@@ -7,6 +7,11 @@ on:
         description: "测试包标识（仅用于文件名）"
         required: false
         default: "test"
+  push:
+    branches:
+      - feature/kingbase_opt
+    paths:
+      - ".github/workflows/test-macos-build.yml"
 
 permissions:
   contents: read
