@@ -382,6 +382,16 @@ const Sidebar: React.FC<{ onEditConnection?: (conn: SavedConnection) => void }> 
       password: readString(rawProxy.password, rawProxy.Password, cloned.proxyPassword, cloned.ProxyPassword),
     };
     const hasProxyDetail = Boolean(normalizedProxy.host || normalizedProxy.user || normalizedProxy.password);
+    const rawHttpTunnel = (cloned.httpTunnel ?? cloned.HTTPTunnel ?? {}) as Record<string, unknown>;
+    const normalizedHttpTunnel = {
+      host: readString(rawHttpTunnel.host, rawHttpTunnel.Host, cloned.httpTunnelHost, cloned.HttpTunnelHost),
+      port: readNumber(8080, rawHttpTunnel.port, rawHttpTunnel.Port, cloned.httpTunnelPort, cloned.HttpTunnelPort),
+      user: readString(rawHttpTunnel.user, rawHttpTunnel.User, cloned.httpTunnelUser, cloned.HttpTunnelUser),
+      password: readString(rawHttpTunnel.password, rawHttpTunnel.Password, cloned.httpTunnelPassword, cloned.HttpTunnelPassword),
+    };
+    const hasHttpTunnelDetail = Boolean(normalizedHttpTunnel.host || normalizedHttpTunnel.user || normalizedHttpTunnel.password);
+    const normalizedUseHttpTunnel = readBool(hasHttpTunnelDetail, cloned.useHttpTunnel, cloned.UseHTTPTunnel);
+    const normalizedUseProxy = !normalizedUseHttpTunnel && readBool(hasProxyDetail, cloned.useProxy, cloned.UseProxy);
 
     const rawHosts = Array.isArray(cloned.hosts)
       ? cloned.hosts
@@ -394,8 +404,10 @@ const Sidebar: React.FC<{ onEditConnection?: (conn: SavedConnection) => void }> 
       ...(cloned as SavedConnection['config']),
       useSSH: readBool(hasSSHDetail, cloned.useSSH, cloned.UseSSH),
       ssh: normalizedSSH,
-      useProxy: readBool(hasProxyDetail, cloned.useProxy, cloned.UseProxy),
+      useProxy: normalizedUseProxy,
       proxy: normalizedProxy,
+      useHttpTunnel: normalizedUseHttpTunnel,
+      httpTunnel: normalizedHttpTunnel,
       hosts: normalizedHosts,
       timeout: readNumber(30, cloned.timeout, cloned.Timeout),
     };
