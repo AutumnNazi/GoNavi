@@ -79,7 +79,13 @@ feature/* / fix/* -> dev -> release/* -> main -> tag(vX.Y.Z)
 
 ### 1. main → dev 同步（必做）
 
-任何合入 `main` 的变更，都必须同步到 `dev`：
+仓库已提供 GitHub Actions 自动同步机制：
+
+- `.github/workflows/sync-main-to-dev.yml`
+- 触发时机：每次 `main` 分支有新的 push
+- 行为：自动创建或复用 `main` 到 `dev` 的同步 PR；若可合并，则尝试开启自动合并
+
+当出现冲突，或自动化暂不可用时，使用以下手动兜底方式：
 
 ```bash
 git checkout dev
@@ -114,7 +120,7 @@ git push origin v0.6.0
 
 ### 4. main 回流到 dev（发版后必做）
 
-发布完成后，再次将 `main` 回流到 `dev`，确保开发线与发布线一致：
+发布完成后，仍沿用同一套自动化流程；如有需要，也可以手动触发 `workflow_dispatch`，或执行以下兜底命令，确保开发线与发布线一致：
 
 ```bash
 git checkout dev

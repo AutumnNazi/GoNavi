@@ -1,0 +1,136 @@
+name: main 回灌 dev
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: sync-main-to-dev
+  cancel-in-progress: true
+
+jobs:
+  sync-main-to-dev:
+    name: 执行回灌同步
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 检查是否需要同步
+        id: diff_check
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "开始检查 main 与 dev 的分支差异..."
+          git fetch origin main dev
+          ahead_count="$(git rev-list --count origin/dev..origin/main)"
+          echo "ahead_count=${ahead_count}" >> "$GITHUB_OUTPUT"
+          if [ "${ahead_count}" -eq 0 ]; then
+            echo "无需同步，dev 已包含 main 的最新提交。"
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "检测到 ${ahead_count} 个待同步提交，准备创建或复用同步 PR。"
+            echo "has_changes=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: 创建或复用同步 PR
+        id: sync_pr
+        if: steps.diff_check.outputs.has_changes == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          existing_number="$(gh pr list --base dev --head main --state open --json number --jq '.[0].number // empty')"
+
+          if [ -n "${existing_number}" ]; then
+            pr_number="${existing_number}"
+            pr_url="$(gh pr view "${pr_number}" --json url --jq '.url')"
+            echo "复用已有同步 PR：#${pr_number}"
+            echo "created=false" >> "$GITHUB_OUTPUT"
+          else
+            body_file="$(mktemp)"
+            {
+              echo "## 自动回灌：\`main -> dev\`"
+              echo
+              echo "- 触发条件：\`main\` 分支出现新提交（含贡献者直接合并到 \`main\` 的 PR）"
+              echo "- 目标：让 \`dev\` 持续吸收 \`main\` 的更新，避免发布前集中冲突"
+              echo
+              echo "### 合并建议"
+              echo "- 无冲突：直接合并该 PR（建议 \`Merge commit\`）"
+              echo "- 有冲突：在该 PR 内解决冲突后再合并"
+            } > "${body_file}"
+            pr_url="$(gh pr create \
+              --base dev \
+              --head main \
+              --title "🔁 chore(sync): 回灌 main 到 dev" \
+              --body-file "${body_file}")"
+            pr_number="${pr_url##*/}"
+            echo "已创建同步 PR：#${pr_number}"
+            echo "created=true" >> "$GITHUB_OUTPUT"
+          fi
+
+          echo "pr_number=${pr_number}" >> "$GITHUB_OUTPUT"
+          echo "pr_url=${pr_url}" >> "$GITHUB_OUTPUT"
+
+      - name: 检查合并状态
+        id: merge_state
+        if: steps.diff_check.outputs.has_changes == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          pr_number="${{ steps.sync_pr.outputs.pr_number }}"
+          mergeable="$(gh pr view "${pr_number}" --json mergeable --jq '.mergeable')"
+          merge_state_status="$(gh pr view "${pr_number}" --json mergeStateStatus --jq '.mergeStateStatus')"
+          echo "PR #${pr_number} 合并状态：mergeable=${mergeable}, mergeStateStatus=${merge_state_status}"
+          echo "mergeable=${mergeable}" >> "$GITHUB_OUTPUT"
+          echo "merge_state_status=${merge_state_status}" >> "$GITHUB_OUTPUT"
+
+      - name: 可合并时开启自动合并
+        id: auto_merge
+        if: steps.diff_check.outputs.has_changes == 'true' && steps.merge_state.outputs.mergeable == 'MERGEABLE'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          pr_number="${{ steps.sync_pr.outputs.pr_number }}"
+          if gh pr merge "${pr_number}" --merge --auto; then
+            echo "已为 PR #${pr_number} 开启自动合并。"
+            echo "result=enabled" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::自动合并开启失败，请手动处理并合并该 PR。"
+            echo "result=failed" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: 写入执行摘要
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## main 回灌 dev 执行结果"
+            if [ "${{ steps.diff_check.outputs.has_changes }}" != "true" ]; then
+              echo "- 状态：无需同步（dev 已包含 main 最新提交）"
+              exit 0
+            fi
+            echo "- PR：${{ steps.sync_pr.outputs.pr_url }}"
+            echo "- 可合并状态：${{ steps.merge_state.outputs.mergeable }}"
+            echo "- 合并状态详情：${{ steps.merge_state.outputs.merge_state_status }}"
+            if [ "${{ steps.merge_state.outputs.mergeable }}" = "CONFLICTING" ]; then
+              echo "- 结论：检测到冲突，需要手动处理后合并"
+            elif [ "${{ steps.auto_merge.outputs.result }}" = "enabled" ]; then
+              echo "- 结论：已启用自动合并（满足保护规则后将自动入 dev）"
+            else
+              echo "- 结论：PR 已创建/复用，请按分支策略人工合并"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

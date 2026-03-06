@@ -79,7 +79,13 @@ Because external pull requests are merged directly into `main`, maintainers must
 
 ### 1. Sync `main` -> `dev` (required)
 
-Every change merged into `main` must be synced into `dev`:
+This repository provides automatic sync via GitHub Actions workflow:
+
+- `.github/workflows/sync-main-to-dev.yml`
+- Trigger: every push to `main`
+- Behavior: create/reuse a PR from `main` to `dev`; if mergeable, it tries to enable auto-merge
+
+Manual fallback (when conflicts or automation is unavailable):
 
 ```bash
 git checkout dev
@@ -114,7 +120,7 @@ git push origin v0.6.0
 
 ### 4. Sync `main` back to `dev` after release
 
-After the release, sync `main` back into `dev` again:
+After the release, the same automation still applies. If needed, you can run the workflow manually (`workflow_dispatch`) or execute the fallback commands:
 
 ```bash
 git checkout dev
