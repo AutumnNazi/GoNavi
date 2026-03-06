@@ -1196,19 +1196,24 @@ const ConnectionModal: React.FC<{
               ? await RedisConnect(config as any)
               : await TestConnection(config as any);
 
-          if (res.success) {
-              setTestResult({ type: 'success', message: res.message });
-              if (isRedisType) {
-                  setRedisDbList(Array.from({ length: 16 }, (_, i) => i));
-              } else {
-                  // Other databases: fetch database list
-                  const dbRes = await DBGetDatabases(config as any);
-                  if (dbRes.success) {
-                      const dbs = (dbRes.data as any[]).map((row: any) => row.Database || row.database);
-                      setDbList(dbs);
-                  }
-              }
-          } else {
+		  if (res.success) {
+			  setTestResult({ type: 'success', message: res.message });
+			  if (isRedisType) {
+				  setRedisDbList(Array.from({ length: 16 }, (_, i) => i));
+			  } else {
+				  // Other databases: fetch database list
+				  const dbRes = await DBGetDatabases(config as any);
+				  if (dbRes.success) {
+					  const dbRows = Array.isArray(dbRes.data) ? dbRes.data : [];
+					  const dbs = dbRows
+						  .map((row: any) => row?.Database || row?.database)
+						  .filter((name: any) => typeof name === 'string' && name.trim() !== '');
+					  setDbList(dbs);
+				  } else {
+					  setDbList([]);
+				  }
+			  }
+		  } else {
               const failMessage = buildTestFailureMessage(
                   res?.message,
                   '连接被拒绝或参数无效，请检查后重试'

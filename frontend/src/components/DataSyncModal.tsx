@@ -264,32 +264,38 @@ const DataSyncModal: React.FC<{ open: boolean; onClose: () => void }> = ({ open,
       setSourceConnId(connId);
       setSourceDb('');
       const conn = connections.find(c => c.id === connId);
-      if (conn) {
-          setLoading(true);
-          try {
-            const res = await DBGetDatabases(normalizeConnConfig(conn) as any);
-            if (res.success) {
-                setSourceDbs((res.data as any[]).map((r: any) => r.Database || r.database || r.username));
-            }
-          } catch(e) { message.error("Failed to fetch source databases"); }
-          setLoading(false);
-      }
+	  if (conn) {
+	      setLoading(true);
+	      try {
+	        const res = await DBGetDatabases(normalizeConnConfig(conn) as any);
+	        if (res.success) {
+	            const dbRows = Array.isArray(res.data) ? res.data : [];
+	            setSourceDbs(dbRows
+	                .map((r: any) => r?.Database || r?.database || r?.username)
+	                .filter((name: any) => typeof name === 'string' && name.trim() !== ''));
+	        }
+	      } catch(e) { message.error("Failed to fetch source databases"); }
+	      setLoading(false);
+	  }
   };
 
   const handleTargetConnChange = async (connId: string) => {
       setTargetConnId(connId);
       setTargetDb('');
       const conn = connections.find(c => c.id === connId);
-      if (conn) {
-          setLoading(true);
-          try {
-            const res = await DBGetDatabases(normalizeConnConfig(conn) as any);
-            if (res.success) {
-                setTargetDbs((res.data as any[]).map((r: any) => r.Database || r.database || r.username));
-            }
-          } catch(e) { message.error("Failed to fetch target databases"); }
-          setLoading(false);
-      }
+	  if (conn) {
+	      setLoading(true);
+	      try {
+	        const res = await DBGetDatabases(normalizeConnConfig(conn) as any);
+	        if (res.success) {
+	            const dbRows = Array.isArray(res.data) ? res.data : [];
+	            setTargetDbs(dbRows
+	                .map((r: any) => r?.Database || r?.database || r?.username)
+	                .filter((name: any) => typeof name === 'string' && name.trim() !== ''));
+	        }
+	      } catch(e) { message.error("Failed to fetch target databases"); }
+	      setLoading(false);
+	  }
   };
 
   const nextToTables = async () => {
@@ -301,14 +307,17 @@ const DataSyncModal: React.FC<{ open: boolean; onClose: () => void }> = ({ open,
       try {
           const conn = connections.find(c => c.id === sourceConnId);
           if (conn) {
-              const config = normalizeConnConfig(conn, sourceDb);
-              const res = await DBGetTables(config as any, sourceDb);
-              if (res.success) {
-                  // DBGetTables returns [{Table: "name"}, ...]
-                  const tables = (res.data as any[]).map((row: any) => row.Table || row.table || row.TABLE_NAME || Object.values(row)[0]);
-                  setAllTables(tables as string[]);
-                  setCurrentStep(1);
-              } else {
+	          const config = normalizeConnConfig(conn, sourceDb);
+	          const res = await DBGetTables(config as any, sourceDb);
+	          if (res.success) {
+	              // DBGetTables returns [{Table: "name"}, ...]
+	              const tableRows = Array.isArray(res.data) ? res.data : [];
+	              const tables = tableRows
+	                  .map((row: any) => row?.Table || row?.table || row?.TABLE_NAME || Object.values(row || {})[0])
+	                  .filter((name: any) => typeof name === 'string' && name.trim() !== '');
+	              setAllTables(tables as string[]);
+	              setCurrentStep(1);
+	          } else {
                   message.error(res.message);
               }
           }
