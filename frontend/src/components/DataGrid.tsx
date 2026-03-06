@@ -2861,6 +2861,66 @@ const DataGrid: React.FC<DataGridProps> = ({
       };
   }, [horizontalScrollVisible]);
 
+  // 非虚拟模式：支持在数据区直接使用触摸板/Shift+滚轮进行横向滚动。
+  // 某些平台在表格内容未铺满一页时，不会把水平手势正确路由到表格 body，导致只能在表头/底部滚动条区域滚动。
+  useEffect(() => {
+      if (viewMode !== 'table' || enableVirtual) return;
+      const container = tableContainerRef.current;
+      if (!(container instanceof HTMLElement)) return;
+
+      const resolveHorizontalDelta = (event: WheelEvent) => {
+          if (Math.abs(event.deltaX) > 0.5) {
+              return event.deltaX;
+          }
+          if (event.shiftKey && Math.abs(event.deltaY) > 0.5) {
+              return event.deltaY;
+          }
+          return 0;
+      };
+
+      const isTableDataAreaTarget = (target: EventTarget | null) => {
+          const element = target instanceof HTMLElement ? target : null;
+          if (!element) return false;
+          if (element.closest('.data-grid-external-hscroll')) return false;
+          return !!element.closest('.ant-table-body, .ant-table-content, .ant-table-cell, .ant-table-row, .ant-table-tbody');
+      };
+
+      const handleContainerHorizontalWheel = (event: WheelEvent) => {
+          const horizontalDelta = resolveHorizontalDelta(event);
+          if (!Number.isFinite(horizontalDelta) || Math.abs(horizontalDelta) < 0.5) return;
+          if (!isTableDataAreaTarget(event.target)) return;
+
+          const targets = pickHorizontalScrollTargets(container);
+          const activeTarget = targets.find((target) => target.scrollWidth > target.clientWidth + 1) || targets[0];
+          if (!(activeTarget instanceof HTMLElement)) return;
+
+          const maxScrollLeft = Math.max(0, activeTarget.scrollWidth - activeTarget.clientWidth);
+          if (maxScrollLeft <= 0) return;
+
+          const nextScrollLeft = Math.max(0, Math.min(maxScrollLeft, activeTarget.scrollLeft + horizontalDelta));
+          if (Math.abs(nextScrollLeft - activeTarget.scrollLeft) < 1) return;
+
+          event.preventDefault();
+          event.stopPropagation();
+
+          horizontalSyncSourceRef.current = 'table';
+          activeTarget.scrollLeft = nextScrollLeft;
+          lastTableScrollLeftRef.current = nextScrollLeft;
+
+          const externalScroll = externalHScrollRef.current;
+          if (externalScroll && Math.abs(externalScroll.scrollLeft - nextScrollLeft) > 1) {
+              externalScroll.scrollLeft = nextScrollLeft;
+              lastExternalScrollLeftRef.current = nextScrollLeft;
+          }
+          horizontalSyncSourceRef.current = '';
+      };
+
+      container.addEventListener('wheel', handleContainerHorizontalWheel, { passive: false, capture: true });
+      return () => {
+          container.removeEventListener('wheel', handleContainerHorizontalWheel, { capture: true } as EventListenerOptions);
+      };
+  }, [viewMode, enableVirtual, pickHorizontalScrollTargets]);
+
   useEffect(() => {
       if (viewMode !== 'table') return;
       const rafId = requestAnimationFrame(() => recalculateTableMetrics(containerRef.current));
