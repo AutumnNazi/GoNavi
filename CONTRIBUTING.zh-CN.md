@@ -84,6 +84,7 @@ feature/* / fix/* -> dev -> release/* -> main -> tag(vX.Y.Z)
 - `.github/workflows/sync-main-to-dev.yml`
 - 触发时机：每次 `main` 分支有新的 push
 - 行为：自动创建或复用 `main` 到 `dev` 的同步 PR；若可合并，则尝试开启自动合并
+- 前置条件：需在 `Settings -> Actions -> General -> Workflow permissions` 中开启 `Allow GitHub Actions to create and approve pull requests`，否则 workflow 只会输出告警摘要并跳过建 PR
 
 当出现冲突，或自动化暂不可用时，使用以下手动兜底方式：
 

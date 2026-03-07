@@ -49,6 +49,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          echo "permission_blocked=false" >> "$GITHUB_OUTPUT"
           existing_number="$(gh pr list --base dev --head main --state open --json number --jq '.[0].number // empty')"
 
           if [ -n "${existing_number}" ]; then
@@ -58,6 +59,7 @@ jobs:
             echo "created=false" >> "$GITHUB_OUTPUT"
           else
             body_file="$(mktemp)"
+            error_file="$(mktemp)"
             {
               echo "## 自动回灌：\`main -> dev\`"
               echo
@@ -68,14 +70,28 @@ jobs:
               echo "- 无冲突：直接合并该 PR（建议 \`Merge commit\`）"
               echo "- 有冲突：在该 PR 内解决冲突后再合并"
             } > "${body_file}"
-            pr_url="$(gh pr create \
+
+            if pr_url="$(gh pr create \
               --base dev \
               --head main \
               --title "🔁 chore(sync): 回灌 main 到 dev" \
-              --body-file "${body_file}")"
-            pr_number="${pr_url##*/}"
-            echo "已创建同步 PR：#${pr_number}"
-            echo "created=true" >> "$GITHUB_OUTPUT"
+              --body-file "${body_file}" 2>"${error_file}")"; then
+              pr_number="${pr_url##*/}"
+              echo "已创建同步 PR：#${pr_number}"
+              echo "created=true" >> "$GITHUB_OUTPUT"
+            else
+              error_message="$(tr '\n' ' ' < "${error_file}")"
+              if printf '%s' "${error_message}" | grep -Fq "GitHub Actions is not permitted to create or approve pull requests"; then
+                echo "::warning::仓库未开启“Allow GitHub Actions to create and approve pull requests”，已跳过自动创建同步 PR。"
+                echo "permission_blocked=true" >> "$GITHUB_OUTPUT"
+                echo "created=false" >> "$GITHUB_OUTPUT"
+                echo "pr_number=" >> "$GITHUB_OUTPUT"
+                echo "pr_url=" >> "$GITHUB_OUTPUT"
+                exit 0
+              fi
+              echo "::error::创建同步 PR 失败：${error_message}"
+              exit 1
+            fi
           fi
 
           echo "pr_number=${pr_number}" >> "$GITHUB_OUTPUT"
@@ -83,7 +99,7 @@ jobs:
 
       - name: 检查合并状态
         id: merge_state
-        if: steps.diff_check.outputs.has_changes == 'true'
+        if: steps.diff_check.outputs.has_changes == 'true' && steps.sync_pr.outputs.permission_blocked != 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
@@ -98,7 +114,7 @@ jobs:
 
       - name: 可合并时开启自动合并
         id: auto_merge
-        if: steps.diff_check.outputs.has_changes == 'true' && steps.merge_state.outputs.mergeable == 'MERGEABLE'
+        if: steps.diff_check.outputs.has_changes == 'true' && steps.sync_pr.outputs.permission_blocked != 'true' && steps.merge_state.outputs.mergeable == 'MERGEABLE'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
@@ -121,6 +137,13 @@ jobs:
             echo "## main 回灌 dev 执行结果"
             if [ "${{ steps.diff_check.outputs.has_changes }}" != "true" ]; then
               echo "- 状态：无需同步（dev 已包含 main 最新提交）"
+              exit 0
+            fi
+            if [ "${{ steps.sync_pr.outputs.permission_blocked }}" = "true" ]; then
+              echo "- 状态：已跳过自动创建同步 PR"
+              echo "- 原因：仓库未开启 GitHub Actions 创建与审批 Pull Request 权限"
+              echo "- 处理：前往 Settings -> Actions -> General -> Workflow permissions，开启 Allow GitHub Actions to create and approve pull requests"
+              echo "- 兜底：由维护者手动执行 main 到 dev 合并，或开启该设置后重新运行 workflow"
               exit 0
             fi
             echo "- PR：${{ steps.sync_pr.outputs.pr_url }}"
