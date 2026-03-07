@@ -1,4 +1,4 @@
-package db
+﻿package db
 
 import (
 	"encoding/hex"
@@ -124,16 +124,6 @@ func normalizeCompositeQueryValue(v interface{}) interface{} {
 		// 统一降级为可读字符串，避免对象深层序列化触发 UI 卡顿。
 		if tm, ok := v.(time.Time); ok {
 			return normalizeTemporalValueForDisplay(tm, "")
-		}
-		if stringer, ok := v.(fmt.Stringer); ok {
-			return stringer.String()
-		}
-		return fmt.Sprintf("%v", v)
-	case reflect.Struct:
-		// 部分驱动（如 Kingbase）会返回复杂结构体值，直接透传会导致前端渲染和比较开销激增。
-		// 统一降级为可读字符串，避免对象深层序列化触发 UI 卡顿。
-		if tm, ok := v.(time.Time); ok {
-			return tm.Format(time.RFC3339Nano)
 		}
 		if stringer, ok := v.(fmt.Stringer); ok {
 			return stringer.String()
