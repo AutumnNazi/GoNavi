@@ -134,6 +134,41 @@ export const buildOrderBySQL = (
   return '';
 };
 
+export const buildPaginatedSelectSQL = (
+  dbType: string,
+  baseSql: string,
+  orderBySQL: string,
+  limit: number,
+  offset: number,
+) => {
+  const normalizedType = String(dbType || '').trim().toLowerCase();
+  const safeLimit = Math.max(0, Math.floor(Number(limit) || 0));
+  const safeOffset = Math.max(0, Math.floor(Number(offset) || 0));
+  const base = String(baseSql || '').trim();
+  const orderBy = String(orderBySQL || '');
+
+  if (!base || safeLimit <= 0) {
+    return `${base}${orderBy}`;
+  }
+
+  switch (normalizedType) {
+    case 'oracle': {
+      const orderedSql = `${base}${orderBy}`;
+      const upperBound = safeOffset + safeLimit;
+      if (safeOffset <= 0) {
+        return `SELECT * FROM (${orderedSql}) WHERE ROWNUM <= ${upperBound}`;
+      }
+      return `SELECT * FROM (SELECT "__gonavi_page__".*, ROWNUM "__gonavi_rn__" FROM (${orderedSql}) "__gonavi_page__" WHERE ROWNUM <= ${upperBound}) WHERE "__gonavi_rn__" > ${safeOffset}`;
+    }
+    case 'sqlserver': {
+      const effectiveOrderBy = orderBy.trim() ? orderBy : ' ORDER BY (SELECT NULL)';
+      return `${base}${effectiveOrderBy} OFFSET ${safeOffset} ROWS FETCH NEXT ${safeLimit} ROWS ONLY`;
+    }
+    default:
+      return `${base}${orderBy} LIMIT ${safeLimit} OFFSET ${safeOffset}`;
+  }
+};
+
 export const parseListValues = (val: string) => {
   const raw = (val || '').trim();
   if (!raw) return [];

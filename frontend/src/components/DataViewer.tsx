@@ -4,7 +4,7 @@ import { TabData, ColumnDefinition } from '../types';
 import { useStore } from '../store';
 import { DBQuery, DBGetColumns } from '../../wailsjs/go/app/App';
 import DataGrid, { GONAVI_ROW_KEY } from './DataGrid';
-import { buildOrderBySQL, buildWhereSQL, quoteIdentPart, quoteQualifiedIdent, withSortBufferTuningSQL, type FilterCondition } from '../utils/sql';
+import { buildOrderBySQL, buildPaginatedSelectSQL, buildWhereSQL, quoteIdentPart, quoteQualifiedIdent, withSortBufferTuningSQL, type FilterCondition } from '../utils/sql';
 import { buildMongoCountCommand, buildMongoFilter, buildMongoFindCommand, buildMongoSort } from '../utils/mongodb';
 import { getDataSourceCapabilities } from '../utils/dataSourceCapabilities';
 
@@ -455,7 +455,7 @@ const DataViewer: React.FC<{ tab: TabData }> = ({ tab }) => {
             if (pageRowCount > 0) {
                 const tailOffset = Math.max(0, totalRows - (offset + pageRowCount));
                 if (tailOffset < offset) {
-                    sql = `${baseSql}${reverseOrderSQL} LIMIT ${pageRowCount} OFFSET ${tailOffset}`;
+                    sql = buildPaginatedSelectSQL(dbType, baseSql, reverseOrderSQL, pageRowCount, tailOffset);
                     useClickHouseReversePagination = true;
                     clickHouseReverseLimit = pageRowCount;
                     clickHouseReverseHasMore = currentPage < totalPages;
@@ -464,7 +464,7 @@ const DataViewer: React.FC<{ tab: TabData }> = ({ tab }) => {
         }
         if (!useClickHouseReversePagination) {
             // 大表性能：打开表不阻塞在 COUNT(*)，先通过多取 1 条判断是否还有下一页；总数在后台统计并异步回填。
-            sql += ` LIMIT ${size + 1} OFFSET ${offset}`;
+            sql = buildPaginatedSelectSQL(dbType, baseSql, orderBySQL, size + 1, offset);
         }
     }
 
@@ -534,8 +534,7 @@ const DataViewer: React.FC<{ tab: TabData }> = ({ tab }) => {
 
             if (safeSelect) {
                 let fallbackSql = `SELECT ${safeSelect} FROM ${quoteQualifiedIdent(dbType, tableName)} ${whereSQL}`;
-                fallbackSql += buildOrderBySQL(dbType, sortInfo, pkColumns);
-                fallbackSql += ` LIMIT ${size + 1} OFFSET ${offset}`;
+                fallbackSql = buildPaginatedSelectSQL(dbType, fallbackSql, buildOrderBySQL(dbType, sortInfo, pkColumns), size + 1, offset);
                 executedSql = fallbackSql;
                 resData = await executeDataQuery(fallbackSql, '复杂类型降级重试');
             }

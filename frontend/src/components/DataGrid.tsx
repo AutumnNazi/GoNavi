@@ -10,7 +10,7 @@ import { useStore } from '../store';
 import type { ColumnDefinition } from '../types';
 import { v4 as uuidv4 } from 'uuid';
 import 'react-resizable/css/styles.css';
-import { buildOrderBySQL, buildWhereSQL, escapeLiteral, quoteIdentPart, quoteQualifiedIdent, withSortBufferTuningSQL, type FilterCondition } from '../utils/sql';
+import { buildOrderBySQL, buildPaginatedSelectSQL, buildWhereSQL, escapeLiteral, quoteIdentPart, quoteQualifiedIdent, withSortBufferTuningSQL, type FilterCondition } from '../utils/sql';
 import { isMacLikePlatform, normalizeOpacityForPlatform, resolveAppearanceValues } from '../utils/appearance';
 import { getDataSourceCapabilities } from '../utils/dataSourceCapabilities';
 
@@ -2447,18 +2447,18 @@ const DataGrid: React.FC<DataGridProps> = ({
       return clauses.join(' OR ');
   }, [pkColumns, tableName]);
 
-  const buildCurrentPageSql = useCallback((dbType: string) => {
+      const buildCurrentPageSql = useCallback((dbType: string) => {
       if (!tableName || !pagination) return '';
       const whereSQL = buildWhereSQL(dbType, filterConditions);
-      let sql = `SELECT * FROM ${quoteQualifiedIdent(dbType, tableName)} ${whereSQL}`;
-      sql += buildOrderBySQL(dbType, sortInfo, pkColumns);
+      const baseSql = `SELECT * FROM ${quoteQualifiedIdent(dbType, tableName)} ${whereSQL}`;
+      const orderBySQL = buildOrderBySQL(dbType, sortInfo, pkColumns);
       const normalizedType = String(dbType || '').trim().toLowerCase();
       const hasExplicitSort = !!sortInfo?.columnKey && (sortInfo?.order === 'ascend' || sortInfo?.order === 'descend');
+      const offset = (pagination.current - 1) * pagination.pageSize;
+      let sql = buildPaginatedSelectSQL(dbType, baseSql, orderBySQL, pagination.pageSize, offset);
       if (hasExplicitSort && (normalizedType === 'mysql' || normalizedType === 'mariadb')) {
           sql = withSortBufferTuningSQL(normalizedType, sql, 32 * 1024 * 1024);
       }
-      const offset = (pagination.current - 1) * pagination.pageSize;
-      sql += ` LIMIT ${pagination.pageSize} OFFSET ${offset}`;
       return sql;
   }, [tableName, pagination, filterConditions, sortInfo, pkColumns]);
 
