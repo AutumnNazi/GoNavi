@@ -473,7 +473,7 @@ export const useAppUpdateManager = ({
     void message.success(res?.message || t('app.about.message.install_directory_opened_manual_replace'));
   }, [t]);
 
-  const checkForUpdates = useCallback(async (silent: boolean) => {
+  const checkForUpdates = useCallback(async (silent: boolean, openReleaseNotes = false) => {
     if (updateCheckInFlightRef.current) return;
     updateCheckInFlightRef.current = true;
     setIsCheckingForUpdates(true);
@@ -568,8 +568,11 @@ export const useAppUpdateManager = ({
       if (!silent) {
         void message.info(t('app.about.message.new_version_found', { version: info.latestVersion }));
         setAboutUpdateStatus(statusText);
-        // 手动「检查更新」发现新版本时，打开更新日志弹窗
-        onManualCheckHasUpdateRef?.current?.();
+        // 仅当显式请求打开更新日志时（如用户点击「检查更新」按钮），才触发弹窗；
+        // 通道切换后的自动复查等场景不传 openReleaseNotes，避免越界打开弹窗（#818）
+        if (openReleaseNotes) {
+          onManualCheckHasUpdateRef?.current?.();
+        }
       }
       if (silent && aboutOpen) {
         setAboutUpdateStatus(statusText);

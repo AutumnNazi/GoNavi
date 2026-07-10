@@ -669,6 +669,46 @@ describe('useAppUpdateManager', () => {
     expect(hook?.lastUpdateInfo?.channel).toBe('dev');
   });
 
+  it('does not invoke the manual-check bridge when a channel change re-check finds an update', async () => {
+    const openReleaseNotes = vi.fn();
+    const openReleaseNotesRef = { current: openReleaseNotes };
+
+    backendApp.SetUpdateChannel.mockResolvedValue({ success: true, data: { channel: 'dev' } });
+    backendApp.CheckForUpdates.mockResolvedValue({
+      success: true,
+      data: {
+        hasUpdate: true,
+        channel: 'dev',
+        currentVersion: '0.8.1',
+        latestVersion: 'dev-a1b2c3d',
+      },
+    });
+
+    const Harness = () => {
+      hook = useAppUpdateManager({
+        runtimeBuildType: 'release',
+        t,
+        onManualCheckHasUpdateRef: openReleaseNotesRef,
+      });
+      return null;
+    };
+
+    act(() => {
+      renderer = create(<Harness />);
+    });
+
+    await act(async () => {
+      await hook?.changeUpdateChannel('dev');
+    });
+
+    expect(backendApp.SetUpdateChannel).toHaveBeenCalledWith('dev');
+    expect(backendApp.CheckForUpdates).toHaveBeenCalledTimes(1);
+    // 通道切换后的自动复查即便发现更新，也不应打开更新日志弹窗（#818 触发边界修正）
+    expect(openReleaseNotes).not.toHaveBeenCalled();
+    expect(hook?.lastUpdateInfo?.hasUpdate).toBe(true);
+    expect(hook?.lastUpdateInfo?.latestVersion).toBe('dev-a1b2c3d');
+  });
+
   it('keeps release metadata from the backend update response', async () => {
     backendApp.CheckForUpdates.mockResolvedValue({
       success: true,
@@ -799,7 +839,7 @@ describe('useAppUpdateManager', () => {
     });
 
     await act(async () => {
-      await hook?.checkForUpdates(false);
+      await hook?.checkForUpdates(false, true);
     });
 
     expect(openReleaseNotes).toHaveBeenCalledTimes(1);
@@ -835,7 +875,7 @@ describe('useAppUpdateManager', () => {
     });
 
     await act(async () => {
-      await hook?.checkForUpdates(false);
+      await hook?.checkForUpdates(false, true);
     });
 
     expect(openReleaseNotes).not.toHaveBeenCalled();

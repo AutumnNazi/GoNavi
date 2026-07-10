@@ -5273,7 +5273,7 @@ function App() {
           key="check"
           icon={<CloudDownloadOutlined />}
           loading={isCheckingForUpdates}
-          onClick={() => checkForUpdates(false)}
+          onClick={() => checkForUpdates(false, true)}
       >
           {t('app.about.action.check_updates')}
       </Button>,
