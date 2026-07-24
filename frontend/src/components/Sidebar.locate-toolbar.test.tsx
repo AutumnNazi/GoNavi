@@ -1325,6 +1325,10 @@ describe('Sidebar locate toolbar', () => {
     expect(css).toMatch(/\.gn-v2-rail-tool \{[^}]*width: calc\(24px \* var\(--gn-v2-rail-scale\)\);/s);
     expect(css).toMatch(/\.gn-v2-active-connection-trigger \{[^}]*height: 34px;[^}]*border: 0;[^}]*background: transparent;/s);
     expect(css).toMatch(/\.gn-v2-active-connection-query-action \{[^}]*max-width: 96px;[^}]*font-size: 12px;/s);
+    expect(css).toMatch(/\.gn-v2-active-connection-tooltip \{[^}]*display: flex;[^}]*flex-direction: column;[^}]*gap: 2px;[^}]*max-width: min\(320px, calc\(100vw - 24px\)\);[^}]*overflow-wrap: anywhere;/s);
+    expect(css).toMatch(/\.gn-v2-object-explorer \{[^}]*container-type: inline-size;[^}]*container-name: gn-v2-object-explorer;/s);
+    expect(css).toMatch(/@container gn-v2-object-explorer \(max-width: 440px\) \{[\s\S]*\.gn-v2-active-connection-query-action \{[^}]*width: 28px;[^}]*max-width: 28px;[^}]*padding: 0;/s);
+    expect(css).toMatch(/@container gn-v2-object-explorer \(max-width: 440px\) \{[\s\S]*\.gn-v2-active-connection-query-action > span:not\(\.anticon\):not\(\.ant-btn-icon\) \{[^}]*display: none;/s);
     expect(css).not.toContain('.gn-v2-active-connection-trigger:hover');
   });
 
@@ -1384,7 +1388,6 @@ describe('Sidebar locate toolbar', () => {
     const source = readSidebarSource();
     const treeLoaderSource = readSourceFile('./sidebar/useSidebarTreeLoaders.tsx');
     const titleRenderSource = readSourceFile('./sidebar/useSidebarTitleRender.tsx');
-    const v2ContextMenuSource = readSourceFile('./sidebar/useSidebarV2ContextMenu.tsx');
 
     expect(source).toContain("export type SidebarConnectionState = 'loading' | 'success' | 'error';");
     expect(treeLoaderSource).toContain("setConnectionStates(prev => ({ ...prev, [conn.id]: 'loading' }));");
@@ -1398,8 +1401,6 @@ describe('Sidebar locate toolbar', () => {
     expect(treeLoaderSource).toContain("setConnectionStates(prev => ({ ...prev, [key as string]: 'success' }));");
     expect(titleRenderSource).toContain("let status: 'loading' | 'success' | 'error' | 'default' = 'default';");
     expect(titleRenderSource).toContain("if (connectionStates[node.key] === 'loading') status = 'loading';");
-    expect(v2ContextMenuSource).toContain("const statusMap = new Map<string, 'loading' | 'live' | 'error' | 'idle'>();");
-    expect(v2ContextMenuSource).toContain("value === 'loading' ? 'loading'");
     expect(css).toMatch(/\.gn-v2-tree-status\.is-loading::before \{[^}]*border: 2px solid rgba\(37, 99, 235, 0\.24\);[^}]*animation: gn-v2-tree-status-spin 0\.8s linear infinite;/s);
     expect(css).toMatch(/@keyframes gn-v2-tree-status-spin \{[^}]*to \{ transform: rotate\(360deg\); \}/s);
   });
@@ -1555,8 +1556,11 @@ describe('Sidebar locate toolbar', () => {
 
     expect(markup).toContain('gn-v2-connection-rail');
     expect(markup).toContain('gn-v2-active-connection-copy');
-    expect(markup).toContain('<strong>本地</strong>');
-    expect(markup).toContain('<span>app_db</span>');
+    expect(markup).toMatch(/<strong aria-describedby="[^"]+">本地<\/strong>/);
+    expect(markup).toMatch(/<span aria-describedby="[^"]+">app_db<\/span>/);
+    expect(markup).not.toContain('title="本地"');
+    expect(markup).not.toContain('title="app_db"');
+    expect(markup).not.toContain('gn-v2-live-dot');
     expect(markup).not.toContain('<span>localhost</span>');
     expect(markup).not.toContain('gn-v2-db-icon-label');
   });
@@ -1586,8 +1590,10 @@ describe('Sidebar locate toolbar', () => {
 
     const markup = renderSidebarMarkup({ uiVersion: 'v2' });
 
-    expect(markup).toContain(`<strong>${t('sidebar.active_connection.no_host_selected')}</strong>`);
-    expect(markup).toContain(`<span>${t('sidebar.active_connection.no_database_selected')}</span>`);
+    expect(markup).toMatch(new RegExp(`<strong aria-describedby="[^"]+">${t('sidebar.active_connection.no_host_selected')}</strong>`));
+    expect(markup).toMatch(new RegExp(`<span aria-describedby="[^"]+">${t('sidebar.active_connection.no_database_selected')}</span>`));
+    expect(markup).not.toContain(`title="${t('sidebar.active_connection.no_host_selected')}"`);
+    expect(markup).not.toContain(`title="${t('sidebar.active_connection.no_database_selected')}"`);
     expect(markup).not.toContain('<strong>本地</strong>');
   });
 
@@ -2803,6 +2809,13 @@ describe('Sidebar locate toolbar', () => {
     expect(source).toContain("title: String(node.title || dataRef.dbName || t('database.unnamed'))");
     expect(source).toContain("meta: conn?.name || dataRef.id || t('database.label')");
     expect(source).toContain("const activeConnectionDisplayName = String(activeConnection?.name || '').trim() || t('sidebar.active_connection.no_host_selected');");
+    expect(source).toContain('const v2ActiveConnectionTooltipContent = (');
+    expect(source).toContain('<div className="gn-v2-active-connection-tooltip">');
+    expect(source).toContain('<strong>{activeConnectionDisplayName}</strong>');
+    expect(source).toContain('<span>{activeDatabaseDisplayName || v2NoDatabaseSelectedLabel}</span>');
+    expect(source.match(/<Tooltip title=\{v2ActiveConnectionTooltipContent\} placement="bottomLeft" mouseEnterDelay=\{0\.35\}>/g)).toHaveLength(2);
+    expect(source).not.toContain('<strong title={activeConnectionDisplayName}>');
+    expect(source).not.toContain('<span title={activeDatabaseDisplayName || v2NoDatabaseSelectedLabel}>');
     expect(utilsSource).toContain("name: item.tag.name || t('connection.sidebar.group.untitled'),");
     expect(source).toContain('groupName={group.name}');
     expect(source).toContain('count={group.connections.length}');

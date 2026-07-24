@@ -30,6 +30,7 @@ describe('app sidebar tree panel collapse', () => {
     expect(appSource).toContain('data-sidebar-collapse-trigger="true"');
     expect(appSource).toContain('data-titlebar-brand-region="true"');
     expect(appSource).toContain('data-sidebar-toggle-placement="titlebar"');
+    expect(connectionRailSource).toContain('data-sidebar-toggle-placement="fixed-rail"');
     expect(appSource).toContain('data-no-titlebar-toggle="true"');
     expect(appSource).toContain('aria-controls="gonavi-sidebar-tree-panel"');
     expect(appSource).toContain('aria-expanded={!isSidebarCollapsed}');
@@ -40,13 +41,15 @@ describe('app sidebar tree panel collapse', () => {
     expect(appSource).toContain("case 'focusSidebarSearch':");
     expect(appSource).toContain('handleFocusSidebarSearch();');
     expect(appSource).toContain('<TabManager onFocusSidebarSearch={handleFocusSidebarSearch} />');
-    expect(appSource).toContain('{(!isV2Ui || isSidebarCollapsed) && (');
+    expect(appSource).toContain('{!isV2Ui && (');
     expect(appSource).toContain('onCollapseSidebar={isV2Ui && !isSidebarCollapsed ? handleCollapseSidebarPanel : undefined}');
+    expect(appSource).toContain('onExpandSidebar={isV2Ui && isSidebarCollapsed ? handleExpandSidebarPanel : undefined}');
     expect(appSource).toContain('collapseSidebarButtonRef={sidebarExplorerToggleRef}');
-    expect(appSource).toContain('ref={sidebarTitlebarToggleRef}');
-    expect(appSource).toContain("pendingSidebarToggleFocusRef.current = 'titlebar'");
+    expect(appSource).toContain('expandSidebarButtonRef={sidebarCollapsedToggleRef}');
+    expect(appSource).toContain('ref={sidebarCollapsedToggleRef}');
+    expect(appSource).toContain("pendingSidebarToggleFocusRef.current = 'collapsed'");
     expect(appSource).toContain("pendingSidebarToggleFocusRef.current = 'explorer'");
-    expect(appSource).toContain("(target === 'titlebar' ? sidebarTitlebarToggleRef : sidebarExplorerToggleRef).current?.focus()");
+    expect(appSource).toContain("(target === 'collapsed' ? sidebarCollapsedToggleRef : sidebarExplorerToggleRef).current?.focus()");
     expect(sidebarSource).toContain('data-sidebar-toggle-placement="explorer-header"');
 
     const titlebarToggleIndex = appSource.indexOf('data-sidebar-collapse-trigger="true"');
@@ -64,6 +67,10 @@ describe('app sidebar tree panel collapse', () => {
     const explorerToggleEndIndex = sidebarSource.indexOf('</Tooltip>', explorerToggleIndex);
     const explorerToggleStartIndex = sidebarSource.lastIndexOf('<Button', explorerToggleIndex);
     const explorerToggleSource = sidebarSource.slice(explorerToggleStartIndex, explorerToggleEndIndex);
+    const fixedRailToggleIndex = connectionRailSource.indexOf('data-sidebar-toggle-placement="fixed-rail"');
+    const railItemsIndex = connectionRailSource.indexOf('<div className="gn-v2-rail-items">');
+    const railPrimaryActionsIndex = connectionRailSource.indexOf('<div className="gn-v2-rail-primary-actions"');
+    const firstRailObjectActionIndex = connectionRailSource.indexOf('data-sidebar-create-group-action="true"');
     expect(titlebarToggleIndex).toBeGreaterThan(appSource.indexOf('data-titlebar-brand-region="true"'));
     expect(titlebarToggleIndex).toBeLessThan(siderIndex);
     expect(triggerSource).toContain('type="text"');
@@ -75,6 +82,10 @@ describe('app sidebar tree panel collapse', () => {
     expect(explorerToggleIndex).toBeGreaterThan(connectionMenuIndex);
     expect(explorerToggleSource).toContain('ref={collapseSidebarButtonRef}');
     expect(explorerToggleSource).not.toContain('disabled=');
+    expect(fixedRailToggleIndex).toBeGreaterThan(-1);
+    expect(fixedRailToggleIndex).toBeGreaterThan(railItemsIndex);
+    expect(fixedRailToggleIndex).toBeGreaterThan(railPrimaryActionsIndex);
+    expect(fixedRailToggleIndex).toBeLessThan(firstRailObjectActionIndex);
   });
 
   it('overrides normal resize bounds with the retained rail width and removes the collapsed resize target', () => {

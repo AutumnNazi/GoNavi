@@ -37,15 +37,13 @@ describe('v2 theme connection identity contrast', () => {
     const dark = readRuleBlock('body[data-ui-version="v2"][data-theme="dark"]');
     const host = readRuleBlock('body[data-ui-version="v2"] .gn-v2-tab-label-part-host');
     const database = readRuleBlock('body[data-ui-version="v2"] .gn-v2-tab-label-part-database');
-    const liveDot = readRuleBlock('body[data-ui-version="v2"] .gn-v2-live-dot');
     const treeDot = readRuleBlock('body[data-ui-version="v2"] .gn-v2-tree-status::before');
 
     expect(host).toContain('color: var(--gn-info);');
     expect(database).toContain('color: var(--gn-accent);');
-    expect(liveDot).toContain('width: 10px;');
-    expect(liveDot).toContain('height: 10px;');
     expect(treeDot).toContain('width: 9px;');
     expect(treeDot).toContain('height: 9px;');
+    expect(source).not.toContain('.gn-v2-live-dot');
     expect(source).toContain('background: var(--gn-status-connected);');
 
     for (const [mode, block] of [['light', light], ['dark', dark]] as const) {

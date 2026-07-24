@@ -511,8 +511,11 @@ const Sidebar: React.FC<{
   uiVersion?: 'legacy' | 'v2';
   onFocusCommandSearch?: () => void;
   onCollapseSidebar?: () => void;
+  onExpandSidebar?: () => void;
   collapseSidebarLabel?: string;
   collapseSidebarButtonRef?: React.Ref<HTMLButtonElement>;
+  expandSidebarLabel?: string;
+  expandSidebarButtonRef?: React.Ref<HTMLButtonElement>;
   isTreePanelCollapsed?: boolean;
 }> = React.memo(({
   onCreateConnection,
@@ -523,8 +526,11 @@ const Sidebar: React.FC<{
   uiVersion,
   onFocusCommandSearch,
   onCollapseSidebar,
+  onExpandSidebar,
   collapseSidebarLabel,
   collapseSidebarButtonRef,
+  expandSidebarLabel,
+  expandSidebarButtonRef,
   isTreePanelCollapsed = false,
 }) => {
   const connections = useStore(state => state.connections);
@@ -2531,7 +2537,6 @@ const Sidebar: React.FC<{
       contextMenu,
       setContextMenu,
       contextMenuPortalRef,
-      buildRailConnectionStatus,
       openV2ConnectionContextMenu,
       getV2TreeMetaText,
       renderV2SidebarContextMenuContent,
@@ -2539,7 +2544,6 @@ const Sidebar: React.FC<{
       refreshV2TableContextMenuStats,
   } = useSidebarV2ContextMenu({
       connections,
-      connectionStates,
       connectionTags,
       activeShortcutPlatform,
       flattenConnectionNodes,
@@ -2917,6 +2921,12 @@ const Sidebar: React.FC<{
   const v2ActiveConnectionHeaderLabel = t('sidebar.active_connection.current_host_database');
   const v2NoDatabaseSelectedLabel = t('sidebar.active_connection.no_database_selected');
   const v2ConnectionActionsLabel = t('sidebar.active_connection.actions');
+  const v2ActiveConnectionTooltipContent = (
+    <div className="gn-v2-active-connection-tooltip">
+      <strong>{activeConnectionDisplayName}</strong>
+      <span>{activeDatabaseDisplayName || v2NoDatabaseSelectedLabel}</span>
+    </div>
+  );
   const v2CommandSearchLabel = t('sidebar.command_search.label');
   const v2CommandSearchPlaceholder = t('sidebar.command_search.placeholder');
 
@@ -3007,6 +3017,11 @@ const Sidebar: React.FC<{
       openSettings: onOpenSettings ?? (() => {}),
     },
     canLocateActiveTab,
+    sidebarExpandAction: onExpandSidebar && expandSidebarLabel ? {
+      label: expandSidebarLabel,
+      onClick: onExpandSidebar,
+      buttonRef: expandSidebarButtonRef,
+    } : undefined,
     workbenchActions: (
       <>
         <SlowQueryRailButton
@@ -3035,10 +3050,13 @@ const Sidebar: React.FC<{
         {isV2Ui && (
             <div className="gn-v2-active-connection-header" data-object-count={activeConnectionObjectCount}>
                 <div className="gn-v2-active-connection-trigger" aria-label={v2ActiveConnectionHeaderLabel}>
-                    <span className={`gn-v2-live-dot is-${activeConnection ? buildRailConnectionStatus(activeConnection.id) : 'idle'}`} />
                     <div className="gn-v2-active-connection-copy">
-                        <strong>{activeConnectionDisplayName}</strong>
-                        <span>{activeDatabaseDisplayName || v2NoDatabaseSelectedLabel}</span>
+                        <Tooltip title={v2ActiveConnectionTooltipContent} placement="bottomLeft" mouseEnterDelay={0.35}>
+                            <strong>{activeConnectionDisplayName}</strong>
+                        </Tooltip>
+                        <Tooltip title={v2ActiveConnectionTooltipContent} placement="bottomLeft" mouseEnterDelay={0.35}>
+                            <span>{activeDatabaseDisplayName || v2NoDatabaseSelectedLabel}</span>
+                        </Tooltip>
                     </div>
                 </div>
                 <div className="gn-v2-active-connection-actions">

@@ -266,8 +266,9 @@ const MIN_KEEPALIVE_INTERVAL_MINUTES = 1;
 const MAX_KEEPALIVE_INTERVAL_MINUTES = 1440;
 const DEFAULT_DIAGNOSTIC_TIMEOUT_SECONDS = 15;
 const MAX_DIAGNOSTIC_TIMEOUT_SECONDS = 300;
-const PERSIST_VERSION = 19;
+const PERSIST_VERSION = 20;
 const SQL_EDITOR_FONT_SIZE_SPLIT_VERSION = 19;
+const TAB_DISPLAY_DEFAULT_MIGRATION_VERSION = 20;
 const UI_VERSION_V2_MIGRATION_VERSION = 14;
 const SIDEBAR_SEARCH_SHORTCUT_MIGRATION_VERSION = 18;
 const PERSIST_STORAGE_KEY = "lite-db-storage";
@@ -2908,6 +2909,21 @@ const sanitizePinnedSidebarTables = (value: unknown): string[] => {
   );
 };
 
+const isLegacyDefaultTabDisplaySettings = (value: unknown): boolean => {
+  if (!value || typeof value !== "object") return false;
+  const raw = value as Partial<TabDisplaySettings>;
+  return raw.layout === "single"
+    && Array.isArray(raw.primaryElements)
+    && raw.primaryElements.length === 3
+    && raw.primaryElements[0] === "connection"
+    && raw.primaryElements[1] === "kind"
+    && raw.primaryElements[2] === "object"
+    && Array.isArray(raw.secondaryElements)
+    && raw.secondaryElements.length === 0
+    && raw.single === undefined
+    && raw.double === undefined;
+};
+
 const sanitizeAppearance = (
   appearance: Partial<AppearanceSettings> | undefined,
   version: number,
@@ -2962,7 +2978,10 @@ const sanitizeAppearance = (
     customUIFontFamily: sanitizeFontFamilyInput(appearance.customUIFontFamily),
     customMonoFontFamily: sanitizeFontFamilyInput(appearance.customMonoFontFamily),
     newQuerySqlTemplate: sanitizeNewQuerySqlTemplate(appearance.newQuerySqlTemplate),
-    tabDisplay: sanitizeTabDisplaySettings(appearance.tabDisplay),
+    tabDisplay: version < TAB_DISPLAY_DEFAULT_MIGRATION_VERSION
+      && isLegacyDefaultTabDisplaySettings(appearance.tabDisplay)
+      ? sanitizeTabDisplaySettings(DEFAULT_TAB_DISPLAY_SETTINGS)
+      : sanitizeTabDisplaySettings(appearance.tabDisplay),
     redisDbAliases: sanitizeRedisDbAliases(appearance.redisDbAliases),
     showDataTableVerticalBorders:
       dataGridDisplaySettings.showDataTableVerticalBorders,

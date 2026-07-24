@@ -1,5 +1,5 @@
 import Modal from './common/ResizableDraggableModal';
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Button, Dropdown, message, Tabs, Tooltip } from 'antd';
 import { CloseOutlined, ConsoleSqlOutlined, DatabaseOutlined, FileTextOutlined, FolderOpenOutlined, HistoryOutlined, PlusOutlined, PushpinOutlined, RightOutlined, RobotOutlined, SearchOutlined, SettingOutlined } from '@ant-design/icons';
 import type { MenuProps, TabsProps } from 'antd';
@@ -81,6 +81,25 @@ export const isRunningDataImportWorkbenchTab = (
 ): boolean => tab.type === 'data-import' && tab.dataImportRunning === true;
 
 export const TAB_WORKBENCH_CLASS_NAME = 'tab-workbench';
+
+export const V2_WORKBENCH_TAB_MIN_WIDTH = 112;
+export const V2_WORKBENCH_TAB_MAX_WIDTH = 260;
+const V2_WORKBENCH_TAB_WIDTH_GUARD = 1;
+
+export const resolveV2WorkbenchTabWidth = (availableWidth: number, tabCount: number): number => {
+  const normalizedTabCount = Number.isFinite(tabCount) ? Math.floor(tabCount) : 0;
+  if (!Number.isFinite(availableWidth) || availableWidth <= 0 || normalizedTabCount <= 0) {
+    return V2_WORKBENCH_TAB_MAX_WIDTH;
+  }
+
+  const equalShare = Math.floor(
+    (availableWidth - V2_WORKBENCH_TAB_WIDTH_GUARD) / normalizedTabCount,
+  );
+  return Math.min(
+    V2_WORKBENCH_TAB_MAX_WIDTH,
+    Math.max(V2_WORKBENCH_TAB_MIN_WIDTH, equalShare),
+  );
+};
 
 type RecentConnectionShortcut = {
   connection: SavedConnection;
@@ -712,6 +731,8 @@ const TabManager: React.FC<TabManagerProps> = React.memo<TabManagerProps>(({ onF
     [detachedTabIdSet, tabs],
   );
   const tabsNavBorderColor = theme === 'dark' ? 'rgba(255, 255, 255, 0.09)' : 'rgba(0, 0, 0, 0.08)';
+  const tabWorkbenchRef = useRef<HTMLDivElement>(null);
+  const [v2TabWidth, setV2TabWidth] = useState(V2_WORKBENCH_TAB_MAX_WIDTH);
   const [draggingTabId, setDraggingTabId] = useState<string | null>(null);
   const [detachDragPreview, setDetachDragPreview] = useState<DetachDragPreviewState | null>(null);
   const [openingRecentSQLFileKey, setOpeningRecentSQLFileKey] = useState<string | null>(null);
@@ -736,6 +757,37 @@ const TabManager: React.FC<TabManagerProps> = React.memo<TabManagerProps>(({ onF
   const isV2Ui = appearance.uiVersion === 'v2';
   const hasTabs = tabs.length > 0;
   const hasDockedTabs = dockedTabs.length > 0;
+  useLayoutEffect(() => {
+    if (!isV2Ui || dockedTabs.length === 0) {
+      setV2TabWidth(V2_WORKBENCH_TAB_MAX_WIDTH);
+      return;
+    }
+
+    const target = tabWorkbenchRef.current;
+    if (!target) return;
+
+    const updateWidth = (availableWidth: number) => {
+      const nextWidth = resolveV2WorkbenchTabWidth(availableWidth, dockedTabs.length);
+      setV2TabWidth((currentWidth) => currentWidth === nextWidth ? currentWidth : nextWidth);
+    };
+    const measure = () => updateWidth(target.getBoundingClientRect().width);
+
+    measure();
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', measure);
+      return () => window.removeEventListener('resize', measure);
+    }
+
+    const observer = new ResizeObserver((entries) => {
+      updateWidth(entries[0]?.contentRect.width ?? target.getBoundingClientRect().width);
+    });
+    observer.observe(target);
+    return () => observer.disconnect();
+  }, [dockedTabs.length, isV2Ui]);
+
+  const tabWorkbenchStyle = isV2Ui
+    ? ({ '--gn-v2-tab-width': `${v2TabWidth}px` } as React.CSSProperties)
+    : undefined;
   const detachTabToWindow = useCallback((tabId: string, preferred?: { x?: number; y?: number; width?: number; height?: number }) => {
     const tab = tabs.find((item) => item.id === tabId);
     if (tab && isBackgroundTaskWorkbenchTab(tab)) {
@@ -1583,7 +1635,11 @@ const TabManager: React.FC<TabManagerProps> = React.memo<TabManagerProps>(({ onF
   );
 
   return (
-    <div className={`${TAB_WORKBENCH_CLASS_NAME}${isV2Ui ? ' gn-v2-tab-workbench' : ''}`}>
+    <div
+      ref={tabWorkbenchRef}
+      className={`${TAB_WORKBENCH_CLASS_NAME}${isV2Ui ? ' gn-v2-tab-workbench' : ''}`}
+      style={tabWorkbenchStyle}
+    >
         <style>{`
             .${TAB_WORKBENCH_CLASS_NAME} {
               height: 100%;

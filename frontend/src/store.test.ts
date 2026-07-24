@@ -96,9 +96,61 @@ describe('store appearance persistence', () => {
     expect(appearance.customMonoFontFamily).toBeNull();
     expect(appearance.newQuerySqlTemplate).toBeNull();
     expect(appearance.tabDisplay).toEqual({
+      layout: 'double',
+      primaryElements: ['object'],
+      secondaryElements: ['kind', 'connection', 'database'],
+    });
+  });
+
+  it('migrates the previous tab display default without overwriting custom settings', async () => {
+    storage.setItem('lite-db-storage', JSON.stringify({
+      state: {
+        appearance: {
+          tabDisplay: {
+            layout: 'single',
+            primaryElements: ['connection', 'kind', 'object'],
+            secondaryElements: [],
+          },
+        },
+      },
+      version: 19,
+    }));
+
+    const migrated = await importStore();
+    expect(migrated.useStore.getState().appearance.tabDisplay).toEqual({
+      layout: 'double',
+      primaryElements: ['object'],
+      secondaryElements: ['kind', 'connection', 'database'],
+    });
+    expect(JSON.parse(storage.getItem('lite-db-storage') || '{}').version).toBe(20);
+
+    storage.setItem('lite-db-storage', JSON.stringify({
+      state: {
+        appearance: {
+          tabDisplay: {
+            layout: 'single',
+            primaryElements: ['connection', 'kind', 'object'],
+            secondaryElements: [],
+            double: {
+              primaryElements: ['object', 'host'],
+              secondaryElements: ['kind', 'connection'],
+            },
+          },
+        },
+      },
+      version: 19,
+    }));
+    vi.resetModules();
+
+    const customized = await importStore();
+    expect(customized.useStore.getState().appearance.tabDisplay).toEqual({
       layout: 'single',
       primaryElements: ['connection', 'kind', 'object'],
       secondaryElements: [],
+      double: {
+        primaryElements: ['object', 'host'],
+        secondaryElements: ['kind', 'connection'],
+      },
     });
   });
 
@@ -123,7 +175,7 @@ describe('store appearance persistence', () => {
     expect(appearance.sqlEditorFontSizeFollowGlobal).toBe(false);
 
     const persisted = JSON.parse(storage.getItem('lite-db-storage') || '{}');
-    expect(persisted.version).toBe(19);
+    expect(persisted.version).toBe(20);
     expect(persisted.state.appearance.sqlEditorFontSize).toBe(17);
     expect(persisted.state.appearance.sqlEditorFontSizeFollowGlobal).toBe(false);
   });
@@ -142,7 +194,7 @@ describe('store appearance persistence', () => {
     expect(useStore.getState().appearance.uiVersion).toBe('v2');
 
     const persisted = JSON.parse(storage.getItem('lite-db-storage') || '{}');
-    expect(persisted.version).toBe(19);
+    expect(persisted.version).toBe(20);
     expect(persisted.state.appearance.uiVersion).toBe('v2');
   });
 
@@ -1322,7 +1374,7 @@ describe('store appearance persistence', () => {
     )).toEqual(legacyTag?.childOrder);
 
     const persisted = JSON.parse(storage.getItem('lite-db-storage') || '{}');
-    expect(persisted.version).toBe(19);
+    expect(persisted.version).toBe(20);
     expect(persisted.state.connectionTags[0].childOrder).toEqual([
       'connection:conn-a',
       'connection:conn-b',
@@ -3194,7 +3246,7 @@ describe('store appearance persistence', () => {
       mac: { combo: 'Meta+K', enabled: false },
       windows: { combo: 'Ctrl+K', enabled: true },
     });
-    expect(JSON.parse(storage.getItem('lite-db-storage') || '{}').version).toBe(19);
+    expect(JSON.parse(storage.getItem('lite-db-storage') || '{}').version).toBe(20);
 
     storage.setItem('lite-db-storage', JSON.stringify({
       state: {

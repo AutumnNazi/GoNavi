@@ -1073,24 +1073,25 @@ function App() {
   const sidebarWidth = useStore(state => state.sidebarWidth);
   const setSidebarWidth = useStore(state => state.setSidebarWidth);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
-  const sidebarTitlebarToggleRef = useRef<HTMLButtonElement>(null);
+  const sidebarCollapsedToggleRef = useRef<HTMLButtonElement>(null);
   const sidebarExplorerToggleRef = useRef<HTMLButtonElement>(null);
-  const pendingSidebarToggleFocusRef = useRef<'titlebar' | 'explorer' | null>(null);
+  const pendingSidebarToggleFocusRef = useRef<'collapsed' | 'explorer' | null>(null);
   const handleCollapseSidebarPanel = useCallback(() => {
-      pendingSidebarToggleFocusRef.current = 'titlebar';
+      pendingSidebarToggleFocusRef.current = 'collapsed';
       setIsSidebarCollapsed(true);
   }, []);
+  const handleExpandSidebarPanel = useCallback(() => {
+      pendingSidebarToggleFocusRef.current = 'explorer';
+      setIsSidebarCollapsed(false);
+  }, []);
   const handleTitlebarSidebarToggle = useCallback(() => {
-      if (isV2Ui && isSidebarCollapsed) {
-          pendingSidebarToggleFocusRef.current = 'explorer';
-      }
       setIsSidebarCollapsed((collapsed) => !collapsed);
-  }, [isSidebarCollapsed, isV2Ui]);
+  }, []);
   useEffect(() => {
       const target = pendingSidebarToggleFocusRef.current;
       if (!target) return;
       pendingSidebarToggleFocusRef.current = null;
-      (target === 'titlebar' ? sidebarTitlebarToggleRef : sidebarExplorerToggleRef).current?.focus();
+      (target === 'collapsed' ? sidebarCollapsedToggleRef : sidebarExplorerToggleRef).current?.focus();
   }, [isSidebarCollapsed]);
   const sidebarCollapsedWidth = isV2Ui ? 38 * effectiveUiScale * effectiveSidebarRailScale : 0;
   const renderedSidebarWidth = isSidebarCollapsed ? sidebarCollapsedWidth : sidebarWidth;
@@ -7522,10 +7523,10 @@ function App() {
                     }}
                   />
                   <span>GoNavi</span>
-                  {(!isV2Ui || isSidebarCollapsed) && (
+                  {!isV2Ui && (
                       <Tooltip title={sidebarPanelToggleLabel} placement="bottom" mouseEnterDelay={0.35}>
                           <Button
-                            ref={sidebarTitlebarToggleRef}
+                            ref={sidebarCollapsedToggleRef}
                             type="text"
                             size="small"
                             className="gonavi-sidebar-collapse-trigger"
@@ -7665,8 +7666,11 @@ function App() {
                             uiVersion={appearance.uiVersion}
                             onFocusCommandSearch={handleFocusSidebarSearch}
                             onCollapseSidebar={isV2Ui && !isSidebarCollapsed ? handleCollapseSidebarPanel : undefined}
+                            onExpandSidebar={isV2Ui && isSidebarCollapsed ? handleExpandSidebarPanel : undefined}
                             collapseSidebarLabel={sidebarPanelToggleLabel}
                             collapseSidebarButtonRef={sidebarExplorerToggleRef}
+                            expandSidebarLabel={sidebarPanelToggleLabel}
+                            expandSidebarButtonRef={sidebarCollapsedToggleRef}
                             isTreePanelCollapsed={isV2Ui && isSidebarCollapsed}
                         />
                     </div>

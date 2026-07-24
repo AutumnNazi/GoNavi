@@ -6,6 +6,8 @@ import {
   applyTabDisplaySettingsPatch,
   buildTabDisplayModel,
   buildTabDisplayTitle,
+  DEFAULT_TAB_DISPLAY_SETTINGS,
+  getDefaultTabDisplaySnapshot,
   getTabDisplayKindLabel,
   resolveTabDisplayElementOrder,
   resolveConnectionHostSummary,
@@ -36,6 +38,22 @@ const redisConnection: SavedConnection = {
 };
 
 describe('tabDisplay', () => {
+  it('uses the requested double-line tab display defaults', () => {
+    expect(DEFAULT_TAB_DISPLAY_SETTINGS).toEqual({
+      layout: 'double',
+      primaryElements: ['object'],
+      secondaryElements: ['kind', 'connection', 'database'],
+    });
+    expect(getDefaultTabDisplaySnapshot('single')).toEqual({
+      primaryElements: ['connection', 'kind', 'object'],
+      secondaryElements: [],
+    });
+    expect(getDefaultTabDisplaySnapshot('double')).toEqual({
+      primaryElements: ['object'],
+      secondaryElements: ['kind', 'connection', 'database'],
+    });
+  });
+
   it('builds compact host summary for multi-host redis connections', () => {
     expect(resolveConnectionHostSummary(redisConnection.config)).toBe('10.10.0.12 +2');
   });
@@ -232,7 +250,7 @@ describe('tabDisplay', () => {
     })).toBe('andon_events SCHEMA:ldf_server 192.168.10.8');
   });
 
-  it('builds the default configurable model with connection, type and compact object name', () => {
+  it('builds the default configurable model with the object on the primary line', () => {
     const connection: SavedConnection = {
       id: 'kingbase-1',
       name: 'Kingbase DEV',
@@ -253,7 +271,12 @@ describe('tabDisplay', () => {
       tableName: 'ldf_server.andon_events',
     };
 
-    expect(buildTabDisplayModel(tableTab, connection).fullTitle).toBe('[DEV] TABLE andon_events');
+    const model = buildTabDisplayModel(tableTab, connection);
+
+    expect(model.layout).toBe('double');
+    expect(model.primaryText).toBe('andon_events');
+    expect(model.secondaryText).toBe('TABLE·[DEV]·appdb');
+    expect(model.fullTitle).toBe('andon_events · TABLE·[DEV]·appdb');
   });
 
   it('keeps query tab labels compact when the title is raw SQL', () => {
@@ -279,7 +302,8 @@ describe('tabDisplay', () => {
 
     const model = buildTabDisplayModel(queryTab, connection);
 
-    expect(model.primaryText).toBe('[开发240] SQL New query');
+    expect(model.primaryText).toBe('New query');
+    expect(model.secondaryText).toBe('SQL·[开发240]·front_end_sys');
     expect(model.fullTitle).not.toContain('fs_org_auth_application');
     expect(model.fullTitle).not.toContain('select *');
   });
@@ -296,7 +320,8 @@ describe('tabDisplay', () => {
 
     const model = buildTabDisplayModel(queryTab, undefined, undefined, keyEchoTranslate);
 
-    expect(model.primaryText).toBe('SQL T(New query)');
+    expect(model.primaryText).toBe('T(New query)');
+    expect(model.secondaryText).toBe('SQL·front_end_sys');
     expect(model.fullTitle).not.toContain('fs_org_auth_application');
     expect(model.fullTitle).not.toContain('select *');
   });
@@ -313,7 +338,8 @@ describe('tabDisplay', () => {
 
     const model = buildTabDisplayModel(queryTab, undefined, undefined, keyEchoTranslate);
 
-    expect(model.primaryText).toBe('SQL T(New query)');
+    expect(model.primaryText).toBe('T(New query)');
+    expect(model.secondaryText).toBe('SQL·front_end_sys');
   });
 
   it('relocalizes database-scoped untitled query labels with the current database name', () => {
@@ -328,7 +354,8 @@ describe('tabDisplay', () => {
 
     const model = buildTabDisplayModel(queryTab, undefined, undefined, keyEchoTranslate);
 
-    expect(model.primaryText).toBe('SQL T(New query (main))');
+    expect(model.primaryText).toBe('T(New query (main))');
+    expect(model.secondaryText).toBe('SQL·main');
   });
 
   it('uses SQL file names as compact query tab object labels', () => {
@@ -343,7 +370,8 @@ describe('tabDisplay', () => {
 
     const model = buildTabDisplayModel(queryTab);
 
-    expect(model.primaryText).toBe('SQL monthly-report.sql');
+    expect(model.primaryText).toBe('monthly-report.sql');
+    expect(model.secondaryText).toBe('SQL');
   });
 
   it('builds configurable double-line tab display models', () => {
@@ -385,7 +413,7 @@ describe('tabDisplay', () => {
       primaryElements: ['schema', 'schema', 'bad' as never],
       secondaryElements: ['object', 'schema', 'host'],
     })).toEqual({
-      layout: 'single',
+      layout: 'double',
       primaryElements: ['schema'],
       secondaryElements: ['object', 'host'],
     });
@@ -396,7 +424,7 @@ describe('tabDisplay', () => {
       secondaryElements: [],
     })).toEqual({
       layout: 'double',
-      primaryElements: ['connection', 'kind', 'object'],
+      primaryElements: ['object'],
       secondaryElements: [],
     });
 

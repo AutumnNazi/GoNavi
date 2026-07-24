@@ -22,7 +22,7 @@ import { getDataSourceCapabilities } from '../../utils/dataSourceCapabilities';
 import { resolveConnectionHostSummary } from '../../utils/tabDisplay';
 import { resolveConnectionIconType } from '../../utils/connectionVisual';
 import { formatSidebarRowCount } from './sidebarHelpers';
-import { isSidebarTablePinned, type SidebarConnectionState, type SidebarTreeNode as TreeNode, type V2RailConnectionGroup } from '../sidebarV2Utils';
+import { isSidebarTablePinned, type SidebarTreeNode as TreeNode, type V2RailConnectionGroup } from '../sidebarV2Utils';
 import { getTableDataDangerActionMeta, supportsTableTruncateAction } from '../tableDataDangerActions';
 import {
   SIDEBAR_CONTEXT_MENU_FALLBACK_HEIGHT,
@@ -45,7 +45,6 @@ export type SidebarContextMenuState = {
 
 type SidebarV2ContextMenuOptions = {
   connections: SavedConnection[];
-  connectionStates: Record<string, SidebarConnectionState>;
   connectionTags: Array<{ id: string; name: string; connectionIds: string[] }>;
   activeShortcutPlatform: any;
   flattenConnectionNodes: (nodes: TreeNode[]) => TreeNode[];
@@ -76,7 +75,6 @@ type SidebarV2ContextMenuOptions = {
 
 export const useSidebarV2ContextMenu = ({
   connections,
-  connectionStates,
   connectionTags,
   activeShortcutPlatform,
   flattenConnectionNodes,
@@ -104,33 +102,6 @@ export const useSidebarV2ContextMenu = ({
   const [contextMenu, setContextMenu] = useState<SidebarContextMenuState | null>(null);
   const contextMenuPortalRef = useRef<HTMLDivElement | null>(null);
   const [v2TableContextMenuStats, setV2TableContextMenuStats] = useState<Record<string, V2TableContextMenuStats>>({});
-
-  const connectionStatusMap = useMemo(() => {
-      const statusMap = new Map<string, 'loading' | 'live' | 'error' | 'idle'>();
-      const sortedConnectionIds = connections
-          .map((conn) => conn.id)
-          .sort((a, b) => b.length - a.length);
-      connections.forEach((conn) => {
-          statusMap.set(conn.id, 'idle');
-      });
-      Object.entries(connectionStates).forEach(([key, value]) => {
-          const ownState = statusMap.get(key);
-          if (ownState !== undefined) {
-              statusMap.set(key, value === 'loading' ? 'loading' : value === 'success' ? 'live' : 'error');
-              return;
-          }
-          if (value !== 'success') return;
-          const ownerId = sortedConnectionIds.find((id) => key.startsWith(`${id}-`));
-          if (ownerId && statusMap.get(ownerId) === 'idle') {
-              statusMap.set(ownerId, 'live');
-          }
-      });
-      return statusMap;
-  }, [connectionStates, connections]);
-
-  const buildRailConnectionStatus = useCallback((connectionId: string): 'loading' | 'live' | 'error' | 'idle' => {
-      return connectionStatusMap.get(connectionId) || 'idle';
-  }, [connectionStatusMap]);
 
   const openV2ConnectionContextMenu = (
       event: React.MouseEvent,
@@ -529,7 +500,6 @@ export const useSidebarV2ContextMenu = ({
       contextMenu,
       setContextMenu,
       contextMenuPortalRef,
-      buildRailConnectionStatus,
       openV2ConnectionContextMenu,
       getV2TreeMetaText,
       renderV2SidebarContextMenuContent,
