@@ -606,6 +606,58 @@ describe('DataViewer safe editing locator', () => {
     renderer!.unmount();
   });
 
+  it('recounts the known total when table data shrinks after a manual refresh', async () => {
+    storeState.connections[0].config.type = 'mysql';
+    storeState.connections[0].config.database = 'main';
+    backendApp.DBGetColumns.mockResolvedValue({
+      success: true,
+      data: [{ name: 'ID', key: 'PRI' }, { name: 'NAME', key: '' }],
+    });
+
+    let countQueryCount = 0;
+    backendApp.DBQuery.mockImplementation(async (_config: any, _dbName: string, sql: string) => {
+      if (/count\s*\(/i.test(String(sql))) {
+        countQueryCount += 1;
+        return {
+          success: true,
+          fields: ['total'],
+          data: [{ total: countQueryCount === 1 ? 500 : 430 }],
+        };
+      }
+      return {
+        success: true,
+        fields: ['ID', 'NAME'],
+        data: createRows(101),
+      };
+    });
+
+    let renderer: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<DataViewer tab={createTab({ dbName: 'main', tableName: 'users', title: 'users' })} />);
+    });
+    await flushPromises();
+
+    expect(dataGridState.latestProps?.pagination).toMatchObject({
+      total: 500,
+      totalKnown: true,
+    });
+
+    await act(async () => {
+      dataGridState.latestProps?.onReload();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    await flushPromises();
+
+    expect(countQueryCount).toBe(2);
+    expect(dataGridState.latestProps?.pagination).toMatchObject({
+      total: 430,
+      totalKnown: true,
+    });
+    expect(dataGridState.latestProps?.data).toHaveLength(100);
+    renderer!.unmount();
+  });
+
   it('shows an actionable message for DuckDB timeout interruption errors', async () => {
     storeState.languagePreference = 'en-US';
     storeState.connections[0].config.type = 'duckdb';
