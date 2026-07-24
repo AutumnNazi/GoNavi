@@ -583,7 +583,8 @@ const DataViewer: React.FC<{ tab: TabData; isActive?: boolean }> = React.memo(({
     setPagination(prev => ({ ...prev, totalCountLoading: false, totalCountCancelled: true }));
   }, []);
 
-  const fetchData = useCallback(async (page = pagination.current, size = pagination.pageSize) => {
+  const fetchData = useCallback(async (page = pagination.current, size = pagination.pageSize, options?: { refreshTotal?: boolean }) => {
+    const refreshTotal = options?.refreshTotal === true;
     const seq = ++fetchSeqRef.current;
     setLoading(true);
     const conn = connections.find(c => c.id === tab.connectionId);
@@ -717,15 +718,16 @@ const DataViewer: React.FC<{ tab: TabData; isActive?: boolean }> = React.memo(({
       : buildOrderBySQL(dbType, sortInfo, resolveDataViewerOrderFallbackColumns(editLocatorForQuery, pkColumnsForQuery));
     const totalRows = Number(pagination.total);
     const hasFiniteTotal = Number.isFinite(totalRows) && totalRows >= 0;
-    const totalKnown = pagination.totalKnown && hasFiniteTotal;
+    const totalKnown = !refreshTotal && pagination.totalKnown && hasFiniteTotal;
     const approximateTotalRows = Number(pagination.approximateTotal);
     const hasApproximateTotalPages =
+      !refreshTotal &&
       !totalKnown &&
       supportsApproximateTotalPages &&
       pagination.totalApprox &&
       Number.isFinite(approximateTotalRows) &&
       approximateTotalRows > 0;
-    const effectiveTotalRows = hasApproximateTotalPages ? approximateTotalRows : totalRows;
+    const effectiveTotalRows = hasApproximateTotalPages ? approximateTotalRows : (refreshTotal ? 0 : totalRows);
     const totalPages = Number.isFinite(effectiveTotalRows) && effectiveTotalRows > 0 ? Math.max(1, Math.ceil(effectiveTotalRows / size)) : 0;
     const currentPage = totalPages > 0 ? Math.min(Math.max(1, page), totalPages) : Math.max(1, page);
     const offset = (currentPage - 1) * size;
@@ -1141,7 +1143,24 @@ const DataViewer: React.FC<{ tab: TabData; isActive?: boolean }> = React.memo(({
     void fetchData(pagination.current, pagination.pageSize);
   }, [fetchData, pagination.current, pagination.pageSize]);
   const handleReload = useCallback(() => {
-    fetchData(pagination.current, pagination.pageSize);
+    countSeqRef.current++;
+    manualCountSeqRef.current++;
+    duckdbApproxSeqRef.current++;
+    oracleApproxSeqRef.current++;
+    countKeyRef.current = '';
+    autoCountKeyRef.current = '';
+    manualCountKeyRef.current = '';
+    duckdbApproxKeyRef.current = '';
+    oracleApproxKeyRef.current = '';
+    setPagination(prev => ({
+      ...prev,
+      totalKnown: false,
+      totalApprox: false,
+      approximateTotal: undefined,
+      totalCountLoading: false,
+      totalCountCancelled: false,
+    }));
+    fetchData(pagination.current, pagination.pageSize, { refreshTotal: true });
   }, [fetchData, pagination.current, pagination.pageSize]);
   const handleSort = useCallback((field: string, order: string) => {
     // 支持多字段排序：field 为 JSON 数组字符串时解析为多字段
