@@ -52,12 +52,12 @@ describe('v2 workbench adaptive tab width', () => {
     );
   });
 
-  it('rounds all four corners of every v2 workbench tab', () => {
+  it('rounds all four corners without drawing an accent bar above the active tab', () => {
     expect(themeSource).toMatch(
       /\.gn-v2-main-tabs \.ant-tabs-tab \{[^}]*border-radius: 8px !important;/s,
     );
-    expect(themeSource).toMatch(
-      /\.gn-v2-main-tabs \.ant-tabs-tab\.ant-tabs-tab-active \{[^}]*box-shadow: inset 0 2px 0 var\(--gn-accent\) !important;/s,
+    expect(themeSource).not.toMatch(
+      /\.gn-v2-main-tabs \.ant-tabs-tab\.ant-tabs-tab-active \{[^}]*box-shadow:/s,
     );
     expect(themeSource).toMatch(
       /\.gn-v2-main-tabs \.ant-tabs-tab\.ant-tabs-tab-active::after \{[^}]*display: none;/s,

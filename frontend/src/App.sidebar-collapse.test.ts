@@ -7,6 +7,16 @@ const sidebarSource = readFileSync(new URL('./components/Sidebar.tsx', import.me
 const connectionRailSource = readFileSync(new URL('./components/sidebar/SidebarConnectionRail.tsx', import.meta.url), 'utf8');
 
 describe('app sidebar tree panel collapse', () => {
+  it('uses the v2 themed sidebar surface for the custom titlebar', () => {
+    const titlebarStart = appSource.indexOf('{/* Custom Title Bar */}');
+    const titlebarEnd = appSource.indexOf('{showLinuxCJKFontBanner && (', titlebarStart);
+    const titlebarSource = appSource.slice(titlebarStart, titlebarEnd);
+
+    expect(titlebarStart).toBeGreaterThan(-1);
+    expect(titlebarEnd).toBeGreaterThan(titlebarStart);
+    expect(titlebarSource).toContain("background: isV2Ui ? 'var(--gn-bg-panel-2)' : bgMain,");
+  });
+
   it('collapses v2 to the scaled fixed rail while preserving the saved expanded width', () => {
     expect(appSource).toContain('const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);');
     expect(appSource).toContain('const sidebarCollapsedWidth = isV2Ui ? 38 * effectiveUiScale * effectiveSidebarRailScale : 0;');

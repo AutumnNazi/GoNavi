@@ -3713,10 +3713,6 @@ body[data-ui-version="v2"] .gn-v2-main-tabs .ant-tabs-tab {
   border-radius: 8px !important;
 }
 
-body[data-ui-version="v2"] .gn-v2-main-tabs .ant-tabs-tab.ant-tabs-tab-active {
-  box-shadow: inset 0 2px 0 var(--gn-accent) !important;
-}
-
 body[data-ui-version="v2"] .gn-v2-main-tabs .ant-tabs-tab.ant-tabs-tab-active::after {
   display: none;
 }
