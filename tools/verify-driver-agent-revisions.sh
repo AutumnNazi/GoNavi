@@ -138,21 +138,29 @@ agent_variants_for() {
   printf '%s\n' ""
 }
 
-probe_agent_revision() {
+probe_agent_revision_once() {
   local agent_path="$1"
-  local stdout_file stderr_file probe_exit
+  local stdout_file stderr_file probe_exit revision
   local request
   request='{"id":1,"method":"metadata"}'
   stdout_file="$(mktemp "${TMPDIR:-/tmp}/gonavi-agent-revision-stdout.XXXXXX")"
   stderr_file="$(mktemp "${TMPDIR:-/tmp}/gonavi-agent-revision-stderr.XXXXXX")"
 
-  if ! printf '%s\n' "$request" | "$agent_path" >"$stdout_file" 2>"$stderr_file"; then
+  set +e
+  printf '%s\n' "$request" | "$agent_path" >"$stdout_file" 2>"$stderr_file"
+  probe_exit=$?
+  set -e
+
+  if [[ "$probe_exit" -ne 0 ]]; then
+    echo "   probe exit=$probe_exit asset=$agent_path" >&2
     [[ -s "$stderr_file" ]] && sed "s/^/   stderr: /" "$stderr_file" >&2
+    [[ -s "$stdout_file" ]] && sed "s/^/   stdout: /" "$stdout_file" >&2
     rm -f "$stdout_file" "$stderr_file"
     return 1
   fi
 
-  python3 - "$stdout_file" <<'PY'
+  revision="$(
+    python3 - "$stdout_file" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -166,17 +174,62 @@ if not lines:
     raise SystemExit(1)
 try:
     payload = json.loads(lines[0])
-except json.JSONDecodeError:
+except json.JSONDecodeError as exc:
+    print(f"invalid metadata json: {exc}", file=sys.stderr)
+    raise SystemExit(1)
+if not payload.get("success"):
+    print(f"metadata success=false error={payload.get('error')!r}", file=sys.stderr)
     raise SystemExit(1)
 data = payload.get("data") or {}
-print(data.get("agentRevision", ""))
+revision = str(data.get("agentRevision") or "").strip()
+if not revision:
+    print(f"metadata missing agentRevision payload={payload!r}", file=sys.stderr)
+    raise SystemExit(1)
+print(revision)
 PY
-  probe_exit=$?
-  if [[ "$probe_exit" -ne 0 && -s "$stderr_file" ]]; then
-    sed "s/^/   stderr: /" "$stderr_file" >&2
-  fi
+  )" || {
+    probe_exit=$?
+    echo "   failed to parse metadata from $agent_path" >&2
+    [[ -s "$stderr_file" ]] && sed "s/^/   stderr: /" "$stderr_file" >&2
+    [[ -s "$stdout_file" ]] && sed "s/^/   stdout: /" "$stdout_file" >&2
+    rm -f "$stdout_file" "$stderr_file"
+    return "$probe_exit"
+  }
+
   rm -f "$stdout_file" "$stderr_file"
-  return "$probe_exit"
+  printf '%s\n' "$revision"
+  return 0
+}
+
+probe_agent_revision() {
+  local agent_path="$1"
+  local attempt revision unpacked_path
+
+  for attempt in 1 2 3; do
+    if revision="$(probe_agent_revision_once "$agent_path")"; then
+      printf '%s\n' "$revision"
+      return 0
+    fi
+    echo "   metadata probe attempt ${attempt}/3 failed for $agent_path" >&2
+    sleep "$attempt"
+  done
+
+  # UPX-packed Go binaries can occasionally fail to exec under runner pressure.
+  # Fall back to an unpacked copy so CI reports the real embedded revision.
+  if command -v upx >/dev/null 2>&1 && upx -t "$agent_path" >/dev/null 2>&1; then
+    unpacked_path="$(mktemp "${TMPDIR:-/tmp}/gonavi-agent-unpacked.XXXXXX")"
+    if cp "$agent_path" "$unpacked_path" && upx -d "$unpacked_path" >/dev/null 2>&1; then
+      chmod +x "$unpacked_path" 2>/dev/null || true
+      if revision="$(probe_agent_revision_once "$unpacked_path")"; then
+        rm -f "$unpacked_path"
+        printf '%s\n' "$revision"
+        return 0
+      fi
+    fi
+    rm -f "$unpacked_path"
+  fi
+
+  return 1
 }
 
 probe_host_agent_revision() {
@@ -310,14 +363,25 @@ for raw_driver in "${raw_drivers[@]}"; do
 
     actual=""
     if can_execute_target_binary; then
+      # Always probe the packaged asset itself. Do not fall back to a host rebuild:
+      # that would hide broken UPX/corrupt artifacts while still shipping them.
       actual="$(probe_agent_revision "$agent_path" || true)"
     else
       echo "ℹ️  runner 平台 ${host_platform} 无法直接执行目标二进制 ${target_platform}，已先完成目标资产架构校验，再用 host-native probe 校验相同 build tags 的 revision"
       actual="$(probe_host_agent_revision "$driver" "$variant" || true)"
     fi
 
+    if [[ -z "$actual" ]]; then
+      echo "❌ $variant_label driver-agent revision 为空：asset=$agent_path expected=$expected"
+      if [[ -f "$agent_path" ]]; then
+        ls -l "$agent_path" >&2 || true
+        file "$agent_path" >&2 || true
+      fi
+      failed=1
+      continue
+    fi
     if [[ "$actual" != "$expected" ]]; then
-      echo "❌ $variant_label driver-agent revision 不匹配：asset=$agent_path actual=${actual:-空} expected=$expected"
+      echo "❌ $variant_label driver-agent revision 不匹配：asset=$agent_path actual=$actual expected=$expected"
       failed=1
       continue
     fi

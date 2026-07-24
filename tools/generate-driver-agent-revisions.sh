@@ -132,6 +132,7 @@ vastbase:internal/db/vastbase_impl.go|\
 opengauss:internal/db/opengauss_impl.go|\
 opengauss:internal/db/postgres_impl.go|\
 gaussdb:internal/db/gaussdb_impl.go|\
+gaussdb:internal/db/postgres_impl.go|\
 iris:internal/db/iris_impl.go|\
 mongodb:internal/db/mongodb_impl.go|\
 mongodb:internal/db/mongodb_impl_v1.go|\
