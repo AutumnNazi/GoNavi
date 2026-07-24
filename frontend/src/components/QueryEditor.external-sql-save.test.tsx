@@ -4408,6 +4408,51 @@ describe('QueryEditor external SQL save', () => {
     });
   });
 
+  it('formats only the selected SQL when a non-empty selection exists', async () => {
+    let renderer!: ReactTestRenderer;
+    const originalSql = 'select 1; select * from users where id=1';
+
+    await act(async () => {
+      renderer = create(<QueryEditor tab={createTab({ query: originalSql })} />);
+    });
+
+    editorState.selection = {
+      startLineNumber: 1,
+      startColumn: 11,
+      endLineNumber: 1,
+      endColumn: originalSql.length + 1,
+    };
+
+    const formatButton = findButton(renderer, '美化');
+    await act(async () => {
+      await formatButton.props.onClick();
+    });
+
+    expect(editorState.editor.executeEdits).toHaveBeenCalledWith(
+      'gonavi-format-sql',
+      expect.arrayContaining([
+        expect.objectContaining({
+          range: expect.objectContaining({
+            startLineNumber: 1,
+            startColumn: 11,
+            endLineNumber: 1,
+            endColumn: originalSql.length + 1,
+          }),
+          text: expect.stringContaining('SELECT'),
+        }),
+      ]),
+    );
+    expect(editorState.value.startsWith('select 1;')).toBe(true);
+    expect(editorState.value).toContain('SELECT');
+    expect(editorState.value).not.toBe(originalSql);
+    expect(storeState.updateQueryTabDraft).toHaveBeenCalledWith('tab-1', {
+      formatRestoreSnapshot: {
+        query: originalSql,
+        createdAt: expect.any(Number),
+      },
+    });
+  });
+
   it('registers a configurable Monaco shortcut action for SQL formatting', async () => {
     await act(async () => {
       create(<QueryEditor tab={createTab({ query: 'select * from users where id=1' })} />);
