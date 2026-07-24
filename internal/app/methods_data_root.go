@@ -3,6 +3,7 @@ package app
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -124,6 +125,9 @@ func (a *App) SelectDataRootDirectory(currentDir string) connection.QueryResult 
 }
 
 func (a *App) ApplyDataRootDirectory(directory string, migrate bool) connection.QueryResult {
+	a.dataRootApplyMu.Lock()
+	defer a.dataRootApplyMu.Unlock()
+
 	currentRoot := appdata.MustResolveActiveRoot()
 	targetRoot, err := appdata.ResolveRoot(directory)
 	if err != nil {
@@ -138,6 +142,25 @@ func (a *App) ApplyDataRootDirectory(directory string, migrate bool) connection.
 			Data:    dataRootInfoPayload(targetRoot),
 		}
 	}
+
+	// The audit database uses SQLite WAL journaling. Pause it and checkpoint/close
+	// every audit connection before copying or switching the data root so the
+	// migration never copies a live database or an incomplete WAL sidecar.
+	resumeSQLAudit, suspendErr := a.suspendSQLAudit()
+	if suspendErr != nil {
+		a.resumeSQLAudit(resumeSQLAudit)
+		return connection.QueryResult{
+			Success: false,
+			Message: dataRootErrorWithDetail(
+				a.appText,
+				"app.data_root.backend.error.migrate_directory_failed",
+				suspendErr.Error(),
+				suspendErr,
+				map[string]any{"entry": "audit"},
+			).Error(),
+		}
+	}
+	defer a.resumeSQLAudit(resumeSQLAudit)
 
 	if migrate {
 		if err := migrateDataRootContentsWithText(currentRoot, targetRoot, a.appText); err != nil {
@@ -222,6 +245,12 @@ func migrateDataRootContentsWithText(sourceRoot string, targetRoot string, text 
 		if _, excluded := dataRootMigrationExcludedEntries[name]; excluded {
 			continue
 		}
+		if name == "audit" {
+			// The SQLite audit store is copied as an exact directory snapshot
+			// after every other migration step succeeds. Merging it would leave
+			// stale WAL/SHM or health sidecars from an existing target root.
+			continue
+		}
 		sourcePath := filepath.Join(sourceRoot, name)
 		targetPath := filepath.Join(targetRoot, name)
 		info, err := entry.Info()
@@ -240,6 +269,84 @@ func migrateDataRootContentsWithText(sourceRoot string, targetRoot string, text 
 	}
 	if err := rewriteMigratedDataRootStateWithText(targetRoot, text); err != nil {
 		return err
+	}
+	if err := replaceMigratedAuditDirectory(sourceRoot, targetRoot); err != nil {
+		return dataRootWrapError(text, "app.data_root.backend.error.migrate_directory_failed", err, map[string]any{"entry": "audit"})
+	}
+	return nil
+}
+
+func replaceMigratedAuditDirectory(sourceRoot string, targetRoot string) error {
+	sourceAudit := filepath.Join(sourceRoot, "audit")
+	targetAudit := filepath.Join(targetRoot, "audit")
+
+	sourceInfo, sourceErr := os.Stat(sourceAudit)
+	sourceExists := sourceErr == nil
+	if sourceErr != nil && !os.IsNotExist(sourceErr) {
+		return fmt.Errorf("inspect source audit directory: %w", sourceErr)
+	}
+	if sourceExists && !sourceInfo.IsDir() {
+		return errors.New("source audit path is not a directory")
+	}
+
+	stagePath := ""
+	if sourceExists {
+		var err error
+		stagePath, err = os.MkdirTemp(targetRoot, ".gonavi-audit-stage-")
+		if err != nil {
+			return fmt.Errorf("create audit migration stage: %w", err)
+		}
+		defer func() { _ = os.RemoveAll(stagePath) }()
+		if err := copyDir(sourceAudit, stagePath); err != nil {
+			return fmt.Errorf("stage audit directory: %w", err)
+		}
+	}
+
+	targetInfo, targetErr := os.Lstat(targetAudit)
+	targetExists := targetErr == nil
+	if targetErr != nil && !os.IsNotExist(targetErr) {
+		return fmt.Errorf("inspect target audit directory: %w", targetErr)
+	}
+	if targetExists && targetInfo == nil {
+		return errors.New("target audit path is unavailable")
+	}
+
+	backupPath := ""
+	if targetExists {
+		reserved, err := os.MkdirTemp(targetRoot, ".gonavi-audit-backup-")
+		if err != nil {
+			return fmt.Errorf("reserve audit migration backup: %w", err)
+		}
+		if err := os.Remove(reserved); err != nil {
+			return fmt.Errorf("prepare audit migration backup: %w", err)
+		}
+		backupPath = reserved
+		if err := os.Rename(targetAudit, backupPath); err != nil {
+			return fmt.Errorf("backup target audit directory: %w", err)
+		}
+	}
+
+	rollback := func(cause error) error {
+		if backupPath == "" {
+			return cause
+		}
+		if restoreErr := os.Rename(backupPath, targetAudit); restoreErr != nil {
+			return errors.Join(cause, fmt.Errorf("restore target audit directory: %w", restoreErr))
+		}
+		backupPath = ""
+		return cause
+	}
+
+	if sourceExists {
+		if err := os.Rename(stagePath, targetAudit); err != nil {
+			return rollback(fmt.Errorf("activate staged audit directory: %w", err))
+		}
+		stagePath = ""
+	}
+	if backupPath != "" {
+		if err := os.RemoveAll(backupPath); err != nil {
+			logger.Warnf("清理数据目录迁移的旧审计备份失败：path=%s err=%v", backupPath, err)
+		}
 	}
 	return nil
 }

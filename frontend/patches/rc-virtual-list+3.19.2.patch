@@ -1,0 +1,336 @@
+diff --git a/node_modules/rc-virtual-list/es/List.d.ts b/node_modules/rc-virtual-list/es/List.d.ts
+index c517366..e414513 100644
+--- a/node_modules/rc-virtual-list/es/List.d.ts
++++ b/node_modules/rc-virtual-list/es/List.d.ts
+@@ -20,6 +20,8 @@ export interface ListProps<T> extends Omit<React.HTMLAttributes<any>, 'children'
+     data: T[];
+     height?: number;
+     itemHeight?: number;
++    /** Treat every item as exactly itemHeight and calculate the visible range in O(1). */
++    itemHeightFixed?: boolean;
+     /** If not match virtual scroll condition, Set List still use height of container. */
+     fullHeight?: boolean;
+     itemKey: React.Key | ((item: T) => React.Key);
+diff --git a/node_modules/rc-virtual-list/es/List.js b/node_modules/rc-virtual-list/es/List.js
+index 2926056..e917ba1 100644
+--- a/node_modules/rc-virtual-list/es/List.js
++++ b/node_modules/rc-virtual-list/es/List.js
+@@ -4,7 +4,7 @@ import _objectSpread from "@babel/runtime/helpers/esm/objectSpread2";
+ import _defineProperty from "@babel/runtime/helpers/esm/defineProperty";
+ import _slicedToArray from "@babel/runtime/helpers/esm/slicedToArray";
+ import _objectWithoutProperties from "@babel/runtime/helpers/esm/objectWithoutProperties";
+-var _excluded = ["prefixCls", "className", "height", "itemHeight", "fullHeight", "style", "data", "children", "itemKey", "virtual", "direction", "scrollWidth", "component", "onScroll", "onVirtualScroll", "onVisibleChange", "innerProps", "extraRender", "styles", "showScrollBar"];
++var _excluded = ["prefixCls", "className", "height", "itemHeight", "itemHeightFixed", "fullHeight", "style", "data", "children", "itemKey", "virtual", "direction", "scrollWidth", "component", "onScroll", "onVirtualScroll", "onVisibleChange", "innerProps", "extraRender", "styles", "showScrollBar"];
+ import classNames from 'classnames';
+ import ResizeObserver from 'rc-resize-observer';
+ import { useEvent } from 'rc-util';
+@@ -35,6 +35,7 @@ export function RawList(props, ref) {
+     className = props.className,
+     height = props.height,
+     itemHeight = props.itemHeight,
++    itemHeightFixed = props.itemHeightFixed,
+     _props$fullHeight = props.fullHeight,
+     fullHeight = _props$fullHeight === void 0 ? true : _props$fullHeight,
+     style = props.style,
+@@ -65,7 +66,7 @@ export function RawList(props, ref) {
+   }, [itemKey]);
+
+   // ================================ Height ================================
+-  var _useHeights = useHeights(getKey, null, null),
++  var _useHeights = useHeights(getKey, null, null, itemHeightFixed),
+     _useHeights2 = _slicedToArray(_useHeights, 4),
+     setInstanceRef = _useHeights2[0],
+     collectHeight = _useHeights2[1],
+@@ -74,11 +75,12 @@ export function RawList(props, ref) {
+
+   // ================================= MISC =================================
+   var useVirtual = !!(virtual !== false && height && itemHeight);
+-  var containerHeight = React.useMemo(function () {
++  var measuredContainerHeight = React.useMemo(function () {
+     return Object.values(heights.maps).reduce(function (total, curr) {
+       return total + curr;
+     }, 0);
+   }, [heights.id, heights.maps]);
++  var containerHeight = itemHeightFixed ? itemHeight * (data || EMPTY_DATA).length : measuredContainerHeight;
+   var inVirtual = useVirtual && data && (Math.max(itemHeight * data.length, containerHeight) > height || !!scrollWidth);
+   var isRTL = direction === 'rtl';
+   var mergedClassName = classNames(prefixCls, _defineProperty({}, "".concat(prefixCls, "-rtl"), isRTL), className);
+@@ -159,6 +161,28 @@ export function RawList(props, ref) {
+           offset: undefined
+         };
+       }
++      if (itemHeightFixed && itemHeight > 0) {
++        var fixedDataLen = mergedData.length;
++        var fixedScrollHeight = fixedDataLen * itemHeight;
++        if (fixedDataLen === 0) {
++          return {
++            scrollHeight: 0,
++            start: 0,
++            end: -1,
++            offset: 0
++          };
++        }
++        var fixedMaxScrollTop = Math.max(0, fixedScrollHeight - height);
++        var fixedOffsetTop = Math.max(0, Math.min(fixedMaxScrollTop, offsetTop));
++        var fixedStartIndex = Math.min(fixedDataLen - 1, Math.max(0, Math.ceil(fixedOffsetTop / itemHeight) - 1));
++        var fixedEndIndex = Math.min(fixedDataLen - 1, Math.floor((fixedOffsetTop + height) / itemHeight) + 1);
++        return {
++          scrollHeight: fixedScrollHeight,
++          start: fixedStartIndex,
++          end: fixedEndIndex,
++          offset: fixedStartIndex * itemHeight
++        };
++      }
+       var itemTop = 0;
+       var startIndex;
+       var startOffset;
+@@ -201,7 +225,7 @@ export function RawList(props, ref) {
+         end: endIndex,
+         offset: startOffset
+       };
+-    }, [inVirtual, useVirtual, offsetTop, mergedData, heightUpdatedMark, height]),
++    }, [inVirtual, useVirtual, offsetTop, mergedData, heightUpdatedMark, height, itemHeightFixed, itemHeight]),
+     scrollHeight = _React$useMemo.scrollHeight,
+     start = _React$useMemo.start,
+     end = _React$useMemo.end,
+@@ -213,6 +237,10 @@ export function RawList(props, ref) {
+   // Which will make scroll jump.
+   // Let's sync scroll top to avoid jump
+   React.useLayoutEffect(function () {
++    if (itemHeightFixed) {
++      heights.resetRecord();
++      return;
++    }
+     var changedRecord = heights.getRecord();
+     if (changedRecord.size === 1) {
+       var recordKey = Array.from(changedRecord.keys())[0];
+@@ -232,7 +260,7 @@ export function RawList(props, ref) {
+       }
+     }
+     heights.resetRecord();
+-  }, [scrollHeight]);
++  }, [scrollHeight, itemHeightFixed, heightUpdatedMark]);
+
+   // ================================= Size =================================
+   var _React$useState = React.useState({
+diff --git a/node_modules/rc-virtual-list/es/hooks/useHeights.d.ts b/node_modules/rc-virtual-list/es/hooks/useHeights.d.ts
+--- a/node_modules/rc-virtual-list/es/hooks/useHeights.d.ts
++++ b/node_modules/rc-virtual-list/es/hooks/useHeights.d.ts
+@@ -1,6 +1,6 @@
+ import type { GetKey } from '../interface';
+ import CacheMap from '../utils/CacheMap';
+-export default function useHeights<T>(getKey: GetKey<T>, onItemAdd?: (item: T) => void, onItemRemove?: (item: T) => void): [
++export default function useHeights<T>(getKey: GetKey<T>, onItemAdd?: (item: T) => void, onItemRemove?: (item: T) => void, disabled?: boolean): [
+     setInstanceRef: (item: T, instance: HTMLElement) => void,
+     collectHeight: (sync?: boolean) => void,
+     cacheMap: CacheMap,
+diff --git a/node_modules/rc-virtual-list/es/hooks/useHeights.js b/node_modules/rc-virtual-list/es/hooks/useHeights.js
+index 0323aae..38e6e75 100644
+--- a/node_modules/rc-virtual-list/es/hooks/useHeights.js
++++ b/node_modules/rc-virtual-list/es/hooks/useHeights.js
+@@ -6,7 +6,7 @@ function parseNumber(value) {
+   var num = parseFloat(value);
+   return isNaN(num) ? 0 : num;
+ }
+-export default function useHeights(getKey, onItemAdd, onItemRemove) {
++export default function useHeights(getKey, onItemAdd, onItemRemove, disabled) {
+   var _React$useState = React.useState(0),
+     _React$useState2 = _slicedToArray(_React$useState, 2),
+     updatedMark = _React$useState2[0],
+@@ -14,12 +14,17 @@ export default function useHeights(getKey, onItemAdd, onItemRemove) {
+   var instanceRef = useRef(new Map());
+   var heightsRef = useRef(new CacheMap());
+   var promiseIdRef = useRef(0);
++  var disabledRef = useRef(disabled);
++  disabledRef.current = disabled;
+   function cancelRaf() {
+     promiseIdRef.current += 1;
+   }
+   function collectHeight() {
+     var sync = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : false;
+     cancelRaf();
++    if (disabledRef.current) {
++      return;
++    }
+     var doCollect = function doCollect() {
+       var changed = false;
+       instanceRef.current.forEach(function (element, key) {
+@@ -79,5 +84,10 @@ export default function useHeights(getKey, onItemAdd, onItemRemove) {
+   useEffect(function () {
+     return cancelRaf;
+   }, []);
++  useEffect(function () {
++    if (!disabled) {
++      collectHeight(true);
++    }
++  }, [disabled]);
+   return [setInstanceRef, collectHeight, heightsRef.current, updatedMark];
+ }
+diff --git a/node_modules/rc-virtual-list/lib/List.d.ts b/node_modules/rc-virtual-list/lib/List.d.ts
+index c517366..e414513 100644
+--- a/node_modules/rc-virtual-list/lib/List.d.ts
++++ b/node_modules/rc-virtual-list/lib/List.d.ts
+@@ -20,6 +20,8 @@ export interface ListProps<T> extends Omit<React.HTMLAttributes<any>, 'children'
+     data: T[];
+     height?: number;
+     itemHeight?: number;
++    /** Treat every item as exactly itemHeight and calculate the visible range in O(1). */
++    itemHeightFixed?: boolean;
+     /** If not match virtual scroll condition, Set List still use height of container. */
+     fullHeight?: boolean;
+     itemKey: React.Key | ((item: T) => React.Key);
+diff --git a/node_modules/rc-virtual-list/lib/List.js b/node_modules/rc-virtual-list/lib/List.js
+index f0cb64d..d24a9ad 100644
+--- a/node_modules/rc-virtual-list/lib/List.js
++++ b/node_modules/rc-virtual-list/lib/List.js
+@@ -32,7 +32,7 @@ var _useScrollDrag = _interopRequireDefault(require("./hooks/useScrollDrag"));
+ var _useScrollTo = _interopRequireDefault(require("./hooks/useScrollTo"));
+ var _ScrollBar = _interopRequireDefault(require("./ScrollBar"));
+ var _scrollbarUtil = require("./utils/scrollbarUtil");
+-var _excluded = ["prefixCls", "className", "height", "itemHeight", "fullHeight", "style", "data", "children", "itemKey", "virtual", "direction", "scrollWidth", "component", "onScroll", "onVirtualScroll", "onVisibleChange", "innerProps", "extraRender", "styles", "showScrollBar"];
++var _excluded = ["prefixCls", "className", "height", "itemHeight", "itemHeightFixed", "fullHeight", "style", "data", "children", "itemKey", "virtual", "direction", "scrollWidth", "component", "onScroll", "onVirtualScroll", "onVisibleChange", "innerProps", "extraRender", "styles", "showScrollBar"];
+ var EMPTY_DATA = [];
+ var ScrollStyle = {
+   overflowY: 'auto',
+@@ -44,6 +44,7 @@ function RawList(props, ref) {
+     className = props.className,
+     height = props.height,
+     itemHeight = props.itemHeight,
++    itemHeightFixed = props.itemHeightFixed,
+     _props$fullHeight = props.fullHeight,
+     fullHeight = _props$fullHeight === void 0 ? true : _props$fullHeight,
+     style = props.style,
+@@ -74,7 +75,7 @@ function RawList(props, ref) {
+   }, [itemKey]);
+
+   // ================================ Height ================================
+-  var _useHeights = (0, _useHeights3.default)(getKey, null, null),
++  var _useHeights = (0, _useHeights3.default)(getKey, null, null, itemHeightFixed),
+     _useHeights2 = (0, _slicedToArray2.default)(_useHeights, 4),
+     setInstanceRef = _useHeights2[0],
+     collectHeight = _useHeights2[1],
+@@ -83,11 +84,12 @@ function RawList(props, ref) {
+
+   // ================================= MISC =================================
+   var useVirtual = !!(virtual !== false && height && itemHeight);
+-  var containerHeight = React.useMemo(function () {
++  var measuredContainerHeight = React.useMemo(function () {
+     return Object.values(heights.maps).reduce(function (total, curr) {
+       return total + curr;
+     }, 0);
+   }, [heights.id, heights.maps]);
++  var containerHeight = itemHeightFixed ? itemHeight * (data || EMPTY_DATA).length : measuredContainerHeight;
+   var inVirtual = useVirtual && data && (Math.max(itemHeight * data.length, containerHeight) > height || !!scrollWidth);
+   var isRTL = direction === 'rtl';
+   var mergedClassName = (0, _classnames.default)(prefixCls, (0, _defineProperty2.default)({}, "".concat(prefixCls, "-rtl"), isRTL), className);
+@@ -168,6 +170,28 @@ function RawList(props, ref) {
+           offset: undefined
+         };
+       }
++      if (itemHeightFixed && itemHeight > 0) {
++        var fixedDataLen = mergedData.length;
++        var fixedScrollHeight = fixedDataLen * itemHeight;
++        if (fixedDataLen === 0) {
++          return {
++            scrollHeight: 0,
++            start: 0,
++            end: -1,
++            offset: 0
++          };
++        }
++        var fixedMaxScrollTop = Math.max(0, fixedScrollHeight - height);
++        var fixedOffsetTop = Math.max(0, Math.min(fixedMaxScrollTop, offsetTop));
++        var fixedStartIndex = Math.min(fixedDataLen - 1, Math.max(0, Math.ceil(fixedOffsetTop / itemHeight) - 1));
++        var fixedEndIndex = Math.min(fixedDataLen - 1, Math.floor((fixedOffsetTop + height) / itemHeight) + 1);
++        return {
++          scrollHeight: fixedScrollHeight,
++          start: fixedStartIndex,
++          end: fixedEndIndex,
++          offset: fixedStartIndex * itemHeight
++        };
++      }
+       var itemTop = 0;
+       var startIndex;
+       var startOffset;
+@@ -210,7 +234,7 @@ function RawList(props, ref) {
+         end: endIndex,
+         offset: startOffset
+       };
+-    }, [inVirtual, useVirtual, offsetTop, mergedData, heightUpdatedMark, height]),
++    }, [inVirtual, useVirtual, offsetTop, mergedData, heightUpdatedMark, height, itemHeightFixed, itemHeight]),
+     scrollHeight = _React$useMemo.scrollHeight,
+     start = _React$useMemo.start,
+     end = _React$useMemo.end,
+@@ -222,6 +246,10 @@ function RawList(props, ref) {
+   // Which will make scroll jump.
+   // Let's sync scroll top to avoid jump
+   React.useLayoutEffect(function () {
++    if (itemHeightFixed) {
++      heights.resetRecord();
++      return;
++    }
+     var changedRecord = heights.getRecord();
+     if (changedRecord.size === 1) {
+       var recordKey = Array.from(changedRecord.keys())[0];
+@@ -241,7 +269,7 @@ function RawList(props, ref) {
+       }
+     }
+     heights.resetRecord();
+-  }, [scrollHeight]);
++  }, [scrollHeight, itemHeightFixed, heightUpdatedMark]);
+
+   // ================================= Size =================================
+   var _React$useState = React.useState({
+diff --git a/node_modules/rc-virtual-list/lib/hooks/useHeights.d.ts b/node_modules/rc-virtual-list/lib/hooks/useHeights.d.ts
+--- a/node_modules/rc-virtual-list/lib/hooks/useHeights.d.ts
++++ b/node_modules/rc-virtual-list/lib/hooks/useHeights.d.ts
+@@ -1,6 +1,6 @@
+ import type { GetKey } from '../interface';
+ import CacheMap from '../utils/CacheMap';
+-export default function useHeights<T>(getKey: GetKey<T>, onItemAdd?: (item: T) => void, onItemRemove?: (item: T) => void): [
++export default function useHeights<T>(getKey: GetKey<T>, onItemAdd?: (item: T) => void, onItemRemove?: (item: T) => void, disabled?: boolean): [
+     setInstanceRef: (item: T, instance: HTMLElement) => void,
+     collectHeight: (sync?: boolean) => void,
+     cacheMap: CacheMap,
+diff --git a/node_modules/rc-virtual-list/lib/hooks/useHeights.js b/node_modules/rc-virtual-list/lib/hooks/useHeights.js
+index 471ffc6..a6d2ce5 100644
+--- a/node_modules/rc-virtual-list/lib/hooks/useHeights.js
++++ b/node_modules/rc-virtual-list/lib/hooks/useHeights.js
+@@ -14,7 +14,7 @@ function parseNumber(value) {
+   var num = parseFloat(value);
+   return isNaN(num) ? 0 : num;
+ }
+-function useHeights(getKey, onItemAdd, onItemRemove) {
++function useHeights(getKey, onItemAdd, onItemRemove, disabled) {
+   var _React$useState = React.useState(0),
+     _React$useState2 = (0, _slicedToArray2.default)(_React$useState, 2),
+     updatedMark = _React$useState2[0],
+@@ -22,12 +22,17 @@ function useHeights(getKey, onItemAdd, onItemRemove) {
+   var instanceRef = (0, _react.useRef)(new Map());
+   var heightsRef = (0, _react.useRef)(new _CacheMap.default());
+   var promiseIdRef = (0, _react.useRef)(0);
++  var disabledRef = (0, _react.useRef)(disabled);
++  disabledRef.current = disabled;
+   function cancelRaf() {
+     promiseIdRef.current += 1;
+   }
+   function collectHeight() {
+     var sync = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : false;
+     cancelRaf();
++    if (disabledRef.current) {
++      return;
++    }
+     var doCollect = function doCollect() {
+       var changed = false;
+       instanceRef.current.forEach(function (element, key) {
+@@ -87,5 +92,10 @@ function useHeights(getKey, onItemAdd, onItemRemove) {
+   (0, _react.useEffect)(function () {
+     return cancelRaf;
+   }, []);
++  (0, _react.useEffect)(function () {
++    if (!disabled) {
++      collectHeight(true);
++    }
++  }, [disabled]);
+   return [setInstanceRef, collectHeight, heightsRef.current, updatedMark];
+ }

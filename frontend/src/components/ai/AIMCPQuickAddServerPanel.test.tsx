@@ -12,7 +12,7 @@ vi.mock('antd', async () => {
   const React = await import('react');
   return {
     Input: {
-      TextArea: (props: any) => React.createElement('textarea', props),
+      TextArea: ({ autoSize: _autoSize, ...props }: any) => React.createElement('textarea', props),
     },
     Button: ({ icon, children, ...props }: any) => React.createElement('button', props, icon, children),
   };
@@ -83,6 +83,9 @@ describe('AIMCPQuickAddServerPanel', () => {
     }).trim());
     expect(markup).toContain('$env:GITHUB_TOKEN=...; uvx mcp-server-github --stdio');
     expect(markup).toContain(zh('ai_settings.mcp_server.quick_add.action.parse_and_add'));
+    expect(markup).toContain('class="gonavi-ai-mcp-disclosure gonavi-ai-mcp-template-disclosure"');
+    expect(markup).not.toContain('gonavi-ai-mcp-template-disclosure" open');
+    expect(markup).toContain(zh('ai_settings.mcp_server.section.action.add_server'));
   });
 
   it('renders quick-add copy from the active locale', () => {

@@ -10,6 +10,8 @@ import {
   buildPackagesMetadataQuerySpecs,
   buildSchemasMetadataQuerySpecs,
   buildSequencesMetadataQuerySpecs,
+  buildViewsMetadataQuerySpecs,
+  getSidebarTableName,
   loadFunctions,
   loadPackages,
   loadSequences,
@@ -20,6 +22,12 @@ const mockedDBQuery = vi.mocked(DBQuery);
 
 beforeEach(() => {
   mockedDBQuery.mockReset();
+});
+
+describe("sidebar table metadata", () => {
+  it("keeps the table name when SQLite table rows include an exact row count", () => {
+    expect(getSidebarTableName({ Rows: "2", Table: "orders" })).toBe("orders");
+  });
 });
 
 describe("buildSchemasMetadataQuerySpecs", () => {
@@ -78,8 +86,15 @@ describe("buildSchemasMetadataQuerySpecs", () => {
 });
 
 describe("Oracle object metadata loaders", () => {
-  it("builds owner-scoped sequence and package queries for Oracle", () => {
+  it("builds owner-scoped object queries for the selected Oracle schema", () => {
+    expect(buildViewsMetadataQuerySpecs("oracle", "SBDEV").map((spec) => spec.sql)).toEqual([
+      "SELECT OWNER AS schema_name, VIEW_NAME AS view_name FROM ALL_VIEWS WHERE OWNER = 'SBDEV' ORDER BY VIEW_NAME",
+    ]);
+    expect(buildFunctionsMetadataQuerySpecs("oracle", "SBDEV").map((spec) => spec.sql)).toEqual([
+      "SELECT OWNER AS schema_name, OBJECT_NAME AS routine_name, OBJECT_TYPE AS routine_type FROM ALL_OBJECTS WHERE OWNER = 'SBDEV' AND OBJECT_TYPE IN ('FUNCTION','PROCEDURE') ORDER BY OBJECT_TYPE, OBJECT_NAME",
+    ]);
     expect(buildSequencesMetadataQuerySpecs("oracle", "MYCIMLED").map((spec) => spec.sql)).toEqual([
+      "SELECT OWNER AS schema_name, OBJECT_NAME AS sequence_name FROM ALL_OBJECTS WHERE OWNER = 'MYCIMLED' AND OBJECT_TYPE = 'SEQUENCE' ORDER BY OBJECT_NAME",
       "SELECT SEQUENCE_OWNER AS schema_name, SEQUENCE_NAME AS sequence_name FROM ALL_SEQUENCES WHERE SEQUENCE_OWNER = 'MYCIMLED' ORDER BY SEQUENCE_NAME",
     ]);
     expect(buildPackagesMetadataQuerySpecs("oracle", "MYCIMLED").map((spec) => spec.sql)).toEqual([
@@ -132,6 +147,54 @@ describe("Oracle object metadata loaders", () => {
         },
       ],
     });
+  });
+
+  it("uses the selected owner catalog for OceanBase Oracle read-only connections", async () => {
+    const executedSql: string[] = [];
+    mockedDBQuery.mockImplementation(async (_config: unknown, _dbName: string, sql: string) => {
+      executedSql.push(sql);
+      if (sql.includes("ALL_VIEWS") && sql.includes("OWNER = 'SBDEV'")) {
+        return {
+          success: true,
+          message: "",
+          data: [{ OWNER: "SBDEV", VIEW_NAME: "V_RISK" }],
+        };
+      }
+      if (sql.includes("ALL_OBJECTS") && sql.includes("('FUNCTION','PROCEDURE')")) {
+        return {
+          success: true,
+          message: "",
+          data: [{ OWNER: "SBDEV", OBJECT_NAME: "P_REFRESH", OBJECT_TYPE: "PROCEDURE" }],
+        };
+      }
+      if (sql.includes("ALL_OBJECTS") && sql.includes("OBJECT_TYPE = 'SEQUENCE'")) {
+        return {
+          success: true,
+          message: "",
+          data: [{ OWNER: "SBDEV", OBJECT_NAME: "SEQ_RISK" }],
+        };
+      }
+      return { success: false, message: "", data: [] };
+    });
+
+    const conn = { config: { type: "oceanbase", oceanBaseProtocol: "oracle" } };
+
+    await expect(loadViews(conn, "SBDEV")).resolves.toEqual({
+      supported: true,
+      views: [{ schemaName: "SBDEV", viewName: "SBDEV.V_RISK" }],
+    });
+    await expect(loadFunctions(conn, "SBDEV")).resolves.toEqual({
+      supported: true,
+      routines: [{ displayName: "SBDEV.P_REFRESH [P]", routineName: "SBDEV.P_REFRESH", routineType: "PROCEDURE" }],
+    });
+    await expect(loadSequences(conn, "SBDEV")).resolves.toEqual({
+      supported: true,
+      sequences: [{ displayName: "SBDEV.SEQ_RISK", schemaName: "SBDEV", sequenceName: "SBDEV.SEQ_RISK" }],
+    });
+
+    expect(executedSql).toHaveLength(3);
+    expect(executedSql).not.toContain(expect.stringContaining("USER_"));
+    expect(executedSql).not.toContain(expect.stringContaining("ALL_SEQUENCES"));
   });
 });
 

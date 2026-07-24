@@ -29,6 +29,13 @@ type mcpHTTPServerRuntime struct {
 	stopping bool
 }
 
+// mcpHTTPStartAttempt 表示尚未发布为运行态的启动过程。
+// Stop/Shutdown 可以先取消它，再等待 mcpHTTPOpMu，避免健康检查完成后又重新发布进程。
+type mcpHTTPStartAttempt struct {
+	ctx    context.Context
+	cancel context.CancelFunc
+}
+
 type mcpHTTPProcessStartOptions struct {
 	Addr       string
 	Path       string
@@ -51,27 +58,45 @@ var (
 
 // AIGetMCPHTTPServerStatus 返回客户端内置 HTTP MCP 服务状态。
 func (s *Service) AIGetMCPHTTPServerStatus() ai.MCPHTTPServerStatus {
+	config := s.currentMCPHTTPServerConfig()
 	s.mcpHTTPMu.Lock()
-	defer s.mcpHTTPMu.Unlock()
-
 	if s.mcpHTTP != nil {
 		status := s.mcpHTTP.status
 		status.Running = true
+		status.Enabled = config.Enabled
+		s.mcpHTTPMu.Unlock()
 		return status
 	}
-	if strings.TrimSpace(s.mcpHTTPLast.Addr) != "" {
-		return s.mcpHTTPLast
+	last := s.mcpHTTPLast
+	s.mcpHTTPMu.Unlock()
+
+	message := strings.TrimSpace(last.Message)
+	if message == "" {
+		message = s.serviceText("ai_settings.mcp_http.status.not_running", nil)
 	}
-	return defaultMCPHTTPServerStatus(s.serviceText)
+	return mcpHTTPStatusFromConfig(config, message)
 }
 
 // AIStartMCPHTTPServer 从客户端内启动 GoNavi Streamable HTTP MCP 服务。
 func (s *Service) AIStartMCPHTTPServer(options ai.MCPHTTPServerOptions) (ai.MCPHTTPServerStatus, error) {
+	return s.startMCPHTTPServer(options)
+}
+
+func (s *Service) startMCPHTTPServer(options ai.MCPHTTPServerOptions) (ai.MCPHTTPServerStatus, error) {
+	s.mcpHTTPOpMu.Lock()
+	defer s.mcpHTTPOpMu.Unlock()
+
 	s.mcpHTTPMu.Lock()
 	if s.mcpHTTP != nil {
 		status := s.mcpHTTP.status
 		status.Running = true
 		s.mcpHTTPMu.Unlock()
+		if err := s.persistMCPHTTPServerConfig(mcpHTTPServerConfigFromStatus(status, true)); err != nil {
+			err = localizeMCPHTTPError(s.serviceText, "ai_service.backend.error.mcp_http_start_failed", nil, err)
+			status.Message = err.Error()
+			return status, err
+		}
+		status.Enabled = true
 		return status, nil
 	}
 	s.mcpHTTPMu.Unlock()
@@ -80,8 +105,8 @@ func (s *Service) AIStartMCPHTTPServer(options ai.MCPHTTPServerOptions) (ai.MCPH
 	startOptions, token, err := normalizeInAppMCPHTTPOptions(options, textLookup)
 	if err != nil {
 		err = localizeMCPHTTPError(textLookup, "ai_service.backend.error.mcp_http_start_failed", nil, err)
-		status := defaultMCPHTTPServerStatus(textLookup)
-		status.Message = err.Error()
+		status := mcpHTTPStatusFromConfig(s.currentMCPHTTPServerConfig(), err.Error())
+		s.setMCPHTTPLastStatus(status)
 		return status, err
 	}
 
@@ -89,22 +114,60 @@ func (s *Service) AIStartMCPHTTPServer(options ai.MCPHTTPServerOptions) (ai.MCPH
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	process, err := startMCPHTTPProcess(ctx, startOptions, textLookup)
+	attempt := s.beginMCPHTTPStart(ctx)
+	published := false
+	defer func() {
+		s.clearMCPHTTPStart(attempt)
+		if !published && attempt.cancel != nil {
+			attempt.cancel()
+		}
+	}()
+
+	if err := s.persistMCPHTTPServerConfig(mcpHTTPServerConfigFromStartOptions(startOptions)); err != nil {
+		err = localizeMCPHTTPError(textLookup, "ai_service.backend.error.mcp_http_start_failed", nil, err)
+		status := mcpHTTPStatusFromConfig(s.currentMCPHTTPServerConfig(), err.Error())
+		s.setMCPHTTPLastStatus(status)
+		return status, err
+	}
+
+	if err := attempt.ctx.Err(); err != nil {
+		err = localizeMCPHTTPError(textLookup, "ai_service.backend.error.mcp_http_start_failed", nil, err)
+		status := stoppedMCPHTTPStatus(statusFromMCPHTTPOptions(startOptions, token, textLookup), err.Error())
+		s.setMCPHTTPLastStatus(status)
+		return status, err
+	}
+	process, err := startMCPHTTPProcess(attempt.ctx, startOptions, textLookup)
 	if err != nil {
 		err = localizeMCPHTTPError(textLookup, "ai_service.backend.error.mcp_http_start_failed", nil, err)
 		status := stoppedMCPHTTPStatus(statusFromMCPHTTPOptions(startOptions, token, textLookup), err.Error())
+		s.setMCPHTTPLastStatus(status)
 		return status, err
 	}
 
 	status := statusFromMCPHTTPOptions(startOptions, token, textLookup)
-	if err := waitForMCPHTTPReady(ctx, process, status, textLookup); err != nil {
+	if err := waitForMCPHTTPReady(attempt.ctx, process, status, textLookup); err != nil {
 		_ = process.Stop(context.Background())
 		err = localizeMCPHTTPError(textLookup, "ai_service.backend.error.mcp_http_start_failed", nil, err)
 		stopped := stoppedMCPHTTPStatus(status, err.Error())
+		s.setMCPHTTPLastStatus(stopped)
+		return stopped, err
+	}
+	if err := attempt.ctx.Err(); err != nil {
+		_ = process.Stop(context.Background())
+		err = localizeMCPHTTPError(textLookup, "ai_service.backend.error.mcp_http_start_failed", nil, err)
+		stopped := stoppedMCPHTTPStatus(status, err.Error())
+		s.setMCPHTTPLastStatus(stopped)
 		return stopped, err
 	}
 
 	runtime := &mcpHTTPServerRuntime{process: process, status: status}
+	if !s.claimMCPHTTPStart(attempt) {
+		_ = process.Stop(context.Background())
+		err := localizeMCPHTTPError(textLookup, "ai_service.backend.error.mcp_http_start_failed", nil, context.Canceled)
+		stopped := stoppedMCPHTTPStatus(status, err.Error())
+		s.setMCPHTTPLastStatus(stopped)
+		return stopped, err
+	}
 
 	s.mcpHTTPMu.Lock()
 	if s.mcpHTTP != nil {
@@ -117,6 +180,7 @@ func (s *Service) AIStartMCPHTTPServer(options ai.MCPHTTPServerOptions) (ai.MCPH
 	s.mcpHTTP = runtime
 	s.mcpHTTPLast = status
 	s.mcpHTTPMu.Unlock()
+	published = true
 
 	logger.Infof("客户端启动 GoNavi MCP HTTP 服务：addr=%s path=%s schemaOnly=%v", status.Addr, status.Path, status.SchemaOnly)
 	go s.watchMCPHTTPServer(runtime)
@@ -125,7 +189,21 @@ func (s *Service) AIStartMCPHTTPServer(options ai.MCPHTTPServerOptions) (ai.MCPH
 
 // AIStopMCPHTTPServer 停止客户端内启动的 GoNavi Streamable HTTP MCP 服务。
 func (s *Service) AIStopMCPHTTPServer() (ai.MCPHTTPServerStatus, error) {
-	return s.stopMCPHTTPServer(context.Background(), s.serviceText("ai_settings.mcp_http.message.stopped", nil))
+	s.cancelMCPHTTPStart()
+	s.mcpHTTPOpMu.Lock()
+	defer s.mcpHTTPOpMu.Unlock()
+
+	status := s.AIGetMCPHTTPServerStatus()
+	if err := s.persistMCPHTTPServerConfig(mcpHTTPServerConfigFromStatus(status, false)); err != nil {
+		err = localizeMCPHTTPError(s.serviceText, "ai_service.backend.error.mcp_http_stop_failed", nil, err)
+		status.Message = err.Error()
+		return status, err
+	}
+
+	stopped, err := s.stopMCPHTTPServer(context.Background(), s.serviceText("ai_settings.mcp_http.message.stopped", nil))
+	stopped.Enabled = false
+	s.setMCPHTTPLastStatus(stopped)
+	return stopped, err
 }
 
 func (s *Service) stopMCPHTTPServer(ctx context.Context, message string) (ai.MCPHTTPServerStatus, error) {
@@ -174,8 +252,70 @@ func (s *Service) stopMCPHTTPServer(ctx context.Context, message string) (ai.MCP
 
 // Shutdown 释放 AI Service 中的运行时资源。
 func (s *Service) Shutdown() {
+	s.cancelMCPHTTPStart()
+	s.mcpHTTPOpMu.Lock()
+	defer s.mcpHTTPOpMu.Unlock()
+
 	ctx := context.Background()
 	_, _ = s.stopMCPHTTPServer(ctx, s.serviceText("ai_settings.mcp_http.message.stopped", nil))
+}
+
+func (s *Service) beginMCPHTTPStart(ctx context.Context) *mcpHTTPStartAttempt {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	startCtx, cancel := context.WithCancel(ctx)
+	attempt := &mcpHTTPStartAttempt{ctx: startCtx, cancel: cancel}
+
+	s.mcpHTTPStartMu.Lock()
+	s.mcpHTTPStart = attempt
+	s.mcpHTTPStartMu.Unlock()
+	return attempt
+}
+
+func (s *Service) clearMCPHTTPStart(attempt *mcpHTTPStartAttempt) {
+	if attempt == nil {
+		return
+	}
+	s.mcpHTTPStartMu.Lock()
+	if s.mcpHTTPStart == attempt {
+		s.mcpHTTPStart = nil
+	}
+	s.mcpHTTPStartMu.Unlock()
+}
+
+// claimMCPHTTPStart 原子地结束待发布的启动过程，并确认它未被 Stop/Shutdown 取消。
+func (s *Service) claimMCPHTTPStart(attempt *mcpHTTPStartAttempt) bool {
+	if attempt == nil {
+		return false
+	}
+	s.mcpHTTPStartMu.Lock()
+	isCurrent := s.mcpHTTPStart == attempt
+	if isCurrent {
+		s.mcpHTTPStart = nil
+	}
+	s.mcpHTTPStartMu.Unlock()
+	return isCurrent && attempt.ctx.Err() == nil
+}
+
+func (s *Service) cancelMCPHTTPStart() {
+	s.mcpHTTPStartMu.Lock()
+	attempt := s.mcpHTTPStart
+	if attempt != nil && attempt.cancel != nil {
+		attempt.cancel()
+	}
+	s.mcpHTTPStartMu.Unlock()
+}
+
+func (s *Service) restoreMCPHTTPServer() {
+	config := s.currentMCPHTTPServerConfig()
+	if !config.Enabled {
+		return
+	}
+
+	if _, err := s.startMCPHTTPServer(mcpHTTPServerOptionsFromConfig(config)); err != nil {
+		logger.Warnf("恢复 GoNavi MCP HTTP 服务失败：addr=%s path=%s reason=%v", config.Addr, config.Path, err)
+	}
 }
 
 func (s *Service) watchMCPHTTPServer(runtime *mcpHTTPServerRuntime) {
@@ -196,6 +336,100 @@ func (s *Service) watchMCPHTTPServer(runtime *mcpHTTPServerRuntime) {
 	}
 	s.mcpHTTP = nil
 	s.mcpHTTPLast = stoppedMCPHTTPStatus(runtime.status, message)
+}
+
+func (s *Service) currentMCPHTTPServerConfig() ai.MCPHTTPServerConfig {
+	s.mu.RLock()
+	config := s.mcpHTTPConfig
+	s.mu.RUnlock()
+	return normalizeMCPHTTPServerConfig(config)
+}
+
+func (s *Service) persistMCPHTTPServerConfig(config ai.MCPHTTPServerConfig) error {
+	config = normalizeMCPHTTPServerConfig(config)
+
+	s.mu.Lock()
+	previous := s.mcpHTTPConfig
+	s.mcpHTTPConfig = config
+	if err := s.saveConfig(); err != nil {
+		s.mcpHTTPConfig = previous
+		s.mu.Unlock()
+		return err
+	}
+	s.mu.Unlock()
+	return nil
+}
+
+func (s *Service) setMCPHTTPLastStatus(status ai.MCPHTTPServerStatus) {
+	s.mcpHTTPMu.Lock()
+	if s.mcpHTTP == nil {
+		s.mcpHTTPLast = status
+	}
+	s.mcpHTTPMu.Unlock()
+}
+
+func mcpHTTPServerOptionsFromConfig(config ai.MCPHTTPServerConfig) ai.MCPHTTPServerOptions {
+	config = normalizeMCPHTTPServerConfig(config)
+	return ai.MCPHTTPServerOptions{
+		Addr:       config.Addr,
+		Path:       config.Path,
+		Token:      config.Token,
+		SchemaOnly: config.SchemaOnly,
+	}
+}
+
+func mcpHTTPServerConfigFromStartOptions(options mcpHTTPProcessStartOptions) ai.MCPHTTPServerConfig {
+	return normalizeMCPHTTPServerConfig(ai.MCPHTTPServerConfig{
+		Enabled:    true,
+		Addr:       options.Addr,
+		Path:       options.Path,
+		SchemaOnly: options.SchemaOnly,
+		Token:      options.Token,
+	})
+}
+
+func mcpHTTPServerConfigFromStatus(status ai.MCPHTTPServerStatus, enabled bool) ai.MCPHTTPServerConfig {
+	return normalizeMCPHTTPServerConfig(ai.MCPHTTPServerConfig{
+		Enabled:    enabled,
+		Addr:       status.Addr,
+		Path:       status.Path,
+		SchemaOnly: status.SchemaOnly,
+		Token:      status.Token,
+	})
+}
+
+func normalizeMCPHTTPServerConfig(config ai.MCPHTTPServerConfig) ai.MCPHTTPServerConfig {
+	config.Addr = strings.TrimSpace(config.Addr)
+	if config.Addr == "" {
+		config.Addr = defaultMCPHTTPAddr
+	}
+	config.Path = strings.TrimSpace(config.Path)
+	if config.Path == "" {
+		config.Path = defaultMCPHTTPPath
+	}
+	if !strings.HasPrefix(config.Path, "/") {
+		config.Path = "/" + config.Path
+	}
+	config.Token = strings.TrimSpace(config.Token)
+	return config
+}
+
+func mcpHTTPStatusFromConfig(config ai.MCPHTTPServerConfig, message string) ai.MCPHTTPServerStatus {
+	config = normalizeMCPHTTPServerConfig(config)
+	status := ai.MCPHTTPServerStatus{
+		Enabled:    config.Enabled,
+		Running:    false,
+		Addr:       config.Addr,
+		Path:       config.Path,
+		URL:        buildMCPHTTPURL(config.Addr, config.Path),
+		SchemaOnly: config.SchemaOnly,
+		Token:      config.Token,
+		Message:    message,
+	}
+	if config.Token != "" {
+		status.AuthorizationHeader = "Bearer " + config.Token
+	}
+	return status
 }
 
 func normalizeInAppMCPHTTPOptions(options ai.MCPHTTPServerOptions, textLookup mcpHTTPTextLookup) (mcpHTTPProcessStartOptions, string, error) {
@@ -220,9 +454,9 @@ func normalizeInAppMCPHTTPOptions(options ai.MCPHTTPServerOptions, textLookup mc
 	}
 
 	return mcpHTTPProcessStartOptions{
-		Addr:       addr,
-		Path:       path,
-		Token:      token,
+		Addr:  addr,
+		Path:  path,
+		Token: token,
 		// 尊重调用方配置：false 时注册 execute_sql，用于查少量样例数据（仍受 AI 安全控制与行数上限约束）。
 		SchemaOnly: options.SchemaOnly,
 	}, token, nil
@@ -372,6 +606,7 @@ func waitMCPHTTPHealthEndpoint(ctx context.Context, healthURL string, textLookup
 
 func statusFromMCPHTTPOptions(options mcpHTTPProcessStartOptions, token string, textLookup mcpHTTPTextLookup) ai.MCPHTTPServerStatus {
 	return ai.MCPHTTPServerStatus{
+		Enabled:             true,
 		Running:             true,
 		Addr:                options.Addr,
 		Path:                options.Path,
@@ -394,10 +629,11 @@ func generateMCPHTTPToken(textLookup mcpHTTPTextLookup) (string, error) {
 
 func defaultMCPHTTPServerStatus(textLookup mcpHTTPTextLookup) ai.MCPHTTPServerStatus {
 	return ai.MCPHTTPServerStatus{
-		Running:    false,
-		Addr:       defaultMCPHTTPAddr,
-		Path:       defaultMCPHTTPPath,
-		URL:        buildMCPHTTPURL(defaultMCPHTTPAddr, defaultMCPHTTPPath),
+		Enabled: false,
+		Running: false,
+		Addr:    defaultMCPHTTPAddr,
+		Path:    defaultMCPHTTPPath,
+		URL:     buildMCPHTTPURL(defaultMCPHTTPAddr, defaultMCPHTTPPath),
 		// 默认允许只读 execute_sql 查少量数据；仍可在启动时显式传 schemaOnly=true 关闭。
 		SchemaOnly: false,
 		Message:    localizeMCPHTTPText(textLookup, "ai_settings.mcp_http.status.not_running", nil),

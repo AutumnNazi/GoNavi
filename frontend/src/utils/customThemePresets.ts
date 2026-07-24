@@ -62,7 +62,7 @@ export type BuiltinCustomThemePreset = CustomThemeDefinition & {
   };
 };
 
-const BUILTIN_THEME_REVISION = 2026071101;
+const BUILTIN_THEME_REVISION = 2026071301;
 
 const createBuiltinThemeCss = (id: string, palette: BuiltinThemePalette): string => `/* GoNavi built-in theme: ${id} */
 body[data-custom-theme],
@@ -107,6 +107,7 @@ body[data-custom-theme][data-ui-version="v2"] {
   --gn-danger-strong: ${palette.dangerStrong};
   --gn-danger-strong-hover: ${palette.dangerHover};
   --gn-on-danger: ${palette.onDanger};
+  --gn-status-connected: ${palette.mode === 'dark' ? '#4ade80' : '#15803d'};
   --gn-purple: ${palette.purple};
   --gn-purple-soft: ${palette.purpleSoft};
 
@@ -217,14 +218,22 @@ body[data-custom-theme][data-ui-version="v2"] .gn-v2-ai-quick-card.tone-purple .
 body[data-custom-theme][data-ui-version="v2"] .gn-v2-live-dot.is-live,
 body[data-custom-theme][data-ui-version="v2"] .gn-v2-rail-status.is-live,
 body[data-custom-theme][data-ui-version="v2"] .gn-v2-tree-status.is-success::before {
-  background: var(--gn-accent-text, var(--gn-accent)) !important;
-  box-shadow: 0 0 0 3px var(--gn-accent-soft) !important;
+  background: var(--gn-status-connected) !important;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--gn-status-connected) 22%, transparent) !important;
 }
 
 body[data-custom-theme][data-ui-version="v2"] .gn-v2-live-dot.is-loading,
 body[data-custom-theme][data-ui-version="v2"] .gn-v2-tree-status.is-loading::before {
   border-color: var(--gn-info-soft) !important;
   border-top-color: var(--gn-info) !important;
+}
+
+body[data-custom-theme][data-ui-version="v2"] .gn-v2-tab-label-part-host {
+  color: var(--gn-info) !important;
+}
+
+body[data-custom-theme][data-ui-version="v2"] .gn-v2-tab-label-part-database {
+  color: var(--gn-accent) !important;
 }
 
 body[data-custom-theme][data-ui-version="v2"] .monaco-editor,
@@ -309,7 +318,7 @@ export const BUILTIN_CUSTOM_THEME_PRESETS: readonly BuiltinCustomThemePreset[] =
       fg1: '#eceff4', fg2: '#d8dee9', fg3: '#c1cad8', fg4: '#9aa7b8', fg5: '#929ead',
       border1: 'rgba(216, 222, 233, 0.07)', border2: 'rgba(216, 222, 233, 0.12)', border3: 'rgba(216, 222, 233, 0.20)',
       accent: '#88c0d0', accent2: '#6faabb', accentSoft: 'rgba(136, 192, 208, 0.16)', accentSoftHover: 'rgba(136, 192, 208, 0.24)', accentOutline: 'rgba(136, 192, 208, 0.42)', onAccent: '#17252a',
-      info: '#81a1c1', infoSoft: 'rgba(129, 161, 193, 0.17)', onInfo: '#17212b', warn: '#ebcb8b', warnSoft: 'rgba(235, 203, 139, 0.16)', danger: '#df858d', dangerStrong: '#a94f59', dangerHover: '#943f49', onDanger: '#ffffff', purple: '#b993b2', purpleSoft: 'rgba(185, 147, 178, 0.17)',
+      info: '#89add0', infoSoft: 'rgba(137, 173, 208, 0.17)', onInfo: '#17212b', warn: '#ebcb8b', warnSoft: 'rgba(235, 203, 139, 0.16)', danger: '#df858d', dangerStrong: '#a94f59', dangerHover: '#943f49', onDanger: '#ffffff', purple: '#b993b2', purpleSoft: 'rgba(185, 147, 178, 0.17)',
       shadowSm: '0 1px 2px rgba(20, 24, 31, 0.24)', shadowMd: '0 4px 14px rgba(20, 24, 31, 0.32)', shadowLg: '0 12px 38px rgba(20, 24, 31, 0.42)', shadowCard: '0 0 0 0.5px rgba(216, 222, 233, 0.08), 0 1px 3px rgba(20, 24, 31, 0.25)',
       kbdBg: '#3b4351', kbdFg: '#d8dee9',
     },
@@ -340,8 +349,8 @@ export const BUILTIN_CUSTOM_THEME_PRESETS: readonly BuiltinCustomThemePreset[] =
       hover: 'rgba(67, 59, 49, 0.05)', active: 'rgba(67, 59, 49, 0.09)', selected: 'rgba(47, 125, 104, 0.14)',
       fg1: '#292722', fg2: '#45413a', fg3: '#655f55', fg4: '#766e63', fg5: '#7a7267',
       border1: 'rgba(67, 59, 49, 0.08)', border2: 'rgba(67, 59, 49, 0.13)', border3: 'rgba(67, 59, 49, 0.20)',
-      accent: '#2f7d68', accent2: '#236553', accentSoft: '#dcede6', accentSoftHover: '#cce4da', accentOutline: 'rgba(47, 125, 104, 0.30)', onAccent: '#ffffff',
-      info: '#3976a8', infoSoft: '#ddeaf4', onInfo: '#ffffff', warn: '#9f5f1d', warnSoft: '#f2e4cf', danger: '#b94a4a', dangerStrong: '#a83c3c', dangerHover: '#923333', onDanger: '#ffffff', purple: '#765b93', purpleSoft: '#eae1f2',
+      accent: '#2d7864', accent2: '#236553', accentSoft: '#dcede6', accentSoftHover: '#cce4da', accentOutline: 'rgba(45, 120, 100, 0.30)', onAccent: '#ffffff',
+      info: '#3572a4', infoSoft: '#ddeaf4', onInfo: '#ffffff', warn: '#9f5f1d', warnSoft: '#f2e4cf', danger: '#b94a4a', dangerStrong: '#a83c3c', dangerHover: '#923333', onDanger: '#ffffff', purple: '#765b93', purpleSoft: '#eae1f2',
       shadowSm: '0 1px 2px rgba(67, 59, 49, 0.07)', shadowMd: '0 4px 14px rgba(67, 59, 49, 0.10)', shadowLg: '0 12px 36px rgba(67, 59, 49, 0.16)', shadowCard: '0 0 0 0.5px rgba(67, 59, 49, 0.10), 0 1px 3px rgba(67, 59, 49, 0.07)',
       kbdBg: '#ece5d9', kbdFg: '#45413a',
     },

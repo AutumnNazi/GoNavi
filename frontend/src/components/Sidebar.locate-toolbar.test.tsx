@@ -6,6 +6,7 @@ import { readV2ThemeCss } from '../test/readV2ThemeCss';
 
 import Sidebar, {
   buildAllSavedQueriesTreeNode,
+  buildSidebarConnectionTagTree,
   buildSidebarTableChildrenForUi,
   buildV2SidebarTableSectionedChildren,
   buildSQLFileExecutionFooter,
@@ -15,6 +16,7 @@ import Sidebar, {
   filterV2ExplorerTreeByKind,
   getV2RailConnectionGroupBadgeText,
   hasSidebarLazyChildren,
+  isConnectionTagDescendant,
   normalizeSidebarTreeRelativeDropPosition,
   parseV2CommandSearchQuery,
   resolveV2CommandSearchPersistentFilter,
@@ -30,6 +32,7 @@ import Sidebar, {
   isSidebarTablePinned,
   SQLFileExecutionProgressContent,
   resolveSidebarTableNameForCopy,
+  resolveSidebarDatabaseNameForCopy,
   shouldKeepSidebarSwitcherCollapsedWhileLoading,
   shouldClearSidebarActiveContextOnEmptySelect,
   shouldSkipSidebarLoadOnExpandWhileDragging,
@@ -130,15 +133,35 @@ const mocks = vi.hoisted(() => ({
 vi.mock('../store', () => ({
   buildSidebarRootConnectionToken: (connectionId: string) => `connection:${connectionId.trim()}`,
   buildSidebarRootTagToken: (tagId: string) => `tag:${tagId.trim()}`,
+  resolveConnectionTagChildOrder: (
+    tagId: string,
+    connectionTags: Array<{ id: string; parentTagId?: string; connectionIds: string[]; childOrder?: string[] }>,
+  ) => {
+    const tag = connectionTags.find((candidate) => candidate.id === tagId);
+    if (!tag) return [];
+    const fallback = [
+      ...tag.connectionIds.map((connectionId) => `connection:${connectionId}`),
+      ...connectionTags
+        .filter((candidate) => candidate.parentTagId === tagId)
+        .map((candidate) => `tag:${candidate.id}`),
+    ];
+    const valid = new Set(fallback);
+    const seen = new Set<string>();
+    return [...(tag.childOrder || []), ...fallback].filter((token) => {
+      if (!valid.has(token) || seen.has(token)) return false;
+      seen.add(token);
+      return true;
+    });
+  },
   resolveSidebarRootOrderTokens: (
     sidebarRootOrder: unknown,
-    connectionTags: Array<{ id: string; connectionIds: string[] }>,
+    connectionTags: Array<{ id: string; parentTagId?: string; connectionIds: string[] }>,
     connections: Array<{ id: string }>,
   ) => {
     const groupedConnectionIds = new Set<string>();
     connectionTags.forEach((tag) => tag.connectionIds.forEach((id) => groupedConnectionIds.add(id)));
     const fallback = [
-      ...connectionTags.map((tag) => `tag:${tag.id}`),
+      ...connectionTags.filter((tag) => !tag.parentTagId).map((tag) => `tag:${tag.id}`),
       ...connections
         .filter((conn) => !groupedConnectionIds.has(conn.id))
         .map((conn) => `connection:${conn.id}`),
@@ -172,9 +195,14 @@ vi.mock('../store', () => ({
   useStore: (selector: (state: any) => any) => selector({
     connections: mocks.state.connections,
     savedQueries: [],
+    savedQueryGroups: [],
     externalSQLDirectories: [],
     saveQuery: mocks.noop,
     deleteQuery: mocks.noop,
+    saveSavedQueryGroup: mocks.noop,
+    deleteSavedQueryGroup: mocks.noop,
+    moveSavedQueryToGroup: mocks.noop,
+    reloadSavedQueryGroups: mocks.noop,
     saveExternalSQLDirectory: mocks.noop,
     deleteExternalSQLDirectory: mocks.noop,
     addConnection: mocks.noop,
@@ -190,6 +218,7 @@ vi.mock('../store', () => ({
     updateConnectionTag: mocks.noop,
     removeConnectionTag: mocks.noop,
     moveConnectionToTag: mocks.noop,
+    moveConnectionTag: mocks.noop,
     reorderConnections: mocks.noop,
     reorderTags: mocks.noop,
     reorderSidebarRoot: mocks.noop,
@@ -617,6 +646,72 @@ describe('Sidebar locate toolbar', () => {
     expect(getV2RailConnectionGroupBadgeText('生产环境')).toBe('生');
   });
 
+  it('builds arbitrarily nested host groups with mixed host and subgroup order', () => {
+    const connections = [
+      'host1', 'host2', 'host3', 'host4', 'host5', 'host6',
+    ].map((id) => ({ id, name: id, config: { type: 'mysql', host: `${id}.local` } })) as any[];
+    const tags = [
+      {
+        id: 'group-1',
+        name: '分组1',
+        connectionIds: ['host1', 'host2'],
+        childOrder: ['connection:host1', 'connection:host2', 'tag:group-1-1'],
+      },
+      {
+        id: 'group-1-1',
+        name: '分组1-1',
+        parentTagId: 'group-1',
+        connectionIds: ['host3', 'host4'],
+        childOrder: ['connection:host3', 'connection:host4', 'tag:group-1-1-1'],
+      },
+      {
+        id: 'group-1-1-1',
+        name: '分组1-1-1',
+        parentTagId: 'group-1-1',
+        connectionIds: ['host5', 'host6'],
+        childOrder: ['connection:host5', 'connection:host6'],
+      },
+    ] as any[];
+
+    const outline = (items: ReturnType<typeof buildSidebarConnectionTagTree>): unknown[] => items.map((item) => (
+      item.kind === 'connection'
+        ? item.id
+        : { id: item.id, children: outline(item.children) }
+    ));
+
+    expect(outline(buildSidebarConnectionTagTree(connections, tags, ['tag:group-1']))).toEqual([
+      {
+        id: 'group-1',
+        children: [
+          'host1',
+          'host2',
+          {
+            id: 'group-1-1',
+            children: [
+              'host3',
+              'host4',
+              { id: 'group-1-1-1', children: ['host5', 'host6'] },
+            ],
+          },
+        ],
+      },
+    ]);
+    expect(isConnectionTagDescendant('group-1', 'group-1-1-1', tags)).toBe(true);
+    expect(isConnectionTagDescendant('group-1-1', 'group-1', tags)).toBe(false);
+  });
+
+  it('keeps malformed group parents and parent cycles visible at the root', () => {
+    const tags = [
+      { id: 'a', name: 'A', parentTagId: 'b', connectionIds: [] },
+      { id: 'b', name: 'B', parentTagId: 'a', connectionIds: [] },
+      { id: 'orphan', name: 'Orphan', parentTagId: 'missing', connectionIds: [] },
+    ] as any[];
+
+    expect(
+      buildSidebarConnectionTagTree([], tags, []).map((item) => item.id),
+    ).toEqual(['a', 'b', 'orphan']);
+  });
+
   it('keeps the sidebar memoized so parent-only button state does not repaint the tree', () => {
     const source = readSidebarSource();
 
@@ -682,6 +777,77 @@ describe('Sidebar locate toolbar', () => {
       key: 'all-saved-query-saved-orphan',
       title: 'Legacy Report',
     });
+  });
+
+  it('renders saved query groups in mixed child order and keeps grouped SQL out of the ungrouped branch', () => {
+    const tree = buildAllSavedQueriesTreeNode(
+      [
+        {
+          id: 'query-root',
+          name: 'Root query',
+          sql: 'select 1',
+          connectionId: 'conn-1',
+          dbName: 'app',
+          createdAt: 100,
+        },
+        {
+          id: 'query-child',
+          name: 'Child query',
+          sql: 'select 2',
+          connectionId: 'conn-1',
+          dbName: 'app',
+          createdAt: 200,
+        },
+        {
+          id: 'query-ungrouped',
+          name: 'Ungrouped query',
+          sql: 'select 3',
+          connectionId: 'conn-1',
+          dbName: 'app',
+          createdAt: 300,
+        },
+      ],
+      [{
+        id: 'conn-1',
+        name: 'Primary',
+        config: { type: 'mysql', host: 'db.local', port: 3306 },
+      }] as any,
+      [
+        {
+          id: 'root-group',
+          name: 'Root group',
+          queryIds: ['query-root'],
+          childOrder: ['group:child-group', 'query:query-root'],
+        },
+        {
+          id: 'child-group',
+          name: 'Child group',
+          parentGroupId: 'root-group',
+          queryIds: ['query-child'],
+          childOrder: ['query:query-child'],
+        },
+      ],
+    );
+
+    const rootGroup = tree?.children?.find((child) => child.key === 'saved-query-manual-group-root-group');
+    expect(rootGroup?.children?.map((child) => child.key)).toEqual([
+      'saved-query-manual-group-child-group',
+      'all-saved-query-query-root',
+    ]);
+    expect(rootGroup?.children?.[0].children?.map((child) => child.key)).toEqual([
+      'all-saved-query-query-child',
+    ]);
+
+    const ungrouped = tree?.children?.find((child) => child.key === 'all-saved-queries-ungrouped');
+    expect(ungrouped?.children?.[0]).toMatchObject({
+      key: 'all-saved-queries-connection-conn-1',
+      title: 'Primary',
+    });
+    expect(ungrouped?.children?.[0].children?.[0].children?.map((child) => child.key)).toEqual([
+      'all-saved-query-query-ungrouped',
+    ]);
+    expect(JSON.stringify(ungrouped)).not.toContain('all-saved-query-query-root');
+    expect(JSON.stringify(ungrouped)).not.toContain('all-saved-query-query-child');
   });
 
   it('releases backend database connections when disconnecting a sidebar connection', () => {
@@ -805,18 +971,29 @@ describe('Sidebar locate toolbar', () => {
     expect(source).toContain("t('sidebar.external_sql_modal.validation.directory_name_no_separator')");
   });
 
-  it('keeps the legacy sidebar toolbar on a stable five-column grid layout', () => {
+  it('keeps the legacy sidebar toolbar on a stable six-column grid layout', () => {
     const source = readSidebarSource();
     const markup = renderSidebarMarkup();
 
     expect(markup).toContain('data-sidebar-legacy-toolbar="true"');
     expect(markup).toContain('data-sidebar-legacy-toolbar-item="true"');
     expect(source).toContain("const legacyToolbarStyle: React.CSSProperties = {");
-    expect(source).toContain("gridTemplateColumns: 'repeat(5, minmax(0, 1fr))'");
+    expect(source).toContain("gridTemplateColumns: 'repeat(6, minmax(0, 1fr))'");
     expect(source).toContain("justifyItems: 'center'");
     expect(source).toContain("const legacyToolbarItemStyle: React.CSSProperties = {");
     expect(source).toContain("const legacyToolbarDisabledWrapStyle: React.CSSProperties = {");
     expect(source).not.toContain("justifyContent: 'space-between', borderTop: `1px solid ${darkMode ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)'}`, borderBottom: `1px solid ${darkMode ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)'}`, background: darkMode ? 'rgba(0,0,0,0.2)' : 'rgba(0,0,0,0.015)' }}>");
+  });
+
+  it('keeps only the unified settings entry in sidebar utility areas', () => {
+    const sidebarSource = readSourceFile('./Sidebar.tsx');
+    const railSource = readSourceFile('./sidebar/SidebarConnectionRail.tsx');
+
+    expect(sidebarSource).not.toContain('onOpenTools');
+    expect(sidebarSource).not.toContain('openTools:');
+    expect(railSource).not.toContain('handlers.openTools');
+    expect(railSource).not.toContain('data-gonavi-open-tools-action');
+    expect(railSource).toContain('handlers.openSettings');
   });
 
   it('renders the v2 sidebar rail, command search hint, filter tabs and slow-query footer', () => {
@@ -865,21 +1042,24 @@ describe('Sidebar locate toolbar', () => {
     expect(markup).toContain('data-sidebar-create-group-action="true"');
     expect(markup).toContain('data-sidebar-batch-table-action="true"');
     expect(markup).toContain('data-sidebar-batch-database-action="true"');
-    expect(source).toContain('openBatchTableExport: () => openBatchOperationModal(),');
-    expect(source).toContain('openBatchDatabaseExport: () => openBatchDatabaseModal(),');
-    expect(source).toContain('onClick={() => openBatchOperationModal()}');
-    expect(source).toContain('onClick={() => openBatchDatabaseModal()}');
-    expect(source).not.toContain('openBatchTableExport: () => openBatchTableExportWorkbench()');
-    expect(source).not.toContain('openBatchDatabaseExport: () => openBatchDatabaseExportWorkbench()');
+    expect(markup).toContain('data-sidebar-data-import-action="true"');
+    expect(source).toContain('openBatchTableExport: openBatchTableWorkbench,');
+    expect(source).toContain('openBatchDatabaseExport: openBatchDatabaseWorkbench,');
+    expect(source).toContain('openDataImport: handleOpenDataImportWorkbench,');
+    expect(source).toContain('onClick={openBatchTableWorkbench}');
+    expect(source).toContain('onClick={openBatchDatabaseWorkbench}');
+    expect(source).not.toContain('openBatchOperationModal');
+    expect(source).not.toContain('openBatchDatabaseModal');
     expect(markup).toContain('data-sidebar-open-external-sql-file-action="true"');
     expect(markup).toContain('data-sidebar-locate-current-tab-action="true"');
     expect(markup).toContain('data-gonavi-new-query-action="true"');
     expect(markup).toContain('data-gonavi-create-connection-action="true"');
     expect(markup).toContain('aria-label="AI 助手"');
     expect(markup).toContain('data-gonavi-ai-entry-action="true"');
-    expect(markup).toContain('aria-label="工具"');
-    expect(markup).toContain('data-gonavi-open-tools-action="true"');
+    expect(markup).not.toContain('aria-label="工具"');
+    expect(markup).not.toContain('data-gonavi-open-tools-action="true"');
     expect(markup).toContain('aria-label="设置"');
+    expect(source).not.toContain('handlers.openTools');
     expect(source).toContain('export const buildV2RailConnectionGroups = (');
     expect(source).toContain("if (menu.kind === 'v2-connection-group') return renderV2ConnectionGroupContextMenu(menu.node);");
     expect(source).toContain('openV2ConnectionContextMenu(event, node);');
@@ -1137,7 +1317,7 @@ describe('Sidebar locate toolbar', () => {
     expect(css).not.toContain('.gn-v2-active-connection-trigger:hover');
   });
 
-  it('shows a prominent v2 new query action before connection creation without reusing the plus icon', () => {
+  it('opens the v2 header new-query action in the selected database before connection creation', () => {
     mocks.state.connections = [{
       id: 'conn-local',
       name: '开发240',
@@ -1172,8 +1352,11 @@ describe('Sidebar locate toolbar', () => {
     expect(markup.indexOf('data-gonavi-new-query-action="true"')).toBeLessThan(markup.indexOf('data-gonavi-create-connection-action="true"'));
     expect(newQueryActionSource).toContain('icon={<FileTextOutlined />}');
     expect(newQueryActionSource).not.toContain('icon={<PlusOutlined />}');
-    expect(newQueryActionSource).toContain("handleV2ConnectionContextMenuAction(getConnectionNodeForAction(activeConnection), 'new-query')");
-    expect(newQueryActionSource).not.toContain("handleV2ConnectionContextMenuAction(activeConnection, 'new-query')");
+    expect(newQueryActionSource).toContain('const selectedDatabase = resolveV2SelectedDatabaseName({');
+    expect(newQueryActionSource).toContain('activeConnectionId: activeConnection.id,');
+    expect(newQueryActionSource).toContain('activeContextConnectionId: activeContext?.connectionId,');
+    expect(newQueryActionSource).toContain("handleV2DatabaseContextMenuAction(getDatabaseNodeRef(activeConnection, selectedDatabase), 'new-query');");
+    expect(newQueryActionSource).toContain("handleV2ConnectionContextMenuAction(getConnectionNodeForAction(activeConnection), 'new-query');");
     expect(newQueryActionSource).toContain('disabled={!activeConnection}');
   });
 
@@ -1260,8 +1443,8 @@ describe('Sidebar locate toolbar', () => {
     expect(v2TreeTitleCss).toContain('min-width: 100%;');
     expect(v2TreeTitleCss).toContain('overflow: visible;');
     expect(css).toMatch(/\.gn-v2-tree-status \{[^}]*width: 14px;[^}]*height: 14px;[^}]*flex: 0 0 14px;[^}]*overflow: visible;/s);
-    expect(css).toMatch(/\.gn-v2-tree-status::before \{[^}]*width: 7px;[^}]*height: 7px;[^}]*border-radius: 50%;/s);
-    expect(css).toMatch(/\.gn-v2-tree-status\.is-success::before \{[^}]*background: #22c55e;[^}]*box-shadow: 0 0 0 4px rgba\(34, 197, 94, 0\.18\);/s);
+    expect(css).toMatch(/\.gn-v2-tree-status::before \{[^}]*width: 9px;[^}]*height: 9px;[^}]*border: 1\.5px solid var\(--gn-fg-4\);[^}]*border-radius: 50%;/s);
+    expect(css).toMatch(/\.gn-v2-tree-status\.is-success::before \{[^}]*border: 0;[^}]*background: var\(--gn-status-connected\);[^}]*box-shadow: 0 0 0 3px color-mix\(in srgb, var\(--gn-status-connected\) 22%, transparent\);/s);
     const treeLabelCss = readCssRuleBlock(css, 'body[data-ui-version="v2"] .gn-v2-tree-label');
     expect(treeLabelCss).toContain('flex: 0 0 auto;');
     expect(treeLabelCss).toContain('overflow: visible;');
@@ -1446,44 +1629,40 @@ describe('Sidebar locate toolbar', () => {
     expect(source).toContain('treeData={isV2Ui ? v2VisibleTreeData : displayTreeData}');
   });
 
-  it('reorders dragged connections instead of only moving them between groups', () => {
+  it('uses the hierarchy actions for mixed sibling host and subgroup drag ordering', () => {
     const source = readSidebarSource();
     const utilsSource = readFileSync(new URL('./sidebarV2Utils.ts', import.meta.url), 'utf8');
 
-    expect(source).toContain('const reorderConnections = useStore(state => state.reorderConnections);');
-    expect(source).toContain('reorderConnections(');
+    expect(source).toContain('const moveConnectionTag = useStore(state => state.moveConnectionTag);');
+    expect(source).toContain('moveConnectionTag(dragTagId, targetParentTagId, targetToken, targetInsertBefore);');
+    expect(source).toContain('moveConnectionToTag(connectionId, targetParentTagId, targetToken, targetInsertBefore);');
     expect(source).toContain('const insertBefore = resolveSidebarDropInsertBefore(');
     expect(source).toContain('const domDropNode = resolveSidebarDropNodeFromDomEvent(info?.event);');
     expect(source).toContain('const dropTargetMetrics = resolveSidebarDropTargetMetricsFromDomEvent(info?.event);');
     expect(source).toContain("findTreeNodeByKeyRef.current(treeDataRef.current, domDropNode.key)");
     expect(utilsSource).toContain("const treeNode = baseElement.closest('.ant-tree-treenode') as HTMLElement | null;");
-    expect(source).toContain('insertBefore,');
+    expect(source).toContain("info?.dropToGap === false");
   });
 
-  it('reorders dragged tags relative to grouped connections instead of always appending them', () => {
+  it('rejects a drag path that would put a group into itself or one of its descendants', () => {
     const source = readSidebarSource();
 
-    expect(source).toContain("connectionTags.find(t => t.connectionIds.includes(String(dropNode.key)))?.id || ''");
-    expect(source).toContain('const dropTagId = dropNode.type === \'tag\'');
-    expect(source).toContain('if (dropTagId) {');
+    expect(source).toContain('const allowSidebarTreeDrop = ({ dragNode, dropNode, dropPosition }: any): boolean => {');
+    expect(source).toContain('!isConnectionTagDescendant(dragTagId, targetParentTagId, connectionTags)');
+    expect(source).toContain('allowDrop={allowSidebarTreeDrop}');
   });
 
-  it('wires v2 tree root dragging through the shared sidebar root order action', () => {
+  it('keeps selection preservation while routing tree drag through the shared hierarchy path', () => {
     const source = readSidebarSource();
 
-    expect(source).toContain('const reorderSidebarRoot = useStore(state => state.reorderSidebarRoot);');
     expect(source).toContain('const treeDragSelectSuppressUntilRef = useRef(0);');
     expect(source).toContain('const treeDragSelectionSnapshotRef = useRef<');
     expect(source).toContain('snapshotTreeSelectionBeforeDrag();');
     expect(source).toContain('restoreTreeSelectionAfterDrag();');
     expect(source).toContain('if (Date.now() < treeDragSelectSuppressUntilRef.current) {');
-    expect(source).toContain('const getDropRootToken = (node: any): string => {');
-    expect(source).toContain("return buildSidebarRootTagToken(String(node?.dataRef?.id || ''));");
-    expect(source).toContain(': buildSidebarRootConnectionToken(String(node.key));');
-    expect(source).toContain('const dragRootToken = buildSidebarRootTagToken(String(dragTagId));');
-    expect(source).toContain('reorderSidebarRoot(dragRootToken, dropRootToken, resolvedInsertBefore);');
-    expect(source).toContain('reorderSidebarRoot(dragRootToken, dropRootToken, insertBefore);');
-    expect(source).toContain('buildSidebarRootConnectionToken(String(dragNode.key))');
+    expect(source).toContain('const getNodeOrderToken = (node: any): string | null => {');
+    expect(source).toContain('const targetParentTagId = droppingIntoTag');
+    expect(source).toContain('const targetToken = droppingIntoTag ? null : getNodeOrderToken(dropNode);');
     expect(source).toContain('onDrop={handleDrop}');
   });
 
@@ -2323,6 +2502,7 @@ describe('Sidebar locate toolbar', () => {
     expect(markup).toContain('data-v2-database-context-menu="true"');
     expect(markup).toContain('mkefu_ai_dev');
     expect(markup).toContain('DB');
+    expect(markup).toContain(t('sidebar.menu.copy_database_name'));
     expect(markup).toContain(t('sidebar.menu.create_table'));
     expect(markup).toContain(t('sidebar.menu.new_query'));
     expect(markup).toContain(t('sidebar.sql_file_exec.title'));
@@ -2337,6 +2517,29 @@ describe('Sidebar locate toolbar', () => {
     expect(markup).toContain(t('sidebar.v2_database_menu.export_all_table_schema_sql'));
     expect(markup).toContain(t('sidebar.v2_database_menu.backup_all_tables_sql'));
     expect(markup).toContain(t('sidebar.v2_table_menu.item_with_suffix', { label: t('sidebar.menu.delete_database'), suffix: 'DROP' }));
+  });
+
+  it('resolves and wires database-name copy for both sidebar menu generations', () => {
+    expect(resolveSidebarDatabaseNameForCopy({
+      title: 'fallback_db',
+      dataRef: { dbName: '  main_db  ' },
+    })).toBe('main_db');
+    expect(resolveSidebarDatabaseNameForCopy({ title: ' fallback_db ' })).toBe('fallback_db');
+    expect(resolveSidebarDatabaseNameForCopy(null)).toBe('');
+
+    const legacySource = readLegacyNodeMenuSource();
+    const menuSource = readSourceFile('./V2TableContextMenu.tsx');
+    const actionSource = readSourceFile('./sidebar/useSidebarV2ActionHandlers.tsx');
+    const objectActionSource = readSourceFile('./sidebar/useSidebarObjectActions.tsx');
+
+    expect(legacySource).toContain("t('sidebar.menu.copy_database_name')");
+    expect(legacySource).toContain("handleV2DatabaseContextMenuAction(node, 'copy-database-name')");
+    expect(menuSource).toContain("action: 'copy-database-name'");
+    expect(menuSource).toContain("t('sidebar.menu.copy_database_name')");
+    expect(actionSource).toContain("case 'copy-database-name':");
+    expect(actionSource).toContain('void handleCopyDatabaseName(node);');
+    expect(objectActionSource).toContain('const handleCopyDatabaseName = async (node: any) => {');
+    expect(objectActionSource).toContain('await navigator.clipboard.writeText(databaseName);');
   });
 
   it('renders the v2 database schema action for PostgreSQL-compatible databases', () => {
@@ -2554,6 +2757,7 @@ describe('Sidebar locate toolbar', () => {
   it('localizes v2 connection shell fallbacks and group controls without changing raw names', () => {
     const source = readSidebarSource();
     const menuSource = readFileSync(new URL('./V2TableContextMenu.tsx', import.meta.url), 'utf8');
+    const utilsSource = readFileSync(new URL('./sidebarV2Utils.ts', import.meta.url), 'utf8');
 
     expect(source).toContain("connectionName={String(conn?.name || node.title || t('connection.unnamed'))}");
     expect(source).toContain("title: String(node.title || conn.name || t('connection.unnamed'))");
@@ -2561,7 +2765,7 @@ describe('Sidebar locate toolbar', () => {
     expect(source).toContain("title: String(node.title || dataRef.dbName || t('database.unnamed'))");
     expect(source).toContain("meta: conn?.name || dataRef.id || t('database.label')");
     expect(source).toContain("const activeConnectionDisplayName = String(activeConnection?.name || '').trim() || t('sidebar.active_connection.no_host_selected');");
-    expect(source).toContain("name: tag.name || t('connection.sidebar.group.untitled'),");
+    expect(utilsSource).toContain("name: item.tag.name || t('connection.sidebar.group.untitled'),");
     expect(source).toContain('groupName={group.name}');
     expect(source).toContain('count={group.connections.length}');
     expect(menuSource).toContain("title={groupName || t('connection.sidebar.group.untitled')}");

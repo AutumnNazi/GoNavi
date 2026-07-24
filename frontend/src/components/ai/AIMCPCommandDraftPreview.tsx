@@ -28,7 +28,7 @@ const sectionTitleStyle = (overlayTheme: OverlayWorkbenchTheme): React.CSSProper
 });
 
 const sectionHintStyle = (overlayTheme: OverlayWorkbenchTheme): React.CSSProperties => ({
-  fontSize: 11,
+  fontSize: 'var(--gn-font-size-sm, 12px)',
   color: overlayTheme.mutedText,
   lineHeight: 1.6,
 });
@@ -49,10 +49,10 @@ const AIMCPCommandDraftPreview: React.FC<AIMCPCommandDraftPreviewProps> = ({
   return (
     <div
       style={{
-        padding: '10px 12px',
-        borderRadius: 10,
-        border: `1px solid ${cardBorder}`,
-        background: darkMode ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.72)',
+        padding: '10px 0 0 12px',
+        borderLeft: `3px solid ${overlayTheme.selectedText}`,
+        borderBottom: `1px solid ${cardBorder}`,
+        background: 'transparent',
         display: 'flex',
         flexDirection: 'column',
         gap: 10,

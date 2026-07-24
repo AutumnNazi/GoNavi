@@ -8,8 +8,14 @@
   "wailsjsdir": "./frontend",
   "version": "2",
   "author": {
-    "name": "User",
-    "email": "user@example.com"
+    "name": "Syngnat",
+    "email": "yangguofeng919@gmail.com"
+  },
+  "info": {
+    "companyName": "Syngnat",
+    "productName": "GoNavi",
+    "copyright": "Copyright 2026 Syngnat",
+    "comments": "GoNavi is licensed under the Apache License, Version 2.0."
   },
   "debounceMS": 100,
   "appargs": ""

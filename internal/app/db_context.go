@@ -40,10 +40,14 @@ func normalizeRunConfig(config connection.ConnectionConfig, dbName string) conne
 		if idx, err := strconv.Atoi(name); err == nil && idx >= 0 {
 			runConfig.RedisDB = idx
 		}
+	case "custom":
+		if resolveDDLDBType(config) == "clickhouse" {
+			runConfig = runConfig.WithRuntimeDatabaseOverride(name)
+		}
 	default:
 		// oracle: dbName 表示 schema/owner，不能覆盖 config.Database（服务名）
 		// sqlite: 无需设置 Database
-		// custom: 语义不明确，避免污染缓存 key
+		// 其他 custom: 语义不明确，避免污染缓存 key
 	}
 
 	return runConfig

@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import React, { useCallback, useEffect, useRef } from 'react';
 import {
   SIDEBAR_RESIZE_MAX_WIDTH,
   SIDEBAR_RESIZE_MIN_WIDTH,
@@ -10,6 +10,11 @@ type SidebarResizeDragState = SidebarResizeBounds & {
   startX: number;
   startWidth: number;
   startGuideLeft: number;
+};
+type SidebarResizeListeners = {
+  blur: () => void;
+  move: (event: MouseEvent) => void;
+  up: (event: MouseEvent) => void;
 };
 
 const parseCssPixelValue = (value: string | null | undefined): number | null => {
@@ -50,10 +55,26 @@ export const useAppSidebarResize = ({
   const ghostRef = useRef<HTMLDivElement>(null);
   const siderRef = useRef<HTMLDivElement | null>(null);
   const sidebarDragBodyStyleRef = useRef<{ cursor: string; userSelect: string; webkitUserSelect: string } | null>(null);
+  const sidebarResizeListenersRef = useRef<SidebarResizeListeners | null>(null);
   const latestMouseX = useRef<number>(0);
+  const setSidebarWidthRef = useRef(setSidebarWidth);
+  setSidebarWidthRef.current = setSidebarWidth;
   const sidebarResizeHandleWidth = Math.max(16, Math.round(16 * effectiveUiScale));
 
-  const restoreSidebarDragBodyStyles = () => {
+  const detachSidebarResizeListeners = useCallback(() => {
+    const listeners = sidebarResizeListenersRef.current;
+    if (!listeners) return;
+    sidebarResizeListenersRef.current = null;
+    if (typeof document !== 'undefined') {
+      document.removeEventListener('mousemove', listeners.move);
+      document.removeEventListener('mouseup', listeners.up);
+    }
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('blur', listeners.blur);
+    }
+  }, []);
+
+  const restoreSidebarDragBodyStyles = useCallback(() => {
     if (!sidebarDragBodyStyleRef.current || typeof document === 'undefined') {
       sidebarDragBodyStyleRef.current = null;
       return;
@@ -62,11 +83,36 @@ export const useAppSidebarResize = ({
     const previous = sidebarDragBodyStyleRef.current;
     document.body.style.cursor = previous.cursor;
     document.body.style.userSelect = previous.userSelect;
-    (document.body.style as any).WebkitUserSelect = previous.webkitUserSelect;
+    document.body.style.webkitUserSelect = previous.webkitUserSelect;
     sidebarDragBodyStyleRef.current = null;
-  };
+  }, []);
 
-  const handleSidebarMouseDown = (e: React.MouseEvent) => {
+  const finishSidebarResize = useCallback((clientX?: number, commit = true) => {
+    const dragState = sidebarDragRef.current;
+    sidebarDragRef.current = null;
+
+    if (rafRef.current !== null) {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+    }
+
+    if (ghostRef.current) {
+      ghostRef.current.style.display = 'none';
+    }
+    detachSidebarResizeListeners();
+    restoreSidebarDragBodyStyles();
+
+    if (commit && dragState) {
+      const finalMouseX = Number.isFinite(clientX) ? clientX as number : latestMouseX.current;
+      const delta = finalMouseX - dragState.startX;
+      setSidebarWidthRef.current(clampSidebarResizeWidth(
+        dragState.startWidth + delta,
+        dragState,
+      ));
+    }
+  }, [detachSidebarResizeListeners, restoreSidebarDragBodyStyles]);
+
+  const handleSidebarMouseDown = useCallback((e: React.MouseEvent) => {
     if (e.button !== 0) {
       e.preventDefault();
       e.stopPropagation();
@@ -76,15 +122,17 @@ export const useAppSidebarResize = ({
     e.preventDefault();
     e.stopPropagation();
 
+    finishSidebarResize(undefined, false);
+
     if (typeof document !== 'undefined') {
       sidebarDragBodyStyleRef.current = {
         cursor: document.body.style.cursor,
         userSelect: document.body.style.userSelect,
-        webkitUserSelect: (document.body.style as any).WebkitUserSelect || '',
+        webkitUserSelect: document.body.style.webkitUserSelect,
       };
       document.body.style.cursor = 'col-resize';
       document.body.style.userSelect = 'none';
-      (document.body.style as any).WebkitUserSelect = 'none';
+      document.body.style.webkitUserSelect = 'none';
     }
 
     const siderRect = siderRef.current?.getBoundingClientRect();
@@ -104,49 +152,41 @@ export const useAppSidebarResize = ({
       ...resizeBounds,
     };
     latestMouseX.current = e.clientX;
-    document.addEventListener('mousemove', handleSidebarMouseMove);
-    document.addEventListener('mouseup', handleSidebarMouseUp);
-  };
 
-  const handleSidebarMouseMove = (e: MouseEvent) => {
-    if (!sidebarDragRef.current) return;
+    const handleMove = (event: MouseEvent) => {
+      if (!sidebarDragRef.current) return;
+      latestMouseX.current = event.clientX;
+      if (event.buttons === 0) {
+        finishSidebarResize(event.clientX);
+        return;
+      }
+      if (rafRef.current !== null) return;
 
-    latestMouseX.current = e.clientX;
+      rafRef.current = requestAnimationFrame(() => {
+        rafRef.current = null;
+        if (!sidebarDragRef.current || !ghostRef.current) return;
+        const { startX, startWidth, startGuideLeft, minWidth, maxWidth } = sidebarDragRef.current;
+        const delta = latestMouseX.current - startX;
+        const newWidth = clampSidebarResizeWidth(startWidth + delta, { minWidth, maxWidth });
+        ghostRef.current.style.left = `${startGuideLeft + (newWidth - startWidth)}px`;
+      });
+    };
+    const handleUp = (event: MouseEvent) => finishSidebarResize(event.clientX);
+    const handleBlur = () => finishSidebarResize();
 
-    if (rafRef.current) return;
+    sidebarResizeListenersRef.current = {
+      blur: handleBlur,
+      move: handleMove,
+      up: handleUp,
+    };
+    document.addEventListener('mousemove', handleMove);
+    document.addEventListener('mouseup', handleUp);
+    window.addEventListener('blur', handleBlur);
+  }, [finishSidebarResize, sidebarWidth]);
 
-    rafRef.current = requestAnimationFrame(() => {
-      if (!sidebarDragRef.current || !ghostRef.current) return;
-      const { startX, startWidth, startGuideLeft, minWidth, maxWidth } = sidebarDragRef.current;
-      const delta = latestMouseX.current - startX;
-      const newWidth = clampSidebarResizeWidth(startWidth + delta, { minWidth, maxWidth });
-      ghostRef.current.style.left = `${startGuideLeft + (newWidth - startWidth)}px`;
-      rafRef.current = null;
-    });
-  };
-
-  const handleSidebarMouseUp = (e: MouseEvent) => {
-    if (rafRef.current) {
-      cancelAnimationFrame(rafRef.current);
-      rafRef.current = null;
-    }
-
-    if (sidebarDragRef.current) {
-      const { startX, startWidth, minWidth, maxWidth } = sidebarDragRef.current;
-      const delta = e.clientX - startX;
-      const newWidth = clampSidebarResizeWidth(startWidth + delta, { minWidth, maxWidth });
-      setSidebarWidth(newWidth);
-    }
-
-    if (ghostRef.current) {
-      ghostRef.current.style.display = 'none';
-    }
-    restoreSidebarDragBodyStyles();
-
-    sidebarDragRef.current = null;
-    document.removeEventListener('mousemove', handleSidebarMouseMove);
-    document.removeEventListener('mouseup', handleSidebarMouseUp);
-  };
+  useEffect(() => () => {
+    finishSidebarResize(undefined, false);
+  }, [finishSidebarResize]);
 
   return {
     ghostRef,

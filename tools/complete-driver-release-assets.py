@@ -34,6 +34,7 @@ DRIVERS = [
     "iotdb",
     "clickhouse",
     "elasticsearch",
+    "trino",
 ]
 
 BUNDLE_NAME = "GoNavi-DriverAgents.zip"

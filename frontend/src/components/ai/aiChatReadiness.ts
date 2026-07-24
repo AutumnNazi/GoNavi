@@ -1,6 +1,7 @@
 import { t as catalogTranslate } from '../../i18n/catalog';
 import type { I18nParams } from '../../i18n/types';
 import type { AIContextItem, AIProviderConfig } from '../../types';
+import { isLocalCLISubscriptionProvider } from '../../utils/aiProviderPresets';
 
 export type AIChatReadinessActionKey = 'open-settings' | 'reload-models';
 
@@ -74,11 +75,16 @@ const getProviderHost = (baseUrl: string): string => {
 const hasProviderSecret = (provider: AIProviderConfig): boolean =>
   provider.hasSecret ?? Boolean(provider.secretRef || provider.apiKey);
 
+const isLocalCLIProvider = (provider: AIProviderConfig): boolean =>
+  isLocalCLISubscriptionProvider(provider);
+
 const isBaseURLOptionalProvider = (provider: AIProviderConfig): boolean =>
-  provider.type === 'custom' && trimText(provider.apiFormat) === 'codebuddy-cli';
+  isLocalCLIProvider(provider)
+  || (provider.type === 'custom' && trimText(provider.apiFormat) === 'codebuddy-cli');
 
 const isModelOptionalProvider = (provider: AIProviderConfig): boolean =>
-  provider.type === 'custom' && ['codebuddy-cli', 'cursor-agent'].includes(trimText(provider.apiFormat));
+  isLocalCLIProvider(provider)
+  || (provider.type === 'custom' && ['codebuddy-cli', 'cursor-agent'].includes(trimText(provider.apiFormat)));
 
 const getSelectedProvider = (params: {
   providers?: AIProviderConfig[];
@@ -164,7 +170,7 @@ export const buildAIChatReadinessSnapshot = (params: {
   }
 
   const issues: AIChatReadinessIssue[] = [];
-  if (!hasProviderSecret(activeProvider)) {
+  if (!isLocalCLIProvider(activeProvider) && !hasProviderSecret(activeProvider)) {
     issues.push('missing_secret');
   }
   if (!isBaseURLOptionalProvider(activeProvider) && !trimText(activeProvider.baseUrl)) {

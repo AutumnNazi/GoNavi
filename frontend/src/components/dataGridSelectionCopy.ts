@@ -3,6 +3,16 @@ export interface SelectedGridCell {
   colName: string;
 }
 
+export const canSelectGridCellForClipboard = ({
+  canModifyData,
+  isDisplayedColumn,
+  isWritableColumn,
+}: {
+  canModifyData: boolean;
+  isDisplayedColumn: boolean;
+  isWritableColumn: boolean;
+}): boolean => isDisplayedColumn && (!canModifyData || isWritableColumn);
+
 const normalizeClipboardCellValue = (value: unknown): string => {
   if (value === null || value === undefined) {
     return 'NULL';

@@ -3,6 +3,7 @@ package jvm
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -16,6 +17,8 @@ const (
 	defaultMonitoringEventLimit = 20
 	defaultMonitoringInterval   = 2 * time.Second
 	maxMonitoringSampleFailures = 3
+	defaultStoppedSessionTTL    = 30 * time.Minute
+	defaultMaxStoppedSessions   = 64
 )
 
 const (
@@ -31,10 +34,14 @@ const (
 var monitoringProviderFactory = NewProvider
 
 type monitoringManager struct {
-	mu       sync.Mutex
-	limit    int
-	interval time.Duration
-	sessions map[string]*monitoringSession
+	mu                 sync.Mutex
+	limit              int
+	interval           time.Duration
+	stoppedSessionTTL  time.Duration
+	maxStoppedSessions int
+	now                func() time.Time
+	shutdown           bool
+	sessions           map[string]*monitoringSession
 }
 
 type monitoringSession struct {
@@ -50,6 +57,7 @@ type monitoringSession struct {
 	providerWarnings []string
 	cancel           context.CancelFunc
 	generation       int64
+	lastTouched      time.Time
 }
 
 func newMonitoringManagerForTest(limit int) *monitoringManager {
@@ -65,9 +73,12 @@ func newMonitoringManager(limit int, interval time.Duration) *monitoringManager 
 		limit = defaultMonitoringPointLimit
 	}
 	return &monitoringManager{
-		limit:    limit,
-		interval: interval,
-		sessions: make(map[string]*monitoringSession),
+		limit:              limit,
+		interval:           interval,
+		stoppedSessionTTL:  defaultStoppedSessionTTL,
+		maxStoppedSessions: defaultMaxStoppedSessions,
+		now:                time.Now,
+		sessions:           make(map[string]*monitoringSession),
 	}
 }
 
@@ -84,6 +95,7 @@ func (m *monitoringManager) ensureSession(connectionID string, providerMode stri
 		connectionID: connectionID,
 		providerMode: providerMode,
 		limit:        m.limit,
+		lastTouched:  m.currentTime(),
 	}
 	m.sessions[key] = session
 	return session
@@ -96,7 +108,6 @@ func (m *monitoringManager) Start(ctx context.Context, raw connection.Connection
 	}
 
 	connectionID := resolveMonitoringConnectionID(cfg)
-	session := m.ensureSession(connectionID, providerMode)
 
 	provider, err := monitoringProviderFactory(providerMode)
 	if err != nil {
@@ -113,16 +124,43 @@ func (m *monitoringManager) Start(ctx context.Context, raw connection.Connection
 		}
 	}
 
-	generation := session.reset(connectionID, providerMode)
+	now := m.currentTime()
+	session := &monitoringSession{
+		connectionID: connectionID,
+		providerMode: providerMode,
+		limit:        m.limit,
+		lastTouched:  now,
+	}
+	generation := session.resetAt(connectionID, providerMode, now)
 	if err := m.sampleOnce(ctx, monitoringProvider, cfg, session, generation); err != nil {
-		session.markStopped(generation)
+		session.markStoppedAt(generation, m.currentTime())
 		return MonitoringSessionSnapshot{}, err
 	}
 
-	session.markRunning(generation)
+	session.markRunningAt(generation, m.currentTime())
+	var loopCtx context.Context
 	if m.interval > 0 {
-		loopCtx, cancel := context.WithCancel(context.Background())
+		var cancel context.CancelFunc
+		loopCtx, cancel = context.WithCancel(context.Background())
 		session.setCancel(cancel)
+	}
+
+	key := m.sessionKey(connectionID, providerMode)
+	m.mu.Lock()
+	if m.shutdown {
+		m.mu.Unlock()
+		session.stopAt(m.currentTime())
+		return MonitoringSessionSnapshot{}, fmt.Errorf("JVM monitoring manager is shut down")
+	}
+	previous := m.sessions[key]
+	m.sessions[key] = session
+	m.pruneStoppedSessionsLocked(m.currentTime())
+	m.mu.Unlock()
+
+	if previous != nil && previous != session {
+		previous.stopAt(m.currentTime())
+	}
+	if loopCtx != nil {
 		go m.runSampler(loopCtx, monitoringProvider, cfg, session, generation)
 	}
 
@@ -137,18 +175,92 @@ func (m *monitoringManager) Stop(connectionID string, providerMode string) error
 		return monitoringSessionNotFoundError(connectionID, providerMode)
 	}
 
-	session.stop()
+	session.stopAt(m.currentTime())
+	m.pruneStoppedSessions(m.currentTime())
 	return nil
 }
 
 func (m *monitoringManager) GetHistory(connectionID string, providerMode string) (MonitoringSessionSnapshot, error) {
+	now := m.currentTime()
 	m.mu.Lock()
+	m.pruneStoppedSessionsLocked(now)
 	session, ok := m.sessions[m.sessionKey(connectionID, providerMode)]
 	m.mu.Unlock()
 	if !ok {
 		return MonitoringSessionSnapshot{}, monitoringSessionNotFoundError(connectionID, providerMode)
 	}
-	return session.snapshot(), nil
+	snapshot := session.snapshotAndTouch(now)
+	return snapshot, nil
+}
+
+// Shutdown stops every sampler and releases all retained histories.
+func (m *monitoringManager) Shutdown() {
+	m.mu.Lock()
+	if m.shutdown {
+		m.mu.Unlock()
+		return
+	}
+	m.shutdown = true
+	sessions := make([]*monitoringSession, 0, len(m.sessions))
+	for _, session := range m.sessions {
+		sessions = append(sessions, session)
+	}
+	m.sessions = make(map[string]*monitoringSession)
+	m.mu.Unlock()
+
+	now := m.currentTime()
+	for _, session := range sessions {
+		session.stopAt(now)
+	}
+}
+
+func (m *monitoringManager) currentTime() time.Time {
+	if m.now != nil {
+		return m.now()
+	}
+	return time.Now()
+}
+
+func (m *monitoringManager) pruneStoppedSessions(now time.Time) {
+	m.mu.Lock()
+	m.pruneStoppedSessionsLocked(now)
+	m.mu.Unlock()
+}
+
+func (m *monitoringManager) pruneStoppedSessionsLocked(now time.Time) {
+	type candidate struct {
+		key         string
+		session     *monitoringSession
+		lastTouched time.Time
+	}
+
+	retained := make([]candidate, 0, len(m.sessions))
+	for key, session := range m.sessions {
+		running, lastTouched := session.retentionState()
+		if running {
+			continue
+		}
+		if m.stoppedSessionTTL > 0 && !lastTouched.IsZero() && !now.Before(lastTouched.Add(m.stoppedSessionTTL)) {
+			delete(m.sessions, key)
+			continue
+		}
+		retained = append(retained, candidate{key: key, session: session, lastTouched: lastTouched})
+	}
+
+	if m.maxStoppedSessions <= 0 || len(retained) <= m.maxStoppedSessions {
+		return
+	}
+	sort.Slice(retained, func(i, j int) bool {
+		if retained[i].lastTouched.Equal(retained[j].lastTouched) {
+			return retained[i].key < retained[j].key
+		}
+		return retained[i].lastTouched.Before(retained[j].lastTouched)
+	})
+	for _, item := range retained[:len(retained)-m.maxStoppedSessions] {
+		if m.sessions[item.key] == item.session {
+			delete(m.sessions, item.key)
+		}
+	}
 }
 
 func monitoringSessionNotFoundError(connectionID string, providerMode string) error {
@@ -183,7 +295,9 @@ func (m *monitoringManager) runSampler(ctx context.Context, provider MonitoringC
 	for {
 		select {
 		case <-ctx.Done():
-			session.markStopped(generation)
+			if session.markStoppedAt(generation, m.currentTime()) {
+				m.pruneStoppedSessions(m.currentTime())
+			}
 			return
 		case <-ticker.C:
 			if err := m.sampleOnce(ctx, provider, cfg, session, generation); err != nil {
@@ -191,7 +305,9 @@ func (m *monitoringManager) runSampler(ctx context.Context, provider MonitoringC
 				session.appendWarning(err.Error())
 				if consecutiveFailures >= maxMonitoringSampleFailures {
 					session.appendWarning(FormatMonitoringSampleAutoStoppedWarning(consecutiveFailures))
-					session.markStopped(generation)
+					if session.markStoppedAt(generation, m.currentTime()) {
+						m.pruneStoppedSessions(m.currentTime())
+					}
 					return
 				}
 				continue
@@ -217,7 +333,17 @@ func (m *monitoringManager) sampleOnce(ctx context.Context, provider MonitoringC
 func (s *monitoringSession) snapshot() MonitoringSessionSnapshot {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.snapshotLocked()
+}
 
+func (s *monitoringSession) snapshotAndTouch(now time.Time) MonitoringSessionSnapshot {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.lastTouched = now
+	return s.snapshotLocked()
+}
+
+func (s *monitoringSession) snapshotLocked() MonitoringSessionSnapshot {
 	return MonitoringSessionSnapshot{
 		ConnectionID:     s.connectionID,
 		ProviderMode:     s.providerMode,
@@ -312,6 +438,10 @@ func (s *monitoringSession) appendWarning(warning string) {
 }
 
 func (s *monitoringSession) reset(connectionID string, providerMode string) int64 {
+	return s.resetAt(connectionID, providerMode, time.Now())
+}
+
+func (s *monitoringSession) resetAt(connectionID string, providerMode string, now time.Time) int64 {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -328,6 +458,7 @@ func (s *monitoringSession) reset(connectionID string, providerMode string) int6
 	s.availableMetrics = nil
 	s.missingMetrics = nil
 	s.providerWarnings = nil
+	s.lastTouched = now
 	return s.generation
 }
 
@@ -338,35 +469,57 @@ func (s *monitoringSession) setCancel(cancel context.CancelFunc) {
 }
 
 func (s *monitoringSession) markRunning(generation int64) {
+	s.markRunningAt(generation, time.Now())
+}
+
+func (s *monitoringSession) markRunningAt(generation int64, now time.Time) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if generation != s.generation {
 		return
 	}
 	s.running = true
+	s.lastTouched = now
 }
 
-func (s *monitoringSession) markStopped(generation int64) {
+func (s *monitoringSession) markStopped(generation int64) bool {
+	return s.markStoppedAt(generation, time.Now())
+}
+
+func (s *monitoringSession) markStoppedAt(generation int64, now time.Time) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if generation != s.generation {
-		return
+		return false
 	}
 	s.running = false
 	s.cancel = nil
+	s.lastTouched = now
+	return true
 }
 
 func (s *monitoringSession) stop() {
+	s.stopAt(time.Now())
+}
+
+func (s *monitoringSession) stopAt(now time.Time) {
 	s.mu.Lock()
 	cancel := s.cancel
 	s.cancel = nil
 	s.generation++
 	s.running = false
+	s.lastTouched = now
 	s.mu.Unlock()
 
 	if cancel != nil {
 		cancel()
 	}
+}
+
+func (s *monitoringSession) retentionState() (bool, time.Time) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.running, s.lastTouched
 }
 
 func resolveMonitoringConnectionID(cfg connection.ConnectionConfig) string {

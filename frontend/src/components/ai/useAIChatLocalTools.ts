@@ -13,6 +13,7 @@ import type {
 } from '../../types';
 import { compressContextIfNeeded, getDynamicMaxContextChars } from '../../utils/aiChatRuntime';
 import { toAIRequestMessage } from '../../utils/aiMessagePayload';
+import { resolveLiveQueryTabs } from '../../utils/liveQueryTabs';
 import type { AIChatToolDefinition } from '../../utils/aiToolRegistry';
 import { dispatchAIChatPayload } from './aiChatPayloadDispatch';
 import type { AIChatAttachmentTranslator } from './aiChatAttachments';
@@ -128,7 +129,7 @@ export const useAIChatLocalTools = ({
         aiChatHistory: currentState.aiChatHistory,
         aiChatSessions: currentState.aiChatSessions,
         activeSessionId: sid,
-        tabs: currentState.tabs,
+        tabs: resolveLiveQueryTabs(currentState.tabs),
         activeTabId: currentState.activeTabId,
         mcpTools,
         toolContextMap: toolContextMapRef.current,

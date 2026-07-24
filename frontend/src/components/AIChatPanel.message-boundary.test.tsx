@@ -26,7 +26,7 @@ describe('AIChatPanel merge resolution', () => {
   it('keeps dev split architecture while retaining render-boundary isolation', () => {
     expect(source).toContain("import AIChatPanelConversationView from './ai/AIChatPanelConversationView';");
     expect(source).toContain("import { useAIChatRuntimeResources } from './ai/useAIChatRuntimeResources';");
-    expect(source).toContain("import { useAIChatStreamSubscription } from './ai/useAIChatStreamSubscription';");
+    expect(source).toMatch(/import\s*{[^}]*useAIChatStreamSubscription[^}]*}\s*from '\.\/ai\/useAIChatStreamSubscription';/s);
     expect(source).toContain("import { useAIChatLocalTools } from './ai/useAIChatLocalTools';");
 
     expect(boundarySource).toContain('class AIMessageRenderBoundary extends React.Component');
@@ -96,5 +96,25 @@ describe('AIChatPanel merge resolution', () => {
     expect(derivedStateSource).toContain("translate('ai_chat.panel.insight.status.recent_body', { count: recentLogs.length })");
     expect(derivedStateSource).toContain("translate('ai_chat.panel.insight.write.detected_title', { count: writeCount })");
     expect(source).not.toContain("|| '新对话'");
+  });
+
+  it('waits for the active producer before manual stop unlocks session actions', () => {
+    const handleStopSource = source.match(
+      /const handleStop = useCallback[\s\S]*?const handleCreateSession = useCallback/,
+    )?.[0] || '';
+    expect(handleStopSource).toContain('prepareAIChatStreamForTerminalAction({');
+    expect(handleStopSource).not.toContain('Service.AIChatCancel(sid)');
+    expect(handleStopSource).not.toContain('setSending(false);');
+  });
+
+  it('locks producer and pointer interactions during a native terminal handoff', () => {
+    const retrySource = source.match(
+      /const handleRetryMessage = useCallback[\s\S]*?useAIChatStreamSubscription\(/,
+    )?.[0] || '';
+    expect(retrySource).toContain('if (sending || interactionDisabled) return;');
+    expect(retrySource).toMatch(/\[\s*sid,\s*sending,\s*interactionDisabled,/);
+    expect(source).toContain('if ((!text && draftAttachments.length === 0) || sending || interactionDisabled) return;');
+    expect(source).toContain('aria-busy={interactionDisabled}');
+    expect(source).toContain("pointerEvents: interactionDisabled ? 'none' : undefined");
   });
 });

@@ -79,6 +79,19 @@ describe('sqlDialect', () => {
     expect(values(resolveColumnTypeOptions('duckdb'))).toContain('STRUCT');
   });
 
+  it('offers every MySQL spatial column type', () => {
+    expect(values(resolveColumnTypeOptions('mysql'))).toEqual(expect.arrayContaining([
+      'geometry',
+      'point',
+      'linestring',
+      'polygon',
+      'multipoint',
+      'multilinestring',
+      'multipolygon',
+      'geometrycollection',
+    ]));
+  });
+
   it('resolves Apache IoTDB completion keywords and functions independently', () => {
     expect(resolveSqlKeywords('iotdb')).toEqual(expect.arrayContaining(['ALIGN BY DEVICE', 'SHOW TIMESERIES', 'WITH DATATYPE']));
     expect(names(resolveSqlFunctions('iotdb'))).toEqual(expect.arrayContaining(['DATE_BIN', 'DIFF', 'TOP_K']));

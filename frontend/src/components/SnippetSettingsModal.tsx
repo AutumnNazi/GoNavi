@@ -54,36 +54,80 @@ export default function SnippetSettingsModal({
   const [isCreating, setIsCreating] = useState(false);
 
   const shellStyle = useMemo(
-    () => ({
-      background: overlayTheme.shellBg,
-      border: overlayTheme.shellBorder,
-      boxShadow: overlayTheme.shellShadow,
-      backdropFilter: overlayTheme.shellBackdropFilter,
-    }),
-    [overlayTheme],
+    () => (
+      embedded
+        ? {
+            background: 'transparent',
+            border: 'none',
+            boxShadow: 'none',
+            backdropFilter: 'none',
+          }
+        : {
+            background: overlayTheme.shellBg,
+            border: overlayTheme.shellBorder,
+            boxShadow: overlayTheme.shellShadow,
+            backdropFilter: overlayTheme.shellBackdropFilter,
+          }
+    ),
+    [embedded, overlayTheme],
   );
 
   const panelStyle = useMemo(
-    () => ({
-      padding: 16,
-      borderRadius: 14,
-      border: overlayTheme.sectionBorder,
-      background: overlayTheme.sectionBg,
-    }),
-    [overlayTheme],
+    () => (
+      embedded
+        ? {
+            padding: '0 4px 0 16px',
+            borderRadius: 0,
+            border: 'none',
+            background: 'transparent',
+          }
+        : {
+            padding: 16,
+            borderRadius: 14,
+            border: overlayTheme.sectionBorder,
+            background: overlayTheme.sectionBg,
+          }
+    ),
+    [embedded, overlayTheme],
   );
 
   const textColor = darkMode ? 'rgba(255,255,255,0.85)' : 'rgba(16,24,40,0.9)';
   const mutedColor = darkMode ? 'rgba(255,255,255,0.5)' : 'rgba(16,24,40,0.55)';
-  const selectedBg = darkMode ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.04)';
+  const selectedBg = embedded
+    ? overlayTheme.selectedBg
+    : darkMode
+      ? 'rgba(255,255,255,0.08)'
+      : 'rgba(0,0,0,0.04)';
+  const selectedRailColor = embedded ? overlayTheme.selectedText : overlayTheme.iconBg;
+  const fieldLabelStyle = {
+    fontSize: 12,
+    lineHeight: 1.4,
+    fontWeight: embedded ? 600 : 400,
+    color: embedded ? textColor : mutedColor,
+    marginBottom: embedded ? 6 : 4,
+  };
   const newSnippetAction = t('snippet_settings.action.new');
   const snippetModalBodyMaxHeight = 'calc(100vh - 128px)';
   const snippetModalEmbeddedBodyMaxHeight = '100%';
   const snippetSyntaxReferenceMaxHeight = 'min(220px, 32vh)';
 
+  const localizeBuiltinSnippet = useCallback((snippet: SqlSnippet): SqlSnippet => {
+    if (!snippet.isBuiltin || !snippet.id.startsWith('builtin-')) {
+      return snippet;
+    }
+    const key = snippet.id.slice('builtin-'.length);
+    return {
+      ...snippet,
+      name: t(`sql_snippets.builtin.${key}.name`),
+      description: t(`sql_snippets.builtin.${key}.description`),
+    };
+  }, [t]);
+
   const sortedSnippets = useMemo(
-    () => [...sqlSnippets].sort((a, b) => a.prefix.localeCompare(b.prefix)),
-    [sqlSnippets],
+    () => sqlSnippets
+      .map(localizeBuiltinSnippet)
+      .sort((a, b) => a.prefix.localeCompare(b.prefix)),
+    [localizeBuiltinSnippet, sqlSnippets],
   );
 
   const selectedSnippet = useMemo(
@@ -163,11 +207,12 @@ export default function SnippetSettingsModal({
       resetBuiltinSqlSnippet(id);
       const original = BUILTIN_SNIPPET_MAP[id];
       if (original && selectedId === id) {
-        setDraft({ ...original, syntaxHelp: original.syntaxHelp || '' });
+        const localized = localizeBuiltinSnippet(original);
+        setDraft({ ...localized, syntaxHelp: localized.syntaxHelp || '' });
       }
       void message.success(t('snippet_settings.message.reset_default'));
     },
-    [resetBuiltinSqlSnippet, selectedId, t],
+    [localizeBuiltinSnippet, resetBuiltinSqlSnippet, selectedId, t],
   );
 
   const syntaxHelpItems = useMemo(
@@ -186,7 +231,7 @@ export default function SnippetSettingsModal({
             style={{
               fontSize: 12,
               resize: 'none',
-              fontFamily: 'var(--gn-font-mono)',
+              fontFamily: embedded ? 'var(--gn-font-sans)' : 'var(--gn-font-mono)',
             }}
           />
         ),
@@ -206,7 +251,7 @@ export default function SnippetSettingsModal({
               fontSize: 12,
               lineHeight: 1.8,
               color: mutedColor,
-              fontFamily: 'var(--gn-font-mono)',
+              fontFamily: embedded ? 'var(--gn-font-sans)' : 'var(--gn-font-mono)',
             }}
           >
             <div>{t('snippet_settings.syntax_reference.first_tabstop')}</div>
@@ -226,10 +271,72 @@ export default function SnippetSettingsModal({
         ),
       },
     ],
-    [draft.syntaxHelp, mutedColor, snippetSyntaxReferenceMaxHeight, t, textColor],
+    [draft.syntaxHelp, embedded, mutedColor, snippetSyntaxReferenceMaxHeight, t, textColor],
   );
 
   const showEditor = isCreating || selectedSnippet;
+
+  const resetAction = showEditor && draft.isBuiltin && draft.createdAt ? (
+    <Popconfirm
+      title={t('snippet_settings.confirm.reset.title')}
+      description={t('snippet_settings.confirm.reset.description')}
+      onConfirm={() => handleReset(draft.id)}
+    >
+      <Button
+        icon={<UndoOutlined />}
+        size="middle"
+        style={{ minWidth: embedded ? 96 : 104, marginRight: embedded ? 'auto' : undefined }}
+      >
+        {t('snippet_settings.action.reset')}
+      </Button>
+    </Popconfirm>
+  ) : null;
+
+  const deleteAction = showEditor && !draft.isBuiltin && !isCreating ? (
+    <Popconfirm
+      title={t('snippet_settings.confirm.delete.title')}
+      description={t('snippet_settings.confirm.delete.description')}
+      onConfirm={() => handleDelete(draft.id)}
+    >
+      <Button
+        danger
+        icon={<DeleteOutlined />}
+        size="middle"
+        style={{ minWidth: 84, marginRight: embedded ? 'auto' : undefined }}
+      >
+        {t('snippet_settings.action.delete')}
+      </Button>
+    </Popconfirm>
+  ) : null;
+
+  const saveAction = showEditor ? (
+    <Button
+      type="primary"
+      icon={<SaveOutlined />}
+      size="middle"
+      style={{ minWidth: 84 }}
+      onClick={handleSave}
+    >
+      {t('snippet_settings.action.save')}
+    </Button>
+  ) : null;
+
+  const closeAction = (
+    <Button
+      type={embedded && !showEditor ? 'primary' : undefined}
+      size="middle"
+      style={{ minWidth: 84 }}
+      onClick={onClose}
+    >
+      {t('snippet_settings.action.close')}
+    </Button>
+  );
+
+  const backAction = onBack ? (
+    <Button size="middle" style={{ minWidth: embedded ? 96 : 104 }} onClick={onBack}>
+      {t(embedded ? 'common.back_to_settings' : 'common.back_to_previous')}
+    </Button>
+  ) : null;
 
   return (
     <Modal
@@ -282,57 +389,118 @@ export default function SnippetSettingsModal({
         data-sql-snippet-content-region="true"
         style={{
           display: 'flex',
-          gap: 16,
+          gap: embedded ? 0 : 16,
           flex: embedded ? '1 1 0' : '1 1 420px',
           minHeight: 0,
           overflow: 'hidden',
+          borderTop: embedded ? overlayTheme.sectionBorder : undefined,
+          fontFamily: embedded ? 'var(--gn-font-sans)' : undefined,
         }}
       >
         {/* Left: snippet list */}
         <div
+          data-sql-snippet-master-panel="true"
           style={{
-            width: 220,
+            width: embedded ? 196 : 220,
             flexShrink: 0,
             minHeight: 0,
-            borderRadius: 14,
-            border: overlayTheme.sectionBorder,
-            background: overlayTheme.sectionBg,
+            borderRadius: embedded ? 0 : 14,
+            border: embedded ? 'none' : overlayTheme.sectionBorder,
+            borderRight: embedded ? overlayTheme.sectionBorder : undefined,
+            background: embedded ? 'transparent' : overlayTheme.sectionBg,
             display: 'flex',
             flexDirection: 'column',
             overflow: 'hidden',
           }}
         >
-          <div style={{ padding: '8px 12px 4px', fontSize: 12, color: mutedColor, fontWeight: 600 }}>
+          <div
+            style={{
+              padding: embedded ? '10px 10px 8px' : '8px 12px 4px',
+              fontSize: 12,
+              lineHeight: 1.4,
+              color: embedded ? textColor : mutedColor,
+              fontWeight: 600,
+              borderBottom: embedded ? overlayTheme.sectionBorder : undefined,
+            }}
+          >
             {t('snippet_settings.list.title')}
           </div>
-          <div style={{ flex: 1, overflowY: 'auto' }}>
+          <div role={embedded ? 'listbox' : undefined} style={{ flex: 1, overflowY: 'auto' }}>
             <List
               size="small"
               dataSource={sortedSnippets}
               renderItem={(snippet) => (
                 <List.Item
                   onClick={() => handleSelect(snippet)}
+                  onKeyDown={embedded ? (event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault();
+                      handleSelect(snippet);
+                      return;
+                    }
+                    if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
+                      event.preventDefault();
+                      const options = Array.from(
+                        event.currentTarget.parentElement?.querySelectorAll<HTMLElement>('[role="option"]') ?? [],
+                      );
+                      const currentIndex = options.indexOf(event.currentTarget);
+                      const nextIndex = event.key === 'Home'
+                        ? 0
+                        : event.key === 'End'
+                          ? options.length - 1
+                          : event.key === 'ArrowDown'
+                            ? Math.min(options.length - 1, currentIndex + 1)
+                            : Math.max(0, currentIndex - 1);
+                      const nextSnippet = sortedSnippets[nextIndex];
+                      if (nextSnippet) {
+                        handleSelect(nextSnippet);
+                        options[nextIndex]?.focus();
+                      }
+                    }
+                  } : undefined}
+                  role={embedded ? 'option' : undefined}
+                  aria-selected={embedded ? selectedId === snippet.id : undefined}
+                  tabIndex={embedded
+                    ? selectedId === snippet.id || (!selectedId && sortedSnippets[0]?.id === snippet.id) ? 0 : -1
+                    : undefined}
                   style={{
                     cursor: 'pointer',
-                    padding: '6px 12px',
+                    minHeight: embedded ? 40 : undefined,
+                    padding: embedded ? '7px 10px' : '6px 12px',
                     background: selectedId === snippet.id ? selectedBg : 'transparent',
                     borderLeft:
                       selectedId === snippet.id
-                        ? `3px solid ${overlayTheme.iconBg}`
+                        ? `3px solid ${selectedRailColor}`
                         : '3px solid transparent',
-                    transition: 'all 0.15s',
+                    borderBottom: embedded ? overlayTheme.sectionBorder : undefined,
+                    transition: 'background-color 0.15s ease, color 0.15s ease',
                   }}
                 >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, overflow: 'hidden' }}>
-                    <Typography.Text
-                      code
-                      style={{ fontSize: 12, flexShrink: 0, color: textColor }}
-                    >
-                      {snippet.prefix}
-                    </Typography.Text>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0, width: '100%', overflow: 'hidden' }}>
+                    {embedded ? (
+                      <code
+                        style={{
+                          flexShrink: 0,
+                          color: selectedId === snippet.id ? overlayTheme.selectedText : textColor,
+                          fontFamily: 'var(--gn-font-mono)',
+                          fontSize: 12,
+                          fontWeight: 600,
+                        }}
+                      >
+                        {snippet.prefix}
+                      </code>
+                    ) : (
+                      <Typography.Text
+                        code
+                        style={{ fontSize: 12, flexShrink: 0, color: textColor }}
+                      >
+                        {snippet.prefix}
+                      </Typography.Text>
+                    )}
                     <span
                       style={{
-                        fontSize: 12,
+                        minWidth: 0,
+                        fontSize: embedded ? 13 : 12,
                         color: textColor,
                         overflow: 'hidden',
                         textOverflow: 'ellipsis',
@@ -349,8 +517,15 @@ export default function SnippetSettingsModal({
                           padding: '0 4px',
                           margin: 0,
                           borderRadius: 4,
+                          ...(embedded
+                            ? {
+                                border: 'none',
+                                background: overlayTheme.selectedBg,
+                                color: overlayTheme.selectedText,
+                              }
+                            : {}),
                         }}
-                        color="blue"
+                        color={embedded ? undefined : 'blue'}
                       >
                         {t('snippet_settings.tag.builtin')}
                       </Tag>
@@ -360,8 +535,20 @@ export default function SnippetSettingsModal({
               )}
             />
           </div>
-          <div style={{ padding: 8 }}>
-            <Button type="dashed" icon={<PlusOutlined />} block size="small" onClick={handleNew}>
+          <div
+            style={{
+              padding: embedded ? '8px 8px 0' : 8,
+              borderTop: embedded ? overlayTheme.sectionBorder : undefined,
+            }}
+          >
+            <Button
+              type={embedded ? 'text' : 'dashed'}
+              icon={<PlusOutlined />}
+              block
+              size={embedded ? 'middle' : 'small'}
+              style={embedded ? { justifyContent: 'flex-start', borderRadius: 6 } : undefined}
+              onClick={handleNew}
+            >
               {newSnippetAction}
             </Button>
           </div>
@@ -380,13 +567,13 @@ export default function SnippetSettingsModal({
                 overflowY: 'auto',
                 overflowX: 'hidden',
                 overscrollBehavior: 'contain',
-                paddingRight: 12,
+                paddingRight: embedded ? 4 : 12,
               }}
               data-sql-snippet-editor-panel-scroll-region="true"
             >
-              <div style={{ display: 'flex', gap: 12, flex: '0 0 auto' }}>
+              <div style={{ display: 'flex', gap: embedded ? 16 : 12, flex: '0 0 auto' }}>
                 <div style={{ flex: 0.4 }}>
-                  <div style={{ fontSize: 12, color: mutedColor, marginBottom: 4 }}>{t('snippet_settings.field.prefix.label')}</div>
+                  <div style={fieldLabelStyle}>{t('snippet_settings.field.prefix.label')}</div>
                   <Input
                     value={draft.prefix}
                     onChange={(e) =>
@@ -394,29 +581,29 @@ export default function SnippetSettingsModal({
                     }
                     placeholder={t('snippet_settings.field.prefix.placeholder')}
                     maxLength={20}
-                    size="small"
+                    size={embedded ? 'middle' : 'small'}
                   />
                 </div>
                 <div style={{ flex: 0.6 }}>
-                  <div style={{ fontSize: 12, color: mutedColor, marginBottom: 4 }}>{t('snippet_settings.field.name.label')}</div>
+                  <div style={fieldLabelStyle}>{t('snippet_settings.field.name.label')}</div>
                   <Input
                     value={draft.name}
                     onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))}
                     placeholder={t('snippet_settings.field.name.placeholder')}
                     maxLength={60}
-                    size="small"
+                    size={embedded ? 'middle' : 'small'}
                   />
                 </div>
               </div>
 
-              <div style={{ flex: '0 0 auto', marginTop: 10 }}>
-                <div style={{ fontSize: 12, color: mutedColor, marginBottom: 4 }}>{t('snippet_settings.field.description.label')}</div>
+              <div style={{ flex: '0 0 auto', marginTop: embedded ? 14 : 10 }}>
+                <div style={fieldLabelStyle}>{t('snippet_settings.field.description.label')}</div>
                 <Input
                   value={draft.description || ''}
                   onChange={(e) => setDraft((d) => ({ ...d, description: e.target.value }))}
                   placeholder={t('snippet_settings.field.description.placeholder')}
                   maxLength={200}
-                  size="small"
+                  size={embedded ? 'middle' : 'small'}
                 />
               </div>
 
@@ -427,10 +614,10 @@ export default function SnippetSettingsModal({
                   display: 'flex',
                   flexDirection: 'column',
                   minHeight: 0,
-                  marginTop: 10,
+                  marginTop: embedded ? 14 : 10,
                 }}
               >
-                <div style={{ fontSize: 12, color: mutedColor, marginBottom: 4 }}>{t('snippet_settings.field.body.label')}</div>
+                <div style={fieldLabelStyle}>{t('snippet_settings.field.body.label')}</div>
                 <Input.TextArea
                   value={draft.body}
                   onChange={(e) => setDraft((d) => ({ ...d, body: e.target.value }))}
@@ -446,9 +633,16 @@ export default function SnippetSettingsModal({
                 />
                 <Collapse
                   size="small"
+                  ghost={embedded}
                   defaultActiveKey={['snippet-help']}
                   items={syntaxHelpItems}
-                  style={{ marginTop: 8, background: 'transparent', flex: '0 0 auto' }}
+                  style={{
+                    marginTop: embedded ? 12 : 8,
+                    background: 'transparent',
+                    borderRadius: embedded ? 0 : undefined,
+                    borderTop: embedded ? overlayTheme.sectionBorder : undefined,
+                    flex: '0 0 auto',
+                  }}
                 />
               </div>
 
@@ -474,49 +668,32 @@ export default function SnippetSettingsModal({
         style={{
           display: 'flex',
           flex: '0 0 auto',
-          gap: 10,
+          gap: embedded ? 8 : 10,
           justifyContent: 'flex-end',
           alignItems: 'center',
-          paddingTop: 8,
-          marginTop: 8,
+          paddingTop: embedded ? 12 : 8,
+          marginTop: embedded ? 0 : 8,
           borderTop: overlayTheme.sectionBorder,
+          fontFamily: embedded ? 'var(--gn-font-sans)' : undefined,
         }}
       >
-        {showEditor && draft.isBuiltin && draft.createdAt && (
-          <Popconfirm
-            title={t('snippet_settings.confirm.reset.title')}
-            description={t('snippet_settings.confirm.reset.description')}
-            onConfirm={() => handleReset(draft.id)}
-          >
-            <Button icon={<UndoOutlined />} size="middle" style={{ minWidth: 104 }}>
-              {t('snippet_settings.action.reset')}
-            </Button>
-          </Popconfirm>
+        {embedded ? (
+          <>
+            {resetAction}
+            {deleteAction}
+            {backAction}
+            {closeAction}
+            {saveAction}
+          </>
+        ) : (
+          <>
+            {resetAction}
+            {deleteAction}
+            {saveAction}
+            {closeAction}
+            {backAction}
+          </>
         )}
-        {showEditor && !draft.isBuiltin && !isCreating && (
-          <Popconfirm
-            title={t('snippet_settings.confirm.delete.title')}
-            description={t('snippet_settings.confirm.delete.description')}
-            onConfirm={() => handleDelete(draft.id)}
-          >
-            <Button danger icon={<DeleteOutlined />} size="middle" style={{ minWidth: 84 }}>
-              {t('snippet_settings.action.delete')}
-            </Button>
-          </Popconfirm>
-        )}
-        {showEditor && (
-          <Button type="primary" icon={<SaveOutlined />} size="middle" style={{ minWidth: 84 }} onClick={handleSave}>
-            {t('snippet_settings.action.save')}
-          </Button>
-        )}
-        <Button size="middle" style={{ minWidth: 84 }} onClick={onClose}>
-          {t('snippet_settings.action.close')}
-        </Button>
-        {onBack ? (
-          <Button size="middle" style={{ minWidth: 104 }} onClick={onBack}>
-            {t('common.back_to_previous')}
-          </Button>
-        ) : null}
       </div>
     </Modal>
   );

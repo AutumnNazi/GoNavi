@@ -11,7 +11,17 @@ const (
 	defaultSQLMaxIdleConns    = 1
 	defaultSQLConnMaxLifetime = 30 * time.Minute
 	defaultSQLConnMaxIdleTime = 30 * time.Second
+	// SQL Server login can be expensive. Keep its single idle connection warm
+	// until the normal lifetime rotation instead of expiring it at 30 seconds.
+	sqlServerSQLConnMaxIdleTime = defaultSQLConnMaxLifetime
 )
+
+func resolveSQLConnectionPoolMaxIdleTime(dbType string) time.Duration {
+	if strings.EqualFold(strings.TrimSpace(dbType), "sqlserver") {
+		return sqlServerSQLConnMaxIdleTime
+	}
+	return defaultSQLConnMaxIdleTime
+}
 
 func configureSQLConnectionPool(db *sql.DB, dbType string) {
 	if db == nil {
@@ -23,18 +33,18 @@ func configureSQLConnectionPool(db *sql.DB, dbType string) {
 	case "oracle", "oceanbase":
 		db.SetMaxOpenConns(defaultSQLMaxOpenConns)
 		db.SetMaxIdleConns(defaultSQLMaxIdleConns)
-		db.SetConnMaxIdleTime(defaultSQLConnMaxIdleTime)
+		db.SetConnMaxIdleTime(resolveSQLConnectionPoolMaxIdleTime(dbType))
 		db.SetConnMaxLifetime(defaultSQLConnMaxLifetime)
 		return
 	case "sqlserver":
 		db.SetMaxOpenConns(defaultSQLMaxOpenConns)
 		db.SetMaxIdleConns(defaultSQLMaxIdleConns)
-		db.SetConnMaxIdleTime(defaultSQLConnMaxIdleTime)
+		db.SetConnMaxIdleTime(resolveSQLConnectionPoolMaxIdleTime(dbType))
 		db.SetConnMaxLifetime(defaultSQLConnMaxLifetime)
 		return
 	}
 	db.SetMaxOpenConns(defaultSQLMaxOpenConns)
 	db.SetMaxIdleConns(0)
-	db.SetConnMaxIdleTime(defaultSQLConnMaxIdleTime)
+	db.SetConnMaxIdleTime(resolveSQLConnectionPoolMaxIdleTime(dbType))
 	db.SetConnMaxLifetime(defaultSQLConnMaxLifetime)
 }

@@ -1,5 +1,6 @@
 import type { ConnectionConfig } from '../types';
 import {
+  isConnectionDataImportRestricted,
   isConnectionDataEditRestricted,
   isConnectionStructureEditRestricted,
 } from './connectionReadOnly';
@@ -162,6 +163,14 @@ const COPY_INSERT_TYPES = new Set([
   'trino',
 ]);
 
+const COPY_TABLE_TYPES = new Set([
+  'mysql',
+  'goldendb',
+  'mariadb',
+  'oceanbase',
+  'postgres',
+]);
+
 const QUERY_EDITOR_DISABLED_TYPES = new Set(['redis']);
 const EXPLAIN_DIAGNOSIS_TYPES = new Set([
   'mysql',
@@ -194,6 +203,7 @@ export type DataSourceCapabilities = {
   supportsExplainDiagnosis: boolean;
   supportsSqlQueryExport: boolean;
   supportsCopyInsert: boolean;
+  supportsCopyTable: boolean;
   supportsCreateDatabase: boolean;
   supportsRenameDatabase: boolean;
   supportsDropDatabase: boolean;
@@ -252,7 +262,9 @@ const DROP_DATABASE_TYPES = new Set([
 
 export const getDataSourceCapabilities = (config: ConnectionLike): DataSourceCapabilities => {
   const type = resolveDataSourceType(config);
+  const customConnection = normalizeDataSourceToken(String(config?.type || '')) === 'custom';
   const dataEditRestricted = isConnectionDataEditRestricted(config);
+  const dataImportRestricted = isConnectionDataImportRestricted(config);
   const structureEditRestricted = isConnectionStructureEditRestricted(config);
   return {
     type,
@@ -260,6 +272,11 @@ export const getDataSourceCapabilities = (config: ConnectionLike): DataSourceCap
     supportsExplainDiagnosis: EXPLAIN_DIAGNOSIS_TYPES.has(type),
     supportsSqlQueryExport: SQL_QUERY_EXPORT_TYPES.has(type),
     supportsCopyInsert: COPY_INSERT_TYPES.has(type),
+    supportsCopyTable:
+      !customConnection &&
+      !dataImportRestricted &&
+      !structureEditRestricted &&
+      COPY_TABLE_TYPES.has(type),
     supportsCreateDatabase: !structureEditRestricted && CREATE_DATABASE_TYPES.has(type),
     supportsRenameDatabase: !structureEditRestricted && RENAME_DATABASE_TYPES.has(type),
     supportsDropDatabase: !structureEditRestricted && DROP_DATABASE_TYPES.has(type),

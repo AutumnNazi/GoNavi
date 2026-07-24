@@ -138,6 +138,7 @@ mongodb:internal/db/mongodb_impl_v1.go|\
 tdengine:internal/db/tdengine_impl.go|\
 iotdb:internal/db/iotdb_impl.go|\
 clickhouse:internal/db/clickhouse_impl.go|\
+clickhouse:internal/db/clickhouse_legacy_http.go|\
 elasticsearch:internal/db/elasticsearch_impl.go|\
 elasticsearch:internal/db/elasticsearch_helpers.go|\
 trino:internal/db/trino_impl.go)
@@ -272,7 +273,7 @@ fi
 
 fingerprint_driver() {
   local driver="$1"
-  local build_driver tag cgo_enabled tmp file identity file_hash revision
+  local build_driver tag cgo_enabled tmp dependency_files file identity file_hash revision
   build_driver="$(build_driver_name "$driver")"
   tag="$(driver_build_tags "$driver")"
   cgo_enabled=0
@@ -287,6 +288,17 @@ fingerprint_driver() {
     printf 'goos=%s\n' "$goos"
     printf 'goarch=%s\n' "$goarch"
   } >"$tmp"
+
+  dependency_files="$(mktemp "${TMPDIR:-/tmp}/gonavi-agent-dependencies.XXXXXX")"
+  if ! CGO_ENABLED="$cgo_enabled" GOOS="$goos" GOARCH="$goarch" GOTOOLCHAIN=auto \
+    go list -deps \
+      -tags "$tag" \
+      -f '{{if not .Standard}}{{range .GoFiles}}{{$.Dir}}/{{.}}{{"\n"}}{{end}}{{range .CgoFiles}}{{$.Dir}}/{{.}}{{"\n"}}{{end}}{{end}}' \
+      ./cmd/optional-driver-agent | sort -u >"$dependency_files"; then
+    rm -f "$tmp" "$dependency_files"
+    echo "driver-agent dependency enumeration failed: $driver ($goos/$goarch)" >&2
+    return 1
+  fi
 
   while IFS= read -r file; do
     file="${file//\\//}"
@@ -314,13 +326,8 @@ fingerprint_driver() {
     fi
     file_hash="$(hash_file "$file")"
     printf '%s  %s\n' "$file_hash" "$identity"
-  done < <(
-    CGO_ENABLED="$cgo_enabled" GOOS="$goos" GOARCH="$goarch" GOTOOLCHAIN=auto \
-      go list -deps \
-        -tags "$tag" \
-        -f '{{if not .Standard}}{{range .GoFiles}}{{$.Dir}}/{{.}}{{"\n"}}{{end}}{{range .CgoFiles}}{{$.Dir}}/{{.}}{{"\n"}}{{end}}{{end}}' \
-        ./cmd/optional-driver-agent | sort -u
-  ) >>"$tmp"
+  done <"$dependency_files" >>"$tmp"
+  rm -f "$dependency_files"
 
   revision="$(hash_file "$tmp" | cut -c1-16)"
   rm -f "$tmp"

@@ -13,19 +13,20 @@ import (
 )
 
 const (
-	aiConfigSchemaVersion = 4
+	aiConfigSchemaVersion = 5
 	aiConfigFileName      = "ai_config.json"
 )
 
 type aiConfig struct {
-	SchemaVersion      int                   `json:"schemaVersion,omitempty"`
-	Providers          []ai.ProviderConfig   `json:"providers"`
-	ActiveProvider     string                `json:"activeProvider"`
-	SafetyLevel        string                `json:"safetyLevel"`
-	ContextLevel       string                `json:"contextLevel"`
-	UserPromptSettings ai.UserPromptSettings `json:"userPromptSettings,omitempty"`
-	MCPServers         []ai.MCPServerConfig  `json:"mcpServers,omitempty"`
-	Skills             []ai.SkillConfig      `json:"skills,omitempty"`
+	SchemaVersion      int                    `json:"schemaVersion,omitempty"`
+	Providers          []ai.ProviderConfig    `json:"providers"`
+	ActiveProvider     string                 `json:"activeProvider"`
+	SafetyLevel        string                 `json:"safetyLevel"`
+	ContextLevel       string                 `json:"contextLevel"`
+	UserPromptSettings ai.UserPromptSettings  `json:"userPromptSettings,omitempty"`
+	MCPServers         []ai.MCPServerConfig   `json:"mcpServers,omitempty"`
+	MCPHTTPServer      ai.MCPHTTPServerConfig `json:"mcpHTTPServer"`
+	Skills             []ai.SkillConfig       `json:"skills,omitempty"`
 }
 
 type ProviderConfigStoreSnapshot struct {
@@ -35,6 +36,7 @@ type ProviderConfigStoreSnapshot struct {
 	ContextLevel       ai.ContextLevel
 	UserPromptSettings ai.UserPromptSettings
 	MCPServers         []ai.MCPServerConfig
+	MCPHTTPServer      ai.MCPHTTPServerConfig
 	Skills             []ai.SkillConfig
 }
 
@@ -106,6 +108,12 @@ func (s *ProviderConfigStore) Load() (ProviderConfigStoreSnapshot, error) {
 	}
 	snapshot.Providers = providers
 
+	mcpHTTPServer, err := s.loadMCPHTTPServerConfig(snapshot.MCPHTTPServer)
+	if err != nil {
+		return snapshot, s.storeError("ai_service.backend.error.config_read_failed", nil, err)
+	}
+	snapshot.MCPHTTPServer = mcpHTTPServer
+
 	if shouldRewrite {
 		if err := s.Save(snapshot); err != nil {
 			return snapshot, s.storeError("ai_service.backend.error.config_rewrite_failed", nil, err)
@@ -161,6 +169,10 @@ func (s *ProviderConfigStore) Save(snapshot ProviderConfigStoreSnapshot) error {
 	if providers == nil {
 		providers = []ai.ProviderConfig{}
 	}
+	mcpHTTPServer := normalizeMCPHTTPServerConfig(snapshot.MCPHTTPServer)
+	if err := s.persistMCPHTTPServerToken(mcpHTTPServer.Token); err != nil {
+		return s.storeError("ai_service.backend.error.config_write_failed", nil, err)
+	}
 
 	cfg := aiConfig{
 		SchemaVersion:      aiConfigSchemaVersion,
@@ -170,6 +182,7 @@ func (s *ProviderConfigStore) Save(snapshot ProviderConfigStoreSnapshot) error {
 		ContextLevel:       string(snapshot.ContextLevel),
 		UserPromptSettings: snapshot.UserPromptSettings,
 		MCPServers:         snapshot.MCPServers,
+		MCPHTTPServer:      mcpHTTPServer,
 		Skills:             snapshot.Skills,
 	}
 
@@ -219,6 +232,7 @@ func (s *ProviderConfigStore) readStoredSnapshot() (aiConfig, ProviderConfigStor
 	}
 	snapshot.UserPromptSettings = cfg.UserPromptSettings
 	snapshot.MCPServers = append([]ai.MCPServerConfig(nil), cfg.MCPServers...)
+	snapshot.MCPHTTPServer = normalizeMCPHTTPServerConfig(cfg.MCPHTTPServer)
 	snapshot.Skills = append([]ai.SkillConfig(nil), cfg.Skills...)
 
 	providers := make([]ai.ProviderConfig, 0, len(cfg.Providers))
@@ -231,6 +245,39 @@ func (s *ProviderConfigStore) readStoredSnapshot() (aiConfig, ProviderConfigStor
 	snapshot.Providers = providers
 
 	return cfg, snapshot, nil
+}
+
+func (s *ProviderConfigStore) loadMCPHTTPServerConfig(config ai.MCPHTTPServerConfig) (ai.MCPHTTPServerConfig, error) {
+	config = normalizeMCPHTTPServerConfig(config)
+	if s.dailySecrets == nil {
+		return config, nil
+	}
+
+	bundle, ok, err := s.dailySecrets.GetMCPHTTPServer()
+	if err != nil {
+		return config, err
+	}
+	if ok {
+		config.Token = strings.TrimSpace(bundle.Token)
+	}
+	return config, nil
+}
+
+func (s *ProviderConfigStore) persistMCPHTTPServerToken(token string) error {
+	if s.dailySecrets == nil {
+		return nil
+	}
+
+	token = strings.TrimSpace(token)
+	if token != "" {
+		return s.dailySecrets.PutMCPHTTPServer(dailysecret.MCPHTTPServerBundle{Token: token})
+	}
+
+	_, exists, err := s.dailySecrets.GetMCPHTTPServer()
+	if err != nil || !exists {
+		return err
+	}
+	return s.dailySecrets.DeleteMCPHTTPServer()
 }
 
 func (s *ProviderConfigStore) loadStoredProviderConfig(config ai.ProviderConfig) (ai.ProviderConfig, bool, error) {

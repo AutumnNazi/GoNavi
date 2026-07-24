@@ -1071,6 +1071,10 @@ func buildMySQLShowCreateTableQuery(dbName, tableName string) string {
 	return "SHOW CREATE TABLE " + mysqlQualifiedTableIdentifier(dbName, tableName)
 }
 
+func buildMySQLShowFullColumnsQuery(dbName, tableName string) string {
+	return "SHOW FULL COLUMNS FROM " + mysqlQualifiedTableIdentifier(dbName, tableName)
+}
+
 func (m *MySQLDB) GetCreateStatement(dbName, tableName string) (string, error) {
 	data, _, err := m.Query(buildMySQLShowCreateTableQuery(dbName, tableName))
 	if err != nil {
@@ -1086,12 +1090,7 @@ func (m *MySQLDB) GetCreateStatement(dbName, tableName string) (string, error) {
 }
 
 func (m *MySQLDB) GetColumns(dbName, tableName string) ([]connection.ColumnDefinition, error) {
-	query := fmt.Sprintf("SHOW FULL COLUMNS FROM `%s`.`%s`", dbName, tableName)
-	if dbName == "" {
-		query = fmt.Sprintf("SHOW FULL COLUMNS FROM `%s`", tableName)
-	}
-
-	data, _, err := m.Query(query)
+	data, _, err := m.Query(buildMySQLShowFullColumnsQuery(dbName, tableName))
 	if err != nil {
 		return nil, err
 	}

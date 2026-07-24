@@ -50,6 +50,9 @@ describe('built-in custom theme presets', () => {
       expect(preset.css).toContain('--gn-ant-on-primary:');
       expect(preset.css).toContain('--gn-settings-card-bg:');
       expect(preset.css).toContain('--gn-explain-critical:');
+      expect(preset.css).toContain('--gn-status-connected:');
+      expect(preset.css).toContain('.gn-v2-tab-label-part-host');
+      expect(preset.css).toContain('.gn-v2-tab-label-part-database');
     }
     expect(BUILTIN_CUSTOM_THEME_PRESETS.filter((preset) => preset.baseMode === 'dark')).toHaveLength(4);
     expect(BUILTIN_CUSTOM_THEME_PRESETS.filter((preset) => preset.baseMode === 'light')).toHaveLength(2);
@@ -72,6 +75,7 @@ describe('built-in custom theme presets', () => {
   it('keeps preset text and solid-button colors at WCAG AA contrast', () => {
     for (const preset of BUILTIN_CUSTOM_THEME_PRESETS) {
       const panel = readHexProperty(preset.css, '--gn-bg-panel');
+      const panel2 = readHexProperty(preset.css, '--gn-bg-panel-2');
       for (const property of [
         '--gn-fg-1',
         '--gn-fg-2',
@@ -84,11 +88,18 @@ describe('built-in custom theme presets', () => {
         '--gn-warn',
         '--gn-danger',
         '--gn-purple',
+        '--gn-status-connected',
       ]) {
         const color = readHexProperty(preset.css, property);
         expect(
           contrastRatio(color, panel),
           `${preset.id} ${property} must contrast with --gn-bg-panel`,
+        ).toBeGreaterThanOrEqual(4.5);
+      }
+      for (const property of ['--gn-info', '--gn-accent', '--gn-status-connected']) {
+        expect(
+          contrastRatio(readHexProperty(preset.css, property), panel2),
+          `${preset.id} ${property} must contrast with --gn-bg-panel-2`,
         ).toBeGreaterThanOrEqual(4.5);
       }
 

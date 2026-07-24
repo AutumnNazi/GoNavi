@@ -40,6 +40,23 @@ describe('QueryEditorToolbar layout', () => {
     expect(css).toContain('gap: 6px;');
   });
 
+  it('optically aligns the word-wrap icon with its visible label', () => {
+    const toolbarSource = readFileSync(new URL('./QueryEditorToolbar.tsx', import.meta.url), 'utf8');
+    const css = readV2ThemeCss();
+    const wordWrapCss = css.slice(
+      css.indexOf('body[data-ui-version="v2"] .gn-v2-query-toolbar-word-wrap-action.ant-btn,'),
+      css.indexOf('body[data-ui-version="v2"] .gn-v2-query-toolbar-action-group {'),
+    );
+
+    expect(toolbarSource).toContain('gn-v2-query-toolbar-word-wrap-action');
+    expect(toolbarSource).toContain('gn-query-toolbar-word-wrap-icon');
+    expect(wordWrapCss).toContain('align-items: center;');
+    expect(wordWrapCss).toContain('justify-content: center;');
+    expect(wordWrapCss).toContain('width: 16px;');
+    expect(wordWrapCss).toContain('height: 16px;');
+    expect(wordWrapCss).not.toContain('translateY');
+  });
+
   it('keeps commit button hover styling in source and v2 css', () => {
     const css = readV2ThemeCss();
     const commitBaseCss = css.slice(

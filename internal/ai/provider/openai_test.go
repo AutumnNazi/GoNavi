@@ -59,6 +59,11 @@ func TestNormalizeOpenAICompatibleBaseURL(t *testing.T) {
 			want: "https://api.openai.com/v1",
 		},
 		{
+			name: "strips responses suffix before normalizing",
+			raw:  "https://api.openai.com/v1/responses",
+			want: "https://api.openai.com/v1",
+		},
+		{
 			name: "strips models suffix before normalizing",
 			raw:  "https://ark.cn-beijing.volces.com/api/coding/v3/models",
 			want: "https://ark.cn-beijing.volces.com/api/coding/v3",
@@ -216,6 +221,124 @@ func TestOpenAIProviderChatUsesRequestMaxTokens(t *testing.T) {
 	}
 	if received.Model != "gpt-chat" {
 		t.Fatalf("expected configured model, got %q", received.Model)
+	}
+}
+
+func TestOpenAIProviderChatMovesSystemMessagesToRequestPrefix(t *testing.T) {
+	var received openAIChatRequest
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer r.Body.Close()
+		if err := json.NewDecoder(r.Body).Decode(&received); err != nil {
+			t.Fatalf("decode request body failed: %v", err)
+		}
+
+		seenNonSystemMessage := false
+		for _, message := range received.Messages {
+			if message.Role == "system" {
+				if seenNonSystemMessage {
+					http.Error(w, `{"error":{"message":"System message must be at the beginning."}}`, http.StatusBadRequest)
+					return
+				}
+				continue
+			}
+			seenNonSystemMessage = true
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"pong"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`))
+	}))
+	defer server.Close()
+
+	providerInstance, err := NewOpenAIProvider(ai.ProviderConfig{
+		Type:    "openai",
+		APIKey:  "sk-test",
+		BaseURL: server.URL,
+		Model:   "gpt-chat",
+	})
+	if err != nil {
+		t.Fatalf("create provider failed: %v", err)
+	}
+
+	_, err = providerInstance.Chat(context.Background(), ai.ChatRequest{
+		Messages: []ai.Message{
+			{Role: "user", Content: "first question"},
+			{Role: "system", Content: "follow the product rules"},
+			{Role: "assistant", Content: "first answer"},
+			{Role: "system", Content: "follow the workspace rules"},
+			{Role: "user", Content: "next question"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("chat should normalize system message ordering, got %v", err)
+	}
+
+	gotRoles := make([]string, len(received.Messages))
+	for index, message := range received.Messages {
+		gotRoles[index] = message.Role
+	}
+	wantRoles := []string{"system", "system", "user", "assistant", "user"}
+	if len(gotRoles) != len(wantRoles) {
+		t.Fatalf("expected roles %v, got %v", wantRoles, gotRoles)
+	}
+	for index, want := range wantRoles {
+		if gotRoles[index] != want {
+			t.Fatalf("expected roles %v, got %v", wantRoles, gotRoles)
+		}
+	}
+}
+
+func TestOpenAIProviderChatStreamMovesSystemMessagesToRequestPrefix(t *testing.T) {
+	var received openAIChatRequest
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer r.Body.Close()
+		if err := json.NewDecoder(r.Body).Decode(&received); err != nil {
+			t.Fatalf("decode request body failed: %v", err)
+		}
+
+		seenNonSystemMessage := false
+		for _, message := range received.Messages {
+			if message.Role == "system" {
+				if seenNonSystemMessage {
+					http.Error(w, `{"error":{"message":"System message must be at the beginning."}}`, http.StatusBadRequest)
+					return
+				}
+				continue
+			}
+			seenNonSystemMessage = true
+		}
+
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"pong\"}}]}\n\ndata: [DONE]\n\n"))
+	}))
+	defer server.Close()
+
+	providerInstance, err := NewOpenAIProvider(ai.ProviderConfig{
+		Type:    "openai",
+		APIKey:  "sk-test",
+		BaseURL: server.URL,
+		Model:   "gpt-chat",
+	})
+	if err != nil {
+		t.Fatalf("create provider failed: %v", err)
+	}
+
+	var response string
+	err = providerInstance.ChatStream(context.Background(), ai.ChatRequest{
+		Messages: []ai.Message{
+			{Role: "user", Content: "first question"},
+			{Role: "system", Content: "follow the product rules"},
+		},
+	}, func(chunk ai.StreamChunk) {
+		response += chunk.Content
+	})
+	if err != nil {
+		t.Fatalf("chat stream should normalize system message ordering, got %v", err)
+	}
+	if response != "pong" {
+		t.Fatalf("expected streamed content pong, got %q", response)
+	}
+	if len(received.Messages) != 2 || received.Messages[0].Role != "system" || received.Messages[1].Role != "user" {
+		t.Fatalf("expected system message before user message, got %#v", received.Messages)
 	}
 }
 

@@ -92,6 +92,7 @@ const REQUIRED_MCP_CLIENT_INSTALL_KEYS = [
   'ai_chat.mcp_client.install.message.remote_guide_copy_failed',
   'ai_chat.mcp_client.install.message.already_connected',
   'ai_chat.mcp_client.install.message.codex_not_supported',
+  'ai_chat.mcp_client.install.message.opencode_not_supported',
   'ai_chat.mcp_client.install.message.claude_not_supported',
   'ai_chat.mcp_client.install.message.install_success',
   'ai_chat.mcp_client.install.message.install_failed',
@@ -209,6 +210,18 @@ describe('mcpClientInstallPanelState', () => {
     expect(resolveMCPClientCommandName(status)).toBe('claude');
     expect(getMCPClientDetectionSummary(status)).toContain('CLI is not in PATH yet');
     expect(resolveMCPClientInstallActionLabel(status)).toBe('Install to Claude Code (external tool)');
+  });
+
+  it('uses the OpenCode command when its CLI path is not detected yet', () => {
+    const status = buildStatus({
+      client: 'opencode',
+      displayName: 'OpenCode',
+      clientCommand: '',
+    });
+
+    expect(resolveMCPClientCommandName(status)).toBe('opencode');
+    expect(getMCPClientDetectionSummary(status)).toContain('Local opencode command was not detected');
+    expect(resolveMCPClientInstallActionLabel(status)).toBe('Install to OpenCode (external tool)');
   });
 
   it('treats OpenClaw as a remote bridge target instead of a local install', () => {

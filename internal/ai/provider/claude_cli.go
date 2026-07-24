@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
@@ -19,10 +20,87 @@ import (
 
 var claudeLookPath = exec.LookPath
 var claudeCommandContext = exec.CommandContext
+var claudeEvalSymlinks = filepath.EvalSymlinks
 var claudeCLIRequestTimeout = 90 * time.Second
+var claudeCLIAuthStatusTimeout = 10 * time.Second
 
-// ClaudeCLIProvider 通过 Claude Code CLI 发送聊天请求
-// 适用于 anyrouter/newapi 等只支持 Claude Code 协议的代理服务
+var claudeCLILocalAuthBlockedEnvKeys = []string{
+	"ANTHROPIC_API_KEY",
+	"ANTHROPIC_AUTH_TOKEN",
+	"ANTHROPIC_BASE_URL",
+	"ANTHROPIC_BEDROCK_BASE_URL",
+	"ANTHROPIC_BEDROCK_MANTLE_BASE_URL",
+	"ANTHROPIC_CUSTOM_HEADERS",
+	"ANTHROPIC_FOUNDRY_API_KEY",
+	"ANTHROPIC_FOUNDRY_AUTH_TOKEN",
+	"ANTHROPIC_FOUNDRY_BASE_URL",
+	"ANTHROPIC_FOUNDRY_RESOURCE",
+	"ANTHROPIC_VERTEX_BASE_URL",
+	"ANTHROPIC_VERTEX_PROJECT_ID",
+	"AWS_ACCESS_KEY_ID",
+	"AWS_BEARER_TOKEN_BEDROCK",
+	"AWS_PROFILE",
+	"AWS_SECRET_ACCESS_KEY",
+	"AWS_SESSION_TOKEN",
+	"CLAUDE_API_KEY",
+	"CLAUDE_CODE_API_KEY_FILE_DESCRIPTOR",
+	"CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST",
+	"CLAUDE_CODE_SKIP_ANTHROPIC_AWS_AUTH",
+	"CLAUDE_CODE_SKIP_BEDROCK_AUTH",
+	"CLAUDE_CODE_SKIP_FOUNDRY_AUTH",
+	"CLAUDE_CODE_SKIP_MANTLE_AUTH",
+	"CLAUDE_CODE_SKIP_VERTEX_AUTH",
+	"CLAUDE_CODE_USE_ANTHROPIC_AWS",
+	"CLAUDE_CODE_USE_BEDROCK",
+	"CLAUDE_CODE_USE_FOUNDRY",
+	"CLAUDE_CODE_USE_MANTLE",
+	"CLAUDE_CODE_USE_VERTEX",
+	"GCLOUD_PROJECT",
+	"GOOGLE_APPLICATION_CREDENTIALS",
+	"GOOGLE_CLOUD_PROJECT",
+}
+
+var claudeCLILocalAuthIsolationEnvKeys = []string{
+	"CLAUDE_CODE_DISABLE_CLAUDE_MDS",
+	"CLAUDE_CODE_DISABLE_AUTO_MEMORY",
+	"CLAUDE_CODE_DISABLE_POLICY_SKILLS",
+	"CLAUDE_CODE_DISABLE_CLAUDE_API_SKILL",
+	"CLAUDE_CODE_DISABLE_OFFICIAL_MARKETPLACE_AUTOINSTALL",
+	"CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC",
+}
+
+var claudeCLILocalAuthSettings = buildClaudeCLILocalAuthSettings()
+
+func buildClaudeCLILocalAuthSettings() string {
+	settings := map[string]any{
+		"apiKeyHelper":     "",
+		"claudeMdExcludes": []string{"**"},
+		"disableAllHooks":  true,
+		"enabledPlugins":   map[string]bool{},
+		// Replace the complete user-settings env block. Per-key null values are
+		// materialized as environment entries by Claude Code and can shadow OAuth.
+		"env": nil,
+	}
+	encoded, err := json.Marshal(settings)
+	if err != nil {
+		panic(fmt.Sprintf("encode Claude CLI isolation settings: %v", err))
+	}
+	return string(encoded)
+}
+
+type claudeCLIAuthStatus struct {
+	LoggedIn     bool   `json:"loggedIn"`
+	AuthMethod   string `json:"authMethod"`
+	APIProvider  string `json:"apiProvider"`
+	APIKeySource string `json:"apiKeySource"`
+}
+
+type claudeCLICommand struct {
+	Path string
+}
+
+// ClaudeCLIProvider 通过 Claude Code CLI 发送聊天请求。
+// AuthMode=local-cli 时复用 Claude Code 官方登录态；其他配置仍支持兼容代理服务。
 type ClaudeCLIProvider struct {
 	config ai.ProviderConfig
 }
@@ -37,9 +115,9 @@ func (p *ClaudeCLIProvider) Name() string {
 }
 
 func (p *ClaudeCLIProvider) Validate() error {
-	_, err := claudeLookPath("claude")
+	_, err := resolveClaudeCLICommand(runtime.GOOS, runtime.GOARCH, claudeLookPath, fileExists)
 	if err != nil {
-		return fmt.Errorf("claude command was not found; install Claude Code CLI first: npm install -g @anthropic-ai/claude-code")
+		return err
 	}
 	if _, err := resolveClaudeCodeGitBashPath(os.Environ(), runtime.GOOS, claudeLookPath, fileExists); err != nil {
 		return err
@@ -47,25 +125,114 @@ func (p *ClaudeCLIProvider) Validate() error {
 	return nil
 }
 
+// CheckClaudeCLILocalAuth validates the local Claude Code subscription login
+// without sending a model request or consuming subscription quota.
+func CheckClaudeCLILocalAuth(ctx context.Context) error {
+	command, err := resolveClaudeCLICommand(runtime.GOOS, runtime.GOARCH, claudeLookPath, fileExists)
+	if err != nil {
+		return err
+	}
+
+	ctx, cancel := ensureClaudeCLITimeout(ctx, claudeCLIAuthStatusTimeout)
+	defer cancel()
+
+	args := append(buildClaudeCLILocalAuthIsolationArgs(), "auth", "status", "--json")
+	cmd := claudeCommandContext(ctx, command.Path, args...)
+	env, err := buildClaudeCLIEnv(ai.ProviderConfig{AuthMode: "local-cli"}, cmd.Environ(), runtime.GOOS, claudeLookPath, fileExists)
+	if err != nil {
+		return err
+	}
+	cmd.Env = env
+
+	output, commandErr := cmd.Output()
+	if errors.Is(ctx.Err(), context.Canceled) {
+		return context.Canceled
+	}
+	if isClaudeCLITimeout(ctx, commandErr) {
+		return fmt.Errorf("Claude Code authentication status check timed out after %s", claudeCLIAuthStatusTimeout)
+	}
+
+	var status claudeCLIAuthStatus
+	parseErr := json.Unmarshal(output, &status)
+	if parseErr == nil {
+		if err := validateClaudeCLISubscriptionStatus(status); err != nil {
+			return err
+		}
+		if commandErr == nil {
+			return nil
+		}
+	}
+
+	if commandErr != nil {
+		detail := strings.TrimSpace(commandErr.Error())
+		if exitErr, ok := commandErr.(*exec.ExitError); ok {
+			if stderr := strings.TrimSpace(string(exitErr.Stderr)); stderr != "" {
+				detail = stderr
+			}
+		}
+		return fmt.Errorf("Claude Code authentication status check failed: %s", detail)
+	}
+	return fmt.Errorf("parse Claude Code authentication status failed: %w", parseErr)
+}
+
+func validateClaudeCLISubscriptionStatus(status claudeCLIAuthStatus) error {
+	if !status.LoggedIn {
+		return fmt.Errorf("Claude Code CLI is not logged in; run claude auth login with a Claude subscription")
+	}
+	if source := strings.TrimSpace(status.APIKeySource); source != "" {
+		return fmt.Errorf("Claude Code CLI is being overridden by API key source %s; remove that API key before using the Claude subscription provider", source)
+	}
+	providerName := strings.NewReplacer("-", "", "_", "").Replace(strings.ToLower(strings.TrimSpace(status.APIProvider)))
+	if providerName != "" && providerName != "firstparty" {
+		return fmt.Errorf("Claude Code CLI is using provider %s instead of the first-party Claude subscription", status.APIProvider)
+	}
+	authMethod := strings.NewReplacer("-", "_", " ", "_").Replace(strings.ToLower(strings.TrimSpace(status.AuthMethod)))
+	if authMethod != "oauth" && authMethod != "oauth_token" {
+		return fmt.Errorf("Claude Code CLI is authenticated with %s instead of a Claude subscription; run claude auth login", firstNonEmptyCLIValue(status.AuthMethod, "an unsupported method"))
+	}
+	return nil
+}
+
+func firstNonEmptyCLIValue(value string, fallback string) string {
+	if value = strings.TrimSpace(value); value != "" {
+		return value
+	}
+	return fallback
+}
+
 // Chat 非流式聊天：调用 claude -p "prompt" --output-format json
 func (p *ClaudeCLIProvider) Chat(ctx context.Context, req ai.ChatRequest) (*ai.ChatResponse, error) {
 	if err := p.Validate(); err != nil {
 		return nil, err
+	}
+	if isLocalCLIAuthMode(p.config) {
+		if err := CheckClaudeCLILocalAuth(ctx); err != nil {
+			return nil, err
+		}
 	}
 
 	ctx, cancel := ensureClaudeCLITimeout(ctx, claudeCLIRequestTimeout)
 	defer cancel()
 
 	prompt := buildPrompt(req.Messages)
-	args := []string{"-p", prompt, "--output-format", "json", "--no-session-persistence"}
+	args := buildClaudeCLIArgs(p.config, prompt, false)
 	if p.config.Model != "" {
 		args = append(args, "--model", p.config.Model)
 	}
 
-	cmd := claudeCommandContext(ctx, "claude", args...)
+	command, err := resolveClaudeCLICommand(runtime.GOOS, runtime.GOARCH, claudeLookPath, fileExists)
+	if err != nil {
+		return nil, err
+	}
+	cmd := claudeCommandContext(ctx, command.Path, args...)
 	if err := p.setEnv(cmd); err != nil {
 		return nil, err
 	}
+	cleanup, err := configureClaudeCLILocalAuthCommand(cmd, p.config, prompt)
+	if err != nil {
+		return nil, err
+	}
+	defer cleanup()
 
 	requestLog := logAIUpstreamRequestStart(
 		p.Name(),
@@ -80,6 +247,10 @@ func (p *ClaudeCLIProvider) Chat(ctx context.Context, req ai.ChatRequest) (*ai.C
 
 	output, err := cmd.Output()
 	if err != nil {
+		if errors.Is(ctx.Err(), context.Canceled) {
+			requestErr = context.Canceled
+			return nil, context.Canceled
+		}
 		if isClaudeCLITimeout(ctx, err) {
 			requestErr = fmt.Errorf("claude CLI timed out after %s; the current Base URL or API key may not be returning a valid response", claudeCLIRequestTimeout)
 			return nil, requestErr
@@ -111,20 +282,34 @@ func (p *ClaudeCLIProvider) ChatStream(ctx context.Context, req ai.ChatRequest, 
 	if err := p.Validate(); err != nil {
 		return err
 	}
+	if isLocalCLIAuthMode(p.config) {
+		if err := CheckClaudeCLILocalAuth(ctx); err != nil {
+			return err
+		}
+	}
 
 	ctx, cancel := ensureClaudeCLITimeout(ctx, claudeCLIRequestTimeout)
 	defer cancel()
 
 	prompt := buildPrompt(req.Messages)
-	args := []string{"-p", prompt, "--output-format", "stream-json", "--verbose", "--include-partial-messages", "--no-session-persistence"}
+	args := buildClaudeCLIArgs(p.config, prompt, true)
 	if p.config.Model != "" {
 		args = append(args, "--model", p.config.Model)
 	}
 
-	cmd := claudeCommandContext(ctx, "claude", args...)
+	command, err := resolveClaudeCLICommand(runtime.GOOS, runtime.GOARCH, claudeLookPath, fileExists)
+	if err != nil {
+		return err
+	}
+	cmd := claudeCommandContext(ctx, command.Path, args...)
 	if err := p.setEnv(cmd); err != nil {
 		return err
 	}
+	cleanup, err := configureClaudeCLILocalAuthCommand(cmd, p.config, prompt)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
 
 	requestLog := logAIUpstreamRequestStart(
 		p.Name(),
@@ -137,8 +322,10 @@ func (p *ClaudeCLIProvider) ChatStream(ctx context.Context, req ai.ChatRequest, 
 		logAIUpstreamRequestFinish(requestLog, 0, requestErr)
 	}()
 
-	// 关闭 stdin，防止 claude CLI 等待输入
-	cmd.Stdin = nil
+	// 代理模式的 prompt 已在 argv 中；订阅模式则通过 stdin 传入，避免出现在进程列表。
+	if !isLocalCLIAuthMode(p.config) {
+		cmd.Stdin = nil
+	}
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -151,6 +338,10 @@ func (p *ClaudeCLIProvider) ChatStream(ctx context.Context, req ai.ChatRequest, 
 	cmd.Stderr = &stderrBuf
 
 	if err := cmd.Start(); err != nil {
+		if errors.Is(ctx.Err(), context.Canceled) {
+			requestErr = context.Canceled
+			return context.Canceled
+		}
 		requestErr = fmt.Errorf("failed to start claude CLI: %w", err)
 		return requestErr
 	}
@@ -236,6 +427,10 @@ func (p *ClaudeCLIProvider) ChatStream(ctx context.Context, req ai.ChatRequest, 
 
 	waitErr := cmd.Wait()
 	stderrStr := strings.TrimSpace(stderrBuf.String())
+	if errors.Is(ctx.Err(), context.Canceled) {
+		requestErr = context.Canceled
+		return context.Canceled
+	}
 
 	if isClaudeCLITimeout(ctx, waitErr) {
 		requestErr = fmt.Errorf("claude CLI timed out after %s; the current Base URL or API key may not be returning a valid response", claudeCLIRequestTimeout)
@@ -297,6 +492,172 @@ func buildClaudeCLIRequestLogBody(outputFormat string, args []string, prompt str
 	}
 }
 
+func resolveClaudeCLICommand(goos, goarch string, lookPath func(string) (string, error), exists func(string) bool) (claudeCLICommand, error) {
+	if strings.EqualFold(strings.TrimSpace(goos), "windows") {
+		if launcherPath, err := lookPath("claude.cmd"); err == nil && exists(launcherPath) {
+			for _, nativePath := range claudeNPMNativeBinaryCandidates(launcherPath, goos, goarch) {
+				if exists(nativePath) {
+					return claudeCLICommand{Path: nativePath}, nil
+				}
+			}
+		}
+
+		if path, err := lookPath("claude.exe"); err == nil && exists(path) {
+			return claudeCLICommand{Path: path}, nil
+		}
+		if path, err := lookPath("claude"); err == nil && exists(path) && strings.EqualFold(filepath.Ext(path), ".exe") {
+			return claudeCLICommand{Path: path}, nil
+		}
+		return claudeCLICommand{}, claudeCLIInstallError()
+	}
+
+	path, err := lookPath("claude")
+	if err != nil || !exists(path) {
+		return claudeCLICommand{}, claudeCLIInstallError()
+	}
+	for _, nativePath := range claudeNPMNativeBinaryCandidates(path, goos, goarch) {
+		if exists(nativePath) {
+			return claudeCLICommand{Path: nativePath}, nil
+		}
+	}
+	return claudeCLICommand{Path: path}, nil
+}
+
+func claudeNPMNativeBinaryCandidates(launcherPath, goos, goarch string) []string {
+	packageRoots := []string{
+		filepath.Join(filepath.Dir(launcherPath), "node_modules", "@anthropic-ai", "claude-code"),
+		filepath.Join(filepath.Dir(filepath.Dir(launcherPath)), "lib", "node_modules", "@anthropic-ai", "claude-code"),
+		filepath.Join(filepath.Dir(filepath.Dir(launcherPath)), "@anthropic-ai", "claude-code"),
+	}
+
+	resolvedPath := ""
+	if resolved, err := claudeEvalSymlinks(launcherPath); err == nil {
+		resolvedPath = resolved
+		packageRoots = append(packageRoots,
+			filepath.Join(filepath.Dir(resolved), "node_modules", "@anthropic-ai", "claude-code"),
+			filepath.Join(filepath.Dir(filepath.Dir(resolved)), "lib", "node_modules", "@anthropic-ai", "claude-code"),
+			filepath.Join(filepath.Dir(filepath.Dir(resolved)), "@anthropic-ai", "claude-code"),
+		)
+		if strings.EqualFold(filepath.Base(resolved), "claude.exe") && strings.EqualFold(filepath.Base(filepath.Dir(resolved)), "bin") {
+			packageRoots = append(packageRoots, filepath.Dir(filepath.Dir(resolved)))
+		}
+	}
+
+	platformPackage, platformBinary, hasPlatformPackage := claudeNPMPlatformTarget(goos, goarch)
+	seen := make(map[string]struct{})
+	candidates := make([]string, 0, len(packageRoots)*3+1)
+	appendCandidate := func(candidate string) {
+		candidate = filepath.Clean(candidate)
+		key := candidate
+		if strings.EqualFold(strings.TrimSpace(goos), "windows") {
+			key = strings.ToLower(candidate)
+		}
+		if _, found := seen[key]; found {
+			return
+		}
+		seen[key] = struct{}{}
+		candidates = append(candidates, candidate)
+	}
+
+	if resolvedPath != "" && strings.EqualFold(filepath.Ext(resolvedPath), ".exe") {
+		appendCandidate(resolvedPath)
+	}
+	for _, packageRoot := range packageRoots {
+		if hasPlatformPackage {
+			appendCandidate(filepath.Join(filepath.Dir(packageRoot), platformPackage, platformBinary))
+			appendCandidate(filepath.Join(packageRoot, "node_modules", "@anthropic-ai", platformPackage, platformBinary))
+		}
+		appendCandidate(filepath.Join(packageRoot, "bin", "claude.exe"))
+	}
+	return candidates
+}
+
+func claudeNPMPlatformTarget(goos, goarch string) (packageName, binaryName string, ok bool) {
+	arch := strings.ToLower(strings.TrimSpace(goarch))
+	archName := ""
+	switch arch {
+	case "amd64":
+		archName = "x64"
+	case "arm64":
+		archName = "arm64"
+	default:
+		return "", "", false
+	}
+
+	switch strings.ToLower(strings.TrimSpace(goos)) {
+	case "windows":
+		return "claude-code-win32-" + archName, "claude.exe", true
+	case "darwin":
+		return "claude-code-darwin-" + archName, "claude", true
+	case "linux":
+		return "claude-code-linux-" + archName, "claude", true
+	default:
+		return "", "", false
+	}
+}
+
+func claudeCLIInstallError() error {
+	return fmt.Errorf("claude command was not found; install Claude Code CLI first: npm install -g @anthropic-ai/claude-code")
+}
+
+func buildClaudeCLIArgs(config ai.ProviderConfig, prompt string, stream bool) []string {
+	args := []string{"--print"}
+	if !isLocalCLIAuthMode(config) {
+		args = []string{"-p", prompt}
+	}
+	outputFormat := "json"
+	if stream {
+		outputFormat = "stream-json"
+	}
+	args = append(args, "--output-format", outputFormat)
+	if stream {
+		args = append(args, "--verbose", "--include-partial-messages")
+	}
+	args = append(args, "--no-session-persistence")
+	if isLocalCLIAuthMode(config) {
+		args = append(args, buildClaudeCLILocalAuthIsolationArgs()...)
+	}
+	return args
+}
+
+func buildClaudeCLILocalAuthIsolationArgs() []string {
+	// Claude Code 2.1.132 ties Windows OAuth credential loading to the user source.
+	// Keep that source for authentication, then neutralize its executable and
+	// instruction-bearing extensions explicitly. An empty setting source would
+	// also hide the OAuth credential and make subscription login unusable.
+	return []string{
+		"--setting-sources", "user",
+		"--settings", claudeCLILocalAuthSettings,
+		"--strict-mcp-config",
+		"--tools", "",
+		"--disable-slash-commands",
+		"--permission-mode", "dontAsk",
+		"--no-chrome",
+	}
+}
+
+func isLocalCLIAuthMode(config ai.ProviderConfig) bool {
+	return strings.EqualFold(strings.TrimSpace(config.AuthMode), "local-cli")
+}
+
+func configureClaudeCLILocalAuthCommand(cmd *exec.Cmd, config ai.ProviderConfig, prompt string) (func(), error) {
+	if !isLocalCLIAuthMode(config) {
+		return func() {}, nil
+	}
+
+	workDir, err := os.MkdirTemp("", "gonavi-claude-")
+	if err != nil {
+		return nil, fmt.Errorf("create isolated Claude CLI workspace failed: %w", err)
+	}
+	cmd.Dir = workDir
+	cmd.Stdin = strings.NewReader(prompt)
+	return func() {
+		if removeErr := os.RemoveAll(workDir); removeErr != nil {
+			logger.Warnf("ClaudeCLI 清理临时目录失败：path=%s err=%v", workDir, removeErr)
+		}
+	}, nil
+}
+
 func claudeCLIArgsForLog(args []string) []string {
 	result := append([]string(nil), args...)
 	for i := 0; i < len(result)-1; i++ {
@@ -331,12 +692,21 @@ func (p *ClaudeCLIProvider) setEnv(cmd *exec.Cmd) error {
 
 func buildClaudeCLIEnv(config ai.ProviderConfig, baseEnv []string, goos string, lookPath func(string) (string, error), exists func(string) bool) ([]string, error) {
 	env := append([]string(nil), baseEnv...)
-	if config.BaseURL != "" {
-		env = upsertEnv(env, "ANTHROPIC_BASE_URL", strings.TrimRight(config.BaseURL, "/"))
-	}
-	if config.APIKey != "" {
-		env = upsertEnv(env, "ANTHROPIC_AUTH_TOKEN", config.APIKey)
-		env = upsertEnv(env, "ANTHROPIC_API_KEY", config.APIKey)
+	if strings.EqualFold(strings.TrimSpace(config.AuthMode), "local-cli") {
+		// 订阅模式必须交给 Claude Code 自身的登录态，避免进程环境中的 API Key 抢占认证。
+		env = removeEnvKeys(env, claudeCLILocalAuthBlockedEnvKeys...)
+		for _, key := range claudeCLILocalAuthIsolationEnvKeys {
+			env = removeEnvKeys(env, key)
+			env = upsertEnv(env, key, "1")
+		}
+	} else {
+		if config.BaseURL != "" {
+			env = upsertEnv(env, "ANTHROPIC_BASE_URL", strings.TrimRight(config.BaseURL, "/"))
+		}
+		if config.APIKey != "" {
+			env = upsertEnv(env, "ANTHROPIC_AUTH_TOKEN", config.APIKey)
+			env = upsertEnv(env, "ANTHROPIC_API_KEY", config.APIKey)
+		}
 	}
 
 	gitBashPath, err := resolveClaudeCodeGitBashPath(env, goos, lookPath, exists)
@@ -427,6 +797,28 @@ func upsertEnv(env []string, key, value string) []string {
 		}
 	}
 	return append(env, prefix+value)
+}
+
+func removeEnvKeys(env []string, keys ...string) []string {
+	filtered := make([]string, 0, len(env))
+	for _, entry := range env {
+		separator := strings.IndexByte(entry, '=')
+		entryKey := entry
+		if separator >= 0 {
+			entryKey = entry[:separator]
+		}
+		remove := false
+		for _, key := range keys {
+			if strings.EqualFold(entryKey, key) {
+				remove = true
+				break
+			}
+		}
+		if !remove {
+			filtered = append(filtered, entry)
+		}
+	}
+	return filtered
 }
 
 func fileExists(path string) bool {

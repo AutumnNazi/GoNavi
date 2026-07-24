@@ -1,7 +1,9 @@
 import Modal from './common/ResizableDraggableModal';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { Button, Empty, Tag } from 'antd';
 import { SafetyCertificateOutlined } from '@ant-design/icons';
+
+import './SecurityUpdateSettingsModal.css';
 
 import type { SecurityUpdateIssue, SecurityUpdateStatus } from '../types';
 import {
@@ -87,7 +89,7 @@ const SecurityUpdateSettingsModal = ({
   const showStart = status.overallStatus === 'pending' || status.overallStatus === 'postponed';
   const showRetry = status.overallStatus === 'needs_attention';
   const showRestart = status.overallStatus === 'needs_attention' || status.overallStatus === 'rolled_back';
-  const actionButtonStyle = getSecurityUpdateActionButtonStyle();
+  const actionButtonStyle = embedded ? undefined : getSecurityUpdateActionButtonStyle();
   const [activeFocus, setActiveFocus] = useState<SecurityUpdateFocusState>(EMPTY_FOCUS_STATE);
   const statusSectionRef = useRef<HTMLDivElement | null>(null);
   const recentResultRef = useRef<HTMLDivElement | null>(null);
@@ -127,9 +129,87 @@ const SecurityUpdateSettingsModal = ({
     };
   }, [focusRequest, focusTarget, open]);
 
+  const standaloneFooter = [
+    showRetry ? (
+      <Button key="retry" className={SECURITY_UPDATE_ACTION_BUTTON_CLASS} style={actionButtonStyle} onClick={onRetry}>
+        {t('security_update.settings.action.retry_check')}
+      </Button>
+    ) : null,
+    showRestart ? (
+      <Button key="restart" className={SECURITY_UPDATE_ACTION_BUTTON_CLASS} style={actionButtonStyle} onClick={onRestart}>
+        {t('security_update.settings.action.restart_update')}
+      </Button>
+    ) : null,
+    showStart ? (
+      <Button
+        key="start"
+        className={SECURITY_UPDATE_ACTION_BUTTON_CLASS}
+        style={actionButtonStyle}
+        type="primary"
+        onClick={onStart}
+      >
+        {t('security_update.settings.action.start')}
+      </Button>
+    ) : null,
+    <Button key="close" className={SECURITY_UPDATE_ACTION_BUTTON_CLASS} style={actionButtonStyle} onClick={onClose}>
+      {t('security_update.settings.action.close')}
+    </Button>,
+    onBack ? (
+      <Button key="back" className={SECURITY_UPDATE_ACTION_BUTTON_CLASS} style={actionButtonStyle} onClick={onBack}>
+        {t('common.back_to_previous')}
+      </Button>
+    ) : null,
+  ];
+
+  const embeddedFooter = [
+    onBack ? (
+      <Button key="back" className={SECURITY_UPDATE_ACTION_BUTTON_CLASS} onClick={onBack}>
+        {t('common.back_to_settings')}
+      </Button>
+    ) : null,
+    <Button
+      key="close"
+      className={SECURITY_UPDATE_ACTION_BUTTON_CLASS}
+      type={!showStart && !showRetry && !showRestart ? 'primary' : 'default'}
+      onClick={onClose}
+    >
+      {t('security_update.settings.action.close')}
+    </Button>,
+    showRestart ? (
+      <Button
+        key="restart"
+        className={SECURITY_UPDATE_ACTION_BUTTON_CLASS}
+        type={!showRetry && !showStart ? 'primary' : 'default'}
+        onClick={onRestart}
+      >
+        {t('security_update.settings.action.restart_update')}
+      </Button>
+    ) : null,
+    showRetry ? (
+      <Button key="retry" className={SECURITY_UPDATE_ACTION_BUTTON_CLASS} type="primary" onClick={onRetry}>
+        {t('security_update.settings.action.retry_check')}
+      </Button>
+    ) : null,
+    showStart ? (
+      <Button key="start" className={SECURITY_UPDATE_ACTION_BUTTON_CLASS} type="primary" onClick={onStart}>
+        {t('security_update.settings.action.start')}
+      </Button>
+    ) : null,
+  ];
+
+  const embeddedThemeStyle = embedded ? ({
+    '--security-update-settings-divider': overlayTheme.divider,
+    '--security-update-settings-accent': overlayTheme.selectedText,
+    height: 'auto',
+    minHeight: '100%',
+  } as CSSProperties) : undefined;
+
   return (
     <Modal
-      rootClassName={SECURITY_UPDATE_MODAL_CLASS}
+      rootClassName={[
+        SECURITY_UPDATE_MODAL_CLASS,
+        embedded ? 'security-update-settings-embedded' : '',
+      ].filter(Boolean).join(' ')}
       title={embedded ? null : (
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, minWidth: 0 }}>
           <div
@@ -161,57 +241,47 @@ const SecurityUpdateSettingsModal = ({
       embedded={embedded}
       closable={embedded ? false : undefined}
       onCancel={onClose}
-      footer={[
-        showRetry ? (
-          <Button key="retry" className={SECURITY_UPDATE_ACTION_BUTTON_CLASS} style={actionButtonStyle} onClick={onRetry}>
-            {t('security_update.settings.action.retry_check')}
-          </Button>
-        ) : null,
-        showRestart ? (
-          <Button key="restart" className={SECURITY_UPDATE_ACTION_BUTTON_CLASS} style={actionButtonStyle} onClick={onRestart}>
-            {t('security_update.settings.action.restart_update')}
-          </Button>
-        ) : null,
-        showStart ? (
-          <Button
-            key="start"
-            className={SECURITY_UPDATE_ACTION_BUTTON_CLASS}
-            style={actionButtonStyle}
-            type="primary"
-            onClick={onStart}
-          >
-            {t('security_update.settings.action.start')}
-          </Button>
-        ) : null,
-        <Button key="close" className={SECURITY_UPDATE_ACTION_BUTTON_CLASS} style={actionButtonStyle} onClick={onClose}>
-          {t('security_update.settings.action.close')}
-        </Button>,
-        onBack ? (
-          <Button key="back" className={SECURITY_UPDATE_ACTION_BUTTON_CLASS} style={actionButtonStyle} onClick={onBack}>
-            {t('common.back_to_previous')}
-          </Button>
-        ) : null,
-      ]}
+      footer={embedded ? embeddedFooter : standaloneFooter}
       width={760}
+      style={embeddedThemeStyle}
       styles={{
         content: getSecurityUpdateShellSurfaceStyle(overlayTheme, surfaceOpacity),
         header: { background: 'transparent', borderBottom: 'none', paddingBottom: 8 },
-        body: { paddingTop: 8, maxHeight: 640, overflowY: 'auto' },
-        footer: { background: 'transparent', borderTop: 'none', paddingTop: 10 },
+        body: embedded
+          ? { padding: 0, maxHeight: 'none', overflow: 'visible', flex: '1 0 auto' }
+          : { paddingTop: 8, maxHeight: 640, overflowY: 'auto' },
+        footer: embedded
+          ? { background: 'transparent', borderTop: `1px solid ${overlayTheme.divider}`, paddingTop: 12 }
+          : { background: 'transparent', borderTop: 'none', paddingTop: 10 },
       }}
     >
-      <div style={{ display: 'grid', gap: 14, padding: '12px 0' }}>
+      <div
+        className={embedded ? 'security-update-settings-layout' : undefined}
+        style={embedded ? undefined : { display: 'grid', gap: 14, padding: '12px 0' }}
+      >
         <div
           ref={statusSectionRef}
           tabIndex={-1}
-          style={sectionStyle(overlayTheme, surfaceOpacity, { emphasized: activeFocus.target === 'status' })}
+          className={embedded ? [
+            'security-update-settings-section',
+            activeFocus.target === 'status' ? 'security-update-settings-section-active' : '',
+          ].filter(Boolean).join(' ') : undefined}
+          style={embedded
+            ? undefined
+            : sectionStyle(overlayTheme, surfaceOpacity, { emphasized: activeFocus.target === 'status' })}
         >
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
             <div>
-              <div style={{ fontSize: 15, fontWeight: 700, color: overlayTheme.titleText }}>
+              <div
+                className={embedded ? 'security-update-settings-status-title' : undefined}
+                style={{ fontSize: embedded ? undefined : 15, fontWeight: 700, color: overlayTheme.titleText }}
+              >
                 {t('security_update.settings.current_status', { status: statusMeta.label })}
               </div>
-              <div style={{ marginTop: 6, fontSize: 13, color: overlayTheme.mutedText, lineHeight: 1.7 }}>
+              <div
+                className={embedded ? 'security-update-settings-copy' : undefined}
+                style={{ marginTop: 6, fontSize: embedded ? undefined : 13, color: overlayTheme.mutedText, lineHeight: 1.7 }}
+              >
                 {statusMeta.description}
               </div>
             </div>
@@ -231,11 +301,23 @@ const SecurityUpdateSettingsModal = ({
           </div>
         </div>
 
-        <div style={sectionStyle(overlayTheme, surfaceOpacity)}>
-          <div style={{ fontSize: 14, fontWeight: 700, color: overlayTheme.titleText, marginBottom: 12 }}>
+        <div
+          className={embedded ? 'security-update-settings-section' : undefined}
+          style={embedded ? undefined : sectionStyle(overlayTheme, surfaceOpacity)}
+        >
+          <div
+            className={embedded ? 'security-update-settings-section-title' : undefined}
+            style={{ fontSize: embedded ? undefined : 14, fontWeight: 700, color: overlayTheme.titleText, marginBottom: 12 }}
+          >
             {t('security_update.settings.scope_title')}
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0, 1fr))', gap: 10 }}>
+          <div
+            className={embedded ? 'security-update-settings-summary' : undefined}
+            role="list"
+            style={embedded
+              ? undefined
+              : { display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0, 1fr))', gap: 10 }}
+          >
             {[
               { label: t('security_update.settings.summary.total'), value: status.summary.total },
               { label: t('security_update.settings.summary.updated'), value: status.summary.updated },
@@ -245,21 +327,39 @@ const SecurityUpdateSettingsModal = ({
             ].map((item) => (
               <div
                 key={item.label}
-                style={{
+                className={embedded ? 'security-update-settings-summary-item' : undefined}
+                role="listitem"
+                style={embedded ? undefined : {
                   ...getSecurityUpdateSectionSurfaceStyle(overlayTheme, { surfaceOpacity }),
                   borderRadius: 12,
                   padding: '12px 10px',
                 }}
               >
-                <div style={{ fontSize: 12, color: overlayTheme.mutedText }}>{item.label}</div>
-                <div style={{ marginTop: 6, fontSize: 20, fontWeight: 700, color: overlayTheme.titleText }}>{item.value}</div>
+                <div
+                  className={embedded ? 'security-update-settings-caption' : undefined}
+                  style={{ fontSize: embedded ? undefined : 12, color: overlayTheme.mutedText }}
+                >
+                  {item.label}
+                </div>
+                <div
+                  className={embedded ? 'security-update-settings-summary-value' : undefined}
+                  style={{ marginTop: embedded ? 4 : 6, fontSize: embedded ? undefined : 20, fontWeight: 700, color: overlayTheme.titleText }}
+                >
+                  {item.value}
+                </div>
               </div>
             ))}
           </div>
         </div>
 
-        <div style={sectionStyle(overlayTheme, surfaceOpacity)}>
-          <div style={{ fontSize: 14, fontWeight: 700, color: overlayTheme.titleText, marginBottom: 12 }}>
+        <div
+          className={embedded ? 'security-update-settings-section' : undefined}
+          style={embedded ? undefined : sectionStyle(overlayTheme, surfaceOpacity)}
+        >
+          <div
+            className={embedded ? 'security-update-settings-section-title' : undefined}
+            style={{ fontSize: embedded ? undefined : 14, fontWeight: 700, color: overlayTheme.titleText, marginBottom: 12 }}
+          >
             {t('security_update.settings.pending_list')}
           </div>
           {sortedIssues.length === 0 ? (
@@ -268,7 +368,7 @@ const SecurityUpdateSettingsModal = ({
               description={t('security_update.settings.empty_pending')}
             />
           ) : (
-            <div style={{ display: 'grid', gap: 10 }}>
+            <div className={embedded ? 'security-update-settings-issue-list' : undefined} style={embedded ? undefined : { display: 'grid', gap: 10 }}>
               {sortedIssues.map((issue) => {
                 const actionMeta = getSecurityUpdateIssueActionMeta(issue, t);
                 const itemStatusMeta = getSecurityUpdateItemStatusMeta(issue.status, t);
@@ -276,7 +376,8 @@ const SecurityUpdateSettingsModal = ({
                 return (
                   <div
                     key={issue.id}
-                    style={{
+                    className={embedded ? 'security-update-settings-issue' : undefined}
+                    style={embedded ? undefined : {
                       ...getSecurityUpdateSectionSurfaceStyle(overlayTheme, { surfaceOpacity }),
                       borderRadius: 12,
                       padding: 14,
@@ -288,7 +389,10 @@ const SecurityUpdateSettingsModal = ({
                   >
                     <div style={{ minWidth: 0 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                        <div style={{ fontSize: 14, fontWeight: 700, color: overlayTheme.titleText }}>
+                        <div
+                          className={embedded ? 'security-update-settings-section-title' : undefined}
+                          style={{ fontSize: embedded ? undefined : 14, fontWeight: 700, color: overlayTheme.titleText }}
+                        >
                           {issue.title || issue.message || issue.id}
                         </div>
                         <Tag color={itemStatusMeta.color}>
@@ -298,14 +402,18 @@ const SecurityUpdateSettingsModal = ({
                           {t('security_update.settings.item_severity', { severity: issueSeverityMeta.label })}
                         </Tag>
                       </div>
-                      <div style={{ marginTop: 6, fontSize: 13, color: overlayTheme.mutedText, lineHeight: 1.7 }}>
+                      <div
+                        className={embedded ? 'security-update-settings-copy' : undefined}
+                        style={{ marginTop: 6, fontSize: embedded ? undefined : 13, color: overlayTheme.mutedText, lineHeight: 1.7 }}
+                      >
                         {issue.message || t('security_update.settings.item_default_message')}
                       </div>
                     </div>
                     <Button
                       className={SECURITY_UPDATE_ACTION_BUTTON_CLASS}
                       style={actionButtonStyle}
-                      type={actionMeta.emphasis === 'primary' ? 'primary' : 'default'}
+                      type={embedded ? 'default' : actionMeta.emphasis === 'primary' ? 'primary' : 'default'}
+                      aria-label={`${actionMeta.label}: ${issue.title || issue.message || issue.id}`}
                       onClick={() => onIssueAction(issue)}
                     >
                       {actionMeta.label}
@@ -323,21 +431,46 @@ const SecurityUpdateSettingsModal = ({
             tabIndex={-1}
             className={[
               SECURITY_UPDATE_RESULT_CARD_CLASS,
+              embedded ? 'security-update-settings-section' : '',
+              embedded && activeFocus.target === 'recent_result' ? 'security-update-settings-section-active' : '',
               activeFocus.target === 'recent_result' ? SECURITY_UPDATE_RESULT_CARD_ACTIVE_CLASS : '',
             ].filter(Boolean).join(' ')}
-            style={sectionStyle(overlayTheme, surfaceOpacity, { emphasized: activeFocus.target === 'recent_result' })}
+            style={embedded
+              ? undefined
+              : sectionStyle(overlayTheme, surfaceOpacity, { emphasized: activeFocus.target === 'recent_result' })}
           >
-            <div style={{ fontSize: 14, fontWeight: 700, color: overlayTheme.titleText, marginBottom: 8 }}>
+            <div
+              className={embedded ? 'security-update-settings-section-title' : undefined}
+              style={{ fontSize: embedded ? undefined : 14, fontWeight: 700, color: overlayTheme.titleText, marginBottom: 8 }}
+            >
               {t('security_update.settings.recent_result')}
             </div>
             {status.backupPath ? (
-              <div style={{ fontSize: 13, color: overlayTheme.mutedText, lineHeight: 1.7 }}>
-                {t('security_update.settings.backup_path')}<span style={{ color: overlayTheme.titleText }}>{status.backupPath}</span>
+              <div
+                className={embedded ? 'security-update-settings-copy' : undefined}
+                style={{ fontSize: embedded ? undefined : 13, color: overlayTheme.mutedText, lineHeight: 1.7 }}
+              >
+                {t('security_update.settings.backup_path')}
+                {embedded ? (
+                  <code className="security-update-settings-technical-value" style={{ color: overlayTheme.titleText }}>
+                    {status.backupPath}
+                  </code>
+                ) : (
+                  <span style={{ color: overlayTheme.titleText }}>{status.backupPath}</span>
+                )}
               </div>
             ) : null}
             {status.lastError ? (
-              <div style={{ marginTop: 8, fontSize: 13, color: '#ff7875', lineHeight: 1.7 }}>
-                {t('security_update.settings.last_error')}{status.lastError}
+              <div
+                className={embedded ? 'security-update-settings-copy' : undefined}
+                style={{ marginTop: 8, fontSize: embedded ? undefined : 13, color: '#ff7875', lineHeight: 1.7 }}
+              >
+                {t('security_update.settings.last_error')}
+                {embedded ? (
+                  <code className="security-update-settings-technical-value">
+                    {status.lastError}
+                  </code>
+                ) : status.lastError}
               </div>
             ) : null}
           </div>

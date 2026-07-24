@@ -79,6 +79,76 @@ describe('AIMCPServerCard', () => {
     expect(markup).toContain('$env:GITHUB_TOKEN=...; uvx mcp-server-github --stdio');
   });
 
+  it('keeps saved services compact while opening a new draft for editing', () => {
+    const renderCard = (id: string) => renderToStaticMarkup(
+      <AIMCPServerCard
+        server={{
+          id,
+          name: '',
+          transport: 'stdio',
+          command: 'node',
+          args: ['server.js', '--stdio'],
+          env: {},
+          enabled: true,
+          timeoutSeconds: 20,
+        }}
+        serverTools={[]}
+        cardBg="#fff"
+        cardBorder="rgba(0,0,0,0.08)"
+        inputBg="#fff"
+        darkMode={false}
+        overlayTheme={buildOverlayWorkbenchTheme(false)}
+        loading={false}
+        onChange={() => {}}
+        onTest={() => {}}
+        onSave={() => {}}
+        onDelete={() => {}}
+      />,
+    );
+
+    const savedMarkup = renderCard('mcp-saved');
+    const draftMarkup = renderCard('mcp-draft-123');
+
+    expect(savedMarkup).toContain('Unnamed MCP service');
+    expect(savedMarkup).toContain('class="gonavi-ai-mcp-server-row gonavi-ai-mcp-disclosure"');
+    expect(savedMarkup).not.toContain('gonavi-ai-mcp-server-row gonavi-ai-mcp-disclosure" open');
+    expect(draftMarkup).toContain('gonavi-ai-mcp-server-row gonavi-ai-mcp-disclosure" open=""');
+    expect(savedMarkup).toContain('Recommended fill order');
+  });
+
+  it('does not expose a malformed full command in the collapsed summary', () => {
+    const secret = 'summary-secret-value';
+    const markup = renderToStaticMarkup(
+      <AIMCPServerCard
+        server={{
+          id: 'mcp-saved',
+          name: 'Private MCP',
+          transport: 'stdio',
+          command: `$env:GITHUB_TOKEN=${secret}; uvx mcp-server-github --stdio`,
+          args: [],
+          env: {},
+          enabled: true,
+          timeoutSeconds: 20,
+        }}
+        serverTools={[]}
+        cardBg="#fff"
+        cardBorder="rgba(0,0,0,0.08)"
+        inputBg="#fff"
+        darkMode={false}
+        overlayTheme={buildOverlayWorkbenchTheme(false)}
+        loading={false}
+        onChange={() => {}}
+        onTest={() => {}}
+        onSave={() => {}}
+        onDelete={() => {}}
+      />,
+    );
+
+    const summaryMarkup = markup.match(/<summary>[\s\S]*?<\/summary>/u)?.[0] || '';
+    expect(summaryMarkup).toContain('Private MCP');
+    expect(summaryMarkup).not.toContain(secret);
+  });
+
   it('renders the MCP setup guide in Chinese when an i18n provider is available', () => {
     const markup = renderToStaticMarkup(
       <I18nProvider preference="zh-CN" systemLanguages={['zh-CN']} onPreferenceChange={() => {}}>

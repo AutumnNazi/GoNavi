@@ -6,6 +6,10 @@ export function AICallMCPTool(arg1:string,arg2:string):Promise<ai.MCPToolCallRes
 
 export function AIChatCancel(arg1:string):Promise<void>;
 
+export function AIChatCancelAllAndWait():Promise<boolean>;
+
+export function AIChatCancelAndWait(arg1:string):Promise<boolean>;
+
 export function AIChatSend(arg1:Array<ai.Message>,arg2:Array<ai.Tool>):Promise<Record<string, any>>;
 
 export function AIChatSendInSession(arg1:string,arg2:Array<ai.Message>,arg3:Array<ai.Tool>):Promise<Record<string, any>>;
@@ -53,6 +57,8 @@ export function AIGetUserPromptSettings():Promise<ai.UserPromptSettings>;
 export function AIInstallClaudeCodeMCP():Promise<ai.MCPClientInstallResult>;
 
 export function AIInstallCodexMCP():Promise<ai.MCPClientInstallResult>;
+
+export function AIInstallOpenCodeMCP():Promise<ai.MCPClientInstallResult>;
 
 export function AIListMCPTools():Promise<Array<ai.MCPToolDescriptor>>;
 

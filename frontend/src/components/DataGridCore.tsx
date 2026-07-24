@@ -241,6 +241,15 @@ const splitCellKey = (cellKey: string): { rowKey: string; colName: string } | nu
         colName: cellKey.slice(sepIndex + CELL_KEY_SEP.length),
     };
 };
+const collectDataGridCellSelectionRowKeys = (cellKeys: Iterable<string>): string[] => {
+    const rowKeys = new Set<string>();
+    for (const cellKey of cellKeys) {
+        const parsed = splitCellKey(cellKey);
+        if (!parsed || !parsed.rowKey) continue;
+        rowKeys.add(parsed.rowKey);
+    }
+    return Array.from(rowKeys);
+};
 export const resolveContextMenuFieldName = (dataIndex: string, title?: string): string => {
     const name = String(dataIndex || title || '').trim();
     return name;
@@ -491,7 +500,7 @@ export const attachDataGridVirtualEditRenderVersion = <T extends Item>(
         }
         const nextRow = { ...(row as object) } as T;
         Object.defineProperty(nextRow, DATA_GRID_VIRTUAL_EDIT_RENDER_VERSION, {
-            value: `${editingCell.rowKey}${CELL_KEY_SEP}${editingCell.dataIndex}`,
+            value: `${editingCell.rowKey}${CELL_KEY_SEP}${editingCell.dataIndex}${CELL_KEY_SEP}${editingCell.sessionId}`,
             enumerable: true,
         });
         return nextRow;
@@ -1322,6 +1331,10 @@ interface DataGridProps {
     resultSql?: string;
     resultExportAllSql?: string;
     dbName?: string;
+    /** DDL 查询使用的数据库/命名空间；查询结果页不复用列元数据目标。 */
+    ddlDbName?: string;
+    /** DDL 查询使用的表名；查询结果页仅在该目标明确时显示 DDL 入口。 */
+    ddlTableName?: string;
     connectionId?: string;
     pkColumns?: string[];
     editLocator?: EditRowLocator;
@@ -1359,6 +1372,7 @@ interface DataGridProps {
     initialViewMode?: GridViewMode;
     initialViewModeRequestId?: string;
     onDataViewActivate?: () => void;
+    onDataChange?: (rows: any[]) => void;
 }
 
 type GridFilterCondition = FilterCondition & {
@@ -1373,6 +1387,7 @@ type GridViewMode = 'table' | 'json' | 'text' | 'fields' | 'ddl' | 'er' | 'sqlLo
 type DdlViewLayoutMode = 'bottom' | 'side';
 type DataGridExportScope = 'selected' | 'page' | 'all' | 'filteredAll';
 type VirtualEditingCellState = {
+    sessionId: number;
     rowKey: string;
     dataIndex: string;
     title: React.ReactNode;
@@ -1656,6 +1671,7 @@ export {
     useDataGridI18nLanguage,
     makeCellKey,
     splitCellKey,
+    collectDataGridCellSelectionRowKeys,
     trimSimpleCache,
     looksLikeDateTimeText,
     normalizeDateTimeString,

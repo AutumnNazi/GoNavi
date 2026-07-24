@@ -152,4 +152,36 @@ describe('sqlEditorApplicationQuit', () => {
       dbName: 'scratch',
     }));
   });
+
+  it('reuses the temporary tab identity so saving on later exits does not create history copies', async () => {
+    const tab = createQueryTab({
+      id: 'tab-3',
+      title: 'New query',
+      query: 'select 3;',
+    });
+    const target = {
+      kind: 'unsaved-query' as const,
+      tabId: tab.id,
+      title: tab.title,
+      draft: tab.query || '',
+      connectionId: tab.connectionId,
+      dbName: tab.dbName || '',
+    };
+    const persistedQueries = new Map<string, SavedQuery>();
+    const saveQuery = vi.fn(async (query: SavedQuery) => {
+      persistedQueries.set(query.id, query);
+      return query;
+    });
+
+    await saveApplicationQuitUnsavedSQLTargets([target], saveQuery);
+    const savedQuery = Array.from(persistedQueries.values())[0];
+    const targetsAfterRestart = await collectApplicationQuitUnsavedSQLTargets(
+      [tab],
+      [savedQuery],
+      vi.fn(),
+    );
+
+    expect(savedQuery.id).toBe(tab.id);
+    expect(targetsAfterRestart).toEqual([]);
+  });
 });

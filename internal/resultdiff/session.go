@@ -22,6 +22,15 @@ type Session struct {
 
 	mu sync.RWMutex
 
+	// activityMu is independent from the data lock so pruning never waits for a
+	// potentially expensive diff to finish. time.Time retains its monotonic
+	// component, avoiding TTL decisions based on wall-clock jumps.
+	activityMu       sync.Mutex
+	lastTouched      time.Time
+	activeOperations int
+	now              func() time.Time
+	owner            *Manager
+
 	// 装载缓冲（rows 模式）
 	leftColumns  []string
 	rightColumns []string
@@ -42,16 +51,26 @@ type Manager struct {
 	mu       sync.Mutex
 	sessions map[string]*Session
 	ttl      time.Duration
+	now      func() time.Time
+	closed   bool
 }
 
 // NewManager 创建会话管理器。
 func NewManager(ttl time.Duration) *Manager {
+	return newManagerWithClock(ttl, time.Now)
+}
+
+func newManagerWithClock(ttl time.Duration, now func() time.Time) *Manager {
 	if ttl <= 0 {
 		ttl = 30 * time.Minute
+	}
+	if now == nil {
+		now = time.Now
 	}
 	m := &Manager{
 		sessions: make(map[string]*Session),
 		ttl:      ttl,
+		now:      now,
 	}
 	return m
 }
@@ -60,8 +79,34 @@ func NewManager(ttl time.Duration) *Manager {
 func (m *Manager) Create(req StartRequest) *Session {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.gcLocked()
+	if m.closed {
+		return nil
+	}
+	now := m.now()
+	m.pruneExpiredLocked(now)
+	return m.createLocked(req, now)
+}
 
+// CreateWithLease creates a session and keeps it active until release is
+// called. It is used while initial SQL datasets are loaded, before the first
+// normal Get/Session operation can refresh the TTL.
+func (m *Manager) CreateWithLease(req StartRequest) (*Session, func()) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.closed {
+		return nil, func() {}
+	}
+	now := m.now()
+	m.pruneExpiredLocked(now)
+	session := m.createLocked(req, now)
+	release := session.beginActivityAt(now)
+	var releaseOnce sync.Once
+	return session, func() {
+		releaseOnce.Do(release)
+	}
+}
+
+func (m *Manager) createLocked(req StartRequest, now time.Time) *Session {
 	id := strings.TrimSpace(req.JobID)
 	if id == "" {
 		id = "rdiff-" + uuid.NewString()
@@ -72,7 +117,7 @@ func (m *Manager) Create(req StartRequest) *Session {
 	}
 	s := &Session{
 		ID:              id,
-		CreatedAt:       time.Now(),
+		CreatedAt:       now,
 		KeyColumns:      normalizeColumnList(req.KeyColumns),
 		CompareColumns:  normalizeColumnList(req.CompareColumns),
 		IgnoreColumns:   normalizeColumnList(req.IgnoreColumns),
@@ -81,7 +126,10 @@ func (m *Manager) Create(req StartRequest) *Session {
 		IncludeSameRows: req.IncludeSameRows,
 		leftRows:        make([]map[string]interface{}, 0),
 		rightRows:       make([]map[string]interface{}, 0),
+		now:             m.now,
+		owner:           m,
 	}
+	s.touch(now)
 	m.sessions[id] = s
 	return s
 }
@@ -90,11 +138,16 @@ func (m *Manager) Create(req StartRequest) *Session {
 func (m *Manager) Get(jobID string) (*Session, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.gcLocked()
+	if m.closed {
+		return nil, fmt.Errorf("result diff manager is closed")
+	}
+	now := m.now()
+	m.pruneExpiredLocked(now)
 	s, ok := m.sessions[strings.TrimSpace(jobID)]
 	if !ok {
 		return nil, fmt.Errorf("result diff job not found: %s", jobID)
 	}
+	s.touch(now)
 	return s, nil
 }
 
@@ -105,20 +158,128 @@ func (m *Manager) Close(jobID string) {
 	delete(m.sessions, strings.TrimSpace(jobID))
 }
 
-func (m *Manager) gcLocked() {
-	if m.ttl <= 0 {
-		return
+// CloseAll releases every managed session and returns the number removed.
+func (m *Manager) CloseAll() int {
+	if m == nil {
+		return 0
 	}
-	now := time.Now()
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	closed := len(m.sessions)
+	m.sessions = make(map[string]*Session)
+	return closed
+}
+
+// Shutdown permanently closes the manager, releases every session, and rejects
+// later creation or lookup attempts.
+func (m *Manager) Shutdown() int {
+	if m == nil {
+		return 0
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	closed := len(m.sessions)
+	m.sessions = make(map[string]*Session)
+	m.closed = true
+	return closed
+}
+
+// PruneExpired removes sessions idle for longer than the configured TTL.
+// Passing a time explicitly keeps the maintenance path deterministic and lets
+// callers share an existing ticker instead of creating another goroutine.
+func (m *Manager) PruneExpired(now time.Time) int {
+	if m == nil {
+		return 0
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if now.IsZero() {
+		now = m.now()
+	}
+	return m.pruneExpiredLocked(now)
+}
+
+func (m *Manager) pruneExpiredLocked(now time.Time) int {
+	if m.ttl <= 0 {
+		return 0
+	}
+	removed := 0
 	for id, s := range m.sessions {
-		if now.Sub(s.CreatedAt) > m.ttl {
+		lastTouched, activeOperations := s.activityState()
+		if activeOperations > 0 {
+			continue
+		}
+		if now.Sub(lastTouched) > m.ttl {
 			delete(m.sessions, id)
+			removed++
 		}
 	}
+	return removed
+}
+
+func (s *Session) touch(now time.Time) {
+	if s == nil {
+		return
+	}
+	s.activityMu.Lock()
+	s.lastTouched = now
+	s.activityMu.Unlock()
+}
+
+func (s *Session) activityState() (time.Time, int) {
+	if s == nil {
+		return time.Time{}, 0
+	}
+	s.activityMu.Lock()
+	defer s.activityMu.Unlock()
+	lastTouched := s.lastTouched
+	if lastTouched.IsZero() {
+		lastTouched = s.CreatedAt
+	}
+	return lastTouched, s.activeOperations
+}
+
+func (s *Session) beginActivity() func() {
+	if s == nil {
+		return func() {}
+	}
+	if s.owner == nil {
+		return s.beginActivityAt(s.currentTime())
+	}
+
+	s.owner.mu.Lock()
+	defer s.owner.mu.Unlock()
+	if s.owner.closed || s.owner.sessions[s.ID] != s {
+		return func() {}
+	}
+	return s.beginActivityAt(s.owner.now())
+}
+
+func (s *Session) beginActivityAt(now time.Time) func() {
+	s.activityMu.Lock()
+	s.lastTouched = now
+	s.activeOperations++
+	s.activityMu.Unlock()
+	return func() {
+		finishedAt := s.currentTime()
+		s.activityMu.Lock()
+		s.lastTouched = finishedAt
+		s.activeOperations--
+		s.activityMu.Unlock()
+	}
+}
+
+func (s *Session) currentTime() time.Time {
+	if s != nil && s.now != nil {
+		return s.now()
+	}
+	return time.Now()
 }
 
 // AppendRows 向一侧追加行。
 func (s *Session) AppendRows(side string, columns []string, rows []map[string]interface{}, done bool) error {
+	finishActivity := s.beginActivity()
+	defer finishActivity()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.computed {
@@ -169,6 +330,8 @@ func (s *Session) SetLoaded(
 	leftCols []string, leftRows []map[string]interface{},
 	rightCols []string, rightRows []map[string]interface{},
 ) error {
+	finishActivity := s.beginActivity()
+	defer finishActivity()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if len(leftRows) > s.MaxRowsPerSide {
@@ -188,6 +351,8 @@ func (s *Session) SetLoaded(
 
 // Compute 执行 diff。
 func (s *Session) Compute() (Summary, error) {
+	finishActivity := s.beginActivity()
+	defer finishActivity()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.computed {
@@ -213,6 +378,8 @@ func (s *Session) Compute() (Summary, error) {
 
 // Page 分页。
 func (s *Session) Page(req PageRequest) (PageResult, error) {
+	finishActivity := s.beginActivity()
+	defer finishActivity()
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if !s.computed {
@@ -226,6 +393,8 @@ func (s *Session) Page(req PageRequest) (PageResult, error) {
 
 // Summary 返回汇总。
 func (s *Session) Summary() (Summary, bool) {
+	finishActivity := s.beginActivity()
+	defer finishActivity()
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.summary, s.computed

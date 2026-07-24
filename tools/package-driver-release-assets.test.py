@@ -39,6 +39,8 @@ class PackageDriverReleaseAssetsTest(unittest.TestCase):
             self.assertTrue((output_dir / "GoNavi-DriverAgents.zip").is_file())
             self.assertTrue((output_dir / windows_asset.name).is_file())
             self.assertTrue((output_dir / darwin_asset.name).is_file())
+            self.assertEqual((output_dir / "LICENSE").read_bytes(), (ROOT / "LICENSE").read_bytes())
+            self.assertEqual((output_dir / "NOTICE").read_bytes(), (ROOT / "NOTICE").read_bytes())
 
             index = json.loads((output_dir / "GoNavi-DriverAgents-Index.json").read_text(encoding="utf-8"))
             self.assertEqual(index["assets"][windows_asset.name], len(b"windows-asset"))
@@ -48,10 +50,14 @@ class PackageDriverReleaseAssetsTest(unittest.TestCase):
                 self.assertEqual(
                     sorted(zf.namelist()),
                     [
+                        "LICENSE",
                         "MacOS/clickhouse-driver-agent-darwin-arm64",
+                        "NOTICE",
                         "Windows/clickhouse-driver-agent-windows-amd64.exe",
                     ],
                 )
+                self.assertEqual(zf.read("LICENSE"), (ROOT / "LICENSE").read_bytes())
+                self.assertEqual(zf.read("NOTICE"), (ROOT / "NOTICE").read_bytes())
 
 
 if __name__ == "__main__":

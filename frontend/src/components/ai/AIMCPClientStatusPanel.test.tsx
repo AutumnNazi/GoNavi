@@ -31,6 +31,7 @@ describe('AIMCPClientStatusPanel', () => {
     );
 
     expect(markup).toContain('Selected client status');
+    expect(markup).toContain('Detection details');
     expect(markup).toContain('Current target client: Hermans');
     expect(markup).toContain('needs a remote MCP bridge to call this GoNavi');
     expect(markup).toContain('Remote connection boundary');
@@ -42,5 +43,7 @@ describe('AIMCPClientStatusPanel', () => {
     expect(markup).toContain('Refresh status');
     expect(markup).toContain('Copy config path');
     expect(markup).toContain('Copy launch command');
+    expect(markup).toContain('class="gonavi-ai-mcp-disclosure gonavi-ai-mcp-client-status-disclosure"');
+    expect(markup).not.toContain('gonavi-ai-mcp-client-status-disclosure" open');
   });
 });

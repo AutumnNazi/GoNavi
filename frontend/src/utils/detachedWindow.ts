@@ -24,6 +24,8 @@ export type DetachedQueryResultSnapshot = {
   /** 列类型/注释元数据所属库（跨库 SELECT 时可能与窗口 dbName 不同） */
   metadataDbName?: string;
   metadataTableName?: string;
+  ddlDbName?: string;
+  ddlTableName?: string;
   pkColumns: string[];
   editLocator?: {
     strategy?: string;
@@ -44,22 +46,29 @@ export type DetachedQueryResultWindow = DetachedWindowBounds & {
   result: DetachedQueryResultSnapshot;
 };
 
+export type DetachedWindowCoordinateSpace = 'viewport' | 'screen';
+
 /** AI 聊天独立浮动窗（单例，会话态；尺寸/位置记忆另存） */
-export type DetachedAIChatWindow = DetachedWindowBounds;
+export type DetachedAIChatWindow = DetachedWindowBounds & {
+  coordinateSpace?: DetachedWindowCoordinateSpace;
+};
 
 /** 独立窗上次尺寸与位置（持久化，再次打开时复用） */
 export type AIChatDetachedBoundsMemory = Pick<
   DetachedWindowBounds,
   'x' | 'y' | 'width' | 'height'
->;
+> & { coordinateSpace?: DetachedWindowCoordinateSpace };
 
 export const toAIChatDetachedBoundsMemory = (
-  bounds: Pick<DetachedWindowBounds, 'x' | 'y' | 'width' | 'height'>,
+  bounds: Pick<DetachedWindowBounds, 'x' | 'y' | 'width' | 'height'> & {
+    coordinateSpace?: DetachedWindowCoordinateSpace;
+  },
 ): AIChatDetachedBoundsMemory => ({
   x: bounds.x,
   y: bounds.y,
   width: bounds.width,
   height: bounds.height,
+  ...(bounds.coordinateSpace ? { coordinateSpace: bounds.coordinateSpace } : {}),
 });
 
 export const DETACH_TAB_DRAG_Y_THRESHOLD = 56;
@@ -154,6 +163,107 @@ export const resolveResultDetachPreferredBounds = (
   x: Math.max(DETACHED_WINDOW_VIEWPORT_PADDING, Math.round(clientX - 120)),
   y: Math.max(DETACHED_WINDOW_VIEWPORT_PADDING, Math.round(clientY - 24)),
 });
+
+export const resolveNativeDetachReleasePoint = (input: {
+  startScreenX: number;
+  startScreenY: number;
+  deltaX: number;
+  deltaY: number;
+}): { screenX: number; screenY: number } => ({
+  screenX: Math.round(Number(input.startScreenX) + Number(input.deltaX)),
+  screenY: Math.round(Number(input.startScreenY) + Number(input.deltaY)),
+});
+
+export type NativeDetachTerminalPointer = {
+  type: 'pointerup' | 'pointercancel';
+  clientX: number;
+  clientY: number;
+  screenX: number;
+  screenY: number;
+};
+
+export const resolveNativeDetachDragRelease = (input: {
+  startClientX: number;
+  startClientY: number;
+  startScreenX: number;
+  startScreenY: number;
+  fallbackDeltaX: number;
+  fallbackDeltaY: number;
+  terminalPointer?: NativeDetachTerminalPointer | null;
+}): {
+  deltaX: number;
+  deltaY: number;
+  screenX: number;
+  screenY: number;
+  terminalType?: NativeDetachTerminalPointer['type'];
+} => {
+  const terminal = input.terminalPointer;
+  const hasTerminalClientPoint = Boolean(terminal)
+    && Number.isFinite(Number(terminal?.clientX))
+    && Number.isFinite(Number(terminal?.clientY));
+  const deltaX = hasTerminalClientPoint
+    ? Number(terminal?.clientX) - Number(input.startClientX)
+    : Number(input.fallbackDeltaX);
+  const deltaY = hasTerminalClientPoint
+    ? Number(terminal?.clientY) - Number(input.startClientY)
+    : Number(input.fallbackDeltaY);
+  const hasTerminalScreenPoint = Boolean(terminal)
+    && Number.isFinite(Number(terminal?.screenX))
+    && Number.isFinite(Number(terminal?.screenY));
+  const fallbackRelease = resolveNativeDetachReleasePoint({
+    startScreenX: input.startScreenX,
+    startScreenY: input.startScreenY,
+    deltaX,
+    deltaY,
+  });
+  return {
+    deltaX,
+    deltaY,
+    screenX: hasTerminalScreenPoint ? Math.round(Number(terminal?.screenX)) : fallbackRelease.screenX,
+    screenY: hasTerminalScreenPoint ? Math.round(Number(terminal?.screenY)) : fallbackRelease.screenY,
+    ...(terminal ? { terminalType: terminal.type } : {}),
+  };
+};
+
+/** Native windows use virtual-desktop coordinates, which may be negative. */
+export const resolveNativeDetachPreferredBounds = (
+  screenX: number,
+  screenY: number,
+): Partial<Pick<DetachedWindowBounds, 'x' | 'y'>> => ({
+  x: Math.round(Number(screenX) - 120),
+  y: Math.round(Number(screenY) - 24),
+});
+
+export const shouldDetachAtScreenPoint = (
+  screenX: number,
+  screenY: number,
+  hostBounds: { x: number; y: number; width: number; height: number },
+): boolean => {
+  const x = Number(screenX);
+  const y = Number(screenY);
+  const left = Number(hostBounds.x);
+  const top = Number(hostBounds.y);
+  const width = Number(hostBounds.width);
+  const height = Number(hostBounds.height);
+  if (![x, y, left, top, width, height].every(Number.isFinite) || width <= 0 || height <= 0) {
+    return false;
+  }
+  return x < left || x > left + width || y < top || y > top + height;
+};
+
+export const shouldDetachAfterNativePointerCancel = (
+  release: {
+    terminalType?: NativeDetachTerminalPointer['type'];
+    deltaY: number;
+    screenX: number;
+    screenY: number;
+  },
+  hostBounds: { x: number; y: number; width: number; height: number },
+): boolean => release.terminalType === 'pointercancel'
+  && (
+    shouldDetachTabByDrag(release.deltaY)
+    || shouldDetachAtScreenPoint(release.screenX, release.screenY, hostBounds)
+  );
 
 export const resolveDetachedWindowTitle = (params: {
   kindLabel: string;

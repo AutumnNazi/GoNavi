@@ -1,14 +1,14 @@
 import Modal from './common/ResizableDraggableModal';
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Dropdown, message, Tabs, Tooltip } from 'antd';
-import { AppstoreOutlined, CloseOutlined, ConsoleSqlOutlined, DatabaseOutlined, PlusOutlined, RobotOutlined, SettingOutlined } from '@ant-design/icons';
+import { CloseOutlined, ConsoleSqlOutlined, DatabaseOutlined, FileTextOutlined, FolderOpenOutlined, HistoryOutlined, PlusOutlined, PushpinOutlined, RightOutlined, RobotOutlined, SearchOutlined, SettingOutlined } from '@ant-design/icons';
 import type { MenuProps, TabsProps } from 'antd';
 import { DndContext, PointerSensor, closestCenter, useSensor, useSensors } from '@dnd-kit/core';
 import type { DragEndEvent, DragMoveEvent, DragStartEvent } from '@dnd-kit/core';
 import { SortableContext, useSortable, horizontalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { useStore } from '../store';
-import type { TabData } from '../types';
+import { useStore, type RecentConnectionTarget, type RecentSQLFile } from '../store';
+import type { ExternalSQLDirectory, SavedConnection, SavedQuery, TabData } from '../types';
 import { t } from '../i18n';
 import {
   buildTabDisplayModel,
@@ -26,15 +26,25 @@ import {
   normalizeSQLFileReadContent,
 } from '../utils/sqlFileTabDirty';
 import { clearSQLFileTabDraft, getSQLFileTabDraft } from '../utils/sqlFileTabDrafts';
+import { buildExternalSQLTabId } from '../utils/externalSqlTree';
+import { buildSQLFileExecutionWorkbenchTab } from '../utils/sqlFileExecutionTab';
+import { getDataSourceCapabilities } from '../utils/dataSourceCapabilities';
+import { CLOSE_ACTIVE_WORKSPACE_TAB_EVENT, resolveDockedActiveTabId } from '../utils/closeTabShortcut';
 import WorkbenchTabContent from './WorkbenchTabContent';
 import DetachDragPreview, {
   buildDetachDragPreviewState,
   type DetachDragPreviewState,
 } from './DetachDragPreview';
 import {
-  resolveResultDetachPreferredBounds,
+  type NativeDetachTerminalPointer,
+  resolveNativeDetachDragRelease,
+  resolveNativeDetachPreferredBounds,
+  shouldDetachAfterNativePointerCancel,
+  shouldDetachAtScreenPoint,
   shouldDetachTabByDrag,
 } from '../utils/detachedWindow';
+import { openNativeWorkbenchTabWindow } from '../utils/nativeDetachedWindowHost';
+import { useWorkbenchTabs } from '../hooks/useWorkbenchTabs';
 
 const getTabKindLabel = (tab: TabData): string => {
   if (tab.type === 'query') return t('tab_manager.kind_badge.query');
@@ -42,8 +52,11 @@ const getTabKindLabel = (tab: TabData): string => {
   if (tab.type === 'design') return t('tab_manager.kind_badge.design');
   if (tab.type === 'table-overview') return t('tab_manager.kind_badge.table_overview');
   if (tab.type === 'table-export') return t('tab_manager.kind_badge.table_export');
+  if (tab.type === 'data-import') return t('tab_manager.kind_badge.data_import');
+  if (tab.type === 'data-sync') return t('app.tools.entry.sync.title');
   if (tab.type === 'sql-file-execution') return t('sidebar.sql_file_exec.title');
   if (tab.type === 'sql-analysis') return t('tab_manager.kind_badge.sql_analysis');
+  if (tab.type === 'sql-audit') return t('tab_manager.kind_badge.sql_audit');
   if (tab.type.startsWith('redis')) return t('tab_manager.kind_badge.redis');
   if (tab.type.startsWith('jvm')) return t('tab_manager.kind_badge.jvm');
   if (tab.type === 'trigger') return t('tab_manager.kind_badge.trigger');
@@ -59,7 +72,125 @@ const getTabKindLabel = (tab: TabData): string => {
   return t('tab_manager.kind_badge.fallback');
 };
 
+export const isBackgroundTaskWorkbenchTab = (tab: Pick<TabData, 'type'>): boolean => (
+  tab.type === 'table-export' || tab.type === 'data-import' || tab.type === 'data-sync'
+);
+
+export const isRunningDataImportWorkbenchTab = (
+  tab: Pick<TabData, 'type' | 'dataImportRunning'>,
+): boolean => tab.type === 'data-import' && tab.dataImportRunning === true;
+
 export const TAB_WORKBENCH_CLASS_NAME = 'tab-workbench';
+
+type RecentConnectionShortcut = {
+  connection: SavedConnection;
+  dbName?: string;
+};
+
+export type PinnedTableShortcut = {
+  connection: SavedConnection;
+  dbName: string;
+  schemaName?: string;
+  tableName: string;
+};
+
+type LinkedExternalSQLDirectoryShortcut = {
+  connection: SavedConnection;
+  dbName?: string;
+  directory: ExternalSQLDirectory;
+};
+
+const RECENT_WORKBENCH_ITEM_LIMIT = 6;
+
+export const buildRecentConnectionShortcuts = (
+  connections: SavedConnection[],
+  recentTargets: RecentConnectionTarget[],
+): RecentConnectionShortcut[] => {
+  const queryCapableConnections = connections.filter((connection) =>
+    getDataSourceCapabilities(connection.config).supportsQueryEditor,
+  );
+  const connectionById = new Map(queryCapableConnections.map((connection) => [connection.id, connection]));
+  const seen = new Set<string>();
+  const seenConnectionIds = new Set<string>();
+  const result: RecentConnectionShortcut[] = [];
+
+  const append = (connection: SavedConnection, preferredDbName?: string) => {
+    const dbName = String(preferredDbName || connection.config.database || '').trim() || undefined;
+    const key = `${connection.id}::${dbName || ''}`;
+    if (seen.has(key) || result.length >= RECENT_WORKBENCH_ITEM_LIMIT) return;
+    seen.add(key);
+    seenConnectionIds.add(connection.id);
+    result.push({ connection, ...(dbName ? { dbName } : {}) });
+  };
+
+  recentTargets.forEach((target) => {
+    const connection = connectionById.get(target.connectionId);
+    if (connection) {
+      append(connection, target.dbName);
+    }
+  });
+  queryCapableConnections.forEach((connection) => {
+    if (!seenConnectionIds.has(connection.id)) {
+      append(connection);
+    }
+  });
+  return result;
+};
+
+export const buildPinnedTableShortcuts = (
+  connections: SavedConnection[],
+  pinnedTableKeys: string[],
+): PinnedTableShortcut[] => {
+  const connectionById = new Map(connections.map((connection) => [connection.id, connection]));
+  const seen = new Set<string>();
+  const result: PinnedTableShortcut[] = [];
+
+  for (const rawKey of pinnedTableKeys) {
+    if (result.length >= RECENT_WORKBENCH_ITEM_LIMIT) break;
+    try {
+      const parsed = JSON.parse(rawKey);
+      if (!Array.isArray(parsed) || parsed.length !== 4) continue;
+      const [rawConnectionId, rawDbName, rawSchemaName, rawTableName] = parsed;
+      const connectionId = String(rawConnectionId || '').trim();
+      const dbName = String(rawDbName || '').trim();
+      const schemaName = String(rawSchemaName || '').trim();
+      const tableName = String(rawTableName || '').trim();
+      const connection = connectionById.get(connectionId);
+      const key = `${connectionId}::${dbName}::${schemaName}::${tableName}`;
+      if (!connection || !dbName || !tableName || seen.has(key)) continue;
+      seen.add(key);
+      result.push({
+        connection,
+        dbName,
+        ...(schemaName ? { schemaName } : {}),
+        tableName,
+      });
+    } catch {
+      // 旧版本或损坏的本地偏好不应阻塞工作台首页。
+    }
+  }
+  return result;
+};
+
+const buildLinkedExternalSQLDirectoryShortcuts = (
+  connections: SavedConnection[],
+  directories: ExternalSQLDirectory[],
+): LinkedExternalSQLDirectoryShortcut[] => {
+  const connectionById = new Map(connections.map((connection) => [connection.id, connection]));
+  return [...directories]
+    .sort((left, right) => Number(right.createdAt || 0) - Number(left.createdAt || 0))
+    .flatMap((directory) => {
+      const connectionId = String(directory.connectionId || '').trim();
+      const connection = connectionById.get(connectionId);
+      if (!connection) return [];
+      const dbName = String(directory.dbName || connection.config.database || '').trim() || undefined;
+      return [{ connection, ...(dbName ? { dbName } : {}), directory }];
+    })
+    .slice(0, RECENT_WORKBENCH_ITEM_LIMIT);
+};
+
+const buildWorkbenchQueryTabId = (): string =>
+  `query-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
 const getTabKindTooltipLabel = (tab: TabData): string => {
   if (tab.type === 'query') return t('tab_manager.hover.kind.query');
@@ -67,8 +198,11 @@ const getTabKindTooltipLabel = (tab: TabData): string => {
   if (tab.type === 'design') return t('tab_manager.hover.kind.design');
   if (tab.type === 'table-overview') return t('tab_manager.hover.kind.table_overview');
   if (tab.type === 'table-export') return t('tab_manager.hover.kind.table_export');
+  if (tab.type === 'data-import') return t('tab_manager.hover.kind.data_import');
+  if (tab.type === 'data-sync') return t('app.tools.entry.sync.title');
   if (tab.type === 'sql-file-execution') return t('sidebar.sql_file_exec.title');
   if (tab.type === 'sql-analysis') return t('tab_manager.hover.kind.sql_analysis');
+  if (tab.type === 'sql-audit') return t('tab_manager.hover.kind.sql_audit');
   if (tab.type === 'redis-keys') return t('tab_manager.hover.kind.redis_keys');
   if (tab.type === 'redis-command') return t('tab_manager.hover.kind.redis_command');
   if (tab.type === 'redis-monitor') return t('tab_manager.hover.kind.redis_monitor');
@@ -100,7 +234,7 @@ const getTabObjectLabel = (tab: TabData): string => {
   if (tab.triggerName) return tab.triggerName;
   if (tab.resourcePath) return tab.resourcePath;
   if (tab.filePath) return tab.filePath;
-  if (tab.type === 'sql-analysis') return tab.title;
+  if (tab.type === 'sql-analysis' || tab.type === 'sql-audit') return tab.title;
   if (tab.type.startsWith('redis')) return `db${tab.redisDB ?? 0}`;
   return '';
 };
@@ -243,6 +377,8 @@ type SortableTabLabelProps = {
   onClose?: () => void;
 };
 
+export const isMiddleMouseButton = (button: number): boolean => button === 1;
+
 const renderV2TabDisplayPart = (part: TabDisplayPart) => {
   if (part.key === 'kind') {
     return (
@@ -257,6 +393,13 @@ const renderV2TabDisplayPart = (part: TabDisplayPart) => {
     </span>
   );
 };
+
+const renderV2TabSecondaryParts = (parts: TabDisplayPart[]) => parts.map((part, index) => (
+  <React.Fragment key={part.key}>
+    {index > 0 ? <span className="gn-v2-tab-label-separator" aria-hidden="true">·</span> : null}
+    {renderV2TabDisplayPart(part)}
+  </React.Fragment>
+));
 
 const SortableTabLabel: React.FC<SortableTabLabelProps> = ({
   tab,
@@ -277,6 +420,19 @@ const SortableTabLabel: React.FC<SortableTabLabelProps> = ({
     setIsTabMenuOpen(true);
   };
 
+  const handleTabLabelMouseDown = (event: React.MouseEvent<HTMLElement>) => {
+    if (!onClose || !isMiddleMouseButton(event.button)) return;
+    event.preventDefault();
+    event.stopPropagation();
+  };
+
+  const handleTabLabelAuxClick = (event: React.MouseEvent<HTMLElement>) => {
+    if (!onClose || !isMiddleMouseButton(event.button)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    onClose();
+  };
+
   const handleTabMenuOpenChange = (open: boolean) => {
     setIsTabMenuOpen(open);
     setIsHoverInfoOpen(false);
@@ -292,6 +448,8 @@ const SortableTabLabel: React.FC<SortableTabLabelProps> = ({
     <span
       className={`tab-dnd-label${isV2Ui ? ' gn-v2-tab-label' : ''}${showSecondaryLine ? ' gn-v2-tab-label-double' : ''}${tabDisplayPartCount >= 4 ? ' gn-v2-tab-label-rich' : ''}`}
       onContextMenu={handleTabLabelContextMenu}
+      onMouseDown={handleTabLabelMouseDown}
+      onAuxClick={handleTabLabelAuxClick}
       title={isV2Ui ? undefined : displayTitle}
     >
       {isV2Ui ? (
@@ -302,8 +460,12 @@ const SortableTabLabel: React.FC<SortableTabLabelProps> = ({
               : displayModel.primaryText}
           </span>
           {showSecondaryLine ? (
-            <span className="gn-v2-tab-label-secondary" title={displayModel.secondaryText}>
-              {displayModel.secondaryText}
+            <span
+              className="gn-v2-tab-label-secondary"
+              title={displayModel.secondaryText}
+              aria-label={displayModel.secondaryText}
+            >
+              {renderV2TabSecondaryParts(displayModel.secondaryParts)}
             </span>
           ) : null}
         </span>
@@ -365,9 +527,135 @@ type DraggableTabNodeProps = {
   node: React.ReactElement;
 };
 
+const TAB_DRAG_INTERACTIVE_SELECTOR = [
+  'button',
+  'a',
+  'input',
+  'textarea',
+  'select',
+  '[contenteditable="true"]',
+  '[role="button"]',
+  '[role="menuitem"]',
+  '[data-tab-drag-ignore="true"]',
+  '.ant-dropdown-menu',
+  '.ant-tabs-tab-remove',
+  '.gn-v2-tab-close',
+].join(', ');
+
+export const shouldActivateTabDragPointer = (event: {
+  button: number;
+  ctrlKey?: boolean;
+  isPrimary?: boolean;
+  target: EventTarget | null;
+}): boolean => {
+  if (event.button !== 0 || event.ctrlKey || event.isPrimary === false) return false;
+  const target = event.target as { closest?: (selector: string) => Element | null } | null;
+  return typeof target?.closest !== 'function'
+    || target.closest(TAB_DRAG_INTERACTIVE_SELECTOR) === null;
+};
+
+export const handleTabDragPointerDown = (
+  event: React.PointerEvent<HTMLElement>,
+  handlePointerDown?: React.PointerEventHandler<HTMLElement>,
+): void => {
+  if (!shouldActivateTabDragPointer(event)) return;
+  try {
+    event.currentTarget.setPointerCapture(event.pointerId);
+  } catch {
+    // Pointer capture is not exposed by every embedded WebView build.
+  }
+  handlePointerDown?.(event);
+};
+
+type TabDetachDragGuardOptions = {
+  windowTarget: EventTarget;
+  captureTarget: EventTarget | null;
+  rootClassList: Pick<DOMTokenList, 'add' | 'remove'>;
+  pointerId: number | null;
+  isCurrent: () => boolean;
+  onTerminalPointer: (pointer: NativeDetachTerminalPointer) => void;
+  onInterrupted: () => void;
+  cancelDndDrag: () => void;
+};
+
+export const installTabDetachDragGuards = ({
+  windowTarget,
+  captureTarget,
+  rootClassList,
+  pointerId,
+  isCurrent,
+  onTerminalPointer,
+  onInterrupted,
+  cancelDndDrag,
+}: TabDetachDragGuardOptions): (() => void) => {
+  let removed = false;
+  const matchesPointer = (event: PointerEvent) => (
+    pointerId === null || event.pointerId === pointerId
+  );
+  const interrupt = () => {
+    if (removed || !isCurrent()) return;
+    try {
+      onInterrupted();
+    } finally {
+      cancelDndDrag();
+    }
+  };
+  const recordTerminalPointer = (event: Event) => {
+    const pointerEvent = event as PointerEvent;
+    if (removed || !isCurrent() || !matchesPointer(pointerEvent)) return;
+    onTerminalPointer({
+      type: event.type === 'pointercancel' ? 'pointercancel' : 'pointerup',
+      clientX: pointerEvent.clientX,
+      clientY: pointerEvent.clientY,
+      screenX: pointerEvent.screenX,
+      screenY: pointerEvent.screenY,
+    });
+  };
+  const handlePointerMove = (event: Event) => {
+    const pointerEvent = event as PointerEvent;
+    if (matchesPointer(pointerEvent) && pointerEvent.buttons === 0) {
+      interrupt();
+    }
+  };
+  const handleLostPointerCapture = (event: Event) => {
+    if (matchesPointer(event as PointerEvent)) {
+      interrupt();
+    }
+  };
+  const handleWindowBlur = () => interrupt();
+
+  windowTarget.addEventListener('pointermove', handlePointerMove, true);
+  windowTarget.addEventListener('pointerup', recordTerminalPointer, true);
+  windowTarget.addEventListener('pointercancel', recordTerminalPointer, true);
+  windowTarget.addEventListener('blur', handleWindowBlur);
+  captureTarget?.addEventListener('lostpointercapture', handleLostPointerCapture);
+  rootClassList.add('gn-workbench-tab-detaching');
+
+  return () => {
+    if (removed) return;
+    removed = true;
+    windowTarget.removeEventListener('pointermove', handlePointerMove, true);
+    windowTarget.removeEventListener('pointerup', recordTerminalPointer, true);
+    windowTarget.removeEventListener('pointercancel', recordTerminalPointer, true);
+    windowTarget.removeEventListener('blur', handleWindowBlur);
+    captureTarget?.removeEventListener('lostpointercapture', handleLostPointerCapture);
+    if (captureTarget && pointerId !== null) {
+      const pointerCaptureTarget = captureTarget as HTMLElement;
+      try {
+        if (pointerCaptureTarget.hasPointerCapture?.(pointerId)) {
+          pointerCaptureTarget.releasePointerCapture(pointerId);
+        }
+      } catch {
+        // Pointer capture may already be gone after blur, cancellation, or unmount.
+      }
+    }
+    rootClassList.remove('gn-workbench-tab-detaching');
+  };
+};
+
 const DraggableTabNode: React.FC<DraggableTabNodeProps> = ({ node }) => {
   const tabId = String(node.key || '').trim();
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: tabId });
+  const { listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: tabId });
   const style: React.CSSProperties = {
     ...(node.props.style || {}),
     transform: CSS.Transform.toString(transform),
@@ -377,20 +665,27 @@ const DraggableTabNode: React.FC<DraggableTabNodeProps> = ({ node }) => {
     touchAction: 'none',
     zIndex: isDragging ? 2 : node.props.style?.zIndex,
   };
+  const handlePointerDown = listeners?.onPointerDown as React.PointerEventHandler<HTMLElement> | undefined;
 
   return React.cloneElement(node, {
     ref: setNodeRef,
     style,
-    ...attributes,
     ...listeners,
+    onPointerDown: (event: React.PointerEvent<HTMLElement>) =>
+      handleTabDragPointerDown(event, handlePointerDown),
     className: `${node.props.className || ''} tab-dnd-node${isDragging ? ' is-dragging' : ''}`,
   });
 };
 
 const TabManager: React.FC = React.memo(() => {
-  const tabs = useStore(state => state.tabs);
+  const tabs = useWorkbenchTabs();
   const detachedWorkbenchWindows = useStore(state => state.detachedWorkbenchWindows);
   const connections = useStore(state => state.connections);
+  const savedQueries = useStore(state => state.savedQueries);
+  const externalSQLDirectories = useStore(state => state.externalSQLDirectories);
+  const recentConnectionTargets = useStore(state => state.recentConnectionTargets);
+  const recentSQLFiles = useStore(state => state.recentSQLFiles);
+  const pinnedSidebarTables = useStore(state => state.pinnedSidebarTables);
   const theme = useStore(state => state.theme);
   const appearance = useStore(state => state.appearance);
   const languagePreference = useStore(state => state.languagePreference);
@@ -403,7 +698,6 @@ const TabManager: React.FC = React.memo(() => {
   const closeTabsToRight = useStore(state => state.closeTabsToRight);
   const closeAllTabs = useStore(state => state.closeAllTabs);
   const moveTab = useStore(state => state.moveTab);
-  const detachWorkbenchTab = useStore(state => state.detachWorkbenchTab);
   const setAIPanelVisible = useStore(state => state.setAIPanelVisible);
   const detachedTabIdSet = useMemo(
     () => new Set(detachedWorkbenchWindows.map((windowState) => windowState.tabId)),
@@ -416,11 +710,18 @@ const TabManager: React.FC = React.memo(() => {
   const tabsNavBorderColor = theme === 'dark' ? 'rgba(255, 255, 255, 0.09)' : 'rgba(0, 0, 0, 0.08)';
   const [draggingTabId, setDraggingTabId] = useState<string | null>(null);
   const [detachDragPreview, setDetachDragPreview] = useState<DetachDragPreviewState | null>(null);
+  const [openingRecentSQLFileKey, setOpeningRecentSQLFileKey] = useState<string | null>(null);
   const detachDragSessionRef = useRef<{
     tabId: string;
     title: string;
     startX: number;
     startY: number;
+    startScreenX: number;
+    startScreenY: number;
+    pointerId: number | null;
+    captureTarget: HTMLElement | null;
+    terminalPointer: NativeDetachTerminalPointer | null;
+    removeDragGuards: (() => void) | null;
   } | null>(null);
   const suppressClickUntilRef = useRef<number>(0);
   const sensors = useSensors(
@@ -431,12 +732,19 @@ const TabManager: React.FC = React.memo(() => {
   const isV2Ui = appearance.uiVersion === 'v2';
   const hasTabs = tabs.length > 0;
   const hasDockedTabs = dockedTabs.length > 0;
-  const dockedActiveTabId = useMemo(() => {
-    if (activeTabId && dockedTabs.some((tab) => tab.id === activeTabId)) {
-      return activeTabId;
+  const detachTabToWindow = useCallback((tabId: string, preferred?: { x?: number; y?: number; width?: number; height?: number }) => {
+    const tab = tabs.find((item) => item.id === tabId);
+    if (tab && isBackgroundTaskWorkbenchTab(tab)) {
+      void message.warning(t('tab_manager.message.background_task_window_unavailable'));
+      return;
     }
-    return dockedTabs[0]?.id || null;
-  }, [activeTabId, dockedTabs]);
+    void openNativeWorkbenchTabWindow(tabId, preferred).catch((error) => {
+      message.error(error instanceof Error ? error.message : String(error));
+    });
+  }, [tabs]);
+  const dockedActiveTabId = useMemo(() => {
+    return resolveDockedActiveTabId(tabs, activeTabId, detachedWorkbenchWindows);
+  }, [activeTabId, detachedWorkbenchWindows, tabs]);
   const pendingCloseTabIdsRef = useRef<Set<string>>(new Set());
 
   const onChange = (newActiveKey: string) => {
@@ -473,7 +781,11 @@ const TabManager: React.FC = React.memo(() => {
           message.error(t('tab_manager.sql_file_close.read_failed_cancel_close', { detail: res.message || filePath }));
           return;
         }
-        const draft = getSQLFileTabDraft(tab.id, String(tab.query ?? ''));
+        const latestTab = useStore.getState().tabs.find((candidate) => candidate.id === tab.id);
+        const draft = getSQLFileTabDraft(
+          tab.id,
+          String(latestTab?.query ?? tab.query ?? ''),
+        );
         if (hasSQLFileTabUnsavedChanges({ ...tab, query: draft }, normalizeSQLFileReadContent(res.data))) {
           dirtyTabs.push({ tab, draft });
         }
@@ -573,14 +885,39 @@ const TabManager: React.FC = React.memo(() => {
   const closeTabsWithSQLFilePrompt = useCallback((targetIds: string[], closeConfirmedTabs: () => void) => {
     const uniqueIds = Array.from(new Set(targetIds.map((id) => String(id || '').trim()).filter(Boolean)));
     if (uniqueIds.length === 0) return;
-    const dedupeKey = uniqueIds.slice().sort().join('\n');
+    const targetIdSet = new Set(uniqueIds);
+    // Query text is intentionally excluded from the chrome subscription. Resolve
+    // close/save candidates from the live store so SQL-file dirty checks never
+    // fall back to the render snapshot after an editor-only update.
+    const targetTabs = useStore.getState().tabs.filter((tab) => targetIdSet.has(tab.id));
+    const runningImportTabs = targetTabs.filter(isRunningDataImportWorkbenchTab);
+    if (runningImportTabs.length > 0) {
+      void message.warning(t('tab_manager.message.data_import_running_close_blocked'));
+    }
+    const closableTabs = targetTabs.filter((tab) => !isRunningDataImportWorkbenchTab(tab));
+    if (closableTabs.length === 0) return;
+    const dedupeKey = closableTabs.map((tab) => tab.id).sort().join('\n');
     if (pendingCloseTabIdsRef.current.has(dedupeKey)) return;
     pendingCloseTabIdsRef.current.add(dedupeKey);
-    const targetTabs = tabs.filter((tab) => uniqueIds.includes(tab.id));
-    void requestCloseSQLFileTabs(targetTabs, closeConfirmedTabs).finally(() => {
+    void requestCloseSQLFileTabs(closableTabs, closeConfirmedTabs).finally(() => {
       pendingCloseTabIdsRef.current.delete(dedupeKey);
     });
-  }, [requestCloseSQLFileTabs, tabs]);
+  }, [requestCloseSQLFileTabs]);
+
+  const requestCloseActiveWorkspaceTab = useCallback(() => {
+    if (!dockedActiveTabId) return;
+    closeTabsWithSQLFilePrompt(
+      [dockedActiveTabId],
+      () => closeTab(dockedActiveTabId),
+    );
+  }, [closeTab, closeTabsWithSQLFilePrompt, dockedActiveTabId]);
+
+  useEffect(() => {
+    window.addEventListener(CLOSE_ACTIVE_WORKSPACE_TAB_EVENT, requestCloseActiveWorkspaceTab);
+    return () => {
+      window.removeEventListener(CLOSE_ACTIVE_WORKSPACE_TAB_EVENT, requestCloseActiveWorkspaceTab);
+    };
+  }, [requestCloseActiveWorkspaceTab]);
 
   const onEdit = (targetKey: React.MouseEvent | React.KeyboardEvent | string, action: 'add' | 'remove') => {
     if (action === 'remove') {
@@ -589,13 +926,40 @@ const TabManager: React.FC = React.memo(() => {
     }
   };
 
+  const dispatchDndPointerCancel = useCallback(() => {
+    document.dispatchEvent(new Event('pointercancel', {
+      bubbles: true,
+      cancelable: true,
+    }));
+  }, []);
+
   const clearDetachDragSession = useCallback(() => {
+    const session = detachDragSessionRef.current;
+    session?.removeDragGuards?.();
+    if (session?.captureTarget && session.pointerId !== null) {
+      try {
+        if (session.captureTarget.hasPointerCapture?.(session.pointerId)) {
+          session.captureTarget.releasePointerCapture(session.pointerId);
+        }
+      } catch {
+        // Pointer capture may already have been released by the native WebView.
+      }
+    }
     detachDragSessionRef.current = null;
     setDetachDragPreview(null);
     document.documentElement.classList.remove('gn-workbench-tab-detaching');
   }, []);
 
+  useEffect(() => () => {
+    const hadActiveSession = detachDragSessionRef.current !== null;
+    clearDetachDragSession();
+    if (hadActiveSession) {
+      dispatchDndPointerCancel();
+    }
+  }, [clearDetachDragSession, dispatchDndPointerCancel]);
+
   const handleDragStart = (event: DragStartEvent) => {
+    clearDetachDragSession();
     const sourceId = String(event.active.id || '').trim();
     setDraggingTabId(sourceId || null);
     const tab = dockedTabs.find((item) => item.id === sourceId);
@@ -607,10 +971,51 @@ const TabManager: React.FC = React.memo(() => {
     const pointerEvent = event.activatorEvent as PointerEvent | MouseEvent | undefined;
     const startX = typeof pointerEvent?.clientX === 'number' ? pointerEvent.clientX : 0;
     const startY = typeof pointerEvent?.clientY === 'number' ? pointerEvent.clientY : 0;
-    detachDragSessionRef.current = sourceId
-      ? { tabId: sourceId, title, startX, startY }
+    const startScreenX = typeof pointerEvent?.screenX === 'number'
+      ? pointerEvent.screenX
+      : window.screenX + startX;
+    const startScreenY = typeof pointerEvent?.screenY === 'number'
+      ? pointerEvent.screenY
+      : window.screenY + startY;
+    const pointerId = typeof (pointerEvent as PointerEvent | undefined)?.pointerId === 'number'
+      ? (pointerEvent as PointerEvent).pointerId
       : null;
-    document.documentElement.classList.add('gn-workbench-tab-detaching');
+    const activatorTarget = pointerEvent?.target;
+    const captureTarget = typeof Element !== 'undefined' && activatorTarget instanceof Element
+      ? activatorTarget.closest<HTMLElement>('.tab-dnd-node')
+      : null;
+    const session = sourceId
+      ? {
+          tabId: sourceId,
+          title,
+          startX,
+          startY,
+          startScreenX,
+          startScreenY,
+          pointerId,
+          captureTarget,
+          terminalPointer: null as NativeDetachTerminalPointer | null,
+          removeDragGuards: null as (() => void) | null,
+        }
+      : null;
+    detachDragSessionRef.current = session;
+    if (session) {
+      session.removeDragGuards = installTabDetachDragGuards({
+        windowTarget: window,
+        captureTarget: session.captureTarget,
+        rootClassList: document.documentElement.classList,
+        pointerId: session.pointerId,
+        isCurrent: () => detachDragSessionRef.current === session,
+        onTerminalPointer: (terminalPointer) => {
+          session.terminalPointer = terminalPointer;
+        },
+        onInterrupted: () => {
+          setDraggingTabId(null);
+          clearDetachDragSession();
+        },
+        cancelDndDrag: dispatchDndPointerCancel,
+      });
+    }
   };
 
   const handleDragMove = (event: DragMoveEvent) => {
@@ -632,17 +1037,30 @@ const TabManager: React.FC = React.memo(() => {
     const deltaX = Number(event.delta?.x || 0);
     const deltaY = Number(event.delta?.y || 0);
     const session = detachDragSessionRef.current;
+    const release = resolveNativeDetachDragRelease({
+      startClientX: session?.startX ?? 0,
+      startClientY: session?.startY ?? 0,
+      startScreenX: session?.startScreenX ?? window.screenX,
+      startScreenY: session?.startScreenY ?? window.screenY,
+      fallbackDeltaX: deltaX,
+      fallbackDeltaY: deltaY,
+      terminalPointer: session?.terminalPointer,
+    });
     setDraggingTabId(null);
     clearDetachDragSession();
     if (!sourceId) {
       return;
     }
-    if (shouldDetachTabByDrag(deltaY, targetId || null)) {
+    const releasedOutsideHost = shouldDetachAtScreenPoint(release.screenX, release.screenY, {
+      x: window.screenX,
+      y: window.screenY,
+      width: window.outerWidth || window.innerWidth,
+      height: window.outerHeight || window.innerHeight,
+    });
+    if (shouldDetachTabByDrag(release.deltaY, targetId || null) || releasedOutsideHost) {
       suppressClickUntilRef.current = Date.now() + 120;
-      const releaseX = (session?.startX ?? 0) + deltaX;
-      const releaseY = (session?.startY ?? 0) + deltaY;
-      const preferred = resolveResultDetachPreferredBounds(releaseX, releaseY);
-      detachWorkbenchTab(sourceId, preferred);
+      const preferred = resolveNativeDetachPreferredBounds(release.screenX, release.screenY);
+      detachTabToWindow(sourceId, preferred);
       return;
     }
     if (!targetId || sourceId === targetId) {
@@ -653,8 +1071,31 @@ const TabManager: React.FC = React.memo(() => {
   };
 
   const handleDragCancel = () => {
+    const session = detachDragSessionRef.current;
+    const release = resolveNativeDetachDragRelease({
+      startClientX: session?.startX ?? 0,
+      startClientY: session?.startY ?? 0,
+      startScreenX: session?.startScreenX ?? window.screenX,
+      startScreenY: session?.startScreenY ?? window.screenY,
+      fallbackDeltaX: 0,
+      fallbackDeltaY: 0,
+      terminalPointer: session?.terminalPointer,
+    });
+    const shouldDetach = Boolean(session) && shouldDetachAfterNativePointerCancel(release, {
+      x: window.screenX,
+      y: window.screenY,
+      width: window.outerWidth || window.innerWidth,
+      height: window.outerHeight || window.innerHeight,
+    });
     setDraggingTabId(null);
     clearDetachDragSession();
+    if (shouldDetach && session) {
+      suppressClickUntilRef.current = Date.now() + 120;
+      detachTabToWindow(
+        session.tabId,
+        resolveNativeDetachPreferredBounds(release.screenX, release.screenY),
+      );
+    }
   };
 
   React.useEffect(() => {
@@ -742,7 +1183,8 @@ const TabManager: React.FC = React.memo(() => {
       {
         key: 'open-in-window',
         label: t('tab_manager.menu.open_in_window'),
-        onClick: () => detachWorkbenchTab(tab.id),
+        disabled: isBackgroundTaskWorkbenchTab(tab),
+        onClick: () => detachTabToWindow(tab.id),
       },
       { type: 'divider' },
       {
@@ -789,7 +1231,42 @@ const TabManager: React.FC = React.memo(() => {
       closable: !isV2Ui,
       children: <WorkbenchTabContent tab={tab} isActive={tabIsActive} />,
     };
-  }), [dockedTabs, dockedActiveTabId, tabs, connections, appearance.tabDisplay, closeOtherTabs, closeTabsToLeft, closeTabsToRight, closeAllTabs, closeTab, closeTabsWithSQLFilePrompt, detachWorkbenchTab, isV2Ui, languagePreference]);
+  }), [dockedTabs, dockedActiveTabId, tabs, connections, appearance.tabDisplay, closeOtherTabs, closeTabsToLeft, closeTabsToRight, closeAllTabs, closeTab, closeTabsWithSQLFilePrompt, detachTabToWindow, isV2Ui, languagePreference]);
+
+  const queryCapableConnections = useMemo(
+    () => connections.filter((connection) => getDataSourceCapabilities(connection.config).supportsQueryEditor),
+    [connections],
+  );
+  const connectionById = useMemo(
+    () => new Map(queryCapableConnections.map((connection) => [connection.id, connection])),
+    [queryCapableConnections],
+  );
+  const recentConnectionShortcuts = useMemo(
+    () => buildRecentConnectionShortcuts(connections, recentConnectionTargets),
+    [connections, recentConnectionTargets],
+  );
+  const recentSavedQueries = useMemo(
+    () => [...savedQueries]
+      .filter((query) => connectionById.has(query.connectionId))
+      .sort((left, right) => Number(right.createdAt || 0) - Number(left.createdAt || 0))
+      .slice(0, RECENT_WORKBENCH_ITEM_LIMIT),
+    [connectionById, savedQueries],
+  );
+  const recentSQLFileShortcuts = useMemo(
+    () => [...recentSQLFiles]
+      .filter((file) => connectionById.has(file.connectionId))
+      .sort((left, right) => right.openedAt - left.openedAt)
+      .slice(0, RECENT_WORKBENCH_ITEM_LIMIT),
+    [connectionById, recentSQLFiles],
+  );
+  const pinnedTableShortcuts = useMemo(
+    () => buildPinnedTableShortcuts(queryCapableConnections, pinnedSidebarTables),
+    [pinnedSidebarTables, queryCapableConnections],
+  );
+  const linkedExternalSQLDirectoryShortcuts = useMemo(
+    () => buildLinkedExternalSQLDirectoryShortcuts(queryCapableConnections, externalSQLDirectories),
+    [externalSQLDirectories, queryCapableConnections],
+  );
 
   const handleOpenConnectionModal = () => {
     const target = document.querySelector<HTMLButtonElement>('[data-gonavi-create-connection-action="true"]');
@@ -799,6 +1276,112 @@ const TabManager: React.FC = React.memo(() => {
   const handleOpenAI = () => {
     setAIPanelVisible(true);
   };
+
+  const handleFocusObjectSearch = () => {
+    window.dispatchEvent(new CustomEvent('gonavi:focus-sidebar-search'));
+  };
+
+  const handleAddExternalSQLDirectory = () => {
+    window.dispatchEvent(new CustomEvent('gonavi:add-external-sql-directory'));
+  };
+
+  const handleOpenRecentConnection = useCallback((shortcut: RecentConnectionShortcut) => {
+    addTab({
+      id: buildWorkbenchQueryTabId(),
+      title: t('query.new'),
+      type: 'query',
+      connectionId: shortcut.connection.id,
+      dbName: shortcut.dbName,
+      query: '',
+    });
+  }, [addTab]);
+
+  const handleOpenPinnedTable = useCallback((shortcut: PinnedTableShortcut) => {
+    const displayName = shortcut.schemaName
+      ? `${shortcut.schemaName}.${shortcut.tableName}`
+      : shortcut.tableName;
+    addTab({
+      id: `pinned-table:${[shortcut.connection.id, shortcut.dbName, shortcut.schemaName || '', shortcut.tableName]
+        .map(encodeURIComponent)
+        .join(':')}`,
+      title: displayName,
+      type: 'table',
+      connectionId: shortcut.connection.id,
+      dbName: shortcut.dbName,
+      tableName: shortcut.tableName,
+      ...(shortcut.schemaName ? { schemaName: shortcut.schemaName } : {}),
+      objectType: 'table',
+    });
+  }, [addTab]);
+
+  const handleOpenSavedQuery = useCallback((query: SavedQuery) => {
+    if (!connectionById.has(query.connectionId)) {
+      message.error(t('sidebar.message.connection_config_not_found'));
+      return;
+    }
+    addTab({
+      id: query.id,
+      title: query.name || t('sidebar.tree.untitled_query'),
+      type: 'query',
+      connectionId: query.connectionId,
+      dbName: query.dbName,
+      query: query.sql,
+      savedQueryId: query.id,
+    });
+  }, [addTab, connectionById]);
+
+  const handleOpenRecentSQLFile = useCallback(async (file: RecentSQLFile) => {
+    const connectionId = String(file.connectionId || '').trim();
+    const dbName = String(file.dbName || '').trim();
+    const filePath = String(file.filePath || '').trim();
+    if (!connectionId || !connectionById.has(connectionId)) {
+      message.error(t('sidebar.message.connection_config_not_found'));
+      return;
+    }
+    if (!filePath) {
+      message.error(t('sidebar.message.sql_file_path_incomplete'));
+      return;
+    }
+
+    const openKey = `${connectionId}::${dbName}::${filePath}`;
+    setOpeningRecentSQLFileKey(openKey);
+    try {
+      const res = await ReadSQLFile(filePath);
+      if (!res.success) {
+        message.error(t('sidebar.message.read_sql_file_failed', { error: res.message }));
+        return;
+      }
+
+      const data = res.data;
+      if (data && typeof data === 'object' && (data as Record<string, unknown>).isLargeFile === true) {
+        const payload = data as Record<string, unknown>;
+        addTab(buildSQLFileExecutionWorkbenchTab({
+          connectionId,
+          dbName: dbName || undefined,
+          filePath: String(payload.filePath || '').trim() || filePath,
+          fileName: file.fileName,
+          fileSizeMB: String(payload.fileSizeMB || '').trim() || undefined,
+        }));
+        return;
+      }
+
+      addTab({
+        id: buildExternalSQLTabId(connectionId, dbName, filePath),
+        title: file.fileName,
+        type: 'query',
+        connectionId,
+        dbName: dbName || undefined,
+        query: normalizeSQLFileReadContent(data),
+        filePath,
+      });
+    } catch (error) {
+      message.error(t('sidebar.message.read_sql_file_failed', {
+        error: error instanceof Error ? error.message : String(error),
+      }));
+    } finally {
+      setOpeningRecentSQLFileKey((current) => current === openKey ? null : current);
+    }
+  }, [addTab, connectionById]);
 
   const EmptyWorkbench = (
     <div className="gn-v2-empty-workbench">
@@ -816,37 +1399,177 @@ const TabManager: React.FC = React.memo(() => {
           <Button icon={<ConsoleSqlOutlined />} onClick={() => window.dispatchEvent(new CustomEvent('gonavi:create-query-tab'))}>
             {t('query.new')}
           </Button>
+          <Tooltip title={t('tab_manager.empty.quick.search.description')}>
+            <Button icon={<SearchOutlined />} onClick={handleFocusObjectSearch}>
+              {t('tab_manager.empty.quick.search.title')}
+            </Button>
+          </Tooltip>
           <Button icon={<RobotOutlined />} onClick={handleOpenAI}>
             {t('tab_manager.empty.action.open_ai')}
           </Button>
         </div>
       </section>
-      <section className="gn-v2-empty-panel" aria-label={t('tab_manager.empty.quick.aria')}>
-        <div className="gn-v2-panel-heading">
-          <span>{t('tab_manager.empty.quick.heading')}</span>
-          <AppstoreOutlined />
-        </div>
-        <button type="button" onClick={handleOpenConnectionModal}>
-          <DatabaseOutlined />
-          <span>
-            <strong>{t('tab_manager.empty.quick.configure_source.title')}</strong>
-            <small>{t('tab_manager.empty.quick.configure_source.description')}</small>
-          </span>
-        </button>
-        <button type="button" onClick={() => window.dispatchEvent(new CustomEvent('gonavi:create-query-tab'))}>
-          <ConsoleSqlOutlined />
-          <span>
-            <strong>{t('tab_manager.empty.quick.sql_workspace.title')}</strong>
-            <small>{t('tab_manager.empty.quick.sql_workspace.description')}</small>
-          </span>
-        </button>
-        <button type="button" onClick={handleOpenAI}>
-          <RobotOutlined />
-          <span>
-            <strong>{t('tab_manager.empty.quick.ai_assist.title')}</strong>
-            <small>{t('tab_manager.empty.quick.ai_assist.description')}</small>
-          </span>
-        </button>
+      <section className="gn-v2-empty-recent" aria-label={t('tab_manager.empty.recent.aria')}>
+        <section className="gn-v2-empty-recent-card">
+          <div className="gn-v2-empty-recent-heading">
+            <span><HistoryOutlined />{t('tab_manager.empty.recent.connection.heading')}</span>
+            <em>{recentConnectionShortcuts.length}</em>
+          </div>
+          {recentConnectionShortcuts.length > 0 ? (
+            <div className="gn-v2-empty-recent-list">
+              {recentConnectionShortcuts.map((shortcut) => (
+                <button
+                  key={`${shortcut.connection.id}::${shortcut.dbName || ''}`}
+                  type="button"
+                  className="gn-v2-empty-recent-item"
+                  onClick={() => handleOpenRecentConnection(shortcut)}
+                >
+                  <DatabaseOutlined />
+                  <span>
+                    <strong title={shortcut.connection.name}>{shortcut.connection.name}</strong>
+                    <small>{shortcut.dbName || t('tab_manager.empty.recent.connection.default_database')}</small>
+                  </span>
+                  <RightOutlined className="gn-v2-empty-recent-arrow" />
+                </button>
+              ))}
+            </div>
+          ) : (
+            <p className="gn-v2-empty-recent-empty">{t('tab_manager.empty.recent.connection.empty')}</p>
+          )}
+        </section>
+        <section className="gn-v2-empty-recent-card">
+          <div className="gn-v2-empty-recent-heading">
+            <span><FileTextOutlined />{t('tab_manager.empty.recent.saved_query.heading')}</span>
+            <em>{recentSavedQueries.length}</em>
+          </div>
+          {recentSavedQueries.length > 0 ? (
+            <div className="gn-v2-empty-recent-list">
+              {recentSavedQueries.map((query) => {
+                const connection = connectionById.get(query.connectionId);
+                return (
+                  <button
+                    key={query.id}
+                    type="button"
+                    className="gn-v2-empty-recent-item"
+                    onClick={() => handleOpenSavedQuery(query)}
+                  >
+                    <FileTextOutlined />
+                    <span>
+                      <strong title={query.name || t('sidebar.tree.untitled_query')}>
+                        {query.name || t('sidebar.tree.untitled_query')}
+                      </strong>
+                      <small>{`${connection?.name || query.connectionId} · ${query.dbName || t('tab_manager.empty.recent.connection.default_database')}`}</small>
+                    </span>
+                    <RightOutlined className="gn-v2-empty-recent-arrow" />
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="gn-v2-empty-recent-empty">{t('tab_manager.empty.recent.saved_query.empty')}</p>
+          )}
+        </section>
+        <section className="gn-v2-empty-recent-card">
+          <div className="gn-v2-empty-recent-heading">
+            <span><ConsoleSqlOutlined />{t('tab_manager.empty.recent.sql_file.heading')}</span>
+            <em>{recentSQLFileShortcuts.length}</em>
+          </div>
+          {recentSQLFileShortcuts.length > 0 ? (
+            <div className="gn-v2-empty-recent-list">
+              {recentSQLFileShortcuts.map((file) => {
+                const connection = connectionById.get(file.connectionId);
+                const openKey = `${file.connectionId}::${file.dbName || ''}::${file.filePath}`;
+                return (
+                  <button
+                    key={openKey}
+                    type="button"
+                    className="gn-v2-empty-recent-item"
+                    disabled={openingRecentSQLFileKey === openKey}
+                    onClick={() => void handleOpenRecentSQLFile(file)}
+                  >
+                    <FileTextOutlined />
+                    <span>
+                      <strong title={file.fileName}>{file.fileName}</strong>
+                      <small>{`${connection?.name || file.connectionId} · ${file.dbName || t('tab_manager.empty.recent.connection.default_database')}`}</small>
+                    </span>
+                    <RightOutlined className="gn-v2-empty-recent-arrow" />
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="gn-v2-empty-recent-empty">{t('tab_manager.empty.recent.sql_file.empty')}</p>
+          )}
+        </section>
+      </section>
+      <section className="gn-v2-empty-resources" aria-label={t('tab_manager.empty.recent.aria')}>
+        <section className="gn-v2-empty-resource-card">
+          <div className="gn-v2-empty-recent-heading">
+            <span><PushpinOutlined />{t('sidebar.action.pin_table')}</span>
+            <em>{pinnedTableShortcuts.length}</em>
+          </div>
+          {pinnedTableShortcuts.length > 0 ? (
+            <div className="gn-v2-empty-recent-list">
+              {pinnedTableShortcuts.map((shortcut) => {
+                const displayName = shortcut.schemaName
+                  ? `${shortcut.schemaName}.${shortcut.tableName}`
+                  : shortcut.tableName;
+                return (
+                  <button
+                    key={`${shortcut.connection.id}::${shortcut.dbName}::${shortcut.schemaName || ''}::${shortcut.tableName}`}
+                    type="button"
+                    className="gn-v2-empty-recent-item"
+                    onClick={() => handleOpenPinnedTable(shortcut)}
+                  >
+                    <DatabaseOutlined />
+                    <span>
+                      <strong title={displayName}>{displayName}</strong>
+                      <small>{`${shortcut.connection.name} · ${shortcut.dbName}`}</small>
+                    </span>
+                    <RightOutlined className="gn-v2-empty-recent-arrow" />
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="gn-v2-empty-resource-empty">
+              <PushpinOutlined />
+              <p>{t('tab_manager.empty.resource.pinned_tables.empty')}</p>
+              <Button type="link" onClick={handleFocusObjectSearch}>{t('sidebar.command_search.label')}</Button>
+            </div>
+          )}
+        </section>
+        <section className="gn-v2-empty-resource-card">
+          <div className="gn-v2-empty-recent-heading">
+            <span><FolderOpenOutlined />{t('sidebar.external_sql.root')}</span>
+            <em>{linkedExternalSQLDirectoryShortcuts.length}</em>
+          </div>
+          {linkedExternalSQLDirectoryShortcuts.length > 0 ? (
+            <div className="gn-v2-empty-recent-list">
+              {linkedExternalSQLDirectoryShortcuts.map((shortcut) => (
+                <button
+                  key={shortcut.directory.id}
+                  type="button"
+                  className="gn-v2-empty-recent-item"
+                  onClick={() => handleOpenRecentConnection(shortcut)}
+                >
+                  <FolderOpenOutlined />
+                  <span>
+                    <strong title={shortcut.directory.name}>{shortcut.directory.name}</strong>
+                    <small>{`${shortcut.connection.name} · ${shortcut.dbName || t('tab_manager.empty.recent.connection.default_database')}`}</small>
+                  </span>
+                  <RightOutlined className="gn-v2-empty-recent-arrow" />
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="gn-v2-empty-resource-empty">
+              <FolderOpenOutlined />
+              <p>{t('tab_manager.empty.resource.sql_directory.empty')}</p>
+              <Button type="link" onClick={handleAddExternalSQLDirectory}>{t('sidebar.menu.add_sql_directory')}</Button>
+            </div>
+          )}
+        </section>
       </section>
     </div>
   );

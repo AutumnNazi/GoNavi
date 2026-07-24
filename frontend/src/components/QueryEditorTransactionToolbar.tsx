@@ -11,6 +11,10 @@ export type PendingSqlEditorTransaction = {
   createdAt: number;
   autoCommitDueAt?: number | null;
   statementCount?: number;
+  dbType?: string;
+  dbName?: string;
+  statements?: string[];
+  executionDurationMs?: number;
 };
 
 type QueryEditorTransactionToolbarProps = {

@@ -85,6 +85,11 @@ describe('AIMCPToolSchemaSummary', () => {
     expect(markup).toContain('No inputSchema declared; check the service docs or use /mcptool before calling.');
     expect(markup).not.toContain('已发现工具和参数提示');
     expect(markup).not.toContain('未声明 inputSchema');
+    expect(markup).toContain('class="gonavi-ai-mcp-tool-schema"');
+    expect(markup).toContain('class="gonavi-ai-mcp-tool-schema-row"');
+    expect(markup).toContain('border-top:1px solid rgba(0,0,0,0.08)');
+    expect(markup).toContain('border-bottom:1px solid rgba(0,0,0,0.08)');
+    expect(markup).toContain('background:transparent');
   });
 
   it('renders tool schema chrome in Chinese when an i18n provider is available', () => {

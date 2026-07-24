@@ -5,6 +5,7 @@ import { DownOutlined } from '@ant-design/icons';
 import { t as catalogTranslate } from '../../i18n/catalog';
 import { useOptionalI18n } from '../../i18n/provider';
 import type { AIProviderConfig } from '../../types';
+import { isLocalCLISubscriptionProvider } from '../../utils/aiProviderPresets';
 
 interface AIChatProviderModelSelectProps {
   activeProvider?: AIProviderConfig | null;
@@ -31,16 +32,20 @@ const AIChatProviderModelSelect: React.FC<AIChatProviderModelSelectProps> = ({
     return null;
   }
 
+  const usesLocalCLI = isLocalCLISubscriptionProvider(activeProvider);
   const options = (dynamicModels.length > 0 ? dynamicModels : (activeProvider.models || []))
     .map((item) => String(item || '').trim())
     .filter(Boolean)
     .map((model) => ({ label: model, value: model }));
 
   const handleOpenChange = (open: boolean) => {
-    if (open && options.length === 0) {
+    if (open && options.length === 0 && !usesLocalCLI) {
       onFetchModels();
     }
   };
+  const modelPlaceholder = usesLocalCLI
+    ? t('ai_settings.provider.auto_model')
+    : t('ai_chat.input.model.placeholder');
 
   if (variant === 'legacy') {
     return (
@@ -55,7 +60,7 @@ const AIChatProviderModelSelect: React.FC<AIChatProviderModelSelectProps> = ({
         style={{ width: 130, fontSize: 11, background: 'transparent' }}
         styles={{ popup: { root: { minWidth: 200 } } }}
         showSearch
-        placeholder={t('ai_chat.input.model.placeholder')}
+        placeholder={modelPlaceholder}
       />
     );
   }
@@ -69,7 +74,7 @@ const AIChatProviderModelSelect: React.FC<AIChatProviderModelSelectProps> = ({
       loading={loadingModels}
       options={options}
       styles={{ popup: { root: { minWidth: 200 } } }}
-      placeholder={t('ai_chat.input.model.placeholder')}
+      placeholder={modelPlaceholder}
       className="gn-v2-ai-model-select"
       suffixIcon={<DownOutlined />}
     />

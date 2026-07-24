@@ -57,6 +57,28 @@ describe('AIBuiltinToolsCatalog', () => {
     expect(source).not.toContain('AI 助手在处理数据库相关问题时，可以自动调用以下内置工具获取真实数据，全程无需人工干预。');
   });
 
+  it('uses flat rows instead of cards for flows and tools', () => {
+    expect(source).toContain('className="gonavi-ai-tool-flow-list"');
+    expect(source).toContain('className="gonavi-ai-tool-row"');
+    expect(source).toContain("background: 'transparent'");
+    expect(source).not.toContain("background: cardBg");
+    expect(source).not.toContain('borderRadius: 14');
+    expect(source).toContain("fontSize: 'var(--gn-settings-font-secondary, 13px)'");
+    expect(source).toContain("fontSize: 'var(--gn-font-size-sm, 12px)'");
+    expect(source).toContain("fontFamily: 'var(--gn-font-mono)'");
+  });
+
+  it('uses native disclosures while keeping flow and tool details mounted', () => {
+    const markup = renderToStaticMarkup(renderCatalog());
+
+    expect(markup).toContain('class="gonavi-ai-tool-flow-list"');
+    expect(markup).toContain('<details');
+    expect(markup).toContain('<summary');
+    expect(markup).toContain('class="gonavi-ai-tool-row"');
+    expect(markup).toContain('正文预览最多返回多少字符');
+    expect(source).not.toContain('{tool.icon}');
+  });
+
   it('renders the workspace flows, snapshot tools, and local saved-sql discovery tools', () => {
     const markup = renderToStaticMarkup(renderCatalog());
 

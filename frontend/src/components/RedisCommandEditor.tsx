@@ -133,6 +133,12 @@ const RedisCommandEditor: React.FC<RedisCommandEditorProps> = ({ connectionId, r
     // UI Layout state
     const [editorHeight, setEditorHeight] = useState(250);
     const dragRef = useRef<{ startY: number; startHeight: number } | null>(null);
+    const dragBodyStyleRef = useRef<{ cursor: string; userSelect: string } | null>(null);
+    const dragListenersRef = useRef<{
+        blur: () => void;
+        move: (event: MouseEvent) => void;
+        up: () => void;
+    } | null>(null);
     const containerRef = useRef<HTMLDivElement>(null);
     const resultsEndRef = useRef<HTMLDivElement>(null);
     
@@ -325,16 +331,42 @@ const RedisCommandEditor: React.FC<RedisCommandEditorProps> = ({ connectionId, r
     };
 
     // Resizing logic
-    const handleDragStart = (e: React.MouseEvent) => {
-        e.preventDefault();
-        dragRef.current = { startY: e.clientY, startHeight: editorHeight };
-        document.addEventListener('mousemove', handleDragMove);
-        document.addEventListener('mouseup', handleDragEnd);
-        document.body.style.cursor = 'row-resize';
-    };
+    const detachDragListeners = useCallback(() => {
+        const listeners = dragListenersRef.current;
+        if (!listeners) return;
+        dragListenersRef.current = null;
+        if (typeof document !== 'undefined') {
+            document.removeEventListener('mousemove', listeners.move);
+            document.removeEventListener('mouseup', listeners.up);
+        }
+        if (typeof window !== 'undefined') {
+            window.removeEventListener('blur', listeners.blur);
+        }
+    }, []);
+
+    const restoreDragBodyStyles = useCallback(() => {
+        const previous = dragBodyStyleRef.current;
+        dragBodyStyleRef.current = null;
+        if (!previous || typeof document === 'undefined') return;
+        document.body.style.cursor = previous.cursor;
+        document.body.style.userSelect = previous.userSelect;
+    }, []);
+
+    const finishDrag = useCallback((layoutEditor = true) => {
+        dragRef.current = null;
+        detachDragListeners();
+        restoreDragBodyStyles();
+        if (layoutEditor && editorRef.current) {
+            editorRef.current.layout();
+        }
+    }, [detachDragListeners, restoreDragBodyStyles]);
 
     const handleDragMove = useCallback((e: MouseEvent) => {
         if (!dragRef.current) return;
+        if (e.buttons === 0) {
+            finishDrag();
+            return;
+        }
         const delta = e.clientY - dragRef.current.startY;
         let newHeight = dragRef.current.startHeight + delta;
         
@@ -350,17 +382,35 @@ const RedisCommandEditor: React.FC<RedisCommandEditorProps> = ({ connectionId, r
         if (editorRef.current) {
             editorRef.current.layout();
         }
-    }, []);
+    }, [finishDrag]);
 
-    const handleDragEnd = useCallback(() => {
-        dragRef.current = null;
-        document.removeEventListener('mousemove', handleDragMove);
-        document.removeEventListener('mouseup', handleDragEnd);
-        document.body.style.cursor = 'default';
-        if (editorRef.current) {
-            editorRef.current.layout();
-        }
-    }, [handleDragMove]);
+    const handleDragStart = useCallback((e: React.MouseEvent) => {
+        if (e.button !== 0) return;
+        e.preventDefault();
+
+        finishDrag(false);
+        dragRef.current = { startY: e.clientY, startHeight: editorHeight };
+        const handleDragEnd = () => finishDrag();
+        const handleWindowBlur = () => finishDrag();
+        dragListenersRef.current = {
+            blur: handleWindowBlur,
+            move: handleDragMove,
+            up: handleDragEnd,
+        };
+        document.addEventListener('mousemove', handleDragMove);
+        document.addEventListener('mouseup', handleDragEnd);
+        window.addEventListener('blur', handleWindowBlur);
+        dragBodyStyleRef.current = {
+            cursor: document.body.style.cursor,
+            userSelect: document.body.style.userSelect,
+        };
+        document.body.style.cursor = 'row-resize';
+        document.body.style.userSelect = 'none';
+    }, [editorHeight, finishDrag, handleDragMove]);
+
+    useEffect(() => () => {
+        finishDrag(false);
+    }, [finishDrag]);
 
     if (!connection) {
         return <div style={{ padding: 20 }}>{tr('redis_command.state.connection_not_found')}</div>;

@@ -148,6 +148,46 @@ func buildDamengColumnsQuery(dbName, tableName string) string {
 		ORDER BY c.column_id`, upperDBName, upperTableName, upperDBName, upperTableName, upperDBName, upperTableName)
 }
 
+// buildDamengAutoIncrementColumnsQuery reads the stable system-table flag that
+// records both IDENTITY and AUTO_INCREMENT columns. It intentionally remains a
+// separate query so restricted accounts can still load base column metadata.
+func buildDamengAutoIncrementColumnsQuery(dbName, tableName string) string {
+	upperDBName := strings.ToUpper(strings.TrimSpace(dbName))
+	upperTableName := strings.ToUpper(strings.TrimSpace(tableName))
+
+	schemaPredicate := "s.NAME = USER"
+	if upperDBName != "" {
+		schemaPredicate = fmt.Sprintf("s.NAME = '%s'", upperDBName)
+	}
+
+	return fmt.Sprintf(`SELECT sc.NAME AS column_name
+		FROM SYS.SYSCOLUMNS sc
+		JOIN SYS.SYSOBJECTS t ON sc.ID = t.ID
+		JOIN SYS.SYSOBJECTS s ON t.SCHID = s.ID
+		WHERE %s
+		  AND t.NAME = '%s'
+		  AND (sc.INFO2 & 0x01) = 0x01
+		ORDER BY sc.COLID`, schemaPredicate, upperTableName)
+}
+
+func applyDamengAutoIncrementColumns(columns []connection.ColumnDefinition, data []map[string]interface{}) []connection.ColumnDefinition {
+	autoIncrementColumns := make(map[string]struct{}, len(data))
+	for _, row := range data {
+		name := strings.ToUpper(strings.TrimSpace(getDamengRowString(row, "COLUMN_NAME")))
+		if name != "" {
+			autoIncrementColumns[name] = struct{}{}
+		}
+	}
+
+	for i := range columns {
+		if _, ok := autoIncrementColumns[strings.ToUpper(strings.TrimSpace(columns[i].Name))]; ok {
+			columns[i].Extra = "auto_increment"
+		}
+	}
+
+	return columns
+}
+
 func buildDamengForeignKeysQuery(dbName, tableName string) string {
 	upperDBName := strings.ToUpper(strings.TrimSpace(dbName))
 	upperTableName := strings.ToUpper(strings.TrimSpace(tableName))

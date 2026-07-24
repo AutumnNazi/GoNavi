@@ -135,7 +135,6 @@ export const buildRedisKeyTree = (
         nodeType: 'group',
         groupName: child.name,
         groupLeafCount: child.leafCount,
-        selectable: false,
         descendantRawKeys,
         children,
       };

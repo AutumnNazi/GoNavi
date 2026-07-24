@@ -44,7 +44,24 @@ describe('AISettingsSidebar', () => {
     expect(markup).toContain('Settings navigation');
     expect(markup).toContain('MCP services');
     expect(markup).toContain('Built-in tools');
-    expect(markup).toContain('aria-pressed="true"');
+    expect(markup).toContain('role="tablist"');
+    expect(markup).toContain('aria-orientation="vertical"');
+    expect(markup).toContain('id="gonavi-ai-settings-tab-mcp"');
+    expect(markup).toContain('role="tab" aria-selected="true" aria-controls="gonavi-ai-settings-panel-mcp" tabindex="0"');
+    expect(markup).toContain('aria-selected="false" aria-controls="gonavi-ai-settings-panel-providers" tabindex="-1"');
+    expect(markup).not.toContain('aria-pressed=');
+    expect(markup).toContain('gonavi-ai-settings-nav-item is-active');
+    expect(markup).toContain('border-left:3px solid');
+    expect(markup).toContain('border-radius:0');
+    expect(markup).not.toContain('linear-gradient(180deg');
+  });
+
+  it('supports vertical tab keyboard navigation with a roving tab stop', () => {
+    expect(sidebarSource).toContain("['ArrowDown', 'ArrowUp', 'Home', 'End']");
+    expect(sidebarSource).toContain('tabIndex={active ? 0 : -1}');
+    expect(sidebarSource).toContain('onSelectSection(AI_SETTINGS_NAV_ITEMS[nextIndex].key);');
+    expect(sidebarSource).toContain("querySelectorAll<HTMLElement>('[role=\"tab\"]')");
+    expect(sidebarSource).toContain('tabs?.[nextIndex]?.focus();');
   });
 
   it('uses catalog fallback keys for settings navigation chrome', () => {

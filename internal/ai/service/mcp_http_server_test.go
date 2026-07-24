@@ -54,6 +54,22 @@ func (p *fakeMCPHTTPProcess) finish() {
 	})
 }
 
+func newMCPHTTPTestService(t *testing.T) *Service {
+	t.Helper()
+	t.Setenv("GONAVI_DATA_ROOT", t.TempDir())
+	return newMCPHTTPTestServiceForActiveRoot(t)
+}
+
+func newMCPHTTPTestServiceForActiveRoot(t *testing.T) *Service {
+	t.Helper()
+	service := NewServiceWithSecretStore(secretstore.NewUnavailableStore("test"))
+	InitializeLifecycle(service, context.Background())
+	t.Cleanup(func() {
+		service.Shutdown()
+	})
+	return service
+}
+
 func TestMCPHTTPServerLifecycleFromAIService(t *testing.T) {
 	originalStarter := startMCPHTTPProcess
 	originalHealth := waitMCPHTTPHealth
@@ -70,14 +86,10 @@ func TestMCPHTTPServerLifecycleFromAIService(t *testing.T) {
 		return nil
 	}
 
-	service := NewServiceWithSecretStore(secretstore.NewUnavailableStore("test"))
-	InitializeLifecycle(service, context.Background())
-	t.Cleanup(func() {
-		service.Shutdown()
-	})
+	service := newMCPHTTPTestService(t)
 
 	initial := service.AIGetMCPHTTPServerStatus()
-	if initial.Running {
+	if initial.Running || initial.Enabled {
 		t.Fatal("expected MCP HTTP server to be stopped initially")
 	}
 
@@ -114,8 +126,146 @@ func TestMCPHTTPServerLifecycleFromAIService(t *testing.T) {
 	if stopped.Running {
 		t.Fatalf("expected stopped status, got %#v", stopped)
 	}
+	if stopped.Enabled {
+		t.Fatalf("expected explicit stop to disable persisted preference, got %#v", stopped)
+	}
 	if stopped.Token != started.Token || stopped.AuthorizationHeader != "Bearer "+started.Token {
 		t.Fatalf("expected stopped status to keep token fields, got token=%q header=%q", stopped.Token, stopped.AuthorizationHeader)
+	}
+}
+
+func TestMCPHTTPServerStopCancelsPendingStart(t *testing.T) {
+	originalStarter := startMCPHTTPProcess
+	originalHealth := waitMCPHTTPHealth
+	t.Cleanup(func() {
+		startMCPHTTPProcess = originalStarter
+		waitMCPHTTPHealth = originalHealth
+	})
+
+	process := newFakeMCPHTTPProcess()
+	healthStarted := make(chan struct{})
+	releaseHealth := make(chan struct{})
+	var releaseOnce sync.Once
+	release := func() {
+		releaseOnce.Do(func() {
+			close(releaseHealth)
+		})
+	}
+	startMCPHTTPProcess = func(_ context.Context, _ mcpHTTPProcessStartOptions, _ mcpHTTPTextLookup) (mcpHTTPProcess, error) {
+		return process, nil
+	}
+	waitMCPHTTPHealth = func(ctx context.Context, _ string, _ mcpHTTPTextLookup) error {
+		close(healthStarted)
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-releaseHealth:
+			return nil
+		}
+	}
+
+	service := newMCPHTTPTestService(t)
+	t.Cleanup(release)
+	startDone := make(chan struct{})
+	go func() {
+		_, _ = service.AIStartMCPHTTPServer(ai.MCPHTTPServerOptions{Token: "gnv_stop_pending_start"})
+		close(startDone)
+	}()
+
+	select {
+	case <-healthStarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for MCP HTTP startup health check")
+	}
+
+	stopped, err := service.AIStopMCPHTTPServer()
+	if err != nil {
+		t.Fatalf("AIStopMCPHTTPServer returned error: %v", err)
+	}
+	if stopped.Enabled || stopped.Running {
+		t.Fatalf("expected explicit stop to disable pending start, got %#v", stopped)
+	}
+
+	// 旧实现会在 Stop 返回后继续发布这个启动过程；释放 health gate 可稳定复现该竞态。
+	release()
+	select {
+	case <-startDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for canceled MCP HTTP startup")
+	}
+
+	status := service.AIGetMCPHTTPServerStatus()
+	if status.Enabled || status.Running {
+		t.Fatalf("expected canceled start to stay disabled and stopped, got %#v", status)
+	}
+	select {
+	case <-process.done:
+	default:
+		t.Fatal("expected pending MCP HTTP process to be stopped")
+	}
+}
+
+func TestMCPHTTPServerShutdownCancelsPendingStartWithoutDisablingPreference(t *testing.T) {
+	originalStarter := startMCPHTTPProcess
+	originalHealth := waitMCPHTTPHealth
+	t.Cleanup(func() {
+		startMCPHTTPProcess = originalStarter
+		waitMCPHTTPHealth = originalHealth
+	})
+
+	process := newFakeMCPHTTPProcess()
+	healthStarted := make(chan struct{})
+	releaseHealth := make(chan struct{})
+	var releaseOnce sync.Once
+	release := func() {
+		releaseOnce.Do(func() {
+			close(releaseHealth)
+		})
+	}
+	startMCPHTTPProcess = func(_ context.Context, _ mcpHTTPProcessStartOptions, _ mcpHTTPTextLookup) (mcpHTTPProcess, error) {
+		return process, nil
+	}
+	waitMCPHTTPHealth = func(ctx context.Context, _ string, _ mcpHTTPTextLookup) error {
+		close(healthStarted)
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-releaseHealth:
+			return nil
+		}
+	}
+
+	service := newMCPHTTPTestService(t)
+	t.Cleanup(release)
+	startDone := make(chan struct{})
+	go func() {
+		_, _ = service.AIStartMCPHTTPServer(ai.MCPHTTPServerOptions{Token: "gnv_shutdown_pending_start"})
+		close(startDone)
+	}()
+
+	select {
+	case <-healthStarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for MCP HTTP startup health check")
+	}
+
+	service.Shutdown()
+	// 旧实现的 Shutdown 在启动尚未发布时会直接返回，随后这里的释放会让进程重新出现。
+	release()
+	select {
+	case <-startDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for canceled MCP HTTP startup")
+	}
+
+	status := service.AIGetMCPHTTPServerStatus()
+	if !status.Enabled || status.Running {
+		t.Fatalf("expected shutdown to preserve preference without publishing pending start, got %#v", status)
+	}
+	select {
+	case <-process.done:
+	default:
+		t.Fatal("expected pending MCP HTTP process to be stopped during shutdown")
 	}
 }
 
@@ -136,11 +286,7 @@ func TestMCPHTTPServerStartUsesCustomAddrAndToken(t *testing.T) {
 		return nil
 	}
 
-	service := NewServiceWithSecretStore(secretstore.NewUnavailableStore("test"))
-	InitializeLifecycle(service, context.Background())
-	t.Cleanup(func() {
-		service.Shutdown()
-	})
+	service := newMCPHTTPTestService(t)
 
 	started, err := service.AIStartMCPHTTPServer(ai.MCPHTTPServerOptions{
 		Addr:  "127.0.0.1:9123",
@@ -194,11 +340,7 @@ func TestMCPHTTPServerLifecycleUsesEnglishStatusMessages(t *testing.T) {
 		return nil
 	}
 
-	service := NewServiceWithSecretStore(secretstore.NewUnavailableStore("test"))
-	InitializeLifecycle(service, context.Background())
-	t.Cleanup(func() {
-		service.Shutdown()
-	})
+	service := newMCPHTTPTestService(t)
 	service.AISetLanguage("en-US")
 
 	initial := service.AIGetMCPHTTPServerStatus()
@@ -235,8 +377,7 @@ func TestMCPHTTPServerStartFailureUsesEnglishError(t *testing.T) {
 		return nil, fmt.Errorf("listen tcp 127.0.0.1:8765: bind: permission denied")
 	}
 
-	service := NewServiceWithSecretStore(secretstore.NewUnavailableStore("test"))
-	InitializeLifecycle(service, context.Background())
+	service := newMCPHTTPTestService(t)
 	service.AISetLanguage("en-US")
 
 	status, err := service.AIStartMCPHTTPServer(ai.MCPHTTPServerOptions{
@@ -272,8 +413,7 @@ func TestMCPHTTPServerUnexpectedExitUsesEnglishStatusMessage(t *testing.T) {
 		return nil
 	}
 
-	service := NewServiceWithSecretStore(secretstore.NewUnavailableStore("test"))
-	InitializeLifecycle(service, context.Background())
+	service := newMCPHTTPTestService(t)
 	service.AISetLanguage("en-US")
 
 	if _, err := service.AIStartMCPHTTPServer(ai.MCPHTTPServerOptions{
@@ -289,6 +429,9 @@ func TestMCPHTTPServerUnexpectedExitUsesEnglishStatusMessage(t *testing.T) {
 	for time.Now().Before(deadline) {
 		status := service.AIGetMCPHTTPServerStatus()
 		if !status.Running && strings.Contains(status.Message, "GoNavi MCP HTTP service stopped unexpectedly") {
+			if !status.Enabled {
+				t.Fatalf("expected unexpected exit to preserve enabled preference, got %#v", status)
+			}
 			const want = "GoNavi MCP HTTP service stopped unexpectedly: exit status 1"
 			if status.Message != want {
 				t.Fatalf("expected localized unexpected-exit message %q, got %q", want, status.Message)
@@ -299,6 +442,128 @@ func TestMCPHTTPServerUnexpectedExitUsesEnglishStatusMessage(t *testing.T) {
 	}
 
 	t.Fatal("timed out waiting for unexpected-exit status")
+}
+
+func TestMCPHTTPServerRestoresEnabledPreferenceOnStartup(t *testing.T) {
+	originalStarter := startMCPHTTPProcess
+	originalHealth := waitMCPHTTPHealth
+	t.Cleanup(func() {
+		startMCPHTTPProcess = originalStarter
+		waitMCPHTTPHealth = originalHealth
+	})
+
+	root := t.TempDir()
+	t.Setenv("GONAVI_DATA_ROOT", root)
+	var capturedOptions []mcpHTTPProcessStartOptions
+	startMCPHTTPProcess = func(_ context.Context, options mcpHTTPProcessStartOptions, _ mcpHTTPTextLookup) (mcpHTTPProcess, error) {
+		capturedOptions = append(capturedOptions, options)
+		return newFakeMCPHTTPProcess(), nil
+	}
+	waitMCPHTTPHealth = func(_ context.Context, _ string, _ mcpHTTPTextLookup) error {
+		return nil
+	}
+
+	first := newMCPHTTPTestServiceForActiveRoot(t)
+	started, err := first.AIStartMCPHTTPServer(ai.MCPHTTPServerOptions{
+		Addr:       "127.0.0.1:9123",
+		Path:       "persisted-mcp",
+		Token:      "gnv_persisted_token",
+		SchemaOnly: true,
+	})
+	if err != nil {
+		t.Fatalf("AIStartMCPHTTPServer returned error: %v", err)
+	}
+	first.Shutdown()
+
+	second := newMCPHTTPTestServiceForActiveRoot(t)
+	status := second.AIGetMCPHTTPServerStatus()
+	if !status.Enabled || !status.Running {
+		t.Fatalf("expected enabled MCP HTTP server to restore on startup, got %#v", status)
+	}
+	if status.Token != started.Token || status.Path != "/persisted-mcp" || !status.SchemaOnly {
+		t.Fatalf("expected restored status to keep saved options, got %#v", status)
+	}
+	if len(capturedOptions) != 2 {
+		t.Fatalf("expected initial start and startup restore, got %d starts", len(capturedOptions))
+	}
+	restored := capturedOptions[1]
+	if restored.Addr != "127.0.0.1:9123" || restored.Path != "/persisted-mcp" || restored.Token != "gnv_persisted_token" || !restored.SchemaOnly {
+		t.Fatalf("expected startup restore to reuse persisted options, got %#v", restored)
+	}
+}
+
+func TestMCPHTTPServerDoesNotRestoreAfterExplicitStop(t *testing.T) {
+	originalStarter := startMCPHTTPProcess
+	originalHealth := waitMCPHTTPHealth
+	t.Cleanup(func() {
+		startMCPHTTPProcess = originalStarter
+		waitMCPHTTPHealth = originalHealth
+	})
+
+	t.Setenv("GONAVI_DATA_ROOT", t.TempDir())
+	starts := 0
+	startMCPHTTPProcess = func(_ context.Context, _ mcpHTTPProcessStartOptions, _ mcpHTTPTextLookup) (mcpHTTPProcess, error) {
+		starts++
+		return newFakeMCPHTTPProcess(), nil
+	}
+	waitMCPHTTPHealth = func(_ context.Context, _ string, _ mcpHTTPTextLookup) error {
+		return nil
+	}
+
+	first := newMCPHTTPTestServiceForActiveRoot(t)
+	if _, err := first.AIStartMCPHTTPServer(ai.MCPHTTPServerOptions{Token: "gnv_disabled_after_stop"}); err != nil {
+		t.Fatalf("AIStartMCPHTTPServer returned error: %v", err)
+	}
+	if _, err := first.AIStopMCPHTTPServer(); err != nil {
+		t.Fatalf("AIStopMCPHTTPServer returned error: %v", err)
+	}
+	first.Shutdown()
+
+	second := newMCPHTTPTestServiceForActiveRoot(t)
+	status := second.AIGetMCPHTTPServerStatus()
+	if status.Enabled || status.Running {
+		t.Fatalf("expected explicitly stopped MCP HTTP server to remain disabled, got %#v", status)
+	}
+	if starts != 1 {
+		t.Fatalf("expected no startup restore after explicit stop, got %d starts", starts)
+	}
+}
+
+func TestMCPHTTPServerStartupFailureKeepsEnabledPreference(t *testing.T) {
+	originalStarter := startMCPHTTPProcess
+	t.Cleanup(func() {
+		startMCPHTTPProcess = originalStarter
+	})
+
+	root := t.TempDir()
+	t.Setenv("GONAVI_DATA_ROOT", root)
+	configStore := NewProviderConfigStore(root, secretstore.NewUnavailableStore("test"))
+	if err := configStore.Save(ProviderConfigStoreSnapshot{
+		Providers:    []ai.ProviderConfig{},
+		SafetyLevel:  ai.PermissionReadOnly,
+		ContextLevel: ai.ContextSchemaOnly,
+		MCPHTTPServer: ai.MCPHTTPServerConfig{
+			Enabled:    true,
+			Addr:       "127.0.0.1:9130",
+			Path:       "/mcp",
+			SchemaOnly: true,
+			Token:      "gnv_restore_failure_token",
+		},
+	}); err != nil {
+		t.Fatalf("Save returned error: %v", err)
+	}
+	startMCPHTTPProcess = func(_ context.Context, _ mcpHTTPProcessStartOptions, _ mcpHTTPTextLookup) (mcpHTTPProcess, error) {
+		return nil, fmt.Errorf("listen tcp 127.0.0.1:9130: bind: address already in use")
+	}
+
+	service := newMCPHTTPTestServiceForActiveRoot(t)
+	status := service.AIGetMCPHTTPServerStatus()
+	if !status.Enabled || status.Running {
+		t.Fatalf("expected failed startup to preserve enabled preference, got %#v", status)
+	}
+	if status.Token != "gnv_restore_failure_token" || !strings.Contains(status.Message, "bind: address already in use") {
+		t.Fatalf("expected failed restore status to retain token and error, got %#v", status)
+	}
 }
 
 func TestMCPHTTPCommandProcessStopTreatsRequestedCancelAsSuccess(t *testing.T) {

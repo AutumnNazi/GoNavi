@@ -1,16 +1,14 @@
 import { create } from "zustand";
-import {
-  createJSONStorage,
-  persist,
-  type PersistStorage,
-  type StateStorage,
-} from "zustand/middleware";
+import { persist } from "zustand/middleware";
+import { isNativeDetachedWindowRoute } from "./utils/nativeDetachedWindowRoute";
 import {
   ConnectionConfig,
   ProxyConfig,
   SavedConnection,
+  SchemaVisibilityRule,
   TabData,
   SavedQuery,
+  SavedQueryGroup,
   ConnectionTag,
   AIChatMessage,
   AIContextItem,
@@ -27,6 +25,7 @@ import {
   DEFAULT_SHORTCUT_OPTIONS,
   cloneShortcutOptions,
   getShortcutPlatform,
+  migrateLegacySidebarSearchShortcutOptions,
   sanitizeShortcutOptions,
   type ShortcutPlatformBinding,
   type ShortcutPlatform,
@@ -36,6 +35,13 @@ import {
   DEFAULT_SQL_SNIPPETS,
   BUILTIN_SNIPPET_MAP,
 } from "./utils/sqlSnippetDefaults";
+import {
+  DEFAULT_BRAND_ICON_ID,
+  sanitizeBrandIconId,
+} from "./brand/brandIcons";
+
+const sanitizeBrandIconIdLocal = (value: unknown): string =>
+  sanitizeBrandIconId(value) || DEFAULT_BRAND_ICON_ID;
 import { toPersistedGlobalProxy } from "./utils/globalProxyDraft";
 import {
   DEFAULT_DATA_GRID_DISPLAY_SETTINGS,
@@ -79,11 +85,17 @@ import {
 } from "./utils/redisDbAlias";
 import {
   captureLegacySavedQueriesSnapshot,
+  deleteSavedQueryGroupFromBackend,
   deleteSavedQueryFromBackend,
+  getSavedQueryGroupsFromBackend,
+  moveSavedQueryGroupInBackend,
+  moveSavedQueryToGroupInBackend,
   sanitizeSavedQueries,
+  saveSavedQueryGroupToBackend,
   saveSavedQueryToBackend,
   type SavedQueryBackend,
 } from "./utils/savedQueryPersistence";
+import { normalizeSavedQueryGroups } from "./utils/savedQueryGroups";
 import {
   clearQueryTabDraft,
   getPersistedQueryTabDraftEntry,
@@ -91,8 +103,10 @@ import {
 } from "./utils/sqlFileTabDrafts";
 import {
   deriveLegacyConnectionReadOnlyFlag,
+  MAX_CONNECTION_KEEPALIVE_SQL_LENGTH,
   normalizeConnectionProtectionConfig,
   resolveConnectionProtectionConfig,
+  supportsConnectionKeepAliveSQL,
 } from "./utils/connectionReadOnly";
 import {
   DEFAULT_QUERY_EDITOR_EDITOR_HEIGHT_RATIO,
@@ -107,6 +121,22 @@ import {
   sanitizeSidebarTableMetadataFields,
   type SidebarTableMetadataField,
 } from "./utils/sidebarTableMetadata";
+import {
+  sanitizeSidebarHiddenObjectGroups,
+  type SidebarObjectGroupKey,
+} from "./utils/sidebarObjectVisibility";
+import {
+  CONNECTION_TYPE_GROUPS,
+  getConnectionTypeDefaultPort,
+} from "./utils/connectionTypeCatalog";
+import { supportsSSLForType } from "./utils/connectionTypeCapabilities";
+import { normalizeDriverType } from "./utils/connectionDriverType";
+import { createDebouncedPersistStorage } from "./utils/debouncedPersistStorage";
+import {
+  incrementTableAccessCount,
+  removeConnectionTableAccessCounts,
+  sanitizeTableAccessCount,
+} from "./utils/tableAccessCount";
 
 export type TableDoubleClickAction = "open-data" | "open-design";
 export type ThemeMode = "light" | "dark";
@@ -125,6 +155,7 @@ export interface AppearanceSettings extends DataGridDisplaySettings {
   v2CommandSearchPersistentFilterEnabled: boolean;
   v2SidebarPersistedFilter: string;
   v2SidebarRailScale: number;
+  sidebarHiddenObjectGroups: SidebarObjectGroupKey[];
   customUIFontFamily: string | null;
   customMonoFontFamily: string | null;
   newQuerySqlTemplate: string | null;
@@ -147,6 +178,7 @@ export const DEFAULT_APPEARANCE: AppearanceSettings = {
   v2CommandSearchPersistentFilterEnabled: false,
   v2SidebarPersistedFilter: "",
   v2SidebarRailScale: DEFAULT_V2_SIDEBAR_RAIL_SCALE,
+  sidebarHiddenObjectGroups: [],
   customUIFontFamily: null,
   customMonoFontFamily: null,
   newQuerySqlTemplate: null,
@@ -161,6 +193,15 @@ const DEFAULT_FONT_SIZE = 14;
 const MIN_FONT_SIZE = 12;
 const MAX_FONT_SIZE = 20;
 const DEFAULT_STARTUP_FULLSCREEN = false;
+const DEFAULT_AUTO_CHECK_FOR_UPDATES = true;
+/** 自动检查更新间隔（分钟）；与关于页 Select 选项保持一致 */
+export const AUTO_CHECK_FOR_UPDATES_INTERVAL_OPTIONS = [
+  15, 30, 60, 120, 360, 720, 1440,
+] as const;
+const DEFAULT_AUTO_CHECK_FOR_UPDATES_INTERVAL_MINUTES = 30;
+const AUTO_CHECK_FOR_UPDATES_INTERVAL_OPTIONS_SET = new Set<number>(
+  AUTO_CHECK_FOR_UPDATES_INTERVAL_OPTIONS,
+);
 const LEGACY_DEFAULT_OPACITY = 0.95;
 const OPACITY_EPSILON = 1e-6;
 const MAX_SIDEBAR_PERSISTED_FILTER_LENGTH = 120;
@@ -217,8 +258,9 @@ const MIN_KEEPALIVE_INTERVAL_MINUTES = 1;
 const MAX_KEEPALIVE_INTERVAL_MINUTES = 1440;
 const DEFAULT_DIAGNOSTIC_TIMEOUT_SECONDS = 15;
 const MAX_DIAGNOSTIC_TIMEOUT_SECONDS = 300;
-const PERSIST_VERSION = 14;
+const PERSIST_VERSION = 18;
 const UI_VERSION_V2_MIGRATION_VERSION = 14;
+const SIDEBAR_SEARCH_SHORTCUT_MIGRATION_VERSION = 18;
 const PERSIST_STORAGE_KEY = "lite-db-storage";
 const PERSIST_WRITE_DEBOUNCE_MS = 160;
 const MAX_PERSISTED_QUERY_TABS = 20;
@@ -231,6 +273,10 @@ const MAX_PERSISTED_SQL_LOG_LENGTH = 24 * 1024;
 const MAX_PERSISTED_SQL_LOG_MESSAGE_LENGTH = 2 * 1024;
 const MAX_TABLE_EXPORT_HISTORY_PER_TARGET = 20;
 const MAX_TABLE_EXPORT_HISTORY_TARGETS = 200;
+const MAX_RECENT_WORKBENCH_TARGETS = 8;
+const MAX_RECENT_SQL_FILES = 8;
+const MAX_RECENT_TARGET_DATABASE_LENGTH = 256;
+const MAX_RECENT_SQL_FILE_NAME_LENGTH = 256;
 const DEFAULT_CONNECTION_TYPE = "mysql";
 const DEFAULT_JVM_PORT = 9010;
 const DEFAULT_LANGUAGE_PREFERENCE: LanguagePreference = "system";
@@ -255,94 +301,6 @@ const resolveSavedQueryBackend = (): SavedQueryBackend | undefined => {
     return undefined;
   }
   return (window as unknown as { go?: { app?: { App?: SavedQueryBackend } } }).go?.app?.App;
-};
-
-const createDebouncedPersistStorage = <S>(
-  getStorage: () => StateStorage,
-  debounceMs = PERSIST_WRITE_DEBOUNCE_MS,
-): PersistStorage<S> | undefined => {
-  const baseStorage = createJSONStorage<S>(getStorage);
-  if (!baseStorage || isFrontendTestRuntime()) {
-    return baseStorage;
-  }
-
-  type PersistedValue = Parameters<PersistStorage<S>["setItem"]>[1];
-  let pendingWrite: { name: string; value: PersistedValue } | null = null;
-  let pendingTimer: number | null = null;
-  let listenersBound = false;
-  let pendingResolves: Array<() => void> = [];
-  let pendingRejects: Array<(error: unknown) => void> = [];
-
-  const settlePending = (error?: unknown) => {
-    const resolves = pendingResolves;
-    const rejects = pendingRejects;
-    pendingResolves = [];
-    pendingRejects = [];
-    if (error !== undefined) {
-      rejects.forEach((reject) => reject(error));
-      return;
-    }
-    resolves.forEach((resolve) => resolve());
-  };
-
-  const flushPendingWrite = async (): Promise<void> => {
-    if (pendingTimer !== null) {
-      window.clearTimeout(pendingTimer);
-      pendingTimer = null;
-    }
-    const nextWrite = pendingWrite;
-    pendingWrite = null;
-    if (!nextWrite) {
-      settlePending();
-      return;
-    }
-    try {
-      await baseStorage.setItem(nextWrite.name, nextWrite.value);
-      settlePending();
-    } catch (error) {
-      settlePending(error);
-      throw error;
-    }
-  };
-
-  const bindFlushListeners = () => {
-    if (listenersBound || typeof window === "undefined") {
-      return;
-    }
-    listenersBound = true;
-    const handleFlush = () => {
-      void flushPendingWrite();
-    };
-    window.addEventListener("pagehide", handleFlush, { capture: true });
-    window.addEventListener("beforeunload", handleFlush, { capture: true });
-  };
-
-  return {
-    getItem: baseStorage.getItem,
-    setItem: (name, value) => {
-      bindFlushListeners();
-      pendingWrite = { name, value };
-      if (pendingTimer !== null) {
-        window.clearTimeout(pendingTimer);
-      }
-      return new Promise<void>((resolve, reject) => {
-        pendingResolves.push(resolve);
-        pendingRejects.push(reject);
-        pendingTimer = window.setTimeout(() => {
-          void flushPendingWrite();
-        }, debounceMs);
-      });
-    },
-    removeItem: async (name) => {
-      pendingWrite = null;
-      if (pendingTimer !== null) {
-        window.clearTimeout(pendingTimer);
-        pendingTimer = null;
-      }
-      settlePending();
-      await baseStorage.removeItem(name);
-    },
-  };
 };
 
 const writePersistedStatePatch = (
@@ -397,119 +355,12 @@ const resolveOceanBaseProtocol = (
   }
 };
 const SUPPORTED_CONNECTION_TYPES = new Set([
-  "mysql",
-  "goldendb",
-  "mariadb",
-  "oceanbase",
+  ...CONNECTION_TYPE_GROUPS.flatMap((group) =>
+    group.items.map((item) => item.key),
+  ),
+  // Legacy persisted alias, normalized to diros before support is checked.
   "doris",
-  "diros",
-  "starrocks",
-  "sphinx",
-  "clickhouse",
-  "trino",
-  "postgres",
-  "redis",
-  "tdengine",
-  "iotdb",
-  "kafka",
-  "oracle",
-  "dameng",
-  "kingbase",
-  "sqlserver",
-  "iris",
-  "mongodb",
-  "elasticsearch",
-  "highgo",
-  "vastbase",
-  "opengauss",
-  "gaussdb",
-  "jvm",
-  "sqlite",
-  "duckdb",
-  "custom",
 ]);
-const SSL_SUPPORTED_CONNECTION_TYPES = new Set([
-  "mysql",
-  "goldendb",
-  "mariadb",
-  "oceanbase",
-  "diros",
-  "starrocks",
-  "sphinx",
-  "dameng",
-  "clickhouse",
-  "trino",
-  "postgres",
-  "sqlserver",
-  "oracle",
-  "kingbase",
-  "highgo",
-  "vastbase",
-  "opengauss",
-  "gaussdb",
-  "mongodb",
-  "redis",
-  "elasticsearch",
-  "tdengine",
-  "kafka",
-]);
-
-const getDefaultPortByType = (type: string): number => {
-  switch (type) {
-    case "jvm":
-      return DEFAULT_JVM_PORT;
-    case "mysql":
-    case "mariadb":
-      return 3306;
-    case "goldendb":
-      return 1523;
-    case "oceanbase":
-      return 2881;
-    case "doris":
-    case "diros":
-    case "starrocks":
-      return 9030;
-    case "duckdb":
-      return 0;
-    case "sphinx":
-      return 9306;
-    case "clickhouse":
-      return 9000;
-    case "trino":
-      return 8080;
-    case "postgres":
-    case "vastbase":
-    case "opengauss":
-    case "gaussdb":
-      return 5432;
-    case "redis":
-      return 6379;
-    case "tdengine":
-      return 6041;
-    case "iotdb":
-      return 6667;
-    case "kafka":
-      return 9092;
-    case "oracle":
-      return 1521;
-    case "dameng":
-      return 5236;
-    case "kingbase":
-      return 54321;
-    case "sqlserver":
-      return 1433;
-    case "iris":
-      return 1972;
-    case "mongodb":
-      return 27017;
-    case "elasticsearch":
-      return 9200;
-    case "highgo":
-      return 5866;
-    default:
-      return 3306;
-  }
-};
 
 const toTrimmedString = (value: unknown, fallback = ""): string => {
   if (typeof value === "string") {
@@ -592,6 +443,50 @@ const sanitizeStringArray = (value: unknown, maxLength = 256): string[] => {
   return result;
 };
 
+const sanitizeSchemaVisibilityByDatabase = (
+  value: unknown,
+): Record<string, SchemaVisibilityRule> | undefined => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+
+  const result: Record<string, SchemaVisibilityRule> = {};
+  const seenDatabases = new Set<string>();
+  Object.entries(value as Record<string, unknown>).some(([rawDatabase, rawRule]) => {
+    if (Object.keys(result).length >= 128) return true;
+    const database = toTrimmedString(rawDatabase);
+    const databaseKey = database.toLocaleLowerCase();
+    if (!database || database.length > 256 || seenDatabases.has(databaseKey)) {
+      return false;
+    }
+    if (!rawRule || typeof rawRule !== "object" || Array.isArray(rawRule)) {
+      return false;
+    }
+    const rule = rawRule as Record<string, unknown>;
+    const mode = rule.mode === "include" || rule.mode === "exclude"
+      ? rule.mode
+      : undefined;
+    if (!mode) return false;
+
+    const seenSchemas = new Set<string>();
+    const schemas = sanitizeStringArray(rule.schemas, 256)
+      .filter((schema) => {
+        const schemaKey = schema.toLocaleLowerCase();
+        if (seenSchemas.has(schemaKey)) return false;
+        seenSchemas.add(schemaKey);
+        return true;
+      })
+      .slice(0, 256);
+    if (schemas.length === 0) return false;
+
+    seenDatabases.add(databaseKey);
+    result[database] = { mode, schemas };
+    return false;
+  });
+
+  return Object.keys(result).length > 0 ? result : undefined;
+};
+
 const sanitizeNumberArray = (
   value: unknown,
   min: number,
@@ -632,7 +527,7 @@ const sanitizeConnectionIconColor = (value: unknown): string | undefined => {
 };
 
 const normalizeConnectionType = (value: unknown): string => {
-  const type = toTrimmedString(value).toLowerCase();
+  const type = normalizeDriverType(toTrimmedString(value));
   if (type === "doris") {
     return "diros";
   }
@@ -821,11 +716,11 @@ const sanitizeConnectionConfig = (value: unknown): ConnectionConfig => {
       ? (value as Record<string, unknown>)
       : {};
   const type = normalizeConnectionType(raw.type);
-  const defaultPort = getDefaultPortByType(type);
+  const defaultPort = getConnectionTypeDefaultPort(type);
   const savePassword =
     typeof raw.savePassword === "boolean" ? raw.savePassword : true;
   const mongoSrv = !!raw.mongoSrv;
-  const sslCapable = SSL_SUPPORTED_CONNECTION_TYPES.has(type);
+  const sslCapable = supportsSSLForType(type);
   const sslModeRaw = toTrimmedString(raw.sslMode, "preferred").toLowerCase();
   const sslMode: "preferred" | "required" | "skip-verify" | "disable" =
     sslModeRaw === "required"
@@ -945,6 +840,17 @@ const sanitizeConnectionConfig = (value: unknown): ConnectionConfig => {
       MIN_KEEPALIVE_INTERVAL_MINUTES,
       MAX_KEEPALIVE_INTERVAL_MINUTES,
     ),
+    keepAliveSQL: supportsConnectionKeepAliveSQL({
+      type,
+      driver: toTrimmedString(raw.driver),
+      oceanBaseProtocol:
+        raw.oceanBaseProtocol as ConnectionConfig["oceanBaseProtocol"],
+    })
+      ? toTrimmedString(raw.keepAliveSQL).slice(
+          0,
+          MAX_CONNECTION_KEEPALIVE_SQL_LENGTH,
+        )
+      : "",
   };
 
   const resolvedProtection = resolveConnectionProtectionConfig(safeConfig);
@@ -1035,6 +941,9 @@ const sanitizeSavedConnection = (
     0,
     MAX_REDIS_DATABASE_INDEX,
   );
+  const schemaVisibilityByDatabase = sanitizeSchemaVisibilityByDatabase(
+    raw.schemaVisibilityByDatabase,
+  );
 
   return {
     id,
@@ -1054,6 +963,7 @@ const sanitizeSavedConnection = (
       includeDatabases.length > 0 ? includeDatabases : undefined,
     includeRedisDatabases:
       includeRedisDatabases.length > 0 ? includeRedisDatabases : undefined,
+    schemaVisibilityByDatabase,
     iconType: sanitizeConnectionIconType(raw.iconType),
     iconColor: sanitizeConnectionIconColor(raw.iconColor),
   };
@@ -1078,32 +988,6 @@ const sanitizeConnections = (value: unknown): SavedConnection[] => {
   return result;
 };
 
-const sanitizeConnectionTags = (value: unknown): ConnectionTag[] => {
-  if (!Array.isArray(value)) return [];
-  const result: ConnectionTag[] = [];
-  const idSet = new Set<string>();
-
-  value.forEach((entry, index) => {
-    if (!entry || typeof entry !== "object") return;
-    const raw = entry as Record<string, unknown>;
-    const id =
-      toTrimmedString(raw.id, `tag-${index + 1}`) || `tag-${index + 1}`;
-    if (idSet.has(id)) return;
-    idSet.add(id);
-
-    const fallbackName = indexedStoreFallback(
-      "store.fallback.connection_tag_name",
-      index,
-    );
-    const name = toTrimmedString(raw.name, fallbackName) || fallbackName;
-    const connectionIds = sanitizeStringArray(raw.connectionIds, 256);
-
-    result.push({ id, name, connectionIds });
-  });
-
-  return result;
-};
-
 const SIDEBAR_ROOT_TAG_TOKEN_PREFIX = "tag:";
 const SIDEBAR_ROOT_CONNECTION_TOKEN_PREFIX = "connection:";
 
@@ -1122,7 +1006,17 @@ const isSidebarRootConnectionToken = (token: string): boolean =>
   token.startsWith(SIDEBAR_ROOT_CONNECTION_TOKEN_PREFIX) &&
   token.length > SIDEBAR_ROOT_CONNECTION_TOKEN_PREFIX.length;
 
-const sanitizeSidebarRootOrder = (value: unknown): string[] => {
+const getSidebarTagIdFromToken = (token: string): string =>
+  isSidebarRootTagToken(token)
+    ? token.slice(SIDEBAR_ROOT_TAG_TOKEN_PREFIX.length)
+    : "";
+
+const getSidebarConnectionIdFromToken = (token: string): string =>
+  isSidebarRootConnectionToken(token)
+    ? token.slice(SIDEBAR_ROOT_CONNECTION_TOKEN_PREFIX.length)
+    : "";
+
+const sanitizeSidebarItemOrder = (value: unknown): string[] => {
   if (!Array.isArray(value)) return [];
   const seen = new Set<string>();
   const result: string[] = [];
@@ -1139,6 +1033,157 @@ const sanitizeSidebarRootOrder = (value: unknown): string[] => {
   return result;
 };
 
+const sanitizeSidebarRootOrder = sanitizeSidebarItemOrder;
+
+const normalizeConnectionTagTree = (
+  value: ConnectionTag[],
+): ConnectionTag[] => {
+  const tags: ConnectionTag[] = [];
+  const idSet = new Set<string>();
+
+  value.forEach((entry, index) => {
+    if (!entry || typeof entry !== "object") return;
+    const id =
+      toTrimmedString(entry.id, `tag-${index + 1}`) || `tag-${index + 1}`;
+    if (idSet.has(id)) return;
+    idSet.add(id);
+
+    const fallbackName = indexedStoreFallback(
+      "store.fallback.connection_tag_name",
+      index,
+    );
+    const name = toTrimmedString(entry.name, fallbackName) || fallbackName;
+    const parentTagId = toTrimmedString(entry.parentTagId) || undefined;
+    tags.push({
+      id,
+      name,
+      parentTagId,
+      connectionIds: sanitizeStringArray(entry.connectionIds, 256),
+      childOrder: sanitizeSidebarItemOrder(entry.childOrder),
+    });
+  });
+
+  const tagById = new Map(tags.map((tag) => [tag.id, tag]));
+  tags.forEach((tag) => {
+    if (
+      !tag.parentTagId ||
+      tag.parentTagId === tag.id ||
+      !tagById.has(tag.parentTagId)
+    ) {
+      tag.parentTagId = undefined;
+    }
+  });
+
+  // Corrupted persisted data must never make the sidebar recurse forever.
+  // Promote every member of a detected parent cycle to the root.
+  tags.forEach((tag) => {
+    const path: string[] = [];
+    const pathIndex = new Map<string, number>();
+    let currentId = tag.id;
+    while (currentId) {
+      const current = tagById.get(currentId);
+      if (!current?.parentTagId) break;
+      const cycleStart = pathIndex.get(currentId);
+      if (cycleStart !== undefined) {
+        path.slice(cycleStart).forEach((cycleTagId) => {
+          const cycleTag = tagById.get(cycleTagId);
+          if (cycleTag) cycleTag.parentTagId = undefined;
+        });
+        break;
+      }
+      pathIndex.set(currentId, path.length);
+      path.push(currentId);
+      currentId = current.parentTagId;
+    }
+  });
+
+  // A host can have one direct owner only. Keep the first persisted owner to
+  // make recovery deterministic and match the flat model's intended invariant.
+  const assignedConnectionIds = new Set<string>();
+  tags.forEach((tag) => {
+    tag.connectionIds = tag.connectionIds.filter((connectionId) => {
+      if (assignedConnectionIds.has(connectionId)) return false;
+      assignedConnectionIds.add(connectionId);
+      return true;
+    });
+  });
+
+  return tags.map((tag) => {
+    const childOrder = resolveConnectionTagChildOrder(tag.id, tags);
+    return {
+      ...tag,
+      // Keep the direct-host array aligned with its display-order subsequence.
+      connectionIds: childOrder
+        .filter(isSidebarRootConnectionToken)
+        .map(getSidebarConnectionIdFromToken),
+      childOrder,
+    };
+  });
+};
+
+const sanitizeConnectionTags = (value: unknown): ConnectionTag[] => {
+  if (!Array.isArray(value)) return [];
+  const result: ConnectionTag[] = [];
+  const idSet = new Set<string>();
+
+  value.forEach((entry, index) => {
+    if (!entry || typeof entry !== "object") return;
+    const raw = entry as Record<string, unknown>;
+    const id =
+      toTrimmedString(raw.id, `tag-${index + 1}`) || `tag-${index + 1}`;
+    if (idSet.has(id)) return;
+    idSet.add(id);
+
+    const fallbackName = indexedStoreFallback(
+      "store.fallback.connection_tag_name",
+      index,
+    );
+    const name = toTrimmedString(raw.name, fallbackName) || fallbackName;
+    result.push({
+      id,
+      name,
+      parentTagId: toTrimmedString(raw.parentTagId) || undefined,
+      connectionIds: sanitizeStringArray(raw.connectionIds, 256),
+      childOrder: sanitizeSidebarItemOrder(raw.childOrder),
+    });
+  });
+
+  return normalizeConnectionTagTree(result);
+};
+
+export const resolveConnectionTagChildOrder = (
+  tagId: string,
+  connectionTags: ConnectionTag[],
+): string[] => {
+  const tag = connectionTags.find((candidate) => candidate.id === tagId);
+  if (!tag) return [];
+
+  const defaultOrder = [
+    ...sanitizeStringArray(tag.connectionIds, 256).map(
+      buildSidebarRootConnectionToken,
+    ),
+    ...connectionTags
+      .filter((candidate) => candidate.parentTagId === tagId)
+      .map((candidate) => buildSidebarRootTagToken(candidate.id)),
+  ];
+  const validTokens = new Set(defaultOrder);
+  const seen = new Set<string>();
+  const result: string[] = [];
+
+  sanitizeSidebarItemOrder(tag.childOrder).forEach((token) => {
+    if (!validTokens.has(token) || seen.has(token)) return;
+    seen.add(token);
+    result.push(token);
+  });
+  defaultOrder.forEach((token) => {
+    if (seen.has(token)) return;
+    seen.add(token);
+    result.push(token);
+  });
+
+  return result;
+};
+
 const buildDefaultSidebarRootOrderTokens = (
   connectionTags: ConnectionTag[],
   connections: SavedConnection[],
@@ -1151,7 +1196,9 @@ const buildDefaultSidebarRootOrderTokens = (
   });
 
   return [
-    ...connectionTags.map((tag) => buildSidebarRootTagToken(tag.id)),
+    ...connectionTags
+      .filter((tag) => !tag.parentTagId)
+      .map((tag) => buildSidebarRootTagToken(tag.id)),
     ...connections
       .filter((connection) => !groupedConnectionIds.has(connection.id))
       .map((connection) => buildSidebarRootConnectionToken(connection.id)),
@@ -1196,10 +1243,23 @@ const resolveHydratedSidebarRootOrderTokens = (
   connections?: SavedConnection[],
 ): string[] => {
   const sanitized = sanitizeSidebarRootOrder(sidebarRootOrder);
-  if (!connectionTags || !connections) {
+  if (!connectionTags) {
     return sanitized;
   }
-  return resolveSidebarRootOrderTokens(sanitized, connectionTags, connections);
+  const rootTagIds = new Set(
+    connectionTags
+      .filter((tag) => !tag.parentTagId)
+      .map((tag) => tag.id),
+  );
+  const rootOnly = sanitized.filter(
+    (token) =>
+      !isSidebarRootTagToken(token) ||
+      rootTagIds.has(getSidebarTagIdFromToken(token)),
+  );
+  if (!connections) {
+    return rootOnly;
+  }
+  return resolveSidebarRootOrderTokens(rootOnly, connectionTags, connections);
 };
 
 const insertSidebarRootTokenBeforeUngrouped = (
@@ -1261,22 +1321,326 @@ const moveSidebarRootToken = (
   return filtered;
 };
 
-const orderConnectionTagsBySidebarRootOrder = (
+type ConnectionTagTreeState = {
+  connectionTags: ConnectionTag[];
+  sidebarRootOrder: string[];
+};
+
+const setConnectionTagChildOrder = (
+  connectionTags: ConnectionTag[],
+  tagId: string,
+  childOrder: string[],
+): ConnectionTag[] =>
+  connectionTags.map((tag) =>
+    tag.id === tagId ? { ...tag, childOrder } : tag,
+  );
+
+const removeSidebarItemTokenFromTagOrders = (
+  connectionTags: ConnectionTag[],
+  token: string,
+): ConnectionTag[] =>
+  connectionTags.map((tag) => ({
+    ...tag,
+    childOrder: sanitizeSidebarItemOrder(tag.childOrder).filter(
+      (item) => item !== token,
+    ),
+  }));
+
+const placeSidebarItemToken = (
+  order: string[],
+  token: string,
+  targetToken?: string | null,
+  insertBefore = false,
+): string[] => {
+  if (!token) return [...order];
+  if (targetToken === token) return [...order];
+  const nextOrder = order.filter((item) => item !== token);
+  if (!targetToken) {
+    return [...nextOrder, token];
+  }
+  const targetIndex = nextOrder.indexOf(targetToken);
+  if (targetIndex === -1) {
+    return [...nextOrder, token];
+  }
+  const insertIndex = insertBefore ? targetIndex : targetIndex + 1;
+  nextOrder.splice(insertIndex, 0, token);
+  return nextOrder;
+};
+
+const replaceSidebarItemToken = (
+  order: string[],
+  token: string,
+  replacements: string[],
+): string[] => {
+  const replacementTokens = Array.from(
+    new Set(replacements.filter(Boolean)),
+  );
+  const replacementSet = new Set(replacementTokens);
+  const result: string[] = [];
+  let inserted = false;
+
+  order.forEach((item) => {
+    if (item === token) {
+      if (!inserted) {
+        result.push(...replacementTokens);
+        inserted = true;
+      }
+      return;
+    }
+    if (replacementSet.has(item)) return;
+    result.push(item);
+  });
+  if (!inserted) {
+    result.push(...replacementTokens);
+  }
+  return result;
+};
+
+const getConnectionOwnerTagId = (
+  connectionId: string,
+  connectionTags: ConnectionTag[],
+): string | undefined =>
+  connectionTags.find((tag) => tag.connectionIds.includes(connectionId))?.id;
+
+const getRootConnectionTagId = (
+  tagId: string | undefined,
+  connectionTags: ConnectionTag[],
+): string | undefined => {
+  if (!tagId) return undefined;
+  const tagById = new Map(connectionTags.map((tag) => [tag.id, tag]));
+  const visited = new Set<string>();
+  let current = tagById.get(tagId);
+  while (current && !visited.has(current.id)) {
+    visited.add(current.id);
+    if (!current.parentTagId) return current.id;
+    current = tagById.get(current.parentTagId);
+  }
+  return undefined;
+};
+
+const isConnectionTagSelfOrDescendant = (
+  tagId: string,
+  candidateParentTagId: string,
+  connectionTags: ConnectionTag[],
+): boolean => {
+  const tagById = new Map(connectionTags.map((tag) => [tag.id, tag]));
+  const visited = new Set<string>();
+  let currentId: string | undefined = candidateParentTagId;
+  while (currentId && !visited.has(currentId)) {
+    if (currentId === tagId) return true;
+    visited.add(currentId);
+    currentId = tagById.get(currentId)?.parentTagId;
+  }
+  return false;
+};
+
+const normalizeConnectionTagTreeState = (
   connectionTags: ConnectionTag[],
   sidebarRootOrder: string[],
-): ConnectionTag[] => {
-  const tagMap = new Map(connectionTags.map((tag) => [tag.id, tag]));
-  const orderedTags: ConnectionTag[] = [];
-  sidebarRootOrder.forEach((token) => {
-    if (!isSidebarRootTagToken(token)) return;
-    const tagId = token.slice(SIDEBAR_ROOT_TAG_TOKEN_PREFIX.length);
-    const tag = tagMap.get(tagId);
-    if (!tag) return;
-    orderedTags.push(tag);
-    tagMap.delete(tagId);
+  connections: SavedConnection[],
+): ConnectionTagTreeState => {
+  const nextTags = normalizeConnectionTagTree(connectionTags);
+  return {
+    connectionTags: nextTags,
+    sidebarRootOrder: resolveSidebarRootOrderTokens(
+      sidebarRootOrder,
+      nextTags,
+      connections,
+    ),
+  };
+};
+
+const moveConnectionTagInTree = (
+  connectionTags: ConnectionTag[],
+  sidebarRootOrder: string[],
+  connections: SavedConnection[],
+  tagId: string,
+  targetParentTagId: string | null,
+  targetToken?: string | null,
+  insertBefore = false,
+): ConnectionTagTreeState | null => {
+  const normalized = normalizeConnectionTagTreeState(
+    connectionTags,
+    sidebarRootOrder,
+    connections,
+  );
+  const tagById = new Map(
+    normalized.connectionTags.map((tag) => [tag.id, tag]),
+  );
+  const source = tagById.get(tagId);
+  if (!source) return null;
+
+  const nextParentTagId = toTrimmedString(targetParentTagId) || undefined;
+  if (
+    nextParentTagId &&
+    (!tagById.has(nextParentTagId) ||
+      isConnectionTagSelfOrDescendant(
+        tagId,
+        nextParentTagId,
+        normalized.connectionTags,
+      ))
+  ) {
+    return null;
+  }
+
+  const token = buildSidebarRootTagToken(tagId);
+  let nextTags = removeSidebarItemTokenFromTagOrders(
+    normalized.connectionTags,
+    token,
+  ).map((tag) =>
+    tag.id === tagId ? { ...tag, parentTagId: nextParentTagId } : tag,
+  );
+  let nextRootOrder = normalized.sidebarRootOrder.filter(
+    (item) => item !== token,
+  );
+
+  nextTags = normalizeConnectionTagTree(nextTags);
+  if (nextParentTagId) {
+    const targetOrder = resolveConnectionTagChildOrder(
+      nextParentTagId,
+      nextTags,
+    );
+    nextTags = setConnectionTagChildOrder(
+      nextTags,
+      nextParentTagId,
+      placeSidebarItemToken(targetOrder, token, targetToken, insertBefore),
+    );
+  } else {
+    const targetOrder = resolveSidebarRootOrderTokens(
+      nextRootOrder,
+      nextTags,
+      connections,
+    );
+    nextRootOrder = placeSidebarItemToken(
+      targetOrder,
+      token,
+      targetToken,
+      insertBefore,
+    );
+  }
+
+  return normalizeConnectionTagTreeState(
+    nextTags,
+    nextRootOrder,
+    connections,
+  );
+};
+
+const moveConnectionInTree = (
+  connectionTags: ConnectionTag[],
+  sidebarRootOrder: string[],
+  connections: SavedConnection[],
+  connectionId: string,
+  targetTagId: string | null,
+  targetToken?: string | null,
+  insertBefore = false,
+): ConnectionTagTreeState | null => {
+  if (!connections.some((connection) => connection.id === connectionId)) {
+    return null;
+  }
+  const normalized = normalizeConnectionTagTreeState(
+    connectionTags,
+    sidebarRootOrder,
+    connections,
+  );
+  const nextTargetTagId = toTrimmedString(targetTagId) || undefined;
+  if (
+    nextTargetTagId &&
+    !normalized.connectionTags.some((tag) => tag.id === nextTargetTagId)
+  ) {
+    return null;
+  }
+
+  const sourceTagId = getConnectionOwnerTagId(
+    connectionId,
+    normalized.connectionTags,
+  );
+  const sourceRootTagId = getRootConnectionTagId(
+    sourceTagId,
+    normalized.connectionTags,
+  );
+  const token = buildSidebarRootConnectionToken(connectionId);
+  let nextTags = removeSidebarItemTokenFromTagOrders(
+    normalized.connectionTags,
+    token,
+  ).map((tag) => ({
+    ...tag,
+    connectionIds: tag.connectionIds.filter((id) => id !== connectionId),
+  }));
+  let nextRootOrder = normalized.sidebarRootOrder.filter(
+    (item) => item !== token,
+  );
+
+  if (nextTargetTagId) {
+    nextTags = nextTags.map((tag) =>
+      tag.id === nextTargetTagId
+        ? {
+            ...tag,
+            connectionIds: [...tag.connectionIds, connectionId],
+          }
+        : tag,
+    );
+    nextTags = normalizeConnectionTagTree(nextTags);
+    const targetOrder = resolveConnectionTagChildOrder(
+      nextTargetTagId,
+      nextTags,
+    );
+    nextTags = setConnectionTagChildOrder(
+      nextTags,
+      nextTargetTagId,
+      placeSidebarItemToken(targetOrder, token, targetToken, insertBefore),
+    );
+  } else {
+    nextTags = normalizeConnectionTagTree(nextTags);
+    const rootOrder = resolveSidebarRootOrderTokens(
+      nextRootOrder,
+      nextTags,
+      connections,
+    );
+    nextRootOrder = targetToken
+      ? placeSidebarItemToken(rootOrder, token, targetToken, insertBefore)
+      : sourceRootTagId
+        ? insertSidebarRootTokenAfter(
+            rootOrder,
+            token,
+            buildSidebarRootTagToken(sourceRootTagId),
+          )
+        : insertSidebarRootTokenBeforeUngrouped(rootOrder, token);
+  }
+
+  return normalizeConnectionTagTreeState(
+    nextTags,
+    nextRootOrder,
+    connections,
+  );
+};
+
+const orderUngroupedConnectionsBySidebarRootOrder = (
+  connections: SavedConnection[],
+  connectionTags: ConnectionTag[],
+  sidebarRootOrder: string[],
+): SavedConnection[] => {
+  const rootOrder = resolveSidebarRootOrderTokens(
+    sidebarRootOrder,
+    connectionTags,
+    connections,
+  );
+  const orderMap = new Map<string, number>();
+  rootOrder.forEach((token, index) => {
+    if (isSidebarRootConnectionToken(token)) {
+      orderMap.set(getSidebarConnectionIdFromToken(token), index);
+    }
   });
-  orderedTags.push(...Array.from(tagMap.values()));
-  return orderedTags;
+  return [...connections].sort((left, right) => {
+    const leftIndex = orderMap.get(left.id);
+    const rightIndex = orderMap.get(right.id);
+    if (leftIndex !== undefined && rightIndex !== undefined) {
+      return leftIndex - rightIndex;
+    }
+    if (leftIndex !== undefined) return -1;
+    if (rightIndex !== undefined) return 1;
+    return 0;
+  });
 };
 
 const isLegacyDefaultAppearance = (
@@ -1304,10 +1668,33 @@ export interface SqlLog {
   message?: string;
   dbName?: string;
   affectedRows?: number;
+  category?: "query" | "transaction";
+  transactionId?: string;
+  transactionAction?: "commit" | "rollback";
 }
+
+/** 首页一键重新打开的最近连接 / 数据库目标。 */
+export interface RecentConnectionTarget {
+  connectionId: string;
+  dbName?: string;
+  openedAt: number;
+}
+
+/** 首页一键重新打开的 SQL 文件，始终保留其运行时连接上下文。 */
+export interface RecentSQLFile {
+  filePath: string;
+  fileName: string;
+  connectionId: string;
+  dbName?: string;
+  openedAt: number;
+}
+
+export type TableOverviewViewMode = "card" | "list" | "table";
 
 export interface QueryOptions {
   maxRows: number;
+  wordWrap: boolean;
+  tableOverviewViewMode?: TableOverviewViewMode;
   showColumnComment: boolean;
   showSidebarTableComment?: boolean;
   sidebarTableMetadataFields?: SidebarTableMetadataField[];
@@ -1335,6 +1722,10 @@ export interface SqlEditorPendingTransactionState {
   createdAt: number;
   autoCommitDueAt?: number | null;
   statementCount?: number;
+  dbType?: string;
+  dbName?: string;
+  statements?: string[];
+  executionDurationMs?: number;
 }
 
 interface AppState {
@@ -1353,14 +1744,23 @@ interface AppState {
   activeTabId: string | null;
   activeContext: { connectionId: string; dbName: string } | null;
   savedQueries: SavedQuery[];
+  savedQueryGroups: SavedQueryGroup[];
   externalSQLDirectories: ExternalSQLDirectory[];
+  recentConnectionTargets: RecentConnectionTarget[];
+  recentSQLFiles: RecentSQLFile[];
   theme: ThemeMode;
   themePreference: ThemePreference;
+  /** Built-in brand mascot icon id (01-10), used in title bar / about / favicon. */
+  brandIconId: string;
   languagePreference: LanguagePreference;
   appearance: AppearanceSettings;
   uiScale: number;
   fontSize: number;
   startupFullscreen: boolean;
+  /** 启动后与定时静默检查更新；默认开启 */
+  autoCheckForUpdates: boolean;
+  /** 自动检查更新间隔（分钟），默认 30 */
+  autoCheckForUpdatesIntervalMinutes: number;
   globalProxy: GlobalProxyConfig;
   sqlFormatOptions: { keywordCase: "upper" | "lower" };
   queryOptions: QueryOptions;
@@ -1426,6 +1826,14 @@ interface AppState {
   moveConnectionToTag: (
     connectionId: string,
     targetTagId: string | null,
+    targetToken?: string | null,
+    insertBefore?: boolean,
+  ) => void;
+  moveConnectionTag: (
+    tagId: string,
+    targetParentTagId: string | null,
+    targetToken?: string | null,
+    insertBefore?: boolean,
   ) => void;
   reorderConnections: (
     connectionId: string,
@@ -1492,13 +1900,24 @@ interface AppState {
   closeDetachedQueryResultWindowsBySourceTab: (sourceQueryTabId: string) => void;
 
   replaceSavedQueries: (queries: SavedQuery[]) => void;
+  replaceSavedQueryGroups: (groups: SavedQueryGroup[]) => void;
+  reloadSavedQueryGroups: () => Promise<SavedQueryGroup[]>;
+  saveSavedQueryGroup: (group: SavedQueryGroup) => Promise<SavedQueryGroup>;
+  deleteSavedQueryGroup: (id: string) => Promise<void>;
+  moveSavedQueryToGroup: (queryId: string, groupId?: string | null) => Promise<void>;
+  moveSavedQueryGroup: (groupId: string, parentGroupId?: string | null) => Promise<void>;
   saveQuery: (query: SavedQuery) => Promise<SavedQuery>;
   deleteQuery: (id: string) => Promise<void>;
   saveExternalSQLDirectory: (directory: ExternalSQLDirectory) => void;
   deleteExternalSQLDirectory: (id: string) => void;
+  updateRecentSQLFilePath: (previousPath: string, nextPath: string) => void;
+  removeRecentSQLFilesByPath: (filePath: string) => void;
+  moveRecentSQLFilesByDirectory: (previousDirectoryPath: string, nextDirectoryPath: string) => void;
+  removeRecentSQLFilesByDirectory: (directoryPath: string) => void;
 
   setTheme: (theme: ThemeMode) => void;
   setThemePreference: (themePreference: ThemePreference) => void;
+  setBrandIconId: (brandIconId: string) => void;
   setLanguagePreference: (languagePreference: LanguagePreference) => void;
   setAppearance: (appearance: Partial<AppearanceSettings>) => void;
   setRedisDbAlias: (
@@ -1509,6 +1928,8 @@ interface AppState {
   setUiScale: (scale: number) => void;
   setFontSize: (size: number) => void;
   setStartupFullscreen: (enabled: boolean) => void;
+  setAutoCheckForUpdates: (enabled: boolean) => void;
+  setAutoCheckForUpdatesIntervalMinutes: (minutes: number) => void;
   setGlobalProxy: (proxy: Partial<GlobalProxyConfig>) => void;
   replaceGlobalProxy: (proxy: Partial<GlobalProxyConfig>) => void;
   setSqlFormatOptions: (options: { keywordCase: "upper" | "lower" }) => void;
@@ -1611,7 +2032,10 @@ interface AppState {
   ) => void;
   attachAIChatPanel: () => void;
   updateDetachedAIChatBounds: (
-    bounds: Partial<Pick<DetachedWindowBounds, "x" | "y" | "width" | "height">>,
+    bounds: Partial<Pick<
+      DetachedAIChatWindow,
+      "x" | "y" | "width" | "height" | "coordinateSpace"
+    >>,
   ) => void;
   focusDetachedAIChatPanel: () => void;
   isAIChatDetached: () => boolean;
@@ -1657,8 +2081,8 @@ const sanitizeSqlSnippets = (value: unknown): SqlSnippet[] => {
       .toLowerCase()
       .replace(/[^a-z0-9_]/g, "")
       .slice(0, 20);
-    const body = toTrimmedString(raw.body);
-    if (!prefix || !body) return;
+    const body = typeof raw.body === "string" ? raw.body : "";
+    if (!prefix || !body.trim()) return;
     const id = toTrimmedString(raw.id, `snippet-${index + 1}`) || `snippet-${index + 1}`;
     const fallbackName = indexedStoreFallback(
       "store.fallback.sql_snippet_name",
@@ -1694,23 +2118,23 @@ const sanitizeExternalSQLDirectories = (
 ): ExternalSQLDirectory[] => {
   if (!Array.isArray(value)) return [];
   const result: ExternalSQLDirectory[] = [];
-  const seenPaths = new Set<string>();
+  const seenDirectoryIds = new Set<string>();
   value.forEach((entry) => {
     if (!entry || typeof entry !== "object") return;
     const raw = entry as Record<string, unknown>;
     const path = toTrimmedString(raw.path);
     if (!path) return;
-    const normalizedPath = path.replace(/\\/g, "/").toLowerCase();
-    if (seenPaths.has(normalizedPath)) return;
-    seenPaths.add(normalizedPath);
     const connectionId = toTrimmedString(raw.connectionId);
     const dbName = toTrimmedString(raw.dbName);
+    const id =
+      toTrimmedString(
+        raw.id,
+        buildExternalSQLDirectoryId(connectionId, dbName, path),
+      ) || buildExternalSQLDirectoryId(connectionId, dbName, path);
+    if (seenDirectoryIds.has(id)) return;
+    seenDirectoryIds.add(id);
     result.push({
-      id:
-        toTrimmedString(
-          raw.id,
-          buildExternalSQLDirectoryId(connectionId, dbName, path),
-        ) || buildExternalSQLDirectoryId(connectionId, dbName, path),
+      id,
       name: resolveExternalSQLDirectoryName(raw.name, path),
       path,
       ...(connectionId ? { connectionId } : {}),
@@ -1722,6 +2146,171 @@ const sanitizeExternalSQLDirectories = (
   });
   return result;
 };
+
+const normalizeRecentTargetTimestamp = (value: unknown): number => {
+  const timestamp = Number(value);
+  return Number.isFinite(timestamp) && timestamp > 0
+    ? Math.trunc(timestamp)
+    : 0;
+};
+
+const buildRecentConnectionTargetKey = (
+  connectionId: string,
+  dbName?: string,
+): string => `${connectionId}::${String(dbName || '')}`;
+
+const buildRecentSQLFileKey = (
+  connectionId: string,
+  dbName: string | undefined,
+  filePath: string,
+): string => [
+  connectionId,
+  String(dbName || ''),
+  filePath.replace(/\\/g, '/'),
+].join('::');
+
+const sanitizeRecentConnectionTargets = (
+  value: unknown,
+): RecentConnectionTarget[] => {
+  if (!Array.isArray(value)) return [];
+
+  const candidates = value.flatMap((entry): RecentConnectionTarget[] => {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return [];
+    const raw = entry as Record<string, unknown>;
+    const connectionId = toTrimmedString(raw.connectionId);
+    if (!connectionId || connectionId.length > 256) return [];
+    const dbName = toTrimmedString(raw.dbName).slice(0, MAX_RECENT_TARGET_DATABASE_LENGTH);
+    return [{
+      connectionId,
+      ...(dbName ? { dbName } : {}),
+      openedAt: normalizeRecentTargetTimestamp(raw.openedAt),
+    }];
+  }).sort((left, right) => right.openedAt - left.openedAt);
+
+  const seen = new Set<string>();
+  return candidates.filter((target) => {
+    const key = buildRecentConnectionTargetKey(target.connectionId, target.dbName);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).slice(0, MAX_RECENT_WORKBENCH_TARGETS);
+};
+
+const resolveRecentSQLFileName = (filePath: string, title: unknown): string => {
+  const fallbackName = filePath.split(/[\\/]/).filter(Boolean).pop() || filePath;
+  return (toTrimmedString(title) || fallbackName).slice(0, MAX_RECENT_SQL_FILE_NAME_LENGTH);
+};
+
+const normalizeRecentSQLPath = (value: unknown): string => {
+  const normalized = toTrimmedString(value).replace(/\\/g, '/');
+  return normalized === '/' ? normalized : normalized.replace(/\/+$/, '');
+};
+
+const isRecentSQLPathInDirectory = (filePath: string, directoryPath: string): boolean => {
+  const normalizedFilePath = normalizeRecentSQLPath(filePath);
+  const normalizedDirectoryPath = normalizeRecentSQLPath(directoryPath);
+  if (!normalizedDirectoryPath) return false;
+  if (normalizedDirectoryPath === '/') return normalizedFilePath.startsWith('/');
+  return normalizedFilePath === normalizedDirectoryPath
+    || normalizedFilePath.startsWith(`${normalizedDirectoryPath}/`);
+};
+
+const relocateRecentSQLFilePath = (
+  filePath: string,
+  previousDirectoryPath: string,
+  nextDirectoryPath: string,
+): string => {
+  const normalizedPreviousDirectoryPath = normalizeRecentSQLPath(previousDirectoryPath);
+  const normalizedFilePath = normalizeRecentSQLPath(filePath);
+  const normalizedNextDirectoryPath = normalizeRecentSQLPath(nextDirectoryPath);
+  if (!normalizedPreviousDirectoryPath || !normalizedNextDirectoryPath) return filePath;
+  const suffix = normalizedFilePath.slice(normalizedPreviousDirectoryPath.length);
+  const rawNextDirectoryPath = toTrimmedString(nextDirectoryPath).replace(/[\\/]+$/, '');
+  const separator = rawNextDirectoryPath.includes('\\') ? '\\' : '/';
+  return `${rawNextDirectoryPath}${suffix.replace(/\//g, separator)}`;
+};
+
+const sanitizeRecentSQLFiles = (value: unknown): RecentSQLFile[] => {
+  if (!Array.isArray(value)) return [];
+
+  const candidates = value.flatMap((entry): RecentSQLFile[] => {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return [];
+    const raw = entry as Record<string, unknown>;
+    const connectionId = toTrimmedString(raw.connectionId);
+    const filePath = toTrimmedString(raw.filePath).slice(0, MAX_URI_LENGTH);
+    if (!connectionId || connectionId.length > 256 || !filePath) return [];
+    const dbName = toTrimmedString(raw.dbName).slice(0, MAX_RECENT_TARGET_DATABASE_LENGTH);
+    const fileName = resolveRecentSQLFileName(filePath, raw.fileName);
+    if (!fileName) return [];
+    return [{
+      filePath,
+      fileName,
+      connectionId,
+      ...(dbName ? { dbName } : {}),
+      openedAt: normalizeRecentTargetTimestamp(raw.openedAt),
+    }];
+  }).sort((left, right) => right.openedAt - left.openedAt);
+
+  const seen = new Set<string>();
+  return candidates.filter((file) => {
+    const key = buildRecentSQLFileKey(file.connectionId, file.dbName, file.filePath);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).slice(0, MAX_RECENT_SQL_FILES);
+};
+
+const prependRecentConnectionTarget = (
+  existing: RecentConnectionTarget[],
+  tab: Pick<TabData, 'connectionId' | 'dbName'>,
+): RecentConnectionTarget[] => {
+  const connectionId = toTrimmedString(tab.connectionId);
+  if (!connectionId) return existing;
+  const dbName = toTrimmedString(tab.dbName).slice(0, MAX_RECENT_TARGET_DATABASE_LENGTH);
+  const target: RecentConnectionTarget = {
+    connectionId,
+    ...(dbName ? { dbName } : {}),
+    openedAt: Date.now(),
+  };
+  const key = buildRecentConnectionTargetKey(target.connectionId, target.dbName);
+  return [
+    target,
+    ...existing.filter((item) => buildRecentConnectionTargetKey(item.connectionId, item.dbName) !== key),
+  ].slice(0, MAX_RECENT_WORKBENCH_TARGETS);
+};
+
+const prependRecentSQLFile = (
+  existing: RecentSQLFile[],
+  tab: Pick<TabData, 'connectionId' | 'dbName' | 'filePath' | 'title'>,
+): RecentSQLFile[] => {
+  const connectionId = toTrimmedString(tab.connectionId);
+  const filePath = toTrimmedString(tab.filePath).slice(0, MAX_URI_LENGTH);
+  if (!connectionId || !filePath) return existing;
+  const dbName = toTrimmedString(tab.dbName).slice(0, MAX_RECENT_TARGET_DATABASE_LENGTH);
+  const file: RecentSQLFile = {
+    filePath,
+    fileName: resolveRecentSQLFileName(filePath, tab.title),
+    connectionId,
+    ...(dbName ? { dbName } : {}),
+    openedAt: Date.now(),
+  };
+  const key = buildRecentSQLFileKey(file.connectionId, file.dbName, file.filePath);
+  return [
+    file,
+    ...existing.filter((item) => buildRecentSQLFileKey(item.connectionId, item.dbName, item.filePath) !== key),
+  ].slice(0, MAX_RECENT_SQL_FILES);
+};
+
+const resolveRecentWorkbenchEntries = (
+  state: Pick<AppState, 'recentConnectionTargets' | 'recentSQLFiles'>,
+  tab: TabData,
+): Pick<AppState, 'recentConnectionTargets' | 'recentSQLFiles'> => ({
+  recentConnectionTargets: prependRecentConnectionTarget(
+    state.recentConnectionTargets,
+    tab,
+  ),
+  recentSQLFiles: prependRecentSQLFile(state.recentSQLFiles, tab),
+});
 
 const sanitizeTableExportHistoryEntry = (
   value: unknown,
@@ -1794,6 +2383,7 @@ const sanitizeTableExportHistories = (
     const sanitizedHistory = (history as unknown[])
       .map((entry) => sanitizeTableExportHistoryEntry(entry))
       .filter((entry): entry is TableExportHistoryEntry => !!entry)
+      .filter((entry) => entry.status === "done" || entry.status === "error")
       .filter((entry) => {
         if (seenJobIds.has(entry.jobId)) {
           return false;
@@ -1965,6 +2555,10 @@ const resolveActiveContextForTabId = (
   return fallbackContext;
 };
 
+const isRunningDataImportTab = (tab: TabData | undefined): boolean => (
+  tab?.type === "data-import" && tab.dataImportRunning === true
+);
+
 type SqlLogSanitizeOptions = {
   limit: number;
   sqlLength: number;
@@ -2009,6 +2603,17 @@ const sanitizeSqlLogEntry = (
     duration: Number.isFinite(duration) && duration >= 0 ? duration : 0,
     dbName: toTrimmedString(raw.dbName) || undefined,
   };
+
+  if (raw.category === "query" || raw.category === "transaction") {
+    log.category = raw.category;
+  }
+  const transactionId = toTrimmedString(raw.transactionId);
+  if (transactionId) {
+    log.transactionId = transactionId;
+  }
+  if (raw.transactionAction === "commit" || raw.transactionAction === "rollback") {
+    log.transactionAction = raw.transactionAction;
+  }
 
   if (message) {
     log.message = message;
@@ -2137,6 +2742,13 @@ const sanitizeQueryOptions = (value: unknown): QueryOptions => {
       ? (value as Record<string, unknown>)
       : {};
   const maxRows = Number(raw.maxRows);
+  const wordWrap = raw.wordWrap === true;
+  const tableOverviewViewMode =
+    raw.tableOverviewViewMode === "card" ||
+    raw.tableOverviewViewMode === "list" ||
+    raw.tableOverviewViewMode === "table"
+      ? raw.tableOverviewViewMode
+      : undefined;
   const showColumnComment =
     typeof raw.showColumnComment === "boolean" ? raw.showColumnComment : true;
   const showSidebarTableComment =
@@ -2164,6 +2776,8 @@ const sanitizeQueryOptions = (value: unknown): QueryOptions => {
   if (!Number.isFinite(maxRows) || maxRows <= 0) {
     return {
       maxRows: 5000,
+      wordWrap,
+      tableOverviewViewMode,
       showColumnComment,
       showSidebarTableComment: derivedShowSidebarTableComment,
       sidebarTableMetadataFields: orderedSidebarTableMetadataFields,
@@ -2175,6 +2789,8 @@ const sanitizeQueryOptions = (value: unknown): QueryOptions => {
   }
   return {
     maxRows: Math.min(50000, Math.trunc(maxRows)),
+    wordWrap,
+    tableOverviewViewMode,
     showColumnComment,
     showSidebarTableComment: derivedShowSidebarTableComment,
     sidebarTableMetadataFields: orderedSidebarTableMetadataFields,
@@ -2218,20 +2834,6 @@ const sanitizeSqlEditorTransactionOptions = (
       ? autoCommitDelayMs
       : 0,
   };
-};
-
-const sanitizeTableAccessCount = (value: unknown): Record<string, number> => {
-  const raw =
-    value && typeof value === "object"
-      ? (value as Record<string, unknown>)
-      : {};
-  const result: Record<string, number> = {};
-  Object.entries(raw).forEach(([key, count]) => {
-    const parsed = Number(count);
-    if (!Number.isFinite(parsed) || parsed < 0) return;
-    result[key] = Math.trunc(parsed);
-  });
-  return result;
 };
 
 const sanitizeTableSortPreference = (
@@ -2336,6 +2938,9 @@ const sanitizeAppearance = (
     v2SidebarRailScale: sanitizeV2SidebarRailScale(
       appearance.v2SidebarRailScale,
     ),
+    sidebarHiddenObjectGroups: sanitizeSidebarHiddenObjectGroups(
+      appearance.sidebarHiddenObjectGroups,
+    ),
     customUIFontFamily: sanitizeFontFamilyInput(appearance.customUIFontFamily),
     customMonoFontFamily: sanitizeFontFamilyInput(appearance.customMonoFontFamily),
     newQuerySqlTemplate: sanitizeNewQuerySqlTemplate(appearance.newQuerySqlTemplate),
@@ -2360,6 +2965,23 @@ const sanitizeAppearance = (
 
 const sanitizeStartupFullscreen = (value: unknown): boolean => {
   return value === true;
+};
+
+const sanitizeAutoCheckForUpdates = (value: unknown): boolean => {
+  return typeof value === "boolean" ? value : DEFAULT_AUTO_CHECK_FOR_UPDATES;
+};
+
+const sanitizeAutoCheckForUpdatesIntervalMinutes = (
+  value: unknown,
+): number => {
+  const minutes = Math.round(Number(value));
+  if (
+    Number.isFinite(minutes) &&
+    AUTO_CHECK_FOR_UPDATES_INTERVAL_OPTIONS_SET.has(minutes)
+  ) {
+    return minutes;
+  }
+  return DEFAULT_AUTO_CHECK_FOR_UPDATES_INTERVAL_MINUTES;
 };
 
 const sanitizeUiScale = (value: unknown): number => {
@@ -2435,6 +3057,9 @@ const sanitizeAIChatDetachedBoundsMemory = (
     height,
     x: Number.isFinite(x) ? x : 0,
     y: Number.isFinite(y) ? y : 0,
+    ...(raw.coordinateSpace === "screen" || raw.coordinateSpace === "viewport"
+      ? { coordinateSpace: raw.coordinateSpace }
+      : {}),
   };
 };
 
@@ -2444,8 +3069,11 @@ const resolveAIChatDetachPreferred = (
   preferred?: Partial<Pick<DetachedWindowBounds, "x" | "y" | "width" | "height">>,
 ): Partial<Pick<DetachedWindowBounds, "x" | "y" | "width" | "height">> | undefined => {
   if (!memory && !preferred) return preferred;
+  const memoryBounds = memory?.coordinateSpace === "screen"
+    ? { width: memory.width, height: memory.height }
+    : memory;
   return {
-    ...(memory ?? {}),
+    ...(memoryBounds ?? {}),
     ...(preferred ?? {}),
   };
 };
@@ -2490,6 +3118,15 @@ const unwrapPersistedAppState = (
 
 let shortcutOptionsExplicitlySet = false;
 
+const sanitizePersistedShortcutOptions = (
+  value: unknown,
+  version: number,
+): ShortcutOptions => (
+  version < SIDEBAR_SEARCH_SHORTCUT_MIGRATION_VERSION
+    ? migrateLegacySidebarSearchShortcutOptions(value)
+    : sanitizeShortcutOptions(value)
+);
+
 const readPersistedShortcutOptions = (): ShortcutOptions | null => {
   if (typeof localStorage === "undefined") {
     return null;
@@ -2499,11 +3136,13 @@ const readPersistedShortcutOptions = (): ShortcutOptions | null => {
     if (!payload) {
       return null;
     }
-    const state = unwrapPersistedAppState(JSON.parse(payload));
+    const raw = JSON.parse(payload) as Record<string, unknown>;
+    const state = unwrapPersistedAppState(raw);
     if (state.shortcutOptions === undefined) {
       return null;
     }
-    return sanitizeShortcutOptions(state.shortcutOptions);
+    const version = typeof raw.version === "number" ? raw.version : 0;
+    return sanitizePersistedShortcutOptions(state.shortcutOptions, version);
   } catch {
     return null;
   }
@@ -2547,26 +3186,82 @@ export const buildSidebarTablePinKey = (
 
 /** 每个 session 独立防抖定时器（2秒） */
 const _persistTimers: Record<string, ReturnType<typeof setTimeout>> = {};
+const _persistGenerations: Record<string, number> = {};
+const _persistDirtySessions = new Set<string>();
+const _persistInFlight: Partial<Record<string, Promise<void>>> = {};
+
+const _persistSessionNow = async (sessionId: string): Promise<void> => {
+  const state = useStore.getState();
+  const messages = state.aiChatHistory[sessionId];
+  const sessionMeta = state.aiChatSessions.find((s) => s.id === sessionId);
+  if (!messages && !sessionMeta) return;
+  const title = sessionMeta?.title || translate("ai_chat.panel.session.default_title");
+  const updatedAt = sessionMeta?.updatedAt || Date.now();
+  const Service = typeof window === "undefined"
+    ? undefined
+    : (window as any).go?.aiservice?.Service;
+  if (typeof Service?.AISaveSession !== "function") return;
+  await Service.AISaveSession(sessionId, title, updatedAt, JSON.stringify(messages || []));
+};
 
 function _debouncedPersistSession(sessionId: string) {
   if (_persistTimers[sessionId]) clearTimeout(_persistTimers[sessionId]);
+  const generation = (_persistGenerations[sessionId] || 0) + 1;
+  _persistGenerations[sessionId] = generation;
+  _persistDirtySessions.add(sessionId);
   _persistTimers[sessionId] = setTimeout(() => {
     delete _persistTimers[sessionId];
-    const state = useStore.getState();
-    const messages = state.aiChatHistory[sessionId];
-    const sessionMeta = state.aiChatSessions.find((s) => s.id === sessionId);
-    if (!messages && !sessionMeta) return; // session 已被删除，跳过
-    const title =
-      sessionMeta?.title || translate("ai_chat.panel.session.default_title");
-    const updatedAt = sessionMeta?.updatedAt || Date.now();
-    const messagesJSON = JSON.stringify(messages || []);
-    const Service = (window as any).go?.aiservice?.Service;
-    Service?.AISaveSession?.(sessionId, title, updatedAt, messagesJSON).catch(
-      (e: any) => {
-        console.error("[AI Session Persist] 持久化失败:", sessionId, e);
-      },
-    );
+    const inFlight = _persistSessionNow(sessionId);
+    _persistInFlight[sessionId] = inFlight;
+    void inFlight.then(() => {
+      if (_persistGenerations[sessionId] === generation) {
+        _persistDirtySessions.delete(sessionId);
+      }
+    }).catch((e: unknown) => {
+      console.error("[AI Session Persist] 持久化失败:", sessionId, e);
+    }).finally(() => {
+      if (_persistInFlight[sessionId] === inFlight) {
+        delete _persistInFlight[sessionId];
+      }
+    });
   }, 2000);
+}
+
+/** Flush pending AI session writes before a native child process exits. */
+export async function flushAIChatSessionPersistence(
+  sessionIds?: string[],
+): Promise<void> {
+  const ids = Array.from(new Set(
+    (sessionIds ?? Array.from(_persistDirtySessions))
+      .map((id) => String(id || "").trim())
+      .filter(Boolean),
+  ));
+  for (let index = 0; index < ids.length; index += 1) {
+    try {
+      const id = ids[index];
+      for (;;) {
+        if (_persistTimers[id]) {
+          clearTimeout(_persistTimers[id]);
+          delete _persistTimers[id];
+        }
+        const inFlight = _persistInFlight[id];
+        if (inFlight) {
+          await inFlight.catch(() => undefined);
+        }
+        const generation = _persistGenerations[id] || 0;
+        await _persistSessionNow(id);
+        if (_persistGenerations[id] === generation) {
+          _persistDirtySessions.delete(id);
+          break;
+        }
+      }
+    } catch (error) {
+      for (const id of ids.slice(index)) {
+        _debouncedPersistSession(id);
+      }
+      throw error;
+    }
+  }
 }
 
 /** 从后端加载会话列表（仅元数据，不含消息体） */
@@ -2622,6 +3317,151 @@ export async function loadAISessionFromBackend(
   return false;
 }
 
+const PERSISTED_STATE_DEPENDENCY_KEYS = [
+  "tabs",
+  "activeTabId",
+  "connectionTags",
+  "sidebarRootOrder",
+  "externalSQLDirectories",
+  "recentConnectionTargets",
+  "recentSQLFiles",
+  "theme",
+  "themePreference",
+  "brandIconId",
+  "languagePreference",
+  "appearance",
+  "uiScale",
+  "fontSize",
+  "startupFullscreen",
+  "autoCheckForUpdates",
+  "autoCheckForUpdatesIntervalMinutes",
+  "aiChatOpenMode",
+  "aiChatDetachedBoundsMemory",
+  "globalProxy",
+  "sqlFormatOptions",
+  "queryOptions",
+  "dataEditTransactionOptions",
+  "sqlEditorTransactionOptions",
+  "shortcutOptions",
+  "sqlLogs",
+  "tableExportHistories",
+  "sqlSnippets",
+  "tableAccessCount",
+  "tableSortPreference",
+  "tableColumnOrders",
+  "enableColumnOrderMemory",
+  "tablePinnedLeftColumns",
+  "tableHiddenColumns",
+  "enableHiddenColumnMemory",
+  "pinnedSidebarTables",
+  "windowBounds",
+  "windowState",
+  "sidebarWidth",
+  "connections",
+] as const satisfies readonly (keyof AppState)[];
+
+type PersistedStateProjectionSource = Pick<
+  AppState,
+  (typeof PERSISTED_STATE_DEPENDENCY_KEYS)[number]
+>;
+
+const buildPersistedStateProjection = (
+  state: PersistedStateProjectionSource,
+): AppState => {
+  const tabs = sanitizeQueryTabs(state.tabs);
+  const partialState: Partial<AppState> = {
+    tabs,
+    activeTabId: sanitizeActiveTabId(state.activeTabId, tabs),
+    connectionTags: state.connectionTags,
+    sidebarRootOrder: state.sidebarRootOrder,
+    externalSQLDirectories: state.externalSQLDirectories,
+    recentConnectionTargets: sanitizeRecentConnectionTargets(
+      state.recentConnectionTargets,
+    ),
+    recentSQLFiles: sanitizeRecentSQLFiles(state.recentSQLFiles),
+    theme: state.theme,
+    themePreference: state.themePreference,
+    brandIconId: sanitizeBrandIconIdLocal(state.brandIconId),
+    languagePreference: state.languagePreference,
+    appearance: state.appearance,
+    uiScale: state.uiScale,
+    fontSize: state.fontSize,
+    startupFullscreen: state.startupFullscreen,
+    autoCheckForUpdates: state.autoCheckForUpdates,
+    autoCheckForUpdatesIntervalMinutes:
+      state.autoCheckForUpdatesIntervalMinutes,
+    aiChatOpenMode: sanitizeAIChatOpenMode(state.aiChatOpenMode),
+    aiChatDetachedBoundsMemory: sanitizeAIChatDetachedBoundsMemory(
+      state.aiChatDetachedBoundsMemory,
+    ),
+    globalProxy:
+      toTrimmedString(state.globalProxy.password) !== ""
+        ? { ...state.globalProxy }
+        : toPersistedGlobalProxy(state.globalProxy),
+    sqlFormatOptions: state.sqlFormatOptions,
+    queryOptions: state.queryOptions,
+    dataEditTransactionOptions: state.dataEditTransactionOptions,
+    sqlEditorTransactionOptions: state.sqlEditorTransactionOptions,
+    shortcutOptions: resolveShortcutOptionsForPersistence(state.shortcutOptions),
+    sqlLogs: sanitizePersistedSqlLogs(state.sqlLogs),
+    tableExportHistories: sanitizeTableExportHistories(
+      state.tableExportHistories,
+    ),
+    sqlSnippets: state.sqlSnippets,
+    tableAccessCount: sanitizeTableAccessCount(state.tableAccessCount),
+    tableSortPreference: state.tableSortPreference,
+    tableColumnOrders: state.tableColumnOrders,
+    enableColumnOrderMemory: state.enableColumnOrderMemory,
+    tablePinnedLeftColumns: state.tablePinnedLeftColumns,
+    tableHiddenColumns: state.tableHiddenColumns,
+    enableHiddenColumnMemory: state.enableHiddenColumnMemory,
+    pinnedSidebarTables: state.pinnedSidebarTables,
+    windowBounds: state.windowBounds,
+    windowState: state.windowState,
+    sidebarWidth: state.sidebarWidth,
+  };
+
+  if (hasLegacyConnectionSecrets(state.connections)) {
+    partialState.connections = state.connections;
+  }
+
+  // AI 会话数据已迁移到后端文件持久化（~/.gonavi/sessions/），不再写入 localStorage
+  return partialState as AppState;
+};
+
+const createMemoizedPersistedStateProjection = () => {
+  let previousDependencies: unknown[] | null = null;
+  let previousProjection: AppState | null = null;
+
+  return (state: AppState): AppState => {
+    if (previousDependencies && previousProjection) {
+      let unchanged = true;
+      for (
+        let index = 0;
+        index < PERSISTED_STATE_DEPENDENCY_KEYS.length;
+        index += 1
+      ) {
+        const key = PERSISTED_STATE_DEPENDENCY_KEYS[index];
+        if (!Object.is(previousDependencies[index], state[key])) {
+          unchanged = false;
+          break;
+        }
+      }
+      if (unchanged) {
+        return previousProjection;
+      }
+    }
+
+    previousDependencies = PERSISTED_STATE_DEPENDENCY_KEYS.map(
+      (key) => state[key],
+    );
+    previousProjection = buildPersistedStateProjection(state);
+    return previousProjection;
+  };
+};
+
+const partializePersistedState = createMemoizedPersistedStateProjection();
+
 export const useStore = create<AppState>()(
   persist(
     (set, get) => ({
@@ -2636,18 +3476,26 @@ export const useStore = create<AppState>()(
       activeTabId: null,
       activeContext: null,
       savedQueries: [],
+      savedQueryGroups: [],
       externalSQLDirectories: [],
+      recentConnectionTargets: [],
+      recentSQLFiles: [],
       theme: "light",
       themePreference: "light",
+      brandIconId: "02",
       languagePreference: DEFAULT_LANGUAGE_PREFERENCE,
       appearance: { ...DEFAULT_APPEARANCE },
       uiScale: DEFAULT_UI_SCALE,
       fontSize: DEFAULT_FONT_SIZE,
       startupFullscreen: DEFAULT_STARTUP_FULLSCREEN,
+      autoCheckForUpdates: DEFAULT_AUTO_CHECK_FOR_UPDATES,
+      autoCheckForUpdatesIntervalMinutes:
+        DEFAULT_AUTO_CHECK_FOR_UPDATES_INTERVAL_MINUTES,
       globalProxy: { ...DEFAULT_GLOBAL_PROXY },
       sqlFormatOptions: { keywordCase: "upper" },
       queryOptions: {
         maxRows: 5000,
+        wordWrap: false,
         showColumnComment: true,
         showSidebarTableComment: false,
         sidebarTableMetadataFields: ["rows"],
@@ -2720,32 +3568,50 @@ export const useStore = create<AppState>()(
       removeConnection: (id) =>
         set((state) => {
           const nextConnections = state.connections.filter((c) => c.id !== id);
+          const connectionToken = buildSidebarRootConnectionToken(id);
           const nextTags = state.connectionTags.map((tag) => ({
             ...tag,
             connectionIds: tag.connectionIds.filter((cid) => cid !== id),
+            childOrder: sanitizeSidebarItemOrder(tag.childOrder).filter(
+              (token) => token !== connectionToken,
+            ),
           }));
+          const normalized = normalizeConnectionTagTreeState(
+            nextTags,
+            state.sidebarRootOrder.filter(
+              (token) => token !== connectionToken,
+            ),
+            nextConnections,
+          );
           return {
             connections: nextConnections,
-            connectionTags: nextTags,
-            sidebarRootOrder: resolveSidebarRootOrderTokens(
-              state.sidebarRootOrder.filter(
-                (token) => token !== buildSidebarRootConnectionToken(id),
-              ),
-              nextTags,
-              nextConnections,
+            connectionTags: normalized.connectionTags,
+            recentConnectionTargets: state.recentConnectionTargets.filter(
+              (target) => target.connectionId !== id,
             ),
+            recentSQLFiles: state.recentSQLFiles.filter(
+              (file) => file.connectionId !== id,
+            ),
+            tableAccessCount: removeConnectionTableAccessCounts(
+              state.tableAccessCount,
+              id,
+              nextConnections.map((connection) => connection.id),
+            ),
+            sidebarRootOrder: normalized.sidebarRootOrder,
           };
         }),
       replaceConnections: (connections) =>
         set((state) => {
           const nextConnections = sanitizeConnections(connections);
+          const normalized = normalizeConnectionTagTreeState(
+            state.connectionTags,
+            state.sidebarRootOrder,
+            nextConnections,
+          );
           return {
             connections: nextConnections,
-            sidebarRootOrder: resolveSidebarRootOrderTokens(
-              state.sidebarRootOrder,
-              state.connectionTags,
-              nextConnections,
-            ),
+            connectionTags: normalized.connectionTags,
+            sidebarRootOrder: normalized.sidebarRootOrder,
             shortcutOptions:
               readPersistedShortcutOptions() ?? state.shortcutOptions,
           };
@@ -2753,94 +3619,241 @@ export const useStore = create<AppState>()(
 
       addConnectionTag: (tag) =>
         set((state) => {
-          const nextTags = [...state.connectionTags, tag];
-          const nextRootOrder = insertSidebarRootTokenBeforeUngrouped(
-            resolveSidebarRootOrderTokens(
-              state.sidebarRootOrder,
-              state.connectionTags,
-              state.connections,
-            ),
-            buildSidebarRootTagToken(tag.id),
+          const normalized = normalizeConnectionTagTreeState(
+            state.connectionTags,
+            state.sidebarRootOrder,
+            state.connections,
           );
-          return {
-            connectionTags: nextTags,
-            sidebarRootOrder: resolveSidebarRootOrderTokens(
-              nextRootOrder,
-              nextTags,
-              state.connections,
-            ),
-          };
+          const tagId = toTrimmedString(tag.id);
+          if (
+            !tagId ||
+            normalized.connectionTags.some((candidate) => candidate.id === tagId)
+          ) {
+            return normalized;
+          }
+
+          const directConnectionIds = sanitizeStringArray(tag.connectionIds, 256);
+          const directConnectionTokens = new Set(
+            directConnectionIds.map(buildSidebarRootConnectionToken),
+          );
+          const nextTags = normalizeConnectionTagTree([
+            ...normalized.connectionTags.map((candidate) => ({
+              ...candidate,
+              connectionIds: candidate.connectionIds.filter(
+                (connectionId) => !directConnectionIds.includes(connectionId),
+              ),
+              childOrder: sanitizeSidebarItemOrder(candidate.childOrder).filter(
+                (token) => !directConnectionTokens.has(token),
+              ),
+            })),
+            {
+              id: tagId,
+              name:
+                toTrimmedString(
+                  tag.name,
+                  indexedStoreFallback(
+                    "store.fallback.connection_tag_name",
+                    normalized.connectionTags.length,
+                  ),
+                ) ||
+                indexedStoreFallback(
+                  "store.fallback.connection_tag_name",
+                  normalized.connectionTags.length,
+                ),
+              parentTagId: toTrimmedString(tag.parentTagId) || undefined,
+              connectionIds: directConnectionIds,
+              childOrder: sanitizeSidebarItemOrder(tag.childOrder),
+            },
+          ]);
+          const addedTag = nextTags.find((candidate) => candidate.id === tagId);
+          const nextRootOrder = addedTag?.parentTagId
+            ? normalized.sidebarRootOrder
+            : insertSidebarRootTokenBeforeUngrouped(
+                resolveSidebarRootOrderTokens(
+                  normalized.sidebarRootOrder,
+                  nextTags,
+                  state.connections,
+                ).filter(
+                  (token) => token !== buildSidebarRootTagToken(tagId),
+                ),
+                buildSidebarRootTagToken(tagId),
+              );
+          return normalizeConnectionTagTreeState(
+            nextTags,
+            nextRootOrder,
+            state.connections,
+          );
         }),
       updateConnectionTag: (tag) =>
         set((state) => {
-          const nextTags = state.connectionTags.map((t) =>
-            t.id === tag.id ? tag : t,
+          const normalized = normalizeConnectionTagTreeState(
+            state.connectionTags,
+            state.sidebarRootOrder,
+            state.connections,
           );
-          return {
-            connectionTags: nextTags,
-            sidebarRootOrder: resolveSidebarRootOrderTokens(
-              state.sidebarRootOrder,
+          const existing = normalized.connectionTags.find(
+            (candidate) => candidate.id === tag.id,
+          );
+          if (!existing) return normalized;
+
+          const requestedConnectionIds = sanitizeStringArray(
+            tag.connectionIds,
+            256,
+          );
+          const requestedConnectionTokens = new Set(
+            requestedConnectionIds.map(buildSidebarRootConnectionToken),
+          );
+          const hasRequestedParent = Object.prototype.hasOwnProperty.call(
+            tag,
+            "parentTagId",
+          );
+          const requestedParentTagId = hasRequestedParent
+            ? toTrimmedString(tag.parentTagId) || undefined
+            : existing.parentTagId;
+          const hasRequestedChildOrder = Object.prototype.hasOwnProperty.call(
+            tag,
+            "childOrder",
+          );
+          let nextTags: ConnectionTag[] = normalized.connectionTags.map((candidate) => {
+            if (candidate.id === tag.id) {
+              return {
+                ...candidate,
+                name: toTrimmedString(tag.name, candidate.name) || candidate.name,
+                connectionIds: requestedConnectionIds,
+                childOrder: hasRequestedChildOrder
+                  ? sanitizeSidebarItemOrder(tag.childOrder)
+                  : candidate.childOrder,
+              };
+            }
+            return {
+              ...candidate,
+              connectionIds: candidate.connectionIds.filter(
+                (connectionId) => !requestedConnectionIds.includes(connectionId),
+              ),
+              childOrder: sanitizeSidebarItemOrder(candidate.childOrder).filter(
+                (token) => !requestedConnectionTokens.has(token),
+              ),
+            };
+          });
+          nextTags = normalizeConnectionTagTree(nextTags);
+
+          if (requestedParentTagId !== existing.parentTagId) {
+            const moved = moveConnectionTagInTree(
               nextTags,
+              normalized.sidebarRootOrder,
               state.connections,
-            ),
-          };
+              tag.id,
+              requestedParentTagId ?? null,
+            );
+            if (moved) return moved;
+          }
+          return normalizeConnectionTagTreeState(
+            nextTags,
+            normalized.sidebarRootOrder,
+            state.connections,
+          );
         }),
       removeConnectionTag: (id) =>
         set((state) => {
-          const nextTags = state.connectionTags.filter((t) => t.id !== id);
-          return {
-            connectionTags: nextTags,
-            sidebarRootOrder: resolveSidebarRootOrderTokens(
-              state.sidebarRootOrder.filter(
-                (token) => token !== buildSidebarRootTagToken(id),
-              ),
-              nextTags,
-              state.connections,
-            ),
-          };
-        }),
-      moveConnectionToTag: (connectionId, targetTagId) =>
-        set((state) => {
-          const newTags = state.connectionTags.map((tag) => {
-            //先从所有tag中移除该connection
-            const filteredIds = tag.connectionIds.filter(
-              (id) => id !== connectionId,
-            );
-            if (tag.id === targetTagId) {
-              return { ...tag, connectionIds: [...filteredIds, connectionId] };
-            }
-            return { ...tag, connectionIds: filteredIds };
-          });
-          const nextRootOrder = resolveSidebarRootOrderTokens(
+          const normalized = normalizeConnectionTagTreeState(
+            state.connectionTags,
             state.sidebarRootOrder,
-            newTags,
             state.connections,
           );
-          const connectionToken = buildSidebarRootConnectionToken(connectionId);
-          if (targetTagId) {
-            return {
-              connectionTags: newTags,
-              sidebarRootOrder: nextRootOrder.filter(
-                (token) => token !== connectionToken,
+          const removedTag = normalized.connectionTags.find(
+            (tag) => tag.id === id,
+          );
+          if (!removedTag) return normalized;
+
+          const removedToken = buildSidebarRootTagToken(id);
+          const promotedOrder = resolveConnectionTagChildOrder(
+            id,
+            normalized.connectionTags,
+          );
+          const parentTagId = removedTag.parentTagId;
+          let nextTags: ConnectionTag[] = normalized.connectionTags
+            .filter((tag) => tag.id !== id)
+            .map((tag) => {
+              const isDirectChild = tag.parentTagId === id;
+              const isParent = parentTagId && tag.id === parentTagId;
+              return {
+                ...tag,
+                parentTagId: isDirectChild ? parentTagId : tag.parentTagId,
+                connectionIds: isParent
+                  ? [...tag.connectionIds, ...removedTag.connectionIds]
+                  : tag.connectionIds,
+              };
+            });
+          let nextRootOrder = normalized.sidebarRootOrder;
+
+          if (parentTagId) {
+            const parentOrder = resolveConnectionTagChildOrder(
+              parentTagId,
+              normalized.connectionTags,
+            );
+            nextTags = setConnectionTagChildOrder(
+              nextTags,
+              parentTagId,
+              replaceSidebarItemToken(
+                parentOrder,
+                removedToken,
+                promotedOrder,
               ),
-            };
+            );
+          } else {
+            nextRootOrder = replaceSidebarItemToken(
+              normalized.sidebarRootOrder,
+              removedToken,
+              promotedOrder,
+            );
           }
 
-          const sourceToken = buildSidebarRootTagToken(
-            state.connectionTags.find((tag) =>
-              tag.connectionIds.includes(connectionId),
-            )?.id || "",
+          return normalizeConnectionTagTreeState(
+            nextTags,
+            nextRootOrder,
+            state.connections,
           );
-          const insertedRootOrder = sourceToken
-            ? insertSidebarRootTokenAfter(nextRootOrder, connectionToken, sourceToken)
-            : insertSidebarRootTokenBeforeUngrouped(nextRootOrder, connectionToken);
-          return {
-            connectionTags: newTags,
-            sidebarRootOrder: resolveSidebarRootOrderTokens(
-              insertedRootOrder,
-              newTags,
-              state.connections,
-            ),
+        }),
+      moveConnectionToTag: (
+        connectionId,
+        targetTagId,
+        targetToken,
+        insertBefore = false,
+      ) =>
+        set((state) => {
+          const moved = moveConnectionInTree(
+            state.connectionTags,
+            state.sidebarRootOrder,
+            state.connections,
+            connectionId,
+            targetTagId,
+            targetToken,
+            insertBefore,
+          );
+          return moved || {
+            connectionTags: state.connectionTags,
+            sidebarRootOrder: state.sidebarRootOrder,
+          };
+        }),
+      moveConnectionTag: (
+        tagId,
+        targetParentTagId,
+        targetToken,
+        insertBefore = false,
+      ) =>
+        set((state) => {
+          const moved = moveConnectionTagInTree(
+            state.connectionTags,
+            state.sidebarRootOrder,
+            state.connections,
+            tagId,
+            targetParentTagId,
+            targetToken,
+            insertBefore,
+          );
+          return moved || {
+            connectionTags: state.connectionTags,
+            sidebarRootOrder: state.sidebarRootOrder,
           };
         }),
       reorderConnections: (
@@ -2853,144 +3866,103 @@ export const useStore = create<AppState>()(
           if (
             !connectionId ||
             !targetConnectionId ||
-            connectionId === targetConnectionId
+            connectionId === targetConnectionId ||
+            !state.connections.some(
+              (connection) => connection.id === targetConnectionId,
+            )
           ) {
             return {
               connections: state.connections,
               connectionTags: state.connectionTags,
             };
           }
-
-          const normalizeInsertIndex = (
-            length: number,
-            index: number,
-          ): number => Math.max(0, Math.min(length, index));
-
-          const nextTags = state.connectionTags.map((tag) => ({
-            ...tag,
-            connectionIds: tag.connectionIds.filter((id) => id !== connectionId),
-          }));
-
-          if (targetTagId) {
-            const updatedTags = nextTags.map((tag) => {
-              if (tag.id !== targetTagId) {
-                return tag;
-              }
-              const targetIndex = tag.connectionIds.indexOf(targetConnectionId);
-              if (targetIndex === -1) {
-                return {
-                  ...tag,
-                  connectionIds: [...tag.connectionIds, connectionId],
-                };
-              }
-              const insertIndex = normalizeInsertIndex(
-                tag.connectionIds.length,
-                insertBefore ? targetIndex : targetIndex + 1,
-              );
-              const nextIds = [...tag.connectionIds];
-              nextIds.splice(insertIndex, 0, connectionId);
-              return { ...tag, connectionIds: nextIds };
-            });
+          const moved = moveConnectionInTree(
+            state.connectionTags,
+            state.sidebarRootOrder,
+            state.connections,
+            connectionId,
+            targetTagId,
+            buildSidebarRootConnectionToken(targetConnectionId),
+            insertBefore,
+          );
+          if (!moved) {
             return {
               connections: state.connections,
-              connectionTags: updatedTags,
-              sidebarRootOrder: resolveSidebarRootOrderTokens(
-                state.sidebarRootOrder,
-                updatedTags,
-                state.connections,
-              ),
+              connectionTags: state.connectionTags,
+              sidebarRootOrder: state.sidebarRootOrder,
             };
           }
-
-          const ungroupedIds = state.connections
-            .map((conn) => conn.id)
-            .filter((id) => id !== connectionId)
-            .filter((id) => !nextTags.some((tag) => tag.connectionIds.includes(id)));
-          const targetIndex = ungroupedIds.indexOf(targetConnectionId);
-          const insertIndex =
-            targetIndex === -1
-              ? ungroupedIds.length
-              : normalizeInsertIndex(
-                  ungroupedIds.length,
-                  insertBefore ? targetIndex : targetIndex + 1,
-                );
-          const nextUngroupedIds = [...ungroupedIds];
-          nextUngroupedIds.splice(insertIndex, 0, connectionId);
-          const ungroupedOrderMap = new Map(
-            nextUngroupedIds.map((id, index) => [id, index]),
-          );
-          const nextConnections = [...state.connections].sort((a, b) => {
-            const indexA = ungroupedOrderMap.get(a.id);
-            const indexB = ungroupedOrderMap.get(b.id);
-            if (typeof indexA === 'number' && typeof indexB === 'number') {
-              return indexA - indexB;
-            }
-            if (typeof indexA === 'number') {
-              return -1;
-            }
-            if (typeof indexB === 'number') {
-              return 1;
-            }
-            return 0;
-          });
-
+          const nextConnections = targetTagId
+            ? state.connections
+            : orderUngroupedConnectionsBySidebarRootOrder(
+                state.connections,
+                moved.connectionTags,
+                moved.sidebarRootOrder,
+              );
           return {
             connections: nextConnections,
-            connectionTags: nextTags,
+            connectionTags: moved.connectionTags,
             sidebarRootOrder: resolveSidebarRootOrderTokens(
-              state.sidebarRootOrder,
-              nextTags,
+              moved.sidebarRootOrder,
+              moved.connectionTags,
               nextConnections,
             ),
           };
         }),
       reorderTags: (tagIds) =>
         set((state) => {
-          const nextRootOrder = resolveSidebarRootOrderTokens(
-            state.sidebarRootOrder,
+          const normalized = normalizeConnectionTagTreeState(
             state.connectionTags,
+            state.sidebarRootOrder,
             state.connections,
           );
-          const orderedRootOrder = [
-            ...tagIds.map((id) => buildSidebarRootTagToken(id)),
-            ...nextRootOrder.filter((token) => !isSidebarRootTagToken(token)),
-          ];
-          const newTags = orderConnectionTagsBySidebarRootOrder(
-            state.connectionTags,
-            orderedRootOrder,
+          const rootTagIds = new Set(
+            normalized.connectionTags
+              .filter((tag) => !tag.parentTagId)
+              .map((tag) => tag.id),
           );
-          return {
-            connectionTags: newTags,
-            sidebarRootOrder: resolveSidebarRootOrderTokens(
-              orderedRootOrder,
-              newTags,
-              state.connections,
+          const requestedTagTokens = Array.from(
+            new Set(
+              tagIds
+                .filter((id) => rootTagIds.has(id))
+                .map(buildSidebarRootTagToken),
             ),
-          };
+          );
+          const orderedRootOrder = [
+            ...requestedTagTokens,
+            ...normalized.sidebarRootOrder.filter(
+              (token) =>
+                isSidebarRootTagToken(token) &&
+                !requestedTagTokens.includes(token),
+            ),
+            ...normalized.sidebarRootOrder.filter(
+              (token) => !isSidebarRootTagToken(token),
+            ),
+          ];
+          return normalizeConnectionTagTreeState(
+            normalized.connectionTags,
+            orderedRootOrder,
+            state.connections,
+          );
         }),
       reorderSidebarRoot: (sourceToken, targetToken, insertBefore) =>
         set((state) => {
+          const normalized = normalizeConnectionTagTreeState(
+            state.connectionTags,
+            state.sidebarRootOrder,
+            state.connections,
+          );
           const nextRootOrder = moveSidebarRootToken(
-            resolveSidebarRootOrderTokens(
-              state.sidebarRootOrder,
-              state.connectionTags,
-              state.connections,
-            ),
+            normalized.sidebarRootOrder,
             sourceToken,
             targetToken,
             insertBefore,
           );
-          return {
-            sidebarRootOrder: resolveSidebarRootOrderTokens(
-              nextRootOrder,
-              state.connectionTags,
-              state.connections,
-            ),
-            connectionTags: orderConnectionTagsBySidebarRootOrder(
-              state.connectionTags,
-              nextRootOrder,
-            ),
-          };
+          return normalizeConnectionTagTreeState(
+            normalized.connectionTags,
+            nextRootOrder,
+            state.connections,
+          );
         }),
 
       addTab: (tab) =>
@@ -3002,6 +3974,10 @@ export const useStore = create<AppState>()(
                   resultPanelVisible: state.queryOptions.showQueryResultsPanel,
                 }
               : tab;
+          const recentWorkbenchEntries = resolveRecentWorkbenchEntries(
+            state,
+            incomingTab,
+          );
           const index = state.tabs.findIndex((t) => t.id === incomingTab.id);
           if (index !== -1) {
             // Update existing tab with new data (e.g. switch initialTab)
@@ -3009,6 +3985,7 @@ export const useStore = create<AppState>()(
             newTabs[index] = { ...newTabs[index], ...incomingTab };
             return {
               tabs: newTabs,
+              ...recentWorkbenchEntries,
               activeTabId: incomingTab.id,
               activeContext: resolveActiveContextForTabId(
                 newTabs,
@@ -3045,6 +4022,7 @@ export const useStore = create<AppState>()(
               };
               return {
                 tabs: newTabs,
+                ...recentWorkbenchEntries,
                 activeTabId: existingTab.id,
                 activeContext: resolveActiveContextForTabId(
                   newTabs,
@@ -3072,6 +4050,7 @@ export const useStore = create<AppState>()(
               };
               return {
                 tabs: newTabs,
+                ...recentWorkbenchEntries,
                 activeTabId: existingTab.id,
                 activeContext: resolveActiveContextForTabId(
                   newTabs,
@@ -3084,6 +4063,7 @@ export const useStore = create<AppState>()(
           const nextTabs = [...state.tabs, incomingTab];
           return {
             tabs: nextTabs,
+            ...recentWorkbenchEntries,
             activeTabId: incomingTab.id,
             activeContext: resolveActiveContextForTabId(
               nextTabs,
@@ -3099,9 +4079,11 @@ export const useStore = create<AppState>()(
           if (!tabId) return state;
 
           let changed = false;
+          let contextChangedTab: TabData | null = null;
           const nextTabs = state.tabs.map((tab) => {
             if (tab.id !== tabId || tab.type !== "query") return tab;
             const nextTab: TabData = { ...tab };
+            let connectionContextChanged = false;
 
             if (draft.query !== undefined) {
               const nextQuery = typeof draft.query === "string" ? draft.query.slice(0, MAX_PERSISTED_QUERY_LENGTH) : "";
@@ -3115,6 +4097,7 @@ export const useStore = create<AppState>()(
               if (nextTab.connectionId !== nextConnectionId) {
                 nextTab.connectionId = nextConnectionId;
                 changed = true;
+                connectionContextChanged = true;
               }
             }
             if (draft.dbName !== undefined) {
@@ -3122,6 +4105,7 @@ export const useStore = create<AppState>()(
               if ((nextTab.dbName || "") !== nextDbName) {
                 nextTab.dbName = nextDbName;
                 changed = true;
+                connectionContextChanged = true;
               }
             }
             if (draft.title !== undefined) {
@@ -3163,15 +4147,27 @@ export const useStore = create<AppState>()(
               }
             }
 
+            if (connectionContextChanged) {
+              contextChangedTab = nextTab;
+            }
             return nextTab;
           });
 
-          return changed ? { tabs: nextTabs } : state;
+          if (!changed) return state;
+          return {
+            tabs: nextTabs,
+            ...(contextChangedTab
+              ? resolveRecentWorkbenchEntries(state, contextChangedTab)
+              : {}),
+          };
         }),
 
       closeTab: (id) =>
         set((state) => {
           const closedTab = state.tabs.find((t) => t.id === id);
+          if (isRunningDataImportTab(closedTab)) {
+            return state;
+          }
           if (closedTab?.type === "query") {
             clearQueryTabDraft(closedTab.id);
             clearQueryEditorResultSession(id);
@@ -3217,15 +4213,19 @@ export const useStore = create<AppState>()(
               clearQueryTabDraft(tab.id);
               clearQueryEditorResultSession(tab.id);
             });
+          const newTabs = state.tabs.filter(
+            (tab) => tab.id === id || isRunningDataImportTab(tab),
+          );
+          const keptIds = new Set(newTabs.map((tab) => tab.id));
           return {
-            tabs: [keep],
+            tabs: newTabs,
             activeTabId: id,
             activeContext: resolveActiveContextFromTab(keep),
             detachedWorkbenchWindows: state.detachedWorkbenchWindows.filter(
-              (windowState) => windowState.tabId === id,
+              (windowState) => keptIds.has(windowState.tabId),
             ),
             detachedQueryResultWindows: state.detachedQueryResultWindows.filter(
-              (windowState) => windowState.sourceQueryTabId === id,
+              (windowState) => keptIds.has(windowState.sourceQueryTabId),
             ),
           };
         }),
@@ -3241,7 +4241,9 @@ export const useStore = create<AppState>()(
               clearQueryTabDraft(tab.id);
               clearQueryEditorResultSession(tab.id);
             });
-          const newTabs = state.tabs.slice(index);
+          const newTabs = state.tabs.filter(
+            (tab, tabIndex) => tabIndex >= index || isRunningDataImportTab(tab),
+          );
           const keptIds = new Set(newTabs.map((tab) => tab.id));
           const activeStillExists = state.activeTabId
             ? newTabs.some((t) => t.id === state.activeTabId)
@@ -3274,7 +4276,9 @@ export const useStore = create<AppState>()(
               clearQueryTabDraft(tab.id);
               clearQueryEditorResultSession(tab.id);
             });
-          const newTabs = state.tabs.slice(0, index + 1);
+          const newTabs = state.tabs.filter(
+            (tab, tabIndex) => tabIndex <= index || isRunningDataImportTab(tab),
+          );
           const keptIds = new Set(newTabs.map((tab) => tab.id));
           const activeStillExists = state.activeTabId
             ? newTabs.some((t) => t.id === state.activeTabId)
@@ -3311,7 +4315,10 @@ export const useStore = create<AppState>()(
               clearQueryEditorResultSession(tab.id);
             });
           const newTabs = state.tabs.filter(
-            (t) => String(t.connectionId || "").trim() !== targetConnectionId,
+            (tab) => (
+              isRunningDataImportTab(tab)
+              || String(tab.connectionId || "").trim() !== targetConnectionId
+            ),
           );
           const activeStillExists = state.activeTabId
             ? newTabs.some((t) => t.id === state.activeTabId)
@@ -3361,6 +4368,7 @@ export const useStore = create<AppState>()(
               clearQueryEditorResultSession(tab.id);
             });
           const newTabs = state.tabs.filter((tab) => {
+            if (isRunningDataImportTab(tab)) return true;
             const sameConnection =
               String(tab.connectionId || "").trim() === targetConnectionId;
             const sameDb = String(tab.dbName || "").trim() === targetDbName;
@@ -3425,12 +4433,28 @@ export const useStore = create<AppState>()(
               clearQueryTabDraft(tab.id);
               clearQueryEditorResultSession(tab.id);
             });
+          const newTabs = state.tabs.filter(isRunningDataImportTab);
+          const keptIds = new Set(newTabs.map((tab) => tab.id));
+          const activeStillExists = state.activeTabId
+            ? keptIds.has(state.activeTabId)
+            : false;
+          const nextActiveTabId = activeStillExists
+            ? state.activeTabId
+            : (newTabs[0]?.id || null);
           return {
-            tabs: [],
-            activeTabId: null,
-            activeContext: null,
-            detachedWorkbenchWindows: [],
-            detachedQueryResultWindows: [],
+            tabs: newTabs,
+            activeTabId: nextActiveTabId,
+            activeContext: resolveActiveContextForTabId(
+              newTabs,
+              nextActiveTabId,
+              null,
+            ),
+            detachedWorkbenchWindows: state.detachedWorkbenchWindows.filter(
+              (windowState) => keptIds.has(windowState.tabId),
+            ),
+            detachedQueryResultWindows: state.detachedQueryResultWindows.filter(
+              (windowState) => keptIds.has(windowState.sourceQueryTabId),
+            ),
           };
         }),
 
@@ -3726,6 +4750,60 @@ export const useStore = create<AppState>()(
       replaceSavedQueries: (queries) =>
         set({ savedQueries: sanitizeSavedQueries(queries) }),
 
+      replaceSavedQueryGroups: (groups) =>
+        set((state) => ({
+          savedQueryGroups: normalizeSavedQueryGroups(
+            groups,
+            state.savedQueries.map((query) => query.id),
+          ),
+        })),
+
+      reloadSavedQueryGroups: async () => {
+        const groups = await getSavedQueryGroupsFromBackend(
+          resolveSavedQueryBackend(),
+        );
+        const normalized = normalizeSavedQueryGroups(
+          groups,
+          get().savedQueries.map((query) => query.id),
+        );
+        set({ savedQueryGroups: normalized });
+        return normalized;
+      },
+
+      saveSavedQueryGroup: async (group) => {
+        const saved = await saveSavedQueryGroupToBackend(
+          resolveSavedQueryBackend(),
+          group,
+        );
+        // The backend normalizes ownership and mixed child order. Reload after
+        // every write rather than applying an optimistic local patch.
+        await get().reloadSavedQueryGroups();
+        return saved;
+      },
+
+      deleteSavedQueryGroup: async (id) => {
+        await deleteSavedQueryGroupFromBackend(resolveSavedQueryBackend(), id);
+        await get().reloadSavedQueryGroups();
+      },
+
+      moveSavedQueryToGroup: async (queryId, groupId) => {
+        await moveSavedQueryToGroupInBackend(
+          resolveSavedQueryBackend(),
+          queryId,
+          groupId,
+        );
+        await get().reloadSavedQueryGroups();
+      },
+
+      moveSavedQueryGroup: async (groupId, parentGroupId) => {
+        await moveSavedQueryGroupInBackend(
+          resolveSavedQueryBackend(),
+          groupId,
+          parentGroupId,
+        );
+        await get().reloadSavedQueryGroups();
+      },
+
       saveQuery: async (query) => {
         const saved = await saveSavedQueryToBackend(
           resolveSavedQueryBackend(),
@@ -3747,8 +4825,17 @@ export const useStore = create<AppState>()(
 
       deleteQuery: async (id) => {
         await deleteSavedQueryFromBackend(resolveSavedQueryBackend(), id);
+        const groups = await getSavedQueryGroupsFromBackend(
+          resolveSavedQueryBackend(),
+        );
         set((state) => ({
           savedQueries: state.savedQueries.filter((q) => q.id !== id),
+          savedQueryGroups: normalizeSavedQueryGroups(
+            groups,
+            state.savedQueries
+              .filter((query) => query.id !== id)
+              .map((query) => query.id),
+          ),
         }));
       },
 
@@ -3774,11 +4861,8 @@ export const useStore = create<AppState>()(
               ? Number(directory.createdAt)
               : Date.now(),
           };
-          const nextPathKey = path.replace(/\\/g, "/").toLowerCase();
           const existingIndex = state.externalSQLDirectories.findIndex(
-            (item) =>
-              item.id === nextDirectory.id ||
-              item.path.replace(/\\/g, "/").toLowerCase() === nextPathKey,
+            (item) => item.id === nextDirectory.id,
           );
           if (existingIndex === -1) {
             return {
@@ -3802,10 +4886,72 @@ export const useStore = create<AppState>()(
           ),
         })),
 
+      updateRecentSQLFilePath: (previousPath, nextPath) =>
+        set((state) => {
+          const previousKey = normalizeRecentSQLPath(previousPath);
+          const normalizedNextPath = toTrimmedString(nextPath);
+          if (!previousKey || !normalizedNextPath) return state;
+          return {
+            recentSQLFiles: sanitizeRecentSQLFiles(state.recentSQLFiles.map((file) => (
+              normalizeRecentSQLPath(file.filePath) === previousKey
+                ? {
+                    ...file,
+                    filePath: normalizedNextPath,
+                    fileName: resolveRecentSQLFileName(normalizedNextPath, undefined),
+                  }
+                : file
+            ))),
+          };
+        }),
+
+      removeRecentSQLFilesByPath: (filePath) =>
+        set((state) => {
+          const pathKey = normalizeRecentSQLPath(filePath);
+          if (!pathKey) return state;
+          return {
+            recentSQLFiles: state.recentSQLFiles.filter(
+              (file) => normalizeRecentSQLPath(file.filePath) !== pathKey,
+            ),
+          };
+        }),
+
+      moveRecentSQLFilesByDirectory: (previousDirectoryPath, nextDirectoryPath) =>
+        set((state) => {
+          const previousPath = normalizeRecentSQLPath(previousDirectoryPath);
+          const nextPath = normalizeRecentSQLPath(nextDirectoryPath);
+          if (!previousPath || !nextPath) return state;
+          return {
+            recentSQLFiles: sanitizeRecentSQLFiles(state.recentSQLFiles.map((file) => {
+              if (!isRecentSQLPathInDirectory(file.filePath, previousPath)) return file;
+              const filePath = relocateRecentSQLFilePath(
+                file.filePath,
+                previousDirectoryPath,
+                nextDirectoryPath,
+              );
+              return {
+                ...file,
+                filePath,
+                fileName: resolveRecentSQLFileName(filePath, undefined),
+              };
+            })),
+          };
+        }),
+
+      removeRecentSQLFilesByDirectory: (directoryPath) =>
+        set((state) => ({
+          recentSQLFiles: state.recentSQLFiles.filter(
+            (file) => !isRecentSQLPathInDirectory(file.filePath, directoryPath),
+          ),
+        })),
+
       setTheme: (theme) => set({ theme }),
       setThemePreference: (themePreference) =>
         set({
           themePreference: sanitizeThemePreference(themePreference),
+        }),
+      setBrandIconId: (brandIconId) =>
+        set({
+          brandIconId: sanitizeBrandIconIdLocal(brandIconId),
         }),
       setLanguagePreference: (languagePreference) =>
         set({
@@ -3839,6 +4985,15 @@ export const useStore = create<AppState>()(
         const nextValue = !!enabled;
         set({ startupFullscreen: nextValue });
         writePersistedStatePatch({ startupFullscreen: nextValue });
+      },
+      setAutoCheckForUpdates: (enabled) => {
+        set({ autoCheckForUpdates: sanitizeAutoCheckForUpdates(enabled) });
+      },
+      setAutoCheckForUpdatesIntervalMinutes: (minutes) => {
+        set({
+          autoCheckForUpdatesIntervalMinutes:
+            sanitizeAutoCheckForUpdatesIntervalMinutes(minutes),
+        });
       },
       setGlobalProxy: (proxy) =>
         set((state) => ({
@@ -3950,7 +5105,11 @@ export const useStore = create<AppState>()(
         set((state) => {
           const safeHistoryKey = toTrimmedString(historyKey);
           const safeEntry = sanitizeTableExportHistoryEntry(entry);
-          if (!safeHistoryKey || !safeEntry) {
+          if (
+            !safeHistoryKey
+            || !safeEntry
+            || (safeEntry.status !== "done" && safeEntry.status !== "error")
+          ) {
             return state;
           }
           const existingEntries = state.tableExportHistories[safeHistoryKey] || [];
@@ -3982,13 +5141,13 @@ export const useStore = create<AppState>()(
 
       recordTableAccess: (connectionId, dbName, tableName) =>
         set((state) => {
-          const key = `${connectionId}-${dbName}-${tableName}`;
-          const currentCount = state.tableAccessCount[key] || 0;
           return {
-            tableAccessCount: {
-              ...state.tableAccessCount,
-              [key]: currentCount + 1,
-            },
+            tableAccessCount: incrementTableAccessCount(
+              state.tableAccessCount,
+              connectionId,
+              dbName,
+              tableName,
+            ),
           };
         }),
 
@@ -4113,14 +5272,16 @@ export const useStore = create<AppState>()(
       toggleAIPanel: () =>
         set((state) => {
           const nextVisible = !state.aiPanelVisible;
-          // 关闭面板时一并收起独立窗，并记下尺寸
+          // 关闭独立 AI 面板时保留窗口意图和尺寸。桌面端会把原生子窗
+          // 隐藏保活，下一次打开可直接聚焦；浏览器浮窗也会被
+          // aiPanelVisible 门禁隐藏，不会继续占用界面。
           if (!nextVisible) {
             const memory = state.detachedAIChatWindow
               ? toAIChatDetachedBoundsMemory(state.detachedAIChatWindow)
               : state.aiChatDetachedBoundsMemory;
             return {
               aiPanelVisible: false,
-              detachedAIChatWindow: null,
+              detachedAIChatWindow: state.detachedAIChatWindow,
               aiChatDetachedBoundsMemory: memory,
             };
           }
@@ -4148,7 +5309,9 @@ export const useStore = create<AppState>()(
             return {
               aiPanelVisible: true,
               detachedAIChatWindow: nextBounds,
-              aiChatDetachedBoundsMemory: toAIChatDetachedBoundsMemory(nextBounds),
+              aiChatDetachedBoundsMemory: state.aiChatDetachedBoundsMemory?.coordinateSpace === "screen"
+                ? state.aiChatDetachedBoundsMemory
+                : toAIChatDetachedBoundsMemory(nextBounds),
             };
           }
           // 侧栏打开：若仍挂着独立窗则先记下尺寸再收拢
@@ -4171,7 +5334,7 @@ export const useStore = create<AppState>()(
               : state.aiChatDetachedBoundsMemory;
             return {
               aiPanelVisible: false,
-              detachedAIChatWindow: null,
+              detachedAIChatWindow: state.detachedAIChatWindow,
               aiChatDetachedBoundsMemory: memory,
             };
           }
@@ -4198,7 +5361,9 @@ export const useStore = create<AppState>()(
             return {
               aiPanelVisible: true,
               detachedAIChatWindow: nextBounds,
-              aiChatDetachedBoundsMemory: toAIChatDetachedBoundsMemory(nextBounds),
+              aiChatDetachedBoundsMemory: state.aiChatDetachedBoundsMemory?.coordinateSpace === "screen"
+                ? state.aiChatDetachedBoundsMemory
+                : toAIChatDetachedBoundsMemory(nextBounds),
             };
           }
           // 默认侧栏：打开时若之前是独立窗则收拢回侧栏，并记下尺寸
@@ -4239,7 +5404,9 @@ export const useStore = create<AppState>()(
           return {
             aiPanelVisible: true,
             detachedAIChatWindow: nextBounds,
-            aiChatDetachedBoundsMemory: toAIChatDetachedBoundsMemory(nextBounds),
+            aiChatDetachedBoundsMemory: state.aiChatDetachedBoundsMemory?.coordinateSpace === "screen"
+              ? state.aiChatDetachedBoundsMemory
+              : toAIChatDetachedBoundsMemory(nextBounds),
           };
         }),
       attachAIChatPanel: () =>
@@ -4323,7 +5490,12 @@ export const useStore = create<AppState>()(
         set((state) => {
           const messages = state.aiChatHistory[sessionId];
           if (!messages) return state;
-          const idx = messages.findIndex((m) => m.id === messageId);
+          // Message IDs are unique within a session and are also used as React keys.
+          // Streaming updates target the newest assistant message, so keep that hot path O(1).
+          const lastIndex = messages.length - 1;
+          const idx = lastIndex >= 0 && messages[lastIndex].id === messageId
+            ? lastIndex
+            : messages.findIndex((m) => m.id === messageId);
           if (idx < 0) return state;
           const newMessages = [...messages];
           newMessages[idx] = { ...newMessages[idx], ...updates };
@@ -4498,7 +5670,11 @@ export const useStore = create<AppState>()(
     }),
     {
       name: PERSIST_STORAGE_KEY, // name of the item in the storage (must be unique)
-      storage: createDebouncedPersistStorage(() => localStorage),
+      storage: createDebouncedPersistStorage(() => localStorage, {
+        debounceMs: PERSIST_WRITE_DEBOUNCE_MS,
+        enabled: !isFrontendTestRuntime(),
+      }),
+      skipHydration: isNativeDetachedWindowRoute(),
       version: PERSIST_VERSION,
       migrate: (persistedState: unknown, version: number) => {
         const state = unwrapPersistedAppState(
@@ -4530,14 +5706,20 @@ export const useStore = create<AppState>()(
           state.connections === undefined ? undefined : nextState.connections,
         );
         delete nextState.savedQueries;
+        delete nextState.savedQueryGroups;
         nextState.externalSQLDirectories = sanitizeExternalSQLDirectories(
           state.externalSQLDirectories,
         );
+        nextState.recentConnectionTargets = sanitizeRecentConnectionTargets(
+          state.recentConnectionTargets,
+        );
+        nextState.recentSQLFiles = sanitizeRecentSQLFiles(state.recentSQLFiles);
         nextState.theme = sanitizeTheme(state.theme);
         nextState.themePreference = sanitizeThemePreference(
           state.themePreference,
           nextState.theme,
         );
+        nextState.brandIconId = sanitizeBrandIconIdLocal(state.brandIconId);
         nextState.languagePreference = sanitizeLanguagePreference(
           state.languagePreference,
         );
@@ -4553,6 +5735,13 @@ export const useStore = create<AppState>()(
         nextState.startupFullscreen = sanitizeStartupFullscreen(
           state.startupFullscreen,
         );
+        nextState.autoCheckForUpdates = sanitizeAutoCheckForUpdates(
+          state.autoCheckForUpdates,
+        );
+        nextState.autoCheckForUpdatesIntervalMinutes =
+          sanitizeAutoCheckForUpdatesIntervalMinutes(
+            state.autoCheckForUpdatesIntervalMinutes,
+          );
         nextState.globalProxy = sanitizeGlobalProxy(state.globalProxy);
         nextState.sqlFormatOptions = sanitizeSqlFormatOptions(
           state.sqlFormatOptions,
@@ -4562,8 +5751,9 @@ export const useStore = create<AppState>()(
           sanitizeDataEditTransactionOptions(state.dataEditTransactionOptions);
         nextState.sqlEditorTransactionOptions =
           sanitizeSqlEditorTransactionOptions(state.sqlEditorTransactionOptions);
-        nextState.shortcutOptions = sanitizeShortcutOptions(
+        nextState.shortcutOptions = sanitizePersistedShortcutOptions(
           state.shortcutOptions,
+          version,
         );
         nextState.sqlLogs = sanitizeRuntimeSqlLogs(state.sqlLogs);
         nextState.tableExportHistories = sanitizeTableExportHistories(
@@ -4654,14 +5844,20 @@ export const useStore = create<AppState>()(
           detachedAIChatWindow: null,
           activeTabId: sanitizeActiveTabId(state.activeTabId, safeTabs),
           savedQueries: currentState.savedQueries,
+          savedQueryGroups: currentState.savedQueryGroups,
           externalSQLDirectories: sanitizeExternalSQLDirectories(
             state.externalSQLDirectories,
           ),
+          recentConnectionTargets: sanitizeRecentConnectionTargets(
+            state.recentConnectionTargets,
+          ),
+          recentSQLFiles: sanitizeRecentSQLFiles(state.recentSQLFiles),
           theme: sanitizeTheme(state.theme),
           themePreference: sanitizeThemePreference(
             state.themePreference,
             sanitizeTheme(state.theme),
           ),
+          brandIconId: sanitizeBrandIconIdLocal(state.brandIconId),
           languagePreference: sanitizeLanguagePreference(
             state.languagePreference,
           ),
@@ -4669,6 +5865,13 @@ export const useStore = create<AppState>()(
           uiScale: sanitizeUiScale(state.uiScale),
           fontSize: sanitizeFontSize(state.fontSize),
           startupFullscreen: sanitizeStartupFullscreen(state.startupFullscreen),
+          autoCheckForUpdates: sanitizeAutoCheckForUpdates(
+            state.autoCheckForUpdates,
+          ),
+          autoCheckForUpdatesIntervalMinutes:
+            sanitizeAutoCheckForUpdatesIntervalMinutes(
+              state.autoCheckForUpdatesIntervalMinutes,
+            ),
           globalProxy: sanitizeGlobalProxy(state.globalProxy),
           tableSortPreference: sanitizeTableSortPreference(
             state.tableSortPreference,
@@ -4711,59 +5914,7 @@ export const useStore = create<AppState>()(
           aiChatSessions: [],
         };
       },
-      partialize: (state) => {
-        const tabs = sanitizeQueryTabs(state.tabs);
-        const partialState: Partial<AppState> = {
-          tabs,
-          activeTabId: sanitizeActiveTabId(state.activeTabId, tabs),
-          connectionTags: state.connectionTags,
-          sidebarRootOrder: state.sidebarRootOrder,
-          externalSQLDirectories: state.externalSQLDirectories,
-          theme: state.theme,
-          themePreference: state.themePreference,
-          languagePreference: state.languagePreference,
-          appearance: state.appearance,
-          uiScale: state.uiScale,
-          fontSize: state.fontSize,
-          startupFullscreen: state.startupFullscreen,
-          aiChatOpenMode: sanitizeAIChatOpenMode(state.aiChatOpenMode),
-          aiChatDetachedBoundsMemory: sanitizeAIChatDetachedBoundsMemory(
-            state.aiChatDetachedBoundsMemory,
-          ),
-          globalProxy:
-            toTrimmedString(state.globalProxy.password) !== ""
-              ? { ...state.globalProxy }
-              : toPersistedGlobalProxy(state.globalProxy),
-          sqlFormatOptions: state.sqlFormatOptions,
-          queryOptions: state.queryOptions,
-          dataEditTransactionOptions: state.dataEditTransactionOptions,
-          sqlEditorTransactionOptions: state.sqlEditorTransactionOptions,
-          shortcutOptions: resolveShortcutOptionsForPersistence(state.shortcutOptions),
-          sqlLogs: sanitizePersistedSqlLogs(state.sqlLogs),
-          tableExportHistories: sanitizeTableExportHistories(
-            state.tableExportHistories,
-          ),
-          sqlSnippets: state.sqlSnippets,
-          tableAccessCount: state.tableAccessCount,
-          tableSortPreference: state.tableSortPreference,
-          tableColumnOrders: state.tableColumnOrders,
-          enableColumnOrderMemory: state.enableColumnOrderMemory,
-          tablePinnedLeftColumns: state.tablePinnedLeftColumns,
-          tableHiddenColumns: state.tableHiddenColumns,
-          enableHiddenColumnMemory: state.enableHiddenColumnMemory,
-          pinnedSidebarTables: state.pinnedSidebarTables,
-          windowBounds: state.windowBounds,
-          windowState: state.windowState,
-          sidebarWidth: state.sidebarWidth,
-        };
-
-        if (hasLegacyConnectionSecrets(state.connections)) {
-          partialState.connections = state.connections;
-        }
-
-        // AI 会话数据已迁移到后端文件持久化（~/.gonavi/sessions/），不再写入 localStorage
-        return partialState as AppState;
-      }, // Don't persist logs
+      partialize: partializePersistedState,
     },
   ),
 );

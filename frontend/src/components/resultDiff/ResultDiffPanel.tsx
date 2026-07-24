@@ -36,6 +36,7 @@ import {
   DEFAULT_DETACHED_WINDOW_MIN_WIDTH,
   DETACHED_WINDOW_VIEWPORT_PADDING,
 } from '../../utils/detachedWindow';
+import { useManagedPointerInteraction } from '../../hooks/useManagedPointerInteraction';
 import {
   loadResultDiffDetachedBoundsMemory,
   resolveResultDiffDetachedBounds,
@@ -119,6 +120,7 @@ const ResultDiffPanel: React.FC<ResultDiffPanelProps> = ({
     originW: number;
     originH: number;
   } | null>(null);
+  const { startInteraction: startManagedInteraction } = useManagedPointerInteraction(open && detached);
   const persistBoundsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const persistBounds = useCallback((next: FloatingBounds) => {
@@ -507,10 +509,9 @@ const ResultDiffPanel: React.FC<ResultDiffPanelProps> = ({
           value={previewMode}
           options={previewModeOptions}
           onChange={(v) => setPreviewMode(v)}
-          // 独立窗 z-index ≥1320，下拉挂 body 并抬高，避免被浮动窗遮挡
+          // Portal 仍挂 body；层级由 Drawer 的 z-index context 自动抬高。
           getPopupContainer={() => document.body}
           popupMatchSelectWidth={false}
-          styles={{ popup: { root: { zIndex: 10050 } } }}
         />
         <Select
           style={{ minWidth: 140 }}
@@ -526,7 +527,6 @@ const ResultDiffPanel: React.FC<ResultDiffPanelProps> = ({
           ]}
           getPopupContainer={() => document.body}
           popupMatchSelectWidth={false}
-          styles={{ popup: { root: { zIndex: 10050 } } }}
         />
         {changedColumn && (
           <Tag closable onClose={() => setChangedColumn('')}>
@@ -644,6 +644,51 @@ const ResultDiffPanel: React.FC<ResultDiffPanelProps> = ({
     event.preventDefault();
     event.stopPropagation();
     const current = boundsRef.current;
+    const started = startManagedInteraction(event, {
+      onMove: (moveEvent) => {
+        const drag = dragRef.current;
+        if (!drag) return;
+        const dx = moveEvent.clientX - drag.startX;
+        const dy = moveEvent.clientY - drag.startY;
+        if (drag.mode === 'move') {
+          const maxX = Math.max(
+            DETACHED_WINDOW_VIEWPORT_PADDING,
+            window.innerWidth - drag.originW - DETACHED_WINDOW_VIEWPORT_PADDING,
+          );
+          const maxY = Math.max(
+            DETACHED_WINDOW_VIEWPORT_PADDING,
+            window.innerHeight - drag.originH - DETACHED_WINDOW_VIEWPORT_PADDING,
+          );
+          applyBounds({
+            x: clamp(drag.originX + dx, DETACHED_WINDOW_VIEWPORT_PADDING, maxX),
+            y: clamp(drag.originY + dy, DETACHED_WINDOW_VIEWPORT_PADDING, maxY),
+          }, false);
+          return;
+        }
+        let nextW = drag.originW;
+        let nextH = drag.originH;
+        if (drag.mode === 'resize-e' || drag.mode === 'resize-se') {
+          nextW = clamp(
+            drag.originW + dx,
+            DEFAULT_DETACHED_WINDOW_MIN_WIDTH,
+            window.innerWidth - drag.originX - DETACHED_WINDOW_VIEWPORT_PADDING,
+          );
+        }
+        if (drag.mode === 'resize-s' || drag.mode === 'resize-se') {
+          nextH = clamp(
+            drag.originH + dy,
+            DEFAULT_DETACHED_WINDOW_MIN_HEIGHT,
+            window.innerHeight - drag.originY - DETACHED_WINDOW_VIEWPORT_PADDING,
+          );
+        }
+        applyBounds({ width: nextW, height: nextH }, false);
+      },
+      onStop: () => {
+        dragRef.current = null;
+        saveResultDiffDetachedBoundsMemory(boundsRef.current);
+      },
+    });
+    if (!started) return;
     dragRef.current = {
       mode,
       startX: event.clientX,
@@ -654,58 +699,7 @@ const ResultDiffPanel: React.FC<ResultDiffPanelProps> = ({
       originH: current.height,
     };
     applyBounds((prev) => ({ ...prev, zIndex: prev.zIndex + 1 }), false);
-
-    const handleMove = (moveEvent: PointerEvent) => {
-      const drag = dragRef.current;
-      if (!drag) return;
-      const dx = moveEvent.clientX - drag.startX;
-      const dy = moveEvent.clientY - drag.startY;
-      if (drag.mode === 'move') {
-        const maxX = Math.max(
-          DETACHED_WINDOW_VIEWPORT_PADDING,
-          window.innerWidth - drag.originW - DETACHED_WINDOW_VIEWPORT_PADDING,
-        );
-        const maxY = Math.max(
-          DETACHED_WINDOW_VIEWPORT_PADDING,
-          window.innerHeight - drag.originH - DETACHED_WINDOW_VIEWPORT_PADDING,
-        );
-        applyBounds({
-          x: clamp(drag.originX + dx, DETACHED_WINDOW_VIEWPORT_PADDING, maxX),
-          y: clamp(drag.originY + dy, DETACHED_WINDOW_VIEWPORT_PADDING, maxY),
-        }, false);
-        return;
-      }
-      let nextW = drag.originW;
-      let nextH = drag.originH;
-      if (drag.mode === 'resize-e' || drag.mode === 'resize-se') {
-        nextW = clamp(
-          drag.originW + dx,
-          DEFAULT_DETACHED_WINDOW_MIN_WIDTH,
-          window.innerWidth - drag.originX - DETACHED_WINDOW_VIEWPORT_PADDING,
-        );
-      }
-      if (drag.mode === 'resize-s' || drag.mode === 'resize-se') {
-        nextH = clamp(
-          drag.originH + dy,
-          DEFAULT_DETACHED_WINDOW_MIN_HEIGHT,
-          window.innerHeight - drag.originY - DETACHED_WINDOW_VIEWPORT_PADDING,
-        );
-      }
-      applyBounds({ width: nextW, height: nextH }, false);
-    };
-
-    const stop = () => {
-      dragRef.current = null;
-      // 松手后持久化最终尺寸/位置
-      saveResultDiffDetachedBoundsMemory(boundsRef.current);
-      window.removeEventListener('pointermove', handleMove);
-      window.removeEventListener('pointerup', stop);
-      window.removeEventListener('pointercancel', stop);
-    };
-    window.addEventListener('pointermove', handleMove);
-    window.addEventListener('pointerup', stop);
-    window.addEventListener('pointercancel', stop);
-  }, [applyBounds]);
+  }, [applyBounds, startManagedInteraction]);
 
   if (!open) return null;
 
@@ -779,6 +773,8 @@ const ResultDiffPanel: React.FC<ResultDiffPanelProps> = ({
         `}</style>
         <div
           className="gn-result-diff-floating-window"
+          data-gonavi-close-shortcut-guard="true"
+          data-gonavi-close-shortcut-scope="blocked"
           style={{
             left: bounds.x,
             top: bounds.y,

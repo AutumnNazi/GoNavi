@@ -8,6 +8,11 @@ export interface DataGridFindSummary {
   occurrenceCount: number;
 }
 
+export interface DataGridFindResult {
+  matches: DataGridFindMatch[];
+  summary: DataGridFindSummary;
+}
+
 export interface DataGridFindMatch extends DataGridTextRange {
   rowIndex: number;
   rowKey: string;
@@ -105,17 +110,41 @@ export const collectDataGridFindMatches = <T>(
   query: string,
   getCellText: (value: unknown, row: T, columnName: string) => string,
   getRowKey: (row: T, rowIndex: number) => string,
-): DataGridFindMatch[] => {
+): DataGridFindMatch[] => collectDataGridFindResult(
+  rows,
+  columnNames,
+  query,
+  getCellText,
+  getRowKey,
+).matches;
+
+export const collectDataGridFindResult = <T>(
+  rows: T[],
+  columnNames: string[],
+  query: string,
+  getCellText: (value: unknown, row: T, columnName: string) => string,
+  getRowKey: (row: T, rowIndex: number) => string,
+): DataGridFindResult => {
   const normalizedQuery = normalizeDataGridFindQuery(query);
-  if (!normalizedQuery) return [];
+  if (!normalizedQuery) {
+    return {
+      matches: [],
+      summary: { matchedCellCount: 0, occurrenceCount: 0 },
+    };
+  }
 
   const matches: DataGridFindMatch[] = [];
+  let matchedCellCount = 0;
 
   rows.forEach((row, rowIndex) => {
     const record = row as Record<string, unknown>;
     const rowKey = getRowKey(row, rowIndex);
     columnNames.forEach((columnName, columnIndex) => {
-      findDataGridTextRanges(getCellText(record[columnName], row, columnName), normalizedQuery).forEach((range, occurrenceIndex) => {
+      const ranges = findDataGridTextRanges(getCellText(record[columnName], row, columnName), normalizedQuery);
+      if (ranges.length > 0) {
+        matchedCellCount += 1;
+      }
+      ranges.forEach((range, occurrenceIndex) => {
         matches.push({
           rowIndex,
           rowKey,
@@ -129,7 +158,13 @@ export const collectDataGridFindMatches = <T>(
     });
   });
 
-  return matches;
+  return {
+    matches,
+    summary: {
+      matchedCellCount,
+      occurrenceCount: matches.length,
+    },
+  };
 };
 
 export const resolveDataGridFindNavigationIndex = (

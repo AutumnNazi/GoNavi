@@ -34,6 +34,7 @@ interface AIMCPClientInstallerService {
   AIGetMCPClientInstallStatuses?: () => Promise<AIMCPClientInstallStatus[]>;
   AIInstallClaudeCodeMCP?: () => Promise<MCPClientInstallResult>;
   AIInstallCodexMCP?: () => Promise<MCPClientInstallResult>;
+  AIInstallOpenCodeMCP?: () => Promise<MCPClientInstallResult>;
 }
 
 interface UseAIMCPClientInstallerOptions {
@@ -120,8 +121,15 @@ export const useAIMCPClientInstaller = ({
 
   const handleInstallSelectedMCPClient = useCallback(async () => {
     const remoteClient = isRemoteMCPClientStatus(selectedMCPClientStatus);
-    const targetClient = selectedMCPClientStatus?.client === 'codex' ? 'codex' : 'claude-code';
-    const targetLabel = selectedMCPClientStatus?.displayName || (targetClient === 'codex' ? 'Codex' : 'Claude Code');
+    const selectedClient = selectedMCPClientStatus?.client;
+    const targetClient = selectedClient === 'codex'
+      ? 'codex'
+      : selectedClient === 'opencode'
+        ? 'opencode'
+        : 'claude-code';
+    const targetLabel = selectedMCPClientStatus?.displayName || (
+      targetClient === 'codex' ? 'Codex' : targetClient === 'opencode' ? 'OpenCode' : 'Claude Code'
+    );
     if (remoteClient) {
       try {
         await onBeforeInstall?.();
@@ -152,7 +160,12 @@ export const useAIMCPClientInstaller = ({
       await onBeforeInstall?.();
       setMCPClientSelectionTouched(true);
       const service = await resolveAIService();
-      if (targetClient === 'codex') {
+      if (targetClient === 'opencode') {
+        if (typeof service?.AIInstallOpenCodeMCP !== 'function') {
+          throw new Error(copy('ai_chat.mcp_client.install.message.opencode_not_supported', 'This version does not support automatic OpenCode MCP installation yet'));
+        }
+        await service.AIInstallOpenCodeMCP();
+      } else if (targetClient === 'codex') {
         if (typeof service?.AIInstallCodexMCP !== 'function') {
           throw new Error(copy('ai_chat.mcp_client.install.message.codex_not_supported', 'This version does not support automatic Codex MCP installation yet'));
         }

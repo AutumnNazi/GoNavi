@@ -2,7 +2,7 @@
 
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -10,6 +10,7 @@ const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const frontendDir = path.resolve(scriptDir, '..');
 const packageJsonPath = path.join(frontendDir, 'package.json');
 const packageLockPath = path.join(frontendDir, 'package-lock.json');
+const patchesDirPath = path.join(frontendDir, 'patches');
 const nodeModulesPath = path.join(frontendDir, 'node_modules');
 const npmHiddenLockPath = path.join(nodeModulesPath, '.package-lock.json');
 const installStatePath = path.join(nodeModulesPath, '.gonavi-install-state.json');
@@ -39,9 +40,27 @@ const hashFile = (filePath) => {
   return hash.digest('hex');
 };
 
+const patchFiles = () => {
+  if (!existsSync(patchesDirPath)) return [];
+  return readdirSync(patchesDirPath)
+    .filter((name) => name.endsWith('.patch'))
+    .sort()
+    .map((name) => path.join(patchesDirPath, name));
+};
+
+const hashPatches = () => {
+  const hash = createHash('sha256');
+  for (const filePath of patchFiles()) {
+    hash.update(path.basename(filePath));
+    hash.update(readFileSync(filePath));
+  }
+  return hash.digest('hex');
+};
+
 const currentState = () => ({
   packageJson: hashFile(packageJsonPath),
   packageLock: existsSync(packageLockPath) ? hashFile(packageLockPath) : '',
+  patches: hashPatches(),
 });
 
 const readInstalledState = () => {
@@ -60,7 +79,7 @@ const writeInstalledState = (state) => {
 const packageInputsAreOlderThanNpmLock = () => {
   if (!existsSync(npmHiddenLockPath)) return false;
   const markerTime = statSync(npmHiddenLockPath).mtimeMs;
-  return [packageJsonPath, packageLockPath]
+  return [packageJsonPath, packageLockPath, ...patchFiles()]
     .filter(existsSync)
     .every((filePath) => statSync(filePath).mtimeMs <= markerTime);
 };
@@ -102,7 +121,8 @@ const forceInstall = process.env.GONAVI_FORCE_FRONTEND_INSTALL === '1';
 if (!forceInstall && existsSync(nodeModulesPath)) {
   if (
     installedState?.packageJson === state.packageJson &&
-    installedState?.packageLock === state.packageLock
+    installedState?.packageLock === state.packageLock &&
+    installedState?.patches === state.patches
   ) {
     console.log('Frontend dependencies are up to date; skipping npm install.');
     process.exit(0);

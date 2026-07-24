@@ -49,6 +49,7 @@ export type V2TableContextMenuActionKey =
   | 'view-er'
   | 'copy-table-name'
   | 'copy-structure'
+  | 'copy-table'
   | 'copy-insert'
   | 'rename-table'
   | 'new-rollup'
@@ -167,6 +168,7 @@ export const V2TableContextMenuView: React.FC<{
   stats?: V2TableContextMenuStats;
   isPinned?: boolean;
   supportsTruncate?: boolean;
+  supportsCopyTable?: boolean;
   supportsStarRocksRollup?: boolean;
   supportsMessagePublish?: boolean;
   onAction?: (action: V2TableContextMenuActionKey) => void;
@@ -176,6 +178,7 @@ export const V2TableContextMenuView: React.FC<{
   stats,
   isPinned = false,
   supportsTruncate = true,
+  supportsCopyTable = false,
   supportsStarRocksRollup = false,
   supportsMessagePublish = false,
   onAction,
@@ -237,6 +240,7 @@ export const V2TableContextMenuView: React.FC<{
         {renderItems([
           { action: 'copy-table-name', icon: <CopyOutlined />, title: t('sidebar.v2_table_menu.copy_table_name'), kbd: primaryShortcut('C', shortcutPlatform) },
           { action: 'copy-structure', icon: <CopyOutlined />, title: `${t('sidebar.menu.copy_table_structure')} · DDL` },
+          ...(supportsCopyTable ? [{ action: 'copy-table' as const, icon: <CopyOutlined />, title: t('table_copy.action.label') }] : []),
           { action: 'copy-insert', icon: <CopyOutlined />, title: t('sidebar.v2_table_menu.copy_table_as_insert', { keyword: 'INSERT' }) },
         ])}
 
@@ -320,6 +324,7 @@ export const V2TableGroupContextMenuView: React.FC<{
 };
 
 export type V2DatabaseContextMenuActionKey =
+  | 'copy-database-name'
   | 'new-table'
   | 'new-schema'
   | 'new-materialized-view'
@@ -331,6 +336,7 @@ export type V2DatabaseContextMenuActionKey =
   | 'disconnect-db'
   | 'new-query'
   | 'run-sql'
+  | 'schema-visibility'
   | 'drop-db';
 
 export type V2SchemaContextMenuActionKey =
@@ -345,6 +351,7 @@ export const V2DatabaseContextMenuView: React.FC<{
   shortcutPlatform?: ShortcutPlatform;
   dialect?: string;
   supportsSchemaActions?: boolean;
+  supportsSchemaVisibility?: boolean;
   supportsStarRocksActions?: boolean;
   supportsRenameDatabase?: boolean;
   supportsDropDatabase?: boolean;
@@ -354,6 +361,7 @@ export const V2DatabaseContextMenuView: React.FC<{
   shortcutPlatform = DEFAULT_V2_CONTEXT_MENU_SHORTCUT_PLATFORM,
   dialect,
   supportsSchemaActions = false,
+  supportsSchemaVisibility = false,
   supportsStarRocksActions = false,
   supportsRenameDatabase = true,
   supportsDropDatabase = true,
@@ -375,8 +383,10 @@ export const V2DatabaseContextMenuView: React.FC<{
 
       <div className="gn-v2-context-menu-body">
         {renderItems([
+          { action: 'copy-database-name', icon: <CopyOutlined />, title: t('sidebar.menu.copy_database_name'), kbd: primaryShortcut('C', shortcutPlatform), featured: true },
           { action: 'new-table', icon: <TableOutlined />, title: t('sidebar.menu.create_table'), kbd: primaryShortcut('N', shortcutPlatform), featured: true },
           ...(supportsSchemaActions ? [{ action: 'new-schema', icon: <FolderAddOutlined />, title: t('sidebar.v2_database_menu.new_schema') }] : []),
+          ...(supportsSchemaVisibility ? [{ action: 'schema-visibility', icon: <FolderOpenOutlined />, title: t('sidebar.schema_visibility.menu.manage') }] : []),
           { action: 'new-query', icon: <ConsoleSqlOutlined />, title: t('sidebar.menu.new_query') },
           { action: 'run-sql', icon: <FileAddOutlined />, title: t('sidebar.sql_file_exec.title') },
         ])}
@@ -490,6 +500,7 @@ export type V2ConnectionContextMenuTagItem = {
 };
 
 export type V2ConnectionGroupContextMenuActionKey =
+  | 'new-subgroup'
   | 'edit-group'
   | 'delete-group';
 
@@ -518,6 +529,7 @@ export const V2ConnectionGroupContextMenuView: React.FC<{
 
       <div className="gn-v2-context-menu-body">
         {renderItems([
+          { action: 'new-subgroup', icon: <FolderAddOutlined />, title: t('connection.sidebar.group.newSubgroup'), featured: true },
           { action: 'edit-group', icon: <EditOutlined />, title: t('connection.sidebar.group.edit'), kbd: 'F2', featured: true },
         ])}
         <div className="gn-v2-context-menu-divider" />
@@ -641,6 +653,7 @@ export type V2CellContextMenuActionKey =
 
 export type V2ColumnHeaderContextMenuActionKey =
   | 'copy-field-name'
+  | 'copy-column-comment'
   | 'copy-column-data'
   | 'sort-asc'
   | 'sort-desc'
@@ -701,6 +714,7 @@ export const V2ColumnHeaderContextMenuView: React.FC<{
         <div className="gn-v2-context-menu-section-title">{t('sidebar.v2_table_menu.copy_section')}</div>
         {renderItems([
           { action: 'copy-field-name', icon: <CopyOutlined />, title: t('data_grid.context_menu.copy_field_name'), kbd: primaryShortcut('C', shortcutPlatform), featured: true },
+          ...(normalizedComment ? [{ action: 'copy-column-comment', icon: <CopyOutlined />, title: t('data_grid.context_menu.copy_column_comment') }] : []),
           { action: 'copy-column-data', icon: <CopyOutlined />, title: t('data_grid.context_menu.copy_column_data') },
         ])}
 

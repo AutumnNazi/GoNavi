@@ -5,11 +5,11 @@ export namespace ai {
 	    temperature?: number;
 	    maxTokens?: number;
 	    thinkingIntensity?: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new ChatSendOptions(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.model = source["model"];
@@ -25,11 +25,11 @@ export namespace ai {
 	    configPath?: string;
 	    command?: string;
 	    args?: string[];
-	
+
 	    static createFrom(source: any = {}) {
 	        return new MCPClientInstallResult(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.success = source["success"];
@@ -93,6 +93,7 @@ export namespace ai {
 	    }
 	}
 	export class MCPHTTPServerStatus {
+	    enabled: boolean;
 	    running: boolean;
 	    addr: string;
 	    path: string;
@@ -109,6 +110,7 @@ export namespace ai {
 	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.enabled = source["enabled"];
 	        this.running = source["running"];
 	        this.addr = source["addr"];
 	        this.path = source["path"];
@@ -288,6 +290,7 @@ export namespace ai {
 	    id: string;
 	    type: string;
 	    name: string;
+	    authMode?: string;
 	    apiKey: string;
 	    secretRef?: string;
 	    hasSecret?: boolean;
@@ -310,6 +313,7 @@ export namespace ai {
 	        this.id = source["id"];
 	        this.type = source["type"];
 	        this.name = source["name"];
+	        this.authMode = source["authMode"];
 	        this.apiKey = source["apiKey"];
 	        this.secretRef = source["secretRef"];
 	        this.hasSecret = source["hasSecret"];
@@ -490,10 +494,17 @@ export namespace app {
 	}
 	export class ExportFileOptions {
 	    format: string;
+	    columns?: string[];
 	    xlsxMaxRowsPerSheet?: number;
 	    jobId?: string;
 	    totalRowsHint?: number;
 	    totalRowsKnown?: boolean;
+	    includeDropIfExists?: boolean;
+	    insertSQLDialect?: string;
+	    insertSQLTargetTable?: string;
+	    insertSQLColumnTypes?: Record<string, string>;
+	    insertSQLTargetColumns?: Record<string, string>;
+	    insertSQLAllowEmptyTargetTable?: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new ExportFileOptions(source);
@@ -502,10 +513,31 @@ export namespace app {
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.format = source["format"];
+	        this.columns = source["columns"];
 	        this.xlsxMaxRowsPerSheet = source["xlsxMaxRowsPerSheet"];
 	        this.jobId = source["jobId"];
 	        this.totalRowsHint = source["totalRowsHint"];
 	        this.totalRowsKnown = source["totalRowsKnown"];
+	        this.includeDropIfExists = source["includeDropIfExists"];
+	        this.insertSQLDialect = source["insertSQLDialect"];
+	        this.insertSQLTargetTable = source["insertSQLTargetTable"];
+	        this.insertSQLColumnTypes = source["insertSQLColumnTypes"];
+	        this.insertSQLTargetColumns = source["insertSQLTargetColumns"];
+	        this.insertSQLAllowEmptyTargetTable = source["insertSQLAllowEmptyTargetTable"];
+	    }
+	}
+	export class ImportFileOptions {
+	    columnMappings?: Record<string, string>;
+	    jobId?: string;
+
+	    static createFrom(source: any = {}) {
+	        return new ImportFileOptions(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.columnMappings = source["columnMappings"];
+	        this.jobId = source["jobId"];
 	    }
 	}
 	export class RedisExportKeysOptions {
@@ -1089,6 +1121,7 @@ export namespace connection {
 	    timeout?: number;
 	    keepAliveEnabled?: boolean;
 	    keepAliveIntervalMinutes?: number;
+	    keepAliveSQL?: string;
 	    redisDB?: number;
 	    redisSentinelMaster?: string;
 	    redisSentinelUser?: string;
@@ -1142,6 +1175,7 @@ export namespace connection {
 	        this.timeout = source["timeout"];
 	        this.keepAliveEnabled = source["keepAliveEnabled"];
 	        this.keepAliveIntervalMinutes = source["keepAliveIntervalMinutes"];
+	        this.keepAliveSQL = source["keepAliveSQL"];
 	        this.redisDB = source["redisDB"];
 	        this.redisSentinelMaster = source["redisSentinelMaster"];
 	        this.redisSentinelUser = source["redisSentinelUser"];
@@ -1266,12 +1300,27 @@ export namespace connection {
 	        this.clearPassword = source["clearPassword"];
 	    }
 	}
+	export class SchemaVisibilityRule {
+	    mode: string;
+	    schemas?: string[];
+
+	    static createFrom(source: any = {}) {
+	        return new SchemaVisibilityRule(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.mode = source["mode"];
+	        this.schemas = source["schemas"];
+	    }
+	}
 	export class SavedConnectionInput {
 	    id?: string;
 	    name: string;
 	    config: ConnectionConfig;
 	    includeDatabases?: string[];
 	    includeRedisDatabases?: number[];
+	    schemaVisibilityByDatabase?: Record<string, SchemaVisibilityRule>;
 	    iconType?: string;
 	    iconColor?: string;
 	    clearPrimaryPassword?: boolean;
@@ -1295,6 +1344,7 @@ export namespace connection {
 	        this.config = this.convertValues(source["config"], ConnectionConfig);
 	        this.includeDatabases = source["includeDatabases"];
 	        this.includeRedisDatabases = source["includeRedisDatabases"];
+	        this.schemaVisibilityByDatabase = this.convertValues(source["schemaVisibilityByDatabase"], SchemaVisibilityRule, true);
 	        this.iconType = source["iconType"];
 	        this.iconColor = source["iconColor"];
 	        this.clearPrimaryPassword = source["clearPrimaryPassword"];
@@ -1332,6 +1382,7 @@ export namespace connection {
 	    config: ConnectionConfig;
 	    includeDatabases?: string[];
 	    includeRedisDatabases?: number[];
+	    schemaVisibilityByDatabase?: Record<string, SchemaVisibilityRule>;
 	    iconType?: string;
 	    iconColor?: string;
 	    secretRef?: string;
@@ -1356,6 +1407,7 @@ export namespace connection {
 	        this.config = this.convertValues(source["config"], ConnectionConfig);
 	        this.includeDatabases = source["includeDatabases"];
 	        this.includeRedisDatabases = source["includeRedisDatabases"];
+	        this.schemaVisibilityByDatabase = this.convertValues(source["schemaVisibilityByDatabase"], SchemaVisibilityRule, true);
 	        this.iconType = source["iconType"];
 	        this.iconColor = source["iconColor"];
 	        this.secretRef = source["secretRef"];
@@ -1418,8 +1470,29 @@ export namespace connection {
 	        this.originalConnectionId = source["originalConnectionId"];
 	    }
 	}
+	export class SavedQueryGroup {
+	    id: string;
+	    name: string;
+	    parentGroupId: string;
+	    queryIds: string[];
+	    childOrder: string[];
+
+	    static createFrom(source: any = {}) {
+	        return new SavedQueryGroup(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.name = source["name"];
+	        this.parentGroupId = source["parentGroupId"];
+	        this.queryIds = source["queryIds"];
+	        this.childOrder = source["childOrder"];
+	    }
+	}
 	export class SavedQueryImportPayload {
 	    queries: SavedQuery[];
+	    groups?: SavedQueryGroup[];
 	    legacyConnections?: SavedConnectionInput[];
 	
 	    static createFrom(source: any = {}) {
@@ -1429,6 +1502,7 @@ export namespace connection {
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.queries = this.convertValues(source["queries"], SavedQuery);
+	        this.groups = this.convertValues(source["groups"], SavedQueryGroup);
 	        this.legacyConnections = this.convertValues(source["legacyConnections"], SavedConnectionInput);
 	    }
 	
@@ -1450,6 +1524,7 @@ export namespace connection {
 		    return a;
 		}
 	}
+
 	export class TestGlobalProxyInput {
 	    proxy: SaveGlobalProxyInput;
 	    url: string;
@@ -1547,6 +1622,144 @@ export namespace jvm {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.title = source["title"];
 	        this.reason = source["reason"];
+	    }
+	}
+
+}
+
+export namespace nativewindow {
+
+	export class HostStateRequest {
+	    id: string;
+	    revision: number;
+	    storeState: Record<string, any>;
+
+	    static createFrom(source: any = {}) {
+	        return new HostStateRequest(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.revision = source["revision"];
+	        this.storeState = source["storeState"];
+	    }
+	}
+	export class OpenRequest {
+	    id?: string;
+	    kind: string;
+	    title: string;
+	    payload?: any;
+	    x: number;
+	    y: number;
+	    width: number;
+	    height: number;
+
+	    static createFrom(source: any = {}) {
+	        return new OpenRequest(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.kind = source["kind"];
+	        this.title = source["title"];
+	        this.payload = source["payload"];
+	        this.x = source["x"];
+	        this.y = source["y"];
+	        this.width = source["width"];
+	        this.height = source["height"];
+	    }
+	}
+	export class WindowBounds {
+	    x: number;
+	    y: number;
+	    width: number;
+	    height: number;
+
+	    static createFrom(source: any = {}) {
+	        return new WindowBounds(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.x = source["x"];
+	        this.y = source["y"];
+	        this.width = source["width"];
+	        this.height = source["height"];
+	    }
+	}
+	export class OperationResult {
+	    success: boolean;
+	    message?: string;
+	    id?: string;
+	    bounds?: WindowBounds;
+	    visibilityRevision?: number;
+
+	    static createFrom(source: any = {}) {
+	        return new OperationResult(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.success = source["success"];
+	        this.message = source["message"];
+	        this.id = source["id"];
+	        this.bounds = this.convertValues(source["bounds"], WindowBounds);
+	        this.visibilityRevision = source["visibilityRevision"];
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+
+	export class WindowInfo {
+	    id: string;
+	    kind: string;
+	    title: string;
+	    x: number;
+	    y: number;
+	    width: number;
+	    height: number;
+	    pid?: number;
+	    openedAt: number;
+	    ready: boolean;
+	    closeSent: boolean;
+	    hidden?: boolean;
+
+	    static createFrom(source: any = {}) {
+	        return new WindowInfo(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.kind = source["kind"];
+	        this.title = source["title"];
+	        this.x = source["x"];
+	        this.y = source["y"];
+	        this.width = source["width"];
+	        this.height = source["height"];
+	        this.pid = source["pid"];
+	        this.openedAt = source["openedAt"];
+	        this.ready = source["ready"];
+	        this.closeSent = source["closeSent"];
+	        this.hidden = source["hidden"];
 	    }
 	}
 
@@ -1652,6 +1865,62 @@ export namespace resultdiff {
 
 }
 
+export namespace sqlaudit {
+
+	export class Filter {
+	    search: string;
+	    connectionId: string;
+	    database: string;
+	    dbType: string;
+	    eventType: string;
+	    status: string;
+	    transactionId: string;
+	    source: string;
+	    fromTimestamp: number;
+	    toTimestamp: number;
+	    page: number;
+	    pageSize: number;
+
+	    static createFrom(source: any = {}) {
+	        return new Filter(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.search = source["search"];
+	        this.connectionId = source["connectionId"];
+	        this.database = source["database"];
+	        this.dbType = source["dbType"];
+	        this.eventType = source["eventType"];
+	        this.status = source["status"];
+	        this.transactionId = source["transactionId"];
+	        this.source = source["source"];
+	        this.fromTimestamp = source["fromTimestamp"];
+	        this.toTimestamp = source["toTimestamp"];
+	        this.page = source["page"];
+	        this.pageSize = source["pageSize"];
+	    }
+	}
+	export class Settings {
+	    enabled: boolean;
+	    captureMode: string;
+	    retentionDays: number;
+	    maxRecords: number;
+
+	    static createFrom(source: any = {}) {
+	        return new Settings(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.enabled = source["enabled"];
+	        this.captureMode = source["captureMode"];
+	        this.retentionDays = source["retentionDays"];
+	        this.maxRecords = source["maxRecords"];
+	    }
+	}
+
+}
 export namespace sync {
 	
 	export class TableOptions {
@@ -1760,4 +2029,3 @@ export namespace sync {
 	}
 
 }
-

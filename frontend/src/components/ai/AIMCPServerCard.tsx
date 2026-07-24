@@ -1,5 +1,6 @@
 import React from 'react';
 
+import { t as catalogTranslate } from '../../i18n/catalog';
 import { useOptionalI18n } from '../../i18n/provider';
 import type { OverlayWorkbenchTheme } from '../../utils/overlayWorkbenchTheme';
 import type { AIMCPServerConfig, AIMCPToolDescriptor } from '../../types';
@@ -28,7 +29,6 @@ interface AIMCPServerCardProps {
 export const AIMCPServerCard: React.FC<AIMCPServerCardProps> = ({
   server,
   serverTools,
-  cardBg,
   cardBorder,
   inputBg,
   darkMode,
@@ -40,8 +40,10 @@ export const AIMCPServerCard: React.FC<AIMCPServerCardProps> = ({
   onDelete,
 }) => {
   const i18n = useOptionalI18n();
+  const copy = (key: string) => (i18n?.t ?? ((catalogKey) => catalogTranslate('en-US', catalogKey)))(key);
   const [rawCommandDraft, setRawCommandDraft] = React.useState('');
   const [envDraft, setEnvDraft] = React.useState(() => formatMCPEnvDraft(server.env));
+  const [expanded, setExpanded] = React.useState(() => server.id.startsWith('mcp-draft-'));
   const launchPreview = buildMCPLaunchPreview(server.command, server.args);
   const parsedCommandDraft = parseMCPCommandDraft(rawCommandDraft);
   const parsedEnvDraft = parseMCPEnvDraft(envDraft);
@@ -69,36 +71,73 @@ export const AIMCPServerCard: React.FC<AIMCPServerCardProps> = ({
   };
 
   return (
-    <div style={{ padding: '14px 16px', borderRadius: 14, border: `1px solid ${cardBorder}`, background: cardBg, display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <AIMCPServerGuidePanel
-        cardBorder={cardBorder}
-        inputBg={inputBg}
-        darkMode={darkMode}
-        overlayTheme={overlayTheme}
-        rawCommandDraft={rawCommandDraft}
-        parsedCommandDraft={parsedCommandDraft}
-        onApplyCommandDraft={handleApplyCommandDraft}
-        onRawCommandDraftChange={setRawCommandDraft}
-      />
-      <AIMCPServerFormPanel
-        server={server}
-        serverTools={serverTools}
-        launchPreview={launchPreview}
-        envDraft={envDraft}
-        parsedEnvDraft={parsedEnvDraft}
-        validation={validation}
-        cardBorder={cardBorder}
-        inputBg={inputBg}
-        darkMode={darkMode}
-        overlayTheme={overlayTheme}
-        loading={loading}
-        onChange={onChange}
-        onEnvDraftChange={handleEnvDraftChange}
-        onTest={onTest}
-        onSave={onSave}
-        onDelete={onDelete}
-      />
-    </div>
+    <details
+      className="gonavi-ai-mcp-server-row gonavi-ai-mcp-disclosure"
+      open={expanded}
+      onToggle={(event) => setExpanded(event.currentTarget.open)}
+      style={{ borderLeft: `3px solid ${overlayTheme.selectedText}`, borderBottom: `1px solid ${cardBorder}`, background: 'transparent' }}
+    >
+      <summary>
+        <span className="gonavi-ai-mcp-server-summary-name" style={{ fontWeight: 700, color: overlayTheme.titleText }}>
+          {server.name.trim() || copy('ai_settings.mcp_server.section.unnamed_draft')}
+        </span>
+        <span
+          style={{
+            padding: '2px 7px',
+            borderRadius: 999,
+            fontSize: 'var(--gn-font-size-sm, 12px)',
+            fontWeight: 700,
+            color: server.enabled ? overlayTheme.selectedText : overlayTheme.mutedText,
+            background: server.enabled ? overlayTheme.selectedBg : 'transparent',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {copy(server.enabled
+            ? 'ai_settings.mcp_server.form.enabled.option.enabled'
+            : 'ai_settings.mcp_server.form.enabled.option.disabled')}
+        </span>
+      </summary>
+      <div style={{ padding: '4px 0 18px 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <details className="gonavi-ai-mcp-disclosure gonavi-ai-mcp-server-guide-disclosure">
+          <summary>
+            <span style={{ fontWeight: 700, color: overlayTheme.titleText }}>
+              {copy('ai_settings.mcp_server.guide.order.title')}
+            </span>
+            <span className="gonavi-ai-mcp-summary-note" style={{ color: overlayTheme.mutedText }}>
+              {copy('ai_settings.mcp_server.guide.full_command.title')}
+            </span>
+          </summary>
+          <AIMCPServerGuidePanel
+            cardBorder={cardBorder}
+            inputBg={inputBg}
+            darkMode={darkMode}
+            overlayTheme={overlayTheme}
+            rawCommandDraft={rawCommandDraft}
+            parsedCommandDraft={parsedCommandDraft}
+            onApplyCommandDraft={handleApplyCommandDraft}
+            onRawCommandDraftChange={setRawCommandDraft}
+          />
+        </details>
+        <AIMCPServerFormPanel
+          server={server}
+          serverTools={serverTools}
+          launchPreview={launchPreview}
+          envDraft={envDraft}
+          parsedEnvDraft={parsedEnvDraft}
+          validation={validation}
+          cardBorder={cardBorder}
+          inputBg={inputBg}
+          darkMode={darkMode}
+          overlayTheme={overlayTheme}
+          loading={loading}
+          onChange={onChange}
+          onEnvDraftChange={handleEnvDraftChange}
+          onTest={onTest}
+          onSave={onSave}
+          onDelete={onDelete}
+        />
+      </div>
+    </details>
   );
 };
 

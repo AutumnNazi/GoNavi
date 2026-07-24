@@ -44,6 +44,9 @@ export const duplicateBrowserMockConnection = ({ existing, items, nextId }: Dupl
     },
     includeDatabases: Array.isArray(existing?.includeDatabases) ? [...existing.includeDatabases] : undefined,
     includeRedisDatabases: Array.isArray(existing?.includeRedisDatabases) ? [...existing.includeRedisDatabases] : undefined,
+    schemaVisibilityByDatabase: existing?.schemaVisibilityByDatabase
+      ? cloneBrowserMockValue(existing.schemaVisibilityByDatabase)
+      : undefined,
   });
   return duplicated;
 };

@@ -18,7 +18,7 @@ type SQLInspection struct {
 
 // InspectSQL 基于现有 SQL 拆分与只读判定逻辑，为外部调用方提供安全边界判断。
 func InspectSQL(dbType string, sql string) SQLInspection {
-	statements := splitSQLStatements(sql)
+	statements := splitSQLStatementsForDialect(dbType, sql)
 	result := SQLInspection{
 		ReadOnly:   true,
 		Statements: make([]SQLStatementInspection, 0, len(statements)),

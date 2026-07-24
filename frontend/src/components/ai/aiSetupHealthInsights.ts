@@ -172,12 +172,12 @@ export const buildAISetupHealthSnapshot = (params: {
     appendUnique(warnings, translateInspectionCopy(
       translate,
       'ai_chat.inspection.setup.warning.external_client_not_connected',
-      'Claude Code / Codex is not connected to the current GoNavi MCP as a local client yet; OpenClaw/Hermans need a remote bridge',
+      'Claude Code / Codex / OpenCode is not connected to the current GoNavi MCP as a local client yet; OpenClaw/Hermans need a remote bridge',
     ));
     appendUnique(nextActions, translateInspectionCopy(
       translate,
       'ai_chat.inspection.setup.next_action.connect_external_client',
-      'To let external Agents use GoNavi MCP, connect local clients such as Claude Code/Codex or configure a remote MCP bridge for cloud Agents',
+      'To let external Agents use GoNavi MCP, connect local clients such as Claude Code/Codex/OpenCode or configure a remote MCP bridge for cloud Agents',
     ));
   }
   if (mcpSnapshot.enabledServerCount > 0 && runtimeSnapshot.mcpToolCount === 0) {

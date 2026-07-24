@@ -79,6 +79,8 @@ func scanSQLServerRowsWithMessages(ctx context.Context, rows *sql.Rows, retmsg *
 			})
 			messages = nil
 		case sqlexp.MsgNextResultSet:
+			// Only MsgNext proves a row set is ready. Calling Columns at an empty
+			// boundary drains later DONE and PRINT tokens in go-mssqldb Rowsq.
 			active = rows.NextResultSet()
 		case sqlexp.MsgError:
 			return resultSets, messages, msg.Error
@@ -86,7 +88,6 @@ func scanSQLServerRowsWithMessages(ctx context.Context, rows *sql.Rows, retmsg *
 			active = false
 		}
 	}
-
 	if len(messages) > 0 {
 		resultSets = append(resultSets, connection.ResultSetData{
 			Rows:     []map[string]interface{}{},
@@ -95,11 +96,7 @@ func scanSQLServerRowsWithMessages(ctx context.Context, rows *sql.Rows, retmsg *
 		})
 	}
 	if len(resultSets) == 0 {
-		fallbackResult, err := scanSQLServerFallbackResultSet(rows)
-		if err != nil {
-			return resultSets, allMessages, err
-		}
-		resultSets = []connection.ResultSetData{fallbackResult}
+		resultSets = []connection.ResultSetData{emptySQLServerRowsResultSet()}
 	}
 	if err := rows.Err(); err != nil {
 		return resultSets, allMessages, err
@@ -112,23 +109,6 @@ func emptySQLServerRowsResultSet() connection.ResultSetData {
 		Rows:    []map[string]interface{}{},
 		Columns: []string{},
 	}
-}
-
-func scanSQLServerFallbackResultSet(rows *sql.Rows) (connection.ResultSetData, error) {
-	data, columns, err := scanRows(rows)
-	if err != nil {
-		return emptySQLServerRowsResultSet(), err
-	}
-	if data == nil {
-		data = []map[string]interface{}{}
-	}
-	if columns == nil {
-		columns = []string{}
-	}
-	return connection.ResultSetData{
-		Rows:    data,
-		Columns: columns,
-	}, nil
 }
 
 // quoteBracket escapes ] in identifiers for safe use in SQL Server [bracket] notation

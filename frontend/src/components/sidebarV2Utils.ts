@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 
 import {
+  resolveConnectionTagChildOrder,
   buildSidebarRootConnectionToken,
   buildSidebarRootTagToken,
   buildSidebarTablePinKey,
@@ -8,6 +9,7 @@ import {
 } from '../store';
 import type { ConnectionTag, SavedConnection } from '../types';
 import type { SidebarTableMetadataField } from '../utils/sidebarTableMetadata';
+import { readTableAccessCount } from '../utils/tableAccessCount';
 import { t } from '../i18n';
 import { t as catalogTranslate } from '../i18n/catalog';
 import {
@@ -39,6 +41,7 @@ export type SidebarTreeNodeType =
   | 'saved-query'
   | 'all-saved-queries'
   | 'saved-query-group'
+  | 'saved-query-manual-group'
   | 'unmatched-saved-queries'
   | 'external-sql-root'
   | 'external-sql-directory'
@@ -123,10 +126,18 @@ export const sortSidebarTableEntries = <T extends SidebarTableEntryForSort>(
   const compareByName = (a: T, b: T) => a.displayName.toLowerCase().localeCompare(b.displayName.toLowerCase());
   const compareWithinPinnedGroup = (a: T, b: T) => {
     if (options.sortBy === 'frequency') {
-      const keyA = `${options.connectionId}-${options.dbName}-${a.tableName}`;
-      const keyB = `${options.connectionId}-${options.dbName}-${b.tableName}`;
-      const countA = accessCount[keyA] || 0;
-      const countB = accessCount[keyB] || 0;
+      const countA = readTableAccessCount(
+        accessCount,
+        options.connectionId,
+        options.dbName,
+        a.tableName,
+      );
+      const countB = readTableAccessCount(
+        accessCount,
+        options.connectionId,
+        options.dbName,
+        b.tableName,
+      );
       if (countA !== countB) {
         return countB - countA;
       }
@@ -193,86 +204,254 @@ export interface V2RailConnectionGroup {
   id: string;
   name: string;
   connections: SavedConnection[];
+  directConnections?: SavedConnection[];
+  children?: V2RailConnectionGroup[];
   isUngrouped?: boolean;
   rootToken: string;
 }
+
+export type SidebarConnectionTagTreeItem =
+  | {
+    kind: 'tag';
+    id: string;
+    token: string;
+    tag: ConnectionTag;
+    children: SidebarConnectionTagTreeItem[];
+  }
+  | {
+    kind: 'connection';
+    id: string;
+    token: string;
+    connection: SavedConnection;
+  };
+
+const resolveConnectionTagParentId = (tag: ConnectionTag): string =>
+  String(tag.parentTagId || '').trim();
+
+/**
+ * Returns true when candidateChildTagId is below ancestorTagId. The guard also
+ * makes a malformed persisted loop harmless while the store normalizes it.
+ */
+export const isConnectionTagDescendant = (
+  ancestorTagId: string,
+  candidateChildTagId: string | null | undefined,
+  connectionTags: ConnectionTag[],
+): boolean => {
+  const ancestorId = String(ancestorTagId || '').trim();
+  let currentId = String(candidateChildTagId || '').trim();
+  if (!ancestorId || !currentId) return false;
+
+  const tagById = new Map(connectionTags.map((tag) => [tag.id, tag]));
+  const seen = new Set<string>();
+  while (currentId && !seen.has(currentId)) {
+    if (currentId === ancestorId) return true;
+    seen.add(currentId);
+    const currentTag = tagById.get(currentId);
+    if (!currentTag) break;
+    currentId = resolveConnectionTagParentId(currentTag);
+  }
+  return false;
+};
+
+/**
+ * Builds the host-group hierarchy from flat persisted records. `childOrder`
+ * owns the mixed sibling order while `parentTagId` owns group containment.
+ */
+export const buildSidebarConnectionTagTree = (
+  connections: SavedConnection[],
+  connectionTags: ConnectionTag[],
+  sidebarRootOrder: string[] = [],
+): SidebarConnectionTagTreeItem[] => {
+  const connectionById = new Map(connections.map((connection) => [connection.id, connection]));
+  const tagById = new Map(connectionTags.map((tag) => [tag.id, tag]));
+  const rawParentById = new Map(
+    connectionTags.map((tag) => [tag.id, resolveConnectionTagParentId(tag)]),
+  );
+
+  const resolveSafeParentId = (tagId: string): string => {
+    const parentId = rawParentById.get(tagId) || '';
+    if (!parentId || !tagById.has(parentId) || parentId === tagId) return '';
+
+    const seen = new Set<string>([tagId]);
+    let currentId = parentId;
+    while (currentId) {
+      if (seen.has(currentId)) return '';
+      seen.add(currentId);
+      const nextId = rawParentById.get(currentId) || '';
+      if (!nextId || !tagById.has(nextId)) break;
+      currentId = nextId;
+    }
+    return parentId;
+  };
+
+  const parentByTagId = new Map<string, string>();
+  const childTagIdsByParentId = new Map<string, string[]>();
+  const rootTagIds: string[] = [];
+  connectionTags.forEach((tag) => {
+    const parentId = resolveSafeParentId(tag.id);
+    parentByTagId.set(tag.id, parentId);
+    if (!parentId) {
+      rootTagIds.push(tag.id);
+      return;
+    }
+    const childIds = childTagIdsByParentId.get(parentId) || [];
+    childIds.push(tag.id);
+    childTagIdsByParentId.set(parentId, childIds);
+  });
+
+  // A connection can only be rendered once, even if an old persisted payload
+  // still lists it in more than one group before hydration cleanup runs.
+  const connectionOwnerTagId = new Map<string, string>();
+  connectionTags.forEach((tag) => {
+    tag.connectionIds.forEach((connectionId) => {
+      if (!connectionById.has(connectionId) || connectionOwnerTagId.has(connectionId)) return;
+      connectionOwnerTagId.set(connectionId, tag.id);
+    });
+  });
+
+  const directConnectionIdsForTag = (tagId: string): string[] => {
+    const tag = tagById.get(tagId);
+    if (!tag) return [];
+    return tag.connectionIds.filter((connectionId) => (
+      connectionOwnerTagId.get(connectionId) === tagId && connectionById.has(connectionId)
+    ));
+  };
+
+  const resolveOrderedChildTokens = (tagId: string): string[] => {
+    const directTagIds = childTagIdsByParentId.get(tagId) || [];
+    const directConnectionIds = directConnectionIdsForTag(tagId);
+    const allowedTokens = new Set([
+      ...directConnectionIds.map(buildSidebarRootConnectionToken),
+      ...directTagIds.map(buildSidebarRootTagToken),
+    ]);
+    const result: string[] = [];
+    const append = (token: string) => {
+      if (!allowedTokens.has(token) || result.includes(token)) return;
+      result.push(token);
+    };
+
+    resolveConnectionTagChildOrder(tagId, connectionTags).forEach(append);
+    // Legacy groups have no childOrder; keep their old host-first layout and
+    // append any new subgroup records in their persisted creation order.
+    directConnectionIds.forEach((id) => append(buildSidebarRootConnectionToken(id)));
+    directTagIds.forEach((id) => append(buildSidebarRootTagToken(id)));
+    return result;
+  };
+
+  const rootConnectionIds = connections
+    .map((connection) => connection.id)
+    .filter((connectionId) => !connectionOwnerTagId.has(connectionId));
+  const rootAllowedTokens = new Set([
+    ...rootTagIds.map(buildSidebarRootTagToken),
+    ...rootConnectionIds.map(buildSidebarRootConnectionToken),
+  ]);
+  const orderedRootTokens: string[] = [];
+  const appendRoot = (token: string) => {
+    if (!rootAllowedTokens.has(token) || orderedRootTokens.includes(token)) return;
+    orderedRootTokens.push(token);
+  };
+  resolveSidebarRootOrderTokens(sidebarRootOrder, connectionTags, connections).forEach(appendRoot);
+  rootTagIds.forEach((id) => appendRoot(buildSidebarRootTagToken(id)));
+  rootConnectionIds.forEach((id) => appendRoot(buildSidebarRootConnectionToken(id)));
+
+  const buildTagItem = (tagId: string, activeTagIds: Set<string>): SidebarConnectionTagTreeItem | null => {
+    const tag = tagById.get(tagId);
+    if (!tag || activeTagIds.has(tagId)) return null;
+
+    const nextActiveTagIds = new Set(activeTagIds);
+    nextActiveTagIds.add(tagId);
+    const children: SidebarConnectionTagTreeItem[] = [];
+    resolveOrderedChildTokens(tagId).forEach((token) => {
+      if (token.startsWith('tag:')) {
+        const childTagId = token.slice('tag:'.length);
+        if (parentByTagId.get(childTagId) !== tagId) return;
+        const child = buildTagItem(childTagId, nextActiveTagIds);
+        if (child) children.push(child);
+        return;
+      }
+      if (token.startsWith('connection:')) {
+        const connectionId = token.slice('connection:'.length);
+        if (connectionOwnerTagId.get(connectionId) !== tagId) return;
+        const connection = connectionById.get(connectionId);
+        if (!connection) return;
+        children.push({
+          kind: 'connection',
+          id: connectionId,
+          token,
+          connection,
+        });
+      }
+    });
+
+    return {
+      kind: 'tag',
+      id: tag.id,
+      token: buildSidebarRootTagToken(tag.id),
+      tag,
+      children,
+    };
+  };
+
+  const rootItems: SidebarConnectionTagTreeItem[] = [];
+  orderedRootTokens.forEach((token) => {
+    if (token.startsWith('tag:')) {
+      const tagId = token.slice('tag:'.length);
+      if (parentByTagId.get(tagId)) return;
+      const tag = buildTagItem(tagId, new Set());
+      if (tag) rootItems.push(tag);
+      return;
+    }
+    if (token.startsWith('connection:')) {
+      const connectionId = token.slice('connection:'.length);
+      if (connectionOwnerTagId.has(connectionId)) return;
+      const connection = connectionById.get(connectionId);
+      if (!connection) return;
+      rootItems.push({
+        kind: 'connection',
+        id: connectionId,
+        token,
+        connection,
+      });
+    }
+  });
+
+  return rootItems;
+};
 
 export const buildV2RailConnectionGroups = (
   connections: SavedConnection[],
   connectionTags: ConnectionTag[],
   sidebarRootOrder: string[] = [],
 ): V2RailConnectionGroup[] => {
-  const connectionById = new Map(connections.map((conn) => [conn.id, conn]));
-  const groupedConnectionIds = new Set<string>();
-  const tagGroups = new Map<string, V2RailConnectionGroup>();
-
-  connectionTags.forEach((tag) => {
-    const tagConnections: SavedConnection[] = [];
-    tag.connectionIds.forEach((connectionId) => {
-      const conn = connectionById.get(connectionId);
-      if (!conn || groupedConnectionIds.has(conn.id)) return;
-      groupedConnectionIds.add(conn.id);
-      tagConnections.push(conn);
-    });
-    if (tagConnections.length === 0) return;
-    tagGroups.set(tag.id, {
-      id: tag.id,
-      name: tag.name || t('connection.sidebar.group.untitled'),
-      connections: tagConnections,
-      rootToken: buildSidebarRootTagToken(tag.id),
-    });
-  });
-
-  const ungroupedConnectionMap = new Map(
-    connections
-      .filter((conn) => !groupedConnectionIds.has(conn.id))
-      .map((conn) => [conn.id, conn]),
-  );
-  const orderedRootTokens = resolveSidebarRootOrderTokens(
-    sidebarRootOrder,
-    connectionTags,
-    connections,
-  );
-  const groups: V2RailConnectionGroup[] = [];
-
-  orderedRootTokens.forEach((token) => {
-    if (token.startsWith('tag:')) {
-      const tagId = token.slice('tag:'.length);
-      const group = tagGroups.get(tagId);
-      if (!group) return;
-      groups.push(group);
-      tagGroups.delete(tagId);
-      return;
-    }
-    if (token.startsWith('connection:')) {
-      const connectionId = token.slice('connection:'.length);
-      const conn = ungroupedConnectionMap.get(connectionId);
-      if (!conn) return;
-      groups.push({
-        id: connectionId,
-        name: conn.name,
-        connections: [conn],
+  const buildGroup = (item: SidebarConnectionTagTreeItem): V2RailConnectionGroup => {
+    if (item.kind === 'connection') {
+      return {
+        id: item.id,
+        name: item.connection.name,
+        connections: [item.connection],
+        directConnections: [item.connection],
         isUngrouped: true,
-        rootToken: buildSidebarRootConnectionToken(connectionId),
-      });
-      ungroupedConnectionMap.delete(connectionId);
+        rootToken: item.token,
+      };
     }
-  });
 
-  tagGroups.forEach((group) => {
-    groups.push(group);
-  });
-  ungroupedConnectionMap.forEach((conn) => {
-    groups.push({
-      id: conn.id,
-      name: conn.name,
-      connections: [conn],
-      isUngrouped: true,
-      rootToken: buildSidebarRootConnectionToken(conn.id),
-    });
-  });
+    const directConnections = item.children
+      .filter((child): child is Extract<SidebarConnectionTagTreeItem, { kind: 'connection' }> => child.kind === 'connection')
+      .map((child) => child.connection);
+    const children = item.children
+      .filter((child): child is Extract<SidebarConnectionTagTreeItem, { kind: 'tag' }> => child.kind === 'tag')
+      .map(buildGroup);
+    return {
+      id: item.id,
+      name: item.tag.name || t('connection.sidebar.group.untitled'),
+      connections: [...directConnections, ...children.flatMap((child) => child.connections)],
+      directConnections,
+      children,
+      rootToken: item.token,
+    };
+  };
 
-  return groups;
+  return buildSidebarConnectionTagTree(connections, connectionTags, sidebarRootOrder).map(buildGroup);
 };
 
 export const getV2RailConnectionGroupBadgeText = (name: unknown, fallback = t('connection.sidebar.group.badge')): string => {
@@ -884,6 +1063,23 @@ export const resolveV2ActiveConnectionId = ({
     || normalizeDirectId(fallbackConnectionId)
     || normalizeDirectId(activeTabConnectionId)
     || '';
+};
+
+export const resolveV2SelectedDatabaseName = ({
+  activeConnectionId,
+  activeContextConnectionId,
+  activeContextDbName,
+}: {
+  activeConnectionId?: unknown;
+  activeContextConnectionId?: unknown;
+  activeContextDbName?: unknown;
+}): string => {
+  const connectionId = String(activeConnectionId || '').trim();
+  const contextConnectionId = String(activeContextConnectionId || '').trim();
+  if (!connectionId || connectionId !== contextConnectionId) {
+    return '';
+  }
+  return String(activeContextDbName || '').trim();
 };
 
 export const resolveSidebarDatabaseTreePruneKeys = ({

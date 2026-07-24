@@ -32,7 +32,6 @@ const AISettingsSkillsSection: React.FC<AISettingsSkillsSectionProps> = ({
   skills,
   skillRequiredToolOptions,
   overlayTheme,
-  cardBg,
   cardBorder,
   inputBg,
   loading,
@@ -43,90 +42,184 @@ const AISettingsSkillsSection: React.FC<AISettingsSkillsSectionProps> = ({
 }) => {
   const i18n = useOptionalI18n();
   const copy = (key: string) => (i18n?.t ?? ((catalogKey) => catalogTranslate('en-US', catalogKey)))(key);
+  const [expandedSkillIds, setExpandedSkillIds] = React.useState<Record<string, boolean>>({});
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <div style={{ fontSize: 13, color: overlayTheme.mutedText, marginBottom: 4 }}>
-        {copy('ai_settings.skill.description')}
-      </div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
-        <div style={{ fontSize: 12, color: overlayTheme.mutedText }}>{copy('ai_settings.skill.hint')}</div>
-        <Button icon={<PlusOutlined />} onClick={onAddSkill} style={{ borderRadius: 10 }}>
+    <div style={{ display: 'flex', flexDirection: 'column' }}>
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'flex-start',
+          gap: 16,
+          paddingBottom: 14,
+          borderBottom: `1px solid ${cardBorder}`,
+        }}
+      >
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontSize: 'var(--gn-settings-font-secondary, 13px)', color: overlayTheme.mutedText, lineHeight: 1.6 }}>
+            {copy('ai_settings.skill.description')}
+          </div>
+          <div style={{ marginTop: 5, fontSize: 'var(--gn-font-size-sm, 12px)', color: overlayTheme.mutedText, lineHeight: 1.5 }}>
+            {copy('ai_settings.skill.hint')}
+          </div>
+        </div>
+        <Button icon={<PlusOutlined />} onClick={onAddSkill}>
           {copy('ai_settings.skill.action.add')}
         </Button>
       </div>
       {skills.length === 0 && (
-        <div style={{ padding: '18px 16px', borderRadius: 14, border: `1px dashed ${cardBorder}`, background: cardBg, color: overlayTheme.mutedText }}>
+        <div
+          className="gonavi-ai-skill-empty"
+          style={{ padding: '18px 0', borderBottom: `1px solid ${cardBorder}`, color: overlayTheme.mutedText }}
+        >
           {copy('ai_settings.skill.empty')}
         </div>
       )}
-      {skills.map((skill) => (
-        <div key={skill.id} style={{ padding: '14px 16px', borderRadius: 14, border: `1px solid ${cardBorder}`, background: cardBg, display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 132px', gap: 12 }}>
+      {skills.map((skill) => {
+        const scopeSummary = (skill.scopes || [])
+          .map((scope) => SKILL_SCOPE_OPTIONS.find((option) => option.value === scope))
+          .filter((option): option is (typeof SKILL_SCOPE_OPTIONS)[number] => Boolean(option))
+          .map((option) => copy(option.labelKey))
+          .join(' / ');
+        const summaryTitle = skill.name.trim() || copy('ai_settings.skill.action.add');
+        const expanded = expandedSkillIds[skill.id] ?? skill.id.startsWith('skill-draft-');
+
+        return (
+        <details
+          key={skill.id}
+          className="gonavi-ai-skill-editor"
+          open={expanded}
+          onToggle={(event) => {
+            const open = event.currentTarget.open;
+            setExpandedSkillIds((current) => current[skill.id] === open
+              ? current
+              : { ...current, [skill.id]: open });
+          }}
+          style={{ borderBottom: `1px solid ${cardBorder}` }}
+        >
+          <summary style={{ cursor: 'pointer', padding: '13px 2px', color: overlayTheme.titleText }}>
+            <span
+              style={{
+                display: 'inline-grid',
+                gridTemplateColumns: 'minmax(0, 1fr) auto',
+                alignItems: 'center',
+                gap: 12,
+                width: 'calc(100% - 18px)',
+                marginLeft: 8,
+                verticalAlign: 'middle',
+              }}
+            >
+              <span style={{ minWidth: 0 }}>
+                <span style={{ display: 'block', fontSize: 'var(--gn-settings-font-secondary, 13px)', fontWeight: 650 }}>{summaryTitle}</span>
+                {(skill.description || scopeSummary) && (
+                  <span
+                    style={{
+                      display: 'block',
+                      marginTop: 3,
+                      color: overlayTheme.mutedText,
+                      fontSize: 'var(--gn-font-size-sm, 12px)',
+                      lineHeight: 1.45,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {skill.description || scopeSummary}
+                  </span>
+                )}
+              </span>
+              <span
+                style={{
+                  padding: '2px 7px',
+                  borderRadius: 999,
+                  color: skill.enabled ? overlayTheme.selectedText : overlayTheme.mutedText,
+                  background: skill.enabled ? overlayTheme.selectedBg : 'transparent',
+                  border: `1px solid ${skill.enabled ? overlayTheme.selectedText : cardBorder}`,
+                  fontSize: 'var(--gn-font-size-sm, 12px)',
+                  fontWeight: 650,
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {copy(skill.enabled ? 'ai_settings.skill.status.enabled' : 'ai_settings.skill.status.disabled')}
+              </span>
+            </span>
+          </summary>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: '2px 2px 16px 26px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 132px', gap: 12 }}>
+              <Input
+                aria-label={copy('ai_settings.skill.name_placeholder')}
+                value={skill.name}
+                onChange={(event) => onUpdateSkillDraft(skill.id, { name: event.target.value })}
+                placeholder={copy('ai_settings.skill.name_placeholder')}
+                style={{ background: inputBg, border: `1px solid ${cardBorder}` }}
+              />
+              <Select
+                aria-label={copy(skill.enabled ? 'ai_settings.skill.status.enabled' : 'ai_settings.skill.status.disabled')}
+                value={skill.enabled ? 'enabled' : 'disabled'}
+                onChange={(value) => onUpdateSkillDraft(skill.id, { enabled: value === 'enabled' })}
+                options={[
+                  { label: copy('ai_settings.skill.status.enabled'), value: 'enabled' },
+                  { label: copy('ai_settings.skill.status.disabled'), value: 'disabled' },
+                ]}
+              />
+            </div>
             <Input
-              value={skill.name}
-              onChange={(event) => onUpdateSkillDraft(skill.id, { name: event.target.value })}
-              placeholder={copy('ai_settings.skill.name_placeholder')}
-              style={{ borderRadius: 10, background: inputBg, border: `1px solid ${cardBorder}` }}
+              aria-label={copy('ai_settings.skill.description_placeholder')}
+              value={skill.description || ''}
+              onChange={(event) => onUpdateSkillDraft(skill.id, { description: event.target.value })}
+              placeholder={copy('ai_settings.skill.description_placeholder')}
+              style={{ background: inputBg, border: `1px solid ${cardBorder}` }}
             />
             <Select
-              value={skill.enabled ? 'enabled' : 'disabled'}
-              onChange={(value) => onUpdateSkillDraft(skill.id, { enabled: value === 'enabled' })}
-              options={[
-                { label: copy('ai_settings.skill.status.enabled'), value: 'enabled' },
-                { label: copy('ai_settings.skill.status.disabled'), value: 'disabled' },
-              ]}
+              aria-label={copy('ai_settings.skill.scopes_placeholder')}
+              mode="multiple"
+              value={skill.scopes || []}
+              onChange={(value) => onUpdateSkillDraft(skill.id, { scopes: value as AISkillScope[] })}
+              options={SKILL_SCOPE_OPTIONS.map((option) => ({
+                label: `${copy(option.labelKey)} · ${copy(option.descKey)}`,
+                value: option.value,
+              }))}
+              placeholder={copy('ai_settings.skill.scopes_placeholder')}
+              style={{ width: '100%' }}
             />
-          </div>
-          <Input
-            value={skill.description || ''}
-            onChange={(event) => onUpdateSkillDraft(skill.id, { description: event.target.value })}
-            placeholder={copy('ai_settings.skill.description_placeholder')}
-            style={{ borderRadius: 10, background: inputBg, border: `1px solid ${cardBorder}` }}
-          />
-          <Select
-            mode="multiple"
-            value={skill.scopes || []}
-            onChange={(value) => onUpdateSkillDraft(skill.id, { scopes: value as AISkillScope[] })}
-            options={SKILL_SCOPE_OPTIONS.map((option) => ({
-              label: `${copy(option.labelKey)} · ${copy(option.descKey)}`,
-              value: option.value,
-            }))}
-            placeholder={copy('ai_settings.skill.scopes_placeholder')}
-            style={{ width: '100%' }}
-          />
-          <Select
-            mode="multiple"
-            value={skill.requiredTools || []}
-            onChange={(value) => onUpdateSkillDraft(skill.id, { requiredTools: value })}
-            options={skillRequiredToolOptions}
-            placeholder={copy('ai_settings.skill.required_tools_placeholder')}
-            style={{ width: '100%' }}
-          />
-          <Input.TextArea
-            rows={6}
-            value={skill.systemPrompt}
-            onChange={(event) => onUpdateSkillDraft(skill.id, { systemPrompt: event.target.value })}
-            placeholder={copy('ai_settings.skill.system_prompt_placeholder')}
-            style={{ borderRadius: 10, background: inputBg, border: `1px solid ${cardBorder}`, fontFamily: 'var(--gn-font-mono)', resize: 'vertical' }}
-          />
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-            <Button type="primary" onClick={() => onSaveSkill(skill)} loading={loading} style={{ borderRadius: 10, fontWeight: 600 }}>
-              {copy('common.save')}
-            </Button>
-            <Popconfirm
-              title={copy('ai_settings.skill.confirm_delete')}
-              okText={copy('common.delete')}
-              cancelText={copy('common.cancel')}
-              onConfirm={() => onDeleteSkill(skill.id)}
-            >
-              <Button danger icon={<DeleteOutlined />} style={{ borderRadius: 10 }}>
-                {copy('common.delete')}
+            <Select
+              aria-label={copy('ai_settings.skill.required_tools_placeholder')}
+              mode="multiple"
+              value={skill.requiredTools || []}
+              onChange={(value) => onUpdateSkillDraft(skill.id, { requiredTools: value })}
+              options={skillRequiredToolOptions}
+              placeholder={copy('ai_settings.skill.required_tools_placeholder')}
+              style={{ width: '100%' }}
+            />
+            <Input.TextArea
+              aria-label={copy('ai_settings.skill.system_prompt_placeholder')}
+              rows={6}
+              value={skill.systemPrompt}
+              onChange={(event) => onUpdateSkillDraft(skill.id, { systemPrompt: event.target.value })}
+              placeholder={copy('ai_settings.skill.system_prompt_placeholder')}
+              style={{ background: inputBg, border: `1px solid ${cardBorder}`, resize: 'vertical' }}
+            />
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+              <Button type="primary" onClick={() => onSaveSkill(skill)} loading={loading}>
+                {copy('common.save')}
               </Button>
-            </Popconfirm>
+              <Popconfirm
+                title={copy('ai_settings.skill.confirm_delete')}
+                okText={copy('common.delete')}
+                cancelText={copy('common.cancel')}
+                onConfirm={() => onDeleteSkill(skill.id)}
+              >
+                <Button danger icon={<DeleteOutlined />}>
+                  {copy('common.delete')}
+                </Button>
+              </Popconfirm>
+            </div>
           </div>
-        </div>
-      ))}
+        </details>
+        );
+      })}
     </div>
   );
 };

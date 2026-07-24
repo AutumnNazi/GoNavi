@@ -1,14 +1,55 @@
 package app
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
+	"path/filepath"
+	stdRuntime "runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
+
+func TestDownloadUpdateAssetWithFallbackRetriesChecksumMismatch(t *testing.T) {
+	goodPayload := []byte("verified update package")
+	expectedHash := fmt.Sprintf("%x", sha256.Sum256(goodPayload))
+	primary := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("corrupted mirror object"))
+	}))
+	defer primary.Close()
+	fallback := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write(goodPayload)
+	}))
+	defer fallback.Close()
+
+	assetPath := filepath.Join(t.TempDir(), "GoNavi.bin")
+	actualHash, err := downloadUpdateAssetWithFallback(
+		[]string{primary.URL, fallback.URL},
+		assetPath,
+		expectedHash,
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("expected checksum mismatch fallback to succeed: %v", err)
+	}
+	if actualHash != expectedHash {
+		t.Fatalf("actual hash = %q, want %q", actualHash, expectedHash)
+	}
+	payload, err := os.ReadFile(assetPath)
+	if err != nil {
+		t.Fatalf("read downloaded asset: %v", err)
+	}
+	if string(payload) != string(goodPayload) {
+		t.Fatalf("downloaded payload = %q", payload)
+	}
+}
 
 func TestReleaseFromUpdateManifestMapsAssets(t *testing.T) {
 	release := releaseFromUpdateManifest(&updateReleaseManifest{
@@ -37,6 +78,111 @@ func TestReleaseFromUpdateManifestMapsAssets(t *testing.T) {
 	}
 	if !strings.HasPrefix(release.Assets[0].Digest, "sha256:") {
 		t.Fatalf("digest = %q", release.Assets[0].Digest)
+	}
+}
+
+func TestUpdateManifestRemoteURLsPreferR2ThenGitHub(t *testing.T) {
+	tests := []struct {
+		channel updateChannel
+		want    []string
+	}{
+		{updateChannelLatest, []string{updateMirrorLatestManifestURL, updateGitHubLatestManifestURL}},
+		{updateChannelDev, []string{updateMirrorDevManifestURL, updateGitHubDevManifestURL}},
+	}
+	for _, test := range tests {
+		got := updateManifestRemoteURLs(test.channel)
+		if len(got) != len(test.want) {
+			t.Fatalf("channel %s URLs = %v", test.channel, got)
+		}
+		for index := range test.want {
+			if got[index] != test.want[index] {
+				t.Fatalf("channel %s URLs = %v, want %v", test.channel, got, test.want)
+			}
+		}
+	}
+}
+
+func TestFetchStaticUpdateManifestFromURLsFallsBackFromInvalidR2Manifests(t *testing.T) {
+	for _, name := range []string{
+		"HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY",
+		"http_proxy", "https_proxy", "all_proxy",
+	} {
+		t.Setenv(name, "")
+	}
+	t.Setenv("NO_PROXY", "127.0.0.1,localhost")
+	t.Setenv("no_proxy", "127.0.0.1,localhost")
+	t.Setenv("GONAVI_DATA_ROOT", t.TempDir())
+
+	const version = "9.9.9"
+	expectedAsset, err := expectedAssetNameForInstallMode(
+		stdRuntime.GOOS,
+		stdRuntime.GOARCH,
+		version,
+		updateResolveInstallMode(),
+	)
+	if err != nil {
+		t.Fatalf("resolve expected update asset: %v", err)
+	}
+	valid := updateReleaseManifest{
+		SchemaVersion: updateManifestSchemaVersion,
+		Channel:       string(updateChannelLatest),
+		TagName:       "v" + version,
+		Version:       version,
+		Assets: []updateManifestAsset{{
+			Name:   expectedAsset,
+			URL:    "https://download.example.test/" + expectedAsset,
+			APIURL: "https://github.example.test/" + expectedAsset,
+			Size:   123,
+			SHA256: strings.Repeat("a", 64),
+		}},
+	}
+	wrongChannel := valid
+	wrongChannel.Channel = string(updateChannelDev)
+	missingTarget := valid
+	missingTarget.Assets = []updateManifestAsset{{
+		Name:   "GoNavi-9.9.9-Other-Platform.bin",
+		URL:    "https://download.example.test/other.bin",
+		Size:   123,
+		SHA256: strings.Repeat("b", 64),
+	}}
+
+	serveManifest := func(manifest updateReleaseManifest, hits *atomic.Int32) *httptest.Server {
+		return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			hits.Add(1)
+			w.Header().Set("Content-Type", "application/json")
+			if err := json.NewEncoder(w).Encode(manifest); err != nil {
+				t.Errorf("encode manifest: %v", err)
+			}
+		}))
+	}
+	var wrongChannelHits atomic.Int32
+	var missingTargetHits atomic.Int32
+	var validHits atomic.Int32
+	wrongChannelServer := serveManifest(wrongChannel, &wrongChannelHits)
+	defer wrongChannelServer.Close()
+	missingTargetServer := serveManifest(missingTarget, &missingTargetHits)
+	defer missingTargetServer.Close()
+	validServer := serveManifest(valid, &validHits)
+	defer validServer.Close()
+
+	release, err := fetchStaticUpdateManifestFromURLs(updateChannelLatest, []string{
+		wrongChannelServer.URL,
+		missingTargetServer.URL,
+		validServer.URL,
+	})
+	if err != nil {
+		t.Fatalf("expected valid fallback manifest: %v", err)
+	}
+	if release == nil || release.TagName != "v"+version || len(release.Assets) != 1 || release.Assets[0].Name != expectedAsset {
+		t.Fatalf("unexpected fallback release: %#v", release)
+	}
+	if wrongChannelHits.Load() != 1 || missingTargetHits.Load() != 1 || validHits.Load() != 1 {
+		t.Fatalf(
+			"unexpected manifest request counts: wrong-channel=%d missing-target=%d valid=%d",
+			wrongChannelHits.Load(),
+			missingTargetHits.Load(),
+			validHits.Load(),
+		)
 	}
 }
 

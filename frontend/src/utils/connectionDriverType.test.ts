@@ -41,6 +41,9 @@ describe("connectionDriverType", () => {
     );
     expect(resolveConnectionDriverType("custom", "gauss_db")).toBe("gaussdb");
     expect(resolveConnectionDriverType("custom", "goldendb")).toBe("goldendb");
+    expect(resolveConnectionDriverType("custom", "ClickHouse")).toBe(
+      "clickhouse",
+    );
     expect(resolveConnectionDriverType("custom", "")).toBe("");
   });
 

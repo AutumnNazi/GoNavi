@@ -74,6 +74,11 @@ func TestFetchLatestUpdateInfoSkipsChecksumWhenCurrentVersionIsAlreadyLatest(t *
 	if info.LatestVersion != "0.6.5" || info.CurrentVersion != "0.6.5" {
 		t.Fatalf("unexpected version info: %#v", info)
 	}
+	if info.InstallMode != string(updateResolveInstallMode()) ||
+		info.PackageType != string(resolveUpdatePackageType(stdRuntime.GOOS, updateResolveInstallMode())) ||
+		!info.AutoRelaunch {
+		t.Fatalf("expected no-update result to include install contract, got %#v", info)
+	}
 }
 
 func TestFetchLatestUpdateInfoUsesAssetDigestWhenUpdateIsAvailable(t *testing.T) {
@@ -498,7 +503,7 @@ func TestResolveReusableStagedUpdateForPlatformSkipsLegacyWindowsExeStagedAsset(
 	info := UpdateInfo{
 		Channel:       string(updateChannelLatest),
 		LatestVersion: "0.8.4",
-		AssetName:     "GoNavi-0.8.4-Windows-Amd64.exe",
+		AssetName:     "GoNavi-0.8.4-Windows-Amd64-Portable.exe",
 		AssetSize:     8,
 	}
 
@@ -526,7 +531,7 @@ func TestResolveReusableStagedUpdateForPlatformPrefersWindowsExeInInstallDirecto
 	info := UpdateInfo{
 		Channel:       string(updateChannelLatest),
 		LatestVersion: "0.8.4",
-		AssetName:     "GoNavi-0.8.4-Windows-Amd64.exe",
+		AssetName:     "GoNavi-0.8.4-Windows-Amd64-Portable.exe",
 		AssetSize:     8,
 	}
 
@@ -562,7 +567,7 @@ func TestResolveReusableStagedUpdateForPlatformDoesNotReuseCurrentWindowsExeInsi
 	info := UpdateInfo{
 		Channel:       string(updateChannelLatest),
 		LatestVersion: "0.8.4",
-		AssetName:     "GoNavi-0.8.4-Windows-Amd64.exe",
+		AssetName:     "GoNavi-0.8.4-Windows-Amd64-Portable.exe",
 		AssetSize:     8,
 	}
 
@@ -620,18 +625,21 @@ func TestInstallUpdateAndRestartFailsBeforeLaunchWhenWindowsTargetDirIsNotWritab
 	}
 
 	stagedDir := t.TempDir()
-	assetPath := filepath.Join(stagedDir, "GoNavi-0.8.2-Windows-Amd64.exe")
+	assetPath := filepath.Join(stagedDir, "GoNavi-0.8.2-Windows-Amd64-Portable.exe")
 	if err := os.WriteFile(assetPath, []byte("12345678"), 0o644); err != nil {
 		t.Fatalf("WriteFile returned error: %v", err)
 	}
 
 	app := NewApp()
 	app.updateState.staged = &stagedUpdate{
-		Channel:   updateChannelLatest,
-		Version:   "0.8.2",
-		AssetName: filepath.Base(assetPath),
-		FilePath:  assetPath,
-		StagedDir: stagedDir,
+		Channel:      updateChannelLatest,
+		Version:      "0.8.2",
+		AssetName:    filepath.Base(assetPath),
+		FilePath:     assetPath,
+		StagedDir:    stagedDir,
+		InstallMode:  updateInstallModePortable,
+		PackageType:  updatePackageTypePortable,
+		AutoRelaunch: true,
 	}
 
 	originalResolveInstallTarget := updateResolveInstallTarget
@@ -651,7 +659,7 @@ func TestInstallUpdateAndRestartFailsBeforeLaunchWhenWindowsTargetDirIsNotWritab
 		return nil
 	}
 
-	result := app.InstallUpdateAndRestart()
+	result := app.InstallUpdateAndRestart(true)
 	if result.Success {
 		t.Fatalf("expected InstallUpdateAndRestart to fail, got %#v", result)
 	}
@@ -660,6 +668,55 @@ func TestInstallUpdateAndRestartFailsBeforeLaunchWhenWindowsTargetDirIsNotWritab
 	}
 	if !strings.Contains(result.Message, "not writable") {
 		t.Fatalf("expected install target write failure in message, got %q", result.Message)
+	}
+}
+
+func TestInstallUpdateAndRestartMSISkipsPortableTargetWriteProbe(t *testing.T) {
+	if stdRuntime.GOOS != "windows" {
+		t.Skip("windows-only MSI launch validation")
+	}
+
+	stagedDir := t.TempDir()
+	assetPath := filepath.Join(stagedDir, "GoNavi-0.8.2-Windows-Amd64-Installer.msi")
+	if err := os.WriteFile(assetPath, []byte("12345678"), 0o644); err != nil {
+		t.Fatalf("WriteFile returned error: %v", err)
+	}
+	app := NewApp()
+	app.updateState.staged = &stagedUpdate{
+		Channel:      updateChannelLatest,
+		Version:      "0.8.2",
+		AssetName:    filepath.Base(assetPath),
+		FilePath:     assetPath,
+		StagedDir:    stagedDir,
+		InstallMode:  updateInstallModeMSI,
+		PackageType:  updatePackageTypeMSI,
+		AutoRelaunch: true,
+	}
+
+	originalResolveInstallTarget := updateResolveInstallTarget
+	originalResolveInstallMode := updateResolveInstallMode
+	originalLaunchInstallScript := updateLaunchInstallScript
+	t.Cleanup(func() {
+		updateResolveInstallTarget = originalResolveInstallTarget
+		updateResolveInstallMode = originalResolveInstallMode
+		updateLaunchInstallScript = originalLaunchInstallScript
+	})
+	updateResolveInstallTarget = func() string {
+		return filepath.Join(stagedDir, "missing", "GoNavi.exe")
+	}
+	updateResolveInstallMode = func() updateInstallMode { return updateInstallModeMSI }
+	launched := false
+	updateLaunchInstallScript = func(*stagedUpdate) error {
+		launched = true
+		return errors.New("stop after MSI launcher reached")
+	}
+
+	result := app.InstallUpdateAndRestart(true)
+	if result.Success {
+		t.Fatalf("expected injected launcher error, got %#v", result)
+	}
+	if !launched {
+		t.Fatal("expected MSI launcher to run without probing target directory writability")
 	}
 }
 
@@ -716,7 +773,8 @@ func TestShouldWindowsUpdateLaunchDownloadedAssetDirectly(t *testing.T) {
 		assetPath string
 		want      bool
 	}{
-		{assetPath: `C:\GoNavi\GoNavi-dev-93dc696-Windows-Amd64.exe`, want: true},
+		{assetPath: `C:\GoNavi\GoNavi-dev-93dc696-Windows-Amd64-Portable.exe`, want: true},
+		{assetPath: `C:\GoNavi\GoNavi-dev-93dc696-Windows-Amd64-Installer.msi`, want: false},
 		{assetPath: `C:\GoNavi\GoNavi-0.8.2-Windows-Amd64.zip`, want: false},
 		{assetPath: "", want: false},
 	}
@@ -725,6 +783,40 @@ func TestShouldWindowsUpdateLaunchDownloadedAssetDirectly(t *testing.T) {
 		if got := shouldWindowsUpdateLaunchDownloadedAssetDirectly(tc.assetPath); got != tc.want {
 			t.Fatalf("shouldWindowsUpdateLaunchDownloadedAssetDirectly(%q) = %v, want %v", tc.assetPath, got, tc.want)
 		}
+	}
+}
+
+func TestExpectedAssetNameForExecutableUsesWindowsPortableSuffix(t *testing.T) {
+	cases := []struct {
+		name    string
+		goarch  string
+		version string
+		want    string
+	}{
+		{
+			name:    "amd64 release",
+			goarch:  "amd64",
+			version: "v1.2.3",
+			want:    "GoNavi-1.2.3-Windows-Amd64-Portable.exe",
+		},
+		{
+			name:    "arm64 dev",
+			goarch:  "arm64",
+			version: "dev-a1b2c3d",
+			want:    "GoNavi-dev-a1b2c3d-Windows-Arm64-Portable.exe",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := expectedAssetNameForExecutable("windows", tc.goarch, tc.version, "")
+			if err != nil {
+				t.Fatalf("expectedAssetNameForExecutable returned error: %v", err)
+			}
+			if got != tc.want {
+				t.Fatalf("expectedAssetNameForExecutable() = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }
 

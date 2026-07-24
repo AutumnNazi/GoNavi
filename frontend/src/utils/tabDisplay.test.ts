@@ -6,6 +6,7 @@ import {
   applyTabDisplaySettingsPatch,
   buildTabDisplayModel,
   buildTabDisplayTitle,
+  getTabDisplayKindLabel,
   resolveTabDisplayElementOrder,
   resolveConnectionHostSummary,
   sanitizeTabDisplaySettings,
@@ -115,6 +116,20 @@ describe('tabDisplay', () => {
     };
 
     expect(buildTabDisplayTitle(exportTab, redisConnection)).toBe('[订单缓存] 导出 orders');
+  });
+
+  it('keeps data import tabs on the same connection prefix strategy', () => {
+    const importTab: TabData = {
+      id: 'data-import-workbench',
+      title: '导入 public.orders',
+      type: 'data-import',
+      connectionId: 'redis-1',
+      dbName: 'app',
+      tableName: 'public.orders',
+    };
+
+    expect(getTabDisplayKindLabel(importTab)).toBe('IMPORT');
+    expect(buildTabDisplayTitle(importTab, redisConnection)).toBe('[订单缓存] 导入 orders');
   });
 
   it('hides schema prefixes from schema-qualified table tab labels', () => {

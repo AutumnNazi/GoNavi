@@ -1,0 +1,532 @@
+name: Publish Draft Release
+
+on:
+  push:
+    branches:
+      - 'publish/v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to publish (for example, v0.8.7)
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: write
+
+concurrency:
+  # Stable and dev publications share the same retained R2 byte budget.
+  group: gonavi-r2-publication
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Validate, mirror, and publish release
+    runs-on: ubuntu-latest
+    env:
+      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+    steps:
+      - name: Validate release
+        id: validate
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const requestedTag = String(process.env.RELEASE_TAG || '').trim();
+            const tag = requestedTag.startsWith('publish/')
+              ? requestedTag.slice('publish/'.length)
+              : requestedTag;
+            if (!/^v\d+\.\d+\.\d+$/.test(tag)) {
+              core.setFailed(`Invalid release tag: ${tag}`);
+              return;
+            }
+
+            const { owner, repo } = context.repo;
+            const tagRef = await github.rest.git.getRef({
+              owner,
+              repo,
+              ref: `tags/${tag}`,
+            });
+
+            let commitSha = tagRef.data.object.sha;
+            if (tagRef.data.object.type === 'tag') {
+              const annotatedTag = await github.rest.git.getTag({
+                owner,
+                repo,
+                tag_sha: tagRef.data.object.sha,
+              });
+              commitSha = annotatedTag.data.object.sha;
+            }
+
+            const workflowRuns = await github.rest.actions.listWorkflowRuns({
+              owner,
+              repo,
+              workflow_id: 'release.yml',
+              event: 'push',
+              branch: tag,
+              per_page: 100,
+            });
+            const runs = workflowRuns.data.workflow_runs;
+            const successfulRun = runs.find((run) => (
+              run.head_sha === commitSha
+              && run.status === 'completed'
+              && run.conclusion === 'success'
+            ));
+            if (!successfulRun) {
+              core.setFailed(`No successful Release workflow found for ${tag} at ${commitSha}`);
+              return;
+            }
+
+            const releaseList = await github.rest.repos.listReleases({
+              owner,
+              repo,
+              per_page: 100,
+            });
+            const releases = releaseList.data;
+            const release = releases.find((item) => item.tag_name === tag);
+            if (!release) {
+              core.setFailed(`Release not found for ${tag}`);
+              return;
+            }
+
+            let latestRelease = null;
+            try {
+              latestRelease = (await github.rest.repos.getLatestRelease({ owner, repo })).data;
+            } catch (error) {
+              if (error.status !== 404) {
+                throw error;
+              }
+            }
+            const semverParts = (value) => value.slice(1).split('.').map(Number);
+            const compareSemver = (left, right) => {
+              const a = semverParts(left);
+              const b = semverParts(right);
+              for (let index = 0; index < 3; index += 1) {
+                if (a[index] !== b[index]) {
+                  return a[index] - b[index];
+                }
+              }
+              return 0;
+            };
+            let shouldPublish = release.draft;
+            if (release.draft) {
+              const latestTag = String(latestRelease?.tag_name || '').trim();
+              if (latestTag && /^v\d+\.\d+\.\d+$/.test(latestTag) && compareSemver(tag, latestTag) <= 0) {
+                core.setFailed(`Refusing to publish ${tag} over current latest ${latestTag}`);
+                return;
+              }
+            } else if (!latestRelease || latestRelease.id !== release.id) {
+              core.setFailed(`Published release ${tag} is not the current GitHub latest release`);
+              return;
+            } else {
+              shouldPublish = false;
+            }
+
+            const version = tag.slice(1);
+            const expectedAssets = [
+              'LICENSE',
+              'NOTICE',
+              'SHA256SUMS',
+              'latest.json',
+              `GoNavi-${version}-Linux-Amd64-WebKit41.tar.gz`,
+              `GoNavi-${version}-Linux-Amd64.tar.gz`,
+              `GoNavi-${version}-Linux-Arm64.tar.gz`,
+              `GoNavi-${version}-MacOS-Amd64.dmg`,
+              `GoNavi-${version}-MacOS-Arm64.dmg`,
+              `GoNavi-${version}-Windows-Amd64-Installer.msi`,
+              `GoNavi-${version}-Windows-Amd64-Portable.exe`,
+              `GoNavi-${version}-Windows-Arm64-Installer.msi`,
+              `GoNavi-${version}-Windows-Arm64-Portable.exe`,
+            ];
+            const assetsByName = new Map(release.assets.map((asset) => [asset.name, asset]));
+            const missingAssets = expectedAssets.filter((name) => {
+              const asset = assetsByName.get(name);
+              return !asset || asset.state !== 'uploaded' || asset.size <= 0;
+            });
+            if (missingAssets.length > 0) {
+              core.setFailed(`Release assets are incomplete: ${missingAssets.join(', ')}`);
+              return;
+            }
+
+            core.setOutput('tag', tag);
+            core.setOutput('release_id', String(release.id));
+            core.setOutput('should_publish', String(shouldPublish));
+            core.notice(`Validated ${release.draft ? 'draft' : 'published'} release ${tag} and its assets`);
+
+      - name: Checkout release tooling
+        uses: actions/checkout@v5
+
+      - name: Mirror and verify stable release in Cloudflare R2
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DRIVER_RELEASE_TOKEN: ${{ secrets.DRIVER_RELEASE_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          RELEASE_TAG: ${{ steps.validate.outputs.tag }}
+          R2_BUCKET: gonavi-downloads
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "${CLOUDFLARE_ACCOUNT_ID}" || -z "${AWS_ACCESS_KEY_ID}" || -z "${AWS_SECRET_ACCESS_KEY}" || -z "${DRIVER_RELEASE_TOKEN}" ]]; then
+            echo "Cloudflare R2 or DriverAgents release credentials are not configured" >&2
+            exit 1
+          fi
+
+          endpoint="https://${CLOUDFLARE_ACCOUNT_ID}.r2.cloudflarestorage.com"
+          app_dir="${RUNNER_TEMP}/gonavi-release"
+          driver_dir="${RUNNER_TEMP}/driver-release"
+          mkdir -p "${app_dir}" "${driver_dir}"
+          gh release download "${RELEASE_TAG}" --repo "${GITHUB_REPOSITORY}" --dir "${app_dir}"
+
+          driver_release_json="${RUNNER_TEMP}/driver-release.json"
+          driver_status="$(curl --silent --show-error \
+            --output "${driver_release_json}" \
+            --write-out '%{http_code}' \
+            --header "Authorization: Bearer ${DRIVER_RELEASE_TOKEN}" \
+            --header 'Accept: application/vnd.github+json' \
+            --header 'X-GitHub-Api-Version: 2022-11-28' \
+            "https://api.github.com/repos/Syngnat/GoNavi-DriverAgents/releases/tags/${RELEASE_TAG}")"
+          has_driver_release=false
+          case "${driver_status}" in
+            200)
+              jq -e --arg tag "${RELEASE_TAG}" \
+                '.tag_name == $tag and .draft == false' "${driver_release_json}" >/dev/null
+              GH_TOKEN="${DRIVER_RELEASE_TOKEN}" gh release download "${RELEASE_TAG}" \
+                --repo Syngnat/GoNavi-DriverAgents --dir "${driver_dir}"
+              has_driver_release=true
+              ;;
+            404)
+              echo "No DriverAgents release for ${RELEASE_TAG}; skipping driver mirror"
+              ;;
+            *)
+              echo "DriverAgents release lookup failed with HTTP ${driver_status}" >&2
+              exit 1
+              ;;
+          esac
+
+          jq -e \
+            --arg tag "${RELEASE_TAG}" \
+            --arg mirror_base "https://download.syngnat.top/gonavi/releases/download" \
+            --arg github_base "https://github.com/${GITHUB_REPOSITORY}/releases/download" \
+            '
+              .tagName == $tag
+              and (.assets | type == "array" and length > 0)
+              and all(.assets[];
+                (.url | type == "string" and startswith($mirror_base + "/" + $tag + "/"))
+                and (.apiUrl | type == "string" and startswith($github_base + "/" + $tag + "/"))
+                and (.sha256 | type == "string" and test("^[0-9a-fA-F]{64}$"))
+              )
+            ' "${app_dir}/latest.json" >/dev/null
+          if [[ "${has_driver_release}" == true ]]; then
+            jq -e '.assets | type == "object" and length > 0' \
+              "${driver_dir}/GoNavi-DriverAgents-Index.json" >/dev/null
+            [[ -s "${driver_dir}/SHA256SUMS" ]] || {
+              echo "DriverAgents SHA256SUMS is missing" >&2
+              exit 1
+            }
+            (cd "${driver_dir}" && sha256sum --check SHA256SUMS)
+            jq --arg tag "${RELEASE_TAG}" \
+              '.tagName = $tag' \
+              "${driver_dir}/GoNavi-DriverAgents-Index.json" \
+              > "${RUNNER_TEMP}/driver-latest-index.json"
+          fi
+
+          while IFS=$'\t' read -r name expected_size expected_sha; do
+            [[ "${name}" == "$(basename "${name}")" ]] || {
+              echo "Invalid app asset name in latest.json: ${name}" >&2
+              exit 1
+            }
+            file="${app_dir}/${name}"
+            [[ -f "${file}" ]] || {
+              echo "App asset referenced by latest.json is missing: ${name}" >&2
+              exit 1
+            }
+            actual_size="$(stat -c '%s' "${file}")"
+            actual_sha="$(sha256sum "${file}" | awk '{print $1}')"
+            if [[ "${actual_size}" != "${expected_size}" || "${actual_sha}" != "${expected_sha,,}" ]]; then
+              echo "App asset does not match latest.json: ${name}" >&2
+              exit 1
+            fi
+          done < <(jq -r '.assets[] | [.name, (.size | tostring), .sha256] | @tsv' "${app_dir}/latest.json")
+
+          if [[ "${has_driver_release}" == true ]]; then
+            while IFS=$'\t' read -r name expected_size; do
+              [[ "${name}" == "$(basename "${name}")" ]] || {
+                echo "Invalid driver asset name in index: ${name}" >&2
+                exit 1
+              }
+              file="${driver_dir}/${name}"
+              [[ -f "${file}" ]] || {
+                echo "Driver asset referenced by index is missing: ${name}" >&2
+                exit 1
+              }
+              actual_size="$(stat -c '%s' "${file}")"
+              if [[ "${actual_size}" != "${expected_size}" ]]; then
+                echo "Driver asset size does not match index: ${name}" >&2
+                exit 1
+              fi
+            done < <(jq -r '.assets | to_entries[] | [.key, (.value | tostring)] | @tsv' \
+              "${driver_dir}/GoNavi-DriverAgents-Index.json")
+          else
+            current_driver_state="${RUNNER_TEMP}/r2-current-stable-driver-state.json"
+            if python3 tools/r2-release-retention.py validate-driver-pointer \
+              --bucket "${R2_BUCKET}" \
+              --endpoint-url "${endpoint}" \
+              --channel stable > "${current_driver_state}"; then
+              current_driver_keep_prefix="$(jq -r '.keepPrefix' "${current_driver_state}")"
+              python3 tools/r2-release-retention.py prune \
+                --bucket "${R2_BUCKET}" \
+                --endpoint-url "${endpoint}" \
+                --root-prefix "drivers/releases/download/" \
+                --keep-prefix "${current_driver_keep_prefix}"
+            else
+              echo "::warning::Current stable driver pointer could not be fully validated; preserving every stable driver object"
+            fi
+          fi
+
+          # Preflight the final retained footprint before uploading or
+          # publishing. Existing objects in the channel being replaced are
+          # excluded, then the exact local candidate size is added.
+          app_manifest_size="$(stat -c '%s' "${app_dir}/latest.json")"
+          planned_bytes="$(jq '[.assets[].size] | add // 0' "${app_dir}/latest.json")"
+          planned_bytes="$((planned_bytes + app_manifest_size * 2))"
+          budget_args=(
+            measure
+            --bucket "${R2_BUCKET}"
+            --endpoint-url "${endpoint}"
+            --prefix "gonavi/"
+            --prefix "drivers/"
+            --exclude-prefix "gonavi/releases/download/"
+            --exclude-prefix "gonavi/releases/latest/"
+          )
+          if [[ "${has_driver_release}" == true ]]; then
+            driver_index_size="$(stat -c '%s' "${driver_dir}/GoNavi-DriverAgents-Index.json")"
+            driver_latest_size="$(stat -c '%s' "${RUNNER_TEMP}/driver-latest-index.json")"
+            driver_asset_bytes="$(jq '[.assets[]] | add // 0' "${driver_dir}/GoNavi-DriverAgents-Index.json")"
+            planned_bytes="$((planned_bytes + driver_asset_bytes + driver_index_size + driver_latest_size))"
+            budget_args+=(
+              --exclude-prefix "drivers/releases/download/"
+              --exclude-prefix "drivers/releases/latest/"
+            )
+          fi
+          python3 tools/r2-release-retention.py "${budget_args[@]}" \
+            --add-bytes "${planned_bytes}" \
+            --max-bytes 9000000000
+
+          upload_immutable() {
+            local file="$1"
+            local key="$2"
+            local content_type="${3:-}"
+            local sha size head_json remote_sha remote_size
+            sha="$(sha256sum "${file}" | awk '{print $1}')"
+            size="$(stat -c '%s' "${file}")"
+            if head_json="$(aws s3api head-object --bucket "${R2_BUCKET}" --key "${key}" --endpoint-url "${endpoint}" --output json 2>&1)"; then
+              remote_sha="$(jq -r '.Metadata.sha256 // ""' <<<"${head_json}")"
+              remote_size="$(jq -r '.ContentLength // 0' <<<"${head_json}")"
+              if [[ "${remote_sha}" != "${sha}" || "${remote_size}" != "${size}" ]]; then
+                echo "Refusing to overwrite immutable R2 object ${key}" >&2
+                exit 1
+              fi
+              echo "R2 object already verified: ${key}"
+              return
+            elif ! grep -Eq '\(404\)|Not Found|NoSuchKey' <<<"${head_json}"; then
+              echo "Unable to inspect immutable R2 object ${key}: ${head_json}" >&2
+              exit 1
+            fi
+            args=(s3 cp "${file}" "s3://${R2_BUCKET}/${key}" --endpoint-url "${endpoint}" --cache-control "public,max-age=31536000,immutable" --metadata "sha256=${sha}" --only-show-errors)
+            if [[ -n "${content_type}" ]]; then
+              args+=(--content-type "${content_type}")
+            fi
+            aws "${args[@]}"
+            head_json="$(aws s3api head-object --bucket "${R2_BUCKET}" --key "${key}" --endpoint-url "${endpoint}" --output json)"
+            remote_sha="$(jq -r '.Metadata.sha256 // ""' <<<"${head_json}")"
+            remote_size="$(jq -r '.ContentLength // 0' <<<"${head_json}")"
+            if [[ "${remote_sha}" != "${sha}" || "${remote_size}" != "${size}" ]]; then
+              echo "R2 verification failed for ${key}" >&2
+              exit 1
+            fi
+          }
+
+          while IFS= read -r name; do
+            file="${app_dir}/${name}"
+            upload_immutable "${file}" "gonavi/releases/download/${RELEASE_TAG}/${name}"
+          done < <(jq -r '.assets[].name' "${app_dir}/latest.json")
+
+          if [[ "${has_driver_release}" == true ]]; then
+            # Upload only the standalone assets referenced by the index. The
+            # aggregate bundle duplicates them and remains on GitHub fallback.
+            while IFS= read -r name; do
+              file="${driver_dir}/${name}"
+              upload_immutable "${file}" "drivers/releases/download/${RELEASE_TAG}/${name}"
+            done < <(jq -r '.assets | keys[]' "${driver_dir}/GoNavi-DriverAgents-Index.json")
+          fi
+
+          # Metadata is the commit point: publish it only after every referenced object is verified.
+          if [[ "${has_driver_release}" == true ]]; then
+            upload_immutable \
+              "${driver_dir}/GoNavi-DriverAgents-Index.json" \
+              "drivers/releases/download/${RELEASE_TAG}/GoNavi-DriverAgents-Index.json" \
+              "application/json; charset=utf-8"
+          fi
+          upload_immutable \
+            "${app_dir}/latest.json" \
+            "gonavi/releases/download/${RELEASE_TAG}/latest.json" \
+            "application/json; charset=utf-8"
+
+      - name: Publish validated draft
+        if: steps.validate.outputs.should_publish == 'true'
+        uses: actions/github-script@v8
+        env:
+          RELEASE_TAG: ${{ steps.validate.outputs.tag }}
+          RELEASE_ID: ${{ steps.validate.outputs.release_id }}
+        with:
+          script: |
+            const tag = String(process.env.RELEASE_TAG || '').trim();
+            const releaseId = Number(process.env.RELEASE_ID || 0);
+            if (!/^v\d+\.\d+\.\d+$/.test(tag) || !Number.isSafeInteger(releaseId) || releaseId <= 0) {
+              core.setFailed(`Invalid validated release: tag=${tag} id=${releaseId}`);
+              return;
+            }
+            const { owner, repo } = context.repo;
+            const published = await github.rest.repos.updateRelease({
+              owner,
+              repo,
+              release_id: releaseId,
+              draft: false,
+              prerelease: false,
+              make_latest: 'true',
+            });
+            if (published.data.draft || !published.data.published_at) {
+              core.setFailed(`Release ${tag} was not published successfully`);
+              return;
+            }
+            core.notice(`Published ${tag}: ${published.data.html_url}`);
+
+      - name: Verify GitHub release is published and latest
+        uses: actions/github-script@v8
+        env:
+          RELEASE_TAG: ${{ steps.validate.outputs.tag }}
+          RELEASE_ID: ${{ steps.validate.outputs.release_id }}
+        with:
+          script: |
+            const tag = String(process.env.RELEASE_TAG || '').trim();
+            const releaseId = Number(process.env.RELEASE_ID || 0);
+            const { owner, repo } = context.repo;
+            const [releaseResult, latestResult] = await Promise.all([
+              github.rest.repos.getRelease({ owner, repo, release_id: releaseId }),
+              github.rest.repos.getLatestRelease({ owner, repo }),
+            ]);
+            const release = releaseResult.data;
+            const latest = latestResult.data;
+            if (release.draft || !release.published_at || release.tag_name !== tag || latest.id !== release.id) {
+              core.setFailed(`Release ${tag} is not the current published GitHub latest release`);
+              return;
+            }
+            core.notice(`Verified GitHub latest release ${tag}`);
+
+      - name: Promote and verify Cloudflare R2 latest manifest
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          RELEASE_TAG: ${{ steps.validate.outputs.tag }}
+          R2_BUCKET: gonavi-downloads
+        shell: bash
+        run: |
+          set -euo pipefail
+          endpoint="https://${CLOUDFLARE_ACCOUNT_ID}.r2.cloudflarestorage.com"
+          file="${RUNNER_TEMP}/gonavi-release/latest.json"
+          key="gonavi/releases/latest/latest.json"
+          sha="$(sha256sum "${file}" | awk '{print $1}')"
+          size="$(stat -c '%s' "${file}")"
+
+          aws s3 cp "${file}" "s3://${R2_BUCKET}/${key}" \
+            --endpoint-url "${endpoint}" \
+            --cache-control "no-cache,must-revalidate" \
+            --content-type "application/json; charset=utf-8" \
+            --metadata "sha256=${sha}" \
+            --only-show-errors
+
+          head_json="$(aws s3api head-object \
+            --bucket "${R2_BUCKET}" \
+            --key "${key}" \
+            --endpoint-url "${endpoint}" \
+            --output json)"
+          remote_sha="$(jq -r '.Metadata.sha256 // ""' <<<"${head_json}")"
+          remote_size="$(jq -r '.ContentLength // 0' <<<"${head_json}")"
+          if [[ "${remote_sha}" != "${sha}" || "${remote_size}" != "${size}" ]]; then
+            echo "R2 latest manifest verification failed" >&2
+            exit 1
+          fi
+
+          curl --fail --silent --show-error \
+            "https://download.syngnat.top/gonavi/releases/latest/latest.json?verify=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+            | jq -e --arg tag "${RELEASE_TAG}" '.tagName == $tag' >/dev/null
+
+          driver_latest_file="${RUNNER_TEMP}/driver-latest-index.json"
+          if [[ -s "${driver_latest_file}" ]]; then
+            driver_key="drivers/releases/latest/GoNavi-DriverAgents-Index.json"
+            driver_sha="$(sha256sum "${driver_latest_file}" | awk '{print $1}')"
+            driver_size="$(stat -c '%s' "${driver_latest_file}")"
+            aws s3 cp "${driver_latest_file}" "s3://${R2_BUCKET}/${driver_key}" \
+              --endpoint-url "${endpoint}" \
+              --cache-control "no-cache,must-revalidate" \
+              --content-type "application/json; charset=utf-8" \
+              --metadata "sha256=${driver_sha}" \
+              --only-show-errors
+            driver_head_json="$(aws s3api head-object \
+              --bucket "${R2_BUCKET}" \
+              --key "${driver_key}" \
+              --endpoint-url "${endpoint}" \
+              --output json)"
+            remote_driver_sha="$(jq -r '.Metadata.sha256 // ""' <<<"${driver_head_json}")"
+            remote_driver_size="$(jq -r '.ContentLength // 0' <<<"${driver_head_json}")"
+            if [[ "${remote_driver_sha}" != "${driver_sha}" || "${remote_driver_size}" != "${driver_size}" ]]; then
+              echo "R2 latest driver index verification failed" >&2
+              exit 1
+            fi
+            curl --fail --silent --show-error \
+              "https://download.syngnat.top/${driver_key}?verify=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+              | jq -e --arg tag "${RELEASE_TAG}" '.tagName == $tag' >/dev/null
+          fi
+
+          # Only prune after the mutable pointers are publicly verified. A
+          # failed cleanup leaves extra storage but never breaks the active
+          # updater path; rerunning this job is idempotent.
+          python3 tools/r2-release-retention.py prune \
+            --bucket "${R2_BUCKET}" \
+            --endpoint-url "${endpoint}" \
+            --root-prefix "gonavi/releases/download/" \
+            --keep-prefix "gonavi/releases/download/${RELEASE_TAG}/"
+          driver_keep_prefix=""
+          if [[ -s "${driver_latest_file}" ]]; then
+            driver_keep_prefix="drivers/releases/download/${RELEASE_TAG}/"
+          else
+            current_driver_state="${RUNNER_TEMP}/r2-current-stable-driver-state.json"
+            if python3 tools/r2-release-retention.py validate-driver-pointer \
+              --bucket "${R2_BUCKET}" \
+              --endpoint-url "${endpoint}" \
+              --channel stable > "${current_driver_state}"; then
+              driver_keep_prefix="$(jq -r '.keepPrefix' "${current_driver_state}")"
+            else
+              echo "::warning::Skipping stable driver cleanup because the current R2 pointer or retained assets are invalid"
+            fi
+          fi
+          if [[ -n "${driver_keep_prefix}" ]]; then
+            python3 tools/r2-release-retention.py prune \
+              --bucket "${R2_BUCKET}" \
+              --endpoint-url "${endpoint}" \
+              --root-prefix "drivers/releases/download/" \
+              --keep-prefix "${driver_keep_prefix}"
+          fi
+
+          # Keep a 1 GB safety margin below the 10 GB-month free allowance.
+          python3 tools/r2-release-retention.py measure \
+            --bucket "${R2_BUCKET}" \
+            --endpoint-url "${endpoint}" \
+            --prefix "gonavi/" \
+            --prefix "drivers/" \
+            --max-bytes 9000000000

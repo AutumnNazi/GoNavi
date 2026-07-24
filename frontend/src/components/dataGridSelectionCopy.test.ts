@@ -1,8 +1,26 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildSelectedCellClipboardText } from './dataGridSelectionCopy';
+import { buildSelectedCellClipboardText, canSelectGridCellForClipboard } from './dataGridSelectionCopy';
 
 describe('dataGridSelectionCopy helpers', () => {
+  it('allows displayed read-only cells while keeping editable expressions out of batch selection', () => {
+    expect(canSelectGridCellForClipboard({
+      canModifyData: false,
+      isDisplayedColumn: true,
+      isWritableColumn: false,
+    })).toBe(true);
+    expect(canSelectGridCellForClipboard({
+      canModifyData: true,
+      isDisplayedColumn: true,
+      isWritableColumn: false,
+    })).toBe(false);
+    expect(canSelectGridCellForClipboard({
+      canModifyData: false,
+      isDisplayedColumn: false,
+      isWritableColumn: false,
+    })).toBe(false);
+  });
+
   it('builds clipboard text in visible row and column order', () => {
     const text = buildSelectedCellClipboardText({
       selectedCells: [

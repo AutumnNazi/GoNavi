@@ -57,7 +57,7 @@ export const buildDefaultLocalToolRuntime = (): AILocalToolRuntime => ({
   },
   query: async (config, dbName, sql) => {
     const mod = await import('../../../wailsjs/go/app/App');
-    return mod.DBQuery(config, dbName, sql);
+    return mod.DBQueryAI(config, dbName, sql);
   },
   checkSQL: async (sql) => {
     const service = getAIService();

@@ -17,7 +17,7 @@ import {
   ThunderboltOutlined,
 } from '@ant-design/icons';
 
-import { useStore } from '../../store';
+import { type SqlLog, useStore } from '../../store';
 import type { SavedConnection } from '../../types';
 import { getCurrentLanguage, t } from '../../i18n';
 import { resolveShortcutDisplay } from '../../utils/shortcuts';
@@ -84,7 +84,7 @@ type SidebarSearchModelArgs = {
   selectedNodesRef: MutableRefObject<any[]>;
   activeContext: any;
   activeTab: any;
-  sqlLogs: any[];
+  recentSqlLogs: SqlLog[];
   shortcutOptions: any;
   activeShortcutPlatform: any;
   overlayTheme: {
@@ -123,7 +123,7 @@ export const useSidebarSearchModel = ({
   selectedNodesRef,
   activeContext,
   activeTab,
-  sqlLogs,
+  recentSqlLogs,
   shortcutOptions,
   activeShortcutPlatform,
   overlayTheme,
@@ -436,7 +436,7 @@ export const useSidebarSearchModel = ({
   );
 
   const commandSearchRecentItems = useMemo<V2CommandSearchItem[]>(() => {
-    return sqlLogs.slice(0, 5).map((log) => ({
+    return recentSqlLogs.map((log) => ({
       key: `recent-${log.id}`,
       kind: 'recent',
       title: log.sql.replace(/\s+/g, ' ').trim() || t('sidebar.command_search.recent_sql_fallback'),
@@ -445,7 +445,7 @@ export const useSidebarSearchModel = ({
       sql: log.sql,
       dbName: log.dbName,
     }));
-  }, [sqlLogs]);
+  }, [recentSqlLogs]);
 
   const commandSearchActionItems = useMemo<V2CommandSearchItem[]>(() => [
     {

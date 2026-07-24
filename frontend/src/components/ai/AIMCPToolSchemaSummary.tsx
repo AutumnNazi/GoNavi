@@ -121,7 +121,7 @@ const AIMCPToolSchemaSummary: React.FC<AIMCPToolSchemaSummaryProps> = ({
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+    <div className="gonavi-ai-mcp-tool-schema" style={{ padding: '10px 0', borderTop: `1px solid ${cardBorder}`, display: 'flex', flexDirection: 'column', gap: 8 }}>
       <div style={{ fontSize: 12, fontWeight: 700, color: overlayTheme.titleText }}>
         {copy('ai_settings.mcp_server.tool_schema_summary.title')}
       </div>
@@ -131,12 +131,12 @@ const AIMCPToolSchemaSummary: React.FC<AIMCPToolSchemaSummaryProps> = ({
           const previewParameters = summary.parameters.slice(0, MAX_PARAMETER_PREVIEW);
           return (
             <div
+              className="gonavi-ai-mcp-tool-schema-row"
               key={tool.alias}
               style={{
-                padding: '10px 12px',
-                borderRadius: 10,
-                border: `1px solid ${cardBorder}`,
-                background: darkMode ? 'rgba(255,255,255,0.025)' : 'rgba(255,255,255,0.78)',
+                padding: '10px 10px 10px 0',
+                borderBottom: `1px solid ${cardBorder}`,
+                background: 'transparent',
                 display: 'flex',
                 flexDirection: 'column',
                 gap: 6,

@@ -59,6 +59,21 @@ describe('UI version switch placement', () => {
     expect(appSource).toContain("gridTemplateColumns: '180px minmax(0, 1fr)', gap: 16, padding: '12px 0'");
   });
 
+  it('keeps theme and UI version radio tiles on one tab stop with complete keyboard navigation', () => {
+    const themeBranchIndex = appSource.indexOf("{themeModalSection === 'theme' ? (");
+    const appearanceBranchIndex = appSource.indexOf(") : themeModalSection === 'appearance' ? (", themeBranchIndex);
+    const themeSource = appSource.slice(themeBranchIndex, appearanceBranchIndex);
+
+    expect(themeSource).toContain(']).map((item, itemIndex, themeItems) => {');
+    expect(themeSource).toContain('tabIndex={themePreference === item.key ? 0 : -1}');
+    expect(themeSource).toContain('selectPresetTheme(themeItems[nextIndex].key);');
+    expect(themeSource).toContain(']).map((item, itemIndex, uiVersionItems) => {');
+    expect(themeSource).toContain('tabIndex={active ? 0 : -1}');
+    expect(themeSource).toContain('setAppearance({ uiVersion: uiVersionItems[nextIndex].key });');
+    expect(themeSource.match(/\['ArrowRight', 'ArrowDown', 'ArrowLeft', 'ArrowUp', 'Home', 'End'\]/g)).toHaveLength(2);
+    expect(themeSource.match(/querySelectorAll<HTMLElement>\('\[role="radio"\]'\)/g)).toHaveLength(2);
+  });
+
   it('isolates workspace settings and remembers the active section', () => {
     expect(appSource).toContain("value: 'workspace'");
     expect(appSource).toContain("t('app.theme.nav.workspace.title')");

@@ -200,6 +200,10 @@ func (m *MilvusDB) GetDatabases() ([]string, error) {
 
 	var raw interface{}
 	if err := m.doJSON(ctx, http.MethodPost, milvusDatabasesListPath, map[string]interface{}{}, &raw); err != nil {
+		if _, fallbackErr := m.listCollections(ctx, m.database); fallbackErr == nil {
+			logger.Warnf("Milvus 数据库列表接口不可用，回退到当前数据库 %s: %v", m.database, err)
+			return []string{m.database}, nil
+		}
 		return nil, err
 	}
 	names := milvusNamesFromValue(raw, "dbNames", "databases", "names")

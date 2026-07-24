@@ -1,5 +1,5 @@
-import React, { createContext, useContext, useEffect, useMemo } from "react";
-import type { I18nKey } from "./catalog";
+import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { hasCatalog, loadCatalog, type I18nKey } from "./catalog";
 import { t as translate } from "./index";
 import { resolveLanguage } from "./resolveLanguage";
 import { syncLanguageRuntime } from "./runtime";
@@ -29,10 +29,31 @@ export const I18nProvider: React.FC<{
   onPreferenceChange: (preference: LanguagePreference) => void;
 }> = ({ children, preference, systemLanguages, onPreferenceChange }) => {
   const language = resolveLanguage(preference, systemLanguages ?? readBrowserLanguages());
+  const [readyLanguage, setReadyLanguage] = useState<SupportedLanguage | null>(() =>
+    hasCatalog(language) ? language : null,
+  );
 
   useEffect(() => {
-    void syncLanguageRuntime(language);
+    let active = true;
+    if (hasCatalog(language)) {
+      setReadyLanguage(language);
+      return () => {
+        active = false;
+      };
+    }
+    void loadCatalog(language).then(() => {
+      if (active) setReadyLanguage(language);
+    });
+    return () => {
+      active = false;
+    };
   }, [language]);
+
+  useEffect(() => {
+    if (readyLanguage === language) {
+      void syncLanguageRuntime(language);
+    }
+  }, [language, readyLanguage]);
 
   const value = useMemo<I18nContextValue>(
     () => ({
@@ -44,6 +65,7 @@ export const I18nProvider: React.FC<{
     [language, onPreferenceChange, preference],
   );
 
+  if (readyLanguage !== language) return null;
   return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>;
 };
 

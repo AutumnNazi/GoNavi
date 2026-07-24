@@ -10,6 +10,7 @@ FROM --platform=$BUILDPLATFORM node:20-bookworm AS frontend
 # 仅 COPY frontend/ 会导致 tsc 报 Cannot find module '../../../shared/i18n/*'。
 WORKDIR /src/frontend
 COPY frontend/package.json frontend/package-lock.json ./
+COPY frontend/patches ./patches
 RUN npm ci --no-audit --no-fund
 COPY frontend/ ./
 COPY shared/ /src/shared/
@@ -42,10 +43,12 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates tzdata curl \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --system --create-home --home-dir /var/lib/gonavi --uid 10001 gonavi \
-    && mkdir -p /data /var/lib/gonavi/logs \
+    && mkdir -p /data /var/lib/gonavi/logs /usr/share/doc/gonavi \
     && chown -R gonavi:gonavi /data /var/lib/gonavi
 
 COPY --from=builder /out/gonavi /usr/local/bin/gonavi
+COPY --from=builder /src/LICENSE /usr/share/doc/gonavi/LICENSE
+COPY --from=builder /src/NOTICE /usr/share/doc/gonavi/NOTICE
 
 ENV HOME=/var/lib/gonavi \
     GONAVI_DATA_ROOT=/data \

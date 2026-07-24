@@ -14,16 +14,18 @@ interface AIHistoryDrawerProps {
     mutedColor: string;
     borderColor: string;
     onCreateNew: () => void;
+    onSelectSession: (sessionId: string) => void;
+    disabled?: boolean;
     sessionId: string;
 }
 
 export const AIHistoryDrawer: React.FC<AIHistoryDrawerProps> = ({
-    open, onClose, bgColor, darkMode, textColor, mutedColor, borderColor, onCreateNew, sessionId
+    open, onClose, bgColor, darkMode, textColor, mutedColor, borderColor,
+    onCreateNew, onSelectSession, disabled = false, sessionId
 }) => {
     const i18n = useOptionalI18n();
     const t = i18n?.t ?? ((key: string) => catalogTranslate('en-US', key));
     const aiChatSessions = useStore(state => state.aiChatSessions);
-    const setAIActiveSessionId = useStore(state => state.setAIActiveSessionId);
     const deleteAISession = useStore(state => state.deleteAISession);
 
     const [searchText, setSearchText] = useState('');
@@ -83,6 +85,7 @@ export const AIHistoryDrawer: React.FC<AIHistoryDrawerProps> = ({
                     type="dashed"
                     block
                     icon={<PlusOutlined />}
+                    disabled={disabled}
                     onClick={() => { onCreateNew(); onClose(); }}
                     style={{ borderColor: borderColor, color: textColor, background: 'transparent' }}
                 >
@@ -111,12 +114,17 @@ export const AIHistoryDrawer: React.FC<AIHistoryDrawerProps> = ({
                         <div
                             key={session.id}
                             className={`ai-history-item ${sessionId === session.id ? 'active' : ''}`}
-                            onClick={() => { setAIActiveSessionId(session.id); onClose(); }}
+                            aria-disabled={disabled}
+                            onClick={() => {
+                                if (disabled) return;
+                                onSelectSession(session.id);
+                                onClose();
+                            }}
                             style={{
                                 padding: '10px 12px',
                                 borderRadius: 6,
                                 marginBottom: 4,
-                                cursor: 'pointer',
+                                cursor: disabled ? 'not-allowed' : 'pointer',
                                 display: 'flex',
                                 justifyContent: 'space-between',
                                 alignItems: 'center',
@@ -138,6 +146,7 @@ export const AIHistoryDrawer: React.FC<AIHistoryDrawerProps> = ({
                                     type="text"
                                     size="small"
                                     danger
+                                    disabled={disabled}
                                     icon={<DeleteOutlined />}
                                     onClick={(e) => {
                                         e.stopPropagation();

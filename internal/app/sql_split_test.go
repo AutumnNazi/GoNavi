@@ -32,6 +32,65 @@ func TestSplitSQLStatements_LineComment(t *testing.T) {
 	}
 }
 
+func TestSplitSQLStatements_DropsCommentOnlyTail(t *testing.T) {
+	t.Parallel()
+
+	statement := "DELETE FROM users WHERE id = 1"
+	tests := []struct {
+		name  string
+		query string
+	}{
+		{name: "bare line comment marker", query: statement + ";--"},
+		{name: "line comment", query: statement + "; -- keep this operation pending"},
+		{name: "hash comment", query: statement + ";\n# keep this operation pending"},
+		{name: "block comment", query: statement + ";\n/* keep this operation pending */"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := splitSQLStatementsForDialect("mysql", tt.query)
+			want := []string{statement}
+			if !reflect.DeepEqual(got, want) {
+				t.Fatalf("splitSQLStatementsForDialect(mysql, %q) = %#v, want %#v", tt.query, got, want)
+			}
+		})
+	}
+}
+
+func TestSplitSQLStatements_PreservesExecutableMySQLComment(t *testing.T) {
+	t.Parallel()
+
+	query := "/*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;"
+	got := splitSQLStatementsForDialect("mysql", query)
+	want := []string{"/*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("splitSQLStatementsForDialect(mysql, %q) = %#v, want %#v", query, got, want)
+	}
+}
+
+func TestSplitSQLStatements_UsesDialectSpecificExecutableCommentRules(t *testing.T) {
+	t.Parallel()
+
+	mysqlComment := "/*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;"
+	mariaDBComment := "/*M!100100 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;"
+	if got := splitSQLStatementsForDialect("postgres", mysqlComment); len(got) != 0 {
+		t.Fatalf("expected PostgreSQL to drop MySQL-only executable comment, got %#v", got)
+	}
+	if got := splitSQLStatementsForDialect("mysql", mariaDBComment); len(got) != 0 {
+		t.Fatalf("expected MySQL to drop MariaDB-only executable comment, got %#v", got)
+	}
+	want := []string{"/*M!100100 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */"}
+	if got := splitSQLStatementsForDialect("mariadb", mariaDBComment); !reflect.DeepEqual(got, want) {
+		t.Fatalf("expected MariaDB statements %#v, got %#v", want, got)
+	}
+
+	statement := "DELETE FROM users WHERE id = 1"
+	want = []string{statement, "#comment"}
+	if got := splitSQLStatementsForDialect("postgres", statement+"; #comment"); !reflect.DeepEqual(got, want) {
+		t.Fatalf("expected PostgreSQL statements %#v, got %#v", want, got)
+	}
+}
+
 func TestSplitSQLStatements_BlockComment(t *testing.T) {
 	input := "SELECT /* ; */ 1; SELECT 2"
 	got := splitSQLStatements(input)

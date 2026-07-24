@@ -168,7 +168,30 @@ describe('useSQLFileExecutionRunner', () => {
     expect(cancelSpy).toHaveBeenCalledWith(jobId);
     expect(runner?.state.status).toBe('cancelled');
 
+    act(() => {
+      runtimeApi.emitProgress({
+        jobId,
+        status: 'running',
+        executed: 10,
+        percent: 100,
+      });
+      vi.advanceTimersByTime(20);
+    });
+    expect(runner?.state.status).toBe('cancelled');
+
     now = 6_000;
+    act(() => {
+      runtimeApi.emitProgress({
+        jobId,
+        status: 'cancelled',
+        executed: 11,
+        percent: 100,
+      });
+      vi.advanceTimersByTime(20);
+    });
+    expect(runner?.state.status).toBe('cancelled');
+    expect(runner?.state.executed).toBe(11);
+
     await act(async () => {
       resolveRun({ success: false, message: '已取消' });
       await runPromise;
@@ -176,5 +199,126 @@ describe('useSQLFileExecutionRunner', () => {
 
     expect(runner?.state.status).toBe('cancelled');
     expect(runner?.state.finishedAt).toBe(6_000);
+  });
+
+  it('keeps a running task below 100 percent until completion', async () => {
+    renderRunner();
+
+    let resolveRun!: (value: { success: boolean; message: string }) => void;
+    const pendingRun = new Promise<{ success: boolean; message: string }>((resolve) => {
+      resolveRun = resolve;
+    });
+
+    let runPromise: Promise<{ success: boolean; message: string } | null> | null = null;
+    await act(async () => {
+      runPromise = runner?.runSQLFileExecutionWithProgress({
+        title: 'small-prefetched.sql',
+        filePath: 'D:/sql/small-prefetched.sql',
+        run: async () => pendingRun,
+      }) || null;
+      await Promise.resolve();
+    });
+
+    const jobId = runner?.state.jobId || '';
+    act(() => {
+      runtimeApi.emitProgress({
+        jobId,
+        status: 'running',
+        executed: 28,
+        failed: 0,
+        percent: 100,
+      });
+      vi.advanceTimersByTime(20);
+    });
+
+    expect(runner?.state.status).toBe('running');
+    expect(runner?.state.percent).toBe(99);
+
+    await act(async () => {
+      resolveRun({ success: true, message: '执行完成' });
+      await runPromise;
+    });
+
+    expect(runner?.state.status).toBe('done');
+    expect(runner?.state.percent).toBe(100);
+  });
+
+  it('keeps 100 percent when the whole file completed with failed statements', async () => {
+    renderRunner();
+
+    let resolveRun!: (value: { success: boolean; message: string }) => void;
+    const pendingRun = new Promise<{ success: boolean; message: string }>((resolve) => {
+      resolveRun = resolve;
+    });
+
+    let runPromise: Promise<{ success: boolean; message: string } | null> | null = null;
+    await act(async () => {
+      runPromise = runner?.runSQLFileExecutionWithProgress({
+        title: 'completed-with-errors.sql',
+        filePath: 'D:/sql/completed-with-errors.sql',
+        run: async () => pendingRun,
+      }) || null;
+      await Promise.resolve();
+    });
+
+    act(() => {
+      runtimeApi.emitProgress({
+        jobId: runner?.state.jobId,
+        status: 'done',
+        executed: 27,
+        failed: 1,
+        percent: 100,
+      });
+      vi.advanceTimersByTime(20);
+    });
+
+    await act(async () => {
+      resolveRun({ success: false, message: '1 statement failed' });
+      await runPromise;
+    });
+
+    expect(runner?.state.status).toBe('error');
+    expect(runner?.state.failed).toBe(1);
+    expect(runner?.state.percent).toBe(100);
+  });
+
+  it('keeps the RPC error status when a queued done event flushes later', async () => {
+    renderRunner();
+
+    let resolveRun!: (value: { success: boolean; message: string }) => void;
+    const pendingRun = new Promise<{ success: boolean; message: string }>((resolve) => {
+      resolveRun = resolve;
+    });
+
+    let runPromise: Promise<{ success: boolean; message: string } | null> | null = null;
+    await act(async () => {
+      runPromise = runner?.runSQLFileExecutionWithProgress({
+        title: 'queued-done.sql',
+        filePath: 'D:/sql/queued-done.sql',
+        run: async () => pendingRun,
+      }) || null;
+      await Promise.resolve();
+    });
+
+    act(() => {
+      runtimeApi.emitProgress({
+        jobId: runner?.state.jobId,
+        status: 'done',
+        executed: 27,
+        failed: 1,
+        percent: 100,
+      });
+    });
+    await act(async () => {
+      resolveRun({ success: false, message: '1 statement failed' });
+      await runPromise;
+    });
+    act(() => {
+      vi.advanceTimersByTime(20);
+    });
+
+    expect(runner?.state.status).toBe('error');
+    expect(runner?.state.failed).toBe(1);
+    expect(runner?.state.percent).toBe(100);
   });
 });

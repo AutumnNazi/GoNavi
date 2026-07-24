@@ -9,6 +9,7 @@ import { buildOverlayWorkbenchTheme } from '../utils/overlayWorkbenchTheme';
 import { buildRpcConnectionConfig } from '../utils/connectionRpcConfig';
 import { isMacLikePlatform } from '../utils/appearance';
 import { useI18n } from '../i18n/provider';
+import { normalizeTableNamesFromMetadataRows } from '../utils/tableMetadataRows';
 
 interface FindInDatabaseModalProps {
     open: boolean;
@@ -117,8 +118,7 @@ const FindInDatabaseModal: React.FC<FindInDatabaseModalProps> = ({ open, onClose
                 setSearching(false);
                 return;
             }
-            const tableRows: any[] = Array.isArray(tablesRes.data) ? tablesRes.data : [];
-            const tableNames = tableRows.map((row: any) => Object.values(row)[0] as string).filter(Boolean);
+            const tableNames = normalizeTableNamesFromMetadataRows(tablesRes.data);
 
             if (tableNames.length === 0) {
                 message.info(t('find_in_database.message.no_tables'));

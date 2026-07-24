@@ -195,6 +195,27 @@ describe('aiSlashCommands', () => {
     expect(filterAISlashCommands('/mcpf').map((command) => command.cmd)).toContain('/mcpfail');
   });
 
+  it('routes OpenCode questions to the MCP setup command in every catalog', () => {
+    const command = filterAISlashCommands('opencode').find((item) => item.cmd === '/mcp');
+    expect(command?.prompt).toContain('OpenCode');
+
+    const catalogs = [zhCnCatalog, zhTwCatalog, enUsCatalog, jaJpCatalog, deDeCatalog, ruRuCatalog];
+    const namedKeys = [
+      'ai_chat.input.slash.mcp.prompt',
+      'ai_chat.inspection.setup.next_action.connect_external_client',
+      'ai_chat.inspection.setup.warning.external_client_not_connected',
+      'ai_chat.inspection.tool_info.inspect_mcp_setup.detail',
+      'ai_chat.system.inspection_guidance.inspect_mcp_setup',
+      'ai_settings.mcp_server.remote_quick_start.guide.boundary.local_stdio',
+    ];
+    for (const catalog of catalogs) {
+      expect(String(catalog['ai_chat.input.slash.mcp.keywords']).toLowerCase()).toContain('opencode');
+      for (const key of namedKeys) {
+        expect(catalog[key]).toContain('OpenCode');
+      }
+    }
+  });
+
   it('supports filtering mcp draft validation diagnostics by keyword and command prefix', () => {
     expect(filterAISlashCommands('MCP草稿', zhCnTranslate).map((command) => command.cmd)).toContain('/mcpdraft');
     expect(filterAISlashCommands('启动命令', zhCnTranslate).map((command) => command.cmd)).toContain('/mcpdraft');

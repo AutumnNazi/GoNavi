@@ -5,6 +5,7 @@ import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 
 import { useStore } from '../../store';
 import type { AIToolCall } from '../../types';
+import { clearQueryTabDraft, setQueryTabDraft } from '../../utils/sqlFileTabDrafts';
 import { useAIChatLocalTools } from './useAIChatLocalTools';
 
 const compressContextIfNeededMock = vi.hoisted(() => vi.fn<() => Promise<string | null>>(async () => null));
@@ -195,6 +196,7 @@ describe('useAIChatLocalTools', () => {
   });
 
   afterEach(() => {
+    clearQueryTabDraft('tab-1');
     vi.useRealTimers();
     useStore.setState({
       activeContext: null,
@@ -209,6 +211,29 @@ describe('useAIChatLocalTools', () => {
       sqlSnippets: [],
       externalSQLDirectories: [],
     });
+  });
+
+  it('passes the latest editor draft to SQL inspection tools without a Zustand tab write', async () => {
+    setQueryTabDraft('tab-1', 'select live SQL from editor');
+    let renderer: ReactTestRenderer | undefined;
+    await act(async () => {
+      renderer = create(<LocalToolsHarness />);
+    });
+
+    const run = latestHook!.executeLocalTools([buildToolCall('inspect_active_tab')], 'assistant-1');
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(150);
+      await run;
+    });
+
+    const executionOptions = executeLocalAIToolCallMock.mock.calls[0]?.[0] as any;
+    expect(executionOptions.tabs[0]).toEqual(expect.objectContaining({
+      id: 'tab-1',
+      query: 'select live SQL from editor',
+    }));
+    expect(useStore.getState().tabs[0]?.query).toBe('select * from orders');
+
+    await act(async () => renderer?.unmount());
   });
 
   it('writes tool results, closes the tool-calling message, and excludes connecting placeholders from the chained request', async () => {

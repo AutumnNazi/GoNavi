@@ -132,4 +132,58 @@ describe('aiProviderInsights', () => {
     expect(snapshot.missingSelectedModelCount).toBe(0);
     expect(snapshot.providers[0].issues).toEqual(['missing_declared_models']);
   });
+
+  it('does not require secrets, endpoints, or models for local CLI subscriptions', () => {
+    const snapshot = buildAIProviderSnapshot({
+      providers: [{
+        id: 'provider-claude',
+        type: 'custom',
+        name: 'Claude Subscription',
+        apiKey: '',
+        hasSecret: false,
+        authMode: 'local-cli',
+        baseUrl: '',
+        model: '',
+        models: [],
+        apiFormat: 'claude-cli',
+        maxTokens: 4096,
+        temperature: 0.2,
+      }],
+      activeProviderId: 'provider-claude',
+    });
+
+    expect(snapshot.providers[0]).toMatchObject({
+      authMode: 'local-cli',
+      issues: [],
+      status: 'ready',
+    });
+    expect(snapshot.missingSecretCount).toBe(0);
+    expect(snapshot.missingBaseUrlCount).toBe(0);
+    expect(snapshot.missingSelectedModelCount).toBe(0);
+  });
+
+  it('reports invalid local-cli combinations as incomplete API providers', () => {
+    const snapshot = buildAIProviderSnapshot({
+      providers: [{
+        id: 'provider-invalid',
+        type: 'custom',
+        name: 'Invalid local CLI',
+        apiKey: '',
+        hasSecret: false,
+        authMode: 'local-cli',
+        baseUrl: '',
+        model: '',
+        models: [],
+        apiFormat: 'openai',
+        maxTokens: 4096,
+        temperature: 0.2,
+      }],
+      activeProviderId: 'provider-invalid',
+    });
+
+    expect(snapshot.providers[0]).toMatchObject({
+      status: 'needs_attention',
+      issues: ['missing_secret', 'missing_base_url', 'missing_selected_model', 'missing_declared_models'],
+    });
+  });
 });

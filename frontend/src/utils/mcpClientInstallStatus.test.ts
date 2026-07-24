@@ -9,6 +9,7 @@ import {
   isRemoteMCPClientStatus,
   normalizeMCPClientStatuses,
   pickPreferredMCPClient,
+  supportsAutoMCPClientInstall,
 } from './mcpClientInstallStatus';
 
 describe('mcpClientInstallStatus helpers', () => {
@@ -39,7 +40,27 @@ describe('mcpClientInstallStatus helpers', () => {
       },
       EMPTY_MCP_CLIENT_STATUSES[2],
       EMPTY_MCP_CLIENT_STATUSES[3],
+      EMPTY_MCP_CLIENT_STATUSES[4],
     ]);
+  });
+
+  it('keeps OpenCode in the local auto-install client order', () => {
+    expect(EMPTY_MCP_CLIENT_STATUSES.map((item) => item.client)).toEqual([
+      'claude-code',
+      'codex',
+      'opencode',
+      'openclaw',
+      'hermans',
+    ]);
+
+    const openCode = EMPTY_MCP_CLIENT_STATUSES.find((item) => item.client === 'opencode');
+    expect(openCode).toMatchObject({
+      displayName: 'OpenCode',
+      installMode: 'auto',
+      clientCommand: 'opencode',
+    });
+    expect(supportsAutoMCPClientInstall(openCode)).toBe(true);
+    expect(isRemoteMCPClientStatus(openCode)).toBe(false);
   });
 
   it('prefers an already-installed but outdated client over a completely uninstalled one', () => {
@@ -166,7 +187,24 @@ describe('mcpClientInstallStatus helpers', () => {
 
   it('keeps the user-selected client when it is still present in the latest status list', () => {
     expect(pickPreferredMCPClient(EMPTY_MCP_CLIENT_STATUSES, 'codex')).toBe('codex');
+    expect(pickPreferredMCPClient(EMPTY_MCP_CLIENT_STATUSES, 'opencode')).toBe('opencode');
     expect(pickPreferredMCPClient(EMPTY_MCP_CLIENT_STATUSES, 'openclaw')).toBe('openclaw');
+  });
+
+  it('prefers a detected OpenCode CLI over clients without local commands or config', () => {
+    const statuses = normalizeMCPClientStatuses([{
+      client: 'opencode',
+      displayName: 'OpenCode',
+      installMode: 'auto',
+      installed: false,
+      matchesCurrent: false,
+      clientDetected: true,
+      clientCommand: 'opencode',
+      clientPath: '/usr/local/bin/opencode',
+      message: 'No OpenCode user-level GoNavi MCP configuration was detected',
+    }]);
+
+    expect(pickPreferredMCPClient(statuses)).toBe('opencode');
   });
 
   it('formats quoted launch commands for display and clipboard use', () => {
@@ -185,6 +223,7 @@ describe('mcpClientInstallStatus helpers', () => {
     expect(guide).toContain('The cloud Agent does not need to store database passwords.');
     expect(guide).toContain('Remote access uses schema-only mode by default and does not register execute_sql');
     expect(guide).toContain('it cannot use the Windows local stdio command directly');
+    expect(guide).toContain('Claude Code / Codex / OpenCode');
     expect(guide).toContain('allowMutating=true');
     expect(guide).toContain('"type": "streamable-http"');
     expect(guide).toContain('"Authorization": "Bearer <random-token>"');

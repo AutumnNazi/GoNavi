@@ -1,13 +1,191 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+    buildBoundedQueryEditorCompletionSuggestions,
+    buildQueryEditorAliasMap,
     collectQueryEditorReferencedDatabaseNames,
+    createBoundedQueryEditorCompletionCandidateBatch,
+    findCompletionTablesByDatabase,
+    getCompletionTableSchemaCounts,
+    isOracleBaseTableReference,
+    materializeBoundedQueryEditorCompletionBatches,
+    rankQueryEditorCompletionCandidate,
     resolveOracleLikeDefaultSchemaName,
     resolveOracleLikeExecutionSchemaName,
     resolveOracleLikeLookupSchemaCandidates,
+    resolveQueryEditorMonacoLanguage,
     resolveQueryEditorNavigationTarget,
+    selectUnqualifiedCompletionSynonyms,
     shouldHandleQueryEditorRunShortcutFallback,
 } from './QueryEditorHelpers';
+
+describe('QueryEditor completion candidate budget', () => {
+    it('builds at most the budget after ranking exact, prefix, and substring matches', () => {
+        const candidates = [
+            ...Array.from({ length: 5_000 }, (_, index) => `archive_entity_${String(index).padStart(4, '0')}`),
+            'entity_primary',
+            'entity',
+        ];
+        let materialized = 0;
+
+        const suggestions = buildBoundedQueryEditorCompletionSuggestions({
+            candidates,
+            prefix: 'entity',
+            getMatchRank: (candidate, prefix) => rankQueryEditorCompletionCandidate(prefix, [candidate]),
+            getSelectionKey: (candidate, _prefix, rank) => `${rank}${candidate}`,
+            buildSuggestion: (candidate) => {
+                materialized += 1;
+                const rank = rankQueryEditorCompletionCandidate('entity', [candidate]);
+                return { label: candidate, sortText: `${rank}${candidate}` };
+            },
+        });
+
+        expect(suggestions).toHaveLength(200);
+        expect(materialized).toBe(200);
+        expect(suggestions.slice(0, 2).map((item) => item.label)).toEqual(['entity', 'entity_primary']);
+    });
+
+    it('stops scanning an empty-prefix source once the budget is full', () => {
+        let inspected = 0;
+        const candidates = Array.from({ length: 10_000 }, (_, index) => `table_${String(index).padStart(5, '0')}`);
+
+        const suggestions = buildBoundedQueryEditorCompletionSuggestions({
+            candidates,
+            prefix: '',
+            getMatchRank: () => {
+                inspected += 1;
+                return 0;
+            },
+            getSelectionKey: (candidate) => candidate,
+            buildSuggestion: (candidate) => ({ label: candidate }),
+            sourceAlreadySortedBySelection: true,
+        });
+
+        expect(suggestions).toHaveLength(200);
+        expect(inspected).toBe(200);
+    });
+
+    it('keeps a late same-rank candidate when its final sort key is better', () => {
+        const candidates = [
+            ...Array.from({ length: 200 }, (_, index) => ({
+                label: `other_${index}`,
+                sortText: `10${String(index).padStart(3, '0')}`,
+            })),
+            { label: 'current_late', sortText: '00current_late' },
+        ];
+        let materialized = 0;
+
+        const suggestions = buildBoundedQueryEditorCompletionSuggestions({
+            candidates,
+            prefix: '',
+            getMatchRank: () => 0,
+            getSelectionKey: (candidate) => candidate.sortText,
+            buildSuggestion: (candidate) => {
+                materialized += 1;
+                return candidate;
+            },
+        });
+
+        expect(suggestions).toHaveLength(200);
+        expect(materialized).toBe(200);
+        expect(suggestions.map((item) => item.label)).toContain('current_late');
+    });
+
+    it('uses final sortText semantics when a late exact match ranks after current-database prefixes', () => {
+        const candidates = [
+            ...Array.from({ length: 200 }, (_, index) => ({
+                label: `current_prefix_${String(index).padStart(3, '0')}`,
+                matchRank: 1 as const,
+                sortText: `00current_${String(index).padStart(3, '0')}`,
+            })),
+            { label: 'other_exact', matchRank: 0 as const, sortText: '01other_exact' },
+        ];
+
+        const suggestions = buildBoundedQueryEditorCompletionSuggestions({
+            candidates,
+            prefix: 'target',
+            getMatchRank: (candidate) => candidate.matchRank,
+            getSelectionKey: (candidate) => candidate.sortText,
+            buildSuggestion: (candidate) => candidate,
+        });
+
+        expect(suggestions).toHaveLength(200);
+        expect(suggestions.map((item) => item.label)).not.toContain('other_exact');
+        expect(suggestions[199]?.label).toBe('current_prefix_199');
+    });
+
+    it('materializes at most one global budget across nine completion categories', () => {
+        let materialized = 0;
+        const batches = Array.from({ length: 9 }, (_, groupIndex) => (
+            createBoundedQueryEditorCompletionCandidateBatch({
+                candidates: Array.from({ length: 500 }, (_, candidateIndex) => ({
+                    label: `group_${groupIndex}_${candidateIndex}`,
+                    sortText: `${String(groupIndex).padStart(2, '0')}${String(candidateIndex).padStart(3, '0')}`,
+                })),
+                prefix: '',
+                getMatchRank: () => 0,
+                getSelectionKey: (candidate) => candidate.sortText,
+                buildSuggestion: (candidate) => {
+                    materialized += 1;
+                    return candidate;
+                },
+            })
+        ));
+
+        expect(materialized).toBe(0);
+        const suggestions = materializeBoundedQueryEditorCompletionBatches(batches);
+
+        expect(suggestions).toHaveLength(200);
+        expect(materialized).toBe(200);
+        expect(suggestions[0]?.label).toBe('group_0_0');
+        expect(suggestions[199]?.label).toBe('group_0_199');
+    });
+
+    it('caches schema counts on the current-database partition without reading other table names', () => {
+        let currentTableNameReads = 0;
+        let otherTableNameReads = 0;
+        const currentTables = Array.from({ length: 3 }, (_, index) => ({
+            dbName: 'main',
+            get tableName() {
+                currentTableNameReads += 1;
+                return index < 2 ? `schema_${index}.users` : 'orders';
+            },
+        }));
+        const otherTables = Array.from({ length: 5_000 }, (_, index) => ({
+            dbName: 'archive',
+            get tableName() {
+                otherTableNameReads += 1;
+                return `archive_${index}`;
+            },
+        }));
+        const allTables = [...otherTables, ...currentTables];
+
+        const firstPartition = findCompletionTablesByDatabase(allTables, 'main');
+        const firstCounts = getCompletionTableSchemaCounts(firstPartition);
+        const secondPartition = findCompletionTablesByDatabase(allTables, 'main');
+        const secondCounts = getCompletionTableSchemaCounts(secondPartition);
+
+        expect(firstPartition).toBe(secondPartition);
+        expect(firstCounts).toBe(secondCounts);
+        expect(firstCounts.get('users')).toBe(2);
+        expect(firstCounts.get('orders')).toBe(1);
+        expect(currentTableNameReads).toBe(3);
+        expect(otherTableNameReads).toBe(0);
+    });
+});
+
+describe('QueryEditor Monaco SQL grammar', () => {
+    it.each([
+        [{ config: { type: 'mysql' } }, 'mysql'],
+        [{ config: { type: 'mariadb' } }, 'mysql'],
+        [{ config: { type: 'custom', driver: 'greatdb' } }, 'mysql'],
+        [{ config: { type: 'oceanbase', oceanBaseProtocol: 'mysql' } }, 'mysql'],
+        [{ config: { type: 'oceanbase', oceanBaseProtocol: 'oracle' } }, 'sql'],
+        [{ config: { type: 'postgres' } }, 'sql'],
+    ])('maps connection row %# to the expected Monaco grammar', (connection, expectedLanguage) => {
+        expect(resolveQueryEditorMonacoLanguage(connection)).toBe(expectedLanguage);
+    });
+});
 
 describe('QueryEditor run shortcut routing', () => {
     it('reserves editor-originated shortcuts for Monaco and keeps document targets as a fallback', () => {
@@ -58,9 +236,45 @@ describe('QueryEditorHelpers Oracle-like execution schema', () => {
         expect(resolveOracleLikeExecutionSchemaName(config, 'APP_OWNER')).toBe('APP_OWNER');
         expect(resolveOracleLikeLookupSchemaCandidates(config, 'APP_OWNER')).toEqual(['APP_OWNER']);
     });
+
+    it('recognizes base tables but not synonyms when deciding whether ROWID is safe', () => {
+        const baseTables = [
+            { dbName: 'A', tableName: 'A.PERSON' },
+            { dbName: 'B', tableName: 'B.ORDERS' },
+        ];
+
+        expect(isOracleBaseTableReference('SELECT * FROM A.person', 'A', baseTables)).toBe(true);
+        expect(isOracleBaseTableReference('SELECT * FROM person', 'B', baseTables)).toBe(false);
+        expect(isOracleBaseTableReference('SELECT * FROM person_view', 'B', baseTables)).toBe(false);
+    });
+
+    it('prefers login-owner synonyms, falls back to PUBLIC, and excludes other owners', () => {
+        const otherOwner = { ownerName: 'IMP_BASICINFO', synonymName: 'PERSON', targetName: 'OTHER_PERSON' };
+        const publicOwner = { ownerName: 'PUBLIC', synonymName: 'PERSON', targetName: 'PUBLIC_PERSON' };
+        const loginOwner = { ownerName: 'B', synonymName: 'PERSON', targetName: 'LOGIN_PERSON' };
+        const otherOnly = { ownerName: 'IMP_BASICINFO', synonymName: 'AC02', targetName: 'AC02' };
+
+        expect(selectUnqualifiedCompletionSynonyms(
+            [otherOwner, publicOwner, otherOnly, loginOwner],
+            'B',
+        )).toEqual([loginOwner]);
+        expect(selectUnqualifiedCompletionSynonyms([otherOwner, publicOwner, otherOnly], 'B')).toEqual([publicOwner]);
+    });
 });
 
 describe('QueryEditorHelpers qualified navigation (MySQL db.table + PG schema.table)', () => {
+    it('tracks an explicit two-part owner separately from the current database', () => {
+        const qualified = buildQueryEditorAliasMap('SELECT p.* FROM IMP_BASICINFO.PERSON p', 'A');
+        expect(qualified.p).toEqual({
+            dbName: 'IMP_BASICINFO',
+            tableName: 'PERSON',
+            explicitOwnerName: 'IMP_BASICINFO',
+        });
+
+        const unqualified = buildQueryEditorAliasMap('SELECT p.* FROM PERSON p', 'A');
+        expect(unqualified.p).toEqual({ dbName: 'A', tableName: 'PERSON' });
+    });
+
     it('collects cross-db names from SQL without requiring an empty visible list', () => {
         const sql = `
 SELECT * FROM uk_back_corp;

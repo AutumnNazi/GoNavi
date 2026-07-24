@@ -193,3 +193,52 @@ func TestBuildMySQLShowCreateTableQueryNormalizesQuotedIdentifiers(t *testing.T)
 		})
 	}
 }
+
+func TestBuildMySQLShowFullColumnsQueryEscapesIdentifiers(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		dbName    string
+		tableName string
+		want      string
+	}{
+		{
+			name:      "plain qualified table",
+			dbName:    "app",
+			tableName: "users",
+			want:      "SHOW FULL COLUMNS FROM `app`.`users`",
+		},
+		{
+			name:      "backticks cannot terminate identifiers",
+			dbName:    "app`prod",
+			tableName: "audit`log",
+			want:      "SHOW FULL COLUMNS FROM `app``prod`.`audit``log`",
+		},
+		{
+			name:      "quoted qualified table overrides database",
+			dbName:    "ignored",
+			tableName: `"sales.region"."daily.order"`,
+			want:      "SHOW FULL COLUMNS FROM `sales.region`.`daily.order`",
+		},
+		{
+			name:      "quoted dotted table remains one identifier",
+			dbName:    "app",
+			tableName: "`audit.logs`",
+			want:      "SHOW FULL COLUMNS FROM `app`.`audit.logs`",
+		},
+		{
+			name:      "table without database",
+			tableName: "standalone",
+			want:      "SHOW FULL COLUMNS FROM `standalone`",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := buildMySQLShowFullColumnsQuery(tt.dbName, tt.tableName); got != tt.want {
+				t.Fatalf("buildMySQLShowFullColumnsQuery(%q,%q)=%q,want=%q", tt.dbName, tt.tableName, got, tt.want)
+			}
+		})
+	}
+}

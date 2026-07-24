@@ -10,7 +10,7 @@ import (
 )
 
 // CustomProvider 自定义 Provider，根据 apiFormat 选择底层协议
-// 支持 openai / anthropic / gemini / cursor-agent 等 API 格式
+// 支持 openai / openai-responses / anthropic / gemini / cursor-agent / CLI 等 API 格式
 type CustomProvider struct {
 	inner Provider
 	name  string
@@ -23,19 +23,23 @@ func NewCustomProvider(config ai.ProviderConfig) (Provider, error) {
 	if apiFormat == "" {
 		apiFormat = "openai"
 	}
-	if strings.TrimSpace(config.BaseURL) == "" && apiFormat != "claude-cli" && apiFormat != "codebuddy-cli" {
+	if strings.TrimSpace(config.BaseURL) == "" && apiFormat != "codex-cli" && apiFormat != "claude-cli" && apiFormat != "codebuddy-cli" {
 		return nil, fmt.Errorf("custom provider Base URL is required")
 	}
 
 	var innerProvider Provider
 	var err error
 	switch apiFormat {
+	case "openai-responses":
+		innerProvider, err = NewOpenAIResponsesProvider(config)
 	case "anthropic":
 		innerProvider, err = NewAnthropicProvider(config)
 	case "gemini":
 		innerProvider, err = NewGeminiProvider(config)
 	case "cursor-agent":
 		innerProvider, err = NewCursorAgentProvider(config)
+	case "codex-cli":
+		innerProvider, err = NewCodexCLIProvider(config)
 	case "claude-cli":
 		innerProvider, err = NewClaudeCLIProvider(config)
 	case "codebuddy-cli":

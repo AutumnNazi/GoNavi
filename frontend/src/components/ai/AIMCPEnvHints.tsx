@@ -53,11 +53,12 @@ const AIMCPEnvHints: React.FC<AIMCPEnvHintsProps> = ({
 
   return (
     <div
+      className="gonavi-ai-mcp-env-hints"
       style={{
-        padding: '10px 12px',
-        borderRadius: 10,
-        border: `1px dashed ${cardBorder}`,
-        background: darkMode ? 'rgba(255,255,255,0.025)' : 'rgba(255,255,255,0.7)',
+        padding: '10px 0',
+        borderTop: `1px solid ${cardBorder}`,
+        borderBottom: `1px solid ${cardBorder}`,
+        background: 'transparent',
         display: 'flex',
         flexDirection: 'column',
         gap: 8,
@@ -75,12 +76,12 @@ const AIMCPEnvHints: React.FC<AIMCPEnvHintsProps> = ({
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 8 }}>
         {profile.items.map((item) => (
           <div
+            className="gonavi-ai-mcp-env-hint-row"
             key={item.key}
             style={{
-              padding: '8px 10px',
-              borderRadius: 10,
-              border: `1px solid ${cardBorder}`,
-              background: darkMode ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.82)',
+              padding: '8px 10px 8px 0',
+              borderBottom: `1px solid ${cardBorder}`,
+              background: 'transparent',
               display: 'flex',
               flexDirection: 'column',
               gap: 5,
@@ -92,7 +93,7 @@ const AIMCPEnvHints: React.FC<AIMCPEnvHintsProps> = ({
                 style={{
                   padding: '1px 7px',
                   borderRadius: 999,
-                  fontSize: 11,
+                  fontSize: 'var(--gn-font-size-sm, 12px)',
                   fontWeight: 700,
                   color: categoryColor[item.category],
                   background: darkMode ? 'rgba(255,255,255,0.06)' : 'rgba(15,23,42,0.05)',

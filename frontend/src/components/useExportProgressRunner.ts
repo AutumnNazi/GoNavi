@@ -1,38 +1,24 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useSyncExternalStore } from 'react';
 import { message } from 'antd';
-import { EventsOn } from '../../wailsjs/runtime/runtime';
 import { t } from '../i18n';
-import type { ExportProgressStatus } from '../utils/exportProgress';
+import {
+  createEphemeralExportProgressTaskKey,
+  consumeExportProgressTaskRequest,
+  finishExportProgressTask,
+  getExportProgressTaskSnapshot,
+  isExportProgressTaskRunning,
+  resetExportProgressTask,
+  startExportProgressTask,
+  subscribeExportProgressTask,
+  type ExportProgressState,
+} from './exportProgressTaskStore';
 
-export type ExportProgressEvent = {
-  jobId: string;
-  status?: ExportProgressStatus;
-  stage?: string;
-  current?: number;
-  total?: number;
-  totalRowsKnown?: boolean;
-  format?: string;
-  targetName?: string;
-  filePath?: string;
-  message?: string;
-};
-
-export type ExportProgressState = {
-  open: boolean;
-  jobId: string;
-  title: string;
-  targetName: string;
-  format: string;
-  startedAt: number;
-  finishedAt: number;
-  status: ExportProgressStatus;
-  stage: string;
-  current: number;
-  total: number;
-  totalRowsKnown: boolean;
-  filePath: string;
-  message: string;
-};
+export type {
+  ExportProgressEvent,
+  ExportProgressLogEntry,
+  ExportProgressState,
+  ExportProgressTaskSnapshot,
+} from './exportProgressTaskStore';
 
 export type ExportRunResult = {
   success: boolean;
@@ -47,26 +33,11 @@ export type RunExportWithProgressOptions<T extends ExportRunResult> = {
   run: (jobId: string) => Promise<T>;
 };
 
-type UseExportProgressRunnerOptions = {
+export type UseExportProgressRunnerOptions = {
   showToast?: boolean;
+  taskKey?: string;
+  requestKey?: string;
 };
-
-const createInitialState = (): ExportProgressState => ({
-  open: false,
-  jobId: '',
-  title: '',
-  targetName: '',
-  format: '',
-  startedAt: 0,
-  finishedAt: 0,
-  status: 'idle',
-  stage: '',
-  current: 0,
-  total: 0,
-  totalRowsKnown: false,
-  filePath: '',
-  message: '',
-});
 
 const normalizeCount = (value: unknown): number => {
   const next = Number(value);
@@ -86,66 +57,43 @@ const hasUsableTotalRows = (known: boolean, total: unknown): boolean => {
 const buildExportJobId = (): string => `export-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 const EXPORT_CANCELED_MESSAGE = '\u5df2\u53d6\u6d88';
 
-const isActiveExportStatus = (status: ExportProgressStatus): boolean =>
-  status === 'start' || status === 'running' || status === 'finalizing' || status === 'done' || status === 'error';
-
 export function useExportProgressRunner(options?: UseExportProgressRunnerOptions) {
   const showToast = options?.showToast !== false;
-  const [state, setState] = useState<ExportProgressState>(() => createInitialState());
-  const activeJobIdRef = useRef('');
+  const configuredTaskKey = String(options?.taskKey || '').trim();
+  const configuredRequestKey = String(options?.requestKey || '').trim();
+  const ephemeralTaskKeyRef = useRef<string | null>(null);
+  if (!ephemeralTaskKeyRef.current) {
+    ephemeralTaskKeyRef.current = createEphemeralExportProgressTaskKey();
+  }
+  const taskKey = configuredTaskKey || ephemeralTaskKeyRef.current;
+  const retainAfterUnmount = configuredTaskKey !== '';
+
+  const subscribe = useCallback(
+    (listener: () => void) => subscribeExportProgressTask(taskKey, listener, retainAfterUnmount),
+    [retainAfterUnmount, taskKey],
+  );
+  const getSnapshot = useCallback(
+    () => getExportProgressTaskSnapshot(taskKey, retainAfterUnmount),
+    [retainAfterUnmount, taskKey],
+  );
+  const snapshot = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+  const state = snapshot.state;
 
   useEffect(() => {
-    const off = EventsOn('export:progress', (event: ExportProgressEvent) => {
-      if (!event || String(event.jobId || '') !== activeJobIdRef.current) {
-        return;
-      }
-
-      setState((prev) => {
-        if (prev.jobId !== activeJobIdRef.current) {
-          return prev;
-        }
-        const nextStatus = (event.status || prev.status || 'running') as ExportProgressStatus;
-        const nextStartedAt = prev.startedAt > 0 || !isActiveExportStatus(nextStatus)
-          ? prev.startedAt
-          : Date.now();
-        const rawNextTotal = normalizeCount(typeof event.total === 'number' ? event.total : prev.total);
-        const requestedTotalRowsKnown = typeof event.totalRowsKnown === 'boolean' ? event.totalRowsKnown : prev.totalRowsKnown;
-        const nextTotalRowsKnown = hasUsableTotalRows(requestedTotalRowsKnown, rawNextTotal);
-        const nextTotal = nextTotalRowsKnown ? rawNextTotal : 0;
-        return {
-          ...prev,
-          open: true,
-          startedAt: nextStartedAt,
-          status: nextStatus,
-          finishedAt: (nextStatus === 'done' || nextStatus === 'error')
-            ? (prev.finishedAt || Date.now())
-            : prev.finishedAt,
-          stage: typeof event.stage === 'string' && event.stage.trim() ? event.stage.trim() : prev.stage,
-          current: normalizeCount(typeof event.current === 'number' ? event.current : prev.current),
-          total: nextTotal,
-          totalRowsKnown: nextTotalRowsKnown,
-          format: typeof event.format === 'string' && event.format.trim() ? String(event.format).toUpperCase() : prev.format,
-          targetName: typeof event.targetName === 'string' && event.targetName.trim() ? event.targetName.trim() : prev.targetName,
-          filePath: typeof event.filePath === 'string' && event.filePath.trim() ? event.filePath.trim() : prev.filePath,
-          message: typeof event.message === 'string' ? event.message : prev.message,
-        };
-      });
-    });
-
-    return () => {
-      if (typeof off === 'function') off();
-    };
-  }, []);
+    if (!configuredRequestKey || configuredRequestKey === state.requestKey) {
+      return;
+    }
+    consumeExportProgressTaskRequest(taskKey, configuredRequestKey);
+  }, [configuredRequestKey, state.requestKey, state.status, taskKey]);
 
   const reset = useCallback(() => {
-    activeJobIdRef.current = '';
-    setState(createInitialState());
-  }, []);
+    resetExportProgressTask(taskKey);
+  }, [taskKey]);
 
   const runExportWithProgress = useCallback(async <T extends ExportRunResult,>(
     runOptions: RunExportWithProgressOptions<T>,
   ): Promise<T | null> => {
-    if (state.open && (state.status === 'start' || state.status === 'running' || state.status === 'finalizing')) {
+    if (isExportProgressTaskRunning(taskKey)) {
       if (showToast) {
         void message.warning(t('data_export.message.already_running'));
       }
@@ -158,8 +106,7 @@ export function useExportProgressRunner(options?: UseExportProgressRunnerOptions
       Number.isFinite(runOptions.totalRows) && Number(runOptions.totalRows) >= 0,
       requestedTotal,
     );
-    activeJobIdRef.current = jobId;
-    setState({
+    const started = startExportProgressTask(taskKey, {
       open: true,
       jobId,
       title: runOptions.title,
@@ -174,73 +121,67 @@ export function useExportProgressRunner(options?: UseExportProgressRunnerOptions
       totalRowsKnown,
       filePath: '',
       message: '',
-    });
+      requestKey: configuredRequestKey,
+    }, retainAfterUnmount);
+    if (!started) {
+      if (showToast) {
+        void message.warning(t('data_export.message.already_running'));
+      }
+      return null;
+    }
 
     try {
       const result = await runOptions.run(jobId);
       if (result.success) {
-        setState((prev) => {
-          if (prev.jobId !== jobId) {
-            return prev;
-          }
-          return {
-            ...prev,
-            open: true,
-            status: 'done',
-            finishedAt: prev.finishedAt || Date.now(),
-            stage: prev.stage || t('data_export.progress.title.done'),
-            current: prev.totalRowsKnown ? Math.max(prev.current, prev.total) : prev.current,
-            message: '',
-          };
-        });
+        finishExportProgressTask(taskKey, jobId, (prev): ExportProgressState => ({
+          ...prev,
+          open: true,
+          status: 'done',
+          finishedAt: prev.finishedAt || Date.now(),
+          stage: prev.stage || t('data_export.progress.title.done'),
+          current: prev.totalRowsKnown ? Math.max(prev.current, prev.total) : prev.current,
+          message: '',
+        }));
         if (showToast) {
           void message.success(t('data_export.message.export_success'));
         }
       } else if (result.message !== EXPORT_CANCELED_MESSAGE) {
-        setState((prev) => {
-          if (prev.jobId !== jobId) {
-            return prev;
-          }
-          return {
-            ...prev,
-            open: true,
-            status: 'error',
-            finishedAt: prev.finishedAt || Date.now(),
-            stage: prev.stage || t('data_export.progress.title.error'),
-            message: result.message,
-          };
-        });
-        if (showToast) {
-          void message.error(t('data_export.message.export_failed', { error: result.message }));
-        }
-      } else {
-        reset();
-      }
-      return result;
-    } catch (error: any) {
-      const errorMessage = error?.message || String(error);
-      setState((prev) => {
-        if (prev.jobId !== jobId) {
-          return prev;
-        }
-        return {
+        finishExportProgressTask(taskKey, jobId, (prev): ExportProgressState => ({
           ...prev,
           open: true,
           status: 'error',
           finishedAt: prev.finishedAt || Date.now(),
           stage: prev.stage || t('data_export.progress.title.error'),
-          message: errorMessage,
-        };
-      });
+          message: result.message,
+        }));
+        if (showToast) {
+          void message.error(t('data_export.message.export_failed', { error: result.message }));
+        }
+      } else {
+        resetExportProgressTask(taskKey);
+      }
+      return result;
+    } catch (error: any) {
+      const errorMessage = error?.message || String(error);
+      finishExportProgressTask(taskKey, jobId, (prev): ExportProgressState => ({
+        ...prev,
+        open: true,
+        status: 'error',
+        finishedAt: prev.finishedAt || Date.now(),
+        stage: prev.stage || t('data_export.progress.title.error'),
+        message: errorMessage,
+      }));
       if (showToast) {
         void message.error(t('data_export.message.export_failed', { error: errorMessage }));
       }
       throw error;
     }
-  }, [reset, showToast, state.open, state.status]);
+  }, [configuredRequestKey, retainAfterUnmount, showToast, taskKey]);
 
   return {
     state,
+    logs: snapshot.logs,
+    taskKey,
     reset,
     runExportWithProgress,
     isRunning: state.status === 'start' || state.status === 'running' || state.status === 'finalizing',

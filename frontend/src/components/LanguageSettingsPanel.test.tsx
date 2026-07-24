@@ -42,10 +42,11 @@ describe("LanguageSettingsPanel", () => {
     expect(radios).toHaveLength(7);
     expect(radios[0]?.props["aria-checked"]).toBe(true);
 
-    const simplifiedChinese = radios.find((node) => {
-      const children = Array.isArray(node.props.children) ? node.props.children.join("") : String(node.props.children ?? "");
-      return children.includes("Simplified Chinese");
-    });
+    const simplifiedChinese = radios.find((node) =>
+      node.findAll(
+        (child) => child.type === "span" && child.children.includes("Simplified Chinese"),
+      ).length > 0,
+    );
     expect(simplifiedChinese).toBeDefined();
 
     await act(async () => {

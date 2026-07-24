@@ -34,4 +34,12 @@ describe('shouldAllowBlankCustomDsn', () => {
       clearStoredSecret: true,
     })).toBe(true);
   });
+
+  it('accepts a JDBC-style ClickHouse DSN for the backend compatibility adapter', () => {
+    expect(shouldAllowBlankCustomDsn({
+      dsnInput: 'jdbc:clickhouse://localhost:8123/default',
+      hasStoredSecret: false,
+      clearStoredSecret: false,
+    })).toBe(true);
+  });
 });

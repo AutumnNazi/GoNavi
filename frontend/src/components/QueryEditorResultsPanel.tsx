@@ -1,15 +1,17 @@
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Button, Dropdown, Tabs, Tooltip, message, type MenuProps } from 'antd';
 import { BugOutlined, CloseOutlined, CopyOutlined, EyeInvisibleOutlined, RobotOutlined } from '@ant-design/icons';
 
 import type { EditRowLocator } from '../utils/rowLocator';
+import type { GridSortInfoItem } from '../utils/dataGridSort';
 import type { QueryResultPaginationState } from '../utils/queryResultPagination';
 import { filterColumnNamesByGlobalHiddenColumns, useGlobalHiddenColumns } from '../utils/globalHiddenColumns';
 import { buildQueryResultColumnPinScope } from '../utils/queryResultColumnPinScope';
 import { t as defaultTranslate } from '../i18n';
 import { useOptionalI18n } from '../i18n/provider';
 import {
-  resolveResultDetachPreferredBounds,
+  resolveNativeDetachPreferredBounds,
+  shouldDetachAtScreenPoint,
   shouldDetachTabByDrag,
   type DetachedWindowBounds,
 } from '../utils/detachedWindow';
@@ -39,18 +41,37 @@ export type QueryEditorResultSet = {
     metadataDbName?: string;
     /** 列元数据查询用表名（PG 等可能为 schema.table） */
     metadataTableName?: string;
+    /** DDL 查询目标，与列元数据目标独立，避免多段限定名被误解析。 */
+    ddlDbName?: string;
+    ddlTableName?: string;
     pkColumns: string[];
     editLocator?: EditRowLocator;
     readOnly: boolean;
     showRowNumberColumn?: boolean;
     truncated?: boolean;
     pkLoading?: boolean;
+    sortInfo?: GridSortInfoItem[];
     page?: QueryResultPaginationState & { loading?: boolean };
+};
+
+export const resolveEffectiveActiveResultKey = (
+    resultSets: Pick<QueryEditorResultSet, 'key'>[],
+    activeResultKey: string,
+    showSqlLogTab: boolean,
+): string => {
+    if (resultSets.some((result) => result.key === activeResultKey)) {
+        return activeResultKey;
+    }
+    if (showSqlLogTab && activeResultKey === QUERY_EDITOR_SQL_LOG_TAB_KEY) {
+        return QUERY_EDITOR_SQL_LOG_TAB_KEY;
+    }
+    return resultSets[0]?.key || (showSqlLogTab ? QUERY_EDITOR_SQL_LOG_TAB_KEY : '');
 };
 
 interface QueryEditorResultsPanelProps {
     resultSets: QueryEditorResultSet[];
     activeResultKey: string;
+    isActive: boolean;
     loading: boolean;
     executionError: string;
     sqlLogCount: number;
@@ -69,6 +90,9 @@ interface QueryEditorResultsPanelProps {
     onOpenResultInWindow?: (key: string, preferred?: OpenResultInWindowPreferred) => void;
     onReloadResult: (key: string, sql: string) => void;
     onResultPageChange: (key: string, page: number, pageSize: number) => void;
+    onResultSort: (key: string, field: string, order: string) => void;
+    onRequestResultTotalCount?: (key: string) => void;
+    onCancelResultTotalCount?: (key: string) => void;
     onDiagnoseExecutionError: () => void;
     onCompareResult?: (resultKey: string) => void;
 }
@@ -81,9 +105,34 @@ const resolveVisibleQueryResultColumns = (columns: string[], globalHiddenColumns
     return visibleColumns.length > 0 || columns.length === 0 ? visibleColumns : columns;
 };
 
+const RESULT_TAB_DETACH_INTERACTIVE_SELECTOR = [
+    '.query-result-tab-close',
+    'button',
+    'a',
+    'input',
+    'textarea',
+    'select',
+    '[contenteditable="true"]',
+    '[role="button"]',
+    '[role="menuitem"]',
+    '.ant-dropdown-menu',
+].join(', ');
+
+export const shouldActivateResultTabDetachPointer = (event: {
+    button: number;
+    isPrimary?: boolean;
+    target: EventTarget | null;
+}): boolean => {
+    if (event.button !== 0 || event.isPrimary === false) return false;
+    const target = event.target as { closest?: (selector: string) => Element | null } | null;
+    return typeof target?.closest !== 'function'
+        || target.closest(RESULT_TAB_DETACH_INTERACTIVE_SELECTOR) === null;
+};
+
 const QueryEditorResultsPanel: React.FC<QueryEditorResultsPanelProps> = ({
     resultSets,
     activeResultKey,
+    isActive,
     loading,
     executionError,
     sqlLogCount,
@@ -102,6 +151,9 @@ const QueryEditorResultsPanel: React.FC<QueryEditorResultsPanelProps> = ({
     onOpenResultInWindow,
     onReloadResult,
     onResultPageChange,
+    onResultSort,
+    onRequestResultTotalCount,
+    onCancelResultTotalCount,
     onDiagnoseExecutionError,
     onCompareResult,
 }) => {
@@ -115,8 +167,17 @@ const QueryEditorResultsPanel: React.FC<QueryEditorResultsPanelProps> = ({
         title: string;
         startX: number;
         startY: number;
+        startScreenX: number;
+        startScreenY: number;
+        pointerId: number;
+        captureTarget: HTMLElement;
         active: boolean;
     } | null>(null);
+    const resultTabDragCleanupRef = useRef<((resetVisualState?: boolean) => void) | null>(null);
+
+    useEffect(() => () => {
+        resultTabDragCleanupRef.current?.(false);
+    }, []);
 
     const resolveResultTabTitle = useCallback((key: string) => {
         const index = resultSets.findIndex((item) => item.key === key);
@@ -129,23 +190,27 @@ const QueryEditorResultsPanel: React.FC<QueryEditorResultsPanelProps> = ({
     }, [resultSets, t]);
 
     const handleResultTabPointerDown = useCallback((event: React.PointerEvent<HTMLElement>, key: string) => {
-        if (!onOpenResultInWindow || event.button !== 0) return;
-        const target = event.target instanceof HTMLElement ? event.target : null;
-        if (target?.closest('.query-result-tab-close, button, a, input, textarea')) {
-            return;
-        }
+        if (!onOpenResultInWindow || !shouldActivateResultTabDetachPointer(event)) return;
+        const openResultInWindow = onOpenResultInWindow;
+        resultTabDragCleanupRef.current?.();
         const title = resolveResultTabTitle(key);
-        resultTabDragRef.current = {
+        const dragState = {
             key,
             title,
             startX: event.clientX,
             startY: event.clientY,
+            startScreenX: event.screenX,
+            startScreenY: event.screenY,
+            pointerId: event.pointerId,
+            captureTarget: event.currentTarget,
             active: false,
         };
+        resultTabDragRef.current = dragState;
 
         const previousUserSelect = document.body.style.userSelect;
         const previousWebkitUserSelect = (document.body.style as CSSStyleDeclaration & { webkitUserSelect?: string }).webkitUserSelect || '';
         let selectionSuppressed = false;
+        let cleaned = false;
 
         const clearNativeSelection = () => {
             const selection = window.getSelection?.();
@@ -154,7 +219,12 @@ const QueryEditorResultsPanel: React.FC<QueryEditorResultsPanelProps> = ({
             }
         };
 
-        const suppressTextSelection = () => {
+        function preventSelectStart(selectEvent: Event) {
+            selectEvent.preventDefault();
+            selectEvent.stopPropagation();
+        }
+
+        function suppressTextSelection() {
             if (!selectionSuppressed) {
                 selectionSuppressed = true;
                 document.body.style.userSelect = 'none';
@@ -164,17 +234,19 @@ const QueryEditorResultsPanel: React.FC<QueryEditorResultsPanelProps> = ({
                 window.addEventListener('dragstart', preventSelectStart, true);
             }
             clearNativeSelection();
-        };
+        }
 
-        const preventSelectStart = (selectEvent: Event) => {
-            selectEvent.preventDefault();
-            selectEvent.stopPropagation();
-        };
-
-        const clearListeners = () => {
+        function clearListeners(resetVisualState = true) {
+            if (cleaned) return;
+            cleaned = true;
+            if (resultTabDragCleanupRef.current === clearListeners) {
+                resultTabDragCleanupRef.current = null;
+            }
             window.removeEventListener('pointermove', handleMove);
             window.removeEventListener('pointerup', handleUp);
-            window.removeEventListener('pointercancel', handleUp);
+            window.removeEventListener('pointercancel', handleCancel);
+            window.removeEventListener('blur', handleWindowBlur);
+            dragState.captureTarget.removeEventListener('lostpointercapture', handleLostPointerCapture);
             window.removeEventListener('selectstart', preventSelectStart, true);
             window.removeEventListener('dragstart', preventSelectStart, true);
             if (selectionSuppressed) {
@@ -182,14 +254,30 @@ const QueryEditorResultsPanel: React.FC<QueryEditorResultsPanelProps> = ({
                 (document.body.style as CSSStyleDeclaration & { webkitUserSelect?: string }).webkitUserSelect = previousWebkitUserSelect;
                 document.documentElement.classList.remove('gn-result-tab-detaching');
             }
-            resultTabDragRef.current = null;
-            setDraggingResultKey(null);
-            setDetachDragPreview(null);
-        };
+            try {
+                if (dragState.captureTarget.hasPointerCapture?.(dragState.pointerId)) {
+                    dragState.captureTarget.releasePointerCapture(dragState.pointerId);
+                }
+            } catch {
+                // Capture may already be gone after blur, cancellation, or unmount.
+            }
+            if (resultTabDragRef.current === dragState) {
+                resultTabDragRef.current = null;
+            }
+            if (resetVisualState) {
+                setDraggingResultKey(null);
+                setDetachDragPreview(null);
+            }
+        }
 
-        const handleMove = (moveEvent: PointerEvent) => {
+        function handleMove(moveEvent: PointerEvent) {
+            if (moveEvent.pointerId !== dragState.pointerId) return;
+            if (moveEvent.buttons === 0) {
+                clearListeners();
+                return;
+            }
             const drag = resultTabDragRef.current;
-            if (!drag || drag.key !== key) return;
+            if (drag !== dragState) return;
             const dx = moveEvent.clientX - drag.startX;
             const dy = moveEvent.clientY - drag.startY;
             if (!drag.active && (Math.abs(dx) > 4 || Math.abs(dy) > 4)) {
@@ -208,16 +296,29 @@ const QueryEditorResultsPanel: React.FC<QueryEditorResultsPanelProps> = ({
                     deltaY: dy,
                 }));
             }
-        };
+        }
 
-        const handleUp = (upEvent: PointerEvent) => {
+        function handleUp(upEvent: PointerEvent) {
+            if (upEvent.pointerId !== dragState.pointerId) return;
             const drag = resultTabDragRef.current;
-            if (!drag || drag.key !== key) {
+            if (drag !== dragState) {
                 clearListeners();
                 return;
             }
             const dy = upEvent.clientY - drag.startY;
-            const shouldDetach = drag.active && shouldDetachTabByDrag(dy);
+            const releaseScreenX = Number.isFinite(upEvent.screenX)
+                ? upEvent.screenX
+                : drag.startScreenX + (upEvent.clientX - drag.startX);
+            const releaseScreenY = Number.isFinite(upEvent.screenY)
+                ? upEvent.screenY
+                : drag.startScreenY + (upEvent.clientY - drag.startY);
+            const releasedOutsideHost = shouldDetachAtScreenPoint(releaseScreenX, releaseScreenY, {
+                x: window.screenX,
+                y: window.screenY,
+                width: window.outerWidth || window.innerWidth,
+                height: window.outerHeight || window.innerHeight,
+            });
+            const shouldDetach = drag.active && (shouldDetachTabByDrag(dy) || releasedOutsideHost);
             if (drag.active) {
                 upEvent.preventDefault();
                 clearNativeSelection();
@@ -225,26 +326,49 @@ const QueryEditorResultsPanel: React.FC<QueryEditorResultsPanelProps> = ({
             // 先清预览再打开真实窗口，避免叠两层
             clearListeners();
             if (shouldDetach) {
-                onOpenResultInWindow(key, resolveResultDetachPreferredBounds(upEvent.clientX, upEvent.clientY));
+                openResultInWindow(key, resolveNativeDetachPreferredBounds(releaseScreenX, releaseScreenY));
             }
-        };
+        }
 
+        function handleCancel(cancelEvent: PointerEvent) {
+            if (cancelEvent.pointerId === dragState.pointerId) {
+                clearListeners();
+            }
+        }
+
+        function handleWindowBlur() {
+            clearListeners();
+        }
+
+        function handleLostPointerCapture(lostEvent: Event) {
+            if ((lostEvent as PointerEvent).pointerId === dragState.pointerId) {
+                clearListeners();
+            }
+        }
+
+        resultTabDragCleanupRef.current = clearListeners;
         window.addEventListener('pointermove', handleMove, { passive: false });
         window.addEventListener('pointerup', handleUp);
-        window.addEventListener('pointercancel', handleUp);
+        window.addEventListener('pointercancel', handleCancel);
+        window.addEventListener('blur', handleWindowBlur);
+        dragState.captureTarget.addEventListener('lostpointercapture', handleLostPointerCapture);
+        try {
+            dragState.captureTarget.setPointerCapture(dragState.pointerId);
+        } catch {
+            // Some embedded WebViews do not expose pointer capture for tab labels.
+        }
     }, [onOpenResultInWindow, resolveResultTabTitle]);
 
-    const shouldShowSqlLogTab = isV2Ui && (sqlLogCount > 0 || activeResultKey === QUERY_EDITOR_SQL_LOG_TAB_KEY);
+    const shouldShowSqlLogTab = isV2Ui;
     const logTabCountLabel = sqlLogCount > 999 ? '999+' : String(sqlLogCount);
     const hideTooltipTitle = toggleShortcutLabel
         ? t('query_editor.results_panel.tooltip.hide_with_shortcut', { shortcut: toggleShortcutLabel })
         : t('query_editor.results_panel.tooltip.hide');
-    const activeResultKeyExists = activeResultKey === QUERY_EDITOR_SQL_LOG_TAB_KEY
-        ? shouldShowSqlLogTab
-        : resultSets.some((result) => result.key === activeResultKey);
-    const resolvedActiveResultKey = activeResultKeyExists
-        ? activeResultKey
-        : resultSets[0]?.key || (shouldShowSqlLogTab ? QUERY_EDITOR_SQL_LOG_TAB_KEY : '');
+    const resolvedActiveResultKey = resolveEffectiveActiveResultKey(
+        resultSets,
+        activeResultKey,
+        shouldShowSqlLogTab,
+    );
 
     const handleMessageTextareaKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
         if (!(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey || event.key.toLowerCase() !== 'a') {
@@ -394,6 +518,7 @@ const QueryEditorResultsPanel: React.FC<QueryEditorResultsPanelProps> = ({
                     <Tooltip title={t('query_editor.result.close')}>
                         <span
                             className="query-result-tab-close"
+                            onPointerDown={(event) => event.stopPropagation()}
                             onClick={(event) => {
                                 event.preventDefault();
                                 event.stopPropagation();
@@ -457,6 +582,7 @@ const QueryEditorResultsPanel: React.FC<QueryEditorResultsPanelProps> = ({
                     <DataGrid
                         data={rs.rows}
                         columnNames={visibleColumns}
+                        isActive={isActive && resolvedActiveResultKey === rs.key}
                         loading={loading || rs.page?.loading === true}
                         tableName={resultTableName}
                         columnPinScope={resultTableName ? undefined : buildQueryResultColumnPinScope({
@@ -468,6 +594,8 @@ const QueryEditorResultsPanel: React.FC<QueryEditorResultsPanelProps> = ({
                         resultSql={rs.exportSql || rs.sql}
                         resultExportAllSql={rs.page?.exportAllSql}
                         dbName={rs.metadataDbName || currentDb}
+                        ddlDbName={rs.ddlDbName}
+                        ddlTableName={rs.ddlTableName}
                         connectionId={currentConnectionId}
                         pkColumns={rs.pkColumns}
                         editLocator={rs.editLocator}
@@ -483,8 +611,18 @@ const QueryEditorResultsPanel: React.FC<QueryEditorResultsPanelProps> = ({
                             pageSize: rs.page.pageSize,
                             total: rs.page.total,
                             totalKnown: rs.page.totalKnown,
+                            totalCountLoading: rs.page.totalCountLoading,
+                            totalCountCancelled: rs.page.totalCountCancelled,
                         } : undefined}
                         onPageChange={rs.page ? ((page, size) => onResultPageChange(rs.key, page, size)) : undefined}
+                        onSort={(field, order) => onResultSort(rs.key, field, order)}
+                        sortInfoExternal={rs.sortInfo || []}
+                        onRequestTotalCount={rs.page && onRequestResultTotalCount
+                            ? (() => onRequestResultTotalCount(rs.key))
+                            : undefined}
+                        onCancelTotalCount={rs.page && onCancelResultTotalCount
+                            ? (() => onCancelResultTotalCount(rs.key))
+                            : undefined}
                         readOnly={rs.readOnly}
                         toolbarExtraActions={resolvedActiveResultKey === rs.key ? toolbarHideButton : null}
                     />
@@ -569,7 +707,7 @@ const QueryEditorResultsPanel: React.FC<QueryEditorResultsPanelProps> = ({
               .query-result-panel-hide { display: inline-flex; align-items: center; gap: 4px; }
               .query-result-panel-hide-compact { min-width: 28px; padding: 0 6px; justify-content: center; }
             `}</style>
-            <div className={isV2Ui ? 'gn-v2-query-results' : undefined} style={{ position: 'relative', flex: 1, minHeight: 0, overflow: 'hidden', padding: 0, display: 'flex', flexDirection: 'column' }}>
+            <div data-gonavi-close-shortcut-scope="result" className={isV2Ui ? 'gn-v2-query-results' : undefined} style={{ position: 'relative', flex: 1, minHeight: 0, overflow: 'hidden', padding: 0, display: 'flex', flexDirection: 'column' }}>
                 {tabItems.length > 0 ? (
                     <Tabs className="query-result-tabs" activeKey={resolvedActiveResultKey} onChange={onActiveResultKeyChange} animated={false} style={{ flex: 1, minHeight: 0 }} tabBarExtraContent={tabsExtraContent} items={tabItems} />
                 ) : executionError ? (

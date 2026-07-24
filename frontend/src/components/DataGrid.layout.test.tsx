@@ -149,6 +149,37 @@ const zhObjectDesignLabel = zhCnCatalog['data_grid.secondary.object_design'];
 const enUndoCellChangeLabel = enUsCatalog['data_grid.context_menu.undo_cell_change'];
 
 describe('DataGrid layout', () => {
+  it('renders without navigator in server-side environments', () => {
+    const navigatorDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+    Reflect.deleteProperty(globalThis, 'navigator');
+
+    try {
+      expect(() => renderDataGridWithI18n(
+        <DataGrid
+          data={[]}
+          columnNames={[]}
+          loading={false}
+          tableName="users"
+          dbName="main"
+          connectionId="conn-1"
+          readOnly
+          pagination={{
+            current: 1,
+            pageSize: 100,
+            total: 0,
+          }}
+          onPageChange={() => {}}
+        />,
+      )).not.toThrow();
+    } finally {
+      if (navigatorDescriptor) {
+        Object.defineProperty(globalThis, 'navigator', navigatorDescriptor);
+      } else {
+        Reflect.deleteProperty(globalThis, 'navigator');
+      }
+    }
+  });
+
   it('renders a secondary action strip for view switching and auxiliary actions', () => {
     const markup = renderDataGridWithI18n(
       <DataGrid
@@ -189,8 +220,10 @@ describe('DataGrid layout', () => {
     expect(markup).toContain('gn-v2-data-grid-status-right');
     expect(markup).toContain('data-grid-v2-pagination="true"');
     expect(markup).toContain('data-grid-v2-page-chip="true"');
+    expect(markup).toContain('data-grid-v2-pagination-first="true"');
     expect(markup).toContain('data-grid-v2-pagination-prev="true"');
     expect(markup).toContain('data-grid-v2-pagination-next="true"');
+    expect(markup).toContain('data-grid-v2-pagination-last="true"');
     expect(markup).toContain('data-grid-pagination-jump="true"');
     expect(markup).toContain('跳页');
     expect(markup).toContain('跳转页码');
@@ -715,6 +748,10 @@ describe('DataGrid layout', () => {
       'const handleCellEditorSave = useCallback(() => {',
       'const handleFormatJsonInEditor = useCallback(() => {',
     );
+    const cellEditorPermissionEffectSource = sliceCallback(
+      'useEffect(() => {\n      if (!cellEditorOpen) return;',
+      'const virtualEditingSessionSequenceRef = useRef(0);',
+    );
     const openRowEditorByKeySource = sliceCallback(
       'const openRowEditorByKey = useCallback((keyStr?: string) => {',
       'const openCurrentViewRowEditor = useCallback(() => {',
@@ -739,7 +776,7 @@ describe('DataGrid layout', () => {
         'data_grid.message.saved',
       ]],
       [handleCellSetNullSource, ['data_grid.message.current_field_not_editable']],
-      [handleCellEditorSaveSource, ['data_grid.message.current_field_not_editable']],
+      [cellEditorPermissionEffectSource, ['data_grid.message.current_field_not_editable']],
       [openRowEditorByKeySource, [
         'data_grid.message.locate_record_to_edit',
         'data_grid.message.target_row_not_found',
@@ -758,6 +795,10 @@ describe('DataGrid layout', () => {
       (keys as string[]).forEach((key) => expectTranslateCall(callbackSource as string, key));
       expectTranslateDependency(callbackSource as string);
     });
+    expect(handleCellEditorSaveSource).toContain('const runtime = cellEditorRuntimeRef.current;');
+    expect(handleCellEditorSaveSource).toContain('!runtime.canModifyData');
+    expect(handleCellEditorSaveSource).toContain('runtime.effectiveEditLocator');
+    expect(handleCellEditorSaveSource).toContain('handleCellSaveRef.current(nextRow);');
 
     expect(applyJsonEditorSource).toMatch(
       /const\s+rawErrorMessage\s*=\s*e\?\.message\s*\|\|\s*String\(e\);[\s\S]*translateDataGrid\(\s*['"]data_grid\.message\.json_parse_failed['"]\s*,\s*\{\s*detail:\s*rawErrorMessage\s*\}\s*\)/,
@@ -1030,6 +1071,12 @@ describe('DataGrid layout', () => {
     expect(css).toMatch(/\[data-grid-pagination-total-count="true"\]\.ant-btn \.ant-btn-icon \{[\s\S]*?margin-inline-end: 3px !important;/);
   });
 
+  it('passes the real total-count handler from DataGridShell to the pagination bar', () => {
+    const shellSource = readDataGridShellSource();
+
+    expect(shellSource).toMatch(/<DataGridPaginationBar[\s\S]*?manualTotalCountAvailable=\{[^}]*onRequestTotalCount[^}]*\}[\s\S]*?totalCountLoading=\{pagination\?\.totalCountLoading\}[\s\S]*?onToggleTotalCount=\{handleToggleTotalCount\}/);
+  });
+
   it('hides current-page find in JSON and text record views', () => {
     const source = readDataGridSource();
 
@@ -1079,13 +1126,15 @@ describe('DataGrid layout', () => {
     expect(pageFindSource).toContain("if (event.key === 'Escape')");
     expect(pageFindSource).toContain('onCancel();');
     expect(pageFindSource).toContain("textAlign: 'left'");
-    expect(dataGridSource).toContain("const normalizedPageFindText = useMemo(() => normalizeDataGridFindQuery(pageFindText), [pageFindText]);");
-    expect(dataGridSource).not.toContain("const normalizedPageFindText = useMemo(() => normalizeDataGridFindQuery(deferredPageFindText), [deferredPageFindText]);");
+    expect(dataGridSource).toContain('const deferredPageFindText = useDeferredValue(pageFindText);');
+    expect(dataGridSource).toMatch(/normalizeDataGridFindQuery\(pageFindText\)[\s\S]*?normalizeDataGridFindQuery\(deferredPageFindText\)[\s\S]*?: ''/);
+    expect(dataGridSource).toContain('collectDataGridFindResult(');
+    expect(dataGridSource).not.toContain('summarizeDataGridFindMatches(');
     expect(dataGridSource).toContain("if (event.key === 'Escape')");
     expect(dataGridSource).toContain('if (activeSelection.size === 0) {');
     expect(dataGridSource).toContain('closeCellEditMode();');
     expect(dataGridSource).toContain('resetCellSelection();');
-    expect(dataGridSource).toContain("tagName === 'input' || tagName === 'textarea' || activeElement?.isContentEditable");
+    expect(dataGridSource).toContain('activeElement?.closest(nativeShortcutGuard) || eventTarget?.closest(nativeShortcutGuard)');
     expect(paginationSource).toContain("padding: 0");
     expect(paginationSource).toContain("justifyContent: 'flex-start'");
   });
@@ -1157,6 +1206,8 @@ describe('DataGrid layout', () => {
     expect(detachedChromeSource).toContain("translate('data_grid.pagination.result_set')");
     expect(detachedChromeSource).toContain("translate('data_grid.pagination.page_size_aria')");
     expect(detachedChromeSource).toContain("translate('data_grid.pagination.page_size_option'");
+    expect(detachedChromeSource).toContain("translate('data_grid.pagination.first_page')");
+    expect(detachedChromeSource).toContain("translate('data_grid.pagination.last_page')");
     expect(detachedChromeSource).toContain("translate('data_grid.pagination.jump_label')");
     expect(detachedChromeSource).toContain("translate('data_grid.pagination.jump_aria')");
     expect(detachedChromeSource).toContain("translate('data_grid.pagination.jump_action')");
@@ -1185,6 +1236,7 @@ describe('DataGrid layout', () => {
     expect(detachedChromeSource).toContain("translate('data_grid.row_editor.popup_edit')");
     expect(detachedChromeSource).toContain("translate('data_grid.cell_editor.title')");
     expect(detachedChromeSource).toContain("translate('data_grid.cell_editor.title_with_column'");
+    expect(detachedChromeSource).toContain("translate('data_grid.cell_viewer.title_with_column'");
     expect(detachedChromeSource).toContain("translate('data_grid.batch_fill.title'");
     expect(detachedChromeSource).toContain("translate('data_grid.batch_fill.set_null')");
     expect(detachedChromeSource).toContain("translate('data_grid.batch_fill.value_placeholder')");
@@ -1258,7 +1310,7 @@ describe('DataGrid layout', () => {
       expect(toolbarFrameSource).toContain(`translate('${key}`);
     });
     [
-      /translate\('data_grid\.toolbar\.selected_count', \{ count: selectedRowKeysLength \}\)/,
+      /translate\('data_grid\.toolbar\.selected_count', \{ count: deleteTargetRowCount \}\)/,
       /translate\('data_grid\.toolbar\.copy_selection', \{ count: selectedCellsSize \}\)/,
       /translate\('data_grid\.toolbar\.copy_selection_columns', \{ count: selectedCellsSize \}\)/,
       /translate\('data_grid\.toolbar\.batch_fill', \{ count: selectedCellsSize \}\)/,
@@ -1721,6 +1773,8 @@ describe('DataGrid layout', () => {
         'data_grid.pagination.result_set': 'Result set label',
         'data_grid.pagination.page_size_aria': 'Rows per page label',
         'data_grid.pagination.page_size_option': `${params?.count} rows per page`,
+        'data_grid.pagination.first_page': 'First page label',
+        'data_grid.pagination.last_page': 'Last page label',
         'data_grid.pagination.jump_label': 'Jump label',
         'data_grid.pagination.jump_aria': 'Jump page aria',
         'data_grid.pagination.jump_action': 'Go action',
@@ -1813,6 +1867,8 @@ describe('DataGrid layout', () => {
       />,
     );
     expect(paginationMarkup).toContain('Result set label');
+    expect(paginationMarkup).toContain('First page label');
+    expect(paginationMarkup).toContain('Last page label');
     expect(paginationMarkup).toContain('Jump label');
     expect(paginationMarkup).toContain('Jump page aria');
     expect(paginationMarkup).toContain('Go action');
@@ -2277,7 +2333,7 @@ describe('DataGrid layout', () => {
     });
   });
 
-  it('renders a DDL action for table data pages only', () => {
+  it('renders a DDL action whenever a physical table context is available', () => {
     const tableMarkup = renderDataGridWithI18n(
       <DataGrid
         data={[
@@ -2335,14 +2391,44 @@ describe('DataGrid layout', () => {
         loading={false}
         tableName="users"
         dbName="main"
+        ddlDbName="main"
+        ddlTableName="users"
         connectionId="conn-1"
         exportScope="queryResult"
       />,
     );
 
-    expect(queryMarkup).not.toContain('data-grid-ddl-action="true"');
+    expect(queryMarkup).toContain('data-grid-ddl-action="true"');
+    expect(queryMarkup).toContain('查看 DDL');
     expect(queryMarkup).toContain('字段信息');
     expect(queryMarkup).not.toContain(zhObjectDesignLabel);
+
+    const ambiguousQueryMarkup = renderDataGridWithI18n(
+      <DataGrid
+        data={[{ __gonavi_row_key__: 'row-1', id: 1 }]}
+        columnNames={['id']}
+        loading={false}
+        tableName="users"
+        dbName="main"
+        connectionId="conn-1"
+        exportScope="queryResult"
+      />,
+    );
+
+    expect(ambiguousQueryMarkup).not.toContain('data-grid-ddl-action="true"');
+
+    const derivedQueryMarkup = renderDataGridWithI18n(
+      <DataGrid
+        data={[{ __gonavi_row_key__: 'row-1', total: 2 }]}
+        columnNames={['total']}
+        loading={false}
+        dbName="main"
+        connectionId="conn-1"
+        exportScope="queryResult"
+      />,
+    );
+
+    expect(derivedQueryMarkup).not.toContain('data-grid-ddl-action="true"');
   });
 
   it('keeps row copy and paste as context menu actions instead of toolbar buttons', () => {
@@ -2385,6 +2471,23 @@ describe('DataGrid layout', () => {
     expect(markup).not.toMatch(/data-grid-query-copy-action="true"[^>]*disabled/);
     expect(markup).toContain('复制');
     expect(markup.match(/data-grid-query-copy-action="true"/g)?.length).toBe(1);
+  });
+
+  it('keeps range selection and Ctrl/Cmd+C available for read-only aggregate results', () => {
+    const batchActionsSource = readFileSync(new URL('./useDataGridBatchActions.ts', import.meta.url), 'utf8');
+    const v2ActionsSource = readFileSync(new URL('./useDataGridV2Actions.ts', import.meta.url), 'utf8');
+    const toolbarSource = readFileSync(new URL('./DataGridToolbarFrame.tsx', import.meta.url), 'utf8');
+
+    expect(batchActionsSource).toContain('if (!isActive || !isTableSurfaceActive) return;');
+    expect(batchActionsSource).not.toContain('if (!canModifyData || !isTableSurfaceActive) return;');
+    expect(batchActionsSource).toContain('canSelectGridCellForClipboard({');
+    expect(batchActionsSource).toContain('if (canModifyData && !cellEditModeRef.current)');
+    expect(batchActionsSource).toContain('markCellSelectionDeleteEligible(canModifyData);');
+    expect(v2ActionsSource).toContain('if (!isActive || !isTableSurfaceActive || (!cellEditMode && selectedCells.size === 0)) return;');
+    expect(v2ActionsSource).toContain("String(event.key || '').toLowerCase() === 'c'");
+    expect(v2ActionsSource).toContain('if (document.getSelection?.()?.toString()) return;');
+    expect(toolbarSource).toContain('!canModifyData && selectedCellsSize > 0');
+    expect(toolbarSource).toContain('data-grid-copy-selection-action="true"');
   });
 
   it('keeps export and import chrome behind translateDataGrid while preserving raw details', () => {
@@ -2578,6 +2681,13 @@ describe('DataGrid layout', () => {
     expect(source).toContain("onCancel={() => setPageFindText('')}");
     expect(source).toContain('enumerable: true');
     expect(source).toContain('resolveDataGridColumnQuickFindScrollLeft({');
+    const pageFindFocusSource = source.slice(
+      source.indexOf('const focusPageFindMatch = useCallback'),
+      source.indexOf('const handleNavigatePageFind = useCallback'),
+    );
+    expect(pageFindFocusSource.indexOf("'[data-column-name]'"))
+      .toBeLessThan(pageFindFocusSource.indexOf('if (applyVisibleFocus()) return;'));
+    expect(pageFindFocusSource).toContain("headerTarget.closest('.ant-table-cell-fix-left, .ant-table-cell-fix-right')");
     expect(source).toContain('const applied = applyVirtualHorizontalOffset(tableContainer, nextScrollLeft);');
     expect(source).toContain('syncExternalScrollFromTargets();');
     expect(source).toContain("const columnQuickFindContent = isTableSurfaceActive ? (");
@@ -2589,22 +2699,52 @@ describe('DataGrid layout', () => {
     expect(source).toContain('const pendingExternalScrollLeftRef = useRef<number | null>(null);');
     expect(source).toContain('const externalScrollSequenceRef = useRef(0);');
     expect(source).toContain('const externalScrollbarDraggingRef = useRef(false);');
+    expect(source).toContain('const EXTERNAL_HORIZONTAL_SCROLL_IDLE_SETTLE_MS = 80;');
+    expect(source).toContain('const externalIdleCommitSchedulerRef = useRef<DataGridIdleCommitScheduler<number> | null>(null);');
+    expect(source).toContain('const virtualHorizontalPostCommitGuardRef = useRef<DataGridVisualFrameGuard<number> | null>(null);');
+    expect(source).toContain('const externalScrollInteractionUntilRef = useRef(0);');
+    expect(source).toContain('createDataGridIdleCommitScheduler<number>({');
+    expect(source).toContain('createDataGridVisualFrameGuard<number>({');
+    expect(source).toContain('const isExternalScrollbarInteractionActive = useCallback(() => (');
+    expect(source).toContain('const refreshExternalScrollbarInteraction = useCallback(() => {');
     expect(source).toContain('const scheduleVirtualHorizontalWheel = useCallback');
     expect(source).toContain('pendingTableHorizontalDeltaRef.current += delta;');
     expect(source).toContain('tableHorizontalWheelRafRef.current = requestAnimationFrame');
     expect(source).toContain('const scheduleVirtualHorizontalAlignment = useCallback((preferredLeft?: number) => {');
     expect(source).toContain('virtualHorizontalElementsRef.current = { tableContainer: null, holderEl: null, innerEl: null, headerEl: null };');
     expect(source).toContain('applyVirtualHorizontalOffset(tableContainer, nextLeft, { forceInternalScroll: true });');
-    expect(source).toContain('}, [horizontalScrollVisible, scheduleVirtualHorizontalAlignment, tableRenderData, tableScrollX, virtualEditingCell]);');
-    expect(source).toContain('tableInstance.scrollTo({ left: clampedOffset, top: holderEl.scrollTop });');
+    expect(source).toContain('}, [horizontalScrollVisible, scheduleVirtualHorizontalAlignment, tableRenderData, tableScrollX, virtualEditingCellForRender]);');
+    expect(source).toContain('tableInstance.scrollTo({ left: clampedOffset });');
+    expect(source).not.toContain('tableInstance.scrollTo({ left: clampedOffset, top: holderEl.scrollTop });');
+    expect(source).toContain("tableContainer.addEventListener('scroll', stopPreviewHeaderScroll, true);");
+    expect(source).toContain("innerEl.style.setProperty('--gn-datagrid-h-scroll', scrollVar);");
+    expect(source).toContain('virtualHorizontalPostCommitGuardRef.current?.update(clampedOffset);');
+    expect(source).not.toContain("tableContainer.style.setProperty('--gn-datagrid-h-scroll', scrollVar);");
+    expect(source).not.toContain("holderEl.style.setProperty('--gn-datagrid-h-scroll', scrollVar);");
     expect(source).toContain('const requestedExternalScrollLeft = pendingExternalScrollLeftRef.current ?? latestExternalScroll.scrollLeft;');
-    expect(source).toContain('applyVirtualHorizontalOffset(tableContainer, requestedExternalScrollLeft, { forceInternalScroll: true });');
+    expect(source).toContain('if (isExternalScrollbarInteractionActive()) {');
+    expect(source).toContain('const visual = syncVirtualHorizontalVisualOffset(tableContainer, requestedExternalScrollLeft);');
+    expect(source).toContain('lastTableScrollLeftRef.current = visual.clampedOffset;');
+    expect(source).toContain('applyVirtualHorizontalOffset(tableContainer, resolvedScrollLeft, { forceInternalScroll: true });');
+    expect(source).not.toContain('deferPostScrollVisualReassert');
     expect(source).not.toContain('const synced = syncVirtualHorizontalVisualOffset(tableContainer, externalScroll.scrollLeft);');
     expect(source).toContain('const handleExternalHorizontalScrollPointerDown = useCallback');
     expect(source).toContain('const handleExternalHorizontalScrollPointerRelease = useCallback');
     expect(source).toContain('const finishExternalScrollbarDrag = useCallback');
     expect(source).toContain('const handleExternalHorizontalScrollLostPointerCapture = useCallback');
-    expect(source).toContain('if (externalScrollbarDraggingRef.current) {');
+    const interactionActiveSource = source.slice(
+      source.indexOf('const isExternalScrollbarInteractionActive = useCallback'),
+      source.indexOf('const clearExternalScrollbarInteraction = useCallback'),
+    );
+    expect(interactionActiveSource).toContain('externalScrollbarDraggingRef.current');
+    expect(interactionActiveSource).toContain('Date.now() < externalScrollInteractionUntilRef.current');
+    const finishExternalScrollbarDragSource = source.slice(
+      source.indexOf('const finishExternalScrollbarDrag = useCallback'),
+      source.indexOf('const handleExternalHorizontalScrollPointerRelease = useCallback'),
+    );
+    expect(finishExternalScrollbarDragSource).toContain('if (isExternalScrollbarInteractionActive()) {');
+    expect(finishExternalScrollbarDragSource).toContain('externalIdleCommitSchedulerRef.current?.flush()');
+    expect(finishExternalScrollbarDragSource).not.toContain('clearExternalScrollbarInteraction();');
     expect(source).toContain('onPointerDown={handleExternalHorizontalScrollPointerDown}');
     expect(source).toContain('onPointerUp={handleExternalHorizontalScrollPointerRelease}');
     expect(source).toContain('onPointerCancel={handleExternalHorizontalScrollPointerRelease}');
@@ -2619,7 +2759,7 @@ describe('DataGrid layout', () => {
     expect(source).toContain('}, areEditableCellPropsEqual);');
     expect(source).toContain('const [virtualEditingCell, setVirtualEditingCell] = useState<VirtualEditingCellState | null>(null);');
     expect(source).toContain('const openVirtualInlineEditor = useCallback((record: Item, dataIndex: string, title: React.ReactNode) => {');
-    expect(source).toContain('if (isVirtualInlineEditingCell && virtualEditable) {');
+    expect(source).toContain('if (isVirtualInlineEditingCell && virtualEditable && virtualEditingCellForRender) {');
     expect(source).toContain('const DATA_GRID_VIRTUAL_EDIT_RENDER_VERSION = Symbol(\'DATA_GRID_VIRTUAL_EDIT_RENDER_VERSION\');');
     expect(source).toContain('const attachDataGridVirtualEditRenderVersion = <T extends Item>(');
     expect(source).toContain('hasDataGridVirtualEditRenderVersionChanged(record, prevRecord)');
@@ -2641,6 +2781,10 @@ describe('DataGrid layout', () => {
     expect(source).toContain('const shouldUsePlainVirtualContent = isV2Ui && !modifiedStyle;');
     expect(source).toContain('if (shouldUsePlainVirtualContent) {');
     expect(source).toContain('return originalRenderContent;');
+    expect(source).toContain('const virtualListItemHeightFixed = !!(');
+    expect(source).toContain('listItemHeightFixed: virtualListItemHeightFixed');
+    expect(source).toContain('const virtualListItemColumnVirtual = isV2Ui && enableVirtual && !virtualEditingCellForRender;');
+    expect(source).toContain('listItemColumnVirtual: virtualListItemColumnVirtual');
     expect(source).toContain('if (scrollSnapshotRafRef.current !== null) return;');
     expect(source).toContain('scrollSnapshotRafRef.current = requestAnimationFrame');
     expect(source).toContain('didRestoreScrollRef.current = false;');

@@ -111,6 +111,61 @@ func TestIsReadOnlySQLQuery_TreatsMongoDeleteAsWrite(t *testing.T) {
 	}
 }
 
+func TestIsReadOnlySQLQuery_TreatsMongoAggregateOutputStagesAsWrites(t *testing.T) {
+	for _, query := range []string{
+		`{"aggregate":"users","pipeline":[{"$match":{"active":true}},{"$out":"active_users"}],"cursor":{}}`,
+		`{"aggregate":"users","pipeline":[{"$merge":{"into":"active_users"}}],"cursor":{}}`,
+	} {
+		if isReadOnlySQLQuery("mongodb", query) {
+			t.Fatalf("Mongo aggregate write stage was classified read-only: %s", query)
+		}
+	}
+	if !isReadOnlySQLQuery("mongodb", `{"aggregate":"users","pipeline":[{"$match":{"active":true}}],"cursor":{}}`) {
+		t.Fatal("read-only Mongo aggregate was classified as write")
+	}
+}
+
+func TestIsReadOnlySQLQuery_TreatsExecutingExplainWritesAsWrites(t *testing.T) {
+	for _, query := range []string{
+		"EXPLAIN ANALYZE UPDATE users SET active = false",
+		"EXPLAIN (ANALYZE true, BUFFERS true) DELETE FROM users",
+		"EXPLAIN ANALYSE WITH removed AS (DELETE FROM users RETURNING id) SELECT * FROM removed",
+	} {
+		if isReadOnlySQLQuery("postgres", query) {
+			t.Fatalf("executing EXPLAIN write was classified read-only: %s", query)
+		}
+	}
+	if !isReadOnlySQLQuery("postgres", "EXPLAIN UPDATE users SET active = false") {
+		t.Fatal("non-executing EXPLAIN was classified as write")
+	}
+	if !isReadOnlySQLQuery("postgres", "EXPLAIN ANALYZE SELECT * FROM users") {
+		t.Fatal("EXPLAIN ANALYZE SELECT was classified as write")
+	}
+}
+
+func TestIsReadOnlySQLQuery_TreatsMutablePragmasAsWrites(t *testing.T) {
+	for _, query := range []string{
+		"PRAGMA user_version = 7",
+		"PRAGMA main.application_id(42)",
+		`PRAGMA "main".user_version = 123`,
+		"PRAGMA [main].user_version = 124",
+		"PRAGMA `main`.user_version = 125",
+		"PRAGMA optimize",
+		"PRAGMA incremental_vacuum",
+		"PRAGMA wal_checkpoint",
+	} {
+		if isReadOnlySQLQuery("sqlite", query) {
+			t.Fatalf("mutable PRAGMA was classified read-only: %s", query)
+		}
+	}
+	if !isReadOnlySQLQuery("sqlite", "PRAGMA table_info('users')") {
+		t.Fatal("metadata PRAGMA was classified as write")
+	}
+	if !isReadOnlySQLQuery("sqlite", "PRAGMA database_list") {
+		t.Fatal("read-only no-argument PRAGMA was classified as write")
+	}
+}
+
 func TestIsReadOnlySQLQuery_TreatsMilvusJSONQueriesAsReadOnly(t *testing.T) {
 	for _, query := range []string{
 		`{"list_collections":true}`,
@@ -124,6 +179,19 @@ func TestIsReadOnlySQLQuery_TreatsMilvusJSONQueriesAsReadOnly(t *testing.T) {
 	}
 	if !isReadOnlySQLQuery("milvus-db", `{"count":"products"}`) {
 		t.Fatal("Milvus aliases should preserve JSON read classification")
+	}
+}
+
+func TestIsReadOnlySQLQuery_TreatsMilvusSelectPreviewsAsReadOnly(t *testing.T) {
+	for _, dbType := range []string{"milvus", "milvusdb", "milvus-db"} {
+		for _, query := range []string{
+			`SELECT * FROM "products" LIMIT 101 OFFSET 0`,
+			`SELECT COUNT(*) as total FROM "products"`,
+		} {
+			if !isReadOnlySQLQuery(dbType, query) {
+				t.Fatalf("Milvus SELECT preview should be read-only: dbType=%s query=%s", dbType, query)
+			}
+		}
 	}
 }
 

@@ -1,17 +1,20 @@
 ﻿import SidebarConnectionRail from './sidebar/SidebarConnectionRail';
+import Modal from './common/ResizableDraggableModal';
 import SidebarSearchPanel, { type SidebarSearchPanelProps } from './sidebar/SidebarSearchPanel';
 import SlowQueryRailButton from './sidebar/SlowQueryRailButton';
+import SqlAuditRailButton from './sidebar/SqlAuditRailButton';
 import { buildSidebarLegacyNodeMenuItems } from './sidebar/sidebarLegacyNodeMenu';
 import {
   getMetadataDialect,
+  loadSchemas,
   shouldHideSchemaPrefix,
   splitQualifiedName,
 } from './sidebar/sidebarMetadataLoaders';
 import {
   useSidebarBatchExport,
 } from './sidebar/useSidebarBatchExport';
-import { SidebarBatchExportModals } from './sidebar/SidebarBatchExportModals';
 import { SidebarEntityModals } from './sidebar/SidebarEntityModals';
+import { SavedQueryGroupModal } from './sidebar/SavedQueryGroupModal';
 import { renderSidebarV2TreeTitle } from './sidebar/SidebarTreeTitle';
 import {
   useSidebarV2ContextMenu,
@@ -62,11 +65,12 @@ export {
   isV2SidebarObjectNode,
   resolveV2ObjectGroupTitle,
   resolveSidebarTableNameForCopy,
+  resolveSidebarDatabaseNameForCopy,
   parseV2CommandSearchQuery,
 } from './sidebar/sidebarHelpers';
 import React, { useEffect, useState, useMemo, useRef, useCallback, useDeferredValue } from 'react';
 import { createPortal } from 'react-dom';
-import { Tree, message, Dropdown, MenuProps, Input, Button, Form, Popover, Tooltip } from 'antd';
+import { Tree, message, Dropdown, MenuProps, Input, Button, Form, Popover, Radio, Select, Tooltip } from 'antd';
 	import {
 	  CaretDownFilled,
 	  DatabaseOutlined,
@@ -88,6 +92,7 @@ import { Tree, message, Dropdown, MenuProps, Input, Button, Form, Popover, Toolt
   FunctionOutlined,
   LinkOutlined,
   FileAddOutlined,
+  ImportOutlined,
   PlusOutlined,
   ReloadOutlined,
   SendOutlined,
@@ -99,23 +104,26 @@ import { Tree, message, Dropdown, MenuProps, Input, Button, Form, Popover, Toolt
   WarningOutlined,
   AimOutlined,
   MoreOutlined,
-  ToolOutlined,
   SettingOutlined
 	} from '@ant-design/icons';
 import {
     buildSidebarRootConnectionToken,
     buildSidebarRootTagToken,
-    resolveSidebarRootOrderTokens,
     useStore,
 } from '../store';
 import { buildOverlayWorkbenchTheme } from '../utils/overlayWorkbenchTheme';
-		import { SavedConnection, SavedQuery, ExternalSQLDirectory, ExternalSQLTreeEntry } from '../types';
+import {
+    selectRecentSidebarSqlLogs,
+    selectSidebarCommandSearchSqlLogs,
+} from './sidebar/sidebarSqlLogSelector';
+		import { SavedConnection, SavedQuery, SavedQueryGroup, ExternalSQLDirectory, ExternalSQLTreeEntry, SchemaVisibilityRule } from '../types';
 import { getDbIcon } from './DatabaseIcons';
 		import { ListSQLDirectory } from '../../wailsjs/go/app/App';
 import { supportsTableTruncateAction } from './tableDataDangerActions';
   import { EventsOn } from '../../wailsjs/runtime/runtime';
   import { isMacLikePlatform, normalizeOpacityForPlatform, resolveAppearanceValues } from '../utils/appearance';
 import { useAutoFetchVisibility } from '../utils/autoFetchVisibility';
+import { useWorkbenchTabs } from '../hooks/useWorkbenchTabs';
 import FindInDatabaseModal from './FindInDatabaseModal';
 import { buildRpcConnectionConfig } from '../utils/connectionRpcConfig';
 import { resolveDataSourceType } from '../utils/dataSourceCapabilities';
@@ -133,16 +141,31 @@ import {
     type SidebarLocateTreeNodeLike,
 } from '../utils/sidebarLocate';
 import { resolveConnectionAccentColor, resolveConnectionIconType } from '../utils/connectionVisual';
+import {
+  getSavedQueryGroupIdFromToken,
+  getSavedQueryGroupOwnerIds,
+  getSavedQueryIdFromGroupToken,
+  isSavedQueryGroupQueryToken,
+  isSavedQueryGroupToken,
+  normalizeSavedQueryGroups,
+  resolveSavedQueryGroupChildOrder,
+} from '../utils/savedQueryGroups';
+import {
+  getSchemaVisibilityRule,
+  moveSchemaVisibilityRule,
+  updateSchemaVisibilityRule,
+} from '../utils/schemaVisibility';
 import { buildJVMTabTitle } from '../utils/jvmRuntimePresentation';
 import { buildJVMDiagnosticActionDescriptor, buildJVMMonitoringActionDescriptors } from '../utils/jvmSidebarActions';
 import {
-    buildBatchDatabaseExportWorkbenchTab,
-    buildBatchTableExportWorkbenchTab,
-} from '../utils/tableExportTab';
+  DATA_IMPORT_WORKBENCH_TAB_ID,
+  resolveDataImportWorkbenchLaunchTab,
+} from '../utils/dataImportTab';
 import { useExportProgressDialog } from './ExportProgressModal';
 import { getShortcutPlatform, resolveShortcutDisplay } from '../utils/shortcuts';
 import { buildExternalSQLRootNode, type ExternalSQLTreeNode } from '../utils/externalSqlTree';
 import { resolveSidebarTableMetadataFields } from '../utils/sidebarTableMetadata';
+import { filterSidebarTreeByHiddenObjectGroups } from '../utils/sidebarObjectVisibility';
 import { t } from '../i18n';
 import MessagePublishModal from './MessagePublishModal';
 import {
@@ -155,6 +178,7 @@ export { resolveSidebarContextMenuPosition } from './sidebarCoreUtils';
 export type { ExternalSQLFileModalMode, SearchScope } from './sidebarCoreUtils';
 import {
   buildSidebarTableChildrenForUi,
+  buildSidebarConnectionTagTree,
   buildV2RailConnectionGroups,
   buildV2SidebarTableSectionedChildren,
   collectSidebarSubtreeKeys,
@@ -162,6 +186,7 @@ import {
   filterV2CommandSearchTreeItems,
   filterV2ExplorerTreeByKind,
   isSidebarTablePinned,
+  isConnectionTagDescendant,
   normalizeSidebarTreeRelativeDropPosition,
   resolveSidebarConnectionIdFromKey,
   resolveSidebarDropInsertBefore,
@@ -169,8 +194,8 @@ import {
   resolveSidebarDropTargetMetricsFromDomEvent,
   resolveSidebarDatabaseTreePruneKeys,
   resolveSidebarNodeConnectionId,
-  resolveSidebarTagDropInsertBefore,
   resolveV2ActiveConnectionId,
+  resolveV2SelectedDatabaseName,
   resolveV2CommandSearchPersistentFilter,
   shouldClearSidebarNodeChildrenOnCollapse,
   shouldSkipSidebarLoadOnExpandWhileDragging,
@@ -185,6 +210,7 @@ import {
 
 export {
   buildSidebarTableChildrenForUi,
+  buildSidebarConnectionTagTree,
   buildV2RailConnectionGroups,
   buildV2SidebarTableSectionedChildren,
   collectSidebarSubtreeKeys,
@@ -192,6 +218,7 @@ export {
   filterV2CommandSearchTreeItems,
   filterV2ExplorerTreeByKind,
   isSidebarTablePinned,
+  isConnectionTagDescendant,
   normalizeSidebarTreeRelativeDropPosition,
   resolveSidebarConnectionIdFromKey,
   resolveSidebarDropInsertBefore,
@@ -199,7 +226,6 @@ export {
   resolveSidebarDropTargetMetricsFromDomEvent,
   resolveSidebarDatabaseTreePruneKeys,
   resolveSidebarNodeConnectionId,
-  resolveSidebarTagDropInsertBefore,
   resolveV2ActiveConnectionId,
   resolveV2CommandSearchPersistentFilter,
   shouldClearSidebarNodeChildrenOnCollapse,
@@ -209,6 +235,7 @@ export {
   shouldRunV2CommandSearchEnter,
   sortSidebarTableEntries,
 };
+export { resolveSidebarTagDropInsertBefore } from './sidebarV2Utils';
 export type { V2CommandSearchItem, V2RailConnectionGroup } from './sidebarV2Utils';
 
 type SidebarTreeSwitcherNodeLike = {
@@ -295,6 +322,7 @@ const buildConnectionReloadSignature = (conn?: SavedConnection | null): string =
     config: conn.config || {},
     includeDatabases: conn.includeDatabases || [],
     includeRedisDatabases: conn.includeRedisDatabases || [],
+    schemaVisibilityByDatabase: conn.schemaVisibilityByDatabase || {},
   });
 };
 
@@ -314,14 +342,16 @@ const isSavedQueryUnmatchedForConnectionIds = (query: SavedQuery, connectionIds:
 export const buildAllSavedQueriesTreeNode = (
   savedQueries: SavedQuery[],
   connections: SavedConnection[],
+  savedQueryGroups: SavedQueryGroup[] = [],
 ): TreeNode | null => {
-  if (savedQueries.length === 0) {
+  const normalizedGroups = normalizeSavedQueryGroups(
+    savedQueryGroups,
+    savedQueries.map((query) => query.id),
+  );
+  if (savedQueries.length === 0 && normalizedGroups.length === 0) {
       return null;
   }
 
-  const connectionIds = new Set(connections.map((conn) => conn.id));
-  const unmatchedSavedQueries = savedQueries.filter((query) => isSavedQueryUnmatchedForConnectionIds(query, connectionIds));
-  const unmatchedIds = new Set(unmatchedSavedQueries.map((query) => query.id));
   const createQueryNode = (query: SavedQuery): TreeNode => ({
       title: query.name || t('sidebar.tree.untitled_query'),
       key: `all-saved-query-${query.id}`,
@@ -347,61 +377,115 @@ export const buildAllSavedQueriesTreeNode = (
       }));
   };
 
-  const groupedByConnection = new Map<string, SavedQuery[]>();
-  savedQueries.forEach((query) => {
-      if (unmatchedIds.has(query.id)) {
-          return;
-      }
-      groupedByConnection.set(query.connectionId, [
-          ...(groupedByConnection.get(query.connectionId) || []),
-          query,
-      ]);
-  });
-
-  const children: TreeNode[] = [];
-  connections.forEach((conn) => {
-      const connectionQueries = groupedByConnection.get(conn.id);
-      if (!connectionQueries || connectionQueries.length === 0) {
-          return;
-      }
-      const iconType = resolveConnectionIconType(conn);
-      const iconColor = resolveConnectionAccentColor(conn);
-      children.push({
-          title: conn.name || conn.id,
-          key: `all-saved-queries-connection-${conn.id}`,
-          icon: getDbIcon(iconType, iconColor, 22),
-          type: 'saved-query-group',
-          selectable: false,
-          isLeaf: false,
-          children: buildDatabaseGroups(connectionQueries, `all-saved-queries-connection-${conn.id}`),
-      });
-  });
-
-  if (unmatchedSavedQueries.length > 0) {
-      const groupedByOriginalConnection = new Map<string, SavedQuery[]>();
-      unmatchedSavedQueries.forEach((query) => {
-          const originalConnectionId = String(query.originalConnectionId || query.connectionId || t('sidebar.tree.unknown_connection')).trim() || t('sidebar.tree.unknown_connection');
-          groupedByOriginalConnection.set(originalConnectionId, [
-              ...(groupedByOriginalConnection.get(originalConnectionId) || []),
+  const buildAutomaticChildren = (queries: SavedQuery[]): TreeNode[] => {
+      const connectionIds = new Set(connections.map((conn) => conn.id));
+      const unmatchedSavedQueries = queries.filter((query) => isSavedQueryUnmatchedForConnectionIds(query, connectionIds));
+      const unmatchedIds = new Set(unmatchedSavedQueries.map((query) => query.id));
+      const groupedByConnection = new Map<string, SavedQuery[]>();
+      queries.forEach((query) => {
+          if (unmatchedIds.has(query.id)) return;
+          groupedByConnection.set(query.connectionId, [
+              ...(groupedByConnection.get(query.connectionId) || []),
               query,
           ]);
       });
-      children.push({
-          title: t('sidebar.tree.unmatched_saved_queries'),
-          key: 'all-saved-queries-unmatched',
-          icon: <WarningOutlined />,
-          type: 'saved-query-group',
-          selectable: false,
-          isLeaf: false,
-          children: Array.from(groupedByOriginalConnection.entries()).map(([connectionLabel, items]) => ({
-              title: connectionLabel,
-              key: `all-saved-queries-unmatched-${encodeURIComponent(connectionLabel)}`,
-              icon: <FolderOpenOutlined />,
+
+      const automaticChildren: TreeNode[] = [];
+      connections.forEach((conn) => {
+          const connectionQueries = groupedByConnection.get(conn.id);
+          if (!connectionQueries || connectionQueries.length === 0) return;
+          const iconType = resolveConnectionIconType(conn);
+          const iconColor = resolveConnectionAccentColor(conn);
+          automaticChildren.push({
+              title: conn.name || conn.id,
+              key: `all-saved-queries-connection-${conn.id}`,
+              icon: getDbIcon(iconType, iconColor, 22),
               type: 'saved-query-group',
               selectable: false,
               isLeaf: false,
-              children: buildDatabaseGroups(items, `all-saved-queries-unmatched-${encodeURIComponent(connectionLabel)}`),
-          })),
+              children: buildDatabaseGroups(connectionQueries, `all-saved-queries-connection-${conn.id}`),
+          });
+      });
+
+      if (unmatchedSavedQueries.length > 0) {
+          const groupedByOriginalConnection = new Map<string, SavedQuery[]>();
+          unmatchedSavedQueries.forEach((query) => {
+              const originalConnectionId = String(query.originalConnectionId || query.connectionId || t('sidebar.tree.unknown_connection')).trim() || t('sidebar.tree.unknown_connection');
+              groupedByOriginalConnection.set(originalConnectionId, [
+                  ...(groupedByOriginalConnection.get(originalConnectionId) || []),
+                  query,
+              ]);
+          });
+          automaticChildren.push({
+              title: t('sidebar.tree.unmatched_saved_queries'),
+              key: 'all-saved-queries-unmatched',
+              icon: <WarningOutlined />,
+              type: 'saved-query-group',
+              selectable: false,
+              isLeaf: false,
+              children: Array.from(groupedByOriginalConnection.entries()).map(([connectionLabel, items]) => ({
+                  title: connectionLabel,
+                  key: `all-saved-queries-unmatched-${encodeURIComponent(connectionLabel)}`,
+                  icon: <FolderOpenOutlined />,
+                  type: 'saved-query-group',
+                  selectable: false,
+                  isLeaf: false,
+                  children: buildDatabaseGroups(items, `all-saved-queries-unmatched-${encodeURIComponent(connectionLabel)}`),
+              })),
+          });
+      }
+      return automaticChildren;
+  };
+
+  const queryById = new Map(savedQueries.map((query) => [query.id, query]));
+  const groupById = new Map(normalizedGroups.map((group) => [group.id, group]));
+  const groupOwners = getSavedQueryGroupOwnerIds(normalizedGroups);
+  const buildManualGroupNode = (group: SavedQueryGroup, ancestors = new Set<string>()): TreeNode => {
+      const nextAncestors = new Set(ancestors);
+      nextAncestors.add(group.id);
+      const children = resolveSavedQueryGroupChildOrder(group.id, normalizedGroups).flatMap((token): TreeNode[] => {
+          if (isSavedQueryGroupQueryToken(token)) {
+              const query = queryById.get(getSavedQueryIdFromGroupToken(token));
+              return query ? [createQueryNode(query)] : [];
+          }
+          if (isSavedQueryGroupToken(token)) {
+              const childGroupId = getSavedQueryGroupIdFromToken(token);
+              const childGroup = groupById.get(childGroupId);
+              if (!childGroup || childGroup.parentGroupId !== group.id || nextAncestors.has(childGroup.id)) return [];
+              return [buildManualGroupNode(childGroup, nextAncestors)];
+          }
+          return [];
+      });
+      return {
+          title: group.name || t('sidebar.saved_query_group.untitled'),
+          key: `saved-query-manual-group-${group.id}`,
+          icon: <FolderOutlined />,
+          type: 'saved-query-manual-group',
+          dataRef: group,
+          selectable: false,
+          isLeaf: false,
+          children,
+      };
+  };
+
+  const automaticChildren = buildAutomaticChildren(
+      savedQueries.filter((query) => !groupOwners.has(query.id)),
+  );
+  const children: TreeNode[] = normalizedGroups
+      .filter((group) => !group.parentGroupId)
+      .map((group) => buildManualGroupNode(group));
+
+  if (normalizedGroups.length === 0) {
+      children.push(...automaticChildren);
+  } else if (automaticChildren.length > 0) {
+      children.push({
+          title: t('sidebar.tree.ungrouped_saved_queries'),
+          key: 'all-saved-queries-ungrouped',
+          icon: <FolderOpenOutlined />,
+          type: 'saved-query-group',
+          selectable: false,
+          isLeaf: false,
+          children: automaticChildren,
       });
   }
 
@@ -419,7 +503,6 @@ export const buildAllSavedQueriesTreeNode = (
 const Sidebar: React.FC<{
   onCreateConnection?: () => void;
   onEditConnection?: (conn: SavedConnection) => void;
-  onOpenTools?: () => void;
   onOpenSettings?: () => void;
   onToggleAI?: () => void;
   onToggleLogPanel?: () => void;
@@ -428,7 +511,6 @@ const Sidebar: React.FC<{
 }> = React.memo(({
   onCreateConnection,
   onEditConnection,
-  onOpenTools,
   onOpenSettings,
   onToggleAI,
   onToggleLogPanel,
@@ -437,15 +519,25 @@ const Sidebar: React.FC<{
 }) => {
   const connections = useStore(state => state.connections);
   const savedQueries = useStore(state => state.savedQueries);
+  const savedQueryGroups = useStore(state => state.savedQueryGroups);
   const externalSQLDirectories = useStore(state => state.externalSQLDirectories);
   const saveQuery = useStore(state => state.saveQuery);
   const deleteQuery = useStore(state => state.deleteQuery);
+  const saveSavedQueryGroup = useStore(state => state.saveSavedQueryGroup);
+  const deleteSavedQueryGroup = useStore(state => state.deleteSavedQueryGroup);
+  const moveSavedQueryToGroup = useStore(state => state.moveSavedQueryToGroup);
+  const reloadSavedQueryGroups = useStore(state => state.reloadSavedQueryGroups);
   const saveExternalSQLDirectory = useStore(state => state.saveExternalSQLDirectory);
   const deleteExternalSQLDirectory = useStore(state => state.deleteExternalSQLDirectory);
+  const updateRecentSQLFilePath = useStore(state => state.updateRecentSQLFilePath);
+  const removeRecentSQLFilesByPath = useStore(state => state.removeRecentSQLFilesByPath);
+  const moveRecentSQLFilesByDirectory = useStore(state => state.moveRecentSQLFilesByDirectory);
+  const removeRecentSQLFilesByDirectory = useStore(state => state.removeRecentSQLFilesByDirectory);
   const addConnection = useStore(state => state.addConnection);
+  const updateConnection = useStore(state => state.updateConnection);
   const addTab = useStore(state => state.addTab);
   const updateQueryTabDraft = useStore(state => state.updateQueryTabDraft);
-  const tabs = useStore(state => state.tabs);
+  const tabs = useWorkbenchTabs();
   const activeTabId = useStore(state => state.activeTabId);
   const setActiveContext = useStore(state => state.setActiveContext);
   const removeConnection = useStore(state => state.removeConnection);
@@ -455,9 +547,7 @@ const Sidebar: React.FC<{
   const updateConnectionTag = useStore(state => state.updateConnectionTag);
   const removeConnectionTag = useStore(state => state.removeConnectionTag);
   const moveConnectionToTag = useStore(state => state.moveConnectionToTag);
-  const reorderConnections = useStore(state => state.reorderConnections);
-  const reorderTags = useStore(state => state.reorderTags);
-  const reorderSidebarRoot = useStore(state => state.reorderSidebarRoot);
+  const moveConnectionTag = useStore(state => state.moveConnectionTag);
   const closeTabsByConnection = useStore(state => state.closeTabsByConnection);
   const closeTabsByDatabase = useStore(state => state.closeTabsByDatabase);
   const theme = useStore(state => state.theme);
@@ -472,7 +562,6 @@ const Sidebar: React.FC<{
   const queryOptions = useStore(state => state.queryOptions);
   const setQueryOptions = useStore(state => state.setQueryOptions);
   const addSqlLog = useStore(state => state.addSqlLog);
-  const sqlLogs = useStore(state => state.sqlLogs) || [];
   const shortcutOptions = useStore(state => state.shortcutOptions);
   const languagePreference = useStore(state => state.languagePreference);
   const setAppearance = useStore(state => state.setAppearance);
@@ -570,6 +659,13 @@ const Sidebar: React.FC<{
   const searchInputRef = useRef<any>(null);
   const commandSearchInputRef = useRef<any>(null);
   const [isV2CommandSearchOpen, setIsV2CommandSearchOpen] = useState(false);
+  const commandSearchSqlLogs = useStore(
+      state => selectSidebarCommandSearchSqlLogs(state, isV2Ui && isV2CommandSearchOpen),
+  );
+  const recentSqlLogs = useMemo(
+      () => selectRecentSidebarSqlLogs(commandSearchSqlLogs),
+      [commandSearchSqlLogs],
+  );
   const [v2CommandSearchValue, setV2CommandSearchValue] = useState('');
   const deferredV2CommandSearchValue = useDeferredValue(v2CommandSearchValue);
   const [v2CommandActiveIndex, setV2CommandActiveIndex] = useState(0);
@@ -600,8 +696,14 @@ const Sidebar: React.FC<{
       [connectionIdSet, savedQueries],
   );
   const allSavedQueriesNode = useMemo<TreeNode | null>(() => {
-      return buildAllSavedQueriesTreeNode(savedQueries, connections);
-  }, [connections, savedQueries]);
+      return buildAllSavedQueriesTreeNode(savedQueries, connections, savedQueryGroups);
+  }, [connections, savedQueries, savedQueryGroups]);
+  const sidebarHiddenObjectGroups = appearance.sidebarHiddenObjectGroups;
+  const visibleSidebarTreeData = useMemo(
+      () => filterSidebarTreeByHiddenObjectGroups(treeData, sidebarHiddenObjectGroups),
+      [sidebarHiddenObjectGroups, treeData],
+  );
+  const sidebarObjectVisibilitySignature = sidebarHiddenObjectGroups.join('|') || 'all';
   const snapshotTreeSelectionBeforeDrag = useCallback(() => {
       treeDragSelectionSnapshotRef.current = {
           selectedKeys: [...selectedKeys],
@@ -786,6 +888,17 @@ const Sidebar: React.FC<{
   const [isRenameSchemaModalOpen, setIsRenameSchemaModalOpen] = useState(false);
   const [renameSchemaForm] = Form.useForm();
   const [renameSchemaTarget, setRenameSchemaTarget] = useState<any>(null);
+  const [schemaVisibilityForm] = Form.useForm<{
+      mode: SchemaVisibilityRule['mode'];
+      schemas: string[];
+  }>();
+  const [schemaVisibilityTarget, setSchemaVisibilityTarget] = useState<{
+      connection: SavedConnection;
+      dbName: string;
+      databaseNodeKey: React.Key;
+      availableSchemas: string[];
+  } | null>(null);
+  const [isSavingSchemaVisibility, setIsSavingSchemaVisibility] = useState(false);
   const [isRenameDbModalOpen, setIsRenameDbModalOpen] = useState(false);
   const [renameDbForm] = Form.useForm();
   const [renameDbTarget, setRenameDbTarget] = useState<any>(null);
@@ -799,57 +912,22 @@ const Sidebar: React.FC<{
   const [isRenameSavedQueryModalOpen, setIsRenameSavedQueryModalOpen] = useState(false);
   const [renameSavedQueryForm] = Form.useForm();
   const [renameSavedQueryTarget, setRenameSavedQueryTarget] = useState<SavedQuery | null>(null);
+  const [isSavedQueryGroupModalOpen, setIsSavedQueryGroupModalOpen] = useState(false);
+  const [savedQueryGroupTargetId, setSavedQueryGroupTargetId] = useState<string | null>(null);
+  const [savedQueryGroupInitialParentId, setSavedQueryGroupInitialParentId] = useState<string | null>(null);
   // Connection Tag Modals
   const [isCreateTagModalOpen, setIsCreateTagModalOpen] = useState(false);
   const [createTagForm] = Form.useForm();
 
   const {
-      isBatchModalOpen,
-      setIsBatchModalOpen,
-      batchTables,
-      checkedTableKeys,
-      setCheckedTableKeys,
-      selectedConnection,
-      selectedDatabase,
-      availableDatabases,
-      batchFilterKeyword,
-      setBatchFilterKeyword,
-      batchFilterType,
-      setBatchFilterType,
-      batchSelectionScope,
-      setBatchSelectionScope,
-      filteredBatchObjects,
-      groupedBatchObjects,
-      selectionScopeTargetKeys,
-      isBatchDbModalOpen,
-      setIsBatchDbModalOpen,
-      batchDatabases,
-      checkedDbKeys,
-      setCheckedDbKeys,
-      selectedDbConnection,
       handleExportDatabaseSQL,
       handleExportSchemaSQL,
-      openBatchOperationModal,
-      openBatchTableExportWorkbench,
-      handleConnectionChange,
-      handleDatabaseChange,
-      handleBatchExport,
-      handleBatchClear,
-      handleBatchDeleteTables,
-      handleCheckAll,
-      handleInvertSelection,
-      openBatchDatabaseModal,
-      openBatchDatabaseExportWorkbench,
-      handleDbConnectionChange,
-      handleBatchDbExport,
-      handleBatchDbDelete,
-      handleCheckAllDb,
-      handleInvertSelectionDb,
+      openBatchTableWorkbench,
+      openBatchDatabaseWorkbench,
   } = useSidebarBatchExport({
       connections,
       selectedNodesRef,
       addTab,
-      addSqlLog,
   });
   // Find in Database Modal
   const [findInDbContext, setFindInDbContext] = useState<{ open: boolean; connectionId: string; dbName: string }>({ open: false, connectionId: '', dbName: '' });
@@ -941,13 +1019,13 @@ const Sidebar: React.FC<{
         } as TreeNode;
       };
 
-      const taggedConnIds = new Set<string>();
-      const tagNodesById = new Map<string, TreeNode>();
-      connectionTags.forEach((tag) => {
-        tag.connectionIds.forEach(id => taggedConnIds.add(id));
-        tagNodesById.set(tag.id, {
-          title: tag.name,
-          key: `tag-${tag.id}`,
+      const buildTreeNode = (item: ReturnType<typeof buildSidebarConnectionTagTree>[number]): TreeNode => {
+        if (item.kind === 'connection') {
+          return buildConnectionNode(item.connection);
+        }
+        return {
+          title: item.tag.name,
+          key: `tag-${item.tag.id}`,
           icon: (
             <span
               className="gn-v2-tree-folder-icon"
@@ -957,46 +1035,17 @@ const Sidebar: React.FC<{
             </span>
           ),
           type: 'tag',
-          dataRef: tag,
+          dataRef: item.tag,
           isLeaf: false,
-          children: tag.connectionIds
-            .map(cid => connections.find(c => c.id === cid))
-            .filter(Boolean)
-            .map(conn => buildConnectionNode(conn!)),
-        } as TreeNode);
-      });
+          children: item.children.map(buildTreeNode),
+        } as TreeNode;
+      };
 
-      const ungroupedNodesById = new Map<string, TreeNode>();
-      connections
-        .filter(c => !taggedConnIds.has(c.id))
-        .forEach((conn) => {
-          ungroupedNodesById.set(conn.id, buildConnectionNode(conn));
-        });
-
-      const orderedRootTokens = resolveSidebarRootOrderTokens(
-        sidebarRootOrder,
-        connectionTags,
+      const orderedNodes = buildSidebarConnectionTagTree(
         connections,
-      );
-      const orderedNodes: TreeNode[] = [];
-      orderedRootTokens.forEach((token) => {
-        if (token.startsWith('tag:')) {
-          const tagNode = tagNodesById.get(token.slice('tag:'.length));
-          if (!tagNode) return;
-          orderedNodes.push(tagNode);
-          tagNodesById.delete(token.slice('tag:'.length));
-          return;
-        }
-        if (token.startsWith('connection:')) {
-          const connectionNode = ungroupedNodesById.get(token.slice('connection:'.length));
-          if (!connectionNode) return;
-          orderedNodes.push(connectionNode);
-          ungroupedNodesById.delete(token.slice('connection:'.length));
-        }
-      });
-
-      orderedNodes.push(...Array.from(tagNodesById.values()));
-      orderedNodes.push(...Array.from(ungroupedNodesById.values()));
+        connectionTags,
+        sidebarRootOrder,
+      ).map(buildTreeNode);
       if (allSavedQueriesNode) {
         orderedNodes.push(allSavedQueriesNode);
       }
@@ -1027,13 +1076,25 @@ const Sidebar: React.FC<{
       message.error(error?.message || t('connection.sidebar.duplicate.failureFallback'));
     }
   };
-  const updateTreeData = (list: TreeNode[], key: React.Key, children: TreeNode[] | undefined): TreeNode[] => {
+  const updateTreeData = (
+    list: TreeNode[],
+    key: React.Key,
+    children: TreeNode[] | undefined,
+    dataRef?: unknown,
+  ): TreeNode[] => {
     return list.map(node => {
       if (node.key === key) {
-        return { ...node, children };
+        return {
+          ...node,
+          children,
+          ...(dataRef === undefined ? {} : { dataRef }),
+        };
       }
       if (node.children) {
-        return { ...node, children: updateTreeData(node.children, key, children) };
+        return {
+          ...node,
+          children: updateTreeData(node.children, key, children, dataRef),
+        };
       }
       return node;
     });
@@ -1056,8 +1117,12 @@ const Sidebar: React.FC<{
 
   findTreeNodeByKeyRef.current = findTreeNodeByKey;
 
-  const replaceTreeNodeChildren = (key: React.Key, children: TreeNode[] | undefined): TreeNode[] => {
-      const nextTreeData = updateTreeData(treeDataRef.current, key, children);
+  const replaceTreeNodeChildren = (
+    key: React.Key,
+    children: TreeNode[] | undefined,
+    dataRef?: unknown,
+  ): TreeNode[] => {
+      const nextTreeData = updateTreeData(treeDataRef.current, key, children, dataRef);
       treeDataRef.current = nextTreeData;
       setTreeData(nextTreeData);
       return nextTreeData;
@@ -1229,11 +1294,25 @@ const Sidebar: React.FC<{
       addTab,
       saveExternalSQLDirectory,
       deleteExternalSQLDirectory,
+      updateRecentSQLFilePath,
+      removeRecentSQLFilesByPath,
+      moveRecentSQLFilesByDirectory,
+      removeRecentSQLFilesByDirectory,
       refreshGlobalExternalSQLRootNode,
       setExpandedKeys,
       setAutoExpandParent,
       getActiveContext: () => useStore.getState().activeContext,
   });
+
+  useEffect(() => {
+    const handleWorkbenchAddExternalSQLDirectory = () => {
+      void handleAddExternalSQLDirectory({ type: 'external-sql-root' });
+    };
+    window.addEventListener('gonavi:add-external-sql-directory', handleWorkbenchAddExternalSQLDirectory);
+    return () => {
+      window.removeEventListener('gonavi:add-external-sql-directory', handleWorkbenchAddExternalSQLDirectory);
+    };
+  }, [handleAddExternalSQLDirectory]);
 
   const getNodeDatabaseContext = (node: any): { connectionId: string; dbName: string; dbNodeKey: string } | null => {
     if (!node) return null;
@@ -1421,7 +1500,7 @@ const Sidebar: React.FC<{
   }, []);
 
   const onLoadData = async ({ key, children, dataRef, type }: any) => {
-    if (type === 'tag' || type === 'all-saved-queries' || type === 'saved-query-group' || type === 'unmatched-saved-queries') return;
+    if (type === 'tag' || type === 'all-saved-queries' || type === 'saved-query-group' || type === 'saved-query-manual-group' || type === 'unmatched-saved-queries') return;
     if (hasSidebarLazyChildren(children)) return;
 
     if (type === 'connection') {
@@ -1927,6 +2006,7 @@ const Sidebar: React.FC<{
   const getDatabaseNodeRef = (connRef: any, dbName: string) => {
       const latestConn = connections.find(c => c.id === connRef.id);
       return {
+          title: dbName,
           key: `${connRef.id}-${dbName}`,
           dataRef: { ...(latestConn || connRef), dbName }
       };
@@ -1941,6 +2021,51 @@ const Sidebar: React.FC<{
       const rawName = String(name || '').trim();
       return rawName || t('query_editor.save_modal.unnamed');
   };
+
+  const openSavedQueryGroupModal = useCallback(async (
+      target?: SavedQueryGroup | null,
+      initialParentGroupId?: string | null,
+  ) => {
+      try {
+          const groups = await reloadSavedQueryGroups();
+          const targetId = String(target?.id || '').trim();
+          if (targetId && !groups.some((group) => group.id === targetId)) {
+              message.warning(t('sidebar.message.saved_query_group_not_found'));
+              return;
+          }
+          const parentId = String(initialParentGroupId || '').trim();
+          setSavedQueryGroupTargetId(targetId || null);
+          setSavedQueryGroupInitialParentId(
+              parentId && groups.some((group) => group.id === parentId) ? parentId : null,
+          );
+          setIsSavedQueryGroupModalOpen(true);
+      } catch (error) {
+          message.error(t('sidebar.message.saved_query_group_load_failed', {
+              error: error instanceof Error ? error.message : String(error),
+          }));
+      }
+  }, [reloadSavedQueryGroups]);
+
+  const closeSavedQueryGroupModal = useCallback(() => {
+      setIsSavedQueryGroupModalOpen(false);
+      setSavedQueryGroupTargetId(null);
+      setSavedQueryGroupInitialParentId(null);
+  }, []);
+
+  const handleSaveSavedQueryGroup = useCallback(async (group: SavedQueryGroup) => {
+      const isEditing = Boolean(group.id);
+      await saveSavedQueryGroup(group);
+      message.success(t(
+          isEditing
+              ? 'sidebar.message.saved_query_group_updated'
+              : 'sidebar.message.saved_query_group_created',
+      ));
+  }, [saveSavedQueryGroup]);
+
+  const savedQueryGroupTarget = useMemo(
+      () => savedQueryGroups.find((group) => group.id === savedQueryGroupTargetId) || null,
+      [savedQueryGroupTargetId, savedQueryGroups],
+  );
 
   const {
       loadDatabases,
@@ -1966,9 +2091,176 @@ const Sidebar: React.FC<{
       },
   });
 
+  const openSchemaVisibilitySettings = useCallback((node: any) => {
+      const dbName = String(node?.dataRef?.dbName || node?.title || '').trim();
+      const connectionId = String(node?.dataRef?.id || '').trim();
+      const connection = connections.find((item) => item.id === connectionId) || node?.dataRef;
+      if (!connection || !dbName || !shouldHideSchemaPrefix(connection as SavedConnection)) {
+          return;
+      }
+
+      const databaseNode = node?.type === 'database'
+          ? node
+          : getDatabaseNodeRef(connection, dbName);
+      const currentRule = getSchemaVisibilityRule(connection as SavedConnection, dbName);
+      const availableSchemas = Array.from(new Set([
+          ...(Array.isArray(databaseNode?.children)
+              ? databaseNode.children
+                  .filter((item: any) => item?.dataRef?.groupKey === 'schema')
+                  .map((item: any) => String(item?.dataRef?.schemaName || item?.title || '').trim())
+              : []),
+          ...(currentRule?.schemas || []),
+      ].filter(Boolean))).sort((a, b) => a.localeCompare(b));
+
+      schemaVisibilityForm.setFieldsValue({
+          mode: currentRule?.mode || 'include',
+          schemas: currentRule?.schemas || [],
+      });
+      setSchemaVisibilityTarget({
+          connection: connection as SavedConnection,
+          dbName,
+          databaseNodeKey: databaseNode?.key || `${connectionId}-${dbName}`,
+          availableSchemas,
+      });
+      void loadSchemas(connection as SavedConnection, dbName).then((result) => {
+          const loadedSchemas = Array.isArray(result?.schemas)
+              ? result.schemas.map((schema) => String(schema || '').trim()).filter(Boolean)
+              : [];
+          if (loadedSchemas.length === 0) return;
+          setSchemaVisibilityTarget((current) => {
+              if (!current || current.connection.id !== connectionId || current.dbName !== dbName) {
+                  return current;
+              }
+              return {
+                  ...current,
+                  availableSchemas: Array.from(new Set([
+                      ...current.availableSchemas,
+                      ...loadedSchemas,
+                  ])).sort((left, right) => left.localeCompare(right)),
+              };
+          });
+      }).catch(() => undefined);
+  }, [connections, getDatabaseNodeRef, schemaVisibilityForm]);
+
+  const handleSaveSchemaVisibility = useCallback(async () => {
+      if (!schemaVisibilityTarget) return;
+      setIsSavingSchemaVisibility(true);
+      try {
+          const values = await schemaVisibilityForm.validateFields();
+          const mode = values.mode === 'exclude' ? 'exclude' : 'include';
+          const seenSchemas = new Set<string>();
+          const schemas = (Array.isArray(values.schemas) ? values.schemas : [])
+              .map((schema) => String(schema || '').trim())
+              .filter((schema) => {
+                  const normalized = schema.toLocaleLowerCase();
+                  if (!normalized || seenSchemas.has(normalized)) return false;
+                  seenSchemas.add(normalized);
+                  return true;
+              });
+          const nextRule: SchemaVisibilityRule | undefined = schemas.length > 0
+              ? { mode, schemas }
+              : undefined;
+          const nextConnection = updateSchemaVisibilityRule(
+              schemaVisibilityTarget.connection,
+              schemaVisibilityTarget.dbName,
+              nextRule,
+          );
+          const backendApp = (window as any).go?.app?.App;
+          if (typeof backendApp?.SaveConnection !== 'function') {
+              throw new Error(t('connection_modal.message.save_failed'));
+          }
+          const saved = await backendApp.SaveConnection({
+              id: nextConnection.id,
+              name: nextConnection.name,
+              config: nextConnection.config,
+              includeDatabases: nextConnection.includeDatabases,
+              includeRedisDatabases: nextConnection.includeRedisDatabases,
+              schemaVisibilityByDatabase: nextConnection.schemaVisibilityByDatabase,
+              iconType: nextConnection.iconType,
+              iconColor: nextConnection.iconColor,
+          });
+          const persistedConnection: SavedConnection = {
+              ...nextConnection,
+              ...(saved || {}),
+              schemaVisibilityByDatabase: nextConnection.schemaVisibilityByDatabase,
+          };
+          connectionReloadSignaturesRef.current[persistedConnection.id] =
+              buildConnectionReloadSignature(persistedConnection);
+          updateConnection(persistedConnection);
+          await loadTables({
+              key: schemaVisibilityTarget.databaseNodeKey,
+              type: 'database',
+              dataRef: {
+                  ...persistedConnection,
+                  dbName: schemaVisibilityTarget.dbName,
+              },
+          });
+          setExpandedKeys((previous) => previous.includes(schemaVisibilityTarget.databaseNodeKey)
+              ? previous
+              : [...previous, schemaVisibilityTarget.databaseNodeKey]);
+          setSchemaVisibilityTarget(null);
+          message.success(t('sidebar.schema_visibility.message.saved'));
+      } catch (error: any) {
+          message.error(t('sidebar.schema_visibility.message.save_failed', {
+              error: error?.message || String(error),
+          }));
+      } finally {
+          setIsSavingSchemaVisibility(false);
+      }
+  }, [loadTables, schemaVisibilityForm, schemaVisibilityTarget, updateConnection]);
+
+  const migrateSchemaVisibilityForRenamedDatabase = useCallback(async (
+      connection: SavedConnection,
+      oldDbName: string,
+      newDbName: string,
+  ): Promise<SavedConnection> => {
+      const currentConnection = connections.find((item) => item.id === connection.id) || connection;
+      const nextConnection = moveSchemaVisibilityRule(currentConnection, oldDbName, newDbName);
+      if (nextConnection === currentConnection) {
+          return currentConnection;
+      }
+
+      const backendApp = (window as any).go?.app?.App;
+      if (typeof backendApp?.SaveConnection !== 'function') {
+          message.warning(t('sidebar.schema_visibility.message.save_failed', {
+              error: t('connection_modal.message.save_failed'),
+          }));
+          return currentConnection;
+      }
+
+      try {
+          const saved = await backendApp.SaveConnection({
+              id: nextConnection.id,
+              name: nextConnection.name,
+              config: nextConnection.config,
+              includeDatabases: nextConnection.includeDatabases,
+              includeRedisDatabases: nextConnection.includeRedisDatabases,
+              schemaVisibilityByDatabase: nextConnection.schemaVisibilityByDatabase,
+              iconType: nextConnection.iconType,
+              iconColor: nextConnection.iconColor,
+          });
+          const persistedConnection: SavedConnection = {
+              ...nextConnection,
+              ...(saved || {}),
+              schemaVisibilityByDatabase: nextConnection.schemaVisibilityByDatabase,
+          };
+          connectionReloadSignaturesRef.current[persistedConnection.id] =
+              buildConnectionReloadSignature(persistedConnection);
+          updateConnection(persistedConnection);
+          return persistedConnection;
+      } catch (error: any) {
+          message.warning(t('sidebar.schema_visibility.message.save_failed', {
+              error: error?.message || String(error),
+          }));
+          return currentConnection;
+      }
+  }, [connections, updateConnection]);
+
   const {
       handleCopyStructure,
+      handleCopyTable,
       handleCopyTableName,
+      handleCopyDatabaseName,
       handleExport,
       openExportDialog,
       handleCopyTableAsInsert,
@@ -2063,6 +2355,7 @@ const Sidebar: React.FC<{
       runExportWithProgress,
       setAIPanelVisible,
       addAIContext,
+      migrateSchemaVisibilityForRenamedDatabase,
   });
 
 
@@ -2122,6 +2415,8 @@ const Sidebar: React.FC<{
       openTableDdlInDesigner,
       openTableInERView,
       handleCopyTableName,
+      handleCopyTable,
+      handleCopyDatabaseName,
       handleCopyStructure,
       handleCopyTableAsInsert,
       openCreateStarRocksRollup,
@@ -2173,7 +2468,7 @@ const Sidebar: React.FC<{
       setV2CommandActiveIndex,
       v2ExplorerFilter,
       sidebarTableMetadataFields,
-      treeData,
+      treeData: visibleSidebarTreeData,
       treeViewportWidth,
       treeHeight,
       isV2Ui,
@@ -2184,7 +2479,7 @@ const Sidebar: React.FC<{
       selectedNodesRef,
       activeContext,
       activeTab,
-      sqlLogs,
+      recentSqlLogs,
       shortcutOptions,
       activeShortcutPlatform,
       overlayTheme,
@@ -2199,7 +2494,7 @@ const Sidebar: React.FC<{
   const legacyToolbarStyle: React.CSSProperties = {
       padding: '6px 16px',
       display: 'grid',
-      gridTemplateColumns: 'repeat(5, minmax(0, 1fr))',
+      gridTemplateColumns: 'repeat(6, minmax(0, 1fr))',
       gap: 8,
       alignItems: 'center',
       justifyItems: 'center',
@@ -2247,6 +2542,7 @@ const Sidebar: React.FC<{
       handleExportSchemaSQL,
       handleDeleteSchema,
       openRenameSchemaModal,
+      openSchemaVisibilitySettings,
       resolveMessagePublishTarget,
       addSqlLog,
       handleV2TableContextMenuAction,
@@ -2314,6 +2610,8 @@ const Sidebar: React.FC<{
   const getNodeMenuItems = (node: any): MenuProps['items'] => buildSidebarLegacyNodeMenuItems(node, {
     addTab,
     getMetadataDialect,
+    shouldHideSchemaPrefix,
+    openSchemaVisibilitySettings,
     handleV2DatabaseContextMenuAction,
     isPostgresSchemaDialect,
     handleExportSchemaSQL,
@@ -2367,6 +2665,7 @@ const Sidebar: React.FC<{
     openDesign,
     openCreateStarRocksRollup,
     handleCopyTableName,
+    handleCopyTable,
     handleCopyStructure,
     handleExport,
     setRenameTableTarget,
@@ -2381,6 +2680,10 @@ const Sidebar: React.FC<{
     openRenameSavedQueryModal,
     resolveSavedQueryDisplayName,
     deleteQuery,
+    savedQueryGroups,
+    openSavedQueryGroupModal,
+    deleteSavedQueryGroup,
+    moveSavedQueryToGroup,
     treeDataRef,
     setTreeData,
     handleAddExternalSQLDirectory,
@@ -2406,6 +2709,52 @@ const Sidebar: React.FC<{
       treeDragSelectSuppressUntilRef,
       setIsTreeDragging,
   });
+  const getTagParentId = (tagId: unknown): string | null => {
+      const tag = connectionTags.find((candidate) => candidate.id === String(tagId || '').trim());
+      const parentTagId = String(tag?.parentTagId || '').trim();
+      return parentTagId || null;
+  };
+
+  const getConnectionParentTagId = (connectionId: unknown): string | null => (
+      connectionTags.find((tag) => tag.connectionIds.includes(String(connectionId || '').trim()))?.id || null
+  );
+
+  const getNodeParentTagId = (node: any): string | null => {
+      if (node?.type === 'tag') return getTagParentId(node?.dataRef?.id);
+      if (node?.type === 'connection') return getConnectionParentTagId(node?.key);
+      return null;
+  };
+
+  const getNodeOrderToken = (node: any): string | null => {
+      if (node?.type === 'tag') {
+          const tagId = String(node?.dataRef?.id || '').trim();
+          return tagId ? buildSidebarRootTagToken(tagId) : null;
+      }
+      if (node?.type === 'connection') {
+          const connectionId = String(node?.key || '').trim();
+          return connectionId ? buildSidebarRootConnectionToken(connectionId) : null;
+      }
+      return null;
+  };
+
+  const allowSidebarTreeDrop = ({ dragNode, dropNode, dropPosition }: any): boolean => {
+      if (!dragNode || !dropNode) return false;
+      if ((dragNode.type !== 'tag' && dragNode.type !== 'connection') || (dropNode.type !== 'tag' && dropNode.type !== 'connection')) {
+          return false;
+      }
+      // Connections cannot contain tree items. A group can contain a group only
+      // when the pointer lands on its content, not on its before/after gap.
+      const droppingIntoTag = dropNode.type === 'tag' && Number(dropPosition) === 0;
+      if (dropNode.type === 'connection' && Number(dropPosition) === 0) return false;
+      if (dragNode.type !== 'tag') return String(dragNode.key) !== String(dropNode.key);
+
+      const dragTagId = String(dragNode?.dataRef?.id || '').trim();
+      const targetParentTagId = droppingIntoTag
+          ? String(dropNode?.dataRef?.id || '').trim() || null
+          : getNodeParentTagId(dropNode);
+      return !!dragTagId && !isConnectionTagDescendant(dragTagId, targetParentTagId, connectionTags);
+  };
+
   const handleDrop = (info: any) => {
       setIsTreeDragging(false);
       const dropPosition = normalizeSidebarTreeRelativeDropPosition(
@@ -2419,128 +2768,34 @@ const Sidebar: React.FC<{
           top: dropTargetMetrics.top,
           height: dropTargetMetrics.height,
       } : null);
-
       const dragNode = info.dragNode;
       const dropNode = domDropNode && domDropNode.key === String(info?.node?.key || '')
           ? info.node
           : (domDropNode
               ? findTreeNodeByKeyRef.current(treeDataRef.current, domDropNode.key) || info.node
               : info.node);
+      if (!dragNode || !dropNode) return;
 
-      const getDropRootToken = (node: any): string => {
-          if (!node) return '';
-          if (node.type === 'tag') {
-              return buildSidebarRootTagToken(String(node?.dataRef?.id || ''));
-          }
-          if (node.type === 'connection') {
-              const groupedTagId = connectionTags.find((tag) =>
-                  tag.connectionIds.includes(String(node.key)),
-              )?.id || '';
-              return groupedTagId
-                  ? buildSidebarRootTagToken(groupedTagId)
-                  : buildSidebarRootConnectionToken(String(node.key));
-          }
-          return '';
-      };
+      const droppingIntoTag = dropNode.type === 'tag' && (
+          info?.dropToGap === false || (info?.dropToGap === undefined && dropPosition === 0)
+      );
+      const targetParentTagId = droppingIntoTag
+          ? String(dropNode?.dataRef?.id || '').trim() || null
+          : getNodeParentTagId(dropNode);
+      const targetToken = droppingIntoTag ? null : getNodeOrderToken(dropNode);
+      const targetInsertBefore = droppingIntoTag ? false : insertBefore;
 
-      // Root tag or ungrouped connection reordering
       if (dragNode.type === 'tag') {
-          if (dropNode.type === 'tag' || dropNode.type === 'connection') {
-              const currentTagOrder = connectionTags.map(t => t.id);
-              const dragTagId = dragNode.dataRef.id;
-              const dropTagId = dropNode.type === 'tag'
-                  ? dropNode.dataRef.id
-                  : (connectionTags.find(t => t.connectionIds.includes(String(dropNode.key)))?.id || '');
-              const dragRootToken = buildSidebarRootTagToken(String(dragTagId));
-              const dropRootToken = getDropRootToken(dropNode);
-
-              if (dropRootToken && dropRootToken !== dragRootToken) {
-                  if (dropTagId) {
-                      const resolvedInsertBefore = resolveSidebarTagDropInsertBefore({
-                          currentTagOrder,
-                          dragTagId,
-                          dropTagId,
-                          relativeDropPosition: dropPosition,
-                          fallbackInsertBefore: insertBefore,
-                          metrics: dropTargetMetrics ? {
-                              clientY: info?.event?.clientY,
-                              top: dropTargetMetrics.top,
-                              height: dropTargetMetrics.height,
-                          } : null,
-                      });
-                      reorderSidebarRoot(dragRootToken, dropRootToken, resolvedInsertBefore);
-                  } else {
-                      reorderSidebarRoot(dragRootToken, dropRootToken, insertBefore);
-                  }
-                  return;
-              }
-
-              const newOrder = currentTagOrder.filter(id => id !== dragTagId);
-              let insertIndex = newOrder.length;
-              if (dropTagId) {
-                  const dropIndex = newOrder.indexOf(dropTagId);
-                  const resolvedInsertBefore = resolveSidebarTagDropInsertBefore({
-                      currentTagOrder,
-                      dragTagId,
-                      dropTagId,
-                      relativeDropPosition: dropPosition,
-                      fallbackInsertBefore: insertBefore,
-                      metrics: dropTargetMetrics ? {
-                          clientY: info?.event?.clientY,
-                          top: dropTargetMetrics.top,
-                          height: dropTargetMetrics.height,
-                      } : null,
-                  });
-
-                  if (resolvedInsertBefore) {
-                      insertIndex = dropIndex;
-                  } else {
-                      insertIndex = dropIndex + 1;
-                  }
-              } else {
-                  // Dropped onto an ungrouped root connection, usually meaning moving to the end of tags
-                  // Since tags are always displayed before ungrouped connections, just put it at the end
-                  insertIndex = newOrder.length;
-              }
-
-              newOrder.splice(insertIndex, 0, dragTagId);
-              reorderTags(newOrder);
-          }
+          const dragTagId = String(dragNode?.dataRef?.id || '').trim();
+          if (!dragTagId || isConnectionTagDescendant(dragTagId, targetParentTagId, connectionTags)) return;
+          moveConnectionTag(dragTagId, targetParentTagId, targetToken, targetInsertBefore);
           return;
       }
 
       if (dragNode.type === 'connection') {
-          const dragTagId = connectionTags.find((tag) =>
-              tag.connectionIds.includes(String(dragNode.key)),
-          )?.id || '';
-          const dragIsUngroupedRoot = !dragTagId;
-          const dropRootToken = getDropRootToken(dropNode);
-          if (dragIsUngroupedRoot && dropNode.type === 'connection' && dropRootToken) {
-              reorderSidebarRoot(
-                  buildSidebarRootConnectionToken(String(dragNode.key)),
-                  dropRootToken,
-                  insertBefore,
-              );
-              return;
-          }
-      }
-
-      // Connection moving to tag (any drop position on a tag node counts as "into")
-      if (dragNode.type === 'connection' && dropNode.type === 'tag') {
-          moveConnectionToTag(dragNode.key, dropNode.dataRef.id);
-          return;
-      }
-
-      // Connection reordering against another connection
-      if (dragNode.type === 'connection' && dropNode.type === 'connection') {
-          const targetTag = connectionTags.find(t => t.connectionIds.includes(dropNode.key));
-          reorderConnections(
-              String(dragNode.key),
-              String(dropNode.key),
-              targetTag?.id || null,
-              insertBefore,
-          );
-          return;
+          const connectionId = String(dragNode.key || '').trim();
+          if (!connectionId || connectionId === String(dropNode.key || '')) return;
+          moveConnectionToTag(connectionId, targetParentTagId, targetToken, targetInsertBefore);
       }
   };
 
@@ -2639,17 +2894,44 @@ const Sidebar: React.FC<{
   const v2NewGroupLabel = t('sidebar.action.new_group');
   const v2BatchTablesLabel = t('sidebar.action.batch_tables');
   const v2BatchDatabasesLabel = t('sidebar.action.batch_databases');
+  const v2DataImportLabel = t('sidebar.action.data_import');
   const v2OpenExternalSqlFileLabel = t('sidebar.sql_file_exec.title');
   const v2LocateCurrentTableLabel = t('sidebar.action.locate_current_table');
   const v2LocateCurrentTableUnavailableLabel = t('sidebar.message.locate_current_table_unavailable');
   const v2AiAssistantLabel = t('app.sidebar.ai_assistant');
-  const v2ToolsLabel = t('app.sidebar.tools');
   const v2SettingsLabel = t('app.sidebar.settings');
   const v2ActiveConnectionHeaderLabel = t('sidebar.active_connection.current_host_database');
   const v2NoDatabaseSelectedLabel = t('sidebar.active_connection.no_database_selected');
   const v2ConnectionActionsLabel = t('sidebar.active_connection.actions');
   const v2CommandSearchLabel = t('sidebar.command_search.label');
   const v2CommandSearchPlaceholder = t('sidebar.command_search.placeholder');
+
+  const handleOpenDataImportWorkbench = useCallback(() => {
+    const node = selectedNodesRef.current[0];
+    const activeTab = tabs.find((tab) => tab.id === activeTabId);
+    const nodeConnectionId = String(
+      node?.dataRef?.id || (node?.type === 'connection' ? node?.key : '') || '',
+    ).trim();
+    const connectionId = nodeConnectionId || String(activeContext?.connectionId || '').trim();
+    const dbName = String(
+      node?.type === 'database'
+        ? (node?.dataRef?.dbName || node?.title || '')
+        : node?.dataRef?.dbName || activeContext?.dbName || '',
+    ).trim();
+    const tableName = String(
+      node?.type === 'table'
+        ? (node?.dataRef?.tableName || node?.title || '')
+        : !node && activeTab?.type === 'table'
+          ? activeTab.tableName || ''
+          : '',
+    ).trim();
+
+    const existingImportTab = tabs.find((tab) => tab.id === DATA_IMPORT_WORKBENCH_TAB_ID);
+    addTab(resolveDataImportWorkbenchLaunchTab(
+      existingImportTab,
+      { connectionId, dbName, tableName },
+    ));
+  }, [activeContext?.connectionId, activeContext?.dbName, activeTabId, addTab, tabs]);
 
   const v2CommandSearchPanelProps: SidebarSearchPanelProps<V2CommandSearchItem> = {
     isOpen: isV2CommandSearchOpen,
@@ -2688,21 +2970,21 @@ const Sidebar: React.FC<{
       newGroup: v2NewGroupLabel,
       batchTables: v2BatchTablesLabel,
       batchDatabases: v2BatchDatabasesLabel,
+      dataImport: v2DataImportLabel,
       openExternalSqlFile: v2OpenExternalSqlFileLabel,
       locateCurrentTable: v2LocateCurrentTableLabel,
       locateCurrentTableUnavailable: v2LocateCurrentTableUnavailableLabel,
       aiAssistant: v2AiAssistantLabel,
-      tools: v2ToolsLabel,
       settings: v2SettingsLabel,
     },
     handlers: {
       openCreateTagModal: () => { setRenameViewTarget(null); createTagForm.resetFields(); setIsCreateTagModalOpen(true); },
-      openBatchTableExport: () => openBatchOperationModal(),
-      openBatchDatabaseExport: () => openBatchDatabaseModal(),
+      openBatchTableExport: openBatchTableWorkbench,
+      openBatchDatabaseExport: openBatchDatabaseWorkbench,
+      openDataImport: handleOpenDataImportWorkbench,
       openExternalSqlFile: handleOpenSQLFileFromToolbar,
       locateActiveTab: handleLocateActiveTabInSidebar,
       toggleAI: onToggleAI ?? (() => {}),
-      openTools: onOpenTools ?? (() => {}),
       openSettings: onOpenSettings ?? (() => {}),
     },
     canLocateActiveTab,
@@ -2733,9 +3015,19 @@ const Sidebar: React.FC<{
                             data-gonavi-new-query-action="true"
                             disabled={!activeConnection}
                             onClick={() => {
-                                if (activeConnection) {
-                                    handleV2ConnectionContextMenuAction(getConnectionNodeForAction(activeConnection), 'new-query');
+                                if (!activeConnection) {
+                                    return;
                                 }
+                                const selectedDatabase = resolveV2SelectedDatabaseName({
+                                    activeConnectionId: activeConnection.id,
+                                    activeContextConnectionId: activeContext?.connectionId,
+                                    activeContextDbName: activeContext?.dbName,
+                                });
+                                if (selectedDatabase) {
+                                    handleV2DatabaseContextMenuAction(getDatabaseNodeRef(activeConnection, selectedDatabase), 'new-query');
+                                    return;
+                                }
+                                handleV2ConnectionContextMenuAction(getConnectionNodeForAction(activeConnection), 'new-query');
                             }}
                         >
                             {t('sidebar.menu.new_query')}
@@ -2936,7 +3228,7 @@ const Sidebar: React.FC<{
                         icon={<TableOutlined />}
                         aria-label={t('sidebar.action.batch_tables')}
                         data-sidebar-batch-table-action="true"
-                        onClick={() => openBatchOperationModal()}
+                        onClick={openBatchTableWorkbench}
                         style={{ color: legacyToolbarButtonColor }}
                     />
                 </Tooltip>
@@ -2949,7 +3241,20 @@ const Sidebar: React.FC<{
                         icon={<DatabaseOutlined />}
                         aria-label={t('sidebar.action.batch_databases')}
                         data-sidebar-batch-database-action="true"
-                        onClick={() => openBatchDatabaseModal()}
+                        onClick={openBatchDatabaseWorkbench}
+                        style={{ color: legacyToolbarButtonColor }}
+                    />
+                </Tooltip>
+            </div>
+            <div data-sidebar-legacy-toolbar-item="true" style={legacyToolbarItemStyle}>
+                <Tooltip title={v2DataImportLabel}>
+                    <Button
+                        size="small"
+                        type="text"
+                        icon={<ImportOutlined />}
+                        aria-label={v2DataImportLabel}
+                        data-sidebar-data-import-action="true"
+                        onClick={handleOpenDataImportWorkbench}
                         style={{ color: legacyToolbarButtonColor }}
                     />
                 </Tooltip>
@@ -2997,13 +3302,14 @@ const Sidebar: React.FC<{
         >
             <div className="sidebar-tree-scroll-content">
                 <Tree
-                    key={isV2Ui ? `v2-tree-${v2ExplorerFilter}` : 'legacy-tree'}
+                    key={`${isV2Ui ? `v2-tree-${v2ExplorerFilter}` : 'legacy-tree'}-${sidebarObjectVisibilitySignature}`}
                     ref={treeRef}
                     showIcon
                     draggable={{
                         icon: false,
                         nodeDraggable: (node: any) => node.type === 'connection' || node.type === 'tag'
                     }}
+                    allowDrop={allowSidebarTreeDrop}
                     onDragStart={() => {
                         snapshotTreeSelectionBeforeDrag();
                         treeDragSelectSuppressUntilRef.current = Date.now() + 600;
@@ -3044,6 +3350,10 @@ const Sidebar: React.FC<{
                     className="gn-v2-sidebar-slow-query-button"
                     tooltipPlacement="top"
                 />
+                <SqlAuditRailButton
+                    className="gn-v2-sidebar-sql-audit-button"
+                    tooltipPlacement="top"
+                />
             </div>
         )}
         </div>
@@ -3053,6 +3363,8 @@ const Sidebar: React.FC<{
             <div
                 ref={contextMenuPortalRef}
                 className={`gn-v2-sidebar-context-menu-portal ${contextMenu.rootClassName || ''}`}
+                data-gonavi-close-shortcut-guard="true"
+                data-gonavi-close-shortcut-blocks-background="true"
                 style={{
                     position: 'fixed',
                     left: contextMenu.x,
@@ -3097,7 +3409,6 @@ const Sidebar: React.FC<{
             renameViewTarget={renameViewTarget}
             updateConnectionTag={updateConnectionTag}
             addConnectionTag={addConnectionTag}
-            moveConnectionToTag={moveConnectionToTag}
             isCreateDbModalOpen={isCreateDbModalOpen}
             setIsCreateDbModalOpen={setIsCreateDbModalOpen}
             createDbForm={createDbForm}
@@ -3139,61 +3450,94 @@ const Sidebar: React.FC<{
             handleRenameSavedQuery={handleRenameSavedQuery}
         />
 
-        <ExternalSQLFileModal {...externalSQLFileModalProps} />
-
-        <SidebarBatchExportModals
-            connections={connections}
+        <SavedQueryGroupModal
+            open={isSavedQueryGroupModalOpen}
+            groups={savedQueryGroups}
+            savedQueries={savedQueries}
+            target={savedQueryGroupTarget}
+            initialParentGroupId={savedQueryGroupInitialParentId}
             modalPanelStyle={modalPanelStyle}
             modalSectionStyle={modalSectionStyle}
             modalScrollSectionStyle={modalScrollSectionStyle}
-            modalHintTextStyle={modalHintTextStyle}
-            darkMode={darkMode}
-            tableModalTitle={renderSidebarModalTitle(
-              <TableOutlined />,
-              t('sidebar.modal.batch_tables.title'),
-              t('sidebar.modal.batch_tables.description'),
-            )}
-            databaseModalTitle={renderSidebarModalTitle(
-              <DatabaseOutlined />,
-              t('sidebar.modal.batch_databases.title'),
-              t('sidebar.modal.batch_databases.description'),
-            )}
-            isBatchModalOpen={isBatchModalOpen}
-            setIsBatchModalOpen={setIsBatchModalOpen}
-            selectedConnection={selectedConnection}
-            selectedDatabase={selectedDatabase}
-            availableDatabases={availableDatabases}
-            batchTables={batchTables}
-            checkedTableKeys={checkedTableKeys}
-            setCheckedTableKeys={setCheckedTableKeys}
-            batchFilterKeyword={batchFilterKeyword}
-            setBatchFilterKeyword={setBatchFilterKeyword}
-            batchFilterType={batchFilterType}
-            setBatchFilterType={setBatchFilterType}
-            batchSelectionScope={batchSelectionScope}
-            setBatchSelectionScope={setBatchSelectionScope}
-            filteredBatchObjects={filteredBatchObjects}
-            groupedBatchObjects={groupedBatchObjects}
-            selectionScopeTargetKeys={selectionScopeTargetKeys}
-            handleConnectionChange={handleConnectionChange}
-            handleDatabaseChange={handleDatabaseChange}
-            handleBatchClear={handleBatchClear}
-            handleBatchDeleteTables={handleBatchDeleteTables}
-            handleBatchExport={handleBatchExport}
-            handleCheckAll={handleCheckAll}
-            handleInvertSelection={handleInvertSelection}
-            isBatchDbModalOpen={isBatchDbModalOpen}
-            setIsBatchDbModalOpen={setIsBatchDbModalOpen}
-            selectedDbConnection={selectedDbConnection}
-            batchDatabases={batchDatabases}
-            checkedDbKeys={checkedDbKeys}
-            setCheckedDbKeys={setCheckedDbKeys}
-            handleDbConnectionChange={handleDbConnectionChange}
-            handleBatchDbExport={handleBatchDbExport}
-            handleBatchDbDelete={handleBatchDbDelete}
-            handleCheckAllDb={handleCheckAllDb}
-            handleInvertSelectionDb={handleInvertSelectionDb}
+            renderModalTitle={renderSidebarModalTitle}
+            onClose={closeSavedQueryGroupModal}
+            onSave={handleSaveSavedQueryGroup}
         />
+
+        <Modal
+            title={renderSidebarModalTitle(
+                <FolderOpenOutlined />,
+                t('sidebar.schema_visibility.title', { database: schemaVisibilityTarget?.dbName || '' }),
+                t('sidebar.schema_visibility.description'),
+            )}
+            open={Boolean(schemaVisibilityTarget)}
+            centered
+            width={560}
+            okText={t('common.save')}
+            confirmLoading={isSavingSchemaVisibility}
+            styles={{
+                content: modalPanelStyle,
+                header: { background: 'transparent', borderBottom: 'none', paddingBottom: 10 },
+                body: { paddingTop: 8 },
+                footer: { background: 'transparent', borderTop: 'none', paddingTop: 12 },
+            }}
+            onOk={() => void handleSaveSchemaVisibility()}
+            onCancel={() => {
+                setSchemaVisibilityTarget(null);
+                schemaVisibilityForm.resetFields();
+            }}
+        >
+            <Form form={schemaVisibilityForm} layout="vertical">
+                <div style={modalSectionStyle}>
+                    <Form.Item
+                        name="mode"
+                        label={t('sidebar.schema_visibility.field.mode')}
+                        style={{ marginBottom: 14 }}
+                    >
+                        <Radio.Group optionType="button" buttonStyle="solid">
+                            <Radio.Button value="include">
+                                {t('sidebar.schema_visibility.mode.include')}
+                            </Radio.Button>
+                            <Radio.Button value="exclude">
+                                {t('sidebar.schema_visibility.mode.exclude')}
+                            </Radio.Button>
+                        </Radio.Group>
+                    </Form.Item>
+                    <Form.Item
+                        name="schemas"
+                        label={t('sidebar.schema_visibility.field.schemas')}
+                        help={t('sidebar.schema_visibility.field.schemas_help')}
+                        style={{ marginBottom: 12 }}
+                    >
+                        <Select
+                            mode="tags"
+                            allowClear
+                            tokenSeparators={[',', ';', '，', '；']}
+                            placeholder={t('sidebar.schema_visibility.field.schemas_placeholder')}
+                            options={(schemaVisibilityTarget?.availableSchemas || []).map((schema) => ({
+                                label: schema,
+                                value: schema,
+                            }))}
+                        />
+                    </Form.Item>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                        <span style={modalHintTextStyle}>
+                            {t('sidebar.schema_visibility.notice')}
+                        </span>
+                        <Button
+                            type="link"
+                            size="small"
+                            onClick={() => schemaVisibilityForm.setFieldsValue({ schemas: [] })}
+                        >
+                            {t('sidebar.schema_visibility.action.show_all')}
+                        </Button>
+                    </div>
+                </div>
+            </Form>
+        </Modal>
+
+        <ExternalSQLFileModal {...externalSQLFileModalProps} />
+
         <FindInDatabaseModal
             open={findInDbContext.open}
             onClose={() => setFindInDbContext({ open: false, connectionId: '', dbName: '' })}

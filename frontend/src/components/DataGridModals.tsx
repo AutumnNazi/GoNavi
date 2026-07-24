@@ -42,7 +42,9 @@ export interface DataGridModalsProps {
   onApplyRowEditor: () => void;
   onOpenRowEditorFieldEditor: (columnName: string) => void;
   cellEditorOpen: boolean;
-  cellEditorMeta: { record: Record<string, unknown>; dataIndex: string; title: string } | null;
+  cellEditorMeta: { record: Record<string, unknown>; dataIndex: string; title: string; readOnly: boolean } | null;
+  cellEditorReadOnly: boolean;
+  cellEditorViewerMode: boolean;
   cellEditorIsJson: boolean;
   cellEditorValue: string;
   onCloseCellEditor: () => void;
@@ -83,6 +85,8 @@ const DataGridModals: React.FC<DataGridModalsProps> = ({
   onOpenRowEditorFieldEditor,
   cellEditorOpen,
   cellEditorMeta,
+  cellEditorReadOnly,
+  cellEditorViewerMode,
   cellEditorIsJson,
   cellEditorValue,
   onCloseCellEditor,
@@ -189,7 +193,9 @@ const DataGridModals: React.FC<DataGridModalsProps> = ({
     <Modal
       title={
         cellEditorMeta
-          ? translate('data_grid.cell_editor.title_with_column', { column: cellEditorMeta.title })
+          ? cellEditorViewerMode
+            ? translate('data_grid.cell_viewer.title_with_column', { column: cellEditorMeta.title })
+            : translate('data_grid.cell_editor.title_with_column', { column: cellEditorMeta.title })
           : translate('data_grid.cell_editor.title')
       }
       open={cellEditorOpen}
@@ -197,11 +203,15 @@ const DataGridModals: React.FC<DataGridModalsProps> = ({
       destroyOnHidden
       width={960}
       maskClosable={false}
-      footer={[
-        <Button key="format" onClick={onFormatJsonInEditor} disabled={!cellEditorIsJson}>{translate('data_grid.json_editor.format')}</Button>,
-        <Button key="cancel" onClick={onCloseCellEditor}>{translate('common.cancel')}</Button>,
-        <Button key="ok" type="primary" onClick={onSaveCellEditor}>{translate('common.save')}</Button>,
-      ]}
+      footer={cellEditorReadOnly
+        ? [
+            <Button key="close" type="primary" onClick={onCloseCellEditor}>{translate('common.close')}</Button>,
+          ]
+        : [
+            <Button key="format" onClick={onFormatJsonInEditor} disabled={!cellEditorIsJson}>{translate('data_grid.json_editor.format')}</Button>,
+            <Button key="cancel" onClick={onCloseCellEditor}>{translate('common.cancel')}</Button>,
+            <Button key="ok" type="primary" onClick={onSaveCellEditor}>{translate('common.save')}</Button>,
+          ]}
     >
       <div style={{ marginBottom: 8, color: '#888', fontSize: 12 }}>
         {cellEditorMeta ? `${tableName || ''}${tableName ? '.' : ''}${cellEditorMeta.dataIndex}` : ''}
@@ -214,6 +224,8 @@ const DataGridModals: React.FC<DataGridModalsProps> = ({
           value={cellEditorValue}
           onChange={(value) => onCellEditorValueChange(value || '')}
           options={{
+            readOnly: cellEditorReadOnly,
+            domReadOnly: cellEditorReadOnly,
             minimap: { enabled: false },
             scrollBeyondLastLine: false,
             wordWrap: 'on',

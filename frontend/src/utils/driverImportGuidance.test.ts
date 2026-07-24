@@ -141,6 +141,8 @@ describe('driver import guidance', () => {
     expect(helpText).toContain('pgx');
     expect(helpText).toContain('open_gauss');
     expect(helpText).toContain('oceanbase');
+    expect(helpText).toContain('clickhouse');
+    expect(helpText).toContain('jdbc:clickhouse://');
     expect(helpText).toContain('Go database/sql');
     expect(helpText).toContain('ODBC/JDBC');
     expect(helpText).toContain('JDBC Jar');

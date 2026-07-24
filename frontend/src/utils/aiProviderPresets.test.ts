@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import type { AIProviderType } from '../types';
+import type { AIProviderAuthMode, AIProviderType } from '../types';
 import {
   LEGACY_QWEN_CODING_PLAN_OPENAI_BASE_URL,
   QWEN_BAILIAN_ANTHROPIC_BASE_URL,
   QWEN_BAILIAN_MODELS_BASE_URL,
   QWEN_CODING_PLAN_ANTHROPIC_BASE_URL,
   QWEN_CODING_PLAN_MODELS,
+  isLocalCLISubscriptionProvider,
   matchQwenPresetKey,
   resolvePresetBaseURL,
   resolvePresetModelSelection,
@@ -18,6 +19,7 @@ type PresetMatcher = {
   backendType: AIProviderType;
   defaultBaseUrl: string;
   fixedApiFormat?: string;
+  authMode?: AIProviderAuthMode;
 };
 
 const PRESETS: PresetMatcher[] = [
@@ -30,6 +32,8 @@ const PRESETS: PresetMatcher[] = [
     fixedApiFormat: 'claude-cli',
   },
   { key: 'codebuddy', backendType: 'custom', defaultBaseUrl: '', fixedApiFormat: 'codebuddy-cli' },
+  { key: 'codex', backendType: 'custom', defaultBaseUrl: '', fixedApiFormat: 'codex-cli', authMode: 'local-cli' },
+  { key: 'claude-subscription', backendType: 'custom', defaultBaseUrl: '', fixedApiFormat: 'claude-cli', authMode: 'local-cli' },
   { key: 'cursor', backendType: 'custom', defaultBaseUrl: 'https://api.cursor.com/v1', fixedApiFormat: 'cursor-agent' },
   { key: 'custom', backendType: 'custom', defaultBaseUrl: '' },
 ];
@@ -117,6 +121,19 @@ describe('ai provider preset helpers', () => {
     });
   });
 
+  it('keeps local CLI model empty so the signed-in CLI can choose automatically', () => {
+    expect(resolvePresetModelSelection({
+      presetKey: 'codex',
+      presetDefaultModel: '',
+      presetModels: [],
+      valuesModel: '',
+      customModels: ['gpt-5.4'],
+    })).toEqual({
+      model: '',
+      models: ['gpt-5.4'],
+    });
+  });
+
   it('forces built-in presets back to their standard base URL when saving or testing', () => {
     expect(resolvePresetBaseURL({
       presetKey: 'qwen-bailian',
@@ -159,6 +176,37 @@ describe('ai provider preset helpers', () => {
     })).toEqual({
       type: 'custom',
       apiFormat: 'gemini',
+    });
+  });
+
+  it('preserves the Responses protocol for the built-in OpenAI preset', () => {
+    expect(resolvePresetTransport({
+      presetBackendType: 'openai',
+      valuesApiFormat: 'openai-responses',
+    })).toEqual({
+      type: 'openai',
+      apiFormat: 'openai-responses',
+    });
+  });
+
+  it('keeps the legacy OpenAI protocol implicit for existing configurations', () => {
+    expect(resolvePresetTransport({
+      presetBackendType: 'openai',
+      valuesApiFormat: 'openai',
+    })).toEqual({
+      type: 'openai',
+      apiFormat: undefined,
+    });
+  });
+
+  it('does not carry the Responses protocol into another OpenAI-compatible preset', () => {
+    expect(resolvePresetTransport({
+      presetKey: 'deepseek',
+      presetBackendType: 'openai',
+      valuesApiFormat: 'openai-responses',
+    })).toEqual({
+      type: 'openai',
+      apiFormat: undefined,
     });
   });
 });
@@ -232,5 +280,64 @@ describe('resolveProviderPresetKey', () => {
     );
 
     expect(key).toBe('cursor');
+  });
+
+  it('通过本机登录方式识别 Codex 订阅预设', () => {
+    expect(resolveProviderPresetKey({
+      type: 'custom',
+      apiFormat: 'codex-cli',
+      authMode: 'local-cli',
+      baseUrl: '',
+    }, PRESETS, 'custom')).toBe('codex');
+  });
+
+  it('区分 Claude 订阅与带端点和密钥的千问 Claude CLI', () => {
+    expect(resolveProviderPresetKey({
+      type: 'custom',
+      apiFormat: 'claude-cli',
+      authMode: 'local-cli',
+      baseUrl: '',
+    }, PRESETS, 'custom')).toBe('claude-subscription');
+
+    expect(resolveProviderPresetKey({
+      type: 'custom',
+      apiFormat: 'claude-cli',
+      authMode: 'api-key',
+      baseUrl: QWEN_CODING_PLAN_ANTHROPIC_BASE_URL,
+    }, PRESETS, 'custom')).toBe('qwen-coding-plan');
+  });
+
+  it('does not reclassify a legacy Claude CLI API-key provider as a subscription', () => {
+    expect(resolveProviderPresetKey({
+      type: 'custom',
+      apiFormat: 'claude-cli',
+      baseUrl: '',
+      hasSecret: true,
+    }, PRESETS, 'custom')).toBe('custom');
+
+    expect(resolveProviderPresetKey({
+      type: 'custom',
+      apiFormat: 'claude-cli',
+      baseUrl: '',
+      apiKey: 'legacy-key',
+    }, PRESETS, 'custom')).toBe('custom');
+  });
+
+  it('only recognizes supported custom CLI transports as local subscriptions', () => {
+    expect(isLocalCLISubscriptionProvider({
+      type: 'custom',
+      apiFormat: 'codex-cli',
+      authMode: 'local-cli',
+    })).toBe(true);
+    expect(isLocalCLISubscriptionProvider({
+      type: 'openai',
+      apiFormat: 'codex-cli',
+      authMode: 'local-cli',
+    })).toBe(false);
+    expect(isLocalCLISubscriptionProvider({
+      type: 'custom',
+      apiFormat: 'openai',
+      authMode: 'local-cli',
+    })).toBe(false);
   });
 });

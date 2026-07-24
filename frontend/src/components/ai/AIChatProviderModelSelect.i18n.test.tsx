@@ -80,6 +80,51 @@ const renderModelSelectWithoutProvider = (variant: 'legacy' | 'v2') => renderToS
   />,
 );
 
+const renderLocalCLIModelSelect = (variant: 'legacy' | 'v2') => renderToStaticMarkup(
+  <I18nProvider
+    preference="en-US"
+    systemLanguages={['en-US']}
+    onPreferenceChange={() => undefined}
+  >
+    <AIChatProviderModelSelect
+      activeProvider={{
+        ...baseProvider,
+        type: 'custom',
+        authMode: 'local-cli',
+        apiFormat: 'codex-cli',
+        name: 'Codex Subscription',
+      }}
+      dynamicModels={[]}
+      loadingModels={false}
+      variant={variant}
+      onModelChange={() => undefined}
+      onFetchModels={() => undefined}
+    />
+  </I18nProvider>,
+);
+
+const renderInvalidLocalCLIModelSelect = (variant: 'legacy' | 'v2') => renderToStaticMarkup(
+  <I18nProvider
+    preference="en-US"
+    systemLanguages={['en-US']}
+    onPreferenceChange={() => undefined}
+  >
+    <AIChatProviderModelSelect
+      activeProvider={{
+        ...baseProvider,
+        type: 'custom',
+        authMode: 'local-cli',
+        apiFormat: 'openai',
+      }}
+      dynamicModels={[]}
+      loadingModels={false}
+      variant={variant}
+      onModelChange={() => undefined}
+      onFetchModels={() => undefined}
+    />
+  </I18nProvider>,
+);
+
 describe('AIChatProviderModelSelect i18n source guards', () => {
   it('uses the shared model placeholder key instead of the legacy Chinese placeholder', () => {
     expect(source).toContain('useOptionalI18n()');
@@ -98,5 +143,15 @@ describe('AIChatProviderModelSelect i18n source guards', () => {
     expect(() => renderModelSelectWithoutProvider('v2')).not.toThrow();
     expect(renderModelSelectWithoutProvider('legacy')).toContain('Select model');
     expect(renderModelSelectWithoutProvider('v2')).toContain('Select model');
+  });
+
+  it('shows automatic model selection for local CLI subscriptions', () => {
+    expect(renderLocalCLIModelSelect('legacy')).toContain('Auto-selected');
+    expect(renderLocalCLIModelSelect('v2')).toContain('Auto-selected');
+  });
+
+  it('keeps the normal model prompt for unsupported local-cli combinations', () => {
+    expect(renderInvalidLocalCLIModelSelect('legacy')).toContain('Select model');
+    expect(renderInvalidLocalCLIModelSelect('v2')).toContain('Select model');
   });
 });

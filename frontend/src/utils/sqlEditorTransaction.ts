@@ -1,6 +1,18 @@
 const SQL_EDITOR_DML_KEYWORDS = new Set(['insert', 'update', 'delete', 'replace', 'merge', 'upsert']);
 const SQL_EDITOR_READ_KEYWORDS = new Set(['select', 'with', 'show', 'describe', 'desc', 'explain', 'pragma', 'values']);
 const SQL_EDITOR_TRANSACTION_CONTROL_KEYWORDS = new Set(['begin', 'commit', 'rollback', 'savepoint', 'release']);
+const SQL_EDITOR_BEGIN_TRANSACTION_CONTROL_KEYWORDS = new Set([
+    'transaction',
+    'tran',
+    'work',
+    'isolation',
+    'read',
+    'write',
+    'deferred',
+    'immediate',
+    'exclusive',
+    'distributed',
+]);
 const SQL_EDITOR_MANAGED_TRANSACTION_UNSUPPORTED_TYPES = new Set([
     'trino',
     'tdengine',
@@ -253,10 +265,63 @@ const sqlEditorStatementHasManagedWrite = (statement: string): boolean => {
     return SQL_EDITOR_DML_KEYWORDS.has(leading.keyword);
 };
 
-const isSqlEditorTransactionControlStatement = (statement: string): boolean => {
-    const keyword = readSqlEditorKeyword(String(statement || ''), 0).keyword;
-    if (SQL_EDITOR_TRANSACTION_CONTROL_KEYWORDS.has(keyword)) return true;
-    return keyword === 'start' && /\btransaction\b/i.test(statement);
+const sqlEditorStatementContainsKeyword = (statement: string, wantedKeyword: string): boolean => {
+    const text = String(statement || '');
+    for (let pos = 0; pos < text.length;) {
+        const skipped = skipSqlEditorQuotedOrComment(text, pos);
+        if (skipped !== null) {
+            pos = skipped;
+            continue;
+        }
+        if (!isSqlEditorKeywordChar(text[pos])) {
+            pos++;
+            continue;
+        }
+        let end = pos + 1;
+        while (isSqlEditorKeywordChar(text[end])) {
+            end++;
+        }
+        if (text.slice(pos, end).toLowerCase() === wantedKeyword) {
+            return true;
+        }
+        pos = end;
+    }
+    return false;
+};
+
+const isSqlEditorBeginTransactionControlStatement = (statement: string, keywordEnd: number): boolean => {
+    const text = String(statement || '');
+    const next = skipSqlEditorTrivia(text, keywordEnd);
+    if (next >= text.length || text[next] === ';') return true;
+    return SQL_EDITOR_BEGIN_TRANSACTION_CONTROL_KEYWORDS.has(readSqlEditorKeyword(text, keywordEnd).keyword);
+};
+
+export const isSqlEditorTransactionControlStatement = (statement: string): boolean => {
+    const text = String(statement || '');
+    const leading = readSqlEditorKeyword(text, 0);
+    if (leading.keyword === 'begin') {
+        return isSqlEditorBeginTransactionControlStatement(text, leading.end);
+    }
+    if (SQL_EDITOR_TRANSACTION_CONTROL_KEYWORDS.has(leading.keyword)) return true;
+    return leading.keyword === 'start' && readSqlEditorKeyword(text, leading.end).keyword === 'transaction';
+};
+
+const isSqlEditorManagedBlockWrite = (type: string, statement: string): boolean => {
+    const text = String(statement || '');
+    const leading = readSqlEditorKeyword(text, 0);
+    const normalizedType = String(type || '').trim().toLowerCase();
+    const isOracleLike = ['oracle', 'dameng', 'dm', 'dm8'].includes(normalizedType);
+    const isSqlServer = ['sqlserver', 'mssql', 'sql_server', 'sql-server'].includes(normalizedType);
+
+    if (isOracleLike) {
+        if (leading.keyword !== 'begin' && leading.keyword !== 'declare') return false;
+    } else if (isSqlServer) {
+        if (leading.keyword !== 'begin' || isSqlEditorBeginTransactionControlStatement(text, leading.end)) return false;
+    } else {
+        return false;
+    }
+
+    return [...SQL_EDITOR_DML_KEYWORDS].some((keyword) => sqlEditorStatementContainsKeyword(text, keyword));
 };
 
 export const shouldUseSqlEditorManagedTransactionForType = (
@@ -271,6 +336,10 @@ export const shouldUseSqlEditorManagedTransactionForType = (
         const trimmed = String(statement || '').trim();
         if (!trimmed) continue;
         if (isSqlEditorTransactionControlStatement(trimmed)) return false;
+        if (isSqlEditorManagedBlockWrite(type, trimmed)) {
+            hasManagedWrite = true;
+            continue;
+        }
         if (sqlEditorStatementHasManagedWrite(trimmed)) {
             hasManagedWrite = true;
             continue;
@@ -297,6 +366,7 @@ export const canReusePendingSqlEditorTransactionForType = (
         const trimmed = String(statement || '').trim();
         if (!trimmed) continue;
         if (isSqlEditorTransactionControlStatement(trimmed)) return false;
+        if (isSqlEditorManagedBlockWrite(type, trimmed)) return false;
         if (sqlEditorStatementHasManagedWrite(trimmed)) return false;
         const keyword = resolveSqlEditorOperationKeyword(trimmed);
         if (!SQL_EDITOR_READ_KEYWORDS.has(keyword)) return false;

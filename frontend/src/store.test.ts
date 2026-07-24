@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SIDEBAR_RESIZE_MAX_WIDTH } from './utils/sidebarLayout';
+import type { AIChatMessage } from './types';
+import {
+  buildLegacyTableAccessCountKey,
+  buildTableAccessCountKey,
+  MAX_TABLE_ACCESS_COUNT_ENTRIES,
+} from './utils/tableAccessCount';
 
 class MemoryStorage implements Storage {
   private data = new Map<string, string>();
@@ -75,6 +81,7 @@ describe('store appearance persistence', () => {
     expect(appearance.v2CommandSearchPersistentFilterEnabled).toBe(false);
     expect(appearance.v2SidebarPersistedFilter).toBe('');
     expect(appearance.v2SidebarRailScale).toBe(1);
+    expect(appearance.sidebarHiddenObjectGroups).toEqual([]);
     expect(appearance.showDataTableVerticalBorders).toBe(false);
     expect(appearance.showDataTableRowNumber).toBe(true);
     expect(appearance.dataTableDensity).toBe('comfortable');
@@ -106,7 +113,7 @@ describe('store appearance persistence', () => {
     expect(useStore.getState().appearance.uiVersion).toBe('v2');
 
     const persisted = JSON.parse(storage.getItem('lite-db-storage') || '{}');
-    expect(persisted.version).toBe(14);
+    expect(persisted.version).toBe(18);
     expect(persisted.state.appearance.uiVersion).toBe('v2');
   });
 
@@ -153,6 +160,33 @@ describe('store appearance persistence', () => {
     expect(appearance.v2SidebarRailScale).toBe(1.55);
   });
 
+  it('persists and sanitizes hidden sidebar object groups', async () => {
+    const { useStore } = await importStore();
+
+    useStore.getState().setAppearance({
+      sidebarHiddenObjectGroups: ['views', 'routines', 'views'],
+    });
+
+    const persisted = JSON.parse(storage.getItem('lite-db-storage') || '{}');
+    expect(persisted.state.appearance.sidebarHiddenObjectGroups).toEqual(['views', 'routines']);
+
+    vi.resetModules();
+    const reloaded = await importStore();
+    expect(reloaded.useStore.getState().appearance.sidebarHiddenObjectGroups).toEqual(['views', 'routines']);
+
+    storage.setItem('lite-db-storage', JSON.stringify({
+      state: {
+        appearance: {
+          sidebarHiddenObjectGroups: ['tables', 'unknown', 'tables', 1],
+        },
+      },
+      version: 16,
+    }));
+    vi.resetModules();
+    const sanitized = await importStore();
+    expect(sanitized.useStore.getState().appearance.sidebarHiddenObjectGroups).toEqual(['tables']);
+  });
+
   it('migrates legacy sidebar table comment settings into metadata fields and persists explicit selections', async () => {
     storage.setItem('lite-db-storage', JSON.stringify({
       state: {
@@ -182,6 +216,44 @@ describe('store appearance persistence', () => {
       'createdAt',
     ]);
     expect(persisted.state.queryOptions.showSidebarTableComment).toBe(false);
+  });
+
+  it('persists the SQL editor word-wrap preference with a disabled default', async () => {
+    const { useStore } = await importStore();
+    expect(useStore.getState().queryOptions.wordWrap).toBe(false);
+
+    useStore.getState().setQueryOptions({ wordWrap: true });
+    expect(useStore.getState().queryOptions.wordWrap).toBe(true);
+
+    const persisted = JSON.parse(storage.getItem('lite-db-storage') || '{}');
+    expect(persisted.state.queryOptions.wordWrap).toBe(true);
+
+    vi.resetModules();
+    const reloaded = await importStore();
+    expect(reloaded.useStore.getState().queryOptions.wordWrap).toBe(true);
+  });
+
+  it('persists the table overview view mode across store reloads', async () => {
+    const { useStore } = await importStore();
+    expect(useStore.getState().queryOptions.tableOverviewViewMode).toBeUndefined();
+
+    useStore.getState().setQueryOptions({ tableOverviewViewMode: 'table' });
+    expect(useStore.getState().queryOptions.tableOverviewViewMode).toBe('table');
+
+    const persisted = JSON.parse(storage.getItem('lite-db-storage') || '{}');
+    expect(persisted.state.queryOptions.tableOverviewViewMode).toBe('table');
+
+    vi.resetModules();
+    const reloaded = await importStore();
+    expect(reloaded.useStore.getState().queryOptions.tableOverviewViewMode).toBe('table');
+
+    storage.setItem('lite-db-storage', JSON.stringify({
+      state: { queryOptions: { tableOverviewViewMode: 'invalid' } },
+      version: 18,
+    }));
+    vi.resetModules();
+    const sanitized = await importStore();
+    expect(sanitized.useStore.getState().queryOptions.tableOverviewViewMode).toBeUndefined();
   });
 
   it('restores query tabs from crash-recovery snapshots even when persisted tabs are missing', async () => {
@@ -661,6 +733,7 @@ describe('store appearance persistence', () => {
           user: 'postgres',
           keepAliveEnabled: true,
           keepAliveIntervalMinutes: 0,
+          keepAliveSQL: '  SELECT 1  ',
         },
       },
     ]);
@@ -668,6 +741,7 @@ describe('store appearance persistence', () => {
     const config = useStore.getState().connections[0]?.config;
     expect(config?.keepAliveEnabled).toBe(true);
     expect(config?.keepAliveIntervalMinutes).toBe(240);
+    expect(config?.keepAliveSQL).toBe('SELECT 1');
   });
 
   it('keeps StarRocks saved connections as independent datasource type', async () => {
@@ -761,6 +835,8 @@ describe('store appearance persistence', () => {
       { id: 'kingbase', name: 'Kingbase', config: { id: 'kingbase', type: 'kingbase8', host: 'kingbase.local', port: 54321, user: 'system' } },
       { id: 'dm', name: 'Dameng', config: { id: 'dm', type: 'dm8', host: 'dm.local', port: 5236, user: 'SYSDBA' } },
       { id: 'sqlite', name: 'SQLite', config: { id: 'sqlite', type: 'sqlite3', host: 'D:/db/app.sqlite', port: 0, user: '' } },
+      { id: 'milvusdb', name: 'Milvus DB', config: { id: 'milvusdb', type: 'milvusdb', host: 'milvus.local', port: 19530, user: '' } },
+      { id: 'milvus-db', name: 'Milvus DB Alias', config: { id: 'milvus-db', type: 'milvus-db', host: 'milvus-alias.local', port: 19530, user: '' } },
     ]);
 
     expect(useStore.getState().connections.map((conn) => conn.config.type)).toEqual([
@@ -769,7 +845,43 @@ describe('store appearance persistence', () => {
       'kingbase',
       'dameng',
       'sqlite',
+      'milvus',
+      'milvus',
     ]);
+  });
+
+  it('preserves built-in document, vector, and messaging datasource types', async () => {
+    const { useStore } = await importStore();
+
+    const datasourceTypes = [
+      ['chroma', 8000],
+      ['qdrant', 6333],
+      ['milvus', 19530],
+      ['rocketmq', 9876],
+      ['mqtt', 1883],
+      ['rabbitmq', 15672],
+    ] as const;
+
+    useStore.getState().replaceConnections(
+      datasourceTypes.map(([type, port]) => ({
+        id: `conn-${type}`,
+        name: type,
+        config: {
+          id: `conn-${type}`,
+          type,
+          host: `${type}.local`,
+          port,
+          user: '',
+        },
+      })),
+    );
+
+    expect(
+      useStore.getState().connections.map((conn) => [
+        conn.config.type,
+        conn.config.port,
+      ]),
+    ).toEqual(datasourceTypes);
   });
 
   it('preserves SSL certificate paths for SSL-capable saved connections', async () => {
@@ -1148,6 +1260,448 @@ describe('store appearance persistence', () => {
     ]);
   });
 
+  it('migrates flat v15 connection groups to explicit root child order', async () => {
+    storage.setItem('lite-db-storage', JSON.stringify({
+      state: {
+        connectionTags: [
+          {
+            id: 'tag-legacy',
+            name: 'Legacy',
+            connectionIds: ['conn-a', 'conn-b'],
+          },
+        ],
+        sidebarRootOrder: ['tag:tag-legacy'],
+      },
+      version: 15,
+    }));
+
+    const {
+      buildSidebarRootConnectionToken,
+      resolveConnectionTagChildOrder,
+      useStore,
+    } = await importStore();
+
+    const legacyTag = useStore.getState().connectionTags[0];
+    expect(legacyTag?.parentTagId).toBeUndefined();
+    expect(legacyTag?.childOrder).toEqual([
+      buildSidebarRootConnectionToken('conn-a'),
+      buildSidebarRootConnectionToken('conn-b'),
+    ]);
+    expect(resolveConnectionTagChildOrder(
+      'tag-legacy',
+      useStore.getState().connectionTags,
+    )).toEqual(legacyTag?.childOrder);
+
+    const persisted = JSON.parse(storage.getItem('lite-db-storage') || '{}');
+    expect(persisted.version).toBe(18);
+    expect(persisted.state.connectionTags[0].childOrder).toEqual([
+      'connection:conn-a',
+      'connection:conn-b',
+    ]);
+  });
+
+  it('supports three-level groups with hosts and child groups in one ordered list', async () => {
+    const {
+      buildSidebarRootConnectionToken,
+      buildSidebarRootTagToken,
+      resolveConnectionTagChildOrder,
+      useStore,
+    } = await importStore();
+    useStore.getState().replaceConnections(
+      ['host-1', 'host-2', 'host-3', 'host-4', 'host-5', 'host-6'].map((id) => ({
+        id,
+        name: id,
+        config: { id, type: 'mysql', host: `${id}.local`, port: 3306, user: 'root' },
+      })),
+    );
+    useStore.getState().addConnectionTag({
+      id: 'group-1',
+      name: '分组1',
+      connectionIds: ['host-1', 'host-2'],
+    });
+    useStore.getState().addConnectionTag({
+      id: 'group-1-1',
+      name: '分组1-1',
+      parentTagId: 'group-1',
+      connectionIds: ['host-3', 'host-4'],
+    });
+    useStore.getState().addConnectionTag({
+      id: 'group-1-1-1',
+      name: '分组1-1-1',
+      parentTagId: 'group-1-1',
+      connectionIds: ['host-5', 'host-6'],
+    });
+
+    // A child group may be placed between its parent's direct hosts.
+    useStore.getState().moveConnectionTag(
+      'group-1-1',
+      'group-1',
+      buildSidebarRootConnectionToken('host-1'),
+      false,
+    );
+
+    expect(resolveConnectionTagChildOrder(
+      'group-1',
+      useStore.getState().connectionTags,
+    )).toEqual([
+      buildSidebarRootConnectionToken('host-1'),
+      buildSidebarRootTagToken('group-1-1'),
+      buildSidebarRootConnectionToken('host-2'),
+    ]);
+    expect(resolveConnectionTagChildOrder(
+      'group-1-1',
+      useStore.getState().connectionTags,
+    )).toEqual([
+      buildSidebarRootConnectionToken('host-3'),
+      buildSidebarRootConnectionToken('host-4'),
+      buildSidebarRootTagToken('group-1-1-1'),
+    ]);
+    expect(useStore.getState().connectionTags.find(
+      (tag) => tag.id === 'group-1-1-1',
+    )?.parentTagId).toBe('group-1-1');
+  });
+
+  it('keeps a host in exactly one nested group while moving and reordering it', async () => {
+    const {
+      buildSidebarRootConnectionToken,
+      resolveConnectionTagChildOrder,
+      useStore,
+    } = await importStore();
+    useStore.getState().replaceConnections(
+      ['host-1', 'host-2'].map((id) => ({
+        id,
+        name: id,
+        config: { id, type: 'mysql', host: `${id}.local`, port: 3306, user: 'root' },
+      })),
+    );
+    useStore.getState().addConnectionTag({
+      id: 'group-1',
+      name: '分组1',
+      connectionIds: ['host-1'],
+    });
+    useStore.getState().addConnectionTag({
+      id: 'group-1-1',
+      name: '分组1-1',
+      parentTagId: 'group-1',
+      connectionIds: ['host-2'],
+    });
+
+    useStore.getState().moveConnectionToTag(
+      'host-1',
+      'group-1-1',
+      buildSidebarRootConnectionToken('host-2'),
+      true,
+    );
+    useStore.getState().reorderConnections(
+      'host-2',
+      'host-1',
+      'group-1-1',
+      true,
+    );
+
+    const groups = useStore.getState().connectionTags;
+    expect(groups.find((tag) => tag.id === 'group-1')?.connectionIds).toEqual([]);
+    expect(groups.find((tag) => tag.id === 'group-1-1')?.connectionIds).toEqual([
+      'host-2',
+      'host-1',
+    ]);
+    expect(groups.filter((tag) => tag.connectionIds.includes('host-1'))).toHaveLength(1);
+    expect(resolveConnectionTagChildOrder('group-1-1', groups)).toEqual([
+      buildSidebarRootConnectionToken('host-2'),
+      buildSidebarRootConnectionToken('host-1'),
+    ]);
+  });
+
+  it('promotes direct hosts and child groups in place when deleting an intermediate group', async () => {
+    const {
+      buildSidebarRootConnectionToken,
+      buildSidebarRootTagToken,
+      resolveConnectionTagChildOrder,
+      useStore,
+    } = await importStore();
+    useStore.getState().replaceConnections(
+      ['host-1', 'host-2', 'host-3', 'host-4', 'host-5', 'host-6'].map((id) => ({
+        id,
+        name: id,
+        config: { id, type: 'mysql', host: `${id}.local`, port: 3306, user: 'root' },
+      })),
+    );
+    useStore.getState().addConnectionTag({
+      id: 'group-1',
+      name: '分组1',
+      connectionIds: ['host-1', 'host-2'],
+    });
+    useStore.getState().addConnectionTag({
+      id: 'group-1-1',
+      name: '分组1-1',
+      parentTagId: 'group-1',
+      connectionIds: ['host-3', 'host-4'],
+    });
+    useStore.getState().addConnectionTag({
+      id: 'group-1-1-1',
+      name: '分组1-1-1',
+      parentTagId: 'group-1-1',
+      connectionIds: ['host-5', 'host-6'],
+    });
+    useStore.getState().moveConnectionTag(
+      'group-1-1',
+      'group-1',
+      buildSidebarRootConnectionToken('host-1'),
+      false,
+    );
+
+    useStore.getState().removeConnectionTag('group-1-1');
+
+    expect(useStore.getState().connectionTags.some(
+      (tag) => tag.id === 'group-1-1',
+    )).toBe(false);
+    expect(useStore.getState().connectionTags.find(
+      (tag) => tag.id === 'group-1-1-1',
+    )?.parentTagId).toBe('group-1');
+    expect(resolveConnectionTagChildOrder(
+      'group-1',
+      useStore.getState().connectionTags,
+    )).toEqual([
+      buildSidebarRootConnectionToken('host-1'),
+      buildSidebarRootConnectionToken('host-3'),
+      buildSidebarRootConnectionToken('host-4'),
+      buildSidebarRootTagToken('group-1-1-1'),
+      buildSidebarRootConnectionToken('host-2'),
+    ]);
+    expect(useStore.getState().connectionTags.find(
+      (tag) => tag.id === 'group-1',
+    )?.connectionIds).toEqual(['host-1', 'host-3', 'host-4', 'host-2']);
+  });
+
+  it('rejects moving a group into itself or a descendant', async () => {
+    const { useStore } = await importStore();
+    useStore.getState().addConnectionTag({
+      id: 'group-1',
+      name: '分组1',
+      connectionIds: [],
+    });
+    useStore.getState().addConnectionTag({
+      id: 'group-1-1',
+      name: '分组1-1',
+      parentTagId: 'group-1',
+      connectionIds: [],
+    });
+    useStore.getState().addConnectionTag({
+      id: 'group-1-1-1',
+      name: '分组1-1-1',
+      parentTagId: 'group-1-1',
+      connectionIds: [],
+    });
+
+    useStore.getState().moveConnectionTag('group-1', 'group-1-1-1');
+    useStore.getState().moveConnectionTag('group-1-1', 'group-1-1');
+
+    const groups = useStore.getState().connectionTags;
+    expect(groups.find((tag) => tag.id === 'group-1')?.parentTagId).toBeUndefined();
+    expect(groups.find((tag) => tag.id === 'group-1-1')?.parentTagId).toBe('group-1');
+    expect(groups.find((tag) => tag.id === 'group-1-1-1')?.parentTagId).toBe('group-1-1');
+  });
+
+  it('sanitizes malformed persisted group parents and duplicate host ownership', async () => {
+    storage.setItem('lite-db-storage', JSON.stringify({
+      state: {
+        connectionTags: [
+          {
+            id: 'group-a',
+            name: 'A',
+            parentTagId: 'group-b',
+            connectionIds: ['shared-host'],
+            childOrder: ['connection:shared-host', 'tag:group-b'],
+          },
+          {
+            id: 'group-b',
+            name: 'B',
+            parentTagId: 'group-a',
+            connectionIds: ['shared-host'],
+          },
+          {
+            id: 'group-orphan',
+            name: 'Orphan',
+            parentTagId: 'missing-group',
+            connectionIds: [],
+          },
+        ],
+      },
+      version: 16,
+    }));
+
+    const { useStore } = await importStore();
+    const groups = useStore.getState().connectionTags;
+
+    expect(groups.find((tag) => tag.id === 'group-a')?.parentTagId).toBeUndefined();
+    expect(groups.find((tag) => tag.id === 'group-b')?.parentTagId).toBeUndefined();
+    expect(groups.find((tag) => tag.id === 'group-orphan')?.parentTagId).toBeUndefined();
+    expect(groups.find((tag) => tag.id === 'group-a')?.connectionIds).toEqual([
+      'shared-host',
+    ]);
+    expect(groups.find((tag) => tag.id === 'group-b')?.connectionIds).toEqual([]);
+  });
+
+  it('removes host tokens from nested group order when deleting a connection', async () => {
+    const {
+      buildSidebarRootConnectionToken,
+      resolveConnectionTagChildOrder,
+      useStore,
+    } = await importStore();
+    useStore.getState().replaceConnections(
+      ['host-1', 'host-2'].map((id) => ({
+        id,
+        name: id,
+        config: { id, type: 'mysql', host: `${id}.local`, port: 3306, user: 'root' },
+      })),
+    );
+    useStore.getState().addConnectionTag({
+      id: 'group-1',
+      name: '分组1',
+      connectionIds: [],
+    });
+    useStore.getState().addConnectionTag({
+      id: 'group-1-1',
+      name: '分组1-1',
+      parentTagId: 'group-1',
+      connectionIds: ['host-1', 'host-2'],
+    });
+
+    useStore.getState().removeConnection('host-1');
+
+    expect(resolveConnectionTagChildOrder(
+      'group-1-1',
+      useStore.getState().connectionTags,
+    )).toEqual([buildSidebarRootConnectionToken('host-2')]);
+    expect(useStore.getState().connectionTags.find(
+      (tag) => tag.id === 'group-1-1',
+    )?.connectionIds).toEqual(['host-2']);
+  });
+
+  it('bounds hydrated table access counts while retaining frequent and recent entries', async () => {
+    const tableAccessCount = Object.fromEntries([
+      ['priority-main-users', 100],
+      ...Array.from(
+        { length: MAX_TABLE_ACCESS_COUNT_ENTRIES + 1 },
+        (_, index) => [`connection-${index}-main-table`, 1] as const,
+      ),
+    ]);
+    storage.setItem('lite-db-storage', JSON.stringify({
+      state: { tableAccessCount },
+      version: 17,
+    }));
+
+    const { useStore } = await importStore();
+    const hydrated = useStore.getState().tableAccessCount;
+
+    expect(Object.keys(hydrated)).toHaveLength(MAX_TABLE_ACCESS_COUNT_ENTRIES);
+    expect(hydrated['priority-main-users']).toBe(100);
+    expect(hydrated['connection-0-main-table']).toBeUndefined();
+    expect(hydrated[`connection-${MAX_TABLE_ACCESS_COUNT_ENTRIES}-main-table`]).toBe(1);
+  });
+
+  it('bounds directly injected table access counts before persistence', async () => {
+    const { useStore } = await importStore();
+    useStore.setState({
+      tableAccessCount: Object.fromEntries(
+        Array.from(
+          { length: MAX_TABLE_ACCESS_COUNT_ENTRIES + 10 },
+          (_, index) => [`injected-${index}`, index + 1],
+        ),
+      ),
+    });
+
+    const persisted = JSON.parse(storage.getItem('lite-db-storage') || '{}');
+    expect(Object.keys(persisted.state.tableAccessCount)).toHaveLength(
+      MAX_TABLE_ACCESS_COUNT_ENTRIES,
+    );
+    expect(persisted.state.tableAccessCount['injected-0']).toBeUndefined();
+    expect(persisted.state.tableAccessCount[
+      `injected-${MAX_TABLE_ACCESS_COUNT_ENTRIES + 9}`
+    ]).toBe(MAX_TABLE_ACCESS_COUNT_ENTRIES + 10);
+  });
+
+  it('bounds runtime table access counts and evicts the oldest least-used entry', async () => {
+    const { useStore } = await importStore();
+    useStore.setState({
+      tableAccessCount: Object.fromEntries(
+        Array.from(
+          { length: MAX_TABLE_ACCESS_COUNT_ENTRIES },
+          (_, index) => [buildTableAccessCountKey('conn', 'main', `table-${index}`), 1],
+        ),
+      ),
+    });
+
+    useStore.getState().recordTableAccess('conn', 'main', 'table-0');
+    useStore.getState().recordTableAccess('conn', 'main', 'new-table');
+
+    const counts = useStore.getState().tableAccessCount;
+    expect(Object.keys(counts)).toHaveLength(MAX_TABLE_ACCESS_COUNT_ENTRIES);
+    expect(counts[buildTableAccessCountKey('conn', 'main', 'table-0')]).toBe(2);
+    expect(counts[buildTableAccessCountKey('conn', 'main', 'table-1')]).toBeUndefined();
+    expect(counts[buildTableAccessCountKey('conn', 'main', 'new-table')]).toBe(1);
+  });
+
+  it('uses a legacy table access count and migrates it on the next access', async () => {
+    const { useStore } = await importStore();
+    const legacyKey = buildLegacyTableAccessCountKey('conn', 'main', 'users');
+    const currentKey = buildTableAccessCountKey('conn', 'main', 'users');
+    useStore.setState({ tableAccessCount: { [legacyKey]: 4 } });
+
+    useStore.getState().recordTableAccess('conn', 'main', 'users');
+
+    expect(useStore.getState().tableAccessCount).toEqual({ [currentKey]: 5 });
+  });
+
+  it('cleans deleted connection access counts without matching a longer connection id', async () => {
+    const { useStore } = await importStore();
+    useStore.getState().replaceConnections(
+      ['conn', 'conn-prod'].map((id) => ({
+        id,
+        name: id,
+        config: { id, type: 'mysql', host: `${id}.local`, port: 3306, user: 'root' },
+      })),
+    );
+    useStore.setState({
+      tableAccessCount: {
+        [buildLegacyTableAccessCountKey('conn', 'main', 'users')]: 3,
+        [buildLegacyTableAccessCountKey('conn-prod', 'main', 'orders')]: 5,
+      },
+    });
+
+    useStore.getState().removeConnection('conn');
+
+    expect(useStore.getState().tableAccessCount).toEqual({
+      [buildLegacyTableAccessCountKey('conn-prod', 'main', 'orders')]: 5,
+    });
+  });
+
+  it('keeps colliding legacy tuples isolated with versioned table access keys', async () => {
+    const { useStore } = await importStore();
+    useStore.getState().replaceConnections(
+      ['conn', 'conn-prod'].map((id) => ({
+        id,
+        name: id,
+        config: { id, type: 'mysql', host: `${id}.local`, port: 3306, user: 'root' },
+      })),
+    );
+
+    useStore.getState().recordTableAccess('conn', 'prod', 'main-orders');
+    useStore.getState().recordTableAccess('conn-prod', 'main', 'orders');
+    expect(buildLegacyTableAccessCountKey('conn', 'prod', 'main-orders')).toBe(
+      buildLegacyTableAccessCountKey('conn-prod', 'main', 'orders'),
+    );
+    expect(buildTableAccessCountKey('conn', 'prod', 'main-orders')).not.toBe(
+      buildTableAccessCountKey('conn-prod', 'main', 'orders'),
+    );
+
+    useStore.getState().removeConnection('conn');
+
+    expect(useStore.getState().tableAccessCount).toEqual({
+      [buildTableAccessCountKey('conn-prod', 'main', 'orders')]: 1,
+    });
+  });
+
   it('keeps legacy global proxy password during hydration until explicit cleanup', async () => {
     storage.setItem('lite-db-storage', JSON.stringify({
       state: {
@@ -1169,7 +1723,7 @@ describe('store appearance persistence', () => {
     expect(useStore.getState().globalProxy.hasPassword).toBe(true);
   });
 
-  it('persists external SQL directories and restores valid items after reload', async () => {
+  it('persists external SQL directories and keeps distinct connection bindings after reload', async () => {
     const { useStore } = await importStore();
 
     useStore.getState().saveExternalSQLDirectory({
@@ -1216,7 +1770,125 @@ describe('store appearance persistence', () => {
         path: 'D:/sql/scripts',
         createdAt: 1,
       },
+      {
+        id: 'legacy-ext-1',
+        name: 'legacy duplicate',
+        path: 'D:\\sql\\scripts',
+        connectionId: 'conn-1',
+        dbName: 'demo',
+        createdAt: 2,
+      },
     ]);
+  });
+
+  it('records recent workbench targets and SQL files with their database binding', async () => {
+    const { useStore } = await importStore();
+
+    useStore.getState().addTab({
+      id: 'recent-query-1',
+      title: 'Orders',
+      type: 'query',
+      connectionId: 'conn-1',
+      dbName: 'orders',
+      query: 'select * from orders;',
+    });
+    useStore.getState().addTab({
+      id: 'recent-file-1',
+      title: 'daily-report.sql',
+      type: 'query',
+      connectionId: 'conn-2',
+      dbName: 'reporting',
+      query: 'select 1;',
+      filePath: 'D:/sql/reports/daily-report.sql',
+    });
+
+    expect(useStore.getState().recentConnectionTargets).toEqual([
+      expect.objectContaining({ connectionId: 'conn-2', dbName: 'reporting' }),
+      expect.objectContaining({ connectionId: 'conn-1', dbName: 'orders' }),
+    ]);
+    expect(useStore.getState().recentSQLFiles).toEqual([
+      expect.objectContaining({
+        connectionId: 'conn-2',
+        dbName: 'reporting',
+        fileName: 'daily-report.sql',
+        filePath: 'D:/sql/reports/daily-report.sql',
+      }),
+    ]);
+
+    useStore.getState().updateQueryTabDraft('recent-file-1', {
+      connectionId: 'conn-3',
+      dbName: 'auditing',
+    });
+    expect(useStore.getState().recentConnectionTargets[0]).toEqual(
+      expect.objectContaining({ connectionId: 'conn-3', dbName: 'auditing' }),
+    );
+    expect(useStore.getState().recentSQLFiles[0]).toEqual(
+      expect.objectContaining({
+        connectionId: 'conn-3',
+        dbName: 'auditing',
+        fileName: 'daily-report.sql',
+        filePath: 'D:/sql/reports/daily-report.sql',
+      }),
+    );
+
+    const persisted = JSON.parse(storage.getItem('lite-db-storage') || '{}');
+    expect(persisted.state.recentConnectionTargets).toHaveLength(3);
+    expect(persisted.state.recentSQLFiles).toHaveLength(2);
+
+    vi.resetModules();
+    const reloaded = await importStore();
+    expect(reloaded.useStore.getState().recentConnectionTargets).toEqual([
+      expect.objectContaining({ connectionId: 'conn-3', dbName: 'auditing' }),
+      expect.objectContaining({ connectionId: 'conn-2', dbName: 'reporting' }),
+      expect.objectContaining({ connectionId: 'conn-1', dbName: 'orders' }),
+    ]);
+    expect(reloaded.useStore.getState().recentSQLFiles).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        connectionId: 'conn-3',
+        dbName: 'auditing',
+        fileName: 'daily-report.sql',
+      }),
+    ]));
+  });
+
+  it('keeps recent SQL shortcuts in sync when files or their directories move or are deleted', async () => {
+    const { useStore } = await importStore();
+    useStore.getState().addTab({
+      id: 'recent-file-a',
+      title: 'a.sql',
+      type: 'query',
+      connectionId: 'conn-1',
+      dbName: 'orders',
+      query: 'select 1;',
+      filePath: 'D:/sql/reports/a.sql',
+    });
+    useStore.getState().addTab({
+      id: 'recent-file-b',
+      title: 'b.sql',
+      type: 'query',
+      connectionId: 'conn-1',
+      dbName: 'orders',
+      query: 'select 2;',
+      filePath: 'D:/sql/reports/nested/b.sql',
+    });
+
+    useStore.getState().moveRecentSQLFilesByDirectory('D:/sql/reports', 'D:/sql/archive');
+    expect(useStore.getState().recentSQLFiles.map((file) => file.filePath).sort()).toEqual([
+      'D:/sql/archive/a.sql',
+      'D:/sql/archive/nested/b.sql',
+    ]);
+
+    useStore.getState().updateRecentSQLFilePath('D:/sql/archive/a.sql', 'D:/sql/archive/renamed.sql');
+    expect(useStore.getState().recentSQLFiles).toEqual(expect.arrayContaining([
+      expect.objectContaining({ filePath: 'D:/sql/archive/renamed.sql', fileName: 'renamed.sql' }),
+    ]));
+
+    useStore.getState().removeRecentSQLFilesByPath('D:/sql/archive/renamed.sql');
+    expect(useStore.getState().recentSQLFiles).toEqual([
+      expect.objectContaining({ filePath: 'D:/sql/archive/nested/b.sql' }),
+    ]);
+    useStore.getState().removeRecentSQLFilesByDirectory('D:/sql/archive');
+    expect(useStore.getState().recentSQLFiles).toEqual([]);
   });
 
   it('uses localized external SQL directory fallback names without overriding explicit names or path segments', async () => {
@@ -1326,12 +1998,12 @@ describe('store appearance persistence', () => {
               jobId: 'job-1',
               targetName: '   ',
               startedAt: 1,
-              finishedAt: 0,
+              finishedAt: 2,
               format: 'csv',
               scope: 'table',
               scopeLabel: 'Table',
               strategyLabel: 'Export',
-              status: 'running',
+              status: 'done',
               stage: '',
               current: 0,
               total: 0,
@@ -1433,6 +2105,43 @@ describe('store appearance persistence', () => {
         'session-stream',
         'session-other',
       ]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('finds the newest streaming message without scanning the full session history', async () => {
+    vi.useFakeTimers();
+    try {
+      const { useStore } = await importStore();
+      let messageIdReads = 0;
+      const messages = Array.from({ length: 500 }, (_, index): AIChatMessage => ({
+        id: `message-${index}`,
+        role: index % 2 === 0 ? 'user' : 'assistant',
+        content: `content-${index}`,
+        timestamp: index,
+      })).map((message) => new Proxy(message, {
+        get(target, property, receiver) {
+          if (property === 'id') {
+            messageIdReads += 1;
+          }
+          return Reflect.get(target, property, receiver);
+        },
+      }));
+      useStore.setState({
+        aiChatHistory: { 'session-stream': messages },
+      });
+      messageIdReads = 0;
+
+      useStore.getState().updateAIChatMessage('session-stream', 'message-499', {
+        content: 'content-499-next-token',
+      });
+
+      expect(messageIdReads).toBeLessThanOrEqual(2);
+      expect(useStore.getState().aiChatHistory['session-stream'][499]?.content).toBe(
+        'content-499-next-token',
+      );
+      expect(useStore.getState().aiChatHistory['session-stream'][0]).toBe(messages[0]);
     } finally {
       vi.useRealTimers();
     }
@@ -1689,9 +2398,21 @@ describe('store appearance persistence', () => {
     expect(useStore.getState().detachedAIChatWindow?.height).toBe(560);
 
     useStore.getState().setAIPanelVisible(false);
-    expect(useStore.getState().detachedAIChatWindow).toBeNull();
+    expect(useStore.getState().detachedAIChatWindow).toEqual(expect.objectContaining({
+      width: 500,
+      height: 560,
+    }));
+    expect(useStore.getState().isAIChatDetached()).toBe(true);
     expect(useStore.getState().aiPanelVisible).toBe(false);
     expect(useStore.getState().aiChatDetachedBoundsMemory?.width).toBe(500);
+
+    useStore.getState().setAIChatOpenMode('detached');
+    useStore.getState().setAIPanelVisible(true);
+    expect(useStore.getState().aiPanelVisible).toBe(true);
+    expect(useStore.getState().detachedAIChatWindow).toEqual(expect.objectContaining({
+      width: 500,
+      height: 560,
+    }));
   });
 
   it('opens AI chat according to the configured default open mode', async () => {
@@ -1881,6 +2602,118 @@ describe('store appearance persistence', () => {
     expect(useStore.getState().activeTabId).toBe('table-export-conn-1-main-users');
   });
 
+  it('keeps a running data import tab until the foreground import finishes', async () => {
+    const { useStore } = await importStore();
+
+    useStore.getState().addTab({
+      id: 'query-1',
+      title: 'Query 1',
+      type: 'query',
+      connectionId: 'conn-1',
+      dbName: 'main',
+    });
+    useStore.getState().addTab({
+      id: 'data-import-workbench',
+      title: 'Data import',
+      type: 'data-import',
+      connectionId: 'conn-1',
+      dbName: 'main',
+      tableName: 'users',
+      dataImportRunning: true,
+    });
+    useStore.getState().addTab({
+      id: 'query-2',
+      title: 'Query 2',
+      type: 'query',
+      connectionId: 'conn-2',
+      dbName: 'analytics',
+    });
+
+    useStore.getState().closeTab('data-import-workbench');
+    expect(useStore.getState().tabs.map((tab) => tab.id)).toContain('data-import-workbench');
+
+    useStore.getState().closeTabsToLeft('query-2');
+    expect(useStore.getState().tabs.map((tab) => tab.id)).toEqual([
+      'data-import-workbench',
+      'query-2',
+    ]);
+
+    useStore.getState().closeAllTabs();
+    expect(useStore.getState().tabs.map((tab) => tab.id)).toEqual(['data-import-workbench']);
+    expect(useStore.getState().activeContext).toEqual({ connectionId: 'conn-1', dbName: 'main' });
+
+    useStore.getState().addTab({
+      ...useStore.getState().tabs[0],
+      dataImportRunning: false,
+    });
+    useStore.getState().closeAllTabs();
+    expect(useStore.getState().tabs).toEqual([]);
+  });
+
+  it('preserves a running data import when closing tabs by database or connection', async () => {
+    const { useStore } = await importStore();
+
+    useStore.getState().addTab({
+      id: 'data-import-workbench',
+      title: 'Data import',
+      type: 'data-import',
+      connectionId: 'conn-1',
+      dbName: 'main',
+      tableName: 'users',
+      dataImportRunning: true,
+    });
+    useStore.getState().addTab({
+      id: 'table-users',
+      title: 'users',
+      type: 'table',
+      connectionId: 'conn-1',
+      dbName: 'main',
+      tableName: 'users',
+    });
+
+    useStore.getState().closeTabsByDatabase('conn-1', 'main');
+    expect(useStore.getState().tabs.map((tab) => tab.id)).toEqual(['data-import-workbench']);
+
+    useStore.getState().closeTabsByConnection('conn-1');
+    expect(useStore.getState().tabs.map((tab) => tab.id)).toEqual(['data-import-workbench']);
+  });
+
+  it('preserves a running data import when closing right-side or other tabs', async () => {
+    const { useStore } = await importStore();
+    const addQuery = (id: string) => useStore.getState().addTab({
+      id,
+      title: id,
+      type: 'query',
+      connectionId: 'conn-2',
+      dbName: 'analytics',
+    });
+
+    addQuery('query-left');
+    useStore.getState().addTab({
+      id: 'data-import-workbench',
+      title: 'Data import',
+      type: 'data-import',
+      connectionId: 'conn-1',
+      dbName: 'main',
+      tableName: 'users',
+      dataImportRunning: true,
+    });
+    addQuery('query-right');
+
+    useStore.getState().closeTabsToRight('query-left');
+    expect(useStore.getState().tabs.map((tab) => tab.id)).toEqual([
+      'query-left',
+      'data-import-workbench',
+    ]);
+
+    addQuery('query-right');
+    useStore.getState().closeOtherTabs('query-left');
+    expect(useStore.getState().tabs.map((tab) => tab.id)).toEqual([
+      'query-left',
+      'data-import-workbench',
+    ]);
+  });
+
   it('persists table export history across store reloads', async () => {
     const { useStore } = await importStore();
 
@@ -1921,6 +2754,42 @@ describe('store appearance persistence', () => {
         status: 'done',
       }),
     ]);
+  });
+
+  it('does not persist export jobs that cannot survive an app restart', async () => {
+    const { useStore } = await importStore();
+    const runningEntry = {
+      jobId: 'job-running',
+      targetName: 'users',
+      startedAt: 1_000,
+      finishedAt: 0,
+      format: 'SQL',
+      scope: 'all',
+      scopeLabel: '全表数据',
+      strategyLabel: '备份',
+      status: 'running' as const,
+      stage: '正在备份',
+      current: 1,
+      total: 2,
+      totalRowsKnown: true,
+      filePath: '/tmp/users.sql',
+      message: '',
+    };
+
+    useStore.getState().upsertTableExportHistory('conn-1::main::users', runningEntry);
+    expect(useStore.getState().tableExportHistories['conn-1::main::users']).toBeUndefined();
+
+    storage.setItem('lite-db-storage', JSON.stringify({
+      state: {
+        tableExportHistories: {
+          'conn-1::main::users': [runningEntry],
+        },
+      },
+      version: 16,
+    }));
+    vi.resetModules();
+    const reloaded = await importStore();
+    expect(reloaded.useStore.getState().tableExportHistories['conn-1::main::users']).toBeUndefined();
   });
 
   it('only restores persisted query tabs with useful SQL state', async () => {
@@ -2014,6 +2883,36 @@ describe('store appearance persistence', () => {
     expect(reloaded.useStore.getState().sqlLogs[0]?.sql.length).toBe(12 * 1024);
   });
 
+  it('preserves SQL transaction log metadata across persistence', async () => {
+    const { useStore } = await importStore();
+
+    useStore.getState().addSqlLog({
+      id: 'transaction-tx-1',
+      timestamp: 100,
+      sql: 'START TRANSACTION;\nUPDATE users SET active = 1 WHERE id = 1;\nCOMMIT;',
+      status: 'success',
+      duration: 32,
+      dbName: 'main',
+      category: 'transaction',
+      transactionId: 'tx-1',
+      transactionAction: 'commit',
+    });
+
+    expect(useStore.getState().sqlLogs[0]).toMatchObject({
+      category: 'transaction',
+      transactionId: 'tx-1',
+      transactionAction: 'commit',
+    });
+
+    vi.resetModules();
+    const reloaded = await importStore();
+    expect(reloaded.useStore.getState().sqlLogs[0]).toMatchObject({
+      category: 'transaction',
+      transactionId: 'tx-1',
+      transactionAction: 'commit',
+    });
+  });
+
   it('shrinks oversized SQL logs from older persisted snapshots during hydration', async () => {
     storage.setItem('lite-db-storage', JSON.stringify({
       state: {
@@ -2089,6 +2988,57 @@ describe('store appearance persistence', () => {
     expect(reloaded.useStore.getState().startupFullscreen).toBe(true);
   });
 
+  it('defaults auto-check for updates to true and persists explicit disable', async () => {
+    const { useStore } = await importStore();
+
+    expect(useStore.getState().autoCheckForUpdates).toBe(true);
+
+    useStore.getState().setAutoCheckForUpdates(false);
+
+    const persisted = JSON.parse(storage.getItem('lite-db-storage') || '{}');
+    expect(persisted.state.autoCheckForUpdates).toBe(false);
+
+    vi.resetModules();
+    const reloaded = await importStore();
+    expect(reloaded.useStore.getState().autoCheckForUpdates).toBe(false);
+
+    storage.setItem('lite-db-storage', JSON.stringify({
+      state: {},
+      version: 17,
+    }));
+    vi.resetModules();
+    const hydrated = await importStore();
+    expect(hydrated.useStore.getState().autoCheckForUpdates).toBe(true);
+  });
+
+  it('defaults auto-check interval to 30 minutes and sanitizes invalid values', async () => {
+    const { useStore } = await importStore();
+
+    expect(useStore.getState().autoCheckForUpdatesIntervalMinutes).toBe(30);
+
+    useStore.getState().setAutoCheckForUpdatesIntervalMinutes(60);
+
+    const persisted = JSON.parse(storage.getItem('lite-db-storage') || '{}');
+    expect(persisted.state.autoCheckForUpdatesIntervalMinutes).toBe(60);
+
+    vi.resetModules();
+    const reloaded = await importStore();
+    expect(reloaded.useStore.getState().autoCheckForUpdatesIntervalMinutes).toBe(60);
+
+    reloaded.useStore.getState().setAutoCheckForUpdatesIntervalMinutes(7);
+    expect(reloaded.useStore.getState().autoCheckForUpdatesIntervalMinutes).toBe(30);
+
+    storage.setItem('lite-db-storage', JSON.stringify({
+      state: {
+        autoCheckForUpdatesIntervalMinutes: 99,
+      },
+      version: 17,
+    }));
+    vi.resetModules();
+    const hydrated = await importStore();
+    expect(hydrated.useStore.getState().autoCheckForUpdatesIntervalMinutes).toBe(30);
+  });
+
   it('persists window state and bounds immediately so Windows reopen keeps maximise or size memory', async () => {
     const { useStore } = await importStore();
 
@@ -2123,6 +3073,66 @@ describe('store appearance persistence', () => {
     expect(useStore.getState().shortcutOptions.sendAIChatMessage).toEqual({
       mac: { combo: 'Enter', enabled: true },
       windows: { combo: 'Enter', enabled: true },
+    });
+  });
+
+  it('migrates legacy sidebar search defaults to K only before storage version 18', async () => {
+    storage.setItem('lite-db-storage', JSON.stringify({
+      state: {
+        shortcutOptions: {
+          focusSidebarSearch: {
+            mac: { combo: 'Meta+F', enabled: false },
+            windows: { combo: 'Ctrl+F', enabled: true },
+          },
+        },
+      },
+      version: 17,
+    }));
+
+    const migrated = await importStore();
+    expect(migrated.useStore.getState().shortcutOptions.focusSidebarSearch).toEqual({
+      mac: { combo: 'Meta+K', enabled: false },
+      windows: { combo: 'Ctrl+K', enabled: true },
+    });
+    expect(JSON.parse(storage.getItem('lite-db-storage') || '{}').version).toBe(18);
+
+    storage.setItem('lite-db-storage', JSON.stringify({
+      state: {
+        shortcutOptions: {
+          focusSidebarSearch: {
+            mac: { combo: 'Meta+F', enabled: true },
+            windows: { combo: 'Ctrl+F', enabled: false },
+          },
+        },
+      },
+      version: 18,
+    }));
+    vi.resetModules();
+
+    const current = await importStore();
+    expect(current.useStore.getState().shortcutOptions.focusSidebarSearch).toEqual({
+      mac: { combo: 'Meta+F', enabled: true },
+      windows: { combo: 'Ctrl+F', enabled: false },
+    });
+  });
+
+  it('does not restore legacy sidebar search defaults during an early startup refresh', async () => {
+    const { useStore } = await importStore();
+    storage.setItem('lite-db-storage', JSON.stringify({
+      state: {
+        shortcutOptions: {
+          focusSidebarSearch: { combo: 'Ctrl+F', enabled: true },
+        },
+      },
+      version: 17,
+    }));
+
+    useStore.getState().replaceConnections([]);
+
+    const persisted = JSON.parse(storage.getItem('lite-db-storage') || '{}');
+    expect(persisted.state.shortcutOptions.focusSidebarSearch).toEqual({
+      mac: { combo: 'Meta+K', enabled: true },
+      windows: { combo: 'Ctrl+K', enabled: true },
     });
   });
 
@@ -2237,5 +3247,136 @@ describe('store appearance persistence', () => {
     const persistedSnippets = persisted.state.sqlSnippets.filter((s: { id: string }) => s.id === original.id);
     expect(persistedSnippets).toHaveLength(1);
     expect(persistedSnippets[0].syntaxHelp).toBe('新说明：目标表、数据源、关联字段均可修改');
+  });
+
+  it('preserves custom SQL snippet body whitespace across reloads', async () => {
+    const { useStore } = await importStore();
+    const body = 'SELECT ${1:columns} FROM ${2:table_name}\n  ';
+
+    useStore.getState().saveSqlSnippet({
+      id: 'custom-trailing-whitespace',
+      prefix: 'trail',
+      name: 'Trailing whitespace',
+      body,
+      isBuiltin: false,
+      createdAt: 1710000000000,
+    });
+
+    expect(useStore.getState().sqlSnippets.find((snippet) => snippet.id === 'custom-trailing-whitespace')?.body)
+      .toBe(body);
+    const persisted = JSON.parse(storage.getItem('lite-db-storage') || '{}');
+    expect(persisted.state.sqlSnippets.find((snippet: { id: string }) => snippet.id === 'custom-trailing-whitespace')?.body)
+      .toBe(body);
+
+    vi.resetModules();
+    const reloaded = await importStore();
+    expect(reloaded.useStore.getState().sqlSnippets.find((snippet) => snippet.id === 'custom-trailing-whitespace')?.body)
+      .toBe(body);
+  });
+});
+
+describe('store persistence hot path', () => {
+  let storage: MemoryStorage;
+
+  beforeEach(() => {
+    storage = new MemoryStorage();
+    vi.stubGlobal('localStorage', storage);
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.resetModules();
+  });
+
+  it('reuses the persisted projection across transient state updates', async () => {
+    const { useStore } = await importStore();
+    const partialize = useStore.persist.getOptions().partialize;
+    if (!partialize) {
+      throw new Error('expected store partialize option');
+    }
+    const state = useStore.getState();
+
+    const projections = Array.from({ length: 1_000 }, (_, index) =>
+      partialize({
+        ...state,
+        aiPanelVisible: index % 2 === 0,
+        jvmDiagnosticOutputs: {
+          [`diagnostic-${index}`]: [],
+        },
+      }),
+    );
+
+    expect(new Set(projections).size).toBe(1);
+  });
+
+  it('invalidates the persisted projection when a persisted field changes', async () => {
+    const { useStore } = await importStore();
+    const partialize = useStore.persist.getOptions().partialize;
+    if (!partialize) {
+      throw new Error('expected store partialize option');
+    }
+    const state = useStore.getState();
+
+    const initial = partialize(state) as Partial<typeof state>;
+    const transientOnly = partialize({
+      ...state,
+      aiPanelVisible: !state.aiPanelVisible,
+    }) as Partial<typeof state>;
+    const changedTheme = partialize({
+      ...state,
+      theme: state.theme === 'light' ? 'dark' : 'light',
+    }) as Partial<typeof state>;
+
+    expect(transientOnly).toBe(initial);
+    expect(changedTheme).not.toBe(initial);
+    expect(changedTheme.theme).not.toBe(initial.theme);
+  });
+
+  it('invalidates connection projection when legacy secrets appear or disappear', async () => {
+    const { useStore } = await importStore();
+    const partialize = useStore.persist.getOptions().partialize;
+    if (!partialize) {
+      throw new Error('expected store partialize option');
+    }
+    const state = useStore.getState();
+    const cleanState = { ...state, connections: [] };
+
+    const cleanProjection = partialize(cleanState) as Partial<typeof state>;
+    expect(Object.prototype.hasOwnProperty.call(cleanProjection, 'connections')).toBe(false);
+
+    const legacyConnections = [
+      {
+        id: 'legacy-secret',
+        name: 'Legacy Secret',
+        config: {
+          id: 'legacy-secret',
+          type: 'mysql',
+          host: '127.0.0.1',
+          port: 3306,
+          user: 'root',
+          password: 'secret',
+        },
+      },
+    ];
+    const legacyProjection = partialize({
+      ...cleanState,
+      connections: legacyConnections,
+    }) as Partial<typeof state>;
+
+    expect(legacyProjection).not.toBe(cleanProjection);
+    expect(legacyProjection.connections).toBe(legacyConnections);
+
+    const scrubbedConnections = legacyConnections.map((connection) => ({
+      ...connection,
+      config: { ...connection.config, password: '' },
+    }));
+    const scrubbedProjection = partialize({
+      ...cleanState,
+      connections: scrubbedConnections,
+    }) as Partial<typeof state>;
+
+    expect(scrubbedProjection).not.toBe(legacyProjection);
+    expect(Object.prototype.hasOwnProperty.call(scrubbedProjection, 'connections')).toBe(false);
   });
 });

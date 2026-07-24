@@ -106,4 +106,22 @@ describe('aiSqlRiskInsights', () => {
     expect(snapshot.warnings).toContain('UPDATE is missing a WHERE clause and may update the entire table.');
     expect(snapshot.warnings).toContain('The current AI safety policy does not allow UPDATE SQL.');
   });
+
+  it('uses the active connection dialect when splitting SQL comments', () => {
+    const snapshot = buildSqlRiskSnapshot({
+      tabs: [{
+        id: 'tab-1',
+        title: '用户删除',
+        type: 'query',
+        connectionId: 'conn-1',
+        dbName: 'crm',
+        query: 'DELETE FROM users WHERE id = 1;--compact',
+      }],
+      activeTabId: 'tab-1',
+      connections,
+    });
+
+    expect(snapshot.statementCount).toBe(2);
+    expect(snapshot.warnings.join('\n')).toContain('Confirm the impact scope of each statement');
+  });
 });

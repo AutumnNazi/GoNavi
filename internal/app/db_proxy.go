@@ -10,6 +10,15 @@ import (
 	proxytunnel "GoNavi-Wails/internal/proxy"
 )
 
+func isFileDatabaseType(driverType string) bool {
+	switch strings.ToLower(strings.TrimSpace(driverType)) {
+	case "sqlite", "duckdb":
+		return true
+	default:
+		return false
+	}
+}
+
 func resolveDialConfigWithProxy(raw connection.ConnectionConfig) (connection.ConnectionConfig, error) {
 	config := raw
 	if config.UseHTTPTunnel {

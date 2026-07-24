@@ -57,10 +57,8 @@ const AISettingsPromptsSection: React.FC<AISettingsPromptsSectionProps> = ({
   builtinPrompts,
   userPromptSettings,
   overlayTheme,
-  cardBg,
   cardBorder,
   inputBg,
-  darkMode,
   loading,
   onChangeUserPrompt,
   onSave,
@@ -73,96 +71,117 @@ const AISettingsPromptsSection: React.FC<AISettingsPromptsSectionProps> = ({
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+    <div style={{ display: 'flex', flexDirection: 'column' }}>
       <div
+        className="gonavi-ai-user-prompts-editor"
         style={{
-          padding: '14px 16px',
-          borderRadius: 14,
-          border: `1px solid ${cardBorder}`,
-          background: cardBg,
+          padding: '0 0 8px',
+          borderBottom: `1px solid ${cardBorder}`,
         }}
       >
-        <div style={{ fontWeight: 700, fontSize: 14, color: overlayTheme.titleText, marginBottom: 6 }}>
-          {copy('ai_settings.prompts.user.title')}
-        </div>
-        <div style={{ fontSize: 13, color: overlayTheme.mutedText, lineHeight: 1.6, marginBottom: 14 }}>
-          {copy('ai_settings.prompts.user.description')}
-        </div>
-
-        {USER_PROMPT_FIELDS.map((item) => (
-          <div key={item.key} style={{ marginTop: 14 }}>
-            <div style={{ fontWeight: 600, fontSize: 13, color: overlayTheme.titleText, marginBottom: 4 }}>
-              {copy(item.titleKey)}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'flex-start',
+            justifyContent: 'space-between',
+            gap: 16,
+            paddingBottom: 10,
+          }}
+        >
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontWeight: 700, fontSize: 'var(--gn-font-size, 14px)', color: overlayTheme.titleText, marginBottom: 5 }}>
+              {copy('ai_settings.prompts.user.title')}
             </div>
-            <div style={{ fontSize: 12, color: overlayTheme.mutedText, lineHeight: 1.6, marginBottom: 8 }}>
-              {copy(item.descKey)}
+            <div style={{ fontSize: 'var(--gn-settings-font-secondary, 13px)', color: overlayTheme.mutedText, lineHeight: 1.55 }}>
+              {copy('ai_settings.prompts.user.description')}
             </div>
-            <Input.TextArea
-              rows={item.rows}
-              value={userPromptSettings[item.key]}
-              onChange={(event) => onChangeUserPrompt(item.key, event.target.value)}
-              placeholder={copy('ai_settings.prompts.placeholder.empty')}
-              style={{
-                borderRadius: 10,
-                background: inputBg,
-                border: `1px solid ${cardBorder}`,
-                fontFamily: 'var(--gn-font-mono)',
-                resize: 'vertical',
-              }}
-            />
           </div>
-        ))}
-
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
-          <Button type="primary" onClick={onSave} loading={loading} style={{ borderRadius: 10, fontWeight: 600 }}>
+          <Button type="primary" onClick={onSave} loading={loading}>
             {copy('ai_settings.prompts.action.save')}
           </Button>
         </div>
+
+        {USER_PROMPT_FIELDS.map((item) => (
+          <details
+            key={item.key}
+            className="gonavi-ai-user-prompt"
+            style={{ borderTop: `1px solid ${cardBorder}` }}
+          >
+            <summary style={{ cursor: 'pointer', padding: '12px 2px', color: overlayTheme.titleText }}>
+              <span style={{ display: 'inline-block', width: 'calc(100% - 18px)', marginLeft: 8, verticalAlign: 'middle' }}>
+                <span style={{ display: 'block', fontWeight: 650, fontSize: 'var(--gn-settings-font-secondary, 13px)' }}>{copy(item.titleKey)}</span>
+                <span style={{ display: 'block', marginTop: 3, fontSize: 'var(--gn-font-size-sm, 12px)', color: overlayTheme.mutedText, lineHeight: 1.45 }}>
+                  {copy(item.descKey)}
+                </span>
+              </span>
+            </summary>
+            <div style={{ padding: '0 2px 14px 26px' }}>
+              <Input.TextArea
+                aria-label={copy(item.titleKey)}
+                rows={item.rows}
+                value={userPromptSettings[item.key]}
+                onChange={(event) => onChangeUserPrompt(item.key, event.target.value)}
+                placeholder={copy('ai_settings.prompts.placeholder.empty')}
+                style={{
+                  background: inputBg,
+                  border: `1px solid ${cardBorder}`,
+                  resize: 'vertical',
+                }}
+              />
+            </div>
+          </details>
+        ))}
       </div>
 
-      <div style={{ fontSize: 13, color: overlayTheme.mutedText, marginBottom: 4 }}>
+      <div style={{ fontSize: 'var(--gn-settings-font-secondary, 13px)', color: overlayTheme.mutedText, margin: '18px 0 6px', lineHeight: 1.55 }}>
         {copy('ai_settings.prompts.builtin.description')}
       </div>
       {Object.entries(builtinPrompts).map(([title, promptText]) => (
-        <div
+        <details
           key={title}
+          className="gonavi-ai-builtin-prompt"
           style={{
-            padding: '12px',
-            borderRadius: 12,
-            border: `1px solid ${cardBorder}`,
-            background: cardBg,
+            borderBottom: `1px solid ${cardBorder}`,
           }}
         >
-          <div
+          <summary
             style={{
-              fontWeight: 700,
-              fontSize: 14,
+              cursor: 'pointer',
+              padding: '12px 2px',
               color: overlayTheme.titleText,
-              marginBottom: 8,
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6,
             }}
           >
-            <RobotOutlined style={{ color: overlayTheme.iconColor }} /> {title}
-          </div>
+            <span
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 7,
+                width: 'calc(100% - 18px)',
+                marginLeft: 8,
+                verticalAlign: 'middle',
+                fontWeight: 650,
+                fontSize: 'var(--gn-settings-font-secondary, 13px)',
+              }}
+            >
+              <RobotOutlined style={{ color: overlayTheme.iconColor }} aria-hidden="true" />
+              {title}
+            </span>
+          </summary>
           <div
             style={{
-              background: darkMode ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.8)',
-              padding: '10px 12px',
-              borderRadius: 8,
-              fontSize: 13,
+              margin: '0 2px 14px 26px',
+              padding: '2px 0 2px 12px',
+              fontSize: 'var(--gn-settings-font-secondary, 13px)',
               color: overlayTheme.mutedText,
               whiteSpace: 'pre-wrap',
-              fontFamily: 'var(--gn-font-mono)',
               lineHeight: 1.5,
               userSelect: 'text',
-              border: darkMode ? '1px solid rgba(255,255,255,0.03)' : '1px solid rgba(0,0,0,0.02)',
+              borderLeft: `2px solid ${cardBorder}`,
             }}
           >
             {promptText}
           </div>
-        </div>
+        </details>
       ))}
     </div>
   );

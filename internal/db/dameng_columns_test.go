@@ -3,6 +3,8 @@ package db
 import (
 	"strings"
 	"testing"
+
+	"GoNavi-Wails/internal/connection"
 )
 
 func TestBuildDamengColumnsQuery_IncludesPrimaryKeyMetadata(t *testing.T) {
@@ -123,5 +125,47 @@ func TestBuildDamengColumnDefinitions_MarksPrimaryKeyColumns(t *testing.T) {
 	}
 	if columns[2].Name != "AMOUNT" || columns[2].Type != "NUMBER(10,2)" || columns[2].Nullable != "NO" {
 		t.Fatalf("数值字段定义异常: %+v", columns[2])
+	}
+}
+
+func TestBuildDamengAutoIncrementColumnsQuery_UsesSystemColumnMetadata(t *testing.T) {
+	t.Parallel()
+
+	ownerQuery := buildDamengAutoIncrementColumnsQuery("biz", "orders")
+	for _, want := range []string{
+		"FROM SYS.SYSCOLUMNS sc",
+		"JOIN SYS.SYSOBJECTS t ON sc.ID = t.ID",
+		"JOIN SYS.SYSOBJECTS s ON t.SCHID = s.ID",
+		"s.NAME = 'BIZ'",
+		"t.NAME = 'ORDERS'",
+		"(sc.INFO2 & 0x01) = 0x01",
+	} {
+		if !strings.Contains(ownerQuery, want) {
+			t.Fatalf("owner query 应包含自增字段元数据条件 %q, got=%s", want, ownerQuery)
+		}
+	}
+
+	userQuery := buildDamengAutoIncrementColumnsQuery("", "orders")
+	if !strings.Contains(userQuery, "s.NAME = USER") {
+		t.Fatalf("user query 应按当前登录 schema 过滤, got=%s", userQuery)
+	}
+}
+
+func TestApplyDamengAutoIncrementColumns_MarksOnlyMatchedColumns(t *testing.T) {
+	t.Parallel()
+
+	columns := []connection.ColumnDefinition{
+		{Name: "ID"},
+		{Name: "NAME"},
+	}
+	got := applyDamengAutoIncrementColumns(columns, []map[string]interface{}{
+		{"COLUMN_NAME": "id"},
+	})
+
+	if got[0].Extra != "auto_increment" {
+		t.Fatalf("自增字段未标记: %+v", got[0])
+	}
+	if got[1].Extra != "" {
+		t.Fatalf("非自增字段不应被标记: %+v", got[1])
 	}
 }

@@ -1,6 +1,17 @@
-import { describe, expect, it, vi } from 'vitest';
+import React from 'react';
+import { act, create, type ReactTestRenderer } from 'react-test-renderer';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ErDiagramTableSnapshot } from './dataGridErDiagramModel';
-import { collectErDiagramNeighborhood } from './useDataGridErDiagram';
+import { collectErDiagramNeighborhood, useDataGridErDiagram } from './useDataGridErDiagram';
+
+const backendApp = vi.hoisted(() => ({
+  DBGetColumns: vi.fn(),
+  DBGetForeignKeys: vi.fn(),
+  DBGetIndexes: vi.fn(),
+  DBGetTables: vi.fn(),
+}));
+
+vi.mock('../../wailsjs/go/app/App', () => backendApp);
 
 const SNAPSHOTS: Record<string, ErDiagramTableSnapshot> = {
   orders: {
@@ -116,5 +127,78 @@ describe('collectErDiagramNeighborhood', () => {
       expect.arrayContaining(['customers->regions']),
     );
     expect(twoHop.canExpandRelations).toBe(false);
+  });
+});
+
+describe('useDataGridErDiagram cache invalidation', () => {
+  beforeEach(() => {
+    Object.values(backendApp).forEach((mock) => mock.mockReset());
+    backendApp.DBGetColumns.mockResolvedValue({ success: true, data: [] });
+    backendApp.DBGetForeignKeys.mockResolvedValue({ success: true, data: [] });
+    backendApp.DBGetIndexes.mockResolvedValue({ success: true, data: [] });
+    backendApp.DBGetTables.mockResolvedValue({ success: true, data: [{ table: 'orders' }] });
+  });
+
+  it('reuses cached metadata until reload invalidates the active connection and database prefix', async () => {
+    let controller: ReturnType<typeof useDataGridErDiagram> | null = null;
+    let renderer: ReactTestRenderer | null = null;
+    const params = {
+      connections: [{
+        id: 'er-cache-invalidation-test',
+        config: { type: 'mysql', host: '127.0.0.1', port: 3306 },
+      }],
+      connectionId: 'er-cache-invalidation-test',
+      dbName: 'app',
+      tableName: 'orders',
+    };
+    const Harness = () => {
+      controller = useDataGridErDiagram(params);
+      return null;
+    };
+    const waitForLoad = async () => {
+      await vi.waitFor(() => {
+        expect(controller?.loading).toBe(false);
+        expect(controller?.graph).not.toBeNull();
+      });
+    };
+
+    await act(async () => {
+      renderer = create(React.createElement(Harness));
+      await waitForLoad();
+    });
+
+    expect(backendApp.DBGetColumns).toHaveBeenCalledTimes(1);
+    expect(backendApp.DBGetForeignKeys).toHaveBeenCalledTimes(1);
+    expect(backendApp.DBGetIndexes).toHaveBeenCalledTimes(1);
+    expect(backendApp.DBGetTables).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      renderer?.unmount();
+      renderer = null;
+    });
+
+    await act(async () => {
+      renderer = create(React.createElement(Harness));
+      await waitForLoad();
+    });
+
+    expect(backendApp.DBGetColumns).toHaveBeenCalledTimes(1);
+    expect(backendApp.DBGetForeignKeys).toHaveBeenCalledTimes(1);
+    expect(backendApp.DBGetIndexes).toHaveBeenCalledTimes(1);
+    expect(backendApp.DBGetTables).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      controller?.reload();
+      await vi.waitFor(() => {
+        expect(backendApp.DBGetColumns).toHaveBeenCalledTimes(2);
+        expect(backendApp.DBGetForeignKeys).toHaveBeenCalledTimes(2);
+        expect(backendApp.DBGetIndexes).toHaveBeenCalledTimes(2);
+        expect(backendApp.DBGetTables).toHaveBeenCalledTimes(2);
+      });
+    });
+
+    act(() => {
+      renderer?.unmount();
+    });
   });
 });

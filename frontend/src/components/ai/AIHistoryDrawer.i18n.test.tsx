@@ -117,6 +117,7 @@ const renderDrawer = async (
           mutedColor="#667085"
           borderColor="#d0d5dd"
           onCreateNew={() => {}}
+          onSelectSession={() => {}}
           sessionId="s1"
           {...overrides}
         />
@@ -181,6 +182,7 @@ describe('AIHistoryDrawer i18n', () => {
             mutedColor="#667085"
             borderColor="#d0d5dd"
             onCreateNew={() => {}}
+            onSelectSession={() => {}}
             sessionId="s1"
           />
         </I18nProvider>,

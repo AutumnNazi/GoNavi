@@ -31,8 +31,10 @@ describe('ResizableDraggableModal guards', () => {
     expect(modalSource).toContain("startResize('south-east', event);");
     expect(modalSource).toContain("wrapperElement?.closest('.ant-modal')");
     expect(modalSource).toContain("modalNode.style.width = `${size.width}px`;");
-    expect(modalSource).toContain("window.addEventListener('click', suppressInteractionClick, true);");
+    expect(modalSource).toContain("window.addEventListener('click', suppressInteractionClick, { capture: true, once: true });");
     expect(modalSource).toContain("window.removeEventListener('click', suppressInteractionClick, true);");
+    expect(modalSource).toContain("window.addEventListener('blur', handleAbortDrag);");
+    expect(modalSource).toContain('if (moveEvent.buttons === 0)');
   });
 
   it('applies resized width and height to the underlying AntD modal nodes', () => {

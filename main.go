@@ -7,11 +7,13 @@ import (
 	"runtime"
 	"runtime/debug"
 	"strings"
+	"sync"
 
 	aiservice "GoNavi-Wails/internal/ai/service"
 	"GoNavi-Wails/internal/app"
 	"GoNavi-Wails/internal/logger"
 	"GoNavi-Wails/internal/mcpserver"
+	"GoNavi-Wails/internal/nativewindow"
 	"GoNavi-Wails/internal/webserver"
 
 	"github.com/wailsapp/wails/v2"
@@ -25,6 +27,51 @@ import (
 )
 
 const nativeSelectCurrentLineEvent = "gonavi:native-select-current-line"
+const windowsMSISingleInstanceID = "CDD6BF2F-ED1E-4345-A0AB-DCDB7E15FB23"
+
+type primaryWindowActivator struct {
+	mu      sync.Mutex
+	ctx     context.Context
+	pending bool
+	show    func(context.Context)
+}
+
+func (a *primaryWindowActivator) requestActivation() {
+	if a == nil {
+		return
+	}
+	a.mu.Lock()
+	ctx := a.ctx
+	if ctx == nil {
+		a.pending = true
+		a.mu.Unlock()
+		return
+	}
+	show := a.show
+	a.mu.Unlock()
+	if show != nil {
+		show(ctx)
+	}
+}
+
+func (a *primaryWindowActivator) bindRuntimeContext(ctx context.Context) {
+	if a == nil || ctx == nil {
+		return
+	}
+	a.mu.Lock()
+	a.ctx = ctx
+	activatePending := a.pending
+	a.pending = false
+	show := a.show
+	a.mu.Unlock()
+	if activatePending && show != nil {
+		show(ctx)
+	}
+}
+
+func shouldEnableWindowsMSISingleInstance(goos string, executablePath string) bool {
+	return app.IsWindowsMSIInstallExecutable(goos, executablePath)
+}
 
 func main() {
 	// 大结果集导出（88W+ 行）时，JSON 编解码会产生 5-8 倍内存副本，
@@ -33,13 +80,52 @@ func main() {
 	// 代价是 CPU 开销略增，但导出/导入场景属 I/O 密集型，GC 开销可忽略。
 	debug.SetGCPercent(50)
 
+	executablePath, executableErr := os.Executable()
+	if executableErr == nil {
+		maintenanceActive, err := app.WindowsUpdateMaintenanceActive(runtime.GOOS, executablePath)
+		if err != nil {
+			logger.Errorf("检查 Windows 更新维护状态失败：%v", err)
+			return
+		}
+		if maintenanceActive {
+			logger.Warnf("当前 GoNavi 安装正在更新，已阻止新进程启动：%s", executablePath)
+			return
+		}
+	}
 	if runSpecialMode(os.Args[1:]) {
 		return
+	}
+	primaryActivator := &primaryWindowActivator{show: wailsRuntime.WindowShow}
+	if executableErr != nil {
+		logger.Warnf("检测 MSI 单实例模式失败：%v", executableErr)
+	} else if shouldEnableWindowsMSISingleInstance(runtime.GOOS, executablePath) {
+		releaseSingleInstance, isPrimary, err := acquireWindowsMSISingleInstance(
+			windowsMSISingleInstanceID,
+			primaryActivator.requestActivation,
+		)
+		if err != nil {
+			logger.Errorf("启用 MSI 单实例模式失败：%v", err)
+			return
+		}
+		if !isPrimary {
+			return
+		}
+		if releaseSingleInstance != nil {
+			defer releaseSingleInstance()
+		}
 	}
 
 	// Create an instance of the app structure
 	application := app.NewApp()
 	aiService := aiservice.NewService()
+	nativeWindowManager, nativeWindowErr := nativewindow.NewManager(assets, application, aiService)
+	if nativeWindowErr != nil {
+		logger.Warnf("初始化原生独立窗口管理器失败：%v", nativeWindowErr)
+	}
+	bindings := []interface{}{application, aiService}
+	if nativeWindowManager != nil {
+		bindings = append(bindings, nativeWindowManager)
+	}
 	lowMemoryMode := isLowMemoryMode()
 	backgroundColour, windowsOptions := resolveWindowVisualOptions(runtime.GOOS, lowMemoryMode)
 	windowsOptions.WebviewUserDataPath = resolveWindowsWebviewUserDataPath()
@@ -78,22 +164,29 @@ func main() {
 		Menu:             appMenu,
 		OnStartup: func(ctx context.Context) {
 			runtimeCtx = ctx
-			app.InitializeLifecycle(application, ctx)
-			aiservice.InitializeLifecycle(aiService, ctx)
+			primaryActivator.bindRuntimeContext(ctx)
+			lifecycleCtx := ctx
+			if nativeWindowManager != nil {
+				if err := nativewindow.InitializeLifecycle(nativeWindowManager, ctx); err != nil {
+					logger.Warnf("启动原生独立窗口服务失败：%v", err)
+				} else {
+					lifecycleCtx = nativewindow.WithLifecycleContext(nativeWindowManager, ctx)
+				}
+			}
+			app.InitializeLifecycle(application, lifecycleCtx)
+			aiservice.InitializeLifecycle(aiService, lifecycleCtx)
 			if err := aiservice.RepairInstalledLocalMCPClientConfigs(aiService); err != nil {
 				logger.Warnf("自动修复本地 MCP 客户端配置失败：%v", err)
 			}
 		},
 		OnShutdown: func(ctx context.Context) {
+			nativewindow.ShutdownLifecycle(nativeWindowManager)
 			aiService.Shutdown()
 			application.Shutdown()
 		},
 		OnBeforeClose: app.NewBeforeCloseHandler(application),
-		Bind: []interface{}{
-			application,
-			aiService,
-		},
-		Windows: windowsOptions,
+		Bind:          bindings,
+		Windows:       windowsOptions,
 		Mac: &mac.Options{
 			WebviewIsTransparent: true,
 			WindowIsTranslucent:  true,
@@ -137,6 +230,11 @@ func runSpecialMode(args []string) bool {
 	case "web-server", "--web-server":
 		if err := webserver.Run(context.Background(), assets, args[1:]); err != nil {
 			logger.Error(err, "GoNavi Web Server 退出")
+		}
+		return true
+	case "detached-window", nativewindow.DetachedWindowArgument:
+		if err := nativewindow.RunChild(context.Background(), assets, args[1:]); err != nil {
+			logger.Error(err, "GoNavi 原生独立窗口退出")
 		}
 		return true
 	default:

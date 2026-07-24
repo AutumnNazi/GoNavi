@@ -28,13 +28,13 @@ export const useAIChatPanelResize = ({
 
   const handleResizeStart = useCallback((event: ReactMouseEvent) => {
     event.preventDefault();
+    if (!panelRef.current) {
+      return;
+    }
     setIsResizing(true);
     resizeStartX.current = event.clientX;
     resizeStartWidth.current = panelWidth;
     dragWidthRef.current = panelWidth;
-    if (!panelRef.current) {
-      return;
-    }
     const rect = panelRef.current.getBoundingClientRect();
     panelRect.current = {
       top: rect.top,
@@ -49,7 +49,30 @@ export const useAIChatPanelResize = ({
     }
 
     let animationFrameId = 0;
+    let resizeFinished = false;
+    const previousBodyStyles = {
+      cursor: document.body.style.cursor,
+      pointerEvents: document.body.style.pointerEvents,
+      userSelect: document.body.style.userSelect,
+    };
+    const finishResize = () => {
+      if (resizeFinished) {
+        return;
+      }
+      resizeFinished = true;
+      if (animationFrameId) {
+        cancelAnimationFrame(animationFrameId);
+      }
+      setIsResizing(false);
+      setPanelWidth(dragWidthRef.current);
+      onWidthChange?.(dragWidthRef.current);
+    };
+
     const handleMouseMove = (event: MouseEvent) => {
+      if (event.buttons === 0) {
+        finishResize();
+        return;
+      }
       if (animationFrameId) {
         cancelAnimationFrame(animationFrameId);
       }
@@ -68,17 +91,9 @@ export const useAIChatPanelResize = ({
       });
     };
 
-    const handleMouseUp = () => {
-      if (animationFrameId) {
-        cancelAnimationFrame(animationFrameId);
-      }
-      setIsResizing(false);
-      setPanelWidth(dragWidthRef.current);
-      onWidthChange?.(dragWidthRef.current);
-    };
-
     document.addEventListener('mousemove', handleMouseMove);
-    document.addEventListener('mouseup', handleMouseUp);
+    document.addEventListener('mouseup', finishResize);
+    window.addEventListener('blur', finishResize);
     document.body.style.cursor = 'col-resize';
     document.body.style.userSelect = 'none';
     document.body.style.pointerEvents = 'none';
@@ -88,10 +103,11 @@ export const useAIChatPanelResize = ({
         cancelAnimationFrame(animationFrameId);
       }
       document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
-      document.body.style.cursor = '';
-      document.body.style.userSelect = '';
-      document.body.style.pointerEvents = '';
+      document.removeEventListener('mouseup', finishResize);
+      window.removeEventListener('blur', finishResize);
+      document.body.style.cursor = previousBodyStyles.cursor;
+      document.body.style.userSelect = previousBodyStyles.userSelect;
+      document.body.style.pointerEvents = previousBodyStyles.pointerEvents;
     };
   }, [isResizing, isV2Ui, onWidthChange]);
 

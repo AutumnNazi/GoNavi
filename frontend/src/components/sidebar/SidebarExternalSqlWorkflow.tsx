@@ -4,7 +4,11 @@ import type { FormInstance } from 'antd/es/form';
 import Modal from '../common/ResizableDraggableModal';
 import type { SavedConnection, ExternalSQLDirectory } from '../../types';
 import { noAutoCapInputProps } from '../../utils/inputAutoCap';
-import { buildExternalSQLDirectoryId, buildExternalSQLTabId } from '../../utils/externalSqlTree';
+import {
+  buildExternalSQLDirectoryId,
+  buildExternalSQLTabId,
+  normalizeExternalSQLPath,
+} from '../../utils/externalSqlTree';
 import { buildSQLFileExecutionWorkbenchTab } from '../../utils/sqlFileExecutionTab';
 import { t } from '../../i18n';
 import { resolveSidebarNodeConnectionId } from '../sidebarV2Utils';
@@ -64,6 +68,10 @@ type UseSidebarExternalSqlWorkflowOptions = {
   addTab: (tab: any) => void;
   saveExternalSQLDirectory: (directory: ExternalSQLDirectory) => void;
   deleteExternalSQLDirectory: (directoryId: string) => void;
+  updateRecentSQLFilePath: (previousPath: string, nextPath: string) => void;
+  removeRecentSQLFilesByPath: (filePath: string) => void;
+  moveRecentSQLFilesByDirectory: (previousDirectoryPath: string, nextDirectoryPath: string) => void;
+  removeRecentSQLFilesByDirectory: (directoryPath: string) => void;
   refreshGlobalExternalSQLRootNode: RefreshExternalSQLRootNode;
   setExpandedKeys: React.Dispatch<React.SetStateAction<React.Key[]>>;
   setAutoExpandParent: React.Dispatch<React.SetStateAction<boolean>>;
@@ -303,6 +311,10 @@ export const useSidebarExternalSqlWorkflow = ({
   addTab,
   saveExternalSQLDirectory,
   deleteExternalSQLDirectory,
+  updateRecentSQLFilePath,
+  removeRecentSQLFilesByPath,
+  moveRecentSQLFilesByDirectory,
+  removeRecentSQLFilesByDirectory,
   refreshGlobalExternalSQLRootNode,
   setExpandedKeys,
   setAutoExpandParent,
@@ -569,6 +581,11 @@ export const useSidebarExternalSqlWorkflow = ({
           message.error(t('sidebar.message.rename_sql_file_failed', { error: res.message }));
           return;
         }
+        const payload = (res.data && typeof res.data === 'object') ? res.data as Record<string, unknown> : {};
+        const nextFilePath = String(payload.filePath || '').trim();
+        if (nextFilePath) {
+          updateRecentSQLFilePath(filePath, nextFilePath);
+        }
         await refreshGlobalExternalSQLRootNode(false);
         message.success(t('sidebar.message.sql_file_renamed'));
       } else if (externalSQLFileModalMode === 'create-directory') {
@@ -596,28 +613,47 @@ export const useSidebarExternalSqlWorkflow = ({
           return;
         }
 
+        const payload = (res.data && typeof res.data === 'object') ? res.data as Record<string, unknown> : {};
+        const nextPath = String(payload.directoryPath || payload.path || '').trim();
+        if (nextPath) {
+          moveRecentSQLFilesByDirectory(directoryPath, nextPath);
+        }
         if (externalSQLFileTarget?.type === 'external-sql-directory') {
-          const payload = (res.data && typeof res.data === 'object') ? res.data as Record<string, unknown> : {};
-          const nextPath = String(payload.directoryPath || payload.path || '').trim();
           const nextName = String(payload.name || name).trim();
-          const oldDirectoryId = String(externalSQLFileTarget?.dataRef?.id || '').trim();
-          if (!nextPath || !oldDirectoryId) {
+          const previousDirectoryPath = normalizeExternalSQLPath(directoryPath);
+          const matchingDirectories = externalSQLDirectories.filter(
+            (directory) => normalizeExternalSQLPath(directory.path) === previousDirectoryPath,
+          );
+          if (!nextPath || matchingDirectories.length === 0) {
             message.error(t('sidebar.message.external_sql_directory_rename_sync_failed'));
             await refreshGlobalExternalSQLRootNode(false);
             return;
           }
-          const nextDirectory: ExternalSQLDirectory = {
-            id: buildExternalSQLDirectoryId('', '', nextPath),
-            name: nextName || nextPath.split(/[\\/]/).filter(Boolean).pop() || t('sidebar.sql_directory.default_name'),
-            path: nextPath,
-            createdAt: Number(externalSQLFileTarget?.dataRef?.createdAt) || Date.now(),
-          };
-          deleteExternalSQLDirectory(oldDirectoryId);
-          saveExternalSQLDirectory(nextDirectory);
+          // A directory is a physical resource, while every connection/database
+          // association is a separate binding. Keep all bindings in sync after
+          // the physical path moves so each one still opens SQL in its own context.
+          const nextDirectoriesById = new Map<string, ExternalSQLDirectory>();
+          matchingDirectories.forEach((directory) => {
+            const connectionId = String(directory.connectionId || '').trim();
+            const dbName = String(directory.dbName || '').trim();
+            const nextDirectory: ExternalSQLDirectory = {
+              ...directory,
+              id: buildExternalSQLDirectoryId(connectionId, dbName, nextPath),
+              name: nextName || nextPath.split(/[\\/]/).filter(Boolean).pop() || t('sidebar.sql_directory.default_name'),
+              path: nextPath,
+              ...(connectionId ? { connectionId } : {}),
+              ...(dbName ? { dbName } : {}),
+              createdAt: Number(directory.createdAt) || Date.now(),
+            };
+            nextDirectoriesById.set(nextDirectory.id, nextDirectory);
+          });
+          const matchingDirectoryIds = new Set(matchingDirectories.map((directory) => directory.id));
           const nextDirectories = [
-            ...externalSQLDirectories.filter((item) => item.id !== oldDirectoryId),
-            nextDirectory,
+            ...externalSQLDirectories.filter((item) => !matchingDirectoryIds.has(item.id)),
+            ...nextDirectoriesById.values(),
           ];
+          matchingDirectories.forEach((directory) => deleteExternalSQLDirectory(directory.id));
+          nextDirectoriesById.forEach((directory) => saveExternalSQLDirectory(directory));
           await refreshGlobalExternalSQLRootNode(false, nextDirectories);
         } else {
           await refreshGlobalExternalSQLRootNode(false);
@@ -651,6 +687,7 @@ export const useSidebarExternalSqlWorkflow = ({
           message.error(t('sidebar.message.delete_sql_file_failed', { error: res.message }));
           return;
         }
+        removeRecentSQLFilesByPath(filePath);
         await refreshGlobalExternalSQLRootNode(false);
         message.success(t('sidebar.message.sql_file_deleted'));
       },
@@ -678,11 +715,17 @@ export const useSidebarExternalSqlWorkflow = ({
           return;
         }
 
+        removeRecentSQLFilesByDirectory(directoryPath);
+
         if (node?.type === 'external-sql-directory') {
-          const directoryId = String(node?.dataRef?.id || '').trim();
-          if (directoryId) {
-            deleteExternalSQLDirectory(directoryId);
-            const nextDirectories = externalSQLDirectories.filter((item) => item.id !== directoryId);
+          const normalizedDirectoryPath = normalizeExternalSQLPath(directoryPath);
+          const matchingDirectories = externalSQLDirectories.filter(
+            (directory) => normalizeExternalSQLPath(directory.path) === normalizedDirectoryPath,
+          );
+          if (matchingDirectories.length > 0) {
+            const matchingDirectoryIds = new Set(matchingDirectories.map((directory) => directory.id));
+            matchingDirectories.forEach((directory) => deleteExternalSQLDirectory(directory.id));
+            const nextDirectories = externalSQLDirectories.filter((item) => !matchingDirectoryIds.has(item.id));
             await refreshGlobalExternalSQLRootNode(false, nextDirectories);
           } else {
             await refreshGlobalExternalSQLRootNode(false);
@@ -714,17 +757,22 @@ export const useSidebarExternalSqlWorkflow = ({
       return;
     }
 
-    const directoryId = buildExternalSQLDirectoryId('', '', path);
+    const activeContext = getActiveContext();
+    const connectionId = String(activeContext?.connectionId || '').trim();
+    const dbName = String(activeContext?.dbName || '').trim();
+    const directoryId = buildExternalSQLDirectoryId(connectionId, dbName, path);
     const nextDirectory: ExternalSQLDirectory = {
       id: directoryId,
       name: name || path.split(/[\\/]/).filter(Boolean).pop() || t('sidebar.sql_directory.default_name'),
       path,
+      ...(connectionId ? { connectionId } : {}),
+      ...(dbName ? { dbName } : {}),
       createdAt: Date.now(),
     };
     saveExternalSQLDirectory(nextDirectory);
 
     const nextDirectories = [
-      ...externalSQLDirectories.filter((item) => item.path.replace(/\\/g, '/').toLowerCase() !== path.replace(/\\/g, '/').toLowerCase()),
+      ...externalSQLDirectories.filter((item) => item.id !== directoryId),
       nextDirectory,
     ];
     setExpandedKeys((prev) => Array.from(new Set([...prev, 'external-sql-root'])));

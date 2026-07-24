@@ -2,7 +2,7 @@ import React from 'react';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { useAppUpdateManager } from './useAppUpdateManager';
+import { resolveUpdateInstallAction, useAppUpdateManager } from './useAppUpdateManager';
 
 const runtimeApi = vi.hoisted(() => ({
   EventsOn: vi.fn(() => vi.fn()),
@@ -14,10 +14,26 @@ const messageApi = vi.hoisted(() => ({
   error: vi.fn(),
 }));
 
+const storeApi = vi.hoisted(() => ({
+  autoCheckForUpdates: true,
+  autoCheckForUpdatesIntervalMinutes: 30,
+}));
+
 vi.mock('../../wailsjs/runtime', () => runtimeApi);
 
 vi.mock('antd', () => ({
   message: messageApi,
+}));
+
+vi.mock('../store', () => ({
+  useStore: (selector: (state: {
+    autoCheckForUpdates: boolean;
+    autoCheckForUpdatesIntervalMinutes: number;
+  }) => unknown) =>
+    selector({
+      autoCheckForUpdates: storeApi.autoCheckForUpdates,
+      autoCheckForUpdatesIntervalMinutes: storeApi.autoCheckForUpdatesIntervalMinutes,
+    }),
 }));
 
 type BackendAppMock = {
@@ -72,6 +88,8 @@ describe('useAppUpdateManager', () => {
     backendApp = createBackendAppMock();
     hook = null;
     renderer = null;
+    storeApi.autoCheckForUpdates = true;
+    storeApi.autoCheckForUpdatesIntervalMinutes = 30;
     runtimeApi.EventsOn.mockClear();
     messageApi.info.mockReset();
     messageApi.success.mockReset();
@@ -96,6 +114,290 @@ describe('useAppUpdateManager', () => {
     });
     vi.useRealTimers();
     vi.unstubAllGlobals();
+  });
+
+  it('resolves Portable and MSI install actions from backend metadata', () => {
+    expect(resolveUpdateInstallAction({ packageType: 'portable', autoRelaunch: true })).toBe('restart');
+    expect(resolveUpdateInstallAction({ packageType: 'msi', autoRelaunch: true })).toBe('install-and-restart');
+    expect(resolveUpdateInstallAction({ packageType: 'msi', autoRelaunch: false })).toBe('launch-installer');
+  });
+
+  it('schedules silent update checks when auto-check is enabled', async () => {
+    backendApp.CheckForUpdatesSilently.mockResolvedValue({
+      success: true,
+      data: {
+        hasUpdate: false,
+        currentVersion: '0.8.1',
+        latestVersion: '0.8.1',
+      },
+    });
+
+    renderHook();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000);
+    });
+
+    expect(backendApp.CheckForUpdatesSilently).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(30 * 60 * 1000);
+    });
+
+    expect(backendApp.CheckForUpdatesSilently).toHaveBeenCalledTimes(2);
+  });
+
+  it('uses the configured auto-check interval for subsequent silent checks', async () => {
+    storeApi.autoCheckForUpdatesIntervalMinutes = 15;
+    backendApp.CheckForUpdatesSilently.mockResolvedValue({
+      success: true,
+      data: {
+        hasUpdate: false,
+        currentVersion: '0.8.1',
+        latestVersion: '0.8.1',
+      },
+    });
+
+    renderHook();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000);
+    });
+    expect(backendApp.CheckForUpdatesSilently).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(14 * 60 * 1000);
+    });
+    expect(backendApp.CheckForUpdatesSilently).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60 * 1000);
+    });
+    expect(backendApp.CheckForUpdatesSilently).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not schedule silent update checks when auto-check is disabled', async () => {
+    storeApi.autoCheckForUpdates = false;
+    backendApp.CheckForUpdatesSilently.mockResolvedValue({
+      success: true,
+      data: {
+        hasUpdate: false,
+        currentVersion: '0.8.1',
+        latestVersion: '0.8.1',
+      },
+    });
+
+    renderHook();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000);
+      await vi.advanceTimersByTimeAsync(30 * 60 * 1000);
+    });
+
+    expect(backendApp.CheckForUpdatesSilently).not.toHaveBeenCalled();
+    expect(backendApp.CheckForUpdates).not.toHaveBeenCalled();
+  });
+
+  it('merges complete MSI download metadata returned by the backend', async () => {
+    backendApp.CheckForUpdates.mockResolvedValue({
+      success: true,
+      data: {
+        hasUpdate: true,
+        channel: 'latest',
+        currentVersion: '0.8.1',
+        latestVersion: '0.8.2',
+        releaseName: 'Initial release metadata',
+        assetName: 'GoNavi-0.8.2-Windows-Amd64-Installer.msi',
+        packageType: 'msi',
+        installMode: 'msi',
+        autoRelaunch: true,
+        downloaded: false,
+        assetSize: 4096,
+      },
+    });
+    backendApp.DownloadUpdate.mockResolvedValue({
+      success: true,
+      data: {
+        info: {
+          hasUpdate: true,
+          channel: 'latest',
+          currentVersion: '0.8.1',
+          latestVersion: '0.8.2',
+          releaseName: 'Resolved release metadata',
+          assetName: 'GoNavi-0.8.2-Windows-Amd64-Installer.msi',
+          packageType: 'msi',
+          installMode: 'msi',
+          autoRelaunch: true,
+        },
+        downloadPath: 'C:\\ProgramData\\GoNavi\\GoNavi-0.8.2-Windows-Amd64-Installer.msi',
+        packageType: 'msi',
+        installMode: 'msi',
+        autoRelaunch: false,
+      },
+    });
+
+    renderHook();
+    await act(async () => {
+      await hook?.checkForUpdates(false);
+    });
+    await act(async () => {
+      await hook?.downloadUpdate(hook?.lastUpdateInfo!, false);
+    });
+
+    expect(hook?.lastUpdateInfo).toMatchObject({
+      releaseName: 'Resolved release metadata',
+      assetName: 'GoNavi-0.8.2-Windows-Amd64-Installer.msi',
+      packageType: 'msi',
+      installMode: 'msi',
+      autoRelaunch: false,
+      downloaded: true,
+      downloadPath: 'C:\\ProgramData\\GoNavi\\GoNavi-0.8.2-Windows-Amd64-Installer.msi',
+    });
+    expect(hook?.installMode).toBe('msi');
+    expect(hook?.updateInstallAction).toBe('launch-installer');
+    expect(hook?.updateDownloadProgress.message).toBe('app.about.download_progress.ready_to_install');
+    expect(messageApi.success).toHaveBeenCalledWith(expect.objectContaining({
+      content: 'app.about.message.download_ready_install_with_path:C:\\ProgramData\\GoNavi\\GoNavi-0.8.2-Windows-Amd64-Installer.msi',
+    }));
+  });
+
+  it('uses the backend download result version for progress and cached update metadata', async () => {
+    backendApp.CheckForUpdates.mockResolvedValue({
+      success: true,
+      data: {
+        hasUpdate: true,
+        channel: 'dev',
+        currentVersion: 'dev-current',
+        latestVersion: 'dev-old',
+        assetName: 'GoNavi-dev-old-Windows-Amd64-Portable.exe',
+        packageType: 'portable',
+        installMode: 'portable',
+        autoRelaunch: true,
+        downloaded: false,
+        assetSize: 4096,
+      },
+    });
+    backendApp.DownloadUpdate.mockResolvedValue({
+      success: true,
+      data: {
+        info: {
+          hasUpdate: true,
+          channel: 'dev',
+          currentVersion: 'dev-current',
+          latestVersion: 'dev-new',
+          assetName: 'GoNavi-dev-new-Windows-Amd64-Portable.exe',
+          packageType: 'portable',
+          installMode: 'portable',
+          autoRelaunch: true,
+        },
+        downloadPath: 'C:\\GoNavi\\GoNavi-dev-new-Windows-Amd64-Portable.exe',
+        packageType: 'portable',
+        installMode: 'portable',
+        autoRelaunch: true,
+      },
+    });
+
+    renderHook();
+    await act(async () => {
+      await hook?.checkForUpdates(false);
+    });
+    await act(async () => {
+      await hook?.downloadUpdate(hook?.lastUpdateInfo!, false);
+    });
+
+    expect(hook?.lastUpdateInfo).toMatchObject({
+      latestVersion: 'dev-new',
+      assetName: 'GoNavi-dev-new-Windows-Amd64-Portable.exe',
+      downloaded: true,
+      downloadPath: 'C:\\GoNavi\\GoNavi-dev-new-Windows-Amd64-Portable.exe',
+    });
+    expect(hook?.updateDownloadProgress).toMatchObject({
+      version: 'dev-new',
+      key: 'dev:dev-new:portable:gonavi-dev-new-windows-amd64-portable.exe',
+      status: 'done',
+    });
+  });
+
+  it('keeps same-version Portable and MSI downloads in separate cache identities', async () => {
+    const portableInfo = {
+      hasUpdate: true,
+      channel: 'latest',
+      currentVersion: '0.8.1',
+      latestVersion: '0.8.2',
+      assetName: 'GoNavi-0.8.2-Windows-Amd64-Portable.exe',
+      packageType: 'portable',
+      installMode: 'portable',
+      autoRelaunch: true,
+      downloaded: false,
+      assetSize: 2048,
+    };
+    const msiInfo = {
+      ...portableInfo,
+      assetName: 'GoNavi-0.8.2-Windows-Amd64-Installer.msi',
+      packageType: 'msi',
+      installMode: 'msi',
+    };
+    backendApp.CheckForUpdates
+      .mockResolvedValueOnce({ success: true, data: portableInfo })
+      .mockResolvedValueOnce({ success: true, data: msiInfo });
+    backendApp.DownloadUpdate
+      .mockResolvedValueOnce({ success: true, data: { info: portableInfo, packageType: 'portable' } })
+      .mockResolvedValueOnce({ success: true, data: { info: msiInfo, packageType: 'msi' } });
+
+    renderHook();
+    await act(async () => {
+      await hook?.checkForUpdates(false);
+    });
+    await act(async () => {
+      await hook?.downloadUpdate(hook?.lastUpdateInfo!, false);
+    });
+    await act(async () => {
+      await hook?.checkForUpdates(false);
+    });
+
+    expect(hook?.lastUpdateInfo?.packageType).toBe('msi');
+    expect(hook?.isLatestUpdateDownloaded).toBe(false);
+
+    await act(async () => {
+      await hook?.downloadUpdate(hook?.lastUpdateInfo!, false);
+    });
+    expect(backendApp.DownloadUpdate).toHaveBeenCalledTimes(2);
+    expect(hook?.lastUpdateInfo?.packageType).toBe('msi');
+    expect(hook?.isLatestUpdateDownloaded).toBe(true);
+  });
+
+  it('reports a launched MSI installer instead of claiming an automatic restart', async () => {
+    backendApp.CheckForUpdates.mockResolvedValue({
+      success: true,
+      data: {
+        hasUpdate: true,
+        channel: 'latest',
+        currentVersion: '0.8.1',
+        latestVersion: '0.8.2',
+        assetName: 'GoNavi-0.8.2-Windows-Amd64-Installer.msi',
+        packageType: 'msi',
+        installMode: 'msi',
+        autoRelaunch: false,
+        downloaded: true,
+      },
+    });
+    backendApp.InstallUpdateAndRestart.mockResolvedValue({
+      success: true,
+      data: { packageType: 'msi', autoRelaunch: false },
+    });
+
+    renderHook();
+    await act(async () => {
+      await hook?.checkForUpdates(false);
+    });
+    await act(async () => {
+      await hook?.handleInstallFromProgress(true);
+    });
+
+    expect(backendApp.InstallUpdateAndRestart).toHaveBeenCalledTimes(1);
+    expect(backendApp.InstallUpdateAndRestart).toHaveBeenCalledWith(true);
+    expect(hook?.updateInstallAction).toBe('launch-installer');
+    expect(hook?.updateDownloadProgress.message).toBe('app.about.download_progress.installer_started');
   });
 
   it('uses InstallUpdateAndRestart for downloaded macOS updates', async () => {
@@ -123,6 +425,7 @@ describe('useAppUpdateManager', () => {
     });
 
     expect(backendApp.InstallUpdateAndRestart).toHaveBeenCalledTimes(1);
+    expect(backendApp.InstallUpdateAndRestart).toHaveBeenCalledWith(false);
     expect(backendApp.OpenDownloadedUpdateDirectory).not.toHaveBeenCalled();
   });
 
@@ -430,5 +733,86 @@ describe('useAppUpdateManager', () => {
 
     expect(backendApp.OpenDownloadedUpdateDirectory).toHaveBeenCalledTimes(1);
     expect(messageApi.success).toHaveBeenCalledWith('opened-install-directory');
+  });
+
+  it('keeps an in-progress download hidden after later progress events', async () => {
+    let resolveDownload: ((result: Record<string, unknown>) => void) | undefined;
+    const downloadPromise = new Promise<Record<string, unknown>>((resolve) => {
+      resolveDownload = resolve;
+    });
+    backendApp.CheckForUpdates.mockResolvedValue({
+      success: true,
+      data: {
+        hasUpdate: true,
+        currentVersion: '0.8.1',
+        latestVersion: '0.8.2',
+        downloaded: false,
+        assetSize: 1024,
+      },
+    });
+    backendApp.DownloadUpdate.mockReturnValue(downloadPromise);
+
+    renderHook();
+    await act(async () => {
+      await hook?.checkForUpdates(false);
+    });
+
+    let pendingDownload: Promise<void> | undefined;
+    act(() => {
+      pendingDownload = hook?.downloadUpdate(hook.lastUpdateInfo!, false);
+    });
+    expect(hook?.updateDownloadProgress.open).toBe(true);
+
+    act(() => {
+      hook?.markUpdateProgressDismissed();
+      hook?.hideUpdateDownloadProgress();
+    });
+    expect(hook?.updateDownloadProgress.open).toBe(false);
+
+    const progressListener = (runtimeApi.EventsOn.mock.calls as unknown as Array<[string, unknown]>)
+      .filter(([eventName]) => eventName === 'update:download-progress')
+      .slice(-1)[0]?.[1] as ((event: Record<string, unknown>) => void) | undefined;
+    expect(progressListener).toBeTypeOf('function');
+    act(() => {
+      progressListener?.({
+        status: 'downloading',
+        downloaded: 768,
+        total: 1024,
+        percent: 75,
+      });
+    });
+
+    expect(hook?.updateDownloadProgress.open).toBe(false);
+    expect(hook?.updateDownloadProgress.percent).toBe(75);
+
+    act(() => {
+      hook?.showUpdateDownloadProgress();
+    });
+    expect(hook?.updateDownloadProgress.open).toBe(true);
+    expect(hook?.updateDownloadProgress.percent).toBe(75);
+
+    act(() => {
+      hook?.hideUpdateDownloadProgress();
+    });
+
+    await act(async () => {
+      resolveDownload?.({
+        success: true,
+        data: { downloadPath: 'D:/GoNavi/GoNavi-0.8.2.exe' },
+      });
+      await pendingDownload;
+    });
+
+    expect(hook?.updateDownloadProgress.status).toBe('done');
+    expect(hook?.updateDownloadProgress.open).toBe(false);
+
+    act(() => {
+      hook?.showUpdateDownloadProgress();
+    });
+    expect(hook?.updateDownloadProgress).toMatchObject({
+      open: true,
+      status: 'done',
+      percent: 100,
+    });
   });
 });

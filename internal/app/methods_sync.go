@@ -56,32 +56,57 @@ func (a *App) resolveDataSyncEndpointConfig(raw connection.ConnectionConfig, sel
 		return resolved, selectedDatabase, err
 	}
 
-	if !strings.EqualFold(strings.TrimSpace(raw.Type), "oracle") || strings.TrimSpace(raw.ID) == "" {
-		return resolved, strings.TrimSpace(selectedDatabase), nil
-	}
-
-	repo := newSavedConnectionRepository(a.configDir, a.secretStore)
-	view, findErr := repo.Find(raw.ID)
-	if findErr != nil {
-		return resolved, strings.TrimSpace(selectedDatabase), nil
-	}
-
-	savedServiceName := strings.TrimSpace(view.Config.Database)
-	if savedServiceName == "" {
-		return resolved, strings.TrimSpace(selectedDatabase), nil
-	}
-
 	selected := strings.TrimSpace(selectedDatabase)
-	incomingDatabase := strings.TrimSpace(raw.Database)
-	if selected == "" && incomingDatabase != "" && !strings.EqualFold(incomingDatabase, savedServiceName) {
-		selected = incomingDatabase
+	if strings.EqualFold(strings.TrimSpace(raw.Type), "oracle") && strings.TrimSpace(raw.ID) != "" {
+		repo := newSavedConnectionRepository(a.configDir, a.secretStore)
+		if view, findErr := repo.Find(raw.ID); findErr == nil {
+			savedServiceName := strings.TrimSpace(view.Config.Database)
+			if savedServiceName != "" {
+				incomingDatabase := strings.TrimSpace(raw.Database)
+				if selected == "" && incomingDatabase != "" && !strings.EqualFold(incomingDatabase, savedServiceName) {
+					selected = incomingDatabase
+				}
+				resolved.Database = savedServiceName
+			}
+		}
 	}
-	resolved.Database = savedServiceName
-	return resolved, selected, nil
+
+	effectiveConfig, err := a.resolveCustomClickHouseRuntimeConfig(resolved)
+	if err != nil {
+		return resolved, selected, err
+	}
+	return effectiveConfig, selected, nil
 }
 
 // DataSync executes a data synchronization task
-func (a *App) DataSync(config sync.SyncConfig) sync.SyncResult {
+func (a *App) DataSync(config sync.SyncConfig) (result sync.SyncResult) {
+	auditStartedAt := time.Now()
+	defer func() {
+		runConfig := normalizeRunConfig(config.TargetConfig, config.TargetDatabase)
+		auditMessage := ""
+		if !result.Success {
+			auditMessage = "data synchronization task failed"
+		}
+		auditResult := connection.QueryResult{
+			Success: result.Success,
+			Message: auditMessage,
+			Data: map[string]int64{
+				"affectedRows": int64(result.RowsInserted + result.RowsUpdated + result.RowsDeleted),
+			},
+		}
+		a.recordSQLAuditQuery(sqlAuditQueryInput{
+			Config:         runConfig,
+			Database:       config.TargetDatabase,
+			DBType:         resolveDDLDBType(runConfig),
+			QueryID:        generateQueryID(),
+			SQL:            fmt.Sprintf("SYNC DATA TABLES_%d", len(config.Tables)),
+			Source:         "sync",
+			CommitMode:     "auto",
+			Duration:       time.Since(auditStartedAt),
+			StatementCount: len(config.Tables),
+			Result:         auditResult,
+		})
+	}()
 	if err := ensureDataSyncTargetProtection(config); err != nil {
 		return sync.SyncResult{
 			Success: false,

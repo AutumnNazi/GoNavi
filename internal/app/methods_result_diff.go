@@ -51,7 +51,13 @@ func (a *App) ResultDiffStart(req ResultDiffStartRequest) connection.QueryResult
 		MaxRowsPerSide:  req.MaxRowsPerSide,
 		IncludeSameRows: req.IncludeSameRows,
 	}
-	session := a.resultDiffManager.Create(startReq)
+	session, releaseSession := a.resultDiffManager.CreateWithLease(startReq)
+	if session == nil {
+		return connection.QueryResult{Success: false, Message: a.appText("result_diff.backend.error.manager_unavailable", nil)}
+	}
+	defer func() {
+		releaseSession()
+	}()
 
 	// 纯 rows 模式：仅创建会话，等待分块上传后 ResultDiffCompute
 	if leftMode == resultdiff.DatasetModeRows && rightMode == resultdiff.DatasetModeRows {
@@ -122,12 +128,14 @@ func (a *App) ResultDiffStart(req ResultDiffStartRequest) connection.QueryResult
 
 	// 混合模式：rows 侧可能稍后上传
 	if leftMode == resultdiff.DatasetModeRows && len(leftRows) == 0 {
-		// 先装 right，left 等待 upload
-		_ = session.SetLoaded(nil, nil, rightCols, rightRows)
-		// SetLoaded 会把两侧都 mark done — 不适合混合。改用 Append。
-		// 重新创建更简单：
+		// 先装 right，left 等待 upload。重新创建可避免 SetLoaded 把两侧都
+		// 标记完成；切换 lease 前先结束旧会话的装载保护。
+		releaseSession()
 		a.resultDiffManager.Close(session.ID)
-		session = a.resultDiffManager.Create(startReq)
+		session, releaseSession = a.resultDiffManager.CreateWithLease(startReq)
+		if session == nil {
+			return connection.QueryResult{Success: false, Message: a.appText("result_diff.backend.error.manager_unavailable", nil)}
+		}
 		if err := session.AppendRows("right", rightCols, rightRows, true); err != nil {
 			a.resultDiffManager.Close(session.ID)
 			return connection.QueryResult{Success: false, Message: err.Error()}
@@ -139,8 +147,12 @@ func (a *App) ResultDiffStart(req ResultDiffStartRequest) connection.QueryResult
 		}
 	}
 	if rightMode == resultdiff.DatasetModeRows && len(rightRows) == 0 {
+		releaseSession()
 		a.resultDiffManager.Close(session.ID)
-		session = a.resultDiffManager.Create(startReq)
+		session, releaseSession = a.resultDiffManager.CreateWithLease(startReq)
+		if session == nil {
+			return connection.QueryResult{Success: false, Message: a.appText("result_diff.backend.error.manager_unavailable", nil)}
+		}
 		if err := session.AppendRows("left", leftCols, leftRows, true); err != nil {
 			a.resultDiffManager.Close(session.ID)
 			return connection.QueryResult{Success: false, Message: err.Error()}
@@ -226,6 +238,13 @@ func (a *App) ResultDiffClose(jobID string) connection.QueryResult {
 	}
 	a.resultDiffManager.Close(jobID)
 	return connection.QueryResult{Success: true, Message: a.appText("result_diff.backend.result.closed", nil)}
+}
+
+func (a *App) closeResultDiffSessions() int {
+	if a == nil || a.resultDiffManager == nil {
+		return 0
+	}
+	return a.resultDiffManager.Shutdown()
 }
 
 func normalizeDatasetMode(mode resultdiff.DatasetMode) resultdiff.DatasetMode {

@@ -26,6 +26,11 @@ const cardSource = source.slice(
 
 const listSource = source.slice(
   source.indexOf('const renderListTable = (table: TableStatRow) => {'),
+  source.indexOf('const renderCompactSortHeader = ('),
+);
+
+const compactTableSource = source.slice(
+  source.indexOf('const renderCompactSortHeader = ('),
   source.indexOf('if (loading) {'),
 );
 
@@ -64,7 +69,9 @@ const aiPromptSource = source.slice(
 
 const requiredTableOperationKeys = [
   'table_overview.metric.created_at',
+  'table_overview.metric.comment',
   'table_overview.metric.updated_at',
+  'table_overview.tooltip.table_view',
   'table_overview.tab.design_table_title',
   'table_overview.tab.table_structure_title',
   'table_overview.message.load_tables_failed',
@@ -151,6 +158,15 @@ describe('TableOverview i18n', () => {
     expect(listSource).toContain("t('table_overview.metric.data_size')");
     expect(listSource).toContain("t('table_overview.metric.index_size')");
     expect(listSource).toContain("t('table_overview.metric.relative_size')");
+
+    expect(compactTableSource).toContain("renderCompactSortHeader('name', 'table_overview.sort.name')");
+    expect(compactTableSource).toContain("renderCompactSortHeader('comment', 'table_overview.metric.comment')");
+    expect(compactTableSource).toContain("renderCompactSortHeader('rows', 'table_overview.sort.rows', 'right')");
+    expect(compactTableSource).toContain("renderCompactSortHeader('dataSize', 'table_overview.metric.data_size', 'right')");
+    expect(compactTableSource).toContain("renderCompactSortHeader('indexSize', 'table_overview.metric.index_size', 'right')");
+    expect(compactTableSource).toContain("renderCompactSortHeader('engine', 'table_overview.metric.engine')");
+    expect(compactTableSource).toContain("renderCompactSortHeader('updateTime', 'table_overview.metric.updated_at')");
+    expect(compactTableSource).toContain("renderCompactSortHeader('createTime', 'table_overview.metric.created_at')");
   });
 
   it('localizes section titles for pinned and all groups with dedicated table_overview keys', () => {

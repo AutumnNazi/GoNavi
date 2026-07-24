@@ -265,6 +265,10 @@ describe('RedisViewer tree interactions', () => {
 
     const appGroup = antdState.treeProps.treeData.find((node: any) => node.key === 'group:app');
     expect(appGroup).toBeTruthy();
+    // rc-tree maps a click on an unselectable, checkable node to onCheck.
+    // Groups must remain selectable so a row click reaches onSelect (which
+    // RedisViewer safely ignores for nodes without a raw Redis key).
+    expect(appGroup.selectable).not.toBe(false);
     expect(antdState.treeProps.expandedKeys).not.toContain('group:app');
 
     const groupTitle = antdState.treeProps.titleRender(appGroup);

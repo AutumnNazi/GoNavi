@@ -69,6 +69,31 @@ describe('AISettingsPromptsSection', () => {
     expect(markup).not.toContain('保存自定义提示词');
   });
 
+  it('uses divided flat sections for editable and builtin prompts', () => {
+    const markup = renderPromptsSection('en-US');
+
+    expect(markup).toContain('gonavi-ai-user-prompts-editor');
+    expect(markup).toContain('gonavi-ai-builtin-prompt');
+    expect(markup).toContain('border-bottom:1px solid rgba(0,0,0,0.08)');
+    expect(markup).toContain('border-left:2px solid rgba(0,0,0,0.08)');
+    expect(source).not.toContain('background: cardBg');
+    expect(source).not.toContain('borderRadius: 14');
+    expect(source).not.toContain('borderRadius: 12');
+    expect(source).toContain("fontSize: 'var(--gn-font-size, 14px)'");
+    expect(source).toContain("fontSize: 'var(--gn-settings-font-secondary, 13px)'");
+    expect(source).toContain("fontSize: 'var(--gn-font-size-sm, 12px)'");
+  });
+
+  it('uses native disclosures and keeps collapsed prompt content mounted', () => {
+    const markup = renderPromptsSection('zh-CN');
+
+    expect(markup).toContain('<details class="gonavi-ai-user-prompt"');
+    expect(markup).toContain('<details class="gonavi-ai-builtin-prompt"');
+    expect(markup).toContain('<summary');
+    expect(markup).toContain('生成 SQL 前必须先确认字段名');
+    expect(markup).toContain('aria-label="全局补充提示词"');
+  });
+
   it('keeps user prompt chrome keys present in all six catalogs', () => {
     const requiredKeys = [
       'ai_settings.prompts.user.title',

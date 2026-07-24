@@ -1,7 +1,8 @@
 import type { CSSProperties } from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ApartmentOutlined, CodeOutlined } from '@ant-design/icons'
-import { Alert, Button, Empty, Modal, Segmented, Spin, Typography, theme } from 'antd'
+import { Alert, Button, Empty, Segmented, Spin, Typography, theme } from 'antd'
+import Modal from '../common/ResizableDraggableModal'
 import { DiagnoseQuery } from '../../../wailsjs/go/app/App'
 import { buildRpcConnectionConfig } from '../../utils/connectionRpcConfig'
 import { useI18n } from '../../i18n/provider'
@@ -166,7 +167,7 @@ export function ExplainReportView({ config, dbName, sql, runKey }: ExplainReport
         <Empty description={t('sql_analysis.explain.empty')} style={{ padding: '48px 0' }} />
       )}
       {!error && report && (
-        <Spin spinning={loading} tip={t('sql_analysis.explain.loading')} className="gn-explain-report-spinner">
+        <Spin spinning={loading} tip={t('sql_analysis.explain.loading')} wrapperClassName="gn-explain-report-spinner">
           <div className="gn-explain-report-shell">
           <div className="gn-explain-report-switcher-row">
             <Segmented
@@ -297,6 +298,8 @@ const reportViewStyles = `
   .gn-explain-report-spinner > .ant-spin-container {
     height: 100%;
     min-height: 0;
+    display: flex;
+    flex-direction: column;
   }
   .gn-explain-report-switcher-row {
     flex: 0 0 auto;

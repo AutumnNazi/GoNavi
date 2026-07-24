@@ -28,10 +28,9 @@ const AIMCPFieldGuideCard: React.FC<AIMCPFieldGuideCardProps> = ({
   return (
     <div
       style={{
-        padding: compact ? '10px 12px' : '10px 12px',
-        borderRadius: compact ? 12 : 10,
-        border: `1px solid ${cardBorder}`,
-        background: darkMode ? 'rgba(255,255,255,0.025)' : 'rgba(255,255,255,0.78)',
+        padding: compact ? '10px 10px 10px 0' : '10px 10px 10px 0',
+        borderBottom: `1px solid ${cardBorder}`,
+        background: 'transparent',
         display: 'flex',
         flexDirection: 'column',
         gap: 6,
@@ -43,7 +42,7 @@ const AIMCPFieldGuideCard: React.FC<AIMCPFieldGuideCardProps> = ({
           style={{
             padding: '2px 8px',
             borderRadius: 999,
-            fontSize: 11,
+            fontSize: 'var(--gn-font-size-sm, 12px)',
             fontWeight: 700,
             color: tone.color,
             background: tone.bg,

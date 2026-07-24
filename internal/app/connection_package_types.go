@@ -133,11 +133,11 @@ type connectionPackageKDFSpec struct {
 }
 
 type connectionPackageFileV2 struct {
-	V              int                         `json:"v"`
-	Kind           string                      `json:"kind"`
-	P              int                         `json:"p"`
-	ExportedAt     string                      `json:"exportedAt,omitempty"`
-	Connections    []connectionPackageItem     `json:"connections"`
+	V              int                          `json:"v"`
+	Kind           string                       `json:"kind"`
+	P              int                          `json:"p"`
+	ExportedAt     string                       `json:"exportedAt,omitempty"`
+	Connections    []connectionPackageItem      `json:"connections"`
 	RedisDbAliases map[string]map[string]string `json:"redisDbAliases,omitempty"`
 }
 
@@ -159,47 +159,50 @@ type connectionPackageKDFSpecV2 struct {
 }
 
 type connectionPackagePayload struct {
-	ExportedAt     string                              `json:"exportedAt,omitempty"`
-	Connections    []connectionPackageItem             `json:"connections"`
+	ExportedAt  string                  `json:"exportedAt,omitempty"`
+	Connections []connectionPackageItem `json:"connections"`
 	// RedisDbAliases：连接 ID → (db 序号字符串 → 别名)。前端展示偏好，随连接包一并迁移。
-	RedisDbAliases map[string]map[string]string        `json:"redisDbAliases,omitempty"`
+	RedisDbAliases map[string]map[string]string `json:"redisDbAliases,omitempty"`
 }
 
 type connectionPackageItem struct {
-	ID                    string                      `json:"id"`
-	Name                  string                      `json:"name"`
-	IncludeDatabases      []string                    `json:"includeDatabases,omitempty"`
-	IncludeRedisDatabases []int                       `json:"includeRedisDatabases,omitempty"`
+	ID                         string                                     `json:"id"`
+	Name                       string                                     `json:"name"`
+	IncludeDatabases           []string                                   `json:"includeDatabases,omitempty"`
+	IncludeRedisDatabases      []int                                      `json:"includeRedisDatabases,omitempty"`
+	SchemaVisibilityByDatabase map[string]connection.SchemaVisibilityRule `json:"schemaVisibilityByDatabase,omitempty"`
 	// RedisDbAliases：该连接下 db 序号 → 别名（如 "0"→"cache"），与前端 redisDbAliases 对齐。
-	RedisDbAliases        map[string]string           `json:"redisDbAliases,omitempty"`
-	IconType              string                      `json:"iconType,omitempty"`
-	IconColor             string                      `json:"iconColor,omitempty"`
-	Config                connection.ConnectionConfig `json:"config"`
-	Secrets               connectionSecretBundle      `json:"secrets,omitempty"`
+	RedisDbAliases map[string]string           `json:"redisDbAliases,omitempty"`
+	IconType       string                      `json:"iconType,omitempty"`
+	IconColor      string                      `json:"iconColor,omitempty"`
+	Config         connection.ConnectionConfig `json:"config"`
+	Secrets        connectionSecretBundle      `json:"secrets,omitempty"`
 }
 
 func (i connectionPackageItem) MarshalJSON() ([]byte, error) {
 	type connectionPackageItemJSON struct {
-		ID                    string                      `json:"id"`
-		Name                  string                      `json:"name"`
-		IncludeDatabases      []string                    `json:"includeDatabases,omitempty"`
-		IncludeRedisDatabases []int                       `json:"includeRedisDatabases,omitempty"`
-		RedisDbAliases        map[string]string           `json:"redisDbAliases,omitempty"`
-		IconType              string                      `json:"iconType,omitempty"`
-		IconColor             string                      `json:"iconColor,omitempty"`
-		Config                connection.ConnectionConfig `json:"config"`
-		Secrets               *connectionSecretBundle     `json:"secrets,omitempty"`
+		ID                         string                                     `json:"id"`
+		Name                       string                                     `json:"name"`
+		IncludeDatabases           []string                                   `json:"includeDatabases,omitempty"`
+		IncludeRedisDatabases      []int                                      `json:"includeRedisDatabases,omitempty"`
+		SchemaVisibilityByDatabase map[string]connection.SchemaVisibilityRule `json:"schemaVisibilityByDatabase,omitempty"`
+		RedisDbAliases             map[string]string                          `json:"redisDbAliases,omitempty"`
+		IconType                   string                                     `json:"iconType,omitempty"`
+		IconColor                  string                                     `json:"iconColor,omitempty"`
+		Config                     connection.ConnectionConfig                `json:"config"`
+		Secrets                    *connectionSecretBundle                    `json:"secrets,omitempty"`
 	}
 
 	item := connectionPackageItemJSON{
-		ID:                    i.ID,
-		Name:                  i.Name,
-		IncludeDatabases:      i.IncludeDatabases,
-		IncludeRedisDatabases: i.IncludeRedisDatabases,
-		RedisDbAliases:        cloneStringMap(i.RedisDbAliases),
-		IconType:              i.IconType,
-		IconColor:             i.IconColor,
-		Config:                i.Config,
+		ID:                         i.ID,
+		Name:                       i.Name,
+		IncludeDatabases:           i.IncludeDatabases,
+		IncludeRedisDatabases:      i.IncludeRedisDatabases,
+		SchemaVisibilityByDatabase: cloneSchemaVisibilityByDatabase(i.SchemaVisibilityByDatabase),
+		RedisDbAliases:             cloneStringMap(i.RedisDbAliases),
+		IconType:                   i.IconType,
+		IconColor:                  i.IconColor,
+		Config:                     i.Config,
 	}
 	if i.Secrets.hasAny() {
 		secrets := i.Secrets

@@ -467,9 +467,64 @@ describe('SnippetSettingsModal i18n', () => {
     });
     expect(actionRow.props.style).toMatchObject({
       flex: '0 0 auto',
-      gap: 10,
-      paddingTop: 8,
-      marginTop: 8,
+      gap: 8,
+      paddingTop: 12,
+      marginTop: 0,
+    });
+  });
+
+  it('uses a flat master-detail workspace only when embedded', async () => {
+    const embeddedRenderer = await renderModal({ embedded: true, onBack: () => undefined });
+    const embeddedContent = embeddedRenderer.root.findByProps({ 'data-sql-snippet-content-region': 'true' });
+    const embeddedMaster = embeddedRenderer.root.findByProps({ 'data-sql-snippet-master-panel': 'true' });
+
+    expect(embeddedContent.props.style).toMatchObject({
+      gap: 0,
+      borderTop: overlayTheme.sectionBorder,
+      fontFamily: 'var(--gn-font-sans)',
+    });
+    expect(embeddedMaster.props.style).toMatchObject({
+      width: 196,
+      borderRadius: 0,
+      border: 'none',
+      borderRight: overlayTheme.sectionBorder,
+      background: 'transparent',
+    });
+
+    const newButton = embeddedRenderer.root.findAll((node: any) => node.type === 'button' && getText(node).includes('New Snippet'))[0];
+    await act(async () => {
+      newButton.props.onClick();
+    });
+
+    const embeddedEditor = embeddedRenderer.root.findByProps({ 'data-sql-snippet-editor-panel-scroll-region': 'true' });
+    const syntaxHelpEditor = embeddedRenderer.root.findByProps({ 'data-sql-snippet-syntax-help-editor': 'true' });
+    expect(embeddedEditor.props.style).toMatchObject({
+      padding: '0 4px 0 16px',
+      borderRadius: 0,
+      border: 'none',
+      background: 'transparent',
+    });
+    expect(syntaxHelpEditor.props.style).toMatchObject({
+      fontFamily: 'var(--gn-font-sans)',
+    });
+
+    const embeddedActionLabels = embeddedRenderer.root
+      .findAll((node: any) => node.type === 'button')
+      .map((node: any) => getText(node));
+    const backIndex = embeddedActionLabels.findIndex((label) => label.includes('Back'));
+    const closeIndex = embeddedActionLabels.findIndex((label) => label.includes('Close'));
+    const saveIndex = embeddedActionLabels.findIndex((label) => label.includes('Save'));
+    expect(backIndex).toBeGreaterThan(-1);
+    expect(backIndex).toBeLessThan(closeIndex);
+    expect(closeIndex).toBeLessThan(saveIndex);
+
+    const standaloneRenderer = await renderModal();
+    const standaloneMaster = standaloneRenderer.root.findByProps({ 'data-sql-snippet-master-panel': 'true' });
+    expect(standaloneMaster.props.style).toMatchObject({
+      width: 220,
+      borderRadius: 14,
+      border: overlayTheme.sectionBorder,
+      background: overlayTheme.sectionBg,
     });
   });
 
@@ -491,6 +546,6 @@ describe('SnippetSettingsModal i18n', () => {
     expect(closeButton.props.size).toBe('middle');
     expect(closeButton.props.style).toMatchObject({ minWidth: 84 });
     expect(backButton.props.size).toBe('middle');
-    expect(backButton.props.style).toMatchObject({ minWidth: 104 });
+    expect(backButton.props.style).toMatchObject({ minWidth: 96 });
   });
 });

@@ -1,6 +1,9 @@
 package app
 
-import "strings"
+import (
+	"errors"
+	"strings"
+)
 
 const (
 	maxXLSXRowsPerSheet     = 1048575
@@ -8,11 +11,18 @@ const (
 )
 
 type ExportFileOptions struct {
-	Format              string `json:"format"`
-	XLSXMaxRowsPerSheet int    `json:"xlsxMaxRowsPerSheet,omitempty"`
-	JobID               string `json:"jobId,omitempty"`
-	TotalRowsHint       int64  `json:"totalRowsHint,omitempty"`
-	TotalRowsKnown      bool   `json:"totalRowsKnown,omitempty"`
+	Format                         string            `json:"format"`
+	Columns                        []string          `json:"columns,omitempty"`
+	XLSXMaxRowsPerSheet            int               `json:"xlsxMaxRowsPerSheet,omitempty"`
+	JobID                          string            `json:"jobId,omitempty"`
+	TotalRowsHint                  int64             `json:"totalRowsHint,omitempty"`
+	TotalRowsKnown                 bool              `json:"totalRowsKnown,omitempty"`
+	IncludeDropIfExists            bool              `json:"includeDropIfExists,omitempty"`
+	InsertSQLDialect               string            `json:"insertSQLDialect,omitempty"`
+	InsertSQLTargetTable           string            `json:"insertSQLTargetTable,omitempty"`
+	InsertSQLColumnTypes           map[string]string `json:"insertSQLColumnTypes,omitempty"`
+	InsertSQLTargetColumns         map[string]string `json:"insertSQLTargetColumns,omitempty"`
+	InsertSQLAllowEmptyTargetTable bool              `json:"insertSQLAllowEmptyTargetTable,omitempty"`
 }
 
 func normalizeExportFileOptions(format string, options ExportFileOptions) ExportFileOptions {
@@ -21,12 +31,45 @@ func normalizeExportFileOptions(format string, options ExportFileOptions) Export
 		resolvedFormat = explicitFormat
 	}
 	return ExportFileOptions{
-		Format:              resolvedFormat,
-		XLSXMaxRowsPerSheet: normalizeXLSXRowsPerSheet(options.XLSXMaxRowsPerSheet),
-		JobID:               strings.TrimSpace(options.JobID),
-		TotalRowsHint:       normalizeExportTotalRowsHint(options.TotalRowsHint, options.TotalRowsKnown),
-		TotalRowsKnown:      options.TotalRowsKnown,
+		Format:                         resolvedFormat,
+		Columns:                        normalizeExportColumns(options.Columns),
+		XLSXMaxRowsPerSheet:            normalizeXLSXRowsPerSheet(options.XLSXMaxRowsPerSheet),
+		JobID:                          strings.TrimSpace(options.JobID),
+		TotalRowsHint:                  normalizeExportTotalRowsHint(options.TotalRowsHint, options.TotalRowsKnown),
+		TotalRowsKnown:                 options.TotalRowsKnown,
+		IncludeDropIfExists:            options.IncludeDropIfExists,
+		InsertSQLDialect:               strings.ToLower(strings.TrimSpace(options.InsertSQLDialect)),
+		InsertSQLTargetTable:           strings.TrimSpace(options.InsertSQLTargetTable),
+		InsertSQLColumnTypes:           options.InsertSQLColumnTypes,
+		InsertSQLTargetColumns:         options.InsertSQLTargetColumns,
+		InsertSQLAllowEmptyTargetTable: options.InsertSQLAllowEmptyTargetTable,
 	}
+}
+
+func normalizeExportColumns(columns []string) []string {
+	if columns == nil {
+		return nil
+	}
+	result := make([]string, 0, len(columns))
+	seen := make(map[string]struct{}, len(columns))
+	for _, column := range columns {
+		if strings.TrimSpace(column) == "" {
+			continue
+		}
+		if _, exists := seen[column]; exists {
+			continue
+		}
+		seen[column] = struct{}{}
+		result = append(result, column)
+	}
+	return result
+}
+
+func validateExportColumnsSelection(options ExportFileOptions) error {
+	if options.Columns != nil && len(options.Columns) == 0 {
+		return errors.New("at least one export column must be selected")
+	}
+	return nil
 }
 
 func normalizeXLSXRowsPerSheet(value int) int {

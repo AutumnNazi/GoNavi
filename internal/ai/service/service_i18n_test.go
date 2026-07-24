@@ -665,7 +665,7 @@ func TestAIServiceMCPHTTPServerMessagesUseLocalizedText(t *testing.T) {
 		rawMessages []string
 		keys        []string
 	}{
-		"func (s *Service) AIStartMCPHTTPServer(options ai.MCPHTTPServerOptions) (ai.MCPHTTPServerStatus, error) {": {
+		"func (s *Service) startMCPHTTPServer(options ai.MCPHTTPServerOptions) (ai.MCPHTTPServerStatus, error) {": {
 			rawMessages: []string{
 				`fmt.Sprintf("GoNavi MCP HTTP 服务启动失败：%v", err)`,
 			},

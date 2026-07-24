@@ -47,6 +47,49 @@ describe('tableOverviewFilter', () => {
     ]);
   });
 
+  it('sorts compact table numeric columns while keeping unknown values last', () => {
+    const indexed = buildTableOverviewSearchIndex([
+      { name: 'unknown', comment: '', rows: -1, dataSize: -1, indexSize: -1 },
+      { name: 'large', comment: '', rows: 50, dataSize: 500, indexSize: 20 },
+      { name: 'small', comment: '', rows: 5, dataSize: 50, indexSize: 2 },
+    ]);
+
+    expect(filterAndSortTableOverviewRows(indexed, '', 'rows', 'desc').map((item) => item.name)).toEqual([
+      'large',
+      'small',
+      'unknown',
+    ]);
+    expect(filterAndSortTableOverviewRows(indexed, '', 'dataSize', 'asc').map((item) => item.name)).toEqual([
+      'small',
+      'large',
+      'unknown',
+    ]);
+    expect(filterAndSortTableOverviewRows(indexed, '', 'indexSize', 'desc').map((item) => item.name)).toEqual([
+      'large',
+      'small',
+      'unknown',
+    ]);
+  });
+
+  it('sorts compact table text columns and leaves missing metadata last', () => {
+    const indexed = buildTableOverviewSearchIndex([
+      { name: 'missing', comment: '', rows: 0, dataSize: 0, indexSize: 0, engine: '' },
+      { name: 'zeta', comment: 'Zulu', rows: 0, dataSize: 0, indexSize: 0, engine: 'MyISAM' },
+      { name: 'alpha', comment: 'Alpha', rows: 0, dataSize: 0, indexSize: 0, engine: 'InnoDB' },
+    ]);
+
+    expect(filterAndSortTableOverviewRows(indexed, '', 'comment', 'asc').map((item) => item.name)).toEqual([
+      'alpha',
+      'zeta',
+      'missing',
+    ]);
+    expect(filterAndSortTableOverviewRows(indexed, '', 'engine', 'desc').map((item) => item.name)).toEqual([
+      'zeta',
+      'alpha',
+      'missing',
+    ]);
+  });
+
   it('keeps pinned overview rows in a dedicated leading group without changing inner sort order', () => {
     const rows = [
       { name: 'audit_log', comment: '', rows: 1, dataSize: 1, indexSize: 0 },

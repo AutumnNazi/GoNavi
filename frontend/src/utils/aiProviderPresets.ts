@@ -1,4 +1,4 @@
-import type { AIProviderConfig, AIProviderType } from '../types';
+import type { AIProviderAuthMode, AIProviderConfig, AIProviderType } from '../types';
 
 export const LEGACY_QWEN_BAILIAN_OPENAI_BASE_URL = 'https://dashscope.aliyuncs.com/compatible-mode/v1';
 export const LEGACY_QWEN_CODING_PLAN_OPENAI_BASE_URL = 'https://coding.dashscope.aliyuncs.com/v1';
@@ -17,7 +17,8 @@ export const QWEN_CODING_PLAN_MODELS = [
   'glm-4.7',
 ];
 
-const CUSTOM_LIKE_PRESET_KEYS = new Set(['custom', 'ollama', 'codebuddy', 'cursor']);
+const CUSTOM_LIKE_PRESET_KEYS = new Set(['custom', 'ollama', 'codebuddy', 'cursor', 'codex', 'claude-subscription']);
+const OPTIONAL_MODEL_PRESET_KEYS = new Set(['cursor', 'codex', 'claude-subscription']);
 
 export interface ResolvePresetModelSelectionInput {
   presetKey: string;
@@ -39,6 +40,7 @@ export interface ResolvePresetBaseURLInput {
 }
 
 export interface ResolvePresetTransportInput {
+  presetKey?: string;
   presetBackendType: AIProviderType;
   presetFixedApiFormat?: string;
   valuesApiFormat?: string;
@@ -54,7 +56,24 @@ export interface ProviderPresetMatcher {
   backendType: AIProviderType;
   defaultBaseUrl: string;
   fixedApiFormat?: string;
+  authMode?: AIProviderAuthMode;
 }
+
+export type ProviderPresetCandidate = Pick<
+  AIProviderConfig,
+  'type' | 'baseUrl' | 'apiFormat' | 'authMode'
+> & Partial<Pick<AIProviderConfig, 'apiKey' | 'hasSecret' | 'secretRef'>>;
+
+export const isLocalCLISubscriptionProvider = (
+  provider: Pick<AIProviderConfig, 'type' | 'apiFormat' | 'authMode'>,
+): boolean => {
+  const providerType = String(provider.type || '').trim().toLowerCase();
+  const authMode = String(provider.authMode || '').trim().toLowerCase();
+  const apiFormat = String(provider.apiFormat || '').trim().toLowerCase();
+  return providerType === 'custom'
+    && authMode === 'local-cli'
+    && (apiFormat === 'codex-cli' || apiFormat === 'claude-cli');
+};
 
 export const getProviderHostname = (raw?: string): string => {
   if (!raw) return '';
@@ -76,7 +95,7 @@ export const getProviderFingerprint = (raw?: string): string => {
   }
 };
 
-export const matchQwenPresetKey = (provider: Pick<AIProviderConfig, 'type' | 'baseUrl' | 'apiFormat'>): string | null => {
+export const matchQwenPresetKey = (provider: ProviderPresetCandidate): string | null => {
   const fingerprint = getProviderFingerprint(provider.baseUrl);
 
   if (
@@ -116,7 +135,7 @@ export const matchQwenPresetKey = (provider: Pick<AIProviderConfig, 'type' | 'ba
 };
 
 export const resolveProviderPresetKey = (
-  provider: Pick<AIProviderConfig, 'type' | 'baseUrl' | 'apiFormat'>,
+  provider: ProviderPresetCandidate,
   presets: ProviderPresetMatcher[],
   fallbackKey = 'custom',
 ): string => {
@@ -126,12 +145,22 @@ export const resolveProviderPresetKey = (
   }
 
   const fingerprint = getProviderFingerprint(provider.baseUrl);
+  const hasStoredSecret = provider.hasSecret === true
+    || Boolean(String(provider.secretRef || '').trim())
+    || Boolean(String(provider.apiKey || '').trim());
+  const inferredAuthMode: AIProviderAuthMode = provider.authMode
+    || (fingerprint === ''
+      && !hasStoredSecret
+      && ['codex-cli', 'claude-cli'].includes(provider.apiFormat || '')
+      ? 'local-cli'
+      : 'api-key');
   const formatOnlyPreset = presets.find((preset) =>
     preset.backendType === provider.type
     && Boolean(preset.fixedApiFormat)
     && preset.fixedApiFormat === provider.apiFormat
     && getProviderFingerprint(preset.defaultBaseUrl) === ''
-    && fingerprint === '',
+    && fingerprint === ''
+    && (preset.authMode || 'api-key') === inferredAuthMode,
   );
   if (formatOnlyPreset) {
     return formatOnlyPreset.key;
@@ -183,7 +212,7 @@ export const resolvePresetModelSelection = ({
 }: ResolvePresetModelSelectionInput): ResolvePresetModelSelectionResult => {
   const isCustomLike = CUSTOM_LIKE_PRESET_KEYS.has(presetKey);
   const resolvedModels = isCustomLike ? (customModels || []) : presetModels;
-  if (presetKey === 'cursor') {
+  if (OPTIONAL_MODEL_PRESET_KEYS.has(presetKey)) {
     return {
       models: resolvedModels,
       model: valuesModel || '',
@@ -208,6 +237,7 @@ export const resolvePresetBaseURL = ({
 };
 
 export const resolvePresetTransport = ({
+  presetKey,
   presetBackendType,
   presetFixedApiFormat,
   valuesApiFormat,
@@ -223,6 +253,17 @@ export const resolvePresetTransport = ({
     return {
       type: presetBackendType,
       apiFormat: valuesApiFormat || 'openai',
+    };
+  }
+
+  if (
+    presetBackendType === 'openai'
+    && valuesApiFormat === 'openai-responses'
+    && (presetKey === undefined || presetKey === 'openai')
+  ) {
+    return {
+      type: presetBackendType,
+      apiFormat: 'openai-responses',
     };
   }
 

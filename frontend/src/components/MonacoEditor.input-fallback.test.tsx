@@ -23,12 +23,12 @@ class FakeTextAreaElement extends FakeHTMLElement {
     this.listeners.get(type)?.delete(listener);
   }
 
-  dispatchPrintableBeforeInput(text: string): void {
+  dispatchPrintableBeforeInput(text: string, defaultPrevented = false): void {
     const event = {
       data: text,
       inputType: 'insertText',
       isComposing: false,
-      defaultPrevented: false,
+      defaultPrevented,
     } as InputEvent;
     this.listeners.get('beforeinput')?.forEach((listener) => listener(event));
   }
@@ -39,8 +39,32 @@ describe('MonacoEditor printable input fallback', () => {
   let input: FakeTextAreaElement;
   let value: string;
   let position: { lineNumber: number; column: number };
+  let selection: {
+    startLineNumber: number;
+    startColumn: number;
+    endLineNumber: number;
+    endColumn: number;
+  } | null;
   let modelContentListener: (() => void) | null;
   let editor: any;
+
+  const installFallback = () => installPrintableInputFallback(editor, {
+    editor: { EditorOption: { readOnly: 1 } },
+  });
+
+  const setSingleLineSelection = (
+    startColumn: number,
+    endColumn: number,
+    activeColumn = endColumn,
+  ) => {
+    selection = {
+      startLineNumber: 1,
+      startColumn,
+      endLineNumber: 1,
+      endColumn,
+    };
+    position = { lineNumber: 1, column: activeColumn };
+  };
 
   beforeEach(() => {
     vi.useFakeTimers();
@@ -56,6 +80,7 @@ describe('MonacoEditor printable input fallback', () => {
 
     value = '';
     position = { lineNumber: 1, column: 1 };
+    selection = null;
     modelContentListener = null;
     const offsetAt = (target: { lineNumber: number; column: number }) => (
       Math.max(0, Math.min(value.length, Number(target.column || 1) - 1))
@@ -66,7 +91,7 @@ describe('MonacoEditor printable input fallback', () => {
     });
     editor = {
       getDomNode: () => editorDomNode,
-      getSelection: () => ({
+      getSelection: () => selection || ({
         startLineNumber: position.lineNumber,
         startColumn: position.column,
         endLineNumber: position.lineNumber,
@@ -80,8 +105,23 @@ describe('MonacoEditor printable input fallback', () => {
       getPosition: () => position,
       getOption: () => false,
       trigger: vi.fn((_source: string, _command: string, payload: { text: string }) => {
-        value += payload.text;
-        position = { lineNumber: 1, column: position.column + payload.text.length };
+        const activeSelection = selection || {
+          startLineNumber: position.lineNumber,
+          startColumn: position.column,
+          endLineNumber: position.lineNumber,
+          endColumn: position.column,
+        };
+        const startOffset = offsetAt({
+          lineNumber: activeSelection.startLineNumber,
+          column: activeSelection.startColumn,
+        });
+        const endOffset = offsetAt({
+          lineNumber: activeSelection.endLineNumber,
+          column: activeSelection.endColumn,
+        });
+        value = value.slice(0, startOffset) + payload.text + value.slice(endOffset);
+        position = positionAt(startOffset + payload.text.length);
+        selection = null;
       }),
       executeEdits: vi.fn((_source: string, edits: Array<{ range: any; text: string }>) => {
         for (const edit of edits) {
@@ -98,6 +138,7 @@ describe('MonacoEditor printable input fallback', () => {
       }),
       setPosition: vi.fn((nextPosition: { lineNumber: number; column: number }) => {
         position = nextPosition;
+        selection = null;
       }),
       onDidChangeModelContent: vi.fn((listener: () => void) => {
         modelContentListener = listener;
@@ -169,6 +210,29 @@ describe('MonacoEditor printable input fallback', () => {
     expect(position).toEqual({ lineNumber: 1, column: 3 });
   });
 
+  it('recovers a default-prevented leading character when later input reaches the model', () => {
+    installPrintableInputFallback(editor, {
+      editor: { EditorOption: { readOnly: 1 } },
+    });
+
+    value = 'SELECT * FROM person';
+    position = { lineNumber: 1, column: value.length + 1 };
+    input.dispatchPrintableBeforeInput('s', true);
+    input.dispatchPrintableBeforeInput('f');
+    value = 'SELECT * FROM personf';
+    position = { lineNumber: 1, column: value.length + 1 };
+    modelContentListener?.();
+
+    vi.advanceTimersByTime(80);
+
+    expect(editor.executeEdits).toHaveBeenCalledWith(
+      'gonavi-printable-input-fallback',
+      [expect.objectContaining({ text: 'sf' })],
+    );
+    expect(value).toBe('SELECT * FROM personsf');
+    expect(position).toEqual({ lineNumber: 1, column: value.length + 1 });
+  });
+
   it('settles the previous missing input before buffering text after a cursor move', () => {
     installPrintableInputFallback(editor, {
       editor: { EditorOption: { readOnly: 1 } },
@@ -192,6 +256,134 @@ describe('MonacoEditor printable input fallback', () => {
       { text: 'b' },
     );
     expect(value).toBe('xayb');
+    expect(position).toEqual({ lineNumber: 1, column: 5 });
+  });
+
+  it('replaces selected text after one printable input when native input is dropped', () => {
+    installFallback();
+
+    value = 'and task_datetime &lt;= least(sysdate)';
+    setSingleLineSelection(19, 23);
+
+    input.dispatchPrintableBeforeInput('<');
+    vi.advanceTimersByTime(80);
+
+    expect(value).toBe('and task_datetime <= least(sysdate)');
+    expect(position).toEqual({ lineNumber: 1, column: 20 });
+  });
+
+  it('does not duplicate printable text when Monaco replaces the selection natively', () => {
+    installFallback();
+
+    value = 'and task_datetime &lt;= least(sysdate)';
+    setSingleLineSelection(19, 23);
+
+    input.dispatchPrintableBeforeInput('<');
+    value = 'and task_datetime <= least(sysdate)';
+    selection = null;
+    position = { lineNumber: 1, column: 20 };
+    modelContentListener?.();
+    vi.advanceTimersByTime(200);
+
+    expect(value).toBe('and task_datetime <= least(sysdate)');
+    expect(editor.executeEdits).not.toHaveBeenCalled();
+    expect(position).toEqual({ lineNumber: 1, column: 20 });
+  });
+
+  it('recovers printable text when native input only deletes a reverse selection', () => {
+    installFallback();
+
+    value = 'and task_datetime &lt;= least(sysdate)';
+    setSingleLineSelection(19, 23, 19);
+
+    input.dispatchPrintableBeforeInput('<');
+    value = 'and task_datetime = least(sysdate)';
+    selection = null;
+    position = { lineNumber: 1, column: 19 };
+    modelContentListener?.();
+    vi.advanceTimersByTime(80);
+
+    expect(value).toBe('and task_datetime <= least(sysdate)');
+    expect(position).toEqual({ lineNumber: 1, column: 20 });
+  });
+
+  it('does not let an older cursor fallback consume a new selection replacement', () => {
+    installFallback();
+
+    value = 'abcd';
+    position = { lineNumber: 1, column: 1 };
+    input.dispatchPrintableBeforeInput('x');
+    setSingleLineSelection(3, 4);
+
+    input.dispatchPrintableBeforeInput('y');
+    vi.advanceTimersByTime(80);
+
+    expect(value).toBe('abyd');
+    expect(position).toEqual({ lineNumber: 1, column: 4 });
+  });
+
+  it('does not let an older selection fallback consume a newer selection replacement', () => {
+    installFallback();
+
+    value = 'abcd';
+    setSingleLineSelection(1, 2);
+    input.dispatchPrintableBeforeInput('x');
+    setSingleLineSelection(3, 4);
+
+    input.dispatchPrintableBeforeInput('y');
+    vi.advanceTimersByTime(80);
+
+    expect(value).toBe('abyd');
+    expect(position).toEqual({ lineNumber: 1, column: 4 });
+  });
+
+  it('keeps consecutive dropped input when the original selection is still active', () => {
+    installFallback();
+
+    value = 'abcd';
+    setSingleLineSelection(2, 4);
+
+    input.dispatchPrintableBeforeInput('x');
+    input.dispatchPrintableBeforeInput('y');
+    vi.advanceTimersByTime(80);
+
+    expect(value).toBe('axyd');
+    expect(position).toEqual({ lineNumber: 1, column: 4 });
+  });
+
+  it('collapses a same-text selection when its native replacement is dropped', () => {
+    installFallback();
+
+    value = 'a<d';
+    setSingleLineSelection(2, 3);
+
+    input.dispatchPrintableBeforeInput('<');
+    vi.advanceTimersByTime(80);
+
+    expect(value).toBe('a<d');
+    expect(editor.getSelection()).toEqual({
+      startLineNumber: 1,
+      startColumn: 3,
+      endLineNumber: 1,
+      endColumn: 3,
+    });
+  });
+
+  it('does not restore an old caret after a native replacement model event', () => {
+    installFallback();
+
+    value = 'abcd';
+    setSingleLineSelection(2, 4);
+    input.dispatchPrintableBeforeInput('x');
+
+    value = 'axd';
+    modelContentListener?.();
+    selection = null;
+    position = { lineNumber: 1, column: 4 };
+    input.dispatchPrintableBeforeInput('y');
+    vi.advanceTimersByTime(80);
+
+    expect(value).toBe('axdy');
     expect(position).toEqual({ lineNumber: 1, column: 5 });
   });
 });

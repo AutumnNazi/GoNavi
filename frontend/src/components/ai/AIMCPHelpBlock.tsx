@@ -70,7 +70,7 @@ const AIMCPHelpBlock: React.FC<AIMCPHelpBlockProps> = ({
           style={{
             padding: '2px 8px',
             borderRadius: 999,
-            fontSize: 11,
+            fontSize: 'var(--gn-font-size-sm, 12px)',
             fontWeight: 700,
             color: tone.color,
             background: tone.bg,

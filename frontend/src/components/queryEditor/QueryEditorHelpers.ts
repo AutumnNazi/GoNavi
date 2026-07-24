@@ -2,7 +2,7 @@ import type { SqlLanguage } from 'sql-formatter';
 import type { TabData, ColumnDefinition, IndexDefinition } from '../../types';
 import { DBGetColumns, DBGetIndexes, DBQuery } from '../../../wailsjs/go/app/App';
 import { buildRpcConnectionConfig } from '../../utils/connectionRpcConfig';
-import { isOracleLikeDialect, resolveSqlDialect } from '../../utils/sqlDialect';
+import { isMysqlFamilyDialect, isOracleLikeDialect, resolveSqlDialect } from '../../utils/sqlDialect';
 import { extractQueryResultTableRef, type QueryResultTableRef } from '../../utils/queryResultTable';
 import { quoteIdentPart } from '../../utils/sql';
 import { splitSidebarQualifiedName } from '../../utils/sidebarLocate';
@@ -22,10 +22,296 @@ import { t as translate } from '../../i18n';
 export type CompletionTableMeta = {dbName: string, tableName: string, comment?: string};
 export type CompletionColumnMeta = {dbName: string, tableName: string, name: string, type: string, comment?: string};
 export type CompletionViewMeta = {dbName: string, viewName: string, schemaName?: string};
+export type CompletionSynonymMeta = {ownerName: string, synonymName: string, targetSchemaName?: string, targetName?: string};
 export type CompletionTriggerMeta = {dbName: string, triggerName: string, tableName: string, schemaName?: string};
 export type CompletionRoutineMeta = {dbName: string, routineName: string, routineType: string, schemaName?: string};
 export type CompletionSequenceMeta = {dbName: string, sequenceName: string, schemaName?: string};
 export type CompletionPackageMeta = {dbName: string, packageName: string, schemaName?: string};
+
+// Metadata refreshes replace the source array, so identity-keyed partitions stay correct and let
+// repeated completion requests avoid allocating/scanning another full-database filter result.
+const completionTablesByDatabaseCache = new WeakMap<CompletionTableMeta[], Map<string, CompletionTableMeta[]>>();
+
+export const findCompletionTablesByDatabase = (
+    tables: CompletionTableMeta[],
+    dbName: string,
+): CompletionTableMeta[] => {
+    let index = completionTablesByDatabaseCache.get(tables);
+    if (!index) {
+        index = new Map<string, CompletionTableMeta[]>();
+        tables.forEach((table) => {
+            const key = String(table.dbName || '').trim().toLowerCase();
+            const matches = index!.get(key);
+            if (matches) {
+                matches.push(table);
+            } else {
+                index!.set(key, [table]);
+            }
+        });
+        completionTablesByDatabaseCache.set(tables, index);
+    }
+    return index.get(String(dbName || '').trim().toLowerCase()) || [];
+};
+
+export const QUERY_EDITOR_COMPLETION_SUGGESTION_LIMIT = 200;
+
+export type QueryEditorCompletionMatchRank = 0 | 1 | 2 | null;
+
+export const rankQueryEditorCompletionCandidate = (
+    prefix: string,
+    candidates: readonly string[],
+    includeSubstring = true,
+): QueryEditorCompletionMatchRank => {
+    const normalizedPrefix = String(prefix || '').trim().toLowerCase();
+    if (!normalizedPrefix) return 0;
+
+    let hasPrefixMatch = false;
+    let hasSubstringMatch = false;
+    for (const candidate of candidates) {
+        const normalizedCandidate = String(candidate || '').trim().toLowerCase();
+        if (!normalizedCandidate) continue;
+        if (normalizedCandidate === normalizedPrefix) return 0;
+        if (normalizedCandidate.startsWith(normalizedPrefix)) {
+            hasPrefixMatch = true;
+        } else if (includeSubstring && normalizedCandidate.includes(normalizedPrefix)) {
+            hasSubstringMatch = true;
+        }
+    }
+    if (hasPrefixMatch) return 1;
+    if (hasSubstringMatch) return 2;
+    return null;
+};
+
+type RankedQueryEditorCompletionCandidate<Candidate> = {
+    candidate: Candidate;
+    selectionKey: string;
+    sourceIndex: number;
+};
+
+export type QueryEditorCompletionCandidateBatch<Candidate, Suggestion> = {
+    rankedCandidates: RankedQueryEditorCompletionCandidate<Candidate>[];
+    buildSuggestion: (candidate: Candidate) => Suggestion;
+};
+
+const compareRankedQueryEditorCompletionCandidates = <Candidate,>(
+    left: RankedQueryEditorCompletionCandidate<Candidate>,
+    right: RankedQueryEditorCompletionCandidate<Candidate>,
+): number => {
+    if (left.selectionKey < right.selectionKey) return -1;
+    if (left.selectionKey > right.selectionKey) return 1;
+    return left.sourceIndex - right.sourceIndex;
+};
+
+export const createBoundedQueryEditorCompletionCandidateBatch = <Candidate, Suggestion>({
+    candidates,
+    prefix,
+    getMatchRank,
+    getSelectionKey,
+    buildSuggestion,
+    limit = QUERY_EDITOR_COMPLETION_SUGGESTION_LIMIT,
+    sourceAlreadySortedBySelection = false,
+}: {
+    candidates: readonly Candidate[];
+    prefix: string;
+    getMatchRank: (candidate: Candidate, normalizedPrefix: string) => QueryEditorCompletionMatchRank;
+    getSelectionKey: (
+        candidate: Candidate,
+        normalizedPrefix: string,
+        matchRank: Exclude<QueryEditorCompletionMatchRank, null>,
+    ) => string;
+    buildSuggestion: (candidate: Candidate) => Suggestion;
+    limit?: number;
+    sourceAlreadySortedBySelection?: boolean;
+}): QueryEditorCompletionCandidateBatch<Candidate, Suggestion> => {
+    const normalizedLimit = Math.max(0, Math.floor(Number(limit) || 0));
+    if (normalizedLimit === 0 || candidates.length === 0) {
+        return { rankedCandidates: [], buildSuggestion };
+    }
+
+    const normalizedPrefix = String(prefix || '').trim().toLowerCase();
+    const compareCandidateToRanked = (
+        selectionKey: string,
+        sourceIndex: number,
+        right: RankedQueryEditorCompletionCandidate<Candidate>,
+    ): number => {
+        if (selectionKey < right.selectionKey) return -1;
+        if (selectionKey > right.selectionKey) return 1;
+        return sourceIndex - right.sourceIndex;
+    };
+    // Max-heap: the worst retained candidate stays at index 0 and can be replaced in O(log limit).
+    const selectedHeap: RankedQueryEditorCompletionCandidate<Candidate>[] = [];
+    const siftUpWorst = (startIndex: number) => {
+        let childIndex = startIndex;
+        while (childIndex > 0) {
+            const parentIndex = Math.floor((childIndex - 1) / 2);
+            if (compareRankedQueryEditorCompletionCandidates(selectedHeap[parentIndex], selectedHeap[childIndex]) >= 0) break;
+            [selectedHeap[parentIndex], selectedHeap[childIndex]] = [selectedHeap[childIndex], selectedHeap[parentIndex]];
+            childIndex = parentIndex;
+        }
+    };
+    const siftDownWorst = (startIndex: number) => {
+        let parentIndex = startIndex;
+        while (true) {
+            const leftIndex = parentIndex * 2 + 1;
+            if (leftIndex >= selectedHeap.length) break;
+            const rightIndex = leftIndex + 1;
+            let worseChildIndex = leftIndex;
+            if (
+                rightIndex < selectedHeap.length
+                && compareRankedQueryEditorCompletionCandidates(selectedHeap[rightIndex], selectedHeap[leftIndex]) > 0
+            ) {
+                worseChildIndex = rightIndex;
+            }
+            if (compareRankedQueryEditorCompletionCandidates(selectedHeap[parentIndex], selectedHeap[worseChildIndex]) >= 0) break;
+            [selectedHeap[parentIndex], selectedHeap[worseChildIndex]] = [selectedHeap[worseChildIndex], selectedHeap[parentIndex]];
+            parentIndex = worseChildIndex;
+        }
+    };
+
+    for (let sourceIndex = 0; sourceIndex < candidates.length; sourceIndex += 1) {
+        const candidate = candidates[sourceIndex];
+        const rank = getMatchRank(candidate, normalizedPrefix);
+        if (rank === null) continue;
+        const selectionKey = String(getSelectionKey(candidate, normalizedPrefix, rank) || '');
+        if (selectedHeap.length < normalizedLimit) {
+            selectedHeap.push({ candidate, selectionKey, sourceIndex });
+            siftUpWorst(selectedHeap.length - 1);
+        } else {
+            const worst = selectedHeap[0];
+            if (compareCandidateToRanked(selectionKey, sourceIndex, worst) < 0) {
+                // Reuse the root entry so descending input cannot allocate one retained wrapper per source row.
+                worst.candidate = candidate;
+                worst.selectionKey = selectionKey;
+                worst.sourceIndex = sourceIndex;
+                siftDownWorst(0);
+            }
+        }
+        // Early-stop is safe only when the caller guarantees the source already follows the same
+        // final selection-key + stable-input-order tuple used by this bounded top-k.
+        if (sourceAlreadySortedBySelection && selectedHeap.length >= normalizedLimit) {
+            break;
+        }
+    }
+
+    selectedHeap.sort(compareRankedQueryEditorCompletionCandidates);
+    return { rankedCandidates: selectedHeap, buildSuggestion };
+};
+
+export const materializeBoundedQueryEditorCompletionBatches = <Suggestion,>(
+    batches: readonly QueryEditorCompletionCandidateBatch<any, Suggestion>[],
+    limit = QUERY_EDITOR_COMPLETION_SUGGESTION_LIMIT,
+): Suggestion[] => {
+    const normalizedLimit = Math.max(0, Math.floor(Number(limit) || 0));
+    if (normalizedLimit === 0 || batches.length === 0) return [];
+
+    type GlobalRankedCandidate = {
+        batchIndex: number;
+        candidateIndex: number;
+        selectionKey: string;
+        sourceIndex: number;
+    };
+    const compareGlobalCandidates = (left: GlobalRankedCandidate, right: GlobalRankedCandidate): number => {
+        if (left.selectionKey < right.selectionKey) return -1;
+        if (left.selectionKey > right.selectionKey) return 1;
+        if (left.batchIndex !== right.batchIndex) return left.batchIndex - right.batchIndex;
+        return left.sourceIndex - right.sourceIndex;
+    };
+    const compareCandidateToGlobal = (
+        batchIndex: number,
+        selectionKey: string,
+        sourceIndex: number,
+        right: GlobalRankedCandidate,
+    ): number => {
+        if (selectionKey < right.selectionKey) return -1;
+        if (selectionKey > right.selectionKey) return 1;
+        if (batchIndex !== right.batchIndex) return batchIndex - right.batchIndex;
+        return sourceIndex - right.sourceIndex;
+    };
+    const selectedHeap: GlobalRankedCandidate[] = [];
+    const siftUpWorst = (startIndex: number) => {
+        let childIndex = startIndex;
+        while (childIndex > 0) {
+            const parentIndex = Math.floor((childIndex - 1) / 2);
+            if (compareGlobalCandidates(selectedHeap[parentIndex], selectedHeap[childIndex]) >= 0) break;
+            [selectedHeap[parentIndex], selectedHeap[childIndex]] = [selectedHeap[childIndex], selectedHeap[parentIndex]];
+            childIndex = parentIndex;
+        }
+    };
+    const siftDownWorst = (startIndex: number) => {
+        let parentIndex = startIndex;
+        while (true) {
+            const leftIndex = parentIndex * 2 + 1;
+            if (leftIndex >= selectedHeap.length) break;
+            const rightIndex = leftIndex + 1;
+            let worseChildIndex = leftIndex;
+            if (
+                rightIndex < selectedHeap.length
+                && compareGlobalCandidates(selectedHeap[rightIndex], selectedHeap[leftIndex]) > 0
+            ) {
+                worseChildIndex = rightIndex;
+            }
+            if (compareGlobalCandidates(selectedHeap[parentIndex], selectedHeap[worseChildIndex]) >= 0) break;
+            [selectedHeap[parentIndex], selectedHeap[worseChildIndex]] = [selectedHeap[worseChildIndex], selectedHeap[parentIndex]];
+            parentIndex = worseChildIndex;
+        }
+    };
+
+    batches.forEach((batch, batchIndex) => {
+        batch.rankedCandidates.forEach((candidate, candidateIndex) => {
+            if (selectedHeap.length < normalizedLimit) {
+                selectedHeap.push({
+                    batchIndex,
+                    candidateIndex,
+                    selectionKey: candidate.selectionKey,
+                    sourceIndex: candidate.sourceIndex,
+                });
+                siftUpWorst(selectedHeap.length - 1);
+                return;
+            }
+            const worst = selectedHeap[0];
+            if (compareCandidateToGlobal(batchIndex, candidate.selectionKey, candidate.sourceIndex, worst) < 0) {
+                worst.batchIndex = batchIndex;
+                worst.candidateIndex = candidateIndex;
+                worst.selectionKey = candidate.selectionKey;
+                worst.sourceIndex = candidate.sourceIndex;
+                siftDownWorst(0);
+            }
+        });
+    });
+
+    selectedHeap.sort(compareGlobalCandidates);
+    return selectedHeap.map(({ batchIndex, candidateIndex }) => {
+        const batch = batches[batchIndex];
+        return batch.buildSuggestion(batch.rankedCandidates[candidateIndex].candidate);
+    });
+};
+
+export const buildBoundedQueryEditorCompletionSuggestions = <Candidate, Suggestion>(
+    options: Parameters<typeof createBoundedQueryEditorCompletionCandidateBatch<Candidate, Suggestion>>[0],
+): Suggestion[] => {
+    const batch = createBoundedQueryEditorCompletionCandidateBatch(options);
+    return materializeBoundedQueryEditorCompletionBatches([batch], options.limit);
+};
+
+export const selectUnqualifiedCompletionSynonyms = (
+    synonyms: CompletionSynonymMeta[],
+    loginOwnerName: string,
+): CompletionSynonymMeta[] => {
+    const loginOwner = String(loginOwnerName || '').trim().toLowerCase();
+    const preferred = new Map<string, { synonym: CompletionSynonymMeta; rank: number }>();
+    synonyms.forEach((synonym) => {
+        const key = String(synonym.synonymName || '').trim().toLowerCase();
+        const owner = String(synonym.ownerName || '').trim().toLowerCase();
+        if (!key) return;
+        const rank = loginOwner && owner === loginOwner ? 0 : owner === 'public' ? 1 : 2;
+        if (rank > 1) return;
+        const current = preferred.get(key);
+        if (!current || rank < current.rank) {
+            preferred.set(key, { synonym, rank });
+        }
+    });
+    return Array.from(preferred.values(), ({ synonym }) => synonym);
+};
 
 export const QUERY_LOCATOR_ALIAS_PREFIX = '__gonavi_locator_';
 const QUERY_LOCATOR_METADATA_TIMEOUT_MS = 1500;
@@ -551,6 +837,17 @@ export const normalizeMetadataDialect = (conn: any): string => {
     return String(dialect || '').toLowerCase();
 };
 
+export type QueryEditorMonacoLanguage = 'sql' | 'mysql';
+
+export const resolveQueryEditorMonacoLanguage = (conn: any): QueryEditorMonacoLanguage => {
+    const dialect = resolveSqlDialect(
+        String(conn?.config?.type || ''),
+        String(conn?.config?.driver || ''),
+        { oceanBaseProtocol: conn?.config?.oceanBaseProtocol },
+    );
+    return isMysqlFamilyDialect(dialect) ? 'mysql' : 'sql';
+};
+
 export const resolveQueryEditorFormatterLanguage = (conn: any): SqlLanguage => {
     const dialect = normalizeMetadataDialect(conn);
     switch (dialect) {
@@ -709,6 +1006,27 @@ export const splitCompletionSchemaAndTable = (qualified: string): { schema: stri
         };
     }
     return { schema: '', table: parts[0] || '' };
+};
+
+// The caller passes the cached current-database partition. Schema duplicate detection therefore
+// reads only that partition once instead of walking every visible database on each keystroke.
+const completionTableSchemaCountCache = new WeakMap<CompletionTableMeta[], Map<string, number>>();
+
+export const getCompletionTableSchemaCounts = (
+    currentDatabaseTables: CompletionTableMeta[],
+): Map<string, number> => {
+    const cached = completionTableSchemaCountCache.get(currentDatabaseTables);
+    if (cached) return cached;
+
+    const counts = new Map<string, number>();
+    currentDatabaseTables.forEach((table) => {
+        const parsed = splitCompletionSchemaAndTable(table.tableName || '');
+        const pureTable = String(parsed.table || table.tableName || '').toLowerCase();
+        if (!pureTable) return;
+        counts.set(pureTable, (counts.get(pureTable) || 0) + 1);
+    });
+    completionTableSchemaCountCache.set(currentDatabaseTables, counts);
+    return counts;
 };
 
 export const DEFAULT_QUERY_TEMPLATE = 'SELECT * FROM ';
@@ -884,6 +1202,20 @@ export const buildCompletionViewsMetadataQuerySpecs = (dialect: string, dbName: 
         default:
             return [];
     }
+};
+
+export const buildCompletionSynonymsMetadataQuerySpecs = (dialect: string): MetadataQuerySpec[] => {
+    if (dialect !== 'oracle') {
+        return [];
+    }
+    return [{
+        sql: `SELECT OWNER AS synonym_owner, SYNONYM_NAME AS synonym_name,
+  TABLE_OWNER AS target_schema_name, TABLE_NAME AS target_name
+FROM ALL_SYNONYMS
+WHERE DB_LINK IS NULL
+  AND TABLE_NAME IS NOT NULL
+ORDER BY CASE WHEN OWNER = USER THEN 0 WHEN OWNER = 'PUBLIC' THEN 1 ELSE 2 END, SYNONYM_NAME`,
+    }];
 };
 
 export const buildCompletionMaterializedViewsMetadataQuerySpecs = (dialect: string, dbName: string): MetadataQuerySpec[] => {
@@ -1109,7 +1441,7 @@ export const QUERY_EDITOR_SQL_ALIAS_REFERENCE_REGEX = new RegExp(
 export const QUERY_EDITOR_SQL_LEADING_IDENTIFIER_PATH_REGEX = new RegExp(`^(${QUERY_EDITOR_SQL_IDENTIFIER_PATH_PATTERN})([\\s\\S]*)$`);
 export const QUERY_EDITOR_HOVER_DELAY_MS = 1000;
 export const QUERY_EDITOR_OBJECT_DECORATION_MAX_TEXT_LENGTH = 200_000;
-export const QUERY_EDITOR_OBJECT_DECORATION_MAX_IDENTIFIERS = 800;
+export const QUERY_EDITOR_OBJECT_DECORATION_MAX_IDENTIFIERS = 200;
 export const QUERY_EDITOR_OBJECT_DECORATION_MAX_LINES = 1_000;
 export const QUERY_EDITOR_LIVE_DECORATION_MAX_TEXT_LENGTH = 50_000;
 export const QUERY_EDITOR_PERSISTED_DRAFT_MAX_TEXT_LENGTH = 50_000;
@@ -1238,6 +1570,33 @@ export const rewriteLeadingSelectTableReference = (sql: string, replacement: str
     const match = matchLeadingSelectTableReference(sql);
     if (!match || !replacement) return undefined;
     return `${match.prefix}${replacement}${match.suffix}`;
+};
+
+export const isOracleBaseTableReference = (
+    statement: string,
+    currentDb: string,
+    tables: CompletionTableMeta[],
+): boolean => {
+    const leadingTable = matchLeadingSelectTableReference(statement);
+    if (!leadingTable) return false;
+
+    const segments = splitQueryIdentifierPathSegments(leadingTable.tableText);
+    if (segments.length === 0 || segments.length > 2) return false;
+
+    const explicitSchemaName = segments.length === 2 ? String(segments[0]?.value || '').trim() : '';
+    const objectName = String(segments[segments.length - 1]?.value || '').trim();
+    const targetSchemaName = explicitSchemaName || String(currentDb || '').trim();
+    if (!objectName || !targetSchemaName) return false;
+
+    const normalizedSchemaName = targetSchemaName.toLowerCase();
+    return tables.some((table) => {
+        if (String(table.dbName || '').trim().toLowerCase() !== normalizedSchemaName) return false;
+        const parsed = splitSidebarQualifiedName(String(table.tableName || ''));
+        const tableObjectName = String(parsed.objectName || table.tableName || '').trim();
+        const tableSchemaName = String(parsed.schemaName || table.dbName || '').trim();
+        if (tableObjectName.toLowerCase() !== objectName.toLowerCase()) return false;
+        return !explicitSchemaName || tableSchemaName.toLowerCase() === normalizedSchemaName;
+    });
 };
 
 export const resolveOracleExactCaseTableReference = (
@@ -1570,8 +1929,8 @@ export const buildQueryEditorHoverMarkdown = (target: QueryEditorHoverTarget): s
 export const buildQueryEditorAliasMap = (
     fullText: string,
     currentDb: string,
-): Record<string, { dbName: string; tableName: string }> => {
-    const aliasMap: Record<string, { dbName: string; tableName: string }> = {};
+): Record<string, { dbName: string; tableName: string; explicitOwnerName?: string }> => {
+    const aliasMap: Record<string, { dbName: string; tableName: string; explicitOwnerName?: string }> = {};
     const reserved = new Set([
         'where', 'on', 'group', 'order', 'limit', 'having',
         'left', 'right', 'inner', 'outer', 'full', 'cross', 'join',
@@ -1586,21 +1945,26 @@ export const buildQueryEditorAliasMap = (
         const parts = tableIdent.split('.');
         let dbName = currentDb || '';
         let tableName = tableIdent;
+        let explicitOwnerName = '';
         if (parts.length === 2) {
             dbName = parts[0];
             tableName = parts[1];
+            explicitOwnerName = parts[0];
         } else if (parts.length >= 3) {
             dbName = parts[0];
             tableName = parts.slice(1).join('.');
         }
         const shortTable = getCompletionQualifiedNameLastPart(tableIdent);
-        if (shortTable) aliasMap[shortTable.toLowerCase()] = { dbName, tableName };
+        const aliasTarget = explicitOwnerName
+            ? { dbName, tableName, explicitOwnerName }
+            : { dbName, tableName };
+        if (shortTable) aliasMap[shortTable.toLowerCase()] = aliasTarget;
 
         const alias = stripCompletionIdentifierQuotes(match[2] || '').trim();
         if (!alias) continue;
         const loweredAlias = alias.toLowerCase();
         if (reserved.has(loweredAlias)) continue;
-        aliasMap[loweredAlias] = { dbName, tableName };
+        aliasMap[loweredAlias] = aliasTarget;
     }
     return aliasMap;
 };
@@ -2330,6 +2694,7 @@ export const resolveQueryLocatorPlan = async ({
     currentDb,
     config,
     forceReadOnly,
+    allowOracleRowID = true,
 }: {
     statement: string;
     originalStatement?: string;
@@ -2337,6 +2702,7 @@ export const resolveQueryLocatorPlan = async ({
     currentDb: string;
     config: any;
     forceReadOnly: boolean;
+    allowOracleRowID?: boolean;
 }): Promise<QueryStatementPlan> => {
     const plan: QueryStatementPlan = {
         originalSql: originalStatement || statement,
@@ -2452,7 +2818,7 @@ export const resolveQueryLocatorPlan = async ({
             const uniqueKeyGroup = uniqueKeyGroups.find((group) => group.length > 0);
             if (uniqueKeyGroup) {
                 plan.editLocator = buildColumnLocator('unique-key', uniqueKeyGroup);
-            } else if (isOracleLikeDialect(dbType)) {
+            } else if (allowOracleRowID && isOracleLikeDialect(dbType)) {
                 needsOracleRowIDExpression = true;
                 plan.editLocator = {
                     strategy: 'oracle-rowid',

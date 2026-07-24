@@ -1,0 +1,293 @@
+# 评论认领：在 Issue 下评论「我想做」等关键词后，自动指派/标记认领人。
+# 说明：
+# - 仓库协作者（write 及以上）可成功写入 Assignees
+# - 外部贡献者若无写权限，GitHub 不允许设为 assignee；此时会打 claimed 标签并回复确认
+# - 支持取消认领：取消认领 / /unclaim
+name: Issue Claim
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  claim:
+    name: Auto claim or unclaim
+    if: ${{ !github.event.issue.pull_request }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Process claim / unclaim comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issue = context.payload.issue;
+            const comment = context.payload.comment;
+            const actor = comment.user.login;
+            const actorType = comment.user.type;
+
+            // 忽略机器人自己的评论，避免循环
+            if (actorType === 'Bot') {
+              core.info('Skip bot comment');
+              return;
+            }
+
+            const raw = (comment.body || '').replace(/\r\n/g, '\n').trim();
+            if (!raw) {
+              return;
+            }
+
+            // 仅认领短指令：整段或首行匹配，避免长讨论误触发
+            const firstLine = raw.split('\n').map((l) => l.trim()).find(Boolean) || '';
+            const normalize = (s) =>
+              s
+                .replace(/^[@/]/g, '')
+                .replace(/[！!。．.、,，\s]+$/g, '')
+                .trim()
+                .toLowerCase();
+
+            const claimPhrases = new Set([
+              '我想做',
+              '我来做',
+              '我来',
+              '认领',
+              '我认领',
+              'claim',
+              'i claim',
+              'i want this',
+              'i will take this',
+              'assign me',
+            ]);
+            const unclaimPhrases = new Set([
+              '取消认领',
+              '不认领了',
+              '放弃认领',
+              'unclaim',
+              'release',
+            ]);
+
+            const nFull = normalize(raw);
+            const nFirst = normalize(firstLine);
+            // 允许 /claim /unclaim 形式
+            const slash = firstLine.match(/^\/(claim|unclaim)\b/i);
+            const isClaim =
+              claimPhrases.has(nFull) ||
+              claimPhrases.has(nFirst) ||
+              (slash && slash[1].toLowerCase() === 'claim');
+            const isUnclaim =
+              unclaimPhrases.has(nFull) ||
+              unclaimPhrases.has(nFirst) ||
+              (slash && slash[1].toLowerCase() === 'unclaim');
+
+            if (!isClaim && !isUnclaim) {
+              core.info('Comment is not a claim/unclaim command');
+              return;
+            }
+
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const issue_number = issue.number;
+            const CLAIMED_LABEL = 'claimed';
+
+            async function ensureClaimedLabel() {
+              try {
+                await github.rest.issues.getLabel({ owner, repo, name: CLAIMED_LABEL });
+              } catch (e) {
+                if (e.status !== 404) throw e;
+                await github.rest.issues.createLabel({
+                  owner,
+                  repo,
+                  name: CLAIMED_LABEL,
+                  color: '0E8A16',
+                  description: '已被社区认领，进行中',
+                });
+              }
+            }
+
+            async function ensureLabels(names) {
+              const current = new Set((issue.labels || []).map((l) => (typeof l === 'string' ? l : l.name)));
+              const toAdd = names.filter((n) => !current.has(n));
+              if (toAdd.length) {
+                await github.rest.issues.addLabels({ owner, repo, issue_number, labels: toAdd });
+              }
+            }
+
+            async function removeLabels(names) {
+              for (const name of names) {
+                try {
+                  await github.rest.issues.removeLabel({ owner, repo, issue_number, name });
+                } catch (e) {
+                  if (e.status !== 404) throw e;
+                }
+              }
+            }
+
+            async function tryAssign(login) {
+              try {
+                await github.rest.issues.addAssignees({
+                  owner,
+                  repo,
+                  issue_number,
+                  assignees: [login],
+                });
+                return { ok: true };
+              } catch (e) {
+                const msg = e.message || String(e);
+                core.warning(`assign failed for ${login}: ${msg}`);
+                return { ok: false, message: msg };
+              }
+            }
+
+            async function tryUnassign(login) {
+              try {
+                await github.rest.issues.removeAssignees({
+                  owner,
+                  repo,
+                  issue_number,
+                  assignees: [login],
+                });
+                return { ok: true };
+              } catch (e) {
+                core.warning(`unassign failed for ${login}: ${e.message || e}`);
+                return { ok: false };
+              }
+            }
+
+            // 从 issue 正文底部的认领锚点解析当前认领人
+            const CLAIM_MARKER_RE =
+              /<!--\s*gonavi-claim\s*:\s*([A-Za-z0-9-]+)\s*-->/;
+            const body = issue.body || '';
+            const markerMatch = body.match(CLAIM_MARKER_RE);
+            const markerClaimer = markerMatch ? markerMatch[1] : null;
+            const assignees = (issue.assignees || []).map((a) => a.login);
+            const currentClaimer = assignees[0] || markerClaimer || null;
+            const hasClaimedLabel = (issue.labels || []).some(
+              (l) => (typeof l === 'string' ? l : l.name) === CLAIMED_LABEL
+            );
+
+            if (isUnclaim) {
+              if (!currentClaimer && !hasClaimedLabel) {
+                await github.rest.issues.createComment({
+                  owner,
+                  repo,
+                  issue_number,
+                  body: `ℹ️ @${actor} 当前无人认领，无需取消。`,
+                });
+                return;
+              }
+              if (currentClaimer && currentClaimer.toLowerCase() !== actor.toLowerCase()) {
+                // 仅认领人本人可取消；维护者可强制取消
+                const isMaintainer = ['OWNER', 'MEMBER', 'COLLABORATOR'].includes(
+                  context.payload.comment.author_association
+                );
+                if (!isMaintainer) {
+                  await github.rest.issues.createComment({
+                    owner,
+                    repo,
+                    issue_number,
+                    body: `⚠️ @${actor} 本 Issue 当前由 @${currentClaimer} 认领。请对方评论 \`取消认领\`，或联系维护者。`,
+                  });
+                  return;
+                }
+              }
+
+              const who = currentClaimer || actor;
+              await tryUnassign(who);
+              await removeLabels([CLAIMED_LABEL]);
+
+              let newBody = body;
+              if (CLAIM_MARKER_RE.test(newBody)) {
+                newBody = newBody
+                  .replace(/\n?<!--\s*gonavi-claim\s*:\s*[A-Za-z0-9-]+\s*-->\s*/g, '\n')
+                  .replace(/\n?### 🔐 认领状态[\s\S]*?(?=\n## |\n# |$)/, '\n')
+                  .trimEnd();
+                await github.rest.issues.update({ owner, repo, issue_number, body: newBody });
+              }
+
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number,
+                body: `🔓 @${actor} 已取消认领${who !== actor ? `（原认领人 @${who}）` : ''}。其他人可评论 \`我想做\` 重新认领。`,
+              });
+              return;
+            }
+
+            // —— claim ——
+            if (currentClaimer && currentClaimer.toLowerCase() !== actor.toLowerCase()) {
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number,
+                body: `⚠️ @${actor} 本 Issue 已由 @${currentClaimer} 认领。\n\n- 若对方长期无进展，可评论提醒，或由维护者 \`取消认领\` 后重开\n- 你也可以先在本线程说明想做的方向，维护者可协助拆分子任务`,
+              });
+              return;
+            }
+
+            if (currentClaimer && currentClaimer.toLowerCase() === actor.toLowerCase()) {
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number,
+                body: `✅ @${actor} 你已经是本 Issue 的认领人，无需重复认领。开干吧 💪`,
+              });
+              return;
+            }
+
+            await ensureClaimedLabel();
+            const assignResult = await tryAssign(actor);
+            await ensureLabels([CLAIMED_LABEL]);
+
+            // 在正文写入可机读认领锚点（assignee 失败时仍可防双认领）
+            const stamp = new Date().toISOString().slice(0, 10);
+            const claimBlock =
+              `\n\n### 🔐 认领状态\n\n` +
+              `- 认领人：@${actor}\n` +
+              `- 认领日期：${stamp}\n` +
+              `- 取消方式：评论 \`取消认领\` 或 \`/unclaim\`\n` +
+              `<!-- gonavi-claim: ${actor} -->\n`;
+
+            let newBody = body;
+            if (CLAIM_MARKER_RE.test(newBody)) {
+              newBody = newBody.replace(
+                CLAIM_MARKER_RE,
+                `<!-- gonavi-claim: ${actor} -->`
+              );
+              if (!/### 🔐 认领状态/.test(newBody)) {
+                newBody = newBody.trimEnd() + claimBlock;
+              }
+            } else {
+              newBody = newBody.trimEnd() + claimBlock;
+            }
+            await github.rest.issues.update({ owner, repo, issue_number, body: newBody });
+
+            if (assignResult.ok) {
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number,
+                body:
+                  `✅ @${actor} 已认领本 Issue，并已加入 **Assignees**。\n\n` +
+                  `建议下一步：\n` +
+                  `1. 从 \`dev\` 拉分支：\`fix/*\` 或 \`feature/*\`\n` +
+                  `2. 完成后向 **\`dev\`** 提 PR\n` +
+                  `3. 若暂无法继续，请评论 \`取消认领\`\n\n` +
+                  `贡献指南：https://github.com/Syngnat/GoNavi/blob/dev/CONTRIBUTING.zh-CN.md`,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number,
+                body:
+                  `✅ @${actor} 已认领本 Issue（已标记 \`claimed\`）。\n\n` +
+                  `> 说明：GitHub 仅允许将**仓库协作者**设为正式 Assignee。你目前可能还没有写权限，因此无法写入 Assignees 字段；**社区认领仍然有效**，其他人再评论「我想做」会被拦截。\n\n` +
+                  `建议下一步：\n` +
+                  `1. Fork 仓库，从 \`dev\` 拉分支开发\n` +
+                  `2. 向 **\`dev\`** 提 PR，并在 PR 描述里写 \`Fixes #${issue_number}\`\n` +
+                  `3. 若暂无法继续，请评论 \`取消认领\`\n\n` +
+                  `贡献指南：https://github.com/Syngnat/GoNavi/blob/dev/CONTRIBUTING.zh-CN.md`,
+              });
+            }

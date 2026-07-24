@@ -2,6 +2,7 @@ import { useMemo } from 'react'
 import { Tooltip } from 'antd'
 import { HistoryOutlined } from '@ant-design/icons'
 import { useStore } from '../../store'
+import { useWorkbenchTabs } from '../../hooks/useWorkbenchTabs'
 import { useI18n } from '../../i18n/provider'
 import { buildSqlAnalysisWorkbenchTab } from '../../utils/sqlAnalysisTab'
 import './SlowQueryRailButton.css'
@@ -43,7 +44,7 @@ export default function SlowQueryRailButton({
   tooltipPlacement = 'right',
 }: SlowQueryRailButtonProps) {
   const { t } = useI18n()
-  const tabs = useStore(s => s.tabs)
+  const tabs = useWorkbenchTabs()
   const activeTabId = useStore(s => s.activeTabId)
   const connections = useStore(s => s.connections)
   const addTab = useStore(s => s.addTab)

@@ -56,16 +56,16 @@ describe('AIMessageBubble', () => {
         onEdit={() => {}}
         onRetry={() => {}}
         onDelete={() => {}}
-        allMessages={[
-          {
+        toolResultsById={new Map([
+          ['tool-1', {
             id: 'tool-result-1',
             role: 'tool',
             content: '[{\"fk\":\"orders.customer_id\"}]',
             timestamp: Date.now(),
             tool_call_id: 'tool-1',
             tool_name: 'get_foreign_keys',
-          },
-        ]}
+          }],
+        ])}
       />,
     );
 

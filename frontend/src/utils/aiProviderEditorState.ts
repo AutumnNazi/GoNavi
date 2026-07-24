@@ -1,4 +1,4 @@
-import type { AIProviderConfig, AIProviderType } from '../types';
+import type { AIProviderAuthMode, AIProviderConfig, AIProviderType } from '../types';
 
 type ProviderEditorStatus = 'idle' | 'success' | 'error';
 
@@ -18,6 +18,7 @@ interface BuildAddProviderEditorSessionInput {
   presetModel: string;
   presetModels?: string[];
   apiFormat?: string;
+  authMode?: AIProviderAuthMode;
 }
 
 interface BuildEditProviderEditorSessionInput {
@@ -32,12 +33,14 @@ export const buildAddProviderEditorSession = ({
   presetModel,
   presetModels = [],
   apiFormat = 'openai',
+  authMode = 'api-key',
 }: BuildAddProviderEditorSessionInput): ProviderEditorSession => {
   const editingProvider: ProviderEditorConfig = {
     id: '',
     type: presetBackendType,
     name: '',
     apiKey: '',
+    authMode,
     baseUrl: presetBaseUrl,
     model: presetModel,
     models: [...presetModels],
@@ -52,6 +55,7 @@ export const buildAddProviderEditorSession = ({
       ...editingProvider,
       presetKey,
       apiFormat,
+      authMode,
     },
     isEditing: true,
     testStatus: 'idle',

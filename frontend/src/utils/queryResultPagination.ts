@@ -1,4 +1,4 @@
-import { buildPaginatedSelectSQL } from './sql';
+import { buildOrderBySQL, buildPaginatedSelectSQL } from './sql';
 import { findTopLevelKeyword, getLeadingKeyword, splitSqlTail } from './queryAutoLimit';
 import { resolveSqlDialect } from './sqlDialect';
 
@@ -7,6 +7,8 @@ export type QueryResultPaginationState = {
   pageSize: number;
   total: number;
   totalKnown?: boolean;
+  totalCountLoading?: boolean;
+  totalCountCancelled?: boolean;
   baseSql: string;
   exportAllSql?: string;
 };
@@ -20,6 +22,26 @@ type LimitInfo = {
 const normalizePositiveInteger = (value: unknown): number => {
   const parsed = Math.floor(Number(value));
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+};
+
+const MAX_SAFE_INTEGER_BIGINT = BigInt(Number.MAX_SAFE_INTEGER);
+
+const parseNonNegativeSafeInteger = (value: unknown): number | null => {
+  if (typeof value === 'bigint') {
+    return value >= 0n && value <= MAX_SAFE_INTEGER_BIGINT ? Number(value) : null;
+  }
+  if (typeof value === 'number') {
+    return Number.isSafeInteger(value) && value >= 0 ? value : null;
+  }
+  if (typeof value !== 'string') return null;
+  const text = value.trim();
+  if (!/^[+]?[0-9]+$/.test(text)) return null;
+  try {
+    const parsed = BigInt(text);
+    return parsed <= MAX_SAFE_INTEGER_BIGINT ? Number(parsed) : null;
+  } catch {
+    return null;
+  }
 };
 
 const normalizeSqlForComparison = (sql: string): string => (
@@ -102,24 +124,57 @@ const resolveWrappedBaseSql = (dbType: string, baseSql: string): string => {
   return `SELECT * FROM (${base}) AS __gonavi_query_page__`;
 };
 
+export const buildQueryResultCountSql = (baseSql: string): string => {
+  const mainSql = splitSqlTail(String(baseSql || '')).main.trim();
+  if (!mainSql) return '';
+  const orderByPos = findTopLevelKeyword(mainSql, 'order by');
+  const countBaseSql = (orderByPos >= 0 ? mainSql.slice(0, orderByPos) : mainSql).trim();
+  if (!countBaseSql) return '';
+  return `SELECT COUNT(*) AS __gonavi_total__ FROM (${countBaseSql}) __gonavi_query_count__`;
+};
+
+export const parseQueryResultTotalCount = (row: unknown): number | null => {
+  if (!row || typeof row !== 'object' || Array.isArray(row)) return null;
+  const entries = Object.entries(row as Record<string, unknown>);
+  if (entries.length === 0) return null;
+
+  for (const [key, value] of entries) {
+    const normalizedKey = key.trim().toLowerCase();
+    if (normalizedKey === '__gonavi_total__' || normalizedKey === 'total' || normalizedKey.includes('count')) {
+      const parsed = parseNonNegativeSafeInteger(value);
+      if (parsed !== null) return parsed;
+    }
+  }
+  for (const [, value] of entries) {
+    const parsed = parseNonNegativeSafeInteger(value);
+    if (parsed !== null) return parsed;
+  }
+  return null;
+};
+
 export const buildQueryResultPageSql = (params: {
   baseSql: string;
   dbType: string;
   driver?: string;
+  oceanBaseProtocol?: string;
   page: number;
   pageSize: number;
   lookahead?: boolean;
+  sortInfo?: Array<{ columnKey: string; order: string; enabled?: boolean }>;
 }): string => {
   const pageSize = normalizePositiveInteger(params.pageSize);
   if (pageSize <= 0) return String(params.baseSql || '').trim();
   const page = Math.max(1, Math.floor(Number(params.page) || 1));
   const limit = params.lookahead ? pageSize + 1 : pageSize;
   const offset = (page - 1) * pageSize;
-  const dialect = resolveSqlDialect(params.dbType || 'mysql', params.driver || '');
+  const dialect = resolveSqlDialect(params.dbType || 'mysql', params.driver || '', {
+    oceanBaseProtocol: params.oceanBaseProtocol || '',
+  });
+  const orderBySql = buildOrderBySQL(dialect, params.sortInfo || []);
   return buildPaginatedSelectSQL(
     dialect,
     resolveWrappedBaseSql(dialect, params.baseSql),
-    '',
+    orderBySql,
     limit,
     offset,
   );
@@ -188,13 +243,11 @@ export const createInitialQueryResultPagination = (params: {
     : explicitLimit?.baseSql || mainSql;
   if (!baseSql) return undefined;
 
-  const totalState = autoLimitCap
-    ? { total: returnedRowCount, totalKnown: true }
-    : resolveQueryResultPaginationTotal({
-      current,
-      pageSize,
-      rowCount: returnedRowCount,
-    });
+  const totalState = resolveQueryResultPaginationTotal({
+    current,
+    pageSize,
+    rowCount: returnedRowCount,
+  });
 
   return {
     current,

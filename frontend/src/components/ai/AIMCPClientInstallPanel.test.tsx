@@ -62,8 +62,9 @@ describe('AIMCPClientInstallPanel', () => {
       />,
     );
 
-    expect(markup).toContain('This connects GoNavi MCP to Claude Code / Codex / OpenClaw / Hermans');
+    expect(markup).toContain('This connects GoNavi MCP to Claude Code / Codex / OpenCode / OpenClaw / Hermans');
     expect(markup).toContain('external tool calls');
+    expect(markup).toContain('Claude Code, Codex, and OpenCode write local user-level MCP config');
     expect(markup).toContain('Cloud Agents such as OpenClaw and Hermans use remote connection guidance');
     expect(markup).toContain('Connect external client');
     expect(markup).toContain('Select external client');
@@ -81,6 +82,46 @@ describe('AIMCPClientInstallPanel', () => {
     expect(markup).toContain('CLI detection: Detected codex');
     expect(markup).toContain('Selected. Only this client will be written or updated');
     expect(markup).toContain('Current target client: Codex');
+  });
+
+  it('renders OpenCode as a local auto-install target', () => {
+    const openCodeStatus = {
+      client: 'opencode',
+      displayName: 'OpenCode',
+      installMode: 'auto' as const,
+      installed: false,
+      matchesCurrent: false,
+      clientDetected: false,
+      clientCommand: 'opencode',
+      message: 'No OpenCode user-level GoNavi MCP configuration was detected',
+      configPath: '/Users/mock/.config/opencode/opencode.json',
+      command: '/Applications/GoNavi.app/Contents/MacOS/GoNavi',
+      args: ['mcp-server'],
+    };
+    const markup = renderToStaticMarkup(
+      <AIMCPClientInstallPanel
+        statuses={[openCodeStatus]}
+        selectedClient="opencode"
+        selectedStatus={openCodeStatus}
+        selectedCommandText="/Applications/GoNavi.app/Contents/MacOS/GoNavi mcp-server"
+        darkMode={false}
+        overlayTheme={buildOverlayWorkbenchTheme(false)}
+        cardBg="#fff"
+        cardBorder="rgba(0,0,0,0.08)"
+        loading={false}
+        statusLoading={false}
+        onSelectClient={() => {}}
+        onRefreshStatus={() => {}}
+        onCopyConfigPath={() => {}}
+        onCopyLaunchCommand={() => {}}
+        onInstall={() => {}}
+      />,
+    );
+
+    expect(markup).toContain('Current target client: OpenCode');
+    expect(markup).toContain('CLI detection: opencode was not detected');
+    expect(markup).toContain('Install to OpenCode (external tool)');
+    expect(markup).not.toContain('Remote connection boundary:');
   });
 
   it('shows an already-connected label and supports prewriting config when the client command is not detected locally', () => {
@@ -191,7 +232,7 @@ describe('AIMCPClientInstallPanel', () => {
     expect(markup).toContain('Remote bridge');
     expect(markup).toContain('Selected. The remote connection guide will be copied');
     expect(markup).toContain('Remote connection boundary');
-    expect(markup).toContain('Cloud Agents read connection summaries, tables, and DDL through schema-only MCP tools by default');
+    expect(markup).toContain('Cloud Agents read connection summaries, object lists, tables, views, and DDL through schema-only MCP tools by default');
     expect(markup).toContain('execute_sql is not registered');
     expect(markup).toContain('OpenClaw Remote MCP quick setup');
     expect(markup).toContain('Public/tunnel URL');

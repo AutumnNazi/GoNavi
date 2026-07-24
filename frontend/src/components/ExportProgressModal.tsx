@@ -7,6 +7,7 @@ import {
 import { t } from '../i18n';
 import ExportProgressBar from './ExportProgressBar';
 import { useExportProgressRunner } from './useExportProgressRunner';
+import { APP_NESTED_MODAL_Z_INDEX } from '../utils/overlayZIndex';
 
 const { Text, Paragraph } = Typography;
 
@@ -21,6 +22,7 @@ export function useExportProgressDialog() {
         ? t('data_export.progress.title.error')
         : (state.status === 'done' ? t('data_export.progress.title.done') : t('data_export.progress.title.running'))}
       open={state.open}
+      zIndex={APP_NESTED_MODAL_Z_INDEX}
       width={560}
       mask={false}
       keyboard={canClose}

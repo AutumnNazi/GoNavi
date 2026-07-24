@@ -45,7 +45,7 @@ const AIMCPServerGuidePanel: React.FC<AIMCPServerGuidePanelProps> = ({
 
   return (
     <>
-    <div style={{ padding: '10px 12px', borderRadius: 10, border: `1px dashed ${cardBorder}`, background: darkMode ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.7)' }}>
+    <div style={{ padding: '2px 0 2px 12px', borderLeft: `3px solid ${overlayTheme.selectedText}`, background: 'transparent' }}>
       <div style={{ ...mcpLabelStyle, color: overlayTheme.titleText }}>{copy('ai_settings.mcp_server.guide.examples.title')}</div>
       <div style={{ ...buildMCPHintStyle(overlayTheme.mutedText), marginTop: 4 }}>
         {copy('ai_settings.mcp_server.guide.examples.description')}
@@ -54,7 +54,7 @@ const AIMCPServerGuidePanel: React.FC<AIMCPServerGuidePanelProps> = ({
       </div>
     </div>
 
-    <div style={{ padding: '12px 14px', borderRadius: 12, border: `1px solid ${cardBorder}`, background: darkMode ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.76)', display: 'flex', flexDirection: 'column', gap: 8 }}>
+    <div style={{ padding: '12px 0', borderBottom: `1px solid ${cardBorder}`, background: 'transparent', display: 'flex', flexDirection: 'column', gap: 8 }}>
       <div style={{ ...mcpLabelStyle, color: overlayTheme.titleText }}>{copy('ai_settings.mcp_server.guide.order.title')}</div>
       <div style={buildMCPHintStyle(overlayTheme.mutedText)}>
         {copy('ai_settings.mcp_server.guide.order.description')}
@@ -77,7 +77,7 @@ const AIMCPServerGuidePanel: React.FC<AIMCPServerGuidePanelProps> = ({
       </div>
     </div>
 
-    <div style={{ padding: '12px 14px', borderRadius: 12, border: `1px solid ${cardBorder}`, background: darkMode ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.76)', display: 'flex', flexDirection: 'column', gap: 10 }}>
+    <div style={{ padding: '12px 0', borderBottom: `1px solid ${cardBorder}`, background: 'transparent', display: 'flex', flexDirection: 'column', gap: 10 }}>
       <div style={{ ...mcpLabelStyle, color: overlayTheme.titleText }}>{copy('ai_settings.mcp_server.guide.field_lookup.title')}</div>
       <div style={buildMCPHintStyle(overlayTheme.mutedText)}>
         {copy('ai_settings.mcp_server.guide.field_lookup.description')}
@@ -95,7 +95,7 @@ const AIMCPServerGuidePanel: React.FC<AIMCPServerGuidePanelProps> = ({
       </div>
     </div>
 
-    <div style={{ padding: '12px 14px', borderRadius: 12, border: `1px solid ${cardBorder}`, background: darkMode ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.76)', display: 'flex', flexDirection: 'column', gap: 10 }}>
+    <div style={{ padding: '12px 0', borderBottom: `1px solid ${cardBorder}`, background: 'transparent', display: 'flex', flexDirection: 'column', gap: 10 }}>
       <div style={{ ...mcpLabelStyle, color: overlayTheme.titleText }}>{copy('ai_settings.mcp_server.guide.troubleshooting.title')}</div>
       <div style={buildMCPHintStyle(overlayTheme.mutedText)}>
         {copy('ai_settings.mcp_server.guide.troubleshooting.description')}
@@ -105,10 +105,9 @@ const AIMCPServerGuidePanel: React.FC<AIMCPServerGuidePanelProps> = ({
           <div
             key={item.key}
             style={{
-              padding: '10px 12px',
-              borderRadius: 10,
-              border: `1px solid ${cardBorder}`,
-              background: darkMode ? 'rgba(255,255,255,0.025)' : 'rgba(255,255,255,0.78)',
+              padding: '10px 10px 10px 0',
+              borderBottom: `1px solid ${cardBorder}`,
+              background: 'transparent',
               display: 'flex',
               flexDirection: 'column',
               gap: 6,
@@ -131,7 +130,7 @@ const AIMCPServerGuidePanel: React.FC<AIMCPServerGuidePanelProps> = ({
       </div>
     </div>
 
-    <div style={{ padding: '12px', borderRadius: 12, border: `1px solid ${cardBorder}`, background: darkMode ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.76)', display: 'flex', flexDirection: 'column', gap: 8 }}>
+    <div style={{ padding: '12px 0', borderBottom: `1px solid ${cardBorder}`, background: 'transparent', display: 'flex', flexDirection: 'column', gap: 8 }}>
       <div style={{ ...mcpLabelStyle, color: overlayTheme.titleText }}>{copy('ai_settings.mcp_server.guide.full_command.title')}</div>
       <div style={buildMCPHintStyle(overlayTheme.mutedText)}>
         {copy('ai_settings.mcp_server.guide.full_command.description')}

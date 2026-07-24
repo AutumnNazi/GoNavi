@@ -62,6 +62,17 @@ func TestBuildRenameSchemaSQL_PostgresQuotesIdentifiers(t *testing.T) {
 	}
 }
 
+func TestBuildRenameSchemaSQL_PostgresAllowsCaseOnlyRename(t *testing.T) {
+	got, err := buildRenameSchemaSQL("postgresql", "sales", "SALES")
+	if err != nil {
+		t.Fatalf("expected postgres case-only schema rename SQL, got error: %v", err)
+	}
+	const want = `ALTER SCHEMA "sales" RENAME TO "SALES"`
+	if got != want {
+		t.Fatalf("unexpected case-only rename schema SQL, want %q got %q", want, got)
+	}
+}
+
 func TestBuildDropSchemaSQL_PostgresUsesCascade(t *testing.T) {
 	got, err := buildDropSchemaSQL("postgresql", `sales"ops`)
 	if err != nil {

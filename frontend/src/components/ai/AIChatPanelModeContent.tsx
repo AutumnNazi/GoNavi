@@ -21,6 +21,7 @@ interface AIChatPanelModeContentProps {
   insights: AIChatInsightItem[];
   sessions: AIChatInlineHistorySession[];
   activeSessionId: string;
+  sessionActionsDisabled?: boolean;
   onSelectSession: (sessionId: string) => void;
 }
 
@@ -39,6 +40,7 @@ const AIChatPanelModeContent: React.FC<AIChatPanelModeContentProps> = ({
   insights,
   sessions,
   activeSessionId,
+  sessionActionsDisabled = false,
   onSelectSession,
 }) => {
   const { t } = useI18n();
@@ -75,6 +77,7 @@ const AIChatPanelModeContent: React.FC<AIChatPanelModeContentProps> = ({
             key={session.id}
             type="button"
             className={`gn-v2-ai-history-card${session.id === activeSessionId ? ' is-active' : ''}`}
+            disabled={sessionActionsDisabled}
             onClick={() => onSelectSession(session.id)}
           >
             <span>

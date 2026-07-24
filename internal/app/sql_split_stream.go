@@ -26,6 +26,15 @@ type sqlStreamSplitter struct {
 	closedPLSQL    bool
 }
 
+func (s *sqlStreamSplitter) takeStatement() string {
+	stmt := strings.TrimSpace(s.cur.String())
+	s.cur.Reset()
+	if !hasExecutableSQLStatementContent("", stmt) {
+		return ""
+	}
+	return stmt
+}
+
 // Feed 将一个 chunk 喂入拆分器，返回在此 chunk 中完成的 SQL 语句列表。
 func (s *sqlStreamSplitter) Feed(chunk []byte) []string {
 	var statements []string
@@ -209,11 +218,10 @@ func (s *sqlStreamSplitter) Feed(chunk []byte) []string {
 					s.pending = text[i:]
 					break
 				}
-				stmt := strings.TrimSpace(s.cur.String())
+				stmt := s.takeStatement()
 				if stmt != "" {
 					statements = append(statements, stmt)
 				}
-				s.cur.Reset()
 				s.closedPLSQL = false
 				i = lineEnd
 				continue
@@ -254,19 +262,17 @@ func (s *sqlStreamSplitter) Feed(chunk []byte) []string {
 			}
 			if s.closedPLSQL {
 				s.cur.WriteByte(ch)
-				stmt := strings.TrimSpace(s.cur.String())
+				stmt := s.takeStatement()
 				if stmt != "" {
 					statements = append(statements, stmt)
 				}
-				s.cur.Reset()
 				s.closedPLSQL = false
 				continue
 			}
-			stmt := strings.TrimSpace(s.cur.String())
+			stmt := s.takeStatement()
 			if stmt != "" {
 				statements = append(statements, stmt)
 			}
-			s.cur.Reset()
 			continue
 		}
 		// 全角分号
@@ -282,20 +288,18 @@ func (s *sqlStreamSplitter) Feed(chunk []byte) []string {
 			}
 			if s.closedPLSQL {
 				s.cur.WriteString("；")
-				stmt := strings.TrimSpace(s.cur.String())
+				stmt := s.takeStatement()
 				if stmt != "" {
 					statements = append(statements, stmt)
 				}
-				s.cur.Reset()
 				s.closedPLSQL = false
 				i += 2
 				continue
 			}
-			stmt := strings.TrimSpace(s.cur.String())
+			stmt := s.takeStatement()
 			if stmt != "" {
 				statements = append(statements, stmt)
 			}
-			s.cur.Reset()
 			i += 2
 			continue
 		}
@@ -312,8 +316,7 @@ func (s *sqlStreamSplitter) Flush() string {
 		if (s.closedPLSQL || strings.TrimSpace(s.cur.String()) == "") && sqlStreamCurrentLineWhitespaceOnly(&s.cur) {
 			if _, standalone, _ := scanSQLStandaloneSlashLineSuffix(s.pending, 0); standalone {
 				s.pending = ""
-				stmt := strings.TrimSpace(s.cur.String())
-				s.cur.Reset()
+				stmt := s.takeStatement()
 				s.closedPLSQL = false
 				return stmt
 			}
@@ -321,8 +324,7 @@ func (s *sqlStreamSplitter) Flush() string {
 		s.cur.WriteString(s.pending)
 		s.pending = ""
 	}
-	stmt := strings.TrimSpace(s.cur.String())
-	s.cur.Reset()
+	stmt := s.takeStatement()
 	if stmt == "/" {
 		return ""
 	}

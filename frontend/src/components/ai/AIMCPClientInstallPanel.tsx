@@ -41,7 +41,6 @@ const AIMCPClientInstallPanel: React.FC<AIMCPClientInstallPanelProps> = ({
   selectedCommandText,
   darkMode,
   overlayTheme,
-  cardBg,
   cardBorder,
   loading,
   statusLoading,
@@ -61,43 +60,14 @@ const AIMCPClientInstallPanel: React.FC<AIMCPClientInstallPanelProps> = ({
   const selectedIsRemoteClient = isRemoteMCPClientStatus(selectedStatus);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+    <div className="gonavi-ai-mcp-client-panel" style={{ padding: '14px 0', borderBottom: `1px solid ${cardBorder}`, display: 'flex', flexDirection: 'column' }}>
       <div
         style={{
-          padding: '16px',
-          borderRadius: 14,
-          border: `1px solid ${cardBorder}`,
-          background: cardBg,
           display: 'flex',
           flexDirection: 'column',
-          gap: 14,
+          gap: 10,
         }}
       >
-        <div
-          style={{
-            padding: '12px 14px',
-            borderRadius: 12,
-            border: `1px solid ${darkMode ? 'rgba(96,165,250,0.16)' : 'rgba(96,165,250,0.18)'}`,
-            background: darkMode ? 'rgba(59,130,246,0.08)' : 'rgba(59,130,246,0.05)',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 6,
-          }}
-        >
-          <div style={{ fontWeight: 700, fontSize: 13, color: overlayTheme.titleText }}>
-            {copy(
-              'ai_chat.mcp_client.install.intro.title',
-              'This connects GoNavi MCP to Claude Code / Codex / OpenClaw / Hermans for external tool calls. It is not installing a plugin into GoNavi itself.',
-            )}
-          </div>
-          <div style={{ fontSize: 12, color: overlayTheme.mutedText, lineHeight: 1.7 }}>
-            {copy(
-              'ai_chat.mcp_client.install.intro.description',
-              'Claude Code and Codex write local user-level MCP config. Cloud Agents such as OpenClaw and Hermans use remote connection guidance so database passwords are not copied to the cloud.',
-            )}
-          </div>
-        </div>
-
         <AIMCPClientSelectorPanel
           statuses={statuses}
           selectedClient={selectedClient}
@@ -120,8 +90,15 @@ const AIMCPClientInstallPanel: React.FC<AIMCPClientInstallPanelProps> = ({
           onCopyLaunchCommand={onCopyLaunchCommand}
         />
 
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-          <div style={{ fontSize: 12, color: overlayTheme.mutedText, lineHeight: 1.6 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
+          <div
+            className="gonavi-ai-mcp-line-clamp"
+            title={`${getMCPClientDetectionSummary(selectedStatus, t)}${!selectedIsRemoteClient ? ` ${copy(
+              'ai_chat.mcp_client.install.repeat_avoidance',
+              'When already connected to this GoNavi, the main button is disabled to avoid repeated writes.',
+            )}` : ''}`}
+            style={{ minWidth: 0, fontSize: 'var(--gn-font-size-sm, 12px)', color: overlayTheme.mutedText, lineHeight: 1.5 }}
+          >
             {getMCPClientDetectionSummary(selectedStatus, t)}
             {!selectedIsRemoteClient && (
               <>
@@ -133,15 +110,33 @@ const AIMCPClientInstallPanel: React.FC<AIMCPClientInstallPanelProps> = ({
               </>
             )}
           </div>
-          <Button
-            type={selectedStatus?.matchesCurrent ? 'default' : 'primary'}
-            onClick={onInstall}
-            loading={loading}
-            disabled={Boolean(selectedStatus?.matchesCurrent)}
-            style={{ borderRadius: 10, fontWeight: 600, width: 208, maxWidth: '100%', height: 40 }}
-          >
-            {resolveMCPClientInstallActionLabel(selectedStatus, t)}
-          </Button>
+          {selectedStatus?.matchesCurrent ? (
+            <span
+              role="status"
+              style={{
+                padding: '3px 9px',
+                borderRadius: 999,
+                color: overlayTheme.selectedText,
+                background: overlayTheme.selectedBg,
+                fontSize: 'var(--gn-font-size-sm, 12px)',
+                fontWeight: 700,
+                lineHeight: 1.5,
+                whiteSpace: 'nowrap',
+                flexShrink: 0,
+              }}
+            >
+              {resolveMCPClientInstallActionLabel(selectedStatus, t)}
+            </span>
+          ) : (
+            <Button
+              type="primary"
+              onClick={onInstall}
+              loading={loading}
+              style={{ fontWeight: 600, maxWidth: '44%', flexShrink: 0 }}
+            >
+              {resolveMCPClientInstallActionLabel(selectedStatus, t)}
+            </Button>
+          )}
         </div>
       </div>
     </div>

@@ -1,15 +1,14 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
-const source = readFileSync(new URL('./sidebar/useSidebarBatchExport.ts', import.meta.url), 'utf8');
+const source = readFileSync(new URL('./TableExportWorkbench.tsx', import.meta.url), 'utf8');
+const runnerSource = readFileSync(new URL('./useExportProgressRunner.ts', import.meta.url), 'utf8');
 const locales = ['zh-CN', 'zh-TW', 'en-US', 'ja-JP', 'de-DE', 'ru-RU'] as const;
 const requiredKeys = [
-  'sidebar.message.load_database_list_failed',
-  'sidebar.message.select_database_required',
-  'sidebar.message.exporting_database_schema',
-  'sidebar.message.exporting_database_backup',
-  'sidebar.message.database_export_success',
-  'sidebar.message.database_export_failed',
+  'data_export.message.load_databases_failed',
+  'data_export.message.already_running',
+  'data_export.message.export_success',
+  'data_export.message.export_failed',
   'sidebar.modal.confirm_delete_selected_databases.title',
   'sidebar.modal.confirm_delete_selected_databases.content',
   'sidebar.message.deleting_selected_databases',
@@ -18,16 +17,16 @@ const requiredKeys = [
 ] as const;
 
 const extractBatchDatabaseExportBlock = (): string => {
-  const start = source.indexOf('const loadDatabasesForDbBatch = async');
-  const end = source.indexOf('const handleCheckAllDb = (checked: boolean)', start);
+  const start = source.indexOf('const handleStartBatchDatabasesExport = async');
+  const end = source.indexOf('const handleStartDirectDatabaseExport = async', start);
   expect(start).toBeGreaterThanOrEqual(0);
   expect(end).toBeGreaterThan(start);
   return source.slice(start, end);
 };
 
 const extractHandleBatchDbDeleteBlock = (): string => {
-  const start = source.indexOf('const handleBatchDbDelete = async');
-  const end = source.indexOf('const handleCheckAllDb = (checked: boolean)', start);
+  const start = source.indexOf('const handleDeleteSelectedDatabases = async');
+  const end = source.indexOf('const handleStartSingleExport = async', start);
   expect(start).toBeGreaterThanOrEqual(0);
   expect(end).toBeGreaterThan(start);
   return source.slice(start, end);
@@ -38,44 +37,38 @@ const placeholders = (value: string): string[] => [...value.matchAll(/\{\{(\w+)\
   .sort();
 
 describe('Sidebar batch database export feedback i18n', () => {
-  it('localizes batch database export list loading, selection, progress, success, and failure wrappers', () => {
+  it('loads databases and routes selected targets through the retained progress runner', () => {
     const block = extractBatchDatabaseExportBlock();
 
-    expect(block).not.toContain("'获取数据库列表失败: ' + res.message");
-    expect(block).not.toContain("message.warning('请至少选择一个数据库')");
-    expect(block).not.toContain('`正在备份数据库 ${db.dbName} (结构+数据)...`');
-    expect(block).not.toContain('`正在导出数据库 ${db.dbName} 表结构...`');
-    expect(block).not.toContain('`${db.dbName} 导出成功`');
-    expect(block).not.toContain('`${db.dbName} 导出失败: ` + res.message');
-    expect(block).not.toContain('`${db.dbName} 导出失败: ` + (e?.message || String(e))');
-    expect(block).toContain("t('sidebar.message.load_database_list_failed'");
-    expect(block).toContain("t('sidebar.message.select_database_required')");
-    expect(block).toContain("t('sidebar.message.exporting_database_backup'");
-    expect(block).toContain("t('sidebar.message.exporting_database_schema'");
-    expect(block).toContain("t('sidebar.message.database_export_success'");
-    expect(block).toContain("t('sidebar.message.database_export_failed'");
-    expect(block).toContain('database: db.dbName');
-    expect(block).toContain('error: res.message');
-    expect(block).toContain('error: e?.message || String(e)');
-    expect(block).toContain("res.message !== '已取消'");
+    expect(source).toContain('DBGetDatabases(');
+    expect(source).toContain("res.message || t('data_export.message.load_databases_failed')");
+    expect(source).toContain("error?.message || t('data_export.message.load_databases_failed')");
+    expect(block).toContain('selectedDatabaseNames.length === 0');
+    expect(block).toContain("batchDatabaseMode === 'backup'");
+    expect(block).toContain('await runExportWithProgress({');
+    expect(block).toContain('ExportDatabasesSQLWithOptions(');
+    expect(block).toContain('selectedDatabaseNames,');
+    expect(block).toContain('includeDropIfExists,');
+    expect(runnerSource).toContain("message.warning(t('data_export.message.already_running'))");
+    expect(runnerSource).toContain("message.success(t('data_export.message.export_success'))");
+    expect(runnerSource).toContain("message.error(t('data_export.message.export_failed', { error: result.message }))");
   });
 
-  it('localizes handleBatchDbDelete confirmation, loading, success, and failure wrappers', () => {
+  it('localizes database deletion confirmation, loading, success, and failure wrappers', () => {
     const block = extractHandleBatchDbDeleteBlock();
 
     expect(block).toContain('DropDatabase');
-    expect(block).toContain("t('sidebar.message.select_database_required')");
     expect(block).toContain("t('sidebar.modal.confirm_delete_selected_databases.title')");
     expect(block).toContain("t('sidebar.modal.confirm_delete_selected_databases.content'");
-    expect(block).toContain("t('sidebar.action.delete')");
-    expect(block).toContain('okButtonProps: { danger: true }');
-    expect(block).toContain("t('sidebar.action.cancel')");
     expect(block).toContain("t('sidebar.message.deleting_selected_databases'");
     expect(block).toContain("t('sidebar.message.delete_databases_success'");
     expect(block).toContain("t('sidebar.message.delete_databases_failed'");
-    expect(block).toContain('connection: batchConnContext.name');
-    expect(block).toContain('count: selectedDbs.length');
-    expect(block).toContain('count: successKeys.length');
+    expect(source).toContain("okText: options.okText || t('sidebar.action.delete')");
+    expect(source).toContain('okButtonProps: { danger: true }');
+    expect(source).toContain("cancelText: t('sidebar.action.cancel')");
+    expect(block).toContain('connection: connection?.name || effectiveConnectionId');
+    expect(block).toContain('count: selectedDatabaseNames.length');
+    expect(block).toContain('count: succeededNames.length');
     expect(block).toContain('database: failed.database');
     expect(block).toContain('error: failed.error');
   });
@@ -86,12 +79,10 @@ describe('Sidebar batch database export feedback i18n', () => {
       requiredKeys.forEach((key) => {
         expect(catalog[key], `${locale}:${key}`).toBeTruthy();
       });
-      expect(placeholders(catalog['sidebar.message.load_database_list_failed'])).toEqual(['error']);
-      expect(placeholders(catalog['sidebar.message.select_database_required'])).toEqual([]);
-      expect(placeholders(catalog['sidebar.message.exporting_database_schema'])).toEqual(['database']);
-      expect(placeholders(catalog['sidebar.message.exporting_database_backup'])).toEqual(['database']);
-      expect(placeholders(catalog['sidebar.message.database_export_success'])).toEqual(['database']);
-      expect(placeholders(catalog['sidebar.message.database_export_failed'])).toEqual(['database', 'error']);
+      expect(placeholders(catalog['data_export.message.load_databases_failed'])).toEqual([]);
+      expect(placeholders(catalog['data_export.message.already_running'])).toEqual([]);
+      expect(placeholders(catalog['data_export.message.export_success'])).toEqual([]);
+      expect(placeholders(catalog['data_export.message.export_failed'])).toEqual(['error']);
       expect(placeholders(catalog['sidebar.modal.confirm_delete_selected_databases.title'])).toEqual([]);
       expect(placeholders(catalog['sidebar.modal.confirm_delete_selected_databases.content'])).toEqual(['connection', 'count']);
       expect(placeholders(catalog['sidebar.message.deleting_selected_databases'])).toEqual(['count']);

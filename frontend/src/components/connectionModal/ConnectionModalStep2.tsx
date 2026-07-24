@@ -2590,6 +2590,7 @@ const ConnectionModalStep2: React.FC<ConnectionModalStep2Props> = (props) => {
         timeout: 30,
         keepAliveEnabled: false,
         keepAliveIntervalMinutes: 240,
+        keepAliveSQL: "",
         uri: "",
         connectionParams: "",
         restrictDataEdit: false,

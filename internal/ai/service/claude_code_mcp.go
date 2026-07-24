@@ -19,6 +19,7 @@ const (
 	defaultCodexMCPStartupTimeoutSecond = 60
 	claudeCodeClientCommandName         = "claude"
 	codexClientCommandName              = "codex"
+	openCodeClientCommandName           = "opencode"
 )
 
 type mcpClientInstallTextFunc func(string, map[string]any) string
@@ -71,6 +72,7 @@ func (s *Service) AIGetMCPClientInstallStatuses() []ai.MCPClientInstallStatus {
 	return []ai.MCPClientInstallStatus{
 		inspectClaudeCodeMCPInstallStatus(command, args, resolveErr, s.serviceText),
 		inspectCodexMCPInstallStatus(command, args, resolveErr, s.serviceText),
+		inspectOpenCodeMCPInstallStatus(command, args, resolveErr, s.serviceText),
 		buildRemoteMCPClientInstallStatus("openclaw", "OpenClaw", s.serviceText),
 		buildRemoteMCPClientInstallStatus("hermans", "Hermans", s.serviceText),
 	}
@@ -171,6 +173,9 @@ func (s *Service) repairInstalledLocalMCPClientConfigs() error {
 	}
 	if err := repairCodexMCPClientConfig(command, args, s.serviceText); err != nil {
 		repairErrors = append(repairErrors, fmt.Errorf("Codex: %w", err))
+	}
+	if err := repairOpenCodeMCPClientConfig(command, args, s.serviceText); err != nil {
+		repairErrors = append(repairErrors, fmt.Errorf("OpenCode: %w", err))
 	}
 	return errors.Join(repairErrors...)
 }

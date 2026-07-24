@@ -1,6 +1,6 @@
 import type { CSSProperties } from 'react';
 
-export const SIDEBAR_UTILITY_ITEM_KEYS = ['tools', 'settings'] as const;
+export const SIDEBAR_UTILITY_ITEM_KEYS = ['settings'] as const;
 
 export type AIEntryPlacement = 'content-edge';
 export type LegacyAIEdgeHandleAttachment = 'content-shell' | 'panel-shell';

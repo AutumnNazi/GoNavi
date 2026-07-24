@@ -96,6 +96,21 @@ describe('AIChatPanelModeContent', () => {
     expect(markup).not.toContain('新对话');
   });
 
+  it('disables history session switches while a response is streaming', () => {
+    const markup = renderWithI18n(
+      <AIChatPanelModeContent
+        mode="history"
+        insights={[]}
+        sessions={[{ id: 'session-2', title: 'Another session', updatedAt: 1710000000000 }]}
+        activeSessionId="session-1"
+        sessionActionsDisabled
+        onSelectSession={() => {}}
+      />,
+    );
+
+    expect(markup).toContain('disabled=""');
+  });
+
   it('keeps source wired to ai_chat panel history i18n keys', () => {
     expect(source).toContain("import { useI18n } from '../../i18n/provider';");
     expect(source).toContain("t('ai_chat.panel.history.empty')");

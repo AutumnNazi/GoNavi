@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { DBGetColumns, DBGetForeignKeys, DBGetIndexes, DBGetTables } from '../../wailsjs/go/app/App';
 import type { ColumnDefinition, ForeignKeyDefinition } from '../types';
+import { createBoundedAsyncCache } from '../utils/boundedAsyncCache';
 import { buildRpcConnectionConfig } from '../utils/connectionRpcConfig';
 import { normalizeColumnDefinitions } from '../utils/columnDefinition';
 import { resolveUniqueKeyGroupsFromIndexes } from './dataGridCopyInsert';
@@ -33,12 +34,13 @@ type DataGridErDiagramState = {
   canExpandRelations: boolean;
 };
 
-type CacheValue<T> = T | Promise<T>;
+const ER_SCHEMA_CACHE_MAX_ENTRIES = 32;
+const ER_TABLE_METADATA_CACHE_MAX_ENTRIES = 256;
 
-const schemaTableNamesCache = new Map<string, CacheValue<string[]>>();
-const tableColumnsCache = new Map<string, CacheValue<ColumnDefinition[]>>();
-const tableForeignKeysCache = new Map<string, CacheValue<ForeignKeyDefinition[]>>();
-const tableUniqueKeyGroupsCache = new Map<string, CacheValue<string[][]>>();
+const schemaTableNamesCache = createBoundedAsyncCache<string[]>(ER_SCHEMA_CACHE_MAX_ENTRIES);
+const tableColumnsCache = createBoundedAsyncCache<ColumnDefinition[]>(ER_TABLE_METADATA_CACHE_MAX_ENTRIES);
+const tableForeignKeysCache = createBoundedAsyncCache<ForeignKeyDefinition[]>(ER_TABLE_METADATA_CACHE_MAX_ENTRIES);
+const tableUniqueKeyGroupsCache = createBoundedAsyncCache<string[][]>(ER_TABLE_METADATA_CACHE_MAX_ENTRIES);
 
 const DEFAULT_EMPTY_STATE: DataGridErDiagramState = {
   graph: null,
@@ -59,39 +61,9 @@ const normalizeConnectionConfig = (connection: any) => ({
   ssh: connection?.config?.ssh || { host: '', port: 22, user: '', password: '', keyPath: '' },
 });
 
-const readCache = async <T>(
-  cache: Map<string, CacheValue<T>>,
-  key: string,
-  loader: () => Promise<T>,
-): Promise<T> => {
-  const cached = cache.get(key);
-  if (cached instanceof Promise) {
-    return cached;
-  }
-  if (cached !== undefined) {
-    return cached;
-  }
-
-  const pending = loader()
-    .then((value) => {
-      cache.set(key, value);
-      return value;
-    })
-    .catch((error) => {
-      cache.delete(key);
-      throw error;
-    });
-  cache.set(key, pending);
-  return pending;
-};
-
 const invalidateCacheByPrefix = (prefix: string) => {
   [schemaTableNamesCache, tableColumnsCache, tableForeignKeysCache, tableUniqueKeyGroupsCache].forEach((cache) => {
-    Array.from(cache.keys()).forEach((key) => {
-      if (key.startsWith(prefix)) {
-        cache.delete(key);
-      }
-    });
+    cache.invalidatePrefix(prefix);
   });
 };
 
@@ -133,7 +105,7 @@ const loadSchemaTableNames = async (
   config: any,
   dbName: string,
   schemaCacheKey: string,
-): Promise<string[]> => readCache(schemaTableNamesCache, schemaCacheKey, async () => {
+): Promise<string[]> => schemaTableNamesCache.getOrLoad(schemaCacheKey, async () => {
   const response = await DBGetTables(buildRpcConnectionConfig(config) as any, dbName);
   if (!response?.success) {
     throw new Error(response?.message || 'Failed to load tables');
@@ -146,7 +118,7 @@ const loadTableColumns = async (
   dbName: string,
   tableName: string,
   cacheKey: string,
-): Promise<ColumnDefinition[]> => readCache(tableColumnsCache, cacheKey, async () => {
+): Promise<ColumnDefinition[]> => tableColumnsCache.getOrLoad(cacheKey, async () => {
   const response = await DBGetColumns(buildRpcConnectionConfig(config) as any, dbName, tableName);
   if (!response?.success) {
     throw new Error(response?.message || `Failed to load columns for ${tableName}`);
@@ -159,7 +131,7 @@ const loadTableForeignKeys = async (
   dbName: string,
   tableName: string,
   cacheKey: string,
-): Promise<ForeignKeyDefinition[]> => readCache(tableForeignKeysCache, cacheKey, async () => {
+): Promise<ForeignKeyDefinition[]> => tableForeignKeysCache.getOrLoad(cacheKey, async () => {
   const response = await DBGetForeignKeys(buildRpcConnectionConfig(config) as any, dbName, tableName);
   if (!response?.success) {
     throw new Error(response?.message || `Failed to load foreign keys for ${tableName}`);
@@ -172,7 +144,7 @@ const loadTableUniqueKeyGroups = async (
   dbName: string,
   tableName: string,
   cacheKey: string,
-): Promise<string[][]> => readCache(tableUniqueKeyGroupsCache, cacheKey, async () => {
+): Promise<string[][]> => tableUniqueKeyGroupsCache.getOrLoad(cacheKey, async () => {
   const response = await DBGetIndexes(buildRpcConnectionConfig(config) as any, dbName, tableName);
   if (!response?.success || !Array.isArray(response.data)) {
     return [];

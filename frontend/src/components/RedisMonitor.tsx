@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useCallback, useState, useEffect, useRef } from 'react';
 import { Card, Row, Col, Statistic, Button, Tag, Typography, Spin } from 'antd';
 import { AreaChart, Area, XAxis, YAxis, Tooltip as RechartsTooltip, ResponsiveContainer, CartesianGrid, Legend, LineChart, Line } from 'recharts';
 import {
@@ -22,6 +22,7 @@ const { Title, Text } = Typography;
 interface RedisMonitorProps {
   connectionId: string;
   redisDB: number;
+  isActive?: boolean;
 }
 
 // Data point for charts
@@ -38,14 +39,18 @@ interface MetricPoint {
 }
 
 const MAX_HISTORY_POINTS = 60; // Keep up to 60 data points
+const POLL_INTERVAL_MS = 2000;
 
-const RedisMonitor: React.FC<RedisMonitorProps> = ({ connectionId, redisDB }) => {
+const RedisMonitor: React.FC<RedisMonitorProps> = ({ connectionId, redisDB, isActive = true }) => {
   const connections = useStore(state => state.connections);
   const theme = useStore(state => state.theme);
   const darkMode = theme === 'dark';
   const i18n = useOptionalI18n();
   const i18nLanguage = i18n?.language;
-  const tr = (key: string, params?: I18nParams) => t(key, params, i18nLanguage);
+  const tr = useCallback(
+    (key: string, params?: I18nParams) => t(key, params, i18nLanguage),
+    [i18nLanguage],
+  );
 
   const [isRunning, setIsRunning] = useState(true);
   const [loading, setLoading] = useState(true);
@@ -55,22 +60,30 @@ const RedisMonitor: React.FC<RedisMonitorProps> = ({ connectionId, redisDB }) =>
   const [currentInfo, setCurrentInfo] = useState<Record<string, string>>({});
   
   // Ref to track if component is mounted to prevent state updates after unmount
-  const mountedRef = useRef(true);
-  // Interval ref
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const mountedRef = useRef(false);
+  const monitorActiveRef = useRef(false);
+  const autoRefreshEnabledRef = useRef(false);
+  const pollingGenerationRef = useRef(0);
+  const inFlightGenerationsRef = useRef(new Set<number>());
+  const nextPollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const requestMetricsRef = useRef<(generation: number) => Promise<void>>(async () => undefined);
   const connection = connections.find((c: SavedConnection) => c.id === connectionId);
-  const formatFetchError = (detail?: unknown) => tr('redis_monitor.message.fetch_failed', {
+  const formatFetchError = useCallback((detail?: unknown) => tr('redis_monitor.message.fetch_failed', {
     detail: String(detail || tr('common.unknown')),
-  });
+  }), [tr]);
 
-  const fetchMetrics = async () => {
+  const fetchMetrics = useCallback(async (generation: number) => {
     if (!connection) return;
 
     try {
       const config = buildRpcConnectionConfig(connection.config, { redisDB });
       const res = await RedisGetServerInfo(config);
       
-      if (!mountedRef.current) return;
+      if (
+        !mountedRef.current
+        || !monitorActiveRef.current
+        || generation !== pollingGenerationRef.current
+      ) return;
 
       if (!res.success) {
         setError(formatFetchError(res.message));
@@ -124,38 +137,83 @@ const RedisMonitor: React.FC<RedisMonitorProps> = ({ connectionId, redisDB }) =>
         return next;
       });
 
-      if (loading) setLoading(false);
+      setLoading(false);
 
     } catch (err: any) {
-      if (mountedRef.current) {
+      if (
+        mountedRef.current
+        && monitorActiveRef.current
+        && generation === pollingGenerationRef.current
+      ) {
         setError(formatFetchError(err?.message || err));
-        if (loading) setLoading(false);
+        setLoading(false);
       }
     }
-  };
+  }, [connection, formatFetchError, redisDB]);
+
+  const clearNextPollTimer = useCallback(() => {
+    if (nextPollTimerRef.current === null) return;
+    clearTimeout(nextPollTimerRef.current);
+    nextPollTimerRef.current = null;
+  }, []);
+
+  const requestMetrics = useCallback(async (generation: number) => {
+    if (
+      !monitorActiveRef.current
+      || generation !== pollingGenerationRef.current
+      || inFlightGenerationsRef.current.has(generation)
+    ) return;
+
+    clearNextPollTimer();
+    inFlightGenerationsRef.current.add(generation);
+    try {
+      await fetchMetrics(generation);
+    } finally {
+      inFlightGenerationsRef.current.delete(generation);
+      if (
+        mountedRef.current
+        && monitorActiveRef.current
+        && autoRefreshEnabledRef.current
+        && generation === pollingGenerationRef.current
+      ) {
+        nextPollTimerRef.current = setTimeout(() => {
+          nextPollTimerRef.current = null;
+          void requestMetricsRef.current(generation);
+        }, POLL_INTERVAL_MS);
+      }
+    }
+  }, [clearNextPollTimer, fetchMetrics]);
+  requestMetricsRef.current = requestMetrics;
 
   useEffect(() => {
     mountedRef.current = true;
-    fetchMetrics(); // initial fetch
     return () => {
       mountedRef.current = false;
-      if (intervalRef.current) clearInterval(intervalRef.current);
+      monitorActiveRef.current = false;
+      autoRefreshEnabledRef.current = false;
+      pollingGenerationRef.current += 1;
+      inFlightGenerationsRef.current.clear();
+      clearNextPollTimer();
     };
-  }, []);
+  }, [clearNextPollTimer]);
 
   useEffect(() => {
-    if (intervalRef.current) {
-      clearInterval(intervalRef.current);
-    }
-    
-    if (isRunning) {
-      intervalRef.current = setInterval(fetchMetrics, 2000); // 2 second interval
-    }
-    
+    clearNextPollTimer();
+    const generation = ++pollingGenerationRef.current;
+    const monitorActive = isActive && Boolean(connection);
+    monitorActiveRef.current = monitorActive;
+    autoRefreshEnabledRef.current = monitorActive && isRunning;
+    if (autoRefreshEnabledRef.current) void requestMetricsRef.current(generation);
+
     return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
+      if (pollingGenerationRef.current !== generation) return;
+      pollingGenerationRef.current += 1;
+      monitorActiveRef.current = false;
+      autoRefreshEnabledRef.current = false;
+      inFlightGenerationsRef.current.delete(generation);
+      clearNextPollTimer();
     };
-  }, [isRunning, connectionId, redisDB, connection, i18nLanguage]);
+  }, [clearNextPollTimer, connection, isActive, isRunning, requestMetrics]);
 
   if (!connection) {
     return <div style={{ padding: 20 }}>{tr('redis_monitor.state.connection_not_found')}</div>;
@@ -207,7 +265,10 @@ const RedisMonitor: React.FC<RedisMonitorProps> = ({ connectionId, redisDB }) =>
           >
             {isRunning ? tr('redis_monitor.action.pause_refresh') : tr('redis_monitor.action.resume_refresh')}
           </Button>
-          <Button icon={<ReloadOutlined />} onClick={fetchMetrics}>
+          <Button
+            icon={<ReloadOutlined />}
+            onClick={() => { void requestMetricsRef.current(pollingGenerationRef.current); }}
+          >
             {tr('redis_monitor.action.refresh_now')}
           </Button>
         </div>

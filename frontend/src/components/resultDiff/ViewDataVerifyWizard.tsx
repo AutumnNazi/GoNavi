@@ -4,13 +4,13 @@ import {
   Checkbox,
   Input,
   InputNumber,
-  Modal,
   Select,
   Space,
   Steps,
   Typography,
   message,
 } from 'antd';
+import Modal from '../common/ResizableDraggableModal';
 import { DBQuery } from '../../../wailsjs/go/app/App';
 import { t as defaultTranslate } from '../../i18n';
 import { useOptionalI18n } from '../../i18n/provider';

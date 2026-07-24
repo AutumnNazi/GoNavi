@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -1076,6 +1077,54 @@ func TestBuildExportedConnectionPackageCarriesRedisDbAliases(t *testing.T) {
 	}
 	if payload.RedisDbAliases["redis-1"]["1"] != "sessions" {
 		t.Fatalf("expected top-level alias sessions, got %#v", payload.RedisDbAliases)
+	}
+}
+
+func TestConnectionPackageRoundTripPreservesSchemaVisibilityByDatabase(t *testing.T) {
+	sourceApp := NewAppWithSecretStore(newFakeAppSecretStore())
+	sourceApp.configDir = t.TempDir()
+
+	expected := map[string]connection.SchemaVisibilityRule{
+		"master": {
+			Mode:    "exclude",
+			Schemas: []string{"db_accessadmin", "db_backupoperator"},
+		},
+		"appdb": {
+			Mode:    "include",
+			Schemas: []string{"dbo", "reporting"},
+		},
+	}
+	_, err := sourceApp.SaveConnection(connection.SavedConnectionInput{
+		ID:                         "mssql-1",
+		Name:                       "SQL Server",
+		SchemaVisibilityByDatabase: expected,
+		Config: connection.ConnectionConfig{
+			ID:   "mssql-1",
+			Type: "mssql",
+			Host: "db.local",
+			Port: 1433,
+		},
+	})
+	if err != nil {
+		t.Fatalf("SaveConnection returned error: %v", err)
+	}
+
+	raw, err := sourceApp.buildExportedConnectionPackage(ConnectionExportOptions{IncludeSecrets: false})
+	if err != nil {
+		t.Fatalf("buildExportedConnectionPackage returned error: %v", err)
+	}
+
+	importApp := NewAppWithSecretStore(newFakeAppSecretStore())
+	importApp.configDir = t.TempDir()
+	importedResult, err := importApp.ImportConnectionsPayload(string(raw), "")
+	if err != nil {
+		t.Fatalf("ImportConnectionsPayload returned error: %v", err)
+	}
+	if len(importedResult.Connections) != 1 {
+		t.Fatalf("expected one imported connection, got %d", len(importedResult.Connections))
+	}
+	if !reflect.DeepEqual(importedResult.Connections[0].SchemaVisibilityByDatabase, expected) {
+		t.Fatalf("expected schema visibility rules to round-trip, got %#v", importedResult.Connections[0].SchemaVisibilityByDatabase)
 	}
 }
 

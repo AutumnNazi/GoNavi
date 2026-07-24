@@ -28,8 +28,8 @@ vi.mock('../store', () => ({
 
 vi.mock('@monaco-editor/react', () => ({
   loader: { config: vi.fn() },
-  default: ({ options }: { options?: Record<string, unknown> }) => (
-    <div data-monaco-options={JSON.stringify(options || {})} />
+  default: ({ loading, options }: { loading?: React.ReactNode; options?: Record<string, unknown> }) => (
+    <div data-monaco-options={JSON.stringify(options || {})}>{loading}</div>
   ),
 }));
 
@@ -97,5 +97,13 @@ describe('MonacoEditor typography', () => {
     expect(markup).toContain('&quot;fontFamily&quot;:&quot;Consolas&quot;');
     expect(markup).toContain('&quot;fontSize&quot;:18');
     expect(markup).not.toContain('JetBrains Mono');
+  });
+
+  it('marks the editor fallback as pending until Monaco mounts', () => {
+    const markup = renderToStaticMarkup(<MonacoEditor options={{}} />);
+
+    expect(markup).toContain('data-monaco-editor-loading="true"');
+    expect(markup).toContain('aria-busy="true"');
+    expect(markup).not.toContain('Loading...');
   });
 });

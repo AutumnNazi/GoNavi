@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
-const source = readFileSync(new URL('./Sidebar.tsx', import.meta.url), 'utf8');
+const source = readFileSync(new URL('./sidebar/useSidebarObjectActions.tsx', import.meta.url), 'utf8');
 const locales = ['zh-CN', 'zh-TW', 'en-US', 'ja-JP', 'de-DE', 'ru-RU'] as const;
 const extractHandleExportBlock = (): string => {
   const start = source.indexOf('const handleExport = async');
@@ -16,15 +16,29 @@ const placeholders = (value: string): string[] => [...value.matchAll(/\{\{(\w+)\
   .sort();
 
 describe('Sidebar table export feedback i18n', () => {
-  it('routes handleExport through the progress runner and option-based backend export', () => {
+  it('opens SQL exports in the workbench while retaining progress export for other formats', () => {
     const block = extractHandleExportBlock();
 
     expect(block).not.toContain('ExportTable(');
+    expect(block).toContain("if (options.format === 'sql')");
+    expect(block).toContain("await openTableSQLExportWorkbench(node, 'backup')");
     expect(block).toContain('runExportWithProgress({');
     expect(block).toContain('ExportTableWithOptions(');
+    expect(block).toContain('...options');
     expect(block).toContain('jobId');
     expect(block).toContain('totalRowsHint');
     expect(block).toContain('totalRowsKnown');
+  });
+
+  it('launches table backups and INSERT exports with distinct background modes', () => {
+    expect(source).toContain("const openTableSQLExportWorkbench = async (node: any, mode: 'backup' | 'dataOnly')");
+    expect(source).toContain("mode === 'backup'");
+    expect(source).toContain('showSQLExportOptionsDialog()');
+    expect(source).toContain('addTab(buildBatchTableExportWorkbenchTab({');
+    expect(source).toContain('initialObjectNames: [tableName]');
+    expect(source).toContain('contentMode: mode');
+    expect(source).toContain('includeDropIfExists: exportOptions.includeDropIfExists');
+    expect(source).toContain("await openTableSQLExportWorkbench(node, 'dataOnly')");
   });
 
   it('keeps the export workbench entry key available across locales', () => {

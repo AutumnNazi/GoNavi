@@ -253,6 +253,8 @@ describe('AIMCPArgumentHints', () => {
     });
 
     const text = flattenRendererText(renderer.toJSON());
+    const shell = renderer.root.findByProps({ className: 'gonavi-ai-mcp-argument-hints' });
+    const hintRows = renderer.root.findAllByProps({ className: 'gonavi-ai-mcp-argument-hint-row' });
     expect(text).toContain('Argument details');
     expect(text).toContain('Detected business arguments');
     expect(text).toContain('--api-key');
@@ -262,6 +264,19 @@ describe('AIMCPArgumentHints', () => {
     expect(text).toContain('Allowed directory');
     expect(text).toContain('Value is masked');
     expect(text).not.toContain('sk-real-secret');
+    expect(shell.props.style).toMatchObject({
+      borderTop: '1px solid rgba(0,0,0,0.08)',
+      borderBottom: '1px solid rgba(0,0,0,0.08)',
+      background: 'transparent',
+    });
+    expect(hintRows.length).toBeGreaterThan(0);
+    for (const row of hintRows) {
+      expect(row.props.style).toMatchObject({
+        borderBottom: '1px solid rgba(0,0,0,0.08)',
+        background: 'transparent',
+      });
+      expect(row.props.style).not.toHaveProperty('borderRadius');
+    }
   });
 
   it('renders zh-CN shell copy from provider while preserving raw argument values', async () => {

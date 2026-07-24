@@ -1,16 +1,19 @@
 import Modal from './common/ResizableDraggableModal';
-import React, { useState, useEffect } from "react";
-import { Table, Alert, Progress, Button, Space } from 'antd';
-import { CheckCircleOutlined, CloseCircleOutlined } from "@ant-design/icons";
+import React, { useState, useEffect, useRef } from "react";
+import { Table, Alert, Progress, Button, Space, Select } from 'antd';
+import { CheckCircleOutlined, CloseCircleOutlined, StopOutlined } from "@ant-design/icons";
 import {
+  CancelQuery,
+  DBGetColumns,
   PreviewImportFile,
-  ImportDataWithProgress,
+  ImportDataWithProgressOptions,
 } from "../../wailsjs/go/app/App";
-import { EventsOn, EventsOff } from "../../wailsjs/runtime/runtime";
+import { EventsOn } from "../../wailsjs/runtime/runtime";
 import { useStore } from "../store";
 import { t as defaultTranslate } from "../i18n";
 import { useOptionalI18n } from "../i18n/provider";
 import { buildRpcConnectionConfig } from "../utils/connectionRpcConfig";
+import { getColumnDefinitionName } from "../utils/columnDefinition";
 interface ImportPreviewModalProps {
   visible: boolean;
   filePath: string;
@@ -19,6 +22,8 @@ interface ImportPreviewModalProps {
   tableName: string;
   onClose: () => void;
   onSuccess: () => void;
+  onImportingChange?: (importing: boolean) => void;
+  presentation?: "modal" | "embedded";
 }
 
 interface PreviewData {
@@ -28,12 +33,20 @@ interface PreviewData {
 }
 
 interface ImportProgress {
+  jobId?: string;
   current: number;
   total: number;
   success: number;
   errors: number;
   totalRowsKnown?: boolean;
 }
+
+const createImportJobId = (): string => {
+  if (typeof globalThis.crypto?.randomUUID === "function") {
+    return `import-${globalThis.crypto.randomUUID()}`;
+  }
+  return `import-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
+};
 
 const ImportPreviewModal: React.FC<ImportPreviewModalProps> = ({
   visible,
@@ -43,28 +56,52 @@ const ImportPreviewModal: React.FC<ImportPreviewModalProps> = ({
   tableName,
   onClose,
   onSuccess,
+  onImportingChange,
+  presentation = "modal",
 }) => {
   const i18n = useOptionalI18n();
   const t = i18n?.t ?? defaultTranslate;
   const connections = useStore((state) => state.connections);
+  const darkMode = useStore((state) => state.theme === "dark");
+  const connection = connections.find((item) => item.id === connectionId);
   const [loading, setLoading] = useState(true);
   const [previewData, setPreviewData] = useState<PreviewData | null>(null);
+  const [targetColumns, setTargetColumns] = useState<string[]>([]);
+  const [columnMappings, setColumnMappings] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
+  const [stopping, setStopping] = useState(false);
   const [progress, setProgress] = useState<ImportProgress | null>(null);
   const [importResult, setImportResult] = useState<any>(null);
+  const previewRequestRef = useRef(0);
+  const importRequestRef = useRef(0);
+  const importingRef = useRef(false);
+  const stoppingRef = useRef(false);
+  const activeImportJobIdRef = useRef("");
+  const previewConnectionConfigRef = useRef<any>(null);
+  const secondaryTextColor = darkMode ? "rgba(255,255,255,0.65)" : "rgba(0,0,0,0.45)";
+  const mappingFieldBackground = darkMode ? "rgba(255,255,255,0.06)" : "#f5f5f5";
 
   useEffect(() => {
+    if (importingRef.current) return undefined;
+    const requestId = previewRequestRef.current + 1;
+    previewRequestRef.current = requestId;
     if (visible && filePath) {
-      loadPreview();
+      void loadPreview(requestId);
     }
-  }, [visible, filePath]);
+    return () => {
+      if (previewRequestRef.current === requestId) {
+        previewRequestRef.current += 1;
+      }
+    };
+  }, [visible, filePath, connectionId, dbName, tableName, connection]);
 
   useEffect(() => {
     if (importing) {
       const unsubscribe = EventsOn(
         "import:progress",
         (data: ImportProgress) => {
+          if (!data || data.jobId !== activeImportJobIdRef.current) return;
           setProgress((prev) => {
             const fallbackTotal = prev?.total || previewData?.totalRows || 0;
             const nextTotal =
@@ -83,53 +120,36 @@ const ImportPreviewModal: React.FC<ImportPreviewModalProps> = ({
       );
       return () => {
         unsubscribe?.();
-        EventsOff("import:progress");
       };
     }
   }, [importing, previewData?.totalRows]);
 
-  const loadPreview = async () => {
+  useEffect(() => {
+    onImportingChange?.(importing);
+    return () => {
+      if (importing) onImportingChange?.(false);
+    };
+  }, [importing, onImportingChange]);
+
+  const loadPreview = async (requestId: number) => {
+    importRequestRef.current += 1;
+    importingRef.current = false;
+    stoppingRef.current = false;
+    activeImportJobIdRef.current = "";
+    previewConnectionConfigRef.current = null;
+    setImporting(false);
+    setStopping(false);
     setLoading(true);
     setError(null);
-    try {
-      const res = await PreviewImportFile(filePath);
-      if (res.success && res.data) {
-        setPreviewData({
-          columns: res.data.columns || [],
-          totalRows: res.data.totalRows || 0,
-          previewRows: res.data.previewRows || [],
-        });
-      } else {
-        setError(res.message || t("import_preview.error.preview_failed"));
-      }
-    } catch (e: any) {
-      setError(
-        t("import_preview.error.preview_failed_detail", {
-          detail: String(e?.message || e),
-        }),
-      );
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleImport = async () => {
-    if (!previewData) return;
-
-    setImporting(true);
-    setProgress({
-      current: 0,
-      total: previewData.totalRows,
-      success: 0,
-      errors: 0,
-    });
+    setPreviewData(null);
+    setTargetColumns([]);
+    setColumnMappings({});
     setImportResult(null);
-
+    setProgress(null);
     try {
-      const conn = connections.find((c) => c.id === connectionId);
+      const conn = connection;
       if (!conn) {
         setError(t("import_preview.error.connection_config_not_found"));
-        setImporting(false);
         return;
       }
 
@@ -147,15 +167,120 @@ const ImportPreviewModal: React.FC<ImportPreviewModalProps> = ({
           keyPath: "",
         },
       };
+      const rpcConfig = buildRpcConnectionConfig(config) as any;
+      const [previewRes, columnsRes] = await Promise.all([
+        PreviewImportFile(filePath),
+        DBGetColumns(rpcConfig, dbName, tableName),
+      ]);
+      if (previewRequestRef.current !== requestId) return;
+      if (!previewRes.success || !previewRes.data) {
+        setError(previewRes.message || t("import_preview.error.preview_failed"));
+        return;
+      }
+      if (!columnsRes.success || !Array.isArray(columnsRes.data)) {
+        setError(columnsRes.message || t("import_preview.error.target_columns_failed"));
+        return;
+      }
 
-      const res = await ImportDataWithProgress(
+      previewConnectionConfigRef.current = config;
+
+      const sourceColumns: string[] = Array.isArray(previewRes.data.columns)
+        ? previewRes.data.columns
+          .map((column: unknown) => String(column))
+          .filter((column: string) => column.trim().length > 0)
+        : [];
+      const nextTargetColumns = Array.from(new Set(
+        columnsRes.data.map(getColumnDefinitionName).filter(Boolean),
+      ));
+      const targetsByLowerName = new Map<string, string[]>();
+      nextTargetColumns.forEach((column) => {
+        const key = column.toLowerCase();
+        targetsByLowerName.set(key, [...(targetsByLowerName.get(key) || []), column]);
+      });
+      const nextMappings: Record<string, string> = {};
+      sourceColumns.forEach((sourceColumn) => {
+        const exactTarget = nextTargetColumns.find((targetColumn) => targetColumn === sourceColumn);
+        const insensitiveTargets = targetsByLowerName.get(sourceColumn.toLowerCase()) || [];
+        nextMappings[sourceColumn] = exactTarget || (insensitiveTargets.length === 1 ? insensitiveTargets[0] : "");
+      });
+
+      setPreviewData({
+        columns: sourceColumns,
+        totalRows: previewRes.data.totalRows || 0,
+        previewRows: previewRes.data.previewRows || [],
+      });
+      setTargetColumns(nextTargetColumns);
+      setColumnMappings(nextMappings);
+    } catch (e: any) {
+      if (previewRequestRef.current !== requestId) return;
+      setError(
+        t("import_preview.error.preview_failed_detail", {
+          detail: String(e?.message || e),
+        }),
+      );
+    } finally {
+      if (previewRequestRef.current === requestId) {
+        setLoading(false);
+      }
+    }
+  };
+
+  const mappedTargetColumns = Object.values(columnMappings).filter(Boolean);
+  const hasDuplicateSourceColumns = previewData
+    ? new Set(previewData.columns).size !== previewData.columns.length
+    : false;
+  const hasDuplicateTargetColumns = new Set(mappedTargetColumns).size !== mappedTargetColumns.length;
+  const mappingValidationError = hasDuplicateSourceColumns
+    ? t("import_preview.mapping.validation.duplicate_source")
+    : hasDuplicateTargetColumns
+      ? t("import_preview.mapping.validation.duplicate_target")
+      : mappedTargetColumns.length === 0
+        ? t("import_preview.mapping.validation.required")
+        : null;
+
+  const handleImport = async () => {
+    if (!previewData || mappingValidationError) return;
+
+    const importRequestId = importRequestRef.current + 1;
+    const importJobId = createImportJobId();
+    importRequestRef.current = importRequestId;
+    importingRef.current = true;
+    stoppingRef.current = false;
+    activeImportJobIdRef.current = importJobId;
+    setImporting(true);
+    setStopping(false);
+    setError(null);
+    setProgress({
+      current: 0,
+      total: previewData.totalRows,
+      success: 0,
+      errors: 0,
+    });
+    setImportResult(null);
+
+    try {
+      const config = previewConnectionConfigRef.current;
+      if (!config) {
+        setError(t("import_preview.error.connection_config_not_found"));
+        return;
+      }
+
+      const selectedMappings = Object.fromEntries(
+        Object.entries(columnMappings).filter(([, targetColumn]) => Boolean(targetColumn)),
+      );
+      const res = await ImportDataWithProgressOptions(
         buildRpcConnectionConfig(config) as any,
         dbName,
         tableName,
         filePath,
+        { columnMappings: selectedMappings, jobId: importJobId },
       );
+      if (importRequestRef.current !== importRequestId) return;
 
-      if (res.success && res.data) {
+      setError(null);
+      if (res.data?.cancelled) {
+        setImportResult(res.data);
+      } else if (res.success && res.data) {
         setImportResult(res.data);
         if (res.data.failed === 0) {
           onSuccess();
@@ -164,13 +289,49 @@ const ImportPreviewModal: React.FC<ImportPreviewModalProps> = ({
         setError(res.message || t("import_preview.error.import_failed"));
       }
     } catch (e: any) {
+      if (importRequestRef.current !== importRequestId) return;
       setError(
         t("import_preview.error.import_failed_detail", {
           detail: String(e?.message || e),
         }),
       );
     } finally {
-      setImporting(false);
+      if (importRequestRef.current === importRequestId) {
+        importingRef.current = false;
+        stoppingRef.current = false;
+        activeImportJobIdRef.current = "";
+        setImporting(false);
+        setStopping(false);
+      }
+    }
+  };
+
+  const handleStopImport = async () => {
+    const importJobId = activeImportJobIdRef.current;
+    if (!importJobId || stoppingRef.current) return;
+
+    stoppingRef.current = true;
+    setStopping(true);
+    setError(null);
+    try {
+      const res = await CancelQuery(importJobId);
+      if (!importingRef.current || activeImportJobIdRef.current !== importJobId) {
+        return;
+      }
+      if (!res.success) {
+        stoppingRef.current = false;
+        setStopping(false);
+        setError(res.message || t("import_preview.error.stop_failed"));
+      }
+    } catch (e: any) {
+      if (!importingRef.current || activeImportJobIdRef.current !== importJobId) {
+        return;
+      }
+      stoppingRef.current = false;
+      setStopping(false);
+      setError(t("import_preview.error.stop_failed_detail", {
+        detail: String(e?.message || e),
+      }));
     }
   };
 
@@ -188,31 +349,37 @@ const ImportPreviewModal: React.FC<ImportPreviewModalProps> = ({
       ? Math.round((progress.current / progress.total) * 100)
       : 0;
 
-  return (
-    <Modal
-      title={t("import_preview.title")}
-      open={visible}
-      onCancel={onClose}
-      width={900}
-      footer={
-        importResult ? (
-          <Space>
-            <Button onClick={onClose}>{t("common.close")}</Button>
-          </Space>
-        ) : importing ? null : (
-          <Space>
-            <Button onClick={onClose}>{t("common.cancel")}</Button>
-            <Button
-              type="primary"
-              onClick={handleImport}
-              disabled={!previewData || loading}
-            >
-              {t("import_preview.action.start")}
-            </Button>
-          </Space>
-        )
-      }
-    >
+  const footer = importResult ? (
+    <Space>
+      <Button onClick={onClose}>{t("common.close")}</Button>
+    </Space>
+  ) : importing ? (
+    <Space>
+      <Button
+        danger
+        icon={<StopOutlined />}
+        loading={stopping}
+        disabled={stopping}
+        onClick={() => void handleStopImport()}
+      >
+        {t("import_preview.action.stop")}
+      </Button>
+    </Space>
+  ) : (
+    <Space>
+      <Button onClick={onClose}>{t("common.cancel")}</Button>
+      <Button
+        type="primary"
+        onClick={handleImport}
+        disabled={!previewData || loading || Boolean(mappingValidationError)}
+      >
+        {t("import_preview.action.start")}
+      </Button>
+    </Space>
+  );
+
+  const content = (
+    <>
       {error && (
         <Alert
           type="error"
@@ -247,11 +414,74 @@ const ImportPreviewModal: React.FC<ImportPreviewModalProps> = ({
             style={{
               marginBottom: 16,
               padding: 8,
-              background: "#f5f5f5",
+              background: mappingFieldBackground,
               borderRadius: 4,
             }}
           >
             {previewData.columns.join(", ")}
+          </div>
+          <div data-import-column-mapping="true" style={{ marginBottom: 16 }}>
+            <div style={{ marginBottom: 8, fontWeight: 600 }}>
+              {t("import_preview.mapping.title")}
+            </div>
+            <div style={{ marginBottom: 10, color: secondaryTextColor, fontSize: 12 }}>
+              {t("import_preview.mapping.description")}
+            </div>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)",
+                gap: 8,
+                marginBottom: 6,
+                color: darkMode ? "rgba(255,255,255,0.85)" : "rgba(0,0,0,0.65)",
+                fontSize: 12,
+                fontWeight: 600,
+              }}
+            >
+              <span>{t("import_preview.mapping.source_column")}</span>
+              <span>{t("import_preview.mapping.target_column")}</span>
+            </div>
+            <div
+              data-import-column-mapping-list="true"
+              style={{ maxHeight: 240, overflowY: "auto", paddingRight: 4 }}
+            >
+              {previewData.columns.map((sourceColumn) => (
+                <div
+                  key={sourceColumn}
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)",
+                    gap: 8,
+                    alignItems: "center",
+                    marginBottom: 8,
+                  }}
+                >
+                  <div title={sourceColumn} style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {sourceColumn}
+                  </div>
+                  <Select
+                    value={columnMappings[sourceColumn] || ""}
+                    options={[
+                      { value: "", label: t("import_preview.mapping.ignore") },
+                      ...targetColumns.map((targetColumn) => ({
+                        value: targetColumn,
+                        label: targetColumn,
+                        disabled: mappedTargetColumns.includes(targetColumn)
+                          && columnMappings[sourceColumn] !== targetColumn,
+                      })),
+                    ]}
+                    onChange={(targetColumn) => setColumnMappings((current) => ({
+                      ...current,
+                      [sourceColumn]: targetColumn,
+                    }))}
+                    style={{ width: "100%" }}
+                  />
+                </div>
+              ))}
+            </div>
+            {mappingValidationError && (
+              <Alert type="warning" showIcon message={mappingValidationError} />
+            )}
           </div>
           <div style={{ marginBottom: 8, fontWeight: 600 }}>
             {t("import_preview.preview.table_title")}
@@ -277,7 +507,9 @@ const ImportPreviewModal: React.FC<ImportPreviewModalProps> = ({
               textAlign: "center",
             }}
           >
-            {t("import_preview.status.importing")}
+            {stopping
+              ? t("import_preview.status.stopping")
+              : t("import_preview.status.importing")}
           </div>
           <Progress percent={progressPercent} status="active" />
           <div style={{ marginTop: 16, textAlign: "center", color: "#666" }}>
@@ -306,8 +538,10 @@ const ImportPreviewModal: React.FC<ImportPreviewModalProps> = ({
       {importResult && (
         <div style={{ padding: 20 }}>
           <Alert
-            type={importResult.failed === 0 ? "success" : "warning"}
-            message={t("import_preview.result.completed")}
+            type={!importResult.cancelled && importResult.failed === 0 ? "success" : "warning"}
+            message={importResult.cancelled
+              ? t("import_preview.result.stopped")
+              : t("import_preview.result.completed")}
             description={
               <div>
                 <div>
@@ -356,6 +590,65 @@ const ImportPreviewModal: React.FC<ImportPreviewModalProps> = ({
           )}
         </div>
       )}
+    </>
+  );
+
+  if (presentation === "embedded") {
+    if (!visible) return null;
+    return (
+      <section
+        data-import-preview-embedded="true"
+        style={{
+          display: "flex",
+          minWidth: 0,
+          flexDirection: "column",
+          overflow: "hidden",
+        }}
+      >
+        <div
+          style={{
+            marginBottom: 16,
+            fontSize: 15,
+            fontWeight: 600,
+          }}
+        >
+          {t("import_preview.title")}
+        </div>
+        <div style={{ minWidth: 0, overflow: "auto" }}>{content}</div>
+        {footer && (
+          <div
+            data-import-preview-embedded-footer="true"
+            style={{
+              display: "flex",
+              justifyContent: "flex-end",
+              marginTop: 16,
+              paddingTop: 16,
+              borderTop: darkMode
+                ? "1px solid rgba(255,255,255,0.08)"
+                : "1px solid rgba(15,23,42,0.08)",
+            }}
+          >
+            {footer}
+          </div>
+        )}
+      </section>
+    );
+  }
+
+  return (
+    <Modal
+      title={t("import_preview.title")}
+      open={visible}
+      onCancel={() => {
+        if (!importing) onClose();
+      }}
+      closable={!importing}
+      maskClosable={!importing}
+      keyboard={!importing}
+      width={900}
+      footer={footer}
+    >
+      {content}
     </Modal>
   );
 };

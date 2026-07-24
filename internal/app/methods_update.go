@@ -47,15 +47,21 @@ type cachedGitHubRelease struct {
 var updateReleaseCache sync.Map // apiURL -> cachedGitHubRelease
 
 var (
-	updateFetchLatestRelease   = fetchLatestRelease
-	updateFetchDevRelease      = fetchDevRelease
-	updateFetchReleaseSHA256   = fetchReleaseSHA256
-	updateLogCheckError        = func(err error) { logger.Error(err, "检查更新失败") }
-	updateResolveInstallTarget = resolveUpdateInstallTarget
-	updateLaunchInstallScript  = launchUpdateScript
-	updateQuitSleep            = time.Sleep
-	updateExitProcess          = os.Exit
+	updateFetchLatestRelease        = fetchLatestRelease
+	updateFetchDevRelease           = fetchDevRelease
+	updateFetchReleaseSHA256        = fetchReleaseSHA256
+	updateLogCheckError             = func(err error) { logger.Error(err, "检查更新失败") }
+	updateResolveInstallTarget      = resolveUpdateInstallTarget
+	updateResolveInstallMode        = resolveCurrentUpdateInstallMode
+	updateLaunchInstallScript       = launchUpdateScript
+	updateFindOtherWindowsInstances = findOtherWindowsUpdateInstances
+	updateCloseWindowsInstances     = closeWindowsUpdateInstances
+	updateAcquireWindowsMaintenance = acquireWindowsUpdateMaintenance
+	updateQuitSleep                 = time.Sleep
+	updateExitProcess               = os.Exit
 )
+
+var errUpdateChecksumMismatch = errors.New("update package checksum mismatch")
 
 type updateState struct {
 	lastCheck   *UpdateInfo
@@ -78,6 +84,9 @@ type UpdateInfo struct {
 	SHA256             string `json:"sha256"`
 	Downloaded         bool   `json:"downloaded"`
 	DownloadPath       string `json:"downloadPath,omitempty"`
+	InstallMode        string `json:"installMode"`
+	PackageType        string `json:"packageType,omitempty"`
+	AutoRelaunch       bool   `json:"autoRelaunch"`
 }
 
 type AppInfo struct {
@@ -96,6 +105,8 @@ type updateDownloadResult struct {
 	InstallLogPath string     `json:"installLogPath,omitempty"`
 	InstallTarget  string     `json:"installTarget,omitempty"`
 	Platform       string     `json:"platform"`
+	InstallMode    string     `json:"installMode"`
+	PackageType    string     `json:"packageType"`
 	AutoRelaunch   bool       `json:"autoRelaunch"`
 }
 
@@ -108,18 +119,28 @@ type updateDownloadProgressPayload struct {
 }
 
 type stagedUpdate struct {
-	Channel        updateChannel
-	Version        string
-	AssetName      string
-	FilePath       string
-	StagedDir      string
-	InstallLogPath string
+	Channel                updateChannel
+	Version                string
+	AssetName              string
+	FilePath               string
+	StagedDir              string
+	InstallLogPath         string
+	InstallMode            updateInstallMode
+	PackageType            updatePackageType
+	AutoRelaunch           bool
+	MaintenanceEventName   string
+	UpdateHandoffEventName string
 }
 
 type updatePathCandidate struct {
 	workspaceDir string
 	stagedDir    string
 	assetPath    string
+}
+
+type windowsUpdateProcess struct {
+	PID        uint32
+	Executable string
 }
 
 type githubRelease struct {
@@ -242,6 +263,15 @@ func (a *App) DownloadUpdate() connection.QueryResult {
 		a.updateMu.Unlock()
 		return connection.QueryResult{Success: false, Message: a.appText("app.update.backend.message.no_update_package", nil)}
 	}
+	if err := validateUpdatePackageForCurrentInstallMode(
+		stdRuntime.GOOS,
+		updateInstallMode(info.InstallMode),
+		updatePackageType(info.PackageType),
+		info.AssetName,
+	); err != nil {
+		a.updateMu.Unlock()
+		return connection.QueryResult{Success: false, Message: a.localizedUpdateError(err)}
+	}
 	staged := resolveReusableStagedUpdate(*info, a.updateState.staged)
 	if staged != nil {
 		a.updateState.staged = staged
@@ -262,7 +292,7 @@ func (a *App) DownloadUpdate() connection.QueryResult {
 	return result
 }
 
-func (a *App) InstallUpdateAndRestart() connection.QueryResult {
+func (a *App) InstallUpdateAndRestart(closeAllWindowsInstancesConfirmed bool) connection.QueryResult {
 	a.updateMu.Lock()
 	staged := a.updateState.staged
 	if staged != nil && strings.TrimSpace(staged.InstallLogPath) == "" {
@@ -272,15 +302,70 @@ func (a *App) InstallUpdateAndRestart() connection.QueryResult {
 	if staged == nil {
 		return connection.QueryResult{Success: false, Message: a.appText("app.update.backend.message.no_downloaded_package", nil)}
 	}
+	if err := validateUpdatePackageForCurrentInstallMode(stdRuntime.GOOS, staged.InstallMode, staged.PackageType, staged.FilePath); err != nil {
+		return connection.QueryResult{
+			Success: false,
+			Message: a.appText("app.update.backend.message.install_launch_failed", map[string]any{
+				"detail": a.localizedUpdateError(err),
+			}),
+		}
+	}
+	if windowsUpdateCloseConfirmationRequired(stdRuntime.GOOS, closeAllWindowsInstancesConfirmed) {
+		return connection.QueryResult{
+			Success: false,
+			Message: a.appText("app.update.backend.message.install_launch_failed", map[string]any{
+				"detail": a.appText("app.update.backend.error.close_instances_confirmation_required", nil),
+			}),
+			Data: map[string]any{
+				"requiresCloseConfirmation": true,
+			},
+		}
+	}
 
 	if stdRuntime.GOOS == "windows" {
-		if err := ensureWindowsUpdateTargetWritable(updateResolveInstallTarget()); err != nil {
+		installTarget := updateResolveInstallTarget()
+		maintenanceLease, err := updateAcquireWindowsMaintenance(installTarget)
+		if err != nil {
 			return connection.QueryResult{
 				Success: false,
 				Message: a.appText("app.update.backend.message.install_launch_failed", map[string]any{
-					"detail": a.localizedUpdateError(err),
+					"detail": a.appText("app.update.backend.error.maintenance_lock_failed", map[string]any{"detail": err.Error()}),
 				}),
 			}
+		}
+		defer func() {
+			if maintenanceLease.Release != nil {
+				maintenanceLease.Release()
+			}
+		}()
+		staged.MaintenanceEventName = maintenanceLease.Name
+		if staged.InstallMode == updateInstallModePortable {
+			if err := ensureWindowsUpdateTargetWritable(installTarget); err != nil {
+				return connection.QueryResult{
+					Success: false,
+					Message: a.appText("app.update.backend.message.install_launch_failed", map[string]any{
+						"detail": a.localizedUpdateError(err),
+					}),
+				}
+			}
+		}
+
+		finalTarget := resolveWindowsUpdateFinalTargetPath(installTarget, staged.FilePath)
+		closedPIDs, err := closeOtherWindowsUpdateInstancesForInstall([]string{installTarget, finalTarget}, os.Getpid())
+		if err != nil {
+			logger.Warnf("关闭 Windows 更新相关实例失败 current=%s target=%s pids=%v error=%v", installTarget, finalTarget, closedPIDs, err)
+			return connection.QueryResult{
+				Success: false,
+				Message: a.appText("app.update.backend.message.install_launch_failed", map[string]any{
+					"detail": a.appText("app.update.backend.error.close_instances_failed", map[string]any{"detail": err.Error()}),
+				}),
+				Data: map[string]any{
+					"runningPids": closedPIDs,
+				},
+			}
+		}
+		if len(closedPIDs) > 0 {
+			logger.Infof("Windows 更新已关闭其他 GoNavi 实例 current=%s target=%s pids=%v", installTarget, finalTarget, closedPIDs)
 		}
 	}
 
@@ -298,11 +383,13 @@ func (a *App) InstallUpdateAndRestart() connection.QueryResult {
 			Success: false,
 			Message: msg,
 			Data: map[string]any{
-				"logPath": staged.InstallLogPath,
+				"logPath":      staged.InstallLogPath,
+				"installMode":  string(staged.InstallMode),
+				"packageType":  string(staged.PackageType),
+				"autoRelaunch": staged.AutoRelaunch,
 			},
 		}
 	}
-
 	go a.quitForUpdate()
 
 	msg := a.appText("app.update.backend.message.install_started", nil)
@@ -313,7 +400,10 @@ func (a *App) InstallUpdateAndRestart() connection.QueryResult {
 		Success: true,
 		Message: msg,
 		Data: map[string]any{
-			"logPath": staged.InstallLogPath,
+			"logPath":      staged.InstallLogPath,
+			"installMode":  string(staged.InstallMode),
+			"packageType":  string(staged.PackageType),
+			"autoRelaunch": staged.AutoRelaunch,
 		},
 	}
 }
@@ -370,7 +460,7 @@ func (a *App) OpenDownloadedUpdateDirectory() connection.QueryResult {
 }
 
 func (a *App) downloadAndStageUpdate(info UpdateInfo) connection.QueryResult {
-	workspaceDir := strings.TrimSpace(resolveUpdateWorkspaceDir(info.LatestVersion))
+	workspaceDir := strings.TrimSpace(resolveUpdateWorkspaceDirForInstallMode(info.LatestVersion, updateInstallMode(info.InstallMode)))
 	if workspaceDir == "" {
 		message := a.appText("app.update.backend.message.app_directory_unresolved_download", nil)
 		a.emitUpdateDownloadProgress("error", 0, info.AssetSize, message)
@@ -414,20 +504,6 @@ func (a *App) downloadAndStageUpdate(info UpdateInfo) connection.QueryResult {
 		}
 		a.emitUpdateDownloadProgress("downloading", downloaded, reportTotal, "")
 	}
-	actualHash, err := downloadFileWithHash(info.AssetURL, assetPath, progressCB)
-	if err != nil && strings.TrimSpace(info.AssetAPIURL) != "" && !strings.EqualFold(strings.TrimSpace(info.AssetAPIURL), strings.TrimSpace(info.AssetURL)) {
-		logger.Warnf("更新包主下载地址失败，尝试 assets API 回退：err=%v", err)
-		_ = os.Remove(assetPath)
-		actualHash, err = downloadFileWithHash(info.AssetAPIURL, assetPath, progressCB)
-	}
-	if err != nil {
-		_ = os.Remove(assetPath)
-		_ = os.RemoveAll(stagedDir)
-		message := a.localizedUpdateError(err)
-		a.emitUpdateDownloadProgress("error", 0, info.AssetSize, message)
-		return connection.QueryResult{Success: false, Message: message}
-	}
-
 	if info.SHA256 == "" {
 		_ = os.Remove(assetPath)
 		_ = os.RemoveAll(stagedDir)
@@ -435,10 +511,22 @@ func (a *App) downloadAndStageUpdate(info UpdateInfo) connection.QueryResult {
 		a.emitUpdateDownloadProgress("error", 0, info.AssetSize, message)
 		return connection.QueryResult{Success: false, Message: message}
 	}
-	if !strings.EqualFold(info.SHA256, actualHash) {
+
+	_, err := downloadUpdateAssetWithFallback(
+		[]string{info.AssetURL, info.AssetAPIURL},
+		assetPath,
+		info.SHA256,
+		progressCB,
+	)
+	if err != nil {
 		_ = os.Remove(assetPath)
 		_ = os.RemoveAll(stagedDir)
-		message := a.appText("app.update.backend.message.checksum_failed", nil)
+		if errors.Is(err, errUpdateChecksumMismatch) {
+			message := a.appText("app.update.backend.message.checksum_failed", nil)
+			a.emitUpdateDownloadProgress("error", 0, info.AssetSize, message)
+			return connection.QueryResult{Success: false, Message: message}
+		}
+		message := a.localizedUpdateError(err)
 		a.emitUpdateDownloadProgress("error", 0, info.AssetSize, message)
 		return connection.QueryResult{Success: false, Message: message}
 	}
@@ -450,6 +538,9 @@ func (a *App) downloadAndStageUpdate(info UpdateInfo) connection.QueryResult {
 		FilePath:       assetPath,
 		StagedDir:      stagedDir,
 		InstallLogPath: buildUpdateInstallLogPath(workspaceDir),
+		InstallMode:    updateInstallMode(info.InstallMode),
+		PackageType:    updatePackageType(info.PackageType),
+		AutoRelaunch:   info.AutoRelaunch,
 	}
 	info.Downloaded = true
 	info.DownloadPath = assetPath
@@ -461,6 +552,52 @@ func (a *App) downloadAndStageUpdate(info UpdateInfo) connection.QueryResult {
 	return connection.QueryResult{Success: true, Message: a.appText("app.update.backend.message.package_downloaded", nil), Data: buildUpdateDownloadResult(info, staged)}
 }
 
+func downloadUpdateAssetWithFallback(
+	candidates []string,
+	assetPath string,
+	expectedSHA256 string,
+	onProgress func(downloaded, total int64),
+) (string, error) {
+	seen := make(map[string]struct{}, len(candidates))
+	urls := make([]string, 0, len(candidates))
+	for _, candidate := range candidates {
+		trimmed := strings.TrimSpace(candidate)
+		if trimmed == "" {
+			continue
+		}
+		if _, ok := seen[trimmed]; ok {
+			continue
+		}
+		seen[trimmed] = struct{}{}
+		urls = append(urls, trimmed)
+	}
+	if len(urls) == 0 {
+		return "", localizedUpdateError{
+			key:    "app.update.backend.error.download_failed",
+			params: map[string]any{"detail": "download URL is empty"},
+		}
+	}
+
+	expectedHash := strings.TrimSpace(expectedSHA256)
+	var lastErr error
+	for index, candidate := range urls {
+		_ = os.Remove(assetPath)
+		actualHash, err := downloadFileWithHash(candidate, assetPath, onProgress)
+		if err == nil && expectedHash != "" && !strings.EqualFold(expectedHash, actualHash) {
+			err = errUpdateChecksumMismatch
+		}
+		if err == nil {
+			return actualHash, nil
+		}
+		lastErr = err
+		if index+1 < len(urls) {
+			logger.Warnf("更新包下载源失败，尝试下一下载源：attempt=%d err=%v", index+1, err)
+		}
+	}
+	_ = os.Remove(assetPath)
+	return "", lastErr
+}
+
 func fetchLatestUpdateInfo(channel updateChannel) (UpdateInfo, error) {
 	return fetchLatestUpdateInfoWithOptions(channel, true)
 }
@@ -469,6 +606,15 @@ func fetchLatestUpdateInfoWithOptions(channel updateChannel, forceNetwork bool) 
 	if channel != updateChannelDev {
 		channel = updateChannelLatest
 	}
+	installMode := updateResolveInstallMode()
+	packageType := resolveUpdatePackageType(stdRuntime.GOOS, installMode)
+	if stdRuntime.GOOS == "windows" && packageType == "" {
+		return UpdateInfo{}, localizedUpdateError{
+			key:    "app.update.backend.error.online_update_unsupported",
+			params: map[string]any{"platform": stdRuntime.GOOS + "/" + stdRuntime.GOARCH + "/" + string(installMode)},
+		}
+	}
+
 	// 优先静态 latest.json（不占 api.github.com 配额）→ GitHub API → 磁盘缓存
 	release, err := fetchReleaseForChannelPreferringStatic(channel, forceNetwork)
 	if err != nil {
@@ -496,6 +642,9 @@ func fetchLatestUpdateInfoWithOptions(channel updateChannel, forceNetwork bool) 
 			ReleaseName:        release.Name,
 			ReleasePublishedAt: strings.TrimSpace(release.PublishedAt),
 			ReleaseNotesURL:    release.HTMLURL,
+			InstallMode:        string(installMode),
+			PackageType:        string(packageType),
+			AutoRelaunch:       true,
 		}, nil
 	}
 
@@ -503,7 +652,7 @@ func fetchLatestUpdateInfoWithOptions(channel updateChannel, forceNetwork bool) 
 	if assetVersion == "" || strings.EqualFold(normalizeVersion(assetVersion), updateDevReleaseTag) {
 		assetVersion = latestVersion
 	}
-	assetName, err := expectedAssetName(stdRuntime.GOOS, stdRuntime.GOARCH, assetVersion)
+	assetName, err := expectedAssetNameForInstallMode(stdRuntime.GOOS, stdRuntime.GOARCH, assetVersion, installMode)
 	if err != nil {
 		return UpdateInfo{}, err
 	}
@@ -536,6 +685,9 @@ func fetchLatestUpdateInfoWithOptions(channel updateChannel, forceNetwork bool) 
 		AssetAPIURL:        strings.TrimSpace(asset.URL),
 		AssetSize:          asset.Size,
 		SHA256:             sha256Value,
+		InstallMode:        string(installMode),
+		PackageType:        string(packageType),
+		AutoRelaunch:       true,
 	}, nil
 }
 
@@ -783,6 +935,14 @@ func classifyGitHubUpdateHTTPError(status int, body []byte, headers http.Header,
 }
 
 func expectedAssetName(goos, goarch, version string) (string, error) {
+	installMode := updateInstallModeUnknown
+	if strings.EqualFold(strings.TrimSpace(goos), "windows") {
+		installMode = updateResolveInstallMode()
+	}
+	return expectedAssetNameForInstallMode(goos, goarch, version, installMode)
+}
+
+func expectedAssetNameForInstallMode(goos, goarch, version string, installMode updateInstallMode) (string, error) {
 	executablePath := ""
 	if goos == "linux" {
 		if path, err := os.Executable(); err == nil {
@@ -792,10 +952,14 @@ func expectedAssetName(goos, goarch, version string) (string, error) {
 			executablePath = path
 		}
 	}
-	return expectedAssetNameForExecutable(goos, goarch, version, executablePath)
+	return expectedAssetNameForExecutableAndInstallMode(goos, goarch, version, executablePath, installMode)
 }
 
 func expectedAssetNameForExecutable(goos, goarch, version, executablePath string) (string, error) {
+	return expectedAssetNameForExecutableAndInstallMode(goos, goarch, version, executablePath, updateInstallModePortable)
+}
+
+func expectedAssetNameForExecutableAndInstallMode(goos, goarch, version, executablePath string, installMode updateInstallMode) (string, error) {
 	version = strings.TrimSpace(version)
 	version = strings.TrimPrefix(version, "v")
 	version = strings.TrimPrefix(version, "V")
@@ -805,11 +969,20 @@ func expectedAssetNameForExecutable(goos, goarch, version, executablePath string
 
 	switch goos {
 	case "windows":
+		suffix := "-Portable.exe"
+		if installMode == updateInstallModeMSI {
+			suffix = "-Installer.msi"
+		} else if installMode != updateInstallModePortable {
+			return "", localizedUpdateError{
+				key:    "app.update.backend.error.online_update_unsupported",
+				params: map[string]any{"platform": goos + "/" + goarch + "/" + string(installMode)},
+			}
+		}
 		if goarch == "amd64" {
-			return fmt.Sprintf("GoNavi-%s-Windows-Amd64.exe", version), nil
+			return fmt.Sprintf("GoNavi-%s-Windows-Amd64%s", version, suffix), nil
 		}
 		if goarch == "arm64" {
-			return fmt.Sprintf("GoNavi-%s-Windows-Arm64.exe", version), nil
+			return fmt.Sprintf("GoNavi-%s-Windows-Arm64%s", version, suffix), nil
 		}
 	case "darwin":
 		if goarch == "amd64" {
@@ -1141,11 +1314,16 @@ func buildUpdateDownloadResult(info UpdateInfo, staged *stagedUpdate) updateDown
 		Info:          info,
 		Platform:      stdRuntime.GOOS,
 		InstallTarget: resolveUpdateInstallTarget(),
-		AutoRelaunch:  true,
+		InstallMode:   info.InstallMode,
+		PackageType:   info.PackageType,
+		AutoRelaunch:  info.AutoRelaunch,
 	}
 	if staged != nil {
 		result.DownloadPath = staged.FilePath
 		result.InstallLogPath = staged.InstallLogPath
+		result.InstallMode = string(staged.InstallMode)
+		result.PackageType = string(staged.PackageType)
+		result.AutoRelaunch = staged.AutoRelaunch
 	}
 	return result
 }
@@ -1277,8 +1455,23 @@ func resolveLegacyUpdateWorkspaceDir() string {
 }
 
 func resolveUpdateWorkspaceDir(version string) string {
+	return resolveUpdateWorkspaceDirForInstallMode(version, updateResolveInstallMode())
+}
+
+func resolveUpdateWorkspaceDirForInstallMode(version string, installMode updateInstallMode) string {
+	cacheDir, _ := os.UserCacheDir()
+	return resolveUpdateWorkspaceDirForPlatform(
+		stdRuntime.GOOS,
+		version,
+		installMode,
+		updateResolveInstallTarget(),
+		cacheDir,
+	)
+}
+
+func resolveUpdateWorkspaceDirForPlatform(goos string, version string, installMode updateInstallMode, installTarget string, userCacheDir string) string {
 	// macOS 更新包继续保存在桌面版本目录根级，方便用户直接处理 DMG。
-	if stdRuntime.GOOS == "darwin" {
+	if goos == "darwin" {
 		homeDir, err := os.UserHomeDir()
 		if err == nil && strings.TrimSpace(homeDir) != "" {
 			desktopDir := filepath.Join(homeDir, "Desktop")
@@ -1287,9 +1480,15 @@ func resolveUpdateWorkspaceDir(version string) string {
 			}
 		}
 	}
+	if goos == "windows" && installMode == updateInstallModeMSI {
+		if strings.TrimSpace(userCacheDir) != "" {
+			return filepath.Join(userCacheDir, "GoNavi", "updates")
+		}
+		return resolveLegacyUpdateWorkspaceDir()
+	}
 
 	// Windows / Linux 更新包优先落到当前应用运行目录，方便用户直接找到下载产物。
-	targetPath := strings.TrimSpace(updateResolveInstallTarget())
+	targetPath := strings.TrimSpace(installTarget)
 	if targetPath != "" {
 		targetDir := strings.TrimSpace(filepath.Dir(targetPath))
 		if targetDir != "" && targetDir != "." {
@@ -1429,7 +1628,7 @@ func isExistingDownloadedAsset(filePath string, expectedSize int64) bool {
 func resolveReusableStagedUpdate(info UpdateInfo, current *stagedUpdate) *stagedUpdate {
 	return resolveReusableStagedUpdateForPlatform(
 		stdRuntime.GOOS,
-		resolveUpdateWorkspaceDir(strings.TrimSpace(info.LatestVersion)),
+		resolveUpdateWorkspaceDirForInstallMode(strings.TrimSpace(info.LatestVersion), updateInstallMode(info.InstallMode)),
 		resolveLegacyUpdateWorkspaceDir(),
 		info,
 		current,
@@ -1453,7 +1652,10 @@ func resolveReusableStagedUpdateForPlatform(goos string, preferredWorkspaceDir s
 		if currentChannel == "" {
 			currentChannel = updateChannelLatest
 		}
-		if currentChannel == channel && strings.TrimSpace(current.Version) == version {
+		if currentChannel == channel && strings.TrimSpace(current.Version) == version &&
+			strings.TrimSpace(current.AssetName) == assetName &&
+			current.InstallMode == updateInstallMode(info.InstallMode) &&
+			current.PackageType == updatePackageType(info.PackageType) {
 			currentPath := strings.TrimSpace(current.FilePath)
 			if isExistingDownloadedAsset(currentPath, info.AssetSize) {
 				if !allowStagedDirReuse && isUpdateAssetPathInsideStagedDir(currentPath, current.StagedDir) {
@@ -1463,6 +1665,10 @@ func resolveReusableStagedUpdateForPlatform(goos string, preferredWorkspaceDir s
 						current.InstallLogPath = buildUpdateInstallLogPath(filepath.Dir(currentPath))
 					}
 					current.Channel = channel
+					current.AssetName = assetName
+					current.InstallMode = updateInstallMode(info.InstallMode)
+					current.PackageType = updatePackageType(info.PackageType)
+					current.AutoRelaunch = info.AutoRelaunch
 					return current
 				}
 			}
@@ -1488,6 +1694,9 @@ func resolveReusableStagedUpdateForPlatform(goos string, preferredWorkspaceDir s
 			FilePath:       candidate.assetPath,
 			StagedDir:      candidate.stagedDir,
 			InstallLogPath: buildUpdateInstallLogPath(candidate.workspaceDir),
+			InstallMode:    updateInstallMode(info.InstallMode),
+			PackageType:    updatePackageType(info.PackageType),
+			AutoRelaunch:   info.AutoRelaunch,
 		}
 	}
 
@@ -1581,7 +1790,19 @@ func launchUpdateScript(staged *stagedUpdate) error {
 }
 
 func launchWindowsUpdate(staged *stagedUpdate, targetExe string, pid int) error {
-	return launchWindowsUpdateWithCleanup(staged, targetExe, pid)
+	if staged == nil {
+		return localizedUpdateError{key: "app.update.backend.message.no_downloaded_package"}
+	}
+	handoff, err := prepareWindowsUpdateHandoff()
+	if err != nil {
+		return err
+	}
+	defer handoff.Close()
+	staged.UpdateHandoffEventName = handoff.Name
+	if staged != nil && staged.InstallMode == updateInstallModeMSI && staged.PackageType == updatePackageTypeMSI {
+		return launchWindowsMSIUpdate(staged, targetExe, pid, handoff.Wait)
+	}
+	return launchWindowsUpdateWithCleanup(staged, targetExe, pid, handoff.Wait)
 }
 
 func launchMacUpdate(staged *stagedUpdate, targetExe string, pid int) error {
@@ -1652,6 +1873,8 @@ func buildWindowsLaunchCommand(scriptPath string, context windowsUpdateLaunchCon
 		"GONAVI_UPDATE_CURRENT_TARGET="+context.CurrentTargetPath,
 		"GONAVI_UPDATE_STAGED_DIR="+context.StagedDir,
 		"GONAVI_UPDATE_LOG_PATH="+context.LogPath,
+		"GONAVI_UPDATE_MAINTENANCE_EVENT_NAME="+context.MaintenanceEventName,
+		"GONAVI_UPDATE_HANDOFF_EVENT_NAME="+context.HandoffEventName,
 		"GONAVI_UPDATE_PID="+strconv.Itoa(context.PID),
 	)
 	configureWindowsUpdateCommand(cmd)

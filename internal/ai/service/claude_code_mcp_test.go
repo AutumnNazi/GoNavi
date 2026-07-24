@@ -14,6 +14,15 @@ import (
 	"GoNavi-Wails/shared/i18n"
 )
 
+func isolateOpenCodeMCPConfig(t *testing.T) string {
+	t.Helper()
+	originalConfigPathFunc := openCodeConfigPathFunc
+	configPath := filepath.Join(t.TempDir(), "opencode.json")
+	openCodeConfigPathFunc = func() (string, error) { return configPath, nil }
+	t.Cleanup(func() { openCodeConfigPathFunc = originalConfigPathFunc })
+	return configPath
+}
+
 func TestResolveLocalMCPCommandUsesMainBinaryWithArgument(t *testing.T) {
 	command, args, err := resolveLocalMCPCommand(`C:\Program Files\GoNavi\GoNavi.exe`)
 	if err != nil {
@@ -41,6 +50,7 @@ func TestResolveLocalMCPCommandKeepsDedicatedServerBinary(t *testing.T) {
 }
 
 func TestRepairInstalledLocalMCPClientConfigsUpdatesMissingManagedCommands(t *testing.T) {
+	isolateOpenCodeMCPConfig(t)
 	originalClaudeConfigPathFunc := claudeCodeConfigPathFunc
 	originalCodexConfigPathFunc := codexConfigPathFunc
 	originalExecutablePathFunc := localMCPExecutablePathFunc
@@ -544,6 +554,7 @@ func TestInspectCodexMCPInstallStatusKeepsMissingCLISignalSeparateFromConfigStat
 }
 
 func TestMCPClientInstallResultMessagesUseServiceLanguage(t *testing.T) {
+	isolateOpenCodeMCPConfig(t)
 	originalClaudeConfigPathFunc := claudeCodeConfigPathFunc
 	originalCodexConfigPathFunc := codexConfigPathFunc
 	originalExecutablePathFunc := localMCPExecutablePathFunc
@@ -589,9 +600,21 @@ func TestMCPClientInstallResultMessagesUseServiceLanguage(t *testing.T) {
 	if !strings.Contains(codexResult.Message, "Codex user-level MCP configuration") {
 		t.Fatalf("unexpected Codex install message: %q", codexResult.Message)
 	}
+
+	openCodeResult, err := service.AIInstallOpenCodeMCP()
+	if err != nil {
+		t.Fatalf("AIInstallOpenCodeMCP returned error: %v", err)
+	}
+	if hanText.MatchString(openCodeResult.Message) {
+		t.Fatalf("OpenCode install message should be localized to English, got %q", openCodeResult.Message)
+	}
+	if !strings.Contains(openCodeResult.Message, "OpenCode user-level MCP configuration") {
+		t.Fatalf("unexpected OpenCode install message: %q", openCodeResult.Message)
+	}
 }
 
 func TestMCPClientInstallStatusMessagesUseServiceLanguage(t *testing.T) {
+	isolateOpenCodeMCPConfig(t)
 	originalClaudeConfigPathFunc := claudeCodeConfigPathFunc
 	originalCodexConfigPathFunc := codexConfigPathFunc
 	originalExecutablePathFunc := localMCPExecutablePathFunc
@@ -628,8 +651,8 @@ func TestMCPClientInstallStatusMessagesUseServiceLanguage(t *testing.T) {
 		}
 	}
 
-	if len(statuses) != 4 {
-		t.Fatalf("expected 4 MCP client statuses, got %d", len(statuses))
+	if len(statuses) != 5 {
+		t.Fatalf("expected 5 MCP client statuses, got %d", len(statuses))
 	}
 	if !strings.Contains(statuses[0].Message, "No Claude Code user-level GoNavi MCP configuration") {
 		t.Fatalf("unexpected Claude Code status message: %q", statuses[0].Message)
@@ -637,12 +660,16 @@ func TestMCPClientInstallStatusMessagesUseServiceLanguage(t *testing.T) {
 	if !strings.Contains(statuses[1].Message, "No Codex user-level GoNavi MCP configuration") {
 		t.Fatalf("unexpected Codex status message: %q", statuses[1].Message)
 	}
-	if !strings.Contains(statuses[2].Message, "usually runs in the cloud or a remote environment") {
-		t.Fatalf("unexpected remote client status message: %q", statuses[2].Message)
+	if !strings.Contains(statuses[2].Message, "No OpenCode user-level GoNavi MCP configuration") {
+		t.Fatalf("unexpected OpenCode status message: %q", statuses[2].Message)
+	}
+	if !strings.Contains(statuses[3].Message, "usually runs in the cloud or a remote environment") {
+		t.Fatalf("unexpected remote client status message: %q", statuses[3].Message)
 	}
 }
 
 func TestMCPClientInstallConfigPathFailuresUseServiceLanguage(t *testing.T) {
+	isolateOpenCodeMCPConfig(t)
 	originalClaudeConfigPathFunc := claudeCodeConfigPathFunc
 	originalCodexConfigPathFunc := codexConfigPathFunc
 	originalExecutablePathFunc := localMCPExecutablePathFunc
@@ -696,6 +723,7 @@ func TestMCPClientInstallConfigPathFailuresUseServiceLanguage(t *testing.T) {
 }
 
 func TestMCPClientInstallHomeDirDetailUsesServiceLanguage(t *testing.T) {
+	isolateOpenCodeMCPConfig(t)
 	originalClaudeConfigPathFunc := claudeCodeConfigPathFunc
 	originalCodexConfigPathFunc := codexConfigPathFunc
 	originalExecutablePathFunc := localMCPExecutablePathFunc
@@ -749,6 +777,7 @@ func TestMCPClientInstallHomeDirDetailUsesServiceLanguage(t *testing.T) {
 }
 
 func TestMCPClientInstallExecutablePathFailuresUseServiceLanguage(t *testing.T) {
+	openCodeConfigPath := isolateOpenCodeMCPConfig(t)
 	originalClaudeConfigPathFunc := claudeCodeConfigPathFunc
 	originalCodexConfigPathFunc := codexConfigPathFunc
 	originalExecutablePathFunc := localMCPExecutablePathFunc
@@ -781,6 +810,9 @@ func TestMCPClientInstallExecutablePathFailuresUseServiceLanguage(t *testing.T) 
 	if err := os.WriteFile(codexConfigPath, []byte("[mcp_servers.gonavi]\ncommand = 'old-gonavi'\nargs = ['mcp-server']\n"), 0o644); err != nil {
 		t.Fatalf("WriteFile Codex config returned error: %v", err)
 	}
+	if err := os.WriteFile(openCodeConfigPath, []byte(`{"mcp":{"gonavi":{"type":"local","command":["old-gonavi","mcp-server"],"enabled":true}}}`), 0o644); err != nil {
+		t.Fatalf("WriteFile OpenCode config returned error: %v", err)
+	}
 
 	service := NewService()
 	service.AISetLanguage(string(i18n.LanguageEnUS))
@@ -795,10 +827,10 @@ func TestMCPClientInstallExecutablePathFailuresUseServiceLanguage(t *testing.T) 
 		t.Fatalf("Claude Code executable path error should use English wrapper and keep raw detail, got %q", err.Error())
 	}
 	statuses := service.AIGetMCPClientInstallStatuses()
-	if len(statuses) < 2 {
-		t.Fatalf("expected at least Claude Code and Codex statuses, got %d", len(statuses))
+	if len(statuses) < 3 {
+		t.Fatalf("expected Claude Code, Codex, and OpenCode statuses, got %d", len(statuses))
 	}
-	for _, status := range statuses[:2] {
+	for _, status := range statuses[:3] {
 		if hanText.MatchString(status.Message) || !strings.Contains(status.Message, "Failed to locate the current GoNavi executable") || !strings.Contains(status.Message, "executable lookup denied") {
 			t.Fatalf("%s status executable path error should use English wrapper and keep raw detail, got %q", status.Client, status.Message)
 		}
@@ -813,7 +845,7 @@ func TestMCPClientInstallExecutablePathFailuresUseServiceLanguage(t *testing.T) 
 		t.Fatalf("Codex empty executable path error should use English wrapper, got %q", err.Error())
 	}
 	statuses = service.AIGetMCPClientInstallStatuses()
-	for _, status := range statuses[:2] {
+	for _, status := range statuses[:3] {
 		if hanText.MatchString(status.Message) || !strings.Contains(status.Message, "Current GoNavi executable path is empty") {
 			t.Fatalf("%s status empty executable path error should use English wrapper, got %q", status.Client, status.Message)
 		}
@@ -821,6 +853,7 @@ func TestMCPClientInstallExecutablePathFailuresUseServiceLanguage(t *testing.T) 
 }
 
 func TestMCPClientInstallConfigFormatFailuresUseServiceLanguage(t *testing.T) {
+	isolateOpenCodeMCPConfig(t)
 	originalClaudeConfigPathFunc := claudeCodeConfigPathFunc
 	originalCodexConfigPathFunc := codexConfigPathFunc
 	originalExecutablePathFunc := localMCPExecutablePathFunc
@@ -954,13 +987,16 @@ func TestMCPClientInstallMessageCatalogKeysExist(t *testing.T) {
 	keys := []string{
 		"ai.service.mcp_client.claude_code.install_success",
 		"ai.service.mcp_client.codex.install_success",
+		"ai.service.mcp_client.opencode.install_success",
 		"ai.service.mcp_client.user_home_dir_unavailable",
 		"ai.service.mcp_client.claude_code.config_path_failed",
 		"ai.service.mcp_client.codex.config_path_failed",
+		"ai.service.mcp_client.opencode.config_path_failed",
 		"ai.service.mcp_client.executable_path_failed",
 		"ai.service.mcp_client.executable_path_empty",
 		"ai.service.mcp_client.claude_code.config_format_invalid",
 		"ai.service.mcp_client.codex.config_format_invalid",
+		"ai.service.mcp_client.opencode.config_format_invalid",
 		"ai.service.mcp_client.claude_code.config_read_failed",
 		"ai.service.mcp_client.claude_code.config_parse_failed",
 		"ai.service.mcp_client.claude_code.config_serialize_failed",
@@ -969,14 +1005,23 @@ func TestMCPClientInstallMessageCatalogKeysExist(t *testing.T) {
 		"ai.service.mcp_client.codex.config_read_failed",
 		"ai.service.mcp_client.codex.config_dir_create_failed",
 		"ai.service.mcp_client.codex.config_write_failed",
+		"ai.service.mcp_client.opencode.config_read_failed",
+		"ai.service.mcp_client.opencode.config_parse_failed",
+		"ai.service.mcp_client.opencode.config_serialize_failed",
+		"ai.service.mcp_client.opencode.config_dir_create_failed",
+		"ai.service.mcp_client.opencode.config_write_failed",
 		"ai.service.mcp_client.claude_code.status.missing",
 		"ai.service.mcp_client.codex.status.missing",
+		"ai.service.mcp_client.opencode.status.missing",
 		"ai.service.mcp_client.claude_code.status.path_check_failed",
 		"ai.service.mcp_client.codex.status.path_check_failed",
+		"ai.service.mcp_client.opencode.status.path_check_failed",
 		"ai.service.mcp_client.claude_code.status.connected",
 		"ai.service.mcp_client.codex.status.connected",
+		"ai.service.mcp_client.opencode.status.connected",
 		"ai.service.mcp_client.claude_code.status.path_mismatch",
 		"ai.service.mcp_client.codex.status.path_mismatch",
+		"ai.service.mcp_client.opencode.status.path_mismatch",
 		"ai.service.mcp_client.remote.status.message",
 	}
 	for _, language := range i18n.SupportedLanguages() {

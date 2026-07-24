@@ -59,6 +59,7 @@ func TestConnectionReadOnlyCatalogKeysExist(t *testing.T) {
 		"connection.backend.action.rename_database",
 		"connection.backend.action.drop_database",
 		"connection.backend.action.rename_table",
+		"connection.backend.action.copy_table",
 		"connection.backend.action.drop_table",
 		"connection.backend.action.drop_view",
 		"connection.backend.action.drop_function_or_procedure",

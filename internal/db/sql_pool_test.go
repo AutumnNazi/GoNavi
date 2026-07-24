@@ -83,6 +83,19 @@ func TestConfigureSQLConnectionPoolKeepsOneIdleSQLServerConnection(t *testing.T)
 	}
 }
 
+func TestSQLServerConnectionPoolIdleWindowOutlastsDefaultPingBoundary(t *testing.T) {
+	sqlServerIdleTime := resolveSQLConnectionPoolMaxIdleTime("sqlserver")
+	if sqlServerIdleTime <= defaultSQLConnMaxIdleTime {
+		t.Fatalf("expected SQL Server idle connection window to exceed %s, got %s", defaultSQLConnMaxIdleTime, sqlServerIdleTime)
+	}
+	if sqlServerIdleTime != defaultSQLConnMaxLifetime {
+		t.Fatalf("expected SQL Server idle connection window to match lifetime %s, got %s", defaultSQLConnMaxLifetime, sqlServerIdleTime)
+	}
+	if got := resolveSQLConnectionPoolMaxIdleTime("oracle"); got != defaultSQLConnMaxIdleTime {
+		t.Fatalf("expected Oracle idle connection window to remain %s, got %s", defaultSQLConnMaxIdleTime, got)
+	}
+}
+
 func TestConfigureSQLConnectionPoolDefaultDoesNotKeepIdleConnections(t *testing.T) {
 	dbConn := openConfiguredPoolForTest(t, "mysql")
 

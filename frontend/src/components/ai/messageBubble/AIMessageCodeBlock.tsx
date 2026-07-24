@@ -226,7 +226,7 @@ const HighlightedCodeBlock: React.FC<HighlightedCodeBlockProps> = ({
     setPreviewError('');
     setPreviewData(null);
     try {
-      const { DBQuery } = await import('../../../../wailsjs/go/app/App');
+      const { DBQueryAI } = await import('../../../../wailsjs/go/app/App');
       const previewSql = buildAIReadonlyPreviewSQL(
         activeConnectionConfig?.type || '',
         displayText,
@@ -234,7 +234,7 @@ const HighlightedCodeBlock: React.FC<HighlightedCodeBlockProps> = ({
         activeConnectionConfig?.driver || '',
         { oceanBaseProtocol: activeConnectionConfig?.oceanBaseProtocol },
       );
-      const response = await DBQuery(activeConnectionConfig, activeDbName || '', previewSql);
+      const response = await DBQueryAI(activeConnectionConfig, activeDbName || '', previewSql);
       if (response.success && Array.isArray(response.data)) {
         const rows = response.data as any[];
         setPreviewCols(rows.length > 0 ? Object.keys(rows[0]) : []);

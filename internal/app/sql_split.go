@@ -34,7 +34,7 @@ func splitSQLStatementsForDialect(dbType, sql string) []string {
 
 	push := func() {
 		s := strings.TrimSpace(cur.String())
-		if s != "" {
+		if s != "" && hasExecutableSQLStatementContent(dbType, s) {
 			statements = append(statements, s)
 		}
 		cur.Reset()
@@ -255,9 +255,65 @@ func splitSQLStatementsForDialect(dbType, sql string) []string {
 	return statements
 }
 
+func hasExecutableSQLStatementContent(dbType, statement string) bool {
+	for i := 0; i < len(statement); {
+		switch statement[i] {
+		case ' ', '\t', '\n', '\r', '\f':
+			i++
+			continue
+		case '-':
+			if i+1 < len(statement) && statement[i+1] == '-' && isSQLDashLineCommentStart(dbType, statement, i) {
+				i = scanSQLLineCommentEnd(statement, i+2)
+				continue
+			}
+		case '#':
+			if supportsSQLHashLineComment(dbType) {
+				i = scanSQLLineCommentEnd(statement, i+1)
+				continue
+			}
+		case '/':
+			if i+1 < len(statement) && statement[i+1] == '*' {
+				remaining := statement[i:]
+				if supportsSQLExecutableBlockComment(dbType, remaining) {
+					return true
+				}
+				blockEnd := strings.Index(remaining[2:], "*/")
+				if blockEnd < 0 {
+					return false
+				}
+				i += blockEnd + 4
+				continue
+			}
+		}
+		return true
+	}
+	return false
+}
+
+func supportsSQLExecutableBlockComment(dbType, remaining string) bool {
+	isMySQLVersionComment := strings.HasPrefix(remaining, "/*!")
+	isMariaDBVersionComment := len(remaining) >= 4 && strings.EqualFold(remaining[:4], "/*m!")
+	if !isMySQLVersionComment && !isMariaDBVersionComment {
+		return false
+	}
+	normalized := normalizeExplainLexicalDBType(dbType)
+	if normalized == "" {
+		return true
+	}
+	if isMariaDBVersionComment {
+		return normalized == "mariadb"
+	}
+	switch normalized {
+	case "mysql", "mariadb", "oceanbase", "diros", "starrocks", "goldendb", "sphinx", "tidb":
+		return true
+	default:
+		return false
+	}
+}
+
 func isSQLDashLineCommentStart(dbType, text string, index int) bool {
 	switch normalizeExplainLexicalDBType(dbType) {
-	case "mysql", "mariadb", "oceanbase", "diros", "starrocks", "goldendb":
+	case "mysql", "mariadb", "oceanbase", "diros", "starrocks", "goldendb", "sphinx", "tidb":
 		return isMySQLDashCommentStart(text, index)
 	default:
 		return true
@@ -270,7 +326,7 @@ func supportsSQLHashLineComment(dbType string) bool {
 		return true
 	}
 	switch normalized {
-	case "mysql", "mariadb", "oceanbase", "diros", "starrocks", "goldendb", "clickhouse":
+	case "mysql", "mariadb", "oceanbase", "diros", "starrocks", "goldendb", "sphinx", "tidb", "clickhouse":
 		return true
 	default:
 		return false

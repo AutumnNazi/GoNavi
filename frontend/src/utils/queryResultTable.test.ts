@@ -9,6 +9,8 @@ describe('extractQueryResultTableRef', () => {
         tableName: 'MYCIMLED.EDC_LOG',
         metadataDbName: 'MYCIMLED',
         metadataTableName: 'EDC_LOG',
+        ddlDbName: 'MYCIMLED',
+        ddlTableName: 'EDC_LOG',
       });
   });
 
@@ -18,6 +20,8 @@ describe('extractQueryResultTableRef', () => {
         tableName: 'MYCIMLED.EDC_LOG',
         metadataDbName: 'MYCIMLED',
         metadataTableName: 'EDC_LOG',
+        ddlDbName: 'MYCIMLED',
+        ddlTableName: 'EDC_LOG',
       });
   });
 
@@ -27,6 +31,8 @@ describe('extractQueryResultTableRef', () => {
         tableName: 'mycimled.edc_log',
         metadataDbName: 'mycimled',
         metadataTableName: 'edc_log',
+        ddlDbName: 'mycimled',
+        ddlTableName: 'edc_log',
       });
   });
 
@@ -36,6 +42,8 @@ describe('extractQueryResultTableRef', () => {
         tableName: 'EDC_LOG',
         metadataDbName: 'MYCIMLED',
         metadataTableName: 'EDC_LOG',
+        ddlDbName: 'MYCIMLED',
+        ddlTableName: 'EDC_LOG',
       });
   });
 
@@ -45,6 +53,8 @@ describe('extractQueryResultTableRef', () => {
         tableName: 'PER_CERT_INFO',
         metadataDbName: 'DEV',
         metadataTableName: 'PER_CERT_INFO',
+        ddlDbName: 'DEV',
+        ddlTableName: 'PER_CERT_INFO',
       });
   });
 
@@ -54,6 +64,8 @@ describe('extractQueryResultTableRef', () => {
         tableName: 'users',
         metadataDbName: 'app',
         metadataTableName: 'users',
+        ddlDbName: 'app',
+        ddlTableName: 'users',
       });
   });
 
@@ -63,6 +75,8 @@ describe('extractQueryResultTableRef', () => {
         tableName: 'ldf_server.mes_work_order',
         metadataDbName: 'ldf_server_dbs_dev',
         metadataTableName: 'ldf_server.mes_work_order',
+        ddlDbName: 'ldf_server_dbs_dev',
+        ddlTableName: 'ldf_server.mes_work_order',
       });
 
     expect(extractQueryResultTableRef('SELECT * FROM ops.jobs LIMIT 20', 'postgres', 'app_db'))
@@ -70,6 +84,8 @@ describe('extractQueryResultTableRef', () => {
         tableName: 'ops.jobs',
         metadataDbName: 'app_db',
         metadataTableName: 'ops.jobs',
+        ddlDbName: 'app_db',
+        ddlTableName: 'ops.jobs',
       });
   });
 
@@ -79,12 +95,76 @@ describe('extractQueryResultTableRef', () => {
         tableName: 'main.events',
         metadataDbName: 'main',
         metadataTableName: 'main.events',
+        ddlDbName: 'main',
+        ddlTableName: 'main.events',
+      });
+  });
+
+  it('resolves SQL Server database and schema separately for DDL', () => {
+    expect(extractQueryResultTableRef('SELECT * FROM sales.dbo.orders', 'sqlserver', 'appdb'))
+      .toMatchObject({
+        ddlDbName: 'sales',
+        ddlTableName: 'dbo.orders',
+      });
+    expect(extractQueryResultTableRef('SELECT * FROM audit.orders', 'mssql', 'appdb'))
+      .toMatchObject({
+        ddlDbName: 'appdb',
+        ddlTableName: 'audit.orders',
+      });
+  });
+
+  it('resolves Trino catalog and schema namespace for DDL', () => {
+    expect(extractQueryResultTableRef('SELECT * FROM hive.audit.orders', 'trino', 'lakehouse.public'))
+      .toMatchObject({
+        ddlDbName: 'hive.audit',
+        ddlTableName: 'orders',
+      });
+    expect(extractQueryResultTableRef('SELECT * FROM audit.orders', 'trino', 'lakehouse.public'))
+      .toMatchObject({
+        ddlDbName: 'lakehouse.audit',
+        ddlTableName: 'orders',
+      });
+    expect(extractQueryResultTableRef('SELECT * FROM orders', 'trino', 'lakehouse.public'))
+      .toMatchObject({
+        ddlDbName: 'lakehouse.public',
+        ddlTableName: 'orders',
+      });
+  });
+
+  it('preserves DuckDB catalog.schema.table targets for DDL', () => {
+    expect(extractQueryResultTableRef('SELECT * FROM analytics.main.events', 'duckdb', 'main'))
+      .toMatchObject({
+        ddlDbName: 'main',
+        ddlTableName: 'analytics.main.events',
+      });
+  });
+
+  it('preserves IRIS schema-qualified table names in the DDL table parameter', () => {
+    expect(extractQueryResultTableRef('SELECT * FROM app.orders', 'iris', 'USER'))
+      .toMatchObject({
+        ddlDbName: 'USER',
+        ddlTableName: 'app.orders',
       });
   });
 
   it('does not mark join results as editable table refs', () => {
     expect(extractQueryResultTableRef('SELECT * FROM users u JOIN orders o ON u.id = o.user_id', 'oracle', 'APP'))
       .toBeUndefined();
+    expect(extractQueryResultTableRef('SELECT * FROM users u, orders o WHERE u.id = o.user_id', 'mysql', 'app'))
+      .toBeUndefined();
+    expect(extractQueryResultTableRef('SELECT * FROM users u CROSS APPLY get_orders(u.id) o', 'sqlserver', 'app'))
+      .toBeUndefined();
+  });
+
+  it('does not treat commas in hints or comments as additional source tables', () => {
+    expect(extractQueryResultTableRef('SELECT * FROM users WITH (INDEX(ix1, ix2))', 'sqlserver', 'app'))
+      .toMatchObject({ ddlDbName: 'app', ddlTableName: 'users' });
+    expect(extractQueryResultTableRef('SELECT * FROM users /* owner, hot */ WHERE id = 1', 'mysql', 'app'))
+      .toMatchObject({ ddlDbName: 'app', ddlTableName: 'users' });
+    expect(extractQueryResultTableRef('SELECT * FROM users /* WHERE */ , orders', 'mysql', 'app'))
+      .toBeUndefined();
+    expect(extractQueryResultTableRef("SELECT ' FROM fake ' AS marker, id FROM users", 'mysql', 'app'))
+      .toMatchObject({ ddlDbName: 'app', ddlTableName: 'users' });
   });
 
   it('does not mark grouped or distinct results as editable table refs', () => {

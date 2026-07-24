@@ -14,6 +14,9 @@ describe('duplicateBrowserMockConnection', () => {
           type: 'postgres',
         },
         includeDatabases: ['appdb'],
+        schemaVisibilityByDatabase: {
+          appdb: { mode: 'include', schemas: ['public'] },
+        },
       },
       items: [],
       nextId: 'conn-2',
@@ -23,5 +26,8 @@ describe('duplicateBrowserMockConnection', () => {
     expect(duplicated.config.id).toBe('conn-2');
     expect(duplicated.name).toBe(`Primary${t('connection.copy_suffix')}`);
     expect(duplicated.includeDatabases).toEqual(['appdb']);
+    expect(duplicated.schemaVisibilityByDatabase).toEqual({
+      appdb: { mode: 'include', schemas: ['public'] },
+    });
   });
 });

@@ -4,7 +4,7 @@ import type { FormInstance } from 'antd/es/form';
 
 import Modal from '../common/ResizableDraggableModal';
 import { t } from '../../i18n';
-import type { SavedConnection } from '../../types';
+import type { ConnectionTag, SavedConnection } from '../../types';
 import { buildRpcConnectionConfig } from '../../utils/connectionRpcConfig';
 import { resolveConnectionAccentColor, resolveConnectionIconType } from '../../utils/connectionVisual';
 import { buildTableSelectQuery } from '../../utils/objectQueryTemplates';
@@ -27,7 +27,7 @@ import {
 
 type UseSidebarV2ActionHandlersArgs = {
   connections: SavedConnection[];
-  connectionTags: Array<{ id: string; name: string; connectionIds: string[] }>;
+  connectionTags: ConnectionTag[];
   pinnedSidebarTables: any[];
   loadingNodesRef: MutableRefObject<Set<string>>;
   treeDataRef: MutableRefObject<TreeNode[]>;
@@ -67,6 +67,8 @@ type UseSidebarV2ActionHandlersArgs = {
   openTableDdlInDesigner: (node: any) => void;
   openTableInERView: (node: any) => void;
   handleCopyTableName: (node: any) => Promise<void>;
+  handleCopyTable: (node: any) => void;
+  handleCopyDatabaseName: (node: any) => Promise<void>;
   handleCopyStructure: (node: any) => Promise<void>;
   handleCopyTableAsInsert: (node: any) => Promise<void>;
   openCreateStarRocksRollup: (node: any) => void;
@@ -130,6 +132,8 @@ export const useSidebarV2ActionHandlers = ({
   openTableDdlInDesigner,
   openTableInERView,
   handleCopyTableName,
+  handleCopyTable,
+  handleCopyDatabaseName,
   handleCopyStructure,
   handleCopyTableAsInsert,
   openCreateStarRocksRollup,
@@ -191,6 +195,9 @@ export const useSidebarV2ActionHandlers = ({
         return;
       case 'copy-structure':
         void handleCopyStructure(node);
+        return;
+      case 'copy-table':
+        handleCopyTable(node);
         return;
       case 'copy-insert':
         void handleCopyTableAsInsert(node);
@@ -304,6 +311,9 @@ export const useSidebarV2ActionHandlers = ({
 
   const handleV2DatabaseContextMenuAction = (node: any, action: V2DatabaseContextMenuActionKey) => {
     switch (action) {
+      case 'copy-database-name':
+        void handleCopyDatabaseName(node);
+        return;
       case 'new-table':
         openNewTableDesign(node);
         return;
@@ -502,8 +512,22 @@ export const useSidebarV2ActionHandlers = ({
   const handleV2ConnectionGroupContextMenuAction = (group: V2RailConnectionGroup, action: V2ConnectionGroupContextMenuActionKey) => {
     const tag = connectionTags.find((item) => item.id === group.id);
     if (!tag) return;
+    if (action === 'new-subgroup') {
+      createTagForm.resetFields();
+      createTagForm.setFieldsValue({
+        parentTagId: tag.id,
+        connectionIds: [],
+      });
+      setRenameViewTarget(null);
+      setIsCreateTagModalOpen(true);
+      return;
+    }
     if (action === 'edit-group') {
-      createTagForm.setFieldsValue({ name: tag.name, connectionIds: tag.connectionIds });
+      createTagForm.setFieldsValue({
+        name: tag.name,
+        parentTagId: tag.parentTagId,
+        connectionIds: tag.connectionIds,
+      });
       setRenameViewTarget({
         title: tag.name,
         key: `tag-${tag.id}`,

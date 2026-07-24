@@ -28,11 +28,19 @@ describe('restart-to-update unsaved SQL guard', () => {
     expect(actionAfterSaveIndex).toBeGreaterThan(saveIndex);
   });
 
-  it('uses a no-argument wrapper for both restart-to-update buttons', () => {
+  it('confirms closing every Windows instance before entering the unsaved SQL guard', () => {
     expect(appSource).toContain('const handleInstallUpdateRequest = useCallback(async () => {');
-    expect(appSource).toContain('await handleApplicationQuitRequest(handleInstallFromProgress);');
+    expect(appSource).toContain("if (installMode === 'portable' || installMode === 'msi') {");
+    expect(appSource).toContain("title: t('app.about.update_install_confirm.close_instances_title')");
+    expect(appSource).toContain("content: t('app.about.update_install_confirm.close_instances_content')");
+    expect(appSource).toContain("okText: t('app.about.update_install_confirm.close_instances_ok')");
+    expect(appSource).toContain("cancelText: t('common.cancel')");
+    expect(appSource).toContain('await handleApplicationQuitRequest(() => handleInstallFromProgress(true));');
+    expect(appSource).toContain('await handleApplicationQuitRequest(() => handleInstallFromProgress(false));');
     expect(appSource.match(/void handleInstallUpdateRequest\(\);/g)).toHaveLength(2);
     expect(appSource).not.toContain('onClick={handleInstallFromProgress}');
-    expect(appSource).not.toContain('handleApplicationQuitRequest(handleInstallFromProgress(');
+    expect(appSource).toContain("updateInstallAction === 'install-and-restart'");
+    expect(appSource).toContain("updateInstallAction === 'launch-installer'");
+    expect(appSource.match(/\{updateInstallActionLabel\}/g)).toHaveLength(2);
   });
 });

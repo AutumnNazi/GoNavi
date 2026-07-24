@@ -3,9 +3,9 @@ import { t as catalogTranslate } from '../i18n/catalog';
 import { SUPPORTED_LANGUAGES } from '../i18n/resolveLanguage';
 import type { I18nParams } from '../i18n/types';
 
-export type MCPClientKey = 'claude-code' | 'codex' | 'openclaw' | 'hermans';
+export type MCPClientKey = 'claude-code' | 'codex' | 'opencode' | 'openclaw' | 'hermans';
 
-const AUTO_MCP_CLIENTS = new Set<MCPClientKey>(['claude-code', 'codex']);
+const AUTO_MCP_CLIENTS = new Set<MCPClientKey>(['claude-code', 'codex', 'opencode']);
 const REMOTE_MCP_CLIENTS = new Set<MCPClientKey>(['openclaw', 'hermans']);
 const DEFAULT_REMOTE_MCP_PUBLIC_URL = 'https://<your-domain-or-tunnel>/mcp';
 const DEFAULT_REMOTE_MCP_LOCAL_ADDR = '127.0.0.1:8765';
@@ -29,8 +29,16 @@ const MCP_CLIENT_STATUS_ERROR_TEMPLATE_KEYS = [
   'ai.service.mcp_client.codex.config_read_failed',
   'ai.service.mcp_client.codex.config_dir_create_failed',
   'ai.service.mcp_client.codex.config_write_failed',
+  'ai.service.mcp_client.opencode.config_path_failed',
+  'ai.service.mcp_client.opencode.config_format_invalid',
+  'ai.service.mcp_client.opencode.config_read_failed',
+  'ai.service.mcp_client.opencode.config_parse_failed',
+  'ai.service.mcp_client.opencode.config_serialize_failed',
+  'ai.service.mcp_client.opencode.config_dir_create_failed',
+  'ai.service.mcp_client.opencode.config_write_failed',
   'ai.service.mcp_client.claude_code.status.path_check_failed',
   'ai.service.mcp_client.codex.status.path_check_failed',
+  'ai.service.mcp_client.opencode.status.path_check_failed',
 ] as const;
 
 const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -158,6 +166,16 @@ export const EMPTY_MCP_CLIENT_STATUSES: AIMCPClientInstallStatus[] = [
     message: 'No Codex user-level GoNavi MCP configuration was detected',
   },
   {
+    client: 'opencode',
+    displayName: 'OpenCode',
+    installMode: 'auto',
+    installed: false,
+    matchesCurrent: false,
+    clientDetected: false,
+    clientCommand: 'opencode',
+    message: 'No OpenCode user-level GoNavi MCP configuration was detected',
+  },
+  {
     client: 'openclaw',
     displayName: 'OpenClaw',
     installMode: 'remote',
@@ -179,7 +197,7 @@ export const EMPTY_MCP_CLIENT_STATUSES: AIMCPClientInstallStatus[] = [
   },
 ];
 
-const MCP_CLIENT_ORDER: MCPClientKey[] = ['claude-code', 'codex', 'openclaw', 'hermans'];
+const MCP_CLIENT_ORDER: MCPClientKey[] = ['claude-code', 'codex', 'opencode', 'openclaw', 'hermans'];
 
 const quoteMCPCommandPart = (value: string): string => {
   const text = String(value || '').trim();
@@ -190,7 +208,7 @@ const quoteMCPCommandPart = (value: string): string => {
 };
 
 export const isMCPClientKey = (client: string): client is MCPClientKey =>
-  client === 'claude-code' || client === 'codex' || client === 'openclaw' || client === 'hermans';
+  client === 'claude-code' || client === 'codex' || client === 'opencode' || client === 'openclaw' || client === 'hermans';
 
 export const isRemoteMCPClientStatus = (status?: Pick<AIMCPClientInstallStatus, 'client' | 'installMode'> | null): boolean => {
   const client = String(status?.client || '').trim();
@@ -331,7 +349,7 @@ export const buildRemoteMCPClientGuide = (
     `- ${translateMCPClientCopy(
       translate,
       'ai_settings.mcp_server.remote_quick_start.guide.boundary.local_stdio',
-      'The built-in local GoNavi MCP entry is stdio, suitable for clients such as Claude Code / Codex running on the same machine as GoNavi.',
+      'The built-in local GoNavi MCP entry is stdio, suitable for clients such as Claude Code / Codex / OpenCode running on the same machine as GoNavi.',
     )}`,
     `- ${translateMCPClientCopy(
       translate,

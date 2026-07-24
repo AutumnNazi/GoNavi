@@ -56,10 +56,9 @@ const AIMCPServerValidationPanel: React.FC<AIMCPServerValidationPanelProps> = ({
   return (
     <div
       style={{
-        padding: '10px 12px',
-        borderRadius: 10,
-        border: `1px solid ${cardBorder}`,
-        background: darkMode ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.72)',
+        padding: '10px 0',
+        borderBottom: `1px solid ${cardBorder}`,
+        background: 'transparent',
         display: 'flex',
         flexDirection: 'column',
         gap: 8,
@@ -79,10 +78,9 @@ const AIMCPServerValidationPanel: React.FC<AIMCPServerValidationPanelProps> = ({
               <div
                 key={issue.key}
                 style={{
-                  padding: '8px 10px',
-                  borderRadius: 10,
-                  border: `1px solid ${cardBorder}`,
-                  background: darkMode ? 'rgba(255,255,255,0.025)' : 'rgba(255,255,255,0.78)',
+                  padding: '8px 10px 8px 0',
+                  borderBottom: `1px solid ${cardBorder}`,
+                  background: 'transparent',
                   display: 'flex',
                   flexDirection: 'column',
                   gap: 4,
@@ -93,7 +91,7 @@ const AIMCPServerValidationPanel: React.FC<AIMCPServerValidationPanelProps> = ({
                     style={{
                       padding: '2px 8px',
                       borderRadius: 999,
-                      fontSize: 11,
+                      fontSize: 'var(--gn-font-size-sm, 12px)',
                       fontWeight: 700,
                       color: tone.color,
                       background: tone.bg,

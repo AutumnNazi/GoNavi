@@ -77,7 +77,7 @@ export const resolveThinkingIntensityProfile = (input: {
   if (type === 'anthropic' || format === 'anthropic') {
     return 'anthropic';
   }
-  if (type === 'openai' || format === 'openai' || format === '') {
+  if (type === 'openai' || format === 'openai' || format === 'openai-responses' || format === '') {
     return 'openai';
   }
   return 'generic';

@@ -8,11 +8,13 @@ import { useStore } from '../../store';
 import { t } from '../../i18n';
 import { buildRpcConnectionConfig } from '../../utils/connectionRpcConfig';
 import { getDataSourceCapabilities } from '../../utils/dataSourceCapabilities';
-import { buildTableExportTab } from '../../utils/tableExportTab';
+import { buildBatchTableExportWorkbenchTab, buildTableExportTab } from '../../utils/tableExportTab';
 import { buildSqlServerObjectDefinitionQueries } from '../../utils/sqlServerObjectDefinition';
 import { buildStarRocksMaterializedViewPreviewSql } from '../tableDesignerSchemaSql';
 import type { ExportRunResult, RunExportWithProgressOptions } from '../useExportProgressRunner';
 import { getTableDataDangerActionMeta, type TableDataDangerActionKind } from '../tableDataDangerActions';
+import { showSQLExportOptionsDialog } from '../SQLExportOptionsDialog';
+import { confirmCopyTable } from '../tableCopyAction';
 import {
   buildDuckDBMacroDDL,
   escapeSQLLiteral,
@@ -21,7 +23,10 @@ import {
   getMetadataDialect,
   splitQualifiedName,
 } from './sidebarMetadataLoaders';
-import { resolveSidebarTableNameForCopy } from './sidebarHelpers';
+import {
+  resolveSidebarDatabaseNameForCopy,
+  resolveSidebarTableNameForCopy,
+} from './sidebarHelpers';
 import { normalizeMySQLViewDDLForEditing } from '../sidebarCoreUtils';
 import {
   DBQuery,
@@ -103,6 +108,11 @@ type UseSidebarObjectActionsArgs = {
   runExportWithProgress: RunExportWithProgress;
   setAIPanelVisible: (visible: boolean) => void;
   addAIContext: (connectionId: string, context: { dbName: string; tableName: string; ddl: string }) => void;
+  migrateSchemaVisibilityForRenamedDatabase: (
+    connection: SavedConnection,
+    oldDbName: string,
+    newDbName: string,
+  ) => Promise<SavedConnection>;
 };
 
 const resolveCopyObjectNameLabel = (node: any): string => {
@@ -200,6 +210,7 @@ export const useSidebarObjectActions = ({
   runExportWithProgress,
   setAIPanelVisible,
   addAIContext,
+  migrateSchemaVisibilityForRenamedDatabase,
 }: UseSidebarObjectActionsArgs) => {
   const handleCopyStructure = async (node: any) => {
     const { config, dbName, tableName } = node.dataRef;
@@ -227,7 +238,71 @@ export const useSidebarObjectActions = ({
     }
   };
 
+  const handleCopyTable = (node: any) => {
+    const conn = node?.dataRef;
+    const tableName = String(conn?.tableName || node?.title || '').trim();
+    if (!conn || !tableName) return;
+    if (!getDataSourceCapabilities(conn.config).supportsCopyTable) {
+      message.warning(t('table_copy.message.unsupported'));
+      return;
+    }
+
+    const config = buildRuntimeConfig(conn, conn.dbName);
+    confirmCopyTable({
+      config: buildRpcConnectionConfig(config) as any,
+      dbName: String(conn.dbName || ''),
+      sourceSchemaName: String(conn.schemaName || ''),
+      sourceTableName: tableName,
+      onSuccess: async () => {
+        await loadTables(getDatabaseNodeRef(conn, conn.dbName));
+      },
+    });
+  };
+
+  const handleCopyDatabaseName = async (node: any) => {
+    const databaseName = resolveSidebarDatabaseNameForCopy(node);
+    const label = t('sidebar.copy_object_name.label.database');
+    if (!databaseName) {
+      message.warning(t('sidebar.copy_object_name.empty', { label }));
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(databaseName);
+      message.success(t('sidebar.copy_object_name.copied', { label }));
+    } catch (e: any) {
+      message.error(t('sidebar.copy_object_name.failed', { label, error: e?.message || String(e) }));
+    }
+  };
+
+  const openTableSQLExportWorkbench = async (node: any, mode: 'backup' | 'dataOnly') => {
+    const tableName = String(node?.dataRef?.tableName || node?.title || '').trim();
+    if (!tableName) {
+      message.warning(t('sidebar.message.table_export_target_missing'));
+      return;
+    }
+    const exportOptions = mode === 'backup'
+      ? await showSQLExportOptionsDialog()
+      : { includeDropIfExists: false };
+    if (!exportOptions) return;
+    const connectionId = resolveSidebarNodeConnectionId(node, connectionIds)
+      || String(node?.dataRef?.id || '').trim();
+    const dbName = String(node?.dataRef?.dbName || '').trim();
+    addTab(buildBatchTableExportWorkbenchTab({
+      connectionId,
+      dbName,
+      initialObjectNames: [tableName],
+      contentMode: mode,
+      includeDropIfExists: exportOptions.includeDropIfExists,
+      requestKey: `table-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      title: t('file.backend.dialog.export_table', { table: tableName }),
+    }));
+  };
+
   const handleExport = async (node: any, options: { format: string; xlsxMaxRowsPerSheet?: number }) => {
+    if (options.format === 'sql') {
+      await openTableSQLExportWorkbench(node, 'backup');
+      return;
+    }
     const { config, dbName, tableName } = node.dataRef;
     const rowCount = Number(node?.dataRef?.rowCount);
     const totalRowsKnown = Number.isFinite(rowCount) && rowCount > 0;
@@ -273,7 +348,7 @@ export const useSidebarObjectActions = ({
   };
 
   const handleCopyTableAsInsert = async (node: any) => {
-    await handleExport(node, { format: 'sql' });
+    await openTableSQLExportWorkbench(node, 'dataOnly');
   };
 
   const openTableDdlInDesigner = (node: any) => {
@@ -499,10 +574,15 @@ export const useSidebarObjectActions = ({
       const config = buildRuntimeConfig(conn, conn.dbName);
       const res = await RenameDatabase(buildRpcConnectionConfig(config) as any, oldDbName, newDbName);
       if (res.success) {
+        const migratedConnection = await migrateSchemaVisibilityForRenamedDatabase(
+          conn as SavedConnection,
+          oldDbName,
+          newDbName,
+        );
         message.success(t('sidebar.message.database_renamed'));
         setExpandedKeys(prev => prev.filter(k => !k.toString().startsWith(`${conn.id}-${oldDbName}`)));
         setLoadedKeys(prev => prev.filter(k => !k.toString().startsWith(`${conn.id}-${oldDbName}`)));
-        await loadDatabases(getConnectionNodeRef(conn));
+        await loadDatabases({ key: migratedConnection.id, dataRef: migratedConnection });
         setIsRenameDbModalOpen(false);
         setRenameDbTarget(null);
         renameDbForm.resetFields();
@@ -1296,7 +1376,9 @@ export const useSidebarObjectActions = ({
 
   return {
     handleCopyStructure,
+    handleCopyTable,
     handleCopyTableName,
+    handleCopyDatabaseName,
     handleExport,
     openExportDialog,
     handleCopyTableAsInsert,

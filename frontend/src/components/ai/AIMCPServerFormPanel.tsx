@@ -161,7 +161,7 @@ const AIMCPServerFormPanel: React.FC<AIMCPServerFormPanelProps> = ({
     </AIMCPHelpBlock>
 
     {launchPreview && (
-      <div style={{ padding: '10px 12px', borderRadius: 10, border: `1px solid ${cardBorder}`, background: darkMode ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.72)' }}>
+      <div style={{ padding: '2px 0 2px 12px', borderLeft: `3px solid ${overlayTheme.selectedText}`, background: 'transparent' }}>
         <div style={{ ...mcpLabelStyle, color: overlayTheme.titleText }}>{copy('ai_settings.mcp_server.form.launch_preview.title')}</div>
         <div style={{ ...buildMCPHintStyle(overlayTheme.mutedText), marginTop: 4 }}>
           {copy('ai_settings.mcp_server.form.launch_preview.description')}
@@ -207,7 +207,7 @@ const AIMCPServerFormPanel: React.FC<AIMCPServerFormPanelProps> = ({
       overlayTheme={overlayTheme}
     />
 
-    <div style={{ padding: '10px 12px', borderRadius: 10, border: `1px solid ${cardBorder}`, background: darkMode ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.72)' }}>
+    <div style={{ padding: '10px 0', borderBottom: `1px solid ${cardBorder}`, background: 'transparent' }}>
       <div style={{ ...mcpLabelStyle, color: overlayTheme.titleText }}>{copy('ai_settings.mcp_server.form.instructions.title')}</div>
       <div style={{ ...buildMCPHintStyle(overlayTheme.mutedText), marginTop: 4 }}>
         <strong>{copy('ai_settings.mcp_server.form.instructions.test_title')}</strong>

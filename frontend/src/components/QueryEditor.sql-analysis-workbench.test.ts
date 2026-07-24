@@ -38,6 +38,18 @@ describe('SQL analysis workbench wiring', () => {
     expect(source).not.toContain('<Tabs')
   })
 
+  it('fills the SQL analysis report viewport through the Ant Spin wrapper', () => {
+    const source = readFileSync(new URL('./explain/ExplainWorkbench.tsx', import.meta.url), 'utf8')
+
+    expect(source).toContain('wrapperClassName="gn-explain-report-spinner"')
+    expect(source).toMatch(
+      /\.gn-explain-report-spinner > \.ant-spin-container \{[^}]*height: 100%;[^}]*min-height: 0;[^}]*display: flex;[^}]*flex-direction: column;/s,
+    )
+    expect(source).toMatch(
+      /\.gn-explain-report-shell \{[^}]*flex: 1 1 auto;[^}]*min-height: 0;[^}]*display: flex;[^}]*flex-direction: column;/s,
+    )
+  })
+
   it('keeps the editor draft separate from the SQL submitted for diagnosis', () => {
     const source = readFileSync(new URL('./explain/SqlAnalysisWorkbench.tsx', import.meta.url), 'utf8')
 

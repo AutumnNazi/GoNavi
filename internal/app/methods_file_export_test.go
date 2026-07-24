@@ -8,12 +8,15 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"GoNavi-Wails/internal/connection"
 	"GoNavi-Wails/internal/db"
+	"GoNavi-Wails/internal/uievents"
 	"GoNavi-Wails/shared/i18n"
 	"github.com/xuri/excelize/v2"
 )
@@ -53,6 +56,27 @@ type fakeGeneratedValueStreamExportDB struct {
 	valueHits  int
 }
 
+type fakeSQLDumpExportDB struct {
+	fakeExportQueryDB
+	tables    []string
+	createSQL string
+	createErr error
+}
+
+type captureExportProgressEmitter struct {
+	events []exportProgressPayload
+}
+
+func (e *captureExportProgressEmitter) Emit(name string, args ...any) {
+	if name != exportProgressEvent || len(args) == 0 {
+		return
+	}
+	payload, ok := args[0].(exportProgressPayload)
+	if ok {
+		e.events = append(e.events, payload)
+	}
+}
+
 func (f *fakeExportQueryDB) Connect(config connection.ConnectionConfig) error { return nil }
 func (f *fakeExportQueryDB) Close() error                                     { return nil }
 func (f *fakeExportQueryDB) Ping() error                                      { return nil }
@@ -90,6 +114,14 @@ func (f *fakeExportQueryDB) GetForeignKeys(dbName, tableName string) ([]connecti
 }
 func (f *fakeExportQueryDB) GetTriggers(dbName, tableName string) ([]connection.TriggerDefinition, error) {
 	return nil, nil
+}
+
+func (f *fakeSQLDumpExportDB) GetTables(dbName string) ([]string, error) {
+	return append([]string(nil), f.tables...), nil
+}
+
+func (f *fakeSQLDumpExportDB) GetCreateStatement(dbName, tableName string) (string, error) {
+	return f.createSQL, f.createErr
 }
 
 func (f *fakeStreamExportDB) Query(query string) ([]map[string]interface{}, []string, error) {
@@ -249,6 +281,139 @@ func TestFormatExportCellText_FloatNoScientificNotation(t *testing.T) {
 	}
 }
 
+func TestBuildExportTableSelectQuery_QuotesRequestedColumnsInOrder(t *testing.T) {
+	got := buildExportTableSelectQuery(
+		"mysql",
+		"audit.users",
+		[]string{"display name", " id "},
+	)
+	want := "SELECT `display name`, ` id ` FROM `audit`.`users`"
+	if got != want {
+		t.Fatalf("整表选列查询异常，want=%q got=%q", want, got)
+	}
+
+	got = buildExportTableSelectQuery("postgres", "public.users", nil)
+	want = `SELECT * FROM "public"."users"`
+	if got != want {
+		t.Fatalf("未指定列时应保持 SELECT * 兼容行为，want=%q got=%q", want, got)
+	}
+}
+
+func TestWriteRowsToFile_TabularFormatsExportNilAsEmptyCell(t *testing.T) {
+	var nilTime *time.Time
+	data := []map[string]interface{}{
+		{"id": 1, "nullable": nil, "nullable_time": nilTime, "tail": "end"},
+	}
+	columns := []string{"id", "nullable", "nullable_time", "tail"}
+
+	for _, format := range []string{"csv", "md", "html", "xlsx"} {
+		t.Run(format, func(t *testing.T) {
+			f, err := os.CreateTemp("", fmt.Sprintf("gonavi-export-null-*.%s", format))
+			if err != nil {
+				t.Fatalf("创建临时文件失败: %v", err)
+			}
+			defer os.Remove(f.Name())
+			defer f.Close()
+
+			if err := writeRowsToFile(f, data, columns, ExportFileOptions{Format: format}); err != nil {
+				t.Fatalf("写入 %s 失败: %v", format, err)
+			}
+
+			if format == "xlsx" {
+				workbook, err := excelize.OpenFile(f.Name())
+				if err != nil {
+					t.Fatalf("打开 xlsx 失败: %v", err)
+				}
+				defer workbook.Close()
+				rows, err := workbook.GetRows("Sheet1")
+				if err != nil {
+					t.Fatalf("读取 xlsx 失败: %v", err)
+				}
+				if len(rows) < 2 || len(rows[1]) < 4 || rows[1][1] != "" || rows[1][2] != "" {
+					t.Fatalf("xlsx 实际 nil 应导出为空单元格，rows=%v", rows)
+				}
+				return
+			}
+
+			contentBytes, err := os.ReadFile(f.Name())
+			if err != nil {
+				t.Fatalf("读取 %s 失败: %v", format, err)
+			}
+			content := string(contentBytes)
+			switch format {
+			case "csv":
+				if !strings.Contains(content, "1,,,end") {
+					t.Fatalf("csv 实际 nil 应导出为空单元格: %q", content)
+				}
+			case "md":
+				if !strings.Contains(content, "| 1 |  |  | end |") {
+					t.Fatalf("markdown 实际 nil 应导出为空单元格: %q", content)
+				}
+			case "html":
+				if !strings.Contains(content, "<td>1</td><td></td><td></td><td>end</td>") {
+					t.Fatalf("html 实际 nil 应导出为空单元格: %q", content)
+				}
+			}
+		})
+	}
+}
+
+func TestWriteRowsToFile_ProjectsColumnsFromExportOptions(t *testing.T) {
+	f, err := os.CreateTemp("", "gonavi-export-buffered-selected-columns-*.csv")
+	if err != nil {
+		t.Fatalf("创建临时文件失败: %v", err)
+	}
+	defer os.Remove(f.Name())
+	defer f.Close()
+
+	data := []map[string]interface{}{
+		{"id": 1, " name ": "alice", "note": "internal"},
+	}
+	columns := []string{"id", " name ", "note"}
+	if err := writeRowsToFile(f, data, columns, ExportFileOptions{
+		Format:  "csv",
+		Columns: []string{" name ", "id", " name ", "   "},
+	}); err != nil {
+		t.Fatalf("写入 csv 失败: %v", err)
+	}
+
+	contentBytes, err := os.ReadFile(f.Name())
+	if err != nil {
+		t.Fatalf("读取导出文件失败: %v", err)
+	}
+	content := strings.TrimPrefix(string(contentBytes), "\uFEFF")
+	want := "\" name \",id\nalice,1\n"
+	if content != want {
+		t.Fatalf("缓冲导出未按 options.Columns 投影，want=%q got=%q", want, content)
+	}
+}
+
+func TestWriteRowsToFile_RejectsExplicitEmptyColumnSelection(t *testing.T) {
+	data := []map[string]interface{}{{"id": 1}}
+	columns := []string{"id"}
+	for name, selectedColumns := range map[string][]string{
+		"empty":      {},
+		"blank-only": {"", "   "},
+	} {
+		t.Run(name, func(t *testing.T) {
+			f, err := os.CreateTemp("", "gonavi-export-empty-columns-*.csv")
+			if err != nil {
+				t.Fatalf("创建临时文件失败: %v", err)
+			}
+			defer os.Remove(f.Name())
+			defer f.Close()
+
+			err = writeRowsToFile(f, data, columns, ExportFileOptions{
+				Format:  "csv",
+				Columns: selectedColumns,
+			})
+			if err == nil || !strings.Contains(err.Error(), "at least one export column must be selected") {
+				t.Fatalf("显式空选列应拒绝导出，err=%v", err)
+			}
+		})
+	}
+}
+
 func TestWriteRowsToFile_Markdown_NumberKeepPlainText(t *testing.T) {
 	f, err := os.CreateTemp("", "gonavi-export-*.md")
 	if err != nil {
@@ -316,6 +481,37 @@ func TestWriteRowsToFile_JSON_NumberKeepPlainText(t *testing.T) {
 	}
 	if decoded[0]["id"].String() != "1445663" {
 		t.Fatalf("json 数值格式异常，want=1445663 got=%s", decoded[0]["id"].String())
+	}
+}
+
+func TestWriteRowsToFile_JSONKeepsNilAsJSONNull(t *testing.T) {
+	f, err := os.CreateTemp("", "gonavi-export-null-*.json")
+	if err != nil {
+		t.Fatalf("创建临时文件失败: %v", err)
+	}
+	defer os.Remove(f.Name())
+	defer f.Close()
+
+	if err := writeRowsToFile(
+		f,
+		[]map[string]interface{}{{"nullable": nil}},
+		[]string{"nullable"},
+		ExportFileOptions{Format: "json"},
+	); err != nil {
+		t.Fatalf("写入 json 失败: %v", err)
+	}
+
+	contentBytes, err := os.ReadFile(f.Name())
+	if err != nil {
+		t.Fatalf("读取 json 失败: %v", err)
+	}
+	var decoded []map[string]interface{}
+	if err := json.Unmarshal(contentBytes, &decoded); err != nil {
+		t.Fatalf("解析 json 失败: %v", err)
+	}
+	value, exists := decoded[0]["nullable"]
+	if !exists || value != nil {
+		t.Fatalf("JSON 导出应保留 null 语义，decoded=%v", decoded)
 	}
 }
 
@@ -581,6 +777,211 @@ func TestExportQueryResultToFile_UsesStreamQueryPath(t *testing.T) {
 	}
 }
 
+func TestExportQueryResultToFile_WritesInsertSQLForKnownTargetTable(t *testing.T) {
+	f, err := os.CreateTemp("", "gonavi-export-insert-*.sql")
+	if err != nil {
+		t.Fatalf("创建临时文件失败: %v", err)
+	}
+	defer os.Remove(f.Name())
+	defer f.Close()
+
+	fake := &fakeValueStreamExportDB{
+		streamCols: []string{"id", "name"},
+		streamValues: [][]interface{}{
+			{1, "O'Brien"},
+			{2, nil},
+		},
+	}
+
+	rowCount, columns, err := exportQueryResultToFile(
+		f,
+		fake,
+		connection.ConnectionConfig{Type: "mysql", Timeout: 10},
+		"SELECT id, name FROM users",
+		ExportFileOptions{
+			Format:               "sql",
+			InsertSQLDialect:     "mysql",
+			InsertSQLTargetTable: "users",
+		},
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("exportQueryResultToFile 返回错误: %v", err)
+	}
+	if rowCount != 2 {
+		t.Fatalf("导出行数异常，want=2 got=%d", rowCount)
+	}
+	if len(columns) != 2 || columns[0] != "id" || columns[1] != "name" {
+		t.Fatalf("导出列异常，got=%v", columns)
+	}
+
+	contentBytes, err := os.ReadFile(f.Name())
+	if err != nil {
+		t.Fatalf("读取导出文件失败: %v", err)
+	}
+	content := string(contentBytes)
+	want := "INSERT INTO `users` (`id`, `name`) VALUES (1, 'O''Brien'),\n(2, NULL);\n"
+	if content != want {
+		t.Fatalf("INSERT SQL 导出内容异常，want=%q got=%q", want, content)
+	}
+}
+
+func TestExportQueryResultToFile_WritesInsertSQLWithEmptyTargetTable(t *testing.T) {
+	f, err := os.CreateTemp("", "gonavi-export-insert-empty-target-*.sql")
+	if err != nil {
+		t.Fatalf("创建临时文件失败: %v", err)
+	}
+	defer os.Remove(f.Name())
+	defer f.Close()
+
+	fake := &fakeValueStreamExportDB{
+		streamCols: []string{"user_id", "role_name"},
+		streamValues: [][]interface{}{
+			{1, "admin"},
+		},
+	}
+
+	_, _, err = exportQueryResultToFile(
+		f,
+		fake,
+		connection.ConnectionConfig{Type: "mysql", Timeout: 10},
+		"SELECT u.id AS user_id, r.name AS role_name FROM users u JOIN roles r ON r.id = u.role_id",
+		ExportFileOptions{
+			Format:                         "sql",
+			InsertSQLDialect:               "mysql",
+			InsertSQLAllowEmptyTargetTable: true,
+		},
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("exportQueryResultToFile 返回错误: %v", err)
+	}
+
+	contentBytes, err := os.ReadFile(f.Name())
+	if err != nil {
+		t.Fatalf("读取导出文件失败: %v", err)
+	}
+	want := "INSERT INTO `<table_name>` (`user_id`, `role_name`) VALUES (1, 'admin');\n"
+	if string(contentBytes) != want {
+		t.Fatalf("空目标表 INSERT SQL 导出内容异常，want=%q got=%q", want, string(contentBytes))
+	}
+}
+
+func TestExportQueryResultToFile_WritesPostgresBooleanWithPlaceholderTable(t *testing.T) {
+	f, err := os.CreateTemp("", "gonavi-export-insert-postgres-placeholder-*.sql")
+	if err != nil {
+		t.Fatalf("创建临时文件失败: %v", err)
+	}
+	defer os.Remove(f.Name())
+	defer f.Close()
+
+	fake := &fakeValueStreamExportDB{
+		streamCols:   []string{"active"},
+		streamValues: [][]interface{}{{true}},
+	}
+
+	_, _, err = exportQueryResultToFile(
+		f,
+		fake,
+		connection.ConnectionConfig{Type: "postgres", Timeout: 10},
+		"SELECT u.active FROM users u JOIN roles r ON r.id = u.role_id",
+		ExportFileOptions{
+			Format:                         "sql",
+			InsertSQLDialect:               "postgres",
+			InsertSQLAllowEmptyTargetTable: true,
+		},
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("exportQueryResultToFile 返回错误: %v", err)
+	}
+
+	contentBytes, err := os.ReadFile(f.Name())
+	if err != nil {
+		t.Fatalf("读取导出文件失败: %v", err)
+	}
+	want := "INSERT INTO \"<table_name>\" (\"active\") VALUES (true);\n"
+	if string(contentBytes) != want {
+		t.Fatalf("PostgreSQL 占位表布尔值导出异常，want=%q got=%q", want, string(contentBytes))
+	}
+}
+
+func TestExportQueryResultToFile_UsesColumnTypesForInsertSQLLiterals(t *testing.T) {
+	f, err := os.CreateTemp("", "gonavi-export-insert-types-*.sql")
+	if err != nil {
+		t.Fatalf("创建临时文件失败: %v", err)
+	}
+	defer os.Remove(f.Name())
+	defer f.Close()
+
+	fake := &fakeValueStreamExportDB{
+		streamCols: []string{"active", "archived"},
+		streamValues: [][]interface{}{
+			{true, false},
+		},
+	}
+
+	_, _, err = exportQueryResultToFile(
+		f,
+		fake,
+		connection.ConnectionConfig{Type: "postgres", Timeout: 10},
+		"SELECT active, archived FROM public.users",
+		ExportFileOptions{
+			Format:               "sql",
+			InsertSQLDialect:     "postgres",
+			InsertSQLTargetTable: "public.users",
+			InsertSQLColumnTypes: map[string]string{
+				"active":   "boolean",
+				"archived": "bool",
+			},
+		},
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("exportQueryResultToFile 返回错误: %v", err)
+	}
+
+	contentBytes, err := os.ReadFile(f.Name())
+	if err != nil {
+		t.Fatalf("读取导出文件失败: %v", err)
+	}
+	want := "INSERT INTO \"public\".\"users\" (\"active\", \"archived\") VALUES (true, false);\n"
+	if string(contentBytes) != want {
+		t.Fatalf("布尔字段 INSERT SQL 导出内容异常，want=%q got=%q", want, string(contentBytes))
+	}
+}
+
+func TestExportQueryResultToFile_RejectsColumnsOutsideInsertTargetTable(t *testing.T) {
+	f, err := os.CreateTemp("", "gonavi-export-insert-mismatch-*.sql")
+	if err != nil {
+		t.Fatalf("创建临时文件失败: %v", err)
+	}
+	defer os.Remove(f.Name())
+	defer f.Close()
+
+	fake := &fakeValueStreamExportDB{
+		streamCols:   []string{"user_id"},
+		streamValues: [][]interface{}{{1}},
+	}
+
+	_, _, err = exportQueryResultToFile(
+		f,
+		fake,
+		connection.ConnectionConfig{Type: "mysql", Timeout: 10},
+		"SELECT id AS user_id FROM users",
+		ExportFileOptions{
+			Format:                 "sql",
+			InsertSQLDialect:       "mysql",
+			InsertSQLTargetTable:   "users",
+			InsertSQLTargetColumns: map[string]string{"id": "id"},
+		},
+		nil,
+	)
+	if err == nil || !strings.Contains(err.Error(), `query result column "user_id" does not match`) {
+		t.Fatalf("列别名不匹配时应拒绝 INSERT SQL 导出，err=%v", err)
+	}
+}
+
 func TestExportQueryResultToFile_UsesValueStreamPathWhenAvailable(t *testing.T) {
 	f, err := os.CreateTemp("", "gonavi-export-stream-values-*.csv")
 	if err != nil {
@@ -622,6 +1023,150 @@ func TestExportQueryResultToFile_UsesValueStreamPathWhenAvailable(t *testing.T) 
 	}
 	if len(columns) != 2 || columns[0] != "id" || columns[1] != "name" {
 		t.Fatalf("导出列异常，got=%v", columns)
+	}
+}
+
+func TestExportQueryResultToFile_ProjectsRequestedColumnsInOrderForValueStream(t *testing.T) {
+	f, err := os.CreateTemp("", "gonavi-export-selected-columns-*.csv")
+	if err != nil {
+		t.Fatalf("创建临时文件失败: %v", err)
+	}
+	defer os.Remove(f.Name())
+	defer f.Close()
+
+	fake := &fakeValueStreamExportDB{
+		streamCols: []string{"id", "name", "note"},
+		streamValues: [][]interface{}{
+			{1, "alice", "internal"},
+			{2, "bob", "private"},
+		},
+	}
+
+	rowCount, columns, err := exportQueryResultToFile(
+		f,
+		fake,
+		connection.ConnectionConfig{Type: "mysql", Timeout: 10},
+		"SELECT id, name, note FROM users",
+		ExportFileOptions{Format: "csv", Columns: []string{"name", "id"}},
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("exportQueryResultToFile 返回错误: %v", err)
+	}
+	if rowCount != 2 {
+		t.Fatalf("导出行数异常，want=2 got=%d", rowCount)
+	}
+	if len(columns) != 2 || columns[0] != "name" || columns[1] != "id" {
+		t.Fatalf("导出列未按请求顺序投影，got=%v", columns)
+	}
+
+	contentBytes, err := os.ReadFile(f.Name())
+	if err != nil {
+		t.Fatalf("读取导出文件失败: %v", err)
+	}
+	content := strings.TrimPrefix(string(contentBytes), "\uFEFF")
+	want := "name,id\nalice,1\nbob,2\n"
+	if content != want {
+		t.Fatalf("选列导出内容异常，want=%q got=%q", want, content)
+	}
+}
+
+func TestExportQueryResultToFile_ProjectsRequestedColumnsInOrderForMapStream(t *testing.T) {
+	f, err := os.CreateTemp("", "gonavi-export-selected-map-columns-*.csv")
+	if err != nil {
+		t.Fatalf("创建临时文件失败: %v", err)
+	}
+	defer os.Remove(f.Name())
+	defer f.Close()
+
+	fake := &fakeStreamExportDB{
+		streamCols: []string{"id", "name", "note"},
+		streamData: []map[string]interface{}{
+			{"id": 1, "name": "alice", "note": "internal"},
+		},
+	}
+
+	_, columns, err := exportQueryResultToFile(
+		f,
+		fake,
+		connection.ConnectionConfig{Type: "mysql", Timeout: 10},
+		"SELECT id, name, note FROM users",
+		ExportFileOptions{Format: "csv", Columns: []string{"note", "id"}},
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("exportQueryResultToFile 返回错误: %v", err)
+	}
+	if len(columns) != 2 || columns[0] != "note" || columns[1] != "id" {
+		t.Fatalf("导出列未按请求顺序投影，got=%v", columns)
+	}
+
+	contentBytes, err := os.ReadFile(f.Name())
+	if err != nil {
+		t.Fatalf("读取导出文件失败: %v", err)
+	}
+	content := strings.TrimPrefix(string(contentBytes), "\uFEFF")
+	want := "note,id\ninternal,1\n"
+	if content != want {
+		t.Fatalf("选列 map 流导出内容异常，want=%q got=%q", want, content)
+	}
+}
+
+func TestExportQueryResultToFile_RejectsRequestedColumnMissingFromResult(t *testing.T) {
+	f, err := os.CreateTemp("", "gonavi-export-missing-column-*.csv")
+	if err != nil {
+		t.Fatalf("创建临时文件失败: %v", err)
+	}
+	defer os.Remove(f.Name())
+	defer f.Close()
+
+	fake := &fakeValueStreamExportDB{
+		streamCols:   []string{"id", "name"},
+		streamValues: [][]interface{}{{1, "alice"}},
+	}
+
+	_, _, err = exportQueryResultToFile(
+		f,
+		fake,
+		connection.ConnectionConfig{Type: "mysql", Timeout: 10},
+		"SELECT id, name FROM users",
+		ExportFileOptions{Format: "csv", Columns: []string{"name", "missing"}},
+		nil,
+	)
+	if err == nil || !strings.Contains(err.Error(), `requested export column "missing" was not found`) {
+		t.Fatalf("查询结果不包含请求列时应拒绝导出，err=%v", err)
+	}
+}
+
+func TestExportQueryResultToFile_RejectsExplicitEmptyColumnSelection(t *testing.T) {
+	fake := &fakeValueStreamExportDB{
+		streamCols:   []string{"id"},
+		streamValues: [][]interface{}{{1}},
+	}
+	for name, selectedColumns := range map[string][]string{
+		"empty":      {},
+		"blank-only": {"", "   "},
+	} {
+		t.Run(name, func(t *testing.T) {
+			f, err := os.CreateTemp("", "gonavi-export-empty-query-columns-*.csv")
+			if err != nil {
+				t.Fatalf("创建临时文件失败: %v", err)
+			}
+			defer os.Remove(f.Name())
+			defer f.Close()
+
+			_, _, err = exportQueryResultToFile(
+				f,
+				fake,
+				connection.ConnectionConfig{Type: "mysql", Timeout: 10},
+				"SELECT id FROM users",
+				ExportFileOptions{Format: "csv", Columns: selectedColumns},
+				nil,
+			)
+			if err == nil || !strings.Contains(err.Error(), "at least one export column must be selected") {
+				t.Fatalf("显式空选列应拒绝查询导出，err=%v", err)
+			}
+		})
 	}
 }
 
@@ -707,7 +1252,7 @@ func TestWriteRowsToFile_HTML_EscapeAndStyle(t *testing.T) {
 	if !strings.Contains(content, "line1<br>line2") {
 		t.Fatalf("html 导出换行未转为 <br>: %s", content)
 	}
-	if !strings.Contains(content, "<td>NULL</td>") {
+	if !strings.Contains(content, "<td></td>") {
 		t.Fatalf("html 导出空值显示异常: %s", content)
 	}
 }
@@ -1138,6 +1683,333 @@ func TestDumpTableSQL_OracleBackupBatchesRowsIntoInsertAll(t *testing.T) {
 	}
 }
 
+func TestNormalizeExportFileOptionsPreservesIncludeDropIfExists(t *testing.T) {
+	normalized := normalizeExportFileOptions("sql", ExportFileOptions{
+		Format:              " SQL ",
+		IncludeDropIfExists: true,
+	})
+
+	if normalized.Format != "sql" {
+		t.Fatalf("expected normalized SQL format, got %q", normalized.Format)
+	}
+	if !normalized.IncludeDropIfExists {
+		t.Fatal("expected IncludeDropIfExists to survive option normalization")
+	}
+}
+
+func TestWriteSQLDropIfExistsPreambleDefaultsOffAndRequiresSchemaExport(t *testing.T) {
+	config := connection.ConnectionConfig{Type: "mysql"}
+	objects := []string{"users"}
+
+	for _, tc := range []struct {
+		name          string
+		includeSchema bool
+		options       ExportFileOptions
+	}{
+		{name: "default off", includeSchema: true, options: ExportFileOptions{}},
+		{name: "data only", includeSchema: false, options: ExportFileOptions{IncludeDropIfExists: true}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var output bytes.Buffer
+			writer := bufio.NewWriter(&output)
+			if err := writeSQLDropIfExistsPreamble(
+				writer,
+				config,
+				"app",
+				objects,
+				map[string]string{},
+				tc.includeSchema,
+				tc.options,
+			); err != nil {
+				t.Fatalf("writeSQLDropIfExistsPreamble returned error: %v", err)
+			}
+			if err := writer.Flush(); err != nil {
+				t.Fatalf("flush drop preamble: %v", err)
+			}
+			if output.Len() != 0 {
+				t.Fatalf("drop preamble must be omitted, got %q", output.String())
+			}
+		})
+	}
+}
+
+func TestExportDatabaseSQLToFileDefaultOptionsDoNotEmitDrops(t *testing.T) {
+	originalNewDatabaseFunc := newDatabaseFunc
+	t.Cleanup(func() {
+		newDatabaseFunc = originalNewDatabaseFunc
+	})
+
+	fakeDB := &fakeSQLDumpExportDB{
+		tables:    []string{"users"},
+		createSQL: "CREATE TABLE `users` (`id` BIGINT)",
+	}
+	newDatabaseFunc = func(string) (db.Database, error) {
+		return fakeDB, nil
+	}
+	app := NewApp()
+	config := connection.ConnectionConfig{Type: "mysql", Host: "127.0.0.1", Port: 3306}
+
+	legacyFile, err := os.CreateTemp(t.TempDir(), "legacy-export-*.sql")
+	if err != nil {
+		t.Fatalf("create legacy export file: %v", err)
+	}
+	legacyPath := legacyFile.Name()
+	if err := legacyFile.Close(); err != nil {
+		t.Fatalf("close legacy export file: %v", err)
+	}
+	legacyResult := app.exportDatabaseSQLToFile(config, "app", false, legacyPath, ExportFileOptions{})
+	if !legacyResult.Success {
+		t.Fatalf("legacy export failed: %+v", legacyResult)
+	}
+	legacyContent, err := os.ReadFile(legacyPath)
+	if err != nil {
+		t.Fatalf("read legacy export: %v", err)
+	}
+	if strings.Contains(string(legacyContent), "DROP TABLE") {
+		t.Fatalf("default/legacy export must not emit DROP statements: %s", legacyContent)
+	}
+
+	optInFile, err := os.CreateTemp(t.TempDir(), "drop-export-*.sql")
+	if err != nil {
+		t.Fatalf("create opt-in export file: %v", err)
+	}
+	optInPath := optInFile.Name()
+	if err := optInFile.Close(); err != nil {
+		t.Fatalf("close opt-in export file: %v", err)
+	}
+	optInResult := app.exportDatabaseSQLToFile(
+		config,
+		"app",
+		false,
+		optInPath,
+		ExportFileOptions{IncludeDropIfExists: true},
+	)
+	if !optInResult.Success {
+		t.Fatalf("opt-in export failed: %+v", optInResult)
+	}
+	optInContent, err := os.ReadFile(optInPath)
+	if err != nil {
+		t.Fatalf("read opt-in export: %v", err)
+	}
+	dropIndex := strings.Index(string(optInContent), "DROP TABLE IF EXISTS `app`.`users`;")
+	createIndex := strings.Index(string(optInContent), "CREATE TABLE `users`")
+	if dropIndex < 0 || createIndex < 0 || dropIndex >= createIndex {
+		t.Fatalf("opt-in export must place DROP before CREATE: %s", optInContent)
+	}
+}
+
+func TestExportDatabaseSQLToFileReportsObjectProgress(t *testing.T) {
+	originalNewDatabaseFunc := newDatabaseFunc
+	t.Cleanup(func() {
+		newDatabaseFunc = originalNewDatabaseFunc
+	})
+
+	fakeDB := &fakeSQLDumpExportDB{
+		tables:    []string{"users", "orders"},
+		createSQL: "CREATE TABLE `placeholder` (`id` BIGINT)",
+	}
+	newDatabaseFunc = func(string) (db.Database, error) {
+		return fakeDB, nil
+	}
+	emitter := &captureExportProgressEmitter{}
+	app := NewApp()
+	app.ctx = uievents.WithEmitter(context.Background(), emitter)
+	filePath := filepath.Join(t.TempDir(), "app_backup.sql")
+
+	result := app.exportDatabaseSQLToFile(
+		connection.ConnectionConfig{Type: "mysql", Host: "127.0.0.1", Port: 3306},
+		"app",
+		false,
+		filePath,
+		ExportFileOptions{Format: "sql", JobID: "database-backup-job"},
+	)
+	if !result.Success {
+		t.Fatalf("database export failed: %+v", result)
+	}
+	if len(emitter.events) < 4 {
+		t.Fatalf("expected start/running/finalizing/done events, got %#v", emitter.events)
+	}
+	statuses := make([]string, 0, len(emitter.events))
+	for _, event := range emitter.events {
+		statuses = append(statuses, event.Status)
+		if event.JobID != "database-backup-job" {
+			t.Fatalf("unexpected progress job id: %#v", event)
+		}
+		if event.FilePath != filePath {
+			t.Fatalf("progress must expose selected backup path: %#v", event)
+		}
+	}
+	for _, want := range []string{"start", "running", "finalizing", "done"} {
+		if !slices.Contains(statuses, want) {
+			t.Fatalf("missing %q progress status in %v", want, statuses)
+		}
+	}
+	itemEvents := make([]exportProgressPayload, 0, 2)
+	for _, event := range emitter.events {
+		if event.Status == "running" && (strings.Contains(event.Stage, "users") || strings.Contains(event.Stage, "orders")) {
+			itemEvents = append(itemEvents, event)
+		}
+	}
+	if len(itemEvents) != 2 || itemEvents[0].Current != 0 || itemEvents[1].Current != 1 {
+		t.Fatalf("expected one running event per object with completed-object counts, got %#v", itemEvents)
+	}
+	last := emitter.events[len(emitter.events)-1]
+	if !last.TotalRowsKnown || last.Total != 2 || last.Current != 2 {
+		t.Fatalf("done progress must report all exported objects: %#v", last)
+	}
+}
+
+func TestExportDatabaseSQLToFilePreservesExistingBackupOnFailure(t *testing.T) {
+	originalNewDatabaseFunc := newDatabaseFunc
+	t.Cleanup(func() {
+		newDatabaseFunc = originalNewDatabaseFunc
+	})
+
+	fakeDB := &fakeSQLDumpExportDB{
+		tables:    []string{"users"},
+		createErr: fmt.Errorf("forced create statement failure"),
+	}
+	newDatabaseFunc = func(string) (db.Database, error) {
+		return fakeDB, nil
+	}
+	directory := t.TempDir()
+	filePath := filepath.Join(directory, "app_backup.sql")
+	const previousBackup = "-- previous complete backup\n"
+	if err := os.WriteFile(filePath, []byte(previousBackup), 0o600); err != nil {
+		t.Fatalf("write previous backup: %v", err)
+	}
+
+	result := NewApp().exportDatabaseSQLToFile(
+		connection.ConnectionConfig{Type: "mysql", Host: "127.0.0.1", Port: 3306},
+		"app",
+		false,
+		filePath,
+		ExportFileOptions{Format: "sql"},
+	)
+	if result.Success {
+		t.Fatalf("expected export failure, got %+v", result)
+	}
+	content, err := os.ReadFile(filePath)
+	if err != nil {
+		t.Fatalf("read preserved backup: %v", err)
+	}
+	if string(content) != previousBackup {
+		t.Fatalf("failed export must preserve previous backup, got %q", content)
+	}
+	temporaryFiles, err := filepath.Glob(filepath.Join(directory, ".gonavi-export-*.part"))
+	if err != nil {
+		t.Fatalf("glob temporary export files: %v", err)
+	}
+	if len(temporaryFiles) != 0 {
+		t.Fatalf("failed export must remove temporary files, got %v", temporaryFiles)
+	}
+}
+
+func TestWriteSQLDropIfExistsPreambleReversesCreateOrderAndDistinguishesViews(t *testing.T) {
+	config := connection.ConnectionConfig{Type: "mysql"}
+	objects := []string{"accounts", "orders", "active_orders"}
+	viewLookup := map[string]string{
+		normalizeExportObjectKey(config, "app", "active_orders"): "active_orders",
+	}
+	var output bytes.Buffer
+	writer := bufio.NewWriter(&output)
+
+	if err := writeSQLDropIfExistsPreamble(
+		writer,
+		config,
+		"app",
+		objects,
+		viewLookup,
+		true,
+		ExportFileOptions{IncludeDropIfExists: true},
+	); err != nil {
+		t.Fatalf("writeSQLDropIfExistsPreamble returned error: %v", err)
+	}
+	if err := writer.Flush(); err != nil {
+		t.Fatalf("flush drop preamble: %v", err)
+	}
+
+	content := output.String()
+	wantStatements := []string{
+		"DROP VIEW IF EXISTS `app`.`active_orders`;",
+		"DROP TABLE IF EXISTS `app`.`orders`;",
+		"DROP TABLE IF EXISTS `app`.`accounts`;",
+	}
+	previousIndex := -1
+	for _, statement := range wantStatements {
+		index := strings.Index(content, statement)
+		if index < 0 {
+			t.Fatalf("drop preamble is missing %q: %s", statement, content)
+		}
+		if index <= previousIndex {
+			t.Fatalf("drop statements do not follow reverse create order: %s", content)
+		}
+		previousIndex = index
+	}
+}
+
+func TestBuildSQLDropIfExistsStatementKeepsOracleBackwardCompatible(t *testing.T) {
+	statement := buildSQLDropIfExistsStatement(
+		connection.ConnectionConfig{Type: "oracle"},
+		"APP",
+		"USERS",
+		false,
+	)
+
+	for _, fragment := range []string{
+		`EXECUTE IMMEDIATE 'DROP TABLE "APP"."USERS"'`,
+		"IF SQLCODE != -942 THEN",
+		"END;\n/",
+	} {
+		if !strings.Contains(statement, fragment) {
+			t.Fatalf("Oracle drop block is missing %q: %s", fragment, statement)
+		}
+	}
+
+	statements := splitSQLStatementsForDialect("oracle", statement+"\nCREATE TABLE \"APP\".\"USERS\" (\"ID\" NUMBER);")
+	if len(statements) != 2 {
+		t.Fatalf("Oracle drop block must remain one executable statement before CREATE, got %#v", statements)
+	}
+	if !strings.Contains(statements[0], `EXECUTE IMMEDIATE 'DROP TABLE "APP"."USERS"'`) {
+		t.Fatalf("unexpected Oracle drop statement after splitting: %#v", statements)
+	}
+}
+
+func TestBuildSQLDropIfExistsStatementUsesDropTableForClickHouseViews(t *testing.T) {
+	statement := buildSQLDropIfExistsStatement(
+		connection.ConnectionConfig{Type: "clickhouse"},
+		"analytics",
+		"events_by_hour",
+		true,
+	)
+
+	if want := "DROP TABLE IF EXISTS `analytics`.`events_by_hour`;"; statement != want {
+		t.Fatalf("ClickHouse view drop statement mismatch: got %q, want %q", statement, want)
+	}
+}
+
+func TestWriteSQLDatabaseBackupHeaderCreatesMySQLDatabaseBeforeSelectingIt(t *testing.T) {
+	var output bytes.Buffer
+	writer := bufio.NewWriter(&output)
+
+	if err := writeSQLDatabaseBackupHeader(writer, connection.ConnectionConfig{Type: "mysql"}, "restore_target"); err != nil {
+		t.Fatalf("writeSQLDatabaseBackupHeader returned error: %v", err)
+	}
+	if err := writer.Flush(); err != nil {
+		t.Fatalf("flush header: %v", err)
+	}
+
+	content := output.String()
+	createIndex := strings.Index(content, "CREATE DATABASE IF NOT EXISTS `restore_target`;")
+	useIndex := strings.Index(content, "USE `restore_target`;")
+	if createIndex < 0 {
+		t.Fatalf("database backup header must create the source database, content=%q", content)
+	}
+	if useIndex < 0 || createIndex > useIndex {
+		t.Fatalf("database backup header must create the database before USE, content=%q", content)
+	}
+}
+
 func TestFilterExportObjectsBySchema_PostgresQualifiedObjectsOnly(t *testing.T) {
 	got := filterExportObjectsBySchema(
 		connection.ConnectionConfig{Type: "postgres"},
@@ -1180,5 +2052,55 @@ func TestFilterExportViewLookupBySchema_PostgresQualifiedViewsOnly(t *testing.T)
 	}
 	if _, ok := got["public.v_users"]; ok {
 		t.Fatalf("expected public.v_users to be filtered out, got=%v", got)
+	}
+}
+
+func TestWriteSQLSchemaExportHeaderPostgresCreatesQuotedSchema(t *testing.T) {
+	var output bytes.Buffer
+	writer := bufio.NewWriter(&output)
+	if err := writeSQLSchemaExportHeader(
+		writer,
+		connection.ConnectionConfig{Type: "postgres"},
+		"app_db",
+		`Sales"Ops`,
+	); err != nil {
+		t.Fatalf("write postgres schema export header: %v", err)
+	}
+	if err := writer.Flush(); err != nil {
+		t.Fatalf("flush postgres schema export header: %v", err)
+	}
+
+	content := output.String()
+	if !strings.Contains(content, `-- Schema: Sales"Ops`) {
+		t.Fatalf("schema export header must describe the selected schema, content=%q", content)
+	}
+	if !strings.Contains(content, `CREATE SCHEMA IF NOT EXISTS "Sales""Ops";`) {
+		t.Fatalf("schema export header must bootstrap the quoted schema, content=%q", content)
+	}
+	databaseIndex := strings.Index(content, "-- Database: app_db")
+	schemaIndex := strings.Index(content, `-- Schema: Sales"Ops`)
+	createIndex := strings.Index(content, `CREATE SCHEMA IF NOT EXISTS "Sales""Ops";`)
+	if databaseIndex < 0 || schemaIndex < databaseIndex || createIndex < schemaIndex {
+		t.Fatalf("schema bootstrap must follow the database and schema metadata, content=%q", content)
+	}
+}
+
+func TestWriteSQLSchemaExportHeaderDoesNotBootstrapNonPostgresSchema(t *testing.T) {
+	var output bytes.Buffer
+	writer := bufio.NewWriter(&output)
+	if err := writeSQLSchemaExportHeader(
+		writer,
+		connection.ConnectionConfig{Type: "mysql"},
+		"app_db",
+		"sales",
+	); err != nil {
+		t.Fatalf("write non-postgres schema export header: %v", err)
+	}
+	if err := writer.Flush(); err != nil {
+		t.Fatalf("flush non-postgres schema export header: %v", err)
+	}
+
+	if strings.Contains(output.String(), "CREATE SCHEMA") {
+		t.Fatalf("non-postgres schema export must not inject postgres bootstrap SQL, content=%q", output.String())
 	}
 }

@@ -1,7 +1,10 @@
 import type { ConnectionConfig, SavedConnection } from "../../types";
 import {
   deriveLegacyConnectionReadOnlyFlag,
+  isSingleReadOnlyConnectionQuery,
+  MAX_CONNECTION_KEEPALIVE_SQL_LENGTH,
   normalizeConnectionProtectionConfig,
+  supportsConnectionKeepAliveSQL,
   supportsConnectionReadOnlyMode,
 } from "../../utils/connectionReadOnly";
 import { resolveConnectionSecretDraft } from "../../utils/connectionSecretDraft";
@@ -252,6 +255,7 @@ export const buildSavedConnectionInput = ({
     includeRedisDatabases: isRedisType
       ? values.includeRedisDatabases
       : undefined,
+    schemaVisibilityByDatabase: initialValues?.schemaVisibilityByDatabase,
     iconType: customIconType || "",
     iconColor: customIconColor || "",
     clearPrimaryPassword: primaryDraft.clearStoredSecret,
@@ -793,6 +797,37 @@ export const buildConnectionConfig = async ({
           MAX_KEEPALIVE_INTERVAL_MINUTES,
         )
       : DEFAULT_KEEPALIVE_INTERVAL_MINUTES;
+  const keepAliveSQLInput = String(mergedValues.keepAliveSQL || "").trim();
+  const keepAliveSQLSupported = supportsConnectionKeepAliveSQL({
+    type,
+    driver: mergedValues.driver,
+    oceanBaseProtocol: selectedOceanBaseProtocol,
+  });
+  if (
+    keepAliveEnabled &&
+    keepAliveSQLSupported &&
+    keepAliveSQLInput.length > MAX_CONNECTION_KEEPALIVE_SQL_LENGTH
+  ) {
+    throw new Error(t("connection.modal.network.keepAliveSQL.maxLength"));
+  }
+  if (
+    keepAliveEnabled &&
+    keepAliveSQLSupported &&
+    keepAliveSQLInput &&
+    !isSingleReadOnlyConnectionQuery(
+      {
+        type,
+        driver: mergedValues.driver,
+        oceanBaseProtocol: selectedOceanBaseProtocol,
+      },
+      keepAliveSQLInput,
+    )
+  ) {
+    throw new Error(t("connection.modal.network.keepAliveSQL.readOnly"));
+  }
+  const keepAliveSQL = keepAliveSQLSupported
+    ? keepAliveSQLInput.slice(0, MAX_CONNECTION_KEEPALIVE_SQL_LENGTH)
+    : "";
   const normalizedConnectionParams = supportsConnectionParamsForType(type)
     ? type === "oceanbase"
       ? normalizeOceanBaseConnectionParamsText(
@@ -844,6 +879,7 @@ export const buildConnectionConfig = async ({
     timeout: Number(mergedValues.timeout || 30),
     keepAliveEnabled: keepAliveEnabled,
     keepAliveIntervalMinutes: keepAliveIntervalMinutes,
+    keepAliveSQL: keepAliveSQL,
     redisDB: Number.isFinite(Number(mergedValues.redisDB))
       ? Math.max(0, Math.trunc(Number(mergedValues.redisDB)))
       : 0,

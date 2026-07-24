@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Alert, Checkbox, Modal, Select, Space, Typography, message } from 'antd';
+import { Alert, Checkbox, Select, Space, Typography, message } from 'antd';
+import Modal from '../common/ResizableDraggableModal';
 import { t as defaultTranslate } from '../../i18n';
 import { useOptionalI18n } from '../../i18n/provider';
 import {

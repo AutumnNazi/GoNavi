@@ -549,6 +549,7 @@ func encryptConnectionPackagePayloadSecrets(payload connectionPackagePayload, ap
 		encryptedItem := item
 		// 确保别名被拷贝进加密后的连接项（不加密，仅展示偏好）
 		encryptedItem.RedisDbAliases = cloneStringMap(item.RedisDbAliases)
+		encryptedItem.SchemaVisibilityByDatabase = cloneSchemaVisibilityByDatabase(item.SchemaVisibilityByDatabase)
 		bundle, err := encryptSecretBundle(appKey, item.Secrets, connectionPackageItemAAD(item))
 		if err != nil {
 			return connectionPackagePayload{}, err
@@ -570,6 +571,7 @@ func decryptConnectionPackagePayloadSecrets(payload connectionPackagePayload, ap
 	for index, item := range payload.Connections {
 		decryptedItem := item
 		decryptedItem.RedisDbAliases = cloneStringMap(item.RedisDbAliases)
+		decryptedItem.SchemaVisibilityByDatabase = cloneSchemaVisibilityByDatabase(item.SchemaVisibilityByDatabase)
 		bundle, err := decryptSecretBundle(appKey, item.Secrets, connectionPackageItemAAD(item))
 		if err != nil {
 			return connectionPackagePayload{}, err

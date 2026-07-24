@@ -12,17 +12,30 @@ import (
 // GenerateChangePreview 将 ChangeSet 转为可读 SQL 语句（不执行）。
 // quoteIdent 用于引用列名/表名（MySQL: backtick, PostgreSQL: double quote）。
 func GenerateChangePreview(tableName string, changes connection.ChangeSet, quoteIdent func(string) string) (deletes, updates, inserts []string) {
-	qt := quoteIdent
+	return GenerateChangePreviewWithTableQuoter(tableName, changes, quoteIdent, quoteIdent)
+}
+
+// GenerateChangePreviewWithTableQuoter allows qualified table names to be quoted
+// segment by segment while keeping column quoting unchanged.
+func GenerateChangePreviewWithTableQuoter(
+	tableName string,
+	changes connection.ChangeSet,
+	quoteIdent func(string) string,
+	quoteTable func(string) string,
+) (deletes, updates, inserts []string) {
+	if quoteTable == nil {
+		quoteTable = quoteIdent
+	}
 
 	// Deletes
 	for _, pk := range changes.Deletes {
 		var conds []string
 		for _, k := range sortedKeys(pk) {
 			v := pk[k]
-			conds = append(conds, fmt.Sprintf("%s = %s", qt(k), formatLiteral(v)))
+			conds = append(conds, fmt.Sprintf("%s = %s", quoteIdent(k), formatLiteral(v)))
 		}
 		if len(conds) > 0 {
-			deletes = append(deletes, fmt.Sprintf("DELETE FROM %s WHERE %s;", qt(tableName), strings.Join(conds, " AND ")))
+			deletes = append(deletes, fmt.Sprintf("DELETE FROM %s WHERE %s;", quoteTable(tableName), strings.Join(conds, " AND ")))
 		}
 	}
 
@@ -31,7 +44,7 @@ func GenerateChangePreview(tableName string, changes connection.ChangeSet, quote
 		var sets []string
 		for _, k := range sortedKeys(row.Values) {
 			v := row.Values[k]
-			sets = append(sets, fmt.Sprintf("%s = %s", qt(k), formatLiteral(v)))
+			sets = append(sets, fmt.Sprintf("%s = %s", quoteIdent(k), formatLiteral(v)))
 		}
 		if len(sets) == 0 {
 			continue
@@ -39,12 +52,12 @@ func GenerateChangePreview(tableName string, changes connection.ChangeSet, quote
 		var conds []string
 		for _, k := range sortedKeys(row.Keys) {
 			v := row.Keys[k]
-			conds = append(conds, fmt.Sprintf("%s = %s", qt(k), formatLiteral(v)))
+			conds = append(conds, fmt.Sprintf("%s = %s", quoteIdent(k), formatLiteral(v)))
 		}
 		if len(conds) == 0 {
 			continue
 		}
-		updates = append(updates, fmt.Sprintf("UPDATE %s SET %s WHERE %s;", qt(tableName), strings.Join(sets, ", "), strings.Join(conds, " AND ")))
+		updates = append(updates, fmt.Sprintf("UPDATE %s SET %s WHERE %s;", quoteTable(tableName), strings.Join(sets, ", "), strings.Join(conds, " AND ")))
 	}
 
 	// Inserts
@@ -56,13 +69,13 @@ func GenerateChangePreview(tableName string, changes connection.ChangeSet, quote
 			if v == nil {
 				continue
 			}
-			cols = append(cols, qt(k))
+			cols = append(cols, quoteIdent(k))
 			vals = append(vals, formatLiteral(v))
 		}
 		if len(cols) == 0 {
 			continue
 		}
-		inserts = append(inserts, fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s);", qt(tableName), strings.Join(cols, ", "), strings.Join(vals, ", ")))
+		inserts = append(inserts, fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s);", quoteTable(tableName), strings.Join(cols, ", "), strings.Join(vals, ", ")))
 	}
 
 	return deletes, updates, inserts

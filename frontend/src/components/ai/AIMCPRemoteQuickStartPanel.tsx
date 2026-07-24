@@ -27,7 +27,7 @@ const remoteCodeStyle = (overlayTheme: OverlayWorkbenchTheme): React.CSSProperti
   display: 'block',
   marginTop: 8,
   fontFamily: 'var(--gn-font-mono)',
-  fontSize: 11,
+  fontSize: 'var(--gn-font-size-sm, 12px)',
   color: overlayTheme.titleText,
   whiteSpace: 'pre-wrap',
   overflowWrap: 'anywhere',
@@ -36,16 +36,14 @@ const remoteCodeStyle = (overlayTheme: OverlayWorkbenchTheme): React.CSSProperti
 const RemoteCommandCard: React.FC<RemoteCommandCardProps> = ({
   title,
   children,
-  darkMode,
   overlayTheme,
   cardBorder,
 }) => (
   <div
     style={{
-      padding: '10px 12px',
-      borderRadius: 10,
-      border: `1px solid ${cardBorder}`,
-      background: darkMode ? 'rgba(15,23,42,0.55)' : 'rgba(255,255,255,0.78)',
+      padding: '10px 10px 10px 0',
+      borderBottom: `1px solid ${cardBorder}`,
+      background: 'transparent',
     }}
   >
     <div style={{ fontWeight: 700, fontSize: 12, color: overlayTheme.titleText }}>
@@ -68,10 +66,9 @@ const AIMCPRemoteQuickStartPanel: React.FC<AIMCPRemoteQuickStartPanelProps> = ({
   return (
   <div
     style={{
-      padding: '12px 14px',
-      borderRadius: 12,
-      border: `1px solid ${darkMode ? 'rgba(56,189,248,0.2)' : 'rgba(14,165,233,0.18)'}`,
-      background: darkMode ? 'rgba(14,165,233,0.06)' : 'rgba(240,249,255,0.78)',
+      padding: '14px 0 0',
+      borderTop: `1px solid ${cardBorder}`,
+      background: 'transparent',
       display: 'flex',
       flexDirection: 'column',
       gap: 10,
@@ -88,10 +85,9 @@ const AIMCPRemoteQuickStartPanel: React.FC<AIMCPRemoteQuickStartPanelProps> = ({
         <div
           key={item.key}
           style={{
-            padding: '10px 12px',
-            borderRadius: 10,
-            border: `1px solid ${cardBorder}`,
-            background: darkMode ? 'rgba(15,23,42,0.42)' : 'rgba(255,255,255,0.72)',
+            padding: '10px 10px 10px 0',
+            borderBottom: `1px solid ${cardBorder}`,
+            background: 'transparent',
             display: 'flex',
             flexDirection: 'column',
             gap: 5,
@@ -105,7 +101,7 @@ const AIMCPRemoteQuickStartPanel: React.FC<AIMCPRemoteQuickStartPanelProps> = ({
               style={{
                 padding: '2px 7px',
                 borderRadius: 999,
-                fontSize: 11,
+                fontSize: 'var(--gn-font-size-sm, 12px)',
                 color: item.required ? '#dc2626' : overlayTheme.mutedText,
                 background: item.required
                   ? (darkMode ? 'rgba(248,113,113,0.12)' : 'rgba(254,226,226,0.7)')

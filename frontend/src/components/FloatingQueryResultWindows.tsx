@@ -1,15 +1,40 @@
-import React, { useCallback, useMemo, useRef } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { Button, Tooltip } from 'antd';
 import { CloseOutlined, CompressOutlined } from '@ant-design/icons';
 import { useStore } from '../store';
 import { t } from '../i18n';
-import DataGrid from './DataGrid';
+import DeferredWorkspaceContentErrorBoundary from './DeferredWorkspaceContentErrorBoundary';
+import DeferredWorkspaceContentFallback from './DeferredWorkspaceContentFallback';
+import { hasNativeDetachedWindowManager } from '../utils/nativeDetachedWindowHost';
 import {
   clamp,
   DEFAULT_DETACHED_WINDOW_MIN_HEIGHT,
   DEFAULT_DETACHED_WINDOW_MIN_WIDTH,
   DETACHED_WINDOW_VIEWPORT_PADDING,
 } from '../utils/detachedWindow';
+import { useManagedPointerInteraction } from '../hooks/useManagedPointerInteraction';
+
+const createLazyDetachedResultDataGrid = () => React.lazy(() => import('./DataGrid'));
+
+type DeferredDetachedResultDataGridProps = React.ComponentProps<
+  typeof import('./DataGrid')['default']
+>;
+
+const DeferredDetachedResultDataGrid: React.FC<DeferredDetachedResultDataGridProps> = (props) => {
+  const [renderNonce, setRenderNonce] = useState(0);
+  const LazyDataGrid = useMemo(createLazyDetachedResultDataGrid, [renderNonce]);
+  const retry = useCallback(() => {
+    setRenderNonce((current) => current + 1);
+  }, []);
+
+  return (
+    <DeferredWorkspaceContentErrorBoundary key={renderNonce} onRetry={retry}>
+      <React.Suspense fallback={<DeferredWorkspaceContentFallback />}>
+        <LazyDataGrid {...props} />
+      </React.Suspense>
+    </DeferredWorkspaceContentErrorBoundary>
+  );
+};
 
 type DragMode = 'move' | 'resize-e' | 'resize-s' | 'resize-se';
 
@@ -33,6 +58,10 @@ const FloatingQueryResultWindows: React.FC = () => {
     originW: number;
     originH: number;
   } | null>(null);
+  const nativeWindowManagerAvailable = hasNativeDetachedWindowManager();
+  const { startInteraction: startManagedInteraction } = useManagedPointerInteraction(
+    detachedQueryResultWindows.length > 0 && !nativeWindowManagerAvailable,
+  );
 
   const startInteraction = useCallback((
     event: React.PointerEvent,
@@ -44,6 +73,50 @@ const FloatingQueryResultWindows: React.FC = () => {
     event.preventDefault();
     event.stopPropagation();
     focusDetachedQueryResultWindow(id);
+    const started = startManagedInteraction(event, {
+      onMove: (moveEvent) => {
+        const drag = dragRef.current;
+        if (!drag) return;
+        const dx = moveEvent.clientX - drag.startX;
+        const dy = moveEvent.clientY - drag.startY;
+        if (drag.mode === 'move') {
+          const maxX = Math.max(
+            DETACHED_WINDOW_VIEWPORT_PADDING,
+            window.innerWidth - drag.originW - DETACHED_WINDOW_VIEWPORT_PADDING,
+          );
+          const maxY = Math.max(
+            DETACHED_WINDOW_VIEWPORT_PADDING,
+            window.innerHeight - drag.originH - DETACHED_WINDOW_VIEWPORT_PADDING,
+          );
+          updateDetachedQueryResultBounds(drag.id, {
+            x: clamp(drag.originX + dx, DETACHED_WINDOW_VIEWPORT_PADDING, maxX),
+            y: clamp(drag.originY + dy, DETACHED_WINDOW_VIEWPORT_PADDING, maxY),
+          });
+          return;
+        }
+        let nextW = drag.originW;
+        let nextH = drag.originH;
+        if (drag.mode === 'resize-e' || drag.mode === 'resize-se') {
+          nextW = clamp(
+            drag.originW + dx,
+            DEFAULT_DETACHED_WINDOW_MIN_WIDTH,
+            window.innerWidth - drag.originX - DETACHED_WINDOW_VIEWPORT_PADDING,
+          );
+        }
+        if (drag.mode === 'resize-s' || drag.mode === 'resize-se') {
+          nextH = clamp(
+            drag.originH + dy,
+            DEFAULT_DETACHED_WINDOW_MIN_HEIGHT,
+            window.innerHeight - drag.originY - DETACHED_WINDOW_VIEWPORT_PADDING,
+          );
+        }
+        updateDetachedQueryResultBounds(drag.id, { width: nextW, height: nextH });
+      },
+      onStop: () => {
+        dragRef.current = null;
+      },
+    });
+    if (!started) return;
     dragRef.current = {
       id,
       mode,
@@ -54,57 +127,7 @@ const FloatingQueryResultWindows: React.FC = () => {
       originW: bounds.width,
       originH: bounds.height,
     };
-
-    const handleMove = (moveEvent: PointerEvent) => {
-      const drag = dragRef.current;
-      if (!drag) return;
-      const dx = moveEvent.clientX - drag.startX;
-      const dy = moveEvent.clientY - drag.startY;
-      if (drag.mode === 'move') {
-        const maxX = Math.max(
-          DETACHED_WINDOW_VIEWPORT_PADDING,
-          window.innerWidth - drag.originW - DETACHED_WINDOW_VIEWPORT_PADDING,
-        );
-        const maxY = Math.max(
-          DETACHED_WINDOW_VIEWPORT_PADDING,
-          window.innerHeight - drag.originH - DETACHED_WINDOW_VIEWPORT_PADDING,
-        );
-        updateDetachedQueryResultBounds(drag.id, {
-          x: clamp(drag.originX + dx, DETACHED_WINDOW_VIEWPORT_PADDING, maxX),
-          y: clamp(drag.originY + dy, DETACHED_WINDOW_VIEWPORT_PADDING, maxY),
-        });
-        return;
-      }
-      let nextW = drag.originW;
-      let nextH = drag.originH;
-      if (drag.mode === 'resize-e' || drag.mode === 'resize-se') {
-        nextW = clamp(
-          drag.originW + dx,
-          DEFAULT_DETACHED_WINDOW_MIN_WIDTH,
-          window.innerWidth - drag.originX - DETACHED_WINDOW_VIEWPORT_PADDING,
-        );
-      }
-      if (drag.mode === 'resize-s' || drag.mode === 'resize-se') {
-        nextH = clamp(
-          drag.originH + dy,
-          DEFAULT_DETACHED_WINDOW_MIN_HEIGHT,
-          window.innerHeight - drag.originY - DETACHED_WINDOW_VIEWPORT_PADDING,
-        );
-      }
-      updateDetachedQueryResultBounds(drag.id, { width: nextW, height: nextH });
-    };
-
-    const stop = () => {
-      dragRef.current = null;
-      window.removeEventListener('pointermove', handleMove);
-      window.removeEventListener('pointerup', stop);
-      window.removeEventListener('pointercancel', stop);
-    };
-
-    window.addEventListener('pointermove', handleMove);
-    window.addEventListener('pointerup', stop);
-    window.addEventListener('pointercancel', stop);
-  }, [focusDetachedQueryResultWindow, updateDetachedQueryResultBounds]);
+  }, [focusDetachedQueryResultWindow, startManagedInteraction, updateDetachedQueryResultBounds]);
 
   const handleRestore = useCallback((id: string) => {
     const restored = attachQueryResultWindow(id);
@@ -119,7 +142,7 @@ const FloatingQueryResultWindows: React.FC = () => {
 
   const windows = useMemo(() => detachedQueryResultWindows, [detachedQueryResultWindows]);
 
-  if (windows.length === 0) {
+  if (nativeWindowManagerAvailable || windows.length === 0) {
     return null;
   }
 
@@ -241,6 +264,8 @@ const FloatingQueryResultWindows: React.FC = () => {
           <div
             key={windowState.id}
             className="gn-detached-result-window"
+            data-gonavi-close-shortcut-guard="true"
+            data-gonavi-close-shortcut-scope="blocked"
             style={{
               left: windowState.x,
               top: windowState.y,
@@ -286,7 +311,7 @@ const FloatingQueryResultWindows: React.FC = () => {
                   value={messageText}
                 />
               ) : (
-                <DataGrid
+                <DeferredDetachedResultDataGrid
                   data={windowState.result.rows || []}
                   columnNames={windowState.result.columns || []}
                   loading={false}
@@ -296,6 +321,8 @@ const FloatingQueryResultWindows: React.FC = () => {
                   readOnly={windowState.result.readOnly !== false}
                   connectionId={windowState.connectionId}
                   dbName={windowState.result.metadataDbName || windowState.dbName || ''}
+                  ddlDbName={windowState.result.ddlDbName}
+                  ddlTableName={windowState.result.ddlTableName}
                   resultSql={windowState.result.exportSql || windowState.result.sql}
                   exportScope="queryResult"
                 />

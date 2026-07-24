@@ -26,7 +26,7 @@ const INSPECTION_GUIDANCE_FALLBACKS = {
   inspect_ai_providers:
     'If the user asks which providers are configured, why the model list is empty, whether an API Key is configured, or why sending is unavailable / no model is selected, call inspect_ai_providers first to read the real provider configuration instead of guessing from memory.',
   inspect_mcp_setup:
-    'If the user asks which MCP servers are configured, whether Claude / Codex is connected to the GoNavi MCP, why an external client cannot use it, or which MCP services are enabled, call inspect_mcp_setup first to read the real MCP configuration and external-client access state instead of guessing from memory.',
+    'If the user asks which MCP servers are configured, whether Claude / Codex / OpenCode is connected to the GoNavi MCP, why an external client cannot use it, or which MCP services are enabled, call inspect_mcp_setup first to read the real MCP configuration and external-client access state instead of guessing from memory.',
   inspect_mcp_runtime_failures:
     'If the user mentions a failed new MCP test, zero discovered tools, MCP tool-call failures, stdio disconnects, Docker MCP exits, or HTTP MCP startup failures, call inspect_mcp_runtime_failures first to read real MCP runtime failure logs and current service discovery state, then decide whether to drill into inspect_mcp_draft, inspect_mcp_docker_setup, or inspect_mcp_setup.',
   inspect_mcp_authoring_guide:

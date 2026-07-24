@@ -127,7 +127,7 @@ func (w *xlsxExportFileWriter) ConsumeRow(row map[string]interface{}) error {
 	for i, col := range w.columns {
 		val := row[col]
 		if val == nil {
-			values[i] = "NULL"
+			values[i] = ""
 			continue
 		}
 		values[i] = formatExportCellText(val)
@@ -154,7 +154,7 @@ func (w *xlsxExportFileWriter) ConsumeRowValues(values []interface{}) error {
 			value = values[i]
 		}
 		if value == nil {
-			record[i] = "NULL"
+			record[i] = ""
 			continue
 		}
 		record[i] = formatExportCellText(value)

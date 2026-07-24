@@ -444,6 +444,33 @@ describe('DataViewer safe editing locator', () => {
     renderer.unmount();
   });
 
+  it('queries Oracle views without injecting ROWID and keeps the result read-only', async () => {
+    backendApp.DBGetColumns.mockResolvedValue({
+      success: true,
+      data: [{ name: 'ID', key: '' }, { name: 'NAME', key: '' }],
+    });
+    backendApp.DBQuery.mockResolvedValue({
+      success: true,
+      fields: ['ID', 'NAME'],
+      data: [{ ID: 7, NAME: 'view-row' }],
+    });
+
+    const renderer = await renderAndReload(createTab({
+      id: 'tab-oracle-view-rowid',
+      tableName: 'PERSON_VIEW',
+      title: 'PERSON_VIEW',
+      objectType: 'view',
+    }));
+
+    const viewQueries = backendApp.DBQuery.mock.calls
+      .map((call: any[]) => String(call[2] || ''))
+      .filter((sql: string) => sql.includes('PERSON_VIEW'));
+    expect(viewQueries.length).toBeGreaterThan(0);
+    expect(viewQueries.every((sql: string) => !/\bROWID\b/i.test(sql))).toBe(true);
+    expect(dataGridState.latestProps?.readOnly).toBe(true);
+    renderer.unmount();
+  });
+
   it('does not add fallback ORDER BY for DuckDB table preview when a primary key is available', async () => {
     storeState.connections[0].config.type = 'duckdb';
     storeState.connections[0].config.database = 'main';

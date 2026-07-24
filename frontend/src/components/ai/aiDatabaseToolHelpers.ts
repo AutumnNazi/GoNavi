@@ -1,8 +1,9 @@
 import type { SavedConnection } from '../../types';
 import { buildPaginatedSelectSQL, quoteQualifiedIdent } from '../../utils/sql';
+import { normalizeTableNamesFromMetadataRows } from '../../utils/tableMetadataRows';
 
 export const normalizeTableList = (rows: any[]): string[] =>
-  rows.map((row) => row.Table || row.table || (Object.values(row)[0] as string));
+  normalizeTableNamesFromMetadataRows(rows);
 
 export const normalizeColumns = (rows: any[]) =>
   rows.map((column) => {

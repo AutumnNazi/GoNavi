@@ -8,6 +8,11 @@ const ROW_NUMBER_MIN_WIDTH = 28;
 const ROW_NUMBER_MAX_WIDTH = 120;
 
 type UseDataGridColumnResizeContext = Record<string, any>;
+type ColumnResizeListeners = {
+  blur: () => void;
+  move: (event: MouseEvent) => void;
+  up: (event: MouseEvent) => void;
+};
 
 export const useDataGridColumnResize = (ctx: UseDataGridColumnResizeContext) => {
   const {
@@ -35,7 +40,12 @@ export const useDataGridColumnResize = (ctx: UseDataGridColumnResizeContext) => 
   const resizeRafRef = useRef<number | null>(null);
   const latestClientXRef = useRef<number | null>(null);
   const isResizingRef = useRef(false);
+  const resizeGateTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const resizeBodyStyleRef = useRef<{ cursor: string; userSelect: string } | null>(null);
+  const resizeListenersRef = useRef<ColumnResizeListeners | null>(null);
+  const setColumnWidthsRef = useRef(setColumnWidths);
   const autoFitCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  setColumnWidthsRef.current = setColumnWidths;
 
   const flushGhostPosition = useCallback(() => {
     resizeRafRef.current = null;
@@ -45,10 +55,72 @@ export const useDataGridColumnResize = (ctx: UseDataGridColumnResizeContext) => 
     ghostRef.current.style.transform = `translateX(${relativeLeft}px)`;
   }, []);
 
+  const detachResizeListeners = useCallback(() => {
+    const listeners = resizeListenersRef.current;
+    if (!listeners) return;
+    resizeListenersRef.current = null;
+    if (typeof document !== 'undefined') {
+      document.removeEventListener('mousemove', listeners.move);
+      document.removeEventListener('mouseup', listeners.up);
+    }
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('blur', listeners.blur);
+    }
+  }, []);
+
+  const restoreResizeBodyStyles = useCallback(() => {
+    const previous = resizeBodyStyleRef.current;
+    resizeBodyStyleRef.current = null;
+    if (!previous || typeof document === 'undefined') return;
+    document.body.style.cursor = previous.cursor;
+    document.body.style.userSelect = previous.userSelect;
+  }, []);
+
+  const finishResize = useCallback((clientX?: number, commit = true, deferGateReset = true) => {
+    const dragState = draggingRef.current;
+    const latestClientX = latestClientXRef.current;
+    draggingRef.current = null;
+
+    if (resizeRafRef.current !== null) {
+      cancelAnimationFrame(resizeRafRef.current);
+      resizeRafRef.current = null;
+    }
+    latestClientXRef.current = null;
+    if (ghostRef.current) {
+      ghostRef.current.style.display = 'none';
+    }
+    detachResizeListeners();
+    restoreResizeBodyStyles();
+
+    if (resizeGateTimeoutRef.current !== null) {
+      clearTimeout(resizeGateTimeoutRef.current);
+      resizeGateTimeoutRef.current = null;
+    }
+    if (deferGateReset) {
+      resizeGateTimeoutRef.current = setTimeout(() => {
+        resizeGateTimeoutRef.current = null;
+        isResizingRef.current = false;
+      }, 100);
+    } else {
+      isResizingRef.current = false;
+    }
+
+    if (commit && dragState) {
+      const finalClientX = Number.isFinite(clientX) ? clientX as number : latestClientX ?? dragState.startX;
+      const deltaX = finalClientX - dragState.startX;
+      const isRowNumberColumn = dragState.key === GONAVI_ROW_NUMBER_COLUMN_KEY;
+      const minWidth = isRowNumberColumn ? ROW_NUMBER_MIN_WIDTH : 50;
+      const maxWidth = isRowNumberColumn ? ROW_NUMBER_MAX_WIDTH : Number.POSITIVE_INFINITY;
+      const newWidth = Math.min(maxWidth, Math.max(minWidth, dragState.startWidth + deltaX));
+      setColumnWidthsRef.current((prev: Record<string, number>) => ({ ...prev, [dragState.key]: newWidth }));
+    }
+  }, [detachResizeListeners, restoreResizeBodyStyles]);
+
   const handleResizeStart = useCallback((key: string) => (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
 
+    finishResize(undefined, false, false);
     isResizingRef.current = true;
 
     const startX = e.clientX;
@@ -70,11 +142,38 @@ export const useDataGridColumnResize = (ctx: UseDataGridColumnResizeContext) => 
       ghostRef.current.style.display = 'block';
     }
 
-    document.addEventListener('mousemove', handleResizeMove);
-    document.addEventListener('mouseup', handleResizeStop);
+    const handleMove = (event: MouseEvent) => {
+      if (!draggingRef.current) return;
+      latestClientXRef.current = event.clientX;
+      if (event.buttons === 0) {
+        finishResize(event.clientX);
+        return;
+      }
+      if (resizeRafRef.current !== null) return;
+      resizeRafRef.current = requestAnimationFrame(flushGhostPosition);
+    };
+    const handleUp = (event: MouseEvent) => finishResize(event.clientX);
+    const handleBlur = () => finishResize();
+
+    resizeListenersRef.current = {
+      blur: handleBlur,
+      move: handleMove,
+      up: handleUp,
+    };
+    document.addEventListener('mousemove', handleMove);
+    document.addEventListener('mouseup', handleUp);
+    window.addEventListener('blur', handleBlur);
+    resizeBodyStyleRef.current = {
+      cursor: document.body.style.cursor,
+      userSelect: document.body.style.userSelect,
+    };
     document.body.style.cursor = 'col-resize';
     document.body.style.userSelect = 'none';
-  }, [columnWidths, dataTableDensity]);
+  }, [columnWidths, containerRef, dataTableDensity, finishResize, flushGhostPosition]);
+
+  useEffect(() => () => {
+    finishResize(undefined, false, false);
+  }, [finishResize]);
 
   const measureTextWidth = useCallback((text: string, font: string) => {
     if (typeof document === 'undefined') {
@@ -178,42 +277,6 @@ export const useDataGridColumnResize = (ctx: UseDataGridColumnResizeContext) => 
     const headerEl = handleEl?.closest('th') as HTMLElement | null;
     autoFitColumnWidth(key, headerEl);
   }, [autoFitColumnWidth, setColumnWidths]);
-
-  const handleResizeMove = useCallback((e: MouseEvent) => {
-    if (!draggingRef.current) return;
-    latestClientXRef.current = e.clientX;
-    if (resizeRafRef.current !== null) return;
-    resizeRafRef.current = requestAnimationFrame(flushGhostPosition);
-  }, [flushGhostPosition]);
-
-  const handleResizeStop = useCallback((e: MouseEvent) => {
-    if (!draggingRef.current) return;
-
-    const { startX, startWidth, key } = draggingRef.current;
-    const deltaX = e.clientX - startX;
-    const isRowNumberColumn = key === GONAVI_ROW_NUMBER_COLUMN_KEY;
-    const minWidth = isRowNumberColumn ? ROW_NUMBER_MIN_WIDTH : 50;
-    const maxWidth = isRowNumberColumn ? ROW_NUMBER_MAX_WIDTH : Number.POSITIVE_INFINITY;
-    const newWidth = Math.min(maxWidth, Math.max(minWidth, startWidth + deltaX));
-
-    setColumnWidths((prev: Record<string, number>) => ({ ...prev, [key]: newWidth }));
-
-    if (resizeRafRef.current !== null) {
-      cancelAnimationFrame(resizeRafRef.current);
-      resizeRafRef.current = null;
-    }
-    latestClientXRef.current = null;
-    if (ghostRef.current) ghostRef.current.style.display = 'none';
-    document.removeEventListener('mousemove', handleResizeMove);
-    document.removeEventListener('mouseup', handleResizeStop);
-    document.body.style.cursor = '';
-    document.body.style.userSelect = '';
-    draggingRef.current = null;
-
-    setTimeout(() => {
-      isResizingRef.current = false;
-    }, 100);
-  }, [handleResizeMove, setColumnWidths]);
 
   return {
     autoFitColumnWidth,

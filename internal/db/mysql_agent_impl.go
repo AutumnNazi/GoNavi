@@ -53,13 +53,12 @@ type mysqlAgentResponse struct {
 }
 
 type mysqlAgentClient struct {
-	cmd      *exec.Cmd
-	stdin    io.WriteCloser
-	reader   *bufio.Reader
-	nextID   int64
-	mu       sync.Mutex
-	stderrMu sync.Mutex
-	stderr   strings.Builder
+	cmd    *exec.Cmd
+	stdin  io.WriteCloser
+	reader *bufio.Reader
+	nextID int64
+	mu     sync.Mutex
+	stderr boundedDiagnosticTail
 }
 
 func newMySQLAgentClient(executablePath string) (*mysqlAgentClient, error) {
@@ -111,18 +110,11 @@ func (c *mysqlAgentClient) captureStderr(stderr io.Reader) {
 		if line == "" {
 			continue
 		}
-		c.stderrMu.Lock()
-		if c.stderr.Len() > 0 {
-			c.stderr.WriteString(" | ")
-		}
-		c.stderr.WriteString(line)
-		c.stderrMu.Unlock()
+		c.stderr.Append(line)
 	}
 }
 
 func (c *mysqlAgentClient) stderrText() string {
-	c.stderrMu.Lock()
-	defer c.stderrMu.Unlock()
 	return strings.TrimSpace(c.stderr.String())
 }
 

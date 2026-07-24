@@ -20,6 +20,7 @@ import { t } from '../../i18n';
 import { buildRpcConnectionConfig } from '../../utils/connectionRpcConfig';
 import { buildRedisDbNodeLabel, getRedisDbAlias } from '../../utils/redisDbAlias';
 import { buildJVMMonitoringActionDescriptors } from '../../utils/jvmSidebarActions';
+import { getSchemaVisibilityRule, isSchemaVisible } from '../../utils/schemaVisibility';
 import { type SidebarViewMetadataEntry } from '../../utils/sidebarMetadata';
 import {
   buildQualifiedName,
@@ -28,6 +29,7 @@ import {
   getCaseInsensitiveValue,
   getMetadataDialect,
   getMySQLShowTablesName,
+  getSidebarTableName,
   getSidebarTableDisplayName,
   isSphinxConnection,
   loadDatabaseEvents,
@@ -84,6 +86,7 @@ const buildConnectionReloadSignature = (conn?: SavedConnection | null): string =
     config: conn.config || {},
     includeDatabases: conn.includeDatabases || [],
     includeRedisDatabases: conn.includeRedisDatabases || [],
+    schemaVisibilityByDatabase: conn.schemaVisibilityByDatabase || {},
   });
 };
 
@@ -130,7 +133,7 @@ type UseSidebarTreeLoadersOptions = {
   loadingNodesRef: React.MutableRefObject<Set<string>>;
   setConnectionStates: React.Dispatch<React.SetStateAction<Record<string, SidebarConnectionState>>>;
   setLoadedKeys: React.Dispatch<React.SetStateAction<React.Key[]>>;
-  replaceTreeNodeChildren: (key: React.Key, children: TreeNode[] | undefined) => TreeNode[];
+  replaceTreeNodeChildren: (key: React.Key, children: TreeNode[] | undefined, dataRef?: unknown) => TreeNode[];
   buildRuntimeConfig: (conn: any, overrideDatabase?: string, clearDatabase?: boolean) => any;
   buildJVMRuntimeConfig: (conn: SavedConnection & { dbName?: string }, providerMode: string) => any;
   buildJVMDiagnosticTreeNodes: (conn: SavedConnection) => TreeNode[];
@@ -336,7 +339,7 @@ export const useSidebarTreeLoaders = ({
                       if (conn.includeRedisDatabases && conn.includeRedisDatabases.length > 0) {
                           dbs = dbs.filter(db => conn.includeRedisDatabases!.includes(db.dbIndex));
                       }
-                      replaceTreeNodeChildren(node.key, dbs);
+                      replaceTreeNodeChildren(node.key, dbs, conn);
                       shouldMarkConnectionSuccess = true;
                   } else {
                       setConnectionStates(prev => ({ ...prev, [conn.id]: 'error' }));
@@ -376,7 +379,7 @@ export const useSidebarTreeLoaders = ({
             }
 
             if (dbs.length > 0) {
-                replaceTreeNodeChildren(node.key, dbs);
+                replaceTreeNodeChildren(node.key, dbs, conn);
             } else {
                 // 空列表：清理 loadedKeys 以允许重新加载，不设置 children = []
                 setLoadedKeys(prev => prev.filter(k => k !== node.key));
@@ -538,6 +541,13 @@ export const useSidebarTreeLoaders = ({
                         });
                     });
                 };
+                tableRows.forEach((row: Record<string, any>) => {
+                    const tableName = getSidebarTableName(row);
+                    const rowCount = parseMetadataRowCount(row);
+                    if (tableName && rowCount !== undefined) {
+                        mergeTableMetadata(tableName, { rowCount });
+                    }
+                });
                 if (tableStatsResult?.success && Array.isArray(tableStatsResult.data)) {
                     tableStatsResult.data.forEach((row: Record<string, any>) => {
                         const rawTableName = String(
@@ -594,7 +604,7 @@ export const useSidebarTreeLoaders = ({
                     });
                 }
 	            const tableEntries = tableRows.map((row: any) => {
-	                const tableName = Object.values(row)[0] as string;
+	                const tableName = getSidebarTableName(row as Record<string, any>);
 	                const parsed = splitQualifiedName(tableName);
                     const metadataKeys = buildTableMetadataKeys(tableName);
                     const resolvedMetadata = metadataKeys
@@ -616,7 +626,7 @@ export const useSidebarTreeLoaders = ({
 	                    tableName,
 	                    schemaName: mappedSchemaName,
 	                    displayName: getSidebarTableDisplayName(conn, tableName),
-                        rowCount: resolvedMetadata?.rowCount,
+                        rowCount: parseMetadataRowCount(row) ?? resolvedMetadata?.rowCount,
                         tableSize: resolvedMetadata?.tableSize,
                         createdAt: resolvedMetadata?.createdAt,
                         updatedAt: resolvedMetadata?.updatedAt,
@@ -944,7 +954,13 @@ export const useSidebarTreeLoaders = ({
 	                };
 	            };
 
-	            const shouldGroupBySchema = shouldHideSchemaPrefix(conn as SavedConnection);
+	            // Metadata loading can overlap with a schema visibility save. Render with the
+	            // newest saved connection so an in-flight request cannot restore stale groups.
+	            const latestConnection = useStore.getState().connections.find(
+	                (candidate) => candidate.id === conn.id,
+	            ) || conn;
+	            const latestDatabaseConnection = { ...latestConnection, dbName };
+	            const shouldGroupBySchema = shouldHideSchemaPrefix(latestDatabaseConnection as SavedConnection);
 	            if (shouldGroupBySchema) {
 	                type SchemaBucket = {
 	                    schemaName: string;
@@ -996,8 +1012,10 @@ export const useSidebarTreeLoaders = ({
 	                const includeOracleObjects = isOracleLike;
 	                const includeEvents = supportsDatabaseEvents(conn as SavedConnection);
 
+	                const schemaVisibilityRule = getSchemaVisibilityRule(latestDatabaseConnection, dbName);
 	                const schemaNodes: TreeNode[] = Array.from(schemaMap.values())
 	                    .filter((bucket) => !(isOracleLike && !bucket.schemaName))
+	                    .filter((bucket) => isSchemaVisible(schemaVisibilityRule, bucket.schemaName))
 	                    .sort((a, b) => {
 	                        if (!a.schemaName && !b.schemaName) return 0;
 	                        if (!a.schemaName) return -1;
@@ -1029,7 +1047,7 @@ export const useSidebarTreeLoaders = ({
 	                        };
 	                    });
 
-	                replaceTreeNodeChildren(key, [queriesNode, ...schemaNodes]);
+	                replaceTreeNodeChildren(key, [queriesNode, ...schemaNodes], latestDatabaseConnection);
 	            } else {
 	                const dialect = getMetadataDialect(conn as SavedConnection);
 	                const includeMaterializedViews = dialect === 'starrocks';
@@ -1046,7 +1064,7 @@ export const useSidebarTreeLoaders = ({
 	                    ...(includeEvents ? [buildObjectGroup(key as string, 'events', t('sidebar.object_group.events'), <ClockCircleOutlined />, eventEntries.map(buildEventNode))] : []),
 	                ];
 
-	                replaceTreeNodeChildren(key, [queriesNode, ...groupedNodes]);
+	                replaceTreeNodeChildren(key, [queriesNode, ...groupedNodes], latestDatabaseConnection);
 	            }
                 onDatabaseTreeLoaded?.(String(key));
                 shouldMarkDatabaseSuccess = true;

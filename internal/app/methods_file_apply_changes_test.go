@@ -52,4 +52,89 @@ func TestApplyChangesReturnsDetailedSQLPreview(t *testing.T) {
 	if len(fakeDB.applyChanges.Deletes) != 1 || len(fakeDB.applyChanges.Updates) != 1 || len(fakeDB.applyChanges.Inserts) != 1 {
 		t.Fatalf("ApplyChanges did not send the full change set to the driver: %#v", fakeDB.applyChanges)
 	}
+	if fakeDB.previewTableName != "users" || fakeDB.applyTableName != "users" {
+		t.Fatalf("non-Oracle target changed unexpectedly: preview=%q apply=%q", fakeDB.previewTableName, fakeDB.applyTableName)
+	}
+}
+
+func TestApplyChangesQualifiesOceanBaseOracleTargetWithSelectedSchema(t *testing.T) {
+	originalNewDatabaseFunc := newDatabaseFunc
+	originalResolveDialConfigWithProxyFunc := resolveDialConfigWithProxyFunc
+	originalDriverRuntimeSupportStatusFunc := driverRuntimeSupportStatusFunc
+	originalVerifyDriverAgentRevisionFunc := verifyDriverAgentRevisionFunc
+	t.Cleanup(func() {
+		newDatabaseFunc = originalNewDatabaseFunc
+		resolveDialConfigWithProxyFunc = originalResolveDialConfigWithProxyFunc
+		driverRuntimeSupportStatusFunc = originalDriverRuntimeSupportStatusFunc
+		verifyDriverAgentRevisionFunc = originalVerifyDriverAgentRevisionFunc
+	})
+
+	fakeDB := &fakeCreateDatabaseDB{}
+	newDatabaseFunc = func(dbType string) (db.Database, error) {
+		return fakeDB, nil
+	}
+	resolveDialConfigWithProxyFunc = func(raw connection.ConnectionConfig) (connection.ConnectionConfig, error) {
+		return raw, nil
+	}
+	driverRuntimeSupportStatusFunc = func(driverType string) (bool, string) {
+		return true, ""
+	}
+	verifyDriverAgentRevisionFunc = func(config connection.ConnectionConfig) error {
+		return nil
+	}
+
+	config := connection.ConnectionConfig{
+		Type:              "oceanbase",
+		OceanBaseProtocol: "oracle",
+		Host:              "127.0.0.1",
+		Port:              2881,
+	}
+	app := NewAppWithSecretStore(secretstore.NewUnavailableStore("test"))
+	result := app.ApplyChanges(
+		config,
+		"APP",
+		"USERS",
+		connection.ChangeSet{
+			Updates: []connection.UpdateRow{{
+				Keys:   map[string]interface{}{"ID": 7},
+				Values: map[string]interface{}{"UPDATED_AT": "2026-07-13 13:42:00"},
+			}},
+		},
+	)
+
+	if !result.Success {
+		t.Fatalf("ApplyChanges returned failure: %s", result.Message)
+	}
+	if fakeDB.previewTableName != "APP.USERS" {
+		t.Fatalf("PreviewChanges table = %q, want APP.USERS", fakeDB.previewTableName)
+	}
+	if fakeDB.applyTableName != "APP.USERS" {
+		t.Fatalf("ApplyChanges table = %q, want APP.USERS", fakeDB.applyTableName)
+	}
+
+	fakeDB.previewTableName = ""
+	previewResult := app.PreviewChanges(config, "APP", "USERS", connection.ChangeSet{})
+	if !previewResult.Success {
+		t.Fatalf("PreviewChanges returned failure: %s", previewResult.Message)
+	}
+	if fakeDB.previewTableName != "APP.USERS" {
+		t.Fatalf("standalone PreviewChanges table = %q, want APP.USERS", fakeDB.previewTableName)
+	}
+}
+
+func TestBuildChangePreviewQuotesQualifiedOracleTargetBySegment(t *testing.T) {
+	preview := buildChangePreview(
+		&fakeBatchWriteDB{},
+		connection.ConnectionConfig{Type: "oceanbase", OceanBaseProtocol: "oracle"},
+		"APP.USERS",
+		connection.ChangeSet{Updates: []connection.UpdateRow{{
+			Keys:   map[string]interface{}{"ID": 7},
+			Values: map[string]interface{}{"STATUS": "0"},
+		}}},
+	)
+
+	want := `UPDATE "APP"."USERS" SET "STATUS" = '0' WHERE "ID" = 7;`
+	if len(preview.Updates) != 1 || preview.Updates[0] != want {
+		t.Fatalf("qualified Oracle preview = %#v, want %q", preview.Updates, want)
+	}
 }

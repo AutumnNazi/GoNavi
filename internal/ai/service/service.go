@@ -38,13 +38,18 @@ type Service struct {
 	contextLevel       ai.ContextLevel
 	userPromptSettings ai.UserPromptSettings
 	mcpServers         []ai.MCPServerConfig
+	mcpHTTPConfig      ai.MCPHTTPServerConfig
 	skills             []ai.SkillConfig
 	guard              *safety.Guard
 	configDir          string // 配置存储目录
 	secretStore        secretstore.SecretStore
 	localizer          *i18n.Localizer
-	cancelFuncs        map[string]context.CancelFunc // 记录每个 session 的 context 取消函数
+	streamProducers    map[string]map[*aiStreamProducer]struct{}
+	streamHandoffCount int
 	sessionProviders   map[string]aiSessionProviderRuntime
+	mcpHTTPOpMu        sync.Mutex
+	mcpHTTPStartMu     sync.Mutex
+	mcpHTTPStart       *mcpHTTPStartAttempt
 	mcpHTTPMu          sync.Mutex
 	mcpHTTP            *mcpHTTPServerRuntime
 	mcpHTTPLast        ai.MCPHTTPServerStatus
@@ -54,6 +59,11 @@ type aiSessionProviderRuntime struct {
 	ProviderKey string
 	State       json.RawMessage
 	Messages    []ai.Message
+}
+
+type aiStreamProducer struct {
+	cancel context.CancelFunc
+	done   chan struct{}
 }
 
 var miniMaxAnthropicModels = []string{
@@ -113,6 +123,18 @@ var claudeCLIHealthCheckFunc = func(config ai.ProviderConfig) error {
 	return err
 }
 
+var claudeCLILocalAuthCheckFunc = func(_ ai.ProviderConfig) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	return provider.CheckClaudeCLILocalAuth(ctx)
+}
+
+var codexCLIHealthCheckFunc = func(config ai.ProviderConfig) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	return provider.CheckCodexCLIAuth(ctx)
+}
+
 var codebuddyCLIHealthCheckFunc = func(config ai.ProviderConfig) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -150,7 +172,7 @@ func NewServiceWithSecretStore(store secretstore.SecretStore) *Service {
 		guard:            safety.NewGuard(ai.PermissionReadOnly),
 		secretStore:      store,
 		localizer:        newServiceLocalizer(),
-		cancelFuncs:      make(map[string]context.CancelFunc),
+		streamProducers:  make(map[string]map[*aiStreamProducer]struct{}),
 		sessionProviders: make(map[string]aiSessionProviderRuntime),
 	}
 }
@@ -363,6 +385,7 @@ func (s *Service) startup(ctx context.Context) {
 	s.ctx = ctx
 	s.configDir = resolveConfigDir()
 	s.loadConfig()
+	s.restoreMCPHTTPServer()
 	logger.Infof("AI Service 启动完成，已加载 %d 个 Provider", len(s.providers))
 }
 
@@ -410,6 +433,13 @@ func (s *Service) AISaveProvider(config ai.ProviderConfig) error {
 	defer s.mu.Unlock()
 
 	config = normalizeProviderConfig(config)
+	if err := validateCodexCLIProviderAuth(config); err != nil {
+		return err
+	}
+	localCLIAuth := isLocalCLIAuthProvider(config)
+	if localCLIAuth {
+		config = clearLocalCLIProviderSecrets(config)
+	}
 	if strings.TrimSpace(config.ID) == "" {
 		config.ID = "provider-" + uuid.New().String()[:8]
 	}
@@ -441,7 +471,7 @@ func (s *Service) AISaveProvider(config ai.ProviderConfig) error {
 			return s.serviceErrorLocked("ai_service.backend.error.provider_secret_save_failed", nil, err)
 		}
 		runtimeConfig = mergeProviderSecrets(storedMeta, mergedBundle)
-	case found && (config.HasSecret || existing.HasSecret):
+	case found && !localCLIAuth && (config.HasSecret || existing.HasSecret):
 		meta.SecretRef = existing.SecretRef
 		meta.HasSecret = config.HasSecret || existing.HasSecret
 		meta, existingBundle := applyExistingRuntimeProviderSecrets(meta, existing)
@@ -517,11 +547,14 @@ func (s *Service) AIDeleteProvider(id string) error {
 
 // AITestProvider 测试 Provider 配置是否可用，仅测试端点连通性与密钥，不实际调用对话
 func (s *Service) AITestProvider(config ai.ProviderConfig) map[string]interface{} {
-	if isMaskedAPIKey(config.APIKey) {
+	localCLIAuth := isLocalCLIAuthProvider(config)
+	if localCLIAuth {
+		config = clearLocalCLIProviderSecrets(config)
+	} else if isMaskedAPIKey(config.APIKey) {
 		config.APIKey = ""
 		config.HasSecret = true
 	}
-	if strings.TrimSpace(config.APIKey) == "" && (config.HasSecret || strings.TrimSpace(config.SecretRef) != "") {
+	if !localCLIAuth && strings.TrimSpace(config.APIKey) == "" && (config.HasSecret || strings.TrimSpace(config.SecretRef) != "") {
 		s.mu.RLock()
 		var existing ai.ProviderConfig
 		found := false
@@ -611,11 +644,21 @@ func (s *Service) AITestProvider(config ai.ProviderConfig) map[string]interface{
 			}
 		}
 	case "claude-cli":
-		testConfig := config
-		if strings.TrimSpace(testConfig.Model) == "" && isDashScopeCodingPlanProvider(testConfig) && len(dashScopeCodingPlanModels) > 0 {
-			testConfig.Model = dashScopeCodingPlanModels[0]
+		if isLocalCLIAuthProvider(config) {
+			err = claudeCLILocalAuthCheckFunc(config)
+		} else {
+			testConfig := config
+			if strings.TrimSpace(testConfig.Model) == "" && isDashScopeCodingPlanProvider(testConfig) && len(dashScopeCodingPlanModels) > 0 {
+				testConfig.Model = dashScopeCodingPlanModels[0]
+			}
+			err = claudeCLIHealthCheckFunc(testConfig)
 		}
-		err = claudeCLIHealthCheckFunc(testConfig)
+	case "codex-cli":
+		if authErr := validateCodexCLIProviderAuth(config); authErr != nil {
+			err = authErr
+		} else {
+			err = codexCLIHealthCheckFunc(config)
+		}
 	case "codebuddy-cli":
 		err = codebuddyCLIHealthCheckFunc(config)
 	default:
@@ -651,9 +694,47 @@ func formatProviderHTTPBody(body []byte) string {
 func normalizedProviderType(config ai.ProviderConfig) string {
 	providerType := strings.ToLower(strings.TrimSpace(config.Type))
 	if providerType == "custom" && strings.TrimSpace(config.APIFormat) != "" {
-		return strings.ToLower(strings.TrimSpace(config.APIFormat))
+		apiFormat := strings.ToLower(strings.TrimSpace(config.APIFormat))
+		if apiFormat == "openai-responses" {
+			return "openai"
+		}
+		return apiFormat
 	}
 	return providerType
+}
+
+func isLocalCLIAuthProvider(config ai.ProviderConfig) bool {
+	if !strings.EqualFold(strings.TrimSpace(config.AuthMode), "local-cli") {
+		return false
+	}
+	if !strings.EqualFold(strings.TrimSpace(config.Type), "custom") {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(config.APIFormat)) {
+	case "codex-cli", "claude-cli":
+		return true
+	default:
+		return false
+	}
+}
+
+func validateCodexCLIProviderAuth(config ai.ProviderConfig) error {
+	if !strings.EqualFold(strings.TrimSpace(config.APIFormat), "codex-cli") {
+		return nil
+	}
+	if !isLocalCLIAuthProvider(config) {
+		return fmt.Errorf("Codex CLI provider requires the Codex Subscription preset with local-cli authentication")
+	}
+	return nil
+}
+
+func clearLocalCLIProviderSecrets(config ai.ProviderConfig) ai.ProviderConfig {
+	config.APIKey = ""
+	config.SecretRef = ""
+	config.HasSecret = false
+	config.BaseURL = ""
+	config.Headers = nil
+	return config
 }
 
 func isMiniMaxAnthropicProvider(config ai.ProviderConfig) bool {
@@ -758,6 +839,7 @@ func defaultStaticModelsForProvider(config ai.ProviderConfig) []string {
 }
 
 func normalizeProviderConfig(config ai.ProviderConfig) ai.ProviderConfig {
+	config.AuthMode = strings.ToLower(strings.TrimSpace(config.AuthMode))
 	switch {
 	case isDashScopeBailianAnthropicProvider(config):
 		config.Models = nil
@@ -839,7 +921,7 @@ func resolveModelsURL(config ai.ProviderConfig) string {
 		return baseURL + "/v1beta/models?key=" + config.APIKey
 	case "cursor-agent":
 		return provider.ResolveCursorAPIEndpoint(baseURL, "models")
-	case "codebuddy-cli":
+	case "codex-cli", "codebuddy-cli":
 		return ""
 	case "openai":
 		fallthrough
@@ -990,7 +1072,7 @@ func (s *Service) AIListModels() map[string]interface{} {
 	}
 
 	config = normalizeProviderConfig(config)
-	if normalizedProviderType(config) == "codebuddy-cli" {
+	if isLocalCLIAuthProvider(config) || normalizedProviderType(config) == "codebuddy-cli" {
 		return map[string]interface{}{
 			"success": true,
 			"models":  append([]string(nil), config.Models...),
@@ -1036,7 +1118,7 @@ func fetchModels(config ai.ProviderConfig, localizer *i18n.Localizer) ([]string,
 		return fetchGeminiModels(config, localizer)
 	case "cursor-agent":
 		return fetchCursorModels(config, localizer)
-	case "codebuddy-cli":
+	case "codex-cli", "codebuddy-cli":
 		return append([]string(nil), config.Models...), nil
 	default:
 		return fetchOpenAIModels(config, localizer)
@@ -1373,15 +1455,14 @@ func (s *Service) AIChatStream(sessionID string, messages []ai.Message, tools []
 func (s *Service) AIChatStreamWithOptions(sessionID string, messages []ai.Message, tools []ai.Tool, options ai.ChatSendOptions) {
 	options = normalizeChatSendOptions(options)
 	streamCtx, cancel := context.WithCancel(context.Background())
-	s.mu.Lock()
-	s.cancelFuncs[sessionID] = cancel
-	s.mu.Unlock()
+	producer := s.registerAIStreamProducer(sessionID, cancel)
+	if producer == nil {
+		return
+	}
 
 	go func() {
 		defer func() {
-			s.mu.Lock()
-			delete(s.cancelFuncs, sessionID)
-			s.mu.Unlock()
+			s.finishAIStreamProducer(sessionID, producer)
 			cancel() // 确保释放
 		}()
 
@@ -1518,13 +1599,147 @@ func (s *Service) AIChatStreamWithOptions(sessionID string, messages []ai.Messag
 	}()
 }
 
+func (s *Service) registerAIStreamProducer(sessionID string, cancel context.CancelFunc) *aiStreamProducer {
+	producer := &aiStreamProducer{cancel: cancel, done: make(chan struct{})}
+	s.mu.Lock()
+	if s.streamHandoffCount > 0 {
+		s.mu.Unlock()
+		if cancel != nil {
+			cancel()
+		}
+		return nil
+	}
+	if s.streamProducers == nil {
+		s.streamProducers = make(map[string]map[*aiStreamProducer]struct{})
+	}
+	active := s.streamProducers[sessionID]
+	if active == nil {
+		active = make(map[*aiStreamProducer]struct{})
+		s.streamProducers[sessionID] = active
+	}
+	previous := make([]context.CancelFunc, 0, len(active))
+	for item := range active {
+		if item.cancel != nil {
+			previous = append(previous, item.cancel)
+		}
+	}
+	active[producer] = struct{}{}
+	s.mu.Unlock()
+
+	// A new send supersedes older sends for the session, but the cancelled
+	// producers remain registered until their goroutines have really stopped.
+	for _, previousCancel := range previous {
+		previousCancel()
+	}
+	return producer
+}
+
+func (s *Service) finishAIStreamProducer(sessionID string, producer *aiStreamProducer) {
+	if producer == nil {
+		return
+	}
+	s.mu.Lock()
+	if active := s.streamProducers[sessionID]; active != nil {
+		delete(active, producer)
+		if len(active) == 0 {
+			delete(s.streamProducers, sessionID)
+		}
+	}
+	close(producer.done)
+	s.mu.Unlock()
+}
+
+func (s *Service) snapshotAIStreamProducers(sessionID string) []*aiStreamProducer {
+	s.mu.RLock()
+	active := s.streamProducers[sessionID]
+	producers := make([]*aiStreamProducer, 0, len(active))
+	for producer := range active {
+		producers = append(producers, producer)
+	}
+	s.mu.RUnlock()
+	return producers
+}
+
+func (s *Service) snapshotAllAIStreamProducers() []*aiStreamProducer {
+	s.mu.RLock()
+	producers := make([]*aiStreamProducer, 0)
+	for _, active := range s.streamProducers {
+		for producer := range active {
+			producers = append(producers, producer)
+		}
+	}
+	s.mu.RUnlock()
+	return producers
+}
+
 // AIChatCancel 立即终止某个 Session 的流式对话请求
 func (s *Service) AIChatCancel(sessionID string) {
-	s.mu.RLock()
-	cancel, ok := s.cancelFuncs[sessionID]
-	s.mu.RUnlock()
-	if ok && cancel != nil {
-		cancel()
+	for _, producer := range s.snapshotAIStreamProducers(sessionID) {
+		if producer.cancel != nil {
+			producer.cancel()
+		}
+	}
+}
+
+// AIChatCancelAndWait stops every active producer for one session and waits
+// until all of them stop emitting events. Detached windows use this before
+// handing ownership back to another WebView so no final token falls into the
+// listener gap.
+func (s *Service) AIChatCancelAndWait(sessionID string) bool {
+	timer := time.NewTimer(3 * time.Second)
+	defer timer.Stop()
+	for {
+		producers := s.snapshotAIStreamProducers(sessionID)
+		if len(producers) == 0 {
+			return true
+		}
+		for _, producer := range producers {
+			if producer.cancel != nil {
+				producer.cancel()
+			}
+		}
+		for _, producer := range producers {
+			select {
+			case <-producer.done:
+			case <-timer.C:
+				return false
+			}
+		}
+	}
+}
+
+// AIChatCancelAllAndWait stops active producers across every session and waits
+// until none of them can emit another event. Native window handoff uses this as
+// a final guard because a previous session may outlive the current UI session.
+func (s *Service) AIChatCancelAllAndWait() bool {
+	s.mu.Lock()
+	s.streamHandoffCount++
+	s.mu.Unlock()
+	defer func() {
+		s.mu.Lock()
+		s.streamHandoffCount--
+		s.mu.Unlock()
+	}()
+
+	timer := time.NewTimer(3 * time.Second)
+	defer timer.Stop()
+	for {
+		producers := s.snapshotAllAIStreamProducers()
+		if len(producers) == 0 {
+			return true
+		}
+		for _, producer := range producers {
+			if producer.cancel != nil {
+				producer.cancel()
+			}
+		}
+		for _, producer := range producers {
+			select {
+			case <-producer.done:
+			case <-timer.C:
+				return false
+			}
+		}
 	}
 }
 
@@ -1756,7 +1971,15 @@ func (s *Service) loadConfig() {
 	s.contextLevel = snapshot.ContextLevel
 	s.userPromptSettings = snapshot.UserPromptSettings
 	s.mcpServers = normalizeMCPServerConfigs(snapshot.MCPServers)
+	s.mcpHTTPConfig = normalizeMCPHTTPServerConfig(snapshot.MCPHTTPServer)
 	s.skills = normalizeSkillConfigs(snapshot.Skills, s.serviceLocalizerForLanguage())
+
+	status := mcpHTTPStatusFromConfig(s.mcpHTTPConfig, s.serviceText("ai_settings.mcp_http.status.not_running", nil))
+	s.mcpHTTPMu.Lock()
+	if s.mcpHTTP == nil {
+		s.mcpHTTPLast = status
+	}
+	s.mcpHTTPMu.Unlock()
 }
 
 func (s *Service) saveConfig() error {
@@ -1767,6 +1990,7 @@ func (s *Service) saveConfig() error {
 		ContextLevel:       s.contextLevel,
 		UserPromptSettings: s.userPromptSettings,
 		MCPServers:         s.mcpServers,
+		MCPHTTPServer:      s.mcpHTTPConfig,
 		Skills:             s.skills,
 	})
 }

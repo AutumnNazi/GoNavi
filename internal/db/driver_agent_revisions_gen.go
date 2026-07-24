@@ -9,7 +9,7 @@ func init() {
 		"diros":         "src-7d4fe439271d0c56",
 		"starrocks":     "src-ce9ee22641a32f46",
 		"sphinx":        "src-08f5ae54efb3d9df",
-		"sqlserver":     "src-33b3b2c6dad5b3e6",
+		"sqlserver":     "src-6c0e98d6d8ba439d",
 		"sqlite":        "src-96dfa25b3042b2d5",
 		"duckdb":        "src-8804eb2cdbc89433",
 		"dameng":        "src-016e77082aea6718",
@@ -22,8 +22,8 @@ func init() {
 		"mongodb":       "src-2610395b35c2e708",
 		"tdengine":      "src-779b9b537f08856f",
 		"iotdb":         "src-7edea4aba8d4869e",
-		"clickhouse":    "src-0197342ca5afa8b5",
-		"elasticsearch": "src-08e8e80cb17a409a",
+		"clickhouse":    "src-d4150c3fb3d1313a",
+		"elasticsearch": "src-3dc1697786483347",
 		"trino":         "src-ba947f211ce7b19f",
 	}
 }

@@ -29,10 +29,10 @@ const MCP_TOOL_INFO_COPY: Record<
     icon: "🪛",
     desc: "Inspect current MCP configuration and external access",
     detail:
-      "Returns the local MCP services, enabled state, declared startup commands, Claude Code / Codex local client write status, OpenClaw / Hermans remote Agent boundaries, and command detection results. Use it first when the user asks which MCP services are configured, why external clients cannot use them, or whether MCP was written into client configs.",
+      "Returns the local MCP services, enabled state, declared startup commands, Claude Code / Codex / OpenCode local client write status, OpenClaw / Hermans remote Agent boundaries, and command detection results. Use it first when the user asks which MCP services are configured, why external clients cannot use them, or whether MCP was written into client configs.",
     paramsSummary: "No parameters",
     toolDescription:
-      "Read the current local MCP configuration snapshot, including MCP service list, enabled state, startup commands, environment variable keys, discovered tools, external client GoNavi MCP write status, local CLI detection results, and remote Agent access boundaries. Use it when the user mentions MCP service configuration, Claude/Codex/OpenClaw/Hermans access, external clients not working, or which MCP services are enabled.",
+      "Read the current local MCP configuration snapshot, including MCP service list, enabled state, startup commands, environment variable keys, discovered tools, external client GoNavi MCP write status, local CLI detection results, and remote Agent access boundaries. Use it when the user mentions MCP service configuration, Claude/Codex/OpenCode/OpenClaw/Hermans access, external clients not working, or which MCP services are enabled.",
   },
   inspect_mcp_remote_access: {
     icon: "🌉",

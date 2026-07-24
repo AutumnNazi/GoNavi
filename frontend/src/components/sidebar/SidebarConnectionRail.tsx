@@ -4,10 +4,10 @@ import {
   FolderOpenOutlined,
   TableOutlined,
   DatabaseOutlined,
+  ImportOutlined,
   FileAddOutlined,
   AimOutlined,
   RobotOutlined,
-  ToolOutlined,
   SettingOutlined,
 } from '@ant-design/icons';
 
@@ -27,21 +27,21 @@ export interface SidebarConnectionRailProps {
     newGroup: string;
     batchTables: string;
     batchDatabases: string;
+    dataImport: string;
     openExternalSqlFile: string;
     locateCurrentTable: string;
     locateCurrentTableUnavailable: string;
     aiAssistant: string;
-    tools: string;
     settings: string;
   };
   handlers: {
     openCreateTagModal: () => void;
     openBatchTableExport: () => void;
     openBatchDatabaseExport: () => void;
+    openDataImport: () => void;
     openExternalSqlFile: () => void;
     locateActiveTab: () => void;
     toggleAI: () => void;
-    openTools: () => void;
     openSettings: () => void;
   };
   canLocateActiveTab: boolean;
@@ -83,6 +83,17 @@ const SidebarConnectionRail: React.FC<SidebarConnectionRailProps> = ({ labels, h
           <DatabaseOutlined />
         </button>
       </Tooltip>
+      <Tooltip title={labels.dataImport} placement="right">
+        <button
+          type="button"
+          className="gn-v2-rail-tool gn-v2-rail-action"
+          onClick={handlers.openDataImport}
+          aria-label={labels.dataImport}
+          data-sidebar-data-import-action="true"
+        >
+          <ImportOutlined />
+        </button>
+      </Tooltip>
       <Tooltip title={labels.openExternalSqlFile} placement="right">
         <button
           type="button"
@@ -119,17 +130,6 @@ const SidebarConnectionRail: React.FC<SidebarConnectionRailProps> = ({ labels, h
           data-gonavi-ai-entry-action="true"
         >
           <RobotOutlined />
-        </button>
-      </Tooltip>
-      <Tooltip title={labels.tools} placement="right">
-        <button
-          type="button"
-          className="gn-v2-rail-tool"
-          onClick={handlers.openTools}
-          aria-label={labels.tools}
-          data-gonavi-open-tools-action="true"
-        >
-          <ToolOutlined />
         </button>
       </Tooltip>
       <Tooltip title={labels.settings} placement="right">

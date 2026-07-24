@@ -1,4 +1,5 @@
 import type { AIProviderConfig } from '../../types';
+import { isLocalCLISubscriptionProvider } from '../../utils/aiProviderPresets';
 import type { AIInspectionTranslator } from './aiInspectionI18n';
 import { translateInspectionCopy } from './aiInspectionI18n';
 
@@ -19,11 +20,16 @@ const trimText = (value: unknown): string => String(value || '').trim();
 const hasProviderSecret = (provider: AIProviderConfig): boolean =>
   provider.hasSecret ?? Boolean(provider.secretRef || provider.apiKey);
 
+const isLocalCLIProvider = (provider: AIProviderConfig): boolean =>
+  isLocalCLISubscriptionProvider(provider);
+
 const isBaseURLOptionalProvider = (provider: AIProviderConfig): boolean =>
-  provider.type === 'custom' && trimText(provider.apiFormat) === 'codebuddy-cli';
+  isLocalCLIProvider(provider)
+  || (provider.type === 'custom' && trimText(provider.apiFormat) === 'codebuddy-cli');
 
 const isModelOptionalProvider = (provider: AIProviderConfig): boolean =>
-  provider.type === 'custom' && ['codebuddy-cli', 'cursor-agent'].includes(trimText(provider.apiFormat));
+  isLocalCLIProvider(provider)
+  || (provider.type === 'custom' && ['codebuddy-cli', 'cursor-agent'].includes(trimText(provider.apiFormat)));
 
 const getProviderHost = (baseUrl: string): string => {
   const normalized = trimText(baseUrl);
@@ -46,7 +52,7 @@ const buildProviderIssues = (provider: AIProviderConfig): string[] => {
     ? provider.models.map((item) => trimText(item)).filter(Boolean)
     : [];
 
-  if (!hasSecret) {
+  if (!isLocalCLIProvider(provider) && !hasSecret) {
     issues.push('missing_secret');
   }
   if (!isBaseURLOptionalProvider(provider) && !baseUrl) {
@@ -55,7 +61,7 @@ const buildProviderIssues = (provider: AIProviderConfig): string[] => {
   if (!isModelOptionalProvider(provider) && !model) {
     issues.push('missing_selected_model');
   }
-  if (declaredModels.length === 0) {
+  if (!isLocalCLIProvider(provider) && declaredModels.length === 0) {
     issues.push('missing_declared_models');
   }
 
@@ -96,6 +102,7 @@ export const buildAIProviderSnapshot = (params: {
       name: trimText(provider.name),
       type: provider.type,
       apiFormat: trimText(provider.apiFormat) || 'openai',
+      authMode: provider.authMode || 'api-key',
       active: provider.id === activeProviderId,
       baseUrl: trimText(provider.baseUrl),
       baseUrlHost: getProviderHost(provider.baseUrl),

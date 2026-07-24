@@ -26,6 +26,7 @@ import {
 import { AIMessageMarkdown } from './messageBubble/AIMessageMarkdown';
 import { AIThinkingBlock, AIToolCallingBlock } from './messageBubble/AIMessageStatusBlocks';
 import { formatAIChatAttachmentSize } from './aiChatAttachments';
+import type { AIToolResultIndex } from './aiToolResultIndex';
 
 interface AIMessageBubbleProps {
   msg: AIChatMessage;
@@ -38,7 +39,7 @@ interface AIMessageBubbleProps {
   activeConnectionId?: string;
   activeConnectionConfig?: any;
   activeDbName?: string;
-  allMessages?: AIChatMessage[];
+  toolResultsById: AIToolResultIndex;
 }
 
 interface AIMessageActionBarProps {
@@ -197,7 +198,7 @@ export const AIMessageBubble: React.FC<AIMessageBubbleProps> = React.memo(({
   activeConnectionId,
   activeConnectionConfig,
   activeDbName,
-  allMessages,
+  toolResultsById,
 }) => {
   const [isCopied, setIsCopied] = useState(false);
   const i18n = useOptionalI18n();
@@ -205,7 +206,6 @@ export const AIMessageBubble: React.FC<AIMessageBubbleProps> = React.memo(({
     i18n?.t ?? ((catalogKey, catalogParams) => catalogTranslate('en-US', catalogKey, catalogParams))
   )(key, params);
   const isUser = msg.role === 'user';
-  const toolMessages = allMessages || [];
 
   const { displayContent, parsedThinking } = React.useMemo(() => {
     const content = msg.content || '';
@@ -280,7 +280,7 @@ export const AIMessageBubble: React.FC<AIMessageBubbleProps> = React.memo(({
               <AIToolCallingBlock
                 toolCalls={msg.tool_calls}
                 loading={Boolean(msg.loading)}
-                allMessages={toolMessages}
+                toolResultsById={toolResultsById}
                 darkMode={darkMode}
                 overlayTheme={overlayTheme}
                 hasContent={false}
@@ -450,7 +450,7 @@ export const AIMessageBubble: React.FC<AIMessageBubbleProps> = React.memo(({
             <AIToolCallingBlock
               toolCalls={msg.tool_calls}
               loading={Boolean(msg.loading)}
-              allMessages={toolMessages}
+              toolResultsById={toolResultsById}
               darkMode={darkMode}
               overlayTheme={overlayTheme}
               hasContent={Boolean(msg.content)}

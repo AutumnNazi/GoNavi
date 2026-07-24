@@ -50,6 +50,9 @@ RUN apt-get update \
     && go install github.com/wailsapp/wails/v2/cmd/wails@${WAILS_VERSION} \
     && rm -rf /var/lib/apt/lists/*
 
+RUN mkdir -p /usr/share/doc/gonavi
+COPY LICENSE NOTICE /usr/share/doc/gonavi/
+
 WORKDIR /workspace
 
 CMD ["bash"]

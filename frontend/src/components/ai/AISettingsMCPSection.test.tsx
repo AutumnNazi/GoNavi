@@ -123,7 +123,7 @@ describe('AISettingsMCPSection', () => {
     expect(markup).toContain('Quick add from one command');
     expect(markup).toContain('Choose the closest template');
     expect(markup).toContain('Parse and add draft');
-    expect(markup).toContain('New MCP parameter quick reference');
+    expect(markup).toContain('Parameter quick reference');
     expect(markup).toContain('command');
     expect(markup).toContain('args');
     expect(markup).toContain('env');
@@ -145,7 +145,26 @@ describe('AISettingsMCPSection', () => {
     expect(markup).toContain('docker run -i --rm image');
     expect(markup).toContain('Add MCP service');
     expect(markup).toContain('No MCP service yet');
+    expect(markup).toContain('No MCP tool source yet');
     expect(markup).toContain('npx -y package --stdio');
+    expect(markup).toContain('class="gonavi-ai-mcp-section"');
+    expect(markup).toContain('class="gonavi-ai-mcp-tabs"');
+    expect(markup).toContain('External clients');
+    expect(markup).toContain('MCP tool sources');
+    expect(markup).toContain('aria-label="External clients → GoNavi"');
+    expect(markup).toContain('aria-label="GoNavi → MCP tool sources"');
+    expect(markup).toContain('class="gonavi-ai-mcp-route-arrow"');
+    expect(markup).toContain('aria-selected="true"');
+    expect(markup).toContain('id="gonavi-ai-mcp-panel-tool-sources"');
+    expect(markup).toContain('hidden=""');
+    expect(markup).toContain('class="gonavi-ai-mcp-http-panel"');
+    expect(markup).toContain('class="gonavi-ai-mcp-client-panel"');
+    expect(markup).toContain('class="gonavi-ai-mcp-quick-add"');
+    expect(markup).toContain('class="gonavi-ai-mcp-disclosure gonavi-ai-mcp-http-disclosure"');
+    expect(markup).toContain('class="gonavi-ai-mcp-disclosure gonavi-ai-mcp-quick-add-disclosure"');
+    expect(markup).toContain('class="gonavi-ai-mcp-disclosure gonavi-ai-mcp-reference-disclosure"');
+    expect(markup).toContain('background:transparent');
+    expect(markup).toContain('border-bottom:1px solid rgba(0,0,0,0.08)');
   });
 
   it('renders the MCP quick reference in Chinese when an i18n provider is available', () => {
@@ -155,7 +174,7 @@ describe('AISettingsMCPSection', () => {
       </I18nProvider>,
     );
 
-    expect(markup).toContain('新增 MCP 参数速查');
+    expect(markup).toContain('参数速查');
     expect(markup).toContain('应填：');
     expect(markup).toContain('新增 MCP 服务');
     expect(markup).toContain('还没有 MCP 服务');
@@ -221,6 +240,8 @@ describe('AISettingsMCPSection', () => {
     expect(markup).toContain('allowMutating: boolean');
     expect(markup).toContain('legacy_tool');
     expect(markup).toContain('No inputSchema declared; check the service docs or use /mcptool before calling.');
+    expect(markup).toContain('class="gonavi-ai-mcp-server-row gonavi-ai-mcp-disclosure"');
+    expect(markup).toContain('border-left:3px solid #1677ff');
   });
 
   it('toggles the in-app MCP HTTP service from the switch panel', async () => {

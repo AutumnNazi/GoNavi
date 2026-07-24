@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"GoNavi-Wails/internal/connection"
 	"GoNavi-Wails/internal/db"
@@ -20,6 +21,7 @@ type fakeBatchWriteDB struct {
 	lastQuery    string
 	lastCtx      context.Context
 	queryCalls   int
+	queryQueries []string
 	queryMap     map[string][]map[string]interface{}
 	fieldMap     map[string][]string
 	messageMap   map[string][]string
@@ -27,6 +29,9 @@ type fakeBatchWriteDB struct {
 	queryErr     map[string]error
 	execErr      map[string]error
 	execAffected map[string]int64
+	execDelay    map[string]time.Duration
+	execStarted  chan<- string
+	execRelease  <-chan struct{}
 	session      *fakeBatchWriteSession
 }
 
@@ -173,6 +178,29 @@ func (f *fakeBatchWriteDB) ExecContext(ctx context.Context, query string) (int64
 	f.lastCtx = ctx
 	f.execCalls++
 	f.execQueries = append(f.execQueries, query)
+	if f.execStarted != nil {
+		select {
+		case f.execStarted <- query:
+		case <-ctx.Done():
+			return 0, ctx.Err()
+		}
+	}
+	if f.execRelease != nil {
+		select {
+		case <-f.execRelease:
+		case <-ctx.Done():
+			return 0, ctx.Err()
+		}
+	}
+	if delay := f.execDelay[query]; delay > 0 {
+		timer := time.NewTimer(delay)
+		defer timer.Stop()
+		select {
+		case <-timer.C:
+		case <-ctx.Done():
+			return 0, ctx.Err()
+		}
+	}
 	if err := f.execErr[query]; err != nil {
 		return 0, err
 	}
@@ -185,6 +213,7 @@ func (f *fakeBatchWriteDB) ExecContext(ctx context.Context, query string) (int64
 func (f *fakeBatchWriteDB) QueryContext(ctx context.Context, query string) ([]map[string]interface{}, []string, error) {
 	f.lastCtx = ctx
 	f.queryCalls++
+	f.queryQueries = append(f.queryQueries, query)
 	if err := f.queryErr[query]; err != nil {
 		return nil, nil, err
 	}
@@ -354,6 +383,126 @@ func cloneResultSets(input []connection.ResultSetData) []connection.ResultSetDat
 		})
 	}
 	return cloned
+}
+
+func TestDBQueryMultiInTransactionSerializesCommitWithInFlightStatement(t *testing.T) {
+	originalNewDatabaseFunc := newDatabaseFunc
+	t.Cleanup(func() { newDatabaseFunc = originalNewDatabaseFunc })
+
+	initialStatement := "UPDATE users SET active = 1 WHERE id = 1"
+	followUpStatement := "UPDATE users SET active = 0 WHERE id = 2"
+	fakeDB := &fakeTransactionalDB{fakeBatchWriteDB: fakeBatchWriteDB{
+		execAffected: map[string]int64{initialStatement: 1, followUpStatement: 1},
+	}}
+	newDatabaseFunc = func(string) (db.Database, error) { return fakeDB, nil }
+	app := NewAppWithSecretStore(secretstore.NewUnavailableStore("test"))
+	config := connection.ConnectionConfig{Type: "mysql", Host: "127.0.0.1", Port: 3306, Database: "main"}
+
+	started := app.DBQueryMultiTransactional(config, "main", initialStatement, "tx-serialize-start")
+	if !started.Success || started.TransactionID == "" {
+		t.Fatalf("start managed transaction: %#v", started)
+	}
+
+	execStarted := make(chan string, 1)
+	execRelease := make(chan struct{})
+	fakeDB.execStarted = execStarted
+	fakeDB.execRelease = execRelease
+	queryDone := make(chan connection.QueryResult, 1)
+	go func() {
+		queryDone <- app.DBQueryMultiInTransaction(started.TransactionID, followUpStatement, "tx-serialize-follow-up")
+	}()
+
+	select {
+	case statement := <-execStarted:
+		if statement != followUpStatement {
+			close(execRelease)
+			t.Fatalf("blocked statement = %q, want %q", statement, followUpStatement)
+		}
+	case <-time.After(2 * time.Second):
+		close(execRelease)
+		t.Fatal("follow-up statement did not start")
+	}
+
+	commitDone := make(chan connection.QueryResult, 1)
+	go func() {
+		commitDone <- app.DBCommitTransaction(started.TransactionID)
+	}()
+	select {
+	case result := <-commitDone:
+		close(execRelease)
+		t.Fatalf("commit completed while statement was still in flight: %#v", result)
+	case <-time.After(75 * time.Millisecond):
+	}
+
+	close(execRelease)
+	if result := <-queryDone; !result.Success {
+		t.Fatalf("follow-up statement failed: %#v", result)
+	}
+	if result := <-commitDone; !result.Success {
+		t.Fatalf("commit after follow-up failed: %#v", result)
+	}
+	if fakeDB.txSession.commitCalls != 1 || !fakeDB.txSession.closed {
+		t.Fatalf("transaction was not committed exactly once after execution: commitCalls=%d closed=%v", fakeDB.txSession.commitCalls, fakeDB.txSession.closed)
+	}
+}
+
+func TestRollbackPendingSQLTransactionsWaitsForInFlightStatement(t *testing.T) {
+	originalNewDatabaseFunc := newDatabaseFunc
+	t.Cleanup(func() { newDatabaseFunc = originalNewDatabaseFunc })
+
+	initialStatement := "UPDATE users SET active = 1 WHERE id = 1"
+	followUpStatement := "UPDATE users SET active = 0 WHERE id = 2"
+	fakeDB := &fakeTransactionalDB{fakeBatchWriteDB: fakeBatchWriteDB{
+		execAffected: map[string]int64{initialStatement: 1, followUpStatement: 1},
+	}}
+	newDatabaseFunc = func(string) (db.Database, error) { return fakeDB, nil }
+	app := NewAppWithSecretStore(secretstore.NewUnavailableStore("test"))
+	config := connection.ConnectionConfig{Type: "mysql", Host: "127.0.0.1", Port: 3306, Database: "main"}
+
+	started := app.DBQueryMultiTransactional(config, "main", initialStatement, "tx-shutdown-start")
+	if !started.Success || started.TransactionID == "" {
+		t.Fatalf("start managed transaction: %#v", started)
+	}
+
+	execStarted := make(chan string, 1)
+	execRelease := make(chan struct{})
+	fakeDB.execStarted = execStarted
+	fakeDB.execRelease = execRelease
+	queryDone := make(chan connection.QueryResult, 1)
+	go func() {
+		queryDone <- app.DBQueryMultiInTransaction(started.TransactionID, followUpStatement, "tx-shutdown-follow-up")
+	}()
+	select {
+	case <-execStarted:
+	case <-time.After(2 * time.Second):
+		close(execRelease)
+		t.Fatal("follow-up statement did not start")
+	}
+
+	shutdownDone := make(chan struct{})
+	go func() {
+		app.rollbackPendingSQLTransactionsOnShutdown()
+		close(shutdownDone)
+	}()
+	select {
+	case <-shutdownDone:
+		close(execRelease)
+		t.Fatal("shutdown rollback completed while statement was still in flight")
+	case <-time.After(75 * time.Millisecond):
+	}
+
+	close(execRelease)
+	if result := <-queryDone; !result.Success {
+		t.Fatalf("follow-up statement failed: %#v", result)
+	}
+	select {
+	case <-shutdownDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("shutdown rollback did not finish after statement completed")
+	}
+	if fakeDB.txSession.rollbackCalls != 1 || !fakeDB.txSession.closed {
+		t.Fatalf("transaction was not rolled back exactly once after execution: rollbackCalls=%d closed=%v", fakeDB.txSession.rollbackCalls, fakeDB.txSession.closed)
+	}
 }
 
 func TestDBQueryMultiKeepsOracleAnonymousBlockAsSingleStatement(t *testing.T) {
@@ -722,6 +871,41 @@ func TestDBQueryWithCancelRoutesMilvusJSONSearchToQuery(t *testing.T) {
 	}
 }
 
+func TestDBQueryWithCancelRoutesMilvusSelectPreviewToQuery(t *testing.T) {
+	originalNewDatabaseFunc := newDatabaseFunc
+	t.Cleanup(func() {
+		newDatabaseFunc = originalNewDatabaseFunc
+	})
+
+	query := `SELECT * FROM "products" LIMIT 101 OFFSET 0`
+	fakeDB := &fakeBatchWriteDB{
+		queryMap: map[string][]map[string]interface{}{
+			query: {{"id": 1, "category": "book"}},
+		},
+		fieldMap: map[string][]string{
+			query: {"id", "category"},
+		},
+		queryErr: map[string]error{},
+	}
+	newDatabaseFunc = func(dbType string) (db.Database, error) {
+		return fakeDB, nil
+	}
+
+	app := NewAppWithSecretStore(secretstore.NewUnavailableStore("test"))
+	result := app.DBQueryWithCancel(
+		connection.ConnectionConfig{Type: "milvus", Host: "127.0.0.1", Port: 19530},
+		"default",
+		query,
+		"milvus-select-preview-test",
+	)
+	if !result.Success {
+		t.Fatalf("expected Milvus SELECT preview success, got failure: %s", result.Message)
+	}
+	if fakeDB.queryCalls != 1 || fakeDB.execCalls != 0 {
+		t.Fatalf("expected query path only, queryCalls=%d execCalls=%d", fakeDB.queryCalls, fakeDB.execCalls)
+	}
+}
+
 func TestDBQueryWithCancelReturnsMessagesForSQLServerQuery(t *testing.T) {
 	originalNewDatabaseFunc := newDatabaseFunc
 	t.Cleanup(func() {
@@ -925,6 +1109,105 @@ func TestDBQueryMultiTransactionalKeepsDMLTransactionOpenUntilCommit(t *testing.
 	}
 	if got := fakeDB.execQueries[len(fakeDB.execQueries)-1]; got != "COMMIT" {
 		t.Fatalf("expected final exec to be COMMIT, got %q", got)
+	}
+}
+
+func TestDBQueryMultiTransactionalKeepsSQLServerBeginEndBlockOpenUntilRollback(t *testing.T) {
+	originalNewDatabaseFunc := newDatabaseFunc
+	t.Cleanup(func() {
+		newDatabaseFunc = originalNewDatabaseFunc
+	})
+
+	block := `BEGIN
+    UPDATE users SET name = 'new' WHERE id = 1;
+END;`
+	fakeDB := &fakeBatchWriteDB{
+		execAffected: map[string]int64{block: 1},
+	}
+	newDatabaseFunc = func(dbType string) (db.Database, error) {
+		return fakeDB, nil
+	}
+
+	app := NewAppWithSecretStore(secretstore.NewUnavailableStore("test"))
+	config := connection.ConnectionConfig{Type: "sqlserver", Host: "127.0.0.1", Port: 1433, User: "sa"}
+
+	result := app.DBQueryMultiTransactional(config, "testdb", block, "sqlserver-begin-end-tx-query")
+	if !result.Success {
+		t.Fatalf("expected SQL Server BEGIN...END transaction success, got failure: %s", result.Message)
+	}
+	if result.TransactionID == "" || !result.TransactionPending {
+		t.Fatalf("expected pending transaction metadata, got id=%q pending=%v", result.TransactionID, result.TransactionPending)
+	}
+	if fakeDB.session == nil {
+		t.Fatal("expected SQL Server transactional block to open a pinned session")
+	}
+	if fakeDB.session.closed {
+		t.Fatal("expected SQL Server transaction session to stay open before rollback")
+	}
+	if !reflect.DeepEqual(fakeDB.execQueries, []string{"BEGIN TRANSACTION"}) {
+		t.Fatalf("expected SQL Server transaction begin before rollback, got %#v", fakeDB.execQueries)
+	}
+	if !reflect.DeepEqual(fakeDB.queryQueries, []string{block}) {
+		t.Fatalf("expected SQL Server block to execute through the pinned query session, got %#v", fakeDB.queryQueries)
+	}
+
+	rollbackResult := app.DBRollbackTransaction(result.TransactionID)
+	if !rollbackResult.Success {
+		t.Fatalf("expected SQL Server rollback success, got failure: %s", rollbackResult.Message)
+	}
+	if !fakeDB.session.closed {
+		t.Fatal("expected SQL Server transaction session to close after rollback")
+	}
+	wantExecs := []string{"BEGIN TRANSACTION", "ROLLBACK TRANSACTION"}
+	if !reflect.DeepEqual(fakeDB.execQueries, wantExecs) {
+		t.Fatalf("expected SQL Server rollback without commit, got %#v", fakeDB.execQueries)
+	}
+}
+
+func TestDBQueryMultiTransactionalKeepsTrailingCommentInsideManagedTransaction(t *testing.T) {
+	originalNewDatabaseFunc := newDatabaseFunc
+	t.Cleanup(func() {
+		newDatabaseFunc = originalNewDatabaseFunc
+	})
+
+	statement := "DELETE FROM users WHERE id = 1"
+	fakeDB := &fakeBatchWriteDB{
+		execAffected: map[string]int64{statement: 1},
+	}
+	newDatabaseFunc = func(dbType string) (db.Database, error) {
+		return fakeDB, nil
+	}
+
+	app := NewAppWithSecretStore(secretstore.NewUnavailableStore("test"))
+	config := connection.ConnectionConfig{Type: "mysql", Host: "127.0.0.1", Port: 3306, User: "root"}
+	result := app.DBQueryMultiTransactional(
+		config,
+		"main",
+		statement+"; -- keep this operation pending",
+		"tx-trailing-comment",
+	)
+
+	if !result.Success {
+		t.Fatalf("expected transactional query success, got failure: %s", result.Message)
+	}
+	if result.TransactionID == "" || !result.TransactionPending {
+		t.Fatalf("expected trailing comment to preserve pending transaction, got id=%q pending=%v", result.TransactionID, result.TransactionPending)
+	}
+	if strings.Contains(result.Message, "逐条执行") {
+		t.Fatalf("expected trailing comment to avoid sequential fallback message, got %q", result.Message)
+	}
+	wantExecs := []string{"START TRANSACTION", statement}
+	if !reflect.DeepEqual(fakeDB.execQueries, wantExecs) {
+		t.Fatalf("expected exec queries %#v, got %#v", wantExecs, fakeDB.execQueries)
+	}
+	resultSets, ok := result.Data.([]connection.ResultSetData)
+	if !ok || len(resultSets) != 1 {
+		t.Fatalf("expected one DML result set, got %T %#v", result.Data, result.Data)
+	}
+
+	rollbackResult := app.DBRollbackTransaction(result.TransactionID)
+	if !rollbackResult.Success {
+		t.Fatalf("expected rollback success, got failure: %s", rollbackResult.Message)
 	}
 }
 
@@ -1848,6 +2131,61 @@ func TestDBQueryMultiFallsBackWhenNativeReadOnlyBatchReturnsBlankResultSet(t *te
 	}
 }
 
+func TestDBQueryMultiFallsBackWhenSQLServerReadReturnsOnlyAffectedRowsStatus(t *testing.T) {
+	originalNewDatabaseFunc := newDatabaseFunc
+	t.Cleanup(func() {
+		newDatabaseFunc = originalNewDatabaseFunc
+	})
+
+	query := "SELECT name FROM sys.databases"
+	statusOnlyResult := []connection.ResultSetData{{
+		Rows:    []map[string]interface{}{{"affectedRows": int64(1)}},
+		Columns: []string{"affectedRows"},
+	}}
+	baseDB := &fakeBatchWriteDB{
+		queryMap: map[string][]map[string]interface{}{
+			query: {{"name": "master"}},
+		},
+		fieldMap: map[string][]string{
+			query: {"name"},
+		},
+		multiResult: map[string][]connection.ResultSetData{
+			query: statusOnlyResult,
+		},
+		queryErr: map[string]error{},
+	}
+	fakeDB := &fakeEmptyNativeMultiResultDB{
+		fakeBatchWriteDB: baseDB,
+		results:          statusOnlyResult,
+	}
+	newDatabaseFunc = func(dbType string) (db.Database, error) {
+		return fakeDB, nil
+	}
+
+	app := NewAppWithSecretStore(secretstore.NewUnavailableStore("test"))
+	config := connection.ConnectionConfig{Type: "custom", Driver: "mssql", Host: "127.0.0.1", Port: 1433, User: "sa"}
+	result := app.DBQueryMulti(config, "master", query, "sqlserver-affected-only-read-fallback-test")
+	if !result.Success {
+		t.Fatalf("expected DBQueryMulti success, got failure: %s", result.Message)
+	}
+	if fakeDB.multiCalls != 1 {
+		t.Fatalf("expected one top-level native multi-result attempt, got %d", fakeDB.multiCalls)
+	}
+	if baseDB.session == nil || baseDB.session.queryCalls != 2 {
+		t.Fatalf("expected status-only result to retry session multi then plain query, session=%#v", baseDB.session)
+	}
+	resultSets, ok := result.Data.([]connection.ResultSetData)
+	if !ok || len(resultSets) != 1 {
+		t.Fatalf("expected one fallback result set, got %#v", result.Data)
+	}
+	if got := resultSets[0].Rows[0]["name"]; got != "master" {
+		t.Fatalf("expected fallback SQL Server row name=master, got %#v", got)
+	}
+	if got := queryResultRowsReturned(result); got != 1 {
+		t.Fatalf("expected SQL audit rows returned = 1, got %d", got)
+	}
+}
+
 func TestDBQueryMultiFallsBackToPlainQueryWhenSequentialMultiStillReturnsBlankResultSet(t *testing.T) {
 	originalNewDatabaseFunc := newDatabaseFunc
 	t.Cleanup(func() {
@@ -2258,6 +2596,81 @@ func TestDBQueryMultiNormalizesSingleSQLServerSelectAffectedRowsStatementIndex(t
 	}
 }
 
+func TestDBQueryMultiNormalizesSQLServerSelectAffectedRowsPairsByStatement(t *testing.T) {
+	originalNewDatabaseFunc := newDatabaseFunc
+	t.Cleanup(func() {
+		newDatabaseFunc = originalNewDatabaseFunc
+	})
+
+	query := "SELECT 1;\nSELECT 2;"
+	baseDB := &fakeBatchWriteDB{
+		multiResult: map[string][]connection.ResultSetData{
+			query: {
+				{
+					Rows:    []map[string]interface{}{{"value": int64(1)}},
+					Columns: []string{"value"},
+				},
+				{
+					Rows:    []map[string]interface{}{{"affectedRows": int64(1)}},
+					Columns: []string{"affectedRows"},
+				},
+				{
+					Rows:    []map[string]interface{}{{"value": int64(2)}},
+					Columns: []string{"value"},
+				},
+				{
+					Rows:    []map[string]interface{}{{"affectedRows": int64(1)}},
+					Columns: []string{"affectedRows"},
+				},
+			},
+		},
+		queryErr: map[string]error{},
+	}
+	fakeDB := &fakeNativeMultiResultDB{fakeBatchWriteDB: baseDB}
+	newDatabaseFunc = func(dbType string) (db.Database, error) {
+		return fakeDB, nil
+	}
+
+	app := NewAppWithSecretStore(secretstore.NewUnavailableStore("test"))
+	config := connection.ConnectionConfig{Type: "sqlserver", Host: "127.0.0.1", Port: 1433, User: "sa"}
+
+	result := app.DBQueryMulti(config, "master", query, "sqlserver-select-pairs-index-test")
+	if !result.Success {
+		t.Fatalf("expected DBQueryMulti success, got failure: %s", result.Message)
+	}
+	resultSets, ok := result.Data.([]connection.ResultSetData)
+	if !ok {
+		t.Fatalf("expected []connection.ResultSetData, got %T", result.Data)
+	}
+	if len(resultSets) != 4 {
+		t.Fatalf("expected four raw SQL Server result sets, got %#v", resultSets)
+	}
+	wantStatementIndexes := []int{1, 1, 2, 2}
+	for idx, want := range wantStatementIndexes {
+		if got := resultSets[idx].StatementIndex; got != want {
+			t.Fatalf("result set %d statementIndex = %d, want %d; all results: %#v", idx, got, want, resultSets)
+		}
+	}
+}
+
+func TestNormalizeNativeResultStatementIndexesKeepsAmbiguousSQLServerResultsUnassigned(t *testing.T) {
+	statements := []string{"SELECT 1", "SELECT 2"}
+	results := []connection.ResultSetData{
+		{Rows: []map[string]interface{}{{"first": int64(1)}}, Columns: []string{"first"}},
+		{Rows: []map[string]interface{}{{"second": int64(2)}}, Columns: []string{"second"}},
+		{Rows: []map[string]interface{}{{"affectedRows": int64(1)}}, Columns: []string{"affectedRows"}},
+		{Rows: []map[string]interface{}{{"affectedRows": int64(1)}}, Columns: []string{"affectedRows"}},
+	}
+
+	normalizeNativeResultStatementIndexes("sqlserver", statements, results)
+
+	for idx, result := range results {
+		if result.StatementIndex != 0 {
+			t.Fatalf("ambiguous result set %d received guessed statementIndex=%d: %#v", idx, result.StatementIndex, results)
+		}
+	}
+}
+
 func TestDBQueryMultiTreatsBareSQLServerProcedureCallAsQueryFirst(t *testing.T) {
 	originalNewDatabaseFunc := newDatabaseFunc
 	t.Cleanup(func() {
@@ -2528,6 +2941,49 @@ func TestExecuteManagedSQLTransactionStatementsPrefersPlainQueryForDamengReadRes
 	}
 	if got := results[0].Rows[0]["NAME"]; got != "timer_a" {
 		t.Fatalf("expected plain query SELECT result NAME=timer_a, got %#v", got)
+	}
+}
+
+func TestExecuteManagedSQLTransactionStatementsFallsBackWhenSQLServerReadReturnsOnlyAffectedRowsStatus(t *testing.T) {
+	query := "SELECT name FROM sys.databases"
+	baseDB := &fakeBatchWriteDB{
+		queryMap: map[string][]map[string]interface{}{
+			query: {{"name": "master"}},
+		},
+		fieldMap: map[string][]string{
+			query: {"name"},
+		},
+		multiResult: map[string][]connection.ResultSetData{
+			query: {{
+				Rows:    []map[string]interface{}{{"affectedRows": int64(1)}},
+				Columns: []string{"affectedRows"},
+			}},
+		},
+		queryErr: map[string]error{},
+	}
+	session := &fakeBatchWriteSession{parent: baseDB}
+
+	results, err := executeManagedSQLTransactionStatements(
+		context.Background(),
+		session,
+		connection.ConnectionConfig{Type: "sqlserver"},
+		[]string{query},
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("expected executeManagedSQLTransactionStatements success, got %v", err)
+	}
+	if session.queryCalls != 2 {
+		t.Fatalf("expected SQL Server status-only result plus plain query fallback, got %d calls", session.queryCalls)
+	}
+	if len(results) != 1 || len(results[0].Rows) != 1 {
+		t.Fatalf("expected one fallback result row, got %#v", results)
+	}
+	if got := results[0].Rows[0]["name"]; got != "master" {
+		t.Fatalf("expected fallback SQL Server row name=master, got %#v", got)
+	}
+	if got := queryResultRowsReturned(connection.QueryResult{Success: true, Data: results}); got != 1 {
+		t.Fatalf("expected SQL audit rows returned = 1, got %d", got)
 	}
 }
 

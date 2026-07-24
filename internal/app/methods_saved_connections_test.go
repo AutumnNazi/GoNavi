@@ -56,6 +56,45 @@ func TestSaveConnectionMethodReturnsSecretlessView(t *testing.T) {
 	}
 }
 
+func TestSaveConnectionSanitizesSchemaVisibilityRules(t *testing.T) {
+	app := NewAppWithSecretStore(newFakeAppSecretStore())
+	app.configDir = t.TempDir()
+
+	result, err := app.SaveConnection(connection.SavedConnectionInput{
+		ID:   "conn-schema-rules",
+		Name: "Schema rules",
+		Config: connection.ConnectionConfig{
+			ID:   "conn-schema-rules",
+			Type: "sqlserver",
+			Host: "db.local",
+			Port: 1433,
+			User: "sa",
+		},
+		SchemaVisibilityByDatabase: map[string]connection.SchemaVisibilityRule{
+			" appdb ": {
+				Mode:    "include",
+				Schemas: []string{" dbo ", "dbo", ""},
+			},
+			"invalid-mode": {
+				Mode:    "all",
+				Schemas: []string{"dbo"},
+			},
+			"empty": {
+				Mode: "exclude",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected := map[string]connection.SchemaVisibilityRule{
+		"appdb": {Mode: "include", Schemas: []string{"dbo"}},
+	}
+	if !reflect.DeepEqual(result.SchemaVisibilityByDatabase, expected) {
+		t.Fatalf("expected schema visibility rules to be sanitized, got %#v", result.SchemaVisibilityByDatabase)
+	}
+}
+
 func TestGetEditableSavedConnectionReturnsResolvedSecretsForEdit(t *testing.T) {
 	app := NewAppWithSecretStore(newFakeAppSecretStore())
 	app.configDir = t.TempDir()
@@ -250,8 +289,14 @@ func TestDuplicateConnectionClonesSecretBundle(t *testing.T) {
 		Name:                  "Primary",
 		IncludeDatabases:      []string{"appdb"},
 		IncludeRedisDatabases: []int{0, 1},
-		IconType:              "postgres",
-		IconColor:             "#1677ff",
+		SchemaVisibilityByDatabase: map[string]connection.SchemaVisibilityRule{
+			"appdb": {
+				Mode:    "include",
+				Schemas: []string{"dbo", "reporting"},
+			},
+		},
+		IconType:  "postgres",
+		IconColor: "#1677ff",
 		Config: connection.ConnectionConfig{
 			ID:       "conn-1",
 			Type:     "postgres",
@@ -280,6 +325,15 @@ func TestDuplicateConnectionClonesSecretBundle(t *testing.T) {
 	}
 	if !reflect.DeepEqual(duplicate.IncludeRedisDatabases, []int{0, 1}) {
 		t.Fatalf("expected redis include databases to be cloned, got %#v", duplicate.IncludeRedisDatabases)
+	}
+	expectedSchemaVisibility := map[string]connection.SchemaVisibilityRule{
+		"appdb": {
+			Mode:    "include",
+			Schemas: []string{"dbo", "reporting"},
+		},
+	}
+	if !reflect.DeepEqual(duplicate.SchemaVisibilityByDatabase, expectedSchemaVisibility) {
+		t.Fatalf("expected schema visibility rules to be cloned, got %#v", duplicate.SchemaVisibilityByDatabase)
 	}
 	if duplicate.IconType != "postgres" || duplicate.IconColor != "#1677ff" {
 		t.Fatalf("expected icon metadata to be cloned, got type=%q color=%q", duplicate.IconType, duplicate.IconColor)

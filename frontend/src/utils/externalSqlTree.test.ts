@@ -110,6 +110,79 @@ describe('externalSqlTree helpers', () => {
     expect(first).not.toBe(second);
   });
 
+  it('keeps a directory binding ahead of the global root fallback context', () => {
+    const node = buildExternalSQLRootNode({
+      connectionId: 'root-connection',
+      dbName: 'root_db',
+      directories: [
+        {
+          id: 'dir-bound',
+          name: 'bound scripts',
+          path: 'D:/sql/bound',
+          connectionId: 'connection-1',
+          dbName: 'orders',
+          createdAt: 1,
+        },
+      ],
+      directoryTrees: {
+        'dir-bound': [
+          {
+            name: 'report.sql',
+            path: 'D:/sql/bound/report.sql',
+            isDir: false,
+          },
+        ],
+      },
+    });
+
+    expect(node.children?.[0]?.dataRef).toMatchObject({
+      connectionId: 'connection-1',
+      dbName: 'orders',
+    });
+    expect(node.children?.[0]?.children?.[0]?.dataRef).toMatchObject({
+      connectionId: 'connection-1',
+      dbName: 'orders',
+    });
+  });
+
+  it('keeps same-path directories separate when they target different databases', () => {
+    const node = buildExternalSQLRootNode({
+      directories: [
+        {
+          id: 'dir-orders',
+          name: 'scripts',
+          path: 'D:/sql/shared',
+          connectionId: 'connection-1',
+          dbName: 'orders',
+          createdAt: 1,
+        },
+        {
+          id: 'dir-reporting',
+          name: 'scripts',
+          path: 'D:/sql/shared',
+          connectionId: 'connection-2',
+          dbName: 'reporting',
+          createdAt: 2,
+        },
+      ],
+      directoryTrees: {
+        'dir-orders': [{ name: 'report.sql', path: 'D:/sql/shared/report.sql', isDir: false }],
+        'dir-reporting': [{ name: 'report.sql', path: 'D:/sql/shared/report.sql', isDir: false }],
+      },
+    });
+
+    const [orders, reporting] = node.children || [];
+    expect(orders.children?.[0]?.key).not.toBe(reporting.children?.[0]?.key);
+    expect(orders.children?.[0]?.dataRef).toMatchObject({
+      connectionId: 'connection-1',
+      dbName: 'orders',
+    });
+    expect(reporting.children?.[0]?.dataRef).toMatchObject({
+      connectionId: 'connection-2',
+      dbName: 'reporting',
+    });
+  });
+
   it('filters non-sql file entries even when the backend returns them', () => {
     const directories: ExternalSQLDirectory[] = [
       {

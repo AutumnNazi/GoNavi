@@ -50,6 +50,30 @@ describe('aiSettingsModalConfig', () => {
     expect(preset.key).toBe('cursor');
   });
 
+  it('matches local Codex and Claude subscriptions without confusing Qwen Claude CLI', () => {
+    expect(matchProviderPreset({
+      type: 'custom',
+      baseUrl: '',
+      apiFormat: 'codex-cli',
+      authMode: 'local-cli',
+    }).key).toBe('codex');
+    expect(matchProviderPreset({
+      type: 'custom',
+      baseUrl: '',
+      apiFormat: 'claude-cli',
+      authMode: 'local-cli',
+    }).key).toBe('claude-subscription');
+  });
+
+  it('preserves a legacy Claude CLI provider that still owns an API secret', () => {
+    expect(matchProviderPreset({
+      type: 'custom',
+      baseUrl: '',
+      apiFormat: 'claude-cli',
+      hasSecret: true,
+    }).key).toBe('custom');
+  });
+
   it('creates MCP server drafts and skill drafts with stable defaults', () => {
     const server = EMPTY_MCP_SERVER({ name: 'Browser', args: ['stdio'] });
     const skill = EMPTY_SKILL();
@@ -62,7 +86,8 @@ describe('aiSettingsModalConfig', () => {
   });
 
   it('keeps the provider preset list available for the settings modal', () => {
-    expect(PROVIDER_PRESETS.some((item) => item.key === 'codex')).toBe(false);
+    expect(PROVIDER_PRESETS.some((item) => item.key === 'codex')).toBe(true);
+    expect(PROVIDER_PRESETS.some((item) => item.key === 'claude-subscription')).toBe(true);
     expect(PROVIDER_PRESETS.some((item) => item.key === 'codebuddy')).toBe(true);
     expect(PROVIDER_PRESETS.some((item) => item.key === 'cursor')).toBe(true);
     expect(PROVIDER_PRESETS.some((item) => item.key === 'openai')).toBe(true);
@@ -89,6 +114,16 @@ describe('aiSettingsModalConfig', () => {
     expect(localized.find((item) => item.key === 'cursor')).toMatchObject({
       label: 'Cursor',
       desc: 'Cloud Agents API / official API Key',
+    });
+    expect(localized.find((item) => item.key === 'codex')).toMatchObject({
+      label: 'Codex Subscription',
+      desc: 'Local Codex CLI / ChatGPT subscription login',
+      authMode: 'local-cli',
+    });
+    expect(localized.find((item) => item.key === 'claude-subscription')).toMatchObject({
+      label: 'Claude Subscription',
+      desc: 'Local Claude Code CLI / Claude subscription login',
+      authMode: 'local-cli',
     });
     expect(localized.find((item) => item.key === 'minimax')).toMatchObject({
       desc: 'M3 / M2.7 series (Anthropic-compatible)',

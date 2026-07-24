@@ -43,6 +43,7 @@ type QueryEditorToolbarProps = {
   toggleQueryResultsPanelShortcutBinding: ShortcutPlatformBinding;
   activeShortcutPlatform: ShortcutPlatform;
   isResultPanelVisible: boolean;
+  wordWrapEnabled: boolean;
   loading: boolean;
   saveMoreMenuItems: MenuProps["items"];
   formatSettingsMenu: MenuProps["items"];
@@ -56,6 +57,7 @@ type QueryEditorToolbarProps = {
   onCancel: () => void;
   onQuickSave: () => void;
   onFindInEditor: () => void;
+  onToggleWordWrap: () => void;
   onFormat: () => void;
   onTriggerSqlAiCompletion: () => void;
   onToggleResultPanelVisibility: () => void;
@@ -66,6 +68,20 @@ type QueryEditorToolbarProps = {
 };
 
 const FULL_NAME_TOOLTIP_DELAY_SECONDS = 1;
+
+const WrapTextIcon: React.FC = () => (
+  <svg
+    className="gn-query-toolbar-word-wrap-icon"
+    viewBox="0 0 24 24"
+    aria-hidden="true"
+    focusable="false"
+  >
+    <path
+      fill="currentColor"
+      d="M4 19h6v-2H4v2zM20 5H4v2h16V5zm-3 6H4v2h13.25c1.1 0 2 .9 2 2s-.9 2-2 2H15v-2l-3 3 3 3v-2h2c2.21 0 4-1.79 4-4s-1.79-4-4-4z"
+    />
+  </svg>
+);
 
 type FullNameSelectOption = {
   label: string;
@@ -110,6 +126,7 @@ const QueryEditorToolbar: React.FC<QueryEditorToolbarProps> = ({
   toggleQueryResultsPanelShortcutBinding,
   activeShortcutPlatform,
   isResultPanelVisible,
+  wordWrapEnabled,
   loading,
   saveMoreMenuItems,
   formatSettingsMenu,
@@ -123,6 +140,7 @@ const QueryEditorToolbar: React.FC<QueryEditorToolbarProps> = ({
   onCancel,
   onQuickSave,
   onFindInEditor,
+  onToggleWordWrap,
   onFormat,
   onTriggerSqlAiCompletion,
   onToggleResultPanelVisibility,
@@ -443,6 +461,28 @@ const QueryEditorToolbar: React.FC<QueryEditorToolbarProps> = ({
         <Tooltip title={findInEditorTitle}>
           <Button icon={<SearchOutlined />} onClick={onFindInEditor}>
             {t("query_editor.action.find_in_editor")}
+          </Button>
+        </Tooltip>
+        <Tooltip
+          title={t(
+            wordWrapEnabled
+              ? "query_editor.action.disable_word_wrap"
+              : "query_editor.action.enable_word_wrap",
+          )}
+        >
+          <Button
+            className={isV2Ui ? "gn-v2-query-toolbar-word-wrap-action" : undefined}
+            type={wordWrapEnabled ? "primary" : "default"}
+            icon={<WrapTextIcon />}
+            aria-label={t(
+              wordWrapEnabled
+                ? "query_editor.action.disable_word_wrap"
+                : "query_editor.action.enable_word_wrap",
+            )}
+            aria-pressed={wordWrapEnabled}
+            onClick={onToggleWordWrap}
+          >
+            {t("query_editor.action.word_wrap")}
           </Button>
         </Tooltip>
         <Tooltip title={formatSqlTitle}>

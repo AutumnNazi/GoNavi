@@ -3,7 +3,9 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   buildBatchDatabaseExportWorkbenchTab,
   buildBatchTableExportWorkbenchTab,
+  buildDatabaseExportWorkbenchTab,
   buildExportWorkbenchHistoryKey,
+  buildSchemaExportWorkbenchTab,
   buildTableExportHistoryKey,
   buildTableExportTab,
   DEFAULT_TABLE_EXPORT_SCOPE_OPTION,
@@ -31,6 +33,17 @@ describe('tableExportTab', () => {
       dbName: ' ignored ',
       exportWorkbenchMode: 'batch-databases',
     })).toBe('conn-1::__batch_databases__');
+    expect(buildExportWorkbenchHistoryKey({
+      connectionId: ' conn-1 ',
+      dbName: ' app ',
+      exportWorkbenchMode: 'database',
+    })).toBe('conn-1::app::__database__');
+    expect(buildExportWorkbenchHistoryKey({
+      connectionId: ' conn-1 ',
+      dbName: ' app ',
+      schemaName: ' sales ',
+      exportWorkbenchMode: 'schema',
+    })).toBe('conn-1::app::sales::__schema__');
   });
 
   it('builds a stable table export tab with normalized defaults', () => {
@@ -99,6 +112,24 @@ describe('tableExportTab', () => {
     expect(tab.dbName).toBe('SYS');
   });
 
+  it('carries selected objects and an auto-start request into the batch table workbench', () => {
+    const tab = buildBatchTableExportWorkbenchTab({
+      connectionId: 'conn-1',
+      dbName: 'SYS',
+      initialObjectNames: [' users ', 'orders', 'users'],
+      contentMode: 'backup',
+      includeDropIfExists: true,
+      requestKey: 'batch-tables-1',
+    });
+
+    expect(tab).toEqual(expect.objectContaining({
+      tableExportInitialObjectNames: ['users', 'orders'],
+      tableExportContentMode: 'backup',
+      tableExportIncludeDropIfExists: true,
+      tableExportRequestKey: 'batch-tables-1',
+    }));
+  });
+
   it('builds batch database export workbench tabs with stable ids', () => {
     setCurrentLanguage('zh-CN');
     const tab = buildBatchDatabaseExportWorkbenchTab({
@@ -109,6 +140,57 @@ describe('tableExportTab', () => {
     expect(tab.type).toBe('table-export');
     expect(tab.title).toBe('批量导出库');
     expect(tab.exportWorkbenchMode).toBe('batch-databases');
+  });
+
+  it('carries selected databases and an auto-start request into the batch database workbench', () => {
+    const tab = buildBatchDatabaseExportWorkbenchTab({
+      connectionId: 'conn-1',
+      initialDatabaseNames: [' app ', 'audit', 'app'],
+      contentMode: 'schema',
+      includeDropIfExists: true,
+      requestKey: 'batch-databases-1',
+    });
+
+    expect(tab).toEqual(expect.objectContaining({
+      tableExportInitialDatabaseNames: ['app', 'audit'],
+      tableExportContentMode: 'schema',
+      tableExportIncludeDropIfExists: true,
+      tableExportRequestKey: 'batch-databases-1',
+    }));
+  });
+
+  it('builds direct database and schema workbenches with stable targets', () => {
+    const databaseTab = buildDatabaseExportWorkbenchTab({
+      connectionId: 'conn-1',
+      dbName: ' app ',
+      contentMode: 'backup',
+      requestKey: 'database-1',
+    });
+    const schemaTab = buildSchemaExportWorkbenchTab({
+      connectionId: 'conn-1',
+      dbName: 'app',
+      schemaName: ' sales ',
+      contentMode: 'schema',
+      requestKey: 'schema-1',
+    });
+
+    expect(databaseTab).toEqual(expect.objectContaining({
+      id: 'table-export-database-conn-1-app',
+      type: 'table-export',
+      exportWorkbenchMode: 'database',
+      dbName: 'app',
+      tableExportContentMode: 'backup',
+      tableExportRequestKey: 'database-1',
+    }));
+    expect(schemaTab).toEqual(expect.objectContaining({
+      id: 'table-export-schema-conn-1-app-sales',
+      type: 'table-export',
+      exportWorkbenchMode: 'schema',
+      dbName: 'app',
+      schemaName: 'sales',
+      tableExportContentMode: 'schema',
+      tableExportRequestKey: 'schema-1',
+    }));
   });
 
   it('uses the current language for batch workbench fallback titles', () => {

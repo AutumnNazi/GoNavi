@@ -282,6 +282,49 @@ func TestProviderConfigStoreSaveAndLoadMCPServers(t *testing.T) {
 	}
 }
 
+func TestProviderConfigStoreSaveAndLoadMCPHTTPServerConfigWithoutTokenInAIConfig(t *testing.T) {
+	configStore := newProviderConfigStore(t.TempDir(), failOnUseSecretStore{})
+
+	expected := ai.MCPHTTPServerConfig{
+		Enabled:    true,
+		Addr:       "127.0.0.1:9123",
+		Path:       "/mcp",
+		SchemaOnly: true,
+		Token:      "gnv_mcp_http_secret",
+	}
+
+	err := configStore.Save(ProviderConfigStoreSnapshot{
+		Providers:      []ai.ProviderConfig{},
+		ActiveProvider: "",
+		SafetyLevel:    ai.PermissionReadOnly,
+		ContextLevel:   ai.ContextSchemaOnly,
+		MCPHTTPServer:  expected,
+	})
+	if err != nil {
+		t.Fatalf("Save returned error: %v", err)
+	}
+
+	snapshot, err := configStore.Load()
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if !reflect.DeepEqual(snapshot.MCPHTTPServer, expected) {
+		t.Fatalf("expected MCP HTTP config %#v, got %#v", expected, snapshot.MCPHTTPServer)
+	}
+
+	configData, err := os.ReadFile(filepath.Join(configStore.configDir, aiConfigFileName))
+	if err != nil {
+		t.Fatalf("ReadFile returned error: %v", err)
+	}
+	configText := string(configData)
+	if !strings.Contains(configText, `"mcpHTTPServer"`) || !strings.Contains(configText, `"enabled": true`) {
+		t.Fatalf("expected persisted MCP HTTP metadata, got %s", configText)
+	}
+	if strings.Contains(configText, expected.Token) {
+		t.Fatalf("expected MCP HTTP token to stay out of ai config, got %s", configText)
+	}
+}
+
 func TestProviderConfigStoreSaveAndLoadSkills(t *testing.T) {
 	configStore := newProviderConfigStore(t.TempDir(), failOnUseSecretStore{})
 

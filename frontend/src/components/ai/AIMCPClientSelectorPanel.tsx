@@ -1,6 +1,4 @@
 import React from 'react';
-import { CheckCircleFilled } from '@ant-design/icons';
-
 import type { AIMCPClientInstallStatus } from '../../types';
 import {
   isMCPClientKey,
@@ -32,7 +30,7 @@ const MCP_CLIENT_INSTALL_STEPS = [
     titleKey: 'ai_chat.mcp_client.install.selector.step.target.title',
     titleFallback: 'Choose target client',
     detailKey: 'ai_chat.mcp_client.install.selector.step.target.detail',
-    detailFallback: 'Local Claude/Codex can be installed automatically. OpenClaw/Hermans use remote connection guidance.',
+    detailFallback: 'Local Claude/Codex/OpenCode can be installed automatically. OpenClaw/Hermans use remote connection guidance.',
   },
   {
     step: '2',
@@ -66,165 +64,176 @@ const AIMCPClientSelectorPanel: React.FC<AIMCPClientSelectorPanelProps> = ({
     fallback: string,
     params?: Record<string, string | number | boolean | null | undefined>,
   ) => translateMCPClientInstallCopy(t, key, fallback, params);
+  const selectedStatusIndex = Math.max(
+    0,
+    statuses.findIndex((status) => isMCPClientKey(status.client) && status.client === selectedClient),
+  );
 
   return (
-    <>
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-      <div style={{ fontWeight: 700, fontSize: 14, color: overlayTheme.titleText }}>
-        {copy('ai_chat.mcp_client.install.selector.title', 'Connect external client')}
-      </div>
-      <div style={{ fontSize: 12, color: overlayTheme.mutedText, lineHeight: 1.7 }}>
-        {copy(
-          'ai_chat.mcp_client.install.selector.description',
-          'Choose one target client first. Local CLIs can write or update config automatically; remote Agents must access current GoNavi through an MCP bridge or tunnel and should not store database passwords.',
-        )}
-      </div>
-    </div>
-    <div
-      style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
-        gap: 10,
-      }}
-    >
-      {MCP_CLIENT_INSTALL_STEPS.map((item) => (
-        <div
-          key={item.step}
-          style={{
-            padding: '12px 14px',
-            borderRadius: 12,
-            border: `1px solid ${cardBorder}`,
-            background: darkMode ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.76)',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 5,
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <div
-              style={{
-                width: 22,
-                height: 22,
-                borderRadius: 999,
-                background: overlayTheme.selectedText,
-                color: '#fff',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontSize: 12,
-                fontWeight: 700,
-                flexShrink: 0,
-              }}
-            >
-              {item.step}
-            </div>
-            <div style={{ fontWeight: 700, fontSize: 13, color: overlayTheme.titleText }}>
-              {copy(item.titleKey, item.titleFallback)}
-            </div>
-          </div>
-          <div style={{ fontSize: 12, color: overlayTheme.mutedText, lineHeight: 1.6 }}>
-            {copy(item.detailKey, item.detailFallback)}
-          </div>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+        <div style={{ fontWeight: 700, fontSize: 14, color: overlayTheme.titleText }}>
+          {copy('ai_chat.mcp_client.install.selector.title', 'Connect external client')}
         </div>
-      ))}
-    </div>
-
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-      <div style={{ fontWeight: 700, fontSize: 13, color: overlayTheme.titleText }}>
-        {copy('ai_chat.mcp_client.install.selector.choice_title', 'Select external client')}
+        <div className="gonavi-ai-mcp-line-clamp" style={{ fontSize: 12, color: overlayTheme.mutedText, lineHeight: 1.6 }}>
+          {copy(
+            'ai_chat.mcp_client.install.selector.description',
+            'Choose one target client first. Local CLIs can write or update config automatically; remote Agents must access current GoNavi through an MCP bridge or tunnel and should not store database passwords.',
+          )}
+        </div>
       </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+        <div style={{ fontWeight: 700, fontSize: 12, color: overlayTheme.titleText }}>
+          {copy('ai_chat.mcp_client.install.selector.choice_title', 'Select external client')}
+        </div>
       <div
         role="radiogroup"
         aria-label={copy('ai_chat.mcp_client.install.selector.aria_label', 'Select the external client for GoNavi MCP')}
-        style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 10 }}
+        style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', gap: 8 }}
       >
-        {statuses.map((status) => {
+        {statuses.map((status, statusIndex) => {
           const client = isMCPClientKey(status.client) ? status.client : 'claude-code';
           const remoteClient = isRemoteMCPClientStatus(status);
           const active = selectedClient === client;
           const tone = getMCPClientStatusTone(status, darkMode, t);
+          const optionSummary = getMCPClientOptionSummary(status, t);
+          const optionState = getMCPClientInstallStateLabel(status, t);
+          const optionHint = active
+            ? (remoteClient
+              ? copy('ai_chat.mcp_client.install.selector.hint.active_remote', 'Selected. The remote connection guide will be copied.')
+              : copy('ai_chat.mcp_client.install.selector.hint.active_local', 'Selected. Only this client will be written or updated.'))
+            : (remoteClient
+              ? copy('ai_chat.mcp_client.install.selector.hint.inactive_remote', 'Click to view the remote connection method.')
+              : copy('ai_chat.mcp_client.install.selector.hint.inactive_local', 'Click to switch to this client.'));
           return (
             <button
+              className="gonavi-ai-mcp-client-option"
               key={status.client}
               type="button"
               role="radio"
+              aria-label={`${status.displayName}, ${tone.label}`}
               aria-checked={active}
+              tabIndex={statusIndex === selectedStatusIndex ? 0 : -1}
+              title={`${optionSummary}\n${optionState}\n${optionHint}`}
               onClick={() => onSelectClient(client)}
+              onKeyDown={(event) => {
+                if (!['ArrowRight', 'ArrowDown', 'ArrowLeft', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
+                  return;
+                }
+                event.preventDefault();
+                const nextIndex = event.key === 'Home'
+                  ? 0
+                  : event.key === 'End'
+                    ? statuses.length - 1
+                    : event.key === 'ArrowRight' || event.key === 'ArrowDown'
+                      ? (statusIndex + 1) % statuses.length
+                      : (statusIndex - 1 + statuses.length) % statuses.length;
+                const nextStatus = statuses[nextIndex];
+                onSelectClient(isMCPClientKey(nextStatus.client) ? nextStatus.client : 'claude-code');
+                const radios = event.currentTarget.parentElement?.querySelectorAll<HTMLElement>('[role="radio"]');
+                radios?.[nextIndex]?.focus();
+              }}
               style={{
-                padding: '14px 16px',
-                borderRadius: 12,
-                border: `1.5px solid ${active ? overlayTheme.selectedText : cardBorder}`,
-                background: active ? overlayTheme.selectedBg : (darkMode ? 'rgba(255,255,255,0.02)' : 'rgba(255,255,255,0.7)'),
+                padding: '9px 6px',
+                border: 'none',
+                borderBottom: `1px solid ${cardBorder}`,
+                borderLeft: `3px solid ${active ? overlayTheme.selectedText : 'transparent'}`,
+                background: 'transparent',
                 cursor: 'pointer',
                 display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'stretch',
-                gap: 10,
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: 5,
                 textAlign: 'left',
-                minHeight: 98,
-                transition: 'all 0.2s ease',
+                minHeight: 46,
+                flex: '0 1 auto',
+                transition: 'border-color 0.2s ease',
                 opacity: statusLoading ? 0.72 : 1,
               }}
             >
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
-                  <div
-                    aria-hidden
-                    style={{
-                      width: 22,
-                      height: 22,
-                      borderRadius: 999,
-                      border: `1.5px solid ${active ? overlayTheme.selectedText : darkMode ? 'rgba(255,255,255,0.16)' : 'rgba(15,23,42,0.16)'}`,
-                      background: active ? overlayTheme.selectedText : 'transparent',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      flexShrink: 0,
-                    }}
-                  >
-                    {active ? <CheckCircleFilled style={{ color: '#fff', fontSize: 12 }} /> : null}
-                  </div>
-                  <div style={{ fontWeight: 700, fontSize: 14, color: overlayTheme.titleText, minWidth: 0 }}>
-                    {status.displayName}
-                  </div>
-                </div>
-                <div
-                  style={{
-                    padding: '4px 10px',
-                    borderRadius: 999,
-                    fontSize: 11,
-                    fontWeight: 700,
-                    color: tone.color,
-                    background: tone.bg,
-                    width: 80,
-                    textAlign: 'center',
-                    flexShrink: 0,
-                  }}
-                >
-                  {tone.label}
-                </div>
-              </div>
-              <div style={{ fontSize: 12, color: overlayTheme.titleText, lineHeight: 1.7 }}>
-                {getMCPClientOptionSummary(status, t)}
-              </div>
-              <div style={{ fontSize: 12, color: active ? overlayTheme.selectedText : overlayTheme.mutedText, lineHeight: 1.6, fontWeight: 700 }}>
-                {getMCPClientInstallStateLabel(status, t)}
-              </div>
-              <div style={{ fontSize: 11, color: overlayTheme.mutedText, lineHeight: 1.6 }}>
-                {active
-                  ? (remoteClient
-                    ? copy('ai_chat.mcp_client.install.selector.hint.active_remote', 'Selected. The remote connection guide will be copied.')
-                    : copy('ai_chat.mcp_client.install.selector.hint.active_local', 'Selected. Only this client will be written or updated.'))
-                  : (remoteClient
-                    ? copy('ai_chat.mcp_client.install.selector.hint.inactive_remote', 'Click to view the remote connection method.')
-                    : copy('ai_chat.mcp_client.install.selector.hint.inactive_local', 'Click to switch to this client.'))}
-              </div>
+              <span className="gonavi-ai-mcp-client-name" style={{ fontWeight: 700, fontSize: 12, color: overlayTheme.titleText }}>
+                {status.displayName}
+              </span>
+              <span
+                className="gonavi-ai-mcp-client-state"
+                title={tone.label}
+                style={{
+                  color: tone.color,
+                  fontSize: 'var(--gn-font-size-sm, 12px)',
+                  fontWeight: 700,
+                  lineHeight: 1,
+                  whiteSpace: 'nowrap',
+                  flexShrink: 0,
+                }}
+              >
+                {tone.label}
+              </span>
             </button>
           );
         })}
       </div>
+      </div>
+
+      <details className="gonavi-ai-mcp-disclosure gonavi-ai-mcp-client-guide-disclosure">
+        <summary>
+          <span style={{ fontWeight: 700, color: overlayTheme.titleText }}>
+            {copy('ai_chat.mcp_client.install.guide_summary', 'Connection flow and safety notes')}
+          </span>
+          <span className="gonavi-ai-mcp-summary-note" style={{ color: overlayTheme.mutedText }}>
+            {copy(
+              'ai_chat.mcp_client.install.intro.description',
+              'Claude Code, Codex, and OpenCode write local user-level MCP config. Cloud Agents such as OpenClaw and Hermans use remote connection guidance so database passwords are not copied to the cloud.',
+            )}
+          </span>
+        </summary>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '4px 0 10px' }}>
+          <div style={{ fontWeight: 700, fontSize: 12, color: overlayTheme.titleText, lineHeight: 1.6 }}>
+            {copy(
+              'ai_chat.mcp_client.install.intro.title',
+              'This connects GoNavi MCP to Claude Code / Codex / OpenCode / OpenClaw / Hermans for external tool calls. It is not installing a plugin into GoNavi itself.',
+            )}
+          </div>
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+              gap: 10,
+            }}
+          >
+            {MCP_CLIENT_INSTALL_STEPS.map((item) => (
+              <div key={item.step} style={{ display: 'flex', gap: 8, minWidth: 0 }}>
+                <div
+                  style={{
+                    width: 20,
+                    height: 20,
+                    borderRadius: 999,
+                    background: overlayTheme.selectedText,
+                    color: '#fff',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: 'var(--gn-font-size-sm, 12px)',
+                    fontWeight: 700,
+                    flexShrink: 0,
+                  }}
+                >
+                  {item.step}
+                </div>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontWeight: 700, fontSize: 12, color: overlayTheme.titleText }}>
+                    {copy(item.titleKey, item.titleFallback)}
+                  </div>
+                  <div style={{ marginTop: 3, fontSize: 'var(--gn-font-size-sm, 12px)', color: overlayTheme.mutedText, lineHeight: 1.55 }}>
+                    {copy(item.detailKey, item.detailFallback)}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </details>
     </div>
-  </>
   );
 };
 

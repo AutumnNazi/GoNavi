@@ -1,6 +1,4 @@
 import React from 'react';
-import { Button } from 'antd';
-import { PlusOutlined } from '@ant-design/icons';
 
 import { t as catalogTranslate } from '../../i18n/catalog';
 import { useOptionalI18n } from '../../i18n/provider';
@@ -84,101 +82,205 @@ const AISettingsMCPSection: React.FC<AISettingsMCPSectionProps> = ({
 }) => {
   const i18n = useOptionalI18n();
   const copy = (key: string) => (i18n?.t ?? ((catalogKey) => catalogTranslate('en-US', catalogKey)))(key);
+  const [activeView, setActiveView] = React.useState<'external-clients' | 'tool-sources'>('external-clients');
+  const tabs = [
+    {
+      key: 'external-clients' as const,
+      source: copy('ai_settings.mcp_section.tab.external_clients'),
+      target: 'GoNavi',
+    },
+    {
+      key: 'tool-sources' as const,
+      source: 'GoNavi',
+      target: copy('ai_settings.mcp_section.tab.tool_sources'),
+    },
+  ];
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-    <AIMCPHTTPServerPanel
-      status={mcpHTTPServerStatus}
-      draft={mcpHTTPServerDraft}
-      loading={mcpHTTPServerLoading}
-      cardBg={cardBg}
-      cardBorder={cardBorder}
-      darkMode={darkMode}
-      overlayTheme={overlayTheme}
-      onDraftChange={onUpdateHTTPServerDraft}
-      onToggle={onToggleHTTPServer}
-      onCopyURL={onCopyHTTPServerURL}
-      onCopyAuthorization={onCopyHTTPServerAuthorization}
-    />
-    <AIMCPClientInstallPanel
-      statuses={mcpClientStatuses}
-      selectedClient={selectedMCPClient}
-      selectedStatus={selectedMCPClientStatus}
-      selectedCommandText={selectedMCPClientCommandText}
-      darkMode={darkMode}
-      overlayTheme={overlayTheme}
-      cardBg={cardBg}
-      cardBorder={cardBorder}
-      loading={loading}
-      statusLoading={mcpClientStatusLoading}
-      onSelectClient={onSelectClient}
-      onRefreshStatus={onRefreshStatus}
-      onCopyConfigPath={onCopyConfigPath}
-      onCopyLaunchCommand={onCopyLaunchCommand}
-      onInstall={onInstallSelectedClient}
-    />
-    <AIMCPQuickAddServerPanel
-      cardBg={cardBg}
-      cardBorder={cardBorder}
-      inputBg={inputBg}
-      darkMode={darkMode}
-      overlayTheme={overlayTheme}
-      onAddServer={onAddServer}
-    />
     <div
+      className="gonavi-ai-mcp-section"
       style={{
-        padding: '14px 16px',
-        borderRadius: 14,
-        border: `1px solid ${cardBorder}`,
-        background: cardBg,
         display: 'flex',
         flexDirection: 'column',
-        gap: 10,
+        borderTop: `1px solid ${cardBorder}`,
       }}
     >
-      <div style={{ fontWeight: 700, fontSize: 14, color: overlayTheme.titleText }}>{copy('ai_settings.mcp_server.section.quick_reference.title')}</div>
-      <div style={{ fontSize: 12, color: overlayTheme.mutedText, lineHeight: 1.7 }}>
-        {copy('ai_settings.mcp_server.section.quick_reference.description')}
+      <div
+        className="gonavi-ai-mcp-tabs"
+        role="tablist"
+        aria-label={copy('ai_settings.nav.mcp.title')}
+        style={{ borderBottom: `1px solid ${cardBorder}` }}
+      >
+        {tabs.map((tab, tabIndex) => {
+          const active = activeView === tab.key;
+          return (
+            <button
+              key={tab.key}
+              id={`gonavi-ai-mcp-tab-${tab.key}`}
+              type="button"
+              role="tab"
+              aria-label={`${tab.source} → ${tab.target}`}
+              aria-selected={active}
+              aria-controls={`gonavi-ai-mcp-panel-${tab.key}`}
+              tabIndex={active ? 0 : -1}
+              className={`gonavi-ai-mcp-tab${active ? ' is-active' : ''}`}
+              onClick={() => setActiveView(tab.key)}
+              onKeyDown={(event) => {
+                if (!['ArrowRight', 'ArrowLeft', 'Home', 'End'].includes(event.key)) {
+                  return;
+                }
+                event.preventDefault();
+                const nextIndex = event.key === 'Home'
+                  ? 0
+                  : event.key === 'End'
+                    ? tabs.length - 1
+                    : event.key === 'ArrowRight'
+                      ? (tabIndex + 1) % tabs.length
+                      : (tabIndex - 1 + tabs.length) % tabs.length;
+                setActiveView(tabs[nextIndex].key);
+                const tabButtons = event.currentTarget.parentElement?.querySelectorAll<HTMLElement>('[role="tab"]');
+                tabButtons?.[nextIndex]?.focus();
+              }}
+              style={{
+                color: active ? overlayTheme.selectedText : overlayTheme.mutedText,
+                borderBottomColor: active ? overlayTheme.selectedText : 'transparent',
+              }}
+            >
+              <span>{tab.source}</span>
+              <span className="gonavi-ai-mcp-route-arrow" aria-hidden>→</span>
+              <span>{tab.target}</span>
+            </button>
+          );
+        })}
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 10 }}>
-        {MCP_FIELD_GUIDES.filter((item) => ['command', 'args', 'env', 'timeout'].includes(item.key)).map((item) => (
-          <AIMCPFieldGuideCard
-            key={item.key}
-            item={item}
+
+      <div
+        id="gonavi-ai-mcp-panel-external-clients"
+        role="tabpanel"
+        aria-labelledby="gonavi-ai-mcp-tab-external-clients"
+        hidden={activeView !== 'external-clients'}
+      >
+        <AIMCPHTTPServerPanel
+          status={mcpHTTPServerStatus}
+          draft={mcpHTTPServerDraft}
+          loading={mcpHTTPServerLoading}
+          cardBg={cardBg}
+          cardBorder={cardBorder}
+          darkMode={darkMode}
+          overlayTheme={overlayTheme}
+          onDraftChange={onUpdateHTTPServerDraft}
+          onToggle={onToggleHTTPServer}
+          onCopyURL={onCopyHTTPServerURL}
+          onCopyAuthorization={onCopyHTTPServerAuthorization}
+        />
+        <AIMCPClientInstallPanel
+          statuses={mcpClientStatuses}
+          selectedClient={selectedMCPClient}
+          selectedStatus={selectedMCPClientStatus}
+          selectedCommandText={selectedMCPClientCommandText}
+          darkMode={darkMode}
+          overlayTheme={overlayTheme}
+          cardBg={cardBg}
+          cardBorder={cardBorder}
+          loading={loading}
+          statusLoading={mcpClientStatusLoading}
+          onSelectClient={onSelectClient}
+          onRefreshStatus={onRefreshStatus}
+          onCopyConfigPath={onCopyConfigPath}
+          onCopyLaunchCommand={onCopyLaunchCommand}
+          onInstall={onInstallSelectedClient}
+        />
+      </div>
+
+      <div
+        id="gonavi-ai-mcp-panel-tool-sources"
+        role="tabpanel"
+        aria-labelledby="gonavi-ai-mcp-tab-tool-sources"
+        hidden={activeView !== 'tool-sources'}
+      >
+        <details className="gonavi-ai-mcp-disclosure gonavi-ai-mcp-quick-add-disclosure">
+          <summary>
+            <span style={{ fontWeight: 700, color: overlayTheme.titleText }}>
+              {copy('ai_settings.mcp_server.quick_add.title')}
+            </span>
+            <span className="gonavi-ai-mcp-summary-note" style={{ color: overlayTheme.mutedText }}>
+              {copy('ai_settings.mcp_server.quick_add.description')}
+            </span>
+          </summary>
+          <AIMCPQuickAddServerPanel
+            cardBg={cardBg}
             cardBorder={cardBorder}
+            inputBg={inputBg}
             darkMode={darkMode}
             overlayTheme={overlayTheme}
-            compact
+            hideHeading
+            onAddServer={onAddServer}
+          />
+        </details>
+
+        {mcpServers.length === 0 && (
+          <div
+            title={copy('ai_settings.mcp_server.section.empty')}
+            style={{ padding: '13px 0', borderBottom: `1px solid ${cardBorder}`, background: 'transparent', color: overlayTheme.mutedText, fontSize: 12 }}
+          >
+            {copy('ai_settings.mcp_server.section.empty_compact')}
+          </div>
+        )}
+        {mcpServers.map((server) => (
+          <AIMCPServerCard
+            key={server.id}
+            server={server}
+            serverTools={mcpTools.filter((tool) => tool.serverId === server.id)}
+            cardBg={cardBg}
+            cardBorder={cardBorder}
+            inputBg={inputBg}
+            darkMode={darkMode}
+            overlayTheme={overlayTheme}
+            loading={loading}
+            onChange={(patch) => onUpdateServerDraft(server.id, patch)}
+            onTest={() => onTestServer(server)}
+            onSave={() => onSaveServer(server)}
+            onDelete={() => onDeleteServer(server.id)}
           />
         ))}
+
+        <details className="gonavi-ai-mcp-disclosure gonavi-ai-mcp-reference-disclosure">
+          <summary>
+            <span style={{ fontWeight: 700, color: overlayTheme.titleText }}>
+              {copy('ai_settings.mcp_server.section.quick_reference.title')}
+            </span>
+            <span className="gonavi-ai-mcp-summary-note" style={{ color: overlayTheme.mutedText }}>
+              {copy('ai_settings.mcp_server.section.quick_reference.description')}
+            </span>
+          </summary>
+          <div
+            style={{
+              padding: '4px 0 16px',
+              borderBottom: `1px solid ${cardBorder}`,
+              background: 'transparent',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 10,
+            }}
+          >
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 10 }}>
+              {MCP_FIELD_GUIDES.filter((item) => ['command', 'args', 'env', 'timeout'].includes(item.key)).map((item) => (
+                <AIMCPFieldGuideCard
+                  key={item.key}
+                  item={item}
+                  cardBorder={cardBorder}
+                  darkMode={darkMode}
+                  overlayTheme={overlayTheme}
+                  compact
+                />
+              ))}
+            </div>
+            <div style={{ fontSize: 12, color: overlayTheme.mutedText }}>
+              {copy('ai_settings.mcp_server.section.quick_reference.footer')}
+            </div>
+          </div>
+        </details>
       </div>
-    </div>
-    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
-      <div style={{ fontSize: 12, color: overlayTheme.mutedText }}>{copy('ai_settings.mcp_server.section.quick_reference.footer')}</div>
-      <Button icon={<PlusOutlined />} onClick={() => onAddServer()} style={{ borderRadius: 10 }}>{copy('ai_settings.mcp_server.section.action.add_server')}</Button>
-    </div>
-    {mcpServers.length === 0 && (
-      <div style={{ padding: '18px 16px', borderRadius: 14, border: `1px dashed ${cardBorder}`, background: cardBg, color: overlayTheme.mutedText }}>
-        {copy('ai_settings.mcp_server.section.empty')}
-      </div>
-    )}
-    {mcpServers.map((server) => (
-      <AIMCPServerCard
-        key={server.id}
-        server={server}
-        serverTools={mcpTools.filter((tool) => tool.serverId === server.id)}
-        cardBg={cardBg}
-        cardBorder={cardBorder}
-        inputBg={inputBg}
-        darkMode={darkMode}
-        overlayTheme={overlayTheme}
-        loading={loading}
-        onChange={(patch) => onUpdateServerDraft(server.id, patch)}
-        onTest={() => onTestServer(server)}
-        onSave={() => onSaveServer(server)}
-        onDelete={() => onDeleteServer(server.id)}
-      />
-    ))}
     </div>
   );
 };

@@ -3,6 +3,7 @@ package jvm
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -236,6 +237,244 @@ func TestMonitoringManagerStopMarksSessionStopped(t *testing.T) {
 	}
 	if history.Running {
 		t.Fatalf("expected session to stop running, got %#v", history)
+	}
+}
+
+func TestMonitoringManagerBoundsRetainedStoppedSessions(t *testing.T) {
+	manager := newMonitoringManagerForTest(5)
+	restore := swapMonitoringProviderFactory(func(mode string) (Provider, error) {
+		return fakeMonitoringProvider{snapshot: JVMMonitoringSnapshot{
+			Point: JVMMonitoringPoint{Timestamp: 1713945600000},
+		}}, nil
+	})
+	defer restore()
+
+	for index := 0; index <= 64; index++ {
+		connectionID := fmt.Sprintf("conn-stopped-%d", index)
+		cfg := connection.ConnectionConfig{
+			ID:   connectionID,
+			Type: "jvm",
+			Host: "orders.internal",
+			JVM: connection.JVMConfig{
+				PreferredMode: ModeJMX,
+				AllowedModes:  []string{ModeJMX},
+			},
+		}
+		if _, err := manager.Start(context.Background(), cfg, ModeJMX); err != nil {
+			t.Fatalf("Start(%s) returned error: %v", connectionID, err)
+		}
+		if err := manager.Stop(connectionID, ModeJMX); err != nil {
+			t.Fatalf("Stop(%s) returned error: %v", connectionID, err)
+		}
+	}
+
+	if got := len(manager.sessions); got > 64 {
+		t.Fatalf("expected stopped session retention to be bounded at 64, got %d", got)
+	}
+}
+
+func TestMonitoringManagerRetainsRecentlyReadStoppedSessions(t *testing.T) {
+	manager := newMonitoringManagerForTest(5)
+	manager.maxStoppedSessions = 2
+	manager.stoppedSessionTTL = time.Hour
+	now := time.Unix(1713945600, 0)
+	manager.now = func() time.Time { return now }
+	restore := swapMonitoringProviderFactory(func(mode string) (Provider, error) {
+		return fakeMonitoringProvider{snapshot: JVMMonitoringSnapshot{
+			Point: JVMMonitoringPoint{Timestamp: now.UnixMilli()},
+		}}, nil
+	})
+	defer restore()
+
+	startAndStop := func(connectionID string) {
+		t.Helper()
+		cfg := connection.ConnectionConfig{
+			ID: connectionID, Type: "jvm", Host: "orders.internal",
+			JVM: connection.JVMConfig{PreferredMode: ModeJMX, AllowedModes: []string{ModeJMX}},
+		}
+		if _, err := manager.Start(context.Background(), cfg, ModeJMX); err != nil {
+			t.Fatalf("Start(%s) returned error: %v", connectionID, err)
+		}
+		if err := manager.Stop(connectionID, ModeJMX); err != nil {
+			t.Fatalf("Stop(%s) returned error: %v", connectionID, err)
+		}
+	}
+
+	startAndStop("conn-old")
+	now = now.Add(time.Second)
+	startAndStop("conn-recent")
+	now = now.Add(time.Second)
+	if _, err := manager.GetHistory("conn-old", ModeJMX); err != nil {
+		t.Fatalf("GetHistory(conn-old) returned error: %v", err)
+	}
+	now = now.Add(time.Second)
+	startAndStop("conn-new")
+
+	if _, err := manager.GetHistory("conn-recent", ModeJMX); err == nil {
+		t.Fatal("expected least-recently-used stopped session to be evicted")
+	}
+	for _, connectionID := range []string{"conn-old", "conn-new"} {
+		history, err := manager.GetHistory(connectionID, ModeJMX)
+		if err != nil {
+			t.Fatalf("expected %s history to be retained: %v", connectionID, err)
+		}
+		if history.Running {
+			t.Fatalf("expected %s history to remain stopped", connectionID)
+		}
+	}
+}
+
+func TestMonitoringManagerPrunesExpiredStoppedSessions(t *testing.T) {
+	manager := newMonitoringManagerForTest(5)
+	manager.stoppedSessionTTL = time.Minute
+	now := time.Unix(1713945600, 0)
+	manager.now = func() time.Time { return now }
+	restore := swapMonitoringProviderFactory(func(mode string) (Provider, error) {
+		return fakeMonitoringProvider{snapshot: JVMMonitoringSnapshot{
+			Point: JVMMonitoringPoint{Timestamp: now.UnixMilli()},
+		}}, nil
+	})
+	defer restore()
+
+	cfg := connection.ConnectionConfig{
+		ID: "conn-expired", Type: "jvm", Host: "orders.internal",
+		JVM: connection.JVMConfig{PreferredMode: ModeJMX, AllowedModes: []string{ModeJMX}},
+	}
+	if _, err := manager.Start(context.Background(), cfg, ModeJMX); err != nil {
+		t.Fatalf("Start returned error: %v", err)
+	}
+	if err := manager.Stop("conn-expired", ModeJMX); err != nil {
+		t.Fatalf("Stop returned error: %v", err)
+	}
+
+	now = now.Add(time.Minute)
+	if _, err := manager.GetHistory("conn-expired", ModeJMX); err == nil {
+		t.Fatal("expected expired stopped session to be pruned")
+	}
+}
+
+func TestMonitoringManagerShutdownStopsAndClearsSessions(t *testing.T) {
+	manager := newMonitoringManagerForTest(5)
+	restore := swapMonitoringProviderFactory(func(mode string) (Provider, error) {
+		return fakeMonitoringProvider{snapshot: JVMMonitoringSnapshot{
+			Point: JVMMonitoringPoint{Timestamp: 1713945600000},
+		}}, nil
+	})
+	defer restore()
+
+	for _, connectionID := range []string{"conn-running", "conn-stopped"} {
+		cfg := connection.ConnectionConfig{
+			ID: connectionID, Type: "jvm", Host: "orders.internal",
+			JVM: connection.JVMConfig{PreferredMode: ModeJMX, AllowedModes: []string{ModeJMX}},
+		}
+		if _, err := manager.Start(context.Background(), cfg, ModeJMX); err != nil {
+			t.Fatalf("Start(%s) returned error: %v", connectionID, err)
+		}
+	}
+	if err := manager.Stop("conn-stopped", ModeJMX); err != nil {
+		t.Fatalf("Stop returned error: %v", err)
+	}
+
+	manager.mu.Lock()
+	retained := make([]*monitoringSession, 0, len(manager.sessions))
+	for _, session := range manager.sessions {
+		retained = append(retained, session)
+	}
+	manager.mu.Unlock()
+
+	manager.Shutdown()
+	manager.Shutdown()
+	if got := len(manager.sessions); got != 0 {
+		t.Fatalf("expected shutdown to clear sessions, got %d", got)
+	}
+	for _, session := range retained {
+		if snapshot := session.snapshot(); snapshot.Running {
+			t.Fatalf("expected shutdown to stop retained session, got %#v", snapshot)
+		}
+	}
+}
+
+func TestMonitoringManagerShutdownRejectsInFlightStartPublish(t *testing.T) {
+	manager := newMonitoringManagerForTest(5)
+	provider := &blockingMonitoringProvider{
+		fakeMonitoringProvider: fakeMonitoringProvider{snapshot: JVMMonitoringSnapshot{
+			Point: JVMMonitoringPoint{Timestamp: 1713945600000},
+		}},
+		started: make(chan struct{}),
+		release: make(chan struct{}),
+	}
+	restore := swapMonitoringProviderFactory(func(mode string) (Provider, error) { return provider, nil })
+	defer restore()
+
+	errCh := make(chan error, 1)
+	go func() {
+		_, err := manager.Start(context.Background(), connection.ConnectionConfig{
+			ID: "conn-in-flight", Type: "jvm", Host: "orders.internal",
+			JVM: connection.JVMConfig{PreferredMode: ModeJMX, AllowedModes: []string{ModeJMX}},
+		}, ModeJMX)
+		errCh <- err
+	}()
+
+	select {
+	case <-provider.started:
+	case <-time.After(time.Second):
+		t.Fatal("in-flight start did not reach provider")
+	}
+	manager.Shutdown()
+	close(provider.release)
+	select {
+	case err := <-errCh:
+		if err == nil {
+			t.Fatal("expected shutdown to reject in-flight start publication")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("in-flight start did not finish after provider release")
+	}
+	if got := len(manager.sessions); got != 0 {
+		t.Fatalf("expected no session published after shutdown, got %d", got)
+	}
+}
+
+func TestMonitoringManagerStopAndGetHistoryAreConcurrentSafe(t *testing.T) {
+	manager := newMonitoringManagerForTest(5)
+	restore := swapMonitoringProviderFactory(func(mode string) (Provider, error) {
+		return fakeMonitoringProvider{snapshot: JVMMonitoringSnapshot{
+			Point: JVMMonitoringPoint{Timestamp: 1713945600000},
+		}}, nil
+	})
+	defer restore()
+
+	for index := 0; index < 100; index++ {
+		connectionID := fmt.Sprintf("conn-race-%d", index)
+		cfg := connection.ConnectionConfig{
+			ID: connectionID, Type: "jvm", Host: "orders.internal",
+			JVM: connection.JVMConfig{PreferredMode: ModeJMX, AllowedModes: []string{ModeJMX}},
+		}
+		if _, err := manager.Start(context.Background(), cfg, ModeJMX); err != nil {
+			t.Fatalf("Start(%s) returned error: %v", connectionID, err)
+		}
+
+		start := make(chan struct{})
+		errCh := make(chan error, 2)
+		go func() {
+			<-start
+			_, err := manager.GetHistory(connectionID, ModeJMX)
+			errCh <- err
+		}()
+		go func() {
+			<-start
+			errCh <- manager.Stop(connectionID, ModeJMX)
+		}()
+		close(start)
+		for count := 0; count < 2; count++ {
+			if err := <-errCh; err != nil {
+				t.Fatalf("concurrent Stop/GetHistory(%s) returned error: %v", connectionID, err)
+			}
+		}
+		history, err := manager.GetHistory(connectionID, ModeJMX)
+		if err != nil || history.Running {
+			t.Fatalf("expected retained stopped history for %s, got %#v, %v", connectionID, history, err)
+		}
 	}
 }
 

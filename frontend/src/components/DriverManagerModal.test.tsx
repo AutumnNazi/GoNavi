@@ -8,6 +8,7 @@ import { t } from '../i18n';
 
 const connectionModalSource = readFileSync(new URL('./ConnectionModal.tsx', import.meta.url), 'utf8');
 const driverManagerModalSource = readFileSync(new URL('./DriverManagerModal.tsx', import.meta.url), 'utf8');
+const appCssSource = readFileSync(new URL('../App.css', import.meta.url), 'utf8');
 const sidebarSource = readFileSync(new URL('./Sidebar.tsx', import.meta.url), 'utf8');
 
 const storeState = vi.hoisted(() => ({
@@ -122,7 +123,7 @@ vi.mock('antd', () => {
       switch
     </button>
   );
-  const Space = ({ children }: any) => <div>{children}</div>;
+  const Space = ({ children, ...rest }: any) => <div {...rest}>{children}</div>;
   const Text = ({ children }: any) => <span>{children}</span>;
   const Paragraph = ({ children }: any) => <div>{children}</div>;
   const Typography = { Paragraph, Text };
@@ -243,6 +244,39 @@ describe('DriverManagerModal toolbar actions', () => {
     expect(openDirButtonAfter.props.disabled).toBeFalsy();
     expect(importDirButtonAfter.props.disabled).toBeFalsy();
     expect(installAllButtonAfter.props.disabled).toBe(true);
+  });
+
+  it('uses the compact flat driver list only inside the embedded settings view', async () => {
+    let embeddedRenderer: ReactTestRenderer;
+    await act(async () => {
+      embeddedRenderer = create(<DriverManagerModal open embedded onClose={vi.fn()} />);
+    });
+    await flushPromises();
+
+    const embeddedShell = embeddedRenderer!.root.findByProps({ className: 'driver-manager-shell is-embedded' });
+    const embeddedLayout = embeddedRenderer!.root.findByProps({ className: 'driver-manager-embedded-layout' });
+    const embeddedCard = embeddedShell.findByProps({ className: 'driver-manager-card' });
+    expect(embeddedLayout.children[0]).toBe(embeddedShell);
+    expect(embeddedLayout.findByProps({ className: 'driver-manager-footer-actions' })).toBeTruthy();
+    expect(embeddedCard.props.style).toMatchObject({
+      border: 'none',
+      background: 'transparent',
+    });
+    expect(findButton(embeddedRenderer!, t('driver.modal.card.action.install')).props.size).toBe('small');
+    expect(appCssSource).toMatch(/\.driver-manager-embedded-layout\s*\{[^}]*overflow:\s*hidden;/s);
+    expect(appCssSource).toMatch(/\.driver-manager-embedded-layout\s*>\s*\.driver-manager-shell\.is-embedded\s*\{[^}]*overflow-y:\s*auto;/s);
+    expect(appCssSource).toMatch(/\.driver-manager-embedded-layout\s*>\s*\.driver-manager-footer-actions\s*\{[^}]*flex:\s*0 0 auto;/s);
+
+    let modalRenderer: ReactTestRenderer;
+    await act(async () => {
+      modalRenderer = create(<DriverManagerModal open onClose={vi.fn()} />);
+    });
+    await flushPromises();
+
+    const modalShell = modalRenderer!.root.findByProps({ className: 'driver-manager-shell' });
+    const modalCard = modalShell.findByProps({ className: 'driver-manager-card' });
+    expect(modalCard.props.style.background).not.toBe('transparent');
+    expect(findButton(modalRenderer!, t('driver.modal.card.action.install')).props.size).toBeUndefined();
   });
 
   it('releases install action when the driver install watchdog expires', async () => {

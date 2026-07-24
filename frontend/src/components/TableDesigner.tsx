@@ -8,7 +8,7 @@ import { CSS } from '@dnd-kit/utilities';
 import Editor from './MonacoEditor';
 import { TabData, ColumnDefinition, IndexDefinition, ForeignKeyDefinition, TriggerDefinition } from '../types';
 import { useStore } from '../store';
-import { DBGetColumns, DBGetIndexes, DBQuery, DBGetForeignKeys, DBGetTriggers, DBShowCreateTable } from '../../wailsjs/go/app/App';
+import { DBGetColumns, DBGetIndexes, DBQueryAudited, DBGetForeignKeys, DBGetTriggers, DBShowCreateTable } from '../../wailsjs/go/app/App';
 import { hasIndexFormChanged, normalizeIndexFormFromRow, shouldRestoreOriginalIndex, toggleIndexSelection as getNextIndexSelection, type IndexDisplaySnapshot } from './tableDesignerIndexUtils';
 import { buildIndexCreateSqlPreview } from './tableDesignerIndexSql';
 import { buildAlterTablePreviewSql, buildCreateTablePreviewSql, hasAlterTableDraftChanges, type StarRocksCreateTableOptions, type StarRocksDistributionType, type StarRocksKeyModel, type StarRocksTableKind } from './tableDesignerSchemaSql';
@@ -551,7 +551,13 @@ const TableDesigner: React.FC<{ tab: TabData; embedded?: boolean }> = ({ tab, em
   const resizeRafRef = useRef<number | null>(null);
   const latestResizeXRef = useRef<number | null>(null);
   const ghostRef = useRef<HTMLDivElement>(null);
-  const resizeListenerRef = useRef<{ move: ((e: MouseEvent) => void) | null; up: ((e: MouseEvent) => void) | null }>({
+  const resizeBodyStyleRef = useRef<{ cursor: string; userSelect: string } | null>(null);
+  const resizeListenerRef = useRef<{
+    blur: (() => void) | null;
+    move: ((e: MouseEvent) => void) | null;
+    up: ((e: MouseEvent) => void) | null;
+  }>({
+    blur: null,
     move: null,
     up: null,
   });
@@ -797,6 +803,10 @@ const TableDesigner: React.FC<{ tab: TabData; embedded?: boolean }> = ({ tab, em
       document.removeEventListener('mouseup', resizeListenerRef.current.up);
       resizeListenerRef.current.up = null;
     }
+    if (resizeListenerRef.current.blur) {
+      window.removeEventListener('blur', resizeListenerRef.current.blur);
+      resizeListenerRef.current.blur = null;
+    }
   }, []);
 
   const cleanupResizeState = useCallback(() => {
@@ -809,13 +819,40 @@ const TableDesigner: React.FC<{ tab: TabData; embedded?: boolean }> = ({ tab, em
     if (ghostRef.current) {
       ghostRef.current.style.display = 'none';
     }
-    document.body.style.cursor = '';
-    document.body.style.userSelect = '';
+    const previousBodyStyle = resizeBodyStyleRef.current;
+    resizeBodyStyleRef.current = null;
+    if (previousBodyStyle) {
+      document.body.style.cursor = previousBodyStyle.cursor;
+      document.body.style.userSelect = previousBodyStyle.userSelect;
+    }
   }, []);
+
+  const finishResize = useCallback((clientX?: number, commit = true) => {
+    const dragState = resizeDragRef.current;
+    const latestResizeX = latestResizeXRef.current;
+    detachResizeListeners();
+    cleanupResizeState();
+
+    if (commit && dragState) {
+      const finalClientX = Number.isFinite(clientX) ? clientX as number : latestResizeX ?? dragState.startX;
+      const newWidth = Math.max(50, dragState.startWidth + finalClientX - dragState.startX);
+      dragState.setter((prevColumns) => {
+        if (!prevColumns[dragState.index]) return prevColumns;
+        const nextColumns = [...prevColumns];
+        nextColumns[dragState.index] = {
+          ...nextColumns[dragState.index],
+          width: newWidth,
+        };
+        return nextColumns;
+      });
+    }
+  }, [cleanupResizeState, detachResizeListeners]);
 
   const createResizeStartHandler = useCallback((columns: any[], setter: React.Dispatch<React.SetStateAction<any[]>>) => (index: number) => (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
+
+    finishResize(undefined, false);
 
     const startX = e.clientX;
     const currentWidth = Number(columns[index]?.width || 200);
@@ -829,51 +866,39 @@ const TableDesigner: React.FC<{ tab: TabData; embedded?: boolean }> = ({ tab, em
       ghostRef.current.style.display = 'block';
     }
 
-    detachResizeListeners();
-
     const onMove = (event: MouseEvent) => {
       if (!resizeDragRef.current) return;
       latestResizeXRef.current = event.clientX;
+      if (event.buttons === 0) {
+        finishResize(event.clientX);
+        return;
+      }
       if (resizeRafRef.current !== null) return;
       resizeRafRef.current = requestAnimationFrame(flushResizeGhost);
     };
+    const onUp = (event: MouseEvent) => finishResize(event.clientX);
+    const onBlur = () => finishResize();
 
-    const onUp = (event: MouseEvent) => {
-      if (resizeDragRef.current) {
-        const { startX: dragStartX, startWidth, index: dragIndex, setter: dragSetter } = resizeDragRef.current;
-        const deltaX = event.clientX - dragStartX;
-        const newWidth = Math.max(50, startWidth + deltaX);
-        dragSetter((prevColumns) => {
-          if (!prevColumns[dragIndex]) return prevColumns;
-          const nextColumns = [...prevColumns];
-          nextColumns[dragIndex] = {
-            ...nextColumns[dragIndex],
-            width: newWidth,
-          };
-          return nextColumns;
-        });
-      }
-
-      detachResizeListeners();
-      cleanupResizeState();
-    };
-
-    resizeListenerRef.current = { move: onMove, up: onUp };
+    resizeListenerRef.current = { blur: onBlur, move: onMove, up: onUp };
     document.addEventListener('mousemove', onMove);
     document.addEventListener('mouseup', onUp);
+    window.addEventListener('blur', onBlur);
+    resizeBodyStyleRef.current = {
+      cursor: document.body.style.cursor,
+      userSelect: document.body.style.userSelect,
+    };
     document.body.style.cursor = 'col-resize';
     document.body.style.userSelect = 'none';
-  }, [cleanupResizeState, detachResizeListeners, flushResizeGhost]);
+  }, [finishResize, flushResizeGhost]);
 
   const handleResizeStart = useMemo(() => createResizeStartHandler(tableColumns, setTableColumns), [createResizeStartHandler, tableColumns]);
   const handleIndexResizeStart = useMemo(() => createResizeStartHandler(indexColumns, setIndexColumns), [createResizeStartHandler, indexColumns]);
 
   useEffect(() => {
     return () => {
-      detachResizeListeners();
-      cleanupResizeState();
+      finishResize(undefined, false);
     };
-  }, [cleanupResizeState, detachResizeListeners]);
+  }, [finishResize]);
 
   const clearMetadataLoading = () => {
     setColumnsLoading(false);
@@ -1209,7 +1234,7 @@ ${selectedTrigger.statement}`;
         const dropSql = buildDropTriggerSql(selectedTrigger.name);
 
         try {
-          const res = await DBQuery(buildRpcConnectionConfig(config) as any, tab.dbName || '', dropSql);
+          const res = await DBQueryAudited(buildRpcConnectionConfig(config) as any, tab.dbName || '', dropSql, 'table_designer');
           if (res.success) {
             message.success(t('table_designer.message.trigger_deleted', undefined, i18nLanguage));
             setSelectedTrigger(null);
@@ -1246,7 +1271,7 @@ ${selectedTrigger.statement}`;
       // 如果是编辑模式，先删除旧触发器
       if (triggerEditMode === 'edit' && selectedTrigger) {
         const dropSql = buildDropTriggerSql(selectedTrigger.name);
-        const dropRes = await DBQuery(buildRpcConnectionConfig(config) as any, tab.dbName || '', dropSql);
+        const dropRes = await DBQueryAudited(buildRpcConnectionConfig(config) as any, tab.dbName || '', dropSql, 'table_designer');
         if (!dropRes.success) {
           message.error(t('table_designer.message.drop_old_trigger_failed', { detail: dropRes.message }, i18nLanguage));
           setTriggerExecuting(false);
@@ -1255,7 +1280,7 @@ ${selectedTrigger.statement}`;
       }
 
       // 执行创建语句
-      const res = await DBQuery(buildRpcConnectionConfig(config) as any, tab.dbName || '', triggerEditSql);
+      const res = await DBQueryAudited(buildRpcConnectionConfig(config) as any, tab.dbName || '', triggerEditSql, 'table_designer');
       if (res.success) {
         message.success(triggerEditMode === 'create'
             ? t('table_designer.message.trigger_created', undefined, i18nLanguage)
@@ -1761,7 +1786,7 @@ ${selectedTrigger.statement}`;
       const sql = buildCreateTableSql(copyTableName.trim(), selectedColumns, copyCharset, copyCollation);
       setCopyExecuting(true);
       try {
-          const res = await DBQuery(buildRpcConnectionConfig(config) as any, tab.dbName || '', sql);
+          const res = await DBQueryAudited(buildRpcConnectionConfig(config) as any, tab.dbName || '', sql, 'table_designer');
           if (res.success) {
               message.success(t('table_designer.message.columns_copied_to_new_table', { count: selectedColumns.length, table: copyTableName.trim() }, i18nLanguage));
               setIsCopyColumnsModalOpen(false);
@@ -1790,7 +1815,7 @@ ${selectedTrigger.statement}`;
       const statements = splitSchemaExecutionStatements(sqlText);
       for (let i = 0; i < statements.length; i++) {
           const stmt = normalizeSchemaStatementForExecution(statements[i], dbType);
-          const res = await DBQuery(buildRpcConnectionConfig(config) as any, tab.dbName || '', stmt);
+          const res = await DBQueryAudited(buildRpcConnectionConfig(config) as any, tab.dbName || '', stmt, 'table_designer');
           if (!res.success) {
               const prefix = statements.length > 1
                   ? t('table_designer.message.statement_execution_failed_prefix', { current: i + 1, total: statements.length }, i18nLanguage)

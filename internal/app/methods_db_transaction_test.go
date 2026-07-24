@@ -50,3 +50,57 @@ END;`
 		t.Fatal("expected Oracle read-only anonymous block to stay unmanaged")
 	}
 }
+
+func TestShouldUseManagedSQLTransaction_SQLServerBeginEndWithDMLUsesManagedTransaction(t *testing.T) {
+	t.Parallel()
+
+	query := `BEGIN
+    PRINT 'the word DELETE here is only text';
+    -- INSERT INTO audit_logs(id) VALUES (1);
+    UPDATE users SET name = 'new' WHERE id = 1;
+END;`
+	if !shouldUseManagedSQLTransaction("sqlserver", query) {
+		t.Fatal("expected SQL Server BEGIN...END block with DML to use SQL editor managed transaction")
+	}
+}
+
+func TestShouldUseManagedSQLTransaction_SQLServerBeginEndWithoutExecutableDMLStaysUnmanaged(t *testing.T) {
+	t.Parallel()
+
+	query := `BEGIN
+    PRINT 'UPDATE users SET name = ''new''';
+    -- DELETE FROM users WHERE id = 1;
+    /* INSERT INTO audit_logs(id) VALUES (1); */
+END;`
+	if shouldUseManagedSQLTransaction("sqlserver", query) {
+		t.Fatal("expected SQL Server BEGIN...END block with DML keywords only in comments or strings to stay unmanaged")
+	}
+}
+
+func TestShouldUseManagedSQLTransaction_SQLServerExplicitBeginStaysUnmanaged(t *testing.T) {
+	t.Parallel()
+
+	for _, query := range []string{
+		"BEGIN TRANSACTION; UPDATE users SET name = 'new' WHERE id = 1; COMMIT TRANSACTION;",
+		"BEGIN TRAN; UPDATE users SET name = 'new' WHERE id = 1; COMMIT TRAN;",
+		"BEGIN WORK; UPDATE users SET name = 'new' WHERE id = 1; COMMIT WORK;",
+	} {
+		if shouldUseManagedSQLTransaction("sqlserver", query) {
+			t.Fatalf("expected explicit SQL Server transaction to stay unmanaged: %q", query)
+		}
+	}
+}
+
+func TestShouldUseManagedSQLTransaction_UsesDialectCommentRules(t *testing.T) {
+	t.Parallel()
+
+	if !shouldUseManagedSQLTransaction("mysql", "DELETE FROM users WHERE id = 1; -- pending") {
+		t.Fatal("expected a valid MySQL trailing comment to preserve the managed transaction")
+	}
+	if shouldUseManagedSQLTransaction("mysql", "DELETE FROM users WHERE id = 1;--comment") {
+		t.Fatal("expected compact MySQL double-dash text to remain an executable statement")
+	}
+	if !shouldUseManagedSQLTransaction("postgres", "DELETE FROM users WHERE id = 1; /*! MySQL-only comment */") {
+		t.Fatal("expected PostgreSQL to ignore a MySQL-only block comment")
+	}
+}

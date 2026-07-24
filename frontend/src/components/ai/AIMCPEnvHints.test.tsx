@@ -132,6 +132,8 @@ describe('AIMCPEnvHints', () => {
     });
 
     const text = flattenRendererText(renderer.toJSON());
+    const shell = renderer.root.findByProps({ className: 'gonavi-ai-mcp-env-hints' });
+    const hintRows = renderer.root.findAllByProps({ className: 'gonavi-ai-mcp-env-hint-row' });
     expect(text).toContain('Environment variable usage hints');
     expect(text).toContain('Detected 2 variables');
     expect(text).toContain('1 look like secrets');
@@ -141,6 +143,19 @@ describe('AIMCPEnvHints', () => {
     expect(text).toContain('Expected:');
     expect(text).not.toContain('ghp_real_secret_value');
     expect(text).not.toContain('127.0.0.1:7890');
+    expect(shell.props.style).toMatchObject({
+      borderTop: '1px solid rgba(0,0,0,0.08)',
+      borderBottom: '1px solid rgba(0,0,0,0.08)',
+      background: 'transparent',
+    });
+    expect(hintRows.length).toBeGreaterThan(0);
+    for (const row of hintRows) {
+      expect(row.props.style).toMatchObject({
+        borderBottom: '1px solid rgba(0,0,0,0.08)',
+        background: 'transparent',
+      });
+      expect(row.props.style).not.toHaveProperty('borderRadius');
+    }
   });
 
   it('renders zh-CN shell copy from provider while preserving raw env keys', async () => {

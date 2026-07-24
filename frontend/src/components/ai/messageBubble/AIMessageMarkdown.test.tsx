@@ -134,14 +134,14 @@ describe('AIMessageStatusBlocks', () => {
           function: { name: 'inspect_ai_runtime', arguments: '{}' },
         }]}
         loading={false}
-        allMessages={[{
+        toolResultsById={new Map([['call-1', {
           id: 'tool-1',
           role: 'tool',
           content: 'result payload',
           timestamp: 1,
           tool_call_id: 'call-1',
           tool_name: 'inspect_ai_runtime',
-        }]}
+        }]])}
         darkMode={false}
         overlayTheme={overlayTheme}
         hasContent={false}
@@ -175,14 +175,14 @@ describe('AIMessageStatusBlocks', () => {
             function: { name: 'inspect_ai_runtime', arguments: '{}' },
           }]}
           loading={false}
-          allMessages={[{
+          toolResultsById={new Map([['call-1', {
             id: 'tool-1',
             role: 'tool',
             content: 'result payload',
             timestamp: 1,
             tool_call_id: 'call-1',
             tool_name: 'inspect_ai_runtime',
-          }]}
+          }]])}
           darkMode={false}
           overlayTheme={overlayTheme}
           hasContent={false}

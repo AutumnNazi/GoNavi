@@ -84,7 +84,7 @@ func (f *fakeBackend) DBShowCreateTable(config connection.ConnectionConfig, dbNa
 	return f.ddlResult
 }
 
-func (f *fakeBackend) DBQueryMulti(config connection.ConnectionConfig, dbName string, query string, queryID string) connection.QueryResult {
+func (f *fakeBackend) ExecuteSQLFromMCP(config connection.ConnectionConfig, dbName string, query string) connection.QueryResult {
 	f.queryCalled = true
 	return f.queryResult
 }

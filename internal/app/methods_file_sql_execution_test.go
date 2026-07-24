@@ -12,6 +12,29 @@ import (
 	"GoNavi-Wails/internal/db"
 )
 
+func TestResolveSQLFileExecutionProgressPercentReservesCompletionForTerminalState(t *testing.T) {
+	tests := []struct {
+		name      string
+		status    string
+		bytesRead int64
+		totalSize int64
+		want      float64
+	}{
+		{name: "running reader reached eof", status: "running", bytesRead: 128, totalSize: 128, want: 99},
+		{name: "running partial read", status: "running", bytesRead: 64, totalSize: 128, want: 50},
+		{name: "done", status: "done", bytesRead: 128, totalSize: 128, want: 100},
+		{name: "unknown size", status: "running", bytesRead: 64, totalSize: 0, want: 0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := resolveSQLFileExecutionProgressPercent(tt.status, tt.bytesRead, tt.totalSize); got != tt.want {
+				t.Fatalf("percent = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 type fakeSQLFileBatchDB struct {
 	batchCalls   int
 	execCalls    int
@@ -582,5 +605,111 @@ func TestStreamSQLFileKeepsOraclePackageSpecAndBodyTogether(t *testing.T) {
 	}
 	if statements[2] != "SELECT 1 FROM dual" {
 		t.Fatalf("unexpected third statement: %q", statements[2])
+	}
+}
+
+func TestResolveSQLFileExecutionRunConfigUsesServerConnectionForGoNaviMySQLDatabaseBackup(t *testing.T) {
+	preamble := strings.Join([]string{
+		"-- GoNavi SQL Export",
+		"-- Time: 2026-07-17 00:00:00",
+		"-- Database: restore_target",
+		"",
+		"CREATE DATABASE IF NOT EXISTS `restore_target`;",
+		"",
+		"USE `restore_target`;",
+	}, "\n")
+
+	got := resolveSQLFileExecutionRunConfig(
+		connection.ConnectionConfig{Type: "mysql", Database: "selected_target"},
+		"selected_target",
+		[]byte(preamble),
+	)
+	if got.Database != "" {
+		t.Fatalf("GoNavi MySQL database backup must connect at server level before CREATE/USE, got database=%q", got.Database)
+	}
+}
+
+func TestResolveSQLFileExecutionRunConfigKeepsSelectedDatabaseForRegularSQL(t *testing.T) {
+	got := resolveSQLFileExecutionRunConfig(
+		connection.ConnectionConfig{Type: "mysql", Database: "configured_default"},
+		"selected_target",
+		[]byte("CREATE TABLE demo(id INT);"),
+	)
+	if got.Database != "selected_target" {
+		t.Fatalf("regular SQL must retain the selected database, got database=%q", got.Database)
+	}
+}
+
+func TestResolveSQLFileExecutionRunConfigUsesServerConnectionForLegacyGoNaviMySQLDatabaseBackup(t *testing.T) {
+	preamble := strings.Join([]string{
+		"-- GoNavi SQL Export",
+		"-- Time: 2026-07-11 00:00:00",
+		"-- Database: legacy_restore_target",
+		"",
+		"USE `legacy_restore_target`;",
+	}, "\n")
+
+	got := resolveSQLFileExecutionRunConfig(
+		connection.ConnectionConfig{Type: "mysql", Database: "selected_target"},
+		"selected_target",
+		[]byte(preamble),
+	)
+	if got.Database != "" {
+		t.Fatalf("legacy GoNavi MySQL database backup must connect at server level before USE, got database=%q", got.Database)
+	}
+}
+
+func TestBuildGoNaviMySQLDatabaseBackupBootstrapSQLOnlyForLegacyBackup(t *testing.T) {
+	legacy := goNaviMySQLDatabaseBackupPreamble{databaseName: "legacy_restore_target"}
+	if got := buildGoNaviMySQLDatabaseBackupBootstrapSQL(legacy); got != "CREATE DATABASE IF NOT EXISTS `legacy_restore_target`" {
+		t.Fatalf("unexpected legacy bootstrap SQL: %q", got)
+	}
+
+	current := goNaviMySQLDatabaseBackupPreamble{
+		databaseName:           "current_restore_target",
+		includesCreateDatabase: true,
+	}
+	if got := buildGoNaviMySQLDatabaseBackupBootstrapSQL(current); got != "" {
+		t.Fatalf("backup that already creates its database must not be bootstrapped again, got %q", got)
+	}
+}
+
+func TestExecuteSQLFileStreamRunsGoNaviMySQLDatabaseBackupHeader(t *testing.T) {
+	fakeDB := &fakeSQLFileBatchDB{}
+	input := strings.Join([]string{
+		"-- GoNavi SQL Export",
+		"-- Database: restore_target",
+		"CREATE DATABASE IF NOT EXISTS `restore_target`;",
+		"USE `restore_target`;",
+		"SET FOREIGN_KEY_CHECKS=0;",
+		"CREATE TABLE users(id INT PRIMARY KEY);",
+		"INSERT INTO users(id) VALUES (1);",
+		"SET FOREIGN_KEY_CHECKS=1;",
+	}, "\n")
+
+	result, err := executeSQLFileStream(context.Background(), fakeDB, strings.NewReader(input), sqlFileExecutionOptions{
+		DBType:             "mysql",
+		BatchMaxStatements: 100,
+		BatchMaxBytes:      1024,
+	}, nil)
+	if err != nil {
+		t.Fatalf("executeSQLFileStream returned error: %v", err)
+	}
+	if result.Executed != 6 || result.Failed != 0 {
+		t.Fatalf("expected complete database backup header and statements to execute, got %#v", result)
+	}
+	joinedExec := strings.Join(fakeDB.execQueries, "\n")
+	for _, expected := range []string{
+		"CREATE DATABASE IF NOT EXISTS `restore_target`",
+		"USE `restore_target`",
+		"CREATE TABLE users(id INT PRIMARY KEY)",
+		"SET FOREIGN_KEY_CHECKS=1",
+	} {
+		if !strings.Contains(joinedExec, expected) {
+			t.Fatalf("expected backup statement %q to execute, queries=%#v", expected, fakeDB.execQueries)
+		}
+	}
+	if len(fakeDB.batchQueries) != 1 || !strings.Contains(fakeDB.batchQueries[0], "INSERT INTO users(id) VALUES (1)") {
+		t.Fatalf("expected INSERT data to be batched after schema restore, batches=%#v", fakeDB.batchQueries)
 	}
 }

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { SearchOutlined, ToolOutlined } from '@ant-design/icons';
 
 import {
@@ -21,11 +21,11 @@ interface AIBuiltinToolsCatalogProps {
 export const AIBuiltinToolsCatalog: React.FC<AIBuiltinToolsCatalogProps> = ({
   darkMode,
   overlayTheme,
-  cardBg,
   cardBorder,
 }) => {
   const { t } = useI18n();
   const [searchText, setSearchText] = useState('');
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const builtinToolFlows = localizeBuiltinToolFlows(t);
   const builtinToolInfo = localizeBuiltinAIToolInfo(t);
   const visibleFlows = filterBuiltinToolFlows(builtinToolFlows, searchText);
@@ -33,7 +33,7 @@ export const AIBuiltinToolsCatalog: React.FC<AIBuiltinToolsCatalogProps> = ({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <div style={{ fontSize: 13, color: overlayTheme.mutedText, marginBottom: 4 }}>
+      <div style={{ fontSize: 'var(--gn-settings-font-secondary, 13px)', color: overlayTheme.mutedText, marginBottom: 4 }}>
         {t('ai_settings.tools.description')}
       </div>
       <label
@@ -41,14 +41,17 @@ export const AIBuiltinToolsCatalog: React.FC<AIBuiltinToolsCatalogProps> = ({
           display: 'flex',
           alignItems: 'center',
           gap: 8,
-          padding: '8px 10px',
-          borderRadius: 10,
+          minHeight: 32,
+          padding: '0 10px',
+          borderRadius: 6,
           border: `1px solid ${cardBorder}`,
-          background: darkMode ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.78)',
+          background: darkMode ? 'rgba(255,255,255,0.03)' : 'transparent',
         }}
       >
         <SearchOutlined style={{ color: overlayTheme.mutedText }} />
         <input
+          ref={searchInputRef}
+          type="search"
           aria-label={t('ai_settings.tools.search.aria_label')}
           value={searchText}
           onChange={(event) => setSearchText(event.target.value)}
@@ -59,26 +62,30 @@ export const AIBuiltinToolsCatalog: React.FC<AIBuiltinToolsCatalogProps> = ({
             outline: 'none',
             background: 'transparent',
             color: overlayTheme.titleText,
-            fontSize: 13,
+            fontSize: 'var(--gn-settings-font-secondary, 13px)',
           }}
         />
         {searchText && (
           <button
             type="button"
-            onClick={() => setSearchText('')}
+            aria-label={t('ai_settings.tools.search.clear')}
+            onClick={() => {
+              setSearchText('');
+              searchInputRef.current?.focus();
+            }}
             style={{
               border: 'none',
               background: 'transparent',
               color: overlayTheme.mutedText,
               cursor: 'pointer',
-              fontSize: 12,
+              fontSize: 'var(--gn-font-size-sm, 12px)',
             }}
           >
             {t('ai_settings.tools.search.clear')}
           </button>
         )}
       </label>
-      <div style={{ fontSize: 12, color: overlayTheme.mutedText }}>
+      <div style={{ fontSize: 'var(--gn-font-size-sm, 12px)', color: overlayTheme.mutedText }}>
         {t('ai_settings.tools.summary', {
           flowVisible: visibleFlows.length,
           flowTotal: builtinToolFlows.length,
@@ -87,35 +94,69 @@ export const AIBuiltinToolsCatalog: React.FC<AIBuiltinToolsCatalogProps> = ({
         })}
       </div>
       {visibleFlows.length > 0 && (
-        <div style={{ display: 'grid', gap: 8 }}>
+        <div className="gonavi-ai-tool-flow-list" style={{ borderTop: `1px solid ${cardBorder}` }}>
           {visibleFlows.map((flow) => (
-            <div
+            <details
               key={flow.title}
               style={{
-                fontSize: 12,
-                color: overlayTheme.mutedText,
-                padding: '10px 12px',
-                borderRadius: 10,
-                background: cardBg,
-                border: `1px solid ${cardBorder}`,
+                borderBottom: `1px solid ${cardBorder}`,
               }}
             >
-              <div style={{ fontWeight: 700, color: overlayTheme.titleText }}>{flow.title}</div>
-              <div style={{ marginTop: 4, fontFamily: 'var(--gn-font-mono)' }}>{flow.steps}</div>
-              <div style={{ marginTop: 4, opacity: 0.8, lineHeight: 1.6 }}>{flow.description}</div>
-            </div>
+              <summary style={{ cursor: 'pointer', padding: '11px 2px', color: overlayTheme.titleText }}>
+                <span
+                  style={{
+                    display: 'inline-grid',
+                    gridTemplateColumns: 'minmax(140px, 0.8fr) minmax(0, 1.2fr)',
+                    alignItems: 'center',
+                    gap: 16,
+                    width: 'calc(100% - 18px)',
+                    marginLeft: 8,
+                    verticalAlign: 'middle',
+                  }}
+                >
+                  <span
+                    style={{
+                      minWidth: 0,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                      fontSize: 'var(--gn-settings-font-secondary, 13px)',
+                      fontWeight: 650,
+                    }}
+                  >
+                    {flow.title}
+                  </span>
+                  <code
+                    style={{
+                      minWidth: 0,
+                      color: overlayTheme.mutedText,
+                      fontFamily: 'var(--gn-font-mono)',
+                      fontSize: 'var(--gn-font-size-sm, 12px)',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                      textAlign: 'right',
+                    }}
+                  >
+                    {flow.steps}
+                  </code>
+                </span>
+              </summary>
+              <div style={{ padding: '0 2px 12px 26px', fontSize: 'var(--gn-font-size-sm, 12px)', color: overlayTheme.mutedText, lineHeight: 1.6 }}>
+                {flow.description}
+              </div>
+            </details>
           ))}
         </div>
       )}
       {visibleTools.length === 0 && (
         <div
           style={{
-            padding: '18px 16px',
-            borderRadius: 14,
-            border: `1px dashed ${cardBorder}`,
-            background: cardBg,
+            padding: '18px 0',
+            borderBottom: `1px solid ${cardBorder}`,
+            background: 'transparent',
             color: overlayTheme.mutedText,
-            fontSize: 13,
+            fontSize: 'var(--gn-settings-font-secondary, 13px)',
             lineHeight: 1.7,
           }}
         >
@@ -125,108 +166,137 @@ export const AIBuiltinToolsCatalog: React.FC<AIBuiltinToolsCatalogProps> = ({
       {visibleTools.map((tool) => {
       const parameterDetails = describeBuiltinToolParameters(tool);
       return (
-        <div
+        <details
           key={tool.name}
+          className="gonavi-ai-tool-row"
           style={{
-            padding: '14px 16px',
-            borderRadius: 14,
-            border: `1px solid ${cardBorder}`,
-            background: cardBg,
-            transition: 'all 0.2s ease',
+            borderBottom: `1px solid ${cardBorder}`,
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
-            <span style={{ fontSize: 20 }}>{tool.icon}</span>
-            <div>
-              <div style={{ fontWeight: 700, fontSize: 14, color: overlayTheme.titleText, fontFamily: 'var(--gn-font-mono)' }}>
-                {tool.name}
-              </div>
-              <div style={{ fontSize: 13, color: overlayTheme.mutedText, marginTop: 2 }}>{tool.desc}</div>
+          <summary style={{ cursor: 'pointer', padding: '12px 2px', color: overlayTheme.titleText }}>
+            <span
+              style={{
+                display: 'inline-grid',
+                gridTemplateColumns: '18px minmax(0, 1fr)',
+                alignItems: 'center',
+                gap: 9,
+                width: 'calc(100% - 18px)',
+                marginLeft: 8,
+                verticalAlign: 'middle',
+              }}
+            >
+              <ToolOutlined style={{ color: overlayTheme.iconColor, fontSize: 14 }} aria-hidden="true" />
+              <span style={{ minWidth: 0 }}>
+                <code
+                  style={{
+                    display: 'block',
+                    color: overlayTheme.titleText,
+                    fontFamily: 'var(--gn-font-mono)',
+                    fontSize: 'var(--gn-settings-font-secondary, 13px)',
+                    fontWeight: 650,
+                  }}
+                >
+                  {tool.name}
+                </code>
+                <span
+                  style={{
+                    display: 'block',
+                    marginTop: 3,
+                    fontSize: 'var(--gn-font-size-sm, 12px)',
+                    color: overlayTheme.mutedText,
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {tool.desc}
+                </span>
+              </span>
+            </span>
+          </summary>
+          <div style={{ padding: '0 2px 14px 29px' }}>
+            <div style={{ fontSize: 'var(--gn-settings-font-secondary, 13px)', color: overlayTheme.mutedText, lineHeight: 1.6 }}>
+              {tool.detail}
             </div>
-          </div>
-          <div
-            style={{
-              fontSize: 13,
-              color: overlayTheme.mutedText,
-              lineHeight: 1.6,
-              padding: '8px 12px',
-              background: darkMode ? 'rgba(0,0,0,0.15)' : 'rgba(0,0,0,0.02)',
-              borderRadius: 8,
-            }}
-          >
-            {tool.detail}
-          </div>
-          <div style={{ marginTop: 8, fontSize: 12, color: overlayTheme.mutedText, opacity: 0.7, display: 'flex', alignItems: 'center', gap: 6 }}>
-            <ToolOutlined style={{ fontSize: 12 }} />
-            <span>{t('ai_settings.tools.params_label')}</span>
-            <code style={{ fontFamily: 'var(--gn-font-mono)', fontSize: 12, padding: '1px 6px', borderRadius: 4, background: darkMode ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)' }}>
-              {tool.params}
-            </code>
-          </div>
-          {parameterDetails.length > 0 && (
-            <div style={{ marginTop: 10, display: 'grid', gap: 8 }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: overlayTheme.titleText }}>
-                {t('ai_settings.tools.parameters.hint_title')}
-              </div>
-              <div style={{ display: 'grid', gap: 8 }}>
-                {parameterDetails.map((item) => (
-                  <div
-                    key={`${tool.name}-${item.name}`}
-                    style={{
-                      padding: '8px 10px',
-                      borderRadius: 10,
-                      border: `1px solid ${cardBorder}`,
-                      background: darkMode ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.76)',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: 4,
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                      <code style={{ fontFamily: 'var(--gn-font-mono)', fontSize: 12 }}>{item.name}</code>
-                      <span style={{ fontSize: 11, color: overlayTheme.mutedText }}>
-                        {t('ai_settings.tools.parameters.type_label', { type: item.typeLabel })}
-                      </span>
-                      <span
-                        style={{
-                          padding: '1px 8px',
-                          borderRadius: 999,
-                          fontSize: 11,
-                          fontWeight: 700,
-                          color: item.required ? '#b45309' : '#475569',
-                          background: item.required
-                            ? (darkMode ? 'rgba(245,158,11,0.18)' : 'rgba(245,158,11,0.12)')
-                            : (darkMode ? 'rgba(148,163,184,0.18)' : 'rgba(148,163,184,0.12)'),
-                        }}
-                      >
-                        {item.required ? t('ai_settings.tools.parameters.required') : t('ai_settings.tools.parameters.optional')}
-                      </span>
-                      {item.enumValues.length > 0 && (
-                        <span style={{ fontSize: 11, color: overlayTheme.mutedText }}>
-                          {t('ai_settings.tools.parameters.enum_values', { values: item.enumValues.join(' / ') })}
+            <div
+              style={{
+                marginTop: 8,
+                fontSize: 'var(--gn-font-size-sm, 12px)',
+                color: overlayTheme.mutedText,
+                display: 'flex',
+                alignItems: 'baseline',
+                gap: 6,
+                flexWrap: 'wrap',
+              }}
+            >
+              <span>{t('ai_settings.tools.params_label')}</span>
+              <code style={{ fontFamily: 'var(--gn-font-mono)', fontSize: 'var(--gn-font-size-sm, 12px)' }}>
+                {tool.params}
+              </code>
+            </div>
+            {parameterDetails.length > 0 && (
+              <div style={{ marginTop: 12, display: 'grid', gap: 8 }}>
+                <div style={{ fontSize: 'var(--gn-font-size-sm, 12px)', fontWeight: 700, color: overlayTheme.titleText }}>
+                  {t('ai_settings.tools.parameters.hint_title')}
+                </div>
+                <div style={{ display: 'grid', gap: 8 }}>
+                  {parameterDetails.map((item) => (
+                    <div
+                      key={`${tool.name}-${item.name}`}
+                      style={{
+                        padding: '8px 0',
+                        borderTop: `1px solid ${cardBorder}`,
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: 4,
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                        <code style={{ fontFamily: 'var(--gn-font-mono)', fontSize: 'var(--gn-font-size-sm, 12px)' }}>{item.name}</code>
+                        <span style={{ fontSize: 'var(--gn-font-size-sm, 12px)', color: overlayTheme.mutedText }}>
+                          {t('ai_settings.tools.parameters.type_label', { type: item.typeLabel })}
                         </span>
+                        <span
+                          style={{
+                            padding: '1px 8px',
+                            borderRadius: 999,
+                            fontSize: 'var(--gn-font-size-sm, 12px)',
+                            fontWeight: 700,
+                            color: item.required ? '#b45309' : '#475569',
+                            background: item.required
+                              ? (darkMode ? 'rgba(245,158,11,0.18)' : 'rgba(245,158,11,0.12)')
+                              : (darkMode ? 'rgba(148,163,184,0.18)' : 'rgba(148,163,184,0.12)'),
+                          }}
+                        >
+                          {item.required ? t('ai_settings.tools.parameters.required') : t('ai_settings.tools.parameters.optional')}
+                        </span>
+                        {item.enumValues.length > 0 && (
+                          <span style={{ fontSize: 'var(--gn-font-size-sm, 12px)', color: overlayTheme.mutedText }}>
+                            {t('ai_settings.tools.parameters.enum_values', { values: item.enumValues.join(' / ') })}
+                          </span>
+                        )}
+                        {item.defaultValue && (
+                          <span style={{ fontSize: 'var(--gn-font-size-sm, 12px)', color: overlayTheme.mutedText }}>
+                            {t('ai_settings.tools.parameters.default_value', { value: item.defaultValue })}
+                          </span>
+                        )}
+                      </div>
+                      {item.description && (
+                        <div style={{ fontSize: 'var(--gn-font-size-sm, 12px)', color: overlayTheme.mutedText, lineHeight: 1.6 }}>{item.description}</div>
                       )}
-                      {item.defaultValue && (
-                        <span style={{ fontSize: 11, color: overlayTheme.mutedText }}>
-                          {t('ai_settings.tools.parameters.default_value', { value: item.defaultValue })}
-                        </span>
+                      {item.exampleValue && (
+                        <div style={{ fontSize: 'var(--gn-font-size-sm, 12px)', color: overlayTheme.mutedText, lineHeight: 1.6 }}>
+                          {t('ai_settings.tools.parameters.example')}
+                          <code style={{ fontFamily: 'var(--gn-font-mono)' }}>{item.exampleValue}</code>
+                        </div>
                       )}
                     </div>
-                    {item.description && (
-                      <div style={{ fontSize: 12, color: overlayTheme.mutedText, lineHeight: 1.6 }}>{item.description}</div>
-                    )}
-                    {item.exampleValue && (
-                      <div style={{ fontSize: 12, color: overlayTheme.mutedText, lineHeight: 1.6 }}>
-                        {t('ai_settings.tools.parameters.example')}
-                        <code style={{ fontFamily: 'var(--gn-font-mono)' }}>{item.exampleValue}</code>
-                      </div>
-                    )}
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
-            </div>
-          )}
-        </div>
+            )}
+          </div>
+        </details>
       );
       })}
     </div>

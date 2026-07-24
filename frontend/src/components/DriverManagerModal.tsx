@@ -551,22 +551,24 @@ const DriverManagerModal: React.FC<{ open: boolean; onClose: () => void; onBack?
   }), [driverManagerTheme]);
 
   const managerSectionStyle = useMemo<React.CSSProperties>(() => ({
-    border: driverManagerTheme.sectionBorder,
-    borderRadius: 8,
-    background: driverManagerTheme.sectionBg,
-  }), [driverManagerTheme]);
+    border: embedded ? 'none' : driverManagerTheme.sectionBorder,
+    borderBottom: embedded ? driverManagerTheme.sectionBorder : undefined,
+    borderRadius: embedded ? 0 : 8,
+    background: embedded ? 'transparent' : driverManagerTheme.sectionBg,
+  }), [driverManagerTheme, embedded]);
 
   const managerStatStyle = useMemo<React.CSSProperties>(() => ({
-    border: driverManagerTheme.statBorder,
-    borderRadius: 8,
-    background: driverManagerTheme.statBg,
-  }), [driverManagerTheme]);
+    border: embedded ? 'none' : driverManagerTheme.statBorder,
+    borderRadius: embedded ? 0 : 8,
+    background: embedded ? 'transparent' : driverManagerTheme.statBg,
+  }), [driverManagerTheme, embedded]);
 
   const managerUpdateNoteStyle = useMemo<React.CSSProperties>(() => ({
-    border: driverManagerTheme.updateNoteBorder,
-    borderRadius: 8,
-    background: driverManagerTheme.updateNoteBg,
-  }), [driverManagerTheme]);
+    border: embedded ? 'none' : driverManagerTheme.updateNoteBorder,
+    borderLeft: embedded ? driverManagerTheme.updateNoteBorder : undefined,
+    borderRadius: embedded ? 0 : 8,
+    background: embedded ? 'transparent' : driverManagerTheme.updateNoteBg,
+  }), [driverManagerTheme, embedded]);
 
   const appendOperationLog = useCallback((
     driverType: string,
@@ -1447,19 +1449,19 @@ const DriverManagerModal: React.FC<{ open: boolean; onClose: () => void; onBack?
     }
 
     const mainAction = row.needsUpdate ? (
-      <Button type="primary" icon={<DownloadOutlined />} disabled={batchBusy} loading={loadingInstallOrRemove} onClick={() => installDriver(row)}>
+      <Button size={embedded ? 'small' : undefined} type="primary" icon={<DownloadOutlined />} disabled={batchBusy} loading={loadingInstallOrRemove} onClick={() => installDriver(row)}>
         {t('driver.modal.card.action.reinstall')}
       </Button>
     ) : versionSwitchPending ? (
-      <Button type="primary" icon={<DownloadOutlined />} disabled={batchBusy} loading={loadingInstallOrRemove} onClick={() => installDriver(row)}>
+      <Button size={embedded ? 'small' : undefined} type="primary" icon={<DownloadOutlined />} disabled={batchBusy} loading={loadingInstallOrRemove} onClick={() => installDriver(row)}>
         {t('driver_manager.action.switch_version')}
       </Button>
     ) : row.connectable ? (
-      <Button danger icon={<DeleteOutlined />} disabled={batchBusy} loading={loadingInstallOrRemove} onClick={() => removeDriver(row)}>
+      <Button size={embedded ? 'small' : undefined} danger icon={<DeleteOutlined />} disabled={batchBusy} loading={loadingInstallOrRemove} onClick={() => removeDriver(row)}>
         {t('driver.modal.card.action.remove')}
       </Button>
     ) : (
-      <Button type="primary" icon={<DownloadOutlined />} disabled={batchBusy} loading={loadingInstallOrRemove} onClick={() => installDriver(row)}>
+      <Button size={embedded ? 'small' : undefined} type="primary" icon={<DownloadOutlined />} disabled={batchBusy} loading={loadingInstallOrRemove} onClick={() => installDriver(row)}>
         {t('driver.modal.card.action.install')}
       </Button>
     );
@@ -1467,10 +1469,10 @@ const DriverManagerModal: React.FC<{ open: boolean; onClose: () => void; onBack?
     return (
       <Space size={8} wrap className="driver-manager-card-actions">
         {mainAction}
-        <Button icon={<FileSearchOutlined />} disabled={batchBusy} loading={loadingLocal} onClick={() => installDriverFromLocalFile(row)}>
+        <Button size={embedded ? 'small' : undefined} icon={<FileSearchOutlined />} disabled={batchBusy} loading={loadingLocal} onClick={() => installDriverFromLocalFile(row)}>
           {getDriverLocalImportButtonLabel()}
         </Button>
-        <Button type={hasLogs ? 'default' : 'text'} disabled={!hasLogs} onClick={() => openDriverLog(row.type)}>
+        <Button size={embedded ? 'small' : undefined} type={hasLogs ? 'default' : 'text'} disabled={!hasLogs} onClick={() => openDriverLog(row.type)}>
           {t('driver_manager.action.logs')}
         </Button>
       </Space>
@@ -1751,7 +1753,11 @@ const DriverManagerModal: React.FC<{ open: boolean; onClose: () => void; onBack?
           row.needsUpdate ? 'driver-manager-card-warning' : '',
           row.connectable ? 'driver-manager-card-ready' : '',
         ].filter(Boolean).join(' ')}
-        style={{
+        style={embedded ? {
+          border: 'none',
+          borderBottom: driverManagerTheme.cardBorder,
+          background: 'transparent',
+        } : {
           border: row.needsUpdate
             ? driverManagerTheme.cardWarningBorder
             : (row.connectable ? driverManagerTheme.cardReadyBorder : driverManagerTheme.cardBorder),
@@ -1762,7 +1768,7 @@ const DriverManagerModal: React.FC<{ open: boolean; onClose: () => void; onBack?
           <div className="driver-manager-card-info">
             <div className="driver-manager-title-row">
               <Text strong className="driver-manager-driver-name">{row.name}</Text>
-              <Tag>{row.type}</Tag>
+              <Tag>{embedded ? <code>{row.type}</code> : row.type}</Tag>
               {resolveDriverStatusTag(row)}
             </div>
             <div className="driver-manager-meta-row">
@@ -1838,7 +1844,11 @@ const DriverManagerModal: React.FC<{ open: boolean; onClose: () => void; onBack?
 
   const driverManagerContent = (
     <>
-      <div className="driver-manager-shell" data-driver-theme={driverManagerTheme.isDark ? 'dark' : 'light'}>
+      <div
+        className={embedded ? 'driver-manager-embedded-layout' : undefined}
+        style={embedded ? undefined : { display: 'contents' }}
+      >
+        <div className={`driver-manager-shell${embedded ? ' is-embedded' : ''}`} data-driver-theme={driverManagerTheme.isDark ? 'dark' : 'light'}>
         <div className="driver-manager-header" style={managerSectionStyle}>
           <div className="driver-manager-heading">
             <Text type="secondary">{t('driver.modal.header.description.install')}</Text>
@@ -1998,7 +2008,7 @@ const DriverManagerModal: React.FC<{ open: boolean; onClose: () => void; onBack?
               {t('driver.modal.toolbar.installAll')}
             </Button>
             <Button
-              type="primary"
+              type={embedded ? 'default' : 'primary'}
               icon={<DownloadOutlined />}
               disabled={installMutatingBusy || reinstallableRows.length === 0}
               loading={batchAction === 'reinstall-updates'}
@@ -2065,25 +2075,26 @@ const DriverManagerModal: React.FC<{ open: boolean; onClose: () => void; onBack?
           )}
         </div>
         </Space>
-      </div>
-      {embedded ? (
-        <Space className="driver-manager-footer-actions" size={8} wrap style={{ justifyContent: 'flex-end', width: '100%' }}>
-          <Button key="refresh" icon={<ReloadOutlined />} onClick={() => refreshStatus(true)} loading={loading}>
-            {t('driver.modal.footer.refresh')}
-          </Button>
-          <Button key="network" onClick={() => checkNetworkStatus(true)} loading={networkChecking}>
-            {t('driver.modal.footer.networkCheck')}
-          </Button>
-          <Button key="close" type="primary" onClick={onClose}>
-            {installMutatingBusy ? t('driver.modal.footer.background') : t('driver.modal.footer.close')}
-          </Button>
-          {onBack ? (
-            <Button key="back" onClick={onBack}>
-              {t('common.back_to_previous')}
+        </div>
+        {embedded ? (
+          <Space className="driver-manager-footer-actions" size={8} wrap style={{ justifyContent: 'flex-end', width: '100%' }}>
+            {onBack ? (
+              <Button key="back" onClick={onBack}>
+                {t('common.back_to_settings')}
+              </Button>
+            ) : null}
+            <Button key="refresh" icon={<ReloadOutlined />} onClick={() => refreshStatus(true)} loading={loading}>
+              {t('driver.modal.footer.refresh')}
             </Button>
-          ) : null}
-        </Space>
-      ) : null}
+            <Button key="network" onClick={() => checkNetworkStatus(true)} loading={networkChecking}>
+              {t('driver.modal.footer.networkCheck')}
+            </Button>
+            <Button key="close" type="primary" onClick={onClose}>
+              {installMutatingBusy ? t('driver.modal.footer.background') : t('driver.modal.footer.close')}
+            </Button>
+          </Space>
+        ) : null}
+      </div>
       <Modal
         title={t('driver_manager.log_modal.title', { name: activeLogRow?.name || logDriverType })}
         open={logModalOpen}

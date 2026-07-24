@@ -50,7 +50,7 @@ func (f *fakeStartupRetryDB) GetTriggers(dbName, tableName string) ([]connection
 	return nil, nil
 }
 
-func TestConnectDatabaseWithStartupRetry_RetriesTransientFailureAndReappliesGlobalProxy(t *testing.T) {
+func TestConnectDatabaseWithStartupRetry_RetriesTransientFailureWithoutApplyingGlobalProxy(t *testing.T) {
 	originalNewDatabaseFunc := newDatabaseFunc
 	originalResolveDialConfigWithProxyFunc := resolveDialConfigWithProxyFunc
 	snapshot := currentGlobalProxyConfig()
@@ -101,11 +101,11 @@ func TestConnectDatabaseWithStartupRetry_RetriesTransientFailureAndReappliesGlob
 	if seenConfigs[0].UseProxy {
 		t.Fatalf("expected first attempt without proxy, got %+v", seenConfigs[0])
 	}
-	if !seenConfigs[1].UseProxy {
-		t.Fatalf("expected second attempt with proxy after startup retry, got %+v", seenConfigs[1])
+	if seenConfigs[1].UseProxy {
+		t.Fatalf("expected global proxy change not to affect second database attempt, got %+v", seenConfigs[1])
 	}
-	if !effectiveConfig.UseProxy {
-		t.Fatalf("expected returned effective config to include proxy, got %+v", effectiveConfig)
+	if effectiveConfig.UseProxy {
+		t.Fatalf("expected returned effective config to exclude global proxy, got %+v", effectiveConfig)
 	}
 }
 
@@ -300,10 +300,10 @@ func TestGetDatabaseWithPing_CoolsDownRepeatedFailures(t *testing.T) {
 	}
 
 	a := &App{
-		startedAt:      time.Now().Add(-startupConnectRetryWindow - time.Second),
-		dbCache:        make(map[string]cachedDatabase),
+		startedAt:       time.Now().Add(-startupConnectRetryWindow - time.Second),
+		dbCache:         make(map[string]cachedDatabase),
 		connectFailures: make(map[string]cachedConnectFailure),
-		runningQueries: make(map[string]queryContext),
+		runningQueries:  make(map[string]queryContext),
 	}
 	config := connection.ConnectionConfig{Type: "postgres", Host: "10.1.131.86", Port: 5432, User: "postgres"}
 
@@ -349,10 +349,10 @@ func TestGetDatabaseWithPing_AllowsRetryAfterFailureCooldown(t *testing.T) {
 	}
 
 	a := &App{
-		startedAt:      time.Now().Add(-startupConnectRetryWindow - time.Second),
-		dbCache:        make(map[string]cachedDatabase),
+		startedAt:       time.Now().Add(-startupConnectRetryWindow - time.Second),
+		dbCache:         make(map[string]cachedDatabase),
 		connectFailures: make(map[string]cachedConnectFailure),
-		runningQueries: make(map[string]queryContext),
+		runningQueries:  make(map[string]queryContext),
 	}
 	config := connection.ConnectionConfig{Type: "postgres", Host: "10.1.131.86", Port: 5432, User: "postgres"}
 
@@ -409,10 +409,10 @@ func TestGetDatabaseWithPing_ClearsFailureCooldownAfterSuccess(t *testing.T) {
 	}
 
 	a := &App{
-		startedAt:      time.Now().Add(-startupConnectRetryWindow - time.Second),
-		dbCache:        make(map[string]cachedDatabase),
+		startedAt:       time.Now().Add(-startupConnectRetryWindow - time.Second),
+		dbCache:         make(map[string]cachedDatabase),
 		connectFailures: make(map[string]cachedConnectFailure),
-		runningQueries: make(map[string]queryContext),
+		runningQueries:  make(map[string]queryContext),
 	}
 	config := connection.ConnectionConfig{Type: "postgres", Host: "10.1.131.86", Port: 5432, User: "postgres"}
 

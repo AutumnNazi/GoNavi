@@ -9,6 +9,7 @@ import {
 
 import type {
   AIMCPServerConfig,
+  AIProviderAuthMode,
   AIProviderConfig,
   AIProviderType,
   AISkillConfig,
@@ -19,6 +20,7 @@ import {
   QWEN_CODING_PLAN_ANTHROPIC_BASE_URL,
   QWEN_CODING_PLAN_MODELS,
   resolveProviderPresetKey,
+  type ProviderPresetCandidate,
 } from '../../utils/aiProviderPresets';
 
 export interface ProviderPreset {
@@ -31,6 +33,7 @@ export interface ProviderPreset {
   color: string;
   backendType: AIProviderType;
   fixedApiFormat?: string;
+  authMode?: AIProviderAuthMode;
   defaultBaseUrl: string;
   defaultModel: string;
   models: string[];
@@ -38,12 +41,14 @@ export interface ProviderPreset {
 
 export const PROVIDER_PRESETS: ProviderPreset[] = [
   { key: 'openai', label: 'OpenAI', labelKey: 'ai_settings.provider_preset.openai.label', icon: <ApiOutlined />, desc: 'GPT-5.4 / 5.3 series', descKey: 'ai_settings.provider_preset.openai.desc', color: '#10b981', backendType: 'openai', defaultBaseUrl: 'https://api.openai.com/v1', defaultModel: 'gpt-4o', models: [] },
+  { key: 'codex', label: 'Codex Subscription', labelKey: 'ai_settings.provider_preset.codex.label', icon: <ApiOutlined />, desc: 'Local Codex CLI / ChatGPT subscription login', descKey: 'ai_settings.provider_preset.codex.desc', color: '#111827', backendType: 'custom', fixedApiFormat: 'codex-cli', authMode: 'local-cli', defaultBaseUrl: '', defaultModel: '', models: [] },
   { key: 'deepseek', label: 'DeepSeek', labelKey: 'ai_settings.provider_preset.deepseek.label', icon: <ThunderboltOutlined />, desc: 'DeepSeek-V4 / R1', descKey: 'ai_settings.provider_preset.deepseek.desc', color: '#3b82f6', backendType: 'openai', defaultBaseUrl: 'https://api.deepseek.com/v1', defaultModel: 'deepseek-chat', models: [] },
   { key: 'qwen-bailian', label: 'Qwen (Bailian General)', labelKey: 'ai_settings.provider_preset.qwen_bailian.label', icon: <CloudOutlined />, desc: 'Bailian Anthropic-compatible endpoint / remote model list', descKey: 'ai_settings.provider_preset.qwen_bailian.desc', color: '#6366f1', backendType: 'anthropic', defaultBaseUrl: QWEN_BAILIAN_ANTHROPIC_BASE_URL, defaultModel: '', models: [] },
   { key: 'qwen-coding-plan', label: 'Qwen (Coding Plan)', labelKey: 'ai_settings.provider_preset.qwen_coding_plan.label', icon: <CloudOutlined />, desc: 'Claude Code CLI proxy chain / official supported model list', descKey: 'ai_settings.provider_preset.qwen_coding_plan.desc', color: '#4f46e5', backendType: 'custom', fixedApiFormat: 'claude-cli', defaultBaseUrl: QWEN_CODING_PLAN_ANTHROPIC_BASE_URL, defaultModel: '', models: QWEN_CODING_PLAN_MODELS },
   { key: 'zhipu', label: 'Zhipu GLM', labelKey: 'ai_settings.provider_preset.zhipu.label', icon: <ExperimentOutlined />, desc: 'GLM-5 / GLM-5-Turbo', descKey: 'ai_settings.provider_preset.zhipu.desc', color: '#0ea5e9', backendType: 'openai', defaultBaseUrl: 'https://open.bigmodel.cn/api/paas/v4', defaultModel: 'glm-4', models: [] },
   { key: 'moonshot', label: 'Kimi', labelKey: 'ai_settings.provider_preset.moonshot.label', icon: <ExperimentOutlined />, desc: 'Kimi K2.5 (Anthropic-compatible)', descKey: 'ai_settings.provider_preset.moonshot.desc', color: '#0d9488', backendType: 'anthropic', defaultBaseUrl: 'https://api.moonshot.cn/anthropic', defaultModel: 'moonshot-v1-8k', models: [] },
   { key: 'anthropic', label: 'Claude', labelKey: 'ai_settings.provider_preset.anthropic.label', icon: <ExperimentOutlined />, desc: 'Claude Opus/Sonnet', descKey: 'ai_settings.provider_preset.anthropic.desc', color: '#d97706', backendType: 'anthropic', defaultBaseUrl: 'https://api.anthropic.com', defaultModel: 'claude-3-5-sonnet-20241022', models: [] },
+  { key: 'claude-subscription', label: 'Claude Subscription', labelKey: 'ai_settings.provider_preset.claude_subscription.label', icon: <ExperimentOutlined />, desc: 'Local Claude Code CLI / Claude subscription login', descKey: 'ai_settings.provider_preset.claude_subscription.desc', color: '#c15f3c', backendType: 'custom', fixedApiFormat: 'claude-cli', authMode: 'local-cli', defaultBaseUrl: '', defaultModel: '', models: [] },
   { key: 'gemini', label: 'Gemini', labelKey: 'ai_settings.provider_preset.gemini.label', icon: <CloudOutlined />, desc: 'Gemini 3.1 / 2.5 series', descKey: 'ai_settings.provider_preset.gemini.desc', color: '#059669', backendType: 'gemini', defaultBaseUrl: 'https://generativelanguage.googleapis.com', defaultModel: 'gemini-2.5-flash', models: [] },
   { key: 'volcengine-ark', label: 'Volcengine Ark', labelKey: 'ai_settings.provider_preset.volcengine_ark.label', icon: <CloudOutlined />, desc: 'Ark general inference / Doubao models', descKey: 'ai_settings.provider_preset.volcengine_ark.desc', color: '#0ea5e9', backendType: 'openai', defaultBaseUrl: 'https://ark.cn-beijing.volces.com/api/v3', defaultModel: '', models: [] },
   { key: 'volcengine-coding', label: 'Volcengine Coding Plan', labelKey: 'ai_settings.provider_preset.volcengine_coding.label', icon: <CloudOutlined />, desc: 'Ark Code / Coding Plan', descKey: 'ai_settings.provider_preset.volcengine_coding.desc', color: '#0284c7', backendType: 'openai', defaultBaseUrl: 'https://ark.cn-beijing.volces.com/api/coding/v3', defaultModel: '', models: [] },
@@ -78,7 +83,7 @@ export const findPreset = (key: string): ProviderPreset =>
   PROVIDER_PRESETS.find((preset) => preset.key === key) || PROVIDER_PRESETS[PROVIDER_PRESETS.length - 1];
 
 export const matchProviderPreset = (
-  provider: Pick<AIProviderConfig, 'type' | 'baseUrl' | 'apiFormat'>,
+  provider: ProviderPresetCandidate,
 ): ProviderPreset => {
   const presetKey = resolveProviderPresetKey(provider, PROVIDER_PRESETS, 'custom');
   return findPreset(presetKey);

@@ -12,6 +12,9 @@ func NewProvider(config ai.ProviderConfig) (Provider, error) {
 	providerType := strings.ToLower(strings.TrimSpace(config.Type))
 	switch providerType {
 	case "openai":
+		if strings.EqualFold(strings.TrimSpace(config.APIFormat), "openai-responses") {
+			return NewOpenAIResponsesProvider(config)
+		}
 		return NewOpenAIProvider(config)
 	case "anthropic":
 		return NewAnthropicProvider(config)

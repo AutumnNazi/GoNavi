@@ -48,6 +48,7 @@ import {
 } from "../utils/connectionDriverType";
 import { resolveSqlDialect } from "../utils/sqlDialect";
 import { quoteIdentPart, quoteQualifiedIdent } from "../utils/sql";
+import { normalizeTableNamesFromMetadataRows } from "../utils/tableMetadataRows";
 import {
   formatLocalDateTimeLiteral,
   normalizeTemporalLiteralText,
@@ -64,6 +65,13 @@ import {
   type DataSyncEntryMode,
 } from "./dataSyncEntryMode";
 import { loadSchemas } from "./sidebar/sidebarMetadataLoaders";
+import {
+  failDataSyncBackgroundTask,
+  finishDataSyncBackgroundTask,
+  resolveDataSyncTaskLogLevel,
+  startDataSyncBackgroundTask,
+  useDataSyncBackgroundTask,
+} from "./dataSyncBackgroundTask";
 const { Title, Text } = Typography;
 const { Step } = Steps;
 const { Option } = Select;
@@ -357,7 +365,15 @@ const DataSyncModal: React.FC<{
   onBack?: () => void;
   entryMode?: DataSyncEntryMode;
   embedded?: boolean;
-}> = ({ open, onClose, onBack, entryMode = "sync", embedded = false }) => {
+  taskKey?: string;
+}> = ({
+  open,
+  onClose,
+  onBack,
+  entryMode = "sync",
+  embedded = false,
+  taskKey,
+}) => {
   const i18n = useOptionalI18n();
   const i18nLanguage = i18n?.language;
   const tr = (key: string, params?: Parameters<typeof t>[1]) =>
@@ -366,6 +382,8 @@ const DataSyncModal: React.FC<{
   const isSchemaCompareEntry = entryMode === "schemaCompare";
   const isDataCompareEntry = entryMode === "dataCompare";
   const isCompareEntry = entryPresentation.readOnly;
+  const resolvedTaskKey = String(taskKey || `data-sync:${entryMode}`).trim();
+  const backgroundTask = useDataSyncBackgroundTask(resolvedTaskKey);
   const connections = useStore((state) => state.connections);
   const themeMode = useStore((state) => state.theme);
   const appearance = useStore((state) => state.appearance);
@@ -441,6 +459,7 @@ const DataSyncModal: React.FC<{
     stage: "",
   });
   const jobIdRef = useRef<string>("");
+  const runSyncGuardRef = useRef(false);
   const logBoxRef = useRef<HTMLDivElement>(null);
   const autoScrollRef = useRef(true);
 
@@ -495,6 +514,16 @@ const DataSyncModal: React.FC<{
 
   useEffect(() => {
     if (open) {
+      if (backgroundTask.jobId) {
+        jobIdRef.current = backgroundTask.jobId;
+        setCurrentStep(2);
+        setSyncing(backgroundTask.status === "running");
+        setSyncResult(backgroundTask.result);
+        setSyncLogs(backgroundTask.logs);
+        setSyncProgress(backgroundTask.progress);
+        autoScrollRef.current = true;
+        return;
+      }
       setCurrentStep(0);
       setSourceConnId("");
       setTargetConnId("");
@@ -534,7 +563,23 @@ const DataSyncModal: React.FC<{
       jobIdRef.current = "";
       autoScrollRef.current = true;
     }
-  }, [open, isSchemaCompareEntry]);
+  }, [backgroundTask.jobId, isSchemaCompareEntry, open]);
+
+  useEffect(() => {
+    if (!backgroundTask.jobId) return;
+    jobIdRef.current = backgroundTask.jobId;
+    setSyncing(backgroundTask.status === "running");
+    setSyncResult(backgroundTask.result);
+    setSyncLogs(backgroundTask.logs);
+    setSyncProgress(backgroundTask.progress);
+    setCurrentStep(2);
+  }, [
+    backgroundTask.jobId,
+    backgroundTask.logs,
+    backgroundTask.progress,
+    backgroundTask.result,
+    backgroundTask.status,
+  ]);
 
   useEffect(() => {
     if (isSchemaCompareEntry) {
@@ -722,19 +767,7 @@ const DataSyncModal: React.FC<{
         const config = normalizeConnConfig(conn, dbName);
         const res = await DBGetTables(config as any, dbName);
         if (res.success) {
-          // DBGetTables returns [{Table: "name"}, ...]
-          const tableRows = Array.isArray(res.data) ? res.data : [];
-          const tables = tableRows
-            .map(
-              (row: any) =>
-                row?.Table ||
-                row?.table ||
-                row?.TABLE_NAME ||
-                Object.values(row || {})[0],
-            )
-            .filter(
-              (name: any) => typeof name === "string" && name.trim() !== "",
-            );
+          const tables = normalizeTableNamesFromMetadataRows(res.data);
           const nextTables = (
             isSourceQueryMode && targetSupportsSchemaSelection && targetSchema
               ? filterTablesBySchema(tables as string[], targetSchema)
@@ -942,89 +975,107 @@ const DataSyncModal: React.FC<{
       message.error(tr("data_sync.message.analyze_before_sync"));
       return;
     }
-    if (syncContent !== "schema" && syncMode === "full_overwrite") {
-      const ok = await new Promise<boolean>((resolve) => {
-        Modal.confirm({
-          title: tr("data_sync.modal.full_overwrite_title"),
-          content: tr("data_sync.modal.full_overwrite_content"),
-          okText: tr("data_sync.modal.full_overwrite_ok"),
-          cancelText: tr("common.cancel"),
-          onOk: () => resolve(true),
-          onCancel: () => resolve(false),
-        });
-      });
-      if (!ok) return;
+    if (runSyncGuardRef.current) {
+      message.warning(tr("data_sync.message.close_blocked_running"));
+      return;
     }
-
-    setLoading(true);
-    setSyncing(true);
-    setCurrentStep(2);
-    setSyncResult(null);
-    setSyncLogs([]);
-
-    const sConn = connections.find((c) => c.id === sourceConnId)!;
-    const tConn = connections.find((c) => c.id === targetConnId)!;
-
-    const jobId = `sync-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
-    jobIdRef.current = jobId;
-    autoScrollRef.current = true;
-    setSyncProgress({
-      percent: 0,
-      current: 0,
-      total: selectedTables.length,
-      table: "",
-      stage: tr("data_sync.progress.stage.preparing"),
-    });
-
-    const config = buildDataSyncRequest({
-      sourceConfig: normalizeConnConfig(sConn, sourceDb),
-      targetConfig: normalizeConnConfig(tConn, targetDb),
-      sourceDatabase: sourceDb,
-      targetDatabase: targetDb,
-      targetSchema,
-      selectedTables,
-      sourceDatasetMode,
-      sourceQuery,
-      syncContent,
-      syncMode,
-      autoAddColumns,
-      targetTableStrategy,
-      createIndexes,
-      mongoCollectionName,
-      tableOptions,
-      jobId,
-    });
-
+    runSyncGuardRef.current = true;
     try {
-      const res = await DataSync(config as any);
-      setSyncResult(res);
-      if (Array.isArray(res?.logs) && res.logs.length > 0) {
-        setSyncLogs((prev) => {
-          if (prev.length > 0) return prev;
-          return (res.logs as string[]).map((log) => {
-            const msg = String(log || "").trim();
-            if (msg.includes("致命错误") || msg.includes("失败"))
-              return { level: "error", message: msg }; // i18n-scan: allow-raw backend log severity markers
-            if (msg.includes("跳过") || msg.includes("警告"))
-              return { level: "warn", message: msg }; // i18n-scan: allow-raw backend log severity markers
-            return { level: "info", message: msg };
+      if (syncContent !== "schema" && syncMode === "full_overwrite") {
+        const ok = await new Promise<boolean>((resolve) => {
+          Modal.confirm({
+            title: tr("data_sync.modal.full_overwrite_title"),
+            content: tr("data_sync.modal.full_overwrite_content"),
+            okText: tr("data_sync.modal.full_overwrite_ok"),
+            cancelText: tr("common.cancel"),
+            onOk: () => resolve(true),
+            onCancel: () => resolve(false),
           });
         });
+        if (!ok) return;
       }
-    } catch (e: any) {
-      message.error(
-        tr("data_sync.message.sync_execution_failed_detail", {
-          detail: e?.message || String(e),
-        }),
-      );
-      setSyncResult({
-        success: false,
-        message: tr("data_sync.message.sync_execution_failed"),
-        logs: [],
+
+      setLoading(true);
+      setSyncing(true);
+      setCurrentStep(2);
+      setSyncResult(null);
+      setSyncLogs([]);
+
+      const sConn = connections.find((c) => c.id === sourceConnId)!;
+      const tConn = connections.find((c) => c.id === targetConnId)!;
+
+      const jobId = `sync-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+      jobIdRef.current = jobId;
+      autoScrollRef.current = true;
+      setSyncProgress({
+        percent: 0,
+        current: 0,
+        total: selectedTables.length,
+        table: "",
+        stage: tr("data_sync.progress.stage.preparing"),
       });
+      const taskStarted = startDataSyncBackgroundTask({
+        taskKey: resolvedTaskKey,
+        jobId,
+        total: selectedTables.length,
+        stage: tr("data_sync.progress.stage.preparing"),
+      });
+      if (!taskStarted) {
+        message.warning(tr("data_sync.message.close_blocked_running"));
+        return;
+      }
+
+      const config = buildDataSyncRequest({
+        sourceConfig: normalizeConnConfig(sConn, sourceDb),
+        targetConfig: normalizeConnConfig(tConn, targetDb),
+        sourceDatabase: sourceDb,
+        targetDatabase: targetDb,
+        targetSchema,
+        selectedTables,
+        sourceDatasetMode,
+        sourceQuery,
+        syncContent,
+        syncMode,
+        autoAddColumns,
+        targetTableStrategy,
+        createIndexes,
+        mongoCollectionName,
+        tableOptions,
+        jobId,
+      });
+
+      try {
+        const res = await DataSync(config as any);
+        setSyncResult(res);
+        finishDataSyncBackgroundTask(resolvedTaskKey, jobId, res);
+        if (Array.isArray(res?.logs) && res.logs.length > 0) {
+          setSyncLogs((prev) => {
+            if (prev.length > 0) return prev;
+            return (res.logs as string[]).map((log) => {
+              const msg = String(log || "").trim();
+              return { level: resolveDataSyncTaskLogLevel(msg), message: msg };
+            });
+          });
+        }
+      } catch (e: any) {
+        const failedResult = {
+          success: false,
+          message: tr("data_sync.message.sync_execution_failed"),
+          logs: [],
+        };
+        message.error(
+          tr("data_sync.message.sync_execution_failed_detail", {
+            detail: e?.message || String(e),
+          }),
+        );
+        setSyncResult(failedResult);
+        failDataSyncBackgroundTask(resolvedTaskKey, jobId, failedResult);
+      }
+    } finally {
+      runSyncGuardRef.current = false;
+      setLoading(false);
+      setSyncing(false);
     }
-    setLoading(false);
-    setSyncing(false);
   };
 
   const renderSyncLogItem = (item: SyncLogItem) => {

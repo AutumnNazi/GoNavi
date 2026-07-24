@@ -29,11 +29,14 @@ import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import quote
 
 REPO = "Syngnat/GoNavi"
 SCHEMA_VERSION = 1
 SKIP_NAMES = {
     "SHA256SUMS",
+    "LICENSE",
+    "NOTICE",
     "latest.json",
     "latest-dev.json",
     ".DS_Store",
@@ -70,11 +73,22 @@ def browser_download_url(tag: str, asset_name: str) -> str:
     return f"https://github.com/{REPO}/releases/download/{tag}/{name}"
 
 
+def mirror_download_url(base_url: str, tag: str, asset_name: str) -> str:
+    base = (base_url or "").strip().rstrip("/")
+    return f"{base}/{quote(tag.strip(), safe='')}/{quote(asset_name.strip(), safe='')}"
+
+
 def html_url(tag: str) -> str:
     return f"https://github.com/{REPO}/releases/tag/{tag.strip()}"
 
 
-def collect_assets(assets_dir: Path, tag: str, hashes: dict[str, str]) -> list[dict]:
+def collect_assets(
+    assets_dir: Path,
+    tag: str,
+    hashes: dict[str, str],
+    download_base_url: str = "",
+    download_tag: str = "",
+) -> list[dict]:
     assets: list[dict] = []
     for path in sorted(assets_dir.iterdir()):
         if not path.is_file():
@@ -84,11 +98,16 @@ def collect_assets(assets_dir: Path, tag: str, hashes: dict[str, str]) -> list[d
             continue
         if name.startswith("."):
             continue
+        github_url = browser_download_url(tag, name)
         item = {
             "name": name,
-            "url": browser_download_url(tag, name),
+            "url": mirror_download_url(download_base_url, download_tag or tag, name)
+            if download_base_url
+            else github_url,
             "size": path.stat().st_size,
         }
+        if download_base_url:
+            item["apiUrl"] = github_url
         sha = hashes.get(name, "").strip().lower()
         if sha:
             item["sha256"] = sha
@@ -104,11 +123,13 @@ def build_manifest(
     assets_dir: Path,
     name: str | None,
     published_at: str | None,
+    download_base_url: str = "",
+    download_tag: str = "",
 ) -> dict:
     hashes = parse_sha256sums(assets_dir / "SHA256SUMS")
     tag = tag.strip() or f"v{normalize_version(version)}"
     version = normalize_version(version) or normalize_version(tag)
-    assets = collect_assets(assets_dir, tag, hashes)
+    assets = collect_assets(assets_dir, tag, hashes, download_base_url, download_tag)
     if not assets:
         raise SystemExit(f"no release assets found under {assets_dir}")
 
@@ -137,6 +158,16 @@ def main() -> int:
     )
     parser.add_argument("--name", default="", help="Release display name")
     parser.add_argument("--published-at", default="", help="ISO8601 published time")
+    parser.add_argument(
+        "--download-base-url",
+        default="",
+        help="Primary release download base URL; GitHub is retained in apiUrl as fallback",
+    )
+    parser.add_argument(
+        "--download-tag",
+        default="",
+        help="Optional tag/path segment for the primary download URL; manifest and GitHub tag stay unchanged",
+    )
     parser.add_argument(
         "--output",
         default="",
@@ -167,6 +198,8 @@ def main() -> int:
         assets_dir=assets_dir,
         name=args.name or None,
         published_at=args.published_at or None,
+        download_base_url=args.download_base_url,
+        download_tag=args.download_tag,
     )
     output.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(f"wrote {output} ({len(manifest['assets'])} assets, version={manifest['version']})")

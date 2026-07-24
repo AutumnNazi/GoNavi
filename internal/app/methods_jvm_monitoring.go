@@ -13,9 +13,14 @@ type jvmMonitoringService interface {
 	Start(ctx context.Context, cfg connection.ConnectionConfig, requestedMode string) (jvm.MonitoringSessionSnapshot, error)
 	GetHistory(connectionID string, providerMode string) (jvm.MonitoringSessionSnapshot, error)
 	Stop(connectionID string, providerMode string) error
+	Shutdown()
 }
 
 var currentJVMMonitoringManager jvmMonitoringService = jvm.NewMonitoringManager()
+
+func closeJVMMonitoringSessions() {
+	currentJVMMonitoringManager.Shutdown()
+}
 
 func (a *App) JVMStartMonitoring(cfg connection.ConnectionConfig) connection.QueryResult {
 	snapshot, err := currentJVMMonitoringManager.Start(a.ctx, cfg, "")

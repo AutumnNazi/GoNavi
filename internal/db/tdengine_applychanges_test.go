@@ -161,6 +161,31 @@ func openTDengineRecordingDB(t *testing.T) (*sql.DB, *tdengineRecordingState) {
 	return dbConn, state
 }
 
+func TestTDengineQueryContextReturnsRowsAndColumns(t *testing.T) {
+	t.Parallel()
+
+	dbConn, state := openTDengineRecordingDB(t)
+	td := &TDengineDB{conn: dbConn}
+	query := "SELECT ts, current FROM meters ORDER BY ts DESC LIMIT 1"
+	state.queryResults[query] = tdengineQueryResult{
+		columns: []string{"ts", "current"},
+		rows: [][]driver.Value{
+			{"2026-07-19 00:00:00.000", 10.2},
+		},
+	}
+
+	rows, columns, err := td.QueryContext(context.Background(), query)
+	if err != nil {
+		t.Fatalf("TDengine QueryContext returned error: %v", err)
+	}
+	if !reflect.DeepEqual(columns, []string{"ts", "current"}) {
+		t.Fatalf("TDengine QueryContext columns = %#v", columns)
+	}
+	if len(rows) != 1 || rows[0]["ts"] != "2026-07-19 00:00:00.000" || rows[0]["current"] != 10.2 {
+		t.Fatalf("TDengine QueryContext rows = %#v, want one data row", rows)
+	}
+}
+
 func TestTDengineApplyChanges_InsertsIntoQualifiedTable(t *testing.T) {
 	t.Parallel()
 

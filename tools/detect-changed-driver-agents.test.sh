@@ -13,6 +13,7 @@ cd "$SCRIPT_DIR"
 tmpdir="$(mktemp -d "${TMPDIR:-/tmp}/gonavi-detect-driver-revisions.XXXXXX")"
 tmpdir_connection=""
 tmpdir_script=""
+tmpdir_shared_source=""
 cleanup() {
   rm -rf "$tmpdir"
   if [[ -n "$tmpdir_connection" ]]; then
@@ -20,6 +21,9 @@ cleanup() {
   fi
   if [[ -n "$tmpdir_script" ]]; then
     rm -rf "$tmpdir_script"
+  fi
+  if [[ -n "$tmpdir_shared_source" ]]; then
+    rm -rf "$tmpdir_shared_source"
   fi
 }
 trap cleanup EXIT
@@ -50,6 +54,36 @@ GOEOF
   actual="$(bash ./tools/detect-changed-driver-agents.sh --base "$base" --head HEAD)"
   if [[ "$actual" != "clickhouse" ]]; then
     echo "expected clickhouse revision-only change to trigger clickhouse build, got: ${actual:-<empty>}" >&2
+    exit 1
+  fi
+)
+
+tmpdir_shared_source="$(mktemp -d "${TMPDIR:-/tmp}/gonavi-detect-shared-source.XXXXXX")"
+git init -q "$tmpdir_shared_source"
+mkdir -p "$tmpdir_shared_source/tools" "$tmpdir_shared_source/internal/db"
+cp tools/detect-changed-driver-agents.sh "$tmpdir_shared_source/tools/detect-changed-driver-agents.sh"
+cat >"$tmpdir_shared_source/internal/db/database.go" <<'GOEOF'
+package db
+
+func normalizeDriverType(driverType string) string {
+	return driverType
+}
+GOEOF
+
+(
+  cd "$tmpdir_shared_source"
+  git add .
+  git -c user.name=GoNavi -c user.email=gonavi@example.test commit -q -m initial
+  base="$(git rev-parse HEAD)"
+
+  perl -0pi -e 's/return driverType/if driverType == "sqlite3" { return "sqlite" }\n\treturn driverType/' internal/db/database.go
+  git add internal/db/database.go
+  git -c user.name=GoNavi -c user.email=gonavi@example.test commit -q -m 'update shared database logic'
+
+  actual="$(bash ./tools/detect-changed-driver-agents.sh --base "$base" --head HEAD)"
+  expected="mariadb,oceanbase,doris,starrocks,sphinx,sqlserver,sqlite,duckdb,dameng,kingbase,highgo,vastbase,opengauss,gaussdb,iris,mongodb,tdengine,iotdb,clickhouse,elasticsearch,trino"
+  if [[ "$actual" != "$expected" ]]; then
+    echo "expected shared internal/db source change to trigger all driver builds, got: ${actual:-<empty>}" >&2
     exit 1
   fi
 )

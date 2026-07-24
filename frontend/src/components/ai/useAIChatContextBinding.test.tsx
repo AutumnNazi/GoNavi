@@ -172,6 +172,40 @@ describe('useAIChatContextBinding', () => {
     });
   });
 
+  it('uses the named table field instead of metadata values such as row counts', async () => {
+    dbGetDatabasesMock.mockResolvedValue({
+      success: true,
+      data: [{ Database: 'analytics' }],
+    });
+    dbGetTablesMock.mockResolvedValue({
+      success: true,
+      data: [
+        { Rows: '128', Table: 'users', Data_length: '4096' },
+        { Index_length: '2048', table_name: 'orders', Rows: '42' },
+        { Name: 'metadata-label', Rows: '7', TABLE: 'customers' },
+      ],
+    });
+
+    let renderer: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<HookHarness />);
+    });
+
+    await act(async () => {
+      await latestHook!.handleOpenContext();
+    });
+
+    expect(latestHook!.filteredTables).toEqual([
+      { name: 'users' },
+      { name: 'orders' },
+      { name: 'customers' },
+    ]);
+
+    await act(async () => {
+      renderer!.unmount();
+    });
+  });
+
   it('falls back to the English unchanged-selection info message after a no-op sync', async () => {
     let renderer: ReactTestRenderer;
     await act(async () => {

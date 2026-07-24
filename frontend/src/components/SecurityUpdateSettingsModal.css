@@ -1,0 +1,147 @@
+.security-update-settings-embedded {
+  --security-update-settings-font-body: var(--gn-settings-font-body, var(--gn-font-size, 14px));
+  --security-update-settings-font-caption: var(--gn-settings-font-caption, var(--gn-font-size-sm, 12px));
+  --security-update-settings-font-compact: calc(var(--security-update-settings-font-body) - 1px);
+  --security-update-settings-font-heading: calc(var(--security-update-settings-font-body) + 1px);
+  --security-update-settings-font-number: calc(var(--security-update-settings-font-body) + 4px);
+  font-family: var(--gn-font-sans);
+  font-size: var(--security-update-settings-font-body);
+}
+
+.security-update-settings-embedded .security-update-settings-layout {
+  display: grid;
+  gap: 0;
+  padding: 0 0 8px;
+}
+
+.security-update-settings-embedded .security-update-settings-section {
+  position: relative;
+  min-width: 0;
+  padding: 16px 0;
+  border: 0;
+  border-bottom: 1px solid var(--security-update-settings-divider);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  transition: border-color 180ms ease;
+}
+
+.security-update-settings-embedded .security-update-settings-section::before {
+  position: absolute;
+  inset-block: 12px;
+  inset-inline-start: 0;
+  width: 3px;
+  background: transparent;
+  content: '';
+  transition: background 180ms ease;
+}
+
+.security-update-settings-embedded .security-update-settings-section-active::before {
+  background: var(--security-update-settings-accent);
+}
+
+.security-update-settings-embedded .security-update-settings-status-title {
+  font-size: var(--security-update-settings-font-heading);
+}
+
+.security-update-settings-embedded .security-update-settings-section-title {
+  font-size: var(--security-update-settings-font-body);
+}
+
+.security-update-settings-embedded .security-update-settings-copy {
+  font-size: var(--security-update-settings-font-compact);
+}
+
+.security-update-settings-embedded .security-update-settings-caption {
+  font-size: var(--security-update-settings-font-caption);
+}
+
+.security-update-settings-embedded .security-update-settings-summary {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.security-update-settings-embedded .security-update-settings-summary-item {
+  min-width: 0;
+  padding: 2px 14px;
+  border-inline-start: 1px solid var(--security-update-settings-divider);
+}
+
+.security-update-settings-embedded .security-update-settings-summary-item:first-child {
+  padding-inline-start: 0;
+  border-inline-start: 0;
+}
+
+.security-update-settings-embedded .security-update-settings-summary-value {
+  font-size: var(--security-update-settings-font-number);
+  font-variant-numeric: tabular-nums;
+}
+
+.security-update-settings-embedded .security-update-settings-issue-list {
+  display: grid;
+}
+
+.security-update-settings-embedded .security-update-settings-issue {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 0;
+  border-top: 1px solid var(--security-update-settings-divider);
+  background: transparent;
+}
+
+.security-update-settings-embedded .security-update-settings-technical-value {
+  margin-inline-start: 4px;
+  font-family: var(--gn-font-mono);
+  font-size: var(--security-update-settings-font-caption);
+  overflow-wrap: anywhere;
+}
+
+.security-update-settings-embedded .security-update-action-btn.ant-btn,
+.security-update-settings-embedded .security-update-action-btn.ant-btn-default,
+.security-update-settings-embedded .security-update-action-btn.ant-btn-primary,
+.security-update-settings-embedded .security-update-action-btn.ant-btn-text {
+  min-height: var(--gn-control-height, 32px);
+  height: var(--gn-control-height, 32px);
+  padding-inline: 12px;
+  border-radius: 6px;
+  font-size: var(--security-update-settings-font-caption);
+  font-weight: 600;
+  box-shadow: none;
+}
+
+.security-update-settings-embedded .security-update-action-btn.ant-btn:focus-visible,
+.security-update-settings-embedded .security-update-action-btn.ant-btn-default:focus-visible,
+.security-update-settings-embedded .security-update-action-btn.ant-btn-primary:focus-visible,
+.security-update-settings-embedded .security-update-action-btn.ant-btn-text:focus-visible {
+  outline: 2px solid currentColor !important;
+  outline-offset: 2px;
+  box-shadow: none !important;
+}
+
+.security-update-settings-embedded .security-update-result-card-active {
+  animation: none;
+}
+
+@media (max-width: 760px) {
+  .security-update-settings-embedded .security-update-settings-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    row-gap: 14px;
+  }
+
+  .security-update-settings-embedded .security-update-settings-summary-item:nth-child(odd) {
+    padding-inline-start: 0;
+    border-inline-start: 0;
+  }
+
+  .security-update-settings-embedded .security-update-settings-issue {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .security-update-settings-embedded .security-update-settings-issue .security-update-action-btn {
+    align-self: flex-start;
+  }
+}

@@ -121,6 +121,7 @@ type openAIChatMessage struct {
 }
 
 func buildOpenAIMessages(reqMessages []ai.Message, modelName string, baseURL string) []openAIChatMessage {
+	reqMessages = normalizeOpenAISystemMessageOrder(reqMessages)
 	messages := make([]openAIChatMessage, len(reqMessages))
 	replayReasoningContent := shouldReplayReasoningContent(modelName, baseURL)
 	for i, m := range reqMessages {
@@ -170,6 +171,41 @@ func buildOpenAIMessages(reqMessages []ai.Message, modelName string, baseURL str
 		}
 	}
 	return messages
+}
+
+// normalizeOpenAISystemMessageOrder keeps strict OpenAI-compatible endpoints
+// from rejecting a historical system message that appears after a user,
+// assistant, or tool message. It preserves the relative order within both
+// groups so tool-call sequences remain intact.
+func normalizeOpenAISystemMessageOrder(messages []ai.Message) []ai.Message {
+	seenNonSystemMessage := false
+	needsReorder := false
+	for _, message := range messages {
+		if message.Role == "system" {
+			if seenNonSystemMessage {
+				needsReorder = true
+				break
+			}
+			continue
+		}
+		seenNonSystemMessage = true
+	}
+	if !needsReorder {
+		return messages
+	}
+
+	reordered := make([]ai.Message, 0, len(messages))
+	for _, message := range messages {
+		if message.Role == "system" {
+			reordered = append(reordered, message)
+		}
+	}
+	for _, message := range messages {
+		if message.Role != "system" {
+			reordered = append(reordered, message)
+		}
+	}
+	return reordered
 }
 
 func attachReasoningContent(msg *openAIChatMessage, source ai.Message, enabled bool) {

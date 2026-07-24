@@ -635,6 +635,221 @@ body[data-theme='light'] .redis-viewer-workbench .ant-radio-button-wrapper-check
     justify-content: flex-end;
 }
 
+/* The settings-center view is a compact driver workbench, not a stack of
+   standalone cards. Keep the full modal presentation above unchanged. */
+.driver-manager-embedded-layout {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+}
+
+.driver-manager-embedded-layout > .driver-manager-shell.is-embedded {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    padding-right: 6px;
+    overscroll-behavior: contain;
+}
+
+.driver-manager-shell.is-embedded {
+    gap: 10px;
+    min-width: 0;
+}
+
+.driver-manager-shell.is-embedded .driver-manager-header {
+    align-items: center;
+    padding: 0 2px 10px;
+    border-radius: 0;
+    background: transparent;
+}
+
+.driver-manager-shell.is-embedded .driver-manager-heading {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 4px 12px;
+    font-family: var(--gn-font-sans);
+}
+
+.driver-manager-shell.is-embedded .driver-manager-stats {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 0;
+    min-width: 0;
+}
+
+.driver-manager-shell.is-embedded .driver-manager-stat {
+    flex-direction: row;
+    align-items: baseline;
+    gap: 5px;
+    min-height: 0;
+    padding: 2px 10px;
+    border-radius: 0;
+    background: transparent;
+}
+
+.driver-manager-shell.is-embedded .driver-manager-stat + .driver-manager-stat {
+    border-left: 1px solid var(--ant-color-border-secondary, rgba(5, 5, 5, 0.08)) !important;
+}
+
+.driver-manager-shell.is-embedded .driver-manager-stat span:first-child {
+    font-size: var(--gn-font-size, 14px);
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+}
+
+.driver-manager-shell.is-embedded .driver-manager-directory-panel {
+    border-radius: 0;
+    background: transparent;
+}
+
+.driver-manager-shell.is-embedded .ant-alert {
+    border-inline: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+}
+
+.driver-manager-shell.is-embedded .driver-manager-directory-panel.ant-collapse {
+    border-inline: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+}
+
+.driver-manager-shell.is-embedded .driver-manager-directory-panel .ant-collapse-header {
+    min-height: 36px;
+    padding: 7px 2px !important;
+    font-size: var(--gn-settings-font-secondary, var(--gn-font-size-sm, 12px));
+    font-weight: 600;
+}
+
+.driver-manager-shell.is-embedded .driver-manager-directory-panel .ant-collapse-content-box {
+    padding: 2px 2px 10px !important;
+}
+
+.driver-manager-shell.is-embedded .driver-manager-directory-panel code,
+.driver-manager-shell.is-embedded .driver-manager-directory-panel .ant-typography-copy {
+    font-family: var(--gn-font-mono);
+}
+
+.driver-manager-shell.is-embedded .driver-manager-toolbar {
+    gap: 8px;
+    padding: 2px 2px 10px;
+    border-bottom: 1px solid var(--ant-color-border-secondary, rgba(5, 5, 5, 0.08));
+}
+
+.driver-manager-shell.is-embedded .driver-manager-search {
+    min-width: 220px;
+    flex-basis: 280px;
+}
+
+.driver-manager-shell.is-embedded .driver-manager-toolbar-actions {
+    gap: 6px !important;
+}
+
+.driver-manager-shell.is-embedded .driver-manager-batch-progress-panel {
+    padding: 10px 2px;
+    border-radius: 0;
+    background: transparent;
+}
+
+.driver-manager-shell.is-embedded .driver-manager-list-head {
+    min-height: 20px;
+    padding-inline: 2px;
+    font-size: var(--gn-settings-font-secondary, var(--gn-font-size-sm, 12px));
+}
+
+.driver-manager-shell.is-embedded .driver-manager-list {
+    gap: 0;
+    border-top: 1px solid var(--ant-color-border-secondary, rgba(5, 5, 5, 0.08));
+}
+
+.driver-manager-shell.is-embedded .driver-manager-card,
+.driver-manager-shell.is-embedded .driver-manager-card-warning,
+.driver-manager-shell.is-embedded .driver-manager-card-ready {
+    border-radius: 0;
+    background: transparent !important;
+    overflow: visible;
+}
+
+.driver-manager-shell.is-embedded .driver-manager-card-main {
+    grid-template-columns: minmax(0, 1fr) minmax(270px, 42%);
+    gap: 12px 16px;
+    padding: 12px 2px;
+}
+
+.driver-manager-shell.is-embedded .driver-manager-card-info {
+    gap: 6px;
+}
+
+.driver-manager-shell.is-embedded .driver-manager-driver-name {
+    font-size: var(--gn-font-size, 14px);
+}
+
+.driver-manager-shell.is-embedded .driver-manager-title-row {
+    gap: 6px;
+}
+
+.driver-manager-shell.is-embedded .driver-manager-title-row .ant-tag {
+    margin-inline-end: 0;
+    border-radius: 3px;
+}
+
+.driver-manager-shell.is-embedded .driver-manager-title-row code {
+    font-size: var(--gn-font-size-mono, var(--gn-font-size-xs, 11px));
+}
+
+.driver-manager-shell.is-embedded .driver-manager-meta-row {
+    gap: 4px 12px;
+    font-size: var(--gn-settings-font-secondary, var(--gn-font-size-sm, 12px));
+    font-variant-numeric: tabular-nums;
+}
+
+.driver-manager-shell.is-embedded .driver-manager-update-note {
+    gap: 2px;
+    padding: 4px 8px;
+    border-radius: 0;
+    background: transparent;
+}
+
+.driver-manager-shell.is-embedded .driver-manager-muted-message {
+    font-size: var(--gn-settings-font-secondary, var(--gn-font-size-sm, 12px));
+}
+
+.driver-manager-shell.is-embedded .driver-manager-control-label,
+.driver-manager-shell.is-embedded .driver-manager-small-text {
+    font-size: var(--gn-settings-font-secondary, var(--gn-font-size-sm, 12px));
+}
+
+.driver-manager-shell.is-embedded .driver-manager-card-controls {
+    display: grid;
+    grid-template-columns: minmax(150px, 1fr) minmax(110px, 0.7fr);
+    align-content: start;
+    gap: 7px 12px;
+}
+
+.driver-manager-shell.is-embedded .driver-manager-control-block {
+    gap: 3px;
+}
+
+.driver-manager-shell.is-embedded .driver-manager-card-actions {
+    grid-column: 1 / -1;
+    gap: 6px !important;
+}
+
+.driver-manager-shell.is-embedded .driver-manager-card-actions .ant-btn {
+    min-width: 0;
+}
+
+.driver-manager-embedded-layout > .driver-manager-footer-actions {
+    flex: 0 0 auto;
+    padding-top: 10px;
+    border-top: 1px solid var(--ant-color-border-secondary, rgba(5, 5, 5, 0.08));
+}
+
 @media (max-width: 900px) {
     .driver-manager-header,
     .driver-manager-card-main {
@@ -653,6 +868,26 @@ body[data-theme='light'] .redis-viewer-workbench .ant-radio-button-wrapper-check
     .driver-manager-batch-progress-header,
     .driver-manager-batch-progress-meta {
         justify-content: flex-start;
+    }
+
+    .driver-manager-shell.is-embedded .driver-manager-header,
+    .driver-manager-shell.is-embedded .driver-manager-card-main {
+        grid-template-columns: 1fr;
+    }
+
+    .driver-manager-shell.is-embedded .driver-manager-stats,
+    .driver-manager-shell.is-embedded .driver-manager-card-actions {
+        justify-content: flex-start;
+    }
+}
+
+@media (max-width: 680px) {
+    .driver-manager-shell.is-embedded .driver-manager-card-controls {
+        grid-template-columns: 1fr;
+    }
+
+    .driver-manager-shell.is-embedded .driver-manager-card-actions {
+        grid-column: 1;
     }
 }
 
@@ -766,13 +1001,397 @@ body[data-ui-version="legacy"] .ant-layout-sider {
   max-width: min(960px, calc(100vw - 360px)) !important;
 }
 
-body .gonavi-about-update-channel.ant-segmented.ant-segmented {
-  height: 42px !important;
-  padding: 4px !important;
-  border: 1px solid rgba(15, 23, 42, 0.10) !important;
-  border-radius: 12px !important;
+.gonavi-about-project-entry {
+  transition: background-color 160ms ease, color 160ms ease;
+}
+
+.gonavi-about-project-entry:hover:not(:disabled) {
   background: rgba(15, 23, 42, 0.035) !important;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72) !important;
+}
+
+.gonavi-about-project-entry:focus-visible {
+  outline: 2px solid rgba(22, 163, 74, 0.55);
+  outline-offset: -2px;
+}
+
+body[data-theme='dark'] .gonavi-about-project-entry:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.045) !important;
+}
+
+.gonavi-ai-settings-nav-item,
+.gonavi-ai-provider-row,
+.gonavi-ai-provider-add {
+  transition: background-color 160ms ease, color 160ms ease;
+}
+
+.gonavi-ai-settings-nav-item:hover:not(.is-active),
+.gonavi-ai-provider-row:hover:not(.is-active),
+.gonavi-ai-provider-add:hover {
+  background: rgba(15, 23, 42, 0.035) !important;
+}
+
+.gonavi-ai-settings-nav-item:focus-visible,
+.gonavi-ai-provider-select:focus-visible,
+.gonavi-ai-provider-add:focus-visible {
+  outline: 2px solid rgba(22, 163, 74, 0.55);
+  outline-offset: -2px;
+}
+
+body[data-theme='dark'] .gonavi-ai-settings-nav-item:hover:not(.is-active),
+body[data-theme='dark'] .gonavi-ai-provider-row:hover:not(.is-active),
+body[data-theme='dark'] .gonavi-ai-provider-add:hover {
+  background: rgba(255, 255, 255, 0.045) !important;
+}
+
+/* Settings center is a flat control surface: UI copy stays sans-serif and
+   machine-readable values opt into the mono stack through code/pre or local classes. */
+.gonavi-settings-center-modal,
+.gonavi-settings-center-modal .ant-modal-content,
+.gonavi-settings-center-modal button,
+.gonavi-settings-center-modal input,
+.gonavi-settings-center-modal textarea,
+.gonavi-settings-center-modal select {
+  font-family: var(--gn-font-sans);
+}
+
+.gonavi-settings-center-modal {
+  --gn-font-size: calc(var(--gonavi-font-size, 14px) * var(--gn-ui-scale, 1));
+  --gn-font-size-sm: calc(var(--gonavi-font-size, 14px) * var(--gn-ui-scale, 1) * 0.86);
+  --gn-font-size-xs: calc(var(--gonavi-font-size, 14px) * var(--gn-ui-scale, 1) * 0.76);
+  --gn-font-size-mono: calc(var(--gonavi-font-size, 14px) * var(--gn-ui-scale, 1) * 0.92);
+  --gn-settings-font-body: var(--gn-font-size);
+  --gn-settings-font-secondary: var(--gn-font-size-sm);
+  --gn-settings-font-caption: var(--gn-settings-font-secondary);
+  font-size: var(--gn-settings-font-body);
+}
+
+.gonavi-settings-center-modal code,
+.gonavi-settings-center-modal pre,
+.gonavi-settings-center-modal kbd,
+.gonavi-settings-center-modal samp {
+  font-family: var(--gn-font-mono);
+  font-size: var(--gn-font-size-mono);
+}
+
+.gonavi-settings-center-modal button:focus-visible,
+.gonavi-settings-center-modal [role='button']:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--gn-accent, #16a34a) 68%, transparent);
+  outline-offset: 2px;
+}
+
+body[data-ui-version] .gonavi-settings-center-modal .ant-btn {
+  min-height: var(--gn-control-height, 32px);
+  height: var(--gn-control-height, 32px) !important;
+  padding-inline: 12px !important;
+  border-radius: 6px !important;
+  box-shadow: none !important;
+  font-size: var(--gn-settings-font-caption) !important;
+  font-weight: 600 !important;
+}
+
+body[data-ui-version] .gonavi-settings-center-modal .ant-btn-sm {
+  min-height: var(--gn-control-height-sm, 24px);
+  height: var(--gn-control-height-sm, 24px) !important;
+  padding-inline: 10px !important;
+  font-size: var(--gn-font-size-xs, 11px) !important;
+}
+
+/* Provider add is a compact action, not a 44px list row. */
+body[data-ui-version] .gonavi-settings-center-modal .gonavi-ai-provider-add.ant-btn {
+  min-height: var(--gn-control-height, 32px);
+  height: var(--gn-control-height, 32px) !important;
+}
+
+body[data-ui-version] .gonavi-settings-center-modal .ant-btn-icon-only {
+  width: var(--gn-control-height, 32px) !important;
+  min-width: var(--gn-control-height, 32px);
+  padding-inline: 0 !important;
+}
+
+body[data-ui-version] .gonavi-settings-center-modal .ant-btn-sm.ant-btn-icon-only {
+  width: var(--gn-control-height-sm, 24px) !important;
+  min-width: var(--gn-control-height-sm, 24px);
+}
+
+body[data-ui-version] .gonavi-settings-center-modal .gonavi-settings-center-entry.ant-btn {
+  height: auto !important;
+  min-height: 58px;
+  padding: 8px 6px !important;
+  border-inline: 0 !important;
+  border-radius: 0 !important;
+}
+
+body[data-ui-version] .gonavi-settings-center-modal .gonavi-ai-provider-add.ant-btn {
+  border-radius: 0 !important;
+}
+
+body[data-ui-version] .gonavi-settings-center-modal .ant-btn-primary {
+  box-shadow: none !important;
+}
+
+body[data-ui-version] .gonavi-settings-center-modal .ant-btn-text,
+body[data-ui-version] .gonavi-settings-center-modal .ant-btn-link {
+  padding-inline: 8px !important;
+}
+
+.gonavi-settings-center-modal .ant-input,
+.gonavi-settings-center-modal .ant-input-affix-wrapper,
+.gonavi-settings-center-modal .ant-input-number,
+.gonavi-settings-center-modal .ant-input-number-group-addon,
+.gonavi-settings-center-modal .ant-select-selector,
+.gonavi-settings-center-modal .ant-segmented,
+.gonavi-settings-center-modal .ant-picker {
+  border-radius: 6px !important;
+  box-shadow: none !important;
+}
+
+.gonavi-settings-center-modal .ant-segmented-item,
+.gonavi-settings-center-modal .ant-segmented-thumb,
+.gonavi-settings-center-modal .ant-tag,
+.gonavi-settings-center-modal .ant-alert {
+  border-radius: 4px !important;
+}
+
+.gonavi-settings-center-modal .ant-form-item-label > label {
+  font-size: var(--gn-settings-font-caption);
+  font-weight: 600;
+}
+
+.gonavi-settings-center-group-tab,
+.gonavi-settings-center-entry {
+  transition: background-color 160ms ease, color 160ms ease;
+}
+
+.gonavi-settings-center-group-tab:hover:not(.is-active),
+.gonavi-settings-center-entry:hover {
+  background: rgba(15, 23, 42, 0.035) !important;
+}
+
+.gonavi-settings-center-group-tab:focus-visible,
+.gonavi-settings-center-entry:focus-visible {
+  outline: 2px solid rgba(22, 163, 74, 0.55);
+  outline-offset: -2px;
+}
+
+body[data-theme='dark'] .gonavi-settings-center-group-tab:hover:not(.is-active),
+body[data-theme='dark'] .gonavi-settings-center-entry:hover {
+  background: rgba(255, 255, 255, 0.045) !important;
+}
+
+@media (max-width: 1120px) {
+  .gonavi-settings-center-layout {
+    grid-template-columns: 176px minmax(0, 1fr) !important;
+    gap: 12px !important;
+  }
+
+  .gonavi-ai-settings-flat {
+    grid-template-columns: 148px minmax(0, 1fr) !important;
+  }
+
+  .gonavi-ai-settings-content {
+    padding-left: 16px !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gonavi-settings-center-modal *,
+  .gonavi-settings-center-modal *::before,
+  .gonavi-settings-center-modal *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
+
+.gonavi-ai-settings-nav-description {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gonavi-language-option {
+  min-height: 46px;
+  padding: 10px 12px;
+  border: 0;
+  border-left: 3px solid transparent;
+  border-bottom: 1px solid rgba(100, 116, 139, 0.16);
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease;
+}
+
+.gonavi-language-option:hover {
+  background: rgba(15, 23, 42, 0.035);
+}
+
+.gonavi-language-option.is-selected {
+  border-left-color: #16a34a;
+  background: rgba(34, 197, 94, 0.08);
+  color: #15803d;
+}
+
+.gonavi-language-option-check {
+  width: 7px;
+  height: 12px;
+  margin: -3px 3px 0 0;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(45deg);
+  flex: 0 0 auto;
+}
+
+.gonavi-language-option:focus-visible {
+  outline: 2px solid rgba(22, 163, 74, 0.55);
+  outline-offset: -2px;
+}
+
+body[data-theme='dark'] .gonavi-language-option:hover {
+  background: rgba(255, 255, 255, 0.045);
+}
+
+body[data-theme='dark'] .gonavi-language-option.is-selected {
+  background: rgba(34, 197, 94, 0.12);
+  color: #86efac;
+}
+
+.gonavi-ai-mcp-tabs {
+  display: flex;
+  align-items: stretch;
+  gap: 22px;
+  min-height: 44px;
+}
+
+.gonavi-ai-mcp-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: -1px;
+  padding: 0 2px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: color 160ms ease, border-color 160ms ease;
+}
+
+.gonavi-ai-mcp-route-arrow {
+  color: rgba(100, 116, 139, 0.7);
+  font-size: 12px;
+  font-weight: 500;
+  transform: translateY(-0.5px);
+}
+
+.gonavi-ai-mcp-tab.is-active .gonavi-ai-mcp-route-arrow {
+  color: currentColor;
+}
+
+.gonavi-ai-mcp-tab:hover:not(.is-active) {
+  color: rgba(15, 23, 42, 0.88) !important;
+}
+
+body[data-theme='dark'] .gonavi-ai-mcp-tab:hover:not(.is-active) {
+  color: rgba(248, 250, 252, 0.9) !important;
+}
+
+.gonavi-ai-mcp-tab:focus-visible,
+.gonavi-ai-mcp-disclosure > summary:focus-visible {
+  outline: 2px solid rgba(22, 163, 74, 0.55);
+  outline-offset: 2px;
+}
+
+.gonavi-ai-mcp-disclosure > summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 42px;
+  padding-right: 2px;
+  list-style: none;
+  cursor: pointer;
+  user-select: none;
+}
+
+.gonavi-ai-mcp-disclosure > summary::-webkit-details-marker {
+  display: none;
+}
+
+.gonavi-ai-mcp-disclosure > summary::after {
+  content: '›';
+  margin-left: auto;
+  color: rgba(100, 116, 139, 0.78);
+  font-size: 18px;
+  line-height: 1;
+  transform: rotate(0deg);
+  transition: transform 160ms ease;
+}
+
+.gonavi-ai-mcp-disclosure[open] > summary::after {
+  transform: rotate(90deg);
+}
+
+.gonavi-ai-mcp-disclosure > summary:hover {
+  background: rgba(15, 23, 42, 0.025);
+}
+
+body[data-theme='dark'] .gonavi-ai-mcp-disclosure > summary:hover {
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.gonavi-ai-mcp-summary-note,
+.gonavi-ai-mcp-line-clamp,
+.gonavi-ai-mcp-client-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gonavi-ai-mcp-summary-note {
+  flex: 1;
+  font-size: var(--gn-font-size-sm, 12px);
+}
+
+.gonavi-ai-mcp-server-row > summary {
+  min-height: 50px;
+  padding-left: 13px;
+}
+
+.gonavi-ai-mcp-server-summary-name {
+  min-width: 120px;
+  max-width: 36%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 760px) {
+  .gonavi-ai-mcp-summary-note {
+    display: none;
+  }
+
+  .gonavi-ai-mcp-tabs {
+    gap: 16px;
+  }
+}
+
+body .gonavi-about-update-channel.ant-segmented.ant-segmented {
+  height: var(--gn-control-height, 32px) !important;
+  padding: 2px !important;
+  border: 1px solid rgba(15, 23, 42, 0.10) !important;
+  border-radius: 6px !important;
+  background: rgba(15, 23, 42, 0.035) !important;
+  box-shadow: none !important;
 }
 
 body .gonavi-about-update-channel .ant-segmented-group {
@@ -780,22 +1399,22 @@ body .gonavi-about-update-channel .ant-segmented-group {
 }
 
 body .gonavi-about-update-channel .ant-segmented-item {
-  border-radius: 9px !important;
+  border-radius: 4px !important;
 }
 
 body .gonavi-about-update-channel .ant-segmented-item-label {
-  min-height: 32px !important;
-  padding: 0 14px !important;
+  min-height: calc(var(--gn-control-height, 32px) - 4px) !important;
+  padding: 0 10px !important;
   color: rgba(15, 23, 42, 0.62) !important;
-  font-size: 14px !important;
-  font-weight: 700 !important;
-  line-height: 32px !important;
+  font-size: var(--gn-font-size-sm, 12px) !important;
+  font-weight: 600 !important;
+  line-height: calc(var(--gn-control-height, 32px) - 4px) !important;
 }
 
 body .gonavi-about-update-channel .ant-segmented-item-selected,
 body .gonavi-about-update-channel .ant-segmented-thumb {
   background: rgba(255, 255, 255, 0.98) !important;
-  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.12) !important;
+  box-shadow: none !important;
 }
 
 body .gonavi-about-update-channel .ant-segmented-item-selected .ant-segmented-item-label {
@@ -809,7 +1428,7 @@ body .gonavi-about-update-channel.ant-segmented-disabled {
 body[data-theme='dark'] .gonavi-about-update-channel.ant-segmented.ant-segmented {
   border-color: rgba(148, 163, 184, 0.22) !important;
   background: rgba(15, 23, 42, 0.55) !important;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08) !important;
+  box-shadow: none !important;
 }
 
 body[data-theme='dark'] .gonavi-about-update-channel .ant-segmented-item-label {
@@ -819,7 +1438,7 @@ body[data-theme='dark'] .gonavi-about-update-channel .ant-segmented-item-label {
 body[data-theme='dark'] .gonavi-about-update-channel .ant-segmented-item-selected,
 body[data-theme='dark'] .gonavi-about-update-channel .ant-segmented-thumb {
   background: rgba(30, 41, 59, 0.98) !important;
-  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.26) !important;
+  box-shadow: none !important;
 }
 
 body[data-theme='dark'] .gonavi-about-update-channel .ant-segmented-item-selected .ant-segmented-item-label {
@@ -882,7 +1501,7 @@ body .gonavi-theme-settings .gonavi-settings-section-title {
   gap: 8px;
   margin: 0 0 10px;
   color: var(--gn-settings-fg);
-  font-size: 13px;
+  font-size: var(--gn-settings-font-body, var(--gn-font-size, 14px));
   font-weight: 700;
   letter-spacing: 0.01em;
 }
@@ -890,7 +1509,7 @@ body .gonavi-theme-settings .gonavi-settings-section-title {
 body .gonavi-theme-settings .gonavi-settings-section-hint {
   margin: -2px 0 10px;
   color: var(--gn-settings-muted);
-  font-size: 12px;
+  font-size: var(--gn-settings-font-secondary, var(--gn-font-size-sm, 12px));
   line-height: 1.5;
 }
 
@@ -915,7 +1534,7 @@ body .gonavi-theme-settings .gonavi-settings-row + .gonavi-settings-row {
 
 body .gonavi-theme-settings .gonavi-settings-label {
   color: var(--gn-settings-fg);
-  font-size: 13px;
+  font-size: var(--gn-settings-font-body, var(--gn-font-size, 14px));
   font-weight: 600;
   line-height: 1.35;
 }
@@ -923,7 +1542,7 @@ body .gonavi-theme-settings .gonavi-settings-label {
 body .gonavi-theme-settings .gonavi-settings-label-hint {
   margin-top: 3px;
   color: var(--gn-settings-muted);
-  font-size: 12px;
+  font-size: var(--gn-settings-font-secondary, var(--gn-font-size-sm, 12px));
   font-weight: 400;
   line-height: 1.45;
 }
@@ -996,7 +1615,7 @@ body .gonavi-theme-settings .gonavi-settings-slider-preset {
   border: none;
   background: transparent;
   color: var(--gn-settings-muted);
-  font-size: 11px;
+  font-size: var(--gn-font-size-sm, 12px);
   font-weight: 500;
   font-variant-numeric: tabular-nums;
   line-height: 18px;
@@ -1047,7 +1666,7 @@ body .gonavi-theme-settings .gonavi-settings-slider-value-input .ant-input-numbe
   height: 28px !important;
   padding: 0 2px 0 6px !important;
   color: var(--gn-settings-fg) !important;
-  font-size: 12px !important;
+  font-size: var(--gn-settings-font-secondary, var(--gn-font-size-sm, 12px)) !important;
   font-weight: 700 !important;
   font-variant-numeric: tabular-nums;
   text-align: center !important;
@@ -1062,7 +1681,7 @@ body .gonavi-theme-settings .gonavi-settings-slider-value-input .ant-input-numbe
   border-radius: 0 999px 999px 0 !important;
   background: color-mix(in srgb, var(--gn-settings-accent) 8%, transparent) !important;
   color: var(--gn-settings-muted) !important;
-  font-size: 11px !important;
+  font-size: var(--gn-font-size-sm, 12px) !important;
   font-weight: 700 !important;
   line-height: 26px !important;
 }
@@ -1209,7 +1828,7 @@ body .gonavi-theme-settings .gonavi-settings-segmented-choice .ant-segmented-ite
   justify-content: center !important;
   min-height: 30px !important;
   padding: 0 12px !important;
-  font-size: 12.5px !important;
+  font-size: var(--gn-settings-font-secondary, var(--gn-font-size-sm, 12px)) !important;
   font-weight: 600 !important;
   line-height: 30px !important;
 }
@@ -1246,43 +1865,49 @@ body[data-theme='dark'] .gonavi-theme-settings .gonavi-settings-segmented-choice
   color: #86efac !important;
 }
 
-/* 界面版本预览卡（紧凑双列） */
+/* 界面版本预览：预览画布保留边界，选择项本身保持平面。 */
 body .gonavi-theme-settings .gonavi-settings-ui-version-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
+  column-gap: 12px;
+  row-gap: 0;
+  border-top: 1px solid var(--gn-settings-line);
 }
 
 body .gonavi-theme-settings .gonavi-settings-ui-version-tile {
   display: flex;
-  flex-direction: column;
-  gap: 8px;
+  align-items: center;
+  gap: 10px;
   margin: 0;
-  padding: 10px;
-  border: 1px solid var(--gn-settings-line);
-  border-radius: 12px;
-  background: var(--gn-settings-card-bg);
+  padding: 9px 8px;
+  border: 0;
+  border-left: 3px solid transparent;
+  border-bottom: 1px solid var(--gn-settings-line);
+  border-radius: 0;
+  background: transparent;
   color: var(--gn-settings-fg);
   text-align: left;
   cursor: pointer;
-  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+  transition: border-color 0.12s ease, background-color 0.12s ease;
 }
 
 body .gonavi-theme-settings .gonavi-settings-ui-version-tile:hover {
-  border-color: #cbd5e1;
+  background: color-mix(in srgb, var(--gn-settings-fg) 4%, transparent);
 }
 
 body .gonavi-theme-settings .gonavi-settings-ui-version-tile.is-active {
-  border-color: var(--gn-settings-accent);
-  box-shadow: 0 0 0 1px var(--gn-settings-accent-border);
-  background: var(--gn-settings-card-bg);
+  border-left-color: var(--gn-settings-accent);
+  box-shadow: none;
+  background: var(--gn-settings-accent-soft);
 }
 
 body .gonavi-theme-settings .gonavi-settings-ui-version-preview {
   position: relative;
-  height: 58px;
+  flex: 0 0 94px;
+  width: 94px;
+  height: 52px;
   overflow: hidden;
-  border-radius: 8px;
+  border-radius: 4px;
   border: 1px solid var(--gn-settings-line);
   background: #f1f5f9;
 }
@@ -1386,6 +2011,8 @@ body .gonavi-theme-settings .gonavi-settings-ui-version-preview.is-legacy .uv-ca
 
 body .gonavi-theme-settings .gonavi-settings-ui-version-meta {
   display: flex;
+  flex: 1;
+  min-width: 0;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
@@ -1396,7 +2023,7 @@ body .gonavi-theme-settings .gonavi-settings-ui-version-title {
   align-items: center;
   gap: 6px;
   min-width: 0;
-  font-size: 13px;
+  font-size: var(--gn-settings-font-body, var(--gn-font-size, 14px));
   font-weight: 700;
   line-height: 1.3;
 }
@@ -1407,7 +2034,7 @@ body .gonavi-theme-settings .gonavi-settings-ui-version-badge {
   border-radius: 999px;
   background: rgba(15, 23, 42, 0.06);
   color: var(--gn-settings-muted);
-  font-size: 10px;
+  font-size: var(--gn-font-size-sm, 12px);
   font-weight: 700;
 }
 
@@ -1446,7 +2073,7 @@ body .gonavi-theme-settings .gonavi-settings-tab {
   background: transparent;
   color: var(--gn-settings-muted);
   font: inherit;
-  font-size: 13px;
+  font-size: var(--gn-settings-font-body, var(--gn-font-size, 14px));
   font-weight: 600;
   line-height: 1.2;
   cursor: pointer;
@@ -1492,7 +2119,7 @@ body .gonavi-theme-settings .gonavi-settings-pill {
   background: var(--gn-settings-card-bg);
   color: var(--gn-settings-muted);
   font: inherit;
-  font-size: 12.5px;
+  font-size: var(--gn-settings-font-secondary, var(--gn-font-size-sm, 12px));
   font-weight: 600;
   line-height: 1.2;
   cursor: pointer;
@@ -1519,7 +2146,7 @@ body[data-theme='dark'] .gonavi-theme-settings .gonavi-settings-pill.is-active {
 body .gonavi-theme-settings .gonavi-settings-inline-meta {
   margin-top: 8px;
   color: var(--gn-settings-muted);
-  font-size: 12px;
+  font-size: var(--gn-settings-font-secondary, var(--gn-font-size-sm, 12px));
   line-height: 1.5;
 }
 
@@ -1531,7 +2158,7 @@ body .gonavi-theme-settings .gonavi-settings-beta-chip {
   border-radius: 999px;
   background: color-mix(in srgb, var(--gn-settings-accent) 12%, transparent);
   color: var(--gn-settings-accent);
-  font-size: 10px;
+  font-size: var(--gn-font-size-sm, 12px);
   font-weight: 700;
   line-height: 18px;
 }
@@ -1542,7 +2169,7 @@ body .gonavi-theme-settings .gonavi-settings-alert {
   border: none;
   background: transparent;
   color: var(--gn-settings-muted);
-  font-size: 11.5px;
+  font-size: var(--gn-font-size-sm, 12px);
   line-height: 1.45;
 }
 
@@ -1552,42 +2179,48 @@ body[data-theme='dark'] .gonavi-theme-settings .gonavi-settings-alert {
   color: var(--gn-settings-muted);
 }
 
-/* Compact theme-mode previews */
+/* 主题模式：紧凑平面 radio 行。 */
 body .gonavi-theme-settings .gonavi-settings-mode-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
+  column-gap: 12px;
+  row-gap: 0;
+  border-top: 1px solid var(--gn-settings-line);
 }
 
 body .gonavi-theme-settings .gonavi-settings-mode-tile {
   display: flex;
-  flex-direction: column;
-  gap: 8px;
+  align-items: center;
+  gap: 10px;
   margin: 0;
-  padding: 10px;
-  border: 1px solid var(--gn-settings-line);
-  border-radius: 12px;
-  background: var(--gn-settings-card-bg);
+  padding: 8px;
+  border: 0;
+  border-left: 3px solid transparent;
+  border-bottom: 1px solid var(--gn-settings-line);
+  border-radius: 0;
+  background: transparent;
   color: var(--gn-settings-fg);
   text-align: left;
   cursor: pointer;
-  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+  transition: border-color 0.12s ease, background-color 0.12s ease;
 }
 
 body .gonavi-theme-settings .gonavi-settings-mode-tile:hover {
-  border-color: #cbd5e1;
+  background: color-mix(in srgb, var(--gn-settings-fg) 4%, transparent);
 }
 
 body .gonavi-theme-settings .gonavi-settings-mode-tile.is-active {
-  border-color: var(--gn-settings-accent);
-  box-shadow: 0 0 0 1px var(--gn-settings-accent-border);
-  background: var(--gn-settings-card-bg);
+  border-left-color: var(--gn-settings-accent);
+  box-shadow: none;
+  background: var(--gn-settings-accent-soft);
 }
 
 body .gonavi-theme-settings .gonavi-settings-mode-preview {
-  height: 44px;
+  flex: 0 0 64px;
+  width: 64px;
+  height: 36px;
   overflow: hidden;
-  border-radius: 8px;
+  border-radius: 4px;
   border: 1px solid var(--gn-settings-line);
   display: grid;
 }
@@ -1644,6 +2277,8 @@ body .gonavi-theme-settings .gonavi-settings-mode-preview-pane.is-dark .gonavi-s
 
 body .gonavi-theme-settings .gonavi-settings-mode-meta {
   display: flex;
+  flex: 1;
+  min-width: 0;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
@@ -1651,14 +2286,14 @@ body .gonavi-theme-settings .gonavi-settings-mode-meta {
 }
 
 body .gonavi-theme-settings .gonavi-settings-mode-label {
-  font-size: 13px;
+  font-size: var(--gn-settings-font-body, var(--gn-font-size, 14px));
   font-weight: 700;
   line-height: 1.3;
 }
 
 body .gonavi-theme-settings .gonavi-settings-mode-check {
   color: var(--gn-settings-accent);
-  font-size: 12px;
+  font-size: var(--gn-settings-font-secondary, var(--gn-font-size-sm, 12px));
   flex-shrink: 0;
 }
 

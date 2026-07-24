@@ -66,6 +66,34 @@ func TestStorePutGetDeleteGlobalProxySecret(t *testing.T) {
 	}
 }
 
+func TestStorePutGetDeleteMCPHTTPServerSecret(t *testing.T) {
+	root := t.TempDir()
+	store := NewStore(root)
+
+	if err := store.PutMCPHTTPServer(MCPHTTPServerBundle{Token: "gnv_mcp_http_test"}); err != nil {
+		t.Fatalf("PutMCPHTTPServer returned error: %v", err)
+	}
+
+	got, ok, err := store.GetMCPHTTPServer()
+	if err != nil {
+		t.Fatalf("GetMCPHTTPServer returned error: %v", err)
+	}
+	if !ok || got.Token != "gnv_mcp_http_test" {
+		t.Fatalf("unexpected MCP HTTP bundle: %#v ok=%v", got, ok)
+	}
+
+	if err := store.DeleteMCPHTTPServer(); err != nil {
+		t.Fatalf("DeleteMCPHTTPServer returned error: %v", err)
+	}
+	_, ok, err = store.GetMCPHTTPServer()
+	if err != nil {
+		t.Fatalf("GetMCPHTTPServer after delete returned error: %v", err)
+	}
+	if ok {
+		t.Fatal("expected MCP HTTP bundle to be deleted")
+	}
+}
+
 func TestStorePutGetDeleteAIProviderSecret(t *testing.T) {
 	root := t.TempDir()
 	store := NewStore(root)

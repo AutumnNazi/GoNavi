@@ -26,14 +26,15 @@ type Backend interface {
 	DBGetForeignKeys(config connection.ConnectionConfig, dbName string, tableName string) connection.QueryResult
 	DBGetTriggers(config connection.ConnectionConfig, dbName string, tableName string) connection.QueryResult
 	DBShowCreateTable(config connection.ConnectionConfig, dbName string, tableName string) connection.QueryResult
-	DBQueryMulti(config connection.ConnectionConfig, dbName string, query string, queryID string) connection.QueryResult
+	ExecuteSQLFromMCP(config connection.ConnectionConfig, dbName string, query string) connection.QueryResult
 	InspectSQL(dbType string, sql string) appcore.SQLInspection
 	GetSQLSafetyLevel() ai.SQLPermissionLevel
 }
 
 // AppBackend 基于现有 internal/app.App 暴露 MCP 所需数据库能力。
 type AppBackend struct {
-	app *appcore.App
+	app              *appcore.App
+	mcpQueryExecutor *appcore.MCPQueryExecutor
 }
 
 func NewAppBackend(ctx context.Context) *AppBackend {
@@ -42,7 +43,7 @@ func NewAppBackend(ctx context.Context) *AppBackend {
 	}
 	a := appcore.NewApp()
 	appcore.InitializeLifecycle(a, ctx)
-	return &AppBackend{app: a}
+	return &AppBackend{app: a, mcpQueryExecutor: appcore.NewMCPQueryExecutor(a)}
 }
 
 func (b *AppBackend) Close(ctx context.Context) error {
@@ -101,8 +102,8 @@ func (b *AppBackend) DBShowCreateTable(config connection.ConnectionConfig, dbNam
 	return b.app.DBShowCreateTable(config, dbName, tableName)
 }
 
-func (b *AppBackend) DBQueryMulti(config connection.ConnectionConfig, dbName string, query string, queryID string) connection.QueryResult {
-	return b.app.DBQueryMulti(config, dbName, query, queryID)
+func (b *AppBackend) ExecuteSQLFromMCP(config connection.ConnectionConfig, dbName string, query string) connection.QueryResult {
+	return b.mcpQueryExecutor.DBQueryMulti(config, dbName, query)
 }
 
 func (b *AppBackend) InspectSQL(dbType string, sql string) appcore.SQLInspection {

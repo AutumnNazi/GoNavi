@@ -80,6 +80,7 @@ func TestInstallUpdateAndRestartAllowsGuardedCloseBeforeFallbackExit(t *testing.
 	originalQuit := quitApplicationRuntime
 	originalResolveInstallTarget := updateResolveInstallTarget
 	originalLaunchInstallScript := updateLaunchInstallScript
+	originalAcquireMaintenance := updateAcquireWindowsMaintenance
 	originalSleep := updateQuitSleep
 	originalExit := updateExitProcess
 	t.Cleanup(func() {
@@ -87,6 +88,7 @@ func TestInstallUpdateAndRestartAllowsGuardedCloseBeforeFallbackExit(t *testing.
 		quitApplicationRuntime = originalQuit
 		updateResolveInstallTarget = originalResolveInstallTarget
 		updateLaunchInstallScript = originalLaunchInstallScript
+		updateAcquireWindowsMaintenance = originalAcquireMaintenance
 		updateQuitSleep = originalSleep
 		updateExitProcess = originalExit
 	})
@@ -95,8 +97,11 @@ func TestInstallUpdateAndRestartAllowsGuardedCloseBeforeFallbackExit(t *testing.
 	app.ctx = context.Background()
 	stagedDir := t.TempDir()
 	app.updateState.staged = &stagedUpdate{
-		FilePath:  stagedDir + "/GoNavi-update.exe",
-		StagedDir: stagedDir,
+		FilePath:     stagedDir + "/GoNavi-update.exe",
+		StagedDir:    stagedDir,
+		InstallMode:  updateInstallModePortable,
+		PackageType:  updatePackageTypePortable,
+		AutoRelaunch: true,
 	}
 
 	events := make(chan string, 3)
@@ -118,6 +123,9 @@ func TestInstallUpdateAndRestartAllowsGuardedCloseBeforeFallbackExit(t *testing.
 		events <- "installer"
 		return nil
 	}
+	updateAcquireWindowsMaintenance = func(string) (windowsUpdateMaintenanceLease, error) {
+		return windowsUpdateMaintenanceLease{Name: `Global\GoNavi-Update-Test`}, nil
+	}
 	updateQuitSleep = func(duration time.Duration) {
 		sleepDurations <- duration
 	}
@@ -126,7 +134,7 @@ func TestInstallUpdateAndRestartAllowsGuardedCloseBeforeFallbackExit(t *testing.
 		exitCodes <- code
 	}
 
-	result := app.InstallUpdateAndRestart()
+	result := app.InstallUpdateAndRestart(true)
 	if !result.Success {
 		t.Fatalf("expected update installation to start, got %#v", result)
 	}

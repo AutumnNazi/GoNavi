@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { ApiOutlined, CaretDownOutlined, CaretRightOutlined, CheckOutlined } from '@ant-design/icons';
 
 import { t as catalogTranslate } from '../../../i18n/catalog';
@@ -6,6 +6,7 @@ import type { I18nParams } from '../../../i18n/types';
 import { useOptionalI18n } from '../../../i18n/provider';
 import type { AIChatMessage, AIToolCall } from '../../../types';
 import type { OverlayWorkbenchTheme } from '../../../utils/overlayWorkbenchTheme';
+import type { AIToolResultIndex } from '../aiToolResultIndex';
 
 interface AIThinkingBlockProps {
   displayThinking: string;
@@ -19,7 +20,7 @@ interface AIThinkingBlockProps {
 interface AIToolCallingBlockProps {
   toolCalls: AIToolCall[];
   loading: boolean;
-  allMessages: AIChatMessage[];
+  toolResultsById: AIToolResultIndex;
   darkMode: boolean;
   overlayTheme: OverlayWorkbenchTheme;
   hasContent: boolean;
@@ -199,19 +200,12 @@ export const AIThinkingBlock: React.FC<AIThinkingBlockProps> = ({
 export const AIToolCallingBlock: React.FC<AIToolCallingBlockProps> = ({
   toolCalls,
   loading,
-  allMessages,
+  toolResultsById,
   darkMode,
   overlayTheme,
   hasContent,
 }) => {
   const copy = useMessageCopy();
-  const toolResultsById = useMemo(() => {
-    return new Map(
-      allMessages
-        .filter((message) => message.role === 'tool' && message.tool_call_id)
-        .map((message) => [message.tool_call_id as string, message]),
-    );
-  }, [allMessages]);
   const allDone = toolCalls.every((toolCall) => toolResultsById.has(toolCall.id));
   const [expanded, setExpanded] = useState(!allDone && loading);
 

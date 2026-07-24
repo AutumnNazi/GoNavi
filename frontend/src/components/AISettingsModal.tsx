@@ -7,8 +7,13 @@ import {
     resolvePresetBaseURL,
     resolvePresetModelSelection,
     resolvePresetTransport,
+    type ProviderPresetCandidate,
 } from '../utils/aiProviderPresets';
-import { resolveProviderSecretDraft } from '../utils/providerSecretDraft';
+import {
+    canRetainExistingProviderSecret,
+    isProviderSecretRequirementSatisfied,
+    resolveProviderSecretDraft,
+} from '../utils/providerSecretDraft';
 import { buildAddProviderEditorSession, buildClosedProviderEditorSession, buildEditProviderEditorSession, type ProviderEditorSession } from '../utils/aiProviderEditorState';
 import type { OverlayWorkbenchTheme } from '../utils/overlayWorkbenchTheme';
 import { useI18n } from '../i18n/provider';
@@ -17,7 +22,7 @@ import { EMPTY_MCP_CLIENT_STATUSES } from '../utils/mcpClientInstallStatus';
 import AIBuiltinToolsCatalog from './ai/AIBuiltinToolsCatalog';
 import AISettingsMCPSection from './ai/AISettingsMCPSection';
 import type { AIMCPHTTPServerDraft } from './ai/AIMCPHTTPServerPanel';
-import AISettingsSidebar, { type AISettingsSectionKey } from './ai/AISettingsSidebar';
+import AISettingsSidebar, { AI_SETTINGS_NAV_ITEMS, type AISettingsSectionKey } from './ai/AISettingsSidebar';
 import AISettingsSafetySection from './ai/AISettingsSafetySection';
 import AISettingsContextSection from './ai/AISettingsContextSection';
 import AISettingsProvidersSection from './ai/AISettingsProvidersSection';
@@ -54,6 +59,7 @@ export interface AISettingsContentProps {
 }
 
 const DEFAULT_MCP_HTTP_SERVER_STATUS: AIMCPHTTPServerStatus = {
+    enabled: false,
     running: false,
     addr: '127.0.0.1:8765',
     path: '/mcp',
@@ -121,6 +127,7 @@ export const AISettingsContent: React.FC<AISettingsContentProps> = ({ active, da
     const [primaryPasswordVisible, setPrimaryPasswordVisible] = useState(false);
     const [form] = Form.useForm();
     const modalBodyRef = useRef<HTMLDivElement>(null);
+    const settingsContentScrollRef = useRef<HTMLDivElement>(null);
     const missingAIServiceWarnedRef = useRef(false);
     const aiChatOpenMode = useStore((state) => state.aiChatOpenMode);
     const setAIChatOpenMode = useStore((state) => state.setAIChatOpenMode);
@@ -146,7 +153,7 @@ export const AISettingsContent: React.FC<AISettingsContentProps> = ({ active, da
         [t],
     );
     const matchLocalizedProviderPreset = useCallback(
-        (provider: Pick<AIProviderConfig, 'type' | 'baseUrl' | 'apiFormat'>) =>
+        (provider: ProviderPresetCandidate) =>
             localizeProviderPreset(matchProviderPreset(provider), t),
         [t],
     );
@@ -271,6 +278,13 @@ export const AISettingsContent: React.FC<AISettingsContentProps> = ({ active, da
     useEffect(() => { if (active) void loadConfig(); }, [active, loadConfig]);
 
     useEffect(() => {
+        const scrollRegion = settingsContentScrollRef.current;
+        if (!scrollRegion) return;
+        scrollRegion.scrollTop = 0;
+        scrollRegion.scrollLeft = 0;
+    }, [activeSection]);
+
+    useEffect(() => {
         if (active) {
             resetMCPClientSelectionTouched();
         }
@@ -316,6 +330,7 @@ export const AISettingsContent: React.FC<AISettingsContentProps> = ({ active, da
             presetModel: preset.defaultModel,
             presetModels: preset.models,
             apiFormat: 'openai',
+            authMode: preset.authMode || 'api-key',
         }));
     };
 
@@ -328,6 +343,7 @@ export const AISettingsContent: React.FC<AISettingsContentProps> = ({ active, da
             // 尝试根据 baseUrl 和 type 推断 preset
             const matchedPreset = matchProviderPreset(editableProvider);
             const resolvedTransport = resolvePresetTransport({
+                presetKey: matchedPreset.key,
                 presetBackendType: matchedPreset.backendType,
                 presetFixedApiFormat: matchedPreset.fixedApiFormat,
                 valuesApiFormat: editableProvider.apiFormat,
@@ -340,6 +356,7 @@ export const AISettingsContent: React.FC<AISettingsContentProps> = ({ active, da
                     models: editableProvider.models || [],
                     presetKey: matchedPreset.key,
                     apiFormat: resolvedTransport.apiFormat || editableProvider.apiFormat || 'openai',
+                    authMode: matchedPreset.authMode || editableProvider.authMode || 'api-key',
                 },
             }));
         } catch (e: any) {
@@ -378,6 +395,8 @@ export const AISettingsContent: React.FC<AISettingsContentProps> = ({ active, da
             // 构建 payload，处理 model/models 逻辑
             const preset = findPreset(values.presetKey);
             const localizedPreset = localizeProviderPreset(preset, t);
+            const authMode = preset.authMode || 'api-key';
+            const usesLocalCLI = authMode === 'local-cli';
             const isCustomLike = ['custom', 'ollama', 'codebuddy', 'cursor'].includes(values.presetKey);
             const { model: finalModel, models: resolvedModels } = resolvePresetModelSelection({
                 presetKey: values.presetKey,
@@ -396,12 +415,26 @@ export const AISettingsContent: React.FC<AISettingsContentProps> = ({ active, da
                 valuesBaseUrl: values.baseUrl,
             });
             const resolvedTransport = resolvePresetTransport({
+                presetKey: values.presetKey,
                 presetBackendType: preset.backendType,
                 presetFixedApiFormat: preset.fixedApiFormat,
                 valuesApiFormat: values.apiFormat,
             });
+            const apiKeyInput = usesLocalCLI ? '' : values.apiKey;
+            const allowEmptySecret = values.presetKey === 'codebuddy';
+            if (!isProviderSecretRequirementSatisfied({
+                apiKeyInput,
+                currentAuthMode: authMode,
+                editingProvider,
+                allowEmptySecret,
+            })) {
+                throw new Error(t('ai_settings.form.api_key_required'));
+            }
+            const retainExistingSecret = !String(apiKeyInput || '').trim()
+                && canRetainExistingProviderSecret({ currentAuthMode: authMode, editingProvider });
             const secretDraft = resolveProviderSecretDraft({
-                apiKeyInput: values.apiKey,
+                apiKeyInput,
+                retainExistingSecret,
             });
             const payload = { 
                 ...editingProvider, 
@@ -410,6 +443,7 @@ export const AISettingsContent: React.FC<AISettingsContentProps> = ({ active, da
                 name: finalName,
                 apiKey: secretDraft.apiKey,
                 hasSecret: secretDraft.hasSecret,
+                authMode,
                 model: finalModel,
                 inlineCompletionModel,
                 models: resolvedModels,
@@ -538,9 +572,10 @@ export const AISettingsContent: React.FC<AISettingsContentProps> = ({ active, da
     };
 
     const handleToggleMCPHTTPServer = async (checked: boolean) => {
+        let Service: any;
         try {
             setMCPHTTPServerLoading(true);
-            const Service = await resolveAIService();
+            Service = await resolveAIService();
             if (!Service) {
                 throw new Error(t('ai_settings.mcp_http.error.control_unsupported_runtime'));
             }
@@ -571,6 +606,19 @@ export const AISettingsContent: React.FC<AISettingsContentProps> = ({ active, da
             }
             void messageApi.success(checked ? t('ai_settings.mcp_http.message.started') : t('ai_settings.mcp_http.message.stopped'));
         } catch (e: any) {
+            try {
+                const refreshedStatus = await Service?.AIGetMCPHTTPServerStatus?.();
+                if (refreshedStatus) {
+                    const normalizedStatus = {
+                        ...defaultMCPHTTPServerStatus,
+                        ...refreshedStatus,
+                    };
+                    setMCPHTTPServerStatus(normalizedStatus);
+                    setMCPHTTPServerDraft((prev) => buildMCPHTTPServerDraftFromStatus(normalizedStatus, prev));
+                }
+            } catch {
+                // 状态回填仅用于反映已持久化的开关意图，保留原始操作错误提示。
+            }
             void messageApi.error(e?.message || t('ai_settings.mcp_http.message.toggle_failed'));
         } finally {
             setMCPHTTPServerLoading(false);
@@ -651,6 +699,8 @@ export const AISettingsContent: React.FC<AISettingsContentProps> = ({ active, da
             setTestStatus('idle');
             const Service = (window as any).go?.aiservice?.Service;
             const preset = findPreset(values.presetKey || 'openai');
+            const authMode = preset.authMode || 'api-key';
+            const usesLocalCLI = authMode === 'local-cli';
             const finalBaseUrl = resolvePresetBaseURL({
                 presetKey: values.presetKey || 'openai',
                 presetDefaultBaseUrl: preset.defaultBaseUrl,
@@ -664,23 +714,34 @@ export const AISettingsContent: React.FC<AISettingsContentProps> = ({ active, da
                 customModels: values.models,
             });
             const resolvedTransport = resolvePresetTransport({
+                presetKey: values.presetKey || 'openai',
                 presetBackendType: preset.backendType,
                 presetFixedApiFormat: preset.fixedApiFormat,
                 valuesApiFormat: values.apiFormat,
             });
             const allowEmptySecret = values.presetKey === 'codebuddy';
-            const secretDraft = resolveProviderSecretDraft({
-                apiKeyInput: values.apiKey,
-            });
-            if (secretDraft.mode === 'clear' && !allowEmptySecret) {
+            const apiKeyInput = usesLocalCLI ? '' : values.apiKey;
+            if (!isProviderSecretRequirementSatisfied({
+                apiKeyInput,
+                currentAuthMode: authMode,
+                editingProvider,
+                allowEmptySecret,
+            })) {
                 throw new Error(t('ai_settings.message.test_requires_new_api_key'));
             }
+            const retainExistingSecret = !String(apiKeyInput || '').trim()
+                && canRetainExistingProviderSecret({ currentAuthMode: authMode, editingProvider });
+            const secretDraft = resolveProviderSecretDraft({
+                apiKeyInput,
+                retainExistingSecret,
+            });
             const res = await Service?.AITestProvider?.({
                 ...editingProvider,
                 ...values,
                 ...resolvedTransport,
                 apiKey: secretDraft.apiKey,
                 hasSecret: secretDraft.hasSecret,
+                authMode,
                 baseUrl: finalBaseUrl,
                 model: finalModel,
                 inlineCompletionModel: String(values.inlineCompletionModel || '').trim(),
@@ -697,7 +758,9 @@ export const AISettingsContent: React.FC<AISettingsContentProps> = ({ active, da
 
     const handlePresetChange = (presetKey: string) => {
         const preset = findPreset(presetKey);
+        const authMode = preset.authMode || 'api-key';
         const resolvedTransport = resolvePresetTransport({
+            presetKey,
             presetBackendType: preset.backendType,
             presetFixedApiFormat: preset.fixedApiFormat,
             valuesApiFormat: form.getFieldValue('apiFormat'),
@@ -716,11 +779,36 @@ export const AISettingsContent: React.FC<AISettingsContentProps> = ({ active, da
             model: presetModel,
             models: presetModels,
             inlineCompletionModel: '',
+            authMode,
+            ...(authMode === 'local-cli' ? { apiKey: '' } : {}),
         });
     };
 
+    const renderSectionPanel = (sectionKey: AISettingsSectionKey, content: React.ReactNode) => {
+        const sectionMeta = AI_SETTINGS_NAV_ITEMS.find((item) => item.key === sectionKey) ?? AI_SETTINGS_NAV_ITEMS[0]!;
+        return (
+            <section
+                key={sectionKey}
+                id={`gonavi-ai-settings-panel-${sectionKey}`}
+                role="tabpanel"
+                aria-labelledby={`gonavi-ai-settings-tab-${sectionKey}`}
+                hidden={activeSection !== sectionKey}
+            >
+                <div style={{ paddingBottom: 12, marginBottom: 2, borderBottom: `1px solid ${overlayTheme.divider}` }}>
+                    <div style={{ fontSize: 'var(--gn-font-size, 14px)', fontWeight: 700, color: overlayTheme.titleText }}>
+                        {t(sectionMeta.titleKey)}
+                    </div>
+                    <div style={{ marginTop: 3, fontSize: 'var(--gn-font-size-sm, 12px)', lineHeight: 1.55, color: overlayTheme.mutedText }}>
+                        {t(sectionMeta.descriptionKey)}
+                    </div>
+                </div>
+                {content}
+            </section>
+        );
+    };
+
     return (
-        <div ref={modalBodyRef} className="ai-settings-body" style={{ display: 'grid', gridTemplateColumns: '180px minmax(0, 1fr)', gap: 16, padding: '12px 0', height: '100%', minHeight: 0, overflow: 'hidden', alignItems: 'stretch', position: 'relative', boxSizing: 'border-box' }}>
+        <div ref={modalBodyRef} className="ai-settings-body gonavi-ai-settings-flat" style={{ display: 'grid', gridTemplateColumns: '168px minmax(0, 1fr)', gap: 0, padding: '10px 0', height: '100%', minHeight: 0, overflow: 'hidden', alignItems: 'stretch', position: 'relative', boxSizing: 'border-box' }}>
             {messageContextHolder}
             <AISettingsSidebar
                 activeSection={activeSection}
@@ -728,8 +816,12 @@ export const AISettingsContent: React.FC<AISettingsContentProps> = ({ active, da
                 overlayTheme={overlayTheme}
                 onSelectSection={setActiveSection}
             />
-            <div style={{ minWidth: 0, minHeight: 0, height: '100%', overflowY: 'auto', overflowX: 'hidden', overscrollBehavior: 'contain', paddingRight: 8, paddingBottom: 28 }}>
-                {activeSection === 'providers' && (
+            <div
+                ref={settingsContentScrollRef}
+                className="gonavi-ai-settings-content"
+                style={{ minWidth: 0, minHeight: 0, height: '100%', overflowY: 'auto', overflowX: 'hidden', overscrollBehavior: 'contain', padding: '0 6px 24px 22px' }}
+            >
+                {renderSectionPanel('providers', (
                     <AISettingsProvidersSection
                         providers={providers}
                         activeProviderId={activeProviderId}
@@ -759,8 +851,8 @@ export const AISettingsContent: React.FC<AISettingsContentProps> = ({ active, da
                         onTestProvider={handleTestProvider}
                         onSaveProvider={handleSaveProvider}
                     />
-                )}
-                {activeSection === 'safety' && (
+                ))}
+                {renderSectionPanel('safety', (
                     <AISettingsSafetySection
                         safetyLevel={safetyLevel}
                         darkMode={darkMode}
@@ -769,8 +861,8 @@ export const AISettingsContent: React.FC<AISettingsContentProps> = ({ active, da
                         cardBorder={cardBorder}
                         onChange={handleSafetyChange}
                     />
-                )}
-                {activeSection === 'context' && (
+                ))}
+                {renderSectionPanel('context', (
                     <AISettingsContextSection
                         contextLevel={contextLevel}
                         openMode={aiChatOpenMode}
@@ -788,8 +880,8 @@ export const AISettingsContent: React.FC<AISettingsContentProps> = ({ active, da
                             );
                         }}
                     />
-                )}
-                {activeSection === 'mcp' && (
+                ))}
+                {renderSectionPanel('mcp', (
                     <AISettingsMCPSection
                         mcpClientStatuses={mcpClientStatuses}
                         selectedMCPClient={selectedMCPClient}
@@ -822,8 +914,8 @@ export const AISettingsContent: React.FC<AISettingsContentProps> = ({ active, da
                         onSaveServer={handleSaveMCPServer}
                         onDeleteServer={handleDeleteMCPServer}
                     />
-                )}
-                {activeSection === 'skills' && (
+                ))}
+                {renderSectionPanel('skills', (
                     <AISettingsSkillsSection
                         skills={skills}
                         skillRequiredToolOptions={skillRequiredToolOptions}
@@ -837,16 +929,16 @@ export const AISettingsContent: React.FC<AISettingsContentProps> = ({ active, da
                         onSaveSkill={handleSaveSkill}
                         onDeleteSkill={handleDeleteSkill}
                     />
-                )}
-                {activeSection === 'tools' && (
+                ))}
+                {renderSectionPanel('tools', (
                     <AIBuiltinToolsCatalog
                         darkMode={darkMode}
                         overlayTheme={overlayTheme}
                         cardBg={cardBg}
                         cardBorder={cardBorder}
                     />
-                )}
-                {activeSection === 'prompts' && (
+                ))}
+                {renderSectionPanel('prompts', (
                     <AISettingsPromptsSection
                         builtinPrompts={builtinPrompts}
                         userPromptSettings={userPromptSettings}
@@ -862,7 +954,7 @@ export const AISettingsContent: React.FC<AISettingsContentProps> = ({ active, da
                         }))}
                         onSave={handleSaveUserPromptSettings}
                     />
-                )}
+                ))}
             </div>
         </div>
     );

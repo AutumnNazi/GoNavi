@@ -113,6 +113,25 @@ describe('applyQueryAutoLimit', () => {
       .toBe(false);
   });
 
+  it.each([
+    ['oracle', 'SELECT IMP_BASICINFO.SEQ_HIS_AZA7.nextval FROM dual'],
+    ['dameng', 'SELECT "APP"."ORDER_SEQ".CURRVAL FROM dual'],
+  ])('does not wrap %s sequence pseudo-column queries', (dbType, sql) => {
+    expect(applyQueryAutoLimit(sql, dbType, 500)).toEqual({
+      sql,
+      applied: false,
+      maxRows: 500,
+    });
+  });
+
+  it('does not mistake sequence pseudo-column text in Oracle strings or comments for executable SQL', () => {
+    const sql = "SELECT 'SEQ.NEXTVAL' AS sample FROM dual /* OTHER_SEQ.CURRVAL */";
+    const result = applyQueryAutoLimit(sql, 'oracle', 500);
+
+    expect(result.applied).toBe(true);
+    expect(result.sql).toContain('WHERE ROWNUM <= 500');
+  });
+
   it('does not add another SQL Server limit when SQL already uses TOP', () => {
     expect(applyQueryAutoLimit('SELECT TOP 10 * FROM users', 'sqlserver', 500).applied)
       .toBe(false);

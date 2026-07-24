@@ -8,8 +8,13 @@ import (
 	"database/sql/driver"
 	"errors"
 	"io"
+	"net"
 	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -19,7 +24,10 @@ import (
 	"GoNavi-Wails/internal/connection"
 	"GoNavi-Wails/shared/i18n"
 
+	chproto "github.com/ClickHouse/ch-go/proto"
 	clickhouse "github.com/ClickHouse/clickhouse-go/v2"
+	clickhousecolumn "github.com/ClickHouse/clickhouse-go/v2/lib/column"
+	clickhouseproto "github.com/ClickHouse/clickhouse-go/v2/lib/proto"
 )
 
 const fakeClickHouseDriverName = "gonavi-fake-clickhouse"
@@ -568,6 +576,22 @@ func TestClickHouseHTTPClientProtocolVersionUnsupportedEnablesCompatibilityRetry
 	}
 }
 
+func TestClickHouseNativeHandshakeTimeoutEnablesAutoProtocolFallback(t *testing.T) {
+	err := errors.New("handshake: failed to read packet from clickhouse.local:18123: read: i/o timeout")
+	if !isClickHouseNativeHandshakeTimeout(err) {
+		t.Fatal("expected Native handshake read timeout to be treated as an inconclusive protocol probe")
+	}
+	if !shouldTryNextClickHouseProtocol(clickhouse.Native, err) {
+		t.Fatal("expected Native handshake read timeout to permit HTTP fallback")
+	}
+	if shouldTryNextClickHouseProtocol(clickhouse.HTTP, err) {
+		t.Fatal("HTTP timeout should not be treated as a Native handshake fallback signal")
+	}
+	if isClickHouseNativeHandshakeTimeout(errors.New("dial tcp clickhouse.local:18123: i/o timeout")) {
+		t.Fatal("dial timeout without a completed connection should not be treated as a protocol probe")
+	}
+}
+
 func TestClickHouseProtocolFailureMessagesUseCurrentLanguage(t *testing.T) {
 	SetBackendLanguage(i18n.LanguageEnUS)
 	t.Cleanup(func() {
@@ -887,6 +911,237 @@ func TestClickHouseHTTPCompatibilityStripperLeavesOtherBodiesUnchanged(t *testin
 	if seenBody != userQuery {
 		t.Fatalf("expected user query body untouched, got %q", seenBody)
 	}
+}
+
+func TestClickHouseConnectFallsBackToLegacyHTTPForRevisionZeroServer(t *testing.T) {
+	installClickHouseRuntimeMarkerForTest(t)
+
+	var (
+		mu                       sync.Mutex
+		sawProtocolVersion       bool
+		sawRevisionZeroHandshake bool
+		sawLegacyJSONQuery       bool
+	)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Errorf("read request body: %v", err)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+
+		mu.Lock()
+		defer mu.Unlock()
+		if r.URL.Query().Get("client_protocol_version") != "" {
+			sawProtocolVersion = true
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = io.WriteString(w, "Code: 115. DB::Exception: Unknown setting client_protocol_version. (UNKNOWN_SETTING)")
+			return
+		}
+
+		switch strings.TrimSpace(string(body)) {
+		case clickHouseServerHelloCompatQuery:
+			sawRevisionZeroHandshake = true
+			writeClickHouseRevisionZeroHelloBlock(t, w)
+		case "SELECT currentDatabase()":
+			if r.URL.Query().Get("default_format") != "JSONCompactEachRowWithNamesAndTypes" {
+				t.Errorf("legacy query format = %q", r.URL.Query().Get("default_format"))
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			sawLegacyJSONQuery = true
+			_, _ = io.WriteString(w, "[\"currentDatabase()\"]\n[\"String\"]\n[\"default\"]\n")
+		default:
+			t.Errorf("unexpected ClickHouse query: %q", string(body))
+			w.WriteHeader(http.StatusBadRequest)
+		}
+	}))
+	defer server.Close()
+
+	serverURL, err := url.Parse(server.URL)
+	if err != nil {
+		t.Fatalf("parse ClickHouse test server URL: %v", err)
+	}
+	host, portText, err := net.SplitHostPort(serverURL.Host)
+	if err != nil {
+		t.Fatalf("split ClickHouse test server address: %v", err)
+	}
+	port, err := strconv.Atoi(portText)
+	if err != nil {
+		t.Fatalf("parse ClickHouse test server port: %v", err)
+	}
+	client := &ClickHouseDB{}
+	err = client.Connect(connection.ConnectionConfig{
+		Type:               "clickhouse",
+		Host:               host,
+		Port:               port,
+		Database:           "default",
+		User:               "default",
+		ClickHouseProtocol: clickHouseProtocolHTTP,
+		Timeout:            2,
+	})
+	if err != nil {
+		t.Fatalf("Connect should fall back to legacy HTTP for ClickHouse 22.8: %v", err)
+	}
+	defer client.Close()
+
+	mu.Lock()
+	defer mu.Unlock()
+	if !sawProtocolVersion || !sawRevisionZeroHandshake || !sawLegacyJSONQuery {
+		t.Fatalf(
+			"expected modern, revision-zero, and legacy requests; modern=%t revisionZero=%t legacy=%t",
+			sawProtocolVersion,
+			sawRevisionZeroHandshake,
+			sawLegacyJSONQuery,
+		)
+	}
+}
+
+func TestClickHouseConnectAutoFallsBackToHTTPAfterNativeHandshakeTimeout(t *testing.T) {
+	installClickHouseRuntimeMarkerForTest(t)
+
+	var sawHTTP atomic.Bool
+	server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Errorf("read request body: %v", err)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		sawHTTP.Store(true)
+
+		if r.URL.Query().Get("client_protocol_version") != "" {
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = io.WriteString(w, "Code: 115. DB::Exception: Unknown setting client_protocol_version. (UNKNOWN_SETTING)")
+			return
+		}
+
+		switch strings.TrimSpace(string(body)) {
+		case clickHouseServerHelloCompatQuery:
+			writeClickHouseRevisionZeroHelloBlock(t, w)
+		case "SELECT currentDatabase()":
+			_, _ = io.WriteString(w, "[\"currentDatabase()\"]\n[\"String\"]\n[\"default\"]\n")
+		default:
+			t.Errorf("unexpected ClickHouse query: %q", string(body))
+			w.WriteHeader(http.StatusBadRequest)
+		}
+	}))
+	server.Listener = &stallFirstReadListener{Listener: server.Listener}
+	server.Start()
+	defer server.Close()
+
+	serverURL, err := url.Parse(server.URL)
+	if err != nil {
+		t.Fatalf("parse ClickHouse test server URL: %v", err)
+	}
+	host, portText, err := net.SplitHostPort(serverURL.Host)
+	if err != nil {
+		t.Fatalf("split ClickHouse test server address: %v", err)
+	}
+	port, err := strconv.Atoi(portText)
+	if err != nil {
+		t.Fatalf("parse ClickHouse test server port: %v", err)
+	}
+
+	client := &ClickHouseDB{}
+	err = client.Connect(connection.ConnectionConfig{
+		Type:               "clickhouse",
+		Host:               host,
+		Port:               port,
+		Database:           "default",
+		User:               "default",
+		ClickHouseProtocol: clickHouseProtocolAuto,
+		Timeout:            1,
+	})
+	if err != nil {
+		t.Fatalf("Connect should try HTTP after a Native handshake timeout in auto mode: %v", err)
+	}
+	defer client.Close()
+	if !sawHTTP.Load() {
+		t.Fatal("expected HTTP fallback request after the Native handshake timeout")
+	}
+}
+
+type stallFirstReadListener struct {
+	net.Listener
+	accepted atomic.Int32
+}
+
+func (l *stallFirstReadListener) Accept() (net.Conn, error) {
+	conn, err := l.Listener.Accept()
+	if err != nil {
+		return nil, err
+	}
+	if l.accepted.Add(1) == 1 {
+		return &discardUntilPeerClosesConn{Conn: conn}, nil
+	}
+	return conn, nil
+}
+
+type discardUntilPeerClosesConn struct {
+	net.Conn
+}
+
+func (c *discardUntilPeerClosesConn) Read(_ []byte) (int, error) {
+	buffer := make([]byte, 4096)
+	for {
+		if _, err := c.Conn.Read(buffer); err != nil {
+			return 0, err
+		}
+	}
+}
+
+func installClickHouseRuntimeMarkerForTest(t *testing.T) {
+	t.Helper()
+	previousRoot := currentExternalDriverDownloadDirectory()
+	t.Cleanup(func() { SetExternalDriverDownloadDirectory(previousRoot) })
+
+	root := t.TempDir()
+	SetExternalDriverDownloadDirectory(root)
+	markerPath, err := ResolveOptionalGoDriverMarkerPath(root, "clickhouse")
+	if err != nil {
+		t.Fatalf("resolve ClickHouse marker path: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(markerPath), 0o755); err != nil {
+		t.Fatalf("create ClickHouse marker directory: %v", err)
+	}
+	if err := os.WriteFile(markerPath, []byte("{}"), 0o644); err != nil {
+		t.Fatalf("write ClickHouse marker: %v", err)
+	}
+	executablePath, err := ResolveOptionalDriverAgentExecutablePath(root, "clickhouse")
+	if err != nil {
+		t.Fatalf("resolve ClickHouse agent path: %v", err)
+	}
+	if err := os.WriteFile(executablePath, []byte("test agent placeholder"), 0o755); err != nil {
+		t.Fatalf("write ClickHouse agent placeholder: %v", err)
+	}
+}
+
+func writeClickHouseRevisionZeroHelloBlock(t *testing.T, w http.ResponseWriter) {
+	t.Helper()
+	block := clickhouseproto.NewBlock()
+	for _, column := range []struct {
+		name     string
+		typeName clickhousecolumn.Type
+	}{
+		{name: "hostName()", typeName: "String"},
+		{name: "version()", typeName: "String"},
+		{name: "revision()", typeName: "UInt64"},
+		{name: "timezone()", typeName: "String"},
+	} {
+		if err := block.AddColumn(column.name, column.typeName); err != nil {
+			t.Fatalf("add ClickHouse block column: %v", err)
+		}
+	}
+	if err := block.Append("legacy-clickhouse", "22.8.20.11", uint64(54460), "UTC"); err != nil {
+		t.Fatalf("append ClickHouse block row: %v", err)
+	}
+	buffer := &chproto.Buffer{}
+	if err := block.Encode(buffer, 0); err != nil {
+		t.Fatalf("encode revision-zero ClickHouse block: %v", err)
+	}
+	w.Header().Set("Content-Type", "application/octet-stream")
+	_, _ = w.Write(buffer.Buf)
 }
 
 func TestWithClickHouseProtocolForcesProtocolSelection(t *testing.T) {

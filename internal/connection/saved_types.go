@@ -1,42 +1,52 @@
 package connection
 
+// SchemaVisibilityRule defines how schemas are displayed for one database in a
+// saved connection. Mode is interpreted by the client (for example, "include"
+// or "exclude") and Schemas contains the affected schema names.
+type SchemaVisibilityRule struct {
+	Mode    string   `json:"mode"`
+	Schemas []string `json:"schemas,omitempty"`
+}
+
 type SavedConnectionInput struct {
-	ID                         string           `json:"id,omitempty"`
-	Name                       string           `json:"name"`
-	Config                     ConnectionConfig `json:"config"`
-	IncludeDatabases           []string         `json:"includeDatabases,omitempty"`
-	IncludeRedisDatabases      []int            `json:"includeRedisDatabases,omitempty"`
-	IconType                   string           `json:"iconType,omitempty"`
-	IconColor                  string           `json:"iconColor,omitempty"`
-	ClearPrimaryPassword       bool             `json:"clearPrimaryPassword,omitempty"`
-	ClearSSHPassword           bool             `json:"clearSSHPassword,omitempty"`
-	ClearProxyPassword         bool             `json:"clearProxyPassword,omitempty"`
-	ClearHTTPTunnelPassword    bool             `json:"clearHttpTunnelPassword,omitempty"`
-	ClearMySQLReplicaPassword  bool             `json:"clearMySQLReplicaPassword,omitempty"`
-	ClearMongoReplicaPassword  bool             `json:"clearMongoReplicaPassword,omitempty"`
-	ClearRedisSentinelPassword bool             `json:"clearRedisSentinelPassword,omitempty"`
-	ClearOpaqueURI             bool             `json:"clearOpaqueURI,omitempty"`
-	ClearOpaqueDSN             bool             `json:"clearOpaqueDSN,omitempty"`
+	ID                         string                          `json:"id,omitempty"`
+	Name                       string                          `json:"name"`
+	Config                     ConnectionConfig                `json:"config"`
+	IncludeDatabases           []string                        `json:"includeDatabases,omitempty"`
+	IncludeRedisDatabases      []int                           `json:"includeRedisDatabases,omitempty"`
+	SchemaVisibilityByDatabase map[string]SchemaVisibilityRule `json:"schemaVisibilityByDatabase,omitempty"`
+	IconType                   string                          `json:"iconType,omitempty"`
+	IconColor                  string                          `json:"iconColor,omitempty"`
+	ClearPrimaryPassword       bool                            `json:"clearPrimaryPassword,omitempty"`
+	ClearSSHPassword           bool                            `json:"clearSSHPassword,omitempty"`
+	ClearProxyPassword         bool                            `json:"clearProxyPassword,omitempty"`
+	ClearHTTPTunnelPassword    bool                            `json:"clearHttpTunnelPassword,omitempty"`
+	ClearMySQLReplicaPassword  bool                            `json:"clearMySQLReplicaPassword,omitempty"`
+	ClearMongoReplicaPassword  bool                            `json:"clearMongoReplicaPassword,omitempty"`
+	ClearRedisSentinelPassword bool                            `json:"clearRedisSentinelPassword,omitempty"`
+	ClearOpaqueURI             bool                            `json:"clearOpaqueURI,omitempty"`
+	ClearOpaqueDSN             bool                            `json:"clearOpaqueDSN,omitempty"`
 }
 
 type SavedConnectionView struct {
-	ID                       string           `json:"id"`
-	Name                     string           `json:"name"`
-	Config                   ConnectionConfig `json:"config"`
-	IncludeDatabases         []string         `json:"includeDatabases,omitempty"`
-	IncludeRedisDatabases    []int            `json:"includeRedisDatabases,omitempty"`
-	IconType                 string           `json:"iconType,omitempty"`
-	IconColor                string           `json:"iconColor,omitempty"`
-	SecretRef                string           `json:"secretRef,omitempty"`
-	HasPrimaryPassword       bool             `json:"hasPrimaryPassword,omitempty"`
-	HasSSHPassword           bool             `json:"hasSSHPassword,omitempty"`
-	HasProxyPassword         bool             `json:"hasProxyPassword,omitempty"`
-	HasHTTPTunnelPassword    bool             `json:"hasHttpTunnelPassword,omitempty"`
-	HasMySQLReplicaPassword  bool             `json:"hasMySQLReplicaPassword,omitempty"`
-	HasMongoReplicaPassword  bool             `json:"hasMongoReplicaPassword,omitempty"`
-	HasRedisSentinelPassword bool             `json:"hasRedisSentinelPassword,omitempty"`
-	HasOpaqueURI             bool             `json:"hasOpaqueURI,omitempty"`
-	HasOpaqueDSN             bool             `json:"hasOpaqueDSN,omitempty"`
+	ID                         string                          `json:"id"`
+	Name                       string                          `json:"name"`
+	Config                     ConnectionConfig                `json:"config"`
+	IncludeDatabases           []string                        `json:"includeDatabases,omitempty"`
+	IncludeRedisDatabases      []int                           `json:"includeRedisDatabases,omitempty"`
+	SchemaVisibilityByDatabase map[string]SchemaVisibilityRule `json:"schemaVisibilityByDatabase,omitempty"`
+	IconType                   string                          `json:"iconType,omitempty"`
+	IconColor                  string                          `json:"iconColor,omitempty"`
+	SecretRef                  string                          `json:"secretRef,omitempty"`
+	HasPrimaryPassword         bool                            `json:"hasPrimaryPassword,omitempty"`
+	HasSSHPassword             bool                            `json:"hasSSHPassword,omitempty"`
+	HasProxyPassword           bool                            `json:"hasProxyPassword,omitempty"`
+	HasHTTPTunnelPassword      bool                            `json:"hasHttpTunnelPassword,omitempty"`
+	HasMySQLReplicaPassword    bool                            `json:"hasMySQLReplicaPassword,omitempty"`
+	HasMongoReplicaPassword    bool                            `json:"hasMongoReplicaPassword,omitempty"`
+	HasRedisSentinelPassword   bool                            `json:"hasRedisSentinelPassword,omitempty"`
+	HasOpaqueURI               bool                            `json:"hasOpaqueURI,omitempty"`
+	HasOpaqueDSN               bool                            `json:"hasOpaqueDSN,omitempty"`
 }
 
 type LegacySavedConnection = SavedConnectionInput

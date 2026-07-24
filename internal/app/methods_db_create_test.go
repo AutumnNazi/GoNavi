@@ -9,12 +9,14 @@ import (
 )
 
 type fakeCreateDatabaseDB struct {
-	connectConfig  connection.ConnectionConfig
-	execQueries    []string
-	applyChanges   connection.ChangeSet
-	previewDeletes []string
-	previewUpdates []string
-	previewInserts []string
+	connectConfig    connection.ConnectionConfig
+	execQueries      []string
+	applyChanges     connection.ChangeSet
+	applyTableName   string
+	previewTableName string
+	previewDeletes   []string
+	previewUpdates   []string
+	previewInserts   []string
 }
 
 func (f *fakeCreateDatabaseDB) Connect(config connection.ConnectionConfig) error {
@@ -53,10 +55,12 @@ func (f *fakeCreateDatabaseDB) GetTriggers(dbName, tableName string) ([]connecti
 	return nil, nil
 }
 func (f *fakeCreateDatabaseDB) ApplyChanges(tableName string, changes connection.ChangeSet) error {
+	f.applyTableName = tableName
 	f.applyChanges = changes
 	return nil
 }
 func (f *fakeCreateDatabaseDB) PreviewChanges(tableName string, changes connection.ChangeSet) (deletes, updates, inserts []string) {
+	f.previewTableName = tableName
 	return f.previewDeletes, f.previewUpdates, f.previewInserts
 }
 

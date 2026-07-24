@@ -2,6 +2,7 @@ import { useCallback, useEffect } from 'react';
 import type React from 'react';
 import { message } from 'antd';
 import type { Item } from './DataGridCore';
+import { canSelectGridCellForClipboard } from './dataGridSelectionCopy';
 
 type DataGridBatchActionsContext = Record<string, any> & {
   CELL_SELECTION_DRAG_THRESHOLD_PX: number;
@@ -43,6 +44,7 @@ type DataGridBatchActionsContext = Record<string, any> & {
   >;
   setModifiedRows: React.Dispatch<React.SetStateAction<Record<string, any>>>;
   setSelectedCells: React.Dispatch<React.SetStateAction<Set<string>>>;
+  markCellSelectionDeleteEligible: (eligible: boolean) => void;
   rowKeyStr: (key: React.Key) => string;
   makeCellKey: (rowKey: string, colName: string) => string;
   splitCellKey: (cellKey: string) => { rowKey: string; colName: string } | null;
@@ -74,6 +76,7 @@ export const useDataGridBatchActions = (ctx: DataGridBatchActionsContext) => {
     displayColumnNames,
     displayDataRef,
     effectiveEditLocator,
+    isActive,
     isCellValueEqualForDiff,
     isDraggingRef,
     isTableSurfaceActive,
@@ -93,6 +96,7 @@ export const useDataGridBatchActions = (ctx: DataGridBatchActionsContext) => {
     setCopiedCellPatch,
     setModifiedRows,
     setSelectedCells,
+    markCellSelectionDeleteEligible,
     splitCellKey,
     suppressCellSelectionClickRef,
     translateDataGrid,
@@ -100,6 +104,7 @@ export const useDataGridBatchActions = (ctx: DataGridBatchActionsContext) => {
   } = ctx;
 
 const handleBatchFillCells = useCallback(() => {
+    if (!canModifyData) return;
     const cellsToFill = currentSelectionRef.current;
     if (cellsToFill.size === 0) {
       void message.info(translateDataGrid('data_grid.message.select_cells_to_fill'));
@@ -129,6 +134,7 @@ const handleBatchFillCells = useCallback(() => {
       const parts = splitCellKey(cellKey);
       if (!parts) return;
       const { rowKey, colName } = parts;
+      if (!isWritableResultColumn(colName, effectiveEditLocator)) return;
 
       const existing = modifiedRows[rowKey];
       const baseRow = baseRowMap.get(rowKey);
@@ -188,6 +194,7 @@ const handleBatchFillCells = useCallback(() => {
 
     // 清除选中状态
     setSelectedCells(new Set());
+    markCellSelectionDeleteEligible(false);
     currentSelectionRef.current = new Set();
     selectionStartRef.current = null;
     isDraggingRef.current = false;
@@ -197,12 +204,13 @@ const handleBatchFillCells = useCallback(() => {
       cellSelectionAutoScrollRafRef.current = null;
     }
     updateCellSelection(new Set());
-  }, [batchEditValue, batchEditSetNull, addedRows, modifiedRows, rowKeyStr, updateCellSelection, closeBatchEditModal, translateDataGrid]);
+  }, [batchEditValue, batchEditSetNull, addedRows, modifiedRows, rowKeyStr, updateCellSelection, closeBatchEditModal, markCellSelectionDeleteEligible, translateDataGrid, canModifyData, effectiveEditLocator, isWritableResultColumn, splitCellKey]);
 
-  // 事件委托：在容器级别处理单元格拖选；未开启模式时，拖拽超过阈值会自动进入单元格编辑模式。
+  // 事件委托：在容器级别处理单元格拖选。可编辑结果会自动进入编辑模式，
+  // 只读/聚合查询结果仅保留选区与复制能力，不触发任何数据修改入口。
   useEffect(() => {
     const container = containerRef.current;
-    if (!canModifyData || !isTableSurfaceActive) return;
+    if (!isActive || !isTableSurfaceActive) return;
     if (!container) return;
     const EDGE_THRESHOLD_PX = 28;
     const MIN_SCROLL_STEP = 8;
@@ -218,7 +226,11 @@ const handleBatchFillCells = useCallback(() => {
       const cell = target.closest('[data-row-key][data-col-name]') as HTMLElement;
       if (!cell || !container.contains(cell)) return null;
       const colName = cell.getAttribute('data-col-name');
-      if (!colName || !isWritableResultColumn(colName, effectiveEditLocator)) return null;
+      if (!colName || !canSelectGridCellForClipboard({
+        canModifyData,
+        isDisplayedColumn: columnIndexMap.has(colName),
+        isWritableColumn: isWritableResultColumn(colName, effectiveEditLocator),
+      })) return null;
       return cell;
     };
 
@@ -260,7 +272,13 @@ const handleBatchFillCells = useCallback(() => {
         const row = currentData[i];
         const rKey = String(row?.[GONAVI_ROW_KEY]);
         for (let j = minColIndex; j <= maxColIndex; j++) {
-          newSelectedCells.add(makeCellKey(rKey, displayColumnNames[j]));
+          const colName = displayColumnNames[j];
+          if (!canSelectGridCellForClipboard({
+            canModifyData,
+            isDisplayedColumn: true,
+            isWritableColumn: isWritableResultColumn(colName, effectiveEditLocator),
+          })) continue;
+          newSelectedCells.add(makeCellKey(rKey, colName));
         }
       }
 
@@ -357,11 +375,12 @@ const handleBatchFillCells = useCallback(() => {
     };
 
     const beginCellSelection = (cellInfo: { rowKey: string; colName: string }, x: number, y: number) => {
-      if (!cellEditModeRef.current) {
+      if (canModifyData && !cellEditModeRef.current) {
         cellEditModeRef.current = true;
         setCellEditMode(true);
       }
       suppressCellSelectionClickRef.current = true;
+      document.getSelection?.()?.removeAllRanges();
       pendingCellSelectionStartRef.current = null;
       isDraggingRef.current = true;
       cellSelectionPointerRef.current = { x, y };
@@ -443,6 +462,7 @@ const handleBatchFillCells = useCallback(() => {
 
       if (currentSelectionRef.current.size > 0) {
         setSelectedCells(new Set(currentSelectionRef.current));
+        markCellSelectionDeleteEligible(canModifyData);
       }
     };
 
@@ -489,7 +509,7 @@ const handleBatchFillCells = useCallback(() => {
       cellSelectionPointerRef.current = null;
       isDraggingRef.current = false;
     };
-  }, [canModifyData, isTableSurfaceActive, displayColumnNames, columnIndexMap, effectiveEditLocator, updateCellSelection]);
+  }, [canModifyData, isActive, isTableSurfaceActive, displayColumnNames, columnIndexMap, effectiveEditLocator, isWritableResultColumn, markCellSelectionDeleteEligible, updateCellSelection]);
 
   const handleCopySelectedColumnsFromRow = useCallback(() => {
     const activeSelection = currentSelectionRef.current.size > 0 ? currentSelectionRef.current : selectedCells;

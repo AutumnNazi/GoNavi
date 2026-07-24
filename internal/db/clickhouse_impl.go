@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"fmt"
 	"io"
 	"net"
@@ -41,6 +42,7 @@ const (
 
 type ClickHouseDB struct {
 	conn        *sql.DB
+	legacyHTTP  *clickHouseLegacyHTTPClient
 	pingTimeout time.Duration
 	forwarder   *ssh.LocalForwarder
 	database    string
@@ -557,8 +559,22 @@ func shouldRetryClickHouseHTTPCompatibility(err error) bool {
 		isClickHouseHTTPServerInfoFunctionUnsupported(err)
 }
 
+func isClickHouseNativeHandshakeTimeout(err error) bool {
+	if err == nil {
+		return false
+	}
+	text := strings.ToLower(strings.TrimSpace(err.Error()))
+	if !strings.Contains(text, "handshake") {
+		return false
+	}
+	return strings.Contains(text, "i/o timeout") ||
+		strings.Contains(text, "context deadline exceeded") ||
+		strings.Contains(text, "deadline exceeded")
+}
+
 func shouldTryNextClickHouseProtocol(protocol clickhouse.Protocol, err error) bool {
 	return isClickHouseProtocolMismatch(err) ||
+		(protocol == clickhouse.Native && isClickHouseNativeHandshakeTimeout(err)) ||
 		(protocol == clickhouse.HTTP && shouldRetryClickHouseHTTPCompatibility(err))
 }
 
@@ -701,6 +717,10 @@ func (c *ClickHouseDB) Connect(config connection.ConnectionConfig) error {
 		_ = c.conn.Close()
 		c.conn = nil
 	}
+	if c.legacyHTTP != nil {
+		_ = c.legacyHTTP.Close()
+		c.legacyHTTP = nil
+	}
 
 	runConfig := normalizeClickHouseConfig(config)
 	c.pingTimeout = getConnectTimeout(runConfig)
@@ -785,6 +805,20 @@ func (c *ClickHouseDB) Connect(config connection.ConnectionConfig) error {
 						}
 						continue
 					}
+					if protocol == clickhouse.HTTP && stripHTTPClientProtocolVersion {
+						legacyClient, legacyErr := c.connectClickHouseLegacyHTTP(opts)
+						if legacyErr == nil {
+							c.legacyHTTP = legacyClient
+							protocolSuccess = true
+							logger.Warnf("ClickHouse HTTP 兼容握手无法解码旧版 Native block，已切换 legacy JSON HTTP 模式")
+							break
+						}
+						lastProtocolErr = legacyErr
+						legacyFailure := sanitizeClickHouseErrorMessage(legacyErr)
+						failures = append(failures, clickHouseAttemptValidationFailedMessage(idx+1, "legacy-http", legacyFailure))
+						logger.Warnf("ClickHouse legacy JSON HTTP 连接尝试失败：第%d组/%d 地址=%s:%d SSL=%t 原因=%s",
+							idx+1, len(attempts), protocolConfig.Host, protocolConfig.Port, protocolConfig.UseSSL, legacyFailure)
+					}
 					break
 				}
 				protocolSuccess = true
@@ -815,6 +849,24 @@ func (c *ClickHouseDB) Connect(config connection.ConnectionConfig) error {
 	return fmt.Errorf("%s", clickHouseConnectFailureSummary(runConfig, failures))
 }
 
+func (c *ClickHouseDB) connectClickHouseLegacyHTTP(opts *clickhouse.Options) (*clickHouseLegacyHTTPClient, error) {
+	legacyClient, err := newClickHouseLegacyHTTPClient(opts)
+	if err != nil {
+		return nil, err
+	}
+	timeout := c.pingTimeout
+	if timeout <= 0 {
+		timeout = 5 * time.Second
+	}
+	ctx, cancel := utils.ContextWithTimeout(timeout)
+	defer cancel()
+	if err := legacyClient.Ping(ctx); err != nil {
+		_ = legacyClient.Close()
+		return nil, err
+	}
+	return legacyClient, nil
+}
+
 func (c *ClickHouseDB) Close() error {
 	if c.forwarder != nil {
 		if err := c.forwarder.Close(); err != nil {
@@ -823,12 +875,32 @@ func (c *ClickHouseDB) Close() error {
 		c.forwarder = nil
 	}
 	if c.conn != nil {
-		return c.conn.Close()
+		err := c.conn.Close()
+		c.conn = nil
+		if err != nil {
+			return err
+		}
+	}
+	if c.legacyHTTP != nil {
+		err := c.legacyHTTP.Close()
+		c.legacyHTTP = nil
+		if err != nil {
+			return err
+		}
 	}
 	return nil
 }
 
 func (c *ClickHouseDB) Ping() error {
+	if c.legacyHTTP != nil {
+		timeout := c.pingTimeout
+		if timeout <= 0 {
+			timeout = 5 * time.Second
+		}
+		ctx, cancel := utils.ContextWithTimeout(timeout)
+		defer cancel()
+		return c.legacyHTTP.Ping(ctx)
+	}
 	if c.conn == nil {
 		return fmt.Errorf("连接未打开")
 	}
@@ -879,6 +951,9 @@ func (c *ClickHouseDB) validateQueryPath() error {
 }
 
 func (c *ClickHouseDB) QueryContext(ctx context.Context, query string) ([]map[string]interface{}, []string, error) {
+	if c.legacyHTTP != nil {
+		return c.legacyHTTP.Query(ctx, query)
+	}
 	if c.conn == nil {
 		return nil, nil, fmt.Errorf("连接未打开")
 	}
@@ -891,6 +966,9 @@ func (c *ClickHouseDB) QueryContext(ctx context.Context, query string) ([]map[st
 }
 
 func (c *ClickHouseDB) Query(query string) ([]map[string]interface{}, []string, error) {
+	if c.legacyHTTP != nil {
+		return c.legacyHTTP.Query(context.Background(), query)
+	}
 	if c.conn == nil {
 		return nil, nil, fmt.Errorf("连接未打开")
 	}
@@ -903,6 +981,9 @@ func (c *ClickHouseDB) Query(query string) ([]map[string]interface{}, []string, 
 }
 
 func (c *ClickHouseDB) StreamQueryContext(ctx context.Context, query string, consumer QueryStreamConsumer) error {
+	if c.legacyHTTP != nil {
+		return c.legacyHTTP.StreamQuery(ctx, query, consumer)
+	}
 	if c.conn == nil {
 		return fmt.Errorf("连接未打开")
 	}
@@ -919,6 +1000,9 @@ func (c *ClickHouseDB) StreamQuery(query string, consumer QueryStreamConsumer) e
 }
 
 func (c *ClickHouseDB) ExecContext(ctx context.Context, query string) (int64, error) {
+	if c.legacyHTTP != nil {
+		return c.legacyHTTP.Exec(ctx, query)
+	}
 	if c.conn == nil {
 		return 0, fmt.Errorf("连接未打开")
 	}
@@ -930,6 +1014,9 @@ func (c *ClickHouseDB) ExecContext(ctx context.Context, query string) (int64, er
 }
 
 func (c *ClickHouseDB) Exec(query string) (int64, error) {
+	if c.legacyHTTP != nil {
+		return c.legacyHTTP.Exec(context.Background(), query)
+	}
 	if c.conn == nil {
 		return 0, fmt.Errorf("连接未打开")
 	}
@@ -1333,7 +1420,7 @@ func isClickHouseTruthy(value interface{}) bool {
 }
 
 func (c *ClickHouseDB) ApplyChanges(tableName string, changes connection.ChangeSet) error {
-	if c.conn == nil {
+	if c.conn == nil && c.legacyHTTP == nil {
 		return fmt.Errorf("连接未打开")
 	}
 
@@ -1349,7 +1436,7 @@ func (c *ClickHouseDB) ApplyChanges(tableName string, changes connection.ChangeS
 			continue
 		}
 		query := fmt.Sprintf("ALTER TABLE %s DELETE WHERE %s", qualifiedTable, whereExpr)
-		if _, err := c.conn.Exec(query); err != nil {
+		if _, err := c.Exec(query); err != nil {
 			return localizedDatabaseRuntimeError("db.backend.error.clickhouse_delete_failed_with_sql", map[string]any{
 				"detail": err.Error(),
 				"sql":    query,
@@ -1364,7 +1451,7 @@ func (c *ClickHouseDB) ApplyChanges(tableName string, changes connection.ChangeS
 			continue
 		}
 		query := fmt.Sprintf("ALTER TABLE %s UPDATE %s WHERE %s", qualifiedTable, setExpr, whereExpr)
-		if _, err := c.conn.Exec(query); err != nil {
+		if _, err := c.Exec(query); err != nil {
 			return localizedDatabaseRuntimeError("db.backend.error.clickhouse_update_failed_with_sql", map[string]any{
 				"detail": err.Error(),
 				"sql":    query,
@@ -1372,14 +1459,14 @@ func (c *ClickHouseDB) ApplyChanges(tableName string, changes connection.ChangeS
 		}
 	}
 
-	if err := execClickHouseInsertBatches(c.conn, qualifiedTable, changes.Inserts); err != nil {
+	if err := execClickHouseInsertBatches(c.Exec, qualifiedTable, changes.Inserts); err != nil {
 		return err
 	}
 	return nil
 }
 
-func execClickHouseInsertBatches(conn *sql.DB, qualifiedTable string, rows []map[string]interface{}) error {
-	if conn == nil {
+func execClickHouseInsertBatches(exec func(string) (int64, error), qualifiedTable string, rows []map[string]interface{}) error {
+	if exec == nil {
 		return fmt.Errorf("连接未打开")
 	}
 	return execLiteralInsertBatches(literalInsertConfig{
@@ -1388,7 +1475,8 @@ func execClickHouseInsertBatches(conn *sql.DB, qualifiedTable string, rows []map
 		QuoteColumn: quoteClickHouseIdentifier,
 		Literal:     clickHouseLiteral,
 		Exec: func(query string) (sql.Result, error) {
-			return conn.Exec(query)
+			affected, err := exec(query)
+			return driver.RowsAffected(affected), err
 		},
 	})
 }

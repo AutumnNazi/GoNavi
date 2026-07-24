@@ -1,6 +1,7 @@
 package app
 
 import (
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -10,7 +11,91 @@ import (
 	"GoNavi-Wails/internal/logger"
 )
 
-func launchWindowsUpdateWithCleanup(staged *stagedUpdate, targetExe string, pid int) error {
+func launchWindowsMSIUpdate(staged *stagedUpdate, targetExe string, pid int, waitForHandoff func() error) error {
+	if staged == nil {
+		return localizedUpdateError{key: "app.update.backend.message.no_downloaded_package"}
+	}
+	if !isUpdatePackageCompatibleWithInstallMode("windows", staged.InstallMode, staged.PackageType, staged.FilePath) {
+		return localizedUpdateError{
+			key:    "app.update.backend.error.online_update_unsupported",
+			params: map[string]any{"platform": "windows/" + string(staged.InstallMode) + "/" + string(staged.PackageType)},
+		}
+	}
+	if err := os.MkdirAll(staged.StagedDir, 0o755); err != nil {
+		return err
+	}
+
+	originalSourceDir := strings.TrimSpace(filepath.Dir(staged.FilePath))
+	preparedSource, err := prepareWindowsStagedUpdateAsset(staged.FilePath, staged.StagedDir)
+	if err != nil {
+		return err
+	}
+	staged.FilePath = preparedSource
+	staged.InstallLogPath = buildUpdateInstallLogPath(staged.StagedDir)
+	msiLogPath := strings.TrimSuffix(staged.InstallLogPath, filepath.Ext(staged.InstallLogPath)) + "-msi.log"
+
+	cleanupWindowsUpdateArtifacts([]string{
+		originalSourceDir,
+		strings.TrimSpace(filepath.Dir(staged.StagedDir)),
+	}, map[string]struct{}{
+		cleanComparablePath(staged.FilePath):  {},
+		cleanComparablePath(staged.StagedDir): {},
+	})
+
+	scriptPath := filepath.Join(staged.StagedDir, "update-msi.ps1")
+	if err := os.WriteFile(scriptPath, []byte(buildWindowsMSIUpdatePowerShellScript()), 0o644); err != nil {
+		return err
+	}
+	msiExecPath := resolveWindowsMSIExecPath(os.Getenv)
+	context := windowsMSIUpdateLaunchContext{
+		SourcePath:           staged.FilePath,
+		TargetPath:           strings.TrimSpace(targetExe),
+		StagedDir:            staged.StagedDir,
+		LogPath:              staged.InstallLogPath,
+		MSILogPath:           msiLogPath,
+		MSIExecPath:          msiExecPath,
+		MaintenanceEventName: staged.MaintenanceEventName,
+		HandoffEventName:     staged.UpdateHandoffEventName,
+		PID:                  pid,
+	}
+	logger.Infof("启动 Windows MSI 更新器：target=%s script=%s log=%s msi_log=%s package=%s", targetExe, scriptPath, staged.InstallLogPath, msiLogPath, staged.FilePath)
+	cmd := buildWindowsMSILaunchCommand(scriptPath, context)
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("start Windows MSI updater: %w", err)
+	}
+	if waitForHandoff != nil {
+		if err := waitForHandoff(); err != nil {
+			if cmd.Process != nil {
+				if killErr := cmd.Process.Kill(); killErr == nil {
+					_, _ = cmd.Process.Wait()
+				} else {
+					_ = cmd.Process.Release()
+				}
+			}
+			return err
+		}
+	}
+	if cmd.Process != nil {
+		if err := cmd.Process.Release(); err != nil {
+			logger.Warnf("释放 Windows MSI 更新脚本进程句柄失败：%v", err)
+		}
+	}
+	return nil
+}
+
+func resolveWindowsMSIExecPath(getenv func(string) string) string {
+	if getenv != nil {
+		if overridden := strings.TrimSpace(getenv("GONAVI_UPDATE_MSIEXEC_PATH")); overridden != "" {
+			return overridden
+		}
+		if systemRoot := strings.TrimSpace(getenv("SystemRoot")); systemRoot != "" {
+			return filepath.Join(systemRoot, "System32", "msiexec.exe")
+		}
+	}
+	return filepath.Join(`C:\Windows`, "System32", "msiexec.exe")
+}
+
+func launchWindowsUpdateWithCleanup(staged *stagedUpdate, targetExe string, pid int, waitForHandoff func() error) error {
 	if staged == nil {
 		return localizedUpdateError{key: "app.update.backend.message.no_downloaded_package"}
 	}
@@ -47,17 +132,31 @@ func launchWindowsUpdateWithCleanup(staged *stagedUpdate, targetExe string, pid 
 	}
 
 	launchContext := windowsUpdateLaunchContext{
-		SourcePath:        staged.FilePath,
-		TargetPath:        finalTargetExe,
-		CurrentTargetPath: currentTargetExe,
-		StagedDir:         staged.StagedDir,
-		LogPath:           staged.InstallLogPath,
-		PID:               pid,
+		SourcePath:           staged.FilePath,
+		TargetPath:           finalTargetExe,
+		CurrentTargetPath:    currentTargetExe,
+		StagedDir:            staged.StagedDir,
+		LogPath:              staged.InstallLogPath,
+		MaintenanceEventName: staged.MaintenanceEventName,
+		HandoffEventName:     staged.UpdateHandoffEventName,
+		PID:                  pid,
 	}
 	logger.Infof("启动 Windows PowerShell 更新器：current=%s target=%s script=%s log=%s", currentTargetExe, finalTargetExe, scriptPath, staged.InstallLogPath)
 	cmd := buildWindowsLaunchCommand(scriptPath, launchContext)
 	if err := cmd.Start(); err != nil {
 		return err
+	}
+	if waitForHandoff != nil {
+		if err := waitForHandoff(); err != nil {
+			if cmd.Process != nil {
+				if killErr := cmd.Process.Kill(); killErr == nil {
+					_, _ = cmd.Process.Wait()
+				} else {
+					_ = cmd.Process.Release()
+				}
+			}
+			return err
+		}
 	}
 	if cmd.Process != nil {
 		if err := cmd.Process.Release(); err != nil {
@@ -67,8 +166,25 @@ func launchWindowsUpdateWithCleanup(staged *stagedUpdate, targetExe string, pid 
 	return nil
 }
 
-func resolveWindowsUpdateFinalTargetPath(currentTarget string, _ string) string {
-	return strings.TrimSpace(currentTarget)
+func resolveWindowsUpdateFinalTargetPath(currentTarget string, sourcePath string) string {
+	currentTarget = strings.TrimSpace(currentTarget)
+	if currentTarget == "" {
+		return currentTarget
+	}
+	currentName := filepath.Base(currentTarget)
+	sourceName := filepath.Base(strings.TrimSpace(sourcePath))
+	if isVersionedWindowsUpdatePackageName(currentName) && isVersionedWindowsUpdatePackageName(sourceName) {
+		return filepath.Join(filepath.Dir(currentTarget), sourceName)
+	}
+	return currentTarget
+}
+
+func isVersionedWindowsUpdatePackageName(name string) bool {
+	trimmed := strings.TrimSpace(name)
+	lower := strings.ToLower(trimmed)
+	return strings.HasPrefix(trimmed, "GoNavi-") &&
+		strings.Contains(trimmed, "-Windows-") &&
+		strings.HasSuffix(lower, ".exe")
 }
 
 func prepareWindowsStagedUpdateAsset(sourcePath string, stagedDir string) (string, error) {
@@ -173,7 +289,7 @@ func shouldRemoveWindowsUpdateArtifact(name string, isDir bool) bool {
 	if !strings.Contains(trimmed, "-Windows-") {
 		return false
 	}
-	return strings.HasSuffix(lower, ".exe") || strings.HasSuffix(lower, ".zip")
+	return strings.HasSuffix(lower, ".exe") || strings.HasSuffix(lower, ".msi") || strings.HasSuffix(lower, ".zip")
 }
 
 func cleanComparablePath(path string) string {

@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	neturl "net/url"
 	"os"
 	"path/filepath"
+	stdRuntime "runtime"
 	"strings"
 	"sync"
 	"time"
@@ -16,10 +18,11 @@ import (
 )
 
 const (
-	// 静态清单：挂在 GitHub Release 资产上，走 github.com 下载链路，不消耗 api.github.com 配额。
-	// 发版时由 CI/build-release 生成 latest.json 并上传到当前 latest 发布。
-	updateLatestManifestURL = "https://github.com/" + updateRepo + "/releases/latest/download/latest.json"
-	updateDevManifestURL    = "https://github.com/" + updateRepo + "/releases/download/" + updateDevReleaseTag + "/latest-dev.json"
+	// 静态清单优先走 R2 自定义域名，GitHub Release 作为故障回退。
+	updateMirrorLatestManifestURL = "https://download.syngnat.top/gonavi/releases/latest/latest.json"
+	updateMirrorDevManifestURL    = "https://download.syngnat.top/gonavi/dev/releases/latest/latest-dev.json"
+	updateGitHubLatestManifestURL = "https://github.com/" + updateRepo + "/releases/latest/download/latest.json"
+	updateGitHubDevManifestURL    = "https://github.com/" + updateRepo + "/releases/download/" + updateDevReleaseTag + "/latest-dev.json"
 
 	updateManifestSchemaVersion = 1
 	updateManifestFileName      = "latest.json"
@@ -32,16 +35,16 @@ const (
 
 // updateReleaseManifest 是面向终端用户的静态更新清单（不依赖 GitHub REST API）。
 type updateReleaseManifest struct {
-	SchemaVersion int                    `json:"schemaVersion"`
-	Channel       string                 `json:"channel"`
-	TagName       string                 `json:"tagName"`
-	Version       string                 `json:"version"`
-	Name          string                 `json:"name,omitempty"`
-	HTMLURL       string                 `json:"htmlUrl,omitempty"`
-	PublishedAt   string                 `json:"publishedAt,omitempty"`
-	Assets        []updateManifestAsset  `json:"assets"`
-	FetchedAt     time.Time              `json:"fetchedAt,omitempty"` // 仅本地缓存写入
-	Source        string                 `json:"source,omitempty"`    // static | api | disk-cache
+	SchemaVersion int                   `json:"schemaVersion"`
+	Channel       string                `json:"channel"`
+	TagName       string                `json:"tagName"`
+	Version       string                `json:"version"`
+	Name          string                `json:"name,omitempty"`
+	HTMLURL       string                `json:"htmlUrl,omitempty"`
+	PublishedAt   string                `json:"publishedAt,omitempty"`
+	Assets        []updateManifestAsset `json:"assets"`
+	FetchedAt     time.Time             `json:"fetchedAt,omitempty"` // 仅本地缓存写入
+	Source        string                `json:"source,omitempty"`    // static | api | disk-cache
 }
 
 type updateManifestAsset struct {
@@ -71,11 +74,11 @@ func swapUpdateFetchStaticManifest(next func(updateChannel) (*githubRelease, err
 	}
 }
 
-func updateManifestRemoteURL(channel updateChannel) string {
+func updateManifestRemoteURLs(channel updateChannel) []string {
 	if channel == updateChannelDev {
-		return updateDevManifestURL
+		return []string{updateMirrorDevManifestURL, updateGitHubDevManifestURL}
 	}
-	return updateLatestManifestURL
+	return []string{updateMirrorLatestManifestURL, updateGitHubLatestManifestURL}
 }
 
 func updateManifestCachePath(channel updateChannel) string {
@@ -220,7 +223,31 @@ func storeDiskUpdateManifest(channel updateChannel, manifest *updateReleaseManif
 }
 
 func fetchStaticUpdateManifest(channel updateChannel) (*githubRelease, error) {
-	url := updateManifestRemoteURL(channel)
+	return fetchStaticUpdateManifestFromURLs(channel, updateManifestRemoteURLs(channel))
+}
+
+func fetchStaticUpdateManifestFromURLs(channel updateChannel, manifestURLs []string) (*githubRelease, error) {
+	var failures []string
+	for _, manifestURL := range manifestURLs {
+		release, err := fetchStaticUpdateManifestFromURL(channel, manifestURL)
+		if err == nil && release != nil {
+			return release, nil
+		}
+		if err != nil {
+			failures = append(failures, fmt.Sprintf("%s: %v", manifestURL, err))
+		}
+	}
+	if len(failures) == 0 {
+		return nil, fmt.Errorf("no static update manifest URL configured")
+	}
+	return nil, fmt.Errorf("static update manifests unavailable: %s", strings.Join(failures, "; "))
+}
+
+func fetchStaticUpdateManifestFromURL(channel updateChannel, manifestURL string) (*githubRelease, error) {
+	url := strings.TrimSpace(manifestURL)
+	if url == "" {
+		return nil, fmt.Errorf("static update manifest URL is empty")
+	}
 	client := newHTTPClientWithGlobalProxy(15 * time.Second)
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
@@ -257,6 +284,9 @@ func fetchStaticUpdateManifest(channel updateChannel) (*githubRelease, error) {
 	if manifest.SchemaVersion != 0 && manifest.SchemaVersion != updateManifestSchemaVersion {
 		return nil, fmt.Errorf("unsupported update manifest schema: %d", manifest.SchemaVersion)
 	}
+	if err := validateRemoteUpdateManifest(channel, &manifest); err != nil {
+		return nil, fmt.Errorf("invalid static update manifest %s: %w", url, err)
+	}
 	manifest.FetchedAt = time.Now().UTC()
 	manifest.Source = "static"
 	if strings.TrimSpace(manifest.Channel) == "" {
@@ -271,6 +301,73 @@ func fetchStaticUpdateManifest(channel updateChannel) (*githubRelease, error) {
 		storeCachedGitHubRelease(updateLatestAPIURL, release)
 	}
 	return release, nil
+}
+
+func validateRemoteUpdateManifest(channel updateChannel, manifest *updateReleaseManifest) error {
+	if manifest == nil {
+		return fmt.Errorf("manifest is empty")
+	}
+	expectedChannel := string(updateChannelLatest)
+	if channel == updateChannelDev {
+		expectedChannel = string(updateChannelDev)
+	}
+	manifestChannel := strings.TrimSpace(manifest.Channel)
+	if manifestChannel != "" && !strings.EqualFold(manifestChannel, expectedChannel) {
+		return fmt.Errorf("channel %q does not match requested channel %q", manifestChannel, expectedChannel)
+	}
+	if len(manifest.Assets) == 0 {
+		return fmt.Errorf("manifest has no assets")
+	}
+
+	assetNames := make(map[string]struct{}, len(manifest.Assets))
+	for _, asset := range manifest.Assets {
+		name := strings.TrimSpace(asset.Name)
+		if name == "" {
+			return fmt.Errorf("manifest contains an unnamed asset")
+		}
+		nameKey := strings.ToLower(name)
+		if _, exists := assetNames[nameKey]; exists {
+			return fmt.Errorf("manifest contains duplicate asset %q", name)
+		}
+		assetNames[nameKey] = struct{}{}
+		if asset.Size <= 0 {
+			return fmt.Errorf("asset %q has invalid size", name)
+		}
+		if normalizeGitHubAssetSHA256(asset.SHA256) == "" {
+			return fmt.Errorf("asset %q has invalid sha256", name)
+		}
+		for label, rawURL := range map[string]string{"url": asset.URL, "apiUrl": asset.APIURL} {
+			value := strings.TrimSpace(rawURL)
+			if value == "" {
+				if label == "url" {
+					return fmt.Errorf("asset %q has no download URL", name)
+				}
+				continue
+			}
+			parsed, err := neturl.ParseRequestURI(value)
+			if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+				return fmt.Errorf("asset %q has invalid %s", name, label)
+			}
+		}
+	}
+
+	assetVersion := strings.TrimSpace(manifest.TagName)
+	if assetVersion == "" || strings.EqualFold(normalizeVersion(assetVersion), updateDevReleaseTag) {
+		assetVersion = strings.TrimSpace(manifest.Version)
+	}
+	expectedAsset, err := expectedAssetNameForInstallMode(
+		stdRuntime.GOOS,
+		stdRuntime.GOARCH,
+		assetVersion,
+		updateResolveInstallMode(),
+	)
+	if err != nil {
+		return err
+	}
+	if _, exists := assetNames[strings.ToLower(expectedAsset)]; !exists {
+		return fmt.Errorf("manifest does not contain current platform asset %q", expectedAsset)
+	}
+	return nil
 }
 
 // fetchReleaseForChannel prefers static manifest → GitHub API → disk cache.

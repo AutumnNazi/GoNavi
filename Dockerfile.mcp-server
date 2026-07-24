@@ -26,10 +26,12 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates tzdata \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --system --create-home --home-dir /var/lib/gonavi --uid 10001 gonavi \
-    && mkdir -p /data /var/lib/gonavi/logs \
+    && mkdir -p /data /var/lib/gonavi/logs /usr/share/doc/gonavi \
     && chown -R gonavi:gonavi /data /var/lib/gonavi
 
 COPY --from=builder /out/gonavi-mcp-server /usr/local/bin/gonavi-mcp-server
+COPY --from=builder /src/LICENSE /usr/share/doc/gonavi/LICENSE
+COPY --from=builder /src/NOTICE /usr/share/doc/gonavi/NOTICE
 
 ENV HOME=/var/lib/gonavi \
     GONAVI_DATA_ROOT=/data \

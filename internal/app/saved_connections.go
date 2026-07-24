@@ -15,8 +15,11 @@ import (
 )
 
 const (
-	savedConnectionsFileName  = "connections.json"
-	savedConnectionSecretKind = "connection"
+	savedConnectionsFileName     = "connections.json"
+	savedConnectionSecretKind    = "connection"
+	maxSchemaVisibilityDatabases = 128
+	maxSchemaVisibilitySchemas   = 256
+	maxSchemaVisibilityNameBytes = 256
 )
 
 type connectionSecretBundle struct {
@@ -148,6 +151,73 @@ func cloneIntSlice(input []int) []int {
 	return cloned
 }
 
+func cloneSchemaVisibilityByDatabase(input map[string]connection.SchemaVisibilityRule) map[string]connection.SchemaVisibilityRule {
+	if len(input) == 0 {
+		return nil
+	}
+	cloned := make(map[string]connection.SchemaVisibilityRule, len(input))
+	for database, rule := range input {
+		cloned[database] = connection.SchemaVisibilityRule{
+			Mode:    rule.Mode,
+			Schemas: cloneStringSlice(rule.Schemas),
+		}
+	}
+	return cloned
+}
+
+func sanitizeSchemaVisibilityByDatabase(input map[string]connection.SchemaVisibilityRule) map[string]connection.SchemaVisibilityRule {
+	if len(input) == 0 {
+		return nil
+	}
+
+	result := make(map[string]connection.SchemaVisibilityRule)
+	seenDatabases := make(map[string]struct{})
+	for database, rule := range input {
+		if len(result) >= maxSchemaVisibilityDatabases {
+			break
+		}
+		database = strings.TrimSpace(database)
+		if database == "" || len(database) > maxSchemaVisibilityNameBytes {
+			continue
+		}
+		databaseKey := strings.ToLower(database)
+		if _, exists := seenDatabases[databaseKey]; exists {
+			continue
+		}
+
+		mode := strings.TrimSpace(rule.Mode)
+		if mode != "include" && mode != "exclude" {
+			continue
+		}
+		seenSchemas := make(map[string]struct{})
+		schemas := make([]string, 0, min(len(rule.Schemas), maxSchemaVisibilitySchemas))
+		for _, schema := range rule.Schemas {
+			if len(schemas) >= maxSchemaVisibilitySchemas {
+				break
+			}
+			schema = strings.TrimSpace(schema)
+			if schema == "" || len(schema) > maxSchemaVisibilityNameBytes {
+				continue
+			}
+			schemaKey := strings.ToLower(schema)
+			if _, exists := seenSchemas[schemaKey]; exists {
+				continue
+			}
+			seenSchemas[schemaKey] = struct{}{}
+			schemas = append(schemas, schema)
+		}
+		if len(schemas) == 0 {
+			continue
+		}
+		seenDatabases[databaseKey] = struct{}{}
+		result[database] = connection.SchemaVisibilityRule{Mode: mode, Schemas: schemas}
+	}
+	if len(result) == 0 {
+		return nil
+	}
+	return result
+}
+
 func cloneStringMap(input map[string]string) map[string]string {
 	if len(input) == 0 {
 		return nil
@@ -173,22 +243,23 @@ func splitConnectionSecrets(input connection.SavedConnectionInput) (connection.S
 	meta = stripConnectionSecretFields(meta)
 
 	view := connection.SavedConnectionView{
-		ID:                       id,
-		Name:                     strings.TrimSpace(input.Name),
-		Config:                   meta,
-		IncludeDatabases:         cloneStringSlice(input.IncludeDatabases),
-		IncludeRedisDatabases:    cloneIntSlice(input.IncludeRedisDatabases),
-		IconType:                 strings.TrimSpace(input.IconType),
-		IconColor:                strings.TrimSpace(input.IconColor),
-		HasPrimaryPassword:       strings.TrimSpace(bundle.Password) != "",
-		HasSSHPassword:           strings.TrimSpace(bundle.SSHPassword) != "",
-		HasProxyPassword:         strings.TrimSpace(bundle.ProxyPassword) != "",
-		HasHTTPTunnelPassword:    strings.TrimSpace(bundle.HTTPTunnelPassword) != "",
-		HasMySQLReplicaPassword:  strings.TrimSpace(bundle.MySQLReplicaPassword) != "",
-		HasMongoReplicaPassword:  strings.TrimSpace(bundle.MongoReplicaPassword) != "",
-		HasRedisSentinelPassword: strings.TrimSpace(bundle.RedisSentinelPassword) != "",
-		HasOpaqueURI:             strings.TrimSpace(bundle.OpaqueURI) != "",
-		HasOpaqueDSN:             strings.TrimSpace(bundle.OpaqueDSN) != "",
+		ID:                         id,
+		Name:                       strings.TrimSpace(input.Name),
+		Config:                     meta,
+		IncludeDatabases:           cloneStringSlice(input.IncludeDatabases),
+		IncludeRedisDatabases:      cloneIntSlice(input.IncludeRedisDatabases),
+		SchemaVisibilityByDatabase: sanitizeSchemaVisibilityByDatabase(input.SchemaVisibilityByDatabase),
+		IconType:                   strings.TrimSpace(input.IconType),
+		IconColor:                  strings.TrimSpace(input.IconColor),
+		HasPrimaryPassword:         strings.TrimSpace(bundle.Password) != "",
+		HasSSHPassword:             strings.TrimSpace(bundle.SSHPassword) != "",
+		HasProxyPassword:           strings.TrimSpace(bundle.ProxyPassword) != "",
+		HasHTTPTunnelPassword:      strings.TrimSpace(bundle.HTTPTunnelPassword) != "",
+		HasMySQLReplicaPassword:    strings.TrimSpace(bundle.MySQLReplicaPassword) != "",
+		HasMongoReplicaPassword:    strings.TrimSpace(bundle.MongoReplicaPassword) != "",
+		HasRedisSentinelPassword:   strings.TrimSpace(bundle.RedisSentinelPassword) != "",
+		HasOpaqueURI:               strings.TrimSpace(bundle.OpaqueURI) != "",
+		HasOpaqueDSN:               strings.TrimSpace(bundle.OpaqueDSN) != "",
 	}
 	return view, bundle
 }
@@ -464,6 +535,7 @@ func (r *savedConnectionRepository) Duplicate(id string, unnamedName string, cop
 	duplicate.ID = "conn-" + uuid.New().String()[:8]
 	duplicate.Config.ID = duplicate.ID
 	duplicate.Name = buildDuplicateConnectionName(original.Name, connections, unnamedName, copySuffix)
+	duplicate.SchemaVisibilityByDatabase = cloneSchemaVisibilityByDatabase(original.SchemaVisibilityByDatabase)
 
 	bundle, err := r.loadSecretBundle(original)
 	if err != nil {

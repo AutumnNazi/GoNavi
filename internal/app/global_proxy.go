@@ -160,36 +160,6 @@ func (a *App) GetGlobalProxyConfig() connection.QueryResult {
 	}
 }
 
-func applyGlobalProxyToConnection(config connection.ConnectionConfig) connection.ConnectionConfig {
-	effective := config
-	if effective.UseProxy || effective.UseHTTPTunnel {
-		return effective
-	}
-	if isFileDatabaseType(effective.Type) {
-		effective.Proxy = connection.ProxyConfig{}
-		return effective
-	}
-
-	snapshot := currentGlobalProxyConfig()
-	if !snapshot.Enabled {
-		effective.Proxy = connection.ProxyConfig{}
-		return effective
-	}
-
-	effective.UseProxy = true
-	effective.Proxy = snapshot.Proxy
-	return effective
-}
-
-func isFileDatabaseType(driverType string) bool {
-	switch strings.ToLower(strings.TrimSpace(driverType)) {
-	case "sqlite", "duckdb":
-		return true
-	default:
-		return false
-	}
-}
-
 func newHTTPClientWithGlobalProxy(timeout time.Duration) *http.Client {
 	client := &http.Client{
 		Timeout: timeout,

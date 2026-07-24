@@ -15,6 +15,7 @@ const storeState = {
     duration: number;
     message?: string;
     affectedRows?: number;
+    category?: "query" | "transaction";
   }>,
   clearSqlLogs: vi.fn(),
   theme: "light",
@@ -153,6 +154,7 @@ describe("LogPanel i18n", () => {
         sql: "START TRANSACTION;\nUPDATE `users` SET `name` = 'new-name' WHERE `id` = 8;\nCOMMIT;",
         status: "success",
         duration: 295,
+        category: "transaction",
       },
     ];
 
@@ -164,6 +166,7 @@ describe("LogPanel i18n", () => {
     ));
 
     expect(sqlNodes).toHaveLength(1);
+    expect(textContent(sqlNodes[0])).toContain("TX");
     expect(textContent(sqlNodes[0])).toContain("UPDATE `users` SET `name` = 'new-name' WHERE `id` = 8;");
   });
 

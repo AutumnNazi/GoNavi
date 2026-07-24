@@ -72,17 +72,17 @@ export default function ConnectionPackagePasswordModal({
       destroyOnHidden={false}
       maskClosable={false}
       footer={[
+        onBack ? (
+          <Button key="back" onClick={onBack}>
+            {t(embedded ? 'common.back_to_settings' : 'common.back_to_previous')}
+          </Button>
+        ) : null,
         <Button key="cancel" onClick={onCancel}>
           {resolvedCancelText}
         </Button>,
         <Button key="confirm" type="primary" loading={confirmLoading} onClick={onConfirm}>
           {resolvedConfirmText}
         </Button>,
-        onBack ? (
-          <Button key="back" onClick={onBack}>
-            {t('common.back_to_previous')}
-          </Button>
-        ) : null,
       ]}
     >
       {isExportMode ? (

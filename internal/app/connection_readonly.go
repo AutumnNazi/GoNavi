@@ -139,6 +139,8 @@ var readOnlyConnectionActionTextKeys = map[string]string{
 	"connection.backend.action.drop_database":              "connection.backend.action.drop_database",
 	"重命名表":                                                 "connection.backend.action.rename_table",
 	"connection.backend.action.rename_table":               "connection.backend.action.rename_table",
+	"复制整表":                                                 "connection.backend.action.copy_table",
+	"connection.backend.action.copy_table":                 "connection.backend.action.copy_table",
 	"删除表":                                                  "connection.backend.action.drop_table",
 	"connection.backend.action.drop_table":                 "connection.backend.action.drop_table",
 	"删除视图":                                                 "connection.backend.action.drop_view",
@@ -266,8 +268,9 @@ func ensureConnectionAllowsQueryWithText(config connection.ConnectionConfig, que
 	if !isConnectionScriptExecutionRestricted(config) {
 		return nil
 	}
-	for _, statement := range splitSQLStatements(query) {
-		if trimmed := strings.TrimSpace(statement); trimmed != "" && !isReadOnlySQLQuery(resolveDDLDBType(config), trimmed) {
+	dbType := resolveDDLDBType(config)
+	for _, statement := range splitSQLStatementsForDialect(dbType, query) {
+		if trimmed := strings.TrimSpace(statement); trimmed != "" && !isReadOnlySQLQuery(dbType, trimmed) {
 			return errors.New(readOnlyConnectionQueryBlockedMessageWithText(text))
 		}
 	}
@@ -318,14 +321,45 @@ func isReadOnlyMongoCommand(query string) bool {
 	if _, blocked := mongoWriteCommands[commandKey]; blocked {
 		return false
 	}
+	if commandKey == "aggregate" && mongoAggregateHasWriteStage(doc) {
+		return false
+	}
 	_, allowed := mongoReadOnlyCommands[commandKey]
 	return allowed
+}
+
+func mongoAggregateHasWriteStage(doc map[string]interface{}) bool {
+	var pipeline interface{}
+	for key, value := range doc {
+		if strings.EqualFold(strings.TrimSpace(key), "pipeline") {
+			pipeline = value
+			break
+		}
+	}
+	stages, ok := pipeline.([]interface{})
+	if !ok {
+		return false
+	}
+	for _, rawStage := range stages {
+		stage, ok := rawStage.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		for key := range stage {
+			switch strings.ToLower(strings.TrimSpace(key)) {
+			case "$out", "$merge":
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func isReadOnlyMilvusCommand(query string) bool {
 	trimmed := strings.TrimSpace(query)
 	if !strings.HasPrefix(trimmed, "{") {
-		return false
+		keyword, withHasWrite := sqlDataOperationInfo(trimmed)
+		return !withHasWrite && keyword == "select" && !isSQLSelectIntoStatement(trimmed)
 	}
 	var doc map[string]interface{}
 	if err := json.Unmarshal([]byte(trimmed), &doc); err != nil {

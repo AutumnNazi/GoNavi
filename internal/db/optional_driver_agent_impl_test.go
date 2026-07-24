@@ -168,6 +168,47 @@ func TestOptionalDriverAgentDBQueryWithMessagesParsesAgentMessages(t *testing.T)
 	}
 }
 
+func TestOptionalDriverAgentDBProvidesSQLiteTableStats(t *testing.T) {
+	var stdin optionalAgentTestWriteCloser
+	stdout := strings.Join([]string{
+		`{"id":1,"success":true,"data":[{"table_rows":2}],"fields":["table_rows"]}`,
+		`{"id":2,"success":true,"data":[{"table_name":"orders","data_length":4096,"index_length":8192}],"fields":["table_name","data_length","index_length"]}`,
+	}, "\n") + "\n"
+
+	dbInst := &OptionalDriverAgentDB{
+		driverType: "sqlite",
+		client: &optionalDriverAgentClient{
+			stdin:  &stdin,
+			reader: bufio.NewReader(strings.NewReader(stdout)),
+			driver: "sqlite",
+		},
+	}
+
+	rowCounts, err := dbInst.GetTableRowCounts("main", []string{"orders"})
+	if err != nil {
+		t.Fatalf("GetTableRowCounts 返回错误: %v", err)
+	}
+	if rowCounts["orders"] != 2 {
+		t.Fatalf("SQLite driver-agent 行数异常: %#v", rowCounts)
+	}
+
+	storageStats, err := dbInst.GetTableStorageStats("main", []string{"orders"})
+	if err != nil {
+		t.Fatalf("GetTableStorageStats 返回错误: %v", err)
+	}
+	if storageStats["orders"].DataLength != 4096 || storageStats["orders"].IndexLength != 8192 {
+		t.Fatalf("SQLite driver-agent 存储统计异常: %#v", storageStats)
+	}
+
+	requests := stdin.String()
+	if !strings.Contains(requests, `SELECT COUNT(*) AS table_rows FROM \"orders\"`) {
+		t.Fatalf("driver-agent 未执行 SQLite 行数查询: %s", requests)
+	}
+	if !strings.Contains(requests, "FROM dbstat") {
+		t.Fatalf("driver-agent 未执行 SQLite dbstat 查询: %s", requests)
+	}
+}
+
 func TestOptionalDriverAgentDBQueryMultiWithMessagesParsesResultSets(t *testing.T) {
 	var stdin optionalAgentTestWriteCloser
 	stdout := `{"id":1,"success":true,"data":[{"statementIndex":1,"rows":[{"name":"master"}],"columns":["name"]},{"statementIndex":1,"rows":[],"columns":[],"messages":["PRINT generated sql"]}],"messages":["batch top-level message"]}` + "\n"

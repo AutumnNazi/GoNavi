@@ -60,6 +60,7 @@ const storeState = vi.hoisted(() => ({
   setSqlFormatOptions: vi.fn(),
   queryOptions: {
     maxRows: 5000,
+    wordWrap: false,
     showColumnComment: true,
     showColumnType: true,
     showQueryResultsPanel: false,
@@ -135,7 +136,9 @@ const backendApp = vi.hoisted(() => ({
   DBQueryMultiInTransaction: vi.fn(),
   DBQueryMultiTransactional: vi.fn(),
   DBCommitTransaction: vi.fn(),
+  DBCommitTransactionWithTrigger: vi.fn(),
   DBRollbackTransaction: vi.fn(),
+  DBRollbackTransactionWithTrigger: vi.fn(),
   DBGetTables: vi.fn(),
   DBGetAllColumns: vi.fn(),
   DBGetDatabases: vi.fn(),
@@ -168,6 +171,7 @@ const autoFetchState = vi.hoisted(() => ({
 
 const monacoEditorMockState = vi.hoisted(() => ({
   deferOnMount: false,
+  latestProps: null as any,
 }));
 
 const defaultEditorContributionResolver = (state: {
@@ -197,7 +201,9 @@ const editorState = vi.hoisted(() => {
     position: { lineNumber: 1, column: 1 },
     selection: null as any,
     providers: [] as any[],
+    providerLanguages: [] as string[],
     hoverProviders: [] as any[],
+    hoverProviderLanguages: [] as string[],
     contentChangeListeners: [] as Array<() => void>,
     cursorPositionListeners: [] as Array<(event: any) => void>,
     modelContentListeners: [] as Array<(event: any) => void>,
@@ -363,7 +369,9 @@ vi.mock('../utils/autoFetchVisibility', () => ({
 }));
 
 vi.mock('@monaco-editor/react', () => ({
-  default: ({ defaultValue, onChange, onMount }: any) => {
+  default: (props: any) => {
+    const { defaultValue, onChange, onMount } = props;
+    monacoEditorMockState.latestProps = props;
     React.useEffect(() => {
       editorState.value = String(defaultValue || '');
       editorState.latestOnChange = onChange;
@@ -374,11 +382,13 @@ vi.mock('@monaco-editor/react', () => ({
         languages: {
           CompletionItemKind: { Keyword: 1, Function: 2, Field: 3 },
           CompletionItemInsertTextRule: { InsertAsSnippet: 1 },
-          registerCompletionItemProvider: vi.fn((_language: string, provider: any) => {
+          registerCompletionItemProvider: vi.fn((language: string, provider: any) => {
+            editorState.providerLanguages.push(language);
             editorState.providers.push(provider);
             return { dispose: vi.fn() };
           }),
-          registerHoverProvider: vi.fn((_language: string, provider: any) => {
+          registerHoverProvider: vi.fn((language: string, provider: any) => {
+            editorState.hoverProviderLanguages.push(language);
             editorState.hoverProviders.push(provider);
             return { dispose: vi.fn() };
           }),
@@ -779,6 +789,7 @@ describe('QueryEditor external SQL save', () => {
     storeState.appearance.newQuerySqlTemplate = null;
     storeState.queryOptions = {
       maxRows: 5000,
+      wordWrap: false,
       showColumnComment: true,
       showColumnType: true,
       showQueryResultsPanel: false,
@@ -840,7 +851,9 @@ describe('QueryEditor external SQL save', () => {
     backendApp.DBQueryMultiInTransaction.mockResolvedValue({ success: true, data: [] });
     backendApp.DBQueryMultiTransactional.mockResolvedValue({ success: true, data: [] });
     backendApp.DBCommitTransaction.mockResolvedValue({ success: true, message: '事务已提交' });
+    backendApp.DBCommitTransactionWithTrigger.mockResolvedValue({ success: true, message: '事务已提交' });
     backendApp.DBRollbackTransaction.mockResolvedValue({ success: true, message: '事务已回滚' });
+    backendApp.DBRollbackTransactionWithTrigger.mockResolvedValue({ success: true, message: '事务已回滚' });
     backendApp.DBGetColumns.mockResolvedValue({ success: true, data: [] });
     backendApp.DBGetIndexes.mockResolvedValue({ success: true, data: [] });
     backendApp.DBGetAllColumns.mockResolvedValue({ success: true, data: [] });
@@ -849,6 +862,7 @@ describe('QueryEditor external SQL save', () => {
     backendApp.GenerateQueryID.mockResolvedValue('query-1');
     storeState.connections = createDefaultConnections();
     storeState.sqlLogs = [];
+    storeState.addSqlLog.mockReset();
     storeState.sqlSnippets = [];
     storeState.clearSqlLogs.mockReset();
     storeState.connections[0].config.type = 'mysql';
@@ -860,9 +874,12 @@ describe('QueryEditor external SQL save', () => {
     editorState.value = '';
     editorState.position = { lineNumber: 1, column: 1 };
     editorState.selection = null;
+    monacoEditorMockState.latestProps = null;
     editorState.domNode.style.cursor = '';
     editorState.providers = [];
+    editorState.providerLanguages = [];
     editorState.hoverProviders = [];
+    editorState.hoverProviderLanguages = [];
     editorState.contentChangeListeners = [];
     editorState.cursorPositionListeners = [];
     editorState.modelContentListeners = [];
@@ -2364,9 +2381,34 @@ describe('QueryEditor external SQL save', () => {
 
     const completionState = (globalThis as any).__gonaviSqlCompletionState;
 
-    expect(editorState.hoverProviders).toHaveLength(1);
-    expect(editorState.providers).toHaveLength(3);
-    expect(completionState.disposables).toHaveLength(4);
+    expect(editorState.hoverProviderLanguages).toEqual(['sql', 'mysql']);
+    expect(editorState.providerLanguages).toEqual(['sql', 'mysql', 'sql', 'mysql', 'sql', 'mysql']);
+    expect(editorState.hoverProviders).toHaveLength(2);
+    expect(editorState.providers).toHaveLength(6);
+    expect(completionState.disposables).toHaveLength(8);
+
+    await act(async () => {
+      renderer.unmount();
+    });
+  });
+
+  it.each([
+    ['mysql', 'mysql'],
+    ['mariadb', 'mysql'],
+    ['postgres', 'sql'],
+  ])('uses the %s connection grammar before formatting SQL', async (dbType, expectedLanguage) => {
+    storeState.connections[0].config.type = dbType;
+    const initialSql = "update finan_ set openid = 'ol_' where pay_status = '0' limit 50";
+
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<QueryEditor tab={createTab({ query: initialSql })} />);
+    });
+
+    expect(monacoEditorMockState.latestProps).toMatchObject({
+      defaultValue: initialSql,
+      language: expectedLanguage,
+    });
 
     await act(async () => {
       renderer.unmount();
@@ -2451,6 +2493,232 @@ describe('QueryEditor external SQL save', () => {
     const result = await sqlProvider.provideCompletionItems(editorState.editor.getModel(), { lineNumber: 1, column: editorState.value.length + 1 });
 
     expect(result.suggestions.map((item: any) => item.label)).toContain('organization');
+    await act(async () => {
+      renderer.unmount();
+    });
+  });
+
+  it('suggests Oracle views after their metadata has loaded', async () => {
+    let renderer!: ReactTestRenderer;
+    autoFetchState.visible = true;
+    storeState.connections[0].config.type = 'oracle';
+    storeState.connections[0].config.database = 'APP';
+    backendApp.DBGetDatabases.mockResolvedValueOnce({ success: true, data: [{ Database: 'APP' }] });
+    backendApp.DBGetTables.mockResolvedValueOnce({ success: true, data: [] });
+    backendApp.DBGetAllColumns.mockResolvedValueOnce({ success: true, data: [] });
+    backendApp.DBQuery.mockImplementation(async (_config: any, _dbName: string, sql: string) => {
+      if (String(sql || '').includes('USER_VIEWS')) {
+        return { success: true, data: [{ view_name: 'PERSON_VIEW' }] };
+      }
+      return { success: true, data: [] };
+    });
+
+    await act(async () => {
+      renderer = create(<QueryEditor tab={createTab({ query: '', dbName: 'APP' })} />);
+    });
+    await act(async () => {
+      for (let i = 0; i < 12; i += 1) {
+        await Promise.resolve();
+      }
+    });
+
+    const sqlProvider = findSqlCompletionProvider();
+    expect(sqlProvider).toBeTruthy();
+
+    editorState.value = 'SELECT * FROM person';
+    editorState.latestOnChange?.(editorState.value);
+    const result = await sqlProvider.provideCompletionItems(
+      editorState.editor.getModel(),
+      { lineNumber: 1, column: editorState.value.length + 1 },
+    );
+
+    expect(result.suggestions).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        label: 'PERSON_VIEW',
+        insertText: 'PERSON_VIEW',
+        detail: '视图 (APP)',
+      }),
+    ]));
+    await act(async () => {
+      renderer.unmount();
+    });
+  });
+
+  it('does not repeat an Oracle view owner across users and de-duplicates its result columns', async () => {
+    let renderer!: ReactTestRenderer;
+    autoFetchState.visible = true;
+    storeState.connections[0].config.type = 'oracle';
+    storeState.connections[0].config.user = 'B';
+    storeState.connections[0].config.database = 'B';
+    backendApp.DBGetDatabases.mockResolvedValueOnce({ success: true, data: [{ Database: 'B' }, { Database: 'A' }] });
+    backendApp.DBGetTables.mockResolvedValue({ success: true, data: [] });
+    backendApp.DBGetAllColumns.mockImplementation(async (_config: any, dbName: string) => ({
+      success: true,
+      data: dbName === 'A'
+        ? [
+          { tableName: 'V_PERSON', name: 'ID', type: 'NUMBER' },
+          { tableName: 'V_PERSON', name: 'NAME', type: 'VARCHAR2' },
+          { tableName: 'V_PERSON', name: 'NAME', type: 'VARCHAR2' },
+        ]
+        : [],
+    }));
+    backendApp.DBQuery.mockImplementation(async (_config: any, _dbName: string, sql: string) => {
+      if (/ALL_VIEWS/i.test(sql) && /OWNER = 'A'/i.test(sql)) {
+        return { success: true, data: [{ schema_name: 'A', view_name: 'V_PERSON' }] };
+      }
+      return { success: true, data: [] };
+    });
+
+    await act(async () => {
+      renderer = create(<QueryEditor tab={createTab({ query: 'SELECT * FROM A.V_PERSON v', dbName: 'B' })} />);
+    });
+    await act(async () => {
+      for (let i = 0; i < 48; i += 1) {
+        await Promise.resolve();
+      }
+    });
+
+    const sqlProvider = findSqlCompletionProvider();
+    expect(sqlProvider).toBeTruthy();
+
+    editorState.value = 'SELECT * FROM A.V';
+    editorState.latestOnChange?.(editorState.value);
+    const viewItems = await sqlProvider.provideCompletionItems(
+      editorState.editor.getModel(),
+      { lineNumber: 1, column: editorState.value.length + 1 },
+    );
+    expect(viewItems.suggestions).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        label: 'V_PERSON',
+        insertText: 'V_PERSON',
+        detail: '视图 (A)',
+      }),
+    ]));
+    expect(viewItems.suggestions.some((item: any) => item.label === 'A.V_PERSON')).toBe(false);
+
+    editorState.value = 'SELECT v. FROM A.V_PERSON v';
+    editorState.latestOnChange?.(editorState.value);
+    const columnItems = await sqlProvider.provideCompletionItems(
+      editorState.editor.getModel(),
+      { lineNumber: 1, column: 'SELECT v.'.length + 1 },
+    );
+    expect(columnItems.suggestions.filter((item: any) => item.label === 'ID')).toHaveLength(1);
+    expect(columnItems.suggestions.filter((item: any) => item.label === 'NAME')).toHaveLength(1);
+
+    await act(async () => {
+      renderer.unmount();
+    });
+  });
+
+  it('keeps same-name Oracle synonyms scoped by owner and resolves qualified columns', async () => {
+    let renderer!: ReactTestRenderer;
+    autoFetchState.visible = true;
+    storeState.connections[0].config.type = 'oracle';
+    storeState.connections[0].config.user = 'B';
+    storeState.connections[0].config.database = 'A';
+    backendApp.DBGetDatabases.mockResolvedValueOnce({ success: true, data: [{ Database: 'A' }] });
+    backendApp.DBGetTables.mockResolvedValue({ success: true, data: [] });
+    backendApp.DBGetAllColumns.mockResolvedValue({ success: true, data: [] });
+    backendApp.DBGetColumns.mockImplementation(async (_config: any, dbName: string, tableName: string) => {
+      if (dbName === 'B' && tableName === 'PERSON') {
+        return {
+          success: true,
+          data: [
+            { name: 'ID', type: 'NUMBER' },
+            { name: 'NAME', type: 'VARCHAR2' },
+          ],
+        };
+      }
+      if (dbName === 'IMP_BASICINFO' && tableName === 'PERSON') {
+        return {
+          success: true,
+          data: [
+            { name: 'AC01', type: 'VARCHAR2' },
+            { name: 'AC02', type: 'VARCHAR2' },
+          ],
+        };
+      }
+      return { success: true, data: [] };
+    });
+    backendApp.DBQuery.mockImplementation(async (_config: any, _dbName: string, sql: string) => {
+      if (/ALL_SYNONYMS/i.test(sql)) {
+        return {
+          success: true,
+          data: [
+            { synonym_owner: 'IMP_BASICINFO', synonym_name: 'PERSON', target_schema_name: 'IMP_DATA', target_name: 'PERSON' },
+            { synonym_owner: 'IMP_BASICINFO', synonym_name: 'AC02', target_schema_name: 'IMP_DATA', target_name: 'AC02' },
+            { synonym_owner: 'PUBLIC', synonym_name: 'PERSON', target_schema_name: 'PUBLIC_DATA', target_name: 'PERSON' },
+            { synonym_owner: 'B', synonym_name: 'PERSON', target_schema_name: 'A', target_name: 'PERSON' },
+          ],
+        };
+      }
+      return { success: true, data: [] };
+    });
+
+    await act(async () => {
+      renderer = create(<QueryEditor tab={createTab({ query: '', dbName: 'A' })} />);
+    });
+    await act(async () => {
+      for (let i = 0; i < 32; i += 1) {
+        await Promise.resolve();
+      }
+    });
+
+    const sqlProvider = findSqlCompletionProvider();
+    expect(sqlProvider).toBeTruthy();
+
+    editorState.value = 'SELECT * FROM per';
+    editorState.latestOnChange?.(editorState.value);
+    const synonymItems = await sqlProvider.provideCompletionItems(
+      editorState.editor.getModel(),
+      { lineNumber: 1, column: editorState.value.length + 1 },
+    );
+    expect(synonymItems.suggestions).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        label: 'PERSON',
+        insertText: 'PERSON',
+        detail: '同义词 (A.PERSON)',
+      }),
+    ]));
+    expect(synonymItems.suggestions.filter((item: any) => item.label === 'PERSON')).toHaveLength(1);
+    expect(synonymItems.suggestions.some((item: any) => item.label === 'AC02')).toBe(false);
+    expect(backendApp.DBQuery).toHaveBeenCalledWith(expect.anything(), 'A', expect.stringMatching(/ALL_SYNONYMS/i));
+
+    editorState.value = 'SELECT p. FROM PERSON p';
+    editorState.latestOnChange?.(editorState.value);
+    const columnItems = await sqlProvider.provideCompletionItems(
+      editorState.editor.getModel(),
+      { lineNumber: 1, column: 'SELECT p.'.length + 1 },
+    );
+    expect(backendApp.DBGetColumns).toHaveBeenCalledWith(expect.anything(), 'B', 'PERSON');
+    expect(columnItems.suggestions.map((item: any) => item.label)).toEqual(expect.arrayContaining(['ID', 'NAME']));
+
+    editorState.value = 'SELECT * FROM IMP_BASICINFO.';
+    editorState.latestOnChange?.(editorState.value);
+    const ownerItems = await sqlProvider.provideCompletionItems(
+      editorState.editor.getModel(),
+      { lineNumber: 1, column: editorState.value.length + 1 },
+    );
+    expect(ownerItems.suggestions).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        label: 'PERSON',
+        detail: '同义词 (IMP_DATA.PERSON)',
+      }),
+      expect.objectContaining({
+        label: 'AC02',
+        detail: '同义词 (IMP_DATA.AC02)',
+      }),
+    ]));
+
+    editorState.value = 'SELECT p. FROM IMP_BASICINFO.PERSON p';
+    editorState.latestOnChange?.(editorState.value);
+    const ownerColumnItems = await sqlProvider.provideCompletionItems(
+      editorState.editor.getModel(),
+      { lineNumber: 1, column: 'SELECT p.'.length + 1 },
+    );
+    expect(backendApp.DBGetColumns).toHaveBeenCalledWith(expect.anything(), 'IMP_BASICINFO', 'PERSON');
+    expect(ownerColumnItems.suggestions.map((item: any) => item.label)).toEqual(expect.arrayContaining(['AC01', 'AC02']));
+
     await act(async () => {
       renderer.unmount();
     });
@@ -2980,6 +3248,230 @@ describe('QueryEditor external SQL save', () => {
 
     expect(labels).toContain('updated_by');
     expect(labels).not.toContain('update_time');
+
+    await act(async () => {
+      renderer.unmount();
+    });
+  });
+
+  it('keeps large table and referenced-column completion within a bounded candidate budget', async () => {
+    let renderer!: ReactTestRenderer;
+    autoFetchState.visible = true;
+    storeState.connections[0].config.type = 'mysql';
+    storeState.connections[0].config.database = 'main';
+    const noisyTableRows = Array.from({ length: 2_000 }, (_, index) => ({
+      Tables_in_main: `archive_entity_${String(index).padStart(4, '0')}`,
+    }));
+    const noisyColumnRows = Array.from({ length: 2_000 }, (_, index) => ({
+      tableName: 'users',
+      name: `column_${String(index).padStart(4, '0')}`,
+      type: 'varchar(64)',
+    }));
+    backendApp.DBGetDatabases.mockResolvedValueOnce({ success: true, data: [{ Database: 'main' }] });
+    backendApp.DBGetTables.mockResolvedValueOnce({
+      success: true,
+      data: [
+        { Tables_in_main: 'users' },
+        ...noisyTableRows,
+        { Tables_in_main: 'entity_primary' },
+        { Tables_in_main: 'entity' },
+      ],
+    });
+    backendApp.DBGetAllColumns.mockResolvedValueOnce({
+      success: true,
+      data: [
+        ...noisyColumnRows,
+        { tableName: 'users', name: 'column_primary', type: 'varchar(64)' },
+        { tableName: 'users', name: 'column', type: 'varchar(64)' },
+      ],
+    });
+
+    editorState.value = 'SELECT * FROM entity';
+    await act(async () => {
+      renderer = create(<QueryEditor tab={createTab({ query: editorState.value, dbName: 'main' })} />);
+    });
+    await act(async () => {
+      for (let index = 0; index < 8; index += 1) {
+        await Promise.resolve();
+      }
+    });
+
+    const sqlProvider = findSqlCompletionProvider();
+    expect(sqlProvider).toBeTruthy();
+
+    const tableItems = await sqlProvider.provideCompletionItems(
+      editorState.editor.getModel(),
+      { lineNumber: 1, column: editorState.value.length + 1 },
+    );
+    const tableLabels = tableItems.suggestions.map((item: any) => item.label);
+    expect(tableLabels).toHaveLength(200);
+    expect(tableLabels.slice(0, 2)).toEqual(['entity', 'entity_primary']);
+
+    editorState.value = 'SELECT * FROM users WHERE column';
+    const columnItems = await sqlProvider.provideCompletionItems(
+      editorState.editor.getModel(),
+      { lineNumber: 1, column: editorState.value.length + 1 },
+    );
+    const columnLabels = columnItems.suggestions.map((item: any) => item.label);
+    expect(columnLabels).toHaveLength(200);
+    expect(columnLabels).toContain('COLUMN');
+    expect(columnLabels).toContain('column');
+    expect(columnLabels.indexOf('column')).toBeLessThan(columnLabels.indexOf('column_0000'));
+
+    await act(async () => {
+      renderer.unmount();
+    });
+  });
+
+  it('keeps a late current-database column when other-database candidates fill the budget first', async () => {
+    let renderer!: ReactTestRenderer;
+    autoFetchState.visible = true;
+    storeState.connections[0].config.type = 'mysql';
+    storeState.connections[0].config.database = 'main';
+    backendApp.DBGetDatabases.mockResolvedValueOnce({
+      success: true,
+      data: [{ Database: 'main' }, { Database: 'otherdb' }],
+    });
+    backendApp.DBGetTables.mockImplementation(async (_config: any, dbName: string) => ({
+      success: true,
+      data: dbName === 'main'
+        ? [{ Tables_in_main: 'local_table' }]
+        : [{ Tables_in_otherdb: 'remote_table' }],
+    }));
+    backendApp.DBGetAllColumns.mockImplementation(async (_config: any, dbName: string) => ({
+      success: true,
+      data: dbName === 'otherdb'
+        ? Array.from({ length: 200 }, (_, index) => ({
+            tableName: 'remote_table',
+            name: `col_other_${String(index).padStart(3, '0')}`,
+            type: 'varchar(64)',
+          }))
+        : [],
+    }));
+    backendApp.DBGetColumns.mockImplementation(async (_config: any, dbName: string, tableName: string) => ({
+      success: true,
+      data: dbName === 'main' && tableName === 'local_table'
+        ? [{ name: 'col_current_late', type: 'varchar(64)' }]
+        : [],
+    }));
+
+    editorState.value = [
+      'SELECT r.col_other_000',
+      'FROM otherdb.remote_table r',
+      'JOIN main.local_table l ON r.id = l.id',
+      'WHERE col',
+    ].join('\n');
+    await act(async () => {
+      renderer = create(<QueryEditor tab={createTab({ query: editorState.value, dbName: 'main' })} />);
+    });
+    await act(async () => {
+      for (let index = 0; index < 16; index += 1) {
+        await Promise.resolve();
+      }
+    });
+
+    const sqlProvider = findSqlCompletionProvider();
+    expect(sqlProvider).toBeTruthy();
+
+    const completionItems = await sqlProvider.provideCompletionItems(
+      editorState.editor.getModel(),
+      { lineNumber: 4, column: 'WHERE col'.length + 1 },
+    );
+    const labels = completionItems.suggestions.map((item: any) => item.label);
+
+    expect(backendApp.DBGetColumns).toHaveBeenCalledWith(expect.anything(), 'main', 'local_table');
+    expect(labels).toHaveLength(200);
+    expect(labels).toContain('col_current_late');
+    expect(labels.indexOf('col_current_late')).toBeLessThan(labels.indexOf('col_other_000'));
+
+    await act(async () => {
+      renderer.unmount();
+    });
+  });
+
+  it('keeps final sortText ordering when an other-database exact match follows 200 current-database prefixes', async () => {
+    let renderer!: ReactTestRenderer;
+    autoFetchState.visible = true;
+    storeState.connections[0].config.type = 'mysql';
+    storeState.connections[0].config.database = 'main';
+    backendApp.DBGetDatabases.mockResolvedValueOnce({
+      success: true,
+      data: [{ Database: 'main' }, { Database: 'otherdb' }],
+    });
+    backendApp.DBGetTables.mockImplementation(async (_config: any, dbName: string) => ({
+      success: true,
+      data: dbName === 'main'
+        ? Array.from({ length: 200 }, (_, index) => ({
+            Tables_in_main: `tar_current_${String(index).padStart(3, '0')}`,
+          }))
+        : [{ Tables_in_otherdb: 'seed' }, { Tables_in_otherdb: 'tar' }],
+    }));
+    backendApp.DBGetAllColumns.mockResolvedValue({ success: true, data: [] });
+
+    editorState.value = 'SELECT * FROM otherdb.seed;\nSELECT tar';
+    await act(async () => {
+      renderer = create(<QueryEditor tab={createTab({ query: editorState.value, dbName: 'main' })} />);
+    });
+    await act(async () => {
+      for (let index = 0; index < 16; index += 1) {
+        await Promise.resolve();
+      }
+    });
+
+    const sqlProvider = findSqlCompletionProvider();
+    expect(sqlProvider).toBeTruthy();
+
+    const completionItems = await sqlProvider.provideCompletionItems(
+      editorState.editor.getModel(),
+      { lineNumber: 2, column: 'SELECT tar'.length + 1 },
+    );
+    const labels = completionItems.suggestions.map((item: any) => item.label);
+
+    expect(labels).toHaveLength(200);
+    expect(labels).not.toContain('otherdb.tar');
+    expect(labels[0]).toBe('tar_current_000');
+    expect(labels[199]).toBe('tar_current_199');
+
+    await act(async () => {
+      renderer.unmount();
+    });
+  });
+
+  it('returns no completion for an unmatched known schema qualifier instead of leaking global objects', async () => {
+    let renderer!: ReactTestRenderer;
+    autoFetchState.visible = true;
+    storeState.connections[0].config.type = 'postgres';
+    storeState.connections[0].config.database = 'main';
+    backendApp.DBGetDatabases.mockResolvedValueOnce({ success: true, data: [{ Database: 'main' }] });
+    backendApp.DBGetTables.mockResolvedValueOnce({
+      success: true,
+      data: [
+        { Table: 'dbo.users' },
+        { Table: 'sales.zzz_candidate' },
+        { Table: 'zzz_global' },
+      ],
+    });
+    backendApp.DBGetAllColumns.mockResolvedValueOnce({ success: true, data: [] });
+
+    editorState.value = 'SELECT * FROM dbo.zzz';
+    await act(async () => {
+      renderer = create(<QueryEditor tab={createTab({ query: editorState.value, dbName: 'main' })} />);
+    });
+    await act(async () => {
+      for (let index = 0; index < 12; index += 1) {
+        await Promise.resolve();
+      }
+    });
+
+    const sqlProvider = findSqlCompletionProvider();
+    expect(sqlProvider).toBeTruthy();
+
+    const completionItems = await sqlProvider.provideCompletionItems(
+      editorState.editor.getModel(),
+      { lineNumber: 1, column: editorState.value.length + 1 },
+    );
+
+    expect(completionItems.suggestions).toEqual([]);
 
     await act(async () => {
       renderer.unmount();
@@ -3982,6 +4474,44 @@ describe('QueryEditor external SQL save', () => {
     expect(findExactButton(renderer, '快捷键管理...')).toBeUndefined();
   });
 
+  it('persists word wrap and applies it to newly opened SQL editors', async () => {
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<QueryEditor tab={createTab({ query: 'select a_very_long_column_name from a_very_long_table_name' })} />);
+    });
+
+    expect(monacoEditorMockState.latestProps.options.wordWrap).toBe('off');
+    const enableButton = renderer.root.find((node) => (
+      node.type === 'button' && node.props?.['aria-label'] === '开启自动换行'
+    ));
+    expect(enableButton.props['aria-pressed']).toBe(false);
+    expect(enableButton.children).toContain('换行');
+
+    await act(async () => {
+      enableButton.props.onClick();
+      notifyStoreSubscribers();
+    });
+
+    expect(storeState.setQueryOptions).toHaveBeenCalledWith({ wordWrap: true });
+    expect(monacoEditorMockState.latestProps.options.wordWrap).toBe('on');
+    const disableButton = renderer.root.find((node) => (
+      node.type === 'button' && node.props?.['aria-label'] === '关闭自动换行'
+    ));
+    expect(disableButton.props['aria-pressed']).toBe(true);
+    expect(disableButton.children).toContain('换行');
+
+    await act(async () => {
+      renderer.unmount();
+      renderer = create(<QueryEditor tab={createTab({ id: 'tab-2', query: 'select 2' })} />);
+    });
+
+    expect(monacoEditorMockState.latestProps.options.wordWrap).toBe('on');
+    const newEditorDisableButton = renderer.root.find((node) => (
+      node.type === 'button' && node.props?.['aria-label'] === '关闭自动换行'
+    ));
+    expect(newEditorDisableButton.props['aria-pressed']).toBe(true);
+  });
+
   it('shows object info via editor ctrl+q action', async () => {
     editorState.value = 'select users.id from users';
     autoFetchState.visible = true;
@@ -4544,6 +5074,74 @@ describe('QueryEditor external SQL save', () => {
       (window.dispatchEvent as any).mock.calls.map((call: any[]) => call[0]?.type),
     ).not.toContain('gonavi:find-active-query');
     expect(document.execCommand).not.toHaveBeenCalled();
+  });
+
+  it('leaves Ctrl/Cmd+A inside Monaco find inputs while retaining the editor fallback', async () => {
+    const windowListeners: Record<string, ((event?: any) => void)[]> = {};
+    vi.stubGlobal('window', {
+      addEventListener: vi.fn((type: string, listener: (event?: any) => void) => {
+        windowListeners[type] ||= [];
+        windowListeners[type].push(listener);
+      }),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+      setTimeout,
+      clearTimeout,
+      requestAnimationFrame: vi.fn((callback: FrameRequestCallback) => {
+        callback(0);
+        return 1;
+      }),
+      cancelAnimationFrame: vi.fn(),
+      innerHeight: 900,
+    });
+
+    await act(async () => {
+      create(<QueryEditor tab={createTab({ query: 'SELECT * FROM users' })} />);
+    });
+
+    const OriginalHTMLElement = globalThis.HTMLElement;
+    class EditableInputTarget {
+      tagName = 'INPUT';
+      isContentEditable = false;
+      closest = vi.fn(() => null);
+    }
+    vi.stubGlobal('HTMLElement', EditableInputTarget as any);
+
+    editorState.editor.trigger.mockClear();
+    editorState.editor.focus.mockClear();
+    const findInputEvent = {
+      ctrlKey: true,
+      metaKey: false,
+      altKey: false,
+      shiftKey: false,
+      key: 'a',
+      target: new EditableInputTarget(),
+      preventDefault: vi.fn(),
+      stopPropagation: vi.fn(),
+    };
+    await act(async () => {
+      windowListeners.keydown?.forEach((listener) => listener(findInputEvent));
+    });
+
+    expect(findInputEvent.preventDefault).not.toHaveBeenCalled();
+    expect(findInputEvent.stopPropagation).not.toHaveBeenCalled();
+    expect(editorState.editor.trigger).not.toHaveBeenCalledWith('keyboard', 'editor.action.selectAll', null);
+    expect(editorState.editor.focus).not.toHaveBeenCalled();
+
+    const documentLevelEvent = {
+      ...findInputEvent,
+      target: null,
+      preventDefault: vi.fn(),
+      stopPropagation: vi.fn(),
+    };
+    await act(async () => {
+      windowListeners.keydown?.forEach((listener) => listener(documentLevelEvent));
+    });
+
+    expect(documentLevelEvent.preventDefault).toHaveBeenCalled();
+    expect(documentLevelEvent.stopPropagation).toHaveBeenCalled();
+    expect(editorState.editor.trigger).toHaveBeenCalledWith('keyboard', 'editor.action.selectAll', null);
+    vi.stubGlobal('HTMLElement', OriginalHTMLElement);
   });
 
   it('intercepts Ctrl/Cmd+D at window level and duplicates the current line below', async () => {
@@ -5891,7 +6489,7 @@ describe('QueryEditor external SQL save', () => {
       await Promise.resolve();
     });
 
-    expect(editorState.hoverProviders).toHaveLength(1);
+    expect(editorState.hoverProviders).toHaveLength(2);
     const hover = editorState.hoverProviders[0].provideHover(
       editorState.editor.getModel(),
       { lineNumber: 1, column: 18 },
@@ -6013,6 +6611,27 @@ describe('QueryEditor external SQL save', () => {
     });
 
     expect(editorState.editor.updateOptions).not.toHaveBeenCalledWith({ mouseStyle: 'text' });
+    expect(editorState.editor.deltaDecorations).not.toHaveBeenCalled();
+  });
+
+  it('does not churn decorations while selecting text without a navigation modifier', async () => {
+    editorState.value = 'select users.id from users';
+
+    await act(async () => {
+      create(<QueryEditor tab={createTab({ query: editorState.value })} />);
+    });
+
+    editorState.editor.updateOptions.mockClear();
+    editorState.editor.deltaDecorations.mockClear();
+
+    await act(async () => {
+      editorState.mouseMoveListeners[0]?.({
+        target: { position: { lineNumber: 1, column: 10 } },
+        event: { ctrlKey: false, metaKey: false },
+      });
+    });
+
+    expect(editorState.editor.updateOptions).not.toHaveBeenCalled();
     expect(editorState.editor.deltaDecorations).not.toHaveBeenCalled();
   });
 
@@ -6651,6 +7270,35 @@ describe('QueryEditor external SQL save', () => {
     expect(editorState.editor.deltaDecorations).not.toHaveBeenCalled();
     expect(editorState.editor.getModel().getValueLength).not.toHaveBeenCalled();
     expect(editorState.editor.getModel().getValue).not.toHaveBeenCalled();
+  });
+
+  it('does not rescan object decorations after repeated edits in the same database context', async () => {
+    vi.useFakeTimers();
+    try {
+      await act(async () => {
+        create(<QueryEditor tab={createTab({ query: 'select 1;' })} />);
+      });
+
+      const emitChange = async (value: string) => {
+        editorState.value = value;
+        editorState.latestOnChange?.(value);
+        editorState.modelContentListeners.forEach((listener) => listener({
+          changes: [{ text: value }],
+        }));
+        await act(async () => {
+          vi.advanceTimersByTime(450);
+          await Promise.resolve();
+        });
+      };
+
+      await emitChange('select users.id from users;');
+      editorState.editor.deltaDecorations.mockClear();
+      await emitChange('select users.id, users.name from users;');
+
+      expect(editorState.editor.deltaDecorations).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('ignores focused local tab query echoes so IME candidate commits are not overwritten', async () => {
@@ -7469,6 +8117,13 @@ describe('QueryEditor external SQL save', () => {
     expect(textContent(renderer!.root)).not.toContain('未提交');
     expect(textContent(renderer!.root)).toContain('提交');
     expect(textContent(renderer!.root)).toContain('影响行数：2');
+    expect(storeState.sqlEditorPendingTransactions['tab-1']).toMatchObject({
+      id: 'tx-1',
+      dbType: 'mysql',
+      dbName: 'main',
+      statements: ["UPDATE users SET name = 'new' WHERE id = 1"],
+      executionDurationMs: expect.any(Number),
+    });
 
     await act(async () => {
       await findButton(renderer!, '提交').props.onClick();
@@ -7478,8 +8133,52 @@ describe('QueryEditor external SQL save', () => {
       await Promise.resolve();
     });
 
-    expect(backendApp.DBCommitTransaction).toHaveBeenCalledWith('tx-1');
+    expect(backendApp.DBCommitTransactionWithTrigger).toHaveBeenCalledWith('tx-1', 'manual');
+    expect(storeState.addSqlLog).toHaveBeenCalledWith(expect.objectContaining({
+      sql: "START TRANSACTION;\nUPDATE users SET name = 'new' WHERE id = 1;\nCOMMIT;",
+      status: 'success',
+      dbName: 'main',
+    }));
     expect(textContent(renderer!.root)).not.toContain('未提交');
+  });
+
+  it('keeps DML with a trailing line comment in a pending managed transaction', async () => {
+    backendApp.DBQueryMultiTransactional.mockResolvedValueOnce({
+      success: true,
+      transactionId: 'tx-comment',
+      transactionPending: true,
+      data: [
+        { columns: ['affectedRows'], rows: [{ affectedRows: 1 }], statementIndex: 1 },
+      ],
+    });
+
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<QueryEditor tab={createTab({
+        query: 'DELETE FROM users WHERE id = 1; -- keep this operation pending',
+      })} />);
+    });
+
+    await act(async () => {
+      await findButton(renderer!, '运行').props.onClick();
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(backendApp.DBQueryMultiTransactional).toHaveBeenCalledWith(
+      expect.anything(),
+      'main',
+      'DELETE FROM users WHERE id = 1',
+      'query-1',
+    );
+    expect(backendApp.DBQueryMulti).not.toHaveBeenCalled();
+    expect(storeState.sqlEditorPendingTransactions['tab-1']).toMatchObject({
+      id: 'tx-comment',
+      dbType: 'mysql',
+      statements: ['DELETE FROM users WHERE id = 1'],
+    });
   });
 
   it('keeps TDengine insert on the regular query path because it has no managed transaction support', async () => {
@@ -7571,6 +8270,26 @@ describe('QueryEditor external SQL save', () => {
     expect(dataGridState.latestProps?.data?.[0]).toMatchObject({ name: 'new' });
     expect(textContent(renderer!.root)).toContain('提交');
     expect(textContent(renderer!.root)).toContain('回滚');
+    expect(storeState.sqlEditorPendingTransactions['tab-1']).toMatchObject({
+      statements: [
+        "UPDATE users SET name = 'new' WHERE id = 1",
+        'SELECT name FROM users WHERE id = 1',
+      ],
+      statementCount: 2,
+    });
+
+    await act(async () => {
+      await findButton(renderer!, '提交').props.onClick();
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(storeState.addSqlLog).toHaveBeenCalledWith(expect.objectContaining({
+      sql: "START TRANSACTION;\nUPDATE users SET name = 'new' WHERE id = 1;\nSELECT name FROM users WHERE id = 1;\nCOMMIT;",
+      status: 'success',
+    }));
   });
 
   it('runs SQL editor WITH DML through a pending managed transaction', async () => {
@@ -7615,7 +8334,7 @@ describe('QueryEditor external SQL save', () => {
       await Promise.resolve();
     });
 
-    expect(backendApp.DBCommitTransaction).toHaveBeenCalledWith('tx-with-dml');
+    expect(backendApp.DBCommitTransactionWithTrigger).toHaveBeenCalledWith('tx-with-dml', 'manual');
   });
 
   it('shows the pending statement count for multi-SQL manual transactions', async () => {
@@ -7782,6 +8501,236 @@ describe('QueryEditor external SQL save', () => {
     expect(dataGridState.latestProps?.data?.[0]).toMatchObject({ id: 501 });
   });
 
+  it('counts the exact total for a limited query result and updates pagination', async () => {
+    const firstPageRows = Array.from({ length: 500 }, (_item, index) => ({ id: index + 1 }));
+    backendApp.GenerateQueryID
+      .mockResolvedValueOnce('query-page-initial')
+      .mockResolvedValueOnce('query-total-count');
+    backendApp.DBQueryMulti
+      .mockResolvedValueOnce({
+        success: true,
+        data: [
+          { columns: ['id'], rows: firstPageRows, statementIndex: 1 },
+        ],
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        data: [
+          { columns: ['__gonavi_total__'], rows: [{ __gonavi_total__: 1234 }], statementIndex: 1 },
+        ],
+      });
+
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<QueryEditor tab={createTab({ query: 'SELECT id FROM users LIMIT 0,500' })} />);
+    });
+
+    await act(async () => {
+      await findButton(renderer!, '运行').props.onClick();
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(dataGridState.latestProps?.pagination).toMatchObject({
+      total: 1000,
+      totalKnown: false,
+    });
+    expect(dataGridState.latestProps?.onRequestTotalCount).toEqual(expect.any(Function));
+
+    await act(async () => {
+      await dataGridState.latestProps.onRequestTotalCount();
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(backendApp.DBQueryMulti).toHaveBeenCalledTimes(2);
+    expect(backendApp.DBQueryMulti).toHaveBeenLastCalledWith(
+      expect.anything(),
+      'main',
+      'SELECT COUNT(*) AS __gonavi_total__ FROM (SELECT id FROM users) __gonavi_query_count__',
+      'query-total-count',
+    );
+    expect(dataGridState.latestProps?.pagination).toMatchObject({
+      total: 1234,
+      totalKnown: true,
+      totalCountLoading: false,
+    });
+  });
+
+  it('cancels a query-result total count without applying its late response', async () => {
+    const firstPageRows = Array.from({ length: 500 }, (_item, index) => ({ id: index + 1 }));
+    let resolveCount!: (value: any) => void;
+    const pendingCount = new Promise((resolve) => {
+      resolveCount = resolve;
+    });
+    backendApp.GenerateQueryID
+      .mockResolvedValueOnce('query-page-initial')
+      .mockResolvedValueOnce('query-total-count');
+    backendApp.CancelQuery.mockResolvedValueOnce({ success: true });
+    backendApp.DBQueryMulti
+      .mockResolvedValueOnce({
+        success: true,
+        data: [
+          { columns: ['id'], rows: firstPageRows, statementIndex: 1 },
+        ],
+      })
+      .mockImplementationOnce(() => pendingCount);
+
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<QueryEditor tab={createTab({ query: 'SELECT id FROM users LIMIT 0,500' })} />);
+    });
+    await act(async () => {
+      await findButton(renderer!, '运行').props.onClick();
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      void dataGridState.latestProps.onRequestTotalCount();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(dataGridState.latestProps?.pagination?.totalCountLoading).toBe(true);
+    expect(dataGridState.latestProps?.onCancelTotalCount).toEqual(expect.any(Function));
+
+    await act(async () => {
+      await dataGridState.latestProps.onCancelTotalCount();
+    });
+    expect(backendApp.CancelQuery).toHaveBeenCalledWith('query-total-count');
+    expect(dataGridState.latestProps?.pagination).toMatchObject({
+      total: 1000,
+      totalKnown: false,
+      totalCountLoading: false,
+    });
+
+    await act(async () => {
+      resolveCount({
+        success: true,
+        data: [
+          { columns: ['__gonavi_total__'], rows: [{ __gonavi_total__: 9999 }] },
+        ],
+      });
+      await pendingCount;
+      await Promise.resolve();
+    });
+    expect(dataGridState.latestProps?.pagination).toMatchObject({
+      total: 1000,
+      totalKnown: false,
+      totalCountLoading: false,
+    });
+  });
+
+  it('does not apply an old total-count response to a newly executed result with the same key', async () => {
+    const firstQueryRows = Array.from({ length: 500 }, (_item, index) => ({ old_id: index + 1 }));
+    const secondQueryRows = Array.from({ length: 500 }, (_item, index) => ({ new_id: index + 1 }));
+    let resolveOldCount!: (value: any) => void;
+    const oldCount = new Promise((resolve) => {
+      resolveOldCount = resolve;
+    });
+    backendApp.GenerateQueryID
+      .mockResolvedValueOnce('query-first')
+      .mockResolvedValueOnce('query-old-total')
+      .mockResolvedValueOnce('query-second');
+    backendApp.CancelQuery.mockResolvedValue({ success: true });
+    backendApp.DBQueryMulti
+      .mockResolvedValueOnce({
+        success: true,
+        data: [{ columns: ['old_id'], rows: firstQueryRows, statementIndex: 1 }],
+      })
+      .mockImplementationOnce(() => oldCount)
+      .mockResolvedValueOnce({
+        success: true,
+        data: [{ columns: ['new_id'], rows: secondQueryRows, statementIndex: 1 }],
+      });
+
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<QueryEditor tab={createTab({ query: 'SELECT old_id FROM old_users LIMIT 0,500' })} />);
+    });
+    await act(async () => {
+      await findButton(renderer!, '运行').props.onClick();
+      await Promise.resolve();
+    });
+    await act(async () => {
+      void dataGridState.latestProps.onRequestTotalCount();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    editorState.value = 'SELECT new_id FROM new_users LIMIT 0,500';
+    await act(async () => {
+      await findButton(renderer!, '运行').props.onClick();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(dataGridState.latestProps?.data?.[0]).toMatchObject({ new_id: 1 });
+
+    await act(async () => {
+      resolveOldCount({
+        success: true,
+        data: [{ columns: ['__gonavi_total__'], rows: [{ __gonavi_total__: 9999 }] }],
+      });
+      await oldCount;
+      await Promise.resolve();
+    });
+
+    expect(backendApp.CancelQuery).toHaveBeenCalledWith('query-old-total');
+    expect(dataGridState.latestProps?.pagination).toMatchObject({
+      total: 1000,
+      totalKnown: false,
+    });
+  });
+
+  it('keeps an exact counted total while navigating through non-final pages', async () => {
+    const firstPageRows = Array.from({ length: 500 }, (_item, index) => ({ id: index + 1 }));
+    const secondPageWithLookahead = Array.from({ length: 501 }, (_item, index) => ({ id: index + 501 }));
+    backendApp.GenerateQueryID
+      .mockResolvedValueOnce('query-initial')
+      .mockResolvedValueOnce('query-total')
+      .mockResolvedValueOnce('query-page-2');
+    backendApp.DBQueryMulti
+      .mockResolvedValueOnce({
+        success: true,
+        data: [{ columns: ['id'], rows: firstPageRows, statementIndex: 1 }],
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        data: [{ columns: ['__gonavi_total__'], rows: [{ __gonavi_total__: 1234 }] }],
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        data: [{ columns: ['id'], rows: secondPageWithLookahead, statementIndex: 1 }],
+      });
+
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<QueryEditor tab={createTab({ query: 'SELECT id FROM users LIMIT 0,500' })} />);
+    });
+    await act(async () => {
+      await findButton(renderer!, '运行').props.onClick();
+      await Promise.resolve();
+    });
+    await act(async () => {
+      await dataGridState.latestProps.onRequestTotalCount();
+      await Promise.resolve();
+    });
+    expect(dataGridState.latestProps?.pagination).toMatchObject({ total: 1234, totalKnown: true });
+
+    await act(async () => {
+      await dataGridState.latestProps.onPageChange(2, 500);
+      await Promise.resolve();
+    });
+    expect(dataGridState.latestProps?.pagination).toMatchObject({
+      current: 2,
+      total: 1234,
+      totalKnown: true,
+    });
+  });
+
   it('runs SQL editor data-changing CTEs through a pending managed transaction', async () => {
     const sql = 'WITH moved AS (DELETE FROM audit_logs WHERE created_at < NOW() RETURNING id) SELECT * FROM moved';
     backendApp.DBQueryMultiTransactional.mockResolvedValueOnce({
@@ -7846,7 +8795,7 @@ describe('QueryEditor external SQL save', () => {
       });
 
       expect(textContent(renderer!.root)).toContain('3s 后自动提交');
-      expect(backendApp.DBCommitTransaction).not.toHaveBeenCalled();
+      expect(backendApp.DBCommitTransactionWithTrigger).not.toHaveBeenCalled();
 
       await act(async () => {
         vi.advanceTimersByTime(3000);
@@ -7854,7 +8803,7 @@ describe('QueryEditor external SQL save', () => {
         await Promise.resolve();
       });
 
-      expect(backendApp.DBCommitTransaction).toHaveBeenCalledWith('tx-auto');
+      expect(backendApp.DBCommitTransactionWithTrigger).toHaveBeenCalledWith('tx-auto', 'auto');
       expect(backendApp.DBQueryMulti).not.toHaveBeenCalled();
     } finally {
       vi.useRealTimers();
@@ -7894,7 +8843,7 @@ describe('QueryEditor external SQL save', () => {
       expect(backendApp.DBQueryMulti).not.toHaveBeenCalled();
       expect(textContent(renderer!.root)).toContain('自动提交中');
       expect(textContent(renderer!.root)).toContain('提交 (1)');
-      expect(backendApp.DBCommitTransaction).not.toHaveBeenCalled();
+      expect(backendApp.DBCommitTransactionWithTrigger).not.toHaveBeenCalled();
 
       await act(async () => {
         vi.runOnlyPendingTimers();
@@ -7902,7 +8851,7 @@ describe('QueryEditor external SQL save', () => {
         await Promise.resolve();
       });
 
-      expect(backendApp.DBCommitTransaction).toHaveBeenCalledWith('tx-auto-now');
+      expect(backendApp.DBCommitTransactionWithTrigger).toHaveBeenCalledWith('tx-auto-now', 'auto');
       expect(textContent(renderer!.root)).not.toContain('自动提交中');
     } finally {
       vi.useRealTimers();
@@ -8256,6 +9205,10 @@ describe('QueryEditor external SQL save', () => {
     (storeState.connections[0].config as any).oceanBaseProtocol = 'oracle';
     storeState.connections[0].config.user = 'dev';
     storeState.connections[0].config.database = 'ORCLPDB1';
+    backendApp.DBGetTables.mockResolvedValueOnce({
+      success: true,
+      data: [{ Table: 'DEV.EDC_LOG' }],
+    });
     backendApp.DBQueryMulti.mockResolvedValueOnce({
       success: true,
       data: [{ columns: ['WAFER_ID', ORACLE_ROWID_LOCATOR_COLUMN], rows: [{ WAFER_ID: 'R015Z10F08', [ORACLE_ROWID_LOCATOR_COLUMN]: 'AAAA' }] }],
@@ -8298,6 +9251,79 @@ describe('QueryEditor external SQL save', () => {
       status: 'success',
     }));
     expect(messageApi.warning).not.toHaveBeenCalled();
+    renderer?.unmount();
+  });
+
+  it('does not inject ROWID for an OceanBase Oracle synonym that is not a base table', async () => {
+    storeState.connections[0].config.type = 'oceanbase';
+    (storeState.connections[0].config as any).oceanBaseProtocol = 'oracle';
+    storeState.connections[0].config.user = 'B';
+    storeState.connections[0].config.database = 'ORCLPDB1';
+    backendApp.DBGetTables.mockResolvedValue({
+      success: true,
+      data: [{ Table: 'B.OTHER_TABLE' }],
+    });
+    backendApp.DBGetColumns.mockResolvedValueOnce({
+      success: true,
+      data: [{ name: 'ID', key: '' }, { name: 'NAME', key: '' }],
+    });
+    backendApp.DBQueryMulti.mockResolvedValueOnce({
+      success: true,
+      data: [{ columns: ['ID', 'NAME'], rows: [{ ID: 7, NAME: 'synonym-row' }] }],
+    });
+
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<QueryEditor tab={createTab({ dbName: 'ORCLPDB1', query: 'SELECT * FROM person' })} />);
+    });
+
+    await act(async () => {
+      await findButton(renderer!, '运行').props.onClick();
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const executedSql = String(backendApp.DBQueryMulti.mock.calls[0][2]);
+    expect(executedSql).toMatch(/FROM\s+person/i);
+    expect(executedSql).not.toMatch(/\bROWID\b/i);
+    expect(dataGridState.latestProps?.editLocator).toMatchObject({
+      strategy: 'all-columns',
+      columns: ['ID', 'NAME'],
+      readOnly: false,
+    });
+    renderer?.unmount();
+  });
+
+  it('keeps OceanBase Oracle sequence queries out of the ROWNUM auto-limit wrapper', async () => {
+    const sql = 'SELECT IMP_BASICINFO.SEQ_HIS_AZA7.nextval FROM dual';
+    storeState.connections[0].config.type = 'oceanbase';
+    (storeState.connections[0].config as any).oceanBaseProtocol = 'oracle';
+    storeState.connections[0].config.database = 'ORCLPDB1';
+    backendApp.DBQueryMulti.mockResolvedValueOnce({
+      success: true,
+      data: [{ columns: ['NEXTVAL'], rows: [{ NEXTVAL: 42 }] }],
+    });
+
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<QueryEditor tab={createTab({ dbName: 'IMP_BASICINFO', query: sql })} />);
+    });
+
+    await act(async () => {
+      await findButton(renderer!, '运行').props.onClick();
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const executedSql = String(backendApp.DBQueryMulti.mock.calls[0][2]);
+    expect(executedSql).toContain('IMP_BASICINFO.SEQ_HIS_AZA7.nextval');
+    expect(executedSql).not.toContain('SELECT * FROM (');
+    expect(executedSql).not.toMatch(/\bROWNUM\b/i);
+    expect(backendApp.DBQueryMultiTransactional).not.toHaveBeenCalled();
     renderer?.unmount();
   });
 
@@ -8432,11 +9458,13 @@ describe('QueryEditor external SQL save', () => {
     renderer?.unmount();
   });
 
-  it('keeps Oracle anonymous PL/SQL blocks intact when running from the editor', async () => {
+  it('keeps Oracle anonymous PL/SQL block DML pending for a manual transaction', async () => {
     storeState.connections[0].config.type = 'oracle';
     storeState.connections[0].config.database = 'ORCLPDB1';
-    backendApp.DBQueryMulti.mockResolvedValueOnce({
+    backendApp.DBQueryMultiTransactional.mockResolvedValueOnce({
       success: true,
+      transactionId: 'tx-oracle-block',
+      transactionPending: true,
       data: [{ columns: ['affectedRows'], rows: [{ affectedRows: 1 }] }],
     });
     const plsql = [
@@ -8460,11 +9488,28 @@ describe('QueryEditor external SQL save', () => {
       await Promise.resolve();
     });
 
-    expect(backendApp.DBQueryMulti).toHaveBeenCalledWith(expect.anything(), 'ORCLPDB1', plsql, 'query-1');
+    expect(backendApp.DBQueryMultiTransactional).toHaveBeenCalledWith(expect.anything(), 'ORCLPDB1', plsql, 'query-1');
+    expect(backendApp.DBQueryMulti).not.toHaveBeenCalled();
+    expect(storeState.sqlEditorPendingTransactions['tab-1']).toMatchObject({
+      id: 'tx-oracle-block',
+      dbType: 'oracle',
+      statements: [plsql],
+    });
+    expect(textContent(renderer!.root)).toContain('提交');
+    expect(textContent(renderer!.root)).toContain('回滚');
     expect(storeState.addSqlLog).toHaveBeenCalledWith(expect.objectContaining({
       sql: plsql,
       status: 'success',
     }));
+
+    await act(async () => {
+      await findButton(renderer!, '回滚').props.onClick();
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(backendApp.DBRollbackTransactionWithTrigger).toHaveBeenCalledWith('tx-oracle-block', 'manual');
     renderer?.unmount();
   });
 
@@ -9329,7 +10374,7 @@ describe('QueryEditor external SQL save', () => {
     });
   });
 
-  it('shows "No executable SQL." in English when the cursor is on a blank line', async () => {
+  it('executes all SQL when the cursor is on a trailing blank line', async () => {
     storeState.languagePreference = 'en-US';
     setCurrentLanguage('en-US');
     backendApp.DBQueryMulti.mockResolvedValueOnce({
@@ -9341,7 +10386,7 @@ describe('QueryEditor external SQL save', () => {
     await act(async () => {
       renderer = create(<QueryEditor tab={createTab({
         dbName: 'main',
-        query: 'select 1 as a;\nselect 2 as b;\n\nselect 3 as c;',
+        query: 'select 1 as a;\nselect 2 as b;\nselect 3 as c;\n',
       })} />);
     });
 
@@ -9368,18 +10413,22 @@ describe('QueryEditor external SQL save', () => {
     expect(textContent(renderer!.toJSON())).toContain('Result 1');
     backendApp.DBQueryMulti.mockClear();
     messageApi.info.mockClear();
+    backendApp.DBQueryMulti.mockResolvedValueOnce({
+      success: true,
+      data: [{ columns: ['a'], rows: [{ a: 1 }] }],
+    });
 
-    editorState.position = { lineNumber: 3, column: 1 };
+    editorState.position = { lineNumber: 4, column: 1 };
     editorState.selection = {
-      startLineNumber: 3,
+      startLineNumber: 4,
       startColumn: 1,
-      endLineNumber: 3,
+      endLineNumber: 4,
       endColumn: 1,
-      positionLineNumber: 3,
+      positionLineNumber: 4,
       positionColumn: 1,
     };
     editorState.cursorPositionListeners.forEach((listener) => {
-      listener({ position: { lineNumber: 3, column: 1 } });
+      listener({ position: { lineNumber: 4, column: 1 } });
     });
 
     await act(async () => {
@@ -9392,8 +10441,12 @@ describe('QueryEditor external SQL save', () => {
       await Promise.resolve();
     });
 
-    expect(backendApp.DBQueryMulti).not.toHaveBeenCalled();
-    expect(messageApi.info).toHaveBeenCalledWith('No executable SQL.');
+    expect(backendApp.DBQueryMulti).toHaveBeenCalledTimes(1);
+    const executedSql = String(backendApp.DBQueryMulti.mock.calls[0][2]);
+    expect(executedSql).toContain('select 1 as a');
+    expect(executedSql).toContain('select 2 as b');
+    expect(executedSql).toContain('select 3 as c');
+    expect(messageApi.info).not.toHaveBeenCalledWith('No executable SQL.');
     expect(messageApi.info).not.toHaveBeenCalledWith('没有可执行的 SQL。');
     expect(dataGridState.latestProps?.data).toEqual(expect.arrayContaining([expect.objectContaining({ a: 1 })]));
   });

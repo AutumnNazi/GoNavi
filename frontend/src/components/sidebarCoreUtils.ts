@@ -85,6 +85,7 @@ export const buildConnectionReloadSignature = (conn?: SavedConnection | null): s
     config: conn.config || {},
     includeDatabases: conn.includeDatabases || [],
     includeRedisDatabases: conn.includeRedisDatabases || [],
+    schemaVisibilityByDatabase: conn.schemaVisibilityByDatabase || {},
   });
 };
 

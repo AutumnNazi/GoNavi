@@ -175,10 +175,10 @@ func TestFormatConnSummary_DefaultTimeout(t *testing.T) {
 	}
 }
 
-func TestDBReleaseConnectionClosesAllDatabaseCacheEntriesForSameInstance(t *testing.T) {
+func TestDBReleaseConnectionClosesAllDatabaseCacheEntriesForSameInstanceDespiteGlobalProxy(t *testing.T) {
 	proxySnapshot := currentGlobalProxyConfig()
-	if _, err := setGlobalProxyConfig(false, proxySnapshot.Proxy); err != nil {
-		t.Fatalf("disable global proxy failed: %v", err)
+	if _, err := setGlobalProxyConfig(true, connection.ProxyConfig{Type: "socks5", Host: "127.0.0.1", Port: 1080}); err != nil {
+		t.Fatalf("enable global proxy failed: %v", err)
 	}
 	t.Cleanup(func() {
 		_, _ = setGlobalProxyConfig(proxySnapshot.Enabled, proxySnapshot.Proxy)

@@ -283,6 +283,75 @@ export const findTopLevelKeyword = (sql: string, keyword: string): number => {
   return -1;
 };
 
+const hasOracleSequencePseudoColumn = (sql: string): boolean => {
+  const text = sql || '';
+  let inSingle = false;
+  let inDouble = false;
+  let inBacktick = false;
+  let inLineComment = false;
+  let inBlockComment = false;
+
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    const next = i + 1 < text.length ? text[i + 1] : '';
+
+    if (inLineComment) {
+      if (ch === '\n') inLineComment = false;
+      continue;
+    }
+    if (inBlockComment) {
+      if (ch === '*' && next === '/') {
+        i++;
+        inBlockComment = false;
+      }
+      continue;
+    }
+    if (!inSingle && !inDouble && !inBacktick) {
+      if (ch === '-' && next === '-') {
+        i++;
+        inLineComment = true;
+        continue;
+      }
+      if (ch === '/' && next === '*') {
+        i++;
+        inBlockComment = true;
+        continue;
+      }
+    }
+
+    if (!inDouble && !inBacktick && ch === "'") {
+      if (inSingle && next === "'") {
+        i++;
+      } else {
+        inSingle = !inSingle;
+      }
+      continue;
+    }
+    if (!inSingle && !inBacktick && ch === '"') {
+      if (inDouble && next === '"') {
+        i++;
+      } else {
+        inDouble = !inDouble;
+      }
+      continue;
+    }
+    if (!inSingle && !inDouble && ch === '`') {
+      inBacktick = !inBacktick;
+      continue;
+    }
+    if (inSingle || inDouble || inBacktick || ch !== '.') continue;
+
+    let tokenStart = i + 1;
+    while (tokenStart < text.length && isWS(text[tokenStart])) tokenStart++;
+    let tokenEnd = tokenStart;
+    while (tokenEnd < text.length && isWord(text[tokenEnd])) tokenEnd++;
+    const token = text.slice(tokenStart, tokenEnd).toLowerCase();
+    if (token === 'nextval' || token === 'currval') return true;
+  }
+
+  return false;
+};
+
 export const applyQueryAutoLimit = (
   sql: string,
   dbType: string,
@@ -323,6 +392,9 @@ export const applyQueryAutoLimit = (
     if (offsetPos >= 0 && (fromPos < 0 || offsetPos > fromPos)) return { sql, applied: false, maxRows };
     const forPos = findTopLevelKeyword(main, 'for');
     if (forPos >= 0 && (fromPos < 0 || forPos > fromPos)) return { sql, applied: false, maxRows };
+    // Oracle-compatible databases reject NEXTVAL/CURRVAL when the ROWNUM cap
+    // moves the original SELECT into a subquery.
+    if (hasOracleSequencePseudoColumn(main)) return { sql, applied: false, maxRows };
     return { sql: `${buildPaginatedSelectSQL(normalizedType, main, '', maxRows, 0)}${tail}`, applied: true, maxRows };
   }
 

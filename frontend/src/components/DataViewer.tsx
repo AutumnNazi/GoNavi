@@ -411,7 +411,9 @@ const DataViewer: React.FC<{ tab: TabData; isActive?: boolean }> = React.memo(({
   const duckdbSafeSelectCacheRef = useRef<Record<string, string>>({});
   const currentConnConfig = connections.find(c => c.id === tab.connectionId)?.config;
   const currentConnCaps = getDataSourceCapabilities(currentConnConfig);
-  const forceReadOnly = currentConnCaps.forceReadOnlyQueryResult;
+  // Ordinary views can reject physical ROWID (for example Oracle join views), so
+  // browse them without attempting the editable-table locator optimization.
+  const forceReadOnly = currentConnCaps.forceReadOnlyQueryResult || tab.objectType === 'view';
   const preferManualTotalCount = currentConnCaps.preferManualTotalCount;
   const supportsApproximateTableCount = currentConnCaps.supportsApproximateTableCount;
   const supportsApproximateTotalPages = currentConnCaps.supportsApproximateTotalPages;
@@ -491,7 +493,7 @@ const DataViewer: React.FC<{ tab: TabData; isActive?: boolean }> = React.memo(({
       totalCountLoading: false,
       totalCountCancelled: false,
     }));
-  }, [tab.id, tab.connectionId, tab.dbName, tab.tableName]);
+  }, [tab.id, tab.connectionId, tab.dbName, tab.tableName, tab.objectType]);
 
   const handleTableScrollSnapshotChange = useCallback((snapshot: ViewerScrollSnapshot) => {
     scrollSnapshotRef.current = snapshot;
@@ -1226,7 +1228,7 @@ const DataViewer: React.FC<{ tab: TabData; isActive?: boolean }> = React.memo(({
       return;
     }
     fetchData(1, pagination.pageSize);
-  }, [tab.id, tab.connectionId, tab.dbName, tab.tableName, sortInfo, filterConditions, quickWhereCondition]); // Initial load and re-load on sort/filter
+  }, [tab.id, tab.connectionId, tab.dbName, tab.tableName, tab.objectType, sortInfo, filterConditions, quickWhereCondition]); // Initial load and re-load on sort/filter
 
   return (
     <div className={isV2Ui ? 'gn-v2-data-viewer' : undefined} style={{ flex: '1 1 auto', minHeight: 0, minWidth: 0, height: '100%', width: '100%', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>

@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -21,15 +22,110 @@ const (
 	logFileName         = "gonavi.log"
 	logRotateMaxBytes   = 10 * 1024 * 1024 // 10MB
 	logRotateMaxBackups = 10
+	logSyncInterval     = 500 * time.Millisecond
+	logSyncQueueSize    = 1
 )
 
 var (
-	once    sync.Once
-	logMu   sync.Mutex
-	logInst *log.Logger
-	logFile *os.File
-	logPath string
+	once         sync.Once
+	logMu        sync.Mutex
+	logInst      *log.Logger
+	logFile      writeSyncCloser
+	logFlusher   *syncWorker
+	logCloseDone chan struct{}
+	logPath      string
 )
+
+type writeSyncCloser interface {
+	io.Writer
+	Sync() error
+	Close() error
+}
+
+// syncWorker batches durability barriers away from logging call sites. The
+// single-slot queue deliberately coalesces duplicate requests: a pending Sync
+// already covers every write completed before it runs, so growing the queue
+// would only add redundant disk stalls.
+type syncWorker struct {
+	sink      writeSyncCloser
+	requests  chan struct{}
+	stop      chan struct{}
+	done      chan struct{}
+	closeOnce sync.Once
+	dirty     atomic.Bool
+}
+
+func newSyncWorker(sink writeSyncCloser, interval time.Duration) *syncWorker {
+	if sink == nil {
+		return nil
+	}
+	if interval <= 0 {
+		interval = logSyncInterval
+	}
+	worker := &syncWorker{
+		sink:     sink,
+		requests: make(chan struct{}, logSyncQueueSize),
+		stop:     make(chan struct{}),
+		done:     make(chan struct{}),
+	}
+	go worker.run(interval)
+	return worker
+}
+
+func (w *syncWorker) request() {
+	if w == nil {
+		return
+	}
+	w.markDirty()
+	select {
+	case w.requests <- struct{}{}:
+	default:
+		// Overflow policy: coalesce with the already pending durability barrier.
+	}
+}
+
+func (w *syncWorker) markDirty() {
+	if w != nil {
+		w.dirty.Store(true)
+	}
+}
+
+func (w *syncWorker) syncIfDirty() {
+	if w != nil && w.dirty.Swap(false) {
+		_ = w.sink.Sync()
+	}
+}
+
+func (w *syncWorker) close() {
+	if w == nil {
+		return
+	}
+	w.closeOnce.Do(func() {
+		close(w.stop)
+		<-w.done
+	})
+}
+
+func (w *syncWorker) run(interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	defer close(w.done)
+
+	for {
+		select {
+		case <-w.requests:
+			w.syncIfDirty()
+		case <-ticker.C:
+			w.syncIfDirty()
+		case <-w.stop:
+			// Close is the durability boundary: all file writes have stopped before
+			// the worker is closed, so this final Sync covers the complete log.
+			_ = w.sink.Sync()
+			_ = w.sink.Close()
+			return
+		}
+	}
+}
 
 func Init() {
 	once.Do(func() {
@@ -39,6 +135,8 @@ func Init() {
 		logPath = path
 		logInst = log.New(out, "", log.Ldate|log.Ltime|log.Lmicroseconds)
 		logInst.Printf("[INFO] 日志初始化完成，日志文件：%s", logPath)
+		logFlusher = newSyncWorker(logFile, logSyncInterval)
+		logFlusher.markDirty()
 	})
 }
 
@@ -52,13 +150,43 @@ func Path() string {
 func Close() {
 	Init()
 	logMu.Lock()
-	defer logMu.Unlock()
+	if logCloseDone != nil {
+		done := logCloseDone
+		logMu.Unlock()
+		<-done
+		return
+	}
 	if logInst != nil {
 		logInst.SetOutput(os.Stderr)
 	}
-	if logFile != nil {
-		_ = logFile.Close()
-		logFile = nil
+	worker := logFlusher
+	sink := logFile
+	logFlusher = nil
+	logFile = nil
+	if worker == nil && sink == nil {
+		logMu.Unlock()
+		return
+	}
+	done := make(chan struct{})
+	logCloseDone = done
+	logMu.Unlock()
+	defer func() {
+		logMu.Lock()
+		if logCloseDone == done {
+			logCloseDone = nil
+			close(done)
+		}
+		logMu.Unlock()
+	}()
+
+	if worker != nil {
+		worker.close()
+		return
+	}
+	// Defensive compatibility for a sink installed without a worker.
+	if sink != nil {
+		_ = sink.Sync()
+		_ = sink.Close()
 	}
 }
 
@@ -115,15 +243,22 @@ func ErrorChain(err error) string {
 
 func printf(level string, format string, args ...any) {
 	Init()
+	message := fmt.Sprintf(format, args...)
 	logMu.Lock()
-	defer logMu.Unlock()
 	inst := logInst
 	if inst == nil {
+		logMu.Unlock()
 		return
 	}
-	inst.Printf("[%s] %s", level, fmt.Sprintf(format, args...))
-	if logFile != nil {
-		_ = logFile.Sync()
+	inst.Printf("[%s] %s", level, message)
+	flusher := logFlusher
+	flusher.markDirty()
+	logMu.Unlock()
+
+	if level == "ERROR" && flusher != nil {
+		// Error logs ask the worker to Sync immediately, but the caller never
+		// waits for the disk. Repeated errors are coalesced by the bounded queue.
+		flusher.request()
 	}
 }
 

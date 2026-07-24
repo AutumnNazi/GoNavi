@@ -18,6 +18,20 @@ describe('aiProviderEditorState', () => {
     expect(session.testStatus).toBe('idle');
   });
 
+  it('carries local CLI authentication into a new provider form', () => {
+    const session = buildAddProviderEditorSession({
+      presetKey: 'codex',
+      presetBackendType: 'custom',
+      presetBaseUrl: '',
+      presetModel: '',
+      apiFormat: 'codex-cli',
+      authMode: 'local-cli',
+    });
+
+    expect(session.editingProvider?.authMode).toBe('local-cli');
+    expect(session.formValues).toMatchObject({ authMode: 'local-cli', apiKey: '' });
+  });
+
   it('starts edit flow with the target provider', () => {
     const session = buildEditProviderEditorSession({
       provider: {

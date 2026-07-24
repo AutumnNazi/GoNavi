@@ -5,7 +5,6 @@ import {
   Button,
   Empty,
   Input,
-  Modal,
   Segmented,
   Spin,
   Tooltip,
@@ -13,6 +12,7 @@ import {
   message,
   theme,
 } from 'antd'
+import Modal from '../common/ResizableDraggableModal'
 import {
   CopyOutlined,
   DeleteOutlined,

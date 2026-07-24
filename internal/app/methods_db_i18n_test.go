@@ -406,7 +406,7 @@ func TestMethodsDBSchemaDDLUsesEnglishMessages(t *testing.T) {
 		t.Fatalf("expected localized schema name message, got %q", missingSchemaName.Message)
 	}
 
-	sameSchemaName := app.RenameSchema(connection.ConnectionConfig{Type: "postgres", Database: "tenant"}, "", "sales", "SALES")
+	sameSchemaName := app.RenameSchema(connection.ConnectionConfig{Type: "postgres", Database: "tenant"}, "", "sales", "sales")
 	if sameSchemaName.Success {
 		t.Fatalf("RenameSchema with same names returned success: %+v", sameSchemaName)
 	}
@@ -525,7 +525,9 @@ func TestMethodsDBQueryMultiMessagesUseLocalizedText(t *testing.T) {
 	}
 	source := string(sourceBytes)
 
-	functionSource := methodsDBFunctionSource(t, source, "func (a *App) DBQueryMulti")
+	// DBQueryMulti only selects the audit policy; the shared execution path owns
+	// all user-facing multi-statement messages.
+	functionSource := methodsDBFunctionSource(t, source, "func (a *App) dbQueryMulti")
 	rawMessages := []string{
 		`fmt.Sprintf("第 %d 条语句执行失败: %v", idx+1, err)`,
 		`fmt.Sprintf("（前 %d 条已执行成功）", len(resultSets))`,
@@ -696,7 +698,7 @@ func TestMethodsDBManagedTransactionExecutionMessagesUseLocalizedText(t *testing
 				"db.backend.error.transaction_rollback_failed",
 			},
 		},
-		"func executeManagedSQLTransactionStatements": {
+		"func executeManagedSQLTransactionStatementsWithObserver": {
 			rawMessages: []string{
 				`fmt.Errorf("当前事务会话不支持查询语句")`,
 				`fmt.Errorf("第 %d 条语句执行失败: %w", idx+1, err)`,

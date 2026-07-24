@@ -445,3 +445,423 @@ func TestRebindSavedQueryUpdatesConnectionAndFingerprint(t *testing.T) {
 		t.Fatalf("expected fingerprint to be stored, got %#v", rebound)
 	}
 }
+
+func TestSavedQueryGroupsReadLegacyQueriesOnlyFile(t *testing.T) {
+	app := NewAppWithSecretStore(secretstore.NewUnavailableStore("test"))
+	app.configDir = t.TempDir()
+
+	legacyPayload := `{
+  "queries": [
+    {
+      "id": "saved-legacy",
+      "name": "Legacy",
+      "sql": "select 1",
+      "connectionId": "conn-1",
+      "dbName": "app",
+      "createdAt": 100
+    }
+  ]
+}`
+	if err := os.WriteFile(
+		filepath.Join(app.configDir, savedQueriesFileName),
+		[]byte(legacyPayload),
+		0o644,
+	); err != nil {
+		t.Fatalf("WriteFile legacy saved queries: %v", err)
+	}
+
+	queries, err := app.GetSavedQueries()
+	if err != nil {
+		t.Fatalf("GetSavedQueries returned error: %v", err)
+	}
+	if len(queries) != 1 || queries[0].ID != "saved-legacy" {
+		t.Fatalf("expected legacy query to load, got %#v", queries)
+	}
+	groups, err := app.GetSavedQueryGroups()
+	if err != nil {
+		t.Fatalf("GetSavedQueryGroups returned error: %v", err)
+	}
+	if len(groups) != 0 {
+		t.Fatalf("expected legacy file without groups to load an empty group list, got %#v", groups)
+	}
+}
+
+func TestSavedQueryGroupsEnforceSingleMembershipAndValidateHierarchy(t *testing.T) {
+	app := NewAppWithSecretStore(secretstore.NewUnavailableStore("test"))
+	app.configDir = t.TempDir()
+	seedSavedQueryGroupQueries(t, app, "saved-1", "saved-2", "saved-3")
+
+	root, err := app.SaveSavedQueryGroup(connection.SavedQueryGroup{
+		ID:         "group-root",
+		Name:       "Root",
+		QueryIDs:   []string{"saved-1", "saved-2"},
+		ChildOrder: []string{"query:saved-2", "query:saved-1"},
+	})
+	if err != nil {
+		t.Fatalf("SaveSavedQueryGroup root: %v", err)
+	}
+	if got, want := root.QueryIDs, []string{"saved-2", "saved-1"}; !sameStringSlice(got, want) {
+		t.Fatalf("expected child order to order direct query ids, got %#v want %#v", got, want)
+	}
+	if _, err := app.SaveSavedQueryGroup(connection.SavedQueryGroup{
+		ID:            "group-child",
+		Name:          "Child",
+		ParentGroupID: "group-root",
+		QueryIDs:      []string{"saved-3"},
+	}); err != nil {
+		t.Fatalf("SaveSavedQueryGroup child: %v", err)
+	}
+	if _, err := app.SaveSavedQueryGroup(connection.SavedQueryGroup{
+		ID:       "group-latest",
+		Name:     "Latest",
+		QueryIDs: []string{"saved-2"},
+	}); err != nil {
+		t.Fatalf("SaveSavedQueryGroup latest: %v", err)
+	}
+
+	groups, err := app.GetSavedQueryGroups()
+	if err != nil {
+		t.Fatalf("GetSavedQueryGroups returned error: %v", err)
+	}
+	if group := findSavedQueryGroup(groups, "group-root"); group == nil || !sameStringSlice(group.QueryIDs, []string{"saved-1"}) {
+		t.Fatalf("expected latest group assignment to remove saved-2 from root, got %#v", group)
+	}
+	if group := findSavedQueryGroup(groups, "group-latest"); group == nil || !sameStringSlice(group.QueryIDs, []string{"saved-2"}) {
+		t.Fatalf("expected latest group to own saved-2, got %#v", group)
+	}
+	if _, err := app.SaveSavedQueryGroup(connection.SavedQueryGroup{
+		ID:         "group-latest",
+		Name:       "Latest renamed",
+		QueryIDs:   []string{},
+		ChildOrder: []string{},
+	}); err != nil {
+		t.Fatalf("SaveSavedQueryGroup full replacement: %v", err)
+	}
+	groups, err = app.GetSavedQueryGroups()
+	if err != nil {
+		t.Fatalf("GetSavedQueryGroups after replacement returned error: %v", err)
+	}
+	if group := findSavedQueryGroup(groups, "group-latest"); group == nil || group.Name != "Latest renamed" || len(group.QueryIDs) != 0 || len(group.ChildOrder) != 0 {
+		t.Fatalf("expected empty queryIds and childOrder to fully replace the group, got %#v", group)
+	}
+
+	if _, err := app.SaveSavedQueryGroup(connection.SavedQueryGroup{
+		ID:            "group-invalid-parent",
+		Name:          "Invalid parent",
+		ParentGroupID: "missing-group",
+	}); err == nil {
+		t.Fatal("expected missing parent to be rejected")
+	}
+	if _, err := app.SaveSavedQueryGroup(connection.SavedQueryGroup{
+		ID:       "group-invalid-query",
+		Name:     "Invalid query",
+		QueryIDs: []string{"missing-query"},
+	}); err == nil {
+		t.Fatal("expected unknown query id to be rejected")
+	}
+	if err := app.MoveSavedQueryGroup("group-root", "group-child"); err == nil {
+		t.Fatal("expected move below descendant to be rejected")
+	}
+	if err := app.MoveSavedQueryGroup("group-child", "group-child"); err == nil {
+		t.Fatal("expected self-parenting move to be rejected")
+	}
+}
+
+func TestImportSavedQueryGroupsLatestDuplicateMembershipWins(t *testing.T) {
+	app := NewAppWithSecretStore(secretstore.NewUnavailableStore("test"))
+	app.configDir = t.TempDir()
+
+	if _, err := app.ImportSavedQueries(connection.SavedQueryImportPayload{
+		Queries: []connection.SavedQuery{
+			{
+				ID:           "saved-1",
+				Name:         "One",
+				SQL:          "select 1",
+				ConnectionID: "conn-1",
+				DBName:       "app",
+				CreatedAt:    100,
+			},
+		},
+		Groups: []connection.SavedQueryGroup{
+			{ID: "group-first", Name: "First", QueryIDs: []string{"saved-1"}},
+			{ID: "group-last", Name: "Last", QueryIDs: []string{"saved-1"}},
+		},
+	}); err != nil {
+		t.Fatalf("ImportSavedQueries returned error: %v", err)
+	}
+
+	groups, err := app.GetSavedQueryGroups()
+	if err != nil {
+		t.Fatalf("GetSavedQueryGroups returned error: %v", err)
+	}
+	if group := findSavedQueryGroup(groups, "group-first"); group == nil || len(group.QueryIDs) != 0 {
+		t.Fatalf("expected first imported group to release duplicate query, got %#v", group)
+	}
+	if group := findSavedQueryGroup(groups, "group-last"); group == nil || !sameStringSlice(group.QueryIDs, []string{"saved-1"}) {
+		t.Fatalf("expected last imported group to own duplicate query, got %#v", group)
+	}
+}
+
+func TestDeleteSavedQueryGroupPromotesDirectQueriesAndChildGroups(t *testing.T) {
+	app := NewAppWithSecretStore(secretstore.NewUnavailableStore("test"))
+	app.configDir = t.TempDir()
+	seedSavedQueryGroupQueries(t, app, "saved-1", "saved-2", "saved-3")
+
+	if _, err := app.SaveSavedQueryGroup(connection.SavedQueryGroup{
+		ID:       "group-parent",
+		Name:     "Parent",
+		QueryIDs: []string{"saved-1"},
+	}); err != nil {
+		t.Fatalf("SaveSavedQueryGroup parent: %v", err)
+	}
+	if _, err := app.SaveSavedQueryGroup(connection.SavedQueryGroup{
+		ID:            "group-child",
+		Name:          "Child",
+		ParentGroupID: "group-parent",
+		QueryIDs:      []string{"saved-2"},
+	}); err != nil {
+		t.Fatalf("SaveSavedQueryGroup child: %v", err)
+	}
+	if _, err := app.SaveSavedQueryGroup(connection.SavedQueryGroup{
+		ID:            "group-grandchild",
+		Name:          "Grandchild",
+		ParentGroupID: "group-child",
+		QueryIDs:      []string{"saved-3"},
+	}); err != nil {
+		t.Fatalf("SaveSavedQueryGroup grandchild: %v", err)
+	}
+
+	if err := app.DeleteSavedQueryGroup("group-child"); err != nil {
+		t.Fatalf("DeleteSavedQueryGroup returned error: %v", err)
+	}
+	groups, err := app.GetSavedQueryGroups()
+	if err != nil {
+		t.Fatalf("GetSavedQueryGroups returned error: %v", err)
+	}
+	if findSavedQueryGroup(groups, "group-child") != nil {
+		t.Fatalf("expected deleted group to be absent, got %#v", groups)
+	}
+	parent := findSavedQueryGroup(groups, "group-parent")
+	if parent == nil || !sameStringSlice(parent.QueryIDs, []string{"saved-1", "saved-2"}) {
+		t.Fatalf("expected parent to receive deleted group's direct queries, got %#v", parent)
+	}
+	if got, want := parent.ChildOrder, []string{"query:saved-1", "query:saved-2", "group:group-grandchild"}; !sameStringSlice(got, want) {
+		t.Fatalf("expected promoted children to retain placement, got %#v want %#v", got, want)
+	}
+	grandchild := findSavedQueryGroup(groups, "group-grandchild")
+	if grandchild == nil || grandchild.ParentGroupID != "group-parent" {
+		t.Fatalf("expected grandchild to be promoted to parent, got %#v", grandchild)
+	}
+}
+
+func TestDeleteRootSavedQueryGroupPromotesChildrenAndUngroupsDirectQueries(t *testing.T) {
+	app := NewAppWithSecretStore(secretstore.NewUnavailableStore("test"))
+	app.configDir = t.TempDir()
+	seedSavedQueryGroupQueries(t, app, "saved-1", "saved-2")
+	if _, err := app.SaveSavedQueryGroup(connection.SavedQueryGroup{
+		ID:       "group-root",
+		Name:     "Root",
+		QueryIDs: []string{"saved-1"},
+	}); err != nil {
+		t.Fatalf("SaveSavedQueryGroup root: %v", err)
+	}
+	if _, err := app.SaveSavedQueryGroup(connection.SavedQueryGroup{
+		ID:            "group-child",
+		Name:          "Child",
+		ParentGroupID: "group-root",
+		QueryIDs:      []string{"saved-2"},
+	}); err != nil {
+		t.Fatalf("SaveSavedQueryGroup child: %v", err)
+	}
+
+	if err := app.DeleteSavedQueryGroup("group-root"); err != nil {
+		t.Fatalf("DeleteSavedQueryGroup root: %v", err)
+	}
+	groups, err := app.GetSavedQueryGroups()
+	if err != nil {
+		t.Fatalf("GetSavedQueryGroups returned error: %v", err)
+	}
+	if findSavedQueryGroup(groups, "group-root") != nil {
+		t.Fatalf("expected root group to be deleted, got %#v", groups)
+	}
+	child := findSavedQueryGroup(groups, "group-child")
+	if child == nil || child.ParentGroupID != "" || !sameStringSlice(child.QueryIDs, []string{"saved-2"}) {
+		t.Fatalf("expected direct child to be promoted to root intact, got %#v", child)
+	}
+	for _, group := range groups {
+		if containsString(group.QueryIDs, "saved-1") {
+			t.Fatalf("expected deleted root's direct query to become ungrouped, got %#v", groups)
+		}
+	}
+}
+
+func TestMoveSavedQueryAndGroupUpdatesMembershipAndParent(t *testing.T) {
+	app := NewAppWithSecretStore(secretstore.NewUnavailableStore("test"))
+	app.configDir = t.TempDir()
+	seedSavedQueryGroupQueries(t, app, "saved-1")
+	if _, err := app.SaveSavedQueryGroup(connection.SavedQueryGroup{
+		ID:       "group-root",
+		Name:     "Root",
+		QueryIDs: []string{"saved-1"},
+	}); err != nil {
+		t.Fatalf("SaveSavedQueryGroup root: %v", err)
+	}
+	if _, err := app.SaveSavedQueryGroup(connection.SavedQueryGroup{
+		ID:            "group-child",
+		Name:          "Child",
+		ParentGroupID: "group-root",
+	}); err != nil {
+		t.Fatalf("SaveSavedQueryGroup child: %v", err)
+	}
+
+	if err := app.MoveSavedQueryToGroup("saved-1", "group-child"); err != nil {
+		t.Fatalf("MoveSavedQueryToGroup returned error: %v", err)
+	}
+	groups, err := app.GetSavedQueryGroups()
+	if err != nil {
+		t.Fatalf("GetSavedQueryGroups returned error: %v", err)
+	}
+	if group := findSavedQueryGroup(groups, "group-root"); group == nil || len(group.QueryIDs) != 0 {
+		t.Fatalf("expected source group to release moved query, got %#v", group)
+	}
+	if group := findSavedQueryGroup(groups, "group-child"); group == nil || !sameStringSlice(group.QueryIDs, []string{"saved-1"}) {
+		t.Fatalf("expected destination group to own moved query, got %#v", group)
+	}
+
+	if err := app.MoveSavedQueryToGroup("saved-1", ""); err != nil {
+		t.Fatalf("MoveSavedQueryToGroup ungroup returned error: %v", err)
+	}
+	if err := app.MoveSavedQueryGroup("group-child", ""); err != nil {
+		t.Fatalf("MoveSavedQueryGroup root returned error: %v", err)
+	}
+	groups, err = app.GetSavedQueryGroups()
+	if err != nil {
+		t.Fatalf("GetSavedQueryGroups after moves returned error: %v", err)
+	}
+	if group := findSavedQueryGroup(groups, "group-child"); group == nil || group.ParentGroupID != "" || len(group.QueryIDs) != 0 {
+		t.Fatalf("expected child group and query to be moved to roots, got %#v", group)
+	}
+	if group := findSavedQueryGroup(groups, "group-root"); group == nil || containsString(group.ChildOrder, "group:group-child") {
+		t.Fatalf("expected old parent order to remove moved group token, got %#v", group)
+	}
+}
+
+func TestSavedQueryGroupsSurviveSaveImportAndRebindThenPruneOnDelete(t *testing.T) {
+	app := NewAppWithSecretStore(secretstore.NewUnavailableStore("test"))
+	app.configDir = t.TempDir()
+	seedSavedQueryGroupQueries(t, app, "saved-1")
+	if _, err := app.SaveSavedQueryGroup(connection.SavedQueryGroup{
+		ID:       "group-keep",
+		Name:     "Keep",
+		QueryIDs: []string{"saved-1"},
+	}); err != nil {
+		t.Fatalf("SaveSavedQueryGroup returned error: %v", err)
+	}
+
+	if _, err := app.SaveQuery(connection.SavedQuery{
+		ID:           "saved-1",
+		Name:         "Updated",
+		SQL:          "select 11",
+		ConnectionID: "conn-1",
+		DBName:       "app",
+		CreatedAt:    101,
+	}); err != nil {
+		t.Fatalf("SaveQuery update returned error: %v", err)
+	}
+	if _, err := app.ImportSavedQueries(connection.SavedQueryImportPayload{
+		Queries: []connection.SavedQuery{{
+			ID:           "saved-2",
+			Name:         "Imported",
+			SQL:          "select 2",
+			ConnectionID: "conn-1",
+			DBName:       "app",
+			CreatedAt:    102,
+		}},
+	}); err != nil {
+		t.Fatalf("ImportSavedQueries returned error: %v", err)
+	}
+
+	target, err := app.SaveConnection(connection.SavedConnectionInput{
+		ID:   "conn-target",
+		Name: "Target",
+		Config: connection.ConnectionConfig{
+			ID:       "conn-target",
+			Type:     "postgres",
+			Host:     "db.local",
+			Port:     5432,
+			User:     "app",
+			Database: "app",
+		},
+	})
+	if err != nil {
+		t.Fatalf("SaveConnection returned error: %v", err)
+	}
+	if _, err := app.RebindSavedQuery("saved-1", target.ID); err != nil {
+		t.Fatalf("RebindSavedQuery returned error: %v", err)
+	}
+
+	groups, err := app.GetSavedQueryGroups()
+	if err != nil {
+		t.Fatalf("GetSavedQueryGroups returned error: %v", err)
+	}
+	if group := findSavedQueryGroup(groups, "group-keep"); group == nil || !sameStringSlice(group.QueryIDs, []string{"saved-1"}) {
+		t.Fatalf("expected group metadata to survive query save/import/rebind, got %#v", group)
+	}
+
+	if err := app.DeleteQuery("saved-1"); err != nil {
+		t.Fatalf("DeleteQuery returned error: %v", err)
+	}
+	groups, err = app.GetSavedQueryGroups()
+	if err != nil {
+		t.Fatalf("GetSavedQueryGroups after delete returned error: %v", err)
+	}
+	if group := findSavedQueryGroup(groups, "group-keep"); group == nil || len(group.QueryIDs) != 0 || len(group.ChildOrder) != 0 {
+		t.Fatalf("expected deleted query to be pruned from group, got %#v", group)
+	}
+}
+
+func seedSavedQueryGroupQueries(t *testing.T, app *App, ids ...string) {
+	t.Helper()
+	for index, id := range ids {
+		if _, err := app.SaveQuery(connection.SavedQuery{
+			ID:           id,
+			Name:         id,
+			SQL:          fmt.Sprintf("select %d", index+1),
+			ConnectionID: "conn-1",
+			DBName:       "app",
+			CreatedAt:    int64(index + 1),
+		}); err != nil {
+			t.Fatalf("SaveQuery %s returned error: %v", id, err)
+		}
+	}
+}
+
+func findSavedQueryGroup(groups []connection.SavedQueryGroup, id string) *connection.SavedQueryGroup {
+	for index := range groups {
+		if groups[index].ID == id {
+			return &groups[index]
+		}
+	}
+	return nil
+}
+
+func sameStringSlice(got []string, want []string) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	for index := range got {
+		if got[index] != want[index] {
+			return false
+		}
+	}
+	return true
+}
+
+func containsString(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
+}

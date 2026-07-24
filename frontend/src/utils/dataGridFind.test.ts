@@ -1,8 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import {
   attachDataGridFindRenderVersion,
   collectDataGridFindMatches,
+  collectDataGridFindResult,
   findDataGridTextRanges,
   hasDataGridFindRenderVersionChanged,
   normalizeDataGridFindQuery,
@@ -78,6 +79,26 @@ describe('dataGridFind', () => {
       { rowIndex: 0, rowKey: 'row-1', columnName: 'note', columnIndex: 1, occurrenceIndex: 0, start: 5, end: 10 },
       { rowIndex: 1, rowKey: 'row-2', columnName: 'note', columnIndex: 1, occurrenceIndex: 0, start: 0, end: 5 },
     ]);
+  });
+
+  it('collects matches and their summary with one cell scan', () => {
+    const rows = [
+      { id: 1, name: 'Alpha alpha', note: 'beta' },
+      { id: 2, name: 'none', note: 'Alpha' },
+    ];
+    const getCellText = vi.fn((value: unknown) => String(value ?? ''));
+
+    const result = collectDataGridFindResult(
+      rows,
+      ['name', 'note'],
+      'alpha',
+      getCellText,
+      (row) => String(row.id),
+    );
+
+    expect(getCellText).toHaveBeenCalledTimes(rows.length * 2);
+    expect(result.summary).toEqual({ matchedCellCount: 2, occurrenceCount: 3 });
+    expect(result.matches).toHaveLength(3);
   });
 
   it('resolves previous and next navigation indexes with wrapping', () => {

@@ -2,7 +2,7 @@ import Modal from './common/ResizableDraggableModal';
 import React, { useEffect, useMemo, useState } from 'react';
 import { Alert, Checkbox, Form, Input, Select, Space, Typography, message } from 'antd';
 
-import { DBQuery } from '../../wailsjs/go/app/App';
+import { DBQueryAudited } from '../../wailsjs/go/app/App';
 import type { SavedConnection } from '../types';
 import { useI18n } from '../i18n/provider';
 import { buildRpcConnectionConfig } from '../utils/connectionRpcConfig';
@@ -98,10 +98,11 @@ const MessagePublishModal: React.FC<MessagePublishModalProps> = ({
 
     setSubmitting(true);
     try {
-      const res = await DBQuery(
+      const res = await DBQueryAudited(
         buildRpcConnectionConfig(connection.config) as any,
         executionDbName,
         command.commandText,
+        'message_publish',
       );
       if (!res?.success) {
         void message.error(t('message_publish_modal.error.send_failed_detail', {

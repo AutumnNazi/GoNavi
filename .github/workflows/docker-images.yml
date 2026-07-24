@@ -85,6 +85,7 @@ jobs:
           labels: |
             org.opencontainers.image.title=${{ matrix.image_name }}
             org.opencontainers.image.description=${{ matrix.description }}
+            org.opencontainers.image.licenses=Apache-2.0
 
       - name: Build smoke image
         uses: docker/build-push-action@v6
@@ -121,10 +122,17 @@ jobs:
           cookie_jar="$(mktemp)"
           cid=""
           trap 'rm -f "$cookie_jar"; if [[ -n "$cid" ]]; then docker rm -f "$cid" >/dev/null 2>&1 || true; fi' EXIT
-          cid="$(docker run -d -p 34116:34116 -e GONAVI_WEB_ADDR=0.0.0.0:34116 -e GONAVI_WEB_PASSWORD=123456 codex-smoke/${{ matrix.image_name }}:local web-server)"
+          cid="$(docker run -d -p 127.0.0.1::34116 -e GONAVI_WEB_ADDR=0.0.0.0:34116 -e GONAVI_WEB_PASSWORD=123456 codex-smoke/${{ matrix.image_name }}:local web-server)"
+          host_port="$(docker port "$cid" 34116/tcp | awk -F: 'NR == 1 { print $NF }')"
+          if [[ ! "$host_port" =~ ^[0-9]+$ ]]; then
+            docker logs "$cid"
+            echo "Failed to resolve the Web Server smoke-test port" >&2
+            exit 1
+          fi
+          base_url="http://127.0.0.1:${host_port}"
           ready=false
           for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
-            if curl --fail --silent http://127.0.0.1:34116/__gonavi/healthz >/dev/null; then
+            if curl --fail --silent "${base_url}/__gonavi/healthz" >/dev/null; then
               ready=true
               break
             fi
@@ -135,11 +143,11 @@ jobs:
             echo "Web Server image smoke test failed" >&2
             exit 1
           fi
-          status="$(curl --fail --silent --show-error http://127.0.0.1:34116/__gonavi/auth/status)"
+          status="$(curl --fail --silent --show-error "${base_url}/__gonavi/auth/status")"
           grep -Fq '"configured":true' <<<"$status"
-          login="$(curl --fail --silent --show-error -c "$cookie_jar" -H 'Content-Type: application/json' -d '{"password":"123456","code":""}' http://127.0.0.1:34116/__gonavi/auth/login)"
+          login="$(curl --fail --silent --show-error -c "$cookie_jar" -H 'Content-Type: application/json' -d '{"password":"123456","code":""}' "${base_url}/__gonavi/auth/login")"
           grep -Fq '"success":true' <<<"$login"
-          app_status="$(curl --silent --show-error -o /dev/null -w '%{http_code}' -b "$cookie_jar" http://127.0.0.1:34116/)"
+          app_status="$(curl --silent --show-error -o /dev/null -w '%{http_code}' -b "$cookie_jar" "${base_url}/")"
           [[ "$app_status" == "200" ]]
 
       - name: Smoke test build environment image
@@ -234,6 +242,7 @@ jobs:
           labels: |
             org.opencontainers.image.title=${{ matrix.image_name }}
             org.opencontainers.image.description=${{ matrix.description }}
+            org.opencontainers.image.licenses=Apache-2.0
 
       - name: Create manifest list and push
         working-directory: ${{ runner.temp }}/digests

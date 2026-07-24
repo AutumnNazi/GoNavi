@@ -36,6 +36,10 @@ func TestBuildWindowsPowerShellScriptWaitsRetriesAndRollsBack(t *testing.T) {
 		`previous executable backup is missing`,
 		`Restore-PreviousTarget`,
 		`if ($NewProcess.HasExited)`,
+		`function Release-UpdateMaintenanceLock`,
+		`[Threading.EventWaitHandle]::OpenExisting($MaintenanceEventName)`,
+		`[void]$HandoffEvent.Set()`,
+		`update maintenance lock could not be released before relaunch`,
 		`package kept for manual install`,
 		`previous application relaunched after update failure`,
 	}
@@ -108,12 +112,14 @@ func TestBuildWindowsPowerShellScriptAvoidsCmdParsing(t *testing.T) {
 
 func TestBuildWindowsLaunchCommandUsesHiddenPowerShellFile(t *testing.T) {
 	context := windowsUpdateLaunchContext{
-		SourcePath:        `C:\tmp\GoNavi-0.8.5-Windows-Amd64.exe`,
-		TargetPath:        `C:\GoNavi\GoNavi.exe`,
-		CurrentTargetPath: `C:\GoNavi\GoNavi.exe`,
-		StagedDir:         `C:\tmp\gonavi-update`,
-		LogPath:           `C:\tmp\gonavi-update\update.log`,
-		PID:               12345,
+		SourcePath:           `C:\tmp\GoNavi-0.8.5-Windows-Amd64.exe`,
+		TargetPath:           `C:\GoNavi\GoNavi.exe`,
+		CurrentTargetPath:    `C:\GoNavi\GoNavi.exe`,
+		StagedDir:            `C:\tmp\gonavi-update`,
+		LogPath:              `C:\tmp\gonavi-update\update.log`,
+		MaintenanceEventName: `Global\GoNavi-Update-Test`,
+		HandoffEventName:     `Local\GoNavi-Update-Handoff-Test`,
+		PID:                  12345,
 	}
 	scriptPath := `C:\tmp\gonavi-update\update.ps1`
 	cmd := buildWindowsLaunchCommand(scriptPath, context)

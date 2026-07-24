@@ -151,4 +151,51 @@ describe('buildAIChatReadinessSnapshot', () => {
     expect(snapshot.title).toContain('Cursor');
     expect(snapshot.title).toContain('Auto-selected');
   });
+
+  it('treats a local CLI subscription as ready without secret, endpoint, or model', () => {
+    const snapshot = buildAIChatReadinessSnapshot({
+      providers: [{
+        id: 'provider-codex',
+        type: 'custom',
+        name: 'Codex Subscription',
+        apiKey: '',
+        hasSecret: false,
+        authMode: 'local-cli',
+        baseUrl: '',
+        model: '',
+        apiFormat: 'codex-cli',
+        models: [],
+        maxTokens: 4096,
+        temperature: 0.2,
+      }],
+      activeProviderId: 'provider-codex',
+    });
+
+    expect(snapshot.status).toBe('ready');
+    expect(snapshot.issues).toEqual([]);
+    expect(snapshot.title).toContain('Auto-selected');
+  });
+
+  it('does not waive API provider requirements for an invalid local-cli flag', () => {
+    const snapshot = buildAIChatReadinessSnapshot({
+      providers: [{
+        id: 'provider-invalid',
+        type: 'custom',
+        name: 'Invalid local CLI',
+        apiKey: '',
+        hasSecret: false,
+        authMode: 'local-cli',
+        baseUrl: '',
+        model: '',
+        apiFormat: 'openai',
+        models: [],
+        maxTokens: 4096,
+        temperature: 0.2,
+      }],
+      activeProviderId: 'provider-invalid',
+    });
+
+    expect(snapshot.status).toBe('provider_incomplete');
+    expect(snapshot.issues).toEqual(['missing_secret', 'missing_base_url', 'missing_selected_model']);
+  });
 });

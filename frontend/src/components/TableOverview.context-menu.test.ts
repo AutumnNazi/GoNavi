@@ -25,4 +25,21 @@ describe('TableOverview v2 context menu', () => {
     expect(cardSource).not.toContain('popupRender');
     expect(listSource).not.toContain('popupRender');
   });
+
+  it('routes table backup and INSERT export entries through the retained export workbench', () => {
+    const source = readFileSync(new URL('./TableOverview.tsx', import.meta.url), 'utf8');
+
+    expect(source).toContain('buildBatchTableExportWorkbenchTab({');
+    expect(source).toContain("const resolvedOptions = mode === 'backup'");
+    expect(source).toContain('await showSQLExportOptionsDialog()');
+    expect(source).toContain('initialObjectNames: [normalizedTableName]');
+    expect(source).toContain('contentMode: mode');
+    expect(source).toContain('...resolvedOptions');
+    expect(source).toContain("await openTableSQLExportWorkbench(tableName, 'dataOnly')");
+    expect(source).toContain("void openTableSQLExportWorkbench(tableName, 'backup')");
+    expect(source).toContain("onClick: () => openTableSQLExportWorkbench(table.name, 'backup')");
+    expect(source).not.toContain('ExportTableWithOptions');
+    expect(source).not.toContain('useExportProgressDialog');
+    expect(source).not.toContain('{exportProgressModal}');
+  });
 });

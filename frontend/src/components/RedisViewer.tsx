@@ -34,6 +34,8 @@ import { decodeRedisUtf8Value, formatRedisStringValue, toHexDisplay } from '../u
 import { isConnectionDataImportRestricted } from '../utils/connectionReadOnly';
 import { t, type I18nParams } from '../i18n';
 import { useOptionalI18n } from '../i18n/provider';
+import { APP_POPUP_Z_INDEX } from '../utils/overlayZIndex';
+import RedisResizableDivider from './RedisResizableDivider';
 
 const { Search } = Input;
 
@@ -65,72 +67,6 @@ type RedisImportPreview = {
     sourceAppName?: string;
     total: number;
     keys: RedisKeyInfo[];
-};
-
-// Draggable divider uses direct DOM updates to avoid resize lag.
-const ResizableDivider: React.FC<{
-    onResizeEnd: (newWidth: number) => void;
-    targetRef: React.RefObject<HTMLDivElement>;
-    minWidth?: number;
-    title: string;
-}> = ({ onResizeEnd, targetRef, minWidth = 300, title }) => {
-    const handleMouseDown = (e: React.MouseEvent) => {
-        e.preventDefault();
-        e.stopPropagation();
-
-        const target = targetRef.current;
-        if (!target) return;
-
-        const startX = e.clientX;
-        const startWidth = target.offsetWidth;
-        const containerWidth = target.parentElement?.offsetWidth || window.innerWidth;
-        const maxWidth = containerWidth - 350; // Keep at least 350px for the right pane.
-
-        // Add an overlay to prevent text selection and other interactions.
-        const overlay = document.createElement('div');
-        overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;cursor:col-resize;z-index:9999;';
-        document.body.appendChild(overlay);
-
-        let currentWidth = startWidth;
-
-        const handleMouseMove = (moveEvent: MouseEvent) => {
-            moveEvent.preventDefault();
-            const delta = moveEvent.clientX - startX;
-            currentWidth = Math.max(minWidth, Math.min(maxWidth, startWidth + delta));
-            // Update DOM directly during drag without forcing React re-renders.
-            target.style.width = `${currentWidth}px`;
-            target.style.flexBasis = `${currentWidth}px`;
-        };
-
-        const handleMouseUp = () => {
-            document.removeEventListener('mousemove', handleMouseMove);
-            document.removeEventListener('mouseup', handleMouseUp);
-            document.body.removeChild(overlay);
-            // Commit React state only after drag ends.
-            onResizeEnd(currentWidth);
-        };
-
-        document.addEventListener('mousemove', handleMouseMove);
-        document.addEventListener('mouseup', handleMouseUp);
-    };
-
-    return (
-        <div
-            onMouseDown={handleMouseDown}
-            style={{
-                width: 5,
-                cursor: 'col-resize',
-                background: 'transparent',
-                flexShrink: 0,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                zIndex: 10,
-            }}
-            title={title}
-        >
-        </div>
-    );
 };
 
 const getRedisScanLoadCount = (pattern: string, append: boolean): number => {
@@ -2280,7 +2216,7 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
             </div>
 
             {/* Resizable Divider */}
-            <ResizableDivider targetRef={leftPanelRef} onResizeEnd={setLeftPanelWidth} title={tr('redis_viewer.tooltip.resize_panels')} />
+            <RedisResizableDivider targetRef={leftPanelRef} onResizeEnd={setLeftPanelWidth} title={tr('redis_viewer.tooltip.resize_panels')} />
 
             {/* Right: Value Viewer */}
             <div className={isV2Ui ? 'gn-v2-redis-value-pane' : undefined} style={{ flex: 1, overflow: 'hidden', minWidth: 300 }}>
@@ -2521,11 +2457,13 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
             {treeContextMenu && typeof document !== 'undefined' && createPortal((
                 <div
                     className={isV2Ui ? 'gn-v2-context-menu gn-v2-redis-context-menu' : undefined}
+                    data-gonavi-close-shortcut-guard="true"
+                    data-gonavi-close-shortcut-blocks-background="true"
                     style={{
                         position: 'fixed',
                         left: typeof window !== 'undefined' ? Math.min(treeContextMenu.x + 4, Math.max(16, window.innerWidth - 220)) : treeContextMenu.x,
                         top: typeof window !== 'undefined' ? Math.min(treeContextMenu.y + 4, Math.max(16, window.innerHeight - 140)) : treeContextMenu.y,
-                        zIndex: 1200,
+                        zIndex: APP_POPUP_Z_INDEX,
                         minWidth: 188,
                         padding: 8,
                         borderRadius: 14,

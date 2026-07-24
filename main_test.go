@@ -1,6 +1,9 @@
 package main
 
 import (
+	"context"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/wailsapp/wails/v2/pkg/menu"
@@ -8,6 +11,49 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/windows"
 )
+
+func TestShouldEnableWindowsMSISingleInstanceOnlyForInstalledMainGUI(t *testing.T) {
+	installDir := t.TempDir()
+	executablePath := filepath.Join(installDir, "GoNavi.exe")
+
+	if shouldEnableWindowsMSISingleInstance("windows", executablePath) {
+		t.Fatal("Portable executable unexpectedly enabled single-instance mode")
+	}
+	if err := os.WriteFile(filepath.Join(installDir, ".gonavi-msi-install"), []byte("MSI"), 0o644); err != nil {
+		t.Fatalf("WriteFile MSI marker: %v", err)
+	}
+
+	if !shouldEnableWindowsMSISingleInstance("windows", executablePath) {
+		t.Fatal("MSI executable did not enable single-instance lock")
+	}
+	if shouldEnableWindowsMSISingleInstance("darwin", executablePath) {
+		t.Fatal("non-Windows executable unexpectedly enabled single-instance mode")
+	}
+}
+
+func TestPrimaryWindowActivatorQueuesRequestsUntilRuntimeStartup(t *testing.T) {
+	type activationContextKey struct{}
+	ctx := context.WithValue(context.Background(), activationContextKey{}, "ready")
+	activatedWith := make([]context.Context, 0, 2)
+	activator := primaryWindowActivator{
+		show: func(runtimeCtx context.Context) {
+			activatedWith = append(activatedWith, runtimeCtx)
+		},
+	}
+
+	activator.requestActivation()
+	if len(activatedWith) != 0 {
+		t.Fatalf("activation ran before startup context was available: %d", len(activatedWith))
+	}
+	activator.bindRuntimeContext(ctx)
+	if len(activatedWith) != 1 || activatedWith[0] != ctx {
+		t.Fatalf("queued activation contexts = %#v, want startup context", activatedWith)
+	}
+	activator.requestActivation()
+	if len(activatedWith) != 2 || activatedWith[1] != ctx {
+		t.Fatalf("live activation contexts = %#v, want startup context twice", activatedWith)
+	}
+}
 
 func TestIsLowMemoryMode(t *testing.T) {
 	tests := []struct {

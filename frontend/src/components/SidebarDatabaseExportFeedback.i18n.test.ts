@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
-const source = readFileSync(new URL('./Sidebar.tsx', import.meta.url), 'utf8');
+const source = readFileSync(new URL('./sidebar/useSidebarBatchExport.ts', import.meta.url), 'utf8');
 const locales = ['zh-CN', 'zh-TW', 'en-US', 'ja-JP', 'de-DE', 'ru-RU'] as const;
 const requiredKeys = [
   'sidebar.message.exporting_database_schema',
@@ -23,21 +23,16 @@ const placeholders = (value: string): string[] => [...value.matchAll(/\{\{(\w+)\
   .sort();
 
 describe('Sidebar database export feedback i18n', () => {
-  it('localizes handleExportDatabaseSQL loading, success, and failure wrappers', () => {
+  it('routes database SQL export into the background workbench', () => {
     const block = extractHandleExportDatabaseBlock();
 
-    expect(block).not.toContain('`正在备份数据库 ${dbName} (结构+数据)...`');
-    expect(block).not.toContain('`正在导出数据库 ${dbName} 表结构...`');
-    expect(block).not.toContain("message.success('导出成功')");
-    expect(block).not.toContain("'导出失败: ' + res.message");
-    expect(block).not.toContain("'导出失败: ' + (e?.message || String(e))");
-    expect(block).toContain("t('sidebar.message.exporting_database_backup'");
-    expect(block).toContain("t('sidebar.message.exporting_database_schema'");
-    expect(block).toContain("t('sidebar.message.export_success')");
-    expect(block).toContain("t('sidebar.message.export_failed'");
-    expect(block).toContain('database: dbName');
-    expect(block).toContain('error: res.message');
-    expect(block).toContain('error: e?.message || String(e)');
+    expect(block).toContain('showSQLExportOptionsDialog()');
+    expect(block).toContain('addTab(buildDatabaseExportWorkbenchTab({');
+    expect(block).toContain("contentMode: includeData ? 'backup' : 'schema'");
+    expect(block).toContain('includeDropIfExists: exportOptions.includeDropIfExists');
+    expect(block).toContain("requestKey: createTableExportRequestKey('database')");
+    expect(block).not.toContain('ExportDatabaseSQLWithOptions(');
+    expect(block).not.toContain('message.loading(');
   });
 
   it('keeps database export feedback keys available with stable placeholders', () => {

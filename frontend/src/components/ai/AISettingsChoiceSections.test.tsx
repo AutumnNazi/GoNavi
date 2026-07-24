@@ -11,6 +11,7 @@ import { buildOverlayWorkbenchTheme } from '../../utils/overlayWorkbenchTheme';
 
 const overlayTheme = buildOverlayWorkbenchTheme(false);
 const contextSectionSource = readFileSync(new URL('./AISettingsContextSection.tsx', import.meta.url), 'utf8');
+const choiceGroupSource = readFileSync(new URL('./AISettingsChoiceGroup.tsx', import.meta.url), 'utf8');
 
 const REQUIRED_CONTEXT_KEYS = [
   'ai_settings.open_mode.title',
@@ -42,7 +43,7 @@ const REQUIRED_SAFETY_KEYS = [
 ] as const;
 
 describe('AI settings readonly sections', () => {
-  it('renders the safety cards and keeps the selected level visible', () => {
+  it('renders the safety choices as flat, accessible rows and keeps the selected level visible', () => {
     const markup = renderToStaticMarkup(
       <I18nProvider preference="en-US" systemLanguages={['en-US']} onPreferenceChange={() => {}}>
         <AISettingsSafetySection
@@ -59,6 +60,32 @@ describe('AI settings readonly sections', () => {
     expect(markup).toContain('Read-only mode');
     expect(markup).toContain('Read/write mode');
     expect(markup).toContain('Full mode');
+    expect(markup).toContain('class="gonavi-ai-safety-choice is-active"');
+    expect(markup.match(/role="radiogroup"/g)).toHaveLength(1);
+    expect(markup.match(/role="radio"/g)).toHaveLength(3);
+    expect(markup.match(/aria-checked="true"/g)).toHaveLength(1);
+    expect(markup).not.toContain('aria-pressed');
+    expect(markup).toContain('border-radius:0');
+  });
+
+  it('uses neutral Ant icons, dividers, and one radio indicator instead of safety cards', () => {
+    expect(safetySectionSource).toContain('LockOutlined');
+    expect(safetySectionSource).toContain('EditOutlined');
+    expect(safetySectionSource).toContain('WarningOutlined');
+    expect(safetySectionSource).not.toMatch(/[🔒⚠️🔓]/u);
+    expect(choiceGroupSource).toContain('borderBottom: `1px solid ${cardBorder}`');
+    expect(choiceGroupSource).toContain('className="gonavi-ai-choice-indicator"');
+    expect(choiceGroupSource).toContain('background: active ? overlayTheme.selectedBg');
+    expect(choiceGroupSource).toContain("fontFamily: 'var(--gn-font-sans)'");
+    expect(choiceGroupSource).not.toContain('borderLeft');
+    expect(choiceGroupSource).not.toContain('borderRadius: 14');
+    expect(safetySectionSource).not.toContain(': cardBg');
+  });
+
+  it('uses shared settings typography variables for headings and helper copy', () => {
+    expect(safetySectionSource).toContain("fontSize: 'var(--gn-font-size-sm, 12px)'");
+    expect(contextSectionSource).toContain("fontSize: 'var(--gn-font-size, 14px)'");
+    expect(contextSectionSource).toContain("fontSize: 'var(--gn-font-size-sm, 12px)'");
   });
 
   it('uses catalog fallback keys for safety mode chrome', () => {
@@ -83,7 +110,7 @@ describe('AI settings readonly sections', () => {
     }
   });
 
-  it('renders the open-mode and context cards and keeps the selected values visible', () => {
+  it('renders open-mode and context choices as flat, accessible rows and keeps the selected values visible', () => {
     const markup = renderToStaticMarkup(
       <I18nProvider preference="en-US" systemLanguages={['en-US']} onPreferenceChange={() => {}}>
         <AISettingsContextSection
@@ -105,6 +132,27 @@ describe('AI settings readonly sections', () => {
     expect(markup).toContain('Schema only');
     expect(markup).toContain('With samples');
     expect(markup).toContain('With query results');
+    expect(markup).toContain('class="gonavi-ai-context-choice is-active"');
+    expect(markup.match(/role="radiogroup"/g)).toHaveLength(2);
+    expect(markup.match(/role="radio"/g)).toHaveLength(5);
+    expect(markup.match(/aria-checked="true"/g)).toHaveLength(2);
+    expect(markup).not.toContain('aria-pressed');
+    expect(markup).toContain('border-radius:0');
+  });
+
+  it('uses neutral Ant icons and the same flat choice treatment for both context groups', () => {
+    expect(contextSectionSource).toContain('LayoutOutlined');
+    expect(contextSectionSource).toContain('ExpandOutlined');
+    expect(contextSectionSource).toContain('TableOutlined');
+    expect(contextSectionSource).toContain('DatabaseOutlined');
+    expect(contextSectionSource).toContain('ProfileOutlined');
+    expect(contextSectionSource).not.toMatch(/[📋📊📑📎🪟]/u);
+    expect(choiceGroupSource).toContain('role="radiogroup"');
+    expect(choiceGroupSource).toContain('role="radio"');
+    expect(choiceGroupSource).toContain('aria-checked={active}');
+    expect(choiceGroupSource).toContain('tabIndex={index === selectedIndex ? 0 : -1}');
+    expect(choiceGroupSource).toContain("event.key === 'ArrowDown'");
+    expect(contextSectionSource).not.toContain(': cardBg');
   });
 
   it('uses catalog fallback keys for context mode chrome', () => {

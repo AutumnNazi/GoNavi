@@ -9,24 +9,27 @@ import {
 } from './aiSettingsPresetLayout';
 
 describe('ai settings preset layout', () => {
-  it('uses a fixed grid auto row height so provider bubbles stay visually consistent across rows', () => {
+  it('uses compact two-column rows instead of provider cards', () => {
     expect(PROVIDER_PRESET_GRID_STYLE).toMatchObject({
       display: 'grid',
-      gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
-      gap: 6,
-      gridAutoRows: '96px',
+      gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+      columnGap: 12,
+      rowGap: 0,
+      gridAutoRows: '58px',
       alignItems: 'stretch',
     });
   });
 
-  it('stretches each provider card to fill the row height', () => {
+  it('stretches each provider choice to fill the row without rounded-card decoration', () => {
     expect(PROVIDER_PRESET_CARD_BASE_STYLE).toMatchObject({
       display: 'flex',
-      alignItems: 'flex-start',
+      alignItems: 'center',
       gap: 10,
       height: '100%',
-      minHeight: '96px',
+      minHeight: '58px',
       overflow: 'hidden',
+      borderRadius: 0,
+      textAlign: 'left',
     });
   });
 
@@ -39,16 +42,16 @@ describe('ai settings preset layout', () => {
     });
 
     expect(PROVIDER_PRESET_CARD_DESCRIPTION_STYLE).toMatchObject({
-      marginTop: 4,
+      marginTop: 2,
       display: '-webkit-box',
-      WebkitLineClamp: 2,
+      WebkitLineClamp: 1,
       WebkitBoxOrient: 'vertical',
       overflow: 'hidden',
     });
 
     expect(PROVIDER_PRESET_CARD_TITLE_STYLE).toMatchObject({
       display: '-webkit-box',
-      WebkitLineClamp: 2,
+      WebkitLineClamp: 1,
       WebkitBoxOrient: 'vertical',
       overflow: 'hidden',
     });

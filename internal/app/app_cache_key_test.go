@@ -53,10 +53,12 @@ func TestGetCacheKey_IgnoreKeepAliveSettings(t *testing.T) {
 		Database:                 "app",
 		KeepAliveEnabled:         false,
 		KeepAliveIntervalMinutes: 240,
+		KeepAliveSQL:             "SELECT 1",
 	}
 	modified := base
 	modified.KeepAliveEnabled = true
 	modified.KeepAliveIntervalMinutes = 15
+	modified.KeepAliveSQL = "SELECT current_timestamp"
 
 	left := getCacheKey(base)
 	right := getCacheKey(modified)

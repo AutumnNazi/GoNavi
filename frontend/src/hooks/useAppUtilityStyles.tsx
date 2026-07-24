@@ -135,10 +135,11 @@ export const useAppUtilityStyles = ({
     backdropFilter: overlayTheme.shellBackdropFilter,
   }), [overlayTheme]);
   const utilityPanelStyle = useMemo(() => ({
-    padding: 16,
-    borderRadius: 14,
-    border: overlayTheme.sectionBorder,
-    background: overlayTheme.sectionBg,
+    padding: '16px 2px',
+    borderRadius: 0,
+    border: 'none',
+    borderBottom: `1px solid ${overlayTheme.divider}`,
+    background: 'transparent',
   }), [overlayTheme]);
   const toolCenterModalContentStyle = useMemo<React.CSSProperties>(() => ({
     ...utilityModalShellStyle,
@@ -149,19 +150,19 @@ export const useAppUtilityStyles = ({
   const toolCenterModalWorkspaceStyle = useMemo<React.CSSProperties>(() => ({
     display: 'flex',
     flexDirection: 'column',
-    padding: '10px 0 2px',
+    padding: '8px 0 2px',
     height: '100%',
     minHeight: 0,
   }), []);
   const toolCenterModalSplitStyle = useMemo<React.CSSProperties>(() => ({
     display: 'grid',
-    gridTemplateColumns: '232px minmax(0, 1fr)',
-    gap: 18,
+    gridTemplateColumns: '204px minmax(0, 1fr)',
+    gap: 16,
     flex: 1,
     minHeight: 0,
   }), []);
   const toolCenterNavPanelStyle = useMemo<React.CSSProperties>(() => ({
-    padding: '4px 12px 4px 0',
+    padding: '4px 16px 4px 0',
     display: 'flex',
     flexDirection: 'column',
     minHeight: 0,
@@ -170,12 +171,13 @@ export const useAppUtilityStyles = ({
   const toolCenterNavScrollStyle = useMemo<React.CSSProperties>(() => ({
     display: 'grid',
     alignContent: 'start',
-    gap: 4,
+    gap: 0,
     minHeight: 0,
     overflowY: 'auto',
     overflowX: 'hidden',
-    paddingRight: 8,
-  }), []);
+    paddingRight: 4,
+    borderTop: `1px solid ${overlayTheme.divider}`,
+  }), [overlayTheme.divider]);
   const toolCenterContentPanelStyle = useMemo<React.CSSProperties>(() => ({
     display: 'flex',
     flexDirection: 'column',
@@ -208,7 +210,7 @@ export const useAppUtilityStyles = ({
   }), []);
   const utilityMutedTextStyle = useMemo(() => ({
     color: overlayTheme.mutedText,
-    fontSize: 12,
+    fontSize: 'var(--gn-font-size-sm, 12px)',
     lineHeight: 1.6,
   }), [overlayTheme]);
   const renderUtilityModalTitle = (
@@ -221,45 +223,47 @@ export const useAppUtilityStyles = ({
         {icon}
       </div>
       <div style={{ minWidth: 0 }}>
-        <div style={{ fontSize: 16, fontWeight: 700, color: overlayTheme.titleText }}>{title}</div>
-        <div style={{ marginTop: 4, color: overlayTheme.mutedText, fontSize: 12, lineHeight: 1.6 }}>{description}</div>
+        <div style={{ fontSize: 'calc(var(--gn-font-size, 14px) * 1.14)', fontWeight: 700, color: overlayTheme.titleText }}>{title}</div>
+        <div style={{ marginTop: 4, color: overlayTheme.mutedText, fontSize: 'var(--gn-font-size-sm, 12px)', lineHeight: 1.6 }}>{description}</div>
       </div>
     </div>
   );
   const utilityActionCardStyle = useMemo(() => ({
     width: '100%',
-    minHeight: 68,
-    borderRadius: 14,
-    border: overlayTheme.sectionBorder,
-    background: overlayTheme.sectionBg,
+    minHeight: 64,
+    borderRadius: 0,
+    border: 'none',
+    borderBottom: `1px solid ${overlayTheme.divider}`,
+    background: 'transparent',
     color: overlayTheme.titleText,
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'flex-start',
     gap: 14,
-    paddingInline: 16,
+    paddingInline: 8,
     boxShadow: 'none',
-    fontSize: 15,
+    fontSize: 'var(--gn-font-size, 14px)',
     fontWeight: 600,
   }), [overlayTheme]);
   const utilityActionHintStyle = useMemo(() => ({
-    fontSize: 12,
+    fontSize: 'var(--gn-font-size-sm, 12px)',
     color: overlayTheme.mutedText,
     fontWeight: 400,
     marginTop: 2,
   }), [overlayTheme]);
   const toolCenterRowStyle = useMemo(() => ({
     width: '100%',
-    minHeight: 82,
+    minHeight: 58,
     borderRadius: 0,
     color: overlayTheme.titleText,
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 16,
-    paddingInline: 8,
+    paddingInline: 6,
+    paddingBlock: 8,
     boxShadow: 'none',
-    fontSize: 15,
+    fontSize: 'var(--gn-font-size, 14px)',
     fontWeight: 600,
   }), [overlayTheme]);
   const toolCenterRowDescriptionStyle = useMemo(() => ({

@@ -102,6 +102,8 @@ describe('buildAISetupHealthSnapshot', () => {
     expect(snapshot.blockers).toContain('The active provider has no selected model');
     expect(snapshot.nextActions).toContain('Fill in the active provider secret');
     expect(snapshot.nextActions).toContain('Select an available model for the active provider');
+    expect(snapshot.warnings.some((warning) => warning.includes('OpenCode'))).toBe(true);
+    expect(snapshot.nextActions.some((action) => action.includes('OpenCode'))).toBe(true);
     expect(snapshot.summary.chatReady).toBe(false);
   });
 

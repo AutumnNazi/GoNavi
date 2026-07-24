@@ -72,13 +72,6 @@ const hasSavedQueryUnsavedChanges = (
     || dbName !== toTrimmedString(savedQuery.dbName);
 };
 
-let applicationQuitSavedQueryIdSeed = 0;
-
-const createApplicationQuitSavedQueryId = (): string => {
-  applicationQuitSavedQueryIdSeed += 1;
-  return `saved-${Date.now()}-${applicationQuitSavedQueryIdSeed}`;
-};
-
 export const buildApplicationQuitUnsavedSQLLabel = (
   targets: ApplicationQuitUnsavedSQLTarget[],
 ): string => {
@@ -174,7 +167,9 @@ export const saveApplicationQuitUnsavedSQLTargets = async (
     }
 
     await saveQuery({
-      id: createApplicationQuitSavedQueryId(),
+      // Keep the tab identity so a restored tab resolves this saved query on
+      // later exits instead of creating a new history copy every time.
+      id: target.tabId,
       name: target.title,
       sql: target.draft,
       connectionId: target.connectionId,

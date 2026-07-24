@@ -17,15 +17,16 @@ import (
 
 func newConnectionPackageItem(view connection.SavedConnectionView, bundle connectionSecretBundle, redisDbAliases map[string]string) connectionPackageItem {
 	return connectionPackageItem{
-		ID:                    view.ID,
-		Name:                  view.Name,
-		IncludeDatabases:      cloneStringSlice(view.IncludeDatabases),
-		IncludeRedisDatabases: cloneIntSlice(view.IncludeRedisDatabases),
-		RedisDbAliases:        cloneStringMap(redisDbAliases),
-		IconType:              view.IconType,
-		IconColor:             view.IconColor,
-		Config:                stripConnectionSecretFields(view.Config),
-		Secrets:               bundle,
+		ID:                         view.ID,
+		Name:                       view.Name,
+		IncludeDatabases:           cloneStringSlice(view.IncludeDatabases),
+		IncludeRedisDatabases:      cloneIntSlice(view.IncludeRedisDatabases),
+		SchemaVisibilityByDatabase: cloneSchemaVisibilityByDatabase(view.SchemaVisibilityByDatabase),
+		RedisDbAliases:             cloneStringMap(redisDbAliases),
+		IconType:                   view.IconType,
+		IconColor:                  view.IconColor,
+		Config:                     stripConnectionSecretFields(view.Config),
+		Secrets:                    bundle,
 	}
 }
 
@@ -169,13 +170,14 @@ func newSavedConnectionInputFromPackageItem(item connectionPackageItem) connecti
 	config.DSN = secrets.OpaqueDSN
 
 	return connection.SavedConnectionInput{
-		ID:                    id,
-		Name:                  item.Name,
-		Config:                config,
-		IncludeDatabases:      cloneStringSlice(item.IncludeDatabases),
-		IncludeRedisDatabases: cloneIntSlice(item.IncludeRedisDatabases),
-		IconType:              item.IconType,
-		IconColor:             item.IconColor,
+		ID:                         id,
+		Name:                       item.Name,
+		Config:                     config,
+		IncludeDatabases:           cloneStringSlice(item.IncludeDatabases),
+		IncludeRedisDatabases:      cloneIntSlice(item.IncludeRedisDatabases),
+		SchemaVisibilityByDatabase: cloneSchemaVisibilityByDatabase(item.SchemaVisibilityByDatabase),
+		IconType:                   item.IconType,
+		IconColor:                  item.IconColor,
 		// 连接恢复包以最新导入文件为准；载荷中缺失的密文字段需要显式清空旧值。
 		ClearPrimaryPassword:       strings.TrimSpace(secrets.Password) == "",
 		ClearSSHPassword:           strings.TrimSpace(secrets.SSHPassword) == "",

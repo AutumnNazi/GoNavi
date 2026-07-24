@@ -10,6 +10,20 @@ const requiredKeys = [
   'sidebar.tree.unknown_connection',
   'sidebar.tree.unmatched_saved_queries',
   'sidebar.tree.all_saved_queries',
+  'sidebar.tree.ungrouped_saved_queries',
+  'sidebar.saved_query_group.create_title',
+  'sidebar.saved_query_group.edit_title',
+  'sidebar.saved_query_group.new_group',
+  'sidebar.saved_query_group.new_subgroup',
+  'sidebar.saved_query_group.move_to_group',
+  'sidebar.saved_query_group.move_to_ungrouped',
+  'sidebar.saved_query_group.empty_queries',
+  'sidebar.message.saved_query_group_created',
+  'sidebar.message.saved_query_group_delete_failed',
+  'sidebar.message.saved_query_group_move_failed',
+  'sidebar.message.saved_query_group_save_failed',
+  'sidebar.saved_query_group.error.backend_unavailable',
+  'sidebar.saved_query_group.error.invalid_input',
 ];
 
 describe('Sidebar saved queries tree i18n', () => {
@@ -29,6 +43,7 @@ describe('Sidebar saved queries tree i18n', () => {
     expect(source).toContain("t('sidebar.tree.unknown_connection')");
     expect(source).toContain("title: t('sidebar.tree.unmatched_saved_queries')");
     expect(source).toContain("title: t('sidebar.tree.all_saved_queries')");
+    expect(source).toContain("title: t('sidebar.tree.ungrouped_saved_queries')");
   });
 
   it('keeps saved query fallback keys available in every locale', () => {

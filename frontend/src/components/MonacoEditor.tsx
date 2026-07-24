@@ -20,9 +20,42 @@ const isTestRuntime = (): boolean => {
   return env.MODE === 'test' || env.VITEST === true || env.VITEST === 'true';
 };
 
+type MonacoWorkerFactory = () => Worker;
+
+interface MonacoWorkerFactories {
+  editor: MonacoWorkerFactory;
+  json: MonacoWorkerFactory;
+  css: MonacoWorkerFactory;
+  html: MonacoWorkerFactory;
+  typescript: MonacoWorkerFactory;
+}
+
+export const installMonacoWorkerEnvironment = (
+  scope: Record<string, any>,
+  workers: MonacoWorkerFactories,
+) => {
+  scope.MonacoEnvironment = {
+    ...(scope.MonacoEnvironment || {}),
+    getWorker(_moduleId: string, label: string) {
+      if (label === 'json') return workers.json();
+      if (label === 'css' || label === 'scss' || label === 'less') return workers.css();
+      if (label === 'html' || label === 'handlebars' || label === 'razor') return workers.html();
+      if (label === 'typescript' || label === 'javascript') return workers.typescript();
+      return workers.editor();
+    },
+  };
+};
+
 const sameEditorPosition = (left: any, right: any): boolean => (
   Number(left?.lineNumber) === Number(right?.lineNumber)
   && Number(left?.column) === Number(right?.column)
+);
+
+const sameEditorRange = (left: any, right: any): boolean => (
+  Number(left?.startLineNumber) === Number(right?.startLineNumber)
+  && Number(left?.startColumn) === Number(right?.startColumn)
+  && Number(left?.endLineNumber) === Number(right?.endLineNumber)
+  && Number(left?.endColumn) === Number(right?.endColumn)
 );
 
 const isSelectionEmpty = (selection: any): boolean => (
@@ -230,6 +263,74 @@ const patchQueryEditorAiInlineRightArrowFallback = (editor: any, monaco: any) =>
   editor.addCommand = patchedAddCommand;
 };
 
+const isWebKitImeScrollRuntime = (): boolean => {
+  const userAgent = typeof navigator === 'undefined' ? '' : String(navigator.userAgent || '');
+  return /AppleWebKit\//i.test(userAgent)
+    && !/(?:Chrome|Chromium|CriOS|Edg|EdgiOS|OPR|OPiOS|FxiOS)\//i.test(userAgent);
+};
+
+export const installWebKitImeScrollStabilizer = (editor: any) => {
+  if (!isWebKitImeScrollRuntime() || editor?.__gonaviWebKitImeScrollStabilizerInstalled) {
+    return;
+  }
+
+  const editorDomNode = editor?.getDomNode?.();
+  const TextAreaElement = typeof HTMLTextAreaElement === 'undefined' ? null : HTMLTextAreaElement;
+  const input = editorDomNode?.querySelector?.('textarea.inputarea, .inputarea textarea, textarea') as HTMLTextAreaElement | null;
+  if (!TextAreaElement || !(input instanceof TextAreaElement)) {
+    return;
+  }
+
+  Object.defineProperty(editor, '__gonaviWebKitImeScrollStabilizerInstalled', {
+    value: true,
+    configurable: true,
+  });
+
+  let composing = false;
+  let compositionScrollLeft = 0;
+  let compositionScrollTop = 0;
+
+  const restoreCompositionScroll = () => {
+    if (!composing) {
+      return;
+    }
+    if (input.scrollLeft !== compositionScrollLeft) {
+      input.scrollLeft = compositionScrollLeft;
+    }
+    if (input.scrollTop !== compositionScrollTop) {
+      input.scrollTop = compositionScrollTop;
+    }
+  };
+  const handleCompositionStart = () => {
+    // Monaco has already positioned its visible IME textarea when this listener runs.
+    // Keep that baseline stable while WebKit and Monaco both try to scroll the textarea.
+    compositionScrollLeft = input.scrollLeft;
+    compositionScrollTop = input.scrollTop;
+    composing = true;
+  };
+  const handleCompositionEnd = () => {
+    composing = false;
+  };
+  const handleBlur = () => {
+    composing = false;
+  };
+
+  input.addEventListener('compositionstart', handleCompositionStart);
+  input.addEventListener('compositionupdate', restoreCompositionScroll);
+  input.addEventListener('compositionend', handleCompositionEnd);
+  input.addEventListener('scroll', restoreCompositionScroll);
+  input.addEventListener('blur', handleBlur);
+
+  editor.onDidDispose?.(() => {
+    composing = false;
+    input.removeEventListener('compositionstart', handleCompositionStart);
+    input.removeEventListener('compositionupdate', restoreCompositionScroll);
+    input.removeEventListener('compositionend', handleCompositionEnd);
+    input.removeEventListener('scroll', restoreCompositionScroll);
+    input.removeEventListener('blur', handleBlur);
+  });
+};
+
 export const installPrintableInputFallback = (editor: any, monaco: any) => {
   const editorDomNode = editor?.getDomNode?.();
   if (!editorDomNode || editor.__gonaviPrintableInputFallbackInstalled) {
@@ -252,6 +353,19 @@ export const installPrintableInputFallback = (editor: any, monaco: any) => {
     text: string;
     timer: number | null;
   } | null = null;
+  let pendingSelectionInput: {
+    valueBefore: string;
+    rangeBefore: {
+      startLineNumber: number;
+      startColumn: number;
+      endLineNumber: number;
+      endColumn: number;
+    };
+    startOffset: number;
+    endOffset: number;
+    text: string;
+    timer: number | null;
+  } | null = null;
 
   const clearPendingInput = () => {
     if (!pendingInput) {
@@ -261,6 +375,16 @@ export const installPrintableInputFallback = (editor: any, monaco: any) => {
       clearTimeout(pendingInput.timer);
     }
     pendingInput = null;
+  };
+
+  const clearPendingSelectionInput = () => {
+    if (!pendingSelectionInput) {
+      return;
+    }
+    if (pendingSelectionInput.timer !== null) {
+      clearTimeout(pendingSelectionInput.timer);
+    }
+    pendingSelectionInput = null;
   };
 
   const getPendingNativeInputDelta = (pending: NonNullable<typeof pendingInput>) => {
@@ -382,6 +506,98 @@ export const installPrintableInputFallback = (editor: any, monaco: any) => {
     return true;
   };
 
+  const getSelectionReplacementValue = (
+    pending: NonNullable<typeof pendingSelectionInput>,
+    text: string,
+  ): string => (
+    pending.valueBefore.slice(0, pending.startOffset)
+    + text
+    + pending.valueBefore.slice(pending.endOffset)
+  );
+
+  const hasSelectionInputValueApplied = (
+    pending: NonNullable<typeof pendingSelectionInput>,
+  ): boolean => (
+    String(editor.getValue?.() ?? '') === getSelectionReplacementValue(pending, pending.text)
+  );
+
+  const hasNativeSelectionInputApplied = (
+    pending: NonNullable<typeof pendingSelectionInput>,
+  ): boolean => {
+    if (!hasSelectionInputValueApplied(pending)) {
+      return false;
+    }
+    const expectedPosition = editor.getModel?.()?.getPositionAt?.(
+      pending.startOffset + pending.text.length,
+    );
+    return isSelectionEmpty(editor.getSelection?.())
+      && sameEditorPosition(editor.getPosition?.(), expectedPosition);
+  };
+
+  const recoverPendingSelectionInput = (
+    pending: NonNullable<typeof pendingSelectionInput>,
+  ): boolean => {
+    const afterValue = String(editor.getValue?.() ?? '');
+    const expectedValue = getSelectionReplacementValue(pending, pending.text);
+    const model = editor.getModel?.();
+    if (afterValue === expectedValue) {
+      const expectedPosition = model?.getPositionAt?.(
+        pending.startOffset + pending.text.length,
+      );
+      if (expectedPosition) {
+        editor.setPosition?.(expectedPosition);
+      }
+      return true;
+    }
+    const valueAfterDeletion = getSelectionReplacementValue(pending, '');
+    if (
+      (afterValue !== pending.valueBefore && afterValue !== valueAfterDeletion)
+      || typeof editor.executeEdits !== 'function'
+    ) {
+      return false;
+    }
+
+    const range = afterValue === pending.valueBefore
+      ? pending.rangeBefore
+      : (() => {
+          const startPosition = model?.getPositionAt?.(pending.startOffset);
+          if (!startPosition) {
+            return null;
+          }
+          return {
+            startLineNumber: startPosition.lineNumber,
+            startColumn: startPosition.column,
+            endLineNumber: startPosition.lineNumber,
+            endColumn: startPosition.column,
+          };
+        })();
+    if (!range) {
+      return false;
+    }
+
+    editor.executeEdits('gonavi-printable-selection-fallback', [{
+      range,
+      text: pending.text,
+      forceMoveMarkers: true,
+    }]);
+    const nextPosition = model?.getPositionAt?.(pending.startOffset + pending.text.length);
+    if (nextPosition) {
+      editor.setPosition?.(nextPosition);
+    }
+    return true;
+  };
+
+  const settlePendingSelectionInput = () => {
+    const pending = pendingSelectionInput;
+    if (!pending) {
+      return;
+    }
+    clearPendingSelectionInput();
+    if (!hasNativeSelectionInputApplied(pending)) {
+      recoverPendingSelectionInput(pending);
+    }
+  };
+
   const isReadOnly = (): boolean => {
     try {
       const optionId = monaco?.editor?.EditorOption?.readOnly;
@@ -394,8 +610,7 @@ export const installPrintableInputFallback = (editor: any, monaco: any) => {
   const handleBeforeInput = (event: InputEvent) => {
     const text = String(event.data || '');
     if (
-      event.defaultPrevented
-      || event.isComposing
+      event.isComposing
       || event.inputType !== 'insertText'
       || !text
       || text.length > 8
@@ -404,8 +619,66 @@ export const installPrintableInputFallback = (editor: any, monaco: any) => {
       return;
     }
 
-    const selectionBefore = editor.getSelection?.();
+    let selectionBefore = editor.getSelection?.();
+    if (pendingSelectionInput) {
+      if (
+        isSelectionEmpty(selectionBefore)
+        || sameEditorRange(selectionBefore, pendingSelectionInput.rangeBefore)
+      ) {
+        settlePendingSelectionInput();
+        selectionBefore = editor.getSelection?.();
+      } else {
+        clearPendingSelectionInput();
+      }
+    }
     if (!isSelectionEmpty(selectionBefore)) {
+      if (pendingInput) {
+        clearPendingInput();
+      }
+
+      const model = editor.getModel?.();
+      const startOffset = Number(model?.getOffsetAt?.({
+        lineNumber: selectionBefore.startLineNumber,
+        column: selectionBefore.startColumn,
+      }));
+      const endOffset = Number(model?.getOffsetAt?.({
+        lineNumber: selectionBefore.endLineNumber,
+        column: selectionBefore.endColumn,
+      }));
+      if (!Number.isFinite(startOffset) || !Number.isFinite(endOffset) || startOffset >= endOffset) {
+        return;
+      }
+
+      const pending = {
+        valueBefore: String(editor.getValue?.() ?? ''),
+        rangeBefore: {
+          startLineNumber: selectionBefore.startLineNumber,
+          startColumn: selectionBefore.startColumn,
+          endLineNumber: selectionBefore.endLineNumber,
+          endColumn: selectionBefore.endColumn,
+        },
+        startOffset,
+        endOffset,
+        text,
+        timer: null as number | null,
+      };
+      pendingSelectionInput = pending;
+      pending.timer = window.setTimeout(() => {
+        if (pendingSelectionInput !== pending) {
+          return;
+        }
+        pendingSelectionInput = null;
+        const domNode = editor.getDomNode?.();
+        if (!(domNode instanceof HTMLElement) || !domNode.isConnected || isReadOnly()) {
+          return;
+        }
+        if (document.activeElement && !domNode.contains(document.activeElement)) {
+          return;
+        }
+        if (!hasNativeSelectionInputApplied(pending)) {
+          recoverPendingSelectionInput(pending);
+        }
+      }, PRINTABLE_INPUT_FALLBACK_DELAY_MS);
       return;
     }
     let beforeValue = String(editor.getValue?.() ?? '');
@@ -479,9 +752,13 @@ export const installPrintableInputFallback = (editor: any, monaco: any) => {
     if (pendingInput && hasNativeInputApplied(pendingInput)) {
       clearPendingInput();
     }
+    if (pendingSelectionInput && hasSelectionInputValueApplied(pendingSelectionInput)) {
+      clearPendingSelectionInput();
+    }
   });
   editor.onDidDispose?.(() => {
     clearPendingInput();
+    clearPendingSelectionInput();
     modelContentDisposable?.dispose?.();
     input.removeEventListener('beforeinput', handleBeforeInput);
   });
@@ -495,7 +772,13 @@ export const registerGonaviMonacoThemes: BeforeMount = (monaco) => {
   monaco.editor.defineTheme('transparent-dark', {
     base: 'vs-dark',
     inherit: true,
-    rules: [],
+    rules: [
+      { token: 'keyword.sql', foreground: 'C792EA', fontStyle: 'bold' },
+      { token: 'keyword.try.sql', foreground: 'C792EA', fontStyle: 'bold' },
+      { token: 'keyword.catch.sql', foreground: 'C792EA', fontStyle: 'bold' },
+      { token: 'keyword.block.sql', foreground: 'C792EA', fontStyle: 'bold' },
+      { token: 'keyword.choice.sql', foreground: 'C792EA', fontStyle: 'bold' },
+    ],
     colors: {
       'editor.background': '#00000000',
       'editor.lineHighlightBackground': '#ffffff10',
@@ -507,7 +790,13 @@ export const registerGonaviMonacoThemes: BeforeMount = (monaco) => {
   monaco.editor.defineTheme('transparent-light', {
     base: 'vs',
     inherit: true,
-    rules: [],
+    rules: [
+      { token: 'keyword.sql', foreground: '6D28D9', fontStyle: 'bold' },
+      { token: 'keyword.try.sql', foreground: '6D28D9', fontStyle: 'bold' },
+      { token: 'keyword.catch.sql', foreground: '6D28D9', fontStyle: 'bold' },
+      { token: 'keyword.block.sql', foreground: '6D28D9', fontStyle: 'bold' },
+      { token: 'keyword.choice.sql', foreground: '6D28D9', fontStyle: 'bold' },
+    ],
     colors: {
       'editor.background': '#00000000',
       'editor.lineHighlightBackground': '#00000010',
@@ -527,8 +816,22 @@ const ensureMonacoConfigured = (): Promise<void> => {
 
   if (!monacoConfiguredPromise) {
     monacoConfiguredPromise = import('monaco-editor/esm/nls.messages.zh-cn')
-      .then(() => import('monaco-editor'))
-      .then((monaco) => {
+      .then(() => Promise.all([
+        import('monaco-editor'),
+        import('monaco-editor/esm/vs/editor/editor.worker?worker'),
+        import('monaco-editor/esm/vs/language/json/json.worker?worker'),
+        import('monaco-editor/esm/vs/language/css/css.worker?worker'),
+        import('monaco-editor/esm/vs/language/html/html.worker?worker'),
+        import('monaco-editor/esm/vs/language/typescript/ts.worker?worker'),
+      ]))
+      .then(([monaco, editorWorker, jsonWorker, cssWorker, htmlWorker, typescriptWorker]) => {
+        installMonacoWorkerEnvironment(globalThis as unknown as Record<string, any>, {
+          editor: () => new editorWorker.default(),
+          json: () => new jsonWorker.default(),
+          css: () => new cssWorker.default(),
+          html: () => new htmlWorker.default(),
+          typescript: () => new typescriptWorker.default(),
+        });
         loader.config({ monaco });
       });
   }
@@ -585,8 +888,19 @@ const MonacoEditor: React.FC<MonacoEditorProps> = ({
     installOceanBaseOracleNavigationFallback(editor);
     patchQueryEditorAiInlineRightArrowFallback(editor, monaco);
     installPrintableInputFallback(editor, monaco);
+    installWebKitImeScrollStabilizer(editor);
     onMount?.(editor, monaco);
   }, [onMount]);
+
+  const loadingFallback = (
+    <div
+      data-monaco-editor-loading="true"
+      aria-busy="true"
+      style={{ height: props.height || '100%', width: props.width || '100%' }}
+    >
+      {loading || null}
+    </div>
+  );
 
   const resolvedOptions = useMemo(() => {
     if (uiVersion !== 'v2') {
@@ -629,21 +943,14 @@ const MonacoEditor: React.FC<MonacoEditorProps> = ({
   ]);
 
   if (!ready) {
-    return (
-      <div
-        data-monaco-editor-loading="true"
-        style={{ height: props.height || '100%', width: props.width || '100%' }}
-      >
-        {loading || null}
-      </div>
-    );
+    return loadingFallback;
   }
 
   return (
     <Editor
       {...props}
       options={resolvedOptions}
-      loading={loading}
+      loading={loadingFallback}
       beforeMount={handleBeforeMount}
       onMount={handleMount}
     />

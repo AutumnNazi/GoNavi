@@ -12,6 +12,11 @@ import AIChatPanelModeContent, {
   type AIChatInsightItem,
   type AIChatPanelMode,
 } from './AIChatPanelModeContent';
+import {
+  buildAIToolResultIndex,
+  haveSameRelevantToolResults,
+  type AIToolResultIndex,
+} from './aiToolResultIndex';
 
 interface AIChatPanelConversationViewProps {
   mode: AIChatPanelMode;
@@ -28,6 +33,7 @@ interface AIChatPanelConversationViewProps {
   insights: AIChatInsightItem[];
   sessions: AIChatInlineHistorySession[];
   activeSessionId: string;
+  sessionActionsDisabled?: boolean;
   activeConnectionId?: string;
   activeConnectionConfig?: RpcConnectionConfig;
   activeDbName?: string;
@@ -41,6 +47,110 @@ interface AIChatPanelConversationViewProps {
   onMessageRenderError: (error: Error, errorInfo: React.ErrorInfo, message: AIChatMessage) => void;
   onScrollBottom: () => void;
 }
+
+interface AIChatMessageRowProps {
+  message: AIChatMessage;
+  toolResultsById: AIToolResultIndex;
+  darkMode: boolean;
+  overlayTheme: OverlayWorkbenchTheme;
+  textColor: string;
+  activeConnectionId?: string;
+  activeConnectionConfig?: RpcConnectionConfig;
+  activeDbName?: string;
+  onEditMessage: (message: AIChatMessage) => void;
+  onRetryMessage: (message: AIChatMessage) => void;
+  onDeleteMessage: (id: string) => void;
+  onMessageRenderError: (error: Error, errorInfo: React.ErrorInfo, message: AIChatMessage) => void;
+}
+
+const areAIChatMessageRowPropsEqual = (
+  previous: AIChatMessageRowProps,
+  next: AIChatMessageRowProps,
+): boolean => (
+  previous.message === next.message
+  && previous.darkMode === next.darkMode
+  && previous.overlayTheme === next.overlayTheme
+  && previous.textColor === next.textColor
+  && previous.activeConnectionId === next.activeConnectionId
+  && previous.activeConnectionConfig === next.activeConnectionConfig
+  && previous.activeDbName === next.activeDbName
+  && previous.onEditMessage === next.onEditMessage
+  && previous.onRetryMessage === next.onRetryMessage
+  && previous.onDeleteMessage === next.onDeleteMessage
+  && previous.onMessageRenderError === next.onMessageRenderError
+  && haveSameRelevantToolResults(
+    next.message.tool_calls,
+    previous.toolResultsById,
+    next.toolResultsById,
+  )
+);
+
+const AIChatMessageRow: React.FC<AIChatMessageRowProps> = React.memo(({
+  message,
+  toolResultsById,
+  darkMode,
+  overlayTheme,
+  textColor,
+  activeConnectionId,
+  activeConnectionConfig,
+  activeDbName,
+  onEditMessage,
+  onRetryMessage,
+  onDeleteMessage,
+  onMessageRenderError,
+}) => (
+  <AIMessageRenderBoundary
+    msg={message}
+    darkMode={darkMode}
+    overlayTheme={overlayTheme}
+    onDeleteMessage={onDeleteMessage}
+    onError={onMessageRenderError}
+  >
+    <AIMessageBubble
+      msg={message}
+      darkMode={darkMode}
+      overlayTheme={overlayTheme}
+      textColor={textColor}
+      onEdit={onEditMessage}
+      onRetry={onRetryMessage}
+      onDelete={onDeleteMessage}
+      activeConnectionId={activeConnectionId}
+      activeConnectionConfig={activeConnectionConfig}
+      activeDbName={activeDbName}
+      toolResultsById={toolResultsById}
+    />
+  </AIMessageRenderBoundary>
+), areAIChatMessageRowPropsEqual);
+
+interface AIChatMessageListProps extends Omit<
+  AIChatMessageRowProps,
+  'message' | 'toolResultsById'
+> {
+  messages: AIChatMessage[];
+}
+
+const AIChatMessageList: React.FC<AIChatMessageListProps> = ({
+  messages,
+  ...rowProps
+}) => {
+  const toolResultsById = React.useMemo(
+    () => buildAIToolResultIndex(messages),
+    [messages],
+  );
+
+  return (
+    <>
+      {messages.map((message) => (
+        <AIChatMessageRow
+          key={message.id}
+          {...rowProps}
+          message={message}
+          toolResultsById={toolResultsById}
+        />
+      ))}
+    </>
+  );
+};
 
 const AIChatPanelConversationView: React.FC<AIChatPanelConversationViewProps> = ({
   mode,
@@ -57,6 +167,7 @@ const AIChatPanelConversationView: React.FC<AIChatPanelConversationViewProps> = 
   insights,
   sessions,
   activeSessionId,
+  sessionActionsDisabled = false,
   activeConnectionId,
   activeConnectionConfig,
   activeDbName,
@@ -85,30 +196,19 @@ const AIChatPanelConversationView: React.FC<AIChatPanelConversationViewProps> = 
             isV2Ui={isV2Ui}
           />
         ) : (
-          messages.map((message) => (
-            <AIMessageRenderBoundary
-              key={message.id}
-              msg={message}
-              darkMode={darkMode}
-              overlayTheme={overlayTheme}
-              onDeleteMessage={onDeleteMessage}
-              onError={onMessageRenderError}
-            >
-              <AIMessageBubble
-                msg={message}
-                darkMode={darkMode}
-                overlayTheme={overlayTheme}
-                textColor={textColor}
-                onEdit={onEditMessage}
-                onRetry={onRetryMessage}
-                onDelete={onDeleteMessage}
-                activeConnectionId={activeConnectionId}
-                activeConnectionConfig={activeConnectionConfig}
-                activeDbName={activeDbName}
-                allMessages={messages}
-              />
-            </AIMessageRenderBoundary>
-          ))
+          <AIChatMessageList
+            messages={messages}
+            darkMode={darkMode}
+            overlayTheme={overlayTheme}
+            textColor={textColor}
+            activeConnectionId={activeConnectionId}
+            activeConnectionConfig={activeConnectionConfig}
+            activeDbName={activeDbName}
+            onEditMessage={onEditMessage}
+            onRetryMessage={onRetryMessage}
+            onDeleteMessage={onDeleteMessage}
+            onMessageRenderError={onMessageRenderError}
+          />
         )
       )}
 
@@ -117,6 +217,7 @@ const AIChatPanelConversationView: React.FC<AIChatPanelConversationViewProps> = 
         insights={insights}
         sessions={sessions}
         activeSessionId={activeSessionId}
+        sessionActionsDisabled={sessionActionsDisabled}
         onSelectSession={onSelectSession}
       />
 

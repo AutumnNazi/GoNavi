@@ -78,6 +78,12 @@ describe('AISettingsModal edit password behavior', () => {
     expect(source).not.toContain("'Authorization Header 已复制'");
   });
 
+  it('refreshes the persisted MCP HTTP status when a toggle request fails', () => {
+    expect(source).toContain('let Service: any;');
+    expect(source).toContain('const refreshedStatus = await Service?.AIGetMCPHTTPServerStatus?.();');
+    expect(source).toContain('状态回填仅用于反映已持久化的开关意图');
+  });
+
   it('localizes MCP HTTP default status fallback', () => {
     expect(source).toContain("const defaultMCPHTTPServerStatus = useMemo<AIMCPHTTPServerStatus>(() => ({");
     expect(source).toContain("message: t('ai_settings.mcp_http.status.not_running')");
@@ -104,7 +110,7 @@ describe('AISettingsModal edit password behavior', () => {
   it('delegates bulky MCP and built-in tool sections to dedicated ai components', () => {
     expect(source).toContain("import AIBuiltinToolsCatalog from './ai/AIBuiltinToolsCatalog';");
     expect(source).toContain("import AISettingsProvidersSection from './ai/AISettingsProvidersSection';");
-    expect(source).toContain("import AISettingsSidebar, { type AISettingsSectionKey } from './ai/AISettingsSidebar';");
+    expect(source).toContain("import AISettingsSidebar, { AI_SETTINGS_NAV_ITEMS, type AISettingsSectionKey } from './ai/AISettingsSidebar';");
     expect(source).toContain("import AISettingsSafetySection from './ai/AISettingsSafetySection';");
     expect(source).toContain("import AISettingsContextSection from './ai/AISettingsContextSection';");
     expect(source).toContain('<AISettingsProvidersSection');
@@ -114,6 +120,30 @@ describe('AISettingsModal edit password behavior', () => {
     expect(source).toContain('<AISettingsContextSection');
     expect(source).toContain('<AISettingsMCPSection');
     expect(source).toContain('<AIBuiltinToolsCatalog');
+  });
+
+  it('keeps every AI section mounted while exposing only the active tabpanel', () => {
+    expect(source).toContain('const renderSectionPanel = (sectionKey: AISettingsSectionKey, content: React.ReactNode) => {');
+    expect(source).toContain('hidden={activeSection !== sectionKey}');
+    expect(source).toContain('id={`gonavi-ai-settings-panel-${sectionKey}`}');
+    expect(source).toContain('aria-labelledby={`gonavi-ai-settings-tab-${sectionKey}`}');
+    expect(source).toContain('role="tabpanel"');
+
+    for (const sectionKey of ['providers', 'safety', 'context', 'mcp', 'skills', 'tools', 'prompts']) {
+      expect(source).toContain(`renderSectionPanel('${sectionKey}', (`);
+    }
+
+    expect(source).not.toContain('key={activeSection}');
+    expect(source).not.toContain("{activeSection === 'mcp' && (");
+    expect(source).not.toContain("{activeSection === 'tools' && (");
+  });
+
+  it('resets the shared AI settings scroll region after section navigation', () => {
+    expect(source).toContain('const settingsContentScrollRef = useRef<HTMLDivElement>(null);');
+    expect(source).toContain('ref={settingsContentScrollRef}');
+    expect(source).toContain('scrollRegion.scrollTop = 0;');
+    expect(source).toContain('scrollRegion.scrollLeft = 0;');
+    expect(source).toContain('}, [activeSection]);');
   });
 
   it('wires the external MCP client install panel actions back to the modal handlers', () => {
@@ -141,6 +171,12 @@ describe('AISettingsModal edit password behavior', () => {
   it('keeps the prefilled api key masked by default', () => {
     expect(source).toContain('const [primaryPasswordVisible, setPrimaryPasswordVisible] = useState(false);');
     expect(providersSectionSource).toContain('visible: primaryPasswordVisible,');
+  });
+
+  it('retains an existing API secret but blocks a keyless local-cli to API switch', () => {
+    expect(source).toContain('isProviderSecretRequirementSatisfied({');
+    expect(source).toContain('canRetainExistingProviderSecret({ currentAuthMode: authMode, editingProvider })');
+    expect(source).toContain('retainExistingSecret,');
   });
 
   it('does not render the clear helper block anymore', () => {

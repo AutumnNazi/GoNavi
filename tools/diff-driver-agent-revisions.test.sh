@@ -22,6 +22,7 @@ rsync -a --exclude .git ./ "$tmpdir/" >/dev/null
 (
   cd "$tmpdir"
   git init -q
+  git add -f cmd/optional-driver-agent
   git add .
   git -c user.name=GoNavi -c user.email=gonavi@example.test commit -q -m initial
   base="$(git rev-parse HEAD)"
@@ -60,6 +61,7 @@ rsync -a --exclude .git ./ "$tmpdir_frontend/" >/dev/null
 (
   cd "$tmpdir_frontend"
   git init -q
+  git add -f cmd/optional-driver-agent
   git add .
   git -c user.name=GoNavi -c user.email=gonavi@example.test commit -q -m initial
   base="$(git rev-parse HEAD)"

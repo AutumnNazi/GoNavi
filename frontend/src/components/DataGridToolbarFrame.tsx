@@ -60,6 +60,7 @@ export interface DataGridToolbarFrameProps {
   onToggleFilter?: () => void;
   canModifyData: boolean;
   selectedRowKeysLength: number;
+  deleteTargetRowCount: number;
   allSelectedAreDeleted: boolean;
   cellEditMode: boolean;
   selectedCellsSize: number;
@@ -161,6 +162,7 @@ const DataGridToolbarFrame: React.FC<DataGridToolbarFrameProps> = ({
   onToggleFilter,
   canModifyData,
   selectedRowKeysLength,
+  deleteTargetRowCount,
   allSelectedAreDeleted,
   cellEditMode,
   selectedCellsSize,
@@ -317,11 +319,11 @@ const DataGridToolbarFrame: React.FC<DataGridToolbarFrameProps> = ({
             {renderToolbarDivider()}
             <Button icon={<PlusOutlined />} onClick={onAddRow}>{translate('data_grid.toolbar.add_row')}</Button>
             {allSelectedAreDeleted ? (
-              <Button icon={<UndoOutlined />} disabled={selectedRowKeysLength === 0} onClick={onUndoDeleteSelected}>{translate('data_grid.toolbar.undo_delete')}</Button>
+              <Button icon={<UndoOutlined />} disabled={deleteTargetRowCount === 0} onClick={onUndoDeleteSelected}>{translate('data_grid.toolbar.undo_delete')}</Button>
             ) : (
-              <Button icon={<DeleteOutlined />} danger disabled={selectedRowKeysLength === 0} onClick={onDeleteSelected}>{translate('data_grid.toolbar.delete_selected')}</Button>
+              <Button icon={<DeleteOutlined />} danger disabled={deleteTargetRowCount === 0} onClick={onDeleteSelected}>{translate('data_grid.toolbar.delete_selected')}</Button>
             )}
-            {selectedRowKeysLength > 0 && <span style={{ fontSize: '12px', color: '#888' }}>{translate('data_grid.toolbar.selected_count', { count: selectedRowKeysLength })}</span>}
+            {deleteTargetRowCount > 0 && <span style={{ fontSize: '12px', color: '#888' }}>{translate('data_grid.toolbar.selected_count', { count: deleteTargetRowCount })}</span>}
             {renderToolbarDivider()}
             <Button
               data-grid-cell-editor-action="true"
@@ -429,6 +431,19 @@ const DataGridToolbarFrame: React.FC<DataGridToolbarFrameProps> = ({
                 {translate('data_grid.toolbar.copy')} <DownOutlined />
               </Button>
             </Dropdown>
+          </>
+        )}
+
+        {!canModifyData && selectedCellsSize > 0 && (
+          <>
+            {renderToolbarDivider()}
+            <Button
+              data-grid-copy-selection-action="true"
+              icon={<CopyOutlined />}
+              onClick={onCopySelectedCellsToClipboard}
+            >
+              {translate('data_grid.toolbar.copy_selection', { count: selectedCellsSize })}
+            </Button>
           </>
         )}
 

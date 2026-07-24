@@ -15,6 +15,15 @@ describe('aiThinkingIntensity', () => {
     })).toBe('openai');
   });
 
+  it('detects OpenAI profile for the Responses API format', () => {
+    expect(resolveThinkingIntensityProfile({
+      type: 'custom',
+      apiFormat: 'openai-responses',
+      baseUrl: 'https://api.openai.com/v1',
+      model: 'gpt-5.4',
+    })).toBe('openai');
+  });
+
   it('detects DeepSeek even when api format is anthropic', () => {
     expect(resolveThinkingIntensityProfile({
       type: 'custom',

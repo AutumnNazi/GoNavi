@@ -120,7 +120,6 @@ const SQLFileExecutionWorkbench: React.FC<{ tab: TabData }> = ({ tab }) => {
   const theme = useStore((state) => state.theme);
   const [nowTick, setNowTick] = useState(() => Date.now());
   const [historyEntries, setHistoryEntries] = useState<SQLFileExecutionHistoryEntry[]>(EMPTY_HISTORY);
-  const lastArchivedJobIdRef = useRef('');
   const lastRequestKeyRef = useRef('');
   const darkMode = theme === 'dark';
   const shellBg = darkMode ? '#101319' : '#f5f7fb';
@@ -165,10 +164,6 @@ const SQLFileExecutionWorkbench: React.FC<{ tab: TabData }> = ({ tab }) => {
     if (state.status !== 'done' && state.status !== 'cancelled' && state.status !== 'error') {
       return;
     }
-    if (lastArchivedJobIdRef.current === state.jobId) {
-      return;
-    }
-    lastArchivedJobIdRef.current = state.jobId;
     setHistoryEntries((prev) => [
       {
         ...state,

@@ -1,35 +1,167 @@
-# GoNavi - A Modern Lightweight Database Client
+<p align="center">
+  <img src="assets/readme-logo.png" width="128" alt="GoNavi Logo" />
+</p>
 
-[![Go Version](https://img.shields.io/github/go-mod/go-version/Syngnat/GoNavi)](https://go.dev/)
-[![Wails Version](https://img.shields.io/badge/Wails-v2-red)](https://wails.io)
-[![React Version](https://img.shields.io/badge/React-v18-blue)](https://reactjs.org/)
-[![License](https://img.shields.io/badge/License-Apache%202.0-green.svg)](LICENSE)
-[![Build Status](https://img.shields.io/github/actions/workflow/status/Syngnat/GoNavi/release.yml?label=Build)](https://github.com/Syngnat/GoNavi/actions)
-[![Stars](https://img.shields.io/github/stars/Syngnat/GoNavi?style=social)](https://github.com/Syngnat/GoNavi/stargazers)
-[![Downloads](https://img.shields.io/github/downloads/Syngnat/GoNavi/total?color=blue&label=downloads)](https://github.com/Syngnat/GoNavi/releases)
+<h1 align="center">GoNavi</h1>
 
-**Language**: English | [简体中文](README.zh-CN.md)
+<p align="center">
+  <b>Navigate every data source — native speed, agent-ready, zero Electron bloat.</b>
+</p>
 
-GoNavi is a modern, high-performance, cross-platform database client built with **Wails (Go)** and **React**.
-It delivers native-like responsiveness with low resource usage.
+<p align="center">
+  A high-performance cross-platform database client built with
+  <a href="https://wails.io">Wails</a> (Go) + <a href="https://react.dev">React</a>.
+  Desktop-first. MCP-ready. ~30MB class binaries.
+</p>
 
-Compared with many Electron-based clients, GoNavi is typically smaller in binary size (around 10MB class), starts faster, and uses less memory.
+<p align="center">
+  <a href="https://github.com/Syngnat/GoNavi/releases"><img src="https://img.shields.io/github/v/release/Syngnat/GoNavi?style=for-the-badge&color=8B5CF6" alt="Release" /></a>
+  <a href="https://github.com/Syngnat/GoNavi/releases"><img src="https://img.shields.io/github/downloads/Syngnat/GoNavi/total?style=for-the-badge&color=6366F1&label=downloads" alt="Downloads" /></a>
+  <a href="https://github.com/Syngnat/GoNavi/stargazers"><img src="https://img.shields.io/github/stars/Syngnat/GoNavi?style=for-the-badge&color=F59E0B" alt="Stars" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache%202.0-22C55E?style=for-the-badge" alt="License" /></a>
+</p>
+
+<p align="center">
+  <a href="https://go.dev"><img src="https://img.shields.io/github/go-mod/go-version/Syngnat/GoNavi?style=flat-square&logo=go&logoColor=white&label=Go" alt="Go" /></a>
+  <a href="https://wails.io"><img src="https://img.shields.io/badge/Wails-v2-red?style=flat-square" alt="Wails" /></a>
+  <a href="https://reactjs.org"><img src="https://img.shields.io/badge/React-18-61DAFB?style=flat-square&logo=react&logoColor=white" alt="React" /></a>
+  <a href="https://github.com/Syngnat/GoNavi/actions"><img src="https://img.shields.io/github/actions/workflow/status/Syngnat/GoNavi/release.yml?style=flat-square&label=Build" alt="Build" /></a>
+</p>
+
+<p align="center">
+  <b>Language</b>: English · <a href="README.zh-CN.md">简体中文</a>
+  &nbsp;·&nbsp;
+  <a href="https://github.com/Syngnat/GoNavi/releases"><b>⬇ Download</b></a>
+  ·
+  <a href="#-quick-start"><b>⚡ Quick Start</b></a>
+  ·
+  <a href="#-key-features"><b>✨ Features</b></a>
+  ·
+  <a href="#-mcp--agents"><b>🤖 MCP</b></a>
+</p>
 
 ---
 
-## Project Overview
+## Why GoNavi?
 
-GoNavi is designed for developers and DBAs who need a unified desktop experience across multiple databases.
+Most database GUIs are Electron shells with megabytes of tax. GoNavi takes a different path:
 
-- **Native-performance architecture**: Wails (Go + WebView) with lightweight runtime overhead.
-- **Large dataset usability**: virtualized rendering and optimized DataGrid workflows for high-volume tables.
-- **Unified connectivity**: URI build/parse, SSH tunnel, proxy support, and on-demand driver activation.
-- **Production-oriented workflow**: SQL editor, object management, batch export/backup, sync tools, execution logs, and update checks.
+| | Typical Electron client | **GoNavi** |
+|---|---|---|
+| Runtime | Chromium + Node | **Go + native WebView** |
+| Binary size | Hundreds of MB | **~30MB class** |
+| Startup | Heavy | **Fast** |
+| Memory | High baseline | **Lean** |
+| AI / Agents | Bolt-on or absent | **First-class MCP + multi-provider AI** |
+| Data sources | Mostly RDBMS | **SQL · Cache · Vector · MQ · Search · Time-series · Domestic DBs** |
 
-## Supported Data Sources
+> **One cockpit for MySQL, Postgres, Redis, Kafka, Milvus, OceanBase, ClickHouse…**  
+> Query, edit, audit, sync — and hand structured context to coding agents without leaking passwords off-host.
 
-> `Built-in`: available out of the box.  
-> `Optional driver agent`: install/enable via Driver Manager first.
+---
+
+## At a Glance
+
+```text
+┌──────────────────────────────────────────────────────────────────────┐
+│  GoNavi Workbench                                                    │
+│  ┌─────────────┐  ┌──────────────────┐  ┌─────────────────────────┐  │
+│  │ Connections │  │ Monaco SQL + AI  │  │ Virtualized DataGrid    │  │
+│  │ SSH / Proxy │  │ Schema context   │  │ Batch edit · Export     │  │
+│  │ Drivers     │  │ Slash commands   │  │ Txn submit / rollback   │  │
+│  └─────────────┘  └────────┬─────────┘  └─────────────────────────┘  │
+│                            │                                         │
+│              ┌─────────────▼─────────────┐                           │
+│              │  Go core · Audit · Sync   │                           │
+│              │  MCP HTTP · Web Server    │                           │
+│              └───────────────────────────┘                           │
+└──────────────────────────────────────────────────────────────────────┘
+```
+
+### Product screenshots
+
+Each image is a **full GoNavi application window**, scaled proportionally for README display.
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/Syngnat/GoNavi/dev/assets/screenshots/01-home-workbench.png" alt="GoNavi full window — connections, queries, and workbench" width="560" />
+  &nbsp;
+  <img src="https://raw.githubusercontent.com/Syngnat/GoNavi/dev/assets/screenshots/04-ai-assistant.png" alt="GoNavi full window — AI assistant with schema context" width="560" />
+</p>
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/Syngnat/GoNavi/dev/assets/screenshots/06-new-connection.png" alt="GoNavi full window — new connection data-source selector" width="560" />
+</p>
+
+<p align="center"><sub>Real desktop captures · full window</sub></p>
+
+---
+
+## ✨ Key Features
+
+<table>
+<tr>
+<td width="50%" valign="top">
+
+### 🤖 AI that knows your schema
+- OpenAI · Gemini · Claude · custom OpenAI-compatible APIs  
+- Attach live table schemas as context  
+- Slash commands: generate SQL, explain, optimize, review  
+- **MCP**: install into Claude Code / Codex, or Streamable HTTP for remote agents  
+- Secrets stay on the GoNavi host — agents get tools, not raw passwords  
+
+</td>
+<td width="50%" valign="top">
+
+### ⚡ Built for large data
+- Virtualized DataGrid for heavy result sets  
+- In-place cell edit · batch CRUD · transaction submit/rollback  
+- Large-field popup editor · smart read/write modes  
+- Export: CSV · XLSX · JSON · Markdown  
+- Monaco editor with context-aware completion  
+
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+
+### 🔌 Connectivity without drama
+- URI generate / parse  
+- SSH tunnel · proxy  
+- Connection JSON import / export  
+- On-demand optional driver agents  
+- Custom Driver + DSN extensibility  
+
+</td>
+<td width="50%" valign="top">
+
+### 🛡️ Observable & shippable
+- SQL execution logs with timing  
+- Audit center (redacted by default, retention, export)  
+- Desktop + experimental **Web Server** mode  
+- Docker / K8s / Helm / Podman packaging  
+- Auto update checks · multi-arch releases  
+
+</td>
+</tr>
+</table>
+
+### 🧩 Stack
+
+`Go 1.24` · `Wails v2` · `React 18` · `TypeScript` · `Vite` · `Ant Design 5` · `Zustand` · `Monaco`
+
+---
+
+## 🗄 Supported Data Sources
+
+> **Built-in** — ready out of the box · **Optional agent** — install via Driver Manager
+
+| | |
+|---|---|
+| **Built-in** | MySQL · GoldenDB · PostgreSQL · Oracle · Redis · Chroma · Qdrant · Milvus · RocketMQ · MQTT · Kafka · RabbitMQ |
+| **Optional** | MariaDB · Doris · StarRocks · Sphinx · SQL Server · SQLite · DuckDB · OceanBase · Dameng · Kingbase · HighGo · Vastbase · OpenGauss · GaussDB · IRIS · MongoDB · TDengine · IoTDB · ClickHouse · Trino · Elasticsearch · Custom Driver/DSN |
+
+<details>
+<summary><b>Full capability matrix</b></summary>
 
 | Category | Data Source | Driver Mode | Typical Capabilities |
 |---|---|---|---|
@@ -68,275 +200,218 @@ GoNavi is designed for developers and DBAs who need a unified desktop experience
 | Search | Elasticsearch | Optional driver agent | Index browsing, mapping inspection, JSON DSL / query_string search |
 | Extensibility | Custom Driver/DSN | Custom | Extend to more data sources via Driver + DSN |
 
-<h2 align="center">📸 Screenshots</h2>
-
-<div align="center">
-    <img width="25%" alt="image" src="https://github.com/user-attachments/assets/0eefe07f-2836-44fa-9ddf-a0d2124b90e2" />
-    <img width="25%" alt="image" src="https://github.com/user-attachments/assets/6765e539-83ea-4cd6-9c9e-f42790fa05b5" />
-    <img width="25%" alt="image" src="https://github.com/user-attachments/assets/60e3d187-171a-4248-94e0-c6b08736e235" />
-    <br />
-    <img width="25%" alt="image" src="https://github.com/user-attachments/assets/7a478602-0f08-4b30-8f6a-879f4a60ae32" />
-    <img width="14%" alt="image" src="https://github.com/user-attachments/assets/6442ca7d-ce9e-46d9-aecd-405ba88f5a5e" />
-    <img width="25%" alt="image" src="https://github.com/user-attachments/assets/bc17895e-02a4-4cc5-b471-c3803cf25a2b" />
-</div>
+</details>
 
 ---
 
-## Key Features
-
-### AI Assistant (New)
-- **Multi-provider Support**: OpenAI, Google Gemini, Anthropic Claude, and custom API support.
-- **Context-Aware Chat**: Attach table schemas to the AI context for accurate SQL generation and assistance.
-- **Slash Commands**: Quick commands for generating SQL, explaining queries, optimizing performance, and reviewing schema designs.
-- **Built-in MCP Workflow**: Manage MCP servers in AI Settings, install GoNavi MCP to Claude Code / Codex, or expose Streamable HTTP for remote Agents.
-- **Remote-Agent Boundary**: Keep saved connections and database passwords on the host running GoNavi while cloud Agents consume schema tools over MCP.
-- **Safety Guardrails**: Remote `schema-only` mode omits `execute_sql`; when SQL execution is enabled, non-read-only statements still require explicit `allowMutating=true`.
-
-### Performance
-- **Smooth interaction under load**: optimized table interaction (including column resize workflow on large datasets).
-- **Virtualized rendering**: keeps large result sets responsive.
-
-### Data Management (DataGrid)
-- In-place cell editing.
-- Batch insert/update/delete with transaction-oriented submit/rollback.
-- Large-field popup editor.
-- Context actions (set NULL, copy/export, etc.).
-- Smart read/write mode switching based on query context.
-- Export formats: CSV, Excel (XLSX), JSON, Markdown.
-
-### SQL Editor
-- Monaco Editor core.
-- Context-aware completion for databases/tables/columns.
-- Multi-tab query workflow.
-
-### Batch Export / Backup
-- Database-level and table-level batch export/backup.
-- Scope-aware operation flow to reduce mistakes.
-
-### Connectivity
-- URI generation/parsing.
-- SSH tunnel support.
-- Proxy support.
-- Config import/export (JSON).
-- Optional driver management and activation.
-
-### Redis Tools
-- Multi-view value rendering (auto/raw text/UTF-8/hex).
-- Built-in command execution panel.
-
-### Observability and Update
-- SQL execution logs with timing information.
-- Startup/scheduled/manual update checks.
-
-### UI/UX
-- Ant Design 5 based interface.
-- Light/Dark themes.
-- Flexible sidebar and layout behavior.
-
----
-
-## Tech Stack
-
-- **Backend**: Go 1.24 + Wails v2
-- **Frontend**: React 18 + TypeScript + Vite
-- **UI**: Ant Design 5
-- **State Management**: Zustand
-- **Editor**: Monaco Editor
-
----
-
-## Installation and Run
+## 🚀 Quick Start
 
 ### Prerequisites
+
 - [Go](https://go.dev/dl/) 1.21+
 - [Node.js](https://nodejs.org/) 18+
-- [Wails CLI](https://wails.io/docs/gettingstarted/installation):
-  `go install github.com/wailsapp/wails/v2/cmd/wails@v2.11.0`
+- [Wails CLI](https://wails.io/docs/gettingstarted/installation)
 
-### Development Mode
+```bash
+go install github.com/wailsapp/wails/v2/cmd/wails@v2.11.0
+```
 
-```shell
-# Clone
+### Develop
+
+```bash
 git clone https://github.com/Syngnat/GoNavi.git
 cd GoNavi
 
-# Start development with hot reload
-wails dev
-
-# Faster local startup when exported Go method signatures are unchanged
-node tools/wails-fast-dev.mjs
-
-# Refresh Wails JS bindings after changing exported Go method signatures
-node tools/wails-fast-dev.mjs --refresh-bindings
-
-# Windows desktop builds use an opaque WebView without an Acrylic backdrop by default.
+wails dev                          # full hot reload
+node tools/wails-fast-dev.mjs      # faster when Go exports unchanged
+node tools/wails-fast-dev.mjs --refresh-bindings  # after Go export signature changes
 ```
 
 ### Build
 
 ```bash
-# Build for current platform
 wails build
-
-# Clean build (recommended before release)
-wails build -clean
+wails build -clean   # clean build before release
 ```
 
-Artifacts are generated in `build/bin`.
+Artifacts → `build/bin`.
 
-### Browser Access Mode (Web Server, Experimental)
+### Prefer a binary?
 
-GoNavi provides a `web-server` mode that reuses the same Go backend and React frontend for browser access (**not** a containerized desktop Wails window).
+Grab the latest build from **[Releases](https://github.com/Syngnat/GoNavi/releases)**  
+(macOS AMD64/ARM64 · Windows AMD64 · Linux WebKitGTK 4.0/4.1).
 
-#### Run locally
+---
+
+## 🌐 Web Server (Experimental)
+
+Same Go backend + React UI over HTTP — **not** a containerized Wails window.
 
 ```powershell
 go build .
 .\GoNavi-Wails.exe web-server --addr 127.0.0.1:34116
 ```
 
-Without a configured password, the first browser visit is redirected to `/setup` to create the web admin password. Google Authenticator is optional but supported out of the box, together with `web_auth.json`, session cookies, recovery codes, and login rate limiting.
+- First visit → `/setup` (admin password; optional Google Authenticator)
+- Bridge: `window.go.*` / `window.runtime.*` → HTTP / SSE
+- Sessions, recovery codes, login rate limits
 
-Current scope already includes:
-
-- Browser-side Wails bridge (`window.go.*` / `window.runtime.*` -> HTTP / SSE)
-- First-run setup page, login page, and logout endpoint
-- Session idle timeout / absolute timeout / remember-login window
-- Google Authenticator TOTP plus recovery codes
-- Docker / Compose packaging (below)
-
-Still in progress:
-
-- Browser upload/download workbenches for external SQL and connection-package flows
-- More web capability gating for desktop-only features
-- Reverse-proxy / HTTPS / zero-trust deployment guidance
-
-#### Docker / Podman (Web Server)
+#### Docker / Podman
 
 ```bash
 cp docker.web-server.env.example docker.web-server.env
-# set GONAVI_HOST_DATA_ROOT to an absolute path
-# optionally set GONAVI_WEB_PASSWORD to at least 6 characters
+# set GONAVI_HOST_DATA_ROOT (absolute path)
+# optional: GONAVI_WEB_PASSWORD (min 6 chars)
 docker compose --env-file docker.web-server.env -f docker-compose.web-server.yml up -d
 ```
 
-You can alternatively put the same variables in the project-level `.env` file and omit `--env-file docker.web-server.env`.
+Open `http://127.0.0.1:34116`. Mount the active data root at `/data`  
+(`connections.json`, `daily_secrets.json`, optional `drivers/`).  
+Auth state → `web_auth.json`.
 
-Open `http://127.0.0.1:34116` (or the mapped host port). When `GONAVI_WEB_PASSWORD` is set, a newly created container synchronizes it and opens the login page directly. Otherwise, complete `/setup` on first visit.
+> **Do not expose an unhardened web entry to the public internet.** Use reverse proxy + HTTPS in production.
 
-Mount the GoNavi active data root at `/data`. Prefer including `connections.json`, `daily_secrets.json`, and optional `drivers/`. Web auth state is stored as `web_auth.json` in that directory.
+Health: `GET /__gonavi/healthz`  
+Local source build: add `-f docker-compose.web-server.local.yml --build`.
 
-`GONAVI_WEB_PASSWORD` takes precedence over the password hash already stored in `web_auth.json`, while preserving 2FA and session settings. Removing the variable leaves the last synchronized password active. Treat the env file as a secret because the plaintext value is visible to users who can inspect the container; restrict its file permissions.
-
-After changing the env password, recreate the container so Compose reloads the env file:
+After changing env passwords:
 
 ```bash
 docker compose --env-file docker.web-server.env -f docker-compose.web-server.yml up -d --force-recreate
 ```
 
-Docker Desktop Restart and `docker restart` keep the old container environment and do not reload the env file.
+(`docker restart` does **not** reload env files.)
 
-On a new deployment, an environment password starts password-only authentication. To enable 2FA, leave `GONAVI_WEB_PASSWORD` empty for the initial `/setup`, then set it to the same password before recreating the container.
+---
 
-The container listens on `0.0.0.0:34116` by default (`GONAVI_WEB_ADDR`). **Do not expose an unhardened Web entrypoint to the public internet**; use a reverse proxy and HTTPS for production.
+## 🤖 MCP & Agents
 
-Default Compose pulls the GHCR image. For a local source build, add the override:
-
-```bash
-docker compose --env-file docker.web-server.env \
-  -f docker-compose.web-server.yml \
-  -f docker-compose.web-server.local.yml \
-  up -d --build
-```
-
-Health check: `GET /__gonavi/healthz`.
-
-### Docker / Podman (MCP Server)
-
-Container packaging also provides `gonavi-mcp-server` (MCP HTTP only; no desktop GUI / Web UI).
+Ship schema tools to agents without shipping your vault:
 
 ```bash
 cp docker.mcp-server.env.example docker.mcp-server.env
 docker compose --env-file docker.mcp-server.env -f docker-compose.mcp-server.yml up -d
 ```
 
-Mount the GoNavi active data root into the container. The mounted directory should contain `connections.json`, `daily_secrets.json`, and optional `drivers/` assets when optional driver agents are required.
+| Surface | Entry |
+|---|---|
+| MCP container | `docker-compose.mcp-server.yml` → `ghcr.io/syngnat/gonavi-mcp-server` |
+| Web UI container | `docker-compose.web-server.yml` → `ghcr.io/syngnat/gonavi-web-server` |
+| Podman / Quadlet | [deploy/podman/gonavi-mcp-server](deploy/podman/gonavi-mcp-server) |
+| Kubernetes | [deploy/k8s/gonavi-mcp-server](deploy/k8s/gonavi-mcp-server) |
+| Helm | [deploy/helm/gonavi-mcp-server](deploy/helm/gonavi-mcp-server) |
+| Build-only image | `Dockerfile.build-env` → `ghcr.io/syngnat/gonavi-build-env` |
 
-The default Compose file pulls the published GHCR image. For local source builds, add the override file:
+Safety defaults: remote `schema-only` omits `execute_sql`; mutating SQL requires explicit `allowMutating=true`.  
+Details: [cmd/gonavi-mcp-server/README.md](cmd/gonavi-mcp-server/README.md).
 
-```bash
-docker compose --env-file docker.mcp-server.env \
-  -f docker-compose.mcp-server.yml \
-  -f docker-compose.mcp-server.local.yml \
-  up -d --build
-```
-
-For Podman, use the same published OCI image with `podman run`, or the native Quadlet example under [deploy/podman/gonavi-mcp-server](deploy/podman/gonavi-mcp-server). That path is intended for Linux servers / NAS hosts where rootless systemd services are preferred.
-
-Deployment matrix:
-
-- Web UI: `docker-compose.web-server.yml` (`ghcr.io/syngnat/gonavi-web-server`)
-- MCP: `docker-compose.mcp-server.yml` (`ghcr.io/syngnat/gonavi-mcp-server`)
-- Podman / Quadlet: [deploy/podman/gonavi-mcp-server](deploy/podman/gonavi-mcp-server)
-- Kubernetes: [deploy/k8s/gonavi-mcp-server](deploy/k8s/gonavi-mcp-server) (`kustomization.yaml` + overlays)
-- Helm chart: [deploy/helm/gonavi-mcp-server](deploy/helm/gonavi-mcp-server)
-- Build-only Linux environment: `Dockerfile.build-env`
-
-See [cmd/gonavi-mcp-server/README.md](cmd/gonavi-mcp-server/README.md) for deployment details and security boundaries.
-
-### Docker / Podman (Build Environment Only)
-
-If you only need a reproducible Linux build environment for Wails, use `Dockerfile.build-env`:
+### Linux build environment only
 
 ```bash
 docker build -f Dockerfile.build-env -t gonavi-build-env:local .
 docker run --rm -it -v "$PWD:/workspace" -w /workspace gonavi-build-env:local bash
 ```
 
-The same Dockerfile also works with Podman, for example `podman build -f Dockerfile.build-env -t localhost/gonavi-build-env:local .` and `podman run --rm -it -v "$PWD:/workspace" -w /workspace localhost/gonavi-build-env:local bash`.
+---
 
-The default image installs the WebKitGTK 4.0 build toolchain for broader Linux/NAS compatibility. The image bases are multi-arch, so `amd64` and `arm64` follow the target container platform.
+## 📦 Release Pipeline
 
-Published images are pushed to GHCR:
-
-- `ghcr.io/syngnat/gonavi-web-server:latest`
-- `ghcr.io/syngnat/gonavi-mcp-server:latest`
-- `ghcr.io/syngnat/gonavi-build-env:latest`
-
-This image is for building Linux artifacts only. It does not turn the Wails desktop GUI into a browser-accessible web application.
-
-### Cross-Platform Release (GitHub Actions)
-
-The repository includes a release workflow.
-Push a `v*` tag to trigger automated build and release.
-Release notes are generated automatically from merged pull requests and categorized by `.github/release.yaml`.
-
-Target artifacts include:
-- macOS (AMD64 / ARM64)
-- Windows (AMD64)
-- Linux (AMD64, WebKitGTK 4.0 and 4.1 variants)
+Push a `v*` tag → GitHub Actions builds multi-arch releases.  
+Notes auto-generated from merged PRs via `.github/release.yaml`.
 
 ---
 
-## Troubleshooting
+## 🛠 Troubleshooting
 
-### macOS: "App is damaged and can’t be opened"
+<details>
+<summary><b>Windows: missing Microsoft Edge WebView2 Runtime (common on intranet images)</b></summary>
 
-Without Apple notarization, Gatekeeper may block startup.
+The GoNavi desktop app on Windows depends on the **Microsoft Edge WebView2 Runtime** (a system component, not full Chrome).  
+Some intranet / thin / Server / LTSC images ship without it. Symptoms:
 
-1. Move `GoNavi.app` to **Applications**.
-2. Open **Terminal**.
-3. Run:
+- Process exits immediately, blank/white window
+- Errors about missing WebView2 / WebView2 Runtime
+- Installer blocked by AV or group policy
+
+### 1. Check whether Runtime is installed
+
+In **PowerShell**:
+
+```powershell
+# Common Evergreen install path (64-bit Windows)
+Test-Path "${env:ProgramFiles(x86)}\Microsoft\EdgeWebView\Application"
+
+# Registry (a `pv` version usually means installed)
+Get-ItemProperty -Path "HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}" `
+  -ErrorAction SilentlyContinue |
+  Select-Object pv, name
+```
+
+If the path is missing and registry has no `pv`, install the Runtime.
+
+### 2. Online install (simplest)
+
+1. Open the official download page:  
+   [Microsoft Edge WebView2](https://developer.microsoft.com/microsoft-edge/webview2/)
+2. Download the **Evergreen Bootstrapper** (small; needs network during install)
+3. Run as Administrator, then **restart GoNavi**
+
+### 3. Offline / intranet: Standalone installer (recommended for IT)
+
+The Bootstrapper fails on fully air-gapped machines. Use the **Evergreen Standalone Installer** instead:
+
+1. On a machine with internet, download the matching architecture package, e.g.:
+   - `MicrosoftEdgeWebView2RuntimeInstallerX64.exe` (most 64-bit PCs)
+   - `…X86.exe` / `…ARM64.exe` as needed
+2. Copy the installer into the intranet (USB, software center, share)
+3. Install **as Administrator** on the target PC:
+
+```powershell
+# Interactive
+.\MicrosoftEdgeWebView2RuntimeInstallerX64.exe
+
+# Silent (batch / SCCM friendly)
+.\MicrosoftEdgeWebView2RuntimeInstallerX64.exe /silent /install
+```
+
+4. Start GoNavi again. If it still fails, sign out or reboot Windows once.
+
+### 4. Group policy / locked-down PCs
+
+- Needs local admin, or IT push via SCCM / software center  
+- Ensure policies do not block Edge/WebView2 install or updates  
+- Enterprises may pin a [Fixed Version](https://developer.microsoft.com/microsoft-edge/webview2/) Runtime (most users should prefer Evergreen)
+
+### 5. Temporary workaround: Web Server mode
+
+If the desktop WebView cannot be installed yet, run the experimental Web Server and use a normal browser:
+
+```powershell
+.\GoNavi.exe web-server --addr 127.0.0.1:34116
+```
+
+Open `http://127.0.0.1:34116`. See the **Web Server** section above.  
+Do **not** expose an unhardened Web endpoint to the public internet.
+
+Tracker / discussion: [#672](https://github.com/Syngnat/GoNavi/issues/672).
+
+</details>
+
+<details>
+<summary><b>macOS: “App is damaged and can’t be opened”</b></summary>
+
+Without Apple notarization, Gatekeeper may block the app:
 
 ```bash
 sudo xattr -rd com.apple.quarantine /Applications/GoNavi.app
 ```
 
-Or right-click the app in Finder and choose **Open** with Control key flow.
+Or right-click → Open (Control-click flow). Move the app to **Applications** first.
 
-### Linux: missing `libwebkit2gtk` / `libjavascriptcoregtk`
+</details>
 
-GoNavi depends on WebKitGTK runtime libraries.
+<details>
+<summary><b>Linux: missing WebKitGTK</b></summary>
 
 ```bash
 # Debian 13 / Ubuntu 24.04+
@@ -348,11 +423,12 @@ sudo apt-get update
 sudo apt-get install -y libgtk-3-0 libwebkit2gtk-4.0-37 libjavascriptcoregtk-4.0-18
 ```
 
-If you use Linux artifacts with the `-WebKit41` suffix, prefer Debian 13 / Ubuntu 24.04+.
+Artifacts with `-WebKit41` prefer Debian 13 / Ubuntu 24.04+.
 
-### Linux: Chinese text appears as square boxes
+</details>
 
-Minimal Ubuntu 24.04 LTS desktop/server environments may not include Chinese CJK fonts. Install Noto / WenQuanYi fonts and restart GoNavi:
+<details>
+<summary><b>Linux: Chinese glyphs as tofu boxes</b></summary>
 
 ```bash
 sudo apt-get update
@@ -360,19 +436,32 @@ sudo apt-get install -y fonts-noto-cjk fonts-wqy-microhei
 fc-cache -fv
 ```
 
+</details>
+
 ---
 
-## Contributing
+## 🤝 Contributing
 
-Issues and pull requests are welcome.
-
-For the full workflow, branch model, and maintainer sync rules, see:
+Issues and PRs welcome. Branch from **`dev`**, PR against **`dev`**.
 
 - [CONTRIBUTING.md](CONTRIBUTING.md)
+- Call for contributors: [Issue #671](https://github.com/Syngnat/GoNavi/issues/671)
 
-External contributors should branch from `dev` and open pull requests against `dev`.
+---
 
-## Star History
+## 💬 Contact & Feedback
+
+| Channel | Notes |
+|---|---|
+| **GitHub Issues** | Preferred for bugs, feature requests, and docs — easier to track and reproduce |
+| **WeChat** | `ygf1140302783` (note “GoNavi”) — maintainer can invite you to the community group for discussion |
+
+> For technical reports, include version, OS, and repro steps when possible. Windows blank/crash on intranet images: [WebView2 guide](https://github.com/Syngnat/GoNavi/issues/672).
+
+---
+
+## ⭐ Star History
+
 <a href="https://www.star-history.com/?repos=Syngnat%2FGoNavi&type=date&legend=top-left">
  <picture>
    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/image?repos=Syngnat/GoNavi&type=date&theme=dark&legend=top-left" />
@@ -381,6 +470,8 @@ External contributors should branch from `dev` and open pull requests against `d
  </picture>
 </a>
 
+---
+
 ## Links
 
 - [linux.do](https://linux.do/)
@@ -388,4 +479,8 @@ External contributors should branch from `dev` and open pull requests against `d
 
 ## License
 
-Licensed under [Apache-2.0](LICENSE).
+[Apache-2.0](LICENSE)
+
+<p align="center">
+  <sub>Built for people who live in SQL, schemas, and agent loops.</sub>
+</p>

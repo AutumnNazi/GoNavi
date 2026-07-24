@@ -1,6 +1,14 @@
 export const TABLE_OVERVIEW_RENDER_BATCH_SIZE = 300;
 
-export type TableOverviewSortField = 'name' | 'rows' | 'dataSize';
+export type TableOverviewSortField =
+  | 'name'
+  | 'comment'
+  | 'rows'
+  | 'dataSize'
+  | 'indexSize'
+  | 'engine'
+  | 'createTime'
+  | 'updateTime';
 export type TableOverviewSortOrder = 'asc' | 'desc';
 
 export interface TableOverviewFilterRow {
@@ -9,6 +17,9 @@ export interface TableOverviewFilterRow {
   rows: number;
   dataSize: number;
   indexSize: number;
+  engine?: string;
+  createTime?: string;
+  updateTime?: string;
 }
 
 export interface TableOverviewSearchIndexItem<T extends TableOverviewFilterRow> {
@@ -37,15 +48,33 @@ export const filterAndSortTableOverviewRows = <T extends TableOverviewFilterRow>
     : [...indexedRows];
 
   matched.sort((a, b) => {
-    let cmp = 0;
     if (sortField === 'name') {
-      cmp = a.sortName.localeCompare(b.sortName);
-    } else if (sortField === 'rows') {
-      cmp = a.row.rows - b.row.rows;
-    } else if (sortField === 'dataSize') {
-      cmp = a.row.dataSize - b.row.dataSize;
+      const cmp = a.sortName.localeCompare(b.sortName);
+      return sortOrder === 'asc' ? cmp : -cmp;
     }
-    return sortOrder === 'asc' ? cmp : -cmp;
+
+    if (sortField === 'rows' || sortField === 'dataSize' || sortField === 'indexSize') {
+      const left = a.row[sortField];
+      const right = b.row[sortField];
+      const leftUnknown = !Number.isFinite(left) || left < 0;
+      const rightUnknown = !Number.isFinite(right) || right < 0;
+      if (leftUnknown !== rightUnknown) return leftUnknown ? 1 : -1;
+      if (!leftUnknown && left !== right) {
+        return sortOrder === 'asc' ? left - right : right - left;
+      }
+      return a.sortName.localeCompare(b.sortName);
+    }
+
+    const left = String(a.row[sortField] || '').trim();
+    const right = String(b.row[sortField] || '').trim();
+    if (!left || !right) {
+      if (!left && right) return 1;
+      if (left && !right) return -1;
+      return a.sortName.localeCompare(b.sortName);
+    }
+    const cmp = left.localeCompare(right, undefined, { numeric: true, sensitivity: 'base' });
+    if (cmp !== 0) return sortOrder === 'asc' ? cmp : -cmp;
+    return a.sortName.localeCompare(b.sortName);
   });
 
   return matched.map((item) => item.row);

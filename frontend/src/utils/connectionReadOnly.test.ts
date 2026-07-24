@@ -6,10 +6,28 @@ import {
   isConnectionDataImportRestricted,
   isConnectionScriptExecutionRestricted,
   isConnectionStructureEditRestricted,
+  isSingleReadOnlyConnectionQuery,
   resolveConnectionProtectionConfig,
+  supportsConnectionKeepAliveSQL,
 } from './connectionReadOnly';
 
 describe('connectionReadOnly', () => {
+  it('accepts only one read-only SQL query for custom keepalive', () => {
+    const config = { type: 'mysql' } as any;
+
+    expect(supportsConnectionKeepAliveSQL(config)).toBe(true);
+    expect(isSingleReadOnlyConnectionQuery(config, 'SELECT 1')).toBe(true);
+    expect(isSingleReadOnlyConnectionQuery(config, 'WITH probe AS (SELECT 1) SELECT * FROM probe')).toBe(true);
+    expect(isSingleReadOnlyConnectionQuery(config, 'SELECT 1; SELECT 2')).toBe(false);
+    expect(isSingleReadOnlyConnectionQuery(config, 'DELETE FROM accounts')).toBe(false);
+    expect(isSingleReadOnlyConnectionQuery(config, '/*!50000 DELETE FROM accounts */ SELECT 1')).toBe(false);
+    expect(isSingleReadOnlyConnectionQuery(config, 'SELECT /*!50000 SQL_NO_CACHE */ 1')).toBe(false);
+    expect(isSingleReadOnlyConnectionQuery(config, "SELECT ';' AS probe")).toBe(false);
+    expect(isSingleReadOnlyConnectionQuery(config, 'SELECT 1 /* ; */')).toBe(false);
+    expect(isSingleReadOnlyConnectionQuery(config, 'SELECT 1; -- probe')).toBe(true);
+    expect(supportsConnectionKeepAliveSQL({ type: 'redis' } as any)).toBe(false);
+  });
+
   it('maps legacy readOnly connections to the full production protection set', () => {
     expect(resolveConnectionProtectionConfig({
       type: 'postgres',
@@ -53,5 +71,21 @@ describe('connectionReadOnly', () => {
         restrictDataEdit: true,
       },
     }, "UPDATE users SET name = 'next';")).toEqual([]);
+  });
+
+  it('uses the connection dialect when filtering comment-only statements', () => {
+    expect(findConnectionMutatingStatements({
+      type: 'postgres',
+      protection: {
+        restrictScriptExecution: true,
+      },
+    }, 'SELECT * FROM users; /*! MySQL-only comment */')).toEqual([]);
+
+    expect(findConnectionMutatingStatements({
+      type: 'mysql',
+      protection: {
+        restrictScriptExecution: true,
+      },
+    }, 'SELECT * FROM users;--compact')).toEqual(['--compact']);
   });
 });

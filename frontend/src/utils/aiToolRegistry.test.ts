@@ -40,7 +40,9 @@ describe('aiToolRegistry', () => {
     const info = BUILTIN_AI_TOOL_INFO.find((item) => item.name === 'inspect_mcp_setup');
     expect(info).toBeTruthy();
     expect(info?.desc).toContain('MCP configuration');
+    expect(info?.detail).toContain('OpenCode');
     expect(info?.tool.function.description).toContain('external client');
+    expect(info?.tool.function.description).toContain('OpenCode');
   });
 
   it('registers the mcp-remote-access inspector as a builtin tool', () => {

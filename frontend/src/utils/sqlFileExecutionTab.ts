@@ -22,6 +22,7 @@ type BuildSQLFileExecutionWorkbenchTabInput = {
   fileName?: string;
   fileSizeMB?: string;
   requestKey?: string;
+  autoStart?: boolean;
 };
 
 export const buildSQLFileExecutionWorkbenchTab = (
@@ -33,6 +34,10 @@ export const buildSQLFileExecutionWorkbenchTab = (
   const fileName = String(input.fileName || '').trim();
   const defaultTitle = fileName || t('sidebar.sql_file_exec.title');
 
+  const requestKey = input.autoStart === false
+    ? ''
+    : String(input.requestKey || `sql-file-execution-${Date.now()}`).trim();
+
   return {
     id: resolveSQLFileExecutionWorkbenchTabId(connectionId, dbName || undefined, filePath),
     title: defaultTitle,
@@ -41,6 +46,6 @@ export const buildSQLFileExecutionWorkbenchTab = (
     ...(dbName ? { dbName } : {}),
     filePath,
     sqlFileExecutionFileSizeMB: String(input.fileSizeMB || '').trim() || undefined,
-    sqlFileExecutionRequestKey: String(input.requestKey || `sql-file-execution-${Date.now()}`).trim(),
+    ...(requestKey ? { sqlFileExecutionRequestKey: requestKey } : {}),
   };
 };

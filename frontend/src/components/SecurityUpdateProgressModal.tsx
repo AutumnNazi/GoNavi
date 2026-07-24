@@ -8,9 +8,11 @@ import {
   getSecurityUpdateShellSurfaceStyle,
 } from '../utils/securityUpdateVisuals';
 import { useI18n } from '../i18n/provider';
+import { APP_NESTED_MODAL_Z_INDEX } from '../utils/overlayZIndex';
 
 interface SecurityUpdateProgressModalProps {
   open: boolean;
+  zIndex?: number;
   stageText: string;
   detailText?: string;
   overlayTheme: OverlayWorkbenchTheme;
@@ -19,6 +21,7 @@ interface SecurityUpdateProgressModalProps {
 
 const SecurityUpdateProgressModal = ({
   open,
+  zIndex = APP_NESTED_MODAL_Z_INDEX,
   stageText,
   detailText,
   overlayTheme,
@@ -30,6 +33,7 @@ const SecurityUpdateProgressModal = ({
     <Modal
       rootClassName={SECURITY_UPDATE_MODAL_CLASS}
       open={open}
+      zIndex={zIndex}
       closable={false}
       maskClosable={false}
       keyboard={false}

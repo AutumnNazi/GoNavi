@@ -42,7 +42,7 @@ const sectionStyle = (dividerColor: string): React.CSSProperties => ({
 });
 
 const sectionTitleStyle = (titleColor: string): React.CSSProperties => ({
-  fontSize: 15,
+  fontSize: 'var(--gn-settings-font-body, var(--gn-font-size, 14px))',
   fontWeight: 700,
   color: titleColor,
 });
@@ -205,22 +205,16 @@ const WebAuthSettingsPanel: React.FC<WebAuthSettingsPanelProps> = ({
   return (
     <div style={{ display: 'grid', gap: 20, padding: '12px 0' }}>
       <section style={sectionStyle(dividerColor)}>
-        <div style={{ display: 'grid', gap: 4 }}>
-          <div style={sectionTitleStyle(titleColor)}>{t('app.settings.web_auth.title')}</div>
-          <div style={{ color: mutedColor, fontSize: 13, lineHeight: 1.6 }}>
-            {t('app.settings.web_auth.description')}
-          </div>
-        </div>
-        <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
+        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
           <Button onClick={() => { void loadSettings(); }} loading={loading}>
             {t('common.refresh')}
           </Button>
         </div>
         {loadError ? (
-          <div style={{ color: darkMode ? '#fda4af' : '#b42318', fontSize: 13 }}>{loadError}</div>
+          <div style={{ color: darkMode ? '#fda4af' : '#b42318', fontSize: 'var(--gn-settings-font-secondary, var(--gn-font-size-sm, 12px))' }}>{loadError}</div>
         ) : null}
         {loading && !summary ? (
-          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 10, color: mutedColor, fontSize: 13 }}>
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 10, color: mutedColor, fontSize: 'var(--gn-settings-font-secondary, var(--gn-font-size-sm, 12px))' }}>
             <Spin size="small" />
             <span>{t('common.loading')}</span>
           </div>
@@ -235,8 +229,8 @@ const WebAuthSettingsPanel: React.FC<WebAuthSettingsPanelProps> = ({
           >
             {summaryItems.map((item) => (
               <div key={item.key} style={{ minWidth: 0 }}>
-                <div style={{ marginBottom: 6, color: mutedColor, fontSize: 12 }}>{item.label}</div>
-                <div style={{ color: titleColor, fontSize: 14, fontWeight: 600, lineHeight: 1.5 }}>{item.value}</div>
+                <div style={{ marginBottom: 6, color: mutedColor, fontSize: 'var(--gn-settings-font-caption, var(--gn-font-size-xs, 11px))' }}>{item.label}</div>
+                <div style={{ color: titleColor, fontSize: 'var(--gn-settings-font-body, var(--gn-font-size, 14px))', fontWeight: 600, lineHeight: 1.5 }}>{item.value}</div>
               </div>
             ))}
           </div>
@@ -246,7 +240,7 @@ const WebAuthSettingsPanel: React.FC<WebAuthSettingsPanelProps> = ({
       <section style={sectionStyle(dividerColor)}>
         <div style={{ display: 'grid', gap: 4 }}>
           <div style={sectionTitleStyle(titleColor)}>{t('app.settings.web_auth.password.title')}</div>
-          <div style={{ color: mutedColor, fontSize: 13, lineHeight: 1.6 }}>
+          <div style={{ color: mutedColor, fontSize: 'var(--gn-settings-font-secondary, var(--gn-font-size-sm, 12px))', lineHeight: 1.6 }}>
             {passwordManagedByEnvironment
               ? t('app.settings.web_auth.password.managed_by_environment')
               : summary?.totpEnabled
@@ -262,7 +256,7 @@ const WebAuthSettingsPanel: React.FC<WebAuthSettingsPanelProps> = ({
           }}
         >
           <label style={{ display: 'grid', gap: 8 }}>
-            <span style={{ color: mutedColor, fontSize: 12 }}>{t('app.settings.web_auth.password.current_label')}</span>
+            <span style={{ color: mutedColor, fontSize: 'var(--gn-settings-font-caption, var(--gn-font-size-xs, 11px))' }}>{t('app.settings.web_auth.password.current_label')}</span>
             <Input.Password
               autoComplete="current-password"
               disabled={passwordManagedByEnvironment}
@@ -273,7 +267,7 @@ const WebAuthSettingsPanel: React.FC<WebAuthSettingsPanelProps> = ({
           </label>
           {summary?.totpEnabled ? (
             <label style={{ display: 'grid', gap: 8 }}>
-              <span style={{ color: mutedColor, fontSize: 12 }}>{t('app.settings.web_auth.password.code_label')}</span>
+              <span style={{ color: mutedColor, fontSize: 'var(--gn-settings-font-caption, var(--gn-font-size-xs, 11px))' }}>{t('app.settings.web_auth.password.code_label')}</span>
               <Input
                 autoComplete="one-time-code"
                 disabled={passwordManagedByEnvironment}
@@ -285,7 +279,7 @@ const WebAuthSettingsPanel: React.FC<WebAuthSettingsPanelProps> = ({
             </label>
           ) : null}
           <label style={{ display: 'grid', gap: 8 }}>
-            <span style={{ color: mutedColor, fontSize: 12 }}>{t('app.settings.web_auth.password.new_label')}</span>
+            <span style={{ color: mutedColor, fontSize: 'var(--gn-settings-font-caption, var(--gn-font-size-xs, 11px))' }}>{t('app.settings.web_auth.password.new_label')}</span>
             <Input.Password
               autoComplete="new-password"
               disabled={passwordManagedByEnvironment}
@@ -295,7 +289,7 @@ const WebAuthSettingsPanel: React.FC<WebAuthSettingsPanelProps> = ({
             />
           </label>
           <label style={{ display: 'grid', gap: 8 }}>
-            <span style={{ color: mutedColor, fontSize: 12 }}>{t('app.settings.web_auth.password.confirm_label')}</span>
+            <span style={{ color: mutedColor, fontSize: 'var(--gn-settings-font-caption, var(--gn-font-size-xs, 11px))' }}>{t('app.settings.web_auth.password.confirm_label')}</span>
             <Input.Password
               autoComplete="new-password"
               disabled={passwordManagedByEnvironment}

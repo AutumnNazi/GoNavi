@@ -2,11 +2,12 @@ import { describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 
 import { setCurrentLanguage } from '../i18n';
-import type { SavedQuery } from '../types';
+import type { SavedQuery, SavedQueryGroup } from '../types';
 import { LEGACY_PERSIST_KEY } from './legacyConnectionStorage';
 import {
   bootstrapSavedQueries,
   readLegacySavedQueriesFromPayload,
+  saveSavedQueryGroupToBackend,
   saveSavedQueryToBackend,
   stripLegacySavedQueries,
 } from './savedQueryPersistence';
@@ -170,6 +171,23 @@ describe('saved query persistence', () => {
       dbName: '',
       createdAt: 100,
     })).rejects.toThrow('Saved query is missing SQL, connection, or database context');
+  });
+
+  it('preserves child-group ordering returned after saving a parent group', async () => {
+    const savedGroup: SavedQueryGroup = {
+      id: 'parent',
+      name: 'Parent',
+      parentGroupId: '',
+      queryIds: ['query-1'],
+      childOrder: ['group:child', 'query:query-1'],
+    };
+    const SaveSavedQueryGroup = vi.fn(async () => savedGroup);
+
+    await expect(saveSavedQueryGroupToBackend(
+      { SaveSavedQueryGroup },
+      savedGroup,
+    )).resolves.toEqual(savedGroup);
+    expect(SaveSavedQueryGroup).toHaveBeenCalledWith(savedGroup);
   });
 
   it('does not hardcode Chinese generated saved query names', () => {

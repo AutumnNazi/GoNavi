@@ -12,6 +12,9 @@ describe('buildRpcConnectionConfig', () => {
       host: 'db.local',
       port: '5432' as unknown as number,
       user: 'postgres',
+      keepAliveEnabled: true,
+      keepAliveIntervalMinutes: 15,
+      keepAliveSQL: 'SELECT 1',
       useSSH: true,
       ssh: {
         host: 'bastion.local',
@@ -38,6 +41,9 @@ describe('buildRpcConnectionConfig', () => {
     expect(result.timeout).toBe(120);
     expect(result.redisDB).toBe(6);
     expect(result.database).toBe('app');
+    expect(result.keepAliveEnabled).toBe(true);
+    expect(result.keepAliveIntervalMinutes).toBe(15);
+    expect(result.keepAliveSQL).toBe('SELECT 1');
   });
 
   it('preserves ClickHouse protocol override for RPC calls', () => {

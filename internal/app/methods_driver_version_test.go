@@ -4,9 +4,11 @@ import (
 	"archive/zip"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -132,6 +134,21 @@ func TestCurrentDriverReleaseTagUsesVersionedReleaseForStableBuild(t *testing.T)
 	}
 }
 
+func TestDriverReleaseLatestDownloadURLForCurrentChannelUsesDevLatest(t *testing.T) {
+	originalVersion := AppVersion
+	AppVersion = "dev-a1b2c3d"
+	t.Cleanup(func() {
+		AppVersion = originalVersion
+	})
+
+	const assetName = "sqlserver-driver-agent-windows-amd64.exe"
+	got := driverReleaseLatestDownloadURLForCurrentChannel(assetName)
+	want := driverReleaseDownloadURL(driverReleaseDevTag, assetName)
+	if got != want {
+		t.Fatalf("dev latest fallback URL = %q, want %q", got, want)
+	}
+}
+
 func TestResolveOptionalDriverBundleDownloadURLsUsesDriverReleaseRepo(t *testing.T) {
 	originalVersion := AppVersion
 	AppVersion = "0.7.4"
@@ -140,6 +157,7 @@ func TestResolveOptionalDriverBundleDownloadURLsUsesDriverReleaseRepo(t *testing
 	})
 
 	urls := resolveOptionalDriverBundleDownloadURLs()
+	wantMirror := driverMirrorReleaseDownloadURL("v0.7.4", optionalDriverBundleAssetName)
 	wantTagged := driverReleaseDownloadURL("v0.7.4", optionalDriverBundleAssetName)
 	wantLatest := driverReleaseLatestDownloadURL(optionalDriverBundleAssetName)
 	if len(urls) < 2 {
@@ -147,7 +165,11 @@ func TestResolveOptionalDriverBundleDownloadURLsUsesDriverReleaseRepo(t *testing
 	}
 	foundTagged := false
 	foundLatest := false
+	foundMirror := false
 	for _, candidate := range urls {
+		if candidate == wantMirror {
+			foundMirror = true
+		}
 		if candidate == wantTagged {
 			foundTagged = true
 		}
@@ -155,8 +177,147 @@ func TestResolveOptionalDriverBundleDownloadURLsUsesDriverReleaseRepo(t *testing
 			foundLatest = true
 		}
 	}
-	if !foundTagged || !foundLatest {
-		t.Fatalf("expected bundle URLs to include tagged=%q and latest=%q, got %v", wantTagged, wantLatest, urls)
+	if !foundMirror || !foundTagged || !foundLatest {
+		t.Fatalf("expected bundle URLs to include mirror=%q, tagged=%q and latest=%q, got %v", wantMirror, wantTagged, wantLatest, urls)
+	}
+	if urls[0] != wantMirror {
+		t.Fatalf("expected R2 mirror first, got %v", urls)
+	}
+}
+
+func TestDriverReleaseDownloadCoordinates(t *testing.T) {
+	tag, asset, ok := driverReleaseDownloadCoordinates("https://github.com/Syngnat/GoNavi-DriverAgents/releases/download/v1.2.3/driver%20agent.exe")
+	if !ok || tag != "v1.2.3" || asset != "driver agent.exe" {
+		t.Fatalf("unexpected GitHub coordinates: tag=%q asset=%q ok=%v", tag, asset, ok)
+	}
+	tag, asset, ok = driverReleaseDownloadCoordinates(driverMirrorReleaseDownloadURL("dev-latest", "driver agent.exe"))
+	if !ok || tag != "dev-latest" || asset != "driver agent.exe" {
+		t.Fatalf("unexpected mirror coordinates: tag=%q asset=%q ok=%v", tag, asset, ok)
+	}
+	if _, _, ok := driverReleaseDownloadCoordinates("https://example.com/releases/download/v1.2.3/driver.exe"); ok {
+		t.Fatal("expected unrelated release URL not to be rewritten to the GoNavi mirror")
+	}
+}
+
+func TestFetchDriverReleaseIndexByURLBuildsMirrorAssets(t *testing.T) {
+	for _, name := range []string{
+		"HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY",
+		"http_proxy", "https_proxy", "all_proxy",
+	} {
+		t.Setenv(name, "")
+	}
+	t.Setenv("NO_PROXY", "127.0.0.1,localhost")
+	t.Setenv("no_proxy", "127.0.0.1,localhost")
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"assets":{"sqlserver-driver-agent-windows-amd64.exe":12345}}`)
+	}))
+	defer server.Close()
+
+	release, err := fetchDriverReleaseIndexByURL("v1.2.3", server.URL)
+	if err != nil {
+		t.Fatalf("fetch driver index: %v", err)
+	}
+	if release.TagName != "v1.2.3" || len(release.Assets) != 1 {
+		t.Fatalf("unexpected synthetic release: %#v", release)
+	}
+	asset := release.Assets[0]
+	if asset.Name != "sqlserver-driver-agent-windows-amd64.exe" || asset.Size != 12345 {
+		t.Fatalf("unexpected synthetic asset: %#v", asset)
+	}
+	if asset.BrowserDownloadURL != driverMirrorReleaseDownloadURL("v1.2.3", asset.Name) {
+		t.Fatalf("unexpected mirror URL: %q", asset.BrowserDownloadURL)
+	}
+	if asset.URL != driverReleaseDownloadURL("v1.2.3", asset.Name) {
+		t.Fatalf("unexpected GitHub fallback URL: %q", asset.URL)
+	}
+
+	latestServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"tagName":"v1.2.2","assets":{"sqlserver-driver-agent-windows-amd64.exe":12345}}`)
+	}))
+	defer latestServer.Close()
+	latestRelease, err := fetchDriverReleaseIndexByURL("", latestServer.URL)
+	if err != nil {
+		t.Fatalf("fetch latest driver index: %v", err)
+	}
+	if latestRelease.TagName != "v1.2.2" || len(latestRelease.Assets) != 1 {
+		t.Fatalf("unexpected latest synthetic release: %#v", latestRelease)
+	}
+	latestAsset := latestRelease.Assets[0]
+	if latestAsset.BrowserDownloadURL != driverMirrorReleaseDownloadURL("v1.2.2", latestAsset.Name) ||
+		latestAsset.URL != driverReleaseDownloadURL("v1.2.2", latestAsset.Name) {
+		t.Fatalf("latest pointer did not preserve source tag: %#v", latestAsset)
+	}
+
+	devServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"tagName":"dev-stale-logical-tag","mirrorTagName":"dev-a1b2c3d","assets":{"sqlserver-driver-agent-windows-amd64.exe":12345}}`)
+	}))
+	defer devServer.Close()
+	devRelease, err := fetchDriverReleaseIndexByURL(driverReleaseDevTag, devServer.URL)
+	if err != nil {
+		t.Fatalf("fetch dev driver index: %v", err)
+	}
+	if devRelease.TagName != driverReleaseDevTag || len(devRelease.Assets) != 1 {
+		t.Fatalf("unexpected dev synthetic release: %#v", devRelease)
+	}
+	devAsset := devRelease.Assets[0]
+	if devAsset.BrowserDownloadURL != driverMirrorDevReleaseDownloadURL("dev-a1b2c3d", devAsset.Name) {
+		t.Fatalf("dev mirror URL did not use the physical mirror tag: %#v", devAsset)
+	}
+	if devAsset.URL != driverReleaseDownloadURL(driverReleaseDevTag, devAsset.Name) {
+		t.Fatalf("dev GitHub fallback did not retain dev-latest: %#v", devAsset)
+	}
+}
+
+func TestResolvePublishedDriverDownloadURLForTagUsesDevMirrorTag(t *testing.T) {
+	definition := driverDefinition{Type: "sqlserver"}
+	assetNames := optionalDriverReleaseAssetNamesForVersion(definition.Type, "")
+	if len(assetNames) == 0 {
+		t.Fatal("expected sqlserver release asset names")
+	}
+	assetName := assetNames[0]
+	want := driverMirrorDevReleaseDownloadURL("dev-a1b2c3d", assetName)
+
+	driverReleaseSizeMu.Lock()
+	original := cloneReleaseAssetSizeCache(driverReleaseSizeMap)
+	driverReleaseSizeMap["tag:"+driverReleaseDevTag] = driverReleaseAssetSizeCacheEntry{
+		LoadedAt:           time.Now(),
+		SizeByKey:          map[string]int64{assetName: 12345},
+		PublishedAssets:    map[string]bool{assetName: true},
+		MirrorDownloadURLs: map[string]string{assetName: want},
+	}
+	driverReleaseSizeMu.Unlock()
+	t.Cleanup(func() {
+		driverReleaseSizeMu.Lock()
+		driverReleaseSizeMap = original
+		driverReleaseSizeMu.Unlock()
+	})
+
+	got, ok := resolvePublishedDriverDownloadURLForTag(definition, "", driverReleaseDevTag)
+	if !ok || got != want {
+		t.Fatalf("dev published URL = %q, ok=%v, want mirror %q", got, ok, want)
+	}
+}
+
+func TestResolveLatestPublishedDriverDownloadURLFallsBackWhenMirrorIndexMissesAsset(t *testing.T) {
+	seedReleaseAssetSizeCache(t, "latest", map[string]int64{
+		"unrelated-driver-agent-windows-amd64.exe": 123,
+	})
+	definition := driverDefinition{Type: "sqlserver"}
+	assetNames := optionalDriverReleaseAssetNamesForVersion(definition.Type, "")
+	if len(assetNames) == 0 {
+		t.Fatal("expected sqlserver release asset names")
+	}
+	got, ok := resolveLatestPublishedDriverDownloadURLForVersion(definition, "")
+	if !ok {
+		t.Fatal("expected GitHub latest fallback for an incomplete mirror index")
+	}
+	want := driverReleaseLatestDownloadURL(assetNames[0])
+	if got != want {
+		t.Fatalf("latest fallback URL = %q, want %q", got, want)
 	}
 }
 
@@ -388,10 +549,10 @@ func TestResolveOptionalDriverAgentDownloadURLsDoesNotFallbackForHistoricalVersi
 		explicitURL,
 		"1.17.4",
 	)
-	if len(urls) != 1 {
-		t.Fatalf("expected only explicit historical URL, got %d candidates: %v", len(urls), urls)
+	if len(urls) != 2 {
+		t.Fatalf("expected mirror plus explicit historical URL, got %d candidates: %v", len(urls), urls)
 	}
-	if urls[0] != explicitURL {
+	if urls[0] != driverMirrorReleaseDownloadURL("v1.17.4", mongoVersionedReleaseAssetName(1)) || urls[1] != explicitURL {
 		t.Fatalf("unexpected historical URL candidate: %v", urls)
 	}
 }
@@ -1774,21 +1935,55 @@ func TestDownloadOptionalDriverAgentFromBundleLocalizesInvalidBundleDetail(t *te
 	}
 }
 
-func TestInstallOptionalDriverAgentPackageAcceptsStaleDownloadRevision(t *testing.T) {
+func TestDownloadDriverPackageRejectsStaleRevisionAndPreservesInstalledDriver(t *testing.T) {
 	originalProbe := optionalDriverAgentMetadataProbe
+	originalValidate := validateOptionalDriverAgentExecutableFunc
+	originalLookPath := goBinaryLookPath
+	originalStat := goBinaryStat
+	originalCommandOutput := goBinaryCommandOutput
 	t.Cleanup(func() {
 		optionalDriverAgentMetadataProbe = originalProbe
+		validateOptionalDriverAgentExecutableFunc = originalValidate
+		goBinaryLookPath = originalLookPath
+		goBinaryStat = originalStat
+		goBinaryCommandOutput = originalCommandOutput
 	})
 
 	tmpDir := t.TempDir()
-	staleAgent := filepath.Join(tmpDir, "stale-driver-agent")
-	if runtime.GOOS == "windows" {
-		staleAgent += ".exe"
+	driverRoot := filepath.Join(tmpDir, "drivers")
+	executablePath, err := db.ResolveOptionalDriverAgentExecutablePath(driverRoot, "sqlserver")
+	if err != nil {
+		t.Fatalf("resolve installed driver path: %v", err)
 	}
-	writeSelfExecutable(t, staleAgent)
+	if err := os.MkdirAll(filepath.Dir(executablePath), 0o755); err != nil {
+		t.Fatalf("create installed driver directory: %v", err)
+	}
+	previousBinary := []byte("previous-sqlserver-driver")
+	if err := os.WriteFile(executablePath, previousBinary, 0o755); err != nil {
+		t.Fatalf("write previous driver: %v", err)
+	}
+	previousMeta := installedDriverPackage{
+		DriverType:     "sqlserver",
+		Version:        "1.9.6",
+		AgentRevision:  db.OptionalDriverAgentRevision("sqlserver"),
+		FilePath:       executablePath,
+		FileName:       filepath.Base(executablePath),
+		ExecutablePath: executablePath,
+		DownloadURL:    "https://example.test/previous-driver",
+		SHA256:         "previous-sha256",
+		DownloadedAt:   "2026-07-15T12:00:00+08:00",
+	}
+	if err := writeInstalledDriverPackage(driverRoot, "sqlserver", previousMeta); err != nil {
+		t.Fatalf("write previous driver metadata: %v", err)
+	}
+	metaPath := installedDriverMetaPath(driverRoot, "sqlserver")
+	previousMetaBytes, err := os.ReadFile(metaPath)
+	if err != nil {
+		t.Fatalf("read previous driver metadata: %v", err)
+	}
 
 	staleServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.ServeFile(w, r, staleAgent)
+		_, _ = w.Write([]byte("stale-sqlserver-driver"))
 	}))
 	defer staleServer.Close()
 	proxySnapshot := currentGlobalProxyConfig()
@@ -1805,33 +2000,331 @@ func TestInstallOptionalDriverAgentPackageAcceptsStaleDownloadRevision(t *testin
 			AgentRevision: "src-stale-agent",
 		}, nil
 	}
+	validateOptionalDriverAgentExecutableFunc = func(driverType string, executablePath string) error {
+		return nil
+	}
+	goBinaryLookPath = func(file string) (string, error) {
+		return "", os.ErrNotExist
+	}
+	goBinaryStat = func(name string) (os.FileInfo, error) {
+		return nil, os.ErrNotExist
+	}
+	goBinaryCommandOutput = func(cmd *exec.Cmd) ([]byte, error) {
+		return nil, os.ErrNotExist
+	}
 
-	meta, err := installOptionalDriverAgentPackage(
-		nil,
-		driverDefinition{Type: "sqlserver", Name: "SQL Server"},
-		"1.9.6",
-		filepath.Join(tmpDir, "drivers"),
-		staleServer.URL,
-	)
+	app := NewApp()
+	result := app.DownloadDriverPackage("sqlserver", "1.9.7", staleServer.URL, driverRoot)
+	if result.Success {
+		t.Fatal("expected stale driver reinstall to fail")
+	}
+
+	installedBinary, err := os.ReadFile(executablePath)
 	if err != nil {
-		t.Fatalf("expected stale direct download to be installed with an update hint, got %v", err)
+		t.Fatalf("read installed driver after failed reinstall: %v", err)
 	}
-	if meta.DownloadURL != staleServer.URL {
-		t.Fatalf("expected direct download source to be preserved, got %q", meta.DownloadURL)
+	if string(installedBinary) != string(previousBinary) {
+		t.Fatalf("failed reinstall replaced the previous driver: got %q", string(installedBinary))
 	}
-	if meta.AgentRevision != "src-stale-agent" {
-		t.Fatalf("expected stale agent revision to be recorded, got %q", meta.AgentRevision)
+	installedMetaBytes, err := os.ReadFile(metaPath)
+	if err != nil {
+		t.Fatalf("read driver metadata after failed reinstall: %v", err)
 	}
-	if _, err := os.Stat(meta.ExecutablePath); err != nil {
-		t.Fatalf("expected runtime executable to stay installed, got %v", err)
+	if string(installedMetaBytes) != string(previousMetaBytes) {
+		t.Fatalf("failed reinstall changed installed metadata:\n%s", string(installedMetaBytes))
 	}
-	needsUpdate, reason, expectedRevision := optionalDriverAgentRevisionStatus("sqlserver", meta, true)
-	if !needsUpdate {
-		t.Fatalf("expected stale installed revision to be surfaced as needsUpdate; expected=%q", expectedRevision)
+	assertNoDriverInstallStagingDirs(t, filepath.Dir(executablePath))
+}
+
+func TestInstallLocalDriverPackageRejectsStaleRevisionAndPreservesInstalledDriver(t *testing.T) {
+	originalProbe := optionalDriverAgentMetadataProbe
+	originalValidate := validateOptionalDriverAgentExecutableFunc
+	t.Cleanup(func() {
+		optionalDriverAgentMetadataProbe = originalProbe
+		validateOptionalDriverAgentExecutableFunc = originalValidate
+	})
+
+	tmpDir := t.TempDir()
+	driverRoot := filepath.Join(tmpDir, "drivers")
+	executablePath, err := db.ResolveOptionalDriverAgentExecutablePath(driverRoot, "sqlserver")
+	if err != nil {
+		t.Fatalf("resolve installed driver path: %v", err)
 	}
-	if !strings.Contains(reason, "强烈建议重装") {
-		t.Fatalf("expected advisory reinstall reason, got %q", reason)
+	if err := os.MkdirAll(filepath.Dir(executablePath), 0o755); err != nil {
+		t.Fatalf("create installed driver directory: %v", err)
 	}
+	previousBinary := []byte("previous-local-sqlserver-driver")
+	if err := os.WriteFile(executablePath, previousBinary, 0o755); err != nil {
+		t.Fatalf("write previous driver: %v", err)
+	}
+	previousMeta := installedDriverPackage{
+		DriverType:     "sqlserver",
+		Version:        "1.9.6",
+		AgentRevision:  db.OptionalDriverAgentRevision("sqlserver"),
+		FilePath:       executablePath,
+		FileName:       filepath.Base(executablePath),
+		ExecutablePath: executablePath,
+		DownloadURL:    "local://previous-driver",
+		SHA256:         "previous-sha256",
+		DownloadedAt:   "2026-07-15T12:00:00+08:00",
+	}
+	if err := writeInstalledDriverPackage(driverRoot, "sqlserver", previousMeta); err != nil {
+		t.Fatalf("write previous driver metadata: %v", err)
+	}
+	metaPath := installedDriverMetaPath(driverRoot, "sqlserver")
+	previousMetaBytes, err := os.ReadFile(metaPath)
+	if err != nil {
+		t.Fatalf("read previous driver metadata: %v", err)
+	}
+	stalePackage := filepath.Join(tmpDir, "stale-sqlserver-driver")
+	if runtime.GOOS == "windows" {
+		stalePackage += ".exe"
+	}
+	if err := os.WriteFile(stalePackage, []byte("stale-local-sqlserver-driver"), 0o755); err != nil {
+		t.Fatalf("write stale local driver package: %v", err)
+	}
+	validateOptionalDriverAgentExecutableFunc = func(driverType string, executablePath string) error {
+		return nil
+	}
+	optionalDriverAgentMetadataProbe = func(driverType string, executablePath string) (db.OptionalDriverAgentMetadata, error) {
+		return db.OptionalDriverAgentMetadata{
+			DriverType:    driverType,
+			AgentRevision: "src-stale-local-agent",
+		}, nil
+	}
+
+	app := NewApp()
+	result := app.InstallLocalDriverPackage("sqlserver", stalePackage, driverRoot, "1.9.6")
+	if result.Success {
+		t.Fatal("expected stale local driver import to fail")
+	}
+	installedBinary, err := os.ReadFile(executablePath)
+	if err != nil {
+		t.Fatalf("read installed driver after failed local import: %v", err)
+	}
+	if string(installedBinary) != string(previousBinary) {
+		t.Fatalf("failed local import replaced the previous driver: got %q", string(installedBinary))
+	}
+	installedMetaBytes, err := os.ReadFile(metaPath)
+	if err != nil {
+		t.Fatalf("read metadata after failed local import: %v", err)
+	}
+	if string(installedMetaBytes) != string(previousMetaBytes) {
+		t.Fatalf("failed local import changed installed metadata:\n%s", string(installedMetaBytes))
+	}
+	assertNoDriverInstallStagingDirs(t, filepath.Dir(executablePath))
+}
+
+func TestDownloadDriverPackageFallsBackAfterStaleRevision(t *testing.T) {
+	originalProbe := optionalDriverAgentMetadataProbe
+	originalValidate := validateOptionalDriverAgentExecutableFunc
+	originalLookPath := goBinaryLookPath
+	t.Cleanup(func() {
+		optionalDriverAgentMetadataProbe = originalProbe
+		validateOptionalDriverAgentExecutableFunc = originalValidate
+		goBinaryLookPath = originalLookPath
+	})
+
+	tmpDir := t.TempDir()
+	staleServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("stale-kingbase-driver"))
+	}))
+	defer staleServer.Close()
+	proxySnapshot := currentGlobalProxyConfig()
+	if _, err := setGlobalProxyConfig(false, proxySnapshot.Proxy); err != nil {
+		t.Fatalf("disable global proxy failed: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = setGlobalProxyConfig(proxySnapshot.Enabled, proxySnapshot.Proxy)
+	})
+
+	projectRoot := filepath.Join(tmpDir, "project")
+	if err := os.MkdirAll(filepath.Join(projectRoot, "cmd", "optional-driver-agent"), 0o755); err != nil {
+		t.Fatalf("create project root: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(projectRoot, "go.mod"), []byte("module GoNavi-Wails\n"), 0o644); err != nil {
+		t.Fatalf("write go.mod: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(projectRoot, "cmd", "optional-driver-agent", "main.go"), []byte("package main\n"), 0o644); err != nil {
+		t.Fatalf("write optional driver agent source: %v", err)
+	}
+	currentAgent := filepath.Join(tmpDir, "current-kingbase-driver")
+	if runtime.GOOS == "windows" {
+		currentAgent += ".exe"
+	}
+	if err := os.WriteFile(currentAgent, []byte("current-kingbase-driver"), 0o755); err != nil {
+		t.Fatalf("write current driver fixture: %v", err)
+	}
+	fakeGo := filepath.Join(tmpDir, "fake-go")
+	if runtime.GOOS == "windows" {
+		fakeGo += ".bat"
+		if err := os.WriteFile(fakeGo, []byte("@echo off\r\nsetlocal\r\nset \"out=\"\r\n:loop\r\nif \"%~1\"==\"\" goto done\r\nif \"%~1\"==\"-o\" goto capture\r\nshift\r\ngoto loop\r\n:capture\r\nset \"out=%~2\"\r\nshift\r\nshift\r\ngoto loop\r\n:done\r\nif \"%out%\"==\"\" exit /b 1\r\ncopy /Y \"%GONAVI_TEST_BUILT_AGENT%\" \"%out%\" >nul\r\n"), 0o755); err != nil {
+			t.Fatalf("write fake go command: %v", err)
+		}
+	} else if err := os.WriteFile(fakeGo, []byte("#!/usr/bin/env sh\nout=\"\"\nwhile [ \"$#\" -gt 0 ]; do\n  if [ \"$1\" = \"-o\" ]; then out=\"$2\"; shift 2; continue; fi\n  shift\ndone\ncp \"$GONAVI_TEST_BUILT_AGENT\" \"$out\"\n"), 0o755); err != nil {
+		t.Fatalf("write fake go command: %v", err)
+	}
+	t.Setenv("GONAVI_TEST_BUILT_AGENT", currentAgent)
+	goBinaryLookPath = func(file string) (string, error) {
+		return fakeGo, nil
+	}
+	validateOptionalDriverAgentExecutableFunc = func(driverType string, executablePath string) error {
+		return nil
+	}
+	optionalDriverAgentMetadataProbe = func(driverType string, executablePath string) (db.OptionalDriverAgentMetadata, error) {
+		content, err := os.ReadFile(executablePath)
+		if err != nil {
+			return db.OptionalDriverAgentMetadata{}, err
+		}
+		revision := "src-stale-agent"
+		if string(content) == "current-kingbase-driver" {
+			revision = db.OptionalDriverAgentRevision(driverType)
+		}
+		return db.OptionalDriverAgentMetadata{DriverType: driverType, AgentRevision: revision}, nil
+	}
+
+	workingDir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("get working directory: %v", err)
+	}
+	if err := os.Chdir(projectRoot); err != nil {
+		t.Fatalf("change to project root: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(workingDir); err != nil {
+			t.Fatalf("restore working directory: %v", err)
+		}
+	})
+
+	driverRoot := filepath.Join(tmpDir, "drivers")
+	app := NewApp()
+	result := app.DownloadDriverPackage("kingbase", "0.0.0-test", staleServer.URL, driverRoot)
+	if !result.Success {
+		t.Fatalf("expected current source fallback to install successfully, got %q", result.Message)
+	}
+	executablePath, err := db.ResolveOptionalDriverAgentExecutablePath(driverRoot, "kingbase")
+	if err != nil {
+		t.Fatalf("resolve installed driver path: %v", err)
+	}
+	installedBinary, err := os.ReadFile(executablePath)
+	if err != nil {
+		t.Fatalf("read installed fallback driver: %v", err)
+	}
+	if string(installedBinary) != "current-kingbase-driver" {
+		t.Fatalf("unexpected installed fallback driver: %q", string(installedBinary))
+	}
+	pkg, ok := readInstalledDriverPackage(driverRoot, "kingbase")
+	if !ok {
+		t.Fatal("expected installed metadata after fallback")
+	}
+	if pkg.AgentRevision != db.OptionalDriverAgentRevision("kingbase") {
+		t.Fatalf("unexpected installed revision: %q", pkg.AgentRevision)
+	}
+	if pkg.DownloadURL != "local://go-build/kingbase-driver-agent" {
+		t.Fatalf("unexpected fallback source: %q", pkg.DownloadURL)
+	}
+	assertNoDriverInstallStagingDirs(t, filepath.Dir(executablePath))
+}
+
+func TestDownloadDriverPackageRollsBackWhenRuntimeActivationFails(t *testing.T) {
+	originalProbe := optionalDriverAgentMetadataProbe
+	originalValidate := validateOptionalDriverAgentExecutableFunc
+	t.Cleanup(func() {
+		optionalDriverAgentMetadataProbe = originalProbe
+		validateOptionalDriverAgentExecutableFunc = originalValidate
+	})
+
+	tmpDir := t.TempDir()
+	driverRoot := filepath.Join(tmpDir, "drivers")
+	installPath, err := db.ResolveOptionalDriverAgentExecutablePathForVersion(driverRoot, "mongodb", "2.99.0")
+	if err != nil {
+		t.Fatalf("resolve versioned driver path: %v", err)
+	}
+	runtimePath, err := db.ResolveOptionalDriverAgentExecutablePath(driverRoot, "mongodb")
+	if err != nil {
+		t.Fatalf("resolve runtime driver path: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(installPath), 0o755); err != nil {
+		t.Fatalf("create driver directory: %v", err)
+	}
+	previousBinary := []byte("previous-mongodb-driver")
+	if err := os.WriteFile(installPath, previousBinary, 0o755); err != nil {
+		t.Fatalf("write previous versioned driver: %v", err)
+	}
+	if err := os.MkdirAll(runtimePath, 0o755); err != nil {
+		t.Fatalf("create occupied runtime path: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(runtimePath, "keep"), []byte("occupied"), 0o644); err != nil {
+		t.Fatalf("occupy runtime path: %v", err)
+	}
+	previousMeta := installedDriverPackage{
+		DriverType:     "mongodb",
+		Version:        "2.98.0",
+		AgentRevision:  db.OptionalDriverAgentRevision("mongodb"),
+		FilePath:       installPath,
+		FileName:       filepath.Base(installPath),
+		ExecutablePath: installPath,
+		DownloadURL:    "https://example.test/previous-mongodb-driver",
+		SHA256:         "previous-sha256",
+		DownloadedAt:   "2026-07-15T12:00:00+08:00",
+	}
+	if err := writeInstalledDriverPackage(driverRoot, "mongodb", previousMeta); err != nil {
+		t.Fatalf("write previous driver metadata: %v", err)
+	}
+	metaPath := installedDriverMetaPath(driverRoot, "mongodb")
+	previousMetaBytes, err := os.ReadFile(metaPath)
+	if err != nil {
+		t.Fatalf("read previous driver metadata: %v", err)
+	}
+
+	currentServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("current-mongodb-driver"))
+	}))
+	defer currentServer.Close()
+	proxySnapshot := currentGlobalProxyConfig()
+	if _, err := setGlobalProxyConfig(false, proxySnapshot.Proxy); err != nil {
+		t.Fatalf("disable global proxy failed: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = setGlobalProxyConfig(proxySnapshot.Enabled, proxySnapshot.Proxy)
+	})
+	validateOptionalDriverAgentExecutableFunc = func(driverType string, executablePath string) error {
+		return nil
+	}
+	optionalDriverAgentMetadataProbe = func(driverType string, executablePath string) (db.OptionalDriverAgentMetadata, error) {
+		return db.OptionalDriverAgentMetadata{
+			DriverType:    driverType,
+			AgentRevision: db.OptionalDriverAgentRevision(driverType),
+		}, nil
+	}
+
+	app := NewApp()
+	result := app.DownloadDriverPackage("mongodb", "2.99.0", currentServer.URL, driverRoot)
+	if result.Success {
+		t.Fatal("expected runtime activation failure")
+	}
+	installedBinary, err := os.ReadFile(installPath)
+	if err != nil {
+		t.Fatalf("read versioned driver after rollback: %v", err)
+	}
+	if string(installedBinary) != string(previousBinary) {
+		t.Fatalf("failed activation did not restore previous driver: got %q", string(installedBinary))
+	}
+	installedMetaBytes, err := os.ReadFile(metaPath)
+	if err != nil {
+		t.Fatalf("read metadata after failed activation: %v", err)
+	}
+	if string(installedMetaBytes) != string(previousMetaBytes) {
+		t.Fatalf("failed activation changed installed metadata:\n%s", string(installedMetaBytes))
+	}
+	occupiedMarker, err := os.ReadFile(filepath.Join(runtimePath, "keep"))
+	if err != nil {
+		t.Fatalf("read occupied runtime marker after rollback: %v", err)
+	}
+	if string(occupiedMarker) != "occupied" {
+		t.Fatalf("runtime marker changed after rollback: %q", string(occupiedMarker))
+	}
+	assertNoDriverInstallStagingDirs(t, filepath.Dir(installPath))
 }
 
 func seedReleaseAssetSizeCache(t *testing.T, cacheKey string, sizeByKey map[string]int64) {
@@ -1863,11 +2356,23 @@ func cloneReleaseAssetSizeCache(src map[string]driverReleaseAssetSizeCacheEntry)
 	cloned := make(map[string]driverReleaseAssetSizeCacheEntry, len(src))
 	for key, value := range src {
 		cloned[key] = driverReleaseAssetSizeCacheEntry{
-			LoadedAt:        value.LoadedAt,
-			SizeByKey:       cloneInt64Map(value.SizeByKey),
-			PublishedAssets: cloneBoolMap(value.PublishedAssets),
-			Err:             value.Err,
+			LoadedAt:           value.LoadedAt,
+			SizeByKey:          cloneInt64Map(value.SizeByKey),
+			PublishedAssets:    cloneBoolMap(value.PublishedAssets),
+			MirrorDownloadURLs: cloneDriverStringMap(value.MirrorDownloadURLs),
+			Err:                value.Err,
 		}
+	}
+	return cloned
+}
+
+func cloneDriverStringMap(src map[string]string) map[string]string {
+	if len(src) == 0 {
+		return map[string]string{}
+	}
+	cloned := make(map[string]string, len(src))
+	for key, value := range src {
+		cloned[key] = value
 	}
 	return cloned
 }
@@ -1963,6 +2468,20 @@ func chdirTemp(t *testing.T) {
 			t.Fatalf("restore cwd failed: %v", err)
 		}
 	})
+}
+
+func assertNoDriverInstallStagingDirs(t *testing.T, driverDir string) {
+	t.Helper()
+
+	entries, err := os.ReadDir(driverDir)
+	if err != nil {
+		t.Fatalf("read driver directory: %v", err)
+	}
+	for _, entry := range entries {
+		if strings.HasPrefix(entry.Name(), ".gonavi-driver-install-") {
+			t.Fatalf("driver install staging directory was not cleaned up: %s", entry.Name())
+		}
+	}
 }
 
 func mongoVersionedReleaseAssetName(major int) string {

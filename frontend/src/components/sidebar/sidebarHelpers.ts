@@ -272,6 +272,11 @@ export const resolveSidebarTableNameForCopy = (
   return String(node?.dataRef?.tableName || node?.dataRef?.viewName || node?.dataRef?.sequenceName || node?.dataRef?.packageName || node?.dataRef?.eventName || node?.title || '').trim();
 };
 
+/** resolveSidebarDatabaseNameForCopy extracts the exact database identifier shown by the node. */
+export const resolveSidebarDatabaseNameForCopy = (
+  node: Pick<SidebarNodeLike, 'title' | 'dataRef'> | null | undefined,
+): string => String(node?.dataRef?.dbName || node?.title || '').trim();
+
 // === 命令搜索相关类型与解析（V2 Command Search）===
 
 /** 命令搜索模式：default（默认）/ object（@前缀，对象搜索）/ ai（?或？前缀，AI 提问） */

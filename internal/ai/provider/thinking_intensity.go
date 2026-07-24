@@ -63,7 +63,7 @@ func ResolveThinkingProfile(providerType, apiFormat, baseURL, model string) Thin
 	if ptype == "anthropic" || format == "anthropic" {
 		return ThinkingProfileAnthropic
 	}
-	if ptype == "openai" || format == "" || format == "openai" {
+	if ptype == "openai" || format == "" || format == "openai" || format == "openai-responses" {
 		return ThinkingProfileOpenAI
 	}
 	return ThinkingProfileGeneric

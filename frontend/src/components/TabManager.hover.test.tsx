@@ -5,10 +5,13 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   TAB_WORKBENCH_CLASS_NAME,
+  handleTabDragPointerDown,
   resolveTabHoverOpen,
   resolveTabHoverTitle,
   shouldShowV2ConnectionLabel,
   TabHoverInfo,
+  isMiddleMouseButton,
+  shouldActivateTabDragPointer,
   stopTabHoverDragPropagation,
 } from './TabManager';
 import { setCurrentLanguage } from '../i18n';
@@ -53,10 +56,95 @@ afterEach(() => {
 });
 
 describe('TabManager hover info', () => {
+  it('starts tab dragging only from a primary pointer on non-interactive tab content', () => {
+    const tabContent = {
+      closest: vi.fn(() => null),
+    } as unknown as EventTarget;
+    const closeIcon = {
+      closest: vi.fn((selector: string) =>
+        selector.includes('.gn-v2-tab-close') ? { className: 'gn-v2-tab-close' } : null),
+    } as unknown as EventTarget;
+    const legacyCloseIcon = {
+      closest: vi.fn((selector: string) =>
+        selector.includes('.ant-tabs-tab-remove') ? { className: 'ant-tabs-tab-remove' } : null),
+    } as unknown as EventTarget;
+    const contextMenuItem = {
+      closest: vi.fn((selector: string) =>
+        selector.includes('[role="menuitem"]') ? { role: 'menuitem' } : null),
+    } as unknown as EventTarget;
+
+    expect(shouldActivateTabDragPointer({ button: 0, target: tabContent })).toBe(true);
+    expect(shouldActivateTabDragPointer({ button: 0, target: closeIcon })).toBe(false);
+    expect(shouldActivateTabDragPointer({ button: 0, target: legacyCloseIcon })).toBe(false);
+    expect(shouldActivateTabDragPointer({ button: 0, target: contextMenuItem })).toBe(false);
+    expect(shouldActivateTabDragPointer({ button: 1, target: tabContent })).toBe(false);
+    expect(shouldActivateTabDragPointer({ button: 2, target: tabContent })).toBe(false);
+    expect(shouldActivateTabDragPointer({ button: 0, ctrlKey: true, target: tabContent })).toBe(false);
+    expect(shouldActivateTabDragPointer({ button: 0, isPrimary: false, target: tabContent })).toBe(false);
+  });
+
+  it('does not capture or notify dnd-kit for close and context-menu pointers', () => {
+    const setPointerCapture = vi.fn();
+    const listener = vi.fn();
+    const tabContent = { closest: vi.fn(() => null) } as unknown as EventTarget;
+    const closeIcon = {
+      closest: vi.fn(() => ({ className: 'gn-v2-tab-close' })),
+    } as unknown as EventTarget;
+    const contextMenuItem = {
+      closest: vi.fn((selector: string) =>
+        selector.includes('[role="menuitem"]') ? { role: 'menuitem' } : null),
+    } as unknown as EventTarget;
+    const buildEvent = (overrides: Record<string, unknown> = {}) => ({
+      button: 0,
+      ctrlKey: false,
+      isPrimary: true,
+      pointerId: 7,
+      target: tabContent,
+      currentTarget: { setPointerCapture },
+      ...overrides,
+    }) as unknown as React.PointerEvent<HTMLElement>;
+
+    handleTabDragPointerDown(buildEvent(), listener);
+    expect(setPointerCapture).toHaveBeenCalledOnce();
+    expect(listener).toHaveBeenCalledOnce();
+
+    setPointerCapture.mockClear();
+    listener.mockClear();
+    handleTabDragPointerDown(buildEvent({ target: closeIcon }), listener);
+    handleTabDragPointerDown(buildEvent({ target: contextMenuItem }), listener);
+    handleTabDragPointerDown(buildEvent({ button: 2 }), listener);
+    handleTabDragPointerDown(buildEvent({ ctrlKey: true }), listener);
+    expect(setPointerCapture).not.toHaveBeenCalled();
+    expect(listener).not.toHaveBeenCalled();
+  });
+
+  it('recognizes only the auxiliary middle mouse button for tab closing', () => {
+    expect(isMiddleMouseButton(1)).toBe(true);
+    expect(isMiddleMouseButton(0)).toBe(false);
+    expect(isMiddleMouseButton(2)).toBe(false);
+  });
+
   it('memoizes the tab workbench so parent-only modal state does not repaint open tabs', () => {
     const source = readFileSync(new URL('./TabManager.tsx', import.meta.url), 'utf8');
 
     expect(source).toContain('const TabManager: React.FC = React.memo(() => {');
+  });
+
+  it('routes the workspace close command through the docked active tab close coordinator', () => {
+    const source = stripSourceComments(readFileSync(new URL('./TabManager.tsx', import.meta.url), 'utf8'));
+    const handlerStart = source.indexOf('const requestCloseActiveWorkspaceTab = useCallback(() => {');
+    const handlerEnd = source.indexOf('\n  useEffect(() => {', handlerStart);
+    const handlerSource = source.slice(handlerStart, handlerEnd);
+
+    expect(handlerStart).toBeGreaterThan(-1);
+    expect(handlerEnd).toBeGreaterThan(handlerStart);
+    expect(source).toContain("import { CLOSE_ACTIVE_WORKSPACE_TAB_EVENT, resolveDockedActiveTabId } from '../utils/closeTabShortcut';");
+    expect(handlerSource).toContain('if (!dockedActiveTabId) return;');
+    expect(handlerSource).toContain('closeTabsWithSQLFilePrompt(\n      [dockedActiveTabId],\n      () => closeTab(dockedActiveTabId),');
+    expect(handlerSource).not.toContain('[activeTabId]');
+    expect(source).toContain('window.addEventListener(CLOSE_ACTIVE_WORKSPACE_TAB_EVENT, requestCloseActiveWorkspaceTab);');
+    expect(source).toContain('window.removeEventListener(CLOSE_ACTIVE_WORKSPACE_TAB_EVENT, requestCloseActiveWorkspaceTab);');
+    expect(source).not.toContain("window.addEventListener('keydown'");
   });
 
   it('keeps the tab workbench as a full-height flex child in legacy and v2 UI', () => {
@@ -289,6 +377,9 @@ describe('TabManager hover info', () => {
     expect(source).toContain('buildTabDisplayModel(tab, connection, appearance.tabDisplay, t)');
     expect(source).toContain('displayModel={displayModel}');
     expect(source).toContain('displayModel.primaryParts.map(renderV2TabDisplayPart)');
+    expect(source).toContain('renderV2TabSecondaryParts(displayModel.secondaryParts)');
+    expect(source).toContain('aria-label={displayModel.secondaryText}');
+    expect(source).toContain('className="gn-v2-tab-label-separator" aria-hidden="true">·</span>');
     expect(source).toContain("if (part.key === 'kind')");
     expect(source).toContain('className="gn-v2-tab-kind"');
     expect(source).toContain('hasDoubleLineTabLabel');
@@ -307,9 +398,20 @@ describe('TabManager hover info', () => {
     expect(source).not.toContain('gn-v2-main-tabs-rich');
   });
 
+  it('keeps short secondary connection labels content-sized', () => {
+    const css = readFileSync(new URL('../v2-theme.css', import.meta.url), 'utf8');
+
+    expect(css).toMatch(/\.gn-v2-tab-label-part-connection \{[^}]*flex: 0 1 auto;[^}]*max-width: 92px;/s);
+    expect(css).not.toMatch(/\.gn-v2-tab-label-part-connection \{[^}]*flex: 0 1 92px;/s);
+  });
+
   it('wires hover card tab-switch and drag-blocking handlers with selectable text styles', () => {
     const source = readFileSync(new URL('./TabManager.tsx', import.meta.url), 'utf8');
 
+    expect(source).toContain('onMouseDown={handleTabLabelMouseDown}');
+    expect(source).toContain('onAuxClick={handleTabLabelAuxClick}');
+    expect(source).toContain('event.stopPropagation();');
+    expect(source).toContain('onClose();');
     expect(source).toContain('onPointerDown={stopTabHoverDragPropagation}');
     expect(source).toContain('onPointerUp={stopTabHoverDragPropagation}');
     expect(source).toContain('onPointerDownCapture={stopTabHoverDragPropagation}');
@@ -364,8 +466,8 @@ describe('TabManager hover info', () => {
     expect(source).toContain('clearSQLFileTabDraft(tab.id)');
     expect(source).toContain('closeTabsWithSQLFilePrompt([id], () => closeTab(id))');
     expect(source).toContain('closeTabsWithSQLFilePrompt(getCloseOtherTabIds(tabs, tab.id), () => closeOtherTabs(tab.id))');
-    expect(source).toContain('closeTabsWithSQLFilePrompt(getCloseTabsToLeftIds(tabs, tab.id), () => closeTabsToLeft(tab.id))');
-    expect(source).toContain('closeTabsWithSQLFilePrompt(getCloseTabsToRightIds(tabs, tab.id), () => closeTabsToRight(tab.id))');
+    expect(source).toContain('closeTabsWithSQLFilePrompt(getCloseTabsToLeftIds(dockedTabs, tab.id), () => closeTabsToLeft(tab.id))');
+    expect(source).toContain('closeTabsWithSQLFilePrompt(getCloseTabsToRightIds(dockedTabs, tab.id), () => closeTabsToRight(tab.id))');
     expect(source).toContain('closeTabsWithSQLFilePrompt(tabs.map((item) => item.id), () => closeAllTabs())');
   });
 

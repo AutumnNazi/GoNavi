@@ -286,6 +286,10 @@ func (s *SQLiteDB) GetTables(dbName string) ([]string, error) {
 	return tables, nil
 }
 
+func (s *SQLiteDB) GetTableRowCounts(_ string, tables []string) (map[string]int64, error) {
+	return getSQLiteTableRowCounts(s.Query, tables)
+}
+
 func (s *SQLiteDB) GetCreateStatement(dbName, tableName string) (string, error) {
 	query := fmt.Sprintf("SELECT sql FROM sqlite_master WHERE type='table' AND name='%s'", tableName)
 	data, _, err := s.Query(query)

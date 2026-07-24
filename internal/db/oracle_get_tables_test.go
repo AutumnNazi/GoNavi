@@ -32,6 +32,10 @@ func TestOracleGetTablesPrefixesOwnerForAllTablesQuery(t *testing.T) {
 	if !reflect.DeepEqual(tables, want) {
 		t.Fatalf("期望返回带 OWNER 前缀的表名 %v，实际 %v", want, tables)
 	}
+	queries := state.snapshotQueries()
+	if len(queries) != 1 || strings.Contains(strings.ToLower(queries[0]), "all_synonyms") {
+		t.Fatalf("GetTables 应保持只返回物理表，实际查询: %v", queries)
+	}
 }
 
 func TestOracleGetTablesPrefixesCurrentUserForUserTablesQuery(t *testing.T) {

@@ -8,6 +8,7 @@ const source = [
 const locales = ['zh-CN', 'zh-TW', 'en-US', 'ja-JP', 'de-DE', 'ru-RU'] as const;
 
 const requiredKeys = [
+  'sidebar.copy_object_name.label.database',
   'sidebar.copy_object_name.label.table',
   'sidebar.copy_object_name.label.view',
   'sidebar.copy_object_name.label.materialized_view',
@@ -30,6 +31,7 @@ describe('Sidebar copy object name i18n', () => {
     expect(source).not.toContain('`${label}为空，无法复制`');
     expect(source).not.toContain('`${label}已复制到剪贴板`');
     expect(source).not.toContain('`复制${label}失败: `');
+    expect(source).toContain("t('sidebar.copy_object_name.label.database')");
     expect(source).toContain("t('sidebar.copy_object_name.label.view')");
     expect(source).toContain("t('sidebar.copy_object_name.label.materialized_view')");
     expect(source).toContain("t('sidebar.copy_object_name.label.sequence')");

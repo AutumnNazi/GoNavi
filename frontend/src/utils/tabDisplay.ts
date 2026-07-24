@@ -451,6 +451,9 @@ const buildCompactObjectTabTitle = (tab: TabData, translate: TabDisplayTranslate
   if (tab.type === 'table-export') {
     return replaceTitleObjectLabel(tab.title, tab.tableName);
   }
+  if (tab.type === 'data-import') {
+    return replaceTitleObjectLabel(tab.title, tab.tableName);
+  }
   if (tab.type === 'view-def') {
     return replaceTitleObjectLabel(tab.title, tab.viewName);
   }
@@ -478,7 +481,10 @@ export const getTabDisplayKindLabel = (tab: TabData): string => {
   if (tab.type === 'design') return 'DESIGN';
   if (tab.type === 'table-overview') return 'DB';
   if (tab.type === 'table-export') return 'EXPORT';
+  if (tab.type === 'data-import') return 'IMPORT';
+  if (tab.type === 'data-sync') return 'SYNC';
   if (tab.type === 'sql-analysis') return 'ANALYZE';
+  if (tab.type === 'sql-audit') return 'AUDIT';
   if (tab.type.startsWith('redis')) return 'REDIS';
   if (tab.type.startsWith('jvm')) return 'JVM';
   if (tab.type === 'trigger') return 'TRG';
@@ -502,6 +508,7 @@ const getTabRawObjectLabel = (tab: TabData, translate: TabDisplayTranslate = def
   if (tab.resourcePath) return tab.resourcePath;
   if (tab.filePath) return getFileNameFromPath(tab.filePath);
   if (tab.type.startsWith('redis')) return `db${tab.redisDB ?? 0}`;
+  if (tab.type === 'sql-audit') return tab.title;
   return tab.title;
 };
 
@@ -622,6 +629,7 @@ export const buildTabDisplayTitle = (
     tab.type !== 'design' &&
     tab.type !== 'table-overview' &&
     tab.type !== 'table-export' &&
+    tab.type !== 'data-import' &&
     tab.type !== 'sql-analysis'
   ) {
     return baseTitle;

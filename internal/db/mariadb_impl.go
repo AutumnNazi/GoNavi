@@ -231,12 +231,7 @@ func (m *MariaDB) GetCreateStatement(dbName, tableName string) (string, error) {
 }
 
 func (m *MariaDB) GetColumns(dbName, tableName string) ([]connection.ColumnDefinition, error) {
-	query := fmt.Sprintf("SHOW FULL COLUMNS FROM `%s`.`%s`", dbName, tableName)
-	if dbName == "" {
-		query = fmt.Sprintf("SHOW FULL COLUMNS FROM `%s`", tableName)
-	}
-
-	data, _, err := m.Query(query)
+	data, _, err := m.Query(buildMySQLShowFullColumnsQuery(dbName, tableName))
 	if err != nil {
 		return nil, err
 	}

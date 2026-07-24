@@ -53,6 +53,8 @@ const DraggableResizableModalFrame: React.FC<DraggableResizableModalFrameProps> 
 }) => {
   const wrapperRef = useRef<HTMLDivElement | null>(null);
   const activeInteractionRef = useRef<'drag' | 'resize' | null>(null);
+  const stopInteractionRef = useRef<((updateState?: boolean) => void) | null>(null);
+  const pendingClickCleanupRef = useRef<(() => void) | null>(null);
   const [wrapperElement, setWrapperElement] = useState<HTMLDivElement | null>(null);
   const [position, setPosition] = useState<ModalPosition>({ x: 0, y: 0 });
   const [size, setSize] = useState<ModalSize>({});
@@ -61,6 +63,8 @@ const DraggableResizableModalFrame: React.FC<DraggableResizableModalFrameProps> 
 
   useEffect(() => {
     if (!active) {
+      stopInteractionRef.current?.();
+      pendingClickCleanupRef.current?.();
       setPosition({ x: 0, y: 0 });
       setSize({});
       setIsDragging(false);
@@ -69,9 +73,14 @@ const DraggableResizableModalFrame: React.FC<DraggableResizableModalFrameProps> 
     }
   }, [active]);
 
+  useEffect(() => () => {
+    stopInteractionRef.current?.(false);
+    pendingClickCleanupRef.current?.();
+  }, []);
+
   const startDrag = useCallback((event: PointerEvent | MouseEvent) => {
     if (activeInteractionRef.current) return;
-    if (!draggable || event.button !== 0 || isInteractiveTarget(event.target)) return;
+    if (!active || !draggable || event.button !== 0 || isInteractiveTarget(event.target)) return;
     const target = event.target instanceof HTMLElement ? event.target : null;
     if (!target?.closest('.ant-modal-header, .ant-modal-title, .ant-modal-confirm-title')) return;
 
@@ -88,6 +97,7 @@ const DraggableResizableModalFrame: React.FC<DraggableResizableModalFrameProps> 
     const maxY = window.innerHeight - VIEWPORT_PADDING - rect.bottom + startPosition.y;
 
     event.preventDefault();
+    pendingClickCleanupRef.current?.();
     activeInteractionRef.current = 'drag';
     setIsDragging(true);
 
@@ -96,36 +106,61 @@ const DraggableResizableModalFrame: React.FC<DraggableResizableModalFrameProps> 
       clickEvent.stopPropagation();
     };
 
+    const removeClickSuppression = () => {
+      window.removeEventListener('click', suppressInteractionClick, true);
+      if (pendingClickCleanupRef.current === removeClickSuppression) {
+        pendingClickCleanupRef.current = null;
+      }
+    };
+
     const handleMove = (moveEvent: PointerEvent | MouseEvent) => {
+      if (moveEvent.buttons === 0) {
+        abortDrag();
+        return;
+      }
       const nextX = clamp(startPosition.x + moveEvent.clientX - startX, minX, maxX);
       const nextY = clamp(startPosition.y + moveEvent.clientY - startY, minY, maxY);
       setPosition({ x: nextX, y: nextY });
     };
 
-    const stopDrag = () => {
+    const finishDrag = (completed: boolean, updateState = true) => {
+      if (stopInteractionRef.current !== abortDrag) return;
+      stopInteractionRef.current = null;
       activeInteractionRef.current = null;
-      setIsDragging(false);
+      if (updateState) {
+        setIsDragging(false);
+      }
       window.removeEventListener('pointermove', handleMove);
       window.removeEventListener('mousemove', handleMove);
       window.removeEventListener('pointerup', stopDrag);
       window.removeEventListener('mouseup', stopDrag);
-      window.removeEventListener('pointercancel', stopDrag);
-      window.setTimeout(() => {
-        window.removeEventListener('click', suppressInteractionClick, true);
-      }, 0);
+      window.removeEventListener('pointercancel', handleAbortDrag);
+      window.removeEventListener('blur', handleAbortDrag);
+      if (completed) {
+        pendingClickCleanupRef.current = removeClickSuppression;
+        window.addEventListener('click', suppressInteractionClick, { capture: true, once: true });
+        window.setTimeout(removeClickSuppression, 0);
+      } else {
+        removeClickSuppression();
+      }
     };
 
+    const stopDrag = () => finishDrag(true);
+    const abortDrag = (updateState = true) => finishDrag(false, updateState);
+    const handleAbortDrag = () => abortDrag();
+
+    stopInteractionRef.current = abortDrag;
     window.addEventListener('pointermove', handleMove);
     window.addEventListener('mousemove', handleMove);
     window.addEventListener('pointerup', stopDrag);
     window.addEventListener('mouseup', stopDrag);
-    window.addEventListener('pointercancel', stopDrag);
-    window.addEventListener('click', suppressInteractionClick, true);
-  }, [draggable, position, wrapperElement]);
+    window.addEventListener('pointercancel', handleAbortDrag);
+    window.addEventListener('blur', handleAbortDrag);
+  }, [active, draggable, position, wrapperElement]);
 
   const startResize = useCallback((direction: ResizeDirection, event: PointerEvent | MouseEvent) => {
     if (activeInteractionRef.current) return;
-    if (!resizable || event.button !== 0) return;
+    if (!active || !resizable || event.button !== 0) return;
     const modalContent = wrapperElement?.querySelector('.ant-modal-content');
     const modalNode = wrapperElement?.closest('.ant-modal');
     if (!(modalContent instanceof HTMLElement) || !(modalNode instanceof HTMLElement)) return;
@@ -139,6 +174,7 @@ const DraggableResizableModalFrame: React.FC<DraggableResizableModalFrameProps> 
 
     event.preventDefault();
     event.stopPropagation();
+    pendingClickCleanupRef.current?.();
     activeInteractionRef.current = 'resize';
     setIsResizing(true);
     setSize({
@@ -151,7 +187,18 @@ const DraggableResizableModalFrame: React.FC<DraggableResizableModalFrameProps> 
       clickEvent.stopPropagation();
     };
 
+    const removeClickSuppression = () => {
+      window.removeEventListener('click', suppressInteractionClick, true);
+      if (pendingClickCleanupRef.current === removeClickSuppression) {
+        pendingClickCleanupRef.current = null;
+      }
+    };
+
     const handleMove = (moveEvent: PointerEvent | MouseEvent) => {
+      if (moveEvent.buttons === 0) {
+        abortResize();
+        return;
+      }
       const deltaX = moveEvent.clientX - startX;
       const deltaY = moveEvent.clientY - startY;
       setSize({
@@ -160,26 +207,40 @@ const DraggableResizableModalFrame: React.FC<DraggableResizableModalFrameProps> 
       });
     };
 
-    const stopResize = () => {
+    const finishResize = (completed: boolean, updateState = true) => {
+      if (stopInteractionRef.current !== abortResize) return;
+      stopInteractionRef.current = null;
       activeInteractionRef.current = null;
-      setIsResizing(false);
+      if (updateState) {
+        setIsResizing(false);
+      }
       window.removeEventListener('pointermove', handleMove);
       window.removeEventListener('mousemove', handleMove);
       window.removeEventListener('pointerup', stopResize);
       window.removeEventListener('mouseup', stopResize);
-      window.removeEventListener('pointercancel', stopResize);
-      window.setTimeout(() => {
-        window.removeEventListener('click', suppressInteractionClick, true);
-      }, 0);
+      window.removeEventListener('pointercancel', handleAbortResize);
+      window.removeEventListener('blur', handleAbortResize);
+      if (completed) {
+        pendingClickCleanupRef.current = removeClickSuppression;
+        window.addEventListener('click', suppressInteractionClick, { capture: true, once: true });
+        window.setTimeout(removeClickSuppression, 0);
+      } else {
+        removeClickSuppression();
+      }
     };
 
+    const stopResize = () => finishResize(true);
+    const abortResize = (updateState = true) => finishResize(false, updateState);
+    const handleAbortResize = () => abortResize();
+
+    stopInteractionRef.current = abortResize;
     window.addEventListener('pointermove', handleMove);
     window.addEventListener('mousemove', handleMove);
     window.addEventListener('pointerup', stopResize);
     window.addEventListener('mouseup', stopResize);
-    window.addEventListener('pointercancel', stopResize);
-    window.addEventListener('click', suppressInteractionClick, true);
-  }, [minResizableHeight, minResizableWidth, resizable, wrapperElement]);
+    window.addEventListener('pointercancel', handleAbortResize);
+    window.addEventListener('blur', handleAbortResize);
+  }, [active, minResizableHeight, minResizableWidth, resizable, wrapperElement]);
 
   useEffect(() => {
     const modalNode = wrapperElement?.closest('.ant-modal');
@@ -251,6 +312,8 @@ const DraggableResizableModalFrame: React.FC<DraggableResizableModalFrameProps> 
       data-resizing={isResizing ? 'true' : 'false'}
       data-has-resized-width={size.width ? 'true' : 'false'}
       data-has-resized-height={size.height ? 'true' : 'false'}
+      data-gonavi-close-shortcut-guard={active ? 'true' : undefined}
+      data-gonavi-close-shortcut-blocks-background={active ? 'true' : undefined}
       style={frameStyle}
     >
       {children}
@@ -299,6 +362,8 @@ const ResizableDraggableModalBase: React.FC<ResizableDraggableModalProps> = ({
           props.rootClassName,
           props.className,
         ].filter(Boolean).join(' ')}
+        data-gonavi-close-shortcut-guard="true"
+        data-gonavi-close-shortcut-blocks-background="true"
         style={props.style}
       >
         {props.title || props.closable !== false ? (
@@ -422,5 +487,7 @@ ResizableDraggableModal.useModal = ((...args: Parameters<typeof AntdModal.useMod
   const [modalApi, contextHolder] = AntdModal.useModal(...args);
   return [wrapHookModalApi(modalApi), contextHolder] as ReturnType<typeof AntdModal.useModal>;
 }) as typeof AntdModal.useModal;
+
+export { DraggableResizableModalFrame };
 
 export default ResizableDraggableModal;

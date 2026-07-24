@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -20,19 +21,32 @@ import (
 	"GoNavi-Wails/internal/ssh"
 
 	"github.com/elastic/go-elasticsearch/v8"
+	"github.com/elastic/go-elasticsearch/v8/esapi"
 )
 
 const (
-	defaultEsPingTimeout  = 5 * time.Second
-	defaultEsQueryTimeout = 30 * time.Second
+	defaultEsPingTimeout      = 5 * time.Second
+	defaultEsQueryTimeout     = 30 * time.Second
+	defaultEsIndexListTimeout = 10 * time.Second
+	maxEsCatIndexListTimeout  = 4 * time.Second
 )
 
 // ElasticsearchDB 实现 Database 接口，提供 Elasticsearch 数据源连接能力。
 type ElasticsearchDB struct {
-	client      *elasticsearch.Client
-	database    string // 默认索引名
-	pingTimeout time.Duration
-	forwarder   *ssh.LocalForwarder
+	client           *elasticsearch.Client
+	database         string // 默认索引名
+	pingTimeout      time.Duration
+	indexListTimeout time.Duration // 0 表示使用默认索引枚举总超时
+	forwarder        *ssh.LocalForwarder
+}
+
+type esHTTPStatusError struct {
+	statusCode int
+	status     string
+}
+
+func (e *esHTTPStatusError) Error() string {
+	return e.status
 }
 
 // Connect 建立到 Elasticsearch 集群的连接。
@@ -102,7 +116,6 @@ func (e *ElasticsearchDB) Connect(config connection.ConnectionConfig) error {
 			lastErr = err
 			continue
 		}
-
 		logger.Infof("Elasticsearch 连接成功：%d/%d 模式=%s", idx+1, len(attempts), sslLabel)
 		if idx > 0 {
 			logger.Warnf("Elasticsearch SSL 优先连接失败，已回退至明文连接")
@@ -328,34 +341,140 @@ func (e *ElasticsearchDB) GetDatabases() ([]string, error) {
 		return nil, localizedDatabaseRuntimeError("db.backend.error.connection_not_open", nil)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
+	totalTimeout := e.indexListTimeout
+	if totalTimeout <= 0 {
+		totalTimeout = defaultEsIndexListTimeout
+	}
+	deadline := time.Now().Add(totalTimeout)
+	catTimeout := totalTimeout / 2
+	if catTimeout > maxEsCatIndexListTimeout {
+		catTimeout = maxEsCatIndexListTimeout
+	}
+	if catTimeout <= 0 {
+		catTimeout = totalTimeout
+	}
 
-	res, err := e.client.Indices.Get(
-		[]string{"*"},
-		e.client.Indices.Get.WithContext(ctx),
-	)
+	catCtx, cancelCat := context.WithTimeout(context.Background(), catTimeout)
+	indices, catErr := e.getDatabasesViaCat(catCtx)
+	cancelCat()
+	if catErr == nil {
+		return normalizeESIndexNames(indices), nil
+	}
+
+	logger.Warnf("Elasticsearch CAT 索引枚举失败，回退 Alias API：%v", catErr)
+	remaining := time.Until(deadline)
+	if remaining <= 0 {
+		return nil, fmt.Errorf("获取索引列表失败：CAT Indices API: %v；Alias API: 总超时 %s 已耗尽", catErr, totalTimeout)
+	}
+
+	aliasCtx, cancelAlias := context.WithTimeout(context.Background(), remaining)
+	indices, aliasErr := e.getDatabasesViaAlias(aliasCtx)
+	cancelAlias()
+	if aliasErr == nil {
+		return normalizeESIndexNames(indices), nil
+	}
+	return nil, fmt.Errorf("获取索引列表失败：CAT Indices API: %v；Alias API: %v", catErr, aliasErr)
+}
+
+func (e *ElasticsearchDB) getDatabasesViaCat(ctx context.Context) ([]string, error) {
+	indices, err := e.getDatabasesViaCatRequest(ctx, true)
+	if err == nil {
+		return indices, nil
+	}
+
+	var statusErr *esHTTPStatusError
+	if !errors.As(err, &statusErr) || statusErr.statusCode != http.StatusBadRequest {
+		return nil, err
+	}
+
+	indices, compatibilityErr := e.getDatabasesViaCatRequest(ctx, false)
+	if compatibilityErr != nil {
+		return nil, fmt.Errorf("全量通配请求: %v；旧版兼容请求: %v", err, compatibilityErr)
+	}
+	return indices, nil
+}
+
+func (e *ElasticsearchDB) getDatabasesViaCatRequest(ctx context.Context, expandAll bool) ([]string, error) {
+	options := []func(*esapi.CatIndicesRequest){
+		e.client.Cat.Indices.WithContext(ctx),
+		e.client.Cat.Indices.WithFormat("json"),
+		e.client.Cat.Indices.WithH("index"),
+	}
+	if expandAll {
+		options = append(options, e.client.Cat.Indices.WithExpandWildcards("all"))
+	}
+
+	res, err := e.client.Cat.Indices(options...)
 	if err != nil {
-		return nil, fmt.Errorf("获取索引列表失败：%w", err)
+		return nil, err
 	}
 	defer res.Body.Close()
 
 	if res.IsError() {
-		return nil, fmt.Errorf("获取索引列表失败：%s", res.Status())
+		_, _ = io.Copy(io.Discard, res.Body)
+		return nil, &esHTTPStatusError{statusCode: res.StatusCode, status: res.Status()}
+	}
+
+	var rows []struct {
+		Index string `json:"index"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&rows); err != nil {
+		return nil, fmt.Errorf("解析响应失败：%w", err)
+	}
+
+	indices := make([]string, 0, len(rows))
+	for _, row := range rows {
+		indices = append(indices, row.Index)
+	}
+	return indices, nil
+}
+
+func (e *ElasticsearchDB) getDatabasesViaAlias(ctx context.Context) ([]string, error) {
+	res, err := e.client.Indices.GetAlias(
+		e.client.Indices.GetAlias.WithContext(ctx),
+		e.client.Indices.GetAlias.WithIndex("*"),
+		e.client.Indices.GetAlias.WithExpandWildcards("all"),
+		e.client.Indices.GetAlias.WithAllowNoIndices(true),
+		e.client.Indices.GetAlias.WithIgnoreUnavailable(true),
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer res.Body.Close()
+
+	if res.IsError() {
+		_, _ = io.Copy(io.Discard, res.Body)
+		return nil, &esHTTPStatusError{statusCode: res.StatusCode, status: res.Status()}
 	}
 
 	var indexMap map[string]interface{}
 	if err := json.NewDecoder(res.Body).Decode(&indexMap); err != nil {
-		return nil, fmt.Errorf("解析索引列表失败：%w", err)
+		return nil, fmt.Errorf("解析响应失败：%w", err)
 	}
 
-	result := make([]string, 0, len(indexMap))
+	indices := make([]string, 0, len(indexMap))
 	for name := range indexMap {
-		if name := strings.TrimSpace(name); name != "" {
-			result = append(result, name)
-		}
+		indices = append(indices, name)
 	}
-	return result, nil
+	return indices, nil
+}
+
+func normalizeESIndexNames(indices []string) []string {
+	seen := make(map[string]struct{}, len(indices))
+	result := make([]string, 0, len(indices))
+	for _, index := range indices {
+		name := strings.TrimSpace(index)
+		if name == "" {
+			continue
+		}
+		if _, exists := seen[name]; exists {
+			continue
+		}
+		seen[name] = struct{}{}
+		result = append(result, name)
+	}
+	sort.Strings(result)
+	return result
 }
 
 // GetTables 对 ES 而言索引即表，返回索引自身名称及别名。

@@ -37,6 +37,17 @@ func TestResolveModelsURL_UsesOpenAIModelsEndpointForOpenAICompatibleProvider(t 
 	}
 }
 
+func TestResolveModelsURL_UsesOpenAIModelsEndpointForResponsesProvider(t *testing.T) {
+	url := resolveModelsURL(ai.ProviderConfig{
+		Type:      "custom",
+		APIFormat: "openai-responses",
+		BaseURL:   "https://api.openai.com/v1",
+	})
+	if url != "https://api.openai.com/v1/models" {
+		t.Fatalf("expected responses provider to share OpenAI models endpoint, got %q", url)
+	}
+}
+
 func TestResolveModelsURL_UsesVersionedVolcengineCodingPlanPath(t *testing.T) {
 	url := resolveModelsURL(ai.ProviderConfig{
 		Type:    "openai",

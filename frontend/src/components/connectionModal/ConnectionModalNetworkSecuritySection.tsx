@@ -4,6 +4,11 @@ import { Button, Checkbox, Form, Input, InputNumber, Space, Typography } from "a
 import { t } from "../../i18n";
 import { getStoredSecretPlaceholder } from "../../utils/connectionModalPresentation";
 import { noAutoCapInputProps } from "../../utils/inputAutoCap";
+import {
+  isSingleReadOnlyConnectionQuery,
+  MAX_CONNECTION_KEEPALIVE_SQL_LENGTH,
+  supportsConnectionKeepAliveSQL,
+} from "../../utils/connectionReadOnly";
 
 const { Text } = Typography;
 const DEFAULT_KEEPALIVE_INTERVAL_MINUTES = 240;
@@ -57,6 +62,13 @@ const ConnectionModalNetworkSecuritySection: React.FC<ConnectionModalNetworkSecu
     !effectiveUseHttpTunnel &&
     (useProxy || !!form.getFieldValue("useProxy"));
   const keepAliveEnabled = !!Form.useWatch("keepAliveEnabled", form);
+  const connectionDriver = Form.useWatch("driver", form);
+  const oceanBaseProtocol = Form.useWatch("oceanBaseProtocol", form);
+  const keepAliveSQLSupported = supportsConnectionKeepAliveSQL({
+    type: dbType,
+    driver: connectionDriver,
+    oceanBaseProtocol: oceanBaseProtocol,
+  });
   const networkItems: Array<{
     key: "ssl" | "ssh" | "proxy" | "httpTunnel";
     title: string;
@@ -1031,6 +1043,51 @@ const ConnectionModalNetworkSecuritySection: React.FC<ConnectionModalNetworkSecu
             })}
           />
         </Form.Item>
+        {keepAliveSQLSupported ? (
+          <Form.Item
+            name="keepAliveSQL"
+            label={t("connection.modal.network.keepAliveSQL.label")}
+            extra={t("connection.modal.network.keepAliveSQL.help")}
+            rules={[
+              {
+                max: MAX_CONNECTION_KEEPALIVE_SQL_LENGTH,
+                message: t("connection.modal.network.keepAliveSQL.maxLength"),
+              },
+              {
+                validator: (_, value) => {
+                  const sql = String(value || "").trim();
+                  if (
+                    !sql ||
+                    !keepAliveEnabled ||
+                    isSingleReadOnlyConnectionQuery(
+                      {
+                        type: dbType,
+                        driver: connectionDriver,
+                        oceanBaseProtocol: oceanBaseProtocol,
+                      },
+                      sql,
+                    )
+                  ) {
+                    return Promise.resolve();
+                  }
+                  return Promise.reject(
+                    new Error(t("connection.modal.network.keepAliveSQL.readOnly")),
+                  );
+                },
+              },
+            ]}
+            style={{ marginTop: 12, marginBottom: 0 }}
+          >
+            <Input.TextArea
+              {...noAutoCapInputProps}
+              autoSize={{ minRows: 2, maxRows: 4 }}
+              disabled={!keepAliveEnabled}
+              maxLength={MAX_CONNECTION_KEEPALIVE_SQL_LENGTH}
+              placeholder="SELECT 1"
+              showCount
+            />
+          </Form.Item>
+        ) : null}
       </div>
     </div>
   );

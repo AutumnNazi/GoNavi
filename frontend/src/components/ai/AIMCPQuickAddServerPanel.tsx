@@ -26,6 +26,7 @@ interface AIMCPQuickAddServerPanelProps {
   inputBg: string;
   darkMode: boolean;
   overlayTheme: OverlayWorkbenchTheme;
+  hideHeading?: boolean;
   onAddServer: (seed?: Partial<AIMCPServerConfig>) => void;
 }
 
@@ -68,11 +69,11 @@ const localizeTemplateSeed = (
 });
 
 const AIMCPQuickAddServerPanel: React.FC<AIMCPQuickAddServerPanelProps> = ({
-  cardBg,
   cardBorder,
   inputBg,
   darkMode,
   overlayTheme,
+  hideHeading = false,
   onAddServer,
 }) => {
   const i18n = useOptionalI18n();
@@ -99,51 +100,63 @@ const AIMCPQuickAddServerPanel: React.FC<AIMCPQuickAddServerPanelProps> = ({
 
   return (
     <div
+      className="gonavi-ai-mcp-quick-add"
       style={{
-        padding: '14px 16px',
-        borderRadius: 14,
-        border: `1px solid ${cardBorder}`,
-        background: cardBg,
+        padding: '4px 0 14px',
+        borderBottom: `1px solid ${cardBorder}`,
+        background: 'transparent',
         display: 'flex',
         flexDirection: 'column',
         gap: 10,
       }}
     >
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-        <div style={{ ...mcpLabelStyle, color: overlayTheme.titleText, fontSize: 14 }}>
-          {copy('ai_settings.mcp_server.quick_add.title', undefined, 'Quick add from one command')}
+      {!hideHeading && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <div style={{ ...mcpLabelStyle, color: overlayTheme.titleText, fontSize: 14 }}>
+            {copy('ai_settings.mcp_server.quick_add.title', undefined, 'Quick add from one command')}
+          </div>
+          <div style={buildMCPHintStyle(overlayTheme.mutedText)}>
+            {copy(
+              'ai_settings.mcp_server.quick_add.description',
+              undefined,
+              'Choose the closest template, or paste a full startup command from the README. GoNavi will split it into command, args, and env, then create an editable MCP draft.',
+            )}
+          </div>
         </div>
-        <div style={buildMCPHintStyle(overlayTheme.mutedText)}>
-          {copy(
-            'ai_settings.mcp_server.quick_add.description',
-            undefined,
-            'Choose the closest template, or paste a full startup command from the README. GoNavi will split it into command, args, and env, then create an editable MCP draft.',
-          )}
-        </div>
+      )}
+      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+        <Button size="small" icon={<PlusOutlined />} onClick={() => onAddServer()} style={{ borderRadius: 8 }}>
+          {copy('ai_settings.mcp_server.section.action.add_server', undefined, 'Add MCP service')}
+        </Button>
       </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        <div style={{ ...mcpLabelStyle, color: overlayTheme.titleText }}>
-          {copy('ai_settings.mcp_server.quick_add.templates_title', undefined, 'Common startup templates')}
-        </div>
-        <div style={buildMCPHintStyle(overlayTheme.mutedText)}>
-          {copy(
-            'ai_settings.mcp_server.quick_add.templates_description',
-            undefined,
-            'If you are not sure how to split command and args, click a template to create a draft. Each card shows the command GoNavi will actually launch.',
-          )}
-        </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
+      <details className="gonavi-ai-mcp-disclosure gonavi-ai-mcp-template-disclosure">
+        <summary>
+          <span style={{ ...mcpLabelStyle, color: overlayTheme.titleText }}>
+            {copy('ai_settings.mcp_server.quick_add.templates_title', undefined, 'Common startup templates')}
+          </span>
+          <span className="gonavi-ai-mcp-summary-note" style={{ color: overlayTheme.mutedText }}>
+            {copy(
+              'ai_settings.mcp_server.quick_add.templates_description',
+              undefined,
+              'If you are not sure how to split command and args, click a template to create a draft. Each card shows the command GoNavi will actually launch.',
+            )}
+          </span>
+        </summary>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(148px, 1fr))', gap: 6, padding: '4px 0 8px' }}>
           {MCP_SERVER_DRAFT_TEMPLATES.map((template) => (
             <button
               key={template.key}
               type="button"
+              title={`${copy(template.descriptionKey, undefined, template.description)}\n${buildMCPLaunchPreview(String(template.seed.command || ''), template.seed.args)}\n${copy(template.detailKey, undefined, template.detail)}`}
               onClick={() => onAddServer(localizeTemplateSeed(template, copy))}
               style={{
                 textAlign: 'left',
-                padding: '12px 13px',
-                borderRadius: 12,
-                border: `1px solid ${cardBorder}`,
-                background: darkMode ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.72)',
+                minHeight: 38,
+                padding: '7px 9px',
+                border: 'none',
+                borderBottom: `1px solid ${cardBorder}`,
+                borderLeft: '3px solid transparent',
+                background: 'transparent',
                 color: overlayTheme.titleText,
                 cursor: 'pointer',
               }}
@@ -151,21 +164,12 @@ const AIMCPQuickAddServerPanel: React.FC<AIMCPQuickAddServerPanelProps> = ({
               <div style={{ fontSize: 13, fontWeight: 700 }}>
                 {copy(template.titleKey, undefined, template.title)}
               </div>
-              <div style={{ marginTop: 4, fontSize: 12, color: overlayTheme.mutedText, lineHeight: 1.6 }}>
-                {copy(template.descriptionKey, undefined, template.description)}
-              </div>
-              <code style={{ display: 'block', marginTop: 8, fontFamily: 'var(--gn-font-mono)', fontSize: 12, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', color: overlayTheme.titleText }}>
-                {buildMCPLaunchPreview(String(template.seed.command || ''), template.seed.args)}
-              </code>
-              <div style={{ marginTop: 6, fontSize: 12, color: overlayTheme.mutedText, lineHeight: 1.6 }}>
-                {copy(template.detailKey, undefined, template.detail)}
-              </div>
             </button>
           ))}
         </div>
-      </div>
+      </details>
       <Input.TextArea
-        rows={2}
+        autoSize={{ minRows: 1, maxRows: 3 }}
         value={rawCommandDraft}
         onChange={(event) => setRawCommandDraft(event.target.value)}
         placeholder={copy('ai_settings.mcp_server.guide.full_command.placeholder', { example: MCP_COMMAND_PARSE_EXAMPLE })}

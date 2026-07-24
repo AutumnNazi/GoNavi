@@ -115,7 +115,8 @@ func (a *App) GetUpdateChannel() connection.QueryResult {
 		Success: true,
 		Message: "OK",
 		Data: map[string]any{
-			"channel": string(channel),
+			"channel":     string(channel),
+			"installMode": string(updateResolveInstallMode()),
 		},
 	}
 }
@@ -152,7 +153,8 @@ func (a *App) SetUpdateChannel(channel string) connection.QueryResult {
 		Success: true,
 		Message: a.appText("app.update.backend.message.channel_changed", map[string]any{"channel": string(normalized)}),
 		Data: map[string]any{
-			"channel": string(normalized),
+			"channel":     string(normalized),
+			"installMode": string(updateResolveInstallMode()),
 		},
 	}
 }

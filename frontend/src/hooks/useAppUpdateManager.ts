@@ -1,11 +1,16 @@
 import { useCallback, useEffect, useRef, useState, type MutableRefObject } from 'react';
 import { message } from 'antd';
 import { EventsOn } from '../../wailsjs/runtime';
+import { useStore } from '../store';
 import { resolveAboutDisplayVersion } from '../utils/appVersionDisplay';
 
 type Translator = (key: string, params?: Record<string, any>) => string;
 
 export type UpdateChannel = 'latest' | 'dev';
+
+export type UpdateInstallMode = 'portable' | 'msi' | 'unknown';
+export type UpdatePackageType = 'portable' | 'msi' | 'dmg' | 'archive' | 'unknown';
+export type UpdateInstallAction = 'restart' | 'install-and-restart' | 'launch-installer';
 
 export type UpdateInfo = {
   hasUpdate: boolean;
@@ -21,6 +26,9 @@ export type UpdateInfo = {
   sha256?: string;
   downloaded?: boolean;
   downloadPath?: string;
+  installMode?: UpdateInstallMode | string;
+  packageType?: UpdatePackageType | string;
+  autoRelaunch?: boolean;
 };
 
 type UpdateDownloadProgressEvent = {
@@ -38,6 +46,8 @@ type UpdateDownloadResultData = {
   installTarget?: string;
   platform?: string;
   autoRelaunch?: boolean;
+  installMode?: UpdateInstallMode | string;
+  packageType?: UpdatePackageType | string;
 };
 
 /** 启动发现更新时打开「设置中心-关于」页（替代旧版关于弹窗） */
@@ -86,9 +96,47 @@ const createEmptyDownloadProgress = () => ({
 const normalizeUpdateChannel = (value: unknown): UpdateChannel =>
   String(value || '').trim().toLowerCase() === 'dev' ? 'dev' : 'latest';
 
-const buildUpdateKey = (info: Pick<UpdateInfo, 'channel' | 'latestVersion'> | null | undefined): string =>
+const normalizeUpdateInstallMode = (value: unknown): UpdateInstallMode => {
+  const normalized = String(value || '').trim().toLowerCase();
+  return normalized === 'portable' || normalized === 'msi' ? normalized : 'unknown';
+};
+
+const normalizeUpdatePackageType = (value: unknown): UpdatePackageType => {
+  const normalized = String(value || '').trim().toLowerCase();
+  return normalized === 'portable' || normalized === 'msi' || normalized === 'dmg' || normalized === 'archive'
+    ? normalized
+    : 'unknown';
+};
+
+const normalizeUpdateInfo = (value: unknown): UpdateInfo => {
+  const source = (value && typeof value === 'object' ? value : {}) as UpdateInfo;
+  return {
+    ...source,
+    channel: normalizeUpdateChannel(source.channel),
+    installMode: normalizeUpdateInstallMode(source.installMode),
+    packageType: normalizeUpdatePackageType(source.packageType),
+  };
+};
+
+export const resolveUpdateInstallAction = (
+  info: Pick<UpdateInfo, 'packageType' | 'autoRelaunch'> | null | undefined,
+): UpdateInstallAction => {
+  if (normalizeUpdatePackageType(info?.packageType) !== 'msi') {
+    return 'restart';
+  }
+  return info?.autoRelaunch === false ? 'launch-installer' : 'install-and-restart';
+};
+
+const buildUpdateKey = (
+  info: Pick<UpdateInfo, 'channel' | 'latestVersion' | 'assetName' | 'packageType'> | null | undefined,
+): string =>
   info?.latestVersion
-    ? `${normalizeUpdateChannel(info.channel)}:${String(info.latestVersion || '').trim()}`
+    ? [
+      normalizeUpdateChannel(info.channel),
+      String(info.latestVersion || '').trim(),
+      normalizeUpdatePackageType(info.packageType),
+      String(info.assetName || '').trim().toLowerCase(),
+    ].join(':')
     : '';
 
 const isUnknownAboutValue = (value: string): boolean => {
@@ -134,6 +182,10 @@ export const useAppUpdateManager = ({
   t,
   updateCenterBridgeRef,
 }: UseAppUpdateManagerOptions) => {
+  const autoCheckForUpdates = useStore((state) => state.autoCheckForUpdates);
+  const autoCheckForUpdatesIntervalMinutes = useStore(
+    (state) => state.autoCheckForUpdatesIntervalMinutes,
+  );
   const updateCheckInFlightRef = useRef(false);
   const updateDownloadInFlightRef = useRef(false);
   const updateUserDismissedRef = useRef(false);
@@ -166,6 +218,7 @@ export const useAppUpdateManager = ({
 
   const [aboutLoading, setAboutLoading] = useState(false);
   const [updateChannel, setUpdateChannelState] = useState<UpdateChannel>('latest');
+  const [installMode, setInstallMode] = useState<UpdateInstallMode>('unknown');
   const [isUpdateChannelLoading, setIsUpdateChannelLoading] = useState(false);
   const [isUpdateChannelSaving, setIsUpdateChannelSaving] = useState(false);
   const [aboutInfo, setAboutInfo] = useState<AboutInfo>(() => DEFAULT_ABOUT_INFO);
@@ -185,9 +238,12 @@ export const useAppUpdateManager = ({
     if (info.hasUpdate) {
       const localDownloaded = updateDownloadedVersionRef.current === buildUpdateKey(info);
       const hasDownloaded = Boolean(info.downloaded) || localDownloaded;
-      return hasDownloaded
+      if (!hasDownloaded) {
+        return t('app.about.update_status.new_version_not_downloaded', { version: info.latestVersion });
+      }
+      return resolveUpdateInstallAction(info) === 'restart'
         ? t('app.about.update_status.new_version_ready_restart', { version: info.latestVersion })
-        : t('app.about.update_status.new_version_not_downloaded', { version: info.latestVersion });
+        : t('app.about.update_status.new_version_ready_install', { version: info.latestVersion });
     }
     return t('app.about.update_status.latest', { version: info.currentVersion || t('common.unknown') });
   }, [t]);
@@ -246,44 +302,58 @@ export const useAppUpdateManager = ({
     updateDownloadInFlightRef.current = false;
     if (res?.success) {
       const resultData = (res?.data || {}) as UpdateDownloadResultData;
+      const downloadedInfo = normalizeUpdateInfo({
+        ...info,
+        ...(resultData.info || {}),
+        downloaded: true,
+        downloadPath: resultData.downloadPath || resultData.info?.downloadPath || info.downloadPath,
+        installMode: resultData.installMode || resultData.info?.installMode || info.installMode,
+        packageType: resultData.packageType || resultData.info?.packageType || info.packageType,
+        autoRelaunch: resultData.autoRelaunch ?? resultData.info?.autoRelaunch ?? info.autoRelaunch,
+      });
+      const downloadedKey = buildUpdateKey(downloadedInfo) || targetKey;
       updateDownloadMetaRef.current = resultData;
-      updateDownloadedVersionRef.current = targetKey;
+      updateDownloadedVersionRef.current = downloadedKey;
+      setInstallMode(normalizeUpdateInstallMode(downloadedInfo.installMode));
       setUpdateDownloadProgress((prev) => {
         const total = prev.total > 0 ? prev.total : (info.assetSize || 0);
-        return { ...prev, status: 'done', percent: 100, downloaded: total, total, message: '', open: false };
-      });
-      setLastUpdateInfo((prev) => {
-        if (!prev || prev.latestVersion !== info.latestVersion) {
-          return {
-            ...info,
-            channel: normalizeUpdateChannel(info.channel),
-            downloaded: true,
-            downloadPath: resultData?.downloadPath || info.downloadPath,
-          };
-        }
         return {
           ...prev,
-          channel: normalizeUpdateChannel(prev.channel || info.channel),
-          downloaded: true,
-          downloadPath: resultData?.downloadPath || prev.downloadPath || info.downloadPath,
+          version: downloadedInfo.latestVersion,
+          key: downloadedKey,
+          status: 'done',
+          percent: 100,
+          downloaded: total,
+          total,
+          message: '',
+          open: prev.open || !updateUserDismissedRef.current,
         };
       });
-      // 与 Terminus/Codex 一致：下载到 100% 后停留在就绪态，由用户点击「重启应用更新」
+      setLastUpdateInfo(downloadedInfo);
+      const installAction = resolveUpdateInstallAction(downloadedInfo);
+      // 下载到 100% 后停留在就绪态，由用户确认当前安装方式对应的更新动作。
       setUpdateDownloadProgress((prev) => ({
         ...prev,
-        open: true,
+        version: downloadedInfo.latestVersion,
+        open: prev.open || !updateUserDismissedRef.current,
         status: 'done',
         percent: 100,
         downloaded: prev.total > 0 ? prev.total : (info.assetSize || prev.downloaded),
-        message: t('app.about.download_progress.ready_to_restart'),
+        message: installAction === 'restart'
+          ? t('app.about.download_progress.ready_to_restart')
+          : t('app.about.download_progress.ready_to_install'),
       }));
       void message.success({
-        content: resultData?.downloadPath
-          ? t('app.about.message.download_ready_restart_with_path', { path: resultData.downloadPath })
-          : t('app.about.message.download_ready_restart'),
+        content: installAction === 'restart'
+          ? (downloadedInfo.downloadPath
+            ? t('app.about.message.download_ready_restart_with_path', { path: downloadedInfo.downloadPath })
+            : t('app.about.message.download_ready_restart'))
+          : (downloadedInfo.downloadPath
+            ? t('app.about.message.download_ready_install_with_path', { path: downloadedInfo.downloadPath })
+            : t('app.about.message.download_ready_install')),
         duration: 4,
       });
-      setAboutUpdateStatus(formatAboutUpdateStatus({ ...info, channel: normalizeUpdateChannel(info.channel), downloaded: true }));
+      setAboutUpdateStatus(formatAboutUpdateStatus(downloadedInfo));
     } else {
       setUpdateDownloadProgress((prev) => ({
         ...prev,
@@ -319,23 +389,27 @@ export const useAppUpdateManager = ({
   const canShowProgressEntry = (isLatestUpdateDownloaded || isBackgroundProgressForLatestUpdate)
     && updateInstallTriggeredVersionRef.current !== (lastUpdateKey || null);
 
-  const handleInstallFromProgress = useCallback(async (): Promise<boolean> => {
+  const handleInstallFromProgress = useCallback(async (closeAllWindowsInstancesConfirmed = false): Promise<boolean> => {
     const canInstall = updateDownloadProgress.status === 'done'
       || (Boolean(lastUpdateInfo?.hasUpdate) && (Boolean(lastUpdateInfo?.downloaded) || updateDownloadedVersionRef.current === lastUpdateKey));
     if (!canInstall) {
       return false;
     }
-    // 点击后进入「正在应用并重启」态，再拉起安装脚本并退出
+    const installAction = resolveUpdateInstallAction(lastUpdateInfo);
     setUpdateDownloadProgress((prev) => ({
       ...prev,
       open: true,
       status: 'downloading',
       percent: 100,
-      message: t('app.about.download_progress.applying_restart'),
+      message: installAction === 'restart'
+        ? t('app.about.download_progress.applying_restart')
+        : (installAction === 'install-and-restart'
+          ? t('app.about.download_progress.installing_and_restarting')
+          : t('app.about.download_progress.launching_installer')),
     }));
     let res: any = null;
     try {
-      res = await (window as any).go?.app?.App?.InstallUpdateAndRestart?.();
+      res = await (window as any).go?.app?.App?.InstallUpdateAndRestart?.(closeAllWindowsInstancesConfirmed);
     } catch (error: any) {
       res = { success: false, message: error?.message || t('common.unknown') };
     }
@@ -350,13 +424,21 @@ export const useAppUpdateManager = ({
       return false;
     }
     updateInstallTriggeredVersionRef.current = lastUpdateKey || null;
-    // 后端会 Quit；此处保持弹窗文案，避免用户误以为失败
+    const completedAction = resolveUpdateInstallAction({
+      packageType: res?.data?.packageType || lastUpdateInfo?.packageType,
+      autoRelaunch: res?.data?.autoRelaunch ?? lastUpdateInfo?.autoRelaunch,
+    });
+    // 后端会退出当前进程；保留最终状态，避免退出前界面看起来像失败。
     setUpdateDownloadProgress((prev) => ({
       ...prev,
       open: true,
       status: 'done',
       percent: 100,
-      message: t('app.about.download_progress.restarting'),
+      message: completedAction === 'restart'
+        ? t('app.about.download_progress.restarting')
+        : (completedAction === 'install-and-restart'
+          ? t('app.about.download_progress.restarting_after_install')
+          : t('app.about.download_progress.installer_started')),
     }));
     return true;
   }, [lastUpdateInfo, lastUpdateKey, t, updateDownloadProgress.status]);
@@ -395,12 +477,10 @@ export const useAppUpdateManager = ({
       }
       return;
     }
-    const info: UpdateInfo = {
-      ...(res.data || {}),
-      channel: normalizeUpdateChannel(res?.data?.channel),
-    };
+    const info = normalizeUpdateInfo(res.data || {});
     if (!info) return;
     setUpdateChannelState(normalizeUpdateChannel(info.channel));
+    setInstallMode(normalizeUpdateInstallMode(info.installMode));
     const aboutOpen = isUpdateCenterOpen();
     if (info.hasUpdate) {
       const infoKey = buildUpdateKey(info);
@@ -541,6 +621,7 @@ export const useAppUpdateManager = ({
       const res = await backendApp.GetUpdateChannel();
       if (res?.success) {
         setUpdateChannelState(normalizeUpdateChannel(res?.data?.channel));
+        setInstallMode(normalizeUpdateInstallMode(res?.data?.installMode));
       }
     } catch (e) {
       console.warn('Wails API: GetUpdateChannel unavailable', e);
@@ -570,6 +651,7 @@ export const useAppUpdateManager = ({
 
       const effectiveChannel = normalizeUpdateChannel(res?.data?.channel || normalizedChannel);
       setUpdateChannelState(effectiveChannel);
+      setInstallMode(normalizeUpdateInstallMode(res?.data?.installMode || installMode));
       resetLocalUpdateArtifacts();
       setLastUpdateInfo(null);
       setAboutUpdateStatus(t('app.about.update_status.not_checked'));
@@ -580,7 +662,7 @@ export const useAppUpdateManager = ({
     } finally {
       setIsUpdateChannelSaving(false);
     }
-  }, [checkForUpdates, resetLocalUpdateArtifacts, t]);
+  }, [checkForUpdates, installMode, resetLocalUpdateArtifacts, t]);
 
   const muteLatestUpdate = useCallback(() => {
     if (lastUpdateKey) {
@@ -609,17 +691,21 @@ export const useAppUpdateManager = ({
   }, [loadUpdateChannel]);
 
   useEffect(() => {
+    if (!autoCheckForUpdates) {
+      return;
+    }
+    const intervalMs = Math.max(1, autoCheckForUpdatesIntervalMinutes) * 60 * 1000;
     const startupTimer = window.setTimeout(() => {
       void checkForUpdates(true);
     }, 2000);
     const interval = window.setInterval(() => {
       void checkForUpdates(true);
-    }, 30 * 60 * 1000);
+    }, intervalMs);
     return () => {
       window.clearTimeout(startupTimer);
       window.clearInterval(interval);
     };
-  }, [checkForUpdates]);
+  }, [autoCheckForUpdates, autoCheckForUpdatesIntervalMinutes, checkForUpdates]);
 
   useEffect(() => {
     let offDownloadProgress: any = null;
@@ -638,7 +724,7 @@ export const useAppUpdateManager = ({
           : (total > 0 ? (downloaded / total) * 100 : 0);
         const percent = Math.max(0, Math.min(100, percentRaw));
         setUpdateDownloadProgress((prev) => {
-          // 用户已点「重启应用更新」时，不让 downloading 事件把 100% 就绪态打回中间态文案
+          // 用户已确认安装时，不让残留的下载事件把 100% 就绪态打回中间态文案。
           if (updateInstallTriggeredVersionRef.current && prev.key && updateInstallTriggeredVersionRef.current === prev.key) {
             return prev;
           }
@@ -646,13 +732,15 @@ export const useAppUpdateManager = ({
           let message = eventMessage;
           if (!message) {
             if (nextStatus === 'done') {
-              message = t('app.about.download_progress.ready_to_restart');
+              message = resolveUpdateInstallAction(lastUpdateInfo) === 'restart'
+                ? t('app.about.download_progress.ready_to_restart')
+                : t('app.about.download_progress.ready_to_install');
             } else if (nextStatus === 'start' || nextStatus === 'downloading') {
               message = t('app.about.download_progress.downloading');
             }
           }
           return {
-            open: prev.open || nextStatus === 'start' || nextStatus === 'downloading' || nextStatus === 'done' || nextStatus === 'error',
+            open: prev.open || !updateUserDismissedRef.current,
             version: prev.version,
             key: prev.key,
             status: nextStatus,
@@ -669,7 +757,9 @@ export const useAppUpdateManager = ({
     return () => {
       if (offDownloadProgress) offDownloadProgress();
     };
-  }, [t]);
+  }, [lastUpdateInfo?.autoRelaunch, lastUpdateInfo?.packageType, t]);
+
+  const updateInstallAction = resolveUpdateInstallAction(lastUpdateInfo);
 
   return {
     aboutDisplayVersion,
@@ -688,6 +778,7 @@ export const useAppUpdateManager = ({
     isLatestUpdateDownloaded,
     isUpdateChannelLoading,
     isUpdateChannelSaving,
+    installMode,
     lastUpdateInfo,
     markUpdateProgressDismissed,
     muteLatestUpdate,
@@ -697,5 +788,6 @@ export const useAppUpdateManager = ({
     showUpdateDownloadProgress,
     updateChannel,
     updateDownloadProgress,
+    updateInstallAction,
   };
 };

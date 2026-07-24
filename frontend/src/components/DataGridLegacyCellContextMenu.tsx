@@ -119,6 +119,8 @@ const DataGridLegacyCellContextMenu: React.FC<DataGridLegacyCellContextMenuProps
   return createPortal(
     <div
       data-grid-legacy-cell-context-menu="true"
+      data-gonavi-close-shortcut-guard="true"
+      data-gonavi-close-shortcut-blocks-background="true"
       style={{
         position: 'fixed',
         left: cellContextMenu.x,

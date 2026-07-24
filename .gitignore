@@ -11,6 +11,8 @@ build/bin/
 # wails / node artifacts (按需)
 node_modules/
 frontend/wailsjs/tsconfig.json
+__pycache__/
+*.py[cod]
 
 dist/
 .DS_Store

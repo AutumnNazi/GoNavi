@@ -2,7 +2,12 @@ import type { SqlLog } from '../../store';
 import type { I18nParams } from '../../i18n';
 import type { SavedConnection, TabData } from '../../types';
 import { findSqlStatementRanges } from '../../utils/sqlStatementSelection';
-import { shouldUseSqlEditorManagedTransaction } from '../../utils/sqlEditorTransaction';
+import {
+  isSqlEditorTransactionControlStatement,
+  shouldUseSqlEditorManagedTransaction,
+  shouldUseSqlEditorManagedTransactionForType,
+} from '../../utils/sqlEditorTransaction';
+import { resolveSqlDialect } from '../../utils/sqlDialect';
 import type {
   AISqlEditorPendingTransactionRuntimeState,
   AISqlEditorTransactionRuntimeState,
@@ -33,14 +38,10 @@ const normalizeDelayMs = (value: unknown): number => {
   return Number.isFinite(delayMs) && delayMs > 0 ? delayMs : DEFAULT_AUTO_COMMIT_DELAY_MS;
 };
 
-const splitStatements = (sql: string): string[] =>
-  findSqlStatementRanges(String(sql || ''))
+const splitStatements = (sql: string, dbType = ''): string[] =>
+  findSqlStatementRanges(String(sql || ''), dbType)
     .map((range) => String(range.text || '').trim())
     .filter(Boolean);
-
-const hasTransactionControlStatement = (statement: string): boolean =>
-  /^\s*(begin|commit|rollback|savepoint|release)\b/i.test(statement)
-  || /^\s*start\s+transaction\b/i.test(statement);
 
 const buildTabSummary = (
   tab: TabData | undefined,
@@ -88,9 +89,15 @@ const buildActiveSqlTabSnapshot = (params: {
   }
 
   const sql = String(activeTab.query || '').trim();
-  const statements = splitStatements(sql);
-  const hasExplicitTransactionControl = statements.some(hasTransactionControlStatement);
-  const usesManagedTransaction = shouldUseSqlEditorManagedTransaction(statements);
+  const connection = connections.find((item) => item.id === activeTab.connectionId);
+  const dbType = resolveSqlDialect(
+    String(connection?.config?.type || ''),
+    String(connection?.config?.driver || ''),
+    { oceanBaseProtocol: connection?.config?.oceanBaseProtocol },
+  );
+  const statements = splitStatements(sql, dbType);
+  const hasExplicitTransactionControl = statements.some(isSqlEditorTransactionControlStatement);
+  const usesManagedTransaction = shouldUseSqlEditorManagedTransactionForType(dbType, statements);
 
   return {
     hasActiveTab: true,
@@ -140,7 +147,7 @@ const isRelevantSqlEditorTransactionLog = (log: SqlLog): boolean => {
   const sql = String(log.sql || '');
   const statements = splitStatements(sql);
   if (shouldUseSqlEditorManagedTransaction(statements)) return true;
-  if (statements.some(hasTransactionControlStatement)) return true;
+  if (statements.some(isSqlEditorTransactionControlStatement)) return true;
   return /\b(transaction|commit|rollback)\b/i.test(sql)
     || LOG_TRANSACTION_KEYWORD_PATTERN.test(String(log.message || ''));
 };

@@ -101,6 +101,9 @@ const LogPanel: React.FC<LogPanelProps> = ({
             dataIndex: 'sql',
             render: (text: string, record: any) => (
                 <div style={{ fontFamily: 'var(--gn-font-mono)', wordBreak: 'break-all', whiteSpace: 'pre-wrap', fontSize: '12px', lineHeight: '1.45' }}>
+                    {record.category === 'transaction' && (
+                        <Tag color="processing" style={{ margin: '0 0 4px', borderRadius: 999, fontSize: 10, fontWeight: 700 }}>TX</Tag>
+                    )}
                     <div style={{ color: darkMode ? '#a6e22e' : '#005cc5' }}>{text}</div>
                     {record.message && <div style={{ color: '#ff4d4f', marginTop: 2 }}>{record.message}</div>}
                     {record.affectedRows !== undefined && <div style={{ color: panelMutedTextColor, marginTop: 1 }}>{t('log_panel.affected_rows', { count: record.affectedRows })}</div>}

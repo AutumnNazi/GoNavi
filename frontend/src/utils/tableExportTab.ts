@@ -1,4 +1,4 @@
-import type { TabData, TableExportScope, TableExportScopeOption } from '../types';
+import type { TabData, TableExportContentMode, TableExportScope, TableExportScopeOption } from '../types';
 import { t } from '../i18n';
 
 export const DEFAULT_TABLE_EXPORT_SCOPE_OPTION: TableExportScopeOption = {
@@ -24,7 +24,7 @@ export const buildTableExportHistoryKey = (
 };
 
 export const buildExportWorkbenchHistoryKey = (
-  input: Pick<TabData, 'connectionId' | 'dbName' | 'tableName' | 'exportWorkbenchMode'>,
+  input: Pick<TabData, 'connectionId' | 'dbName' | 'tableName' | 'schemaName' | 'exportWorkbenchMode'>,
 ): string => {
   const mode = input.exportWorkbenchMode || 'single';
   const connectionId = String(input.connectionId || '').trim();
@@ -35,7 +35,19 @@ export const buildExportWorkbenchHistoryKey = (
   if (mode === 'batch-databases') {
     return [connectionId, '__batch_databases__'].join('::');
   }
+  if (mode === 'database') {
+    return [connectionId, dbName, '__database__'].join('::');
+  }
+  if (mode === 'schema') {
+    return [connectionId, dbName, String(input.schemaName || '').trim(), '__schema__'].join('::');
+  }
   return buildTableExportHistoryKey(connectionId, dbName, input.tableName);
+};
+
+type ExportWorkbenchLaunchOptions = {
+  contentMode?: TableExportContentMode;
+  includeDropIfExists?: boolean;
+  requestKey?: string;
 };
 
 type BuildTableExportTabInput = {
@@ -52,16 +64,50 @@ type BuildTableExportTabInput = {
   rowCountByScope?: Partial<Record<TableExportScope, number>>;
 };
 
-type BuildBatchTableExportWorkbenchTabInput = {
+type BuildBatchTableExportWorkbenchTabInput = ExportWorkbenchLaunchOptions & {
   connectionId: string;
   dbName?: string;
   title?: string;
+  initialObjectNames?: string[];
 };
 
-type BuildBatchDatabaseExportWorkbenchTabInput = {
+type BuildBatchDatabaseExportWorkbenchTabInput = ExportWorkbenchLaunchOptions & {
   connectionId: string;
   title?: string;
+  initialDatabaseNames?: string[];
 };
+
+type BuildDatabaseExportWorkbenchTabInput = ExportWorkbenchLaunchOptions & {
+  connectionId: string;
+  dbName: string;
+  title?: string;
+};
+
+type BuildSchemaExportWorkbenchTabInput = ExportWorkbenchLaunchOptions & {
+  connectionId: string;
+  dbName: string;
+  schemaName: string;
+  title?: string;
+};
+
+const normalizeNameList = (values: string[] | undefined): string[] | undefined => {
+  if (!Array.isArray(values)) return undefined;
+  const seen = new Set<string>();
+  const result = values
+    .map((value) => String(value || '').trim())
+    .filter((value) => {
+      if (!value || seen.has(value)) return false;
+      seen.add(value);
+      return true;
+    });
+  return result.length > 0 ? result : undefined;
+};
+
+const buildLaunchMetadata = (input: ExportWorkbenchLaunchOptions): Partial<TabData> => ({
+  ...(input.contentMode ? { tableExportContentMode: input.contentMode } : {}),
+  ...(input.includeDropIfExists === true ? { tableExportIncludeDropIfExists: true } : {}),
+  ...(String(input.requestKey || '').trim() ? { tableExportRequestKey: String(input.requestKey).trim() } : {}),
+});
 
 const normalizeScopeOptions = (
   scopeOptions: TableExportScopeOption[] | undefined,
@@ -169,6 +215,10 @@ export const buildBatchTableExportWorkbenchTab = (
     connectionId,
     dbName: dbName || undefined,
     initialTab: 'config',
+    ...(normalizeNameList(input.initialObjectNames)
+      ? { tableExportInitialObjectNames: normalizeNameList(input.initialObjectNames) }
+      : {}),
+    ...buildLaunchMetadata(input),
   };
 };
 
@@ -183,5 +233,49 @@ export const buildBatchDatabaseExportWorkbenchTab = (
     exportWorkbenchMode: 'batch-databases',
     connectionId,
     initialTab: 'config',
+    ...(normalizeNameList(input.initialDatabaseNames)
+      ? { tableExportInitialDatabaseNames: normalizeNameList(input.initialDatabaseNames) }
+      : {}),
+    ...buildLaunchMetadata(input),
+  };
+};
+
+export const buildDatabaseExportWorkbenchTab = (
+  input: BuildDatabaseExportWorkbenchTabInput,
+): TabData => {
+  const connectionId = String(input.connectionId || '').trim();
+  const dbName = String(input.dbName || '').trim();
+  const targetName = dbName || t('data_export.progress.value.target_fallback');
+  return {
+    id: `table-export-database-${connectionId || 'none'}-${dbName || 'default'}`,
+    title: String(input.title || t('data_export.workbench.task.export_target', { name: targetName })).trim()
+      || t('data_export.workbench.task.export_target', { name: targetName }),
+    type: 'table-export',
+    exportWorkbenchMode: 'database',
+    connectionId,
+    dbName: dbName || undefined,
+    initialTab: 'config',
+    ...buildLaunchMetadata(input),
+  };
+};
+
+export const buildSchemaExportWorkbenchTab = (
+  input: BuildSchemaExportWorkbenchTabInput,
+): TabData => {
+  const connectionId = String(input.connectionId || '').trim();
+  const dbName = String(input.dbName || '').trim();
+  const schemaName = String(input.schemaName || '').trim();
+  const targetName = [dbName, schemaName].filter(Boolean).join('.') || t('data_export.progress.value.target_fallback');
+  return {
+    id: `table-export-schema-${connectionId || 'none'}-${dbName || 'default'}-${schemaName || 'schema'}`,
+    title: String(input.title || t('data_export.workbench.task.export_target', { name: targetName })).trim()
+      || t('data_export.workbench.task.export_target', { name: targetName }),
+    type: 'table-export',
+    exportWorkbenchMode: 'schema',
+    connectionId,
+    dbName: dbName || undefined,
+    schemaName: schemaName || undefined,
+    initialTab: 'config',
+    ...buildLaunchMetadata(input),
   };
 };

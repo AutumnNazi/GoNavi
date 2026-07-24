@@ -358,6 +358,28 @@ describe('tableDesignerSchemaSql', () => {
     expect(tdengineSql).not.toContain('AFTER');
   });
 
+  it('keeps freely entered MySQL spatial type attributes in schema SQL', () => {
+    const location = baseColumn({
+      _key: 'location',
+      name: 'location',
+      type: 'POINT SRID 4326',
+      nullable: 'NO',
+    });
+    const createSql = buildCreateTablePreviewSql({
+      tableName: 'places',
+      dbType: 'mysql',
+      columns: [location],
+    });
+    const alterSql = buildAlterTablePreviewSql(buildInput({
+      tableName: 'places',
+      originalColumns: [],
+      columns: [location],
+    }));
+
+    expect(createSql).toContain('`location` POINT SRID 4326 NOT NULL');
+    expect(alterSql).toContain('ADD COLUMN `location` POINT SRID 4326 NOT NULL');
+  });
+
   it('builds StarRocks create table preview with OLAP engine and conservative distribution', () => {
     const sql = buildCreateTablePreviewSql({
       tableName: 'sales.orders',

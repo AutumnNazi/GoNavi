@@ -44,6 +44,14 @@ func (b GlobalProxyBundle) HasAny() bool {
 	return strings.TrimSpace(b.Password) != ""
 }
 
+type MCPHTTPServerBundle struct {
+	Token string `json:"token,omitempty"`
+}
+
+func (b MCPHTTPServerBundle) HasAny() bool {
+	return strings.TrimSpace(b.Token) != ""
+}
+
 type ProviderBundle struct {
 	APIKey           string            `json:"apiKey,omitempty"`
 	SensitiveHeaders map[string]string `json:"sensitiveHeaders,omitempty"`
@@ -57,6 +65,7 @@ type File struct {
 	SchemaVersion int                         `json:"schemaVersion,omitempty"`
 	Connections   map[string]ConnectionBundle `json:"connections,omitempty"`
 	GlobalProxy   *GlobalProxyBundle          `json:"globalProxy,omitempty"`
+	MCPHTTPServer *MCPHTTPServerBundle        `json:"mcpHTTPServer,omitempty"`
 	AIProviders   map[string]ProviderBundle   `json:"aiProviders,omitempty"`
 }
 
@@ -103,6 +112,9 @@ func (s *Store) Save(file File) error {
 	}
 	if file.GlobalProxy != nil && !file.GlobalProxy.HasAny() {
 		file.GlobalProxy = nil
+	}
+	if file.MCPHTTPServer != nil && !file.MCPHTTPServer.HasAny() {
+		file.MCPHTTPServer = nil
 	}
 	if len(file.AIProviders) == 0 {
 		file.AIProviders = nil
@@ -187,6 +199,40 @@ func (s *Store) DeleteGlobalProxy() error {
 		return err
 	}
 	file.GlobalProxy = nil
+	return s.Save(file)
+}
+
+func (s *Store) GetMCPHTTPServer() (MCPHTTPServerBundle, bool, error) {
+	file, err := s.Load()
+	if err != nil {
+		return MCPHTTPServerBundle{}, false, err
+	}
+	if file.MCPHTTPServer == nil {
+		return MCPHTTPServerBundle{}, false, nil
+	}
+	return *file.MCPHTTPServer, true, nil
+}
+
+func (s *Store) PutMCPHTTPServer(bundle MCPHTTPServerBundle) error {
+	file, err := s.Load()
+	if err != nil {
+		return err
+	}
+	if !bundle.HasAny() {
+		file.MCPHTTPServer = nil
+		return s.Save(file)
+	}
+	copyBundle := bundle
+	file.MCPHTTPServer = &copyBundle
+	return s.Save(file)
+}
+
+func (s *Store) DeleteMCPHTTPServer() error {
+	file, err := s.Load()
+	if err != nil {
+		return err
+	}
+	file.MCPHTTPServer = nil
 	return s.Save(file)
 }
 

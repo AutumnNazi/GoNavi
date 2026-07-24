@@ -1,5 +1,6 @@
 import type { SavedConnection, TabData } from '../../types';
 import type { I18nParams } from '../../i18n';
+import { resolveSqlDialect } from '../../utils/sqlDialect';
 import { findSqlStatementRanges } from '../../utils/sqlStatementSelection';
 import type { AIInspectionTranslator } from './aiInspectionI18n';
 import { translateInspectionCopy } from './aiInspectionI18n';
@@ -277,7 +278,14 @@ export const buildSqlRiskSnapshot = (params: {
     };
   }
 
-  const statements = findSqlStatementRanges(sql).map((range) => range.text.trim()).filter(Boolean);
+  const dbType = connection
+    ? resolveSqlDialect(
+        String(connection.config?.type || ''),
+        String(connection.config?.driver || ''),
+        { oceanBaseProtocol: connection.config?.oceanBaseProtocol },
+      )
+    : '';
+  const statements = findSqlStatementRanges(sql, dbType).map((range) => range.text.trim()).filter(Boolean);
   const statementRisks = statements.map((statement) => buildStatementRisk(statement, params.translate));
   let riskLevel: SqlRiskLevel = statements.length > 0 ? 'low' : 'none';
   const warnings: string[] = [];

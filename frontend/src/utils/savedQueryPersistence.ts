@@ -1,11 +1,13 @@
-import type { SavedConnection, SavedQuery } from '../types';
+import type { SavedConnection, SavedQuery, SavedQueryGroup } from '../types';
 import { t as translate } from '../i18n';
 import { LEGACY_PERSIST_KEY } from './legacyConnectionStorage';
+import { normalizeSavedQueryGroups } from './savedQueryGroups';
 
 type StorageLike = Pick<Storage, 'getItem' | 'setItem'>;
 
 export interface SavedQueryImportPayload {
   queries: SavedQuery[];
+  groups?: SavedQueryGroup[];
   legacyConnections?: SavedConnection[];
 }
 
@@ -15,6 +17,11 @@ export interface SavedQueryBackend {
   ImportSavedQueries?: (payload: SavedQueryImportPayload) => Promise<SavedQuery[]>;
   DeleteQuery?: (id: string) => Promise<void>;
   RebindSavedQuery?: (id: string, connectionId: string) => Promise<SavedQuery>;
+  GetSavedQueryGroups?: () => Promise<SavedQueryGroup[]>;
+  SaveSavedQueryGroup?: (group: SavedQueryGroup) => Promise<SavedQueryGroup | null | undefined>;
+  DeleteSavedQueryGroup?: (id: string) => Promise<void>;
+  MoveSavedQueryToGroup?: (queryId: string, groupId: string) => Promise<void>;
+  MoveSavedQueryGroup?: (groupId: string, parentGroupId: string) => Promise<void>;
 }
 
 export interface SavedQueryBootstrapArgs {
@@ -247,6 +254,113 @@ export const deleteSavedQueryFromBackend = async (
   if (typeof backend?.DeleteQuery === 'function') {
     await backend.DeleteQuery(id);
   }
+};
+
+const savedQueryGroupBackendUnavailable = (): Error => (
+  new Error(translate('sidebar.saved_query_group.error.backend_unavailable'))
+);
+
+const savedQueryGroupInvalidInput = (): Error => (
+  new Error(translate('sidebar.saved_query_group.error.invalid_input'))
+);
+
+const sanitizeSavedQueryGroupInput = (group: SavedQueryGroup): SavedQueryGroup | null => {
+  const name = toTrimmedString(group?.name);
+  if (!name) return null;
+  const seenQueryIds = new Set<string>();
+  const queryIds = Array.isArray(group?.queryIds)
+    ? group.queryIds.reduce<string[]>((result, queryId) => {
+      const id = toTrimmedString(queryId);
+      if (!id || seenQueryIds.has(id)) return result;
+      seenQueryIds.add(id);
+      result.push(id);
+      return result;
+    }, [])
+    : [];
+  const seenTokens = new Set<string>();
+  const childOrder = Array.isArray(group?.childOrder)
+    ? group.childOrder.reduce<string[]>((result, token) => {
+      const value = toTrimmedString(token);
+      if (!value || seenTokens.has(value)) return result;
+      seenTokens.add(value);
+      result.push(value);
+      return result;
+    }, [])
+    : [];
+  const sanitized: SavedQueryGroup = {
+    id: toTrimmedString(group?.id),
+    name,
+    parentGroupId: toTrimmedString(group?.parentGroupId),
+    queryIds,
+    childOrder,
+  };
+  return sanitized;
+};
+
+export const getSavedQueryGroupsFromBackend = async (
+  backend: SavedQueryBackend | undefined,
+): Promise<SavedQueryGroup[]> => {
+  if (typeof backend?.GetSavedQueryGroups !== 'function') {
+    return [];
+  }
+  return normalizeSavedQueryGroups(await backend.GetSavedQueryGroups());
+};
+
+export const saveSavedQueryGroupToBackend = async (
+  backend: SavedQueryBackend | undefined,
+  group: SavedQueryGroup,
+): Promise<SavedQueryGroup> => {
+  const sanitized = sanitizeSavedQueryGroupInput(group);
+  if (!sanitized) {
+    throw savedQueryGroupInvalidInput();
+  }
+  if (typeof backend?.SaveSavedQueryGroup !== 'function') {
+    throw savedQueryGroupBackendUnavailable();
+  }
+  const saved = await backend.SaveSavedQueryGroup(sanitized);
+  const persisted = saved ? sanitizeSavedQueryGroupInput(saved) : null;
+  if (!persisted || !persisted.id) {
+    throw savedQueryGroupInvalidInput();
+  }
+  return persisted;
+};
+
+export const deleteSavedQueryGroupFromBackend = async (
+  backend: SavedQueryBackend | undefined,
+  id: string,
+): Promise<void> => {
+  const targetId = toTrimmedString(id);
+  if (!targetId) throw savedQueryGroupInvalidInput();
+  if (typeof backend?.DeleteSavedQueryGroup !== 'function') {
+    throw savedQueryGroupBackendUnavailable();
+  }
+  await backend.DeleteSavedQueryGroup(targetId);
+};
+
+export const moveSavedQueryToGroupInBackend = async (
+  backend: SavedQueryBackend | undefined,
+  queryId: string,
+  groupId?: string | null,
+): Promise<void> => {
+  const targetQueryId = toTrimmedString(queryId);
+  if (!targetQueryId) throw savedQueryGroupInvalidInput();
+  if (typeof backend?.MoveSavedQueryToGroup !== 'function') {
+    throw savedQueryGroupBackendUnavailable();
+  }
+  await backend.MoveSavedQueryToGroup(targetQueryId, toTrimmedString(groupId));
+};
+
+export const moveSavedQueryGroupInBackend = async (
+  backend: SavedQueryBackend | undefined,
+  groupId: string,
+  parentGroupId?: string | null,
+): Promise<void> => {
+  const targetGroupId = toTrimmedString(groupId);
+  if (!targetGroupId) throw savedQueryGroupInvalidInput();
+  if (typeof backend?.MoveSavedQueryGroup !== 'function') {
+    throw savedQueryGroupBackendUnavailable();
+  }
+  await backend.MoveSavedQueryGroup(targetGroupId, toTrimmedString(parentGroupId));
 };
 
 export async function bootstrapSavedQueries(args: SavedQueryBootstrapArgs): Promise<SavedQueryBootstrapResult> {

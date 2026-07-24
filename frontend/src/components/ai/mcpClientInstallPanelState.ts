@@ -99,7 +99,13 @@ export const resolveMCPClientCommandName = (status: AIMCPClientInstallStatus | u
   if (command) {
     return command;
   }
-  return status?.client === 'codex' ? 'codex' : 'claude';
+  if (status?.client === 'codex') {
+    return 'codex';
+  }
+  if (status?.client === 'opencode') {
+    return 'opencode';
+  }
+  return 'claude';
 };
 
 export const getMCPClientStatusSummary = (

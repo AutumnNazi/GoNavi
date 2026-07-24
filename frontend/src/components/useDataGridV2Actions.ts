@@ -31,6 +31,7 @@ export const useDataGridV2Actions = (ctx: DataGridV2ActionsContext) => {
     buildCopyUpdateSQL,
     buildDataGridSelectBaseSql,
     buildEffectiveFilterConditions,
+    buildBackendExportOptions,
     buildOrderBySQL,
     buildPaginatedSelectSQL,
     buildRpcConnectionConfig,
@@ -39,6 +40,7 @@ export const useDataGridV2Actions = (ctx: DataGridV2ActionsContext) => {
     buildWhereSQL,
     cellContextMenu,
     cellEditMode,
+    canExportInsertSQL,
     closeCellEditMode,
     columnMetaMap,
     columnMetaMapByLowerName,
@@ -71,6 +73,8 @@ export const useDataGridV2Actions = (ctx: DataGridV2ActionsContext) => {
     hasChanges,
     hasExplicitSort,
     hasFilteredExportSql,
+    isActive,
+    isTableSurfaceActive,
     isQueryResultExport,
     mergedDisplayData,
     modal,
@@ -122,6 +126,17 @@ const handleV2ColumnHeaderContextMenuAction = useCallback((action: V2ColumnHeade
           case 'copy-field-name':
               copyToClipboard(columnName);
               break;
+          case 'copy-column-comment': {
+              const columnMeta = columnMetaMap[columnName]
+                  || columnMetaMapByLowerName[columnName.toLowerCase()];
+              const comment = String(columnMeta?.comment || '').trim();
+              if (!comment) {
+                  void message.info(translateDataGrid('data_grid.context_menu.column_no_comment'));
+                  break;
+              }
+              copyToClipboard(comment);
+              break;
+          }
           case 'copy-column-data':
               handleCopyColumnData(columnName);
               break;
@@ -184,6 +199,8 @@ const handleV2ColumnHeaderContextMenuAction = useCallback((action: V2ColumnHeade
       cellContextMenu.dataIndex,
       cellContextMenu.title,
       connectionId,
+      columnMetaMap,
+      columnMetaMapByLowerName,
       copyToClipboard,
       dbName,
       displayColumnNames.length,
@@ -283,28 +300,35 @@ const handleV2ColumnHeaderContextMenuAction = useCallback((action: V2ColumnHeade
   }, [selectedCells, mergedDisplayData, displayColumnNames, copyToClipboard, translateDataGrid]);
 
   useEffect(() => {
-      if (!cellEditMode) return;
+      if (!isActive || !isTableSurfaceActive || (!cellEditMode && selectedCells.size === 0)) return;
 
       const onKeyDown = (event: KeyboardEvent) => {
+          if (event.defaultPrevented) return;
           const activeElement = document.activeElement as HTMLElement | null;
-          const tagName = String(activeElement?.tagName || '').toLowerCase();
-          if (tagName === 'input' || tagName === 'textarea' || activeElement?.isContentEditable) {
+          const eventTarget = event.target instanceof HTMLElement ? event.target : null;
+          const nativeShortcutGuard = 'input, textarea, select, [contenteditable="true"], .ant-modal, .ant-dropdown, .ant-select-dropdown, .ant-picker-dropdown, .ant-popover, [data-gonavi-close-shortcut-guard]';
+          if (activeElement?.closest(nativeShortcutGuard) || eventTarget?.closest(nativeShortcutGuard)) {
               return;
           }
 
           if (event.key === 'Escape') {
               const activeSelection = currentSelectionRef.current.size > 0 ? currentSelectionRef.current : selectedCells;
-              event.preventDefault();
               if (activeSelection.size === 0) {
-                  closeCellEditMode();
+                  if (cellEditMode) {
+                      event.preventDefault();
+                      closeCellEditMode();
+                  }
                   return;
               }
+              event.preventDefault();
               resetCellSelection();
               return;
           }
 
           const isCopy = (event.ctrlKey || event.metaKey) && !event.altKey && String(event.key || '').toLowerCase() === 'c';
           if (!isCopy) return;
+
+          if (document.getSelection?.()?.toString()) return;
 
           const activeSelection = currentSelectionRef.current.size > 0 ? currentSelectionRef.current : selectedCells;
           if (activeSelection.size === 0) return;
@@ -315,10 +339,10 @@ const handleV2ColumnHeaderContextMenuAction = useCallback((action: V2ColumnHeade
 
       window.addEventListener('keydown', onKeyDown);
       return () => window.removeEventListener('keydown', onKeyDown);
-  }, [cellEditMode, selectedCells, handleCopySelectedCellsToClipboard, resetCellSelection, closeCellEditMode]);
+  }, [cellEditMode, selectedCells, handleCopySelectedCellsToClipboard, resetCellSelection, closeCellEditMode, isActive, isTableSurfaceActive]);
 
   useEffect(() => {
-      if (!cellEditMode) return;
+      if (!isActive || !isTableSurfaceActive || (!cellEditMode && selectedCells.size === 0)) return;
 
       const onPointerDown = (event: MouseEvent) => {
           const root = rootRef.current;
@@ -328,12 +352,16 @@ const handleV2ColumnHeaderContextMenuAction = useCallback((action: V2ColumnHeade
               && target.closest('.ant-modal, .ant-dropdown, .ant-select-dropdown, .ant-picker-dropdown, .ant-popover')) {
               return;
           }
-          closeCellEditMode();
+          if (cellEditMode) {
+              closeCellEditMode();
+          } else {
+              resetCellSelection();
+          }
       };
 
       document.addEventListener('mousedown', onPointerDown);
       return () => document.removeEventListener('mousedown', onPointerDown);
-  }, [cellEditMode, closeCellEditMode]);
+  }, [cellEditMode, closeCellEditMode, isActive, isTableSurfaceActive, resetCellSelection, selectedCells.size]);
   
   const getTargets = useCallback((clickedRecord: any) => {
       const selKeys = selectedRowKeysRef.current;
@@ -539,14 +567,14 @@ const handleV2ColumnHeaderContextMenuAction = useCallback((action: V2ColumnHeade
               sql,
               normalizedDefaultName || 'export',
               {
-                  ...options,
+                  ...buildBackendExportOptions(options),
                   jobId,
                   totalRowsHint: totalRowsKnown ? Number(totalRows) : 0,
                   totalRowsKnown,
               } as any,
           ),
       });
-  }, [buildConnConfig, dbName, resolveExportTitle, runExportWithProgress]);
+  }, [buildBackendExportOptions, buildConnConfig, dbName, resolveExportTitle, runExportWithProgress]);
 
   const buildPkWhereSql = useCallback((rows: any[], dbType: string) => {
       if (!tableName || pkColumns.length === 0) return '';
@@ -861,13 +889,18 @@ const handleV2ColumnHeaderContextMenuAction = useCallback((action: V2ColumnHeade
           const values = await showDataExportDialog(modal, {
               title: translateDataGrid('file.backend.dialog.export_query_result'),
               scopeOptions,
+              availableColumns: displayOutputColumnNames,
+              allowInsertSql: canExportInsertSQL,
               initialValues: {
                   ...commonInitialValues,
                   scope: (resultExportAllSql || resultSql) ? 'all' : (selectedCount > 0 ? 'selected' : 'page'),
               },
           });
           if (!values) return;
-          await exportQueryResultRows(values, values.scope as Exclude<DataGridExportScope, 'filteredAll'>);
+          await exportQueryResultRows(
+              { ...values, columns: values.columns },
+              values.scope as Exclude<DataGridExportScope, 'filteredAll'>,
+          );
           return;
       }
 
@@ -926,12 +959,15 @@ const handleV2ColumnHeaderContextMenuAction = useCallback((action: V2ColumnHeade
   }, [
       addTab,
       buildAllRowsSql,
+      buildBackendExportOptions,
       buildConnConfig,
       buildCurrentPageSql,
       buildFilteredAllSql,
+      canExportInsertSQL,
       connectionId,
       dbName,
       displayData.length,
+      displayOutputColumnNames,
       exportQueryResultRows,
       hasFilteredExportSql,
       objectType,

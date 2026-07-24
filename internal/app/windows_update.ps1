@@ -5,6 +5,8 @@ $Target = $env:GONAVI_UPDATE_TARGET
 $CurrentTarget = $env:GONAVI_UPDATE_CURRENT_TARGET
 $StagedDir = $env:GONAVI_UPDATE_STAGED_DIR
 $LogPath = $env:GONAVI_UPDATE_LOG_PATH
+$MaintenanceEventName = $env:GONAVI_UPDATE_MAINTENANCE_EVENT_NAME
+$HandoffEventName = $env:GONAVI_UPDATE_HANDOFF_EVENT_NAME
 $HostProcessId = 0
 $TargetOld = $null
 $ReplacementPrepared = $false
@@ -14,6 +16,9 @@ $LaunchSucceeded = $false
 $HostExited = $false
 $SourceMatchesTarget = $false
 $RollbackSucceeded = $true
+$MaintenanceEvent = $null
+$HandoffEvent = $null
+$MaintenanceLockReleased = $false
 
 function Write-UpdateLog {
     param([string]$Message)
@@ -26,6 +31,25 @@ function Write-UpdateLog {
         Add-Content -LiteralPath $LogPath -Value "[$timestamp] $Message" -Encoding UTF8
     } catch {
         # Logging must never hide the original updater error.
+    }
+}
+
+function Release-UpdateMaintenanceLock {
+    if ($MaintenanceLockReleased) {
+        return $true
+    }
+    try {
+        if ($null -eq $MaintenanceEvent) {
+            $script:MaintenanceLockReleased = $true
+            return $true
+        }
+        $script:MaintenanceEvent.Dispose()
+        $script:MaintenanceEvent = $null
+        $script:MaintenanceLockReleased = $true
+        return $true
+    } catch {
+        Write-UpdateLog ("maintenance lock release failed: " + $_.Exception.Message)
+        return $false
     }
 }
 
@@ -128,7 +152,7 @@ function Select-PortableExecutable {
 }
 
 try {
-    foreach ($requiredPath in @($Source, $Target, $CurrentTarget, $StagedDir, $LogPath)) {
+    foreach ($requiredPath in @($Source, $Target, $CurrentTarget, $StagedDir, $LogPath, $MaintenanceEventName, $HandoffEventName)) {
         if ([string]::IsNullOrWhiteSpace($requiredPath)) {
             throw 'missing required updater path'
         }
@@ -146,6 +170,11 @@ try {
         throw 'source file not found'
     }
 
+    $MaintenanceEvent = [Threading.EventWaitHandle]::OpenExisting($MaintenanceEventName)
+    $HandoffEvent = [Threading.EventWaitHandle]::OpenExisting($HandoffEventName)
+    [void]$HandoffEvent.Set()
+    $HandoffEvent.Dispose()
+    $HandoffEvent = $null
     Write-UpdateLog 'updater started'
     $waitedSeconds = 0
     while (Get-Process -Id $HostProcessId -ErrorAction SilentlyContinue) {
@@ -222,6 +251,9 @@ try {
         throw 'replace failed after retries; package kept for manual install'
     }
 
+    if (-not (Release-UpdateMaintenanceLock)) {
+        throw 'update maintenance lock could not be released before relaunch'
+    }
     Write-UpdateLog ("launching target: " + $Target)
     $NewProcess = Start-Process -FilePath $Target -WorkingDirectory $TargetDir -PassThru -ErrorAction Stop
     Start-Sleep -Milliseconds 1500
@@ -261,7 +293,8 @@ try {
     if ($ReplacementPrepared -and -not $LaunchSucceeded -and -not $SourceMatchesTarget) {
         $RollbackSucceeded = Restore-PreviousTarget
     }
-    if ($HostExited -and -not $LaunchSucceeded -and -not $SourceMatchesTarget -and $RollbackSucceeded) {
+    [void](Release-UpdateMaintenanceLock)
+    if ($HostExited -and -not $LaunchSucceeded -and -not $SourceMatchesTarget -and $RollbackSucceeded -and $MaintenanceLockReleased) {
         try {
             if (Test-Path -LiteralPath $CurrentTarget -PathType Leaf) {
                 $CurrentTargetDir = [IO.Path]::GetDirectoryName($CurrentTarget)

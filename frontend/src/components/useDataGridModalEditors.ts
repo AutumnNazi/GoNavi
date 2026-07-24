@@ -7,6 +7,7 @@ export interface DataGridCellEditorMeta {
   record: GridRecord;
   dataIndex: string;
   title: string;
+  readOnly: boolean;
 }
 
 interface OpenRowEditorParams {
@@ -19,6 +20,7 @@ interface OpenRowEditorParams {
 
 interface UseDataGridModalEditorsParams {
   toEditableText: (value: any, columnName?: string) => string;
+  toViewerText: (value: any, columnName?: string) => string;
   looksLikeJsonText: (text: string) => boolean;
 }
 
@@ -35,6 +37,11 @@ export interface UseDataGridModalEditorsResult {
     dataIndex: string,
     title: React.ReactNode,
     onApplyValue?: (val: string) => void,
+  ) => void;
+  openCellViewer: (
+    record: GridRecord,
+    dataIndex: string,
+    title: React.ReactNode,
   ) => void;
   jsonEditorOpen: boolean;
   jsonEditorValue: string;
@@ -60,6 +67,7 @@ export interface UseDataGridModalEditorsResult {
 
 export const useDataGridModalEditors = ({
   toEditableText,
+  toViewerText,
   looksLikeJsonText,
 }: UseDataGridModalEditorsParams): UseDataGridModalEditorsResult => {
   const [cellEditorOpen, setCellEditorOpen] = React.useState(false);
@@ -92,26 +100,49 @@ export const useDataGridModalEditors = ({
     cellEditorApplyRef.current = null;
   }, []);
 
+  const openCellModal = React.useCallback((
+    record: GridRecord,
+    dataIndex: string,
+    title: React.ReactNode,
+    readOnly: boolean,
+    onApplyValue?: (val: string) => void,
+  ) => {
+    if (!record || dataIndex === null || dataIndex === undefined) return;
+    const raw = record?.[dataIndex];
+    let text = readOnly ? toViewerText(raw, dataIndex) : toEditableText(raw, dataIndex);
+    if (readOnly && raw === null) {
+      text = 'NULL';
+    } else if (readOnly && raw === undefined) {
+      text = 'undefined';
+    }
+    const isJson = looksLikeJsonText(text);
+    const titleText = typeof title === 'string'
+      ? title
+      : (typeof title === 'number' ? String(title) : String(dataIndex));
+
+    setCellEditorMeta({ record, dataIndex, title: titleText, readOnly });
+    setCellEditorValue(text);
+    setCellEditorIsJson(isJson);
+    setCellEditorOpen(true);
+    cellEditorApplyRef.current = typeof onApplyValue === 'function' ? onApplyValue : null;
+  }, [looksLikeJsonText, toEditableText, toViewerText]);
+
   const openCellEditor = React.useCallback((
     record: GridRecord,
     dataIndex: string,
     title: React.ReactNode,
     onApplyValue?: (val: string) => void,
   ) => {
-    if (!record || !dataIndex) return;
-    const raw = record?.[dataIndex];
-    const text = toEditableText(raw, dataIndex);
-    const isJson = looksLikeJsonText(text);
-    const titleText = typeof title === 'string'
-      ? title
-      : (typeof title === 'number' ? String(title) : String(dataIndex));
+    openCellModal(record, dataIndex, title, false, onApplyValue);
+  }, [openCellModal]);
 
-    setCellEditorMeta({ record, dataIndex, title: titleText });
-    setCellEditorValue(text);
-    setCellEditorIsJson(isJson);
-    setCellEditorOpen(true);
-    cellEditorApplyRef.current = typeof onApplyValue === 'function' ? onApplyValue : null;
-  }, [looksLikeJsonText, toEditableText]);
+  const openCellViewer = React.useCallback((
+    record: GridRecord,
+    dataIndex: string,
+    title: React.ReactNode,
+  ) => {
+    openCellModal(record, dataIndex, title, true);
+  }, [openCellModal]);
 
   const openJsonEditor = React.useCallback((value: string) => {
     setJsonEditorValue(value);
@@ -159,6 +190,7 @@ export const useDataGridModalEditors = ({
     cellEditorApplyRef,
     closeCellEditor,
     openCellEditor,
+    openCellViewer,
     jsonEditorOpen,
     jsonEditorValue,
     setJsonEditorValue,

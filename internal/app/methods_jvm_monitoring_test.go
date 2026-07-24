@@ -22,6 +22,7 @@ type fakeJVMMonitoringManager struct {
 	historyMode       string
 	stopConnection    string
 	stopMode          string
+	shutdownCalls     int
 }
 
 func (f *fakeJVMMonitoringManager) Start(_ context.Context, cfg connection.ConnectionConfig, mode string) (jvm.MonitoringSessionSnapshot, error) {
@@ -40,6 +41,10 @@ func (f *fakeJVMMonitoringManager) Stop(connectionID string, providerMode string
 	f.stopConnection = connectionID
 	f.stopMode = providerMode
 	return f.stopErr
+}
+
+func (f *fakeJVMMonitoringManager) Shutdown() {
+	f.shutdownCalls++
 }
 
 func swapJVMMonitoringManager(manager jvmMonitoringService) func() {
@@ -144,6 +149,18 @@ func TestJVMStopMonitoringReturnsManagerError(t *testing.T) {
 	}
 	if manager.stopConnection != "conn-stop" || manager.stopMode != jvm.ModeAgent {
 		t.Fatalf("unexpected manager stop args: connection=%q mode=%q", manager.stopConnection, manager.stopMode)
+	}
+}
+
+func TestCloseJVMMonitoringSessionsShutsDownManager(t *testing.T) {
+	manager := &fakeJVMMonitoringManager{}
+	restore := swapJVMMonitoringManager(manager)
+	defer restore()
+
+	closeJVMMonitoringSessions()
+
+	if manager.shutdownCalls != 1 {
+		t.Fatalf("expected JVM monitoring manager shutdown once, got %d", manager.shutdownCalls)
 	}
 }
 

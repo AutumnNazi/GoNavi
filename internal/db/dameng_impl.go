@@ -291,7 +291,18 @@ func (d *DamengDB) GetColumns(dbName, tableName string) ([]connection.ColumnDefi
 		return nil, err
 	}
 
-	return buildDamengColumnDefinitions(data), nil
+	columns := buildDamengColumnDefinitions(data)
+	if len(columns) == 0 {
+		return columns, nil
+	}
+
+	autoIncrementData, _, autoIncrementErr := d.Query(buildDamengAutoIncrementColumnsQuery(dbName, tableName))
+	if autoIncrementErr != nil {
+		logger.Warnf("达梦 GetColumns 自增字段元数据查询失败，已返回基础字段定义：%v", autoIncrementErr)
+		return columns, nil
+	}
+
+	return applyDamengAutoIncrementColumns(columns, autoIncrementData), nil
 }
 
 func (d *DamengDB) GetIndexes(dbName, tableName string) ([]connection.IndexDefinition, error) {

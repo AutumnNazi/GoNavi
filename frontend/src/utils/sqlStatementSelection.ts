@@ -4,7 +4,7 @@ export interface SqlStatementRange {
   text: string;
 }
 
-export type SqlExecutionSelectionSource = 'selection' | 'statement' | 'line';
+export type SqlExecutionSelectionSource = 'selection' | 'statement' | 'line' | 'all';
 
 export interface SqlExecutionSelection {
   sql: string;
@@ -22,6 +22,73 @@ const isHorizontalWhitespace = (ch: string): boolean => (
 const isSqlIdentifierStart = (ch: string): boolean => /^[A-Za-z_]$/.test(ch);
 
 const isSqlIdentifierPart = (ch: string): boolean => /^[A-Za-z0-9_$#]$/.test(ch);
+
+const normalizeSqlLexicalDbType = (dbType: string): string => {
+  const normalized = String(dbType || '').trim().toLowerCase();
+  if (normalized === 'doris') return 'diros';
+  if (normalized === 'greatdb' || normalized === 'gdb') return 'goldendb';
+  return normalized;
+};
+
+const MYSQL_DASH_COMMENT_DIALECTS = new Set([
+  'mysql', 'mariadb', 'oceanbase', 'diros', 'starrocks', 'goldendb', 'sphinx', 'tidb',
+]);
+
+const supportsSqlHashLineComment = (dbType: string): boolean => {
+  const normalized = normalizeSqlLexicalDbType(dbType);
+  return !normalized || normalized === 'clickhouse' || MYSQL_DASH_COMMENT_DIALECTS.has(normalized);
+};
+
+const isSqlDashLineCommentStart = (dbType: string, next2: string): boolean => {
+  const normalized = normalizeSqlLexicalDbType(dbType);
+  return !MYSQL_DASH_COMMENT_DIALECTS.has(normalized) || !next2 || isWhitespace(next2);
+};
+
+const isExecutableSqlBlockComment = (sql: string, index: number, dbType: string): boolean => {
+  const isMySqlVersionComment = sql.startsWith('/*!', index);
+  const isMariaDbVersionComment = sql.slice(index, index + 4).toLowerCase() === '/*m!';
+  if (!isMySqlVersionComment && !isMariaDbVersionComment) {
+    return false;
+  }
+  const normalized = normalizeSqlLexicalDbType(dbType);
+  if (!normalized) {
+    return true;
+  }
+  if (isMariaDbVersionComment) {
+    return normalized === 'mariadb';
+  }
+  return MYSQL_DASH_COMMENT_DIALECTS.has(normalized);
+};
+
+const hasExecutableSqlStatementContent = (sql: string, dbType = ''): boolean => {
+  const text = String(sql || '');
+  let index = 0;
+  while (index < text.length) {
+    const ch = text[index];
+    const next = index + 1 < text.length ? text[index + 1] : '';
+    const next2 = index + 2 < text.length ? text[index + 2] : '';
+    if (isWhitespace(ch)) {
+      index++;
+      continue;
+    }
+    if ((ch === '#' && supportsSqlHashLineComment(dbType))
+      || (ch === '-' && next === '-' && isSqlDashLineCommentStart(dbType, next2))) {
+      const lineEnd = text.indexOf('\n', index + (ch === '#' ? 1 : 2));
+      index = lineEnd < 0 ? text.length : lineEnd + 1;
+      continue;
+    }
+    if (ch === '/' && next === '*') {
+      if (isExecutableSqlBlockComment(text, index, dbType)) {
+        return true;
+      }
+      const blockEnd = text.indexOf('*/', index + 2);
+      index = blockEnd < 0 ? text.length : blockEnd + 2;
+      continue;
+    }
+    return true;
+  }
+  return false;
+};
 
 const skipSqlWhitespaceAndComments = (text: string, position: number): number => {
   let index = position;
@@ -206,7 +273,7 @@ const isPlsqlControlEnd = (text: string, tokenEnd: number): boolean => (
   ['if', 'loop', 'case'].includes(nextSqlSignificantToken(text, tokenEnd))
 );
 
-const trimStatementRange = (sql: string, start: number, end: number): SqlStatementRange | null => {
+const trimStatementRange = (sql: string, start: number, end: number, dbType = ''): SqlStatementRange | null => {
   let nextStart = Math.max(0, start);
   let nextEnd = Math.min(sql.length, Math.max(start, end));
 
@@ -221,6 +288,10 @@ const trimStatementRange = (sql: string, start: number, end: number): SqlStateme
     return null;
   }
 
+  if (!hasExecutableSqlStatementContent(sql.slice(nextStart, nextEnd), dbType)) {
+    return null;
+  }
+
   return {
     start: nextStart,
     end: nextEnd,
@@ -228,7 +299,7 @@ const trimStatementRange = (sql: string, start: number, end: number): SqlStateme
   };
 };
 
-export const findSqlStatementRanges = (sql: string): SqlStatementRange[] => {
+export const findSqlStatementRanges = (sql: string, dbType = ''): SqlStatementRange[] => {
   const text = String(sql || '').replace(/\r\n/g, '\n');
   const ranges: SqlStatementRange[] = [];
 
@@ -247,7 +318,7 @@ export const findSqlStatementRanges = (sql: string): SqlStatementRange[] => {
   let justClosedPLSQLBlock = false;
 
   const push = (end: number) => {
-    const range = trimStatementRange(text, statementStart, end);
+    const range = trimStatementRange(text, statementStart, end, dbType);
     if (range) {
       ranges.push(range);
     }
@@ -256,7 +327,6 @@ export const findSqlStatementRanges = (sql: string): SqlStatementRange[] => {
   for (let index = 0; index < text.length; index++) {
     const ch = text[index];
     const next = index + 1 < text.length ? text[index + 1] : '';
-    const prev = index > 0 ? text[index - 1] : '';
     const next2 = index + 2 < text.length ? text[index + 2] : '';
 
     if (dollarTag) {
@@ -300,11 +370,11 @@ export const findSqlStatementRanges = (sql: string): SqlStatementRange[] => {
           continue;
         }
       }
-      if (ch === '#') {
+      if (ch === '#' && supportsSqlHashLineComment(dbType)) {
         inLineComment = true;
         continue;
       }
-      if (ch === '-' && next === '-' && (index === 0 || isWhitespace(prev)) && (next2 === '' || isWhitespace(next2))) {
+      if (ch === '-' && next === '-' && isSqlDashLineCommentStart(dbType, next2)) {
         index++;
         inLineComment = true;
         continue;
@@ -409,10 +479,10 @@ export const findSqlStatementRanges = (sql: string): SqlStatementRange[] => {
   return ranges;
 };
 
-export const resolveCurrentSqlStatementRange = (sql: string, cursorOffset: number): SqlStatementRange | null => {
+export const resolveCurrentSqlStatementRange = (sql: string, cursorOffset: number, dbType = ''): SqlStatementRange | null => {
   const text = String(sql || '').replace(/\r\n/g, '\n');
   const offset = Math.max(0, Math.min(text.length, Number.isFinite(cursorOffset) ? cursorOffset : 0));
-  const ranges = findSqlStatementRanges(text);
+  const ranges = findSqlStatementRanges(text, dbType);
   if (ranges.length === 0) {
     return null;
   }
@@ -439,6 +509,7 @@ export const resolveExecutableSql = (
   sql: string,
   cursorOffset: number,
   selectedSql = '',
+  dbType = '',
 ): SqlExecutionSelection | null => {
   const selected = String(selectedSql || '').trim();
   if (selected) {
@@ -447,7 +518,10 @@ export const resolveExecutableSql = (
 
   const text = String(sql || '').replace(/\r\n/g, '\n');
   const offset = Math.max(0, Math.min(text.length, Number.isFinite(cursorOffset) ? cursorOffset : 0));
-  const ranges = findSqlStatementRanges(text);
+  const ranges = findSqlStatementRanges(text, dbType);
+  if (ranges.length === 0) {
+    return null;
+  }
   const statement = ranges.find((range) => offset >= range.start && offset <= range.end);
   if (statement?.text.trim()) {
     return { sql: statement.text, source: 'statement' };
@@ -475,5 +549,5 @@ export const resolveExecutableSql = (
     return { sql: line, source: 'line' };
   }
 
-  return null;
+  return { sql: String(sql || ''), source: 'all' };
 };

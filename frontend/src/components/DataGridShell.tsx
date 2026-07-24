@@ -79,6 +79,8 @@ const DataGridShell: React.FC<DataGridShellProps> = (props) => {
     cellEditorIsJson,
     cellEditorMeta,
     cellEditorOpen,
+    cellEditorReadOnly,
+    cellEditorViewerMode,
     cellEditorValue,
     clearAllFiltersAndSorts,
     clearAutoCommitTimer,
@@ -111,6 +113,7 @@ const DataGridShell: React.FC<DataGridShellProps> = (props) => {
     dataContextValue,
     dataEditAutoCommitDelayMs,
     dataEditCommitMode,
+    deleteTargetRowCount,
     dataPanelDirtyRef,
     dataPanelIsJson,
     dataPanelOpen,
@@ -331,6 +334,8 @@ const DataGridShell: React.FC<DataGridShellProps> = (props) => {
     useStore,
     viewMode,
     virtualListItemHeight,
+    virtualListItemHeightFixed,
+    virtualListItemColumnVirtual,
     window,
   } = props;
 
@@ -361,7 +366,11 @@ const renderDataTableView = () => (
                                       dataSource={tableRenderData}
                                       columns={tableColumns}
                                       {...(enableVirtual && typeof virtualListItemHeight === 'number'
-                                          ? { listItemHeight: virtualListItemHeight }
+                                          ? {
+                                              listItemHeight: virtualListItemHeight,
+                                              listItemHeightFixed: virtualListItemHeightFixed,
+                                              listItemColumnVirtual: virtualListItemColumnVirtual,
+                                          }
                                           : {})}
                                       showSorterTooltip={{ target: 'sorter-icon' }}
                                       size="small"
@@ -448,6 +457,14 @@ const renderDataTableView = () => (
           translate={translateDataGrid}
       />
   );
+  const handleToggleTotalCount = useCallback(() => {
+      if (!onRequestTotalCount) return;
+      if (pagination?.totalCountLoading) {
+          onCancelTotalCount?.();
+          return;
+      }
+      onRequestTotalCount();
+  }, [onCancelTotalCount, onRequestTotalCount, pagination?.totalCountLoading]);
   const paginationContent = (
       <DataGridPaginationBar
           isV2Ui={isV2Ui}
@@ -459,9 +476,12 @@ const renderDataTableView = () => (
           paginationPageText={paginationPageText}
           paginationPageSizeOptions={paginationPageSizeOptions}
           showKnownPageCount={paginationHasKnownTotalPages}
+          manualTotalCountAvailable={prefersManualTotalCount && !!onRequestTotalCount}
+          totalCountLoading={pagination?.totalCountLoading}
           onPageChange={onPageChange}
           onPageSizeChange={handlePageSizeChange}
           onV2PageStep={handleV2PageStep}
+          onToggleTotalCount={onRequestTotalCount ? handleToggleTotalCount : undefined}
           translate={translateDataGrid}
       />
   );
@@ -491,6 +511,7 @@ const renderDataTableView = () => (
 
   const handleRefreshGrid = useCallback(() => {
       setSelectedRowKeys([]);
+      resetCellSelection();
       const normalizedTableName = String(tableName || '').trim();
       const normalizedDbName = String(dbName || '').trim();
       if (connectionId && normalizedTableName) {
@@ -501,7 +522,7 @@ const renderDataTableView = () => (
           setMetadataReloadVersion((value: number) => value + 1);
       }
       if (onReload) onReload();
-  }, [connectionId, dbName, onReload, tableName]);
+  }, [connectionId, dbName, onReload, resetCellSelection, tableName]);
 
   const handleResetPendingChanges = useCallback(() => {
       clearAutoCommitTimer();
@@ -546,15 +567,6 @@ const renderDataTableView = () => (
       }, wasClosed ? 350 : 0);
   }, [mergedDisplayData, translateDataGrid]);
 
-  const handleToggleTotalCount = useCallback(() => {
-      if (!onRequestTotalCount) return;
-      if (pagination?.totalCountLoading) {
-          if (onCancelTotalCount) onCancelTotalCount();
-          return;
-      }
-      onRequestTotalCount();
-  }, [onCancelTotalCount, onRequestTotalCount, pagination?.totalCountLoading]);
-
   return (
     <div ref={rootRef} className={`${gridId}${cellEditMode ? ' cell-edit-mode' : ''} data-grid-root${isV2Ui ? ' gn-v2-data-grid' : ''}`} style={{ '--gonavi-header-min-height': `${headerCellMinHeight}px`, flex: '1 1 auto', height: '100%', overflow: 'hidden', padding: 0, display: 'flex', flexDirection: 'column', minHeight: 0, minWidth: 0, background: 'transparent' } as React.CSSProperties}>
         <DataGridToolbarFrame
@@ -580,6 +592,7 @@ const renderDataTableView = () => (
             onToggleFilter={onToggleFilter}
             canModifyData={canModifyData}
             selectedRowKeysLength={selectedRowKeys.length}
+            deleteTargetRowCount={deleteTargetRowCount}
             allSelectedAreDeleted={allSelectedAreDeleted}
             cellEditMode={cellEditMode}
             selectedCellsSize={selectedCells.size}
@@ -699,6 +712,8 @@ const renderDataTableView = () => (
                 onOpenRowEditorFieldEditor={openRowEditorFieldEditor}
                 cellEditorOpen={cellEditorOpen}
                 cellEditorMeta={cellEditorMeta}
+                cellEditorReadOnly={cellEditorReadOnly}
+                cellEditorViewerMode={cellEditorViewerMode}
                 cellEditorIsJson={cellEditorIsJson}
                 cellEditorValue={cellEditorValue}
                 onCloseCellEditor={closeCellEditor}
@@ -861,6 +876,8 @@ const renderDataTableView = () => (
             <div
                 ref={cellContextMenuPortalRef}
                 className="gn-v2-table-context-menu-portal"
+                data-gonavi-close-shortcut-guard="true"
+                data-gonavi-close-shortcut-blocks-background="true"
                 style={{
                     position: 'fixed',
                     left: cellContextMenu.x,

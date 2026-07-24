@@ -109,9 +109,22 @@ export function useSQLFileExecutionRunner(options?: UseSQLFileExecutionRunnerOpt
         if (prev.jobId !== activeJobIdRef.current) {
           return prev;
         }
-        const nextStatus = (event.status || prev.status || 'running') as SQLFileExecutionRunnerStatus;
+        const reportedStatus = (event.status || prev.status || 'running') as SQLFileExecutionRunnerStatus;
+        const wasTerminal = prev.status === 'done' || prev.status === 'cancelled' || prev.status === 'error';
+        const reportedIsTerminal = reportedStatus === 'done' || reportedStatus === 'cancelled' || reportedStatus === 'error';
+        if (wasTerminal && !reportedIsTerminal) {
+          return prev;
+        }
+        // The RPC result is authoritative once it has settled. A terminal
+        // progress event delayed by the animation-frame throttle may still
+        // contribute final counters/percent, but must not rewrite that result.
+        const nextStatus = wasTerminal && reportedIsTerminal ? prev.status : reportedStatus;
         const nextStartedAt = prev.startedAt || Date.now();
         const isTerminal = nextStatus === 'done' || nextStatus === 'cancelled' || nextStatus === 'error';
+        const reportedPercent = Math.max(0, Math.min(100, Number(event.percent ?? prev.percent) || 0));
+        const nextPercent = reportedStatus === 'done' || nextStatus === 'done'
+          ? 100
+          : Math.min(99, reportedPercent);
         return {
           ...prev,
           startedAt: nextStartedAt,
@@ -121,11 +134,13 @@ export function useSQLFileExecutionRunner(options?: UseSQLFileExecutionRunnerOpt
             ? t('sidebar.sql_file_exec.status.cancelled')
             : nextStatus === 'error'
               ? t('sidebar.sql_file_exec.status.error')
-              : t('sidebar.sql_file_exec.status.running'),
+              : nextStatus === 'done'
+                ? t('sidebar.sql_file_exec.status.done')
+                : t('sidebar.sql_file_exec.status.running'),
           executed: normalizeCount(event.executed ?? prev.executed),
           failed: normalizeCount(event.failed ?? prev.failed),
           total: normalizeCount(event.total ?? prev.total),
-          percent: Math.max(0, Math.min(100, Number(event.percent ?? prev.percent) || 0)),
+          percent: nextPercent,
           currentSQL: typeof event.currentSQL === 'string' ? event.currentSQL : prev.currentSQL,
           message: typeof event.error === 'string' && event.error.trim() ? event.error : prev.message,
         };
@@ -246,7 +261,9 @@ export function useSQLFileExecutionRunner(options?: UseSQLFileExecutionRunnerOpt
             : nextStatus === 'done'
               ? t('sidebar.sql_file_exec.status.done')
               : t('sidebar.sql_file_exec.status.error'),
-          percent: nextStatus === 'cancelled' ? prev.percent : 100,
+          percent: nextStatus === 'done' || prev.status === 'done'
+            ? 100
+            : Math.min(99, prev.percent),
           message: typeof result.message === 'string' ? result.message : prev.message,
         };
       });

@@ -7,6 +7,7 @@ import type { AIContextItem } from '../../types';
 import { useStore } from '../../store';
 import { buildRpcConnectionConfig } from '../../utils/connectionRpcConfig';
 import { resolveAITableSchemaToolResult } from '../../utils/aiTableSchemaTool';
+import { normalizeTableNamesFromMetadataRows } from '../../utils/tableMetadataRows';
 import { DBGetColumns, DBGetDatabases, DBGetTables, DBShowCreateTable } from '../../../wailsjs/go/app/App';
 
 interface ActiveContextRef {
@@ -34,6 +35,10 @@ const getErrorDetail = (value: unknown): string => {
   }
   const detail = String(value || '').trim();
   return detail || 'unknown error';
+};
+
+export const normalizeAIContextTables = (data: unknown): { name: string }[] => {
+  return normalizeTableNamesFromMetadataRows(data).map((name) => ({ name }));
 };
 
 export const useAIChatContextBinding = ({
@@ -73,7 +78,7 @@ export const useAIChatContextBinding = ({
     try {
       const res = await DBGetTables(buildRpcConnectionConfig(connConfig), dbName);
       if (res.success && Array.isArray(res.data)) {
-        setContextTables(res.data.map((row) => ({ name: Object.values(row)[0] as string })));
+        setContextTables(normalizeAIContextTables(res.data));
       } else {
         const detail = getErrorDetail(res.message);
         message.error(translateMessage(
@@ -125,7 +130,7 @@ export const useAIChatContextBinding = ({
       setSelectedDbName(initialDbName);
       const tablesRes = await DBGetTables(buildRpcConnectionConfig(connection.config) as any, initialDbName);
       if (tablesRes.success && Array.isArray(tablesRes.data)) {
-        setContextTables(tablesRes.data.map((row: any) => ({ name: Object.values(row)[0] as string })));
+        setContextTables(normalizeAIContextTables(tablesRes.data));
       } else {
         const detail = getErrorDetail(tablesRes.message);
         message.error(translateMessage(

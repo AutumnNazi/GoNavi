@@ -452,10 +452,160 @@ func isReadOnlySQLQuery(dbType string, query string) bool {
 	if keyword == "select" && isSQLSelectIntoStatement(query) {
 		return false
 	}
+	if keyword == "explain" && explainAnalyzeMayWrite(query) {
+		return false
+	}
+	if keyword == "pragma" {
+		return !pragmaMayWrite(query)
+	}
 	switch keyword {
-	case "select", "with", "show", "describe", "desc", "explain", "pragma", "values", "consume":
+	case "select", "with", "show", "describe", "desc", "explain", "values", "consume":
 		return true
 	default:
+		return false
+	}
+}
+
+func explainAnalyzeMayWrite(query string) bool {
+	keyword, pos := nextSQLKeyword(query, 0)
+	if keyword != "explain" {
+		return false
+	}
+	pos = skipSQLTrivia(query, pos)
+	analyze := false
+	if pos < len(query) && query[pos] == '(' {
+		next := skipBalancedSQLParens(query, pos)
+		if next < 0 {
+			return false
+		}
+		options := query[pos+1 : next-1]
+		analyze = sqlContainsKeyword(options, "analyze") || sqlContainsKeyword(options, "analyse")
+		pos = next
+	} else {
+		for {
+			option, next := nextSQLKeyword(query, pos)
+			switch option {
+			case "analyze", "analyse":
+				analyze = true
+				pos = next
+			case "verbose":
+				pos = next
+			default:
+				goto optionsDone
+			}
+		}
+	}
+
+optionsDone:
+	if !analyze {
+		return false
+	}
+	body := query[skipSQLTrivia(query, pos):]
+	bodyKeyword, withHasWrite := sqlDataOperationInfo(body)
+	if withHasWrite || isSQLDataWriteKeyword(bodyKeyword) {
+		return true
+	}
+	if bodyKeyword == "select" && isSQLSelectIntoStatement(body) {
+		return true
+	}
+	switch bodyKeyword {
+	case "create", "execute", "call":
+		return true
+	default:
+		return false
+	}
+}
+
+func pragmaMayWrite(query string) bool {
+	keyword, pos := nextSQLKeyword(query, 0)
+	if keyword != "pragma" {
+		return false
+	}
+	name, next, ok := readSQLIdentifierName(query, pos)
+	if !ok {
+		return true
+	}
+	pos = skipSQLTrivia(query, next)
+	if pos < len(query) && query[pos] == '.' {
+		name, next, ok = readSQLIdentifierName(query, pos+1)
+		if !ok {
+			return true
+		}
+		pos = skipSQLTrivia(query, next)
+	}
+	if pos < len(query) && query[pos] == '=' {
+		return true
+	}
+	if pos < len(query) && query[pos] == '(' {
+		return !isReadOnlyPragmaWithArgument(name)
+	}
+	for {
+		pos = skipSQLTrivia(query, pos)
+		if pos < len(query) && query[pos] == ';' {
+			pos++
+			continue
+		}
+		break
+	}
+	if pos < len(query) {
+		return true
+	}
+	return !isReadOnlyPragmaWithoutArgument(name)
+}
+
+func readSQLIdentifierName(text string, start int) (string, int, bool) {
+	pos := skipSQLTrivia(text, start)
+	end, ok := skipSQLIdentifierToken(text, pos)
+	if !ok || end <= pos {
+		return "", pos, false
+	}
+	token := text[pos:end]
+	switch token[0] {
+	case '"', '`':
+		if len(token) < 2 {
+			return "", end, false
+		}
+		delimiter := string(token[0])
+		token = strings.ReplaceAll(token[1:len(token)-1], delimiter+delimiter, delimiter)
+	case '[':
+		if len(token) < 2 || token[len(token)-1] != ']' {
+			return "", end, false
+		}
+		token = token[1 : len(token)-1]
+	}
+	token = strings.ToLower(strings.TrimSpace(token))
+	return token, end, token != ""
+}
+
+func isReadOnlyPragmaWithArgument(name string) bool {
+	switch name {
+	case "foreign_key_check", "foreign_key_list", "index_info", "index_xinfo", "index_list",
+		"integrity_check", "quick_check", "table_info", "table_xinfo":
+		return true
+	default:
+		return false
+	}
+}
+
+func isReadOnlyPragmaWithoutArgument(name string) bool {
+	switch name {
+	case "analysis_limit", "application_id", "auto_vacuum", "automatic_index", "busy_timeout",
+		"cache_size", "cache_spill", "case_sensitive_like", "cell_size_check", "checkpoint_fullfsync",
+		"collation_list", "compile_options", "data_version", "database_list", "defer_foreign_keys",
+		"encoding", "foreign_key_check", "foreign_key_list", "foreign_keys", "freelist_count",
+		"full_column_names", "fullfsync", "function_list", "hard_heap_limit", "ignore_check_constraints",
+		"index_info", "index_list", "index_xinfo", "integrity_check", "journal_mode", "journal_size_limit",
+		"legacy_alter_table", "legacy_file_format", "locking_mode", "max_page_count", "mmap_size",
+		"module_list", "page_count", "page_size", "pragma_list", "query_only", "quick_check",
+		"read_uncommitted", "recursive_triggers", "reverse_unordered_selects", "schema_version", "secure_delete",
+		"short_column_names", "soft_heap_limit", "stats", "synchronous", "table_info", "table_list",
+		"table_xinfo", "temp_store", "threads", "trusted_schema", "user_version", "wal_autocheckpoint",
+		"writable_schema":
+		return true
+	default:
+		// Unknown/action pragmas are conservative writes. This covers
+		// no-argument operations such as optimize, incremental_vacuum and
+		// wal_checkpoint without depending on a perpetually complete list.
 		return false
 	}
 }

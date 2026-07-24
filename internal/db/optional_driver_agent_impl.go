@@ -88,14 +88,13 @@ type OptionalDriverAgentMetadata struct {
 }
 
 type optionalDriverAgentClient struct {
-	cmd      *exec.Cmd
-	stdin    io.WriteCloser
-	reader   *bufio.Reader
-	nextID   int64
-	mu       sync.Mutex
-	stderrMu sync.Mutex
-	stderr   strings.Builder
-	driver   string
+	cmd    *exec.Cmd
+	stdin  io.WriteCloser
+	reader *bufio.Reader
+	nextID int64
+	mu     sync.Mutex
+	stderr boundedDiagnosticTail
+	driver string
 }
 
 func ProbeOptionalDriverAgentMetadata(driverType string, executablePath string) (OptionalDriverAgentMetadata, error) {
@@ -195,18 +194,11 @@ func (c *optionalDriverAgentClient) captureStderr(stderr io.Reader) {
 			continue
 		}
 		logger.Warnf("%s 驱动代理 stderr: %s", driverDisplayName(c.driver), line)
-		c.stderrMu.Lock()
-		if c.stderr.Len() > 0 {
-			c.stderr.WriteString(" | ")
-		}
-		c.stderr.WriteString(line)
-		c.stderrMu.Unlock()
+		c.stderr.Append(line)
 	}
 }
 
 func (c *optionalDriverAgentClient) stderrText() string {
-	c.stderrMu.Lock()
-	defer c.stderrMu.Unlock()
 	return strings.TrimSpace(c.stderr.String())
 }
 
@@ -859,6 +851,20 @@ func (d *OptionalDriverAgentDB) GetTables(dbName string) ([]string, error) {
 		return nil, err
 	}
 	return tables, nil
+}
+
+func (d *OptionalDriverAgentDB) GetTableRowCounts(_ string, tables []string) (map[string]int64, error) {
+	if normalizeRuntimeDriverType(d.driverType) != "sqlite" {
+		return map[string]int64{}, nil
+	}
+	return getSQLiteTableRowCounts(d.Query, tables)
+}
+
+func (d *OptionalDriverAgentDB) GetTableStorageStats(_ string, tables []string) (map[string]TableStorageStats, error) {
+	if normalizeRuntimeDriverType(d.driverType) != "sqlite" {
+		return map[string]TableStorageStats{}, nil
+	}
+	return getSQLiteTableStorageStats(d.Query, tables)
 }
 
 func (d *OptionalDriverAgentDB) GetCreateStatement(dbName, tableName string) (string, error) {

@@ -825,6 +825,43 @@ func TestOceanBaseOracleOBClientApplyChangesFormatsTemporalValuesExplicitly(t *t
 	}
 }
 
+func TestOceanBaseOracleOBClientApplyChangesFormatsAllColumnsTemporalWhereValuesExplicitly(t *testing.T) {
+	t.Parallel()
+
+	dbConn, state := openOracleRecordingDB(t)
+	oceanbaseDB := &OceanBaseDB{}
+	oceanbaseDB.bindConnectedDatabase(dbConn, 0, oceanBaseProtocolOracle)
+
+	changes := connection.ChangeSet{
+		LocatorStrategy: "all-columns",
+		Updates: []connection.UpdateRow{{
+			Keys: map[string]interface{}{
+				"CREATED_AT": "2026-07-13",
+				"UPDATED_AT": "2026-07-13 13:42:00.123456",
+			},
+			Values: map[string]interface{}{
+				"STATUS": "0",
+			},
+		}},
+	}
+
+	if err := oceanbaseDB.ApplyChanges("APP.USERS", changes); err != nil {
+		t.Fatalf("ApplyChanges() unexpected error: %v", err)
+	}
+
+	queries := state.snapshotExecQueries()
+	if len(queries) != 1 {
+		t.Fatalf("expected one exec query, got %#v", queries)
+	}
+	query := queries[0]
+	if !strings.Contains(query, `"CREATED_AT" = TO_DATE(?, 'YYYY-MM-DD')`) {
+		t.Fatalf("expected explicit TO_DATE binding in all-columns WHERE, got %q", query)
+	}
+	if !strings.Contains(query, `"UPDATED_AT" = TO_TIMESTAMP(?, 'YYYY-MM-DD HH24:MI:SS.FF')`) {
+		t.Fatalf("expected explicit TO_TIMESTAMP binding in all-columns WHERE, got %q", query)
+	}
+}
+
 func TestOceanBaseOracleGetCreateStatementFallsBackToShowCreateTable(t *testing.T) {
 	t.Parallel()
 

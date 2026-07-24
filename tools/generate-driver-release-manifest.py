@@ -15,8 +15,19 @@ from pathlib import Path
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--assets-dir", required=True, help="driver release staging dir that contains standalone driver assets")
-    parser.add_argument("--output", required=True, help="manifest json output path")
-    return parser.parse_args()
+    parser.add_argument("--output", help="release manifest json output path")
+    parser.add_argument(
+        "--provenance",
+        action="append",
+        default=[],
+        help="manifest/provenance JSON file or directory; may be passed more than once",
+    )
+    parser.add_argument("--provenance-output", help="write SHA-bound build provenance and exit when --output is omitted")
+    parser.add_argument("--revision-file", help="generated driver revision file used by --provenance-output")
+    args = parser.parse_args()
+    if not args.output and not args.provenance_output:
+        parser.error("one of --output or --provenance-output is required")
+    return args
 
 
 def infer_driver_and_platform(file_name: str):
@@ -127,6 +138,174 @@ def parse_revision_file(path: Path):
     return revisions
 
 
+def resolve_host_platform():
+    goos = subprocess.run(
+        ["go", "env", "GOOS"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    goarch = subprocess.run(
+        ["go", "env", "GOARCH"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    return f"{goos}/{goarch}"
+
+
+def probe_agent_metadata(asset_path: Path):
+    if os.name != "nt":
+        os.chmod(asset_path, asset_path.stat().st_mode | 0o111)
+    proc = subprocess.run(
+        [str(asset_path)],
+        input='{"id":1,"method":"metadata"}\n',
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        timeout=30,
+    )
+    if proc.returncode != 0:
+        detail = proc.stderr.strip() or f"exit code {proc.returncode}"
+        raise RuntimeError(f"{asset_path.name}: metadata probe failed: {detail}")
+    lines = [line.strip() for line in proc.stdout.splitlines() if line.strip()]
+    if not lines:
+        raise RuntimeError(f"{asset_path.name}: metadata probe returned no response")
+    try:
+        response = json.loads(lines[0])
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"{asset_path.name}: metadata probe returned invalid JSON: {exc}") from exc
+    if not response.get("success"):
+        detail = str(response.get("error") or "metadata request failed").strip()
+        raise RuntimeError(f"{asset_path.name}: metadata probe failed: {detail}")
+    data = response.get("data") or {}
+    driver_type = normalize_driver(data.get("driverType"))
+    revision = str(data.get("agentRevision") or "").strip()
+    if not driver_type or not revision:
+        raise RuntimeError(f"{asset_path.name}: metadata response is missing driverType or agentRevision")
+    return driver_type, revision
+
+
+def load_asset_provenance(paths):
+    entries = {}
+    for raw_path in paths:
+        source = Path(raw_path).resolve()
+        if source.is_dir():
+            files = sorted(source.rglob("*.json"))
+        elif source.is_file():
+            files = [source]
+        else:
+            raise RuntimeError(f"binary revision provenance path does not exist: {source}")
+        for file_path in files:
+            try:
+                payload = json.loads(file_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError) as exc:
+                raise RuntimeError(f"failed to read binary revision provenance {file_path}: {exc}") from exc
+            assets = payload.get("assets") or {}
+            if not isinstance(assets, dict):
+                raise RuntimeError(f"binary revision provenance {file_path} has invalid assets")
+            for asset_name, metadata in assets.items():
+                if not isinstance(metadata, dict):
+                    continue
+                name = str(asset_name or "").strip()
+                if not name:
+                    continue
+                entries.setdefault(name, []).append((file_path, metadata))
+    return entries
+
+
+def resolve_asset_provenance(entries, asset_name, driver, platform, sha256, size):
+    candidates = entries.get(asset_name) or []
+    matching = []
+    for source, metadata in candidates:
+        recorded_sha = str(metadata.get("sha256") or "").strip().lower()
+        if recorded_sha == sha256.lower():
+            matching.append((source, metadata))
+    if not matching:
+        if candidates:
+            recorded = sorted(
+                {
+                    str(metadata.get("sha256") or "<missing>").strip() or "<missing>"
+                    for _, metadata in candidates
+                }
+            )
+            raise RuntimeError(
+                f"{asset_name}: binary revision provenance SHA256 mismatch: "
+                f"asset={sha256} recorded={','.join(recorded)}"
+            )
+        raise RuntimeError(
+            f"{asset_name}: binary revision provenance is required for "
+            f"cross-platform asset {platform}"
+        )
+
+    revisions = set()
+    for source, metadata in matching:
+        recorded_driver = normalize_driver(metadata.get("driver") or metadata.get("driverType"))
+        recorded_platform = str(metadata.get("platform") or "").strip()
+        recorded_revision = str(metadata.get("revision") or "").strip()
+        recorded_size = metadata.get("size")
+        if recorded_driver != driver or recorded_platform != platform:
+            raise RuntimeError(
+                f"{asset_name}: binary revision provenance identity mismatch in {source}: "
+                f"recorded={recorded_platform}/{recorded_driver} expected={platform}/{driver}"
+            )
+        if recorded_size is not None and int(recorded_size) != size:
+            raise RuntimeError(
+                f"{asset_name}: binary revision provenance size mismatch in {source}: "
+                f"recorded={recorded_size} expected={size}"
+            )
+        if not recorded_revision:
+            raise RuntimeError(f"{asset_name}: binary revision provenance is missing revision in {source}")
+        revisions.add(recorded_revision)
+    if len(revisions) != 1:
+        raise RuntimeError(
+            f"{asset_name}: conflicting binary revision provenance: {','.join(sorted(revisions))}"
+        )
+    return revisions.pop()
+
+
+def write_build_provenance(asset_entries, revision_file: Path, output_path: Path, generated_from: str):
+    revisions = parse_revision_file(revision_file)
+    host_platform = resolve_host_platform()
+    assets = {}
+    for child, driver, platform in asset_entries:
+        normalized_driver = normalize_driver(driver)
+        revision = str(revisions.get(normalized_driver) or "").strip()
+        if not revision:
+            raise RuntimeError(
+                f"{child.name}: missing build revision for {platform}/{normalized_driver} in {revision_file}"
+            )
+        if platform == host_platform:
+            binary_driver, binary_revision = probe_agent_metadata(child)
+            if binary_driver != normalized_driver or binary_revision != revision:
+                raise RuntimeError(
+                    f"{child.name}: build provenance metadata mismatch: "
+                    f"binary={binary_driver}/{binary_revision} "
+                    f"expected={normalized_driver}/{revision}"
+                )
+            revision = binary_revision
+        size = child.stat().st_size
+        assets[child.name] = {
+            "driver": driver,
+            "driverType": driver,
+            "platform": platform,
+            "revision": revision,
+            "size": size,
+            "sha256": hashlib.sha256(child.read_bytes()).hexdigest(),
+        }
+    payload = {
+        "schemaVersion": 1,
+        "generatedFrom": generated_from,
+        "assets": assets,
+    }
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    print(f"wrote build provenance: {output_path}")
+    print(f"asset count: {len(assets)}")
+
+
 def generate_platform_revisions(root: Path, drivers_by_platform):
     if not drivers_by_platform:
         return {}
@@ -170,11 +349,10 @@ def generate_platform_revisions(root: Path, drivers_by_platform):
 def main():
     args = parse_args()
     assets_dir = Path(args.assets_dir).resolve()
-    output_path = Path(args.output).resolve()
     root = repo_root()
+    generated_from = os.environ.get("GITHUB_SHA", "").strip() or resolve_head_commit(root)
 
     asset_entries = []
-    drivers_by_platform = {}
     for child in sorted(assets_dir.rglob("*")):
         if not child.is_file():
             continue
@@ -184,29 +362,103 @@ def main():
         if child.stat().st_size == 0:
             raise RuntimeError(f"{child.name}: asset is empty")
         asset_entries.append((child, driver, platform))
-        drivers_by_platform.setdefault(platform, set()).add(driver)
 
-    revisions_by_platform = generate_platform_revisions(root, drivers_by_platform)
+    if args.provenance_output:
+        revision_file = Path(args.revision_file).resolve() if args.revision_file else root / "internal" / "db" / "driver_agent_revisions_gen.go"
+        write_build_provenance(
+            asset_entries,
+            revision_file,
+            Path(args.provenance_output).resolve(),
+            generated_from,
+        )
+        if not args.output:
+            return 0
+
+    output_path = Path(args.output).resolve()
+    provenance_entries = load_asset_provenance(args.provenance)
+    host_platform = resolve_host_platform()
 
     manifest = {
         "schemaVersion": 1,
-        "generatedFrom": os.environ.get("GITHUB_SHA", "").strip() or resolve_head_commit(root),
+        "generatedFrom": generated_from,
         "assets": {},
     }
+    fallback_entries = []
+    fallback_drivers_by_platform = {}
 
     for child, driver, platform in asset_entries:
         normalized_driver = normalize_driver(driver)
-        revision = str((revisions_by_platform.get(platform) or {}).get(normalized_driver) or "").strip()
-        if not revision:
-            raise RuntimeError(f"{child.name}: missing revision for {platform}/{normalized_driver}")
+        size = child.stat().st_size
+        sha256 = hashlib.sha256(child.read_bytes()).hexdigest()
+
+        if child.name not in provenance_entries:
+            if platform != host_platform:
+                resolve_asset_provenance(
+                    provenance_entries,
+                    child.name,
+                    normalized_driver,
+                    platform,
+                    sha256,
+                    size,
+                )
+            fallback_entries.append((child, driver, platform, normalized_driver, size, sha256))
+            fallback_drivers_by_platform.setdefault(platform, set()).add(normalized_driver)
+            continue
+
+        revision = resolve_asset_provenance(
+            provenance_entries,
+            child.name,
+            normalized_driver,
+            platform,
+            sha256,
+            size,
+        )
+        if platform == host_platform:
+            binary_driver, binary_revision = probe_agent_metadata(child)
+            if binary_driver != normalized_driver:
+                raise RuntimeError(
+                    f"{child.name}: embedded driver type mismatch: "
+                    f"binary={binary_driver} expected={normalized_driver}"
+                )
+            if binary_revision != revision:
+                raise RuntimeError(
+                    f"{child.name}: provenance revision mismatch: "
+                    f"binary={binary_revision} expected={revision}"
+                )
         manifest["assets"][child.name] = {
             "driver": driver,
             "driverType": driver,
             "platform": platform,
             "revision": revision,
-            "size": child.stat().st_size,
-            "sha256": hashlib.sha256(child.read_bytes()).hexdigest(),
+            "size": size,
+            "sha256": sha256,
         }
+
+    if fallback_entries:
+        fallback_revisions_by_platform = generate_platform_revisions(root, fallback_drivers_by_platform)
+        for child, driver, platform, normalized_driver, size, sha256 in fallback_entries:
+            revision = str((fallback_revisions_by_platform.get(platform) or {}).get(normalized_driver) or "").strip()
+            if not revision:
+                raise RuntimeError(f"{child.name}: missing revision for {platform}/{normalized_driver}")
+            binary_driver, binary_revision = probe_agent_metadata(child)
+            if binary_driver != normalized_driver:
+                raise RuntimeError(
+                    f"{child.name}: embedded driver type mismatch: "
+                    f"binary={binary_driver} expected={normalized_driver}"
+                )
+            if binary_revision != revision:
+                raise RuntimeError(
+                    f"{child.name}: embedded revision mismatch: "
+                    f"binary={binary_revision} expected={revision}"
+                )
+            manifest["assets"][child.name] = {
+                "driver": driver,
+                "driverType": driver,
+                "platform": platform,
+                "revision": binary_revision,
+                "size": size,
+                "sha256": sha256,
+            }
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")

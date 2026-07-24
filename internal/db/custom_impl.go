@@ -270,6 +270,13 @@ func (c *CustomDB) GetTables(dbName string) ([]string, error) {
 	return tables, nil
 }
 
+func (c *CustomDB) GetTableRowCounts(_ string, tables []string) (map[string]int64, error) {
+	if !strings.EqualFold(strings.TrimSpace(c.driver), "sqlite") {
+		return map[string]int64{}, nil
+	}
+	return getSQLiteTableRowCounts(c.Query, tables)
+}
+
 func (c *CustomDB) GetCreateStatement(dbName, tableName string) (string, error) {
 	return "Not supported for custom connections yet", nil
 }

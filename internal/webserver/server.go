@@ -6,6 +6,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"io/fs"
 	"net"
 	"net/http"
@@ -23,11 +24,68 @@ import (
 )
 
 const (
-	defaultWebServerAddr = "127.0.0.1:34116"
-	internalRoutePrefix  = "/__gonavi"
+	defaultWebServerAddr      = "127.0.0.1:34116"
+	internalRoutePrefix       = "/__gonavi"
+	detachedWindowIDHeader    = "X-GoNavi-Detached-Window-ID"
+	eventSubscriberQueueLimit = 128
+	eventStreamDataChunkBytes = 256 << 10
 )
 
 var errorType = reflect.TypeOf((*error)(nil)).Elem()
+
+var desktopOnlyAppMethods = map[string]struct{}{
+	"Shutdown":                      {},
+	"SetWindowTranslucency":         {},
+	"SetMacNativeWindowControls":    {},
+	"SetApplicationBrandIcon":       {},
+	"ResetWebViewZoom":              {},
+	"SelectDataRootDirectory":       {},
+	"GetDataRootDirectoryInfo":      {},
+	"ApplyDataRootDirectory":        {},
+	"OpenDataRootDirectory":         {},
+	"SelectDriverDownloadDirectory": {},
+	"SelectDriverPackageFile":       {},
+	"SelectDriverPackageDirectory":  {},
+	"OpenSQLFile":                   {},
+	"SelectSQLFileForExecution":     {},
+	"SelectSQLDirectory":            {},
+	"ListSQLDirectory":              {},
+	"ReadSQLFile":                   {},
+	"WriteSQLFile":                  {},
+	"CreateSQLFile":                 {},
+	"CreateSQLDirectory":            {},
+	"DeleteSQLFile":                 {},
+	"DeleteSQLDirectory":            {},
+	"RenameSQLFile":                 {},
+	"RenameSQLDirectory":            {},
+	"ExecuteSQLFile":                {},
+	"ExportSQLFile":                 {},
+	"ImportConfigFile":              {},
+	"ExportConnectionsPackage":      {},
+	"SelectSSHKeyFile":              {},
+	"SelectCertificateFile":         {},
+	"SelectDatabaseFile":            {},
+	"ImportData":                    {},
+	"PreviewImportFile":             {},
+	"ImportDataWithProgress":        {},
+	"ImportDataWithProgressOptions": {},
+	"ExportTable":                   {},
+	"ExportTableWithOptions":        {},
+	"ExportTablesSQL":               {},
+	"ExportTablesDataSQL":           {},
+	"ExportTablesSQLWithOptions":    {},
+	"ExportDatabaseSQL":             {},
+	"ExportDatabaseSQLWithOptions":  {},
+	"ExportDatabasesSQLWithOptions": {},
+	"ExportSchemaSQL":               {},
+	"ExportSchemaSQLWithOptions":    {},
+	"ExportData":                    {},
+	"ExportDataWithOptions":         {},
+	"ExportQuery":                   {},
+	"ExportQueryWithOptions":        {},
+	"RedisExportKeys":               {},
+	"ExportSQLAuditFile":            {},
+}
 
 type Options struct {
 	Addr string
@@ -52,11 +110,193 @@ type eventMessage struct {
 
 type eventHub struct {
 	mu          sync.RWMutex
-	subscribers map[chan eventMessage]struct{}
+	subscribers map[*eventSubscriber]struct{}
 }
 
 func newEventHub() *eventHub {
-	return &eventHub{subscribers: make(map[chan eventMessage]struct{})}
+	return &eventHub{subscribers: make(map[*eventSubscriber]struct{})}
+}
+
+type eventSubscriber struct {
+	targetID string
+
+	mu     sync.Mutex
+	queue  []eventMessage
+	head   int
+	wake   chan struct{}
+	done   chan struct{}
+	closed bool
+}
+
+func newEventSubscriber(targetID string) *eventSubscriber {
+	return &eventSubscriber{
+		targetID: strings.TrimSpace(targetID),
+		wake:     make(chan struct{}, 1),
+		done:     make(chan struct{}),
+	}
+}
+
+func (s *eventSubscriber) enqueue(msg eventMessage, reliable bool) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	if s.coalesceQueuedEventLocked(msg) {
+		s.mu.Unlock()
+		select {
+		case s.wake <- struct{}{}:
+		default:
+		}
+		return
+	}
+	// AI stream deltas are loss-sensitive. Once one delta is queued, later
+	// deltas for that session coalesce into it; the first delta and terminal
+	// events may therefore exceed the soft broadcast limit by a small amount.
+	if s.closed || (!reliable && !strings.HasPrefix(msg.Name, "ai:stream:") && len(s.queue)-s.head >= eventSubscriberQueueLimit) {
+		s.mu.Unlock()
+		return
+	}
+	s.queue = append(s.queue, msg)
+	s.mu.Unlock()
+
+	select {
+	case s.wake <- struct{}{}:
+	default:
+	}
+}
+
+func (s *eventSubscriber) coalesceQueuedEventLocked(incoming eventMessage) bool {
+	if s == nil || s.closed {
+		return false
+	}
+	if strings.HasPrefix(incoming.Name, "ai:stream:") {
+		for index := len(s.queue) - 1; index >= s.head; index-- {
+			if s.queue[index].Name == incoming.Name {
+				return mergeQueuedAIStreamEvent(&s.queue[index], incoming)
+			}
+		}
+		return false
+	}
+	key := detachedSyncEventKey(incoming)
+	if key == "" {
+		return false
+	}
+	for index := len(s.queue) - 1; index >= s.head; index-- {
+		if detachedSyncEventKey(s.queue[index]) == key {
+			s.queue[index] = incoming
+			return true
+		}
+	}
+	return false
+}
+
+func mergeQueuedAIStreamEvent(existing *eventMessage, incoming eventMessage) bool {
+	if existing == nil || existing.Name != incoming.Name || len(existing.Args) != 1 || len(incoming.Args) != 1 {
+		return false
+	}
+	current, currentOK := existing.Args[0].(map[string]any)
+	next, nextOK := incoming.Args[0].(map[string]any)
+	if !currentOK || !nextOK || aiStreamPayloadIsTerminal(current) || aiStreamPayloadIsTerminal(next) {
+		return false
+	}
+	merged := make(map[string]any, len(current)+len(next))
+	for key, value := range current {
+		merged[key] = value
+	}
+	for key, value := range next {
+		merged[key] = value
+	}
+	for _, key := range []string{"content", "thinking", "reasoning_content"} {
+		merged[key] = stringValue(current[key]) + stringValue(next[key])
+	}
+	existing.Args = []any{merged}
+	return true
+}
+
+func aiStreamPayloadIsTerminal(payload map[string]any) bool {
+	if payload == nil {
+		return true
+	}
+	if done, _ := payload["done"].(bool); done {
+		return true
+	}
+	if strings.TrimSpace(stringValue(payload["error"])) != "" {
+		return true
+	}
+	toolCalls := reflect.ValueOf(payload["tool_calls"])
+	return toolCalls.IsValid() && (toolCalls.Kind() == reflect.Array || toolCalls.Kind() == reflect.Slice) && toolCalls.Len() > 0
+}
+
+func stringValue(value any) string {
+	text, _ := value.(string)
+	return text
+}
+
+func detachedSyncEventKey(msg eventMessage) string {
+	if msg.Name != "gonavi:native-detached-event" || len(msg.Args) != 1 {
+		return ""
+	}
+	value := reflect.ValueOf(msg.Args[0])
+	for value.IsValid() && (value.Kind() == reflect.Interface || value.Kind() == reflect.Pointer) {
+		if value.IsNil() {
+			return ""
+		}
+		value = value.Elem()
+	}
+	if !value.IsValid() || value.Kind() != reflect.Struct {
+		return ""
+	}
+	idField := value.FieldByName("ID")
+	actionField := value.FieldByName("Action")
+	if !idField.IsValid() ||
+		idField.Kind() != reflect.String ||
+		!actionField.IsValid() ||
+		actionField.Kind() != reflect.String ||
+		actionField.String() != "sync" {
+		return ""
+	}
+	id := strings.TrimSpace(idField.String())
+	if id == "" {
+		return ""
+	}
+	return "detached-sync:" + id
+}
+
+func (s *eventSubscriber) dequeue() (eventMessage, bool) {
+	if s == nil {
+		return eventMessage{}, false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.head >= len(s.queue) {
+		return eventMessage{}, false
+	}
+	msg := s.queue[s.head]
+	s.queue[s.head] = eventMessage{}
+	s.head++
+	if s.head == len(s.queue) {
+		s.queue = nil
+		s.head = 0
+	} else if s.head >= eventSubscriberQueueLimit && s.head*2 >= len(s.queue) {
+		remaining := append([]eventMessage(nil), s.queue[s.head:]...)
+		s.queue = remaining
+		s.head = 0
+	}
+	return msg, true
+}
+
+func (s *eventSubscriber) close() {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	if s.closed {
+		s.mu.Unlock()
+		return
+	}
+	s.closed = true
+	close(s.done)
+	s.mu.Unlock()
 }
 
 func (h *eventHub) Emit(name string, args ...any) {
@@ -66,36 +306,57 @@ func (h *eventHub) Emit(name string, args ...any) {
 	msg := eventMessage{Name: name, Args: args}
 	h.mu.RLock()
 	defer h.mu.RUnlock()
-	for ch := range h.subscribers {
-		select {
-		case ch <- msg:
-		default:
+	for subscriber := range h.subscribers {
+		subscriber.enqueue(msg, false)
+	}
+}
+
+func (h *eventHub) EmitTo(targetID string, name string, args ...any) {
+	h.emitTo(targetID, name, true, args...)
+}
+
+func (h *eventHub) EmitToBestEffort(targetID string, name string, args ...any) {
+	h.emitTo(targetID, name, false, args...)
+}
+
+func (h *eventHub) emitTo(targetID string, name string, reliable bool, args ...any) {
+	if h == nil || strings.TrimSpace(targetID) == "" || strings.TrimSpace(name) == "" {
+		return
+	}
+	msg := eventMessage{Name: name, Args: args}
+	targetID = strings.TrimSpace(targetID)
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	for subscriber := range h.subscribers {
+		if subscriber.targetID == targetID {
+			subscriber.enqueue(msg, reliable)
 		}
 	}
 }
 
-func (h *eventHub) subscribe() chan eventMessage {
-	ch := make(chan eventMessage, 128)
+func (h *eventHub) subscribe(targetID string) *eventSubscriber {
+	subscriber := newEventSubscriber(targetID)
 	h.mu.Lock()
-	h.subscribers[ch] = struct{}{}
+	h.subscribers[subscriber] = struct{}{}
 	h.mu.Unlock()
-	return ch
+	return subscriber
 }
 
-func (h *eventHub) unsubscribe(ch chan eventMessage) {
-	if ch == nil {
+func (h *eventHub) unsubscribe(subscriber *eventSubscriber) {
+	if h == nil || subscriber == nil {
 		return
 	}
 	h.mu.Lock()
-	if _, ok := h.subscribers[ch]; ok {
-		delete(h.subscribers, ch)
-		close(ch)
+	if _, ok := h.subscribers[subscriber]; ok {
+		delete(h.subscribers, subscriber)
+		subscriber.close()
 	}
 	h.mu.Unlock()
 }
 
 type methodInvoker struct {
-	targets map[string]reflect.Value
+	targets             map[string]reflect.Value
+	allowDesktopMethods bool
 }
 
 func newMethodInvoker(app *appcore.App, ai *aiservice.Service) *methodInvoker {
@@ -128,6 +389,9 @@ func (i *methodInvoker) Invoke(req invokeRequest) (any, error) {
 	if !ok {
 		return nil, fmt.Errorf("unsupported invoke target: %s.%s", namespace, receiver)
 	}
+	if !i.allowDesktopMethods && (key == "app" || key == "app.app") && isDesktopOnlyAppMethod(methodName) {
+		return nil, fmt.Errorf("method %s is unavailable in web runtime", methodName)
+	}
 
 	method := target.MethodByName(methodName)
 	if !method.IsValid() {
@@ -153,6 +417,11 @@ func (i *methodInvoker) Invoke(req invokeRequest) (any, error) {
 
 	results := method.Call(callArgs)
 	return unpackResults(results)
+}
+
+func isDesktopOnlyAppMethod(methodName string) bool {
+	_, denied := desktopOnlyAppMethods[strings.TrimSpace(methodName)]
+	return denied
 }
 
 func decodeArgument(raw json.RawMessage, targetType reflect.Type) (reflect.Value, error) {
@@ -194,13 +463,157 @@ func unpackResults(results []reflect.Value) (any, error) {
 }
 
 type Server struct {
-	options Options
-	assets  fs.FS
-	app     *appcore.App
-	ai      *aiservice.Service
-	auth    *webAuthManager
-	events  *eventHub
-	invoker *methodInvoker
+	options       Options
+	assets        fs.FS
+	app           *appcore.App
+	ai            *aiservice.Service
+	auth          *webAuthManager
+	events        *eventHub
+	invoker       *methodInvoker
+	auditHeavySem chan struct{}
+}
+
+// SharedRuntimeOptions configures the authenticated loopback runtime used by
+// native child windows. Authentication is intentionally owned by the caller so
+// the same handler can be protected by a process-scoped token instead of the
+// browser server's password/session flow.
+type SharedRuntimeOptions struct {
+	RuntimeBridgePath   string
+	RuntimeBridgeScript string
+}
+
+// SharedRuntime exposes the existing frontend assets and reflective App/AI RPC
+// bridge without creating a second backend. It is safe to host this on a
+// loopback-only listener owned by the desktop process.
+type SharedRuntime struct {
+	server              *Server
+	runtimeBridgePath   string
+	runtimeBridgeScript string
+	handler             http.Handler
+}
+
+// NewSharedRuntime creates an HTTP runtime backed by the already-running
+// desktop App and AI service. The caller remains responsible for their
+// lifecycle.
+func NewSharedRuntime(assetFS fs.FS, app *appcore.App, ai *aiservice.Service, options SharedRuntimeOptions) (*SharedRuntime, error) {
+	if assetFS == nil {
+		return nil, fmt.Errorf("web assets are unavailable")
+	}
+	if app == nil || ai == nil {
+		return nil, fmt.Errorf("shared App and AI service are required")
+	}
+	frontendFS, err := fs.Sub(assetFS, "frontend/dist")
+	if err != nil {
+		return nil, fmt.Errorf("resolve frontend dist assets failed: %w", err)
+	}
+
+	bridgePath := strings.TrimSpace(options.RuntimeBridgePath)
+	if bridgePath == "" || !strings.HasPrefix(bridgePath, internalRoutePrefix+"/") {
+		return nil, fmt.Errorf("runtime bridge path must be under %s", internalRoutePrefix)
+	}
+
+	events := newEventHub()
+	shared := &SharedRuntime{
+		server: &Server{
+			assets: frontendFS,
+			app:    app,
+			ai:     ai,
+			events: events,
+			invoker: func() *methodInvoker {
+				invoker := newMethodInvoker(app, ai)
+				invoker.allowDesktopMethods = true
+				return invoker
+			}(),
+			auditHeavySem: make(chan struct{}, 1),
+		},
+		runtimeBridgePath:   bridgePath,
+		runtimeBridgeScript: options.RuntimeBridgeScript,
+	}
+	shared.handler = shared.routes()
+	return shared, nil
+}
+
+// Handler returns the shared runtime HTTP handler.
+func (s *SharedRuntime) Handler() http.Handler {
+	if s == nil {
+		return http.NotFoundHandler()
+	}
+	return s.handler
+}
+
+// Emit publishes a backend event to every native child window connected to the
+// shared runtime event stream.
+func (s *SharedRuntime) Emit(name string, args ...any) {
+	if s == nil || s.server == nil || s.server.events == nil {
+		return
+	}
+	s.server.events.Emit(name, args...)
+}
+
+// EmitTo publishes a backend event only to the native child window whose SSE
+// stream is identified by targetID. Targeted events use a reliable per-stream
+// queue so control commands are not discarded when the broadcast queue is full.
+func (s *SharedRuntime) EmitTo(targetID string, name string, args ...any) {
+	if s == nil || s.server == nil || s.server.events == nil {
+		return
+	}
+	s.server.events.EmitTo(targetID, name, args...)
+}
+
+// EmitToBestEffort publishes a high-frequency event to one child without
+// allowing a slow SSE consumer to grow its queue without bound.
+func (s *SharedRuntime) EmitToBestEffort(targetID string, name string, args ...any) {
+	if s == nil || s.server == nil || s.server.events == nil {
+		return
+	}
+	s.server.events.EmitToBestEffort(targetID, name, args...)
+}
+
+func (s *SharedRuntime) routes() http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc(internalRoutePrefix+"/api/invoke", s.server.handleInvoke)
+	mux.HandleFunc(internalRoutePrefix+"/events", s.server.handleEvents)
+	mux.HandleFunc(s.runtimeBridgePath, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
+		_, _ = w.Write([]byte(s.runtimeBridgeScript))
+	})
+	mux.HandleFunc(internalRoutePrefix+"/healthz", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		_, _ = w.Write([]byte("ok"))
+	})
+
+	fileServer := http.FileServer(http.FS(s.server.assets))
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if strings.HasPrefix(r.URL.Path, internalRoutePrefix+"/") {
+			http.NotFound(w, r)
+			return
+		}
+		if s.server.shouldServeIndex(r.URL.Path) {
+			payload, err := fs.ReadFile(s.server.assets, "index.html")
+			if err != nil {
+				http.Error(w, "frontend index is unavailable", http.StatusInternalServerError)
+				return
+			}
+			html := injectBodyScript(string(payload), s.runtimeBridgePath)
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			http.ServeContent(w, r, "index.html", time.Time{}, strings.NewReader(html))
+			return
+		}
+		fileServer.ServeHTTP(w, r)
+	})
+	return withSecurityHeaders(mux)
 }
 
 func ParseOptions(args []string) (Options, error) {
@@ -246,7 +659,7 @@ func New(ctx context.Context, assetFS fs.FS, options Options) (*Server, error) {
 	events := newEventHub()
 	lifecycleCtx := uievents.WithEmitter(ctx, events)
 
-	app := appcore.NewApp()
+	app := appcore.NewWebApp()
 	appcore.InitializeLifecycle(app, lifecycleCtx)
 	ai := aiservice.NewService()
 	aiservice.InitializeLifecycle(ai, lifecycleCtx)
@@ -256,13 +669,14 @@ func New(ctx context.Context, assetFS fs.FS, options Options) (*Server, error) {
 	}
 
 	return &Server{
-		options: options,
-		assets:  frontendFS,
-		app:     app,
-		ai:      ai,
-		auth:    auth,
-		events:  events,
-		invoker: newMethodInvoker(app, ai),
+		options:       options,
+		assets:        frontendFS,
+		app:           app,
+		ai:            ai,
+		auth:          auth,
+		events:        events,
+		invoker:       newMethodInvoker(app, ai),
+		auditHeavySem: make(chan struct{}, 1),
 	}, nil
 }
 
@@ -390,14 +804,29 @@ func (s *Server) serveIndex(w http.ResponseWriter, r *http.Request) {
 }
 
 func injectRuntimeBridge(indexHTML string) string {
-	if strings.Contains(indexHTML, internalRoutePrefix+"/web-runtime.js") {
+	return injectScript(indexHTML, internalRoutePrefix+"/web-runtime.js")
+}
+
+func injectScript(indexHTML string, scriptPath string) string {
+	if strings.Contains(indexHTML, scriptPath) {
 		return indexHTML
 	}
-	scriptTag := fmt.Sprintf(`<script src="%s/web-runtime.js"></script>`, internalRoutePrefix)
+	scriptTag := fmt.Sprintf(`<script src="%s"></script>`, scriptPath)
 	if strings.Contains(indexHTML, "</head>") {
 		return strings.Replace(indexHTML, "</head>", scriptTag+"\n</head>", 1)
 	}
 	return scriptTag + "\n" + indexHTML
+}
+
+func injectBodyScript(indexHTML string, scriptPath string) string {
+	if strings.Contains(indexHTML, scriptPath) {
+		return indexHTML
+	}
+	scriptTag := fmt.Sprintf(`<script src="%s"></script>`, scriptPath)
+	if strings.Contains(indexHTML, "</body>") {
+		return strings.Replace(indexHTML, "</body>", scriptTag+"\n</body>", 1)
+	}
+	return injectScript(indexHTML, scriptPath)
 }
 
 func (s *Server) handleInvoke(w http.ResponseWriter, r *http.Request) {
@@ -412,12 +841,35 @@ func (s *Server) handleInvoke(w http.ResponseWriter, r *http.Request) {
 		s.writeInvokeResponse(w, http.StatusBadRequest, invokeResponse{Error: err.Error()})
 		return
 	}
+	if isSQLAuditHeavyInvoke(request) && s.auditHeavySem != nil {
+		select {
+		case s.auditHeavySem <- struct{}{}:
+			defer func() { <-s.auditHeavySem }()
+		default:
+			s.writeInvokeResponse(w, http.StatusTooManyRequests, invokeResponse{Error: "another SQL audit export or integrity verification is already in progress"})
+			return
+		}
+	}
 	result, err := s.invoker.Invoke(request)
 	if err != nil {
 		s.writeInvokeResponse(w, http.StatusBadRequest, invokeResponse{Error: err.Error()})
 		return
 	}
 	s.writeInvokeResponse(w, http.StatusOK, invokeResponse{Result: result})
+}
+
+func isSQLAuditHeavyInvoke(request invokeRequest) bool {
+	namespace := strings.ToLower(strings.TrimSpace(request.Namespace))
+	receiver := strings.ToLower(strings.TrimSpace(request.Receiver))
+	if namespace != "app" || (receiver != "" && receiver != "app") {
+		return false
+	}
+	switch strings.TrimSpace(request.Method) {
+	case "BuildSQLAuditExport", "VerifySQLAuditIntegrity":
+		return true
+	default:
+		return false
+	}
 }
 
 func (s *Server) writeInvokeResponse(w http.ResponseWriter, status int, response invokeResponse) {
@@ -437,8 +889,8 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 
-	ch := s.events.subscribe()
-	defer s.events.unsubscribe(ch)
+	subscriber := s.events.subscribe(r.Header.Get(detachedWindowIDHeader))
+	defer s.events.unsubscribe(subscriber)
 
 	ticker := time.NewTicker(20 * time.Second)
 	defer ticker.Stop()
@@ -447,24 +899,52 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 	flusher.Flush()
 
 	for {
+		if msg, ok := subscriber.dequeue(); ok {
+			if err := writeEventStreamMessage(w, msg, subscriber.targetID != ""); err != nil {
+				return
+			}
+			flusher.Flush()
+			continue
+		}
 		select {
 		case <-r.Context().Done():
 			return
+		case <-subscriber.done:
+			return
+		case <-subscriber.wake:
+			continue
 		case <-ticker.C:
-			_, _ = w.Write([]byte(": ping\n\n"))
-			flusher.Flush()
-		case msg, ok := <-ch:
-			if !ok {
+			if _, err := w.Write([]byte(": ping\n\n")); err != nil {
 				return
 			}
-			payload, err := json.Marshal(msg)
-			if err != nil {
-				continue
-			}
-			_, _ = fmt.Fprintf(w, "event: gonavi\ndata: %s\n\n", payload)
 			flusher.Flush()
 		}
 	}
+}
+
+func writeEventStreamMessage(writer io.Writer, msg eventMessage, fragmented bool) error {
+	payload, err := json.Marshal(msg)
+	if err != nil {
+		return err
+	}
+	if _, err := io.WriteString(writer, "event: gonavi\n"); err != nil {
+		return err
+	}
+	chunkSize := len(payload)
+	if fragmented {
+		chunkSize = eventStreamDataChunkBytes
+	}
+	for offset := 0; offset < len(payload); offset += chunkSize {
+		end := offset + chunkSize
+		if end > len(payload) {
+			end = len(payload)
+		}
+		if _, err := fmt.Fprintf(writer, "data: %s\n", payload[offset:end]); err != nil {
+			return err
+		}
+	}
+	_, err = io.WriteString(writer, "\n")
+	return err
 }
 
 func (s *Server) handleRuntimeBridge(w http.ResponseWriter, _ *http.Request) {

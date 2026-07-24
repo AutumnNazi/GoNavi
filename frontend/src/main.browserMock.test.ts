@@ -197,12 +197,16 @@ describe('main browser mock', () => {
     const service = (globalThis as any).window.go.aiservice.Service;
 
     await expect(service.AIGetMCPHTTPServerStatus()).resolves.toEqual(expect.objectContaining({
+      enabled: false,
       message: t('app.browser_mock.mcp_http.not_running'),
     }));
-    await expect(service.AIStartMCPHTTPServer({ addr: '127.0.0.1:8765', path: '/mcp' })).resolves.toEqual(expect.objectContaining({
+    await expect(service.AIStartMCPHTTPServer({ addr: '127.0.0.1:8765', path: '/mcp', schemaOnly: false })).resolves.toEqual(expect.objectContaining({
+      enabled: true,
+      schemaOnly: false,
       message: t('app.browser_mock.mcp_http.started'),
     }));
     await expect(service.AIStopMCPHTTPServer()).resolves.toEqual(expect.objectContaining({
+      enabled: false,
       message: t('app.browser_mock.mcp_http.stopped'),
     }));
   });
@@ -331,6 +335,10 @@ describe('main browser mock', () => {
         client: 'codex',
         message: t('app.browser_mock.mcp_client.codex.path_mismatch'),
       }),
+      expect.objectContaining({
+        client: 'opencode',
+        message: t('app.browser_mock.mcp_client.opencode.not_detected'),
+      }),
     ]));
 
     await expect(service.AIInstallClaudeCodeMCP()).resolves.toEqual(expect.objectContaining({
@@ -340,6 +348,10 @@ describe('main browser mock', () => {
     await expect(service.AIInstallCodexMCP()).resolves.toEqual(expect.objectContaining({
       client: 'codex',
       message: t('app.browser_mock.mcp_client.codex.installed'),
+    }));
+    await expect(service.AIInstallOpenCodeMCP()).resolves.toEqual(expect.objectContaining({
+      client: 'opencode',
+      message: t('app.browser_mock.mcp_client.opencode.installed'),
     }));
     await expect(service.AIGetMCPClientInstallStatuses()).resolves.toEqual(expect.arrayContaining([
       expect.objectContaining({
@@ -352,6 +364,11 @@ describe('main browser mock', () => {
         installed: true,
         message: t('app.browser_mock.mcp_client.codex.installed'),
       }),
+      expect.objectContaining({
+        client: 'opencode',
+        installed: true,
+        message: t('app.browser_mock.mcp_client.opencode.installed'),
+      }),
     ]));
   });
 
@@ -361,6 +378,7 @@ describe('main browser mock', () => {
     expect(source).not.toContain("'已检测到 Codex 中的 GoNavi MCP 记录，但与当前 GoNavi 安装路径不一致，建议更新'");
     expect(source).not.toContain("'已写入 Claude Code 用户级 MCP 配置，重启 Claude CLI 后可在 /mcp 的 User MCPs 中看到 GoNavi。'");
     expect(source).not.toContain("'已写入 Codex 用户级 MCP 配置，重启 Codex CLI 或桌面端后可看到 GoNavi。'");
+    expect(source).not.toContain("'已写入 OpenCode 用户级 MCP 配置，重启 OpenCode 后可看到 GoNavi。'");
   });
 
   it('waits for store hydration before syncing an explicit persisted language over a different system language', async () => {

@@ -385,15 +385,17 @@ func TestRedisTestConnectionUsesIsolatedClientAndClosesIt(t *testing.T) {
 		CloseAllRedisClients()
 	}()
 	CloseAllRedisClients()
-	if _, err := setGlobalProxyConfig(false, proxySnapshot.Proxy); err != nil {
-		t.Fatalf("disable global proxy failed: %v", err)
+	if _, err := setGlobalProxyConfig(true, connection.ProxyConfig{Type: "socks5", Host: "127.0.0.1", Port: 1080}); err != nil {
+		t.Fatalf("enable global proxy failed: %v", err)
 	}
 
 	client := &capturingRedisClient{}
+	var dialConfig connection.ConnectionConfig
 	newRedisClientFunc = func() redislib.RedisClient {
 		return client
 	}
 	resolveDialConfigWithProxyFunc = func(raw connection.ConnectionConfig) (connection.ConnectionConfig, error) {
+		dialConfig = raw
 		return raw, nil
 	}
 
@@ -412,6 +414,9 @@ func TestRedisTestConnectionUsesIsolatedClientAndClosesIt(t *testing.T) {
 	}
 	if len(redisCache) != 0 {
 		t.Fatalf("redis test connection must not write global redis cache, got %d entries", len(redisCache))
+	}
+	if dialConfig.UseProxy {
+		t.Fatalf("global proxy must not be applied to Redis connections, got %+v", dialConfig)
 	}
 }
 

@@ -970,6 +970,15 @@ func (r *kafkaGoRuntime) partitionOffsets(ctx context.Context, topic string, par
 	return conn.ReadOffsets()
 }
 
+type kafkaOffsetSeeker interface {
+	Seek(offset int64, whence int) (int64, error)
+}
+
+func seekKafkaAbsoluteOffset(conn kafkaOffsetSeeker, offset int64) error {
+	_, err := conn.Seek(offset, kafka.SeekAbsolute)
+	return err
+}
+
 func (r *kafkaGoRuntime) fetchPartitionMessages(ctx context.Context, topic string, partitionID int, startOffset int64, limit int) ([]kafkaMessageRecord, error) {
 	conn, err := r.dialer.DialLeader(ctx, "tcp", r.bootstrap, topic, partitionID)
 	if err != nil {
@@ -977,7 +986,7 @@ func (r *kafkaGoRuntime) fetchPartitionMessages(ctx context.Context, topic strin
 	}
 	defer conn.Close()
 
-	if _, err := conn.Seek(startOffset, io.SeekStart); err != nil {
+	if err := seekKafkaAbsoluteOffset(conn, startOffset); err != nil {
 		return nil, err
 	}
 	deadline := time.Now().Add(r.readWait)

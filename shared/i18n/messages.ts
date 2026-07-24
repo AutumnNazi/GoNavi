@@ -649,9 +649,16 @@ export const messages: Record<SupportedLanguage, Record<MessageKey, string>> = {
       "仅在跳板机 token 或长连接会话需要定期续期时开启。",
     "connection.modal.network.keepAliveInterval.label": "探活间隔 (分钟)",
     "connection.modal.network.keepAliveInterval.help":
-      "后台会按这个间隔对已建立的缓存连接执行 Ping，默认 240 分钟。",
+      "后台会按这个间隔对已建立的缓存连接执行 Ping 或自定义探活 SQL，默认 240 分钟。",
     "connection.modal.network.keepAliveInterval.range":
       "探活间隔范围: 1-1440 分钟",
+    "connection.modal.network.keepAliveSQL.label": "自定义探活 SQL",
+    "connection.modal.network.keepAliveSQL.help":
+      "留空时使用驱动 Ping；仅允许一条 SELECT/WITH，请使用只返回少量数据的轻量查询和数据库只读账号。配置会随连接明文保存，请勿填写凭证。",
+    "connection.modal.network.keepAliveSQL.maxLength":
+      "自定义探活 SQL 不能超过 4096 个字符",
+    "connection.modal.network.keepAliveSQL.readOnly":
+      "自定义探活 SQL 仅允许一条 SELECT 或 WITH 语句",
     "connection.modal.appearance.title": "外观",
     "connection.modal.appearance.description": "自定义图标与颜色",
     "connection.modal.appearance.icon": "图标",
@@ -672,7 +679,7 @@ export const messages: Record<SupportedLanguage, Record<MessageKey, string>> = {
     "driver.guidance.localImportSingleFileHelp":
       "行内“导入驱动包”仅用于单个驱动文件/总包（如 `mariadb-driver-agent`、`mariadb-driver-agent.exe`、`GoNavi-DriverAgents.zip`），不支持直接导入 JDBC Jar；批量导入请使用上方“导入驱动目录”。",
     "driver.guidance.customConnectionDriverHelp":
-      "已支持: mysql, starrocks, oceanbase, postgres, opengauss, sqlite, oracle, dm, kingbase；别名支持 postgresql/pgx、open_gauss/open-gauss、dm8、kingbase8/kingbasees/kingbasev8。请填写 GoNavi 已注册的 Go database/sql 驱动名，不能直接填写系统 ODBC/JDBC 驱动名或导入 JDBC Jar。",
+      "已支持: mysql, starrocks, oceanbase, postgres, opengauss, sqlite, oracle, dm, kingbase, clickhouse；别名支持 postgresql/pgx、open_gauss/open-gauss、dm8、kingbase8/kingbasees/kingbasev8。ClickHouse 自定义连接可填写 clickhouse://、http(s)://、jdbc:clickhouse:// 或 jdbc:ch:// DSN，并复用 GoNavi ClickHouse driver-agent，不会加载 JDBC Jar。其他驱动请填写 GoNavi 已注册的 Go database/sql 驱动名，不能直接填写系统 ODBC/JDBC 驱动名。",
     "driver.modal.title": "驱动管理",
     "driver.modal.footer.refresh": "刷新",
     "driver.modal.footer.networkCheck": "网络检测",
@@ -1549,9 +1556,16 @@ export const messages: Record<SupportedLanguage, Record<MessageKey, string>> = {
     "connection.modal.network.keepAliveInterval.label":
       "Keep-alive interval (minutes)",
     "connection.modal.network.keepAliveInterval.help":
-      "GoNavi pings established cached connections at this interval. Default is 240 minutes.",
+      "GoNavi runs Ping or the custom keep-alive SQL on established cached connections at this interval. Default is 240 minutes.",
     "connection.modal.network.keepAliveInterval.range":
       "Keep-alive interval must be between 1 and 1440 minutes.",
+    "connection.modal.network.keepAliveSQL.label": "Custom keep-alive SQL",
+    "connection.modal.network.keepAliveSQL.help":
+      "Leave blank to use the driver Ping. Only one SELECT/WITH statement is allowed; use a lightweight query that returns little data and a database account with read-only permissions. This value is stored in plain text with the connection; do not include credentials.",
+    "connection.modal.network.keepAliveSQL.maxLength":
+      "Custom keep-alive SQL cannot exceed 4096 characters.",
+    "connection.modal.network.keepAliveSQL.readOnly":
+      "Custom keep-alive SQL must be one SELECT or WITH statement.",
     "connection.modal.appearance.title": "Appearance",
     "connection.modal.appearance.description": "Custom icon and color",
     "connection.modal.appearance.icon": "Icon",
@@ -1574,7 +1588,7 @@ export const messages: Record<SupportedLanguage, Record<MessageKey, string>> = {
     "driver.guidance.localImportSingleFileHelp":
       "The inline \"Import driver package\" action only accepts a single driver file or bundle (for example `mariadb-driver-agent`, `mariadb-driver-agent.exe`, `GoNavi-DriverAgents.zip`). It does not import JDBC Jar directly. Use \"Import driver directory\" above for batch import.",
     "driver.guidance.customConnectionDriverHelp":
-      "Supported: mysql, starrocks, oceanbase, postgres, opengauss, sqlite, oracle, dm, kingbase; aliases include postgresql/pgx, open_gauss/open-gauss, dm8, kingbase8/kingbasees/kingbasev8. Enter a Go database/sql driver name already registered by GoNavi. Do not enter a system ODBC/JDBC driver name directly or import a JDBC Jar.",
+      "Supported: mysql, starrocks, oceanbase, postgres, opengauss, sqlite, oracle, dm, kingbase, clickhouse; aliases include postgresql/pgx, open_gauss/open-gauss, dm8, kingbase8/kingbasees/kingbasev8. ClickHouse custom connections accept clickhouse://, http(s)://, jdbc:clickhouse://, or jdbc:ch:// DSNs and reuse the GoNavi ClickHouse driver-agent; no JDBC Jar is loaded. For other drivers, enter a Go database/sql driver name already registered by GoNavi, not a system ODBC/JDBC driver name.",
     "driver.modal.title": "Driver Manager",
     "driver.modal.footer.refresh": "Refresh",
     "driver.modal.footer.networkCheck": "Network check",

@@ -136,6 +136,44 @@ func TestMilvusGetDatabasesPostsJSONObject(t *testing.T) {
 	}
 }
 
+func TestMilvusGetDatabasesFallsBackWhenDatabaseListIsUnsupported(t *testing.T) {
+	collectionListCalls := 0
+	server := newMockMilvusServer(t, func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case isMilvusCollectionListRequest(r):
+			collectionListCalls++
+			if body := decodeMilvusRequest(t, r); body["dbName"] != defaultMilvusDatabase {
+				t.Fatalf("list body = %#v", body)
+			}
+			writeMilvusJSON(w, []string{"products"})
+		case r.Method == http.MethodPost && r.URL.Path == milvusDatabasesListPath:
+			http.NotFound(w, r)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+
+	db := newTestMilvusDB(t, server.URL)
+	databases, err := db.GetDatabases()
+	if err != nil {
+		t.Fatalf("GetDatabases should fall back to the configured database: %v", err)
+	}
+	if strings.Join(databases, ",") != defaultMilvusDatabase {
+		t.Fatalf("databases = %v, want [%s]", databases, defaultMilvusDatabase)
+	}
+
+	tables, err := db.GetTables(databases[0])
+	if err != nil {
+		t.Fatalf("GetTables failed after database fallback: %v", err)
+	}
+	if strings.Join(tables, ",") != "products" {
+		t.Fatalf("tables = %v, want [products]", tables)
+	}
+	if collectionListCalls != 3 {
+		t.Fatalf("collection list calls = %d, want 3", collectionListCalls)
+	}
+}
+
 func TestMilvusGetTablesUsesRESTV2CollectionList(t *testing.T) {
 	server := newMockMilvusServer(t, func(w http.ResponseWriter, r *http.Request) {
 		if isMilvusCollectionListRequest(r) {

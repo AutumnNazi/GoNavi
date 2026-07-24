@@ -1,4 +1,5 @@
 import type { ColumnDefinition, ForeignKeyDefinition } from '../types';
+import { extractTableNameFromMetadataRow } from '../utils/tableMetadataRows';
 
 export type ErDiagramRelationDirection = 'incoming' | 'outgoing' | 'self';
 
@@ -160,16 +161,7 @@ export const extractErTableNames = (rows: unknown): string[] => {
   const seen = new Set<string>();
   const result: string[] = [];
   rows.forEach((row) => {
-    const candidate = readText(row, [
-      'table',
-      'Table',
-      'TABLE',
-      'tableName',
-      'TableName',
-      'TABLE_NAME',
-      'name',
-      'Name',
-    ]) || String(Object.values((row as Record<string, unknown>) || {})[0] || '').trim();
+    const candidate = extractTableNameFromMetadataRow(row);
     const normalized = normalizeErQualifiedName(candidate);
     if (!normalized || seen.has(normalized)) {
       return;

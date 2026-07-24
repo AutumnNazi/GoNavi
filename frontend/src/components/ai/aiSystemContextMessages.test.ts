@@ -329,6 +329,7 @@ describe('buildAISystemContextMessages', () => {
     }
     expect(joined).toContain('call inspect_app_health first');
     expect(joined).toContain('call inspect_sql_risk first');
+    expect(joined).toContain('Claude/Codex/OpenCode');
     expect(joined).toContain('Existing connections');
     expect(joined).toContain('The user has provided an additional global prompt');
     expect(joined).toContain('回答前先核对上下文。');

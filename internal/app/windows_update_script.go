@@ -9,12 +9,14 @@ import (
 var windowsUpdatePowerShellScript string
 
 type windowsUpdateLaunchContext struct {
-	SourcePath        string
-	TargetPath        string
-	CurrentTargetPath string
-	StagedDir         string
-	LogPath           string
-	PID               int
+	SourcePath           string
+	TargetPath           string
+	CurrentTargetPath    string
+	StagedDir            string
+	LogPath              string
+	MaintenanceEventName string
+	HandoffEventName     string
+	PID                  int
 }
 
 func buildWindowsPowerShellScript() string {

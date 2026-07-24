@@ -1,8 +1,10 @@
 import React from 'react';
-import { Input, Button, Switch, Tooltip } from 'antd';
+import { createPortal } from 'react-dom';
+import { ConfigProvider, Input, Button, Switch, Tooltip } from 'antd';
 import { SearchOutlined, ReloadOutlined, TableOutlined, RobotOutlined } from '@ant-design/icons';
 import { noAutoCapInputProps } from '../../utils/inputAutoCap';
 import { t } from '../../i18n';
+import { APP_COMMAND_PALETTE_Z_INDEX } from '../../utils/overlayZIndex';
 
 // V2 Command Search 子组件（从 Sidebar.tsx 抽取）。
 //
@@ -65,7 +67,7 @@ const SidebarSearchPanel = <TItem extends V2CommandSearchItemLike>({
   inputRef,
   handlers,
 }: SidebarSearchPanelProps<TItem>) => {
-  if (!isOpen) return null;
+  if (!isOpen || typeof document === 'undefined') return null;
 
   const emptyCopy = aiMode
     ? t('sidebar.command_search.empty.ai')
@@ -103,8 +105,13 @@ const SidebarSearchPanel = <TItem extends V2CommandSearchItemLike>({
     );
   };
 
-  return (
-    <div className="gn-v2-command-backdrop" data-v2-command-search="true" onMouseDown={handlers.onClose}>
+  const panel = (
+    <div
+      className="gn-v2-command-backdrop"
+      data-v2-command-search="true"
+      style={{ zIndex: APP_COMMAND_PALETTE_Z_INDEX }}
+      onMouseDown={handlers.onClose}
+    >
       <div
         className="gn-v2-command-palette"
         role="dialog"
@@ -161,6 +168,13 @@ const SidebarSearchPanel = <TItem extends V2CommandSearchItemLike>({
         </div>
       </div>
     </div>
+  );
+
+  return createPortal(
+    <ConfigProvider theme={{ token: { zIndexPopupBase: APP_COMMAND_PALETTE_Z_INDEX } }}>
+      {panel}
+    </ConfigProvider>,
+    document.body,
   );
 };
 

@@ -308,6 +308,7 @@ export interface ConnectionConfig {
   timeout?: number;
   keepAliveEnabled?: boolean;
   keepAliveIntervalMinutes?: number;
+  keepAliveSQL?: string;
   redisDB?: number; // Redis database index
   uri?: string; // Connection URI for copy/paste
   clickHouseProtocol?: "auto" | "http" | "native"; // ClickHouse connection protocol override
@@ -354,8 +355,14 @@ export interface SavedConnection {
   hasOpaqueDSN?: boolean;
   includeDatabases?: string[];
   includeRedisDatabases?: number[]; // Redis databases to show
+  schemaVisibilityByDatabase?: Record<string, SchemaVisibilityRule>;
   iconType?: string; // 自定义图标类型（如 'mysql','postgres'），不填则取 config.type
   iconColor?: string; // 自定义图标颜色（十六进制），不填则取类型默认色
+}
+
+export interface SchemaVisibilityRule {
+  mode: 'include' | 'exclude';
+  schemas: string[];
 }
 
 export interface GlobalProxyConfig extends ProxyConfig {
@@ -367,7 +374,17 @@ export interface GlobalProxyConfig extends ProxyConfig {
 export interface ConnectionTag {
   id: string;
   name: string;
+  /**
+   * Parent group id. An omitted value keeps the group at the sidebar root.
+   * Hosts are always owned by exactly one direct group, while groups can nest.
+   */
+  parentTagId?: string;
   connectionIds: string[];
+  /**
+   * Direct child display order. Entries use the same `tag:<id>` and
+   * `connection:<id>` tokens as the sidebar root order.
+   */
+  childOrder?: string[];
 }
 
 export interface ColumnDefinition {
@@ -404,6 +421,7 @@ export interface TriggerDefinition {
 }
 
 export type TableExportScope = "selected" | "page" | "all" | "filteredAll";
+export type TableExportContentMode = "schema" | "dataOnly" | "backup";
 
 export interface TableExportScopeOption {
   value: TableExportScope;
@@ -445,8 +463,10 @@ export interface TabData {
     | "query"
     | "table"
     | "design"
+    | "data-sync"
     | "sql-file-execution"
     | "sql-analysis"
+    | "sql-audit"
     | "redis-keys"
     | "redis-command"
     | "redis-monitor"
@@ -458,6 +478,7 @@ export interface TabData {
     | "package-def"
     | "table-overview"
     | "table-export"
+    | "data-import"
     | "jvm-overview"
     | "jvm-resource"
     | "jvm-audit"
@@ -492,15 +513,24 @@ export interface TabData {
   sidebarLocateKey?: string; // Precise sidebar tree key for locating an object node
   savedQueryId?: string; // Saved query identity for quick-save behavior
   objectType?: 'table' | 'view' | 'materialized-view'; // Table-like object type for shared viewers
-  exportWorkbenchMode?: 'single' | 'batch-tables' | 'batch-databases';
+  exportWorkbenchMode?: 'single' | 'batch-tables' | 'batch-databases' | 'database' | 'schema';
+  dataSyncEntryMode?: 'sync' | 'schemaCompare' | 'dataCompare';
   tableExportScopeOptions?: TableExportScopeOption[];
   tableExportInitialScope?: TableExportScope;
   tableExportQueryByScope?: Partial<Record<TableExportScope, string>>;
   tableExportRowCountByScope?: Partial<Record<TableExportScope, number>>;
+  tableExportInitialObjectNames?: string[];
+  tableExportInitialDatabaseNames?: string[];
+  tableExportContentMode?: TableExportContentMode;
+  tableExportIncludeDropIfExists?: boolean;
+  tableExportRequestKey?: string;
+  dataImportRunning?: boolean;
   sqlFileExecutionRequestKey?: string;
   sqlFileExecutionFileSizeMB?: string;
   sqlAnalysisView?: "diagnose" | "slow-query";
   sqlAnalysisRequestKey?: string;
+  sqlAuditTransactionId?: string;
+  sqlAuditRequestKey?: string;
   formatRestoreSnapshot?: {
     query: string;
     createdAt: number;
@@ -539,6 +569,17 @@ export interface SavedQuery {
   fingerprintVersion?: string;
   bindingStatus?: "active" | "rebound" | "orphan" | string;
   originalConnectionId?: string;
+}
+
+export interface SavedQueryGroup {
+  id: string;
+  name: string;
+  parentGroupId?: string;
+  queryIds: string[];
+  /**
+   * Mixed direct-child order. Tokens use `query:<id>` and `group:<id>`.
+   */
+  childOrder?: string[];
 }
 
 export interface SqlSnippet {
@@ -605,6 +646,7 @@ export interface StreamEntry {
 // --- AI Types ---
 
 export type AIProviderType = "openai" | "anthropic" | "gemini" | "custom";
+export type AIProviderAuthMode = "api-key" | "local-cli";
 export type AISafetyLevel = "readonly" | "readwrite" | "full";
 export type AIContextLevel = "schema_only" | "with_samples" | "with_results";
 
@@ -619,13 +661,14 @@ export interface AIProviderConfig {
   type: AIProviderType;
   name: string;
   apiKey: string;
+  authMode?: AIProviderAuthMode;
   secretRef?: string;
   hasSecret?: boolean;
   baseUrl: string;
   model: string;
   inlineCompletionModel?: string;
   models?: string[];
-  apiFormat?: string; // custom 专用: openai | anthropic | gemini | cursor-agent | claude-cli | codebuddy-cli
+  apiFormat?: string; // openai 可选 openai-responses；custom 支持 openai/anthropic/gemini/CLI 等格式
   headers?: Record<string, string>;
   maxTokens: number;
   temperature: number;
@@ -690,6 +733,8 @@ export interface AIMCPClientInstallStatus {
 }
 
 export interface AIMCPHTTPServerStatus {
+  /** 用户持久化的启用意图；与真实进程运行状态分离。 */
+  enabled?: boolean;
   running: boolean;
   addr: string;
   path: string;

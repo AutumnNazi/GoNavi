@@ -67,6 +67,8 @@ func normalizeOpenAICompatibleBaseURLString(raw string) string {
 	switch {
 	case strings.HasSuffix(lower, "/chat/completions"):
 		normalized = normalized[:len(normalized)-len("/chat/completions")]
+	case strings.HasSuffix(lower, "/responses"):
+		normalized = normalized[:len(normalized)-len("/responses")]
 	case strings.HasSuffix(lower, "/models"):
 		normalized = normalized[:len(normalized)-len("/models")]
 	}
@@ -83,6 +85,8 @@ func normalizeOpenAICompatiblePath(path string) string {
 	switch {
 	case strings.HasSuffix(lower, "/chat/completions"):
 		normalized = normalized[:len(normalized)-len("/chat/completions")]
+	case strings.HasSuffix(lower, "/responses"):
+		normalized = normalized[:len(normalized)-len("/responses")]
 	case strings.HasSuffix(lower, "/models"):
 		normalized = normalized[:len(normalized)-len("/models")]
 	}

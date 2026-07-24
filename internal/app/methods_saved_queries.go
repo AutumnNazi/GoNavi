@@ -25,6 +25,13 @@ func (a *App) GetSavedQueries() ([]connection.SavedQuery, error) {
 	return resolveSavedQueryBindings(queries, currentConnections, nil), nil
 }
 
+func (a *App) GetSavedQueryGroups() ([]connection.SavedQueryGroup, error) {
+	savedQueriesMu.Lock()
+	defer savedQueriesMu.Unlock()
+
+	return a.savedQueryRepository().loadGroups()
+}
+
 func (a *App) SaveQuery(input connection.SavedQuery) (connection.SavedQuery, error) {
 	if strings.TrimSpace(input.Name) == "" {
 		input.Name = a.localizedSavedQueryDefaultName(0)
@@ -59,6 +66,31 @@ func (a *App) localizedSavedQueryDefaultName(index int) string {
 
 func (a *App) DeleteQuery(id string) error {
 	return a.savedQueryRepository().Delete(id)
+}
+
+// SaveSavedQueryGroup creates or fully replaces a saved SQL group. Callers
+// must submit the current parent, query IDs, and child order; query IDs in the
+// submitted group become owned by that direct group only.
+func (a *App) SaveSavedQueryGroup(input connection.SavedQueryGroup) (connection.SavedQueryGroup, error) {
+	return a.savedQueryRepository().SaveGroup(input)
+}
+
+// DeleteSavedQueryGroup removes a group and promotes its direct queries and
+// child groups to the deleted group's parent when it has one.
+func (a *App) DeleteSavedQueryGroup(id string) error {
+	return a.savedQueryRepository().DeleteGroup(id)
+}
+
+// MoveSavedQueryToGroup moves a saved query to a direct group. An empty group
+// id makes the query ungrouped.
+func (a *App) MoveSavedQueryToGroup(queryID string, groupID string) error {
+	return a.savedQueryRepository().MoveQueryToGroup(queryID, groupID)
+}
+
+// MoveSavedQueryGroup reparents a saved-query group. An empty parent id moves
+// it to the root level.
+func (a *App) MoveSavedQueryGroup(groupID string, parentGroupID string) error {
+	return a.savedQueryRepository().MoveGroup(groupID, parentGroupID)
 }
 
 func (a *App) RebindSavedQuery(id string, connectionID string) (connection.SavedQuery, error) {

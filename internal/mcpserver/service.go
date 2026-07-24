@@ -546,7 +546,7 @@ func (s *Service) ExecuteSQL(ctx context.Context, req *mcp.CallToolRequest, args
 	}
 
 	dbName := effectiveDBName(args.DBName, view.Config)
-	queryResult := s.backend.DBQueryMulti(view.Config, dbName, sqlText, "")
+	queryResult := s.backend.ExecuteSQLFromMCP(view.Config, dbName, sqlText)
 	if !queryResult.Success {
 		return toolError("SQL 执行失败: %s", strings.TrimSpace(queryResult.Message)), executeSQLResult{}, nil
 	}

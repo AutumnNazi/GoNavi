@@ -682,7 +682,7 @@ func (a *App) getRedisClient(config connection.ConnectionConfig) (redis.RedisCli
 		return nil, wrapped
 	}
 
-	effectiveConfig := applyGlobalProxyToConnection(resolvedConfig)
+	effectiveConfig := resolvedConfig
 	connectConfig, proxyErr := resolveDialConfigWithProxyFunc(effectiveConfig)
 	if proxyErr != nil {
 		wrapped := wrapConnectError(effectiveConfig, proxyErr)
@@ -735,7 +735,7 @@ func (a *App) openRedisClientIsolated(config connection.ConnectionConfig) (redis
 		return nil, wrapped
 	}
 
-	effectiveConfig := applyGlobalProxyToConnection(resolvedConfig)
+	effectiveConfig := resolvedConfig
 	connectConfig, proxyErr := resolveDialConfigWithProxyFunc(effectiveConfig)
 	if proxyErr != nil {
 		wrapped := wrapConnectError(effectiveConfig, proxyErr)
@@ -824,7 +824,7 @@ func (a *App) releaseRedisClientsForConfig(config connection.ConnectionConfig) (
 	if err != nil {
 		return 0, wrapConnectError(config, err)
 	}
-	targetKey := getConnectionReleaseMatchKey(applyGlobalProxyToConnection(resolvedConfig))
+	targetKey := getConnectionReleaseMatchKey(resolvedConfig)
 	closed := 0
 
 	redisCacheMu.Lock()

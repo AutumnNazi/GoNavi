@@ -298,7 +298,7 @@ export default function CustomThemeManager({ legacyMode = false }: CustomThemeMa
               return (
                 <label
                   key={preset.id}
-                  className={`gonavi-custom-theme-preset-card${active ? ' is-active' : ''}`}
+                  className={`gonavi-custom-theme-preset-option${active ? ' is-active' : ''}`}
                   style={previewStyle}
                 >
                   <input

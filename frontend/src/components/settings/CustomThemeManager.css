@@ -60,34 +60,38 @@
 .gonavi-custom-theme-preset-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(180px, 100%), 1fr));
-  gap: 9px;
+  column-gap: 12px;
+  row-gap: 0;
   min-width: 0;
+  border-top: 1px solid var(--gn-settings-line, var(--gn-br-2, #e2e8f0));
 }
 
-.gonavi-custom-theme-preset-card {
+.gonavi-custom-theme-preset-option {
   position: relative;
   display: grid;
   gap: 8px;
   min-width: 0;
-  padding: 9px;
+  padding: 9px 8px;
   overflow: hidden;
-  border: 1px solid var(--gn-settings-line, var(--gn-br-2, #e2e8f0));
-  border-radius: 11px;
-  background: var(--gn-settings-card-bg, var(--gn-bg-panel, #fff));
+  border: 0;
+  border-left: 3px solid transparent;
+  border-bottom: 1px solid var(--gn-settings-line, var(--gn-br-2, #e2e8f0));
+  border-radius: 0;
+  background: transparent;
   color: inherit;
   cursor: pointer;
-  transition: border-color 120ms ease, box-shadow 120ms ease, transform 120ms ease;
+  transition: border-color 120ms ease, background-color 120ms ease;
 }
 
-.gonavi-custom-theme-preset-card:hover {
-  border-color: color-mix(in srgb, var(--gonavi-preset-accent) 52%, var(--gn-settings-line, #e2e8f0));
-  transform: translateY(-1px);
+.gonavi-custom-theme-preset-option:hover {
+  background: color-mix(in srgb, var(--gonavi-preset-accent) 5%, transparent);
 }
 
-.gonavi-custom-theme-preset-card:focus-within,
-.gonavi-custom-theme-preset-card.is-active {
-  border-color: var(--gonavi-preset-accent);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--gonavi-preset-accent) 42%, transparent);
+.gonavi-custom-theme-preset-option:focus-within,
+.gonavi-custom-theme-preset-option.is-active {
+  border-left-color: var(--gonavi-preset-accent);
+  box-shadow: none;
+  background: color-mix(in srgb, var(--gonavi-preset-accent) 10%, transparent);
 }
 
 .gonavi-custom-theme-preset-preview {
@@ -348,19 +352,22 @@ body[data-theme='dark'] .gonavi-custom-theme-manager.is-legacy {
   grid-template-rows: auto auto auto;
   min-width: 0;
   overflow: hidden;
-  border: 1px solid var(--gn-settings-line, var(--gn-br-2, #e2e8f0));
-  border-radius: 12px;
-  background: var(--gn-settings-card-bg, var(--gn-bg-panel, #fff));
-  transition: border-color 120ms ease, box-shadow 120ms ease, transform 120ms ease;
+  border: 0;
+  border-left: 3px solid transparent;
+  border-bottom: 1px solid var(--gn-settings-line, var(--gn-br-2, #e2e8f0));
+  border-radius: 0;
+  background: transparent;
+  transition: border-color 120ms ease, background-color 120ms ease;
 }
 
 .gonavi-custom-theme-card:hover {
-  border-color: color-mix(in srgb, var(--gonavi-custom-theme-preview-accent, var(--gn-accent, #16a34a)) 42%, var(--gn-settings-line, #e2e8f0));
+  background: color-mix(in srgb, var(--gonavi-custom-theme-preview-accent, var(--gn-accent, #16a34a)) 5%, transparent);
 }
 
 .gonavi-custom-theme-card.is-active {
-  border-color: var(--gonavi-custom-theme-preview-accent, var(--gn-settings-accent, var(--gn-accent, #16a34a)));
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--gonavi-custom-theme-preview-accent, var(--gn-accent, #16a34a)) 38%, transparent);
+  border-left-color: var(--gonavi-custom-theme-preview-accent, var(--gn-settings-accent, var(--gn-accent, #16a34a)));
+  box-shadow: none;
+  background: color-mix(in srgb, var(--gonavi-custom-theme-preview-accent, var(--gn-accent, #16a34a)) 10%, transparent);
 }
 
 .gonavi-custom-theme-select {
@@ -534,7 +541,7 @@ body[data-theme='dark'] .gonavi-custom-theme-manager.is-legacy {
     transition: none;
   }
 
-  .gonavi-custom-theme-preset-card {
+  .gonavi-custom-theme-preset-option {
     transition: none;
   }
 }

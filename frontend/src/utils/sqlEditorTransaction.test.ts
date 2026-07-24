@@ -6,12 +6,32 @@ import {
   shouldUseSqlEditorManagedTransaction,
   shouldUseSqlEditorManagedTransactionForType,
 } from './sqlEditorTransaction';
+import { findSqlStatementRanges } from './sqlStatementSelection';
 
 describe('sqlEditorTransaction', () => {
   it('keeps regular DML in a managed transaction', () => {
     expect(shouldUseSqlEditorManagedTransaction(['UPDATE users SET name = "n" WHERE id = 1'])).toBe(true);
     expect(shouldUseSqlEditorManagedTransaction(['INSERT INTO users(id) VALUES (1)'])).toBe(true);
     expect(shouldUseSqlEditorManagedTransaction(['DELETE FROM users WHERE id = 1'])).toBe(true);
+  });
+
+  it('keeps DML with a trailing line comment in a managed transaction', () => {
+    const sql = 'DELETE FROM users WHERE id = 1; -- keep this operation pending';
+    const statements = findSqlStatementRanges(sql).map((range) => range.text);
+
+    expect(statements).toEqual(['DELETE FROM users WHERE id = 1']);
+    expect(shouldUseSqlEditorManagedTransactionForType('mysql', statements)).toBe(true);
+  });
+
+  it('uses dialect-specific rules for compact line comments', () => {
+    const sql = 'DELETE FROM users WHERE id = 1;--comment';
+    const postgresStatements = findSqlStatementRanges(sql, 'postgres').map((range) => range.text);
+    const mysqlStatements = findSqlStatementRanges(sql, 'mysql').map((range) => range.text);
+
+    expect(postgresStatements).toEqual(['DELETE FROM users WHERE id = 1']);
+    expect(shouldUseSqlEditorManagedTransactionForType('postgres', postgresStatements)).toBe(true);
+    expect(mysqlStatements).toEqual(['DELETE FROM users WHERE id = 1', '--comment']);
+    expect(shouldUseSqlEditorManagedTransactionForType('mysql', mysqlStatements)).toBe(false);
   });
 
   it('classifies WITH statements by their top-level operation', () => {
@@ -44,6 +64,36 @@ describe('sqlEditorTransaction', () => {
     expect(shouldUseSqlEditorManagedTransaction([
       'START TRANSACTION',
       'DELETE FROM users WHERE id = 1',
+    ])).toBe(false);
+  });
+
+  it('keeps DML inside anonymous BEGIN...END blocks in a managed transaction', () => {
+    const sqlServerBlock = [
+      'BEGIN',
+      "  PRINT 'DELETE is text here';",
+      '  -- INSERT INTO audit_logs(id) VALUES (1);',
+      "  UPDATE users SET name = 'new' WHERE id = 1;",
+      'END;',
+    ].join('\n');
+    const oracleBlock = [
+      'BEGIN',
+      "  UPDATE users SET name = 'new' WHERE id = 1;",
+      'END;',
+    ].join('\n');
+
+    expect(shouldUseSqlEditorManagedTransactionForType(
+      'sqlserver',
+      findSqlStatementRanges(sqlServerBlock, 'sqlserver').map((range) => range.text),
+    )).toBe(true);
+    expect(shouldUseSqlEditorManagedTransactionForType(
+      'oracle',
+      findSqlStatementRanges(oracleBlock, 'oracle').map((range) => range.text),
+    )).toBe(true);
+  });
+
+  it('does not wrap BEGIN TRANSACTION as an anonymous block', () => {
+    expect(shouldUseSqlEditorManagedTransactionForType('sqlserver', [
+      "BEGIN TRANSACTION; UPDATE users SET name = 'new' WHERE id = 1; COMMIT TRANSACTION;",
     ])).toBe(false);
   });
 

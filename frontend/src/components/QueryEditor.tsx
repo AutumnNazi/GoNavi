@@ -11,20 +11,25 @@ import { GONAVI_ROW_KEY } from './DataGrid';
 import { EventsOn } from '../../wailsjs/runtime';
 import { findConnectionMutatingStatements } from '../utils/connectionReadOnly';
 import { getDataSourceCapabilities } from '../utils/dataSourceCapabilities';
+import type { GridSortInfoItem } from '../utils/dataGridSort';
 import { applyMongoQueryAutoLimit, convertMongoShellToJsonCommand } from "../utils/mongodb";
 import { getShortcutDisplayLabel, getShortcutPlatform, getShortcutPrimaryModifierDisplayLabel, isEditableElement, isImeComposingKeyEvent, isShortcutMatch, comboToMonacoKeyBinding, normalizeShortcutCombo, resolveShortcutBinding } from "../utils/shortcuts";
 import { useAutoFetchVisibility } from '../utils/autoFetchVisibility';
 import { buildRpcConnectionConfig } from '../utils/connectionRpcConfig';
 import { isPostgresSchemaDialect } from '../utils/connectionDriverType';
+import { resolveOceanBaseProtocolFromConfig } from '../utils/oceanBaseProtocol';
 import { isOracleLikeDialect, resolveSqlDialect, resolveSqlFunctions, resolveSqlKeywords } from '../utils/sqlDialect';
 import { applyQueryAutoLimit } from '../utils/queryAutoLimit';
 import {
+    buildQueryResultCountSql,
     buildQueryResultPageSql,
     createInitialQueryResultPagination,
+    parseQueryResultTotalCount,
     resolveQueryResultPaginationTotal,
 } from '../utils/queryResultPagination';
 import { extractQueryResultTableRef, type QueryResultTableRef } from '../utils/queryResultTable';
 import { quoteIdentPart, quoteQualifiedIdent } from '../utils/sql';
+import { extractTableNameFromMetadataRow } from '../utils/tableMetadataRows';
 import { formatSqlExecutionError, hasLocalizedSqlTimeoutKeyword } from '../utils/sqlErrorSemantics';
 import { canReusePendingSqlEditorTransactionForType, shouldUseSqlEditorManagedTransactionForType } from '../utils/sqlEditorTransaction';
 import { findSqlStatementRanges, resolveCurrentSqlStatementRange, resolveExecutableSql } from '../utils/sqlStatementSelection';
@@ -32,6 +37,10 @@ import { isMacLikePlatform } from '../utils/appearance';
 import { splitSidebarQualifiedName } from '../utils/sidebarLocate';
 import { buildMySQLCompatibleViewMetadataSqls, isSidebarViewTableType, normalizeSidebarViewName } from '../utils/sidebarMetadata';
 import { SIDEBAR_SQL_EDITOR_DRAG_MIME, decodeSidebarSqlEditorDragPayload, hasSidebarSqlEditorDragPayload } from '../utils/sidebarSqlDrag';
+import {
+    CLOSE_ACTIVE_RESULT_TAB_EVENT,
+    type CloseActiveResultShortcutRequest,
+} from '../utils/closeTabShortcut';
 import { resolveUniqueKeyGroupsFromIndexes } from './dataGridCopyInsert';
 import { t as translate } from '../i18n';
 import { buildSqlAnalysisWorkbenchTab } from '../utils/sqlAnalysisTab';
@@ -60,6 +69,11 @@ import {
     takeQueryEditorResultSession,
 } from '../utils/queryEditorResultSessionCache';
 import { buildEditableTriggerSql } from '../utils/triggerEditSql';
+import { openNativeQueryResultWindow } from '../utils/nativeDetachedWindowHost';
+import {
+    isNativeDetachedWindow,
+    NATIVE_DETACHED_QUERY_RESULT_REDETACH_EVENT,
+} from '../utils/nativeDetachedWindowClient';
 import {
     getColumnDefinitionComment,
     getColumnDefinitionKey,
@@ -68,6 +82,7 @@ import {
 } from '../utils/columnDefinition';
 import QueryEditorResultsPanel, {
     QUERY_EDITOR_SQL_LOG_TAB_KEY,
+    resolveEffectiveActiveResultKey,
     type QueryEditorResultSet,
 } from './QueryEditorResultsPanel';
 import ResultDiffWizard from './resultDiff/ResultDiffWizard';
@@ -91,12 +106,14 @@ import {
     type CompletionPackageMeta,
     type CompletionRoutineMeta,
     type CompletionSequenceMeta,
+    type CompletionSynonymMeta,
     type CompletionTableMeta,
     type CompletionTriggerMeta,
     type CompletionViewMeta,
     type QueryEditorNavigationTarget,
     type QueryStatementPlan,
     QUERY_EDITOR_HOVER_DELAY_MS,
+    QUERY_EDITOR_COMPLETION_SUGGESTION_LIMIT,
     QUERY_EDITOR_LIVE_DECORATION_MAX_TEXT_LENGTH,
     QUERY_EDITOR_OBJECT_DECORATION_MAX_TEXT_LENGTH,
     QUERY_EDITOR_PERSISTED_DRAFT_MAX_TEXT_LENGTH,
@@ -105,6 +122,8 @@ import {
     QUERY_EDITOR_SQL_THREE_PART_COMPLETION_REGEX,
     appendCommentToDetail,
     areSqlStatementListsEqual,
+    buildBoundedQueryEditorCompletionSuggestions,
+    createBoundedQueryEditorCompletionCandidateBatch,
     buildCompletionDocumentation,
     buildColumnCompletionDetail,
     buildColumnCompletionDocumentation,
@@ -112,6 +131,7 @@ import {
     buildCompletionMaterializedViewsMetadataQuerySpecs,
     buildCompletionPackagesMetadataQuerySpecs,
     buildCompletionSequencesMetadataQuerySpecs,
+    buildCompletionSynonymsMetadataQuerySpecs,
     buildCompletionTableCommentSQL,
     buildCompletionTriggersMetadataQuerySpecs,
     buildCompletionViewsMetadataQuerySpecs,
@@ -122,7 +142,9 @@ import {
     clearQueryEditorObjectDecorations,
     collectQueryEditorObjectDecorationCandidates,
     collectQueryEditorReferencedDatabaseNames,
+    findCompletionTablesByDatabase,
     getCaseInsensitiveValue,
+    getCompletionTableSchemaCounts,
     getFirstRowValue,
     getNormalizedPositionAtOffset,
     hasQueryEditorCtrlMetaModifier,
@@ -132,6 +154,7 @@ import {
     getQueryEditorDecorationModelTextIfLightweight,
     getQueryEditorObjectResolveText,
     getTabQueryValue,
+    isOracleBaseTableReference,
     isDocumentLevelShortcutTarget,
     isQueryEditorPrimaryMouseButton,
     normalizeCommentText,
@@ -143,6 +166,7 @@ import {
     queryCompletionMetadataRowsBySpecs,
     readSidebarSqlDropText,
     matchLeadingSelectTableReference,
+    materializeBoundedQueryEditorCompletionBatches,
     resolveNewQueryDefaultTemplate,
     resolveEventTargetNode,
     resolveNextResultSetIndex,
@@ -151,11 +175,14 @@ import {
     resolveOracleLikeExecutionSchemaName,
     resolveOracleLikeLookupSchemaCandidates,
     resolveQueryEditorFormatterLanguage,
+    resolveQueryEditorMonacoLanguage,
     resolveQueryEditorHoverTarget,
     resolveQueryEditorNavigationDecorations,
     resolveQueryEditorNavigationTarget,
+    rankQueryEditorCompletionCandidate,
     resolveQueryLocatorPlan,
     rewriteLeadingSelectTableReference,
+    selectUnqualifiedCompletionSynonyms,
     splitCompletionSchemaAndTable,
     splitQueryIdentifierPathSegments,
     stripCompletionIdentifierQuotes,
@@ -195,6 +222,18 @@ const QUERY_EDITOR_MAC_FIND_WITH_SELECTION_GUARD_ACTION_ID = 'gonavi.suppressMac
 const QUERY_EDITOR_AI_INLINE_DEBOUNCE_MS = 220;
 const QUERY_EDITOR_AI_INLINE_CONTEXT_KEY = 'gonaviAiInlineSuggestionVisible';
 const QUERY_EDITOR_IME_FALLBACK_DELAY_MS = 80;
+const EMPTY_QUERY_EDITOR_SQL_LOGS: SqlLog[] = [];
+
+const isOceanBaseOracleConnection = (config: any): boolean => {
+    const type = String(config?.type || '').trim().toLowerCase();
+    const driver = String(config?.driver || '').trim().toLowerCase();
+    if (type !== 'oceanbase' && driver !== 'oceanbase') return false;
+    try {
+        return resolveOceanBaseProtocolFromConfig(config || {}) === 'oracle';
+    } catch {
+        return false;
+    }
+};
 
 const normalizeQueryEditorInlineMemorySqlKey = (sql: string): string => (
     String(sql || '')
@@ -257,7 +296,7 @@ const buildQueryEditorInlineMemoryEntries = ({
     });
 
     sqlLogs.forEach((log) => {
-        if (log.status !== 'success') {
+        if (log.status !== 'success' || log.category === 'transaction') {
             return;
         }
         if (!matchesQueryEditorInlineMemoryDb(currentDb, log.dbName)) {
@@ -276,10 +315,11 @@ const buildQueryEditorInlineMemoryEntries = ({
         .map((entry) => ({ sql: entry.sql }));
 };
 
-const buildQueryEditorMonacoOptions = (isObjectEditQueryTab: boolean) => ({
+const buildQueryEditorMonacoOptions = (isObjectEditQueryTab: boolean, wordWrapEnabled = false) => ({
     minimap: { enabled: false },
     automaticLayout: true,
     fixedOverflowWidgets: true,
+    wordWrap: wordWrapEnabled ? ('on' as const) : ('off' as const),
     find: QUERY_EDITOR_MONACO_FIND_OPTIONS,
     hover: {
         enabled: true,
@@ -865,7 +905,8 @@ const resolveQueryEditorAiConnectionHost = (connection: any): string => {
 
 // HMR 重载时释放旧注册避免补全和 hover 内容重复
 const _g = globalThis as any;
-const SQL_COMPLETION_PROVIDER_VERSION = '20260702-ai-inline-sql-v1';
+const SQL_COMPLETION_PROVIDER_VERSION = '20260718-mysql-language-v1';
+const QUERY_EDITOR_MONACO_LANGUAGE_IDS = ['sql', 'mysql'] as const;
 if (!_g.__gonaviSqlCompletionState) {
     _g.__gonaviSqlCompletionState = { registered: false, version: '', disposables: [] as any[] };
 }
@@ -886,6 +927,15 @@ let sharedAllColumnsData: CompletionColumnMeta[] = [];
 // AI 补全的元数据预热可能把整库列（数十万条）灌入 sharedAllColumnsData，普通补全逐列全量
 // 扫描会阻塞主线程；按 (库, 表名末段) 建索引，并以数组身份为键缓存，数组重新赋值时自动失效。
 const sharedColumnsIndexCache = new WeakMap<CompletionColumnMeta[], Map<string, CompletionColumnMeta[]>>();
+const dedupeCompletionColumnsByName = (columns: CompletionColumnMeta[]): CompletionColumnMeta[] => {
+    const seen = new Set<string>();
+    return columns.filter((column) => {
+        const key = String(column.name || '').trim().toLowerCase();
+        if (!key || seen.has(key)) return false;
+        seen.add(key);
+        return true;
+    });
+};
 const findSharedPreloadedColumns = (dbName: string, tableName: string): CompletionColumnMeta[] => {
     const columns = sharedAllColumnsData;
     let index = sharedColumnsIndexCache.get(columns);
@@ -910,7 +960,7 @@ const findSharedPreloadedColumns = (dbName: string, tableName: string): Completi
         sharedColumnsIndexCache.set(columns, index);
     }
     const key = `${String(dbName || '').toLowerCase()}\u0000${String(tableName || '').toLowerCase()}`;
-    return index.get(key) || [];
+    return dedupeCompletionColumnsByName(index.get(key) || []);
 };
 
 // 普通建议的“相关列”按 SQL 中引用的表标识符（db.table / table / 纯表名）匹配，
@@ -957,6 +1007,7 @@ const collectSharedColumnsForTableIdents = (
 let sharedVisibleDbs: string[] = [];
 let sharedViewsData: CompletionViewMeta[] = [];
 let sharedMaterializedViewsData: CompletionViewMeta[] = [];
+let sharedSynonymsData: CompletionSynonymMeta[] = [];
 let sharedTriggersData: CompletionTriggerMeta[] = [];
 let sharedRoutinesData: CompletionRoutineMeta[] = [];
 let sharedSequencesData: CompletionSequenceMeta[] = [];
@@ -976,10 +1027,7 @@ const clearRecord = (record: Record<string, unknown>) => {
 const QUERY_EDITOR_SQL_SNIPPET_SUGGEST_DETAIL_MIN_HEIGHT = 260;
 
 const getCompletionTableNameFromRow = (row: any): string => (
-    normalizeCommentText(
-        getCaseInsensitiveValue(row, ['table_name', 'TABLE_NAME', 'Table', 'table', 'name', 'Name'])
-            ?? Object.values(row || {})[0],
-    )
+    normalizeCommentText(extractTableNameFromMetadataRow(row))
 );
 
 const getCompletionTableCommentFromRow = (row: any): string => (
@@ -1097,6 +1145,7 @@ const resetSharedQueryEditorMetadata = () => {
     sharedVisibleDbs = [];
     sharedViewsData = [];
     sharedMaterializedViewsData = [];
+    sharedSynonymsData = [];
     sharedTriggersData = [];
     sharedRoutinesData = [];
     sharedSequencesData = [];
@@ -1107,9 +1156,104 @@ const resetSharedQueryEditorMetadata = () => {
     clearRecord(sharedLazyTablesInFlight);
 };
 
+const parseQueryResultSortInfo = (field: string, order: string): GridSortInfoItem[] => {
+  let candidates: unknown[] = [];
+  try {
+    const parsed = JSON.parse(field);
+    if (Array.isArray(parsed)) candidates = parsed;
+  } catch {
+    // Compatibility with the legacy single-column callback shape.
+  }
+  if (candidates.length === 0) {
+    candidates = [{ columnKey: field, order, enabled: true }];
+  }
+
+  const normalized: GridSortInfoItem[] = [];
+  const seen = new Set<string>();
+  candidates.forEach((candidate) => {
+    if (!candidate || typeof candidate !== 'object') return;
+    const item = candidate as Record<string, unknown>;
+    const columnKey = String(item.columnKey || '').trim();
+    const normalizedOrder = item.order === 'ascend' || item.order === 'descend'
+      ? item.order
+      : '';
+    const dedupeKey = columnKey.toLowerCase();
+    if (!columnKey || !normalizedOrder || seen.has(dedupeKey)) return;
+    seen.add(dedupeKey);
+    normalized.push({
+      columnKey,
+      order: normalizedOrder,
+      enabled: item.enabled !== false,
+    });
+  });
+  return normalized;
+};
+
+const compareQueryResultValues = (left: unknown, right: unknown): number => {
+  if (Object.is(left, right)) return 0;
+  if (left === null || left === undefined) return -1;
+  if (right === null || right === undefined) return 1;
+  if (typeof left === 'bigint' && typeof right === 'bigint') {
+    return left < right ? -1 : 1;
+  }
+  if (typeof left === 'number' && typeof right === 'number') {
+    if (Number.isNaN(left)) return Number.isNaN(right) ? 0 : -1;
+    if (Number.isNaN(right)) return 1;
+    return left < right ? -1 : left > right ? 1 : 0;
+  }
+  if (typeof left === 'boolean' && typeof right === 'boolean') {
+    return Number(left) - Number(right);
+  }
+  return String(left).localeCompare(String(right), undefined, {
+    numeric: true,
+    sensitivity: 'base',
+  });
+};
+
+const compareQueryResultOriginalOrder = (
+  left: Record<string, unknown>,
+  right: Record<string, unknown>,
+  leftIndex: number,
+  rightIndex: number,
+): number => {
+  const leftKey = left?.[GONAVI_ROW_KEY];
+  const rightKey = right?.[GONAVI_ROW_KEY];
+  const leftNumber = Number(leftKey);
+  const rightNumber = Number(rightKey);
+  if (Number.isFinite(leftNumber) && Number.isFinite(rightNumber) && leftNumber !== rightNumber) {
+    return leftNumber - rightNumber;
+  }
+  const keyOrder = String(leftKey ?? '').localeCompare(String(rightKey ?? ''), undefined, { numeric: true });
+  return keyOrder || leftIndex - rightIndex;
+};
+
+const sortCompleteQueryResultRows = (
+  rows: any[],
+  sortInfo: GridSortInfoItem[],
+): any[] => {
+  const activeSortInfo = sortInfo.filter((item) => item.enabled !== false);
+  return rows
+    .map((row, index) => ({ row, index }))
+    .sort((left, right) => {
+      for (const item of activeSortInfo) {
+        const valueOrder = compareQueryResultValues(
+          left.row?.[item.columnKey],
+          right.row?.[item.columnKey],
+        );
+        if (valueOrder !== 0) {
+          return item.order === 'descend' ? -valueOrder : valueOrder;
+        }
+      }
+      return compareQueryResultOriginalOrder(left.row, right.row, left.index, right.index);
+    })
+    .map(({ row }) => row);
+};
 
 const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isActive = true }) => {
   const appearance = useStore(state => state.appearance);
+  const queryOptions = useStore(state => state.queryOptions);
+  const setQueryOptions = useStore(state => state.setQueryOptions);
+  const wordWrapEnabled = queryOptions?.wordWrap === true;
   const [query, setQuery] = useState(() => getInitialEditorQuery(
       tab,
       resolveNewQueryDefaultTemplate(appearance.newQuerySqlTemplate),
@@ -1117,8 +1261,8 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
   const isExternalSQLFileTab = Boolean(String(tab.filePath || '').trim());
   const isObjectEditQueryTab = tab.type === 'query' && tab.queryMode === 'object-edit';
   const queryEditorMonacoOptions = useMemo(
-      () => buildQueryEditorMonacoOptions(isObjectEditQueryTab),
-      [isObjectEditQueryTab],
+      () => buildQueryEditorMonacoOptions(isObjectEditQueryTab, wordWrapEnabled),
+      [isObjectEditQueryTab, wordWrapEnabled],
   );
   
   type ResultSet = QueryEditorResultSet;
@@ -1133,6 +1277,10 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
   );
   const resultSetsRef = useRef(resultSets);
   const activeResultKeyRef = useRef(activeResultKey);
+  const nativeRestoredResultRefs = useRef(new Map<
+    string,
+    { resultKey: string; result: ResultSet }
+  >());
   resultSetsRef.current = resultSets;
   activeResultKeyRef.current = activeResultKey;
   const [loading, setLoading] = useState(false);
@@ -1142,6 +1290,8 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
   const [sqlSnippetPickerKeyword, setSqlSnippetPickerKeyword] = useState('');
   const runSeqRef = useRef(0);
   const currentQueryIdRef = useRef('');
+  const resultTotalCountSeqRef = useRef(0);
+  const resultTotalCountRequestsRef = useRef<Record<string, { sequence: number; queryId: string }>>({});
   const [isSaveModalOpen, setIsSaveModalOpen] = useState(false);
   const [saveModalMode, setSaveModalMode] = useState<'save' | 'rename'>('save');
   const [saveForm] = Form.useForm();
@@ -1149,6 +1299,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
   // Database Selection
   const [currentConnectionId, setCurrentConnectionId] = useState<string>(tab.connectionId);
   const [currentDb, setCurrentDb] = useState<string>(tab.dbName || '');
+  const resultTotalCountContextRef = useRef(`${tab.connectionId}\u0000${tab.dbName || ''}`);
   const [dbList, setDbList] = useState<string[]>([]);
   const [isTextToSqlModalOpen, setIsTextToSqlModalOpen] = useState(false);
   const [textToSqlInstruction, setTextToSqlInstruction] = useState('');
@@ -1228,6 +1379,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
   const allColumnsRef = useRef<CompletionColumnMeta[]>([]); // Store all columns (cross-db)
   const viewsRef = useRef<CompletionViewMeta[]>([]);
   const materializedViewsRef = useRef<CompletionViewMeta[]>([]);
+  const synonymsRef = useRef<CompletionSynonymMeta[]>([]);
   const triggersRef = useRef<CompletionTriggerMeta[]>([]);
   const routinesRef = useRef<CompletionRoutineMeta[]>([]);
   const sequencesRef = useRef<CompletionSequenceMeta[]>([]);
@@ -1251,10 +1403,16 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       ),
       [connections, currentConnectionId],
   );
+  const queryEditorMonacoLanguage = useMemo(
+      () => resolveQueryEditorMonacoLanguage(
+          connections.find(connection => connection.id === currentConnectionId),
+      ),
+      [connections, currentConnectionId],
+  );
 
   const addSqlLog = useStore(state => state.addSqlLog);
-  const sqlLogCount = useStore(state => state.sqlLogs.length);
-  const sqlLogs = useStore(state => state.sqlLogs);
+  const sqlLogs = useStore(state => (isActive ? state.sqlLogs : EMPTY_QUERY_EDITOR_SQL_LOGS));
+  const sqlLogCount = sqlLogs.length;
   const addTab = useStore(state => state.addTab);
   const setActiveContext = useStore(state => state.setActiveContext);
   const updateQueryTabDraft = useStore(state => state.updateQueryTabDraft);
@@ -1288,8 +1446,6 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
   const isV2Ui = appearance.uiVersion === 'v2';
   const sqlFormatOptions = useStore(state => state.sqlFormatOptions);
   const setSqlFormatOptions = useStore(state => state.setSqlFormatOptions);
-  const queryOptions = useStore(state => state.queryOptions);
-  const setQueryOptions = useStore(state => state.setQueryOptions);
   const queryEditorEditorHeightRatio = sanitizeQueryEditorEditorHeightRatio(
       queryOptions?.queryEditorEditorHeightRatio,
   );
@@ -1301,6 +1457,23 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
   );
   const isResultPanelVisibleRef = useRef(isResultPanelVisible);
   isResultPanelVisibleRef.current = isResultPanelVisible;
+  const publishesDetachedResultSession = useMemo(() => isNativeDetachedWindow(), []);
+
+  useEffect(() => {
+      const captureSession = (event: Event) => {
+          const requestedTabId = String((event as CustomEvent).detail?.tabId || '').trim();
+          if (requestedTabId !== tab.id) return;
+          saveQueryEditorResultSession(tab.id, {
+              resultSets: resultSetsRef.current,
+              activeResultKey: activeResultKeyRef.current,
+              isResultPanelVisible: isResultPanelVisibleRef.current,
+          });
+      };
+      window.addEventListener('gonavi:capture-query-result-session', captureSession);
+      return () => {
+          window.removeEventListener('gonavi:capture-query-result-session', captureSession);
+      };
+  }, [tab.id]);
 
   useEffect(() => {
       // Keep result panel state across detach/attach remounts of the same tab.
@@ -1312,6 +1485,15 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           });
       };
   }, [tab.id]);
+
+  useEffect(() => {
+      if (!publishesDetachedResultSession) return;
+      saveQueryEditorResultSession(tab.id, {
+          resultSets,
+          activeResultKey,
+          isResultPanelVisible,
+      });
+  }, [activeResultKey, isResultPanelVisible, publishesDetachedResultSession, resultSets, tab.id]);
   const shortcutOptions = useStore(state => state.shortcutOptions);
   const activeShortcutPlatform = getShortcutPlatform(isMacLikePlatform());
   const runQueryShortcutBinding = useMemo(
@@ -1553,7 +1735,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
 
       const binding = triggerSqlAiCompletionShortcutBinding;
       const keyBinding = binding?.enabled && binding.combo
-          ? comboToMonacoKeyBinding(binding.combo, monaco.KeyMod, monaco.KeyCode)
+          ? comboToMonacoKeyBinding(binding.combo, monaco.KeyMod, monaco.KeyCode, activeShortcutPlatform)
           : null;
       triggerSqlAiCompletionActionRef.current = editor.addAction({
           id: 'gonavi.triggerSqlAiCompletion',
@@ -1565,25 +1747,29 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
               triggerAiInlineCompletionRef.current?.();
           },
       });
-  }, [triggerSqlAiCompletionShortcutBinding]);
+  }, [activeShortcutPlatform, triggerSqlAiCompletionShortcutBinding]);
   useEffect(() => {
       // Prefer remount session cache (detach/attach); otherwise follow tab draft flag.
       if (restoredResultSessionRef.current && restoredResultSessionRef.current.isResultPanelVisible !== undefined) {
-          setIsResultPanelVisible(restoredResultSessionRef.current.isResultPanelVisible === true);
+          const restoredVisible = restoredResultSessionRef.current.isResultPanelVisible === true;
+          isResultPanelVisibleRef.current = restoredVisible;
+          setIsResultPanelVisible(restoredVisible);
           return;
       }
-      setIsResultPanelVisible(tab.resultPanelVisible === true);
+      const restoredVisible = tab.resultPanelVisible === true;
+      isResultPanelVisibleRef.current = restoredVisible;
+      setIsResultPanelVisible(restoredVisible);
   }, [tab.id, tab.resultPanelVisible]);
   const updateResultPanelVisibility = useCallback((visible: boolean) => {
+      isResultPanelVisibleRef.current = visible;
       setIsResultPanelVisible(visible);
       updateQueryTabDraft(tab.id, { resultPanelVisible: visible });
   }, [tab.id, updateQueryTabDraft]);
   const toggleResultPanelVisibility = useCallback(() => {
-      setIsResultPanelVisible((previousVisible) => {
-          const nextVisible = !previousVisible;
-          updateQueryTabDraft(tab.id, { resultPanelVisible: nextVisible });
-          return nextVisible;
-      });
+      const nextVisible = !isResultPanelVisibleRef.current;
+      isResultPanelVisibleRef.current = nextVisible;
+      setIsResultPanelVisible(nextVisible);
+      updateQueryTabDraft(tab.id, { resultPanelVisible: nextVisible });
   }, [tab.id, updateQueryTabDraft]);
   const handleOpenEditorFind = useCallback(() => {
       const editor = editorRef.current;
@@ -1621,6 +1807,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       : 0;
   const {
       activatePendingSqlTransaction,
+      appendPendingSqlTransactionExecution,
       autoCommitRemainingSeconds: sqlEditorAutoCommitRemainingSeconds,
       finishPendingSqlTransaction,
       pendingSqlTransaction,
@@ -1629,6 +1816,10 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       tabId: tab.id,
       translate: (key, params) => translate(key, params),
   });
+  const handleFinishPendingSqlTransaction = useCallback(async (action: 'commit' | 'rollback') => {
+      await finishPendingSqlTransaction(action, 'manual');
+      handleShowSqlExecutionLog('open');
+  }, [finishPendingSqlTransaction, handleShowSqlExecutionLog]);
   const autoFetchVisible = useAutoFetchVisibility();
 
   useEffect(() => {
@@ -1645,6 +1836,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       allColumnsRef.current = [];
       viewsRef.current = [];
       materializedViewsRef.current = [];
+      synonymsRef.current = [];
       triggersRef.current = [];
       routinesRef.current = [];
       columnsCacheRef.current = {};
@@ -2074,6 +2266,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       sharedVisibleDbs = visibleDbsRef.current;
       sharedViewsData = viewsRef.current;
       sharedMaterializedViewsData = materializedViewsRef.current;
+      sharedSynonymsData = synonymsRef.current;
       sharedTriggersData = triggersRef.current;
       sharedRoutinesData = routinesRef.current;
       sharedSequencesData = sequencesRef.current;
@@ -2108,6 +2301,20 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       const decorations: any[] = [];
       const seen = new Set<string>();
       const candidates = collectQueryEditorObjectDecorationCandidates(text);
+      const objectMetadataCount = tablesRef.current.length
+          + viewsRef.current.length
+          + materializedViewsRef.current.length
+          + triggersRef.current.length
+          + routinesRef.current.length
+          + sequencesRef.current.length
+          + packagesRef.current.length;
+      if (objectMetadataCount > 5_000) {
+          objectDecorationIdsRef.current = editor.deltaDecorations(objectDecorationIdsRef.current, []);
+          return;
+      }
+      const decorationColumns = allColumnsRef.current.length <= 2_000
+          ? allColumnsRef.current
+          : [];
 
       for (const candidate of candidates) {
           const hoverTarget = resolveQueryEditorHoverTarget(
@@ -2117,7 +2324,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
               currentDbRef.current,
               visibleDbsRef.current,
               tablesRef.current,
-              allColumnsRef.current,
+              decorationColumns,
               viewsRef.current,
               materializedViewsRef.current,
               triggersRef.current,
@@ -2635,10 +2842,11 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
 
   // Fetch Database List
   useEffect(() => {
-      if (!autoFetchVisible) {
+      if (!isActive || !autoFetchVisible) {
           return;
       }
 
+      let cancelled = false;
       const fetchDbs = async () => {
           const conn = connections.find(c => c.id === currentConnectionId);
           if (!conn) return;
@@ -2653,6 +2861,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           };
 
           const res = await DBGetDatabases(buildRpcConnectionConfig(config) as any);
+          if (cancelled) return;
           if (res.success && Array.isArray(res.data)) {
               let dbs = res.data.map((row: any) => row.Database || row.database);
 
@@ -2687,11 +2896,14 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           }
       };
       void fetchDbs();
-  }, [autoFetchVisible, currentConnectionId, connections]);
+      return () => {
+          cancelled = true;
+      };
+  }, [autoFetchVisible, currentConnectionId, connections, isActive]);
 
   // Fetch Metadata for Autocomplete (Cross-database)
   useEffect(() => {
-      if (!autoFetchVisible || isObjectEditQueryTab) {
+      if (!isActive || !autoFetchVisible || isObjectEditQueryTab) {
           return;
       }
 
@@ -2742,6 +2954,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           const allColumns: CompletionColumnMeta[] = [];
           const allViews: CompletionViewMeta[] = [];
           const allMaterializedViews: CompletionViewMeta[] = [];
+          const allSynonyms: CompletionSynonymMeta[] = [];
           const allTriggers: CompletionTriggerMeta[] = [];
           const allRoutines: CompletionRoutineMeta[] = [];
           const allSequences: CompletionSequenceMeta[] = [];
@@ -2755,6 +2968,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
               allColumnsRef.current = [...allColumns];
               viewsRef.current = [...allViews];
               materializedViewsRef.current = [...allMaterializedViews];
+              synonymsRef.current = [...allSynonyms];
               triggersRef.current = [...allTriggers];
               routinesRef.current = [...allRoutines];
               sequencesRef.current = [...allSequences];
@@ -2765,6 +2979,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                   sharedAllColumnsData = allColumnsRef.current;
                   sharedViewsData = viewsRef.current;
                   sharedMaterializedViewsData = materializedViewsRef.current;
+                  sharedSynonymsData = synonymsRef.current;
                   sharedTriggersData = triggersRef.current;
                   sharedRoutinesData = routinesRef.current;
                   sharedSequencesData = sequencesRef.current;
@@ -2772,6 +2987,40 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
               }
               return true;
           };
+
+          const synonymResults = await queryCompletionMetadataRowsBySpecs(
+              config,
+              metadataDbName,
+              buildCompletionSynonymsMetadataQuerySpecs(metadataDialect),
+          );
+          if (cancelled) return;
+          const seenSynonyms = new Set<string>();
+          synonymResults.forEach((queryResult) => {
+              queryResult.rows.forEach((row) => {
+                  const rawSynonymName = String(getCaseInsensitiveValue(row, ['synonym_name', 'synonymname', 'name']) || '').trim()
+                      || getFirstRowValue(row);
+                  const synonymParts = splitSidebarQualifiedName(rawSynonymName);
+                  const synonymName = String(synonymParts.objectName || rawSynonymName).trim();
+                  if (!synonymName) return;
+
+                  const ownerName = String(getCaseInsensitiveValue(row, ['synonym_owner', 'owner', 'schema_name']) || synonymParts.schemaName || '').trim();
+                  const rawTargetName = String(getCaseInsensitiveValue(row, ['target_name', 'table_name', 'table']) || '').trim();
+                  const targetParts = splitSidebarQualifiedName(rawTargetName);
+                  const targetName = String(targetParts.objectName || rawTargetName).trim();
+                  if (!targetName) return;
+
+                  const targetSchemaName = String(getCaseInsensitiveValue(row, ['target_schema_name', 'table_owner', 'target_owner']) || targetParts.schemaName || '').trim();
+                  const uniqueKey = [ownerName.toLowerCase(), synonymName.toLowerCase()].join('\u0000');
+                  if (seenSynonyms.has(uniqueKey)) return;
+                  seenSynonyms.add(uniqueKey);
+                  allSynonyms.push({
+                      ownerName,
+                      synonymName,
+                      targetSchemaName: targetSchemaName || undefined,
+                      targetName,
+                  });
+              });
+          });
 
           for (const dbName of metadataDbNames) {
               if (cancelled) return;
@@ -3472,7 +3721,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       if (mountedModel && typeof monaco?.editor?.setModelLanguage === 'function') {
           monaco.editor.setModelLanguage(mountedModel, 'sql');
       }
-      editor.updateOptions?.(buildQueryEditorMonacoOptions(isObjectEditQueryTab));
+      editor.updateOptions?.(buildQueryEditorMonacoOptions(isObjectEditQueryTab, wordWrapEnabled));
 
       aiInlineGhostVisibleContextKeyRef.current = editor.createContextKey?.(
           QUERY_EDITOR_AI_INLINE_CONTEXT_KEY,
@@ -3953,6 +4202,9 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       const applyNavigationHoverState = (event: any) => {
           const targetPosition = normalizeEditorPosition(event?.target?.position);
           lastHoverTargetPositionRef.current = targetPosition;
+          if (!ctrlMetaPressedRef.current) {
+              return;
+          }
           applyNavigationHoverStateAtPosition(targetPosition);
       };
 
@@ -4293,8 +4545,6 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                   ...referencedDbs.map((dbName) => String(dbName || '').toLowerCase()).sort(),
               ].join('\u0000');
               if (nextKey === lastSqlReferencedMetadataKeyRef.current) {
-                  // 库集合未变：仍刷新装饰（可能表列表已异步到位）
-                  refreshObjectDecorations(QUERY_EDITOR_LIVE_DECORATION_MAX_TEXT_LENGTH);
                   return;
               }
               lastSqlReferencedMetadataKeyRef.current = nextKey;
@@ -4496,7 +4746,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       const runBinding = runQueryShortcutBinding;
       if (runBinding?.enabled && runBinding.combo) {
           const keyBinding = comboToMonacoKeyBinding(
-              runBinding.combo, monaco.KeyMod, monaco.KeyCode
+              runBinding.combo, monaco.KeyMod, monaco.KeyCode, activeShortcutPlatform,
           );
           if (keyBinding) {
               runQueryActionRef.current = editor.addAction({
@@ -4516,7 +4766,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       const selectStatementBinding = selectCurrentStatementShortcutBinding;
       if (selectStatementBinding?.enabled && selectStatementBinding.combo) {
           const keyBinding = comboToMonacoKeyBinding(
-              selectStatementBinding.combo, monaco.KeyMod, monaco.KeyCode
+              selectStatementBinding.combo, monaco.KeyMod, monaco.KeyCode, activeShortcutPlatform,
           );
           if (keyBinding) {
               selectCurrentStatementActionRef.current = editor.addAction({
@@ -4531,6 +4781,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       const macFindWithSelectionGuardKeyBinding = activeShortcutPlatform === 'mac'
           ? comboToMonacoKeyBinding(
               QUERY_EDITOR_MAC_FIND_WITH_SELECTION_COMBO, monaco.KeyMod, monaco.KeyCode,
+              activeShortcutPlatform,
           )
           : null;
       if (macFindWithSelectionGuardKeyBinding) {
@@ -4556,6 +4807,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       if (duplicateLineBinding?.enabled && duplicateLineBinding.combo) {
           const keyBinding = comboToMonacoKeyBinding(
               duplicateLineBinding.combo, monaco.KeyMod, monaco.KeyCode,
+              activeShortcutPlatform,
           );
           if (keyBinding) {
               duplicateCurrentLineActionRef.current = editor.addAction({
@@ -4570,7 +4822,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       const saveBinding = saveQueryShortcutBinding;
       if (saveBinding?.enabled && saveBinding.combo) {
           const keyBinding = comboToMonacoKeyBinding(
-              saveBinding.combo, monaco.KeyMod, monaco.KeyCode
+              saveBinding.combo, monaco.KeyMod, monaco.KeyCode, activeShortcutPlatform,
           );
           if (keyBinding) {
               saveQueryActionRef.current = editor.addAction({
@@ -4585,7 +4837,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       }
 
       const findInEditorKeyBinding = comboToMonacoKeyBinding(
-          findInEditorShortcutCombo, monaco.KeyMod, monaco.KeyCode
+          findInEditorShortcutCombo, monaco.KeyMod, monaco.KeyCode, activeShortcutPlatform,
       );
       if (findInEditorKeyBinding) {
           findInEditorActionRef.current = editor.addAction({
@@ -4601,7 +4853,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       const formatBinding = formatSqlShortcutBinding;
       if (formatBinding?.enabled && formatBinding.combo) {
           const keyBinding = comboToMonacoKeyBinding(
-              formatBinding.combo, monaco.KeyMod, monaco.KeyCode
+              formatBinding.combo, monaco.KeyMod, monaco.KeyCode, activeShortcutPlatform,
           );
           if (keyBinding) {
               formatSqlActionRef.current = editor.addAction({
@@ -4620,7 +4872,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       const toggleResultsBinding = toggleQueryResultsPanelShortcutBinding;
       if (toggleResultsBinding?.enabled && toggleResultsBinding.combo) {
           const keyBinding = comboToMonacoKeyBinding(
-              toggleResultsBinding.combo, monaco.KeyMod, monaco.KeyCode
+              toggleResultsBinding.combo, monaco.KeyMod, monaco.KeyCode, activeShortcutPlatform,
           );
           if (keyBinding) {
               toggleQueryResultsPanelActionRef.current = editor.addAction({
@@ -4645,7 +4897,17 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       _g.__gonaviSqlCompletionState.version = SQL_COMPLETION_PROVIDER_VERSION;
       sqlCompletionDisposables.forEach((d: any) => d?.dispose?.());
       sqlCompletionDisposables.length = 0;
-      sqlCompletionDisposables.push(monaco.languages.registerHoverProvider('sql', {
+      const registerQueryEditorHoverProvider = (provider: any) => {
+          QUERY_EDITOR_MONACO_LANGUAGE_IDS.forEach((languageId) => {
+              sqlCompletionDisposables.push(monaco.languages.registerHoverProvider(languageId, provider));
+          });
+      };
+      const registerQueryEditorCompletionProvider = (provider: any) => {
+          QUERY_EDITOR_MONACO_LANGUAGE_IDS.forEach((languageId) => {
+              sqlCompletionDisposables.push(monaco.languages.registerCompletionItemProvider(languageId, provider));
+          });
+      };
+      registerQueryEditorHoverProvider({
           provideHover: (model: any, position: any) => {
               const normalizedPosition = normalizeEditorPosition(position);
               if (!normalizedPosition) {
@@ -4681,8 +4943,8 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                   contents: [{ value: buildQueryEditorHoverMarkdown(hoverTarget) }],
               };
           },
-      }));
-      sqlCompletionDisposables.push(monaco.languages.registerCompletionItemProvider('sql', {
+      });
+      registerQueryEditorCompletionProvider({
           triggerCharacters: ['.'],
           provideCompletionItems: async (model: any, position: any, _context?: any, token?: { isCancellationRequested?: boolean }) => {
               if (isSqlCompletionRequestCancelled(token)) {
@@ -4701,6 +4963,9 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                   String(activeConnection?.config?.driver || ''),
                   { oceanBaseProtocol: activeConnection?.config?.oceanBaseProtocol },
               );
+              const oracleLoginOwner = isOracleLikeDialect(activeDialect)
+                  ? resolveOracleLikeDefaultSchemaName(activeConnection?.config)
+                  : '';
               const shouldQuoteCompletionIdentifiers = isPostgresSchemaDialect(activeDialect);
               const quoteCompletionPart = (ident: string) => {
                   const raw = String(ident || '').trim();
@@ -4775,7 +5040,68 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                       routineType: normalizeRoutineType(routine.routineType),
                   };
               };
-
+              const getViewTypeLabel = (materialized: boolean) => (
+                  materialized
+                      ? translate('query_editor.object_info.materialized_view')
+                      : translate('sidebar.object.view')
+              );
+              const buildViewSuggestionMeta = (view: CompletionViewMeta) => {
+                  const rawDbName = String(view.dbName || '').trim();
+                  const rawViewName = String(view.viewName || '').trim();
+                  const parsed = splitSchemaAndTable(rawViewName);
+                  const schemaName = String(view.schemaName || parsed.schema || '').trim();
+                  const objectName = String(parsed.table || rawViewName).trim();
+                  const schemaMatchesDb = !!schemaName
+                      && !!rawDbName
+                      && schemaName.toLowerCase() === rawDbName.toLowerCase();
+                  const isCurrentDb = rawDbName.toLowerCase() === getActiveCompletionDbName().toLowerCase();
+                  const schemaQualifiedName = schemaName && !schemaMatchesDb
+                      ? `${schemaName}.${objectName}`
+                      : objectName;
+                  const displayName = isCurrentDb && schemaMatchesDb
+                      ? objectName
+                      : schemaQualifiedName;
+                  const dbQualifiedLabel = rawDbName && !isCurrentDb
+                      ? `${rawDbName}.${displayName}`
+                      : displayName;
+                  const insertName = rawDbName && !isCurrentDb
+                      ? dbQualifiedLabel
+                      : displayName;
+                  return {
+                      displayName,
+                      dbQualifiedLabel,
+                      insertText: quoteCompletionPath(insertName),
+                      objectName,
+                      schemaName,
+                  };
+              };
+              const getViewSuggestionScope = (view: CompletionViewMeta, meta: ReturnType<typeof buildViewSuggestionMeta>) => {
+                  const dbName = String(view.dbName || '').trim();
+                  const schemaName = String(meta.schemaName || '').trim();
+                  if (!schemaName || schemaName.toLowerCase() === dbName.toLowerCase()) {
+                      return dbName;
+                  }
+                  return dbName ? `${dbName}.${schemaName}` : schemaName;
+              };
+              const getSynonymTargetName = (synonym: CompletionSynonymMeta) => {
+                  const targetSchemaName = String(synonym.targetSchemaName || '').trim();
+                  const targetName = String(synonym.targetName || '').trim();
+                  return targetSchemaName && targetName ? `${targetSchemaName}.${targetName}` : targetName;
+              };
+              const buildSynonymSuggestion = (synonym: CompletionSynonymMeta, sortText: string) => {
+                  const synonymName = String(synonym.synonymName || '').trim();
+                  const targetName = getSynonymTargetName(synonym);
+                  return {
+                      label: synonymName,
+                      kind: monaco.languages.CompletionItemKind.Class,
+                      insertText: quoteCompletionPath(synonymName),
+                      detail: targetName
+                          ? `${translate('query_editor.object_info.synonym')} (${targetName})`
+                          : translate('query_editor.object_info.synonym'),
+                      range,
+                      sortText,
+                  };
+              };
               const buildConnConfig = () => {
                   const connId = sharedCurrentConnectionId;
                   const conn = sharedConnections.find(c => c.id === connId);
@@ -4855,7 +5181,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                   columns: ColumnDefinition[],
                   dbName: string,
                   tableName: string,
-              ): CompletionColumnMeta[] => columns
+              ): CompletionColumnMeta[] => dedupeCompletionColumnsByName(columns
                   .map((column) => ({
                       dbName,
                       tableName,
@@ -4863,7 +5189,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                       type: getColumnDefinitionType(column),
                       comment: getColumnDefinitionComment(column),
                   }))
-                  .filter((column) => !!column.name);
+                  .filter((column) => !!column.name));
 
               const findPreloadedColumns = (dbName: string, tableName: string) =>
                   findSharedPreloadedColumns(dbName, tableName);
@@ -4890,18 +5216,47 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                   }
               };
 
-              const getCompletionColumnsByTable = async (dbName: string, tableIdent: string) => {
+              const findCompletionSynonym = (
+                  tableIdent: string,
+                  explicitOwnerName = '',
+              ): CompletionSynonymMeta | undefined => {
+                  const parsed = splitSchemaAndTable(tableIdent);
+                  const synonymName = String(parsed.table || tableIdent).trim().toLowerCase();
+                  if (!synonymName) return undefined;
+                  const matches = sharedSynonymsData.filter((synonym) => (
+                      String(synonym.synonymName || '').trim().toLowerCase() === synonymName
+                  ));
+                  if (matches.length === 0) return undefined;
+
+                  const explicitOwner = String(explicitOwnerName || parsed.schema || '').trim().toLowerCase();
+                  if (explicitOwner) {
+                      return matches.find((synonym) => String(synonym.ownerName || '').trim().toLowerCase() === explicitOwner);
+                  }
+
+                  const loginOwner = oracleLoginOwner.trim().toLowerCase();
+                  return matches.find((synonym) => String(synonym.ownerName || '').trim().toLowerCase() === loginOwner)
+                      || matches.find((synonym) => String(synonym.ownerName || '').trim().toLowerCase() === 'public');
+              };
+
+              const getCompletionColumnsByTable = async (
+                  dbName: string,
+                  tableIdent: string,
+                  explicitOwnerName = '',
+              ) => {
                   const connId = sharedCurrentConnectionId;
                   const targetDb = String(dbName || '').trim();
                   const targetTable = String(tableIdent || '').trim();
                   if (!connId || !targetDb || !targetTable) return [] as CompletionColumnMeta[];
 
-                  const preloaded = findPreloadedColumns(targetDb, targetTable);
+                  const synonym = findCompletionSynonym(targetTable, explicitOwnerName);
+                  const lookupDbName = String(synonym?.ownerName || targetDb).trim();
+                  const lookupTableName = String(synonym?.synonymName || targetTable).trim();
+                  const preloaded = synonym ? [] : findPreloadedColumns(targetDb, targetTable);
                   if (preloaded.length > 0) {
                       return preloaded;
                   }
 
-                  const key = `${connId}|${targetDb}|${targetTable}`;
+                  const key = `${connId}|${lookupDbName}|${lookupTableName}`;
                   const cached = sharedColumnsCacheData[key] as ColumnDefinition[] | undefined;
                   if (cached) {
                       const cachedColumns = toCompletionColumns(cached, targetDb, targetTable);
@@ -4912,7 +5267,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                   const config = buildConnConfig();
                   if (!config) return [] as CompletionColumnMeta[];
 
-                  const res = await DBGetColumns(buildRpcConnectionConfig(config) as any, targetDb, targetTable);
+                  const res = await DBGetColumns(buildRpcConnectionConfig(config) as any, lookupDbName, lookupTableName);
                   if (res?.success && Array.isArray(res.data)) {
                       const cols = res.data as ColumnDefinition[];
                       sharedColumnsCacheData[key] = cols;
@@ -4928,7 +5283,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                   lineNumber: Number(position?.lineNumber || 1),
                   column: Number(position?.column || 1),
               });
-              const currentStatementRange = resolveCurrentSqlStatementRange(fullText, cursorOffset);
+              const currentStatementRange = resolveCurrentSqlStatementRange(fullText, cursorOffset, activeDialect);
 
               // 获取当前行光标前的内容
               const linePrefix = model.getLineContent(position.lineNumber).slice(0, position.column - 1);
@@ -4946,24 +5301,26 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                   const tablePart = stripQuotes(threePartMatch[2]);
                   const colPrefix = (threePartMatch[3] || '').toLowerCase();
 
-                  const cols = await getCompletionColumnsByTable(dbPart, tablePart);
+                  const cols = await getCompletionColumnsByTable(dbPart, tablePart, dbPart);
                   if (isSqlCompletionRequestCancelled(token)) {
                       return createEmptySqlCompletionResult();
                   }
 
-                  const filtered = colPrefix
-                      ? cols.filter(c => (c.name || '').toLowerCase().startsWith(colPrefix))
-                      : cols;
-
-                  const suggestions = filtered.map(c => ({
-                      label: c.name,
-                      kind: monaco.languages.CompletionItemKind.Field,
-                      insertText: quoteCompletionPart(c.name),
-                      detail: buildColumnCompletionDetail(c),
-                      documentation: buildColumnCompletionDocumentation(c),
-                      range,
-                      sortText: '0' + c.name
-                  }));
+                  const suggestions = buildBoundedQueryEditorCompletionSuggestions({
+                      candidates: cols,
+                      prefix: colPrefix,
+                      getMatchRank: (column, prefix) => rankQueryEditorCompletionCandidate(prefix, [column.name], false),
+                      getSelectionKey: (column) => '0' + column.name,
+                      buildSuggestion: (column) => ({
+                          label: column.name,
+                          kind: monaco.languages.CompletionItemKind.Field,
+                          insertText: quoteCompletionPart(column.name),
+                          detail: buildColumnCompletionDetail(column),
+                          documentation: buildColumnCompletionDocumentation(column),
+                          range,
+                          sortText: '0' + column.name,
+                      }),
+                  });
                   return { suggestions };
               }
 
@@ -4978,91 +5335,192 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                   const visibleDbs = sharedVisibleDbs;
                   if (visibleDbs.some(db => db.toLowerCase() === qualifierLower)) {
                       // qualifier 是数据库名，提示该库的表
-                      let tables = sharedTablesData.filter(t =>
-                          (t.dbName || '').toLowerCase() === qualifierLower
-                      );
+                      let tables = findCompletionTablesByDatabase(sharedTablesData, qualifier);
                       if (tables.length === 0) {
                           tables = await getLazyTablesByDB(qualifier);
                           if (isSqlCompletionRequestCancelled(token)) {
                               return createEmptySqlCompletionResult();
                           }
                       }
-                      const filtered = prefix
-                          ? tables.filter(t => {
-                              const suggestionMeta = buildDbQualifiedTableSuggestionMeta(t.dbName || qualifier, t.tableName || '');
-                              return String(suggestionMeta.displayName || '').toLowerCase().startsWith(prefix)
-                                  || String(t.tableName || '').toLowerCase().startsWith(prefix);
-                          })
-                          : tables;
-
-                      const suggestions = filtered.map(t => {
-                          const suggestionMeta = buildDbQualifiedTableSuggestionMeta(t.dbName || qualifier, t.tableName || '');
-                          return {
-                          label: suggestionMeta.displayName,
-                          kind: monaco.languages.CompletionItemKind.Class,
-                          insertText: suggestionMeta.insertText,
-                          detail: appendCommentToDetail(`${translate('query_editor.object_info.table')} (${t.dbName})`, t.comment),
-                          documentation: buildCompletionDocumentation(t.comment),
-                          range,
-                          sortText: '0' + suggestionMeta.displayName
-                      };
+                      const tableBatch = createBoundedQueryEditorCompletionCandidateBatch({
+                          candidates: tables,
+                          prefix,
+                          getMatchRank: (table, normalizedPrefix) => {
+                              if (String(table.dbName || '').toLowerCase() !== qualifierLower) return null;
+                              const meta = buildDbQualifiedTableSuggestionMeta(table.dbName || qualifier, table.tableName || '');
+                              return rankQueryEditorCompletionCandidate(normalizedPrefix, [meta.displayName, table.tableName], false);
+                          },
+                          getSelectionKey: (table) => {
+                              const meta = buildDbQualifiedTableSuggestionMeta(table.dbName || qualifier, table.tableName || '');
+                              return '0' + meta.displayName;
+                          },
+                          buildSuggestion: (table) => {
+                              const meta = buildDbQualifiedTableSuggestionMeta(table.dbName || qualifier, table.tableName || '');
+                              return {
+                                  label: meta.displayName,
+                                  kind: monaco.languages.CompletionItemKind.Class,
+                                  insertText: meta.insertText,
+                                  detail: appendCommentToDetail(`${translate('query_editor.object_info.table')} (${table.dbName})`, table.comment),
+                                  documentation: buildCompletionDocumentation(table.comment),
+                                  range,
+                                  sortText: '0' + meta.displayName,
+                              };
+                          },
                       });
-                      const routineSuggestions = sharedRoutinesData
-                          .filter((routine) => String(routine.dbName || '').toLowerCase() === qualifierLower)
-                          .map((routine) => ({ routine, meta: buildRoutineSuggestionMeta(routine) }))
-                          .filter(({ routine, meta }) => (
-                              !prefix
-                              || meta.displayName.toLowerCase().startsWith(prefix)
-                              || meta.objectName.toLowerCase().startsWith(prefix)
-                              || String(routine.routineName || '').toLowerCase().startsWith(prefix)
-                          ))
-                          .map(({ routine, meta }) => ({
-                              label: meta.displayName,
-                              kind: monaco.languages.CompletionItemKind.Function,
-                              insertText: meta.insertText,
-                              insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
-                              detail: `${getRoutineTypeLabel(routine.routineType)} (${routine.dbName})`,
-                              range,
-                              sortText: '1' + meta.displayName,
-                          }));
-                      return { suggestions: [...suggestions, ...routineSuggestions] };
+                      const buildQualifiedViewBatch = (views: CompletionViewMeta[], materialized: boolean) => (
+                          createBoundedQueryEditorCompletionCandidateBatch({
+                              candidates: views,
+                              prefix,
+                              getMatchRank: (view, normalizedPrefix) => {
+                                  if (String(view.dbName || '').toLowerCase() !== qualifierLower) return null;
+                                  const meta = buildViewSuggestionMeta(view);
+                                  return rankQueryEditorCompletionCandidate(
+                                      normalizedPrefix,
+                                      [meta.displayName, meta.objectName, view.viewName],
+                                      false,
+                                  );
+                              },
+                              getSelectionKey: (view) => '05' + buildViewSuggestionMeta(view).displayName,
+                              buildSuggestion: (view) => {
+                                  const meta = buildViewSuggestionMeta(view);
+                                  return {
+                                      label: meta.displayName,
+                                      kind: monaco.languages.CompletionItemKind.Class,
+                                      insertText: quoteCompletionPath(meta.displayName),
+                                      detail: `${getViewTypeLabel(materialized)} (${view.dbName})`,
+                                      range,
+                                      sortText: '05' + meta.displayName,
+                                  };
+                              },
+                          })
+                      );
+                      const viewBatch = buildQualifiedViewBatch(sharedViewsData, false);
+                      const materializedViewBatch = buildQualifiedViewBatch(sharedMaterializedViewsData, true);
+                      const synonymBatch = createBoundedQueryEditorCompletionCandidateBatch({
+                          candidates: sharedSynonymsData,
+                          prefix,
+                          getMatchRank: (synonym, normalizedPrefix) => (
+                              String(synonym.ownerName || '').trim().toLowerCase() === qualifierLower
+                                  ? rankQueryEditorCompletionCandidate(normalizedPrefix, [synonym.synonymName], false)
+                                  : null
+                          ),
+                          getSelectionKey: (synonym) => '06' + synonym.synonymName,
+                          buildSuggestion: (synonym) => buildSynonymSuggestion(synonym, '06' + synonym.synonymName),
+                      });
+                      const routineBatch = createBoundedQueryEditorCompletionCandidateBatch({
+                          candidates: sharedRoutinesData,
+                          prefix,
+                          getMatchRank: (routine, normalizedPrefix) => {
+                              if (String(routine.dbName || '').toLowerCase() !== qualifierLower) return null;
+                              const meta = buildRoutineSuggestionMeta(routine);
+                              return rankQueryEditorCompletionCandidate(
+                                  normalizedPrefix,
+                                  [meta.displayName, meta.objectName, routine.routineName],
+                                  false,
+                              );
+                          },
+                          getSelectionKey: (routine) => '1' + buildRoutineSuggestionMeta(routine).displayName,
+                          buildSuggestion: (routine) => {
+                              const meta = buildRoutineSuggestionMeta(routine);
+                              return {
+                                  label: meta.displayName,
+                                  kind: monaco.languages.CompletionItemKind.Function,
+                                  insertText: meta.insertText,
+                                  insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+                                  detail: `${getRoutineTypeLabel(routine.routineType)} (${routine.dbName})`,
+                                  range,
+                                  sortText: '1' + meta.displayName,
+                              };
+                          },
+                      });
+                      return {
+                          suggestions: materializeBoundedQueryEditorCompletionBatches([
+                              tableBatch,
+                              viewBatch,
+                              materializedViewBatch,
+                              synonymBatch,
+                              routineBatch,
+                          ]),
+                      };
                   }
 
                   // qualifier 是 schema（如 dbo/public）时，仅补全表名，避免输入 dbo. 后再补成 dbo.dbo.table
-                  const schemaTables = sharedTablesData
-                      .map(t => {
-                          const parsed = splitSchemaAndTable(t.tableName || '');
+                  let hasKnownSchemaQualifier = false;
+                  const schemaTableBatch = createBoundedQueryEditorCompletionCandidateBatch({
+                      candidates: sharedTablesData,
+                      prefix,
+                      getMatchRank: (table, normalizedPrefix) => {
+                          const parsed = splitSchemaAndTable(table.tableName || '');
+                          if (parsed.schema.toLowerCase() !== qualifierLower) return null;
+                          hasKnownSchemaQualifier = true;
+                          if (!parsed.table) return null;
+                          return rankQueryEditorCompletionCandidate(normalizedPrefix, [parsed.table], false);
+                      },
+                      getSelectionKey: (table) => '0' + splitSchemaAndTable(table.tableName || '').table,
+                      buildSuggestion: (table) => {
+                          const parsed = splitSchemaAndTable(table.tableName || '');
                           return {
-                              dbName: t.dbName || '',
-                              schema: parsed.schema,
-                              table: parsed.table,
-                              comment: t.comment,
+                              label: parsed.table,
+                              kind: monaco.languages.CompletionItemKind.Class,
+                              insertText: quoteCompletionPart(parsed.table),
+                              detail: appendCommentToDetail(`${translate('query_editor.object_info.table')} (${table.dbName}${parsed.schema ? '.' + parsed.schema : ''})`, table.comment),
+                              documentation: buildCompletionDocumentation(table.comment),
+                              range,
+                              sortText: '0' + parsed.table,
                           };
+                      },
+                  });
+                  const buildSchemaViewBatch = (views: CompletionViewMeta[], materialized: boolean) => (
+                      createBoundedQueryEditorCompletionCandidateBatch({
+                          candidates: views,
+                          prefix,
+                          getMatchRank: (view, normalizedPrefix) => {
+                              const meta = buildViewSuggestionMeta(view);
+                              if (meta.schemaName.toLowerCase() !== qualifierLower) return null;
+                              hasKnownSchemaQualifier = true;
+                              if (!meta.objectName) return null;
+                              return rankQueryEditorCompletionCandidate(normalizedPrefix, [meta.objectName], false);
+                          },
+                          getSelectionKey: (view) => '05' + buildViewSuggestionMeta(view).objectName,
+                          buildSuggestion: (view) => {
+                              const meta = buildViewSuggestionMeta(view);
+                              return {
+                                  label: meta.objectName,
+                                  kind: monaco.languages.CompletionItemKind.Class,
+                                  insertText: quoteCompletionPart(meta.objectName),
+                                  detail: `${getViewTypeLabel(materialized)} (${getViewSuggestionScope(view, meta)})`,
+                                  range,
+                                  sortText: '05' + meta.objectName,
+                              };
+                          },
                       })
-                      .filter(t => t.schema.toLowerCase() === qualifierLower && !!t.table);
-
-                  if (schemaTables.length > 0) {
-                      const filtered = prefix
-                          ? schemaTables.filter(t => t.table.toLowerCase().startsWith(prefix))
-                          : schemaTables;
-
-                      const suggestions = filtered.map(t => ({
-                          label: t.table,
-                          kind: monaco.languages.CompletionItemKind.Class,
-                          insertText: quoteCompletionPart(t.table),
-                          detail: appendCommentToDetail(`${translate('query_editor.object_info.table')} (${t.dbName}${t.schema ? '.' + t.schema : ''})`, t.comment),
-                          documentation: buildCompletionDocumentation(t.comment),
-                          range,
-                          sortText: '0' + t.table
-                      }));
-                      const routineSuggestions = sharedRoutinesData
-                          .filter((routine) => {
-                              const meta = buildRoutineSuggestionMeta(routine);
-                              return meta.schemaName.toLowerCase() === qualifierLower;
-                          })
-                          .map((routine) => ({ routine, meta: buildRoutineSuggestionMeta(routine) }))
-                          .filter(({ meta }) => !prefix || meta.objectName.toLowerCase().startsWith(prefix))
-                          .map(({ routine, meta }) => ({
+                  );
+                  const schemaViewBatch = buildSchemaViewBatch(sharedViewsData, false);
+                  const schemaMaterializedViewBatch = buildSchemaViewBatch(sharedMaterializedViewsData, true);
+                  const schemaSynonymBatch = createBoundedQueryEditorCompletionCandidateBatch({
+                      candidates: sharedSynonymsData,
+                      prefix,
+                      getMatchRank: (synonym, normalizedPrefix) => {
+                          if (String(synonym.ownerName || '').trim().toLowerCase() !== qualifierLower) return null;
+                          hasKnownSchemaQualifier = true;
+                          return rankQueryEditorCompletionCandidate(normalizedPrefix, [synonym.synonymName], false);
+                      },
+                      getSelectionKey: (synonym) => '06' + synonym.synonymName,
+                      buildSuggestion: (synonym) => buildSynonymSuggestion(synonym, '06' + synonym.synonymName),
+                  });
+                  const schemaRoutineBatch = createBoundedQueryEditorCompletionCandidateBatch({
+                      candidates: sharedRoutinesData,
+                      prefix,
+                      getMatchRank: (routine, normalizedPrefix) => {
+                          const meta = buildRoutineSuggestionMeta(routine);
+                          if (meta.schemaName.toLowerCase() !== qualifierLower) return null;
+                          hasKnownSchemaQualifier = true;
+                          return rankQueryEditorCompletionCandidate(normalizedPrefix, [meta.objectName], false);
+                      },
+                      getSelectionKey: (routine) => '1' + buildRoutineSuggestionMeta(routine).objectName,
+                      buildSuggestion: (routine) => {
+                          const meta = buildRoutineSuggestionMeta(routine);
+                          return {
                               label: meta.objectName,
                               kind: monaco.languages.CompletionItemKind.Function,
                               insertText: `${quoteCompletionPart(meta.objectName)}($0)`,
@@ -5070,8 +5528,18 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                               detail: `${getRoutineTypeLabel(routine.routineType)} (${routine.dbName}${meta.schemaName ? '.' + meta.schemaName : ''})`,
                               range,
                               sortText: '1' + meta.objectName,
-                          }));
-                      return { suggestions: [...suggestions, ...routineSuggestions] };
+                          };
+                      },
+                  });
+                  const schemaSuggestions = materializeBoundedQueryEditorCompletionBatches([
+                      schemaTableBatch,
+                      schemaViewBatch,
+                      schemaMaterializedViewBatch,
+                      schemaSynonymBatch,
+                      schemaRoutineBatch,
+                  ]);
+                  if (hasKnownSchemaQualifier) {
+                      return { suggestions: schemaSuggestions };
                   }
 
                   // 否则检查是否是表别名或表名，提示列
@@ -5079,24 +5547,30 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
 
                   const tableInfo = aliasMap[qualifier.toLowerCase()];
                   if (tableInfo) {
-                      const cols = await getCompletionColumnsByTable(tableInfo.dbName, tableInfo.tableName);
+                      const cols = await getCompletionColumnsByTable(
+                          tableInfo.dbName,
+                          tableInfo.tableName,
+                          tableInfo.explicitOwnerName,
+                      );
                       if (isSqlCompletionRequestCancelled(token)) {
                           return createEmptySqlCompletionResult();
                       }
 
-                      const filtered = prefix
-                          ? cols.filter(c => (c.name || '').toLowerCase().startsWith(prefix))
-                          : cols;
-
-                      const suggestions = filtered.map(c => ({
-                          label: c.name,
-                          kind: monaco.languages.CompletionItemKind.Field,
-                          insertText: quoteCompletionPart(c.name),
-                          detail: buildColumnCompletionDetail(c),
-                          documentation: buildColumnCompletionDocumentation(c),
-                          range,
-                          sortText: '0' + c.name
-                      }));
+                      const suggestions = buildBoundedQueryEditorCompletionSuggestions({
+                          candidates: cols,
+                          prefix,
+                          getMatchRank: (column, normalizedPrefix) => rankQueryEditorCompletionCandidate(normalizedPrefix, [column.name], false),
+                          getSelectionKey: (column) => '0' + column.name,
+                          buildSuggestion: (column) => ({
+                              label: column.name,
+                              kind: monaco.languages.CompletionItemKind.Field,
+                              insertText: quoteCompletionPart(column.name),
+                              detail: buildColumnCompletionDetail(column),
+                              documentation: buildColumnCompletionDocumentation(column),
+                              range,
+                              sortText: '0' + column.name,
+                          }),
+                      });
                       return { suggestions };
                   }
               }
@@ -5117,8 +5591,6 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
               const isCurrentCompletionDatabase = (dbName: string) =>
                   String(dbName || '').toLowerCase() === currentDatabase.toLowerCase();
               const wordPrefix = (word.word || '').toLowerCase();
-              const startsWithPrefix = (candidate: string) => !wordPrefix || candidate.toLowerCase().startsWith(wordPrefix);
-              const includesWordPrefix = (candidate: string) => !wordPrefix || String(candidate || '').toLowerCase().includes(wordPrefix);
               const getPrefixMatchRank = (...candidates: string[]) => {
                   if (!wordPrefix) return '0';
                   const normalized = candidates
@@ -5153,30 +5625,27 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                       ? { keyword: '20', func: '25', routineCurrent: '26', routineOther: '27', columnCurrent: '10', columnOther: '11', tableCurrent: '00', tableOther: '01', db: '30' }
                       : { keyword: '30', func: '25', routineCurrent: '26', routineOther: '27', columnCurrent: '00', columnOther: '01', tableCurrent: '10', tableOther: '11', db: '20' };
               let completionTables = sharedTablesData;
+              const currentSharedTables = expectsTableName && currentDatabase
+                  ? findCompletionTablesByDatabase(sharedTablesData, currentDatabase)
+                  : [];
               if (
                   expectsTableName
                   && currentDatabase
-                  && !sharedTablesData.some((t) => isCurrentCompletionDatabase(t.dbName || ''))
+                  && currentSharedTables.length === 0
               ) {
                   const lazyTables = await getLazyTablesByDB(currentDatabase);
                   if (isSqlCompletionRequestCancelled(token)) {
                       return createEmptySqlCompletionResult();
                   }
                   if (lazyTables.length > 0) {
-                      const seenTableKeys = new Set<string>();
-                      completionTables = [...sharedTablesData, ...lazyTables].filter((table) => {
-                          const key = `${String(table.dbName || '').toLowerCase()}.${String(table.tableName || '').toLowerCase()}`;
-                          if (seenTableKeys.has(key)) return false;
-                          seenTableKeys.add(key);
-                          return true;
-                      });
+                      completionTables = lazyTables;
                   }
               }
               if (
                   expectsTableName
                   && currentDatabase
-                  && sharedTablesData.some((table) => isCurrentCompletionDatabase(table.dbName || ''))
-                  && sharedTablesData.some((table) => isCurrentCompletionDatabase(table.dbName || '') && !normalizeCommentText(table.comment))
+                  && currentSharedTables.length > 0
+                  && currentSharedTables.some((table) => !normalizeCommentText(table.comment))
               ) {
                   const enrichedTables = await getLazyTablesByDB(currentDatabase);
                   if (isSqlCompletionRequestCancelled(token)) {
@@ -5187,7 +5656,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                   }
               }
               if (expectsTableName && currentDatabase) {
-                  completionTables = completionTables.filter((table) => isCurrentCompletionDatabase(table.dbName || ''));
+                  completionTables = findCompletionTablesByDatabase(completionTables, currentDatabase);
               }
 
               const referencedColumns: CompletionColumnMeta[] = [];
@@ -5200,7 +5669,11 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                       seenReferencedTables.add(key);
                       const preloaded = findPreloadedColumns(tableInfo.dbName, tableInfo.tableName);
                       if (preloaded.length > 0) continue;
-                      const cols = await getCompletionColumnsByTable(tableInfo.dbName, tableInfo.tableName);
+                      const cols = await getCompletionColumnsByTable(
+                          tableInfo.dbName,
+                          tableInfo.tableName,
+                          tableInfo.explicitOwnerName,
+                      );
                       if (isSqlCompletionRequestCancelled(token)) {
                           return createEmptySqlCompletionResult();
                       }
@@ -5210,110 +5683,189 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
               // 相关列提示：匹配 SQL 中引用的表（FROM/JOIN 等）
               // 权重最高，输入 WHERE 条件时优先显示
               // 先用索引把候选收敛到被引用表的列，避免整库列全量扫描。
-              const relevantColumnCandidates = expectsTableName || foundTables.size === 0
+              const preloadedRelevantColumns = expectsTableName || foundTables.size === 0
                   ? []
-                  : [
-                      ...collectSharedColumnsForTableIdents(sharedAllColumnsData, foundTables),
-                      ...referencedColumns,
-                  ];
-              const relevantColumns = relevantColumnCandidates
-                  .filter(c => {
-                      const fullIdent = `${c.dbName}.${c.tableName}`.toLowerCase();
-                      const shortIdent = (c.tableName || '').toLowerCase();
-                      // 对 schema.table 格式，也用纯表名部分匹配（如 public.users → users）
-                      const parsed = splitSchemaAndTable(c.tableName || '');
+                  : collectSharedColumnsForTableIdents(sharedAllColumnsData, foundTables);
+              const relevantColumnCandidates = preloadedRelevantColumns.length === 0
+                  ? referencedColumns
+                  : referencedColumns.length === 0
+                      ? preloadedRelevantColumns
+                      : [...preloadedRelevantColumns, ...referencedColumns];
+              const relevantColumnBatch = createBoundedQueryEditorCompletionCandidateBatch({
+                  candidates: relevantColumnCandidates,
+                  prefix: wordPrefix,
+                  getMatchRank: (column, normalizedPrefix) => {
+                      const fullIdent = `${column.dbName}.${column.tableName}`.toLowerCase();
+                      const shortIdent = (column.tableName || '').toLowerCase();
+                      const parsed = splitSchemaAndTable(column.tableName || '');
                       const pureIdent = (parsed.table || '').toLowerCase();
-                      return (foundTables.has(fullIdent) || foundTables.has(shortIdent) || (pureIdent && foundTables.has(pureIdent))) && startsWithPrefix(c.name || '');
-                  })
-                  .map(c => {
-                      // 当前库的表字段优先级更高
-                      const isCurrentDb = isCurrentCompletionDatabase(c.dbName || '');
+                      if (!foundTables.has(fullIdent) && !foundTables.has(shortIdent) && (!pureIdent || !foundTables.has(pureIdent))) {
+                          return null;
+                      }
+                      return rankQueryEditorCompletionCandidate(normalizedPrefix, [column.name], false);
+                  },
+                  getSelectionKey: (column) => (
+                      isCurrentCompletionDatabase(column.dbName || '')
+                          ? sortGroups.columnCurrent + column.name
+                          : sortGroups.columnOther + column.name
+                  ),
+                  buildSuggestion: (column) => {
+                      const isCurrentDb = isCurrentCompletionDatabase(column.dbName || '');
                       return {
-                          label: c.name,
+                          label: column.name,
                           kind: monaco.languages.CompletionItemKind.Field,
-                          insertText: quoteCompletionPart(c.name),
-                          detail: buildColumnCompletionDetail(c),
-                          documentation: buildColumnCompletionDocumentation(c),
+                          insertText: quoteCompletionPart(column.name),
+                          detail: buildColumnCompletionDetail(column),
+                          documentation: buildColumnCompletionDocumentation(column),
                           range,
-                          sortText: isCurrentDb ? sortGroups.columnCurrent + c.name : sortGroups.columnOther + c.name,
+                          sortText: isCurrentDb ? sortGroups.columnCurrent + column.name : sortGroups.columnOther + column.name,
                       };
-                  });
+                  },
+              });
 
               // 表提示：当前库智能处理 schema.table 格式
               // 1. 构建纯表名到 schema 列表的映射，检测同名表
-              const currentDbTables = completionTables.filter(t =>
-                  isCurrentCompletionDatabase(t.dbName || '')
-              );
-              const tableNameToSchemas = new Map<string, string[]>();
-              for (const t of currentDbTables) {
-                  const parsed = splitSchemaAndTable(t.tableName || '');
-                  const pureTable = (parsed.table || t.tableName || '').toLowerCase();
-                  const schemas = tableNameToSchemas.get(pureTable) || [];
-                  schemas.push(parsed.schema || '');
-                  tableNameToSchemas.set(pureTable, schemas);
-              }
+              const currentDatabaseTables = currentDatabase
+                  ? findCompletionTablesByDatabase(completionTables, currentDatabase)
+                  : [];
+              const tableNameToSchemaCount = getCompletionTableSchemaCounts(currentDatabaseTables);
 
-              const tableSuggestions = completionTables
-                .filter(t => {
-                    const isCurrentDb = isCurrentCompletionDatabase(t.dbName || '');
-                    const parsed = splitSchemaAndTable(t.tableName || '');
-                    const pureTable = parsed.table || t.tableName || '';
-                  if (!isCurrentDb) {
-                      const suggestionMeta = buildDbQualifiedTableSuggestionMeta(t.dbName || '', t.tableName || '');
-                      const label = suggestionMeta.dbQualifiedLabel;
-                      // 跨库：用 db.table 格式匹配
-                        return includesWordPrefix(label)
-                            || includesWordPrefix(t.tableName || '')
-                            || includesWordPrefix(pureTable);
-                    }
-                    // 当前库：同时用完整名和纯表名匹配
-                    return includesWordPrefix(t.tableName || '') || includesWordPrefix(pureTable);
-                })
-                .map(t => {
-                  const isCurrentDb = isCurrentCompletionDatabase(t.dbName || '');
-                  const parsed = splitSchemaAndTable(t.tableName || '');
-                  const pureTable = parsed.table || t.tableName || '';
-                  if (!isCurrentDb) {
-                      const suggestionMeta = buildDbQualifiedTableSuggestionMeta(t.dbName || '', t.tableName || '');
-                      const label = suggestionMeta.dbQualifiedLabel;
+              const tableBatch = createBoundedQueryEditorCompletionCandidateBatch({
+                  candidates: completionTables,
+                  prefix: wordPrefix,
+                  getMatchRank: (table, normalizedPrefix) => {
+                      const isCurrentDb = isCurrentCompletionDatabase(table.dbName || '');
+                      const parsed = splitSchemaAndTable(table.tableName || '');
+                      const pureTable = parsed.table || table.tableName || '';
+                      if (!isCurrentDb) {
+                          const meta = buildDbQualifiedTableSuggestionMeta(table.dbName || '', table.tableName || '');
+                          return rankQueryEditorCompletionCandidate(
+                              normalizedPrefix,
+                              [meta.dbQualifiedLabel, table.tableName, pureTable],
+                          );
+                      }
+                      return rankQueryEditorCompletionCandidate(normalizedPrefix, [table.tableName, pureTable]);
+                  },
+                  getSelectionKey: (table) => {
+                      const isCurrentDb = isCurrentCompletionDatabase(table.dbName || '');
+                      const parsed = splitSchemaAndTable(table.tableName || '');
+                      const pureTable = parsed.table || table.tableName || '';
+                      if (!isCurrentDb) {
+                          const meta = buildDbQualifiedTableSuggestionMeta(table.dbName || '', table.tableName || '');
+                          const label = meta.dbQualifiedLabel;
+                          return sortGroups.tableOther + getPrefixMatchRank(label, table.tableName || '', pureTable) + label;
+                      }
+                      return sortGroups.tableCurrent + getPrefixMatchRank(table.tableName || '', pureTable) + pureTable;
+                  },
+                  buildSuggestion: (table) => {
+                      const isCurrentDb = isCurrentCompletionDatabase(table.dbName || '');
+                      const parsed = splitSchemaAndTable(table.tableName || '');
+                      const pureTable = parsed.table || table.tableName || '';
+                      if (!isCurrentDb) {
+                          const meta = buildDbQualifiedTableSuggestionMeta(table.dbName || '', table.tableName || '');
+                          const label = meta.dbQualifiedLabel;
+                          return {
+                              label,
+                              kind: monaco.languages.CompletionItemKind.Class,
+                              insertText: quoteCompletionPath(label),
+                              detail: appendCommentToDetail(`${translate('query_editor.object_info.table')} (${table.dbName})`, table.comment),
+                              documentation: buildCompletionDocumentation(table.comment),
+                              range,
+                              sortText: sortGroups.tableOther + getPrefixMatchRank(label, table.tableName || '', pureTable) + label,
+                          };
+                      }
+                      const hasDuplicate = (tableNameToSchemaCount.get(pureTable.toLowerCase()) || 0) > 1;
+                      const label = hasDuplicate ? table.tableName : pureTable;
+                      const schemaInfo = parsed.schema ? ` (${parsed.schema})` : '';
                       return {
                           label,
                           kind: monaco.languages.CompletionItemKind.Class,
-                          insertText: quoteCompletionPath(label),
-                          detail: appendCommentToDetail(`${translate('query_editor.object_info.table')} (${t.dbName})`, t.comment),
-                          documentation: buildCompletionDocumentation(t.comment),
+                          insertText: quoteCompletionPath(hasDuplicate ? table.tableName : pureTable),
+                          detail: appendCommentToDetail(`${translate('query_editor.object_info.table')}${schemaInfo}`, table.comment),
+                          documentation: buildCompletionDocumentation(table.comment),
                           range,
-                          sortText: sortGroups.tableOther + getPrefixMatchRank(label, t.tableName || '', pureTable) + label,
+                          sortText: sortGroups.tableCurrent + getPrefixMatchRank(table.tableName || '', pureTable) + pureTable,
                       };
-                  }
-                  // 当前库：检查是否有跨 schema 同名表
-                  const schemas = tableNameToSchemas.get(pureTable.toLowerCase()) || [];
-                  const hasDuplicate = schemas.length > 1;
-                  // 同名表存在于多个 schema → 显示 schema.table；否则只显示纯表名
-                  const label = hasDuplicate ? t.tableName : pureTable;
-                  const insertText = quoteCompletionPath(hasDuplicate ? t.tableName : pureTable);
-                  const schemaInfo = parsed.schema ? ` (${parsed.schema})` : '';
-                  return {
-                      label,
-                      kind: monaco.languages.CompletionItemKind.Class,
-                      insertText,
-                      detail: appendCommentToDetail(`${translate('query_editor.object_info.table')}${schemaInfo}`, t.comment),
-                      documentation: buildCompletionDocumentation(t.comment),
-                      range,
-                      sortText: sortGroups.tableCurrent + getPrefixMatchRank(t.tableName || '', pureTable) + pureTable,
-                  };
+                  },
               });
 
-              const routineSuggestions = sharedRoutinesData
-                  .map((routine) => ({ routine, meta: buildRoutineSuggestionMeta(routine) }))
-                  .filter(({ routine, meta }) => {
-                      if (expectsRoutineName && meta.routineType !== 'PROCEDURE') return false;
-                      return includesWordPrefix(meta.dbQualifiedLabel)
-                          || includesWordPrefix(meta.displayName)
-                          || includesWordPrefix(meta.objectName)
-                          || includesWordPrefix(routine.routineName || '');
+              const buildGlobalViewBatch = (views: CompletionViewMeta[], materialized: boolean) => (
+                  createBoundedQueryEditorCompletionCandidateBatch({
+                      candidates: views,
+                      prefix: wordPrefix,
+                      getMatchRank: (view, normalizedPrefix) => {
+                          if (expectsTableName && currentDatabase && !isCurrentCompletionDatabase(view.dbName || '')) return null;
+                          const meta = buildViewSuggestionMeta(view);
+                          return rankQueryEditorCompletionCandidate(
+                              normalizedPrefix,
+                              [meta.dbQualifiedLabel, meta.displayName, meta.objectName, view.viewName],
+                          );
+                      },
+                      getSelectionKey: (view) => {
+                          const meta = buildViewSuggestionMeta(view);
+                          const isCurrentDb = isCurrentCompletionDatabase(view.dbName || '');
+                          const label = isCurrentDb ? meta.displayName : meta.dbQualifiedLabel;
+                          return (isCurrentDb ? sortGroups.tableCurrent : sortGroups.tableOther)
+                              + '1'
+                              + getPrefixMatchRank(label, meta.displayName, meta.objectName, view.viewName || '')
+                              + label;
+                      },
+                      buildSuggestion: (view) => {
+                          const meta = buildViewSuggestionMeta(view);
+                          const isCurrentDb = isCurrentCompletionDatabase(view.dbName || '');
+                          const label = isCurrentDb ? meta.displayName : meta.dbQualifiedLabel;
+                          return {
+                              label,
+                              kind: monaco.languages.CompletionItemKind.Class,
+                              insertText: meta.insertText,
+                              detail: `${getViewTypeLabel(materialized)} (${getViewSuggestionScope(view, meta)})`,
+                              range,
+                              sortText: (isCurrentDb ? sortGroups.tableCurrent : sortGroups.tableOther)
+                                  + '1'
+                                  + getPrefixMatchRank(label, meta.displayName, meta.objectName, view.viewName || '')
+                                  + label,
+                          };
+                      },
                   })
-                  .map(({ routine, meta }) => {
+              );
+              const viewBatch = buildGlobalViewBatch(sharedViewsData, false);
+              const materializedViewBatch = buildGlobalViewBatch(sharedMaterializedViewsData, true);
+
+              const synonymBatch = createBoundedQueryEditorCompletionCandidateBatch({
+                  candidates: selectUnqualifiedCompletionSynonyms(sharedSynonymsData, oracleLoginOwner),
+                  prefix: wordPrefix,
+                  getMatchRank: (synonym, normalizedPrefix) => (
+                      rankQueryEditorCompletionCandidate(normalizedPrefix, [synonym.synonymName])
+                  ),
+                  getSelectionKey: (synonym) => (
+                      sortGroups.tableCurrent + '05' + getPrefixMatchRank(synonym.synonymName || '') + synonym.synonymName
+                  ),
+                  buildSuggestion: (synonym) => buildSynonymSuggestion(
+                      synonym,
+                      sortGroups.tableCurrent + '05' + getPrefixMatchRank(synonym.synonymName || '') + synonym.synonymName,
+                  ),
+              });
+
+              const routineBatch = createBoundedQueryEditorCompletionCandidateBatch({
+                  candidates: sharedRoutinesData,
+                  prefix: wordPrefix,
+                  getMatchRank: (routine, normalizedPrefix) => {
+                      const meta = buildRoutineSuggestionMeta(routine);
+                      if (expectsRoutineName && meta.routineType !== 'PROCEDURE') return null;
+                      return rankQueryEditorCompletionCandidate(
+                          normalizedPrefix,
+                          [meta.dbQualifiedLabel, meta.displayName, meta.objectName, routine.routineName],
+                      );
+                  },
+                  getSelectionKey: (routine) => {
+                      const meta = buildRoutineSuggestionMeta(routine);
+                      const isCurrentDb = isCurrentCompletionDatabase(routine.dbName || '');
+                      return (isCurrentDb ? sortGroups.routineCurrent : sortGroups.routineOther)
+                          + getPrefixMatchRank(meta.dbQualifiedLabel, meta.displayName, meta.objectName, routine.routineName || '')
+                          + meta.dbQualifiedLabel;
+                  },
+                  buildSuggestion: (routine) => {
+                      const meta = buildRoutineSuggestionMeta(routine);
                       const isCurrentDb = isCurrentCompletionDatabase(routine.dbName || '');
                       const schemaInfo = meta.schemaName && meta.schemaName.toLowerCase() !== String(routine.dbName || '').toLowerCase()
                           ? `.${meta.schemaName}`
@@ -5329,65 +5881,72 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                               + getPrefixMatchRank(meta.dbQualifiedLabel, meta.displayName, meta.objectName, routine.routineName || '')
                               + meta.dbQualifiedLabel,
                       };
-                  });
+                  },
+              });
 
               // 数据库提示
-              const dbSuggestions = sharedVisibleDbs
-                  .filter((db) => startsWithPrefix(db))
-                  .map(db => ({
+              const dbBatch = createBoundedQueryEditorCompletionCandidateBatch({
+                  candidates: sharedVisibleDbs,
+                  prefix: wordPrefix,
+                  getMatchRank: (db, normalizedPrefix) => rankQueryEditorCompletionCandidate(normalizedPrefix, [db], false),
+                  getSelectionKey: (db) => sortGroups.db + db,
+                  buildSuggestion: (db) => ({
                       label: db,
                       kind: monaco.languages.CompletionItemKind.Module,
                       insertText: db,
                       detail: translate('query_editor.object_info.database'),
                       range,
                       sortText: sortGroups.db + db,
-                  }));
+                  }),
+              });
 
               // 关键字提示
-              const keywordSuggestions = dialectKeywords
-                  .filter((k) => startsWithPrefix(k))
-                  .map(k => ({
-                  label: k,
-                  kind: monaco.languages.CompletionItemKind.Keyword,
-                  insertText: k,
-                  range,
-                  sortText: sortGroups.keyword + k,
-              }));
+              const keywordBatch = createBoundedQueryEditorCompletionCandidateBatch({
+                  candidates: dialectKeywords,
+                  prefix: wordPrefix,
+                  getMatchRank: (keyword, normalizedPrefix) => rankQueryEditorCompletionCandidate(normalizedPrefix, [keyword], false),
+                  getSelectionKey: (keyword) => sortGroups.keyword + keyword,
+                  buildSuggestion: (keyword) => ({
+                      label: keyword,
+                      kind: monaco.languages.CompletionItemKind.Keyword,
+                      insertText: keyword,
+                      range,
+                      sortText: sortGroups.keyword + keyword,
+                  }),
+              });
 
               // 内置函数提示
-              const funcSuggestions = dialectFunctions
-                  .filter((f) => startsWithPrefix(f.name))
-                  .map(f => ({
-                      label: f.name,
+              const funcBatch = createBoundedQueryEditorCompletionCandidateBatch({
+                  candidates: dialectFunctions,
+                  prefix: wordPrefix,
+                  getMatchRank: (func, normalizedPrefix) => rankQueryEditorCompletionCandidate(normalizedPrefix, [func.name], false),
+                  getSelectionKey: (func) => sortGroups.func + func.name,
+                  buildSuggestion: (func) => ({
+                      label: func.name,
                       kind: monaco.languages.CompletionItemKind.Function,
-                      insertText: f.name + '($0)',
+                      insertText: func.name + '($0)',
                       insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
-                      detail: f.detail,
+                      detail: func.detail,
                       range,
-                      sortText: sortGroups.func + f.name,
-                  }));
+                      sortText: sortGroups.func + func.name,
+                  }),
+              });
 
-              const suggestions = isNewStatementKeywordContext
-                  ? [
-                      ...keywordSuggestions,
-                      ...funcSuggestions,
-                      ...tableSuggestions,
-                      ...dbSuggestions,
-                      ...routineSuggestions,
-                      ...relevantColumns,
-                  ]
-                  : [
-                      ...relevantColumns,   // FROM 表的列最优先
-                      ...tableSuggestions,  // 表次之
-                      ...dbSuggestions,     // 数据库
-                      ...routineSuggestions, // 存储过程/函数
-                      ...funcSuggestions,   // 内置函数
-                      ...keywordSuggestions // 关键字最后
-                  ];
+              const suggestions = materializeBoundedQueryEditorCompletionBatches([
+                  relevantColumnBatch,
+                  tableBatch,
+                  viewBatch,
+                  materializedViewBatch,
+                  synonymBatch,
+                  dbBatch,
+                  routineBatch,
+                  funcBatch,
+                  keywordBatch,
+              ], QUERY_EDITOR_COMPLETION_SUGGESTION_LIMIT);
               return { suggestions };
           }
-      }));
-      sqlCompletionDisposables.push(monaco.languages.registerCompletionItemProvider('sql', {
+      });
+      registerQueryEditorCompletionProvider({
           triggerCharacters: ['/'],
           provideCompletionItems: (model: any, position: any) => {
               const lineContent = model.getLineContent(position.lineNumber);
@@ -5414,11 +5973,11 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                   })),
               };
           },
-      }));
+      });
 
 
       // SQL snippet completion provider
-      sqlCompletionDisposables.push(monaco.languages.registerCompletionItemProvider('sql', {
+      registerQueryEditorCompletionProvider({
           provideCompletionItems: (model: any, position: any) => {
               const word = model.getWordUntilPosition(position);
               const prefix = word.word.toLowerCase();
@@ -5450,7 +6009,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                   })),
               };
           },
-      }));
+      });
 
       } // end sqlCompletionRegistered guard
 
@@ -5642,8 +6201,8 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       },
   ];
 
-  const splitSQLStatements = (sql: string): string[] => {
-    return findSqlStatementRanges(sql).map((range) => range.text);
+  const splitSQLStatements = (sql: string, dbType = ''): string[] => {
+    return findSqlStatementRanges(sql, dbType).map((range) => range.text);
   };
 
   const containsOraclePlsqlDefinition = (statements: string[]): boolean => (
@@ -5769,19 +6328,19 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           || '';
   };
 
-  const resolveExecutableSQLAtEditorPosition = (model: any, sqlText: string, position: any): string => {
+  const resolveExecutableSQLAtEditorPosition = (model: any, sqlText: string, position: any, dbType = ''): string => {
       const normalizedPosition = normalizeEditorPosition(position);
       if (!normalizedPosition) return '';
       const cursorOffset = getNormalizedOffsetAtPosition(sqlText, normalizedPosition);
-      const resolved = resolveExecutableSql(sqlText, cursorOffset, '');
+      const resolved = resolveExecutableSql(sqlText, cursorOffset, '', dbType);
       return resolved?.sql || '';
   };
 
-  const getExecutableSQLAtCurrentCursor = (model: any, sqlText: string): string => {
+  const getExecutableSQLAtCurrentCursor = (model: any, sqlText: string, dbType = ''): string => {
       const editor = editorRef.current;
       const liveSelection = normalizeEditorPosition(editor?.getSelection?.());
       if (liveSelection) {
-          return resolveExecutableSQLAtEditorPosition(model, sqlText, liveSelection);
+          return resolveExecutableSQLAtEditorPosition(model, sqlText, liveSelection, dbType);
       }
 
       const livePosition = normalizeEditorPosition(editor?.getPosition?.());
@@ -5795,12 +6354,12 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           const key = `${position.lineNumber}:${position.column}`;
           if (seen.has(key)) continue;
           seen.add(key);
-          const sql = resolveExecutableSQLAtEditorPosition(model, sqlText, position);
+          const sql = resolveExecutableSQLAtEditorPosition(model, sqlText, position, dbType);
           if (sql.trim()) return sql;
       }
 
       const fallbackPosition = cachedPosition || livePosition;
-      return resolveExecutableSQLAtEditorPosition(model, sqlText, fallbackPosition);
+      return resolveExecutableSQLAtEditorPosition(model, sqlText, fallbackPosition, dbType);
   };
 
   const getExecutableSQL = (): string => {
@@ -5822,7 +6381,13 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       if (selected) {
           return selectedSQL;
       }
-      return getExecutableSQLAtCurrentCursor(model, String(model.getValue?.() ?? currentQuery));
+      const activeConnection = connections.find((connection) => connection.id === currentConnectionId);
+      const activeDialect = resolveSqlDialect(
+          String(activeConnection?.config?.type || ''),
+          String(activeConnection?.config?.driver || ''),
+          { oceanBaseProtocol: activeConnection?.config?.oceanBaseProtocol },
+      );
+      return getExecutableSQLAtCurrentCursor(model, String(model.getValue?.() ?? currentQuery), activeDialect);
   };
 
   const captureEditorCursorPosition = (event?: React.MouseEvent<HTMLElement>) => {
@@ -5840,9 +6405,10 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       sql: string,
       queryId: string,
       sourceStatements: string[],
+      dbType = String(config.type || ''),
   ) => {
       const pendingTransaction = pendingSqlTransactionRef.current;
-      if (pendingTransaction && canReusePendingSqlEditorTransactionForType(String(config.type || ''), sourceStatements)) {
+      if (pendingTransaction && canReusePendingSqlEditorTransactionForType(dbType, sourceStatements)) {
           return DBQueryMultiInTransaction(pendingTransaction.id, sql, queryId);
       }
       return DBQueryMulti(buildRpcConnectionConfig(config) as any, dbName, sql, queryId);
@@ -5864,6 +6430,11 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           useSSH: conn.config.useSSH || false,
           ssh: conn.config.ssh || { host: "", port: 22, user: "", password: "", keyPath: "" }
       };
+      const normalizedDbType = String(resolveSqlDialect(
+          String(config.type || ''),
+          String((config as any).driver || ''),
+          { oceanBaseProtocol: String((config as any).oceanBaseProtocol || '') },
+      )).trim().toLowerCase();
 
       try {
           setLoading(true);
@@ -5879,7 +6450,8 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
               currentDb,
               sql,
               queryId,
-              splitSQLStatements(sql),
+              splitSQLStatements(sql, normalizedDbType),
+              normalizedDbType,
           );
           if (!res?.success) {
               message.error(translate('query_editor.message.refresh_failed', {
@@ -5935,8 +6507,179 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       }
   };
 
-  const handleResultPageChange = async (resultKey: string, page: number, pageSize: number) => {
-      const target = resultSets.find((item) => item.key === resultKey);
+  const handleRequestResultTotalCount = async (resultKey: string) => {
+      const target = resultSetsRef.current.find((item) => item.key === resultKey);
+      if (!target?.page?.baseSql || !currentDb || resultTotalCountRequestsRef.current[resultKey]) return;
+      const conn = connections.find(c => c.id === currentConnectionId);
+      if (!conn) return;
+      const countSql = buildQueryResultCountSql(target.page.baseSql);
+      if (!countSql) return;
+      const config = {
+          ...conn.config,
+          port: Number(conn.config.port),
+          password: conn.config.password || '',
+          database: conn.config.database || '',
+          useSSH: conn.config.useSSH || false,
+          ssh: conn.config.ssh || { host: '', port: 22, user: '', password: '', keyPath: '' },
+          timeout: Math.max(Number(conn.config.timeout) || 30, 120),
+      };
+      const normalizedDbType = String(resolveSqlDialect(
+          String(config.type || 'mysql'),
+          String((config as any).driver || ''),
+          { oceanBaseProtocol: String((config as any).oceanBaseProtocol || '') },
+      )).toLowerCase();
+      const sequence = ++resultTotalCountSeqRef.current;
+      const requestRunSequence = runSeqRef.current;
+      resultTotalCountRequestsRef.current[resultKey] = { sequence, queryId: '' };
+      setResultSets(prev => prev.map(rs =>
+          rs.key === resultKey && rs.page
+              ? { ...rs, page: { ...rs.page, totalCountLoading: true, totalCountCancelled: false } }
+              : rs
+      ));
+      const countStartedAt = Date.now();
+      const isCurrentRequest = () => {
+          if (resultTotalCountRequestsRef.current[resultKey]?.sequence !== sequence) return false;
+          if (runSeqRef.current !== requestRunSequence) return false;
+          const currentResult = resultSetsRef.current.find((item) => item.key === resultKey);
+          return currentResult?.page?.baseSql === target.page?.baseSql;
+      };
+      const finishLoading = (cancelled = false) => {
+          if (!isCurrentRequest()) return;
+          delete resultTotalCountRequestsRef.current[resultKey];
+          setResultSets(prev => prev.map(rs =>
+              rs.key === resultKey && rs.page
+                  ? { ...rs, page: { ...rs.page, totalCountLoading: false, totalCountCancelled: cancelled } }
+                  : rs
+          ));
+      };
+
+      try {
+          let queryId: string;
+          try {
+              queryId = await GenerateQueryID();
+          } catch {
+              queryId = `query-total-${uuidv4()}`;
+          }
+          if (!isCurrentRequest()) return;
+          resultTotalCountRequestsRef.current[resultKey] = { sequence, queryId };
+          const res = await executeSqlEditorMultiQuery(
+              config,
+              currentDb,
+              countSql,
+              queryId,
+              [countSql],
+              normalizedDbType,
+          );
+          const duration = Date.now() - countStartedAt;
+          addSqlLog({
+              id: `log-${Date.now()}-query-total-count`,
+              timestamp: Date.now(),
+              sql: countSql,
+              status: res?.success ? 'success' : 'error',
+              duration,
+              message: res?.success ? '' : String(res?.message || translate('data_viewer.message.total_count_failed')),
+              dbName: currentDb,
+          });
+          if (!isCurrentRequest()) return;
+          if (!res?.success) {
+              finishLoading();
+              message.error(String(res?.message || translate('data_viewer.message.total_count_failed')));
+              return;
+          }
+          const resultSetData = Array.isArray(res.data) ? res.data[0] : null;
+          const countRow = Array.isArray(resultSetData?.rows) ? resultSetData.rows[0] : null;
+          const total = parseQueryResultTotalCount(countRow);
+          if (total === null) {
+              finishLoading();
+              message.error(translate('data_viewer.message.total_count_parse_failed'));
+              return;
+          }
+
+          delete resultTotalCountRequestsRef.current[resultKey];
+          setResultSets(prev => prev.map(rs =>
+              rs.key === resultKey && rs.page
+                  ? {
+                      ...rs,
+                      page: {
+                          ...rs.page,
+                          total,
+                          totalKnown: true,
+                          totalCountLoading: false,
+                          totalCountCancelled: false,
+                      },
+                  }
+                  : rs
+          ));
+      } catch (error: any) {
+          if (!isCurrentRequest()) return;
+          addSqlLog({
+              id: `log-${Date.now()}-query-total-count-error`,
+              timestamp: Date.now(),
+              sql: countSql,
+              status: 'error',
+              duration: Date.now() - countStartedAt,
+              message: String(error?.message || error || translate('common.unknown')),
+              dbName: currentDb,
+          });
+          finishLoading();
+          message.error(translate('data_viewer.message.total_count_failed_detail', {
+              detail: String(error?.message || error || translate('common.unknown')),
+          }));
+      }
+  };
+
+  const cancelResultTotalCountRequests = async (resultKeys: string[]) => {
+      const uniqueKeys = Array.from(new Set(resultKeys));
+      const pendingRequests = uniqueKeys
+          .map((key) => ({ key, request: resultTotalCountRequestsRef.current[key] }))
+          .filter((item) => Boolean(item.request));
+      if (pendingRequests.length === 0) return;
+      pendingRequests.forEach(({ key }) => {
+          delete resultTotalCountRequestsRef.current[key];
+      });
+      const pendingKeySet = new Set(pendingRequests.map(({ key }) => key));
+      setResultSets(prev => prev.map(rs =>
+          pendingKeySet.has(rs.key) && rs.page
+              ? { ...rs, page: { ...rs.page, totalCountLoading: false, totalCountCancelled: true } }
+              : rs
+      ));
+      await Promise.all(pendingRequests.map(async ({ request }) => {
+          if (!request?.queryId) return;
+          try {
+              await CancelQuery(request.queryId);
+          } catch {
+              // The query may have completed between the local cancellation and the backend call.
+          }
+      }));
+  };
+
+  useEffect(() => {
+      const nextContext = `${currentConnectionId}\u0000${currentDb}`;
+      if (resultTotalCountContextRef.current === nextContext) return;
+      resultTotalCountContextRef.current = nextContext;
+      void cancelResultTotalCountRequests(Object.keys(resultTotalCountRequestsRef.current));
+  }, [currentConnectionId, currentDb]);
+
+  useEffect(() => () => {
+      const requests = Object.values(resultTotalCountRequestsRef.current);
+      resultTotalCountRequestsRef.current = {};
+      requests.forEach((request) => {
+          if (!request.queryId) return;
+          void CancelQuery(request.queryId).catch(() => undefined);
+      });
+  }, []);
+
+  const handleCancelResultTotalCount = async (resultKey: string) => {
+      await cancelResultTotalCountRequests([resultKey]);
+  };
+
+  const handleResultPageChange = async (
+      resultKey: string,
+      page: number,
+      pageSize: number,
+      sortInfoOverride?: GridSortInfoItem[],
+  ) => {
+      const target = resultSetsRef.current.find((item) => item.key === resultKey);
       if (!target?.page?.baseSql || !currentDb) return;
       const conn = connections.find(c => c.id === currentConnectionId);
       if (!conn) return;
@@ -5959,9 +6702,11 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           baseSql: target.page.baseSql,
           dbType: normalizedDbType,
           driver,
+          oceanBaseProtocol: String((config as any).oceanBaseProtocol || ''),
           page: safePage,
           pageSize: safePageSize,
           lookahead: true,
+          sortInfo: sortInfoOverride || target.sortInfo || [],
       });
 
       try {
@@ -5982,7 +6727,8 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
               currentDb,
               pageSql,
               queryId,
-              splitSQLStatements(pageSql),
+              splitSQLStatements(pageSql, normalizedDbType),
+              normalizedDbType,
           );
           if (!res?.success) {
               message.error(translate('query_editor.message.page_query_failed', {
@@ -6014,25 +6760,29 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
               rowCount: rows.length,
               hasNext,
           });
-          setResultSets(prev => prev.map(rs =>
-              rs.key === resultKey && rs.page
-                  ? {
-                      ...rs,
-                      rows,
-                      columns: cols,
-                      messages: pageMessages,
-                      resultType: 'grid',
-                      truncated: false,
-                      page: {
-                          ...rs.page,
-                          current: safePage,
-                          pageSize: safePageSize,
-                          ...totalState,
-                          loading: false,
-                      },
-                  }
-                  : rs
-          ));
+          setResultSets(prev => prev.map(rs => {
+              if (rs.key !== resultKey || !rs.page) return rs;
+              const hasExactTotal = rs.page.totalKnown === true
+                  && Number.isFinite(Number(rs.page.total))
+                  && Number(rs.page.total) >= 0;
+              return {
+                  ...rs,
+                  rows,
+                  columns: cols,
+                  messages: pageMessages,
+                  resultType: 'grid',
+                  truncated: false,
+                  page: {
+                      ...rs.page,
+                      current: safePage,
+                      pageSize: safePageSize,
+                      ...(hasExactTotal
+                          ? { total: rs.page.total, totalKnown: true }
+                          : totalState),
+                      loading: false,
+                  },
+              };
+          }));
       } catch (err: any) {
           message.error(translate('query_editor.message.page_query_failed', {
               error: formatSqlExecutionError(err?.message || err || translate('common.unknown'), { translate }),
@@ -6045,6 +6795,30 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                   : rs
           ));
       }
+  };
+
+  const handleResultSort = async (resultKey: string, field: string, order: string) => {
+      const nextSortInfo = parseQueryResultSortInfo(field, order);
+      const target = resultSetsRef.current.find((item) => item.key === resultKey);
+      if (!target) return;
+
+      if (target.page) {
+          setResultSets(prev => prev.map(rs => (
+              rs.key === resultKey ? { ...rs, sortInfo: nextSortInfo } : rs
+          )));
+          await handleResultPageChange(resultKey, 1, target.page.pageSize, nextSortInfo);
+          return;
+      }
+
+      setResultSets(prev => prev.map(rs => (
+          rs.key === resultKey
+              ? {
+                  ...rs,
+                  rows: sortCompleteQueryResultRows(rs.rows, nextSortInfo),
+                  sortInfo: nextSortInfo,
+              }
+              : rs
+      )));
   };
 
   const handleRun = async () => {
@@ -6061,6 +6835,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
         message.error(translate('query_editor.message.select_database_first'));
         return;
     }
+    await cancelResultTotalCountRequests(Object.keys(resultTotalCountRequestsRef.current));
     // 如果已有查询在运行，先取消它
     if (currentQueryIdRef.current) {
         try {
@@ -6121,13 +6896,13 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
             const splitInput = normalizedRawSQL
                 .replace(/^\s*\/\/.*$/gm, '')
                 .replace(/^\s*#.*$/gm, '');
-            const statements = splitSQLStatements(splitInput);
+            const statements = splitSQLStatements(splitInput, normalizedDbType);
             const didExecuteAppendedSql = resultSets.length > 0
                 && lastExecutedEditorQueryRef.current
                 && currentQuery.startsWith(lastExecutedEditorQueryRef.current)
                 && normalizedRawSQL.trim() === currentQuery.slice(lastExecutedEditorQueryRef.current.length).replace(/；/g, ';').trim();
             const didExecuteWholeEditor = areSqlStatementListsEqual(
-                splitSQLStatements(currentQuery.replace(/；/g, ';')),
+                splitSQLStatements(currentQuery.replace(/；/g, ';'), normalizedDbType),
                 statements,
             );
             if (statements.length === 0) {
@@ -6282,13 +7057,13 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
 
         } else {
             // 非 MongoDB：使用 DBQueryMulti 一次性执行多条 SQL，后端返回多结果集
-            const sourceStatements = splitSQLStatements(normalizedRawSQL);
+            const sourceStatements = splitSQLStatements(normalizedRawSQL, normalizedDbType);
             const didExecuteAppendedSql = resultSets.length > 0
                 && lastExecutedEditorQueryRef.current
                 && currentQuery.startsWith(lastExecutedEditorQueryRef.current)
                 && normalizedRawSQL.trim() === currentQuery.slice(lastExecutedEditorQueryRef.current.length).replace(/；/g, ';').trim();
             const didExecuteWholeEditor = areSqlStatementListsEqual(
-                splitSQLStatements(currentQuery.replace(/；/g, ';')),
+                splitSQLStatements(currentQuery.replace(/；/g, ';'), normalizedDbType),
                 sourceStatements,
             );
             if (sourceStatements.length === 0) {
@@ -6297,16 +7072,17 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                 setActiveResultKey('');
                 return;
             }
-            const useManagedTransaction = shouldUseSqlEditorManagedTransactionForType(connCaps.type, sourceStatements);
+            const useManagedTransaction = shouldUseSqlEditorManagedTransactionForType(normalizedDbType, sourceStatements);
             if (useManagedTransaction && pendingSqlTransactionRef.current) {
                 message.warning(translate('query_editor.transaction.message.pending_managed_transaction'));
                 return;
             }
             const managedTransactionStatementCount = sourceStatements
-                .filter((statement) => shouldUseSqlEditorManagedTransactionForType(connCaps.type, [statement]))
+                .filter((statement) => shouldUseSqlEditorManagedTransactionForType(normalizedDbType, [statement]))
                 .length || sourceStatements.length;
 
             const forceReadOnlyResult = connCaps.forceReadOnlyQueryResult;
+            const oceanBaseOracleConnection = isOceanBaseOracleConnection(config);
             const defaultOracleSchema = isOracleLikeDialect(normalizedDbType)
                 ? resolveOracleLikeDefaultSchemaName(config)
                 : '';
@@ -6332,7 +7108,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                     }
                     const fetchedTables = resTables.data
                         .map((row: any) => {
-                            const tableName = String(Object.values(row || {})[0] || '').trim();
+                            const tableName = extractTableNameFromMetadataRow(row);
                             if (!tableName) return null;
                             return {
                                 dbName: normalizedDbName,
@@ -6358,8 +7134,10 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                 }
             };
             const executedSourceStatements: string[] = [];
+            const allowOracleRowIDByStatement: boolean[] = [];
             for (const statement of sourceStatements) {
                 let executableStatement = statement;
+                let allowOracleRowID = !oceanBaseOracleConnection;
                 if (isOracleLikeDialect(normalizedDbType)) {
                     const leadingTable = matchLeadingSelectTableReference(statement);
                     if (leadingTable) {
@@ -6370,6 +7148,12 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                         let exactQualifiedTable: string | undefined;
                         for (const oracleLookupDbName of oracleLookupDbCandidates) {
                             const oracleTables = oracleLookupDbName ? await getOracleTablesForDb(oracleLookupDbName) : [];
+                            if (
+                                oceanBaseOracleConnection
+                                && isOracleBaseTableReference(statement, oracleLookupDbName, oracleTables)
+                            ) {
+                                allowOracleRowID = true;
+                            }
                             exactQualifiedTable = resolveOracleExactCaseTableReference(statement, oracleLookupDbName, oracleTables, {
                                 qualifyUnqualified: Boolean(
                                     leadingSegments.length === 1
@@ -6387,6 +7171,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                     }
                 }
                 executedSourceStatements.push(executableStatement);
+                allowOracleRowIDByStatement.push(allowOracleRowID);
             }
             const statementPlans: QueryStatementPlan[] = [];
             for (let index = 0; index < sourceStatements.length; index += 1) {
@@ -6399,6 +7184,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                         currentDb,
                         config,
                         forceReadOnly: forceReadOnlyResult,
+                        allowOracleRowID: allowOracleRowIDByStatement[index],
                     }));
                 } catch (planError) {
                     // 行定位计划失败绝不能阻断查询执行，兜底裸计划保证结果页始终呈现。
@@ -6444,6 +7230,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                     fullSQL,
                     queryId,
                     executableStatements,
+                    normalizedDbType,
                 );
             const duration = Date.now() - startTime;
 
@@ -6486,14 +7273,27 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                 return;
             }
 
-            if (useManagedTransaction && res.transactionPending && res.transactionId) {
-                activatePendingSqlTransaction({
-                    id: String(res.transactionId),
-                    commitMode: sqlEditorCommitMode,
-                    autoCommitDelayMs: sqlEditorAutoCommitDelayMs,
-                    createdAt: Date.now(),
-                    statementCount: managedTransactionStatementCount,
-                });
+            if (res.transactionPending && res.transactionId) {
+                const transactionId = String(res.transactionId);
+                if (useManagedTransaction) {
+                    activatePendingSqlTransaction({
+                        id: transactionId,
+                        commitMode: sqlEditorCommitMode,
+                        autoCommitDelayMs: sqlEditorAutoCommitDelayMs,
+                        createdAt: Date.now(),
+                        statementCount: managedTransactionStatementCount,
+                        dbType: normalizedDbType,
+                        dbName: currentDb,
+                        statements: sourceStatements,
+                        executionDurationMs: duration,
+                    });
+                } else {
+                    appendPendingSqlTransactionExecution({
+                        transactionId,
+                        statements: sourceStatements,
+                        durationMs: duration,
+                    });
+                }
             }
 
             // res.data 是 ResultSetData[] 数组
@@ -6620,6 +7420,8 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                         // 跨库/跨 schema 查询时，列类型与注释必须从真实表所在库加载
                         metadataDbName: tableRef?.metadataDbName,
                         metadataTableName: tableRef?.metadataTableName,
+                        ddlDbName: tableRef?.ddlDbName,
+                        ddlTableName: tableRef?.ddlTableName,
                         pkColumns: plan?.pkColumns || [],
                         editLocator,
                         readOnly: forceReadOnlyResult || !editLocator || editLocator.readOnly,
@@ -6740,7 +7542,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           const editorHasFocus = !!editor.hasTextFocus?.();
           const inEditorPane = !!(targetNode && editorPaneRef.current?.contains(targetNode));
           const inQueryEditor = !!(targetNode && queryEditorRootRef.current?.contains(targetNode));
-          if (isEditableElement(event.target) && !inEditorPane) {
+          if (isEditableElement(event.target)) {
               return;
           }
           if (!editorHasFocus && !inEditorPane) {
@@ -6897,7 +7699,9 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       const binding = runQueryShortcutBinding;
       if (!binding?.enabled || !binding.combo) return;
 
-      const keyBinding = comboToMonacoKeyBinding(binding.combo, monaco.KeyMod, monaco.KeyCode);
+      const keyBinding = comboToMonacoKeyBinding(
+          binding.combo, monaco.KeyMod, monaco.KeyCode, activeShortcutPlatform,
+      );
       if (keyBinding) {
           runQueryActionRef.current = editor.addAction({
               id: 'gonavi.runQuery',
@@ -6918,7 +7722,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
               runQueryActionRef.current = null;
           }
       };
-  }, [languagePreference, runQueryShortcutBinding]);
+  }, [activeShortcutPlatform, languagePreference, runQueryShortcutBinding]);
 
   useEffect(() => {
       if (selectCurrentStatementActionRef.current) {
@@ -6936,7 +7740,9 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
 
       const binding = selectCurrentStatementShortcutBinding;
       if (binding?.enabled && binding.combo) {
-          const keyBinding = comboToMonacoKeyBinding(binding.combo, monaco.KeyMod, monaco.KeyCode);
+          const keyBinding = comboToMonacoKeyBinding(
+              binding.combo, monaco.KeyMod, monaco.KeyCode, activeShortcutPlatform,
+          );
           if (keyBinding) {
               selectCurrentStatementActionRef.current = editor.addAction({
                   id: 'gonavi.selectCurrentStatement',
@@ -6952,6 +7758,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
               QUERY_EDITOR_MAC_FIND_WITH_SELECTION_COMBO,
               monaco.KeyMod,
               monaco.KeyCode,
+              activeShortcutPlatform,
           )
           : null;
       if (macFindWithSelectionGuardKeyBinding) {
@@ -6998,7 +7805,9 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       const binding = duplicateCurrentLineShortcutBinding;
       if (!binding?.enabled || !binding.combo) return;
 
-      const keyBinding = comboToMonacoKeyBinding(binding.combo, monaco.KeyMod, monaco.KeyCode);
+      const keyBinding = comboToMonacoKeyBinding(
+          binding.combo, monaco.KeyMod, monaco.KeyCode, activeShortcutPlatform,
+      );
       if (keyBinding) {
           duplicateCurrentLineActionRef.current = editor.addAction({
               id: 'gonavi.duplicateCurrentLine',
@@ -7014,7 +7823,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
               duplicateCurrentLineActionRef.current = null;
           }
       };
-  }, [duplicateCurrentLineShortcutBinding, handleDuplicateCurrentLine, languagePreference]);
+  }, [activeShortcutPlatform, duplicateCurrentLineShortcutBinding, handleDuplicateCurrentLine, languagePreference]);
 
   useEffect(() => {
       if (saveQueryActionRef.current) {
@@ -7029,7 +7838,9 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       const binding = saveQueryShortcutBinding;
       if (!binding?.enabled || !binding.combo) return;
 
-      const keyBinding = comboToMonacoKeyBinding(binding.combo, monaco.KeyMod, monaco.KeyCode);
+      const keyBinding = comboToMonacoKeyBinding(
+          binding.combo, monaco.KeyMod, monaco.KeyCode, activeShortcutPlatform,
+      );
       if (keyBinding) {
           saveQueryActionRef.current = editor.addAction({
               id: 'gonavi.saveQuery',
@@ -7047,7 +7858,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
               saveQueryActionRef.current = null;
           }
       };
-  }, [languagePreference, saveQueryShortcutBinding]);
+  }, [activeShortcutPlatform, languagePreference, saveQueryShortcutBinding]);
 
   useEffect(() => {
       if (findInEditorActionRef.current) {
@@ -7063,6 +7874,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           findInEditorShortcutCombo,
           monaco.KeyMod,
           monaco.KeyCode,
+          activeShortcutPlatform,
       );
       if (keyBinding) {
           findInEditorActionRef.current = editor.addAction({
@@ -7081,7 +7893,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
               findInEditorActionRef.current = null;
           }
       };
-  }, [findInEditorShortcutCombo, languagePreference]);
+  }, [activeShortcutPlatform, findInEditorShortcutCombo, languagePreference]);
 
   useEffect(() => {
       if (formatSqlActionRef.current) {
@@ -7096,7 +7908,9 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       const binding = formatSqlShortcutBinding;
       if (!binding?.enabled || !binding.combo) return;
 
-      const keyBinding = comboToMonacoKeyBinding(binding.combo, monaco.KeyMod, monaco.KeyCode);
+      const keyBinding = comboToMonacoKeyBinding(
+          binding.combo, monaco.KeyMod, monaco.KeyCode, activeShortcutPlatform,
+      );
       if (keyBinding) {
           formatSqlActionRef.current = editor.addAction({
               id: 'gonavi.formatSql',
@@ -7114,7 +7928,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
               formatSqlActionRef.current = null;
           }
       };
-  }, [languagePreference, formatSqlShortcutBinding]);
+  }, [activeShortcutPlatform, languagePreference, formatSqlShortcutBinding]);
 
   useEffect(() => {
       const editor = editorRef.current;
@@ -7144,7 +7958,9 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       const binding = toggleQueryResultsPanelShortcutBinding;
       if (!binding?.enabled || !binding.combo) return;
 
-      const keyBinding = comboToMonacoKeyBinding(binding.combo, monaco.KeyMod, monaco.KeyCode);
+      const keyBinding = comboToMonacoKeyBinding(
+          binding.combo, monaco.KeyMod, monaco.KeyCode, activeShortcutPlatform,
+      );
       if (keyBinding) {
           toggleQueryResultsPanelActionRef.current = editor.addAction({
               id: 'gonavi.toggleQueryResultsPanel',
@@ -7160,7 +7976,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
               toggleQueryResultsPanelActionRef.current = null;
           }
       };
-  }, [languagePreference, toggleQueryResultsPanelShortcutBinding, toggleResultPanelVisibility]);
+  }, [activeShortcutPlatform, languagePreference, toggleQueryResultsPanelShortcutBinding, toggleResultPanelVisibility]);
 
   useEffect(() => {
       const handleRunActiveQuery = (event: Event) => {
@@ -7777,21 +8593,69 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
   };
 
   const handleCloseResult = (key: string) => {
-      setResultSets(prev => {
-          const idx = prev.findIndex(r => r.key === key);
-          if (idx < 0) return prev;
-          const next = prev.filter(r => r.key !== key);
+      void cancelResultTotalCountRequests([key]);
+      const currentResultSets = resultSetsRef.current;
+      const idx = currentResultSets.findIndex(result => result.key === key);
+      if (idx < 0) return;
 
-          setActiveResultKey(prevActive => {
-              if (prevActive && prevActive !== key) return prevActive;
-              return next[idx]?.key || next[idx - 1]?.key || next[0]?.key || '';
-          });
+      const currentActiveKey = resolveEffectiveActiveResultKey(
+          currentResultSets,
+          activeResultKeyRef.current,
+          isV2Ui,
+      );
+      const nextResultSets = currentResultSets.filter(result => result.key !== key);
+      const nextActiveKey = currentActiveKey && currentActiveKey !== key
+          ? currentActiveKey
+          : nextResultSets[idx]?.key
+              || nextResultSets[idx - 1]?.key
+              || nextResultSets[0]?.key
+              || (isV2Ui ? QUERY_EDITOR_SQL_LOG_TAB_KEY : '');
 
-          return next;
-      });
+      resultSetsRef.current = nextResultSets;
+      activeResultKeyRef.current = nextActiveKey;
+      setResultSets(nextResultSets);
+      setActiveResultKey(nextActiveKey);
   };
 
+  useEffect(() => {
+      if (!isActive) return;
+
+      const handleCloseActiveResultTab = (event: Event) => {
+          const request = (event as CustomEvent<CloseActiveResultShortcutRequest>).detail;
+          if (!request || request.handled || request.targetTabId !== tab.id) return;
+          request.handled = true;
+          request.outcome = 'ignored';
+          if (!isResultPanelVisibleRef.current) return;
+
+          const effectiveActiveKey = resolveEffectiveActiveResultKey(
+              resultSetsRef.current,
+              activeResultKeyRef.current,
+              isV2Ui,
+          );
+          if (!effectiveActiveKey) return;
+
+          if (effectiveActiveKey === QUERY_EDITOR_SQL_LOG_TAB_KEY) {
+              updateResultPanelVisibility(false);
+              request.outcome = 'hidden';
+              return;
+          }
+          if (!resultSetsRef.current.some(result => result.key === effectiveActiveKey)) return;
+
+          handleCloseResult(effectiveActiveKey);
+          request.outcome = 'closed';
+      };
+
+      window.addEventListener(CLOSE_ACTIVE_RESULT_TAB_EVENT, handleCloseActiveResultTab);
+      return () => {
+          window.removeEventListener(CLOSE_ACTIVE_RESULT_TAB_EVENT, handleCloseActiveResultTab);
+      };
+  }, [isActive, isV2Ui, tab.id, updateResultPanelVisibility]);
+
   const replaceResultSetsAfterMenuClose = (next: ResultSet[], preferredKey?: string) => {
+      const nextKeys = new Set(next.map((result) => result.key));
+      const removedCountKeys = Object.keys(resultTotalCountRequestsRef.current)
+          .filter((key) => !nextKeys.has(key));
+      void cancelResultTotalCountRequests(removedCountKeys);
       setResultSets(next);
       setActiveResultKey(prevActive => {
           if (preferredKey && next.some(result => result.key === preferredKey)) return preferredKey;
@@ -7818,8 +8682,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
   };
 
   const closeAllResultTabs = () => {
-      setResultSets([]);
-      setActiveResultKey('');
+      replaceResultSetsAfterMenuClose([]);
   };
 
   const openResultInWindow = (
@@ -7833,7 +8696,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           ? translate('query_editor.results_panel.tab.message', { index: index + 1 })
           : translate('query_editor.results_panel.detached.title', { index: index + 1 });
       const windowId = `query-result:${tab.id}:${target.key}`;
-      useStore.getState().detachQueryResultWindow({
+      const detachedWindow = {
           id: windowId,
           sourceQueryTabId: tab.id,
           connectionId: currentConnectionId || tab.connectionId || '',
@@ -7857,14 +8720,22 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
               tableName: target.metadataTableName || target.tableName,
               metadataDbName: target.metadataDbName,
               metadataTableName: target.metadataTableName,
+              ddlDbName: target.ddlDbName,
+              ddlTableName: target.ddlTableName,
               pkColumns: target.pkColumns || [],
               editLocator: target.editLocator as any,
               readOnly: target.readOnly !== false,
               showRowNumberColumn: target.showRowNumberColumn,
               truncated: target.truncated,
           },
-      });
-      handleCloseResult(key);
+      };
+      void openNativeQueryResultWindow(detachedWindow)
+          .then((opened) => {
+              if (opened) handleCloseResult(key);
+          })
+          .catch((error) => {
+              message.error(error instanceof Error ? error.message : String(error));
+          });
   };
 
   React.useEffect(() => {
@@ -7876,41 +8747,78 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           if (!restored || typeof restored !== 'object') return;
           const restoredKey = String(restored.key || '').trim();
           if (!restoredKey) return;
-          setResultSets((prev) => {
-              if (prev.some((item) => item.key === restoredKey)) {
-                  return prev;
-              }
-              return [
-                  ...prev,
-                  {
-                      key: restoredKey,
-                      sql: String(restored.sql || ''),
-                      exportSql: restored.exportSql,
-                      sourceStatementIndex: restored.sourceStatementIndex,
-                      statementResultIndex: restored.statementResultIndex,
-                      rows: Array.isArray(restored.rows) ? restored.rows : [],
-                      columns: Array.isArray(restored.columns) ? restored.columns : [],
-                      messages: Array.isArray(restored.messages) ? restored.messages : undefined,
-                      resultType: restored.resultType === 'message' ? 'message' : 'grid',
-                      tableName: restored.tableName,
-                      metadataDbName: restored.metadataDbName,
-                      metadataTableName: restored.metadataTableName,
-                      pkColumns: Array.isArray(restored.pkColumns) ? restored.pkColumns : [],
-                      editLocator: restored.editLocator,
-                      readOnly: restored.readOnly !== false,
-                      showRowNumberColumn: restored.showRowNumberColumn,
-                      truncated: restored.truncated,
-                  } as ResultSet,
+          const windowId = String(detail.windowId || '').trim();
+          const expectedWindowId = `query-result:${sourceQueryTabId}:${restoredKey}`;
+          if (!resultSetsRef.current.some((item) => item.key === restoredKey)) {
+              const restoredResult = {
+                  key: restoredKey,
+                  sql: String(restored.sql || ''),
+                  exportSql: restored.exportSql,
+                  sourceStatementIndex: restored.sourceStatementIndex,
+                  statementResultIndex: restored.statementResultIndex,
+                  rows: Array.isArray(restored.rows) ? restored.rows : [],
+                  columns: Array.isArray(restored.columns) ? restored.columns : [],
+                  messages: Array.isArray(restored.messages) ? restored.messages : undefined,
+                  resultType: restored.resultType === 'message' ? 'message' : 'grid',
+                  tableName: restored.tableName,
+                  metadataDbName: restored.metadataDbName,
+                  metadataTableName: restored.metadataTableName,
+                  ddlDbName: restored.ddlDbName,
+                  ddlTableName: restored.ddlTableName,
+                  pkColumns: Array.isArray(restored.pkColumns) ? restored.pkColumns : [],
+                  editLocator: restored.editLocator,
+                  readOnly: restored.readOnly !== false,
+                  showRowNumberColumn: restored.showRowNumberColumn,
+                  truncated: restored.truncated,
+              } as ResultSet;
+              const nextResultSets = [
+                  ...resultSetsRef.current,
+                  restoredResult,
               ];
-          });
+              resultSetsRef.current = nextResultSets;
+              setResultSets(nextResultSets);
+              if (windowId === expectedWindowId) {
+                  nativeRestoredResultRefs.current.set(windowId, {
+                      resultKey: restoredKey,
+                      result: restoredResult,
+                  });
+              }
+          } else if (windowId) {
+              nativeRestoredResultRefs.current.delete(windowId);
+          }
+          activeResultKeyRef.current = restoredKey;
           setActiveResultKey(restoredKey);
           updateResultPanelVisibility(true);
       };
+      const handleRedetachQueryResult = (event: Event) => {
+          const detail = (event as CustomEvent).detail || {};
+          const sourceQueryTabId = String(detail.sourceQueryTabId || '').trim();
+          if (sourceQueryTabId !== tab.id) return;
+          const resultKey = String(detail.resultKey || '').trim();
+          const windowId = String(detail.windowId || '').trim();
+          if (!resultKey || windowId !== `query-result:${sourceQueryTabId}:${resultKey}`) return;
+          const restoredResult = nativeRestoredResultRefs.current.get(windowId);
+          nativeRestoredResultRefs.current.delete(windowId);
+          if (
+              !restoredResult
+              || restoredResult.resultKey !== resultKey
+              || resultSetsRef.current.find((item) => item.key === resultKey) !== restoredResult.result
+          ) return;
+          handleCloseResult(resultKey);
+      };
       window.addEventListener('gonavi:restore-query-result', handleRestoreQueryResult as EventListener);
+      window.addEventListener(
+          NATIVE_DETACHED_QUERY_RESULT_REDETACH_EVENT,
+          handleRedetachQueryResult as EventListener,
+      );
       return () => {
           window.removeEventListener('gonavi:restore-query-result', handleRestoreQueryResult as EventListener);
+          window.removeEventListener(
+              NATIVE_DETACHED_QUERY_RESULT_REDETACH_EVENT,
+              handleRedetachQueryResult as EventListener,
+          );
       };
-  }, [tab.id, updateResultPanelVisibility]);
+  }, [isV2Ui, tab.id, updateResultPanelVisibility]);
 
   const toggleQueryResultsPanelShortcutLabel =
       toggleQueryResultsPanelShortcutBinding.enabled && toggleQueryResultsPanelShortcutBinding.combo
@@ -7937,7 +8845,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           darkMode={darkMode}
           transaction={pendingSqlTransaction}
           autoCommitRemainingSeconds={sqlEditorAutoCommitRemainingSeconds}
-          onFinish={(action) => void finishPendingSqlTransaction(action, 'manual')}
+          onFinish={(action) => void handleFinishPendingSqlTransaction(action)}
       />
   );
   const queryEditorStageStyle: React.CSSProperties = isResultPanelVisible
@@ -7979,6 +8887,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
         toggleQueryResultsPanelShortcutBinding={toggleQueryResultsPanelShortcutBinding}
         activeShortcutPlatform={activeShortcutPlatform}
         isResultPanelVisible={isResultPanelVisible}
+        wordWrapEnabled={wordWrapEnabled}
         loading={loading}
         saveMoreMenuItems={saveMoreMenuItems}
         formatSettingsMenu={formatSettingsMenu}
@@ -7999,6 +8908,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
         onCancel={handleCancel}
         onQuickSave={handleQuickSave}
         onFindInEditor={handleOpenEditorFind}
+        onToggleWordWrap={() => setQueryOptions({ wordWrap: !wordWrapEnabled })}
         onFormat={handleFormat}
         onTriggerSqlAiCompletion={() => triggerAiInlineCompletionRef.current?.()}
         onToggleResultPanelVisibility={toggleResultPanelVisibility}
@@ -8039,7 +8949,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           <Editor 
             height="100%" 
             gonaviTypography="code"
-            defaultLanguage="sql" 
+            language={queryEditorMonacoLanguage}
             theme={darkMode ? "transparent-dark" : "transparent-light"}
             defaultValue={query}
             onChange={(val) => {
@@ -8072,6 +8982,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
         <QueryEditorResultsPanel
           resultSets={resultSets}
           activeResultKey={activeResultKey}
+          isActive={isActive}
           loading={loading}
           executionError={executionError}
           sqlLogCount={sqlLogCount}
@@ -8090,6 +9001,9 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           onOpenResultInWindow={openResultInWindow}
           onReloadResult={handleReloadResult}
           onResultPageChange={handleResultPageChange}
+          onResultSort={handleResultSort}
+          onRequestResultTotalCount={handleRequestResultTotalCount}
+          onCancelResultTotalCount={handleCancelResultTotalCount}
           onDiagnoseExecutionError={handleDiagnoseExecutionError}
           onCompareResult={(resultKey) => {
             setResultDiffAnchorKey(resultKey);

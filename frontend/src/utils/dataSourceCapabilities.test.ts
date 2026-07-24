@@ -31,6 +31,74 @@ describe('dataSourceCapabilities', () => {
     });
   });
 
+  it('uses ClickHouse capabilities for a custom ClickHouse JDBC connection', () => {
+    expect(getDataSourceCapabilities({ type: 'custom', driver: 'clickhouse' })).toMatchObject({
+      type: 'clickhouse',
+      supportsQueryEditor: true,
+      supportsExplainDiagnosis: true,
+      supportsSqlQueryExport: true,
+      supportsCopyTable: false,
+      supportsCreateDatabase: true,
+      supportsDropDatabase: true,
+      forceReadOnlyQueryResult: true,
+    });
+  });
+
+  it('only enables whole-table copy for backend-supported SQL families', () => {
+    [
+      { type: 'mysql' },
+      { type: 'goldendb' },
+      { type: 'mariadb' },
+      { type: 'oceanbase', oceanBaseProtocol: 'mysql' as const },
+      { type: 'postgresql' },
+    ].forEach((config) => {
+      expect(getDataSourceCapabilities(config).supportsCopyTable, JSON.stringify(config)).toBe(true);
+    });
+
+    [
+      { type: 'oceanbase', oceanBaseProtocol: 'oracle' as const },
+      { type: 'custom', driver: 'mysql' },
+      { type: 'custom', driver: 'greatdb' },
+      { type: 'custom', driver: 'pgx' },
+      { type: 'custom', driver: 'oceanbase', oceanBaseProtocol: 'mysql' as const },
+      { type: 'custom', driver: 'doris' },
+      { type: 'starrocks' },
+      { type: 'kingbase8' },
+      { type: 'highgo' },
+      { type: 'vastbase' },
+      { type: 'custom', driver: 'open-gauss' },
+      { type: 'custom', driver: 'gauss-db' },
+      { type: 'sqlite' },
+      { type: 'duckdb' },
+      { type: 'sqlserver' },
+      { type: 'oracle' },
+      { type: 'clickhouse' },
+      { type: 'mongodb' },
+      { type: 'redis' },
+    ].forEach((config) => {
+      expect(getDataSourceCapabilities(config).supportsCopyTable, JSON.stringify(config)).toBe(false);
+    });
+  });
+
+  it('blocks whole-table copy when data import or structure editing is protected', () => {
+    expect(getDataSourceCapabilities({
+      type: 'postgres',
+      protection: { restrictDataImport: true },
+    }).supportsCopyTable).toBe(false);
+    expect(getDataSourceCapabilities({
+      type: 'postgres',
+      protection: { restrictStructureEdit: true },
+    }).supportsCopyTable).toBe(false);
+    expect(getDataSourceCapabilities({ type: 'postgres', readOnly: true }).supportsCopyTable).toBe(false);
+  });
+
+  it('keeps whole-table copy available when only row editing is protected', () => {
+    expect(getDataSourceCapabilities({
+      type: 'postgres',
+      protection: { restrictDataEdit: true },
+    }).supportsCopyTable).toBe(true);
+  });
+
   it('only enables execution-plan diagnosis for backend-supported SQL dialects', () => {
     expect(getDataSourceCapabilities({ type: 'goldendb' }).supportsExplainDiagnosis).toBe(true);
     expect(getDataSourceCapabilities({ type: 'custom', driver: 'greatdb' }).supportsExplainDiagnosis).toBe(true);

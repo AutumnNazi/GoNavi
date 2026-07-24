@@ -33,4 +33,17 @@ describe('sqlFileExecutionTab', () => {
       sqlFileExecutionRequestKey: 'job-1',
     }));
   });
+
+  it('opens completed backup artifacts without automatically executing them', () => {
+    const tab = buildSQLFileExecutionWorkbenchTab({
+      connectionId: 'conn-1',
+      dbName: 'demo',
+      filePath: '/tmp/demo_backup.sql',
+      fileName: 'demo_backup.sql',
+      autoStart: false,
+    });
+
+    expect(tab.sqlFileExecutionRequestKey).toBeUndefined();
+    expect(tab.filePath).toBe('/tmp/demo_backup.sql');
+  });
 });

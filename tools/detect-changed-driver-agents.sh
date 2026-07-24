@@ -7,7 +7,7 @@ cd "$SCRIPT_DIR"
 SCRIPT_DIR_WINDOWS="$(pwd -W 2>/dev/null || true)"
 SCRIPT_DIR_WINDOWS="${SCRIPT_DIR_WINDOWS//\\//}"
 
-DEFAULT_DRIVERS=(mariadb oceanbase doris starrocks sphinx sqlserver sqlite duckdb dameng kingbase highgo vastbase opengauss gaussdb iris mongodb tdengine iotdb clickhouse elasticsearch)
+DEFAULT_DRIVERS=(mariadb oceanbase doris starrocks sphinx sqlserver sqlite duckdb dameng kingbase highgo vastbase opengauss gaussdb iris mongodb tdengine iotdb clickhouse elasticsearch trino)
 TARGET_PLATFORMS=(darwin/amd64 darwin/arm64 windows/amd64 windows/arm64 linux/amd64 linux/arm64)
 
 usage() {
@@ -54,7 +54,7 @@ normalize_driver() {
     open_gauss|open-gauss) echo "opengauss" ;;
     gaussdb|gauss_db|gauss-db) echo "gaussdb" ;;
     elastic|elasticsearch) echo "elasticsearch" ;;
-    mariadb|oceanbase|starrocks|sphinx|sqlserver|sqlite|duckdb|dameng|kingbase|highgo|vastbase|opengauss|gaussdb|iris|mongodb|tdengine|iotdb|clickhouse)
+    mariadb|oceanbase|starrocks|sphinx|sqlserver|sqlite|duckdb|dameng|kingbase|highgo|vastbase|opengauss|gaussdb|iris|mongodb|tdengine|iotdb|clickhouse|trino)
       echo "$value"
       ;;
     *)
@@ -165,6 +165,7 @@ driver_tokens_from_text() {
   case "$text" in *iotdb*|*apache-iotdb*|*apache_iotdb*) emit_driver_token iotdb ;; esac
   case "$text" in *clickhouse*) emit_driver_token clickhouse ;; esac
   case "$text" in *elasticsearch*) emit_driver_token elasticsearch ;; esac
+  case "$text" in *trino*) emit_driver_token trino ;; esac
 
   case "$text" in
     *github.com/go-sql-driver/mysql*)
@@ -194,6 +195,7 @@ driver_tokens_from_text() {
   case "$text" in *github.com/apache/iotdb-client-go*) emit_driver_token iotdb ;; esac
   case "$text" in *github.com/clickhouse/clickhouse-go/v2*|*github.com/clickhouse/ch-go*) emit_driver_token clickhouse ;; esac
   case "$text" in *github.com/elastic/go-elasticsearch/v8*) emit_driver_token elasticsearch ;; esac
+  case "$text" in *github.com/trinodb/trino-go-client*) emit_driver_token trino ;; esac
 }
 
 emit_driver_token() {
@@ -351,7 +353,7 @@ revision_file_changed_drivers() {
 
 is_ignored_driver_agent_source_file() {
   case "$1" in
-    *_test.go|frontend/*|internal/app/*|internal/appdata/*|internal/connection/*|internal/logger/*)
+    *_test.go|frontend/*|internal/app/*|internal/appdata/*|internal/connection/*|internal/logger/*|internal/db/driver_agent_revisions_gen.go)
       return 0
       ;;
   esac
@@ -372,18 +374,18 @@ attribute_source_file_change() {
     return 0
   fi
 
-  tokens="$(source_file_driver_tokens "$file")"
-  if [[ -n "$tokens" ]]; then
-    add_forced_drivers_from_tokens "$tokens"
-    return 0
-  fi
-
   case "$file" in
     cmd/optional-driver-agent/*.go|internal/db/*.go)
       add_all_forced_drivers
       return 0
       ;;
   esac
+
+  tokens="$(source_file_driver_tokens "$file")"
+  if [[ -n "$tokens" ]]; then
+    add_forced_drivers_from_tokens "$tokens"
+    return 0
+  fi
 
   return 1
 }

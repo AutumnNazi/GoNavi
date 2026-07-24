@@ -21,7 +21,7 @@ export type AISettingsSectionKey =
   | 'prompts'
   | 'tools';
 
-const AI_SETTINGS_NAV_ITEMS: Array<{
+export const AI_SETTINGS_NAV_ITEMS: Array<{
   key: AISettingsSectionKey;
   titleKey: string;
   descriptionKey: string;
@@ -53,37 +53,71 @@ const AISettingsSidebar: React.FC<AISettingsSidebarProps> = ({
   const copy = (key: string) => (i18n?.t ?? ((catalogKey) => catalogTranslate('en-US', catalogKey)))(key);
 
   return (
-    <div style={{ minHeight: 0, height: '100%', overflowY: 'auto', overflowX: 'hidden', padding: '0 6px 28px 12px' }}>
-      <div style={{ marginBottom: 12, fontWeight: 600, color: overlayTheme.titleText }}>{copy('ai_settings.nav.title')}</div>
-      <div style={{ display: 'grid', gap: 10 }}>
-        {AI_SETTINGS_NAV_ITEMS.map((item) => {
+    <div
+      className="gonavi-ai-settings-sidebar"
+      style={{
+        minHeight: 0,
+        height: '100%',
+        overflowY: 'auto',
+        overflowX: 'hidden',
+        padding: '0 14px 24px 0',
+        borderRight: `1px solid ${overlayTheme.divider}`,
+      }}
+    >
+      <div style={{ marginBottom: 10, paddingLeft: 10, fontSize: 'var(--gn-font-size-sm, 12px)', fontWeight: 700, color: overlayTheme.titleText }}>{copy('ai_settings.nav.title')}</div>
+      <div
+        role="tablist"
+        aria-label={copy('ai_settings.nav.title')}
+        aria-orientation="vertical"
+        style={{ display: 'grid', borderTop: `1px solid ${overlayTheme.divider}` }}
+      >
+        {AI_SETTINGS_NAV_ITEMS.map((item, itemIndex) => {
           const active = activeSection === item.key;
           return (
             <button
+              className={`gonavi-ai-settings-nav-item${active ? ' is-active' : ''}`}
               key={item.key}
+              id={`gonavi-ai-settings-tab-${item.key}`}
               type="button"
-              aria-pressed={active}
+              role="tab"
+              aria-selected={active}
+              aria-controls={`gonavi-ai-settings-panel-${item.key}`}
+              tabIndex={active ? 0 : -1}
+              title={`${copy(item.titleKey)} - ${copy(item.descriptionKey)}`}
               onClick={() => onSelectSection(item.key)}
+              onKeyDown={(event) => {
+                if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
+                  return;
+                }
+                event.preventDefault();
+                const nextIndex = event.key === 'Home'
+                  ? 0
+                  : event.key === 'End'
+                    ? AI_SETTINGS_NAV_ITEMS.length - 1
+                    : event.key === 'ArrowDown'
+                      ? (itemIndex + 1) % AI_SETTINGS_NAV_ITEMS.length
+                      : (itemIndex - 1 + AI_SETTINGS_NAV_ITEMS.length) % AI_SETTINGS_NAV_ITEMS.length;
+                onSelectSection(AI_SETTINGS_NAV_ITEMS[nextIndex].key);
+                const tabs = event.currentTarget.parentElement?.querySelectorAll<HTMLElement>('[role="tab"]');
+                tabs?.[nextIndex]?.focus();
+              }}
               style={{
+                width: '100%',
                 textAlign: 'left',
-                padding: '12px 14px',
-                borderRadius: 12,
-                border: `1px solid ${active
-                  ? (darkMode ? 'rgba(255,214,102,0.3)' : 'rgba(24,144,255,0.24)')
-                  : (darkMode ? 'rgba(255,255,255,0.08)' : 'rgba(16,24,40,0.08)')}`,
-                background: active
-                  ? (darkMode ? 'linear-gradient(180deg, rgba(255,214,102,0.12) 0%, rgba(255,214,102,0.06) 100%)' : 'linear-gradient(180deg, rgba(24,144,255,0.10) 0%, rgba(24,144,255,0.05) 100%)')
-                  : (darkMode ? 'rgba(255,255,255,0.02)' : 'rgba(255,255,255,0.72)'),
+                minHeight: 44,
+                padding: '10px 10px',
+                borderRadius: 0,
+                border: 'none',
+                borderBottom: `1px solid ${overlayTheme.divider}`,
+                borderLeft: `3px solid ${active ? overlayTheme.selectedText : 'transparent'}`,
+                background: active ? overlayTheme.selectedBg : 'transparent',
                 color: active ? (darkMode ? '#f5f7ff' : '#162033') : (darkMode ? 'rgba(255,255,255,0.82)' : '#3f4b5e'),
                 cursor: 'pointer',
               }}
             >
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <span style={{ fontSize: 16 }}>{item.icon}</span>
-                <span style={{ fontSize: 14, fontWeight: 700 }}>{copy(item.titleKey)}</span>
-              </div>
-              <div style={{ marginTop: 6, fontSize: 12, lineHeight: 1.6, color: active ? (darkMode ? 'rgba(255,255,255,0.68)' : 'rgba(22,32,51,0.68)') : 'rgba(128,128,128,0.7)' }}>
-                {copy(item.descriptionKey)}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: 15, color: active ? overlayTheme.iconColor : overlayTheme.mutedText }}>{item.icon}</span>
+                <span style={{ fontSize: 'var(--gn-font-size, 14px)', fontWeight: 700 }}>{copy(item.titleKey)}</span>
               </div>
             </button>
           );

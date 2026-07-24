@@ -24,6 +24,7 @@ const notifyStoreSubscribers = () => {
 };
 
 let mockFormValues: Record<string, any> = {};
+let mockValidateFields: (() => Promise<void>) | undefined;
 
 const antdMessage = vi.hoisted(() => ({
   error: vi.fn(),
@@ -223,7 +224,7 @@ vi.mock("antd", () => {
   const Switch = () => <button type="button">switch</button>;
 
   const formApi = {
-    validateFields: vi.fn(() => Promise.resolve()),
+    validateFields: vi.fn(() => mockValidateFields?.() ?? Promise.resolve()),
     getFieldsValue: vi.fn(() => ({
       type: "mysql",
       timeout: 30,
@@ -363,6 +364,7 @@ describe("ConnectionModal i18n", () => {
     storeState.updateConnection.mockReset();
     storeState.setLanguagePreference.mockClear();
     mockFormValues = {};
+    mockValidateFields = undefined;
     setCurrentLanguage("zh-CN");
   });
 
@@ -433,6 +435,7 @@ describe("ConnectionModal i18n", () => {
       expect(pageText).toContain("首选");
       expect(pageText).toContain("必需");
       expect(pageText).toContain("跳过验证");
+      expect(pageText).toContain("自定义探活 SQL");
     },
   );
 
@@ -1029,6 +1032,7 @@ describe("ConnectionModal i18n", () => {
   it("retranslates test failure feedback while preserving raw detail when language changes in-place", async () => {
     storeState.appearance.uiVersion = "legacy";
     setCurrentLanguage("zh-CN");
+    backendApp.TestConnection.mockReset();
     backendApp.TestConnection.mockResolvedValue({
       success: false,
       message: "backend raw error: /tmp/app.db",
@@ -1064,6 +1068,140 @@ describe("ConnectionModal i18n", () => {
     );
     expect(pageText).toContain("View details");
     expect(pageText).toContain("backend raw error: /tmp/app.db");
+  });
+
+  it("stops connection action loading before optional database discovery finishes", async () => {
+    storeState.appearance.uiVersion = "legacy";
+    setCurrentLanguage("zh-CN");
+    backendApp.TestConnection.mockResolvedValue({
+      success: true,
+      message: "连接正常",
+    });
+    let resolveDatabases: ((value: { success: true; data: unknown[] }) => void) | undefined;
+    backendApp.DBGetDatabases.mockReset();
+    backendApp.DBGetDatabases.mockReturnValue(
+      new Promise((resolve) => {
+        resolveDatabases = resolve;
+      }),
+    );
+    const { default: ConnectionModal } = await import("./ConnectionModal");
+
+    let renderer: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(
+        <ConnectionModal
+          open
+          onClose={vi.fn()}
+          initialValues={initialConnection("elasticsearch", { port: 9200 })}
+        />,
+      );
+    });
+
+    await act(async () => {
+      findButton(renderer!, "测试连接").props.onClick();
+      await flushConnectionTestTick();
+    });
+
+    expect(textContent(renderer!.toJSON())).toContain("连接成功");
+    expect(findButton(renderer!, "测试连接").props.disabled).toBe(false);
+    expect(findButton(renderer!, "保存").props.disabled).toBe(false);
+    expect(backendApp.DBGetDatabases).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      resolveDatabases?.({ success: true, data: [] });
+      await flushConnectionTestTick();
+    });
+  });
+
+  it("does not let a stale validation run restart loading after the modal reopens", async () => {
+    storeState.appearance.uiVersion = "legacy";
+    setCurrentLanguage("zh-CN");
+    let resolveValidation: (() => void) | undefined;
+    mockValidateFields = () =>
+      new Promise<void>((resolve) => {
+        resolveValidation = resolve;
+      });
+    backendApp.TestConnection.mockReset();
+    backendApp.TestConnection.mockRejectedValue(new Error("stale validation failure"));
+    const { default: ConnectionModal } = await import("./ConnectionModal");
+    const connection = initialConnection("elasticsearch", { port: 9200 });
+    const onClose = vi.fn();
+
+    let renderer: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(
+        <ConnectionModal open onClose={onClose} initialValues={connection} />,
+      );
+    });
+    await act(async () => {
+      findButton(renderer!, "测试连接").props.onClick();
+      await flushConnectionTestTick();
+    });
+    await act(async () => {
+      renderer!.update(
+        <ConnectionModal open={false} onClose={onClose} initialValues={connection} />,
+      );
+    });
+    await act(async () => {
+      renderer!.update(
+        <ConnectionModal open onClose={onClose} initialValues={connection} />,
+      );
+    });
+    await act(async () => {
+      resolveValidation?.();
+      await flushConnectionTestTick();
+    });
+
+    expect(backendApp.TestConnection).not.toHaveBeenCalled();
+    expect(textContent(renderer!.toJSON())).not.toContain("stale validation failure");
+    expect(findButton(renderer!, "测试连接").props.disabled).toBe(false);
+    expect(findButton(renderer!, "保存").props.disabled).toBe(false);
+  });
+
+  it("ignores a stale connection-test rejection after the modal reopens", async () => {
+    storeState.appearance.uiVersion = "legacy";
+    setCurrentLanguage("zh-CN");
+    let rejectConnection: ((reason?: unknown) => void) | undefined;
+    backendApp.TestConnection.mockReset();
+    backendApp.TestConnection.mockReturnValue(
+      new Promise((_, reject) => {
+        rejectConnection = reject;
+      }),
+    );
+    const { default: ConnectionModal } = await import("./ConnectionModal");
+    const connection = initialConnection("elasticsearch", { port: 9200 });
+    const onClose = vi.fn();
+
+    let renderer: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(
+        <ConnectionModal open onClose={onClose} initialValues={connection} />,
+      );
+    });
+    await act(async () => {
+      findButton(renderer!, "测试连接").props.onClick();
+      await flushConnectionTestTick();
+    });
+    expect(backendApp.TestConnection).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      renderer!.update(
+        <ConnectionModal open={false} onClose={onClose} initialValues={connection} />,
+      );
+    });
+    await act(async () => {
+      renderer!.update(
+        <ConnectionModal open onClose={onClose} initialValues={connection} />,
+      );
+    });
+    await act(async () => {
+      rejectConnection?.(new Error("stale connection failure"));
+      await flushConnectionTestTick();
+    });
+
+    expect(textContent(renderer!.toJSON())).not.toContain("stale connection failure");
+    expect(findButton(renderer!, "测试连接").props.disabled).toBe(false);
+    expect(findButton(renderer!, "保存").props.disabled).toBe(false);
   });
 
   it("renders English data source groups and hints for the remaining step one copy", async () => {

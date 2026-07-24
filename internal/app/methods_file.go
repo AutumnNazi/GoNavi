@@ -3,7 +3,9 @@ package app
 import (
 	"bufio"
 	"context"
+	"crypto/sha256"
 	"encoding/csv"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -48,6 +50,15 @@ const maxAppLogTailLineLimit = 200
 const appLogTailReadWindowBytes int64 = 256 * 1024
 
 var mysqlCreateViewPrefixPattern = regexp.MustCompile(`(?is)^\s*create\s+(?:algorithm\s*=\s*\w+\s+)?(?:definer\s*=\s*(?:` + "`[^`]+`" + `|\S+)\s*@\s*(?:` + "`[^`]+`" + `|\S+)\s+)?(?:sql\s+security\s+(?:definer|invoker)\s+)?view\s+`)
+
+type saveFileDialogFunc func(context.Context, runtime.SaveDialogOptions) (string, error)
+
+func (a *App) showSaveFileDialog(options runtime.SaveDialogOptions) (string, error) {
+	if a.saveFileDialog != nil {
+		return a.saveFileDialog(a.ctx, options)
+	}
+	return runtime.SaveFileDialog(a.ctx, options)
+}
 
 type sqlFileExecutionProgress struct {
 	Status     string
@@ -363,6 +374,10 @@ func tryResolveExportTableTotalRows(dbInst db.Database, config connection.Connec
 
 func verifyOptionalDriverAgentReadyForExport(config connection.ConnectionConfig) error {
 	driverType := normalizeDriverType(config.Type)
+	if strings.EqualFold(strings.TrimSpace(config.Type), "custom") &&
+		strings.EqualFold(strings.TrimSpace(config.Driver), "clickhouse") {
+		driverType = "clickhouse"
+	}
 	if !db.IsOptionalGoDriver(driverType) {
 		return nil
 	}
@@ -554,7 +569,7 @@ func createSQLFileInDirectoryWithText(directoryPath string, rawName string, text
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
 	target := filepath.Join(directory, name)
-	if _, err := os.Stat(target); err == nil {
+	if _, err := os.Lstat(target); err == nil {
 		return connection.QueryResult{Success: false, Message: fileBackendText(text, "file.backend.error.sql_file_exists", nil)}
 	} else if !os.IsNotExist(err) {
 		return connection.QueryResult{Success: false, Message: fileBackendText(text, "file.backend.error.read_file_info_failed", map[string]any{"detail": err.Error()})}
@@ -860,13 +875,22 @@ func normalizeSQLExportDefaultFilename(rawName string) string {
 	return name
 }
 
-func normalizeSQLExportTargetPath(filePath string) string {
+func exportFormatExtension(format string) string {
+	switch normalized := strings.ToLower(strings.TrimSpace(format)); normalized {
+	case "csv", "xlsx", "json", "md", "html", "sql":
+		return "." + normalized
+	default:
+		return ""
+	}
+}
+
+func normalizeExportTargetPath(filePath string, format string) string {
 	target := strings.TrimSpace(filePath)
 	if target == "" {
 		return ""
 	}
-	if !strings.EqualFold(filepath.Ext(target), ".sql") {
-		target += ".sql"
+	if extension := exportFormatExtension(format); extension != "" && !strings.EqualFold(filepath.Ext(target), extension) {
+		target += extension
 	}
 	if abs, err := filepath.Abs(target); err == nil {
 		target = abs
@@ -874,12 +898,81 @@ func normalizeSQLExportTargetPath(filePath string) string {
 	return target
 }
 
+type exportTargetOverwriteConfirmationError struct {
+	targetPath string
+	extension  string
+}
+
+func (e *exportTargetOverwriteConfirmationError) Error() string {
+	return fmt.Sprintf("target file already exists after adding %s: %s", e.extension, e.targetPath)
+}
+
+func resolveExportTargetPath(filePath string, format string) (string, error) {
+	selected := strings.TrimSpace(filePath)
+	target := normalizeExportTargetPath(selected, format)
+	if selected == "" || target == "" {
+		return target, nil
+	}
+	if abs, err := filepath.Abs(selected); err == nil {
+		selected = abs
+	}
+	if filepath.Clean(selected) == filepath.Clean(target) {
+		return target, nil
+	}
+	if _, err := os.Stat(target); err == nil {
+		return "", &exportTargetOverwriteConfirmationError{
+			targetPath: target,
+			extension:  exportFormatExtension(format),
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return "", err
+	}
+	return target, nil
+}
+
+func exportTargetPathErrorMessage(err error, text fileBackendTextFunc) string {
+	var overwriteErr *exportTargetOverwriteConfirmationError
+	if errors.As(err, &overwriteErr) {
+		return fileBackendText(text, "file.backend.error.target_file_overwrite_confirmation_required", map[string]any{
+			"extension": overwriteErr.extension,
+			"path":      overwriteErr.targetPath,
+		})
+	}
+	return fileBackendText(text, "file.backend.error.read_file_info_failed", map[string]any{"detail": err.Error()})
+}
+
+func (a *App) resolveExportDialogTargetPath(filePath string, format string) (string, error) {
+	target, err := resolveExportTargetPath(filePath, format)
+	if err != nil {
+		return "", errors.New(exportTargetPathErrorMessage(err, a.appText))
+	}
+	return target, nil
+}
+
+func exportFileDialogFilters(format string) []runtime.FileFilter {
+	extension := exportFormatExtension(format)
+	if extension == "" {
+		return nil
+	}
+	return []runtime.FileFilter{{
+		DisplayName: strings.ToUpper(strings.TrimPrefix(extension, ".")),
+		Pattern:     "*" + extension,
+	}}
+}
+
+func normalizeSQLExportTargetPath(filePath string) string {
+	return normalizeExportTargetPath(filePath, "sql")
+}
+
 func writeExportedSQLFileByPath(filePath string, content string) connection.QueryResult {
 	return writeExportedSQLFileByPathWithText(filePath, content, nil)
 }
 
 func writeExportedSQLFileByPathWithText(filePath string, content string, text fileBackendTextFunc) connection.QueryResult {
-	target := normalizeSQLExportTargetPath(filePath)
+	target, targetErr := resolveExportTargetPath(filePath, "sql")
+	if targetErr != nil {
+		return connection.QueryResult{Success: false, Message: exportTargetPathErrorMessage(targetErr, text)}
+	}
 	if target == "" {
 		return connection.QueryResult{Success: false, Message: fileBackendText(text, "file.backend.error.file_path_required", nil)}
 	}
@@ -1196,7 +1289,7 @@ func (a *App) RenameSQLDirectory(directoryPath string, name string) connection.Q
 }
 
 func (a *App) ExportSQLFile(defaultName string, content string) connection.QueryResult {
-	filename, err := runtime.SaveFileDialog(a.ctx, runtime.SaveDialogOptions{
+	filename, err := a.showSaveFileDialog(runtime.SaveDialogOptions{
 		Title:           a.appText("query_editor.action.export_sql_file", nil),
 		DefaultFilename: normalizeSQLExportDefaultFilename(defaultName),
 		Filters: []runtime.FileFilter{
@@ -1548,7 +1641,102 @@ func executeSQLFileStream(ctx context.Context, dbInst db.Database, reader io.Rea
 
 // ExecuteSQLFile 在后端流式读取并执行大 SQL 文件，通过事件推送进度。
 // 前端通过 EventsOn("sqlfile:progress", ...) 监听进度。
-func (a *App) ExecuteSQLFile(config connection.ConnectionConfig, dbName string, filePath string, jobID string) connection.QueryResult {
+const sqlFileExecutionPreambleBytes = 64 * 1024
+
+func readSQLFileExecutionPreamble(reader io.ReadSeeker) ([]byte, error) {
+	buffer := make([]byte, sqlFileExecutionPreambleBytes)
+	read, err := io.ReadFull(reader, buffer)
+	if err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrUnexpectedEOF) {
+		return nil, err
+	}
+	if _, err := reader.Seek(0, io.SeekStart); err != nil {
+		return nil, err
+	}
+	return buffer[:read], nil
+}
+
+type goNaviMySQLDatabaseBackupPreamble struct {
+	databaseName           string
+	includesCreateDatabase bool
+}
+
+func parseGoNaviMySQLDatabaseBackupPreamble(preamble []byte) (goNaviMySQLDatabaseBackupPreamble, bool) {
+	text := strings.TrimPrefix(string(preamble), "\ufeff")
+	if !strings.HasPrefix(strings.TrimSpace(text), "-- GoNavi SQL Export") {
+		return goNaviMySQLDatabaseBackupPreamble{}, false
+	}
+
+	databaseName := ""
+	for _, line := range strings.Split(text, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "-- Database:") {
+			databaseName = strings.TrimSpace(strings.TrimPrefix(trimmed, "-- Database:"))
+			break
+		}
+	}
+	if databaseName == "" {
+		return goNaviMySQLDatabaseBackupPreamble{}, false
+	}
+
+	quotedDatabase := quoteIdentByType("mysql", databaseName)
+	if !strings.Contains(text, "USE "+quotedDatabase+";") {
+		return goNaviMySQLDatabaseBackupPreamble{}, false
+	}
+	return goNaviMySQLDatabaseBackupPreamble{
+		databaseName:           databaseName,
+		includesCreateDatabase: strings.Contains(text, "CREATE DATABASE IF NOT EXISTS "+quotedDatabase+";"),
+	}, true
+}
+
+func buildGoNaviMySQLDatabaseBackupBootstrapSQL(backup goNaviMySQLDatabaseBackupPreamble) string {
+	if backup.includesCreateDatabase || strings.TrimSpace(backup.databaseName) == "" {
+		return ""
+	}
+	return fmt.Sprintf("CREATE DATABASE IF NOT EXISTS %s", quoteIdentByType("mysql", backup.databaseName))
+}
+
+func resolveSQLFileExecutionProgressPercent(status string, bytesRead, totalSize int64) float64 {
+	if totalSize <= 0 {
+		return 0
+	}
+	percent := float64(bytesRead) / float64(totalSize) * 100
+	if percent < 0 {
+		return 0
+	}
+	if percent > 100 {
+		percent = 100
+	}
+	// The SQL splitter reads ahead before executing the statements found in that
+	// chunk. Reaching EOF therefore means parsing is complete, not execution.
+	// Reserve 100% for the successful terminal event.
+	if !strings.EqualFold(strings.TrimSpace(status), "done") && percent >= 100 {
+		return 99
+	}
+	return percent
+}
+
+func resolveSQLFileExecutionRunConfig(config connection.ConnectionConfig, dbName string, preamble []byte) connection.ConnectionConfig {
+	runConfig := normalizeRunConfig(config, dbName)
+	if strings.EqualFold(strings.TrimSpace(runConfig.Type), "mysql") {
+		_, isGoNaviDatabaseBackup := parseGoNaviMySQLDatabaseBackupPreamble(preamble)
+		if !isGoNaviDatabaseBackup {
+			return runConfig
+		}
+		// A GoNavi database backup creates and selects its source database itself.
+		// Connect at server level so restoring into a deleted database can start.
+		runConfig.Database = ""
+	}
+	return runConfig
+}
+
+func (a *App) ExecuteSQLFile(config connection.ConnectionConfig, dbName string, filePath string, jobID string) (result connection.QueryResult) {
+	auditSQL := "EXECUTE SQL FILE"
+	auditStatementCount := 0
+	auditSafeError := "SQL file task failed before an execution summary was available"
+	defer a.beginSQLAuditUserActionWithOptions(config, dbName, "sql_file", &auditSQL, &result, sqlAuditUserActionOptions{
+		StatementCount: &auditStatementCount,
+		SafeError:      &auditSafeError,
+	})()
 	if strings.TrimSpace(filePath) == "" {
 		return connection.QueryResult{Success: false, Message: a.appText("file.backend.error.file_path_empty", nil)}
 	}
@@ -1558,24 +1746,37 @@ func (a *App) ExecuteSQLFile(config connection.ConnectionConfig, dbName string, 
 
 	logger.Warnf("ExecuteSQLFile 开始：file=%s db=%s jobID=%s", filePath, dbName, jobID)
 
-	// 获取数据库连接
-	runConfig := normalizeRunConfig(config, dbName)
-	dbInst, err := a.getDatabase(runConfig)
-	if err != nil {
-		logger.Error(err, "ExecuteSQLFile 获取连接失败：%s", formatConnSummary(runConfig))
-		return connection.QueryResult{Success: false, Message: err.Error()}
-	}
-
 	// 打开文件
 	f, err := os.Open(filePath)
 	if err != nil {
 		return connection.QueryResult{Success: false, Message: a.appText("file.backend.error.open_file_failed", map[string]any{"detail": err.Error()})}
 	}
 	defer f.Close()
+	preamble, err := readSQLFileExecutionPreamble(f)
+	if err != nil {
+		return connection.QueryResult{Success: false, Message: a.appText("file.backend.error.open_file_failed", map[string]any{"detail": err.Error()})}
+	}
+	backupPreamble := goNaviMySQLDatabaseBackupPreamble{}
+	isGoNaviMySQLDatabaseBackup := false
+	if strings.EqualFold(strings.TrimSpace(config.Type), "mysql") {
+		backupPreamble, isGoNaviMySQLDatabaseBackup = parseGoNaviMySQLDatabaseBackupPreamble(preamble)
+	}
+
+	// GoNavi 的 MySQL 整库备份会在脚本中创建并 USE 源库，因此不能先连接到该库。
+	runConfig := resolveSQLFileExecutionRunConfig(config, dbName, preamble)
+	dbInst, err := a.getDatabase(runConfig)
+	if err != nil {
+		logger.Error(err, "ExecuteSQLFile 获取连接失败：%s", formatConnSummary(runConfig))
+		return connection.QueryResult{Success: false, Message: err.Error()}
+	}
 
 	// 获取文件大小用于计算进度
-	fi, _ := f.Stat()
-	totalSize := fi.Size()
+	var totalSize int64
+	totalSizeKnown := false
+	if fi, statErr := f.Stat(); statErr == nil {
+		totalSize = fi.Size()
+		totalSizeKnown = true
+	}
 
 	// 设置取消上下文
 	ctx, cancel := context.WithCancel(context.Background())
@@ -1593,15 +1794,15 @@ func (a *App) ExecuteSQLFile(config connection.ConnectionConfig, dbName string, 
 		a.queryMu.Unlock()
 	}()
 
+	if bootstrapSQL := buildGoNaviMySQLDatabaseBackupBootstrapSQL(backupPreamble); isGoNaviMySQLDatabaseBackup && bootstrapSQL != "" {
+		if _, err := execSQLFileStatement(ctx, dbInst, bootstrapSQL); err != nil {
+			return connection.QueryResult{Success: false, Message: err.Error()}
+		}
+	}
+
 	// 发送进度事件的辅助函数
 	emitProgress := func(status string, executed, failed, total int, bytesRead int64, currentSQL string, errMsg string) {
-		percent := 0.0
-		if totalSize > 0 {
-			percent = float64(bytesRead) / float64(totalSize) * 100
-			if percent > 100 {
-				percent = 100
-			}
-		}
+		percent := resolveSQLFileExecutionProgressPercent(status, bytesRead, totalSize)
 		uievents.Emit(a.ctx, "sqlfile:progress", map[string]interface{}{
 			"jobId":      jobID,
 			"status":     status,
@@ -1619,7 +1820,8 @@ func (a *App) ExecuteSQLFile(config connection.ConnectionConfig, dbName string, 
 	emitProgress("running", 0, 0, 0, 0, "", "")
 
 	// 使用 countingReader 追踪已读取字节数
-	cr := &countingReader{r: f}
+	fileDigest := sha256.New()
+	cr := &countingReader{r: io.TeeReader(f, fileDigest)}
 
 	startTime := time.Now()
 	execResult, streamErr := executeSQLFileStream(ctx, dbInst, cr, sqlFileExecutionOptions{
@@ -1644,6 +1846,12 @@ func (a *App) ExecuteSQLFile(config connection.ConnectionConfig, dbName string, 
 	executedCount := execResult.Executed
 	failedCount := execResult.Failed
 	errorLogs := execResult.Errors
+	auditStatementCount = executedCount + failedCount
+	auditSQL = fmt.Sprintf("EXECUTE SQL FILE EXECUTED_%d FAILED_%d", executedCount, failedCount)
+	auditSafeError = fmt.Sprintf("SQL file task failed after executing %d statement(s); %d statement(s) failed", executedCount, failedCount)
+	if totalSizeKnown && cr.n == totalSize {
+		auditSQL += " SHA256_" + hex.EncodeToString(fileDigest.Sum(nil))
+	}
 
 	if streamErr != nil && streamErr.Error() == "已取消" {
 		emitProgress("cancelled", executedCount, failedCount, executedCount+failedCount, cr.n, "", a.appText("file.backend.message.user_cancelled", nil))
@@ -1772,7 +1980,7 @@ func (a *App) ImportConfigFile() connection.QueryResult {
 }
 
 func (a *App) ExportConnectionsPackage(options ConnectionExportOptions) connection.QueryResult {
-	filename, err := runtime.SaveFileDialog(a.ctx, runtime.SaveDialogOptions{
+	filename, err := a.showSaveFileDialog(runtime.SaveDialogOptions{
 		Title:           a.appText("file.backend.dialog.export_connections", nil),
 		DefaultFilename: "connections" + connectionPackageExtension,
 		Filters: []runtime.FileFilter{
@@ -2364,39 +2572,147 @@ func formatImportSQLValue(dbType, columnType string, value interface{}) string {
 }
 
 // ImportDataWithProgress 执行导入并发送进度事件
-func (a *App) ImportDataWithProgress(config connection.ConnectionConfig, dbName, tableName, filePath string) connection.QueryResult {
+func (a *App) ImportDataWithProgress(config connection.ConnectionConfig, dbName, tableName, filePath string) (result connection.QueryResult) {
+	return a.ImportDataWithProgressOptions(config, dbName, tableName, filePath, ImportFileOptions{})
+}
+
+func buildImportExecutionPayload(resultData importExecutionResult, summary string, cancelled bool) map[string]interface{} {
+	total := resultData.Total
+	if cancelled {
+		// Rows that were parsed into an uncommitted buffer are not processed rows.
+		total = resultData.Success + resultData.Failed
+	}
+	return map[string]interface{}{
+		"success":      resultData.Success,
+		"failed":       resultData.Failed,
+		"total":        total,
+		"affectedRows": int64(resultData.Success),
+		"errorLogs":    resultData.ErrorLogs,
+		"errorSummary": summary,
+		"cancelled":    cancelled,
+	}
+}
+
+func (a *App) cancelledImportResult(resultData importExecutionResult) connection.QueryResult {
+	summary := a.appText("file.backend.message.import_cancelled", map[string]any{
+		"imported": resultData.Success,
+		"failed":   resultData.Failed,
+	})
+	return connection.QueryResult{
+		Success: false,
+		Data:    buildImportExecutionPayload(resultData, summary, true),
+		Message: summary,
+	}
+}
+
+// ImportDataWithProgressOptions executes a streamed import with optional source-header
+// to database-column mappings. ImportDataWithProgress remains the compatibility entrypoint.
+func (a *App) ImportDataWithProgressOptions(config connection.ConnectionConfig, dbName, tableName, filePath string, options ImportFileOptions) (result connection.QueryResult) {
+	if strings.TrimSpace(filePath) == "" {
+		return connection.QueryResult{Success: false, Message: a.appText("file.backend.error.import_file_empty", nil)}
+	}
+	dbType := resolveDDLDBType(config)
+	schemaName, pureTableName := normalizeSchemaAndTable(config, dbName, tableName)
+	metadataSchemaName, metadataTableName := normalizeMetadataSchemaAndTable(config, dbName, tableName)
+	auditTarget := strings.TrimSpace(tableName)
+	if pureTableName != "" {
+		auditTarget = quoteTableIdentByType(dbType, schemaName, pureTableName)
+	}
+	if auditTarget == "" {
+		auditTarget = "TARGET_TABLE"
+	}
+	auditSQL := "IMPORT DATA INTO " + auditTarget
+	auditSafeError := "data import task failed"
+	defer a.beginSQLAuditUserActionWithOptions(config, dbName, "data_import", &auditSQL, &result, sqlAuditUserActionOptions{
+		SafeError: &auditSafeError,
+	})()
 	if err := ensureConnectionAllowsDataImport(config, "connection.backend.action.import_data"); err != nil {
 		return connection.QueryResult{Success: false, Message: err.Error()}
+	}
+
+	importCtx := context.Background()
+	jobID := strings.TrimSpace(options.JobID)
+	if jobID != "" {
+		registeredAt := time.Now()
+		ctx, cancel := context.WithCancel(context.Background())
+		importCtx = ctx
+		a.queryMu.Lock()
+		if a.runningQueries == nil {
+			a.runningQueries = make(map[string]queryContext)
+		}
+		if _, exists := a.runningQueries[jobID]; exists {
+			a.queryMu.Unlock()
+			cancel()
+			return connection.QueryResult{Success: false, Message: a.appText("file.backend.error.import_job_already_running", nil)}
+		}
+		a.runningQueries[jobID] = queryContext{
+			cancel:          cancel,
+			started:         registeredAt,
+			retainUntilDone: true,
+		}
+		a.queryMu.Unlock()
+		defer cancel()
+		defer func() {
+			a.queryMu.Lock()
+			if running, exists := a.runningQueries[jobID]; exists && running.started.Equal(registeredAt) {
+				delete(a.runningQueries, jobID)
+			}
+			a.queryMu.Unlock()
+		}()
+	}
+	if err := importCtx.Err(); err != nil {
+		return a.cancelledImportResult(importExecutionResult{})
 	}
 	runConfig := normalizeRunConfig(config, dbName)
 	dbInst, err := a.getDatabase(runConfig)
 	if err != nil {
+		if errors.Is(importCtx.Err(), context.Canceled) {
+			return a.cancelledImportResult(importExecutionResult{})
+		}
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
-
-	dbType := resolveDDLDBType(config)
-	schemaName, pureTableName := normalizeSchemaAndTable(config, dbName, tableName)
-	columnTypeMap := map[string]string{}
-	if defs, colErr := dbInst.GetColumns(schemaName, pureTableName); colErr == nil {
-		columnTypeMap = buildImportColumnTypeMap(defs)
+	if err := importCtx.Err(); err != nil {
+		return a.cancelledImportResult(importExecutionResult{})
 	}
 
-	writer := newImportDatabaseRowWriter(dbInst, dbType, tableName, columnTypeMap)
-	consumer := newImportBatchConsumer(writer, defaultImportApplyBatchSize, 0, false, func(state importProgressState) {
+	targetColumns, colErr := getColumnsWithMetadataFallback(dbInst, config, metadataSchemaName, metadataTableName, a.appText)
+	if errors.Is(importCtx.Err(), context.Canceled) {
+		return a.cancelledImportResult(importExecutionResult{})
+	}
+	if colErr != nil && options.ColumnMappings != nil {
+		return connection.QueryResult{Success: false, Message: colErr.Error()}
+	}
+
+	writer := newImportDatabaseRowWriter(dbInst, dbType, tableName, newImportColumnTypeLookup(targetColumns))
+	batchConsumer := newImportBatchConsumer(writer, defaultImportApplyBatchSize, 0, false, func(state importProgressState) {
 		uievents.Emit(a.ctx, "import:progress", state)
 	})
+	batchConsumer.SetContext(importCtx)
+	batchConsumer.jobID = jobID
+	consumer, err := newImportColumnMappingConsumer(batchConsumer, options.ColumnMappings, targetColumns)
+	if err != nil {
+		return connection.QueryResult{Success: false, Message: err.Error()}
+	}
 	if err := streamImportFile(filePath, consumer); err != nil {
-		resultData := consumer.Result()
+		resultData := batchConsumer.Result()
+		if errors.Is(err, context.Canceled) {
+			maybeReleaseFileTransferMemory("import-cancelled", int64(resultData.Success+resultData.Failed), filePath)
+			return a.cancelledImportResult(resultData)
+		}
 		maybeReleaseFileTransferMemory("import-stream-error", int64(resultData.Total), filePath)
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
-	if err := consumer.Flush(); err != nil {
-		resultData := consumer.Result()
+	if err := batchConsumer.Flush(); err != nil {
+		resultData := batchConsumer.Result()
+		if errors.Is(err, context.Canceled) {
+			maybeReleaseFileTransferMemory("import-cancelled", int64(resultData.Success+resultData.Failed), filePath)
+			return a.cancelledImportResult(resultData)
+		}
 		maybeReleaseFileTransferMemory("import-flush-error", int64(resultData.Total), filePath)
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
 
-	resultData := consumer.Result()
+	resultData := batchConsumer.Result()
 	if resultData.Total == 0 {
 		maybeReleaseFileTransferMemory("import-empty", 0, filePath)
 		return connection.QueryResult{Success: true, Message: a.appText("file.backend.message.import_no_data", nil)}
@@ -2406,19 +2722,15 @@ func (a *App) ImportDataWithProgress(config connection.ConnectionConfig, dbName,
 		"imported": resultData.Success,
 		"failed":   resultData.Failed,
 	})
-	result := map[string]interface{}{
-		"success":      resultData.Success,
-		"failed":       resultData.Failed,
-		"total":        resultData.Total,
-		"errorLogs":    resultData.ErrorLogs,
-		"errorSummary": summary,
-	}
+	resultPayload := buildImportExecutionPayload(resultData, summary, false)
 
 	maybeReleaseFileTransferMemory("import-finished", int64(resultData.Total), filePath)
-	return connection.QueryResult{Success: true, Data: result, Message: summary}
+	return connection.QueryResult{Success: true, Data: resultPayload, Message: summary}
 }
 
-func (a *App) ApplyChanges(config connection.ConnectionConfig, dbName, tableName string, changes connection.ChangeSet) connection.QueryResult {
+func (a *App) ApplyChanges(config connection.ConnectionConfig, dbName, tableName string, changes connection.ChangeSet) (result connection.QueryResult) {
+	auditSQL := fmt.Sprintf("APPLY CHANGES TO %s", strings.TrimSpace(tableName))
+	defer a.beginSQLAuditUserAction(config, dbName, "data_editor", &auditSQL, &result)()
 	if err := ensureConnectionAllowsDataEdit(config, "connection.backend.action.apply_result_changes"); err != nil {
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
@@ -2430,8 +2742,9 @@ func (a *App) ApplyChanges(config connection.ConnectionConfig, dbName, tableName
 	}
 
 	if applier, ok := dbInst.(db.BatchApplier); ok {
-		preview := buildChangePreview(dbInst, config, tableName, changes)
-		err := applier.ApplyChanges(tableName, changes)
+		targetTableName := resolveChangeTargetTableName(config, dbName, tableName)
+		preview := buildChangePreview(dbInst, config, targetTableName, changes)
+		err := applier.ApplyChanges(targetTableName, changes)
 		if err != nil {
 			return connection.QueryResult{Success: false, Message: err.Error(), Data: preview}
 		}
@@ -2448,6 +2761,19 @@ type ChangePreview struct {
 	Inserts []string `json:"inserts"`
 }
 
+func resolveChangeTargetTableName(config connection.ConnectionConfig, dbName, tableName string) string {
+	targetTableName := strings.TrimSpace(tableName)
+	if resolveDDLDBType(config) != "oracle" {
+		return targetTableName
+	}
+
+	schemaName, pureTableName := normalizeSchemaAndTable(config, dbName, targetTableName)
+	if strings.TrimSpace(schemaName) == "" || strings.TrimSpace(pureTableName) == "" {
+		return targetTableName
+	}
+	return strings.TrimSpace(schemaName) + "." + strings.TrimSpace(pureTableName)
+}
+
 func buildChangePreview(dbInst db.Database, config connection.ConnectionConfig, tableName string, changes connection.ChangeSet) ChangePreview {
 	if previewer, ok := dbInst.(db.ChangePreviewer); ok {
 		deletes, updates, inserts := previewer.PreviewChanges(tableName, changes)
@@ -2456,7 +2782,8 @@ func buildChangePreview(dbInst db.Database, config connection.ConnectionConfig, 
 
 	dbType := resolveDDLDBType(config)
 	quoter := func(s string) string { return quoteIdentByType(dbType, s) }
-	deletes, updates, inserts := db.GenerateChangePreview(tableName, changes, quoter)
+	tableQuoter := func(s string) string { return quoteQualifiedIdentByType(dbType, s) }
+	deletes, updates, inserts := db.GenerateChangePreviewWithTableQuoter(tableName, changes, quoter, tableQuoter)
 	return ChangePreview{Deletes: deletes, Updates: updates, Inserts: inserts}
 }
 
@@ -2471,28 +2798,49 @@ func (a *App) PreviewChanges(config connection.ConnectionConfig, dbName, tableNa
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
 
-	return connection.QueryResult{Success: true, Data: buildChangePreview(dbInst, config, tableName, changes)}
+	targetTableName := resolveChangeTargetTableName(config, dbName, tableName)
+	return connection.QueryResult{Success: true, Data: buildChangePreview(dbInst, config, targetTableName, changes)}
 }
 
 func (a *App) ExportTable(config connection.ConnectionConfig, dbName string, tableName string, format string) connection.QueryResult {
 	return a.ExportTableWithOptions(config, dbName, tableName, ExportFileOptions{Format: format})
 }
 
+func buildExportTableSelectQuery(dbType string, tableName string, columns []string) string {
+	selectList := "*"
+	if len(columns) > 0 {
+		quotedColumns := make([]string, len(columns))
+		for index, column := range columns {
+			quotedColumns[index] = quoteIdentByType(dbType, column)
+		}
+		selectList = strings.Join(quotedColumns, ", ")
+	}
+	return fmt.Sprintf("SELECT %s FROM %s", selectList, quoteQualifiedIdentByType(dbType, tableName))
+}
+
 func (a *App) ExportTableWithOptions(config connection.ConnectionConfig, dbName string, tableName string, options ExportFileOptions) connection.QueryResult {
 	options = normalizeExportFileOptions("", options)
+	if err := validateExportColumnsSelection(options); err != nil {
+		return connection.QueryResult{Success: false, Message: err.Error()}
+	}
 	format := options.Format
 	if format != "sql" {
 		if err := verifyOptionalDriverAgentReadyForExport(config); err != nil {
 			return connection.QueryResult{Success: false, Message: err.Error()}
 		}
 	}
-	filename, err := runtime.SaveFileDialog(a.ctx, runtime.SaveDialogOptions{
+	filename, err := a.showSaveFileDialog(runtime.SaveDialogOptions{
 		Title:           a.appText("file.backend.dialog.export_table", map[string]any{"table": tableName}),
 		DefaultFilename: fmt.Sprintf("%s.%s", tableName, format),
+		Filters:         exportFileDialogFilters(format),
 	})
 
-	if err != nil || filename == "" {
+	if err != nil || strings.TrimSpace(filename) == "" {
 		return connection.QueryResult{Success: false, Message: "已取消"}
+	}
+	filename, err = a.resolveExportDialogTargetPath(filename, format)
+	if err != nil {
+		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
 
 	reporter := newExportProgressReporter(a, options, tableName, filename)
@@ -2519,21 +2867,32 @@ func (a *App) ExportTableWithOptions(config connection.ConnectionConfig, dbName 
 
 	if format == "sql" {
 		reporter.Start(a.appText("data_export.progress.stage.exporting_sql_file", nil))
-		f, err := os.Create(filename)
+		target, err := createAtomicExportTarget(filename)
 		if err != nil {
 			reporter.Error(0, err.Error())
 			return connection.QueryResult{Success: false, Message: err.Error()}
 		}
-		defer f.Close()
+		defer target.abort()
 
-		w := bufio.NewWriterSize(f, 1024*1024)
-		defer w.Flush()
+		w := bufio.NewWriterSize(target.file, 1024*1024)
 
 		if err := writeSQLHeader(w, runConfig, dbName); err != nil {
 			reporter.Error(0, err.Error())
 			return connection.QueryResult{Success: false, Message: err.Error()}
 		}
 		viewLookup := listViewNameLookup(dbInst, runConfig, dbName)
+		if err := writeSQLDropIfExistsPreamble(
+			w,
+			runConfig,
+			dbName,
+			[]string{tableName},
+			viewLookup,
+			true,
+			options,
+		); err != nil {
+			reporter.Error(0, err.Error())
+			return connection.QueryResult{Success: false, Message: err.Error()}
+		}
 		if err := dumpTableSQL(w, dbInst, runConfig, dbName, tableName, true, true, viewLookup); err != nil {
 			reporter.Error(0, err.Error())
 			return connection.QueryResult{Success: false, Message: err.Error()}
@@ -2544,13 +2903,21 @@ func (a *App) ExportTableWithOptions(config connection.ConnectionConfig, dbName 
 		}
 
 		reporter.Finalizing(0)
+		if err := w.Flush(); err != nil {
+			reporter.Error(0, err.Error())
+			return connection.QueryResult{Success: false, Message: err.Error()}
+		}
+		if err := target.commit(); err != nil {
+			reporter.Error(0, err.Error())
+			return connection.QueryResult{Success: false, Message: err.Error()}
+		}
 		reporter.Done(0)
 		maybeReleaseFileTransferMemory("export-table-sql-finished", 0, filename)
 		return connection.QueryResult{Success: true, Message: a.appText("file.backend.message.export_completed", nil)}
 	}
 
 	dbType := resolveDDLDBType(config)
-	query := fmt.Sprintf("SELECT * FROM %s", quoteQualifiedIdentByType(dbType, tableName))
+	query := buildExportTableSelectQuery(dbType, tableName, options.Columns)
 
 	f, err := os.Create(filename)
 	if err != nil {
@@ -2596,19 +2963,24 @@ func (a *App) ExportTablesSQLWithOptions(
 	options.TotalRowsHint = int64(len(objects))
 	options.TotalRowsKnown = true
 
-	filename, err := runtime.SaveFileDialog(a.ctx, runtime.SaveDialogOptions{
+	filename, err := a.showSaveFileDialog(runtime.SaveDialogOptions{
 		Title:           a.appText("file.backend.dialog.export_tables_sql", nil),
 		DefaultFilename: buildTablesExportDefaultFilename(dbName, objects, includeSchema, includeData),
+		Filters:         exportFileDialogFilters("sql"),
 	})
-	if err != nil || filename == "" {
+	if err != nil || strings.TrimSpace(filename) == "" {
 		return connection.QueryResult{Success: false, Message: "已取消"}
+	}
+	filename, err = a.resolveExportDialogTargetPath(filename, "sql")
+	if err != nil {
+		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
 
 	reporter := newExportProgressReporter(a, options, resolveBatchObjectsTargetNameWithText(dbName, objects, a.appText), filename)
 	if reporter != nil {
 		reporter.Start(a.appText("data_export.progress.stage.preparing_batch_tables_export", nil))
 	}
-	return a.exportTablesSQLToFile(config, dbName, objects, includeSchema, includeData, filename, reporter)
+	return a.exportTablesSQLToFile(config, dbName, objects, includeSchema, includeData, filename, reporter, options)
 }
 
 func (a *App) exportTablesSQL(config connection.ConnectionConfig, dbName string, tableNames []string, includeSchema bool, includeData bool) connection.QueryResult {
@@ -2617,15 +2989,81 @@ func (a *App) exportTablesSQL(config connection.ConnectionConfig, dbName string,
 	}
 	objects := normalizeExportNameList(tableNames)
 
-	filename, err := runtime.SaveFileDialog(a.ctx, runtime.SaveDialogOptions{
+	filename, err := a.showSaveFileDialog(runtime.SaveDialogOptions{
 		Title:           a.appText("file.backend.dialog.export_tables_sql", nil),
 		DefaultFilename: buildTablesExportDefaultFilename(dbName, objects, includeSchema, includeData),
+		Filters:         exportFileDialogFilters("sql"),
 	})
-	if err != nil || filename == "" {
+	if err != nil || strings.TrimSpace(filename) == "" {
 		return connection.QueryResult{Success: false, Message: "已取消"}
 	}
+	filename, err = a.resolveExportDialogTargetPath(filename, "sql")
+	if err != nil {
+		return connection.QueryResult{Success: false, Message: err.Error()}
+	}
 
-	return a.exportTablesSQLToFile(config, dbName, objects, includeSchema, includeData, filename, nil)
+	return a.exportTablesSQLToFile(
+		config,
+		dbName,
+		objects,
+		includeSchema,
+		includeData,
+		filename,
+		nil,
+		ExportFileOptions{Format: "sql"},
+	)
+}
+
+type atomicExportTarget struct {
+	file       *os.File
+	tempPath   string
+	targetPath string
+	closed     bool
+	committed  bool
+}
+
+func createAtomicExportTarget(targetPath string) (*atomicExportTarget, error) {
+	temporary, err := os.CreateTemp(filepath.Dir(targetPath), ".gonavi-export-*.part")
+	if err != nil {
+		return nil, err
+	}
+	return &atomicExportTarget{
+		file:       temporary,
+		tempPath:   temporary.Name(),
+		targetPath: targetPath,
+	}, nil
+}
+
+func (target *atomicExportTarget) abort() {
+	if target == nil {
+		return
+	}
+	if !target.closed {
+		_ = target.file.Close()
+		target.closed = true
+	}
+	if !target.committed {
+		_ = os.Remove(target.tempPath)
+	}
+}
+
+func (target *atomicExportTarget) commit() error {
+	if target == nil || target.file == nil {
+		return errors.New("invalid atomic export target")
+	}
+	if err := target.file.Sync(); err != nil {
+		return err
+	}
+	closeErr := target.file.Close()
+	target.closed = true
+	if closeErr != nil {
+		return closeErr
+	}
+	if err := atomicReplaceSQLAuditFile(target.tempPath, target.targetPath); err != nil {
+		return err
+	}
+	target.committed = true
+	return nil
 }
 
 func (a *App) exportTablesSQLToFile(
@@ -2636,6 +3074,7 @@ func (a *App) exportTablesSQLToFile(
 	includeData bool,
 	filename string,
 	reporter *exportProgressReporter,
+	options ExportFileOptions,
 ) connection.QueryResult {
 	if !includeSchema && !includeData {
 		return connection.QueryResult{Success: false, Message: a.appText("file.backend.error.invalid_export_mode", nil)}
@@ -2653,19 +3092,32 @@ func (a *App) exportTablesSQLToFile(
 	viewLookup := listViewNameLookup(dbInst, runConfig, dbName)
 	objects := buildExportObjectOrder(runConfig, dbName, normalizeExportNameList(tableNames), viewLookup, false)
 
-	f, err := os.Create(filename)
+	target, err := createAtomicExportTarget(filename)
 	if err != nil {
 		if reporter != nil {
 			reporter.Error(0, err.Error())
 		}
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
-	defer f.Close()
+	defer target.abort()
 
-	w := bufio.NewWriterSize(f, 1024*1024)
-	defer w.Flush()
+	w := bufio.NewWriterSize(target.file, 1024*1024)
 
 	if err := writeSQLHeader(w, runConfig, dbName); err != nil {
+		if reporter != nil {
+			reporter.Error(0, err.Error())
+		}
+		return connection.QueryResult{Success: false, Message: err.Error()}
+	}
+	if err := writeSQLDropIfExistsPreamble(
+		w,
+		runConfig,
+		dbName,
+		objects,
+		viewLookup,
+		includeSchema,
+		options,
+	); err != nil {
 		if reporter != nil {
 			reporter.Error(0, err.Error())
 		}
@@ -2685,13 +3137,6 @@ func (a *App) exportTablesSQLToFile(
 			}
 			return connection.QueryResult{Success: false, Message: err.Error()}
 		}
-		if reporter != nil {
-			reporter.ForceRunning(int64(index+1), a.appText("data_export.progress.stage.exporting_item_with_progress", map[string]any{
-				"name":    objectName,
-				"current": index + 1,
-				"total":   len(objects),
-			}))
-		}
 	}
 	if err := writeSQLFooter(w, runConfig); err != nil {
 		if reporter != nil {
@@ -2702,6 +3147,20 @@ func (a *App) exportTablesSQLToFile(
 
 	if reporter != nil {
 		reporter.Finalizing(int64(len(objects)))
+	}
+	if err := w.Flush(); err != nil {
+		if reporter != nil {
+			reporter.Error(int64(len(objects)), err.Error())
+		}
+		return connection.QueryResult{Success: false, Message: err.Error()}
+	}
+	if err := target.commit(); err != nil {
+		if reporter != nil {
+			reporter.Error(int64(len(objects)), err.Error())
+		}
+		return connection.QueryResult{Success: false, Message: err.Error()}
+	}
+	if reporter != nil {
 		reporter.Done(int64(len(objects)))
 	}
 	return connection.QueryResult{
@@ -2715,20 +3174,35 @@ func (a *App) exportTablesSQLToFile(
 }
 
 func (a *App) ExportDatabaseSQL(config connection.ConnectionConfig, dbName string, includeData bool) connection.QueryResult {
+	return a.ExportDatabaseSQLWithOptions(config, dbName, includeData, ExportFileOptions{Format: "sql"})
+}
+
+func (a *App) ExportDatabaseSQLWithOptions(
+	config connection.ConnectionConfig,
+	dbName string,
+	includeData bool,
+	options ExportFileOptions,
+) connection.QueryResult {
 	safeDbName := strings.TrimSpace(dbName)
 	if safeDbName == "" {
 		return connection.QueryResult{Success: false, Message: a.appText("file.backend.error.database_name_required", nil)}
 	}
+	options = normalizeExportFileOptions("sql", options)
 
-	filename, err := runtime.SaveFileDialog(a.ctx, runtime.SaveDialogOptions{
+	filename, err := a.showSaveFileDialog(runtime.SaveDialogOptions{
 		Title:           a.appText("file.backend.dialog.export_database_sql", map[string]any{"database": safeDbName}),
 		DefaultFilename: buildDatabaseExportDefaultFilename(safeDbName, includeData),
+		Filters:         exportFileDialogFilters("sql"),
 	})
-	if err != nil || filename == "" {
+	if err != nil || strings.TrimSpace(filename) == "" {
 		return connection.QueryResult{Success: false, Message: "已取消"}
 	}
+	filename, err = a.resolveExportDialogTargetPath(filename, "sql")
+	if err != nil {
+		return connection.QueryResult{Success: false, Message: err.Error()}
+	}
 
-	return a.exportDatabaseSQLToFile(config, safeDbName, includeData, filename)
+	return a.exportDatabaseSQLToFile(config, safeDbName, includeData, filename, options)
 }
 
 func (a *App) ExportDatabasesSQLWithOptions(
@@ -2767,19 +3241,15 @@ func (a *App) ExportDatabasesSQLWithOptions(
 			}))
 		}
 		targetFile := filepath.Join(directory, buildDatabaseExportDefaultFilename(name, includeData))
-		result := a.exportDatabaseSQLToFile(config, name, includeData, targetFile)
+		innerOptions := options
+		innerOptions.JobID = ""
+		result := a.exportDatabaseSQLToFile(config, name, includeData, targetFile, innerOptions)
 		if !result.Success {
+			result.Message = fmt.Sprintf("%s: %s", targetFile, result.Message)
 			if reporter != nil {
 				reporter.Error(int64(index), result.Message)
 			}
 			return result
-		}
-		if reporter != nil {
-			reporter.ForceRunning(int64(index+1), a.appText("data_export.progress.stage.exporting_item_with_progress", map[string]any{
-				"name":    name,
-				"current": index + 1,
-				"total":   len(normalizedDbNames),
-			}))
 		}
 	}
 
@@ -2802,44 +3272,110 @@ func (a *App) exportDatabaseSQLToFile(
 	dbName string,
 	includeData bool,
 	filename string,
+	options ExportFileOptions,
 ) connection.QueryResult {
 	safeDbName := strings.TrimSpace(dbName)
 	if safeDbName == "" {
 		return connection.QueryResult{Success: false, Message: a.appText("file.backend.error.database_name_required", nil)}
 	}
+	reporter := newExportProgressReporter(a, options, safeDbName, filename)
+	if reporter != nil {
+		reporter.Start(a.appText("data_export.progress.stage.preparing_export", nil))
+	}
 
 	runConfig := normalizeRunConfig(config, dbName)
 	dbInst, err := a.getDatabase(runConfig)
 	if err != nil {
+		if reporter != nil {
+			reporter.Error(0, err.Error())
+		}
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
 
 	tables, err := dbInst.GetTables(dbName)
 	if err != nil {
+		if reporter != nil {
+			reporter.Error(0, err.Error())
+		}
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
 	viewLookup := listViewNameLookup(dbInst, runConfig, dbName)
 	objects := buildExportObjectOrder(runConfig, dbName, tables, viewLookup, true)
+	if reporter != nil {
+		reporter.totalRows = int64(len(objects))
+		reporter.totalRowsKnown = true
+		reporter.ForceRunning(0, a.appText("data_export.progress.stage.exporting_sql_file", nil))
+	}
 
-	f, err := os.Create(filename)
+	target, err := createAtomicExportTarget(filename)
 	if err != nil {
+		if reporter != nil {
+			reporter.Error(0, err.Error())
+		}
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
-	defer f.Close()
+	defer target.abort()
 
-	w := bufio.NewWriterSize(f, 1024*1024)
-	defer w.Flush()
+	w := bufio.NewWriterSize(target.file, 1024*1024)
 
-	if err := writeSQLHeader(w, runConfig, dbName); err != nil {
+	if err := writeSQLDatabaseBackupHeader(w, runConfig, dbName); err != nil {
+		if reporter != nil {
+			reporter.Error(0, err.Error())
+		}
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
-	for _, objectName := range objects {
+	if err := writeSQLDropIfExistsPreamble(
+		w,
+		runConfig,
+		dbName,
+		objects,
+		viewLookup,
+		true,
+		options,
+	); err != nil {
+		if reporter != nil {
+			reporter.Error(0, err.Error())
+		}
+		return connection.QueryResult{Success: false, Message: err.Error()}
+	}
+	for index, objectName := range objects {
+		if reporter != nil {
+			reporter.ForceRunning(int64(index), a.appText("data_export.progress.stage.exporting_item_with_progress", map[string]any{
+				"name":    objectName,
+				"current": index + 1,
+				"total":   len(objects),
+			}))
+		}
 		if err := dumpTableSQL(w, dbInst, runConfig, dbName, objectName, true, includeData, viewLookup); err != nil {
+			if reporter != nil {
+				reporter.Error(int64(index), err.Error())
+			}
 			return connection.QueryResult{Success: false, Message: err.Error()}
 		}
 	}
 	if err := writeSQLFooter(w, runConfig); err != nil {
+		if reporter != nil {
+			reporter.Error(int64(len(objects)), err.Error())
+		}
 		return connection.QueryResult{Success: false, Message: err.Error()}
+	}
+	if reporter != nil {
+		reporter.Finalizing(int64(len(objects)))
+	}
+	if err := w.Flush(); err != nil {
+		if reporter != nil {
+			reporter.Error(int64(len(objects)), err.Error())
+		}
+		return connection.QueryResult{Success: false, Message: err.Error()}
+	}
+	if err := target.commit(); err != nil {
+		if reporter != nil {
+			reporter.Error(int64(len(objects)), err.Error())
+		}
+		return connection.QueryResult{Success: false, Message: err.Error()}
+	}
+	if reporter != nil {
+		reporter.Done(int64(len(objects)))
 	}
 
 	return connection.QueryResult{
@@ -2852,6 +3388,16 @@ func (a *App) exportDatabaseSQLToFile(
 }
 
 func (a *App) ExportSchemaSQL(config connection.ConnectionConfig, dbName string, schemaName string, includeData bool) connection.QueryResult {
+	return a.ExportSchemaSQLWithOptions(config, dbName, schemaName, includeData, ExportFileOptions{Format: "sql"})
+}
+
+func (a *App) ExportSchemaSQLWithOptions(
+	config connection.ConnectionConfig,
+	dbName string,
+	schemaName string,
+	includeData bool,
+	options ExportFileOptions,
+) connection.QueryResult {
 	safeDbName := strings.TrimSpace(dbName)
 	safeSchemaName := strings.TrimSpace(schemaName)
 	if safeDbName == "" {
@@ -2860,28 +3406,44 @@ func (a *App) ExportSchemaSQL(config connection.ConnectionConfig, dbName string,
 	if safeSchemaName == "" {
 		return connection.QueryResult{Success: false, Message: a.appText("file.backend.error.schema_name_required", nil)}
 	}
+	options = normalizeExportFileOptions("sql", options)
 
 	suffix := "schema"
 	if includeData {
 		suffix = "backup"
 	}
 
-	filename, err := runtime.SaveFileDialog(a.ctx, runtime.SaveDialogOptions{
+	filename, err := a.showSaveFileDialog(runtime.SaveDialogOptions{
 		Title:           a.appText("file.backend.dialog.export_database_sql", map[string]any{"database": safeDbName + "." + safeSchemaName}),
 		DefaultFilename: fmt.Sprintf("%s_%s_%s.sql", safeDbName, safeSchemaName, suffix),
+		Filters:         exportFileDialogFilters("sql"),
 	})
-	if err != nil || filename == "" {
+	if err != nil || strings.TrimSpace(filename) == "" {
 		return connection.QueryResult{Success: false, Message: "已取消"}
+	}
+	filename, err = a.resolveExportDialogTargetPath(filename, "sql")
+	if err != nil {
+		return connection.QueryResult{Success: false, Message: err.Error()}
+	}
+	reporter := newExportProgressReporter(a, options, safeDbName+"."+safeSchemaName, filename)
+	if reporter != nil {
+		reporter.Start(a.appText("data_export.progress.stage.preparing_export", nil))
 	}
 
 	runConfig := normalizeRunConfig(config, dbName)
 	dbInst, err := a.getDatabase(runConfig)
 	if err != nil {
+		if reporter != nil {
+			reporter.Error(0, err.Error())
+		}
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
 
 	tables, err := dbInst.GetTables(dbName)
 	if err != nil {
+		if reporter != nil {
+			reporter.Error(0, err.Error())
+		}
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
 	viewLookup := listViewNameLookup(dbInst, runConfig, dbName)
@@ -2889,34 +3451,96 @@ func (a *App) ExportSchemaSQL(config connection.ConnectionConfig, dbName string,
 	filteredViews := filterExportViewLookupBySchema(runConfig, dbName, viewLookup, safeSchemaName)
 	objects := buildExportObjectOrder(runConfig, dbName, filteredTables, filteredViews, true)
 	if len(objects) == 0 {
-		return connection.QueryResult{Success: false, Message: a.appText("file.backend.error.schema_export_no_objects", map[string]any{"schema": safeSchemaName})}
+		message := a.appText("file.backend.error.schema_export_no_objects", map[string]any{"schema": safeSchemaName})
+		if reporter != nil {
+			reporter.Error(0, message)
+		}
+		return connection.QueryResult{Success: false, Message: message}
+	}
+	if reporter != nil {
+		reporter.totalRows = int64(len(objects))
+		reporter.totalRowsKnown = true
+		reporter.ForceRunning(0, a.appText("data_export.progress.stage.exporting_sql_file", nil))
 	}
 
-	f, err := os.Create(filename)
+	target, err := createAtomicExportTarget(filename)
 	if err != nil {
+		if reporter != nil {
+			reporter.Error(0, err.Error())
+		}
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
-	defer f.Close()
+	defer target.abort()
 
-	w := bufio.NewWriterSize(f, 1024*1024)
-	defer w.Flush()
+	w := bufio.NewWriterSize(target.file, 1024*1024)
 
-	if err := writeSQLHeader(w, runConfig, dbName); err != nil {
+	if err := writeSQLSchemaExportHeader(w, runConfig, dbName, safeSchemaName); err != nil {
+		if reporter != nil {
+			reporter.Error(0, err.Error())
+		}
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
-	if _, err := w.WriteString(fmt.Sprintf("-- Schema: %s\n\n", safeSchemaName)); err != nil {
+	if err := writeSQLDropIfExistsPreamble(
+		w,
+		runConfig,
+		dbName,
+		objects,
+		filteredViews,
+		true,
+		options,
+	); err != nil {
+		if reporter != nil {
+			reporter.Error(0, err.Error())
+		}
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
-	for _, objectName := range objects {
+	for index, objectName := range objects {
+		if reporter != nil {
+			reporter.ForceRunning(int64(index), a.appText("data_export.progress.stage.exporting_item_with_progress", map[string]any{
+				"name":    objectName,
+				"current": index + 1,
+				"total":   len(objects),
+			}))
+		}
 		if err := dumpTableSQL(w, dbInst, runConfig, dbName, objectName, true, includeData, filteredViews); err != nil {
+			if reporter != nil {
+				reporter.Error(int64(index), err.Error())
+			}
 			return connection.QueryResult{Success: false, Message: err.Error()}
 		}
 	}
 	if err := writeSQLFooter(w, runConfig); err != nil {
+		if reporter != nil {
+			reporter.Error(int64(len(objects)), err.Error())
+		}
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
+	if reporter != nil {
+		reporter.Finalizing(int64(len(objects)))
+	}
+	if err := w.Flush(); err != nil {
+		if reporter != nil {
+			reporter.Error(int64(len(objects)), err.Error())
+		}
+		return connection.QueryResult{Success: false, Message: err.Error()}
+	}
+	if err := target.commit(); err != nil {
+		if reporter != nil {
+			reporter.Error(int64(len(objects)), err.Error())
+		}
+		return connection.QueryResult{Success: false, Message: err.Error()}
+	}
+	if reporter != nil {
+		reporter.Done(int64(len(objects)))
+	}
 
-	return connection.QueryResult{Success: true, Message: a.appText("file.backend.message.export_completed", nil)}
+	return connection.QueryResult{
+		Success: true,
+		Message: a.appText("file.backend.message.export_completed", nil),
+		Data: map[string]interface{}{
+			"filePath": filename,
+		},
+	}
 }
 
 type tableDataClearMode string
@@ -2983,7 +3607,13 @@ func tableDataClearMessageKeys(mode tableDataClearMode, partial bool) (failureKe
 	}
 }
 
-func (a *App) runTableDataClear(config connection.ConnectionConfig, dbName string, tableNames []string, mode tableDataClearMode) connection.QueryResult {
+func (a *App) runTableDataClear(config connection.ConnectionConfig, dbName string, tableNames []string, mode tableDataClearMode) (result connection.QueryResult) {
+	auditAction := "DELETE TABLE DATA"
+	if mode == tableDataClearModeTruncate {
+		auditAction = "TRUNCATE TABLE DATA"
+	}
+	auditSQL := auditAction + " " + strings.Join(tableNames, ", ")
+	defer a.beginSQLAuditUserAction(config, dbName, "object_editor", &auditSQL, &result)()
 	actionLabel, progressLabel := tableDataClearActionLabels(mode)
 	if err := ensureConnectionAllowsDataEdit(config, actionLabel); err != nil {
 		return connection.QueryResult{Success: false, Message: err.Error()}
@@ -3149,6 +3779,41 @@ func quoteQualifiedIdentByType(dbType string, ident string) string {
 }
 
 func writeSQLHeader(w *bufio.Writer, config connection.ConnectionConfig, dbName string) error {
+	return writeSQLHeaderWithDatabaseBootstrap(w, config, dbName, false)
+}
+
+func writeSQLSchemaExportHeader(
+	w *bufio.Writer,
+	config connection.ConnectionConfig,
+	dbName string,
+	schemaName string,
+) error {
+	safeSchemaName := strings.TrimSpace(schemaName)
+	if safeSchemaName == "" {
+		return errors.New("schema name is required")
+	}
+	if err := writeSQLHeader(w, config, dbName); err != nil {
+		return err
+	}
+	if _, err := w.WriteString(fmt.Sprintf("-- Schema: %s\n\n", safeSchemaName)); err != nil {
+		return err
+	}
+	dbType := resolveDDLDBType(config)
+	if isPostgresSchemaDDLDBType(dbType) {
+		_, err := w.WriteString(fmt.Sprintf(
+			"CREATE SCHEMA IF NOT EXISTS %s;\n\n",
+			quoteIdentByType(dbType, safeSchemaName),
+		))
+		return err
+	}
+	return nil
+}
+
+func writeSQLDatabaseBackupHeader(w *bufio.Writer, config connection.ConnectionConfig, dbName string) error {
+	return writeSQLHeaderWithDatabaseBootstrap(w, config, dbName, true)
+}
+
+func writeSQLHeaderWithDatabaseBootstrap(w *bufio.Writer, config connection.ConnectionConfig, dbName string, createDatabase bool) error {
 	now := time.Now().Format("2006-01-02 15:04:05")
 	if _, err := w.WriteString(fmt.Sprintf("-- GoNavi SQL Export\n-- Time: %s\n", now)); err != nil {
 		return err
@@ -3160,6 +3825,11 @@ func writeSQLHeader(w *bufio.Writer, config connection.ConnectionConfig, dbName 
 	}
 
 	if strings.ToLower(strings.TrimSpace(config.Type)) == "mysql" && strings.TrimSpace(dbName) != "" {
+		if createDatabase {
+			if _, err := w.WriteString(fmt.Sprintf("CREATE DATABASE IF NOT EXISTS %s;\n\n", quoteIdentByType("mysql", dbName))); err != nil {
+				return err
+			}
+		}
 		if _, err := w.WriteString(fmt.Sprintf("USE %s;\n\n", quoteIdentByType("mysql", dbName))); err != nil {
 			return err
 		}
@@ -3176,6 +3846,84 @@ func writeSQLFooter(w *bufio.Writer, config connection.ConnectionConfig) error {
 		if _, err := w.WriteString("\nSET FOREIGN_KEY_CHECKS=1;\n"); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+func buildSQLDropIfExistsStatement(
+	config connection.ConnectionConfig,
+	dbName string,
+	objectName string,
+	isView bool,
+) string {
+	schemaName, pureObjectName := normalizeSchemaAndTable(config, dbName, objectName)
+	if strings.TrimSpace(pureObjectName) == "" {
+		return ""
+	}
+
+	dbType := resolveDDLDBType(config)
+	objectType := "TABLE"
+	// ClickHouse exposes views (including materialized views) through the table
+	// namespace and removes them with DROP TABLE.
+	if isView && dbType != "clickhouse" {
+		objectType = "VIEW"
+	}
+	qualifiedObject := quoteQualifiedIdentByType(dbType, qualifyTable(schemaName, pureObjectName))
+	if strings.TrimSpace(qualifiedObject) == "" {
+		return ""
+	}
+
+	// Not every supported Oracle version has native DROP ... IF EXISTS.
+	// Use a PL/SQL guard so exported SQL remains backward compatible.
+	if dbType == "oracle" {
+		dropSQL := fmt.Sprintf("DROP %s %s", objectType, qualifiedObject)
+		return fmt.Sprintf(
+			"BEGIN\n  EXECUTE IMMEDIATE '%s';\nEXCEPTION\n  WHEN OTHERS THEN\n    IF SQLCODE != -942 THEN\n      RAISE;\n    END IF;\nEND;\n/",
+			escapeSQLLiteral(dropSQL),
+		)
+	}
+
+	return fmt.Sprintf("DROP %s IF EXISTS %s;", objectType, qualifiedObject)
+}
+
+func writeSQLDropIfExistsPreamble(
+	w *bufio.Writer,
+	config connection.ConnectionConfig,
+	dbName string,
+	objects []string,
+	viewLookup map[string]string,
+	includeSchema bool,
+	options ExportFileOptions,
+) error {
+	if !includeSchema || !options.IncludeDropIfExists || len(objects) == 0 {
+		return nil
+	}
+
+	wroteStatement := false
+	for index := len(objects) - 1; index >= 0; index-- {
+		objectName := strings.TrimSpace(objects[index])
+		if objectName == "" {
+			continue
+		}
+		objectKey := normalizeExportObjectKey(config, dbName, objectName)
+		_, isView := viewLookup[objectKey]
+		statement := buildSQLDropIfExistsStatement(config, dbName, objectName, isView)
+		if statement == "" {
+			continue
+		}
+		if !wroteStatement {
+			if _, err := w.WriteString("\n-- Drop existing objects before recreation\n"); err != nil {
+				return err
+			}
+			wroteStatement = true
+		}
+		if _, err := w.WriteString(statement + "\n"); err != nil {
+			return err
+		}
+	}
+	if wroteStatement {
+		_, err := w.WriteString("\n")
+		return err
 	}
 	return nil
 }
@@ -3743,6 +4491,9 @@ func formatSQLValue(dbType string, v interface{}) string {
 
 	switch val := v.(type) {
 	case bool:
+		if isPgLikeBooleanDBType(dbType) {
+			return booleanSQLLiteral(val)
+		}
 		if val {
 			return "1"
 		}
@@ -3904,20 +4655,29 @@ func (a *App) ExportDataWithOptions(data []map[string]interface{}, columns []str
 		defaultName = "export"
 	}
 	options = normalizeExportFileOptions("", options)
+	if err := validateExportColumnsSelection(options); err != nil {
+		return connection.QueryResult{Success: false, Message: err.Error()}
+	}
 	if !options.TotalRowsKnown {
 		options.TotalRowsKnown = true
 		options.TotalRowsHint = int64(len(data))
 	}
 	format := options.Format
 	logger.Infof("ExportData 开始：rows=%d cols=%d format=%s defaultName=%s", len(data), len(columns), strings.ToLower(strings.TrimSpace(format)), strings.TrimSpace(defaultName))
-	filename, err := runtime.SaveFileDialog(a.ctx, runtime.SaveDialogOptions{
+	filename, err := a.showSaveFileDialog(runtime.SaveDialogOptions{
 		Title:           a.appText("file.backend.dialog.export_data", nil),
 		DefaultFilename: fmt.Sprintf("%s.%s", defaultName, strings.ToLower(format)),
+		Filters:         exportFileDialogFilters(format),
 	})
 
-	if err != nil || filename == "" {
+	if err != nil || strings.TrimSpace(filename) == "" {
 		logger.Infof("ExportData 已取消或未选择文件：err=%v", err)
 		return connection.QueryResult{Success: false, Message: "已取消"}
+	}
+	filename, err = a.resolveExportDialogTargetPath(filename, format)
+	if err != nil {
+		logger.Warnf("ExportData 目标文件无效：file=%s err=%v", filename, err)
+		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
 	logger.Infof("ExportData 选定文件：%s", filename)
 	reporter := newExportProgressReporter(a, options, defaultName, filename)
@@ -3960,6 +4720,9 @@ func (a *App) ExportQueryWithOptions(config connection.ConnectionConfig, dbName 
 		defaultName = "export"
 	}
 	options = normalizeExportFileOptions("", options)
+	if err := validateExportColumnsSelection(options); err != nil {
+		return connection.QueryResult{Success: false, Message: err.Error()}
+	}
 	format := options.Format
 	if format != "sql" {
 		if err := verifyOptionalDriverAgentReadyForExport(config); err != nil {
@@ -3967,13 +4730,19 @@ func (a *App) ExportQueryWithOptions(config connection.ConnectionConfig, dbName 
 		}
 	}
 
-	filename, err := runtime.SaveFileDialog(a.ctx, runtime.SaveDialogOptions{
+	filename, err := a.showSaveFileDialog(runtime.SaveDialogOptions{
 		Title:           a.appText("file.backend.dialog.export_query_result", nil),
 		DefaultFilename: fmt.Sprintf("%s.%s", defaultName, strings.ToLower(format)),
+		Filters:         exportFileDialogFilters(format),
 	})
-	if err != nil || filename == "" {
+	if err != nil || strings.TrimSpace(filename) == "" {
 		logger.Infof("ExportQuery 已取消或未选择文件：err=%v", err)
 		return connection.QueryResult{Success: false, Message: "已取消"}
+	}
+	filename, err = a.resolveExportDialogTargetPath(filename, format)
+	if err != nil {
+		logger.Warnf("ExportQuery 目标文件无效：file=%s err=%v", filename, err)
+		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
 	logger.Infof("ExportQuery 开始：type=%s db=%s format=%s file=%s sql=%q", strings.TrimSpace(config.Type), strings.TrimSpace(dbName), strings.ToLower(strings.TrimSpace(format)), filename, sqlSnippet(query))
 	reporter := newExportProgressReporter(a, options, defaultName, filename)
@@ -3984,6 +4753,22 @@ func (a *App) ExportQueryWithOptions(config connection.ConnectionConfig, dbName 
 	if err != nil {
 		reporter.Error(0, err.Error())
 		return connection.QueryResult{Success: false, Message: err.Error()}
+	}
+	if format == "sql" {
+		options.InsertSQLDialect = resolveDDLDBType(runConfig)
+		options.InsertSQLTargetTable = resolveChangeTargetTableName(runConfig, dbName, options.InsertSQLTargetTable)
+		if options.InsertSQLTargetTable != "" {
+			schemaName, pureTableName := normalizeSchemaAndTable(runConfig, dbName, options.InsertSQLTargetTable)
+			if defs, colErr := dbInst.GetColumns(schemaName, pureTableName); colErr == nil {
+				options.InsertSQLColumnTypes = buildImportColumnTypeMap(defs)
+				options.InsertSQLTargetColumns = make(map[string]string, len(defs))
+				for _, def := range defs {
+					if key := normalizeColumnName(def.Name); key != "" {
+						options.InsertSQLTargetColumns[key] = strings.TrimSpace(def.Name)
+					}
+				}
+			}
+		}
 	}
 
 	query = sanitizeSQLForPgLike(resolveDDLDBType(config), query)
@@ -4060,6 +4845,66 @@ type exportFileWriter interface {
 
 type exportValueStreamConsumer interface {
 	ConsumeRowValues(values []interface{}) error
+}
+
+type exportColumnProjectionConsumer struct {
+	delegate         db.QueryStreamConsumer
+	requestedColumns []string
+	columns          []string
+	columnIndexes    []int
+	values           []interface{}
+}
+
+func (c *exportColumnProjectionConsumer) SetColumns(columns []string) error {
+	selectedColumns, err := resolveRequestedExportColumns(columns, c.requestedColumns)
+	if err != nil {
+		return err
+	}
+	indexByColumn := make(map[string]int, len(columns))
+	for index, column := range columns {
+		if _, exists := indexByColumn[column]; !exists {
+			indexByColumn[column] = index
+		}
+	}
+
+	c.columns = selectedColumns
+	c.columnIndexes = make([]int, len(selectedColumns))
+	for index, column := range selectedColumns {
+		c.columnIndexes[index] = indexByColumn[column]
+	}
+	c.values = make([]interface{}, len(c.columns))
+	if c.delegate == nil {
+		return nil
+	}
+	return c.delegate.SetColumns(c.columns)
+}
+
+func (c *exportColumnProjectionConsumer) ConsumeRow(row map[string]interface{}) error {
+	if c.delegate == nil {
+		return nil
+	}
+	return c.delegate.ConsumeRow(row)
+}
+
+func (c *exportColumnProjectionConsumer) ConsumeRowValues(values []interface{}) error {
+	for selectedIndex, sourceIndex := range c.columnIndexes {
+		if sourceIndex < len(values) {
+			c.values[selectedIndex] = values[sourceIndex]
+		} else {
+			c.values[selectedIndex] = nil
+		}
+	}
+	if c.delegate == nil {
+		return nil
+	}
+	if valueConsumer, ok := c.delegate.(exportValueStreamConsumer); ok {
+		return valueConsumer.ConsumeRowValues(c.values)
+	}
+	row := make(map[string]interface{}, len(c.columns))
+	for index, column := range c.columns {
+		row[column] = c.values[index]
+	}
+	return c.delegate.ConsumeRow(row)
 }
 
 type countingExportConsumer struct {
@@ -4460,6 +5305,7 @@ type sqlInsertExportConsumer struct {
 	quotedCols    []string
 	columnList    string
 	columnTypes   []string
+	targetColumns map[string]string
 	valueBuf      []string
 	rowCount      int64
 	mode          sqlInsertExportMode
@@ -4492,7 +5338,15 @@ func (c *sqlInsertExportConsumer) SetColumns(columns []string) error {
 	c.columnTypes = make([]string, len(columns))
 	c.valueBuf = make([]string, len(columns))
 	for _, column := range columns {
-		c.quotedCols = append(c.quotedCols, quoteIdentByType(c.dbType, column))
+		targetColumn := column
+		if len(c.targetColumns) > 0 {
+			mappedColumn, ok := c.targetColumns[normalizeColumnName(column)]
+			if !ok || strings.TrimSpace(mappedColumn) == "" {
+				return fmt.Errorf("query result column %q does not match the INSERT target table", column)
+			}
+			targetColumn = mappedColumn
+		}
+		c.quotedCols = append(c.quotedCols, quoteIdentByType(c.dbType, targetColumn))
 	}
 	for i, column := range columns {
 		c.columnTypes[i] = c.columnTypeMap[normalizeColumnName(column)]
@@ -4606,6 +5460,62 @@ func (c *sqlInsertExportConsumer) Flush() error {
 	return nil
 }
 
+type sqlInsertExportFileWriter struct {
+	writer   *bufio.Writer
+	consumer *sqlInsertExportConsumer
+	closed   bool
+}
+
+func newSQLInsertExportFileWriter(f *os.File, options ExportFileOptions) (*sqlInsertExportFileWriter, error) {
+	dialect := strings.TrimSpace(options.InsertSQLDialect)
+	targetTable := strings.TrimSpace(options.InsertSQLTargetTable)
+	if dialect == "" {
+		return nil, fmt.Errorf("INSERT SQL export requires a database dialect")
+	}
+	if targetTable == "" && !options.InsertSQLAllowEmptyTargetTable {
+		return nil, fmt.Errorf("INSERT SQL export requires a target table")
+	}
+	quotedTable := quoteQualifiedIdentByType(dialect, "<table_name>")
+	if targetTable != "" {
+		quotedTable = quoteQualifiedIdentByType(dialect, targetTable)
+	}
+
+	writer := bufio.NewWriterSize(f, 1024*1024)
+	return &sqlInsertExportFileWriter{
+		writer: writer,
+		consumer: &sqlInsertExportConsumer{
+			w:             writer,
+			dbType:        dialect,
+			quotedTable:   quotedTable,
+			columnTypeMap: options.InsertSQLColumnTypes,
+			targetColumns: options.InsertSQLTargetColumns,
+		},
+	}, nil
+}
+
+func (w *sqlInsertExportFileWriter) SetColumns(columns []string) error {
+	return w.consumer.SetColumns(columns)
+}
+
+func (w *sqlInsertExportFileWriter) ConsumeRow(row map[string]interface{}) error {
+	return w.consumer.ConsumeRow(row)
+}
+
+func (w *sqlInsertExportFileWriter) ConsumeRowValues(values []interface{}) error {
+	return w.consumer.ConsumeRowValues(values)
+}
+
+func (w *sqlInsertExportFileWriter) Close() error {
+	if w == nil || w.closed {
+		return nil
+	}
+	w.closed = true
+	if err := w.consumer.Flush(); err != nil {
+		return err
+	}
+	return w.writer.Flush()
+}
+
 func resolveExportColumns(columns []string, data []map[string]interface{}) []string {
 	if len(columns) > 0 || len(data) == 0 {
 		return columns
@@ -4624,6 +5534,24 @@ func resolveExportColumns(columns []string, data []map[string]interface{}) []str
 	return derived
 }
 
+func resolveRequestedExportColumns(columns []string, requested []string) ([]string, error) {
+	if len(requested) == 0 {
+		return columns, nil
+	}
+	available := make(map[string]struct{}, len(columns))
+	for _, column := range columns {
+		available[column] = struct{}{}
+	}
+	selected := make([]string, 0, len(requested))
+	for _, column := range requested {
+		if _, exists := available[column]; !exists {
+			return nil, fmt.Errorf("requested export column %q was not found in query result", column)
+		}
+		selected = append(selected, column)
+	}
+	return selected, nil
+}
+
 func newExportFileWriter(f *os.File, options ExportFileOptions) (exportFileWriter, error) {
 	options = normalizeExportFileOptions("", options)
 	switch options.Format {
@@ -4637,6 +5565,8 @@ func newExportFileWriter(f *os.File, options ExportFileOptions) (exportFileWrite
 		return newHTMLExportFileWriter(f), nil
 	case "xlsx":
 		return newXLSXExportFileWriter(f, options.XLSXMaxRowsPerSheet)
+	case "sql":
+		return newSQLInsertExportFileWriter(f, options)
 	default:
 		return nil, fmt.Errorf("unsupported format: %s", options.Format)
 	}
@@ -4685,6 +5615,10 @@ func streamQueryDataForExport(dbInst db.Database, config connection.ConnectionCo
 }
 
 func exportQueryResultToFile(f *os.File, dbInst db.Database, config connection.ConnectionConfig, query string, options ExportFileOptions, reporter *exportProgressReporter) (int64, []string, error) {
+	options = normalizeExportFileOptions("", options)
+	if err := validateExportColumnsSelection(options); err != nil {
+		return 0, nil, err
+	}
 	writer, err := newExportFileWriter(f, options)
 	if err != nil {
 		return 0, nil, err
@@ -4693,19 +5627,32 @@ func exportQueryResultToFile(f *os.File, dbInst db.Database, config connection.C
 	if reporter != nil {
 		reporter.Start(reporter.text("data_export.progress.stage.querying_data", nil))
 	}
-	consumer := &countingExportConsumer{delegate: writer, reporter: reporter}
+	var projection *exportColumnProjectionConsumer
+	delegate := db.QueryStreamConsumer(writer)
+	if len(options.Columns) > 0 {
+		projection = &exportColumnProjectionConsumer{
+			delegate:         writer,
+			requestedColumns: options.Columns,
+		}
+		delegate = projection
+	}
+	consumer := &countingExportConsumer{delegate: delegate, reporter: reporter}
 	streamErr := streamQueryDataForExport(dbInst, config, query, consumer)
 	if reporter != nil && streamErr == nil {
 		reporter.Finalizing(consumer.rowCount)
 	}
 	closeErr := writer.Close()
+	exportedColumns := consumer.columns
+	if projection != nil {
+		exportedColumns = projection.columns
+	}
 	if streamErr != nil {
-		return consumer.rowCount, consumer.columns, streamErr
+		return consumer.rowCount, exportedColumns, streamErr
 	}
 	if closeErr != nil {
-		return consumer.rowCount, consumer.columns, closeErr
+		return consumer.rowCount, exportedColumns, closeErr
 	}
-	return consumer.rowCount, consumer.columns, nil
+	return consumer.rowCount, exportedColumns, nil
 }
 
 func fillExportRecordFromValues(record []string, values []interface{}, markdown bool) []string {
@@ -4730,7 +5677,7 @@ func fillExportRecordFromRow(record []string, row map[string]interface{}, column
 
 func formatExportRecordValue(val interface{}, markdown bool) string {
 	if val == nil {
-		return "NULL"
+		return ""
 	}
 	text := formatExportCellText(val)
 	if markdown {
@@ -4749,7 +5696,15 @@ func writeRowsToFileWithReporter(f *os.File, data []map[string]interface{}, colu
 	if f == nil {
 		return 0, fmt.Errorf("file required")
 	}
+	options = normalizeExportFileOptions("", options)
+	if err := validateExportColumnsSelection(options); err != nil {
+		return 0, err
+	}
 	columns = resolveExportColumns(columns, data)
+	columns, err := resolveRequestedExportColumns(columns, options.Columns)
+	if err != nil {
+		return 0, err
+	}
 	writer, err := newExportFileWriter(f, options)
 	if err != nil {
 		return 0, err
@@ -4963,7 +5918,7 @@ func writeRowsToHTML(f *os.File, data []map[string]interface{}, columns []string
 
 func formatExportCellText(val interface{}) string {
 	if val == nil {
-		return "NULL"
+		return ""
 	}
 
 	switch v := val.(type) {
@@ -4971,7 +5926,7 @@ func formatExportCellText(val interface{}) string {
 		return v.Format("2006-01-02 15:04:05")
 	case *time.Time:
 		if v == nil {
-			return "NULL"
+			return ""
 		}
 		return v.Format("2006-01-02 15:04:05")
 	case float32:

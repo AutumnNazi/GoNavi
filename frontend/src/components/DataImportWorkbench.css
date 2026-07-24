@@ -1,0 +1,21 @@
+@media (max-width: 1050px) {
+  [data-data-import-workbench-layout="true"] {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  [data-data-import-target-config="true"],
+  [data-data-import-preview-panel="true"] {
+    min-width: 0;
+  }
+}
+
+@media (max-width: 720px) {
+  [data-data-import-workbench="true"] > header {
+    padding: 16px !important;
+  }
+
+  [data-data-import-workbench-layout="true"] {
+    gap: 16px !important;
+    padding: 16px !important;
+  }
+}

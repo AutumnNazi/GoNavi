@@ -1,6 +1,13 @@
 import React from 'react';
-import { Button, InputNumber, Pagination, Select } from 'antd';
-import { CloseOutlined, LeftOutlined, RightOutlined, VerticalAlignBottomOutlined } from '@ant-design/icons';
+import { Button, InputNumber, Pagination, Select, Tooltip } from 'antd';
+import {
+  CloseOutlined,
+  LeftOutlined,
+  RightOutlined,
+  VerticalAlignBottomOutlined,
+  VerticalLeftOutlined,
+  VerticalRightOutlined,
+} from '@ant-design/icons';
 import { t as defaultTranslate, type I18nParams } from '../i18n';
 
 interface DataGridPaginationState {
@@ -35,20 +42,27 @@ export interface DataGridPaginationBarProps {
   translate?: DataGridPaginationTranslate;
 }
 
-const findToolbarTotalCountButton = (
-  trigger: HTMLElement,
-  labels: string[],
-): HTMLButtonElement | null => {
-  const root = trigger.closest('.data-grid-root') || trigger.ownerDocument?.body;
-  if (!root) return null;
-  const normalizedLabels = labels.map((label) => String(label || '').trim()).filter(Boolean);
-  const buttons = Array.from(root.querySelectorAll('button')) as HTMLButtonElement[];
-  return buttons.find((button) => {
-    if (button === trigger) return false;
-    if (button.disabled) return false;
-    const text = String(button.textContent || '').replace(/\s+/g, ' ').trim();
-    return normalizedLabels.some((label) => text === label || text.includes(label));
-  }) || null;
+export const resolveDataGridPaginationBoundaryTarget = ({
+  boundary,
+  current,
+  totalPages,
+  totalKnown,
+  canNavigate,
+}: {
+  boundary: 'first' | 'last';
+  current: number;
+  totalPages: number;
+  totalKnown: boolean;
+  canNavigate: boolean;
+}): number | null => {
+  if (!canNavigate) return null;
+  if (boundary === 'first') return current > 1 ? 1 : null;
+  if (!totalKnown) return null;
+
+  const lastPage = Number.isFinite(totalPages)
+    ? Math.max(1, Math.trunc(totalPages))
+    : 1;
+  return current < lastPage ? lastPage : null;
 };
 
 const DataGridPaginationBar: React.FC<DataGridPaginationBarProps> = ({
@@ -83,29 +97,17 @@ const DataGridPaginationBar: React.FC<DataGridPaginationBarProps> = ({
   const countTotalLabel = translate('data_grid.toolbar.count_total');
   const cancelCountLabel = translate('data_grid.toolbar.cancel_count');
   const effectiveTotalCountLoading = totalCountLoading || Boolean(pagination.totalCountLoading);
-  const shouldShowTotalCountButton = Boolean(
-    onToggleTotalCount
-    || manualTotalCountAvailable
+  const shouldShowTotalCountButton = Boolean(onToggleTotalCount && (
+    manualTotalCountAvailable
     || pagination.totalCountLoading
-    || pagination.totalKnown === false,
-  );
-  const handleToggleTotalCount = (event: React.MouseEvent<HTMLButtonElement>) => {
-    if (onToggleTotalCount) {
-      onToggleTotalCount();
-      return;
-    }
-    // Backward-compatible bridge for existing DataGridShell callers: the top toolbar already owns
-    // the total-count handler, but it can be horizontally scrolled out of view on large toolbars.
-    // Trigger that existing button so the pagination bar can expose the action without duplicating data-flow state.
-    const toolbarButton = findToolbarTotalCountButton(event.currentTarget, [countTotalLabel, cancelCountLabel]);
-    toolbarButton?.click();
-  };
+    || pagination.totalKnown === false
+  ));
   const totalCountButton = shouldShowTotalCountButton ? (
     <Button
       data-grid-pagination-total-count="true"
       size="small"
       icon={effectiveTotalCountLoading ? <CloseOutlined /> : <VerticalAlignBottomOutlined />}
-      onClick={handleToggleTotalCount}
+      onClick={onToggleTotalCount}
     >
       {effectiveTotalCountLoading ? cancelCountLabel : countTotalLabel}
     </Button>
@@ -149,12 +151,67 @@ const DataGridPaginationBar: React.FC<DataGridPaginationBarProps> = ({
       </Button>
     </div>
   );
+  const firstPageLabel = translate('data_grid.pagination.first_page');
+  const lastPageLabel = translate('data_grid.pagination.last_page');
+  const firstPageTarget = resolveDataGridPaginationBoundaryTarget({
+    boundary: 'first',
+    current: pagination.current,
+    totalPages: paginationTotalPages,
+    totalKnown: showKnownPageCount,
+    canNavigate: Boolean(onPageChange),
+  });
+  const lastPageTarget = resolveDataGridPaginationBoundaryTarget({
+    boundary: 'last',
+    current: pagination.current,
+    totalPages: paginationTotalPages,
+    totalKnown: showKnownPageCount,
+    canNavigate: Boolean(onPageChange),
+  });
+  const navigateToBoundary = (target: number | null) => {
+    if (!onPageChange || target === null) return;
+    onPageChange(target, pagination.pageSize);
+  };
+  const firstPageButton = (
+    <Tooltip title={firstPageLabel}>
+      <span style={{ display: 'inline-flex' }}>
+        <Button
+          data-grid-pagination-first="true"
+          data-grid-v2-pagination-first={isV2Ui ? 'true' : undefined}
+          size="small"
+          icon={<VerticalRightOutlined />}
+          aria-label={firstPageLabel}
+          disabled={firstPageTarget === null}
+          onClick={() => navigateToBoundary(firstPageTarget)}
+        >
+          {firstPageLabel}
+        </Button>
+      </span>
+    </Tooltip>
+  );
+  const lastPageButton = (
+    <Tooltip title={lastPageLabel}>
+      <span style={{ display: 'inline-flex' }}>
+        <Button
+          data-grid-pagination-last="true"
+          data-grid-v2-pagination-last={isV2Ui ? 'true' : undefined}
+          size="small"
+          icon={<VerticalLeftOutlined />}
+          aria-label={lastPageLabel}
+          disabled={lastPageTarget === null}
+          onClick={() => navigateToBoundary(lastPageTarget)}
+        >
+          {lastPageLabel}
+        </Button>
+      </span>
+    </Tooltip>
+  );
   const sequentialPaginationControl = (
     <div
       className="data-grid-pagination-sequential"
       data-grid-pagination-sequential="true"
       style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}
     >
+      {firstPageButton}
       <Button
         data-grid-pagination-prev="true"
         size="small"
@@ -172,6 +229,7 @@ const DataGridPaginationBar: React.FC<DataGridPaginationBarProps> = ({
         disabled={!onPageChange || pagination.current >= paginationTotalPages}
         onClick={() => onV2PageStep('next')}
       />
+      {lastPageButton}
     </div>
   );
 
@@ -186,6 +244,7 @@ const DataGridPaginationBar: React.FC<DataGridPaginationBarProps> = ({
             <span className="data-grid-pagination-summary-value">{paginationV2SummaryText}</span>
           </div>
           {totalCountButton}
+          {firstPageButton}
           <Button
             data-grid-v2-pagination-prev="true"
             size="small"
@@ -211,6 +270,7 @@ const DataGridPaginationBar: React.FC<DataGridPaginationBarProps> = ({
             disabled={!onPageChange || pagination.current >= paginationTotalPages}
             onClick={() => onV2PageStep('next')}
           />
+          {lastPageButton}
           {jumpPageControl}
           <Select
             size="small"
@@ -230,24 +290,28 @@ const DataGridPaginationBar: React.FC<DataGridPaginationBarProps> = ({
           </div>
           {totalCountButton}
           {showSequentialPagination ? sequentialPaginationControl : (
-            <Pagination
-              current={pagination.current}
-              pageSize={pagination.pageSize}
-              total={paginationControlTotal}
-              showSizeChanger={false}
-              onChange={onPageChange}
-              showTitle={false}
-              size="small"
-              itemRender={(_page, type, originalElement) => {
-                if (type === 'prev') {
-                  return <span className="data-grid-pagination-nav-icon" aria-hidden="true"><LeftOutlined /></span>;
-                }
-                if (type === 'next') {
-                  return <span className="data-grid-pagination-nav-icon" aria-hidden="true"><RightOutlined /></span>;
-                }
-                return originalElement;
-              }}
-            />
+            <>
+              {firstPageButton}
+              <Pagination
+                current={pagination.current}
+                pageSize={pagination.pageSize}
+                total={paginationControlTotal}
+                showSizeChanger={false}
+                onChange={onPageChange}
+                showTitle={false}
+                size="small"
+                itemRender={(_page, type, originalElement) => {
+                  if (type === 'prev') {
+                    return <span className="data-grid-pagination-nav-icon" aria-hidden="true"><LeftOutlined /></span>;
+                  }
+                  if (type === 'next') {
+                    return <span className="data-grid-pagination-nav-icon" aria-hidden="true"><RightOutlined /></span>;
+                  }
+                  return originalElement;
+                }}
+              />
+              {lastPageButton}
+            </>
           )}
           {jumpPageControl}
           <Select

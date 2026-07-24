@@ -4,7 +4,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 
 import { useStore } from '../../store';
-import { useAIChatStreamSubscription } from './useAIChatStreamSubscription';
+import {
+  flushAIChatStreamBuffers,
+  prepareAIChatStreamForTerminalAction,
+  useAIChatStreamSubscription,
+} from './useAIChatStreamSubscription';
 
 const aiChatStreamMock = vi.hoisted(() => vi.fn(async (..._args: any[]) => undefined));
 const generateTitleForSessionMock = vi.hoisted(() => vi.fn(async () => undefined));
@@ -112,7 +116,7 @@ const StreamHarness = () => {
     translate,
   });
 
-  return null;
+  return <span data-sending={sending ? 'true' : 'false'} />;
 };
 
 describe('useAIChatStreamSubscription', () => {
@@ -217,6 +221,28 @@ describe('useAIChatStreamSubscription', () => {
     });
   });
 
+  it('keeps session actions locked until the stream reaches done', async () => {
+    vi.useFakeTimers();
+    let renderer: ReactTestRenderer | undefined;
+    await act(async () => {
+      renderer = create(<StreamHarness />);
+    });
+
+    await emitStreamChunk({ content: 'first token' });
+    expect(renderer!.root.findByType('span').props['data-sending']).toBe('true');
+
+    await emitStreamChunk({ done: true });
+    expect(renderer!.root.findByType('span').props['data-sending']).toBe('true');
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60);
+    });
+    expect(renderer!.root.findByType('span').props['data-sending']).toBe('false');
+
+    await act(async () => {
+      renderer?.unmount();
+    });
+  });
+
   it('coalesces high-frequency thinking chunks before writing them to the store', async () => {
     vi.useFakeTimers();
     let renderer: ReactTestRenderer | undefined;
@@ -250,6 +276,126 @@ describe('useAIChatStreamSubscription', () => {
     await act(async () => {
       renderer?.unmount();
     });
+  });
+
+  it('flushes the final buffered token synchronously before a detached window exits', async () => {
+    vi.useFakeTimers();
+    let renderer: ReactTestRenderer | undefined;
+    await act(async () => {
+      renderer = create(<StreamHarness />);
+    });
+
+    await emitStreamChunk({ content: 'tail' });
+    flushAIChatStreamBuffers([SESSION_ID]);
+
+    expect(
+      (useStore.getState().aiChatHistory[SESSION_ID] || []).find(
+        (message) => message.id === 'assistant-connecting',
+      )?.content,
+    ).toBe('tail');
+    await act(async () => {
+      renderer?.unmount();
+    });
+  });
+
+  it('keeps the streaming message active when cancel-and-wait cannot stop the producer', async () => {
+    const setSending = vi.fn();
+    const cancelAndWait = vi.fn(async () => false);
+
+    await expect(prepareAIChatStreamForTerminalAction({
+      sid: SESSION_ID,
+      service: { AIChatCancelAndWait: cancelAndWait },
+      setSending,
+      settleDelayMs: 0,
+    })).resolves.toBe(false);
+
+    expect(cancelAndWait).toHaveBeenCalledWith(SESSION_ID);
+    expect(setSending).not.toHaveBeenCalled();
+    expect(
+      (useStore.getState().aiChatHistory[SESSION_ID] || []).find(
+        (message) => message.id === 'assistant-connecting',
+      ),
+    ).toMatchObject({ loading: true, phase: 'connecting' });
+  });
+
+  it('flushes buffered content and settles loading assistant messages after cancellation', async () => {
+    vi.useFakeTimers();
+    const setSending = vi.fn();
+    const cancelAndWait = vi.fn(async () => true);
+    let renderer: ReactTestRenderer | undefined;
+    await act(async () => {
+      renderer = create(<StreamHarness />);
+    });
+
+    await emitStreamChunk({ content: 'final token' });
+    await expect(prepareAIChatStreamForTerminalAction({
+      sid: SESSION_ID,
+      service: { AIChatCancelAndWait: cancelAndWait },
+      setSending,
+      settleDelayMs: 0,
+    })).resolves.toBe(true);
+
+    expect(
+      (useStore.getState().aiChatHistory[SESSION_ID] || []).find(
+        (message) => message.id === 'assistant-connecting',
+      ),
+    ).toMatchObject({
+      content: 'final token',
+      loading: false,
+      phase: 'idle',
+    });
+    expect(setSending).toHaveBeenCalledWith(false);
+    await act(async () => {
+      renderer?.unmount();
+    });
+  });
+
+  it('cancels and settles every session before a native terminal handoff', async () => {
+    const setSending = vi.fn();
+    const cancelAllAndWait = vi.fn(async () => true);
+    const cancelAndWait = vi.fn(async () => true);
+    useStore.setState((state) => ({
+      aiChatHistory: {
+        ...state.aiChatHistory,
+        'session-other': [{
+          id: 'assistant-other',
+          role: 'assistant',
+          content: 'partial',
+          timestamp: 3,
+          loading: true,
+          phase: 'generating',
+        }],
+      },
+      aiChatSessions: [
+        ...state.aiChatSessions,
+        { id: 'session-other', title: 'other', updatedAt: 3 },
+      ],
+    }));
+
+    await expect(prepareAIChatStreamForTerminalAction({
+      sid: SESSION_ID,
+      service: {
+        AIChatCancelAllAndWait: cancelAllAndWait,
+        AIChatCancelAndWait: cancelAndWait,
+      },
+      setSending,
+      settleDelayMs: 0,
+      allSessions: true,
+    })).resolves.toBe(true);
+
+    expect(cancelAllAndWait).toHaveBeenCalledOnce();
+    expect(cancelAndWait).not.toHaveBeenCalled();
+    expect(
+      (useStore.getState().aiChatHistory[SESSION_ID] || []).find(
+        (message) => message.id === 'assistant-connecting',
+      ),
+    ).toMatchObject({ loading: false, phase: 'idle' });
+    expect(
+      (useStore.getState().aiChatHistory['session-other'] || []).find(
+        (message) => message.id === 'assistant-other',
+      ),
+    ).toMatchObject({ loading: false, phase: 'idle' });
+    expect(setSending).toHaveBeenCalledWith(false);
   });
 
   it('resends a localized force-tool-call nudge when the model only describes the next action', async () => {

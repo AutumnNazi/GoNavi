@@ -1,0 +1,31 @@
+.gn-sql-audit-rail-button {
+  display: flex;
+  width: 32px;
+  height: 32px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--gn-fg-2, #1f2937);
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: color 150ms ease, background-color 150ms ease;
+}
+
+.gn-sql-audit-rail-button:hover {
+  background: var(--gn-accent-soft, #dcfce7);
+  color: var(--gn-accent-2, #15803d);
+}
+
+.gn-sql-audit-rail-button:focus-visible {
+  outline: 2px solid var(--gn-accent-2, #15803d);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gn-sql-audit-rail-button {
+    transition: none;
+  }
+}

@@ -8,6 +8,9 @@ import { I18nProvider } from './i18n/provider'
 import { applyDayjsLocale } from './i18n/runtime'
 import { useStore } from './store'
 import { cloneBrowserMockValue, duplicateBrowserMockConnection, resolveBrowserMockSecretFlag } from './utils/browserMockConnections'
+import { configureAntdStaticOverlayLayer } from './utils/overlayZIndex'
+
+configureAntdStaticOverlayLayer();
 
 const resolveDevHarnessMode = (): string => {
     if (typeof window === 'undefined') {
@@ -44,6 +47,7 @@ if (
 
     const mockConnections: any[] = [];
     const mockSavedQueries: any[] = [];
+    const mockSavedQueryGroups: any[] = [];
     const mockQueryTables = [
         { table_name: 'videos', table_comment: 'sample video records' },
         { table_name: 'users', table_comment: 'sample users' },
@@ -69,11 +73,12 @@ if (
     };
     let mockMCPServers: any[] = [];
     let mockMCPHTTPServerStatus: any = {
+        enabled: false,
         running: false,
         addr: '127.0.0.1:8765',
         path: '/mcp',
         url: 'http://127.0.0.1:8765/mcp',
-        schemaOnly: true,
+        schemaOnly: false,
         message: t('app.browser_mock.mcp_http.not_running'),
     };
     let mockMCPClientStatuses: any[] = [
@@ -100,6 +105,19 @@ if (
             message: t('app.browser_mock.mcp_client.codex.path_mismatch'),
             configPath: 'C:/Users/mock/.codex/config.toml',
             command: 'C:/Old/GoNavi.exe',
+            args: ['mcp-server'],
+        },
+        {
+            client: 'opencode',
+            displayName: 'OpenCode',
+            installMode: 'auto',
+            installed: false,
+            matchesCurrent: false,
+            clientDetected: false,
+            clientCommand: 'opencode',
+            message: t('app.browser_mock.mcp_client.opencode.not_detected'),
+            configPath: 'C:/Users/mock/.config/opencode/opencode.json',
+            command: 'C:/Program Files/GoNavi/GoNavi.exe',
             args: ['mcp-server'],
         },
     ];
@@ -137,6 +155,7 @@ if (
 
     const saveMockConnection = (input: any) => {
         const existing = mockConnections.find((item) => item.id === input?.id);
+        const hasSchemaVisibilityByDatabase = Object.prototype.hasOwnProperty.call(input || {}, 'schemaVisibilityByDatabase');
         const existingSecrets = mockConnectionSecrets.get(existing?.id || input?.id || '') || {};
         const config = (input?.config && typeof input.config === 'object') ? input.config : {};
         const ssh = (config.ssh && typeof config.ssh === 'object') ? config.ssh : {};
@@ -182,6 +201,11 @@ if (
             },
             includeDatabases: Array.isArray(input?.includeDatabases) ? [...input.includeDatabases] : existing?.includeDatabases,
             includeRedisDatabases: Array.isArray(input?.includeRedisDatabases) ? [...input.includeRedisDatabases] : existing?.includeRedisDatabases,
+            schemaVisibilityByDatabase: hasSchemaVisibilityByDatabase
+                ? (input?.schemaVisibilityByDatabase && typeof input.schemaVisibilityByDatabase === 'object'
+                    ? cloneBrowserMockValue(input.schemaVisibilityByDatabase)
+                    : undefined)
+                : existing?.schemaVisibilityByDatabase,
             iconType: typeof input?.iconType === 'string' ? input.iconType : (existing?.iconType || ''),
             iconColor: typeof input?.iconColor === 'string' ? input.iconColor : (existing?.iconColor || ''),
             hasPrimaryPassword: resolveBrowserMockSecretFlag(config.password, !!input?.clearPrimaryPassword, existing?.hasPrimaryPassword),
@@ -220,6 +244,64 @@ if (
             mockSavedQueries.push(view);
         }
         return cloneBrowserMockValue(view);
+    };
+
+    const uniqueMockStringArray = (value: unknown): string[] => {
+        if (!Array.isArray(value)) return [];
+        const seen = new Set<string>();
+        return value.reduce<string[]>((result, item) => {
+            const next = String(item || '').trim();
+            if (!next || seen.has(next)) return result;
+            seen.add(next);
+            result.push(next);
+            return result;
+        }, []);
+    };
+
+    const saveMockSavedQueryGroup = (input: any) => {
+        const nextId = String(input?.id || `saved-query-group-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+        const index = mockSavedQueryGroups.findIndex((item) => item.id === nextId);
+        const existing = index >= 0 ? mockSavedQueryGroups[index] : undefined;
+        const queryIds = uniqueMockStringArray(input?.queryIds);
+        const childOrder = uniqueMockStringArray(input?.childOrder);
+        const view = {
+            id: nextId,
+            name: String(input?.name || existing?.name || t('sidebar.saved_query_group.untitled')).trim(),
+            parentGroupId: String(input?.parentGroupId || '').trim() || undefined,
+            queryIds,
+            childOrder,
+        };
+        if (index >= 0) {
+            mockSavedQueryGroups[index] = view;
+        } else {
+            mockSavedQueryGroups.push(view);
+        }
+        mockSavedQueryGroups.forEach((group) => {
+            if (group.id === nextId) return;
+            group.queryIds = uniqueMockStringArray(group.queryIds).filter((queryId) => !queryIds.includes(queryId));
+            group.childOrder = uniqueMockStringArray(group.childOrder)
+                .filter((token) => !queryIds.includes(String(token).replace(/^query:/, '')));
+        });
+        return cloneBrowserMockValue(view);
+    };
+
+    const deleteMockSavedQueryGroup = (id: string) => {
+        const index = mockSavedQueryGroups.findIndex((item) => item.id === id);
+        if (index < 0) return;
+        const removed = mockSavedQueryGroups[index];
+        mockSavedQueryGroups.splice(index, 1);
+        mockSavedQueryGroups.forEach((group) => {
+            if (group.parentGroupId === removed.id) {
+                group.parentGroupId = removed.parentGroupId || undefined;
+            }
+            if (group.id === removed.parentGroupId) {
+                group.queryIds = uniqueMockStringArray([...(group.queryIds || []), ...(removed.queryIds || [])]);
+                group.childOrder = uniqueMockStringArray([
+                    ...(group.childOrder || []).filter((token: string) => token !== `group:${removed.id}`),
+                    ...(removed.childOrder || []),
+                ]);
+            }
+        });
     };
 
     const saveMockGlobalProxy = (input: any) => {
@@ -333,18 +415,107 @@ if (
                     ),
                 }),
                 DBQuery: async () => ({ success: true, data: [], columns: [] }),
+                DBQueryAudited: async () => ({ success: true, data: { affectedRows: 1 }, queryId: `query-${Date.now()}` }),
                 ExecuteQuery: async () => ({ columns: [], rows: [], time: 0 }),
+                GetSQLAuditEvents: async (filter: any) => ({
+                    success: true,
+                    data: {
+                        items: [],
+                        total: 0,
+                        page: Number(filter?.page) || 1,
+                        pageSize: Number(filter?.pageSize) || 50,
+                        summary: { totalEvents: 0, successCount: 0, errorCount: 0, transactionCount: 0 },
+                    },
+                }),
+                GetSQLAuditHealth: async () => ({
+                    success: true,
+                    data: {
+                        status: 'healthy',
+                        captureEnabled: true,
+                        captureMode: 'redacted',
+                        droppedEvents: 0,
+                        firstFailureAt: 0,
+                        lastFailureAt: 0,
+                        lastSuccessAt: 0,
+                        lastError: '',
+                    },
+                }),
+                GetSQLAuditSettings: async () => ({ success: true, data: { enabled: true, captureMode: 'redacted', retentionDays: 30, maxRecords: 100000 } }),
+                UpdateSQLAuditSettings: async () => ({ success: true }),
+                VerifySQLAuditIntegrity: async () => ({
+                    success: true,
+                    data: { valid: true, weakValidation: true, partialChain: false, truncatedPrefix: false, checkedRecords: 0 },
+                }),
+                BuildSQLAuditExport: async (_filter: any, format: string) => ({
+                    success: true,
+                    data: {
+                        fileName: `gonavi-sql-audit.${format === 'csv' ? 'csv' : 'json'}`,
+                        mimeType: format === 'csv' ? 'text/csv;charset=utf-8' : 'application/json',
+                        content: format === 'csv' ? '' : '[]',
+                    },
+                }),
+                ExportSQLAuditFile: async (_filter: any, format: string) => ({ success: true, data: { filePath: `gonavi-sql-audit.${format}` } }),
+                ClearSQLAuditEvents: async () => ({ success: true }),
                 GetSavedQueries: async () => cloneBrowserMockValue(mockSavedQueries),
+                GetSavedQueryGroups: async () => cloneBrowserMockValue(mockSavedQueryGroups),
                 SaveQuery: async (input: any) => saveMockQuery(input),
+                SaveSavedQueryGroup: async (input: any) => saveMockSavedQueryGroup(input),
                 ImportSavedQueries: async (payload: any) => {
                     const items = Array.isArray(payload) ? payload : payload?.queries;
                     (Array.isArray(items) ? items : []).forEach((item) => saveMockQuery(item));
+                    const groups: unknown[] = Array.isArray(payload?.groups) ? payload.groups : [];
+                    groups.forEach((group) => saveMockSavedQueryGroup(group));
                     return cloneBrowserMockValue(mockSavedQueries);
                 },
                 DeleteQuery: async (id: string) => {
                     const index = mockSavedQueries.findIndex((item) => item.id === id);
                     if (index >= 0) {
                         mockSavedQueries.splice(index, 1);
+                    }
+                    mockSavedQueryGroups.forEach((group) => {
+                        group.queryIds = uniqueMockStringArray(group.queryIds).filter((queryId) => queryId !== id);
+                        group.childOrder = uniqueMockStringArray(group.childOrder)
+                            .filter((token) => token !== `query:${id}`);
+                    });
+                    return null;
+                },
+                DeleteSavedQueryGroup: async (id: string) => {
+                    deleteMockSavedQueryGroup(id);
+                    return null;
+                },
+                MoveSavedQueryToGroup: async (queryId: string, groupId: string) => {
+                    if (!mockSavedQueries.some((query) => query.id === queryId)) {
+                        throw new Error('saved query not found');
+                    }
+                    const target = groupId ? mockSavedQueryGroups.find((group) => group.id === groupId) : null;
+                    if (groupId && !target) {
+                        throw new Error('saved query group not found');
+                    }
+                    mockSavedQueryGroups.forEach((group) => {
+                        group.queryIds = uniqueMockStringArray(group.queryIds).filter((id) => id !== queryId);
+                        group.childOrder = uniqueMockStringArray(group.childOrder)
+                            .filter((token) => token !== `query:${queryId}`);
+                    });
+                    if (target) {
+                        target.queryIds = uniqueMockStringArray([...(target.queryIds || []), queryId]);
+                        target.childOrder = uniqueMockStringArray([...(target.childOrder || []), `query:${queryId}`]);
+                    }
+                    return null;
+                },
+                MoveSavedQueryGroup: async (groupId: string, parentGroupId: string) => {
+                    const target = mockSavedQueryGroups.find((group) => group.id === groupId);
+                    if (!target) throw new Error('saved query group not found');
+                    if (parentGroupId && !mockSavedQueryGroups.some((group) => group.id === parentGroupId)) {
+                        throw new Error('saved query parent group not found');
+                    }
+                    mockSavedQueryGroups.forEach((group) => {
+                        group.childOrder = uniqueMockStringArray(group.childOrder)
+                            .filter((token) => token !== `group:${groupId}`);
+                    });
+                    target.parentGroupId = parentGroupId || undefined;
+                    if (parentGroupId) {
+                        const parent = mockSavedQueryGroups.find((group) => group.id === parentGroupId);
+                        parent.childOrder = uniqueMockStringArray([...(parent.childOrder || []), `group:${groupId}`]);
                     }
                     return null;
                 },
@@ -414,7 +585,7 @@ if (
                 RenameSQLDirectory: async (directoryPath: string, name: string) => ({ success: true, data: { directoryPath: `${directoryPath.replace(/[\\/][^\\/]*$/, '')}/${name}`, name } }),
                 WriteSQLFile: async (_filePath: string, _content: string) => ({ success: true }),
                 ExportSQLFile: async (_defaultName: string, _content: string) => ({ success: false, message: t('app.browser_mock.export_sql_unsupported') }),
-                InstallUpdateAndRestart: async () => ({ success: false }),
+                InstallUpdateAndRestart: async (_closeAllWindowsInstancesConfirmed: boolean) => ({ success: false }),
                 ImportConfigFile: async () => ({ success: false, message: '已取消' }),
                 ImportConnectionsPayload: async (raw: string, _password?: string) => {
                     try {
@@ -545,10 +716,11 @@ if (
                     const token = String(input?.token || 'gnv_browser_mock_token').trim() || 'gnv_browser_mock_token';
                     mockMCPHTTPServerStatus = {
                         running: true,
+                        enabled: true,
                         addr,
                         path,
                         url: `http://${addr}${path}`,
-                        schemaOnly: true,
+                        schemaOnly: Boolean(input?.schemaOnly),
                         token,
                         authorizationHeader: `Bearer ${token}`,
                         startedAt: Date.now(),
@@ -559,6 +731,7 @@ if (
                 AIStopMCPHTTPServer: async () => {
                     mockMCPHTTPServerStatus = {
                         ...mockMCPHTTPServerStatus,
+                        enabled: false,
                         running: false,
                         message: t('app.browser_mock.mcp_http.stopped'),
                     };
@@ -601,6 +774,26 @@ if (
                         client: 'codex',
                         message: t('app.browser_mock.mcp_client.codex.installed'),
                         configPath: 'C:/Users/mock/.codex/config.toml',
+                        command: 'C:/Program Files/GoNavi/GoNavi.exe',
+                        args: ['mcp-server'],
+                    };
+                },
+                AIInstallOpenCodeMCP: async () => {
+                    mockMCPClientStatuses = mockMCPClientStatuses.map((item) => item.client === 'opencode'
+                        ? {
+                            ...item,
+                            installed: true,
+                            matchesCurrent: true,
+                            message: t('app.browser_mock.mcp_client.opencode.installed'),
+                            command: 'C:/Program Files/GoNavi/GoNavi.exe',
+                            args: ['mcp-server'],
+                        }
+                        : item);
+                    return {
+                        success: true,
+                        client: 'opencode',
+                        message: t('app.browser_mock.mcp_client.opencode.installed'),
+                        configPath: 'C:/Users/mock/.config/opencode/opencode.json',
                         command: 'C:/Program Files/GoNavi/GoNavi.exe',
                         args: ['mcp-server'],
                     };

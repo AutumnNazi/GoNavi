@@ -24,6 +24,8 @@ const REQUIRED_KEYS = [
   'ai_settings.mcp_http.panel.status.running',
   'ai_settings.mcp_http.panel.status.stopped',
   'ai_settings.mcp_http.panel.description',
+  'ai_settings.mcp_http.panel.details_summary',
+  'ai_settings.mcp_http.panel.retry_start',
   'ai_settings.mcp_http.panel.switch.on',
   'ai_settings.mcp_http.panel.switch.off',
   'ai_settings.mcp_http.panel.addr_label',
@@ -42,6 +44,7 @@ const REQUIRED_KEYS = [
 
 const buildPanelProps = () => ({
   status: {
+    enabled: true,
     running: true,
     addr: '127.0.0.1:8765',
     path: '/mcp',
@@ -112,6 +115,9 @@ describe('AIMCPHTTPServerPanel', () => {
     expect(markup).toContain('http://127.0.0.1:8765/mcp');
     expect(markup).toContain('Copy Authorization');
     expect(markup).toContain('Bearer gnv_test');
+    expect(markup).toContain('Connection settings and permissions');
+    expect(markup).toContain('class="gonavi-ai-mcp-disclosure gonavi-ai-mcp-http-disclosure"');
+    expect(markup).not.toContain('gonavi-ai-mcp-http-disclosure" open');
   });
 
   it('falls back to English without an i18n provider', () => {
@@ -132,5 +138,29 @@ describe('AIMCPHTTPServerPanel', () => {
     expect(markup).toContain('placeholder="Bearer gnv_xxx (leave empty to generate automatically)"');
     expect(markup).toContain('readonly=""');
     expect(markup).not.toContain('placeholder="Bearer gnv_xxx (leave empty to generate automatically)" disabled=""');
+  });
+
+  it('binds the switch to persistent enabled intent while keeping runtime status separate', () => {
+    expect(source).toContain('const enabled = status?.enabled === true;');
+    expect(source).toContain('const running = status?.running === true;');
+    expect(source).toContain('checked={enabled}');
+    expect(source).not.toContain('checked={running}');
+  });
+
+  it('shows the startup failure while the persisted switch remains enabled', () => {
+    const markup = renderToStaticMarkup(
+      <AIMCPHTTPServerPanel
+        {...buildPanelProps()}
+        status={{
+          ...buildPanelProps().status,
+          enabled: true,
+          running: false,
+          message: 'listen tcp 127.0.0.1:8765: bind: address already in use',
+        }}
+      />,
+    );
+
+    expect(markup).toContain('listen tcp 127.0.0.1:8765: bind: address already in use');
+    expect(markup).toContain('Retry start');
   });
 });

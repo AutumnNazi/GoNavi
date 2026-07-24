@@ -84,6 +84,29 @@ describe('AISettingsSkillsSection', () => {
     expect(markup).toContain('Delete');
   });
 
+  it('uses divided flat sections instead of cards for empty and editable states', () => {
+    const emptyMarkup = renderSection([]);
+    const editorMarkup = renderSection([skillDraft]);
+
+    expect(emptyMarkup).toContain('gonavi-ai-skill-empty');
+    expect(emptyMarkup).toContain('border-bottom:1px solid rgba(0,0,0,0.08)');
+    expect(editorMarkup).toContain('gonavi-ai-skill-editor');
+    expect(editorMarkup).toContain('border-bottom:1px solid rgba(0,0,0,0.08)');
+    expect(skillsSectionSource).not.toContain('borderRadius: 14');
+    expect(skillsSectionSource).not.toContain('background: cardBg');
+    expect(skillsSectionSource).toContain("fontSize: 'var(--gn-settings-font-secondary, 13px)'");
+    expect(skillsSectionSource).toContain("fontSize: 'var(--gn-font-size-sm, 12px)'");
+  });
+
+  it('uses native disclosure while keeping editor fields mounted', () => {
+    const markup = renderSection([{ ...skillDraft, systemPrompt: 'Keep this draft mounted.' }]);
+
+    expect(markup).toContain('<details class="gonavi-ai-skill-editor"');
+    expect(markup).toContain('<summary');
+    expect(markup).toContain('Keep this draft mounted.');
+    expect(markup).toContain('aria-label="Skill name, for example: SQL review / JVM diagnostic plan"');
+  });
+
   it('uses catalog keys for skill settings chrome', () => {
     expect(skillsSectionSource).toContain('useOptionalI18n()');
     expect(skillsSectionSource).toContain("catalogTranslate('en-US'");

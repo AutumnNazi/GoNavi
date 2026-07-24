@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+  pull-requests: read
 
 jobs:
   frontend:
@@ -21,6 +22,18 @@ jobs:
         with:
           go-version-file: 'go.mod'
 
+      - name: Test release asset contracts
+        run: |
+          bash tools/detect-changed-driver-agents.test.sh
+          bash tools/generate-driver-agent-revisions.test.sh
+          python3 tools/generate-driver-release-manifest.test.py
+          python3 tools/generate-update-latest-manifest.test.py
+          python3 tools/r2-release-retention.test.py
+          python3 tools/package-driver-release-assets.test.py
+          python3 tools/legal-release-assets.test.py
+          python3 tools/windows-release-artifacts.test.py
+          python3 tools/generate-release-notes.test.py
+
       - name: Setup Node
         uses: actions/setup-node@v5
         with:
@@ -32,7 +45,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: frontend/node_modules
-          key: ${{ runner.os }}-node20-frontend-${{ hashFiles('frontend/package-lock.json') }}
+          key: ${{ runner.os }}-node20-frontend-${{ hashFiles('frontend/package-lock.json', 'frontend/patches/*.patch') }}
 
       - name: Install Wails
         run: go install -v github.com/wailsapp/wails/v2/cmd/wails@v2.11.0
@@ -46,6 +59,9 @@ jobs:
           wails generate module
           node frontend/scripts/wails-frontend-install.mjs
           npm --prefix frontend run build
+
+      - name: Test frontend virtual scrolling
+        run: npm --prefix frontend test -- src/components/dataGridVirtualScroll.test.ts src/components/DataGrid.layout.test.tsx
 
       - name: Pack frontend dist
         shell: bash
@@ -343,6 +359,24 @@ jobs:
           }
           & $upxCmd --version
 
+      - name: Install WiX Toolset (Windows)
+        if: contains(matrix.platform, 'windows')
+        shell: pwsh
+        run: |
+          $wixVersion = "6.0.2"
+          $wixTools = Join-Path $env:RUNNER_TEMP "wix-tools"
+          dotnet tool install wix --tool-path $wixTools --version $wixVersion
+          if ($LASTEXITCODE -ne 0) {
+              throw "WiX Toolset 安装失败，退出码: $LASTEXITCODE"
+          }
+          $wixTools | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+          $env:PATH = "$wixTools;$env:PATH"
+          wix extension add --global "WixToolset.UI.wixext/$wixVersion"
+          if ($LASTEXITCODE -ne 0) {
+              throw "WiX UI 扩展安装失败，退出码: $LASTEXITCODE"
+          }
+          wix --version
+
       # Linux Dependencies (GTK3, WebKit2GTK required by Wails)
       - name: Install Linux Dependencies
         if: contains(matrix.platform, 'linux')
@@ -475,7 +509,7 @@ jobs:
       - name: Test Windows Online Updater (Windows AMD64)
         if: ${{ matrix.platform == 'windows/amd64' }}
         shell: pwsh
-        run: go test ./internal/app -run '^TestWindowsPowerShellUpdater' -count=1 -timeout=3m
+        run: go test . ./internal/app -run '^(TestShouldEnableWindowsMSISingleInstanceOnlyForInstalledMainGUI|TestPrimaryWindowActivatorQueuesRequestsUntilRuntimeStartup|TestAcquireWindowsMSISingleInstance|TestResolveWindowsUpdateMaintenanceName|TestAcquireWindowsUpdateMaintenance|TestPrepareWindowsUpdateHandoff|TestWindowsPowerShellUpdater|TestExpectedAssetNameForExecutableUsesWindowsPortableSuffix|TestShouldWindowsUpdateLaunchDownloadedAssetDirectly|TestResolveUpdateInstallMode|TestExpectedAssetNameForWindowsInstallMode|TestResolveUpdateWorkspaceDirForPlatformSeparatesMSIFromInstallDirectory|TestValidateUpdatePackageForCurrentInstallMode|TestWindowsUpdateRequiresExplicitCloseConfirmation|TestInstallUpdateAndRestartRequiresCloseConfirmationOnWindows|TestInstallUpdateAndRestartMSI|TestFindOtherWindowsUpdateInstances|TestCloseWindowsUpdateInstances|TestInstallUpdateAndRestartClosesOtherTargetInstances|TestBuildWindowsMSIUpdatePowerShellScript|TestBuildWindowsMSILaunchCommand|TestResolveWindowsMSIExecPath)' -count=1 -timeout=3m
 
       - name: Build
         shell: bash
@@ -564,7 +598,7 @@ jobs:
               open_gauss|open-gauss) echo "opengauss" ;;
               gaussdb|gauss_db|gauss-db) echo "gaussdb" ;;
               elastic|elasticsearch) echo "elasticsearch" ;;
-              mariadb|oceanbase|starrocks|sphinx|sqlserver|sqlite|duckdb|dameng|kingbase|highgo|vastbase|opengauss|gaussdb|iris|mongodb|tdengine|iotdb|clickhouse)
+              mariadb|oceanbase|starrocks|sphinx|sqlserver|sqlite|duckdb|dameng|kingbase|highgo|vastbase|opengauss|gaussdb|iris|mongodb|tdengine|iotdb|clickhouse|trino)
                 echo "$value"
                 ;;
               *)
@@ -746,6 +780,11 @@ jobs:
             --platform "$TARGET_PLATFORM" \
             --drivers "$NORMALIZED_CHANGED_DRIVER_AGENTS"
 
+          mkdir -p driver-provenance
+          python3 ./tools/generate-driver-release-manifest.py \
+            --assets-dir drivers \
+            --provenance-output "driver-provenance/${GOOS}-${GOARCH}.json"
+
       # macOS Packaging
       - name: Package macOS DMG
         if: contains(matrix.platform, 'darwin')
@@ -761,6 +800,9 @@ jobs:
             exit 1
           fi
           APP_NAME=$(basename "$APP_PATH")
+          mkdir -p "$APP_NAME/Contents/Resources"
+          cp ../../LICENSE "$APP_NAME/Contents/Resources/LICENSE"
+          cp ../../NOTICE "$APP_NAME/Contents/Resources/NOTICE"
 
           APP_BIN=$(find "$APP_PATH/Contents/MacOS" -maxdepth 1 -type f | head -n 1)
           if [ -z "$APP_BIN" ]; then
@@ -806,7 +848,7 @@ jobs:
           mv "$DMG_NAME" "../../$FINAL_NAME"
 
       # Windows Packaging
-      - name: Package Windows EXE
+      - name: Package Windows Portable EXE and MSI
         if: contains(matrix.platform, 'windows')
         shell: pwsh
         run: |
@@ -816,7 +858,9 @@ jobs:
               $version = $version.Substring(1)
           }
           $target = "${{ matrix.build_name }}"
-          $finalExeName = "GoNavi-$version-${{ matrix.os_name }}-${{ matrix.arch_name }}${{ matrix.artifact_suffix }}.exe"
+          $archName = "${{ matrix.arch_name }}"
+          $portableExeName = "GoNavi-$version-${{ matrix.os_name }}-$archName${{ matrix.artifact_suffix }}-Portable.exe"
+          $msiName = "GoNavi-$version-${{ matrix.os_name }}-$archName${{ matrix.artifact_suffix }}-Installer.msi"
 
           if (Test-Path "$target.exe") {
               $finalExe = "$target.exe"
@@ -859,8 +903,71 @@ jobs:
               }
           }
 
-          Write-Host "📦 输出 Windows 可执行文件 $finalExeName..."
-          Copy-Item -LiteralPath $finalExe -Destination "..\\..\\$finalExeName" -Force
+          Write-Host "📦 输出 Windows Portable 可执行文件 $portableExeName..."
+          Copy-Item -LiteralPath $finalExe -Destination "..\\..\\$portableExeName" -Force
+
+          if ($version -match '^(?<major>\d+)\.(?<minor>\d+)\.(?<build>\d+)(?:[-+].*)?$') {
+              $major = [int]$Matches.major
+              $minor = [int]$Matches.minor
+              $build = [int]$Matches.build
+          } else {
+              throw "Windows MSI 版本必须是 major.minor.patch 格式，当前为: $version"
+          }
+          if ($major -gt 255 -or $minor -gt 255 -or $build -gt 65535) {
+              throw "Windows MSI 版本超出范围 (major/minor <= 255, patch <= 65535): $version"
+          }
+          $productVersion = "$major.$minor.$build"
+          $wixArch = if ($archName -eq "Arm64") { "arm64" } else { "x64" }
+          $componentGuid = if ($archName -eq "Arm64") {
+              "7F4C7757-329F-42B0-B312-D4B8AD50415E"
+          } else {
+              "0BCEE70B-9CF2-449C-9ADE-190188493234"
+          }
+          $desktopShortcutComponentGuid = if ($archName -eq "Arm64") {
+              "3CF7DCD2-2658-432D-8677-AB6BB34A9659"
+          } else {
+              "114030DD-DB5F-460A-9CAC-997680E9F938"
+          }
+
+          $licenseFile = (Resolve-Path -LiteralPath "..\\..\\LICENSE").Path
+          $noticeFile = (Resolve-Path -LiteralPath "..\\..\\NOTICE").Path
+          $licenseText = Get-Content -LiteralPath $licenseFile -Raw
+          $escapedLicense = $licenseText.Replace('\', '\\').Replace('{', '\{').Replace('}', '\}')
+          $escapedLicense = $escapedLicense -replace "`r?`n", "\par`r`n"
+          $licenseRtf = Join-Path $env:RUNNER_TEMP "GoNavi-License.rtf"
+          $rtfContent = "{\rtf1\ansi\deff0{\fonttbl{\f0 Segoe UI;}}\f0\fs18 $escapedLicense}"
+          Set-Content -LiteralPath $licenseRtf -Value $rtfContent -Encoding ascii
+
+          $sourceExe = (Resolve-Path -LiteralPath $finalExe).Path
+          $wxsPath = (Resolve-Path -LiteralPath "..\\windows\\installer.wxs").Path
+          $iconPath = (Resolve-Path -LiteralPath "..\\windows\\icon.ico").Path
+          $installMarkerPath = Join-Path $env:RUNNER_TEMP ".gonavi-msi-install"
+          Set-Content -LiteralPath $installMarkerPath -Value "MSI" -Encoding ascii -NoNewline
+          $installMarkerPath = (Resolve-Path -LiteralPath $installMarkerPath).Path
+          $wixIntermediateDir = Join-Path $env:RUNNER_TEMP "wixobj-$archName"
+          Write-Host "📦 生成 Windows MSI 安装程序 $msiName (version=$productVersion arch=$wixArch)..."
+          wix build $wxsPath `
+              -arch $wixArch `
+              -ext "WixToolset.UI.wixext/6.0.2" `
+              -d "ProductName=GoNavi" `
+              -d "ProductVersion=$productVersion" `
+              -d "UpgradeCode=CDD6BF2F-ED1E-4345-A0AB-DCDB7E15FB23" `
+              -d "ComponentGuid=$componentGuid" `
+              -d "DesktopShortcutComponentGuid=$desktopShortcutComponentGuid" `
+              -d "InstallFolderName=GoNavi" `
+              -d "RegistryKeyName=GoNavi" `
+              -d "SourceExe=$sourceExe" `
+              -d "InstallMarker=$installMarkerPath" `
+              -d "IconPath=$iconPath" `
+              -d "LicenseRtf=$licenseRtf" `
+              -d "LicenseFile=$licenseFile" `
+              -d "NoticeFile=$noticeFile" `
+              -pdbtype none `
+              -intermediatefolder $wixIntermediateDir `
+              -out "..\\..\\$msiName"
+          if ($LASTEXITCODE -ne 0) {
+              throw "WiX MSI 构建失败，退出码: $LASTEXITCODE"
+          }
 
       # Linux Packaging (tar.gz and AppImage)
       - name: Package Linux
@@ -893,7 +1000,7 @@ jobs:
 
           # 1. Create tar.gz
           echo "📦 正在打包 $TAR_NAME..."
-          tar -czvf "$TAR_NAME" "$TARGET"
+          tar -czvf "$TAR_NAME" "$TARGET" -C ../.. LICENSE NOTICE
           mv "$TAR_NAME" ../../
 
           # 2. Create AppImage (skip for ARM64 or if tools unavailable)
@@ -907,9 +1014,12 @@ jobs:
           # Create AppDir structure
           mkdir -p AppDir/usr/bin
           mkdir -p AppDir/usr/share/applications
+          mkdir -p AppDir/usr/share/doc/gonavi
           mkdir -p AppDir/usr/share/icons/hicolor/256x256/apps
 
           cp "$TARGET" AppDir/usr/bin/gonavi
+          cp ../../LICENSE AppDir/usr/share/doc/gonavi/LICENSE
+          cp ../../NOTICE AppDir/usr/share/doc/gonavi/NOTICE
 
           # Create desktop file
           printf '%s\n' \
@@ -962,9 +1072,11 @@ jobs:
           path: |
             GoNavi-*.dmg
             GoNavi-*.exe
+            GoNavi-*.msi
             GoNavi-*.tar.gz
             GoNavi-*.AppImage
             drivers/**
+            driver-provenance/**
           retention-days: 1
 
   # Phase 2: Collect all artifacts and Publish Release (Single Job)
@@ -978,6 +1090,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v5
 
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: 'go.mod'
+
       - name: Download All Artifacts
         uses: actions/download-artifact@v7
         with:
@@ -985,8 +1102,28 @@ jobs:
           pattern: build-artifacts-*
           merge-multiple: true
 
+      - name: Add legal documents
+        shell: bash
+        run: install -m 0644 LICENSE NOTICE release-assets/
+
       - name: List Assets
         run: ls -R release-assets
+
+      - name: Download Previous Driver Manifest
+        if: needs.driver_agents.outputs.has_changes == 'true' && needs.driver_agents.outputs.release_source != 'all'
+        env:
+          DRIVER_RELEASE_SOURCE: ${{ needs.driver_agents.outputs.release_source }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          manifest_path="$RUNNER_TEMP/previous-driver-manifest.json"
+          manifest_url="https://github.com/Syngnat/GoNavi-DriverAgents/releases/download/${DRIVER_RELEASE_SOURCE}/GoNavi-DriverAgents-Manifest.json"
+          if curl --retry 3 --retry-delay 2 --retry-all-errors -fsSL "$manifest_url" -o "$manifest_path"; then
+            echo "🧭 已下载上一版 driver manifest 作为复用资产 provenance"
+          else
+            rm -f "$manifest_path"
+            echo "⚠️ 上一版 driver manifest 不可用；未重建资产将由 manifest 生成阶段拒绝"
+          fi
 
       - name: Complete Driver Agent Assets
         if: needs.driver_agents.outputs.has_changes == 'true' && needs.driver_agents.outputs.release_source != 'all'
@@ -1061,12 +1198,20 @@ jobs:
             drivers \
             ../driver-release-assets
 
-          python3 ../tools/generate-driver-release-manifest.py \
-            --assets-dir drivers \
+          MANIFEST_ARGS=(
+            --assets-dir drivers
             --output ../driver-release-assets/GoNavi-DriverAgents-Manifest.json
+          )
+          if [ -d driver-provenance ]; then
+            MANIFEST_ARGS+=(--provenance driver-provenance)
+          fi
+          if [ -s "$RUNNER_TEMP/previous-driver-manifest.json" ]; then
+            MANIFEST_ARGS+=(--provenance "$RUNNER_TEMP/previous-driver-manifest.json")
+          fi
+          python3 ../tools/generate-driver-release-manifest.py "${MANIFEST_ARGS[@]}"
 
           # GoNavi 主仓库只保留主程序包；驱动资产发布到独立仓库。
-          rm -rf drivers
+          rm -rf drivers driver-provenance
           echo "has_driver_assets=true" >> "$GITHUB_OUTPUT"
 
       - name: Generate SHA256SUMS
@@ -1102,6 +1247,7 @@ jobs:
             --version "$VERSION" \
             --tag "$TAG" \
             --channel latest \
+            --download-base-url https://download.syngnat.top/gonavi/releases/download \
             --output release-assets/latest.json
           test -s release-assets/latest.json
           echo "📄 latest.json ready:"
@@ -1156,65 +1302,19 @@ jobs:
 
       - name: Generate Changelog
         id: changelog
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
         run: |
           set -euo pipefail
           cd repo-for-changelog
-          TAG="${{ github.ref_name }}"
-          # 获取上一个 tag
-          PREV_TAG=$(git tag --sort=-creatordate | grep -E '^v' | sed -n '2p' || true)
-          if [ -z "$PREV_TAG" ]; then
-            echo "⚠️ 未找到上一个 tag，使用全部 commit"
-            RANGE="$TAG"
-          else
-            RANGE="${PREV_TAG}..${TAG}"
-          fi
-
-          echo "📋 生成更新日志：$RANGE"
-
-          # 提取 commit 消息（排除 merge commit）
-          COMMITS=$(git log "$RANGE" --no-merges --pretty=format:'%s' 2>/dev/null || true)
-          if [ -z "$COMMITS" ]; then
-            BODY="暂无提交记录。"
-          else
-            CAT_FEAT=""
-            CAT_FIX=""
-            CAT_PERF=""
-            CAT_REFACTOR=""
-            CAT_I18N=""
-            CAT_OTHER=""
-
-            while IFS= read -r line; do
-              [ -z "$line" ] && continue
-              case "$line" in
-                ✨*|*feat*)     CAT_FEAT="${CAT_FEAT}\n- ${line}" ;;
-                🐛*|*fix*)     CAT_FIX="${CAT_FIX}\n- ${line}" ;;
-                ⚡*|*perf*)    CAT_PERF="${CAT_PERF}\n- ${line}" ;;
-                ♻️*|*refactor*) CAT_REFACTOR="${CAT_REFACTOR}\n- ${line}" ;;
-                🌐*)           CAT_I18N="${CAT_I18N}\n- ${line}" ;;
-                🔧*|🔨*|*chore*) CAT_OTHER="${CAT_OTHER}\n- ${line}" ;;
-                *)             CAT_OTHER="${CAT_OTHER}\n- ${line}" ;;
-              esac
-            done <<< "$COMMITS"
-
-            BODY=""
-            [ -n "$CAT_FEAT" ]     && BODY="${BODY}## ✨ 新功能\n${CAT_FEAT}\n\n"
-            [ -n "$CAT_FIX" ]      && BODY="${BODY}## 🐛 问题修复\n${CAT_FIX}\n\n"
-            [ -n "$CAT_PERF" ]     && BODY="${BODY}## ⚡ 性能优化\n${CAT_PERF}\n\n"
-            [ -n "$CAT_REFACTOR" ] && BODY="${BODY}## ♻️ 重构\n${CAT_REFACTOR}\n\n"
-            [ -n "$CAT_I18N" ]     && BODY="${BODY}## 🌐 国际化\n${CAT_I18N}\n\n"
-            [ -n "$CAT_OTHER" ]    && BODY="${BODY}## 🔧 其他变更\n${CAT_OTHER}\n\n"
-
-            # 附加 compare 链接
-            if [ -n "$PREV_TAG" ]; then
-              REPO_URL="${{ github.server_url }}/${{ github.repository }}"
-              BODY="${BODY}---\n**完整变更**: [${PREV_TAG}...${TAG}](${REPO_URL}/compare/${PREV_TAG}...${TAG})\n"
-            fi
-          fi
-
-          # 写入到文件避免多行环境变量问题
-          printf '%b' "$BODY" > /tmp/changelog.md
-          echo "changelog_file=/tmp/changelog.md" >> "$GITHUB_OUTPUT"
+          CHANGELOG_FILE="$RUNNER_TEMP/changelog.md"
+          python3 tools/generate-release-notes.py \
+            --repo "${{ github.repository }}" \
+            --tag "${{ github.ref_name }}" \
+            --repository-url "${{ github.server_url }}/${{ github.repository }}" \
+            --output "$CHANGELOG_FILE"
+          echo "changelog_file=$CHANGELOG_FILE" >> "$GITHUB_OUTPUT"
 
       - name: Create Release
         uses: softprops/action-gh-release@v3

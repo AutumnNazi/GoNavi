@@ -69,13 +69,14 @@ const readRowLocatorSource = (): string =>
   readFileSync(new URL("../utils/rowLocator.ts", import.meta.url), "utf8");
 
 const sliceBetween = (source: string, start: string, end: string): string => {
-  const startIndex = source.indexOf(start);
-  const endIndex = source.indexOf(end, startIndex + start.length);
+  const normalizedSource = source.replace(/\r\n/g, "\n");
+  const startIndex = normalizedSource.indexOf(start);
+  const endIndex = normalizedSource.indexOf(end, startIndex + start.length);
 
   expect(startIndex).toBeGreaterThanOrEqual(0);
   expect(endIndex).toBeGreaterThan(startIndex);
 
-  return source.slice(startIndex, endIndex);
+  return normalizedSource.slice(startIndex, endIndex);
 };
 
 const assertSourceDoesNotInlineCatalogValues = (
@@ -85,6 +86,7 @@ const assertSourceDoesNotInlineCatalogValues = (
     ignoreEnglishBaseline?: boolean;
   },
 ): void => {
+  const executableSource = source.replace(/\/\*[\s\S]*?\*\//g, "");
   for (const language of SUPPORTED_LANGUAGES) {
     for (const key of keys) {
       const value = catalogs[language][key];
@@ -95,7 +97,7 @@ const assertSourceDoesNotInlineCatalogValues = (
       if (options?.ignoreEnglishBaseline && value === catalogs["en-US"][key]) {
         continue;
       }
-      if (source.includes(value)) {
+      if (executableSource.includes(value)) {
         throw new Error(`catalog literal leaked into source: ${language} ${key}`);
       }
     }
@@ -114,6 +116,38 @@ describe("i18n catalog", () => {
       expect(getCatalogKeys(language)).toEqual(baseKeys);
       expect(catalogs[language]["common.cancel"]).toBeTruthy();
       expect(catalogs[language]["settings.language.title"]).toBeTruthy();
+    }
+  });
+
+  it("keeps MSI and Portable update copy complete across all catalogs", () => {
+    const updateKeys = [
+      "app.about.action.download_msi_update",
+      "app.about.action.download_portable_update",
+      "app.about.action.install_and_restart",
+      "app.about.action.launch_installer",
+      "app.about.download_progress.ready_to_install",
+      "app.about.download_progress.installing_and_restarting",
+      "app.about.download_progress.launching_installer",
+      "app.about.download_progress.restarting_after_install",
+      "app.about.download_progress.installer_started",
+      "app.about.message.download_ready_install",
+      "app.about.message.download_ready_install_with_path",
+      "app.about.update_status.new_version_ready_install",
+      "app.about.version.install_mode",
+      "app.about.version.package_type",
+      "app.about.install_mode.portable",
+      "app.about.install_mode.msi",
+      "app.about.package_type.portable",
+      "app.about.package_type.msi",
+    ] as const;
+    const base = catalogs["en-US"];
+
+    for (const language of SUPPORTED_LANGUAGES) {
+      for (const key of updateKeys) {
+        expect(catalogs[language]).toHaveProperty(key);
+        expect(catalogs[language][key]).toBeTruthy();
+        expect(getPlaceholders(catalogs[language][key])).toEqual(getPlaceholders(base[key]));
+      }
     }
   });
 
@@ -237,6 +271,8 @@ describe("i18n catalog", () => {
 
   it("includes App shortcut modal keys required by every supported language", () => {
     const shortcutModalKeys = [
+      "app.shortcuts.action.closeActiveTab.description",
+      "app.shortcuts.action.closeActiveTab.label",
       "app.shortcuts.action.focusSidebarSearch.description",
       "app.shortcuts.action.focusSidebarSearch.label",
       "app.shortcuts.action.newConnection.description",
@@ -418,6 +454,8 @@ describe("i18n catalog", () => {
       "data_grid.pagination.result_set",
       "data_grid.pagination.page_size_aria",
       "data_grid.pagination.page_size_option",
+      "data_grid.pagination.first_page",
+      "data_grid.pagination.last_page",
       "data_grid.pagination.jump_label",
       "data_grid.pagination.jump_aria",
       "data_grid.pagination.jump_action",
@@ -455,6 +493,7 @@ describe("i18n catalog", () => {
       "data_grid.row_editor.popup_edit",
       "data_grid.cell_editor.title",
       "data_grid.cell_editor.title_with_column",
+      "data_grid.cell_viewer.title_with_column",
       "data_grid.batch_fill.title",
       "data_grid.batch_fill.set_null",
       "data_grid.batch_fill.value_placeholder",
@@ -719,10 +758,10 @@ describe("i18n catalog", () => {
 
   it("keeps App tools, data root, and about shell copy out of source literals", () => {
     const source = readAppSource();
-    const toolsModalSource = sliceBetween(
+    const settingsToolsSource = sliceBetween(
       source,
-      "{isToolsModalOpen && (",
-      "{isSettingsModalOpen && (",
+      "{isSettingsModalOpen && (() => {",
+      "{isDataRootModalOpen && (",
     );
     const dataRootModalSource = sliceBetween(
       source,
@@ -735,12 +774,12 @@ describe("i18n catalog", () => {
       "{isThemeModalOpen && (",
     );
 
-    expect(toolsModalSource).not.toContain("工具中心");
-    expect(toolsModalSource).not.toContain("导入连接配置");
-    expect(toolsModalSource).not.toContain("导出连接配置");
-    expect(toolsModalSource).not.toContain("数据同步");
-    expect(toolsModalSource).not.toContain("驱动管理");
-    expect(toolsModalSource).not.toContain("数据目录");
+    expect(settingsToolsSource).not.toContain("工具中心");
+    expect(settingsToolsSource).not.toContain("导入连接配置");
+    expect(settingsToolsSource).not.toContain("导出连接配置");
+    expect(settingsToolsSource).not.toContain("数据同步");
+    expect(settingsToolsSource).not.toContain("驱动管理");
+    expect(settingsToolsSource).not.toContain("数据目录");
 
     expect(dataRootModalSource).not.toContain("数据存储位置");
     expect(dataRootModalSource).not.toContain("数据目录");
@@ -778,13 +817,13 @@ describe("i18n catalog", () => {
     );
     const aiPanelSource = sliceBetween(
       source,
-      "<AIPanelErrorBoundary",
-      "<AIChatPanel",
+      "key={aiPanelRenderNonce}",
+      "<LazyAIChatPanel",
     );
-    const toolsModalSource = sliceBetween(
+    const settingsToolsSource = sliceBetween(
       source,
-      "{isToolsModalOpen && (",
-      "{isSettingsModalOpen && (",
+      "{isSettingsModalOpen && (() => {",
+      "{isDataRootModalOpen && (",
     );
 
     expect(securityInitialStageSource).toContain("app.security_update.stage.checking_saved_config");
@@ -823,7 +862,7 @@ describe("i18n catalog", () => {
     expect(dataRootFlowSource).not.toContain("数据目录已更新");
     expect(dataRootFlowSource).not.toContain("打开数据目录失败");
 
-    expect(sidebarUtilitySource).toContain("app.sidebar.tools");
+    expect(sidebarUtilitySource).not.toContain("app.sidebar.tools");
     expect(sidebarUtilitySource).toContain("app.sidebar.settings");
     expect(sidebarUtilitySource).toContain("app.sidebar.ai_assistant");
     expect(source).toContain("app.sidebar.resize_width");
@@ -856,16 +895,16 @@ describe("i18n catalog", () => {
     expect(aiPanelSource).not.toContain("关闭面板");
     expect(aiPanelSource).not.toContain("重新加载");
 
-    expect(toolsModalSource).toContain("app.tools.entry.snippets.title");
-    expect(toolsModalSource).toContain("app.tools.entry.snippets.description");
-    expect(toolsModalSource).toContain("app.tools.entry.security_update.title");
-    expect(toolsModalSource).toContain("app.tools.entry.security_update.status_description");
-    expect(toolsModalSource).toContain("app.tools.entry.security_update.description");
-    expect(toolsModalSource).not.toContain("代码片段管理");
-    expect(toolsModalSource).not.toContain("管理 SQL 代码片段和前缀补全。");
-    expect(toolsModalSource).not.toContain("安全更新");
-    expect(toolsModalSource).not.toContain("当前状态：");
-    expect(toolsModalSource).not.toContain("查看已保存配置的安全更新状态。");
+    expect(settingsToolsSource).toContain("app.tools.entry.snippets.title");
+    expect(settingsToolsSource).toContain("app.tools.entry.snippets.description");
+    expect(settingsToolsSource).toContain("app.tools.entry.security_update.title");
+    expect(settingsToolsSource).toContain("app.tools.entry.security_update.status_description");
+    expect(settingsToolsSource).toContain("app.tools.entry.security_update.description");
+    expect(settingsToolsSource).not.toContain("代码片段管理");
+    expect(settingsToolsSource).not.toContain("管理 SQL 代码片段和前缀补全。");
+    expect(settingsToolsSource).not.toContain("安全更新");
+    expect(settingsToolsSource).not.toContain("当前状态：");
+    expect(settingsToolsSource).not.toContain("查看已保存配置的安全更新状态。");
   });
 
   it("keeps App theme modal shell copy out of source literals", () => {
@@ -873,7 +912,7 @@ describe("i18n catalog", () => {
     const themeModalSource = sliceBetween(
       source,
       "{isThemeModalOpen && (",
-      "{isShortcutModalOpen && (",
+      "{isProxyModalOpen && (",
     );
 
     expect(themeModalSource).not.toContain("主题设置");
@@ -888,15 +927,15 @@ describe("i18n catalog", () => {
 
   it("keeps App shortcut modal shell copy out of source literals", () => {
     const source = readAppSource();
-    const toolsModalSource = sliceBetween(
+    const settingsToolsSource = sliceBetween(
       source,
-      "{isToolsModalOpen && (",
-      "{isSettingsModalOpen && (",
+      "{isSettingsModalOpen && (() => {",
+      "{isDataRootModalOpen && (",
     );
     const shortcutModalSource = sliceBetween(
       source,
-      "{isShortcutModalOpen && (",
-      "{isSnippetModalOpen && (",
+      "if (activeSettingsCenterPane.key === 'shortcut-settings') {",
+      "return null;\n            };",
     );
     const shortcutCaptureSource = sliceBetween(
       source,
@@ -904,7 +943,7 @@ describe("i18n catalog", () => {
       "window.addEventListener('keydown', handleShortcutCapture, true);",
     );
 
-    expect(toolsModalSource).not.toContain("查看并调整全局快捷键绑定。");
+    expect(settingsToolsSource).not.toContain("查看并调整全局快捷键绑定。");
     expect(shortcutModalSource).not.toContain("统一查看、录制与启停常用快捷键");
     expect(shortcutModalSource).not.toContain("已恢复默认快捷键");
     expect(shortcutModalSource).not.toContain("请按下快捷键...");
@@ -922,7 +961,7 @@ describe("i18n catalog", () => {
     const connectionPackageFlowSource = sliceBetween(
       source,
       "const importConnectionsPayload = useCallback(async (raw: string, password: string) => {",
-      "const [isToolsModalOpen, setIsToolsModalOpen] = useState(false);",
+      "const [toolCenterBackGroupKey, setToolCenterBackGroupKey]",
     );
     const connectionPackageModalPropsSource = sliceBetween(
       source,
@@ -975,7 +1014,7 @@ describe("i18n catalog", () => {
     const formatMenuSource = sliceBetween(
       source,
       "const formatSettingsMenu: MenuProps['items'] = [",
-      "const splitSQLStatements = (sql: string): string[] => {",
+      "const splitSQLStatements = (",
     );
 
     for (const language of SUPPORTED_LANGUAGES) {
@@ -1707,7 +1746,7 @@ describe("i18n catalog", () => {
     const databaseQualifiedTableDetailSource = sliceBetween(
       databaseQualifiedTableCompletionSource,
       "                          detail: appendCommentToDetail(",
-      "                          documentation: buildCompletionDocumentation(t.comment),",
+      "                          documentation: buildCompletionDocumentation(table.comment),",
     );
 
     for (const language of SUPPORTED_LANGUAGES) {
@@ -1737,7 +1776,7 @@ describe("i18n catalog", () => {
     const schemaQualifiedTableDetailSource = sliceBetween(
       schemaQualifiedTableCompletionSource,
       "                          detail: appendCommentToDetail(",
-      "                          documentation: buildCompletionDocumentation(t.comment),",
+      "                          documentation: buildCompletionDocumentation(table.comment),",
     );
 
     for (const language of SUPPORTED_LANGUAGES) {
@@ -1761,13 +1800,13 @@ describe("i18n catalog", () => {
     const source = readQueryEditorSource();
     const globalCrossDbTableCompletionSource = sliceBetween(
       source,
-      "                  if (!isCurrentDb) {",
-      "                  // 当前库：检查是否有跨 schema 同名表",
+      "              // 表提示：当前库智能处理 schema.table 格式",
+      "                      const hasDuplicate = (",
     );
     const globalCrossDbTableDetailSource = sliceBetween(
       globalCrossDbTableCompletionSource,
-      "                          detail: appendCommentToDetail(",
-      "                          documentation: buildCompletionDocumentation(t.comment),",
+      "                              detail: appendCommentToDetail(",
+      "                              documentation: buildCompletionDocumentation(table.comment),",
     );
 
     for (const language of SUPPORTED_LANGUAGES) {
@@ -1791,13 +1830,13 @@ describe("i18n catalog", () => {
     const source = readQueryEditorSource();
     const currentDbTableCompletionSource = sliceBetween(
       source,
-      "                  // 当前库：检查是否有跨 schema 同名表",
-      "              });",
+      "                      const hasDuplicate = (",
+      "              const buildGlobalViewBatch =",
     );
     const currentDbTableDetailSource = sliceBetween(
       currentDbTableCompletionSource,
       "                      detail: appendCommentToDetail(",
-      "                      documentation: buildCompletionDocumentation(t.comment),",
+      "                      documentation: buildCompletionDocumentation(table.comment),",
     );
 
     for (const language of SUPPORTED_LANGUAGES) {
@@ -2146,7 +2185,7 @@ describe("i18n catalog", () => {
       sliceBetween(
         source,
         "      const binding = runQueryShortcutBinding;",
-        "  }, [languagePreference, runQueryShortcutBinding]);",
+        "  }, [activeShortcutPlatform, languagePreference, runQueryShortcutBinding]);",
       ),
       sliceBetween(
         source,
@@ -2156,12 +2195,12 @@ describe("i18n catalog", () => {
       sliceBetween(
         source,
         "      const binding = duplicateCurrentLineShortcutBinding;",
-        "  }, [duplicateCurrentLineShortcutBinding, handleDuplicateCurrentLine, languagePreference]);",
+        "  }, [activeShortcutPlatform, duplicateCurrentLineShortcutBinding, handleDuplicateCurrentLine, languagePreference]);",
       ),
       sliceBetween(
         source,
         "      const binding = saveQueryShortcutBinding;",
-        "  }, [languagePreference, saveQueryShortcutBinding]);",
+        "  }, [activeShortcutPlatform, languagePreference, saveQueryShortcutBinding]);",
       ),
     ].join("\n");
 

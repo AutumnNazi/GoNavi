@@ -7,8 +7,8 @@ import {
 } from './aiEntryLayout';
 
 describe('ai entry layout', () => {
-  it('keeps legacy sidebar utility buttons limited to tools and settings', () => {
-    expect(SIDEBAR_UTILITY_ITEM_KEYS).toEqual(['tools', 'settings']);
+  it('keeps the legacy sidebar utility area limited to the unified settings entry', () => {
+    expect(SIDEBAR_UTILITY_ITEM_KEYS).toEqual(['settings']);
   });
 
   it('attaches the legacy closed AI handle to the content shell', () => {

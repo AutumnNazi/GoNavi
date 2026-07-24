@@ -2,6 +2,7 @@ package provider
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"os/exec"
@@ -34,6 +35,294 @@ func TestBuildClaudeCLIEnv_IncludesAnthropicProxyEnv(t *testing.T) {
 	}
 	if got := envValue(env, "ANTHROPIC_AUTH_TOKEN"); got != "sk-test" {
 		t.Fatalf("expected auth token in env, got %q", got)
+	}
+}
+
+func TestBuildClaudeCLIEnv_LocalAuthRemovesAPIOverrides(t *testing.T) {
+	env, err := buildClaudeCLIEnv(ai.ProviderConfig{
+		AuthMode: "local-cli",
+		BaseURL:  "https://proxy.example",
+		APIKey:   "should-not-be-used",
+	}, []string{
+		"PATH=/usr/bin",
+		"ANTHROPIC_BASE_URL=https://environment-proxy.example",
+		"ANTHROPIC_AUTH_TOKEN=environment-token",
+		"ANTHROPIC_API_KEY=environment-key",
+		"ANTHROPIC_FOUNDRY_API_KEY=foundry-key",
+		"AWS_ACCESS_KEY_ID=aws-access-key",
+		"CLAUDE_API_KEY=claude-api-key",
+		"CLAUDE_CODE_API_KEY_FILE_DESCRIPTOR=9",
+		"CLAUDE_CODE_USE_BEDROCK=1",
+		"CLAUDE_CODE_USE_VERTEX=1",
+		"CLAUDE_CODE_USE_FOUNDRY=1",
+		"CLAUDE_CODE_USE_MANTLE=1",
+		"CLAUDE_CODE_USE_ANTHROPIC_AWS=1",
+		"GOOGLE_APPLICATION_CREDENTIALS=/tmp/google-credentials.json",
+		"CLAUDE_CONFIG_DIR=/tmp/claude-config",
+		"CLAUDE_CODE_OAUTH_TOKEN=oauth-token",
+	}, "darwin", func(name string) (string, error) {
+		return "", errors.New("unexpected lookup")
+	}, func(path string) bool {
+		return false
+	})
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	for _, key := range []string{
+		"ANTHROPIC_BASE_URL",
+		"ANTHROPIC_AUTH_TOKEN",
+		"ANTHROPIC_API_KEY",
+		"ANTHROPIC_FOUNDRY_API_KEY",
+		"AWS_ACCESS_KEY_ID",
+		"CLAUDE_API_KEY",
+		"CLAUDE_CODE_API_KEY_FILE_DESCRIPTOR",
+		"CLAUDE_CODE_USE_BEDROCK",
+		"CLAUDE_CODE_USE_VERTEX",
+		"CLAUDE_CODE_USE_FOUNDRY",
+		"CLAUDE_CODE_USE_MANTLE",
+		"CLAUDE_CODE_USE_ANTHROPIC_AWS",
+		"GOOGLE_APPLICATION_CREDENTIALS",
+	} {
+		if got := envValue(env, key); got != "" {
+			t.Fatalf("expected %s to be removed in local auth mode, got %q", key, got)
+		}
+	}
+	if got := envValue(env, "CLAUDE_CONFIG_DIR"); got != "/tmp/claude-config" {
+		t.Fatalf("expected Claude config directory to be preserved for OAuth, got %q", got)
+	}
+	if got := envValue(env, "CLAUDE_CODE_OAUTH_TOKEN"); got != "oauth-token" {
+		t.Fatalf("expected OAuth token to be preserved, got %q", got)
+	}
+	for _, key := range claudeCLILocalAuthIsolationEnvKeys {
+		if got := envValue(env, key); got != "1" {
+			t.Fatalf("expected %s=1 in local auth mode, got %q", key, got)
+		}
+	}
+}
+
+func TestBuildClaudeCLIArgs_LocalAuthKeepsPromptOutOfArgvAndDisablesTools(t *testing.T) {
+	args := buildClaudeCLIArgs(ai.ProviderConfig{AuthMode: "local-cli"}, "private prompt", true)
+	if strings.Contains(strings.Join(args, " "), "private prompt") {
+		t.Fatalf("expected prompt to stay out of argv, got %#v", args)
+	}
+	if !hasArgSequence(args, "--tools", "") {
+		t.Fatalf("expected tools to be disabled, got %#v", args)
+	}
+	if !hasArgSequence(args, "--permission-mode", "dontAsk") {
+		t.Fatalf("expected non-interactive permission mode, got %#v", args)
+	}
+	if !hasArg(args, "--print") || hasArg(args, "-p") {
+		t.Fatalf("expected stdin-based --print mode without a prompt argument, got %#v", args)
+	}
+	if !hasArgSequence(args, "--setting-sources", "user") {
+		t.Fatalf("expected user settings source so Claude 2.1.132 can load OAuth, got %#v", args)
+	}
+	if !hasArgSequence(args, "--settings", claudeCLILocalAuthSettings) {
+		t.Fatalf("expected inline hook and CLAUDE.md isolation settings, got %#v", args)
+	}
+	for _, expected := range []string{"--disable-slash-commands", "--no-chrome", "--no-session-persistence"} {
+		if !hasArg(args, expected) {
+			t.Fatalf("expected %q in args, got %#v", expected, args)
+		}
+	}
+	if !hasArg(args, "--strict-mcp-config") {
+		t.Fatalf("expected MCP configuration isolation, got %#v", args)
+	}
+	if hasArg(args, "--bare") {
+		t.Fatalf("--bare disables OAuth and must not be used for subscription auth: %#v", args)
+	}
+}
+
+func TestClaudeCLILocalAuthSettingsNeutralizeUserEnvironmentOverrides(t *testing.T) {
+	var settings struct {
+		APIKeyHelper string `json:"apiKeyHelper"`
+		Env          any    `json:"env"`
+	}
+	if err := json.Unmarshal([]byte(claudeCLILocalAuthSettings), &settings); err != nil {
+		t.Fatalf("parse isolation settings: %v", err)
+	}
+	if settings.APIKeyHelper != "" {
+		t.Fatalf("expected user apiKeyHelper to be disabled, got %q", settings.APIKeyHelper)
+	}
+	if settings.Env != nil {
+		t.Fatalf("expected complete user settings env block to be neutralized, got %#v", settings.Env)
+	}
+}
+
+func TestValidateClaudeCLISubscriptionStatus(t *testing.T) {
+	tests := []struct {
+		name       string
+		status     claudeCLIAuthStatus
+		wantErr    bool
+		wantDetail string
+	}{
+		{
+			name: "oauth subscription",
+			status: claudeCLIAuthStatus{
+				LoggedIn:    true,
+				AuthMethod:  "oauth_token",
+				APIProvider: "firstParty",
+			},
+		},
+		{
+			name:       "logged out",
+			status:     claudeCLIAuthStatus{},
+			wantErr:    true,
+			wantDetail: "claude auth login",
+		},
+		{
+			name: "api key override",
+			status: claudeCLIAuthStatus{
+				LoggedIn:     true,
+				AuthMethod:   "oauth_token",
+				APIProvider:  "firstParty",
+				APIKeySource: "ANTHROPIC_API_KEY",
+			},
+			wantErr:    true,
+			wantDetail: "ANTHROPIC_API_KEY",
+		},
+		{
+			name: "third-party provider",
+			status: claudeCLIAuthStatus{
+				LoggedIn:    true,
+				AuthMethod:  "oauth_token",
+				APIProvider: "bedrock",
+			},
+			wantErr:    true,
+			wantDetail: "bedrock",
+		},
+		{
+			name: "non-oauth method",
+			status: claudeCLIAuthStatus{
+				LoggedIn:    true,
+				AuthMethod:  "api_key",
+				APIProvider: "firstParty",
+			},
+			wantErr:    true,
+			wantDetail: "api_key",
+		},
+		{
+			name: "misleading oauth substring",
+			status: claudeCLIAuthStatus{
+				LoggedIn:    true,
+				AuthMethod:  "not_oauth",
+				APIProvider: "firstParty",
+			},
+			wantErr:    true,
+			wantDetail: "not_oauth",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateClaudeCLISubscriptionStatus(tt.status)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("validate status error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if tt.wantDetail != "" && (err == nil || !strings.Contains(err.Error(), tt.wantDetail)) {
+				t.Fatalf("expected error containing %q, got %v", tt.wantDetail, err)
+			}
+		})
+	}
+}
+
+func TestCheckClaudeCLILocalAuthUsesStatusWithoutModelRequest(t *testing.T) {
+	restore := overrideClaudeCLIWithTestProcess(t, "auth-success")
+	defer restore()
+
+	if err := CheckClaudeCLILocalAuth(context.Background()); err != nil {
+		t.Fatalf("expected OAuth status check success, got %v", err)
+	}
+}
+
+func TestCheckClaudeCLILocalAuthReportsLoggedOutStatus(t *testing.T) {
+	restore := overrideClaudeCLIWithTestProcess(t, "logged-out")
+	defer restore()
+
+	err := CheckClaudeCLILocalAuth(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "claude auth login") {
+		t.Fatalf("expected actionable logged-out error, got %v", err)
+	}
+}
+
+func TestClaudeCLILocalAuthRejectsAPIKeyOverrideBeforeChatAndStream(t *testing.T) {
+	restore := overrideClaudeCLIWithTestProcess(t, "api-key-override")
+	defer restore()
+
+	provider, err := NewClaudeCLIProvider(ai.ProviderConfig{AuthMode: "local-cli"})
+	if err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+	request := ai.ChatRequest{Messages: []ai.Message{{Role: "user", Content: "ping"}}}
+
+	if _, err := provider.Chat(context.Background(), request); err == nil || !strings.Contains(err.Error(), "apiKeyHelper") {
+		t.Fatalf("expected Chat to reject API key override before model request, got %v", err)
+	}
+	if err := provider.ChatStream(context.Background(), request, func(ai.StreamChunk) {}); err == nil || !strings.Contains(err.Error(), "apiKeyHelper") {
+		t.Fatalf("expected ChatStream to reject API key override before model request, got %v", err)
+	}
+}
+
+func TestCheckClaudeCLILocalAuthReturnsContextCanceled(t *testing.T) {
+	restore := overrideClaudeCLIWithTestProcess(t, "sleep")
+	defer restore()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	time.AfterFunc(50*time.Millisecond, cancel)
+	err := CheckClaudeCLILocalAuth(ctx)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context.Canceled from auth status, got %v", err)
+	}
+}
+
+func TestClaudeCLIChatReturnsContextCanceled(t *testing.T) {
+	restore := overrideClaudeCLIWithTestProcess(t, "sleep")
+	defer restore()
+
+	provider, err := NewClaudeCLIProvider(ai.ProviderConfig{
+		BaseURL: "https://coding.dashscope.aliyuncs.com/apps/anthropic",
+		APIKey:  "qwen-key",
+	})
+	if err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	time.AfterFunc(50*time.Millisecond, cancel)
+	_, err = provider.Chat(ctx, ai.ChatRequest{Messages: []ai.Message{{Role: "user", Content: "ping"}}})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context.Canceled from Chat, got %v", err)
+	}
+}
+
+func TestClaudeCLIChatStreamReturnsContextCanceledWithoutErrorChunk(t *testing.T) {
+	restore := overrideClaudeCLIWithTestProcess(t, "sleep")
+	defer restore()
+
+	provider, err := NewClaudeCLIProvider(ai.ProviderConfig{
+		BaseURL: "https://coding.dashscope.aliyuncs.com/apps/anthropic",
+		APIKey:  "qwen-key",
+	})
+	if err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	time.AfterFunc(50*time.Millisecond, cancel)
+	var chunks []ai.StreamChunk
+	err = provider.ChatStream(ctx, ai.ChatRequest{Messages: []ai.Message{{Role: "user", Content: "ping"}}}, func(chunk ai.StreamChunk) {
+		chunks = append(chunks, chunk)
+	})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context.Canceled from ChatStream, got %v", err)
+	}
+	if len(chunks) != 0 {
+		t.Fatalf("cancellation must not emit a user-facing error chunk, got %#v", chunks)
+	}
+}
+
+func TestBuildClaudeCLIArgs_ProxyModePreservesExistingPromptArgument(t *testing.T) {
+	args := buildClaudeCLIArgs(ai.ProviderConfig{}, "proxy prompt", false)
+	if !hasArgSequence(args, "-p", "proxy prompt") {
+		t.Fatalf("expected proxy mode to preserve argv prompt for compatibility, got %#v", args)
 	}
 }
 
@@ -165,6 +454,112 @@ func TestClaudeCLIProviderValidateReturnsEnglishInstallHintWhenCommandMissing(t 
 	}
 	if strings.Contains(err.Error(), "未找到 claude 命令") || strings.Contains(err.Error(), "请先安装") {
 		t.Fatalf("expected English missing claude error, got %q", err.Error())
+	}
+}
+
+func TestResolveClaudeCLICommandUsesNPMNativeBinaryOnWindows(t *testing.T) {
+	cmdPath := filepath.Join("npm", "claude.cmd")
+	nativePath := filepath.Join("npm", "node_modules", "@anthropic-ai", "claude-code", "bin", "claude.exe")
+	standalonePath := filepath.Join("standalone", "claude.exe")
+
+	command, err := resolveClaudeCLICommand("windows", "amd64", func(name string) (string, error) {
+		switch name {
+		case "claude.cmd":
+			return cmdPath, nil
+		case "claude.exe":
+			return standalonePath, nil
+		default:
+			return "", errors.New("not found")
+		}
+	}, func(path string) bool {
+		return path == cmdPath || path == nativePath || path == standalonePath
+	})
+	if err != nil {
+		t.Fatalf("resolve Claude CLI command: %v", err)
+	}
+	if command.Path != nativePath {
+		t.Fatalf("expected npm native binary %q, got %#v", nativePath, command)
+	}
+}
+
+func TestResolveClaudeCLICommandFallsBackToStandaloneExeOnWindows(t *testing.T) {
+	cmdPath := filepath.Join("npm", "claude.cmd")
+	standalonePath := filepath.Join("standalone", "claude.exe")
+
+	command, err := resolveClaudeCLICommand("windows", "amd64", func(name string) (string, error) {
+		switch name {
+		case "claude.cmd":
+			return cmdPath, nil
+		case "claude.exe":
+			return standalonePath, nil
+		default:
+			return "", errors.New("not found")
+		}
+	}, func(path string) bool {
+		return path == cmdPath || path == standalonePath
+	})
+	if err != nil {
+		t.Fatalf("resolve Claude CLI command: %v", err)
+	}
+	if command.Path != standalonePath {
+		t.Fatalf("expected standalone binary %q, got %#v", standalonePath, command)
+	}
+}
+
+func TestResolveClaudeCLICommandDoesNotReturnCmdWhenNativeBinaryIsMissing(t *testing.T) {
+	cmdPath := filepath.Join("npm", "claude.cmd")
+	_, err := resolveClaudeCLICommand("windows", "amd64", func(name string) (string, error) {
+		if name == "claude.cmd" || name == "claude" {
+			return cmdPath, nil
+		}
+		return "", errors.New("not found")
+	}, func(path string) bool {
+		return path == cmdPath
+	})
+	if err == nil {
+		t.Fatal("expected missing native executable error instead of returning the cmd launcher")
+	}
+	if err.Error() != claudeCLIInstallError().Error() {
+		t.Fatalf("expected actionable install error, got %v", err)
+	}
+}
+
+func TestClaudeNPMNativeBinaryCandidatesSupportsWindowsArm64(t *testing.T) {
+	candidates := claudeNPMNativeBinaryCandidates(filepath.Join("npm", "claude.cmd"), "windows", "arm64")
+	wantPart := filepath.Join("@anthropic-ai", "claude-code-win32-arm64", "claude.exe")
+	found := false
+	for _, candidate := range candidates {
+		if strings.Contains(candidate, wantPart) {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected Windows arm64 native package candidate, got %#v", candidates)
+	}
+}
+
+func TestClaudeNPMPlatformTargetSupportsOfficialPackages(t *testing.T) {
+	tests := []struct {
+		goos       string
+		goarch     string
+		wantPkg    string
+		wantBinary string
+	}{
+		{"windows", "amd64", "claude-code-win32-x64", "claude.exe"},
+		{"windows", "arm64", "claude-code-win32-arm64", "claude.exe"},
+		{"darwin", "amd64", "claude-code-darwin-x64", "claude"},
+		{"darwin", "arm64", "claude-code-darwin-arm64", "claude"},
+		{"linux", "amd64", "claude-code-linux-x64", "claude"},
+		{"linux", "arm64", "claude-code-linux-arm64", "claude"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.goos+"-"+tt.goarch, func(t *testing.T) {
+			pkg, binary, ok := claudeNPMPlatformTarget(tt.goos, tt.goarch)
+			if !ok || pkg != tt.wantPkg || binary != tt.wantBinary {
+				t.Fatalf("unexpected target: package=%q binary=%q ok=%v", pkg, binary, ok)
+			}
+		})
 	}
 }
 
@@ -517,13 +912,13 @@ func overrideClaudeCLIForTest(t *testing.T, fakeClaudePath string) func() {
 	originalLookPath := claudeLookPath
 	originalCommandContext := claudeCommandContext
 	claudeLookPath = func(name string) (string, error) {
-		if name == "claude" {
+		if name == "claude" || name == "claude.cmd" || name == "claude.exe" {
 			return fakeClaudePath, nil
 		}
 		return originalLookPath(name)
 	}
 	claudeCommandContext = func(ctx context.Context, name string, args ...string) *exec.Cmd {
-		if name == "claude" {
+		if name == "claude" || name == fakeClaudePath {
 			if runtime.GOOS == "windows" {
 				bashPath := resolveGitBashForFakeClaudeTest(t, originalLookPath)
 				bashScriptPath := gitBashTestPath(fakeClaudePath)
@@ -543,6 +938,79 @@ func overrideClaudeCLIForTest(t *testing.T, fakeClaudePath string) func() {
 		claudeLookPath = originalLookPath
 		claudeCommandContext = originalCommandContext
 		_ = os.Setenv("PATH", originalPath)
+	}
+}
+
+func overrideClaudeCLIWithTestProcess(t *testing.T, mode string) func() {
+	t.Helper()
+	testExecutable, err := os.Executable()
+	if err != nil {
+		t.Fatalf("resolve test executable: %v", err)
+	}
+
+	originalLookPath := claudeLookPath
+	originalCommandContext := claudeCommandContext
+	claudeLookPath = func(name string) (string, error) {
+		if name == "claude" || name == "claude.cmd" || name == "claude.exe" {
+			return testExecutable, nil
+		}
+		return originalLookPath(name)
+	}
+	claudeCommandContext = func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		isAuthStatus := hasArg(args, "auth") && hasArg(args, "status") && hasArg(args, "--json")
+		helperMode := mode
+		switch mode {
+		case "auth-success", "logged-out":
+			if !isAuthStatus {
+				helperMode = "unexpected-model-request"
+			}
+		case "api-key-override":
+			if !isAuthStatus {
+				helperMode = "model-success"
+			}
+		}
+		helperArgs := []string{"-test.run=^TestClaudeCLIHelperProcess$"}
+		cmd := exec.CommandContext(ctx, testExecutable, helperArgs...)
+		cmd.Env = append(os.Environ(),
+			"GO_WANT_CLAUDE_CLI_HELPER_PROCESS=1",
+			"GONAVI_CLAUDE_CLI_HELPER_MODE="+helperMode,
+		)
+		return cmd
+	}
+
+	return func() {
+		claudeLookPath = originalLookPath
+		claudeCommandContext = originalCommandContext
+	}
+}
+
+func TestClaudeCLIHelperProcess(t *testing.T) {
+	if os.Getenv("GO_WANT_CLAUDE_CLI_HELPER_PROCESS") != "1" {
+		return
+	}
+
+	switch os.Getenv("GONAVI_CLAUDE_CLI_HELPER_MODE") {
+	case "auth-success":
+		_, _ = os.Stdout.WriteString(`{"loggedIn":true,"authMethod":"oauth_token","apiProvider":"firstParty"}`)
+		os.Exit(0)
+	case "logged-out":
+		_, _ = os.Stdout.WriteString(`{"loggedIn":false,"authMethod":"none","apiProvider":"firstParty"}`)
+		os.Exit(1)
+	case "api-key-override":
+		_, _ = os.Stdout.WriteString(`{"loggedIn":true,"authMethod":"oauth_token","apiProvider":"firstParty","apiKeySource":"apiKeyHelper"}`)
+		os.Exit(0)
+	case "model-success":
+		_, _ = os.Stdout.WriteString(`{"type":"result","subtype":"success","is_error":false,"result":"model request should not run"}`)
+		os.Exit(0)
+	case "sleep":
+		time.Sleep(5 * time.Second)
+		os.Exit(0)
+	case "unexpected-model-request":
+		_, _ = os.Stderr.WriteString("unexpected model request")
+		os.Exit(9)
+	default:
+		_, _ = os.Stderr.WriteString("unknown Claude CLI helper mode")
+		os.Exit(10)
 	}
 }
 

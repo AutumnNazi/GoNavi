@@ -39,6 +39,7 @@ const renderHistoryDrawer = () => renderToStaticMarkup(
     mutedColor="rgba(16,24,40,0.55)"
     borderColor="rgba(0,0,0,0.12)"
     onCreateNew={() => {}}
+    onSelectSession={() => {}}
     sessionId="current-session"
   />
 );
@@ -86,5 +87,29 @@ describe('AIHistoryDrawer', () => {
     expect(markup).toContain('No history yet');
     expect(markup).not.toContain('ai_chat.history.title');
     expect(markup).not.toContain('还没有历史对话');
+  });
+
+  it('disables session-changing actions while a response is streaming', () => {
+    mockState = {
+      ...mockState,
+      aiChatSessions: [{ id: 'session-2', title: 'Another session', updatedAt: 1720000000000 }],
+    };
+    const markup = renderToStaticMarkup(
+      <AIHistoryDrawer
+        open
+        onClose={() => {}}
+        darkMode={false}
+        textColor="#162033"
+        mutedColor="#526075"
+        borderColor="#d0d5dd"
+        onCreateNew={() => {}}
+        onSelectSession={() => {}}
+        disabled
+        sessionId="current-session"
+      />,
+    );
+
+    expect(markup).toContain('aria-disabled="true"');
+    expect(markup.match(/disabled=""/g)?.length).toBeGreaterThanOrEqual(2);
   });
 });

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import json
+import hashlib
 import os
 import shlex
 import shutil
@@ -70,6 +71,323 @@ def expected_revision(revision_file: Path, driver: str):
 
 
 class GenerateDriverReleaseManifestTest(unittest.TestCase):
+    def test_release_jobs_pin_go_toolchain_before_generating_driver_manifest(self):
+        setup_go_step = (
+            "      - name: Setup Go\n"
+            "        uses: actions/setup-go@v6\n"
+            "        with:\n"
+            "          go-version-file: 'go.mod'"
+        )
+        manifest_command = "python3 ../tools/generate-driver-release-manifest.py"
+
+        for workflow_name in ("dev-build.yml", "release.yml"):
+            workflow = (ROOT / ".github" / "workflows" / workflow_name).read_text(encoding="utf-8")
+            release_job = workflow.split("\n  release:\n", 1)[1]
+            self.assertIn(setup_go_step, release_job)
+            self.assertLess(release_job.index(setup_go_step), release_job.index(manifest_command))
+
+    def _host_platform(self):
+        goos = subprocess.run(
+            ["go", "env", "GOOS"],
+            cwd=ROOT,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=True,
+        ).stdout.strip()
+        goarch = subprocess.run(
+            ["go", "env", "GOARCH"],
+            cwd=ROOT,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=True,
+        ).stdout.strip()
+        return goos, goarch
+
+    def _build_metadata_agent(self, output: Path, revision: str):
+        source = output.parent / "metadata-agent.go"
+        source.write_text(
+            "package main\n"
+            "import (\"bufio\"; \"fmt\"; \"os\")\n"
+            "func main() {\n"
+            "  scanner := bufio.NewScanner(os.Stdin)\n"
+            "  for scanner.Scan() {\n"
+            f"    fmt.Println(`{{\"id\":1,\"success\":true,\"data\":{{\"driverType\":\"clickhouse\",\"agentRevision\":\"{revision}\",\"protocolSchema\":\"json-lines-v1\"}}}}`)\n"
+            "  }\n"
+            "}\n",
+            encoding="utf-8",
+        )
+        subprocess.run(
+            ["go", "build", "-o", str(output), str(source)],
+            cwd=ROOT,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=True,
+        )
+
+    def _cross_platform(self):
+        host = "/".join(self._host_platform())
+        for platform in ("linux/amd64", "darwin/arm64", "windows/amd64"):
+            if platform != host:
+                return platform
+        raise AssertionError(f"unable to select cross platform for {host}")
+
+    def test_rejects_native_asset_with_stale_embedded_revision(self):
+        goos, goarch = self._host_platform()
+        extension = ".exe" if goos == "windows" else ""
+        with tempfile.TemporaryDirectory(prefix="gonavi-release-manifest-stale-agent-") as tmp:
+            tmpdir = Path(tmp)
+            assets_dir = tmpdir / "drivers"
+            assets_dir.mkdir(parents=True)
+            asset = assets_dir / f"clickhouse-driver-agent-{goos}-{goarch}{extension}"
+            self._build_metadata_agent(asset, "src-stale-agent")
+
+            output = tmpdir / "manifest.json"
+            proc = subprocess.run(
+                [sys.executable, str(SCRIPT), "--assets-dir", str(assets_dir), "--output", str(output)],
+                cwd=ROOT,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+
+            self.assertNotEqual(proc.returncode, 0, proc.stdout)
+            self.assertIn("src-stale-agent", proc.stderr)
+            self.assertFalse(output.exists())
+
+    def test_rejects_native_asset_when_sha_bound_provenance_disagrees_with_binary(self):
+        goos, goarch = self._host_platform()
+        platform = f"{goos}/{goarch}"
+        extension = ".exe" if goos == "windows" else ""
+        with tempfile.TemporaryDirectory(prefix="gonavi-release-manifest-native-provenance-") as tmp:
+            tmpdir = Path(tmp)
+            assets_dir = tmpdir / "drivers"
+            assets_dir.mkdir(parents=True)
+            asset = assets_dir / f"clickhouse-driver-agent-{goos}-{goarch}{extension}"
+            self._build_metadata_agent(asset, "src-binary-revision")
+            content = asset.read_bytes()
+            provenance = tmpdir / "provenance.json"
+            provenance.write_text(
+                json.dumps(
+                    {
+                        "schemaVersion": 1,
+                        "assets": {
+                            asset.name: {
+                                "driver": "clickhouse",
+                                "driverType": "clickhouse",
+                                "platform": platform,
+                                "revision": "src-provenance-revision",
+                                "sha256": hashlib.sha256(content).hexdigest(),
+                                "size": len(content),
+                            }
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            output = tmpdir / "manifest.json"
+            proc = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPT),
+                    "--assets-dir",
+                    str(assets_dir),
+                    "--output",
+                    str(output),
+                    "--provenance",
+                    str(provenance),
+                ],
+                cwd=ROOT,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+
+            self.assertNotEqual(proc.returncode, 0, proc.stdout)
+            self.assertIn("provenance revision mismatch", proc.stderr)
+            self.assertIn("src-binary-revision", proc.stderr)
+            self.assertIn("src-provenance-revision", proc.stderr)
+            self.assertFalse(output.exists())
+
+    def test_rejects_cross_platform_asset_without_binary_revision_provenance(self):
+        goos, goarch = self._cross_platform().split("/", 1)
+        extension = ".exe" if goos == "windows" else ""
+        with tempfile.TemporaryDirectory(prefix="gonavi-release-manifest-cross-agent-") as tmp:
+            tmpdir = Path(tmp)
+            assets_dir = tmpdir / "drivers"
+            assets_dir.mkdir(parents=True)
+            asset = assets_dir / f"clickhouse-driver-agent-{goos}-{goarch}{extension}"
+            asset.write_bytes(b"cross-platform-driver-agent")
+
+            output = tmpdir / "manifest.json"
+            proc = subprocess.run(
+                [sys.executable, str(SCRIPT), "--assets-dir", str(assets_dir), "--output", str(output)],
+                cwd=ROOT,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+
+            self.assertNotEqual(proc.returncode, 0, proc.stdout)
+            self.assertIn("binary revision provenance", proc.stderr)
+            self.assertFalse(output.exists())
+
+    def test_accepts_cross_platform_asset_with_matching_sha_bound_provenance(self):
+        platform = self._cross_platform()
+        goos, goarch = platform.split("/", 1)
+        extension = ".exe" if goos == "windows" else ""
+        revision = "src-build-provenance"
+
+        with tempfile.TemporaryDirectory(prefix="gonavi-release-manifest-provenance-") as tmp:
+            tmpdir = Path(tmp)
+            assets_dir = tmpdir / "drivers"
+            assets_dir.mkdir(parents=True)
+            asset = assets_dir / f"clickhouse-driver-agent-{goos}-{goarch}{extension}"
+            content = b"cross-platform-driver-agent-with-provenance"
+            asset.write_bytes(content)
+            provenance = tmpdir / "provenance.json"
+            provenance.write_text(
+                json.dumps(
+                    {
+                        "schemaVersion": 1,
+                        "assets": {
+                            asset.name: {
+                                "driver": "clickhouse",
+                                "driverType": "clickhouse",
+                                "platform": platform,
+                                "revision": revision,
+                                "sha256": hashlib.sha256(content).hexdigest(),
+                                "size": len(content),
+                            }
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            output = tmpdir / "manifest.json"
+            proc = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPT),
+                    "--assets-dir",
+                    str(assets_dir),
+                    "--output",
+                    str(output),
+                    "--provenance",
+                    str(provenance),
+                ],
+                cwd=ROOT,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            manifest = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(manifest["assets"][asset.name]["revision"], revision)
+
+    def test_accepts_sha_matching_provenance_from_the_build_runner(self):
+        platform = self._cross_platform()
+        goos, goarch = platform.split("/", 1)
+        extension = ".exe" if goos == "windows" else ""
+        with tempfile.TemporaryDirectory(prefix="gonavi-release-manifest-stale-provenance-") as tmp:
+            tmpdir = Path(tmp)
+            assets_dir = tmpdir / "drivers"
+            assets_dir.mkdir(parents=True)
+            asset = assets_dir / f"clickhouse-driver-agent-{goos}-{goarch}{extension}"
+            content = b"stale-cross-platform-driver-agent"
+            asset.write_bytes(content)
+            provenance = tmpdir / "previous-manifest.json"
+            provenance.write_text(
+                json.dumps(
+                    {
+                        "schemaVersion": 1,
+                        "assets": {
+                            asset.name: {
+                                "driver": "clickhouse",
+                                "driverType": "clickhouse",
+                                "platform": platform,
+                                "revision": "src-build-runner",
+                                "sha256": hashlib.sha256(content).hexdigest(),
+                                "size": len(content),
+                            }
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            output = tmpdir / "manifest.json"
+            proc = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPT),
+                    "--assets-dir",
+                    str(assets_dir),
+                    "--output",
+                    str(output),
+                    "--provenance",
+                    str(provenance),
+                ],
+                cwd=ROOT,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            manifest = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(manifest["assets"][asset.name]["revision"], "src-build-runner")
+
+    def test_writes_sha_bound_build_provenance_from_revision_file(self):
+        platform = self._cross_platform()
+        goos, goarch = platform.split("/", 1)
+        extension = ".exe" if goos == "windows" else ""
+        with tempfile.TemporaryDirectory(prefix="gonavi-release-build-provenance-") as tmp:
+            tmpdir = Path(tmp)
+            assets_dir = tmpdir / "drivers"
+            assets_dir.mkdir(parents=True)
+            asset = assets_dir / f"clickhouse-driver-agent-{goos}-{goarch}{extension}"
+            content = b"freshly-built-cross-platform-agent"
+            asset.write_bytes(content)
+            revision_file = tmpdir / "driver_agent_revisions_gen.go"
+            revision_file.write_text(
+                "package db\n"
+                "var revisions = map[string]string{\n"
+                '    "clickhouse": "src-build-revision",\n'
+                "}\n",
+                encoding="utf-8",
+            )
+            provenance = tmpdir / "build-provenance.json"
+
+            proc = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPT),
+                    "--assets-dir",
+                    str(assets_dir),
+                    "--provenance-output",
+                    str(provenance),
+                    "--revision-file",
+                    str(revision_file),
+                ],
+                cwd=ROOT,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            payload = json.loads(provenance.read_text(encoding="utf-8"))
+            metadata = payload["assets"][asset.name]
+            self.assertEqual(metadata["revision"], "src-build-revision")
+            self.assertEqual(metadata["sha256"], hashlib.sha256(content).hexdigest())
+            self.assertEqual(metadata["platform"], platform)
+
     def _generate_revision_file(self, platform: str, drivers: str = "clickhouse"):
         bash_executable = resolve_bash_executable()
         worktree = Path(tempfile.mkdtemp(prefix="gonavi-release-manifest-worktree-"))
@@ -99,7 +417,7 @@ class GenerateDriverReleaseManifestTest(unittest.TestCase):
         )
         return worktree / "internal" / "db" / "driver_agent_revisions_gen.go"
 
-    def test_generates_manifest_without_executing_cross_platform_assets(self):
+    def test_generates_manifest_from_verified_native_and_provenance_backed_cross_platform_assets(self):
         with tempfile.TemporaryDirectory(prefix="gonavi-release-manifest-test-") as tmp:
             tmpdir = Path(tmp)
             assets_dir = tmpdir / "drivers"
@@ -107,21 +425,61 @@ class GenerateDriverReleaseManifestTest(unittest.TestCase):
             (assets_dir / "Linux").mkdir(parents=True)
             (assets_dir / "Windows").mkdir(parents=True)
 
-            fixtures = {
-                assets_dir / "MacOS" / "clickhouse-driver-agent-darwin-arm64": b"darwin-binary",
-                assets_dir / "Linux" / "clickhouse-driver-agent-linux-amd64": b"linux-binary",
-                assets_dir / "Linux" / "clickhouse-driver-agent-linux-arm64": b"linux-arm64-binary",
-                assets_dir / "Windows" / "clickhouse-driver-agent-windows-amd64.exe": b"MZfake-binary",
-                assets_dir / "Windows" / "mongodb-driver-agent-v1-windows-amd64.exe": b"MZfake-mongodb-v1",
-                assets_dir / "Windows" / "mongodb-driver-agent-v2-windows-amd64.exe": b"MZfake-mongodb-v2",
+            darwin_revision_file = self._generate_revision_file("darwin/arm64")
+            linux_revision_file = self._generate_revision_file("linux/amd64")
+            linux_arm64_revision_file = self._generate_revision_file("linux/arm64")
+            windows_revision_file = self._generate_revision_file("windows/amd64", "clickhouse,mongodb")
+            revision_by_platform_driver = {
+                ("darwin/arm64", "clickhouse"): expected_revision(darwin_revision_file, "clickhouse"),
+                ("linux/amd64", "clickhouse"): expected_revision(linux_revision_file, "clickhouse"),
+                ("linux/arm64", "clickhouse"): expected_revision(linux_arm64_revision_file, "clickhouse"),
+                ("windows/amd64", "clickhouse"): expected_revision(windows_revision_file, "clickhouse"),
+                ("windows/amd64", "mongodb"): expected_revision(windows_revision_file, "mongodb"),
             }
-            for path, content in fixtures.items():
+            fixtures = {
+                assets_dir / "MacOS" / "clickhouse-driver-agent-darwin-arm64": ("clickhouse", "darwin/arm64", b"darwin-binary"),
+                assets_dir / "Linux" / "clickhouse-driver-agent-linux-amd64": ("clickhouse", "linux/amd64", b"linux-binary"),
+                assets_dir / "Linux" / "clickhouse-driver-agent-linux-arm64": ("clickhouse", "linux/arm64", b"linux-arm64-binary"),
+                assets_dir / "Windows" / "clickhouse-driver-agent-windows-amd64.exe": ("clickhouse", "windows/amd64", b"MZfake-binary"),
+                assets_dir / "Windows" / "mongodb-driver-agent-v1-windows-amd64.exe": ("mongodb", "windows/amd64", b"MZfake-mongodb-v1"),
+                assets_dir / "Windows" / "mongodb-driver-agent-v2-windows-amd64.exe": ("mongodb", "windows/amd64", b"MZfake-mongodb-v2"),
+            }
+            host_platform = "/".join(self._host_platform())
+            for path, (driver, platform, content) in fixtures.items():
                 path.write_bytes(content)
                 os.chmod(path, stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
+                if platform == host_platform and driver == "clickhouse":
+                    self._build_metadata_agent(path, revision_by_platform_driver[(platform, driver)])
+
+            provenance_assets = {}
+            for path, (driver, platform, _) in fixtures.items():
+                content = path.read_bytes()
+                provenance_assets[path.name] = {
+                    "driver": driver,
+                    "driverType": driver,
+                    "platform": platform,
+                    "revision": revision_by_platform_driver[(platform, driver)],
+                    "sha256": hashlib.sha256(content).hexdigest(),
+                    "size": len(content),
+                }
+            provenance = tmpdir / "provenance.json"
+            provenance.write_text(
+                json.dumps({"schemaVersion": 1, "assets": provenance_assets}),
+                encoding="utf-8",
+            )
 
             output = tmpdir / "manifest.json"
             proc = subprocess.run(
-                [sys.executable, str(SCRIPT), "--assets-dir", str(assets_dir), "--output", str(output)],
+                [
+                    sys.executable,
+                    str(SCRIPT),
+                    "--assets-dir",
+                    str(assets_dir),
+                    "--output",
+                    str(output),
+                    "--provenance",
+                    str(provenance),
+                ],
                 cwd=ROOT,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
@@ -129,13 +487,9 @@ class GenerateDriverReleaseManifestTest(unittest.TestCase):
                 check=True,
             )
 
-            self.assertIn("asset count: 5", proc.stdout)
+            self.assertIn("asset count: 6", proc.stdout)
             manifest = json.loads(output.read_text(encoding="utf-8"))
             assets = manifest["assets"]
-            darwin_revision_file = self._generate_revision_file("darwin/arm64")
-            linux_revision_file = self._generate_revision_file("linux/amd64")
-            linux_arm64_revision_file = self._generate_revision_file("linux/arm64")
-            windows_revision_file = self._generate_revision_file("windows/amd64", "clickhouse,mongodb")
             self.assertEqual(
                 assets["clickhouse-driver-agent-darwin-arm64"]["revision"],
                 expected_revision(darwin_revision_file, "clickhouse"),

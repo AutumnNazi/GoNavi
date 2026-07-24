@@ -1,0 +1,401 @@
+.gn-sql-audit-workbench {
+  box-sizing: border-box;
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  flex-direction: column;
+  gap: 12px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 16px;
+  background: var(--sql-audit-bg);
+  color: var(--sql-audit-text);
+}
+
+.gn-sql-audit-header {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.gn-sql-audit-title-group,
+.gn-sql-audit-title-copy,
+.gn-sql-audit-header-actions {
+  min-width: 0;
+}
+
+.gn-sql-audit-title-group {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.gn-sql-audit-title-icon {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 12px;
+  background: var(--gn-accent-soft, var(--sql-audit-subtle));
+  color: var(--gn-accent-2, var(--sql-audit-primary));
+  font-size: 20px;
+}
+
+.gn-sql-audit-title-copy .ant-typography {
+  margin: 0;
+}
+
+.gn-sql-audit-title-copy h4 {
+  text-wrap: balance;
+}
+
+.gn-sql-audit-privacy-note,
+.gn-sql-audit-health-alert,
+.gn-sql-audit-integrity-alert,
+.gn-sql-audit-load-alert {
+  flex: 0 0 auto;
+}
+
+.gn-sql-audit-health-summary {
+  margin-bottom: 6px;
+}
+
+.gn-sql-audit-health-details {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  color: var(--sql-audit-muted);
+  font-size: 12px;
+}
+
+.gn-sql-audit-health-details code {
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.gn-sql-audit-toolbar {
+  display: grid;
+  flex: 0 0 auto;
+  grid-template-columns: minmax(220px, 1.4fr) repeat(7, minmax(126px, 0.8fr));
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--sql-audit-border);
+  border-radius: 12px;
+  background: var(--sql-audit-panel);
+}
+
+.gn-sql-audit-filter-search,
+.gn-sql-audit-filter-time {
+  min-width: 0;
+}
+
+.gn-sql-audit-filter-time {
+  display: grid;
+  grid-column: span 2;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.gn-sql-audit-toolbar-actions {
+  display: flex;
+  grid-column: span 2;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.gn-sql-audit-summary {
+  display: grid;
+  flex: 0 0 auto;
+  grid-template-columns: repeat(4, minmax(120px, 1fr));
+  gap: 8px;
+}
+
+.gn-sql-audit-summary-card {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--sql-audit-border);
+  border-radius: 10px;
+  background: var(--sql-audit-panel);
+}
+
+.gn-sql-audit-summary-card span {
+  overflow: hidden;
+  color: var(--sql-audit-muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gn-sql-audit-summary-card strong {
+  flex: 0 0 auto;
+  color: var(--sql-audit-text);
+  font-size: 18px;
+  font-variant-numeric: tabular-nums;
+}
+
+.gn-sql-audit-summary-card.is-error strong {
+  color: var(--ant-color-error, #dc2626);
+}
+
+.gn-sql-audit-table-panel {
+  display: flex;
+  min-height: 280px;
+  flex: 1 1 auto;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--sql-audit-border);
+  border-radius: 12px;
+  background: var(--sql-audit-panel);
+}
+
+.gn-sql-audit-table-panel > .ant-empty {
+  margin: auto;
+}
+
+.gn-sql-audit-table-panel .ant-table-wrapper {
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
+.gn-sql-audit-table-panel .ant-table-thead > tr > th,
+.gn-sql-audit-table-panel .ant-table-tbody > tr > td {
+  padding-block: 9px;
+}
+
+.gn-sql-audit-table-panel .ant-table-cell-fix-right {
+  background: var(--sql-audit-panel);
+}
+
+.gn-sql-audit-workbench .gn-sql-audit-table-panel .ant-table-tbody > tr:hover > td {
+  background: color-mix(in srgb, var(--sql-audit-text) 4.5%, var(--sql-audit-panel)) !important;
+}
+
+.gn-sql-audit-table-row td {
+  height: 44px;
+  font-variant-numeric: tabular-nums;
+}
+
+.gn-sql-audit-sql-cell {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+}
+
+.gn-sql-audit-sql-cell code {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  color: var(--sql-audit-text);
+  font-family: var(--gn-font-mono, ui-monospace, SFMono-Regular, Consolas, monospace);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gn-sql-audit-sql-cell .ant-tag {
+  flex: 0 0 auto;
+  margin-inline-end: 0;
+}
+
+.gn-sql-audit-pagination {
+  display: flex;
+  min-height: 48px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--sql-audit-border);
+}
+
+.gn-sql-audit-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.gn-sql-audit-detail section > h5 {
+  margin-block: 0 12px;
+  scroll-margin-top: 16px;
+  text-wrap: balance;
+}
+
+.gn-sql-audit-detail-heading-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.gn-sql-audit-detail-heading-row h5 {
+  min-width: 0;
+  flex: 1 1 auto;
+  margin: 0;
+}
+
+.gn-sql-audit-detail-sql,
+.gn-sql-audit-timeline pre {
+  max-height: 360px;
+  margin: 0 0 12px;
+  overflow: auto;
+  padding: 12px;
+  border: 1px solid var(--sql-audit-border);
+  border-radius: 8px;
+  background: var(--sql-audit-subtle);
+  color: var(--sql-audit-text);
+  font-family: var(--gn-font-mono, ui-monospace, SFMono-Regular, Consolas, monospace);
+  font-size: 12px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.gn-sql-audit-timeline {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.gn-sql-audit-timeline li {
+  position: relative;
+  margin-left: 7px;
+  padding: 0 0 18px 22px;
+  border-left: 2px solid var(--sql-audit-border);
+}
+
+.gn-sql-audit-timeline li::before {
+  position: absolute;
+  top: 4px;
+  left: -7px;
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--sql-audit-panel);
+  border-radius: 50%;
+  background: var(--sql-audit-primary);
+  content: '';
+}
+
+.gn-sql-audit-timeline li.is-error::before {
+  background: var(--ant-color-error, #dc2626);
+}
+
+.gn-sql-audit-timeline li:last-child {
+  padding-bottom: 0;
+  border-left-color: transparent;
+}
+
+.gn-sql-audit-timeline-pagination {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 16px;
+  overflow-x: auto;
+  padding: 2px;
+}
+
+.gn-sql-audit-timeline-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.gn-sql-audit-timeline-header time {
+  flex: 0 0 auto;
+  color: var(--sql-audit-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.gn-sql-audit-hash {
+  margin-bottom: 0 !important;
+  overflow-wrap: anywhere;
+  font-family: var(--gn-font-mono, ui-monospace, SFMono-Regular, Consolas, monospace);
+  font-size: 12px;
+}
+
+@media (max-width: 1280px) {
+  .gn-sql-audit-toolbar {
+    grid-template-columns: repeat(4, minmax(150px, 1fr));
+  }
+
+  .gn-sql-audit-filter-search,
+  .gn-sql-audit-filter-time {
+    grid-column: span 2;
+  }
+}
+
+@media (max-width: 820px) {
+  .gn-sql-audit-workbench {
+    overflow-y: auto;
+  }
+
+  .gn-sql-audit-header,
+  .gn-sql-audit-pagination,
+  .gn-sql-audit-timeline-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .gn-sql-audit-toolbar {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .gn-sql-audit-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .gn-sql-audit-table-panel {
+    min-height: 440px;
+    flex: 0 0 auto;
+  }
+
+  .gn-sql-audit-pagination .ant-pagination {
+    overflow-x: auto;
+  }
+}
+
+@media (max-width: 520px) {
+  .gn-sql-audit-workbench {
+    padding: 12px;
+  }
+
+  .gn-sql-audit-toolbar,
+  .gn-sql-audit-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .gn-sql-audit-filter-search,
+  .gn-sql-audit-filter-time,
+  .gn-sql-audit-toolbar-actions {
+    grid-column: auto;
+  }
+
+  .gn-sql-audit-filter-time {
+    grid-template-columns: 1fr;
+  }
+
+  .gn-sql-audit-toolbar-actions > .ant-btn {
+    flex: 1 1 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gn-sql-audit-workbench *,
+  .gn-sql-audit-workbench *::before,
+  .gn-sql-audit-workbench *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
