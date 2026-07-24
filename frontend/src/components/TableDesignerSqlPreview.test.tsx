@@ -15,7 +15,16 @@ const tableDesignerColumnI18nKeys = [
   'table_designer.column.default',
   'table_designer.column.comment',
   'table_designer.column.actions',
-  'table_designer.tooltip.edit_comment_popup',
+  'table_designer.tooltip.edit_column_options',
+] as const;
+
+const tableDesignerColumnOptionI18nKeys = [
+  'table_designer.column.charset',
+  'table_designer.column.collation',
+  'table_designer.column.enable_default',
+  'table_designer.modal.column_options_title',
+  'table_designer.modal.column_options_title_named',
+  'table_designer.placeholder.column_default',
 ] as const;
 
 const tableDesignerSqlPreviewChangeKeys = [
@@ -155,6 +164,15 @@ describe('TableDesignerSqlPreview', () => {
       "'弹框编辑注释'",
     ]) {
       expect(initialColumnsDefinition).not.toContain(literal);
+    }
+  });
+
+  it('keeps TableDesigner column option labels in i18n catalogs', () => {
+    for (const localeFile of sharedI18nLocaleFiles) {
+      const catalog = JSON.parse(readFileSync(new URL(localeFile, sharedI18nDir), 'utf8')) as Record<string, string>;
+      for (const key of tableDesignerColumnOptionI18nKeys) {
+        expect(catalog[key], `${localeFile} ${key}`).toBeTruthy();
+      }
     }
   });
 

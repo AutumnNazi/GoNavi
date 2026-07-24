@@ -393,8 +393,11 @@ export interface ColumnDefinition {
   nullable: string;
   key: string;
   default?: string;
+  hasDefault?: boolean;
   extra: string;
   comment: string;
+  charset?: string;
+  collation?: string;
 }
 
 export interface IndexDefinition {

@@ -197,13 +197,16 @@ type DatabaseObject struct {
 
 // ColumnDefinition 描述表的一个列定义。
 type ColumnDefinition struct {
-	Name     string  `json:"name"`
-	Type     string  `json:"type"`
-	Nullable string  `json:"nullable"` // YES/NO
-	Key      string  `json:"key"`      // PRI, UNI, MUL
-	Default  *string `json:"default"`
-	Extra    string  `json:"extra"` // auto_increment
-	Comment  string  `json:"comment"`
+	Name       string  `json:"name"`
+	Type       string  `json:"type"`
+	Nullable   string  `json:"nullable"` // YES/NO
+	Key        string  `json:"key"`      // PRI, UNI, MUL
+	Default    *string `json:"default"`
+	HasDefault bool    `json:"hasDefault,omitempty"`
+	Extra      string  `json:"extra"` // auto_increment
+	Comment    string  `json:"comment"`
+	Charset    string  `json:"charset,omitempty"`
+	Collation  string  `json:"collation,omitempty"`
 }
 
 // IndexDefinition 描述表的一个索引定义。
