@@ -8,6 +8,7 @@ import {
   supportsConnectionReadOnlyMode,
 } from "../../utils/connectionReadOnly";
 import { resolveConnectionSecretDraft } from "../../utils/connectionSecretDraft";
+import { normalizeConnectionEnvironmentType } from "../../utils/connectionEnvironment";
 import {
   getConnectionTypeDefaultPort as getDefaultPortByType,
 } from "../../utils/connectionTypeCatalog";
@@ -212,6 +213,7 @@ export const buildSavedConnectionInput = ({
   return {
     id: connectionId,
     name: nextName,
+    environmentType: normalizeConnectionEnvironmentType(values.environmentType),
     config: {
       ...config,
       id: connectionId,

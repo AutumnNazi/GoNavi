@@ -1139,6 +1139,56 @@ describe('store appearance persistence', () => {
     );
   });
 
+  it('normalizes connection and group environment metadata', async () => {
+    const { useStore } = await importStore();
+
+    useStore.getState().replaceConnections([
+      {
+        id: 'conn-production',
+        name: 'Production',
+        environmentType: 'production',
+        config: {
+          id: 'conn-production',
+          type: 'postgres',
+          host: 'prod.local',
+          port: 5432,
+          user: 'postgres',
+        },
+      },
+      {
+        id: 'conn-legacy',
+        name: 'Legacy',
+        config: {
+          id: 'conn-legacy',
+          type: 'sqlite',
+          host: '',
+          port: 0,
+          user: '',
+        },
+      },
+    ]);
+    useStore.getState().addConnectionTag({
+      id: 'tag-test',
+      name: 'Test',
+      environmentType: 'test',
+      connectionIds: ['conn-production'],
+    });
+    useStore.getState().addConnectionTag({
+      id: 'tag-legacy',
+      name: 'Legacy',
+      connectionIds: ['conn-legacy'],
+    });
+
+    expect(useStore.getState().connections.map((item) => item.environmentType)).toEqual([
+      'production',
+      'local',
+    ]);
+    expect(useStore.getState().connectionTags.map((item) => item.environmentType)).toEqual([
+      'test',
+      'local',
+    ]);
+  }, 30_000);
+
   it('reorders connections inside tags and ungrouped roots independently', async () => {
     const { useStore } = await importStore();
 

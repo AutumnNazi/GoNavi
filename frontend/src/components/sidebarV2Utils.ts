@@ -458,6 +458,26 @@ export const buildV2RailConnectionGroups = (
   return buildSidebarConnectionTagTree(connections, connectionTags, sidebarRootOrder).map(buildGroup);
 };
 
+export const resolveV2ConnectionGroup = (
+  node: Pick<SidebarTreeNode, 'type' | 'dataRef'> | null | undefined,
+  groups: V2RailConnectionGroup[],
+): V2RailConnectionGroup | null => {
+  if (node?.type !== 'tag') return null;
+  const groupId = String(node.dataRef?.id || '').trim();
+  if (!groupId) return null;
+
+  const findGroup = (items: V2RailConnectionGroup[]): V2RailConnectionGroup | null => {
+    for (const group of items) {
+      if (group.id === groupId) return group;
+      const childMatch = findGroup(group.children || []);
+      if (childMatch) return childMatch;
+    }
+    return null;
+  };
+
+  return findGroup(groups);
+};
+
 export const getV2RailConnectionGroupBadgeText = (name: unknown, fallback = t('connection.sidebar.group.badge')): string => {
   const trimmed = String(name ?? '').trim();
   if (!trimmed) return fallback;

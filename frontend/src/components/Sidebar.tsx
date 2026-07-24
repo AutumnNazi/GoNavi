@@ -143,6 +143,7 @@ import {
     type SidebarLocateTreeNodeLike,
 } from '../utils/sidebarLocate';
 import { resolveConnectionAccentColor, resolveConnectionIconType } from '../utils/connectionVisual';
+import { getConnectionEnvironmentMeta } from '../utils/connectionEnvironment';
 import {
   getSavedQueryGroupIdFromToken,
   getSavedQueryGroupOwnerIds,
@@ -196,6 +197,7 @@ import {
   resolveSidebarDropTargetMetricsFromDomEvent,
   resolveSidebarDatabaseTreePruneKeys,
   resolveSidebarNodeConnectionId,
+  resolveV2ConnectionGroup,
   resolveV2ActiveConnectionId,
   resolveV2SelectedDatabaseName,
   resolveV2CommandSearchPersistentFilter,
@@ -504,6 +506,7 @@ export const buildAllSavedQueriesTreeNode = (
 
 const Sidebar: React.FC<{
   onCreateConnection?: () => void;
+  onCreateConnectionInGroup?: (targetTagId: string) => void;
   onEditConnection?: (conn: SavedConnection) => void;
   onOpenSettings?: () => void;
   onToggleAI?: () => void;
@@ -518,6 +521,7 @@ const Sidebar: React.FC<{
   expandSidebarButtonRef?: React.Ref<HTMLButtonElement>;
 }> = React.memo(({
   onCreateConnection,
+  onCreateConnectionInGroup,
   onEditConnection,
   onOpenSettings,
   onToggleAI,
@@ -1039,6 +1043,7 @@ const Sidebar: React.FC<{
         if (item.kind === 'connection') {
           return buildConnectionNode(item.connection);
         }
+        const environment = getConnectionEnvironmentMeta(item.tag.environmentType);
         return {
           title: item.tag.name,
           key: `tag-${item.tag.id}`,
@@ -1046,8 +1051,10 @@ const Sidebar: React.FC<{
             <span
               className="gn-v2-tree-folder-icon"
               data-sidebar-tree-folder-icon="true"
+              data-connection-environment={environment.type}
+              title={t(environment.labelKey)}
             >
-              <FolderOutlined />
+              <FolderOutlined style={{ color: environment.color }} />
             </span>
           ),
           type: 'tag',
@@ -2448,6 +2455,7 @@ const Sidebar: React.FC<{
       handleExportDatabaseSQL,
       handleRunSQLFile,
       handleDeleteDatabase,
+      onCreateConnectionInGroup,
       onEditConnection,
       handleDuplicateConnection,
       buildConnectionRootQueryTabTitle,
@@ -2645,6 +2653,7 @@ const Sidebar: React.FC<{
     setRenameViewTarget,
     setIsCreateTagModalOpen,
     removeConnectionTag,
+    onCreateConnectionInGroup,
     setExpandedKeys,
     setLoadedKeys,
     loadingNodesRef,
@@ -2725,6 +2734,10 @@ const Sidebar: React.FC<{
       treeDragSelectSuppressUntilRef,
       setIsTreeDragging,
   });
+  const v2RailConnectionGroups = useMemo(
+      () => buildV2RailConnectionGroups(connections, connectionTags, sidebarRootOrder),
+      [connections, connectionTags, sidebarRootOrder],
+  );
   const getTagParentId = (tagId: unknown): string | null => {
       const tag = connectionTags.find((candidate) => candidate.id === String(tagId || '').trim());
       const parentTagId = String(tag?.parentTagId || '').trim();
@@ -2820,6 +2833,27 @@ const Sidebar: React.FC<{
           event.preventDefault();
           event.stopPropagation();
           return;
+      }
+      if (isV2Ui && node?.type === 'tag') {
+          const group = resolveV2ConnectionGroup(node, v2RailConnectionGroups);
+          if (group) {
+              event.preventDefault();
+              event.stopPropagation();
+              const position = resolveSidebarContextMenuPosition(event.clientX, event.clientY);
+              setContextMenu({
+                  x: position.x,
+                  y: position.y,
+                  sourceX: event.clientX,
+                  sourceY: event.clientY,
+                  items: [],
+                  kind: 'v2-connection-group',
+                  node: group,
+                  rootClassName: 'gn-v2-table-context-menu-popup',
+                  overlayStyle: { width: 264, maxWidth: 'calc(100vw - 24px)' },
+                  maxHeight: position.maxHeight,
+              });
+              return;
+          }
       }
       if (isV2Ui && node?.type === 'connection') {
           openV2ConnectionContextMenu(event, node);

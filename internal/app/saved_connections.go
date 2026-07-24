@@ -17,10 +17,24 @@ import (
 const (
 	savedConnectionsFileName     = "connections.json"
 	savedConnectionSecretKind    = "connection"
+	defaultConnectionEnvironment = "local"
 	maxSchemaVisibilityDatabases = 128
 	maxSchemaVisibilitySchemas   = 256
 	maxSchemaVisibilityNameBytes = 256
 )
+
+func normalizeConnectionEnvironmentType(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "production":
+		return "production"
+	case "test":
+		return "test"
+	case "development":
+		return "development"
+	default:
+		return defaultConnectionEnvironment
+	}
+}
 
 type connectionSecretBundle struct {
 	Password              string `json:"password,omitempty"`
@@ -245,6 +259,7 @@ func splitConnectionSecrets(input connection.SavedConnectionInput) (connection.S
 	view := connection.SavedConnectionView{
 		ID:                         id,
 		Name:                       strings.TrimSpace(input.Name),
+		EnvironmentType:            normalizeConnectionEnvironmentType(input.EnvironmentType),
 		Config:                     meta,
 		IncludeDatabases:           cloneStringSlice(input.IncludeDatabases),
 		IncludeRedisDatabases:      cloneIntSlice(input.IncludeRedisDatabases),
@@ -287,6 +302,11 @@ func (r *savedConnectionRepository) load() ([]connection.SavedConnectionView, er
 	}
 	if file.Connections == nil {
 		return []connection.SavedConnectionView{}, nil
+	}
+	for index := range file.Connections {
+		file.Connections[index].EnvironmentType = normalizeConnectionEnvironmentType(
+			file.Connections[index].EnvironmentType,
+		)
 	}
 	return file.Connections, nil
 }
