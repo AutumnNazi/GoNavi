@@ -2388,7 +2388,6 @@ const Sidebar: React.FC<{
 
   const {
       getConnectionNodeForAction,
-      toggleSidebarTablePinned,
       handleV2TableContextMenuAction,
       handleTableGroupSortAction,
       handleV2TableGroupContextMenuAction,
@@ -2577,8 +2576,6 @@ const Sidebar: React.FC<{
   refreshV2TableContextMenuStatsRef.current = refreshV2TableContextMenuStats;
   const getV2TreeMetaTextRef = useRef(getV2TreeMetaText);
   getV2TreeMetaTextRef.current = getV2TreeMetaText;
-  const toggleSidebarTablePinnedRef = useRef(toggleSidebarTablePinned);
-  toggleSidebarTablePinnedRef.current = toggleSidebarTablePinned;
 
   const renderV2TreeTitle = useCallback((node: any, hoverTitle: string, statusBadge: React.ReactNode) => renderSidebarV2TreeTitle({
       node,
@@ -2586,7 +2583,6 @@ const Sidebar: React.FC<{
       statusBadge,
       getV2TreeMetaText: getV2TreeMetaTextRef.current,
       sidebarTableMetadataFields,
-      toggleSidebarTablePinned: toggleSidebarTablePinnedRef.current,
       snapshotTreeSelectionBeforeDrag,
       restoreTreeSelectionAfterDrag,
       treeDragSelectSuppressUntilRef,

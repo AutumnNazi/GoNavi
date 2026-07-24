@@ -2292,17 +2292,45 @@ describe('Sidebar locate toolbar', () => {
     }).map((entry) => entry.tableName)).toEqual(['orders', 'users', 'audit']);
   });
 
-  it('keeps the v2 table pin action on sidebar table rows', () => {
-    const source = readSidebarSource();
+  it('renders a non-interactive pin indicator only for pinned v2 sidebar tables', () => {
+    const source = readSourceFile('./sidebar/SidebarTreeTitle.tsx');
     const css = readV2ThemeCss();
+    const baseOptions = {
+      hoverTitle: 'orders',
+      statusBadge: null,
+      getV2TreeMetaText: () => '',
+      sidebarTableMetadataFields: [],
+      snapshotTreeSelectionBeforeDrag: vi.fn(),
+      restoreTreeSelectionAfterDrag: vi.fn(),
+      treeDragSelectSuppressUntilRef: { current: 0 },
+      setIsTreeDragging: vi.fn(),
+    };
+    const renderTableTitle = (pinnedSidebarTable: boolean) => renderToStaticMarkup(renderSidebarV2TreeTitle({
+      ...baseOptions,
+      node: {
+        type: 'table',
+        title: 'orders',
+        key: 'conn-main-orders',
+        dataRef: {
+          id: 'conn',
+          dbName: 'main',
+          tableName: 'orders',
+          pinnedSidebarTable,
+        },
+      },
+    }));
 
-    expect(source).toContain('data-v2-sidebar-table-pin-action="true"');
-    expect(source).toContain('node?.dataRef?.pinnedSidebarTable ? <StarFilled /> : <StarOutlined />');
-    expect(source).toContain('toggleSidebarTablePinned(node);');
-    expect(source).toContain("message.success(shouldPin ? t('sidebar.message.table_pinned') : t('sidebar.message.table_unpinned'));");
-    expect(css).toMatch(/\.gn-v2-table-pin-action \{[^}]*opacity: 0;/s);
-    expect(css).toMatch(/\.gn-v2-table-pin-action\.is-pinned \{[^}]*color: #f59e0b;[^}]*opacity: 1;/s);
-    expect(css).toMatch(/\.ant-tree-node-content-wrapper:hover \.gn-v2-table-pin-action,/s);
+    const unpinnedMarkup = renderTableTitle(false);
+    const pinnedMarkup = renderTableTitle(true);
+    expect(unpinnedMarkup).not.toContain('data-v2-sidebar-table-pin-indicator');
+    expect(pinnedMarkup).toContain('data-v2-sidebar-table-pin-indicator="true"');
+    expect(pinnedMarkup).toContain(`aria-label="${t('sidebar.status.pinned')}"`);
+    expect(pinnedMarkup).not.toContain('<button');
+    expect(pinnedMarkup).not.toContain('aria-pressed');
+    expect(source).not.toContain('toggleSidebarTablePinned');
+    expect(source).not.toContain('StarOutlined');
+    expect(css).toMatch(/\.gn-v2-table-pin-indicator \{[^}]*pointer-events: none;[^}]*cursor: default;[^}]*color: var\(--gn-warn\);/s);
+    expect(css).not.toContain('.gn-v2-table-pin-action');
   });
 
   it('splits v2 sidebar pinned tables into a dedicated table section', () => {
@@ -2887,23 +2915,19 @@ describe('Sidebar locate toolbar', () => {
     expect(source).toContain("t('connection.sidebar.delete.failureFallback')");
   });
 
-  it('localizes the sidebar table pin action title and aria-label via i18n keys', () => {
-    const source = readSidebarSource();
-    const tablePinActionStart = source.indexOf("const tablePinAction = node.type === 'table' ? (");
-    const tablePinActionEnd = source.indexOf('aria-pressed=', tablePinActionStart);
-    const tablePinActionSource = source.slice(tablePinActionStart, tablePinActionEnd);
-    const normalizedTablePinActionSource = tablePinActionSource.replace(/\s+/g, ' ');
+  it('localizes the sidebar table pin indicator via the pinned status key', () => {
+    const source = readSourceFile('./sidebar/SidebarTreeTitle.tsx');
+    const tablePinIndicatorStart = source.indexOf("const tablePinIndicator = node.type === 'table'");
+    const tablePinIndicatorEnd = source.indexOf('</span>', tablePinIndicatorStart);
+    const tablePinIndicatorSource = source.slice(tablePinIndicatorStart, tablePinIndicatorEnd);
+    const normalizedTablePinIndicatorSource = tablePinIndicatorSource.replace(/\s+/g, ' ');
 
-    expect(tablePinActionStart).toBeGreaterThanOrEqual(0);
-    expect(tablePinActionEnd).toBeGreaterThan(tablePinActionStart);
-    expect(normalizedTablePinActionSource).toContain(
-      "title={node?.dataRef?.pinnedSidebarTable ? t('sidebar.action.unpin_table') : t('sidebar.action.pin_table')}",
-    );
-    expect(normalizedTablePinActionSource).toContain(
-      "aria-label={node?.dataRef?.pinnedSidebarTable ? t('sidebar.action.unpin_table') : t('sidebar.action.pin_table')}",
-    );
-    expect(tablePinActionSource).not.toContain("'取消置顶表'");
-    expect(tablePinActionSource).not.toContain("'置顶表'");
+    expect(tablePinIndicatorStart).toBeGreaterThanOrEqual(0);
+    expect(tablePinIndicatorEnd).toBeGreaterThan(tablePinIndicatorStart);
+    expect(normalizedTablePinIndicatorSource).toContain("title={t('sidebar.status.pinned')}");
+    expect(normalizedTablePinIndicatorSource).toContain("aria-label={t('sidebar.status.pinned')}");
+    expect(tablePinIndicatorSource).not.toContain('sidebar.action.pin_table');
+    expect(tablePinIndicatorSource).not.toContain('sidebar.action.unpin_table');
   });
 
   it('localizes legacy sidebar connection and redis menu labels', () => {
@@ -3324,7 +3348,6 @@ describe('Sidebar locate toolbar', () => {
       hoverTitle: 'users',
       statusBadge: null,
       getV2TreeMetaText: () => '',
-      toggleSidebarTablePinned: vi.fn(),
       snapshotTreeSelectionBeforeDrag: vi.fn(),
       restoreTreeSelectionAfterDrag: vi.fn(),
       treeDragSelectSuppressUntilRef: { current: 0 },

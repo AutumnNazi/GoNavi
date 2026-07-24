@@ -3117,7 +3117,7 @@ body[data-ui-version="v2"] .gn-v2-tree-count {
   opacity: 0.82;
 }
 
-body[data-ui-version="v2"] .gn-v2-table-pin-action {
+body[data-ui-version="v2"] .gn-v2-table-pin-indicator {
   width: 18px;
   height: 18px;
   flex: 0 0 18px;
@@ -3126,28 +3126,9 @@ body[data-ui-version="v2"] .gn-v2-table-pin-action {
   justify-content: center;
   margin-left: 2px;
   padding: 0;
-  border: 0;
-  border-radius: 4px;
-  background: transparent;
-  color: var(--gn-fg-5);
-  cursor: pointer;
-  opacity: 0;
-  transition: opacity 0.12s ease, color 0.12s ease, background 0.12s ease;
-}
-
-body[data-ui-version="v2"] .gn-v2-table-pin-action:hover {
-  background: var(--gn-bg-hover);
-  color: var(--gn-fg-2);
-}
-
-body[data-ui-version="v2"] .gn-v2-table-pin-action.is-pinned {
+  pointer-events: none;
+  cursor: default;
   color: var(--gn-warn);
-  opacity: 1;
-}
-
-body[data-ui-version="v2"] .ant-tree-node-content-wrapper:hover .gn-v2-table-pin-action,
-body[data-ui-version="v2"] .gn-v2-table-pin-action:focus-visible {
-  opacity: 1;
 }
 
 body[data-ui-version="v2"] .gn-v2-object-explorer .ant-tree .ant-tree-node-content-wrapper.ant-tree-node-selected::before {

@@ -558,7 +558,6 @@ export const useSidebarV2ActionHandlers = ({
 
   return {
     getConnectionNodeForAction,
-    toggleSidebarTablePinned,
     handleV2TableContextMenuAction,
     handleTableGroupSortAction,
     handleV2TableGroupContextMenuAction,
