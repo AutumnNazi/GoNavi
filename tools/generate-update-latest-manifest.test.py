@@ -15,14 +15,17 @@ class GenerateUpdateLatestManifestTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             assets = Path(tmp)
             exe = assets / "GoNavi-1.2.3-Windows-Amd64-Portable.exe"
+            portable_zip = assets / "GoNavi-1.2.3-Windows-Amd64-Portable.zip"
             msi = assets / "GoNavi-1.2.3-Windows-Amd64-Installer.msi"
             exe.write_bytes(b"fake-binary")
+            portable_zip.write_bytes(b"fake-portable-zip")
             msi.write_bytes(b"fake-installer")
             (assets / "LICENSE").write_text("license text\n", encoding="utf-8")
             (assets / "NOTICE").write_text("notice text\n", encoding="utf-8")
             (assets / "SHA256SUMS").write_text(
                 "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  GoNavi-1.2.3-Windows-Amd64-Portable.exe\n"
-                "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb  GoNavi-1.2.3-Windows-Amd64-Installer.msi\n",
+                "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb  GoNavi-1.2.3-Windows-Amd64-Installer.msi\n"
+                "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc  GoNavi-1.2.3-Windows-Amd64-Portable.zip\n",
                 encoding="utf-8",
             )
             out = assets / "latest.json"
@@ -55,6 +58,7 @@ class GenerateUpdateLatestManifestTest(unittest.TestCase):
                 set(assets_by_name),
                 {
                     "GoNavi-1.2.3-Windows-Amd64-Portable.exe",
+                    "GoNavi-1.2.3-Windows-Amd64-Portable.zip",
                     "GoNavi-1.2.3-Windows-Amd64-Installer.msi",
                 },
             )
@@ -68,6 +72,16 @@ class GenerateUpdateLatestManifestTest(unittest.TestCase):
                 "https://github.com/Syngnat/GoNavi/releases/download/v1.2.3/GoNavi-1.2.3-Windows-Amd64-Portable.exe",
             )
             self.assertEqual(portable_asset["sha256"], "a" * 64)
+            portable_zip_asset = assets_by_name["GoNavi-1.2.3-Windows-Amd64-Portable.zip"]
+            self.assertEqual(
+                portable_zip_asset["url"],
+                "https://download.syngnat.top/gonavi/releases/download/v1.2.3/GoNavi-1.2.3-Windows-Amd64-Portable.zip",
+            )
+            self.assertEqual(
+                portable_zip_asset["apiUrl"],
+                "https://github.com/Syngnat/GoNavi/releases/download/v1.2.3/GoNavi-1.2.3-Windows-Amd64-Portable.zip",
+            )
+            self.assertEqual(portable_zip_asset["sha256"], "c" * 64)
             installer_asset = assets_by_name["GoNavi-1.2.3-Windows-Amd64-Installer.msi"]
             self.assertEqual(
                 installer_asset["url"],
@@ -85,7 +99,7 @@ class GenerateUpdateLatestManifestTest(unittest.TestCase):
     def test_dev_manifest_keeps_github_tag_but_uses_unique_mirror_tag(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             assets = Path(tmp)
-            asset_name = "GoNavi-dev-a1b2c3d-Windows-Amd64-Portable.exe"
+            asset_name = "GoNavi-dev-a1b2c3d-Windows-Amd64-Portable.zip"
             (assets / asset_name).write_bytes(b"fake-dev-binary")
             (assets / "SHA256SUMS").write_text(
                 f"{'c' * 64}  {asset_name}\n",

@@ -6,14 +6,20 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 )
 
-const bootstrapFileName = "storage_root.json"
+const (
+	bootstrapFileName     = "storage_root.json"
+	bootstrapLockFileName = bootstrapFileName + ".lock"
+	configuredLogFileName = "gonavi.log"
+)
 const dataRootEnvName = "GONAVI_DATA_ROOT"
 
 var (
 	ErrSetActiveRootCreateDataDirectory      = errors.New("create data directory failed")
 	ErrSetActiveRootCreateBootstrapDirectory = errors.New("create bootstrap directory failed")
+	bootstrapConfigMu                        sync.Mutex
 )
 
 type setActiveRootError struct {
@@ -57,7 +63,97 @@ func SetActiveRootErrorDetail(err error) error {
 }
 
 type bootstrapConfig struct {
-	DataRoot string `json:"dataRoot"`
+	DataRoot     string `json:"dataRoot,omitempty"`
+	LogDirectory string `json:"logDirectory,omitempty"`
+}
+
+func readBootstrapConfig() (bootstrapConfig, error) {
+	data, err := os.ReadFile(BootstrapPath())
+	if err != nil {
+		if os.IsNotExist(err) {
+			return bootstrapConfig{}, nil
+		}
+		return bootstrapConfig{}, err
+	}
+	var cfg bootstrapConfig
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		return bootstrapConfig{}, err
+	}
+	return cfg, nil
+}
+
+func writeBootstrapConfig(cfg bootstrapConfig) error {
+	cfg.DataRoot = strings.TrimSpace(cfg.DataRoot)
+	cfg.LogDirectory = strings.TrimSpace(cfg.LogDirectory)
+	if cfg.DataRoot == "" && cfg.LogDirectory == "" {
+		if err := os.Remove(BootstrapPath()); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+		return nil
+	}
+	if err := os.MkdirAll(DefaultRoot(), 0o755); err != nil {
+		return err
+	}
+	payload, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return err
+	}
+	return writeBootstrapConfigAtomic(payload)
+}
+
+func writeBootstrapConfigAtomic(payload []byte) error {
+	temporary, err := os.CreateTemp(DefaultRoot(), ".storage_root-*.tmp")
+	if err != nil {
+		return err
+	}
+	temporaryPath := temporary.Name()
+	cleanup := true
+	defer func() {
+		if cleanup {
+			_ = os.Remove(temporaryPath)
+		}
+	}()
+	if err := temporary.Chmod(0o644); err != nil {
+		_ = temporary.Close()
+		return err
+	}
+	if _, err := temporary.Write(payload); err != nil {
+		_ = temporary.Close()
+		return err
+	}
+	if err := temporary.Sync(); err != nil {
+		_ = temporary.Close()
+		return err
+	}
+	if err := temporary.Close(); err != nil {
+		return err
+	}
+	if err := atomicReplaceBootstrapFile(temporaryPath, BootstrapPath()); err != nil {
+		return err
+	}
+	cleanup = false
+	return nil
+}
+
+func updateBootstrapConfig(update func(*bootstrapConfig)) (err error) {
+	bootstrapConfigMu.Lock()
+	defer bootstrapConfigMu.Unlock()
+	if err := os.MkdirAll(DefaultRoot(), 0o755); err != nil {
+		return err
+	}
+	fileLock, err := acquireBootstrapFileLock(BootstrapLockPath())
+	if err != nil {
+		return err
+	}
+	defer func() {
+		err = errors.Join(err, fileLock.Close())
+	}()
+	cfg, err := readBootstrapConfig()
+	if err != nil {
+		return err
+	}
+	update(&cfg)
+	return writeBootstrapConfig(cfg)
 }
 
 func configuredRootOverride() string {
@@ -74,6 +170,10 @@ func DefaultRoot() string {
 
 func BootstrapPath() string {
 	return filepath.Join(DefaultRoot(), bootstrapFileName)
+}
+
+func BootstrapLockPath() string {
+	return filepath.Join(DefaultRoot(), bootstrapLockFileName)
 }
 
 func normalizeRoot(root string) (string, error) {
@@ -100,15 +200,10 @@ func ResolveActiveRoot() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	data, err := os.ReadFile(BootstrapPath())
+	bootstrapConfigMu.Lock()
+	cfg, err := readBootstrapConfig()
+	bootstrapConfigMu.Unlock()
 	if err != nil {
-		if os.IsNotExist(err) {
-			return defaultRoot, nil
-		}
-		return "", err
-	}
-	var cfg bootstrapConfig
-	if err := json.Unmarshal(data, &cfg); err != nil {
 		return "", err
 	}
 	if strings.TrimSpace(cfg.DataRoot) == "" {
@@ -145,21 +240,66 @@ func SetActiveRoot(root string) (string, error) {
 	if err := os.MkdirAll(targetRoot, 0o755); err != nil {
 		return "", newSetActiveRootError(ErrSetActiveRootCreateDataDirectory, err)
 	}
-	if targetRoot == defaultRoot {
-		if err := os.Remove(BootstrapPath()); err != nil && !os.IsNotExist(err) {
-			return "", err
+	if targetRoot != defaultRoot {
+		if err := os.MkdirAll(defaultRoot, 0o755); err != nil {
+			return "", newSetActiveRootError(ErrSetActiveRootCreateBootstrapDirectory, err)
 		}
-		return defaultRoot, nil
 	}
-	if err := os.MkdirAll(defaultRoot, 0o755); err != nil {
-		return "", newSetActiveRootError(ErrSetActiveRootCreateBootstrapDirectory, err)
-	}
-	payload, err := json.MarshalIndent(bootstrapConfig{DataRoot: targetRoot}, "", "  ")
-	if err != nil {
-		return "", err
-	}
-	if err := os.WriteFile(BootstrapPath(), payload, 0o644); err != nil {
+
+	if err := updateBootstrapConfig(func(cfg *bootstrapConfig) {
+		if targetRoot == defaultRoot {
+			cfg.DataRoot = ""
+		} else {
+			cfg.DataRoot = targetRoot
+		}
+	}); err != nil {
 		return "", err
 	}
 	return targetRoot, nil
+}
+
+func ResolveConfiguredLogDirectory() (string, error) {
+	bootstrapConfigMu.Lock()
+	cfg, err := readBootstrapConfig()
+	bootstrapConfigMu.Unlock()
+	if err != nil {
+		return "", err
+	}
+	directory := strings.TrimSpace(cfg.LogDirectory)
+	if directory == "" {
+		return "", nil
+	}
+	abs, err := filepath.Abs(directory)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Clean(abs), nil
+}
+
+func SetConfiguredLogDirectory(directory string) (string, error) {
+	target := strings.TrimSpace(directory)
+	if target != "" {
+		abs, err := filepath.Abs(target)
+		if err != nil {
+			return "", err
+		}
+		target = filepath.Clean(abs)
+		if err := os.MkdirAll(target, 0o755); err != nil {
+			return "", err
+		}
+		probe, err := os.OpenFile(filepath.Join(target, configuredLogFileName), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+		if err != nil {
+			return "", err
+		}
+		if err := probe.Close(); err != nil {
+			return "", err
+		}
+	}
+
+	if err := updateBootstrapConfig(func(cfg *bootstrapConfig) {
+		cfg.LogDirectory = target
+	}); err != nil {
+		return "", err
+	}
+	return target, nil
 }

@@ -142,6 +142,13 @@ if (
         driverPath: 'C:/mock/.gonavi/drivers',
         isDefaultPath: true,
         bootstrapPath: 'C:/mock/.gonavi/storage_root.json',
+        logDirectory: 'C:/Users/mock/.GoNavi/Logs',
+        activeLogDirectory: 'C:/Users/mock/.GoNavi/Logs',
+        logFilePath: 'C:/Users/mock/.GoNavi/Logs/gonavi.log',
+        defaultLogDirectory: 'C:/Users/mock/.GoNavi/Logs',
+        logDirectorySource: 'default',
+        logDirectoryEditable: true,
+        logDirectoryRestartRequired: false,
     };
 
     const upsertMockConnection = (view: any) => {
@@ -543,6 +550,7 @@ if (
                 OpenDownloadedUpdateDirectory: async () => ({ success: false }),
                 OpenDriverDownloadDirectory: async (path: string) => ({ success: true, data: { path } }),
                 OpenDataRootDirectory: async () => ({ success: true }),
+                OpenLogDirectory: async () => ({ success: true }),
                 SelectSQLDirectory: async (currentPath: string) => ({ success: false, message: currentPath ? '已取消' : '已取消' }),
                 ListSQLDirectory: async () => ({ success: true, data: [] }),
                 ReadSQLFile: async () => ({ success: false, message: '已取消' }),
@@ -647,6 +655,24 @@ if (
                         isDefaultPath: nextPath === mockDataRootInfo.defaultPath,
                     };
                     return { success: true, message: t('app.data_root.message.updated'), data: cloneBrowserMockValue(mockDataRootInfo) };
+                },
+                SelectLogDirectory: async (currentPath: string) => ({
+                    success: true,
+                    data: { directory: currentPath || mockDataRootInfo.defaultLogDirectory },
+                }),
+                ApplyLogDirectory: async (path: string) => {
+                    const nextPath = String(path || mockDataRootInfo.defaultLogDirectory);
+                    mockDataRootInfo = {
+                        ...mockDataRootInfo,
+                        logDirectory: nextPath,
+                        logDirectorySource: nextPath === mockDataRootInfo.defaultLogDirectory ? 'default' : 'custom',
+                        logDirectoryRestartRequired: nextPath !== mockDataRootInfo.activeLogDirectory,
+                    };
+                    return {
+                        success: true,
+                        message: t('app.data_root.log_directory.message.updated'),
+                        data: cloneBrowserMockValue(mockDataRootInfo),
+                    };
                 },
             }
         },

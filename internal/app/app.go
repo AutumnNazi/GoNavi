@@ -424,13 +424,17 @@ func dataRootInfoPayload(activeRoot string) map[string]interface{} {
 	if currentRoot == "" {
 		currentRoot = appdata.MustResolveActiveRoot()
 	}
-	return map[string]interface{}{
+	payload := map[string]interface{}{
 		"path":          currentRoot,
 		"defaultPath":   defaultRoot,
 		"driverPath":    appdata.DriverRoot(currentRoot),
 		"isDefaultPath": filepath.Clean(currentRoot) == filepath.Clean(defaultRoot),
 		"bootstrapPath": appdata.BootstrapPath(),
 	}
+	for key, value := range logDirectoryInfoPayload() {
+		payload[key] = value
+	}
+	return payload
 }
 
 func normalizeCacheKeyConfig(config connection.ConnectionConfig) connection.ConnectionConfig {

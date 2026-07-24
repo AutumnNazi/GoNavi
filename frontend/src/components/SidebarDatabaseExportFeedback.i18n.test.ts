@@ -23,14 +23,15 @@ const placeholders = (value: string): string[] => [...value.matchAll(/\{\{(\w+)\
   .sort();
 
 describe('Sidebar database export feedback i18n', () => {
-  it('routes database SQL export into the background workbench', () => {
+  it('opens database SQL exports in the workbench for review', () => {
     const block = extractHandleExportDatabaseBlock();
 
-    expect(block).toContain('showSQLExportOptionsDialog()');
+    expect(block).not.toContain('showSQLExportOptionsDialog()');
     expect(block).toContain('addTab(buildDatabaseExportWorkbenchTab({');
     expect(block).toContain("contentMode: includeData ? 'backup' : 'schema'");
-    expect(block).toContain('includeDropIfExists: exportOptions.includeDropIfExists');
-    expect(block).toContain("requestKey: createTableExportRequestKey('database')");
+    expect(block).toContain('includeDropIfExists: false');
+    expect(block).toContain("launchKey: createTableExportKey('database')");
+    expect(block).not.toContain('requestKey:');
     expect(block).not.toContain('ExportDatabaseSQLWithOptions(');
     expect(block).not.toContain('message.loading(');
   });

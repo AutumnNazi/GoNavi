@@ -4,6 +4,7 @@ import {
   resolveResultDiffDetachedBounds,
   saveResultDiffDetachedBoundsMemory,
 } from './detachedBoundsMemory';
+import { APP_DETACHED_WINDOW_Z_INDEX_BASE } from '../overlayZIndex';
 
 describe('resultDiff detachedBoundsMemory', () => {
   beforeEach(() => {
@@ -46,5 +47,6 @@ describe('resultDiff detachedBoundsMemory', () => {
     const resolved = resolveResultDiffDetachedBounds(null);
     expect(resolved.width).toBeGreaterThan(0);
     expect(resolved.height).toBeGreaterThan(0);
+    expect(resolved.zIndex).toBe(APP_DETACHED_WINDOW_Z_INDEX_BASE + 1);
   });
 });

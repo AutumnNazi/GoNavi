@@ -129,7 +129,7 @@ func TestBuildWindowsLaunchCommandUsesHiddenPowerShellFile(t *testing.T) {
 		"-NoProfile",
 		"-NonInteractive",
 		"-ExecutionPolicy",
-		"Bypass",
+		"RemoteSigned",
 		"-File",
 		scriptPath,
 	}

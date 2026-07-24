@@ -85,6 +85,7 @@ export default function SlowQueryRailButton({
         disabled={buttonDisabled}
         style={style}
         aria-label={t('sql_analysis.slow_query.rail.aria_label')}
+        data-sidebar-sql-analysis-action="true"
       >
         <HistoryOutlined style={{ fontSize: 16 }} />
       </button>

@@ -138,9 +138,8 @@ export const useAppUtilityStyles = ({
     padding: '16px 2px',
     borderRadius: 0,
     border: 'none',
-    borderBottom: `1px solid ${overlayTheme.divider}`,
     background: 'transparent',
-  }), [overlayTheme]);
+  }), []);
   const toolCenterModalContentStyle = useMemo<React.CSSProperties>(() => ({
     ...utilityModalShellStyle,
     height: 'min(820px, calc(100vh - 64px))',
@@ -171,13 +170,12 @@ export const useAppUtilityStyles = ({
   const toolCenterNavScrollStyle = useMemo<React.CSSProperties>(() => ({
     display: 'grid',
     alignContent: 'start',
-    gap: 0,
+    gap: 2,
     minHeight: 0,
     overflowY: 'auto',
     overflowX: 'hidden',
     paddingRight: 4,
-    borderTop: `1px solid ${overlayTheme.divider}`,
-  }), [overlayTheme.divider]);
+  }), []);
   const toolCenterContentPanelStyle = useMemo<React.CSSProperties>(() => ({
     display: 'flex',
     flexDirection: 'column',
@@ -204,6 +202,9 @@ export const useAppUtilityStyles = ({
   const toolCenterScrollableListStyle = useMemo<React.CSSProperties>(() => ({
     flex: 1,
     minHeight: 0,
+    display: 'grid',
+    alignContent: 'start',
+    gap: 2,
     overflowY: 'auto',
     overflowX: 'hidden',
     overscrollBehavior: 'contain',
@@ -254,7 +255,7 @@ export const useAppUtilityStyles = ({
   const toolCenterRowStyle = useMemo(() => ({
     width: '100%',
     minHeight: 58,
-    borderRadius: 0,
+    borderRadius: 4,
     color: overlayTheme.titleText,
     display: 'flex',
     alignItems: 'center',

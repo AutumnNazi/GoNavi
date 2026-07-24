@@ -39,7 +39,7 @@ describe('QueryEditor i18n source guards', () => {
     expect(queryEditorSource).toContain('query_editor.action.find_in_editor');
     expect(queryEditorSource).toContain('gonavi:find-active-query');
     expect(queryEditorSource).toContain("editor.getAction?.('actions.find')");
-    expect(queryEditorSource).toContain('addExtraSpaceOnTop: true');
+    expect(queryEditorSource).toContain('addExtraSpaceOnTop: false');
   });
 
   it('uses a localized wrapper for save query failures', () => {

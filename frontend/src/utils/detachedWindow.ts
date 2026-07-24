@@ -1,3 +1,5 @@
+import { APP_DETACHED_WINDOW_Z_INDEX_BASE } from './overlayZIndex';
+
 export type DetachedWindowBounds = {
   x: number;
   y: number;
@@ -86,7 +88,7 @@ export const clamp = (value: number, min: number, max: number): number =>
   Math.min(Math.max(value, min), max);
 
 export const nextDetachedZIndex = (windows: Array<{ zIndex?: number }>): number => {
-  let max = 1200;
+  let max = APP_DETACHED_WINDOW_Z_INDEX_BASE;
   for (const windowState of windows) {
     const z = Number(windowState?.zIndex);
     if (Number.isFinite(z) && z > max) {

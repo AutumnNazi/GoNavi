@@ -655,7 +655,7 @@ export default function SqlAuditWorkbench({ tab, backend: backendOverride, isAct
             pagination={false}
             size="small"
             tableLayout="fixed"
-            scroll={{ x: 1444, y: 'calc(100vh - 540px)' }}
+            scroll={{ x: 1444, y: '100%' }}
             rowClassName="gn-sql-audit-table-row"
           />
         ) : (

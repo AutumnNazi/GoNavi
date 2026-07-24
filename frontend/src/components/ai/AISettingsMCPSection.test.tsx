@@ -149,6 +149,7 @@ describe('AISettingsMCPSection', () => {
     expect(markup).toContain('npx -y package --stdio');
     expect(markup).toContain('class="gonavi-ai-mcp-section"');
     expect(markup).toContain('class="gonavi-ai-mcp-tabs"');
+    expect(markup).toContain('class="gonavi-ai-mcp-tab is-active"');
     expect(markup).toContain('External clients');
     expect(markup).toContain('MCP tool sources');
     expect(markup).toContain('aria-label="External clients → GoNavi"');
@@ -156,6 +157,7 @@ describe('AISettingsMCPSection', () => {
     expect(markup).toContain('class="gonavi-ai-mcp-route-arrow"');
     expect(markup).toContain('aria-selected="true"');
     expect(markup).toContain('id="gonavi-ai-mcp-panel-tool-sources"');
+    expect(markup).toContain('class="gonavi-ai-mcp-panel"');
     expect(markup).toContain('hidden=""');
     expect(markup).toContain('class="gonavi-ai-mcp-http-panel"');
     expect(markup).toContain('class="gonavi-ai-mcp-client-panel"');
@@ -164,7 +166,9 @@ describe('AISettingsMCPSection', () => {
     expect(markup).toContain('class="gonavi-ai-mcp-disclosure gonavi-ai-mcp-quick-add-disclosure"');
     expect(markup).toContain('class="gonavi-ai-mcp-disclosure gonavi-ai-mcp-reference-disclosure"');
     expect(markup).toContain('background:transparent');
-    expect(markup).toContain('border-bottom:1px solid rgba(0,0,0,0.08)');
+    expect(markup).not.toContain('border-bottom:1px solid rgba(0,0,0,0.08)');
+    expect(markup).not.toContain('border-top:1px solid rgba(0,0,0,0.08)');
+    expect(markup).not.toContain('border-bottom-color:#1677ff');
   });
 
   it('renders the MCP quick reference in Chinese when an i18n provider is available', () => {

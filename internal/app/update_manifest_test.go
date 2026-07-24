@@ -17,6 +17,72 @@ import (
 	"time"
 )
 
+func configureUpdateManifestHTTPTest(t *testing.T) {
+	t.Helper()
+	for _, name := range []string{
+		"HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY",
+		"http_proxy", "https_proxy", "all_proxy",
+	} {
+		t.Setenv(name, "")
+	}
+	t.Setenv("NO_PROXY", "127.0.0.1,localhost")
+	t.Setenv("no_proxy", "127.0.0.1,localhost")
+	t.Setenv("GONAVI_DATA_ROOT", t.TempDir())
+}
+
+func buildValidUpdateManifestForTest(
+	t *testing.T,
+	channel updateChannel,
+	version string,
+	publishedAt string,
+	hashCharacter string,
+) updateReleaseManifest {
+	t.Helper()
+	expectedAsset, err := expectedAssetNameForInstallMode(
+		stdRuntime.GOOS,
+		stdRuntime.GOARCH,
+		version,
+		updateResolveInstallMode(),
+	)
+	if err != nil {
+		t.Fatalf("resolve expected update asset: %v", err)
+	}
+	tagName := "v" + normalizeVersion(version)
+	name := tagName
+	if channel == updateChannelDev {
+		tagName = updateDevReleaseTag
+		name = "Dev Build (" + version + ")"
+	}
+	return updateReleaseManifest{
+		SchemaVersion: updateManifestSchemaVersion,
+		Channel:       string(channel),
+		TagName:       tagName,
+		Version:       version,
+		Name:          name,
+		PublishedAt:   publishedAt,
+		Assets: []updateManifestAsset{{
+			Name:   expectedAsset,
+			URL:    "https://download.example.test/" + expectedAsset,
+			APIURL: "https://github.example.test/" + expectedAsset,
+			Size:   123,
+			SHA256: strings.Repeat(hashCharacter, 64),
+		}},
+	}
+}
+
+func serveUpdateManifestForTest(t *testing.T, manifest updateReleaseManifest, hits *atomic.Int32) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if hits != nil {
+			hits.Add(1)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(manifest); err != nil {
+			t.Errorf("encode manifest: %v", err)
+		}
+	}))
+}
+
 func TestDownloadUpdateAssetWithFallbackRetriesChecksumMismatch(t *testing.T) {
 	goodPayload := []byte("verified update package")
 	expectedHash := fmt.Sprintf("%x", sha256.Sum256(goodPayload))
@@ -186,6 +252,153 @@ func TestFetchStaticUpdateManifestFromURLsFallsBackFromInvalidR2Manifests(t *tes
 	}
 }
 
+func TestFetchFreshestStaticUpdateManifestFromURLsPrefersNewerDevPublishedAt(t *testing.T) {
+	configureUpdateManifestHTTPTest(t)
+
+	var mirrorHits atomic.Int32
+	var githubHits atomic.Int32
+	mirror := serveUpdateManifestForTest(t, buildValidUpdateManifestForTest(
+		t, updateChannelDev, "dev-3e02c81", "2026-07-23T01:19:41Z", "a",
+	), &mirrorHits)
+	defer mirror.Close()
+	github := serveUpdateManifestForTest(t, buildValidUpdateManifestForTest(
+		t, updateChannelDev, "dev-83952ab", "2026-07-23T05:39:03Z", "b",
+	), &githubHits)
+	defer github.Close()
+
+	release, err := fetchFreshestStaticUpdateManifestFromURLs(updateChannelDev, []string{mirror.URL, github.URL})
+	if err != nil {
+		t.Fatalf("fetch freshest static manifest: %v", err)
+	}
+	if got := resolveReleaseVersion(updateChannelDev, release); got != "dev-83952ab" {
+		t.Fatalf("freshest dev version = %q, want dev-83952ab", got)
+	}
+	if mirrorHits.Load() != 1 || githubHits.Load() != 1 {
+		t.Fatalf("manifest request counts: mirror=%d github=%d", mirrorHits.Load(), githubHits.Load())
+	}
+	cached, _ := loadDiskUpdateManifest(updateChannelDev)
+	if cached == nil || cached.Version != "dev-83952ab" {
+		t.Fatalf("cached manifest = %#v, want selected GitHub manifest", cached)
+	}
+}
+
+func TestFetchFreshestStaticUpdateManifestFromURLsUsesAvailableSource(t *testing.T) {
+	configureUpdateManifestHTTPTest(t)
+
+	tests := []struct {
+		name            string
+		mirrorAvailable bool
+		githubAvailable bool
+		wantVersion     string
+	}{
+		{name: "mirror unavailable", githubAvailable: true, wantVersion: "dev-github"},
+		{name: "github unavailable", mirrorAvailable: true, wantVersion: "dev-mirror"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			mirror := serveUpdateManifestForTest(t, buildValidUpdateManifestForTest(
+				t, updateChannelDev, "dev-mirror", "2026-07-23T01:00:00Z", "a",
+			), nil)
+			mirrorURL := mirror.URL
+			if !test.mirrorAvailable {
+				mirror.Close()
+			} else {
+				defer mirror.Close()
+			}
+
+			github := serveUpdateManifestForTest(t, buildValidUpdateManifestForTest(
+				t, updateChannelDev, "dev-github", "2026-07-23T02:00:00Z", "b",
+			), nil)
+			githubURL := github.URL
+			if !test.githubAvailable {
+				github.Close()
+			} else {
+				defer github.Close()
+			}
+
+			release, err := fetchFreshestStaticUpdateManifestFromURLs(updateChannelDev, []string{mirrorURL, githubURL})
+			if err != nil {
+				t.Fatalf("fetch freshest static manifest: %v", err)
+			}
+			if got := resolveReleaseVersion(updateChannelDev, release); got != test.wantVersion {
+				t.Fatalf("version = %q, want %q", got, test.wantVersion)
+			}
+		})
+	}
+}
+
+func TestFetchFreshestStaticUpdateManifestFromURLsPrefersHigherStableVersion(t *testing.T) {
+	configureUpdateManifestHTTPTest(t)
+
+	mirror := serveUpdateManifestForTest(t, buildValidUpdateManifestForTest(
+		t, updateChannelLatest, "2.4.9", "2026-07-23T05:00:00Z", "c",
+	), nil)
+	defer mirror.Close()
+	github := serveUpdateManifestForTest(t, buildValidUpdateManifestForTest(
+		t, updateChannelLatest, "2.5.0", "2026-07-23T04:00:00Z", "d",
+	), nil)
+	defer github.Close()
+
+	release, err := fetchFreshestStaticUpdateManifestFromURLs(updateChannelLatest, []string{mirror.URL, github.URL})
+	if err != nil {
+		t.Fatalf("fetch freshest stable manifest: %v", err)
+	}
+	if got := resolveReleaseVersion(updateChannelLatest, release); got != "2.5.0" {
+		t.Fatalf("stable version = %q, want 2.5.0", got)
+	}
+}
+
+func TestFetchFreshestStaticUpdateManifestFromURLsFetchesSourcesConcurrently(t *testing.T) {
+	configureUpdateManifestHTTPTest(t)
+
+	entered := make(chan struct{}, 2)
+	releaseHandlers := make(chan struct{})
+	serveBlockedManifest := func(manifest updateReleaseManifest) *httptest.Server {
+		return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			entered <- struct{}{}
+			<-releaseHandlers
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(manifest)
+		}))
+	}
+
+	mirror := serveBlockedManifest(buildValidUpdateManifestForTest(
+		t, updateChannelDev, "dev-mirror", "2026-07-23T01:00:00Z", "e",
+	))
+	defer mirror.Close()
+	github := serveBlockedManifest(buildValidUpdateManifestForTest(
+		t, updateChannelDev, "dev-github", "2026-07-23T02:00:00Z", "f",
+	))
+	defer github.Close()
+
+	type fetchOutcome struct {
+		release *githubRelease
+		err     error
+	}
+	done := make(chan fetchOutcome, 1)
+	go func() {
+		release, err := fetchFreshestStaticUpdateManifestFromURLs(updateChannelDev, []string{mirror.URL, github.URL})
+		done <- fetchOutcome{release: release, err: err}
+	}()
+
+	for index := 0; index < 2; index++ {
+		select {
+		case <-entered:
+		case <-time.After(2 * time.Second):
+			close(releaseHandlers)
+			t.Fatal("static manifest sources were not fetched concurrently")
+		}
+	}
+	close(releaseHandlers)
+	outcome := <-done
+	if outcome.err != nil {
+		t.Fatalf("fetch freshest static manifest: %v", outcome.err)
+	}
+	if got := resolveReleaseVersion(updateChannelDev, outcome.release); got != "dev-github" {
+		t.Fatalf("version = %q, want dev-github", got)
+	}
+}
+
 func TestDiskUpdateManifestRoundTrip(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("GONAVI_DATA_ROOT", root)
@@ -246,6 +459,49 @@ func TestFetchReleaseForChannelPreferringStaticUsesStaticFirst(t *testing.T) {
 	}
 	if release.TagName != "v2.0.0" {
 		t.Fatalf("tag=%q", release.TagName)
+	}
+}
+
+func TestFetchReleaseForChannelPreferringStaticUsesFreshestOnlyForManualChecks(t *testing.T) {
+	t.Setenv("GONAVI_DATA_ROOT", t.TempDir())
+	updateReleaseCache = sync.Map{}
+	updateNetworkCheckMu.Lock()
+	updateLastNetworkCheck = updateNetworkCheckMemory{}
+	updateNetworkCheckMu.Unlock()
+
+	staticCalls := 0
+	freshestCalls := 0
+	restoreStatic := swapUpdateFetchStaticManifest(func(channel updateChannel) (*githubRelease, error) {
+		staticCalls++
+		return &githubRelease{TagName: updateDevReleaseTag, Name: "Dev Build (dev-mirror)"}, nil
+	})
+	defer restoreStatic()
+	restoreFreshest := swapUpdateFetchFreshestStaticManifest(func(channel updateChannel) (*githubRelease, error) {
+		freshestCalls++
+		return &githubRelease{TagName: updateDevReleaseTag, Name: "Dev Build (dev-github)"}, nil
+	})
+	defer restoreFreshest()
+
+	silentRelease, err := fetchReleaseForChannelPreferringStatic(updateChannelDev, false)
+	if err != nil {
+		t.Fatalf("silent static fetch: %v", err)
+	}
+	if got := resolveReleaseVersion(updateChannelDev, silentRelease); got != "dev-mirror" {
+		t.Fatalf("silent version = %q, want mirror", got)
+	}
+	if staticCalls != 1 || freshestCalls != 0 {
+		t.Fatalf("silent calls: static=%d freshest=%d", staticCalls, freshestCalls)
+	}
+
+	manualRelease, err := fetchReleaseForChannelPreferringStatic(updateChannelDev, true)
+	if err != nil {
+		t.Fatalf("manual static fetch: %v", err)
+	}
+	if got := resolveReleaseVersion(updateChannelDev, manualRelease); got != "dev-github" {
+		t.Fatalf("manual version = %q, want freshest", got)
+	}
+	if staticCalls != 1 || freshestCalls != 1 {
+		t.Fatalf("manual calls: static=%d freshest=%d", staticCalls, freshestCalls)
 	}
 }
 

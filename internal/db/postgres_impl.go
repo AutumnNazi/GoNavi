@@ -773,6 +773,9 @@ func (p *PostgresDB) ApplyChanges(tableName string, changes connection.ChangeSet
 		Exec: func(query string, args ...interface{}) (sql.Result, error) {
 			return tx.Exec(query, args...)
 		},
+		EmptyInsertSQL: func(table string) string {
+			return fmt.Sprintf("INSERT INTO %s DEFAULT VALUES", table)
+		},
 	}); err != nil {
 		return err
 	}

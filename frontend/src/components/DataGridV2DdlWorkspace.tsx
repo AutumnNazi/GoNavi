@@ -137,7 +137,7 @@ export const DataGridV2DdlView: React.FC<DataGridV2DdlViewProps> = ({
     <div className="gn-v2-data-grid-ddl-code">
       <Editor
         height="100%"
-        gonaviTypography="code"
+        gonaviTypography="sql"
         language="sql"
         theme={darkMode ? 'transparent-dark' : 'transparent-light'}
         value={ddlLoading ? translate('data_grid.ddl.loading') : ddlText}

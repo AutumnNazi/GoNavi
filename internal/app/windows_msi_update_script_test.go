@@ -79,6 +79,23 @@ func TestBuildWindowsMSILaunchCommandPreservesPathsInEnvironment(t *testing.T) {
 		PID:                  12345,
 	}
 	cmd := buildWindowsMSILaunchCommand(filepath.Join(context.StagedDir, "update-msi.ps1"), context)
+	wantArgs := []string{
+		"powershell.exe",
+		"-NoProfile",
+		"-NonInteractive",
+		"-ExecutionPolicy",
+		"RemoteSigned",
+		"-File",
+		filepath.Join(context.StagedDir, "update-msi.ps1"),
+	}
+	if len(cmd.Args) != len(wantArgs) {
+		t.Fatalf("unexpected arg length: got %d want %d, args=%v", len(cmd.Args), len(wantArgs), cmd.Args)
+	}
+	for index := range wantArgs {
+		if cmd.Args[index] != wantArgs[index] {
+			t.Fatalf("unexpected arg[%d]: got %q want %q", index, cmd.Args[index], wantArgs[index])
+		}
+	}
 	want := map[string]string{
 		"GONAVI_UPDATE_SOURCE":                 context.SourcePath,
 		"GONAVI_UPDATE_TARGET":                 context.TargetPath,

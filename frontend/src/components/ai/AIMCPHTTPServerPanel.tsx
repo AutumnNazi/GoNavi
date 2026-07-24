@@ -33,7 +33,6 @@ const AIMCPHTTPServerPanel: React.FC<AIMCPHTTPServerPanelProps> = ({
   status,
   draft,
   loading,
-  cardBorder,
   darkMode,
   overlayTheme,
   onDraftChange,
@@ -58,7 +57,6 @@ const AIMCPHTTPServerPanel: React.FC<AIMCPHTTPServerPanelProps> = ({
       className="gonavi-ai-mcp-http-panel"
       style={{
         padding: '14px 0 0',
-        borderBottom: `1px solid ${cardBorder}`,
         background: 'transparent',
         display: 'flex',
         flexDirection: 'column',

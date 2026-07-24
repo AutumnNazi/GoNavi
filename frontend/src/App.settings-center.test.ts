@@ -59,6 +59,19 @@ describe('settings center layout', () => {
     expect(appSource).not.toContain("setIsLanguageModalOpen(true)");
   });
 
+  it('removes redundant framing lines from settings detail pages', () => {
+    const detailPanelStyleStart = appSource.indexOf('const activeSettingsCenterDetailPanelStyle');
+    const detailPanelStyleEnd = appSource.indexOf('const settingsCenterDetailBodyStyle', detailPanelStyleStart);
+    const detailPanelStyleSource = appSource.slice(detailPanelStyleStart, detailPanelStyleEnd);
+    const detailShellStart = appSource.indexOf('style={activeSettingsCenterDetailPanelStyle}');
+    const detailShellEnd = appSource.indexOf('className="gonavi-settings-center-entry"', detailShellStart);
+    const detailShellSource = appSource.slice(detailShellStart, detailShellEnd);
+
+    expect(detailPanelStyleSource).toContain("borderBottom: 'none'");
+    expect(detailShellSource).toContain('<div style={{ paddingBottom: 10 }}>');
+    expect(detailShellSource).not.toContain('borderTop: `1px solid ${overlayTheme.divider}`');
+  });
+
   it('adds persistent sidebar object visibility controls to preferences', () => {
     expect(appSource).toContain("key: 'sidebar-objects'");
     expect(appSource).toContain("title: t('app.settings.sidebar_objects.title')");
@@ -88,6 +101,56 @@ describe('settings center layout', () => {
     expect(appSource).toContain('https://github.com/Syngnat/GoNavi/releases/latest');
     expect(appSource).toContain("t('app.proxy.test.action')");
     expect(appSource).toContain("t('app.proxy.test.target_placeholder')");
+  });
+
+  it('keeps log directory controls inside the data-root detail page', () => {
+    const embeddedDataRootStart = appSource.indexOf("if (activeSettingsCenterPane.key === 'data-root')");
+    const embeddedDataRootEnd = appSource.indexOf(
+      "if (activeSettingsCenterPane.key === 'security-update')",
+      embeddedDataRootStart,
+    );
+    const embeddedDataRootSource = appSource.slice(embeddedDataRootStart, embeddedDataRootEnd);
+    const standaloneDataRootStart = appSource.indexOf('{isDataRootModalOpen && (');
+    const standaloneDataRootEnd = appSource.indexOf(
+      '<ConnectionPackagePasswordModal',
+      standaloneDataRootStart,
+    );
+    const standaloneDataRootSource = appSource.slice(standaloneDataRootStart, standaloneDataRootEnd);
+    const logDirectoryRendererStart = appSource.indexOf('const renderLogDirectorySettings = () => {');
+    const logDirectoryRendererEnd = appSource.indexOf('\n  const {', logDirectoryRendererStart);
+    const logDirectoryRendererSource = appSource.slice(logDirectoryRendererStart, logDirectoryRendererEnd);
+
+    expect(embeddedDataRootStart).toBeGreaterThan(-1);
+    expect(embeddedDataRootEnd).toBeGreaterThan(embeddedDataRootStart);
+    expect(standaloneDataRootStart).toBeGreaterThan(-1);
+    expect(standaloneDataRootEnd).toBeGreaterThan(standaloneDataRootStart);
+    expect(appSource).toContain('ApplyLogDirectory');
+    expect(appSource).toContain('OpenLogDirectory');
+    expect(appSource).toContain('SelectLogDirectory');
+    expect(appSource).toContain("const [selectedLogDirectoryPath, setSelectedLogDirectoryPath] = useState('');");
+    expect(appSource).toContain('const directorySettingsApplying = dataRootApplying || logDirectoryApplying;');
+    expect(appSource).toContain('const handleSelectLogDirectory = useCallback(async () => {');
+    expect(appSource).toContain('const handleApplyLogDirectory = useCallback(async (useDefaultPath = false) => {');
+    expect(appSource).toContain('const handleOpenLogDirectory = useCallback(async () => {');
+    expect(appSource).toContain('const renderLogDirectorySettings = () => {');
+    expect(appSource).toContain('data-log-directory-settings="true"');
+    expect(appSource).toContain("dataRootInfo?.logDirectorySource === 'environment'");
+    expect(appSource).toContain('dataRootInfo?.logDirectoryRestartRequired === true');
+    expect(appSource).toContain("t('app.data_root.log_directory.environment_hint')");
+    expect(appSource).toContain("t('app.data_root.log_directory.pending_restart')");
+    expect(appSource).toContain("t('app.data_root.log_directory.restart_hint')");
+    expect(logDirectoryRendererSource).not.toContain(
+      "<div style={{ fontWeight: 600 }}>{t('app.data_root.log_directory.title')}</div>",
+    );
+    expect(logDirectoryRendererSource).not.toContain("t('app.data_root.log_directory.target_directory')");
+    expect(logDirectoryRendererSource.match(/disabled={!editable \|\| directorySettingsApplying}/g)).toHaveLength(3);
+    expect(embeddedDataRootSource.match(/disabled={directorySettingsApplying}/g)).toHaveLength(4);
+    expect(standaloneDataRootSource.match(/disabled={directorySettingsApplying}/g)).toHaveLength(4);
+    expect(embeddedDataRootSource).toContain('{renderLogDirectorySettings()}');
+    expect(standaloneDataRootSource).toContain('{renderLogDirectorySettings()}');
+    expect(appSource).not.toContain("| 'log-directory'");
+    expect(appSource).not.toContain("key: 'log-directory'");
+    expect(appSource).not.toContain("handleOpenToolCenterPane('config', 'log-directory')");
   });
 
   it('adds close and back-to-settings actions to settings center detail panes', () => {
@@ -259,11 +322,30 @@ describe('settings center layout', () => {
     expect(appSource).toContain("[t('app.about.version.package_type'), t(`app.about.package_type.${packageType}`)]");
     expect(appSource).toContain('className="gonavi-about-update-channel"');
     expect(appSource).toContain('<Segmented');
+    expect(appSource).toContain("t('app.about.version_update.channel_hint.latest')");
+    expect(appSource).toContain("t('app.about.version_update.channel_hint.dev')");
+    expect(appSource).not.toContain("t('app.about.version_update.channel_hint')");
+    expect(appSource).toMatch(/updateChannel === 'dev'\s*\? t\('app\.about\.version_update\.channel_hint\.dev'\)\s*: t\('app\.about\.version_update\.channel_hint\.latest'\)/s);
+    expect(appCssSource).toMatch(/\.gonavi-about-pane\s*\{[^}]*--gn-about-update-control-width:\s*200px;/s);
+    expect(appCssSource).toMatch(/\.gonavi-about-update-channel\.ant-segmented\.ant-segmented\s*\{[^}]*width:\s*var\(--gn-about-update-control-width\);/s);
+    expect(appCssSource).toMatch(/\.gonavi-about-update-channel\.ant-segmented\.ant-segmented\s*\{[^}]*max-width:\s*100%;/s);
+    expect(appCssSource).toMatch(/\.gonavi-about-update-channel\.ant-segmented\.ant-segmented\s*\{[^}]*justify-self:\s*end;/s);
+    expect(appCssSource).toMatch(/\.gonavi-about-update-channel \.ant-segmented-item\s*\{[^}]*flex:\s*1 1 0;/s);
     expect(appSource).toContain("t('app.about.field.auto_check_updates')");
     expect(appSource).toContain("t('app.about.field.auto_check_interval')");
     expect(appSource).toContain("t('app.about.version_update.auto_check_hint')");
     expect(appSource).toContain("t('app.about.version_update.auto_check_disabled_hint')");
     expect(appSource).toContain('className="gonavi-about-auto-check-interval"');
+    const autoCheckIntervalSelectStart = aboutPaneSource.indexOf('className="gonavi-about-auto-check-interval"');
+    const autoCheckIntervalSelectSource = aboutPaneSource.slice(
+      autoCheckIntervalSelectStart,
+      aboutPaneSource.indexOf('/>', autoCheckIntervalSelectStart),
+    );
+    expect(autoCheckIntervalSelectStart).toBeGreaterThan(-1);
+    expect(autoCheckIntervalSelectSource).not.toContain("width: '100%'");
+    expect(appCssSource).toMatch(/\.gonavi-about-auto-check-interval\.ant-select\s*\{[^}]*width:\s*var\(--gn-about-update-control-width\);/s);
+    expect(appCssSource).toMatch(/\.gonavi-about-auto-check-interval\.ant-select\s*\{[^}]*max-width:\s*100%;/s);
+    expect(appCssSource).toMatch(/\.gonavi-about-auto-check-interval\.ant-select\s*\{[^}]*justify-self:\s*end;/s);
     expect(appSource).toContain('checked={autoCheckForUpdates}');
     expect(appSource).toContain('setAutoCheckForUpdates(checked)');
     expect(appSource).toContain('setAutoCheckForUpdatesIntervalMinutes(Number(value))');

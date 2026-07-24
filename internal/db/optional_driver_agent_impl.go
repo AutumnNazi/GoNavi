@@ -22,27 +22,30 @@ import (
 )
 
 const (
-	optionalAgentMethodConnect          = "connect"
-	optionalAgentMethodClose            = "close"
-	optionalAgentMethodMetadata         = "metadata"
-	optionalAgentMethodPing             = "ping"
-	optionalAgentMethodOpenSession      = "openSession"
-	optionalAgentMethodCloseSession     = "closeSession"
-	optionalAgentMethodQuery            = "query"
-	optionalAgentMethodQueryMulti       = "queryMulti"
-	optionalAgentMethodStreamQuery      = "streamQuery"
-	optionalAgentMethodExec             = "exec"
-	optionalAgentMethodGetDatabases     = "getDatabases"
-	optionalAgentMethodGetTables        = "getTables"
-	optionalAgentMethodGetCreateStmt    = "getCreateStatement"
-	optionalAgentMethodGetColumns       = "getColumns"
-	optionalAgentMethodGetAllColumns    = "getAllColumns"
-	optionalAgentMethodGetIndexes       = "getIndexes"
-	optionalAgentMethodGetForeignKeys   = "getForeignKeys"
-	optionalAgentMethodGetTriggers      = "getTriggers"
-	optionalAgentMethodApplyChanges     = "applyChanges"
-	optionalAgentDefaultScannerMaxBytes = 8 << 20
-	optionalAgentMetadataProbeTimeout   = 5 * time.Second
+	optionalAgentMethodConnect             = "connect"
+	optionalAgentMethodClose               = "close"
+	optionalAgentMethodMetadata            = "metadata"
+	optionalAgentMethodPing                = "ping"
+	optionalAgentMethodOpenSession         = "openSession"
+	optionalAgentMethodCloseSession        = "closeSession"
+	optionalAgentMethodOpenTransaction     = "openTransaction"
+	optionalAgentMethodCommitTransaction   = "commitTransaction"
+	optionalAgentMethodRollbackTransaction = "rollbackTransaction"
+	optionalAgentMethodQuery               = "query"
+	optionalAgentMethodQueryMulti          = "queryMulti"
+	optionalAgentMethodStreamQuery         = "streamQuery"
+	optionalAgentMethodExec                = "exec"
+	optionalAgentMethodGetDatabases        = "getDatabases"
+	optionalAgentMethodGetTables           = "getTables"
+	optionalAgentMethodGetCreateStmt       = "getCreateStatement"
+	optionalAgentMethodGetColumns          = "getColumns"
+	optionalAgentMethodGetAllColumns       = "getAllColumns"
+	optionalAgentMethodGetIndexes          = "getIndexes"
+	optionalAgentMethodGetForeignKeys      = "getForeignKeys"
+	optionalAgentMethodGetTriggers         = "getTriggers"
+	optionalAgentMethodApplyChanges        = "applyChanges"
+	optionalAgentDefaultScannerMaxBytes    = 8 << 20
+	optionalAgentMetadataProbeTimeout      = 5 * time.Second
 	// callStreamQueryGCInterval 控制 callStreamQuery 每接收多少行 driver-agent 数据触发一次 runtime.GC。
 	//
 	// 该路径不走 sql.Rows（scan_rows.go 的周期 GC 覆盖不到），但每个 chunk 解码
@@ -433,6 +436,10 @@ type OptionalDriverAgentDB struct {
 	client     *optionalDriverAgentClient
 }
 
+type optionalDriverAgentTransactionalDB struct {
+	*OptionalDriverAgentDB
+}
+
 type optionalDriverAgentSession struct {
 	client    *optionalDriverAgentClient
 	driver    string
@@ -441,10 +448,28 @@ type optionalDriverAgentSession struct {
 	closed    bool
 }
 
+type optionalDriverAgentTransaction struct {
+	*optionalDriverAgentSession
+	finishMu sync.Mutex
+	finished bool
+}
+
+var _ TransactionExecerProvider = (*optionalDriverAgentTransactionalDB)(nil)
+var _ TransactionExecer = (*optionalDriverAgentTransaction)(nil)
+
 func newOptionalDriverAgentDatabase(driverType string) databaseFactory {
 	normalized := normalizeRuntimeDriverType(driverType)
 	return func() Database {
 		return &OptionalDriverAgentDB{driverType: normalized}
+	}
+}
+
+func newOptionalDriverAgentTransactionalDatabase(driverType string) databaseFactory {
+	normalized := normalizeRuntimeDriverType(driverType)
+	return func() Database {
+		return &optionalDriverAgentTransactionalDB{
+			OptionalDriverAgentDB: &OptionalDriverAgentDB{driverType: normalized},
+		}
 	}
 }
 
@@ -684,6 +709,64 @@ func (d *OptionalDriverAgentDB) OpenSessionExecer(ctx context.Context) (Statemen
 		driver:    d.driverType,
 		sessionID: sessionID,
 	}, nil
+}
+
+func (d *optionalDriverAgentTransactionalDB) OpenTransactionExecer(ctx context.Context) (TransactionExecer, error) {
+	if d == nil || d.OptionalDriverAgentDB == nil {
+		return nil, fmt.Errorf("连接未打开")
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	client, err := d.requireClient()
+	if err != nil {
+		return nil, err
+	}
+	var sessionID string
+	if err := client.call(optionalAgentRequest{
+		Method:    optionalAgentMethodOpenTransaction,
+		TimeoutMs: timeoutMsFromContext(ctx),
+	}, &sessionID, nil, nil, nil); err != nil {
+		return nil, err
+	}
+	sessionID = strings.TrimSpace(sessionID)
+	if sessionID == "" {
+		return nil, fmt.Errorf("%s 驱动代理未返回事务 ID", driverDisplayName(d.driverType))
+	}
+	return &optionalDriverAgentTransaction{
+		optionalDriverAgentSession: &optionalDriverAgentSession{
+			client:    client,
+			driver:    d.driverType,
+			sessionID: sessionID,
+		},
+	}, nil
+}
+
+func (t *optionalDriverAgentTransaction) Commit() error {
+	return t.finish(optionalAgentMethodCommitTransaction)
+}
+
+func (t *optionalDriverAgentTransaction) Rollback() error {
+	return t.finish(optionalAgentMethodRollbackTransaction)
+}
+
+func (t *optionalDriverAgentTransaction) finish(method string) error {
+	if t == nil || t.optionalDriverAgentSession == nil {
+		return nil
+	}
+	t.finishMu.Lock()
+	defer t.finishMu.Unlock()
+	if t.finished {
+		return nil
+	}
+	if err := t.ensureOpen(); err != nil {
+		return err
+	}
+	t.finished = true
+	return t.client.call(optionalAgentRequest{
+		Method:    method,
+		SessionID: t.sessionID,
+	}, nil, nil, nil, nil)
 }
 
 func (s *optionalDriverAgentSession) Query(query string) ([]map[string]interface{}, []string, error) {

@@ -28,6 +28,7 @@ type fakeExportQueryDB struct {
 	defs []connection.ColumnDefinition
 
 	lastQuery          string
+	queries            []string
 	lastContextTimeout time.Duration
 	hasContextDeadline bool
 }
@@ -82,10 +83,12 @@ func (f *fakeExportQueryDB) Close() error                                     { 
 func (f *fakeExportQueryDB) Ping() error                                      { return nil }
 func (f *fakeExportQueryDB) Query(query string) ([]map[string]interface{}, []string, error) {
 	f.lastQuery = query
+	f.queries = append(f.queries, query)
 	return f.data, f.cols, f.err
 }
 func (f *fakeExportQueryDB) QueryContext(ctx context.Context, query string) ([]map[string]interface{}, []string, error) {
 	f.lastQuery = query
+	f.queries = append(f.queries, query)
 	if deadline, ok := ctx.Deadline(); ok {
 		f.hasContextDeadline = true
 		f.lastContextTimeout = time.Until(deadline)
@@ -1683,10 +1686,11 @@ func TestDumpTableSQL_OracleBackupBatchesRowsIntoInsertAll(t *testing.T) {
 	}
 }
 
-func TestNormalizeExportFileOptionsPreservesIncludeDropIfExists(t *testing.T) {
+func TestNormalizeExportFileOptionsPreservesSQLDatabaseOptions(t *testing.T) {
 	normalized := normalizeExportFileOptions("sql", ExportFileOptions{
-		Format:              " SQL ",
-		IncludeDropIfExists: true,
+		Format:                 " SQL ",
+		IncludeDropIfExists:    true,
+		IncludeDatabaseContext: true,
 	})
 
 	if normalized.Format != "sql" {
@@ -1694,6 +1698,9 @@ func TestNormalizeExportFileOptionsPreservesIncludeDropIfExists(t *testing.T) {
 	}
 	if !normalized.IncludeDropIfExists {
 		t.Fatal("expected IncludeDropIfExists to survive option normalization")
+	}
+	if !normalized.IncludeDatabaseContext {
+		t.Fatal("expected IncludeDatabaseContext to survive option normalization")
 	}
 }
 
@@ -1733,7 +1740,7 @@ func TestWriteSQLDropIfExistsPreambleDefaultsOffAndRequiresSchemaExport(t *testi
 	}
 }
 
-func TestExportDatabaseSQLToFileDefaultOptionsDoNotEmitDrops(t *testing.T) {
+func TestExportDatabaseSQLToFileDefaultOptionsDoNotEmitDropsOrDatabaseContext(t *testing.T) {
 	originalNewDatabaseFunc := newDatabaseFunc
 	t.Cleanup(func() {
 		newDatabaseFunc = originalNewDatabaseFunc
@@ -1768,6 +1775,9 @@ func TestExportDatabaseSQLToFileDefaultOptionsDoNotEmitDrops(t *testing.T) {
 	if strings.Contains(string(legacyContent), "DROP TABLE") {
 		t.Fatalf("default/legacy export must not emit DROP statements: %s", legacyContent)
 	}
+	if strings.Contains(string(legacyContent), "CREATE DATABASE") || strings.Contains(string(legacyContent), "USE `app`;") {
+		t.Fatalf("default export must not emit database context statements: %s", legacyContent)
+	}
 
 	optInFile, err := os.CreateTemp(t.TempDir(), "drop-export-*.sql")
 	if err != nil {
@@ -1777,24 +1787,122 @@ func TestExportDatabaseSQLToFileDefaultOptionsDoNotEmitDrops(t *testing.T) {
 	if err := optInFile.Close(); err != nil {
 		t.Fatalf("close opt-in export file: %v", err)
 	}
-	optInResult := app.exportDatabaseSQLToFile(
+	contextFreeDropResult := app.exportDatabaseSQLToFile(
 		config,
 		"app",
 		false,
 		optInPath,
 		ExportFileOptions{IncludeDropIfExists: true},
 	)
-	if !optInResult.Success {
-		t.Fatalf("opt-in export failed: %+v", optInResult)
+	if !contextFreeDropResult.Success {
+		t.Fatalf("context-free DROP export failed: %+v", contextFreeDropResult)
 	}
 	optInContent, err := os.ReadFile(optInPath)
 	if err != nil {
 		t.Fatalf("read opt-in export: %v", err)
 	}
-	dropIndex := strings.Index(string(optInContent), "DROP TABLE IF EXISTS `app`.`users`;")
+	dropIndex := strings.Index(string(optInContent), "DROP TABLE IF EXISTS `users`;")
 	createIndex := strings.Index(string(optInContent), "CREATE TABLE `users`")
 	if dropIndex < 0 || createIndex < 0 || dropIndex >= createIndex {
-		t.Fatalf("opt-in export must place DROP before CREATE: %s", optInContent)
+		t.Fatalf("context-free export must place unqualified DROP before CREATE: %s", optInContent)
+	}
+	if strings.Contains(string(optInContent), "`app`.`users`") {
+		t.Fatalf("context-free export must not qualify output objects with the source database: %s", optInContent)
+	}
+}
+
+func TestExportDatabaseSQLToFileDatabaseContextIsExplicitOptIn(t *testing.T) {
+	originalNewDatabaseFunc := newDatabaseFunc
+	t.Cleanup(func() {
+		newDatabaseFunc = originalNewDatabaseFunc
+	})
+
+	fakeDB := &fakeSQLDumpExportDB{
+		fakeExportQueryDB: fakeExportQueryDB{
+			data: []map[string]interface{}{{"id": int64(1)}},
+			cols: []string{"id"},
+			defs: []connection.ColumnDefinition{{Name: "id", Type: "bigint"}},
+		},
+		tables:    []string{"users"},
+		createSQL: "CREATE TABLE `users` (`id` BIGINT)",
+	}
+	newDatabaseFunc = func(string) (db.Database, error) {
+		return fakeDB, nil
+	}
+	app := NewApp()
+	config := connection.ConnectionConfig{Type: "mysql", Host: "127.0.0.1", Port: 3306}
+
+	contextFreePath := filepath.Join(t.TempDir(), "context-free.sql")
+	contextFreeResult := app.exportDatabaseSQLToFile(
+		config,
+		"app",
+		true,
+		contextFreePath,
+		ExportFileOptions{IncludeDropIfExists: true},
+	)
+	if !contextFreeResult.Success {
+		t.Fatalf("context-free export failed: %+v", contextFreeResult)
+	}
+	contextFreeContent, err := os.ReadFile(contextFreePath)
+	if err != nil {
+		t.Fatalf("read context-free export: %v", err)
+	}
+	contextFreeSQL := string(contextFreeContent)
+	for _, unexpected := range []string{
+		"CREATE DATABASE",
+		"USE `app`;",
+		"DROP TABLE IF EXISTS `app`.`users`;",
+		"INSERT INTO `app`.`users`",
+	} {
+		if strings.Contains(contextFreeSQL, unexpected) {
+			t.Fatalf("context-free export must not contain %q: %s", unexpected, contextFreeSQL)
+		}
+	}
+	for _, expected := range []string{
+		"DROP TABLE IF EXISTS `users`;",
+		"INSERT INTO `users` (`id`) VALUES (1);",
+	} {
+		if !strings.Contains(contextFreeSQL, expected) {
+			t.Fatalf("context-free export must contain %q: %s", expected, contextFreeSQL)
+		}
+	}
+	if !slices.Contains(fakeDB.queries, "SELECT * FROM `app`.`users`") {
+		t.Fatalf("context-free output must still read from the source database, queries=%#v", fakeDB.queries)
+	}
+
+	contextPath := filepath.Join(t.TempDir(), "with-context.sql")
+	contextResult := app.exportDatabaseSQLToFile(
+		config,
+		"app",
+		true,
+		contextPath,
+		ExportFileOptions{
+			IncludeDropIfExists:    true,
+			IncludeDatabaseContext: true,
+		},
+	)
+	if !contextResult.Success {
+		t.Fatalf("database-context export failed: %+v", contextResult)
+	}
+	contextContent, err := os.ReadFile(contextPath)
+	if err != nil {
+		t.Fatalf("read database-context export: %v", err)
+	}
+	contextSQL := string(contextContent)
+	orderedStatements := []string{
+		"CREATE DATABASE IF NOT EXISTS `app`;",
+		"USE `app`;",
+		"DROP TABLE IF EXISTS `app`.`users`;",
+		"CREATE TABLE `users`",
+		"INSERT INTO `app`.`users` (`id`) VALUES (1);",
+	}
+	previousIndex := -1
+	for _, statement := range orderedStatements {
+		index := strings.Index(contextSQL, statement)
+		if index < 0 || index <= previousIndex {
+			t.Fatalf("database-context export statement order is invalid at %q: %s", statement, contextSQL)
+		}
+		previousIndex = index
 	}
 }
 

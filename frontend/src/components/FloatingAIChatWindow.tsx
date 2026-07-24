@@ -1,5 +1,6 @@
 import React, { useCallback, useMemo, useRef } from 'react';
-import { Button, Spin } from 'antd';
+import { createPortal } from 'react-dom';
+import { Button, ConfigProvider, Spin } from 'antd';
 import { useStore } from '../store';
 import { t } from '../i18n';
 import {
@@ -10,6 +11,7 @@ import {
 } from '../utils/detachedWindow';
 import type { OverlayWorkbenchTheme } from '../utils/overlayWorkbenchTheme';
 import { hasNativeDetachedWindowManager } from '../utils/nativeDetachedWindowHost';
+import { APP_POPUP_Z_INDEX } from '../utils/overlayZIndex';
 import { useManagedPointerInteraction } from '../hooks/useManagedPointerInteraction';
 import AIPanelErrorBoundary from './ai/AIPanelErrorBoundary';
 
@@ -129,8 +131,9 @@ const FloatingAIChatWindow: React.FC<FloatingAIChatWindowProps> = ({
   const isDark = theme === 'dark';
   const bounds = windowState;
 
-  return (
-    <div className="gn-detached-ai-chat-layer" aria-label={t('ai_chat.detached.window_aria')}>
+  const floatingWindow = (
+    <ConfigProvider theme={{ token: { zIndexPopupBase: APP_POPUP_Z_INDEX } }}>
+      <div className="gn-detached-ai-chat-layer" aria-label={t('ai_chat.detached.window_aria')}>
       <style>{`
         .gn-detached-ai-chat-layer {
           position: fixed;
@@ -293,8 +296,13 @@ const FloatingAIChatWindow: React.FC<FloatingAIChatWindowProps> = ({
           onPointerDown={(event) => startInteraction(event, 'resize-se', bounds)}
         />
       </div>
-    </div>
+      </div>
+    </ConfigProvider>
   );
+
+  return typeof document === 'undefined'
+    ? floatingWindow
+    : createPortal(floatingWindow, document.body);
 };
 
 export default FloatingAIChatWindow;

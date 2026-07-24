@@ -13,11 +13,19 @@ import {
   shouldDetachAtScreenPoint,
   toAIChatDetachedBoundsMemory,
 } from './detachedWindow';
+import {
+  APP_DETACHED_WINDOW_Z_INDEX_BASE,
+  APP_POPUP_Z_INDEX,
+} from './overlayZIndex';
 
 describe('detachedWindow helpers', () => {
   it('computes next z-index above existing windows', () => {
-    expect(nextDetachedZIndex([])).toBe(1201);
-    expect(nextDetachedZIndex([{ zIndex: 1300 }, { zIndex: 1250 }])).toBe(1301);
+    expect(nextDetachedZIndex([])).toBe(APP_DETACHED_WINDOW_Z_INDEX_BASE + 1);
+    expect(nextDetachedZIndex([
+      { zIndex: APP_DETACHED_WINDOW_Z_INDEX_BASE + 100 },
+      { zIndex: APP_DETACHED_WINDOW_Z_INDEX_BASE + 50 },
+    ])).toBe(APP_DETACHED_WINDOW_Z_INDEX_BASE + 101);
+    expect(nextDetachedZIndex([])).toBeLessThan(APP_POPUP_Z_INDEX);
   });
 
   it('detaches only when vertical drag exceeds threshold', () => {
@@ -30,7 +38,8 @@ describe('detachedWindow helpers', () => {
     const bounds = createDefaultDetachedBounds([]);
     expect(bounds.width).toBeGreaterThan(0);
     expect(bounds.height).toBeGreaterThan(0);
-    expect(bounds.zIndex).toBeGreaterThan(1200);
+    expect(bounds.zIndex).toBeGreaterThan(APP_DETACHED_WINDOW_Z_INDEX_BASE);
+    expect(bounds.zIndex).toBeLessThan(APP_POPUP_Z_INDEX);
   });
 
   it('resolves floating window titles with object labels', () => {

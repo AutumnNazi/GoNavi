@@ -523,7 +523,10 @@ export interface TabData {
   tableExportInitialDatabaseNames?: string[];
   tableExportContentMode?: TableExportContentMode;
   tableExportIncludeDropIfExists?: boolean;
+  tableExportLaunchKey?: string;
   tableExportRequestKey?: string;
+  dataImportMode?: "table" | "database";
+  dataImportLaunchKey?: string;
   dataImportRunning?: boolean;
   sqlFileExecutionRequestKey?: string;
   sqlFileExecutionFileSizeMB?: string;

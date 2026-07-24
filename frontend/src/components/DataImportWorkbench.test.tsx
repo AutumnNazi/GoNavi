@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   dbGetDatabases: vi.fn(),
   dbGetTables: vi.fn(),
   importData: vi.fn(),
+  selectSQLFileForExecution: vi.fn(),
   messageError: vi.fn(),
   messageSuccess: vi.fn(),
   addTab: vi.fn(),
@@ -26,6 +27,14 @@ vi.mock('../../wailsjs/go/app/App', () => ({
   DBGetDatabases: mocks.dbGetDatabases,
   DBGetTables: mocks.dbGetTables,
   ImportData: mocks.importData,
+  SelectSQLFileForExecution: mocks.selectSQLFileForExecution,
+}));
+
+vi.mock('./DatabaseImportExecutionPanel', () => ({
+  default: (props: Record<string, unknown>) => React.createElement(
+    'mock-database-import-execution-panel',
+    { 'data-database-import-execution-panel-mock': 'true', ...props },
+  ),
 }));
 
 vi.mock('./ImportPreviewModal', () => ({
@@ -38,6 +47,7 @@ vi.mock('./ImportPreviewModal', () => ({
 vi.mock('antd', async () => {
   const React = await import('react');
   const Select = (props: Record<string, unknown>) => React.createElement('mock-select', props);
+  const Segmented = (props: Record<string, unknown>) => React.createElement('mock-segmented', props);
   const Button = ({ children, ...props }: any) => <button {...props}>{children}</button>;
   const Alert = (props: Record<string, unknown>) => React.createElement('mock-alert', props);
   const Empty = ({ description, ...props }: any) => React.createElement('mock-empty', props, description);
@@ -48,6 +58,7 @@ vi.mock('antd', async () => {
     Alert,
     Button,
     Empty,
+    Segmented,
     Select,
     Typography: { Text, Title },
     message: {
@@ -58,8 +69,10 @@ vi.mock('antd', async () => {
 });
 
 vi.mock('@ant-design/icons', () => ({
+  DatabaseOutlined: () => React.createElement('mock-icon', { 'data-icon': 'database' }),
   FileAddOutlined: () => React.createElement('mock-icon', { 'data-icon': 'file-add' }),
   ImportOutlined: () => React.createElement('mock-icon', { 'data-icon': 'import' }),
+  TableOutlined: () => React.createElement('mock-icon', { 'data-icon': 'table' }),
 }));
 
 const createTab = (overrides: Record<string, unknown> = {}) => ({
@@ -135,6 +148,11 @@ describe('DataImportWorkbench', () => {
       success: true,
       data: { filePath: '/tmp/users.csv' },
     });
+    mocks.selectSQLFileForExecution.mockReset();
+    mocks.selectSQLFileForExecution.mockResolvedValue({
+      success: true,
+      data: { filePath: '/tmp/full-backup.sql', fileSizeMB: '1.25' },
+    });
     mocks.messageError.mockReset();
     mocks.messageSuccess.mockReset();
     mocks.addTab.mockReset();
@@ -157,6 +175,55 @@ describe('DataImportWorkbench', () => {
     expect(tableSelect.props.options.map((option: any) => option.value)).toEqual(['orders', 'users']);
     expect(mocks.dbGetDatabases).toHaveBeenCalledTimes(1);
     expect(mocks.dbGetTables).toHaveBeenCalledWith(expect.anything(), 'app');
+  });
+
+  it('filters every SQL import protection from database mode connections', async () => {
+    const primaryConnection = mocks.storeState.connections[0];
+    mocks.storeState.connections = [
+      primaryConnection,
+      {
+        id: 'data-import-protected',
+        name: 'Data import protected',
+        config: {
+          ...primaryConnection.config,
+          protection: { restrictDataImport: true },
+        },
+      },
+      {
+        id: 'structure-protected',
+        name: 'Structure protected',
+        config: {
+          ...primaryConnection.config,
+          protection: { restrictStructureEdit: true },
+        },
+      },
+      {
+        id: 'script-protected',
+        name: 'Script protected',
+        config: {
+          ...primaryConnection.config,
+          protection: { restrictScriptExecution: true },
+        },
+      },
+      {
+        id: 'redis-1',
+        name: 'Redis',
+        config: { type: 'redis', host: 'localhost', port: 6379 },
+      },
+    ];
+
+    const renderer = await renderWorkbench({
+      dataImportMode: 'database',
+      dataImportLaunchKey: 'database-launch-1',
+      tableName: undefined,
+    });
+    const connectionSelect = renderer.root.findByProps({
+      'data-import-target-field': 'connection',
+    });
+
+    expect(connectionSelect.props.options.map((option: any) => option.value)).toEqual(['conn-1']);
+    expect(renderer.root.findAllByProps({ 'data-import-target-field': 'table' })).toHaveLength(0);
+    expect(mocks.dbGetTables).not.toHaveBeenCalled();
   });
 
   it('syncs the automatic connection fallback back to the stable workbench tab', async () => {
@@ -219,6 +286,84 @@ describe('DataImportWorkbench', () => {
     }).props.disabled).toBe(true);
   });
 
+  it('selects a SQL file without running it and renders the database execution panel', async () => {
+    const renderer = await renderWorkbench({
+      dataImportMode: 'database',
+      dataImportLaunchKey: 'database-launch-1',
+      tableName: undefined,
+    });
+    const modeSelector = renderer.root.findByProps({
+      'data-import-mode-selector': 'true',
+    });
+    const databaseSelect = renderer.root.findByProps({
+      'data-import-target-field': 'database',
+    });
+    const selectFileButton = renderer.root.findByProps({
+      'data-import-select-file-action': 'true',
+    });
+
+    expect(modeSelector.props.value).toBe('database');
+    expect(databaseSelect.props.allowClear).toBe(true);
+    expect(renderer.root.findAllByProps({ 'data-import-target-field': 'table' })).toHaveLength(0);
+    expect(mocks.dbGetTables).not.toHaveBeenCalled();
+
+    await act(async () => {
+      selectFileButton.props.onClick();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(mocks.selectSQLFileForExecution).toHaveBeenCalledTimes(1);
+    expect(mocks.importData).not.toHaveBeenCalled();
+    expect(renderer.root.findAllByProps({ 'data-import-preview-mock': 'true' })).toHaveLength(0);
+    const executionPanel = renderer.root.findByProps({
+      'data-database-import-execution-panel-mock': 'true',
+    });
+    expect(executionPanel.props).toMatchObject({
+      dbName: 'app',
+      filePath: '/tmp/full-backup.sql',
+      fileSizeMB: '1.25',
+      darkMode: false,
+    });
+    expect(executionPanel.props.connectionConfig).toEqual(expect.objectContaining({ type: 'mysql' }));
+  });
+
+  it('allows selecting a database SQL file without a default database', async () => {
+    const renderer = await renderWorkbench({
+      dataImportMode: 'database',
+      dataImportLaunchKey: 'database-launch-1',
+      tableName: undefined,
+    });
+    const databaseSelect = renderer.root.findByProps({
+      'data-import-target-field': 'database',
+    });
+
+    await act(async () => {
+      databaseSelect.props.onChange(undefined);
+      await Promise.resolve();
+    });
+
+    expect(renderer.root.findByProps({
+      'data-import-target-field': 'database',
+    }).props.value).toBeUndefined();
+    const selectFileButton = renderer.root.findByProps({
+      'data-import-select-file-action': 'true',
+    });
+    expect(selectFileButton.props.disabled).toBe(false);
+
+    await act(async () => {
+      selectFileButton.props.onClick();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(renderer.root.findByProps({
+      'data-database-import-execution-panel-mock': 'true',
+    }).props.dbName).toBe('');
+    expect(mocks.dbGetTables).not.toHaveBeenCalled();
+    expect(mocks.importData).not.toHaveBeenCalled();
+  });
+
   it('clears downstream target state when the database changes', async () => {
     const renderer = await renderWorkbench();
     const databaseSelect = renderer.root.findByProps({
@@ -252,6 +397,80 @@ describe('DataImportWorkbench', () => {
     }));
   });
 
+  it('clears the selected table file and table target when switching to database mode', async () => {
+    const renderer = await renderWorkbench();
+    const selectFileButton = renderer.root.findByProps({
+      'data-import-select-file-action': 'true',
+    });
+
+    await act(async () => {
+      selectFileButton.props.onClick();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(renderer.root.findAllByProps({ 'data-import-preview-mock': 'true' })).toHaveLength(1);
+
+    const modeSelector = renderer.root.findByProps({
+      'data-import-mode-selector': 'true',
+    });
+    expect(modeSelector.props.disabled).toBe(false);
+    await act(async () => {
+      modeSelector.props.onChange('database');
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(renderer.root.findByProps({
+      'data-import-mode-selector': 'true',
+    }).props.value).toBe('database');
+    expect(renderer.root.findAllByProps({ 'data-import-target-field': 'table' })).toHaveLength(0);
+    expect(renderer.root.findAllByProps({ title: '/tmp/users.csv' })).toHaveLength(0);
+    expect(renderer.root.findAllByProps({ 'data-import-preview-mock': 'true' })).toHaveLength(0);
+    expect(renderer.root.findAllByProps({
+      'data-database-import-execution-panel-mock': 'true',
+    })).toHaveLength(0);
+    expect(mocks.addTab).toHaveBeenLastCalledWith(expect.objectContaining({
+      id: 'data-import-workbench',
+      dataImportMode: 'database',
+      tableName: undefined,
+    }));
+  });
+
+  it('ignores a pending table file selection result after switching modes', async () => {
+    let resolveTableFile!: (result: any) => void;
+    mocks.importData.mockReturnValueOnce(new Promise<any>((resolve) => {
+      resolveTableFile = resolve;
+    }));
+    const renderer = await renderWorkbench();
+
+    await act(async () => {
+      renderer.root.findByProps({
+        'data-import-select-file-action': 'true',
+      }).props.onClick();
+      await Promise.resolve();
+    });
+    await act(async () => {
+      renderer.root.findByProps({
+        'data-import-mode-selector': 'true',
+      }).props.onChange('database');
+      await Promise.resolve();
+    });
+    await act(async () => {
+      resolveTableFile({ success: true, data: { filePath: '/tmp/stale-users.csv' } });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(renderer.root.findByProps({
+      'data-import-mode-selector': 'true',
+    }).props.value).toBe('database');
+    expect(renderer.root.findAllByProps({ title: '/tmp/stale-users.csv' })).toHaveLength(0);
+    expect(renderer.root.findAllByProps({ 'data-import-preview-mock': 'true' })).toHaveLength(0);
+    expect(renderer.root.findAllByProps({
+      'data-database-import-execution-panel-mock': 'true',
+    })).toHaveLength(0);
+  });
+
   it('does not report the native file-picker cancellation as an error', async () => {
     mocks.importData.mockResolvedValueOnce({ success: false, message: '已取消' });
     const renderer = await renderWorkbench();
@@ -267,6 +486,90 @@ describe('DataImportWorkbench', () => {
 
     expect(mocks.messageError).not.toHaveBeenCalled();
     expect(renderer.root.findAllByProps({ 'data-import-preview-mock': 'true' })).toHaveLength(0);
+  });
+
+  it('resets a selected SQL file when the same target gets a new launch key', async () => {
+    const renderer = await renderWorkbench({
+      dataImportMode: 'database',
+      dataImportLaunchKey: 'database-launch-1',
+      tableName: undefined,
+    });
+    await act(async () => {
+      renderer.root.findByProps({
+        'data-import-select-file-action': 'true',
+      }).props.onClick();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(renderer.root.findAllByProps({
+      'data-database-import-execution-panel-mock': 'true',
+    })).toHaveLength(1);
+
+    await act(async () => {
+      renderer.update(<DataImportWorkbench tab={createTab({
+        dataImportMode: 'database',
+        dataImportLaunchKey: 'database-launch-2',
+        tableName: undefined,
+      })} />);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(renderer.root.findAllByProps({ title: '/tmp/full-backup.sql' })).toHaveLength(0);
+    expect(renderer.root.findAllByProps({
+      'data-database-import-execution-panel-mock': 'true',
+    })).toHaveLength(0);
+    expect(mocks.selectSQLFileForExecution).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not replace a running database import target when the stable tab is reopened', async () => {
+    const renderer = await renderWorkbench({
+      dataImportMode: 'database',
+      dataImportLaunchKey: 'database-launch-1',
+      tableName: undefined,
+    });
+    await act(async () => {
+      renderer.root.findByProps({
+        'data-import-select-file-action': 'true',
+      }).props.onClick();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    const executionPanel = renderer.root.findByProps({
+      'data-database-import-execution-panel-mock': 'true',
+    });
+    await act(async () => {
+      executionPanel.props.onRunningChange(true);
+      await Promise.resolve();
+    });
+    await act(async () => {
+      renderer.update(<DataImportWorkbench tab={createTab({
+        dataImportMode: 'table',
+        dataImportLaunchKey: 'table-launch-2',
+        dbName: 'analytics',
+        tableName: 'events',
+      })} />);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(renderer.root.findByProps({
+      'data-import-mode-selector': 'true',
+    }).props).toMatchObject({ value: 'database', disabled: true });
+    expect(renderer.root.findByProps({
+      'data-database-import-execution-panel-mock': 'true',
+    }).props).toMatchObject({
+      dbName: 'app',
+      filePath: '/tmp/full-backup.sql',
+    });
+    expect(mocks.addTab).toHaveBeenCalledWith(expect.objectContaining({
+      id: 'data-import-workbench',
+      connectionId: 'conn-1',
+      dbName: 'app',
+      tableName: undefined,
+      dataImportMode: 'database',
+      dataImportRunning: true,
+    }));
   });
 
   it('does not replace an active import target when the stable tab is reopened', async () => {

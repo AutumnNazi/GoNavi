@@ -52,7 +52,10 @@ describe('AISettingsSidebar', () => {
     expect(markup).not.toContain('aria-pressed=');
     expect(markup).toContain('gonavi-ai-settings-nav-item is-active');
     expect(markup).toContain('border-left:3px solid');
-    expect(markup).toContain('border-radius:0');
+    expect(markup).toContain('border-radius:4px');
+    expect(sidebarSource).toContain("style={{ display: 'grid', gap: 2 }}");
+    expect(sidebarSource).not.toContain('borderTop');
+    expect(sidebarSource).not.toContain('borderBottom');
     expect(markup).not.toContain('linear-gradient(180deg');
   });
 

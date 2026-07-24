@@ -3,6 +3,7 @@ import Modal from './common/ResizableDraggableModal';
 import React, { useState, useEffect, useRef, useContext, useMemo, useCallback, useDeferredValue } from 'react';
 import { createPortal } from 'react-dom';
 import { Table, message, Input, Button, Dropdown, MenuProps, Form, Pagination, Select, Checkbox, Segmented, Tooltip, Popover, DatePicker, TimePicker } from 'antd';
+import type { InputRef } from 'antd';
 import dayjs from 'dayjs';
 import type { SortOrder, ColumnType } from 'antd/es/table/interface';
 import type { Reference as TableReference } from 'rc-table';
@@ -82,7 +83,13 @@ import {
     pickRowsForClipboard,
 } from './dataGridClipboardExport';
 import { applyNoAutoCapAttributesWithin, noAutoCapInputProps } from '../utils/inputAutoCap';
-import { DEFAULT_SHORTCUT_OPTIONS, getShortcutPlatform, resolveShortcutDisplay } from '../utils/shortcuts';
+import {
+    DEFAULT_SHORTCUT_OPTIONS,
+    getShortcutPlatform,
+    isEditableElement,
+    isShortcutMatch,
+    resolveShortcutDisplay,
+} from '../utils/shortcuts';
 import {
     TEMPORAL_FORMATS,
     formatFromDayjs,
@@ -238,6 +245,7 @@ import {
     ContextMenuRow,
     buildColumnMetaMap,
     hasUsableColumnMeta,
+    shouldOmitBlankDataGridInsertValue,
     EXACT_GRID_FILTER_OPERATOR,
     CONTAINS_GRID_FILTER_OPERATOR,
     FILTER_FIELD_SELECT_STYLE,
@@ -291,6 +299,8 @@ export {
     buildGridFieldSelectOptions,
     buildDataGridCommitChangeSet,
     collectDataGridCellSelectionRowKeys,
+    buildColumnMetaMap,
+    shouldOmitBlankDataGridInsertValue,
 } from './DataGridCore';
 
 // Native scroll events can outlive a pointer gesture on macOS. Wait for a brief
@@ -306,6 +316,7 @@ const DataGrid: React.FC<DataGridProps> = ({
     scrollSnapshot, onScrollSnapshotChange, toolbarExtraActions, showRowNumberColumn, isActive = true, enableSqlLogEvent = false,
     initialViewMode,
     initialViewModeRequestId,
+    initialViewModeScope,
     onDataViewActivate,
     onDataChange,
 }) => {
@@ -423,6 +434,7 @@ const DataGrid: React.FC<DataGridProps> = ({
   const [columnSearchText, setColumnSearchText] = useState('');
   const [columnQuickFindText, setColumnQuickFindText] = useState('');
   const [highlightedColumnName, setHighlightedColumnName] = useState('');
+  const [pageFindOpen, setPageFindOpen] = useState(false);
   const [pageFindText, setPageFindText] = useState('');
   const [activePageFindMatchIndex, setActivePageFindMatchIndex] = useState(-1);
   const columnQuickFindHighlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -442,6 +454,7 @@ const DataGrid: React.FC<DataGridProps> = ({
   useEffect(() => {
       setColumnQuickFindText('');
       setHighlightedColumnName('');
+      setPageFindOpen(false);
       setPageFindText('');
       setActivePageFindMatchIndex(-1);
   }, [connectionId, dbName, tableName]);
@@ -972,6 +985,7 @@ const DataGrid: React.FC<DataGridProps> = ({
   });
   const cellContextMenuPortalRef = useRef<HTMLDivElement | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
+  const pageFindInputRef = useRef<InputRef>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const tableContainerRef = useRef<HTMLDivElement | null>(null);
   const tableRef = useRef<VirtualTableScrollReference | null>(null);
@@ -1290,6 +1304,9 @@ const DataGrid: React.FC<DataGridProps> = ({
           }
           const normalizedName = String(columnName || '').trim();
           const meta = columnMetaMap[normalizedName] || columnMetaMapByLowerName[normalizedName.toLowerCase()];
+          if (shouldOmitBlankDataGridInsertValue(value, mode, meta)) {
+              return undefined;
+          }
           const temporal = isTemporalColumnType(meta?.type, dbType);
 
           if (!temporal) {
@@ -1743,7 +1760,99 @@ const DataGrid: React.FC<DataGridProps> = ({
       translate: translateDataGrid,
       initialViewMode,
       initialViewModeRequestId,
+      initialViewModeScope,
   });
+
+  const pageFindShortcutCombo = activeShortcutPlatform === 'mac' ? 'Meta+F' : 'Ctrl+F';
+
+  const focusPageFindInput = useCallback(() => {
+      requestAnimationFrame(() => {
+          const inputHandle = pageFindInputRef.current as (InputRef & HTMLInputElement) | null;
+          const input = inputHandle?.input ?? inputHandle;
+          input?.focus?.({ preventScroll: true });
+          input?.select?.();
+      });
+  }, []);
+
+  const handleOpenPageFind = useCallback(() => {
+      setPageFindOpen(true);
+      focusPageFindInput();
+  }, [focusPageFindInput]);
+
+  const handleClosePageFind = useCallback(() => {
+      setPageFindOpen(false);
+      setPageFindText('');
+      setActivePageFindMatchIndex(-1);
+      requestAnimationFrame(() => {
+          rootRef.current?.focus({ preventScroll: true });
+      });
+  }, []);
+
+  const handleDataGridRootPointerDownCapture = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+      if (isEditableElement(event.target)) return;
+      event.currentTarget.focus({ preventScroll: true });
+  }, []);
+
+  useEffect(() => {
+      if (!isV2Ui || (isActive && viewMode === 'table')) return;
+      setPageFindOpen(false);
+      setPageFindText('');
+      setActivePageFindMatchIndex(-1);
+  }, [isActive, isV2Ui, viewMode]);
+
+  useEffect(() => {
+      if (!isV2Ui || !isActive || viewMode !== 'table') return;
+
+      const handlePageFindShortcut = (event: KeyboardEvent) => {
+          if (!isShortcutMatch(event, pageFindShortcutCombo)) return;
+
+          const root = rootRef.current;
+          const eventTarget = event.target;
+          const targetNode = typeof Node !== 'undefined' && eventTarget instanceof Node
+              ? eventTarget
+              : null;
+          const targetElement = eventTarget
+              && typeof (eventTarget as Element).closest === 'function'
+              ? eventTarget as Element
+              : null;
+          const activeElement = document.activeElement;
+          const eventTargetInGrid = !!(root && targetNode && root.contains(targetNode));
+          const activeElementInGrid = !!(root && activeElement && root.contains(activeElement));
+          const isDocumentLevelTarget = eventTarget === window
+              || eventTarget === document
+              || eventTarget === document.body
+              || eventTarget === document.documentElement;
+          const hasGridShortcutContext = eventTargetInGrid
+              || activeElementInGrid
+              || (exportScope === 'table' && isDocumentLevelTarget);
+          if (!hasGridShortcutContext) return;
+
+          const isPageFindInput = !!targetElement?.closest('[data-grid-page-find="true"]');
+          if (
+              !isPageFindInput
+              && (isEditableElement(event.target) || isEditableElement(activeElement))
+          ) {
+              return;
+          }
+
+          event.preventDefault();
+          event.stopPropagation();
+          event.stopImmediatePropagation();
+          handleOpenPageFind();
+      };
+
+      window.addEventListener('keydown', handlePageFindShortcut, true);
+      return () => {
+          window.removeEventListener('keydown', handlePageFindShortcut, true);
+      };
+  }, [
+      exportScope,
+      handleOpenPageFind,
+      isActive,
+      isV2Ui,
+      pageFindShortcutCombo,
+      viewMode,
+  ]);
 
   useEffect(() => {
       const handleExternalViewModeChange = (event: Event) => {
@@ -5273,6 +5382,7 @@ const DataGrid: React.FC<DataGridProps> = ({
         handleBatchFillToSelected,
         handleCellEditorSave,
         handleCellSetNull,
+        handleClosePageFind,
         handleCommit,
         handleCopyContextMenuFieldName,
         handleCopyCsv,
@@ -5287,6 +5397,7 @@ const DataGrid: React.FC<DataGridProps> = ({
         handleCopyUpdate,
         handleDataPanelFormatJson,
         handleDataPanelSave,
+        handleDataGridRootPointerDownCapture,
         closeDdlView,
         handleDdlSidebarResizeStart,
         handleDeleteSelected,
@@ -5352,6 +5463,8 @@ const DataGrid: React.FC<DataGridProps> = ({
         openCurrentViewRowEditor,
         openRowEditorFieldEditor,
         pageFindMatches,
+        pageFindInputRef,
+        pageFindOpen,
         pageFindSummary,
         pageFindText,
         pagination,

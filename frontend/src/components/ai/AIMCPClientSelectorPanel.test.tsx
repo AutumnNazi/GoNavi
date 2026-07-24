@@ -6,6 +6,13 @@ import { describe, expect, it, vi } from 'vitest';
 import { buildOverlayWorkbenchTheme } from '../../utils/overlayWorkbenchTheme';
 import AIMCPClientSelectorPanel from './AIMCPClientSelectorPanel';
 
+vi.mock('@ant-design/icons', async () => {
+  const React = await import('react');
+  return {
+    CheckCircleFilled: (props: any) => React.createElement('span', props),
+  };
+});
+
 describe('AIMCPClientSelectorPanel', () => {
   it('renders local install and remote bridge choices with clear state labels', () => {
     const markup = renderToStaticMarkup(
@@ -68,14 +75,14 @@ describe('AIMCPClientSelectorPanel', () => {
     expect(markup).toContain('Selected. The remote connection guide will be copied');
     expect(markup).toContain('cloud Agents');
     expect(markup).toContain('role="radiogroup"');
-    expect(markup).toContain('class="gonavi-ai-mcp-client-option"');
+    expect(markup).toContain('class="gonavi-ai-mcp-client-options"');
+    expect(markup).toContain('class="gonavi-ai-mcp-client-option is-active"');
+    expect(markup).toContain('class="gonavi-ai-mcp-client-check"');
     expect(markup).toContain('role="radio"');
     expect(markup).toContain('aria-checked="true"');
     expect(markup.match(/tabindex="-1"/g)).toHaveLength(2);
     expect(markup.match(/tabindex="0"/g)).toHaveLength(1);
-    expect(markup).toContain('border-left:3px solid #1677ff');
-    expect(markup).toContain('background:transparent');
-    expect(markup).toContain('min-height:46px');
+    expect(markup).not.toContain('border-left:3px solid');
     expect(markup).toContain('class="gonavi-ai-mcp-disclosure gonavi-ai-mcp-client-guide-disclosure"');
     expect(markup).not.toContain('gonavi-ai-mcp-client-guide-disclosure" open');
   });

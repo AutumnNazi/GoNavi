@@ -1,6 +1,7 @@
 import React from 'react';
 import { Button, Input, Tooltip } from 'antd';
-import { LeftOutlined, RightOutlined, SearchOutlined } from '@ant-design/icons';
+import type { InputRef } from 'antd';
+import { CloseOutlined, LeftOutlined, RightOutlined, SearchOutlined } from '@ant-design/icons';
 import { t as defaultTranslate, type I18nParams } from '../i18n';
 
 export type DataGridPageFindTranslate = (key: string, params?: I18nParams) => string;
@@ -8,6 +9,7 @@ export type DataGridPageFindTranslate = (key: string, params?: I18nParams) => st
 export interface DataGridPageFindProps {
   isV2Ui: boolean;
   darkMode: boolean;
+  inputRef?: React.Ref<InputRef>;
   inputProps?: Record<string, unknown>;
   pageFindText: string;
   normalizedPageFindText: string;
@@ -26,6 +28,7 @@ export interface DataGridPageFindProps {
 const DataGridPageFind: React.FC<DataGridPageFindProps> = ({
   isV2Ui,
   darkMode,
+  inputRef,
   inputProps,
   pageFindText,
   normalizedPageFindText,
@@ -53,6 +56,7 @@ const DataGridPageFind: React.FC<DataGridPageFindProps> = ({
         style={isV2Ui ? undefined : { display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, flexWrap: 'nowrap', height: 32 }}
       >
         <Input
+          ref={inputRef}
           className={isV2Ui ? 'gn-v2-data-grid-page-find-input' : undefined}
           {...inputProps}
           allowClear
@@ -67,6 +71,16 @@ const DataGridPageFind: React.FC<DataGridPageFindProps> = ({
               event.preventDefault();
               event.stopPropagation();
               onCancel();
+              return;
+            }
+            if (event.key === 'Enter') {
+              event.preventDefault();
+              event.stopPropagation();
+              if (event.shiftKey) {
+                onNavigatePrevious();
+              } else {
+                onNavigateNext();
+              }
             }
           }}
           style={isV2Ui ? undefined : { width: 168, height: 32 }}
@@ -74,6 +88,8 @@ const DataGridPageFind: React.FC<DataGridPageFindProps> = ({
         <Button
           data-grid-page-find-prev="true"
           className={isV2Ui ? 'gn-v2-data-grid-page-find-prev' : undefined}
+          aria-label={translate('data_grid.page_find.previous')}
+          title={translate('data_grid.page_find.previous')}
           size="small"
           icon={<LeftOutlined />}
           disabled={!hasMatches}
@@ -83,6 +99,8 @@ const DataGridPageFind: React.FC<DataGridPageFindProps> = ({
         <Button
           data-grid-page-find-next="true"
           className={isV2Ui ? 'gn-v2-data-grid-page-find-next' : undefined}
+          aria-label={translate('data_grid.page_find.next')}
+          title={translate('data_grid.page_find.next')}
           size="small"
           icon={<RightOutlined />}
           disabled={!hasMatches}
@@ -104,6 +122,18 @@ const DataGridPageFind: React.FC<DataGridPageFindProps> = ({
             {hasMatches ? `${activePageFindPosition} / ${matchCount} · ` : ''}{summaryText}
           </span>
         )}
+        {isV2Ui ? (
+          <Button
+            data-grid-page-find-close="true"
+            className="gn-v2-data-grid-page-find-close"
+            aria-label={translate('common.close')}
+            title={translate('common.close')}
+            size="small"
+            type="text"
+            icon={<CloseOutlined />}
+            onClick={onCancel}
+          />
+        ) : null}
       </div>
     </Tooltip>
   );

@@ -3,9 +3,10 @@ import Editor, { loader, type BeforeMount, type EditorProps, type OnMount } from
 import { useStore } from '../store';
 import { sanitizeDataTableFontSize } from '../utils/dataGridDisplay';
 import { DEFAULT_MONO_FONT_FAMILY } from '../utils/fontFamilies';
+import { resolveSqlEditorFontSize } from '../utils/sqlEditorTypography';
 
 export type { BeforeMount, OnMount } from '@monaco-editor/react';
-export type GonaviMonacoTypography = 'code' | 'data';
+export type GonaviMonacoTypography = 'code' | 'data' | 'sql';
 
 const DEFAULT_FONT_SIZE = 14;
 const MIN_FONT_SIZE = 12;
@@ -855,6 +856,8 @@ const MonacoEditor: React.FC<MonacoEditorProps> = ({
   const uiVersion = useStore((state) => state.appearance.uiVersion);
   const dataTableFontSize = useStore((state) => state.appearance.dataTableFontSize);
   const dataTableFontSizeFollowGlobal = useStore((state) => state.appearance.dataTableFontSizeFollowGlobal);
+  const sqlEditorFontSize = useStore((state) => state.appearance.sqlEditorFontSize);
+  const sqlEditorFontSizeFollowGlobal = useStore((state) => state.appearance.sqlEditorFontSizeFollowGlobal);
   const monoFontFamily = useStore((state) => state.appearance.customMonoFontFamily);
   const globalFontSize = useStore((state) => state.fontSize);
 
@@ -917,9 +920,16 @@ const MonacoEditor: React.FC<MonacoEditorProps> = ({
     const effectiveDataTableFontSize = dataTableFontSizeFollowGlobal !== false
       ? effectiveGlobalFontSize
       : (sanitizeDataTableFontSize(dataTableFontSize) ?? effectiveGlobalFontSize);
+    const effectiveSqlEditorFontSize = resolveSqlEditorFontSize({
+      globalFontSize: effectiveGlobalFontSize,
+      sqlEditorFontSize,
+      sqlEditorFontSizeFollowGlobal,
+    });
     const resolvedFontSize = gonaviTypography === 'data'
       ? effectiveDataTableFontSize
-      : Math.max(10, Math.round(effectiveDataTableFontSize * 0.92));
+      : gonaviTypography === 'sql'
+        ? effectiveSqlEditorFontSize
+        : Math.max(10, Math.round(effectiveDataTableFontSize * 0.92));
     const effectiveEditorFontSize = Math.max(
       10,
       Math.round(Number(options?.fontSize) || resolvedFontSize),
@@ -939,6 +949,8 @@ const MonacoEditor: React.FC<MonacoEditorProps> = ({
     gonaviTypography,
     monoFontFamily,
     options,
+    sqlEditorFontSize,
+    sqlEditorFontSizeFollowGlobal,
     uiVersion,
   ]);
 

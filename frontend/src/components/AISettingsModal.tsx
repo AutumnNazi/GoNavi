@@ -794,7 +794,7 @@ export const AISettingsContent: React.FC<AISettingsContentProps> = ({ active, da
                 aria-labelledby={`gonavi-ai-settings-tab-${sectionKey}`}
                 hidden={activeSection !== sectionKey}
             >
-                <div style={{ paddingBottom: 12, marginBottom: 2, borderBottom: `1px solid ${overlayTheme.divider}` }}>
+                <div style={{ paddingBottom: 12, marginBottom: 2 }}>
                     <div style={{ fontSize: 'var(--gn-font-size, 14px)', fontWeight: 700, color: overlayTheme.titleText }}>
                         {t(sectionMeta.titleKey)}
                     </div>

@@ -125,6 +125,7 @@ const mocks = vi.hoisted(() => ({
       opacity: 1,
       blur: 0,
       uiVersion: 'legacy',
+      sidebarHiddenObjectGroups: [],
     } as any,
     shortcutOptions: null as any,
   },
@@ -322,6 +323,7 @@ describe('Sidebar locate toolbar', () => {
       opacity: 1,
       blur: 0,
       uiVersion: 'legacy',
+      sidebarHiddenObjectGroups: [],
     };
     mocks.state.shortcutOptions = cloneShortcutOptions(DEFAULT_SHORTCUT_OPTIONS);
   });
@@ -996,13 +998,18 @@ describe('Sidebar locate toolbar', () => {
     expect(railSource).toContain('handlers.openSettings');
   });
 
-  it('renders the v2 sidebar rail, command search hint, filter tabs and slow-query footer', () => {
+  it('renders the fixed v2 rail, explorer filters and workbench actions', () => {
     const markup = renderSidebarMarkup({ uiVersion: 'v2', onCreateConnection: mocks.noop });
+    const collapsedMarkup = renderSidebarMarkup({ uiVersion: 'v2', isTreePanelCollapsed: true });
     const source = readSidebarSource();
 
     expect(markup).toContain('gn-v2-sidebar-redesign');
     expect(markup).toContain('gn-v2-connection-rail');
+    expect(markup).toContain('data-sidebar-fixed-rail="true"');
     expect(markup).toContain('gn-v2-object-explorer');
+    expect(markup.indexOf('data-sidebar-fixed-rail="true"')).toBeLessThan(markup.indexOf('data-sidebar-tree-panel="true"'));
+    expect(collapsedMarkup).toContain('data-sidebar-fixed-rail="true"');
+    expect(collapsedMarkup).toContain('data-sidebar-tree-panel="true" aria-hidden="true" style="display:none');
     expect(markup).toContain('gn-v2-active-connection-header');
     expect(markup).toContain('gn-v2-explorer-search');
     expect(markup).toContain('data-v2-sidebar-search-mode="command"');
@@ -1032,12 +1039,15 @@ describe('Sidebar locate toolbar', () => {
     expect(source).toContain("window.removeEventListener('keydown', handleV2CommandSearchGlobalKeyDown, true)");
     expect(source).toContain('onClick={() => setV2ExplorerFilter(item.key)}');
     expect(source).toContain('treeData={isV2Ui ? v2VisibleTreeData : displayTreeData}');
-    expect(markup).toContain('gn-v2-sidebar-log-footer');
-    expect(markup).toContain('gn-v2-sidebar-slow-query-button');
+    expect(markup).toContain('gn-v2-rail-workbench-actions');
+    expect(markup).toContain('data-sidebar-sql-analysis-action="true"');
+    expect(markup).toContain('data-sidebar-sql-audit-action="true"');
+    expect(markup).not.toContain('gn-v2-sidebar-log-footer');
+    expect(markup).not.toContain('gn-v2-sidebar-slow-query-button');
     expect(markup).not.toContain('gn-v2-sidebar-log-button');
     expect(markup).not.toContain('SQL 执行日志');
     expect(markup).not.toContain('2,341');
-    expect(markup).not.toContain('gn-v2-rail-action-group');
+    expect(markup).toContain('gn-v2-rail-items');
     expect(source).toContain('className="gn-v2-rail-primary-actions"');
     expect(markup).toContain('data-sidebar-create-group-action="true"');
     expect(markup).toContain('data-sidebar-batch-table-action="true"');
@@ -1293,12 +1303,13 @@ describe('Sidebar locate toolbar', () => {
     expect(source).not.toContain("shortcut: '⌘L'");
   });
 
-  it('scales the v2 rail and footer tools from global appearance tokens', () => {
+  it('scales the v2 rail and keeps fixed workbench tools below a scrollable primary area', () => {
     const css = readV2ThemeCss();
 
-    expect(css).toMatch(/\.gn-v2-rail-action-group,\s*body\[data-ui-version="v2"\] \.gn-v2-rail-system-actions \{[^}]*flex-direction: column;/s);
-    expect(css).toMatch(/\.gn-v2-rail-action-group,\s*body\[data-ui-version="v2"\] \.gn-v2-rail-system-actions \{[^}]*flex-direction: column;/s);
-    expect(css).toMatch(/\.gn-v2-rail-action-group \{[^}]*border-bottom: 0\.5px solid var\(--gn-br-1\);/s);
+    expect(css).toMatch(/\.gn-v2-rail-workbench-actions,\s*body\[data-ui-version="v2"\] \.gn-v2-rail-system-actions \{[^}]*flex-direction: column;/s);
+    expect(css).toMatch(/\.gn-v2-rail-workbench-actions \{[^}]*border-bottom: 0\.5px solid var\(--gn-br-1\);/s);
+    expect(css).toMatch(/\.gn-v2-rail-items \{[^}]*flex: 1 1 auto;[^}]*overflow-y: auto;/s);
+    expect(css).toMatch(/\.gn-v2-rail-secondary-actions \{[^}]*margin-top: auto;[^}]*flex: 0 0 auto;/s);
     expect(css).toMatch(/\.gn-v2-explorer-toolbar\s*\{[^}]*display:\s*none\s*!important/s);
     expect(css).toMatch(/\.ant-tree \{[^}]*font-size: var\(--gn-sidebar-tree-font-size, var\(--gn-font-size-sm, 12px\)\);/s);
     expect(css).toMatch(/\.gn-v2-explorer-tree-shell \.ant-tree \{[^}]*font-size: var\(--gn-sidebar-tree-font-size, var\(--gn-font-size-sm, 12px\)\);/s);
@@ -1333,6 +1344,7 @@ describe('Sidebar locate toolbar', () => {
       opacity: 1,
       blur: 0,
       uiVersion: 'v2',
+      sidebarHiddenObjectGroups: [],
     };
 
     const markup = renderSidebarMarkup({ uiVersion: 'v2', onCreateConnection: mocks.noop });
@@ -1536,6 +1548,7 @@ describe('Sidebar locate toolbar', () => {
       opacity: 1,
       blur: 0,
       uiVersion: 'v2',
+      sidebarHiddenObjectGroups: [],
     };
 
     const markup = renderSidebarMarkup({ uiVersion: 'v2' });
@@ -1568,6 +1581,7 @@ describe('Sidebar locate toolbar', () => {
       opacity: 1,
       blur: 0,
       uiVersion: 'v2',
+      sidebarHiddenObjectGroups: [],
     };
 
     const markup = renderSidebarMarkup({ uiVersion: 'v2' });
@@ -1611,6 +1625,7 @@ describe('Sidebar locate toolbar', () => {
       opacity: 1,
       blur: 0,
       uiVersion: 'v2',
+      sidebarHiddenObjectGroups: [],
     };
 
     const markup = renderSidebarMarkup({ uiVersion: 'v2' });

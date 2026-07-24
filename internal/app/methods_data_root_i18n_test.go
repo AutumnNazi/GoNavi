@@ -25,6 +25,20 @@ func methodsDataRootFunctionSource(t *testing.T, source string, signature string
 	return source[start : start+len(signature)+end]
 }
 
+func methodsLogDirectoryFunctionSource(t *testing.T, source string, signature string) string {
+	t.Helper()
+	start := strings.Index(source, signature)
+	if start < 0 {
+		t.Fatalf("methods_log_directory.go missing function signature %q", signature)
+	}
+	rest := source[start+len(signature):]
+	end := strings.Index(rest, "\nfunc ")
+	if end < 0 {
+		return source[start:]
+	}
+	return source[start : start+len(signature)+end]
+}
+
 func TestMethodsDataRootMessagesUseLocalizedText(t *testing.T) {
 	sourceBytes, err := os.ReadFile("methods_data_root.go")
 	if err != nil {
@@ -140,6 +154,78 @@ func TestMethodsDataRootMessagesUseLocalizedText(t *testing.T) {
 	}
 }
 
+func TestMethodsLogDirectoryMessagesUseLocalizedText(t *testing.T) {
+	sourceBytes, err := os.ReadFile("methods_log_directory.go")
+	if err != nil {
+		t.Fatalf("read methods_log_directory.go: %v", err)
+	}
+	source := string(sourceBytes)
+
+	checks := map[string]struct {
+		rawMessages []string
+		keys        []string
+	}{
+		"func (a *App) SelectLogDirectory": {
+			rawMessages: []string{
+				`Message: "日志目录设置仅可在桌面应用中使用"`,
+				`Message: "日志目录由环境变量 GONAVI_LOG_DIR 管理"`,
+				`Title:                "选择 GoNavi 日志目录"`,
+			},
+			keys: []string{
+				"app.data_root.log_directory.backend.error.desktop_only",
+				"app.data_root.log_directory.backend.error.environment_managed",
+				"app.data_root.log_directory.backend.dialog.select_directory",
+			},
+		},
+		"func (a *App) ApplyLogDirectory": {
+			rawMessages: []string{
+				`Message: "日志目录设置仅可在桌面应用中使用"`,
+				`Message: "日志目录由环境变量 GONAVI_LOG_DIR 管理"`,
+				`Message: fmt.Sprintf("保存日志目录失败：%v", err)`,
+				`message := "日志目录已保存，重启应用后生效"`,
+				`message = "日志目录未发生变化"`,
+			},
+			keys: []string{
+				"app.data_root.log_directory.backend.error.desktop_only",
+				"app.data_root.log_directory.backend.error.environment_managed",
+				"app.data_root.log_directory.backend.error.save_failed",
+				"app.data_root.log_directory.backend.message.updated_restart",
+				"app.data_root.log_directory.backend.message.unchanged",
+			},
+		},
+		"func (a *App) OpenLogDirectory": {
+			rawMessages: []string{
+				`Message: "日志目录设置仅可在桌面应用中使用"`,
+				`Message: "当前日志目录不存在或不可访问"`,
+				`Message: fmt.Sprintf("当前平台暂不支持打开日志目录：%s", stdRuntime.GOOS)`,
+				`Message: fmt.Sprintf("打开日志目录失败：%v", err)`,
+				`Message: "已打开日志目录"`,
+			},
+			keys: []string{
+				"app.data_root.log_directory.backend.error.desktop_only",
+				"app.data_root.log_directory.backend.error.directory_unavailable",
+				"app.data_root.log_directory.backend.error.open_directory_unsupported",
+				"app.data_root.log_directory.backend.error.open_directory_failed",
+				"app.data_root.log_directory.backend.message.opened",
+			},
+		},
+	}
+
+	for signature, check := range checks {
+		body := methodsLogDirectoryFunctionSource(t, source, signature)
+		for _, raw := range check.rawMessages {
+			if strings.Contains(body, raw) {
+				t.Fatalf("%s still contains raw log-directory text %q", signature, raw)
+			}
+		}
+		for _, key := range check.keys {
+			if !strings.Contains(body, key) {
+				t.Fatalf("%s should reference localized key %q", signature, key)
+			}
+		}
+	}
+}
+
 func TestMethodsDataRootCatalogKeysExist(t *testing.T) {
 	catalogs, err := i18n.LoadCatalogs()
 	if err != nil {
@@ -181,6 +267,35 @@ func TestMethodsDataRootCatalogKeysExist(t *testing.T) {
 		for _, key := range keys {
 			if strings.TrimSpace(catalog[key]) == "" {
 				t.Fatalf("%s catalog missing data-root key %q", language, key)
+			}
+		}
+	}
+}
+
+func TestMethodsLogDirectoryCatalogKeysExistInAllLanguages(t *testing.T) {
+	catalogs, err := i18n.LoadCatalogs()
+	if err != nil {
+		t.Fatalf("LoadCatalogs() error = %v", err)
+	}
+
+	keys := []string{
+		"app.data_root.log_directory.backend.dialog.select_directory",
+		"app.data_root.log_directory.backend.error.desktop_only",
+		"app.data_root.log_directory.backend.error.directory_unavailable",
+		"app.data_root.log_directory.backend.error.environment_managed",
+		"app.data_root.log_directory.backend.error.open_directory_failed",
+		"app.data_root.log_directory.backend.error.open_directory_unsupported",
+		"app.data_root.log_directory.backend.error.save_failed",
+		"app.data_root.log_directory.backend.message.opened",
+		"app.data_root.log_directory.backend.message.unchanged",
+		"app.data_root.log_directory.backend.message.updated_restart",
+	}
+
+	for _, language := range i18n.SupportedLanguages() {
+		catalog := catalogs[language]
+		for _, key := range keys {
+			if strings.TrimSpace(catalog[key]) == "" {
+				t.Fatalf("%s catalog missing log-directory key %q", language, key)
 			}
 		}
 	}

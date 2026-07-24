@@ -75,7 +75,7 @@ export const AIMCPServerCard: React.FC<AIMCPServerCardProps> = ({
       className="gonavi-ai-mcp-server-row gonavi-ai-mcp-disclosure"
       open={expanded}
       onToggle={(event) => setExpanded(event.currentTarget.open)}
-      style={{ borderLeft: `3px solid ${overlayTheme.selectedText}`, borderBottom: `1px solid ${cardBorder}`, background: 'transparent' }}
+      style={{ borderLeft: `3px solid ${overlayTheme.selectedText}`, borderRadius: 4, background: 'transparent' }}
     >
       <summary>
         <span className="gonavi-ai-mcp-server-summary-name" style={{ fontWeight: 700, color: overlayTheme.titleText }}>

@@ -44,6 +44,7 @@ import {
   shouldHideSchemaPrefix,
   splitQualifiedName,
   supportsDatabaseEvents,
+  supportsDatabaseSequences,
 } from './sidebarMetadataLoaders';
 import {
   buildSidebarTableChildrenForUi,
@@ -1010,6 +1011,7 @@ export const useSidebarTreeLoaders = ({
 	                const isOracleLike = (dialect === 'oracle' || dialect === 'dm');
 	                const includeMaterializedViews = dialect === 'starrocks';
 	                const includeOracleObjects = isOracleLike;
+	                const includeSequences = supportsDatabaseSequences(conn as SavedConnection);
 	                const includeEvents = supportsDatabaseEvents(conn as SavedConnection);
 
 	                const schemaVisibilityRule = getSchemaVisibilityRule(latestDatabaseConnection, dbName);
@@ -1029,7 +1031,7 @@ export const useSidebarTreeLoaders = ({
 	                            buildObjectGroup(schemaNodeKey, 'tables', t('sidebar.object_group.tables'), <TableOutlined />, bucket.tables, { schemaName: bucket.schemaName }),
 	                            buildObjectGroup(schemaNodeKey, 'views', t('sidebar.object_group.views'), <EyeOutlined />, bucket.views, { schemaName: bucket.schemaName }),
 	                            ...(includeMaterializedViews ? [buildObjectGroup(schemaNodeKey, 'materializedViews', t('sidebar.object_group.materialized_views'), <ThunderboltOutlined />, bucket.materializedViews, { schemaName: bucket.schemaName })] : []),
-	                            ...(includeOracleObjects ? [buildObjectGroup(schemaNodeKey, 'sequences', t('sidebar.object_group.sequences'), <KeyOutlined />, bucket.sequences, { schemaName: bucket.schemaName })] : []),
+	                            ...(includeSequences ? [buildObjectGroup(schemaNodeKey, 'sequences', t('sidebar.object_group.sequences'), <KeyOutlined />, bucket.sequences, { schemaName: bucket.schemaName })] : []),
 	                            buildObjectGroup(schemaNodeKey, 'routines', t('sidebar.object_group.routines'), <CodeOutlined />, bucket.routines, { schemaName: bucket.schemaName }),
 	                            ...(includeOracleObjects ? [buildObjectGroup(schemaNodeKey, 'packages', t('sidebar.object_group.packages'), <CodeOutlined />, bucket.packages, { schemaName: bucket.schemaName })] : []),
 	                            buildObjectGroup(schemaNodeKey, 'triggers', t('sidebar.object_group.triggers'), <FunctionOutlined />, bucket.triggers, { schemaName: bucket.schemaName }),
@@ -1052,12 +1054,13 @@ export const useSidebarTreeLoaders = ({
 	                const dialect = getMetadataDialect(conn as SavedConnection);
 	                const includeMaterializedViews = dialect === 'starrocks';
 	                const includeOracleObjects = dialect === 'oracle' || dialect === 'dm';
+	                const includeSequences = supportsDatabaseSequences(conn as SavedConnection);
 	                const includeEvents = supportsDatabaseEvents(conn as SavedConnection);
 	                const groupedNodes: TreeNode[] = [
 	                    buildObjectGroup(key as string, 'tables', t('sidebar.object_group.tables'), <TableOutlined />, sortedTableEntries.map(buildTableNode)),
 	                    buildObjectGroup(key as string, 'views', t('sidebar.object_group.views'), <EyeOutlined />, viewEntries.map(buildViewNode)),
 	                    ...(includeMaterializedViews ? [buildObjectGroup(key as string, 'materializedViews', t('sidebar.object_group.materialized_views'), <ThunderboltOutlined />, materializedViewEntries.map(buildMaterializedViewNode))] : []),
-	                    ...(includeOracleObjects ? [buildObjectGroup(key as string, 'sequences', t('sidebar.object_group.sequences'), <KeyOutlined />, sequenceEntries.map(buildSequenceNode))] : []),
+	                    ...(includeSequences ? [buildObjectGroup(key as string, 'sequences', t('sidebar.object_group.sequences'), <KeyOutlined />, sequenceEntries.map(buildSequenceNode))] : []),
 	                    buildObjectGroup(key as string, 'routines', t('sidebar.object_group.routines'), <CodeOutlined />, routineEntries.map(buildRoutineNode)),
 	                    ...(includeOracleObjects ? [buildObjectGroup(key as string, 'packages', t('sidebar.object_group.packages'), <CodeOutlined />, packageEntries.map(buildPackageNode))] : []),
 	                    buildObjectGroup(key as string, 'triggers', t('sidebar.object_group.triggers'), <FunctionOutlined />, triggerEntries.map(buildTriggerNode)),

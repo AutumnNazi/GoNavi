@@ -103,7 +103,6 @@ const AIMCPQuickAddServerPanel: React.FC<AIMCPQuickAddServerPanelProps> = ({
       className="gonavi-ai-mcp-quick-add"
       style={{
         padding: '4px 0 14px',
-        borderBottom: `1px solid ${cardBorder}`,
         background: 'transparent',
         display: 'flex',
         flexDirection: 'column',
@@ -125,7 +124,7 @@ const AIMCPQuickAddServerPanel: React.FC<AIMCPQuickAddServerPanelProps> = ({
         </div>
       )}
       <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-        <Button size="small" icon={<PlusOutlined />} onClick={() => onAddServer()} style={{ borderRadius: 8 }}>
+        <Button size="middle" icon={<PlusOutlined />} onClick={() => onAddServer()} style={{ borderRadius: 8 }}>
           {copy('ai_settings.mcp_server.section.action.add_server', undefined, 'Add MCP service')}
         </Button>
       </div>
@@ -154,8 +153,8 @@ const AIMCPQuickAddServerPanel: React.FC<AIMCPQuickAddServerPanelProps> = ({
                 minHeight: 38,
                 padding: '7px 9px',
                 border: 'none',
-                borderBottom: `1px solid ${cardBorder}`,
                 borderLeft: '3px solid transparent',
+                borderRadius: 4,
                 background: 'transparent',
                 color: overlayTheme.titleText,
                 cursor: 'pointer',

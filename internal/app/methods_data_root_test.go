@@ -50,6 +50,14 @@ func TestMigrateDataRootContentsCopiesKnownFilesAndDirectories(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(sourceRoot, "jvm_diag_audit.jsonl"), []byte("jvm-diag-audit\n"), 0o644); err != nil {
 		t.Fatalf("write jvm_diag_audit.jsonl failed: %v", err)
 	}
+	for _, excludedName := range []string{
+		filepath.Base(appdata.BootstrapPath()),
+		filepath.Base(appdata.BootstrapLockPath()),
+	} {
+		if err := os.WriteFile(filepath.Join(sourceRoot, excludedName), []byte("bootstrap-only"), 0o600); err != nil {
+			t.Fatalf("write excluded bootstrap file %s: %v", excludedName, err)
+		}
+	}
 	if err := os.MkdirAll(filepath.Join(sourceRoot, "sessions"), 0o755); err != nil {
 		t.Fatalf("mkdir sessions failed: %v", err)
 	}
@@ -71,6 +79,14 @@ func TestMigrateDataRootContentsCopiesKnownFilesAndDirectories(t *testing.T) {
 	}
 	if got, err := os.ReadFile(filepath.Join(targetRoot, "jvm_diag_audit.jsonl")); err != nil || string(got) != "jvm-diag-audit\n" {
 		t.Fatalf("expected jvm_diag_audit.jsonl to migrate, content=%q err=%v", string(got), err)
+	}
+	for _, excludedName := range []string{
+		filepath.Base(appdata.BootstrapPath()),
+		filepath.Base(appdata.BootstrapLockPath()),
+	} {
+		if _, err := os.Stat(filepath.Join(targetRoot, excludedName)); !os.IsNotExist(err) {
+			t.Fatalf("bootstrap file %s should not migrate, err=%v", excludedName, err)
+		}
 	}
 }
 

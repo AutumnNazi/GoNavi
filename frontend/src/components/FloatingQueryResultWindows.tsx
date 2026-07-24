@@ -1,5 +1,6 @@
 import React, { useCallback, useMemo, useRef, useState } from 'react';
-import { Button, Tooltip } from 'antd';
+import { createPortal } from 'react-dom';
+import { Button, ConfigProvider, Tooltip } from 'antd';
 import { CloseOutlined, CompressOutlined } from '@ant-design/icons';
 import { useStore } from '../store';
 import { t } from '../i18n';
@@ -12,6 +13,10 @@ import {
   DEFAULT_DETACHED_WINDOW_MIN_WIDTH,
   DETACHED_WINDOW_VIEWPORT_PADDING,
 } from '../utils/detachedWindow';
+import {
+  APP_DETACHED_WINDOW_Z_INDEX_BASE,
+  APP_POPUP_Z_INDEX,
+} from '../utils/overlayZIndex';
 import { useManagedPointerInteraction } from '../hooks/useManagedPointerInteraction';
 
 const createLazyDetachedResultDataGrid = () => React.lazy(() => import('./DataGrid'));
@@ -148,14 +153,15 @@ const FloatingQueryResultWindows: React.FC = () => {
 
   const isDark = theme === 'dark';
 
-  return (
-    <div className="gn-detached-result-layer" aria-label={t('query_editor.results_panel.detached.title', { index: '' })}>
+  const floatingWindows = (
+    <ConfigProvider theme={{ token: { zIndexPopupBase: APP_POPUP_Z_INDEX } }}>
+      <div className="gn-detached-result-layer" aria-label={t('query_editor.results_panel.detached.title', { index: '' })}>
       <style>{`
         .gn-detached-result-layer {
           position: fixed;
           inset: 0;
           pointer-events: none;
-          z-index: 1210;
+          z-index: ${APP_DETACHED_WINDOW_Z_INDEX_BASE};
         }
         .gn-detached-result-window {
           position: fixed;
@@ -343,8 +349,13 @@ const FloatingQueryResultWindows: React.FC = () => {
           </div>
         );
       })}
-    </div>
+      </div>
+    </ConfigProvider>
   );
+
+  return typeof document === 'undefined'
+    ? floatingWindows
+    : createPortal(floatingWindows, document.body);
 };
 
 export default FloatingQueryResultWindows;

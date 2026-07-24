@@ -42,9 +42,9 @@ func TestExpectedAssetNameForWindowsInstallMode(t *testing.T) {
 		installMode updateInstallMode
 		want        string
 	}{
-		{name: "amd64 portable", arch: "amd64", installMode: updateInstallModePortable, want: "GoNavi-1.2.3-Windows-Amd64-Portable.exe"},
+		{name: "amd64 portable", arch: "amd64", installMode: updateInstallModePortable, want: "GoNavi-1.2.3-Windows-Amd64-Portable.zip"},
 		{name: "amd64 msi", arch: "amd64", installMode: updateInstallModeMSI, want: "GoNavi-1.2.3-Windows-Amd64-Installer.msi"},
-		{name: "arm64 portable", arch: "arm64", installMode: updateInstallModePortable, want: "GoNavi-1.2.3-Windows-Arm64-Portable.exe"},
+		{name: "arm64 portable", arch: "arm64", installMode: updateInstallModePortable, want: "GoNavi-1.2.3-Windows-Arm64-Portable.zip"},
 		{name: "arm64 msi", arch: "arm64", installMode: updateInstallModeMSI, want: "GoNavi-1.2.3-Windows-Arm64-Installer.msi"},
 	}
 	for _, tc := range cases {
@@ -88,5 +88,19 @@ func TestValidateUpdatePackageForCurrentInstallModeRejectsModeAndSuffixMismatch(
 	}
 	if err := validateUpdatePackageForCurrentInstallMode("windows", updateInstallModeMSI, updatePackageTypeMSI, `C:\\tmp\\GoNavi-Installer.exe`); err == nil {
 		t.Fatal("expected invalid MSI suffix to be rejected")
+	}
+}
+
+func TestPortableUpdatePackageAcceptsZipAndLegacyExe(t *testing.T) {
+	for _, assetPath := range []string{
+		`C:\\tmp\\GoNavi-Portable.zip`,
+		`C:\\tmp\\GoNavi-Portable.exe`,
+	} {
+		if !isUpdatePackageCompatibleWithInstallMode("windows", updateInstallModePortable, updatePackageTypePortable, assetPath) {
+			t.Fatalf("valid portable package rejected: %s", assetPath)
+		}
+	}
+	if isUpdatePackageCompatibleWithInstallMode("windows", updateInstallModePortable, updatePackageTypePortable, `C:\\tmp\\GoNavi-Installer.msi`) {
+		t.Fatal("expected MSI suffix to be rejected for portable mode")
 	}
 }

@@ -196,6 +196,7 @@ const DataGridPaginationBar: React.FC<DataGridPaginationBarProps> = ({
           data-grid-v2-pagination-last={isV2Ui ? 'true' : undefined}
           size="small"
           icon={<VerticalLeftOutlined />}
+          iconPosition="end"
           aria-label={lastPageLabel}
           disabled={lastPageTarget === null}
           onClick={() => navigateToBoundary(lastPageTarget)}

@@ -60,7 +60,7 @@ const AIMCPClientInstallPanel: React.FC<AIMCPClientInstallPanelProps> = ({
   const selectedIsRemoteClient = isRemoteMCPClientStatus(selectedStatus);
 
   return (
-    <div className="gonavi-ai-mcp-client-panel" style={{ padding: '14px 0', borderBottom: `1px solid ${cardBorder}`, display: 'flex', flexDirection: 'column' }}>
+    <div className="gonavi-ai-mcp-client-panel" style={{ padding: '14px 0 8px', display: 'flex', flexDirection: 'column' }}>
       <div
         style={{
           display: 'flex',

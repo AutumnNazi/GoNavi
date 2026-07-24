@@ -75,6 +75,7 @@ const importMain = async () => {
             ImportConnectionsPayload: (raw: string, password?: string) => Promise<unknown>;
             ExportConnectionsPackage: (options?: { includeSecrets?: boolean; filePassword?: string }) => Promise<{ success: boolean; message?: string }>;
             ApplyDataRootDirectory: (path: string) => Promise<{ success: boolean; message?: string; data?: { path?: string } }>;
+            ApplyLogDirectory: (path: string) => Promise<{ success: boolean; message?: string; data?: { logDirectory?: string; logDirectoryRestartRequired?: boolean } }>;
             SaveQuery: (input: { id?: string; name?: string; sql?: string }) => Promise<{ name: string; sql: string }>;
             CheckForUpdates: () => Promise<{ success: boolean; data?: Record<string, unknown> }>;
             CheckForUpdatesSilently: () => Promise<{ success: boolean; data?: Record<string, unknown> }>;
@@ -239,6 +240,25 @@ describe('main browser mock', () => {
   it('does not hardcode Chinese browser mock data root update messages', () => {
     const source = readFileSync(new URL('./main.tsx', import.meta.url), 'utf8');
     expect(source).not.toContain("'数据目录已更新'");
+  });
+
+  it('keeps browser mock log directory state available for the data-root page', async () => {
+    vi.stubGlobal('navigator', {
+      languages: ['en-US'],
+      language: 'en-US',
+    });
+
+    const app = await importMain();
+    const { t } = await import('./i18n');
+
+    await expect(app!.ApplyLogDirectory('C:/mock/custom-logs')).resolves.toEqual(expect.objectContaining({
+      success: true,
+      message: t('app.data_root.log_directory.message.updated'),
+      data: expect.objectContaining({
+        logDirectory: 'C:/mock/custom-logs',
+        logDirectoryRestartRequired: true,
+      }),
+    }));
   });
 
   it('localizes browser mock MCP server test messages', async () => {

@@ -79,6 +79,7 @@ interface QueryEditorResultsPanelProps {
     isV2Ui: boolean;
     currentDb: string;
     currentConnectionId: string;
+    dataPreviewRequest?: { resultKey: string; requestId: string } | null;
     toggleShortcutLabel: string;
     onActiveResultKeyChange: (key: string) => void;
     onHide: () => void;
@@ -140,6 +141,7 @@ const QueryEditorResultsPanel: React.FC<QueryEditorResultsPanelProps> = ({
     isV2Ui,
     currentDb,
     currentConnectionId,
+    dataPreviewRequest,
     toggleShortcutLabel,
     onActiveResultKeyChange,
     onHide,
@@ -457,9 +459,13 @@ const QueryEditorResultsPanel: React.FC<QueryEditorResultsPanelProps> = ({
 
     const toolbarHideButton = (
         <Tooltip title={hideTooltipTitle}>
-            <Button className={isV2Ui ? 'gn-v2-query-result-toolbar-hide' : undefined} icon={<EyeInvisibleOutlined />} onClick={onHide}>
-                <span>{t('query_editor.results_panel.action.hide')}</span>
-                {isV2Ui && toggleShortcutLabel && <span className="gn-v2-toolbar-kbd">{toggleShortcutLabel}</span>}
+            <Button
+                aria-label={t('query_editor.results_panel.aria.hide')}
+                className={isV2Ui ? 'gn-v2-data-grid-toolbar-action gn-v2-query-result-toolbar-hide' : undefined}
+                icon={<EyeInvisibleOutlined />}
+                onClick={onHide}
+            >
+                {!isV2Ui && <span>{t('query_editor.results_panel.action.hide')}</span>}
             </Button>
         </Tooltip>
     );
@@ -597,6 +603,9 @@ const QueryEditorResultsPanel: React.FC<QueryEditorResultsPanelProps> = ({
                         ddlDbName={rs.ddlDbName}
                         ddlTableName={rs.ddlTableName}
                         connectionId={currentConnectionId}
+                        initialViewMode={dataPreviewRequest?.resultKey === rs.key ? 'table' : undefined}
+                        initialViewModeRequestId={dataPreviewRequest?.resultKey === rs.key ? dataPreviewRequest.requestId : undefined}
+                        initialViewModeScope={dataPreviewRequest?.resultKey === rs.key ? 'local' : undefined}
                         pkColumns={rs.pkColumns}
                         editLocator={rs.editLocator}
                         onReload={() => {

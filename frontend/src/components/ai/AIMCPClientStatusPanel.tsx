@@ -56,10 +56,8 @@ const AIMCPClientStatusPanel: React.FC<AIMCPClientStatusPanelProps> = ({
 
   return (
     <div
+      className="gonavi-ai-mcp-client-status-panel"
       style={{
-        padding: '10px 0 0',
-        borderTop: `1px solid ${cardBorder}`,
-        background: 'transparent',
         display: 'flex',
         flexDirection: 'column',
         gap: 8,

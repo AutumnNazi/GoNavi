@@ -8,6 +8,7 @@ import { buildOverlayWorkbenchTheme } from '../../utils/overlayWorkbenchTheme';
 import { I18nProvider } from '../../i18n/provider';
 
 const source = readFileSync(new URL('./AIBuiltinToolsCatalog.tsx', import.meta.url), 'utf8');
+const appCss = readFileSync(new URL('../../App.css', import.meta.url), 'utf8');
 
 const renderCatalog = () => (
   <I18nProvider preference="zh-CN" systemLanguages={['zh-CN']} onPreferenceChange={() => {}}>
@@ -25,7 +26,9 @@ describe('AIBuiltinToolsCatalog', () => {
     expect(source).toContain("aria-label={t('ai_settings.tools.search.aria_label')}");
     expect(source).toContain("placeholder={t('ai_settings.tools.search.placeholder')}");
     expect(source).toContain("{t('ai_settings.tools.search.clear')}");
-    expect(source).toContain("t('ai_settings.tools.summary', {");
+    expect(source).toContain("t('ai_settings.tools.view.flows')");
+    expect(source).toContain("t('ai_settings.tools.view.tools')");
+    expect(source).toContain("t('ai_settings.tools.empty.no_flow_matches')");
     expect(source).toContain("t('ai_settings.tools.empty.no_matches')");
     expect(source).not.toContain('aria-label="搜索内置工具"');
     expect(source).not.toContain('placeholder="搜索工具、流程或参数，例如 mcp / lineLimit / allowMutating / 事务"');
@@ -57,9 +60,25 @@ describe('AIBuiltinToolsCatalog', () => {
     expect(source).not.toContain('AI 助手在处理数据库相关问题时，可以自动调用以下内置工具获取真实数据，全程无需人工干预。');
   });
 
-  it('uses flat rows instead of cards for flows and tools', () => {
+  it('separates recommended flows and built-in tools into dedicated views', () => {
+    expect(source).toContain("useState<AIBuiltinToolsCatalogView>('flows')");
+    expect(source).toContain('className="gonavi-ai-tool-view-tabs"');
+    expect(source).toContain('role="tablist"');
+    expect(source).toContain('role="tab"');
+    expect(source).toContain('role="tabpanel"');
+    expect(source).toContain("hidden={activeView !== 'flows'}");
+    expect(source).toContain("hidden={activeView !== 'tools'}");
     expect(source).toContain('className="gonavi-ai-tool-flow-list"');
-    expect(source).toContain('className="gonavi-ai-tool-row"');
+    expect(source).toContain('className="gonavi-ai-tool-list"');
+    expect(source).toContain('<ApartmentOutlined style={{ color: overlayTheme.iconColor, fontSize: 14 }} aria-hidden="true" />');
+    expect(source).toContain('className="gonavi-ai-settings-disclosure gonavi-ai-tool-row"');
+    expect(source.split("gridTemplateColumns: '18px minmax(0, 1fr)'")).toHaveLength(3);
+    expect(source.split('<ToolOutlined style={{ color: overlayTheme.iconColor, fontSize: 14 }} aria-hidden="true" />')).toHaveLength(2);
+    expect(source).not.toContain("gridTemplateColumns: 'minmax(140px, 0.8fr) minmax(0, 1.2fr)'");
+    expect(source).not.toContain("textAlign: 'right'");
+    expect(source).toContain('gap: 2');
+    expect(source).toContain('borderRadius: 4');
+    expect(source).not.toContain('borderBottom:');
     expect(source).toContain("background: 'transparent'");
     expect(source).not.toContain("background: cardBg");
     expect(source).not.toContain('borderRadius: 14');
@@ -72,9 +91,18 @@ describe('AIBuiltinToolsCatalog', () => {
     const markup = renderToStaticMarkup(renderCatalog());
 
     expect(markup).toContain('class="gonavi-ai-tool-flow-list"');
+    expect(markup).toContain('class="gonavi-ai-tool-view-tabs"');
+    expect(markup).toContain('推荐流程');
+    expect(markup).toContain('内置工具');
     expect(markup).toContain('<details');
     expect(markup).toContain('<summary');
-    expect(markup).toContain('class="gonavi-ai-tool-row"');
+    expect(markup).toContain('class="gonavi-ai-settings-disclosure gonavi-ai-tool-flow-row"');
+    expect(markup).toContain('class="gonavi-ai-settings-disclosure gonavi-ai-tool-row"');
+    expect(markup).toContain('gonavi-ai-settings-disclosure-content');
+    expect(markup).toContain('gonavi-ai-settings-disclosure-icon');
+    expect(appCss).toContain('.gonavi-ai-settings-disclosure > summary::-webkit-details-marker');
+    expect(appCss).toContain('.gonavi-ai-settings-disclosure > summary::marker');
+    expect(appCss).toContain('.gonavi-ai-settings-disclosure[open] > summary .gonavi-ai-settings-disclosure-icon');
     expect(markup).toContain('正文预览最多返回多少字符');
     expect(source).not.toContain('{tool.icon}');
   });
@@ -184,7 +212,8 @@ describe('AIBuiltinToolsCatalog', () => {
     expect(markup).toContain('preview_table_rows');
     expect(markup).toContain('参数提示');
     expect(markup).toContain('搜索工具、流程或参数');
-    expect(markup).toContain('当前显示');
+    expect(markup).toContain('45/45');
+    expect(markup).toContain('53/53');
     expect(markup).toContain('类型：string');
     expect(markup).toContain('默认：160');
     expect(markup).toContain('示例：');

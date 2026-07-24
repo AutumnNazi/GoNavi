@@ -9,7 +9,9 @@ WORKFLOWS = (
     ROOT / ".github" / "workflows" / "release.yml",
     ROOT / ".github" / "workflows" / "dev-build.yml",
 )
+PUBLISH_WORKFLOW = ROOT / ".github" / "workflows" / "publish-release.yml"
 INSTALLER = ROOT / "build" / "windows" / "installer.wxs"
+LOCAL_RELEASE_SCRIPT = ROOT / "build-release.sh"
 WIX_NAMESPACE = "http://wixtoolset.org/schemas/v4/wxs"
 UPGRADE_CODE = "CDD6BF2F-ED1E-4345-A0AB-DCDB7E15FB23"
 AMD64_COMPONENT_GUID = "0BCEE70B-9CF2-449C-9ADE-190188493234"
@@ -23,15 +25,29 @@ class WindowsReleaseArtifactsTest(unittest.TestCase):
         for workflow in WORKFLOWS:
             with self.subTest(workflow=workflow.name):
                 source = workflow.read_text(encoding="utf-8")
-                self.assertIn("Package Windows Portable EXE and MSI", source)
+                windows_packaging = source.split("# Windows Packaging", 1)[1].split("# Linux Packaging", 1)[0]
+                self.assertIn("Package Windows Portable ZIP, bridge EXE, and MSI", source)
                 self.assertIn("-Portable.exe", source)
+                self.assertIn("-Portable.zip", source)
                 self.assertIn("-Installer.msi", source)
+                self.assertIn("GoNavi-*.zip", source)
                 self.assertIn("GoNavi-*.msi", source)
+                self.assertIn('$portableApp = Join-Path $portableDir "GoNavi.exe"', source)
+                self.assertIn('$portableLicense = Join-Path $portableDir "LICENSE"', source)
+                self.assertIn('$portableNotice = Join-Path $portableDir "NOTICE"', source)
+                self.assertIn(
+                    "Compress-Archive -LiteralPath $portableFiles -DestinationPath $portableZipPath -CompressionLevel Optimal -Force",
+                    source,
+                )
                 self.assertIn("dotnet tool install wix --tool-path $wixTools --version $wixVersion", source)
                 self.assertIn('WixToolset.UI.wixext/$wixVersion', source)
                 self.assertIn('WixToolset.UI.wixext/6.0.2', source)
                 self.assertIn("-arch $wixArch", source)
                 self.assertIn("TestExpectedAssetNameForWindowsInstallMode", source)
+                self.assertIn("TestBuildWindowsLaunchCommandUsesHiddenPowerShellFile", source)
+                self.assertIn("TestPortableUpdatePackageAcceptsZipAndLegacyExe", source)
+                self.assertIn("TestResolveReusableStagedUpdateForPlatformReusesPortableZipInsideStagedDir", source)
+                self.assertIn("TestResolveWindowsUpdateFinalTargetPathMapsDownloadedPortableZipToExe", source)
                 self.assertIn("TestInstallUpdateAndRestartMSI", source)
                 self.assertIn("TestShouldEnableWindowsMSISingleInstanceOnlyForInstalledMainGUI", source)
                 self.assertIn("TestAcquireWindowsMSISingleInstance", source)
@@ -65,6 +81,9 @@ class WindowsReleaseArtifactsTest(unittest.TestCase):
                 self.assertIn('$noticeFile = (Resolve-Path -LiteralPath "..\\\\..\\\\NOTICE").Path', source)
                 self.assertIn('-d "LicenseFile=$licenseFile"', source)
                 self.assertIn('-d "NoticeFile=$noticeFile"', source)
+                self.assertIn("wails build -s -skipbindings -trimpath", source)
+                self.assertNotIn("Install UPX (Windows)", source)
+                self.assertNotIn("upx", windows_packaging.lower())
                 self.assertNotIn('-d "ProductName=GoNavi Dev"', source)
                 self.assertNotIn('-d "InstallFolderName=GoNavi Dev"', source)
                 self.assertNotIn('-d "RegistryKeyName=GoNavi Dev"', source)
@@ -77,6 +96,19 @@ class WindowsReleaseArtifactsTest(unittest.TestCase):
         dev_source = WORKFLOWS[1].read_text(encoding="utf-8")
         self.assertIn('$productVersion = "255.0.$runNumber"', dev_source)
         self.assertNotIn('$productVersion = "0.0.$runNumber"', dev_source)
+
+        publish_source = PUBLISH_WORKFLOW.read_text(encoding="utf-8")
+        for arch in ("Amd64", "Arm64"):
+            self.assertIn(f"GoNavi-${{version}}-Windows-{arch}-Portable.exe", publish_source)
+            self.assertIn(f"GoNavi-${{version}}-Windows-{arch}-Portable.zip", publish_source)
+
+    def test_local_windows_release_keeps_unpacked_trimmed_executables(self) -> None:
+        source = LOCAL_RELEASE_SCRIPT.read_text(encoding="utf-8")
+        windows_builds = source.split("# --- Windows AMD64", 1)[1].split("# --- Linux AMD64", 1)[0]
+
+        self.assertIn("wails build -trimpath -platform windows/amd64", windows_builds)
+        self.assertIn("wails build -trimpath -platform windows/arm64", windows_builds)
+        self.assertNotIn("upx", windows_builds.lower())
 
     def test_installer_declares_upgrade_shortcuts_and_uninstall_metadata(self) -> None:
         root = ET.parse(INSTALLER).getroot()

@@ -31,7 +31,8 @@ jobs:
           bash tools/generate-driver-agent-revisions.test.sh
           python3 tools/generate-driver-release-manifest.test.py
           python3 tools/generate-update-latest-manifest.test.py
-          python3 tools/r2-release-retention.test.py
+          python3 tools/prepare-vps-release-payload.test.py
+          bash tools/vps-release-commit.test.sh
           python3 tools/package-driver-release-assets.test.py
           python3 tools/legal-release-assets.test.py
           python3 tools/windows-release-artifacts.test.py
@@ -386,26 +387,6 @@ jobs:
           tar -xf frontend-artifact/frontend-dist.tar -C frontend/dist
           test -s frontend/dist/index.html
 
-      - name: Install UPX (Windows)
-        if: matrix.platform == 'windows/amd64'
-        shell: pwsh
-        run: |
-          $UPX_VERSION = "4.2.4"
-          $url = "https://github.com/upx/upx/releases/download/v${UPX_VERSION}/upx-${UPX_VERSION}-win64.zip"
-          $zipPath = "$env:RUNNER_TEMP\upx.zip"
-          $extractPath = "$env:RUNNER_TEMP\upx"
-          Write-Host "📥 从 GitHub Releases 下载 UPX v${UPX_VERSION} ..."
-          Invoke-WebRequest -Uri $url -OutFile $zipPath -UseBasicParsing
-          Expand-Archive -Path $zipPath -DestinationPath $extractPath -Force
-          $upxDir = Get-ChildItem -Path $extractPath -Directory | Select-Object -First 1
-          "$($upxDir.FullName)" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
-          $upxCmd = Join-Path $upxDir.FullName "upx.exe"
-          if (!(Test-Path $upxCmd)) {
-            Write-Error "❌ 未检测到 upx，无法保证 Windows 产物经过压缩"
-            exit 1
-          }
-          & $upxCmd --version
-
       - name: Install WiX Toolset (Windows)
         if: contains(matrix.platform, 'windows')
         shell: pwsh
@@ -552,7 +533,7 @@ jobs:
       - name: Test Windows Online Updater (Windows AMD64)
         if: ${{ matrix.platform == 'windows/amd64' }}
         shell: pwsh
-        run: go test . ./internal/app -run '^(TestShouldEnableWindowsMSISingleInstanceOnlyForInstalledMainGUI|TestPrimaryWindowActivatorQueuesRequestsUntilRuntimeStartup|TestAcquireWindowsMSISingleInstance|TestResolveWindowsUpdateMaintenanceName|TestAcquireWindowsUpdateMaintenance|TestPrepareWindowsUpdateHandoff|TestWindowsPowerShellUpdater|TestExpectedAssetNameForExecutableUsesWindowsPortableSuffix|TestShouldWindowsUpdateLaunchDownloadedAssetDirectly|TestResolveUpdateInstallMode|TestExpectedAssetNameForWindowsInstallMode|TestResolveUpdateWorkspaceDirForPlatformSeparatesMSIFromInstallDirectory|TestValidateUpdatePackageForCurrentInstallMode|TestWindowsUpdateRequiresExplicitCloseConfirmation|TestInstallUpdateAndRestartRequiresCloseConfirmationOnWindows|TestInstallUpdateAndRestartMSI|TestFindOtherWindowsUpdateInstances|TestCloseWindowsUpdateInstances|TestInstallUpdateAndRestartClosesOtherTargetInstances|TestBuildWindowsMSIUpdatePowerShellScript|TestBuildWindowsMSILaunchCommand|TestResolveWindowsMSIExecPath)' -count=1 -timeout=3m
+        run: go test . ./internal/app -run '^(TestShouldEnableWindowsMSISingleInstanceOnlyForInstalledMainGUI|TestPrimaryWindowActivatorQueuesRequestsUntilRuntimeStartup|TestAcquireWindowsMSISingleInstance|TestResolveWindowsUpdateMaintenanceName|TestAcquireWindowsUpdateMaintenance|TestPrepareWindowsUpdateHandoff|TestWindowsPowerShellUpdater|TestBuildWindowsLaunchCommandUsesHiddenPowerShellFile|TestExpectedAssetNameForExecutableUsesWindowsPortableSuffix|TestShouldWindowsUpdateLaunchDownloadedAssetDirectly|TestResolveUpdateInstallMode|TestExpectedAssetNameForWindowsInstallMode|TestPortableUpdatePackageAcceptsZipAndLegacyExe|TestResolveReusableStagedUpdateForPlatformReusesPortableZipInsideStagedDir|TestResolveWindowsUpdateFinalTargetPathMapsDownloadedPortableZipToExe|TestResolveUpdateWorkspaceDirForPlatformSeparatesMSIFromInstallDirectory|TestValidateUpdatePackageForCurrentInstallMode|TestWindowsUpdateRequiresExplicitCloseConfirmation|TestInstallUpdateAndRestartRequiresCloseConfirmationOnWindows|TestInstallUpdateAndRestartMSI|TestFindOtherWindowsUpdateInstances|TestCloseWindowsUpdateInstances|TestInstallUpdateAndRestartClosesOtherTargetInstances|TestBuildWindowsMSIUpdatePowerShellScript|TestBuildWindowsMSILaunchCommand|TestResolveWindowsMSIExecPath)' -count=1 -timeout=3m
 
       # ---- 生成 dev 版本号 ----
       - name: Generate Dev Version
@@ -582,9 +563,9 @@ jobs:
           mkdir -p "$GOCACHE"
           echo "🧭 使用隔离 GOCACHE：$GOCACHE"
           if [ -n "${{ matrix.wails_tags }}" ]; then
-            wails build -s -skipbindings -platform ${{ matrix.platform }} -clean -o ${{ matrix.build_name }} -tags "${{ matrix.wails_tags }}" -ldflags "-s -w -X GoNavi-Wails/internal/app.AppVersion=${DEV_VERSION}"
+            wails build -s -skipbindings -trimpath -platform ${{ matrix.platform }} -clean -o ${{ matrix.build_name }} -tags "${{ matrix.wails_tags }}" -ldflags "-s -w -X GoNavi-Wails/internal/app.AppVersion=${DEV_VERSION}"
           else
-            wails build -s -skipbindings -platform ${{ matrix.platform }} -clean -o ${{ matrix.build_name }} -ldflags "-s -w -X GoNavi-Wails/internal/app.AppVersion=${DEV_VERSION}"
+            wails build -s -skipbindings -trimpath -platform ${{ matrix.platform }} -clean -o ${{ matrix.build_name }} -ldflags "-s -w -X GoNavi-Wails/internal/app.AppVersion=${DEV_VERSION}"
           fi
 
       - name: Select Platform Driver Set
@@ -902,7 +883,7 @@ jobs:
           mv "$DMG_NAME" "../../$FINAL_NAME"
 
       # Windows Packaging
-      - name: Package Windows Portable EXE and MSI
+      - name: Package Windows Portable ZIP, bridge EXE, and MSI
         if: contains(matrix.platform, 'windows')
         shell: pwsh
         run: |
@@ -911,6 +892,7 @@ jobs:
           $target = "${{ matrix.build_name }}"
           $archName = "${{ matrix.arch_name }}"
           $portableExeName = "GoNavi-$version-${{ matrix.os_name }}-$archName${{ matrix.artifact_suffix }}-Portable.exe"
+          $portableZipName = "GoNavi-$version-${{ matrix.os_name }}-$archName${{ matrix.artifact_suffix }}-Portable.zip"
           $msiName = "GoNavi-$version-${{ matrix.os_name }}-$archName${{ matrix.artifact_suffix }}-Installer.msi"
 
           if (Test-Path "$target.exe") {
@@ -923,39 +905,33 @@ jobs:
               exit 1
           }
 
-          $isArm64Target = "${{ matrix.arch_name }}".ToLowerInvariant() -eq "arm64"
-          if ($isArm64Target) {
-              Write-Warning "⚠️ UPX 当前不支持 win64/arm64，跳过压缩并保留原始 EXE。"
-              $LASTEXITCODE = 0
-          } else {
-              $upxCmd = Get-Command upx -ErrorAction SilentlyContinue
-              if ($null -eq $upxCmd) {
-                  Write-Error "❌ 未找到 upx，无法保证 Windows 产物经过压缩"
-                  exit 1
-              }
-              $beforeBytes = (Get-Item -LiteralPath $finalExe).Length
-              Write-Host "🗜️ 使用 UPX 压缩 $finalExe ..."
-              & upx --best --lzma --force $finalExe | Out-Host
-              if ($LASTEXITCODE -ne 0) {
-                  Write-Error "❌ UPX 压缩失败（$LASTEXITCODE）"
-                  exit 1
-              }
-              & upx -t $finalExe | Out-Host
-              if ($LASTEXITCODE -ne 0) {
-                  Write-Error "❌ UPX 校验失败（$LASTEXITCODE）"
-                  exit 1
-              }
-              $afterBytes = (Get-Item -LiteralPath $finalExe).Length
-              if ($afterBytes -lt $beforeBytes) {
-                  $savedBytes = $beforeBytes - $afterBytes
-                  Write-Host ("✅ UPX 压缩完成：{0:N2}MB -> {1:N2}MB，减少 {2:N2}MB" -f ($beforeBytes / 1MB), ($afterBytes / 1MB), ($savedBytes / 1MB))
-              } else {
-                  Write-Host ("ℹ️ UPX 压缩完成：{0:N2}MB -> {1:N2}MB" -f ($beforeBytes / 1MB), ($afterBytes / 1MB))
-              }
-          }
+          Write-Host "ℹ️ 保留 Wails 原始 Windows EXE，避免可执行文件打包器增加杀毒软件误报。"
 
-          Write-Host "📦 输出 Windows Portable 可执行文件 $portableExeName..."
-          Copy-Item -LiteralPath $finalExe -Destination "..\\..\\$portableExeName" -Force
+          $releaseRoot = (Resolve-Path -LiteralPath "..\\..").Path
+          $licenseFile = (Resolve-Path -LiteralPath "..\\..\\LICENSE").Path
+          $noticeFile = (Resolve-Path -LiteralPath "..\\..\\NOTICE").Path
+
+          Write-Host "📦 输出旧客户端兼容 EXE $portableExeName..."
+          Copy-Item -LiteralPath $finalExe -Destination (Join-Path $releaseRoot $portableExeName) -Force
+
+          $portableDir = Join-Path $env:RUNNER_TEMP "gonavi-portable-$archName"
+          if (Test-Path -LiteralPath $portableDir) {
+              Remove-Item -LiteralPath $portableDir -Recurse -Force
+          }
+          New-Item -ItemType Directory -Path $portableDir -Force | Out-Null
+          $portableApp = Join-Path $portableDir "GoNavi.exe"
+          $portableLicense = Join-Path $portableDir "LICENSE"
+          $portableNotice = Join-Path $portableDir "NOTICE"
+          Copy-Item -LiteralPath $finalExe -Destination $portableApp -Force
+          Copy-Item -LiteralPath $licenseFile -Destination $portableLicense -Force
+          Copy-Item -LiteralPath $noticeFile -Destination $portableNotice -Force
+          $portableFiles = @($portableApp, $portableLicense, $portableNotice)
+          $portableZipPath = Join-Path $releaseRoot $portableZipName
+          Write-Host "📦 生成普通 Windows Portable ZIP $portableZipName..."
+          Compress-Archive -LiteralPath $portableFiles -DestinationPath $portableZipPath -CompressionLevel Optimal -Force
+          if (-not (Test-Path -LiteralPath $portableZipPath -PathType Leaf) -or (Get-Item -LiteralPath $portableZipPath).Length -le 0) {
+              throw "Windows Portable ZIP 生成失败: $portableZipPath"
+          }
 
           $runNumber = [int64]$env:GITHUB_RUN_NUMBER
           if ($runNumber -le 0 -or $runNumber -gt 65535) {
@@ -974,8 +950,6 @@ jobs:
               "114030DD-DB5F-460A-9CAC-997680E9F938"
           }
 
-          $licenseFile = (Resolve-Path -LiteralPath "..\\..\\LICENSE").Path
-          $noticeFile = (Resolve-Path -LiteralPath "..\\..\\NOTICE").Path
           $licenseText = Get-Content -LiteralPath $licenseFile -Raw
           $escapedLicense = $licenseText.Replace('\', '\\').Replace('{', '\{').Replace('}', '\}')
           $escapedLicense = $escapedLicense -replace "`r?`n", "\par`r`n"
@@ -1106,6 +1080,7 @@ jobs:
           path: |
             GoNavi-*.dmg
             GoNavi-*.exe
+            GoNavi-*.zip
             GoNavi-*.msi
             GoNavi-*.tar.gz
             GoNavi-*.AppImage
@@ -1120,9 +1095,9 @@ jobs:
       - build
       - driver_agents
     # Serialize only the publication stage with stable releases so both
-    # channels cannot pass the retained-byte preflight concurrently.
+    # channels cannot publish shared mirror targets concurrently.
     concurrency:
-      group: gonavi-r2-publication
+      group: gonavi-release-publication
       cancel-in-progress: false
     runs-on: ubuntu-latest
     steps:
@@ -1431,28 +1406,15 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Mirror, promote, and retain latest dev release in Cloudflare R2
+      - name: Prepare and verify dev mirror payload
         env:
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: auto
           DEV_VERSION: ${{ steps.version.outputs.version }}
           HAS_DRIVER_ASSETS: ${{ steps.driver_assets.outputs.has_driver_assets }}
-          R2_BUCKET: gonavi-downloads
         shell: bash
         run: |
           set -euo pipefail
-          if [[ -z "${CLOUDFLARE_ACCOUNT_ID}" || -z "${AWS_ACCESS_KEY_ID}" || -z "${AWS_SECRET_ACCESS_KEY}" ]]; then
-            echo "Cloudflare R2 release credentials are not configured" >&2
-            exit 1
-          fi
-
-          endpoint="https://${CLOUDFLARE_ACCOUNT_ID}.r2.cloudflarestorage.com"
           app_dir="release-assets"
           driver_dir="driver-release-assets"
-          app_prefix="gonavi/dev/releases/download/${DEV_VERSION}"
-          driver_prefix="drivers/dev/releases/download/${DEV_VERSION}"
 
           jq -e \
             --arg version "${DEV_VERSION}" \
@@ -1484,80 +1446,7 @@ jobs:
               "${driver_dir}/GoNavi-DriverAgents-Index.json" \
               > "${driver_latest_file}"
             jq -e '.assets | type == "object" and length > 0' "${driver_latest_file}" >/dev/null
-          else
-            current_driver_state="${RUNNER_TEMP}/r2-current-dev-driver-state.json"
-            if python3 tools/r2-release-retention.py validate-driver-pointer \
-              --bucket "${R2_BUCKET}" \
-              --endpoint-url "${endpoint}" \
-              --channel dev > "${current_driver_state}"; then
-              current_driver_keep_prefix="$(jq -r '.keepPrefix' "${current_driver_state}")"
-              python3 tools/r2-release-retention.py prune \
-                --bucket "${R2_BUCKET}" \
-                --endpoint-url "${endpoint}" \
-                --root-prefix "drivers/dev/releases/download/" \
-                --keep-prefix "${current_driver_keep_prefix}"
-            else
-              echo "::warning::Current dev driver pointer could not be fully validated; preserving every dev driver object"
-            fi
           fi
-
-          app_manifest_size="$(stat -c '%s' "${app_dir}/latest-dev.json")"
-          planned_bytes="$(jq '[.assets[].size] | add // 0' "${app_dir}/latest-dev.json")"
-          planned_bytes="$((planned_bytes + app_manifest_size * 2))"
-          budget_args=(
-            measure
-            --bucket "${R2_BUCKET}"
-            --endpoint-url "${endpoint}"
-            --prefix "gonavi/"
-            --prefix "drivers/"
-            --exclude-prefix "gonavi/dev/releases/download/"
-            --exclude-prefix "gonavi/dev/releases/latest/"
-          )
-          if [[ -s "${driver_latest_file}" ]]; then
-            driver_index_size="$(stat -c '%s' "${driver_latest_file}")"
-            driver_asset_bytes="$(jq '[.assets[]] | add // 0' "${driver_latest_file}")"
-            planned_bytes="$((planned_bytes + driver_asset_bytes + driver_index_size * 2))"
-            budget_args+=(
-              --exclude-prefix "drivers/dev/releases/download/"
-              --exclude-prefix "drivers/dev/releases/latest/"
-            )
-          fi
-          python3 tools/r2-release-retention.py "${budget_args[@]}" \
-            --add-bytes "${planned_bytes}" \
-            --max-bytes 9000000000
-
-          upload_immutable() {
-            local file="$1"
-            local key="$2"
-            local content_type="${3:-}"
-            local sha size head_json remote_sha remote_size
-            sha="$(sha256sum "${file}" | awk '{print $1}')"
-            size="$(stat -c '%s' "${file}")"
-            if head_json="$(aws s3api head-object --bucket "${R2_BUCKET}" --key "${key}" --endpoint-url "${endpoint}" --output json 2>&1)"; then
-              remote_sha="$(jq -r '.Metadata.sha256 // ""' <<<"${head_json}")"
-              remote_size="$(jq -r '.ContentLength // 0' <<<"${head_json}")"
-              if [[ "${remote_sha}" != "${sha}" || "${remote_size}" != "${size}" ]]; then
-                echo "Refusing to overwrite immutable R2 object ${key}" >&2
-                exit 1
-              fi
-              return
-            elif ! grep -Eq '\(404\)|Not Found|NoSuchKey' <<<"${head_json}"; then
-              echo "Unable to inspect immutable R2 object ${key}: ${head_json}" >&2
-              exit 1
-            fi
-            args=(s3 cp "${file}" "s3://${R2_BUCKET}/${key}" --endpoint-url "${endpoint}" --cache-control "public,max-age=31536000,immutable" --metadata "sha256=${sha}" --only-show-errors)
-            if [[ -n "${content_type}" ]]; then
-              args+=(--content-type "${content_type}")
-            fi
-            aws "${args[@]}"
-            head_json="$(aws s3api head-object --bucket "${R2_BUCKET}" --key "${key}" --endpoint-url "${endpoint}" --output json)"
-            remote_sha="$(jq -r '.Metadata.sha256 // ""' <<<"${head_json}")"
-            remote_size="$(jq -r '.ContentLength // 0' <<<"${head_json}")"
-            if [[ "${remote_sha}" != "${sha}" || "${remote_size}" != "${size}" ]]; then
-              echo "R2 verification failed for ${key}" >&2
-              exit 1
-            fi
-          }
 
           while IFS=$'\t' read -r name expected_size expected_sha; do
             [[ "${name}" == "$(basename "${name}")" ]] || {
@@ -1575,12 +1464,7 @@ jobs:
               echo "Dev app asset does not match latest-dev.json: ${name}" >&2
               exit 1
             fi
-            upload_immutable "${file}" "${app_prefix}/${name}"
           done < <(jq -r '.assets[] | [.name, (.size | tostring), .sha256] | @tsv' "${app_dir}/latest-dev.json")
-          upload_immutable \
-            "${app_dir}/latest-dev.json" \
-            "${app_prefix}/latest-dev.json" \
-            "application/json; charset=utf-8"
 
           if [[ "${HAS_DRIVER_ASSETS}" == "true" ]]; then
             while IFS=$'\t' read -r name expected_size; do
@@ -1598,81 +1482,23 @@ jobs:
                 echo "Dev driver asset size does not match index: ${name}" >&2
                 exit 1
               fi
-              upload_immutable "${file}" "${driver_prefix}/${name}"
             done < <(jq -r '.assets | to_entries[] | [.key, (.value | tostring)] | @tsv' "${driver_latest_file}")
-            upload_immutable \
-              "${driver_latest_file}" \
-              "${driver_prefix}/GoNavi-DriverAgents-Index.json" \
-              "application/json; charset=utf-8"
           fi
 
-          promote_mutable() {
-            local file="$1"
-            local key="$2"
-            local sha size head_json remote_sha remote_size
-            sha="$(sha256sum "${file}" | awk '{print $1}')"
-            size="$(stat -c '%s' "${file}")"
-            aws s3 cp "${file}" "s3://${R2_BUCKET}/${key}" \
-              --endpoint-url "${endpoint}" \
-              --cache-control "no-cache,must-revalidate" \
-              --content-type "application/json; charset=utf-8" \
-              --metadata "sha256=${sha}" \
-              --only-show-errors
-            head_json="$(aws s3api head-object --bucket "${R2_BUCKET}" --key "${key}" --endpoint-url "${endpoint}" --output json)"
-            remote_sha="$(jq -r '.Metadata.sha256 // ""' <<<"${head_json}")"
-            remote_size="$(jq -r '.ContentLength // 0' <<<"${head_json}")"
-            if [[ "${remote_sha}" != "${sha}" || "${remote_size}" != "${size}" ]]; then
-              echo "R2 mutable object verification failed for ${key}" >&2
-              exit 1
-            fi
-          }
-
-          app_latest_key="gonavi/dev/releases/latest/latest-dev.json"
-          promote_mutable "${app_dir}/latest-dev.json" "${app_latest_key}"
-          curl --fail --silent --show-error \
-            "https://download.syngnat.top/${app_latest_key}?verify=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
-            | jq -e --arg version "${DEV_VERSION}" '.channel == "dev" and .version == $version' >/dev/null
-
-          if [[ -s "${driver_latest_file}" ]]; then
-            driver_latest_key="drivers/dev/releases/latest/GoNavi-DriverAgents-Index.json"
-            promote_mutable "${driver_latest_file}" "${driver_latest_key}"
-            curl --fail --silent --show-error \
-              "https://download.syngnat.top/${driver_latest_key}?verify=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
-              | jq -e \
-                  --arg mirror_tag "${DEV_VERSION}" \
-                  '.tagName == "dev-latest" and .mirrorTagName == $mirror_tag' >/dev/null
-          fi
-
-          python3 tools/r2-release-retention.py prune \
-            --bucket "${R2_BUCKET}" \
-            --endpoint-url "${endpoint}" \
-            --root-prefix "gonavi/dev/releases/download/" \
-            --keep-prefix "${app_prefix}/"
-          driver_keep_prefix=""
-          if [[ -s "${driver_latest_file}" ]]; then
-            driver_keep_prefix="${driver_prefix}/"
-          else
-            current_driver_state="${RUNNER_TEMP}/r2-current-dev-driver-state.json"
-            if python3 tools/r2-release-retention.py validate-driver-pointer \
-              --bucket "${R2_BUCKET}" \
-              --endpoint-url "${endpoint}" \
-              --channel dev > "${current_driver_state}"; then
-              driver_keep_prefix="$(jq -r '.keepPrefix' "${current_driver_state}")"
-            else
-              echo "::warning::Skipping dev driver cleanup because the current R2 pointer or retained assets are invalid"
-            fi
-          fi
-          if [[ -n "${driver_keep_prefix}" ]]; then
-            python3 tools/r2-release-retention.py prune \
-              --bucket "${R2_BUCKET}" \
-              --endpoint-url "${endpoint}" \
-              --root-prefix "drivers/dev/releases/download/" \
-              --keep-prefix "${driver_keep_prefix}"
-          fi
-
-          python3 tools/r2-release-retention.py measure \
-            --bucket "${R2_BUCKET}" \
-            --endpoint-url "${endpoint}" \
-            --prefix "gonavi/" \
-            --prefix "drivers/" \
-            --max-bytes 9000000000
+      - name: Mirror dev release to Gatewaysentry
+        uses: ./.github/actions/publish-vps-mirror
+        with:
+          channel: dev
+          app-tag: ${{ steps.version.outputs.version }}
+          app-dir: release-assets
+          app-manifest: release-assets/latest-dev.json
+          driver-enabled: ${{ steps.driver_assets.outputs.has_driver_assets }}
+          driver-tag: ${{ steps.version.outputs.version }}
+          driver-dir: driver-release-assets
+          driver-version-index: ${{ runner.temp }}/driver-dev-latest-index.json
+          driver-latest-index: ${{ runner.temp }}/driver-dev-latest-index.json
+          ssh-host: ${{ secrets.MIRROR_SSH_HOST }}
+          ssh-port: ${{ secrets.MIRROR_SSH_PORT }}
+          ssh-user: ${{ secrets.MIRROR_SSH_USER }}
+          ssh-private-key: ${{ secrets.MIRROR_SSH_PRIVATE_KEY }}
+          ssh-known-hosts: ${{ secrets.MIRROR_SSH_KNOWN_HOSTS }}

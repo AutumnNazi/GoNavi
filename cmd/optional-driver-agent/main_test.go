@@ -176,6 +176,32 @@ type fakeAgentSessionDB struct {
 	session *fakeAgentStatementSession
 }
 
+type fakeAgentTransactionDB struct {
+	fakeAgentTimeoutDB
+	transaction *fakeAgentTransactionSession
+}
+
+func (f *fakeAgentTransactionDB) OpenTransactionExecer(context.Context) (db.TransactionExecer, error) {
+	f.transaction = &fakeAgentTransactionSession{}
+	return f.transaction, nil
+}
+
+type fakeAgentTransactionSession struct {
+	fakeAgentStatementSession
+	commitCalls   int
+	rollbackCalls int
+}
+
+func (f *fakeAgentTransactionSession) Commit() error {
+	f.commitCalls++
+	return nil
+}
+
+func (f *fakeAgentTransactionSession) Rollback() error {
+	f.rollbackCalls++
+	return nil
+}
+
 func (f *fakeAgentSessionDB) OpenSessionExecer(ctx context.Context) (db.StatementExecer, error) {
 	f.session = &fakeAgentStatementSession{}
 	return f.session, nil
@@ -465,6 +491,72 @@ func TestHandleRequest_UsesPinnedSessionForSessionScopedQueryAndExec(t *testing.
 	}
 	if !fake.session.closed {
 		t.Fatal("expected pinned session to close")
+	}
+}
+
+func TestHandleRequest_UsesManagedTransactionSession(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		finishMethod  string
+		wantCommits   int
+		wantRollbacks int
+	}{
+		{name: "commit", finishMethod: "commitTransaction", wantCommits: 1},
+		{name: "rollback", finishMethod: "rollbackTransaction", wantRollbacks: 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fake := &fakeAgentTransactionDB{}
+			runtimeState := &agentRuntime{
+				inst:     fake,
+				sessions: make(map[string]db.StatementExecer),
+			}
+
+			openResp := handleRequest(runtimeState, agentRequest{ID: 1, Method: "openTransaction"})
+			if !openResp.Success {
+				t.Fatalf("openTransaction failed: %s", openResp.Error)
+			}
+			sessionID, ok := openResp.Data.(string)
+			if !ok || strings.TrimSpace(sessionID) == "" {
+				t.Fatalf("unexpected transaction id payload: %#v", openResp.Data)
+			}
+
+			execResp := handleRequest(runtimeState, agentRequest{
+				ID:        2,
+				Method:    agentMethodExec,
+				SessionID: sessionID,
+				Query:     "UPDATE t SET v = 1",
+			})
+			if !execResp.Success {
+				t.Fatalf("transaction exec failed: %s", execResp.Error)
+			}
+
+			finishResp := handleRequest(runtimeState, agentRequest{
+				ID:        3,
+				Method:    tc.finishMethod,
+				SessionID: sessionID,
+			})
+			if !finishResp.Success {
+				t.Fatalf("%s failed: %s", tc.finishMethod, finishResp.Error)
+			}
+			closeResp := handleRequest(runtimeState, agentRequest{
+				ID:        4,
+				Method:    agentMethodCloseSession,
+				SessionID: sessionID,
+			})
+			if !closeResp.Success {
+				t.Fatalf("closeSession failed: %s", closeResp.Error)
+			}
+			if fake.transaction == nil || !fake.transaction.closed {
+				t.Fatal("expected managed transaction session to close")
+			}
+			if fake.transaction.commitCalls != tc.wantCommits || fake.transaction.rollbackCalls != tc.wantRollbacks {
+				t.Fatalf(
+					"unexpected finish calls: commit=%d rollback=%d",
+					fake.transaction.commitCalls,
+					fake.transaction.rollbackCalls,
+				)
+			}
+		})
 	}
 }
 

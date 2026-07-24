@@ -49,6 +49,12 @@ import {
   type DataGridDisplaySettings,
 } from "./utils/dataGridDisplay";
 import {
+  DEFAULT_SQL_EDITOR_TYPOGRAPHY_SETTINGS,
+  migrateLegacySqlEditorTypographySettings,
+  sanitizeSqlEditorTypographySettings,
+  type SqlEditorTypographySettings,
+} from "./utils/sqlEditorTypography";
+import {
   normalizeOceanBaseProtocol,
   resolveOceanBaseProtocolFromConfig,
   resolveOceanBaseProtocolFromQueryText,
@@ -144,7 +150,8 @@ export type ThemePreference = ThemeMode | "system";
 /** AI 聊天默认打开形态：侧栏 / 独立浮动窗 */
 export type AIChatOpenMode = "dock" | "detached";
 
-export interface AppearanceSettings extends DataGridDisplaySettings {
+export interface AppearanceSettings
+  extends DataGridDisplaySettings, SqlEditorTypographySettings {
   uiVersion: "legacy" | "v2";
   enabled: boolean;
   opacity: number;
@@ -185,6 +192,7 @@ export const DEFAULT_APPEARANCE: AppearanceSettings = {
   tabDisplay: DEFAULT_TAB_DISPLAY_SETTINGS,
   redisDbAliases: DEFAULT_REDIS_DB_ALIASES,
   ...DEFAULT_DATA_GRID_DISPLAY_SETTINGS,
+  ...DEFAULT_SQL_EDITOR_TYPOGRAPHY_SETTINGS,
 };
 const DEFAULT_UI_SCALE = 1.0;
 const MIN_UI_SCALE = 0.8;
@@ -258,7 +266,8 @@ const MIN_KEEPALIVE_INTERVAL_MINUTES = 1;
 const MAX_KEEPALIVE_INTERVAL_MINUTES = 1440;
 const DEFAULT_DIAGNOSTIC_TIMEOUT_SECONDS = 15;
 const MAX_DIAGNOSTIC_TIMEOUT_SECONDS = 300;
-const PERSIST_VERSION = 18;
+const PERSIST_VERSION = 19;
+const SQL_EDITOR_FONT_SIZE_SPLIT_VERSION = 19;
 const UI_VERSION_V2_MIGRATION_VERSION = 14;
 const SIDEBAR_SEARCH_SHORTCUT_MIGRATION_VERSION = 18;
 const PERSIST_STORAGE_KEY = "lite-db-storage";
@@ -2901,6 +2910,9 @@ const sanitizeAppearance = (
     return { ...DEFAULT_APPEARANCE };
   }
   const dataGridDisplaySettings = sanitizeDataGridDisplaySettings(appearance);
+  const sqlEditorTypographySettings = version < SQL_EDITOR_FONT_SIZE_SPLIT_VERSION
+    ? migrateLegacySqlEditorTypographySettings(dataGridDisplaySettings)
+    : sanitizeSqlEditorTypographySettings(appearance);
   const nextAppearance = {
     uiVersion:
       appearance.uiVersion === "v2" || appearance.uiVersion === "legacy"
@@ -2953,6 +2965,9 @@ const sanitizeAppearance = (
     dataTableFontSize: dataGridDisplaySettings.dataTableFontSize,
     dataTableFontSizeFollowGlobal:
       dataGridDisplaySettings.dataTableFontSizeFollowGlobal,
+    sqlEditorFontSize: sqlEditorTypographySettings.sqlEditorFontSize,
+    sqlEditorFontSizeFollowGlobal:
+      sqlEditorTypographySettings.sqlEditorFontSizeFollowGlobal,
     sidebarTreeFontSize: dataGridDisplaySettings.sidebarTreeFontSize,
     sidebarTreeFontSizeFollowGlobal:
       dataGridDisplaySettings.sidebarTreeFontSizeFollowGlobal,
@@ -3461,6 +3476,21 @@ const createMemoizedPersistedStateProjection = () => {
 };
 
 const partializePersistedState = createMemoizedPersistedStateProjection();
+
+const appPersistStorage = createDebouncedPersistStorage<AppState>(
+  () => localStorage,
+  {
+    debounceMs: PERSIST_WRITE_DEBOUNCE_MS,
+    enabled: !isFrontendTestRuntime(),
+  },
+);
+
+export const flushAppStatePersistence = async (): Promise<void> => {
+  const flush = (appPersistStorage as { flush?: () => Promise<void> } | undefined)?.flush;
+  if (typeof flush === "function") {
+    await flush();
+  }
+};
 
 export const useStore = create<AppState>()(
   persist(
@@ -5670,10 +5700,7 @@ export const useStore = create<AppState>()(
     }),
     {
       name: PERSIST_STORAGE_KEY, // name of the item in the storage (must be unique)
-      storage: createDebouncedPersistStorage(() => localStorage, {
-        debounceMs: PERSIST_WRITE_DEBOUNCE_MS,
-        enabled: !isFrontendTestRuntime(),
-      }),
+      storage: appPersistStorage,
       skipHydration: isNativeDetachedWindowRoute(),
       version: PERSIST_VERSION,
       migrate: (persistedState: unknown, version: number) => {

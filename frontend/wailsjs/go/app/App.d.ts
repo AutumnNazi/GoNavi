@@ -12,6 +12,8 @@ export function ApplyChanges(arg1:connection.ConnectionConfig,arg2:string,arg3:s
 
 export function ApplyDataRootDirectory(arg1:string,arg2:boolean):Promise<connection.QueryResult>;
 
+export function ApplyLogDirectory(arg1:string):Promise<connection.QueryResult>;
+
 export function BuildSQLAuditExport(arg1:sqlaudit.Filter,arg2:string):Promise<connection.QueryResult>;
 
 export function CancelApplicationQuit():Promise<connection.QueryResult>;
@@ -216,6 +218,8 @@ export function ImportDataWithProgress(arg1:connection.ConnectionConfig,arg2:str
 
 export function ImportDataWithProgressOptions(arg1:connection.ConnectionConfig,arg2:string,arg3:string,arg4:string,arg5:app.ImportFileOptions):Promise<connection.QueryResult>;
 
+export function ImportDatabaseSQL(arg1:connection.ConnectionConfig,arg2:string,arg3:string,arg4:string):Promise<connection.QueryResult>;
+
 export function ImportLegacyConnections(arg1:Array<connection.SavedConnectionInput>):Promise<Array<connection.SavedConnectionView>>;
 
 export function ImportLegacyGlobalProxy(arg1:connection.SaveGlobalProxyInput):Promise<connection.GlobalProxyView>;
@@ -281,6 +285,8 @@ export function OpenDataRootDirectory():Promise<connection.QueryResult>;
 export function OpenDownloadedUpdateDirectory():Promise<connection.QueryResult>;
 
 export function OpenDriverDownloadDirectory(arg1:string):Promise<connection.QueryResult>;
+
+export function OpenLogDirectory():Promise<connection.QueryResult>;
 
 export function OpenSQLFile():Promise<connection.QueryResult>;
 
@@ -405,6 +411,8 @@ export function SelectDriverDownloadDirectory(arg1:string):Promise<connection.Qu
 export function SelectDriverPackageDirectory(arg1:string):Promise<connection.QueryResult>;
 
 export function SelectDriverPackageFile(arg1:string):Promise<connection.QueryResult>;
+
+export function SelectLogDirectory(arg1:string):Promise<connection.QueryResult>;
 
 export function SelectSQLDirectory(arg1:string):Promise<connection.QueryResult>;
 

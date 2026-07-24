@@ -161,7 +161,7 @@ if (-not (Test-SameFilePath $restoredMatchingShortcut.TargetPath $target)) {
 		t.Fatal(err)
 	}
 
-	command := exec.Command(powerShell, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", scriptPath)
+	command := exec.Command(powerShell, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "RemoteSigned", "-File", scriptPath)
 	command.Env = append(os.Environ(),
 		"GONAVI_TEST_TARGET="+targetPath,
 		"GONAVI_TEST_FOREIGN_TARGET="+foreignTargetPath,

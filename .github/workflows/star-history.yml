@@ -1,0 +1,97 @@
+# After GitHub restricted public stargazers API (2026-06-30), live api.star-history.com
+# embeds need a collaborator token. Official guidance for README:
+# render with a token that can read THIS repo, do not put a raw PAT in the public file.
+#
+# This workflow uses the repo GITHUB_TOKEN + star-history's chart renderer (via
+# narayann7/star-history-action, which star-history maintainers point to when you
+# prefer not to hand a fine-grained token to the public star-history API).
+# Ref: https://github.com/marketplace/actions/star-history-action
+#      https://www.star-history.com/blog/github-stargazer-api-restriction
+
+name: Star History
+
+on:
+  schedule:
+    - cron: "0 */6 * * *"
+  watch:
+    types: [started]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: star-history
+  cancel-in-progress: true
+
+jobs:
+  star-history:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Render star history chart
+        uses: narayann7/star-history-action@v1
+        with:
+          repos: ${{ github.repository }}
+          token: ${{ github.token }}
+          type: Date
+          themes: light,dark
+          output-dir: assets/star-history
+          update-readme: true
+          readme: README.md
+          readme-format: picture
+          commit: false
+
+      - name: Sync chart block into README.zh-CN.md
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+          import re
+
+          start = "<!-- star-history:start -->"
+          end = "<!-- star-history:end -->"
+
+          def extract_block(text: str) -> str:
+              m = re.search(
+                  re.escape(start) + r"(.*?)" + re.escape(end),
+                  text,
+                  flags=re.S,
+              )
+              if not m:
+                  raise SystemExit("star-history markers missing in README.md")
+              return m.group(0)
+
+          def replace_block(text: str, block: str) -> str:
+              if start not in text or end not in text:
+                  raise SystemExit("star-history markers missing in README.zh-CN.md")
+              return re.sub(
+                  re.escape(start) + r".*?" + re.escape(end),
+                  block,
+                  text,
+                  count=1,
+                  flags=re.S,
+              )
+
+          en = Path("README.md").read_text(encoding="utf-8")
+          zh_path = Path("README.zh-CN.md")
+          zh = zh_path.read_text(encoding="utf-8")
+          block = extract_block(en)
+          zh_path.write_text(replace_block(zh, block), encoding="utf-8")
+          print("synced star-history block into README.zh-CN.md")
+          PY
+
+      - name: Commit if changed
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add assets/star-history README.md README.zh-CN.md
+          if git diff --staged --quiet; then
+            echo "No star-history changes"
+            exit 0
+          fi
+          git commit -m "chore(docs): refresh star history chart [skip ci]"
+          git push

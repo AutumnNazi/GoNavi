@@ -13,10 +13,12 @@ const CONTEXT_OPTIONS: {
   value: AIContextLevel;
   descKey: string;
   icon: React.ReactNode;
+  lightIconColor: string;
+  darkIconColor: string;
 }[] = [
-  { labelKey: 'ai_settings.context.schema_only.label', value: 'schema_only', descKey: 'ai_settings.context.schema_only.desc', icon: <TableOutlined /> },
-  { labelKey: 'ai_settings.context.with_samples.label', value: 'with_samples', descKey: 'ai_settings.context.with_samples.desc', icon: <DatabaseOutlined /> },
-  { labelKey: 'ai_settings.context.with_results.label', value: 'with_results', descKey: 'ai_settings.context.with_results.desc', icon: <ProfileOutlined /> },
+  { labelKey: 'ai_settings.context.schema_only.label', value: 'schema_only', descKey: 'ai_settings.context.schema_only.desc', icon: <TableOutlined />, lightIconColor: '#0284c7', darkIconColor: '#38bdf8' },
+  { labelKey: 'ai_settings.context.with_samples.label', value: 'with_samples', descKey: 'ai_settings.context.with_samples.desc', icon: <DatabaseOutlined />, lightIconColor: '#d97706', darkIconColor: '#fbbf24' },
+  { labelKey: 'ai_settings.context.with_results.label', value: 'with_results', descKey: 'ai_settings.context.with_results.desc', icon: <ProfileOutlined />, lightIconColor: '#16a34a', darkIconColor: '#4ade80' },
 ];
 
 const OPEN_MODE_OPTIONS: {
@@ -24,9 +26,11 @@ const OPEN_MODE_OPTIONS: {
   value: AIChatOpenMode;
   descKey: string;
   icon: React.ReactNode;
+  lightIconColor: string;
+  darkIconColor: string;
 }[] = [
-  { labelKey: 'ai_settings.open_mode.dock.label', value: 'dock', descKey: 'ai_settings.open_mode.dock.desc', icon: <LayoutOutlined /> },
-  { labelKey: 'ai_settings.open_mode.detached.label', value: 'detached', descKey: 'ai_settings.open_mode.detached.desc', icon: <ExpandOutlined /> },
+  { labelKey: 'ai_settings.open_mode.dock.label', value: 'dock', descKey: 'ai_settings.open_mode.dock.desc', icon: <LayoutOutlined />, lightIconColor: '#2563eb', darkIconColor: '#60a5fa' },
+  { labelKey: 'ai_settings.open_mode.detached.label', value: 'detached', descKey: 'ai_settings.open_mode.detached.desc', icon: <ExpandOutlined />, lightIconColor: '#7c3aed', darkIconColor: '#a78bfa' },
 ];
 
 interface AISettingsContextSectionProps {
@@ -43,6 +47,7 @@ interface AISettingsContextSectionProps {
 const AISettingsContextSection: React.FC<AISettingsContextSectionProps> = ({
   contextLevel,
   openMode,
+  darkMode,
   overlayTheme,
   cardBorder,
   onChange,
@@ -56,12 +61,14 @@ const AISettingsContextSection: React.FC<AISettingsContextSectionProps> = ({
     title: copy(option.labelKey),
     description: copy(option.descKey),
     icon: option.icon,
+    iconColor: darkMode ? option.darkIconColor : option.lightIconColor,
   }));
   const contextOptions = CONTEXT_OPTIONS.map((option) => ({
     value: option.value,
     title: copy(option.labelKey),
     description: copy(option.descKey),
     icon: option.icon,
+    iconColor: darkMode ? option.darkIconColor : option.lightIconColor,
   }));
 
   return (

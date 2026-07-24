@@ -969,7 +969,7 @@ func expectedAssetNameForExecutableAndInstallMode(goos, goarch, version, executa
 
 	switch goos {
 	case "windows":
-		suffix := "-Portable.exe"
+		suffix := "-Portable.zip"
 		if installMode == updateInstallModeMSI {
 			suffix = "-Installer.msi"
 		} else if installMode != updateInstallModePortable {
@@ -1862,7 +1862,7 @@ func buildWindowsLaunchCommand(scriptPath string, context windowsUpdateLaunchCon
 		"-NoProfile",
 		"-NonInteractive",
 		"-ExecutionPolicy",
-		"Bypass",
+		windowsUpdatePowerShellExecutionPolicy,
 		"-File",
 		scriptPath,
 	)

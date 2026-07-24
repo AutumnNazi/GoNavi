@@ -69,13 +69,16 @@ describe('AISettingsPromptsSection', () => {
     expect(markup).not.toContain('保存自定义提示词');
   });
 
-  it('uses divided flat sections for editable and builtin prompts', () => {
+  it('uses spaced flat sections without horizontal dividers', () => {
     const markup = renderPromptsSection('en-US');
 
     expect(markup).toContain('gonavi-ai-user-prompts-editor');
     expect(markup).toContain('gonavi-ai-builtin-prompt');
-    expect(markup).toContain('border-bottom:1px solid rgba(0,0,0,0.08)');
+    expect(markup).not.toContain('border-bottom:1px solid rgba(0,0,0,0.08)');
+    expect(markup).not.toContain('border-top:1px solid rgba(0,0,0,0.08)');
     expect(markup).toContain('border-left:2px solid rgba(0,0,0,0.08)');
+    expect(source).toContain('gap: 2');
+    expect(source).toContain('borderRadius: 4');
     expect(source).not.toContain('background: cardBg');
     expect(source).not.toContain('borderRadius: 14');
     expect(source).not.toContain('borderRadius: 12');
@@ -87,9 +90,14 @@ describe('AISettingsPromptsSection', () => {
   it('uses native disclosures and keeps collapsed prompt content mounted', () => {
     const markup = renderPromptsSection('zh-CN');
 
-    expect(markup).toContain('<details class="gonavi-ai-user-prompt"');
-    expect(markup).toContain('<details class="gonavi-ai-builtin-prompt"');
+    expect(markup).toContain('<details class="gonavi-ai-settings-disclosure gonavi-ai-user-prompt"');
+    expect(markup).toContain('<details class="gonavi-ai-settings-disclosure gonavi-ai-builtin-prompt"');
     expect(markup).toContain('<summary');
+    expect(markup).toContain('gonavi-ai-settings-disclosure-content');
+    expect(markup).toContain('gonavi-ai-settings-disclosure-icon');
+    expect(source).toContain("padding: '0 2px 14px'");
+    expect(source).toContain("margin: '0 2px 14px'");
+    expect(source).not.toContain("14px 26px");
     expect(markup).toContain('生成 SQL 前必须先确认字段名');
     expect(markup).toContain('aria-label="全局补充提示词"');
   });

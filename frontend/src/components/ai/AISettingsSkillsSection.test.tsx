@@ -84,14 +84,16 @@ describe('AISettingsSkillsSection', () => {
     expect(markup).toContain('Delete');
   });
 
-  it('uses divided flat sections instead of cards for empty and editable states', () => {
+  it('uses spaced flat sections without decorative dividers', () => {
     const emptyMarkup = renderSection([]);
     const editorMarkup = renderSection([skillDraft]);
 
     expect(emptyMarkup).toContain('gonavi-ai-skill-empty');
-    expect(emptyMarkup).toContain('border-bottom:1px solid rgba(0,0,0,0.08)');
+    expect(emptyMarkup).not.toContain('border-bottom:1px solid rgba(0,0,0,0.08)');
     expect(editorMarkup).toContain('gonavi-ai-skill-editor');
-    expect(editorMarkup).toContain('border-bottom:1px solid rgba(0,0,0,0.08)');
+    expect(editorMarkup).not.toContain('border-bottom:1px solid rgba(0,0,0,0.08)');
+    expect(skillsSectionSource).toContain('gap: 2');
+    expect(skillsSectionSource).toContain('borderRadius: 4');
     expect(skillsSectionSource).not.toContain('borderRadius: 14');
     expect(skillsSectionSource).not.toContain('background: cardBg');
     expect(skillsSectionSource).toContain("fontSize: 'var(--gn-settings-font-secondary, 13px)'");

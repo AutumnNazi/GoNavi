@@ -95,14 +95,15 @@
 
 .gn-sql-audit-filter-time {
   display: grid;
-  grid-column: span 2;
+  grid-column: 1 / span 2;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
 }
 
 .gn-sql-audit-toolbar-actions {
   display: flex;
-  grid-column: span 2;
+  grid-column: -3 / -1;
+  align-items: center;
   justify-content: flex-end;
   gap: 8px;
 }
@@ -160,7 +161,34 @@
   margin: auto;
 }
 
+/* Prevent intrinsic row height from consuming the pagination slot. */
 .gn-sql-audit-table-panel .ant-table-wrapper {
+  display: flex;
+  height: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.gn-sql-audit-table-panel .ant-table-wrapper > .ant-spin-nested-loading,
+.gn-sql-audit-table-panel .ant-table-wrapper > .ant-spin-nested-loading > .ant-spin-container,
+.gn-sql-audit-table-panel .ant-table-wrapper .ant-table,
+.gn-sql-audit-table-panel .ant-table-wrapper .ant-table-container {
+  height: 100%;
+  min-height: 0;
+}
+
+.gn-sql-audit-table-panel .ant-table-wrapper .ant-table-container {
+  display: flex;
+  flex-direction: column;
+}
+
+.gn-sql-audit-table-panel .ant-table-wrapper .ant-table-header {
+  flex: 0 0 auto;
+}
+
+.gn-sql-audit-table-panel .ant-table-wrapper .ant-table-body {
   min-height: 0;
   flex: 1 1 auto;
 }
@@ -323,14 +351,21 @@
   font-size: 12px;
 }
 
-@media (max-width: 1280px) {
+@media (max-width: 1600px) {
   .gn-sql-audit-toolbar {
     grid-template-columns: repeat(4, minmax(150px, 1fr));
   }
+}
+
+@media (max-width: 1100px) {
+  .gn-sql-audit-toolbar {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 
   .gn-sql-audit-filter-search,
-  .gn-sql-audit-filter-time {
-    grid-column: span 2;
+  .gn-sql-audit-filter-time,
+  .gn-sql-audit-toolbar-actions {
+    grid-column: 1 / -1;
   }
 }
 
@@ -344,10 +379,6 @@
   .gn-sql-audit-timeline-header {
     align-items: stretch;
     flex-direction: column;
-  }
-
-  .gn-sql-audit-toolbar {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .gn-sql-audit-summary {

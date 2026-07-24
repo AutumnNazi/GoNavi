@@ -5,11 +5,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import DataGrid, {
   attachDataGridVirtualEditRenderVersion,
+  buildColumnMetaMap,
   buildDataGridCommitChangeSet,
   collectDataGridCellSelectionRowKeys,
   formatCellDisplayText,
   GONAVI_ROW_KEY,
   hasDataGridVirtualEditRenderVersionChanged,
+  shouldOmitBlankDataGridInsertValue,
 } from './DataGrid';
 import { resetDataGridDdlViewSharedStateForTests } from './useDataGridDdlView';
 import DataGridPageFind from './DataGridPageFind';
@@ -215,7 +217,9 @@ vi.mock('@ant-design/icons', () => {
     FilterOutlined: Icon,
     CloseOutlined: Icon,
     BugOutlined: Icon,
+    CodeOutlined: Icon,
     ConsoleSqlOutlined: Icon,
+    ControlOutlined: Icon,
     FileTextOutlined: Icon,
     CopyOutlined: Icon,
     ClearOutlined: Icon,
@@ -237,6 +241,7 @@ vi.mock('@ant-design/icons', () => {
     DatabaseOutlined: Icon,
     NodeIndexOutlined: Icon,
     ThunderboltOutlined: Icon,
+    FormatPainterOutlined: Icon,
   };
 });
 
@@ -505,7 +510,13 @@ const textContent = (node: any): string =>
     .join('');
 
 const findButton = (renderer: ReactTestRenderer, text: string) =>
-  renderer.root.findAll((node) => node.type === 'button' && textContent(node).includes(text))[0];
+  renderer.root.findAll((node) => (
+    node.type === 'button'
+    && (
+      textContent(node).includes(text)
+      || String(node.props['aria-label'] || '').includes(text)
+    )
+  ))[0];
 
 const renderHeaderText = (columnKey: string): string => {
   const column = testRenderState.latestColumns.find((item) => item.key === columnKey);
@@ -558,6 +569,79 @@ describe('DataGrid cell selection row keys', () => {
 });
 
 describe('DataGrid commit change set', () => {
+  it('omits blank generated columns from inserts while preserving ordinary blank values', () => {
+    const columnMetaMap = buildColumnMetaMap([
+      {
+        name: 'id',
+        type: 'bigint',
+        nullable: 'NO',
+        key: 'PRI',
+        default: "nextval('users_id_seq'::regclass)",
+        extra: 'auto_increment',
+        comment: '',
+      },
+      {
+        name: 'display_name',
+        type: 'text',
+        nullable: 'NO',
+        key: '',
+        extra: '',
+        comment: '',
+      },
+    ]);
+    const normalizeInsertValue = (columnName: string, value: any, mode: 'insert' | 'update') => (
+      shouldOmitBlankDataGridInsertValue(value, mode, columnMetaMap[columnName])
+        ? undefined
+        : value
+    );
+
+    const result = buildDataGridCommitChangeSet({
+      addedRows: [{ [GONAVI_ROW_KEY]: 'new-1', id: '', display_name: '' }],
+      modifiedRows: {},
+      deletedRowKeys: new Set(),
+      data: [],
+      editLocator: {
+        strategy: 'primary-key',
+        columns: ['id'],
+        valueColumns: ['id'],
+        readOnly: false,
+      },
+      visibleColumnNames: ['id', 'display_name'],
+      rowKeyToString,
+      normalizeCommitCellValue: normalizeInsertValue,
+      shouldCommitColumn: commitColumnGuard,
+    });
+
+    expect(columnMetaMap.id).toMatchObject({
+      default: "nextval('users_id_seq'::regclass)",
+      extra: 'auto_increment',
+      nullable: 'NO',
+    });
+    expect(result).toEqual({
+      ok: true,
+      changes: {
+        inserts: [{ display_name: '' }],
+        updates: [],
+        deletes: [],
+      },
+    });
+  });
+
+  it('does not omit generated-column nulls or blank values during updates', () => {
+    const generatedMeta = {
+      type: 'bigint',
+      comment: '',
+      default: "nextval('users_id_seq'::regclass)",
+      extra: 'auto_increment',
+      nullable: 'NO',
+    };
+
+    expect(shouldOmitBlankDataGridInsertValue('', 'insert', generatedMeta)).toBe(true);
+    expect(shouldOmitBlankDataGridInsertValue(null, 'insert', generatedMeta)).toBe(false);
+    expect(shouldOmitBlankDataGridInsertValue('', 'update', generatedMeta)).toBe(false);
+    expect(shouldOmitBlankDataGridInsertValue('', 'insert', { ...generatedMeta, default: '', extra: '' })).toBe(false);
+  });
+
   it('uses unique locator values instead of falling back to the whole row', () => {
     const result = buildDataGridCommitChangeSet({
       addedRows: [],
@@ -1266,6 +1350,161 @@ describe('DataGrid DDL interactions', () => {
         testRenderState.latestTableProps.rowClassName(row)
       )),
     ).toEqual(['row-deleted', 'row-deleted']);
+    renderer!.unmount();
+  });
+
+  it('navigates and closes the current-page finder from its keyboard controls', async () => {
+    const onCancel = vi.fn();
+    const onNavigatePrevious = vi.fn();
+    const onNavigateNext = vi.fn();
+    let renderer: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(
+        <DataGridPageFind
+          isV2Ui
+          darkMode={false}
+          pageFindText="Ada"
+          normalizedPageFindText="ada"
+          hasMatches
+          activePageFindPosition={1}
+          matchCount={2}
+          occurrenceCount={2}
+          matchedCellCount={2}
+          onPageFindTextChange={() => {}}
+          onCancel={onCancel}
+          onNavigatePrevious={onNavigatePrevious}
+          onNavigateNext={onNavigateNext}
+        />,
+      );
+    });
+    const input = renderer!.root.findByType('input');
+    const createKeyEvent = (key: string, shiftKey = false) => ({
+      key,
+      shiftKey,
+      preventDefault: vi.fn(),
+      stopPropagation: vi.fn(),
+    });
+
+    await act(async () => {
+      input.props.onKeyDown(createKeyEvent('Enter'));
+      input.props.onKeyDown(createKeyEvent('Enter', true));
+      input.props.onKeyDown(createKeyEvent('Escape'));
+    });
+
+    expect(onNavigateNext).toHaveBeenCalledTimes(1);
+    expect(onNavigatePrevious).toHaveBeenCalledTimes(1);
+    expect(onCancel).toHaveBeenCalledTimes(1);
+    renderer!.unmount();
+  });
+
+  it('opens the V2 current-page finder with Ctrl+F and closes it without duplicating the widget', async () => {
+    storeState.appearance.uiVersion = 'v2';
+    Object.defineProperty(navigator, 'platform', {
+      configurable: true,
+      value: 'Win32',
+    });
+    let renderer: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(
+        <DataGrid
+          data={[
+            { __gonavi_row_key__: 'row-1', id: 1, name: 'Ada' },
+            { __gonavi_row_key__: 'row-2', id: 2, name: 'Linus' },
+          ]}
+          columnNames={['id', 'name']}
+          loading={false}
+          tableName="users"
+          dbName="main"
+          connectionId="conn-1"
+        />,
+      );
+    });
+    await waitForEffects();
+
+    expect(renderer!.root.findAllByType(DataGridPageFind)).toHaveLength(0);
+    const keydownRegistrations = vi.mocked(window.addEventListener).mock.calls.filter(
+      ([type, _listener, options]) => type === 'keydown' && options === true,
+    );
+    expect(keydownRegistrations).toHaveLength(1);
+    const handlePageFindShortcut = keydownRegistrations[0][1] as EventListener;
+    const createFindShortcutEvent = () => ({
+      key: 'f',
+      code: 'KeyF',
+      metaKey: false,
+      ctrlKey: true,
+      altKey: false,
+      shiftKey: false,
+      isComposing: false,
+      target: document.body,
+      preventDefault: vi.fn(),
+      stopPropagation: vi.fn(),
+      stopImmediatePropagation: vi.fn(),
+    }) as unknown as KeyboardEvent;
+
+    const firstShortcut = createFindShortcutEvent();
+    await act(async () => {
+      handlePageFindShortcut(firstShortcut);
+    });
+    expect(firstShortcut.preventDefault).toHaveBeenCalledTimes(1);
+    expect(firstShortcut.stopPropagation).toHaveBeenCalledTimes(1);
+    expect(firstShortcut.stopImmediatePropagation).toHaveBeenCalledTimes(1);
+    expect(renderer!.root.findAllByType(DataGridPageFind)).toHaveLength(1);
+
+    const secondShortcut = createFindShortcutEvent();
+    await act(async () => {
+      handlePageFindShortcut(secondShortcut);
+    });
+    expect(renderer!.root.findAllByType(DataGridPageFind)).toHaveLength(1);
+
+    await act(async () => {
+      renderer!.root.findByType(DataGridPageFind).props.onCancel();
+    });
+    expect(renderer!.root.findAllByType(DataGridPageFind)).toHaveLength(0);
+    renderer!.unmount();
+  });
+
+  it('does not claim document-level Cmd+F for a query result without DataGrid focus', async () => {
+    storeState.appearance.uiVersion = 'v2';
+    let renderer: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(
+        <DataGrid
+          data={[{ __gonavi_row_key__: 'row-1', id: 1, name: 'Ada' }]}
+          columnNames={['id', 'name']}
+          loading={false}
+          tableName="users"
+          dbName="main"
+          connectionId="conn-1"
+          exportScope="queryResult"
+        />,
+      );
+    });
+    await waitForEffects();
+
+    const keydownRegistrations = vi.mocked(window.addEventListener).mock.calls.filter(
+      ([type, _listener, options]) => type === 'keydown' && options === true,
+    );
+    expect(keydownRegistrations).toHaveLength(1);
+    const event = {
+      key: 'f',
+      code: 'KeyF',
+      metaKey: true,
+      ctrlKey: false,
+      altKey: false,
+      shiftKey: false,
+      isComposing: false,
+      target: document.body,
+      preventDefault: vi.fn(),
+      stopPropagation: vi.fn(),
+      stopImmediatePropagation: vi.fn(),
+    } as unknown as KeyboardEvent;
+
+    await act(async () => {
+      (keydownRegistrations[0][1] as EventListener)(event);
+    });
+
+    expect(event.preventDefault).not.toHaveBeenCalled();
+    expect(renderer!.root.findAllByType(DataGridPageFind)).toHaveLength(0);
     renderer!.unmount();
   });
 
@@ -2092,6 +2331,61 @@ describe('DataGrid DDL interactions', () => {
     expect(viewer.findAll((node) => node.type === 'button' && textContent(node).includes(t('common.save')))).toHaveLength(0);
     expect(viewer.findAll((node) => node.type === 'button' && textContent(node).includes(t('common.close')))).toHaveLength(1);
     expect(viewer.findAll((node) => node.type === 'button')).toHaveLength(1);
+    renderer!.unmount();
+  });
+
+  it('formats a writable JSON cell from the toolbar before saving the draft', async () => {
+    storeState.appearance.uiVersion = 'v2';
+    const compactJson = '{"billType":"YDApp","data":{"items":[{"count":100}]}}';
+    const formattedJson = JSON.stringify(JSON.parse(compactJson), null, 2);
+    const rows = [{ __gonavi_row_key__: 'row-1', id: 1, payload: compactJson }];
+
+    let renderer: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(
+        <DataGrid
+          data={rows}
+          columnNames={['id', 'payload']}
+          loading={false}
+          tableName="orders"
+          dbName="main"
+          connectionId="conn-1"
+          pkColumns={['id']}
+        />,
+      );
+    });
+    await waitForEffects();
+
+    const doubleClickSurface = renderer!.root.findAll(
+      (node) => typeof node.props.onDoubleClickCapture === 'function',
+    )[0];
+    await act(async () => {
+      doubleClickSurface.props.onDoubleClickCapture({
+        target: createRenderedCellTarget('row-1', 'payload'),
+        preventDefault: vi.fn(),
+        stopPropagation: vi.fn(),
+      });
+    });
+
+    const editorTitle = t('data_grid.cell_editor.title_with_column', { column: 'payload' });
+    const editor = renderer!.root.findByProps({ 'data-modal-title': editorTitle });
+    const toolbar = editor.findByProps({ 'data-grid-cell-editor-toolbar': 'true' });
+    const formatButton = toolbar.findByProps({ 'data-grid-cell-editor-format': 'true' });
+    expect(formatButton.props.disabled).not.toBe(true);
+    expect(textContent(editor.findByProps({ 'data-monaco-editor': 'true' }))).toBe(compactJson);
+
+    await act(async () => {
+      formatButton.props.onClick();
+    });
+
+    expect(textContent(editor.findByProps({ 'data-monaco-editor': 'true' }))).toBe(formattedJson);
+    expect(testRenderState.latestTableProps.dataSource[0].payload).toBe(compactJson);
+
+    await act(async () => {
+      findButton(renderer!, t('common.save')).props.onClick();
+    });
+
+    expect(testRenderState.latestTableProps.dataSource[0].payload).toBe(formattedJson);
     renderer!.unmount();
   });
 
@@ -4274,6 +4568,102 @@ describe('DataGrid DDL interactions', () => {
     expect(content).toContain('DDL - orders');
     expect(content).toContain('CREATE TABLE orders');
     expect(content).not.toContain('CREATE TABLE users');
+  });
+
+  it('returns a query result to data preview when a fresh table view request arrives', async () => {
+    storeState.appearance.uiVersion = 'v2';
+    backendApp.DBShowCreateTable
+      .mockResolvedValueOnce({
+        success: true,
+        data: 'CREATE TABLE users (`id` bigint)',
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        data: 'CREATE TABLE users (`id` bigint)',
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        data: 'CREATE TABLE orders (`id` bigint)',
+      });
+
+    const renderGrid = (initialViewModeRequestId?: string, rowId = 1) => (
+      <DataGrid
+        data={[{ __gonavi_row_key__: `row-${rowId}`, id: rowId }]}
+        columnNames={['id']}
+        loading={false}
+        tableName="users"
+        dbName="main"
+        connectionId="conn-1"
+        initialViewMode={initialViewModeRequestId ? 'table' : undefined}
+        initialViewModeRequestId={initialViewModeRequestId}
+        initialViewModeScope={initialViewModeRequestId ? 'local' : undefined}
+      />
+    );
+
+    let renderer: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(renderGrid());
+    });
+    await waitForEffects();
+
+    await act(async () => {
+      findButton(renderer!, '查看 DDL').props.onClick();
+    });
+    await waitForEffects();
+    expect(renderer!.root.findAll((node) => node.props['data-grid-ddl-view'])).toHaveLength(1);
+
+    await act(async () => {
+      renderer!.update(renderGrid('query-run-1', 2));
+    });
+    await waitForEffects();
+
+    expect(renderer!.root.findAll((node) => node.props['data-grid-ddl-view'])).toHaveLength(0);
+    expect(testRenderState.latestTableProps.dataSource[0]).toMatchObject({ id: 2 });
+    expect(backendApp.DBShowCreateTable).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      findButton(renderer!, '查看 DDL').props.onClick();
+    });
+    await waitForEffects();
+    expect(renderer!.root.findAll((node) => node.props['data-grid-ddl-view'])).toHaveLength(1);
+    expect(backendApp.DBShowCreateTable).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ type: 'mysql' }),
+      'main',
+      'users',
+    );
+
+    await act(async () => {
+      renderer!.update(renderGrid('query-run-2', 3));
+    });
+    await waitForEffects();
+    expect(renderer!.root.findAll((node) => node.props['data-grid-ddl-view'])).toHaveLength(0);
+    expect(testRenderState.latestTableProps.dataSource[0]).toMatchObject({ id: 3 });
+
+    await act(async () => {
+      renderer!.update(
+        <DataGrid
+          key="orders"
+          data={[{ __gonavi_row_key__: 'row-4', id: 4 }]}
+          columnNames={['id']}
+          loading={false}
+          tableName="orders"
+          dbName="main"
+          connectionId="conn-1"
+        />,
+      );
+    });
+    await waitForEffects();
+
+    expect(renderer!.root.findAll((node) => node.props['data-grid-ddl-view'])).toHaveLength(1);
+    expect(backendApp.DBShowCreateTable).toHaveBeenNthCalledWith(
+      3,
+      expect.objectContaining({ type: 'mysql' }),
+      'main',
+      'orders',
+    );
+    expect(textContent(renderer!.root)).toContain('CREATE TABLE orders');
+    expect(backendApp.DBShowCreateTable).toHaveBeenCalledTimes(3);
   });
 
   it('keeps the v2 DDL sidebar open when switching to another table tab instance', async () => {

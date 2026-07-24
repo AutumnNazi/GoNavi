@@ -102,14 +102,14 @@ const AISettingsMCPSection: React.FC<AISettingsMCPSectionProps> = ({
       style={{
         display: 'flex',
         flexDirection: 'column',
-        borderTop: `1px solid ${cardBorder}`,
-      }}
+        '--gn-mcp-accent': overlayTheme.selectedText,
+        '--gn-mcp-accent-bg': overlayTheme.selectedBg,
+      } as React.CSSProperties}
     >
       <div
         className="gonavi-ai-mcp-tabs"
         role="tablist"
         aria-label={copy('ai_settings.nav.mcp.title')}
-        style={{ borderBottom: `1px solid ${cardBorder}` }}
       >
         {tabs.map((tab, tabIndex) => {
           const active = activeView === tab.key;
@@ -143,7 +143,6 @@ const AISettingsMCPSection: React.FC<AISettingsMCPSectionProps> = ({
               }}
               style={{
                 color: active ? overlayTheme.selectedText : overlayTheme.mutedText,
-                borderBottomColor: active ? overlayTheme.selectedText : 'transparent',
               }}
             >
               <span>{tab.source}</span>
@@ -159,6 +158,8 @@ const AISettingsMCPSection: React.FC<AISettingsMCPSectionProps> = ({
         role="tabpanel"
         aria-labelledby="gonavi-ai-mcp-tab-external-clients"
         hidden={activeView !== 'external-clients'}
+        className="gonavi-ai-mcp-panel"
+        style={{ display: activeView === 'external-clients' ? 'flex' : 'none' }}
       >
         <AIMCPHTTPServerPanel
           status={mcpHTTPServerStatus}
@@ -197,6 +198,8 @@ const AISettingsMCPSection: React.FC<AISettingsMCPSectionProps> = ({
         role="tabpanel"
         aria-labelledby="gonavi-ai-mcp-tab-tool-sources"
         hidden={activeView !== 'tool-sources'}
+        className="gonavi-ai-mcp-panel"
+        style={{ display: activeView === 'tool-sources' ? 'flex' : 'none' }}
       >
         <details className="gonavi-ai-mcp-disclosure gonavi-ai-mcp-quick-add-disclosure">
           <summary>
@@ -221,7 +224,7 @@ const AISettingsMCPSection: React.FC<AISettingsMCPSectionProps> = ({
         {mcpServers.length === 0 && (
           <div
             title={copy('ai_settings.mcp_server.section.empty')}
-            style={{ padding: '13px 0', borderBottom: `1px solid ${cardBorder}`, background: 'transparent', color: overlayTheme.mutedText, fontSize: 12 }}
+            style={{ padding: '13px 2px', borderRadius: 4, background: 'transparent', color: overlayTheme.mutedText, fontSize: 12 }}
           >
             {copy('ai_settings.mcp_server.section.empty_compact')}
           </div>
@@ -256,7 +259,6 @@ const AISettingsMCPSection: React.FC<AISettingsMCPSectionProps> = ({
           <div
             style={{
               padding: '4px 0 16px',
-              borderBottom: `1px solid ${cardBorder}`,
               background: 'transparent',
               display: 'flex',
               flexDirection: 'column',

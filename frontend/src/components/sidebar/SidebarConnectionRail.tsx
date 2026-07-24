@@ -1,5 +1,5 @@
 import React from 'react';
-import { Tooltip, Form } from 'antd';
+import { Tooltip } from 'antd';
 import {
   FolderOpenOutlined,
   TableOutlined,
@@ -17,7 +17,7 @@ import {
 // 通过聚合 props 对象传递，避免 18+ 个独立 props 的 drilling 噪音。
 // 后续状态管理重构（PR-A）会把 labels/handlers 迁到 useSidebarUIState hook。
 //
-// 设计取舍：用 labels + handlers 聚合对象 + FormInstance，换取 Sidebar.tsx 减少 ~100 行。
+// 设计取舍：用 labels + handlers 聚合对象和可选工作台入口，换取 Sidebar.tsx 减少 props drilling。
 // 主组件 props drilling 复杂度可控（只有一处调用点）。
 
 export interface SidebarConnectionRailProps {
@@ -45,11 +45,13 @@ export interface SidebarConnectionRailProps {
     openSettings: () => void;
   };
   canLocateActiveTab: boolean;
+  workbenchActions?: React.ReactNode;
 }
 
-const SidebarConnectionRail: React.FC<SidebarConnectionRailProps> = ({ labels, handlers, canLocateActiveTab }) => (
-  <div className="gn-v2-connection-rail" aria-label={labels.railSystemActions}>
-    <div className="gn-v2-rail-primary-actions" aria-label={labels.railObjectActions}>
+const SidebarConnectionRail: React.FC<SidebarConnectionRailProps> = ({ labels, handlers, canLocateActiveTab, workbenchActions }) => (
+  <div className="gn-v2-connection-rail" data-sidebar-fixed-rail="true" aria-label={labels.railSystemActions}>
+    <div className="gn-v2-rail-items">
+      <div className="gn-v2-rail-primary-actions" aria-label={labels.railObjectActions}>
       <Tooltip title={labels.newGroup} placement="right">
         <button
           type="button"
@@ -119,24 +121,32 @@ const SidebarConnectionRail: React.FC<SidebarConnectionRailProps> = ({ labels, h
           </button>
         </span>
       </Tooltip>
+      </div>
     </div>
     <div className="gn-v2-rail-secondary-actions" aria-label={labels.railSystemActions}>
-      <Tooltip title={labels.aiAssistant} placement="right">
-        <button
-          type="button"
-          className="gn-v2-rail-tool"
-          onClick={handlers.toggleAI}
-          aria-label={labels.aiAssistant}
-          data-gonavi-ai-entry-action="true"
-        >
-          <RobotOutlined />
-        </button>
-      </Tooltip>
-      <Tooltip title={labels.settings} placement="right">
-        <button type="button" className="gn-v2-rail-tool" onClick={handlers.openSettings} aria-label={labels.settings}>
-          <SettingOutlined />
-        </button>
-      </Tooltip>
+      {workbenchActions && (
+        <div className="gn-v2-rail-workbench-actions">
+          {workbenchActions}
+        </div>
+      )}
+      <div className="gn-v2-rail-system-actions">
+        <Tooltip title={labels.aiAssistant} placement="right">
+          <button
+            type="button"
+            className="gn-v2-rail-tool"
+            onClick={handlers.toggleAI}
+            aria-label={labels.aiAssistant}
+            data-gonavi-ai-entry-action="true"
+          >
+            <RobotOutlined />
+          </button>
+        </Tooltip>
+        <Tooltip title={labels.settings} placement="right">
+          <button type="button" className="gn-v2-rail-tool" onClick={handlers.openSettings} aria-label={labels.settings}>
+            <SettingOutlined />
+          </button>
+        </Tooltip>
+      </div>
     </div>
   </div>
 );

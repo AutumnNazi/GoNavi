@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -711,5 +713,91 @@ func TestExecuteSQLFileStreamRunsGoNaviMySQLDatabaseBackupHeader(t *testing.T) {
 	}
 	if len(fakeDB.batchQueries) != 1 || !strings.Contains(fakeDB.batchQueries[0], "INSERT INTO users(id) VALUES (1)") {
 		t.Fatalf("expected INSERT data to be batched after schema restore, batches=%#v", fakeDB.batchQueries)
+	}
+}
+
+func TestImportDatabaseSQLHonorsConnectionProtections(t *testing.T) {
+	allowedFilePath := filepath.Join(t.TempDir(), "database.sql")
+	if err := os.WriteFile(allowedFilePath, []byte("CREATE TABLE demo(id INT);"), 0o600); err != nil {
+		t.Fatalf("write SQL import fixture: %v", err)
+	}
+	missingFilePath := filepath.Join(t.TempDir(), "missing.sql")
+
+	tests := []struct {
+		name       string
+		protection connection.ConnectionProtectionConfig
+		filePath   string
+		wantBlock  bool
+	}{
+		{
+			name:       "data import restricted",
+			protection: connection.ConnectionProtectionConfig{RestrictDataImport: true},
+			filePath:   missingFilePath,
+			wantBlock:  true,
+		},
+		{
+			name:       "structure edit restricted",
+			protection: connection.ConnectionProtectionConfig{RestrictStructureEdit: true},
+			filePath:   missingFilePath,
+			wantBlock:  true,
+		},
+		{
+			name:       "script execution restricted",
+			protection: connection.ConnectionProtectionConfig{RestrictScriptExecution: true},
+			filePath:   missingFilePath,
+			wantBlock:  true,
+		},
+		{
+			name:      "allowed",
+			filePath:  allowedFilePath,
+			wantBlock: false,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			originalNewDatabaseFunc := newDatabaseFunc
+			t.Cleanup(func() { newDatabaseFunc = originalNewDatabaseFunc })
+
+			opened := false
+			fakeDB := &fakeSQLFileBatchDB{}
+			newDatabaseFunc = func(string) (db.Database, error) {
+				opened = true
+				return fakeDB, nil
+			}
+
+			app := NewApp()
+			result := app.ImportDatabaseSQL(connection.ConnectionConfig{
+				Type:       "mysql",
+				Protection: test.protection,
+			}, "app", test.filePath, "database-import-protection-test")
+
+			if test.wantBlock {
+				if result.Success {
+					t.Fatalf("ImportDatabaseSQL unexpectedly succeeded: %#v", result)
+				}
+				wantMessage := readOnlyConnectionActionBlockedMessageWithText(
+					"connection.backend.action.import_data",
+					app.appText,
+				)
+				if result.Message != wantMessage {
+					t.Fatalf("blocked message = %q, want %q", result.Message, wantMessage)
+				}
+				if opened {
+					t.Fatal("ImportDatabaseSQL opened a database despite connection protection")
+				}
+				return
+			}
+
+			if !result.Success {
+				t.Fatalf("ImportDatabaseSQL returned failure: %#v", result)
+			}
+			if !opened {
+				t.Fatal("ImportDatabaseSQL did not open a database on the allowed path")
+			}
+			if len(fakeDB.execQueries) != 1 || fakeDB.execQueries[0] != "CREATE TABLE demo(id INT)" {
+				t.Fatalf("unexpected executed SQL: %#v", fakeDB.execQueries)
+			}
+		})
 	}
 }

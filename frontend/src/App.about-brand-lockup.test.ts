@@ -1,5 +1,6 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { unzlibSync } from 'fflate';
 import { describe, expect, it } from 'vitest';
 
 const appSource = readFileSync(
@@ -16,6 +17,36 @@ const brandIconsDirectory = fileURLToPath(
 const defaultTitlebarMark = fileURLToPath(
   new globalThis.URL('../public/brand-marks/02-database-search-transparent.png', import.meta.url),
 );
+
+const readFirstPngPixelAlpha = (assetBase64: string): number => {
+  const binary = globalThis.atob(assetBase64);
+  const pngBytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+  const idatChunks: Uint8Array[] = [];
+
+  for (let offset = 8; offset + 12 <= pngBytes.length;) {
+    const chunkLength = new DataView(
+      pngBytes.buffer,
+      pngBytes.byteOffset + offset,
+      4,
+    ).getUint32(0);
+    const chunkType = String.fromCharCode(...pngBytes.slice(offset + 4, offset + 8));
+    if (chunkType === 'IDAT') {
+      idatChunks.push(pngBytes.slice(offset + 8, offset + 8 + chunkLength));
+    }
+    offset += chunkLength + 12;
+  }
+
+  const compressedLength = idatChunks.reduce((total, chunk) => total + chunk.length, 0);
+  const compressedData = new Uint8Array(compressedLength);
+  let compressedOffset = 0;
+  for (const chunk of idatChunks) {
+    compressedData.set(chunk, compressedOffset);
+    compressedOffset += chunk.length;
+  }
+
+  const scanlines = unzlibSync(compressedData);
+  return scanlines[4] ?? -1;
+};
 
 describe('about brand lockup', () => {
   it('uses a transparent lockup without a tile background on the about page', () => {
@@ -37,18 +68,33 @@ describe('about brand lockup', () => {
     expect(readFileSync(defaultTitlebarMark, 'base64')).not.toHaveLength(0);
   });
 
-  it('keeps one shared lossless WebP asset for every selectable mascot', () => {
+  it('keeps a tile asset and a transparent about lockup for every selectable mascot', () => {
     const iconAssetPaths = brandIconsSource.match(/iconPath: '\/brand-icons\/\d{2}-.+\.webp'/g) || [];
+    const aboutAssetPaths = brandIconsSource.match(/aboutPath: '\/brand-icons\/\d{2}-.+-about\.png'/g) || [];
     expect(iconAssetPaths).toHaveLength(10);
+    expect(aboutAssetPaths).toHaveLength(10);
+
     for (const declaration of iconAssetPaths) {
       const assetPath = declaration.match(/'([^']+)'/)?.[1];
       expect(assetPath).toBeTruthy();
-      expect(readFileSync(`${brandIconsDirectory}${assetPath?.replace('/brand-icons/', '')}`, 'utf8')).not.toBe('');
+      expect(readFileSync(`${brandIconsDirectory}${assetPath?.replace('/brand-icons/', '')}`, 'base64')).not.toBe('');
+    }
+
+    for (const declaration of aboutAssetPaths) {
+      const assetPath = declaration.match(/'([^']+)'/)?.[1];
+      expect(assetPath).toBeTruthy();
+      const assetBase64 = readFileSync(
+        `${brandIconsDirectory}${assetPath?.replace('/brand-icons/', '')}`,
+        'base64',
+      );
+      expect(assetBase64).not.toBe('');
+      expect(globalThis.atob(assetBase64).charCodeAt(25)).toBe(6);
+      expect(readFirstPngPixelAlpha(assetBase64)).toBe(0);
     }
 
     const webpFiles = readdirSync(brandIconsDirectory).filter((file) => file.endsWith('.webp'));
     expect(webpFiles).toHaveLength(10);
-    const legacyPngFiles = readdirSync(brandIconsDirectory).filter((file) => file.endsWith('.png'));
-    expect(legacyPngFiles).toEqual([]);
+    const aboutPngFiles = readdirSync(brandIconsDirectory).filter((file) => file.endsWith('-about.png'));
+    expect(aboutPngFiles).toHaveLength(10);
   });
 });

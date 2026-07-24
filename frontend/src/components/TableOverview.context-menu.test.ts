@@ -26,15 +26,15 @@ describe('TableOverview v2 context menu', () => {
     expect(listSource).not.toContain('popupRender');
   });
 
-  it('routes table backup and INSERT export entries through the retained export workbench', () => {
+  it('opens table backups for review while retaining automatic INSERT exports', () => {
     const source = readFileSync(new URL('./TableOverview.tsx', import.meta.url), 'utf8');
 
     expect(source).toContain('buildBatchTableExportWorkbenchTab({');
-    expect(source).toContain("const resolvedOptions = mode === 'backup'");
-    expect(source).toContain('await showSQLExportOptionsDialog()');
+    expect(source).not.toContain('showSQLExportOptionsDialog');
     expect(source).toContain('initialObjectNames: [normalizedTableName]');
     expect(source).toContain('contentMode: mode');
-    expect(source).toContain('...resolvedOptions');
+    expect(source).toContain('includeDropIfExists: false');
+    expect(source).toContain("...(mode === 'backup' ? { launchKey } : { requestKey: launchKey })");
     expect(source).toContain("await openTableSQLExportWorkbench(tableName, 'dataOnly')");
     expect(source).toContain("void openTableSQLExportWorkbench(tableName, 'backup')");
     expect(source).toContain("onClick: () => openTableSQLExportWorkbench(table.name, 'backup')");

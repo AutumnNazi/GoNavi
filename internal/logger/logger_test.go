@@ -6,10 +6,13 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"GoNavi-Wails/internal/appdata"
 )
 
 func TestMain(m *testing.M) {
@@ -32,6 +35,62 @@ func TestMain(m *testing.M) {
 	}
 	_ = os.RemoveAll(testLogDir)
 	os.Exit(code)
+}
+
+func TestConfiguredDirectoryUsesPersistedSetting(t *testing.T) {
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir)
+	t.Setenv(envLogDir, "")
+
+	customDirectory := filepath.Join(t.TempDir(), "custom-logs")
+	if _, err := appdata.SetConfiguredLogDirectory(customDirectory); err != nil {
+		t.Fatalf("SetConfiguredLogDirectory returned error: %v", err)
+	}
+	directory, managedByEnvironment := ConfiguredDirectory()
+	if managedByEnvironment {
+		t.Fatal("persisted log directory should not be marked as environment-managed")
+	}
+	if directory != customDirectory {
+		t.Fatalf("configured directory = %q, want %q", directory, customDirectory)
+	}
+}
+
+func TestConfiguredDirectoryPrefersEnvironmentOverride(t *testing.T) {
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir)
+
+	persistedDirectory := filepath.Join(t.TempDir(), "persisted-logs")
+	if _, err := appdata.SetConfiguredLogDirectory(persistedDirectory); err != nil {
+		t.Fatalf("SetConfiguredLogDirectory returned error: %v", err)
+	}
+	environmentDirectory := filepath.Join(t.TempDir(), "environment-logs")
+	t.Setenv(envLogDir, environmentDirectory)
+
+	directory, managedByEnvironment := ConfiguredDirectory()
+	if !managedByEnvironment {
+		t.Fatal("environment log directory should be marked as environment-managed")
+	}
+	if directory != environmentDirectory {
+		t.Fatalf("configured directory = %q, want environment override %q", directory, environmentDirectory)
+	}
+}
+
+func TestConfiguredDirectoryFallsBackToDefault(t *testing.T) {
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir)
+	t.Setenv(envLogDir, "")
+
+	directory, managedByEnvironment := ConfiguredDirectory()
+	if managedByEnvironment {
+		t.Fatal("default log directory should not be marked as environment-managed")
+	}
+	want := filepath.Join(homeDir, appHiddenDir, appLogDirName)
+	if directory != want {
+		t.Fatalf("configured directory = %q, want default %q", directory, want)
+	}
 }
 
 type slowSyncSink struct {

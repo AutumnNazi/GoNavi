@@ -2,6 +2,7 @@ import React from 'react';
 import { createPortal } from 'react-dom';
 import { CopyOutlined, EditOutlined, UndoOutlined, VerticalAlignBottomOutlined } from '@ant-design/icons';
 import { t } from '../i18n';
+import { APP_POPUP_Z_INDEX } from '../utils/overlayZIndex';
 
 interface CellContextMenuState {
   visible: boolean;
@@ -125,7 +126,7 @@ const DataGridLegacyCellContextMenu: React.FC<DataGridLegacyCellContextMenuProps
         position: 'fixed',
         left: cellContextMenu.x,
         top: cellContextMenu.y,
-        zIndex: 10000,
+        zIndex: APP_POPUP_Z_INDEX,
         background: bgContextMenu,
         border: darkMode ? '1px solid #303030' : '1px solid #d9d9d9',
         borderRadius: 4,

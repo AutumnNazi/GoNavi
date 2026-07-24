@@ -207,7 +207,7 @@ const AIMCPServerFormPanel: React.FC<AIMCPServerFormPanelProps> = ({
       overlayTheme={overlayTheme}
     />
 
-    <div style={{ padding: '10px 0', borderBottom: `1px solid ${cardBorder}`, background: 'transparent' }}>
+    <div style={{ padding: '10px 0', background: 'transparent' }}>
       <div style={{ ...mcpLabelStyle, color: overlayTheme.titleText }}>{copy('ai_settings.mcp_server.form.instructions.title')}</div>
       <div style={{ ...buildMCPHintStyle(overlayTheme.mutedText), marginTop: 4 }}>
         <strong>{copy('ai_settings.mcp_server.form.instructions.test_title')}</strong>

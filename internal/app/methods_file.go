@@ -1729,6 +1729,26 @@ func resolveSQLFileExecutionRunConfig(config connection.ConnectionConfig, dbName
 	return runConfig
 }
 
+// ImportDatabaseSQL restores a database from a SQL file while honoring the
+// connection protections that apply to destructive import workflows.
+func (a *App) ImportDatabaseSQL(config connection.ConnectionConfig, dbName string, filePath string, jobID string) connection.QueryResult {
+	for _, protection := range []connectionProtectionKey{
+		connectionProtectionDataImport,
+		connectionProtectionStructureEdit,
+		connectionProtectionScriptExecution,
+	} {
+		if err := ensureConnectionAllowsActionWithText(
+			config,
+			protection,
+			"connection.backend.action.import_data",
+			a.appText,
+		); err != nil {
+			return connection.QueryResult{Success: false, Message: err.Error()}
+		}
+	}
+	return a.ExecuteSQLFile(config, dbName, filePath, jobID)
+}
+
 func (a *App) ExecuteSQLFile(config connection.ConnectionConfig, dbName string, filePath string, jobID string) (result connection.QueryResult) {
 	auditSQL := "EXECUTE SQL FILE"
 	auditStatementCount := 0
@@ -3174,7 +3194,10 @@ func (a *App) exportTablesSQLToFile(
 }
 
 func (a *App) ExportDatabaseSQL(config connection.ConnectionConfig, dbName string, includeData bool) connection.QueryResult {
-	return a.ExportDatabaseSQLWithOptions(config, dbName, includeData, ExportFileOptions{Format: "sql"})
+	return a.ExportDatabaseSQLWithOptions(config, dbName, includeData, ExportFileOptions{
+		Format:                 "sql",
+		IncludeDatabaseContext: true,
+	})
 }
 
 func (a *App) ExportDatabaseSQLWithOptions(
@@ -3318,13 +3341,13 @@ func (a *App) exportDatabaseSQLToFile(
 
 	w := bufio.NewWriterSize(target.file, 1024*1024)
 
-	if err := writeSQLDatabaseBackupHeader(w, runConfig, dbName); err != nil {
+	if err := writeSQLDatabaseExportHeader(w, runConfig, dbName, options.IncludeDatabaseContext); err != nil {
 		if reporter != nil {
 			reporter.Error(0, err.Error())
 		}
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
-	if err := writeSQLDropIfExistsPreamble(
+	if err := writeSQLDropIfExistsPreambleWithDatabaseContext(
 		w,
 		runConfig,
 		dbName,
@@ -3332,6 +3355,7 @@ func (a *App) exportDatabaseSQLToFile(
 		viewLookup,
 		true,
 		options,
+		options.IncludeDatabaseContext,
 	); err != nil {
 		if reporter != nil {
 			reporter.Error(0, err.Error())
@@ -3346,7 +3370,17 @@ func (a *App) exportDatabaseSQLToFile(
 				"total":   len(objects),
 			}))
 		}
-		if err := dumpTableSQL(w, dbInst, runConfig, dbName, objectName, true, includeData, viewLookup); err != nil {
+		if err := dumpTableSQLWithDatabaseContext(
+			w,
+			dbInst,
+			runConfig,
+			dbName,
+			objectName,
+			true,
+			includeData,
+			viewLookup,
+			options.IncludeDatabaseContext,
+		); err != nil {
 			if reporter != nil {
 				reporter.Error(int64(index), err.Error())
 			}
@@ -3779,7 +3813,7 @@ func quoteQualifiedIdentByType(dbType string, ident string) string {
 }
 
 func writeSQLHeader(w *bufio.Writer, config connection.ConnectionConfig, dbName string) error {
-	return writeSQLHeaderWithDatabaseBootstrap(w, config, dbName, false)
+	return writeSQLHeaderWithDatabaseBootstrap(w, config, dbName, true, false)
 }
 
 func writeSQLSchemaExportHeader(
@@ -3810,10 +3844,31 @@ func writeSQLSchemaExportHeader(
 }
 
 func writeSQLDatabaseBackupHeader(w *bufio.Writer, config connection.ConnectionConfig, dbName string) error {
-	return writeSQLHeaderWithDatabaseBootstrap(w, config, dbName, true)
+	return writeSQLHeaderWithDatabaseBootstrap(w, config, dbName, true, true)
 }
 
-func writeSQLHeaderWithDatabaseBootstrap(w *bufio.Writer, config connection.ConnectionConfig, dbName string, createDatabase bool) error {
+func writeSQLDatabaseExportHeader(
+	w *bufio.Writer,
+	config connection.ConnectionConfig,
+	dbName string,
+	includeDatabaseContext bool,
+) error {
+	return writeSQLHeaderWithDatabaseBootstrap(
+		w,
+		config,
+		dbName,
+		includeDatabaseContext,
+		includeDatabaseContext,
+	)
+}
+
+func writeSQLHeaderWithDatabaseBootstrap(
+	w *bufio.Writer,
+	config connection.ConnectionConfig,
+	dbName string,
+	includeDatabaseContext bool,
+	createDatabase bool,
+) error {
 	now := time.Now().Format("2006-01-02 15:04:05")
 	if _, err := w.WriteString(fmt.Sprintf("-- GoNavi SQL Export\n-- Time: %s\n", now)); err != nil {
 		return err
@@ -3824,14 +3879,16 @@ func writeSQLHeaderWithDatabaseBootstrap(w *bufio.Writer, config connection.Conn
 		}
 	}
 
-	if strings.ToLower(strings.TrimSpace(config.Type)) == "mysql" && strings.TrimSpace(dbName) != "" {
-		if createDatabase {
+	if supportsMySQLDatabaseContext(config) && strings.TrimSpace(dbName) != "" {
+		if includeDatabaseContext && createDatabase {
 			if _, err := w.WriteString(fmt.Sprintf("CREATE DATABASE IF NOT EXISTS %s;\n\n", quoteIdentByType("mysql", dbName))); err != nil {
 				return err
 			}
 		}
-		if _, err := w.WriteString(fmt.Sprintf("USE %s;\n\n", quoteIdentByType("mysql", dbName))); err != nil {
-			return err
+		if includeDatabaseContext {
+			if _, err := w.WriteString(fmt.Sprintf("USE %s;\n\n", quoteIdentByType("mysql", dbName))); err != nil {
+				return err
+			}
 		}
 		if _, err := w.WriteString("SET FOREIGN_KEY_CHECKS=0;\n\n"); err != nil {
 			return err
@@ -3839,6 +3896,10 @@ func writeSQLHeaderWithDatabaseBootstrap(w *bufio.Writer, config connection.Conn
 	}
 
 	return nil
+}
+
+func supportsMySQLDatabaseContext(config connection.ConnectionConfig) bool {
+	return strings.EqualFold(strings.TrimSpace(config.Type), "mysql")
 }
 
 func writeSQLFooter(w *bufio.Writer, config connection.ConnectionConfig) error {
@@ -3856,6 +3917,16 @@ func buildSQLDropIfExistsStatement(
 	objectName string,
 	isView bool,
 ) string {
+	return buildSQLDropIfExistsStatementWithDatabaseContext(config, dbName, objectName, isView, true)
+}
+
+func buildSQLDropIfExistsStatementWithDatabaseContext(
+	config connection.ConnectionConfig,
+	dbName string,
+	objectName string,
+	isView bool,
+	includeDatabaseContext bool,
+) string {
 	schemaName, pureObjectName := normalizeSchemaAndTable(config, dbName, objectName)
 	if strings.TrimSpace(pureObjectName) == "" {
 		return ""
@@ -3868,7 +3939,11 @@ func buildSQLDropIfExistsStatement(
 	if isView && dbType != "clickhouse" {
 		objectType = "VIEW"
 	}
-	qualifiedObject := quoteQualifiedIdentByType(dbType, qualifyTable(schemaName, pureObjectName))
+	outputObjectName := qualifyTable(schemaName, pureObjectName)
+	if supportsMySQLDatabaseContext(config) && !includeDatabaseContext {
+		outputObjectName = pureObjectName
+	}
+	qualifiedObject := quoteQualifiedIdentByType(dbType, outputObjectName)
 	if strings.TrimSpace(qualifiedObject) == "" {
 		return ""
 	}
@@ -3895,6 +3970,28 @@ func writeSQLDropIfExistsPreamble(
 	includeSchema bool,
 	options ExportFileOptions,
 ) error {
+	return writeSQLDropIfExistsPreambleWithDatabaseContext(
+		w,
+		config,
+		dbName,
+		objects,
+		viewLookup,
+		includeSchema,
+		options,
+		true,
+	)
+}
+
+func writeSQLDropIfExistsPreambleWithDatabaseContext(
+	w *bufio.Writer,
+	config connection.ConnectionConfig,
+	dbName string,
+	objects []string,
+	viewLookup map[string]string,
+	includeSchema bool,
+	options ExportFileOptions,
+	includeDatabaseContext bool,
+) error {
 	if !includeSchema || !options.IncludeDropIfExists || len(objects) == 0 {
 		return nil
 	}
@@ -3907,7 +4004,13 @@ func writeSQLDropIfExistsPreamble(
 		}
 		objectKey := normalizeExportObjectKey(config, dbName, objectName)
 		_, isView := viewLookup[objectKey]
-		statement := buildSQLDropIfExistsStatement(config, dbName, objectName, isView)
+		statement := buildSQLDropIfExistsStatementWithDatabaseContext(
+			config,
+			dbName,
+			objectName,
+			isView,
+			includeDatabaseContext,
+		)
 		if statement == "" {
 			continue
 		}
@@ -4540,6 +4643,30 @@ func dumpTableSQL(
 	includeData bool,
 	viewLookup map[string]string,
 ) error {
+	return dumpTableSQLWithDatabaseContext(
+		w,
+		dbInst,
+		config,
+		dbName,
+		tableName,
+		includeSchema,
+		includeData,
+		viewLookup,
+		true,
+	)
+}
+
+func dumpTableSQLWithDatabaseContext(
+	w *bufio.Writer,
+	dbInst db.Database,
+	config connection.ConnectionConfig,
+	dbName,
+	tableName string,
+	includeSchema bool,
+	includeData bool,
+	viewLookup map[string]string,
+	includeDatabaseContext bool,
+) error {
 	schemaName, pureTableName := normalizeSchemaAndTable(config, dbName, tableName)
 	objectKey := normalizeExportObjectKeyByParts(schemaName, pureTableName)
 	_, isView := viewLookup[objectKey]
@@ -4616,6 +4743,10 @@ func dumpTableSQL(
 	qualified := qualifyTable(schemaName, pureTableName)
 	dbType := resolveDDLDBType(config)
 	selectSQL := fmt.Sprintf("SELECT * FROM %s", quoteQualifiedIdentByType(dbType, qualified))
+	outputTableName := qualified
+	if supportsMySQLDatabaseContext(config) && !includeDatabaseContext {
+		outputTableName = pureTableName
+	}
 	columnTypeMap := map[string]string{}
 	if defs, colErr := dbInst.GetColumns(schemaName, pureTableName); colErr == nil {
 		columnTypeMap = buildImportColumnTypeMap(defs)
@@ -4623,7 +4754,7 @@ func dumpTableSQL(
 	insertConsumer := &sqlInsertExportConsumer{
 		w:             w,
 		dbType:        dbType,
-		quotedTable:   quoteQualifiedIdentByType(dbType, qualified),
+		quotedTable:   quoteQualifiedIdentByType(dbType, outputTableName),
 		columnTypeMap: columnTypeMap,
 	}
 	if err := streamQueryDataForExport(dbInst, config, selectSQL, insertConsumer); err != nil {

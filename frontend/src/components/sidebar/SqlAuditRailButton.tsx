@@ -24,6 +24,7 @@ export default function SqlAuditRailButton({
         className={['gn-sql-audit-rail-button', className].filter(Boolean).join(' ')}
         onClick={() => addTab(buildSqlAuditWorkbenchTab())}
         aria-label={t('sql_audit.rail.aria_label')}
+        data-sidebar-sql-audit-action="true"
       >
         <AuditOutlined aria-hidden="true" />
       </button>

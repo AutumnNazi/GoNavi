@@ -15,7 +15,7 @@ func TestShouldRemoveWindowsUpdateArtifact(t *testing.T) {
 	}{
 		{name: "GoNavi-dev-abc-Windows-Amd64.exe", want: true},
 		{name: "GoNavi-dev-abc-Windows-Amd64-Installer.msi", want: true},
-		{name: "GoNavi-0.8.4-Windows-Amd64.zip", want: true},
+		{name: "GoNavi-0.8.4-Windows-Amd64-Portable.zip", want: true},
 		{name: "gonavi-update-windows-123.log", want: true},
 		{name: ".gonavi-update-windows-dev-dev-abc", isDir: true, want: true},
 		{name: "GoNavi-dev-abc-MacOS-Arm64.dmg", want: false},
@@ -120,19 +120,29 @@ func TestPrepareWindowsStagedUpdateAssetMovesPackageIntoStagedDir(t *testing.T) 
 	}
 }
 
-func TestResolveWindowsUpdateFinalTargetPathUsesDownloadedVersionedPortableName(t *testing.T) {
+func TestResolveWindowsUpdateFinalTargetPathMapsDownloadedPortableZipToExe(t *testing.T) {
 	currentTarget := filepath.Join("D:", "软件", "数据库管理工具", "GoNavi", "GoNavi-dev-f930ffe-Windows-Amd64.exe")
-	stagedSource := filepath.Join("C:", "Temp", "gonavi-updates", "GoNavi-dev-2d5f246-Windows-Amd64-Portable.exe")
-	want := filepath.Join(filepath.Dir(currentTarget), filepath.Base(stagedSource))
+	stagedSource := filepath.Join("C:", "Temp", "gonavi-updates", "GoNavi-dev-2d5f246-Windows-Amd64-Portable.zip")
+	want := filepath.Join(filepath.Dir(currentTarget), "GoNavi-dev-2d5f246-Windows-Amd64-Portable.exe")
 
 	if got := resolveWindowsUpdateFinalTargetPath(currentTarget, stagedSource); got != want {
 		t.Fatalf("Windows update target = %q, want downloaded versioned path %q", got, want)
 	}
 }
 
+func TestResolveWindowsUpdateFinalTargetPathKeepsLegacyPortableExeName(t *testing.T) {
+	currentTarget := filepath.Join("D:", "软件", "数据库管理工具", "GoNavi", "GoNavi-dev-f930ffe-Windows-Amd64.exe")
+	stagedSource := filepath.Join("C:", "Temp", "gonavi-updates", "GoNavi-dev-2d5f246-Windows-Amd64-Portable.exe")
+	want := filepath.Join(filepath.Dir(currentTarget), filepath.Base(stagedSource))
+
+	if got := resolveWindowsUpdateFinalTargetPath(currentTarget, stagedSource); got != want {
+		t.Fatalf("Windows update target = %q, want legacy executable path %q", got, want)
+	}
+}
+
 func TestResolveWindowsUpdateFinalTargetPathKeepsFixedExecutablePath(t *testing.T) {
 	currentTarget := filepath.Join("D:", "软件", "数据库管理工具", "GoNavi", "GoNavi.exe")
-	stagedSource := filepath.Join("C:", "Temp", "gonavi-updates", "GoNavi-dev-2d5f246-Windows-Amd64-Portable.exe")
+	stagedSource := filepath.Join("C:", "Temp", "gonavi-updates", "GoNavi-dev-2d5f246-Windows-Amd64-Portable.zip")
 
 	if got := resolveWindowsUpdateFinalTargetPath(currentTarget, stagedSource); got != currentTarget {
 		t.Fatalf("Windows update target = %q, want fixed executable path %q", got, currentTarget)

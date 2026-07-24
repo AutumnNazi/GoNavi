@@ -65,15 +65,22 @@ describe('AI settings readonly sections', () => {
     expect(markup.match(/role="radio"/g)).toHaveLength(3);
     expect(markup.match(/aria-checked="true"/g)).toHaveLength(1);
     expect(markup).not.toContain('aria-pressed');
-    expect(markup).toContain('border-radius:0');
+    expect(markup).toContain('border-radius:4px');
+    expect(markup).toContain('color:#16a34a');
+    expect(markup).toContain('color:#d97706');
+    expect(markup).toContain('color:#dc2626');
   });
 
-  it('uses neutral Ant icons, dividers, and one radio indicator instead of safety cards', () => {
+  it('uses semantic Ant icons, whitespace, and one radio indicator instead of safety cards', () => {
     expect(safetySectionSource).toContain('LockOutlined');
     expect(safetySectionSource).toContain('EditOutlined');
     expect(safetySectionSource).toContain('WarningOutlined');
     expect(safetySectionSource).not.toMatch(/[🔒⚠️🔓]/u);
-    expect(choiceGroupSource).toContain('borderBottom: `1px solid ${cardBorder}`');
+    expect(choiceGroupSource).toContain("display: 'grid'");
+    expect(choiceGroupSource).toContain('gap: 2');
+    expect(choiceGroupSource).not.toContain('borderTop');
+    expect(choiceGroupSource).not.toContain('borderBottom');
+    expect(choiceGroupSource).toContain('color: option.iconColor');
     expect(choiceGroupSource).toContain('className="gonavi-ai-choice-indicator"');
     expect(choiceGroupSource).toContain('background: active ? overlayTheme.selectedBg');
     expect(choiceGroupSource).toContain("fontFamily: 'var(--gn-font-sans)'");
@@ -137,10 +144,15 @@ describe('AI settings readonly sections', () => {
     expect(markup.match(/role="radio"/g)).toHaveLength(5);
     expect(markup.match(/aria-checked="true"/g)).toHaveLength(2);
     expect(markup).not.toContain('aria-pressed');
-    expect(markup).toContain('border-radius:0');
+    expect(markup).toContain('border-radius:4px');
+    expect(markup).toContain('color:#2563eb');
+    expect(markup).toContain('color:#7c3aed');
+    expect(markup).toContain('color:#0284c7');
+    expect(markup).toContain('color:#d97706');
+    expect(markup).toContain('color:#16a34a');
   });
 
-  it('uses neutral Ant icons and the same flat choice treatment for both context groups', () => {
+  it('uses semantic Ant icons and the same flat choice treatment for both context groups', () => {
     expect(contextSectionSource).toContain('LayoutOutlined');
     expect(contextSectionSource).toContain('ExpandOutlined');
     expect(contextSectionSource).toContain('TableOutlined');
@@ -152,6 +164,7 @@ describe('AI settings readonly sections', () => {
     expect(choiceGroupSource).toContain('aria-checked={active}');
     expect(choiceGroupSource).toContain('tabIndex={index === selectedIndex ? 0 : -1}');
     expect(choiceGroupSource).toContain("event.key === 'ArrowDown'");
+    expect(choiceGroupSource).toContain('className="gonavi-ai-choice-icon"');
     expect(contextSectionSource).not.toContain(': cardBg');
   });
 

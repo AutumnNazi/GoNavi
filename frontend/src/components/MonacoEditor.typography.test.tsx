@@ -6,17 +6,19 @@ import MonacoEditor from './MonacoEditor';
 
 const storeState = vi.hoisted(() => ({
   fontSize: 14,
-    appearance: {
-      enabled: true,
-      opacity: 1,
-      blur: 0,
-      uiVersion: 'v2' as 'legacy' | 'v2',
-      customUIFontFamily: null as string | null,
-      customMonoFontFamily: null as string | null,
-      showDataTableVerticalBorders: false,
-      dataTableDensity: 'comfortable' as const,
-      dataTableFontSize: null as number | null,
+  appearance: {
+    enabled: true,
+    opacity: 1,
+    blur: 0,
+    uiVersion: 'v2' as 'legacy' | 'v2',
+    customUIFontFamily: null as string | null,
+    customMonoFontFamily: null as string | null,
+    showDataTableVerticalBorders: false,
+    dataTableDensity: 'comfortable' as const,
+    dataTableFontSize: null as number | null,
     dataTableFontSizeFollowGlobal: true,
+    sqlEditorFontSize: null as number | null,
+    sqlEditorFontSizeFollowGlobal: true,
     sidebarTreeFontSize: null as number | null,
     sidebarTreeFontSizeFollowGlobal: true,
   },
@@ -47,6 +49,8 @@ describe('MonacoEditor typography', () => {
       dataTableDensity: 'comfortable',
       dataTableFontSize: null,
       dataTableFontSizeFollowGlobal: true,
+      sqlEditorFontSize: null,
+      sqlEditorFontSizeFollowGlobal: true,
       sidebarTreeFontSize: null,
       sidebarTreeFontSizeFollowGlobal: true,
     };
@@ -84,6 +88,26 @@ describe('MonacoEditor typography', () => {
 
     expect(markup).toContain('&quot;fontSize&quot;:15');
     expect(markup).toContain('&quot;lineHeight&quot;:24');
+  });
+
+  it('keeps SQL-editor and data-editor font sizes independent in v2', () => {
+    storeState.fontSize = 16;
+    storeState.appearance.sqlEditorFontSizeFollowGlobal = false;
+    storeState.appearance.sqlEditorFontSize = 18;
+    storeState.appearance.dataTableFontSizeFollowGlobal = false;
+    storeState.appearance.dataTableFontSize = 11;
+
+    const sqlMarkup = renderToStaticMarkup(
+      <MonacoEditor gonaviTypography="sql" options={{ minimap: { enabled: false } }} />,
+    );
+    const dataMarkup = renderToStaticMarkup(
+      <MonacoEditor gonaviTypography="data" options={{ lineNumbers: 'off' }} />,
+    );
+
+    expect(sqlMarkup).toContain('&quot;fontSize&quot;:18');
+    expect(sqlMarkup).toContain('&quot;lineHeight&quot;:29');
+    expect(dataMarkup).toContain('&quot;fontSize&quot;:11');
+    expect(dataMarkup).toContain('&quot;lineHeight&quot;:18');
   });
 
   it('keeps legacy editors on their explicit font settings', () => {

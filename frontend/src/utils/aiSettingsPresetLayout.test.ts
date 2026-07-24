@@ -14,13 +14,13 @@ describe('ai settings preset layout', () => {
       display: 'grid',
       gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
       columnGap: 12,
-      rowGap: 0,
+      rowGap: 2,
       gridAutoRows: '58px',
       alignItems: 'stretch',
     });
   });
 
-  it('stretches each provider choice to fill the row without rounded-card decoration', () => {
+  it('stretches each provider choice to fill the row with only a subtle selection radius', () => {
     expect(PROVIDER_PRESET_CARD_BASE_STYLE).toMatchObject({
       display: 'flex',
       alignItems: 'center',
@@ -28,7 +28,7 @@ describe('ai settings preset layout', () => {
       height: '100%',
       minHeight: '58px',
       overflow: 'hidden',
-      borderRadius: 0,
+      borderRadius: 4,
       textAlign: 'left',
     });
   });

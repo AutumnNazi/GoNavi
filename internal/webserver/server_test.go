@@ -104,9 +104,9 @@ func TestMethodInvokerRejectsDesktopOnlyAppMethodsBeforeReflection(t *testing.T)
 
 	for _, method := range []string{
 		"Shutdown", "ExportSQLAuditFile", "OpenSQLFile", "ExecuteSQLFile", "ReadSQLFile",
-		"PreviewImportFile", "ImportDataWithProgress", "ImportDataWithProgressOptions", "GetDataRootDirectoryInfo",
+		"PreviewImportFile", "ImportDatabaseSQL", "ImportDataWithProgress", "ImportDataWithProgressOptions", "GetDataRootDirectoryInfo",
 		"ExportDatabaseSQLWithOptions", "ExportSchemaSQLWithOptions",
-		"ApplyDataRootDirectory", "OpenDataRootDirectory", "SetApplicationBrandIcon",
+		"ApplyDataRootDirectory", "OpenDataRootDirectory", "SelectLogDirectory", "ApplyLogDirectory", "OpenLogDirectory", "SetApplicationBrandIcon",
 	} {
 		_, err := invoker.Invoke(invokeRequest{Namespace: "app", Receiver: "app", Method: method})
 		if err == nil || !strings.Contains(err.Error(), "unavailable in web runtime") {

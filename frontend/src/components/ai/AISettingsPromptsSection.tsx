@@ -1,6 +1,6 @@
 import React from 'react';
 import { Button, Input } from 'antd';
-import { RobotOutlined } from '@ant-design/icons';
+import { RightOutlined, RobotOutlined } from '@ant-design/icons';
 
 import { t as catalogTranslate } from '../../i18n/catalog';
 import type { I18nParams } from '../../i18n';
@@ -71,12 +71,22 @@ const AISettingsPromptsSection: React.FC<AISettingsPromptsSectionProps> = ({
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column' }}>
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 2,
+        '--gn-ai-disclosure-accent': overlayTheme.selectedText,
+        '--gn-ai-disclosure-accent-bg': overlayTheme.selectedBg,
+      } as React.CSSProperties}
+    >
       <div
         className="gonavi-ai-user-prompts-editor"
         style={{
           padding: '0 0 8px',
-          borderBottom: `1px solid ${cardBorder}`,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 2,
         }}
       >
         <div
@@ -104,18 +114,19 @@ const AISettingsPromptsSection: React.FC<AISettingsPromptsSectionProps> = ({
         {USER_PROMPT_FIELDS.map((item) => (
           <details
             key={item.key}
-            className="gonavi-ai-user-prompt"
-            style={{ borderTop: `1px solid ${cardBorder}` }}
+            className="gonavi-ai-settings-disclosure gonavi-ai-user-prompt"
+            style={{ borderRadius: 4 }}
           >
-            <summary style={{ cursor: 'pointer', padding: '12px 2px', color: overlayTheme.titleText }}>
-              <span style={{ display: 'inline-block', width: 'calc(100% - 18px)', marginLeft: 8, verticalAlign: 'middle' }}>
+            <summary style={{ color: overlayTheme.titleText }}>
+              <span className="gonavi-ai-settings-disclosure-content" style={{ display: 'inline-block' }}>
                 <span style={{ display: 'block', fontWeight: 650, fontSize: 'var(--gn-settings-font-secondary, 13px)' }}>{copy(item.titleKey)}</span>
                 <span style={{ display: 'block', marginTop: 3, fontSize: 'var(--gn-font-size-sm, 12px)', color: overlayTheme.mutedText, lineHeight: 1.45 }}>
                   {copy(item.descKey)}
                 </span>
               </span>
+              <RightOutlined className="gonavi-ai-settings-disclosure-icon" aria-hidden="true" />
             </summary>
-            <div style={{ padding: '0 2px 14px 26px' }}>
+            <div style={{ padding: '0 2px 14px' }}>
               <Input.TextArea
                 aria-label={copy(item.titleKey)}
                 rows={item.rows}
@@ -139,26 +150,22 @@ const AISettingsPromptsSection: React.FC<AISettingsPromptsSectionProps> = ({
       {Object.entries(builtinPrompts).map(([title, promptText]) => (
         <details
           key={title}
-          className="gonavi-ai-builtin-prompt"
+          className="gonavi-ai-settings-disclosure gonavi-ai-builtin-prompt"
           style={{
-            borderBottom: `1px solid ${cardBorder}`,
+            borderRadius: 4,
           }}
         >
           <summary
             style={{
-              cursor: 'pointer',
-              padding: '12px 2px',
               color: overlayTheme.titleText,
             }}
           >
             <span
+              className="gonavi-ai-settings-disclosure-content"
               style={{
                 display: 'inline-flex',
                 alignItems: 'center',
                 gap: 7,
-                width: 'calc(100% - 18px)',
-                marginLeft: 8,
-                verticalAlign: 'middle',
                 fontWeight: 650,
                 fontSize: 'var(--gn-settings-font-secondary, 13px)',
               }}
@@ -166,10 +173,11 @@ const AISettingsPromptsSection: React.FC<AISettingsPromptsSectionProps> = ({
               <RobotOutlined style={{ color: overlayTheme.iconColor }} aria-hidden="true" />
               {title}
             </span>
+            <RightOutlined className="gonavi-ai-settings-disclosure-icon" aria-hidden="true" />
           </summary>
           <div
             style={{
-              margin: '0 2px 14px 26px',
+              margin: '0 2px 14px',
               padding: '2px 0 2px 12px',
               fontSize: 'var(--gn-settings-font-secondary, 13px)',
               color: overlayTheme.mutedText,

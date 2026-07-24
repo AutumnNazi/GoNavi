@@ -11,7 +11,7 @@ func registerOptionalDatabaseFactories() {
 	registerDatabaseFactory(newOptionalDriverAgentDatabase("sqlserver"), "sqlserver")
 	registerDatabaseFactory(newOptionalDriverAgentDatabase("sqlite"), "sqlite")
 	registerDatabaseFactory(newOptionalDriverAgentDatabase("duckdb"), "duckdb")
-	registerDatabaseFactory(newOptionalDriverAgentDatabase("dameng"), "dameng")
+	registerDatabaseFactory(newOptionalDriverAgentTransactionalDatabase("dameng"), "dameng")
 	registerDatabaseFactory(newOptionalDriverAgentDatabase("kingbase"), "kingbase")
 	registerDatabaseFactory(newOptionalDriverAgentDatabase("highgo"), "highgo")
 	registerDatabaseFactory(newOptionalDriverAgentDatabase("vastbase"), "vastbase")

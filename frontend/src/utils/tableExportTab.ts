@@ -47,6 +47,7 @@ export const buildExportWorkbenchHistoryKey = (
 type ExportWorkbenchLaunchOptions = {
   contentMode?: TableExportContentMode;
   includeDropIfExists?: boolean;
+  launchKey?: string;
   requestKey?: string;
 };
 
@@ -103,11 +104,18 @@ const normalizeNameList = (values: string[] | undefined): string[] | undefined =
   return result.length > 0 ? result : undefined;
 };
 
-const buildLaunchMetadata = (input: ExportWorkbenchLaunchOptions): Partial<TabData> => ({
-  ...(input.contentMode ? { tableExportContentMode: input.contentMode } : {}),
-  ...(input.includeDropIfExists === true ? { tableExportIncludeDropIfExists: true } : {}),
-  ...(String(input.requestKey || '').trim() ? { tableExportRequestKey: String(input.requestKey).trim() } : {}),
-});
+const buildLaunchMetadata = (input: ExportWorkbenchLaunchOptions): Partial<TabData> => {
+  const requestKey = String(input.requestKey || '').trim();
+  const launchKey = String(input.launchKey || '').trim() || requestKey;
+  return {
+    ...(input.contentMode ? { tableExportContentMode: input.contentMode } : {}),
+    ...(input.includeDropIfExists !== undefined
+      ? { tableExportIncludeDropIfExists: input.includeDropIfExists === true }
+      : {}),
+    tableExportLaunchKey: launchKey || undefined,
+    tableExportRequestKey: requestKey || undefined,
+  };
+};
 
 const normalizeScopeOptions = (
   scopeOptions: TableExportScopeOption[] | undefined,

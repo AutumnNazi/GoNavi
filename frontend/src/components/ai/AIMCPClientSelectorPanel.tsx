@@ -1,4 +1,5 @@
 import React from 'react';
+import { CheckCircleFilled } from '@ant-design/icons';
 import type { AIMCPClientInstallStatus } from '../../types';
 import {
   isMCPClientKey,
@@ -53,7 +54,6 @@ const AIMCPClientSelectorPanel: React.FC<AIMCPClientSelectorPanelProps> = ({
   selectedClient,
   darkMode,
   overlayTheme,
-  cardBorder,
   statusLoading,
   onSelectClient,
 }) => {
@@ -87,92 +87,87 @@ const AIMCPClientSelectorPanel: React.FC<AIMCPClientSelectorPanelProps> = ({
         <div style={{ fontWeight: 700, fontSize: 12, color: overlayTheme.titleText }}>
           {copy('ai_chat.mcp_client.install.selector.choice_title', 'Select external client')}
         </div>
-      <div
-        role="radiogroup"
-        aria-label={copy('ai_chat.mcp_client.install.selector.aria_label', 'Select the external client for GoNavi MCP')}
-        style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', gap: 8 }}
-      >
-        {statuses.map((status, statusIndex) => {
-          const client = isMCPClientKey(status.client) ? status.client : 'claude-code';
-          const remoteClient = isRemoteMCPClientStatus(status);
-          const active = selectedClient === client;
-          const tone = getMCPClientStatusTone(status, darkMode, t);
-          const optionSummary = getMCPClientOptionSummary(status, t);
-          const optionState = getMCPClientInstallStateLabel(status, t);
-          const optionHint = active
-            ? (remoteClient
-              ? copy('ai_chat.mcp_client.install.selector.hint.active_remote', 'Selected. The remote connection guide will be copied.')
-              : copy('ai_chat.mcp_client.install.selector.hint.active_local', 'Selected. Only this client will be written or updated.'))
-            : (remoteClient
-              ? copy('ai_chat.mcp_client.install.selector.hint.inactive_remote', 'Click to view the remote connection method.')
-              : copy('ai_chat.mcp_client.install.selector.hint.inactive_local', 'Click to switch to this client.'));
-          return (
-            <button
-              className="gonavi-ai-mcp-client-option"
-              key={status.client}
-              type="button"
-              role="radio"
-              aria-label={`${status.displayName}, ${tone.label}`}
-              aria-checked={active}
-              tabIndex={statusIndex === selectedStatusIndex ? 0 : -1}
-              title={`${optionSummary}\n${optionState}\n${optionHint}`}
-              onClick={() => onSelectClient(client)}
-              onKeyDown={(event) => {
-                if (!['ArrowRight', 'ArrowDown', 'ArrowLeft', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
-                  return;
-                }
-                event.preventDefault();
-                const nextIndex = event.key === 'Home'
-                  ? 0
-                  : event.key === 'End'
-                    ? statuses.length - 1
-                    : event.key === 'ArrowRight' || event.key === 'ArrowDown'
-                      ? (statusIndex + 1) % statuses.length
-                      : (statusIndex - 1 + statuses.length) % statuses.length;
-                const nextStatus = statuses[nextIndex];
-                onSelectClient(isMCPClientKey(nextStatus.client) ? nextStatus.client : 'claude-code');
-                const radios = event.currentTarget.parentElement?.querySelectorAll<HTMLElement>('[role="radio"]');
-                radios?.[nextIndex]?.focus();
-              }}
-              style={{
-                padding: '9px 6px',
-                border: 'none',
-                borderBottom: `1px solid ${cardBorder}`,
-                borderLeft: `3px solid ${active ? overlayTheme.selectedText : 'transparent'}`,
-                background: 'transparent',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                gap: 5,
-                textAlign: 'left',
-                minHeight: 46,
-                flex: '0 1 auto',
-                transition: 'border-color 0.2s ease',
-                opacity: statusLoading ? 0.72 : 1,
-              }}
-            >
-              <span className="gonavi-ai-mcp-client-name" style={{ fontWeight: 700, fontSize: 12, color: overlayTheme.titleText }}>
-                {status.displayName}
-              </span>
-              <span
-                className="gonavi-ai-mcp-client-state"
-                title={tone.label}
+        <div
+          className="gonavi-ai-mcp-client-options"
+          role="radiogroup"
+          aria-label={copy('ai_chat.mcp_client.install.selector.aria_label', 'Select the external client for GoNavi MCP')}
+        >
+          {statuses.map((status, statusIndex) => {
+            const client = isMCPClientKey(status.client) ? status.client : 'claude-code';
+            const remoteClient = isRemoteMCPClientStatus(status);
+            const active = selectedClient === client;
+            const tone = getMCPClientStatusTone(status, darkMode, t);
+            const optionSummary = getMCPClientOptionSummary(status, t);
+            const optionState = getMCPClientInstallStateLabel(status, t);
+            const optionHint = active
+              ? (remoteClient
+                ? copy('ai_chat.mcp_client.install.selector.hint.active_remote', 'Selected. The remote connection guide will be copied.')
+                : copy('ai_chat.mcp_client.install.selector.hint.active_local', 'Selected. Only this client will be written or updated.'))
+              : (remoteClient
+                ? copy('ai_chat.mcp_client.install.selector.hint.inactive_remote', 'Click to view the remote connection method.')
+                : copy('ai_chat.mcp_client.install.selector.hint.inactive_local', 'Click to switch to this client.'));
+            return (
+              <button
+                className={`gonavi-ai-mcp-client-option${active ? ' is-active' : ''}`}
+                key={status.client}
+                type="button"
+                role="radio"
+                aria-label={`${status.displayName}, ${tone.label}`}
+                aria-checked={active}
+                tabIndex={statusIndex === selectedStatusIndex ? 0 : -1}
+                title={`${optionSummary}\n${optionState}\n${optionHint}`}
+                onClick={() => onSelectClient(client)}
+                onKeyDown={(event) => {
+                  if (!['ArrowRight', 'ArrowDown', 'ArrowLeft', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
+                    return;
+                  }
+                  event.preventDefault();
+                  const nextIndex = event.key === 'Home'
+                    ? 0
+                    : event.key === 'End'
+                      ? statuses.length - 1
+                      : event.key === 'ArrowRight' || event.key === 'ArrowDown'
+                        ? (statusIndex + 1) % statuses.length
+                        : (statusIndex - 1 + statuses.length) % statuses.length;
+                  const nextStatus = statuses[nextIndex];
+                  onSelectClient(isMCPClientKey(nextStatus.client) ? nextStatus.client : 'claude-code');
+                  const radios = event.currentTarget.parentElement?.querySelectorAll<HTMLElement>('[role="radio"]');
+                  radios?.[nextIndex]?.focus();
+                }}
                 style={{
-                  color: tone.color,
-                  fontSize: 'var(--gn-font-size-sm, 12px)',
-                  fontWeight: 700,
-                  lineHeight: 1,
-                  whiteSpace: 'nowrap',
-                  flexShrink: 0,
+                  opacity: statusLoading ? 0.72 : 1,
                 }}
               >
-                {tone.label}
-              </span>
-            </button>
-          );
-        })}
-      </div>
+                <span className="gonavi-ai-mcp-client-name" style={{ fontWeight: 700, fontSize: 12, color: overlayTheme.titleText }}>
+                  {status.displayName}
+                </span>
+                <span className="gonavi-ai-mcp-client-option-state">
+                  {active && (
+                    <CheckCircleFilled
+                      className="gonavi-ai-mcp-client-check"
+                      style={{ color: overlayTheme.selectedText }}
+                      aria-hidden
+                    />
+                  )}
+                  <span
+                    className="gonavi-ai-mcp-client-state"
+                    title={tone.label}
+                    style={{
+                      color: tone.color,
+                      fontSize: 'var(--gn-font-size-sm, 12px)',
+                      fontWeight: 700,
+                      lineHeight: 1,
+                      whiteSpace: 'nowrap',
+                      flexShrink: 0,
+                    }}
+                  >
+                    {tone.label}
+                  </span>
+                </span>
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       <details className="gonavi-ai-mcp-disclosure gonavi-ai-mcp-client-guide-disclosure">

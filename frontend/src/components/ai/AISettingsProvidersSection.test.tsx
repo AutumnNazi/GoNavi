@@ -103,11 +103,29 @@ describe('AISettingsProvidersSection', () => {
     expect(listEnd).toBeGreaterThan(listStart);
     expect(listSource).toContain('className="gonavi-ai-provider-list"');
     expect(listSource).toContain('className={`gonavi-ai-provider-row');
+    expect(listSource).toContain('gap: 2');
     expect(listSource).not.toContain('type="dashed"');
     expect(listSource).not.toContain('borderRadius: 14');
-    expect(fieldGroupSource).toContain('borderRadius: 0');
+    expect(listSource).not.toContain('borderTop');
+    expect(listSource).not.toContain('borderBottom');
     expect(fieldGroupSource).toContain("border: 'none'");
+    expect(fieldGroupSource).not.toContain('borderBottom');
     expect(fieldGroupSource).toContain("background: 'transparent'");
+  });
+
+  it('keeps provider actions full-sized and directly below the final field group', () => {
+    const actionsStart = providerSectionSource.indexOf('className="gonavi-ai-provider-actions"');
+    const actionsEnd = providerSectionSource.indexOf('\n        </div>', actionsStart);
+    const actionsSource = providerSectionSource.slice(actionsStart, actionsEnd);
+
+    expect(actionsStart).toBeGreaterThan(-1);
+    expect(actionsEnd).toBeGreaterThan(actionsStart);
+    expect(actionsSource.match(/size="middle"/g)).toHaveLength(2);
+    expect(actionsSource).toContain('minWidth: 92');
+    expect(actionsSource).toContain('minWidth: 72');
+    expect(actionsSource).toContain('marginTop: 16');
+    expect(actionsSource).not.toContain('borderTop');
+    expect(actionsSource).not.toContain('paddingTop');
   });
 
   it('renders providers as flat rows with a separate native selection button', () => {
@@ -206,6 +224,8 @@ describe('AISettingsProvidersSection', () => {
     expect(markup).toContain('role="radiogroup"');
     expect(markup).toContain('role="radio" aria-checked="true"');
     expect(markup).toContain('aria-label="API format"');
+    expect(markup).toContain('gonavi-ai-provider-actions');
+    expect(markup).not.toContain('ant-btn-sm');
   });
 
   it('renders the Responses protocol selector for the built-in OpenAI preset', () => {

@@ -69,7 +69,7 @@ const AISettingsSidebar: React.FC<AISettingsSidebarProps> = ({
         role="tablist"
         aria-label={copy('ai_settings.nav.title')}
         aria-orientation="vertical"
-        style={{ display: 'grid', borderTop: `1px solid ${overlayTheme.divider}` }}
+        style={{ display: 'grid', gap: 2 }}
       >
         {AI_SETTINGS_NAV_ITEMS.map((item, itemIndex) => {
           const active = activeSection === item.key;
@@ -106,9 +106,8 @@ const AISettingsSidebar: React.FC<AISettingsSidebarProps> = ({
                 textAlign: 'left',
                 minHeight: 44,
                 padding: '10px 10px',
-                borderRadius: 0,
+                borderRadius: 4,
                 border: 'none',
-                borderBottom: `1px solid ${overlayTheme.divider}`,
                 borderLeft: `3px solid ${active ? overlayTheme.selectedText : 'transparent'}`,
                 background: active ? overlayTheme.selectedBg : 'transparent',
                 color: active ? (darkMode ? '#f5f7ff' : '#162033') : (darkMode ? 'rgba(255,255,255,0.82)' : '#3f4b5e'),

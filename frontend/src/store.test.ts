@@ -6,6 +6,7 @@ import {
   buildTableAccessCountKey,
   MAX_TABLE_ACCESS_COUNT_ENTRIES,
 } from './utils/tableAccessCount';
+import { buildBatchTableExportWorkbenchTab } from './utils/tableExportTab';
 
 class MemoryStorage implements Storage {
   private data = new Map<string, string>();
@@ -87,6 +88,8 @@ describe('store appearance persistence', () => {
     expect(appearance.dataTableDensity).toBe('comfortable');
     expect(appearance.dataTableFontSize).toBeNull();
     expect(appearance.dataTableFontSizeFollowGlobal).toBe(true);
+    expect(appearance.sqlEditorFontSize).toBeNull();
+    expect(appearance.sqlEditorFontSizeFollowGlobal).toBe(true);
     expect(appearance.sidebarTreeFontSize).toBeNull();
     expect(appearance.sidebarTreeFontSizeFollowGlobal).toBe(true);
     expect(appearance.customUIFontFamily).toBeNull();
@@ -97,6 +100,32 @@ describe('store appearance persistence', () => {
       primaryElements: ['connection', 'kind', 'object'],
       secondaryElements: [],
     });
+  });
+
+  it('migrates the coupled data-table font into an independent SQL editor font', async () => {
+    storage.setItem('lite-db-storage', JSON.stringify({
+      state: {
+        appearance: {
+          uiVersion: 'v2',
+          dataTableFontSize: 18,
+          dataTableFontSizeFollowGlobal: false,
+        },
+      },
+      version: 18,
+    }));
+
+    const { useStore } = await importStore();
+    const appearance = useStore.getState().appearance;
+
+    expect(appearance.dataTableFontSize).toBe(18);
+    expect(appearance.dataTableFontSizeFollowGlobal).toBe(false);
+    expect(appearance.sqlEditorFontSize).toBe(17);
+    expect(appearance.sqlEditorFontSizeFollowGlobal).toBe(false);
+
+    const persisted = JSON.parse(storage.getItem('lite-db-storage') || '{}');
+    expect(persisted.version).toBe(19);
+    expect(persisted.state.appearance.sqlEditorFontSize).toBe(17);
+    expect(persisted.state.appearance.sqlEditorFontSizeFollowGlobal).toBe(false);
   });
 
   it('migrates an existing legacy UI selection to V2', async () => {
@@ -113,7 +142,7 @@ describe('store appearance persistence', () => {
     expect(useStore.getState().appearance.uiVersion).toBe('v2');
 
     const persisted = JSON.parse(storage.getItem('lite-db-storage') || '{}');
-    expect(persisted.version).toBe(18);
+    expect(persisted.version).toBe(19);
     expect(persisted.state.appearance.uiVersion).toBe('v2');
   });
 
@@ -1293,7 +1322,7 @@ describe('store appearance persistence', () => {
     )).toEqual(legacyTag?.childOrder);
 
     const persisted = JSON.parse(storage.getItem('lite-db-storage') || '{}');
-    expect(persisted.version).toBe(18);
+    expect(persisted.version).toBe(19);
     expect(persisted.state.connectionTags[0].childOrder).toEqual([
       'connection:conn-a',
       'connection:conn-b',
@@ -2602,6 +2631,36 @@ describe('store appearance persistence', () => {
     expect(useStore.getState().activeTabId).toBe('table-export-conn-1-main-users');
   });
 
+  it('clears an auto-start request when a stable export workbench is reopened for review', async () => {
+    const { useStore } = await importStore();
+
+    useStore.getState().addTab(buildBatchTableExportWorkbenchTab({
+      connectionId: 'conn-1',
+      dbName: 'main',
+      initialObjectNames: ['users'],
+      contentMode: 'dataOnly',
+      includeDropIfExists: true,
+      requestKey: 'request-1',
+    }));
+    useStore.getState().addTab(buildBatchTableExportWorkbenchTab({
+      connectionId: 'conn-1',
+      dbName: 'main',
+      initialObjectNames: ['orders'],
+      contentMode: 'backup',
+      includeDropIfExists: false,
+      launchKey: 'launch-2',
+    }));
+
+    expect(useStore.getState().tabs).toHaveLength(1);
+    expect(useStore.getState().tabs[0]).toEqual(expect.objectContaining({
+      tableExportInitialObjectNames: ['orders'],
+      tableExportContentMode: 'backup',
+      tableExportIncludeDropIfExists: false,
+      tableExportLaunchKey: 'launch-2',
+      tableExportRequestKey: undefined,
+    }));
+  });
+
   it('keeps a running data import tab until the foreground import finishes', async () => {
     const { useStore } = await importStore();
 
@@ -3094,7 +3153,7 @@ describe('store appearance persistence', () => {
       mac: { combo: 'Meta+K', enabled: false },
       windows: { combo: 'Ctrl+K', enabled: true },
     });
-    expect(JSON.parse(storage.getItem('lite-db-storage') || '{}').version).toBe(18);
+    expect(JSON.parse(storage.getItem('lite-db-storage') || '{}').version).toBe(19);
 
     storage.setItem('lite-db-storage', JSON.stringify({
       state: {

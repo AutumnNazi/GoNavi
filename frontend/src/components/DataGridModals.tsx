@@ -1,8 +1,8 @@
 import Modal from './common/ResizableDraggableModal';
 import React from 'react';
-import { Button, Checkbox, DatePicker, Form, Input, TimePicker } from 'antd';
+import { Button, Checkbox, DatePicker, Form, Input, TimePicker, Tooltip } from 'antd';
 import dayjs from 'dayjs';
-import { CopyOutlined } from '@ant-design/icons';
+import { CopyOutlined, FormatPainterOutlined } from '@ant-design/icons';
 import Editor from './MonacoEditor';
 import {
   TEMPORAL_FORMATS,
@@ -208,13 +208,38 @@ const DataGridModals: React.FC<DataGridModalsProps> = ({
             <Button key="close" type="primary" onClick={onCloseCellEditor}>{translate('common.close')}</Button>,
           ]
         : [
-            <Button key="format" onClick={onFormatJsonInEditor} disabled={!cellEditorIsJson}>{translate('data_grid.json_editor.format')}</Button>,
             <Button key="cancel" onClick={onCloseCellEditor}>{translate('common.cancel')}</Button>,
             <Button key="ok" type="primary" onClick={onSaveCellEditor}>{translate('common.save')}</Button>,
           ]}
     >
-      <div style={{ marginBottom: 8, color: '#888', fontSize: 12 }}>
-        {cellEditorMeta ? `${tableName || ''}${tableName ? '.' : ''}${cellEditorMeta.dataIndex}` : ''}
+      <div
+        data-grid-cell-editor-toolbar="true"
+        style={{
+          marginBottom: 8,
+          color: '#888',
+          fontSize: 12,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+        }}
+      >
+        <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {cellEditorMeta ? `${tableName || ''}${tableName ? '.' : ''}${cellEditorMeta.dataIndex}` : ''}
+        </span>
+        <span style={{ flex: 1 }} />
+        {!cellEditorReadOnly && cellEditorIsJson && (
+          <Tooltip title={translate('data_grid.json_editor.format')}>
+            <Button
+              data-grid-cell-editor-format="true"
+              size="small"
+              icon={<FormatPainterOutlined aria-hidden="true" />}
+              aria-label={translate('data_grid.json_editor.format')}
+              onClick={onFormatJsonInEditor}
+            >
+              {translate('data_grid.json_editor.format')}
+            </Button>
+          </Tooltip>
+        )}
       </div>
       {cellEditorOpen && (
         <Editor

@@ -26,6 +26,8 @@ type DamengDB struct {
 	forwarder   *ssh.LocalForwarder // Store SSH tunnel forwarder
 }
 
+var _ TransactionExecerProvider = (*DamengDB)(nil)
+
 func (d *DamengDB) getDSN(config connection.ConnectionConfig) string {
 	// dm://user:password@host:port?schema=...
 	// or dm://user:password@host:port
@@ -221,6 +223,23 @@ func (d *DamengDB) Exec(query string) (int64, error) {
 		return 0, err
 	}
 	return res.RowsAffected()
+}
+
+// OpenTransactionExecer starts a driver-backed transaction that can remain
+// open across SQL editor RPCs until an explicit commit or rollback.
+func (d *DamengDB) OpenTransactionExecer(ctx context.Context) (TransactionExecer, error) {
+	if d.conn == nil {
+		return nil, fmt.Errorf("连接未打开")
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	// Do not bind the transaction to ctx: the editor finishes it in a later RPC.
+	tx, err := d.conn.Begin()
+	if err != nil {
+		return nil, err
+	}
+	return NewSQLTxStatementExecer(tx), nil
 }
 
 func (d *DamengDB) GetDatabases() ([]string, error) {

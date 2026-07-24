@@ -40,7 +40,7 @@ describe('QueryEditorToolbar layout', () => {
     expect(css).toContain('gap: 6px;');
   });
 
-  it('optically aligns the word-wrap icon with its visible label', () => {
+  it('optically centers the word-wrap icon in its v2 icon-only action', () => {
     const toolbarSource = readFileSync(new URL('./QueryEditorToolbar.tsx', import.meta.url), 'utf8');
     const css = readV2ThemeCss();
     const wordWrapCss = css.slice(
@@ -50,6 +50,7 @@ describe('QueryEditorToolbar layout', () => {
 
     expect(toolbarSource).toContain('gn-v2-query-toolbar-word-wrap-action');
     expect(toolbarSource).toContain('gn-query-toolbar-word-wrap-icon');
+    expect(toolbarSource).toContain('{!isV2Ui && t("query_editor.action.word_wrap")}');
     expect(wordWrapCss).toContain('align-items: center;');
     expect(wordWrapCss).toContain('justify-content: center;');
     expect(wordWrapCss).toContain('width: 16px;');
@@ -80,7 +81,7 @@ describe('QueryEditorToolbar layout', () => {
     expect(commitKbdHoverCss).toContain('background:');
   });
 
-  it('keeps transaction selects wide enough for localized auto-commit labels', () => {
+  it('keeps transaction selectors compact after replacing selected labels with icons', () => {
     const css = readV2ThemeCss();
     const transactionModeCss = css.slice(
       css.indexOf('body[data-ui-version="v2"] .gn-v2-query-toolbar-transaction-mode-select {'),
@@ -91,10 +92,32 @@ describe('QueryEditorToolbar layout', () => {
       css.indexOf('body[data-ui-version="v2"] .gn-v2-query-toolbar .ant-select-selector {'),
     );
 
-    expect(transactionModeCss).toContain('width: 78px !important;');
-    expect(transactionModeCss).toContain('flex: 0 0 78px !important;');
-    expect(transactionDelayCss).toContain('width: 104px !important;');
-    expect(transactionDelayCss).toContain('flex: 0 0 104px !important;');
+    expect(transactionModeCss).toContain('width: 48px !important;');
+    expect(transactionModeCss).toContain('flex: 0 0 48px !important;');
+    expect(transactionDelayCss).toContain('width: 48px !important;');
+    expect(transactionDelayCss).toContain('flex: 0 0 48px !important;');
+    expect(css).toContain(
+      'body[data-ui-version="v2"] .gn-v2-query-toolbar .gn-v2-query-toolbar-icon-select .ant-select-selector {',
+    );
+  });
+
+  it('uses a stable icon-button width for every v2 SQL toolbar action', () => {
+    const toolbarSource = readFileSync(new URL('./QueryEditorToolbar.tsx', import.meta.url), 'utf8');
+    const css = readV2ThemeCss();
+    const iconActionCss = css.slice(
+      css.indexOf('body[data-ui-version="v2"] .gn-v2-query-toolbar-icon-action.ant-btn,'),
+      css.indexOf('body[data-ui-version="v2"] .gn-v2-query-toolbar-run-action.ant-btn {'),
+    );
+
+    expect(toolbarSource).toContain('EllipsisOutlined');
+    expect(toolbarSource).toContain('gn-v2-query-toolbar-menu-trigger');
+    expect(toolbarSource).toContain('aria-haspopup="menu"');
+    expect(toolbarSource).toContain('aria-expanded={isV2Ui ? openToolbarMenu === "ai" : undefined}');
+    expect(toolbarSource).toContain('aria-expanded={isV2Ui ? openToolbarMenu === "more" : undefined}');
+    expect(toolbarSource).toContain('aria-expanded={isV2Ui ? openToolbarMenu === "format" : undefined}');
+    expect(iconActionCss).toContain('width: 34px !important;');
+    expect(iconActionCss).toContain('min-width: 34px !important;');
+    expect(iconActionCss).toContain('padding: 0 !important;');
   });
 
   it('keeps editor search action grouped with formatting actions', () => {

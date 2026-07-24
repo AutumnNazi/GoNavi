@@ -108,6 +108,11 @@ const supportsDatabaseEvents = (conn: SavedConnection | undefined): boolean => {
   return getMetadataDialect(conn) === "mysql";
 };
 
+const supportsDatabaseSequences = (conn: SavedConnection | undefined): boolean => {
+  const dialect = getMetadataDialect(conn);
+  return dialect === "oracle" || dialect === "dm" || isPostgresSchemaDialect(dialect);
+};
+
 const escapeSQLLiteral = (raw: string): string =>
   String(raw || "").replace(/'/g, "''");
 const quoteSqlServerIdentifier = (raw: string): string =>
@@ -634,6 +639,14 @@ const buildSequencesMetadataQuerySpecs = (
   dialect: string,
   dbName: string,
 ): MetadataQuerySpec[] => {
+  if (isPostgresSchemaDialect(dialect)) {
+    return [
+      {
+        sql: `SELECT sequence_schema AS schema_name, sequence_name FROM information_schema.sequences WHERE sequence_schema NOT IN ('pg_catalog', 'information_schema') AND sequence_schema NOT LIKE 'pg|_%' ESCAPE '|' ORDER BY sequence_schema, sequence_name`,
+      },
+    ];
+  }
+
   const safeDbName = escapeSQLLiteral(dbName);
   switch (dialect) {
     case "oracle":
@@ -1324,4 +1337,5 @@ export {
   shouldHideSchemaPrefix,
   splitQualifiedName,
   supportsDatabaseEvents,
+  supportsDatabaseSequences,
 };

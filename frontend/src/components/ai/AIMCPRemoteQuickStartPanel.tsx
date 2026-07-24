@@ -20,7 +20,6 @@ interface RemoteCommandCardProps {
   children: React.ReactNode;
   darkMode: boolean;
   overlayTheme: OverlayWorkbenchTheme;
-  cardBorder: string;
 }
 
 const remoteCodeStyle = (overlayTheme: OverlayWorkbenchTheme): React.CSSProperties => ({
@@ -37,12 +36,10 @@ const RemoteCommandCard: React.FC<RemoteCommandCardProps> = ({
   title,
   children,
   overlayTheme,
-  cardBorder,
 }) => (
   <div
     style={{
       padding: '10px 10px 10px 0',
-      borderBottom: `1px solid ${cardBorder}`,
       background: 'transparent',
     }}
   >
@@ -57,7 +54,6 @@ const AIMCPRemoteQuickStartPanel: React.FC<AIMCPRemoteQuickStartPanelProps> = ({
   quickStart,
   darkMode,
   overlayTheme,
-  cardBorder,
 }) => {
   const i18n = useOptionalI18n();
   const copy = i18n?.t ?? ((key, params) => catalogTranslate('en-US', key, params));
@@ -67,7 +63,6 @@ const AIMCPRemoteQuickStartPanel: React.FC<AIMCPRemoteQuickStartPanelProps> = ({
   <div
     style={{
       padding: '14px 0 0',
-      borderTop: `1px solid ${cardBorder}`,
       background: 'transparent',
       display: 'flex',
       flexDirection: 'column',
@@ -86,7 +81,6 @@ const AIMCPRemoteQuickStartPanel: React.FC<AIMCPRemoteQuickStartPanelProps> = ({
           key={item.key}
           style={{
             padding: '10px 10px 10px 0',
-            borderBottom: `1px solid ${cardBorder}`,
             background: 'transparent',
             display: 'flex',
             flexDirection: 'column',
@@ -130,7 +124,6 @@ const AIMCPRemoteQuickStartPanel: React.FC<AIMCPRemoteQuickStartPanelProps> = ({
         title={copy('ai_settings.mcp_server.remote_quick_start.card.cloud_agent')}
         darkMode={darkMode}
         overlayTheme={overlayTheme}
-        cardBorder={cardBorder}
       >
         <code style={remoteCodeStyle(overlayTheme)}>
           {quickStart.configJson}
@@ -140,7 +133,6 @@ const AIMCPRemoteQuickStartPanel: React.FC<AIMCPRemoteQuickStartPanelProps> = ({
         title={copy('ai_settings.mcp_server.remote_quick_start.card.cli_config')}
         darkMode={darkMode}
         overlayTheme={overlayTheme}
-        cardBorder={cardBorder}
       >
         <code style={remoteCodeStyle(overlayTheme)}>
           {quickStart.configCommand}
@@ -155,7 +147,6 @@ const AIMCPRemoteQuickStartPanel: React.FC<AIMCPRemoteQuickStartPanelProps> = ({
         title={copy('ai_settings.mcp_server.remote_quick_start.card.windows_launch')}
         darkMode={darkMode}
         overlayTheme={overlayTheme}
-        cardBorder={cardBorder}
       >
         <code style={remoteCodeStyle(overlayTheme)}>
           {quickStart.launchCommand}

@@ -8,11 +8,13 @@ describe('QueryEditorToolbar AI trigger affordance', () => {
     expect(source).toContain('onMouseDown={onCaptureEditorCursorPosition}');
     expect(source).toContain('onClick={onTriggerSqlAiCompletion}');
     expect(source).toContain('triggerSqlAiCompletionLabel');
-    expect(source).toMatch(/aria-label="AI more actions"\s+onMouseDown=\{onCaptureEditorCursorPosition\}/);
+    expect(source).toContain('const aiMoreTitle');
+    expect(source).toMatch(/aria-label=\{aiMoreTitle\}[\s\S]*?onMouseDown=\{onCaptureEditorCursorPosition\}/);
   });
 
   it('keeps the secondary AI dropdown for other actions', () => {
     expect(source).toContain('icon={<DownOutlined />}');
     expect(source).toContain('menu={{ items: aiMenuItems }}');
+    expect(source).toContain('title={isV2Ui ? aiMoreTitle : undefined}');
   });
 });

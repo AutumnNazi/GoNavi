@@ -6,7 +6,7 @@ export const PROVIDER_PRESET_GRID_STYLE: CSSProperties = {
   display: 'grid',
   gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
   columnGap: 12,
-  rowGap: 0,
+  rowGap: 2,
   gridAutoRows: `${PROVIDER_PRESET_CARD_HEIGHT}px`,
   alignItems: 'stretch',
 };
@@ -14,7 +14,7 @@ export const PROVIDER_PRESET_GRID_STYLE: CSSProperties = {
 export const PROVIDER_PRESET_CARD_BASE_STYLE: CSSProperties = {
   width: '100%',
   padding: '9px 10px',
-  borderRadius: 0,
+  borderRadius: 4,
   border: 'none',
   cursor: 'pointer',
   transition: 'background-color 0.16s ease, border-color 0.16s ease',

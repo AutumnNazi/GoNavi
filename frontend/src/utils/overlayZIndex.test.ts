@@ -5,7 +5,9 @@ import * as ts from 'typescript';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  APP_APPLICATION_QUIT_MODAL_Z_INDEX,
   APP_COMMAND_PALETTE_Z_INDEX,
+  APP_DETACHED_WINDOW_Z_INDEX_BASE,
   APP_FOREGROUND_MODAL_Z_INDEX,
   APP_NESTED_MODAL_Z_INDEX,
   APP_OVERLAY_Z_INDEX_BASE,
@@ -28,6 +30,14 @@ const connectionModalSource = readSource('../components/ConnectionModal.tsx');
 const redisViewerSource = readSource('../components/RedisViewer.tsx');
 const resultDiffPanelSource = readSource('../components/resultDiff/ResultDiffPanel.tsx');
 const sidebarSearchPanelSource = readSource('../components/sidebar/SidebarSearchPanel.tsx');
+const floatingAIChatSource = readSource('../components/FloatingAIChatWindow.tsx');
+const floatingWorkbenchSource = readSource('../components/FloatingWorkbenchWindows.tsx');
+const floatingQueryResultSource = readSource('../components/FloatingQueryResultWindows.tsx');
+const detachedWindowSource = readSource('./detachedWindow.ts');
+const legacyGridContextMenuSource = readSource('../components/DataGridLegacyCellContextMenu.tsx');
+const dataGridShellSource = readSource('../components/DataGridShell.tsx');
+const sidebarSource = readSource('../components/Sidebar.tsx');
+const tableOverviewSource = readSource('../components/TableOverview.tsx');
 const v2ThemeSource = readSource('../v2-theme.css');
 
 const collectRuntimeSources = (directory: string): string[] => readdirSync(directory).flatMap((entry) => {
@@ -94,12 +104,14 @@ afterEach(() => {
 });
 
 describe('application overlay z-index policy', () => {
-  it('keeps root, popup, and foreground modal layers ordered', () => {
+  it('keeps root dialogs, floating windows, popups, and foreground dialogs ordered', () => {
     expect(APP_OVERLAY_Z_INDEX_BASE).toBe(10_000);
-    expect(APP_POPUP_Z_INDEX).toBeGreaterThan(APP_OVERLAY_Z_INDEX_BASE);
+    expect(APP_DETACHED_WINDOW_Z_INDEX_BASE).toBeGreaterThan(APP_OVERLAY_Z_INDEX_BASE);
+    expect(APP_POPUP_Z_INDEX).toBeGreaterThan(APP_DETACHED_WINDOW_Z_INDEX_BASE);
     expect(APP_FOREGROUND_MODAL_Z_INDEX).toBeGreaterThan(APP_POPUP_Z_INDEX);
     expect(APP_NESTED_MODAL_Z_INDEX).toBeGreaterThan(APP_FOREGROUND_MODAL_Z_INDEX);
     expect(APP_COMMAND_PALETTE_Z_INDEX).toBeGreaterThan(APP_NESTED_MODAL_Z_INDEX);
+    expect(APP_APPLICATION_QUIT_MODAL_Z_INDEX).toBeGreaterThan(APP_COMMAND_PALETTE_Z_INDEX);
   });
 
   it('configures static Ant Design APIs with the same popup base', () => {
@@ -110,7 +122,7 @@ describe('application overlay z-index policy', () => {
     expect(configSpy).toHaveBeenCalledWith({
       theme: {
         token: {
-          zIndexPopupBase: APP_OVERLAY_Z_INDEX_BASE,
+          zIndexPopupBase: APP_POPUP_Z_INDEX,
         },
       },
     });
@@ -166,6 +178,34 @@ describe('application overlay z-index policy', () => {
     expect(connectionModalSource).toContain('zIndex={APP_NESTED_MODAL_Z_INDEX}');
     expect(redisViewerSource).toContain('zIndex: APP_POPUP_Z_INDEX');
     expect(resultDiffPanelSource).not.toContain('zIndex: 10050');
+  });
+
+  it('keeps every in-WebView floating window above root dialogs with usable portaled popups', () => {
+    expect(detachedWindowSource).toContain('let max = APP_DETACHED_WINDOW_Z_INDEX_BASE;');
+    for (const source of [
+      floatingAIChatSource,
+      floatingWorkbenchSource,
+      floatingQueryResultSource,
+    ]) {
+      expect(source).toContain("import { createPortal } from 'react-dom';");
+      expect(source).toContain('zIndexPopupBase: APP_POPUP_Z_INDEX');
+      expect(source).toContain('document.body');
+    }
+    expect(floatingWorkbenchSource).toContain('z-index: ${APP_DETACHED_WINDOW_Z_INDEX_BASE};');
+    expect(floatingQueryResultSource).toContain('z-index: ${APP_DETACHED_WINDOW_Z_INDEX_BASE};');
+    expect(resultDiffPanelSource).toContain('z-index: ${APP_DETACHED_WINDOW_Z_INDEX_BASE};');
+    expect(resultDiffPanelSource).toContain('zIndexPopupBase: APP_POPUP_Z_INDEX');
+  });
+
+  it('routes body-level context menus through the shared popup layer', () => {
+    for (const source of [
+      legacyGridContextMenuSource,
+      dataGridShellSource,
+      sidebarSource,
+      tableOverviewSource,
+    ]) {
+      expect(source).toContain('zIndex: APP_POPUP_Z_INDEX');
+    }
   });
 
   it('portals the command palette above modal stacking contexts', () => {

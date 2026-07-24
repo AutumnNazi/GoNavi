@@ -492,6 +492,10 @@ describe('DriverManagerModal i18n', () => {
     });
 
     const content = textContent(renderer!.toJSON());
+    const titleRow = renderer!.root.findByProps({ className: 'driver-manager-title-row' });
+    const updateNote = renderer!.root.findByProps({ className: 'driver-manager-update-note' });
+    expect(textContent(titleRow)).toContain('Reinstall needed');
+    expect(updateNote.findAll((node) => node.type === 'span' && textContent(node) === 'Reinstall required')).toHaveLength(0);
     expect(content).toContain('Reinstall required to apply driver updates.');
     expect(content).toContain('Affects 3 saved connections');
     expect(content).toContain('installed revision rev-old');

@@ -10,6 +10,10 @@ export function ApplyDataRootDirectory(arg1, arg2) {
   return window['go']['app']['App']['ApplyDataRootDirectory'](arg1, arg2);
 }
 
+export function ApplyLogDirectory(arg1) {
+  return window['go']['app']['App']['ApplyLogDirectory'](arg1);
+}
+
 export function BuildSQLAuditExport(arg1, arg2) {
   return window['go']['app']['App']['BuildSQLAuditExport'](arg1, arg2);
 }
@@ -418,6 +422,10 @@ export function ImportDataWithProgressOptions(arg1, arg2, arg3, arg4, arg5) {
   return window['go']['app']['App']['ImportDataWithProgressOptions'](arg1, arg2, arg3, arg4, arg5);
 }
 
+export function ImportDatabaseSQL(arg1, arg2, arg3, arg4) {
+  return window['go']['app']['App']['ImportDatabaseSQL'](arg1, arg2, arg3, arg4);
+}
+
 export function ImportLegacyConnections(arg1) {
   return window['go']['app']['App']['ImportLegacyConnections'](arg1);
 }
@@ -548,6 +556,10 @@ export function OpenDownloadedUpdateDirectory() {
 
 export function OpenDriverDownloadDirectory(arg1) {
   return window['go']['app']['App']['OpenDriverDownloadDirectory'](arg1);
+}
+
+export function OpenLogDirectory() {
+  return window['go']['app']['App']['OpenLogDirectory']();
 }
 
 export function OpenSQLFile() {
@@ -796,6 +808,10 @@ export function SelectDriverPackageDirectory(arg1) {
 
 export function SelectDriverPackageFile(arg1) {
   return window['go']['app']['App']['SelectDriverPackageFile'](arg1);
+}
+
+export function SelectLogDirectory(arg1) {
+  return window['go']['app']['App']['SelectLogDirectory'](arg1);
 }
 
 export function SelectSQLDirectory(arg1) {

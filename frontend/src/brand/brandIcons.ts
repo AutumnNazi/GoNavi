@@ -16,6 +16,7 @@ export type BrandIconDefinition = {
   titleZh: string;
   titleEn: string;
   iconPath: string;
+  aboutPath: string;
   titlebarPath?: string;
 };
 
@@ -28,6 +29,7 @@ export const BRAND_ICONS: BrandIconDefinition[] = [
     titleZh: '抱库小狗',
     titleEn: 'Database hug',
     iconPath: '/brand-icons/01-database-hug.webp',
+    aboutPath: '/brand-icons/01-database-hug-about.png',
   },
   {
     id: '02',
@@ -35,6 +37,7 @@ export const BRAND_ICONS: BrandIconDefinition[] = [
     titleZh: '搜库小狗',
     titleEn: 'Database search',
     iconPath: '/brand-icons/02-database-search.webp',
+    aboutPath: '/brand-icons/02-database-search-about.png',
     titlebarPath: '/brand-marks/02-database-search-transparent.png',
   },
   {
@@ -43,6 +46,7 @@ export const BRAND_ICONS: BrandIconDefinition[] = [
     titleZh: '头巾徽章',
     titleEn: 'Bandana badge',
     iconPath: '/brand-icons/03-bandana-badge.webp',
+    aboutPath: '/brand-icons/03-bandana-badge-about.png',
   },
   {
     id: '04',
@@ -50,6 +54,7 @@ export const BRAND_ICONS: BrandIconDefinition[] = [
     titleZh: '放大镜眨眼',
     titleEn: 'Magnifier wink',
     iconPath: '/brand-icons/04-magnifier-wink.webp',
+    aboutPath: '/brand-icons/04-magnifier-wink-about.png',
   },
   {
     id: '05',
@@ -57,6 +62,7 @@ export const BRAND_ICONS: BrandIconDefinition[] = [
     titleZh: '窗口探头',
     titleEn: 'Window peek',
     iconPath: '/brand-icons/05-window-peek.webp',
+    aboutPath: '/brand-icons/05-window-peek-about.png',
   },
   {
     id: '06',
@@ -64,6 +70,7 @@ export const BRAND_ICONS: BrandIconDefinition[] = [
     titleZh: '六边项圈',
     titleEn: 'Hex collar',
     iconPath: '/brand-icons/06-hex-collar.webp',
+    aboutPath: '/brand-icons/06-hex-collar-about.png',
   },
   {
     id: '07',
@@ -71,6 +78,7 @@ export const BRAND_ICONS: BrandIconDefinition[] = [
     titleZh: '关系图',
     titleEn: 'Graph sit',
     iconPath: '/brand-icons/07-graph-sit.webp',
+    aboutPath: '/brand-icons/07-graph-sit-about.png',
   },
   {
     id: '08',
@@ -78,6 +86,7 @@ export const BRAND_ICONS: BrandIconDefinition[] = [
     titleZh: '云朵横幅',
     titleEn: 'Cloud banner',
     iconPath: '/brand-icons/08-cloud-banner.webp',
+    aboutPath: '/brand-icons/08-cloud-banner-about.png',
   },
   {
     id: '09',
@@ -85,6 +94,7 @@ export const BRAND_ICONS: BrandIconDefinition[] = [
     titleZh: '终端旁坐',
     titleEn: 'Terminal sit',
     iconPath: '/brand-icons/09-terminal-sit.webp',
+    aboutPath: '/brand-icons/09-terminal-sit-about.png',
   },
   {
     id: '10',
@@ -92,6 +102,7 @@ export const BRAND_ICONS: BrandIconDefinition[] = [
     titleZh: '罗盘头巾',
     titleEn: 'Compass bandana',
     iconPath: '/brand-icons/10-compass-bandana.webp',
+    aboutPath: '/brand-icons/10-compass-bandana-about.png',
   },
 ];
 
@@ -118,7 +129,7 @@ export function resolveBrandFullSrc(id?: unknown): string {
 }
 
 export function resolveBrandAboutSrc(id?: unknown): string {
-  return resolveBrandIconSrc(id);
+  return resolveBrandIcon(id).aboutPath;
 }
 
 export function resolveBrandTitlebarSrc(id?: unknown): string {

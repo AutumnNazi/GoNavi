@@ -1,4 +1,5 @@
 import Modal from './common/ResizableDraggableModal';
+import { showCountdownDangerConfirm } from './common/countdownDangerConfirm';
 import React, { useState, useEffect, useMemo, useCallback, useDeferredValue, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { Input, Spin, Empty, Dropdown, message, Tooltip, Button } from 'antd';
@@ -29,8 +30,8 @@ import { buildBatchTableExportWorkbenchTab, buildTableExportTab } from '../utils
 import { getDataSourceCapabilities } from '../utils/dataSourceCapabilities';
 import { extractTableNameFromMetadataRow } from '../utils/tableMetadataRows';
 import { V2TableContextMenuView, type V2TableContextMenuActionKey } from './V2TableContextMenu';
-import { showSQLExportOptionsDialog } from './SQLExportOptionsDialog';
 import { confirmCopyTable } from './tableCopyAction';
+import { APP_POPUP_Z_INDEX } from '../utils/overlayZIndex';
 
 interface TableOverviewProps {
     tab: TabData;
@@ -610,18 +611,15 @@ const TableOverview: React.FC<TableOverviewProps> = ({ tab }) => {
     const openTableSQLExportWorkbench = useCallback(async (tableName: string, mode: 'backup' | 'dataOnly') => {
         const normalizedTableName = String(tableName || '').trim();
         if (!normalizedTableName) return;
-        const resolvedOptions = mode === 'backup'
-            ? await showSQLExportOptionsDialog()
-            : { includeDropIfExists: false };
-        if (!resolvedOptions) return;
+        const launchKey = `table-overview-${mode}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
         addTab(buildBatchTableExportWorkbenchTab({
             connectionId: tab.connectionId,
             dbName: tab.dbName,
             initialObjectNames: [normalizedTableName],
             contentMode: mode,
-            requestKey: `table-overview-${mode}-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+            includeDropIfExists: false,
+            ...(mode === 'backup' ? { launchKey } : { requestKey: launchKey }),
             title: t('file.backend.dialog.export_table', { table: normalizedTableName }),
-            ...resolvedOptions,
         }));
     }, [addTab, tab.connectionId, tab.dbName]);
 
@@ -645,10 +643,9 @@ const TableOverview: React.FC<TableOverviewProps> = ({ tab }) => {
     const handleDeleteTable = useCallback((tableName: string) => {
         const config = buildConfig();
         if (!config) return;
-        Modal.confirm({
+        showCountdownDangerConfirm({
             title: t('table_overview.modal.delete_table.title'),
             content: t('table_overview.modal.delete_table.content', { table: tableName }),
-            okButtonProps: { danger: true },
             onOk: async () => {
                 const res = await DropTable(buildRpcConnectionConfig(config) as any, tab.dbName || '', tableName);
                 if (res.success) {
@@ -1606,7 +1603,7 @@ const TableOverview: React.FC<TableOverviewProps> = ({ tab }) => {
                         position: 'fixed',
                         left: v2ContextMenu.x,
                         top: v2ContextMenu.y,
-                        zIndex: 10000,
+                        zIndex: APP_POPUP_Z_INDEX,
                         width: OVERVIEW_CONTEXT_MENU_WIDTH,
                         maxWidth: 'calc(100vw - 24px)',
                         ['--gn-v2-context-menu-max-height' as any]: `${v2ContextMenu.maxHeight}px`,

@@ -39,6 +39,11 @@
   <a href="#-mcp--agents"><b>🤖 MCP</b></a>
 </p>
 
+<p align="center">
+  <sub>赞助商 ·
+  <a href="#-赞助商"><b>华龙中转站</b></a></sub>
+</p>
+
 ---
 
 ## 为什么是 GoNavi？
@@ -440,12 +445,40 @@ fc-cache -fv
 
 ---
 
+## 💖 赞助商
+
+<p align="center">
+  <a href="https://api-fast.hualong.online/">
+    <img src="assets/sponsors/hualong-mark.png" width="120" alt="华龙中转站" />
+  </a>
+</p>
+
+<p align="center">
+  <b><a href="https://api-fast.hualong.online/">华龙中转站 · Hualong Transfer Station</a></b><br/>
+  <sub>AI API Gateway · 多模型统一接入 · 国内直连高速端点</sub>
+</p>
+
+特别感谢 **[华龙中转站](https://api-fast.hualong.online/)** 赞助 GoNavi 开源开发。
+
+| | |
+|---|---|
+| **他们是谁** | **AI API 中转 / Gateway**：以 OpenAI 兼容接口统一多模型接入，帮你少踩「渠道碎片化 + 网络不稳定」的坑。 |
+| **核心能力** | 多模型统一路由 · OpenAI 兼容 · **国内直连高速端点** · 适合个人开发者与开源项目快速接通 LLM |
+| **为什么推荐** | GoNavi 自身是 AI / MCP 一等公民产品；稳定、好用的模型通道，是写代码、做 Agent、联调多 Provider 的基础设施。 |
+
+**需要靠谱的 LLM 中转？**  
+👉 [https://api-fast.hualong.online/](https://api-fast.hualong.online/) — 控制台、文档与国内高速端点。
+
+> 华龙另向本仓库赞助了 **共享 500 亿（50B）token** 额度，供 GoNavi **共建者** 以 **API Key** 方式协作开发使用（非整库人均 50B）。申请与规则见共建入口：[Issue #671](https://github.com/Syngnat/GoNavi/issues/671)。
+
+---
+
 ## 🤝 贡献
 
 欢迎 Issue 与 PR。请从 **`dev`** 拉分支，并向 **`dev`** 提 PR。
 
 - [CONTRIBUTING.zh-CN.md](CONTRIBUTING.zh-CN.md)
-- 共建邀请：[Issue #671](https://github.com/Syngnat/GoNavi/issues/671)
+- 共建邀请（含赞助 token 池说明）：[Issue #671](https://github.com/Syngnat/GoNavi/issues/671)
 
 ---
 
@@ -462,18 +495,18 @@ fc-cache -fv
 
 ## ⭐ Star History
 
-<a href="https://www.star-history.com/?repos=Syngnat%2FGoNavi&type=date&legend=top-left">
- <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/image?repos=Syngnat/GoNavi&type=date&theme=dark&legend=top-left" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/image?repos=Syngnat/GoNavi&type=date&legend=top-left" />
-   <img alt="Star History Chart" src="https://api.star-history.com/image?repos=Syngnat/GoNavi&type=date&legend=top-left" />
- </picture>
-</a>
+<!-- star-history:start -->
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/star-history/star-history-dark.svg">
+  <img alt="Star history" src="assets/star-history/star-history-light.svg">
+</picture>
+<!-- star-history:end -->
 
 ---
 
 ## 友情链接
 
+- [华龙中转站](https://api-fast.hualong.online/) — AI API Gateway（GoNavi 赞助商）
 - [linux.do](https://linux.do/)
 - [AI全书](https://aibook.ren/)
 

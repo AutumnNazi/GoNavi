@@ -279,6 +279,21 @@ describe('DriverManagerModal toolbar actions', () => {
     expect(findButton(modalRenderer!, t('driver.modal.card.action.install')).props.size).toBeUndefined();
   });
 
+  it('shows the driver display name without repeating its internal type', async () => {
+    for (const embedded of [false, true]) {
+      let renderer: ReactTestRenderer;
+      await act(async () => {
+        renderer = create(<DriverManagerModal open embedded={embedded} onClose={vi.fn()} />);
+      });
+      await flushPromises();
+
+      const titleRow = renderer!.root.findByProps({ className: 'driver-manager-title-row' });
+      const titleText = textContent(titleRow);
+      expect(titleText).toContain('DuckDB');
+      expect(titleText).not.toContain('duckdb');
+    }
+  });
+
   it('releases install action when the driver install watchdog expires', async () => {
     vi.useFakeTimers();
     try {

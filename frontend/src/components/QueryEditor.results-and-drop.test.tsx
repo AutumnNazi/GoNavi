@@ -55,8 +55,16 @@ const storeState = vi.hoisted(() => ({
   savedQueries: [] as SavedQuery[],
   saveQuery: vi.fn(),
   theme: 'light',
+  fontSize: 14,
   languagePreference: 'zh-CN' as 'zh-CN' | 'en-US',
-  appearance: { uiVersion: 'legacy' as 'legacy' | 'v2' },
+  appearance: {
+    uiVersion: 'legacy' as 'legacy' | 'v2',
+    customMonoFontFamily: null as string | null,
+    dataTableFontSize: null as number | null,
+    dataTableFontSizeFollowGlobal: true,
+    sqlEditorFontSize: null as number | null,
+    sqlEditorFontSizeFollowGlobal: true,
+  },
   sqlFormatOptions: { keywordCase: 'upper' as const },
   setSqlFormatOptions: vi.fn(),
   queryOptions: {
@@ -399,6 +407,7 @@ vi.mock('@ant-design/icons', () => {
     BugOutlined: Icon,
     ClearOutlined: Icon,
     CopyOutlined: Icon,
+    DiffOutlined: Icon,
     PlayCircleOutlined: Icon,
     SaveOutlined: Icon,
     FormatPainterOutlined: Icon,
@@ -411,6 +420,8 @@ vi.mock('@ant-design/icons', () => {
     DatabaseOutlined: Icon,
     EyeOutlined: Icon,
     EyeInvisibleOutlined: Icon,
+    EnterOutlined: Icon,
+    EllipsisOutlined: Icon,
   };
 });
 
@@ -444,6 +455,10 @@ vi.mock('antd', () => {
   );
   const Empty = ({ description }: { description?: React.ReactNode }) => <div>{description}</div>;
   (Empty as any).PRESENTED_IMAGE_SIMPLE = 'simple';
+  const Input: any = ({ value, onChange, placeholder }: any) => <input value={value} onChange={onChange} placeholder={placeholder} />;
+  Input.TextArea = ({ value, onChange, placeholder, disabled }: any) => (
+    <textarea value={value} onChange={onChange} placeholder={placeholder} disabled={disabled} />
+  );
 
   return {
     Button,
@@ -458,7 +473,7 @@ vi.mock('antd', () => {
         <button type="button" onClick={onOk}>{okText}</button>
       </section>
     ) : null),
-    Input: ({ value, onChange, placeholder }: any) => <input value={value} onChange={onChange} placeholder={placeholder} />,
+    Input,
     Segmented: () => null,
     Form,
     Dropdown: ({ children, menu }: any) => (
@@ -510,11 +525,18 @@ const textContent = (node: any): string => {
     .join('');
 };
 
-const findButton = (renderer: ReactTestRenderer, text: string) =>
-  renderer.root.findAll((node) => node.type === 'button' && textContent(node).includes(text))[0];
+const findButtons = (renderer: ReactTestRenderer, text: string) => {
+  const visibleTextMatches = renderer.root.findAll(
+    (node) => node.type === 'button' && textContent(node).includes(text),
+  );
+  return visibleTextMatches.length > 0
+    ? visibleTextMatches
+    : renderer.root.findAll((node) => (
+      node.type === 'button' && String(node.props?.['aria-label'] || '').includes(text)
+    ));
+};
 
-const findButtons = (renderer: ReactTestRenderer, text: string) =>
-  renderer.root.findAll((node) => node.type === 'button' && textContent(node).includes(text));
+const findButton = (renderer: ReactTestRenderer, text: string) => findButtons(renderer, text)[0];
 
 const findExactButton = (renderer: ReactTestRenderer, text: string) =>
   renderer.root.findAll((node) => node.type === 'button' && textContent(node) === text)[0];
@@ -808,7 +830,13 @@ describe('QueryEditor external SQL save', () => {
     storeState.clearSqlLogs.mockReset();
     storeState.connections[0].config.type = 'mysql';
     storeState.connections[0].config.database = 'main';
+    storeState.fontSize = 14;
     storeState.appearance.uiVersion = 'legacy';
+    storeState.appearance.customMonoFontFamily = null;
+    storeState.appearance.dataTableFontSize = null;
+    storeState.appearance.dataTableFontSizeFollowGlobal = true;
+    storeState.appearance.sqlEditorFontSize = null;
+    storeState.appearance.sqlEditorFontSizeFollowGlobal = true;
     autoFetchState.visible = false;
     dataGridState.latestProps = null;
     tabsState.activeKey = undefined;
@@ -963,7 +991,12 @@ describe('QueryEditor external SQL save', () => {
     renderer?.unmount();
   });
 
-  it('disables sticky scroll for object-edit query tabs', async () => {
+  it('disables sticky scroll for object-edit query tabs without overriding shared typography', async () => {
+    storeState.appearance.uiVersion = 'v2';
+    storeState.appearance.dataTableFontSize = 11;
+    storeState.appearance.dataTableFontSizeFollowGlobal = false;
+    storeState.appearance.sqlEditorFontSize = 18;
+    storeState.appearance.sqlEditorFontSizeFollowGlobal = false;
     storeState.connections[0].config.type = 'oracle';
     storeState.connections[0].config.database = 'ORCLPDB1';
     const plsql = [
@@ -980,12 +1013,10 @@ describe('QueryEditor external SQL save', () => {
     });
 
     expect(editorState.latestOptions?.stickyScroll?.enabled).toBe(false);
-    expect(editorState.latestOptions?.fontSize).toBe(14);
-    expect(editorState.latestOptions?.lineHeight).toBe(24);
+    expect(editorState.latestOptions?.fontSize).toBe(18);
+    expect(editorState.latestOptions?.lineHeight).toBe(29);
     expect(editorState.latestOptions?.lineNumbersMinChars).toBe(4);
     expect(editorState.editor.updateOptions).toHaveBeenCalledWith(expect.objectContaining({
-      fontSize: 14,
-      lineHeight: 24,
       lineNumbersMinChars: 4,
       stickyScroll: { enabled: false },
     }));
@@ -3789,8 +3820,8 @@ describe('QueryEditor external SQL save', () => {
 
     expect(css).toContain('body[data-ui-version="v2"] .gn-v2-query-toolbar-selects');
     expect(css).toContain('body[data-ui-version="v2"] .gn-v2-query-toolbar-actions');
-    expect(css).toContain('width: 78px !important;');
-    expect(css).toContain('width: 104px !important;');
+    expect(css).toContain('width: 48px !important;');
+    expect(css).toContain('flex: 0 0 48px !important;');
     expect(css).toContain('flex: 0 0 auto !important;');
     expect(css).toContain('justify-content: flex-start;');
     expect(css).toContain('height: 32px !important;');

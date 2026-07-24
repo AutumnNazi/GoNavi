@@ -6,7 +6,6 @@ import SidebarConnectionRail from './SidebarConnectionRail';
 
 vi.mock('antd', () => ({
   Tooltip: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-  Form: {},
 }));
 
 vi.mock('@ant-design/icons', () => {
@@ -63,5 +62,50 @@ describe('SidebarConnectionRail', () => {
 
     expect(action.props['aria-label']).toBe('Data import');
     expect(openDataImport).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps workbench actions in the fixed secondary rail above AI and settings', () => {
+    const noop = vi.fn();
+    const renderer = create(
+      <SidebarConnectionRail
+        labels={{
+          railSystemActions: 'System actions',
+          railObjectActions: 'Object actions',
+          newGroup: 'New group',
+          batchTables: 'Batch tables',
+          batchDatabases: 'Batch databases',
+          dataImport: 'Data import',
+          openExternalSqlFile: 'Open SQL file',
+          locateCurrentTable: 'Locate table',
+          locateCurrentTableUnavailable: 'No table',
+          aiAssistant: 'AI assistant',
+          settings: 'Settings',
+        }}
+        handlers={{
+          openCreateTagModal: noop,
+          openBatchTableExport: noop,
+          openBatchDatabaseExport: noop,
+          openDataImport: noop,
+          openExternalSqlFile: noop,
+          locateActiveTab: noop,
+          toggleAI: noop,
+          openSettings: noop,
+        }}
+        canLocateActiveTab
+        workbenchActions={(
+          <>
+            <button type="button" aria-label="SQL analysis" data-sidebar-sql-analysis-action="true" />
+            <button type="button" aria-label="SQL audit" data-sidebar-sql-audit-action="true" />
+          </>
+        )}
+      />,
+    );
+
+    const rail = renderer.root.findByProps({ 'data-sidebar-fixed-rail': 'true' });
+    const secondaryActions = rail.findByProps({ className: 'gn-v2-rail-secondary-actions' });
+    const labels = secondaryActions.findAllByType('button').map((button) => button.props['aria-label']);
+
+    expect(rail.findByProps({ className: 'gn-v2-rail-items' })).toBeTruthy();
+    expect(labels).toEqual(['SQL analysis', 'SQL audit', 'AI assistant', 'Settings']);
   });
 });

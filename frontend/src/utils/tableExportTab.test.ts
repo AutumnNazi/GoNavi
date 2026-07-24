@@ -126,8 +126,41 @@ describe('tableExportTab', () => {
       tableExportInitialObjectNames: ['users', 'orders'],
       tableExportContentMode: 'backup',
       tableExportIncludeDropIfExists: true,
+      tableExportLaunchKey: 'batch-tables-1',
       tableExportRequestKey: 'batch-tables-1',
     }));
+  });
+
+  it('carries launch-only refresh keys without creating auto-start requests', () => {
+    const tableTab = buildBatchTableExportWorkbenchTab({
+      connectionId: 'conn-1',
+      dbName: 'SYS',
+      initialObjectNames: [' users '],
+      contentMode: 'backup',
+      includeDropIfExists: false,
+      launchKey: ' table-launch-1 ',
+    });
+    const databaseTab = buildDatabaseExportWorkbenchTab({
+      connectionId: 'conn-1',
+      dbName: ' app ',
+      contentMode: 'schema',
+      launchKey: ' database-launch-1 ',
+    });
+
+    expect(tableTab).toEqual(expect.objectContaining({
+      tableExportInitialObjectNames: ['users'],
+      tableExportContentMode: 'backup',
+      tableExportIncludeDropIfExists: false,
+      tableExportLaunchKey: 'table-launch-1',
+    }));
+    expect(databaseTab).toEqual(expect.objectContaining({
+      exportWorkbenchMode: 'database',
+      dbName: 'app',
+      tableExportContentMode: 'schema',
+      tableExportLaunchKey: 'database-launch-1',
+    }));
+    expect(tableTab).toHaveProperty('tableExportRequestKey', undefined);
+    expect(databaseTab).toHaveProperty('tableExportRequestKey', undefined);
   });
 
   it('builds batch database export workbench tabs with stable ids', () => {
@@ -155,6 +188,7 @@ describe('tableExportTab', () => {
       tableExportInitialDatabaseNames: ['app', 'audit'],
       tableExportContentMode: 'schema',
       tableExportIncludeDropIfExists: true,
+      tableExportLaunchKey: 'batch-databases-1',
       tableExportRequestKey: 'batch-databases-1',
     }));
   });
@@ -180,6 +214,7 @@ describe('tableExportTab', () => {
       exportWorkbenchMode: 'database',
       dbName: 'app',
       tableExportContentMode: 'backup',
+      tableExportLaunchKey: 'database-1',
       tableExportRequestKey: 'database-1',
     }));
     expect(schemaTab).toEqual(expect.objectContaining({
@@ -189,6 +224,7 @@ describe('tableExportTab', () => {
       dbName: 'app',
       schemaName: 'sales',
       tableExportContentMode: 'schema',
+      tableExportLaunchKey: 'schema-1',
       tableExportRequestKey: 'schema-1',
     }));
   });

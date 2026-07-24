@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestResolveActiveRootDefaultsToLegacyGonaviDir(t *testing.T) {
@@ -87,5 +88,145 @@ func TestResolveActiveRootPrefersEnvOverride(t *testing.T) {
 	}
 	if resolvedRoot != overrideRoot {
 		t.Fatalf("expected env override root %q, got %q", overrideRoot, resolvedRoot)
+	}
+}
+
+func TestDataRootAndLogDirectoryPreserveEachOtherInBootstrap(t *testing.T) {
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir)
+
+	customDataRoot := filepath.Join(t.TempDir(), "gonavi-data")
+	customLogDirectory := filepath.Join(t.TempDir(), "gonavi-logs")
+	if _, err := SetConfiguredLogDirectory(customLogDirectory); err != nil {
+		t.Fatalf("SetConfiguredLogDirectory returned error: %v", err)
+	}
+	if _, err := SetActiveRoot(customDataRoot); err != nil {
+		t.Fatalf("SetActiveRoot returned error: %v", err)
+	}
+
+	resolvedLogDirectory, err := ResolveConfiguredLogDirectory()
+	if err != nil {
+		t.Fatalf("ResolveConfiguredLogDirectory returned error: %v", err)
+	}
+	if resolvedLogDirectory != customLogDirectory {
+		t.Fatalf("expected custom log directory %q, got %q", customLogDirectory, resolvedLogDirectory)
+	}
+
+	if _, err := SetActiveRoot(""); err != nil {
+		t.Fatalf("reset SetActiveRoot returned error: %v", err)
+	}
+	if _, err := os.Stat(BootstrapPath()); err != nil {
+		t.Fatalf("bootstrap should remain while log directory is customized: %v", err)
+	}
+	resolvedLogDirectory, err = ResolveConfiguredLogDirectory()
+	if err != nil || resolvedLogDirectory != customLogDirectory {
+		t.Fatalf("log directory after data-root reset = %q, %v", resolvedLogDirectory, err)
+	}
+
+	if _, err := SetActiveRoot(customDataRoot); err != nil {
+		t.Fatalf("restore custom data root returned error: %v", err)
+	}
+	if _, err := SetConfiguredLogDirectory(""); err != nil {
+		t.Fatalf("reset SetConfiguredLogDirectory returned error: %v", err)
+	}
+	resolvedRoot, err := ResolveActiveRoot()
+	if err != nil || resolvedRoot != customDataRoot {
+		t.Fatalf("data root after log reset = %q, %v", resolvedRoot, err)
+	}
+	if _, err := os.Stat(BootstrapPath()); err != nil {
+		t.Fatalf("bootstrap should remain while data root is customized: %v", err)
+	}
+
+	if _, err := SetActiveRoot(""); err != nil {
+		t.Fatalf("final SetActiveRoot reset returned error: %v", err)
+	}
+	if _, err := os.Stat(BootstrapPath()); !os.IsNotExist(err) {
+		t.Fatalf("bootstrap should be removed when both settings use defaults, got err=%v", err)
+	}
+}
+
+func TestSetConfiguredLogDirectoryRejectsFilePathWithoutChangingConfig(t *testing.T) {
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir)
+
+	blockingPath := filepath.Join(t.TempDir(), "not-a-directory")
+	if err := os.WriteFile(blockingPath, []byte("blocked"), 0o644); err != nil {
+		t.Fatalf("write blocking file: %v", err)
+	}
+	if _, err := SetConfiguredLogDirectory(blockingPath); err == nil {
+		t.Fatal("expected file path to be rejected as a log directory")
+	}
+	configured, err := ResolveConfiguredLogDirectory()
+	if err != nil {
+		t.Fatalf("ResolveConfiguredLogDirectory returned error: %v", err)
+	}
+	if configured != "" {
+		t.Fatalf("failed update changed configured log directory to %q", configured)
+	}
+}
+
+func TestSetConfiguredLogDirectoryRejectsDirectoryAtLogFilePathWithoutChangingConfig(t *testing.T) {
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir)
+
+	targetDirectory := filepath.Join(t.TempDir(), "logs")
+	if err := os.MkdirAll(filepath.Join(targetDirectory, configuredLogFileName), 0o755); err != nil {
+		t.Fatalf("create blocking log-file directory: %v", err)
+	}
+	if _, err := SetConfiguredLogDirectory(targetDirectory); err == nil {
+		t.Fatal("expected a directory at the log file path to be rejected")
+	}
+	configured, err := ResolveConfiguredLogDirectory()
+	if err != nil {
+		t.Fatalf("ResolveConfiguredLogDirectory returned error: %v", err)
+	}
+	if configured != "" {
+		t.Fatalf("failed update changed configured log directory to %q", configured)
+	}
+}
+
+func TestBootstrapFileLockSerializesAccess(t *testing.T) {
+	lockPath := filepath.Join(t.TempDir(), "storage_root.json.lock")
+	first, err := acquireBootstrapFileLock(lockPath)
+	if err != nil {
+		t.Fatalf("acquire first bootstrap lock: %v", err)
+	}
+	defer first.Close()
+
+	acquired := make(chan *bootstrapFileLock, 1)
+	errs := make(chan error, 1)
+	go func() {
+		second, err := acquireBootstrapFileLock(lockPath)
+		if err != nil {
+			errs <- err
+			return
+		}
+		acquired <- second
+	}()
+
+	select {
+	case second := <-acquired:
+		_ = second.Close()
+		t.Fatal("second bootstrap lock acquired before the first was released")
+	case err := <-errs:
+		t.Fatalf("acquire second bootstrap lock: %v", err)
+	case <-time.After(50 * time.Millisecond):
+	}
+	if err := first.Close(); err != nil {
+		t.Fatalf("release first bootstrap lock: %v", err)
+	}
+
+	select {
+	case second := <-acquired:
+		if err := second.Close(); err != nil {
+			t.Fatalf("release second bootstrap lock: %v", err)
+		}
+	case err := <-errs:
+		t.Fatalf("acquire second bootstrap lock after release: %v", err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("second bootstrap lock did not acquire after the first was released")
 	}
 }

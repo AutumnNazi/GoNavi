@@ -6,6 +6,7 @@ import {
   DEFAULT_DETACHED_WINDOW_WIDTH,
   DETACHED_WINDOW_VIEWPORT_PADDING,
 } from '../detachedWindow';
+import { APP_DETACHED_WINDOW_Z_INDEX_BASE } from '../overlayZIndex';
 
 const STORAGE_KEY = 'gonavi.resultDiff.detachedBounds.v1';
 
@@ -62,7 +63,7 @@ export const saveResultDiffDetachedBoundsMemory = (
 /** 按当前视口校正记忆的位置与尺寸，避免移出屏幕 */
 export const resolveResultDiffDetachedBounds = (
   memory?: ResultDiffDetachedBoundsMemory | null,
-  zIndex = 1320,
+  zIndex = APP_DETACHED_WINDOW_Z_INDEX_BASE + 1,
 ): {
   x: number;
   y: number;

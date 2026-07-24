@@ -153,19 +153,33 @@ export const getColumnDefinitionExtra = (column: unknown): string => (
   readStringProperty(column, ['extra', 'Extra'])
 );
 
+export const getColumnDefinitionNullable = (column: unknown): string => (
+  normalizeNullable(readStringProperty(column, ['nullable', 'Nullable', 'NULLABLE', 'is_nullable', 'IS_NULLABLE', 'Null', 'null']))
+);
+
+export const getColumnDefinitionDefault = (column: unknown): string => (
+  readStringProperty(column, ['default', 'Default', 'COLUMN_DEFAULT', 'column_default', 'DATA_DEFAULT', 'data_default'])
+);
+
+export const hasColumnDefinitionDefault = (column: unknown): boolean => {
+  const raw = readProperty(column, ['default', 'Default', 'COLUMN_DEFAULT', 'column_default', 'DATA_DEFAULT', 'data_default']);
+  return raw !== undefined && raw !== null;
+};
+
 export const getColumnDefinitionComment = (column: unknown): string => (
   readStringProperty(column, ['comment', 'Comment', 'COMMENTS', 'comments', 'COLUMN_COMMENT', 'column_comment'])
 );
 
 export const normalizeColumnDefinition = (column: unknown): ColumnDefinition => {
   const source = (column && typeof column === 'object' ? column : {}) as Partial<ColumnDefinition>;
+  const hasDefault = hasColumnDefinitionDefault(column);
   return {
     ...source,
     name: getColumnDefinitionName(column),
     type: getColumnDefinitionType(column),
-    nullable: normalizeNullable(readStringProperty(column, ['nullable', 'Nullable', 'NULLABLE', 'is_nullable', 'IS_NULLABLE', 'Null', 'null'])),
+    nullable: getColumnDefinitionNullable(column),
     key: getColumnDefinitionKey(column),
-    default: source.default,
+    default: hasDefault ? getColumnDefinitionDefault(column) : undefined,
     extra: getColumnDefinitionExtra(column),
     comment: getColumnDefinitionComment(column),
   };

@@ -45,6 +45,7 @@ SELECT
 	pg_catalog.format_type(a.atttypid, a.atttypmod) AS data_type,
 	CASE WHEN a.attnotnull THEN 'NO' ELSE 'YES' END AS is_nullable,
 	pg_get_expr(ad.adbin, ad.adrelid) AS column_default,
+	COALESCE(pg_catalog.to_jsonb(a)->>'attidentity', '') AS identity_generation,
 	col_description(a.attrelid, a.attnum) AS comment,
 	CASE WHEN pk.attname IS NOT NULL THEN 'PRI' ELSE '' END AS column_key
 FROM pg_class c
@@ -111,9 +112,13 @@ func buildPGLikeColumnDefinitions(data []map[string]interface{}) []connection.Co
 		if v, ok := row["column_default"]; ok && v != nil {
 			def := fmt.Sprintf("%v", v)
 			col.Default = &def
-			if strings.HasPrefix(strings.ToLower(strings.TrimSpace(def)), "nextval(") {
+			normalizedDefault := strings.ToLower(strings.TrimSpace(def))
+			if strings.HasPrefix(normalizedDefault, "nextval(") || strings.HasPrefix(normalizedDefault, "pg_catalog.nextval(") {
 				col.Extra = "auto_increment"
 			}
+		}
+		if v, ok := row["identity_generation"]; ok && v != nil && strings.TrimSpace(fmt.Sprintf("%v", v)) != "" {
+			col.Extra = "auto_increment"
 		}
 
 		columns = append(columns, col)

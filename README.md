@@ -40,6 +40,11 @@
   <a href="#-mcp--agents"><b>🤖 MCP</b></a>
 </p>
 
+<p align="center">
+  <sub>Sponsored by
+  <a href="#-sponsors"><b>华龙中转站 / Hualong Transfer Station</b></a></sub>
+</p>
+
 ---
 
 ## Why GoNavi?
@@ -440,12 +445,40 @@ fc-cache -fv
 
 ---
 
+## 💖 Sponsors
+
+<p align="center">
+  <a href="https://api-fast.hualong.online/">
+    <img src="assets/sponsors/hualong-mark.png" width="120" alt="华龙中转站 Hualong Transfer Station" />
+  </a>
+</p>
+
+<p align="center">
+  <b><a href="https://api-fast.hualong.online/">华龙中转站 · Hualong Transfer Station</a></b><br/>
+  <sub>AI API Gateway · multi-model routing · domestic high-speed endpoint</sub>
+</p>
+
+Special thanks to **[华龙中转站 (Hualong Transfer Station)](https://api-fast.hualong.online/)** for sponsoring GoNavi open-source development.
+
+| | |
+|---|---|
+| **What they are** | An **AI API Gateway** that unifies multi-model access behind an OpenAI-compatible surface — so you can ship LLM features without fighting provider fragmentation and network friction. |
+| **What you get** | Multi-model routing · OpenAI-compatible API · **domestic high-speed direct endpoint** · practical for indie devs and open-source projects that need reliable LLM access |
+| **Why we recommend them** | GoNavi is AI/MCP-first. Stable model access is core infrastructure for coding agents, schema-aware assistants, and day-to-day development. |
+
+**Looking for a solid LLM relay?**  
+👉 [https://api-fast.hualong.online/](https://api-fast.hualong.online/) — console, docs, and the domestic high-speed endpoint.
+
+> Hualong also sponsored a **shared 50B token pool** for GoNavi **co-maintainers**, used via **API Key** (not 50B per person). Rules and how to apply: [Issue #671](https://github.com/Syngnat/GoNavi/issues/671).
+
+---
+
 ## 🤝 Contributing
 
 Issues and PRs welcome. Branch from **`dev`**, PR against **`dev`**.
 
 - [CONTRIBUTING.md](CONTRIBUTING.md)
-- Call for contributors: [Issue #671](https://github.com/Syngnat/GoNavi/issues/671)
+- Call for contributors (incl. sponsored token pool): [Issue #671](https://github.com/Syngnat/GoNavi/issues/671)
 
 ---
 
@@ -462,18 +495,18 @@ Issues and PRs welcome. Branch from **`dev`**, PR against **`dev`**.
 
 ## ⭐ Star History
 
-<a href="https://www.star-history.com/?repos=Syngnat%2FGoNavi&type=date&legend=top-left">
- <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/image?repos=Syngnat/GoNavi&type=date&theme=dark&legend=top-left" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/image?repos=Syngnat/GoNavi&type=date&legend=top-left" />
-   <img alt="Star History Chart" src="https://api.star-history.com/image?repos=Syngnat/GoNavi&type=date&legend=top-left" />
- </picture>
-</a>
+<!-- star-history:start -->
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/star-history/star-history-dark.svg">
+  <img alt="Star history" src="assets/star-history/star-history-light.svg">
+</picture>
+<!-- star-history:end -->
 
 ---
 
 ## Links
 
+- [华龙中转站 · Hualong Transfer Station](https://api-fast.hualong.online/) — AI API Gateway (GoNavi sponsor)
 - [linux.do](https://linux.do/)
 - [AIBook](https://aibook.ren/)
 

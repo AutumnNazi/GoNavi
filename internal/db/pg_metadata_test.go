@@ -58,6 +58,39 @@ func TestBuildPGLikeColumnDefinitionsMarksPrimaryKey(t *testing.T) {
 	}
 }
 
+func TestBuildPGLikeColumnDefinitionsRecognizesIdentityAndQualifiedNextval(t *testing.T) {
+	t.Parallel()
+
+	query := buildPGLikeColumnsMetadataQuery("public", "users")
+	if !strings.Contains(query, "to_jsonb(a)->>'attidentity'") {
+		t.Fatalf("expected PostgreSQL-version-safe identity metadata, got %s", query)
+	}
+
+	columns := buildPGLikeColumnDefinitions([]map[string]interface{}{
+		{
+			"column_name":         "identity_id",
+			"data_type":           "bigint",
+			"is_nullable":         "NO",
+			"identity_generation": "a",
+		},
+		{
+			"column_name":    "serial_id",
+			"data_type":      "bigint",
+			"is_nullable":    "NO",
+			"column_default": "pg_catalog.nextval('users_id_seq'::regclass)",
+		},
+	})
+
+	if len(columns) != 2 {
+		t.Fatalf("unexpected column count: %d", len(columns))
+	}
+	for _, column := range columns {
+		if column.Extra != "auto_increment" {
+			t.Fatalf("expected generated column %q to be auto_increment: %+v", column.Name, column)
+		}
+	}
+}
+
 func TestBuildPGLikeIndexDefinitionsParsesStringUnique(t *testing.T) {
 	t.Parallel()
 

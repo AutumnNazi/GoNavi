@@ -3,6 +3,7 @@ package db
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"strings"
 	"testing"
 
@@ -240,5 +241,82 @@ func TestOptionalDriverAgentDBQueryMultiWithMessagesParsesResultSets(t *testing.
 	}
 	if !strings.Contains(stdin.String(), `"method":"queryMulti"`) {
 		t.Fatalf("请求未使用 queryMulti 方法: %s", stdin.String())
+	}
+}
+
+func TestDamengOptionalDriverAgentSupportsManagedTransactions(t *testing.T) {
+	damengDB, err := NewDatabase("dameng")
+	if err != nil {
+		t.Fatalf("create Dameng optional driver database: %v", err)
+	}
+	if _, ok := damengDB.(TransactionExecerProvider); !ok {
+		t.Fatal("expected Dameng optional driver database to expose managed transactions")
+	}
+
+	for _, dbType := range []string{"sqlserver", "kingbase"} {
+		dbInst, err := NewDatabase(dbType)
+		if err != nil {
+			t.Fatalf("create %s optional driver database: %v", dbType, err)
+		}
+		if _, ok := dbInst.(TransactionExecerProvider); ok {
+			t.Fatalf("expected %s to keep using its existing session transaction path", dbType)
+		}
+	}
+}
+
+func TestOptionalDriverAgentTransactionUsesTransactionRPC(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		finishMethod string
+		finish       func(TransactionExecer) error
+	}{
+		{name: "commit", finishMethod: optionalAgentMethodCommitTransaction, finish: func(tx TransactionExecer) error { return tx.Commit() }},
+		{name: "rollback", finishMethod: optionalAgentMethodRollbackTransaction, finish: func(tx TransactionExecer) error { return tx.Rollback() }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var stdin optionalAgentTestWriteCloser
+			stdout := strings.Join([]string{
+				`{"id":1,"success":true,"data":"transaction-1"}`,
+				`{"id":2,"success":true,"rowsAffected":1}`,
+				`{"id":3,"success":true}`,
+				`{"id":4,"success":true}`,
+			}, "\n") + "\n"
+			dbInst := &optionalDriverAgentTransactionalDB{
+				OptionalDriverAgentDB: &OptionalDriverAgentDB{
+					driverType: "dameng",
+					client: &optionalDriverAgentClient{
+						stdin:  &stdin,
+						reader: bufio.NewReader(strings.NewReader(stdout)),
+						driver: "dameng",
+					},
+				},
+			}
+
+			tx, err := dbInst.OpenTransactionExecer(context.Background())
+			if err != nil {
+				t.Fatalf("OpenTransactionExecer returned error: %v", err)
+			}
+			if _, err := tx.ExecContext(context.Background(), "UPDATE t SET v = 1"); err != nil {
+				t.Fatalf("ExecContext returned error: %v", err)
+			}
+			if err := tc.finish(tx); err != nil {
+				t.Fatalf("finish transaction returned error: %v", err)
+			}
+			if err := tx.Close(); err != nil {
+				t.Fatalf("Close returned error: %v", err)
+			}
+
+			requests := stdin.String()
+			for _, fragment := range []string{
+				`"method":"openTransaction"`,
+				`"method":"exec","sessionId":"transaction-1"`,
+				`"method":"` + tc.finishMethod + `","sessionId":"transaction-1"`,
+				`"method":"closeSession","sessionId":"transaction-1"`,
+			} {
+				if !strings.Contains(requests, fragment) {
+					t.Fatalf("expected request fragment %q, got %s", fragment, requests)
+				}
+			}
+		})
 	}
 }

@@ -40,6 +40,8 @@ const readDataGridSecondaryActionsSource = (): string =>
   readFileSync(new URL('./DataGridSecondaryActions.tsx', import.meta.url), 'utf8');
 const readDataGridShellSource = (): string =>
   readFileSync(new URL('./DataGridShell.tsx', import.meta.url), 'utf8');
+const readQueryEditorSource = (): string =>
+  readFileSync(new URL('./QueryEditor.tsx', import.meta.url), 'utf8');
 
 const mockStoreState = vi.hoisted(() => ({
   languagePreference: 'system' as LanguagePreference,
@@ -213,9 +215,9 @@ describe('DataGrid layout', () => {
     expect(markup).toContain('跳列');
     expect(markup).toContain('日志');
     expect(markup).toContain(zhObjectDesignLabel);
-    expect(markup).toContain('data-grid-page-find="true"');
-    expect(markup).toContain('data-grid-page-find-prev="true"');
-    expect(markup).toContain('data-grid-page-find-next="true"');
+    expect(markup).not.toContain('data-grid-page-find="true"');
+    expect(markup).not.toContain('data-grid-page-find-prev="true"');
+    expect(markup).not.toContain('data-grid-page-find-next="true"');
     expect(markup).toContain('gn-v2-data-grid-status-main');
     expect(markup).toContain('gn-v2-data-grid-status-right');
     expect(markup).toContain('data-grid-v2-pagination="true"');
@@ -229,7 +231,7 @@ describe('DataGrid layout', () => {
     expect(markup).toContain('跳转页码');
     expect(markup).not.toContain('class="ant-pagination');
     expect(markup).not.toContain('class="data-grid-pagination-kicker"');
-    expect(markup).toContain('当前页查找...');
+    expect(markup).not.toContain('当前页查找...');
   });
 
   it('opens the embedded SQL log view from the shared V2 SQL log event in table data tabs', () => {
@@ -1077,11 +1079,39 @@ describe('DataGrid layout', () => {
     expect(shellSource).toMatch(/<DataGridPaginationBar[\s\S]*?manualTotalCountAvailable=\{[^}]*onRequestTotalCount[^}]*\}[\s\S]*?totalCountLoading=\{pagination\?\.totalCountLoading\}[\s\S]*?onToggleTotalCount=\{handleToggleTotalCount\}/);
   });
 
-  it('hides current-page find in JSON and text record views', () => {
-    const source = readDataGridSource();
+  it('keeps V2 current-page find hidden until its floating table overlay is opened', () => {
+    const source = readDataGridShellSource();
+    const secondaryActionsSource = readDataGridSecondaryActionsSource();
+    const css = readV2ThemeCss();
 
-    expect(source).toContain("const visiblePageFindContent = viewMode === 'table' ? pageFindContent : null;");
-    expect(source).toContain('pageFindContent={visiblePageFindContent}');
+    expect(source).toContain("const floatingPageFindContent = isV2Ui && pageFindOpen && viewMode === 'table'");
+    expect(source).toContain("const legacyPageFindContent = !isV2Ui && viewMode === 'table'");
+    expect(source).toContain('data-grid-page-find-overlay="true"');
+    expect(source).toContain('pageFindContent={legacyPageFindContent}');
+    const v2BranchStart = secondaryActionsSource.indexOf('if (isV2Ui)');
+    const legacyBranchStart = secondaryActionsSource.lastIndexOf('  return (');
+    expect(v2BranchStart).toBeGreaterThanOrEqual(0);
+    expect(legacyBranchStart).toBeGreaterThan(v2BranchStart);
+    expect(secondaryActionsSource.slice(v2BranchStart, legacyBranchStart)).not.toContain('{pageFindContent}');
+    expect(css).toMatch(/\.gn-v2-data-grid-page-find-overlay\s*\{[^}]*position:\s*absolute;[^}]*top:\s*8px;[^}]*right:\s*8px;[^}]*z-index:\s*40;[^}]*background:[^;]+;[^}]*box-shadow:/s);
+    expect(css).toMatch(/\.gn-v2-data-grid-page-find-overlay\s*\{[^}]*width:\s*min\(360px,\s*calc\(100% - 16px\)\);/s);
+    expect(css).toMatch(/\.gn-v2-data-grid-page-find\s*\{[^}]*width:\s*100%;[^}]*flex:\s*1 1 auto;[^}]*overflow:\s*hidden;/s);
+    expect(css).toMatch(/\.gn-v2-data-grid-page-find \.ant-input-affix-wrapper\s*\{[^}]*flex:\s*1 1 160px;[^}]*width:\s*auto !important;[^}]*max-width:\s*none !important;/s);
+    expect(css).not.toMatch(/\.gn-v2-data-grid-page-find\s*\{[^}]*max-width:\s*214px\s*!important;/s);
+    expect(css).not.toMatch(/\.gn-v2-data-grid-page-find [^{]*\.gn-v2-data-grid-page-find-input[^{]*\{[^}]*width:\s*160px\s*!important;/s);
+    expect(css).not.toContain('.gn-v2-data-grid-page-find-row');
+  });
+
+  it('routes Ctrl/Cmd+F to the active DataGrid without stealing SQL editor find', () => {
+    const dataGridSource = readDataGridSource();
+    const queryEditorSource = readQueryEditorSource();
+
+    expect(dataGridSource).toContain("activeShortcutPlatform === 'mac' ? 'Meta+F' : 'Ctrl+F'");
+    expect(dataGridSource).toContain('isShortcutMatch(event, pageFindShortcutCombo)');
+    expect(dataGridSource).toContain("window.addEventListener('keydown', handlePageFindShortcut, true)");
+    expect(dataGridSource).toContain('event.stopImmediatePropagation()');
+    expect(queryEditorSource).toContain("targetElement?.closest('.data-grid-root')");
+    expect(queryEditorSource).toContain('dataGridHasFocus');
   });
 
   it('keeps legacy secondary actions aligned on a shared search-row baseline', () => {
@@ -1202,6 +1232,8 @@ describe('DataGrid layout', () => {
     expect(dataGridSource).toMatch(/<DataGridV2DdlView[\s\S]*?translate={translateDataGrid}/);
     expect(detachedChromeSource).toContain("translate('data_grid.page_find.tooltip')");
     expect(detachedChromeSource).toContain("translate('data_grid.page_find.placeholder')");
+    expect(detachedChromeSource).toContain("translate('data_grid.page_find.previous')");
+    expect(detachedChromeSource).toContain("translate('data_grid.page_find.next')");
     expect(detachedChromeSource).toContain("translate('data_grid.page_find.summary'");
     expect(detachedChromeSource).toContain("translate('data_grid.pagination.result_set')");
     expect(detachedChromeSource).toContain("translate('data_grid.pagination.page_size_aria')");
@@ -1220,9 +1252,9 @@ describe('DataGrid layout', () => {
     expect(detachedChromeSource).toContain("translate('data_grid.secondary.er_diagram')");
     expect(detachedChromeSource).toContain("translate('data_grid.secondary.column_display')");
     expect(detachedChromeSource).toContain("translate('data_grid.secondary.jump_column')");
-    expect(detachedChromeSource).toContain("translate('data_grid.secondary.row_count'");
-    expect(detachedChromeSource).toContain("translate('data_grid.secondary.pending_changes'");
-    expect(detachedChromeSource).toContain("translate('data_grid.secondary.live')");
+    expect(secondaryActionsSource).not.toContain("translate('data_grid.secondary.row_count'");
+    expect(secondaryActionsSource).not.toContain("translate('data_grid.secondary.pending_changes'");
+    expect(secondaryActionsSource).not.toContain("translate('data_grid.secondary.live')");
     expect(detachedChromeSource).toContain("translate('data_grid.record_view.empty')");
     expect(detachedChromeSource).toContain("translate('data_grid.record_view.json_record_count'");
     expect(detachedChromeSource).toContain("translate('data_grid.record_view.edit_json')");
@@ -1769,6 +1801,8 @@ describe('DataGrid layout', () => {
       const values: Record<string, string> = {
         'data_grid.page_find.tooltip': 'Find only this page',
         'data_grid.page_find.placeholder': 'Find current page',
+        'data_grid.page_find.previous': 'Previous find match',
+        'data_grid.page_find.next': 'Next find match',
         'data_grid.page_find.summary': `${params?.occurrences} hits / ${params?.cells} cells`,
         'data_grid.pagination.result_set': 'Result set label',
         'data_grid.pagination.page_size_aria': 'Rows per page label',
@@ -1787,9 +1821,6 @@ describe('DataGrid layout', () => {
         'data_grid.secondary.er_diagram': 'ER diagram label',
         'data_grid.secondary.column_display': 'Column display label',
         'data_grid.secondary.jump_column': 'Jump column label',
-        'data_grid.secondary.row_count': `${params?.count} rows label`,
-        'data_grid.secondary.pending_changes': `${params?.count} pending label`,
-        'data_grid.secondary.live': 'Live label',
         'data_grid.record_view.empty': 'No rows label',
         'data_grid.record_view.json_record_count': `${params?.count} JSON rows label`,
         'data_grid.record_view.edit_json': 'Edit JSON label',
@@ -1802,6 +1833,7 @@ describe('DataGrid layout', () => {
         'data_grid.preview_panel.no_cell_title': 'Select cell title',
         'data_grid.preview_panel.no_cell_description': 'Select cell description',
         'data_grid.json_editor.format': 'Format JSON label',
+        'common.close': 'Close find',
         'common.save': 'Save label',
       };
       return values[key] ?? key;
@@ -1809,7 +1841,7 @@ describe('DataGrid layout', () => {
 
     const pageFindMarkup = renderToStaticMarkup(
       <DataGridPageFind
-        isV2Ui={false}
+        isV2Ui
         darkMode={false}
         pageFindText="al"
         normalizedPageFindText="al"
@@ -1828,6 +1860,9 @@ describe('DataGrid layout', () => {
     expect(pageFindMarkup).toContain('placeholder="Find current page"');
     expect(pageFindMarkup).toContain('1 / 3');
     expect(pageFindMarkup).toContain('4 hits / 2 cells');
+    expect(pageFindMarkup).toContain('aria-label="Previous find match"');
+    expect(pageFindMarkup).toContain('aria-label="Next find match"');
+    expect(pageFindMarkup).toContain('aria-label="Close find"');
     expect(pageFindMarkup).not.toContain('data_grid.page_find');
 
     const resultViewMarkup = renderToStaticMarkup(
@@ -1884,8 +1919,6 @@ describe('DataGrid layout', () => {
         ddlLoading={false}
         showColumnComment={false}
         showColumnType={false}
-        mergedDisplayCount={3}
-        pendingChangeCount={2}
         resultViewSwitcher={<span>view switcher</span>}
         columnInfoSettingContent={<span>column settings</span>}
         columnQuickFindContent={<span>quick find</span>}
@@ -1905,9 +1938,8 @@ describe('DataGrid layout', () => {
     expect(secondaryMarkup).toContain('ER diagram label');
     expect(secondaryMarkup).toContain('Column display label');
     expect(secondaryMarkup).toContain('Jump column label');
-    expect(secondaryMarkup).toContain('3 rows label');
-    expect(secondaryMarkup).toContain('2 pending label');
-    expect(secondaryMarkup).toContain('Live label');
+    expect(secondaryMarkup).not.toContain('page find');
+    expect(secondaryMarkup).not.toContain('gn-v2-data-grid-status-center');
     expect(secondaryMarkup).not.toContain('data_grid.secondary');
 
     const jsonRecordMarkup = renderToStaticMarkup(
@@ -2135,6 +2167,7 @@ describe('DataGrid layout', () => {
     expect(markup).toContain('gn-v2-toolbar-divider');
     expect(markup).toContain('gn-v2-commit-button');
     expect(markup).toContain('gn-v2-ai-insight-button');
+    expect(markup).toContain('gn-v2-data-grid-toolbar-action');
     expect(markup).toContain('gn-v2-smart-filter-panel');
     expect(markup).toContain('gn-v2-data-grid-table-shell');
     expect(markup).toContain('gn-v2-data-grid-table-wrap');
@@ -2142,6 +2175,74 @@ describe('DataGrid layout', () => {
     expect(markup).toContain('提交事务');
     expect(markup).toContain('手动提交');
     expect(markup).toContain('AI 洞察');
+
+    const getButtonBody = (label: string) => {
+      const escapedLabel = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const match = markup.match(new RegExp(`<button(?=[^>]*aria-label="${escapedLabel}")[^>]*>([\\s\\S]*?)<\\/button>`));
+      expect(match, `missing toolbar button: ${label}`).not.toBeNull();
+      return match?.[1] ?? '';
+    };
+
+    [
+      '刷新',
+      '筛选',
+      '新增行',
+      '删除选中',
+      '单元格编辑',
+      '提交事务',
+      '手动提交',
+      '导入',
+      '导出',
+      'AI 洞察',
+    ].forEach((label) => {
+      expect(getButtonBody(label)).not.toContain(label);
+    });
+    [
+      '数据预览',
+      zhObjectDesignLabel,
+      '查看 DDL',
+      'ER 图',
+      '日志',
+      '字段显示',
+    ].forEach((label) => {
+      expect(getButtonBody(label)).not.toContain(label);
+    });
+    expect(markup).toContain('aria-haspopup="menu"');
+    expect(markup).toContain('aria-expanded="false"');
+
+    const resultViewMarkup = renderToStaticMarkup(
+      <DataGridResultViewSwitcher
+        isV2Ui
+        darkMode={false}
+        viewMode="table"
+        translate={(key) => zhCnCatalog[key] ?? key}
+        onViewModeChange={() => {}}
+      />,
+    );
+    expect(resultViewMarkup).toContain('aria-label="结果视图"');
+    expect(resultViewMarkup).not.toContain('>结果视图<');
+    expect(resultViewMarkup).toContain('class="gn-v2-data-grid-visually-hidden">表格</span>');
+    expect(resultViewMarkup).toContain('class="gn-v2-data-grid-visually-hidden">JSON</span>');
+    expect(resultViewMarkup).toContain('class="gn-v2-data-grid-visually-hidden">文本</span>');
+    expect(readDataGridSecondaryActionsSource()).toContain('<Tooltip key={item.key} title={item.label}>');
+    expect(readDataGridSecondaryActionsSource()).toContain(
+      '<Tooltip title={columnDisplayLabel} open={columnDisplayOpen ? false : undefined}>',
+    );
+    expect(
+      readFileSync(new URL('./DataGridResultViewSwitcher.tsx', import.meta.url), 'utf8'),
+    ).toContain('<Tooltip title={option.label}>');
+
+    const css = readV2ThemeCss();
+    const iconActionCss = css.slice(
+      css.indexOf('body[data-ui-version="v2"] .gn-v2-data-grid .gn-v2-data-grid-toolbar-action {'),
+      css.indexOf('body[data-ui-version="v2"] .gn-v2-data-grid-toolbar-title {'),
+    );
+    expect(iconActionCss).toContain('width: 28px !important;');
+    expect(iconActionCss).toContain('min-width: 28px !important;');
+    expect(iconActionCss).toContain('padding-inline: 0 !important;');
+    expect(css).toContain(
+      'body[data-ui-version="v2"] .gn-v2-data-grid-statusbar .gn-v2-data-grid-toolbar-action.ant-btn {',
+    );
   });
 
   it('renders a non-data row number column when enabled', () => {
@@ -2376,7 +2477,7 @@ describe('DataGrid layout', () => {
     expect(schemaTableMarkup).toContain('data-grid-ddl-action="true"');
     expect(schemaTableMarkup).toContain('查看 DDL');
     expect(schemaTableMarkup).toContain(zhObjectDesignLabel);
-    expect(schemaTableMarkup).toContain('data-grid-page-find="true"');
+    expect(schemaTableMarkup).not.toContain('data-grid-page-find="true"');
 
     const queryMarkup = renderDataGridWithI18n(
       <DataGrid
@@ -2470,6 +2571,8 @@ describe('DataGrid layout', () => {
     expect(markup).toContain('data-grid-query-copy-action="true"');
     expect(markup).not.toMatch(/data-grid-query-copy-action="true"[^>]*disabled/);
     expect(markup).toContain('复制');
+    expect(markup).toContain('aria-haspopup="menu"');
+    expect(markup).toContain('aria-expanded="false"');
     expect(markup.match(/data-grid-query-copy-action="true"/g)?.length).toBe(1);
   });
 
@@ -2678,7 +2781,7 @@ describe('DataGrid layout', () => {
     expect(source).toContain('const handleSubmitColumnQuickFind = useCallback((submittedValue?: string) => {');
     expect(source).toContain('const effectiveQuery = String(submittedValue ?? columnQuickFindText);');
     expect(source).toContain('resolveDataGridColumnQuickFindTarget(displayColumnNames, query)');
-    expect(source).toContain("onCancel={() => setPageFindText('')}");
+    expect(source).toContain('onCancel={handleClosePageFind}');
     expect(source).toContain('enumerable: true');
     expect(source).toContain('resolveDataGridColumnQuickFindScrollLeft({');
     const pageFindFocusSource = source.slice(
@@ -2799,17 +2902,16 @@ describe('DataGrid layout', () => {
     expect(columnTitleSource).toContain('data-column-name={normalizedName}');
     expect(columnQuickFindSource).toContain('AutoComplete');
     expect(columnQuickFindSource).toContain("placeholder={translate('data_grid.column_quick_find.placeholder')}");
-    expect(secondaryActionsSource.indexOf('{pageFindContent}')).toBeLessThan(secondaryActionsSource.indexOf('gn-v2-data-grid-status-center'));
+    expect(secondaryActionsSource).not.toContain('gn-v2-data-grid-status-center');
+    expect(secondaryActionsSource).not.toContain('gn-v2-data-grid-live');
     expect(css).toContain('width: 66px !important;');
-    expect(css).toContain('grid-template-columns: 160px 26px 26px !important;');
     expect(css).toContain('container-name: gn-v2-data-grid-statusbar;');
     expect(css).toContain('body[data-ui-version="v2"] .gn-v2-data-grid-statusbar::-webkit-scrollbar');
     expect(css).toContain('scrollbar-width: thin;');
     expect(css).toContain('min-width: max-content;');
     expect(css).toContain('flex: 0 0 auto;');
-    expect(css).toContain('body[data-ui-version="v2"] .gn-v2-data-grid-status-center {');
-    expect(css).not.toContain('.gn-v2-data-grid-status-center > span:last-child {\n    display: none;');
-    expect(css).not.toContain('.gn-v2-data-grid-status-center > span:nth-child(2) {\n    display: none;');
+    expect(css).not.toContain('gn-v2-data-grid-status-center');
+    expect(css).not.toContain('gn-v2-data-grid-live');
     expect(css).toContain('body[data-ui-version="v2"] .gn-v2-data-grid-pagination-wrap::-webkit-scrollbar');
     expect(css).toContain('@container gn-v2-data-grid-statusbar (max-width: 960px)');
     expect(css).toContain('@container gn-v2-data-grid-statusbar (max-width: 760px)');

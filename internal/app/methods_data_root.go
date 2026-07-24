@@ -20,7 +20,8 @@ import (
 )
 
 var dataRootMigrationExcludedEntries = map[string]struct{}{
-	"storage_root.json": {},
+	filepath.Base(appdata.BootstrapPath()):     {},
+	filepath.Base(appdata.BootstrapLockPath()): {},
 }
 
 type dataRootTextFunc func(string, map[string]any) string

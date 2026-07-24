@@ -677,7 +677,11 @@ const DraggableTabNode: React.FC<DraggableTabNodeProps> = ({ node }) => {
   });
 };
 
-const TabManager: React.FC = React.memo(() => {
+type TabManagerProps = {
+  onFocusSidebarSearch?: () => void;
+};
+
+const TabManager: React.FC<TabManagerProps> = React.memo<TabManagerProps>(({ onFocusSidebarSearch }) => {
   const tabs = useWorkbenchTabs();
   const detachedWorkbenchWindows = useStore(state => state.detachedWorkbenchWindows);
   const connections = useStore(state => state.connections);
@@ -1278,6 +1282,10 @@ const TabManager: React.FC = React.memo(() => {
   };
 
   const handleFocusObjectSearch = () => {
+    if (onFocusSidebarSearch) {
+      onFocusSidebarSearch();
+      return;
+    }
     window.dispatchEvent(new CustomEvent('gonavi:focus-sidebar-search'));
   };
 

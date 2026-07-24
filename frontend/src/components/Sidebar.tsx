@@ -71,6 +71,7 @@ export {
 import React, { useEffect, useState, useMemo, useRef, useCallback, useDeferredValue } from 'react';
 import { createPortal } from 'react-dom';
 import { Tree, message, Dropdown, MenuProps, Input, Button, Form, Popover, Radio, Select, Tooltip } from 'antd';
+import { APP_POPUP_Z_INDEX } from '../utils/overlayZIndex';
 	import {
 	  CaretDownFilled,
 	  DatabaseOutlined,
@@ -104,6 +105,7 @@ import { Tree, message, Dropdown, MenuProps, Input, Button, Form, Popover, Radio
   WarningOutlined,
   AimOutlined,
   MoreOutlined,
+  MenuFoldOutlined,
   SettingOutlined
 	} from '@ant-design/icons';
 import {
@@ -508,6 +510,10 @@ const Sidebar: React.FC<{
   onToggleLogPanel?: () => void;
   uiVersion?: 'legacy' | 'v2';
   onFocusCommandSearch?: () => void;
+  onCollapseSidebar?: () => void;
+  collapseSidebarLabel?: string;
+  collapseSidebarButtonRef?: React.Ref<HTMLButtonElement>;
+  isTreePanelCollapsed?: boolean;
 }> = React.memo(({
   onCreateConnection,
   onEditConnection,
@@ -516,6 +522,10 @@ const Sidebar: React.FC<{
   onToggleLogPanel,
   uiVersion,
   onFocusCommandSearch,
+  onCollapseSidebar,
+  collapseSidebarLabel,
+  collapseSidebarButtonRef,
+  isTreePanelCollapsed = false,
 }) => {
   const connections = useStore(state => state.connections);
   const savedQueries = useStore(state => state.savedQueries);
@@ -2925,11 +2935,12 @@ const Sidebar: React.FC<{
           ? activeTab.tableName || ''
           : '',
     ).trim();
+    const mode = node?.type === 'database' ? 'database' : 'table';
 
     const existingImportTab = tabs.find((tab) => tab.id === DATA_IMPORT_WORKBENCH_TAB_ID);
     addTab(resolveDataImportWorkbenchLaunchTab(
       existingImportTab,
-      { connectionId, dbName, tableName },
+      { connectionId, dbName, tableName, mode },
     ));
   }, [activeContext?.connectionId, activeContext?.dbName, activeTabId, addTab, tabs]);
 
@@ -2988,13 +2999,31 @@ const Sidebar: React.FC<{
       openSettings: onOpenSettings ?? (() => {}),
     },
     canLocateActiveTab,
+    workbenchActions: (
+      <>
+        <SlowQueryRailButton
+          className="gn-v2-rail-tool gn-v2-rail-sql-analysis-button"
+          tooltipPlacement="right"
+        />
+        <SqlAuditRailButton
+          className="gn-v2-rail-tool gn-v2-rail-sql-audit-button"
+          tooltipPlacement="right"
+        />
+      </>
+    ),
   };
 
   return (
     <div className={isV2Ui ? 'gn-v2-sidebar-redesign' : undefined} style={{ display: 'flex', height: '100%', minHeight: 0 }}>
         {exportProgressModal}
         {isV2Ui && <SidebarConnectionRail {...v2ConnectionRailProps} />}
-        <div className={isV2Ui ? 'gn-v2-object-explorer' : undefined} style={{ display: 'flex', flexDirection: 'column', height: '100%', minWidth: 0, flex: 1 }}>
+        <div
+            id={isV2Ui ? 'gonavi-sidebar-tree-panel' : undefined}
+            className={isV2Ui ? 'gn-v2-object-explorer' : undefined}
+            data-sidebar-tree-panel={isV2Ui ? 'true' : undefined}
+            aria-hidden={isV2Ui ? isTreePanelCollapsed : undefined}
+            style={{ display: isV2Ui && isTreePanelCollapsed ? 'none' : 'flex', flexDirection: 'column', height: '100%', minWidth: 0, flex: 1 }}
+        >
         {isV2Ui && (
             <div className="gn-v2-active-connection-header" data-object-count={activeConnectionObjectCount}>
                 <div className="gn-v2-active-connection-trigger" aria-label={v2ActiveConnectionHeaderLabel}>
@@ -3059,6 +3088,23 @@ const Sidebar: React.FC<{
                             }}
                         />
                     </Tooltip>
+                    {onCollapseSidebar && collapseSidebarLabel && (
+                        <Tooltip title={collapseSidebarLabel} placement="bottom" mouseEnterDelay={0.35}>
+                            <Button
+                                ref={collapseSidebarButtonRef}
+                                size="small"
+                                type="text"
+                                className="gonavi-sidebar-collapse-trigger"
+                                data-sidebar-collapse-trigger="true"
+                                data-sidebar-toggle-placement="explorer-header"
+                                aria-label={collapseSidebarLabel}
+                                aria-controls="gonavi-sidebar-tree-panel"
+                                aria-expanded={true}
+                                icon={<MenuFoldOutlined />}
+                                onClick={onCollapseSidebar}
+                            />
+                        </Tooltip>
+                    )}
                 </div>
             </div>
         )}
@@ -3344,18 +3390,6 @@ const Sidebar: React.FC<{
             </div>
         </div>
 
-        {isV2Ui && (
-            <div className="gn-v2-sidebar-log-footer">
-                <SlowQueryRailButton
-                    className="gn-v2-sidebar-slow-query-button"
-                    tooltipPlacement="top"
-                />
-                <SqlAuditRailButton
-                    className="gn-v2-sidebar-sql-audit-button"
-                    tooltipPlacement="top"
-                />
-            </div>
-        )}
         </div>
         <SidebarSearchPanel {...v2CommandSearchPanelProps} />
 
@@ -3369,7 +3403,7 @@ const Sidebar: React.FC<{
                     position: 'fixed',
                     left: contextMenu.x,
                     top: contextMenu.y,
-                    zIndex: 10000,
+                    zIndex: APP_POPUP_Z_INDEX,
                     width: contextMenu.overlayStyle?.width ?? SIDEBAR_CONTEXT_MENU_FALLBACK_WIDTH,
                     maxWidth: contextMenu.overlayStyle?.maxWidth ?? 'calc(100vw - 24px)',
                     ['--gn-v2-context-menu-max-height' as any]: `${contextMenu.maxHeight ?? SIDEBAR_CONTEXT_MENU_FALLBACK_HEIGHT}px`,

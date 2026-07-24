@@ -3,6 +3,7 @@ import { message } from 'antd';
 import type { FormInstance } from 'antd/es/form';
 
 import Modal from '../common/ResizableDraggableModal';
+import { showCountdownDangerConfirm } from '../common/countdownDangerConfirm';
 import type { SavedConnection, SavedQuery } from '../../types';
 import { useStore } from '../../store';
 import { t } from '../../i18n';
@@ -13,7 +14,6 @@ import { buildSqlServerObjectDefinitionQueries } from '../../utils/sqlServerObje
 import { buildStarRocksMaterializedViewPreviewSql } from '../tableDesignerSchemaSql';
 import type { ExportRunResult, RunExportWithProgressOptions } from '../useExportProgressRunner';
 import { getTableDataDangerActionMeta, type TableDataDangerActionKind } from '../tableDataDangerActions';
-import { showSQLExportOptionsDialog } from '../SQLExportOptionsDialog';
 import { confirmCopyTable } from '../tableCopyAction';
 import {
   buildDuckDBMacroDDL,
@@ -280,20 +280,17 @@ export const useSidebarObjectActions = ({
       message.warning(t('sidebar.message.table_export_target_missing'));
       return;
     }
-    const exportOptions = mode === 'backup'
-      ? await showSQLExportOptionsDialog()
-      : { includeDropIfExists: false };
-    if (!exportOptions) return;
     const connectionId = resolveSidebarNodeConnectionId(node, connectionIds)
       || String(node?.dataRef?.id || '').trim();
     const dbName = String(node?.dataRef?.dbName || '').trim();
+    const launchKey = `table-${Date.now()}-${Math.random().toString(36).slice(2)}`;
     addTab(buildBatchTableExportWorkbenchTab({
       connectionId,
       dbName,
       initialObjectNames: [tableName],
       contentMode: mode,
-      includeDropIfExists: exportOptions.includeDropIfExists,
-      requestKey: `table-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      includeDropIfExists: false,
+      ...(mode === 'backup' ? { launchKey } : { requestKey: launchKey }),
       title: t('file.backend.dialog.export_table', { table: tableName }),
     }));
   };
@@ -598,10 +595,9 @@ export const useSidebarObjectActions = ({
     const conn = node.dataRef;
     const dbName = String(conn.dbName || '').trim();
     if (!dbName) return;
-    Modal.confirm({
+    showCountdownDangerConfirm({
       title: t('sidebar.modal.confirm_delete_database.title'),
       content: t('sidebar.modal.confirm_delete_database.content', { name: dbName }),
-      okButtonProps: { danger: true },
       onOk: async () => {
         const config = buildRuntimeConfig(conn, conn.dbName);
         const res = await DropDatabase(buildRpcConnectionConfig(config) as any, dbName);
@@ -653,10 +649,9 @@ export const useSidebarObjectActions = ({
     const conn = node.dataRef;
     const tableName = String(conn.tableName || '').trim();
     if (!tableName) return;
-    Modal.confirm({
+    showCountdownDangerConfirm({
       title: t('sidebar.modal.confirm_delete_table.title'),
       content: t('sidebar.modal.confirm_delete_table.content', { name: tableName }),
-      okButtonProps: { danger: true },
       onOk: async () => {
         const config = buildRuntimeConfig(conn, conn.dbName);
         const res = await DropTable(buildRpcConnectionConfig(config) as any, conn.dbName, tableName);

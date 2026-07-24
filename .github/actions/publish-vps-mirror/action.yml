@@ -1,0 +1,213 @@
+name: Publish VPS download mirror
+description: Verify, upload, and atomically publish a GoNavi release to the VPS mirror
+
+inputs:
+  channel:
+    description: stable or dev
+    required: true
+  app-tag:
+    description: Physical application release directory name
+    required: true
+  app-dir:
+    description: Directory containing application release assets
+    required: true
+  app-manifest:
+    description: Application latest manifest path
+    required: true
+  driver-enabled:
+    description: Whether this deployment must publish driver assets
+    required: true
+  driver-tag:
+    description: Physical driver release directory name
+    required: false
+    default: ''
+  driver-dir:
+    description: Directory containing driver release assets
+    required: false
+    default: ''
+  driver-version-index:
+    description: Versioned driver index path
+    required: false
+    default: ''
+  driver-latest-index:
+    description: Mutable latest driver index path
+    required: false
+    default: ''
+  ssh-host:
+    description: Mirror origin SSH host
+    required: true
+  ssh-port:
+    description: Mirror origin SSH port
+    required: true
+  ssh-user:
+    description: Unprivileged mirror deployment user
+    required: true
+  ssh-private-key:
+    description: SSH private key for the deployment user
+    required: true
+  ssh-known-hosts:
+    description: Pinned known_hosts entry for the mirror origin
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Prepare, upload, and commit mirror payload
+      shell: bash
+      env:
+        MIRROR_CHANNEL: ${{ inputs.channel }}
+        MIRROR_APP_TAG: ${{ inputs.app-tag }}
+        MIRROR_APP_DIR: ${{ inputs.app-dir }}
+        MIRROR_APP_MANIFEST: ${{ inputs.app-manifest }}
+        MIRROR_DRIVER_ENABLED: ${{ inputs.driver-enabled }}
+        MIRROR_DRIVER_TAG: ${{ inputs.driver-tag }}
+        MIRROR_DRIVER_DIR: ${{ inputs.driver-dir }}
+        MIRROR_DRIVER_VERSION_INDEX: ${{ inputs.driver-version-index }}
+        MIRROR_DRIVER_LATEST_INDEX: ${{ inputs.driver-latest-index }}
+        MIRROR_SSH_HOST: ${{ inputs.ssh-host }}
+        MIRROR_SSH_PORT: ${{ inputs.ssh-port }}
+        MIRROR_SSH_USER: ${{ inputs.ssh-user }}
+        MIRROR_SSH_PRIVATE_KEY: ${{ inputs.ssh-private-key }}
+        MIRROR_SSH_KNOWN_HOSTS: ${{ inputs.ssh-known-hosts }}
+      run: |
+        set -euo pipefail
+        mirror_root="/srv/gonavi-downloads"
+        [[ "${MIRROR_CHANNEL}" == "stable" || "${MIRROR_CHANNEL}" == "dev" ]] || {
+          echo "Invalid mirror channel: ${MIRROR_CHANNEL}" >&2
+          exit 1
+        }
+        [[ "${GITHUB_RUN_ID:-}" =~ ^[0-9]+$ && "${GITHUB_RUN_ATTEMPT:-}" =~ ^[0-9]+$ ]] || {
+          echo "Invalid GitHub run identity" >&2
+          exit 1
+        }
+        deployment_id="${MIRROR_CHANNEL}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+        stage_dir="${RUNNER_TEMP}/gonavi-vps-mirror-${deployment_id}"
+        ssh_dir="${RUNNER_TEMP}/gonavi-vps-ssh-${deployment_id}"
+        remote_stage="${mirror_root}/.incoming/${deployment_id}"
+        effective_driver_tag=""
+        remote=""
+        remote_cleanup_enabled=false
+        ssh_options=()
+
+        cleanup() {
+          local exit_code=$?
+          local cleanup_remote_command=""
+          trap - EXIT
+          set +e
+          if [[ "${remote_cleanup_enabled}" == true && -n "${remote}" ]]; then
+            printf -v cleanup_remote_command 'rm -rf -- %q' "${remote_stage}"
+            ssh "${ssh_options[@]}" "${remote}" "${cleanup_remote_command}" >/dev/null 2>&1 || true
+          fi
+          rm -rf -- "${ssh_dir}" "${stage_dir}"
+          exit "${exit_code}"
+        }
+        trap cleanup EXIT
+
+        [[ "${MIRROR_SSH_PORT}" =~ ^[0-9]+$ ]] || {
+          echo "Invalid mirror SSH port" >&2
+          exit 1
+        }
+        mkdir -p "${ssh_dir}"
+        chmod 0700 "${ssh_dir}"
+        printf '%s\n' "${MIRROR_SSH_PRIVATE_KEY}" > "${ssh_dir}/id_ed25519"
+        printf '%s\n' "${MIRROR_SSH_KNOWN_HOSTS}" > "${ssh_dir}/known_hosts"
+        chmod 0600 "${ssh_dir}/id_ed25519" "${ssh_dir}/known_hosts"
+        ssh-keygen -y -f "${ssh_dir}/id_ed25519" >/dev/null
+
+        prepare_args=(
+          --channel "${MIRROR_CHANNEL}"
+          --app-tag "${MIRROR_APP_TAG}"
+          --app-dir "${MIRROR_APP_DIR}"
+          --app-manifest "${MIRROR_APP_MANIFEST}"
+          --output "${stage_dir}"
+        )
+        case "${MIRROR_DRIVER_ENABLED}" in
+          true)
+            [[ -n "${MIRROR_DRIVER_TAG}" ]] || {
+              echo "Driver mirror publication is enabled but driver-tag is empty" >&2
+              exit 1
+            }
+            [[ -n "${MIRROR_DRIVER_DIR}" && -d "${MIRROR_DRIVER_DIR}" ]] || {
+              echo "Driver mirror publication is enabled but driver-dir is missing" >&2
+              exit 1
+            }
+            [[ -n "$(find "${MIRROR_DRIVER_DIR}" -maxdepth 1 -type f -print -quit)" ]] || {
+              echo "Driver mirror publication is enabled but driver-dir is empty" >&2
+              exit 1
+            }
+            [[ -n "${MIRROR_DRIVER_VERSION_INDEX}" && -s "${MIRROR_DRIVER_VERSION_INDEX}" ]] || {
+              echo "Driver mirror publication is enabled but driver-version-index is missing or empty" >&2
+              exit 1
+            }
+            [[ -n "${MIRROR_DRIVER_LATEST_INDEX}" && -s "${MIRROR_DRIVER_LATEST_INDEX}" ]] || {
+              echo "Driver mirror publication is enabled but driver-latest-index is missing or empty" >&2
+              exit 1
+            }
+            effective_driver_tag="${MIRROR_DRIVER_TAG}"
+            prepare_args+=(
+              --driver-tag "${effective_driver_tag}"
+              --driver-dir "${MIRROR_DRIVER_DIR}"
+              --driver-version-index "${MIRROR_DRIVER_VERSION_INDEX}"
+              --driver-latest-index "${MIRROR_DRIVER_LATEST_INDEX}"
+            )
+            ;;
+          false)
+            echo "Driver mirror publication explicitly disabled"
+            ;;
+          *)
+            echo "Invalid driver-enabled value: ${MIRROR_DRIVER_ENABLED}" >&2
+            exit 1
+            ;;
+        esac
+        python3 "${GITHUB_WORKSPACE}/tools/prepare-vps-release-payload.py" "${prepare_args[@]}"
+        cp "${GITHUB_WORKSPACE}/tools/vps-release-commit.sh" "${stage_dir}/vps-release-commit.sh"
+        chmod 0755 "${stage_dir}/vps-release-commit.sh"
+
+        ssh_options=(
+          -i "${ssh_dir}/id_ed25519"
+          -p "${MIRROR_SSH_PORT}"
+          -o BatchMode=yes
+          -o IdentitiesOnly=yes
+          -o StrictHostKeyChecking=yes
+          -o "UserKnownHostsFile=${ssh_dir}/known_hosts"
+        )
+        remote="${MIRROR_SSH_USER}@${MIRROR_SSH_HOST}"
+        printf -v stale_cleanup_script '%s\n' \
+          'set -euo pipefail' \
+          "root=$(printf '%q' "${mirror_root}")" \
+          'marker="$(cat "${root}/.gonavi-mirror-root" 2>/dev/null || true)"' \
+          '[[ "${marker}" == "gonavi-download-mirror-v1" ]] || { echo "mirror root marker is missing or invalid" >&2; exit 1; }' \
+          'incoming="${root}/.incoming"' \
+          'mkdir -p "${incoming}"' \
+          'find "${incoming}" -mindepth 1 -maxdepth 1 -type d -mmin +1440 -exec rm -rf -- {} +'
+        printf -v stale_cleanup_command 'bash -c %q' "${stale_cleanup_script}"
+        ssh "${ssh_options[@]}" "${remote}" "${stale_cleanup_command}"
+
+        payload_bytes="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["payloadBytes"])' "${stage_dir}/deployment.json")"
+        available_kib="$(ssh "${ssh_options[@]}" "${remote}" "LC_ALL=C df -Pk '${mirror_root}' | awk 'NR == 2 { print \$4 }'")"
+        [[ "${available_kib}" =~ ^[0-9]+$ ]] || {
+          echo "Mirror origin returned an invalid free space value: ${available_kib:-<empty>}" >&2
+          exit 1
+        }
+        available_bytes="$((available_kib * 1024))"
+        required_bytes="$((payload_bytes + 2000000000))"
+        if (( available_bytes < required_bytes )); then
+          echo "Mirror origin has insufficient free space: available=${available_bytes} required=${required_bytes}" >&2
+          exit 1
+        fi
+
+        remote_cleanup_enabled=true
+        ssh "${ssh_options[@]}" "${remote}" "mkdir -p '${remote_stage}'"
+        rsync -rlt --delete --partial \
+          --chmod=Du=rwx,Dgo=rx,Fu=rw,Fgo=r \
+          -e "ssh -i ${ssh_dir}/id_ed25519 -p ${MIRROR_SSH_PORT} -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=${ssh_dir}/known_hosts" \
+          "${stage_dir}/" "${remote}:${remote_stage}/"
+
+        printf -v remote_command 'bash %q %q %q %q %q %q' \
+          "${remote_stage}/vps-release-commit.sh" \
+          "${mirror_root}" \
+          "${remote_stage}" \
+          "${MIRROR_CHANNEL}" \
+          "${MIRROR_APP_TAG}" \
+          "${effective_driver_tag}"
+        ssh "${ssh_options[@]}" "${remote}" "${remote_command}"

@@ -16,6 +16,7 @@ import {
   loadPackages,
   loadSequences,
   loadViews,
+  supportsDatabaseSequences,
 } from "./sidebarMetadataLoaders";
 
 const mockedDBQuery = vi.mocked(DBQuery);
@@ -82,6 +83,38 @@ describe("buildSchemasMetadataQuerySpecs", () => {
     expect(result.views).toEqual([
       { viewName: "CHARACTER_SETS", schemaName: "information_schema" },
     ]);
+  });
+});
+
+describe("PostgreSQL sequence metadata", () => {
+  it("queries visible non-system sequences for PostgreSQL-compatible dialects", () => {
+    const specs = buildSequencesMetadataQuerySpecs("postgres", "saas_cloud");
+
+    expect(specs).toHaveLength(1);
+    expect(specs[0]?.sql).toContain("information_schema.sequences");
+    expect(specs[0]?.sql).toContain("sequence_schema NOT IN ('pg_catalog', 'information_schema')");
+    expect(specs[0]?.sql).not.toContain("saas_cloud");
+    expect(supportsDatabaseSequences({ config: { type: "postgres" } } as any)).toBe(true);
+    expect(supportsDatabaseSequences({ config: { type: "mysql" } } as any)).toBe(false);
+  });
+
+  it("loads schema-qualified PostgreSQL sequence names", async () => {
+    mockedDBQuery.mockResolvedValue({
+      success: true,
+      message: "",
+      data: [
+        { schema_name: "public", sequence_name: "pay_method_info_id_seq" },
+      ],
+    });
+
+    await expect(loadSequences({ config: { type: "postgres" } }, "saas_cloud")).resolves.toEqual({
+      supported: true,
+      sequences: [{
+        displayName: "public.pay_method_info_id_seq",
+        schemaName: "public",
+        sequenceName: "public.pay_method_info_id_seq",
+      }],
+    });
   });
 });
 

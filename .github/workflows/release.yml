@@ -28,7 +28,8 @@ jobs:
           bash tools/generate-driver-agent-revisions.test.sh
           python3 tools/generate-driver-release-manifest.test.py
           python3 tools/generate-update-latest-manifest.test.py
-          python3 tools/r2-release-retention.test.py
+          python3 tools/prepare-vps-release-payload.test.py
+          bash tools/vps-release-commit.test.sh
           python3 tools/package-driver-release-assets.test.py
           python3 tools/legal-release-assets.test.py
           python3 tools/windows-release-artifacts.test.py
@@ -339,26 +340,6 @@ jobs:
           tar -xf frontend-artifact/frontend-dist.tar -C frontend/dist
           test -s frontend/dist/index.html
 
-      - name: Install UPX (Windows)
-        if: matrix.platform == 'windows/amd64'
-        shell: pwsh
-        run: |
-          $UPX_VERSION = "4.2.4"
-          $url = "https://github.com/upx/upx/releases/download/v${UPX_VERSION}/upx-${UPX_VERSION}-win64.zip"
-          $zipPath = "$env:RUNNER_TEMP\upx.zip"
-          $extractPath = "$env:RUNNER_TEMP\upx"
-          Write-Host "📥 从 GitHub Releases 下载 UPX v${UPX_VERSION} ..."
-          Invoke-WebRequest -Uri $url -OutFile $zipPath -UseBasicParsing
-          Expand-Archive -Path $zipPath -DestinationPath $extractPath -Force
-          $upxDir = Get-ChildItem -Path $extractPath -Directory | Select-Object -First 1
-          "$($upxDir.FullName)" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
-          $upxCmd = Join-Path $upxDir.FullName "upx.exe"
-          if (!(Test-Path $upxCmd)) {
-            Write-Error "❌ 未检测到 upx，无法保证 Windows 产物经过压缩"
-            exit 1
-          }
-          & $upxCmd --version
-
       - name: Install WiX Toolset (Windows)
         if: contains(matrix.platform, 'windows')
         shell: pwsh
@@ -509,7 +490,7 @@ jobs:
       - name: Test Windows Online Updater (Windows AMD64)
         if: ${{ matrix.platform == 'windows/amd64' }}
         shell: pwsh
-        run: go test . ./internal/app -run '^(TestShouldEnableWindowsMSISingleInstanceOnlyForInstalledMainGUI|TestPrimaryWindowActivatorQueuesRequestsUntilRuntimeStartup|TestAcquireWindowsMSISingleInstance|TestResolveWindowsUpdateMaintenanceName|TestAcquireWindowsUpdateMaintenance|TestPrepareWindowsUpdateHandoff|TestWindowsPowerShellUpdater|TestExpectedAssetNameForExecutableUsesWindowsPortableSuffix|TestShouldWindowsUpdateLaunchDownloadedAssetDirectly|TestResolveUpdateInstallMode|TestExpectedAssetNameForWindowsInstallMode|TestResolveUpdateWorkspaceDirForPlatformSeparatesMSIFromInstallDirectory|TestValidateUpdatePackageForCurrentInstallMode|TestWindowsUpdateRequiresExplicitCloseConfirmation|TestInstallUpdateAndRestartRequiresCloseConfirmationOnWindows|TestInstallUpdateAndRestartMSI|TestFindOtherWindowsUpdateInstances|TestCloseWindowsUpdateInstances|TestInstallUpdateAndRestartClosesOtherTargetInstances|TestBuildWindowsMSIUpdatePowerShellScript|TestBuildWindowsMSILaunchCommand|TestResolveWindowsMSIExecPath)' -count=1 -timeout=3m
+        run: go test . ./internal/app -run '^(TestShouldEnableWindowsMSISingleInstanceOnlyForInstalledMainGUI|TestPrimaryWindowActivatorQueuesRequestsUntilRuntimeStartup|TestAcquireWindowsMSISingleInstance|TestResolveWindowsUpdateMaintenanceName|TestAcquireWindowsUpdateMaintenance|TestPrepareWindowsUpdateHandoff|TestWindowsPowerShellUpdater|TestBuildWindowsLaunchCommandUsesHiddenPowerShellFile|TestExpectedAssetNameForExecutableUsesWindowsPortableSuffix|TestShouldWindowsUpdateLaunchDownloadedAssetDirectly|TestResolveUpdateInstallMode|TestExpectedAssetNameForWindowsInstallMode|TestPortableUpdatePackageAcceptsZipAndLegacyExe|TestResolveReusableStagedUpdateForPlatformReusesPortableZipInsideStagedDir|TestResolveWindowsUpdateFinalTargetPathMapsDownloadedPortableZipToExe|TestResolveUpdateWorkspaceDirForPlatformSeparatesMSIFromInstallDirectory|TestValidateUpdatePackageForCurrentInstallMode|TestWindowsUpdateRequiresExplicitCloseConfirmation|TestInstallUpdateAndRestartRequiresCloseConfirmationOnWindows|TestInstallUpdateAndRestartMSI|TestFindOtherWindowsUpdateInstances|TestCloseWindowsUpdateInstances|TestInstallUpdateAndRestartClosesOtherTargetInstances|TestBuildWindowsMSIUpdatePowerShellScript|TestBuildWindowsMSILaunchCommand|TestResolveWindowsMSIExecPath)' -count=1 -timeout=3m
 
       - name: Build
         shell: bash
@@ -528,9 +509,9 @@ jobs:
           mkdir -p "$GOCACHE"
           echo "🧭 使用隔离 GOCACHE：$GOCACHE"
           if [ -n "${{ matrix.wails_tags }}" ]; then
-            wails build -s -skipbindings -platform ${{ matrix.platform }} -clean -o ${{ matrix.build_name }} -tags "${{ matrix.wails_tags }}" -ldflags "-s -w -X GoNavi-Wails/internal/app.AppVersion=${{ github.ref_name }}"
+            wails build -s -skipbindings -trimpath -platform ${{ matrix.platform }} -clean -o ${{ matrix.build_name }} -tags "${{ matrix.wails_tags }}" -ldflags "-s -w -X GoNavi-Wails/internal/app.AppVersion=${{ github.ref_name }}"
           else
-            wails build -s -skipbindings -platform ${{ matrix.platform }} -clean -o ${{ matrix.build_name }} -ldflags "-s -w -X GoNavi-Wails/internal/app.AppVersion=${{ github.ref_name }}"
+            wails build -s -skipbindings -trimpath -platform ${{ matrix.platform }} -clean -o ${{ matrix.build_name }} -ldflags "-s -w -X GoNavi-Wails/internal/app.AppVersion=${{ github.ref_name }}"
           fi
 
       - name: Resolve Platform Driver Revision Diff
@@ -848,7 +829,7 @@ jobs:
           mv "$DMG_NAME" "../../$FINAL_NAME"
 
       # Windows Packaging
-      - name: Package Windows Portable EXE and MSI
+      - name: Package Windows Portable ZIP, bridge EXE, and MSI
         if: contains(matrix.platform, 'windows')
         shell: pwsh
         run: |
@@ -860,6 +841,7 @@ jobs:
           $target = "${{ matrix.build_name }}"
           $archName = "${{ matrix.arch_name }}"
           $portableExeName = "GoNavi-$version-${{ matrix.os_name }}-$archName${{ matrix.artifact_suffix }}-Portable.exe"
+          $portableZipName = "GoNavi-$version-${{ matrix.os_name }}-$archName${{ matrix.artifact_suffix }}-Portable.zip"
           $msiName = "GoNavi-$version-${{ matrix.os_name }}-$archName${{ matrix.artifact_suffix }}-Installer.msi"
 
           if (Test-Path "$target.exe") {
@@ -872,39 +854,33 @@ jobs:
               exit 1
           }
 
-          $isArm64Target = "${{ matrix.arch_name }}".ToLowerInvariant() -eq "arm64"
-          if ($isArm64Target) {
-              Write-Warning "⚠️ UPX 当前不支持 win64/arm64，跳过压缩并保留原始 EXE。"
-              $LASTEXITCODE = 0
-          } else {
-              $upxCmd = Get-Command upx -ErrorAction SilentlyContinue
-              if ($null -eq $upxCmd) {
-                  Write-Error "❌ 未找到 upx，无法保证 Windows 产物经过压缩"
-                  exit 1
-              }
-              $beforeBytes = (Get-Item -LiteralPath $finalExe).Length
-              Write-Host "🗜️ 使用 UPX 压缩 $finalExe ..."
-              & upx --best --lzma --force $finalExe | Out-Host
-              if ($LASTEXITCODE -ne 0) {
-                  Write-Error "❌ UPX 压缩失败（$LASTEXITCODE）"
-                  exit 1
-              }
-              & upx -t $finalExe | Out-Host
-              if ($LASTEXITCODE -ne 0) {
-                  Write-Error "❌ UPX 校验失败（$LASTEXITCODE）"
-                  exit 1
-              }
-              $afterBytes = (Get-Item -LiteralPath $finalExe).Length
-              if ($afterBytes -lt $beforeBytes) {
-                  $savedBytes = $beforeBytes - $afterBytes
-                  Write-Host ("✅ UPX 压缩完成：{0:N2}MB -> {1:N2}MB，减少 {2:N2}MB" -f ($beforeBytes / 1MB), ($afterBytes / 1MB), ($savedBytes / 1MB))
-              } else {
-                  Write-Host ("ℹ️ UPX 压缩完成：{0:N2}MB -> {1:N2}MB" -f ($beforeBytes / 1MB), ($afterBytes / 1MB))
-              }
-          }
+          Write-Host "ℹ️ 保留 Wails 原始 Windows EXE，避免可执行文件打包器增加杀毒软件误报。"
 
-          Write-Host "📦 输出 Windows Portable 可执行文件 $portableExeName..."
-          Copy-Item -LiteralPath $finalExe -Destination "..\\..\\$portableExeName" -Force
+          $releaseRoot = (Resolve-Path -LiteralPath "..\\..").Path
+          $licenseFile = (Resolve-Path -LiteralPath "..\\..\\LICENSE").Path
+          $noticeFile = (Resolve-Path -LiteralPath "..\\..\\NOTICE").Path
+
+          Write-Host "📦 输出旧客户端兼容 EXE $portableExeName..."
+          Copy-Item -LiteralPath $finalExe -Destination (Join-Path $releaseRoot $portableExeName) -Force
+
+          $portableDir = Join-Path $env:RUNNER_TEMP "gonavi-portable-$archName"
+          if (Test-Path -LiteralPath $portableDir) {
+              Remove-Item -LiteralPath $portableDir -Recurse -Force
+          }
+          New-Item -ItemType Directory -Path $portableDir -Force | Out-Null
+          $portableApp = Join-Path $portableDir "GoNavi.exe"
+          $portableLicense = Join-Path $portableDir "LICENSE"
+          $portableNotice = Join-Path $portableDir "NOTICE"
+          Copy-Item -LiteralPath $finalExe -Destination $portableApp -Force
+          Copy-Item -LiteralPath $licenseFile -Destination $portableLicense -Force
+          Copy-Item -LiteralPath $noticeFile -Destination $portableNotice -Force
+          $portableFiles = @($portableApp, $portableLicense, $portableNotice)
+          $portableZipPath = Join-Path $releaseRoot $portableZipName
+          Write-Host "📦 生成普通 Windows Portable ZIP $portableZipName..."
+          Compress-Archive -LiteralPath $portableFiles -DestinationPath $portableZipPath -CompressionLevel Optimal -Force
+          if (-not (Test-Path -LiteralPath $portableZipPath -PathType Leaf) -or (Get-Item -LiteralPath $portableZipPath).Length -le 0) {
+              throw "Windows Portable ZIP 生成失败: $portableZipPath"
+          }
 
           if ($version -match '^(?<major>\d+)\.(?<minor>\d+)\.(?<build>\d+)(?:[-+].*)?$') {
               $major = [int]$Matches.major
@@ -929,8 +905,6 @@ jobs:
               "114030DD-DB5F-460A-9CAC-997680E9F938"
           }
 
-          $licenseFile = (Resolve-Path -LiteralPath "..\\..\\LICENSE").Path
-          $noticeFile = (Resolve-Path -LiteralPath "..\\..\\NOTICE").Path
           $licenseText = Get-Content -LiteralPath $licenseFile -Raw
           $escapedLicense = $licenseText.Replace('\', '\\').Replace('{', '\{').Replace('}', '\}')
           $escapedLicense = $escapedLicense -replace "`r?`n", "\par`r`n"
@@ -1072,6 +1046,7 @@ jobs:
           path: |
             GoNavi-*.dmg
             GoNavi-*.exe
+            GoNavi-*.zip
             GoNavi-*.msi
             GoNavi-*.tar.gz
             GoNavi-*.AppImage

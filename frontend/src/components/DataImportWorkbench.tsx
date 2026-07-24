@@ -1,17 +1,33 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Button, Empty, Select, Typography, message } from 'antd';
-import { FileAddOutlined, ImportOutlined } from '@ant-design/icons';
+import { Alert, Button, Empty, Segmented, Select, Typography, message } from 'antd';
+import {
+  DatabaseOutlined,
+  FileAddOutlined,
+  ImportOutlined,
+  TableOutlined,
+} from '@ant-design/icons';
 
-import { DBGetDatabases, DBGetTables, ImportData } from '../../wailsjs/go/app/App';
+import {
+  DBGetDatabases,
+  DBGetTables,
+  ImportData,
+  SelectSQLFileForExecution,
+} from '../../wailsjs/go/app/App';
 import { useStore } from '../store';
 import type { SavedConnection, TabData } from '../types';
 import { t as defaultTranslate } from '../i18n';
 import { useOptionalI18n } from '../i18n/provider';
 import { BACKEND_CANCELLED_MESSAGE } from '../utils/connectionExport';
 import { buildRpcConnectionConfig } from '../utils/connectionRpcConfig';
-import { isConnectionDataImportRestricted } from '../utils/connectionReadOnly';
+import {
+  isConnectionDataImportRestricted,
+  isConnectionScriptExecutionRestricted,
+  isConnectionStructureEditRestricted,
+} from '../utils/connectionReadOnly';
 import { getDataSourceCapabilities } from '../utils/dataSourceCapabilities';
 import { normalizeTableNamesFromMetadataRows } from '../utils/tableMetadataRows';
+import type { DataImportMode } from '../utils/dataImportTab';
+import DatabaseImportExecutionPanel from './DatabaseImportExecutionPanel';
 import ImportPreviewModal from './ImportPreviewModal';
 import './DataImportWorkbench.css';
 
@@ -56,10 +72,20 @@ const getFileName = (filePath: string): string => {
   return parts[parts.length - 1] || filePath;
 };
 
-const isEligibleImportConnection = (connection: SavedConnection): boolean => (
-  getDataSourceCapabilities(connection.config).supportsCopyInsert
-  && !isConnectionDataImportRestricted(connection.config)
-);
+const isEligibleImportConnection = (
+  connection: SavedConnection,
+  mode: DataImportMode,
+): boolean => {
+  const capabilities = getDataSourceCapabilities(connection.config);
+  if (mode === 'table') {
+    return capabilities.supportsCopyInsert
+      && !isConnectionDataImportRestricted(connection.config);
+  }
+  return capabilities.supportsSqlQueryExport
+    && !isConnectionDataImportRestricted(connection.config)
+    && !isConnectionStructureEditRestricted(connection.config)
+    && !isConnectionScriptExecutionRestricted(connection.config);
+};
 
 const DataImportWorkbench: React.FC<{ tab: TabData }> = ({ tab }) => {
   const i18n = useOptionalI18n();
@@ -67,9 +93,12 @@ const DataImportWorkbench: React.FC<{ tab: TabData }> = ({ tab }) => {
   const connections = useStore((state) => state.connections);
   const darkMode = useStore((state) => state.theme === 'dark');
   const addTab = useStore((state) => state.addTab);
+  const [importMode, setImportMode] = useState<DataImportMode>(
+    () => (tab.dataImportMode === 'database' ? 'database' : 'table'),
+  );
   const eligibleConnections = useMemo(
-    () => connections.filter(isEligibleImportConnection),
-    [connections],
+    () => connections.filter((connection) => isEligibleImportConnection(connection, importMode)),
+    [connections, importMode],
   );
   const connectionOptions = useMemo<SelectOption[]>(
     () => eligibleConnections.map((connection) => ({
@@ -86,6 +115,7 @@ const DataImportWorkbench: React.FC<{ tab: TabData }> = ({ tab }) => {
   const [databaseOptions, setDatabaseOptions] = useState<SelectOption[]>([]);
   const [tableOptions, setTableOptions] = useState<SelectOption[]>([]);
   const [filePath, setFilePath] = useState('');
+  const [fileSizeMB, setFileSizeMB] = useState('');
   const [loadingDatabases, setLoadingDatabases] = useState(false);
   const [loadingTables, setLoadingTables] = useState(false);
   const [selectingFile, setSelectingFile] = useState(false);
@@ -116,18 +146,43 @@ const DataImportWorkbench: React.FC<{ tab: TabData }> = ({ tab }) => {
     });
   }, [addTab]);
 
+  const invalidateFileSelection = useCallback(() => {
+    fileSelectionRequestRef.current += 1;
+    setSelectingFile(false);
+    setFilePath('');
+    setFileSizeMB('');
+  }, []);
+
   useEffect(() => {
     if (importing) return;
-    const prefillKey = [tab.connectionId, tab.dbName, tab.tableName]
+    const nextMode: DataImportMode = tab.dataImportMode === 'database' ? 'database' : 'table';
+    const prefillKey = [
+      tab.dataImportLaunchKey,
+      nextMode,
+      tab.connectionId,
+      tab.dbName,
+      nextMode === 'table' ? tab.tableName : '',
+    ]
       .map((value) => String(value || '').trim())
       .join('::');
     if (appliedPrefillRef.current === prefillKey) return;
     appliedPrefillRef.current = prefillKey;
+    setImportMode(nextMode);
     setSelectedConnectionId(String(tab.connectionId || '').trim());
     setSelectedDbName(String(tab.dbName || '').trim());
-    setSelectedTableName(String(tab.tableName || '').trim());
-    setFilePath('');
-  }, [importing, tab.connectionId, tab.dbName, tab.tableName]);
+    setSelectedTableName(nextMode === 'table' ? String(tab.tableName || '').trim() : '');
+    setDatabaseError('');
+    setTableError('');
+    invalidateFileSelection();
+  }, [
+    importing,
+    invalidateFileSelection,
+    tab.connectionId,
+    tab.dataImportLaunchKey,
+    tab.dataImportMode,
+    tab.dbName,
+    tab.tableName,
+  ]);
 
   useEffect(() => {
     if (importing) return;
@@ -137,14 +192,23 @@ const DataImportWorkbench: React.FC<{ tab: TabData }> = ({ tab }) => {
     setSelectedConnectionId(nextConnectionId);
     setSelectedDbName('');
     setSelectedTableName('');
-    setFilePath('');
+    invalidateFileSelection();
     syncWorkbenchTab({
       connectionId: nextConnectionId,
       dbName: undefined,
       tableName: undefined,
+      dataImportMode: importMode,
       dataImportRunning: false,
     });
-  }, [connections.length, eligibleConnections, importing, selectedConnectionId, syncWorkbenchTab]);
+  }, [
+    connections.length,
+    eligibleConnections,
+    importMode,
+    importing,
+    invalidateFileSelection,
+    selectedConnectionId,
+    syncWorkbenchTab,
+  ]);
 
   useEffect(() => {
     if (!selectedConnectionConfig || !selectedConnection) {
@@ -165,7 +229,7 @@ const DataImportWorkbench: React.FC<{ tab: TabData }> = ({ tab }) => {
           setSelectedDbName('');
           setSelectedTableName('');
           setTableOptions([]);
-          setFilePath('');
+          invalidateFileSelection();
           setDatabaseError(t('data_import.workbench.message.load_databases_failed', {
             detail: res.message || '',
           }));
@@ -191,7 +255,7 @@ const DataImportWorkbench: React.FC<{ tab: TabData }> = ({ tab }) => {
         setSelectedDbName('');
         setSelectedTableName('');
         setTableOptions([]);
-        setFilePath('');
+        invalidateFileSelection();
         setDatabaseError(t('data_import.workbench.message.load_databases_failed', {
           detail: error?.message || String(error),
         }));
@@ -203,10 +267,10 @@ const DataImportWorkbench: React.FC<{ tab: TabData }> = ({ tab }) => {
     return () => {
       alive = false;
     };
-  }, [selectedConnection, selectedConnectionConfig, t]);
+  }, [invalidateFileSelection, selectedConnection, selectedConnectionConfig, t]);
 
   useEffect(() => {
-    if (!selectedConnectionConfig || !selectedDbName) {
+    if (importMode !== 'table' || !selectedConnectionConfig || !selectedDbName) {
       setTableOptions([]);
       setLoadingTables(false);
       setTableError('');
@@ -222,7 +286,7 @@ const DataImportWorkbench: React.FC<{ tab: TabData }> = ({ tab }) => {
         if (!res.success) {
           setTableOptions([]);
           setSelectedTableName('');
-          setFilePath('');
+          invalidateFileSelection();
           setTableError(t('data_import.workbench.message.load_tables_failed', {
             detail: res.message || '',
           }));
@@ -237,7 +301,7 @@ const DataImportWorkbench: React.FC<{ tab: TabData }> = ({ tab }) => {
         if (!alive) return;
         setTableOptions([]);
         setSelectedTableName('');
-        setFilePath('');
+        invalidateFileSelection();
         setTableError(t('data_import.workbench.message.load_tables_failed', {
           detail: error?.message || String(error),
         }));
@@ -249,54 +313,71 @@ const DataImportWorkbench: React.FC<{ tab: TabData }> = ({ tab }) => {
     return () => {
       alive = false;
     };
-  }, [selectedConnectionConfig, selectedDbName, t]);
+  }, [importMode, invalidateFileSelection, selectedConnectionConfig, selectedDbName, t]);
 
   const clearSelectedFile = () => {
-    fileSelectionRequestRef.current += 1;
-    setFilePath('');
+    invalidateFileSelection();
+  };
+
+  const handleModeChange = (value: string | number) => {
+    const nextMode: DataImportMode = value === 'database' ? 'database' : 'table';
+    if (nextMode === importMode || importing) return;
+    invalidateFileSelection();
+    setImportMode(nextMode);
+    setSelectedTableName('');
+    setTableOptions([]);
+    setTableError('');
+    syncWorkbenchTab({
+      connectionId: selectedConnectionId,
+      dbName: selectedDbName || undefined,
+      tableName: undefined,
+      dataImportMode: nextMode,
+      dataImportRunning: false,
+    });
   };
 
   const handleConnectionChange = (connectionId: string) => {
-    fileSelectionRequestRef.current += 1;
+    invalidateFileSelection();
     setSelectedConnectionId(connectionId);
     setSelectedDbName('');
     setSelectedTableName('');
     setDatabaseOptions([]);
     setTableOptions([]);
-    setFilePath('');
     setDatabaseError('');
     setTableError('');
     syncWorkbenchTab({
       connectionId,
       dbName: undefined,
       tableName: undefined,
+      dataImportMode: importMode,
       dataImportRunning: false,
     });
   };
 
-  const handleDatabaseChange = (dbName: string) => {
-    fileSelectionRequestRef.current += 1;
+  const handleDatabaseChange = (value?: string) => {
+    const dbName = String(value || '').trim();
+    invalidateFileSelection();
     setSelectedDbName(dbName);
     setSelectedTableName('');
     setTableOptions([]);
-    setFilePath('');
     setTableError('');
     syncWorkbenchTab({
       connectionId: selectedConnectionId,
       dbName,
       tableName: undefined,
+      dataImportMode: importMode,
       dataImportRunning: false,
     });
   };
 
   const handleTableChange = (tableName: string) => {
-    fileSelectionRequestRef.current += 1;
+    invalidateFileSelection();
     setSelectedTableName(tableName);
-    setFilePath('');
     syncWorkbenchTab({
       connectionId: selectedConnectionId,
       dbName: selectedDbName,
       tableName,
+      dataImportMode: importMode,
       dataImportRunning: false,
     });
   };
@@ -306,26 +387,33 @@ const DataImportWorkbench: React.FC<{ tab: TabData }> = ({ tab }) => {
     syncWorkbenchTab({
       connectionId: selectedConnectionId,
       dbName: selectedDbName || undefined,
-      tableName: selectedTableName || undefined,
+      tableName: importMode === 'table' ? selectedTableName || undefined : undefined,
+      dataImportMode: importMode,
       dataImportRunning: nextImporting,
     });
-  }, [selectedConnectionId, selectedDbName, selectedTableName, syncWorkbenchTab]);
+  }, [importMode, selectedConnectionId, selectedDbName, selectedTableName, syncWorkbenchTab]);
 
   const handleSelectFile = async () => {
-    if (!selectedConnectionConfig || !selectedDbName || !selectedTableName) return;
+    if (!selectedConnectionConfig) return;
+    if (importMode === 'table' && (!selectedDbName || !selectedTableName)) return;
     const requestId = fileSelectionRequestRef.current + 1;
     fileSelectionRequestRef.current = requestId;
     setSelectingFile(true);
     try {
-      const res = await ImportData(
-        buildRpcConnectionConfig(selectedConnectionConfig) as any,
-        selectedDbName,
-        selectedTableName,
-      );
+      const res = importMode === 'database'
+        ? await SelectSQLFileForExecution()
+        : await ImportData(
+            buildRpcConnectionConfig(selectedConnectionConfig) as any,
+            selectedDbName,
+            selectedTableName,
+          );
       if (fileSelectionRequestRef.current !== requestId) return;
       const nextFilePath = String(res?.data?.filePath || '').trim();
       if (res.success && nextFilePath) {
         setFilePath(nextFilePath);
+        setFileSizeMB(importMode === 'database'
+          ? String(res?.data?.fileSizeMB || '').trim()
+          : '');
         return;
       }
       if (String(res?.message || '').trim() !== BACKEND_CANCELLED_MESSAGE) {
@@ -363,11 +451,46 @@ const DataImportWorkbench: React.FC<{ tab: TabData }> = ({ tab }) => {
         background: shellBackground,
       }}
     >
-      <header style={{ padding: '20px 24px 16px', background: panelBackground, borderBottom: panelBorder }}>
-        <Title level={4} style={{ margin: 0, letterSpacing: 0 }}>
-          {t('data_import.workbench.title')}
-        </Title>
-        <Text type="secondary">{t('data_import.workbench.description')}</Text>
+      <header
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 16,
+          flexWrap: 'wrap',
+          padding: '20px 24px 16px',
+          background: panelBackground,
+          borderBottom: panelBorder,
+        }}
+      >
+        <div>
+          <Title level={4} style={{ margin: 0, letterSpacing: 0 }}>
+            {t('data_import.workbench.title')}
+          </Title>
+          <Text type="secondary">
+            {importMode === 'database'
+              ? t('data_import.workbench.description.database')
+              : t('data_import.workbench.description')}
+          </Text>
+        </div>
+        <Segmented
+          data-import-mode-selector="true"
+          value={importMode}
+          disabled={importing}
+          options={[
+            {
+              value: 'table',
+              label: t('data_import.workbench.mode.table'),
+              icon: <TableOutlined />,
+            },
+            {
+              value: 'database',
+              label: t('data_import.workbench.mode.database'),
+              icon: <DatabaseOutlined />,
+            },
+          ]}
+          onChange={handleModeChange}
+        />
       </header>
 
       <div
@@ -408,46 +531,59 @@ const DataImportWorkbench: React.FC<{ tab: TabData }> = ({ tab }) => {
             </label>
 
             <label style={{ display: 'grid', gap: 6 }}>
-              <Text type="secondary">{t('data_import.workbench.label.database')}</Text>
+              <Text type="secondary">
+                {importMode === 'database'
+                  ? t('data_import.workbench.label.default_database')
+                  : t('data_import.workbench.label.database')}
+              </Text>
               <Select
                 data-import-target-field="database"
                 value={selectedDbName || undefined}
                 options={databaseOptions}
                 placeholder={loadingDatabases
                   ? t('data_import.workbench.placeholder.loading_databases')
-                  : t('data_import.workbench.placeholder.select_database')}
+                  : importMode === 'database'
+                    ? t('data_import.workbench.placeholder.select_default_database')
+                    : t('data_import.workbench.placeholder.select_database')}
                 loading={loadingDatabases}
                 showSearch
+                allowClear={importMode === 'database'}
                 optionFilterProp="title"
                 disabled={targetLocked || !selectedConnectionId || loadingDatabases}
                 onChange={handleDatabaseChange}
               />
             </label>
 
-            <label style={{ display: 'grid', gap: 6 }}>
-              <Text type="secondary">{t('data_import.workbench.label.table')}</Text>
-              <Select
-                data-import-target-field="table"
-                value={selectedTableName || undefined}
-                options={tableOptions}
-                placeholder={!selectedDbName
-                  ? t('data_import.workbench.placeholder.select_database_first')
-                  : loadingTables
-                    ? t('data_import.workbench.placeholder.loading_tables')
-                    : t('data_import.workbench.placeholder.select_table')}
-                loading={loadingTables}
-                showSearch
-                optionFilterProp="title"
-                disabled={targetLocked || !selectedDbName || loadingTables}
-                onChange={handleTableChange}
-              />
-            </label>
+            {importMode === 'table' ? (
+              <label style={{ display: 'grid', gap: 6 }}>
+                <Text type="secondary">{t('data_import.workbench.label.table')}</Text>
+                <Select
+                  data-import-target-field="table"
+                  value={selectedTableName || undefined}
+                  options={tableOptions}
+                  placeholder={!selectedDbName
+                    ? t('data_import.workbench.placeholder.select_database_first')
+                    : loadingTables
+                      ? t('data_import.workbench.placeholder.loading_tables')
+                      : t('data_import.workbench.placeholder.select_table')}
+                  loading={loadingTables}
+                  showSearch
+                  optionFilterProp="title"
+                  disabled={targetLocked || !selectedDbName || loadingTables}
+                  onChange={handleTableChange}
+                />
+              </label>
+            ) : null}
 
             {databaseError && <Alert type="error" showIcon message={databaseError} />}
-            {tableError && <Alert type="error" showIcon message={tableError} />}
+            {importMode === 'table' && tableError && <Alert type="error" showIcon message={tableError} />}
 
             <div style={{ display: 'grid', gap: 6 }}>
-              <Text type="secondary">{t('data_import.workbench.label.file')}</Text>
+              <Text type="secondary">
+                {importMode === 'database'
+                  ? t('data_import.workbench.label.sql_file')
+                  : t('data_import.workbench.label.file')}
+              </Text>
               {filePath && (
                 <div
                   title={filePath}
@@ -471,15 +607,25 @@ const DataImportWorkbench: React.FC<{ tab: TabData }> = ({ tab }) => {
                 type="primary"
                 icon={filePath ? <FileAddOutlined /> : <ImportOutlined />}
                 loading={selectingFile}
-                disabled={importing || !selectedConnectionConfig || !selectedDbName || !selectedTableName}
+                disabled={
+                  importing
+                  || !selectedConnectionConfig
+                  || (importMode === 'table' && (!selectedDbName || !selectedTableName))
+                }
                 onClick={() => void handleSelectFile()}
               >
-                {filePath
-                  ? t('data_import.workbench.action.change_file')
-                  : t('data_import.workbench.action.select_file')}
+                {importMode === 'database'
+                  ? filePath
+                    ? t('data_import.workbench.action.change_sql_file')
+                    : t('data_import.workbench.action.select_sql_file')
+                  : filePath
+                    ? t('data_import.workbench.action.change_file')
+                    : t('data_import.workbench.action.select_file')}
               </Button>
               <Text type="secondary" style={{ fontSize: 12 }}>
-                {t('data_import.workbench.helper.file_formats')}
+                {importMode === 'database'
+                  ? t('data_import.workbench.helper.sql_file')
+                  : t('data_import.workbench.helper.file_formats')}
               </Text>
             </div>
           </div>
@@ -497,26 +643,45 @@ const DataImportWorkbench: React.FC<{ tab: TabData }> = ({ tab }) => {
           }}
         >
           {filePath ? (
-            <ImportPreviewModal
-              visible
-              presentation="embedded"
-              filePath={filePath}
-              connectionId={selectedConnectionId}
-              dbName={selectedDbName}
-              tableName={selectedTableName}
-              onClose={clearSelectedFile}
-              onImportingChange={handleImportingChange}
-              onSuccess={() => {
-                void message.success(t('data_import.workbench.message.import_done'));
-              }}
-            />
+            importMode === 'database' ? (
+              <DatabaseImportExecutionPanel
+                connectionConfig={selectedConnectionConfig}
+                dbName={selectedDbName}
+                filePath={filePath}
+                fileSizeMB={fileSizeMB}
+                darkMode={darkMode}
+                onRunningChange={handleImportingChange}
+              />
+            ) : (
+              <ImportPreviewModal
+                visible
+                presentation="embedded"
+                filePath={filePath}
+                connectionId={selectedConnectionId}
+                dbName={selectedDbName}
+                tableName={selectedTableName}
+                onClose={clearSelectedFile}
+                onImportingChange={handleImportingChange}
+                onSuccess={() => {
+                  void message.success(t('data_import.workbench.message.import_done'));
+                }}
+              />
+            )
           ) : (
             <Empty
               image={Empty.PRESENTED_IMAGE_SIMPLE}
               description={(
                 <div style={{ display: 'grid', gap: 4 }}>
-                  <Text strong>{t('data_import.workbench.state.awaiting_file_title')}</Text>
-                  <Text type="secondary">{t('data_import.workbench.state.awaiting_file_description')}</Text>
+                  <Text strong>
+                    {importMode === 'database'
+                      ? t('data_import.workbench.state.awaiting_sql_title')
+                      : t('data_import.workbench.state.awaiting_file_title')}
+                  </Text>
+                  <Text type="secondary">
+                    {importMode === 'database'
+                      ? t('data_import.workbench.state.awaiting_sql_description')
+                      : t('data_import.workbench.state.awaiting_file_description')}
+                  </Text>
                 </div>
               )}
             />

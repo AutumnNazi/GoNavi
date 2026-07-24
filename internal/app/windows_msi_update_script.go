@@ -37,7 +37,7 @@ func buildWindowsMSILaunchCommand(scriptPath string, context windowsMSIUpdateLau
 		"-NoProfile",
 		"-NonInteractive",
 		"-ExecutionPolicy",
-		"Bypass",
+		windowsUpdatePowerShellExecutionPolicy,
 		"-File",
 		scriptPath,
 	)

@@ -43,7 +43,7 @@ describe('Sidebar schema export feedback i18n', () => {
     expect(block).toContain('schemaName,');
     expect(block).toContain("contentMode: includeData ? 'backup' : 'schema'");
     expect(block).toContain('includeDropIfExists: exportOptions.includeDropIfExists');
-    expect(block).toContain("requestKey: createTableExportRequestKey('schema')");
+    expect(block).toContain("requestKey: createTableExportKey('schema')");
     expect(block).not.toContain('ExportSchemaSQLWithOptions(');
     expect(block).not.toContain('message.loading(');
     expect(executionBlock).toContain('await runExportWithProgress({');

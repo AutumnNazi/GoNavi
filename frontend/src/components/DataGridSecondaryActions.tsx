@@ -1,5 +1,5 @@
 import React from 'react';
-import { Button, Popover } from 'antd';
+import { Button, Popover, Tooltip } from 'antd';
 import {
   AimOutlined,
   BugOutlined,
@@ -23,8 +23,6 @@ export interface DataGridSecondaryActionsProps {
   ddlLoading: boolean;
   showColumnComment: boolean;
   showColumnType: boolean;
-  mergedDisplayCount: number;
-  pendingChangeCount: number;
   resultViewSwitcher: React.ReactNode;
   columnInfoSettingContent: React.ReactNode;
   columnQuickFindContent: React.ReactNode;
@@ -46,8 +44,6 @@ const DataGridSecondaryActions: React.FC<DataGridSecondaryActionsProps> = ({
   ddlLoading,
   showColumnComment,
   showColumnType,
-  mergedDisplayCount,
-  pendingChangeCount,
   resultViewSwitcher,
   columnInfoSettingContent,
   columnQuickFindContent,
@@ -60,11 +56,14 @@ const DataGridSecondaryActions: React.FC<DataGridSecondaryActionsProps> = ({
   onOpenTableDdl,
   translate = defaultTranslate,
 }) => {
+  const [columnDisplayOpen, setColumnDisplayOpen] = React.useState(false);
+
   if (isV2Ui) {
     const fieldsActionLabel = canOpenObjectDesigner
       ? translate('data_grid.secondary.object_design')
       : translate('data_grid.column_settings.field_info');
     const fieldsActionIcon = canOpenObjectDesigner ? <EditOutlined /> : <FileTextOutlined />;
+    const columnDisplayLabel = translate('data_grid.secondary.column_display');
     const viewTabItems: Array<{ key: GridViewMode; label: string; icon: React.ReactNode; disabled?: boolean }> = [
       { key: 'table', label: translate('data_grid.secondary.data_preview'), icon: <TableOutlined /> },
       { key: 'fields', label: fieldsActionLabel, icon: fieldsActionIcon },
@@ -77,38 +76,54 @@ const DataGridSecondaryActions: React.FC<DataGridSecondaryActionsProps> = ({
       <div data-grid-secondary-actions="true" className="gn-v2-data-grid-statusbar">
         <div className="gn-v2-data-grid-status-main">
           <div className="gn-v2-data-grid-view-tabs">
-            {viewTabItems.map((item) => (
-              <Button
-                data-grid-ddl-action={item.key === 'ddl' && canViewDdl ? 'true' : undefined}
-                key={item.key}
-                size="small"
-                type={viewMode === item.key || (item.key === 'table' && (viewMode === 'json' || viewMode === 'text')) ? 'primary' : 'text'}
-                icon={item.icon}
-                disabled={item.disabled}
-                loading={item.key === 'ddl' && ddlLoading}
-                onClick={() => {
-                  if (item.key === 'table') {
-                    onViewModeChange('table');
-                    return;
-                  }
-                  onViewModeChange(item.key);
-                }}
-              >
-                {item.label}
-              </Button>
-            ))}
+            {viewTabItems.map((item) => {
+              const isActive = viewMode === item.key
+                || (item.key === 'table' && (viewMode === 'json' || viewMode === 'text'));
+
+              return (
+                <Tooltip key={item.key} title={item.label}>
+                  <Button
+                    data-grid-ddl-action={item.key === 'ddl' && canViewDdl ? 'true' : undefined}
+                    className="gn-v2-data-grid-toolbar-action"
+                    aria-label={item.label}
+                    aria-pressed={isActive}
+                    size="small"
+                    type={isActive ? 'primary' : 'text'}
+                    icon={item.icon}
+                    disabled={item.disabled}
+                    loading={item.key === 'ddl' && ddlLoading}
+                    onClick={() => {
+                      if (item.key === 'table') {
+                        onViewModeChange('table');
+                        return;
+                      }
+                      onViewModeChange(item.key);
+                    }}
+                  />
+                </Tooltip>
+              );
+            })}
           </div>
           <div className="gn-v2-toolbar-divider" />
           {resultViewSwitcher}
-          <Popover trigger="click" placement="topRight" content={columnInfoSettingContent}>
-            <Button
-              data-grid-column-display-action="true"
-              size="small"
-              type={showColumnComment || showColumnType ? 'primary' : 'text'}
-              icon={<FileTextOutlined />}
-            >
-              {translate('data_grid.secondary.column_display')}
-            </Button>
+          <Popover
+            trigger="click"
+            placement="topRight"
+            content={columnInfoSettingContent}
+            open={columnDisplayOpen}
+            onOpenChange={setColumnDisplayOpen}
+          >
+            <Tooltip title={columnDisplayLabel} open={columnDisplayOpen ? false : undefined}>
+              <Button
+                data-grid-column-display-action="true"
+                className="gn-v2-data-grid-toolbar-action"
+                aria-label={columnDisplayLabel}
+                aria-pressed={showColumnComment || showColumnType}
+                size="small"
+                type={showColumnComment || showColumnType ? 'primary' : 'text'}
+                icon={<FileTextOutlined />}
+              />
+            </Tooltip>
           </Popover>
           <Popover trigger="click" placement="topRight" content={<div style={{ padding: 4 }}>{columnQuickFindContent}</div>}>
             <Button
@@ -116,16 +131,10 @@ const DataGridSecondaryActions: React.FC<DataGridSecondaryActionsProps> = ({
               size="small"
               type="text"
               icon={<AimOutlined />}
-            >
+          >
               {translate('data_grid.secondary.jump_column')}
             </Button>
           </Popover>
-          {pageFindContent}
-          <div className="gn-v2-data-grid-status-center">
-            <span className="gn-v2-data-grid-live">{translate('data_grid.secondary.live')}</span>
-            <span>{translate('data_grid.secondary.row_count', { count: mergedDisplayCount })}</span>
-            <span>{translate('data_grid.secondary.pending_changes', { count: pendingChangeCount })}</span>
-          </div>
         </div>
         <div className="gn-v2-data-grid-status-right">
           {paginationContent}

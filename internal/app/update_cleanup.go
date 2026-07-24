@@ -173,8 +173,9 @@ func resolveWindowsUpdateFinalTargetPath(currentTarget string, sourcePath string
 	}
 	currentName := filepath.Base(currentTarget)
 	sourceName := filepath.Base(strings.TrimSpace(sourcePath))
-	if isVersionedWindowsUpdatePackageName(currentName) && isVersionedWindowsUpdatePackageName(sourceName) {
-		return filepath.Join(filepath.Dir(currentTarget), sourceName)
+	sourceExecutableName := resolveVersionedWindowsUpdateExecutableName(sourceName)
+	if isVersionedWindowsUpdatePackageName(currentName) && sourceExecutableName != "" {
+		return filepath.Join(filepath.Dir(currentTarget), sourceExecutableName)
 	}
 	return currentTarget
 }
@@ -185,6 +186,22 @@ func isVersionedWindowsUpdatePackageName(name string) bool {
 	return strings.HasPrefix(trimmed, "GoNavi-") &&
 		strings.Contains(trimmed, "-Windows-") &&
 		strings.HasSuffix(lower, ".exe")
+}
+
+func resolveVersionedWindowsUpdateExecutableName(name string) string {
+	trimmed := strings.TrimSpace(name)
+	if !strings.HasPrefix(trimmed, "GoNavi-") || !strings.Contains(trimmed, "-Windows-") {
+		return ""
+	}
+	extension := filepath.Ext(trimmed)
+	switch strings.ToLower(extension) {
+	case ".exe":
+		return trimmed
+	case ".zip":
+		return strings.TrimSuffix(trimmed, extension) + ".exe"
+	default:
+		return ""
+	}
 }
 
 func prepareWindowsStagedUpdateAsset(sourcePath string, stagedDir string) (string, error) {

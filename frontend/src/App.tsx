@@ -1,7 +1,7 @@
 ﻿import Modal from './components/common/ResizableDraggableModal';
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Layout, Button, ConfigProvider, theme, message, Spin, Slider, Progress, Switch, Input, InputNumber, Select, Segmented, Tooltip, Alert } from 'antd';
-import { PlusOutlined, ConsoleSqlOutlined, UploadOutlined, DownloadOutlined, CloudDownloadOutlined, BugOutlined, GlobalOutlined, InfoCircleOutlined, GithubOutlined, SkinOutlined, CheckOutlined, MinusOutlined, BorderOutlined, CloseOutlined, SettingOutlined, LinkOutlined, BgColorsOutlined, AppstoreOutlined, RobotOutlined, FolderOpenOutlined, HddOutlined, SafetyCertificateOutlined, SwitcherOutlined, CodeOutlined, RightOutlined, TableOutlined, MenuOutlined, PoweroffOutlined, TagOutlined, UserOutlined, UpCircleOutlined, MessageOutlined, FileTextOutlined, SyncOutlined, SendOutlined, AuditOutlined } from '@ant-design/icons';
+import { PlusOutlined, ConsoleSqlOutlined, UploadOutlined, DownloadOutlined, CloudDownloadOutlined, BugOutlined, GlobalOutlined, InfoCircleOutlined, GithubOutlined, SkinOutlined, CheckOutlined, MinusOutlined, BorderOutlined, CloseOutlined, SettingOutlined, LinkOutlined, BgColorsOutlined, AppstoreOutlined, RobotOutlined, FolderOpenOutlined, HddOutlined, SafetyCertificateOutlined, SwitcherOutlined, CodeOutlined, RightOutlined, TableOutlined, MenuOutlined, MenuFoldOutlined, MenuUnfoldOutlined, PoweroffOutlined, TagOutlined, UserOutlined, UpCircleOutlined, MessageOutlined, FileTextOutlined, SyncOutlined, SendOutlined, AuditOutlined } from '@ant-design/icons';
 import { DndContext, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
 import { arrayMove, SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -46,6 +46,7 @@ import {
   MIN_V2_SIDEBAR_RAIL_SCALE,
   sanitizeV2SidebarRailScale,
   type ThemePreference,
+  flushAppStatePersistence,
   useStore,
 } from './store';
 import { useCustomThemeStore } from './customThemeStore';
@@ -58,6 +59,12 @@ import {
   sanitizeDataTableFontSize,
   sanitizeSidebarTreeFontSize,
 } from './utils/dataGridDisplay';
+import {
+  MAX_SQL_EDITOR_FONT_SIZE,
+  MIN_SQL_EDITOR_FONT_SIZE,
+  resolveSqlEditorFontSize,
+  sanitizeSqlEditorFontSize,
+} from './utils/sqlEditorTypography';
 import {
   TAB_DISPLAY_SECONDARY_DEFAULT_KEYS,
   TAB_DISPLAY_ELEMENT_META,
@@ -203,7 +210,9 @@ import {
   collectApplicationQuitUnsavedSQLTargets,
   saveApplicationQuitUnsavedSQLTargets,
 } from './utils/sqlEditorApplicationQuit';
+import { flushQueryTabDraftSnapshots } from './utils/sqlFileTabDrafts';
 import {
+  APP_APPLICATION_QUIT_MODAL_Z_INDEX,
   APP_FOREGROUND_MODAL_Z_INDEX,
   APP_NESTED_MODAL_Z_INDEX,
   APP_OVERLAY_Z_INDEX_BASE,
@@ -213,7 +222,7 @@ import { useAppLogPanelResize } from './hooks/useAppLogPanelResize';
 import { useAppSidebarResize } from './hooks/useAppSidebarResize';
 import { useAppUtilityStyles } from './hooks/useAppUtilityStyles';
 import { useWorkbenchTabs } from './hooks/useWorkbenchTabs';
-import { ApplyDataRootDirectory, CancelApplicationQuit, ForceQuitApplication, GetDataRootDirectoryInfo, GetSavedConnections, ListInstalledFontFamilies, OpenDataRootDirectory, SelectDataRootDirectory, SetApplicationBrandIcon, SetMacNativeWindowControls, SetWindowTranslucency } from '../wailsjs/go/app/App';
+import { ApplyDataRootDirectory, ApplyLogDirectory, CancelApplicationQuit, ForceQuitApplication, GetDataRootDirectoryInfo, GetSavedConnections, ListInstalledFontFamilies, OpenDataRootDirectory, OpenLogDirectory, SelectDataRootDirectory, SelectLogDirectory, SetApplicationBrandIcon, SetMacNativeWindowControls, SetWindowTranslucency } from '../wailsjs/go/app/App';
 import { getAntdLocale } from './i18n/frameworkLocale';
 import { useI18n } from './i18n/provider';
 import './App.css';
@@ -271,6 +280,10 @@ const DATA_TABLE_FONT_SLIDER_MARKS: Record<number, string> = {
   14: '14',
   16: '16',
   18: '18',
+};
+const SQL_EDITOR_FONT_SLIDER_MARKS: Record<number, string> = {
+  ...DATA_TABLE_FONT_SLIDER_MARKS,
+  20: '20',
 };
 const DEFAULT_UI_SCALE = 1.0;
 const DEFAULT_FONT_SIZE = 14;
@@ -765,10 +778,16 @@ function App() {
   const tokenControlHeightSM = Math.max(20, Math.round(24 * effectiveUiScale));
   const tokenControlHeightLG = Math.max(30, Math.round(40 * effectiveUiScale));
   const dataTableFontSizeFollowsGlobal = appearance.dataTableFontSizeFollowGlobal !== false;
+  const sqlEditorFontSizeFollowsGlobal = appearance.sqlEditorFontSizeFollowGlobal !== false;
   const sidebarTreeFontSizeFollowsGlobal = appearance.sidebarTreeFontSizeFollowGlobal !== false;
   const effectiveDataTableFontSize = dataTableFontSizeFollowsGlobal
       ? effectiveFontSize
       : (sanitizeDataTableFontSize(appearance.dataTableFontSize) ?? effectiveFontSize);
+  const effectiveSqlEditorFontSize = resolveSqlEditorFontSize({
+      globalFontSize: effectiveFontSize,
+      sqlEditorFontSize: appearance.sqlEditorFontSize,
+      sqlEditorFontSizeFollowGlobal: appearance.sqlEditorFontSizeFollowGlobal,
+  });
   const effectiveSidebarTreeFontSize = sidebarTreeFontSizeFollowsGlobal
       ? effectiveFontSize
       : (sanitizeSidebarTreeFontSize(appearance.sidebarTreeFontSize) ?? effectiveFontSize);
@@ -1002,6 +1021,8 @@ function App() {
   );
   const linuxCJKFontInstallHint = getLinuxCJKFontInstallHint(runtimePlatform, installedFontFamilies);
   const [isStoreHydrated, setIsStoreHydrated] = useState(() => useStore.persist.hasHydrated());
+  const savedQueriesBootstrapPromiseRef = useRef<Promise<void> | null>(null);
+  const savedQueriesLoadedRef = useRef(false);
   const [hasLoadedSecureConfig, setHasLoadedSecureConfig] = useState(false);
   const [viewportWidth, setViewportWidth] = useState(() => (typeof window === 'undefined' ? 1280 : window.innerWidth || 1280));
   const [securityUpdateStatus, setSecurityUpdateStatus] = useState<SecurityUpdateStatus>(() => createEmptySecurityUpdateStatus());
@@ -1032,6 +1053,28 @@ function App() {
   const LazyAISettingsContent = useMemo(createLazyAISettingsContent, [aiSettingsRenderNonce]);
   const sidebarWidth = useStore(state => state.sidebarWidth);
   const setSidebarWidth = useStore(state => state.setSidebarWidth);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const sidebarTitlebarToggleRef = useRef<HTMLButtonElement>(null);
+  const sidebarExplorerToggleRef = useRef<HTMLButtonElement>(null);
+  const pendingSidebarToggleFocusRef = useRef<'titlebar' | 'explorer' | null>(null);
+  const handleCollapseSidebarPanel = useCallback(() => {
+      pendingSidebarToggleFocusRef.current = 'titlebar';
+      setIsSidebarCollapsed(true);
+  }, []);
+  const handleTitlebarSidebarToggle = useCallback(() => {
+      if (isV2Ui && isSidebarCollapsed) {
+          pendingSidebarToggleFocusRef.current = 'explorer';
+      }
+      setIsSidebarCollapsed((collapsed) => !collapsed);
+  }, [isSidebarCollapsed, isV2Ui]);
+  useEffect(() => {
+      const target = pendingSidebarToggleFocusRef.current;
+      if (!target) return;
+      pendingSidebarToggleFocusRef.current = null;
+      (target === 'titlebar' ? sidebarTitlebarToggleRef : sidebarExplorerToggleRef).current?.focus();
+  }, [isSidebarCollapsed]);
+  const sidebarCollapsedWidth = isV2Ui ? 38 * effectiveUiScale * effectiveSidebarRailScale : 0;
+  const renderedSidebarWidth = isSidebarCollapsed ? sidebarCollapsedWidth : sidebarWidth;
   const aiPanelVisible = useStore(state => state.aiPanelVisible);
   const detachedAIChatWindow = useStore(state => state.detachedAIChatWindow);
   const detachAIChatPanel = useStore(state => state.detachAIChatPanel);
@@ -1044,6 +1087,10 @@ function App() {
   const settingsChildModalZIndex = Math.max(
     APP_NESTED_MODAL_Z_INDEX,
     settingsCenterModalZIndex + 100,
+  );
+  const applicationQuitModalZIndex = Math.max(
+    APP_APPLICATION_QUIT_MODAL_Z_INDEX,
+    settingsChildModalZIndex + 100,
   );
   const toggleAIPanel = useStore(state => state.toggleAIPanel);
   const setAIPanelVisible = useStore(state => state.setAIPanelVisible);
@@ -1156,35 +1203,41 @@ function App() {
       };
   }, [isStoreHydrated]);
 
+  const ensureSavedQueriesLoaded = useCallback(async (): Promise<void> => {
+      if (savedQueriesLoadedRef.current) {
+          return;
+      }
+      if (!savedQueriesBootstrapPromiseRef.current) {
+          savedQueriesBootstrapPromiseRef.current = (async () => {
+              await bootstrapSavedQueries({
+                  backend: (window as any).go?.app?.App,
+                  replaceSavedQueries,
+              });
+              savedQueriesLoadedRef.current = true;
+              void reloadSavedQueryGroups().catch((error) => {
+                  console.warn('Failed to reload saved query groups', error);
+              });
+          })();
+      }
+      const pending = savedQueriesBootstrapPromiseRef.current;
+      try {
+          await pending;
+      } catch (error) {
+          if (savedQueriesBootstrapPromiseRef.current === pending) {
+              savedQueriesBootstrapPromiseRef.current = null;
+          }
+          throw error;
+      }
+  }, [reloadSavedQueryGroups, replaceSavedQueries]);
+
   useEffect(() => {
       if (!isStoreHydrated) {
           return;
       }
-
-      let cancelled = false;
-      const loadSavedQueries = async () => {
-          try {
-              await bootstrapSavedQueries({
-                  backend: (window as any).go?.app?.App,
-                  replaceSavedQueries: (queries) => {
-                      if (!cancelled) {
-                          replaceSavedQueries(queries);
-                      }
-                  },
-              });
-              if (!cancelled) {
-                  await reloadSavedQueryGroups();
-              }
-          } catch (err) {
-              console.warn('Failed to bootstrap saved queries', err);
-          }
-      };
-
-      void loadSavedQueries();
-      return () => {
-          cancelled = true;
-      };
-  }, [isStoreHydrated, reloadSavedQueryGroups, replaceSavedQueries]);
+      void ensureSavedQueriesLoaded().catch((err) => {
+          console.warn('Failed to bootstrap saved queries', err);
+      });
+  }, [ensureSavedQueriesLoaded, isStoreHydrated]);
 
   const normalizeSecurityUpdateStatus = useCallback((status?: Partial<SecurityUpdateStatus> | null): SecurityUpdateStatus => {
       const fallback = createEmptySecurityUpdateStatus();
@@ -2539,6 +2592,8 @@ function App() {
       const runConfirmedAction = async (): Promise<boolean> => {
           let accepted = false;
           try {
+              flushQueryTabDraftSnapshots();
+              await flushAppStatePersistence();
               if (confirmedAction) {
                   accepted = await confirmedAction();
               } else {
@@ -2560,6 +2615,7 @@ function App() {
 
       let targets;
       try {
+          await ensureSavedQueriesLoaded();
           const latestState = useStore.getState();
           targets = await collectApplicationQuitUnsavedSQLTargets(
               latestState.tabs,
@@ -2589,6 +2645,7 @@ function App() {
           cancelText: t('app.quit.unsaved_sql.cancel'),
           closable: true,
           maskClosable: false,
+          zIndex: applicationQuitModalZIndex,
           okButtonProps: { danger: true, type: 'primary' },
           footer: (_, { OkBtn, CancelBtn }) => (
               <>
@@ -2624,7 +2681,7 @@ function App() {
       });
       destroyConfirm = confirmRef.destroy;
       applicationQuitConfirmRef.current = confirmRef;
-  }, [forceQuitApplication, resetApplicationQuitRequest, saveQuery, t]);
+  }, [applicationQuitModalZIndex, ensureSavedQueriesLoaded, forceQuitApplication, resetApplicationQuitRequest, saveQuery, t]);
 
   const handleInstallUpdateRequest = useCallback(async () => {
       if (installMode === 'portable' || installMode === 'msi') {
@@ -2635,6 +2692,7 @@ function App() {
               cancelText: t('common.cancel'),
               closable: true,
               maskClosable: false,
+              zIndex: applicationQuitModalZIndex,
               okButtonProps: { danger: true, type: 'primary' },
               onOk: async () => {
                   await handleApplicationQuitRequest(() => handleInstallFromProgress(true));
@@ -2643,7 +2701,7 @@ function App() {
           return;
       }
       await handleApplicationQuitRequest(() => handleInstallFromProgress(false));
-  }, [handleApplicationQuitRequest, handleInstallFromProgress, installMode, t]);
+  }, [applicationQuitModalZIndex, handleApplicationQuitRequest, handleInstallFromProgress, installMode, t]);
 
   useEffect(() => {
       const offBeforeClose = EventsOn('app:before-close-request', () => {
@@ -3053,21 +3111,24 @@ function App() {
   const [isDataRootModalOpen, setIsDataRootModalOpen] = useState(false);
   const [dataRootInfo, setDataRootInfo] = useState<any>(null);
   const [selectedDataRootPath, setSelectedDataRootPath] = useState('');
+  const [selectedLogDirectoryPath, setSelectedLogDirectoryPath] = useState('');
   const [dataRootLoading, setDataRootLoading] = useState(false);
   const [dataRootApplying, setDataRootApplying] = useState(false);
+  const [logDirectoryApplying, setLogDirectoryApplying] = useState(false);
+  const directorySettingsApplying = dataRootApplying || logDirectoryApplying;
 
   const aiEntryPlacement = resolveAIEntryPlacement();
   const legacyAiEdgeHandleAttachment = resolveLegacyAIEdgeHandleAttachment(aiPanelVisible);
   const aiPanelOverlayActive = aiPanelVisible && shouldOverlayAIPanel({
       isV2Ui,
       viewportWidth,
-      sidebarWidth,
+      sidebarWidth: renderedSidebarWidth,
       panelWidth: DEFAULT_AI_PANEL_WIDTH,
   });
   const aiPanelRenderWidth = aiPanelOverlayActive
       ? resolveOverlayAIPanelWidth({
           viewportWidth,
-          sidebarWidth,
+          sidebarWidth: renderedSidebarWidth,
           panelWidth: DEFAULT_AI_PANEL_WIDTH,
       })
       : DEFAULT_AI_PANEL_WIDTH;
@@ -3429,7 +3490,10 @@ function App() {
       return SIDEBAR_UTILITY_ITEM_KEYS.map((key) => itemMap[key]);
   }, [handleOpenSettingsModal, t]);
   const handleFocusSidebarSearch = useCallback(() => {
-      window.dispatchEvent(new CustomEvent('gonavi:focus-sidebar-search'));
+      setIsSidebarCollapsed(false);
+      window.setTimeout(() => {
+          window.dispatchEvent(new CustomEvent('gonavi:focus-sidebar-search'));
+      }, 0);
   }, []);
   const renderLegacyAIEdgeHandle = () => (
       <Tooltip title={t('app.sidebar.ai_assistant')}>
@@ -3455,6 +3519,7 @@ function App() {
           const data = (res?.data || {}) as any;
           setDataRootInfo(data);
           setSelectedDataRootPath(String(data.path || ''));
+          setSelectedLogDirectoryPath(String(data.logDirectory || data.defaultLogDirectory || ''));
       } catch (error) {
           const errMsg = error instanceof Error ? error.message : String(error || t('common.unknown'));
           void message.error(t('app.data_root.message.load_failed_with_error', { error: errMsg }));
@@ -3522,6 +3587,137 @@ function App() {
           void message.error(t('app.data_root.message.open_failed_with_error', { error: errMsg }));
       }
   }, [t]);
+
+  const handleSelectLogDirectory = useCallback(async () => {
+      try {
+          const res = await SelectLogDirectory(
+              selectedLogDirectoryPath || dataRootInfo?.logDirectory || dataRootInfo?.defaultLogDirectory || '',
+          );
+          if (!res?.success) {
+              if (String(res?.message || '') !== '已取消') {
+                  throw new Error(res?.message || t('common.unknown'));
+              }
+              return;
+          }
+          const data = (res?.data || {}) as any;
+          setSelectedLogDirectoryPath(String(data.directory || ''));
+      } catch (error) {
+          const errMsg = error instanceof Error ? error.message : String(error || t('common.unknown'));
+          void message.error(t('app.data_root.log_directory.message.select_failed_with_error', { error: errMsg }));
+      }
+  }, [dataRootInfo?.defaultLogDirectory, dataRootInfo?.logDirectory, selectedLogDirectoryPath, t]);
+
+  const handleApplyLogDirectory = useCallback(async (useDefaultPath = false) => {
+      const nextPath = useDefaultPath
+          ? String(dataRootInfo?.defaultLogDirectory || '')
+          : String(selectedLogDirectoryPath || '').trim();
+      if (!nextPath) {
+          void message.warning(t('app.data_root.log_directory.message.select_valid_first'));
+          return;
+      }
+      setLogDirectoryApplying(true);
+      try {
+          const res = await ApplyLogDirectory(nextPath);
+          if (!res?.success) {
+              throw new Error(res?.message || t('common.unknown'));
+          }
+          const data = (res?.data || {}) as any;
+          setDataRootInfo(data);
+          setSelectedLogDirectoryPath(String(data.logDirectory || data.defaultLogDirectory || nextPath));
+          void message.success(res?.message || t('app.data_root.log_directory.message.updated'));
+      } catch (error) {
+          const errMsg = error instanceof Error ? error.message : String(error || t('common.unknown'));
+          void message.error(t('app.data_root.log_directory.message.apply_failed_with_error', { error: errMsg }));
+      } finally {
+          setLogDirectoryApplying(false);
+      }
+  }, [dataRootInfo?.defaultLogDirectory, selectedLogDirectoryPath, t]);
+
+  const handleOpenLogDirectory = useCallback(async () => {
+      try {
+          const res = await OpenLogDirectory();
+          if (!res?.success) {
+              throw new Error(res?.message || t('common.unknown'));
+          }
+      } catch (error) {
+          const errMsg = error instanceof Error ? error.message : String(error || t('common.unknown'));
+          void message.error(t('app.data_root.log_directory.message.open_failed_with_error', { error: errMsg }));
+      }
+  }, [t]);
+
+  const renderLogDirectorySettings = () => {
+      const editable = dataRootInfo?.logDirectoryEditable !== false;
+      const managedByEnvironment = dataRootInfo?.logDirectorySource === 'environment';
+      const restartRequired = dataRootInfo?.logDirectoryRestartRequired === true;
+      return (
+          <div style={utilityPanelStyle} data-log-directory-settings="true">
+              <div style={utilityMutedTextStyle}>
+                  {t('app.data_root.log_directory.description')}
+              </div>
+              <div style={{ display: 'grid', gap: 10, marginTop: 14 }}>
+                  <Input
+                      readOnly
+                      disabled={!editable}
+                      value={selectedLogDirectoryPath}
+                      placeholder={t('app.data_root.log_directory.placeholder')}
+                      aria-label={t('app.data_root.log_directory.title')}
+                  />
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
+                      <Button
+                          icon={<FolderOpenOutlined />}
+                          disabled={!editable || directorySettingsApplying}
+                          onClick={() => void handleSelectLogDirectory()}
+                      >
+                          {t('app.data_root.action.select')}
+                      </Button>
+                      <Button onClick={() => void handleOpenLogDirectory()}>
+                          {t('app.data_root.action.open_current')}
+                      </Button>
+                      <Button
+                          disabled={!editable || directorySettingsApplying}
+                          loading={logDirectoryApplying}
+                          onClick={() => void handleApplyLogDirectory(true)}
+                      >
+                          {t('app.data_root.action.restore_default_directory')}
+                      </Button>
+                      <Button
+                          type="primary"
+                          disabled={!editable || directorySettingsApplying}
+                          loading={logDirectoryApplying}
+                          onClick={() => void handleApplyLogDirectory(false)}
+                      >
+                          {t('common.save')}
+                      </Button>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 12 }}>
+                      <div>
+                          <div style={{ marginBottom: 6, fontWeight: 500 }}>
+                              {t('app.data_root.log_directory.current_file')}
+                          </div>
+                          <div style={{ ...utilityMutedTextStyle, overflowWrap: 'anywhere' }}>
+                              {dataRootInfo?.logFilePath || '-'}
+                          </div>
+                      </div>
+                      <div>
+                          <div style={{ marginBottom: 6, fontWeight: 500 }}>
+                              {t('app.data_root.log_directory.default_directory')}
+                          </div>
+                          <div style={{ ...utilityMutedTextStyle, overflowWrap: 'anywhere' }}>
+                              {dataRootInfo?.defaultLogDirectory || '-'}
+                          </div>
+                      </div>
+                  </div>
+                  {managedByEnvironment ? (
+                      <Alert type="warning" showIcon message={t('app.data_root.log_directory.environment_hint')} />
+                  ) : restartRequired ? (
+                      <Alert type="info" showIcon message={t('app.data_root.log_directory.pending_restart')} />
+                  ) : (
+                      <div style={utilityMutedTextStyle}>{t('app.data_root.log_directory.restart_hint')}</div>
+                  )}
+              </div>
+          </div>
+      );
+  };
 
 
   const {
@@ -4073,7 +4269,7 @@ function App() {
                   window.dispatchEvent(new CustomEvent('gonavi:run-active-query'));
                   break;
               case 'focusSidebarSearch':
-                  window.dispatchEvent(new CustomEvent('gonavi:focus-sidebar-search'));
+                  handleFocusSidebarSearch();
                   break;
               case 'newQueryTab':
                   handleNewQuery();
@@ -4116,7 +4312,7 @@ function App() {
       return () => {
           window.removeEventListener('keydown', handleGlobalShortcut, true);
       };
-  }, [activeShortcutPlatform, capturingShortcutAction, handleCreateConnection, handleManualResetWindowZoom, handleNewQuery, handleOpenToolCenterPane, handleTitleBarWindowToggle, handleToggleLogPanel, isMacRuntime, selectPresetTheme, shortcutOptions, switchActiveTabByOffset, themeMode, toggleAIPanel, useNativeMacWindowControls]);
+  }, [activeShortcutPlatform, capturingShortcutAction, handleCreateConnection, handleFocusSidebarSearch, handleManualResetWindowZoom, handleNewQuery, handleOpenToolCenterPane, handleTitleBarWindowToggle, handleToggleLogPanel, isMacRuntime, selectPresetTheme, shortcutOptions, switchActiveTabByOffset, themeMode, toggleAIPanel, useNativeMacWindowControls]);
 
   useEffect(() => {
       if (!capturingShortcutAction) {
@@ -5046,7 +5242,11 @@ function App() {
                                     style={{ flexShrink: 0 }}
                                   />
                               </div>
-                              <div style={{ ...utilityMutedTextStyle, lineHeight: 1.55, maxWidth: 360 }}>{t('app.about.version_update.channel_hint')}</div>
+                              <div style={{ ...utilityMutedTextStyle, lineHeight: 1.55, maxWidth: 360 }}>
+                                  {updateChannel === 'dev'
+                                      ? t('app.about.version_update.channel_hint.dev')
+                                      : t('app.about.version_update.channel_hint.latest')}
+                              </div>
                               <div style={{ display: 'grid', gridTemplateColumns: '100px 1fr', alignItems: 'center', gap: 16, marginTop: 10 }}>
                                   <div style={{ fontSize: 15, fontWeight: 600, color: overlayTheme.titleText, whiteSpace: 'nowrap' }}>{t('app.about.field.auto_check_updates')}</div>
                                   <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
@@ -5070,7 +5270,6 @@ function App() {
                                                 : t('app.about.auto_check_interval.minutes', { minutes }),
                                             }))}
                                             onChange={(value) => setAutoCheckForUpdatesIntervalMinutes(Number(value))}
-                                            style={{ width: '100%' }}
                                           />
                                       </div>
                                       <div style={{ ...utilityMutedTextStyle, lineHeight: 1.55, maxWidth: 360 }}>{t('app.about.version_update.auto_check_hint')}</div>
@@ -5906,6 +6105,41 @@ function App() {
                                       {renderThemeSettingsRow({
                                           label: (
                                               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                                                  <span>{t('app.theme.data_table.sql_editor_font_size')}</span>
+                                                  <Button
+                                                      size="small"
+                                                      type={sqlEditorFontSizeFollowsGlobal ? 'primary' : 'default'}
+                                                      onClick={() => setAppearance({
+                                                          sqlEditorFontSizeFollowGlobal: !sqlEditorFontSizeFollowsGlobal,
+                                                          sqlEditorFontSize: sqlEditorFontSizeFollowsGlobal
+                                                              ? sanitizeSqlEditorFontSize(appearance.sqlEditorFontSize)
+                                                              : null,
+                                                      })}
+                                                  >
+                                                      {t('app.theme.data_table.follow_global')}
+                                                  </Button>
+                                              </span>
+                                          ),
+                                          stacked: true,
+                                          control: (
+                                              <ThemeSettingsSlider
+                                                  min={MIN_SQL_EDITOR_FONT_SIZE}
+                                                  max={MAX_SQL_EDITOR_FONT_SIZE}
+                                                  step={1}
+                                                  marks={SQL_EDITOR_FONT_SLIDER_MARKS}
+                                                  disabled={sqlEditorFontSizeFollowsGlobal}
+                                                  value={effectiveSqlEditorFontSize}
+                                                  unit="px"
+                                                  onChange={(value) => setAppearance({
+                                                      sqlEditorFontSize: sanitizeSqlEditorFontSize(value),
+                                                      sqlEditorFontSizeFollowGlobal: false,
+                                                  })}
+                                              />
+                                          ),
+                                      })}
+                                      {renderThemeSettingsRow({
+                                          label: (
+                                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                                                   <span>{t('app.theme.data_table.font_size')}</span>
                                                   <Button
                                                       size="small"
@@ -6681,6 +6915,38 @@ function App() {
                                       </div>
                                       <div>
                                           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 8 }}>
+                                              <div style={{ fontWeight: 500 }}>{t('app.theme.data_table.sql_editor_font_size')}</div>
+                                              <Button
+                                                  size="small"
+                                                  type={sqlEditorFontSizeFollowsGlobal ? 'primary' : 'default'}
+                                                  onClick={() => setAppearance({
+                                                      sqlEditorFontSizeFollowGlobal: !sqlEditorFontSizeFollowsGlobal,
+                                                      sqlEditorFontSize: sqlEditorFontSizeFollowsGlobal
+                                                          ? sanitizeSqlEditorFontSize(appearance.sqlEditorFontSize)
+                                                          : null,
+                                                  })}
+                                              >
+                                                  {t('app.theme.data_table.follow_global')}
+                                              </Button>
+                                          </div>
+                                          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                                              <Slider
+                                                  min={MIN_SQL_EDITOR_FONT_SIZE}
+                                                  max={MAX_SQL_EDITOR_FONT_SIZE}
+                                                  step={1}
+                                                  disabled={sqlEditorFontSizeFollowsGlobal}
+                                                  value={effectiveSqlEditorFontSize}
+                                                  onChange={(value) => setAppearance({
+                                                      sqlEditorFontSize: sanitizeSqlEditorFontSize(value),
+                                                      sqlEditorFontSizeFollowGlobal: false,
+                                                  })}
+                                                  style={{ flex: 1 }}
+                                              />
+                                              <span style={{ width: 56 }}>{effectiveSqlEditorFontSize}px</span>
+                                          </div>
+                                      </div>
+                                      <div>
+                                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 8 }}>
                                               <div style={{ fontWeight: 500 }}>{t('app.theme.data_table.font_size')}</div>
                                               <Button
                                                   size="small"
@@ -6913,6 +7179,7 @@ function App() {
       ...toolCenterDetailPanelStyle,
       padding: '0 4px 0 0',
       border: 'none',
+      borderBottom: 'none',
       borderRadius: 0,
       background: 'transparent',
   };
@@ -7028,6 +7295,8 @@ function App() {
       return null;
   };
 
+  const sidebarPanelToggleLabel = t(isSidebarCollapsed ? 'app.sidebar.expand' : 'app.sidebar.collapse');
+
   return (
     <ConfigProvider
         locale={getAntdLocale(language)}
@@ -7075,7 +7344,10 @@ function App() {
                 fontSize: tokenFontSize
             } as any}
           >
-              <div style={{ display: 'flex', alignItems: 'center', gap: Math.max(6, Math.round(8 * effectiveUiScale)), fontWeight: 600, minWidth: 0 }}>
+              <div
+                data-titlebar-brand-region="true"
+                style={{ display: 'flex', alignItems: 'center', gap: Math.max(6, Math.round(8 * effectiveUiScale)), fontWeight: 600, minWidth: 0 }}
+              >
                   <img
                     src={resolveBrandTitlebarSrc(brandIconId)}
                     alt="GoNavi"
@@ -7091,7 +7363,26 @@ function App() {
                       background: 'transparent',
                     }}
                   />
-                  GoNavi
+                  <span>GoNavi</span>
+                  {(!isV2Ui || isSidebarCollapsed) && (
+                      <Tooltip title={sidebarPanelToggleLabel} placement="bottom" mouseEnterDelay={0.35}>
+                          <Button
+                            ref={sidebarTitlebarToggleRef}
+                            type="text"
+                            size="small"
+                            className="gonavi-sidebar-collapse-trigger"
+                            data-sidebar-collapse-trigger="true"
+                            data-sidebar-toggle-placement="titlebar"
+                            data-no-titlebar-toggle="true"
+                            aria-label={sidebarPanelToggleLabel}
+                            aria-controls="gonavi-sidebar-tree-panel"
+                            aria-expanded={!isSidebarCollapsed}
+                            icon={isSidebarCollapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+                            onClick={handleTitlebarSidebarToggle}
+                            style={{ WebkitAppRegion: 'no-drag', '--wails-draggable': 'no-drag' } as any}
+                          />
+                      </Tooltip>
+                  )}
               </div>
               {isWebRuntime ? (
                   <div
@@ -7111,6 +7402,7 @@ function App() {
                   <div style={{ minWidth: Math.max(40, Math.round(48 * effectiveUiScale)) }} />
               ) : (
                   <div
+                    className="titlebar-window-controls"
                     data-no-titlebar-toggle="true"
                     onDoubleClick={(e) => e.stopPropagation()}
                     style={{ display: 'flex', height: '100%', WebkitAppRegion: 'no-drag', '--wails-draggable': 'no-drag' } as any}
@@ -7155,14 +7447,31 @@ function App() {
           <Sider
             ref={siderRef}
             width={sidebarWidth}
+            collapsible
+            collapsed={isSidebarCollapsed}
+            collapsedWidth={sidebarCollapsedWidth}
+            trigger={null}
+            data-sidebar-panel="true"
+            data-sidebar-collapsed={isSidebarCollapsed}
             className={isV2Ui ? 'gn-v2-app-sider' : undefined}
             style={{
                 borderRight: isV2Ui ? 'none' : '1px solid rgba(128,128,128,0.2)',
                 position: 'relative',
-                background: isV2Ui ? 'var(--gn-bg-panel-2)' : bgMain
+                background: isV2Ui ? 'var(--gn-bg-panel-2)' : bgMain,
+                ['--gonavi-sidebar-collapsed-width' as any]: `${sidebarCollapsedWidth}px`,
             }}
           >
-            <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+            <div
+                id={isV2Ui ? undefined : 'gonavi-sidebar-tree-panel'}
+                aria-hidden={!isV2Ui ? isSidebarCollapsed : undefined}
+                style={{
+                    height: '100%',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    overflow: 'hidden',
+                    visibility: !isV2Ui && isSidebarCollapsed ? 'hidden' : 'visible',
+                }}
+            >
                 {!isV2Ui && (
                 <>
                 <div style={{ padding: `12px ${sidebarHorizontalPadding}px 8px`, borderBottom: 'none', display: 'flex', alignItems: 'center', flexShrink: 0 }}>
@@ -7187,7 +7496,7 @@ function App() {
                 </>
                 )}
 
-                <div style={{ flex: 1, overflow: 'hidden', paddingBottom: isV2Ui ? 0 : 58, paddingRight: sidebarResizeHandleWidth, position: 'relative' }}>
+                <div style={{ flex: 1, overflow: 'hidden', paddingBottom: isV2Ui ? 0 : 58, paddingRight: isSidebarCollapsed ? 0 : sidebarResizeHandleWidth, position: 'relative' }}>
                     <div style={{ height: '100%', opacity: connectionWorkbenchState.ready ? 1 : 0.72, pointerEvents: connectionWorkbenchState.ready ? 'auto' : 'none' }}>
                         <Sidebar
                             onCreateConnection={handleCreateConnection}
@@ -7197,6 +7506,10 @@ function App() {
                             onToggleLogPanel={handleToggleLogPanel}
                             uiVersion={appearance.uiVersion}
                             onFocusCommandSearch={handleFocusSidebarSearch}
+                            onCollapseSidebar={isV2Ui && !isSidebarCollapsed ? handleCollapseSidebarPanel : undefined}
+                            collapseSidebarLabel={sidebarPanelToggleLabel}
+                            collapseSidebarButtonRef={sidebarExplorerToggleRef}
+                            isTreePanelCollapsed={isV2Ui && isSidebarCollapsed}
                         />
                     </div>
                     {!connectionWorkbenchState.ready && (
@@ -7233,7 +7546,7 @@ function App() {
                             </div>
                         </div>
                     )}
-                    <div
+                    {!isSidebarCollapsed && <div
                         onMouseDown={handleSidebarMouseDown}
                         onContextMenu={(event) => {
                             event.preventDefault();
@@ -7255,7 +7568,7 @@ function App() {
                             WebkitUserSelect: 'none',
                             background: 'transparent',
                         }}
-                    />
+                    />}
                 </div>
 
                 {/* Floating SQL Log Toggle */}
@@ -7316,7 +7629,7 @@ function App() {
              )}
              <div style={{ flex: 1, minHeight: 0, minWidth: 0, overflow: 'hidden', display: 'flex', flexDirection: 'row', position: 'relative' }}>
                <div style={{ flex: 1, minHeight: 0, minWidth: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', background: bgContent, marginBottom: isLogPanelOpen ? 8 : 0, borderRadius: isLogPanelOpen ? 'var(--gonavi-border-radius)' : 0, clipPath: isLogPanelOpen ? 'inset(0 round var(--gonavi-border-radius))' : 'none' }}>
-                  <TabManager />
+                  <TabManager onFocusSidebarSearch={handleFocusSidebarSearch} />
                   <FloatingWorkbenchWindows />
                   <FloatingQueryResultWindows />
                   <NativeDetachedWindowController onOpenAISettings={handleOpenAISettings} />
@@ -7790,13 +8103,21 @@ function App() {
                               placeholder={t('app.data_root.placeholder.select_new_directory')}
                             />
                             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
-                              <Button icon={<FolderOpenOutlined />} onClick={() => void handleSelectDataRoot()}>
+                              <Button
+                                icon={<FolderOpenOutlined />}
+                                disabled={directorySettingsApplying}
+                                onClick={() => void handleSelectDataRoot()}
+                              >
                                 {t('app.data_root.action.select')}
                               </Button>
                               <Button onClick={() => void handleOpenDataRoot()}>
                                 {t('app.data_root.action.open_current')}
                               </Button>
-                              <Button loading={dataRootApplying} onClick={() => void handleApplyDataRoot(false, true)}>
+                              <Button
+                                disabled={directorySettingsApplying}
+                                loading={dataRootApplying}
+                                onClick={() => void handleApplyDataRoot(false, true)}
+                              >
                                 {t('app.data_root.action.restore_default_directory')}
                               </Button>
                             </div>
@@ -7805,10 +8126,19 @@ function App() {
                         <div style={utilityPanelStyle}>
                           <div style={{ marginBottom: 10, fontWeight: 600 }}>{t('app.data_root.apply_method')}</div>
                           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
-                            <Button loading={dataRootApplying} onClick={() => void handleApplyDataRoot(false)}>
+                            <Button
+                              disabled={directorySettingsApplying}
+                              loading={dataRootApplying}
+                              onClick={() => void handleApplyDataRoot(false)}
+                            >
                               {t('app.data_root.action.switch_only')}
                             </Button>
-                            <Button type="primary" loading={dataRootApplying} onClick={() => void handleApplyDataRoot(true)}>
+                            <Button
+                              type="primary"
+                              disabled={directorySettingsApplying}
+                              loading={dataRootApplying}
+                              onClick={() => void handleApplyDataRoot(true)}
+                            >
                               {t('app.data_root.action.migrate_and_switch')}
                             </Button>
                           </div>
@@ -7816,6 +8146,7 @@ function App() {
                             {t('app.data_root.restart_hint')}
                           </div>
                         </div>
+                        {renderLogDirectorySettings()}
                       </div>
                     )}
                   </Modal>
@@ -8044,9 +8375,8 @@ function App() {
                                 textAlign: 'left',
                                 width: '100%',
                                 padding: '10px 6px 10px 12px',
-                                borderRadius: 0,
+                                borderRadius: 4,
                                 border: 'none',
-                                borderBottom: `1px solid ${overlayTheme.divider}`,
                                 background: active
                                   ? overlayTheme.selectedBg
                                   : 'transparent',
@@ -8115,7 +8445,7 @@ function App() {
                     >
                       {activeSettingsCenterPane ? (
                         <div style={activeSettingsCenterDetailPanelStyle}>
-                          <div style={{ paddingBottom: 10, borderBottom: `1px solid ${overlayTheme.divider}` }}>
+                          <div style={{ paddingBottom: 10 }}>
                             <div style={{ minWidth: 0 }}>
                               <div style={{ fontSize: 'calc(var(--gn-font-size, 14px) * 1.14)', fontWeight: 700, color: overlayTheme.titleText }}>
                                 {activeSettingsCenterPaneItem?.title ?? activeSettingsCenterGroup.title}
@@ -8140,7 +8470,6 @@ function App() {
                                 gap: activeSettingsCenterPane.key === 'about-go-navi' ? 16 : 8,
                                 paddingTop: 10,
                                 marginTop: 10,
-                                borderTop: `1px solid ${overlayTheme.divider}`,
                                 flexShrink: 0,
                               }}
                             >
@@ -8166,17 +8495,13 @@ function App() {
                             <div style={utilityMutedTextStyle}>{activeSettingsCenterGroup.description}</div>
                           </div>
                           <div style={toolCenterScrollableListStyle}>
-                            {activeSettingsCenterGroup.items.map((item, index) => (
+                            {activeSettingsCenterGroup.items.map((item) => (
                               <Button
                                 className="gonavi-settings-center-entry"
                                 key={item.key}
                                 data-settings-pane-key={item.key}
                                 type="text"
-                                style={{
-                                  ...toolCenterRowStyle,
-                                  borderTop: index === 0 ? `1px solid ${overlayTheme.divider}` : 'none',
-                                  borderBottom: `1px solid ${overlayTheme.divider}`,
-                                }}
+                                style={toolCenterRowStyle}
                                 onClick={item.onClick}
                               >
                                 <span style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
@@ -8265,13 +8590,21 @@ function App() {
                       placeholder={t('app.data_root.placeholder.select_new_directory')}
                     />
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
-                      <Button icon={<FolderOpenOutlined />} onClick={() => void handleSelectDataRoot()}>
+                      <Button
+                        icon={<FolderOpenOutlined />}
+                        disabled={directorySettingsApplying}
+                        onClick={() => void handleSelectDataRoot()}
+                      >
                         {t('app.data_root.action.select')}
                       </Button>
                       <Button onClick={() => void handleOpenDataRoot()}>
                         {t('app.data_root.action.open_current')}
                       </Button>
-                      <Button loading={dataRootApplying} onClick={() => void handleApplyDataRoot(false, true)}>
+                      <Button
+                        disabled={directorySettingsApplying}
+                        loading={dataRootApplying}
+                        onClick={() => void handleApplyDataRoot(false, true)}
+                      >
                         {t('app.data_root.action.restore_default_directory')}
                       </Button>
                     </div>
@@ -8280,10 +8613,19 @@ function App() {
                 <div style={utilityPanelStyle}>
                   <div style={{ marginBottom: 10, fontWeight: 600 }}>{t('app.data_root.apply_method')}</div>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
-                    <Button loading={dataRootApplying} onClick={() => void handleApplyDataRoot(false)}>
+                    <Button
+                      disabled={directorySettingsApplying}
+                      loading={dataRootApplying}
+                      onClick={() => void handleApplyDataRoot(false)}
+                    >
                       {t('app.data_root.action.switch_only')}
                     </Button>
-                    <Button type="primary" loading={dataRootApplying} onClick={() => void handleApplyDataRoot(true)}>
+                    <Button
+                      type="primary"
+                      disabled={directorySettingsApplying}
+                      loading={dataRootApplying}
+                      onClick={() => void handleApplyDataRoot(true)}
+                    >
                       {t('app.data_root.action.migrate_and_switch')}
                     </Button>
                   </div>
@@ -8291,6 +8633,7 @@ function App() {
                     {t('app.data_root.restart_hint')}
                   </div>
                 </div>
+                {renderLogDirectorySettings()}
               </div>
             )}
           </Modal>
@@ -8514,7 +8857,7 @@ function App() {
               ref={logGhostRef}
               style={{
                   position: 'fixed',
-                  left: sidebarWidth, // Start from sidebar edge
+                  left: renderedSidebarWidth, // Start from the rendered sidebar edge
                   right: 0,
                   height: '4px',
                   background: resizeGuideColor,

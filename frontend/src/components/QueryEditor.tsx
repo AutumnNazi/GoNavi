@@ -59,6 +59,7 @@ import {
 } from '../utils/rowLocator';
 import {
     clearQueryTabDraft,
+    flushQueryTabDraftSnapshots,
     getQueryTabDraft,
     hasQueryTabDraft,
     persistQueryTabDraftSnapshot,
@@ -213,9 +214,6 @@ export {
 const buildQueryEditorMonacoActionLabel = (key: string): string =>
     `GoNavi: ${translate(key)}`;
 
-const QUERY_EDITOR_MONACO_FIND_OPTIONS = {
-    addExtraSpaceOnTop: true,
-} as const;
 const QUERY_EDITOR_NATIVE_SELECT_CURRENT_LINE_EVENT = 'gonavi:native-select-current-line';
 const QUERY_EDITOR_MAC_FIND_WITH_SELECTION_COMBO = 'Meta+E';
 const QUERY_EDITOR_MAC_FIND_WITH_SELECTION_GUARD_ACTION_ID = 'gonavi.suppressMacFindWithSelection';
@@ -315,12 +313,19 @@ const buildQueryEditorInlineMemoryEntries = ({
         .map((entry) => ({ sql: entry.sql }));
 };
 
-const buildQueryEditorMonacoOptions = (isObjectEditQueryTab: boolean, wordWrapEnabled = false) => ({
+const buildQueryEditorMonacoOptions = (
+    isObjectEditQueryTab: boolean,
+    wordWrapEnabled = false,
+    preserveLegacyObjectEditTypography = false,
+) => ({
     minimap: { enabled: false },
     automaticLayout: true,
     fixedOverflowWidgets: true,
     wordWrap: wordWrapEnabled ? ('on' as const) : ('off' as const),
-    find: QUERY_EDITOR_MONACO_FIND_OPTIONS,
+    // Keep the find widget as an overlay; Monaco's default top spacer creates a blank band.
+    find: {
+        addExtraSpaceOnTop: false,
+    },
     hover: {
         enabled: true,
         delay: QUERY_EDITOR_HOVER_DELAY_MS,
@@ -332,8 +337,9 @@ const buildQueryEditorMonacoOptions = (isObjectEditQueryTab: boolean, wordWrapEn
     inlineSuggest: buildQueryEditorAiInlineSuggestOptions(),
     ...(isObjectEditQueryTab
         ? {
-            fontSize: 14,
-            lineHeight: 24,
+            ...(preserveLegacyObjectEditTypography
+                ? { fontSize: 14, lineHeight: 24 }
+                : {}),
             lineNumbersMinChars: 4,
             stickyScroll: { enabled: false },
         }
@@ -1261,8 +1267,12 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
   const isExternalSQLFileTab = Boolean(String(tab.filePath || '').trim());
   const isObjectEditQueryTab = tab.type === 'query' && tab.queryMode === 'object-edit';
   const queryEditorMonacoOptions = useMemo(
-      () => buildQueryEditorMonacoOptions(isObjectEditQueryTab, wordWrapEnabled),
-      [isObjectEditQueryTab, wordWrapEnabled],
+      () => buildQueryEditorMonacoOptions(
+          isObjectEditQueryTab,
+          wordWrapEnabled,
+          appearance.uiVersion !== 'v2',
+      ),
+      [appearance.uiVersion, isObjectEditQueryTab, wordWrapEnabled],
   );
   
   type ResultSet = QueryEditorResultSet;
@@ -1275,6 +1285,10 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
   const [activeResultKey, setActiveResultKey] = useState<string>(
     () => restoredResultSessionRef.current?.activeResultKey || '',
   );
+  const [resultDataPreviewRequest, setResultDataPreviewRequest] = useState<{
+      resultKey: string;
+      requestId: string;
+  } | null>(null);
   const resultSetsRef = useRef(resultSets);
   const activeResultKeyRef = useRef(activeResultKey);
   const nativeRestoredResultRefs = useRef(new Map<
@@ -1336,6 +1350,8 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
   const toggleQueryResultsPanelActionRef = useRef<any>(null);
   const lastExternalQueryRef = useRef<string>(getTabQueryValue(tab));
   const lastLocalQueryRef = useRef<string>(query);
+  const saveOperationQueueRef = useRef<Promise<unknown>>(Promise.resolve());
+  const queryEditorMountedRef = useRef(true);
   const imeCompositionFallbackRef = useRef<{
       editor: any;
       valueBefore: string;
@@ -1857,6 +1873,22 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       return savedQueries.find((item) => item.id === tabId) || null;
   }, [savedQueries, tab.id, tab.savedQueryId]);
 
+  useEffect(() => {
+      queryEditorMountedRef.current = true;
+      return () => {
+          queryEditorMountedRef.current = false;
+      };
+  }, []);
+
+  const runQueuedSaveOperation = useCallback(<T,>(operation: () => Promise<T>): Promise<T> => {
+      const queued = saveOperationQueueRef.current.then(operation, operation);
+      saveOperationQueueRef.current = queued.then(
+          () => undefined,
+          () => undefined,
+      );
+      return queued;
+  }, []);
+
   const syncQueryDraft = useCallback((nextQuery: string) => {
       const next = String(nextQuery ?? '');
       lastLocalQueryRef.current = next;
@@ -1944,11 +1976,22 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
   }, [applyQueryState, handleCloseSqlSnippetPicker]);
 
   useEffect(() => {
-      persistQueryTabDraftSnapshot(draftSnapshotTab, query, {
-          connectionId: currentConnectionIdRef.current || currentConnectionId,
-          dbName: currentDbRef.current || currentDb,
+      const latestQuery = lastLocalQueryRef.current;
+      const latestConnectionId = currentConnectionIdRef.current || currentConnectionId;
+      const latestDbName = currentDbRef.current || currentDb;
+      const matchesSavedQuery = currentSavedQuery
+          && latestQuery === String(currentSavedQuery.sql ?? '')
+          && String(latestConnectionId || '').trim() === String(currentSavedQuery.connectionId || '').trim()
+          && String(latestDbName || '').trim() === String(currentSavedQuery.dbName || '').trim();
+      if (matchesSavedQuery) {
+          clearQueryTabDraft(tab.id);
+          return;
+      }
+      persistQueryTabDraftSnapshot(draftSnapshotTab, latestQuery, {
+          connectionId: latestConnectionId,
+          dbName: latestDbName,
       });
-  }, [currentConnectionId, currentDb, draftSnapshotTab, query]);
+  }, [currentConnectionId, currentDb, currentSavedQuery, draftSnapshotTab, query, tab.id]);
 
   useEffect(() => {
       currentConnectionIdRef.current = currentConnectionId;
@@ -3721,7 +3764,11 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       if (mountedModel && typeof monaco?.editor?.setModelLanguage === 'function') {
           monaco.editor.setModelLanguage(mountedModel, 'sql');
       }
-      editor.updateOptions?.(buildQueryEditorMonacoOptions(isObjectEditQueryTab, wordWrapEnabled));
+      editor.updateOptions?.(buildQueryEditorMonacoOptions(
+          isObjectEditQueryTab,
+          wordWrapEnabled,
+          !isV2Ui,
+      ));
 
       aiInlineGhostVisibleContextKeyRef.current = editor.createContextKey?.(
           QUERY_EDITOR_AI_INLINE_CONTEXT_KEY,
@@ -6312,6 +6359,13 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           ),
       );
 
+  const isQueryDataGridResultSet = (result?: ResultSet | null): boolean =>
+      Boolean(
+          result &&
+          result.resultType !== 'message' &&
+          !isAffectedRowsResultSet(result),
+      );
+
   const resolveActiveResultKeyAfterMerge = (merged: ResultSet[], executed: ResultSet[]): string => {
       const firstExecutedResult = executed.find((result) => isConcreteGridResultSet(result))
           || executed.find((result) => isMessageLikeResultSet(result))
@@ -6326,6 +6380,18 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           || firstExecutedResult.key
           || merged[0]?.key
           || '';
+  };
+
+  const activateExecutedResult = (merged: ResultSet[], executed: ResultSet[], requestSeq: number) => {
+      const nextActiveResultKey = resolveActiveResultKeyAfterMerge(merged, executed);
+      const nextActiveResult = merged.find((result) => result.key === nextActiveResultKey);
+      setActiveResultKey(nextActiveResultKey);
+      setResultDataPreviewRequest(isQueryDataGridResultSet(nextActiveResult)
+          ? {
+              resultKey: nextActiveResultKey,
+              requestId: `${tab.id}:${requestSeq}`,
+          }
+          : null);
   };
 
   const resolveExecutableSQLAtEditorPosition = (model: any, sqlText: string, position: any, dbType = ''): string => {
@@ -7042,7 +7108,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
             const shouldReplaceAllResults = didExecuteWholeEditor;
             const mergedResultSets = mergeResultSets(resultSets, nextResultSets, shouldReplaceAllResults);
             setResultSets(mergedResultSets);
-            setActiveResultKey(resolveActiveResultKeyAfterMerge(mergedResultSets, nextResultSets));
+            activateExecutedResult(mergedResultSets, nextResultSets, runSeq);
             if (didExecuteAppendedSql || didExecuteWholeEditor) {
                 lastExecutedEditorQueryRef.current = currentQuery;
             }
@@ -7453,7 +7519,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
             const shouldReplaceAllResults = didExecuteWholeEditor;
             const mergedResultSets = mergeResultSets(resultSets, nextResultSets, shouldReplaceAllResults);
             setResultSets(mergedResultSets);
-            setActiveResultKey(resolveActiveResultKeyAfterMerge(mergedResultSets, nextResultSets));
+            activateExecutedResult(mergedResultSets, nextResultSets, runSeq);
             if (didExecuteAppendedSql || didExecuteWholeEditor) {
                 lastExecutedEditorQueryRef.current = currentQuery;
             }
@@ -8193,8 +8259,9 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       return rawTitle;
   };
 
-  const persistQuery = async (payload: { id: string; name: string; createdAt?: number }) => {
+  const persistQuery = async (payload: { id: string; name: string; createdAt?: number }): Promise<boolean> => {
       const sql = getCurrentQuery();
+      lastLocalQueryRef.current = sql;
       const saved = {
           id: payload.id,
           name: payload.name,
@@ -8203,17 +8270,40 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           dbName: currentDb || tab.dbName || '',
           createdAt: payload.createdAt ?? Date.now(),
       };
-      const persisted = await saveQuery(saved);
-      addTab({
-          ...tab,
+      const persisted = await runQueuedSaveOperation(() => saveQuery(saved));
+      if (!queryEditorMountedRef.current) {
+          return false;
+      }
+
+      const latestSql = getCurrentQuery();
+      const latestConnectionId = currentConnectionIdRef.current;
+      const latestDbName = currentDbRef.current;
+      const latestTab = useStore.getState().tabs?.find((item) => item.id === tab.id) || tab;
+      const nextTab = {
+          ...latestTab,
           title: persisted.name,
-          query: sql,
-          connectionId: currentConnectionId,
-          dbName: currentDb || tab.dbName || '',
+          query: latestSql,
+          connectionId: latestConnectionId,
+          dbName: latestDbName,
           savedQueryId: persisted.id,
-      });
-      clearQueryTabDraft(tab.id);
-      return persisted;
+      };
+      addTab(nextTab);
+      lastLocalQueryRef.current = latestSql;
+      setQuery(latestSql);
+
+      const savedSnapshotStillCurrent = latestSql === String(persisted.sql ?? '')
+          && String(latestConnectionId || '').trim() === String(persisted.connectionId || '').trim()
+          && String(latestDbName || '').trim() === String(persisted.dbName || '').trim();
+      if (savedSnapshotStillCurrent) {
+          clearQueryTabDraft(tab.id);
+      } else {
+          persistQueryTabDraftSnapshot(nextTab, latestSql, {
+              connectionId: latestConnectionId,
+              dbName: latestDbName,
+          });
+      }
+      flushQueryTabDraftSnapshots();
+      return true;
   };
 
   const openSaveQueryModal = (mode: 'save' | 'rename') => {
@@ -8227,22 +8317,40 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       if (filePath) {
           const sql = getCurrentQuery();
           try {
-              const res = await WriteSQLFile(filePath, sql);
+              const res = await runQueuedSaveOperation(() => WriteSQLFile(filePath, sql));
+              if (!queryEditorMountedRef.current) {
+                  return;
+              }
               if (!res.success) {
                   message.error(translate('query_editor.message.save_sql_file_failed', {
                       error: res.message || translate('common.unknown'),
                   }));
                   return;
               }
-              addTab({
-                  ...tab,
-                  query: sql,
-                  connectionId: currentConnectionId,
-                  dbName: currentDb || tab.dbName || '',
+              const latestSql = getCurrentQuery();
+              const latestConnectionId = currentConnectionIdRef.current;
+              const latestDbName = currentDbRef.current;
+              const latestTab = useStore.getState().tabs?.find((item) => item.id === tab.id) || tab;
+              const nextTab = {
+                  ...latestTab,
+                  query: latestSql,
+                  connectionId: latestConnectionId,
+                  dbName: latestDbName,
                   filePath,
                   savedQueryId: undefined,
-              });
-              clearQueryTabDraft(tab.id);
+              };
+              addTab(nextTab);
+              lastLocalQueryRef.current = latestSql;
+              setQuery(latestSql);
+              if (latestSql === sql) {
+                  clearQueryTabDraft(tab.id);
+              } else {
+                  persistQueryTabDraftSnapshot(nextTab, latestSql, {
+                      connectionId: latestConnectionId,
+                      dbName: latestDbName,
+                  });
+              }
+              flushQueryTabDraftSnapshots();
               message.success(translate('query_editor.message.sql_file_saved'));
           } catch (error) {
               message.error(translate('query_editor.message.save_sql_file_failed', {
@@ -8260,8 +8368,9 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           return;
       }
       const saveName = existed?.name || resolveDefaultQueryName();
-      await persistQuery({ id: saveId, name: saveName, createdAt: existed?.createdAt });
-      message.success(translate('query_editor.message.saved'));
+      if (await persistQuery({ id: saveId, name: saveName, createdAt: existed?.createdAt })) {
+          message.success(translate('query_editor.message.saved'));
+      }
   };
 
   const handleRenameQuery = () => {
@@ -8354,6 +8463,19 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
 
           const editor = editorRef.current;
           const targetNode = resolveEventTargetNode(event.target);
+          const targetElement = targetNode
+              && typeof (targetNode as Element).closest === 'function'
+              ? targetNode as Element
+              : null;
+          const activeElement = document.activeElement;
+          const dataGridHasFocus = !!(
+              activeElement
+              && typeof activeElement.closest === 'function'
+              && activeElement.closest('.data-grid-root')
+          );
+          if (targetElement?.closest('.data-grid-root') || dataGridHasFocus) {
+              return;
+          }
           const editorHasFocus = !!editor?.hasTextFocus?.();
           const inEditorPane = !!(targetNode && editorPaneRef.current?.contains(targetNode));
           const inQueryEditor = !!(targetNode && queryEditorRootRef.current?.contains(targetNode));
@@ -8574,11 +8696,14 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           const existed = currentSavedQuery || null;
           const fallbackSavedId = String(tab.savedQueryId || '').trim();
           const nextSavedId = existed?.id || fallbackSavedId || `saved-${Date.now()}`;
-          await persistQuery({
+          const applied = await persistQuery({
               id: nextSavedId,
               name: String(values.name || '').trim() || translate('query_editor.save_modal.unnamed'),
               createdAt: existed?.createdAt,
           });
+          if (!applied) {
+              return;
+          }
           message.success(translate(
               saveModalMode === 'rename' ? 'query_editor.message.renamed' : 'query_editor.message.saved'
           ));
@@ -8948,7 +9073,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
         >
           <Editor 
             height="100%" 
-            gonaviTypography="code"
+            gonaviTypography="sql"
             language={queryEditorMonacoLanguage}
             theme={darkMode ? "transparent-dark" : "transparent-light"}
             defaultValue={query}
@@ -8990,6 +9115,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           isV2Ui={isV2Ui}
           currentDb={currentDb}
           currentConnectionId={currentConnectionId}
+          dataPreviewRequest={resultDataPreviewRequest}
           toggleShortcutLabel={toggleQueryResultsPanelShortcutLabel}
           onActiveResultKeyChange={setActiveResultKey}
           onHide={() => updateResultPanelVisibility(false)}

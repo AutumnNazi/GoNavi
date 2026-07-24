@@ -151,6 +151,63 @@ describe("i18n catalog", () => {
     }
   });
 
+  it("keeps latest and dev update channel descriptions distinct", () => {
+    const latestHintKey = "app.about.version_update.channel_hint.latest";
+    const devHintKey = "app.about.version_update.channel_hint.dev";
+
+    for (const language of SUPPORTED_LANGUAGES) {
+      expect(catalogs[language]).toHaveProperty(latestHintKey);
+      expect(catalogs[language]).toHaveProperty(devHintKey);
+      expect(catalogs[language][latestHintKey]).toBeTruthy();
+      expect(catalogs[language][devHintKey]).toBeTruthy();
+      expect(catalogs[language][latestHintKey]).not.toBe(catalogs[language][devHintKey]);
+    }
+
+    expect(catalogs["zh-CN"][latestHintKey]).toBe("接收最新的稳定版本");
+    expect(catalogs["zh-CN"][devHintKey]).toBe("接收最新的开发版本");
+  });
+
+  it("keeps data-root log directory copy complete across all catalogs", () => {
+    const logDirectoryKeys = [
+      "app.data_root.log_directory.backend.dialog.select_directory",
+      "app.data_root.log_directory.backend.error.desktop_only",
+      "app.data_root.log_directory.backend.error.directory_unavailable",
+      "app.data_root.log_directory.backend.error.environment_managed",
+      "app.data_root.log_directory.backend.error.open_directory_failed",
+      "app.data_root.log_directory.backend.error.open_directory_unsupported",
+      "app.data_root.log_directory.backend.error.save_failed",
+      "app.data_root.log_directory.backend.message.opened",
+      "app.data_root.log_directory.backend.message.unchanged",
+      "app.data_root.log_directory.backend.message.updated_restart",
+      "app.data_root.log_directory.current_file",
+      "app.data_root.log_directory.default_directory",
+      "app.data_root.log_directory.description",
+      "app.data_root.log_directory.environment_hint",
+      "app.data_root.log_directory.message.apply_failed_with_error",
+      "app.data_root.log_directory.message.open_failed_with_error",
+      "app.data_root.log_directory.message.select_failed_with_error",
+      "app.data_root.log_directory.message.select_valid_first",
+      "app.data_root.log_directory.message.updated",
+      "app.data_root.log_directory.pending_restart",
+      "app.data_root.log_directory.placeholder",
+      "app.data_root.log_directory.restart_hint",
+      "app.data_root.log_directory.title",
+    ] as const;
+    const base = catalogs["en-US"];
+
+    for (const language of SUPPORTED_LANGUAGES) {
+      for (const key of logDirectoryKeys) {
+        expect(catalogs[language]).toHaveProperty(key);
+        expect(catalogs[language][key]).toBeTruthy();
+        expect(getPlaceholders(catalogs[language][key])).toEqual(getPlaceholders(base[key]));
+      }
+    }
+
+    expect(catalogs["zh-CN"]["app.data_root.log_directory.title"]).toBe("日志目录");
+    expect(catalogs["zh-CN"]["app.data_root.log_directory.environment_hint"]).toContain("GONAVI_LOG_DIR");
+    expect(catalogs["en-US"]["app.data_root.log_directory.restart_hint"]).toContain("gonavi.log");
+  });
+
   it("includes App shell keys required by every supported language", () => {
     const appShellKeys = [
       "app.tools.title",
@@ -188,6 +245,8 @@ describe("i18n catalog", () => {
       "app.security_update.stage.updating_secure_storage",
       "app.security_update.stage.verifying_result",
       "app.sidebar.ai_assistant",
+      "app.sidebar.collapse",
+      "app.sidebar.expand",
       "app.sidebar.resize_width",
       "app.sidebar.settings",
       "app.sidebar.sql_execution_log",
@@ -450,6 +509,8 @@ describe("i18n catalog", () => {
     const dataGridDetachedChromeKeys = [
       "data_grid.page_find.tooltip",
       "data_grid.page_find.placeholder",
+      "data_grid.page_find.previous",
+      "data_grid.page_find.next",
       "data_grid.page_find.summary",
       "data_grid.pagination.result_set",
       "data_grid.pagination.page_size_aria",
@@ -477,9 +538,6 @@ describe("i18n catalog", () => {
       "data_grid.secondary.er_diagram",
       "data_grid.secondary.column_display",
       "data_grid.secondary.jump_column",
-      "data_grid.secondary.row_count",
-      "data_grid.secondary.pending_changes",
-      "data_grid.secondary.live",
       "data_grid.record_view.empty",
       "data_grid.record_view.json_record_count",
       "data_grid.record_view.edit_json",
@@ -553,8 +611,6 @@ describe("i18n catalog", () => {
     expect(t("en-US", "data_grid.pagination.page.current", { current: "<raw-current>" })).toContain("<raw-current>");
     expect(t("en-US", "data_grid.pagination.page.known", { current: "<raw-current>", totalPages: "<raw-total-pages>" })).toContain("<raw-current>");
     expect(t("en-US", "data_grid.pagination.page.known", { current: "<raw-current>", totalPages: "<raw-total-pages>" })).toContain("<raw-total-pages>");
-    expect(t("zh-CN", "data_grid.secondary.row_count", { count: "<raw-count>" })).toContain("<raw-count>");
-    expect(t("zh-CN", "data_grid.secondary.pending_changes", { count: "<raw-count>" })).toContain("<raw-count>");
     expect(t("zh-CN", "data_grid.secondary.view_ddl")).toContain("DDL");
     expect(t("ja-JP", "data_grid.secondary.er_diagram")).toContain("ER");
     expect(t("zh-CN", "data_grid.record_view.json_record_count", { count: "<raw-count>" })).toContain("<raw-count>");
@@ -865,6 +921,8 @@ describe("i18n catalog", () => {
     expect(sidebarUtilitySource).not.toContain("app.sidebar.tools");
     expect(sidebarUtilitySource).toContain("app.sidebar.settings");
     expect(sidebarUtilitySource).toContain("app.sidebar.ai_assistant");
+    expect(source).toContain("app.sidebar.collapse");
+    expect(source).toContain("app.sidebar.expand");
     expect(source).toContain("app.sidebar.resize_width");
     expect(source).toContain("app.sidebar.sql_execution_log");
     expect(sidebarUtilitySource).not.toContain("title: '工具'");

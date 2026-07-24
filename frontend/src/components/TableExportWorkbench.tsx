@@ -273,6 +273,8 @@ const resolveBatchTableModeMeta = (mode: BatchTableExportMode) =>
 const resolveBatchDatabaseModeMeta = (mode: BatchDatabaseExportMode) =>
   createBatchDatabaseExportModeOptions().find((item) => item.value === mode) || createBatchDatabaseExportModeOptions()[0];
 
+const shouldIncludeDatabaseContextByDefault = (mode: BatchDatabaseExportMode): boolean => mode === 'backup';
+
 const resolveBatchTablesTargetName = (dbName: string, objectCount: number): string => {
   const safeDbName = String(dbName || '').trim() || t('data_export.workbench.target.current_database');
   return t('data_export.workbench.target.batch_tables', { database: safeDbName, count: objectCount });
@@ -381,6 +383,9 @@ const TableExportWorkbench: React.FC<{ tab: TabData }> = ({ tab }) => {
     tab.tableExportContentMode === 'backup' ? 'backup' : 'schema'
   ));
   const [includeDropIfExists, setIncludeDropIfExists] = useState(tab.tableExportIncludeDropIfExists === true);
+  const [includeDatabaseContext, setIncludeDatabaseContext] = useState(() => (
+    shouldIncludeDatabaseContextByDefault(tab.tableExportContentMode === 'backup' ? 'backup' : 'schema')
+  ));
   const [loadingDatabases, setLoadingDatabases] = useState(false);
   const [loadingObjects, setLoadingObjects] = useState(false);
   const [loadingColumns, setLoadingColumns] = useState(false);
@@ -388,7 +393,9 @@ const TableExportWorkbench: React.FC<{ tab: TabData }> = ({ tab }) => {
   const [objectLoadError, setObjectLoadError] = useState('');
   const [columnLoadError, setColumnLoadError] = useState('');
   const [destructiveOperation, setDestructiveOperation] = useState<BatchDestructiveOperation | null>(null);
-  const [appliedLaunchRequestKey, setAppliedLaunchRequestKey] = useState(() => String(tab.tableExportRequestKey || '').trim());
+  const [appliedLaunchKey, setAppliedLaunchKey] = useState(() => (
+    String(tab.tableExportRequestKey || tab.tableExportLaunchKey || '').trim()
+  ));
 
   const syncBatchWorkbenchTabContext = useCallback((connectionId: string, dbName?: string) => {
     if (!isBatchTablesWorkbench && !isBatchDatabasesWorkbench) return;
@@ -433,6 +440,7 @@ const TableExportWorkbench: React.FC<{ tab: TabData }> = ({ tab }) => {
     () => (connection ? normalizeConnectionConfig(connection) : null),
     [connection],
   );
+  const supportsDatabaseContextOption = String(connectionConfig?.type || '').trim().toLowerCase() === 'mysql';
   const connectionCapabilities = useMemo(
     () => getDataSourceCapabilities(connection?.config),
     [connection?.config],
@@ -478,8 +486,8 @@ const TableExportWorkbench: React.FC<{ tab: TabData }> = ({ tab }) => {
   });
 
   useEffect(() => {
-    const requestKey = String(tab.tableExportRequestKey || '').trim();
-    if (!requestKey || requestKey === appliedLaunchRequestKey || isRunning) {
+    const launchKey = String(tab.tableExportRequestKey || tab.tableExportLaunchKey || '').trim();
+    if (!launchKey || launchKey === appliedLaunchKey || isRunning) {
       return;
     }
     setSelectedConnectionId(String(tab.connectionId || '').trim());
@@ -487,11 +495,13 @@ const TableExportWorkbench: React.FC<{ tab: TabData }> = ({ tab }) => {
     setSelectedObjectNames(tab.tableExportInitialObjectNames || []);
     setSelectedDatabaseNames(tab.tableExportInitialDatabaseNames || []);
     setBatchTableMode(tab.tableExportContentMode || 'schema');
-    setBatchDatabaseMode(tab.tableExportContentMode === 'backup' ? 'backup' : 'schema');
+    const nextDatabaseMode = tab.tableExportContentMode === 'backup' ? 'backup' : 'schema';
+    setBatchDatabaseMode(nextDatabaseMode);
     setIncludeDropIfExists(tab.tableExportIncludeDropIfExists === true);
-    setAppliedLaunchRequestKey(requestKey);
+    setIncludeDatabaseContext(shouldIncludeDatabaseContextByDefault(nextDatabaseMode));
+    setAppliedLaunchKey(launchKey);
   }, [
-    appliedLaunchRequestKey,
+    appliedLaunchKey,
     isRunning,
     tab.connectionId,
     tab.dbName,
@@ -499,6 +509,7 @@ const TableExportWorkbench: React.FC<{ tab: TabData }> = ({ tab }) => {
     tab.tableExportIncludeDropIfExists,
     tab.tableExportInitialDatabaseNames,
     tab.tableExportInitialObjectNames,
+    tab.tableExportLaunchKey,
     tab.tableExportRequestKey,
   ]);
 
@@ -1199,6 +1210,7 @@ const TableExportWorkbench: React.FC<{ tab: TabData }> = ({ tab }) => {
             totalRowsHint: selectedDatabaseNames.length,
             totalRowsKnown: true,
             includeDropIfExists,
+            includeDatabaseContext,
           } as any,
         ),
     });
@@ -1223,6 +1235,7 @@ const TableExportWorkbench: React.FC<{ tab: TabData }> = ({ tab }) => {
           totalRowsHint: 0,
           totalRowsKnown: false,
           includeDropIfExists,
+          includeDatabaseContext,
         } as any,
       ),
     });
@@ -1279,7 +1292,7 @@ const TableExportWorkbench: React.FC<{ tab: TabData }> = ({ tab }) => {
     const requestKey = String(tab.tableExportRequestKey || '').trim();
     if (
       !requestKey
-      || requestKey !== appliedLaunchRequestKey
+      || requestKey !== appliedLaunchKey
       || requestKey === lastAutoStartRequestKeyRef.current
       || requestKey === String(progressState.requestKey || '').trim()
       || !canStart
@@ -1289,7 +1302,7 @@ const TableExportWorkbench: React.FC<{ tab: TabData }> = ({ tab }) => {
     }
     lastAutoStartRequestKeyRef.current = requestKey;
     void handleStartExport();
-  }, [appliedLaunchRequestKey, canStart, isRunning, progressState.requestKey, tab.tableExportRequestKey]);
+  }, [appliedLaunchKey, canStart, isRunning, progressState.requestKey, tab.tableExportRequestKey]);
 
   const headerBadges = useMemo(() => {
     if (isSingleWorkbench) {
@@ -1644,12 +1657,35 @@ const TableExportWorkbench: React.FC<{ tab: TabData }> = ({ tab }) => {
                     value={batchDatabaseMode}
                     disabled={isConfigurationLocked}
                     options={createBatchDatabaseExportModeOptions().map((item) => ({ value: item.value, label: item.label }))}
-                    onChange={(next) => setBatchDatabaseMode(next as BatchDatabaseExportMode)}
+                    onChange={(next) => {
+                      const nextMode = next as BatchDatabaseExportMode;
+                      setBatchDatabaseMode(nextMode);
+                      setIncludeDatabaseContext(shouldIncludeDatabaseContextByDefault(nextMode));
+                    }}
                   />
                   <div style={{ marginTop: 6, fontSize: 12, color: secondaryTextColor }}>
                     {batchDatabaseModeMeta.description}
                   </div>
                 </div>
+
+                {isDirectDatabaseWorkbench && supportsDatabaseContextOption ? (
+                  <div>
+                    <Checkbox
+                      data-export-include-database-context="true"
+                      checked={includeDatabaseContext}
+                      disabled={isConfigurationLocked}
+                      onChange={(event) => setIncludeDatabaseContext(event.target.checked)}
+                    >
+                      {t('data_export.sql_options.database_context.label')}
+                    </Checkbox>
+                    <Alert
+                      type="info"
+                      showIcon
+                      style={{ marginTop: 8 }}
+                      message={t('data_export.sql_options.database_context.description')}
+                    />
+                  </div>
+                ) : null}
 
                 <div>
                   <Checkbox
@@ -1901,12 +1937,35 @@ const TableExportWorkbench: React.FC<{ tab: TabData }> = ({ tab }) => {
                     value={batchDatabaseMode}
                     disabled={isConfigurationLocked}
                     options={createBatchDatabaseExportModeOptions().map((item) => ({ value: item.value, label: item.label }))}
-                    onChange={(next) => setBatchDatabaseMode(next as BatchDatabaseExportMode)}
+                    onChange={(next) => {
+                      const nextMode = next as BatchDatabaseExportMode;
+                      setBatchDatabaseMode(nextMode);
+                      setIncludeDatabaseContext(shouldIncludeDatabaseContextByDefault(nextMode));
+                    }}
                   />
                   <div style={{ marginTop: 6, fontSize: 12, color: secondaryTextColor }}>
                     {batchDatabaseModeMeta.description}
                   </div>
                 </div>
+
+                {supportsDatabaseContextOption ? (
+                  <div>
+                    <Checkbox
+                      data-export-include-database-context="true"
+                      checked={includeDatabaseContext}
+                      disabled={isConfigurationLocked}
+                      onChange={(event) => setIncludeDatabaseContext(event.target.checked)}
+                    >
+                      {t('data_export.sql_options.database_context.label')}
+                    </Checkbox>
+                    <Alert
+                      type="info"
+                      showIcon
+                      style={{ marginTop: 8 }}
+                      message={t('data_export.sql_options.database_context.description')}
+                    />
+                  </div>
+                ) : null}
 
                 <div>
                   <Checkbox

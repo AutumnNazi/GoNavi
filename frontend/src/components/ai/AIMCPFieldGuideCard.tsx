@@ -16,7 +16,6 @@ interface AIMCPFieldGuideCardProps {
 
 const AIMCPFieldGuideCard: React.FC<AIMCPFieldGuideCardProps> = ({
   item,
-  cardBorder,
   darkMode,
   overlayTheme,
   compact = false,
@@ -29,7 +28,6 @@ const AIMCPFieldGuideCard: React.FC<AIMCPFieldGuideCardProps> = ({
     <div
       style={{
         padding: compact ? '10px 10px 10px 0' : '10px 10px 10px 0',
-        borderBottom: `1px solid ${cardBorder}`,
         background: 'transparent',
         display: 'flex',
         flexDirection: 'column',

@@ -45,7 +45,7 @@ const AISettingsSkillsSection: React.FC<AISettingsSkillsSectionProps> = ({
   const [expandedSkillIds, setExpandedSkillIds] = React.useState<Record<string, boolean>>({});
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
       <div
         style={{
           display: 'flex',
@@ -53,7 +53,6 @@ const AISettingsSkillsSection: React.FC<AISettingsSkillsSectionProps> = ({
           alignItems: 'flex-start',
           gap: 16,
           paddingBottom: 14,
-          borderBottom: `1px solid ${cardBorder}`,
         }}
       >
         <div style={{ minWidth: 0 }}>
@@ -71,7 +70,7 @@ const AISettingsSkillsSection: React.FC<AISettingsSkillsSectionProps> = ({
       {skills.length === 0 && (
         <div
           className="gonavi-ai-skill-empty"
-          style={{ padding: '18px 0', borderBottom: `1px solid ${cardBorder}`, color: overlayTheme.mutedText }}
+          style={{ padding: '18px 2px', borderRadius: 4, color: overlayTheme.mutedText }}
         >
           {copy('ai_settings.skill.empty')}
         </div>
@@ -96,7 +95,7 @@ const AISettingsSkillsSection: React.FC<AISettingsSkillsSectionProps> = ({
               ? current
               : { ...current, [skill.id]: open });
           }}
-          style={{ borderBottom: `1px solid ${cardBorder}` }}
+          style={{ borderRadius: 4 }}
         >
           <summary style={{ cursor: 'pointer', padding: '13px 2px', color: overlayTheme.titleText }}>
             <span

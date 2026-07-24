@@ -500,6 +500,7 @@ export namespace app {
 	    totalRowsHint?: number;
 	    totalRowsKnown?: boolean;
 	    includeDropIfExists?: boolean;
+	    includeDatabaseContext?: boolean;
 	    insertSQLDialect?: string;
 	    insertSQLTargetTable?: string;
 	    insertSQLColumnTypes?: Record<string, string>;
@@ -519,6 +520,7 @@ export namespace app {
 	        this.totalRowsHint = source["totalRowsHint"];
 	        this.totalRowsKnown = source["totalRowsKnown"];
 	        this.includeDropIfExists = source["includeDropIfExists"];
+	        this.includeDatabaseContext = source["includeDatabaseContext"];
 	        this.insertSQLDialect = source["insertSQLDialect"];
 	        this.insertSQLTargetTable = source["insertSQLTargetTable"];
 	        this.insertSQLColumnTypes = source["insertSQLColumnTypes"];
@@ -1695,6 +1697,7 @@ export namespace nativewindow {
 	    id?: string;
 	    bounds?: WindowBounds;
 	    visibilityRevision?: number;
+	    applied?: boolean;
 
 	    static createFrom(source: any = {}) {
 	        return new OperationResult(source);
@@ -1707,6 +1710,7 @@ export namespace nativewindow {
 	        this.id = source["id"];
 	        this.bounds = this.convertValues(source["bounds"], WindowBounds);
 	        this.visibilityRevision = source["visibilityRevision"];
+	        this.applied = source["applied"];
 	    }
 
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

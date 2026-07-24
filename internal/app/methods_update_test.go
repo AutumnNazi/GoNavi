@@ -595,6 +595,40 @@ func TestResolveReusableStagedUpdateForPlatformDoesNotReuseCurrentWindowsExeInsi
 	}
 }
 
+func TestResolveReusableStagedUpdateForPlatformReusesPortableZipInsideStagedDir(t *testing.T) {
+	preferredWorkspaceDir := t.TempDir()
+	legacyWorkspaceDir := t.TempDir()
+	info := UpdateInfo{
+		Channel:       string(updateChannelLatest),
+		LatestVersion: "0.8.5",
+		AssetName:     "GoNavi-0.8.5-Windows-Amd64-Portable.zip",
+		AssetSize:     8,
+		InstallMode:   string(updateInstallModePortable),
+		PackageType:   string(updatePackageTypePortable),
+		AutoRelaunch:  true,
+	}
+
+	stagedDir := filepath.Join(
+		legacyWorkspaceDir,
+		buildUpdateStageDirNameForPlatform("windows", info.Channel, info.LatestVersion),
+	)
+	if err := os.MkdirAll(stagedDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll returned error: %v", err)
+	}
+	assetPath := filepath.Join(stagedDir, info.AssetName)
+	if err := os.WriteFile(assetPath, []byte("12345678"), 0o644); err != nil {
+		t.Fatalf("WriteFile returned error: %v", err)
+	}
+
+	reused := resolveReusableStagedUpdateForPlatform("windows", preferredWorkspaceDir, legacyWorkspaceDir, info, nil)
+	if reused == nil {
+		t.Fatal("expected staged portable ZIP to be reused")
+	}
+	if reused.FilePath != assetPath || reused.PackageType != updatePackageTypePortable {
+		t.Fatalf("unexpected reused portable ZIP: %#v", reused)
+	}
+}
+
 func TestDownloadUpdateUsesCurrentLanguageForBackendMessage(t *testing.T) {
 	app := NewApp()
 	app.SetLanguage("en-US")
@@ -797,13 +831,13 @@ func TestExpectedAssetNameForExecutableUsesWindowsPortableSuffix(t *testing.T) {
 			name:    "amd64 release",
 			goarch:  "amd64",
 			version: "v1.2.3",
-			want:    "GoNavi-1.2.3-Windows-Amd64-Portable.exe",
+			want:    "GoNavi-1.2.3-Windows-Amd64-Portable.zip",
 		},
 		{
 			name:    "arm64 dev",
 			goarch:  "arm64",
 			version: "dev-a1b2c3d",
-			want:    "GoNavi-dev-a1b2c3d-Windows-Arm64-Portable.exe",
+			want:    "GoNavi-dev-a1b2c3d-Windows-Arm64-Portable.zip",
 		},
 	}
 

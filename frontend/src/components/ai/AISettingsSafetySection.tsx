@@ -12,10 +12,12 @@ const SAFETY_OPTIONS: {
   value: AISafetyLevel;
   descKey: string;
   icon: React.ReactNode;
+  lightIconColor: string;
+  darkIconColor: string;
 }[] = [
-  { labelKey: 'ai_settings.safety.readonly.label', value: 'readonly', descKey: 'ai_settings.safety.readonly.desc', icon: <LockOutlined /> },
-  { labelKey: 'ai_settings.safety.readwrite.label', value: 'readwrite', descKey: 'ai_settings.safety.readwrite.desc', icon: <EditOutlined /> },
-  { labelKey: 'ai_settings.safety.full.label', value: 'full', descKey: 'ai_settings.safety.full.desc', icon: <WarningOutlined /> },
+  { labelKey: 'ai_settings.safety.readonly.label', value: 'readonly', descKey: 'ai_settings.safety.readonly.desc', icon: <LockOutlined />, lightIconColor: '#16a34a', darkIconColor: '#4ade80' },
+  { labelKey: 'ai_settings.safety.readwrite.label', value: 'readwrite', descKey: 'ai_settings.safety.readwrite.desc', icon: <EditOutlined />, lightIconColor: '#d97706', darkIconColor: '#fbbf24' },
+  { labelKey: 'ai_settings.safety.full.label', value: 'full', descKey: 'ai_settings.safety.full.desc', icon: <WarningOutlined />, lightIconColor: '#dc2626', darkIconColor: '#f87171' },
 ];
 
 interface AISettingsSafetySectionProps {
@@ -29,6 +31,7 @@ interface AISettingsSafetySectionProps {
 
 const AISettingsSafetySection: React.FC<AISettingsSafetySectionProps> = ({
   safetyLevel,
+  darkMode,
   overlayTheme,
   cardBorder,
   onChange,
@@ -41,6 +44,7 @@ const AISettingsSafetySection: React.FC<AISettingsSafetySectionProps> = ({
     title: copy(option.labelKey),
     description: copy(option.descKey),
     icon: option.icon,
+    iconColor: darkMode ? option.darkIconColor : option.lightIconColor,
   }));
 
   return (

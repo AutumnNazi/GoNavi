@@ -1768,7 +1768,6 @@ const DriverManagerModal: React.FC<{ open: boolean; onClose: () => void; onBack?
           <div className="driver-manager-card-info">
             <div className="driver-manager-title-row">
               <Text strong className="driver-manager-driver-name">{row.name}</Text>
-              <Tag>{embedded ? <code>{row.type}</code> : row.type}</Tag>
               {resolveDriverStatusTag(row)}
             </div>
             <div className="driver-manager-meta-row">
@@ -1778,7 +1777,6 @@ const DriverManagerModal: React.FC<{ open: boolean; onClose: () => void; onBack?
             </div>
             {row.needsUpdate && statusMessage ? (
               <div className="driver-manager-update-note" style={managerUpdateNoteStyle}>
-                <Text strong type="warning">{t('driver.modal.card.needsUpdate')}</Text>
                 <Paragraph
                   className="driver-manager-note-text"
                   ellipsis={{ rows: 2, expandable: true, symbol: t('driver.modal.card.expandReason') }}

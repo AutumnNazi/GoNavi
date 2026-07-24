@@ -123,6 +123,10 @@ describe('AISettingsModal edit password behavior', () => {
   });
 
   it('keeps every AI section mounted while exposing only the active tabpanel', () => {
+    const sectionPanelStart = source.indexOf('const renderSectionPanel =');
+    const sectionPanelEnd = source.indexOf('\n    return (', sectionPanelStart);
+    const sectionPanelSource = source.slice(sectionPanelStart, sectionPanelEnd);
+
     expect(source).toContain('const renderSectionPanel = (sectionKey: AISettingsSectionKey, content: React.ReactNode) => {');
     expect(source).toContain('hidden={activeSection !== sectionKey}');
     expect(source).toContain('id={`gonavi-ai-settings-panel-${sectionKey}`}');
@@ -136,6 +140,7 @@ describe('AISettingsModal edit password behavior', () => {
     expect(source).not.toContain('key={activeSection}');
     expect(source).not.toContain("{activeSection === 'mcp' && (");
     expect(source).not.toContain("{activeSection === 'tools' && (");
+    expect(sectionPanelSource).not.toContain('borderBottom');
   });
 
   it('resets the shared AI settings scroll region after section navigation', () => {

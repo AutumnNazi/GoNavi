@@ -15,13 +15,18 @@ describe('SQL audit workbench wiring', () => {
     expect(workbenchSource).toContain('<SqlAuditWorkbench tab={tab} isActive={isActive} />');
   });
 
-  it('provides both the V2 footer shortcut and the cross-version settings-center entry', () => {
+  it('provides both the fixed V2 rail shortcut and the cross-version settings-center entry', () => {
     const sidebarSource = read('../Sidebar.tsx');
     const railSource = read('../sidebar/SqlAuditRailButton.tsx');
+    const connectionRailSource = read('../sidebar/SidebarConnectionRail.tsx');
     const appSource = read('../../App.tsx');
 
-    expect(sidebarSource).toContain('gn-v2-sidebar-sql-audit-button');
+    expect(sidebarSource).toContain('gn-v2-rail-sql-audit-button');
+    expect(sidebarSource).toContain('workbenchActions:');
+    expect(connectionRailSource).toContain('{workbenchActions}');
+    expect(sidebarSource).not.toContain('gn-v2-sidebar-log-footer');
     expect(railSource).toContain('buildSqlAuditWorkbenchTab()');
+    expect(railSource).toContain('data-sidebar-sql-audit-action="true"');
     expect(appSource).toContain("key: 'sql-audit'");
     expect(appSource).toContain('addTab(buildSqlAuditWorkbenchTab())');
     expect(appSource).toContain('handleCancelSettingsCenterPane();');

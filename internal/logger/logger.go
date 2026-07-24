@@ -12,6 +12,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"GoNavi-Wails/internal/appdata"
 )
 
 const (
@@ -147,6 +149,23 @@ func Path() string {
 	return logPath
 }
 
+func DefaultDirectory() string {
+	return defaultLogDir()
+}
+
+func ConfiguredDirectory() (string, bool) {
+	if directory := strings.TrimSpace(os.Getenv(envLogDir)); directory != "" {
+		if abs, err := filepath.Abs(directory); err == nil {
+			directory = filepath.Clean(abs)
+		}
+		return directory, true
+	}
+	if directory, err := appdata.ResolveConfiguredLogDirectory(); err == nil && directory != "" {
+		return directory, false
+	}
+	return defaultLogDir(), false
+}
+
 func Close() {
 	Init()
 	logMu.Lock()
@@ -263,13 +282,16 @@ func printf(level string, format string, args ...any) {
 }
 
 func initOutput() (string, io.Writer) {
-	dir := strings.TrimSpace(os.Getenv(envLogDir))
-	if dir == "" {
-		dir = defaultLogDir()
-	}
+	dir, _ := ConfiguredDirectory()
 
 	if path, writer, ok := openLogFile(dir); ok {
 		return path, writer
+	}
+	defaultDir := defaultLogDir()
+	if filepath.Clean(dir) != filepath.Clean(defaultDir) {
+		if path, writer, ok := openLogFile(defaultDir); ok {
+			return path, writer
+		}
 	}
 
 	fallbackDir := filepath.Join(os.TempDir(), appHiddenDir, appLogDirName)

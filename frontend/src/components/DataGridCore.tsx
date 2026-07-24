@@ -115,8 +115,12 @@ import {
 } from '../utils/rowLocator';
 import {
     getColumnDefinitionComment,
+    getColumnDefinitionDefault,
+    getColumnDefinitionExtra,
     getColumnDefinitionName,
+    getColumnDefinitionNullable,
     getColumnDefinitionType,
+    hasColumnDefinitionDefault,
 } from '../utils/columnDefinition';
 import {
     V2CellContextMenuView,
@@ -1371,6 +1375,7 @@ interface DataGridProps {
     enableSqlLogEvent?: boolean;
     initialViewMode?: GridViewMode;
     initialViewModeRequestId?: string;
+    initialViewModeScope?: 'shared' | 'local';
     onDataViewActivate?: () => void;
     onDataChange?: (rows: any[]) => void;
 }
@@ -1397,6 +1402,10 @@ type VirtualEditingCellState = {
 type ColumnMeta = {
     type: string;
     comment: string;
+    nullable: string;
+    default: string;
+    hasDefault: boolean;
+    extra: string;
 };
 
 const buildColumnMetaMap = (columns: ColumnDefinition[]): Record<string, ColumnMeta> => {
@@ -1407,6 +1416,10 @@ const buildColumnMetaMap = (columns: ColumnDefinition[]): Record<string, ColumnM
         nextMap[name] = {
             type: getColumnDefinitionType(column),
             comment: getColumnDefinitionComment(column),
+            nullable: getColumnDefinitionNullable(column),
+            default: getColumnDefinitionDefault(column),
+            hasDefault: hasColumnDefinitionDefault(column),
+            extra: getColumnDefinitionExtra(column),
         };
     });
     return nextMap;
@@ -1419,6 +1432,21 @@ const hasUsableColumnMeta = (metaMap: Record<string, ColumnMeta>): boolean => (
         return type.length > 0 || comment.length > 0;
     })
 );
+
+export const shouldOmitBlankDataGridInsertValue = (
+    value: unknown,
+    mode: 'insert' | 'update',
+    meta?: Partial<ColumnMeta>,
+): boolean => {
+    if (mode !== 'insert' || typeof value !== 'string' || value.trim() !== '') {
+        return false;
+    }
+    const extra = String(meta?.extra || '').trim().toLowerCase();
+    return meta?.hasDefault === true
+        || String(meta?.default || '').trim() !== ''
+        || extra.includes('auto_increment')
+        || extra.includes('identity');
+};
 
 type ForeignKeyTarget = {
     columnName: string;

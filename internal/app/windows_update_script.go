@@ -8,6 +8,9 @@ import (
 //go:embed windows_update.ps1
 var windowsUpdatePowerShellScript string
 
+// The updater writes these embedded scripts locally, so RemoteSigned runs them without disabling policy checks.
+const windowsUpdatePowerShellExecutionPolicy = "RemoteSigned"
+
 type windowsUpdateLaunchContext struct {
 	SourcePath           string
 	TargetPath           string

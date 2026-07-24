@@ -162,13 +162,37 @@ body[data-ui-version="v2"] .gn-v2-query-toolbar-max-rows-select {
 }
 
 body[data-ui-version="v2"] .gn-v2-query-toolbar-transaction-mode-select {
-  width: 78px !important;
-  flex: 0 0 78px !important;
+  width: 48px !important;
+  flex: 0 0 48px !important;
 }
 
 body[data-ui-version="v2"] .gn-v2-query-toolbar-transaction-delay-select {
-  width: 104px !important;
-  flex: 0 0 104px !important;
+  width: 48px !important;
+  flex: 0 0 48px !important;
+}
+
+body[data-ui-version="v2"] .gn-v2-query-toolbar .gn-v2-query-toolbar-icon-select .ant-select-selector {
+  padding: 0 23px 0 7px !important;
+}
+
+body[data-ui-version="v2"] .gn-v2-query-toolbar-icon-select .ant-select-selection-item {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding-inline-end: 0 !important;
+}
+
+body[data-ui-version="v2"] .gn-v2-query-toolbar-icon-select .ant-select-arrow {
+  inset-inline-end: 7px;
+}
+
+body[data-ui-version="v2"] .gn-v2-query-toolbar-select-icon {
+  display: inline-flex;
+  width: 16px;
+  height: 16px;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
 }
 
 body[data-ui-version="v2"] .gn-v2-query-toolbar .ant-select-selector {
@@ -275,12 +299,21 @@ body[data-ui-version="v2"] .gn-v2-query-transaction-commit-button:active .gn-v2-
 body[data-ui-version="v2"] .gn-v2-query-toolbar-icon-action.ant-btn,
 body[data-ui-version="v2"] .gn-v2-query-toolbar .ant-btn-icon-only {
   width: 34px !important;
+  min-width: 34px !important;
   padding: 0 !important;
+  flex: 0 0 34px;
+}
+
+body[data-ui-version="v2"] .gn-v2-query-toolbar-menu-trigger {
+  display: inline-flex;
+  width: 34px;
+  min-width: 34px;
+  flex: 0 0 34px;
 }
 
 body[data-ui-version="v2"] .gn-v2-query-toolbar-run-action.ant-btn {
-  min-width: 64px;
-  padding: 0 13px !important;
+  min-width: 34px;
+  padding: 0 !important;
   font-weight: 650 !important;
 }
 
@@ -312,11 +345,6 @@ body[data-ui-version="v2"] .gn-v2-query-monaco-stage {
   border-top: 0.5px solid var(--gn-br-1);
   border-bottom: 0.5px solid var(--gn-br-1);
   background: var(--gn-bg-panel);
-}
-
-body[data-ui-version="v2"] .gn-v2-query-monaco-stage:has(.monaco-editor .find-widget.visible:not(.hiddenEditor)) {
-  padding-top: 24px;
-  overflow: visible;
 }
 
 body[data-ui-version="v2"] .gn-v2-query-monaco-shell {
@@ -1228,49 +1256,4 @@ body[data-ui-version="v2"] .gn-v2-data-grid-page-find .ant-input::placeholder {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-body[data-ui-version="v2"] .gn-v2-data-grid-page-find {
-  max-width: 214px !important;
-  overflow: visible !important;
-}
-
-body[data-ui-version="v2"] .gn-v2-data-grid-page-find .gn-v2-data-grid-page-find-row {
-  display: grid !important;
-  grid-template-columns: 160px 26px 26px !important;
-  column-gap: 2px !important;
-  align-items: stretch !important;
-  height: 26px !important;
-  min-height: 26px !important;
-  flex: 0 0 auto !important;
-}
-
-body[data-ui-version="v2"] .gn-v2-data-grid-page-find .gn-v2-data-grid-page-find-input,
-body[data-ui-version="v2"] .gn-v2-data-grid-page-find .gn-v2-data-grid-page-find-input.ant-input-affix-wrapper {
-  width: 160px !important;
-  min-width: 160px !important;
-  max-width: 160px !important;
-  height: 26px !important;
-  min-height: 26px !important;
-  box-sizing: border-box !important;
-}
-
-body[data-ui-version="v2"] .gn-v2-data-grid-page-find .gn-v2-data-grid-page-find-input.ant-input-affix-wrapper {
-  display: flex !important;
-  align-items: center !important;
-  padding-inline: 8px !important;
-  line-height: 26px !important;
-}
-
-body[data-ui-version="v2"] .gn-v2-data-grid-page-find .gn-v2-data-grid-page-find-prev.ant-btn,
-body[data-ui-version="v2"] .gn-v2-data-grid-page-find .gn-v2-data-grid-page-find-next.ant-btn {
-  width: 26px !important;
-  min-width: 26px !important;
-  max-width: 26px !important;
-  height: 26px !important;
-  min-height: 26px !important;
-  margin: 0 !important;
-  padding: 0 !important;
-  align-self: stretch !important;
-  justify-self: stretch !important;
 }

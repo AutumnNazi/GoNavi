@@ -12,7 +12,7 @@ import {
 } from '../../utils/tableExportTab';
 import { showSQLExportOptionsDialog } from '../SQLExportOptionsDialog';
 
-const createTableExportRequestKey = (prefix: string): string => (
+const createTableExportKey = (prefix: string): string => (
   `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2)}`
 );
 
@@ -65,14 +65,12 @@ export const useSidebarBatchExport = ({
   const handleExportDatabaseSQL = async (node: any, includeData: boolean) => {
     const conn = node.dataRef;
     const dbName = conn.dbName || node.title;
-    const exportOptions = await showSQLExportOptionsDialog();
-    if (!exportOptions) return;
     addTab(buildDatabaseExportWorkbenchTab({
       connectionId: String(conn.id || '').trim(),
       dbName,
       contentMode: includeData ? 'backup' : 'schema',
-      includeDropIfExists: exportOptions.includeDropIfExists,
-      requestKey: createTableExportRequestKey('database'),
+      includeDropIfExists: false,
+      launchKey: createTableExportKey('database'),
     }));
   };
 
@@ -92,7 +90,7 @@ export const useSidebarBatchExport = ({
       schemaName,
       contentMode: includeData ? 'backup' : 'schema',
       includeDropIfExists: exportOptions.includeDropIfExists,
-      requestKey: createTableExportRequestKey('schema'),
+      requestKey: createTableExportKey('schema'),
     }));
   };
 

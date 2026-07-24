@@ -63,11 +63,9 @@ interface AISettingsProvidersSectionProps {
   onSaveProvider: () => void;
 }
 
-const fieldGroupStyle = (cardBorder: string): React.CSSProperties => ({
-  padding: '18px 0',
-  borderRadius: 0,
+const fieldGroupStyle = (): React.CSSProperties => ({
+  padding: '14px 0 0',
   border: 'none',
-  borderBottom: `1px solid ${cardBorder}`,
   background: 'transparent',
   marginBottom: 0,
 });
@@ -135,7 +133,7 @@ const AISettingsProvidersSection: React.FC<AISettingsProvidersSectionProps> = ({
         { value: 'claude-cli', label: 'Claude CLI' },
       ];
   const sectionLabelColor = darkMode ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.4)';
-  const currentFieldGroupStyle = fieldGroupStyle(cardBorder);
+  const currentFieldGroupStyle = fieldGroupStyle();
   const currentFieldLabelStyle = fieldLabelStyle(sectionLabelColor);
   const watchedModel = Form.useWatch('model', form);
   const watchedModels = Form.useWatch('models', form);
@@ -168,14 +166,13 @@ const AISettingsProvidersSection: React.FC<AISettingsProvidersSectionProps> = ({
 
   if (!isEditing) {
     return (
-      <div className="gonavi-ai-provider-list" style={{ display: 'flex', flexDirection: 'column', borderTop: `1px solid ${cardBorder}` }}>
+      <div className="gonavi-ai-provider-list" style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
         {providers.length === 0 && (
           <div style={{
             textAlign: 'center',
             padding: '36px 20px',
             color: overlayTheme.mutedText,
             fontSize: 'var(--gn-font-size, 14px)',
-            borderBottom: `1px solid ${cardBorder}`,
             background: 'transparent',
           }}>
             <RobotOutlined style={{ fontSize: 32, marginBottom: 12, opacity: 0.3, display: 'block' }} />
@@ -196,10 +193,9 @@ const AISettingsProvidersSection: React.FC<AISettingsProvidersSectionProps> = ({
               className={`gonavi-ai-provider-row${isActive ? ' is-active' : ''}`}
               key={provider.id}
               style={{
-                borderRadius: 0,
+                borderRadius: 4,
                 transition: 'background-color 0.2s ease',
                 border: 'none',
-                borderBottom: `1px solid ${cardBorder}`,
                 borderLeft: `3px solid ${isActive ? overlayTheme.selectedText : 'transparent'}`,
                 background: isActive ? overlayTheme.selectedBg : 'transparent',
                 display: 'flex',
@@ -292,7 +288,7 @@ const AISettingsProvidersSection: React.FC<AISettingsProvidersSectionProps> = ({
           type="text"
           icon={<PlusOutlined />}
           onClick={onAddProvider}
-          style={{ borderRadius: 0, borderBottom: `1px solid ${cardBorder}` }}
+          style={{ borderRadius: 4 }}
         >
           {copy('ai_settings.provider.action.add')}
         </Button>
@@ -303,7 +299,7 @@ const AISettingsProvidersSection: React.FC<AISettingsProvidersSectionProps> = ({
   return (
     <div>
       <div style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 10 }}>
-        <Button size="small" onClick={onCancelEdit} style={{ borderRadius: 8 }}>{copy('ai_settings.action.back')}</Button>
+        <Button size="middle" onClick={onCancelEdit} style={{ borderRadius: 8 }}>{copy('ai_settings.action.back')}</Button>
         <span style={{ fontWeight: 700, fontSize: 'calc(var(--gn-font-size, 14px) * 1.14)', color: overlayTheme.titleText }}>
           {copy(editingProvider?.id ? 'ai_settings.provider.editor.edit_title' : 'ai_settings.provider.editor.add_title')}
         </span>
@@ -346,7 +342,6 @@ const AISettingsProvidersSection: React.FC<AISettingsProvidersSectionProps> = ({
                   }}
                   style={{
                     ...PROVIDER_PRESET_CARD_BASE_STYLE,
-                    borderBottom: `1px solid ${cardBorder}`,
                     borderLeft: `3px solid ${presetKeyFromForm === preset.key ? overlayTheme.selectedText : 'transparent'}`,
                     background: presetKeyFromForm === preset.key ? overlayTheme.selectedBg : 'transparent',
                     color: overlayTheme.titleText,
@@ -521,24 +516,23 @@ const AISettingsProvidersSection: React.FC<AISettingsProvidersSectionProps> = ({
           )}
         </div>
 
-        <div style={{
+        <div className="gonavi-ai-provider-actions" style={{
           display: 'flex',
-          gap: 8,
+          gap: 10,
           justifyContent: 'flex-end',
-          marginTop: 12,
-          paddingTop: 16,
-          borderTop: `1px solid ${cardBorder}`,
-          paddingBottom: 24,
+          marginTop: 16,
+          paddingBottom: 8,
         }}>
           <Button
+            size="middle"
             onClick={onTestProvider}
             loading={loading}
-            style={{ borderRadius: 10 }}
+            style={{ minWidth: 92, borderRadius: 8 }}
             icon={testStatus === 'success' ? <CheckOutlined style={{ color: '#22c55e' }} /> : undefined}
           >
             {testStatus === 'success' ? copy('ai_settings.action.connection_ok') : testStatus === 'error' ? copy('ai_settings.action.retest') : copy('ai_settings.action.test')}
           </Button>
-          <Button type="primary" onClick={onSaveProvider} loading={loading} style={{ borderRadius: 10, fontWeight: 600 }}>
+          <Button size="middle" type="primary" onClick={onSaveProvider} loading={loading} style={{ minWidth: 72, borderRadius: 8, fontWeight: 600 }}>
             {copy('ai_settings.action.save')}
           </Button>
         </div>

@@ -2,6 +2,7 @@ package app
 
 import (
 	"archive/zip"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -20,6 +21,22 @@ import (
 	"GoNavi-Wails/internal/db"
 	"GoNavi-Wails/internal/logger"
 )
+
+const (
+	optionalDriverDownloadProbeBytes      = 256 << 10
+	optionalDriverDownloadProbeMinBytes   = 64 << 10
+	optionalDriverDownloadProbeTimeout    = 4 * time.Second
+	optionalDriverDownloadProbeSpeedRatio = 1.5
+)
+
+type optionalDriverDownloadProbeResult struct {
+	URL      string
+	Bytes    int64
+	Duration time.Duration
+	OK       bool
+}
+
+type optionalDriverDownloadProbeFunc func(context.Context, *http.Client, string) optionalDriverDownloadProbeResult
 
 func optionalDriverPublicTypeName(driverType string) string {
 	switch normalizeDriverType(driverType) {
@@ -52,6 +69,17 @@ func optionalDriverReleaseAssetNameForType(typeName string, goos string, goarch 
 		return name + ".exe"
 	}
 	return name
+}
+
+func optionalDriverReleaseZipAssetName(assetName string) string {
+	name := strings.TrimSpace(assetName)
+	if name == "" {
+		return ""
+	}
+	if strings.EqualFold(filepath.Ext(name), ".exe") {
+		name = name[:len(name)-len(filepath.Ext(name))]
+	}
+	return name + ".zip"
 }
 
 func optionalDriverNameStemCandidates(driverType string, selectedVersion string) []string {
@@ -145,6 +173,36 @@ func optionalDriverReleaseAssetNamesForVersion(driverType string, selectedVersio
 
 func optionalDriverReleaseAssetNames(driverType string) []string {
 	return optionalDriverReleaseAssetNamesForVersion(driverType, "")
+}
+
+func optionalDriverReleaseZipAssetNamesForVersion(driverType string, selectedVersion string) []string {
+	rawNames := optionalDriverReleaseAssetNamesForVersion(driverType, selectedVersion)
+	names := make([]string, 0, len(rawNames))
+	seen := make(map[string]struct{}, len(rawNames))
+	for _, rawName := range rawNames {
+		name := optionalDriverReleaseZipAssetName(rawName)
+		if name == "" {
+			continue
+		}
+		if _, ok := seen[name]; ok {
+			continue
+		}
+		seen[name] = struct{}{}
+		names = append(names, name)
+	}
+	return names
+}
+
+func optionalDriverReleaseZipAssetNames(driverType string) []string {
+	return optionalDriverReleaseZipAssetNamesForVersion(driverType, "")
+}
+
+func optionalDriverReleaseZipAssetNameForVersion(driverType string, selectedVersion string) string {
+	names := optionalDriverReleaseZipAssetNamesForVersion(driverType, selectedVersion)
+	if len(names) == 0 {
+		return optionalDriverReleaseZipAssetName(optionalDriverReleaseAssetNameForType("", stdRuntime.GOOS, stdRuntime.GOARCH))
+	}
+	return names[0]
 }
 
 func optionalDriverExecutableBaseName(driverType string) string {
@@ -393,7 +451,7 @@ func resolveOptionalDriverAssetSize(sizeByAsset map[string]int64, driverType str
 	if len(sizeByAsset) == 0 {
 		return 0
 	}
-	for _, assetName := range optionalDriverReleaseAssetNames(driverType) {
+	for _, assetName := range optionalDriverReleaseZipAssetNames(driverType) {
 		sizeBytes := sizeByAsset[assetName]
 		if sizeBytes > 0 {
 			return sizeBytes
@@ -406,7 +464,7 @@ func resolveOptionalDriverAssetSizeForVersion(sizeByAsset map[string]int64, driv
 	if len(sizeByAsset) == 0 {
 		return 0
 	}
-	for _, assetName := range optionalDriverReleaseAssetNamesForVersion(driverType, version) {
+	for _, assetName := range optionalDriverReleaseZipAssetNamesForVersion(driverType, version) {
 		sizeBytes := sizeByAsset[assetName]
 		if sizeBytes > 0 {
 			return sizeBytes
@@ -634,13 +692,131 @@ func acquireOptionalDriverBundlePath(bundleURL string, onProgress func(downloade
 	}
 }
 
+func optionalDriverDownloadSource(rawURL string) string {
+	parsed, err := url.Parse(strings.TrimSpace(rawURL))
+	if err != nil {
+		return ""
+	}
+	switch strings.ToLower(strings.TrimSpace(parsed.Hostname())) {
+	case "download.syngnat.top":
+		return "mirror"
+	case "github.com", "api.github.com", "release-assets.githubusercontent.com", "objects.githubusercontent.com":
+		return "github"
+	default:
+		return ""
+	}
+}
+
+func probeOptionalDriverDownloadURL(ctx context.Context, client *http.Client, rawURL string) optionalDriverDownloadProbeResult {
+	result := optionalDriverDownloadProbeResult{URL: strings.TrimSpace(rawURL)}
+	if result.URL == "" || client == nil {
+		return result
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, result.URL, nil)
+	if err != nil {
+		return result
+	}
+	req.Header.Set("Range", fmt.Sprintf("bytes=0-%d", optionalDriverDownloadProbeBytes-1))
+	applyGitHubDownloadRequestHeaders(req, isGitHubReleaseAssetAPIURL(result.URL))
+
+	startedAt := time.Now()
+	resp, err := doUpdateRequest(client, req)
+	if err != nil {
+		return result
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusPartialContent {
+		return result
+	}
+
+	written, err := io.Copy(io.Discard, io.LimitReader(resp.Body, optionalDriverDownloadProbeBytes))
+	result.Duration = time.Since(startedAt)
+	result.Bytes = written
+	result.OK = err == nil && written >= optionalDriverDownloadProbeMinBytes && result.Duration > 0
+	return result
+}
+
+func reorderOptionalDriverDownloadURLsBySpeedWithProbe(urls []string, probe optionalDriverDownloadProbeFunc) []string {
+	ordered := append([]string(nil), urls...)
+	if len(ordered) < 2 || probe == nil {
+		return ordered
+	}
+
+	mirrorURL := ""
+	githubURL := ""
+	for _, candidate := range ordered {
+		if !isOptionalDriverDownloadZipURL(candidate) {
+			continue
+		}
+		switch optionalDriverDownloadSource(candidate) {
+		case "mirror":
+			if mirrorURL == "" {
+				mirrorURL = candidate
+			}
+		case "github":
+			if githubURL == "" {
+				githubURL = candidate
+			}
+		}
+	}
+	if mirrorURL == "" || githubURL == "" {
+		return ordered
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), optionalDriverDownloadProbeTimeout)
+	defer cancel()
+	client := newHTTPClientWithGlobalProxy(optionalDriverDownloadProbeTimeout)
+	results := make(chan optionalDriverDownloadProbeResult, 2)
+	for _, candidate := range []string{mirrorURL, githubURL} {
+		candidateURL := candidate
+		go func() {
+			results <- probe(ctx, client, candidateURL)
+		}()
+	}
+
+	measured := make(map[string]optionalDriverDownloadProbeResult, 2)
+	for remaining := 2; remaining > 0; remaining-- {
+		select {
+		case result := <-results:
+			measured[result.URL] = result
+		case <-ctx.Done():
+			remaining = 0
+		}
+	}
+
+	mirrorResult := measured[mirrorURL]
+	githubResult := measured[githubURL]
+	preferGitHub := githubResult.OK && !mirrorResult.OK
+	if githubResult.OK && mirrorResult.OK {
+		mirrorSpeed := float64(mirrorResult.Bytes) / mirrorResult.Duration.Seconds()
+		githubSpeed := float64(githubResult.Bytes) / githubResult.Duration.Seconds()
+		preferGitHub = githubSpeed >= mirrorSpeed*optionalDriverDownloadProbeSpeedRatio
+	}
+	if !preferGitHub {
+		return ordered
+	}
+
+	reordered := make([]string, 0, len(ordered))
+	reordered = append(reordered, githubURL)
+	for _, candidate := range ordered {
+		if candidate != githubURL {
+			reordered = append(reordered, candidate)
+		}
+	}
+	return reordered
+}
+
+func reorderOptionalDriverDownloadURLsBySpeed(urls []string) []string {
+	return reorderOptionalDriverDownloadURLsBySpeedWithProbe(urls, probeOptionalDriverDownloadURL)
+}
+
 func resolveOptionalDriverAgentDownloadURLs(definition driverDefinition, rawURL string, selectedVersion string) []string {
 	candidates := make([]string, 0, 6)
 	seen := make(map[string]struct{}, 6)
 	driverType := normalizeDriverType(definition.Type)
 	appendURL := func(value string) {
 		trimmed := strings.TrimSpace(value)
-		if trimmed == "" {
+		if trimmed == "" || !isOptionalDriverDownloadZipURL(trimmed) {
 			return
 		}
 		if _, ok := seen[trimmed]; ok {
@@ -689,7 +865,7 @@ func resolveOptionalDriverAgentDownloadURLs(definition driverDefinition, rawURL 
 		appendPublishedURLs()
 	}
 
-	if parsed, err := url.Parse(strings.TrimSpace(rawURL)); err == nil {
+	if parsed, err := url.Parse(strings.TrimSpace(rawURL)); err == nil && isOptionalDriverDownloadZipURL(parsed.String()) {
 		switch strings.ToLower(strings.TrimSpace(parsed.Scheme)) {
 		case "http", "https":
 			if tag, assetName, ok := driverReleaseDownloadCoordinates(parsed.String()); ok &&
@@ -1376,35 +1552,7 @@ func resolveLatestPublishedDriverDownloadURLForVersion(definition driverDefiniti
 	if driverType == "" {
 		return "", false
 	}
-	if shouldUseDuckDBWindowsDynamicLibrary(driverType) {
-		if sizeByAsset, publishedAssets, ok := readReleaseAssetSizesFromCache("latest"); ok {
-			if publishedAssets[duckDBWindowsDriverZipAssetName] && sizeByAsset[duckDBWindowsDriverZipAssetName] > 0 {
-				if release, err := fetchLatestReleaseForDriverAssets(); err == nil {
-					if asset, found := findReleaseAssetByName(release, []string{duckDBWindowsDriverZipAssetName}); found {
-						return driverReleaseAssetAPIURL(asset), true
-					}
-				}
-				return driverReleaseLatestDownloadURLForCurrentChannel(duckDBWindowsDriverZipAssetName), true
-			}
-			return "", false
-		}
-
-		sizeByAsset, publishedAssets, err := loadReleaseAssetSizesCached("latest", fetchLatestReleaseForDriverAssets)
-		if err != nil {
-			return "", false
-		}
-		if publishedAssets[duckDBWindowsDriverZipAssetName] && sizeByAsset[duckDBWindowsDriverZipAssetName] > 0 {
-			if release, relErr := fetchLatestReleaseForDriverAssets(); relErr == nil {
-				if asset, found := findReleaseAssetByName(release, []string{duckDBWindowsDriverZipAssetName}); found {
-					return driverReleaseAssetAPIURL(asset), true
-				}
-			}
-			return driverReleaseLatestDownloadURLForCurrentChannel(duckDBWindowsDriverZipAssetName), true
-		}
-		return "", false
-	}
-
-	assetNames := optionalDriverReleaseAssetNamesForVersion(driverType, selectedVersion)
+	assetNames := optionalDriverReleaseZipAssetNamesForVersion(driverType, selectedVersion)
 	if len(assetNames) == 0 {
 		return "", false
 	}
@@ -1420,12 +1568,12 @@ func resolveLatestPublishedDriverDownloadURLForVersion(definition driverDefiniti
 				return driverReleaseLatestDownloadURLForCurrentChannel(assetName), true
 			}
 		}
-		return "", false
+		return driverReleaseLatestDownloadURLForCurrentChannel(assetNames[0]), true
 	}
 
 	sizeByAsset, publishedAssets, err := loadReleaseAssetSizesCached("latest", fetchLatestReleaseForDriverAssets)
 	if err != nil {
-		return "", false
+		return driverReleaseLatestDownloadURLForCurrentChannel(assetNames[0]), true
 	}
 	for _, assetName := range assetNames {
 		if publishedAssets[assetName] && sizeByAsset[assetName] > 0 {
@@ -1437,7 +1585,7 @@ func resolveLatestPublishedDriverDownloadURLForVersion(definition driverDefiniti
 			return driverReleaseLatestDownloadURLForCurrentChannel(assetName), true
 		}
 	}
-	return "", false
+	return driverReleaseLatestDownloadURLForCurrentChannel(assetNames[0]), true
 }
 
 func fetchReleaseByTag(tag string) (*githubRelease, error) {
@@ -1484,7 +1632,7 @@ func fetchDriverReleaseIndexByURL(tag string, indexURL string) (*githubRelease, 
 		tagName = fallbackTag
 	}
 	if strings.EqualFold(fallbackTag, driverReleaseDevTag) {
-		// dev alias 的逻辑 GitHub 标签固定为 dev-latest；mirrorTagName 仅控制 R2 物理路径。
+		// dev alias 的逻辑 GitHub 标签固定为 dev-latest；mirrorTagName 仅控制镜像物理路径。
 		tagName = driverReleaseDevTag
 	}
 	if tagName == "" {

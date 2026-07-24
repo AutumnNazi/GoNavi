@@ -43,6 +43,7 @@ describe('AIMCPClientStatusPanel', () => {
     expect(markup).toContain('Refresh status');
     expect(markup).toContain('Copy config path');
     expect(markup).toContain('Copy launch command');
+    expect(markup).toContain('class="gonavi-ai-mcp-client-status-panel"');
     expect(markup).toContain('class="gonavi-ai-mcp-disclosure gonavi-ai-mcp-client-status-disclosure"');
     expect(markup).not.toContain('gonavi-ai-mcp-client-status-disclosure" open');
   });

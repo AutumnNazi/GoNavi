@@ -1,6 +1,6 @@
 import React from 'react';
 import { readFileSync } from 'node:fs';
-import { Button, Select } from 'antd';
+import { Button, Checkbox, Select } from 'antd';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -18,6 +18,7 @@ import {
   DropDatabase,
   DropTable,
   ExportDatabaseSQLWithOptions,
+  ExportDatabasesSQLWithOptions,
   ExportQueryWithOptions,
   ExportSchemaSQLWithOptions,
   ExportTableWithOptions,
@@ -25,6 +26,7 @@ import {
 } from '../../wailsjs/go/app/App';
 import { loadViews } from './sidebar/sidebarMetadataLoaders';
 import { setCurrentLanguage } from '../i18n';
+import { buildBatchTableExportWorkbenchTab } from '../utils/tableExportTab';
 import type { ExportProgressState } from './useExportProgressRunner';
 import type { ExportProgressLogEntry } from './useExportProgressRunner';
 import Modal from './common/ResizableDraggableModal';
@@ -192,6 +194,7 @@ describe('TableExportWorkbench', () => {
     vi.mocked(loadViews).mockReset();
     vi.mocked(loadViews).mockResolvedValue({ views: [], supported: true });
     vi.mocked(ExportDatabaseSQLWithOptions).mockReset();
+    vi.mocked(ExportDatabasesSQLWithOptions).mockReset();
     vi.mocked(ExportQueryWithOptions).mockReset();
     vi.mocked(ExportSchemaSQLWithOptions).mockReset();
     vi.mocked(ExportTableWithOptions).mockReset();
@@ -889,8 +892,73 @@ describe('TableExportWorkbench', () => {
         format: 'sql',
         jobId: 'database-job-1',
         includeDropIfExists: true,
+        includeDatabaseContext: true,
       }),
     );
+
+    renderer.unmount();
+  });
+
+  it('defaults database context by export mode and preserves a manual override', async () => {
+    mockProgressRunnerState = createIdleProgressRunnerState();
+    vi.mocked(ExportDatabaseSQLWithOptions).mockResolvedValue({ success: true } as any);
+
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(
+        <TableExportWorkbench
+          tab={{
+            id: 'table-export-database-conn-1-SYS',
+            title: '导出 SYS',
+            type: 'table-export',
+            exportWorkbenchMode: 'database',
+            connectionId: 'conn-1',
+            dbName: 'SYS',
+            tableExportContentMode: 'schema',
+          }}
+        />,
+      );
+    });
+
+    const findDatabaseModeSelect = () => renderer.root.findAllByType(Select).find((node) => (
+      Array.isArray(node.props.options)
+      && node.props.options.some((option: { value?: string }) => option.value === 'schema')
+      && node.props.options.some((option: { value?: string }) => option.value === 'backup')
+    ));
+    const findDatabaseContextCheckbox = () => renderer.root.findByProps({
+      'data-export-include-database-context': 'true',
+    });
+
+    expect(findDatabaseContextCheckbox().props.checked).toBe(false);
+
+    const startButton = renderer.root.findAllByType(Button).find((node) => (
+      node.props.type === 'primary' && node.props.size === 'large'
+    ));
+    await act(async () => {
+      startButton?.props.onClick();
+    });
+    const run = mockRunExportWithProgress.mock.calls[0][0].run as (jobId: string) => Promise<unknown>;
+    await run('database-schema-job-1');
+
+    expect(ExportDatabaseSQLWithOptions).toHaveBeenLastCalledWith(
+      expect.objectContaining({ type: 'mysql' }),
+      'SYS',
+      false,
+      expect.objectContaining({
+        includeDropIfExists: false,
+        includeDatabaseContext: false,
+      }),
+    );
+
+    await act(async () => {
+      findDatabaseModeSelect()?.props.onChange('backup');
+    });
+    expect(findDatabaseContextCheckbox().props.checked).toBe(true);
+
+    await act(async () => {
+      findDatabaseContextCheckbox().props.onChange({ target: { checked: false } });
+    });
+    expect(findDatabaseContextCheckbox().props.checked).toBe(false);
 
     renderer.unmount();
   });
@@ -949,6 +1017,9 @@ describe('TableExportWorkbench', () => {
         includeDropIfExists: false,
       }),
     );
+    expect(renderer.root.findAllByType(Checkbox).filter((node) => (
+      node.props['data-export-include-database-context'] === 'true'
+    ))).toHaveLength(0);
 
     renderer.unmount();
   });
@@ -1010,6 +1081,149 @@ describe('TableExportWorkbench', () => {
     renderer.unmount();
   });
 
+  it('refreshes launch-only table presets without auto-starting an export', async () => {
+    mockProgressRunnerState = createIdleProgressRunnerState();
+    vi.mocked(DBGetDatabases).mockResolvedValue({
+      success: true,
+      data: [{ Database: 'SYS' }, { Database: 'audit' }],
+    } as any);
+    vi.mocked(DBGetTables).mockResolvedValue({
+      success: true,
+      data: [{ name: 'users' }, { name: 'orders' }],
+    } as any);
+
+    const buildTab = (
+      launchKey: string,
+      database: string,
+      tableName: string,
+      contentMode: 'schema' | 'backup',
+      includeDropIfExists: boolean,
+    ) => ({
+      id: 'table-export-batch-tables-conn-1',
+      title: '导出已选对象',
+      type: 'table-export' as const,
+      exportWorkbenchMode: 'batch-tables' as const,
+      connectionId: 'conn-1',
+      dbName: database,
+      tableExportInitialObjectNames: [tableName],
+      tableExportContentMode: contentMode,
+      tableExportIncludeDropIfExists: includeDropIfExists,
+      tableExportLaunchKey: launchKey,
+    });
+    const readConfig = (renderer: ReactTestRenderer) => {
+      const selects = renderer.root.findAllByType(Select);
+      const objectSelect = selects.find((node) => node.props.mode === 'multiple');
+      const contentModeSelect = selects.find((node) => (
+        Array.isArray(node.props.options)
+        && node.props.options.some((option: { value?: string }) => option.value === 'dataOnly')
+        && node.props.options.some((option: { value?: string }) => option.value === 'backup')
+      ));
+      const dropIfExistsCheckbox = renderer.root.findAllByType(Checkbox)[0];
+      return { objectSelect, contentModeSelect, dropIfExistsCheckbox };
+    };
+
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(
+        <TableExportWorkbench tab={buildTab('launch-1', 'SYS', 'users', 'schema', false)} />,
+      );
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    let config = readConfig(renderer);
+    expect(config.objectSelect?.props.value).toEqual(['users']);
+    expect(config.contentModeSelect?.props.value).toBe('schema');
+    expect(config.dropIfExistsCheckbox?.props.checked).toBe(false);
+    expect(mockRunExportWithProgress).not.toHaveBeenCalled();
+
+    await act(async () => {
+      renderer.update(
+        <TableExportWorkbench tab={buildTab('launch-2', 'audit', 'orders', 'backup', true)} />,
+      );
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    config = readConfig(renderer);
+    expect(config.objectSelect?.props.value).toEqual(['orders']);
+    expect(config.contentModeSelect?.props.value).toBe('backup');
+    expect(config.dropIfExistsCheckbox?.props.checked).toBe(true);
+    expect(mockUseExportProgressRunner).toHaveBeenLastCalledWith({
+      taskKey: 'table-export-batch-tables-conn-1',
+      requestKey: undefined,
+    });
+    expect(mockRunExportWithProgress).not.toHaveBeenCalled();
+    expect(ExportTablesSQLWithOptions).not.toHaveBeenCalled();
+
+    renderer.unmount();
+  });
+
+  it('switches a reused table workbench from auto-start to review-only without restarting', async () => {
+    mockProgressRunnerState = createIdleProgressRunnerState();
+    vi.mocked(DBGetDatabases).mockResolvedValue({
+      success: true,
+      data: [{ Database: 'SYS' }],
+    } as any);
+    vi.mocked(DBGetTables).mockResolvedValue({
+      success: true,
+      data: [{ name: 'users' }, { name: 'orders' }],
+    } as any);
+    const autoTab = buildBatchTableExportWorkbenchTab({
+      connectionId: 'conn-1',
+      dbName: 'SYS',
+      initialObjectNames: ['users'],
+      contentMode: 'dataOnly',
+      includeDropIfExists: true,
+      requestKey: 'request-1',
+    });
+    const reviewTab = buildBatchTableExportWorkbenchTab({
+      connectionId: 'conn-1',
+      dbName: 'SYS',
+      initialObjectNames: ['orders'],
+      contentMode: 'backup',
+      includeDropIfExists: false,
+      launchKey: 'launch-2',
+    });
+
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<TableExportWorkbench tab={autoTab} />);
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(mockRunExportWithProgress).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      renderer.update(<TableExportWorkbench tab={{ ...autoTab, ...reviewTab }} />);
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const selects = renderer.root.findAllByType(Select);
+    const objectSelect = selects.find((node) => node.props.mode === 'multiple');
+    const contentModeSelect = selects.find((node) => (
+      Array.isArray(node.props.options)
+      && node.props.options.some((option: { value?: string }) => option.value === 'dataOnly')
+      && node.props.options.some((option: { value?: string }) => option.value === 'backup')
+    ));
+    expect(objectSelect?.props.value).toEqual(['orders']);
+    expect(contentModeSelect?.props.value).toBe('backup');
+    expect(renderer.root.findAllByType(Checkbox)[0]?.props.checked).toBe(false);
+    expect(mockUseExportProgressRunner).toHaveBeenLastCalledWith({
+      taskKey: autoTab.id,
+      requestKey: undefined,
+    });
+    expect(mockRunExportWithProgress).toHaveBeenCalledTimes(1);
+    expect(ExportTablesSQLWithOptions).not.toHaveBeenCalled();
+
+    renderer.unmount();
+  });
+
   it('reuses a stable task key and applies merged launch options before restarting', async () => {
     mockProgressRunnerState = createProgressRunnerState({
       open: false,
@@ -1064,6 +1278,7 @@ describe('TableExportWorkbench', () => {
       tableExportInitialDatabaseNames: [database],
       tableExportContentMode: contentMode,
       tableExportIncludeDropIfExists: includeDropIfExists,
+      tableExportLaunchKey: 'stale-launch',
       tableExportRequestKey: requestKey,
     });
 
@@ -1072,12 +1287,27 @@ describe('TableExportWorkbench', () => {
       renderer = create(<TableExportWorkbench tab={buildTab('request-1', 'SYS', 'schema', false, 'conn-2')} />);
       await Promise.resolve();
     });
+    expect(renderer.root.findAllByProps({ 'data-export-include-database-context': 'true' })).toHaveLength(0);
     expect(mockRunExportWithProgress).toHaveBeenCalledTimes(1);
+    const firstRun = mockRunExportWithProgress.mock.calls[0][0].run as (jobId: string) => Promise<unknown>;
+    await firstRun('batch-databases-job-1');
+    expect(ExportDatabasesSQLWithOptions).toHaveBeenLastCalledWith(
+      expect.objectContaining({ type: 'postgres' }),
+      ['SYS'],
+      false,
+      expect.objectContaining({
+        includeDropIfExists: false,
+        includeDatabaseContext: false,
+      }),
+    );
 
     await act(async () => {
       renderer.update(<TableExportWorkbench tab={buildTab('request-2', 'audit', 'backup', true, 'conn-1')} />);
       await Promise.resolve();
     });
+    expect(renderer.root.findAllByType(Checkbox).filter((node) => (
+      node.props['data-export-include-database-context'] === 'true'
+    ))).toHaveLength(1);
 
     expect(mockUseExportProgressRunner).toHaveBeenCalledWith({
       taskKey: 'table-export-batch-databases-conn-1',
@@ -1087,13 +1317,55 @@ describe('TableExportWorkbench', () => {
     const secondRun = mockRunExportWithProgress.mock.calls[1][0].run as (jobId: string) => Promise<unknown>;
     await secondRun('batch-databases-job-2');
 
-    const { ExportDatabasesSQLWithOptions } = await import('../../wailsjs/go/app/App');
     expect(ExportDatabasesSQLWithOptions).toHaveBeenLastCalledWith(
       expect.objectContaining({ type: 'mysql' }),
       ['audit'],
       true,
-      expect.objectContaining({ includeDropIfExists: true }),
+      expect.objectContaining({
+        includeDropIfExists: true,
+        includeDatabaseContext: true,
+      }),
     );
+
+    renderer.unmount();
+  });
+
+  it('resets the database context default when a stable database workbench is reopened', async () => {
+    mockProgressRunnerState = createIdleProgressRunnerState();
+    vi.mocked(DBGetDatabases).mockResolvedValue({
+      success: true,
+      data: [{ Database: 'SYS' }, { Database: 'audit' }],
+    } as any);
+
+    const buildTab = (launchKey: string, contentMode: 'schema' | 'backup') => ({
+      id: 'table-export-batch-databases-conn-1',
+      title: '批量导出库',
+      type: 'table-export' as const,
+      exportWorkbenchMode: 'batch-databases' as const,
+      connectionId: 'conn-1',
+      tableExportInitialDatabaseNames: ['SYS'],
+      tableExportContentMode: contentMode,
+      tableExportLaunchKey: launchKey,
+    });
+
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<TableExportWorkbench tab={buildTab('launch-1', 'backup')} />);
+      await Promise.resolve();
+    });
+
+    const findDatabaseContextCheckbox = () => renderer.root.findByProps({
+      'data-export-include-database-context': 'true',
+    });
+    expect(findDatabaseContextCheckbox().props.checked).toBe(true);
+
+    await act(async () => {
+      renderer.update(<TableExportWorkbench tab={buildTab('launch-2', 'schema')} />);
+      await Promise.resolve();
+    });
+
+    expect(findDatabaseContextCheckbox().props.checked).toBe(false);
+    expect(mockRunExportWithProgress).not.toHaveBeenCalled();
 
     renderer.unmount();
   });
@@ -1356,6 +1628,8 @@ describe('TableExportWorkbench', () => {
     const keys = [
       'data_export.action.restore_backup',
       'data_export.label.schema',
+      'data_export.sql_options.database_context.description',
+      'data_export.sql_options.database_context.label',
       'data_export.workbench.section.logs',
     ] as const;
 

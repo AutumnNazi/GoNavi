@@ -85,7 +85,7 @@ func isUpdatePackageCompatibleWithInstallMode(goos string, installMode updateIns
 	case updateInstallModeMSI:
 		return packageType == updatePackageTypeMSI && extension == ".msi"
 	case updateInstallModePortable:
-		return packageType == updatePackageTypePortable && extension == ".exe"
+		return packageType == updatePackageTypePortable && (extension == ".zip" || extension == ".exe")
 	default:
 		return false
 	}

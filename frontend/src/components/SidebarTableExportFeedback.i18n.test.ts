@@ -30,14 +30,14 @@ describe('Sidebar table export feedback i18n', () => {
     expect(block).toContain('totalRowsKnown');
   });
 
-  it('launches table backups and INSERT exports with distinct background modes', () => {
+  it('opens table backups for review while retaining automatic INSERT exports', () => {
     expect(source).toContain("const openTableSQLExportWorkbench = async (node: any, mode: 'backup' | 'dataOnly')");
-    expect(source).toContain("mode === 'backup'");
-    expect(source).toContain('showSQLExportOptionsDialog()');
+    expect(source).not.toContain('showSQLExportOptionsDialog');
     expect(source).toContain('addTab(buildBatchTableExportWorkbenchTab({');
     expect(source).toContain('initialObjectNames: [tableName]');
     expect(source).toContain('contentMode: mode');
-    expect(source).toContain('includeDropIfExists: exportOptions.includeDropIfExists');
+    expect(source).toContain('includeDropIfExists: false');
+    expect(source).toContain("...(mode === 'backup' ? { launchKey } : { requestKey: launchKey })");
     expect(source).toContain("await openTableSQLExportWorkbench(node, 'dataOnly')");
   });
 

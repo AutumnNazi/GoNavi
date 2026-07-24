@@ -42,25 +42,28 @@ type agentResponse struct {
 }
 
 const (
-	agentMethodConnect       = "connect"
-	agentMethodClose         = "close"
-	agentMethodMetadata      = "metadata"
-	agentMethodPing          = "ping"
-	agentMethodOpenSession   = "openSession"
-	agentMethodCloseSession  = "closeSession"
-	agentMethodQuery         = "query"
-	agentMethodQueryMulti    = "queryMulti"
-	agentMethodStreamQuery   = "streamQuery"
-	agentMethodExec          = "exec"
-	agentMethodGetDatabases  = "getDatabases"
-	agentMethodGetTables     = "getTables"
-	agentMethodGetCreateStmt = "getCreateStatement"
-	agentMethodGetColumns    = "getColumns"
-	agentMethodGetAllColumns = "getAllColumns"
-	agentMethodGetIndexes    = "getIndexes"
-	agentMethodGetForeignKey = "getForeignKeys"
-	agentMethodGetTriggers   = "getTriggers"
-	agentMethodApplyChanges  = "applyChanges"
+	agentMethodConnect             = "connect"
+	agentMethodClose               = "close"
+	agentMethodMetadata            = "metadata"
+	agentMethodPing                = "ping"
+	agentMethodOpenSession         = "openSession"
+	agentMethodCloseSession        = "closeSession"
+	agentMethodOpenTransaction     = "openTransaction"
+	agentMethodCommitTransaction   = "commitTransaction"
+	agentMethodRollbackTransaction = "rollbackTransaction"
+	agentMethodQuery               = "query"
+	agentMethodQueryMulti          = "queryMulti"
+	agentMethodStreamQuery         = "streamQuery"
+	agentMethodExec                = "exec"
+	agentMethodGetDatabases        = "getDatabases"
+	agentMethodGetTables           = "getTables"
+	agentMethodGetCreateStmt       = "getCreateStatement"
+	agentMethodGetColumns          = "getColumns"
+	agentMethodGetAllColumns       = "getAllColumns"
+	agentMethodGetIndexes          = "getIndexes"
+	agentMethodGetForeignKey       = "getForeignKeys"
+	agentMethodGetTriggers         = "getTriggers"
+	agentMethodApplyChanges        = "applyChanges"
 )
 
 const legacyClickHouseDefaultTimeout = 2 * time.Hour
@@ -222,6 +225,23 @@ func handleRequest(runtimeState *agentRuntime, req agentRequest) agentResponse {
 		runtimeState.sessions[sessionID] = session
 		resp.Data = sessionID
 		return resp
+	case agentMethodOpenTransaction:
+		if runtimeState.inst == nil {
+			return fail(resp, "connection not open")
+		}
+		provider, ok := runtimeState.inst.(db.TransactionExecerProvider)
+		if !ok {
+			return fail(resp, fmt.Sprintf("当前数据源（%s）不支持 SQL 编辑器托管事务", strings.TrimSpace(agentDriverType)))
+		}
+		// The transaction must outlive this request and be finished by a later RPC.
+		transaction, err := provider.OpenTransactionExecer(context.Background())
+		if err != nil {
+			return fail(resp, err.Error())
+		}
+		sessionID := runtimeState.nextID()
+		runtimeState.sessions[sessionID] = transaction
+		resp.Data = sessionID
+		return resp
 	case agentMethodCloseSession:
 		if err := runtimeState.closeSession(req.SessionID); err != nil {
 			return fail(resp, err.Error())
@@ -261,6 +281,20 @@ func handleRequest(runtimeState *agentRuntime, req agentRequest) agentResponse {
 				return fail(resp, err.Error())
 			}
 			resp.RowsAffected = affected
+		case agentMethodCommitTransaction, agentMethodRollbackTransaction:
+			transaction, ok := session.(db.TransactionExecer)
+			if !ok {
+				return fail(resp, "当前会话不是托管事务")
+			}
+			var err error
+			if method == agentMethodCommitTransaction {
+				err = transaction.Commit()
+			} else {
+				err = transaction.Rollback()
+			}
+			if err != nil {
+				return fail(resp, err.Error())
+			}
 		default:
 			return fail(resp, "当前事务会话不支持该方法")
 		}

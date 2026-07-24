@@ -7,6 +7,7 @@ export interface AISettingsChoiceOption<T extends string> {
   title: string;
   description: string;
   icon: React.ReactNode;
+  iconColor: string;
 }
 
 interface AISettingsChoiceGroupProps<T extends string> {
@@ -58,7 +59,8 @@ const AISettingsChoiceGroup = <T extends string>({
       role="radiogroup"
       aria-label={ariaLabel}
       style={{
-        borderTop: `1px solid ${cardBorder}`,
+        display: 'grid',
+        gap: 2,
         fontFamily: 'var(--gn-font-sans)',
       }}
     >
@@ -90,8 +92,7 @@ const AISettingsChoiceGroup = <T extends string>({
               minHeight: 'calc(62px * var(--gn-ui-scale, 1))',
               padding: '11px 10px',
               border: 'none',
-              borderBottom: `1px solid ${cardBorder}`,
-              borderRadius: 0,
+              borderRadius: 4,
               cursor: 'pointer',
               transition: 'background 0.16s ease, outline-color 0.16s ease',
               background: active ? overlayTheme.selectedBg : (interactive ? overlayTheme.hoverBg : 'transparent'),
@@ -110,6 +111,7 @@ const AISettingsChoiceGroup = <T extends string>({
           >
             <span
               aria-hidden="true"
+              className="gonavi-ai-choice-icon"
               style={{
                 width: 20,
                 height: 20,
@@ -117,7 +119,7 @@ const AISettingsChoiceGroup = <T extends string>({
                 placeItems: 'center',
                 fontSize: 'var(--gn-font-size, 14px)',
                 lineHeight: '20px',
-                color: overlayTheme.mutedText,
+                color: option.iconColor,
                 marginTop: 1,
               }}
             >

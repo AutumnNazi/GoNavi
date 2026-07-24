@@ -1,5 +1,6 @@
 import React, { useCallback, useMemo, useRef } from 'react';
-import { Button, Tooltip } from 'antd';
+import { createPortal } from 'react-dom';
+import { Button, ConfigProvider, Tooltip } from 'antd';
 import { CloseOutlined, CompressOutlined } from '@ant-design/icons';
 import { useStore } from '../store';
 import { t } from '../i18n';
@@ -18,6 +19,10 @@ import WorkbenchTabContent from './WorkbenchTabContent';
 import { hasNativeDetachedWindowManager } from '../utils/nativeDetachedWindowHost';
 import { useWorkbenchTabs } from '../hooks/useWorkbenchTabs';
 import { useManagedPointerInteraction } from '../hooks/useManagedPointerInteraction';
+import {
+  APP_DETACHED_WINDOW_Z_INDEX_BASE,
+  APP_POPUP_Z_INDEX,
+} from '../utils/overlayZIndex';
 
 const getTabKindLabel = (type: string): string => {
   if (type === 'query') return t('tab_manager.kind_badge.query');
@@ -184,14 +189,15 @@ const FloatingWorkbenchWindows: React.FC = () => {
 
   const isDark = theme === 'dark';
 
-  return (
-    <div className="gn-detached-window-layer" aria-label={t('tab_manager.detached.title_fallback')}>
+  const floatingWindows = (
+    <ConfigProvider theme={{ token: { zIndexPopupBase: APP_POPUP_Z_INDEX } }}>
+      <div className="gn-detached-window-layer" aria-label={t('tab_manager.detached.title_fallback')}>
       <style>{`
         .gn-detached-window-layer {
           position: fixed;
           inset: 0;
           pointer-events: none;
-          z-index: 1200;
+          z-index: ${APP_DETACHED_WINDOW_Z_INDEX_BASE};
         }
         .gn-detached-window {
           position: fixed;
@@ -368,8 +374,13 @@ const FloatingWorkbenchWindows: React.FC = () => {
           />
         </div>
       ))}
-    </div>
+      </div>
+    </ConfigProvider>
   );
+
+  return typeof document === 'undefined'
+    ? floatingWindows
+    : createPortal(floatingWindows, document.body);
 };
 
 export default FloatingWorkbenchWindows;

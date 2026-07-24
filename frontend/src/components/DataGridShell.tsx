@@ -2,6 +2,7 @@ import React from 'react';
 import { Button, message } from 'antd';
 import { CopyOutlined } from '@ant-design/icons';
 import { createPortal } from 'react-dom';
+import { APP_POPUP_Z_INDEX } from '../utils/overlayZIndex';
 
 import Modal from './common/ResizableDraggableModal';
 import ImportPreviewModal from './ImportPreviewModal';
@@ -155,6 +156,7 @@ const DataGridShell: React.FC<DataGridShellProps> = (props) => {
     handleBatchFillToSelected,
     handleCellEditorSave,
     handleCellSetNull,
+    handleClosePageFind,
     handleCommit,
     handleCopyContextMenuFieldName,
     handleCopyCsv,
@@ -169,6 +171,7 @@ const DataGridShell: React.FC<DataGridShellProps> = (props) => {
     handleCopyUpdate,
     handleDataPanelFormatJson,
     handleDataPanelSave,
+    handleDataGridRootPointerDownCapture,
     handleDdlSidebarResizeStart,
     handleDeleteSelected,
     handleDragEnd,
@@ -232,7 +235,9 @@ const DataGridShell: React.FC<DataGridShellProps> = (props) => {
     openBatchEditModal,
     openCurrentViewRowEditor,
     openRowEditorFieldEditor,
+    pageFindInputRef,
     pageFindMatches,
+    pageFindOpen,
     pageFindSummary,
     pageFindText,
     pagination,
@@ -419,6 +424,7 @@ const renderDataTableView = () => (
       <DataGridPageFind
           isV2Ui={isV2Ui}
           darkMode={darkMode}
+          inputRef={pageFindInputRef}
           inputProps={noAutoCapInputProps as Record<string, unknown>}
           pageFindText={pageFindText}
           normalizedPageFindText={normalizedPageFindText}
@@ -428,13 +434,18 @@ const renderDataTableView = () => (
           occurrenceCount={pageFindSummary.occurrenceCount}
           matchedCellCount={pageFindSummary.matchedCellCount}
           onPageFindTextChange={setPageFindText}
-          onCancel={() => setPageFindText('')}
+          onCancel={handleClosePageFind}
           onNavigatePrevious={() => handleNavigatePageFind('previous')}
           onNavigateNext={() => handleNavigatePageFind('next')}
           translate={translateDataGrid}
       />
   );
-  const visiblePageFindContent = viewMode === 'table' ? pageFindContent : null;
+  const floatingPageFindContent = isV2Ui && pageFindOpen && viewMode === 'table'
+      ? pageFindContent
+      : null;
+  const legacyPageFindContent = !isV2Ui && viewMode === 'table'
+      ? pageFindContent
+      : null;
   const columnQuickFindContent = isTableSurfaceActive ? (
       <DataGridColumnQuickFind
           isV2Ui={isV2Ui}
@@ -568,7 +579,13 @@ const renderDataTableView = () => (
   }, [mergedDisplayData, translateDataGrid]);
 
   return (
-    <div ref={rootRef} className={`${gridId}${cellEditMode ? ' cell-edit-mode' : ''} data-grid-root${isV2Ui ? ' gn-v2-data-grid' : ''}`} style={{ '--gonavi-header-min-height': `${headerCellMinHeight}px`, flex: '1 1 auto', height: '100%', overflow: 'hidden', padding: 0, display: 'flex', flexDirection: 'column', minHeight: 0, minWidth: 0, background: 'transparent' } as React.CSSProperties}>
+    <div
+        ref={rootRef}
+        tabIndex={isV2Ui ? -1 : undefined}
+        onPointerDownCapture={isV2Ui ? handleDataGridRootPointerDownCapture : undefined}
+        className={`${gridId}${cellEditMode ? ' cell-edit-mode' : ''} data-grid-root${isV2Ui ? ' gn-v2-data-grid' : ''}`}
+        style={{ '--gonavi-header-min-height': `${headerCellMinHeight}px`, flex: '1 1 auto', height: '100%', overflow: 'hidden', padding: 0, display: 'flex', flexDirection: 'column', minHeight: 0, minWidth: 0, background: 'transparent', outline: 'none' } as React.CSSProperties}
+    >
         <DataGridToolbarFrame
             isV2Ui={isV2Ui}
             tableName={tableName}
@@ -740,6 +757,14 @@ const renderDataTableView = () => (
                 onCloseDdlModal={() => setDdlModalOpen(false)}
                 onCopyDdl={handleCopyDdl}
             />
+            {floatingPageFindContent ? (
+                <div
+                    data-grid-page-find-overlay="true"
+                    className="gn-v2-data-grid-page-find-overlay"
+                >
+                    {floatingPageFindContent}
+                </div>
+            ) : null}
 
         {viewMode === 'table' ? (
             renderDataTableView()
@@ -882,7 +907,7 @@ const renderDataTableView = () => (
                     position: 'fixed',
                     left: cellContextMenu.x,
                     top: cellContextMenu.y,
-                    zIndex: 10000,
+                    zIndex: APP_POPUP_Z_INDEX,
                 }}
                 onClick={(e) => e.stopPropagation()}
             >
@@ -1010,12 +1035,10 @@ const renderDataTableView = () => (
                 ddlLoading={ddlLoading}
                 showColumnComment={showColumnComment}
                 showColumnType={showColumnType}
-                mergedDisplayCount={mergedDisplayData.length}
-                pendingChangeCount={pendingChangeCount}
                 resultViewSwitcher={resultViewSwitcher}
                 columnInfoSettingContent={columnInfoSettingContent}
                 columnQuickFindContent={columnQuickFindContent}
-                pageFindContent={visiblePageFindContent}
+                pageFindContent={legacyPageFindContent}
                 paginationContent={paginationContent}
                 onViewModeChange={handleViewModeChange}
                 dataPanelOpen={dataPanelOpen}

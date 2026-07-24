@@ -18,7 +18,7 @@ import (
 )
 
 const (
-	// 静态清单优先走 R2 自定义域名，GitHub Release 作为故障回退。
+	// 静态清单优先走自建下载镜像，GitHub Release 作为故障回退。
 	updateMirrorLatestManifestURL = "https://download.syngnat.top/gonavi/releases/latest/latest.json"
 	updateMirrorDevManifestURL    = "https://download.syngnat.top/gonavi/dev/releases/latest/latest-dev.json"
 	updateGitHubLatestManifestURL = "https://github.com/" + updateRepo + "/releases/latest/download/latest.json"
@@ -61,16 +61,28 @@ type updateNetworkCheckMemory struct {
 }
 
 var (
-	updateFetchStaticManifest = fetchStaticUpdateManifest
-	updateNetworkCheckMu      sync.Mutex
-	updateLastNetworkCheck    updateNetworkCheckMemory
+	updateFetchStaticManifest         = fetchStaticUpdateManifest
+	updateFetchFreshestStaticManifest = fetchFreshestStaticUpdateManifest
+	updateNetworkCheckMu              sync.Mutex
+	updateLastNetworkCheck            updateNetworkCheckMemory
 )
 
 func swapUpdateFetchStaticManifest(next func(updateChannel) (*githubRelease, error)) func() {
-	original := updateFetchStaticManifest
+	originalStatic := updateFetchStaticManifest
+	originalFreshest := updateFetchFreshestStaticManifest
 	updateFetchStaticManifest = next
+	updateFetchFreshestStaticManifest = next
 	return func() {
-		updateFetchStaticManifest = original
+		updateFetchStaticManifest = originalStatic
+		updateFetchFreshestStaticManifest = originalFreshest
+	}
+}
+
+func swapUpdateFetchFreshestStaticManifest(next func(updateChannel) (*githubRelease, error)) func() {
+	original := updateFetchFreshestStaticManifest
+	updateFetchFreshestStaticManifest = next
+	return func() {
+		updateFetchFreshestStaticManifest = original
 	}
 }
 
@@ -226,6 +238,10 @@ func fetchStaticUpdateManifest(channel updateChannel) (*githubRelease, error) {
 	return fetchStaticUpdateManifestFromURLs(channel, updateManifestRemoteURLs(channel))
 }
 
+func fetchFreshestStaticUpdateManifest(channel updateChannel) (*githubRelease, error) {
+	return fetchFreshestStaticUpdateManifestFromURLs(channel, updateManifestRemoteURLs(channel))
+}
+
 func fetchStaticUpdateManifestFromURLs(channel updateChannel, manifestURLs []string) (*githubRelease, error) {
 	var failures []string
 	for _, manifestURL := range manifestURLs {
@@ -244,6 +260,97 @@ func fetchStaticUpdateManifestFromURLs(channel updateChannel, manifestURLs []str
 }
 
 func fetchStaticUpdateManifestFromURL(channel updateChannel, manifestURL string) (*githubRelease, error) {
+	manifest, err := fetchStaticUpdateManifestPayloadFromURL(channel, manifestURL)
+	if err != nil {
+		return nil, err
+	}
+	return commitStaticUpdateManifest(channel, manifest), nil
+}
+
+func fetchFreshestStaticUpdateManifestFromURLs(channel updateChannel, manifestURLs []string) (*githubRelease, error) {
+	type fetchResult struct {
+		index    int
+		manifest *updateReleaseManifest
+		err      error
+	}
+
+	results := make([]fetchResult, len(manifestURLs))
+	resultCh := make(chan fetchResult, len(manifestURLs))
+	for index, manifestURL := range manifestURLs {
+		go func(index int, manifestURL string) {
+			manifest, err := fetchStaticUpdateManifestPayloadFromURL(channel, manifestURL)
+			resultCh <- fetchResult{index: index, manifest: manifest, err: err}
+		}(index, manifestURL)
+	}
+	for range manifestURLs {
+		result := <-resultCh
+		results[result.index] = result
+	}
+
+	var selected *updateReleaseManifest
+	var failures []string
+	for index, result := range results {
+		if result.err != nil {
+			failures = append(failures, fmt.Sprintf("%s: %v", manifestURLs[index], result.err))
+			continue
+		}
+		if shouldPreferUpdateManifest(channel, selected, result.manifest) {
+			selected = result.manifest
+		}
+	}
+	if selected != nil {
+		return commitStaticUpdateManifest(channel, selected), nil
+	}
+	if len(failures) == 0 {
+		return nil, fmt.Errorf("no static update manifest URL configured")
+	}
+	return nil, fmt.Errorf("static update manifests unavailable: %s", strings.Join(failures, "; "))
+}
+
+func shouldPreferUpdateManifest(channel updateChannel, current *updateReleaseManifest, candidate *updateReleaseManifest) bool {
+	if candidate == nil {
+		return false
+	}
+	if current == nil {
+		return true
+	}
+	comparison, comparable := compareUpdateManifestRecency(channel, current, candidate)
+	return comparable && comparison < 0
+}
+
+// compareUpdateManifestRecency follows compareVersion: -1 means current is older.
+// A false comparable result keeps source order stable, so the mirror wins ties.
+func compareUpdateManifestRecency(channel updateChannel, current *updateReleaseManifest, candidate *updateReleaseManifest) (int, bool) {
+	if current == nil || candidate == nil {
+		return 0, false
+	}
+
+	if channel != updateChannelDev {
+		currentVersion := normalizeVersion(firstNonEmptyString(current.Version, current.TagName))
+		candidateVersion := normalizeVersion(firstNonEmptyString(candidate.Version, candidate.TagName))
+		if currentVersion != "" && candidateVersion != "" {
+			if comparison := compareVersion(currentVersion, candidateVersion); comparison != 0 {
+				return comparison, true
+			}
+		}
+	}
+
+	currentPublishedAt, currentErr := time.Parse(time.RFC3339, strings.TrimSpace(current.PublishedAt))
+	candidatePublishedAt, candidateErr := time.Parse(time.RFC3339, strings.TrimSpace(candidate.PublishedAt))
+	if currentErr == nil && candidateErr == nil {
+		switch {
+		case currentPublishedAt.Before(candidatePublishedAt):
+			return -1, true
+		case currentPublishedAt.After(candidatePublishedAt):
+			return 1, true
+		default:
+			return 0, true
+		}
+	}
+	return 0, false
+}
+
+func fetchStaticUpdateManifestPayloadFromURL(channel updateChannel, manifestURL string) (*updateReleaseManifest, error) {
 	url := strings.TrimSpace(manifestURL)
 	if url == "" {
 		return nil, fmt.Errorf("static update manifest URL is empty")
@@ -292,15 +399,22 @@ func fetchStaticUpdateManifestFromURL(channel updateChannel, manifestURL string)
 	if strings.TrimSpace(manifest.Channel) == "" {
 		manifest.Channel = string(channel)
 	}
-	storeDiskUpdateManifest(channel, &manifest)
-	release := releaseFromUpdateManifest(&manifest)
+	return &manifest, nil
+}
+
+func commitStaticUpdateManifest(channel updateChannel, manifest *updateReleaseManifest) *githubRelease {
+	if manifest == nil {
+		return nil
+	}
+	storeDiskUpdateManifest(channel, manifest)
+	release := releaseFromUpdateManifest(manifest)
 	// 同步进进程内 API 缓存，供限流回退
 	if channel == updateChannelDev {
 		storeCachedGitHubRelease(updateDevAPIURL, release)
 	} else {
 		storeCachedGitHubRelease(updateLatestAPIURL, release)
 	}
-	return release, nil
+	return release
 }
 
 func validateRemoteUpdateManifest(channel updateChannel, manifest *updateReleaseManifest) error {
@@ -383,8 +497,13 @@ func fetchReleaseForChannelPreferringStatic(channel updateChannel, forceNetwork 
 		}
 	}
 
+	staticFetcher := updateFetchStaticManifest
+	if forceNetwork {
+		staticFetcher = updateFetchFreshestStaticManifest
+	}
+
 	var staticErr error
-	if release, err := updateFetchStaticManifest(channel); err == nil && release != nil {
+	if release, err := staticFetcher(channel); err == nil && release != nil {
 		markUpdateNetworkCheck(channel)
 		return release, nil
 	} else {

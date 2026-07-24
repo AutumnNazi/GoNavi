@@ -596,3 +596,22 @@ func TestPostgresApplyChangesReturnsErrorWhenDeleteAffectsMultipleRows(t *testin
 		t.Fatalf("错误信息应提示影响多行，实际=%v", err)
 	}
 }
+
+func TestPostgresApplyChangesExecutesDefaultValuesForEmptyInsert(t *testing.T) {
+	t.Parallel()
+
+	dbConn, state := openOracleRecordingDB(t)
+	postgresDB := &PostgresDB{conn: dbConn}
+
+	err := postgresDB.ApplyChanges("public.users", connection.ChangeSet{
+		Inserts: []map[string]interface{}{{}},
+	})
+	if err != nil {
+		t.Fatalf("ApplyChanges() error = %v", err)
+	}
+
+	queries := state.snapshotExecQueries()
+	if len(queries) != 1 || queries[0] != `INSERT INTO "public"."users" DEFAULT VALUES` {
+		t.Fatalf("default-only insert queries = %#v", queries)
+	}
+}

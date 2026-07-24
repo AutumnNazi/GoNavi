@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Button, Drawer, Empty, Pagination, Select, Space, Table, Tag, Tooltip, Typography, message } from 'antd';
+import { Button, ConfigProvider, Drawer, Empty, Pagination, Select, Space, Table, Tag, Tooltip, Typography, message } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import {
   CloseOutlined,
@@ -36,6 +36,10 @@ import {
   DEFAULT_DETACHED_WINDOW_MIN_WIDTH,
   DETACHED_WINDOW_VIEWPORT_PADDING,
 } from '../../utils/detachedWindow';
+import {
+  APP_DETACHED_WINDOW_Z_INDEX_BASE,
+  APP_POPUP_Z_INDEX,
+} from '../../utils/overlayZIndex';
 import { useManagedPointerInteraction } from '../../hooks/useManagedPointerInteraction';
 import {
   loadResultDiffDetachedBoundsMemory,
@@ -79,7 +83,7 @@ type FloatingBounds = {
   zIndex: number;
 };
 
-const initialFloatingBounds = (zIndex = 1320): FloatingBounds =>
+const initialFloatingBounds = (zIndex = APP_DETACHED_WINDOW_Z_INDEX_BASE + 1): FloatingBounds =>
   resolveResultDiffDetachedBounds(loadResultDiffDetachedBoundsMemory(), zIndex);
 
 const ResultDiffPanel: React.FC<ResultDiffPanelProps> = ({
@@ -707,13 +711,14 @@ const ResultDiffPanel: React.FC<ResultDiffPanelProps> = ({
 
   const floatingWindow = detached && typeof document !== 'undefined'
     ? createPortal(
-      <div className="gn-result-diff-floating-layer" aria-label={titleText}>
+      <ConfigProvider theme={{ token: { zIndexPopupBase: APP_POPUP_Z_INDEX } }}>
+        <div className="gn-result-diff-floating-layer" aria-label={titleText}>
         <style>{`
           .gn-result-diff-floating-layer {
             position: fixed;
             inset: 0;
             pointer-events: none;
-            z-index: 1320;
+            z-index: ${APP_DETACHED_WINDOW_Z_INDEX_BASE};
           }
           .gn-result-diff-floating-window {
             position: fixed;
@@ -782,7 +787,10 @@ const ResultDiffPanel: React.FC<ResultDiffPanelProps> = ({
             height: bounds.height,
             zIndex: bounds.zIndex,
           }}
-          onMouseDown={() => setBounds((prev) => ({ ...prev, zIndex: Math.max(prev.zIndex, 1320) + 1 }))}
+          onMouseDown={() => setBounds((prev) => ({
+            ...prev,
+            zIndex: Math.max(prev.zIndex, APP_DETACHED_WINDOW_Z_INDEX_BASE) + 1,
+          }))}
         >
           <div
             className="gn-result-diff-floating-header"
@@ -811,7 +819,8 @@ const ResultDiffPanel: React.FC<ResultDiffPanelProps> = ({
             onPointerDown={(event) => startFloatingDrag(event, 'resize-se')}
           />
         </div>
-      </div>,
+        </div>
+      </ConfigProvider>,
       document.body,
     )
     : null;
