@@ -1000,7 +1000,6 @@ describe('Sidebar locate toolbar', () => {
 
   it('renders the fixed v2 rail, explorer filters and workbench actions', () => {
     const markup = renderSidebarMarkup({ uiVersion: 'v2', onCreateConnection: mocks.noop });
-    const collapsedMarkup = renderSidebarMarkup({ uiVersion: 'v2', isTreePanelCollapsed: true });
     const source = readSidebarSource();
 
     expect(markup).toContain('gn-v2-sidebar-redesign');
@@ -1008,8 +1007,8 @@ describe('Sidebar locate toolbar', () => {
     expect(markup).toContain('data-sidebar-fixed-rail="true"');
     expect(markup).toContain('gn-v2-object-explorer');
     expect(markup.indexOf('data-sidebar-fixed-rail="true"')).toBeLessThan(markup.indexOf('data-sidebar-tree-panel="true"'));
-    expect(collapsedMarkup).toContain('data-sidebar-fixed-rail="true"');
-    expect(collapsedMarkup).toContain('data-sidebar-tree-panel="true" aria-hidden="true" style="display:none');
+    expect(markup).toContain('data-sidebar-tree-panel="true" style="display:flex');
+    expect(markup).not.toContain('data-sidebar-tree-panel="true" aria-hidden="true" style="display:none');
     expect(markup).toContain('gn-v2-active-connection-header');
     expect(markup).toContain('gn-v2-explorer-search');
     expect(markup).toContain('data-v2-sidebar-search-mode="command"');

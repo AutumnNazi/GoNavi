@@ -516,7 +516,6 @@ const Sidebar: React.FC<{
   collapseSidebarButtonRef?: React.Ref<HTMLButtonElement>;
   expandSidebarLabel?: string;
   expandSidebarButtonRef?: React.Ref<HTMLButtonElement>;
-  isTreePanelCollapsed?: boolean;
 }> = React.memo(({
   onCreateConnection,
   onEditConnection,
@@ -531,7 +530,6 @@ const Sidebar: React.FC<{
   collapseSidebarButtonRef,
   expandSidebarLabel,
   expandSidebarButtonRef,
-  isTreePanelCollapsed = false,
 }) => {
   const connections = useStore(state => state.connections);
   const savedQueries = useStore(state => state.savedQueries);
@@ -3044,8 +3042,7 @@ const Sidebar: React.FC<{
             id={isV2Ui ? 'gonavi-sidebar-tree-panel' : undefined}
             className={isV2Ui ? 'gn-v2-object-explorer' : undefined}
             data-sidebar-tree-panel={isV2Ui ? 'true' : undefined}
-            aria-hidden={isV2Ui ? isTreePanelCollapsed : undefined}
-            style={{ display: isV2Ui && isTreePanelCollapsed ? 'none' : 'flex', flexDirection: 'column', height: '100%', minWidth: 0, flex: 1 }}
+            style={{ display: 'flex', flexDirection: 'column', height: '100%', minWidth: 0, flex: 1 }}
         >
         {isV2Ui && (
             <div className="gn-v2-active-connection-header" data-object-count={activeConnectionObjectCount}>

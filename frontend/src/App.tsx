@@ -7454,7 +7454,9 @@ function App() {
       return null;
   };
 
-  const sidebarPanelToggleLabel = t(isSidebarCollapsed ? 'app.sidebar.expand' : 'app.sidebar.collapse');
+  const sidebarPanelCollapseLabel = t('app.sidebar.collapse');
+  const sidebarPanelExpandLabel = t('app.sidebar.expand');
+  const sidebarPanelToggleLabel = isSidebarCollapsed ? sidebarPanelExpandLabel : sidebarPanelCollapseLabel;
 
   return (
     <ConfigProvider
@@ -7622,13 +7624,13 @@ function App() {
           >
             <div
                 id={isV2Ui ? undefined : 'gonavi-sidebar-tree-panel'}
+                data-sidebar-content="true"
                 aria-hidden={!isV2Ui ? isSidebarCollapsed : undefined}
                 style={{
                     height: '100%',
                     display: 'flex',
                     flexDirection: 'column',
                     overflow: 'hidden',
-                    visibility: !isV2Ui && isSidebarCollapsed ? 'hidden' : 'visible',
                 }}
             >
                 {!isV2Ui && (
@@ -7665,13 +7667,12 @@ function App() {
                             onToggleLogPanel={handleToggleLogPanel}
                             uiVersion={appearance.uiVersion}
                             onFocusCommandSearch={handleFocusSidebarSearch}
-                            onCollapseSidebar={isV2Ui && !isSidebarCollapsed ? handleCollapseSidebarPanel : undefined}
-                            onExpandSidebar={isV2Ui && isSidebarCollapsed ? handleExpandSidebarPanel : undefined}
-                            collapseSidebarLabel={sidebarPanelToggleLabel}
+                            onCollapseSidebar={isV2Ui ? handleCollapseSidebarPanel : undefined}
+                            onExpandSidebar={isV2Ui ? handleExpandSidebarPanel : undefined}
+                            collapseSidebarLabel={isV2Ui ? sidebarPanelCollapseLabel : undefined}
                             collapseSidebarButtonRef={sidebarExplorerToggleRef}
-                            expandSidebarLabel={sidebarPanelToggleLabel}
+                            expandSidebarLabel={isV2Ui ? sidebarPanelExpandLabel : undefined}
                             expandSidebarButtonRef={sidebarCollapsedToggleRef}
-                            isTreePanelCollapsed={isV2Ui && isSidebarCollapsed}
                         />
                     </div>
                     {!connectionWorkbenchState.ready && (
