@@ -7523,7 +7523,7 @@ function App() {
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
-                background: bgMain,
+                background: isV2Ui ? 'var(--gn-bg-panel-2)' : bgMain,
                 borderBottom: 'none',
                 userSelect: 'none',
                 WebkitAppRegion: isWebRuntime ? 'no-drag' : 'drag',
