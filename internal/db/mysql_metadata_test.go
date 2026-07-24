@@ -144,6 +144,68 @@ func TestCollectMySQLDatabaseNames_FallsBackToInformationSchemaSchemata(t *testi
 	}
 }
 
+func TestBuildMySQLColumnDefinitionPreservesDefaultAndCollation(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name           string
+		row            map[string]interface{}
+		wantDefault    *string
+		wantHasDefault bool
+		wantCharset    string
+		wantCollation  string
+	}{
+		{
+			name: "empty string default",
+			row: map[string]interface{}{
+				"Field": "nickname", "Type": "varchar(64)", "Null": "YES", "Key": "",
+				"Default": "", "Extra": "", "Comment": "", "Collation": "utf8mb4_unicode_ci",
+			},
+			wantDefault:    stringPointer(""),
+			wantHasDefault: true,
+			wantCharset:    "utf8mb4",
+			wantCollation:  "utf8mb4_unicode_ci",
+		},
+		{
+			name: "ordinary default",
+			row: map[string]interface{}{
+				"Field": "status", "Type": "varchar(16)", "Null": "NO", "Key": "",
+				"Default": "active", "Extra": "", "Comment": "", "Collation": "utf8_general_ci",
+			},
+			wantDefault:    stringPointer("active"),
+			wantHasDefault: true,
+			wantCharset:    "utf8",
+			wantCollation:  "utf8_general_ci",
+		},
+		{
+			name: "no default or collation",
+			row: map[string]interface{}{
+				"Field": "id", "Type": "bigint", "Null": "NO", "Key": "PRI",
+				"Default": nil, "Extra": "auto_increment", "Comment": "", "Collation": nil,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := buildMySQLColumnDefinition(tt.row)
+			if !reflect.DeepEqual(got.Default, tt.wantDefault) {
+				t.Fatalf("default got=%v want=%v", got.Default, tt.wantDefault)
+			}
+			if got.HasDefault != tt.wantHasDefault {
+				t.Fatalf("hasDefault got=%v want=%v", got.HasDefault, tt.wantHasDefault)
+			}
+			if got.Charset != tt.wantCharset || got.Collation != tt.wantCollation {
+				t.Fatalf("charset/collation got=%q/%q want=%q/%q", got.Charset, got.Collation, tt.wantCharset, tt.wantCollation)
+			}
+		})
+	}
+}
+
+func stringPointer(value string) *string {
+	return &value
+}
+
 func TestBuildMySQLShowCreateTableQueryNormalizesQuotedIdentifiers(t *testing.T) {
 	t.Parallel()
 

@@ -21,9 +21,12 @@ export interface EditableColumnSnapshot {
   type: string;
   nullable: string;
   default?: string | null;
+  hasDefault?: boolean;
   extra?: string;
   comment?: string;
   key?: string;
+  charset?: string;
+  collation?: string;
   isAutoIncrement?: boolean;
 }
 
@@ -117,13 +120,30 @@ const quoteIdentifierPath = (path: string, dbType: string): string => quoteSqlId
 
 const normalizeDefaultText = (value: unknown): string => String(value ?? '').trim();
 
-const isKnownDefaultExpression = (trimmed: string): boolean => {
+const hasDefaultValue = (column: EditableColumnSnapshot): boolean => (
+  typeof column.hasDefault === 'boolean'
+    ? column.hasDefault
+    : column.default !== undefined && column.default !== null && normalizeDefaultText(column.default).length > 0
+);
+
+const defaultDefinitionChanged = (curr: EditableColumnSnapshot, orig: EditableColumnSnapshot): boolean => (
+  hasDefaultValue(curr) !== hasDefaultValue(orig) ||
+  (hasDefaultValue(curr) && normalizeDefaultText(curr.default) !== normalizeDefaultText(orig.default))
+);
+
+const isMySqlCharacterColumnType = (columnType: string): boolean => (
+  /^(?:char|varchar|tinytext|text|mediumtext|longtext|enum|set|nchar|nvarchar)\b/i.test(String(columnType || '').trim())
+);
+
+const isKnownDefaultExpression = (trimmed: string, dbType: string): boolean => {
   if (!trimmed) return false;
   if (/^N?'.*'$/i.test(trimmed)) return true;
+  if (dbType === 'mysql' && /^(?:b'[01]+'|0b[01]+|x'[0-9a-f]+'|0x[0-9a-f]+)$/i.test(trimmed)) return true;
   if (/^-?\d+(\.\d+)?$/.test(trimmed)) return true;
   if (/^(true|false|null)$/i.test(trimmed)) return true;
-  if (/^(current_timestamp|current_date|current_time|localtimestamp|sysdate|systimestamp)$/i.test(trimmed)) return true;
+  if (/^(current_timestamp|current_date|current_time|localtimestamp|sysdate|systimestamp)(?:\s*\(\s*\d+\s*\))?$/i.test(trimmed)) return true;
   if (/^(now|uuid|newid|sysdatetime)\s*\(\s*\)$/i.test(trimmed)) return true;
+  if (dbType === 'mysql' && /^\([\s\S]+\)$/.test(trimmed)) return true;
   if (/^nextval\s*\(/i.test(trimmed) || /::/.test(trimmed)) return true;
   return false;
 };
@@ -131,10 +151,10 @@ const isKnownDefaultExpression = (trimmed: string): boolean => {
 const formatDefaultExpression = (value: unknown, dbType: string): string => {
   const trimmed = normalizeDefaultText(value);
   if (!trimmed) return '';
-  if (isKnownDefaultExpression(trimmed)) {
+  if (isKnownDefaultExpression(trimmed, dbType)) {
     if (/^(true|false|null)$/i.test(trimmed)) return trimmed.toUpperCase();
-    if (/^(current_timestamp|current_date|current_time|localtimestamp|sysdate|systimestamp)$/i.test(trimmed)) {
-      return trimmed.toUpperCase();
+    if (/^(current_timestamp|current_date|current_time|localtimestamp|sysdate|systimestamp)(?:\s*\(\s*\d+\s*\))?$/i.test(trimmed)) {
+      return trimmed.toUpperCase().replace(/\s+/g, '');
     }
     return trimmed;
   }
@@ -142,40 +162,61 @@ const formatDefaultExpression = (value: unknown, dbType: string): string => {
   return `${prefix}'${escapeSqlString(trimmed)}'`;
 };
 
-const buildDefaultSql = (value: unknown, dbType: string): string => {
-  const defaultValue = normalizeDefaultText(value);
-  if (!defaultValue) return '';
+const formatEnabledDefaultExpression = (column: EditableColumnSnapshot, dbType: string): string => {
+  const defaultValue = normalizeDefaultText(column.default);
+  return defaultValue ? formatDefaultExpression(defaultValue, dbType) : "''";
+};
+
+const buildDefaultSql = (column: EditableColumnSnapshot, dbType: string): string => {
+  if (!hasDefaultValue(column)) return '';
+  const defaultValue = normalizeDefaultText(column.default);
+  if (!defaultValue) {
+    return dbType !== 'mysql' || isMySqlCharacterColumnType(column.type) ? "DEFAULT ''" : '';
+  }
   return `DEFAULT ${formatDefaultExpression(defaultValue, dbType)}`;
 };
 
-const definitionChanged = (curr: EditableColumnSnapshot, orig: EditableColumnSnapshot): boolean => (
+const definitionChanged = (
+  curr: EditableColumnSnapshot,
+  orig: EditableColumnSnapshot,
+  includeCharacterOptions = false,
+): boolean => (
   curr.type !== orig.type ||
   curr.nullable !== orig.nullable ||
-  normalizeDefaultText(curr.default) !== normalizeDefaultText(orig.default) ||
+  defaultDefinitionChanged(curr, orig) ||
   (curr.comment || '') !== (orig.comment || '') ||
+  (includeCharacterOptions && (curr.charset || '') !== (orig.charset || '')) ||
+  (includeCharacterOptions && (curr.collation || '') !== (orig.collation || '')) ||
   Boolean(curr.isAutoIncrement) !== Boolean(orig.isAutoIncrement)
 );
 
 const physicalDefinitionChanged = (curr: EditableColumnSnapshot, orig: EditableColumnSnapshot): boolean => (
   curr.type !== orig.type ||
   curr.nullable !== orig.nullable ||
-  normalizeDefaultText(curr.default) !== normalizeDefaultText(orig.default) ||
+  defaultDefinitionChanged(curr, orig) ||
   Boolean(curr.isAutoIncrement) !== Boolean(orig.isAutoIncrement)
 );
 
 const buildMySqlColumnDefinition = (column: EditableColumnSnapshot, dbType: string): string => {
-  let extra = String(column.extra || '').trim();
+  let extra = String(column.extra || '').replace(/\bDEFAULT_GENERATED\b/gi, '').replace(/\s+/g, ' ').trim();
   if (column.isAutoIncrement) {
     if (!extra.toLowerCase().includes('auto_increment')) {
       extra = `${extra} AUTO_INCREMENT`.trim();
     }
   } else {
-    extra = extra.replace(/auto_increment/gi, '').trim();
+    extra = extra.replace(/auto_increment/gi, '').replace(/\s+/g, ' ').trim();
   }
-  const defaultSql = buildDefaultSql(column.default, dbType);
+  const defaultSql = buildDefaultSql(column, dbType);
+  const characterOptionsSql = dbType === 'mysql' && isMySqlCharacterColumnType(column.type)
+    ? [
+        column.charset ? `CHARACTER SET ${column.charset}` : '',
+        column.collation ? `COLLATE ${column.collation}` : '',
+      ].filter(Boolean).join(' ')
+    : '';
   return [
     quoteIdentifierPart(column.name, dbType),
     String(column.type || '').trim(),
+    characterOptionsSql,
     column.nullable === 'NO' ? 'NOT NULL' : 'NULL',
     defaultSql,
     extra,
@@ -196,7 +237,7 @@ const DORIS_AGG_TYPES = new Set([
 ]);
 
 const buildDorisColumnDefinition = (column: EditableColumnSnapshot, dbType: string): string => {
-  const defaultSql = buildDefaultSql(column.default, dbType);
+  const defaultSql = buildDefaultSql(column, dbType);
   const autoIncrementSql = column.isAutoIncrement ? 'AUTO_INCREMENT' : '';
   const keyText = String(column.key || '').trim().toUpperCase();
   const extraText = String(column.extra || '').trim().toUpperCase();
@@ -215,7 +256,7 @@ const buildDorisColumnDefinition = (column: EditableColumnSnapshot, dbType: stri
 };
 
 const buildStarRocksColumnDefinition = (column: EditableColumnSnapshot): string => {
-  const defaultSql = buildDefaultSql(column.default, 'starrocks');
+  const defaultSql = buildDefaultSql(column, 'starrocks');
   const extraText = String(column.extra || '').trim().toUpperCase();
   const aggregateSql = DORIS_AGG_TYPES.has(extraText) ? extraText : '';
   return [
@@ -241,7 +282,7 @@ const buildStandardColumnDefinition = (
       parts.push('GENERATED BY DEFAULT AS IDENTITY');
     }
   }
-  const defaultSql = buildDefaultSql(column.default, dbType);
+  const defaultSql = buildDefaultSql(column, dbType);
   if (defaultSql) parts.push(defaultSql);
   if (column.nullable === 'NO') {
     parts.push('NOT NULL');
@@ -253,7 +294,7 @@ const buildStandardColumnDefinition = (
 
 const buildPgLikeColumnDefinition = (column: EditableColumnSnapshot, dbType: string): string => {
   const parts = [quoteIdentifierPart(column.name, dbType), String(column.type || '').trim()];
-  const defaultSql = buildDefaultSql(column.default, dbType);
+  const defaultSql = buildDefaultSql(column, dbType);
   if (defaultSql) parts.push(defaultSql);
   if (column.nullable === 'NO') parts.push('NOT NULL');
   return parts.join(' ').trim();
@@ -307,7 +348,7 @@ const buildMySqlAlterPreviewSql = (input: BuildAlterTablePreviewInput, dbType: s
       return;
     }
 
-    if (definitionChanged(curr, orig)) {
+    if (definitionChanged(curr, orig, dbType === 'mysql')) {
       alters.push(`MODIFY COLUMN ${colDef} ${positionSql}`.trim());
     }
   });
@@ -397,11 +438,11 @@ const buildPgLikeAlterPreviewSql = (input: BuildAlterTablePreviewInput, dbType: 
       statements.push(`ALTER TABLE ${tableRef}\nALTER COLUMN ${quoteIdentifierPart(currentName, dbType)} TYPE ${curr.type};`);
     }
 
-    const currDefault = normalizeDefaultText(curr.default);
-    const origDefault = normalizeDefaultText(orig.default);
-    if (currDefault !== origDefault) {
-      if (currDefault) {
-        statements.push(`ALTER TABLE ${tableRef}\nALTER COLUMN ${quoteIdentifierPart(currentName, dbType)} SET DEFAULT ${formatDefaultExpression(currDefault, dbType)};`);
+    const currHasDefault = hasDefaultValue(curr);
+    const origHasDefault = hasDefaultValue(orig);
+    if (currHasDefault !== origHasDefault || (currHasDefault && normalizeDefaultText(curr.default) !== normalizeDefaultText(orig.default))) {
+      if (currHasDefault) {
+        statements.push(`ALTER TABLE ${tableRef}\nALTER COLUMN ${quoteIdentifierPart(currentName, dbType)} SET DEFAULT ${formatEnabledDefaultExpression(curr, dbType)};`);
       } else {
         statements.push(`ALTER TABLE ${tableRef}\nALTER COLUMN ${quoteIdentifierPart(currentName, dbType)} DROP DEFAULT;`);
       }
@@ -518,15 +559,15 @@ const buildSqlServerAlterPreviewSql = (input: BuildAlterTablePreviewInput): stri
     }
 
     if (curr.type !== orig.type || curr.nullable !== orig.nullable || Boolean(curr.isAutoIncrement) !== Boolean(orig.isAutoIncrement)) {
-      statements.push(`ALTER TABLE ${tableRef}\nALTER COLUMN ${buildStandardColumnDefinition({ ...curr, name: currentName, default: '' }, dbType, { includeNull: true, includeIdentity: false })};`);
+      statements.push(`ALTER TABLE ${tableRef}\nALTER COLUMN ${buildStandardColumnDefinition({ ...curr, name: currentName, default: undefined, hasDefault: false }, dbType, { includeNull: true, includeIdentity: false })};`);
     }
 
-    const currDefault = normalizeDefaultText(curr.default);
-    const origDefault = normalizeDefaultText(orig.default);
-    if (currDefault !== origDefault) {
+    const currHasDefault = hasDefaultValue(curr);
+    const origHasDefault = hasDefaultValue(orig);
+    if (currHasDefault !== origHasDefault || (currHasDefault && normalizeDefaultText(curr.default) !== normalizeDefaultText(orig.default))) {
       statements.push(buildSqlServerDefaultDropBatch(input.tableName, currentName));
-      if (currDefault) {
-        statements.push(`ALTER TABLE ${tableRef}\nADD DEFAULT ${formatDefaultExpression(currDefault, dbType)} FOR ${quoteIdentifierPart(currentName, dbType)};`);
+      if (currHasDefault) {
+        statements.push(`ALTER TABLE ${tableRef}\nADD DEFAULT ${formatEnabledDefaultExpression(curr, dbType)} FOR ${quoteIdentifierPart(currentName, dbType)};`);
       }
     }
 
@@ -612,11 +653,11 @@ const buildDuckDbAlterPreviewSql = (input: BuildAlterTablePreviewInput): string 
     if (curr.type !== orig.type) {
       statements.push(`ALTER TABLE ${tableRef}\nALTER COLUMN ${quoteIdentifierPart(currentName, dbType)} SET DATA TYPE ${curr.type};`);
     }
-    const currDefault = normalizeDefaultText(curr.default);
-    const origDefault = normalizeDefaultText(orig.default);
-    if (currDefault !== origDefault) {
-      if (currDefault) {
-        statements.push(`ALTER TABLE ${tableRef}\nALTER COLUMN ${quoteIdentifierPart(currentName, dbType)} SET DEFAULT ${formatDefaultExpression(currDefault, dbType)};`);
+    const currHasDefault = hasDefaultValue(curr);
+    const origHasDefault = hasDefaultValue(orig);
+    if (currHasDefault !== origHasDefault || (currHasDefault && normalizeDefaultText(curr.default) !== normalizeDefaultText(orig.default))) {
+      if (currHasDefault) {
+        statements.push(`ALTER TABLE ${tableRef}\nALTER COLUMN ${quoteIdentifierPart(currentName, dbType)} SET DEFAULT ${formatEnabledDefaultExpression(curr, dbType)};`);
       } else {
         statements.push(`ALTER TABLE ${tableRef}\nALTER COLUMN ${quoteIdentifierPart(currentName, dbType)} DROP DEFAULT;`);
       }
@@ -663,7 +704,7 @@ const buildLimitedBacktickAlterPreviewSql = (input: BuildAlterTablePreviewInput,
     const orig = input.originalColumns.find((col) => col._key === curr._key);
     if (!orig) {
       statements.push(`ALTER TABLE ${tableRef}\nADD COLUMN ${quoteIdentifierPart(curr.name, dbType)} ${curr.type};`);
-      if (curr.nullable === 'NO' || normalizeDefaultText(curr.default) || String(curr.comment || '').trim()) {
+      if (curr.nullable === 'NO' || hasDefaultValue(curr) || String(curr.comment || '').trim()) {
         statements.push(translateSchemaSqlComment(input.translate, 'table_designer.schema_sql.limited_column_hint', {
           dialect: label,
         }));
@@ -681,7 +722,7 @@ const buildLimitedBacktickAlterPreviewSql = (input: BuildAlterTablePreviewInput,
     }
     if (
       curr.nullable !== orig.nullable ||
-      normalizeDefaultText(curr.default) !== normalizeDefaultText(orig.default) ||
+      defaultDefinitionChanged(curr, orig) ||
       (curr.comment || '') !== (orig.comment || '') ||
       Boolean(curr.isAutoIncrement) !== Boolean(orig.isAutoIncrement)
     ) {

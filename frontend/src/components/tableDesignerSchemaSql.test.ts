@@ -36,15 +36,20 @@ const translateEn = (key: string, params?: Record<string, string | number | bool
   catalogTranslate('en-US', key, params);
 
 const baseColumn = (overrides: Partial<EditableColumnSnapshot>): EditableColumnSnapshot => ({
-  _key: overrides._key || 'col',
-  name: overrides.name || 'id',
-  type: overrides.type || 'int',
-  nullable: overrides.nullable || 'NO',
-  default: overrides.default || '',
-  extra: overrides.extra || '',
-  comment: overrides.comment || '',
-  key: overrides.key || '',
-  isAutoIncrement: overrides.isAutoIncrement || false,
+  _key: overrides._key ?? 'col',
+  name: overrides.name ?? 'id',
+  type: overrides.type ?? 'int',
+  nullable: overrides.nullable ?? 'NO',
+  default: Object.prototype.hasOwnProperty.call(overrides, 'default') ? overrides.default : undefined,
+  hasDefault: Object.prototype.hasOwnProperty.call(overrides, 'hasDefault')
+    ? overrides.hasDefault
+    : overrides.default !== undefined && overrides.default !== null && String(overrides.default).trim().length > 0,
+  extra: overrides.extra ?? '',
+  comment: overrides.comment ?? '',
+  key: overrides.key ?? '',
+  charset: overrides.charset,
+  collation: overrides.collation,
+  isAutoIncrement: overrides.isAutoIncrement ?? false,
 });
 
 const buildInput = (overrides: Partial<BuildAlterTablePreviewInput>): BuildAlterTablePreviewInput => ({
@@ -153,6 +158,157 @@ describe('tableDesignerSchemaSql', () => {
     expect(sql).toContain('ADD COLUMN `age` int NULL');
     expect(sql).toContain("COMMENT '年龄'");
     expect(sql).toContain('AFTER `id`');
+  });
+
+  it('preserves explicit MySQL default states and expressions', () => {
+    const columns = [
+      baseColumn({ _key: 'none', name: 'none_value', type: 'varchar(16)', nullable: 'YES', hasDefault: false }),
+      baseColumn({ _key: 'null', name: 'null_value', type: 'varchar(16)', nullable: 'YES', default: 'NULL', hasDefault: true }),
+      baseColumn({ _key: 'empty', name: 'empty_value', type: 'varchar(16)', nullable: 'YES', default: '', hasDefault: true }),
+      baseColumn({ _key: 'zero', name: 'zero_value', type: 'int', nullable: 'YES', default: '0', hasDefault: true }),
+      baseColumn({ _key: 'text', name: 'text_value', type: 'varchar(16)', nullable: 'YES', default: 'active', hasDefault: true }),
+      baseColumn({ _key: 'time', name: 'time_value', type: 'timestamp(6)', nullable: 'NO', default: 'CURRENT_TIMESTAMP(6)', hasDefault: true }),
+      baseColumn({ _key: 'bit', name: 'bit_value', type: 'bit(1)', nullable: 'NO', default: "b'0'", hasDefault: true }),
+      baseColumn({ _key: 'hex', name: 'hex_value', type: 'binary(1)', nullable: 'NO', default: '0x00', hasDefault: true }),
+      baseColumn({ _key: 'uuid', name: 'uuid_value', type: 'binary(16)', nullable: 'NO', default: '(uuid_to_bin(uuid()))', hasDefault: true }),
+    ];
+
+    const sql = buildCreateTablePreviewSql({
+      tableName: 'defaults_test',
+      dbType: 'mysql',
+      columns,
+    });
+
+    expect(sql).toContain("`none_value` varchar(16) NULL COMMENT ''");
+    expect(sql).not.toContain('`none_value` varchar(16) NULL DEFAULT');
+    expect(sql).toContain('`null_value` varchar(16) NULL DEFAULT NULL');
+    expect(sql).toContain("`empty_value` varchar(16) NULL DEFAULT ''");
+    expect(sql).toContain('`zero_value` int NULL DEFAULT 0');
+    expect(sql).toContain("`text_value` varchar(16) NULL DEFAULT 'active'");
+    expect(sql).toContain('`time_value` timestamp(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)');
+    expect(sql).toContain("`bit_value` bit(1) NOT NULL DEFAULT b'0'");
+    expect(sql).toContain('`hex_value` binary(1) NOT NULL DEFAULT 0x00');
+    expect(sql).toContain('`uuid_value` binary(16) NOT NULL DEFAULT (uuid_to_bin(uuid()))');
+  });
+
+  it('does not generate an empty string default for non-character columns', () => {
+    const sql = buildCreateTablePreviewSql({
+      tableName: 'invalid_default',
+      dbType: 'mysql',
+      columns: [baseColumn({
+        _key: 'count',
+        name: 'count',
+        type: 'int',
+        nullable: 'NO',
+        default: '',
+        hasDefault: true,
+      })],
+    });
+
+    expect(sql).not.toContain('DEFAULT');
+  });
+
+  it('detects changes between no default and an explicit empty string default', () => {
+    const original = baseColumn({
+      _key: 'status',
+      name: 'status',
+      type: 'varchar(16)',
+      default: undefined,
+      hasDefault: false,
+    });
+    const changed = baseColumn({
+      ...original,
+      default: '',
+      hasDefault: true,
+    });
+
+    const sql = buildAlterTablePreviewSql(buildInput({
+      dbType: 'mysql',
+      originalColumns: [original],
+      columns: [changed],
+    }));
+
+    expect(sql).toContain("MODIFY COLUMN `status` varchar(16) NOT NULL DEFAULT ''");
+  });
+
+  it('generates MySQL character options only for character columns', () => {
+    const createSql = buildCreateTablePreviewSql({
+      tableName: 'column_options',
+      dbType: 'mysql',
+      columns: [
+        baseColumn({
+          _key: 'name',
+          name: 'name',
+          type: 'varchar(64)',
+          charset: 'utf8mb4',
+          collation: 'utf8mb4_unicode_ci',
+        }),
+        baseColumn({
+          _key: 'count',
+          name: 'count',
+          type: 'int',
+          charset: 'utf8mb4',
+          collation: 'utf8mb4_unicode_ci',
+        }),
+      ],
+    });
+
+    expect(createSql).toContain('`name` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci');
+    expect(createSql).not.toContain('`count` int CHARACTER SET');
+  });
+
+  it.each([
+    {
+      label: 'charset',
+      change: { charset: 'utf8' },
+      expected: 'CHARACTER SET utf8 COLLATE utf8mb4_general_ci',
+    },
+    {
+      label: 'collation',
+      change: { collation: 'utf8mb4_unicode_ci' },
+      expected: 'CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci',
+    },
+  ])('detects a MySQL $label change without extending mysql-family dialects', ({ change, expected }) => {
+    const original = baseColumn({
+      _key: 'name',
+      name: 'name',
+      type: 'varchar(64)',
+      charset: 'utf8mb4',
+      collation: 'utf8mb4_general_ci',
+    });
+    const changed = baseColumn({ ...original, ...change });
+
+    const mysqlSql = buildAlterTablePreviewSql(buildInput({
+      dbType: 'mysql',
+      originalColumns: [original],
+      columns: [changed],
+    }));
+    const mariadbSql = buildAlterTablePreviewSql(buildInput({
+      dbType: 'mariadb',
+      originalColumns: [original],
+      columns: [changed],
+    }));
+
+    expect(mysqlSql).toContain(`MODIFY COLUMN \`name\` varchar(64) ${expected}`);
+    expect(mariadbSql).toBe('');
+  });
+
+  it('filters MySQL DEFAULT_GENERATED metadata while preserving valid extras', () => {
+    const sql = buildCreateTablePreviewSql({
+      tableName: 'generated_defaults',
+      dbType: 'mysql',
+      columns: [baseColumn({
+        _key: 'updated_at',
+        name: 'updated_at',
+        type: 'timestamp',
+        default: 'CURRENT_TIMESTAMP',
+        hasDefault: true,
+        extra: 'DEFAULT_GENERATED on update CURRENT_TIMESTAMP',
+      })],
+    });
+
+    expect(sql).toContain('DEFAULT CURRENT_TIMESTAMP on update CURRENT_TIMESTAMP');
+    expect(sql).not.toContain('DEFAULT_GENERATED');
   });
 
   it('builds kingbase alter preview without mysql-only syntax', () => {

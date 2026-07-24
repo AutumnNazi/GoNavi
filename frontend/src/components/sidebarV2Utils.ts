@@ -123,7 +123,11 @@ export const sortSidebarTableEntries = <T extends SidebarTableEntryForSort>(
 ): T[] => {
   const pinnedKeys = options.pinnedSidebarTables || [];
   const accessCount = options.tableAccessCount || {};
-  const compareByName = (a: T, b: T) => a.displayName.toLowerCase().localeCompare(b.displayName.toLowerCase());
+  const compareByName = (a: T, b: T) => a.displayName.localeCompare(
+    b.displayName,
+    undefined,
+    { numeric: true, sensitivity: 'base' },
+  );
   const compareWithinPinnedGroup = (a: T, b: T) => {
     if (options.sortBy === 'frequency') {
       const countA = readTableAccessCount(
