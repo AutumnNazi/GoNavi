@@ -223,7 +223,7 @@ describe('useAppSidebarResize interaction cleanup', () => {
   });
 
   it('marks the sider as resizing during drag and keeps the flag across width commit', () => {
-    const sider = (resize!.siderRef as React.MutableRefObject<FakeHTMLElement>).current;
+    const sider = resize!.siderRef.current as unknown as FakeHTMLElement;
 
     beginResize();
     expect(sider.getAttribute('data-sidebar-resizing')).toBe('true');
