@@ -709,6 +709,44 @@ func normalizeDirectoryDialogPath(currentDir string) string {
 	return defaultDir
 }
 
+func absDialogPath(path string) string {
+	trimmed := strings.TrimSpace(path)
+	if trimmed == "" {
+		return ""
+	}
+	if abs, err := filepath.Abs(trimmed); err == nil {
+		return abs
+	}
+	return trimmed
+}
+
+// resolveFileOpenDialogDirectory picks the directory for OpenFileDialog.
+// currentPath may be a previously selected file, including extensionless SSH keys
+// such as id_rsa / id_ed25519 / custom names under ~/.ssh.
+func resolveFileOpenDialogDirectory(currentPath string, emptyFallback string) string {
+	path := strings.TrimSpace(currentPath)
+	if path == "" {
+		path = strings.TrimSpace(emptyFallback)
+	}
+	if path == "" {
+		return ""
+	}
+
+	if info, err := os.Stat(path); err == nil {
+		if info.IsDir() {
+			return absDialogPath(path)
+		}
+		return absDialogPath(filepath.Dir(path))
+	}
+
+	// Path does not exist: treat it as a file location when a parent exists.
+	parent := filepath.Dir(path)
+	if parent != "" && parent != "." && parent != path {
+		return absDialogPath(parent)
+	}
+	return absDialogPath(path)
+}
+
 type fileBackendTextFunc func(key string, params map[string]any) string
 
 func fileBackendText(text fileBackendTextFunc, key string, params map[string]any) string {
@@ -2057,32 +2095,24 @@ func normalizeConnectionPackageExportFilename(filename string) string {
 }
 
 func (a *App) SelectSSHKeyFile(currentPath string) connection.QueryResult {
-	defaultDir := strings.TrimSpace(currentPath)
-	if defaultDir == "" {
-		if home, err := os.UserHomeDir(); err == nil {
-			defaultDir = filepath.Join(home, ".ssh")
-		}
+	fallbackDir := ""
+	if home, err := os.UserHomeDir(); err == nil {
+		fallbackDir = filepath.Join(home, ".ssh")
 	}
-	if filepath.Ext(defaultDir) != "" {
-		defaultDir = filepath.Dir(defaultDir)
-	}
-	if defaultDir != "" && !filepath.IsAbs(defaultDir) {
-		if abs, err := filepath.Abs(defaultDir); err == nil {
-			defaultDir = abs
-		}
-	}
+	defaultDir := resolveFileOpenDialogDirectory(currentPath, fallbackDir)
 
+	// OpenSSH private keys are commonly extensionless (id_ed25519, id_ecdsa,
+	// custom names). Wails/macOS treats dialog filters as file extensions only,
+	// so filename globs never match real key basenames and hide them.
+	// Allow all files and show hidden items so ~/.ssh keys remain selectable.
 	selection, err := runtime.OpenFileDialog(a.ctx, runtime.OpenDialogOptions{
 		Title:            a.appText("file.backend.dialog.select_ssh_key_file", nil),
 		DefaultDirectory: defaultDir,
+		ShowHiddenFiles:  true,
 		Filters: []runtime.FileFilter{
 			{
-				DisplayName: a.appText("file.backend.filter.private_key_files", nil),
-				Pattern:     "*.pem;*.key;*.ppk;*id_rsa*",
-			},
-			{
 				DisplayName: a.appText("file.backend.filter.all_files", nil),
-				Pattern:     "*",
+				Pattern:     "*.*",
 			},
 		},
 	})
@@ -2099,24 +2129,18 @@ func (a *App) SelectSSHKeyFile(currentPath string) connection.QueryResult {
 }
 
 func (a *App) SelectCertificateFile(currentPath string, certKind string) connection.QueryResult {
-	defaultDir := strings.TrimSpace(currentPath)
-	if defaultDir == "" {
-		if home, err := os.UserHomeDir(); err == nil {
-			defaultDir = home
-		}
+	fallbackDir := ""
+	if home, err := os.UserHomeDir(); err == nil {
+		fallbackDir = home
 	}
-	if filepath.Ext(defaultDir) != "" {
-		defaultDir = filepath.Dir(defaultDir)
-	}
-	if defaultDir != "" && !filepath.IsAbs(defaultDir) {
-		if abs, err := filepath.Abs(defaultDir); err == nil {
-			defaultDir = abs
-		}
-	}
+	defaultDir := resolveFileOpenDialogDirectory(currentPath, fallbackDir)
 
 	kind := strings.ToLower(strings.TrimSpace(certKind))
 	titleKey := "file.backend.dialog.select_tls_certificate_file"
 	displayNameKey := "file.backend.filter.certificate_files"
+	// Certificate material usually has extensions; still include all-files so
+	// extensionless keys remain selectable (same macOS filter limitation).
+	filterPattern := "*.pem;*.crt;*.cer;*.cert;*.key"
 	switch kind {
 	case "ca":
 		titleKey = "file.backend.dialog.select_ca_server_certificate_file"
@@ -2125,19 +2149,22 @@ func (a *App) SelectCertificateFile(currentPath string, certKind string) connect
 	case "client-key":
 		titleKey = "file.backend.dialog.select_client_private_key_file"
 		displayNameKey = "file.backend.filter.private_key_files"
+		// Prefer all-files for private keys: extensionless PEM keys are common.
+		filterPattern = "*.*"
 	}
 
 	selection, err := runtime.OpenFileDialog(a.ctx, runtime.OpenDialogOptions{
 		Title:            a.appText(titleKey, nil),
 		DefaultDirectory: defaultDir,
+		ShowHiddenFiles:  kind == "client-key",
 		Filters: []runtime.FileFilter{
 			{
 				DisplayName: a.appText(displayNameKey, nil),
-				Pattern:     "*.pem;*.crt;*.cer;*.cert;*.key",
+				Pattern:     filterPattern,
 			},
 			{
 				DisplayName: a.appText("file.backend.filter.all_files", nil),
-				Pattern:     "*",
+				Pattern:     "*.*",
 			},
 		},
 	})
