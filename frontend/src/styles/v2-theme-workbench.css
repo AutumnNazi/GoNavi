@@ -347,6 +347,10 @@ body[data-ui-version="v2"] .gn-v2-query-monaco-stage {
   background: var(--gn-bg-panel);
 }
 
+body[data-ui-version="v2"] .gn-v2-query-monaco-stage:has(.monaco-editor .find-widget.visible:not(.hiddenEditor)) {
+  overflow: visible;
+}
+
 body[data-ui-version="v2"] .gn-v2-query-monaco-shell {
   min-height: 0;
   overflow: visible;

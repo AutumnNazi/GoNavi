@@ -51,4 +51,16 @@ describe('v2 workbench adaptive tab width', () => {
       /\.gn-v2-main-tabs \.ant-tabs-tab \{[^}]*width: 260px;[^}]*min-width: 260px;[^}]*max-width: 260px;/s,
     );
   });
+
+  it('rounds all four corners of every v2 workbench tab', () => {
+    expect(themeSource).toMatch(
+      /\.gn-v2-main-tabs \.ant-tabs-tab \{[^}]*border-radius: 8px !important;/s,
+    );
+    expect(themeSource).toMatch(
+      /\.gn-v2-main-tabs \.ant-tabs-tab\.ant-tabs-tab-active \{[^}]*box-shadow: inset 0 2px 0 var\(--gn-accent\) !important;/s,
+    );
+    expect(themeSource).toMatch(
+      /\.gn-v2-main-tabs \.ant-tabs-tab\.ant-tabs-tab-active::after \{[^}]*display: none;/s,
+    );
+  });
 });
