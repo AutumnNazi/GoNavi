@@ -358,6 +358,18 @@ describe('settings center tool entries', () => {
     expect(v2ThemeCss).toMatch(/body\[data-ui-version="v2"\]\s+\.gn-v2-app-sider\s*\{[^}]*min-width:\s*232px\s*!important;[^}]*max-width:\s*min\(960px,\s*calc\(100vw - 360px\)\)\s*!important;/s);
   });
 
+  it('disables sider width transition while drag-resizing so the workbench does not reflow for 200ms', () => {
+    expect(appSidebarResizeSource).toContain("sider.setAttribute('data-sidebar-resizing', 'true')");
+    expect(appSidebarResizeSource).toContain("document.body.setAttribute('data-sidebar-resizing', 'true')");
+    expect(appSidebarResizeSource).toContain('scheduleClearSidebarResizing');
+    expect(appCss).toMatch(
+      /body\[data-ui-version\]\s+\.ant-layout-sider\[data-sidebar-panel='true'\]\[data-sidebar-resizing='true'\][\s\S]*?transition:\s*none\s*!important;/,
+    );
+    expect(appCss).toMatch(
+      /body\[data-sidebar-resizing='true'\]\s+\.ant-layout-sider\[data-sidebar-panel='true'\][\s\S]*?transition:\s*none\s*!important;/,
+    );
+  });
+
   it('keeps connection modal warm-mounted while leaving the remaining heavyweight modals conditional', () => {
     expect(appSource).toContain('const [isConnectionModalMounted, setIsConnectionModalMounted] = useState(false);');
     expect(appSource).toContain('{isConnectionModalMounted && (');
