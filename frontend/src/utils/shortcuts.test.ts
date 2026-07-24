@@ -18,6 +18,7 @@ import {
   getShortcutDisplayLabel,
   getShortcutPrimaryModifierDisplayLabel,
   installGlobalImeCompositionTracking,
+  isEditableElement,
   isGlobalImeCompositionActive,
   isGlobalShortcutCaptureActive,
   isImeComposingKeyEvent,
@@ -37,6 +38,33 @@ beforeEach(() => {
   setCurrentLanguage('zh-CN');
   setGlobalImeCompositionActive(false);
   setGlobalShortcutCaptureActive(false);
+});
+
+describe('editable targets', () => {
+  it('treats Ant Design select dropdown options as interactive targets', () => {
+    const OriginalHTMLElement = globalThis.HTMLElement;
+    class MockHTMLElement {
+      tagName = 'div';
+      isContentEditable = false;
+
+      closest(selector: string) {
+        return selector.includes('.ant-select-dropdown') ? this : null;
+      }
+    }
+    Object.defineProperty(globalThis, 'HTMLElement', {
+      configurable: true,
+      value: MockHTMLElement,
+    });
+
+    try {
+      expect(isEditableElement(new MockHTMLElement() as unknown as EventTarget)).toBe(true);
+    } finally {
+      Object.defineProperty(globalThis, 'HTMLElement', {
+        configurable: true,
+        value: OriginalHTMLElement,
+      });
+    }
+  });
 });
 
 // ─── findReservedConflict ────────────────────────────────────────────
