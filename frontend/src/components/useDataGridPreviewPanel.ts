@@ -9,6 +9,7 @@ export interface DataGridFocusedCellInfo {
 }
 
 interface UseDataGridPreviewPanelParams {
+  previewAvailable: boolean;
   toEditableText: (value: any, columnName?: string) => string;
   looksLikeJsonText: (text: string) => boolean;
   normalizeDateTimeString: (value: string) => string;
@@ -29,6 +30,7 @@ export interface UseDataGridPreviewPanelResult {
 }
 
 export const useDataGridPreviewPanel = ({
+  previewAvailable,
   toEditableText,
   looksLikeJsonText,
   normalizeDateTimeString,
@@ -40,6 +42,16 @@ export const useDataGridPreviewPanel = ({
   const [dataPanelIsJson, setDataPanelIsJson] = React.useState(false);
   const dataPanelDirtyRef = React.useRef(false);
   const dataPanelOriginalRef = React.useRef('');
+
+  const closeDataPanel = React.useCallback(() => {
+    dataPanelOpenRef.current = false;
+    setDataPanelOpen(false);
+    setFocusedCellInfo(null);
+    setDataPanelValue('');
+    setDataPanelIsJson(false);
+    dataPanelDirtyRef.current = false;
+    dataPanelOriginalRef.current = '';
+  }, []);
 
   const updateFocusedCell = React.useCallback((record: GridRecord, dataIndex: string) => {
     if (!record || !dataIndex) return;
@@ -68,24 +80,30 @@ export const useDataGridPreviewPanel = ({
   }, [dataPanelIsJson, dataPanelValue]);
 
   const toggleDataPanel = React.useCallback(() => {
+    if (!previewAvailable) {
+      closeDataPanel();
+      return;
+    }
     const next = !dataPanelOpenRef.current;
     dataPanelOpenRef.current = next;
     setDataPanelOpen(next);
     if (!next) {
-      setFocusedCellInfo(null);
-      setDataPanelValue('');
-      setDataPanelIsJson(false);
-      dataPanelDirtyRef.current = false;
-      dataPanelOriginalRef.current = '';
+      closeDataPanel();
     }
-  }, []);
+  }, [closeDataPanel, previewAvailable]);
+
+  React.useEffect(() => {
+    if (!previewAvailable) {
+      closeDataPanel();
+    }
+  }, [closeDataPanel, previewAvailable]);
 
   React.useEffect(() => {
     dataPanelOpenRef.current = dataPanelOpen;
   }, [dataPanelOpen]);
 
   return {
-    dataPanelOpen,
+    dataPanelOpen: previewAvailable && dataPanelOpen,
     dataPanelOpenRef,
     focusedCellInfo,
     dataPanelValue,
