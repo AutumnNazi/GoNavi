@@ -28,6 +28,9 @@ export interface TableOverviewSearchIndexItem<T extends TableOverviewFilterRow> 
   sortName: string;
 }
 
+const compareTableNames = (left: string, right: string): number =>
+  left.localeCompare(right, undefined, { numeric: true, sensitivity: 'base' });
+
 export const buildTableOverviewSearchIndex = <T extends TableOverviewFilterRow>(
   rows: T[],
 ): TableOverviewSearchIndexItem<T>[] => rows.map((row) => ({
@@ -49,7 +52,7 @@ export const filterAndSortTableOverviewRows = <T extends TableOverviewFilterRow>
 
   matched.sort((a, b) => {
     if (sortField === 'name') {
-      const cmp = a.sortName.localeCompare(b.sortName);
+      const cmp = compareTableNames(a.sortName, b.sortName);
       return sortOrder === 'asc' ? cmp : -cmp;
     }
 
@@ -62,7 +65,7 @@ export const filterAndSortTableOverviewRows = <T extends TableOverviewFilterRow>
       if (!leftUnknown && left !== right) {
         return sortOrder === 'asc' ? left - right : right - left;
       }
-      return a.sortName.localeCompare(b.sortName);
+      return compareTableNames(a.sortName, b.sortName);
     }
 
     const left = String(a.row[sortField] || '').trim();
@@ -70,11 +73,11 @@ export const filterAndSortTableOverviewRows = <T extends TableOverviewFilterRow>
     if (!left || !right) {
       if (!left && right) return 1;
       if (left && !right) return -1;
-      return a.sortName.localeCompare(b.sortName);
+      return compareTableNames(a.sortName, b.sortName);
     }
     const cmp = left.localeCompare(right, undefined, { numeric: true, sensitivity: 'base' });
     if (cmp !== 0) return sortOrder === 'asc' ? cmp : -cmp;
-    return a.sortName.localeCompare(b.sortName);
+    return compareTableNames(a.sortName, b.sortName);
   });
 
   return matched.map((item) => item.row);

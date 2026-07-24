@@ -162,9 +162,22 @@ export const getColumnDefinitionDefault = (column: unknown): string => (
 );
 
 export const hasColumnDefinitionDefault = (column: unknown): boolean => {
+  const explicit = readProperty(column, ['hasDefault', 'HasDefault', 'HAS_DEFAULT', 'has_default']);
+  if (explicit !== undefined && explicit !== null) {
+    return readBooleanProperty(column, ['hasDefault', 'HasDefault', 'HAS_DEFAULT', 'has_default']);
+  }
+
   const raw = readProperty(column, ['default', 'Default', 'COLUMN_DEFAULT', 'column_default', 'DATA_DEFAULT', 'data_default']);
-  return raw !== undefined && raw !== null;
+  return raw !== undefined && raw !== null && String(raw).length > 0;
 };
+
+export const getColumnDefinitionCharset = (column: unknown): string => (
+  readStringProperty(column, ['charset', 'Charset', 'CHARACTER_SET_NAME', 'character_set_name'])
+);
+
+export const getColumnDefinitionCollation = (column: unknown): string => (
+  readStringProperty(column, ['collation', 'Collation', 'COLLATION_NAME', 'collation_name'])
+);
 
 export const getColumnDefinitionComment = (column: unknown): string => (
   readStringProperty(column, ['comment', 'Comment', 'COMMENTS', 'comments', 'COLUMN_COMMENT', 'column_comment'])
@@ -180,8 +193,11 @@ export const normalizeColumnDefinition = (column: unknown): ColumnDefinition => 
     nullable: getColumnDefinitionNullable(column),
     key: getColumnDefinitionKey(column),
     default: hasDefault ? getColumnDefinitionDefault(column) : undefined,
+    hasDefault,
     extra: getColumnDefinitionExtra(column),
     comment: getColumnDefinitionComment(column),
+    charset: getColumnDefinitionCharset(column) || undefined,
+    collation: getColumnDefinitionCollation(column) || undefined,
   };
 };
 

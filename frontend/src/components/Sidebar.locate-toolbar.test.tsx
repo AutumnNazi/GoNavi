@@ -2255,6 +2255,20 @@ describe('Sidebar locate toolbar', () => {
     expect(metaSource).not.toContain('— 行');
   });
 
+  it('sorts sidebar table names in natural numeric order', () => {
+    const entries = [
+      { tableName: 'table_10', displayName: 'table_10' },
+      { tableName: 'table_2', displayName: 'table_2' },
+      { tableName: 'table_1', displayName: 'table_1' },
+    ];
+
+    expect(sortSidebarTableEntries(entries, {
+      connectionId: 'conn-1',
+      dbName: 'main',
+      sortBy: 'name',
+    }).map((entry) => entry.tableName)).toEqual(['table_1', 'table_2', 'table_10']);
+  });
+
   it('sorts pinned sidebar tables before the active sort mode', () => {
     const pinnedSidebarTables = [
       buildSidebarTablePinKey('conn-1', 'main', 'orders', 'public'),

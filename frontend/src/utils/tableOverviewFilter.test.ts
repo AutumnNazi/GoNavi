@@ -47,6 +47,44 @@ describe('tableOverviewFilter', () => {
     ]);
   });
 
+  it('sorts table names in natural numeric order', () => {
+    const indexed = buildTableOverviewSearchIndex([
+      { name: 'table_11', comment: '', rows: 0, dataSize: 0, indexSize: 0 },
+      { name: 'table_2', comment: '', rows: 0, dataSize: 0, indexSize: 0 },
+      { name: 'table_10', comment: '', rows: 0, dataSize: 0, indexSize: 0 },
+      { name: 'table_1', comment: '', rows: 0, dataSize: 0, indexSize: 0 },
+    ]);
+
+    expect(filterAndSortTableOverviewRows(indexed, '', 'name', 'asc').map((item) => item.name)).toEqual([
+      'table_1',
+      'table_2',
+      'table_10',
+      'table_11',
+    ]);
+    expect(filterAndSortTableOverviewRows(indexed, '', 'name', 'desc').map((item) => item.name)).toEqual([
+      'table_11',
+      'table_10',
+      'table_2',
+      'table_1',
+    ]);
+  });
+
+  it('uses natural table name order when other sort values match', () => {
+    const indexed = buildTableOverviewSearchIndex([
+      { name: 'table_10', comment: 'same', rows: 1, dataSize: 0, indexSize: 0 },
+      { name: 'table_2', comment: 'same', rows: 1, dataSize: 0, indexSize: 0 },
+    ]);
+
+    expect(filterAndSortTableOverviewRows(indexed, '', 'rows', 'desc').map((item) => item.name)).toEqual([
+      'table_2',
+      'table_10',
+    ]);
+    expect(filterAndSortTableOverviewRows(indexed, '', 'comment', 'desc').map((item) => item.name)).toEqual([
+      'table_2',
+      'table_10',
+    ]);
+  });
+
   it('sorts compact table numeric columns while keeping unknown values last', () => {
     const indexed = buildTableOverviewSearchIndex([
       { name: 'unknown', comment: '', rows: -1, dataSize: -1, indexSize: -1 },
