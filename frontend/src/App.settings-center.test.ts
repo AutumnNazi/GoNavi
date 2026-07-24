@@ -343,6 +343,8 @@ describe('settings center layout', () => {
     expect(appSource).toContain("border: 'none'");
     expect(appSource).toContain("background: 'transparent'");
     expect(aboutPaneSource).toContain('className="gonavi-about-pane"');
+    expect(aboutPaneSource).toContain("style={{ display: 'flex', flexDirection: 'column' }}");
+    expect(aboutPaneSource).not.toContain("padding: '0 0 18px'");
     expect(aboutPaneSource).toContain('aria-labelledby="gonavi-about-version-heading"');
     expect(aboutPaneSource).toContain('aria-labelledby="gonavi-about-project-heading"');
     expect(aboutPaneSource).toContain("gridTemplateColumns: 'minmax(0, 1.15fr) minmax(260px, 0.85fr)'");
