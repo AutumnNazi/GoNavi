@@ -63,6 +63,8 @@ const MessagePublishModal: React.FC<MessagePublishModalProps> = ({
   );
 
   useEffect(() => {
+    // destroyOnHidden unmounts the Form while closed. Only touch the form
+    // instance when the modal is open so useForm stays connected.
     if (!open || !connection) return;
     form.setFieldsValue(
       createDefaultMessagePublishDraft(
@@ -74,9 +76,8 @@ const MessagePublishModal: React.FC<MessagePublishModalProps> = ({
 
   useEffect(() => {
     if (open) return;
-    form.resetFields();
     setSubmitting(false);
-  }, [form, open]);
+  }, [open]);
 
   const handleSubmit = async () => {
     if (!connection) return;

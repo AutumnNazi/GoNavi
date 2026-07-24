@@ -184,7 +184,7 @@ const ResultDiffWizard: React.FC<ResultDiffWizardProps> = ({
       onOk={handleStart}
       okText={t('result_diff.wizard.start')}
       confirmLoading={loading}
-      destroyOnClose
+      destroyOnHidden
       width={640}
       maskClosable={!loading}
     >

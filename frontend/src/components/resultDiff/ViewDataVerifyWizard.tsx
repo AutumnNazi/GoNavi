@@ -510,7 +510,7 @@ const ViewDataVerifyWizard: React.FC<ViewDataVerifyWizardProps> = ({
       onOk={handleStart}
       okText={t('result_diff.view_verify.start')}
       confirmLoading={running || probing}
-      destroyOnClose
+      destroyOnHidden
       width={680}
       maskClosable={!running}
     >

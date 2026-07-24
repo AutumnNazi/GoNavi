@@ -1797,6 +1797,29 @@ function App() {
       let hiddenSeen = document.visibilityState === 'hidden';
 
       const wait = (ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms));
+      // Automatic scale-fix may call ResetWebViewZoom multiple times on startup.
+      // The backend path depends on Wails unexported fields and can fail harmlessly;
+      // log at most once so the console is not flooded with expected unavailability.
+      let resetWebViewZoomUnavailableLogged = false;
+      const tryResetWebViewZoomQuietly = async () => {
+          try {
+              const res = await (window as any).go?.app?.App?.ResetWebViewZoom?.();
+              if (res?.success) {
+                  return true;
+              }
+              if (!resetWebViewZoomUnavailableLogged) {
+                  resetWebViewZoomUnavailableLogged = true;
+                  console.warn('ResetWebViewZoom unavailable in fixWindowScaleIfNeeded:', res?.message);
+              }
+              return false;
+          } catch (e) {
+              if (!resetWebViewZoomUnavailableLogged) {
+                  resetWebViewZoomUnavailableLogged = true;
+                  console.warn('ResetWebViewZoom call failed in fixWindowScaleIfNeeded', e);
+              }
+              return false;
+          }
+      };
 
       const fixWindowScaleIfNeeded = async (reason: WindowScaleFixReason) => {
           if (cancelled || inFlight) return;
@@ -1828,14 +1851,7 @@ function App() {
               const shouldResetWebViewZoom = shouldResetWebViewZoomForScaleFix(reason, hasViewportScaleDrift);
 
               if (shouldResetWebViewZoom && !isMaximised) {
-                  try {
-                      const res = await (window as any).go?.app?.App?.ResetWebViewZoom?.();
-                      if (!res?.success) {
-                          console.warn('ResetWebViewZoom unavailable in fixWindowScaleIfNeeded:', res?.message);
-                      }
-                  } catch (e) {
-                      console.warn('ResetWebViewZoom call failed in fixWindowScaleIfNeeded', e);
-                  }
+                  await tryResetWebViewZoomQuietly();
               }
 
               if (isMaximised) {
@@ -1847,14 +1863,7 @@ function App() {
                       // backend 失败（wails 升级破坏反射 / 非 Windows）时回退到 dispatch resize 兜底；
                       // 用户仍可按 Ctrl+Shift+0 手动 toggle 修复。
                       if (shouldResetWebViewZoom) {
-                          try {
-                              const res = await (window as any).go?.app?.App?.ResetWebViewZoom?.();
-                              if (!res?.success) {
-                                  console.warn('ResetWebViewZoom unavailable in fixWindowScaleIfNeeded:', res?.message);
-                              }
-                          } catch (e) {
-                              console.warn('ResetWebViewZoom call failed in fixWindowScaleIfNeeded', e);
-                          }
+                          await tryResetWebViewZoomQuietly();
                       }
                       window.dispatchEvent(new Event('resize'));
                       lastFixAt = Date.now();

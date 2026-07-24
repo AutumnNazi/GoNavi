@@ -840,7 +840,7 @@ const ResultDiffPanel: React.FC<ResultDiffPanelProps> = ({
         onClose={handleClose}
         maskClosable={false}
         width="min(1100px, 96vw)"
-        destroyOnClose={false}
+        destroyOnHidden={false}
         extra={actionButtons}
       >
         {body}

@@ -262,7 +262,7 @@ export default function ExplainWorkbench({ open, onClose, config, dbName, sql }:
       width="90%"
       style={{ top: 20 }}
       title={<Title level={5} style={{ margin: 0 }}>{t('sql_analysis.workbench.title')}</Title>}
-      destroyOnClose
+      destroyOnHidden
     >
       <div style={{ minHeight: 480, height: '70vh' }}>
         <ExplainReportView
