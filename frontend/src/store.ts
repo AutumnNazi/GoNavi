@@ -71,6 +71,7 @@ import {
   type DetachedWindowBounds,
 } from "./utils/detachedWindow";
 import { clearQueryEditorResultSession } from "./utils/queryEditorResultSessionCache";
+import { normalizeConnectionEnvironmentType } from "./utils/connectionEnvironment";
 import {
   DEFAULT_LANGUAGE,
   LANGUAGE_PREFERENCES,
@@ -958,6 +959,7 @@ const sanitizeSavedConnection = (
   return {
     id,
     name,
+    environmentType: normalizeConnectionEnvironmentType(raw.environmentType),
     config: { ...config, id: config.id || id },
     secretRef: toTrimmedString(raw.secretRef) || undefined,
     hasPrimaryPassword: raw.hasPrimaryPassword === true,
@@ -1067,6 +1069,7 @@ const normalizeConnectionTagTree = (
     tags.push({
       id,
       name,
+      environmentType: normalizeConnectionEnvironmentType(entry.environmentType),
       parentTagId,
       connectionIds: sanitizeStringArray(entry.connectionIds, 256),
       childOrder: sanitizeSidebarItemOrder(entry.childOrder),
@@ -1152,6 +1155,7 @@ const sanitizeConnectionTags = (value: unknown): ConnectionTag[] => {
     result.push({
       id,
       name,
+      environmentType: normalizeConnectionEnvironmentType(raw.environmentType),
       parentTagId: toTrimmedString(raw.parentTagId) || undefined,
       connectionIds: sanitizeStringArray(raw.connectionIds, 256),
       childOrder: sanitizeSidebarItemOrder(raw.childOrder),
@@ -3715,6 +3719,9 @@ export const useStore = create<AppState>()(
                   "store.fallback.connection_tag_name",
                   normalized.connectionTags.length,
                 ),
+              environmentType: normalizeConnectionEnvironmentType(
+                tag.environmentType,
+              ),
               parentTagId: toTrimmedString(tag.parentTagId) || undefined,
               connectionIds: directConnectionIds,
               childOrder: sanitizeSidebarItemOrder(tag.childOrder),
@@ -3774,6 +3781,9 @@ export const useStore = create<AppState>()(
               return {
                 ...candidate,
                 name: toTrimmedString(tag.name, candidate.name) || candidate.name,
+                environmentType: normalizeConnectionEnvironmentType(
+                  tag.environmentType ?? candidate.environmentType,
+                ),
                 connectionIds: requestedConnectionIds,
                 childOrder: hasRequestedChildOrder
                   ? sanitizeSidebarItemOrder(tag.childOrder)

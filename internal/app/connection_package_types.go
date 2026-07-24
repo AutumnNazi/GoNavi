@@ -168,6 +168,7 @@ type connectionPackagePayload struct {
 type connectionPackageItem struct {
 	ID                         string                                     `json:"id"`
 	Name                       string                                     `json:"name"`
+	EnvironmentType            string                                     `json:"environmentType,omitempty"`
 	IncludeDatabases           []string                                   `json:"includeDatabases,omitempty"`
 	IncludeRedisDatabases      []int                                      `json:"includeRedisDatabases,omitempty"`
 	SchemaVisibilityByDatabase map[string]connection.SchemaVisibilityRule `json:"schemaVisibilityByDatabase,omitempty"`
@@ -183,6 +184,7 @@ func (i connectionPackageItem) MarshalJSON() ([]byte, error) {
 	type connectionPackageItemJSON struct {
 		ID                         string                                     `json:"id"`
 		Name                       string                                     `json:"name"`
+		EnvironmentType            string                                     `json:"environmentType,omitempty"`
 		IncludeDatabases           []string                                   `json:"includeDatabases,omitempty"`
 		IncludeRedisDatabases      []int                                      `json:"includeRedisDatabases,omitempty"`
 		SchemaVisibilityByDatabase map[string]connection.SchemaVisibilityRule `json:"schemaVisibilityByDatabase,omitempty"`
@@ -196,6 +198,7 @@ func (i connectionPackageItem) MarshalJSON() ([]byte, error) {
 	item := connectionPackageItemJSON{
 		ID:                         i.ID,
 		Name:                       i.Name,
+		EnvironmentType:            i.EnvironmentType,
 		IncludeDatabases:           i.IncludeDatabases,
 		IncludeRedisDatabases:      i.IncludeRedisDatabases,
 		SchemaVisibilityByDatabase: cloneSchemaVisibilityByDatabase(i.SchemaVisibilityByDatabase),

@@ -42,6 +42,7 @@ import {
   getRedisDbAlias,
 } from '../../utils/redisDbAlias';
 import { supportsTableTruncateAction } from '../tableDataDangerActions';
+import { normalizeConnectionEnvironmentType } from '../../utils/connectionEnvironment';
 
 const updateRedisDbNodeAlias = (
   nodes: any[],
@@ -151,6 +152,7 @@ export const buildSidebarLegacyNodeMenuItems = (
     setRenameViewTarget,
     setIsCreateTagModalOpen,
     removeConnectionTag,
+    onCreateConnectionInGroup,
     setExpandedKeys,
     setLoadedKeys,
     loadingNodesRef,
@@ -362,7 +364,20 @@ export const buildSidebarLegacyNodeMenuItems = (
 
     // Connection Tag Menu — must be BEFORE the connection check
     if (node.type === 'tag') {
+        const tagId = String(node.dataRef?.id || '').trim();
+        const newConnectionItems: NonNullable<MenuProps['items']> = tagId && typeof onCreateConnectionInGroup === 'function'
+            ? [
+                {
+                    key: 'new-connection-in-tag',
+                    label: t('connection.new'),
+                    icon: <PlusOutlined />,
+                    onClick: () => onCreateConnectionInGroup?.(tagId),
+                },
+                { type: 'divider' },
+            ]
+            : [];
         return [
+            ...newConnectionItems,
             {
                 key: 'edit-tag',
                 label: t('sidebar.menu.edit_tag'),
@@ -370,6 +385,9 @@ export const buildSidebarLegacyNodeMenuItems = (
                 onClick: () => {
                     createTagForm.setFieldsValue({
                         name: node.title,
+                        environmentType: normalizeConnectionEnvironmentType(
+                          node.dataRef.environmentType,
+                        ),
                         parentTagId: node.dataRef.parentTagId,
                         connectionIds: node.dataRef.connectionIds,
                     });

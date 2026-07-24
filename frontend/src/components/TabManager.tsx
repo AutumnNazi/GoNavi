@@ -45,6 +45,7 @@ import {
 } from '../utils/detachedWindow';
 import { openNativeWorkbenchTabWindow } from '../utils/nativeDetachedWindowHost';
 import { useWorkbenchTabs } from '../hooks/useWorkbenchTabs';
+import { resolveConnectionEnvironmentPresentation } from '../utils/connectionEnvironment';
 
 const getTabKindLabel = (tab: TabData): string => {
   if (tab.type === 'query') return t('tab_manager.kind_badge.query');
@@ -392,6 +393,9 @@ type SortableTabLabelProps = {
   menuItems: MenuProps['items'];
   connectionLabel?: string;
   hostSummary?: string;
+  environmentColor?: string;
+  environmentLabel?: string;
+  environmentType?: string;
   isV2Ui?: boolean;
   onClose?: () => void;
 };
@@ -427,6 +431,9 @@ const SortableTabLabel: React.FC<SortableTabLabelProps> = ({
   menuItems,
   connectionLabel,
   hostSummary,
+  environmentColor,
+  environmentLabel,
+  environmentType,
   isV2Ui,
   onClose,
 }) => {
@@ -465,12 +472,23 @@ const SortableTabLabel: React.FC<SortableTabLabelProps> = ({
   const showSecondaryLine = isV2Ui && displayModel.layout === 'double' && Boolean(displayModel.secondaryText);
   const labelNode = (
     <span
-      className={`tab-dnd-label${isV2Ui ? ' gn-v2-tab-label' : ''}${showSecondaryLine ? ' gn-v2-tab-label-double' : ''}${tabDisplayPartCount >= 4 ? ' gn-v2-tab-label-rich' : ''}`}
+      className={`tab-dnd-label${isV2Ui ? ' gn-v2-tab-label' : ''}${showSecondaryLine ? ' gn-v2-tab-label-double' : ''}${tabDisplayPartCount >= 4 ? ' gn-v2-tab-label-rich' : ''}${environmentColor ? ' gn-tab-label-has-environment' : ''}`}
+      data-connection-environment={environmentType}
       onContextMenu={handleTabLabelContextMenu}
       onMouseDown={handleTabLabelMouseDown}
       onAuxClick={handleTabLabelAuxClick}
       title={isV2Ui ? undefined : displayTitle}
     >
+      {environmentColor ? (
+        <span
+          className="gn-tab-environment-accent"
+          style={{
+            '--gn-tab-environment-color': environmentColor,
+          } as React.CSSProperties}
+          title={environmentLabel}
+          aria-label={environmentLabel}
+        />
+      ) : null}
       {isV2Ui ? (
         <span className="gn-v2-tab-label-content">
           <span className="gn-v2-tab-label-main tab-title-text">
@@ -704,6 +722,7 @@ const TabManager: React.FC<TabManagerProps> = React.memo<TabManagerProps>(({ onF
   const tabs = useWorkbenchTabs();
   const detachedWorkbenchWindows = useStore(state => state.detachedWorkbenchWindows);
   const connections = useStore(state => state.connections);
+  const connectionTags = useStore(state => state.connectionTags);
   const savedQueries = useStore(state => state.savedQueries);
   const externalSQLDirectories = useStore(state => state.externalSQLDirectories);
   const recentConnectionTargets = useStore(state => state.recentConnectionTargets);
@@ -1225,6 +1244,9 @@ const TabManager: React.FC<TabManagerProps> = React.memo<TabManagerProps>(({ onF
   const items = useMemo(() => dockedTabs.map((tab, index) => {
     const connection = connections.find((conn) => conn.id === tab.connectionId);
     const displayModel = buildTabDisplayModel(tab, connection, appearance.tabDisplay, t);
+    const environment = connection
+      ? resolveConnectionEnvironmentPresentation(connection, connectionTags, t)
+      : undefined;
     const displayTitle = displayModel.fullTitle;
     const hostSummary = resolveConnectionHostSummary(connection?.config);
     const tabIsActive = tab.id === dockedActiveTabId;
@@ -1279,6 +1301,9 @@ const TabManager: React.FC<TabManagerProps> = React.memo<TabManagerProps>(({ onF
           menuItems={menuItems}
           connectionLabel={connection?.name}
           hostSummary={hostSummary}
+          environmentColor={environment?.color}
+          environmentLabel={environment?.label}
+          environmentType={environment?.type}
           isV2Ui={isV2Ui}
           onClose={() => closeTabsWithSQLFilePrompt([tab.id], () => closeTab(tab.id))}
         />
@@ -1287,7 +1312,7 @@ const TabManager: React.FC<TabManagerProps> = React.memo<TabManagerProps>(({ onF
       closable: !isV2Ui,
       children: <WorkbenchTabContent tab={tab} isActive={tabIsActive} />,
     };
-  }), [dockedTabs, dockedActiveTabId, tabs, connections, appearance.tabDisplay, closeOtherTabs, closeTabsToLeft, closeTabsToRight, closeAllTabs, closeTab, closeTabsWithSQLFilePrompt, detachTabToWindow, isV2Ui, languagePreference]);
+  }), [dockedTabs, dockedActiveTabId, tabs, connections, connectionTags, appearance.tabDisplay, closeOtherTabs, closeTabsToLeft, closeTabsToRight, closeAllTabs, closeTab, closeTabsWithSQLFilePrompt, detachTabToWindow, isV2Ui, languagePreference]);
 
   const queryCapableConnections = useMemo(
     () => connections.filter((connection) => getDataSourceCapabilities(connection.config).supportsQueryEditor),
@@ -1701,12 +1726,29 @@ const TabManager: React.FC<TabManagerProps> = React.memo<TabManagerProps>(({ onF
               transition: transform 180ms cubic-bezier(0.22, 1, 0.36, 1), background-color 120ms ease;
             }
             .main-tabs .tab-dnd-label {
+              position: relative;
               user-select: none;
               -webkit-user-select: none;
               display: inline-flex;
               align-items: center;
               gap: 7px;
               max-width: 100%;
+            }
+            .main-tabs .gn-tab-environment-accent {
+              position: absolute;
+              z-index: 1;
+              right: 8px;
+              bottom: 0;
+              left: 8px;
+              height: 4px;
+              box-sizing: border-box;
+              border-radius: 4px 4px 0 0;
+              background: var(--gn-tab-environment-color);
+              pointer-events: none;
+              transition: opacity 140ms ease;
+            }
+            .main-tabs .ant-tabs-tab:not(:hover):not(.ant-tabs-tab-active) .gn-tab-environment-accent {
+              opacity: 0.86;
             }
             .main-tabs .tab-title-text {
               min-width: 0;

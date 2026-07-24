@@ -42,6 +42,30 @@ func TestSplitConnectionSecretsStripsPasswordsAndOpaqueDSN(t *testing.T) {
 	}
 }
 
+func TestSavedConnectionRepositoryDefaultsLegacyEnvironmentToLocal(t *testing.T) {
+	repo := newSavedConnectionRepository(t.TempDir(), newFakeAppSecretStore())
+	if err := repo.saveAll([]connection.SavedConnectionView{
+		{
+			ID:   "legacy-connection",
+			Name: "Legacy",
+			Config: connection.ConnectionConfig{
+				ID:   "legacy-connection",
+				Type: "sqlite",
+			},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	items, err := repo.load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 || items[0].EnvironmentType != defaultConnectionEnvironment {
+		t.Fatalf("expected legacy environment to default to %q, got %#v", defaultConnectionEnvironment, items)
+	}
+}
+
 func TestSplitConnectionSecretsStripsRedisSentinelPassword(t *testing.T) {
 	withTestGOOS(t, "linux")
 

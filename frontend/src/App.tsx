@@ -729,6 +729,7 @@ function App() {
   const [isConnectionModalMounted, setIsConnectionModalMounted] = useState(false);
   const [isDriverModalOpen, setIsDriverModalOpen] = useState(false);
   const [editingConnection, setEditingConnection] = useState<SavedConnection | null>(null);
+  const pendingConnectionTagIdRef = useRef<string | null>(null);
   const connectionModalWarmupDoneRef = useRef(false);
   const windowState = useStore(state => state.windowState);
   const themeMode = useStore(state => state.theme);
@@ -2076,6 +2077,7 @@ function App() {
   const addTab = useStore(state => state.addTab);
   const activeContext = useStore(state => state.activeContext);
   const connections = useStore(state => state.connections);
+  const moveConnectionToTag = useStore(state => state.moveConnectionToTag);
   const tabs = useWorkbenchTabs();
   const activeTabId = useStore(state => state.activeTabId);
   const setActiveTab = useStore(state => state.setActiveTab);
@@ -3898,14 +3900,22 @@ function App() {
       handleCloseAppLogPanel();
   }, [handleCloseAppLogPanel]);
 
-  const handleCreateConnection = useCallback(() => {
+  const openCreateConnection = useCallback((targetTagId?: string) => {
+      const normalizedTargetTagId = String(targetTagId || '').trim();
+      pendingConnectionTagIdRef.current = normalizedTargetTagId || null;
       setSecurityUpdateRepairSource(null);
       setEditingConnection(null);
       setIsConnectionModalMounted(true);
       setIsModalOpen(true);
   }, []);
+  const handleCreateConnection = useCallback(() => openCreateConnection(), [openCreateConnection]);
+  const handleCreateConnectionInGroup = useCallback(
+      (targetTagId: string) => openCreateConnection(targetTagId),
+      [openCreateConnection],
+  );
 
   const handleEditConnection = useCallback((conn: SavedConnection) => {
+      pendingConnectionTagIdRef.current = null;
       setSecurityUpdateRepairSource(null);
       setIsConnectionModalMounted(true);
       void (async () => {
@@ -3960,6 +3970,12 @@ function App() {
   }, []);
 
   const handleConnectionSaved = useCallback(async (savedConnection: SavedConnection) => {
+      const targetTagId = pendingConnectionTagIdRef.current;
+      pendingConnectionTagIdRef.current = null;
+      if (targetTagId && savedConnection?.id) {
+          moveConnectionToTag(savedConnection.id, targetTagId);
+      }
+
       if (!shouldRetrySecurityUpdateAfterRepairSave(securityUpdateRepairSource)) {
           return;
       }
@@ -4019,6 +4035,7 @@ function App() {
   }, [
       applySecurityUpdateStatus,
       normalizeSecurityUpdateStatus,
+      moveConnectionToTag,
       replaceConnections,
       replaceGlobalProxy,
       securityUpdateRawPayload,
@@ -4030,6 +4047,7 @@ function App() {
 
   const handleCloseModal = () => {
       const reopenSecurityUpdateDetails = shouldReopenSecurityUpdateDetails(securityUpdateRepairSource);
+      pendingConnectionTagIdRef.current = null;
       setIsModalOpen(false);
       setEditingConnection(null);
       setSecurityUpdateRepairSource(null);
@@ -4039,6 +4057,7 @@ function App() {
   };
 
   const handleOpenDriverManagerFromConnection = () => {
+      pendingConnectionTagIdRef.current = null;
       setIsModalOpen(false);
       setEditingConnection(null);
       setToolCenterBackGroupKey(null);
@@ -7661,6 +7680,7 @@ function App() {
                     <div style={{ height: '100%', opacity: connectionWorkbenchState.ready ? 1 : 0.72, pointerEvents: connectionWorkbenchState.ready ? 'auto' : 'none' }}>
                         <Sidebar
                             onCreateConnection={handleCreateConnection}
+                            onCreateConnectionInGroup={handleCreateConnectionInGroup}
                             onEditConnection={handleEditConnection}
                             onOpenSettings={handleOpenSettingsModal}
                             onToggleAI={toggleAIPanel}
