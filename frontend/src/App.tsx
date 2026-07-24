@@ -5333,7 +5333,7 @@ function App() {
       ];
 
       return (
-          <div className="gonavi-about-pane" style={{ display: 'flex', flexDirection: 'column', padding: '0 0 18px' }}>
+          <div className="gonavi-about-pane" style={{ display: 'flex', flexDirection: 'column' }}>
               <section
                 aria-label="GoNavi"
                 style={{
