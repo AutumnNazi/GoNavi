@@ -31,7 +31,7 @@ import { t } from '../../i18n';
 import { useStore } from '../../store';
 import type { SavedConnection, SavedQuery, SavedQueryGroup } from '../../types';
 import { getDataSourceCapabilities } from '../../utils/dataSourceCapabilities';
-import { buildTableSelectQuery } from '../../utils/objectQueryTemplates';
+import { resolveTableSelectQuery } from '../../utils/objectQueryTemplates';
 import {
   buildSavedQueryGroupPath,
   getSavedQueryGroupOwnerIds,
@@ -866,14 +866,23 @@ export const buildSidebarLegacyNodeMenuItems = (
                 label: t('sidebar.menu.new_query'),
                 icon: <ConsoleSqlOutlined />,
                 onClick: () => {
-                    addTab({
-                        id: `query-${Date.now()}`,
-                        title: t('query.new'),
-                        type: 'query',
-                        connectionId: node.dataRef.id,
-                        dbName: node.dataRef.dbName,
-                        query: buildTableSelectQuery('starrocks', String(node.dataRef?.tableName || node.dataRef?.viewName || ''))
-                    });
+                    void (async () => {
+                        const tableName = String(node.dataRef?.tableName || node.dataRef?.viewName || '');
+                        const queryTemplate = await resolveTableSelectQuery({
+                            dbType: 'starrocks',
+                            tableName,
+                            dbName: String(node.dataRef?.dbName || ''),
+                            connectionConfig: node.dataRef?.config,
+                        });
+                        addTab({
+                            id: `query-${Date.now()}`,
+                            title: t('query.new'),
+                            type: 'query',
+                            connectionId: node.dataRef.id,
+                            dbName: node.dataRef.dbName,
+                            query: queryTemplate,
+                        });
+                    })();
                 }
             },
         ];
@@ -964,16 +973,23 @@ export const buildSidebarLegacyNodeMenuItems = (
                 label: t('sidebar.menu.new_query'),
                 icon: <ConsoleSqlOutlined />,
                 onClick: () => {
-                   const tableName = String(node.dataRef?.tableName || '').trim();
-                   const queryTemplate = buildTableSelectQuery(getMetadataDialect(node.dataRef as SavedConnection), tableName);
-                   addTab({
-                       id: `query-${Date.now()}`,
-                       title: t('query.new'),
-                       type: 'query',
-                       connectionId: node.dataRef.id,
-                       dbName: node.dataRef.dbName,
-                       query: queryTemplate
-                   });
+                   void (async () => {
+                       const tableName = String(node.dataRef?.tableName || '').trim();
+                       const queryTemplate = await resolveTableSelectQuery({
+                           dbType: getMetadataDialect(node.dataRef as SavedConnection),
+                           tableName,
+                           dbName: String(node.dataRef?.dbName || ''),
+                           connectionConfig: node.dataRef?.config,
+                       });
+                       addTab({
+                           id: `query-${Date.now()}`,
+                           title: t('query.new'),
+                           type: 'query',
+                           connectionId: node.dataRef.id,
+                           dbName: node.dataRef.dbName,
+                           query: queryTemplate,
+                       });
+                   })();
                 }
             },
             ...(messagePublishTarget ? [{
