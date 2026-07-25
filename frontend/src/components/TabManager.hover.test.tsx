@@ -127,7 +127,7 @@ describe('TabManager hover info', () => {
   it('memoizes the tab workbench so parent-only modal state does not repaint open tabs', () => {
     const source = readFileSync(new URL('./TabManager.tsx', import.meta.url), 'utf8');
 
-    expect(source).toContain('const TabManager: React.FC = React.memo(() => {');
+    expect(source).toContain('const TabManager: React.FC<TabManagerProps> = React.memo<TabManagerProps>(({ onFocusSidebarSearch }) => {');
   });
 
   it('routes the workspace close command through the docked active tab close coordinator', () => {
@@ -473,7 +473,8 @@ describe('TabManager hover info', () => {
       expect(source).not.toContain(text);
     });
     expect(source).toContain('confirmDirtyTabsOrClose();');
-    expect(source).toContain("getSQLFileTabDraft(tab.id, String(tab.query ?? ''))");
+    expect(source).toContain('const latestTab = useStore.getState().tabs.find((candidate) => candidate.id === tab.id);');
+    expect(source).toContain("String(latestTab?.query ?? tab.query ?? '')");
     expect(source).toContain('hasSQLFileTabUnsavedChanges({ ...tab, query: draft }, normalizeSQLFileReadContent(res.data))');
     expect(source).toContain('WriteSQLFile(filePath, draft)');
     expect(source).toContain('clearSQLFileTabDraft(tab.id)');

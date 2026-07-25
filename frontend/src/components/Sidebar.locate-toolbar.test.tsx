@@ -954,7 +954,7 @@ describe('Sidebar locate toolbar', () => {
     expect(source).toContain('refreshGlobalExternalSQLRootNode(false)');
     expect(source).toContain("request.objectGroup === 'externalSqlFiles'");
     expect(source).toContain("t('sidebar.message.locate_external_sql_file_not_found', { path: request.filePath })");
-    expect(source).toContain('filePath: data.filePath || undefined');
+    expect(source).toContain('filePath: data.filePath');
     expect(source).toContain("key: 'add-external-sql-directory'");
     expect(source).toContain("key: 'new-external-sql-file'");
     expect(source).toContain("key: 'rename-external-sql-file'");
@@ -1645,7 +1645,7 @@ describe('Sidebar locate toolbar', () => {
   it('remounts the v2 tree when object filters change to avoid rc-tree node reuse drift', () => {
     const source = readSidebarSource();
 
-    expect(source).toContain("key={isV2Ui ? `v2-tree-${v2ExplorerFilter}` : 'legacy-tree'}");
+    expect(source).toContain("key={`${isV2Ui ? `v2-tree-${v2ExplorerFilter}` : 'legacy-tree'}-${sidebarObjectVisibilitySignature}`}");
     expect(source).toContain('treeData={isV2Ui ? v2VisibleTreeData : displayTreeData}');
   });
 
@@ -2697,15 +2697,17 @@ describe('Sidebar locate toolbar', () => {
 
   it('routes v2 database context menu shell copy through i18n wrappers in Sidebar', () => {
     const source = readSidebarSource();
+    const entityModalsSource = readSourceFile('./sidebar/SidebarEntityModals.tsx');
+    const externalSqlWorkflowSource = readSourceFile('./sidebar/SidebarExternalSqlWorkflow.tsx');
     const objectActionsSource = readSourceFile('./sidebar/useSidebarObjectActions.tsx');
     const v2ActionHandlersSource = readSourceFile('./sidebar/useSidebarV2ActionHandlers.tsx');
     const createSchemaSource = objectActionsSource.slice(
       objectActionsSource.indexOf('const openCreateSchemaModal = (node: any) => {'),
       objectActionsSource.indexOf('const openRenameSchemaModal = (node: any) => {'),
     );
-    const runSqlSource = source.slice(
-      source.indexOf('const handleRunSQLFile = async (node: any) => {'),
-      source.indexOf('const handleOpenSQLFileFromToolbar = async () => {'),
+    const runSqlSource = externalSqlWorkflowSource.slice(
+      externalSqlWorkflowSource.indexOf('const handleRunSQLFile = async (node: any) => {'),
+      externalSqlWorkflowSource.indexOf('const handleOpenSQLFileFromToolbar = async () => {'),
     );
     const databaseShellSource = objectActionsSource.slice(
       objectActionsSource.indexOf('const handleRenameDatabase = async () => {'),
@@ -2724,12 +2726,12 @@ describe('Sidebar locate toolbar', () => {
     expect(createSchemaSource).toContain("message.error(t('sidebar.message.schema_target_missing'))");
     expect(createSchemaSource).toContain("message.success(t('sidebar.message.schema_created'))");
     expect(createSchemaSource).toContain("message.error(t('sidebar.message.operation_create_failed'");
-    expect(source).toContain("t('sidebar.v2_database_menu.new_schema')");
-    expect(source).toContain("t('sidebar.field.schema_name')");
-    expect(source).toContain("t('sidebar.validation.schema_name_required')");
+    expect(entityModalsSource).toContain("t('sidebar.v2_database_menu.new_schema')");
+    expect(entityModalsSource).toContain("t('sidebar.field.schema_name')");
+    expect(entityModalsSource).toContain("t('sidebar.validation.schema_name_required')");
 
-    expect(runSqlSource).toContain("message.error(t('sidebar.message.connection_config_not_found'))");
-    expect(runSqlSource).toContain("data.fileName || t('sidebar.sql_file_exec.title')");
+    expect(runSqlSource).toContain("message.warning(t('sidebar.message.select_connection_or_database_first'))");
+    expect(runSqlSource).toContain('fileName: data.fileName');
     expect(runSqlSource).toContain("message.error(t('sidebar.message.read_file_failed'");
 
     expect(databaseShellSource).toContain("message.error(t('sidebar.message.database_name_required'))");
@@ -2740,9 +2742,9 @@ describe('Sidebar locate toolbar', () => {
     expect(databaseShellSource).toContain("content: t('sidebar.modal.confirm_delete_database.content', { name: dbName })");
     expect(databaseShellSource).toContain("message.success(t('sidebar.message.database_deleted'))");
     expect(databaseShellSource).toContain("message.error(t('sidebar.message.operation_drop_failed'");
-    expect(source).toContain("t('sidebar.modal.rename_database.title'");
-    expect(source).toContain("t('sidebar.field.new_database_name')");
-    expect(source).toContain("t('sidebar.validation.new_database_name_required')");
+    expect(entityModalsSource).toContain("t('sidebar.modal.rename_database.title'");
+    expect(entityModalsSource).toContain("t('sidebar.field.new_database_name')");
+    expect(entityModalsSource).toContain("t('sidebar.validation.new_database_name_required')");
 
     expect(databaseActionSource).toContain("message.success(t('sidebar.message.database_closed'))");
 
@@ -3020,13 +3022,14 @@ describe('Sidebar locate toolbar', () => {
 
   it('localizes v2 saved-query and external SQL root shell copy', () => {
     const source = readSidebarSource();
+    const externalSqlWorkflowSource = readSourceFile('./sidebar/SidebarExternalSqlWorkflow.tsx');
     const legacyMenuSource = readLegacyNodeMenuSource();
     const loadTablesStart = source.indexOf('const loadTables = async (node: any) => {');
     const loadTablesEnd = source.indexOf('const config = {', loadTablesStart);
     const loadTablesSource = source.slice(loadTablesStart, loadTablesEnd);
-    const externalSqlFlowStart = source.indexOf('const handleAddExternalSQLDirectory = async (node: any) => {');
-    const externalSqlFlowEnd = source.indexOf('const cancelSQLFileExecution = () => {', externalSqlFlowStart);
-    const externalSqlFlowSource = source.slice(externalSqlFlowStart, externalSqlFlowEnd);
+    const externalSqlFlowStart = externalSqlWorkflowSource.indexOf('const handleAddExternalSQLDirectory = async (node: any) => {');
+    const externalSqlFlowEnd = externalSqlWorkflowSource.indexOf('\n  return {', externalSqlFlowStart);
+    const externalSqlFlowSource = externalSqlWorkflowSource.slice(externalSqlFlowStart, externalSqlFlowEnd);
     const treeTitleSource = readSourceFile('./sidebar/SidebarTreeTitle.tsx');
     const treeTitleStart = 0;
     const treeTitleEnd = treeTitleSource.length;
