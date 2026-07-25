@@ -30,6 +30,8 @@ describe('workspace heavy module loading', () => {
     expect(source).toContain('<React.Suspense fallback={<DeferredWorkspaceContentFallback />}>');
     expect(source).toContain('<LazyDataGrid');
     expect(source).toContain('<DeferredDetachedResultDataGrid');
+    expect(source).toContain('tableName={windowState.result.tableName}');
+    expect(source).not.toContain('tableName={windowState.result.metadataTableName || windowState.result.tableName}');
     expect(source).not.toContain('detachedResultRenderNonce');
   });
 

@@ -4776,6 +4776,50 @@ describe('QueryEditorResultsPanel result-tab detach lifecycle', () => {
     return captureTarget;
   };
 
+  it('keeps the actual result table identity separate from metadata lookup names', async () => {
+    await act(async () => {
+      renderer = create(
+        <QueryEditorResultsPanel
+          resultSets={[{
+            key: 'result-1',
+            sql: 'select * from APP.USERS',
+            rows: [{ id: 1 }],
+            columns: ['id'],
+            tableName: 'APP.USERS',
+            metadataTableName: 'USERS',
+            pkColumns: ['id'],
+            readOnly: false,
+          }]}
+          activeResultKey="result-1"
+          isActive
+          loading={false}
+          executionError=""
+          sqlLogCount={0}
+          darkMode={false}
+          isV2Ui
+          currentDb="APP"
+          currentConnectionId="conn-1"
+          toggleShortcutLabel=""
+          onActiveResultKeyChange={vi.fn()}
+          onHide={vi.fn()}
+          onCloseResult={vi.fn()}
+          onCloseOtherResultTabs={vi.fn()}
+          onCloseResultTabsToLeft={vi.fn()}
+          onCloseResultTabsToRight={vi.fn()}
+          onCloseAllResultTabs={vi.fn()}
+          onOpenResultInWindow={vi.fn()}
+          onReloadResult={vi.fn()}
+          onResultPageChange={vi.fn()}
+          onResultSort={vi.fn()}
+          onDiagnoseExecutionError={vi.fn()}
+        />,
+      );
+    });
+
+    expect(dataGridState.latestProps?.tableName).toBe('APP.USERS');
+    expect(dataGridState.latestProps?.dbName).toBe('APP');
+  });
+
   it('restores selection state and removes global listeners when the window blurs', async () => {
     const onOpenResultInWindow = vi.fn();
     await renderDetachableResultPanel(onOpenResultInWindow);
