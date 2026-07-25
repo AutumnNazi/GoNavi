@@ -124,7 +124,13 @@ export function buildRpcConnectionConfig(
   const baseId = toStringValue(config.id).trim() || toStringValue(overrides.id).trim() || undefined;
   const timeout = toOptionalInteger(rpcMerged.timeout, toOptionalInteger(config.timeout));
   const redisDB = toOptionalInteger(rpcMerged.redisDB, toOptionalInteger(config.redisDB));
-  const protection = resolveConnectionProtectionConfig(rpcMerged);
+  const protection = resolveConnectionProtectionConfig({
+    type: toStringValue(rpcMerged.type),
+    driver: rpcMerged.driver,
+    oceanBaseProtocol: rpcMerged.oceanBaseProtocol,
+    readOnly: rpcMerged.readOnly,
+    protection: rpcMerged.protection,
+  });
 
   const rpcConfig = new connection.ConnectionConfig({
     ...rpcPayload,
