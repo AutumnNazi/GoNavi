@@ -1,13 +1,15 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
-const source = readFileSync(new URL('./Sidebar.tsx', import.meta.url), 'utf8');
+const sidebarSource = readFileSync(new URL('./Sidebar.tsx', import.meta.url), 'utf8');
+const objectActionsSource = readFileSync(new URL('./sidebar/useSidebarObjectActions.tsx', import.meta.url), 'utf8');
+const source = `${sidebarSource}\n${objectActionsSource}`;
 const locales = ['zh-CN', 'zh-TW', 'en-US', 'ja-JP', 'de-DE', 'ru-RU'] as const;
 
 describe('Sidebar routine definition tab i18n', () => {
   it('localizes routine definition tab titles', () => {
     expect(source).not.toContain('title: `${typeLabel}: ${routineName}`');
-    expect(source.match(/title: t\('sidebar\.tab\.routine_definition'/g) || []).toHaveLength(2);
+    expect(sidebarSource.match(/title: t\('sidebar\.tab\.routine_definition'/g) || []).toHaveLength(2);
     expect(source.match(/t\(routineType === 'PROCEDURE' \? 'sidebar\.object\.procedure' : 'sidebar\.object\.function'\)/g) || []).toHaveLength(4);
   });
 

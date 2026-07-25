@@ -4,6 +4,7 @@ import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { readFileSync } from "node:fs";
 
 import { setCurrentLanguage } from "../i18n";
+import { getCustomConnectionDriverHelp } from "../utils/driverImportGuidance";
 
 const storeState = {
   addConnection: vi.fn(),
@@ -168,6 +169,8 @@ vi.mock("@ant-design/icons", () => {
   };
 });
 
+const modalConfirm = vi.hoisted(() => vi.fn());
+
 vi.mock("antd", () => {
   const Button: any = ({ children, disabled, loading, onClick, ...rest }: any) => (
     <button type="button" disabled={disabled || loading} onClick={onClick} {...rest}>
@@ -296,7 +299,7 @@ vi.mock("antd", () => {
         <div>{footer}</div>
       </section>
     ) : null;
-  Modal.confirm = vi.fn();
+  Modal.confirm = modalConfirm;
 
   const Typography = {
     Text: ({ children }: any) => <span>{children}</span>,
@@ -357,9 +360,7 @@ describe("ConnectionModal i18n", () => {
     antdMessage.warning.mockReset();
     antdMessage.success.mockReset();
     antdMessage.destroy.mockReset();
-    void import("antd").then(({ Modal }) => {
-      (Modal.confirm as any).mockReset?.();
-    });
+    modalConfirm.mockReset();
     storeState.addConnection.mockReset();
     storeState.updateConnection.mockReset();
     storeState.setLanguagePreference.mockClear();
@@ -1260,8 +1261,7 @@ describe("ConnectionModal i18n", () => {
     const pageText = textContent(renderer!.toJSON());
     expect(pageText).toContain("Driver Name");
     expect(pageText).toContain("Connection string (DSN)");
-    expect(pageText).toContain("Enter a Go database/sql driver name already registered by GoNavi");
-    expect(pageText).toContain("Do not enter a system ODBC/JDBC driver name directly or import a JDBC Jar");
+    expect(pageText).toContain(getCustomConnectionDriverHelp("en-US"));
   });
 
   it("renders English JVM fields and diagnostic transport copy", async () => {

@@ -1,10 +1,9 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
-const source = readFileSync(new URL('./Sidebar.tsx', import.meta.url), 'utf8');
-const modalOpenIndex = source.indexOf('open={isExternalSQLFileModalOpen}');
-const modalStart = source.lastIndexOf('<Modal', modalOpenIndex);
-const modalEnd = source.indexOf('title={renderSidebarModalTitle(<TableOutlined />', modalOpenIndex);
+const source = readFileSync(new URL('./sidebar/SidebarExternalSqlWorkflow.tsx', import.meta.url), 'utf8');
+const modalStart = source.indexOf('export const ExternalSQLFileModal');
+const modalEnd = source.indexOf('export const SQLFileExecutionModal');
 const externalSqlModalBlock = source.slice(modalStart, modalEnd);
 
 describe('Sidebar external SQL file modal i18n', () => {

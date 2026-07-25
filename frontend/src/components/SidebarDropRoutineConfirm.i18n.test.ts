@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
-const source = readFileSync(new URL('./Sidebar.tsx', import.meta.url), 'utf8');
+const source = readFileSync(new URL('./sidebar/useSidebarObjectActions.tsx', import.meta.url), 'utf8');
 const dropRoutineSource = source.slice(
   source.indexOf('const handleDropRoutine ='),
   source.indexOf('const resolveMessagePublishTarget ='),
