@@ -9,6 +9,7 @@ import { applyDayjsLocale } from './i18n/runtime'
 import { useStore } from './store'
 import { cloneBrowserMockValue, duplicateBrowserMockConnection, resolveBrowserMockSecretFlag } from './utils/browserMockConnections'
 import { configureAntdStaticOverlayLayer } from './utils/overlayZIndex'
+import { normalizeConnectionEnvironmentType } from './utils/connectionEnvironment'
 
 configureAntdStaticOverlayLayer();
 
@@ -196,6 +197,9 @@ if (
         const view = {
             id: nextId,
             name: String(input?.name || existing?.name || t('connection.unnamed')),
+            environmentType: normalizeConnectionEnvironmentType(
+                input?.environmentType ?? existing?.environmentType,
+            ),
             config: {
                 ...config,
                 id: nextId,

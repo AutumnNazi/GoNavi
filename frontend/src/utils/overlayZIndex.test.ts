@@ -12,6 +12,7 @@ import {
   APP_NESTED_MODAL_Z_INDEX,
   APP_OVERLAY_Z_INDEX_BASE,
   APP_POPUP_Z_INDEX,
+  APP_STATIC_FEEDBACK_Z_INDEX_BASE,
   configureAntdStaticOverlayLayer,
 } from './overlayZIndex';
 
@@ -112,9 +113,10 @@ describe('application overlay z-index policy', () => {
     expect(APP_NESTED_MODAL_Z_INDEX).toBeGreaterThan(APP_FOREGROUND_MODAL_Z_INDEX);
     expect(APP_COMMAND_PALETTE_Z_INDEX).toBeGreaterThan(APP_NESTED_MODAL_Z_INDEX);
     expect(APP_APPLICATION_QUIT_MODAL_Z_INDEX).toBeGreaterThan(APP_COMMAND_PALETTE_Z_INDEX);
+    expect(APP_STATIC_FEEDBACK_Z_INDEX_BASE).toBeGreaterThan(APP_APPLICATION_QUIT_MODAL_Z_INDEX);
   });
 
-  it('configures static Ant Design APIs with the same popup base', () => {
+  it('configures static Ant Design feedback above every dialog layer', () => {
     const configSpy = vi.spyOn(ConfigProvider, 'config').mockImplementation(() => undefined);
 
     configureAntdStaticOverlayLayer();
@@ -122,7 +124,7 @@ describe('application overlay z-index policy', () => {
     expect(configSpy).toHaveBeenCalledWith({
       theme: {
         token: {
-          zIndexPopupBase: APP_POPUP_Z_INDEX,
+          zIndexPopupBase: APP_STATIC_FEEDBACK_Z_INDEX_BASE,
         },
       },
     });

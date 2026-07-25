@@ -442,7 +442,7 @@ const ConnectionModalNetworkSecuritySection: React.FC<ConnectionModalNetworkSecu
             <Form.Item
               label={t("connection.modal.network.ssh.keyPath")}
                 help={t("connection.modal.example", {
-                  value: "/Users/name/.ssh/id_rsa",
+                  value: "/Users/name/.ssh/id_ed25519",
                 })}
             >
                 <Space.Compact style={{ width: "100%" }}>

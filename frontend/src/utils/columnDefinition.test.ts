@@ -75,6 +75,57 @@ describe('columnDefinition metadata normalization', () => {
     });
   });
 
+  it('preserves an explicitly enabled empty string default', () => {
+    expect(normalizeColumnDefinition({
+      Name: 'status',
+      Type: 'varchar(32)',
+      Default: '',
+      HasDefault: true,
+    })).toMatchObject({
+      default: '',
+      hasDefault: true,
+    });
+  });
+
+  it('respects an explicitly disabled default', () => {
+    expect(normalizeColumnDefinition({
+      name: 'status',
+      type: 'varchar(32)',
+      default: 'active',
+      hasDefault: false,
+    })).toMatchObject({
+      default: undefined,
+      hasDefault: false,
+    });
+  });
+
+  it('falls back to legacy non-empty defaults when hasDefault is absent', () => {
+    expect(normalizeColumnDefinition({ name: 'status', type: 'varchar(32)', default: 'active' })).toMatchObject({
+      default: 'active',
+      hasDefault: true,
+    });
+    expect(normalizeColumnDefinition({ name: 'status', type: 'varchar(32)', default: '' })).toMatchObject({
+      default: undefined,
+      hasDefault: false,
+    });
+    expect(normalizeColumnDefinition({ name: 'status', type: 'varchar(32)', default: null })).toMatchObject({
+      default: undefined,
+      hasDefault: false,
+    });
+  });
+
+  it('normalizes charset and collation metadata aliases', () => {
+    expect(normalizeColumnDefinition({
+      COLUMN_NAME: 'status',
+      DATA_TYPE: 'varchar',
+      CHARACTER_SET_NAME: 'utf8mb4',
+      COLLATION_NAME: 'utf8mb4_unicode_ci',
+    })).toMatchObject({
+      charset: 'utf8mb4',
+      collation: 'utf8mb4_unicode_ci',
+    });
+  });
+
   it('maps boolean primary and unique metadata aliases to GoNavi keys', () => {
     expect(getColumnDefinitionKey({ column_name: 'id', isPrimary: true })).toBe('PRI');
     expect(getColumnDefinitionKey({ column_name: 'id', primary_key: 't' })).toBe('PRI');

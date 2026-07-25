@@ -3,7 +3,7 @@ import { t as catalogTranslate } from '../i18n/catalog';
 import type { I18nParams } from '../i18n/types';
 import { resolveLocalizedUntitledQueryTitle } from './queryTabTitle';
 
-export const TAB_DISPLAY_ELEMENT_KEYS = ['connection', 'kind', 'object', 'database', 'schema', 'host'] as const;
+export const TAB_DISPLAY_ELEMENT_KEYS = ['object', 'kind', 'connection', 'database', 'schema', 'host'] as const;
 
 export type TabDisplayElementKey = typeof TAB_DISPLAY_ELEMENT_KEYS[number];
 export type TabDisplayLayout = 'single' | 'double';
@@ -25,7 +25,7 @@ export type TabDisplayTranslate = (key: string, params?: I18nParams) => string;
 
 const defaultTranslate: TabDisplayTranslate = (key, params) => catalogTranslate('en-US', key, params);
 
-export const TAB_DISPLAY_SECONDARY_DEFAULT_KEYS: TabDisplayElementKey[] = ['connection', 'database', 'schema', 'host'];
+export const TAB_DISPLAY_SECONDARY_DEFAULT_KEYS: TabDisplayElementKey[] = ['kind', 'connection', 'database', 'schema', 'host'];
 
 export const TAB_DISPLAY_ELEMENT_META: Record<TabDisplayElementKey, { labelKey: string; descriptionKey: string }> = {
   connection: {
@@ -54,10 +54,20 @@ export const TAB_DISPLAY_ELEMENT_META: Record<TabDisplayElementKey, { labelKey: 
   },
 };
 
-export const DEFAULT_TAB_DISPLAY_SETTINGS: TabDisplaySettings = {
-  layout: 'single',
+const DEFAULT_SINGLE_TAB_DISPLAY_SNAPSHOT: TabDisplayLayoutSnapshot = {
   primaryElements: ['connection', 'kind', 'object'],
   secondaryElements: [],
+};
+
+const DEFAULT_DOUBLE_TAB_DISPLAY_SNAPSHOT: TabDisplayLayoutSnapshot = {
+  primaryElements: ['object'],
+  secondaryElements: ['kind', 'connection', 'database'],
+};
+
+export const DEFAULT_TAB_DISPLAY_SETTINGS: TabDisplaySettings = {
+  layout: 'double',
+  primaryElements: [...DEFAULT_DOUBLE_TAB_DISPLAY_SNAPSHOT.primaryElements],
+  secondaryElements: [...DEFAULT_DOUBLE_TAB_DISPLAY_SNAPSHOT.secondaryElements],
 };
 
 export const getCurrentTabDisplaySnapshot = (settings: TabDisplaySettings): TabDisplayLayoutSnapshot => ({
@@ -66,16 +76,12 @@ export const getCurrentTabDisplaySnapshot = (settings: TabDisplaySettings): TabD
 });
 
 export const getDefaultTabDisplaySnapshot = (layout: TabDisplayLayout): TabDisplayLayoutSnapshot => {
-  if (layout === 'single') {
-    return {
-      primaryElements: [...DEFAULT_TAB_DISPLAY_SETTINGS.primaryElements],
-      secondaryElements: [],
-    };
-  }
-
+  const snapshot = layout === 'single'
+    ? DEFAULT_SINGLE_TAB_DISPLAY_SNAPSHOT
+    : DEFAULT_DOUBLE_TAB_DISPLAY_SNAPSHOT;
   return {
-    primaryElements: [...DEFAULT_TAB_DISPLAY_SETTINGS.primaryElements],
-    secondaryElements: TAB_DISPLAY_SECONDARY_DEFAULT_KEYS.filter((key) => !DEFAULT_TAB_DISPLAY_SETTINGS.primaryElements.includes(key)),
+    primaryElements: [...snapshot.primaryElements],
+    secondaryElements: [...snapshot.secondaryElements],
   };
 };
 
@@ -148,7 +154,10 @@ const sanitizeTabDisplayElementList = (
   return result;
 };
 
-const sanitizeTabDisplayLayoutSnapshot = (value: unknown): TabDisplayLayoutSnapshot | null => {
+const sanitizeTabDisplayLayoutSnapshot = (
+  value: unknown,
+  layout: TabDisplayLayout,
+): TabDisplayLayoutSnapshot | null => {
   if (!value || typeof value !== 'object') {
     return null;
   }
@@ -156,8 +165,9 @@ const sanitizeTabDisplayLayoutSnapshot = (value: unknown): TabDisplayLayoutSnaps
   const used = new Set<TabDisplayElementKey>();
   const primaryElements = sanitizeTabDisplayElementList(raw.primaryElements, used);
   const secondaryElements = sanitizeTabDisplayElementList(raw.secondaryElements, used);
+  const fallback = getDefaultTabDisplaySnapshot(layout);
   return {
-    primaryElements: primaryElements.length > 0 ? primaryElements : [...DEFAULT_TAB_DISPLAY_SETTINGS.primaryElements],
+    primaryElements: primaryElements.length > 0 ? primaryElements : fallback.primaryElements,
     secondaryElements,
   };
 };
@@ -167,16 +177,20 @@ export const sanitizeTabDisplaySettings = (value: unknown): TabDisplaySettings =
     return { ...DEFAULT_TAB_DISPLAY_SETTINGS, primaryElements: [...DEFAULT_TAB_DISPLAY_SETTINGS.primaryElements], secondaryElements: [...DEFAULT_TAB_DISPLAY_SETTINGS.secondaryElements] };
   }
   const raw = value as Partial<TabDisplaySettings>;
+  const layout = raw.layout === 'single' || raw.layout === 'double'
+    ? raw.layout
+    : DEFAULT_TAB_DISPLAY_SETTINGS.layout;
+  const fallback = getDefaultTabDisplaySnapshot(layout);
   const used = new Set<TabDisplayElementKey>();
   const primaryElements = sanitizeTabDisplayElementList(raw.primaryElements, used);
   const secondaryElements = sanitizeTabDisplayElementList(raw.secondaryElements, used);
   const result: TabDisplaySettings = {
-    layout: raw.layout === 'double' ? 'double' : 'single',
-    primaryElements: primaryElements.length > 0 ? primaryElements : [...DEFAULT_TAB_DISPLAY_SETTINGS.primaryElements],
+    layout,
+    primaryElements: primaryElements.length > 0 ? primaryElements : fallback.primaryElements,
     secondaryElements,
   };
-  const single = sanitizeTabDisplayLayoutSnapshot(raw.single);
-  const double = sanitizeTabDisplayLayoutSnapshot(raw.double);
+  const single = sanitizeTabDisplayLayoutSnapshot(raw.single, 'single');
+  const double = sanitizeTabDisplayLayoutSnapshot(raw.double, 'double');
   if (single) {
     result.single = single;
   }

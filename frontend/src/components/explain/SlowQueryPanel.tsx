@@ -318,7 +318,7 @@ export default function SlowQueryPanel({ open, onClose, config, dbName, onPickQu
           <Text type="secondary">{dbName || t('sql_analysis.slow_query.current_connection')}</Text>
         </div>
       }
-      destroyOnClose
+      destroyOnHidden
     >
       <div className="gn-slow-query-modal-body">
         <SlowQueryPanelContent
@@ -454,7 +454,7 @@ function SlowQueryCard({
               {t('common.close')}
             </Button>,
           ]}
-          destroyOnClose
+          destroyOnHidden
         >
           <pre
             className="gn-slow-query-full-sql"

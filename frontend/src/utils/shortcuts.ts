@@ -851,7 +851,7 @@ export const isEditableElement = (target: EventTarget | null): boolean => {
   if (tag === 'input' || tag === 'textarea' || tag === 'select') {
     return true;
   }
-  if (target.closest('.monaco-editor, .monaco-inputbox, .ant-select, .ant-picker, .ant-input')) {
+  if (target.closest('.monaco-editor, .monaco-inputbox, .ant-select, .ant-select-dropdown, .ant-picker, .ant-input')) {
     return true;
   }
   return false;

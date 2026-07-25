@@ -96,9 +96,61 @@ describe('store appearance persistence', () => {
     expect(appearance.customMonoFontFamily).toBeNull();
     expect(appearance.newQuerySqlTemplate).toBeNull();
     expect(appearance.tabDisplay).toEqual({
+      layout: 'double',
+      primaryElements: ['object'],
+      secondaryElements: ['kind', 'connection', 'database'],
+    });
+  });
+
+  it('migrates the previous tab display default without overwriting custom settings', async () => {
+    storage.setItem('lite-db-storage', JSON.stringify({
+      state: {
+        appearance: {
+          tabDisplay: {
+            layout: 'single',
+            primaryElements: ['connection', 'kind', 'object'],
+            secondaryElements: [],
+          },
+        },
+      },
+      version: 19,
+    }));
+
+    const migrated = await importStore();
+    expect(migrated.useStore.getState().appearance.tabDisplay).toEqual({
+      layout: 'double',
+      primaryElements: ['object'],
+      secondaryElements: ['kind', 'connection', 'database'],
+    });
+    expect(JSON.parse(storage.getItem('lite-db-storage') || '{}').version).toBe(20);
+
+    storage.setItem('lite-db-storage', JSON.stringify({
+      state: {
+        appearance: {
+          tabDisplay: {
+            layout: 'single',
+            primaryElements: ['connection', 'kind', 'object'],
+            secondaryElements: [],
+            double: {
+              primaryElements: ['object', 'host'],
+              secondaryElements: ['kind', 'connection'],
+            },
+          },
+        },
+      },
+      version: 19,
+    }));
+    vi.resetModules();
+
+    const customized = await importStore();
+    expect(customized.useStore.getState().appearance.tabDisplay).toEqual({
       layout: 'single',
       primaryElements: ['connection', 'kind', 'object'],
       secondaryElements: [],
+      double: {
+        primaryElements: ['object', 'host'],
+        secondaryElements: ['kind', 'connection'],
+      },
     });
   });
 
@@ -123,7 +175,7 @@ describe('store appearance persistence', () => {
     expect(appearance.sqlEditorFontSizeFollowGlobal).toBe(false);
 
     const persisted = JSON.parse(storage.getItem('lite-db-storage') || '{}');
-    expect(persisted.version).toBe(19);
+    expect(persisted.version).toBe(20);
     expect(persisted.state.appearance.sqlEditorFontSize).toBe(17);
     expect(persisted.state.appearance.sqlEditorFontSizeFollowGlobal).toBe(false);
   });
@@ -142,7 +194,7 @@ describe('store appearance persistence', () => {
     expect(useStore.getState().appearance.uiVersion).toBe('v2');
 
     const persisted = JSON.parse(storage.getItem('lite-db-storage') || '{}');
-    expect(persisted.version).toBe(19);
+    expect(persisted.version).toBe(20);
     expect(persisted.state.appearance.uiVersion).toBe('v2');
   });
 
@@ -1087,6 +1139,56 @@ describe('store appearance persistence', () => {
     );
   });
 
+  it('normalizes connection and group environment metadata', async () => {
+    const { useStore } = await importStore();
+
+    useStore.getState().replaceConnections([
+      {
+        id: 'conn-production',
+        name: 'Production',
+        environmentType: 'production',
+        config: {
+          id: 'conn-production',
+          type: 'postgres',
+          host: 'prod.local',
+          port: 5432,
+          user: 'postgres',
+        },
+      },
+      {
+        id: 'conn-legacy',
+        name: 'Legacy',
+        config: {
+          id: 'conn-legacy',
+          type: 'sqlite',
+          host: '',
+          port: 0,
+          user: '',
+        },
+      },
+    ]);
+    useStore.getState().addConnectionTag({
+      id: 'tag-test',
+      name: 'Test',
+      environmentType: 'test',
+      connectionIds: ['conn-production'],
+    });
+    useStore.getState().addConnectionTag({
+      id: 'tag-legacy',
+      name: 'Legacy',
+      connectionIds: ['conn-legacy'],
+    });
+
+    expect(useStore.getState().connections.map((item) => item.environmentType)).toEqual([
+      'production',
+      'local',
+    ]);
+    expect(useStore.getState().connectionTags.map((item) => item.environmentType)).toEqual([
+      'test',
+      'local',
+    ]);
+  }, 30_000);
+
   it('reorders connections inside tags and ungrouped roots independently', async () => {
     const { useStore } = await importStore();
 
@@ -1322,7 +1424,7 @@ describe('store appearance persistence', () => {
     )).toEqual(legacyTag?.childOrder);
 
     const persisted = JSON.parse(storage.getItem('lite-db-storage') || '{}');
-    expect(persisted.version).toBe(19);
+    expect(persisted.version).toBe(20);
     expect(persisted.state.connectionTags[0].childOrder).toEqual([
       'connection:conn-a',
       'connection:conn-b',
@@ -3194,7 +3296,7 @@ describe('store appearance persistence', () => {
       mac: { combo: 'Meta+K', enabled: false },
       windows: { combo: 'Ctrl+K', enabled: true },
     });
-    expect(JSON.parse(storage.getItem('lite-db-storage') || '{}').version).toBe(19);
+    expect(JSON.parse(storage.getItem('lite-db-storage') || '{}').version).toBe(20);
 
     storage.setItem('lite-db-storage', JSON.stringify({
       state: {

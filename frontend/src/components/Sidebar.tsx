@@ -143,6 +143,7 @@ import {
     type SidebarLocateTreeNodeLike,
 } from '../utils/sidebarLocate';
 import { resolveConnectionAccentColor, resolveConnectionIconType } from '../utils/connectionVisual';
+import { getConnectionEnvironmentMeta } from '../utils/connectionEnvironment';
 import {
   getSavedQueryGroupIdFromToken,
   getSavedQueryGroupOwnerIds,
@@ -196,6 +197,7 @@ import {
   resolveSidebarDropTargetMetricsFromDomEvent,
   resolveSidebarDatabaseTreePruneKeys,
   resolveSidebarNodeConnectionId,
+  resolveV2ConnectionGroup,
   resolveV2ActiveConnectionId,
   resolveV2SelectedDatabaseName,
   resolveV2CommandSearchPersistentFilter,
@@ -504,6 +506,7 @@ export const buildAllSavedQueriesTreeNode = (
 
 const Sidebar: React.FC<{
   onCreateConnection?: () => void;
+  onCreateConnectionInGroup?: (targetTagId: string) => void;
   onEditConnection?: (conn: SavedConnection) => void;
   onOpenSettings?: () => void;
   onToggleAI?: () => void;
@@ -511,11 +514,14 @@ const Sidebar: React.FC<{
   uiVersion?: 'legacy' | 'v2';
   onFocusCommandSearch?: () => void;
   onCollapseSidebar?: () => void;
+  onExpandSidebar?: () => void;
   collapseSidebarLabel?: string;
   collapseSidebarButtonRef?: React.Ref<HTMLButtonElement>;
-  isTreePanelCollapsed?: boolean;
+  expandSidebarLabel?: string;
+  expandSidebarButtonRef?: React.Ref<HTMLButtonElement>;
 }> = React.memo(({
   onCreateConnection,
+  onCreateConnectionInGroup,
   onEditConnection,
   onOpenSettings,
   onToggleAI,
@@ -523,9 +529,11 @@ const Sidebar: React.FC<{
   uiVersion,
   onFocusCommandSearch,
   onCollapseSidebar,
+  onExpandSidebar,
   collapseSidebarLabel,
   collapseSidebarButtonRef,
-  isTreePanelCollapsed = false,
+  expandSidebarLabel,
+  expandSidebarButtonRef,
 }) => {
   const connections = useStore(state => state.connections);
   const savedQueries = useStore(state => state.savedQueries);
@@ -1035,6 +1043,7 @@ const Sidebar: React.FC<{
         if (item.kind === 'connection') {
           return buildConnectionNode(item.connection);
         }
+        const environment = getConnectionEnvironmentMeta(item.tag.environmentType);
         return {
           title: item.tag.name,
           key: `tag-${item.tag.id}`,
@@ -1042,8 +1051,10 @@ const Sidebar: React.FC<{
             <span
               className="gn-v2-tree-folder-icon"
               data-sidebar-tree-folder-icon="true"
+              data-connection-environment={environment.type}
+              title={t(environment.labelKey)}
             >
-              <FolderOutlined />
+              <FolderOutlined style={{ color: environment.color }} />
             </span>
           ),
           type: 'tag',
@@ -2377,7 +2388,6 @@ const Sidebar: React.FC<{
 
   const {
       getConnectionNodeForAction,
-      toggleSidebarTablePinned,
       handleV2TableContextMenuAction,
       handleTableGroupSortAction,
       handleV2TableGroupContextMenuAction,
@@ -2444,6 +2454,7 @@ const Sidebar: React.FC<{
       handleExportDatabaseSQL,
       handleRunSQLFile,
       handleDeleteDatabase,
+      onCreateConnectionInGroup,
       onEditConnection,
       handleDuplicateConnection,
       buildConnectionRootQueryTabTitle,
@@ -2531,7 +2542,6 @@ const Sidebar: React.FC<{
       contextMenu,
       setContextMenu,
       contextMenuPortalRef,
-      buildRailConnectionStatus,
       openV2ConnectionContextMenu,
       getV2TreeMetaText,
       renderV2SidebarContextMenuContent,
@@ -2539,7 +2549,6 @@ const Sidebar: React.FC<{
       refreshV2TableContextMenuStats,
   } = useSidebarV2ContextMenu({
       connections,
-      connectionStates,
       connectionTags,
       activeShortcutPlatform,
       flattenConnectionNodes,
@@ -2567,8 +2576,6 @@ const Sidebar: React.FC<{
   refreshV2TableContextMenuStatsRef.current = refreshV2TableContextMenuStats;
   const getV2TreeMetaTextRef = useRef(getV2TreeMetaText);
   getV2TreeMetaTextRef.current = getV2TreeMetaText;
-  const toggleSidebarTablePinnedRef = useRef(toggleSidebarTablePinned);
-  toggleSidebarTablePinnedRef.current = toggleSidebarTablePinned;
 
   const renderV2TreeTitle = useCallback((node: any, hoverTitle: string, statusBadge: React.ReactNode) => renderSidebarV2TreeTitle({
       node,
@@ -2576,7 +2583,6 @@ const Sidebar: React.FC<{
       statusBadge,
       getV2TreeMetaText: getV2TreeMetaTextRef.current,
       sidebarTableMetadataFields,
-      toggleSidebarTablePinned: toggleSidebarTablePinnedRef.current,
       snapshotTreeSelectionBeforeDrag,
       restoreTreeSelectionAfterDrag,
       treeDragSelectSuppressUntilRef,
@@ -2643,6 +2649,7 @@ const Sidebar: React.FC<{
     setRenameViewTarget,
     setIsCreateTagModalOpen,
     removeConnectionTag,
+    onCreateConnectionInGroup,
     setExpandedKeys,
     setLoadedKeys,
     loadingNodesRef,
@@ -2723,6 +2730,10 @@ const Sidebar: React.FC<{
       treeDragSelectSuppressUntilRef,
       setIsTreeDragging,
   });
+  const v2RailConnectionGroups = useMemo(
+      () => buildV2RailConnectionGroups(connections, connectionTags, sidebarRootOrder),
+      [connections, connectionTags, sidebarRootOrder],
+  );
   const getTagParentId = (tagId: unknown): string | null => {
       const tag = connectionTags.find((candidate) => candidate.id === String(tagId || '').trim());
       const parentTagId = String(tag?.parentTagId || '').trim();
@@ -2818,6 +2829,27 @@ const Sidebar: React.FC<{
           event.preventDefault();
           event.stopPropagation();
           return;
+      }
+      if (isV2Ui && node?.type === 'tag') {
+          const group = resolveV2ConnectionGroup(node, v2RailConnectionGroups);
+          if (group) {
+              event.preventDefault();
+              event.stopPropagation();
+              const position = resolveSidebarContextMenuPosition(event.clientX, event.clientY);
+              setContextMenu({
+                  x: position.x,
+                  y: position.y,
+                  sourceX: event.clientX,
+                  sourceY: event.clientY,
+                  items: [],
+                  kind: 'v2-connection-group',
+                  node: group,
+                  rootClassName: 'gn-v2-table-context-menu-popup',
+                  overlayStyle: { width: 264, maxWidth: 'calc(100vw - 24px)' },
+                  maxHeight: position.maxHeight,
+              });
+              return;
+          }
       }
       if (isV2Ui && node?.type === 'connection') {
           openV2ConnectionContextMenu(event, node);
@@ -2917,6 +2949,12 @@ const Sidebar: React.FC<{
   const v2ActiveConnectionHeaderLabel = t('sidebar.active_connection.current_host_database');
   const v2NoDatabaseSelectedLabel = t('sidebar.active_connection.no_database_selected');
   const v2ConnectionActionsLabel = t('sidebar.active_connection.actions');
+  const v2ActiveConnectionTooltipContent = (
+    <div className="gn-v2-active-connection-tooltip">
+      <strong>{activeConnectionDisplayName}</strong>
+      <span>{activeDatabaseDisplayName || v2NoDatabaseSelectedLabel}</span>
+    </div>
+  );
   const v2CommandSearchLabel = t('sidebar.command_search.label');
   const v2CommandSearchPlaceholder = t('sidebar.command_search.placeholder');
 
@@ -3007,6 +3045,11 @@ const Sidebar: React.FC<{
       openSettings: onOpenSettings ?? (() => {}),
     },
     canLocateActiveTab,
+    sidebarExpandAction: onExpandSidebar && expandSidebarLabel ? {
+      label: expandSidebarLabel,
+      onClick: onExpandSidebar,
+      buttonRef: expandSidebarButtonRef,
+    } : undefined,
     workbenchActions: (
       <>
         <SlowQueryRailButton
@@ -3029,16 +3072,18 @@ const Sidebar: React.FC<{
             id={isV2Ui ? 'gonavi-sidebar-tree-panel' : undefined}
             className={isV2Ui ? 'gn-v2-object-explorer' : undefined}
             data-sidebar-tree-panel={isV2Ui ? 'true' : undefined}
-            aria-hidden={isV2Ui ? isTreePanelCollapsed : undefined}
-            style={{ display: isV2Ui && isTreePanelCollapsed ? 'none' : 'flex', flexDirection: 'column', height: '100%', minWidth: 0, flex: 1 }}
+            style={{ display: 'flex', flexDirection: 'column', height: '100%', minWidth: 0, flex: 1 }}
         >
         {isV2Ui && (
             <div className="gn-v2-active-connection-header" data-object-count={activeConnectionObjectCount}>
                 <div className="gn-v2-active-connection-trigger" aria-label={v2ActiveConnectionHeaderLabel}>
-                    <span className={`gn-v2-live-dot is-${activeConnection ? buildRailConnectionStatus(activeConnection.id) : 'idle'}`} />
                     <div className="gn-v2-active-connection-copy">
-                        <strong>{activeConnectionDisplayName}</strong>
-                        <span>{activeDatabaseDisplayName || v2NoDatabaseSelectedLabel}</span>
+                        <Tooltip title={v2ActiveConnectionTooltipContent} placement="bottomLeft" mouseEnterDelay={0.35}>
+                            <strong>{activeConnectionDisplayName}</strong>
+                        </Tooltip>
+                        <Tooltip title={v2ActiveConnectionTooltipContent} placement="bottomLeft" mouseEnterDelay={0.35}>
+                            <span>{activeDatabaseDisplayName || v2NoDatabaseSelectedLabel}</span>
+                        </Tooltip>
                     </div>
                 </div>
                 <div className="gn-v2-active-connection-actions">

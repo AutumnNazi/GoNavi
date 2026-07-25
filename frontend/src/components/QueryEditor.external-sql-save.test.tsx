@@ -11644,13 +11644,17 @@ describe('QueryEditor external SQL save', () => {
     expect(css).toContain('body[data-ui-version="v2"] .gn-v2-query-results .query-result-tab-text {');
   });
 
-  it('does not reserve vertical space for the Monaco find widget in the v2 query editor', () => {
+  it('shows Monaco find button hovers without moving the find widget in the v2 query editor', () => {
     const source = readFileSync(new URL('./QueryEditor.tsx', import.meta.url), 'utf8');
     const css = readV2ThemeCss();
+    const findWidgetOverflowRule = css.match(
+      /body\[data-ui-version="v2"\] \.gn-v2-query-monaco-stage:has\(\.monaco-editor \.find-widget\.visible:not\(\.hiddenEditor\)\)\s*\{(?<body>[^}]*)\}/s,
+    )?.groups?.body ?? '';
 
     expect(source).not.toContain('addExtraSpaceOnTop: true');
-    expect(css).not.toContain('body[data-ui-version="v2"] .gn-v2-query-monaco-stage:has(.monaco-editor .find-widget.visible:not(.hiddenEditor)) {');
-    expect(css).not.toContain('padding-top: 24px;');
+    expect(findWidgetOverflowRule).toContain('overflow: visible;');
+    expect(findWidgetOverflowRule).not.toContain('padding-top');
+    expect(findWidgetOverflowRule).not.toContain('top:');
     expect(css).not.toContain('body[data-ui-version="v2"] .gn-v2-query-monaco-stage .monaco-editor .find-widget {');
   });
 

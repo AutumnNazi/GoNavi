@@ -68,6 +68,7 @@ func stripConnectionSecretFields(config connection.ConnectionConfig) connection.
 }
 
 func sanitizeSavedConnectionView(view connection.SavedConnectionView) connection.SavedConnectionView {
+	view.EnvironmentType = normalizeConnectionEnvironmentType(view.EnvironmentType)
 	view.Config = stripConnectionSecretFields(view.Config)
 	return view
 }

@@ -146,7 +146,7 @@ export default function SqlAuditDetailDrawer({
       onClose={onClose}
       width="min(760px, calc(100vw - 24px))"
       title={t('sql_audit.detail.title')}
-      destroyOnClose
+      destroyOnHidden
       styles={{
         body: {
           padding: 20,

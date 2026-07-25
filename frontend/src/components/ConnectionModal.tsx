@@ -64,6 +64,10 @@ import {
 import { getCustomConnectionDsnValidationMessage } from "../utils/customConnectionDsn";
 import { mergeParsedUriValuesForForm } from "../utils/connectionUriMerge";
 import { buildRpcConnectionConfig } from "../utils/connectionRpcConfig";
+import {
+  DEFAULT_CONNECTION_ENVIRONMENT,
+  normalizeConnectionEnvironmentType,
+} from "../utils/connectionEnvironment";
 import { resolveConnectionProtectionConfig } from "../utils/connectionReadOnly";
 import { getCustomConnectionDriverHelp } from "../utils/driverImportGuidance";
 import { isBackendCancelledResult } from "../utils/connectionExport";
@@ -1448,6 +1452,9 @@ const ConnectionModal: React.FC<{
         form.setFieldsValue({
           type: configType,
           name: initialValues.name,
+          environmentType: normalizeConnectionEnvironmentType(
+            initialValues.environmentType,
+          ),
           host: primaryHost,
           port: primaryPort,
           user: config.user,
@@ -1657,6 +1664,10 @@ const ConnectionModal: React.FC<{
         setActiveConfigSection("basic");
         setStep(1);
         form.resetFields();
+        form.setFieldValue(
+          "environmentType",
+          DEFAULT_CONNECTION_ENVIRONMENT,
+        );
         setUseSSL(false);
         setUseSSH(false);
         setUseProxy(false);

@@ -5,6 +5,7 @@ import {
   calculateExternalHorizontalScrollInnerWidth,
   calculateTableBodyBottomPadding,
   calculateVirtualTableScrollX,
+  resolveExternalHorizontalScrollMetrics,
   resolveDataGridColumnQuickFindScrollLeft,
   resolveDataGridHorizontalWheelDelta,
 } from './dataGridLayout';
@@ -81,6 +82,21 @@ describe('dataGridLayout helpers', () => {
       tableScrollWidth: 18,
       trackInset: 10,
     })).toBe(1);
+  });
+
+  it('uses measured DOM overflow when stretched columns exceed the theoretical table width', () => {
+    expect(resolveExternalHorizontalScrollMetrics({
+      tableScrollWidth: 1537,
+      tableViewportWidth: 1537,
+      measuredScrollWidth: 1539,
+      measuredClientWidth: 1526,
+      measuredTrackClientWidth: 1517,
+      trackInset: 10,
+    })).toEqual({
+      visible: true,
+      innerWidth: 1530,
+      maxScrollLeft: 13,
+    });
   });
 
   it('resolves quick-find target scrollLeft by centering the target column when possible', () => {

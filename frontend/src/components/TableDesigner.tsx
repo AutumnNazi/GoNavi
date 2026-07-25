@@ -243,6 +243,10 @@ const COMMON_DEFAULTS = [
     { value: "''" },
 ];
 
+const isMySQLCharacterColumnType = (columnType: string): boolean => (
+    /^(?:char|varchar|tinytext|text|mediumtext|longtext|enum|set|nchar|nvarchar)\b/i.test(String(columnType || '').trim())
+);
+
 
 const PGLIKE_INDEX_TYPE_OPTIONS = [
     { label: 'DEFAULT', value: 'DEFAULT' },
@@ -285,7 +289,16 @@ const COLLATIONS = {
         { label: 'utf8_unicode_ci', value: 'utf8_unicode_ci' },
         { label: 'utf8_general_ci', value: 'utf8_general_ci' },
         { label: 'utf8_bin', value: 'utf8_bin' },
-    ]
+    ],
+    'latin1': [
+        { label: 'latin1_swedish_ci', value: 'latin1_swedish_ci' },
+        { label: 'latin1_general_ci', value: 'latin1_general_ci' },
+        { label: 'latin1_bin', value: 'latin1_bin' },
+    ],
+    'ascii': [
+        { label: 'ascii_general_ci', value: 'ascii_general_ci' },
+        { label: 'ascii_bin', value: 'ascii_bin' },
+    ],
 };
 
 const getCollationOptions = (i18nLanguage: string) => Object.fromEntries(
@@ -476,7 +489,12 @@ const TableDesigner: React.FC<{ tab: TabData; embedded?: boolean }> = ({ tab, em
   const [isCommentModalOpen, setIsCommentModalOpen] = useState(false);
   const [commentEditorColumnKey, setCommentEditorColumnKey] = useState('');
   const [commentEditorColumnName, setCommentEditorColumnName] = useState('');
+  const [commentEditorColumnType, setCommentEditorColumnType] = useState('');
   const [commentEditorValue, setCommentEditorValue] = useState('');
+  const [columnDefaultEnabled, setColumnDefaultEnabled] = useState(false);
+  const [columnDefaultValue, setColumnDefaultValue] = useState('');
+  const [columnCharset, setColumnCharset] = useState<string | undefined>();
+  const [columnCollation, setColumnCollation] = useState<string | undefined>();
   const [inlineCommentEditingKey, setInlineCommentEditingKey] = useState('');
   
   const connections = useStore(state => state.connections);
@@ -515,7 +533,12 @@ const TableDesigner: React.FC<{ tab: TabData; embedded?: boolean }> = ({ tab, em
       setInlineCommentEditingKey('');
       setCommentEditorColumnKey(record._key);
       setCommentEditorColumnName(record.name || '');
+      setCommentEditorColumnType(record.type || '');
       setCommentEditorValue(record.comment || '');
+      setColumnDefaultEnabled(record.hasDefault === true);
+      setColumnDefaultValue(record.default ?? '');
+      setColumnCharset(record.charset);
+      setColumnCollation(record.collation);
       setIsCommentModalOpen(true);
   }, []);
 
@@ -523,7 +546,12 @@ const TableDesigner: React.FC<{ tab: TabData; embedded?: boolean }> = ({ tab, em
       setIsCommentModalOpen(false);
       setCommentEditorColumnKey('');
       setCommentEditorColumnName('');
+      setCommentEditorColumnType('');
       setCommentEditorValue('');
+      setColumnDefaultEnabled(false);
+      setColumnDefaultValue('');
+      setColumnCharset(undefined);
+      setColumnCollation(undefined);
   }, []);
 
   // 透明 Monaco Editor 主题由 MonacoEditor 包装组件按需注册（含 stickyScroll 不透明背景）
@@ -718,11 +746,25 @@ const TableDesigner: React.FC<{ tab: TabData; embedded?: boolean }> = ({ tab, em
               dataIndex: 'default', 
               key: 'default', 
               width: 180, // Increased default width
-              render: (text: string, record: EditableColumn) => readOnly ? text : (
-                  renderDesignerCellField(
-                      <AutoComplete options={COMMON_DEFAULTS} value={text} onChange={val => handleColumnChange(record._key, 'default', val)} style={{ width: '100%' }} variant="borderless" placeholder="NULL" />
-                  )
-              )
+              render: (text: string | undefined, record: EditableColumn) => {
+                  const value = record.hasDefault
+                      ? (text === '' ? "''" : (text ?? ''))
+                      : undefined;
+                  if (readOnly) return value;
+                  return renderDesignerCellField(
+                      <AutoComplete
+                          options={COMMON_DEFAULTS}
+                          value={value}
+                          onChange={val => {
+                              const hasDefault = val.length > 0;
+                              handleColumnChange(record._key, 'default', hasDefault ? (val === "''" ? '' : val) : undefined);
+                              handleColumnChange(record._key, 'hasDefault', hasDefault);
+                          }}
+                          style={{ width: '100%' }}
+                          variant="borderless"
+                      />
+                  );
+              }
           },
           { 
               title: renderDesignerHeaderTitle(t('table_designer.column.comment', undefined, i18nLanguage)),
@@ -754,7 +796,7 @@ const TableDesigner: React.FC<{ tab: TabData; embedded?: boolean }> = ({ tab, em
                               variant="borderless"
                           />
                       )}
-                      <Tooltip title={t('table_designer.tooltip.edit_comment_popup', undefined, i18nLanguage)}>
+                      <Tooltip title={t('table_designer.tooltip.edit_column_options', undefined, i18nLanguage)}>
                           <Button
                               type="text"
                               size="small"
@@ -773,7 +815,7 @@ const TableDesigner: React.FC<{ tab: TabData; embedded?: boolean }> = ({ tab, em
               onHeaderCell: () => ({ className: 'table-designer-action-column' }),
               render: (_: any, record: EditableColumn) => (
                   <div className="table-designer-action-cell">
-                      <Tooltip title={t('table_designer.tooltip.edit_comment_popup', undefined, i18nLanguage)}>
+                      <Tooltip title={t('table_designer.tooltip.edit_column_options', undefined, i18nLanguage)}>
                           <Button type="text" size="small" icon={<EditOutlined />} onClick={() => openCommentEditor(record)} />
                       </Tooltip>
                       <Tooltip title={t('table_designer.action.delete', undefined, i18nLanguage)}>
@@ -1310,10 +1352,41 @@ ${selectedTrigger.statement}`;
                   newCol.nullable = 'NO';
                   newCol.type = 'int'; // Suggest INT
               }
+              if (field === 'type' && getDbType() === 'mysql' && !isMySQLCharacterColumnType(String(value))) {
+                  newCol.charset = undefined;
+                  newCol.collation = undefined;
+              }
               return newCol;
           }
           return col;
       }));
+  };
+
+  const handleSaveColumnOptions = () => {
+      if (!commentEditorColumnKey) {
+          closeCommentEditor();
+          return;
+      }
+
+      const isMySQL = getDbType() === 'mysql';
+      const supportsCharacterOptions = isMySQL && isMySQLCharacterColumnType(commentEditorColumnType);
+      const hasDefault = columnDefaultEnabled && (
+          columnDefaultValue.length > 0 || isMySQLCharacterColumnType(commentEditorColumnType)
+      );
+      setColumns(prev => prev.map(col => {
+          if (col._key !== commentEditorColumnKey) return col;
+          return {
+              ...col,
+              comment: commentEditorValue,
+              hasDefault,
+              default: hasDefault ? columnDefaultValue : undefined,
+              ...(isMySQL ? {
+                  charset: supportsCharacterOptions ? columnCharset : undefined,
+                  collation: supportsCharacterOptions ? columnCollation : undefined,
+              } : {}),
+          };
+      }));
+      closeCommentEditor();
   };
 
   const createNewColumn = useCallback((indexHint: number): EditableColumn => ({
@@ -1323,7 +1396,8 @@ ${selectedTrigger.statement}`;
       key: '',
       extra: '',
       comment: '',
-      default: '',
+      default: undefined,
+      hasDefault: false,
       _key: `new-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       isNew: true,
       isAutoIncrement: false
@@ -3429,28 +3503,65 @@ END;`;
 
         <Modal
             title={commentEditorColumnName
-                ? t('table_designer.modal.column_comment_title_named', { name: commentEditorColumnName }, i18nLanguage)
-                : t('table_designer.modal.column_comment_title', undefined, i18nLanguage)}
+                ? t('table_designer.modal.column_options_title_named', { name: commentEditorColumnName }, i18nLanguage)
+                : t('table_designer.modal.column_options_title', undefined, i18nLanguage)}
             open={isCommentModalOpen}
             onCancel={closeCommentEditor}
-            onOk={() => {
-                if (commentEditorColumnKey) {
-                    handleColumnChange(commentEditorColumnKey, 'comment', commentEditorValue);
-                }
-                closeCommentEditor();
-            }}
+            onOk={handleSaveColumnOptions}
             okText={t('table_designer.action.apply', undefined, i18nLanguage)}
             cancelText={t('table_designer.action.cancel', undefined, i18nLanguage)}
             width={640}
             destroyOnHidden
         >
-            <Input.TextArea
-                value={commentEditorValue}
-                onChange={(e) => setCommentEditorValue(e.target.value)}
-                autoSize={{ minRows: 8, maxRows: 18 }}
-                placeholder={t('table_designer.placeholder.column_comment', undefined, i18nLanguage)}
-                maxLength={2000}
-            />
+            <Space direction="vertical" size={16} style={{ width: '100%' }}>
+                <Space direction="vertical" size={8} style={{ width: '100%' }}>
+                    <Checkbox
+                        checked={columnDefaultEnabled}
+                        onChange={(event) => setColumnDefaultEnabled(event.target.checked)}
+                    >
+                        {t('table_designer.column.enable_default', undefined, i18nLanguage)}
+                    </Checkbox>
+                    <AutoComplete
+                        options={COMMON_DEFAULTS}
+                        value={columnDefaultValue}
+                        onChange={setColumnDefaultValue}
+                        disabled={!columnDefaultEnabled}
+                        style={{ width: '100%' }}
+                        placeholder={t('table_designer.placeholder.column_default', undefined, i18nLanguage)}
+                    />
+                </Space>
+                {getDbType() === 'mysql' && isMySQLCharacterColumnType(commentEditorColumnType) && (
+                    <Space wrap size={12} style={{ width: '100%' }}>
+                        <AutoComplete
+                            allowClear
+                            value={columnCharset}
+                            onChange={(value) => {
+                                setColumnCharset(value || undefined);
+                                const options = value ? (COLLATIONS as any)[value] : undefined;
+                                setColumnCollation(options?.[0]?.value);
+                            }}
+                            options={charsetOptions}
+                            placeholder={t('table_designer.column.charset', undefined, i18nLanguage)}
+                            style={{ width: 180 }}
+                        />
+                        <AutoComplete
+                            allowClear
+                            value={columnCollation}
+                            onChange={(value) => setColumnCollation(value || undefined)}
+                            options={columnCharset ? (collationOptions as any)[columnCharset] || [] : []}
+                            placeholder={t('table_designer.column.collation', undefined, i18nLanguage)}
+                            style={{ width: 260 }}
+                        />
+                    </Space>
+                )}
+                <Input.TextArea
+                    value={commentEditorValue}
+                    onChange={(e) => setCommentEditorValue(e.target.value)}
+                    autoSize={{ minRows: 5, maxRows: 12 }}
+                    placeholder={t('table_designer.placeholder.column_comment', undefined, i18nLanguage)}
+                    maxLength={2000}
+                />
+            </Space>
         </Modal>
 
         <Modal

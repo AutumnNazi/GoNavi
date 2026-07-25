@@ -30,11 +30,45 @@ class FakeEventTarget {
   }
 }
 
-class FakeHTMLElement {
+class FakeAttributeHost {
+  private attributes = new Map<string, string>();
+
+  setAttribute(name: string, value: string) {
+    this.attributes.set(name, value);
+  }
+
+  removeAttribute(name: string) {
+    this.attributes.delete(name);
+  }
+
+  getAttribute(name: string) {
+    return this.attributes.has(name) ? this.attributes.get(name)! : null;
+  }
+}
+
+class FakeHTMLElement extends FakeAttributeHost {
   getBoundingClientRect() {
     return { right: 240, width: 240 };
   }
 }
+
+class FakeBody extends FakeAttributeHost {
+  style = {
+    cursor: 'wait',
+    userSelect: 'text',
+    webkitUserSelect: 'auto',
+  };
+}
+
+const flushAnimationFrames = (frames: Map<number, FrameRequestCallback>, passes = 2) => {
+  for (let pass = 0; pass < passes; pass += 1) {
+    const pending = [...frames.entries()];
+    frames.clear();
+    for (const [, callback] of pending) {
+      callback(0);
+    }
+  }
+};
 
 describe('useAppSidebarResize interaction cleanup', () => {
   const previousWindowDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'window');
@@ -46,15 +80,7 @@ describe('useAppSidebarResize interaction cleanup', () => {
   let renderer: ReactTestRenderer | null = null;
   let resize: ReturnType<typeof useAppSidebarResize> | null = null;
   let fakeWindow: FakeEventTarget & { getComputedStyle: () => { minWidth: string; maxWidth: string }; innerWidth: number };
-  let fakeDocument: FakeEventTarget & {
-    body: {
-      style: {
-        cursor: string;
-        userSelect: string;
-        webkitUserSelect: string;
-      };
-    };
-  };
+  let fakeDocument: FakeEventTarget & { body: FakeBody };
   let ghost: { style: { display: string; left: string } };
   let scheduledFrames: Map<number, FrameRequestCallback>;
   let nextFrameId: number;
@@ -89,13 +115,7 @@ describe('useAppSidebarResize interaction cleanup', () => {
       innerWidth: 1200,
     });
     fakeDocument = Object.assign(new FakeEventTarget(), {
-      body: {
-        style: {
-          cursor: 'wait',
-          userSelect: 'text',
-          webkitUserSelect: 'auto',
-        },
-      },
+      body: new FakeBody(),
     });
     ghost = { style: { display: 'none', left: '' } };
 
@@ -200,5 +220,24 @@ describe('useAppSidebarResize interaction cleanup', () => {
     expect(fakeDocument.listenerCount('mouseup')).toBe(0);
     expect(fakeWindow.listenerCount('blur')).toBe(0);
     expect(setSidebarWidth).not.toHaveBeenCalled();
+  });
+
+  it('marks the sider as resizing during drag and keeps the flag across width commit', () => {
+    const sider = resize!.siderRef.current as unknown as FakeHTMLElement;
+
+    beginResize();
+    expect(sider.getAttribute('data-sidebar-resizing')).toBe('true');
+    expect(fakeDocument.body.getAttribute('data-sidebar-resizing')).toBe('true');
+
+    act(() => fakeDocument.dispatch('mouseup', { clientX: 280 }));
+    expect(setSidebarWidth).toHaveBeenCalledWith(320);
+    // Still marked while the commit paints, so Ant Design width transition stays off.
+    expect(sider.getAttribute('data-sidebar-resizing')).toBe('true');
+    expect(fakeDocument.body.getAttribute('data-sidebar-resizing')).toBe('true');
+
+    act(() => flushAnimationFrames(scheduledFrames, 2));
+
+    expect(sider.getAttribute('data-sidebar-resizing')).toBe(null);
+    expect(fakeDocument.body.getAttribute('data-sidebar-resizing')).toBe(null);
   });
 });

@@ -244,6 +244,44 @@ func TestOptionalDriverAgentDBQueryMultiWithMessagesParsesResultSets(t *testing.
 	}
 }
 
+func TestKingbaseOptionalDriverAgentSessionInitializesSearchPath(t *testing.T) {
+	var stdin optionalAgentTestWriteCloser
+	stdout := strings.Join([]string{
+		`{"id":1,"success":true,"data":"session-1"}`,
+		`{"id":2,"success":true,"rowsAffected":0}`,
+		`{"id":3,"success":true}`,
+	}, "\n") + "\n"
+
+	dbInst := &OptionalDriverAgentDB{
+		driverType:         "kingbase",
+		kingbaseSearchPath: `"$user",public,ldf_server`,
+		client: &optionalDriverAgentClient{
+			stdin:  &stdin,
+			reader: bufio.NewReader(strings.NewReader(stdout)),
+			driver: "kingbase",
+		},
+	}
+
+	session, err := dbInst.OpenSessionExecer(context.Background())
+	if err != nil {
+		t.Fatalf("OpenSessionExecer returned error: %v", err)
+	}
+	if err := session.Close(); err != nil {
+		t.Fatalf("Close returned error: %v", err)
+	}
+
+	requests := stdin.String()
+	for _, fragment := range []string{
+		`"method":"openSession"`,
+		`"method":"exec","sessionId":"session-1","query":"SET search_path TO \"$user\",public,ldf_server"`,
+		`"method":"closeSession","sessionId":"session-1"`,
+	} {
+		if !strings.Contains(requests, fragment) {
+			t.Fatalf("expected request fragment %q, got %s", fragment, requests)
+		}
+	}
+}
+
 func TestDamengOptionalDriverAgentSupportsManagedTransactions(t *testing.T) {
 	damengDB, err := NewDatabase("dameng")
 	if err != nil {

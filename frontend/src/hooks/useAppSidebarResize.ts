@@ -52,6 +52,7 @@ export const useAppSidebarResize = ({
 }: UseAppSidebarResizeOptions) => {
   const sidebarDragRef = useRef<SidebarResizeDragState | null>(null);
   const rafRef = useRef<number | null>(null);
+  const clearResizingFrameRef = useRef<number | null>(null);
   const ghostRef = useRef<HTMLDivElement>(null);
   const siderRef = useRef<HTMLDivElement | null>(null);
   const sidebarDragBodyStyleRef = useRef<{ cursor: string; userSelect: string; webkitUserSelect: string } | null>(null);
@@ -60,6 +61,51 @@ export const useAppSidebarResize = ({
   const setSidebarWidthRef = useRef(setSidebarWidth);
   setSidebarWidthRef.current = setSidebarWidth;
   const sidebarResizeHandleWidth = Math.max(16, Math.round(16 * effectiveUiScale));
+
+  const cancelClearResizingFrame = useCallback(() => {
+    if (clearResizingFrameRef.current === null) return;
+    cancelAnimationFrame(clearResizingFrameRef.current);
+    clearResizingFrameRef.current = null;
+  }, []);
+
+  /**
+   * Mark the sider as mid-resize so CSS can disable Ant Design's default
+   * `transition: all`. Without this, committing width animates for ~200ms and
+   * forces the workbench/DataGrid to reflow on every animation frame.
+   */
+  const setSidebarResizing = useCallback((active: boolean) => {
+    const sider = siderRef.current;
+    if (sider instanceof HTMLElement) {
+      if (active) {
+        sider.setAttribute('data-sidebar-resizing', 'true');
+      } else {
+        sider.removeAttribute('data-sidebar-resizing');
+      }
+    }
+    if (typeof document !== 'undefined') {
+      if (active) {
+        document.body.setAttribute('data-sidebar-resizing', 'true');
+      } else {
+        document.body.removeAttribute('data-sidebar-resizing');
+      }
+    }
+  }, []);
+
+  const scheduleClearSidebarResizing = useCallback(() => {
+    cancelClearResizingFrame();
+    if (typeof window === 'undefined') {
+      setSidebarResizing(false);
+      return;
+    }
+    // Wait two frames so React can paint the committed width while transition
+    // is still disabled, then re-enable collapse animations.
+    clearResizingFrameRef.current = requestAnimationFrame(() => {
+      clearResizingFrameRef.current = requestAnimationFrame(() => {
+        clearResizingFrameRef.current = null;
+        setSidebarResizing(false);
+      });
+    });
+  }, [cancelClearResizingFrame, setSidebarResizing]);
 
   const detachSidebarResizeListeners = useCallback(() => {
     const listeners = sidebarResizeListenersRef.current;
@@ -105,12 +151,25 @@ export const useAppSidebarResize = ({
     if (commit && dragState) {
       const finalMouseX = Number.isFinite(clientX) ? clientX as number : latestMouseX.current;
       const delta = finalMouseX - dragState.startX;
+      // Keep transition disabled across the state commit + first paint.
+      setSidebarResizing(true);
       setSidebarWidthRef.current(clampSidebarResizeWidth(
         dragState.startWidth + delta,
         dragState,
       ));
+      scheduleClearSidebarResizing();
+      return;
     }
-  }, [detachSidebarResizeListeners, restoreSidebarDragBodyStyles]);
+
+    cancelClearResizingFrame();
+    setSidebarResizing(false);
+  }, [
+    cancelClearResizingFrame,
+    detachSidebarResizeListeners,
+    restoreSidebarDragBodyStyles,
+    scheduleClearSidebarResizing,
+    setSidebarResizing,
+  ]);
 
   const handleSidebarMouseDown = useCallback((e: React.MouseEvent) => {
     if (e.button !== 0) {
@@ -123,6 +182,8 @@ export const useAppSidebarResize = ({
     e.stopPropagation();
 
     finishSidebarResize(undefined, false);
+    cancelClearResizingFrame();
+    setSidebarResizing(true);
 
     if (typeof document !== 'undefined') {
       sidebarDragBodyStyleRef.current = {
@@ -182,11 +243,12 @@ export const useAppSidebarResize = ({
     document.addEventListener('mousemove', handleMove);
     document.addEventListener('mouseup', handleUp);
     window.addEventListener('blur', handleBlur);
-  }, [finishSidebarResize, sidebarWidth]);
+  }, [cancelClearResizingFrame, finishSidebarResize, setSidebarResizing, sidebarWidth]);
 
   useEffect(() => () => {
     finishSidebarResize(undefined, false);
-  }, [finishSidebarResize]);
+    cancelClearResizingFrame();
+  }, [cancelClearResizingFrame, finishSidebarResize]);
 
   return {
     ghostRef,

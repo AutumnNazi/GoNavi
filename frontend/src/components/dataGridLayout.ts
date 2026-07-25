@@ -21,6 +21,19 @@ export interface ExternalHorizontalScrollInnerWidthOptions {
   trackInset: number;
 }
 
+export interface ExternalHorizontalScrollMetricsOptions extends ExternalHorizontalScrollInnerWidthOptions {
+  tableViewportWidth: number;
+  measuredScrollWidth: number;
+  measuredClientWidth: number;
+  measuredTrackClientWidth?: number;
+}
+
+export interface ExternalHorizontalScrollMetrics {
+  visible: boolean;
+  innerWidth: number;
+  maxScrollLeft: number;
+}
+
 export interface DataGridColumnQuickFindScrollLeftOptions {
   currentScrollLeft: number;
   columnLeft: number;
@@ -144,6 +157,36 @@ export const calculateExternalHorizontalScrollInnerWidth = ({
   const safeTrackInset = Math.max(0, Math.ceil(trackInset));
 
   return Math.max(1, safeTableScrollWidth - safeTrackInset * 2);
+};
+
+export const resolveExternalHorizontalScrollMetrics = ({
+  tableScrollWidth,
+  tableViewportWidth,
+  measuredScrollWidth,
+  measuredClientWidth,
+  measuredTrackClientWidth,
+  trackInset,
+}: ExternalHorizontalScrollMetricsOptions): ExternalHorizontalScrollMetrics => {
+  const safeTableScrollWidth = Math.max(0, Math.ceil(tableScrollWidth));
+  const safeViewportWidth = Math.max(0, Math.floor(tableViewportWidth));
+  const safeMeasuredScrollWidth = Math.max(0, Math.ceil(measuredScrollWidth));
+  const safeMeasuredClientWidth = Math.max(0, Math.floor(measuredClientWidth));
+  const safeMeasuredTrackClientWidth = Math.max(0, Math.floor(measuredTrackClientWidth || 0));
+  const safeTrackInset = Math.max(0, Math.ceil(trackInset));
+  const calculatedMaxScrollLeft = safeViewportWidth > 0
+    ? Math.max(0, safeTableScrollWidth - safeViewportWidth)
+    : 0;
+  const measuredMaxScrollLeft = Math.max(0, safeMeasuredScrollWidth - safeMeasuredClientWidth);
+  const maxScrollLeft = Math.max(calculatedMaxScrollLeft, measuredMaxScrollLeft);
+  const innerWidth = safeViewportWidth > 0
+    ? Math.max(1, safeMeasuredTrackClientWidth || (safeViewportWidth - safeTrackInset * 2)) + maxScrollLeft
+    : calculateExternalHorizontalScrollInnerWidth({ tableScrollWidth, trackInset });
+
+  return {
+    visible: maxScrollLeft > 1,
+    innerWidth,
+    maxScrollLeft,
+  };
 };
 
 export const resolveDataGridColumnQuickFindScrollLeft = ({

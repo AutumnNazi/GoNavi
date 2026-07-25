@@ -416,24 +416,13 @@ func (c *optionalDriverAgentClient) forceTerminate() {
 func (c *optionalDriverAgentClient) close() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	var closeErr error
-	if c.stdin != nil {
-		_ = c.stdin.Close()
-	}
-	if c.cmd != nil && c.cmd.Process != nil {
-		if err := c.cmd.Process.Kill(); err != nil {
-			closeErr = err
-		}
-	}
-	if c.cmd != nil {
-		_ = c.cmd.Wait()
-	}
-	return closeErr
+	return closeAgentProcess(c.stdin, c.cmd)
 }
 
 type OptionalDriverAgentDB struct {
-	driverType string
-	client     *optionalDriverAgentClient
+	driverType         string
+	client             *optionalDriverAgentClient
+	kingbaseSearchPath string
 }
 
 type optionalDriverAgentTransactionalDB struct {
@@ -474,6 +463,7 @@ func newOptionalDriverAgentTransactionalDatabase(driverType string) databaseFact
 }
 
 func (d *OptionalDriverAgentDB) Connect(config connection.ConnectionConfig) error {
+	d.kingbaseSearchPath = ""
 	if d.client != nil {
 		_ = d.client.close()
 		d.client = nil
@@ -704,11 +694,18 @@ func (d *OptionalDriverAgentDB) OpenSessionExecer(ctx context.Context) (Statemen
 	if sessionID == "" {
 		return nil, fmt.Errorf("%s 驱动代理未返回事务会话 ID", driverDisplayName(d.driverType))
 	}
-	return &optionalDriverAgentSession{
+	session := &optionalDriverAgentSession{
 		client:    client,
 		driver:    d.driverType,
 		sessionID: sessionID,
-	}, nil
+	}
+	if searchPath := strings.TrimSpace(d.kingbaseSearchPath); searchPath != "" {
+		if _, err := session.ExecContext(ctx, fmt.Sprintf("SET search_path TO %s", searchPath)); err != nil {
+			_ = session.Close()
+			return nil, fmt.Errorf("人大金仓会话初始化 search_path 失败：%w", err)
+		}
+	}
+	return session, nil
 }
 
 func (d *optionalDriverAgentTransactionalDB) OpenTransactionExecer(ctx context.Context) (TransactionExecer, error) {
@@ -1098,6 +1095,7 @@ func (d *OptionalDriverAgentDB) ensureKingbaseSearchPath(config connection.Conne
 	if strings.TrimSpace(searchPath) == "" {
 		return
 	}
+	d.kingbaseSearchPath = searchPath
 
 	if _, err := d.ExecContext(ctx, fmt.Sprintf("SET search_path TO %s", searchPath)); err != nil {
 		logger.Warnf("人大金仓驱动代理设置 search_path 失败：%v", err)

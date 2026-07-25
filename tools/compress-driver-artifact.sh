@@ -186,6 +186,12 @@ if can_smoke_test_driver_agent; then
       exit 1
     fi
     echo "⚠️  UPX 压缩后 driver-agent metadata 自检失败，已恢复原文件：$label"
+    # Still smoke-test the restored (uncompressed) artifact so a permanently
+    # broken binary fails the build step instead of surfacing later as empty revision.
+    if ! smoke_test_driver_agent_metadata; then
+      echo "❌ 恢复未压缩产物后 metadata 仍失败：$label" >&2
+      exit 1
+    fi
     exit 0
   fi
 fi
@@ -193,7 +199,7 @@ fi
 after_bytes="$(file_size_bytes "$artifact_path")"
 if [[ "$after_bytes" -lt "$before_bytes" ]]; then
   saved_bytes=$((before_bytes - after_bytes))
-  echo "✅ UPX 压缩完成：$(format_size_mb "$before_bytes") -> $(format_size_mb "$after_bytes")，减少 $(format_size_mb "$saved_bytes")"
+  echo "✅ UPX 压缩完成：$label $(format_size_mb "$before_bytes") -> $(format_size_mb "$after_bytes")，减少 $(format_size_mb "$saved_bytes")"
 else
-  echo "ℹ️  UPX 压缩完成：$(format_size_mb "$before_bytes") -> $(format_size_mb "$after_bytes")"
+  echo "ℹ️  UPX 压缩完成：$label $(format_size_mb "$before_bytes") -> $(format_size_mb "$after_bytes")"
 fi

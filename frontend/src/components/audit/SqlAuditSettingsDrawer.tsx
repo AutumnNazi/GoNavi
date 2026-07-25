@@ -82,7 +82,7 @@ export default function SqlAuditSettingsDrawer({
       onClose={onClose}
       width={440}
       title={t('sql_audit.settings.title')}
-      destroyOnClose
+      destroyOnHidden
       extra={(
         <Space>
           <Button onClick={onClose}>{t('common.cancel')}</Button>

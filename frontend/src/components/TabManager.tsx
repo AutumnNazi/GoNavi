@@ -1,5 +1,5 @@
 import Modal from './common/ResizableDraggableModal';
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Button, Dropdown, message, Tabs, Tooltip } from 'antd';
 import { CloseOutlined, ConsoleSqlOutlined, DatabaseOutlined, FileTextOutlined, FolderOpenOutlined, HistoryOutlined, PlusOutlined, PushpinOutlined, RightOutlined, RobotOutlined, SearchOutlined, SettingOutlined } from '@ant-design/icons';
 import type { MenuProps, TabsProps } from 'antd';
@@ -45,6 +45,7 @@ import {
 } from '../utils/detachedWindow';
 import { openNativeWorkbenchTabWindow } from '../utils/nativeDetachedWindowHost';
 import { useWorkbenchTabs } from '../hooks/useWorkbenchTabs';
+import { resolveConnectionEnvironmentPresentation } from '../utils/connectionEnvironment';
 
 const getTabKindLabel = (tab: TabData): string => {
   if (tab.type === 'query') return t('tab_manager.kind_badge.query');
@@ -81,6 +82,25 @@ export const isRunningDataImportWorkbenchTab = (
 ): boolean => tab.type === 'data-import' && tab.dataImportRunning === true;
 
 export const TAB_WORKBENCH_CLASS_NAME = 'tab-workbench';
+
+export const V2_WORKBENCH_TAB_MIN_WIDTH = 112;
+export const V2_WORKBENCH_TAB_MAX_WIDTH = 260;
+const V2_WORKBENCH_TAB_WIDTH_GUARD = 1;
+
+export const resolveV2WorkbenchTabWidth = (availableWidth: number, tabCount: number): number => {
+  const normalizedTabCount = Number.isFinite(tabCount) ? Math.floor(tabCount) : 0;
+  if (!Number.isFinite(availableWidth) || availableWidth <= 0 || normalizedTabCount <= 0) {
+    return V2_WORKBENCH_TAB_MAX_WIDTH;
+  }
+
+  const equalShare = Math.floor(
+    (availableWidth - V2_WORKBENCH_TAB_WIDTH_GUARD) / normalizedTabCount,
+  );
+  return Math.min(
+    V2_WORKBENCH_TAB_MAX_WIDTH,
+    Math.max(V2_WORKBENCH_TAB_MIN_WIDTH, equalShare),
+  );
+};
 
 type RecentConnectionShortcut = {
   connection: SavedConnection;
@@ -373,6 +393,9 @@ type SortableTabLabelProps = {
   menuItems: MenuProps['items'];
   connectionLabel?: string;
   hostSummary?: string;
+  environmentColor?: string;
+  environmentLabel?: string;
+  environmentType?: string;
   isV2Ui?: boolean;
   onClose?: () => void;
 };
@@ -408,6 +431,9 @@ const SortableTabLabel: React.FC<SortableTabLabelProps> = ({
   menuItems,
   connectionLabel,
   hostSummary,
+  environmentColor,
+  environmentLabel,
+  environmentType,
   isV2Ui,
   onClose,
 }) => {
@@ -446,12 +472,23 @@ const SortableTabLabel: React.FC<SortableTabLabelProps> = ({
   const showSecondaryLine = isV2Ui && displayModel.layout === 'double' && Boolean(displayModel.secondaryText);
   const labelNode = (
     <span
-      className={`tab-dnd-label${isV2Ui ? ' gn-v2-tab-label' : ''}${showSecondaryLine ? ' gn-v2-tab-label-double' : ''}${tabDisplayPartCount >= 4 ? ' gn-v2-tab-label-rich' : ''}`}
+      className={`tab-dnd-label${isV2Ui ? ' gn-v2-tab-label' : ''}${showSecondaryLine ? ' gn-v2-tab-label-double' : ''}${tabDisplayPartCount >= 4 ? ' gn-v2-tab-label-rich' : ''}${environmentColor ? ' gn-tab-label-has-environment' : ''}`}
+      data-connection-environment={environmentType}
       onContextMenu={handleTabLabelContextMenu}
       onMouseDown={handleTabLabelMouseDown}
       onAuxClick={handleTabLabelAuxClick}
       title={isV2Ui ? undefined : displayTitle}
     >
+      {environmentColor ? (
+        <span
+          className="gn-tab-environment-accent"
+          style={{
+            '--gn-tab-environment-color': environmentColor,
+          } as React.CSSProperties}
+          title={environmentLabel}
+          aria-label={environmentLabel}
+        />
+      ) : null}
       {isV2Ui ? (
         <span className="gn-v2-tab-label-content">
           <span className="gn-v2-tab-label-main tab-title-text">
@@ -685,6 +722,7 @@ const TabManager: React.FC<TabManagerProps> = React.memo<TabManagerProps>(({ onF
   const tabs = useWorkbenchTabs();
   const detachedWorkbenchWindows = useStore(state => state.detachedWorkbenchWindows);
   const connections = useStore(state => state.connections);
+  const connectionTags = useStore(state => state.connectionTags);
   const savedQueries = useStore(state => state.savedQueries);
   const externalSQLDirectories = useStore(state => state.externalSQLDirectories);
   const recentConnectionTargets = useStore(state => state.recentConnectionTargets);
@@ -712,6 +750,8 @@ const TabManager: React.FC<TabManagerProps> = React.memo<TabManagerProps>(({ onF
     [detachedTabIdSet, tabs],
   );
   const tabsNavBorderColor = theme === 'dark' ? 'rgba(255, 255, 255, 0.09)' : 'rgba(0, 0, 0, 0.08)';
+  const tabWorkbenchRef = useRef<HTMLDivElement>(null);
+  const [v2TabWidth, setV2TabWidth] = useState(V2_WORKBENCH_TAB_MAX_WIDTH);
   const [draggingTabId, setDraggingTabId] = useState<string | null>(null);
   const [detachDragPreview, setDetachDragPreview] = useState<DetachDragPreviewState | null>(null);
   const [openingRecentSQLFileKey, setOpeningRecentSQLFileKey] = useState<string | null>(null);
@@ -736,6 +776,37 @@ const TabManager: React.FC<TabManagerProps> = React.memo<TabManagerProps>(({ onF
   const isV2Ui = appearance.uiVersion === 'v2';
   const hasTabs = tabs.length > 0;
   const hasDockedTabs = dockedTabs.length > 0;
+  useLayoutEffect(() => {
+    if (!isV2Ui || dockedTabs.length === 0) {
+      setV2TabWidth(V2_WORKBENCH_TAB_MAX_WIDTH);
+      return;
+    }
+
+    const target = tabWorkbenchRef.current;
+    if (!target) return;
+
+    const updateWidth = (availableWidth: number) => {
+      const nextWidth = resolveV2WorkbenchTabWidth(availableWidth, dockedTabs.length);
+      setV2TabWidth((currentWidth) => currentWidth === nextWidth ? currentWidth : nextWidth);
+    };
+    const measure = () => updateWidth(target.getBoundingClientRect().width);
+
+    measure();
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', measure);
+      return () => window.removeEventListener('resize', measure);
+    }
+
+    const observer = new ResizeObserver((entries) => {
+      updateWidth(entries[0]?.contentRect.width ?? target.getBoundingClientRect().width);
+    });
+    observer.observe(target);
+    return () => observer.disconnect();
+  }, [dockedTabs.length, isV2Ui]);
+
+  const tabWorkbenchStyle = isV2Ui
+    ? ({ '--gn-v2-tab-width': `${v2TabWidth}px` } as React.CSSProperties)
+    : undefined;
   const detachTabToWindow = useCallback((tabId: string, preferred?: { x?: number; y?: number; width?: number; height?: number }) => {
     const tab = tabs.find((item) => item.id === tabId);
     if (tab && isBackgroundTaskWorkbenchTab(tab)) {
@@ -1173,6 +1244,9 @@ const TabManager: React.FC<TabManagerProps> = React.memo<TabManagerProps>(({ onF
   const items = useMemo(() => dockedTabs.map((tab, index) => {
     const connection = connections.find((conn) => conn.id === tab.connectionId);
     const displayModel = buildTabDisplayModel(tab, connection, appearance.tabDisplay, t);
+    const environment = connection
+      ? resolveConnectionEnvironmentPresentation(connection, connectionTags, t)
+      : undefined;
     const displayTitle = displayModel.fullTitle;
     const hostSummary = resolveConnectionHostSummary(connection?.config);
     const tabIsActive = tab.id === dockedActiveTabId;
@@ -1227,6 +1301,9 @@ const TabManager: React.FC<TabManagerProps> = React.memo<TabManagerProps>(({ onF
           menuItems={menuItems}
           connectionLabel={connection?.name}
           hostSummary={hostSummary}
+          environmentColor={environment?.color}
+          environmentLabel={environment?.label}
+          environmentType={environment?.type}
           isV2Ui={isV2Ui}
           onClose={() => closeTabsWithSQLFilePrompt([tab.id], () => closeTab(tab.id))}
         />
@@ -1235,7 +1312,7 @@ const TabManager: React.FC<TabManagerProps> = React.memo<TabManagerProps>(({ onF
       closable: !isV2Ui,
       children: <WorkbenchTabContent tab={tab} isActive={tabIsActive} />,
     };
-  }), [dockedTabs, dockedActiveTabId, tabs, connections, appearance.tabDisplay, closeOtherTabs, closeTabsToLeft, closeTabsToRight, closeAllTabs, closeTab, closeTabsWithSQLFilePrompt, detachTabToWindow, isV2Ui, languagePreference]);
+  }), [dockedTabs, dockedActiveTabId, tabs, connections, connectionTags, appearance.tabDisplay, closeOtherTabs, closeTabsToLeft, closeTabsToRight, closeAllTabs, closeTab, closeTabsWithSQLFilePrompt, detachTabToWindow, isV2Ui, languagePreference]);
 
   const queryCapableConnections = useMemo(
     () => connections.filter((connection) => getDataSourceCapabilities(connection.config).supportsQueryEditor),
@@ -1583,7 +1660,11 @@ const TabManager: React.FC<TabManagerProps> = React.memo<TabManagerProps>(({ onF
   );
 
   return (
-    <div className={`${TAB_WORKBENCH_CLASS_NAME}${isV2Ui ? ' gn-v2-tab-workbench' : ''}`}>
+    <div
+      ref={tabWorkbenchRef}
+      className={`${TAB_WORKBENCH_CLASS_NAME}${isV2Ui ? ' gn-v2-tab-workbench' : ''}`}
+      style={tabWorkbenchStyle}
+    >
         <style>{`
             .${TAB_WORKBENCH_CLASS_NAME} {
               height: 100%;
@@ -1645,12 +1726,29 @@ const TabManager: React.FC<TabManagerProps> = React.memo<TabManagerProps>(({ onF
               transition: transform 180ms cubic-bezier(0.22, 1, 0.36, 1), background-color 120ms ease;
             }
             .main-tabs .tab-dnd-label {
+              position: relative;
               user-select: none;
               -webkit-user-select: none;
               display: inline-flex;
               align-items: center;
               gap: 7px;
               max-width: 100%;
+            }
+            .main-tabs .gn-tab-environment-accent {
+              position: absolute;
+              z-index: 1;
+              right: 8px;
+              bottom: 0;
+              left: 8px;
+              height: 4px;
+              box-sizing: border-box;
+              border-radius: 4px 4px 0 0;
+              background: var(--gn-tab-environment-color);
+              pointer-events: none;
+              transition: opacity 140ms ease;
+            }
+            .main-tabs .ant-tabs-tab:not(:hover):not(.ant-tabs-tab-active) .gn-tab-environment-accent {
+              opacity: 0.86;
             }
             .main-tabs .tab-title-text {
               min-width: 0;

@@ -72,6 +72,19 @@ const clampHarnessFontSize = (value: unknown): number => {
   return Math.min(20, Math.max(12, Math.round(numeric)));
 };
 
+const readHarnessRowCount = (): number => {
+  if (typeof window === 'undefined') return 10000;
+  try {
+    const rawValue = new URLSearchParams(window.location.search).get('rows');
+    if (rawValue === null || rawValue === '') return 10000;
+    const numeric = Number(rawValue);
+    if (!Number.isFinite(numeric)) return 10000;
+    return Math.min(50000, Math.max(0, Math.trunc(numeric)));
+  } catch {
+    return 10000;
+  }
+};
+
 const readHarnessRuntimeConfig = (): HarnessRuntimeConfig => {
   if (typeof window === 'undefined') {
     return { ...DEFAULT_HARNESS_CONFIG };
@@ -119,7 +132,7 @@ const buildHarnessColumns = (count: number): string[] => {
 };
 
 const buildHarnessData = (rowCount: number, columnNames: string[]): HarnessRow[] => {
-  const safeRows = Math.max(200, Math.min(50000, Math.trunc(rowCount || 0)));
+  const safeRows = Math.max(0, Math.min(50000, Math.trunc(rowCount || 0)));
   return Array.from({ length: safeRows }, (_, rowIndex) => {
     const rowNumber = rowIndex + 1;
     const nextRow: HarnessRow = {
@@ -164,7 +177,7 @@ const PerfDataGridHarness: React.FC = () => {
   const setTheme = useStore((state) => state.setTheme);
   const setUiScale = useStore((state) => state.setUiScale);
   const setFontSize = useStore((state) => state.setFontSize);
-  const [rowCount, setRowCount] = useState(10000);
+  const [rowCount, setRowCount] = useState(readHarnessRowCount);
   const [columnCount, setColumnCount] = useState(24);
   const [uiVersion, setUiVersion] = useState<HarnessUiVersion>(initialConfig.uiVersion);
   const [density, setDensity] = useState<DataTableDensity>(initialConfig.density);
@@ -297,11 +310,11 @@ const PerfDataGridHarness: React.FC = () => {
             ]}
           />
           <InputNumber
-            min={200}
+            min={0}
             max={50000}
             step={500}
             value={rowCount}
-            onChange={(value) => setRowCount(Number(value) || 10000)}
+            onChange={(value) => setRowCount(value === null ? 0 : Number(value))}
             addonBefore={t('dev.perf_data_grid.rows')}
           />
           <InputNumber

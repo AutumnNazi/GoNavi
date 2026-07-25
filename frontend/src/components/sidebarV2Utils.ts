@@ -123,7 +123,11 @@ export const sortSidebarTableEntries = <T extends SidebarTableEntryForSort>(
 ): T[] => {
   const pinnedKeys = options.pinnedSidebarTables || [];
   const accessCount = options.tableAccessCount || {};
-  const compareByName = (a: T, b: T) => a.displayName.toLowerCase().localeCompare(b.displayName.toLowerCase());
+  const compareByName = (a: T, b: T) => a.displayName.localeCompare(
+    b.displayName,
+    undefined,
+    { numeric: true, sensitivity: 'base' },
+  );
   const compareWithinPinnedGroup = (a: T, b: T) => {
     if (options.sortBy === 'frequency') {
       const countA = readTableAccessCount(
@@ -452,6 +456,26 @@ export const buildV2RailConnectionGroups = (
   };
 
   return buildSidebarConnectionTagTree(connections, connectionTags, sidebarRootOrder).map(buildGroup);
+};
+
+export const resolveV2ConnectionGroup = (
+  node: Pick<SidebarTreeNode, 'type' | 'dataRef'> | null | undefined,
+  groups: V2RailConnectionGroup[],
+): V2RailConnectionGroup | null => {
+  if (node?.type !== 'tag') return null;
+  const groupId = String(node.dataRef?.id || '').trim();
+  if (!groupId) return null;
+
+  const findGroup = (items: V2RailConnectionGroup[]): V2RailConnectionGroup | null => {
+    for (const group of items) {
+      if (group.id === groupId) return group;
+      const childMatch = findGroup(group.children || []);
+      if (childMatch) return childMatch;
+    }
+    return null;
+  };
+
+  return findGroup(groups);
 };
 
 export const getV2RailConnectionGroupBadgeText = (name: unknown, fallback = t('connection.sidebar.group.badge')): string => {

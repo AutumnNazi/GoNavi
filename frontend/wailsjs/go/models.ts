@@ -1319,6 +1319,7 @@ export namespace connection {
 	export class SavedConnectionInput {
 	    id?: string;
 	    name: string;
+	    environmentType?: string;
 	    config: ConnectionConfig;
 	    includeDatabases?: string[];
 	    includeRedisDatabases?: number[];
@@ -1343,6 +1344,7 @@ export namespace connection {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
 	        this.name = source["name"];
+	        this.environmentType = source["environmentType"];
 	        this.config = this.convertValues(source["config"], ConnectionConfig);
 	        this.includeDatabases = source["includeDatabases"];
 	        this.includeRedisDatabases = source["includeRedisDatabases"];
@@ -1381,6 +1383,7 @@ export namespace connection {
 	export class SavedConnectionView {
 	    id: string;
 	    name: string;
+	    environmentType?: string;
 	    config: ConnectionConfig;
 	    includeDatabases?: string[];
 	    includeRedisDatabases?: number[];
@@ -1406,6 +1409,7 @@ export namespace connection {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
 	        this.name = source["name"];
+	        this.environmentType = source["environmentType"];
 	        this.config = this.convertValues(source["config"], ConnectionConfig);
 	        this.includeDatabases = source["includeDatabases"];
 	        this.includeRedisDatabases = source["includeRedisDatabases"];

@@ -239,6 +239,12 @@ export const messages: Record<SupportedLanguage, Record<MessageKey, string>> = {
     "connection.modal.config.basic.jvmNavDescription":
       "JVM 目标、接入模式、JMX、Endpoint、Agent 与诊断增强",
     "connection.modal.field.name.label": "连接名称",
+    "connection.modal.field.environment_type.label": "预设类型",
+    "connection.environment.production": "生产环境",
+    "connection.environment.test": "测试环境",
+    "connection.environment.development": "开发环境",
+    "connection.environment.local": "本地环境",
+    "sidebar.field.environment_type": "预设分组类型",
     "connection.modal.field.name.placeholder.default": "例如：本地测试库",
     "connection.modal.field.name.placeholder.jvm":
       "例如：本地 JVM / 订单服务 JVM",
@@ -1112,6 +1118,12 @@ export const messages: Record<SupportedLanguage, Record<MessageKey, string>> = {
     "connection.modal.config.basic.jvmNavDescription":
       "JVM target, access modes, JMX, Endpoint, Agent, and diagnostics",
     "connection.modal.field.name.label": "Connection name",
+    "connection.modal.field.environment_type.label": "Preset type",
+    "connection.environment.production": "Production environment",
+    "connection.environment.test": "Test environment",
+    "connection.environment.development": "Development environment",
+    "connection.environment.local": "Local environment",
+    "sidebar.field.environment_type": "Preset group type",
     "connection.modal.field.name.placeholder.default":
       "For example: local test database",
     "connection.modal.field.name.placeholder.jvm":

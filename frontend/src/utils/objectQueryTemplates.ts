@@ -1,12 +1,95 @@
-import { quoteQualifiedIdent } from './sql';
+import { DBGetColumns } from '../../wailsjs/go/app/App';
+import { getColumnDefinitionName } from './columnDefinition';
+import { buildRpcConnectionConfig } from './connectionRpcConfig';
+import { quoteIdentPart, quoteQualifiedIdent } from './sql';
 
-export const buildTableSelectQuery = (dbType: string, tableName: string): string => {
+const MESSAGE_QUEUE_DB_TYPES = new Set(['rocketmq', 'mqtt', 'kafka', 'rabbitmq']);
+
+const isMessageQueueDbType = (dbType: string): boolean => (
+  MESSAGE_QUEUE_DB_TYPES.has(String(dbType || '').trim().toLowerCase())
+);
+
+export const extractTableSelectColumnNames = (columns: unknown): string[] => {
+  if (!Array.isArray(columns)) return [];
+  const names: string[] = [];
+  const seen = new Set<string>();
+  for (const column of columns) {
+    const name = getColumnDefinitionName(column);
+    if (!name || seen.has(name)) continue;
+    seen.add(name);
+    names.push(name);
+  }
+  return names;
+};
+
+export const buildTableSelectQuery = (
+  dbType: string,
+  tableName: string,
+  columns: string[] = [],
+): string => {
   const normalizedTableName = String(tableName || '').trim();
   if (!normalizedTableName) {
     return 'SELECT * FROM ';
   }
-  if (['rocketmq', 'mqtt', 'kafka', 'rabbitmq'].includes(String(dbType || '').trim().toLowerCase())) {
-    return `SELECT * FROM ${quoteQualifiedIdent(dbType, normalizedTableName)} LIMIT 100;`;
+
+  const quotedTable = quoteQualifiedIdent(dbType, normalizedTableName);
+  const limitSuffix = isMessageQueueDbType(dbType) ? ' LIMIT 100' : '';
+  const normalizedColumns = columns
+    .map((column) => String(column || '').trim())
+    .filter(Boolean);
+
+  if (normalizedColumns.length === 0) {
+    return `SELECT * FROM ${quotedTable}${limitSuffix};`;
   }
-  return `SELECT * FROM ${quoteQualifiedIdent(dbType, normalizedTableName)};`;
+
+  const selectList = normalizedColumns
+    .map((column) => quoteIdentPart(dbType, column))
+    .join(',\n  ');
+  return `SELECT\n  ${selectList}\nFROM ${quotedTable}${limitSuffix};`;
+};
+
+type ResolveTableSelectQueryOptions = {
+  dbType: string;
+  tableName: string;
+  dbName?: string;
+  connectionConfig?: unknown;
+};
+
+/**
+ * Build a SELECT template for "new query" from a table/view.
+ * Prefers expanding all column names; falls back to SELECT * when metadata is unavailable.
+ */
+export const resolveTableSelectQuery = async ({
+  dbType,
+  tableName,
+  dbName = '',
+  connectionConfig,
+}: ResolveTableSelectQueryOptions): Promise<string> => {
+  const normalizedTableName = String(tableName || '').trim();
+  if (!normalizedTableName) {
+    return buildTableSelectQuery(dbType, normalizedTableName);
+  }
+
+  // Message-queue "tables" are topics/queues; column expansion is not meaningful.
+  if (isMessageQueueDbType(dbType) || !connectionConfig) {
+    return buildTableSelectQuery(dbType, normalizedTableName);
+  }
+
+  try {
+    const res = await DBGetColumns(
+      buildRpcConnectionConfig(connectionConfig as any) as any,
+      String(dbName || ''),
+      normalizedTableName,
+    );
+    if (res?.success && Array.isArray(res.data)) {
+      const columnNames = extractTableSelectColumnNames(res.data);
+      if (columnNames.length > 0) {
+        return buildTableSelectQuery(dbType, normalizedTableName, columnNames);
+      }
+    }
+  } catch {
+    // Fall back to SELECT * when metadata lookup fails.
+  }
+
+  return buildTableSelectQuery(dbType, normalizedTableName);
 };

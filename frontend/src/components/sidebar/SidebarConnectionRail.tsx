@@ -7,6 +7,7 @@ import {
   ImportOutlined,
   FileAddOutlined,
   AimOutlined,
+  MenuUnfoldOutlined,
   RobotOutlined,
   SettingOutlined,
 } from '@ant-design/icons';
@@ -45,13 +46,37 @@ export interface SidebarConnectionRailProps {
     openSettings: () => void;
   };
   canLocateActiveTab: boolean;
+  sidebarExpandAction?: {
+    label: string;
+    onClick: () => void;
+    buttonRef?: React.Ref<HTMLButtonElement>;
+  };
   workbenchActions?: React.ReactNode;
 }
 
-const SidebarConnectionRail: React.FC<SidebarConnectionRailProps> = ({ labels, handlers, canLocateActiveTab, workbenchActions }) => (
+const SidebarConnectionRail: React.FC<SidebarConnectionRailProps> = ({ labels, handlers, canLocateActiveTab, sidebarExpandAction, workbenchActions }) => (
   <div className="gn-v2-connection-rail" data-sidebar-fixed-rail="true" aria-label={labels.railSystemActions}>
     <div className="gn-v2-rail-items">
       <div className="gn-v2-rail-primary-actions" aria-label={labels.railObjectActions}>
+      {sidebarExpandAction && (
+        <div className="gn-v2-rail-sidebar-toggle-slot">
+          <Tooltip title={sidebarExpandAction.label} placement="right" mouseEnterDelay={0.35}>
+            <button
+              ref={sidebarExpandAction.buttonRef}
+              type="button"
+              className="gn-v2-rail-tool gn-v2-rail-sidebar-toggle"
+              data-sidebar-collapse-trigger="true"
+              data-sidebar-toggle-placement="fixed-rail"
+              aria-label={sidebarExpandAction.label}
+              aria-controls="gonavi-sidebar-tree-panel"
+              aria-expanded={false}
+              onClick={sidebarExpandAction.onClick}
+            >
+              <MenuUnfoldOutlined />
+            </button>
+          </Tooltip>
+        </div>
+      )}
       <Tooltip title={labels.newGroup} placement="right">
         <button
           type="button"
