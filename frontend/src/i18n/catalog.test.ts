@@ -208,6 +208,50 @@ describe("i18n catalog", () => {
     expect(catalogs["en-US"]["app.data_root.log_directory.restart_hint"]).toContain("gonavi.log");
   });
 
+  it("keeps saved query directory copy complete across all catalogs", () => {
+    const savedQueryDirectoryKeys = [
+      "app.data_root.saved_query_directory.backend.dialog.select_directory",
+      "app.data_root.saved_query_directory.backend.error.desktop_only",
+      "app.data_root.saved_query_directory.backend.error.directory_unavailable",
+      "app.data_root.saved_query_directory.backend.error.migrate_failed",
+      "app.data_root.saved_query_directory.backend.error.open_directory_failed",
+      "app.data_root.saved_query_directory.backend.error.open_directory_unsupported",
+      "app.data_root.saved_query_directory.backend.error.query_file_unavailable",
+      "app.data_root.saved_query_directory.backend.error.query_id_required",
+      "app.data_root.saved_query_directory.backend.error.query_not_found",
+      "app.data_root.saved_query_directory.backend.error.reveal_failed",
+      "app.data_root.saved_query_directory.backend.error.reveal_unsupported",
+      "app.data_root.saved_query_directory.backend.error.save_failed",
+      "app.data_root.saved_query_directory.backend.message.opened",
+      "app.data_root.saved_query_directory.backend.message.revealed",
+      "app.data_root.saved_query_directory.backend.message.unchanged",
+      "app.data_root.saved_query_directory.backend.message.updated",
+      "app.data_root.saved_query_directory.current_directory",
+      "app.data_root.saved_query_directory.default_directory",
+      "app.data_root.saved_query_directory.description",
+      "app.data_root.saved_query_directory.message.apply_failed_with_error",
+      "app.data_root.saved_query_directory.message.open_failed_with_error",
+      "app.data_root.saved_query_directory.message.select_failed_with_error",
+      "app.data_root.saved_query_directory.message.select_valid_first",
+      "app.data_root.saved_query_directory.message.updated",
+      "app.data_root.saved_query_directory.placeholder",
+      "app.data_root.saved_query_directory.title",
+    ] as const;
+    const base = catalogs["en-US"];
+
+    for (const language of SUPPORTED_LANGUAGES) {
+      for (const key of savedQueryDirectoryKeys) {
+        expect(catalogs[language]).toHaveProperty(key);
+        expect(catalogs[language][key]).toBeTruthy();
+        expect(getPlaceholders(catalogs[language][key])).toEqual(getPlaceholders(base[key]));
+      }
+    }
+
+    expect(catalogs["zh-CN"]["app.data_root.saved_query_directory.title"]).toBe("已存查询目录");
+    expect(catalogs["zh-CN"]["app.data_root.saved_query_directory.description"]).toContain(".sql");
+    expect(catalogs["en-US"]["app.data_root.saved_query_directory.description"]).toContain("independent .sql file");
+  });
+
   it("includes App shell keys required by every supported language", () => {
     const appShellKeys = [
       "app.tools.title",

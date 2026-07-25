@@ -176,19 +176,7 @@ func (c *mysqlAgentClient) call(req mysqlAgentRequest, out interface{}, fields *
 func (c *mysqlAgentClient) close() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	var closeErr error
-	if c.stdin != nil {
-		_ = c.stdin.Close()
-	}
-	if c.cmd != nil && c.cmd.Process != nil {
-		if err := c.cmd.Process.Kill(); err != nil {
-			closeErr = err
-		}
-	}
-	if c.cmd != nil {
-		_ = c.cmd.Wait()
-	}
-	return closeErr
+	return closeAgentProcess(c.stdin, c.cmd)
 }
 
 type MySQLAgentDB struct {

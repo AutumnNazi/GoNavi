@@ -916,6 +916,63 @@ describe('QueryEditor external SQL save', () => {
     renderer?.unmount();
   });
 
+  it('executes a long commented Oracle anonymous block without blocking the UI thread', async () => {
+    storeState.appearance.uiVersion = 'v2';
+    storeState.connections[0].config.type = 'oracle';
+    storeState.connections[0].config.database = 'ORCLPDB1';
+    const columns = Array.from(
+      { length: 42 },
+      (_, index) => `                column_${index + 1} VARCHAR2(100) DEFAULT 'value_${index + 1}'`,
+    ).join(',\n');
+    const sql = [
+      '-- ------------------------------------------------------------',
+      '-- Long Oracle anonymous setup block',
+      '-- ------------------------------------------------------------',
+      'DECLARE',
+      '    v_cnt NUMBER;',
+      'BEGIN',
+      '    SELECT COUNT(1) INTO v_cnt',
+      '      FROM user_tables',
+      "     WHERE table_name = 'GONAVI_REPRO_TABLE';",
+      '    IF v_cnt = 0 THEN',
+      "        EXECUTE IMMEDIATE '\n            CREATE TABLE gonavi_repro_table (\n" + columns + "\n            )\n        ';",
+      '    END IF;',
+      'END;',
+      '/',
+    ].join('\n');
+    backendApp.DBQueryMulti.mockResolvedValueOnce({
+      success: true,
+      data: Array.from({ length: 52 }, (_, index) => ({
+        statementIndex: index + 1,
+        columns: ['affectedRows'],
+        rows: [{ affectedRows: 0 }],
+      })),
+    });
+
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<QueryEditor tab={createTab({ dbName: 'ORCLPDB1', query: sql })} />);
+    });
+
+    const runButton = findByClassName(renderer, 'gn-v2-query-toolbar-run-action');
+    await act(async () => {
+      await runButton.props.onClick();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    const resultTabs = renderer.root.findAll((node) =>
+      node.type === 'button' && String(node.props?.['data-tab-key'] || '').startsWith('result-'),
+    );
+
+    expect(backendApp.DBQueryMulti).toHaveBeenCalledOnce();
+    expect(backendApp.DBGetColumns).not.toHaveBeenCalled();
+    expect(backendApp.DBGetIndexes).not.toHaveBeenCalled();
+    expect(resultTabs).toHaveLength(52);
+    await act(async () => {
+      renderer.unmount();
+    });
+  });
+
   it('runs the whole Oracle procedure when the cursor is in the exception tail', async () => {
     storeState.connections[0].config.type = 'oracle';
     storeState.connections[0].config.database = 'ORCLPDB1';

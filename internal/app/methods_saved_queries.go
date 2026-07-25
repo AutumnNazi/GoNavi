@@ -68,6 +68,10 @@ func (a *App) DeleteQuery(id string) error {
 	return a.savedQueryRepository().Delete(id)
 }
 
+func (a *App) RenameSavedQuery(id string, name string) (connection.SavedQuery, error) {
+	return a.savedQueryRepository().Rename(id, name)
+}
+
 // SaveSavedQueryGroup creates or fully replaces a saved SQL group. Callers
 // must submit the current parent, query IDs, and child order; query IDs in the
 // submitted group become owned by that direct group only.

@@ -76,7 +76,10 @@ const importMain = async () => {
             ExportConnectionsPackage: (options?: { includeSecrets?: boolean; filePassword?: string }) => Promise<{ success: boolean; message?: string }>;
             ApplyDataRootDirectory: (path: string) => Promise<{ success: boolean; message?: string; data?: { path?: string } }>;
             ApplyLogDirectory: (path: string) => Promise<{ success: boolean; message?: string; data?: { logDirectory?: string; logDirectoryRestartRequired?: boolean } }>;
+            ApplySavedQueryDirectory: (path: string) => Promise<{ success: boolean; message?: string; data?: { savedQueryDirectory?: string; savedQueryDirectorySource?: string } }>;
             SaveQuery: (input: { id?: string; name?: string; sql?: string }) => Promise<{ name: string; sql: string }>;
+            RenameSavedQuery: (id: string, name: string) => Promise<{ id: string; name: string; sql: string }>;
+            RevealSavedQueryInFolder: (id: string) => Promise<{ success: boolean; message?: string; data?: { path?: string } }>;
             CheckForUpdates: () => Promise<{ success: boolean; data?: Record<string, unknown> }>;
             CheckForUpdatesSilently: () => Promise<{ success: boolean; data?: Record<string, unknown> }>;
             SetUpdateChannel: (channel: string) => Promise<{ success: boolean; data?: { channel?: string } }>;
@@ -257,6 +260,56 @@ describe('main browser mock', () => {
       data: expect.objectContaining({
         logDirectory: 'C:/mock/custom-logs',
         logDirectoryRestartRequired: true,
+      }),
+    }));
+  });
+
+  it('keeps browser mock saved query directory state available for the data-root page', async () => {
+    vi.stubGlobal('navigator', {
+      languages: ['en-US'],
+      language: 'en-US',
+    });
+
+    const app = await importMain();
+    const { t } = await import('./i18n');
+
+    await expect(app!.ApplySavedQueryDirectory('C:/mock/custom-saved-queries')).resolves.toEqual(expect.objectContaining({
+      success: true,
+      message: t('app.data_root.saved_query_directory.message.updated'),
+      data: expect.objectContaining({
+        savedQueryDirectory: 'C:/mock/custom-saved-queries',
+        savedQueryDirectorySource: 'custom',
+      }),
+    }));
+  });
+
+  it('renames browser mock saved queries without replacing their SQL', async () => {
+    const app = await importMain();
+    const saved = await app!.SaveQuery({
+      id: 'browser-mock-rename-query',
+      name: 'Before',
+      sql: 'select 42',
+    });
+
+    await expect(app!.RenameSavedQuery('browser-mock-rename-query', 'After')).resolves.toEqual(expect.objectContaining({
+      id: 'browser-mock-rename-query',
+      name: 'After',
+      sql: saved.sql,
+    }));
+  });
+
+  it('reveals browser mock saved query files in their configured directory', async () => {
+    const app = await importMain();
+    await app!.SaveQuery({
+      id: 'browser-mock-reveal-query',
+      name: 'Reveal',
+      sql: 'select 7',
+    });
+
+    await expect(app!.RevealSavedQueryInFolder('browser-mock-reveal-query')).resolves.toEqual(expect.objectContaining({
+      success: true,
+      data: expect.objectContaining({
+        path: 'C:/mock/.gonavi/saved_queries/browser-mock-reveal-query.sql',
       }),
     }));
   });

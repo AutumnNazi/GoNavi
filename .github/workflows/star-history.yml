@@ -7,6 +7,10 @@
 # prefer not to hand a fine-grained token to the public star-history API).
 # Ref: https://github.com/marketplace/actions/star-history-action
 #      https://www.star-history.com/blog/github-stargazer-api-restriction
+#
+# Commit throttle: only refresh + commit when stargazers_count has grown by
+# STAR_GROWTH_THRESHOLD (default 50) since the last committed baseline
+# (assets/star-history/last-star-count.txt). workflow_dispatch always refreshes.
 
 name: Star History
 
@@ -24,6 +28,10 @@ concurrency:
   group: star-history
   cancel-in-progress: true
 
+env:
+  STAR_GROWTH_THRESHOLD: "50"
+  STAR_BASELINE_FILE: assets/star-history/last-star-count.txt
+
 jobs:
   star-history:
     runs-on: ubuntu-latest
@@ -31,7 +39,69 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Decide whether to refresh
+        id: gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          current="$(gh api "repos/${{ github.repository }}" --jq '.stargazers_count')"
+          if [[ ! "$current" =~ ^[0-9]+$ ]]; then
+            echo "Unexpected stargazers_count: $current" >&2
+            exit 1
+          fi
+
+          seed_baseline=false
+          if [[ -f "$STAR_BASELINE_FILE" ]]; then
+            last="$(tr -d '[:space:]' < "$STAR_BASELINE_FILE" || true)"
+          else
+            last=""
+          fi
+          if [[ ! "$last" =~ ^[0-9]+$ ]]; then
+            # No baseline in repo yet: record current count and skip chart refresh
+            # until the next +N growth (avoids a burst commit on throttle rollout).
+            mkdir -p "$(dirname "$STAR_BASELINE_FILE")"
+            printf '%s\n' "$current" > "$STAR_BASELINE_FILE"
+            last="$current"
+            seed_baseline=true
+            echo "Seeded baseline at $current (no prior file)"
+          fi
+
+          delta=$((current - last))
+          force=false
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            force=true
+          fi
+
+          should_refresh=false
+          if [[ "$force" == "true" ]]; then
+            should_refresh=true
+            reason="manual workflow_dispatch"
+          elif (( delta >= STAR_GROWTH_THRESHOLD )); then
+            should_refresh=true
+            reason="star growth ${delta} >= ${STAR_GROWTH_THRESHOLD} (last=${last}, current=${current})"
+          else
+            reason="star growth ${delta} < ${STAR_GROWTH_THRESHOLD} (last=${last}, current=${current})"
+          fi
+
+          # Seeding still needs a tiny commit so the baseline survives checkouts.
+          should_commit=false
+          if [[ "$should_refresh" == "true" || "$seed_baseline" == "true" ]]; then
+            should_commit=true
+          fi
+
+          {
+            echo "current=$current"
+            echo "last=$last"
+            echo "delta=$delta"
+            echo "should_refresh=$should_refresh"
+            echo "seed_baseline=$seed_baseline"
+            echo "should_commit=$should_commit"
+          } >> "$GITHUB_OUTPUT"
+          echo "Gate: should_refresh=$should_refresh seed_baseline=$seed_baseline — $reason"
+
       - name: Render star history chart
+        if: steps.gate.outputs.should_refresh == 'true'
         uses: narayann7/star-history-action@v1
         with:
           repos: ${{ github.repository }}
@@ -45,6 +115,7 @@ jobs:
           commit: false
 
       - name: Sync chart block into README.zh-CN.md
+        if: steps.gate.outputs.should_refresh == 'true'
         run: |
           set -euo pipefail
           python3 <<'PY'
@@ -83,15 +154,30 @@ jobs:
           print("synced star-history block into README.zh-CN.md")
           PY
 
+      - name: Update baseline star count
+        if: steps.gate.outputs.should_refresh == 'true'
+        run: |
+          set -euo pipefail
+          mkdir -p "$(dirname "$STAR_BASELINE_FILE")"
+          printf '%s\n' "${{ steps.gate.outputs.current }}" > "$STAR_BASELINE_FILE"
+          echo "Updated baseline -> ${{ steps.gate.outputs.current }}"
+
       - name: Commit if changed
+        if: steps.gate.outputs.should_commit == 'true'
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add assets/star-history README.md README.zh-CN.md
+          if [[ "${{ steps.gate.outputs.should_refresh }}" == "true" ]]; then
+            git add assets/star-history README.md README.zh-CN.md
+            msg="chore(docs): refresh star history chart [skip ci]"
+          else
+            git add "$STAR_BASELINE_FILE"
+            msg="chore(docs): seed star history baseline [skip ci]"
+          fi
           if git diff --staged --quiet; then
             echo "No star-history changes"
             exit 0
           fi
-          git commit -m "chore(docs): refresh star history chart [skip ci]"
+          git commit -m "$msg"
           git push

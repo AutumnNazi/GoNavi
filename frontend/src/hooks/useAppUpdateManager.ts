@@ -414,6 +414,16 @@ export const useAppUpdateManager = ({
       res = { success: false, message: error?.message || t('common.unknown') };
     }
     if (!res?.success) {
+      if (res?.data?.cancelled === true) {
+        setUpdateDownloadProgress((prev) => ({
+          ...prev,
+          open: true,
+          status: 'done',
+          percent: 100,
+          message: '',
+        }));
+        return false;
+      }
       setUpdateDownloadProgress((prev) => ({
         ...prev,
         open: true,

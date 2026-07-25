@@ -2017,12 +2017,12 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
 
         return (
             <div className={isV2Ui ? 'gn-v2-redis-value-layout' : undefined} style={{ height: '100%', display: 'flex', flexDirection: 'column', gap: 12 }}>
-                <div className={isV2Ui ? 'gn-v2-redis-value-header' : undefined} style={{ ...workbenchCardStyle, padding: 18, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, flexShrink: 0 }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10, minWidth: 0 }}>
+                <div className={`redis-key-detail-header${isV2Ui ? ' gn-v2-redis-value-header' : ''}`} style={{ ...workbenchCardStyle, padding: 18, display: 'flex', flexDirection: 'column', gap: 16, flexShrink: 0 }}>
+                    <div className="redis-key-detail-summary" style={{ display: 'flex', flexDirection: 'column', gap: 10, minWidth: 0, width: '100%' }}>
                         <span style={{ fontSize: 12, textTransform: 'uppercase', letterSpacing: '.08em', color: workbenchTheme.textMuted, fontWeight: 600 }}>
                             {tr('redis_viewer.title.active_key')}
                         </span>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', minWidth: 0 }}>
+                        <div className="redis-key-detail-identity" style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
                             <Tooltip title={selectedKey}>
                                 <strong style={{ maxWidth: 340, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 26, color: workbenchTheme.textPrimary }}>
                                     {selectedKey}
@@ -2043,20 +2043,22 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
                                     }}
                                 />
                             </Tooltip>
+                        </div>
+                        <div className="redis-key-detail-metadata" style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', minWidth: 0 }}>
                             <Tag color={getTypeColor(keyValue.type)} style={pillTagStyle}>{keyValue.type}</Tag>
                             <Tag icon={<ClockCircleOutlined />} style={mutedPillTagStyle}>{formatTTL(keyValue.ttl)}</Tag>
                             {keyValue.length > 0 && <Tag style={mutedPillTagStyle}>{tr('redis_viewer.label.length', { count: keyValue.length })}</Tag>}
                         </div>
-                    </div>
-                    <div className={isV2Ui ? 'gn-v2-redis-value-actions' : undefined} style={{ ...workbenchSubCardStyle, padding: 4, display: 'flex', gap: 4, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-                        <Button size="small" style={actionButtonStyle} onClick={() => {
-                            ttlForm.setFieldsValue({ ttl: keyValue.ttl > 0 ? keyValue.ttl : -1 });
-                            setTtlModalOpen(true);
-                        }}>{tr('redis_viewer.action.set_ttl')}</Button>
-                        <Button size="small" style={actionButtonStyle} onClick={() => loadKeyValue(selectedKey)} icon={<ReloadOutlined />}>{tr('redis_viewer.action.refresh')}</Button>
-                        <Popconfirm title={tr('redis_viewer.confirm.delete_key', { key: selectedKey })} onConfirm={handleDeleteCurrentKey}>
-                            <Button size="small" style={dangerActionButtonStyle} icon={<DeleteOutlined />}>{tr('redis_viewer.action.delete_key')}</Button>
-                        </Popconfirm>
+                        <div className="redis-key-detail-actions" style={{ display: 'flex', gap: 4, alignItems: 'center', alignSelf: 'flex-start', flexWrap: 'wrap', maxWidth: '100%' }}>
+                            <Button size="small" style={actionButtonStyle} onClick={() => {
+                                ttlForm.setFieldsValue({ ttl: keyValue.ttl > 0 ? keyValue.ttl : -1 });
+                                setTtlModalOpen(true);
+                            }}>{tr('redis_viewer.action.set_ttl')}</Button>
+                            <Button size="small" style={actionButtonStyle} onClick={() => loadKeyValue(selectedKey)} icon={<ReloadOutlined />}>{tr('redis_viewer.action.refresh')}</Button>
+                            <Popconfirm title={tr('redis_viewer.confirm.delete_key', { key: selectedKey })} onConfirm={handleDeleteCurrentKey}>
+                                <Button size="small" style={dangerActionButtonStyle} icon={<DeleteOutlined />}>{tr('redis_viewer.action.delete_key')}</Button>
+                            </Popconfirm>
+                        </div>
                     </div>
                 </div>
                 <div className={isV2Ui ? 'gn-v2-redis-view-mode' : undefined} style={{ ...workbenchSubCardStyle, padding: 6, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexShrink: 0 }}>

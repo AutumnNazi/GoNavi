@@ -128,7 +128,7 @@ describe('settings center layout', () => {
     expect(appSource).toContain('OpenLogDirectory');
     expect(appSource).toContain('SelectLogDirectory');
     expect(appSource).toContain("const [selectedLogDirectoryPath, setSelectedLogDirectoryPath] = useState('');");
-    expect(appSource).toContain('const directorySettingsApplying = dataRootApplying || logDirectoryApplying;');
+    expect(appSource).toContain('const directorySettingsApplying = dataRootApplying || logDirectoryApplying || savedQueryDirectoryApplying;');
     expect(appSource).toContain('const handleSelectLogDirectory = useCallback(async () => {');
     expect(appSource).toContain('const handleApplyLogDirectory = useCallback(async (useDefaultPath = false) => {');
     expect(appSource).toContain('const handleOpenLogDirectory = useCallback(async () => {');
@@ -151,6 +151,50 @@ describe('settings center layout', () => {
     expect(appSource).not.toContain("| 'log-directory'");
     expect(appSource).not.toContain("key: 'log-directory'");
     expect(appSource).not.toContain("handleOpenToolCenterPane('config', 'log-directory')");
+  });
+
+  it('keeps configurable saved query file storage inside the data-root detail page', () => {
+    const selectHandlerStart = appSource.indexOf('const handleSelectSavedQueryDirectory = useCallback(async () => {');
+    const selectHandlerEnd = appSource.indexOf('const handleApplySavedQueryDirectory = useCallback', selectHandlerStart);
+    const selectHandlerSource = appSource.slice(selectHandlerStart, selectHandlerEnd);
+    const rendererStart = appSource.indexOf('const renderSavedQueryDirectorySettings = (readOnly = false) => (');
+    const rendererEnd = appSource.indexOf('const renderLogDirectorySettings = () => {', rendererStart);
+    const rendererSource = appSource.slice(rendererStart, rendererEnd);
+    const embeddedDataRootStart = appSource.indexOf("if (activeSettingsCenterPane.key === 'data-root')");
+    const embeddedDataRootEnd = appSource.indexOf(
+      "if (activeSettingsCenterPane.key === 'security-update')",
+      embeddedDataRootStart,
+    );
+    const embeddedDataRootSource = appSource.slice(embeddedDataRootStart, embeddedDataRootEnd);
+    const standaloneDataRootStart = appSource.indexOf('{isDataRootModalOpen && (');
+    const standaloneDataRootEnd = appSource.indexOf(
+      '<ConnectionPackagePasswordModal',
+      standaloneDataRootStart,
+    );
+    const standaloneDataRootSource = appSource.slice(standaloneDataRootStart, standaloneDataRootEnd);
+
+    expect(appSource).toContain('ApplySavedQueryDirectory');
+    expect(appSource).toContain('OpenSavedQueryDirectory');
+    expect(appSource).toContain('SelectSavedQueryDirectory');
+    expect(appSource).toContain('GetSavedQueries');
+    expect(appSource).toContain("const [selectedSavedQueryDirectoryPath, setSelectedSavedQueryDirectoryPath] = useState('');");
+    expect(appSource).toContain("const [savedQueryDirectoryApplying, setSavedQueryDirectoryApplying] = useState(false);");
+    expect(appSource).toContain('const handleSelectSavedQueryDirectory = useCallback(async () => {');
+    expect(selectHandlerSource).toContain('if (data.cancelled === true) return;');
+    expect(selectHandlerSource).not.toContain('已取消');
+    expect(appSource).toContain('const handleApplySavedQueryDirectory = useCallback(async (useDefaultPath = false) => {');
+    expect(appSource).toContain('const handleOpenSavedQueryDirectory = useCallback(async () => {');
+    expect(rendererStart).toBeGreaterThan(-1);
+    expect(rendererEnd).toBeGreaterThan(rendererStart);
+    expect(rendererSource).toContain('data-saved-query-directory-settings="true"');
+    expect(rendererSource).toContain("t('app.data_root.saved_query_directory.title')");
+    expect(rendererSource).toContain('dataRootInfo?.defaultSavedQueryDirectory');
+    expect(rendererSource).toContain('{!readOnly && (');
+    expect(appSource).toContain('replaceSavedQueries(Array.isArray(queries) ? queries : []);');
+    expect(appSource).toContain('await reloadSavedQueryGroups();');
+    expect(embeddedDataRootSource).toContain('{renderSavedQueryDirectorySettings(true)}');
+    expect(embeddedDataRootSource).toContain('{renderSavedQueryDirectorySettings()}');
+    expect(standaloneDataRootSource).toContain('{renderSavedQueryDirectorySettings()}');
   });
 
   it('adds close and back-to-settings actions to settings center detail panes', () => {
@@ -299,6 +343,8 @@ describe('settings center layout', () => {
     expect(appSource).toContain("border: 'none'");
     expect(appSource).toContain("background: 'transparent'");
     expect(aboutPaneSource).toContain('className="gonavi-about-pane"');
+    expect(aboutPaneSource).toContain("style={{ display: 'flex', flexDirection: 'column' }}");
+    expect(aboutPaneSource).not.toContain("padding: '0 0 18px'");
     expect(aboutPaneSource).toContain('aria-labelledby="gonavi-about-version-heading"');
     expect(aboutPaneSource).toContain('aria-labelledby="gonavi-about-project-heading"');
     expect(aboutPaneSource).toContain("gridTemplateColumns: 'minmax(0, 1.15fr) minmax(260px, 0.85fr)'");

@@ -41,6 +41,7 @@ import {
   RenameDatabase,
   RenameTable,
   RenameView,
+  RevealSavedQueryInFolder,
 } from '../../../wailsjs/go/app/App';
 import { resolveSidebarNodeConnectionId, type SidebarTreeNode as TreeNode } from '../sidebarV2Utils';
 
@@ -1001,10 +1002,25 @@ export const useSidebarObjectActions = ({
         return;
       }
 
-      const persisted = await saveQuery({
-        ...renameSavedQueryTarget,
-        name: nextName,
-      });
+      const backendApp = (window as any).go?.app?.App;
+      let persisted: SavedQuery;
+      if (typeof backendApp?.RenameSavedQuery === 'function') {
+        const renamed = await backendApp.RenameSavedQuery(renameSavedQueryTarget.id, nextName);
+        persisted = {
+          ...renameSavedQueryTarget,
+          ...(renamed || {}),
+          name: String(renamed?.name || nextName),
+        };
+        const latestState = useStore.getState();
+        latestState.replaceSavedQueries(latestState.savedQueries.map(query => (
+          query.id === persisted.id ? { ...query, ...persisted } : query
+        )));
+      } else {
+        persisted = await saveQuery({
+          ...renameSavedQueryTarget,
+          name: nextName,
+        });
+      }
       const updateSavedQueryNode = (list: TreeNode[]): TreeNode[] =>
         list.map(node => {
           if (node.type === 'saved-query' && node.dataRef?.id === renameSavedQueryTarget.id) {
@@ -1032,6 +1048,24 @@ export const useSidebarObjectActions = ({
       }));
     }
   };
+
+  const handleRevealSavedQueryInFolder = useCallback(async (query: SavedQuery) => {
+    if (!query?.id) return;
+    try {
+      const res = await RevealSavedQueryInFolder(query.id);
+      if (res?.success) {
+        message.success(res.message || t('sidebar.message.saved_query_revealed'));
+        return;
+      }
+      message.error(res?.message || t('sidebar.message.saved_query_reveal_failed', {
+        error: t('common.unknown'),
+      }));
+    } catch (error) {
+      message.error(t('sidebar.message.saved_query_reveal_failed', {
+        error: error instanceof Error ? error.message : String(error),
+      }));
+    }
+  }, []);
 
   const isSavedQueryUnmatched = useCallback((query: SavedQuery): boolean => {
     return query.bindingStatus === 'orphan' || !connectionIdSet.has(query.connectionId);
@@ -1401,6 +1435,7 @@ export const useSidebarObjectActions = ({
     handleRenameView,
     openRenameSavedQueryModal,
     handleRenameSavedQuery,
+    handleRevealSavedQueryInFolder,
     isSavedQueryUnmatched,
     handleRebindSavedQuery,
     openRoutineDefinition,

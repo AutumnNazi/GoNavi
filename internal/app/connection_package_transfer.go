@@ -19,6 +19,7 @@ func newConnectionPackageItem(view connection.SavedConnectionView, bundle connec
 	return connectionPackageItem{
 		ID:                         view.ID,
 		Name:                       view.Name,
+		EnvironmentType:            view.EnvironmentType,
 		IncludeDatabases:           cloneStringSlice(view.IncludeDatabases),
 		IncludeRedisDatabases:      cloneIntSlice(view.IncludeRedisDatabases),
 		SchemaVisibilityByDatabase: cloneSchemaVisibilityByDatabase(view.SchemaVisibilityByDatabase),
@@ -172,6 +173,7 @@ func newSavedConnectionInputFromPackageItem(item connectionPackageItem) connecti
 	return connection.SavedConnectionInput{
 		ID:                         id,
 		Name:                       item.Name,
+		EnvironmentType:            item.EnvironmentType,
 		Config:                     config,
 		IncludeDatabases:           cloneStringSlice(item.IncludeDatabases),
 		IncludeRedisDatabases:      cloneIntSlice(item.IncludeRedisDatabases),

@@ -55,6 +55,7 @@ class WindowsReleaseArtifactsTest(unittest.TestCase):
                 self.assertIn("TestPrepareWindowsUpdateHandoff", source)
                 self.assertIn("TestWindowsUpdateRequiresExplicitCloseConfirmation", source)
                 self.assertIn("TestInstallUpdateAndRestartRequiresCloseConfirmationOnWindows", source)
+                self.assertIn("TestInstallUpdateAndRestartSkipsCloseConfirmationForSingleWindowsInstance", source)
                 self.assertIn("TestFindOtherWindowsUpdateInstances", source)
                 self.assertIn("TestCloseWindowsUpdateInstances", source)
                 self.assertIn("TestInstallUpdateAndRestartClosesOtherTargetInstances", source)

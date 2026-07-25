@@ -4,11 +4,13 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"net"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -59,18 +61,22 @@ func connectSSH(config connection.SSHConfig) (*ssh.Client, error) {
 	logger.Infof("开始建立 SSH 连接：地址=%s:%d 用户=%s", config.Host, config.Port, config.User)
 	authMethods := []ssh.AuthMethod{}
 
-	if config.KeyPath != "" {
-		key, err := os.ReadFile(config.KeyPath)
+	if keyPath := strings.TrimSpace(config.KeyPath); keyPath != "" {
+		key, err := os.ReadFile(keyPath)
 		if err != nil {
-			logger.Warnf("读取 SSH 私钥失败：路径=%s，原因：%v", config.KeyPath, err)
-		} else {
-			signer, err := ssh.ParsePrivateKey(key)
-			if err != nil {
-				logger.Warnf("解析 SSH 私钥失败：路径=%s，原因：%v", config.KeyPath, err)
-			} else {
-				authMethods = append(authMethods, ssh.PublicKeys(signer))
-			}
+			logger.Warnf("读取 SSH 私钥失败：路径=%s，原因：%v", keyPath, err)
+			return nil, fmt.Errorf("failed to read SSH private key %s: %w", keyPath, err)
 		}
+		signer, err := ssh.ParsePrivateKey(key)
+		if err != nil {
+			logger.Warnf("解析 SSH 私钥失败：路径=%s，原因：%v", keyPath, err)
+			var passphraseErr *ssh.PassphraseMissingError
+			if errors.As(err, &passphraseErr) {
+				return nil, fmt.Errorf("SSH private key %s is encrypted with a passphrase; passphrase-protected keys are not supported", keyPath)
+			}
+			return nil, fmt.Errorf("failed to parse SSH private key %s: %w", keyPath, err)
+		}
+		authMethods = append(authMethods, ssh.PublicKeys(signer))
 	}
 
 	if config.Password != "" {

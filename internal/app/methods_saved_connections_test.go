@@ -27,6 +27,7 @@ func TestSaveConnectionMethodReturnsSecretlessView(t *testing.T) {
 	result, err := app.SaveConnection(connection.SavedConnectionInput{
 		ID:               "conn-1",
 		Name:             "Primary",
+		EnvironmentType:  "production",
 		IncludeDatabases: []string{"appdb"},
 		IconType:         "postgres",
 		IconColor:        "#1677ff",
@@ -53,6 +54,30 @@ func TestSaveConnectionMethodReturnsSecretlessView(t *testing.T) {
 	}
 	if result.IconType != "postgres" || result.IconColor != "#1677ff" {
 		t.Fatalf("expected icon metadata to be preserved, got type=%q color=%q", result.IconType, result.IconColor)
+	}
+	if result.EnvironmentType != "production" {
+		t.Fatalf("expected environment type to be preserved, got %q", result.EnvironmentType)
+	}
+}
+
+func TestSaveConnectionDefaultsInvalidEnvironmentTypeToLocal(t *testing.T) {
+	app := NewAppWithSecretStore(newFakeAppSecretStore())
+	app.configDir = t.TempDir()
+
+	result, err := app.SaveConnection(connection.SavedConnectionInput{
+		ID:              "conn-default-environment",
+		Name:            "Default environment",
+		EnvironmentType: "staging",
+		Config: connection.ConnectionConfig{
+			ID:   "conn-default-environment",
+			Type: "sqlite",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.EnvironmentType != defaultConnectionEnvironment {
+		t.Fatalf("expected invalid environment to default to %q, got %q", defaultConnectionEnvironment, result.EnvironmentType)
 	}
 }
 

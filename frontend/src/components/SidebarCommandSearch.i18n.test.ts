@@ -18,6 +18,8 @@ const requiredKeys = [
   'sidebar.command_search.action.open_ai.meta',
   'sidebar.command_search.action.open_sql_log.title',
   'sidebar.command_search.action.open_sql_log.meta',
+  'sidebar.command_search.action.clear_recent',
+  'sidebar.command_search.action.remove_recent',
   'sidebar.command_search.empty.ai',
   'sidebar.command_search.empty.object',
   'sidebar.command_search.empty.default',

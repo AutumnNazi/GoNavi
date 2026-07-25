@@ -15,6 +15,7 @@ import {
     type EditRowLocator,
 } from '../../utils/rowLocator';
 import { getQueryTabDraft, hasQueryTabDraft } from '../../utils/sqlFileTabDrafts';
+import { resolveSqlEditorOperationKeyword } from '../../utils/sqlEditorTransaction';
 import { getColumnDefinitionKey, getColumnDefinitionName } from '../../utils/columnDefinition';
 import { resolveUniqueKeyGroupsFromIndexes } from '../dataGridCopyInsert';
 import { t as translate } from '../../i18n';
@@ -2709,6 +2710,9 @@ export const resolveQueryLocatorPlan = async ({
         executedSql: statement,
         pkColumns: [],
     };
+    if (resolveSqlEditorOperationKeyword(statement) !== 'select') {
+        return plan;
+    }
     const defaultSchema = isOracleLikeDialect(dbType)
         ? resolveOracleLikeExecutionSchemaName(config, currentDb)
         : '';

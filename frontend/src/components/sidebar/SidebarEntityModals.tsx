@@ -6,6 +6,11 @@ import Modal from '../common/ResizableDraggableModal';
 import type { ConnectionTag, SavedConnection, SavedQuery } from '../../types';
 import { t } from '../../i18n';
 import { noAutoCapInputProps } from '../../utils/inputAutoCap';
+import {
+  DEFAULT_CONNECTION_ENVIRONMENT,
+  normalizeConnectionEnvironmentType,
+} from '../../utils/connectionEnvironment';
+import ConnectionEnvironmentSelect from '../ConnectionEnvironmentSelect';
 
 const getConnectionTagDescendantIds = (
   connectionTags: ConnectionTag[],
@@ -219,6 +224,7 @@ export const SidebarEntityModals: React.FC<SidebarEntityModalsProps> = ({
             updateConnectionTag({
               ...renameViewTarget.dataRef,
               name: values.name,
+              environmentType: normalizeConnectionEnvironmentType(values.environmentType),
               parentTagId,
               connectionIds: values.connectionIds || [],
             });
@@ -227,6 +233,7 @@ export const SidebarEntityModals: React.FC<SidebarEntityModalsProps> = ({
             addConnectionTag({
               id: tagId,
               name: values.name,
+              environmentType: normalizeConnectionEnvironmentType(values.environmentType),
               parentTagId,
               connectionIds: values.connectionIds || [],
             });
@@ -236,10 +243,20 @@ export const SidebarEntityModals: React.FC<SidebarEntityModalsProps> = ({
       }}
       onCancel={() => setIsCreateTagModalOpen(false)}
     >
-      <Form form={createTagForm} layout="vertical">
+      <Form
+        form={createTagForm}
+        layout="vertical"
+        initialValues={{ environmentType: DEFAULT_CONNECTION_ENVIRONMENT }}
+      >
         <div style={modalSectionStyle}>
           <Form.Item name="name" label={t('sidebar.field.tag_name')} rules={[{ required: true, message: t('sidebar.validation.tag_name_required') }]}>
             <Input placeholder={t('sidebar.placeholder.tag_name')} />
+          </Form.Item>
+          <Form.Item
+            name="environmentType"
+            label={t('sidebar.field.environment_type')}
+          >
+            <ConnectionEnvironmentSelect />
           </Form.Item>
           <Form.Item name="parentTagId" label={t('sidebar.field.parent_group')}>
             <Select

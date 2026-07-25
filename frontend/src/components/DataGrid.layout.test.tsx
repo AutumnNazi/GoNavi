@@ -740,7 +740,7 @@ describe('DataGrid layout', () => {
 
     const handleDataPanelSaveSource = sliceCallback(
       'const handleDataPanelSave = useCallback(() => {',
-      'const handleCellSetNull = useCallback(() => {',
+      "const lastReportedDataFingerprintRef = useRef('');",
     );
     const handleCellSetNullSource = sliceCallback(
       'const handleCellSetNull = useCallback(() => {',
@@ -2953,5 +2953,7 @@ describe('DataGrid layout', () => {
     expect(harnessSource).toContain("document.body.setAttribute('data-ui-version', uiVersion);");
     expect(harnessSource).toContain("if (value === null || value === undefined || value === '') {");
     expect(harnessSource).toContain("const currentState = useStore.getState();");
+    expect(harnessSource).toContain("new URLSearchParams(window.location.search).get('rows')");
+    expect(harnessSource).toContain('Math.max(0, Math.min(50000');
   });
 });

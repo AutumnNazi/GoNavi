@@ -442,6 +442,7 @@ export const useSidebarSearchModel = ({
       title: log.sql.replace(/\s+/g, ' ').trim() || t('sidebar.command_search.recent_sql_fallback'),
       meta: `${new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} · ${log.duration}ms${log.dbName ? ` · ${log.dbName}` : ''}`,
       icon: <ClockCircleOutlined />,
+      logId: log.id,
       sql: log.sql,
       dbName: log.dbName,
     }));

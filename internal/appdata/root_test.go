@@ -146,6 +146,120 @@ func TestDataRootAndLogDirectoryPreserveEachOtherInBootstrap(t *testing.T) {
 	}
 }
 
+func TestDefaultSavedQueryDirectoryUsesActiveRoot(t *testing.T) {
+	activeRoot := filepath.Join(t.TempDir(), "gonavi-data")
+	want := filepath.Join(activeRoot, savedQueryDirectoryName)
+	if got := DefaultSavedQueryDirectory(activeRoot); got != want {
+		t.Fatalf("DefaultSavedQueryDirectory = %q, want %q", got, want)
+	}
+}
+
+func TestSavedQueryDirectoryFollowsDataRootOnlyWhileUsingDefault(t *testing.T) {
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir)
+
+	firstRoot := filepath.Join(t.TempDir(), "first-root")
+	secondRoot := filepath.Join(t.TempDir(), "second-root")
+	if _, err := SetActiveRoot(firstRoot); err != nil {
+		t.Fatalf("SetActiveRoot first returned error: %v", err)
+	}
+	resolved, err := ResolveSavedQueryDirectory(firstRoot)
+	if err != nil || resolved != filepath.Join(firstRoot, savedQueryDirectoryName) {
+		t.Fatalf("first default saved query directory = %q, %v", resolved, err)
+	}
+	if _, err := SetActiveRoot(secondRoot); err != nil {
+		t.Fatalf("SetActiveRoot second returned error: %v", err)
+	}
+	resolved, err = ResolveSavedQueryDirectory(secondRoot)
+	if err != nil || resolved != filepath.Join(secondRoot, savedQueryDirectoryName) {
+		t.Fatalf("second default saved query directory = %q, %v", resolved, err)
+	}
+
+	customDirectory := filepath.Join(t.TempDir(), "custom-saved-queries")
+	if _, err := SetConfiguredSavedQueryDirectory(customDirectory); err != nil {
+		t.Fatalf("SetConfiguredSavedQueryDirectory returned error: %v", err)
+	}
+	if _, err := SetActiveRoot(firstRoot); err != nil {
+		t.Fatalf("restore SetActiveRoot first returned error: %v", err)
+	}
+	resolved, err = ResolveSavedQueryDirectory(firstRoot)
+	if err != nil || resolved != customDirectory {
+		t.Fatalf("custom saved query directory after data-root switch = %q, %v; want %q", resolved, err, customDirectory)
+	}
+}
+
+func TestSavedQueryDirectoryAndOtherSettingsPreserveEachOtherInBootstrap(t *testing.T) {
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir)
+
+	customDataRoot := filepath.Join(t.TempDir(), "gonavi-data")
+	customLogDirectory := filepath.Join(t.TempDir(), "gonavi-logs")
+	customSavedQueryDirectory := filepath.Join(t.TempDir(), "saved-queries")
+	if _, err := SetActiveRoot(customDataRoot); err != nil {
+		t.Fatalf("SetActiveRoot returned error: %v", err)
+	}
+	if _, err := SetConfiguredLogDirectory(customLogDirectory); err != nil {
+		t.Fatalf("SetConfiguredLogDirectory returned error: %v", err)
+	}
+	if _, err := SetConfiguredSavedQueryDirectory(customSavedQueryDirectory); err != nil {
+		t.Fatalf("SetConfiguredSavedQueryDirectory returned error: %v", err)
+	}
+
+	resolvedSavedQueryDirectory, err := ResolveSavedQueryDirectory(customDataRoot)
+	if err != nil || resolvedSavedQueryDirectory != customSavedQueryDirectory {
+		t.Fatalf("saved query directory = %q, %v; want %q", resolvedSavedQueryDirectory, err, customSavedQueryDirectory)
+	}
+
+	if _, err := SetActiveRoot(""); err != nil {
+		t.Fatalf("reset SetActiveRoot returned error: %v", err)
+	}
+	if _, err := SetConfiguredLogDirectory(""); err != nil {
+		t.Fatalf("reset SetConfiguredLogDirectory returned error: %v", err)
+	}
+	if _, err := os.Stat(BootstrapPath()); err != nil {
+		t.Fatalf("bootstrap should remain while saved query directory is customized: %v", err)
+	}
+	resolvedSavedQueryDirectory, err = ResolveConfiguredSavedQueryDirectory()
+	if err != nil || resolvedSavedQueryDirectory != customSavedQueryDirectory {
+		t.Fatalf("configured saved query directory = %q, %v; want %q", resolvedSavedQueryDirectory, err, customSavedQueryDirectory)
+	}
+
+	if _, err := SetConfiguredSavedQueryDirectory(""); err != nil {
+		t.Fatalf("reset SetConfiguredSavedQueryDirectory returned error: %v", err)
+	}
+	if _, err := os.Stat(BootstrapPath()); !os.IsNotExist(err) {
+		t.Fatalf("bootstrap should be removed when all settings use defaults, got err=%v", err)
+	}
+	defaultSavedQueryDirectory := filepath.Join(homeDir, ".gonavi", savedQueryDirectoryName)
+	resolvedSavedQueryDirectory, err = ResolveSavedQueryDirectory("")
+	if err != nil || resolvedSavedQueryDirectory != defaultSavedQueryDirectory {
+		t.Fatalf("default saved query directory = %q, %v; want %q", resolvedSavedQueryDirectory, err, defaultSavedQueryDirectory)
+	}
+}
+
+func TestSetConfiguredSavedQueryDirectoryRejectsFilePathWithoutChangingConfig(t *testing.T) {
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir)
+
+	blockingPath := filepath.Join(t.TempDir(), "not-a-directory")
+	if err := os.WriteFile(blockingPath, []byte("blocked"), 0o644); err != nil {
+		t.Fatalf("write blocking file: %v", err)
+	}
+	if _, err := SetConfiguredSavedQueryDirectory(blockingPath); err == nil {
+		t.Fatal("expected file path to be rejected as a saved query directory")
+	}
+	configured, err := ResolveConfiguredSavedQueryDirectory()
+	if err != nil {
+		t.Fatalf("ResolveConfiguredSavedQueryDirectory returned error: %v", err)
+	}
+	if configured != "" {
+		t.Fatalf("failed update changed configured saved query directory to %q", configured)
+	}
+}
+
 func TestSetConfiguredLogDirectoryRejectsFilePathWithoutChangingConfig(t *testing.T) {
 	homeDir := t.TempDir()
 	t.Setenv("HOME", homeDir)

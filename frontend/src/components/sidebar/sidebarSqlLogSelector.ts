@@ -9,5 +9,7 @@ export const selectSidebarCommandSearchSqlLogs = (
 ): SqlLog[] => (enabled ? state.sqlLogs : EMPTY_SIDEBAR_SQL_LOGS);
 
 export const selectRecentSidebarSqlLogs = (sqlLogs: SqlLog[]): SqlLog[] => (
-  sqlLogs.slice(0, SIDEBAR_RECENT_SQL_LOG_LIMIT)
+  sqlLogs
+    .filter((log) => !log.hiddenFromRecent)
+    .slice(0, SIDEBAR_RECENT_SQL_LOG_LIMIT)
 );

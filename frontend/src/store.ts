@@ -71,6 +71,7 @@ import {
   type DetachedWindowBounds,
 } from "./utils/detachedWindow";
 import { clearQueryEditorResultSession } from "./utils/queryEditorResultSessionCache";
+import { normalizeConnectionEnvironmentType } from "./utils/connectionEnvironment";
 import {
   DEFAULT_LANGUAGE,
   LANGUAGE_PREFERENCES,
@@ -266,8 +267,9 @@ const MIN_KEEPALIVE_INTERVAL_MINUTES = 1;
 const MAX_KEEPALIVE_INTERVAL_MINUTES = 1440;
 const DEFAULT_DIAGNOSTIC_TIMEOUT_SECONDS = 15;
 const MAX_DIAGNOSTIC_TIMEOUT_SECONDS = 300;
-const PERSIST_VERSION = 19;
+const PERSIST_VERSION = 20;
 const SQL_EDITOR_FONT_SIZE_SPLIT_VERSION = 19;
+const TAB_DISPLAY_DEFAULT_MIGRATION_VERSION = 20;
 const UI_VERSION_V2_MIGRATION_VERSION = 14;
 const SIDEBAR_SEARCH_SHORTCUT_MIGRATION_VERSION = 18;
 const PERSIST_STORAGE_KEY = "lite-db-storage";
@@ -957,6 +959,7 @@ const sanitizeSavedConnection = (
   return {
     id,
     name,
+    environmentType: normalizeConnectionEnvironmentType(raw.environmentType),
     config: { ...config, id: config.id || id },
     secretRef: toTrimmedString(raw.secretRef) || undefined,
     hasPrimaryPassword: raw.hasPrimaryPassword === true,
@@ -1066,6 +1069,7 @@ const normalizeConnectionTagTree = (
     tags.push({
       id,
       name,
+      environmentType: normalizeConnectionEnvironmentType(entry.environmentType),
       parentTagId,
       connectionIds: sanitizeStringArray(entry.connectionIds, 256),
       childOrder: sanitizeSidebarItemOrder(entry.childOrder),
@@ -1151,6 +1155,7 @@ const sanitizeConnectionTags = (value: unknown): ConnectionTag[] => {
     result.push({
       id,
       name,
+      environmentType: normalizeConnectionEnvironmentType(raw.environmentType),
       parentTagId: toTrimmedString(raw.parentTagId) || undefined,
       connectionIds: sanitizeStringArray(raw.connectionIds, 256),
       childOrder: sanitizeSidebarItemOrder(raw.childOrder),
@@ -1674,6 +1679,7 @@ export interface SqlLog {
   sql: string;
   status: "success" | "error";
   duration: number;
+  hiddenFromRecent?: boolean;
   message?: string;
   dbName?: string;
   affectedRows?: number;
@@ -1964,6 +1970,8 @@ interface AppState {
   resetBuiltinSqlSnippet: (id: string) => void;
 
   addSqlLog: (log: SqlLog) => void;
+  hideSqlLogFromRecent: (id: string) => void;
+  clearRecentSqlLogs: () => void;
   clearSqlLogs: () => void;
   upsertTableExportHistory: (
     historyKey: string,
@@ -2627,6 +2635,9 @@ const sanitizeSqlLogEntry = (
   if (message) {
     log.message = message;
   }
+  if (raw.hiddenFromRecent === true) {
+    log.hiddenFromRecent = true;
+  }
   if (Number.isFinite(affectedRows)) {
     log.affectedRows = affectedRows;
   }
@@ -2902,6 +2913,21 @@ const sanitizePinnedSidebarTables = (value: unknown): string[] => {
   );
 };
 
+const isLegacyDefaultTabDisplaySettings = (value: unknown): boolean => {
+  if (!value || typeof value !== "object") return false;
+  const raw = value as Partial<TabDisplaySettings>;
+  return raw.layout === "single"
+    && Array.isArray(raw.primaryElements)
+    && raw.primaryElements.length === 3
+    && raw.primaryElements[0] === "connection"
+    && raw.primaryElements[1] === "kind"
+    && raw.primaryElements[2] === "object"
+    && Array.isArray(raw.secondaryElements)
+    && raw.secondaryElements.length === 0
+    && raw.single === undefined
+    && raw.double === undefined;
+};
+
 const sanitizeAppearance = (
   appearance: Partial<AppearanceSettings> | undefined,
   version: number,
@@ -2956,7 +2982,10 @@ const sanitizeAppearance = (
     customUIFontFamily: sanitizeFontFamilyInput(appearance.customUIFontFamily),
     customMonoFontFamily: sanitizeFontFamilyInput(appearance.customMonoFontFamily),
     newQuerySqlTemplate: sanitizeNewQuerySqlTemplate(appearance.newQuerySqlTemplate),
-    tabDisplay: sanitizeTabDisplaySettings(appearance.tabDisplay),
+    tabDisplay: version < TAB_DISPLAY_DEFAULT_MIGRATION_VERSION
+      && isLegacyDefaultTabDisplaySettings(appearance.tabDisplay)
+      ? sanitizeTabDisplaySettings(DEFAULT_TAB_DISPLAY_SETTINGS)
+      : sanitizeTabDisplaySettings(appearance.tabDisplay),
     redisDbAliases: sanitizeRedisDbAliases(appearance.redisDbAliases),
     showDataTableVerticalBorders:
       dataGridDisplaySettings.showDataTableVerticalBorders,
@@ -3690,6 +3719,9 @@ export const useStore = create<AppState>()(
                   "store.fallback.connection_tag_name",
                   normalized.connectionTags.length,
                 ),
+              environmentType: normalizeConnectionEnvironmentType(
+                tag.environmentType,
+              ),
               parentTagId: toTrimmedString(tag.parentTagId) || undefined,
               connectionIds: directConnectionIds,
               childOrder: sanitizeSidebarItemOrder(tag.childOrder),
@@ -3749,6 +3781,9 @@ export const useStore = create<AppState>()(
               return {
                 ...candidate,
                 name: toTrimmedString(tag.name, candidate.name) || candidate.name,
+                environmentType: normalizeConnectionEnvironmentType(
+                  tag.environmentType ?? candidate.environmentType,
+                ),
                 connectionIds: requestedConnectionIds,
                 childOrder: hasRequestedChildOrder
                   ? sanitizeSidebarItemOrder(tag.childOrder)
@@ -5130,6 +5165,18 @@ export const useStore = create<AppState>()(
 
       addSqlLog: (log) =>
         set((state) => ({ sqlLogs: appendRuntimeSqlLog(state.sqlLogs, log) })),
+      hideSqlLogFromRecent: (id) =>
+        set((state) => ({
+          sqlLogs: state.sqlLogs.map((log) => (
+            log.id === id ? { ...log, hiddenFromRecent: true } : log
+          )),
+        })),
+      clearRecentSqlLogs: () =>
+        set((state) => ({
+          sqlLogs: state.sqlLogs.map((log) => (
+            log.hiddenFromRecent ? log : { ...log, hiddenFromRecent: true }
+          )),
+        })),
       clearSqlLogs: () => set({ sqlLogs: [] }),
       upsertTableExportHistory: (historyKey, entry) =>
         set((state) => {

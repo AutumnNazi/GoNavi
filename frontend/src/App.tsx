@@ -222,7 +222,26 @@ import { useAppLogPanelResize } from './hooks/useAppLogPanelResize';
 import { useAppSidebarResize } from './hooks/useAppSidebarResize';
 import { useAppUtilityStyles } from './hooks/useAppUtilityStyles';
 import { useWorkbenchTabs } from './hooks/useWorkbenchTabs';
-import { ApplyDataRootDirectory, ApplyLogDirectory, CancelApplicationQuit, ForceQuitApplication, GetDataRootDirectoryInfo, GetSavedConnections, ListInstalledFontFamilies, OpenDataRootDirectory, OpenLogDirectory, SelectDataRootDirectory, SelectLogDirectory, SetApplicationBrandIcon, SetMacNativeWindowControls, SetWindowTranslucency } from '../wailsjs/go/app/App';
+import {
+  ApplyDataRootDirectory,
+  ApplyLogDirectory,
+  ApplySavedQueryDirectory,
+  CancelApplicationQuit,
+  ForceQuitApplication,
+  GetDataRootDirectoryInfo,
+  GetSavedConnections,
+  GetSavedQueries,
+  ListInstalledFontFamilies,
+  OpenDataRootDirectory,
+  OpenLogDirectory,
+  OpenSavedQueryDirectory,
+  SelectDataRootDirectory,
+  SelectLogDirectory,
+  SelectSavedQueryDirectory,
+  SetApplicationBrandIcon,
+  SetMacNativeWindowControls,
+  SetWindowTranslucency,
+} from '../wailsjs/go/app/App';
 import { getAntdLocale } from './i18n/frameworkLocale';
 import { useI18n } from './i18n/provider';
 import './App.css';
@@ -710,6 +729,7 @@ function App() {
   const [isConnectionModalMounted, setIsConnectionModalMounted] = useState(false);
   const [isDriverModalOpen, setIsDriverModalOpen] = useState(false);
   const [editingConnection, setEditingConnection] = useState<SavedConnection | null>(null);
+  const pendingConnectionTagIdRef = useRef<string | null>(null);
   const connectionModalWarmupDoneRef = useRef(false);
   const windowState = useStore(state => state.windowState);
   const themeMode = useStore(state => state.theme);
@@ -1054,24 +1074,25 @@ function App() {
   const sidebarWidth = useStore(state => state.sidebarWidth);
   const setSidebarWidth = useStore(state => state.setSidebarWidth);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
-  const sidebarTitlebarToggleRef = useRef<HTMLButtonElement>(null);
+  const sidebarCollapsedToggleRef = useRef<HTMLButtonElement>(null);
   const sidebarExplorerToggleRef = useRef<HTMLButtonElement>(null);
-  const pendingSidebarToggleFocusRef = useRef<'titlebar' | 'explorer' | null>(null);
+  const pendingSidebarToggleFocusRef = useRef<'collapsed' | 'explorer' | null>(null);
   const handleCollapseSidebarPanel = useCallback(() => {
-      pendingSidebarToggleFocusRef.current = 'titlebar';
+      pendingSidebarToggleFocusRef.current = 'collapsed';
       setIsSidebarCollapsed(true);
   }, []);
+  const handleExpandSidebarPanel = useCallback(() => {
+      pendingSidebarToggleFocusRef.current = 'explorer';
+      setIsSidebarCollapsed(false);
+  }, []);
   const handleTitlebarSidebarToggle = useCallback(() => {
-      if (isV2Ui && isSidebarCollapsed) {
-          pendingSidebarToggleFocusRef.current = 'explorer';
-      }
       setIsSidebarCollapsed((collapsed) => !collapsed);
-  }, [isSidebarCollapsed, isV2Ui]);
+  }, []);
   useEffect(() => {
       const target = pendingSidebarToggleFocusRef.current;
       if (!target) return;
       pendingSidebarToggleFocusRef.current = null;
-      (target === 'titlebar' ? sidebarTitlebarToggleRef : sidebarExplorerToggleRef).current?.focus();
+      (target === 'collapsed' ? sidebarCollapsedToggleRef : sidebarExplorerToggleRef).current?.focus();
   }, [isSidebarCollapsed]);
   const sidebarCollapsedWidth = isV2Ui ? 38 * effectiveUiScale * effectiveSidebarRailScale : 0;
   const renderedSidebarWidth = isSidebarCollapsed ? sidebarCollapsedWidth : sidebarWidth;
@@ -1776,6 +1797,29 @@ function App() {
       let hiddenSeen = document.visibilityState === 'hidden';
 
       const wait = (ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms));
+      // Automatic scale-fix may call ResetWebViewZoom multiple times on startup.
+      // The backend path depends on Wails unexported fields and can fail harmlessly;
+      // log at most once so the console is not flooded with expected unavailability.
+      let resetWebViewZoomUnavailableLogged = false;
+      const tryResetWebViewZoomQuietly = async () => {
+          try {
+              const res = await (window as any).go?.app?.App?.ResetWebViewZoom?.();
+              if (res?.success) {
+                  return true;
+              }
+              if (!resetWebViewZoomUnavailableLogged) {
+                  resetWebViewZoomUnavailableLogged = true;
+                  console.warn('ResetWebViewZoom unavailable in fixWindowScaleIfNeeded:', res?.message);
+              }
+              return false;
+          } catch (e) {
+              if (!resetWebViewZoomUnavailableLogged) {
+                  resetWebViewZoomUnavailableLogged = true;
+                  console.warn('ResetWebViewZoom call failed in fixWindowScaleIfNeeded', e);
+              }
+              return false;
+          }
+      };
 
       const fixWindowScaleIfNeeded = async (reason: WindowScaleFixReason) => {
           if (cancelled || inFlight) return;
@@ -1807,14 +1851,7 @@ function App() {
               const shouldResetWebViewZoom = shouldResetWebViewZoomForScaleFix(reason, hasViewportScaleDrift);
 
               if (shouldResetWebViewZoom && !isMaximised) {
-                  try {
-                      const res = await (window as any).go?.app?.App?.ResetWebViewZoom?.();
-                      if (!res?.success) {
-                          console.warn('ResetWebViewZoom unavailable in fixWindowScaleIfNeeded:', res?.message);
-                      }
-                  } catch (e) {
-                      console.warn('ResetWebViewZoom call failed in fixWindowScaleIfNeeded', e);
-                  }
+                  await tryResetWebViewZoomQuietly();
               }
 
               if (isMaximised) {
@@ -1826,14 +1863,7 @@ function App() {
                       // backend 失败（wails 升级破坏反射 / 非 Windows）时回退到 dispatch resize 兜底；
                       // 用户仍可按 Ctrl+Shift+0 手动 toggle 修复。
                       if (shouldResetWebViewZoom) {
-                          try {
-                              const res = await (window as any).go?.app?.App?.ResetWebViewZoom?.();
-                              if (!res?.success) {
-                                  console.warn('ResetWebViewZoom unavailable in fixWindowScaleIfNeeded:', res?.message);
-                              }
-                          } catch (e) {
-                              console.warn('ResetWebViewZoom call failed in fixWindowScaleIfNeeded', e);
-                          }
+                          await tryResetWebViewZoomQuietly();
                       }
                       window.dispatchEvent(new Event('resize'));
                       lastFixAt = Date.now();
@@ -2056,6 +2086,7 @@ function App() {
   const addTab = useStore(state => state.addTab);
   const activeContext = useStore(state => state.activeContext);
   const connections = useStore(state => state.connections);
+  const moveConnectionToTag = useStore(state => state.moveConnectionToTag);
   const tabs = useWorkbenchTabs();
   const activeTabId = useStore(state => state.activeTabId);
   const setActiveTab = useStore(state => state.setActiveTab);
@@ -2583,11 +2614,19 @@ function App() {
       }
   }, [t]);
 
-  const handleApplicationQuitRequest = useCallback(async (confirmedAction?: ApplicationQuitConfirmedAction) => {
+  const handleApplicationQuitRequest = useCallback(async (
+      confirmedAction?: ApplicationQuitConfirmedAction,
+      cancelledAction?: () => void,
+  ) => {
       if (applicationQuitHandlingRef.current) {
           return;
       }
       applicationQuitHandlingRef.current = true;
+
+      const cancelRequest = () => {
+          resetApplicationQuitRequest();
+          cancelledAction?.();
+      };
 
       const runConfirmedAction = async (): Promise<boolean> => {
           let accepted = false;
@@ -2601,14 +2640,14 @@ function App() {
                   accepted = true;
               }
           } catch (error) {
-              resetApplicationQuitRequest();
+              cancelRequest();
               message.error(t('app.quit.message.quit_failed', {
                   detail: error instanceof Error ? error.message : String(error),
               }));
               return false;
           }
           if (!accepted) {
-              resetApplicationQuitRequest();
+              cancelRequest();
           }
           return accepted;
       };
@@ -2622,7 +2661,7 @@ function App() {
               latestState.savedQueries,
           );
       } catch (error) {
-          resetApplicationQuitRequest();
+          cancelRequest();
           message.error(t('app.quit.unsaved_sql.inspect_failed', {
               detail: error instanceof Error ? error.message : String(error),
           }));
@@ -2663,14 +2702,14 @@ function App() {
               </>
           ),
           onCancel: () => {
-              resetApplicationQuitRequest();
+              cancelRequest();
           },
           onOk: async () => {
               try {
                   await saveApplicationQuitUnsavedSQLTargets(targets, saveQuery);
                   message.success(t('app.quit.unsaved_sql.saved'));
               } catch (error) {
-                  resetApplicationQuitRequest();
+                  cancelRequest();
                   message.error(t('app.quit.unsaved_sql.save_failed_cancel_exit', {
                       detail: error instanceof Error ? error.message : String(error),
                   }));
@@ -2684,24 +2723,12 @@ function App() {
   }, [applicationQuitModalZIndex, ensureSavedQueriesLoaded, forceQuitApplication, resetApplicationQuitRequest, saveQuery, t]);
 
   const handleInstallUpdateRequest = useCallback(async () => {
-      if (installMode === 'portable' || installMode === 'msi') {
-          Modal.confirm({
-              title: t('app.about.update_install_confirm.close_instances_title'),
-              content: t('app.about.update_install_confirm.close_instances_content'),
-              okText: t('app.about.update_install_confirm.close_instances_ok'),
-              cancelText: t('common.cancel'),
-              closable: true,
-              maskClosable: false,
-              zIndex: applicationQuitModalZIndex,
-              okButtonProps: { danger: true, type: 'primary' },
-              onOk: async () => {
-                  await handleApplicationQuitRequest(() => handleInstallFromProgress(true));
-              },
-          });
-          return;
-      }
-      await handleApplicationQuitRequest(() => handleInstallFromProgress(false));
-  }, [applicationQuitModalZIndex, handleApplicationQuitRequest, handleInstallFromProgress, installMode, t]);
+      hideUpdateDownloadProgress();
+      await handleApplicationQuitRequest(
+          () => handleInstallFromProgress(false),
+          showUpdateDownloadProgress,
+      );
+  }, [handleApplicationQuitRequest, handleInstallFromProgress, hideUpdateDownloadProgress, showUpdateDownloadProgress]);
 
   useEffect(() => {
       const offBeforeClose = EventsOn('app:before-close-request', () => {
@@ -3112,10 +3139,12 @@ function App() {
   const [dataRootInfo, setDataRootInfo] = useState<any>(null);
   const [selectedDataRootPath, setSelectedDataRootPath] = useState('');
   const [selectedLogDirectoryPath, setSelectedLogDirectoryPath] = useState('');
+  const [selectedSavedQueryDirectoryPath, setSelectedSavedQueryDirectoryPath] = useState('');
   const [dataRootLoading, setDataRootLoading] = useState(false);
   const [dataRootApplying, setDataRootApplying] = useState(false);
   const [logDirectoryApplying, setLogDirectoryApplying] = useState(false);
-  const directorySettingsApplying = dataRootApplying || logDirectoryApplying;
+  const [savedQueryDirectoryApplying, setSavedQueryDirectoryApplying] = useState(false);
+  const directorySettingsApplying = dataRootApplying || logDirectoryApplying || savedQueryDirectoryApplying;
 
   const aiEntryPlacement = resolveAIEntryPlacement();
   const legacyAiEdgeHandleAttachment = resolveLegacyAIEdgeHandleAttachment(aiPanelVisible);
@@ -3520,6 +3549,9 @@ function App() {
           setDataRootInfo(data);
           setSelectedDataRootPath(String(data.path || ''));
           setSelectedLogDirectoryPath(String(data.logDirectory || data.defaultLogDirectory || ''));
+          setSelectedSavedQueryDirectoryPath(String(
+              data.savedQueryDirectory || data.defaultSavedQueryDirectory || '',
+          ));
       } catch (error) {
           const errMsg = error instanceof Error ? error.message : String(error || t('common.unknown'));
           void message.error(t('app.data_root.message.load_failed_with_error', { error: errMsg }));
@@ -3645,6 +3677,144 @@ function App() {
       }
   }, [t]);
 
+  const handleSelectSavedQueryDirectory = useCallback(async () => {
+      try {
+          const res = await SelectSavedQueryDirectory(
+              selectedSavedQueryDirectoryPath
+                  || dataRootInfo?.savedQueryDirectory
+                  || dataRootInfo?.defaultSavedQueryDirectory
+                  || '',
+          );
+          if (!res?.success) {
+              const data = (res?.data || {}) as any;
+              if (data.cancelled === true) return;
+              throw new Error(res?.message || t('common.unknown'));
+          }
+          const data = (res?.data || {}) as any;
+          setSelectedSavedQueryDirectoryPath(String(data.directory || ''));
+      } catch (error) {
+          const errMsg = error instanceof Error ? error.message : String(error || t('common.unknown'));
+          void message.error(t('app.data_root.saved_query_directory.message.select_failed_with_error', { error: errMsg }));
+      }
+  }, [
+      dataRootInfo?.defaultSavedQueryDirectory,
+      dataRootInfo?.savedQueryDirectory,
+      selectedSavedQueryDirectoryPath,
+      t,
+  ]);
+
+  const handleApplySavedQueryDirectory = useCallback(async (useDefaultPath = false) => {
+      const nextPath = useDefaultPath
+          ? String(dataRootInfo?.defaultSavedQueryDirectory || '')
+          : String(selectedSavedQueryDirectoryPath || '').trim();
+      if (!nextPath) {
+          void message.warning(t('app.data_root.saved_query_directory.message.select_valid_first'));
+          return;
+      }
+      setSavedQueryDirectoryApplying(true);
+      try {
+          const res = await ApplySavedQueryDirectory(nextPath);
+          if (!res?.success) {
+              throw new Error(res?.message || t('common.unknown'));
+          }
+          const data = (res?.data || {}) as any;
+          setDataRootInfo(data);
+          setSelectedSavedQueryDirectoryPath(String(
+              data.savedQueryDirectory || data.defaultSavedQueryDirectory || nextPath,
+          ));
+          try {
+              const queries = await GetSavedQueries();
+              replaceSavedQueries(Array.isArray(queries) ? queries : []);
+              await reloadSavedQueryGroups();
+          } catch (refreshError) {
+              console.warn('Failed to refresh saved queries after changing their directory', refreshError);
+          }
+          void message.success(res?.message || t('app.data_root.saved_query_directory.message.updated'));
+      } catch (error) {
+          const errMsg = error instanceof Error ? error.message : String(error || t('common.unknown'));
+          void message.error(t('app.data_root.saved_query_directory.message.apply_failed_with_error', { error: errMsg }));
+      } finally {
+          setSavedQueryDirectoryApplying(false);
+      }
+  }, [
+      dataRootInfo?.defaultSavedQueryDirectory,
+      reloadSavedQueryGroups,
+      replaceSavedQueries,
+      selectedSavedQueryDirectoryPath,
+      t,
+  ]);
+
+  const handleOpenSavedQueryDirectory = useCallback(async () => {
+      try {
+          const res = await OpenSavedQueryDirectory();
+          if (!res?.success) {
+              throw new Error(res?.message || t('common.unknown'));
+          }
+      } catch (error) {
+          const errMsg = error instanceof Error ? error.message : String(error || t('common.unknown'));
+          void message.error(t('app.data_root.saved_query_directory.message.open_failed_with_error', { error: errMsg }));
+      }
+  }, [t]);
+
+  const renderSavedQueryDirectorySettings = (readOnly = false) => (
+      <div style={utilityPanelStyle} data-saved-query-directory-settings="true">
+          <div style={{ fontWeight: 600 }}>{t('app.data_root.saved_query_directory.title')}</div>
+          <div style={{ ...utilityMutedTextStyle, marginTop: 6 }}>
+              {t('app.data_root.saved_query_directory.description')}
+          </div>
+          <div style={{ display: 'grid', gap: 10, marginTop: 14 }}>
+              <div>
+                  <div style={{ marginBottom: 6, fontWeight: 500 }}>
+                      {t('app.data_root.saved_query_directory.current_directory')}
+                  </div>
+                  <Input
+                      readOnly
+                      value={selectedSavedQueryDirectoryPath}
+                      placeholder={t('app.data_root.saved_query_directory.placeholder')}
+                      aria-label={t('app.data_root.saved_query_directory.title')}
+                  />
+              </div>
+              {!readOnly && (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
+                      <Button
+                          icon={<FolderOpenOutlined />}
+                          disabled={directorySettingsApplying}
+                          onClick={() => void handleSelectSavedQueryDirectory()}
+                      >
+                          {t('app.data_root.action.select')}
+                      </Button>
+                      <Button onClick={() => void handleOpenSavedQueryDirectory()}>
+                          {t('app.data_root.action.open_current')}
+                      </Button>
+                      <Button
+                          disabled={directorySettingsApplying}
+                          loading={savedQueryDirectoryApplying}
+                          onClick={() => void handleApplySavedQueryDirectory(true)}
+                      >
+                          {t('app.data_root.action.restore_default_directory')}
+                      </Button>
+                      <Button
+                          type="primary"
+                          disabled={directorySettingsApplying}
+                          loading={savedQueryDirectoryApplying}
+                          onClick={() => void handleApplySavedQueryDirectory(false)}
+                      >
+                          {t('common.save')}
+                      </Button>
+                  </div>
+              )}
+              <div>
+                  <div style={{ marginBottom: 6, fontWeight: 500 }}>
+                      {t('app.data_root.saved_query_directory.default_directory')}
+                  </div>
+                  <div style={{ ...utilityMutedTextStyle, overflowWrap: 'anywhere' }}>
+                      {dataRootInfo?.defaultSavedQueryDirectory || '-'}
+                  </div>
+              </div>
+          </div>
+      </div>
+  );
+
   const renderLogDirectorySettings = () => {
       const editable = dataRootInfo?.logDirectoryEditable !== false;
       const managedByEnvironment = dataRootInfo?.logDirectorySource === 'environment';
@@ -3739,14 +3909,22 @@ function App() {
       handleCloseAppLogPanel();
   }, [handleCloseAppLogPanel]);
 
-  const handleCreateConnection = useCallback(() => {
+  const openCreateConnection = useCallback((targetTagId?: string) => {
+      const normalizedTargetTagId = String(targetTagId || '').trim();
+      pendingConnectionTagIdRef.current = normalizedTargetTagId || null;
       setSecurityUpdateRepairSource(null);
       setEditingConnection(null);
       setIsConnectionModalMounted(true);
       setIsModalOpen(true);
   }, []);
+  const handleCreateConnection = useCallback(() => openCreateConnection(), [openCreateConnection]);
+  const handleCreateConnectionInGroup = useCallback(
+      (targetTagId: string) => openCreateConnection(targetTagId),
+      [openCreateConnection],
+  );
 
   const handleEditConnection = useCallback((conn: SavedConnection) => {
+      pendingConnectionTagIdRef.current = null;
       setSecurityUpdateRepairSource(null);
       setIsConnectionModalMounted(true);
       void (async () => {
@@ -3801,6 +3979,12 @@ function App() {
   }, []);
 
   const handleConnectionSaved = useCallback(async (savedConnection: SavedConnection) => {
+      const targetTagId = pendingConnectionTagIdRef.current;
+      pendingConnectionTagIdRef.current = null;
+      if (targetTagId && savedConnection?.id) {
+          moveConnectionToTag(savedConnection.id, targetTagId);
+      }
+
       if (!shouldRetrySecurityUpdateAfterRepairSave(securityUpdateRepairSource)) {
           return;
       }
@@ -3860,6 +4044,7 @@ function App() {
   }, [
       applySecurityUpdateStatus,
       normalizeSecurityUpdateStatus,
+      moveConnectionToTag,
       replaceConnections,
       replaceGlobalProxy,
       securityUpdateRawPayload,
@@ -3871,6 +4056,7 @@ function App() {
 
   const handleCloseModal = () => {
       const reopenSecurityUpdateDetails = shouldReopenSecurityUpdateDetails(securityUpdateRepairSource);
+      pendingConnectionTagIdRef.current = null;
       setIsModalOpen(false);
       setEditingConnection(null);
       setSecurityUpdateRepairSource(null);
@@ -3880,6 +4066,7 @@ function App() {
   };
 
   const handleOpenDriverManagerFromConnection = () => {
+      pendingConnectionTagIdRef.current = null;
       setIsModalOpen(false);
       setEditingConnection(null);
       setToolCenterBackGroupKey(null);
@@ -5155,7 +5342,7 @@ function App() {
       ];
 
       return (
-          <div className="gonavi-about-pane" style={{ display: 'flex', flexDirection: 'column', padding: '0 0 18px' }}>
+          <div className="gonavi-about-pane" style={{ display: 'flex', flexDirection: 'column' }}>
               <section
                 aria-label="GoNavi"
                 style={{
@@ -7295,7 +7482,9 @@ function App() {
       return null;
   };
 
-  const sidebarPanelToggleLabel = t(isSidebarCollapsed ? 'app.sidebar.expand' : 'app.sidebar.collapse');
+  const sidebarPanelCollapseLabel = t('app.sidebar.collapse');
+  const sidebarPanelExpandLabel = t('app.sidebar.expand');
+  const sidebarPanelToggleLabel = isSidebarCollapsed ? sidebarPanelExpandLabel : sidebarPanelCollapseLabel;
 
   return (
     <ConfigProvider
@@ -7334,7 +7523,7 @@ function App() {
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
-                background: bgMain,
+                background: isV2Ui ? 'var(--gn-bg-panel-2)' : bgMain,
                 borderBottom: 'none',
                 userSelect: 'none',
                 WebkitAppRegion: isWebRuntime ? 'no-drag' : 'drag',
@@ -7364,10 +7553,10 @@ function App() {
                     }}
                   />
                   <span>GoNavi</span>
-                  {(!isV2Ui || isSidebarCollapsed) && (
+                  {!isV2Ui && (
                       <Tooltip title={sidebarPanelToggleLabel} placement="bottom" mouseEnterDelay={0.35}>
                           <Button
-                            ref={sidebarTitlebarToggleRef}
+                            ref={sidebarCollapsedToggleRef}
                             type="text"
                             size="small"
                             className="gonavi-sidebar-collapse-trigger"
@@ -7463,13 +7652,13 @@ function App() {
           >
             <div
                 id={isV2Ui ? undefined : 'gonavi-sidebar-tree-panel'}
+                data-sidebar-content="true"
                 aria-hidden={!isV2Ui ? isSidebarCollapsed : undefined}
                 style={{
                     height: '100%',
                     display: 'flex',
                     flexDirection: 'column',
                     overflow: 'hidden',
-                    visibility: !isV2Ui && isSidebarCollapsed ? 'hidden' : 'visible',
                 }}
             >
                 {!isV2Ui && (
@@ -7500,16 +7689,19 @@ function App() {
                     <div style={{ height: '100%', opacity: connectionWorkbenchState.ready ? 1 : 0.72, pointerEvents: connectionWorkbenchState.ready ? 'auto' : 'none' }}>
                         <Sidebar
                             onCreateConnection={handleCreateConnection}
+                            onCreateConnectionInGroup={handleCreateConnectionInGroup}
                             onEditConnection={handleEditConnection}
                             onOpenSettings={handleOpenSettingsModal}
                             onToggleAI={toggleAIPanel}
                             onToggleLogPanel={handleToggleLogPanel}
                             uiVersion={appearance.uiVersion}
                             onFocusCommandSearch={handleFocusSidebarSearch}
-                            onCollapseSidebar={isV2Ui && !isSidebarCollapsed ? handleCollapseSidebarPanel : undefined}
-                            collapseSidebarLabel={sidebarPanelToggleLabel}
+                            onCollapseSidebar={isV2Ui ? handleCollapseSidebarPanel : undefined}
+                            onExpandSidebar={isV2Ui ? handleExpandSidebarPanel : undefined}
+                            collapseSidebarLabel={isV2Ui ? sidebarPanelCollapseLabel : undefined}
                             collapseSidebarButtonRef={sidebarExplorerToggleRef}
-                            isTreePanelCollapsed={isV2Ui && isSidebarCollapsed}
+                            expandSidebarLabel={isV2Ui ? sidebarPanelExpandLabel : undefined}
+                            expandSidebarButtonRef={sidebarCollapsedToggleRef}
                         />
                     </div>
                     {!connectionWorkbenchState.ready && (
@@ -8048,6 +8240,7 @@ function App() {
                           </div>
                         </div>
                       </div>
+                      {renderSavedQueryDirectorySettings(true)}
                     </div>
                   );
                 }
@@ -8146,6 +8339,7 @@ function App() {
                             {t('app.data_root.restart_hint')}
                           </div>
                         </div>
+                        {renderSavedQueryDirectorySettings()}
                         {renderLogDirectorySettings()}
                       </div>
                     )}
@@ -8633,6 +8827,7 @@ function App() {
                     {t('app.data_root.restart_hint')}
                   </div>
                 </div>
+                {renderSavedQueryDirectorySettings()}
                 {renderLogDirectorySettings()}
               </div>
             )}

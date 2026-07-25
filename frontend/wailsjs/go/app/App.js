@@ -14,6 +14,10 @@ export function ApplyLogDirectory(arg1) {
   return window['go']['app']['App']['ApplyLogDirectory'](arg1);
 }
 
+export function ApplySavedQueryDirectory(arg1) {
+  return window['go']['app']['App']['ApplySavedQueryDirectory'](arg1);
+}
+
 export function BuildSQLAuditExport(arg1, arg2) {
   return window['go']['app']['App']['BuildSQLAuditExport'](arg1, arg2);
 }
@@ -566,6 +570,10 @@ export function OpenSQLFile() {
   return window['go']['app']['App']['OpenSQLFile']();
 }
 
+export function OpenSavedQueryDirectory() {
+  return window['go']['app']['App']['OpenSavedQueryDirectory']();
+}
+
 export function PreviewChanges(arg1, arg2, arg3, arg4) {
   return window['go']['app']['App']['PreviewChanges'](arg1, arg2, arg3, arg4);
 }
@@ -714,6 +722,10 @@ export function RenameSQLFile(arg1, arg2) {
   return window['go']['app']['App']['RenameSQLFile'](arg1, arg2);
 }
 
+export function RenameSavedQuery(arg1, arg2) {
+  return window['go']['app']['App']['RenameSavedQuery'](arg1, arg2);
+}
+
 export function RenameSchema(arg1, arg2, arg3, arg4) {
   return window['go']['app']['App']['RenameSchema'](arg1, arg2, arg3, arg4);
 }
@@ -770,6 +782,10 @@ export function RetrySecurityUpdateCurrentRound(arg1) {
   return window['go']['app']['App']['RetrySecurityUpdateCurrentRound'](arg1);
 }
 
+export function RevealSavedQueryInFolder(arg1) {
+  return window['go']['app']['App']['RevealSavedQueryInFolder'](arg1);
+}
+
 export function SaveConnection(arg1) {
   return window['go']['app']['App']['SaveConnection'](arg1);
 }
@@ -824,6 +840,10 @@ export function SelectSQLFileForExecution() {
 
 export function SelectSSHKeyFile(arg1) {
   return window['go']['app']['App']['SelectSSHKeyFile'](arg1);
+}
+
+export function SelectSavedQueryDirectory(arg1) {
+  return window['go']['app']['App']['SelectSavedQueryDirectory'](arg1);
 }
 
 export function SetApplicationBrandIcon(arg1) {

@@ -48,11 +48,11 @@ import { filterRowsByGridConditions } from '../utils/dataGridClientFilter';
 import { resolveGridSortInfoFromTableSorter } from '../utils/dataGridSort';
 import {
     absorbExtraWidthIntoFlexibleColumns,
-    calculateExternalHorizontalScrollInnerWidth,
     calculateTableBodyBottomPadding,
     calculateVirtualTableScrollX,
     resolveDataGridColumnQuickFindScrollLeft,
     resolveDataGridHorizontalWheelDelta,
+    resolveExternalHorizontalScrollMetrics,
 } from './dataGridLayout';
 import {
     createDataGridIdleCommitScheduler,
@@ -942,29 +942,6 @@ const DataGrid: React.FC<DataGridProps> = ({
   const virtualInlineInputRef = useRef<any>(null);
   const virtualInlinePickerOpenRef = useRef(false);
   const virtualInlineScrollLockRef = useRef<{ el: HTMLElement; handler: (e: WheelEvent) => void } | null>(null);
-  const {
-      dataPanelOpen,
-      dataPanelOpenRef,
-      focusedCellInfo,
-      dataPanelValue,
-      setDataPanelValue,
-      dataPanelIsJson,
-      dataPanelDirtyRef,
-      dataPanelOriginalRef,
-      toggleDataPanel,
-      updateFocusedCell,
-      handleDataPanelFormatJson,
-  } = useDataGridPreviewPanel({
-      toEditableText: mongoAwareEditableText,
-      looksLikeJsonText,
-      normalizeDateTimeString,
-  });
-  const focusedCellWritable = useMemo(() => (
-      canModifyData &&
-      !!focusedCellInfo &&
-      isWritableResultColumn(focusedCellInfo.dataIndex, effectiveEditLocator)
-  ), [canModifyData, focusedCellInfo, effectiveEditLocator]);
-
   // Cell Context Menu State
   const [cellContextMenu, setCellContextMenu] = useState<{
     visible: boolean;
@@ -1409,6 +1386,11 @@ const DataGrid: React.FC<DataGridProps> = ({
   // Dynamic Height
   const [tableHeight, setTableHeight] = useState(500);
   const [tableViewportWidth, setTableViewportWidth] = useState(0);
+  const [measuredHorizontalScrollMetrics, setMeasuredHorizontalScrollMetrics] = useState({
+      scrollWidth: 0,
+      clientWidth: 0,
+      trackClientWidth: 0,
+  });
   const [tableBodyBottomPadding, setTableBodyBottomPadding] = useState(0);
 
   // P0 性能优化：CSS 模板字符串 memoize，仅在主题/布局变量变化时重算
@@ -1494,7 +1476,21 @@ const DataGrid: React.FC<DataGridProps> = ({
       const rcVirtualHolderEl = target.querySelector('.rc-virtual-list-holder') as HTMLElement | null;
       const virtualScrollbarEl = target.querySelector('.ant-table-tbody-virtual-scrollbar-horizontal') as HTMLElement | null;
       const scrollableEl = virtualBodyEl || rcVirtualHolderEl || bodyEl;
-      const hasHorizontalOverflow = !!scrollableEl && (scrollableEl.scrollWidth - scrollableEl.clientWidth > 1);
+      const measuredScrollWidth = scrollableEl?.scrollWidth || 0;
+      const measuredClientWidth = scrollableEl?.clientWidth || 0;
+      const measuredTrackClientWidth = externalHorizontalScrollRef.current?.clientWidth || 0;
+      const hasHorizontalOverflow = measuredScrollWidth - measuredClientWidth > 1;
+      setMeasuredHorizontalScrollMetrics((current) => (
+          current.scrollWidth === measuredScrollWidth
+          && current.clientWidth === measuredClientWidth
+          && current.trackClientWidth === measuredTrackClientWidth
+              ? current
+              : {
+                  scrollWidth: measuredScrollWidth,
+                  clientWidth: measuredClientWidth,
+                  trackClientWidth: measuredTrackClientWidth,
+              }
+      ));
       // 普通表格可通过 body 底部内边距避开悬浮横向滚动条；
       // 但虚拟表格的内部横向滚动轨道会直接覆盖在可视区底部，需要同时从 y 高度里扣掉安全区。
       const nextBodyBottomPadding = calculateTableBodyBottomPadding({
@@ -2260,25 +2256,6 @@ const DataGrid: React.FC<DataGridProps> = ({
   const handleCellSaveRef = useRef(handleCellSave);
   handleCellSaveRef.current = handleCellSave;
 
-  const handleDataPanelSave = useCallback(() => {
-      if (!focusedCellInfo) return;
-      if (!focusedCellWritable) {
-          void message.info(translateDataGrid('data_grid.message.current_field_not_editable'));
-          return;
-      }
-      // 与 updateFocusedCell 设置的原始值比较，避免幽灵变更
-      if (dataPanelValue === dataPanelOriginalRef.current) {
-          dataPanelDirtyRef.current = false;
-          void message.info(translateDataGrid('data_grid.message.no_data_changes'));
-          return;
-      }
-      const nextRow: any = { ...focusedCellInfo.record, [focusedCellInfo.dataIndex]: dataPanelValue };
-      handleCellSave(nextRow);
-      dataPanelOriginalRef.current = dataPanelValue;
-      dataPanelDirtyRef.current = false;
-      void message.success(translateDataGrid('data_grid.message.saved'));
-  }, [focusedCellInfo, focusedCellWritable, dataPanelValue, handleCellSave, translateDataGrid]);
-
   const handleCellSetNull = useCallback(() => {
     if (!cellContextMenu.record) return;
     if (!isWritableResultColumn(cellContextMenu.dataIndex, effectiveEditLocator)) {
@@ -2451,6 +2428,47 @@ const DataGrid: React.FC<DataGridProps> = ({
       });
   }, [displayData, modifiedRows, deletedRowKeys]);
   mergedDisplayDataRef.current = mergedDisplayData;
+  const {
+      dataPanelOpen,
+      dataPanelOpenRef,
+      focusedCellInfo,
+      dataPanelValue,
+      setDataPanelValue,
+      dataPanelIsJson,
+      dataPanelDirtyRef,
+      dataPanelOriginalRef,
+      toggleDataPanel,
+      updateFocusedCell,
+      handleDataPanelFormatJson,
+  } = useDataGridPreviewPanel({
+      previewAvailable: mergedDisplayData.length > 0,
+      toEditableText: mongoAwareEditableText,
+      looksLikeJsonText,
+      normalizeDateTimeString,
+  });
+  const focusedCellWritable = useMemo(() => (
+      canModifyData &&
+      !!focusedCellInfo &&
+      isWritableResultColumn(focusedCellInfo.dataIndex, effectiveEditLocator)
+  ), [canModifyData, focusedCellInfo, effectiveEditLocator]);
+  const handleDataPanelSave = useCallback(() => {
+      if (!focusedCellInfo) return;
+      if (!focusedCellWritable) {
+          void message.info(translateDataGrid('data_grid.message.current_field_not_editable'));
+          return;
+      }
+      // 与 updateFocusedCell 设置的原始值比较，避免幽灵变更
+      if (dataPanelValue === dataPanelOriginalRef.current) {
+          dataPanelDirtyRef.current = false;
+          void message.info(translateDataGrid('data_grid.message.no_data_changes'));
+          return;
+      }
+      const nextRow: any = { ...focusedCellInfo.record, [focusedCellInfo.dataIndex]: dataPanelValue };
+      handleCellSave(nextRow);
+      dataPanelOriginalRef.current = dataPanelValue;
+      dataPanelDirtyRef.current = false;
+      void message.success(translateDataGrid('data_grid.message.saved'));
+  }, [focusedCellInfo, focusedCellWritable, dataPanelValue, handleCellSave, translateDataGrid]);
   const lastReportedDataFingerprintRef = useRef('');
   useEffect(() => {
       if (!onDataChange) return;
@@ -3942,11 +3960,23 @@ const DataGrid: React.FC<DataGridProps> = ({
           isMacLike,
       });
   }, [totalWidth, isMacLike, tableViewportWidth]);
-  const horizontalScrollVisible = isTableSurfaceActive && tableScrollX > tableViewportWidth + 1;
-  const horizontalScrollWidth = useMemo(() => calculateExternalHorizontalScrollInnerWidth({
+  const externalHorizontalScrollMetrics = useMemo(() => resolveExternalHorizontalScrollMetrics({
       tableScrollWidth: tableScrollX,
+      tableViewportWidth,
+      measuredScrollWidth: measuredHorizontalScrollMetrics.scrollWidth,
+      measuredClientWidth: measuredHorizontalScrollMetrics.clientWidth,
+      measuredTrackClientWidth: measuredHorizontalScrollMetrics.trackClientWidth,
       trackInset: floatingScrollbarInset,
-  }), [tableScrollX, floatingScrollbarInset]);
+  }), [
+      floatingScrollbarInset,
+      measuredHorizontalScrollMetrics.clientWidth,
+      measuredHorizontalScrollMetrics.scrollWidth,
+      measuredHorizontalScrollMetrics.trackClientWidth,
+      tableScrollX,
+      tableViewportWidth,
+  ]);
+  const horizontalScrollVisible = isTableSurfaceActive && externalHorizontalScrollMetrics.visible;
+  const horizontalScrollWidth = externalHorizontalScrollMetrics.innerWidth;
   const tableScrollConfig = useMemo(() => ({ x: tableScrollX, y: tableHeight }), [tableScrollX, tableHeight]);
   const virtualRowHeightSignature = `${displayRenderVersion}|${effectiveUiScale}`;
   const measuredVirtualRowHeight = virtualRowHeightMeasurement?.signature === virtualRowHeightSignature

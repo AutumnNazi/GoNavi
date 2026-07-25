@@ -9,6 +9,7 @@ import { applyDayjsLocale } from './i18n/runtime'
 import { useStore } from './store'
 import { cloneBrowserMockValue, duplicateBrowserMockConnection, resolveBrowserMockSecretFlag } from './utils/browserMockConnections'
 import { configureAntdStaticOverlayLayer } from './utils/overlayZIndex'
+import { normalizeConnectionEnvironmentType } from './utils/connectionEnvironment'
 
 configureAntdStaticOverlayLayer();
 
@@ -149,6 +150,9 @@ if (
         logDirectorySource: 'default',
         logDirectoryEditable: true,
         logDirectoryRestartRequired: false,
+        savedQueryDirectory: 'C:/mock/.gonavi/saved_queries',
+        defaultSavedQueryDirectory: 'C:/mock/.gonavi/saved_queries',
+        savedQueryDirectorySource: 'default',
     };
 
     const upsertMockConnection = (view: any) => {
@@ -193,6 +197,9 @@ if (
         const view = {
             id: nextId,
             name: String(input?.name || existing?.name || t('connection.unnamed')),
+            environmentType: normalizeConnectionEnvironmentType(
+                input?.environmentType ?? existing?.environmentType,
+            ),
             config: {
                 ...config,
                 id: nextId,
@@ -466,6 +473,29 @@ if (
                 GetSavedQueries: async () => cloneBrowserMockValue(mockSavedQueries),
                 GetSavedQueryGroups: async () => cloneBrowserMockValue(mockSavedQueryGroups),
                 SaveQuery: async (input: any) => saveMockQuery(input),
+                RenameSavedQuery: async (id: string, name: string) => {
+                    const existing = mockSavedQueries.find((item) => item.id === id);
+                    if (!existing) throw new Error('saved query not found');
+                    return saveMockQuery({
+                        ...existing,
+                        name: String(name || '').trim(),
+                    });
+                },
+                RevealSavedQueryInFolder: async (id: string) => {
+                    const existing = mockSavedQueries.find((item) => item.id === id);
+                    if (!existing) {
+                        return {
+                            success: false,
+                            message: t('app.data_root.saved_query_directory.backend.error.query_not_found', { id }),
+                        };
+                    }
+                    const path = `${mockDataRootInfo.savedQueryDirectory}/${id}.sql`;
+                    return {
+                        success: true,
+                        message: t('app.data_root.saved_query_directory.backend.message.revealed', { path }),
+                        data: { path },
+                    };
+                },
                 SaveSavedQueryGroup: async (input: any) => saveMockSavedQueryGroup(input),
                 ImportSavedQueries: async (payload: any) => {
                     const items = Array.isArray(payload) ? payload : payload?.queries;
@@ -551,6 +581,7 @@ if (
                 OpenDriverDownloadDirectory: async (path: string) => ({ success: true, data: { path } }),
                 OpenDataRootDirectory: async () => ({ success: true }),
                 OpenLogDirectory: async () => ({ success: true }),
+                OpenSavedQueryDirectory: async () => ({ success: true }),
                 SelectSQLDirectory: async (currentPath: string) => ({ success: false, message: currentPath ? '已取消' : '已取消' }),
                 ListSQLDirectory: async () => ({ success: true, data: [] }),
                 ReadSQLFile: async () => ({ success: false, message: '已取消' }),
@@ -671,6 +702,25 @@ if (
                     return {
                         success: true,
                         message: t('app.data_root.log_directory.message.updated'),
+                        data: cloneBrowserMockValue(mockDataRootInfo),
+                    };
+                },
+                SelectSavedQueryDirectory: async (currentPath: string) => ({
+                    success: true,
+                    data: { directory: currentPath || mockDataRootInfo.defaultSavedQueryDirectory },
+                }),
+                ApplySavedQueryDirectory: async (path: string) => {
+                    const nextPath = String(path || mockDataRootInfo.defaultSavedQueryDirectory);
+                    mockDataRootInfo = {
+                        ...mockDataRootInfo,
+                        savedQueryDirectory: nextPath,
+                        savedQueryDirectorySource: nextPath === mockDataRootInfo.defaultSavedQueryDirectory
+                            ? 'default'
+                            : 'custom',
+                    };
+                    return {
+                        success: true,
+                        message: t('app.data_root.saved_query_directory.message.updated'),
                         data: cloneBrowserMockValue(mockDataRootInfo),
                     };
                 },

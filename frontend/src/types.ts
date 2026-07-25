@@ -330,6 +330,12 @@ export interface ConnectionConfig {
   jvm?: JVMConfig;
 }
 
+export type ConnectionEnvironmentType =
+  | 'production'
+  | 'test'
+  | 'development'
+  | 'local';
+
 export interface MongoMemberInfo {
   host: string;
   role: string;
@@ -342,6 +348,7 @@ export interface MongoMemberInfo {
 export interface SavedConnection {
   id: string;
   name: string;
+  environmentType?: ConnectionEnvironmentType;
   config: ConnectionConfig;
   secretRef?: string;
   hasPrimaryPassword?: boolean;
@@ -374,6 +381,7 @@ export interface GlobalProxyConfig extends ProxyConfig {
 export interface ConnectionTag {
   id: string;
   name: string;
+  environmentType?: ConnectionEnvironmentType;
   /**
    * Parent group id. An omitted value keeps the group at the sidebar root.
    * Hosts are always owned by exactly one direct group, while groups can nest.
@@ -393,8 +401,11 @@ export interface ColumnDefinition {
   nullable: string;
   key: string;
   default?: string;
+  hasDefault?: boolean;
   extra: string;
   comment: string;
+  charset?: string;
+  collation?: string;
 }
 
 export interface IndexDefinition {

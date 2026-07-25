@@ -1,7 +1,7 @@
 import React from 'react';
 import { createPortal } from 'react-dom';
 import { ConfigProvider, Input, Button, Switch, Tooltip } from 'antd';
-import { SearchOutlined, ReloadOutlined, TableOutlined, RobotOutlined } from '@ant-design/icons';
+import { CloseOutlined, SearchOutlined, ReloadOutlined, TableOutlined, RobotOutlined } from '@ant-design/icons';
 import { noAutoCapInputProps } from '../../utils/inputAutoCap';
 import { t } from '../../i18n';
 import { APP_COMMAND_PALETTE_Z_INDEX } from '../../utils/overlayZIndex';
@@ -47,6 +47,8 @@ export interface SidebarSearchPanelProps<TItem extends V2CommandSearchItemLike =
     onClose: () => void;
     onItemSelect: (item: TItem) => void;
     onItemHover: (key: string) => void;
+    onRemoveRecentItem: (item: TItem) => void;
+    onClearRecentItems: () => void;
     onTogglePersistentFilter: (enabled: boolean) => void;
     onResetFilter: () => void;
   };
@@ -76,28 +78,69 @@ const SidebarSearchPanel = <TItem extends V2CommandSearchItemLike>({
       : t('sidebar.command_search.empty.default');
 
   const renderRow = (item: TItem, active: boolean) => (
-    <button
+    <div
       key={item.key}
-      type="button"
-      className={`gn-v2-command-row${active ? ' is-active' : ''}`}
+      className={`gn-v2-command-row-shell${active ? ' is-active' : ''}`}
       onMouseEnter={() => handlers.onItemHover(item.key)}
-      onMouseDown={(event) => event.preventDefault()}
-      onClick={() => handlers.onItemSelect(item)}
     >
-      <span className={`gn-v2-command-row-icon is-${item.kind}`}>{item.icon}</span>
-      <span className="gn-v2-command-row-main">
-        <strong>{item.title}</strong>
-        {item.meta ? <small>{item.meta}</small> : null}
-      </span>
-      {item.kind === 'action' && item.shortcut ? <kbd>{item.shortcut}</kbd> : null}
-    </button>
+      <button
+        type="button"
+        className="gn-v2-command-row"
+        onMouseDown={(event) => event.preventDefault()}
+        onClick={() => handlers.onItemSelect(item)}
+      >
+        <span className={`gn-v2-command-row-icon is-${item.kind}`}>{item.icon}</span>
+        <span className="gn-v2-command-row-main">
+          <strong>{item.title}</strong>
+          {item.meta ? <small>{item.meta}</small> : null}
+        </span>
+        {item.kind === 'action' && item.shortcut ? <kbd>{item.shortcut}</kbd> : null}
+      </button>
+      {item.kind === 'recent' ? (
+        <Tooltip title={t('sidebar.command_search.action.remove_recent')}>
+          <button
+            type="button"
+            className="gn-v2-command-row-remove"
+            aria-label={t('sidebar.command_search.action.remove_recent')}
+            onMouseDown={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+            }}
+            onClick={(event) => {
+              event.stopPropagation();
+              handlers.onRemoveRecentItem(item);
+            }}
+          >
+            <CloseOutlined />
+          </button>
+        </Tooltip>
+      ) : null}
+    </div>
   );
 
-  const renderSection = (title: string, items: TItem[]) => {
+  const renderSection = (title: string, items: TItem[], showClear = false) => {
     if (items.length === 0) return null;
     return (
       <section className="gn-v2-command-section">
-        <div className="gn-v2-command-section-title">{title}</div>
+        <div className="gn-v2-command-section-heading">
+          <div className="gn-v2-command-section-title">{title}</div>
+          {showClear ? (
+            <button
+              type="button"
+              className="gn-v2-command-section-clear"
+              onMouseDown={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+              }}
+              onClick={(event) => {
+                event.stopPropagation();
+                handlers.onClearRecentItems();
+              }}
+            >
+              {t('sidebar.command_search.action.clear_recent')}
+            </button>
+          ) : null}
+        </div>
         {items.map((item) =>
           renderRow(item, flatItems[activeIndex]?.key === item.key),
         )}
@@ -155,7 +198,7 @@ const SidebarSearchPanel = <TItem extends V2CommandSearchItemLike>({
           {renderSection(t('sidebar.command_search.section.goto'), sections.goTo)}
           {renderSection(t('sidebar.command_search.section.ai'), sections.ai)}
           {renderSection(t('sidebar.command_search.section.actions'), sections.actions)}
-          {renderSection(t('sidebar.command_search.section.recent'), sections.recent)}
+          {renderSection(t('sidebar.command_search.section.recent'), sections.recent, true)}
           {flatItems.length === 0 ? (
             <div className="gn-v2-command-empty">{emptyCopy}</div>
           ) : null}

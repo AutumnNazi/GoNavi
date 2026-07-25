@@ -424,12 +424,24 @@ func dataRootInfoPayload(activeRoot string) map[string]interface{} {
 	if currentRoot == "" {
 		currentRoot = appdata.MustResolveActiveRoot()
 	}
+	defaultSavedQueryDirectory := appdata.DefaultSavedQueryDirectory(currentRoot)
+	savedQueryDirectory, err := appdata.ResolveSavedQueryDirectory(currentRoot)
+	if err != nil || strings.TrimSpace(savedQueryDirectory) == "" {
+		savedQueryDirectory = defaultSavedQueryDirectory
+	}
+	savedQueryDirectorySource := "custom"
+	if directoriesEqual(savedQueryDirectory, defaultSavedQueryDirectory) {
+		savedQueryDirectorySource = "default"
+	}
 	payload := map[string]interface{}{
-		"path":          currentRoot,
-		"defaultPath":   defaultRoot,
-		"driverPath":    appdata.DriverRoot(currentRoot),
-		"isDefaultPath": filepath.Clean(currentRoot) == filepath.Clean(defaultRoot),
-		"bootstrapPath": appdata.BootstrapPath(),
+		"path":                       currentRoot,
+		"defaultPath":                defaultRoot,
+		"driverPath":                 appdata.DriverRoot(currentRoot),
+		"isDefaultPath":              filepath.Clean(currentRoot) == filepath.Clean(defaultRoot),
+		"bootstrapPath":              appdata.BootstrapPath(),
+		"savedQueryDirectory":        savedQueryDirectory,
+		"defaultSavedQueryDirectory": defaultSavedQueryDirectory,
+		"savedQueryDirectorySource":  savedQueryDirectorySource,
 	}
 	for key, value := range logDirectoryInfoPayload() {
 		payload[key] = value

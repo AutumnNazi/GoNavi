@@ -8,18 +8,27 @@ import (
 
 func TestWindowsUpdateRequiresExplicitCloseConfirmation(t *testing.T) {
 	tests := []struct {
-		goos      string
-		confirmed bool
-		want      bool
+		goos           string
+		confirmed      bool
+		otherInstances int
+		want           bool
 	}{
-		{goos: "windows", confirmed: false, want: true},
-		{goos: " WINDOWS ", confirmed: true, want: false},
-		{goos: "darwin", confirmed: false, want: false},
-		{goos: "linux", confirmed: false, want: false},
+		{goos: "windows", confirmed: false, otherInstances: 1, want: true},
+		{goos: "windows", confirmed: false, otherInstances: 0, want: false},
+		{goos: " WINDOWS ", confirmed: true, otherInstances: 1, want: false},
+		{goos: "darwin", confirmed: false, otherInstances: 1, want: false},
+		{goos: "linux", confirmed: false, otherInstances: 1, want: false},
 	}
 	for _, test := range tests {
-		if got := windowsUpdateCloseConfirmationRequired(test.goos, test.confirmed); got != test.want {
-			t.Fatalf("windowsUpdateCloseConfirmationRequired(%q, %v) = %v, want %v", test.goos, test.confirmed, got, test.want)
+		if got := windowsUpdateCloseConfirmationRequired(test.goos, test.confirmed, test.otherInstances); got != test.want {
+			t.Fatalf(
+				"windowsUpdateCloseConfirmationRequired(%q, %v, %d) = %v, want %v",
+				test.goos,
+				test.confirmed,
+				test.otherInstances,
+				got,
+				test.want,
+			)
 		}
 	}
 }

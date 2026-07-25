@@ -398,6 +398,19 @@ describe('TabManager hover info', () => {
     expect(source).not.toContain('gn-v2-main-tabs-rich');
   });
 
+  it('renders the resolved environment bottom line only for connection-backed tabs', () => {
+    const source = stripSourceComments(readFileSync(new URL('./TabManager.tsx', import.meta.url), 'utf8'));
+
+    expect(source).toContain('const connectionTags = useStore(state => state.connectionTags)');
+    expect(source).toContain('const environment = connection');
+    expect(source).toContain('resolveConnectionEnvironmentPresentation(connection, connectionTags, t)');
+    expect(source).toContain('environmentColor={environment?.color}');
+    expect(source).toContain('className="gn-tab-environment-accent"');
+    expect(source).toContain('data-connection-environment={environmentType}');
+    expect(source).toMatch(/\.gn-tab-environment-accent \{[^}]*right: 8px;[^}]*bottom: 0;[^}]*left: 8px;[^}]*height: 4px;[^}]*border-radius: 4px 4px 0 0;[^}]*background: var\(--gn-tab-environment-color\);/s);
+    expect(source).not.toContain('color-mix(');
+  });
+
   it('keeps short secondary connection labels content-sized', () => {
     const css = readFileSync(new URL('../v2-theme.css', import.meta.url), 'utf8');
 

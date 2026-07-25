@@ -1,6 +1,6 @@
 import React from 'react';
 import { Tooltip } from 'antd';
-import { StarFilled, StarOutlined } from '@ant-design/icons';
+import { StarFilled } from '@ant-design/icons';
 import { t } from '../../i18n';
 import { SIDEBAR_SQL_EDITOR_DRAG_MIME, encodeSidebarSqlEditorDragPayload } from '../../utils/sidebarSqlDrag';
 import {
@@ -25,7 +25,6 @@ type SidebarV2TreeTitleOptions = {
   statusBadge: React.ReactNode;
   getV2TreeMetaText: (node: any) => string;
   sidebarTableMetadataFields: SidebarTableMetadataField[];
-  toggleSidebarTablePinned: (node: any) => void;
   snapshotTreeSelectionBeforeDrag: () => void;
   restoreTreeSelectionAfterDrag: () => void;
   treeDragSelectSuppressUntilRef: React.MutableRefObject<number>;
@@ -116,7 +115,6 @@ export const renderSidebarV2TreeTitle = ({
   statusBadge,
   getV2TreeMetaText,
   sidebarTableMetadataFields,
-  toggleSidebarTablePinned,
   snapshotTreeSelectionBeforeDrag,
   restoreTreeSelectionAfterDrag,
   treeDragSelectSuppressUntilRef,
@@ -178,33 +176,16 @@ export const renderSidebarV2TreeTitle = ({
     node.type === 'redis-db' ? 'is-redis-db' : '',
     node.type === 'table' && node?.dataRef?.pinnedSidebarTable ? 'is-pinned-table' : '',
   ].filter(Boolean).join(' ');
-  const tablePinAction = node.type === 'table' ? (
-    <button
-      type="button"
-      className={[
-        'gn-v2-table-pin-action',
-        node?.dataRef?.pinnedSidebarTable ? 'is-pinned' : '',
-      ].filter(Boolean).join(' ')}
-      title={node?.dataRef?.pinnedSidebarTable ? t('sidebar.action.unpin_table') : t('sidebar.action.pin_table')}
-      aria-label={node?.dataRef?.pinnedSidebarTable ? t('sidebar.action.unpin_table') : t('sidebar.action.pin_table')}
-      aria-pressed={node?.dataRef?.pinnedSidebarTable ? true : false}
-      data-v2-sidebar-table-pin-action="true"
-      onMouseDown={(event) => {
-        event.preventDefault();
-        event.stopPropagation();
-      }}
-      onClick={(event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        toggleSidebarTablePinned(node);
-      }}
-      onDoubleClick={(event) => {
-        event.preventDefault();
-        event.stopPropagation();
-      }}
+  const tablePinIndicator = node.type === 'table' && node?.dataRef?.pinnedSidebarTable ? (
+    <span
+      className="gn-v2-table-pin-indicator"
+      title={t('sidebar.status.pinned')}
+      role="img"
+      aria-label={t('sidebar.status.pinned')}
+      data-v2-sidebar-table-pin-indicator="true"
     >
-      {node?.dataRef?.pinnedSidebarTable ? <StarFilled /> : <StarOutlined />}
-    </button>
+      <StarFilled aria-hidden="true" />
+    </span>
   ) : null;
   if (node.type === 'connection') {
     return (
@@ -287,7 +268,7 @@ export const renderSidebarV2TreeTitle = ({
   return (
     <>
       {wrappedTitleNode}
-      {tablePinAction}
+      {tablePinIndicator}
     </>
   );
 };

@@ -10,9 +10,11 @@ import (
 )
 
 const (
-	bootstrapFileName     = "storage_root.json"
-	bootstrapLockFileName = bootstrapFileName + ".lock"
-	configuredLogFileName = "gonavi.log"
+	bootstrapFileName              = "storage_root.json"
+	bootstrapLockFileName          = bootstrapFileName + ".lock"
+	configuredLogFileName          = "gonavi.log"
+	savedQueryDirectoryName        = "saved_queries"
+	savedQueryDirectoryProbePrefix = ".gonavi-saved-query-"
 )
 const dataRootEnvName = "GONAVI_DATA_ROOT"
 
@@ -63,8 +65,9 @@ func SetActiveRootErrorDetail(err error) error {
 }
 
 type bootstrapConfig struct {
-	DataRoot     string `json:"dataRoot,omitempty"`
-	LogDirectory string `json:"logDirectory,omitempty"`
+	DataRoot            string `json:"dataRoot,omitempty"`
+	LogDirectory        string `json:"logDirectory,omitempty"`
+	SavedQueryDirectory string `json:"savedQueryDirectory,omitempty"`
 }
 
 func readBootstrapConfig() (bootstrapConfig, error) {
@@ -85,7 +88,8 @@ func readBootstrapConfig() (bootstrapConfig, error) {
 func writeBootstrapConfig(cfg bootstrapConfig) error {
 	cfg.DataRoot = strings.TrimSpace(cfg.DataRoot)
 	cfg.LogDirectory = strings.TrimSpace(cfg.LogDirectory)
-	if cfg.DataRoot == "" && cfg.LogDirectory == "" {
+	cfg.SavedQueryDirectory = strings.TrimSpace(cfg.SavedQueryDirectory)
+	if cfg.DataRoot == "" && cfg.LogDirectory == "" && cfg.SavedQueryDirectory == "" {
 		if err := os.Remove(BootstrapPath()); err != nil && !os.IsNotExist(err) {
 			return err
 		}
@@ -228,6 +232,17 @@ func DriverRoot(activeRoot string) string {
 	return filepath.Join(root, "drivers")
 }
 
+func DefaultSavedQueryDirectory(activeRoot string) string {
+	root := strings.TrimSpace(activeRoot)
+	if root == "" {
+		root = MustResolveActiveRoot()
+	}
+	if abs, err := filepath.Abs(root); err == nil {
+		root = abs
+	}
+	return filepath.Join(filepath.Clean(root), savedQueryDirectoryName)
+}
+
 func SetActiveRoot(root string) (string, error) {
 	targetRoot, err := normalizeRoot(root)
 	if err != nil {
@@ -298,6 +313,69 @@ func SetConfiguredLogDirectory(directory string) (string, error) {
 
 	if err := updateBootstrapConfig(func(cfg *bootstrapConfig) {
 		cfg.LogDirectory = target
+	}); err != nil {
+		return "", err
+	}
+	return target, nil
+}
+
+func ResolveConfiguredSavedQueryDirectory() (string, error) {
+	bootstrapConfigMu.Lock()
+	cfg, err := readBootstrapConfig()
+	bootstrapConfigMu.Unlock()
+	if err != nil {
+		return "", err
+	}
+	directory := strings.TrimSpace(cfg.SavedQueryDirectory)
+	if directory == "" {
+		return "", nil
+	}
+	abs, err := filepath.Abs(directory)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Clean(abs), nil
+}
+
+func ResolveSavedQueryDirectory(activeRoot string) (string, error) {
+	directory, err := ResolveConfiguredSavedQueryDirectory()
+	if err != nil {
+		return "", err
+	}
+	if directory != "" {
+		return directory, nil
+	}
+	return DefaultSavedQueryDirectory(activeRoot), nil
+}
+
+func SetConfiguredSavedQueryDirectory(directory string) (string, error) {
+	target := strings.TrimSpace(directory)
+	if target != "" {
+		abs, resolveErr := filepath.Abs(target)
+		if resolveErr != nil {
+			return "", resolveErr
+		}
+		target = filepath.Clean(abs)
+		if mkdirErr := os.MkdirAll(target, 0o755); mkdirErr != nil {
+			return "", mkdirErr
+		}
+
+		probe, createErr := os.CreateTemp(target, savedQueryDirectoryProbePrefix)
+		if createErr != nil {
+			return "", createErr
+		}
+		probePath := probe.Name()
+		if closeErr := probe.Close(); closeErr != nil {
+			_ = os.Remove(probePath)
+			return "", closeErr
+		}
+		if removeErr := os.Remove(probePath); removeErr != nil {
+			return "", removeErr
+		}
+	}
+
+	if err := updateBootstrapConfig(func(cfg *bootstrapConfig) {
+		cfg.SavedQueryDirectory = target
 	}); err != nil {
 		return "", err
 	}

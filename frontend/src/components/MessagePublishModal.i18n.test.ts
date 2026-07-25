@@ -19,6 +19,9 @@ describe('MessagePublishModal i18n shell guards', () => {
     expect(modalSource).toContain('connectionName: connection.name');
     expect(modalSource).toContain('detail: res?.message');
     expect(modalSource).toContain('detail: error?.message || String(error)');
+    expect(modalSource).toContain('destroyOnHidden');
+    // Closed modals unmount Form; never call form APIs while open === false.
+    expect(modalSource).not.toContain('form.resetFields()');
     expect(modalSource).not.toContain('测试发送消息');
     expect(modalSource).not.toContain('okText="发送"');
     expect(modalSource).not.toContain('发送失败:');

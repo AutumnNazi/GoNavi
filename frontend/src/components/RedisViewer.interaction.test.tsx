@@ -321,6 +321,44 @@ describe('RedisViewer tree interactions', () => {
     renderer!.unmount();
   });
 
+  it('renders key detail actions on a separate row below the metadata', async () => {
+    let renderer: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<RedisViewer connectionId="redis-1" redisDB={0} />);
+    });
+    await flushEffects();
+
+    const leafNode = findFirstLeafNode(antdState.treeProps.treeData);
+    await act(async () => {
+      antdState.treeProps.onSelect?.([leafNode.key]);
+    });
+    await flushEffects();
+
+    const header = renderer!.root.findByProps({ className: 'redis-key-detail-header' });
+    const summary = renderer!.root.findByProps({ className: 'redis-key-detail-summary' });
+    const identity = renderer!.root.findByProps({ className: 'redis-key-detail-identity' });
+    const metadata = renderer!.root.findByProps({ className: 'redis-key-detail-metadata' });
+    const actions = renderer!.root.findByProps({ className: 'redis-key-detail-actions' });
+
+    expect(header.props.style).toMatchObject({ flexDirection: 'column' });
+    expect(summary.props.style).toMatchObject({ minWidth: 0, width: '100%' });
+    expect(identity.parent).toBe(summary);
+    expect(metadata.parent).toBe(summary);
+    expect(actions.parent).toBe(summary);
+    expect(summary.children.indexOf(identity)).toBeLessThan(summary.children.indexOf(metadata));
+    expect(summary.children.indexOf(metadata)).toBeLessThan(summary.children.indexOf(actions));
+    expect(actions.props.style).toMatchObject({
+      alignSelf: 'flex-start',
+      flexWrap: 'wrap',
+      maxWidth: '100%',
+    });
+    expect(findButtonByText(renderer!, 'Set TTL')).toBeTruthy();
+    expect(findButtonByText(renderer!, 'Refresh')).toBeTruthy();
+    expect(findButtonByText(renderer!, 'Delete Key')).toBeTruthy();
+
+    renderer!.unmount();
+  });
+
   it('loads every key page when the load-all action is clicked', async () => {
     redisBackend.RedisScanKeys.mockReset();
     redisBackend.RedisScanKeys

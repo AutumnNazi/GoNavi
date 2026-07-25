@@ -1089,29 +1089,40 @@ func (m *MySQLDB) GetCreateStatement(dbName, tableName string) (string, error) {
 	return "", localizedDatabaseRuntimeError("db.backend.error.create_table_statement_not_found", nil)
 }
 
+func buildMySQLColumnDefinition(row map[string]interface{}) connection.ColumnDefinition {
+	col := connection.ColumnDefinition{
+		Name:     fmt.Sprintf("%v", row["Field"]),
+		Type:     fmt.Sprintf("%v", row["Type"]),
+		Nullable: fmt.Sprintf("%v", row["Null"]),
+		Key:      fmt.Sprintf("%v", row["Key"]),
+		Extra:    fmt.Sprintf("%v", row["Extra"]),
+		Comment:  fmt.Sprintf("%v", row["Comment"]),
+	}
+
+	if row["Default"] != nil {
+		defaultValue := fmt.Sprintf("%v", row["Default"])
+		col.Default = &defaultValue
+		col.HasDefault = true
+	}
+	if row["Collation"] != nil {
+		col.Collation = fmt.Sprintf("%v", row["Collation"])
+		if separator := strings.IndexByte(col.Collation, '_'); separator > 0 {
+			col.Charset = col.Collation[:separator]
+		}
+	}
+
+	return col
+}
+
 func (m *MySQLDB) GetColumns(dbName, tableName string) ([]connection.ColumnDefinition, error) {
 	data, _, err := m.Query(buildMySQLShowFullColumnsQuery(dbName, tableName))
 	if err != nil {
 		return nil, err
 	}
 
-	var columns []connection.ColumnDefinition
+	columns := make([]connection.ColumnDefinition, 0, len(data))
 	for _, row := range data {
-		col := connection.ColumnDefinition{
-			Name:     fmt.Sprintf("%v", row["Field"]),
-			Type:     fmt.Sprintf("%v", row["Type"]),
-			Nullable: fmt.Sprintf("%v", row["Null"]),
-			Key:      fmt.Sprintf("%v", row["Key"]),
-			Extra:    fmt.Sprintf("%v", row["Extra"]),
-			Comment:  fmt.Sprintf("%v", row["Comment"]),
-		}
-
-		if row["Default"] != nil {
-			d := fmt.Sprintf("%v", row["Default"])
-			col.Default = &d
-		}
-
-		columns = append(columns, col)
+		columns = append(columns, buildMySQLColumnDefinition(row))
 	}
 	return columns, nil
 }

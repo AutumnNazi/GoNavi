@@ -568,6 +568,39 @@ describe('useAppUpdateManager', () => {
     );
   });
 
+  it('restores the ready state without an error toast when Windows instance confirmation is cancelled', async () => {
+    backendApp.CheckForUpdates.mockResolvedValue({
+      success: true,
+      data: {
+        hasUpdate: true,
+        currentVersion: '0.8.1',
+        latestVersion: '0.8.2',
+        downloaded: true,
+        assetSize: 2048,
+        installMode: 'portable',
+        packageType: 'portable',
+      },
+    });
+    backendApp.InstallUpdateAndRestart.mockResolvedValue({
+      success: false,
+      data: { cancelled: true },
+    });
+
+    renderHook();
+    await act(async () => {
+      await hook?.checkForUpdates(false);
+    });
+
+    let accepted = true;
+    await act(async () => {
+      accepted = await hook!.handleInstallFromProgress();
+    });
+
+    expect(accepted).toBe(false);
+    expect(hook?.updateDownloadProgress.status).toBe('done');
+    expect(messageApi.error).not.toHaveBeenCalled();
+  });
+
   it('returns false without calling the backend when no update is ready', async () => {
     renderHook();
 

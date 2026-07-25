@@ -14,6 +14,8 @@ export function ApplyDataRootDirectory(arg1:string,arg2:boolean):Promise<connect
 
 export function ApplyLogDirectory(arg1:string):Promise<connection.QueryResult>;
 
+export function ApplySavedQueryDirectory(arg1:string):Promise<connection.QueryResult>;
+
 export function BuildSQLAuditExport(arg1:sqlaudit.Filter,arg2:string):Promise<connection.QueryResult>;
 
 export function CancelApplicationQuit():Promise<connection.QueryResult>;
@@ -290,6 +292,8 @@ export function OpenLogDirectory():Promise<connection.QueryResult>;
 
 export function OpenSQLFile():Promise<connection.QueryResult>;
 
+export function OpenSavedQueryDirectory():Promise<connection.QueryResult>;
+
 export function PreviewChanges(arg1:connection.ConnectionConfig,arg2:string,arg3:string,arg4:connection.ChangeSet):Promise<connection.QueryResult>;
 
 export function PreviewImportFile(arg1:string):Promise<connection.QueryResult>;
@@ -364,6 +368,8 @@ export function RenameSQLDirectory(arg1:string,arg2:string):Promise<connection.Q
 
 export function RenameSQLFile(arg1:string,arg2:string):Promise<connection.QueryResult>;
 
+export function RenameSavedQuery(arg1:string,arg2:string):Promise<connection.SavedQuery>;
+
 export function RenameSchema(arg1:connection.ConnectionConfig,arg2:string,arg3:string,arg4:string):Promise<connection.QueryResult>;
 
 export function RenameTable(arg1:connection.ConnectionConfig,arg2:string,arg3:string,arg4:string):Promise<connection.QueryResult>;
@@ -392,6 +398,8 @@ export function ResultDiffUploadChunk(arg1:resultdiff.UploadChunkRequest):Promis
 
 export function RetrySecurityUpdateCurrentRound(arg1:app.RetrySecurityUpdateRequest):Promise<app.SecurityUpdateStatus>;
 
+export function RevealSavedQueryInFolder(arg1:string):Promise<connection.QueryResult>;
+
 export function SaveConnection(arg1:connection.SavedConnectionInput):Promise<connection.SavedConnectionView>;
 
 export function SaveGlobalProxy(arg1:connection.SaveGlobalProxyInput):Promise<connection.GlobalProxyView>;
@@ -419,6 +427,8 @@ export function SelectSQLDirectory(arg1:string):Promise<connection.QueryResult>;
 export function SelectSQLFileForExecution():Promise<connection.QueryResult>;
 
 export function SelectSSHKeyFile(arg1:string):Promise<connection.QueryResult>;
+
+export function SelectSavedQueryDirectory(arg1:string):Promise<connection.QueryResult>;
 
 export function SetApplicationBrandIcon(arg1:string):Promise<connection.QueryResult>;
 

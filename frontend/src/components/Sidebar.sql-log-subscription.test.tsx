@@ -71,4 +71,17 @@ describe('Sidebar SQL log subscription', () => {
       renderer.unmount();
     });
   });
+
+  it('filters hidden recent queries before applying the five-item limit', () => {
+    const logs = Array.from({ length: 7 }, (_, index) => makeLog(`log-${7 - index}`, 7 - index));
+    logs[1] = { ...logs[1], hiddenFromRecent: true };
+
+    expect(selectRecentSidebarSqlLogs(logs).map((log) => log.id)).toEqual([
+      'log-7',
+      'log-5',
+      'log-4',
+      'log-3',
+      'log-2',
+    ]);
+  });
 });

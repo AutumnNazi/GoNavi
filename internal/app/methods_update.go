@@ -47,18 +47,19 @@ type cachedGitHubRelease struct {
 var updateReleaseCache sync.Map // apiURL -> cachedGitHubRelease
 
 var (
-	updateFetchLatestRelease        = fetchLatestRelease
-	updateFetchDevRelease           = fetchDevRelease
-	updateFetchReleaseSHA256        = fetchReleaseSHA256
-	updateLogCheckError             = func(err error) { logger.Error(err, "检查更新失败") }
-	updateResolveInstallTarget      = resolveUpdateInstallTarget
-	updateResolveInstallMode        = resolveCurrentUpdateInstallMode
-	updateLaunchInstallScript       = launchUpdateScript
-	updateFindOtherWindowsInstances = findOtherWindowsUpdateInstances
-	updateCloseWindowsInstances     = closeWindowsUpdateInstances
-	updateAcquireWindowsMaintenance = acquireWindowsUpdateMaintenance
-	updateQuitSleep                 = time.Sleep
-	updateExitProcess               = os.Exit
+	updateFetchLatestRelease           = fetchLatestRelease
+	updateFetchDevRelease              = fetchDevRelease
+	updateFetchReleaseSHA256           = fetchReleaseSHA256
+	updateLogCheckError                = func(err error) { logger.Error(err, "检查更新失败") }
+	updateResolveInstallTarget         = resolveUpdateInstallTarget
+	updateResolveInstallMode           = resolveCurrentUpdateInstallMode
+	updateLaunchInstallScript          = launchUpdateScript
+	updateFindOtherWindowsInstances    = findOtherWindowsUpdateInstances
+	updateCloseWindowsInstances        = closeWindowsUpdateInstances
+	updateConfirmCloseWindowsInstances = showWindowsUpdateCloseConfirmation
+	updateAcquireWindowsMaintenance    = acquireWindowsUpdateMaintenance
+	updateQuitSleep                    = time.Sleep
+	updateExitProcess                  = os.Exit
 )
 
 var errUpdateChecksumMismatch = errors.New("update package checksum mismatch")
@@ -310,18 +311,6 @@ func (a *App) InstallUpdateAndRestart(closeAllWindowsInstancesConfirmed bool) co
 			}),
 		}
 	}
-	if windowsUpdateCloseConfirmationRequired(stdRuntime.GOOS, closeAllWindowsInstancesConfirmed) {
-		return connection.QueryResult{
-			Success: false,
-			Message: a.appText("app.update.backend.message.install_launch_failed", map[string]any{
-				"detail": a.appText("app.update.backend.error.close_instances_confirmation_required", nil),
-			}),
-			Data: map[string]any{
-				"requiresCloseConfirmation": true,
-			},
-		}
-	}
-
 	if stdRuntime.GOOS == "windows" {
 		installTarget := updateResolveInstallTarget()
 		maintenanceLease, err := updateAcquireWindowsMaintenance(installTarget)
@@ -339,6 +328,44 @@ func (a *App) InstallUpdateAndRestart(closeAllWindowsInstancesConfirmed bool) co
 			}
 		}()
 		staged.MaintenanceEventName = maintenanceLease.Name
+
+		finalTarget := resolveWindowsUpdateFinalTargetPath(installTarget, staged.FilePath)
+		runningInstances, err := updateFindOtherWindowsInstances([]string{installTarget, finalTarget}, os.Getpid())
+		if err != nil {
+			return connection.QueryResult{
+				Success: false,
+				Message: a.appText("app.update.backend.message.install_launch_failed", map[string]any{
+					"detail": a.appText("app.update.backend.error.close_instances_failed", map[string]any{"detail": err.Error()}),
+				}),
+			}
+		}
+		if windowsUpdateCloseConfirmationRequired(stdRuntime.GOOS, closeAllWindowsInstancesConfirmed, len(runningInstances)) {
+			confirmationParams := map[string]any{"count": len(runningInstances)}
+			confirmed, confirmErr := updateConfirmCloseWindowsInstances(
+				a.ctx,
+				a.appText("app.about.update_install_confirm.close_instances_title", confirmationParams),
+				a.appText("app.about.update_install_confirm.close_instances_content", confirmationParams),
+			)
+			if confirmErr != nil {
+				return connection.QueryResult{
+					Success: false,
+					Message: a.appText("app.update.backend.message.install_launch_failed", map[string]any{
+						"detail": confirmErr.Error(),
+					}),
+				}
+			}
+			if !confirmed {
+				return connection.QueryResult{
+					Success: false,
+					Data: map[string]any{
+						"cancelled":   true,
+						"runningPids": otherWindowsUpdateProcessIDs(runningInstances),
+					},
+				}
+			}
+			closeAllWindowsInstancesConfirmed = true
+		}
+
 		if staged.InstallMode == updateInstallModePortable {
 			if err := ensureWindowsUpdateTargetWritable(installTarget); err != nil {
 				return connection.QueryResult{
@@ -350,22 +377,23 @@ func (a *App) InstallUpdateAndRestart(closeAllWindowsInstancesConfirmed bool) co
 			}
 		}
 
-		finalTarget := resolveWindowsUpdateFinalTargetPath(installTarget, staged.FilePath)
-		closedPIDs, err := closeOtherWindowsUpdateInstancesForInstall([]string{installTarget, finalTarget}, os.Getpid())
-		if err != nil {
-			logger.Warnf("关闭 Windows 更新相关实例失败 current=%s target=%s pids=%v error=%v", installTarget, finalTarget, closedPIDs, err)
-			return connection.QueryResult{
-				Success: false,
-				Message: a.appText("app.update.backend.message.install_launch_failed", map[string]any{
-					"detail": a.appText("app.update.backend.error.close_instances_failed", map[string]any{"detail": err.Error()}),
-				}),
-				Data: map[string]any{
-					"runningPids": closedPIDs,
-				},
+		if closeAllWindowsInstancesConfirmed {
+			closedPIDs, closeErr := closeOtherWindowsUpdateInstancesForInstall([]string{installTarget, finalTarget}, os.Getpid())
+			if closeErr != nil {
+				logger.Warnf("关闭 Windows 更新相关实例失败 current=%s target=%s pids=%v error=%v", installTarget, finalTarget, closedPIDs, closeErr)
+				return connection.QueryResult{
+					Success: false,
+					Message: a.appText("app.update.backend.message.install_launch_failed", map[string]any{
+						"detail": a.appText("app.update.backend.error.close_instances_failed", map[string]any{"detail": closeErr.Error()}),
+					}),
+					Data: map[string]any{
+						"runningPids": closedPIDs,
+					},
+				}
 			}
-		}
-		if len(closedPIDs) > 0 {
-			logger.Infof("Windows 更新已关闭其他 GoNavi 实例 current=%s target=%s pids=%v", installTarget, finalTarget, closedPIDs)
+			if len(closedPIDs) > 0 {
+				logger.Infof("Windows 更新已关闭其他 GoNavi 实例 current=%s target=%s pids=%v", installTarget, finalTarget, closedPIDs)
+			}
 		}
 	}
 

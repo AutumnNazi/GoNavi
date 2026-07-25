@@ -10,15 +10,18 @@ const appSource = readFileSync(
 describe('restart-to-update unsaved SQL guard', () => {
   it('runs the confirmed update action through every application quit path', () => {
     expect(appSource).toContain('type ApplicationQuitConfirmedAction = () => Promise<boolean>;');
-    expect(appSource).toContain('const handleApplicationQuitRequest = useCallback(async (confirmedAction?: ApplicationQuitConfirmedAction) => {');
+    expect(appSource).toContain('const handleApplicationQuitRequest = useCallback(async (');
+    expect(appSource).toContain('confirmedAction?: ApplicationQuitConfirmedAction,');
+    expect(appSource).toContain('cancelledAction?: () => void,');
     expect(appSource).toContain('const runConfirmedAction = async (): Promise<boolean> => {');
     const runnerStart = appSource.indexOf('const runConfirmedAction = async (): Promise<boolean> => {');
     const runnerEnd = appSource.indexOf('\n      let targets;', runnerStart);
     const runnerSource = appSource.slice(runnerStart, runnerEnd);
     expect(runnerSource).toContain('accepted = await confirmedAction();');
     expect(runnerSource).toContain('await forceQuitApplication();\n                  accepted = true;');
-    expect(runnerSource).toContain('} catch (error) {\n              resetApplicationQuitRequest();');
-    expect(runnerSource).toContain('if (!accepted) {\n              resetApplicationQuitRequest();');
+    expect(runnerSource).toContain('} catch (error) {\n              cancelRequest();');
+    expect(runnerSource).toContain('if (!accepted) {\n              cancelRequest();');
+    expect(appSource).toContain('resetApplicationQuitRequest();\n          cancelledAction?.();');
     expect(runnerSource).toContain('return accepted;');
     expect(appSource).toContain('if (targets.length === 0) {\n          await runConfirmedAction();');
     expect(appSource).toContain('void runConfirmedAction();');
@@ -57,15 +60,20 @@ describe('restart-to-update unsaved SQL guard', () => {
     expect(loaderSource).not.toContain('await reloadSavedQueryGroups();');
   });
 
-  it('confirms closing every Windows instance before entering the unsaved SQL guard', () => {
+  it('lets the backend confirm only actually running Windows instances after the unsaved SQL guard', () => {
     expect(appSource).toContain('const handleInstallUpdateRequest = useCallback(async () => {');
-    expect(appSource).toContain("if (installMode === 'portable' || installMode === 'msi') {");
-    expect(appSource).toContain("title: t('app.about.update_install_confirm.close_instances_title')");
-    expect(appSource).toContain("content: t('app.about.update_install_confirm.close_instances_content')");
-    expect(appSource).toContain("okText: t('app.about.update_install_confirm.close_instances_ok')");
-    expect(appSource).toContain("cancelText: t('common.cancel')");
-    expect(appSource).toContain('await handleApplicationQuitRequest(() => handleInstallFromProgress(true));');
-    expect(appSource).toContain('await handleApplicationQuitRequest(() => handleInstallFromProgress(false));');
+    const installRequestStart = appSource.indexOf('const handleInstallUpdateRequest = useCallback(async () => {');
+    const installRequestEnd = appSource.indexOf('\n\n  useEffect(() => {', installRequestStart);
+    const installRequestSource = appSource.slice(installRequestStart, installRequestEnd);
+    expect(installRequestSource.indexOf('hideUpdateDownloadProgress();')).toBeGreaterThan(-1);
+    expect(installRequestSource.indexOf('await handleApplicationQuitRequest(')).toBeGreaterThan(-1);
+    expect(installRequestSource.indexOf('hideUpdateDownloadProgress();')).toBeLessThan(
+      installRequestSource.indexOf('await handleApplicationQuitRequest('),
+    );
+    expect(installRequestSource).toContain('() => handleInstallFromProgress(false),');
+    expect(installRequestSource).toContain('showUpdateDownloadProgress,');
+    expect(appSource).not.toContain("title: t('app.about.update_install_confirm.close_instances_title')");
+    expect(appSource).not.toContain('handleInstallFromProgress(true)');
     expect(appSource.match(/void handleInstallUpdateRequest\(\);/g)).toHaveLength(2);
     expect(appSource).not.toContain('onClick={handleInstallFromProgress}');
     expect(appSource).toContain("updateInstallAction === 'install-and-restart'");
@@ -73,7 +81,7 @@ describe('restart-to-update unsaved SQL guard', () => {
     expect(appSource.match(/\{updateInstallActionLabel\}/g)).toHaveLength(2);
   });
 
-  it('keeps every update quit confirmation above active settings and update dialogs', () => {
+  it('keeps the unsaved SQL quit confirmation above active settings and update dialogs', () => {
     const unsavedConfirmStart = appSource.indexOf('const confirmRef = Modal.confirm({');
     const installRequestStart = appSource.indexOf('const handleInstallUpdateRequest = useCallback', unsavedConfirmStart);
     const installRequestEnd = appSource.indexOf('\n\n  useEffect(() => {', installRequestStart);
@@ -87,6 +95,6 @@ describe('restart-to-update unsaved SQL guard', () => {
     expect(appSource).toContain('const applicationQuitModalZIndex = Math.max(');
     expect(appSource).toContain('settingsChildModalZIndex + 100,');
     expect(unsavedConfirmSource).toContain('zIndex: applicationQuitModalZIndex');
-    expect(installRequestSource).toContain('zIndex: applicationQuitModalZIndex');
+    expect(installRequestSource).not.toContain('Modal.confirm({');
   });
 });

@@ -57,6 +57,8 @@ import {
 } from "./connectionModalUri";
 import ConnectionModalNetworkSecuritySection from "./ConnectionModalNetworkSecuritySection";
 import type { MongoMemberInfo } from "../../types";
+import ConnectionEnvironmentSelect from "../ConnectionEnvironmentSelect";
+import { DEFAULT_CONNECTION_ENVIRONMENT } from "../../utils/connectionEnvironment";
 
 const { Text } = Typography;
 
@@ -247,20 +249,29 @@ const ConnectionModalStep2: React.FC<ConnectionModalStep2Props> = (props) => {
             </Tag>
           ),
           children: (
-            <Form.Item
-              name="name"
-              label={t("connection.modal.field.name.label")}
-              style={{ marginBottom: 0 }}
-            >
-              <Input
-                {...noAutoCapInputProps}
-                placeholder={
-                  isJVM
-                    ? t("connection.modal.field.name.placeholder.jvm")
-                    : t("connection.modal.field.name.placeholder.default")
-                }
-              />
-            </Form.Item>
+            <>
+              <Form.Item
+                name="name"
+                label={t("connection.modal.field.name.label")}
+              >
+                <Input
+                  {...noAutoCapInputProps}
+                  placeholder={
+                    isJVM
+                      ? t("connection.modal.field.name.placeholder.jvm")
+                      : t("connection.modal.field.name.placeholder.default")
+                  }
+                />
+              </Form.Item>
+              <Form.Item
+                name="environmentType"
+                label={t("connection.modal.field.environment_type.label")}
+                initialValue={DEFAULT_CONNECTION_ENVIRONMENT}
+                style={{ marginBottom: 0 }}
+              >
+                <ConnectionEnvironmentSelect />
+              </Form.Item>
+            </>
           ),
         })}
 

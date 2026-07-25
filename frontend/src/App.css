@@ -1005,12 +1005,49 @@ body[data-ui-version="legacy"] .ant-layout-sider {
   max-width: min(960px, calc(100vw - 360px)) !important;
 }
 
+body[data-ui-version] .ant-layout-sider[data-sidebar-panel='true'] {
+  --gonavi-sidebar-collapse-duration: 200ms;
+}
+
+/*
+ * Ant Design Sider defaults to `transition: all`. That is desirable for the
+ * collapse/expand animation, but drag-resizing width must snap immediately —
+ * otherwise the workbench/DataGrid reflows for ~200ms and feels heavily janky.
+ */
+body[data-ui-version] .ant-layout-sider[data-sidebar-panel='true'][data-sidebar-resizing='true'],
+body[data-sidebar-resizing='true'] .ant-layout-sider[data-sidebar-panel='true'] {
+  transition: none !important;
+}
+
 body[data-ui-version] .ant-layout-sider[data-sidebar-collapsed='true'] {
   min-width: var(--gonavi-sidebar-collapsed-width, 0px) !important;
   max-width: var(--gonavi-sidebar-collapsed-width, 0px) !important;
   width: var(--gonavi-sidebar-collapsed-width, 0px) !important;
   flex: 0 0 var(--gonavi-sidebar-collapsed-width, 0px) !important;
   border-right: 0 !important;
+}
+
+body[data-ui-version='legacy'] .ant-layout-sider[data-sidebar-collapsed='true'] [data-sidebar-content='true'],
+body[data-ui-version='v2'] .ant-layout-sider[data-sidebar-collapsed='true'] [data-sidebar-tree-panel='true'] {
+  visibility: hidden;
+  pointer-events: none;
+  transition: visibility 0s linear var(--gonavi-sidebar-collapse-duration);
+}
+
+body[data-ui-version='legacy'] .ant-layout-sider[data-sidebar-collapsed='false'] [data-sidebar-content='true'],
+body[data-ui-version='v2'] .ant-layout-sider[data-sidebar-collapsed='false'] [data-sidebar-tree-panel='true'] {
+  visibility: visible;
+  transition: none;
+}
+
+body[data-ui-version='v2'] .ant-layout-sider[data-sidebar-collapsed='false'] .gn-v2-rail-sidebar-toggle-slot {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body[data-ui-version] .ant-layout-sider[data-sidebar-panel='true'] {
+    --gonavi-sidebar-collapse-duration: 0ms;
+  }
 }
 
 body[data-ui-version] .gonavi-sidebar-collapse-trigger.ant-btn {

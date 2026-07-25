@@ -167,6 +167,7 @@ import {
     queryCompletionMetadataRowsBySpecs,
     readSidebarSqlDropText,
     matchLeadingSelectTableReference,
+    maskQueryEditorSqlLiteralsAndComments,
     materializeBoundedQueryEditorCompletionBatches,
     resolveNewQueryDefaultTemplate,
     resolveEventTargetNode,
@@ -6115,38 +6116,49 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                   ? connectionsRef.current.find(c => c.id === tabConnectionId)
                   : undefined);
           const formatterLanguage = resolveQueryEditorFormatterLanguage(conn);
-          const sourceSql = getCurrentQuery();
+          const editor = editorRef.current;
+          const monaco = monacoRef.current;
+          const model = editor?.getModel?.();
+          const selection = editor?.getSelection?.();
+          const selectedRaw = model && selection
+              ? String(model.getValueInRange?.(selection) || '')
+              : '';
+          const formatSelection = !!selection && !!selectedRaw.trim();
+          const fullQuery = getCurrentQuery();
+          const sourceSql = formatSelection ? selectedRaw : fullQuery;
           const formatted = format(sourceSql, { language: formatterLanguage, keywordCase: sqlFormatOptions.keywordCase });
           if (sourceSql === formatted) {
               return;
           }
           updateQueryTabDraft(tab.id, {
               formatRestoreSnapshot: {
-                  query: sourceSql,
+                  query: fullQuery,
                   createdAt: Date.now(),
               },
           });
-          const editor = editorRef.current;
-          const monaco = monacoRef.current;
-          const model = editor?.getModel?.();
           if (editor && monaco && model) {
-              const currentValue = String(model.getValue?.() || sourceSql);
-              if (currentValue === formatted) {
+              const editRange = formatSelection
+                  ? selection
+                  : (model.getFullModelRange?.()
+                      || new monaco.Range(1, 1, model.getLineCount?.() || 1, model.getLineMaxColumn?.(model.getLineCount?.() || 1) || 1));
+              const currentValue = String(model.getValue?.() || fullQuery);
+              if (!formatSelection && currentValue === formatted) {
                   return;
               }
-              const fullRange = model.getFullModelRange?.()
-                  || new monaco.Range(1, 1, model.getLineCount?.() || 1, model.getLineMaxColumn?.(model.getLineCount?.() || 1) || 1);
               editor.pushUndoStop?.();
               editor.executeEdits?.('gonavi-format-sql', [{
-                  range: fullRange,
+                  range: editRange,
                   text: formatted,
                   forceMoveMarkers: true,
               }]);
               editor.pushUndoStop?.();
               const nextValue = editor.getValue?.();
-              applyQueryState(typeof nextValue === 'string' ? nextValue : formatted);
+              applyQueryState(typeof nextValue === 'string' ? nextValue : (formatSelection ? currentValue : formatted));
               refreshObjectDecorations();
               return;
+      }
+      if (formatSelection) {
+          return;
       }
       syncQueryToEditor(formatted);
   } catch (e) {
@@ -6253,7 +6265,9 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
   };
 
   const containsOraclePlsqlDefinition = (statements: string[]): boolean => (
-      statements.some((statement) => /^\s*(?:(?:--[^\n]*|\/\*[\s\S]*?\*\/)\s*)*CREATE\s+(?:OR\s+REPLACE\s+)?(?:EDITIONABLE\s+|NONEDITIONABLE\s+)?(?:PROCEDURE|FUNCTION|PACKAGE|TRIGGER)\b/i.test(statement))
+      statements.some((statement) => /^\s*CREATE\s+(?:OR\s+REPLACE\s+)?(?:EDITIONABLE\s+|NONEDITIONABLE\s+)?(?:PROCEDURE|FUNCTION|PACKAGE|TRIGGER)\b/i.test(
+          maskQueryEditorSqlLiteralsAndComments(statement),
+      ))
   );
 
   const normalizeOracleSqlPlusSlashTerminators = (sql: string): string => (

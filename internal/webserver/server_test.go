@@ -106,7 +106,8 @@ func TestMethodInvokerRejectsDesktopOnlyAppMethodsBeforeReflection(t *testing.T)
 		"Shutdown", "ExportSQLAuditFile", "OpenSQLFile", "ExecuteSQLFile", "ReadSQLFile",
 		"PreviewImportFile", "ImportDatabaseSQL", "ImportDataWithProgress", "ImportDataWithProgressOptions", "GetDataRootDirectoryInfo",
 		"ExportDatabaseSQLWithOptions", "ExportSchemaSQLWithOptions",
-		"ApplyDataRootDirectory", "OpenDataRootDirectory", "SelectLogDirectory", "ApplyLogDirectory", "OpenLogDirectory", "SetApplicationBrandIcon",
+		"ApplyDataRootDirectory", "OpenDataRootDirectory", "SelectLogDirectory", "ApplyLogDirectory", "OpenLogDirectory",
+		"SelectSavedQueryDirectory", "ApplySavedQueryDirectory", "OpenSavedQueryDirectory", "RevealSavedQueryInFolder", "SetApplicationBrandIcon",
 	} {
 		_, err := invoker.Invoke(invokeRequest{Namespace: "app", Receiver: "app", Method: method})
 		if err == nil || !strings.Contains(err.Error(), "unavailable in web runtime") {

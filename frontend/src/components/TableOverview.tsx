@@ -12,7 +12,7 @@ import { useAutoFetchVisibility } from '../utils/autoFetchVisibility';
 import { buildRpcConnectionConfig } from '../utils/connectionRpcConfig';
 import { noAutoCapInputProps } from '../utils/inputAutoCap';
 import { supportsTableTruncateAction, type TableDataDangerActionKind } from './tableDataDangerActions';
-import { buildTableSelectQuery } from '../utils/objectQueryTemplates';
+import { resolveTableSelectQuery } from '../utils/objectQueryTemplates';
 import {
     TABLE_OVERVIEW_RENDER_BATCH_SIZE,
     buildTableOverviewSearchIndex,
@@ -522,15 +522,23 @@ const TableOverview: React.FC<TableOverviewProps> = ({ tab }) => {
 
     const openQueryForTable = useCallback((tableName: string) => {
         if (!connection) return;
-        setActiveContext({ connectionId: connection.id, dbName: tab.dbName || '' });
-        addTab({
-            id: `query-${Date.now()}`,
-            title: t('table_overview.menu.new_query'),
-            type: 'query',
-            connectionId: connection.id,
-            dbName: tab.dbName,
-            query: buildTableSelectQuery(metadataDialect, tableName),
-        });
+        void (async () => {
+            setActiveContext({ connectionId: connection.id, dbName: tab.dbName || '' });
+            const queryTemplate = await resolveTableSelectQuery({
+                dbType: metadataDialect,
+                tableName,
+                dbName: String(tab.dbName || ''),
+                connectionConfig: connection.config,
+            });
+            addTab({
+                id: `query-${Date.now()}`,
+                title: t('table_overview.menu.new_query'),
+                type: 'query',
+                connectionId: connection.id,
+                dbName: tab.dbName,
+                query: queryTemplate,
+            });
+        })();
     }, [addTab, connection, metadataDialect, setActiveContext, t, tab.dbName]);
 
     const openTableInER = useCallback((tableName: string) => {

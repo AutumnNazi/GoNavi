@@ -7,7 +7,8 @@ import { t } from '../../i18n';
 import type { ConnectionTag, SavedConnection } from '../../types';
 import { buildRpcConnectionConfig } from '../../utils/connectionRpcConfig';
 import { resolveConnectionAccentColor, resolveConnectionIconType } from '../../utils/connectionVisual';
-import { buildTableSelectQuery } from '../../utils/objectQueryTemplates';
+import { normalizeConnectionEnvironmentType } from '../../utils/connectionEnvironment';
+import { resolveTableSelectQuery } from '../../utils/objectQueryTemplates';
 import { DBReleaseConnection } from '../../../wailsjs/go/app/App';
 import { getDbIcon } from '../DatabaseIcons';
 import { getMetadataDialect } from './sidebarMetadataLoaders';
@@ -83,6 +84,7 @@ type UseSidebarV2ActionHandlersArgs = {
   handleExportDatabaseSQL: (node: any, includeData: boolean) => Promise<void>;
   handleRunSQLFile: (node: any) => void;
   handleDeleteDatabase: (node: any) => void;
+  onCreateConnectionInGroup?: (targetTagId: string) => void;
   onEditConnection?: (conn: SavedConnection) => void;
   handleDuplicateConnection: (conn: SavedConnection) => Promise<void>;
   buildConnectionRootQueryTabTitle: () => string;
@@ -148,6 +150,7 @@ export const useSidebarV2ActionHandlers = ({
   handleExportDatabaseSQL,
   handleRunSQLFile,
   handleDeleteDatabase,
+  onCreateConnectionInGroup,
   onEditConnection,
   handleDuplicateConnection,
   buildConnectionRootQueryTabTitle,
@@ -169,16 +172,24 @@ export const useSidebarV2ActionHandlers = ({
         openDesign(node, 'columns', false);
         return;
       case 'new-query': {
-        const tableName = String(node.dataRef?.tableName || '').trim();
-        const queryTemplate = buildTableSelectQuery(getMetadataDialect(node.dataRef as SavedConnection), tableName);
-        addTab({
-          id: `query-${Date.now()}`,
-          title: t('query.new'),
-          type: 'query',
-          connectionId: node.dataRef.id,
-          dbName: node.dataRef.dbName,
-          query: queryTemplate,
-        });
+        void (async () => {
+          const tableName = String(node.dataRef?.tableName || '').trim();
+          const dbType = getMetadataDialect(node.dataRef as SavedConnection);
+          const queryTemplate = await resolveTableSelectQuery({
+            dbType,
+            tableName,
+            dbName: String(node.dataRef?.dbName || ''),
+            connectionConfig: node.dataRef?.config,
+          });
+          addTab({
+            id: `query-${Date.now()}`,
+            title: t('query.new'),
+            type: 'query',
+            connectionId: node.dataRef.id,
+            dbName: node.dataRef.dbName,
+            query: queryTemplate,
+          });
+        })();
         return;
       }
       case 'publish-message':
@@ -512,6 +523,10 @@ export const useSidebarV2ActionHandlers = ({
   const handleV2ConnectionGroupContextMenuAction = (group: V2RailConnectionGroup, action: V2ConnectionGroupContextMenuActionKey) => {
     const tag = connectionTags.find((item) => item.id === group.id);
     if (!tag) return;
+    if (action === 'new-connection') {
+      onCreateConnectionInGroup?.(tag.id);
+      return;
+    }
     if (action === 'new-subgroup') {
       createTagForm.resetFields();
       createTagForm.setFieldsValue({
@@ -525,6 +540,7 @@ export const useSidebarV2ActionHandlers = ({
     if (action === 'edit-group') {
       createTagForm.setFieldsValue({
         name: tag.name,
+        environmentType: normalizeConnectionEnvironmentType(tag.environmentType),
         parentTagId: tag.parentTagId,
         connectionIds: tag.connectionIds,
       });
@@ -550,7 +566,6 @@ export const useSidebarV2ActionHandlers = ({
 
   return {
     getConnectionNodeForAction,
-    toggleSidebarTablePinned,
     handleV2TableContextMenuAction,
     handleTableGroupSortAction,
     handleV2TableGroupContextMenuAction,

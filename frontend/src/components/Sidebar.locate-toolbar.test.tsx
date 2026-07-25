@@ -1000,7 +1000,6 @@ describe('Sidebar locate toolbar', () => {
 
   it('renders the fixed v2 rail, explorer filters and workbench actions', () => {
     const markup = renderSidebarMarkup({ uiVersion: 'v2', onCreateConnection: mocks.noop });
-    const collapsedMarkup = renderSidebarMarkup({ uiVersion: 'v2', isTreePanelCollapsed: true });
     const source = readSidebarSource();
 
     expect(markup).toContain('gn-v2-sidebar-redesign');
@@ -1008,8 +1007,8 @@ describe('Sidebar locate toolbar', () => {
     expect(markup).toContain('data-sidebar-fixed-rail="true"');
     expect(markup).toContain('gn-v2-object-explorer');
     expect(markup.indexOf('data-sidebar-fixed-rail="true"')).toBeLessThan(markup.indexOf('data-sidebar-tree-panel="true"'));
-    expect(collapsedMarkup).toContain('data-sidebar-fixed-rail="true"');
-    expect(collapsedMarkup).toContain('data-sidebar-tree-panel="true" aria-hidden="true" style="display:none');
+    expect(markup).toContain('data-sidebar-tree-panel="true" style="display:flex');
+    expect(markup).not.toContain('data-sidebar-tree-panel="true" aria-hidden="true" style="display:none');
     expect(markup).toContain('gn-v2-active-connection-header');
     expect(markup).toContain('gn-v2-explorer-search');
     expect(markup).toContain('data-v2-sidebar-search-mode="command"');
@@ -1325,6 +1324,10 @@ describe('Sidebar locate toolbar', () => {
     expect(css).toMatch(/\.gn-v2-rail-tool \{[^}]*width: calc\(24px \* var\(--gn-v2-rail-scale\)\);/s);
     expect(css).toMatch(/\.gn-v2-active-connection-trigger \{[^}]*height: 34px;[^}]*border: 0;[^}]*background: transparent;/s);
     expect(css).toMatch(/\.gn-v2-active-connection-query-action \{[^}]*max-width: 96px;[^}]*font-size: 12px;/s);
+    expect(css).toMatch(/\.gn-v2-active-connection-tooltip \{[^}]*display: flex;[^}]*flex-direction: column;[^}]*gap: 2px;[^}]*max-width: min\(320px, calc\(100vw - 24px\)\);[^}]*overflow-wrap: anywhere;/s);
+    expect(css).toMatch(/\.gn-v2-object-explorer \{[^}]*container-type: inline-size;[^}]*container-name: gn-v2-object-explorer;/s);
+    expect(css).toMatch(/@container gn-v2-object-explorer \(max-width: 440px\) \{[\s\S]*\.gn-v2-active-connection-query-action \{[^}]*width: 28px;[^}]*max-width: 28px;[^}]*padding: 0;/s);
+    expect(css).toMatch(/@container gn-v2-object-explorer \(max-width: 440px\) \{[\s\S]*\.gn-v2-active-connection-query-action > span:not\(\.anticon\):not\(\.ant-btn-icon\) \{[^}]*display: none;/s);
     expect(css).not.toContain('.gn-v2-active-connection-trigger:hover');
   });
 
@@ -1384,7 +1387,6 @@ describe('Sidebar locate toolbar', () => {
     const source = readSidebarSource();
     const treeLoaderSource = readSourceFile('./sidebar/useSidebarTreeLoaders.tsx');
     const titleRenderSource = readSourceFile('./sidebar/useSidebarTitleRender.tsx');
-    const v2ContextMenuSource = readSourceFile('./sidebar/useSidebarV2ContextMenu.tsx');
 
     expect(source).toContain("export type SidebarConnectionState = 'loading' | 'success' | 'error';");
     expect(treeLoaderSource).toContain("setConnectionStates(prev => ({ ...prev, [conn.id]: 'loading' }));");
@@ -1398,8 +1400,6 @@ describe('Sidebar locate toolbar', () => {
     expect(treeLoaderSource).toContain("setConnectionStates(prev => ({ ...prev, [key as string]: 'success' }));");
     expect(titleRenderSource).toContain("let status: 'loading' | 'success' | 'error' | 'default' = 'default';");
     expect(titleRenderSource).toContain("if (connectionStates[node.key] === 'loading') status = 'loading';");
-    expect(v2ContextMenuSource).toContain("const statusMap = new Map<string, 'loading' | 'live' | 'error' | 'idle'>();");
-    expect(v2ContextMenuSource).toContain("value === 'loading' ? 'loading'");
     expect(css).toMatch(/\.gn-v2-tree-status\.is-loading::before \{[^}]*border: 2px solid rgba\(37, 99, 235, 0\.24\);[^}]*animation: gn-v2-tree-status-spin 0\.8s linear infinite;/s);
     expect(css).toMatch(/@keyframes gn-v2-tree-status-spin \{[^}]*to \{ transform: rotate\(360deg\); \}/s);
   });
@@ -1555,8 +1555,11 @@ describe('Sidebar locate toolbar', () => {
 
     expect(markup).toContain('gn-v2-connection-rail');
     expect(markup).toContain('gn-v2-active-connection-copy');
-    expect(markup).toContain('<strong>本地</strong>');
-    expect(markup).toContain('<span>app_db</span>');
+    expect(markup).toMatch(/<strong aria-describedby="[^"]+">本地<\/strong>/);
+    expect(markup).toMatch(/<span aria-describedby="[^"]+">app_db<\/span>/);
+    expect(markup).not.toContain('title="本地"');
+    expect(markup).not.toContain('title="app_db"');
+    expect(markup).not.toContain('gn-v2-live-dot');
     expect(markup).not.toContain('<span>localhost</span>');
     expect(markup).not.toContain('gn-v2-db-icon-label');
   });
@@ -1586,8 +1589,10 @@ describe('Sidebar locate toolbar', () => {
 
     const markup = renderSidebarMarkup({ uiVersion: 'v2' });
 
-    expect(markup).toContain(`<strong>${t('sidebar.active_connection.no_host_selected')}</strong>`);
-    expect(markup).toContain(`<span>${t('sidebar.active_connection.no_database_selected')}</span>`);
+    expect(markup).toMatch(new RegExp(`<strong aria-describedby="[^"]+">${t('sidebar.active_connection.no_host_selected')}</strong>`));
+    expect(markup).toMatch(new RegExp(`<span aria-describedby="[^"]+">${t('sidebar.active_connection.no_database_selected')}</span>`));
+    expect(markup).not.toContain(`title="${t('sidebar.active_connection.no_host_selected')}"`);
+    expect(markup).not.toContain(`title="${t('sidebar.active_connection.no_database_selected')}"`);
     expect(markup).not.toContain('<strong>本地</strong>');
   });
 
@@ -1956,6 +1961,10 @@ describe('Sidebar locate toolbar', () => {
     expect(renameHandlerSource).toContain("message.error(t('query_editor.save_modal.name_required'))");
     expect(renameHandlerSource).toContain("message.warning(t('sidebar.message.saved_query_name_unchanged'))");
     expect(renameHandlerSource).toContain("message.success(t('sidebar.message.saved_query_renamed'))");
+    expect(renameHandlerSource).toContain("typeof backendApp?.RenameSavedQuery === 'function'");
+    expect(renameHandlerSource).toContain('backendApp.RenameSavedQuery(renameSavedQueryTarget.id, nextName)');
+    expect(renameHandlerSource).toContain('latestState.replaceSavedQueries(latestState.savedQueries.map');
+    expect(renameHandlerSource).toContain('persisted = await saveQuery({');
     expect(savedQueryMenuSource).toContain("key: 'rename-query'");
     expect(savedQueryMenuSource).toContain("label: t('sidebar.menu.rename_query')");
     expect(savedQueryMenuSource).toContain("label: t('sidebar.menu.open_query')");
@@ -1982,6 +1991,25 @@ describe('Sidebar locate toolbar', () => {
     expect(renameModalSource).not.toContain('cancelText="取消"');
     expect(renameModalSource).not.toContain('label="查询名称"');
     expect(renameModalSource).not.toContain("message: '请输入查询名称'");
+  });
+
+  it('reveals a saved query file from its context menu', () => {
+    const source = readSidebarSource();
+    const handlerStart = source.indexOf('const handleRevealSavedQueryInFolder = useCallback(async (query: SavedQuery) =>');
+    const handlerEnd = source.indexOf('const isSavedQueryUnmatched', handlerStart);
+    const savedQueryMenuStart = source.indexOf('// \u5df2\u5b58\u67e5\u8be2\u8282\u70b9\u7684\u53f3\u952e\u83dc\u5355');
+    const savedQueryMenuEnd = source.indexOf("if (node.type === 'external-sql-root') {", savedQueryMenuStart);
+    const handlerSource = source.slice(handlerStart, handlerEnd);
+    const savedQueryMenuSource = source.slice(savedQueryMenuStart, savedQueryMenuEnd);
+
+    expect(handlerStart).toBeGreaterThanOrEqual(0);
+    expect(handlerEnd).toBeGreaterThan(handlerStart);
+    expect(handlerSource).toContain('await RevealSavedQueryInFolder(query.id)');
+    expect(handlerSource).toContain("t('sidebar.message.saved_query_revealed')");
+    expect(handlerSource).toContain("t('sidebar.message.saved_query_reveal_failed'");
+    expect(savedQueryMenuSource).toContain("key: 'reveal-saved-query-in-folder'");
+    expect(savedQueryMenuSource).toContain("label: t('sidebar.menu.reveal_saved_query_in_folder')");
+    expect(savedQueryMenuSource).toContain('onClick: () => void handleRevealSavedQueryInFolder(q)');
   });
 
   it('renders the v2 table context menu with the redesigned table layout', () => {
@@ -2226,6 +2254,20 @@ describe('Sidebar locate toolbar', () => {
     expect(metaSource).not.toContain('— 行');
   });
 
+  it('sorts sidebar table names in natural numeric order', () => {
+    const entries = [
+      { tableName: 'table_10', displayName: 'table_10' },
+      { tableName: 'table_2', displayName: 'table_2' },
+      { tableName: 'table_1', displayName: 'table_1' },
+    ];
+
+    expect(sortSidebarTableEntries(entries, {
+      connectionId: 'conn-1',
+      dbName: 'main',
+      sortBy: 'name',
+    }).map((entry) => entry.tableName)).toEqual(['table_1', 'table_2', 'table_10']);
+  });
+
   it('sorts pinned sidebar tables before the active sort mode', () => {
     const pinnedSidebarTables = [
       buildSidebarTablePinKey('conn-1', 'main', 'orders', 'public'),
@@ -2250,17 +2292,45 @@ describe('Sidebar locate toolbar', () => {
     }).map((entry) => entry.tableName)).toEqual(['orders', 'users', 'audit']);
   });
 
-  it('keeps the v2 table pin action on sidebar table rows', () => {
-    const source = readSidebarSource();
+  it('renders a non-interactive pin indicator only for pinned v2 sidebar tables', () => {
+    const source = readSourceFile('./sidebar/SidebarTreeTitle.tsx');
     const css = readV2ThemeCss();
+    const baseOptions = {
+      hoverTitle: 'orders',
+      statusBadge: null,
+      getV2TreeMetaText: () => '',
+      sidebarTableMetadataFields: [],
+      snapshotTreeSelectionBeforeDrag: vi.fn(),
+      restoreTreeSelectionAfterDrag: vi.fn(),
+      treeDragSelectSuppressUntilRef: { current: 0 },
+      setIsTreeDragging: vi.fn(),
+    };
+    const renderTableTitle = (pinnedSidebarTable: boolean) => renderToStaticMarkup(renderSidebarV2TreeTitle({
+      ...baseOptions,
+      node: {
+        type: 'table',
+        title: 'orders',
+        key: 'conn-main-orders',
+        dataRef: {
+          id: 'conn',
+          dbName: 'main',
+          tableName: 'orders',
+          pinnedSidebarTable,
+        },
+      },
+    }));
 
-    expect(source).toContain('data-v2-sidebar-table-pin-action="true"');
-    expect(source).toContain('node?.dataRef?.pinnedSidebarTable ? <StarFilled /> : <StarOutlined />');
-    expect(source).toContain('toggleSidebarTablePinned(node);');
-    expect(source).toContain("message.success(shouldPin ? t('sidebar.message.table_pinned') : t('sidebar.message.table_unpinned'));");
-    expect(css).toMatch(/\.gn-v2-table-pin-action \{[^}]*opacity: 0;/s);
-    expect(css).toMatch(/\.gn-v2-table-pin-action\.is-pinned \{[^}]*color: #f59e0b;[^}]*opacity: 1;/s);
-    expect(css).toMatch(/\.ant-tree-node-content-wrapper:hover \.gn-v2-table-pin-action,/s);
+    const unpinnedMarkup = renderTableTitle(false);
+    const pinnedMarkup = renderTableTitle(true);
+    expect(unpinnedMarkup).not.toContain('data-v2-sidebar-table-pin-indicator');
+    expect(pinnedMarkup).toContain('data-v2-sidebar-table-pin-indicator="true"');
+    expect(pinnedMarkup).toContain(`aria-label="${t('sidebar.status.pinned')}"`);
+    expect(pinnedMarkup).not.toContain('<button');
+    expect(pinnedMarkup).not.toContain('aria-pressed');
+    expect(source).not.toContain('toggleSidebarTablePinned');
+    expect(source).not.toContain('StarOutlined');
+    expect(css).toMatch(/\.gn-v2-table-pin-indicator \{[^}]*pointer-events: none;[^}]*cursor: default;[^}]*color: var\(--gn-warn\);/s);
+    expect(css).not.toContain('.gn-v2-table-pin-action');
   });
 
   it('splits v2 sidebar pinned tables into a dedicated table section', () => {
@@ -2780,6 +2850,13 @@ describe('Sidebar locate toolbar', () => {
     expect(source).toContain("title: String(node.title || dataRef.dbName || t('database.unnamed'))");
     expect(source).toContain("meta: conn?.name || dataRef.id || t('database.label')");
     expect(source).toContain("const activeConnectionDisplayName = String(activeConnection?.name || '').trim() || t('sidebar.active_connection.no_host_selected');");
+    expect(source).toContain('const v2ActiveConnectionTooltipContent = (');
+    expect(source).toContain('<div className="gn-v2-active-connection-tooltip">');
+    expect(source).toContain('<strong>{activeConnectionDisplayName}</strong>');
+    expect(source).toContain('<span>{activeDatabaseDisplayName || v2NoDatabaseSelectedLabel}</span>');
+    expect(source.match(/<Tooltip title=\{v2ActiveConnectionTooltipContent\} placement="bottomLeft" mouseEnterDelay=\{0\.35\}>/g)).toHaveLength(2);
+    expect(source).not.toContain('<strong title={activeConnectionDisplayName}>');
+    expect(source).not.toContain('<span title={activeDatabaseDisplayName || v2NoDatabaseSelectedLabel}>');
     expect(utilsSource).toContain("name: item.tag.name || t('connection.sidebar.group.untitled'),");
     expect(source).toContain('groupName={group.name}');
     expect(source).toContain('count={group.connections.length}');
@@ -2838,23 +2915,19 @@ describe('Sidebar locate toolbar', () => {
     expect(source).toContain("t('connection.sidebar.delete.failureFallback')");
   });
 
-  it('localizes the sidebar table pin action title and aria-label via i18n keys', () => {
-    const source = readSidebarSource();
-    const tablePinActionStart = source.indexOf("const tablePinAction = node.type === 'table' ? (");
-    const tablePinActionEnd = source.indexOf('aria-pressed=', tablePinActionStart);
-    const tablePinActionSource = source.slice(tablePinActionStart, tablePinActionEnd);
-    const normalizedTablePinActionSource = tablePinActionSource.replace(/\s+/g, ' ');
+  it('localizes the sidebar table pin indicator via the pinned status key', () => {
+    const source = readSourceFile('./sidebar/SidebarTreeTitle.tsx');
+    const tablePinIndicatorStart = source.indexOf("const tablePinIndicator = node.type === 'table'");
+    const tablePinIndicatorEnd = source.indexOf('</span>', tablePinIndicatorStart);
+    const tablePinIndicatorSource = source.slice(tablePinIndicatorStart, tablePinIndicatorEnd);
+    const normalizedTablePinIndicatorSource = tablePinIndicatorSource.replace(/\s+/g, ' ');
 
-    expect(tablePinActionStart).toBeGreaterThanOrEqual(0);
-    expect(tablePinActionEnd).toBeGreaterThan(tablePinActionStart);
-    expect(normalizedTablePinActionSource).toContain(
-      "title={node?.dataRef?.pinnedSidebarTable ? t('sidebar.action.unpin_table') : t('sidebar.action.pin_table')}",
-    );
-    expect(normalizedTablePinActionSource).toContain(
-      "aria-label={node?.dataRef?.pinnedSidebarTable ? t('sidebar.action.unpin_table') : t('sidebar.action.pin_table')}",
-    );
-    expect(tablePinActionSource).not.toContain("'取消置顶表'");
-    expect(tablePinActionSource).not.toContain("'置顶表'");
+    expect(tablePinIndicatorStart).toBeGreaterThanOrEqual(0);
+    expect(tablePinIndicatorEnd).toBeGreaterThan(tablePinIndicatorStart);
+    expect(normalizedTablePinIndicatorSource).toContain("title={t('sidebar.status.pinned')}");
+    expect(normalizedTablePinIndicatorSource).toContain("aria-label={t('sidebar.status.pinned')}");
+    expect(tablePinIndicatorSource).not.toContain('sidebar.action.pin_table');
+    expect(tablePinIndicatorSource).not.toContain('sidebar.action.unpin_table');
   });
 
   it('localizes legacy sidebar connection and redis menu labels', () => {
@@ -3275,7 +3348,6 @@ describe('Sidebar locate toolbar', () => {
       hoverTitle: 'users',
       statusBadge: null,
       getV2TreeMetaText: () => '',
-      toggleSidebarTablePinned: vi.fn(),
       snapshotTreeSelectionBeforeDrag: vi.fn(),
       restoreTreeSelectionAfterDrag: vi.fn(),
       treeDragSelectSuppressUntilRef: { current: 0 },

@@ -13,6 +13,26 @@ import (
 	"GoNavi-Wails/internal/secretstore"
 )
 
+func TestConnectionPackagePreservesEnvironmentType(t *testing.T) {
+	item := newConnectionPackageItem(connection.SavedConnectionView{
+		ID:              "conn-environment",
+		Name:            "Production",
+		EnvironmentType: "production",
+		Config: connection.ConnectionConfig{
+			ID:   "conn-environment",
+			Type: "postgres",
+		},
+	}, connectionSecretBundle{}, nil)
+	if item.EnvironmentType != "production" {
+		t.Fatalf("expected package item environment type to be preserved, got %q", item.EnvironmentType)
+	}
+
+	input := newSavedConnectionInputFromPackageItem(item)
+	if input.EnvironmentType != "production" {
+		t.Fatalf("expected imported environment type to be preserved, got %q", input.EnvironmentType)
+	}
+}
+
 func TestBuildConnectionPackagePayloadIncludesSecretBundles(t *testing.T) {
 	app := NewAppWithSecretStore(newFakeAppSecretStore())
 	app.configDir = t.TempDir()

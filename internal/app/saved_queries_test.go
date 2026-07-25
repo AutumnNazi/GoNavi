@@ -1,6 +1,8 @@
 package app
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -11,6 +13,455 @@ import (
 	"GoNavi-Wails/internal/connection"
 	"GoNavi-Wails/internal/secretstore"
 )
+
+func TestSavedQueryRepositoryStoresSQLInIndependentFile(t *testing.T) {
+	app := newSavedQueryTestApp(t)
+	query := connection.SavedQuery{
+		ID:           "saved-file-backed",
+		Name:         "Orders / latest",
+		SQL:          "\n  select * from orders;\n",
+		ConnectionID: "conn-1",
+		DBName:       "app",
+		CreatedAt:    100,
+	}
+
+	if _, err := app.SaveQuery(query); err != nil {
+		t.Fatalf("SaveQuery returned error: %v", err)
+	}
+	diskFile, payload := readSavedQueriesDiskFile(t, app)
+	if bytes.Contains(payload, []byte(`"sql"`)) {
+		t.Fatalf("saved query metadata still contains inline sql: %s", payload)
+	}
+	if diskFile.Version != savedQueriesFormatVersion || len(diskFile.Queries) != 1 {
+		t.Fatalf("unexpected saved query metadata: %#v", diskFile)
+	}
+	record := diskFile.Queries[0]
+	if record.FileName != "Orders _ latest.sql" {
+		t.Fatalf("managed sql file name = %q, want %q", record.FileName, "Orders _ latest.sql")
+	}
+	if strings.ContainsAny(record.FileName, `/\`) {
+		t.Fatalf("managed sql file name contains a path separator: %q", record.FileName)
+	}
+	content, err := os.ReadFile(savedQuerySQLPath(t, app, record.FileName))
+	if err != nil {
+		t.Fatalf("ReadFile saved query sql: %v", err)
+	}
+	if string(content) != query.SQL {
+		t.Fatalf("saved query sql = %q, want %q", content, query.SQL)
+	}
+}
+
+func TestSavedQueryRepositoryAllocatesReadableDuplicateFileNames(t *testing.T) {
+	app := newSavedQueryTestApp(t)
+	for index, id := range []string{"orders-1", "orders-2", "orders-3"} {
+		if _, err := app.SaveQuery(connection.SavedQuery{
+			ID: id, Name: "Orders", SQL: fmt.Sprintf("select %d", index+1), ConnectionID: "conn-1", DBName: "app", CreatedAt: int64(index + 1),
+		}); err != nil {
+			t.Fatalf("SaveQuery(%s) returned error: %v", id, err)
+		}
+	}
+
+	diskFile, _ := readSavedQueriesDiskFile(t, app)
+	got := make([]string, 0, len(diskFile.Queries))
+	for _, record := range diskFile.Queries {
+		got = append(got, record.FileName)
+	}
+	want := []string{"Orders.sql", "Orders (2).sql", "Orders (3).sql"}
+	if !sameStringSlice(got, want) {
+		t.Fatalf("managed sql file names = %#v, want %#v", got, want)
+	}
+}
+
+func TestSavedQueryRepositoryAvoidsCaseInsensitiveExternalFileCollision(t *testing.T) {
+	app := newSavedQueryTestApp(t)
+	directory, err := app.savedQueryRepository().sqlDirectory()
+	if err != nil {
+		t.Fatalf("resolve sql directory: %v", err)
+	}
+	if err := os.MkdirAll(directory, 0o755); err != nil {
+		t.Fatalf("MkdirAll sql directory: %v", err)
+	}
+	externalPath := filepath.Join(directory, "orders.SQL")
+	if err := os.WriteFile(externalPath, []byte("external sql"), 0o644); err != nil {
+		t.Fatalf("WriteFile external sql: %v", err)
+	}
+
+	if _, err := app.SaveQuery(connection.SavedQuery{
+		ID: "orders-managed", Name: "Orders", SQL: "select 1", ConnectionID: "conn-1", DBName: "app", CreatedAt: 1,
+	}); err != nil {
+		t.Fatalf("SaveQuery returned error: %v", err)
+	}
+	diskFile, _ := readSavedQueriesDiskFile(t, app)
+	if got := diskFile.Queries[0].FileName; got != "Orders (2).sql" {
+		t.Fatalf("managed sql file name = %q, want %q", got, "Orders (2).sql")
+	}
+	content, err := os.ReadFile(externalPath)
+	if err != nil || string(content) != "external sql" {
+		t.Fatalf("external sql content = %q, %v", content, err)
+	}
+}
+
+func TestRenameSavedQueryAllocatesNextReadableFileName(t *testing.T) {
+	app := newSavedQueryTestApp(t)
+	for _, query := range []connection.SavedQuery{
+		{ID: "rename-source", Name: "Source", SQL: "select 1", ConnectionID: "conn-1", DBName: "app", CreatedAt: 1},
+		{ID: "rename-target", Name: "Target", SQL: "select 2", ConnectionID: "conn-1", DBName: "app", CreatedAt: 2},
+	} {
+		if _, err := app.SaveQuery(query); err != nil {
+			t.Fatalf("SaveQuery(%s) returned error: %v", query.ID, err)
+		}
+	}
+	directory, err := app.savedQueryRepository().sqlDirectory()
+	if err != nil {
+		t.Fatalf("resolve sql directory: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(directory, "target (2).SQL"), []byte("external sql"), 0o644); err != nil {
+		t.Fatalf("WriteFile external sql: %v", err)
+	}
+	beforeDisk, _ := readSavedQueriesDiskFile(t, app)
+	oldPath := savedQuerySQLPath(t, app, beforeDisk.Queries[0].FileName)
+	latestSQL := "select 3 -- edited outside GoNavi"
+	if err := os.WriteFile(oldPath, []byte(latestSQL), 0o644); err != nil {
+		t.Fatalf("WriteFile external edit: %v", err)
+	}
+
+	renamed, err := app.RenameSavedQuery("rename-source", "Target")
+	if err != nil {
+		t.Fatalf("RenameSavedQuery returned error: %v", err)
+	}
+	if renamed.SQL != latestSQL {
+		t.Fatalf("renamed query sql = %q, want latest disk content %q", renamed.SQL, latestSQL)
+	}
+	afterDisk, _ := readSavedQueriesDiskFile(t, app)
+	if got := afterDisk.Queries[0].FileName; got != "Target (3).sql" {
+		t.Fatalf("renamed sql file name = %q, want %q", got, "Target (3).sql")
+	}
+	content, err := os.ReadFile(savedQuerySQLPath(t, app, afterDisk.Queries[0].FileName))
+	if err != nil || string(content) != latestSQL {
+		t.Fatalf("renamed sql content = %q, %v", content, err)
+	}
+}
+
+func TestSavedQueryRepositoryMigratesVersionTwoHashedFileNames(t *testing.T) {
+	app := newSavedQueryTestApp(t)
+	directory, err := app.savedQueryRepository().sqlDirectory()
+	if err != nil {
+		t.Fatalf("resolve sql directory: %v", err)
+	}
+	if err := os.MkdirAll(directory, 0o755); err != nil {
+		t.Fatalf("MkdirAll sql directory: %v", err)
+	}
+	externalPath := filepath.Join(directory, "orders.SQL")
+	if err := os.WriteFile(externalPath, []byte("external sql"), 0o644); err != nil {
+		t.Fatalf("WriteFile external sql: %v", err)
+	}
+	oldFileNames := []string{
+		"Orders--11111111111111111111111111111111.sql",
+		"Orders--22222222222222222222222222222222.sql",
+	}
+	for index, fileName := range oldFileNames {
+		if err := os.WriteFile(filepath.Join(directory, fileName), []byte(fmt.Sprintf("select %d", index+1)), 0o644); err != nil {
+			t.Fatalf("WriteFile old managed sql: %v", err)
+		}
+	}
+	diskFile := savedQueriesDiskFile{
+		Version: 2,
+		Queries: []savedQueryDiskRecord{
+			{ID: "migrate-v2-1", Name: "Orders", FileName: oldFileNames[0], ConnectionID: "conn-1", DBName: "app", CreatedAt: 1},
+			{ID: "migrate-v2-2", Name: "Orders", FileName: oldFileNames[1], ConnectionID: "conn-1", DBName: "app", CreatedAt: 2},
+		},
+	}
+	payload, err := json.Marshal(diskFile)
+	if err != nil {
+		t.Fatalf("Marshal v2 metadata: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(app.configDir, savedQueriesFileName), payload, 0o644); err != nil {
+		t.Fatalf("WriteFile v2 metadata: %v", err)
+	}
+
+	queries, err := app.GetSavedQueries()
+	if err != nil {
+		t.Fatalf("GetSavedQueries returned error: %v", err)
+	}
+	if len(queries) != 2 || queries[0].SQL != "select 1" || queries[1].SQL != "select 2" {
+		t.Fatalf("migrated queries = %#v", queries)
+	}
+	migratedDisk, _ := readSavedQueriesDiskFile(t, app)
+	if migratedDisk.Version != savedQueriesFormatVersion {
+		t.Fatalf("migrated metadata version = %d, want %d", migratedDisk.Version, savedQueriesFormatVersion)
+	}
+	wantFileNames := []string{"Orders (2).sql", "Orders (3).sql"}
+	for index, record := range migratedDisk.Queries {
+		if record.FileName != wantFileNames[index] {
+			t.Fatalf("migrated file name %d = %q, want %q", index, record.FileName, wantFileNames[index])
+		}
+		content, readErr := os.ReadFile(savedQuerySQLPath(t, app, record.FileName))
+		if readErr != nil || string(content) != fmt.Sprintf("select %d", index+1) {
+			t.Fatalf("migrated sql %d = %q, %v", index, content, readErr)
+		}
+		if _, statErr := os.Stat(filepath.Join(directory, oldFileNames[index])); !os.IsNotExist(statErr) {
+			t.Fatalf("old hashed sql file still exists: %s, err=%v", oldFileNames[index], statErr)
+		}
+	}
+	content, err := os.ReadFile(externalPath)
+	if err != nil || string(content) != "external sql" {
+		t.Fatalf("external sql content = %q, %v", content, err)
+	}
+	path, found, err := app.savedQueryRepository().findSQLPath("migrate-v2-2")
+	if err != nil || !found || filepath.Base(path) != "Orders (3).sql" {
+		t.Fatalf("findSQLPath after migration = %q, %v, %v", path, found, err)
+	}
+}
+
+func TestSavedQueryRepositoryVersionTwoMigrationRollsBackWhenMetadataWriteFails(t *testing.T) {
+	app := newSavedQueryTestApp(t)
+	directory, err := app.savedQueryRepository().sqlDirectory()
+	if err != nil {
+		t.Fatalf("resolve sql directory: %v", err)
+	}
+	if err := os.MkdirAll(directory, 0o755); err != nil {
+		t.Fatalf("MkdirAll sql directory: %v", err)
+	}
+	oldFileName := "Rollback--11111111111111111111111111111111.sql"
+	oldPath := filepath.Join(directory, oldFileName)
+	if err := os.WriteFile(oldPath, []byte("select 1"), 0o644); err != nil {
+		t.Fatalf("WriteFile old managed sql: %v", err)
+	}
+	diskFile := savedQueriesDiskFile{
+		Version: 2,
+		Queries: []savedQueryDiskRecord{{
+			ID: "migrate-rollback", Name: "Rollback", FileName: oldFileName, ConnectionID: "conn-1", DBName: "app", CreatedAt: 1,
+		}},
+	}
+	payload, err := json.Marshal(diskFile)
+	if err != nil {
+		t.Fatalf("Marshal v2 metadata: %v", err)
+	}
+	metadataPath := filepath.Join(app.configDir, savedQueriesFileName)
+	if err := os.WriteFile(metadataPath, payload, 0o644); err != nil {
+		t.Fatalf("WriteFile v2 metadata: %v", err)
+	}
+
+	previousWrite := writeSavedQueriesMetadataAtomic
+	writeSavedQueriesMetadataAtomic = func(string, []byte) error {
+		return fmt.Errorf("forced metadata write failure")
+	}
+	t.Cleanup(func() {
+		writeSavedQueriesMetadataAtomic = previousWrite
+	})
+
+	if _, err := app.GetSavedQueries(); err == nil {
+		t.Fatal("expected migration to fail when metadata cannot be written")
+	}
+	afterMetadata, err := os.ReadFile(metadataPath)
+	if err != nil || !bytes.Equal(afterMetadata, payload) {
+		t.Fatalf("metadata after failed migration = %q, %v", afterMetadata, err)
+	}
+	oldContent, err := os.ReadFile(oldPath)
+	if err != nil || string(oldContent) != "select 1" {
+		t.Fatalf("old managed sql after failed migration = %q, %v", oldContent, err)
+	}
+	if _, err := os.Stat(filepath.Join(directory, "Rollback.sql")); !os.IsNotExist(err) {
+		t.Fatalf("new readable sql should be rolled back, err=%v", err)
+	}
+}
+
+func TestSavedQueryRepositoryFindSQLPathTracksManagedFileName(t *testing.T) {
+	app := newSavedQueryTestApp(t)
+	query := connection.SavedQuery{
+		ID:           "saved-reveal-path",
+		Name:         "Before reveal",
+		SQL:          "select 1;",
+		ConnectionID: "conn-1",
+		DBName:       "app",
+		CreatedAt:    100,
+	}
+	if _, err := app.SaveQuery(query); err != nil {
+		t.Fatalf("SaveQuery returned error: %v", err)
+	}
+
+	repository := app.savedQueryRepository()
+	beforePath, found, err := repository.findSQLPath(query.ID)
+	if err != nil || !found {
+		t.Fatalf("findSQLPath before rename = %q, %v, %v", beforePath, found, err)
+	}
+	if _, err := os.Stat(beforePath); err != nil {
+		t.Fatalf("managed sql path before rename is unavailable: %v", err)
+	}
+
+	if _, err := app.RenameSavedQuery(query.ID, "After reveal"); err != nil {
+		t.Fatalf("RenameSavedQuery returned error: %v", err)
+	}
+	afterPath, found, err := repository.findSQLPath(query.ID)
+	if err != nil || !found {
+		t.Fatalf("findSQLPath after rename = %q, %v, %v", afterPath, found, err)
+	}
+	if afterPath == beforePath {
+		t.Fatalf("findSQLPath still returns the pre-rename path: %s", afterPath)
+	}
+	if _, err := os.Stat(afterPath); err != nil {
+		t.Fatalf("managed sql path after rename is unavailable: %v", err)
+	}
+	if _, found, err := repository.findSQLPath("missing-query"); err != nil || found {
+		t.Fatalf("findSQLPath for a missing query returned found=%v, err=%v", found, err)
+	}
+}
+
+func TestSavedQueryRepositoryMigratesLegacyInlineSQLIdempotently(t *testing.T) {
+	app := newSavedQueryTestApp(t)
+	legacyPayload := []byte(`{
+  "queries": [{
+    "id": "saved-legacy-file",
+    "name": "Legacy",
+    "sql": "select 1;\n",
+    "connectionId": "conn-1",
+    "dbName": "app",
+    "createdAt": 100
+  }]
+}`)
+	if err := os.WriteFile(filepath.Join(app.configDir, savedQueriesFileName), legacyPayload, 0o644); err != nil {
+		t.Fatalf("WriteFile legacy metadata: %v", err)
+	}
+
+	for attempt := 0; attempt < 2; attempt++ {
+		queries, err := app.GetSavedQueries()
+		if err != nil {
+			t.Fatalf("GetSavedQueries attempt %d returned error: %v", attempt+1, err)
+		}
+		if len(queries) != 1 || queries[0].SQL != "select 1;\n" {
+			t.Fatalf("unexpected migrated query on attempt %d: %#v", attempt+1, queries)
+		}
+	}
+	diskFile, payload := readSavedQueriesDiskFile(t, app)
+	if bytes.Contains(payload, []byte(`"sql"`)) {
+		t.Fatalf("migrated metadata still contains inline sql: %s", payload)
+	}
+	if len(diskFile.Queries) != 1 {
+		t.Fatalf("unexpected migrated metadata: %#v", diskFile)
+	}
+	content, err := os.ReadFile(savedQuerySQLPath(t, app, diskFile.Queries[0].FileName))
+	if err != nil || string(content) != "select 1;\n" {
+		t.Fatalf("migrated sql content = %q, %v", content, err)
+	}
+}
+
+func TestSavedQueryRepositoryLegacyMigrationFailureLeavesJSONUntouched(t *testing.T) {
+	app := newSavedQueryTestApp(t)
+	legacyPayload := []byte(`{"queries":[{"id":"saved-blocked","name":"Blocked","sql":"select 1","connectionId":"conn-1","dbName":"app","createdAt":100}]}`)
+	metadataPath := filepath.Join(app.configDir, savedQueriesFileName)
+	if err := os.WriteFile(metadataPath, legacyPayload, 0o644); err != nil {
+		t.Fatalf("WriteFile legacy metadata: %v", err)
+	}
+	directory, err := app.savedQueryRepository().sqlDirectory()
+	if err != nil {
+		t.Fatalf("resolve sql directory: %v", err)
+	}
+	if err := os.WriteFile(directory, []byte("blocks directory creation"), 0o644); err != nil {
+		t.Fatalf("WriteFile blocking path: %v", err)
+	}
+
+	if _, err := app.GetSavedQueries(); err == nil {
+		t.Fatal("expected legacy migration to fail when the sql directory is blocked")
+	}
+	after, err := os.ReadFile(metadataPath)
+	if err != nil {
+		t.Fatalf("ReadFile metadata after failure: %v", err)
+	}
+	if !bytes.Equal(after, legacyPayload) {
+		t.Fatalf("legacy metadata changed after failed migration:\n%s", after)
+	}
+}
+
+func TestSavedQueryRepositoryReloadsExternallyModifiedSQL(t *testing.T) {
+	app := newSavedQueryTestApp(t)
+	if _, err := app.SaveQuery(connection.SavedQuery{
+		ID: "saved-external-edit", Name: "External", SQL: "select 1", ConnectionID: "conn-1", DBName: "app", CreatedAt: 100,
+	}); err != nil {
+		t.Fatalf("SaveQuery returned error: %v", err)
+	}
+	diskFile, _ := readSavedQueriesDiskFile(t, app)
+	path := savedQuerySQLPath(t, app, diskFile.Queries[0].FileName)
+	if err := os.WriteFile(path, []byte("select 2 -- edited externally"), 0o644); err != nil {
+		t.Fatalf("WriteFile external edit: %v", err)
+	}
+
+	queries, err := app.GetSavedQueries()
+	if err != nil {
+		t.Fatalf("GetSavedQueries returned error: %v", err)
+	}
+	if len(queries) != 1 || queries[0].SQL != "select 2 -- edited externally" {
+		t.Fatalf("expected latest disk content, got %#v", queries)
+	}
+}
+
+func TestRenameSavedQueryPreservesLatestDiskContent(t *testing.T) {
+	app := newSavedQueryTestApp(t)
+	if _, err := app.SaveQuery(connection.SavedQuery{
+		ID: "saved-rename-file", Name: "Before", SQL: "select 1", ConnectionID: "conn-1", DBName: "app", CreatedAt: 100,
+	}); err != nil {
+		t.Fatalf("SaveQuery returned error: %v", err)
+	}
+	beforeDisk, _ := readSavedQueriesDiskFile(t, app)
+	oldPath := savedQuerySQLPath(t, app, beforeDisk.Queries[0].FileName)
+	latestSQL := "select 2 -- edited outside GoNavi"
+	if err := os.WriteFile(oldPath, []byte(latestSQL), 0o644); err != nil {
+		t.Fatalf("WriteFile external edit: %v", err)
+	}
+
+	renamed, err := app.RenameSavedQuery("saved-rename-file", "After")
+	if err != nil {
+		t.Fatalf("RenameSavedQuery returned error: %v", err)
+	}
+	if renamed.Name != "After" || renamed.SQL != latestSQL {
+		t.Fatalf("unexpected renamed query: %#v", renamed)
+	}
+	afterDisk, payload := readSavedQueriesDiskFile(t, app)
+	if bytes.Contains(payload, []byte(`"sql"`)) {
+		t.Fatalf("renamed metadata contains inline sql: %s", payload)
+	}
+	newPath := savedQuerySQLPath(t, app, afterDisk.Queries[0].FileName)
+	if newPath == oldPath {
+		t.Fatalf("expected query rename to rename the managed sql file: %s", newPath)
+	}
+	if _, err := os.Stat(oldPath); !os.IsNotExist(err) {
+		t.Fatalf("old sql path should be gone, got err=%v", err)
+	}
+	content, err := os.ReadFile(newPath)
+	if err != nil || string(content) != latestSQL {
+		t.Fatalf("renamed sql content = %q, %v", content, err)
+	}
+}
+
+func TestDeleteSavedQueryRemovesSQLFileAndGroupMembership(t *testing.T) {
+	app := newSavedQueryTestApp(t)
+	if _, err := app.SaveQuery(connection.SavedQuery{
+		ID: "saved-delete-file", Name: "Delete", SQL: "select 1", ConnectionID: "conn-1", DBName: "app", CreatedAt: 100,
+	}); err != nil {
+		t.Fatalf("SaveQuery returned error: %v", err)
+	}
+	if _, err := app.SaveSavedQueryGroup(connection.SavedQueryGroup{
+		ID: "group-delete-file", Name: "Delete", QueryIDs: []string{"saved-delete-file"},
+	}); err != nil {
+		t.Fatalf("SaveSavedQueryGroup returned error: %v", err)
+	}
+	diskFile, _ := readSavedQueriesDiskFile(t, app)
+	queryPath := savedQuerySQLPath(t, app, diskFile.Queries[0].FileName)
+
+	if err := app.DeleteQuery("saved-delete-file"); err != nil {
+		t.Fatalf("DeleteQuery returned error: %v", err)
+	}
+	if _, err := os.Stat(queryPath); !os.IsNotExist(err) {
+		t.Fatalf("deleted query sql file still exists, err=%v", err)
+	}
+	groups, err := app.GetSavedQueryGroups()
+	if err != nil {
+		t.Fatalf("GetSavedQueryGroups returned error: %v", err)
+	}
+	group := findSavedQueryGroup(groups, "group-delete-file")
+	if group == nil || len(group.QueryIDs) != 0 || len(group.ChildOrder) != 0 {
+		t.Fatalf("deleted query still belongs to a group: %#v", group)
+	}
+}
 
 func TestSavedQueryRepositorySaveUpdateAndDelete(t *testing.T) {
 	app := NewAppWithSecretStore(secretstore.NewUnavailableStore("test"))
@@ -864,4 +1315,36 @@ func containsString(values []string, target string) bool {
 		}
 	}
 	return false
+}
+
+func newSavedQueryTestApp(t *testing.T) *App {
+	t.Helper()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	application := NewAppWithSecretStore(secretstore.NewUnavailableStore("test"))
+	application.configDir = t.TempDir()
+	return application
+}
+
+func readSavedQueriesDiskFile(t *testing.T, application *App) (savedQueriesDiskFile, []byte) {
+	t.Helper()
+	payload, err := os.ReadFile(filepath.Join(application.configDir, savedQueriesFileName))
+	if err != nil {
+		t.Fatalf("ReadFile saved query metadata: %v", err)
+	}
+	var file savedQueriesDiskFile
+	if err := json.Unmarshal(payload, &file); err != nil {
+		t.Fatalf("Unmarshal saved query metadata: %v", err)
+	}
+	return file, payload
+}
+
+func savedQuerySQLPath(t *testing.T, application *App, fileName string) string {
+	t.Helper()
+	directory, err := application.savedQueryRepository().sqlDirectory()
+	if err != nil {
+		t.Fatalf("resolve saved query sql directory: %v", err)
+	}
+	return filepath.Join(directory, fileName)
 }
