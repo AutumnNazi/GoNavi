@@ -97,6 +97,7 @@ const storeState = vi.hoisted(() => ({
     },
   },
   activeTabId: 'tab-1',
+  tabs: [] as TabData[],
   aiPanelVisible: false,
   setAIPanelVisible: vi.fn(),
   sqlSnippets: [] as any[],
@@ -792,6 +793,7 @@ describe('QueryEditor external SQL save', () => {
     storeState.saveQuery.mockImplementation(async (query: SavedQuery) => query);
     storeState.savedQueries = [];
     storeState.activeTabId = 'tab-1';
+    storeState.tabs = [];
     storeState.aiPanelVisible = false;
     storeState.setAIPanelVisible.mockReset();
     storeState.appearance.uiVersion = 'legacy';
@@ -7334,6 +7336,46 @@ describe('QueryEditor external SQL save', () => {
     expect(editorState.editor.setValue).toHaveBeenCalledWith('');
   });
 
+  it('does not restore a closed external SQL file after unmount cleanup', async () => {
+    const filePath = '/Users/me/Documents/gonavi-queries/closed.sql';
+    const tab = createTab({ filePath, query: 'select 1;' });
+    storeState.tabs = [tab];
+
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<QueryEditor tab={tab} />);
+    });
+    await act(async () => {
+      editorState.value = 'select 2;';
+      editorState.latestOnChange?.(editorState.value);
+    });
+    expect(getSQLFileTabDraft('tab-1')).toBe('select 2;');
+
+    storeState.tabs = [];
+    await act(async () => {
+      renderer.unmount();
+    });
+
+    expect(getSQLFileTabDraft('tab-1')).toBe('');
+  });
+
+  it('writes the latest external SQL draft when the tab still exists on unmount', async () => {
+    const filePath = '/Users/me/Documents/gonavi-queries/open.sql';
+    const tab = createTab({ filePath, query: 'select 1;' });
+    storeState.tabs = [tab];
+
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<QueryEditor tab={tab} />);
+    });
+    editorState.value = 'select 2;';
+
+    await act(async () => {
+      renderer.unmount();
+    });
+
+    expect(getSQLFileTabDraft('tab-1')).toBe('select 2;');
+  });
   it('writes external SQL file tabs back to disk without creating saved queries', async () => {
     let renderer!: ReactTestRenderer;
     const filePath = '/Users/me/Documents/gonavi-queries/report.sql';
