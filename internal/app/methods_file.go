@@ -6196,12 +6196,16 @@ func normalizeExportJSONValue(val interface{}) interface{} {
 }
 
 // writeRowsToXlsx 使用 excelize 写入真正的 xlsx 格式文件
-func writeRowsToXlsx(filename string, data []map[string]interface{}, columns []string) error {
+func writeRowsToXlsx(filename string, data []map[string]interface{}, columns []string) (err error) {
 	file, err := os.Create(filename)
 	if err != nil {
 		return err
 	}
-	defer file.Close()
+	defer func() {
+		if closeErr := file.Close(); closeErr != nil && err == nil {
+			err = closeErr
+		}
+	}()
 
 	writer, err := newXLSXExportFileWriter(file, 0)
 	if err != nil {
