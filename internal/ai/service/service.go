@@ -1562,7 +1562,7 @@ func (s *Service) AIChatStreamWithOptions(sessionID string, messages []ai.Messag
 		}
 
 		// 当 context 被主动 cancel 的时候，不把这个视为向外抛的 error
-		if err != nil && err != context.Canceled {
+		if err != nil && !isAIStreamCancellation(err) {
 			logger.Warnf("AIChatStream 失败：sessionID=%s provider=%s messages=%d tools=%d duration=%s err=%s", sessionID, providerName, len(messages), len(tools), time.Since(started).Round(time.Millisecond), provider.RedactAIUpstreamLogText(err.Error()))
 			uievents.Emit(s.ctx, "ai:stream:"+sessionID, map[string]interface{}{
 				"error": err.Error(),
@@ -1570,7 +1570,7 @@ func (s *Service) AIChatStreamWithOptions(sessionID string, messages []ai.Messag
 			})
 			return
 		}
-		if err == context.Canceled {
+		if isAIStreamCancellation(err) {
 			logger.Infof("AIChatStream 已取消：sessionID=%s provider=%s duration=%s", sessionID, providerName, time.Since(started).Round(time.Millisecond))
 			return
 		}
@@ -1597,6 +1597,10 @@ func (s *Service) AIChatStreamWithOptions(sessionID string, messages []ai.Messag
 			time.Since(started).Round(time.Millisecond),
 		)
 	}()
+}
+
+func isAIStreamCancellation(err error) bool {
+	return errors.Is(err, context.Canceled)
 }
 
 func (s *Service) registerAIStreamProducer(sessionID string, cancel context.CancelFunc) *aiStreamProducer {
@@ -1772,8 +1776,8 @@ func (s *Service) getActiveProviderRuntime() (provider.Provider, ai.ProviderConf
 }
 
 func (s *Service) getActiveProviderRuntimeWithOptions(options ai.ChatSendOptions) (provider.Provider, ai.ProviderConfig, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	localizer := s.serviceLocalizerForLanguageLocked()
 
 	if s.activeProvider == "" && len(s.providers) > 0 {
