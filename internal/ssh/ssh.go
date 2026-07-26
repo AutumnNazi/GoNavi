@@ -103,19 +103,39 @@ func connectSSH(config connection.SSHConfig) (*ssh.Client, error) {
 	return client, nil
 }
 
-// RegisterSSHNetwork registers a unique network name for a specific SSH tunnel
+// sshNetworkName 按 SSH 目标确定性派生 go-sql-driver 的自定义 network 名。
+//
+// 必须是确定性的：mysql.RegisterDialContext 写入驱动内一张永不回收的全局 map
+// （DeregisterDialContext 在本仓库无任何调用点）。若每次调用都用时间戳生成新名字，
+// 每次（重）连接都会新增一条永久条目并钉住其闭包捕获的 ssh.Client，形成随重连线性增长的
+// SSH 连接与 goroutine 泄漏。相同目标复用同名注册后，map 大小收敛为 SSH 目标个数。
+//
+// 用 %q 做字段分隔以保证单射（host/user 里的引号会被转义），并只取短哈希，避免在
+// network 名与日志中泄露认证指纹明文。
+func sshNetworkName(key sshClientCacheKey) string {
+	sum := sha256.Sum256([]byte(fmt.Sprintf("%q %d %q %q", key.host, key.port, key.user, key.auth)))
+	return "ssh_" + hex.EncodeToString(sum[:8])
+}
+
+// RegisterSSHNetwork registers a network name for a specific SSH tunnel
 // Returns the network name to use in DSN
 func RegisterSSHNetwork(sshConfig connection.SSHConfig) (string, error) {
-	client, err := connectSSH(sshConfig)
-	if err != nil {
+	// 走缓存创建客户端，使其进入 sshClientCache，从而能被 CloseAllSSHClients 统一回收；
+	// 直接调 connectSSH 会产出一个既不入缓存、也无人关闭的孤立客户端。
+	if _, err := GetOrCreateSSHClient(sshConfig); err != nil {
 		return "", err
 	}
 
-	// Generate unique network name
-	netName := fmt.Sprintf("ssh_%s_%d", sshConfig.Host, time.Now().UnixNano())
+	netName := sshNetworkName(newSSHClientCacheKey(sshConfig))
 	logger.Infof("注册 SSH 网络：%s（地址=%s:%d 用户=%s）", netName, sshConfig.Host, sshConfig.Port, sshConfig.User)
 
+	// 闭包在拨号时才取客户端，不捕获固定实例：GetOrCreateSSHClient 会探测存活并在断开后重建，
+	// 因此这条注册项对同一目标可长期复用，也不会把一个已死的 client 永久钉在驱动的全局 map 里。
 	mysql.RegisterDialContext(netName, func(ctx context.Context, addr string) (net.Conn, error) {
+		client, err := GetOrCreateSSHClient(sshConfig)
+		if err != nil {
+			return nil, err
+		}
 		return dialContext(ctx, client, "tcp", addr)
 	})
 
