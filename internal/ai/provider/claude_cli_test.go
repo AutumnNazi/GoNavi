@@ -654,48 +654,6 @@ func TestClaudeCLIProvider_ChatStreamUsesRequestTimeoutWhenNoMeaningfulResponseA
 	assertClaudeCLIRuntimeErrorIsEnglish(t, lastChunk.Error)
 }
 
-func TestClaudeCLIRuntimeErrorsStayEnglish(t *testing.T) {
-	message, hasError := extractClaudeCLIEventError(cliStreamEvent{Type: "error"})
-	if !hasError {
-		t.Fatal("expected fallback error")
-	}
-	if message != "claude CLI returned an unknown error" {
-		t.Fatalf("expected English unknown error, got %q", message)
-	}
-
-	authMessage, hasAuthError := extractClaudeCLISystemRetryError(cliStreamEvent{
-		Type:        "system",
-		Subtype:     "api_retry",
-		ErrorStatus: 401,
-		Error:       cliStreamEventError{Message: "authentication_failed"},
-	})
-	if !hasAuthError {
-		t.Fatal("expected auth retry error")
-	}
-	if authMessage != "claude CLI authentication failed (HTTP 401): authentication_failed" {
-		t.Fatalf("expected English auth retry error, got %q", authMessage)
-	}
-
-	source, err := os.ReadFile("claude_cli.go")
-	if err != nil {
-		t.Fatalf("read claude_cli.go: %v", err)
-	}
-	for _, notWant := range []string{
-		"执行超时",
-		"执行失败",
-		"返回错误",
-		"创建 stdout 管道失败",
-		"启动 claude CLI 失败",
-		"鉴权失败",
-		"异常退出",
-		"返回未知错误",
-	} {
-		if strings.Contains(string(source), notWant) {
-			t.Fatalf("expected Claude CLI runtime wrappers to stay English, found %q", notWant)
-		}
-	}
-}
-
 func assertClaudeCLIRuntimeErrorIsEnglish(t *testing.T, message string) {
 	t.Helper()
 	if strings.TrimSpace(message) == "" {

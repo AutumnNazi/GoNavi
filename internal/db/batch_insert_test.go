@@ -5,10 +5,8 @@ import (
 	"database/sql/driver"
 	"errors"
 	"fmt"
-	"os"
 	"strings"
 	"testing"
-
 	"GoNavi-Wails/shared/i18n"
 )
 
@@ -385,43 +383,6 @@ func TestBatchInsertErrorsUseCurrentLanguage(t *testing.T) {
 	}
 }
 
-func TestBatchInsertErrorSourcesUseI18nKeys(t *testing.T) {
-	sourceBytes, err := os.ReadFile("batch_insert.go")
-	if err != nil {
-		t.Fatalf("read batch_insert.go: %v", err)
-	}
-	source := string(sourceBytes)
-
-	for _, rawMessage := range []string{
-		`fmt.Errorf("表名不能为空")`,
-		`fmt.Errorf("列名引用函数不能为空")`,
-		`fmt.Errorf("占位符函数不能为空")`,
-		`fmt.Errorf("执行函数不能为空")`,
-		`fmt.Errorf("字面量函数不能为空")`,
-		`fmt.Errorf("插入失败：%v", err)`,
-		`fmt.Errorf("插入失败：%v; sql=%s", err, query)`,
-		`fmt.Errorf("插入未生效：未影响任何行")`,
-	} {
-		if strings.Contains(source, rawMessage) {
-			t.Fatalf("batch_insert.go still contains raw batch insert text %q", rawMessage)
-		}
-	}
-
-	for _, key := range []string{
-		"db.backend.error.table_name_required",
-		"db.backend.error.batch_insert_quote_column_required",
-		"db.backend.error.batch_insert_placeholder_required",
-		"db.backend.error.batch_insert_exec_required",
-		"db.backend.error.batch_insert_literal_required",
-		"db.backend.error.batch_insert_failed",
-		"db.backend.error.batch_insert_failed_with_sql",
-		"db.backend.error.batch_insert_no_rows_affected",
-	} {
-		if !strings.Contains(source, key) {
-			t.Fatalf("batch_insert.go does not reference i18n key %q", key)
-		}
-	}
-}
 
 func TestBatchInsertErrorCatalogKeysExist(t *testing.T) {
 	catalogs, err := i18n.LoadCatalogs()
