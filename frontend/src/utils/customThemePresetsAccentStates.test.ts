@@ -1,0 +1,104 @@
+import { describe, expect, it } from 'vitest';
+
+import { BUILTIN_CUSTOM_THEME_PRESETS } from './customThemePresets';
+
+/**
+ * 内置主题的「主要操作按钮」三态可辨性不变式。
+ *
+ * 回归背景：--gn-ant-primary-hover 与 --gn-ant-primary-active 原先都直接取 palette.accent2，
+ * 二者取值完全相同，hover 与按下态在视觉上无任何区别；而 accent2 又是 accent 的近邻色
+ * （内置主题的强调色刻意低饱和），实测 base→hover 对比度仅 1.05–1.29，
+ * 其中 Deep Ocean 的 accent2 比 accent 更亮（调色板方向反了），
+ * 导致「有待提交变更」这类关键状态的交互反馈几乎不可见。
+ *
+ * 本用例断言生成 CSS（函数返回值）里的派生结果，而不是读取源码文本：
+ * 一旦有人把 hover/active 改回 accent2 或让两者相同，这里会失败。
+ */
+
+const readToken = (css: string, token: string): string => {
+  const match = new RegExp(`${token}:\\s*([^;]+);`).exec(css);
+  if (!match) {
+    throw new Error(`生成的主题 CSS 缺少 ${token}`);
+  }
+  return match[1].trim();
+};
+
+const parseHex = (value: string): [number, number, number] => {
+  const text = value.trim().replace(/^#/, '');
+  expect(text, `${value} 应为 6 位十六进制颜色`).toMatch(/^[0-9a-fA-F]{6}$/);
+  return [
+    Number.parseInt(text.slice(0, 2), 16),
+    Number.parseInt(text.slice(2, 4), 16),
+    Number.parseInt(text.slice(4, 6), 16),
+  ];
+};
+
+const channelLuminance = (channel: number): number => {
+  const c = channel / 255;
+  return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+};
+
+const relativeLuminance = ([r, g, b]: [number, number, number]): number => (
+  0.2126 * channelLuminance(r) + 0.7152 * channelLuminance(g) + 0.0722 * channelLuminance(b)
+);
+
+const contrastRatio = (a: string, b: string): number => {
+  const la = relativeLuminance(parseHex(a));
+  const lb = relativeLuminance(parseHex(b));
+  const [hi, lo] = la >= lb ? [la, lb] : [lb, la];
+  return (hi + 0.05) / (lo + 0.05);
+};
+
+/** 填充色变化的可感知下限。低于此值时状态切换在实机上基本看不出来。 */
+const MIN_STATE_DELTA = 1.25;
+
+describe('内置主题的主要操作按钮三态', () => {
+  it('每个内置主题都提供 accent / hover / active 三个不同的派生色', () => {
+    expect(BUILTIN_CUSTOM_THEME_PRESETS.length).toBeGreaterThan(0);
+
+    for (const preset of BUILTIN_CUSTOM_THEME_PRESETS) {
+      const accent = readToken(preset.css, '--gn-ant-primary');
+      const hover = readToken(preset.css, '--gn-ant-primary-hover');
+      const active = readToken(preset.css, '--gn-ant-primary-active');
+
+      expect(hover, `${preset.id} 的 hover 不应等于基色`).not.toBe(accent);
+      expect(active, `${preset.id} 的 active 不应等于基色`).not.toBe(accent);
+      expect(active, `${preset.id} 的 active 不应等于 hover（否则按下无反馈）`).not.toBe(hover);
+    }
+  });
+
+  it('accent → hover → active 的对比度变化均达到可感知阈值', () => {
+    for (const preset of BUILTIN_CUSTOM_THEME_PRESETS) {
+      const accent = readToken(preset.css, '--gn-ant-primary');
+      const hover = readToken(preset.css, '--gn-ant-primary-hover');
+      const active = readToken(preset.css, '--gn-ant-primary-active');
+
+      expect(
+        contrastRatio(accent, hover),
+        `${preset.id} 的 base→hover 对比度不足`,
+      ).toBeGreaterThanOrEqual(MIN_STATE_DELTA);
+      expect(
+        contrastRatio(hover, active),
+        `${preset.id} 的 hover→active 对比度不足`,
+      ).toBeGreaterThanOrEqual(MIN_STATE_DELTA);
+    }
+  });
+
+  it('三态亮度单调递减，不出现深浅方向颠倒', () => {
+    for (const preset of BUILTIN_CUSTOM_THEME_PRESETS) {
+      const accent = relativeLuminance(parseHex(readToken(preset.css, '--gn-ant-primary')));
+      const hover = relativeLuminance(parseHex(readToken(preset.css, '--gn-ant-primary-hover')));
+      const active = relativeLuminance(parseHex(readToken(preset.css, '--gn-ant-primary-active')));
+
+      expect(hover, `${preset.id} 的 hover 不应比基色更亮`).toBeLessThan(accent);
+      expect(active, `${preset.id} 的 active 不应比 hover 更亮`).toBeLessThan(hover);
+    }
+  });
+
+  it('同时暴露 --gn-accent-hover / --gn-accent-active 供 CSS 直接引用', () => {
+    for (const preset of BUILTIN_CUSTOM_THEME_PRESETS) {
+      expect(readToken(preset.css, '--gn-accent-hover')).toBe(readToken(preset.css, '--gn-ant-primary-hover'));
+      expect(readToken(preset.css, '--gn-accent-active')).toBe(readToken(preset.css, '--gn-ant-primary-active'));
+    }
+  });
+});

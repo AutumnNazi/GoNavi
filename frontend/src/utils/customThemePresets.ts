@@ -62,7 +62,63 @@ export type BuiltinCustomThemePreset = CustomThemeDefinition & {
   };
 };
 
-const BUILTIN_THEME_REVISION = 2026071301;
+const BUILTIN_THEME_REVISION = 2026072601;
+
+/**
+ * 主要操作按钮交互态的派生比例（强调色占比，其余混入面板底色）。
+ *
+ * 原先 --gn-ant-primary-hover 与 --gn-ant-primary-active 都直接取 palette.accent2，
+ * 二者取值完全相同，因此 hover 与按下态在视觉上无任何区别；而 accent2 本身又是 accent 的
+ * 近邻色（内置主题的强调色刻意低饱和），实测 base→hover 对比度仅 1.05–1.29，
+ * 其中 Deep Ocean 的 accent2 甚至比 accent 更亮（调色板方向反了），几乎完全看不出状态变化。
+ *
+ * 改为按固定比例混合派生「逐级加深」的三态：与调色板自身的取值无关，
+ * 因此内置主题与用户自定义主题都能得到一致可辨的三态。
+ * 实测深色主题下 base→hover 1.31–1.39、hover→active 1.43–1.55，
+ * 且强调色占比不低于 60%，色相仍可辨认。
+ *
+ * 混合锚点必须按模式区分，否则方向会反：
+ *   - 深色主题的面板底色比强调色更暗，向面板混合即加深，且能留在主题自身的色系里；
+ *   - 浅色主题的面板底色比强调色更亮（如 warm-paper 的 #fffcf5 vs accent #2d7864），
+ *     向面板混合会把按钮**冲淡**、与页面对比更弱，看起来像被禁用。
+ *     浅色主题改为向纯黑混合：其 fg1 与 accent 都偏深（#292722 vs #2d7864），
+ *     用 fg1 作锚点亮度变化太小（base→hover 仅 1.19–1.22，仍不达阈值），
+ *     纯黑可得 1.35 / 1.45，与深色主题的 1.31 / 1.43 观感一致。
+ */
+const ACCENT_HOVER_RATIO = 0.82;
+const ACCENT_ACTIVE_RATIO = 0.60;
+
+/** accentStateAnchor 返回让强调色「加深」的混合锚点。 */
+const accentStateAnchor = (palette: BuiltinThemePalette): string => (
+  palette.mode === 'light' ? '#000000' : palette.panel
+);
+
+const parseHexColor = (value: string): [number, number, number] | null => {
+  const text = value.trim().replace(/^#/, '');
+  if (!/^[0-9a-fA-F]{6}$/.test(text)) {
+    return null;
+  }
+  return [
+    Number.parseInt(text.slice(0, 2), 16),
+    Number.parseInt(text.slice(2, 4), 16),
+    Number.parseInt(text.slice(4, 6), 16),
+  ];
+};
+
+/** mixHex 按 ratio 保留 accent、其余混入 towards，返回十六进制。 */
+const mixHex = (accent: string, towards: string, ratio: number): string => {
+  const a = parseHexColor(accent);
+  const b = parseHexColor(towards);
+  if (!a || !b) {
+    // 任一侧不是 6 位十六进制（例如被改成 rgba）时保持原值，避免产出非法颜色。
+    return accent;
+  }
+  const channel = (index: number): string => {
+    const mixed = Math.round(a[index] * ratio + b[index] * (1 - ratio));
+    return Math.max(0, Math.min(255, mixed)).toString(16).padStart(2, '0');
+  };
+  return `#${channel(0)}${channel(1)}${channel(2)}`;
+};
 
 const createBuiltinThemeCss = (id: string, palette: BuiltinThemePalette): string => `/* GoNavi built-in theme: ${id} */
 body[data-custom-theme],
@@ -118,9 +174,12 @@ body[data-custom-theme][data-ui-version="v2"] {
   --gn-kbd-bg: ${palette.kbdBg};
   --gn-kbd-fg: ${palette.kbdFg};
 
+  --gn-accent-hover: ${mixHex(palette.accent, accentStateAnchor(palette), ACCENT_HOVER_RATIO)};
+  --gn-accent-active: ${mixHex(palette.accent, accentStateAnchor(palette), ACCENT_ACTIVE_RATIO)};
+
   --gn-ant-primary: ${palette.accent};
-  --gn-ant-primary-hover: ${palette.accent2};
-  --gn-ant-primary-active: ${palette.accent2};
+  --gn-ant-primary-hover: ${mixHex(palette.accent, accentStateAnchor(palette), ACCENT_HOVER_RATIO)};
+  --gn-ant-primary-active: ${mixHex(palette.accent, accentStateAnchor(palette), ACCENT_ACTIVE_RATIO)};
   --gn-ant-primary-bg: ${palette.accentSoft};
   --gn-ant-primary-bg-hover: ${palette.accentSoftHover};
   --gn-ant-primary-border: ${palette.accent};
@@ -176,11 +235,19 @@ body[data-custom-theme][data-ui-version="v2"] .ant-btn-primary.ant-btn-dangerous
 
 body[data-custom-theme][data-ui-version="v2"] .gn-v2-query-transaction-commit-button:hover,
 body[data-custom-theme][data-ui-version="v2"] .gn-v2-query-transaction-commit-button:focus,
-body[data-custom-theme][data-ui-version="v2"] .gn-v2-query-transaction-commit-button:focus-visible,
-body[data-custom-theme][data-ui-version="v2"] .gn-v2-query-transaction-commit-button:active {
+body[data-custom-theme][data-ui-version="v2"] .gn-v2-query-transaction-commit-button:focus-visible {
   border-color: var(--gn-ant-primary-border) !important;
   background: var(--gn-ant-primary-bg-hover) !important;
   box-shadow: 0 0 0 1px var(--gn-ant-control-outline), var(--gn-shadow-sm) !important;
+}
+
+/* 按下态与 hover 必须可区分：原先 :active 与 :hover 共用同一条规则，
+   点击时没有任何视觉反馈。 */
+body[data-custom-theme][data-ui-version="v2"] .gn-v2-query-transaction-commit-button:active {
+  border-color: var(--gn-accent-active) !important;
+  background: var(--gn-accent-active) !important;
+  color: var(--gn-on-accent, #fff) !important;
+  box-shadow: none !important;
 }
 
 body[data-custom-theme][data-ui-version="v2"] .gn-v2-query-transaction-commit-button .gn-v2-toolbar-kbd {

@@ -4057,14 +4057,26 @@ body[data-ui-version="v2"] .gn-v2-data-grid .gn-v2-commit-button {
   font-weight: 750 !important;
 }
 
+/* hover/focus 与 active 必须用不同的派生色：原先两者都取 --gn-accent-2，
+   而 accent-2 是 accent 的近邻色（内置主题强调色刻意低饱和），
+   实测 base→hover 对比度仅 1.05–1.29，Deep Ocean 的 accent-2 甚至比 accent 更亮，
+   导致"有待提交变更"这一关键状态的交互反馈几乎不可见。
+   --gn-accent-hover / --gn-accent-active 由 customThemePresets 按固定比例向面板底色派生，
+   回退值保留 accent-2 以兼容未提供这两个 token 的旧自定义主题。 */
 body[data-ui-version="v2"] .gn-v2-data-grid .gn-v2-commit-button:hover,
 body[data-ui-version="v2"] .gn-v2-data-grid .gn-v2-commit-button:focus,
-body[data-ui-version="v2"] .gn-v2-data-grid .gn-v2-commit-button:focus-visible,
-body[data-ui-version="v2"] .gn-v2-data-grid .gn-v2-commit-button:active {
-  border-color: var(--gn-accent-2) !important;
-  background: var(--gn-accent-2) !important;
+body[data-ui-version="v2"] .gn-v2-data-grid .gn-v2-commit-button:focus-visible {
+  border-color: var(--gn-accent-hover, var(--gn-accent-2)) !important;
+  background: var(--gn-accent-hover, var(--gn-accent-2)) !important;
   color: var(--gn-on-accent, #fff) !important;
   box-shadow: var(--gn-shadow-sm), inset 0 0.5px 0 rgba(255, 255, 255, 0.15) !important;
+}
+
+body[data-ui-version="v2"] .gn-v2-data-grid .gn-v2-commit-button:active {
+  border-color: var(--gn-accent-active, var(--gn-accent-2)) !important;
+  background: var(--gn-accent-active, var(--gn-accent-2)) !important;
+  color: var(--gn-on-accent, #fff) !important;
+  box-shadow: none !important;
 }
 
 body[data-ui-version="v2"] .gn-v2-data-grid .gn-v2-commit-button:disabled {
