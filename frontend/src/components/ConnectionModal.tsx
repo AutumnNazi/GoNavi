@@ -539,14 +539,19 @@ const ConnectionModal: React.FC<{
     [overlayTheme],
   );
 
+  // 弹窗内的区块容器去卡片化：原先是 14px 圆角 + 边框 + 独立底色，
+  // 而它同时用在左侧导航容器、右侧内容面板与网络安全的各个分组上，
+  // 再叠加内部分组各自的卡片，形成多层「卡片套卡片」，整页视觉噪声很高。
+  // 现在只保留内边距，靠内部的小标题与分割线划分层次。
+  // 保留原有内边距（间距不变，避免表单贴到容器边缘），只去掉边框、底色与圆角。
   const modalInnerSectionStyle = useMemo(
     () => ({
       padding: 14,
-      borderRadius: 14,
-      border: overlayTheme.sectionBorder,
-      background: overlayTheme.sectionBg,
+      borderRadius: 0,
+      border: "none",
+      background: "transparent",
     }),
-    [overlayTheme],
+    [],
   );
 
   const modalMutedTextStyle = useMemo(
@@ -759,18 +764,15 @@ const ConnectionModal: React.FC<{
     </div>
   );
 
+  // 表单分组改用「小标题 + 细分割线」而不是卡片：
+  // 原先每个分组都是 16px 圆角 + 边框 + 内阴影 + 独立底色的卡片，一屏里叠七八个，
+  // 视觉噪声极高且每张卡各占 16px 内边距，把真正的字段挤得很散。
+  // 去掉边框/圆角/底色/内阴影，只保留组间的一条上分割线来划分层次，字段密度明显提升。
   const configSectionCardStyle = (): React.CSSProperties => ({
-    padding: 16,
-    borderRadius: 16,
-    border: darkMode
-      ? "1px solid rgba(255,255,255,0.08)"
-      : "1px solid rgba(16,24,40,0.08)",
-    background: darkMode
-      ? "rgba(255,255,255,0.025)"
-      : "rgba(255,255,255,0.70)",
-    boxShadow: darkMode
-      ? "inset 0 1px 0 rgba(255,255,255,0.04)"
-      : "inset 0 1px 0 rgba(255,255,255,0.90)",
+    paddingTop: 18,
+    borderTop: darkMode
+      ? "1px solid rgba(255,255,255,0.07)"
+      : "1px solid rgba(16,24,40,0.07)",
   });
 
   const renderConfigSectionCard = ({

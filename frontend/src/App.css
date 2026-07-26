@@ -414,6 +414,13 @@ body[data-theme='light'] .redis-viewer-workbench .ant-radio-button-wrapper-check
     flex-shrink: 0;
 }
 
+/* 连接配置的表单分组改用「小标题 + 细分割线」代替卡片（见 ConnectionModal.tsx 的
+   configSectionCardStyle）。每组靠一条上分割线与前一组划界，因此首组不需要这条线。 */
+[data-connection-config-section]:first-child {
+    padding-top: 0 !important;
+    border-top: none !important;
+}
+
 /* Custom Title Bar Close Button Hover */
 body[data-platform='windows'] .titlebar-window-controls {
     gap: 8px;

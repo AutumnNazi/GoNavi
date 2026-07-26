@@ -68,6 +68,19 @@ const findClickableByAnyText = (renderer: ReactTestRenderer, texts: string[]) =>
 const findClickableCard = (renderer: ReactTestRenderer, text: string) =>
   renderer.root.findAll((node) => node.props?.role === "button" && textContent(node).includes(text))[0];
 
+/**
+ * 展开「连接 URI」分组。
+ *
+ * 该分组默认折叠：它的多行输入框很高，展开时会把 host/账号/密码这些必填项挤出首屏，
+ * 因此只有编辑已含 uri 的连接时才默认展开。断言 URI 相关文案或按钮的用例需先展开。
+ */
+const expandUriSection = (renderer: ReactTestRenderer) => {
+  const toggle = renderer.root.findAll(
+    (node) => node.props?.["data-connection-config-section-toggle"] === "uri",
+  )[0];
+  toggle?.props?.onClick?.({ stopPropagation: () => {} });
+};
+
 const flushConnectionTestTick = async () => {
   await new Promise((resolve) => setTimeout(resolve, 0));
   await Promise.resolve();
@@ -899,6 +912,10 @@ describe("ConnectionModal i18n", () => {
         />,
       );
     });
+    // URI 分组默认折叠（见 expandUriSection 的说明），先展开再断言其占位示例。
+    await act(async () => {
+      expandUriSection(renderer!);
+    });
     expect(textContent(renderer!.toJSON())).toContain(
       "For example: postgres://user:pass@127.0.0.1:5432/db_name",
     );
@@ -986,6 +1003,10 @@ describe("ConnectionModal i18n", () => {
 
     await act(async () => {
       findClickableCard(renderer!, "MySQL").props.onClick();
+    });
+
+    await act(async () => {
+      expandUriSection(renderer!);
     });
 
     await act(async () => {

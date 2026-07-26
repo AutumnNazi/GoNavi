@@ -200,9 +200,20 @@ const ConnectionModalStep2: React.FC<ConnectionModalStep2Props> = (props) => {
   const [readOnlyProtectionExpanded, setReadOnlyProtectionExpanded] =
     React.useState(false);
 
+  // 连接 URI 属于「粘贴整串」的高级入口，默认折叠：它的多行输入框很高，
+  // 展开时会把 host/账号/密码这些必填项挤出首屏。
+  // 已经填了 URI 的连接（编辑场景）默认展开，避免用户看不到自己已录入的值。
+  const [uriSectionExpanded, setUriSectionExpanded] = React.useState(
+    () => String(initialValues?.uri || "").trim() !== "",
+  );
+
   React.useEffect(() => {
     setReadOnlyProtectionExpanded(false);
   }, [dbType]);
+
+  React.useEffect(() => {
+    setUriSectionExpanded(String(initialValues?.uri || "").trim() !== "");
+  }, [dbType, initialValues?.uri]);
 
   const renderStep2 = () => {
   const showConnectionReadOnlyField = supportsConnectionReadOnlyMode({
@@ -240,107 +251,6 @@ const ConnectionModalStep2: React.FC<ConnectionModalStep2Props> = (props) => {
       </div>
 
       <div style={{ display: "grid", gap: 16 }}>
-        {renderConfigSectionCard({
-          sectionKey: "identity",
-          icon: <ApiOutlined />,
-          badge: (
-            <Tag>
-              {getConnectionConfigLayoutKindLabel(connectionConfigLayout.kind)}
-            </Tag>
-          ),
-          children: (
-            <>
-              <Form.Item
-                name="name"
-                label={t("connection.modal.field.name.label")}
-              >
-                <Input
-                  {...noAutoCapInputProps}
-                  placeholder={
-                    isJVM
-                      ? t("connection.modal.field.name.placeholder.jvm")
-                      : t("connection.modal.field.name.placeholder.default")
-                  }
-                />
-              </Form.Item>
-              <Form.Item
-                name="environmentType"
-                label={t("connection.modal.field.environment_type.label")}
-                initialValue={DEFAULT_CONNECTION_ENVIRONMENT}
-                style={{ marginBottom: 0 }}
-              >
-                <ConnectionEnvironmentSelect />
-              </Form.Item>
-            </>
-          ),
-        })}
-
-        {!isCustom &&
-          !isJVM &&
-          renderConfigSectionCard({
-            sectionKey: "uri",
-            icon: <LinkOutlined />,
-            children: (
-              <>
-                <Form.Item
-                  name="uri"
-                  label={t("connection.modal.uri.label")}
-                  help={t("connection.modal.uri.help")}
-                >
-                  <Input.TextArea
-                    {...noAutoCapInputProps}
-                    rows={3}
-                    placeholder={getUriPlaceholder(dbType)}
-                  />
-                </Form.Item>
-                {supportsConnectionParams && (
-                  <Form.Item
-                    name="connectionParams"
-                    label={t("connection.modal.connectionParams.label")}
-                    help={t("connection.modal.connectionParams.help")}
-                  >
-                    <Input.TextArea
-                      {...noAutoCapInputProps}
-                      rows={2}
-                      placeholder={getConnectionParamsPlaceholder(dbType, oceanBaseProtocol)}
-                    />
-                  </Form.Item>
-                )}
-                <Space
-                  size={8}
-                  style={{ marginBottom: uriFeedback ? 12 : 16 }}
-                  wrap
-                >
-                  <Button onClick={handleGenerateURI}>
-                    {t("connection.modal.uri.action.generate")}
-                  </Button>
-                  <Button onClick={handleParseURI}>
-                    {t("connection.modal.uri.action.parse")}
-                  </Button>
-                  <Button onClick={handleCopyURI}>
-                    {t("connection.modal.uri.action.copy")}
-                  </Button>
-                </Space>
-                {uriFeedback && (
-                  <Alert
-                    showIcon
-                    closable
-                    type={uriFeedback.type}
-                    message={resolvedUriFeedbackMessage}
-                    onClose={() => setUriFeedback(null)}
-                    style={{ marginBottom: 16 }}
-                  />
-                )}
-                {renderStoredSecretControls({
-                  fieldName: "uri",
-                  clearKey: "opaqueURI",
-                  hasStoredSecret: initialValues?.hasOpaqueURI,
-                  clearLabel: t("connection.modal.uri.stored.clear"),
-                  description: t("connection.modal.uri.stored.description"),
-                })}
-              </>
-            ),
-          })}
 
         {isCustom ? (
           <>
@@ -2539,6 +2449,115 @@ const ConnectionModalStep2: React.FC<ConnectionModalStep2Props> = (props) => {
               })}
           </>
         )}
+
+        {/* 必填项优先：目标地址、凭据、数据库范围由上方的条件分支渲染。
+            连接名称与预设类型属于可选的展示信息，连接 URI 属于「粘贴整串」的高级入口，
+            两者都下沉到必填项之后，避免它们（尤其是 URI 的多行输入框）把
+            host/账号/密码挤出首屏。 */}
+        {renderConfigSectionCard({
+          sectionKey: "identity",
+          icon: <ApiOutlined />,
+          badge: (
+            <Tag>
+              {getConnectionConfigLayoutKindLabel(connectionConfigLayout.kind)}
+            </Tag>
+          ),
+          children: (
+            <>
+              <Form.Item
+                name="name"
+                label={t("connection.modal.field.name.label")}
+              >
+                <Input
+                  {...noAutoCapInputProps}
+                  placeholder={
+                    isJVM
+                      ? t("connection.modal.field.name.placeholder.jvm")
+                      : t("connection.modal.field.name.placeholder.default")
+                  }
+                />
+              </Form.Item>
+              <Form.Item
+                name="environmentType"
+                label={t("connection.modal.field.environment_type.label")}
+                initialValue={DEFAULT_CONNECTION_ENVIRONMENT}
+                style={{ marginBottom: 0 }}
+              >
+                <ConnectionEnvironmentSelect />
+              </Form.Item>
+            </>
+          ),
+        })}
+
+        {!isCustom &&
+          !isJVM &&
+          renderConfigSectionCard({
+            sectionKey: "uri",
+            icon: <LinkOutlined />,
+            collapsible: true,
+            expanded: uriSectionExpanded,
+            onToggle: () => setUriSectionExpanded((expanded) => !expanded),
+            children: (
+              <>
+                <Form.Item
+                  name="uri"
+                  label={t("connection.modal.uri.label")}
+                  help={t("connection.modal.uri.help")}
+                >
+                  <Input.TextArea
+                    {...noAutoCapInputProps}
+                    rows={3}
+                    placeholder={getUriPlaceholder(dbType)}
+                  />
+                </Form.Item>
+                {supportsConnectionParams && (
+                  <Form.Item
+                    name="connectionParams"
+                    label={t("connection.modal.connectionParams.label")}
+                    help={t("connection.modal.connectionParams.help")}
+                  >
+                    <Input.TextArea
+                      {...noAutoCapInputProps}
+                      rows={2}
+                      placeholder={getConnectionParamsPlaceholder(dbType, oceanBaseProtocol)}
+                    />
+                  </Form.Item>
+                )}
+                <Space
+                  size={8}
+                  style={{ marginBottom: uriFeedback ? 12 : 16 }}
+                  wrap
+                >
+                  <Button onClick={handleGenerateURI}>
+                    {t("connection.modal.uri.action.generate")}
+                  </Button>
+                  <Button onClick={handleParseURI}>
+                    {t("connection.modal.uri.action.parse")}
+                  </Button>
+                  <Button onClick={handleCopyURI}>
+                    {t("connection.modal.uri.action.copy")}
+                  </Button>
+                </Space>
+                {uriFeedback && (
+                  <Alert
+                    showIcon
+                    closable
+                    type={uriFeedback.type}
+                    message={resolvedUriFeedbackMessage}
+                    onClose={() => setUriFeedback(null)}
+                    style={{ marginBottom: 16 }}
+                  />
+                )}
+                {renderStoredSecretControls({
+                  fieldName: "uri",
+                  clearKey: "opaqueURI",
+                  hasStoredSecret: initialValues?.hasOpaqueURI,
+                  clearLabel: t("connection.modal.uri.stored.clear"),
+                  description: t("connection.modal.uri.stored.description"),
+                })}
+              </>
+            ),
+          })}
       </div>
     </div>
   );
@@ -3107,26 +3126,26 @@ const ConnectionModalStep2: React.FC<ConnectionModalStep2Props> = (props) => {
                       key={item.key}
                       type="button"
                       onClick={() => setActiveConfigSection(item.key)}
+                      /* 导航项改为扁平列表：原先每项都是 14px 圆角 + 边框 + 渐变底 + 投影的
+                         独立卡片，三项叠在一个卡片容器里形成「卡片套卡片」，视觉噪声很高。
+                         现在只用左侧强调条 + 淡底表示选中，去掉边框、圆角与投影。 */
                       style={{
                         textAlign: "left",
-                        padding: "12px 12px 12px 14px",
-                        borderRadius: 14,
-                        border: `1px solid ${
+                        padding: "10px 10px 10px 12px",
+                        borderRadius: 8,
+                        border: "none",
+                        borderLeft: `2px solid ${
                           active
                             ? darkMode
-                              ? "rgba(255,214,102,0.3)"
-                              : "rgba(24,144,255,0.24)"
-                            : darkMode
-                              ? "rgba(255,255,255,0.045)"
-                              : "rgba(16,24,40,0.055)"
+                              ? "#ffd666"
+                              : "#1677ff"
+                            : "transparent"
                         }`,
                         background: active
                           ? darkMode
-                            ? "linear-gradient(180deg, rgba(255,214,102,0.12) 0%, rgba(255,214,102,0.06) 100%)"
-                            : "linear-gradient(180deg, rgba(24,144,255,0.10) 0%, rgba(24,144,255,0.05) 100%)"
-                          : darkMode
-                            ? "rgba(255,255,255,0.02)"
-                            : "rgba(255,255,255,0.7)",
+                            ? "rgba(255,214,102,0.10)"
+                            : "rgba(24,144,255,0.08)"
+                          : "transparent",
                         color: active
                           ? darkMode
                             ? "#f5f7ff"
@@ -3135,12 +3154,8 @@ const ConnectionModalStep2: React.FC<ConnectionModalStep2Props> = (props) => {
                             ? "rgba(255,255,255,0.76)"
                             : "#3f4b5e",
                         cursor: "pointer",
-                        transition: "all 120ms ease",
-                        boxShadow: active
-                          ? darkMode
-                            ? "0 10px 24px rgba(0,0,0,0.18)"
-                            : "0 10px 22px rgba(24,144,255,0.08)"
-                          : "none",
+                        transition: "background 120ms ease, color 120ms ease",
+                        boxShadow: "none",
                       }}
                     >
                       <div
