@@ -43,11 +43,13 @@ func (t *TDengineDB) getDSN(config connection.ConnectionConfig) string {
 		path = "/" + dbName
 	}
 
+	escapedUser := url.QueryEscape(user)
+	escapedPass := url.QueryEscape(pass)
 	netType := resolveTDengineNet(config)
 	params := url.Values{}
 	mergeConnectionParamsFromConfigWithAllowlist(params, config, tdengineConnectionParamNames, "taos", "taosws", "tdengine")
 	query := params.Encode()
-	dsn := fmt.Sprintf("%s:%s@%s(%s)%s", user, pass, netType, net.JoinHostPort(config.Host, strconv.Itoa(config.Port)), path)
+	dsn := fmt.Sprintf("%s:%s@%s(%s)%s", escapedUser, escapedPass, netType, net.JoinHostPort(config.Host, strconv.Itoa(config.Port)), path)
 	if query == "" {
 		return dsn
 	}
