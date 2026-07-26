@@ -102,3 +102,48 @@ describe('内置主题的主要操作按钮三态', () => {
     }
   });
 });
+
+/**
+ * 手动事务「提交」按钮用 warn 实心填充，刻意不跟随主题强调色。
+ * 回归背景：原先用 accent-soft 底 + accent-2 文字，与普通主操作同色系且文字对比极低；
+ * 待提交条数徽标更是用硬编码绿底 + accent-2 文字，实测对比度仅 1.10–1.17，
+ * 静止状态下数字完全看不见，只有 hover 把按钮压暗后才显现。
+ */
+describe('手动事务提交按钮的 warn 配色', () => {
+  it('warn 前景色在每个主题下都达到正文可读级（≥4.5）', () => {
+    for (const preset of BUILTIN_CUSTOM_THEME_PRESETS) {
+      const warn = readToken(preset.css, '--gn-warn');
+      const onWarn = readToken(preset.css, '--gn-on-warn');
+      expect(
+        contrastRatio(onWarn, warn),
+        `${preset.id} 的 warn 标签对比度不足`,
+      ).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+
+  it('待提交条数徽标的数字在静止状态即可读（≥4.5）', () => {
+    for (const preset of BUILTIN_CUSTOM_THEME_PRESETS) {
+      const onWarn = readToken(preset.css, '--gn-on-warn');
+      const badgeHex = readToken(preset.css, '--gn-warn-badge-bg');
+      expect(
+        contrastRatio(onWarn, badgeHex),
+        `${preset.id} 的徽标数字对比度不足`,
+      ).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+
+  it('warn 的三态同样逐级加深且互不相同', () => {
+    for (const preset of BUILTIN_CUSTOM_THEME_PRESETS) {
+      const warn = readToken(preset.css, '--gn-warn');
+      const hover = readToken(preset.css, '--gn-warn-hover');
+      const active = readToken(preset.css, '--gn-warn-active');
+
+      expect(hover, `${preset.id} 的 warn hover 不应等于基色`).not.toBe(warn);
+      expect(active, `${preset.id} 的 warn active 不应等于 hover`).not.toBe(hover);
+      expect(
+        contrastRatio(warn, hover),
+        `${preset.id} 的 warn base→hover 对比度不足`,
+      ).toBeGreaterThanOrEqual(MIN_STATE_DELTA);
+    }
+  });
+});

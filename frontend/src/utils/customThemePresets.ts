@@ -105,6 +105,60 @@ const parseHexColor = (value: string): [number, number, number] | null => {
   ];
 };
 
+const channelLuminance = (channel: number): number => {
+  const c = channel / 255;
+  return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+};
+
+/**
+ * readableOnColor 按底色亮度挑选可读的前景色。
+ *
+ * warn 在各预设间跨度很大（浅色主题为 #9f5f1d 这类深琥珀，深色主题为 #ebcb8b 这类浅琥珀），
+ * 固定用深色或白色都会在另一端失效，因此按相对亮度择优。
+ */
+const DARK_ON_COLOR = '#17130a';
+
+const readableOnColor = (background: string): string => {
+  const rgb = parseHexColor(background);
+  if (!rgb) {
+    return '#ffffff';
+  }
+  const relativeLuminance = (channels: [number, number, number]): number => (
+    0.2126 * channelLuminance(channels[0])
+    + 0.7152 * channelLuminance(channels[1])
+    + 0.0722 * channelLuminance(channels[2])
+  );
+  const contrast = (a: number, b: number): number => {
+    const [hi, lo] = a >= b ? [a, b] : [b, a];
+    return (hi + 0.05) / (lo + 0.05);
+  };
+
+  const backgroundLuminance = relativeLuminance(rgb);
+  const darkRgb = parseHexColor(DARK_ON_COLOR);
+  const darkContrast = darkRgb
+    ? contrast(backgroundLuminance, relativeLuminance(darkRgb))
+    : 1;
+  const whiteContrast = contrast(backgroundLuminance, 1);
+  return darkContrast >= whiteContrast ? DARK_ON_COLOR : '#ffffff';
+};
+
+/**
+ * badgeBackground 计算「按钮内计数徽标」的底色。
+ *
+ * 叠加方向必须跟随前景色，不能写死成半透明白：
+ * warn 在浅色主题下是深琥珀（#9f5f1d），前景色随之取白，此时若把徽标底往白色叠加，
+ * 白字只剩 2.65 的对比度；反之深色主题的浅琥珀底配深字，则必须往白色叠加。
+ * 因此按前景色是深还是浅，决定徽标底往相反方向偏移。
+ */
+const badgeBackground = (base: string, onColor: string): string => {
+  const rgb = parseHexColor(onColor);
+  // 前景偏深时把徽标底往白色偏移，前景偏浅（白字）时往黑色偏移。
+  const onIsDark = rgb
+    ? 0.2126 * channelLuminance(rgb[0]) + 0.7152 * channelLuminance(rgb[1]) + 0.0722 * channelLuminance(rgb[2]) < 0.5
+    : true;
+  return mixHex(base, onIsDark ? '#ffffff' : '#000000', 0.65);
+};
+
 /** mixHex 按 ratio 保留 accent、其余混入 towards，返回十六进制。 */
 const mixHex = (accent: string, towards: string, ratio: number): string => {
   const a = parseHexColor(accent);
@@ -176,6 +230,15 @@ body[data-custom-theme][data-ui-version="v2"] {
 
   --gn-accent-hover: ${mixHex(palette.accent, accentStateAnchor(palette), ACCENT_HOVER_RATIO)};
   --gn-accent-active: ${mixHex(palette.accent, accentStateAnchor(palette), ACCENT_ACTIVE_RATIO)};
+
+  /* 手动事务的「提交」按钮刻意不跟随主题强调色：待提交事务是需要用户显式决断的状态，
+     若与普通主操作同色则无法区分（回滚已用 danger，提交用 warn 形成语义配对）。
+     on-warn 按亮度择优，因为 warn 在各预设间跨度很大（#9f5f1d ~ #ebcb8b）。 */
+  --gn-on-warn: ${readableOnColor(palette.warn)};
+  --gn-warn-hover: ${mixHex(palette.warn, accentStateAnchor(palette), ACCENT_HOVER_RATIO)};
+  --gn-warn-active: ${mixHex(palette.warn, accentStateAnchor(palette), ACCENT_ACTIVE_RATIO)};
+  --gn-warn-badge-bg: ${badgeBackground(palette.warn, readableOnColor(palette.warn))};
+  --gn-accent-badge-bg: ${badgeBackground(palette.accent, palette.onAccent)};
 
   --gn-ant-primary: ${palette.accent};
   --gn-ant-primary-hover: ${mixHex(palette.accent, accentStateAnchor(palette), ACCENT_HOVER_RATIO)};

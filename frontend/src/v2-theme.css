@@ -4091,10 +4091,21 @@ body[data-ui-version="v2"] .gn-v2-data-grid .gn-v2-commit-button:disabled {
   box-shadow: none !important;
 }
 
+/* 待提交条数徽标：底色改用白色半透明叠加、文字改用 on-accent。
+   原先底是硬编码的 rgba(22,163,74,.18)、文字是 --gn-accent-2，
+   而按钮底色是 --gn-accent —— 三者几乎同色（实测对比度仅 1.10–1.17），
+   静止状态下数字完全看不见，只有 hover 把按钮压暗后才显现。 */
 body[data-ui-version="v2"] .gn-v2-data-grid .gn-v2-commit-button .gn-v2-toolbar-kbd {
   border: none;
-  background: rgba(22, 163, 74, 0.18);
-  color: var(--gn-accent-2);
+  background: var(--gn-accent-badge-bg, rgba(255, 255, 255, 0.35));
+  color: var(--gn-on-accent, #17130a);
+}
+
+body[data-ui-version="v2"] .gn-v2-data-grid .gn-v2-commit-button:hover .gn-v2-toolbar-kbd,
+body[data-ui-version="v2"] .gn-v2-data-grid .gn-v2-commit-button:focus-visible .gn-v2-toolbar-kbd,
+body[data-ui-version="v2"] .gn-v2-data-grid .gn-v2-commit-button:active .gn-v2-toolbar-kbd {
+  background: var(--gn-accent-badge-bg, rgba(255, 255, 255, 0.42));
+  color: var(--gn-on-accent, #17130a);
 }
 
 body[data-ui-version="v2"] .gn-v2-data-grid .gn-v2-ai-insight-button {

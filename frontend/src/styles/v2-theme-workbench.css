@@ -262,38 +262,50 @@ body[data-ui-version="v2"] .gn-v2-query-transaction-commit-button {
   display: inline-flex !important;
   align-items: center;
   gap: 6px;
-  border-color: transparent !important;
-  background: var(--gn-accent-soft) !important;
-  color: var(--gn-accent-2) !important;
+  /* 待提交事务用 warn 实心填充，刻意不跟随主题强调色：
+     它是需要用户显式决断的状态，与普通主操作同色时无法区分（回滚用 danger，二者语义配对）。
+     原先是 accent-soft 底 + accent-2 文字，两者都是同一色系的淡色，实测文字对比极低。 */
+  border-color: var(--gn-warn) !important;
+  background: var(--gn-warn) !important;
+  color: var(--gn-on-warn, #17130a) !important;
   font-weight: 750 !important;
   transition: background-color 120ms ease, box-shadow 120ms ease, border-color 120ms ease !important;
 }
 
 body[data-ui-version="v2"] .gn-v2-query-transaction-commit-button:hover,
 body[data-ui-version="v2"] .gn-v2-query-transaction-commit-button:focus,
-body[data-ui-version="v2"] .gn-v2-query-transaction-commit-button:focus-visible,
-body[data-ui-version="v2"] .gn-v2-query-transaction-commit-button:active {
-  border-color: rgba(22, 163, 74, 0.18) !important;
-  background: color-mix(in srgb, var(--gn-accent-soft) 80%, rgba(22, 163, 74, 0.28)) !important;
-  color: var(--gn-accent-2) !important;
-  box-shadow: 0 0 0 1px rgba(22, 163, 74, 0.12), 0 6px 14px rgba(22, 163, 74, 0.12) !important;
+body[data-ui-version="v2"] .gn-v2-query-transaction-commit-button:focus-visible {
+  border-color: var(--gn-warn-hover, var(--gn-warn)) !important;
+  background: var(--gn-warn-hover, var(--gn-warn)) !important;
+  color: var(--gn-on-warn, #17130a) !important;
+  box-shadow: var(--gn-shadow-sm), inset 0 0.5px 0 rgba(255, 255, 255, 0.15) !important;
 }
 
+body[data-ui-version="v2"] .gn-v2-query-transaction-commit-button:active {
+  border-color: var(--gn-warn-active, var(--gn-warn)) !important;
+  background: var(--gn-warn-active, var(--gn-warn)) !important;
+  color: var(--gn-on-warn, #17130a) !important;
+  box-shadow: none !important;
+}
+
+/* 待提交条数徽标：底色用白色半透明叠加而非硬编码绿色，文字用 on-warn。
+   原先底是 rgba(22,163,74,.18)、文字是 --gn-accent-2，与按钮底色几乎同色
+   （实测对比度仅 1.10–1.17），静止状态下数字完全看不见，只有 hover 变暗后才显现。 */
 body[data-ui-version="v2"] .gn-v2-query-transaction-commit-button .gn-v2-toolbar-kbd {
   margin-left: 0;
   min-width: 18px;
   justify-content: center;
   border: none;
-  background: rgba(22, 163, 74, 0.18);
-  color: var(--gn-accent-2);
+  background: var(--gn-warn-badge-bg, rgba(255, 255, 255, 0.35));
+  color: var(--gn-on-warn, #17130a);
 }
 
 body[data-ui-version="v2"] .gn-v2-query-transaction-commit-button:hover .gn-v2-toolbar-kbd,
 body[data-ui-version="v2"] .gn-v2-query-transaction-commit-button:focus .gn-v2-toolbar-kbd,
 body[data-ui-version="v2"] .gn-v2-query-transaction-commit-button:focus-visible .gn-v2-toolbar-kbd,
 body[data-ui-version="v2"] .gn-v2-query-transaction-commit-button:active .gn-v2-toolbar-kbd {
-  background: rgba(22, 163, 74, 0.24);
-  color: var(--gn-accent-2);
+  background: var(--gn-warn-badge-bg, rgba(255, 255, 255, 0.42));
+  color: var(--gn-on-warn, #17130a);
 }
 
 body[data-ui-version="v2"] .gn-v2-query-toolbar-icon-action.ant-btn,
