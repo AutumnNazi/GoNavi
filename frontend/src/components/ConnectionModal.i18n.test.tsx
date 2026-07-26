@@ -4,6 +4,7 @@ import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { readFileSync } from "node:fs";
 
 import { setCurrentLanguage } from "../i18n";
+import { getAllConnectionTypeCatalogItems } from "../utils/connectionTypeCatalog";
 import { getCustomConnectionDriverHelp } from "../utils/driverImportGuidance";
 
 const storeState = {
@@ -66,7 +67,38 @@ const findClickableByAnyText = (renderer: ReactTestRenderer, texts: string[]) =>
   )[0];
 
 const findClickableCard = (renderer: ReactTestRenderer, text: string) =>
-  renderer.root.findAll((node) => node.props?.role === "button" && textContent(node).includes(text))[0];
+  renderer.root.findAll(
+    (node) =>
+      (node.props?.role === "button" ||
+        typeof node.props?.["data-connection-type-key"] === "string") &&
+      textContent(node).includes(text),
+  )[0];
+
+const findConnectionTypeButtons = (renderer: ReactTestRenderer) =>
+  renderer.root.findAll(
+    (node) =>
+      node.type === "button" &&
+      typeof node.props?.["data-connection-type-key"] === "string",
+  );
+
+const findConnectionTypeGroup = (
+  renderer: ReactTestRenderer,
+  groupKey: string,
+) =>
+  renderer.root.findAll(
+    (node) =>
+      node.type === "button" &&
+      node.props?.["data-connection-group-key"] === groupKey,
+  )[0];
+
+const findInputByPlaceholder = (
+  renderer: ReactTestRenderer,
+  placeholder: string,
+) =>
+  renderer.root.findAll(
+    (node) =>
+      node.type === "input" && node.props?.placeholder === placeholder,
+  )[0];
 
 /**
  * 展开「连接 URI」分组。
@@ -173,6 +205,7 @@ vi.mock("@ant-design/icons", () => {
     ThunderboltOutlined: Icon,
     DownOutlined: Icon,
     RightOutlined: Icon,
+    SearchOutlined: Icon,
   };
 });
 
@@ -385,6 +418,14 @@ describe("ConnectionModal i18n", () => {
     });
 
     expect(textContent(renderer!.toJSON())).toContain("选择数据源类型");
+    expect(
+      textContent(
+        findConnectionTypeGroup(
+          renderer!,
+          "connection_modal.step1.group.all",
+        ),
+      ),
+    ).toBe("全部");
 
     await act(async () => {
       storeState.setLanguagePreference("en-US");
@@ -392,7 +433,56 @@ describe("ConnectionModal i18n", () => {
 
     expect(storeState.setLanguagePreference).toHaveBeenCalledWith("en-US");
     expect(textContent(renderer!.toJSON())).toContain("Select connection type");
+    expect(
+      textContent(
+        findConnectionTypeGroup(
+          renderer!,
+          "connection_modal.step1.group.all",
+        ),
+      ),
+    ).toBe("All");
+    expect(
+      textContent(
+        findConnectionTypeGroup(
+          renderer!,
+          "connection_modal.step1.group.other",
+        ),
+      ),
+    ).toBe("Other");
     expect(textContent(renderer!.toJSON())).not.toContain("选择数据源类型");
+  });
+
+  it("retranslates data source groups when resolved system language changes", async () => {
+    storeState.languagePreference = "system";
+    setCurrentLanguage("zh-CN");
+    const { default: ConnectionModal } = await import("./ConnectionModal");
+    const onClose = vi.fn();
+
+    let renderer: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<ConnectionModal open onClose={onClose} />);
+    });
+    expect(
+      textContent(
+        findConnectionTypeGroup(
+          renderer!,
+          "connection_modal.step1.group.all",
+        ),
+      ),
+    ).toBe("全部");
+
+    setCurrentLanguage("en-US");
+    await act(async () => {
+      renderer!.update(<ConnectionModal open onClose={onClose} />);
+    });
+    expect(
+      textContent(
+        findConnectionTypeGroup(
+          renderer!,
+          "connection_modal.step1.group.all",
+        ),
+      ),
+    ).toBe("All");
   });
 
   it.each(["legacy", "v2"] as const)(
@@ -1237,6 +1327,116 @@ describe("ConnectionModal i18n", () => {
     expect(pageText).not.toContain("JVM Runtime");
     expect(pageText).toContain("Custom");
     expect(pageText).not.toContain("Custom (自定义)");
+  });
+
+  it("searches across all data sources, keeps category state consistent, and resets on reopen", async () => {
+    storeState.appearance.uiVersion = "legacy";
+    setCurrentLanguage("en-US");
+    const { default: ConnectionModal } = await import("./ConnectionModal");
+    const onClose = vi.fn();
+
+    let renderer: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<ConnectionModal open onClose={onClose} />);
+    });
+
+    const expectedKeys = new Set(
+      getAllConnectionTypeCatalogItems().map((item) => item.key),
+    );
+    expect(
+      findConnectionTypeButtons(renderer!).map(
+        (node) => node.props["data-connection-type-key"],
+      ),
+    ).toEqual([...expectedKeys]);
+
+    await act(async () => {
+      findConnectionTypeGroup(
+        renderer!,
+        "connection_modal.step1.group.nosql",
+      ).props.onClick();
+    });
+    expect(
+      findConnectionTypeButtons(renderer!).map(
+        (node) => node.props["data-connection-type-key"],
+      ),
+    ).toEqual(["mongodb", "redis", "elasticsearch"]);
+
+    await act(async () => {
+      findInputByPlaceholder(
+        renderer!,
+        "Search data source name",
+      ).props.onChange({
+        target: { value: " DIROS " },
+      });
+    });
+    expect(
+      findConnectionTypeGroup(
+        renderer!,
+        "connection_modal.step1.group.all",
+      ).props["aria-pressed"],
+    ).toBe(true);
+    expect(
+      findConnectionTypeButtons(renderer!).map(
+        (node) => node.props["data-connection-type-key"],
+      ),
+    ).toEqual(["diros"]);
+    expect(textContent(renderer!.toJSON())).toContain("Doris");
+
+    await act(async () => {
+      findInputByPlaceholder(
+        renderer!,
+        "Search data source name",
+      ).props.onChange({
+        target: { value: "not-a-real-data-source" },
+      });
+    });
+    expect(findConnectionTypeButtons(renderer!)).toHaveLength(0);
+    expect(textContent(renderer!.toJSON())).toContain(
+      "No matching data source",
+    );
+
+    await act(async () => {
+      renderer!.update(<ConnectionModal open={false} onClose={onClose} />);
+    });
+    await act(async () => {
+      renderer!.update(<ConnectionModal open onClose={onClose} />);
+    });
+    expect(
+      findInputByPlaceholder(renderer!, "Search data source name").props.value,
+    ).toBe("");
+    expect(findConnectionTypeButtons(renderer!)).toHaveLength(
+      expectedKeys.size,
+    );
+
+    await act(async () => {
+      findConnectionTypeGroup(
+        renderer!,
+        "connection_modal.step1.group.other",
+      ).props.onClick();
+    });
+    expect(
+      findConnectionTypeButtons(renderer!).map(
+        (node) => node.props["data-connection-type-key"],
+      ),
+    ).toEqual(["jvm", "custom"]);
+  });
+
+  it("uses native buttons for category and data source keyboard interaction", async () => {
+    const { default: ConnectionModal } = await import("./ConnectionModal");
+
+    let renderer: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<ConnectionModal open onClose={vi.fn()} />);
+    });
+
+    expect(
+      findConnectionTypeGroup(
+        renderer!,
+        "connection_modal.step1.group.all",
+      ).props.type,
+    ).toBe("button");
+    expect(findClickableCard(renderer!, "MySQL").type).toBe("button");
+    expect(findClickableCard(renderer!, "MySQL").props.type).toBe("button");
   });
 
   it("renders English custom driver DSN copy after the module was loaded in another language", async () => {

@@ -421,6 +421,36 @@ body[data-theme='light'] .redis-viewer-workbench .ant-radio-button-wrapper-check
     border-top: none !important;
 }
 
+.gn-connection-type-row {
+    background: transparent;
+}
+
+.gn-connection-type-row:hover {
+    background: rgba(16, 24, 40, 0.05);
+}
+
+.gn-connection-type-row:focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--gn-accent, #1677ff) 68%, transparent);
+    outline-offset: -2px;
+}
+
+body[data-theme='dark'] .gn-connection-type-row:hover {
+    background: rgba(255, 255, 255, 0.06);
+}
+
+.gn-connection-type-group:hover:not([aria-pressed='true']) {
+    background: rgba(16, 24, 40, 0.035) !important;
+}
+
+.gn-connection-type-group:focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--gn-accent, #1677ff) 68%, transparent);
+    outline-offset: -2px;
+}
+
+body[data-theme='dark'] .gn-connection-type-group:hover:not([aria-pressed='true']) {
+    background: rgba(255, 255, 255, 0.045) !important;
+}
+
 /* Custom Title Bar Close Button Hover */
 body[data-platform='windows'] .titlebar-window-controls {
     gap: 8px;

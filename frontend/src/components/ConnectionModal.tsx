@@ -9,9 +9,6 @@ import {
   Checkbox,
   Select,
   Alert,
-  Card,
-  Row,
-  Col,
   Typography,
   Space,
   Table,
@@ -36,6 +33,7 @@ import {
   ThunderboltOutlined,
   DownOutlined,
   RightOutlined,
+  SearchOutlined,
 } from "@ant-design/icons";
 import {
   getDbIcon,
@@ -345,6 +343,7 @@ const ConnectionModal: React.FC<{
   const [dbType, setDbType] = useState("mysql");
   const [step, setStep] = useState(1); // 1: Select Type, 2: Configure
   const [activeGroup, setActiveGroup] = useState(0); // Active category index in step 1
+  const [dbTypeQuery, setDbTypeQuery] = useState("");
   const [activeConfigSection, setActiveConfigSection] = useState<
     "basic" | "network" | "appearance"
   >("basic");
@@ -1676,6 +1675,7 @@ const ConnectionModal: React.FC<{
         setUseHttpTunnel(false);
         setDbType("mysql");
         setActiveGroup(0);
+        setDbTypeQuery("");
         setActiveConfigSection("basic");
         setActiveNetworkConfig("ssl");
         setPrimaryPasswordVisible(false);
@@ -2356,17 +2356,54 @@ const ConnectionModal: React.FC<{
   const driverStatusChecking =
     hasCurrentDriverType && !driverStatusLoaded && step === 2;
 
-  const dbTypeGroups = useMemo(
-    () =>
-      buildConnectionTypeGroups(t).map((group) => ({
-        ...group,
-        items: group.items.map((item) => ({
-          ...item,
-          icon: getDbIcon(item.key, undefined, 36),
-        })),
-      })),
-    [],
-  );
+  // 翻译函数读取运行时语言；系统语言变化时 preference 仍可能保持 "system"，
+  // 因此这组少量目录项必须随组件重渲染重新派生，不能只按 preference 做 memo。
+  const localizedDbTypeGroups = buildConnectionTypeGroups(t).map((group) => ({
+    ...group,
+    items: group.items.map((item) => ({
+      ...item,
+      icon: getDbIcon(item.key, undefined, 32),
+    })),
+  }));
+  const seenDbTypeKeys = new Set<string>();
+  const allDbTypeItems = localizedDbTypeGroups
+    .flatMap((group) => group.items)
+    .filter((item) => {
+      if (seenDbTypeKeys.has(item.key)) {
+        return false;
+      }
+      seenDbTypeKeys.add(item.key);
+      return true;
+    });
+  const dbTypeGroups = [
+    {
+      labelKey: "connection_modal.step1.group.all",
+      label: t("connection.modal.step1.group.all"),
+      items: allDbTypeItems,
+    },
+    ...localizedDbTypeGroups,
+  ];
+
+  const normalizedDbTypeQuery = dbTypeQuery.trim().toLowerCase();
+  const visibleDbTypeItems = normalizedDbTypeQuery
+    ? (dbTypeGroups[0]?.items ?? []).filter(
+        (item) =>
+          item.name.toLowerCase().includes(normalizedDbTypeQuery) ||
+          String(item.key).toLowerCase().includes(normalizedDbTypeQuery),
+      )
+    : (dbTypeGroups[activeGroup]?.items ?? []);
+
+  const handleDbTypeQueryChange = (value: string) => {
+    setDbTypeQuery(value);
+    if (value.trim()) {
+      setActiveGroup(0);
+    }
+  };
+
+  const handleDbTypeGroupSelect = (index: number) => {
+    setActiveGroup(index);
+    setDbTypeQuery("");
+  };
 
   const dbTypes = getAllConnectionTypeCatalogItems();
 
@@ -2379,20 +2416,46 @@ const ConnectionModal: React.FC<{
         height: "100%",
       }}
     >
-      <div style={{ ...modalInnerSectionStyle, paddingBottom: 12 }}>
-        <div
+      <div
+        style={{
+          ...modalInnerSectionStyle,
+          display: "flex",
+          alignItems: "flex-end",
+          justifyContent: "space-between",
+          gap: 24,
+          padding: "8px 12px 14px",
+          flexWrap: "wrap",
+        }}
+      >
+        <div style={{ minWidth: 240, flex: "1 1 360px" }}>
+          <div
+            style={{
+              marginBottom: 5,
+              color: darkMode ? "#f5f7ff" : "#162033",
+              fontSize: 14,
+              fontWeight: 700,
+            }}
+          >
+            {t("connection.modal.step1.sectionTitle")}
+          </div>
+          <div style={modalMutedTextStyle}>
+            {t("connection.modal.step1.sectionDescription")}
+          </div>
+        </div>
+        <Input
+          allowClear
+          aria-label={t("connection.modal.step1.search.placeholder")}
+          value={dbTypeQuery}
+          onChange={(event) => handleDbTypeQueryChange(event.target.value)}
+          placeholder={t("connection.modal.step1.search.placeholder")}
+          prefix={<SearchOutlined style={{ color: overlayTheme.mutedText }} />}
           style={{
-            marginBottom: 12,
-            color: darkMode ? "#f5f7ff" : "#162033",
-            fontSize: 14,
-            fontWeight: 700,
+            width: "100%",
+            maxWidth: 320,
+            flex: "0 1 320px",
           }}
-        >
-          {t("connection.modal.step1.sectionTitle")}
-        </div>
-        <div style={modalMutedTextStyle}>
-          {t("connection.modal.step1.sectionDescription")}
-        </div>
+          {...noAutoCapInputProps}
+        />
       </div>
       {typeSelectWarning && (
         <Alert
@@ -2423,42 +2486,55 @@ const ConnectionModal: React.FC<{
           display: "flex",
           flex: 1,
           minHeight: 0,
-          padding: 12,
+          padding: "2px 12px 8px",
         }}
       >
-        {/* 左侧分类导航 */}
         <div
+          role="navigation"
+          aria-label={t("connection.modal.step1.sectionTitle")}
           style={{
-            width: 148,
+            width: 142,
             borderRight: `1px solid ${step1SidebarDividerColor}`,
-            paddingRight: 10,
+            paddingRight: 12,
             flexShrink: 0,
             overflowY: "auto",
           }}
         >
           {dbTypeGroups.map((group, idx) => (
-            <div
-              key={group.label}
-              onClick={() => setActiveGroup(idx)}
+            <button
+              key={group.labelKey}
+              type="button"
+              className="gn-connection-type-group"
+              data-connection-group-key={group.labelKey}
+              aria-pressed={activeGroup === idx}
+              onClick={() => handleDbTypeGroupSelect(idx)}
               style={{
-                padding: "11px 12px",
+                width: "100%",
+                padding: "8px 10px",
                 cursor: "pointer",
-                borderRadius: 12,
-                marginBottom: 6,
+                border: "none",
+                borderRadius: 0,
+                borderLeft: `2px solid ${
+                  activeGroup === idx ? step1SidebarActiveColor : "transparent"
+                }`,
+                marginBottom: 2,
                 background:
-                  activeGroup === idx ? step1SidebarActiveBg : "transparent",
+                  activeGroup === idx
+                    ? `linear-gradient(90deg, ${step1SidebarActiveBg}, transparent)`
+                    : "transparent",
                 color:
                   activeGroup === idx ? step1SidebarActiveColor : undefined,
                 fontWeight: activeGroup === idx ? 700 : 500,
-                transition: "all 0.2s",
+                transition: "background 120ms ease, color 120ms ease",
                 fontSize: 13,
+                fontFamily: "var(--gn-font-sans)",
+                textAlign: "left",
               }}
             >
               {group.label}
-            </div>
+            </button>
           ))}
         </div>
-        {/* 右侧数据源卡片 */}
         <div
           style={{
             flex: 1,
@@ -2468,72 +2544,98 @@ const ConnectionModal: React.FC<{
             overflowX: "hidden",
           }}
         >
-          <Row gutter={[14, 14]}>
-            {dbTypeGroups[activeGroup]?.items.map((item) => (
-              <Col span={12} key={item.key}>
-                <Card
-                  hoverable
-                  onClick={() => {
-                    void handleTypeSelect(item.key);
-                  }}
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+              gap: "2px 12px",
+            }}
+          >
+            {visibleDbTypeItems.map((item) => (
+              <button
+                key={item.key}
+                type="button"
+                data-connection-type-key={item.key}
+                aria-label={item.name}
+                onClick={() => {
+                  void handleTypeSelect(item.key);
+                }}
+                className="gn-connection-type-row"
+                style={{
+                  width: "100%",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                  minHeight: 44,
+                  padding: "6px 8px",
+                  border: "none",
+                  borderRadius: 6,
+                  color: "inherit",
+                  cursor: "pointer",
+                  fontFamily: "var(--gn-font-sans)",
+                  textAlign: "left",
+                  transition: "background 120ms ease",
+                }}
+              >
+                <div
                   style={{
-                    cursor: "pointer",
-                    minHeight: 92,
-                    borderRadius: 16,
-                    border: darkMode
-                      ? "1px solid rgba(255,255,255,0.08)"
-                      : "1px solid rgba(16,24,40,0.08)",
-                    background: darkMode
-                      ? "rgba(255,255,255,0.03)"
-                      : "rgba(255,255,255,0.80)",
-                  }}
-                  styles={{
-                    body: {
-                      padding: 14,
-                      display: "flex",
-                      alignItems: "flex-start",
-                      gap: 12,
-                      height: "100%",
-                    },
+                    width: 32,
+                    height: 32,
+                    display: "grid",
+                    placeItems: "center",
+                    flexShrink: 0,
                   }}
                 >
-                  <div
+                  {item.icon}
+                </div>
+                <div
+                  style={{
+                    minWidth: 0,
+                    flex: 1,
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 2,
+                  }}
+                >
+                  <Text
+                    strong
                     style={{
-                      width: 44,
-                      height: 44,
-                      borderRadius: 14,
-                      display: "grid",
-                      placeItems: "center",
-                      flexShrink: 0,
-                      background: darkMode
-                        ? "rgba(255,255,255,0.05)"
-                        : "rgba(22,119,255,0.08)",
+                      fontSize: 13.5,
+                      whiteSpace: "nowrap",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      maxWidth: "100%",
+                      display: "block",
+                      lineHeight: 1.2,
                     }}
                   >
-                    {item.icon}
-                  </div>
-                  <div style={{ minWidth: 0, flex: 1 }}>
-                    <Text
-                      strong
-                      style={{
-                        fontSize: 14,
-                        whiteSpace: "nowrap",
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        maxWidth: "100%",
-                        display: "block",
-                      }}
-                    >
-                      {item.name}
-                    </Text>
-                    <Text type="secondary" style={{ fontSize: 12 }}>
-                      {getConnectionTypeHint(item.key, t)}
-                    </Text>
-                  </div>
-                </Card>
-              </Col>
+                    {item.name}
+                  </Text>
+                  <Text
+                    type="secondary"
+                    style={{
+                      fontSize: 11.5,
+                      display: "block",
+                      whiteSpace: "nowrap",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      lineHeight: 1.2,
+                    }}
+                  >
+                    {getConnectionTypeHint(item.key, t)}
+                  </Text>
+                </div>
+              </button>
             ))}
-          </Row>
+          </div>
+          {normalizedDbTypeQuery && visibleDbTypeItems.length === 0 ? (
+            <div
+              role="status"
+              style={{ ...modalMutedTextStyle, padding: "18px 10px" }}
+            >
+              {t("connection.modal.step1.search.empty")}
+            </div>
+          ) : null}
         </div>
       </div>
     </div>
