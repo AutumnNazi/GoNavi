@@ -103,6 +103,60 @@ describe('内置主题的主要操作按钮三态', () => {
   });
 });
 
+const saturationOf = (value: string): number => {
+  const [r, g, b] = parseHex(value).map((c) => c / 255);
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const lightness = (max + min) / 2;
+  return max === min ? 0 : (max - min) / (1 - Math.abs(2 * lightness - 1));
+};
+
+/**
+ * 主操作按钮填充用的提饱和派生色。
+ * 回归背景：内置主题的强调色刻意低饱和（Comfort Dark 仅 20%、Deep Ocean 28%），
+ * 直接填在按钮上读起来"没有颜色"、不像可点的主操作。
+ */
+describe('主操作按钮的提饱和填充色', () => {
+  it('accent-strong 的饱和度高于原 accent，且标签仍可读', () => {
+    for (const preset of BUILTIN_CUSTOM_THEME_PRESETS) {
+      const accent = readToken(preset.css, '--gn-accent');
+      const strong = readToken(preset.css, '--gn-accent-strong');
+      const onAccent = readToken(preset.css, '--gn-on-accent');
+
+      // 浅色主题的强调色本身已足够饱和，不提升（提了会让白色标签跌破 AA）
+      if (preset.baseMode === 'dark') {
+        expect(
+          saturationOf(strong),
+          `${preset.id} 的 accent-strong 饱和度未提升`,
+        ).toBeGreaterThan(saturationOf(accent));
+      } else {
+        expect(saturationOf(strong)).toBeCloseTo(saturationOf(accent), 5);
+      }
+      expect(
+        contrastRatio(onAccent, strong),
+        `${preset.id} 的主按钮标签对比度不足`,
+      ).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+
+  it('accent-strong 的三态同样逐级加深且达到可感知阈值', () => {
+    for (const preset of BUILTIN_CUSTOM_THEME_PRESETS) {
+      const strong = readToken(preset.css, '--gn-accent-strong');
+      const hover = readToken(preset.css, '--gn-accent-strong-hover');
+      const active = readToken(preset.css, '--gn-accent-strong-active');
+
+      expect(
+        contrastRatio(strong, hover),
+        `${preset.id} 的 strong base→hover 对比度不足`,
+      ).toBeGreaterThanOrEqual(MIN_STATE_DELTA);
+      expect(
+        contrastRatio(hover, active),
+        `${preset.id} 的 strong hover→active 对比度不足`,
+      ).toBeGreaterThanOrEqual(MIN_STATE_DELTA);
+    }
+  });
+});
+
 /**
  * 手动事务「提交」按钮用 warn 实心填充，刻意不跟随主题强调色。
  * 回归背景：原先用 accent-soft 底 + accent-2 文字，与普通主操作同色系且文字对比极低；

@@ -150,6 +150,78 @@ const readableOnColor = (background: string): string => {
  * 白字只剩 2.65 的对比度；反之深色主题的浅琥珀底配深字，则必须往白色叠加。
  * 因此按前景色是深还是浅，决定徽标底往相反方向偏移。
  */
+/**
+ * 主操作按钮填充色的饱和度提升倍数。
+ *
+ * 内置主题的强调色刻意低饱和（Comfort Dark 仅 20%、Deep Ocean 28%），淡到接近灰蓝，
+ * 填充在按钮上读起来"没有颜色"、不像可点的主操作。这里只提升**按钮填充**用的派生色，
+ * 侧边栏高亮、文字、边框等仍用原 accent，保持主题整体的淡雅气质。
+ *
+ * 取 1.55：实测 4 个深色内置主题的饱和度提升到 31%–72%，同时对工具栏底的对比度仍 ≥6.0、
+ * 标签可读性 ≥6.1；再往上（1.75）Midnight Navy 会到 82%，偏霓虹。
+ *
+ * 只对深色主题生效：浅色主题的强调色本身已有约 46% 饱和（如 warm-paper 的 #2d7864），
+ * 不存在"淡到没颜色"的问题；对其提饱和反而会把白色标签的对比度从 4.5+ 压到 4.14，跌破 AA。
+ */
+const ACCENT_STRONG_SATURATION = 1.55;
+
+const accentStrongSaturation = (palette: BuiltinThemePalette): number => (
+  palette.mode === 'light' ? 1 : ACCENT_STRONG_SATURATION
+);
+
+const rgbToHsl = ([r, g, b]: [number, number, number]): [number, number, number] => {
+  const rn = r / 255;
+  const gn = g / 255;
+  const bn = b / 255;
+  const max = Math.max(rn, gn, bn);
+  const min = Math.min(rn, gn, bn);
+  const lightness = (max + min) / 2;
+  if (max === min) {
+    return [0, 0, lightness];
+  }
+  const delta = max - min;
+  const saturation = delta / (1 - Math.abs(2 * lightness - 1));
+  let hue: number;
+  if (max === rn) {
+    hue = ((gn - bn) / delta + (gn < bn ? 6 : 0)) * 60;
+  } else if (max === gn) {
+    hue = ((bn - rn) / delta + 2) * 60;
+  } else {
+    hue = ((rn - gn) / delta + 4) * 60;
+  }
+  return [hue, saturation, lightness];
+};
+
+const hslToHex = ([hue, saturation, lightness]: [number, number, number]): string => {
+  const chroma = (1 - Math.abs(2 * lightness - 1)) * saturation;
+  const secondary = chroma * (1 - Math.abs(((hue / 60) % 2) - 1));
+  const offset = lightness - chroma / 2;
+  const sector = Math.floor(hue / 60) % 6;
+  const table: [number, number, number][] = [
+    [chroma, secondary, 0],
+    [secondary, chroma, 0],
+    [0, chroma, secondary],
+    [0, secondary, chroma],
+    [secondary, 0, chroma],
+    [chroma, 0, secondary],
+  ];
+  const [r, g, b] = table[sector < 0 ? 0 : sector];
+  const channel = (value: number): string => Math.max(0, Math.min(255, Math.round((value + offset) * 255)))
+    .toString(16)
+    .padStart(2, '0');
+  return `#${channel(r)}${channel(g)}${channel(b)}`;
+};
+
+/** saturate 保持色相与明度，仅提升饱和度。 */
+const saturate = (color: string, factor: number): string => {
+  const rgb = parseHexColor(color);
+  if (!rgb) {
+    return color;
+  }
+  const [hue, saturation, lightness] = rgbToHsl(rgb);
+  return hslToHex([hue, Math.min(1, saturation * factor), lightness]);
+};
+
 const badgeBackground = (base: string, onColor: string): string => {
   const rgb = parseHexColor(onColor);
   // 前景偏深时把徽标底往白色偏移，前景偏浅（白字）时往黑色偏移。
@@ -230,6 +302,11 @@ body[data-custom-theme][data-ui-version="v2"] {
 
   --gn-accent-hover: ${mixHex(palette.accent, accentStateAnchor(palette), ACCENT_HOVER_RATIO)};
   --gn-accent-active: ${mixHex(palette.accent, accentStateAnchor(palette), ACCENT_ACTIVE_RATIO)};
+
+  /* 只给主操作按钮填充用的提饱和派生色；侧边栏高亮、文字、边框仍用原 accent。 */
+  --gn-accent-strong: ${saturate(palette.accent, accentStrongSaturation(palette))};
+  --gn-accent-strong-hover: ${mixHex(saturate(palette.accent, accentStrongSaturation(palette)), accentStateAnchor(palette), ACCENT_HOVER_RATIO)};
+  --gn-accent-strong-active: ${mixHex(saturate(palette.accent, accentStrongSaturation(palette)), accentStateAnchor(palette), ACCENT_ACTIVE_RATIO)};
 
   /* 手动事务的「提交」按钮刻意不跟随主题强调色：待提交事务是需要用户显式决断的状态，
      若与普通主操作同色则无法区分（回滚已用 danger，提交用 warn 形成语义配对）。
@@ -318,21 +395,28 @@ body[data-custom-theme][data-ui-version="v2"] .gn-v2-query-transaction-commit-bu
   color: var(--gn-accent-text, var(--gn-accent)) !important;
 }
 
+/* 「保存」降为次级样式：与 v2-theme.css 保持一致。
+   原先填 --gn-info，而 info 与 accent 在内置主题下的区分度仅 1.05–1.25，
+   两个相邻实心按钮一眼分不清；且 Midnight Navy / Nord Slate 的 accent 本身即蓝青系，
+   靠色相无法拉开，故改用层级区分，只让「执行」保持实心主按钮。 */
 body[data-custom-theme][data-ui-version="v2"] .gn-v2-query-toolbar-save-action.ant-btn-primary:not(:disabled) {
-  background: var(--gn-info) !important;
-  border-color: var(--gn-info) !important;
-  color: var(--gn-on-info, #fff) !important;
+  background: transparent !important;
+  border-color: var(--gn-br-3) !important;
+  color: var(--gn-fg-2) !important;
+  box-shadow: none !important;
 }
 
 body[data-custom-theme][data-ui-version="v2"] .gn-v2-query-toolbar-save-action.ant-btn-primary:not(:disabled):hover,
 body[data-custom-theme][data-ui-version="v2"] .gn-v2-query-toolbar-save-action.ant-btn-primary:not(:disabled):focus-visible {
-  background: color-mix(in srgb, var(--gn-info) 86%, var(--gn-bg-panel)) !important;
-  border-color: color-mix(in srgb, var(--gn-info) 86%, var(--gn-bg-panel)) !important;
+  background: var(--gn-bg-hover) !important;
+  border-color: var(--gn-accent) !important;
+  color: var(--gn-fg-1) !important;
 }
 
 body[data-custom-theme][data-ui-version="v2"] .gn-v2-query-toolbar-save-action.ant-btn-primary:not(:disabled):active {
-  background: color-mix(in srgb, var(--gn-info) 74%, var(--gn-bg-panel)) !important;
-  border-color: color-mix(in srgb, var(--gn-info) 74%, var(--gn-bg-panel)) !important;
+  background: var(--gn-bg-active) !important;
+  border-color: var(--gn-accent) !important;
+  color: var(--gn-fg-1) !important;
 }
 
 body[data-custom-theme][data-ui-version="v2"] .gn-v2-ai-panel .ai-logo {
