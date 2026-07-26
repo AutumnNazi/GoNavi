@@ -337,11 +337,15 @@ body[data-theme='dark'] .ant-radio-checked .ant-radio-inner {
 }
 
 body[data-theme='dark'] .ant-radio-wrapper:hover .ant-radio-inner,
-body[data-theme='dark'] .ant-radio:hover .ant-radio-inner {
+/* 这两条是旧版 UI 的琥珀强调色，必须排除 v2：
+   v2 的强调色是绿色（v2-theme.css 的 --gn-accent 与 antd colorPrimary 均为绿），
+   而这里的选择器特异性更高（.ant-switch.ant-switch-checked 是两个类），
+   即便 v2-theme.css 后加载也会被这里压过，导致 v2 下的开关/单选显示成琥珀色。 */
+body[data-theme='dark']:not([data-ui-version='v2']) .ant-radio:hover .ant-radio-inner {
     border-color: #f6c453 !important;
 }
 
-body[data-theme='dark'] .ant-switch.ant-switch-checked {
+body[data-theme='dark']:not([data-ui-version='v2']) .ant-switch.ant-switch-checked {
     background: #d8a93b !important;
 }
 
@@ -1877,6 +1881,37 @@ body[data-theme='dark'] .gonavi-about-update-channel .ant-segmented-thumb {
 
 body[data-theme='dark'] .gonavi-about-update-channel .ant-segmented-item-selected .ant-segmented-item-label {
   color: #f8fafc !important;
+}
+
+/* ── 更新通道：选中项使用主题强调色实心胶囊 ──────────────
+   原先深色下选中态是 rgba(30,41,59,.98)，与容器底 rgba(15,23,42,.55) 对比极低，
+   选中状态几乎看不出来，且完全没有体现主题色。
+   --gn-accent 仅在 v2 下定义，因此这里限定 v2 作用域；旧版 UI 保留其自身的中性配色。
+   ant-segmented-thumb 是切换时的滑动块，必须与选中项同色，否则动画期间会闪回灰底。 */
+body[data-ui-version='v2'] .gonavi-about-update-channel .ant-segmented-item-selected,
+body[data-ui-version='v2'] .gonavi-about-update-channel .ant-segmented-thumb {
+  background: var(--gn-accent) !important;
+  box-shadow: none !important;
+}
+
+body[data-ui-version='v2'] .gonavi-about-update-channel .ant-segmented-item-selected .ant-segmented-item-label {
+  color: #ffffff !important;
+}
+
+/* 未选项：透明底 + hover 时微亮，避免与选中胶囊争夺注意力。 */
+body[data-ui-version='v2'] .gonavi-about-update-channel .ant-segmented-item:not(.ant-segmented-item-selected) {
+  background: transparent !important;
+}
+
+body[data-ui-version='v2'] .gonavi-about-update-channel .ant-segmented-item:not(.ant-segmented-item-selected):hover .ant-segmented-item-label {
+  color: var(--gn-fg-1) !important;
+}
+
+/* 键盘可达性：Segmented 的焦点环也跟随主题色。 */
+body[data-ui-version='v2'] .gonavi-about-update-channel .ant-segmented-item-input:focus-visible + .ant-segmented-item-label {
+  outline: 2px solid var(--gn-accent) !important;
+  outline-offset: -2px;
+  border-radius: 4px;
 }
 
 /* ── Theme settings (v2 only): clean desktop settings ─── */
