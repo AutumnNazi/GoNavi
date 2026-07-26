@@ -4051,16 +4051,28 @@ body[data-ui-version="v2"] .gn-v2-toolbar-kbd {
 }
 
 body[data-ui-version="v2"] .gn-v2-data-grid .gn-v2-commit-button {
-  border-color: transparent !important;
-  background: var(--gn-accent-soft) !important;
-  color: var(--gn-accent-2) !important;
+  border-color: var(--gn-accent-2) !important;
+  background: var(--gn-accent) !important;
+  color: var(--gn-on-accent, #fff) !important;
   font-weight: 750 !important;
+}
+
+body[data-ui-version="v2"] .gn-v2-data-grid .gn-v2-commit-button:hover,
+body[data-ui-version="v2"] .gn-v2-data-grid .gn-v2-commit-button:focus,
+body[data-ui-version="v2"] .gn-v2-data-grid .gn-v2-commit-button:focus-visible,
+body[data-ui-version="v2"] .gn-v2-data-grid .gn-v2-commit-button:active {
+  border-color: var(--gn-accent-2) !important;
+  background: var(--gn-accent-2) !important;
+  color: var(--gn-on-accent, #fff) !important;
+  box-shadow: var(--gn-shadow-sm), inset 0 0.5px 0 rgba(255, 255, 255, 0.15) !important;
 }
 
 body[data-ui-version="v2"] .gn-v2-data-grid .gn-v2-commit-button:disabled {
   opacity: 1;
-  background: var(--gn-accent-soft) !important;
-  color: var(--gn-accent-2) !important;
+  border-color: var(--gn-br-2) !important;
+  background: var(--gn-bg-active) !important;
+  color: var(--gn-fg-5) !important;
+  box-shadow: none !important;
 }
 
 body[data-ui-version="v2"] .gn-v2-data-grid .gn-v2-commit-button .gn-v2-toolbar-kbd {

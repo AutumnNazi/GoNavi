@@ -2237,9 +2237,28 @@ describe('DataGrid layout', () => {
       css.indexOf('body[data-ui-version="v2"] .gn-v2-data-grid .gn-v2-data-grid-toolbar-action {'),
       css.indexOf('body[data-ui-version="v2"] .gn-v2-data-grid-toolbar-title {'),
     );
+    const commitBaseCss = css.slice(
+      css.indexOf('body[data-ui-version="v2"] .gn-v2-data-grid .gn-v2-commit-button {'),
+      css.indexOf('body[data-ui-version="v2"] .gn-v2-data-grid .gn-v2-commit-button:hover,'),
+    );
+    const commitInteractiveCss = css.slice(
+      css.indexOf('body[data-ui-version="v2"] .gn-v2-data-grid .gn-v2-commit-button:hover,'),
+      css.indexOf('body[data-ui-version="v2"] .gn-v2-data-grid .gn-v2-commit-button:disabled {'),
+    );
+    const commitDisabledCss = css.slice(
+      css.indexOf('body[data-ui-version="v2"] .gn-v2-data-grid .gn-v2-commit-button:disabled {'),
+      css.indexOf('body[data-ui-version="v2"] .gn-v2-data-grid .gn-v2-commit-button .gn-v2-toolbar-kbd {'),
+    );
     expect(iconActionCss).toContain('width: 28px !important;');
     expect(iconActionCss).toContain('min-width: 28px !important;');
     expect(iconActionCss).toContain('padding-inline: 0 !important;');
+    expect(commitBaseCss).toContain('background: var(--gn-accent) !important;');
+    expect(commitBaseCss).toContain('color: var(--gn-on-accent, #fff) !important;');
+    expect(commitInteractiveCss).toContain('background: var(--gn-accent-2) !important;');
+    expect(commitInteractiveCss).toContain('box-shadow:');
+    expect(commitDisabledCss).toContain('background: var(--gn-bg-active) !important;');
+    expect(commitDisabledCss).toContain('color: var(--gn-fg-5) !important;');
+    expect(commitDisabledCss).not.toContain('var(--gn-accent-soft)');
     expect(css).toContain(
       'body[data-ui-version="v2"] .gn-v2-data-grid-statusbar .gn-v2-data-grid-toolbar-action.ant-btn {',
     );
