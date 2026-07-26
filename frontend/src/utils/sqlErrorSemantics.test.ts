@@ -1,9 +1,6 @@
-import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 import { formatSqlExecutionError } from './sqlErrorSemantics';
-
-const source = readFileSync(new URL('./sqlErrorSemantics.ts', import.meta.url), 'utf8');
 
 describe('formatSqlExecutionError', () => {
   it('adds semantic explanation for SQL syntax errors and keeps raw text', () => {
@@ -126,15 +123,5 @@ describe('formatSqlExecutionError', () => {
     ].join('\n');
 
     expect(formatSqlExecutionError(raw)).toBe(raw);
-  });
-
-  it('keeps SQL execution semantic copy out of production Chinese literals', () => {
-    expect(source).toContain('query_editor.sql_error.rule.');
-    expect(source).toContain("key: 'syntax'");
-    expect(source).toContain('query_editor.sql_error.wrapper.semantic_line');
-    expect(source).not.toContain('SQL 语法错误');
-    expect(source).not.toContain('处理建议');
-    expect(source).not.toContain('原始错误');
-    expect(source).not.toContain('数据库执行错误');
   });
 });

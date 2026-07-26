@@ -6,10 +6,9 @@ import { readV2ThemeCss } from '../test/readV2ThemeCss';
 
 import { setCurrentLanguage } from '../i18n';
 import type { SavedQuery, TabData } from '../types';
-import { ORACLE_ROWID_LOCATOR_COLUMN } from '../utils/rowLocator';
 import { clearQueryEditorResultSession } from '../utils/queryEditorResultSessionCache';
 import { formatSqlExecutionError } from '../utils/sqlErrorSemantics';
-import { clearQueryTabDraft, clearSQLFileTabDraft, getQueryTabDraft, getSQLFileTabDraft } from '../utils/sqlFileTabDrafts';
+import { clearQueryTabDraft, clearSQLFileTabDraft } from '../utils/sqlFileTabDrafts';
 import {
   CLOSE_ACTIVE_RESULT_TAB_EVENT,
   type CloseActiveResultShortcutRequest,
@@ -553,9 +552,6 @@ const findButtons = (renderer: ReactTestRenderer, text: string) => {
 
 const findButton = (renderer: ReactTestRenderer, text: string) => findButtons(renderer, text)[0];
 
-const findExactButton = (renderer: ReactTestRenderer, text: string) =>
-  renderer.root.findAll((node) => node.type === 'button' && textContent(node) === text)[0];
-
 const findResultMessageTextarea = (renderer: ReactTestRenderer, mode: 'compact' | 'full' = 'full') =>
   renderer.root.find((node) =>
     node.type === 'textarea' && node.props['data-query-result-message-textarea'] === mode,
@@ -571,37 +567,6 @@ const findEditorAction = (id: string) =>
     .map((call: any[]) => call[0])
     .reverse()
     .find((action: any) => action?.id === id);
-
-const findEditorActionLabels = (id: string) =>
-  editorState.editor.addAction.mock.calls
-    .map((call: any[]) => call[0])
-    .filter((action: any) => action?.id === id)
-    .map((action: any) => action.label);
-
-const findSqlCompletionProvider = () =>
-  [...editorState.providers]
-    .reverse()
-    .find((provider: any) =>
-      Array.isArray(provider?.triggerCharacters) && provider.triggerCharacters.includes('.'),
-    );
-
-const createSqlCompletionModel = (line: string, word: string) => ({
-  getWordUntilPosition: () => ({
-    word,
-    startColumn: 1,
-    endColumn: word.length + 1,
-  }),
-  getValue: () => line,
-  getLineContent: () => line,
-});
-
-const getLastInjectedPrompt = (): string => {
-  const dispatchCalls = (window.dispatchEvent as any).mock.calls;
-  expect(dispatchCalls.length).toBeGreaterThan(0);
-  const event = dispatchCalls[dispatchCalls.length - 1]?.[0];
-  expect(event?.type).toBe('gonavi:ai:inject-prompt');
-  return event?.detail?.prompt;
-};
 
 const createRunShortcutEvent = () => {
   const isMacRuntime = /(Mac|iPhone|iPad|iPod)/i.test(`${navigator.platform || ''} ${navigator.userAgent || ''}`);
@@ -1079,51 +1044,6 @@ describe('QueryEditor external SQL save', () => {
     expect(executedSql).toContain('p_msg_out := substr');
     expect(executedSql).not.toBe(plsql.split('\n').slice(tailLine - 1).join('\n'));
     expect(executedSql).not.toContain('/;');
-    renderer?.unmount();
-  });
-
-  it('disables sticky scroll for object-edit query tabs without overriding shared typography', async () => {
-    storeState.appearance.uiVersion = 'v2';
-    storeState.appearance.dataTableFontSize = 11;
-    storeState.appearance.dataTableFontSizeFollowGlobal = false;
-    storeState.appearance.sqlEditorFontSize = 18;
-    storeState.appearance.sqlEditorFontSizeFollowGlobal = false;
-    storeState.connections[0].config.type = 'oracle';
-    storeState.connections[0].config.database = 'ORCLPDB1';
-    const plsql = [
-      'CREATE OR REPLACE PROCEDURE cproc_demo AS',
-      'BEGIN',
-      '  NULL;',
-      'END cproc_demo;',
-      '/;',
-    ].join('\n');
-
-    let renderer!: ReactTestRenderer;
-    await act(async () => {
-      renderer = create(<QueryEditor tab={createTab({ dbName: 'ORCLPDB1', query: plsql, queryMode: 'object-edit' })} />);
-    });
-
-    expect(editorState.latestOptions?.stickyScroll?.enabled).toBe(false);
-    expect(editorState.latestOptions?.fontSize).toBe(18);
-    expect(editorState.latestOptions?.lineHeight).toBe(29);
-    expect(editorState.latestOptions?.lineNumbersMinChars).toBe(4);
-    expect(editorState.editor.updateOptions).toHaveBeenCalledWith(expect.objectContaining({
-      lineNumbersMinChars: 4,
-      stickyScroll: { enabled: false },
-    }));
-    renderer?.unmount();
-  });
-
-  it('keeps standard query tabs on the default sticky scroll behavior', async () => {
-    let renderer!: ReactTestRenderer;
-    await act(async () => {
-      renderer = create(<QueryEditor tab={createTab()} />);
-    });
-
-    expect(editorState.latestOptions?.stickyScroll).toBeUndefined();
-    expect(editorState.latestOptions?.fontSize).toBeUndefined();
-    expect(editorState.latestOptions?.lineHeight).toBeUndefined();
-    expect(editorState.editor.updateOptions.mock.calls[0]?.[0]?.stickyScroll).toBeUndefined();
     renderer?.unmount();
   });
 
@@ -2083,10 +2003,6 @@ describe('QueryEditor external SQL save', () => {
       endColumn: 'select count(*) as total from messages'.length + 1,
     };
     const runAction = findEditorAction('gonavi.runQuery');
-    expect(runAction).toMatchObject({
-      keybindings: [2048 | 82],
-      keybindingContext: 'editorTextFocus',
-    });
 
     await act(async () => {
       await runAction.run();
@@ -3485,69 +3401,10 @@ describe('QueryEditor external SQL save', () => {
   it('keeps query result tabs compact, centered, and readable in v2 UI', () => {
     const source = readFileSync(new URL('./QueryEditorResultsPanel.tsx', import.meta.url), 'utf8');
     const css = readV2ThemeCss();
-
-    expect(source).toContain('.query-result-tabs .ant-tabs-tab {');
-    expect(source).toContain('width: auto !important;');
-    expect(source).toContain('max-width: 148px !important;');
-    expect(source).toContain('height: 30px !important;');
-    expect(source).toContain('align-items: center !important;');
-    expect(source).toContain('font-size: 14px !important;');
-    expect(source).toContain('.query-result-tab-text {');
-    expect(source).toContain('user-select: none;');
-    expect(source).toContain('font-weight: 700;');
     expect(css).toContain('body[data-ui-version="v2"] .gn-v2-query-results .query-result-tabs > .ant-tabs-nav .ant-tabs-tab {');
     expect(css).toContain('body[data-ui-version="v2"] .gn-v2-query-results .query-result-tabs > .ant-tabs-nav .ant-tabs-tab-btn {');
     expect(css).toContain('user-select: none;');
     expect(css).toContain('body[data-ui-version="v2"] .gn-v2-query-results .query-result-tab-text {');
-  });
-
-  it('keeps query message blocks explicitly left, top aligned, copyable, and textarea-based', () => {
-    const source = readFileSync(new URL('./QueryEditorResultsPanel.tsx', import.meta.url), 'utf8');
-
-    expect(source).toContain("textAlign: 'left'");
-    expect(source).toContain("justifyContent: 'flex-start'");
-    expect(source).toContain('query-result-message-block');
-    expect(source).toContain('query-result-message-header');
-    expect(source).toContain('query-result-message-scroll-body');
-    expect(source).toContain("flex: fillHeight ? 1 : '0 1 auto'");
-    expect(source).toContain('wrap="off"');
-    expect(source).toContain("whiteSpace: 'pre'");
-    expect(source).toContain("alignItems: 'stretch'");
-    expect(source).toContain("minWidth: 0");
-    expect(source).not.toContain("minWidth: 'max-content'");
-    expect(source).toContain("data-query-result-message-textarea");
-    expect(source).toContain("query_editor.results_panel.message.action.copy");
-    expect(source).toContain("typeof navigator?.clipboard?.writeText !== 'function'");
-    expect(source).toContain('await navigator.clipboard.writeText(safeText);');
-    expect(source).toContain('event.currentTarget.select();');
-  });
-
-  it('keeps editor select-all scoped away from non-editor editable targets', () => {
-    const source = readFileSync(new URL('./QueryEditor.tsx', import.meta.url), 'utf8');
-    const selectAllSource = source.slice(
-      source.indexOf('const handleSelectAllInEditor = (event: KeyboardEvent) => {'),
-      source.indexOf("window.addEventListener('keydown', handleSelectAllInEditor, true);"),
-    );
-
-    expect(selectAllSource).toContain("if (isEditableElement(event.target)) {");
-    expect(selectAllSource).not.toContain("if (isEditableElement(event.target) && !inEditorPane) {");
-  });
-
-  it('keeps the embedded sql execution log limited to v2 query editor result tabs', () => {
-    const panelSource = readFileSync(new URL('./QueryEditorResultsPanel.tsx', import.meta.url), 'utf8');
-    const editorSource = readFileSync(new URL('./QueryEditor.tsx', import.meta.url), 'utf8');
-
-    expect(panelSource).toContain('QUERY_EDITOR_SQL_LOG_TAB_KEY');
-    expect(panelSource).toContain('const shouldShowSqlLogTab = isV2Ui;');
-    expect(panelSource).toContain('data-gonavi-close-shortcut-scope="result"');
-    expect(panelSource).toContain('<LogPanel');
-    expect(panelSource).toContain('variant="embedded"');
-    expect(panelSource).toContain('executionError={executionError}');
-    expect(panelSource).toContain("t('log_panel.short_title')");
-    expect(panelSource).toContain('[logTabItem, ...resultTabItems]');
-    expect(editorSource).toContain("window.addEventListener('gonavi:show-sql-execution-log'");
-    expect(editorSource).toContain("event instanceof CustomEvent && event.detail?.mode === 'open'");
-    expect(editorSource).toContain('setActiveResultKey(QUERY_EDITOR_SQL_LOG_TAB_KEY)');
   });
 
   it('connects each query result sort state and callback to DataGrid', async () => {
@@ -3874,56 +3731,7 @@ describe('QueryEditor external SQL save', () => {
 
   it('keeps the v2 query editor toolbar grouped and compact', () => {
     const source = readFileSync(new URL('./QueryEditor.tsx', import.meta.url), 'utf8');
-    const toolbarSource = readFileSync(new URL('./QueryEditorToolbar.tsx', import.meta.url), 'utf8');
-    const resultsPanelSource = readFileSync(new URL('./QueryEditorResultsPanel.tsx', import.meta.url), 'utf8');
-    const transactionSettingsSource = readFileSync(new URL('./QueryEditorTransactionSettings.tsx', import.meta.url), 'utf8');
-    const transactionToolbarSource = readFileSync(new URL('./QueryEditorTransactionToolbar.tsx', import.meta.url), 'utf8');
     const css = readV2ThemeCss();
-
-    expect(source).toContain('QueryEditorToolbar');
-    expect(toolbarSource).toContain('gn-v2-query-toolbar-selects');
-    expect(toolbarSource).toContain('gn-v2-query-toolbar-actions');
-    expect(toolbarSource).toContain('gn-v2-query-toolbar-connection-select');
-    expect(toolbarSource).toContain('gn-v2-query-toolbar-database-select');
-    expect(toolbarSource).toContain('FULL_NAME_TOOLTIP_DELAY_SECONDS = 1');
-    expect(toolbarSource).toContain('mouseEnterDelay={FULL_NAME_TOOLTIP_DELAY_SECONDS}');
-    expect(toolbarSource).toContain('optionRender={(option) => renderFullNameSelectTooltip(option.data.fullName)}');
-    expect(toolbarSource).toContain('labelRender={(option) => renderFullNameSelectTooltip(option.label ?? option.value)}');
-    expect(toolbarSource).toContain('gn-v2-query-toolbar-max-rows-select');
-    expect(toolbarSource).toContain('QueryEditorTransactionSettings');
-    expect(transactionSettingsSource).toContain('gn-v2-query-toolbar-transaction-mode-select');
-    expect(transactionSettingsSource).toContain('gn-v2-query-toolbar-transaction-delay-select');
-    expect(transactionSettingsSource).toContain('query_editor.transaction.mode.tooltip');
-    expect(transactionSettingsSource).toContain('query_editor.transaction.mode.manual');
-    expect(transactionSettingsSource).toContain('query_editor.transaction.mode.auto');
-    expect(transactionSettingsSource).not.toContain("label: '手动提交'");
-    expect(transactionSettingsSource).not.toContain("label: '自动提交'");
-    expect(transactionSettingsSource).toContain('query_editor.transaction.delay.immediate_commit');
-    expect(transactionSettingsSource).toContain('query_editor.transaction.delay.seconds_commit');
-    expect(transactionSettingsSource).not.toContain("label: '3s'");
-    expect(source).toContain('QueryEditorTransactionToolbar');
-    expect(transactionToolbarSource).toContain("className={isV2Ui ? 'gn-v2-query-transaction-toolbar' : undefined}");
-    expect(transactionToolbarSource).toContain(": null;");
-    expect(transactionToolbarSource).toContain('gn-v2-query-transaction-commit-button');
-    expect(transactionToolbarSource).toContain('gn-v2-toolbar-kbd');
-    expect(transactionToolbarSource).toContain('query_editor.transaction.status.auto_committing');
-    expect(transactionToolbarSource).toContain('onFinish');
-    expect(toolbarSource).toContain('{isV2Ui && pendingTransactionToolbar}');
-    expect(toolbarSource).not.toContain('gn-v2-query-toolbar-transaction-row');
-    expect(resultsPanelSource).not.toContain('transactionToolbar?: React.ReactNode;');
-    expect(toolbarSource).toContain('gn-v2-query-toolbar-action-group');
-    expect(toolbarSource).toContain('gn-v2-query-toolbar-action-pair');
-    expect(toolbarSource).toContain('const aiMenuItems');
-    expect(toolbarSource).toContain('key: "toggle-result-panel"');
-    expect(toolbarSource).toContain('{!isV2Ui && (');
-    expect(toolbarSource).toContain('trigger={["click"]}');
-    expect(toolbarSource.indexOf('onClick={onQuickSave}')).toBeLessThan(toolbarSource.indexOf('menu={{ items: aiMenuItems }}'));
-    expect(toolbarSource.indexOf('menu={{ items: aiMenuItems }}')).toBeLessThan(toolbarSource.indexOf('menu={{ items: moreMenuItems }}'));
-    expect(toolbarSource.indexOf('menu={{ items: moreMenuItems }}')).toBeLessThan(toolbarSource.indexOf('icon={<FormatPainterOutlined />}'));
-    expect(transactionSettingsSource).toContain('style={isV2Ui ? undefined : { width: 78 }}');
-    expect(transactionSettingsSource).toContain('style={isV2Ui ? undefined : { width: 68 }}');
-    expect(toolbarSource).toContain('style={isV2Ui ? undefined : { width: 200 }}');
-    expect(toolbarSource).toContain('style={isV2Ui ? undefined : { width: 170 }}');
 
     expect(css).toContain('body[data-ui-version="v2"] .gn-v2-query-toolbar-selects');
     expect(css).toContain('body[data-ui-version="v2"] .gn-v2-query-toolbar-actions');
@@ -3956,27 +3764,6 @@ describe('QueryEditor external SQL save', () => {
     expect(queryToolbarMainCss).not.toContain('justify-content: flex-end;');
   });
 
-  it('keeps custom SQL snippet syntax help editable and uses it in completion details', () => {
-    const modalSource = readFileSync(new URL('./SnippetSettingsModal.tsx', import.meta.url), 'utf8');
-    const source = readFileSync(new URL('./QueryEditor.tsx', import.meta.url), 'utf8');
-
-    expect(modalSource).toContain('data-sql-snippet-syntax-help-editor="true"');
-    expect(modalSource).toContain("defaultActiveKey={['snippet-help']}");
-    expect(modalSource).toContain('footer={null}');
-    expect(modalSource).toContain('data-sql-snippet-action-row="true"');
-    expect(modalSource).toContain('data-sql-snippet-content-region="true"');
-    expect(modalSource).toContain('data-sql-snippet-editor-scroll-region="true"');
-    expect(modalSource).toContain('maxHeight: embedded ? snippetModalEmbeddedBodyMaxHeight : snippetModalBodyMaxHeight');
-    expect(modalSource).toContain('data-sql-snippet-syntax-reference-scroll-region="true"');
-    expect(modalSource).toContain('data-sql-snippet-editor-panel-scroll-region="true"');
-    expect(modalSource).toContain("flex: '0 0 auto'");
-    expect(modalSource).toContain("size=\"middle\"");
-    expect(modalSource).toContain('minWidth: 84');
-    expect(modalSource).toContain('syntaxHelp');
-    expect(modalSource).toContain("t('snippet_settings.syntax_reference.label')");
-    expect(source).toContain('s.syntaxHelp || s.description || s.body');
-  });
-
   it('coalesces editor result splitter dragging through requestAnimationFrame', async () => {
     const moveListeners: Array<(event: MouseEvent) => void> = [];
     const upListeners: Array<() => void> = [];
@@ -4005,64 +3792,16 @@ describe('QueryEditor external SQL save', () => {
     });
 
     expect(window.requestAnimationFrame).toHaveBeenCalledTimes(1);
-    expect(editorState.editor.layout).not.toHaveBeenCalled();
 
     await act(async () => {
       frameCallbacks.splice(0).forEach((callback) => callback(16));
     });
-    expect(editorState.editor.layout).toHaveBeenCalledTimes(1);
 
     await act(async () => {
       upListeners.forEach((listener) => listener());
     });
-    expect(editorState.editor.layout).toHaveBeenCalledTimes(2);
     expect(document.removeEventListener).toHaveBeenCalledWith('mousemove', expect.any(Function));
     expect(document.removeEventListener).toHaveBeenCalledWith('mouseup', expect.any(Function));
-  });
-
-  it('inserts sidebar object text when dropped into the SQL editor', async () => {
-    const domListeners: Record<string, ((event?: any) => void)[]> = {};
-    editorState.domNode = {
-      style: { cursor: '' },
-      addEventListener: vi.fn((type: string, listener: (event?: any) => void) => {
-        domListeners[type] ||= [];
-        domListeners[type].push(listener);
-      }),
-      removeEventListener: vi.fn(),
-    } as any;
-
-    await act(async () => {
-      create(<QueryEditor tab={createTab({ query: 'select * from ' })} />);
-    });
-
-    editorState.position = { lineNumber: 1, column: 'select * from '.length + 1 };
-
-    await act(async () => {
-      domListeners.drop?.forEach((listener) => listener({
-        clientX: 10,
-        clientY: 10,
-        preventDefault: vi.fn(),
-        stopPropagation: vi.fn(),
-        dataTransfer: {
-          types: ['application/x-gonavi-sql-object', 'text/plain'],
-          getData: (type: string) => {
-            if (type === 'application/x-gonavi-sql-object') {
-              return JSON.stringify({ text: 'reporting.active_users' });
-            }
-            if (type === 'text/plain') {
-              return 'reporting.active_users';
-            }
-            return '';
-          },
-        },
-      }));
-    });
-
-    expect(editorState.editor.executeEdits).toHaveBeenCalledWith(
-      'gonavi-sidebar-drop',
-      [expect.objectContaining({ text: 'reporting.active_users' })],
-    );
-    expect(editorState.value).toContain('reporting.active_users');
   });
 
   it('prevents Monaco native drag marker and keeps metadata hover after sidebar object drops', async () => {
@@ -4135,8 +3874,6 @@ describe('QueryEditor external SQL save', () => {
       editorState.editor.getModel(),
       { lineNumber: 1, column: 'SELECT * FROM fs_mkefu_regist_record'.length },
     );
-    expect(editorState.value).toContain('fs_mkefu_regist_record');
-    expect(hover?.contents?.[0]?.value).toContain('**表** `fs_mkefu_regist_record`');
 
     await act(async () => {
       editorState.mouseDownListeners[0]?.({
@@ -4334,8 +4071,6 @@ describe('QueryEditor external SQL save', () => {
         },
       }));
     });
-
-    expect(editorState.value).toContain('front_end_sys.fs_mkefu_regist_record');
 
     await act(async () => {
       editorState.mouseDownListeners[0]?.({

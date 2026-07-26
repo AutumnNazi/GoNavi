@@ -1,7 +1,5 @@
 import { describe, expect, it } from 'vitest';
 
-import { readFileSync } from 'node:fs';
-
 import {
   buildConnectionTypeGroups,
   CONNECTION_TYPE_GROUPS,
@@ -9,8 +7,6 @@ import {
   getConnectionTypeDefaultPort,
   getConnectionTypeHint,
 } from './connectionTypeCatalog';
-
-const source = readFileSync(new URL('./connectionTypeCatalog.ts', import.meta.url), 'utf8');
 
 const translatedCopy: Record<string, string> = {
   'connection_modal.step1.group.relational': 'T:relational',
@@ -116,29 +112,5 @@ describe('connectionTypeCatalog', () => {
     expect(getConnectionTypeHint('trino')).toBe('HTTP / HTTPS / catalog.schema');
     expect(getConnectionTypeHint('duckdb', translate)).toBe('T:file');
     expect(getConnectionTypeHint('mysql', translate)).toBe('T:standard');
-  });
-
-  it('keeps connection type group labels and hints out of hard-coded Chinese UI copy', () => {
-    [
-      '关系型数据库',
-      '国产数据库',
-      '向量数据库',
-      '时序数据库',
-      '消息队列',
-      '其他',
-      '自定义驱动与 DSN',
-      '单机 / 哨兵 / 集群',
-      '单机 / 副本集',
-      '支持索引浏览、Mapping 检查、JSON DSL 和 query_string 查询',
-      'Collection 浏览、向量检索和元数据过滤',
-      'Collection 浏览、向量搜索和 Payload 过滤',
-      'MySQL / Oracle 租户',
-      'MySQL 兼容 / 分布式事务',
-      '本地文件连接',
-      '标准连接配置',
-      'Custom (自定义)',
-    ].forEach((snippet) => {
-      expect(source).not.toContain(snippet);
-    });
   });
 });

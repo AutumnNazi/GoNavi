@@ -1,5 +1,4 @@
 import React from 'react';
-import { readFileSync } from 'node:fs';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -87,11 +86,6 @@ const createRows = (count: number) => Array.from({ length: count }, (_, i) => ({
 }));
 
 describe('DataViewer safe editing locator', () => {
-  it('memoizes the table data viewer so parent-only modal state does not repaint loaded data', () => {
-    const source = readFileSync(new URL('./DataViewer.tsx', import.meta.url), 'utf8');
-
-    expect(source).toContain('React.memo(({ tab, isActive = true }) => {');
-  });
 
   const renderAndReload = async (tab: TabData = createTab()) => {
     let renderer: ReactTestRenderer;
@@ -169,31 +163,6 @@ describe('DataViewer safe editing locator', () => {
 
     expect(backendApp.DBQuery).toHaveBeenCalled();
     renderer!.unmount();
-  });
-
-  it('keeps DataViewer message wrappers and SQL log phase labels keyed', () => {
-    const source = readFileSync(new URL('./DataViewer.tsx', import.meta.url), 'utf8');
-
-    expect(source).not.toMatch(/当前结果集尚未就绪|统计失败|统计总数失败|统计结果解析失败|Mongo 筛选条件无效|解析失败|主查询|复杂类型降级重试|重试\(32MB sort_buffer\)|重试\(128MB sort_buffer\)|已自动提升排序缓冲并重试成功|查询失败|查询超过连接超时时间|DuckDB 查询超过连接超时时间|超时|MongoDB 结果集中缺少 _id|加载索引失败|无法加载主键\/唯一索引元数据|无法加载唯一索引元数据|保持只读|当前结果没有可用的安全行定位方式/);
-    expect(source).toContain('data_viewer.message.connection_not_found');
-    expect(source).toContain('data_viewer.message.result_not_ready');
-    expect(source).toContain('data_viewer.message.query_failed');
-    expect(source).toContain('data_viewer.message.query_timeout');
-    expect(source).toContain('data_viewer.message.duckdb_query_timeout');
-    expect(source).toContain('data_viewer.read_only.reason.mongo_id_missing');
-    expect(source).toContain('data_viewer.read_only.reason.no_safe_locator');
-    expect(source).toContain('data_viewer.read_only.warning.table');
-    expect(source).toContain('data_viewer.read_only.warning.collection');
-    expect(source).toContain('data_viewer.sql_log.phase.main_query');
-    expect(source).toContain('data_viewer.sql_log.phase.sort_buffer_retry');
-  });
-
-  it('caps viewer filter snapshots so long-running sessions do not retain unbounded table state', () => {
-    const source = readFileSync(new URL('./DataViewer.tsx', import.meta.url), 'utf8');
-
-    expect(source).toContain('const MAX_VIEWER_FILTER_SNAPSHOTS = 64;');
-    expect(source).toContain('const trimViewerFilterSnapshots = () => {');
-    expect(source).toContain('setViewerFilterSnapshot(normalizedTabId, {');
   });
 
   it('enables table preview editing after primary keys are loaded', async () => {

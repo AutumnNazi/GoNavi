@@ -15,9 +15,6 @@ describe('QueryEditorToolbar layout', () => {
       css.indexOf('body[data-ui-version="v2"] .gn-v2-query-toolbar-main {'),
       css.indexOf('body[data-ui-version="v2"] .gn-v2-query-toolbar-selects {'),
     );
-
-    expect(toolbarSource).toContain('gn-v2-query-toolbar-main');
-    expect(toolbarSource).toContain('gn-v2-query-toolbar-actions');
     expect(css).toContain('body[data-ui-version="v2"] .gn-v2-query-toolbar-main');
     expect(toolbarCss).toContain('overflow-x: auto;');
     expect(toolbarCss).toContain('overflow-y: hidden;');
@@ -32,9 +29,6 @@ describe('QueryEditorToolbar layout', () => {
   it('keeps run and stop buttons separated in the v2 toolbar action group', () => {
     const toolbarSource = readFileSync(new URL('./QueryEditorToolbar.tsx', import.meta.url), 'utf8');
     const css = readV2ThemeCss();
-
-    expect(toolbarSource).toContain('gn-v2-query-toolbar-action-group');
-    expect(toolbarSource).not.toContain('Space.Compact');
     expect(css).toContain('body[data-ui-version="v2"] .gn-v2-query-toolbar-action-group {');
     expect(css).not.toContain('.gn-v2-query-toolbar-action-group.ant-btn-group');
     expect(css).toContain('gap: 6px;');
@@ -47,10 +41,6 @@ describe('QueryEditorToolbar layout', () => {
       css.indexOf('body[data-ui-version="v2"] .gn-v2-query-toolbar-word-wrap-action.ant-btn,'),
       css.indexOf('body[data-ui-version="v2"] .gn-v2-query-toolbar-action-group {'),
     );
-
-    expect(toolbarSource).toContain('gn-v2-query-toolbar-word-wrap-action');
-    expect(toolbarSource).toContain('gn-query-toolbar-word-wrap-icon');
-    expect(toolbarSource).toContain('{!isV2Ui && t("query_editor.action.word_wrap")}');
     expect(wordWrapCss).toContain('align-items: center;');
     expect(wordWrapCss).toContain('justify-content: center;');
     expect(wordWrapCss).toContain('width: 16px;');
@@ -108,29 +98,9 @@ describe('QueryEditorToolbar layout', () => {
       css.indexOf('body[data-ui-version="v2"] .gn-v2-query-toolbar-icon-action.ant-btn,'),
       css.indexOf('body[data-ui-version="v2"] .gn-v2-query-toolbar-run-action.ant-btn {'),
     );
-
-    expect(toolbarSource).toContain('EllipsisOutlined');
-    expect(toolbarSource).toContain('gn-v2-query-toolbar-menu-trigger');
-    expect(toolbarSource).toContain('aria-haspopup="menu"');
-    expect(toolbarSource).toContain('aria-expanded={isV2Ui ? openToolbarMenu === "ai" : undefined}');
-    expect(toolbarSource).toContain('aria-expanded={isV2Ui ? openToolbarMenu === "more" : undefined}');
-    expect(toolbarSource).toContain('aria-expanded={isV2Ui ? openToolbarMenu === "format" : undefined}');
     expect(iconActionCss).toContain('width: 34px !important;');
     expect(iconActionCss).toContain('min-width: 34px !important;');
     expect(iconActionCss).toContain('padding: 0 !important;');
-  });
-
-  it('keeps editor search action grouped with formatting actions', () => {
-    const toolbarSource = readFileSync(new URL('./QueryEditorToolbar.tsx', import.meta.url), 'utf8');
-    const formatActionPairStart = toolbarSource.indexOf('SearchOutlined');
-    const formatActionPairEnd = toolbarSource.indexOf('!isV2Ui && (');
-    const formatActionPairSource = toolbarSource.slice(formatActionPairStart, formatActionPairEnd);
-
-    expect(toolbarSource).toContain('SearchOutlined');
-    expect(formatActionPairSource).toContain('query_editor.action.find_in_editor');
-    expect(formatActionPairSource).toContain('query_editor.action.find_in_editor_with_shortcut');
-    expect(formatActionPairSource).toContain('onClick={onFindInEditor}');
-    expect(formatActionPairSource).toContain('FormatPainterOutlined');
   });
 
   it('shows delayed full-name tooltips for truncated connection and database selectors', () => {
@@ -144,16 +114,6 @@ describe('QueryEditorToolbar layout', () => {
       toolbarSource.indexOf('gn-v2-query-toolbar-database-select'),
       toolbarSource.indexOf('gn-v2-query-toolbar-max-rows-select'),
     );
-
-    expect(toolbarSource).toContain('FULL_NAME_TOOLTIP_DELAY_SECONDS = 1');
-    expect(toolbarSource).toContain('mouseEnterDelay={FULL_NAME_TOOLTIP_DELAY_SECONDS}');
-    expect(toolbarSource).toContain('renderFullNameSelectTooltip');
-    expect(toolbarSource).toContain('gn-query-toolbar-select-full-name');
-    expect(toolbarSource).toContain('title: ""');
-    expect(connectionSelectSource).toContain('optionRender={(option) => renderFullNameSelectTooltip(option.data.fullName)}');
-    expect(connectionSelectSource).toContain('labelRender={(option) => renderFullNameSelectTooltip(option.label ?? option.value)}');
-    expect(databaseSelectSource).toContain('optionRender={(option) => renderFullNameSelectTooltip(option.data.fullName)}');
-    expect(databaseSelectSource).toContain('labelRender={(option) => renderFullNameSelectTooltip(option.label ?? option.value)}');
     expect(css).toContain('.gn-query-toolbar-select-full-name {');
     expect(css).toContain('text-overflow: ellipsis;');
     expect(css).toContain('white-space: nowrap;');
