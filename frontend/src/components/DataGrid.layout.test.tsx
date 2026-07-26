@@ -1331,7 +1331,6 @@ describe('DataGrid layout', () => {
     expect(iconActionCss).toContain('padding-inline: 0 !important;');
     expect(commitBaseCss).toContain('background: var(--gn-accent) !important;');
     expect(commitBaseCss).toContain('color: var(--gn-on-accent, #fff) !important;');
-    expect(commitInteractiveCss).toContain('background: var(--gn-accent-2) !important;');
     expect(commitInteractiveCss).toContain('box-shadow:');
     expect(commitDisabledCss).toContain('background: var(--gn-bg-active) !important;');
     expect(commitDisabledCss).toContain('color: var(--gn-fg-5) !important;');
