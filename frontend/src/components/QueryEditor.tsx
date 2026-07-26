@@ -2291,10 +2291,15 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           dbName: currentDbRef.current,
       });
       return () => {
-          persistQueryTabDraftSnapshot(draftSnapshotTab, getCurrentQuery(), {
-              connectionId: currentConnectionIdRef.current,
-              dbName: currentDbRef.current,
-          });
+          const tabStillExists = useStore.getState().tabs.some((item) => item.id === draftSnapshotTab.id);
+          if (tabStillExists) {
+              persistQueryTabDraftSnapshot(draftSnapshotTab, getCurrentQuery(), {
+                  connectionId: currentConnectionIdRef.current,
+                  dbName: currentDbRef.current,
+              });
+          } else {
+              clearQueryTabDraft(draftSnapshotTab.id);
+          }
       };
   }, [draftSnapshotTab, getCurrentQuery, isExternalSQLFileTab]);
 
