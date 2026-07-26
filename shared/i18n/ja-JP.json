@@ -3145,6 +3145,7 @@
   "app.update.backend.message.channel_change_failed": "更新チャネルの保存に失敗しました: {{detail}}",
   "app.update.backend.message.channel_changed": "更新チャネルを切り替えました: {{channel}}",
   "app.update.backend.message.check_first": "先に更新を確認してください",
+  "app.update.backend.message.check_stale": "確認中に更新状態が変更されました。もう一度確認してください。",
   "app.update.backend.message.checksum_failed": "更新パッケージのチェックサム検証に失敗しました。もう一度お試しください。",
   "app.update.backend.message.checksum_missing": "更新パッケージのチェックサムがありません (SHA256SUMS)",
   "app.update.backend.message.create_workspace_failed": "アプリディレクトリ内に更新作業ディレクトリを作成できません: {{path}}",

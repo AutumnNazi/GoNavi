@@ -3145,6 +3145,7 @@
   "app.update.backend.message.channel_change_failed": "保存更新通道失敗：{{detail}}",
   "app.update.backend.message.channel_changed": "更新通道已切換為：{{channel}}",
   "app.update.backend.message.check_first": "請先檢查更新",
+  "app.update.backend.message.check_stale": "檢查期間更新狀態已變更，請重新檢查",
   "app.update.backend.message.checksum_failed": "更新套件校驗失敗，請重試",
   "app.update.backend.message.checksum_missing": "缺少更新套件校驗值（SHA256SUMS）",
   "app.update.backend.message.create_workspace_failed": "無法在應用程式目錄建立更新工作目錄：{{path}}",

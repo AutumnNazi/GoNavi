@@ -3145,6 +3145,7 @@
   "app.update.backend.message.channel_change_failed": "Не удалось сохранить канал обновления: {{detail}}",
   "app.update.backend.message.channel_changed": "Канал обновления переключен на: {{channel}}",
   "app.update.backend.message.check_first": "Сначала проверьте обновления",
+  "app.update.backend.message.check_stale": "Состояние обновления изменилось во время проверки. Проверьте ещё раз.",
   "app.update.backend.message.checksum_failed": "Проверка контрольной суммы пакета обновления не пройдена. Повторите попытку.",
   "app.update.backend.message.checksum_missing": "Отсутствует контрольная сумма пакета обновления (SHA256SUMS)",
   "app.update.backend.message.create_workspace_failed": "Не удалось создать рабочий каталог обновления в каталоге приложения: {{path}}",

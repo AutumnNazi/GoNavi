@@ -3145,6 +3145,7 @@
   "app.update.backend.message.channel_change_failed": "Speichern des Update-Kanals fehlgeschlagen: {{detail}}",
   "app.update.backend.message.channel_changed": "Update-Kanal gewechselt zu: {{channel}}",
   "app.update.backend.message.check_first": "Prüfen Sie zuerst auf Updates",
+  "app.update.backend.message.check_stale": "Der Updatestatus hat sich während der Prüfung geändert. Prüfen Sie erneut.",
   "app.update.backend.message.checksum_failed": "Prüfsumme des Updatepakets ist fehlgeschlagen. Versuchen Sie es erneut.",
   "app.update.backend.message.checksum_missing": "Prüfsumme des Updatepakets fehlt (SHA256SUMS)",
   "app.update.backend.message.create_workspace_failed": "Update-Arbeitsverzeichnis konnte im App-Verzeichnis nicht erstellt werden: {{path}}",

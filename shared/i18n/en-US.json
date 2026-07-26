@@ -3145,6 +3145,7 @@
   "app.update.backend.message.channel_change_failed": "Failed to save update channel: {{detail}}",
   "app.update.backend.message.channel_changed": "Update channel switched to: {{channel}}",
   "app.update.backend.message.check_first": "Check for updates first",
+  "app.update.backend.message.check_stale": "Update state changed while checking. Check again.",
   "app.update.backend.message.checksum_failed": "Update package checksum failed. Try again.",
   "app.update.backend.message.checksum_missing": "Update package checksum is missing (SHA256SUMS)",
   "app.update.backend.message.create_workspace_failed": "Cannot create update workspace directory in the app directory: {{path}}",
