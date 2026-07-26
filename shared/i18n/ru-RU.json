@@ -3204,6 +3204,7 @@
   "common.named_item": "{{name}}",
   "common.ok": "OK",
   "common.refresh": "Обновить",
+  "common.retry": "Повторить",
   "common.save": "Сохранить",
   "common.search": "Поиск",
   "common.success": "Успешно",

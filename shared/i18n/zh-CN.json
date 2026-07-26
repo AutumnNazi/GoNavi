@@ -3204,6 +3204,7 @@
   "common.named_item": "{{name}}",
   "common.ok": "确定",
   "common.refresh": "刷新",
+  "common.retry": "重试",
   "common.save": "保存",
   "common.search": "搜索",
   "common.success": "成功",
