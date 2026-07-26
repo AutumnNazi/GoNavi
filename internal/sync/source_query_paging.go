@@ -272,7 +272,7 @@ func buildSourceQueryPKInSelectSQL(dbType, sourceQuery string, cols []connection
 	}
 	literals := make([]string, 0, len(pkValues))
 	for _, value := range pkValues {
-		literal, ok := formatSyncSQLLiteral(value)
+		literal, ok := formatSyncSQLLiteral(dbType, value)
 		if ok {
 			literals = append(literals, literal)
 		}
