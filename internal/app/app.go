@@ -333,6 +333,18 @@ func InitializeLifecycle(a *App, ctx context.Context) {
 	a.startup(ctx)
 }
 
+// HandleFrontendDomReady 在 WebView 每次完成导航（含前端刷新）后调用。
+//
+// SQL 编辑器待提交事务的 ID 只存在于前端组件内存，刷新后无法再被提交或回滚，
+// 却仍在后端占着 pinned 连接与数据库行锁，直到应用退出。这里把这些孤儿事务回滚掉。
+// 首次加载时事务表为空，因此本调用是无副作用的。
+func HandleFrontendDomReady(a *App) {
+	if a == nil {
+		return
+	}
+	a.rollbackAbandonedSQLTransactionsOnReload()
+}
+
 // startup is called when the app starts. The context is saved
 // so we can call the runtime methods.
 func (a *App) startup(ctx context.Context) {

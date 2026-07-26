@@ -179,6 +179,13 @@ func main() {
 				logger.Warnf("自动修复本地 MCP 客户端配置失败：%v", err)
 			}
 		},
+		OnDomReady: func(_ context.Context) {
+			// 每次 WebView 导航完成（含用户刷新前端）都会触发。
+			// 刷新会让 SQL 编辑器的待提交事务 ID 随组件内存一起丢失，
+			// 但后端事务仍开着并持有行锁：不清理的话，重新执行同一条 DML 会卡满
+			// innodb_lock_wait_timeout 并报 Error 1205，只能重启应用恢复。
+			app.HandleFrontendDomReady(application)
+		},
 		OnShutdown: func(ctx context.Context) {
 			nativewindow.ShutdownLifecycle(nativeWindowManager)
 			aiService.Shutdown()
