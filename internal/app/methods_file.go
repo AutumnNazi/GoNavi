@@ -4614,12 +4614,20 @@ func escapeSQLLiteral(value string) string {
 	return strings.ReplaceAll(strings.TrimSpace(value), "'", "''")
 }
 
-// isMySQLLikeDBType 判断方言是否按 MySQL 风格把反斜杠当作字符串字面量里的转义符。
-// 这些方言默认 sql_mode 不含 NO_BACKSLASH_ESCAPES，因此生成字面量时必须把反斜杠翻倍，
-// 否则还原时 \n \t \0 会被解释成控制字符（静默改写数据），且以反斜杠结尾的值会吞掉闭合单引号。
-func isMySQLLikeDBType(dbType string) bool {
+// dialectEscapesBackslashInStringLiteral 判断方言是否把反斜杠当作字符串字面量里的转义符。
+//
+// 命中的方言必须在生成字面量时把反斜杠翻倍，否则还原时 \n \t \0 会被解释成控制字符
+// （静默改写数据），且以反斜杠结尾的值会吞掉闭合单引号，让后续文本越出字面量。
+//   - MySQL 协议系（mysql/mariadb/tidb/oceanbase/doris/starrocks）：默认 sql_mode 不含
+//     NO_BACKSLASH_ESCAPES，反斜杠为转义符。
+//   - ClickHouse 与 TDengine：字面量同样支持 C 风格反斜杠转义。
+//
+// 不命中的方言（postgres 系在 standard_conforming_strings=on 下、oracle、sqlserver、
+// sqlite 等）反斜杠是普通字面字符，翻倍反而会写入两个反斜杠、损坏数据。
+func dialectEscapesBackslashInStringLiteral(dbType string) bool {
 	switch strings.ToLower(strings.TrimSpace(dbType)) {
-	case "mysql", "mariadb", "tidb", "oceanbase", "diros", "doris", "starrocks":
+	case "mysql", "mariadb", "tidb", "oceanbase", "diros", "doris", "starrocks",
+		"clickhouse", "tdengine", "taos":
 		return true
 	default:
 		return false
@@ -4630,7 +4638,7 @@ func isMySQLLikeDBType(dbType string) bool {
 // 反斜杠必须先于单引号处理，避免二次转义。非 MySQL 系方言（standard_conforming_strings）
 // 只需翻倍单引号，反斜杠保持字面量含义。
 func escapeSQLStringLiteralBody(dbType string, value string) string {
-	if isMySQLLikeDBType(dbType) {
+	if dialectEscapesBackslashInStringLiteral(dbType) {
 		value = strings.ReplaceAll(value, "\\", "\\\\")
 	}
 	return strings.ReplaceAll(value, "'", "''")

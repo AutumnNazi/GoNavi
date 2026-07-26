@@ -99,17 +99,32 @@ func TestEscapeSQLStringLiteralBodyIsDialectAware(t *testing.T) {
 	}
 }
 
-// TestIsMySQLLikeDBTypeCoversProtocolFamily 固定 MySQL 协议系方言集合，
-// 新增 MySQL 兼容方言时若漏加会在此失败。
-func TestIsMySQLLikeDBTypeCoversProtocolFamily(t *testing.T) {
-	for _, dbType := range []string{"mysql", "MySQL", " mariadb ", "tidb", "oceanbase", "diros", "doris", "starrocks"} {
-		if !isMySQLLikeDBType(dbType) {
-			t.Errorf("isMySQLLikeDBType(%q) = false，期望 true", dbType)
+// TestDialectEscapesBackslashInStringLiteralCoversAffectedDialects 固定"字面量内反斜杠是
+// 转义符"的方言集合。新增方言时若漏加，导出的 dump 会静默改写数据；若误加，反斜杠会被
+// 写成两个而同样损坏数据——两个方向都必须在此失败。
+func TestDialectEscapesBackslashInStringLiteralCoversAffectedDialects(t *testing.T) {
+	// MySQL 协议系 + ClickHouse/TDengine 的字面量都支持反斜杠转义。
+	for _, dbType := range []string{
+		"mysql", "MySQL", " mariadb ", "tidb", "oceanbase", "diros", "doris", "starrocks",
+		"clickhouse", "tdengine", "taos",
+	} {
+		if !dialectEscapesBackslashInStringLiteral(dbType) {
+			t.Errorf("dialectEscapesBackslashInStringLiteral(%q) = false，期望 true", dbType)
 		}
 	}
-	for _, dbType := range []string{"postgres", "sqlserver", "oracle", "sqlite", "clickhouse", "kingbase", ""} {
-		if isMySQLLikeDBType(dbType) {
-			t.Errorf("isMySQLLikeDBType(%q) = true，期望 false", dbType)
+	// standard_conforming_strings / 无反斜杠转义语义的方言：反斜杠必须原样保留。
+	for _, dbType := range []string{"postgres", "postgresql", "sqlserver", "oracle", "sqlite", "kingbase", "highgo", "gaussdb", ""} {
+		if dialectEscapesBackslashInStringLiteral(dbType) {
+			t.Errorf("dialectEscapesBackslashInStringLiteral(%q) = true，期望 false", dbType)
+		}
+	}
+}
+
+// TestFormatSQLValueEscapesBackslashForClickHouseAndTDengine 覆盖初版修复漏掉的方言。
+func TestFormatSQLValueEscapesBackslashForClickHouseAndTDengine(t *testing.T) {
+	for _, dbType := range []string{"clickhouse", "tdengine"} {
+		if got := formatSQLValue(dbType, `a\b`); got != `'a\\b'` {
+			t.Errorf("formatSQLValue(%q, %q) = %s，期望 %s", dbType, `a\b`, got, `'a\\b'`)
 		}
 	}
 }
