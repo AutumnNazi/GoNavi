@@ -1887,28 +1887,35 @@ body[data-theme='dark'] .gonavi-about-update-channel .ant-segmented-item-selecte
    原先深色下选中态是 rgba(30,41,59,.98)，与容器底 rgba(15,23,42,.55) 对比极低，
    选中状态几乎看不出来，且完全没有体现主题色。
    --gn-accent 仅在 v2 下定义，因此这里限定 v2 作用域；旧版 UI 保留其自身的中性配色。
-   ant-segmented-thumb 是切换时的滑动块，必须与选中项同色，否则动画期间会闪回灰底。 */
-body[data-ui-version='v2'] .gonavi-about-update-channel .ant-segmented-item-selected,
-body[data-ui-version='v2'] .gonavi-about-update-channel .ant-segmented-thumb {
+   ant-segmented-thumb 是切换时的滑动块，必须与选中项同色，否则动画期间会闪回灰底。
+
+   注意选择器必须带上 .ant-segmented（即 .gonavi-about-update-channel.ant-segmented），
+   把特异性提到 (0,4,1)：v2-theme.css:601 的
+   `body[data-ui-version="v2"] .ant-segmented .ant-segmented-item-selected`
+   特异性同为 (0,3,1) 且该文件在 App.css 之后导入，同分时后加载者胜出，
+   只写 (0,3,1) 会被它按 --gn-bg-panel 覆盖回灰底。 */
+body[data-ui-version='v2'] .gonavi-about-update-channel.ant-segmented .ant-segmented-item-selected,
+body[data-ui-version='v2'] .gonavi-about-update-channel.ant-segmented .ant-segmented-thumb {
   background: var(--gn-accent) !important;
   box-shadow: none !important;
 }
 
-body[data-ui-version='v2'] .gonavi-about-update-channel .ant-segmented-item-selected .ant-segmented-item-label {
+body[data-ui-version='v2'] .gonavi-about-update-channel.ant-segmented .ant-segmented-item-selected,
+body[data-ui-version='v2'] .gonavi-about-update-channel.ant-segmented .ant-segmented-item-selected .ant-segmented-item-label {
   color: #ffffff !important;
 }
 
 /* 未选项：透明底 + hover 时微亮，避免与选中胶囊争夺注意力。 */
-body[data-ui-version='v2'] .gonavi-about-update-channel .ant-segmented-item:not(.ant-segmented-item-selected) {
+body[data-ui-version='v2'] .gonavi-about-update-channel.ant-segmented .ant-segmented-item:not(.ant-segmented-item-selected) {
   background: transparent !important;
 }
 
-body[data-ui-version='v2'] .gonavi-about-update-channel .ant-segmented-item:not(.ant-segmented-item-selected):hover .ant-segmented-item-label {
+body[data-ui-version='v2'] .gonavi-about-update-channel.ant-segmented .ant-segmented-item:not(.ant-segmented-item-selected):hover .ant-segmented-item-label {
   color: var(--gn-fg-1) !important;
 }
 
 /* 键盘可达性：Segmented 的焦点环也跟随主题色。 */
-body[data-ui-version='v2'] .gonavi-about-update-channel .ant-segmented-item-input:focus-visible + .ant-segmented-item-label {
+body[data-ui-version='v2'] .gonavi-about-update-channel.ant-segmented .ant-segmented-item-input:focus-visible + .ant-segmented-item-label {
   outline: 2px solid var(--gn-accent) !important;
   outline-offset: -2px;
   border-radius: 4px;
