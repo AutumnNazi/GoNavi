@@ -41,16 +41,17 @@ type RabbitMQDB struct {
 	forwarder       *ssh.LocalForwarder
 }
 
-func (r *RabbitMQDB) Connect(config connection.ConnectionConfig) error {
-	if r.forwarder != nil {
-		_ = r.forwarder.Close()
-		r.forwarder = nil
-	}
-	r.client = nil
+func (r *RabbitMQDB) Connect(config connection.ConnectionConfig) (err error) {
+	_ = r.Close()
+	defer func() {
+		if err != nil {
+			_ = r.Close()
+		}
+	}()
 
 	runConfig := normalizeRabbitMQConfig(config)
 	if runConfig.UseSSH {
-		forwarder, err := ssh.GetOrCreateLocalForwarder(runConfig.SSH, runConfig.Host, runConfig.Port)
+		forwarder, err := ssh.AcquireLocalForwarder(runConfig.SSH, runConfig.Host, runConfig.Port)
 		if err != nil {
 			return fmt.Errorf("创建 SSH 隧道失败：%w", err)
 		}
@@ -88,7 +89,7 @@ func (r *RabbitMQDB) Connect(config connection.ConnectionConfig) error {
 
 func (r *RabbitMQDB) Close() error {
 	if r.forwarder != nil {
-		if err := r.forwarder.Close(); err != nil {
+		if err := r.forwarder.Release(); err != nil {
 			logger.Warnf("关闭 RabbitMQ SSH 端口转发失败：%v", err)
 		}
 		r.forwarder = nil

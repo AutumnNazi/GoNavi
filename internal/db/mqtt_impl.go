@@ -174,7 +174,7 @@ func (m *MQTTDB) Close() error {
 		if forwarder == nil {
 			continue
 		}
-		if err := forwarder.Close(); err != nil && firstErr == nil {
+		if err := forwarder.Release(); err != nil && firstErr == nil {
 			firstErr = err
 		}
 	}
@@ -708,19 +708,29 @@ func mqttForwardBrokersOverSSH(config connection.ConnectionConfig) (connection.C
 	}
 	runConfig := config
 	forwarders := make([]*ssh.LocalForwarder, 0, len(brokers))
+	cleanupForwarders := true
+	defer func() {
+		if !cleanupForwarders {
+			return
+		}
+		for _, forwarder := range forwarders {
+			_ = forwarder.Release()
+		}
+	}()
 	rewritten := make([]string, 0, len(brokers))
 	for _, broker := range brokers {
 		host, port, ok := parseHostPortWithDefault(broker, defaultMQTTPort)
 		if !ok {
 			return connection.ConnectionConfig{}, nil, nil, fmt.Errorf("解析 MQTT broker 地址失败：%s", broker)
 		}
-		forwarder, err := ssh.GetOrCreateLocalForwarder(config.SSH, host, port)
+		forwarder, err := ssh.AcquireLocalForwarder(config.SSH, host, port)
 		if err != nil {
 			return connection.ConnectionConfig{}, nil, nil, fmt.Errorf("创建 MQTT SSH 隧道失败：%w", err)
 		}
 		forwarders = append(forwarders, forwarder)
 		rewritten = append(rewritten, forwarder.LocalAddr)
 	}
+	cleanupForwarders = false
 	return runConfig, rewritten, forwarders, nil
 }
 

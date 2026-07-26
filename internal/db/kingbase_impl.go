@@ -110,14 +110,21 @@ func (k *KingbaseDB) getDSN(config connection.ConnectionConfig) string {
 	return strings.Join(parts, " ")
 }
 
-func (k *KingbaseDB) Connect(config connection.ConnectionConfig) error {
+func (k *KingbaseDB) Connect(config connection.ConnectionConfig) (err error) {
+	_ = k.Close()
+	defer func() {
+		if err != nil {
+			_ = k.Close()
+		}
+	}()
+
 	runConfig := config
 
 	if config.UseSSH {
 		// Create SSH tunnel with local port forwarding
 		logger.Infof("人大金仓使用 SSH 连接：地址=%s:%d 用户=%s", config.Host, config.Port, config.User)
 
-		forwarder, err := ssh.GetOrCreateLocalForwarder(config.SSH, config.Host, config.Port)
+		forwarder, err := ssh.AcquireLocalForwarder(config.SSH, config.Host, config.Port)
 		if err != nil {
 			return fmt.Errorf("创建 SSH 隧道失败：%w", err)
 		}
@@ -250,7 +257,7 @@ func (k *KingbaseDB) getSearchPathStr() string {
 func (k *KingbaseDB) Close() error {
 	// Close SSH forwarder first if exists
 	if k.forwarder != nil {
-		if err := k.forwarder.Close(); err != nil {
+		if err := k.forwarder.Release(); err != nil {
 			logger.Warnf("关闭人大金仓 SSH 端口转发失败：%v", err)
 		}
 		k.forwarder = nil

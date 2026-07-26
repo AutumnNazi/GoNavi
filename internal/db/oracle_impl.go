@@ -119,7 +119,14 @@ func annotateOracleValidationError(err error) error {
 	return fmt.Errorf("%w（Oracle 连接在验证阶段被服务端关闭或被驱动超时中断；请检查监听端口是否为 Oracle 协议端口、Service Name 是否正确、认证参数如 DBA_PRIVILEGE/AUTH_TYPE 是否匹配）", err)
 }
 
-func (o *OracleDB) Connect(config connection.ConnectionConfig) error {
+func (o *OracleDB) Connect(config connection.ConnectionConfig) (err error) {
+	_ = o.Close()
+	defer func() {
+		if err != nil {
+			_ = o.Close()
+		}
+	}()
+
 	runConfig := config
 	serviceName := strings.TrimSpace(config.Database)
 	if serviceName == "" {
@@ -130,7 +137,7 @@ func (o *OracleDB) Connect(config connection.ConnectionConfig) error {
 		// Create SSH tunnel with local port forwarding
 		logger.Infof("Oracle 使用 SSH 连接：地址=%s:%d 用户=%s", config.Host, config.Port, config.User)
 
-		forwarder, err := ssh.GetOrCreateLocalForwarder(config.SSH, config.Host, config.Port)
+		forwarder, err := ssh.AcquireLocalForwarder(config.SSH, config.Host, config.Port)
 		if err != nil {
 			return fmt.Errorf("创建 SSH 隧道失败：%w", err)
 		}
@@ -191,7 +198,7 @@ func (o *OracleDB) Connect(config connection.ConnectionConfig) error {
 func (o *OracleDB) Close() error {
 	// Close SSH forwarder first if exists
 	if o.forwarder != nil {
-		if err := o.forwarder.Close(); err != nil {
+		if err := o.forwarder.Release(); err != nil {
 			logger.Warnf("关闭 Oracle SSH 端口转发失败：%v", err)
 		}
 		o.forwarder = nil
