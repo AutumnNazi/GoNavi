@@ -1,8 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
-const sidebarSource = readFileSync(new URL('./Sidebar.tsx', import.meta.url), 'utf8');
 const sidebarV2UtilsSource = readFileSync(new URL('./sidebarV2Utils.ts', import.meta.url), 'utf8');
+const sidebarHelpersSource = readFileSync(new URL('./sidebar/sidebarHelpers.ts', import.meta.url), 'utf8');
 
 const locales = ['zh-CN', 'zh-TW', 'en-US', 'ja-JP', 'de-DE', 'ru-RU'] as const;
 const requiredKeys = [
@@ -16,13 +16,12 @@ describe('Sidebar v2 connection group fallback i18n', () => {
       "name: tag.name || '未命名分组'",
       "fallback = '组'",
     ].forEach((snippet) => {
-      expect(sidebarSource).not.toContain(snippet);
       expect(sidebarV2UtilsSource).not.toContain(snippet);
+      expect(sidebarHelpersSource).not.toContain(snippet);
     });
 
-    expect(sidebarSource).toContain("tag.name || t('connection.sidebar.group.untitled')");
-    expect(sidebarSource).toContain("fallback = t('connection.sidebar.group.badge')");
-    expect(sidebarV2UtilsSource).toContain("fallback = t('connection.sidebar.group.badge')");
+    expect(sidebarV2UtilsSource).toContain("tag.name || t('connection.sidebar.group.untitled')");
+    expect(sidebarHelpersSource).toContain("fallback = t('connection.sidebar.group.badge')");
   });
 
   it('keeps v2 connection group fallback keys available in every locale', () => {

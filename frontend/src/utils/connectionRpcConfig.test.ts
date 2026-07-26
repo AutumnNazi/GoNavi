@@ -193,6 +193,47 @@ describe('buildRpcConnectionConfig', () => {
     } as any);
 
     expect(result.readOnly).toBe(true);
+    expect(result.protection).toEqual({
+      restrictDataEdit: true,
+      restrictStructureEdit: true,
+      restrictScriptExecution: true,
+      restrictDataImport: true,
+    });
+  });
+
+  it('preserves partial connection protection for RPC calls', () => {
+    const result = buildRpcConnectionConfig({
+      id: 'conn-prod-partial',
+      type: 'postgres',
+      protection: {
+        restrictDataEdit: true,
+        restrictDataImport: true,
+      },
+    } as any);
+
+    expect(result.readOnly).toBe(false);
+    expect(result.protection).toEqual({
+      restrictDataEdit: true,
+      restrictStructureEdit: false,
+      restrictScriptExecution: false,
+      restrictDataImport: true,
+    });
+  });
+
+  it('ignores the legacy readOnly flag for unsupported connection types', () => {
+    const result = buildRpcConnectionConfig({
+      id: 'conn-redis-readonly',
+      type: 'redis',
+      readOnly: true,
+    } as any);
+
+    expect(result.readOnly).toBe(false);
+    expect(result.protection).toEqual({
+      restrictDataEdit: false,
+      restrictStructureEdit: false,
+      restrictScriptExecution: false,
+      restrictDataImport: false,
+    });
   });
 
   it('fills default nested config blocks needed by RPC calls', () => {

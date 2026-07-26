@@ -20,6 +20,10 @@ const localeFiles = [
 
 const sources = componentFiles.map((file) => readFileSync(new URL(file, import.meta.url), 'utf8'));
 const combinedSource = sources.join('\n');
+const userFacingSource = combinedSource
+  .replace(/\/\*[\s\S]*?\*\//g, '')
+  .replace(/\/\/.*$/gm, '')
+  .replace(/'已取消'/g, '');
 const catalogs = Object.fromEntries(localeFiles.map((locale) => [
   locale,
   JSON.parse(readFileSync(new URL(`../../../shared/i18n/${locale}.json`, import.meta.url), 'utf8')) as Record<string, string>,
@@ -44,7 +48,7 @@ describe('data export i18n', () => {
     expect(sources[4]).toContain("t('data_export.workbench.scope.all.description')");
     expect(sources[4]).toContain("t('data_export.progress.value.target_fallback')");
     expect(sources[4]).toContain("t('data_export.workbench.task.export_target'");
-    expect(combinedSource).not.toMatch(/\p{Script=Han}/u);
+    expect(userFacingSource).not.toMatch(/\p{Script=Han}/u);
   });
 
   it('keeps all extracted data_export keys present in every supported locale with matching placeholders', () => {

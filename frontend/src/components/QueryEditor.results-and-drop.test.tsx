@@ -1,12 +1,13 @@
 import React from 'react';
 import { readFileSync } from 'node:fs';
-import { act, create, type ReactTestRenderer } from 'react-test-renderer';
+import { act, create as createRenderer, type ReactTestRenderer } from 'react-test-renderer';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { readV2ThemeCss } from '../test/readV2ThemeCss';
 
 import { setCurrentLanguage } from '../i18n';
 import type { SavedQuery, TabData } from '../types';
 import { ORACLE_ROWID_LOCATOR_COLUMN } from '../utils/rowLocator';
+import { clearQueryEditorResultSession } from '../utils/queryEditorResultSessionCache';
 import { formatSqlExecutionError } from '../utils/sqlErrorSemantics';
 import { clearQueryTabDraft, clearSQLFileTabDraft, getQueryTabDraft, getSQLFileTabDraft } from '../utils/sqlFileTabDrafts';
 import {
@@ -24,6 +25,18 @@ import QueryEditorResultsPanel, {
   resolveEffectiveActiveResultKey,
   shouldActivateResultTabDetachPointer,
 } from './QueryEditorResultsPanel';
+
+const mountedRenderers = new Set<ReactTestRenderer>();
+const create = (...args: Parameters<typeof createRenderer>): ReactTestRenderer => {
+  const renderer = createRenderer(...args);
+  mountedRenderers.add(renderer);
+  const unmount = renderer.unmount.bind(renderer);
+  renderer.unmount = () => {
+    mountedRenderers.delete(renderer);
+    unmount();
+  };
+  return renderer;
+};
 
 const storeState = vi.hoisted(() => ({
   connections: [
@@ -117,7 +130,9 @@ const backendApp = vi.hoisted(() => ({
   DBQueryMulti: vi.fn(),
   DBQueryMultiTransactional: vi.fn(),
   DBCommitTransaction: vi.fn(),
+  DBCommitTransactionWithTrigger: vi.fn(),
   DBRollbackTransaction: vi.fn(),
+  DBRollbackTransactionWithTrigger: vi.fn(),
   DBGetTables: vi.fn(),
   DBGetAllColumns: vi.fn(),
   DBGetDatabases: vi.fn(),
@@ -745,6 +760,10 @@ describe('QueryEditor external SQL save', () => {
       addEventListener: vi.fn(),
       removeEventListener: vi.fn(),
     });
+    vi.stubGlobal('navigator', {
+      platform: 'MacIntel',
+      userAgent: 'Vitest',
+    });
     setCurrentLanguage('zh-CN');
     storeState.languagePreference = 'zh-CN';
     storeState.shortcutOptions.runQuery.mac = { enabled: false, combo: '' };
@@ -818,7 +837,9 @@ describe('QueryEditor external SQL save', () => {
     backendApp.DBQueryMulti.mockResolvedValue({ success: true, data: [] });
     backendApp.DBQueryMultiTransactional.mockResolvedValue({ success: true, data: [] });
     backendApp.DBCommitTransaction.mockResolvedValue({ success: true, message: '事务已提交' });
+    backendApp.DBCommitTransactionWithTrigger.mockResolvedValue({ success: true, message: '事务已提交' });
     backendApp.DBRollbackTransaction.mockResolvedValue({ success: true, message: '事务已回滚' });
+    backendApp.DBRollbackTransactionWithTrigger.mockResolvedValue({ success: true, message: '事务已回滚' });
     backendApp.DBGetColumns.mockResolvedValue({ success: true, data: [] });
     backendApp.DBGetIndexes.mockResolvedValue({ success: true, data: [] });
     backendApp.DBGetAllColumns.mockResolvedValue({ success: true, data: [] });
@@ -876,6 +897,11 @@ describe('QueryEditor external SQL save', () => {
   });
 
   afterEach(() => {
+    act(() => {
+      [...mountedRenderers].forEach((renderer) => renderer.unmount());
+    });
+    clearQueryEditorResultSession('tab-1');
+    clearQueryEditorResultSession('tab-2');
     vi.unstubAllGlobals();
     vi.clearAllMocks();
   });
@@ -883,8 +909,10 @@ describe('QueryEditor external SQL save', () => {
   it('keeps Oracle anonymous PL/SQL blocks intact when running from the editor', async () => {
     storeState.connections[0].config.type = 'oracle';
     storeState.connections[0].config.database = 'ORCLPDB1';
-    backendApp.DBQueryMulti.mockResolvedValueOnce({
+    backendApp.DBQueryMultiTransactional.mockResolvedValueOnce({
       success: true,
+      transactionId: 'tx-oracle-block',
+      transactionPending: true,
       data: [{ columns: ['affectedRows'], rows: [{ affectedRows: 1 }] }],
     });
     const plsql = [
@@ -908,7 +936,13 @@ describe('QueryEditor external SQL save', () => {
       await Promise.resolve();
     });
 
-    expect(backendApp.DBQueryMulti).toHaveBeenCalledWith(expect.anything(), 'ORCLPDB1', plsql, 'query-1');
+    expect(backendApp.DBQueryMultiTransactional).toHaveBeenCalledWith(expect.anything(), 'ORCLPDB1', plsql, 'query-1');
+    expect(backendApp.DBQueryMulti).not.toHaveBeenCalled();
+    expect(storeState.sqlEditorPendingTransactions['tab-1']).toMatchObject({
+      id: 'tx-oracle-block',
+      dbType: 'oracle',
+      statements: [plsql],
+    });
     expect(storeState.addSqlLog).toHaveBeenCalledWith(expect.objectContaining({
       sql: plsql,
       status: 'success',
@@ -1228,7 +1262,7 @@ describe('QueryEditor external SQL save', () => {
 
     expect(textContent(renderer!.toJSON())).toContain('消息 1');
     expect(findResultMessageTextarea(renderer!).props.value).toBe("Table 'users'. Scan count 1, logical reads 3.");
-    expect(dataGridState.latestProps).toBeNull();
+    expect(renderer!.root.findAll((node) => node.props?.['data-grid'] === 'true')).toHaveLength(0);
   });
 
   it('preserves sqlserver message indentation and blank lines after stripping mssql prefixes', () => {
@@ -1729,7 +1763,7 @@ describe('QueryEditor external SQL save', () => {
     expect(dataGridState.latestProps?.data).not.toEqual(expect.arrayContaining([expect.objectContaining({ name: 'master' })]));
   });
 
-  it('localizes the non-Oracle no-safe-locator read-only warning in English while preserving the raw table name', async () => {
+  it('localizes the non-Oracle all-columns locator warning in English while preserving the raw table name', async () => {
     storeState.languagePreference = 'en-US';
     setCurrentLanguage('en-US');
     backendApp.DBQueryMulti.mockResolvedValueOnce({
@@ -1757,12 +1791,12 @@ describe('QueryEditor external SQL save', () => {
     expect(dataGridState.latestProps?.tableName).toBe('users');
     expect(dataGridState.latestProps?.pkColumns).toEqual([]);
     expect(dataGridState.latestProps?.editLocator).toMatchObject({
-      strategy: 'none',
-      readOnly: true,
-      reason: 'No primary key or usable unique index was detected, so changes cannot be committed safely.',
+      strategy: 'all-columns',
+      readOnly: false,
+      reason: 'No primary key or unique index was detected, so rows will be located by matching all columns. Edit with care.',
     });
-    expect(dataGridState.latestProps?.readOnly).toBe(true);
-    expect(messageApi.warning).toHaveBeenCalledWith(
+    expect(dataGridState.latestProps?.readOnly).toBe(false);
+    expect(messageApi.warning).not.toHaveBeenCalledWith(
       'Query results remain read-only: main.users No primary key or usable unique index was detected, so changes cannot be committed safely.',
     );
     expect(messageApi.warning).not.toHaveBeenCalledWith(
@@ -1770,7 +1804,7 @@ describe('QueryEditor external SQL save', () => {
     );
   });
 
-  it('localizes the non-Oracle index-metadata-unavailable read-only warning in English while preserving the raw table name', async () => {
+  it('uses all-columns editing when non-Oracle unique-index metadata is unavailable', async () => {
     storeState.languagePreference = 'en-US';
     setCurrentLanguage('en-US');
     backendApp.DBQueryMulti.mockResolvedValueOnce({
@@ -1801,12 +1835,11 @@ describe('QueryEditor external SQL save', () => {
 
     expect(dataGridState.latestProps?.tableName).toBe('users');
     expect(dataGridState.latestProps?.editLocator).toMatchObject({
-      strategy: 'none',
-      readOnly: true,
-      reason: 'Unable to load unique index metadata, so changes cannot be committed safely.',
+      strategy: 'all-columns',
+      readOnly: false,
     });
-    expect(dataGridState.latestProps?.readOnly).toBe(true);
-    expect(messageApi.warning).toHaveBeenCalledWith(
+    expect(dataGridState.latestProps?.readOnly).toBe(false);
+    expect(messageApi.warning).not.toHaveBeenCalledWith(
       'Query results remain read-only: main.users Unable to load unique index metadata, so changes cannot be committed safely.',
     );
     expect(messageApi.warning).not.toHaveBeenCalledWith(
@@ -1814,7 +1847,7 @@ describe('QueryEditor external SQL save', () => {
     );
   });
 
-  it('localizes the table-locator-metadata-unavailable read-only warning in English while preserving the raw table name', async () => {
+  it('uses all-columns editing when non-Oracle table locator metadata is unavailable', async () => {
     storeState.languagePreference = 'en-US';
     setCurrentLanguage('en-US');
     backendApp.DBQueryMulti.mockResolvedValueOnce({
@@ -1841,12 +1874,12 @@ describe('QueryEditor external SQL save', () => {
 
     expect(dataGridState.latestProps?.tableName).toBe('users');
     expect(dataGridState.latestProps?.editLocator).toMatchObject({
-      strategy: 'none',
-      readOnly: true,
-      reason: 'Unable to load primary key/unique index metadata for main.users, so changes cannot be committed safely.',
+      strategy: 'all-columns',
+      columns: [],
+      readOnly: false,
     });
-    expect(dataGridState.latestProps?.readOnly).toBe(true);
-    expect(messageApi.warning).toHaveBeenCalledWith(
+    expect(dataGridState.latestProps?.readOnly).toBe(false);
+    expect(messageApi.warning).not.toHaveBeenCalledWith(
       'Query results remain read-only: Unable to load primary key/unique index metadata for main.users, so changes cannot be committed safely.',
     );
     expect(messageApi.warning).not.toHaveBeenCalledWith(
@@ -1854,7 +1887,7 @@ describe('QueryEditor external SQL save', () => {
     );
   });
 
-  it('falls back to read-only results when query locator metadata stalls', async () => {
+  it('falls back to all-columns editing when query locator metadata stalls', async () => {
     vi.useFakeTimers();
     backendApp.DBQueryMulti.mockResolvedValueOnce({
       success: true,
@@ -1891,7 +1924,11 @@ describe('QueryEditor external SQL save', () => {
       );
       expect(dataGridState.latestProps?.data?.[0]).toMatchObject({ NAME: 'alpha' });
       expect(dataGridState.latestProps?.tableName).toBe('users');
-      expect(dataGridState.latestProps?.readOnly).toBe(true);
+      expect(dataGridState.latestProps?.editLocator).toMatchObject({
+        strategy: 'all-columns',
+        readOnly: false,
+      });
+      expect(dataGridState.latestProps?.readOnly).toBe(false);
     } finally {
       vi.useRealTimers();
     }
@@ -2004,6 +2041,10 @@ describe('QueryEditor external SQL save', () => {
   });
 
   it('registers Windows Ctrl+R with Monaco CtrlCmd and runs the selected SQL', async () => {
+    vi.stubGlobal('navigator', {
+      platform: 'Win32',
+      userAgent: 'Vitest',
+    });
     storeState.shortcutOptions.runQuery.windows = { enabled: true, combo: 'Ctrl+R' };
     const windowListeners: Record<string, ((event?: any) => void)[]> = {};
     vi.stubGlobal('window', {
@@ -2063,7 +2104,7 @@ describe('QueryEditor external SQL save', () => {
     expect(String(backendApp.DBQueryMulti.mock.calls[0][2])).not.toContain('select 3');
   });
 
-  it('does not run SQL from the run shortcut when nothing is selected', async () => {
+  it('runs the cursor SQL from the run shortcut when nothing is selected', async () => {
     storeState.shortcutOptions.runQuery.mac = { enabled: true, combo: 'Meta+Enter' };
     storeState.shortcutOptions.runQuery.windows = { enabled: true, combo: 'Ctrl+Enter' };
     const windowListeners: Record<string, ((event?: any) => void)[]> = {};
@@ -2090,6 +2131,9 @@ describe('QueryEditor external SQL save', () => {
     });
     editorState.position = { lineNumber: 2, column: 8 };
     editorState.selection = null;
+    editorState.cursorPositionListeners.forEach((listener) => {
+      listener({ position: editorState.position });
+    });
     backendApp.DBQueryMulti.mockClear();
 
     const event = createRunShortcutEvent();
@@ -2103,8 +2147,14 @@ describe('QueryEditor external SQL save', () => {
 
     expect(event.preventDefault).toHaveBeenCalled();
     expect(event.stopPropagation).toHaveBeenCalled();
-    expect(backendApp.DBQueryMulti).not.toHaveBeenCalled();
-    expect(messageApi.info).toHaveBeenCalledWith('没有可选择的 SQL 语句。');
+    expect(backendApp.DBQueryMulti).toHaveBeenCalledWith(
+      expect.anything(),
+      'main',
+      expect.stringContaining('select 2 as two'),
+      'query-1',
+    );
+    expect(String(backendApp.DBQueryMulti.mock.calls[0][2])).not.toContain('select 1');
+    expect(String(backendApp.DBQueryMulti.mock.calls[0][2])).not.toContain('select 3');
   });
 
   it('runs selected SQL from the run shortcut', async () => {
@@ -4535,7 +4585,7 @@ describe('QueryEditor external SQL save', () => {
     expect(messageApi.warning).not.toHaveBeenCalled();
   });
 
-  it('gives a multiline single-table result an independent column pin scope without making it editable', async () => {
+  it('keeps a multiline single-table result tied to its editable all-columns locator', async () => {
     const sql = [
       'SELECT a.COMPID, a.MEMCARDNO,',
       '  a.MODIFYUSER, a.MODIFYTIME',
@@ -4562,10 +4612,13 @@ describe('QueryEditor external SQL save', () => {
       await Promise.resolve();
     });
 
-    expect(dataGridState.latestProps?.tableName).toBeUndefined();
-    expect(dataGridState.latestProps?.readOnly).toBe(true);
-    expect(dataGridState.latestProps?.columnPinScope).toMatch(/^query-result:[a-f0-9]+$/);
-    expect(dataGridState.latestProps?.columnPinScope).not.toContain('D_MEMBER_CARDTYPE_MODFIY_LOG');
+    expect(dataGridState.latestProps?.tableName).toBe('D_MEMBER_CARDTYPE_MODFIY_LOG');
+    expect(dataGridState.latestProps?.editLocator).toMatchObject({
+      strategy: 'all-columns',
+      readOnly: false,
+    });
+    expect(dataGridState.latestProps?.readOnly).toBe(false);
+    expect(dataGridState.latestProps?.columnPinScope).toBeUndefined();
     renderer!.unmount();
   });
 
@@ -4593,7 +4646,6 @@ describe('QueryEditor external SQL save', () => {
     async (dbType) => {
       storeState.connections[0].config.type = dbType;
       storeState.connections[0].config.database = dbType === 'oracle' || dbType === 'dameng' ? 'APP' : 'main';
-      const forceReadOnlyQueryResult = dbType === 'tdengine' || dbType === 'clickhouse';
       backendApp.DBQueryMulti.mockResolvedValueOnce({
         success: true,
         data: [{ columns: ['COUNT'], rows: [{ COUNT: 1 }] }],
@@ -4616,7 +4668,7 @@ describe('QueryEditor external SQL save', () => {
       });
 
       const expectedTableName = dbType === 'oracle' || dbType === 'dameng' ? 'USERS' : 'users';
-      expect(dataGridState.latestProps?.tableName).toBe(forceReadOnlyQueryResult ? undefined : expectedTableName);
+      expect(dataGridState.latestProps?.tableName).toBe(expectedTableName);
       expect(dataGridState.latestProps?.editLocator).toBeUndefined();
       expect(dataGridState.latestProps?.readOnly).toBe(true);
       expect(backendApp.DBGetColumns).not.toHaveBeenCalled();
@@ -4775,6 +4827,50 @@ describe('QueryEditorResultsPanel result-tab detach lifecycle', () => {
     });
     return captureTarget;
   };
+
+  it('keeps the actual result table identity separate from metadata lookup names', async () => {
+    await act(async () => {
+      renderer = create(
+        <QueryEditorResultsPanel
+          resultSets={[{
+            key: 'result-1',
+            sql: 'select * from APP.USERS',
+            rows: [{ id: 1 }],
+            columns: ['id'],
+            tableName: 'APP.USERS',
+            metadataTableName: 'USERS',
+            pkColumns: ['id'],
+            readOnly: false,
+          }]}
+          activeResultKey="result-1"
+          isActive
+          loading={false}
+          executionError=""
+          sqlLogCount={0}
+          darkMode={false}
+          isV2Ui
+          currentDb="APP"
+          currentConnectionId="conn-1"
+          toggleShortcutLabel=""
+          onActiveResultKeyChange={vi.fn()}
+          onHide={vi.fn()}
+          onCloseResult={vi.fn()}
+          onCloseOtherResultTabs={vi.fn()}
+          onCloseResultTabsToLeft={vi.fn()}
+          onCloseResultTabsToRight={vi.fn()}
+          onCloseAllResultTabs={vi.fn()}
+          onOpenResultInWindow={vi.fn()}
+          onReloadResult={vi.fn()}
+          onResultPageChange={vi.fn()}
+          onResultSort={vi.fn()}
+          onDiagnoseExecutionError={vi.fn()}
+        />,
+      );
+    });
+
+    expect(dataGridState.latestProps?.tableName).toBe('APP.USERS');
+    expect(dataGridState.latestProps?.dbName).toBe('APP');
+  });
 
   it('restores selection state and removes global listeners when the window blurs', async () => {
     const onOpenResultInWindow = vi.fn();

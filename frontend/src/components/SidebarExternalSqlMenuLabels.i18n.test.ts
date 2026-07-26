@@ -1,13 +1,13 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
-const source = readFileSync(new URL('./Sidebar.tsx', import.meta.url), 'utf8');
-const titleRenderIndex = source.indexOf('  const titleRender =');
-const externalSqlMenuStart = source.lastIndexOf("if (node.type === 'external-sql-root')", titleRenderIndex);
+const source = readFileSync(new URL('./sidebar/sidebarLegacyNodeMenu.tsx', import.meta.url), 'utf8');
+const externalSqlMenuStart = source.indexOf("if (node.type === 'external-sql-root')");
+const externalSqlMenuEnd = source.indexOf('    return [];', externalSqlMenuStart);
 
 const externalSqlMenuBlock = source.slice(
   externalSqlMenuStart,
-  titleRenderIndex,
+  externalSqlMenuEnd,
 );
 
 describe('Sidebar external SQL menu labels i18n', () => {

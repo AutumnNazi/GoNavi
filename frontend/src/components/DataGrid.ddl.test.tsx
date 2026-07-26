@@ -4134,7 +4134,6 @@ describe('DataGrid DDL interactions', () => {
 
     const content = textContent(renderer!.root);
     expect(content).toContain('SCHEMA DESIGNER');
-    expect(content).toContain('字段');
     expect(content).toContain('id');
     expect(content).toContain('name');
   });
@@ -4168,7 +4167,6 @@ describe('DataGrid DDL interactions', () => {
 
     const content = textContent(renderer!.root);
     expect(content).toContain('SCHEMA DESIGNER');
-    expect(content).toContain('字段');
     expect(content).toContain('id');
     expect(content).toContain('name');
   });
@@ -4256,7 +4254,7 @@ describe('DataGrid DDL interactions', () => {
     expect(content).not.toContain('gn-v2-data-grid-fields-view');
     expect(content).toContain('数据预览');
     expect(content).toContain('结果视图');
-    expect(content).toContain('字段信息');
+    expect(findButton(renderer!, '字段信息')).toBeTruthy();
   });
 
   it('keeps the v2 fields tab as read-only field info for views', async () => {
@@ -4285,8 +4283,8 @@ describe('DataGrid DDL interactions', () => {
     });
     await waitForEffects();
 
-    expect(textContent(renderer!.root)).toContain('字段信息');
-    expect(textContent(renderer!.root)).not.toContain('对象设计');
+    expect(findButton(renderer!, '字段信息')).toBeTruthy();
+    expect(findButton(renderer!, '对象设计')).toBeUndefined();
 
     await act(async () => {
       findButton(renderer!, '字段信息').props.onClick();

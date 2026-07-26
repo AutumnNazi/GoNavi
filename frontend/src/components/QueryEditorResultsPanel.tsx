@@ -572,7 +572,7 @@ const QueryEditorResultsPanel: React.FC<QueryEditorResultsPanelProps> = ({
                 );
             }
             const visibleColumns = resolveVisibleQueryResultColumns(rs.columns, globalHiddenColumns);
-            const resultTableName = rs.metadataTableName || rs.tableName;
+            const resultTableName = rs.tableName;
             return (
                 <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
                     {Array.isArray(rs.messages) && rs.messages.length > 0 ? (

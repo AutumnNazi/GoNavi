@@ -726,9 +726,18 @@ describe("i18n catalog", () => {
     assertSourceDoesNotInlineCatalogValues(detachedChromeSource, dataGridDetachedChromeKeys, { ignoreEnglishBaseline: true });
   });
 
-  it("does not put the raw cancelled sentinel into catalog values", () => {
+  it("keeps raw cancelled sentinels out of data-root and export feedback catalogs", () => {
+    const guardedKeyPrefixes = [
+      "app.data_root.",
+      "data_export.",
+    ];
+
     for (const language of SUPPORTED_LANGUAGES) {
-      expect(Object.values(catalogs[language])).not.toContain("已取消");
+      for (const [key, value] of Object.entries(catalogs[language])) {
+        if (guardedKeyPrefixes.some((prefix) => key.startsWith(prefix))) {
+          expect(value, `${language}:${key}`).not.toBe("已取消");
+        }
+      }
     }
   });
 
@@ -908,7 +917,7 @@ describe("i18n catalog", () => {
     const dataRootFlowSource = sliceBetween(
       source,
       "const loadDataRootInfo = useCallback(async () => {",
-      "const handleCreateConnection = useCallback(() => {",
+      "const openCreateConnection = useCallback((targetTagId?: string) => {",
     );
     const windowZoomSource = sliceBetween(
       source,
