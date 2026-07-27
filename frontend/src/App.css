@@ -196,6 +196,10 @@ samp {
     font-weight: 700;
 }
 
+.redis-value-table-shell .ant-table-body {
+    overflow-y: auto !important;
+}
+
 /* Scrollbar styling for dark mode */
 body[data-theme='dark'] ::-webkit-scrollbar {
     width: 10px;
