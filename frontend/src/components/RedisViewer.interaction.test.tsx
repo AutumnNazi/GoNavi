@@ -296,6 +296,58 @@ describe('RedisViewer tree interactions', () => {
     renderer!.unmount();
   });
 
+  it('filters keys by the full namespace path from a group action', async () => {
+    let renderer: ReactTestRenderer;
+    let groupTitleRenderer: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<RedisViewer connectionId="redis-1" redisDB={0} />);
+    });
+    await flushEffects();
+
+    const searchModeGroup = renderer!.root.findAll(
+      node => node.props.buttonStyle === 'solid' && typeof node.props.onChange === 'function',
+    )[0];
+    await act(async () => {
+      searchModeGroup.props.onChange({ target: { value: 'exact' } });
+    });
+    await flushEffects();
+
+    const appGroup = antdState.treeProps.treeData.find((node: any) => node.key === 'group:app');
+    const userGroup = appGroup.children.find((node: any) => node.key === 'group:app:user');
+    await act(async () => {
+      groupTitleRenderer = create(antdState.treeProps.titleRender(userGroup));
+    });
+
+    const filterButton = groupTitleRenderer!.root.findByProps({ 'aria-label': 'Filter by namespace' });
+    const event = {
+      preventDefault: vi.fn(),
+      stopPropagation: vi.fn(),
+    };
+    await act(async () => {
+      filterButton.props.onClick(event);
+    });
+    await flushEffects();
+
+    const searchInput = renderer!.root.findAllByType('input').find(node => typeof node.props.onSearch === 'function');
+    const updatedSearchModeGroup = renderer!.root.findAll(
+      node => node.props.buttonStyle === 'solid' && typeof node.props.onChange === 'function',
+    )[0];
+
+    expect(event.preventDefault).toHaveBeenCalled();
+    expect(event.stopPropagation).toHaveBeenCalled();
+    expect(searchInput?.props.value).toBe('app:user');
+    expect(updatedSearchModeGroup.props.value).toBe('fuzzy');
+    expect(redisBackend.RedisScanKeys).toHaveBeenLastCalledWith(
+      expect.any(Object),
+      '*[aA][pP][pP]:[uU][sS][eE][rR]*',
+      '0',
+      600,
+    );
+
+    groupTitleRenderer!.unmount();
+    renderer!.unmount();
+  });
+
   it('shows Redis Cluster topology context in the key explorer header', async () => {
     storeState.connections = [
       {

@@ -1092,6 +1092,16 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
         });
     }, [isLargeKeyspace]);
 
+    const handleFilterByGroup = useCallback((treeNode: RedisTreeDataNode) => {
+        const groupPath = treeNode.groupPath?.trim();
+        if (!groupPath) {
+            return;
+        }
+
+        setSearchMode('fuzzy');
+        executeSearch(groupPath, 'fuzzy');
+    }, [executeSearch]);
+
     const stopTreeTitleEvent = (event: React.SyntheticEvent<HTMLElement>) => {
         event.preventDefault();
         event.stopPropagation();
@@ -1164,26 +1174,51 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
                         </span>
                         <span style={{ fontSize: 12, color: workbenchTheme.textMuted, flexShrink: 0 }}>({treeNode.groupLeafCount ?? 0})</span>
                     </Space>
-                    <Button
-                        size="small"
-                        style={{
-                            paddingInline: 10,
-                            height: 26,
-                            borderRadius: 999,
-                            flexShrink: 0,
-                            borderColor: workbenchTheme.accentBorder,
-                            background: workbenchTheme.accentSoft,
-                            color: workbenchTheme.accent,
-                            fontWeight: 600,
-                        }}
-                        onMouseDown={stopTreeTitleEvent}
-                        onClick={(event) => {
-                            stopTreeTitleEvent(event);
-                            handleSelectGroupDescendants(treeNode);
-                        }}
-                    >
-                        {groupFullyChecked ? tr('redis_viewer.action.clear_group_selection') : tr('redis_viewer.action.select_group')}
-                    </Button>
+                    <Space size={6} style={{ flexShrink: 0 }}>
+                        <Tooltip title={tr('redis_viewer.action.filter_group')}>
+                            <Button
+                                size="small"
+                                className="redis-tree-group-filter-button"
+                                aria-label={tr('redis_viewer.action.filter_group')}
+                                icon={<SearchOutlined />}
+                                style={{
+                                    width: 26,
+                                    height: 26,
+                                    padding: 0,
+                                    borderRadius: 999,
+                                    borderColor: workbenchTheme.actionSecondaryBorder,
+                                    background: workbenchTheme.actionSecondaryBg,
+                                    color: workbenchTheme.accent,
+                                    boxShadow: 'none',
+                                }}
+                                onMouseDown={stopTreeTitleEvent}
+                                onClick={(event) => {
+                                    stopTreeTitleEvent(event);
+                                    handleFilterByGroup(treeNode);
+                                }}
+                            />
+                        </Tooltip>
+                        <Button
+                            size="small"
+                            style={{
+                                paddingInline: 10,
+                                height: 26,
+                                borderRadius: 999,
+                                flexShrink: 0,
+                                borderColor: workbenchTheme.accentBorder,
+                                background: workbenchTheme.accentSoft,
+                                color: workbenchTheme.accent,
+                                fontWeight: 600,
+                            }}
+                            onMouseDown={stopTreeTitleEvent}
+                            onClick={(event) => {
+                                stopTreeTitleEvent(event);
+                                handleSelectGroupDescendants(treeNode);
+                            }}
+                        >
+                            {groupFullyChecked ? tr('redis_viewer.action.clear_group_selection') : tr('redis_viewer.action.select_group')}
+                        </Button>
+                    </Space>
                 </div>
             );
         }

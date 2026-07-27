@@ -6868,6 +6868,7 @@
   "redis_viewer.action.edit": "Bearbeiten",
   "redis_viewer.action.export_all": "Alle exportieren",
   "redis_viewer.action.export_selected": "Auswahl exportieren",
+  "redis_viewer.action.filter_group": "Nach diesem Namensraum filtern",
   "redis_viewer.action.import": "Importieren",
   "redis_viewer.action.load_all": "Alle laden",
   "redis_viewer.action.load_more": "Mehr laden",

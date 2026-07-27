@@ -6868,6 +6868,7 @@
   "redis_viewer.action.edit": "編集",
   "redis_viewer.action.export_all": "すべてエクスポート",
   "redis_viewer.action.export_selected": "選択した Key をエクスポート",
+  "redis_viewer.action.filter_group": "この名前空間で絞り込む",
   "redis_viewer.action.import": "インポート",
   "redis_viewer.action.load_all": "すべて読み込む",
   "redis_viewer.action.load_more": "さらに読み込む",

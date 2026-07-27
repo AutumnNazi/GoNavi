@@ -6868,6 +6868,7 @@
   "redis_viewer.action.edit": "Редактировать",
   "redis_viewer.action.export_all": "Экспортировать все",
   "redis_viewer.action.export_selected": "Экспортировать выбранное",
+  "redis_viewer.action.filter_group": "Фильтровать по этому пространству имён",
   "redis_viewer.action.import": "Импортировать",
   "redis_viewer.action.load_all": "Загрузить все",
   "redis_viewer.action.load_more": "Загрузить еще",

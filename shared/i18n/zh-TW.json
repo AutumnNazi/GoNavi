@@ -6868,6 +6868,7 @@
   "redis_viewer.action.edit": "編輯",
   "redis_viewer.action.export_all": "匯出全部",
   "redis_viewer.action.export_selected": "匯出已選",
+  "redis_viewer.action.filter_group": "依此目錄篩選",
   "redis_viewer.action.import": "匯入",
   "redis_viewer.action.load_all": "載入全部",
   "redis_viewer.action.load_more": "載入更多",
