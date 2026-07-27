@@ -43,6 +43,7 @@ type Service struct {
 	guard              *safety.Guard
 	configDir          string // 配置存储目录
 	secretStore        secretstore.SecretStore
+	configChanged      func()
 	localizer          *i18n.Localizer
 	streamProducers    map[string]map[*aiStreamProducer]struct{}
 	streamHandoffCount int
@@ -157,6 +158,14 @@ var codebuddyCLIHealthCheckFunc = func(config ai.ProviderConfig) error {
 // NewService 创建 AI Service 实例
 func NewService() *Service {
 	return NewServiceWithSecretStore(secretstore.NewKeyringStore())
+}
+
+// NewServiceWithConfigChangeHandler creates a service that notifies the owner
+// after a persisted AI configuration change succeeds.
+func NewServiceWithConfigChangeHandler(handler func()) *Service {
+	service := NewService()
+	service.configChanged = handler
+	return service
 }
 
 func NewServiceWithSecretStore(store secretstore.SecretStore) *Service {
@@ -1987,7 +1996,7 @@ func (s *Service) loadConfig() {
 }
 
 func (s *Service) saveConfig() error {
-	return NewProviderConfigStoreWithLanguage(s.configDir, s.secretStore, s.serviceLanguageLocked()).Save(ProviderConfigStoreSnapshot{
+	err := NewProviderConfigStoreWithLanguage(s.configDir, s.secretStore, s.serviceLanguageLocked()).Save(ProviderConfigStoreSnapshot{
 		Providers:          s.providers,
 		ActiveProvider:     s.activeProvider,
 		SafetyLevel:        s.safetyLevel,
@@ -1997,6 +2006,10 @@ func (s *Service) saveConfig() error {
 		MCPHTTPServer:      s.mcpHTTPConfig,
 		Skills:             s.skills,
 	})
+	if err == nil && s.configChanged != nil {
+		s.configChanged()
+	}
+	return err
 }
 
 const maxUserPromptChars = 16000
