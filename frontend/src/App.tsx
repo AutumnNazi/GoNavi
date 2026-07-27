@@ -2368,6 +2368,7 @@ function App() {
       hideUpdateDownloadProgress,
       isAboutOpen,
       isBackgroundProgressForLatestUpdate,
+      isCheckingForUpdates,
       isLatestUpdateDownloaded,
       isUpdateChannelLoading,
       isUpdateChannelSaving,
@@ -5161,7 +5162,14 @@ function App() {
       lastUpdateInfo?.hasUpdate && !isLatestUpdateDownloaded && !isBackgroundProgressForLatestUpdate ? (
           <Button key="mute" onClick={muteLatestUpdate}>{t('app.about.action.mute_this_version')}</Button>
       ) : null,
-      <Button key="check" icon={<CloudDownloadOutlined />} onClick={() => checkForUpdates(false)}>{t('app.about.action.check_updates')}</Button>,
+      <Button
+          key="check"
+          icon={<CloudDownloadOutlined />}
+          loading={isCheckingForUpdates}
+          onClick={() => checkForUpdates(false)}
+      >
+          {t('app.about.action.check_updates')}
+      </Button>,
       closeAction ?? null,
       lastUpdateInfo?.hasUpdate && !isLatestUpdateDownloaded && !isBackgroundProgressForLatestUpdate ? (
           <Button key="download" type="primary" icon={<DownloadOutlined />} onClick={() => downloadUpdate(lastUpdateInfo, false)}>{updateDownloadActionLabel}</Button>
