@@ -649,9 +649,6 @@ func (r *RedisClientImpl) ScanKeys(pattern string, cursor uint64, count int64) (
 			}
 			seen[key] = struct{}{}
 			keys = append(keys, key)
-			if len(keys) >= int(targetCount) {
-				break
-			}
 		}
 
 		currentCursor = nextCursor

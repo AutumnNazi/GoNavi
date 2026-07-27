@@ -97,6 +97,50 @@ func redisBulkString(value string) string {
 	return fmt.Sprintf("$%d\r\n%s\r\n", len(value), value)
 }
 
+func TestScanKeysKeepsEntireRedisScanBatch(t *testing.T) {
+	addr := startRedisProtocolTestServer(t, func(args []string) string {
+		switch strings.ToUpper(strings.TrimSpace(args[0])) {
+		case "HELLO":
+			return "-ERR unknown command 'HELLO'\r\n"
+		case "CLIENT":
+			return "-ERR unknown subcommand\r\n"
+		case "SCAN":
+			return "*2\r\n$2\r\n42\r\n*3\r\n$5\r\nalpha\r\n$4\r\nbeta\r\n$5\r\ngamma\r\n"
+		case "TYPE":
+			return "+string\r\n"
+		case "TTL":
+			return ":-1\r\n"
+		}
+		return "+OK\r\n"
+	})
+
+	rawClient := goredis.NewClient(&goredis.Options{
+		Addr:     addr,
+		Protocol: 2,
+	})
+	client := &RedisClientImpl{
+		client:       rawClient,
+		singleClient: rawClient,
+	}
+	defer client.Close()
+
+	result, err := client.ScanKeys("*", 0, 1)
+	if err != nil {
+		t.Fatalf("ScanKeys returned error: %v", err)
+	}
+	if result.Cursor != "42" {
+		t.Fatalf("expected next cursor 42, got %q", result.Cursor)
+	}
+	if len(result.Keys) != 3 {
+		t.Fatalf("expected all 3 keys from the Redis SCAN batch, got %#v", result.Keys)
+	}
+	for index, key := range []string{"alpha", "beta", "gamma"} {
+		if result.Keys[index].Key != key {
+			t.Fatalf("expected key %q at index %d, got %#v", key, index, result.Keys)
+		}
+	}
+}
+
 // 回归保护：HGETALL 在 RESP3 下返回 map[interface{}]interface{}（go-redis v9 默认 RESP3），
 // 这种类型 encoding/json 无法序列化，原值穿透到 Wails RPC 会让 Windows 进程退出（用户感知闪退）。
 // formatCommandResult 必须把 map 平展成交错 [k1, v1, k2, v2, ...] array，前端按 array 渲染。
