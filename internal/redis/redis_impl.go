@@ -47,7 +47,6 @@ const (
 	redisScanMaxDuration              = 12 * time.Second
 	redisSearchMaxTargetCount   int64 = 1000
 	redisSearchMaxStepCount     int64 = 1000
-	redisSearchMaxRounds              = 16
 	redisSearchMaxDuration            = 3 * time.Second
 )
 
@@ -552,7 +551,9 @@ func (r *RedisClientImpl) ScanKeys(pattern string, cursor uint64, count int64) (
 		if scanStepCount > redisSearchMaxStepCount {
 			scanStepCount = redisSearchMaxStepCount
 		}
-		maxRounds = redisSearchMaxRounds
+		// SCAN MATCH 可能连续返回空批次，但后续 cursor 页仍然存在匹配 key。
+		// 搜索模式不使用固定轮数限制，改由 maxDuration 和 targetCount 兜底。
+		maxRounds = 0
 		maxDuration = redisSearchMaxDuration
 	}
 
@@ -604,7 +605,7 @@ func (r *RedisClientImpl) ScanKeys(pattern string, cursor uint64, count int64) (
 
 				nodeCursor = nextCursor
 				round++
-				if nodeCursor == 0 || round >= maxRounds {
+				if nodeCursor == 0 || (maxRounds > 0 && round >= maxRounds) {
 					break
 				}
 			}
@@ -653,7 +654,7 @@ func (r *RedisClientImpl) ScanKeys(pattern string, cursor uint64, count int64) (
 
 		currentCursor = nextCursor
 		round++
-		if currentCursor == 0 || round >= maxRounds {
+		if currentCursor == 0 || (maxRounds > 0 && round >= maxRounds) {
 			break
 		}
 	}
