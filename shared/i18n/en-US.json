@@ -8116,6 +8116,7 @@
   "table_designer.message.index_updated": "Index updated",
   "table_designer.message.indexes_deleted": "{{count}} indexes deleted",
   "table_designer.message.load_columns_failed": "Failed to load columns: {{detail}}",
+  "table_designer.message.load_indexes_failed": "Failed to load indexes: {{detail}}",
   "table_designer.message.no_changes_detected": "No changes detected",
   "table_designer.message.no_copyable_columns": "No copyable columns selected",
   "table_designer.message.no_index_changes": "No index changes detected",

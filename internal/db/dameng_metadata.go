@@ -188,6 +188,59 @@ func applyDamengAutoIncrementColumns(columns []connection.ColumnDefinition, data
 	return columns
 }
 
+func buildDamengIndexesQuery(dbName, tableName string) string {
+	upperDBName := strings.ReplaceAll(strings.ToUpper(strings.TrimSpace(dbName)), "'", "''")
+	upperTableName := strings.ReplaceAll(strings.ToUpper(strings.TrimSpace(tableName)), "'", "''")
+
+	if upperDBName == "" {
+		return fmt.Sprintf(`SELECT c.index_name, c.column_name, i.uniqueness, c.column_position, i.index_type
+			FROM user_ind_columns c
+			JOIN user_indexes i ON i.index_name = c.index_name
+			WHERE c.table_name = '%s'
+			  AND c.column_name IS NOT NULL
+			ORDER BY c.index_name, c.column_position`, upperTableName)
+	}
+
+	return fmt.Sprintf(`SELECT c.index_name, c.column_name, i.uniqueness, c.column_position, i.index_type
+		FROM all_ind_columns c
+		JOIN all_indexes i ON i.owner = c.index_owner AND i.index_name = c.index_name
+		WHERE c.table_owner = '%s'
+		  AND c.table_name = '%s'
+		  AND c.column_name IS NOT NULL
+		ORDER BY c.index_name, c.column_position`, upperDBName, upperTableName)
+}
+
+func buildDamengIndexDefinitions(data []map[string]interface{}) []connection.IndexDefinition {
+	indexes := make([]connection.IndexDefinition, 0, len(data))
+	for _, row := range data {
+		name := getDamengRowString(row, "INDEX_NAME")
+		columnName := getDamengRowString(row, "COLUMN_NAME")
+		if name == "" || columnName == "" {
+			continue
+		}
+
+		nonUnique := 1
+		if strings.EqualFold(getDamengRowString(row, "UNIQUENESS"), "UNIQUE") {
+			nonUnique = 0
+		}
+
+		seqInIndex, _ := getDamengRowInt(row, "COLUMN_POSITION")
+		indexType := getDamengRowString(row, "INDEX_TYPE")
+		if indexType == "" {
+			indexType = "BTREE"
+		}
+
+		indexes = append(indexes, connection.IndexDefinition{
+			Name:       name,
+			ColumnName: columnName,
+			NonUnique:  nonUnique,
+			SeqInIndex: seqInIndex,
+			IndexType:  indexType,
+		})
+	}
+	return indexes
+}
+
 func buildDamengForeignKeysQuery(dbName, tableName string) string {
 	upperDBName := strings.ToUpper(strings.TrimSpace(dbName))
 	upperTableName := strings.ToUpper(strings.TrimSpace(tableName))

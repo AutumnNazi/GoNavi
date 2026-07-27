@@ -8116,6 +8116,7 @@
   "table_designer.message.index_updated": "Index aktualisiert",
   "table_designer.message.indexes_deleted": "{{count}} Indizes gelöscht",
   "table_designer.message.load_columns_failed": "Spalten konnten nicht geladen werden: {{detail}}",
+  "table_designer.message.load_indexes_failed": "Indizes konnten nicht geladen werden: {{detail}}",
   "table_designer.message.no_changes_detected": "Keine Änderungen erkannt",
   "table_designer.message.no_copyable_columns": "Keine kopierbaren Spalten ausgewählt",
   "table_designer.message.no_index_changes": "Keine Indexänderungen erkannt",

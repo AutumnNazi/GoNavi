@@ -332,40 +332,11 @@ func (d *DamengDB) GetColumns(dbName, tableName string) ([]connection.ColumnDefi
 }
 
 func (d *DamengDB) GetIndexes(dbName, tableName string) ([]connection.IndexDefinition, error) {
-	query := fmt.Sprintf(`SELECT index_name, column_name, uniqueness 
-		FROM all_ind_columns 
-		JOIN all_indexes USING (index_name, owner) 
-		WHERE table_owner = '%s' AND table_name = '%s'`,
-		strings.ToUpper(dbName), strings.ToUpper(tableName))
-
-	if dbName == "" {
-		query = fmt.Sprintf(`SELECT index_name, column_name, uniqueness 
-			FROM user_ind_columns 
-			JOIN user_indexes USING (index_name) 
-			WHERE table_name = '%s'`, strings.ToUpper(tableName))
-	}
-
-	data, _, err := d.Query(query)
+	data, _, err := d.Query(buildDamengIndexesQuery(dbName, tableName))
 	if err != nil {
 		return nil, err
 	}
-
-	var indexes []connection.IndexDefinition
-	for _, row := range data {
-		unique := 1
-		if val, ok := row["UNIQUENESS"]; ok && val == "UNIQUE" {
-			unique = 0
-		}
-
-		idx := connection.IndexDefinition{
-			Name:       fmt.Sprintf("%v", row["INDEX_NAME"]),
-			ColumnName: fmt.Sprintf("%v", row["COLUMN_NAME"]),
-			NonUnique:  unique,
-			IndexType:  "BTREE",
-		}
-		indexes = append(indexes, idx)
-	}
-	return indexes, nil
+	return buildDamengIndexDefinitions(data), nil
 }
 
 func (d *DamengDB) GetForeignKeys(dbName, tableName string) ([]connection.ForeignKeyDefinition, error) {

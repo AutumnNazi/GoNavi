@@ -61,6 +61,19 @@ func (damengColumnsMetadataConn) QueryContext(_ context.Context, query string, _
 		}, nil
 	}
 
+	if strings.Contains(query, "all_ind_columns") {
+		if !strings.Contains(query, "i.owner = c.index_owner AND i.index_name = c.index_name") {
+			return nil, errors.New("ALL_IND_COLUMNS must join ALL_INDEXES through INDEX_OWNER")
+		}
+		return &damengColumnsMetadataRows{
+			columns: []string{"INDEX_NAME", "COLUMN_NAME", "UNIQUENESS", "COLUMN_POSITION", "INDEX_TYPE"},
+			values: [][]driver.Value{
+				{"IDX_ORDERS_TENANT_CREATED", "TENANT_ID", "NONUNIQUE", int64(1), "NORMAL"},
+				{"IDX_ORDERS_TENANT_CREATED", "CREATED_AT", "NONUNIQUE", int64(2), "NORMAL"},
+			},
+		}, nil
+	}
+
 	return &damengColumnsMetadataRows{
 		columns: []string{
 			"COLUMN_NAME", "DATA_TYPE", "DATA_LENGTH", "CHAR_LENGTH", "DATA_PRECISION",
@@ -158,5 +171,29 @@ func TestDamengGetColumnsKeepsBaseMetadataWhenAutoIncrementQueryFails(t *testing
 	}
 	if len(columns) != 2 || columns[0].Name != "ID" || columns[0].Extra != "" {
 		t.Fatalf("unexpected fallback columns: %+v", columns)
+	}
+}
+
+func TestDamengGetIndexesUsesIndexOwnerJoinAndMapsColumnOrder(t *testing.T) {
+	resetDamengColumnsMetadataQueryState(t, false)
+
+	damengDB := &DamengDB{conn: openDamengColumnsMetadataDB(t)}
+	indexes, err := damengDB.GetIndexes("biz", "orders")
+	if err != nil {
+		t.Fatalf("GetIndexes returned error: %v", err)
+	}
+	if len(indexes) != 2 {
+		t.Fatalf("unexpected index column count: %d", len(indexes))
+	}
+	if indexes[0].Name != "IDX_ORDERS_TENANT_CREATED" || indexes[0].ColumnName != "TENANT_ID" || indexes[0].SeqInIndex != 1 || indexes[0].IndexType != "NORMAL" {
+		t.Fatalf("unexpected first index column: %+v", indexes[0])
+	}
+	if indexes[1].ColumnName != "CREATED_AT" || indexes[1].SeqInIndex != 2 {
+		t.Fatalf("unexpected second index column: %+v", indexes[1])
+	}
+
+	queries := damengColumnsMetadataQueries()
+	if len(queries) != 1 || !strings.Contains(queries[0], "c.table_owner = 'BIZ'") || !strings.Contains(queries[0], "c.table_name = 'ORDERS'") {
+		t.Fatalf("expected one normalized schema index query, got=%v", queries)
 	}
 }

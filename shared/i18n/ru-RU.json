@@ -8116,6 +8116,7 @@
   "table_designer.message.index_updated": "Индекс обновлен",
   "table_designer.message.indexes_deleted": "{{count}} индексов удалено",
   "table_designer.message.load_columns_failed": "Не удалось загрузить столбцы: {{detail}}",
+  "table_designer.message.load_indexes_failed": "Не удалось загрузить индексы: {{detail}}",
   "table_designer.message.no_changes_detected": "Изменения не обнаружены",
   "table_designer.message.no_copyable_columns": "Не выбраны столбцы для копирования",
   "table_designer.message.no_index_changes": "Изменения индекса не обнаружены",

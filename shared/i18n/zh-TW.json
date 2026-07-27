@@ -8116,6 +8116,7 @@
   "table_designer.message.index_updated": "索引修改成功",
   "table_designer.message.indexes_deleted": "{{count}} 個索引刪除成功",
   "table_designer.message.load_columns_failed": "載入欄位失敗：{{detail}}",
+  "table_designer.message.load_indexes_failed": "載入索引失敗：{{detail}}",
   "table_designer.message.no_changes_detected": "未偵測到變更",
   "table_designer.message.no_copyable_columns": "未選取可複製欄位",
   "table_designer.message.no_index_changes": "未偵測到索引變更",

@@ -9,7 +9,7 @@ import Editor from './MonacoEditor';
 import { TabData, ColumnDefinition, IndexDefinition, ForeignKeyDefinition, TriggerDefinition } from '../types';
 import { useStore } from '../store';
 import { DBGetColumns, DBGetIndexes, DBQueryAudited, DBGetForeignKeys, DBGetTriggers, DBShowCreateTable } from '../../wailsjs/go/app/App';
-import { hasIndexFormChanged, normalizeIndexFormFromRow, shouldRestoreOriginalIndex, toggleIndexSelection as getNextIndexSelection, type IndexDisplaySnapshot } from './tableDesignerIndexUtils';
+import { hasIndexFormChanged, normalizeIndexFormFromRow, resolveIndexMetadataResponse, shouldRestoreOriginalIndex, toggleIndexSelection as getNextIndexSelection, type IndexDisplaySnapshot } from './tableDesignerIndexUtils';
 import { buildIndexCreateSqlPreview } from './tableDesignerIndexSql';
 import { buildAlterTablePreviewSql, buildCreateTablePreviewSql, hasAlterTableDraftChanges, type StarRocksCreateTableOptions, type StarRocksDistributionType, type StarRocksKeyModel, type StarRocksTableKind } from './tableDesignerSchemaSql';
 import { summarizeDuckDbPrimaryKeyChange } from './tableDesignerDuckDbPrimaryKey';
@@ -1026,10 +1026,20 @@ const TableDesigner: React.FC<{ tab: TabData; embedded?: boolean }> = ({ tab, em
     const loadIndexes = DBGetIndexes(rpcConfig, dbName, tableName)
         .then((idxRes) => {
             if (!isCurrentRequest()) return;
-            setIndexes(idxRes.success && Array.isArray(idxRes.data) ? idxRes.data : []);
+            const result = resolveIndexMetadataResponse<IndexDefinition>(idxRes);
+            setIndexes(result.indexes);
+            if (result.errorDetail !== null) {
+                message.error(t('table_designer.message.load_indexes_failed', {
+                    detail: result.errorDetail || t('table_designer.fallback.unknown_error', undefined, i18nLanguage),
+                }, i18nLanguage));
+            }
         })
-        .catch(() => {
-            if (isCurrentRequest()) setIndexes([]);
+        .catch((error: unknown) => {
+            if (!isCurrentRequest()) return;
+            setIndexes([]);
+            message.error(t('table_designer.message.load_indexes_failed', {
+                detail: formatLoadError(error) || t('table_designer.fallback.unknown_error', undefined, i18nLanguage),
+            }, i18nLanguage));
         })
         .finally(() => {
             if (isCurrentRequest()) setIndexesLoading(false);

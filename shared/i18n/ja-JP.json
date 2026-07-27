@@ -8116,6 +8116,7 @@
   "table_designer.message.index_updated": "インデックスを更新しました",
   "table_designer.message.indexes_deleted": "{{count}} 件のインデックスを削除しました",
   "table_designer.message.load_columns_failed": "列の読み込みに失敗しました: {{detail}}",
+  "table_designer.message.load_indexes_failed": "インデックスの読み込みに失敗しました: {{detail}}",
   "table_designer.message.no_changes_detected": "変更は検出されませんでした",
   "table_designer.message.no_copyable_columns": "コピーできる列が選択されていません",
   "table_designer.message.no_index_changes": "インデックスの変更は検出されませんでした",
