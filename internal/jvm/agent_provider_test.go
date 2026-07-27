@@ -232,6 +232,9 @@ func startAgentFixture(t *testing.T) agentFixtureProcess {
 	}
 
 	classesDir := filepath.Join(t.TempDir(), "agent-fixture-classes")
+	if err := os.MkdirAll(classesDir, 0o755); err != nil {
+		t.Fatalf("create agent fixture classes directory failed: %v", err)
+	}
 	sourceRoot := filepath.Join(testRepoRoot(t), "internal", "jvm", "testdata", "agentfixture", "src")
 	javaFiles, err := filepath.Glob(filepath.Join(sourceRoot, "com", "gonavi", "fixture", "*.java"))
 	if err != nil {

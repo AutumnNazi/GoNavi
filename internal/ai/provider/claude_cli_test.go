@@ -676,12 +676,11 @@ func assertClaudeCLIRuntimeErrorIsEnglish(t *testing.T, message string) {
 }
 
 func TestClaudeCLIProvider_ChatStreamAllowsDelayedMeaningfulResponse(t *testing.T) {
-	fakeClaude := writeFakeClaudeScript(t, "#!/bin/sh\necho '{\"type\":\"system\",\"subtype\":\"init\"}'\nsleep 0.2\necho '{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"text\",\"text\":\"OK\"}]}}'\necho '{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"result\":\"OK\"}'\n")
-	restore := overrideClaudeCLIForTest(t, fakeClaude)
+	restore := overrideClaudeCLIWithTestProcess(t, "delayed-stream-success")
 	defer restore()
 
 	originalRequestTimeout := claudeCLIRequestTimeout
-	claudeCLIRequestTimeout = 1 * time.Second
+	claudeCLIRequestTimeout = 5 * time.Second
 	defer func() {
 		claudeCLIRequestTimeout = originalRequestTimeout
 	}()
@@ -959,6 +958,12 @@ func TestClaudeCLIHelperProcess(t *testing.T) {
 		os.Exit(0)
 	case "model-success":
 		_, _ = os.Stdout.WriteString(`{"type":"result","subtype":"success","is_error":false,"result":"model request should not run"}`)
+		os.Exit(0)
+	case "delayed-stream-success":
+		_, _ = os.Stdout.WriteString("{\"type\":\"system\",\"subtype\":\"init\"}\n")
+		time.Sleep(200 * time.Millisecond)
+		_, _ = os.Stdout.WriteString("{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"text\",\"text\":\"OK\"}]}}\n")
+		_, _ = os.Stdout.WriteString("{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"result\":\"OK\"}\n")
 		os.Exit(0)
 	case "sleep":
 		time.Sleep(5 * time.Second)

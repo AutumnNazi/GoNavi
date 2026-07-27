@@ -2056,7 +2056,17 @@ func (s *Service) loadSessionFile(sessionID string) (sessionFileData, error) {
 	return sessionData, nil
 }
 
+func (s *Service) ensureSessionsDir() error {
+	if err := os.MkdirAll(s.sessionsDir(), 0o755); err != nil {
+		return s.serviceError("ai_service.backend.error.sessions_dir_create_failed", nil, err)
+	}
+	return nil
+}
+
 func (s *Service) loadOrCreateSessionFile(sessionID string) (sessionFileData, error) {
+	if err := s.ensureSessionsDir(); err != nil {
+		return sessionFileData{}, err
+	}
 	sessionData, err := s.loadSessionFile(sessionID)
 	if err == nil {
 		return sessionData, nil
@@ -2073,9 +2083,8 @@ func (s *Service) loadOrCreateSessionFile(sessionID string) (sessionFileData, er
 }
 
 func (s *Service) saveSessionFile(sessionID string, sessionData sessionFileData) error {
-	dir := s.sessionsDir()
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return s.serviceError("ai_service.backend.error.sessions_dir_create_failed", nil, err)
+	if err := s.ensureSessionsDir(); err != nil {
+		return err
 	}
 	if strings.TrimSpace(sessionData.ID) == "" {
 		sessionData.ID = sessionID

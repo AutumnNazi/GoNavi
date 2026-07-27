@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -521,6 +522,9 @@ func startEndpointFixture(t *testing.T) endpointFixtureProcess {
 	}
 
 	classesDir := filepath.Join(t.TempDir(), "endpoint-fixture-classes")
+	if err := os.MkdirAll(classesDir, 0o755); err != nil {
+		t.Fatalf("create endpoint fixture classes directory failed: %v", err)
+	}
 	sourceRoot := filepath.Join(testRepoRoot(t), "internal", "jvm", "testdata", "endpointfixture", "src")
 	javaFiles, err := filepath.Glob(filepath.Join(sourceRoot, "com", "gonavi", "fixture", "*.java"))
 	if err != nil {
