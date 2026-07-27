@@ -193,9 +193,9 @@ vi.mock("@ant-design/icons", () => {
     CloudOutlined: Icon,
     CheckCircleFilled: Icon,
     CloseCircleFilled: Icon,
-    LinkOutlined: Icon,
-    EditOutlined: Icon,
-    AppstoreOutlined: Icon,
+    ArrowLeftOutlined: Icon,
+    CloseOutlined: Icon,
+    PlusOutlined: Icon,
     BgColorsOutlined: Icon,
     ApiOutlined: Icon,
     ClusterOutlined: Icon,
@@ -382,6 +382,8 @@ describe("ConnectionModal i18n", () => {
     vi.stubGlobal("window", {
       setTimeout,
       clearTimeout,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
     });
     storeState.theme = "light";
     storeState.languagePreference = "zh-CN";
@@ -504,7 +506,8 @@ describe("ConnectionModal i18n", () => {
 
       expect(textContent(renderer!.toJSON())).toContain("选择数据源类型");
       expect(textContent(renderer!.toJSON())).toContain("选择数据源");
-      expect(textContent(renderer!.toJSON())).toContain("取消");
+      expect(textContent(renderer!.toJSON())).toContain("1 选类型");
+      expect(textContent(renderer!.toJSON())).toContain("SSL");
 
       await act(async () => {
         findClickableCard(renderer!, "MySQL").props.onClick();
@@ -519,7 +522,9 @@ describe("ConnectionModal i18n", () => {
         renderer!.update(<ConnectionModal open onClose={vi.fn()} />);
       });
 
-      expect(textContent(renderer!.toJSON())).toContain("新建 MySQL 连接");
+      expect(textContent(renderer!.toJSON())).toContain("MySQL 连接");
+      expect(textContent(renderer!.toJSON())).toContain("2 参数");
+      expect(textContent(renderer!.toJSON())).toContain("未测试");
       expect(textContent(renderer!.toJSON())).toContain("名称");
       expect(textContent(renderer!.toJSON())).toContain("测试连接");
       expect(textContent(renderer!.toJSON())).toContain("保存");
@@ -552,13 +557,15 @@ describe("ConnectionModal i18n", () => {
       expect(textContent(renderer!.toJSON())).toContain("Select connection type");
       expect(textContent(renderer!.toJSON())).toContain("Click to configure");
       expect(textContent(renderer!.toJSON())).toContain("Categories");
-      expect(textContent(renderer!.toJSON())).toContain("Cancel");
+      expect(textContent(renderer!.toJSON())).toContain("1 Choose type");
 
       await act(async () => {
         findClickableCard(renderer!, "MySQL").props.onClick();
       });
 
-      expect(textContent(renderer!.toJSON())).toContain("New MySQL connection");
+      expect(textContent(renderer!.toJSON())).toContain("MySQL connection");
+      expect(textContent(renderer!.toJSON())).toContain("2 Parameters");
+      expect(textContent(renderer!.toJSON())).toContain("Not tested");
       expect(textContent(renderer!.toJSON())).toContain("Name");
       expect(textContent(renderer!.toJSON())).toContain("Test connection");
       expect(textContent(renderer!.toJSON())).toContain("Save");
@@ -630,7 +637,7 @@ describe("ConnectionModal i18n", () => {
         findClickableCard(renderer!, sourceLabel).props.onClick();
       });
 
-      // Demo：生产保护默认展开；折叠后选项文案应消失
+      // A · Studio：生产保护默认展开，折叠后选项文案隐藏。
       let pageText = textContent(renderer!.toJSON());
       expect(pageText).toContain(expectations[0]);
       expect(pageText).toContain(expectations[2]);
@@ -647,22 +654,8 @@ describe("ConnectionModal i18n", () => {
 
       pageText = textContent(renderer!.toJSON());
       expect(pageText).toContain(expectations[0]);
-      expect(pageText).toContain(
-        language === "zh-CN" ? "未限制" : "No restrictions",
-      );
       expect(pageText).not.toContain(expectations[2]);
       expect(pageText).not.toContain(expectations[3]);
-
-      await act(async () => {
-        protectionToggle.props.onClick({ stopPropagation: vi.fn() });
-      });
-
-      pageText = textContent(renderer!.toJSON());
-      expectations
-        .filter((expected) => expected !== expectations[1])
-        .forEach((expected) => {
-          expect(pageText).toContain(expected);
-        });
       expect(pageText).not.toContain("connection.modal.section.undefined.title");
       expect(pageText).not.toContain("connection.modal.section.undefined.description");
     },
@@ -1096,6 +1089,15 @@ describe("ConnectionModal i18n", () => {
       message: "backend raw error: /tmp/app.db",
     });
     const { default: ConnectionModal } = await import("./ConnectionModal");
+    let dismissUriFeedback: (() => void) | undefined;
+    const uriFeedbackTimer = vi.fn((callback: () => void, delay: number) => {
+      if (delay === 4000) dismissUriFeedback = callback;
+      return 1;
+    });
+    Object.assign(window, {
+      setTimeout: uriFeedbackTimer,
+      clearTimeout: vi.fn(),
+    });
 
     let renderer: ReactTestRenderer;
     await act(async () => {
@@ -1115,6 +1117,12 @@ describe("ConnectionModal i18n", () => {
     });
 
     expect(textContent(renderer!.toJSON())).toContain("URI generated.");
+    expect(uriFeedbackTimer).toHaveBeenCalledWith(expect.any(Function), 4000);
+
+    await act(async () => {
+      dismissUriFeedback?.();
+    });
+    expect(textContent(renderer!.toJSON())).not.toContain("URI generated.");
 
     await act(async () => {
       findButton(renderer!, "Back").props.onClick();
@@ -1130,6 +1138,45 @@ describe("ConnectionModal i18n", () => {
     expect(antdMessage.error).toHaveBeenCalledWith(
       "Failed to select database file: backend raw error: /tmp/app.db",
     );
+  });
+
+  it("automatically dismisses URI warning feedback after four seconds", async () => {
+    storeState.appearance.uiVersion = "legacy";
+    setCurrentLanguage("en-US");
+    const { default: ConnectionModal } = await import("./ConnectionModal");
+    let dismissUriFeedback: (() => void) | undefined;
+    const uriFeedbackTimer = vi.fn((callback: () => void, delay: number) => {
+      if (delay === 4000) dismissUriFeedback = callback;
+      return 1;
+    });
+    Object.assign(window, {
+      setTimeout: uriFeedbackTimer,
+      clearTimeout: vi.fn(),
+    });
+
+    let renderer: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<ConnectionModal open onClose={vi.fn()} />);
+    });
+    await act(async () => {
+      findClickableCard(renderer!, "MySQL").props.onClick();
+    });
+    await act(async () => {
+      expandUriSection(renderer!);
+    });
+    const parseUriButton = findButton(renderer!, "Parse from URI");
+    expect(parseUriButton, textContent(renderer!.toJSON())).toBeDefined();
+    await act(async () => {
+      parseUriButton.props.onClick();
+    });
+
+    expect(textContent(renderer!.toJSON())).toContain("Enter a URI first");
+    expect(uriFeedbackTimer).toHaveBeenCalledWith(expect.any(Function), 4000);
+
+    await act(async () => {
+      dismissUriFeedback?.();
+    });
+    expect(textContent(renderer!.toJSON())).not.toContain("Enter a URI first");
   });
 
   it("retranslates test failure feedback while preserving raw detail when language changes in-place", async () => {

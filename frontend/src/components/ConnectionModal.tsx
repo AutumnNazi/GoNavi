@@ -20,9 +20,9 @@ import {
   FileTextOutlined,
   CheckCircleFilled,
   CloseCircleFilled,
-  LinkOutlined,
-  EditOutlined,
-  AppstoreOutlined,
+  ArrowLeftOutlined,
+  CloseOutlined,
+  PlusOutlined,
   ApiOutlined,
   ClusterOutlined,
   CodeOutlined,
@@ -170,7 +170,8 @@ const PRIMARY_USERNAME_OPTIONAL_TYPES = new Set([
 /** Step1 选型网格需要较宽；Step2 密排表单对齐 Demo ~600，避免右侧空洞或输入框被拉超长 */
 const CONNECTION_MODAL_WIDTH_STEP1 = 960;
 const CONNECTION_MODAL_WIDTH_STEP2 = 600;
-const CONNECTION_MODAL_BODY_HEIGHT = 620;
+// A · Studio 第一步整体高度约 560px，扣除头部后主体固定为 500px。
+const CONNECTION_MODAL_BODY_HEIGHT = 500;
 const REDIS_DEFAULT_DATABASE_COUNT = 16;
 const CLICKHOUSE_PROTOCOL_OPTIONS: Array<{
   value: ClickHouseProtocolChoice;
@@ -2440,6 +2441,25 @@ const ConnectionModal: React.FC<{
     setDbTypeQuery("");
   };
 
+  useEffect(() => {
+    if (!open || step !== 1 || typeof window === "undefined") return;
+    // Studio 选型页快捷键处理器，仅在第一步挂载。
+    const focusStudioSearch = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "k") {
+        return;
+      }
+      // 当前弹窗内的数据源搜索框。
+      const searchInput = document.querySelector<HTMLInputElement>(
+        '.connection-modal-wrap [data-connection-type-search="true"]',
+      );
+      if (!searchInput) return;
+      event.preventDefault();
+      searchInput.focus();
+    };
+    window.addEventListener("keydown", focusStudioSearch);
+    return () => window.removeEventListener("keydown", focusStudioSearch);
+  }, [open, step]);
+
   const dbTypes = getAllConnectionTypeCatalogItems();
 
   const recentConnectionChips = useMemo(() => {
@@ -2511,8 +2531,12 @@ const ConnectionModal: React.FC<{
               onChange={(event) => handleDbTypeQueryChange(event.target.value)}
               placeholder={t("connection.modal.step1.search.placeholder")}
               className="gn-conn-picker-search-input"
+              data-connection-type-search="true"
               {...noAutoCapInputProps}
             />
+            <kbd className="gn-conn-picker-search-shortcut">
+              {isMacLikePlatform() ? "Cmd K" : "Ctrl K"}
+            </kbd>
           </div>
 
           {recentConnectionChips.length > 0 ? (
@@ -2588,6 +2612,15 @@ const ConnectionModal: React.FC<{
           <div className="gn-conn-picker-grid">
             {visibleDbTypeItems.map((item) => {
               const color = getDbDefaultColor(item.key);
+              // 卡片所属的数据源分类展示标签。
+              const categoryLabel = localizedDbTypeGroups.find((group) =>
+                group.items.some((groupItem) => groupItem.key === item.key),
+              )?.label;
+              // Studio 卡片底部展示标签，不参与连接逻辑。
+              const studioTags = [
+                categoryLabel,
+                supportsSSLForType(item.key) ? "SSL" : null,
+              ].filter((tag): tag is string => Boolean(tag));
               return (
                 <button
                   key={item.key}
@@ -2613,6 +2646,15 @@ const ConnectionModal: React.FC<{
                       </div>
                     </div>
                   </div>
+                  {studioTags.length > 0 ? (
+                    <div className="gn-conn-type-card-tags" aria-hidden="true">
+                      {studioTags.map((tag) => (
+                        <span key={tag} className="gn-conn-type-card-tag">
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
+                  ) : null}
                 </button>
               );
             })}
@@ -2696,6 +2738,7 @@ const ConnectionModal: React.FC<{
         renderJvmSectionHeader,
         renderStoredSecretControls,
         resolvedUriFeedbackMessage,
+        resolvedTestResultMessage,
         rocketmqTopology,
         selectingCertificateField,
         selectingDbFile,
@@ -2735,11 +2778,7 @@ const ConnectionModal: React.FC<{
 
   const getFooter = () => {
     if (step === 1) {
-      return [
-        <Button key="cancel" onClick={onClose}>
-          {t("common.action.cancel")}
-        </Button>,
-      ];
+      return null;
     }
     const isTestSuccess = testResult?.type === "success";
     const hasTestError = !!testResult && !isTestSuccess;
@@ -2754,74 +2793,40 @@ const ConnectionModal: React.FC<{
       driverStatusChecking ||
       !!unsupportedJvmModeMessage;
     return (
-      <div
-        style={{
-          display: "flex",
-          width: "100%",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 12,
-          padding: "4px 2px 0",
-        }}
-      >
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-            flex: 1,
-            minWidth: 0,
-          }}
-        >
+      <div className="gn-conn-studio-foot">
+        <div className="gn-conn-studio-foot-left">
           {!initialValues && (
-            <Button key="back" onClick={() => setStep(1)}>
+            <Button
+              key="back"
+              className="gn-conn-studio-button"
+              icon={<ArrowLeftOutlined />}
+              onClick={() => setStep(1)}
+            >
               {t("common.action.back")}
             </Button>
           )}
-          {testResult ? (
-            <span
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 6,
-                height: 24,
-                padding: "0 10px",
-                borderRadius: 999,
-                border: isTestSuccess
-                  ? "1px solid rgba(82, 196, 26, 0.35)"
-                  : "1px solid rgba(255, 77, 79, 0.35)",
-                background: isTestSuccess
-                  ? "rgba(82, 196, 26, 0.10)"
-                  : "rgba(255, 77, 79, 0.10)",
-                color: isTestSuccess ? "#389e0d" : "#cf1322",
-                fontSize: 12,
-                lineHeight: "22px",
-                whiteSpace: "nowrap",
-                boxSizing: "border-box",
-              }}
-            >
+          <span
+            className="gn-conn-studio-foot-status"
+            data-status={testResult ? (isTestSuccess ? "success" : "error") : "idle"}
+          >
+            {testResult ? (
+              <>
               {isTestSuccess ? <CheckCircleFilled /> : <CloseCircleFilled />}
-              <span>
-                {isTestSuccess
-                  ? t("connection.status.success")
-                  : t("connection.status.failure")}
-              </span>
-            </span>
-          ) : null}
+                <span>
+                  {isTestSuccess
+                    ? t("connection.status.success")
+                    : t("connection.status.failure")}
+                </span>
+              </>
+            ) : (
+              t("connection.modal.studio.test.idle")
+            )}
+          </span>
           {hasTestError && (
             <span
               data-connection-test-error-summary="true"
               title={testFailureSummary}
-              style={{
-                minWidth: 0,
-                flex: 1,
-                color: "#cf1322",
-                fontSize: 12,
-                lineHeight: "20px",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-              }}
+              className="gn-conn-studio-foot-error"
             >
               {testFailureSummary}
             </span>
@@ -2830,35 +2835,30 @@ const ConnectionModal: React.FC<{
             <Button
               size="small"
               icon={<FileTextOutlined />}
-              style={{
-                height: 24,
-                borderRadius: 999,
-                padding: "0 10px",
-                borderColor: "#ffccc7",
-                background: "#fff2f0",
-                color: "#cf1322",
-              }}
+              className="gn-conn-studio-details-button"
               onClick={() => setTestErrorLogOpen(true)}
             >
               {t("connection.action.viewDetails")}
             </Button>
           )}
         </div>
-        <Space size={8} style={{ flexShrink: 0 }}>
+        <Space size={8} className="gn-conn-studio-foot-right">
           <Button
             key="test"
+            className="gn-conn-studio-button"
             loading={testingConnection}
             disabled={operationBlocked || saving}
             onClick={requestTest}
           >
             {t("connection.action.test")}
           </Button>
-          <Button key="cancel" onClick={onClose}>
+          <Button key="cancel" className="gn-conn-studio-button" onClick={onClose}>
             {t("common.action.cancel")}
           </Button>
           <Button
             key="submit"
             type="primary"
+            className="gn-conn-studio-button"
             loading={saving}
             disabled={operationBlocked || testingConnection}
             onClick={handleOk}
@@ -2870,46 +2870,97 @@ const ConnectionModal: React.FC<{
     );
   };
 
-  const getTitle = () => {
-    if (step === 1) {
-      return renderConnectionModalTitle(
-        <AppstoreOutlined />,
-        t("connection.modal.title.step1"),
-        t("connection.modal.description.step1"),
-      );
-    }
+  const getStudioTitle = () => {
     const typeName = dbTypes.find((t) => t.key === dbType)?.name || dbType;
-    return initialValues
-      ? renderConnectionModalTitle(
-          <EditOutlined />,
-          t("connection.modal.title.edit"),
-          t("connection.modal.description.edit", { type: typeName }),
-        )
-      : renderConnectionModalTitle(
-          <LinkOutlined />,
-          t("connection.modal.title.create", { type: typeName }),
-          t("connection.modal.description.create"),
-        );
+    // 是否处于第一步数据源选型页。
+    const pickerStep = step === 1;
+    // Studio 标题栏三段进度文案。
+    const stepItems = pickerStep
+      ? [
+          t("connection.modal.studio.step.chooseType"),
+          t("connection.modal.studio.step.configure"),
+          t("connection.modal.studio.step.testSave"),
+        ]
+      : [
+          t("connection.modal.studio.step.type"),
+          t("connection.modal.studio.step.params"),
+          t("connection.modal.studio.step.save"),
+        ];
+    // 当前步骤对应的标题文案。
+    const title = pickerStep
+      ? t("connection.modal.title.step1")
+      : initialValues
+        ? t("connection.modal.studio.title.edit", { type: typeName })
+        : t("connection.modal.studio.title.connection", { type: typeName });
+    return (
+      <div className="gn-conn-studio-header" data-connection-step={step}>
+        <div className="gn-conn-studio-header-left">
+          <div
+            className="gn-conn-studio-type-badge"
+            style={pickerStep ? undefined : { background: getDbDefaultColor(dbType) }}
+            aria-hidden="true"
+          >
+            {pickerStep ? <PlusOutlined /> : getDbIcon(dbType, "#ffffff", 28)}
+          </div>
+          <div className="gn-conn-studio-heading">
+            <div className="gn-conn-studio-title">{title}</div>
+            {pickerStep ? (
+              <div className="gn-conn-studio-subtitle">
+                {t("connection.modal.description.step1")}
+              </div>
+            ) : null}
+          </div>
+        </div>
+        <div className="gn-conn-studio-steps" aria-label={t("connection.modal.studio.progress")}>
+          {stepItems.map((item, index) => {
+            // 当前高亮的进度节点。
+            const active = pickerStep ? index === 0 : index === 1;
+            // 已完成的进度节点。
+            const done = !pickerStep && index === 0;
+            return (
+              <React.Fragment key={item}>
+                {index > 0 ? (
+                  <RightOutlined className="gn-conn-studio-step-arrow" aria-hidden="true" />
+                ) : null}
+                <span data-active={active ? "true" : undefined} data-done={done ? "true" : undefined}>
+                  {index + 1} {item}
+                </span>
+              </React.Fragment>
+            );
+          })}
+        </div>
+        <button
+          type="button"
+          className="gn-conn-studio-close"
+          aria-label={t("common.action.close")}
+          title={t("common.action.close")}
+          onClick={onClose}
+        >
+          <CloseOutlined />
+        </button>
+      </div>
+    );
   };
 
   const isFormStep = step !== 1;
   // Step2 对齐 demo `.frame-form { height: fit-content }`，避免固定 620 撑出大片空白
   const modalBodyStyle = {
-    padding: isFormStep ? "10px 12px 12px" : "12px 24px 18px",
+    padding: 0,
     height: isFormStep ? "auto" : CONNECTION_MODAL_BODY_HEIGHT,
-    maxHeight: isFormStep ? "min(720px, calc(100vh - 160px))" : undefined,
+    maxHeight: isFormStep ? "min(720px, calc(100vh - 132px))" : undefined,
     minHeight: isFormStep ? 0 : CONNECTION_MODAL_BODY_HEIGHT,
-    overflowY: "auto" as const,
+    overflowY: "hidden" as const,
     overflowX: "hidden" as const,
   };
 
   return (
     <>
       <Modal
-        title={getTitle()}
+        title={getStudioTitle()}
         open={open}
         onCancel={onClose}
         footer={getFooter()}
+        closable={false}
         centered
         wrapClassName={
           isFormStep
@@ -2922,17 +2973,9 @@ const ConnectionModal: React.FC<{
         maskClosable={false}
         styles={{
           content: modalShellStyle,
-          header: {
-            background: "transparent",
-            borderBottom: "none",
-            paddingBottom: 8,
-          },
+          header: { background: "transparent" },
           body: modalBodyStyle,
-          footer: {
-            background: "transparent",
-            borderTop: "none",
-            paddingTop: 10,
-          },
+          footer: { background: "transparent" },
         }}
       >
         {step === 1 ? renderStep1() : renderStep2()}
