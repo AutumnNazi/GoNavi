@@ -35,6 +35,12 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      - name: Prepare frontend embed
+        shell: bash
+        run: |
+          mkdir -p frontend/dist
+          printf '<!doctype html><title>GoNavi test</title>\n' > frontend/dist/index.html
+
       - name: Run backend tests
         run: go test ./... -count=1 -timeout=30m
 

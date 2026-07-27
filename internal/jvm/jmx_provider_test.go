@@ -788,7 +788,8 @@ func startJMXFixture(t *testing.T) jmxFixtureProcess {
 		t.Fatalf("expected fixture java files under %s", sourceRoot)
 	}
 
-	compileCmd := exec.Command(javacBin, append([]string{"-d", classesDir}, javaFiles...)...)
+	compileArgs := append([]string{"-encoding", "UTF-8", "-d", classesDir}, javaFiles...)
+	compileCmd := exec.Command(javacBin, compileArgs...)
 	output, err := compileCmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("compile fixture failed: %v\n%s", err, strings.TrimSpace(string(output)))
