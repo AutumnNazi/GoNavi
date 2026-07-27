@@ -359,6 +359,52 @@ describe('RedisViewer tree interactions', () => {
     renderer!.unmount();
   });
 
+  it('continues a filtered scan when the first cursor page has no matching keys', async () => {
+    redisBackend.RedisScanKeys.mockReset();
+    redisBackend.RedisScanKeys
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          cursor: '0',
+          keys: [{ key: 'app:user:1', type: 'string', ttl: -1 }],
+        },
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        data: { cursor: '27', keys: [] },
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          cursor: '0',
+          keys: [{ key: 'sub:v2:lock', type: 'string', ttl: 2400 }],
+        },
+      });
+
+    let renderer: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<RedisViewer connectionId="redis-1" redisDB={0} />);
+    });
+    await flushEffects();
+
+    const searchInput = renderer!.root.findAllByType('input')
+      .find((node) => typeof node.props.onSearch === 'function');
+    expect(searchInput).toBeTruthy();
+
+    await act(async () => {
+      searchInput!.props.onSearch('sub:v2');
+    });
+    await flushEffects();
+
+    expect(redisBackend.RedisScanKeys).toHaveBeenCalledTimes(3);
+    expect(redisBackend.RedisScanKeys.mock.calls[1]?.[2]).toBe('0');
+    expect(redisBackend.RedisScanKeys.mock.calls[2]?.[2]).toBe('27');
+    expect(countLeafNodes(antdState.treeProps.treeData)).toBe(1);
+    expect(findFirstLeafNode(antdState.treeProps.treeData)?.rawKey).toBe('sub:v2:lock');
+
+    renderer!.unmount();
+  });
+
   it('loads every key page when the load-all action is clicked', async () => {
     redisBackend.RedisScanKeys.mockReset();
     redisBackend.RedisScanKeys

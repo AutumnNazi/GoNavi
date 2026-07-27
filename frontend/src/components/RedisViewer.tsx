@@ -345,10 +345,36 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
 
         setLoading(true);
         try {
-            const { scannedKeys, nextCursor } = await scanRedisKeysPage(config, normalizedPattern, fromCursor, effectiveTargetCount);
-            if (requestId !== latestLoadRequestIdRef.current) {
-                return;
+            let scanCursor = normalizeRedisCursor(fromCursor);
+            let scannedKeys: RedisKeyInfo[] = [];
+            let nextCursor = scanCursor;
+            const visitedCursors = new Set<string>();
+
+            while (true) {
+                if (visitedCursors.has(scanCursor)) {
+                    nextCursor = '0';
+                    break;
+                }
+                visitedCursors.add(scanCursor);
+
+                const page = await scanRedisKeysPage(
+                    config,
+                    normalizedPattern,
+                    scanCursor,
+                    effectiveTargetCount
+                );
+                if (requestId !== latestLoadRequestIdRef.current) {
+                    return;
+                }
+
+                scannedKeys = page.scannedKeys;
+                nextCursor = page.nextCursor;
+                if (scannedKeys.length > 0 || nextCursor === '0') {
+                    break;
+                }
+                scanCursor = nextCursor;
             }
+
             if (append) {
                 setKeys(prev => mergeRedisKeyInfoLists(prev, scannedKeys));
             } else {
