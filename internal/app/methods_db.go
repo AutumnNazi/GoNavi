@@ -2876,6 +2876,29 @@ func (a *App) DBGetForeignKeys(config connection.ConnectionConfig, dbName string
 	return connection.QueryResult{Success: true, Data: ensureNonNilSlice(fks)}
 }
 
+func (a *App) DBGetDatabaseForeignKeys(config connection.ConnectionConfig, dbName string) connection.QueryResult {
+	runConfig := normalizeRunConfig(config, dbName)
+
+	dbInst, err := a.getDatabase(runConfig)
+	if err != nil {
+		return connection.QueryResult{Success: false, Message: err.Error()}
+	}
+
+	provider, ok := dbInst.(db.DatabaseForeignKeyProvider)
+	if !ok {
+		return connection.QueryResult{Success: false, Message: "database-wide foreign-key metadata is not supported"}
+	}
+
+	foreignKeysByTable, err := provider.GetDatabaseForeignKeys(dbName)
+	if err != nil {
+		return connection.QueryResult{Success: false, Message: err.Error()}
+	}
+	if foreignKeysByTable == nil {
+		foreignKeysByTable = make(map[string][]connection.ForeignKeyDefinition)
+	}
+	return connection.QueryResult{Success: true, Data: foreignKeysByTable}
+}
+
 func (a *App) DBGetTriggers(config connection.ConnectionConfig, dbName string, tableName string) connection.QueryResult {
 	runConfig := normalizeRunConfig(config, dbName)
 

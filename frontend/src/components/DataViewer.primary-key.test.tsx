@@ -165,6 +165,52 @@ describe('DataViewer safe editing locator', () => {
     renderer!.unmount();
   });
 
+  it('does not block the initial Kingbase table query on edit-locator metadata', async () => {
+    storeState.connections[0].config.type = 'kingbase';
+    storeState.connections[0].config.database = 'ldf_server_dbs_dev';
+
+    let resolveColumns!: (value: any) => void;
+    let resolveIndexes!: (value: any) => void;
+    backendApp.DBGetColumns.mockReturnValue(new Promise((resolve) => {
+      resolveColumns = resolve;
+    }));
+    backendApp.DBGetIndexes.mockReturnValue(new Promise((resolve) => {
+      resolveIndexes = resolve;
+    }));
+
+    let renderer: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<DataViewer tab={createTab({
+        id: 'tab-kingbase-fast-open',
+        dbName: 'ldf_server_dbs_dev',
+        tableName: 'ldf_server.andon_dash_events',
+        title: 'andon_dash_events',
+      })} />);
+    });
+    await flushPromises();
+
+    expect(backendApp.DBQuery).toHaveBeenCalled();
+    expect(dataGridState.latestProps?.data).toEqual([
+      expect.objectContaining({ ID: 7, NAME: 'old-name' }),
+    ]);
+
+    await act(async () => {
+      resolveColumns({
+        success: true,
+        data: [{ name: 'ID', key: 'PRI' }, { name: 'NAME', key: '' }],
+      });
+      resolveIndexes({ success: true, data: [] });
+    });
+    await flushPromises();
+
+    expect(dataGridState.latestProps?.editLocator).toMatchObject({
+      strategy: 'primary-key',
+      columns: ['ID'],
+      readOnly: false,
+    });
+    renderer!.unmount();
+  });
+
   it('enables table preview editing after primary keys are loaded', async () => {
     backendApp.DBGetColumns.mockResolvedValue({
       success: true,

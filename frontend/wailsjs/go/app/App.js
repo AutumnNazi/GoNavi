@@ -110,6 +110,10 @@ export function DBGetDatabases(arg1) {
   return window['go']['app']['App']['DBGetDatabases'](arg1);
 }
 
+export function DBGetDatabaseForeignKeys(arg1, arg2) {
+  return window['go']['app']['App']['DBGetDatabaseForeignKeys'](arg1, arg2);
+}
+
 export function DBGetForeignKeys(arg1, arg2, arg3) {
   return window['go']['app']['App']['DBGetForeignKeys'](arg1, arg2, arg3);
 }
