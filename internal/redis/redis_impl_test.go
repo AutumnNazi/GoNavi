@@ -14,6 +14,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	goredis "github.com/redis/go-redis/v9"
 )
@@ -739,6 +740,81 @@ func TestListRemoveUsesLRemForOneMatchingValue(t *testing.T) {
 		}
 	}
 	t.Fatalf("expected LREM command, got %v", commands)
+}
+
+func TestRedisSearchScanContinuesPastEmptyMatchedPages(t *testing.T) {
+	var mu sync.Mutex
+	scanCalls := 0
+	const searchPattern = "*[lL][aA][tT][eE]*"
+
+	redisScanResponse := func(cursor string, keys ...string) string {
+		var builder strings.Builder
+		builder.WriteString("*2\r\n")
+		builder.WriteString(redisBulkString(cursor))
+		builder.WriteString(fmt.Sprintf("*%d\r\n", len(keys)))
+		for _, key := range keys {
+			builder.WriteString(redisBulkString(key))
+		}
+		return builder.String()
+	}
+
+	addr := startRedisProtocolTestServer(t, func(args []string) string {
+		command := strings.ToUpper(strings.TrimSpace(args[0]))
+		switch command {
+		case "HELLO":
+			return "-ERR unknown command 'HELLO'\r\n"
+		case "CLIENT":
+			return "-ERR unknown subcommand\r\n"
+		case "SCAN":
+			mu.Lock()
+			defer mu.Unlock()
+			scanCalls++
+			for i := 0; i+1 < len(args); i++ {
+				if strings.EqualFold(args[i], "MATCH") && args[i+1] != searchPattern {
+					t.Fatalf("expected SCAN MATCH %q, got command %v", searchPattern, args)
+				}
+			}
+			if scanCalls <= 16 {
+				return redisScanResponse(strconv.Itoa(scanCalls))
+			}
+			return redisScanResponse("0", "late:user:1")
+		case "TYPE":
+			return "+string\r\n"
+		case "TTL":
+			return ":-1\r\n"
+		}
+		return "+OK\r\n"
+	})
+
+	rawClient := goredis.NewClient(&goredis.Options{
+		Addr:     addr,
+		Protocol: 2,
+	})
+	client := &RedisClientImpl{
+		client:       rawClient,
+		singleClient: rawClient,
+	}
+	defer client.Close()
+
+	result, err := client.ScanKeys(searchPattern, 0, 10)
+	if err != nil {
+		t.Fatalf("ScanKeys returned error: %v", err)
+	}
+	if result == nil || len(result.Keys) != 1 {
+		t.Fatalf("expected one searched key after empty pages, got %#v", result)
+	}
+	if result.Keys[0].Key != "late:user:1" {
+		t.Fatalf("expected late:user:1, got %#v", result.Keys[0])
+	}
+	if result.Cursor != "0" {
+		t.Fatalf("expected completed cursor, got %q", result.Cursor)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if scanCalls <= 16 {
+		t.Fatalf("expected ScanKeys to continue past 16 empty search pages, got %d calls", scanCalls)
+	}
 }
 
 func TestRedisSelectDBReconnectsWithSentinelConfig(t *testing.T) {

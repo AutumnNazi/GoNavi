@@ -209,6 +209,7 @@ const editorState = vi.hoisted(() => {
     },
     position: { lineNumber: 1, column: 1 },
     selection: null as any,
+    scrollLeft: 0,
     providers: [] as any[],
     providerLanguages: [] as string[],
     hoverProviders: [] as any[],
@@ -291,6 +292,10 @@ const editorState = vi.hoisted(() => {
     }),
     setSelections: vi.fn((selections: any[]) => {
       state.selection = Array.isArray(selections) ? selections[0] ?? null : null;
+    }),
+    getScrollLeft: vi.fn(() => state.scrollLeft),
+    setScrollLeft: vi.fn((scrollLeft: number) => {
+      state.scrollLeft = scrollLeft;
     }),
     executeEdits: vi.fn((_source: string, edits: any[]) => {
       edits.forEach((edit) => {
@@ -897,6 +902,7 @@ describe('QueryEditor external SQL save', () => {
     editorState.value = '';
     editorState.position = { lineNumber: 1, column: 1 };
     editorState.selection = null;
+    editorState.scrollLeft = 0;
     monacoEditorMockState.latestProps = null;
     editorState.domNode.style.cursor = '';
     editorState.providers = [];
@@ -919,6 +925,8 @@ describe('QueryEditor external SQL save', () => {
     editorState.editor.getModel().getValueLength.mockClear();
     editorState.editor.setValue.mockClear();
     editorState.editor.executeEdits.mockClear();
+    editorState.editor.getScrollLeft.mockClear();
+    editorState.editor.setScrollLeft.mockClear();
     editorState.editor.deltaDecorations.mockClear();
     editorState.editor.updateOptions.mockClear();
     editorState.editor.pushUndoStop.mockClear();
@@ -4425,6 +4433,26 @@ describe('QueryEditor external SQL save', () => {
         createdAt: expect.any(Number),
       },
     });
+  });
+
+  it('resets stale horizontal scroll after formatting a long single-line SQL statement', async () => {
+    let renderer!: ReactTestRenderer;
+    const longSql = `select ${Array.from({ length: 80 }, (_, index) => `column_${index + 1}`).join(', ')} from users where id=1`;
+
+    await act(async () => {
+      renderer = create(<QueryEditor tab={createTab({ query: longSql })} />);
+    });
+
+    editorState.scrollLeft = 2400;
+
+    const formatButton = findButton(renderer, '美化');
+    await act(async () => {
+      await formatButton.props.onClick();
+    });
+
+    expect(editorState.editor.executeEdits).toHaveBeenCalled();
+    expect(editorState.editor.setScrollLeft).toHaveBeenCalledWith(0);
+    expect(editorState.scrollLeft).toBe(0);
   });
 
   it('formats only the selected SQL when a non-empty selection exists', async () => {
