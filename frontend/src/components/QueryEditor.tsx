@@ -1256,6 +1256,24 @@ const sortCompleteQueryResultRows = (
     .map(({ row }) => row);
 };
 
+type QueryEditorBulkCloseMode = 'other' | 'left' | 'right' | 'all';
+
+export const filterQueryEditorResultSetsForBulkClose = (
+    resultSets: QueryEditorResultSet[],
+    key: string,
+    mode: QueryEditorBulkCloseMode,
+): QueryEditorResultSet[] => {
+    const targetIndex = resultSets.findIndex((result) => result.key === key);
+    if (mode !== 'all' && targetIndex < 0) return resultSets;
+    return resultSets.filter((result, index) => {
+        if (result.pinned) return true;
+        if (mode === 'all') return false;
+        if (mode === 'other') return result.key === key;
+        if (mode === 'left') return index >= targetIndex;
+        return index <= targetIndex;
+    });
+};
+
 const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isActive = true }) => {
   const appearance = useStore(state => state.appearance);
   const queryOptions = useStore(state => state.queryOptions);
@@ -6300,21 +6318,31 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
   };
 
   const mergeResultSets = (previous: ResultSet[], next: ResultSet[], replaceAll: boolean): ResultSet[] => {
-      if (replaceAll || previous.length === 0) {
-          return next.map((result, index) => ({ ...result, key: `result-${index + 1}` }));
-      }
-
-      const merged = [...previous];
+      const merged = replaceAll ? previous.filter((result) => result.pinned) : [...previous];
       next.forEach((result) => {
           const incomingKey = buildResultSetMergeKey(result);
-          const existingIndex = merged.findIndex((item) => buildResultSetMergeKey(item) === incomingKey);
+          const existingIndex = merged.findIndex(
+              (item) => !item.pinned && buildResultSetMergeKey(item) === incomingKey,
+          );
           if (existingIndex >= 0) {
-              merged[existingIndex] = { ...result, key: merged[existingIndex].key };
+              merged[existingIndex] = { ...result, key: merged[existingIndex].key, pinned: false };
               return;
           }
-          merged.push({ ...result, key: `result-${resolveNextResultSetIndex(merged)}` });
+          merged.push({ ...result, key: `result-${resolveNextResultSetIndex(merged)}`, pinned: false });
       });
       return merged;
+  };
+
+  const clearUnpinnedResultSets = (fallbackActiveKey = ''): ResultSet[] => {
+      const nextResultSets = resultSetsRef.current.filter((result) => result.pinned);
+      const nextActiveKey = nextResultSets.some((result) => result.key === activeResultKeyRef.current)
+          ? activeResultKeyRef.current
+          : nextResultSets[0]?.key || fallbackActiveKey;
+      resultSetsRef.current = nextResultSets;
+      activeResultKeyRef.current = nextActiveKey;
+      setResultSets(nextResultSets);
+      setActiveResultKey(nextActiveKey);
+      return nextResultSets;
   };
 
   const isDisplayableResultSet = (result?: ResultSet | null): boolean => {
@@ -6395,7 +6423,9 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           return '';
       }
       const executedSqlKey = buildResultSetMergeKey(firstExecutedResult);
-      return merged.find((item) => buildResultSetMergeKey(item) === executedSqlKey)?.key
+      return merged.find(
+          (item) => !item.pinned && buildResultSetMergeKey(item) === executedSqlKey,
+      )?.key
           || firstExecutedResult.key
           || merged[0]?.key
           || '';
@@ -6912,8 +6942,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
     const executableSQL = getExecutableSQL();
     if (!executableSQL.trim()) {
         message.info(translate('query_editor.message.no_executable_sql'));
-        setResultSets([]);
-        setActiveResultKey('');
+        clearUnpinnedResultSets();
         return;
     }
     if (!currentDb) {
@@ -6992,8 +7021,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
             );
             if (statements.length === 0) {
                 message.info(translate('query_editor.message.no_executable_sql'));
-                setResultSets([]);
-                setActiveResultKey('');
+                clearUnpinnedResultSets();
                 return;
             }
 
@@ -7013,8 +7041,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                             : '';
                         updateResultPanelVisibility(true);
                         setExecutionError(formatSqlExecutionError(shellConvert.error, { prefix, translate }));
-                        setResultSets([]);
-                        setActiveResultKey('');
+                        clearUnpinnedResultSets();
                         return;
                     }
                     if (shellConvert.command) {
@@ -7056,8 +7083,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                         : '';
                     updateResultPanelVisibility(true);
                     setExecutionError(formatSqlExecutionError(res.message, { prefix, translate }));
-                    setResultSets([]);
-                    setActiveResultKey(QUERY_EDITOR_SQL_LOG_TAB_KEY);
+                    clearUnpinnedResultSets(QUERY_EDITOR_SQL_LOG_TAB_KEY);
                     return;
                 }
                 if (Array.isArray(res.data)) {
@@ -7153,8 +7179,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
             );
             if (sourceStatements.length === 0) {
                 message.info(translate('query_editor.message.no_executable_sql'));
-                setResultSets([]);
-                setActiveResultKey('');
+                clearUnpinnedResultSets();
                 return;
             }
             const useManagedTransaction = shouldUseSqlEditorManagedTransactionForType(normalizedDbType, sourceStatements);
@@ -7343,8 +7368,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                                        errorMsg.includes('deadline exceeded');
 
                 if (isCancelledError && !isTimeoutError) {
-                    setResultSets([]);
-                    setActiveResultKey('');
+                    clearUnpinnedResultSets();
                     if (currentQueryIdRef.current) {
                         clearQueryId();
                     }
@@ -7353,8 +7377,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
 
                 updateResultPanelVisibility(true);
                 setExecutionError(formatSqlExecutionError(res.message, { translate }));
-                setResultSets([]);
-                setActiveResultKey(QUERY_EDITOR_SQL_LOG_TAB_KEY);
+                clearUnpinnedResultSets(QUERY_EDITOR_SQL_LOG_TAB_KEY);
                 return;
             }
 
@@ -7574,8 +7597,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
         });
         updateResultPanelVisibility(true);
         setExecutionError(formattedError);
-        setResultSets([]);
-        setActiveResultKey(QUERY_EDITOR_SQL_LOG_TAB_KEY);
+        clearUnpinnedResultSets(QUERY_EDITOR_SQL_LOG_TAB_KEY);
     } finally {
         if (runSeqRef.current === runSeq) setLoading(false);
         // Clear query ID after execution completes
@@ -8795,38 +8817,53 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       };
   }, [isActive, isV2Ui, tab.id, updateResultPanelVisibility]);
 
+  const handleResultPinnedChange = (key: string, pinned: boolean) => {
+      const nextResultSets = resultSetsRef.current.map((result) => (
+          result.key === key ? { ...result, pinned } : result
+      ));
+      resultSetsRef.current = nextResultSets;
+      setResultSets(nextResultSets);
+  };
+
   const replaceResultSetsAfterMenuClose = (next: ResultSet[], preferredKey?: string) => {
       const nextKeys = new Set(next.map((result) => result.key));
       const removedCountKeys = Object.keys(resultTotalCountRequestsRef.current)
           .filter((key) => !nextKeys.has(key));
       void cancelResultTotalCountRequests(removedCountKeys);
+      resultSetsRef.current = next;
       setResultSets(next);
       setActiveResultKey(prevActive => {
-          if (preferredKey && next.some(result => result.key === preferredKey)) return preferredKey;
-          if (prevActive && next.some(result => result.key === prevActive)) return prevActive;
-          return next[0]?.key || '';
+          const nextActiveKey = preferredKey && next.some(result => result.key === preferredKey)
+              ? preferredKey
+              : prevActive && next.some(result => result.key === prevActive)
+                  ? prevActive
+                  : next[0]?.key || '';
+          activeResultKeyRef.current = nextActiveKey;
+          return nextActiveKey;
       });
   };
 
   const closeOtherResultTabs = (key: string) => {
-      const target = resultSets.find(result => result.key === key);
-      replaceResultSetsAfterMenuClose(target ? [target] : resultSets, key);
+      replaceResultSetsAfterMenuClose(
+          filterQueryEditorResultSetsForBulkClose(resultSets, key, 'other'),
+          key,
+      );
   };
 
   const closeResultTabsToLeft = (key: string) => {
-      const index = resultSets.findIndex(result => result.key === key);
-      if (index <= 0) return;
-      replaceResultSetsAfterMenuClose(resultSets.slice(index), key);
+      const next = filterQueryEditorResultSetsForBulkClose(resultSets, key, 'left');
+      if (next === resultSets) return;
+      replaceResultSetsAfterMenuClose(next, key);
   };
 
   const closeResultTabsToRight = (key: string) => {
-      const index = resultSets.findIndex(result => result.key === key);
-      if (index < 0 || index >= resultSets.length - 1) return;
-      replaceResultSetsAfterMenuClose(resultSets.slice(0, index + 1), key);
+      const next = filterQueryEditorResultSetsForBulkClose(resultSets, key, 'right');
+      if (next === resultSets) return;
+      replaceResultSetsAfterMenuClose(next, key);
   };
 
   const closeAllResultTabs = () => {
-      replaceResultSetsAfterMenuClose([]);
+      replaceResultSetsAfterMenuClose(filterQueryEditorResultSetsForBulkClose(resultSets, '', 'all'));
   };
 
   const openResultInWindow = (
@@ -8871,6 +8908,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
               readOnly: target.readOnly !== false,
               showRowNumberColumn: target.showRowNumberColumn,
               truncated: target.truncated,
+              pinned: target.pinned,
           },
       };
       void openNativeQueryResultWindow(detachedWindow)
@@ -8914,6 +8952,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                   readOnly: restored.readOnly !== false,
                   showRowNumberColumn: restored.showRowNumberColumn,
                   truncated: restored.truncated,
+                  pinned: restored.pinned === true,
               } as ResultSet;
               const nextResultSets = [
                   ...resultSetsRef.current,
@@ -9143,6 +9182,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           onCloseResultTabsToLeft={closeResultTabsToLeft}
           onCloseResultTabsToRight={closeResultTabsToRight}
           onCloseAllResultTabs={closeAllResultTabs}
+          onResultPinnedChange={handleResultPinnedChange}
           onOpenResultInWindow={openResultInWindow}
           onReloadResult={handleReloadResult}
           onResultPageChange={handleResultPageChange}

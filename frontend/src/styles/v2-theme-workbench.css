@@ -403,7 +403,7 @@ body[data-ui-version="v2"] .gn-v2-query-results .query-result-tabs > .ant-tabs-n
   margin: 4px 6px 4px 0 !important;
   padding: 0 9px !important;
   border: 0.5px solid var(--gn-br-1) !important;
-  border-radius: 999px !important;
+  border-radius: 8px !important;
   background: color-mix(in srgb, var(--gn-bg-panel) 72%, transparent) !important;
   color: var(--gn-fg-3) !important;
   align-items: center !important;

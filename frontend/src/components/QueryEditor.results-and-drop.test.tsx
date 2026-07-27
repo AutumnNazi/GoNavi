@@ -16,6 +16,7 @@ import {
 import { normalizeQueryResultMessages } from './queryEditor/QueryEditorHelpers';
 import QueryEditor, {
   collectQueryEditorObjectDecorationCandidates,
+  filterQueryEditorResultSetsForBulkClose,
   resolveQueryEditorNavigationDecorations,
   resolveQueryEditorNavigationTarget,
 } from './QueryEditor';
@@ -141,6 +142,10 @@ const backendApp = vi.hoisted(() => ({
   GenerateQueryID: vi.fn(),
   WriteSQLFile: vi.fn(),
   ExportSQLFile: vi.fn(),
+}));
+
+const nativeDetachedWindowState = vi.hoisted(() => ({
+  openNativeQueryResultWindow: vi.fn(),
 }));
 
 const messageApi = vi.hoisted(() => ({
@@ -321,6 +326,8 @@ vi.mock('../store', () => {
 
 vi.mock('../../wailsjs/go/app/App', () => backendApp);
 
+vi.mock('../utils/nativeDetachedWindowHost', () => nativeDetachedWindowState);
+
 vi.mock('../utils/autoFetchVisibility', () => ({
   useAutoFetchVisibility: () => autoFetchState.visible,
 }));
@@ -434,6 +441,7 @@ vi.mock('@ant-design/icons', () => {
     DatabaseOutlined: Icon,
     EyeOutlined: Icon,
     EyeInvisibleOutlined: Icon,
+    PushpinOutlined: Icon,
     EnterOutlined: Icon,
     EllipsisOutlined: Icon,
   };
@@ -663,6 +671,7 @@ describe('QueryEditor external SQL save', () => {
           onCloseResultTabsToLeft={vi.fn()}
           onCloseResultTabsToRight={vi.fn()}
           onCloseAllResultTabs={vi.fn()}
+          onResultPinnedChange={vi.fn()}
           onOpenResultInWindow={vi.fn()}
           onReloadResult={vi.fn()}
           onResultPageChange={vi.fn()}
@@ -791,6 +800,8 @@ describe('QueryEditor external SQL save', () => {
       storeState.sqlEditorPendingTransactions[tabId] = transaction;
     });
     Object.values(backendApp).forEach((fn) => fn.mockReset());
+    nativeDetachedWindowState.openNativeQueryResultWindow.mockReset();
+    nativeDetachedWindowState.openNativeQueryResultWindow.mockResolvedValue(false);
     messageApi.success.mockReset();
     messageApi.error.mockReset();
     messageApi.info.mockReset();
@@ -2931,6 +2942,83 @@ describe('QueryEditor external SQL save', () => {
     })).toHaveLength(2);
   });
 
+  it('keeps pinned result tabs across bulk close modes', () => {
+    const resultSets = [
+      { key: 'result-1', pinned: true },
+      { key: 'result-2' },
+      { key: 'result-3', pinned: true },
+      { key: 'result-4' },
+    ] as any[];
+
+    expect(filterQueryEditorResultSetsForBulkClose(resultSets, 'result-2', 'other').map((result) => result.key))
+      .toEqual(['result-1', 'result-2', 'result-3']);
+    expect(filterQueryEditorResultSetsForBulkClose(resultSets, 'result-2', 'left').map((result) => result.key))
+      .toEqual(['result-1', 'result-2', 'result-3', 'result-4']);
+    expect(filterQueryEditorResultSetsForBulkClose(resultSets, 'result-2', 'right').map((result) => result.key))
+      .toEqual(['result-1', 'result-2', 'result-3']);
+    expect(filterQueryEditorResultSetsForBulkClose(resultSets, '', 'all').map((result) => result.key))
+      .toEqual(['result-1', 'result-3']);
+  });
+
+  it('pins a result from the context menu and keeps its snapshot when rerunning the same SQL', async () => {
+    backendApp.DBQueryMulti
+      .mockResolvedValueOnce({ success: true, data: [{ columns: ['value'], rows: [{ value: 'first' }] }] })
+      .mockResolvedValueOnce({ success: true, data: [{ columns: ['value'], rows: [{ value: 'second' }] }] });
+
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<QueryEditor tab={createTab({ dbName: 'main', query: 'select 1 as value;' })} />);
+      await Promise.resolve();
+    });
+    await act(async () => {
+      await findButton(renderer, '运行').props.onClick();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const pinButton = renderer.root.findAll((node) =>
+      node.type === 'button' && textContent(node) === '固定结果',
+    )[0];
+    expect(pinButton).toBeTruthy();
+    await act(async () => {
+      pinButton.props.onClick();
+    });
+    expect(renderer.root.findAll((node) =>
+      String(node.props?.className || '').includes('query-result-tab-pin'),
+    )).toHaveLength(1);
+
+    const openInWindowButton = renderer.root.findAll((node) =>
+      node.type === 'button' && textContent(node) === '在独立窗口打开',
+    )[0];
+    await act(async () => {
+      await openInWindowButton.props.onClick();
+      await Promise.resolve();
+    });
+    expect(nativeDetachedWindowState.openNativeQueryResultWindow).toHaveBeenCalledWith(
+      expect.objectContaining({
+        result: expect.objectContaining({ pinned: true }),
+      }),
+    );
+
+    await act(async () => {
+      await findButton(renderer, '运行').props.onClick();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const resultTabs = renderer.root.findAll((node) =>
+      node.type === 'button' && String(node.props?.['data-tab-key'] || '').startsWith('result-'),
+    );
+    expect(resultTabs).toHaveLength(2);
+    expect(dataGridState.latestProps?.data).toEqual([
+      expect.objectContaining({ value: 'second' }),
+    ]);
+    const unpinButton = renderer.root.findAll((node) =>
+      node.type === 'button' && textContent(node) === '取消固定结果',
+    )[0];
+    expect(unpinButton).toBeTruthy();
+  });
+
   it('provides context menu actions for query result tabs', async () => {
     backendApp.DBQueryMulti.mockResolvedValue({
       success: true,
@@ -3093,6 +3181,7 @@ describe('QueryEditor external SQL save', () => {
             rows: [{ value: 'existing' }],
             pkColumns: [],
             readOnly: true,
+            pinned: true,
           },
         },
       }));
@@ -3120,7 +3209,7 @@ describe('QueryEditor external SQL save', () => {
     });
 
     expect(renderer.root.findAll((node) =>
-      String(node.props?.className || '').split(/\s+/).includes('query-result-tab-label'),
+      String(node.props?.className || '').includes('query-result-tab-pin'),
     )).toHaveLength(1);
     expect(dataGridState.latestProps?.data).toEqual([
       expect.objectContaining({ value: 'existing' }),
@@ -3441,6 +3530,7 @@ describe('QueryEditor external SQL save', () => {
           onCloseResultTabsToLeft={vi.fn()}
           onCloseResultTabsToRight={vi.fn()}
           onCloseAllResultTabs={vi.fn()}
+          onResultPinnedChange={vi.fn()}
           onReloadResult={vi.fn()}
           onResultPageChange={vi.fn()}
           onResultSort={onResultSort}
@@ -3497,6 +3587,7 @@ describe('QueryEditor external SQL save', () => {
         onCloseResultTabsToLeft={vi.fn()}
         onCloseResultTabsToRight={vi.fn()}
         onCloseAllResultTabs={vi.fn()}
+        onResultPinnedChange={vi.fn()}
         onReloadResult={vi.fn()}
         onResultPageChange={vi.fn()}
         onResultSort={vi.fn()}
@@ -3660,6 +3751,7 @@ describe('QueryEditor external SQL save', () => {
         onCloseResultTabsToLeft={vi.fn()}
         onCloseResultTabsToRight={vi.fn()}
         onCloseAllResultTabs={vi.fn()}
+        onResultPinnedChange={vi.fn()}
         onReloadResult={vi.fn()}
         onResultPageChange={vi.fn()}
         onResultSort={vi.fn()}
@@ -3719,6 +3811,7 @@ describe('QueryEditor external SQL save', () => {
         onCloseResultTabsToLeft={vi.fn()}
         onCloseResultTabsToRight={vi.fn()}
         onCloseAllResultTabs={vi.fn()}
+        onResultPinnedChange={vi.fn()}
         onReloadResult={vi.fn()}
         onResultPageChange={vi.fn()}
         onResultSort={vi.fn()}
@@ -4531,6 +4624,7 @@ describe('QueryEditorResultsPanel result-tab detach lifecycle', () => {
           onCloseResultTabsToLeft={vi.fn()}
           onCloseResultTabsToRight={vi.fn()}
           onCloseAllResultTabs={vi.fn()}
+          onResultPinnedChange={vi.fn()}
           onOpenResultInWindow={onOpenResultInWindow}
           onReloadResult={vi.fn()}
           onResultPageChange={vi.fn()}
@@ -4594,6 +4688,7 @@ describe('QueryEditorResultsPanel result-tab detach lifecycle', () => {
           onCloseResultTabsToLeft={vi.fn()}
           onCloseResultTabsToRight={vi.fn()}
           onCloseAllResultTabs={vi.fn()}
+          onResultPinnedChange={vi.fn()}
           onOpenResultInWindow={vi.fn()}
           onReloadResult={vi.fn()}
           onResultPageChange={vi.fn()}

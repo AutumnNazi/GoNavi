@@ -6,6 +6,7 @@ import { DEFAULT_GRID_MONO_FONT_FAMILY, GONAVI_ROW_NUMBER_COLUMN_KEY } from './D
 const ROW_NUMBER_DEFAULT_WIDTH = 36;
 const ROW_NUMBER_MIN_WIDTH = 28;
 const ROW_NUMBER_MAX_WIDTH = 120;
+const DATA_COLUMN_MIN_WIDTH = 80;
 
 type UseDataGridColumnResizeContext = Record<string, any>;
 type ColumnResizeListeners = {
@@ -109,7 +110,7 @@ export const useDataGridColumnResize = (ctx: UseDataGridColumnResizeContext) => 
       const finalClientX = Number.isFinite(clientX) ? clientX as number : latestClientX ?? dragState.startX;
       const deltaX = finalClientX - dragState.startX;
       const isRowNumberColumn = dragState.key === GONAVI_ROW_NUMBER_COLUMN_KEY;
-      const minWidth = isRowNumberColumn ? ROW_NUMBER_MIN_WIDTH : 50;
+      const minWidth = isRowNumberColumn ? ROW_NUMBER_MIN_WIDTH : DATA_COLUMN_MIN_WIDTH;
       const maxWidth = isRowNumberColumn ? ROW_NUMBER_MAX_WIDTH : Number.POSITIVE_INFINITY;
       const newWidth = Math.min(maxWidth, Math.max(minWidth, dragState.startWidth + deltaX));
       setColumnWidthsRef.current((prev: Record<string, number>) => ({ ...prev, [dragState.key]: newWidth }));
@@ -248,7 +249,7 @@ export const useDataGridColumnResize = (ctx: UseDataGridColumnResizeContext) => 
       measureHeaderText: buildAutoFitMeasurer(headerEl ?? null, `600 ${densityParams.dataFontSize}px ${DEFAULT_GRID_MONO_FONT_FAMILY}`),
       measureCellText: buildAutoFitMeasurer(sampleCell ?? null, `400 ${densityParams.dataFontSize}px ${DEFAULT_GRID_MONO_FONT_FAMILY}`),
       defaultWidth,
-      minWidth: 80,
+      minWidth: DATA_COLUMN_MIN_WIDTH,
       maxWidth: Math.max(720, Math.floor(containerWidth * 0.85)),
     });
 
