@@ -4243,7 +4243,6 @@ function App() {
   }, [t]);
 
   const {
-      ghostRef,
       handleSidebarMouseDown,
       sidebarResizeHandleWidth,
       siderRef,
@@ -9027,22 +9026,6 @@ function App() {
                   <div style={{ ...linuxResizeHandleStyleBase, bottom: 0, right: 0, width: 14, height: 14, cursor: 'nwse-resize' }} />
               </>
           )}
-
-          {/* Ghost Resize Line for Sidebar */}
-          <div
-              ref={ghostRef}
-              style={{
-                  position: 'fixed',
-                  top: 0,
-                  bottom: 0,
-                  left: 0,
-                  width: '4px',
-                  background: resizeGuideColor,
-                  zIndex: 9999,
-                  pointerEvents: 'none',
-                  display: 'none'
-              }}
-          />
 
           {/* Ghost Resize Line for Log Panel */}
           <div

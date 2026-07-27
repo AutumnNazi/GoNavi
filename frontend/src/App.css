@@ -2528,6 +2528,8 @@ body[data-ui-version] .ant-layout-sider[data-sidebar-panel='true'] {
 body[data-ui-version] .ant-layout-sider[data-sidebar-panel='true'][data-sidebar-resizing='true'],
 body[data-sidebar-resizing='true'] .ant-layout-sider[data-sidebar-panel='true'] {
   transition: none !important;
+  width: var(--gonavi-sidebar-resize-width) !important;
+  flex: 0 0 var(--gonavi-sidebar-resize-width) !important;
 }
 
 body[data-ui-version] .ant-layout-sider[data-sidebar-collapsed='true'] {
