@@ -117,7 +117,7 @@ func main() {
 
 	// Create an instance of the app structure
 	application := app.NewApp()
-	aiService := aiservice.NewService()
+	aiService := aiservice.NewServiceWithConfigChangeHandler(app.NewCloudBackupChangeHandler(application))
 	nativeWindowManager, nativeWindowErr := nativewindow.NewManager(assets, application, aiService)
 	if nativeWindowErr != nil {
 		logger.Warnf("初始化原生独立窗口管理器失败：%v", nativeWindowErr)

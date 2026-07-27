@@ -27,6 +27,7 @@ import SecurityUpdateProgressModal from './components/SecurityUpdateProgressModa
 import SecurityUpdateSettingsModal from './components/SecurityUpdateSettingsModal';
 import LanguageSettingsPanel from './components/LanguageSettingsPanel';
 import WebAuthSettingsPanel from './components/WebAuthSettingsPanel';
+import CloudBackupSettings from './components/CloudBackupSettings';
 import BrandIconPicker from './components/BrandIconPicker';
 import {
   resolveBrandAboutSrc,
@@ -550,6 +551,7 @@ type SettingsCenterPaneKey =
   | 'sidebar-objects'
   | 'proxy'
   | 'web-auth'
+  | 'cloud-backup'
   | 'ai'
   | ToolCenterPaneKey
   | 'about-go-navi';
@@ -7331,6 +7333,13 @@ function App() {
                   onClick: () => handleOpenSettingsCenterPane('services', 'web-auth'),
               }] : []),
               {
+                  key: 'cloud-backup',
+                  icon: <CloudDownloadOutlined />,
+                  title: t('app.settings.entry.cloud_backup.title'),
+                  description: t('app.settings.entry.cloud_backup.description'),
+                  onClick: () => handleOpenSettingsCenterPane('services', 'cloud-backup'),
+              },
+              {
                   key: 'ai',
                   icon: <RobotOutlined />,
                   title: t('app.settings.entry.ai.title'),
@@ -7433,6 +7442,11 @@ function App() {
                 mutedColor={String(utilityMutedTextStyle.color || overlayTheme.mutedText)}
                 titleColor={overlayTheme.titleText}
               />
+          );
+      }
+      if (activeSettingsCenterPane.key === 'cloud-backup') {
+          return (
+              <CloudBackupSettings t={t} />
           );
       }
       if (activeSettingsCenterPane.key === 'ai') {

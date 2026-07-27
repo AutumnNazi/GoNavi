@@ -201,6 +201,17 @@ type App struct {
 	keepAliveDone                 chan struct{}
 	resultDiffManager             *resultdiff.Manager
 	saveFileDialog                saveFileDialogFunc
+	cloudBackupSyncMu             sync.Mutex
+	cloudBackupStateMu            sync.Mutex
+	cloudBackupSecretMu           sync.Mutex
+	cloudBackupSchedulerMu        sync.Mutex
+	cloudBackupSchedulerCancel    context.CancelFunc
+	cloudBackupDirtyMu            sync.Mutex
+	cloudBackupDirty              bool
+	cloudBackupDirtyRevision      uint64
+	cloudBackupRestoreTokenMu     sync.Mutex
+	cloudBackupRestoreTokens      map[string]cloudBackupRestoreConfirmationToken
+	cloudBackupRestoreTokenTTL    time.Duration
 }
 
 // NewApp creates a new App application struct
@@ -222,17 +233,19 @@ func NewAppWithSecretStore(store secretstore.SecretStore) *App {
 		store = secretstore.NewUnavailableStore("secret store unavailable")
 	}
 	return &App{
-		dbCache:            make(map[string]cachedDatabase),
-		connectFailures:    make(map[string]cachedConnectFailure),
-		dbConnectFlights:   make(map[uint64]*databaseConnectFlight),
-		runningQueries:     make(map[string]queryContext),
-		sqlTransactions:    make(map[string]*managedSQLTransaction),
-		configDir:          resolveAppConfigDir(),
-		secretStore:        store,
-		localizer:          newAppLocalizer(),
-		jvmPreviewTokens:   make(map[string]jvmPreviewConfirmationToken),
-		jvmPreviewTokenTTL: defaultJVMPreviewConfirmationTokenTTL,
-		resultDiffManager:  resultdiff.NewManager(30 * time.Minute),
+		dbCache:                    make(map[string]cachedDatabase),
+		connectFailures:            make(map[string]cachedConnectFailure),
+		dbConnectFlights:           make(map[uint64]*databaseConnectFlight),
+		runningQueries:             make(map[string]queryContext),
+		sqlTransactions:            make(map[string]*managedSQLTransaction),
+		configDir:                  resolveAppConfigDir(),
+		secretStore:                store,
+		localizer:                  newAppLocalizer(),
+		jvmPreviewTokens:           make(map[string]jvmPreviewConfirmationToken),
+		jvmPreviewTokenTTL:         defaultJVMPreviewConfirmationTokenTTL,
+		cloudBackupRestoreTokens:   make(map[string]cloudBackupRestoreConfirmationToken),
+		cloudBackupRestoreTokenTTL: defaultCloudBackupRestoreConfirmationTokenTTL,
+		resultDiffManager:          resultdiff.NewManager(30 * time.Minute),
 	}
 }
 
@@ -368,6 +381,7 @@ func (a *App) startup(ctx context.Context) {
 	}
 	applyMacWindowTranslucencyFix()
 	a.startConnectionKeepAliveLoop()
+	a.initializeCloudBackup(ctx)
 	logger.Infof("应用启动完成（首次连接保护窗口=%s，最多重试=%d 次）", startupConnectRetryWindow, startupConnectRetryAttempts)
 }
 
@@ -416,6 +430,7 @@ func (a *App) LogWindowDiagnostic(stage string, payload string) {
 // Shutdown is called when the app terminates.
 func (a *App) Shutdown() {
 	logger.Infof("应用开始关闭，准备释放资源")
+	a.shutdownCloudBackup()
 	a.beginDatabaseShutdown()
 	a.stopConnectionKeepAliveLoop()
 	closeJVMMonitoringSessions()
