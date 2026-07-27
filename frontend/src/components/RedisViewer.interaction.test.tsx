@@ -341,13 +341,18 @@ describe('RedisViewer tree interactions', () => {
     await flushEffects();
 
     const header = renderer!.root.findByProps({ className: 'redis-key-detail-header' });
+    const top = renderer!.root.findByProps({ className: 'redis-key-detail-top' });
+    const viewMode = renderer!.root.findByProps({ className: 'redis-key-view-mode' });
     const summary = renderer!.root.findByProps({ className: 'redis-key-detail-summary' });
     const identity = renderer!.root.findByProps({ className: 'redis-key-detail-identity' });
     const metadata = renderer!.root.findByProps({ className: 'redis-key-detail-metadata' });
     const actions = renderer!.root.findByProps({ className: 'redis-key-detail-actions' });
 
     expect(header.props.style).toMatchObject({ flexDirection: 'column' });
+    expect(header.parent).toBe(top);
+    expect(viewMode.parent).toBe(top);
     expect(summary.props.style).toMatchObject({ minWidth: 0, width: '100%' });
+    expect(identity.props.style).toMatchObject({ minWidth: 0, width: '100%' });
     expect(identity.parent).toBe(summary);
     expect(metadata.parent).toBe(summary);
     expect(actions.parent).toBe(summary);
@@ -358,6 +363,9 @@ describe('RedisViewer tree interactions', () => {
       flexWrap: 'wrap',
       maxWidth: '100%',
     });
+    const activeKey = renderer!.root.findByProps({ 'data-redis-active-key': 'true' });
+    expect(activeKey.props.style).toMatchObject({ flex: '0 1 auto', minWidth: 0, textOverflow: 'ellipsis' });
+    expect(activeKey.props.style).not.toHaveProperty('maxWidth');
     expect(findButtonByText(renderer!, 'Set TTL')).toBeTruthy();
     expect(findButtonByText(renderer!, 'Refresh')).toBeTruthy();
     expect(findButtonByText(renderer!, 'Delete Key')).toBeTruthy();
