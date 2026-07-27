@@ -6178,6 +6178,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
               const nextValue = editor.getValue?.();
               applyQueryState(typeof nextValue === 'string' ? nextValue : (formatSelection ? currentValue : formatted));
               refreshObjectDecorations();
+              editor.setScrollLeft?.(0);
               return;
       }
       if (formatSelection) {
