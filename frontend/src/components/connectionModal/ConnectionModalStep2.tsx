@@ -15,7 +15,9 @@ import {
 } from "antd";
 import {
   ApiOutlined,
+  CheckCircleFilled,
   ClusterOutlined,
+  CloseCircleFilled,
   CodeOutlined,
   DatabaseOutlined,
   FileTextOutlined,
@@ -89,6 +91,9 @@ const PRIMARY_USERNAME_OPTIONAL_TYPES = new Set([
   "rabbitmq",
 ]);
 
+// URI 操作反馈统一保留 4 秒，便于用户读取后自动回收空间。
+const URI_FEEDBACK_AUTO_DISMISS_MS = 4000;
+
 type ConnectionModalStep2Props = Record<string, any>;
 
 const ConnectionModalStep2: React.FC<ConnectionModalStep2Props> = (props) => {
@@ -158,6 +163,7 @@ const ConnectionModalStep2: React.FC<ConnectionModalStep2Props> = (props) => {
     renderConfigSectionCard,
     renderJvmSectionHeader,
     renderStoredSecretControls,
+    resolvedTestResultMessage,
     resolvedUriFeedbackMessage,
     rocketmqTopology,
     selectingCertificateField,
@@ -194,13 +200,21 @@ const ConnectionModalStep2: React.FC<ConnectionModalStep2Props> = (props) => {
     useSSL,
   } = props;
 
-  // Demo：进入配置后生产保护默认展开，便于看到限制项
+  // A · Studio 默认展开生产保护，保留用户按需折叠的交互。
   const [readOnlyProtectionExpanded, setReadOnlyProtectionExpanded] =
     React.useState(true);
 
   React.useEffect(() => {
     setReadOnlyProtectionExpanded(true);
   }, [dbType]);
+
+  React.useEffect(() => {
+    if (!uriFeedback) return undefined;
+    const dismissTimer = window.setTimeout(() => {
+      setUriFeedback(null);
+    }, URI_FEEDBACK_AUTO_DISMISS_MS);
+    return () => window.clearTimeout(dismissTimer);
+  }, [setUriFeedback, uriFeedback]);
 
   const renderStep2 = () => {
   const showConnectionReadOnlyField = supportsConnectionReadOnlyMode({
@@ -238,8 +252,13 @@ const ConnectionModalStep2: React.FC<ConnectionModalStep2Props> = (props) => {
             placeholder={getUriPlaceholder(dbType)}
           />
         </Form.Item>
-        <Space size={8} style={{ marginBottom: uriFeedback ? 8 : 0 }} wrap>
-          <Button size="small" type="primary" onClick={handleParseURI}>
+        <Space
+          size={8}
+          className="gn-conn-uri-actions"
+          style={{ marginBottom: uriFeedback ? 8 : 0 }}
+          wrap
+        >
+          <Button size="small" onClick={handleParseURI}>
             {t("connection.modal.uri.action.parse")}
           </Button>
           <Button size="small" onClick={handleGenerateURI}>
@@ -2521,6 +2540,7 @@ const ConnectionModalStep2: React.FC<ConnectionModalStep2Props> = (props) => {
     <Form
       form={form}
       layout="vertical"
+      className="gn-conn-studio-form"
       initialValues={{
         type: "mysql",
         host: "localhost",
@@ -2812,33 +2832,17 @@ const ConnectionModalStep2: React.FC<ConnectionModalStep2Props> = (props) => {
           customIconColor || getDbDefaultColor(effectiveIconType);
 
         const appearanceSection = (
-          <div style={{ display: "grid", gap: 14 }}>
+          <div className="gn-conn-appearance">
             <div>
-              <div
-                style={{
-                  marginBottom: 8,
-                  fontSize: 12,
-                  fontWeight: 700,
-                  color: darkMode ? "#f5f7ff" : "#162033",
-                }}
-              >
+              <div className="gn-conn-appearance-label">
                 {t("connection.modal.appearance.icon")}
-                <span
-                  style={{
-                    marginLeft: 8,
-                    fontSize: 11,
-                    fontWeight: 500,
-                    color: darkMode
-                      ? "rgba(255,255,255,0.45)"
-                      : "rgba(0,0,0,0.35)",
-                  }}
-                >
+                <span>
                   {t("connection.modal.appearance.current", {
                     name: getDbIconLabel(effectiveIconType),
                   })}
                 </span>
               </div>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+              <div className="gn-conn-appearance-icon-grid">
                 {DB_ICON_TYPES.map((iconKey) => {
                   const isActive = effectiveIconType === iconKey;
                   return (
@@ -2846,26 +2850,13 @@ const ConnectionModalStep2: React.FC<ConnectionModalStep2Props> = (props) => {
                       key={iconKey}
                       type="button"
                       title={getDbIconLabel(iconKey)}
+                      className="gn-conn-appearance-icon"
+                      data-active={isActive ? "true" : undefined}
                       onClick={() =>
                         setCustomIconType(
                           iconKey === dbType ? undefined : iconKey,
                         )
                       }
-                      style={{
-                        width: 40,
-                        height: 40,
-                        borderRadius: 9,
-                        display: "grid",
-                        placeItems: "center",
-                        border: `2px solid ${isActive ? effectiveIconColor : darkMode ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.06)"}`,
-                        background: isActive
-                          ? darkMode
-                            ? "rgba(255,255,255,0.08)"
-                            : "rgba(24,144,255,0.06)"
-                          : "transparent",
-                        cursor: "pointer",
-                        transition: "all 120ms ease",
-                      }}
                     >
                       {getDbIcon(
                         iconKey,
@@ -2878,30 +2869,19 @@ const ConnectionModalStep2: React.FC<ConnectionModalStep2Props> = (props) => {
               </div>
             </div>
             <div>
-              <div
-                style={{
-                  marginBottom: 8,
-                  fontSize: 12,
-                  fontWeight: 700,
-                  color: darkMode ? "#f5f7ff" : "#162033",
-                }}
-              >
+              <div className="gn-conn-appearance-label">
                 {t("connection.modal.appearance.color")}
               </div>
-              <div
-                style={{
-                  display: "flex",
-                  flexWrap: "wrap",
-                  gap: 8,
-                  alignItems: "center",
-                }}
-              >
+              <div className="gn-conn-appearance-colors">
                 {PRESET_ICON_COLORS.map((presetColor) => {
                   const isActive = effectiveIconColor === presetColor;
                   return (
                     <button
                       key={presetColor}
                       type="button"
+                      className="gn-conn-appearance-color"
+                      data-active={isActive ? "true" : undefined}
+                      aria-label={presetColor}
                       onClick={() =>
                         setCustomIconColor(
                           presetColor === getDbDefaultColor(effectiveIconType)
@@ -2910,18 +2890,7 @@ const ConnectionModalStep2: React.FC<ConnectionModalStep2Props> = (props) => {
                         )
                       }
                       style={{
-                        width: 26,
-                        height: 26,
-                        borderRadius: 7,
                         background: presetColor,
-                        border: isActive
-                          ? `2.5px solid ${darkMode ? "#fff" : "#162033"}`
-                          : "2px solid transparent",
-                        cursor: "pointer",
-                        transition: "all 120ms ease",
-                        boxShadow: isActive
-                          ? `0 0 0 2px ${presetColor}40`
-                          : "none",
                       }}
                     />
                   );
@@ -2937,45 +2906,21 @@ const ConnectionModalStep2: React.FC<ConnectionModalStep2Props> = (props) => {
                     )
                   }
                   title={t("connection.modal.appearance.customColor")}
-                  style={{
-                    width: 26,
-                    height: 26,
-                    border: "none",
-                    padding: 0,
-                    cursor: "pointer",
-                    borderRadius: 6,
-                    background: "transparent",
-                  }}
+                  className="gn-conn-appearance-custom-color"
                 />
               </div>
             </div>
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 12,
-                padding: "10px 12px",
-                borderRadius: 10,
-                border: `1px solid ${darkMode ? "rgba(255,255,255,0.08)" : "rgba(16,24,40,0.08)"}`,
-                background: darkMode
-                  ? "rgba(255,255,255,0.03)"
-                  : "rgba(16,24,40,0.02)",
-              }}
-            >
-              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                {getDbIcon(effectiveIconType, effectiveIconColor, 24)}
-                <div style={{ minWidth: 0 }}>
-                  <div
-                    style={{
-                      fontSize: 13,
-                      fontWeight: 700,
-                      color: darkMode ? "#e0e0e0" : "#333",
-                    }}
-                  >
+            <div className="gn-conn-appearance-preview">
+              <div className="gn-conn-appearance-preview-main">
+                <div className="gn-conn-appearance-preview-icon">
+                  {getDbIcon(effectiveIconType, effectiveIconColor, 18)}
+                </div>
+                <div className="gn-conn-appearance-preview-copy">
+                  <div className="gn-conn-appearance-preview-name">
                     {form.getFieldValue("name") ||
                       t("connection.modal.appearance.previewName")}
                   </div>
-                  <div style={{ ...modalMutedTextStyle, fontSize: 11 }}>
+                  <div className="gn-conn-appearance-preview-meta">
                     {t("connection.modal.appearance.preview")}
                   </div>
                 </div>
@@ -2984,7 +2929,7 @@ const ConnectionModalStep2: React.FC<ConnectionModalStep2Props> = (props) => {
                 <Button
                   size="small"
                   type="link"
-                  style={{ marginLeft: "auto" }}
+                  className="gn-conn-appearance-reset"
                   onClick={() => {
                     setCustomIconType(undefined);
                     setCustomIconColor(undefined);
@@ -3024,7 +2969,33 @@ const ConnectionModalStep2: React.FC<ConnectionModalStep2Props> = (props) => {
                 );
               })}
             </nav>
-            <div className="gn-conn-form-main">{currentSectionContent}</div>
+            <div className="gn-conn-form-main">
+              {testResult ? (
+                <div
+                  className="gn-conn-studio-test-banner"
+                  data-status={testResult.type === "success" ? "success" : "error"}
+                  role="status"
+                >
+                  {testResult.type === "success" ? (
+                    <CheckCircleFilled aria-hidden="true" />
+                  ) : (
+                    <CloseCircleFilled aria-hidden="true" />
+                  )}
+                  <span>{resolvedTestResultMessage}</span>
+                  {testResult.type !== "success" ? (
+                    <Button
+                      type="link"
+                      size="small"
+                      icon={<FileTextOutlined />}
+                      onClick={() => setTestErrorLogOpen(true)}
+                    >
+                      {t("connection.action.viewDetails")}
+                    </Button>
+                  ) : null}
+                </div>
+              ) : null}
+              {currentSectionContent}
+            </div>
           </div>
         );
       })()}
