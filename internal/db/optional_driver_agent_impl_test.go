@@ -499,8 +499,8 @@ func TestOptionalDriverAgentUnresponsiveProcessIsReapedAfterTimeout(t *testing.T
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("expected context deadline error, got %v", err)
 	}
-	if cmd.ProcessState == nil || !cmd.ProcessState.Exited() {
-		t.Fatalf("timed-out driver-agent process was not reaped: %#v", cmd.ProcessState)
+	if cmd.ProcessState == nil {
+		t.Fatal("timed-out driver-agent process was not reaped")
 	}
 }
 

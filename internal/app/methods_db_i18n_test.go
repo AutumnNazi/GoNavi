@@ -196,6 +196,9 @@ func TestMethodsDBConnectionValidationAndReleaseUseEnglishMessages(t *testing.T)
 func TestMethodsDBConnectUsesCurrentLanguageForDriverRuntimeReason(t *testing.T) {
 	tmpDir := t.TempDir()
 	db.SetExternalDriverDownloadDirectory(tmpDir)
+	t.Cleanup(func() {
+		db.SetExternalDriverDownloadDirectory("")
+	})
 
 	app := NewAppWithSecretStore(newFakeAppSecretStore())
 	app.configDir = tmpDir
