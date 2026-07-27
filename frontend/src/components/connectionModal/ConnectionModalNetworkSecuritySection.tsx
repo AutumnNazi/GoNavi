@@ -23,7 +23,6 @@ const ConnectionModalNetworkSecuritySection: React.FC<ConnectionModalNetworkSecu
     darkMode,
     dbType,
     form,
-    getConnectionOptionCardStyle,
     handleSelectCertificateFile,
     handleSelectSSHKeyFile,
     initialValues,
@@ -787,36 +786,20 @@ const ConnectionModalNetworkSecuritySection: React.FC<ConnectionModalNetworkSecu
   };
 
   return (
-    <div style={modalInnerSectionStyle}>
-      <div
-        style={{
-          marginBottom: 12,
-          color: darkMode ? "#f5f7ff" : "#162033",
-          fontSize: 14,
-          fontWeight: 700,
-        }}
-      >
-        {t("connection.modal.network.title")}
+    <div>
+      <div className="gn-conn-net-hint">
+        {t("connection.modal.network.listHint")}
       </div>
-      <div style={{ ...modalMutedTextStyle, marginBottom: 16 }}>
-        {t("connection.modal.network.description")}
-      </div>
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-          gap: 12,
-          marginBottom: 16,
-        }}
-      >
+      <div className="gn-conn-net-list">
         {networkItems.map((item) => {
           const active = item.key === resolvedNetworkConfig;
-          const activeColor = darkMode ? "#ffd666" : "#1677ff";
           return (
             <div
               key={item.key}
               role="button"
               tabIndex={0}
+              className="gn-conn-net-row"
+              data-active={active ? "true" : "false"}
               onClick={() => setActiveNetworkConfig(item.key)}
               onKeyDown={(event) => {
                 if (event.key === "Enter" || event.key === " ") {
@@ -824,167 +807,55 @@ const ConnectionModalNetworkSecuritySection: React.FC<ConnectionModalNetworkSecu
                   setActiveNetworkConfig(item.key);
                 }
               }}
-              style={{
-                ...getConnectionOptionCardStyle(item.enabled),
-                borderColor: active
-                  ? darkMode
-                    ? "rgba(255,214,102,0.46)"
-                    : "rgba(24,144,255,0.36)"
-                  : "transparent",
-                background: active
-                  ? darkMode
-                    ? "linear-gradient(180deg, rgba(255,214,102,0.14) 0%, rgba(255,214,102,0.08) 100%)"
-                    : "linear-gradient(180deg, rgba(24,144,255,0.12) 0%, rgba(24,144,255,0.06) 100%)"
-                  : getConnectionOptionCardStyle(item.enabled)
-                      .background,
-                boxShadow: active
-                  ? darkMode
-                    ? "0 0 0 1px rgba(255,214,102,0.18) inset, 0 12px 26px rgba(0,0,0,0.16)"
-                    : "0 0 0 1px rgba(24,144,255,0.14) inset, 0 12px 22px rgba(24,144,255,0.10)"
-                  : "none",
-                cursor: "pointer",
-                outline: "none",
-              }}
             >
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "flex-start",
-                  gap: 10,
-                }}
+              <Form.Item
+                name={
+                  item.key === "ssl"
+                    ? "useSSL"
+                    : item.key === "ssh"
+                      ? "useSSH"
+                      : item.key === "proxy"
+                        ? "useProxy"
+                        : "useHttpTunnel"
+                }
+                valuePropName="checked"
+                noStyle
               >
-                <div
-                  style={{
-                    width: 8,
-                    height: 8,
-                    marginTop: 8,
-                    borderRadius: 999,
-                    background: active ? activeColor : "transparent",
-                    border: active
-                      ? "none"
-                      : darkMode
-                        ? "1px solid rgba(255,255,255,0.12)"
-                        : "1px solid rgba(16,24,40,0.12)",
-                    flexShrink: 0,
+                <Checkbox
+                  onClick={(event) => {
+                    // 勾选时保留在当前行，同时展开详情
+                    event.stopPropagation();
+                    setActiveNetworkConfig(item.key);
                   }}
                 />
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "flex-start",
-                    gap: 10,
-                    minWidth: 0,
-                    flex: 1,
-                  }}
-                >
-                  <Form.Item
-                    name={
-                      item.key === "ssl"
-                        ? "useSSL"
-                        : item.key === "ssh"
-                          ? "useSSH"
-                          : item.key === "proxy"
-                            ? "useProxy"
-                            : "useHttpTunnel"
-                    }
-                    valuePropName="checked"
-                    noStyle
-                  >
-                    <Checkbox />
-                  </Form.Item>
-                  <div style={{ minWidth: 0, flex: 1 }}>
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "space-between",
-                        gap: 8,
-                      }}
-                    >
-                      <span
-                        style={{
-                          fontSize: 14,
-                          fontWeight: 700,
-                          color: darkMode ? "#f5f7ff" : "#162033",
-                        }}
-                      >
-                        {item.title}
-                      </span>
-                      <div
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 8,
-                        }}
-                      >
-                        {active && (
-                          <span
-                            style={{
-                              padding: "2px 8px",
-                              borderRadius: 999,
-                              fontSize: 11,
-                              fontWeight: 700,
-                              color: activeColor,
-                              background: darkMode
-                                ? "rgba(255,214,102,0.16)"
-                                : "rgba(24,144,255,0.12)",
-                            }}
-                          >
-                            {t(
-                              "connection.modal.network.currentEditing",
-                            )}
-                          </span>
-                        )}
-                        <span
-                          style={{
-                            fontSize: 11,
-                            fontWeight: 700,
-                            color: item.enabled
-                              ? activeColor
-                              : darkMode
-                                ? "rgba(255,255,255,0.38)"
-                                : "rgba(16,24,40,0.36)",
-                          }}
-                        >
-                          {item.enabled
-                            ? t("connection.modal.network.enabled")
-                            : t(
-                                "connection.modal.network.notEnabled",
-                              )}
-                        </span>
-                      </div>
-                    </div>
-                    <div
-                      style={{
-                        marginTop: 4,
-                        ...modalMutedTextStyle,
-                        color: active
-                          ? darkMode
-                            ? "rgba(255,255,255,0.72)"
-                            : "rgba(22,32,51,0.68)"
-                          : modalMutedTextStyle.color,
-                      }}
-                    >
-                      {item.description}
-                    </div>
-                  </div>
-                </div>
+              </Form.Item>
+              <div style={{ minWidth: 0 }}>
+                <div className="nt">{item.title}</div>
+                <div className="nd">{item.description}</div>
               </div>
+              <span className={`st${item.enabled ? " on" : ""}`}>
+                {item.enabled
+                  ? t("connection.modal.network.enabled")
+                  : t("connection.modal.network.notEnabled")}
+              </span>
             </div>
           );
         })}
       </div>
-      <div style={{ marginBottom: 16 }}>{renderNetworkPanel()}</div>
-      <div style={{ ...modalInnerSectionStyle, padding: 12 }}>
-        <div
-          style={{
-            marginBottom: 10,
-            color: darkMode ? "#f5f7ff" : "#162033",
-            fontSize: 13,
-            fontWeight: 700,
-          }}
-        >
-          {t("connection.modal.network.advanced.title")}
+      <div style={{ marginBottom: 14 }}>{renderNetworkPanel()}</div>
+      <div
+        className="gn-conn-uri-block"
+        style={{ marginBottom: 0 }}
+      >
+        <div className="gn-conn-uri-block-top">
+          <div>
+            <span className="ttl">
+              {t("connection.modal.network.advanced.title")}
+            </span>
+            <span className="hint">
+              {t("connection.modal.network.timeout.label")}
+            </span>
+          </div>
         </div>
         <Form.Item
           name="timeout"

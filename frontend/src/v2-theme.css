@@ -2260,20 +2260,6 @@ body[data-ui-version="v2"] .gn-v2-active-connection-actions {
   flex: 0 0 auto;
 }
 
-body[data-ui-version="v2"] .gn-v2-active-connection-query-action {
-  padding: 0 8px;
-  max-width: 96px;
-  font-size: 12px;
-  font-weight: 500;
-}
-
-body[data-ui-version="v2"] .gn-v2-active-connection-query-action > span:not(.anticon):not(.ant-btn-icon) {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 @container gn-v2-object-explorer (max-width: 440px) {
   body[data-ui-version="v2"] .gn-v2-active-connection-header {
     padding-right: 8px;
@@ -2285,16 +2271,6 @@ body[data-ui-version="v2"] .gn-v2-active-connection-query-action > span:not(.ant
     gap: 2px;
   }
 
-  body[data-ui-version="v2"] .gn-v2-active-connection-query-action {
-    width: 28px;
-    min-width: 28px;
-    max-width: 28px;
-    padding: 0;
-  }
-
-  body[data-ui-version="v2"] .gn-v2-active-connection-query-action > span:not(.anticon):not(.ant-btn-icon) {
-    display: none;
-  }
 }
 
 body[data-ui-version="v2"] .gn-v2-explorer-search {

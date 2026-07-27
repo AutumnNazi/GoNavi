@@ -425,7 +425,7 @@ describe("ConnectionModal i18n", () => {
           "connection_modal.step1.group.all",
         ),
       ),
-    ).toBe("全部");
+    ).toContain("全部");
 
     await act(async () => {
       storeState.setLanguagePreference("en-US");
@@ -440,7 +440,7 @@ describe("ConnectionModal i18n", () => {
           "connection_modal.step1.group.all",
         ),
       ),
-    ).toBe("All");
+    ).toContain("All");
     expect(
       textContent(
         findConnectionTypeGroup(
@@ -448,7 +448,7 @@ describe("ConnectionModal i18n", () => {
           "connection_modal.step1.group.other",
         ),
       ),
-    ).toBe("Other");
+    ).toContain("Other");
     expect(textContent(renderer!.toJSON())).not.toContain("选择数据源类型");
   });
 
@@ -469,7 +469,7 @@ describe("ConnectionModal i18n", () => {
           "connection_modal.step1.group.all",
         ),
       ),
-    ).toBe("全部");
+    ).toContain("全部");
 
     setCurrentLanguage("en-US");
     await act(async () => {
@@ -482,7 +482,7 @@ describe("ConnectionModal i18n", () => {
           "connection_modal.step1.group.all",
         ),
       ),
-    ).toBe("All");
+    ).toContain("All");
   });
 
   it.each(["legacy", "v2"] as const)(
@@ -520,7 +520,7 @@ describe("ConnectionModal i18n", () => {
       });
 
       expect(textContent(renderer!.toJSON())).toContain("新建 MySQL 连接");
-      expect(textContent(renderer!.toJSON())).toContain("基础身份");
+      expect(textContent(renderer!.toJSON())).toContain("名称");
       expect(textContent(renderer!.toJSON())).toContain("测试连接");
       expect(textContent(renderer!.toJSON())).toContain("保存");
       expect(textContent(renderer!.toJSON())).toContain("上一步");
@@ -550,7 +550,8 @@ describe("ConnectionModal i18n", () => {
       });
 
       expect(textContent(renderer!.toJSON())).toContain("Select connection type");
-      expect(textContent(renderer!.toJSON())).toContain("Choose data source");
+      expect(textContent(renderer!.toJSON())).toContain("Click to configure");
+      expect(textContent(renderer!.toJSON())).toContain("Categories");
       expect(textContent(renderer!.toJSON())).toContain("Cancel");
 
       await act(async () => {
@@ -558,7 +559,7 @@ describe("ConnectionModal i18n", () => {
       });
 
       expect(textContent(renderer!.toJSON())).toContain("New MySQL connection");
-      expect(textContent(renderer!.toJSON())).toContain("Connection identity");
+      expect(textContent(renderer!.toJSON())).toContain("Name");
       expect(textContent(renderer!.toJSON())).toContain("Test connection");
       expect(textContent(renderer!.toJSON())).toContain("Save");
       expect(textContent(renderer!.toJSON())).toContain("Back");
@@ -629,27 +630,39 @@ describe("ConnectionModal i18n", () => {
         findClickableCard(renderer!, sourceLabel).props.onClick();
       });
 
+      // Demo：生产保护默认展开；折叠后选项文案应消失
       let pageText = textContent(renderer!.toJSON());
       expect(pageText).toContain(expectations[0]);
-      expect(pageText).toContain(
-        language === "zh-CN" ? "未限制" : "No restrictions",
-      );
-      expect(pageText).not.toContain(expectations[1]);
-      expect(pageText).not.toContain(expectations[2]);
+      expect(pageText).toContain(expectations[2]);
+      expect(pageText).toContain(expectations[6]);
 
       const protectionToggle = renderer!.root.findAll(
         (node) => node.props?.["data-connection-config-section-toggle"] === "readOnly",
       )[0];
-      expect(protectionToggle.props["aria-expanded"]).toBe(false);
+      expect(protectionToggle.props["aria-expanded"]).toBe(true);
 
       await act(async () => {
         protectionToggle.props.onClick({ stopPropagation: vi.fn() });
       });
 
       pageText = textContent(renderer!.toJSON());
-      expectations.forEach((expected) => {
-        expect(pageText).toContain(expected);
+      expect(pageText).toContain(expectations[0]);
+      expect(pageText).toContain(
+        language === "zh-CN" ? "未限制" : "No restrictions",
+      );
+      expect(pageText).not.toContain(expectations[2]);
+      expect(pageText).not.toContain(expectations[3]);
+
+      await act(async () => {
+        protectionToggle.props.onClick({ stopPropagation: vi.fn() });
       });
+
+      pageText = textContent(renderer!.toJSON());
+      expectations
+        .filter((expected) => expected !== expectations[1])
+        .forEach((expected) => {
+          expect(pageText).toContain(expected);
+        });
       expect(pageText).not.toContain("connection.modal.section.undefined.title");
       expect(pageText).not.toContain("connection.modal.section.undefined.description");
     },
@@ -706,7 +719,7 @@ describe("ConnectionModal i18n", () => {
     expect(pageText).toContain("Auth database (authSource)");
     expect(pageText).toContain("Read preference (readPreference)");
     expect(pageText).toContain("Read from the primary node only.");
-    expect(pageText).toContain("Authentication method");
+    expect(pageText).toContain("Auth");
     expect(pageText).toContain("Auto-negotiate");
     expect(pageText).toContain("Let the driver choose based on server capabilities.");
 
@@ -729,7 +742,7 @@ describe("ConnectionModal i18n", () => {
     pageText = textContent(renderer!.toJSON());
     expect(pageText).toContain("Cluster mode");
     expect(pageText).toContain("Redis password");
-    expect(pageText).toContain("Visible databases");
+    expect(pageText).toContain("Scope");
   });
 
   it("renders English network, appearance, and raw-preserving copy for v2 ui", async () => {
@@ -791,8 +804,7 @@ describe("ConnectionModal i18n", () => {
 
     let pageText = textContent(renderer!.toJSON());
     expect(pageText).toContain("Network & Security");
-    expect(pageText).toContain("SSL, SSH, proxy, and advanced connection");
-    expect(pageText).toContain("Keep connection methods listed above and show the selected details below");
+    expect(pageText).toContain("Check to enable · click a row to edit details");
     expect(pageText).toContain("SSL/TLS");
     expect(pageText).toContain("Preferred");
     expect(pageText).toContain("Required");
@@ -802,9 +814,8 @@ describe("ConnectionModal i18n", () => {
     expect(pageText).toContain("HTTP tunnel");
     expect(pageText).toContain("Advanced connection");
     expect(pageText).toContain("Connection timeout (seconds)");
-    expect(pageText).toContain("Configuration sections");
     expect(pageText).toContain("Appearance");
-    expect(pageText).toContain("Custom icon and color");
+    expect(pageText).toContain("Advanced");
 
     await act(async () => {
       findClickableCard(renderer!, "Proxy").props.onClick();
@@ -968,7 +979,7 @@ describe("ConnectionModal i18n", () => {
     expect(textContent(renderer!.toJSON())).toContain(
       "MySQL-compatible data sources support CA certificates, client certificates, and private keys.",
     );
-    expect(textContent(renderer!.toJSON())).toContain("Editing");
+    expect(textContent(renderer!.toJSON())).toContain("Not enabled");
 
     mockFormValues = {
       type: "clickhouse",
@@ -1533,7 +1544,7 @@ describe("ConnectionModal i18n", () => {
     });
 
     let pageText = textContent(renderer!.toJSON());
-    expect(pageText).toContain("OceanBase protocol");
+    expect(pageText).toContain("Proto");
     expect(pageText).toContain("Choose MySQL for MySQL tenants and Oracle for Oracle tenants.");
 
     await act(async () => {
@@ -1550,7 +1561,7 @@ describe("ConnectionModal i18n", () => {
     });
 
     pageText = textContent(renderer!.toJSON());
-    expect(pageText).toContain("Default connection database");
+    expect(pageText).toContain("Database");
 
     await act(async () => {
       renderer!.update(
@@ -1566,6 +1577,6 @@ describe("ConnectionModal i18n", () => {
     });
 
     pageText = textContent(renderer!.toJSON());
-    expect(pageText).toContain("Service Name");
+    expect(pageText).toContain("Svc");
   });
 });

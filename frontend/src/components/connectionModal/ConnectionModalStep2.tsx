@@ -15,14 +15,11 @@ import {
 } from "antd";
 import {
   ApiOutlined,
-  BgColorsOutlined,
-  CloudOutlined,
   ClusterOutlined,
   CodeOutlined,
   DatabaseOutlined,
   FileTextOutlined,
   GatewayOutlined,
-  LinkOutlined,
   SafetyCertificateOutlined,
   ThunderboltOutlined,
 } from "@ant-design/icons";
@@ -197,23 +194,13 @@ const ConnectionModalStep2: React.FC<ConnectionModalStep2Props> = (props) => {
     useSSL,
   } = props;
 
+  // Demo：进入配置后生产保护默认展开，便于看到限制项
   const [readOnlyProtectionExpanded, setReadOnlyProtectionExpanded] =
-    React.useState(false);
-
-  // 连接 URI 属于「粘贴整串」的高级入口，默认折叠：它的多行输入框很高，
-  // 展开时会把 host/账号/密码这些必填项挤出首屏。
-  // 已经填了 URI 的连接（编辑场景）默认展开，避免用户看不到自己已录入的值。
-  const [uriSectionExpanded, setUriSectionExpanded] = React.useState(
-    () => String(initialValues?.uri || "").trim() !== "",
-  );
+    React.useState(true);
 
   React.useEffect(() => {
-    setReadOnlyProtectionExpanded(false);
+    setReadOnlyProtectionExpanded(true);
   }, [dbType]);
-
-  React.useEffect(() => {
-    setUriSectionExpanded(String(initialValues?.uri || "").trim() !== "");
-  }, [dbType, initialValues?.uri]);
 
   const renderStep2 = () => {
   const showConnectionReadOnlyField = supportsConnectionReadOnlyMode({
@@ -234,23 +221,103 @@ const ConnectionModalStep2: React.FC<ConnectionModalStep2Props> = (props) => {
     restrictScriptExecution,
     restrictDataImport,
   ].filter(Boolean).length;
-  const baseInfoSection = (
-    <div style={modalInnerSectionStyle}>
-      <div
-        style={{
-          marginBottom: 12,
-          color: darkMode ? "#f5f7ff" : "#162033",
-          fontSize: 14,
-          fontWeight: 700,
-        }}
-      >
-        {t("connection.modal.config.basic.title")}
-      </div>
-      <div style={{ ...modalMutedTextStyle, marginBottom: 16 }}>
-        {t("connection.modal.config.basic.description")}
-      </div>
 
-      <div style={{ display: "grid", gap: 16 }}>
+  const uriQuickBlock =
+    !isCustom && !isJVM ? (
+      <div className="gn-conn-uri-block">
+        <div className="gn-conn-uri-block-top">
+          <div>
+            <span className="ttl">{t("connection.modal.config_section.uri.title")}</span>
+            <span className="hint">{t("connection.modal.uri.optionalHint")}</span>
+          </div>
+        </div>
+        <Form.Item name="uri" style={{ marginBottom: 8 }}>
+          <Input.TextArea
+            {...noAutoCapInputProps}
+            rows={2}
+            placeholder={getUriPlaceholder(dbType)}
+          />
+        </Form.Item>
+        <Space size={8} style={{ marginBottom: uriFeedback ? 8 : 0 }} wrap>
+          <Button size="small" type="primary" onClick={handleParseURI}>
+            {t("connection.modal.uri.action.parse")}
+          </Button>
+          <Button size="small" onClick={handleGenerateURI}>
+            {t("connection.modal.uri.action.generate")}
+          </Button>
+          <Button size="small" onClick={handleCopyURI}>
+            {t("connection.modal.uri.action.copy")}
+          </Button>
+        </Space>
+        {uriFeedback && (
+          <Alert
+            showIcon
+            closable
+            type={uriFeedback.type}
+            message={resolvedUriFeedbackMessage}
+            onClose={() => setUriFeedback(null)}
+            style={{ marginTop: 8, marginBottom: 0 }}
+          />
+        )}
+        {renderStoredSecretControls({
+          fieldName: "uri",
+          clearKey: "opaqueURI",
+          hasStoredSecret: initialValues?.hasOpaqueURI,
+          clearLabel: t("connection.modal.uri.stored.clear"),
+          description: t("connection.modal.uri.stored.description"),
+        })}
+      </div>
+    ) : null;
+
+  /** Demo 短标签；完整文案放 title，避免窄列换行 */
+  const denseLabel = (shortText: string, fullTitle?: string) => (
+    <span className="gn-conn-f-label" title={fullTitle || shortText}>
+      {shortText}
+    </span>
+  );
+
+  const denseIdentityRows = (
+    <div className="gn-conn-f-row">
+      {denseLabel(
+        t("connection.modal.dense.name"),
+        t("connection.modal.field.name.label"),
+      )}
+      <div className="gn-conn-f-ctrl gn-conn-f-inline">
+        <div className="gn-conn-w gn-conn-w-name">
+          <Form.Item name="name" style={{ marginBottom: 0 }}>
+            <Input
+              {...noAutoCapInputProps}
+              placeholder={
+                isJVM
+                  ? t("connection.modal.field.name.placeholder.jvm")
+                  : t("connection.modal.field.name.placeholder.default")
+              }
+            />
+          </Form.Item>
+        </div>
+        <div className="gn-conn-w gn-conn-w-env">
+          <Form.Item
+            name="environmentType"
+            initialValue={DEFAULT_CONNECTION_ENVIRONMENT}
+            style={{ marginBottom: 0 }}
+          >
+            <ConnectionEnvironmentSelect style={{ width: "100%" }} />
+          </Form.Item>
+        </div>
+      </div>
+    </div>
+  );
+
+  const baseInfoSection = (
+    <div className="gn-conn-dense" style={{ display: "grid", gap: 4 }}>
+      {uriQuickBlock}
+      {uriQuickBlock ? (
+        <div className="gn-conn-uri-divider">
+          {t("connection.modal.uri.orManual")}
+        </div>
+      ) : null}
+
+      <div style={{ display: "grid", gap: isCustom || isJVM ? 16 : 4 }}>
 
         {isCustom ? (
           <>
@@ -1010,25 +1077,24 @@ const ConnectionModalStep2: React.FC<ConnectionModalStep2Props> = (props) => {
         </>
         ) : (
           <>
-            {renderConfigSectionCard({
-              sectionKey: isFileDb ? "fileTarget" : "target",
-              icon: isFileDb ? <FileTextOutlined /> : <GatewayOutlined />,
-              children: (
+            {denseIdentityRows}
+
+            {/* 主机 / 文件 · 密排 */}
+            <div className="gn-conn-f-row">
+              {denseLabel(
+                isFileDb
+                  ? t("connection.modal.dense.file")
+                  : t("connection.modal.dense.host"),
+                isFileDb
+                  ? t("connection.modal.field.filePath.label")
+                  : t("connection.modal.field.host.label"),
+              )}
+              <div className="gn-conn-f-ctrl gn-conn-f-inline">
                 <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "minmax(0, 1fr) 120px",
-                    gap: 16,
-                    alignItems: "start",
-                  }}
+                  className={`gn-conn-w ${isFileDb ? "gn-conn-w-grow" : "gn-conn-w-host"}`}
                 >
                   <Form.Item
                     name="host"
-                    label={
-                      isFileDb
-                        ? t("connection.modal.field.filePath.label")
-                        : t("connection.modal.field.host.label")
-                    }
                     rules={[
                       createUriAwareRequiredRule(
                         t("connection.modal.field.addressPath.required"),
@@ -1047,20 +1113,18 @@ const ConnectionModalStep2: React.FC<ConnectionModalStep2Props> = (props) => {
                       }
                     />
                   </Form.Item>
-                  {isFileDb ? (
-                    <Form.Item label=" " style={{ marginBottom: 0 }}>
-                      <Button
-                        style={{ width: "100%" }}
-                        onClick={handleSelectDatabaseFile}
-                        loading={selectingDbFile}
-                      >
-                        {t("connection.modal.action.browse")}
-                      </Button>
-                    </Form.Item>
-                  ) : (
+                </div>
+                {isFileDb ? (
+                  <Button
+                    onClick={handleSelectDatabaseFile}
+                    loading={selectingDbFile}
+                  >
+                    {t("connection.modal.action.browse")}
+                  </Button>
+                ) : (
+                  <div className="gn-conn-w gn-conn-w-port">
                     <Form.Item
                       name="port"
-                      label={t("connection.modal.field.port.label")}
                       rules={[
                         createUriAwareRequiredRule(
                           t("connection.modal.field.port.required"),
@@ -1069,25 +1133,51 @@ const ConnectionModalStep2: React.FC<ConnectionModalStep2Props> = (props) => {
                       ]}
                       style={{ marginBottom: 0 }}
                     >
-                      <InputNumber style={{ width: "100%" }} />
+                      <InputNumber
+                        style={{ width: "100%" }}
+                        controls={false}
+                      />
                     </Form.Item>
+                  </div>
+                )}
+                {!isFileDb &&
+                  (isMySQLLike ||
+                    dbType === "postgres" ||
+                    dbType === "kingbase" ||
+                    dbType === "highgo" ||
+                    dbType === "vastbase" ||
+                    dbType === "opengauss" ||
+                    dbType === "gaussdb" ||
+                    dbType === "trino" ||
+                    dbType === "mongodb") && (
+                    <div className="gn-conn-w gn-conn-w-db">
+                      <Form.Item name="database" style={{ marginBottom: 0 }}>
+                        <Input
+                          {...noAutoCapInputProps}
+                          aria-label={t(
+                            "connection.modal.field.defaultDatabase.label",
+                          )}
+                          placeholder={t("connection.modal.dense.db")}
+                        />
+                      </Form.Item>
+                    </div>
                   )}
-                </div>
-              ),
-            })}
+              </div>
+            </div>
 
-            {dbType === "clickhouse" &&
-              renderConfigSectionCard({
-                sectionKey: "connectionMode",
-                icon: <ClusterOutlined />,
-                children: (
+            {dbType === "clickhouse" && (
+              <div className="gn-conn-f-row">
+                {denseLabel(
+                  t("connection.modal.dense.protocol"),
+                  t("connection.modal.field.protocol.label"),
+                )}
+                <div className="gn-conn-f-ctrl gn-conn-f-inline">
                   <Form.Item
                     name="clickHouseProtocol"
-                    label={t("connection.modal.field.protocol.label")}
-                    help={t("connection.modal.field.clickHouseProtocol.help")}
-                    style={{ marginBottom: 0 }}
+                    style={{ marginBottom: 0, minWidth: 140 }}
                   >
                     <Select
+                      style={{ minWidth: 140 }}
                       options={CLICKHOUSE_PROTOCOL_OPTIONS.map((option) => ({
                         ...option,
                         label: option.labelKey
@@ -1097,35 +1187,23 @@ const ConnectionModalStep2: React.FC<ConnectionModalStep2Props> = (props) => {
                       onChange={() => clearConnectionTestResultForChoice()}
                     />
                   </Form.Item>
-                ),
-              })}
+                </div>
+              </div>
+            )}
 
-            {dbType === "oceanbase" &&
-              renderConfigSectionCard({
-                sectionKey: "oceanBaseProtocol",
-                icon: <ClusterOutlined />,
-                children: (
+            {dbType === "oceanbase" && (
+              <div className="gn-conn-f-row" data-align="start">
+                {denseLabel(
+                  t("connection.modal.dense.protocol"),
+                  t("connection.modal.field.oceanBaseProtocol.label"),
+                )}
+                <div className="gn-conn-f-ctrl">
                   <Form.Item
                     name="oceanBaseProtocol"
-                    label={t("connection.modal.field.oceanBaseProtocol.label")}
-                    help={
-                      <span>
-                        {t(
-                          "connection.modal.field.oceanBaseProtocol.help.primary",
-                        )}
-                        <br />
-                        {t(
-                          "connection.modal.field.oceanBaseProtocol.help.connectionAttributes",
-                          {
-                            attributes:
-                              "connectionAttributes=key1:value1,key2:value2",
-                          },
-                        )}
-                      </span>
-                    }
-                    style={{ marginBottom: 0 }}
+                    style={{ marginBottom: 0, minWidth: 140 }}
                   >
                     <Select
+                      style={{ minWidth: 140 }}
                       options={OCEANBASE_PROTOCOL_OPTIONS}
                       onChange={() => {
                         form.setFieldsValue({ mysqlTopology: "single" });
@@ -1133,47 +1211,21 @@ const ConnectionModalStep2: React.FC<ConnectionModalStep2Props> = (props) => {
                       }}
                     />
                   </Form.Item>
-                ),
-              })}
+                  <div className="gn-conn-mode-hint">
+                    {t("connection.modal.field.oceanBaseProtocol.help.primary")}
+                  </div>
+                </div>
+              </div>
+            )}
 
-            {(dbType === "postgres" ||
-              dbType === "kingbase" ||
-              dbType === "highgo" ||
-              dbType === "vastbase" ||
-              dbType === "opengauss" ||
-              dbType === "gaussdb" ||
-              dbType === "trino") &&
-              renderConfigSectionCard({
-                sectionKey: "service",
-                icon: <DatabaseOutlined />,
-                children: (
-                  <Form.Item
-                    name="database"
-                    label={t("connection.modal.field.defaultDatabase.label")}
-                    help={t("connection.modal.field.defaultDatabase.help")}
-                    style={{ marginBottom: 0 }}
-                  >
-                    <Input
-                      {...noAutoCapInputProps}
-                      placeholder={t(
-                        "connection.modal.field.defaultDatabase.placeholder",
-                      )}
-                    />
-                  </Form.Item>
-                ),
-              })}
-
-            {dbType === "kafka" &&
-              renderConfigSectionCard({
-                sectionKey: "service",
-                icon: <DatabaseOutlined />,
-                children: (
-                  <Form.Item
-                    name="database"
-                    label={t("connection.modal.messageQueue.kafka.defaultTopic.label")}
-                    help={t("connection.modal.messageQueue.kafka.defaultTopic.help")}
-                    style={{ marginBottom: 0 }}
-                  >
+            {dbType === "kafka" && (
+              <div className="gn-conn-f-row">
+                {denseLabel(
+                  t("connection.modal.dense.topic"),
+                  t("connection.modal.messageQueue.kafka.defaultTopic.label"),
+                )}
+                <div className="gn-conn-f-ctrl">
+                  <Form.Item name="database" style={{ marginBottom: 0 }}>
                     <Input
                       {...noAutoCapInputProps}
                       placeholder={t(
@@ -1181,20 +1233,20 @@ const ConnectionModalStep2: React.FC<ConnectionModalStep2Props> = (props) => {
                       )}
                     />
                   </Form.Item>
-                ),
-              })}
+                </div>
+              </div>
+            )}
 
-            {dbType === "rocketmq" &&
-              renderConfigSectionCard({
-                sectionKey: "service",
-                icon: <DatabaseOutlined />,
-                children: (
-                  <Form.Item
-                    name="database"
-                    label={t("connection.modal.messageQueue.rocketmq.defaultTopic.label")}
-                    help={t("connection.modal.messageQueue.rocketmq.defaultTopic.help")}
-                    style={{ marginBottom: 0 }}
-                  >
+            {dbType === "rocketmq" && (
+              <div className="gn-conn-f-row">
+                {denseLabel(
+                  t("connection.modal.dense.topic"),
+                  t(
+                    "connection.modal.messageQueue.rocketmq.defaultTopic.label",
+                  ),
+                )}
+                <div className="gn-conn-f-ctrl">
+                  <Form.Item name="database" style={{ marginBottom: 0 }}>
                     <Input
                       {...noAutoCapInputProps}
                       placeholder={t(
@@ -1202,20 +1254,20 @@ const ConnectionModalStep2: React.FC<ConnectionModalStep2Props> = (props) => {
                       )}
                     />
                   </Form.Item>
-                ),
-              })}
+                </div>
+              </div>
+            )}
 
-            {dbType === "mqtt" &&
-              renderConfigSectionCard({
-                sectionKey: "service",
-                icon: <DatabaseOutlined />,
-                children: (
-                  <Form.Item
-                    name="database"
-                    label={t("connection.modal.messageQueue.mqtt.defaultTopicFilter.label")}
-                    help={t("connection.modal.messageQueue.mqtt.defaultTopicFilter.help")}
-                    style={{ marginBottom: 0 }}
-                  >
+            {dbType === "mqtt" && (
+              <div className="gn-conn-f-row">
+                {denseLabel(
+                  t("connection.modal.dense.topic"),
+                  t(
+                    "connection.modal.messageQueue.mqtt.defaultTopicFilter.label",
+                  ),
+                )}
+                <div className="gn-conn-f-ctrl">
+                  <Form.Item name="database" style={{ marginBottom: 0 }}>
                     <Input
                       {...noAutoCapInputProps}
                       placeholder={t(
@@ -1223,20 +1275,20 @@ const ConnectionModalStep2: React.FC<ConnectionModalStep2Props> = (props) => {
                       )}
                     />
                   </Form.Item>
-                ),
-              })}
+                </div>
+              </div>
+            )}
 
-            {dbType === "rabbitmq" &&
-              renderConfigSectionCard({
-                sectionKey: "service",
-                icon: <DatabaseOutlined />,
-                children: (
-                  <Form.Item
-                    name="database"
-                    label={t("connection.modal.messageQueue.rabbitmq.defaultVirtualHost.label")}
-                    help={t("connection.modal.messageQueue.rabbitmq.defaultVirtualHost.help")}
-                    style={{ marginBottom: 0 }}
-                  >
+            {dbType === "rabbitmq" && (
+              <div className="gn-conn-f-row">
+                {denseLabel(
+                  t("connection.modal.dense.vhost"),
+                  t(
+                    "connection.modal.messageQueue.rabbitmq.defaultVirtualHost.label",
+                  ),
+                )}
+                <div className="gn-conn-f-ctrl">
+                  <Form.Item name="database" style={{ marginBottom: 0 }}>
                     <Input
                       {...noAutoCapInputProps}
                       placeholder={t(
@@ -1244,23 +1296,21 @@ const ConnectionModalStep2: React.FC<ConnectionModalStep2Props> = (props) => {
                       )}
                     />
                   </Form.Item>
-                ),
-              })}
+                </div>
+              </div>
+            )}
 
-            {(dbType === "oracle" || isOceanBaseOracle) &&
-              renderConfigSectionCard({
-                sectionKey: "service",
-                icon: <DatabaseOutlined />,
-                children: (
+            {(dbType === "oracle" || isOceanBaseOracle) && (
+              <div className="gn-conn-f-row">
+                {denseLabel(
+                  t("connection.modal.dense.service"),
+                  isOceanBaseOracle
+                    ? t("connection.modal.field.oceanBaseServiceName.label")
+                    : t("connection.modal.field.serviceName.label"),
+                )}
+                <div className="gn-conn-f-ctrl">
                   <Form.Item
                     name="database"
-                    label={
-                      isOceanBaseOracle
-                        ? t(
-                            "connection.modal.field.oceanBaseServiceName.label",
-                          )
-                        : t("connection.modal.field.serviceName.label")
-                    }
                     rules={
                       isOceanBaseOracle
                         ? []
@@ -1269,13 +1319,6 @@ const ConnectionModalStep2: React.FC<ConnectionModalStep2Props> = (props) => {
                               t("connection.modal.field.serviceName.required"),
                             ),
                           ]
-                    }
-                    help={
-                      isOceanBaseOracle
-                        ? t(
-                            "connection.modal.field.oceanBaseServiceName.help",
-                          )
-                        : t("connection.modal.field.serviceName.help")
                     }
                     style={{ marginBottom: 0 }}
                   >
@@ -1286,371 +1329,312 @@ const ConnectionModalStep2: React.FC<ConnectionModalStep2Props> = (props) => {
                       )}
                     />
                   </Form.Item>
-                ),
-              })}
+                </div>
+              </div>
+            )}
 
-            {showConnectionReadOnlyField &&
-              renderConfigSectionCard({
-                sectionKey: "readOnly",
-                icon: <SafetyCertificateOutlined />,
-                collapsible: true,
-                expanded: readOnlyProtectionExpanded,
-                onToggle: () =>
-                  setReadOnlyProtectionExpanded((expanded) => !expanded),
-                badge: (
-                  <Tag
-                    color={
-                      connectionProtectionEnabledCount > 0 ? "red" : "default"
-                    }
-                  >
-                    {connectionProtectionEnabledCount > 0
-                      ? t(
-                          "connection.modal.field.readOnly.status.enabledCount",
-                          {
-                            count: connectionProtectionEnabledCount,
-                          },
-                        )
-                      : t("connection.modal.field.readOnly.status.disabled")}
-                  </Tag>
-                ),
-                children: (
-                  <div style={{ display: "grid", gap: 14 }}>
-                    <div
-                      style={{
-                        padding: 16,
-                        borderRadius: 16,
-                        border: connectionProtectionEnabledCount > 0
-                          ? darkMode
-                            ? "1px solid rgba(255,120,117,0.34)"
-                            : "1px solid rgba(245,34,45,0.18)"
-                          : darkMode
-                            ? "1px solid rgba(255,214,102,0.24)"
-                            : "1px solid rgba(250,173,20,0.18)",
-                        background: connectionProtectionEnabledCount > 0
-                          ? darkMode
-                            ? "linear-gradient(180deg, rgba(255,120,117,0.12) 0%, rgba(255,120,117,0.05) 100%)"
-                            : "linear-gradient(180deg, rgba(255,245,245,0.96) 0%, rgba(255,240,240,0.92) 100%)"
-                          : darkMode
-                            ? "linear-gradient(180deg, rgba(255,214,102,0.10) 0%, rgba(255,214,102,0.04) 100%)"
-                            : "linear-gradient(180deg, rgba(255,251,230,0.98) 0%, rgba(255,247,214,0.94) 100%)",
-                        boxShadow: darkMode
-                          ? "inset 0 1px 0 rgba(255,255,255,0.04)"
-                          : "inset 0 1px 0 rgba(255,255,255,0.92)",
-                      }}
-                    >
-                      <div
-                        style={{
-                          display: "grid",
-                          gridTemplateColumns: "minmax(0, 1fr) auto",
-                          gap: 16,
-                          alignItems: "start",
-                        }}
+            {/* 认证 · 密排（Demo：认证行 → 库范围 → 勾选 → 模式 → 生产保护） */}
+            {!isFileDb && !isRedis && (
+              <>
+                <div className="gn-conn-f-row">
+                  {denseLabel(
+                    t("connection.modal.dense.auth"),
+                    t("connection.modal.field.username.label"),
+                  )}
+                  <div className="gn-conn-f-ctrl gn-conn-f-inline">
+                    <div className="gn-conn-w gn-conn-w-user">
+                      <Form.Item
+                        name="user"
+                        rules={
+                          PRIMARY_USERNAME_OPTIONAL_TYPES.has(dbType)
+                            ? []
+                            : [
+                                createUriAwareRequiredRule(
+                                  t("connection.modal.field.username.required"),
+                                ),
+                              ]
+                        }
+                        style={{ marginBottom: 0 }}
                       >
-                        <div>
-                          <div
-                            style={{
-                              fontSize: 15,
-                              fontWeight: 700,
-                              color: darkMode ? "#f5f7ff" : "#162033",
-                            }}
-                          >
-                            {t("connection.modal.field.readOnly.label")}
-                          </div>
-                          <div style={{ ...modalMutedTextStyle, marginTop: 6 }}>
-                            {t("connection.modal.field.readOnly.help")}
-                          </div>
-                        </div>
-                        <Text
-                          style={{
-                            fontSize: 12,
-                            color: darkMode ? "#ffd591" : "#ad4e00",
-                            whiteSpace: "nowrap",
-                          }}
-                        >
-                          {t("connection.modal.field.readOnly.compatibility")}
-                        </Text>
-                      </div>
-                    </div>
-                    <div
-                      style={{
-                        display: "grid",
-                        gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-                        gap: 12,
-                      }}
-                    >
-                      {[
-                        {
-                          field: "restrictDataEdit",
-                          checked: restrictDataEdit,
-                          label: t(
-                            "connection.modal.field.readOnly.option.dataEdit.label",
-                          ),
-                          help: t(
-                            "connection.modal.field.readOnly.option.dataEdit.help",
-                          ),
-                        },
-                        {
-                          field: "restrictStructureEdit",
-                          checked: restrictStructureEdit,
-                          label: t(
-                            "connection.modal.field.readOnly.option.structureEdit.label",
-                          ),
-                          help: t(
-                            "connection.modal.field.readOnly.option.structureEdit.help",
-                          ),
-                        },
-                        {
-                          field: "restrictScriptExecution",
-                          checked: restrictScriptExecution,
-                          label: t(
-                            "connection.modal.field.readOnly.option.scriptExecution.label",
-                          ),
-                          help: t(
-                            "connection.modal.field.readOnly.option.scriptExecution.help",
-                          ),
-                        },
-                        {
-                          field: "restrictDataImport",
-                          checked: restrictDataImport,
-                          label: t(
-                            "connection.modal.field.readOnly.option.dataImport.label",
-                          ),
-                          help: t(
-                            "connection.modal.field.readOnly.option.dataImport.help",
-                          ),
-                        },
-                      ].map((item) => (
-                        <div
-                          key={item.field}
-                          onClick={() =>
-                            setChoiceFieldValue(item.field, !item.checked)
+                        <Input
+                          {...noAutoCapInputProps}
+                          placeholder={
+                            PRIMARY_USERNAME_OPTIONAL_TYPES.has(dbType)
+                              ? t(
+                                  "connection.modal.field.username.optional_placeholder",
+                                )
+                              : t("connection.modal.field.username.label")
                           }
-                          style={{
-                            padding: 14,
-                            borderRadius: 14,
-                            border: item.checked
-                              ? darkMode
-                                ? "1px solid rgba(255,120,117,0.22)"
-                                : "1px solid rgba(245,34,45,0.14)"
-                              : darkMode
-                                ? "1px solid rgba(255,255,255,0.08)"
-                                : "1px solid rgba(5,5,5,0.08)",
-                            background: item.checked
-                              ? darkMode
-                                ? "rgba(255,120,117,0.08)"
-                                : "rgba(255,241,240,0.92)"
-                              : darkMode
-                                ? "rgba(255,255,255,0.02)"
-                                : "rgba(255,255,255,0.9)",
-                            cursor: "pointer",
+                        />
+                      </Form.Item>
+                    </div>
+                    <div className="gn-conn-w gn-conn-w-pass">
+                      <Form.Item name="password" style={{ marginBottom: 0 }}>
+                        <Input.Password
+                          {...noAutoCapInputProps}
+                          visibilityToggle={{
+                            visible: primaryPasswordVisible,
+                            onVisibleChange: setPrimaryPasswordVisible,
                           }}
-                        >
-                          <div
-                            style={{
-                              display: "grid",
-                              gridTemplateColumns: "auto minmax(0, 1fr)",
-                              gap: 12,
-                              alignItems: "start",
-                            }}
-                          >
-                            <div
-                              style={{
-                                display: "flex",
-                                alignItems: "flex-start",
-                                paddingTop: 2,
-                              }}
-                              onClick={(event) => event.stopPropagation()}
-                            >
-                              <Form.Item
-                                name={item.field}
-                                valuePropName="checked"
-                                noStyle
-                              >
-                                <Checkbox
-                                  onChange={() =>
-                                    clearConnectionTestResultForChoice()
-                                  }
-                                  style={{
-                                    marginInlineStart: 0,
-                                  }}
-                                />
-                              </Form.Item>
-                            </div>
-                            <div>
-                              <div
-                                style={{
-                                  fontSize: 13,
-                                  fontWeight: 700,
-                                  color: darkMode ? "#f5f7ff" : "#162033",
-                                }}
-                              >
-                                {item.label}
-                              </div>
-                              <div
-                                style={{
-                                  ...modalMutedTextStyle,
-                                  marginTop: 6,
-                                  whiteSpace: "normal",
-                                }}
-                              >
-                                {item.help}
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                    <div
-                      style={{
-                        padding: 14,
-                        borderRadius: 14,
-                        border: darkMode
-                          ? "1px solid rgba(82,196,26,0.22)"
-                          : "1px solid rgba(82,196,26,0.18)",
-                        background: darkMode
-                          ? "rgba(82,196,26,0.08)"
-                          : "rgba(246,255,237,0.92)",
-                      }}
-                    >
-                      <div
-                        style={{
-                          fontSize: 13,
-                          fontWeight: 700,
-                          color: darkMode ? "#f5f7ff" : "#162033",
-                        }}
-                      >
-                        {t("connection.modal.field.readOnly.summary.title")}
-                      </div>
-                      <div style={{ ...modalMutedTextStyle, marginTop: 6 }}>
-                        {connectionProtectionEnabledCount > 0
-                          ? t(
-                              "connection.modal.field.readOnly.summary.selected",
-                              { count: connectionProtectionEnabledCount },
-                            )
-                          : t(
-                              "connection.modal.field.readOnly.summary.empty",
-                            )}
-                      </div>
-                    </div>
-                    <div
-                      style={{
-                        ...modalMutedTextStyle,
-                        fontSize: 12,
-                        lineHeight: 1.7,
-                        padding: "0 4px",
-                      }}
-                    >
-                      {t("connection.modal.field.readOnly.tip")}
+                          placeholder={getStoredSecretPlaceholder({
+                            hasStoredSecret: initialValues?.hasPrimaryPassword,
+                            emptyPlaceholder: t(
+                              "connection.modal.field.password.placeholder",
+                            ),
+                            retainedLabel: t(
+                              "connection.modal.field.password.retained",
+                            ),
+                          })}
+                        />
+                      </Form.Item>
                     </div>
                   </div>
-                ),
-              })}
+                </div>
+                {initialValues?.hasPrimaryPassword
+                  ? renderStoredSecretControls({
+                      fieldName: "password",
+                      clearKey: "primaryPassword",
+                      hasStoredSecret: initialValues?.hasPrimaryPassword,
+                      clearLabel: t(
+                        "connection.modal.secret.clear_saved_password",
+                      ),
+                      description: t("connection.modal.secret.saved_password"),
+                    })
+                  : null}
+              </>
+            )}
 
-            {isMySQLLike &&
-              renderConfigSectionCard({
-                sectionKey: "connectionMode",
-                icon: <ClusterOutlined />,
-                children: renderChoiceCards({
-                  fieldName: "mysqlTopology",
-                  value: String(mysqlTopology),
-                  options: [
-                    {
-                      value: "single",
-                      label: t("connection.modal.topology.single.label"),
-                      description: t(
-                        "connection.modal.topology.mysql.single.description",
-                      ),
-                    },
-                    {
-                      value: "replica",
-                      label: t(
-                        "connection.modal.topology.mysql.replica.label",
-                      ),
-                      description: t(
-                        "connection.modal.topology.mysql.replica.description",
-                      ),
-                    },
-                  ],
-                }),
-              })}
+            {isRedis && (
+              <div className="gn-conn-f-row">
+                {denseLabel(
+                  t("connection.modal.dense.password"),
+                  t("connection.modal.field.redisPassword.label"),
+                )}
+                <div className="gn-conn-f-ctrl gn-conn-f-inline">
+                  <div className="gn-conn-w gn-conn-w-pass">
+                    <Form.Item name="password" style={{ marginBottom: 0 }}>
+                      <Input.Password
+                        {...noAutoCapInputProps}
+                        visibilityToggle={{
+                          visible: primaryPasswordVisible,
+                          onVisibleChange: setPrimaryPasswordVisible,
+                        }}
+                        placeholder={getStoredSecretPlaceholder({
+                          hasStoredSecret: initialValues?.hasPrimaryPassword,
+                          emptyPlaceholder: t(
+                            "connection.modal.field.redisPassword.placeholder",
+                          ),
+                          retainedLabel: t(
+                            "connection.modal.field.redisPassword.retained",
+                          ),
+                        })}
+                      />
+                    </Form.Item>
+                  </div>
+                </div>
+              </div>
+            )}
 
-            {isKafka &&
-              renderConfigSectionCard({
-                sectionKey: "connectionMode",
-                icon: <ClusterOutlined />,
-                children: renderChoiceCards({
-                  fieldName: "kafkaTopology",
-                  value: String(kafkaTopology),
-                  options: [
-                    {
-                      value: "single",
-                      label: t("connection.modal.messageQueue.kafka.topology.single.label"),
-                      description: t(
-                        "connection.modal.messageQueue.kafka.topology.single.description",
-                      ),
-                    },
-                    {
-                      value: "cluster",
-                      label: t("connection.modal.messageQueue.topology.cluster.label"),
-                      description: t(
-                        "connection.modal.messageQueue.kafka.topology.cluster.description",
-                      ),
-                    },
-                  ],
-                }),
-              })}
+            {/* 库范围 · Demo #a-scope-wrap：整行 input width:100% */}
+            {!isFileDb && !isRedis && !isKafka && (
+              <div className="gn-conn-f-row">
+                {denseLabel(
+                  t("connection.modal.dense.scope"),
+                  t("connection.modal.field.displayDatabases.label"),
+                )}
+                <div className="gn-conn-f-ctrl">
+                  <Form.Item
+                    name="includeDatabases"
+                    style={{ marginBottom: 0, width: "100%" }}
+                  >
+                    <Select
+                      className="gn-conn-scope-select"
+                      mode="tags"
+                      style={{ width: "100%", minWidth: "100%" }}
+                      popupMatchSelectWidth
+                      tokenSeparators={[",", ";", " "]}
+                      placeholder={t(
+                        "connection.modal.dense.scopePlaceholder",
+                      )}
+                      allowClear
+                      maxTagCount="responsive"
+                      options={dbList.map((db: string) => ({
+                        value: db,
+                        label: db,
+                      }))}
+                    />
+                  </Form.Item>
+                </div>
+              </div>
+            )}
 
-            {isRocketMQ &&
-              renderConfigSectionCard({
-                sectionKey: "connectionMode",
-                icon: <ClusterOutlined />,
-                children: renderChoiceCards({
-                  fieldName: "rocketmqTopology",
-                  value: String(rocketmqTopology),
-                  options: [
-                    {
-                      value: "single",
-                      label: t("connection.modal.messageQueue.rocketmq.topology.single.label"),
-                      description: t(
-                        "connection.modal.messageQueue.rocketmq.topology.single.description",
-                      ),
-                    },
-                    {
-                      value: "cluster",
-                      label: t("connection.modal.messageQueue.topology.cluster.label"),
-                      description: t(
-                        "connection.modal.messageQueue.rocketmq.topology.cluster.description",
-                      ),
-                    },
-                  ],
-                }),
-              })}
+            {/* demo .check-line：保存密码 + 保存后连接并展开（后者 UI 对齐；连接/展开由 onSaved 侧既有流程处理时可再接线） */}
+            {!isFileDb && (
+              <div className="gn-conn-check-line">
+                <Form.Item
+                  name="savePassword"
+                  valuePropName="checked"
+                  style={{ marginBottom: 0 }}
+                >
+                  <Checkbox>
+                    {t("connection.modal.field.savePassword")}
+                  </Checkbox>
+                </Form.Item>
+                <Form.Item
+                  name="connectAndExpandAfterSave"
+                  valuePropName="checked"
+                  initialValue={true}
+                  style={{ marginBottom: 0 }}
+                >
+                  <Checkbox>
+                    {t("connection.modal.dense.connectAndExpand")}
+                  </Checkbox>
+                </Form.Item>
+              </div>
+            )}
 
-            {isMQTT &&
-              renderConfigSectionCard({
-                sectionKey: "connectionMode",
-                icon: <ClusterOutlined />,
-                children: renderChoiceCards({
-                  fieldName: "mqttTopology",
-                  value: String(mqttTopology),
-                  options: [
-                    {
-                      value: "single",
-                      label: t("connection.modal.messageQueue.mqtt.topology.single.label"),
-                      description: t(
-                        "connection.modal.messageQueue.mqtt.topology.single.description",
-                      ),
-                    },
-                    {
-                      value: "cluster",
-                      label: t("connection.modal.messageQueue.topology.cluster.label"),
-                      description: t(
-                        "connection.modal.messageQueue.mqtt.topology.cluster.description",
-                      ),
-                    },
-                  ],
-                }),
-              })}
+            {/* 模式分段 · 对齐 Demo mode-seg */}
+            {isMySQLLike && (
+              <div className="gn-conn-f-row" data-align="start">
+                {denseLabel(
+                  t("connection.modal.dense.mode"),
+                  t("connection.modal.config_section.connectionMode.title"),
+                )}
+                <div className="gn-conn-f-ctrl">
+                  {renderChoiceCards({
+                    fieldName: "mysqlTopology",
+                    value: String(mysqlTopology),
+                    variant: "segment",
+                    options: [
+                      {
+                        value: "single",
+                        label: t("connection.modal.topology.single.label"),
+                        description: t(
+                          "connection.modal.topology.mysql.single.description",
+                        ),
+                      },
+                      {
+                        value: "replica",
+                        label: t(
+                          "connection.modal.topology.mysql.replica.label",
+                        ),
+                        description: t(
+                          "connection.modal.topology.mysql.replica.description",
+                        ),
+                      },
+                    ],
+                  })}
+                </div>
+              </div>
+            )}
+
+            {isKafka && (
+              <div className="gn-conn-f-row" data-align="start">
+                {denseLabel(
+                  t("connection.modal.dense.mode"),
+                  t("connection.modal.config_section.connectionMode.title"),
+                )}
+                <div className="gn-conn-f-ctrl">
+                  {renderChoiceCards({
+                    fieldName: "kafkaTopology",
+                    value: String(kafkaTopology),
+                    variant: "segment",
+                    options: [
+                      {
+                        value: "single",
+                        label: t(
+                          "connection.modal.messageQueue.kafka.topology.single.label",
+                        ),
+                        description: t(
+                          "connection.modal.messageQueue.kafka.topology.single.description",
+                        ),
+                      },
+                      {
+                        value: "cluster",
+                        label: t(
+                          "connection.modal.messageQueue.topology.cluster.label",
+                        ),
+                        description: t(
+                          "connection.modal.messageQueue.kafka.topology.cluster.description",
+                        ),
+                      },
+                    ],
+                  })}
+                </div>
+              </div>
+            )}
+
+            {isRocketMQ && (
+              <div className="gn-conn-f-row" data-align="start">
+                {denseLabel(
+                  t("connection.modal.dense.mode"),
+                  t("connection.modal.config_section.connectionMode.title"),
+                )}
+                <div className="gn-conn-f-ctrl">
+                  {renderChoiceCards({
+                    fieldName: "rocketmqTopology",
+                    value: String(rocketmqTopology),
+                    variant: "segment",
+                    options: [
+                      {
+                        value: "single",
+                        label: t(
+                          "connection.modal.messageQueue.rocketmq.topology.single.label",
+                        ),
+                        description: t(
+                          "connection.modal.messageQueue.rocketmq.topology.single.description",
+                        ),
+                      },
+                      {
+                        value: "cluster",
+                        label: t(
+                          "connection.modal.messageQueue.topology.cluster.label",
+                        ),
+                        description: t(
+                          "connection.modal.messageQueue.rocketmq.topology.cluster.description",
+                        ),
+                      },
+                    ],
+                  })}
+                </div>
+              </div>
+            )}
+
+            {isMQTT && (
+              <div className="gn-conn-f-row" data-align="start">
+                {denseLabel(
+                  t("connection.modal.dense.mode"),
+                  t("connection.modal.config_section.connectionMode.title"),
+                )}
+                <div className="gn-conn-f-ctrl">
+                  {renderChoiceCards({
+                    fieldName: "mqttTopology",
+                    value: String(mqttTopology),
+                    variant: "segment",
+                    options: [
+                      {
+                        value: "single",
+                        label: t(
+                          "connection.modal.messageQueue.mqtt.topology.single.label",
+                        ),
+                        description: t(
+                          "connection.modal.messageQueue.mqtt.topology.single.description",
+                        ),
+                      },
+                      {
+                        value: "cluster",
+                        label: t(
+                          "connection.modal.messageQueue.topology.cluster.label",
+                        ),
+                        description: t(
+                          "connection.modal.messageQueue.mqtt.topology.cluster.description",
+                        ),
+                      },
+                    ],
+                  })}
+                </div>
+              </div>
+            )}
 
             {isKafka &&
               kafkaTopology === "cluster" &&
@@ -2171,96 +2155,65 @@ const ConnectionModalStep2: React.FC<ConnectionModalStep2Props> = (props) => {
                 ),
               })}
 
-            {isRedis &&
-              renderConfigSectionCard({
-                sectionKey: "connectionMode",
-                icon: <ClusterOutlined />,
-                children: (
-                  <>
-                    {renderChoiceCards({
-                      fieldName: "redisTopology",
-                      value: String(redisTopology),
-                      options: [
-                        {
-                          value: "single",
-                          label: t("connection.modal.topology.single.label"),
-                          description: t(
-                            "connection.modal.topology.redis.single.description",
-                          ),
-                        },
-                        {
-                          value: "cluster",
-                          label: t(
-                            "connection.modal.topology.redis.cluster.label",
-                          ),
-                          description: t(
-                            "connection.modal.topology.redis.cluster.description",
-                          ),
-                        },
-                      ],
-                    })}
-                    {redisTopology === "cluster" && (
-                      <Form.Item
-                        name="redisHosts"
-                        label={t("connection.modal.field.redisHosts.label")}
-                        help={t("connection.modal.field.redisHosts.help")}
-                        style={{ marginTop: 16, marginBottom: 0 }}
-                      >
-                        <Select
-                          mode="tags"
-                          placeholder={t(
-                            "connection.modal.field.redisHosts.placeholder",
-                          )}
-                          tokenSeparators={[",", ";", " "]}
-                        />
-                      </Form.Item>
-                    )}
-                  </>
-                ),
-              })}
-
-            {isRedis &&
-              renderConfigSectionCard({
-                sectionKey: "credentials",
-                icon: <SafetyCertificateOutlined />,
-                children: (
-                  <>
+            {isRedis && (
+              <div className="gn-conn-f-row" data-align="start">
+                {denseLabel(
+                  t("connection.modal.dense.mode"),
+                  t("connection.modal.config_section.connectionMode.title"),
+                )}
+                <div className="gn-conn-f-ctrl">
+                  {renderChoiceCards({
+                    fieldName: "redisTopology",
+                    value: String(redisTopology),
+                    variant: "segment",
+                    options: [
+                      {
+                        value: "single",
+                        label: t("connection.modal.topology.single.label"),
+                        description: t(
+                          "connection.modal.topology.redis.single.description",
+                        ),
+                      },
+                      {
+                        value: "cluster",
+                        label: t(
+                          "connection.modal.topology.redis.cluster.label",
+                        ),
+                        description: t(
+                          "connection.modal.topology.redis.cluster.description",
+                        ),
+                      },
+                    ],
+                  })}
+                  {redisTopology === "cluster" && (
                     <Form.Item
-                      name="password"
-                      label={t("connection.modal.field.redisPassword.label")}
+                      name="redisHosts"
+                      label={t("connection.modal.field.redisHosts.label")}
+                      help={t("connection.modal.field.redisHosts.help")}
+                      style={{ marginTop: 10, marginBottom: 0 }}
                     >
-                      <Input.Password
-                        {...noAutoCapInputProps}
-                        visibilityToggle={{
-                          visible: primaryPasswordVisible,
-                          onVisibleChange: setPrimaryPasswordVisible,
-                        }}
-                        placeholder={getStoredSecretPlaceholder({
-                          hasStoredSecret: initialValues?.hasPrimaryPassword,
-                          emptyPlaceholder: t(
-                            "connection.modal.field.redisPassword.placeholder",
-                          ),
-                          retainedLabel: t(
-                            "connection.modal.field.redisPassword.retained",
-                          ),
-                        })}
+                      <Select
+                        mode="tags"
+                        placeholder={t(
+                          "connection.modal.field.redisHosts.placeholder",
+                        )}
+                        tokenSeparators={[",", ";", " "]}
                       />
                     </Form.Item>
-                  </>
-                ),
-              })}
+                  )}
+                </div>
+              </div>
+            )}
 
-            {isRedis &&
-              renderConfigSectionCard({
-                sectionKey: "databaseScope",
-                icon: <DatabaseOutlined />,
-                children: (
+            {isRedis && (
+              <div className="gn-conn-f-row">
+                {denseLabel(
+                  t("connection.modal.dense.scope"),
+                  t("connection.modal.field.displayDatabases.label"),
+                )}
+                <div className="gn-conn-f-ctrl">
                   <Form.Item
                     name="includeRedisDatabases"
-                    label={t(
-                      "connection.modal.field.displayDatabases.label",
-                    )}
-                    help={t("connection.modal.field.displayDatabases.help")}
                     style={{ marginBottom: 0 }}
                   >
                     <Select
@@ -2277,288 +2230,257 @@ const ConnectionModalStep2: React.FC<ConnectionModalStep2Props> = (props) => {
                       ))}
                     </Select>
                   </Form.Item>
-                ),
-              })}
+                </div>
+              </div>
+            )}
 
-            {!isFileDb &&
-              !isRedis &&
-              renderConfigSectionCard({
-                sectionKey: "credentials",
-                icon: <SafetyCertificateOutlined />,
-                children: (
-                  <>
-                    <div
-                      style={{
-                        display: "grid",
-                        gridTemplateColumns:
-                          dbType === "mongodb"
-                            ? "minmax(0, 1fr) minmax(0, 1fr) 180px"
-                            : "repeat(2, minmax(0, 1fr))",
-                        gap: 16,
-                      }}
-                    >
-                      <Form.Item
-                        name="user"
-                        label={t("connection.modal.field.username.label")}
-                        rules={
-                          PRIMARY_USERNAME_OPTIONAL_TYPES.has(dbType)
-                            ? []
-                            : [
-                                createUriAwareRequiredRule(
-                                  t(
-                                    "connection.modal.field.username.required",
-                                  ),
-                                ),
-                              ]
-                        }
-                        style={{ marginBottom: 0 }}
-                      >
-                        <Input
-                          {...noAutoCapInputProps}
-                          placeholder={
-                            PRIMARY_USERNAME_OPTIONAL_TYPES.has(dbType)
-                              ? t("connection.modal.field.username.optional_placeholder")
-                              : undefined
-                          }
-                        />
-                      </Form.Item>
-                      <Form.Item
-                        name="password"
-                        label={t("connection.modal.field.password.label")}
-                        style={{ marginBottom: 0 }}
-                      >
-                        <Input.Password
-                          {...noAutoCapInputProps}
-                          visibilityToggle={{
-                            visible: primaryPasswordVisible,
-                            onVisibleChange: setPrimaryPasswordVisible,
-                          }}
-                          placeholder={getStoredSecretPlaceholder({
-                            hasStoredSecret:
-                              initialValues?.hasPrimaryPassword,
-                            emptyPlaceholder: t(
-                              "connection.modal.field.password.placeholder",
-                            ),
-                            retainedLabel: t(
-                              "connection.modal.field.password.retained",
-                            ),
-                          })}
-                        />
-                      </Form.Item>
-                      {dbType === "mongodb" && (
-                        <div style={{ display: "grid", gap: 8 }}>
-                          <Text strong>
-                            {t(
-                              "connection.modal.mongo.authMechanism.label",
-                            )}
-                          </Text>
-                          {renderChoiceCards({
-                            fieldName: "mongoAuthMechanism",
-                            value: String(mongoAuthMechanism),
-                            minWidth: 150,
-                            options: [
-                              {
-                                value: "",
-                                label: t(
-                                  "connection.modal.mongo.authMechanism.auto.label",
-                                ),
-                                description: t(
-                                  "connection.modal.mongo.authMechanism.auto.description",
-                                ),
-                              },
-                              {
-                                value: "NONE",
-                                label: t(
-                                  "connection.modal.mongo.authMechanism.none.label",
-                                ),
-                                description: t(
-                                  "connection.modal.mongo.authMechanism.none.description",
-                                ),
-                              },
-                              {
-                                value: "SCRAM-SHA-1",
-                                label: "SCRAM-SHA-1",
-                                description: t(
-                                  "connection.modal.mongo.authMechanism.scramSha1.description",
-                                ),
-                              },
-                              {
-                                value: "SCRAM-SHA-256",
-                                label: "SCRAM-SHA-256",
-                                description: t(
-                                  "connection.modal.mongo.authMechanism.scramSha256.description",
-                                ),
-                              },
-                              {
-                                value: "MONGODB-AWS",
-                                label: "MONGODB-AWS",
-                                description: t(
-                                  "connection.modal.mongo.authMechanism.aws.description",
-                                ),
-                              },
-                            ],
-                          })}
-                        </div>
-                      )}
-                    </div>
-                    {dbType === "mongodb" && (
-                      <Form.Item
-                        name="savePassword"
-                        valuePropName="checked"
-                        style={{ marginTop: 12, marginBottom: 0 }}
-                      >
-                        <Checkbox>
-                          {t("connection.modal.field.savePassword")}
-                        </Checkbox>
-                      </Form.Item>
-                    )}
-                  </>
-                ),
-              })}
+            {/* Mongo 认证机制 · 紧凑分段 */}
+            {dbType === "mongodb" && (
+              <div className="gn-conn-f-row" data-align="start">
+                {denseLabel(
+                  t("connection.modal.dense.auth"),
+                  t("connection.modal.mongo.authMechanism.label"),
+                )}
+                <div className="gn-conn-f-ctrl">
+                  {renderChoiceCards({
+                    fieldName: "mongoAuthMechanism",
+                    value: String(mongoAuthMechanism),
+                    variant: "segment",
+                    options: [
+                      {
+                        value: "",
+                        label: t(
+                          "connection.modal.mongo.authMechanism.auto.label",
+                        ),
+                        description: t(
+                          "connection.modal.mongo.authMechanism.auto.description",
+                        ),
+                      },
+                      {
+                        value: "NONE",
+                        label: t(
+                          "connection.modal.mongo.authMechanism.none.label",
+                        ),
+                        description: t(
+                          "connection.modal.mongo.authMechanism.none.description",
+                        ),
+                      },
+                      {
+                        value: "SCRAM-SHA-1",
+                        label: "SCRAM-SHA-1",
+                        description: t(
+                          "connection.modal.mongo.authMechanism.scramSha1.description",
+                        ),
+                      },
+                      {
+                        value: "SCRAM-SHA-256",
+                        label: "SCRAM-SHA-256",
+                        description: t(
+                          "connection.modal.mongo.authMechanism.scramSha256.description",
+                        ),
+                      },
+                      {
+                        value: "MONGODB-AWS",
+                        label: "MONGODB-AWS",
+                        description: t(
+                          "connection.modal.mongo.authMechanism.aws.description",
+                        ),
+                      },
+                    ],
+                  })}
+                </div>
+              </div>
+            )}
 
-            {!isFileDb &&
-              !isRedis &&
-              !isKafka &&
-              renderConfigSectionCard({
-                sectionKey: "databaseScope",
-                icon: <DatabaseOutlined />,
-                children: (
-                  <Form.Item
-                    name="includeDatabases"
-                    label={t(
-                      "connection.modal.field.displayDatabases.label",
-                    )}
-                    help={t("connection.modal.field.displayDatabases.help")}
-                    style={{ marginBottom: 0 }}
+            {/* 生产连接保护 · Demo：紧挨模式下方；默认展开；扁平列表 */}
+            {showConnectionReadOnlyField && (
+              <div
+                className="gn-conn-prot"
+                data-open={readOnlyProtectionExpanded ? "1" : "0"}
+                data-connection-config-section="readOnly"
+              >
+                <button
+                  type="button"
+                  className="gn-conn-prot-head"
+                  data-connection-config-section-toggle="readOnly"
+                  aria-expanded={readOnlyProtectionExpanded}
+                  onClick={() =>
+                    setReadOnlyProtectionExpanded((expanded) => !expanded)
+                  }
+                >
+                  <span className="gn-conn-prot-chev" aria-hidden="true" />
+                  <span className="gn-conn-prot-title">
+                    {t("connection.modal.section.readOnly.title")}
+                  </span>
+                  <span
+                    className={`gn-conn-prot-tag${
+                      connectionProtectionEnabledCount > 0 ? " on" : ""
+                    }`}
                   >
-                    <Select
-                      mode="multiple"
-                      placeholder={t(
-                        "connection.modal.field.displayDatabases.placeholder",
-                      )}
-                      allowClear
-                    >
-                      {dbList.map((db: string) => (
-                        <Select.Option key={db} value={db}>
-                          {db}
-                        </Select.Option>
-                      ))}
-                    </Select>
-                  </Form.Item>
-                ),
-              })}
+                    {connectionProtectionEnabledCount > 0
+                      ? t(
+                          "connection.modal.field.readOnly.status.enabledCount",
+                          { count: connectionProtectionEnabledCount },
+                        )
+                      : t("connection.modal.field.readOnly.status.disabled")}
+                  </span>
+                </button>
+                {readOnlyProtectionExpanded ? (
+                  <div className="gn-conn-prot-body">
+                    {[
+                      {
+                        field: "restrictDataEdit",
+                        checked: restrictDataEdit,
+                        label: t(
+                          "connection.modal.field.readOnly.option.dataEdit.label",
+                        ),
+                        help: t(
+                          "connection.modal.field.readOnly.option.dataEdit.help",
+                        ),
+                      },
+                      {
+                        field: "restrictStructureEdit",
+                        checked: restrictStructureEdit,
+                        label: t(
+                          "connection.modal.field.readOnly.option.structureEdit.label",
+                        ),
+                        help: t(
+                          "connection.modal.field.readOnly.option.structureEdit.help",
+                        ),
+                      },
+                      {
+                        field: "restrictScriptExecution",
+                        checked: restrictScriptExecution,
+                        label: t(
+                          "connection.modal.field.readOnly.option.scriptExecution.label",
+                        ),
+                        help: t(
+                          "connection.modal.field.readOnly.option.scriptExecution.help",
+                        ),
+                      },
+                      {
+                        field: "restrictDataImport",
+                        checked: restrictDataImport,
+                        label: t(
+                          "connection.modal.field.readOnly.option.dataImport.label",
+                        ),
+                        help: t(
+                          "connection.modal.field.readOnly.option.dataImport.help",
+                        ),
+                      },
+                    ].map((item) => (
+                      <button
+                        key={item.field}
+                        type="button"
+                        className="gn-conn-prot-opt"
+                        onClick={() =>
+                          setChoiceFieldValue(item.field, !item.checked)
+                        }
+                      >
+                        <span
+                          onClick={(event) => event.stopPropagation()}
+                          style={{ justifySelf: "center", marginTop: 2 }}
+                        >
+                          <Form.Item
+                            name={item.field}
+                            valuePropName="checked"
+                            noStyle
+                          >
+                            <Checkbox
+                              onChange={() =>
+                                clearConnectionTestResultForChoice()
+                              }
+                            />
+                          </Form.Item>
+                        </span>
+                        <div>
+                          <div className="n">{item.label}</div>
+                          <div className="h">{item.help}</div>
+                        </div>
+                      </button>
+                    ))}
+                    <div className="gn-conn-prot-sum">
+                      {t("connection.modal.field.readOnly.summary.title")}
+                      {": "}
+                      {connectionProtectionEnabledCount > 0
+                        ? t(
+                            "connection.modal.field.readOnly.summary.selected",
+                            { count: connectionProtectionEnabledCount },
+                          )
+                        : t("connection.modal.field.readOnly.status.disabled")}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            )}
           </>
         )}
 
-        {/* 必填项优先：目标地址、凭据、数据库范围由上方的条件分支渲染。
-            连接名称与预设类型属于可选的展示信息，连接 URI 属于「粘贴整串」的高级入口，
-            两者都下沉到必填项之后，避免它们（尤其是 URI 的多行输入框）把
-            host/账号/密码挤出首屏。 */}
-        {renderConfigSectionCard({
-          sectionKey: "identity",
-          icon: <ApiOutlined />,
-          badge: (
-            <Tag>
-              {getConnectionConfigLayoutKindLabel(connectionConfigLayout.kind)}
-            </Tag>
-          ),
-          children: (
-            <>
-              <Form.Item
-                name="name"
-                label={t("connection.modal.field.name.label")}
-              >
-                <Input
-                  {...noAutoCapInputProps}
-                  placeholder={
-                    isJVM
-                      ? t("connection.modal.field.name.placeholder.jvm")
-                      : t("connection.modal.field.name.placeholder.default")
-                  }
-                />
-              </Form.Item>
-              <Form.Item
-                name="environmentType"
-                label={t("connection.modal.field.environment_type.label")}
-                initialValue={DEFAULT_CONNECTION_ENVIRONMENT}
-                style={{ marginBottom: 0 }}
-              >
-                <ConnectionEnvironmentSelect />
-              </Form.Item>
-            </>
-          ),
-        })}
-
-        {!isCustom &&
-          !isJVM &&
+        {/* custom / jvm 仍使用分区卡片身份信息；标准类型已在上方密排 */}
+        {(isCustom || isJVM) &&
           renderConfigSectionCard({
-            sectionKey: "uri",
-            icon: <LinkOutlined />,
-            collapsible: true,
-            expanded: uriSectionExpanded,
-            onToggle: () => setUriSectionExpanded((expanded) => !expanded),
+            sectionKey: "identity",
+            icon: <ApiOutlined />,
+            badge: (
+              <Tag>
+                {getConnectionConfigLayoutKindLabel(
+                  connectionConfigLayout.kind,
+                )}
+              </Tag>
+            ),
             children: (
               <>
                 <Form.Item
-                  name="uri"
-                  label={t("connection.modal.uri.label")}
-                  help={t("connection.modal.uri.help")}
+                  name="name"
+                  label={t("connection.modal.field.name.label")}
                 >
-                  <Input.TextArea
+                  <Input
                     {...noAutoCapInputProps}
-                    rows={3}
-                    placeholder={getUriPlaceholder(dbType)}
+                    placeholder={
+                      isJVM
+                        ? t("connection.modal.field.name.placeholder.jvm")
+                        : t("connection.modal.field.name.placeholder.default")
+                    }
                   />
                 </Form.Item>
-                {supportsConnectionParams && (
-                  <Form.Item
-                    name="connectionParams"
-                    label={t("connection.modal.connectionParams.label")}
-                    help={t("connection.modal.connectionParams.help")}
-                  >
-                    <Input.TextArea
-                      {...noAutoCapInputProps}
-                      rows={2}
-                      placeholder={getConnectionParamsPlaceholder(dbType, oceanBaseProtocol)}
-                    />
-                  </Form.Item>
-                )}
-                <Space
-                  size={8}
-                  style={{ marginBottom: uriFeedback ? 12 : 16 }}
-                  wrap
+                <Form.Item
+                  name="environmentType"
+                  label={t("connection.modal.field.environment_type.label")}
+                  initialValue={DEFAULT_CONNECTION_ENVIRONMENT}
+                  style={{ marginBottom: 0 }}
                 >
-                  <Button onClick={handleGenerateURI}>
-                    {t("connection.modal.uri.action.generate")}
-                  </Button>
-                  <Button onClick={handleParseURI}>
-                    {t("connection.modal.uri.action.parse")}
-                  </Button>
-                  <Button onClick={handleCopyURI}>
-                    {t("connection.modal.uri.action.copy")}
-                  </Button>
-                </Space>
-                {uriFeedback && (
-                  <Alert
-                    showIcon
-                    closable
-                    type={uriFeedback.type}
-                    message={resolvedUriFeedbackMessage}
-                    onClose={() => setUriFeedback(null)}
-                    style={{ marginBottom: 16 }}
-                  />
-                )}
-                {renderStoredSecretControls({
-                  fieldName: "uri",
-                  clearKey: "opaqueURI",
-                  hasStoredSecret: initialValues?.hasOpaqueURI,
-                  clearLabel: t("connection.modal.uri.stored.clear"),
-                  description: t("connection.modal.uri.stored.description"),
-                })}
+                  <ConnectionEnvironmentSelect />
+                </Form.Item>
               </>
             ),
           })}
       </div>
+    </div>
+  );
+
+  const advancedSection = (
+    <div style={{ display: "grid", gap: 14 }}>
+      {supportsConnectionParams ? (
+        <Form.Item
+          name="connectionParams"
+          label={t("connection.modal.connectionParams.label")}
+          help={t("connection.modal.connectionParams.help")}
+          style={{ marginBottom: 0 }}
+        >
+          <Input.TextArea
+            {...noAutoCapInputProps}
+            rows={3}
+            placeholder={getConnectionParamsPlaceholder(
+              dbType,
+              oceanBaseProtocol,
+            )}
+          />
+        </Form.Item>
+      ) : (
+        <div style={{ ...modalMutedTextStyle, padding: "8px 2px" }}>
+          {t("connection.modal.config.advanced.empty")}
+        </div>
+      )}
     </div>
   );
 
@@ -2638,6 +2560,7 @@ const ConnectionModalStep2: React.FC<ConnectionModalStep2Props> = (props) => {
         mongoReadPreference: "primary",
         mongoAuthMechanism: "",
         savePassword: true,
+        connectAndExpandAfterSave: true,
         mysqlReplicaHosts: [],
         rocketmqHosts: [],
         mqttHosts: [],
@@ -2854,36 +2777,28 @@ const ConnectionModalStep2: React.FC<ConnectionModalStep2Props> = (props) => {
       )}
       {(() => {
         const sectionItems: Array<{
-          key: "basic" | "network" | "appearance";
+          key: "basic" | "network" | "appearance" | "advanced";
           title: string;
-          description: string;
-          icon: React.ReactNode;
         }> = [
           {
             key: "basic",
             title: t("connection.modal.config.basic.title"),
-            description: isJVM
-              ? t("connection.modal.config.basic.jvmNavDescription")
-              : t("connection.modal.config.basic.navDescription"),
-            icon: <DatabaseOutlined />,
           },
           ...(!isCustom && !isFileDb && !isJVM
             ? [
                 {
                   key: "network" as const,
                   title: t("connection.modal.network.title"),
-                  description: t(
-                    "connection.modal.network.navDescription",
-                  ),
-                  icon: <CloudOutlined />,
                 },
               ]
             : []),
           {
             key: "appearance",
             title: t("connection.modal.appearance.title"),
-            description: t("connection.modal.appearance.description"),
-            icon: <BgColorsOutlined />,
+          },
+          {
+            key: "advanced",
+            title: t("connection.modal.config.advanced.title"),
           },
         ];
         const resolvedSection = sectionItems.some(
@@ -2897,19 +2812,33 @@ const ConnectionModalStep2: React.FC<ConnectionModalStep2Props> = (props) => {
           customIconColor || getDbDefaultColor(effectiveIconType);
 
         const appearanceSection = (
-          <div style={{ display: "grid", gap: 18 }}>
-            <div style={{ ...modalInnerSectionStyle, padding: 16 }}>
+          <div style={{ display: "grid", gap: 14 }}>
+            <div>
               <div
                 style={{
-                  marginBottom: 12,
-                  fontSize: 13,
+                  marginBottom: 8,
+                  fontSize: 12,
                   fontWeight: 700,
                   color: darkMode ? "#f5f7ff" : "#162033",
                 }}
               >
                 {t("connection.modal.appearance.icon")}
+                <span
+                  style={{
+                    marginLeft: 8,
+                    fontSize: 11,
+                    fontWeight: 500,
+                    color: darkMode
+                      ? "rgba(255,255,255,0.45)"
+                      : "rgba(0,0,0,0.35)",
+                  }}
+                >
+                  {t("connection.modal.appearance.current", {
+                    name: getDbIconLabel(effectiveIconType),
+                  })}
+                </span>
               </div>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                 {DB_ICON_TYPES.map((iconKey) => {
                   const isActive = effectiveIconType === iconKey;
                   return (
@@ -2923,9 +2852,9 @@ const ConnectionModalStep2: React.FC<ConnectionModalStep2Props> = (props) => {
                         )
                       }
                       style={{
-                        width: 44,
-                        height: 44,
-                        borderRadius: 10,
+                        width: 40,
+                        height: 40,
+                        borderRadius: 9,
                         display: "grid",
                         placeItems: "center",
                         border: `2px solid ${isActive ? effectiveIconColor : darkMode ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.06)"}`,
@@ -2941,31 +2870,18 @@ const ConnectionModalStep2: React.FC<ConnectionModalStep2Props> = (props) => {
                       {getDbIcon(
                         iconKey,
                         isActive ? effectiveIconColor : undefined,
-                        22,
+                        20,
                       )}
                     </button>
                   );
                 })}
               </div>
-              <div
-                style={{
-                  marginTop: 6,
-                  fontSize: 11,
-                  color: darkMode
-                    ? "rgba(255,255,255,0.45)"
-                    : "rgba(0,0,0,0.35)",
-                }}
-              >
-                {t("connection.modal.appearance.current", {
-                  name: getDbIconLabel(effectiveIconType),
-                })}
-              </div>
             </div>
-            <div style={{ ...modalInnerSectionStyle, padding: 16 }}>
+            <div>
               <div
                 style={{
-                  marginBottom: 12,
-                  fontSize: 13,
+                  marginBottom: 8,
+                  fontSize: 12,
                   fontWeight: 700,
                   color: darkMode ? "#f5f7ff" : "#162033",
                 }}
@@ -2994,9 +2910,9 @@ const ConnectionModalStep2: React.FC<ConnectionModalStep2Props> = (props) => {
                         )
                       }
                       style={{
-                        width: 28,
-                        height: 28,
-                        borderRadius: 8,
+                        width: 26,
+                        height: 26,
+                        borderRadius: 7,
                         background: presetColor,
                         border: isActive
                           ? `2.5px solid ${darkMode ? "#fff" : "#162033"}`
@@ -3022,8 +2938,8 @@ const ConnectionModalStep2: React.FC<ConnectionModalStep2Props> = (props) => {
                   }
                   title={t("connection.modal.appearance.customColor")}
                   style={{
-                    width: 28,
-                    height: 28,
+                    width: 26,
+                    height: 26,
                     border: "none",
                     padding: 0,
                     cursor: "pointer",
@@ -3035,38 +2951,40 @@ const ConnectionModalStep2: React.FC<ConnectionModalStep2Props> = (props) => {
             </div>
             <div
               style={{
-                ...modalInnerSectionStyle,
-                padding: 16,
                 display: "flex",
                 alignItems: "center",
-                gap: 14,
+                gap: 12,
+                padding: "10px 12px",
+                borderRadius: 10,
+                border: `1px solid ${darkMode ? "rgba(255,255,255,0.08)" : "rgba(16,24,40,0.08)"}`,
+                background: darkMode
+                  ? "rgba(255,255,255,0.03)"
+                  : "rgba(16,24,40,0.02)",
               }}
             >
-              <div
-                style={{
-                  fontSize: 13,
-                  fontWeight: 700,
-                  color: darkMode ? "#f5f7ff" : "#162033",
-                }}
-              >
-                {t("connection.modal.appearance.preview")}
-              </div>
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                 {getDbIcon(effectiveIconType, effectiveIconColor, 24)}
-                <span
-                  style={{
-                    fontSize: 14,
-                    color: darkMode ? "#e0e0e0" : "#333",
-                  }}
-                >
-                  {form.getFieldValue("name") ||
-                    t("connection.modal.appearance.previewName")}
-                </span>
+                <div style={{ minWidth: 0 }}>
+                  <div
+                    style={{
+                      fontSize: 13,
+                      fontWeight: 700,
+                      color: darkMode ? "#e0e0e0" : "#333",
+                    }}
+                  >
+                    {form.getFieldValue("name") ||
+                      t("connection.modal.appearance.previewName")}
+                  </div>
+                  <div style={{ ...modalMutedTextStyle, fontSize: 11 }}>
+                    {t("connection.modal.appearance.preview")}
+                  </div>
+                </div>
               </div>
               {(customIconType || customIconColor) && (
                 <Button
                   size="small"
                   type="link"
+                  style={{ marginLeft: "auto" }}
                   onClick={() => {
                     setCustomIconType(undefined);
                     setCustomIconColor(undefined);
@@ -3084,167 +3002,29 @@ const ConnectionModalStep2: React.FC<ConnectionModalStep2Props> = (props) => {
             ? baseInfoSection
             : resolvedSection === "appearance"
               ? appearanceSection
-              : networkSecuritySection;
-
-        if (sectionItems.length <= 1) {
-          return currentSectionContent;
-        }
+              : resolvedSection === "advanced"
+                ? advancedSection
+                : networkSecuritySection;
 
         return (
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "220px minmax(0, 1fr)",
-              gap: 18,
-              alignItems: "start",
-            }}
-          >
-            <div
-              style={{
-                ...modalInnerSectionStyle,
-                padding: 12,
-                position: "sticky",
-                top: 0,
-              }}
-            >
-              <div
-                style={{
-                  marginBottom: 12,
-                  color: darkMode ? "#f5f7ff" : "#162033",
-                  fontSize: 13,
-                  fontWeight: 700,
-                  letterSpacing: 0.2,
-                }}
-              >
-                {t("connection.modal.config.sections")}
-              </div>
-              <div style={{ display: "grid", gap: 10 }}>
-                {sectionItems.map((item) => {
-                  const active = item.key === resolvedSection;
-                  return (
-                    <button
-                      key={item.key}
-                      type="button"
-                      onClick={() => setActiveConfigSection(item.key)}
-                      /* 导航项改为扁平列表：原先每项都是 14px 圆角 + 边框 + 渐变底 + 投影的
-                         独立卡片，三项叠在一个卡片容器里形成「卡片套卡片」，视觉噪声很高。
-                         现在只用左侧强调条 + 淡底表示选中，去掉边框、圆角与投影。 */
-                      style={{
-                        textAlign: "left",
-                        padding: "10px 10px 10px 12px",
-                        borderRadius: 8,
-                        border: "none",
-                        borderLeft: `2px solid ${
-                          active
-                            ? darkMode
-                              ? "#ffd666"
-                              : "#1677ff"
-                            : "transparent"
-                        }`,
-                        background: active
-                          ? darkMode
-                            ? "rgba(255,214,102,0.10)"
-                            : "rgba(24,144,255,0.08)"
-                          : "transparent",
-                        color: active
-                          ? darkMode
-                            ? "#f5f7ff"
-                            : "#162033"
-                          : darkMode
-                            ? "rgba(255,255,255,0.76)"
-                            : "#3f4b5e",
-                        cursor: "pointer",
-                        transition: "background 120ms ease, color 120ms ease",
-                        boxShadow: "none",
-                      }}
-                    >
-                      <div
-                        style={{
-                          display: "flex",
-                          alignItems: "flex-start",
-                          gap: 10,
-                        }}
-                      >
-                        <div
-                          style={{
-                            width: 30,
-                            height: 30,
-                            borderRadius: 10,
-                            display: "grid",
-                            placeItems: "center",
-                            flexShrink: 0,
-                            background: active
-                              ? darkMode
-                                ? "rgba(255,214,102,0.16)"
-                                : "rgba(24,144,255,0.14)"
-                              : darkMode
-                                ? "rgba(255,255,255,0.05)"
-                                : "rgba(16,24,40,0.05)",
-                            color: active
-                              ? darkMode
-                                ? "#ffd666"
-                                : "#1677ff"
-                              : darkMode
-                                ? "rgba(255,255,255,0.55)"
-                                : "#627089",
-                          }}
-                        >
-                          {item.icon}
-                        </div>
-                        <div style={{ minWidth: 0, flex: 1 }}>
-                          <div
-                            style={{
-                              display: "flex",
-                              alignItems: "center",
-                              justifyContent: "space-between",
-                              gap: 8,
-                            }}
-                          >
-                            <span style={{ fontSize: 14, fontWeight: 700 }}>
-                              {item.title}
-                            </span>
-                            <span
-                              style={{
-                                width: 8,
-                                height: 8,
-                                borderRadius: 999,
-                                background: active
-                                  ? darkMode
-                                    ? "#ffd666"
-                                    : "#1677ff"
-                                  : "transparent",
-                                border: active
-                                  ? "none"
-                                  : darkMode
-                                    ? "1px solid rgba(255,255,255,0.12)"
-                                    : "1px solid rgba(16,24,40,0.12)",
-                              }}
-                            />
-                          </div>
-                          <div
-                            style={{
-                              marginTop: 5,
-                              fontSize: 12,
-                              lineHeight: 1.55,
-                              color: active
-                                ? darkMode
-                                  ? "rgba(255,255,255,0.68)"
-                                  : "rgba(22,32,51,0.68)"
-                                : darkMode
-                                  ? "rgba(255,255,255,0.42)"
-                                  : "rgba(63,75,94,0.62)",
-                            }}
-                          >
-                            {item.description}
-                          </div>
-                        </div>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-            <div style={{ minWidth: 0 }}>{currentSectionContent}</div>
+          <div className="gn-conn-form-layout">
+            <nav className="gn-conn-form-nav" aria-label={t("connection.modal.config.sections")}>
+              {sectionItems.map((item) => {
+                const active = item.key === resolvedSection;
+                return (
+                  <button
+                    key={item.key}
+                    type="button"
+                    className="gn-conn-form-nav-item"
+                    aria-selected={active}
+                    onClick={() => setActiveConfigSection(item.key)}
+                  >
+                    {item.title}
+                  </button>
+                );
+              })}
+            </nav>
+            <div className="gn-conn-form-main">{currentSectionContent}</div>
           </div>
         );
       })()}

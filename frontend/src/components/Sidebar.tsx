@@ -94,7 +94,6 @@ import { APP_POPUP_Z_INDEX } from '../utils/overlayZIndex';
   LinkOutlined,
   FileAddOutlined,
   ImportOutlined,
-  PlusOutlined,
   ReloadOutlined,
   SendOutlined,
   DeleteOutlined,
@@ -199,7 +198,6 @@ import {
   resolveSidebarNodeConnectionId,
   resolveV2ConnectionGroup,
   resolveV2ActiveConnectionId,
-  resolveV2SelectedDatabaseName,
   resolveV2CommandSearchPersistentFilter,
   shouldClearSidebarNodeChildrenOnCollapse,
   shouldSkipSidebarLoadOnExpandWhileDragging,
@@ -3087,46 +3085,6 @@ const Sidebar: React.FC<{
                     </div>
                 </div>
                 <div className="gn-v2-active-connection-actions">
-                    <Tooltip title={t('sidebar.menu.new_query')}>
-                        <Button
-                            size="small"
-                            type="text"
-                            className="gn-v2-active-connection-query-action"
-                            icon={<FileTextOutlined />}
-                            aria-label={t('sidebar.menu.new_query')}
-                            data-gonavi-new-query-action="true"
-                            disabled={!activeConnection}
-                            onClick={() => {
-                                if (!activeConnection) {
-                                    return;
-                                }
-                                const selectedDatabase = resolveV2SelectedDatabaseName({
-                                    activeConnectionId: activeConnection.id,
-                                    activeContextConnectionId: activeContext?.connectionId,
-                                    activeContextDbName: activeContext?.dbName,
-                                });
-                                if (selectedDatabase) {
-                                    handleV2DatabaseContextMenuAction(getDatabaseNodeRef(activeConnection, selectedDatabase), 'new-query');
-                                    return;
-                                }
-                                handleV2ConnectionContextMenuAction(getConnectionNodeForAction(activeConnection), 'new-query');
-                            }}
-                        >
-                            {t('sidebar.menu.new_query')}
-                        </Button>
-                    </Tooltip>
-                    {onCreateConnection && (
-                        <Tooltip title={t('connection.new')}>
-                            <Button
-                                size="small"
-                                type="text"
-                                icon={<PlusOutlined />}
-                                aria-label={t('connection.new')}
-                                data-gonavi-create-connection-action="true"
-                                onClick={onCreateConnection}
-                            />
-                        </Tooltip>
-                    )}
                     <Tooltip title={v2ConnectionActionsLabel}>
                         <Button
                             size="small"

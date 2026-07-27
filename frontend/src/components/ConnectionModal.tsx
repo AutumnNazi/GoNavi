@@ -18,13 +18,11 @@ import {
 import {
   DatabaseOutlined,
   FileTextOutlined,
-  CloudOutlined,
   CheckCircleFilled,
   CloseCircleFilled,
   LinkOutlined,
   EditOutlined,
   AppstoreOutlined,
-  BgColorsOutlined,
   ApiOutlined,
   ClusterOutlined,
   CodeOutlined,
@@ -169,11 +167,11 @@ const PRIMARY_USERNAME_OPTIONAL_TYPES = new Set([
   "kafka",
   "rabbitmq",
 ]);
-const CONNECTION_MODAL_WIDTH = 960;
+/** Step1 选型网格需要较宽；Step2 密排表单对齐 Demo ~600，避免右侧空洞或输入框被拉超长 */
+const CONNECTION_MODAL_WIDTH_STEP1 = 960;
+const CONNECTION_MODAL_WIDTH_STEP2 = 600;
 const CONNECTION_MODAL_BODY_HEIGHT = 620;
 const REDIS_DEFAULT_DATABASE_COUNT = 16;
-const STEP1_SIDEBAR_DIVIDER_DARK = "rgba(255, 255, 255, 0.16)";
-const STEP1_SIDEBAR_DIVIDER_LIGHT = "rgba(0, 0, 0, 0.08)";
 const CLICKHOUSE_PROTOCOL_OPTIONS: Array<{
   value: ClickHouseProtocolChoice;
   label?: string;
@@ -345,7 +343,7 @@ const ConnectionModal: React.FC<{
   const [activeGroup, setActiveGroup] = useState(0); // Active category index in step 1
   const [dbTypeQuery, setDbTypeQuery] = useState("");
   const [activeConfigSection, setActiveConfigSection] = useState<
-    "basic" | "network" | "appearance"
+    "basic" | "network" | "appearance" | "advanced"
   >("basic");
   const [customIconType, setCustomIconType] = useState<string | undefined>(
     undefined,
@@ -385,6 +383,7 @@ const ConnectionModal: React.FC<{
   const testRunIdRef = useRef(0);
   const addConnection = useStore((state) => state.addConnection);
   const updateConnection = useStore((state) => state.updateConnection);
+  const savedConnections = useStore((state) => state.connections) ?? [];
   const theme = useStore((state) => state.theme);
   const appearance = useStore((state) => state.appearance);
   const languagePreference = useStore((state) => state.languagePreference);
@@ -483,13 +482,6 @@ const ConnectionModal: React.FC<{
     return `rgba(${r}, ${g}, ${b}, ${Math.max(effectiveOpacity, 0.82)})`;
   };
 
-  const step1SidebarDividerColor = darkMode
-    ? STEP1_SIDEBAR_DIVIDER_DARK
-    : STEP1_SIDEBAR_DIVIDER_LIGHT;
-  const step1SidebarActiveBg = darkMode
-    ? "rgba(246, 196, 83, 0.20)"
-    : "#e6f4ff";
-  const step1SidebarActiveColor = darkMode ? "#ffd666" : "#1677ff";
   const overlayTheme = useMemo(
     () =>
       buildOverlayWorkbenchTheme(darkMode, {
@@ -906,79 +898,121 @@ const ConnectionModal: React.FC<{
     options,
     minWidth = 180,
     onSelect,
+    variant = "cards",
   }: {
     fieldName: string;
     value: string;
     options: ChoiceCardOption[];
     minWidth?: number;
     onSelect?: (value: string) => void;
-  }) => (
-    <>
-      <Form.Item name={fieldName} hidden>
-        <Input {...noAutoCapInputProps} />
-      </Form.Item>
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: `repeat(auto-fit, minmax(${minWidth}px, 1fr))`,
-          gap: 10,
-        }}
-      >
-        {options.map((option) => {
-          const active = String(value ?? "") === option.value;
-          return (
-            <button
-              key={option.value || "empty"}
-              type="button"
-              aria-pressed={active}
-              onClick={() =>
-                onSelect
-                  ? onSelect(option.value)
-                  : setChoiceFieldValue(fieldName, option.value)
-              }
-              style={{
-                textAlign: "left",
-                padding: "12px 14px",
-                borderRadius: 14,
-                border: active
-                  ? darkMode
-                    ? "1px solid rgba(255,214,102,0.42)"
-                    : "1px solid rgba(22,119,255,0.36)"
-                  : darkMode
-                    ? "1px solid rgba(255,255,255,0.08)"
-                    : "1px solid rgba(16,24,40,0.08)",
-                background: active
-                  ? darkMode
-                    ? "rgba(255,214,102,0.10)"
-                    : "rgba(22,119,255,0.07)"
-                  : darkMode
-                    ? "rgba(255,255,255,0.03)"
-                    : "rgba(16,24,40,0.03)",
-                color: darkMode ? "#f5f7ff" : "#162033",
-                cursor: "pointer",
-                transition: "all 120ms ease",
-                boxShadow: active
-                  ? darkMode
-                    ? "0 0 0 2px rgba(255,214,102,0.10)"
-                    : "0 0 0 2px rgba(22,119,255,0.08)"
-                  : "none",
-              }}
-            >
-              <Space size={8} wrap>
-                <Text strong>{option.label}</Text>
-                {active ? <Tag color="blue">{t("connection.modal.choice.current")}</Tag> : null}
-              </Space>
-              {option.description ? (
-                <div style={{ ...modalMutedTextStyle, marginTop: 6 }}>
-                  {option.description}
-                </div>
-              ) : null}
-            </button>
-          );
-        })}
-      </div>
-    </>
-  );
+    /** cards = 大卡片；segment = Demo 分段控件 */
+    variant?: "cards" | "segment";
+  }) => {
+    const activeOption = options.find(
+      (option) => String(value ?? "") === option.value,
+    );
+    if (variant === "segment") {
+      return (
+        <div className="gn-conn-mode-block">
+          <Form.Item name={fieldName} hidden>
+            <Input {...noAutoCapInputProps} />
+          </Form.Item>
+          <div className="gn-conn-mode-seg" role="group">
+            {options.map((option) => {
+              const active = String(value ?? "") === option.value;
+              return (
+                <button
+                  key={option.value || "empty"}
+                  type="button"
+                  className="gn-conn-mode-seg-item"
+                  aria-pressed={active}
+                  onClick={() =>
+                    onSelect
+                      ? onSelect(option.value)
+                      : setChoiceFieldValue(fieldName, option.value)
+                  }
+                >
+                  {option.label}
+                </button>
+              );
+            })}
+          </div>
+          {activeOption?.description ? (
+            <div className="gn-conn-mode-hint">{activeOption.description}</div>
+          ) : null}
+        </div>
+      );
+    }
+    return (
+      <>
+        <Form.Item name={fieldName} hidden>
+          <Input {...noAutoCapInputProps} />
+        </Form.Item>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: `repeat(auto-fit, minmax(${minWidth}px, 1fr))`,
+            gap: 10,
+          }}
+        >
+          {options.map((option) => {
+            const active = String(value ?? "") === option.value;
+            return (
+              <button
+                key={option.value || "empty"}
+                type="button"
+                aria-pressed={active}
+                onClick={() =>
+                  onSelect
+                    ? onSelect(option.value)
+                    : setChoiceFieldValue(fieldName, option.value)
+                }
+                style={{
+                  textAlign: "left",
+                  padding: "12px 14px",
+                  borderRadius: 14,
+                  border: active
+                    ? darkMode
+                      ? "1px solid rgba(255,214,102,0.42)"
+                      : "1px solid rgba(22,119,255,0.36)"
+                    : darkMode
+                      ? "1px solid rgba(255,255,255,0.08)"
+                      : "1px solid rgba(16,24,40,0.08)",
+                  background: active
+                    ? darkMode
+                      ? "rgba(255,214,102,0.10)"
+                      : "rgba(22,119,255,0.07)"
+                    : darkMode
+                      ? "rgba(255,255,255,0.03)"
+                      : "rgba(16,24,40,0.03)",
+                  color: darkMode ? "#f5f7ff" : "#162033",
+                  cursor: "pointer",
+                  transition: "all 120ms ease",
+                  boxShadow: active
+                    ? darkMode
+                      ? "0 0 0 2px rgba(255,214,102,0.10)"
+                      : "0 0 0 2px rgba(22,119,255,0.08)"
+                    : "none",
+                }}
+              >
+                <Space size={8} wrap>
+                  <Text strong>{option.label}</Text>
+                  {active ? (
+                    <Tag color="blue">{t("connection.modal.choice.current")}</Tag>
+                  ) : null}
+                </Space>
+                {option.description ? (
+                  <div style={{ ...modalMutedTextStyle, marginTop: 6 }}>
+                    {option.description}
+                  </div>
+                ) : null}
+              </button>
+            );
+          })}
+        </div>
+      </>
+    );
+  };
 
   const applyJvmModeSelection = (
     nextModes: EditableJVMMode[],
@@ -2314,6 +2348,7 @@ const ConnectionModal: React.FC<{
     }
 
     setMongoMembers([]);
+    setActiveConfigSection("basic");
     setStep(2);
 
     if (!driverStatusLoaded || !snapshot) {
@@ -2407,61 +2442,41 @@ const ConnectionModal: React.FC<{
 
   const dbTypes = getAllConnectionTypeCatalogItems();
 
+  const recentConnectionChips = useMemo(() => {
+    const seen = new Set<string>();
+    const chips: Array<{
+      id: string;
+      type: string;
+      name: string;
+      color: string;
+    }> = [];
+    for (let i = savedConnections.length - 1; i >= 0; i -= 1) {
+      const conn = savedConnections[i];
+      const type = String(conn?.config?.type || "").trim();
+      if (!type || seen.has(conn.id)) continue;
+      seen.add(conn.id);
+      chips.push({
+        id: conn.id,
+        type,
+        name: conn.name || type,
+        color: conn.iconColor || getDbDefaultColor(conn.iconType || type),
+      });
+      if (chips.length >= 5) break;
+    }
+    return chips;
+  }, [savedConnections]);
+
+  const activeGroupLabel =
+    dbTypeGroups[activeGroup]?.label || t("connection.modal.step1.group.all");
+
   const renderStep1 = () => (
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        gap: 12,
-        height: "100%",
-      }}
-    >
-      <div
-        style={{
-          ...modalInnerSectionStyle,
-          display: "flex",
-          alignItems: "flex-end",
-          justifyContent: "space-between",
-          gap: 24,
-          padding: "8px 12px 14px",
-          flexWrap: "wrap",
-        }}
-      >
-        <div style={{ minWidth: 240, flex: "1 1 360px" }}>
-          <div
-            style={{
-              marginBottom: 5,
-              color: darkMode ? "#f5f7ff" : "#162033",
-              fontSize: 14,
-              fontWeight: 700,
-            }}
-          >
-            {t("connection.modal.step1.sectionTitle")}
-          </div>
-          <div style={modalMutedTextStyle}>
-            {t("connection.modal.step1.sectionDescription")}
-          </div>
-        </div>
-        <Input
-          allowClear
-          aria-label={t("connection.modal.step1.search.placeholder")}
-          value={dbTypeQuery}
-          onChange={(event) => handleDbTypeQueryChange(event.target.value)}
-          placeholder={t("connection.modal.step1.search.placeholder")}
-          prefix={<SearchOutlined style={{ color: overlayTheme.mutedText }} />}
-          style={{
-            width: "100%",
-            maxWidth: 320,
-            flex: "0 1 320px",
-          }}
-          {...noAutoCapInputProps}
-        />
-      </div>
+    <div className="gn-conn-picker" data-connection-step="1">
       {typeSelectWarning && (
         <Alert
           type="warning"
           showIcon
           closable
+          style={{ margin: "0 0 10px" }}
           message={t("connection.modal.typeWarning.unavailable", {
             name: typeSelectWarning.driverName,
           })}
@@ -2480,163 +2495,134 @@ const ConnectionModal: React.FC<{
           onClose={() => setTypeSelectWarning(null)}
         />
       )}
-      <div
-        style={{
-          ...modalInnerSectionStyle,
-          display: "flex",
-          flex: 1,
-          minHeight: 0,
-          padding: "2px 12px 8px",
-        }}
-      >
-        <div
+      <div className="gn-conn-picker-body">
+        <aside
+          className="gn-conn-picker-side"
           role="navigation"
           aria-label={t("connection.modal.step1.sectionTitle")}
-          style={{
-            width: 142,
-            borderRight: `1px solid ${step1SidebarDividerColor}`,
-            paddingRight: 12,
-            flexShrink: 0,
-            overflowY: "auto",
-          }}
         >
-          {dbTypeGroups.map((group, idx) => (
-            <button
-              key={group.labelKey}
-              type="button"
-              className="gn-connection-type-group"
-              data-connection-group-key={group.labelKey}
-              aria-pressed={activeGroup === idx}
-              onClick={() => handleDbTypeGroupSelect(idx)}
-              style={{
-                width: "100%",
-                padding: "8px 10px",
-                cursor: "pointer",
-                border: "none",
-                borderRadius: 0,
-                borderLeft: `2px solid ${
-                  activeGroup === idx ? step1SidebarActiveColor : "transparent"
-                }`,
-                marginBottom: 2,
-                background:
-                  activeGroup === idx
-                    ? `linear-gradient(90deg, ${step1SidebarActiveBg}, transparent)`
-                    : "transparent",
-                color:
-                  activeGroup === idx ? step1SidebarActiveColor : undefined,
-                fontWeight: activeGroup === idx ? 700 : 500,
-                transition: "background 120ms ease, color 120ms ease",
-                fontSize: 13,
-                fontFamily: "var(--gn-font-sans)",
-                textAlign: "left",
-              }}
-            >
-              {group.label}
-            </button>
-          ))}
-        </div>
-        <div
-          style={{
-            flex: 1,
-            minHeight: 0,
-            paddingLeft: 18,
-            overflowY: "auto",
-            overflowX: "hidden",
-          }}
-        >
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-              gap: "2px 12px",
-            }}
-          >
-            {visibleDbTypeItems.map((item) => (
-              <button
-                key={item.key}
-                type="button"
-                data-connection-type-key={item.key}
-                aria-label={item.name}
-                onClick={() => {
-                  void handleTypeSelect(item.key);
-                }}
-                className="gn-connection-type-row"
-                style={{
-                  width: "100%",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 10,
-                  minHeight: 44,
-                  padding: "6px 8px",
-                  border: "none",
-                  borderRadius: 6,
-                  color: "inherit",
-                  cursor: "pointer",
-                  fontFamily: "var(--gn-font-sans)",
-                  textAlign: "left",
-                  transition: "background 120ms ease",
-                }}
-              >
-                <div
-                  style={{
-                    width: 32,
-                    height: 32,
-                    display: "grid",
-                    placeItems: "center",
-                    flexShrink: 0,
-                  }}
-                >
-                  {item.icon}
-                </div>
-                <div
-                  style={{
-                    minWidth: 0,
-                    flex: 1,
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: 2,
-                  }}
-                >
-                  <Text
-                    strong
-                    style={{
-                      fontSize: 13.5,
-                      whiteSpace: "nowrap",
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      maxWidth: "100%",
-                      display: "block",
-                      lineHeight: 1.2,
+          <div className="gn-conn-picker-search">
+            <SearchOutlined className="gn-conn-picker-search-ico" />
+            <Input
+              allowClear
+              variant="borderless"
+              aria-label={t("connection.modal.step1.search.placeholder")}
+              value={dbTypeQuery}
+              onChange={(event) => handleDbTypeQueryChange(event.target.value)}
+              placeholder={t("connection.modal.step1.search.placeholder")}
+              className="gn-conn-picker-search-input"
+              {...noAutoCapInputProps}
+            />
+          </div>
+
+          {recentConnectionChips.length > 0 ? (
+            <div className="gn-conn-picker-block">
+              <div className="gn-conn-picker-sec-label">
+                {t("connection.modal.step1.recent")}
+              </div>
+              <div className="gn-conn-picker-recent">
+                {recentConnectionChips.map((chip) => (
+                  <button
+                    key={chip.id}
+                    type="button"
+                    className="gn-conn-picker-chip"
+                    title={chip.name}
+                    onClick={() => {
+                      void handleTypeSelect(chip.type);
                     }}
                   >
-                    {item.name}
-                  </Text>
-                  <Text
-                    type="secondary"
-                    style={{
-                      fontSize: 11.5,
-                      display: "block",
-                      whiteSpace: "nowrap",
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      lineHeight: 1.2,
-                    }}
+                    <span
+                      className="gn-conn-picker-chip-dot"
+                      style={{ background: chip.color }}
+                    />
+                    <span className="gn-conn-picker-chip-text">
+                      {getDbIconLabel(chip.type)} · {chip.name}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          <div className="gn-conn-picker-block gn-conn-picker-block-grow">
+            <div className="gn-conn-picker-sec-label">
+              {t("connection.modal.step1.categories")}
+            </div>
+            <div className="gn-conn-picker-nav">
+              {dbTypeGroups.map((group, idx) => {
+                // 搜索时强制落到「全部」分组，aria-pressed 与可见结果一致。
+                const active =
+                  activeGroup === idx ||
+                  (!!normalizedDbTypeQuery && idx === 0);
+                return (
+                  <button
+                    key={group.labelKey}
+                    type="button"
+                    className="gn-conn-picker-nav-item"
+                    data-connection-group-key={group.labelKey}
+                    aria-pressed={active}
+                    onClick={() => handleDbTypeGroupSelect(idx)}
                   >
-                    {getConnectionTypeHint(item.key, t)}
-                  </Text>
-                </div>
-              </button>
-            ))}
+                    <span className="gn-conn-picker-nav-label">
+                      {group.label}
+                    </span>
+                    <span className="gn-conn-picker-nav-count" aria-hidden="true">
+                      {group.items.length}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </aside>
+
+        <main className="gn-conn-picker-main">
+          <div className="gn-conn-picker-main-h">
+            <h3>
+              {normalizedDbTypeQuery
+                ? t("connection.modal.step1.search.placeholder")
+                : activeGroupLabel}
+            </h3>
+            <span>{t("connection.modal.step1.clickToConfigure")}</span>
+          </div>
+          <div className="gn-conn-picker-grid">
+            {visibleDbTypeItems.map((item) => {
+              const color = getDbDefaultColor(item.key);
+              return (
+                <button
+                  key={item.key}
+                  type="button"
+                  data-connection-type-key={item.key}
+                  aria-label={item.name}
+                  onClick={() => {
+                    void handleTypeSelect(item.key);
+                  }}
+                  className="gn-conn-type-card"
+                >
+                  <div className="gn-conn-type-card-top">
+                    <div
+                      className="gn-conn-type-card-logo"
+                      style={{ background: color }}
+                    >
+                      {getDbIcon(item.key, "#ffffff", 20)}
+                    </div>
+                    <div className="gn-conn-type-card-meta">
+                      <div className="gn-conn-type-card-name">{item.name}</div>
+                      <div className="gn-conn-type-card-hint">
+                        {getConnectionTypeHint(item.key, t)}
+                      </div>
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
           </div>
           {normalizedDbTypeQuery && visibleDbTypeItems.length === 0 ? (
-            <div
-              role="status"
-              style={{ ...modalMutedTextStyle, padding: "18px 10px" }}
-            >
+            <div role="status" className="gn-conn-picker-empty">
               {t("connection.modal.step1.search.empty")}
             </div>
           ) : null}
-        </div>
+        </main>
       </div>
     </div>
   );
@@ -2906,9 +2892,13 @@ const ConnectionModal: React.FC<{
         );
   };
 
+  const isFormStep = step !== 1;
+  // Step2 对齐 demo `.frame-form { height: fit-content }`，避免固定 620 撑出大片空白
   const modalBodyStyle = {
-    padding: "12px 24px 18px",
-    height: CONNECTION_MODAL_BODY_HEIGHT,
+    padding: isFormStep ? "10px 12px 12px" : "12px 24px 18px",
+    height: isFormStep ? "auto" : CONNECTION_MODAL_BODY_HEIGHT,
+    maxHeight: isFormStep ? "min(720px, calc(100vh - 160px))" : undefined,
+    minHeight: isFormStep ? 0 : CONNECTION_MODAL_BODY_HEIGHT,
     overflowY: "auto" as const,
     overflowX: "hidden" as const,
   };
@@ -2921,8 +2911,12 @@ const ConnectionModal: React.FC<{
         onCancel={onClose}
         footer={getFooter()}
         centered
-        wrapClassName="connection-modal-wrap"
-        width={CONNECTION_MODAL_WIDTH}
+        wrapClassName={
+          isFormStep
+            ? "connection-modal-wrap connection-modal-form"
+            : "connection-modal-wrap"
+        }
+        width={isFormStep ? CONNECTION_MODAL_WIDTH_STEP2 : CONNECTION_MODAL_WIDTH_STEP1}
         zIndex={APP_FOREGROUND_MODAL_Z_INDEX}
         destroyOnHidden
         maskClosable={false}
