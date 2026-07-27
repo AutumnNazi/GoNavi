@@ -62,6 +62,8 @@ export function DBGetColumns(arg1:connection.ConnectionConfig,arg2:string,arg3:s
 
 export function DBGetDatabases(arg1:connection.ConnectionConfig):Promise<connection.QueryResult>;
 
+export function DBGetDatabaseForeignKeys(arg1:connection.ConnectionConfig,arg2:string):Promise<connection.QueryResult>;
+
 export function DBGetForeignKeys(arg1:connection.ConnectionConfig,arg2:string,arg3:string):Promise<connection.QueryResult>;
 
 export function DBGetIndexes(arg1:connection.ConnectionConfig,arg2:string,arg3:string):Promise<connection.QueryResult>;

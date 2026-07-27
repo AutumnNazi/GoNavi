@@ -2,8 +2,8 @@ import Modal from './common/ResizableDraggableModal';
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { Table, Input, Button, Space, Tag, Tree, Spin, message, Form, InputNumber, Popconfirm, Tooltip, Radio } from 'antd';
-import type { RadioChangeEvent } from 'antd';
-import { ReloadOutlined, DeleteOutlined, PlusOutlined, EditOutlined, SearchOutlined, ClockCircleOutlined, CopyOutlined, FolderOpenOutlined, KeyOutlined, RightOutlined, DownOutlined } from '@ant-design/icons';
+import type { RadioChangeEvent, TableProps } from 'antd';
+import { ReloadOutlined, DeleteOutlined, PlusOutlined, EditOutlined, EyeOutlined, SearchOutlined, ClockCircleOutlined, CopyOutlined, FolderOpenOutlined, KeyOutlined, RightOutlined, DownOutlined } from '@ant-design/icons';
 import { useStore } from '../store';
 import { RedisKeyInfo, RedisValue, StreamEntry } from '../types';
 import Editor from './MonacoEditor';
@@ -50,6 +50,83 @@ const REDIS_KEY_SEARCH_LOAD_MORE_COUNT = 1000;
 const REDIS_LARGE_KEYSPACE_THRESHOLD = 10000;
 const REDIS_LARGE_KEYSPACE_MAX_EXPANDED_GROUPS = 200;
 const REDIS_KEY_GONE_MESSAGE = 'Redis Key 不存在或已过期'; // i18n-scan: allow-raw backend sentinel
+const REDIS_VALUE_TABLE_PAGE_SIZE = 50;
+const REDIS_VALUE_TABLE_DEFAULT_SCROLL_HEIGHT = 240;
+const REDIS_VALUE_TABLE_MIN_SCROLL_HEIGHT = 96;
+
+type RedisValueTableProps = Omit<TableProps<any>, 'pagination' | 'scroll' | 'size'> & {
+    totalCount: number;
+    totalLabel: string;
+};
+
+const getElementOuterHeight = (element: HTMLElement | null): number => {
+    if (!element) return 0;
+    const styles = window.getComputedStyle(element);
+    const marginTop = Number.parseFloat(styles.marginTop) || 0;
+    const marginBottom = Number.parseFloat(styles.marginBottom) || 0;
+    return element.getBoundingClientRect().height + marginTop + marginBottom;
+};
+
+const RedisValueTable: React.FC<RedisValueTableProps> = ({ totalCount, totalLabel, dataSource, ...tableProps }) => {
+    const shellRef = useRef<HTMLDivElement>(null);
+    const [scrollHeight, setScrollHeight] = useState(REDIS_VALUE_TABLE_DEFAULT_SCROLL_HEIGHT);
+
+    useEffect(() => {
+        const shell = shellRef.current;
+        if (!shell) return;
+
+        let animationFrame = 0;
+        const measure = () => {
+            const header = shell.querySelector<HTMLElement>('.ant-table-header')
+                || shell.querySelector<HTMLElement>('.ant-table-thead');
+            const pagination = shell.querySelector<HTMLElement>('.ant-pagination');
+            const availableHeight = shell.clientHeight
+                - getElementOuterHeight(header)
+                - getElementOuterHeight(pagination)
+                - 2;
+            const nextHeight = Math.max(REDIS_VALUE_TABLE_MIN_SCROLL_HEIGHT, Math.floor(availableHeight));
+            setScrollHeight((current) => current === nextHeight ? current : nextHeight);
+        };
+        const scheduleMeasure = () => {
+            if (animationFrame) window.cancelAnimationFrame(animationFrame);
+            animationFrame = window.requestAnimationFrame(() => {
+                animationFrame = 0;
+                measure();
+            });
+        };
+
+        scheduleMeasure();
+        const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(scheduleMeasure) : null;
+        observer?.observe(shell);
+        window.addEventListener('resize', scheduleMeasure);
+        return () => {
+            if (animationFrame) window.cancelAnimationFrame(animationFrame);
+            observer?.disconnect();
+            window.removeEventListener('resize', scheduleMeasure);
+        };
+    }, [dataSource?.length]);
+
+    return (
+        <div
+            ref={shellRef}
+            className="redis-value-table-shell"
+            data-redis-value-total={totalCount}
+            style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}
+        >
+            <Table
+                {...tableProps}
+                dataSource={dataSource}
+                size="small"
+                pagination={{
+                    pageSize: REDIS_VALUE_TABLE_PAGE_SIZE,
+                    showSizeChanger: false,
+                    showTotal: () => totalLabel,
+                }}
+                scroll={{ y: scrollHeight }}
+            />
+        </div>
+    );
+};
 
 interface RedisViewerProps {
     connectionId: string;
@@ -210,10 +287,11 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
     // JSON edit modal state.
     const [jsonEditModalOpen, setJsonEditModalOpen] = useState(false);
     const [jsonEditConfig, setJsonEditConfig] = useState<{
+        mode: 'edit' | 'view';
         title: string;
         value: string;
         isJson: boolean;
-        onSave: (newValue: string) => Promise<void>;
+        onSave?: (newValue: string) => Promise<void>;
     } | null>(null);
     const jsonEditValueRef = useRef<string>('');
     const latestLoadRequestIdRef = useRef(0);
@@ -345,10 +423,36 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
 
         setLoading(true);
         try {
-            const { scannedKeys, nextCursor } = await scanRedisKeysPage(config, normalizedPattern, fromCursor, effectiveTargetCount);
-            if (requestId !== latestLoadRequestIdRef.current) {
-                return;
+            let scanCursor = normalizeRedisCursor(fromCursor);
+            let scannedKeys: RedisKeyInfo[] = [];
+            let nextCursor = scanCursor;
+            const visitedCursors = new Set<string>();
+
+            while (true) {
+                if (visitedCursors.has(scanCursor)) {
+                    nextCursor = '0';
+                    break;
+                }
+                visitedCursors.add(scanCursor);
+
+                const page = await scanRedisKeysPage(
+                    config,
+                    normalizedPattern,
+                    scanCursor,
+                    effectiveTargetCount
+                );
+                if (requestId !== latestLoadRequestIdRef.current) {
+                    return;
+                }
+
+                scannedKeys = page.scannedKeys;
+                nextCursor = page.nextCursor;
+                if (scannedKeys.length > 0 || nextCursor === '0') {
+                    break;
+                }
+                scanCursor = nextCursor;
             }
+
             if (append) {
                 setKeys(prev => mergeRedisKeyInfoLists(prev, scannedKeys));
             } else {
@@ -1342,7 +1446,9 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
                             });
                         }}>{tr('redis_viewer.action.add_field')}</Button>
                     </div>
-                    <Table
+                    <RedisValueTable
+                        totalCount={keyValue.length}
+                        totalLabel={tr('redis_viewer.pagination.total', { count: keyValue.length })}
                         dataSource={data}
                         columns={[
                             { title: tr('redis_viewer.table.field'), dataIndex: 'field', key: 'field', width: 200, ellipsis: true },
@@ -1388,6 +1494,7 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
                                             <Button type="text" size="small" icon={<EditOutlined />} onClick={() => {
                                                 const editContent = record.isJson ? record.displayValue : record.value;
                                                 setJsonEditConfig({
+                                                    mode: 'edit',
                                                     title: tr('redis_viewer.modal.edit_field', { field: record.field }),
                                                     value: editContent,
                                                     isJson: record.isJson,
@@ -1406,10 +1513,6 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
                             }
                         ]}
                         rowKey="field"
-                        size="small"
-                        pagination={{ pageSize: 50 }}
-                        scroll={{ y: 'calc(100vh - 350px)' }}
-                        style={{ flex: 1 }}
                     />
                 </div>
             );
@@ -1507,7 +1610,9 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
                             }}>{tr('redis_viewer.action.add_list_head')}</Button>
                         </Space>
                     </div>
-                    <Table
+                    <RedisValueTable
+                        totalCount={keyValue.length}
+                        totalLabel={tr('redis_viewer.pagination.total', { count: keyValue.length })}
                         dataSource={data}
                         columns={[
                             { title: tr('redis_viewer.table.index'), dataIndex: 'index', key: 'index', width: 80 },
@@ -1537,7 +1642,7 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
                             {
                                 title: tr('redis_viewer.table.action'),
                                 key: 'action',
-                                width: 120,
+                                width: 160,
                                 render: (_: any, record: any) => (
                                     <Space size="small">
                                         <Tooltip title={tr('redis_viewer.tooltip.copy_value')}>
@@ -1549,10 +1654,29 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
                                                 });
                                             }} />
                                         </Tooltip>
+                                        <Tooltip title={tr('redis_viewer.tooltip.view_value')}>
+                                            <Button
+                                                type="text"
+                                                size="small"
+                                                aria-label={tr('redis_viewer.tooltip.view_value')}
+                                                icon={<EyeOutlined />}
+                                                onClick={() => {
+                                                    const viewContent = record.isJson ? record.displayValue : record.value;
+                                                    setJsonEditConfig({
+                                                        mode: 'view',
+                                                        title: tr('redis_viewer.modal.view_index', { index: record.index }),
+                                                        value: viewContent,
+                                                        isJson: record.isJson,
+                                                    });
+                                                    setJsonEditModalOpen(true);
+                                                }}
+                                            />
+                                        </Tooltip>
                                         {!record.isBinary && (
                                             <Button type="text" size="small" icon={<EditOutlined />} onClick={() => {
                                                 const editContent = record.isJson ? record.displayValue : record.value;
                                                 setJsonEditConfig({
+                                                    mode: 'edit',
                                                     title: tr('redis_viewer.modal.edit_index', { index: record.index }),
                                                     value: editContent,
                                                     isJson: record.isJson,
@@ -1571,10 +1695,6 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
                             }
                         ]}
                         rowKey="index"
-                        size="small"
-                        pagination={{ pageSize: 50 }}
-                        scroll={{ y: 'calc(100vh - 350px)' }}
-                        style={{ flex: 1 }}
                     />
                 </div>
             );
@@ -1636,7 +1756,9 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
                             });
                         }}>{tr('redis_viewer.action.add_member')}</Button>
                     </div>
-                    <Table
+                    <RedisValueTable
+                        totalCount={keyValue.length}
+                        totalLabel={tr('redis_viewer.pagination.total', { count: keyValue.length })}
                         dataSource={data}
                         columns={[
                             {
@@ -1685,10 +1807,6 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
                             }
                         ]}
                         rowKey="index"
-                        size="small"
-                        pagination={{ pageSize: 50 }}
-                        scroll={{ y: 'calc(100vh - 350px)' }}
-                        style={{ flex: 1 }}
                     />
                 </div>
             );
@@ -1760,7 +1878,9 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
                             });
                         }}>{tr('redis_viewer.action.add_member')}</Button>
                     </div>
-                    <Table
+                    <RedisValueTable
+                        totalCount={keyValue.length}
+                        totalLabel={tr('redis_viewer.pagination.total', { count: keyValue.length })}
                         dataSource={data}
                         columns={[
                             { title: tr('redis_viewer.table.score'), dataIndex: 'score', key: 'score', width: 120 },
@@ -1827,10 +1947,6 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
                             }
                         ]}
                         rowKey="index"
-                        size="small"
-                        pagination={{ pageSize: 50 }}
-                        scroll={{ y: 'calc(100vh - 350px)' }}
-                        style={{ flex: 1 }}
                     />
                 </div>
             );
@@ -1941,7 +2057,9 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
                             });
                         }}>{tr('redis_viewer.action.add_stream_entry')}</Button>
                     </div>
-                    <Table
+                    <RedisValueTable
+                        totalCount={keyValue.length}
+                        totalLabel={tr('redis_viewer.pagination.total', { count: keyValue.length })}
                         dataSource={data}
                         columns={[
                             {
@@ -2006,10 +2124,6 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
                             }
                         ]}
                         rowKey="id"
-                        size="small"
-                        pagination={{ pageSize: 50 }}
-                        scroll={{ y: 'calc(100vh - 350px)' }}
-                        style={{ flex: 1 }}
                     />
                 </div>
             );
@@ -2017,58 +2131,60 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
 
         return (
             <div className={isV2Ui ? 'gn-v2-redis-value-layout' : undefined} style={{ height: '100%', display: 'flex', flexDirection: 'column', gap: 12 }}>
-                <div className={`redis-key-detail-header${isV2Ui ? ' gn-v2-redis-value-header' : ''}`} style={{ ...workbenchCardStyle, padding: 18, display: 'flex', flexDirection: 'column', gap: 16, flexShrink: 0 }}>
-                    <div className="redis-key-detail-summary" style={{ display: 'flex', flexDirection: 'column', gap: 10, minWidth: 0, width: '100%' }}>
-                        <span style={{ fontSize: 12, textTransform: 'uppercase', letterSpacing: '.08em', color: workbenchTheme.textMuted, fontWeight: 600 }}>
-                            {tr('redis_viewer.title.active_key')}
-                        </span>
-                        <div className="redis-key-detail-identity" style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
-                            <Tooltip title={selectedKey}>
-                                <strong style={{ maxWidth: 340, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 26, color: workbenchTheme.textPrimary }}>
-                                    {selectedKey}
-                                </strong>
-                            </Tooltip>
-                            <Tooltip title={tr('redis_viewer.tooltip.copy_key_name')}>
-                                <Button
-                                    type="text"
-                                    size="small"
-                                    icon={<CopyOutlined />}
-                                    style={{ padding: '0 4px', display: 'flex', alignItems: 'center', color: workbenchTheme.textMuted }}
-                                    onClick={() => {
-                                        navigator.clipboard.writeText(selectedKey).then(() => {
-                                            message.success(tr('redis_viewer.message.key_name_copied'));
-                                        }).catch(() => {
-                                            message.error(tr('redis_viewer.message.copy_failed'));
-                                        });
-                                    }}
-                                />
-                            </Tooltip>
-                        </div>
-                        <div className="redis-key-detail-metadata" style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', minWidth: 0 }}>
-                            <Tag color={getTypeColor(keyValue.type)} style={pillTagStyle}>{keyValue.type}</Tag>
-                            <Tag icon={<ClockCircleOutlined />} style={mutedPillTagStyle}>{formatTTL(keyValue.ttl)}</Tag>
-                            {keyValue.length > 0 && <Tag style={mutedPillTagStyle}>{tr('redis_viewer.label.length', { count: keyValue.length })}</Tag>}
-                        </div>
-                        <div className="redis-key-detail-actions" style={{ display: 'flex', gap: 4, alignItems: 'center', alignSelf: 'flex-start', flexWrap: 'wrap', maxWidth: '100%' }}>
-                            <Button size="small" style={actionButtonStyle} onClick={() => {
-                                ttlForm.setFieldsValue({ ttl: keyValue.ttl > 0 ? keyValue.ttl : -1 });
-                                setTtlModalOpen(true);
-                            }}>{tr('redis_viewer.action.set_ttl')}</Button>
-                            <Button size="small" style={actionButtonStyle} onClick={() => loadKeyValue(selectedKey)} icon={<ReloadOutlined />}>{tr('redis_viewer.action.refresh')}</Button>
-                            <Popconfirm title={tr('redis_viewer.confirm.delete_key', { key: selectedKey })} onConfirm={handleDeleteCurrentKey}>
-                                <Button size="small" style={dangerActionButtonStyle} icon={<DeleteOutlined />}>{tr('redis_viewer.action.delete_key')}</Button>
-                            </Popconfirm>
+                <div className={`redis-key-detail-top${isV2Ui ? ' gn-v2-redis-value-top' : ''}`} style={{ display: 'flex', flexDirection: 'column', gap: 12, flexShrink: 0 }}>
+                    <div className={`redis-key-detail-header${isV2Ui ? ' gn-v2-redis-value-header' : ''}`} style={{ ...workbenchCardStyle, padding: 18, display: 'flex', flexDirection: 'column', gap: 16, flexShrink: 0 }}>
+                        <div className="redis-key-detail-summary" style={{ display: 'flex', flexDirection: 'column', gap: 10, minWidth: 0, width: '100%' }}>
+                            <span style={{ fontSize: 12, textTransform: 'uppercase', letterSpacing: '.08em', color: workbenchTheme.textMuted, fontWeight: 600 }}>
+                                {tr('redis_viewer.title.active_key')}
+                            </span>
+                            <div className="redis-key-detail-identity" style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, width: '100%' }}>
+                                <Tooltip title={selectedKey}>
+                                    <strong data-redis-active-key="true" style={{ flex: '0 1 auto', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 26, color: workbenchTheme.textPrimary }}>
+                                        {selectedKey}
+                                    </strong>
+                                </Tooltip>
+                                <Tooltip title={tr('redis_viewer.tooltip.copy_key_name')}>
+                                    <Button
+                                        type="text"
+                                        size="small"
+                                        icon={<CopyOutlined />}
+                                        style={{ padding: '0 4px', display: 'flex', alignItems: 'center', color: workbenchTheme.textMuted, flex: '0 0 auto' }}
+                                        onClick={() => {
+                                            navigator.clipboard.writeText(selectedKey).then(() => {
+                                                message.success(tr('redis_viewer.message.key_name_copied'));
+                                            }).catch(() => {
+                                                message.error(tr('redis_viewer.message.copy_failed'));
+                                            });
+                                        }}
+                                    />
+                                </Tooltip>
+                            </div>
+                            <div className="redis-key-detail-metadata" style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', minWidth: 0 }}>
+                                <Tag color={getTypeColor(keyValue.type)} style={pillTagStyle}>{keyValue.type}</Tag>
+                                <Tag icon={<ClockCircleOutlined />} style={mutedPillTagStyle}>{formatTTL(keyValue.ttl)}</Tag>
+                                {keyValue.length > 0 && <Tag style={mutedPillTagStyle}>{tr('redis_viewer.label.length', { count: keyValue.length })}</Tag>}
+                            </div>
+                            <div className="redis-key-detail-actions" style={{ display: 'flex', gap: 4, alignItems: 'center', alignSelf: 'flex-start', flexWrap: 'wrap', maxWidth: '100%' }}>
+                                <Button size="small" style={actionButtonStyle} onClick={() => {
+                                    ttlForm.setFieldsValue({ ttl: keyValue.ttl > 0 ? keyValue.ttl : -1 });
+                                    setTtlModalOpen(true);
+                                }}>{tr('redis_viewer.action.set_ttl')}</Button>
+                                <Button size="small" style={actionButtonStyle} onClick={() => loadKeyValue(selectedKey)} icon={<ReloadOutlined />}>{tr('redis_viewer.action.refresh')}</Button>
+                                <Popconfirm title={tr('redis_viewer.confirm.delete_key', { key: selectedKey })} onConfirm={handleDeleteCurrentKey}>
+                                    <Button size="small" style={dangerActionButtonStyle} icon={<DeleteOutlined />}>{tr('redis_viewer.action.delete_key')}</Button>
+                                </Popconfirm>
+                            </div>
                         </div>
                     </div>
-                </div>
-                <div className={isV2Ui ? 'gn-v2-redis-view-mode' : undefined} style={{ ...workbenchSubCardStyle, padding: 6, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexShrink: 0 }}>
-                    <span style={{ paddingInline: 10, fontSize: 12, color: workbenchTheme.textMuted }}>{tr('redis_viewer.view.title')}</span>
-                    <Radio.Group size="small" value={viewMode} onChange={(e) => setViewMode(e.target.value)}>
-                        <Radio.Button value="auto">{tr('redis_viewer.view.auto')}</Radio.Button>
-                        <Radio.Button value="text">{tr('redis_viewer.view.text')}</Radio.Button>
-                        <Radio.Button value="utf8">UTF-8</Radio.Button>
-                        <Radio.Button value="hex">{tr('redis_viewer.view.hex')}</Radio.Button>
-                    </Radio.Group>
+                    <div className={`redis-key-view-mode${isV2Ui ? ' gn-v2-redis-view-mode' : ''}`} style={{ ...workbenchSubCardStyle, padding: 6, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexShrink: 0 }}>
+                        <span style={{ paddingInline: 10, fontSize: 12, color: workbenchTheme.textMuted }}>{tr('redis_viewer.view.title')}</span>
+                        <Radio.Group size="small" value={viewMode} onChange={(e) => setViewMode(e.target.value)}>
+                            <Radio.Button value="auto">{tr('redis_viewer.view.auto')}</Radio.Button>
+                            <Radio.Button value="text">{tr('redis_viewer.view.text')}</Radio.Button>
+                            <Radio.Button value="utf8">UTF-8</Radio.Button>
+                            <Radio.Button value="hex">{tr('redis_viewer.view.hex')}</Radio.Button>
+                        </Radio.Group>
+                    </div>
                 </div>
                 <div className={isV2Ui ? 'gn-v2-redis-value-card' : undefined} style={{ ...workbenchCardStyle, padding: 14, flex: 1, minHeight: 0, overflow: 'hidden' }}>
                     <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', height: '100%' }}>
@@ -2089,7 +2205,19 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
     }
 
     return (
-        <div className={`redis-viewer-workbench${isV2Ui ? ' gn-v2-redis-workbench' : ''}`} style={{ display: 'flex', height: '100%', gap: 12, padding: 12, background: workbenchTheme.appBg, backdropFilter: workbenchBackdropFilter, WebkitBackdropFilter: workbenchBackdropFilter }}>
+        <div
+            className={`redis-viewer-workbench${isV2Ui ? ' gn-v2-redis-workbench' : ''}`}
+            style={{
+                display: 'flex',
+                height: '100%',
+                gap: 12,
+                padding: 12,
+                background: workbenchTheme.appBg,
+                backdropFilter: workbenchBackdropFilter,
+                WebkitBackdropFilter: workbenchBackdropFilter,
+                '--gn-redis-sidebar-width': typeof leftPanelWidth === 'number' ? `${leftPanelWidth}px` : leftPanelWidth,
+            } as React.CSSProperties}
+        >
             {/* Left: Key List */}
             <div ref={leftPanelRef} className={isV2Ui ? 'gn-v2-redis-sidebar' : undefined} style={{ width: leftPanelWidth, minWidth: 300, display: 'flex', flexDirection: 'column', flexShrink: 0, gap: 12 }}>
                 <div className={isV2Ui ? 'gn-v2-redis-header' : undefined} style={{ ...workbenchCardStyle, padding: 12 }}>
@@ -2218,12 +2346,18 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
             </div>
 
             {/* Resizable Divider */}
-            <RedisResizableDivider targetRef={leftPanelRef} onResizeEnd={setLeftPanelWidth} title={tr('redis_viewer.tooltip.resize_panels')} />
+            <RedisResizableDivider
+                targetRef={leftPanelRef}
+                onResizeEnd={setLeftPanelWidth}
+                maxReservedWidth={isV2Ui ? 361 : undefined}
+                containerWidthCssVariable={isV2Ui ? '--gn-redis-sidebar-width' : undefined}
+                title={tr('redis_viewer.tooltip.resize_panels')}
+            />
 
             {/* Right: Value Viewer */}
             <div className={isV2Ui ? 'gn-v2-redis-value-pane' : undefined} style={{ flex: 1, overflow: 'hidden', minWidth: 300 }}>
                 {valueLoading ? (
-                    <div style={{ ...workbenchCardStyle, padding: 20, textAlign: 'center', color: workbenchTheme.textMuted }}>{tr('common.loading')}...</div>
+                    <div className={isV2Ui ? 'gn-v2-redis-empty-value' : undefined} style={{ ...workbenchCardStyle, padding: 20, textAlign: 'center', color: workbenchTheme.textMuted }}>{tr('common.loading')}...</div>
                 ) : (
                     renderValueEditor()
                 )}
@@ -2428,12 +2562,14 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
                 title={jsonEditConfig?.title || tr('redis_viewer.action.edit')}
                 open={jsonEditModalOpen}
                 onOk={async () => {
-                    if (jsonEditConfig?.onSave) {
+                    if (jsonEditConfig?.mode === 'edit' && jsonEditConfig.onSave) {
                         await jsonEditConfig.onSave(jsonEditValueRef.current);
                     }
                     setJsonEditModalOpen(false);
                 }}
                 onCancel={() => setJsonEditModalOpen(false)}
+                okText={jsonEditConfig?.mode === 'view' ? tr('common.close') : undefined}
+                cancelButtonProps={jsonEditConfig?.mode === 'view' ? { style: { display: 'none' } } : undefined}
                 width={800}
                 styles={{ content: redisModalContentStyle, header: { background: 'transparent', borderBottom: 'none', color: workbenchTheme.textPrimary }, body: { height: 500, paddingTop: 8 }, footer: { background: 'transparent', borderTop: 'none' } }}
             >
@@ -2452,7 +2588,8 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
                         scrollBeyondLastLine: false,
                         automaticLayout: true,
                         folding: true,
-                        formatOnPaste: true
+                        formatOnPaste: jsonEditConfig?.mode !== 'view',
+                        readOnly: jsonEditConfig?.mode === 'view',
                     }}
                 />
             </Modal>

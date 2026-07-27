@@ -68,6 +68,7 @@ type updateState struct {
 	lastCheck   *UpdateInfo
 	downloading bool
 	staged      *stagedUpdate
+	revision    uint64
 }
 
 type UpdateInfo struct {
@@ -133,6 +134,22 @@ type stagedUpdate struct {
 	UpdateHandoffEventName string
 }
 
+func snapshotStagedUpdate(current *stagedUpdate) *stagedUpdate {
+	if current == nil {
+		return nil
+	}
+	snapshot := *current
+	return &snapshot
+}
+
+func snapshotUpdateInfo(current *UpdateInfo) *UpdateInfo {
+	if current == nil {
+		return nil
+	}
+	snapshot := *current
+	return &snapshot
+}
+
 type updatePathCandidate struct {
 	workspaceDir string
 	stagedDir    string
@@ -193,7 +210,12 @@ func (a *App) CheckForUpdatesSilently() connection.QueryResult {
 
 func (a *App) checkForUpdates(logFailure bool, forceNetwork bool) connection.QueryResult {
 	a.ensurePersistedGlobalProxyRuntime()
+	a.updateMu.Lock()
 	channel := a.currentUpdateChannel()
+	expectedRevision := a.updateState.revision
+	currentStaged := snapshotStagedUpdate(a.updateState.staged)
+	a.updateMu.Unlock()
+
 	info, err := fetchLatestUpdateInfoWithOptions(channel, forceNetwork)
 	if err != nil {
 		if logFailure {
@@ -201,11 +223,6 @@ func (a *App) checkForUpdates(logFailure bool, forceNetwork bool) connection.Que
 		}
 		return connection.QueryResult{Success: false, Message: a.localizedUpdateError(err)}
 	}
-
-	var currentStaged *stagedUpdate
-	a.updateMu.Lock()
-	currentStaged = a.updateState.staged
-	a.updateMu.Unlock()
 
 	if info.HasUpdate {
 		reusable := resolveReusableStagedUpdate(info, currentStaged)
@@ -220,16 +237,30 @@ func (a *App) checkForUpdates(logFailure bool, forceNetwork bool) connection.Que
 		currentStaged = nil
 	}
 
-	a.updateMu.Lock()
-	a.updateState.lastCheck = &info
-	a.updateState.staged = currentStaged
-	a.updateMu.Unlock()
+	if !a.publishUpdateCheckSnapshot(expectedRevision, info, currentStaged) {
+		return connection.QueryResult{
+			Success: false,
+			Message: a.appText("app.update.backend.message.check_stale", nil),
+		}
+	}
 
 	msg := a.appText("app.update.backend.message.latest", nil)
 	if info.HasUpdate {
 		msg = a.appText("app.update.backend.message.update_found", map[string]any{"version": info.LatestVersion})
 	}
 	return connection.QueryResult{Success: true, Message: msg, Data: info}
+}
+
+func (a *App) publishUpdateCheckSnapshot(expectedRevision uint64, info UpdateInfo, staged *stagedUpdate) bool {
+	a.updateMu.Lock()
+	defer a.updateMu.Unlock()
+	if a.updateState.revision != expectedRevision {
+		return false
+	}
+	a.updateState.lastCheck = snapshotUpdateInfo(&info)
+	a.updateState.staged = snapshotStagedUpdate(staged)
+	a.updateState.revision++
+	return true
 }
 
 func (a *App) GetAppInfo() connection.QueryResult {
@@ -251,7 +282,7 @@ func (a *App) DownloadUpdate() connection.QueryResult {
 		a.updateMu.Unlock()
 		return connection.QueryResult{Success: false, Message: a.appText("app.update.backend.message.download_in_progress", nil)}
 	}
-	info := a.updateState.lastCheck
+	info := snapshotUpdateInfo(a.updateState.lastCheck)
 	if info == nil {
 		a.updateMu.Unlock()
 		return connection.QueryResult{Success: false, Message: a.appText("app.update.backend.message.check_first", nil)}
@@ -273,14 +304,16 @@ func (a *App) DownloadUpdate() connection.QueryResult {
 		a.updateMu.Unlock()
 		return connection.QueryResult{Success: false, Message: a.localizedUpdateError(err)}
 	}
-	staged := resolveReusableStagedUpdate(*info, a.updateState.staged)
+	staged := resolveReusableStagedUpdate(*info, snapshotStagedUpdate(a.updateState.staged))
 	if staged != nil {
 		a.updateState.staged = staged
+		a.updateState.revision++
 		a.updateMu.Unlock()
 		return connection.QueryResult{Success: true, Message: a.appText("app.update.backend.message.package_already_downloaded", nil), Data: buildUpdateDownloadResult(*info, staged)}
 	}
 	a.updateState.staged = nil
 	a.updateState.downloading = true
+	a.updateState.revision++
 	a.updateMu.Unlock()
 
 	a.emitUpdateDownloadProgress("start", 0, info.AssetSize, "")
@@ -295,13 +328,25 @@ func (a *App) DownloadUpdate() connection.QueryResult {
 
 func (a *App) InstallUpdateAndRestart(closeAllWindowsInstancesConfirmed bool) connection.QueryResult {
 	a.updateMu.Lock()
-	staged := a.updateState.staged
-	if staged != nil && strings.TrimSpace(staged.InstallLogPath) == "" {
-		staged.InstallLogPath = buildUpdateInstallLogPath(filepath.Dir(staged.FilePath))
-	}
+	staged := snapshotStagedUpdate(a.updateState.staged)
 	a.updateMu.Unlock()
 	if staged == nil {
 		return connection.QueryResult{Success: false, Message: a.appText("app.update.backend.message.no_downloaded_package", nil)}
+	}
+	if strings.TrimSpace(staged.InstallLogPath) == "" {
+		staged.InstallLogPath = buildUpdateInstallLogPath(filepath.Dir(staged.FilePath))
+	}
+	installTarget := ""
+	if stdRuntime.GOOS == "windows" {
+		installTarget = strings.TrimSpace(updateResolveInstallTarget())
+		if installTarget == "" {
+			return connection.QueryResult{
+				Success: false,
+				Message: a.appText("app.update.backend.message.install_launch_failed", map[string]any{
+					"detail": a.appText("app.update.backend.error.install_target_unresolved", nil),
+				}),
+			}
+		}
 	}
 	if err := validateUpdatePackageForCurrentInstallMode(stdRuntime.GOOS, staged.InstallMode, staged.PackageType, staged.FilePath); err != nil {
 		return connection.QueryResult{
@@ -312,7 +357,6 @@ func (a *App) InstallUpdateAndRestart(closeAllWindowsInstancesConfirmed bool) co
 		}
 	}
 	if stdRuntime.GOOS == "windows" {
-		installTarget := updateResolveInstallTarget()
 		maintenanceLease, err := updateAcquireWindowsMaintenance(installTarget)
 		if err != nil {
 			return connection.QueryResult{
@@ -446,7 +490,7 @@ func (a *App) quitForUpdate() {
 
 func (a *App) OpenDownloadedUpdateDirectory() connection.QueryResult {
 	a.updateMu.Lock()
-	staged := a.updateState.staged
+	staged := snapshotStagedUpdate(a.updateState.staged)
 	a.updateMu.Unlock()
 	if staged == nil {
 		return connection.QueryResult{Success: false, Message: a.appText("app.update.backend.message.no_downloaded_package", nil)}
@@ -474,7 +518,11 @@ func (a *App) OpenDownloadedUpdateDirectory() connection.QueryResult {
 	default:
 		return connection.QueryResult{Success: false, Message: a.appText("app.update.backend.message.open_directory_unsupported", map[string]any{"platform": stdRuntime.GOOS})}
 	}
-	if err := cmd.Start(); err != nil {
+	if err := startBackgroundCommand(cmd, func(waitErr error) {
+		if waitErr != nil {
+			logger.Warnf("打开更新目录的后台进程退出异常：%v", waitErr)
+		}
+	}); err != nil {
 		logger.Error(err, "打开更新目录失败")
 		return connection.QueryResult{Success: false, Message: a.appText("app.update.backend.message.open_directory_failed", map[string]any{"detail": err.Error()})}
 	}
@@ -574,6 +622,7 @@ func (a *App) downloadAndStageUpdate(info UpdateInfo) connection.QueryResult {
 	info.DownloadPath = assetPath
 	a.updateMu.Lock()
 	a.updateState.staged = staged
+	a.updateState.revision++
 	a.updateMu.Unlock()
 
 	a.emitUpdateDownloadProgress("done", info.AssetSize, info.AssetSize, "")
@@ -1732,15 +1781,34 @@ func resolveReusableStagedUpdateForPlatform(goos string, preferredWorkspaceDir s
 }
 
 func resolveUpdateInstallTarget() string {
-	exePath, err := os.Executable()
+	exePath, err := resolveExecutablePath(os.Executable, filepath.EvalSymlinks)
 	if err != nil {
 		return ""
 	}
-	exePath, _ = filepath.EvalSymlinks(exePath)
 	if stdRuntime.GOOS == "darwin" {
 		return resolveMacUpdateTarget(exePath)
 	}
 	return exePath
+}
+
+func resolveExecutablePath(
+	executable func() (string, error),
+	evalSymlinks func(string) (string, error),
+) (string, error) {
+	exePath, err := executable()
+	if err != nil {
+		return "", err
+	}
+	exePath = strings.TrimSpace(exePath)
+	if exePath == "" {
+		return "", localizedUpdateError{key: "app.update.backend.error.install_target_unresolved"}
+	}
+	if resolved, evalErr := evalSymlinks(exePath); evalErr == nil {
+		if resolved = strings.TrimSpace(resolved); resolved != "" {
+			exePath = resolved
+		}
+	}
+	return exePath, nil
 }
 
 func ensureWindowsUpdateTargetWritable(targetExe string) error {
@@ -1795,11 +1863,10 @@ func (a *App) emitUpdateDownloadProgress(status string, downloaded, total int64,
 }
 
 func launchUpdateScript(staged *stagedUpdate) error {
-	exePath, err := os.Executable()
-	if err != nil {
-		return err
+	exePath, err := resolveExecutablePath(os.Executable, filepath.EvalSymlinks)
+	if err != nil || strings.TrimSpace(exePath) == "" {
+		return localizedUpdateError{key: "app.update.backend.error.install_target_unresolved"}
 	}
-	exePath, _ = filepath.EvalSymlinks(exePath)
 	pid := os.Getpid()
 
 	switch stdRuntime.GOOS {

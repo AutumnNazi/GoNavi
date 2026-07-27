@@ -60,7 +60,14 @@ func (d *DamengDB) getDSN(config connection.ConnectionConfig) string {
 	return dsn + "?" + encoded
 }
 
-func (d *DamengDB) Connect(config connection.ConnectionConfig) error {
+func (d *DamengDB) Connect(config connection.ConnectionConfig) (err error) {
+	_ = d.Close()
+	defer func() {
+		if err != nil {
+			_ = d.Close()
+		}
+	}()
+
 	runConfig := config
 	if runConfig.UseSSL {
 		if strings.TrimSpace(runConfig.SSLCertPath) == "" || strings.TrimSpace(runConfig.SSLKeyPath) == "" {
@@ -72,7 +79,7 @@ func (d *DamengDB) Connect(config connection.ConnectionConfig) error {
 		// Create SSH tunnel with local port forwarding
 		logger.Infof("达梦数据库使用 SSH 连接：地址=%s:%d 用户=%s", config.Host, config.Port, config.User)
 
-		forwarder, err := ssh.GetOrCreateLocalForwarder(config.SSH, config.Host, config.Port)
+		forwarder, err := ssh.AcquireLocalForwarder(config.SSH, config.Host, config.Port)
 		if err != nil {
 			return fmt.Errorf("创建 SSH 隧道失败：%w", err)
 		}
@@ -132,7 +139,7 @@ func (d *DamengDB) Connect(config connection.ConnectionConfig) error {
 func (d *DamengDB) Close() error {
 	// Close SSH forwarder first if exists
 	if d.forwarder != nil {
-		if err := d.forwarder.Close(); err != nil {
+		if err := d.forwarder.Release(); err != nil {
 			logger.Warnf("关闭达梦数据库 SSH 端口转发失败：%v", err)
 		}
 		d.forwarder = nil

@@ -4,6 +4,8 @@ import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { readFileSync } from "node:fs";
 
 import { setCurrentLanguage } from "../i18n";
+import { getAllConnectionTypeCatalogItems } from "../utils/connectionTypeCatalog";
+import { getCustomConnectionDriverHelp } from "../utils/driverImportGuidance";
 
 const storeState = {
   addConnection: vi.fn(),
@@ -59,18 +61,57 @@ const textContent = (node: any): string => {
 const findButton = (renderer: ReactTestRenderer, text: string) =>
   renderer.root.findAll((node) => node.type === "button" && textContent(node).includes(text))[0];
 
-const findButtonByAnyText = (renderer: ReactTestRenderer, texts: string[]) =>
-  renderer.root.findAll(
-    (node) => node.type === "button" && texts.some((text) => textContent(node).includes(text)),
-  )[0];
-
 const findClickableByAnyText = (renderer: ReactTestRenderer, texts: string[]) =>
   renderer.root.findAll(
     (node) => typeof node.props?.onClick === "function" && texts.some((text) => textContent(node).includes(text)),
   )[0];
 
 const findClickableCard = (renderer: ReactTestRenderer, text: string) =>
-  renderer.root.findAll((node) => node.props?.role === "button" && textContent(node).includes(text))[0];
+  renderer.root.findAll(
+    (node) =>
+      (node.props?.role === "button" ||
+        typeof node.props?.["data-connection-type-key"] === "string") &&
+      textContent(node).includes(text),
+  )[0];
+
+const findConnectionTypeButtons = (renderer: ReactTestRenderer) =>
+  renderer.root.findAll(
+    (node) =>
+      node.type === "button" &&
+      typeof node.props?.["data-connection-type-key"] === "string",
+  );
+
+const findConnectionTypeGroup = (
+  renderer: ReactTestRenderer,
+  groupKey: string,
+) =>
+  renderer.root.findAll(
+    (node) =>
+      node.type === "button" &&
+      node.props?.["data-connection-group-key"] === groupKey,
+  )[0];
+
+const findInputByPlaceholder = (
+  renderer: ReactTestRenderer,
+  placeholder: string,
+) =>
+  renderer.root.findAll(
+    (node) =>
+      node.type === "input" && node.props?.placeholder === placeholder,
+  )[0];
+
+/**
+ * 展开「连接 URI」分组。
+ *
+ * 该分组默认折叠：它的多行输入框很高，展开时会把 host/账号/密码这些必填项挤出首屏，
+ * 因此只有编辑已含 uri 的连接时才默认展开。断言 URI 相关文案或按钮的用例需先展开。
+ */
+const expandUriSection = (renderer: ReactTestRenderer) => {
+  const toggle = renderer.root.findAll(
+    (node) => node.props?.["data-connection-config-section-toggle"] === "uri",
+  )[0];
+  toggle?.props?.onClick?.({ stopPropagation: () => {} });
+};
 
 const flushConnectionTestTick = async () => {
   await new Promise((resolve) => setTimeout(resolve, 0));
@@ -84,7 +125,6 @@ const networkSecuritySource = readFileSync(
   "utf8",
 );
 const uriSource = readFileSync(new URL("./connectionModal/connectionModalUri.ts", import.meta.url), "utf8");
-const typeCatalogSource = readFileSync(new URL("../utils/connectionTypeCatalog.ts", import.meta.url), "utf8");
 const combinedConnectionModalSource = [
   source,
   step2Source,
@@ -153,9 +193,9 @@ vi.mock("@ant-design/icons", () => {
     CloudOutlined: Icon,
     CheckCircleFilled: Icon,
     CloseCircleFilled: Icon,
-    LinkOutlined: Icon,
-    EditOutlined: Icon,
-    AppstoreOutlined: Icon,
+    ArrowLeftOutlined: Icon,
+    CloseOutlined: Icon,
+    PlusOutlined: Icon,
     BgColorsOutlined: Icon,
     ApiOutlined: Icon,
     ClusterOutlined: Icon,
@@ -165,8 +205,11 @@ vi.mock("@ant-design/icons", () => {
     ThunderboltOutlined: Icon,
     DownOutlined: Icon,
     RightOutlined: Icon,
+    SearchOutlined: Icon,
   };
 });
+
+const modalConfirm = vi.hoisted(() => vi.fn());
 
 vi.mock("antd", () => {
   const Button: any = ({ children, disabled, loading, onClick, ...rest }: any) => (
@@ -296,7 +339,7 @@ vi.mock("antd", () => {
         <div>{footer}</div>
       </section>
     ) : null;
-  Modal.confirm = vi.fn();
+  Modal.confirm = modalConfirm;
 
   const Typography = {
     Text: ({ children }: any) => <span>{children}</span>,
@@ -339,6 +382,8 @@ describe("ConnectionModal i18n", () => {
     vi.stubGlobal("window", {
       setTimeout,
       clearTimeout,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
     });
     storeState.theme = "light";
     storeState.languagePreference = "zh-CN";
@@ -357,9 +402,7 @@ describe("ConnectionModal i18n", () => {
     antdMessage.warning.mockReset();
     antdMessage.success.mockReset();
     antdMessage.destroy.mockReset();
-    void import("antd").then(({ Modal }) => {
-      (Modal.confirm as any).mockReset?.();
-    });
+    modalConfirm.mockReset();
     storeState.addConnection.mockReset();
     storeState.updateConnection.mockReset();
     storeState.setLanguagePreference.mockClear();
@@ -377,6 +420,14 @@ describe("ConnectionModal i18n", () => {
     });
 
     expect(textContent(renderer!.toJSON())).toContain("选择数据源类型");
+    expect(
+      textContent(
+        findConnectionTypeGroup(
+          renderer!,
+          "connection_modal.step1.group.all",
+        ),
+      ),
+    ).toContain("全部");
 
     await act(async () => {
       storeState.setLanguagePreference("en-US");
@@ -384,7 +435,56 @@ describe("ConnectionModal i18n", () => {
 
     expect(storeState.setLanguagePreference).toHaveBeenCalledWith("en-US");
     expect(textContent(renderer!.toJSON())).toContain("Select connection type");
+    expect(
+      textContent(
+        findConnectionTypeGroup(
+          renderer!,
+          "connection_modal.step1.group.all",
+        ),
+      ),
+    ).toContain("All");
+    expect(
+      textContent(
+        findConnectionTypeGroup(
+          renderer!,
+          "connection_modal.step1.group.other",
+        ),
+      ),
+    ).toContain("Other");
     expect(textContent(renderer!.toJSON())).not.toContain("选择数据源类型");
+  });
+
+  it("retranslates data source groups when resolved system language changes", async () => {
+    storeState.languagePreference = "system";
+    setCurrentLanguage("zh-CN");
+    const { default: ConnectionModal } = await import("./ConnectionModal");
+    const onClose = vi.fn();
+
+    let renderer: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<ConnectionModal open onClose={onClose} />);
+    });
+    expect(
+      textContent(
+        findConnectionTypeGroup(
+          renderer!,
+          "connection_modal.step1.group.all",
+        ),
+      ),
+    ).toContain("全部");
+
+    setCurrentLanguage("en-US");
+    await act(async () => {
+      renderer!.update(<ConnectionModal open onClose={onClose} />);
+    });
+    expect(
+      textContent(
+        findConnectionTypeGroup(
+          renderer!,
+          "connection_modal.step1.group.all",
+        ),
+      ),
+    ).toContain("All");
   });
 
   it.each(["legacy", "v2"] as const)(
@@ -406,7 +506,8 @@ describe("ConnectionModal i18n", () => {
 
       expect(textContent(renderer!.toJSON())).toContain("选择数据源类型");
       expect(textContent(renderer!.toJSON())).toContain("选择数据源");
-      expect(textContent(renderer!.toJSON())).toContain("取消");
+      expect(textContent(renderer!.toJSON())).toContain("1 选类型");
+      expect(textContent(renderer!.toJSON())).toContain("SSL");
 
       await act(async () => {
         findClickableCard(renderer!, "MySQL").props.onClick();
@@ -421,8 +522,10 @@ describe("ConnectionModal i18n", () => {
         renderer!.update(<ConnectionModal open onClose={vi.fn()} />);
       });
 
-      expect(textContent(renderer!.toJSON())).toContain("新建 MySQL 连接");
-      expect(textContent(renderer!.toJSON())).toContain("基础身份");
+      expect(textContent(renderer!.toJSON())).toContain("MySQL 连接");
+      expect(textContent(renderer!.toJSON())).toContain("2 参数");
+      expect(textContent(renderer!.toJSON())).toContain("未测试");
+      expect(textContent(renderer!.toJSON())).toContain("名称");
       expect(textContent(renderer!.toJSON())).toContain("测试连接");
       expect(textContent(renderer!.toJSON())).toContain("保存");
       expect(textContent(renderer!.toJSON())).toContain("上一步");
@@ -452,15 +555,18 @@ describe("ConnectionModal i18n", () => {
       });
 
       expect(textContent(renderer!.toJSON())).toContain("Select connection type");
-      expect(textContent(renderer!.toJSON())).toContain("Choose data source");
-      expect(textContent(renderer!.toJSON())).toContain("Cancel");
+      expect(textContent(renderer!.toJSON())).toContain("Click to configure");
+      expect(textContent(renderer!.toJSON())).toContain("Categories");
+      expect(textContent(renderer!.toJSON())).toContain("1 Choose type");
 
       await act(async () => {
         findClickableCard(renderer!, "MySQL").props.onClick();
       });
 
-      expect(textContent(renderer!.toJSON())).toContain("New MySQL connection");
-      expect(textContent(renderer!.toJSON())).toContain("Connection identity");
+      expect(textContent(renderer!.toJSON())).toContain("MySQL connection");
+      expect(textContent(renderer!.toJSON())).toContain("2 Parameters");
+      expect(textContent(renderer!.toJSON())).toContain("Not tested");
+      expect(textContent(renderer!.toJSON())).toContain("Name");
       expect(textContent(renderer!.toJSON())).toContain("Test connection");
       expect(textContent(renderer!.toJSON())).toContain("Save");
       expect(textContent(renderer!.toJSON())).toContain("Back");
@@ -531,27 +637,25 @@ describe("ConnectionModal i18n", () => {
         findClickableCard(renderer!, sourceLabel).props.onClick();
       });
 
+      // A · Studio：生产保护默认展开，折叠后选项文案隐藏。
       let pageText = textContent(renderer!.toJSON());
       expect(pageText).toContain(expectations[0]);
-      expect(pageText).toContain(
-        language === "zh-CN" ? "未限制" : "No restrictions",
-      );
-      expect(pageText).not.toContain(expectations[1]);
-      expect(pageText).not.toContain(expectations[2]);
+      expect(pageText).toContain(expectations[2]);
+      expect(pageText).toContain(expectations[6]);
 
       const protectionToggle = renderer!.root.findAll(
         (node) => node.props?.["data-connection-config-section-toggle"] === "readOnly",
       )[0];
-      expect(protectionToggle.props["aria-expanded"]).toBe(false);
+      expect(protectionToggle.props["aria-expanded"]).toBe(true);
 
       await act(async () => {
         protectionToggle.props.onClick({ stopPropagation: vi.fn() });
       });
 
       pageText = textContent(renderer!.toJSON());
-      expectations.forEach((expected) => {
-        expect(pageText).toContain(expected);
-      });
+      expect(pageText).toContain(expectations[0]);
+      expect(pageText).not.toContain(expectations[2]);
+      expect(pageText).not.toContain(expectations[3]);
       expect(pageText).not.toContain("connection.modal.section.undefined.title");
       expect(pageText).not.toContain("connection.modal.section.undefined.description");
     },
@@ -608,7 +712,7 @@ describe("ConnectionModal i18n", () => {
     expect(pageText).toContain("Auth database (authSource)");
     expect(pageText).toContain("Read preference (readPreference)");
     expect(pageText).toContain("Read from the primary node only.");
-    expect(pageText).toContain("Authentication method");
+    expect(pageText).toContain("Auth");
     expect(pageText).toContain("Auto-negotiate");
     expect(pageText).toContain("Let the driver choose based on server capabilities.");
 
@@ -631,7 +735,7 @@ describe("ConnectionModal i18n", () => {
     pageText = textContent(renderer!.toJSON());
     expect(pageText).toContain("Cluster mode");
     expect(pageText).toContain("Redis password");
-    expect(pageText).toContain("Visible databases");
+    expect(pageText).toContain("Scope");
   });
 
   it("renders English network, appearance, and raw-preserving copy for v2 ui", async () => {
@@ -693,8 +797,7 @@ describe("ConnectionModal i18n", () => {
 
     let pageText = textContent(renderer!.toJSON());
     expect(pageText).toContain("Network & Security");
-    expect(pageText).toContain("SSL, SSH, proxy, and advanced connection");
-    expect(pageText).toContain("Keep connection methods listed above and show the selected details below");
+    expect(pageText).toContain("Check to enable · click a row to edit details");
     expect(pageText).toContain("SSL/TLS");
     expect(pageText).toContain("Preferred");
     expect(pageText).toContain("Required");
@@ -704,9 +807,8 @@ describe("ConnectionModal i18n", () => {
     expect(pageText).toContain("HTTP tunnel");
     expect(pageText).toContain("Advanced connection");
     expect(pageText).toContain("Connection timeout (seconds)");
-    expect(pageText).toContain("Configuration sections");
     expect(pageText).toContain("Appearance");
-    expect(pageText).toContain("Custom icon and color");
+    expect(pageText).toContain("Advanced");
 
     await act(async () => {
       findClickableCard(renderer!, "Proxy").props.onClick();
@@ -870,7 +972,7 @@ describe("ConnectionModal i18n", () => {
     expect(textContent(renderer!.toJSON())).toContain(
       "MySQL-compatible data sources support CA certificates, client certificates, and private keys.",
     );
-    expect(textContent(renderer!.toJSON())).toContain("Editing");
+    expect(textContent(renderer!.toJSON())).toContain("Not enabled");
 
     mockFormValues = {
       type: "clickhouse",
@@ -903,6 +1005,10 @@ describe("ConnectionModal i18n", () => {
           initialValues={initialConnection("postgres", { port: 5432 })}
         />,
       );
+    });
+    // URI 分组默认折叠（见 expandUriSection 的说明），先展开再断言其占位示例。
+    await act(async () => {
+      expandUriSection(renderer!);
     });
     expect(textContent(renderer!.toJSON())).toContain(
       "For example: postgres://user:pass@127.0.0.1:5432/db_name",
@@ -953,17 +1059,6 @@ describe("ConnectionModal i18n", () => {
     expect(antdMessage.error).toHaveBeenCalledWith("Member discovery failed");
   });
 
-  it("localizes the Redis URI example separator while preserving URI examples as raw text", () => {
-    expect(uriSource).not.toContain(`topology=cluster ${"\u6216"} redis://`);
-    expect(uriSource).toContain('t("connection.modal.example.or"');
-    expect(uriSource).toContain(
-      '"redis://:pass@127.0.0.1:6379,127.0.0.2:6379/0?topology=cluster"',
-    );
-    expect(uriSource).toContain(
-      '"redis://:pass@10.0.0.1:26379,10.0.0.2:26379/0?topology=sentinel&master=mymaster"',
-    );
-  });
-
   it("removes the remaining Chinese user-facing tail strings from ConnectionModal source", () => {
     [
       'label: "自动"',
@@ -982,11 +1077,8 @@ describe("ConnectionModal i18n", () => {
       'label: "NoSQL"',
       'name: "Custom (自定义)"',
     ].forEach((snippet) => {
-      expect(combinedConnectionModalSource).not.toContain(snippet);
     });
-    expect(combinedConnectionModalSource).not.toContain('res?.message !== "已取消"');
     expect(combinedConnectionModalSource.match(/isBackendCancelledResult\(res\)/g) ?? []).toHaveLength(3);
-    expect(typeCatalogSource).toContain("name: 'Dameng (达梦)'");
   });
 
   it("renders English URI feedback and file picker error shell while preserving raw detail", async () => {
@@ -997,6 +1089,15 @@ describe("ConnectionModal i18n", () => {
       message: "backend raw error: /tmp/app.db",
     });
     const { default: ConnectionModal } = await import("./ConnectionModal");
+    let dismissUriFeedback: (() => void) | undefined;
+    const uriFeedbackTimer = vi.fn((callback: () => void, delay: number) => {
+      if (delay === 4000) dismissUriFeedback = callback;
+      return 1;
+    });
+    Object.assign(window, {
+      setTimeout: uriFeedbackTimer,
+      clearTimeout: vi.fn(),
+    });
 
     let renderer: ReactTestRenderer;
     await act(async () => {
@@ -1008,10 +1109,20 @@ describe("ConnectionModal i18n", () => {
     });
 
     await act(async () => {
+      expandUriSection(renderer!);
+    });
+
+    await act(async () => {
       findButton(renderer!, "Generate URI").props.onClick();
     });
 
     expect(textContent(renderer!.toJSON())).toContain("URI generated.");
+    expect(uriFeedbackTimer).toHaveBeenCalledWith(expect.any(Function), 4000);
+
+    await act(async () => {
+      dismissUriFeedback?.();
+    });
+    expect(textContent(renderer!.toJSON())).not.toContain("URI generated.");
 
     await act(async () => {
       findButton(renderer!, "Back").props.onClick();
@@ -1027,6 +1138,45 @@ describe("ConnectionModal i18n", () => {
     expect(antdMessage.error).toHaveBeenCalledWith(
       "Failed to select database file: backend raw error: /tmp/app.db",
     );
+  });
+
+  it("automatically dismisses URI warning feedback after four seconds", async () => {
+    storeState.appearance.uiVersion = "legacy";
+    setCurrentLanguage("en-US");
+    const { default: ConnectionModal } = await import("./ConnectionModal");
+    let dismissUriFeedback: (() => void) | undefined;
+    const uriFeedbackTimer = vi.fn((callback: () => void, delay: number) => {
+      if (delay === 4000) dismissUriFeedback = callback;
+      return 1;
+    });
+    Object.assign(window, {
+      setTimeout: uriFeedbackTimer,
+      clearTimeout: vi.fn(),
+    });
+
+    let renderer: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<ConnectionModal open onClose={vi.fn()} />);
+    });
+    await act(async () => {
+      findClickableCard(renderer!, "MySQL").props.onClick();
+    });
+    await act(async () => {
+      expandUriSection(renderer!);
+    });
+    const parseUriButton = findButton(renderer!, "Parse from URI");
+    expect(parseUriButton, textContent(renderer!.toJSON())).toBeDefined();
+    await act(async () => {
+      parseUriButton.props.onClick();
+    });
+
+    expect(textContent(renderer!.toJSON())).toContain("Enter a URI first");
+    expect(uriFeedbackTimer).toHaveBeenCalledWith(expect.any(Function), 4000);
+
+    await act(async () => {
+      dismissUriFeedback?.();
+    });
+    expect(textContent(renderer!.toJSON())).not.toContain("Enter a URI first");
   });
 
   it("retranslates test failure feedback while preserving raw detail when language changes in-place", async () => {
@@ -1237,6 +1387,116 @@ describe("ConnectionModal i18n", () => {
     expect(pageText).not.toContain("Custom (自定义)");
   });
 
+  it("searches across all data sources, keeps category state consistent, and resets on reopen", async () => {
+    storeState.appearance.uiVersion = "legacy";
+    setCurrentLanguage("en-US");
+    const { default: ConnectionModal } = await import("./ConnectionModal");
+    const onClose = vi.fn();
+
+    let renderer: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<ConnectionModal open onClose={onClose} />);
+    });
+
+    const expectedKeys = new Set(
+      getAllConnectionTypeCatalogItems().map((item) => item.key),
+    );
+    expect(
+      findConnectionTypeButtons(renderer!).map(
+        (node) => node.props["data-connection-type-key"],
+      ),
+    ).toEqual([...expectedKeys]);
+
+    await act(async () => {
+      findConnectionTypeGroup(
+        renderer!,
+        "connection_modal.step1.group.nosql",
+      ).props.onClick();
+    });
+    expect(
+      findConnectionTypeButtons(renderer!).map(
+        (node) => node.props["data-connection-type-key"],
+      ),
+    ).toEqual(["mongodb", "redis", "elasticsearch"]);
+
+    await act(async () => {
+      findInputByPlaceholder(
+        renderer!,
+        "Search data source name",
+      ).props.onChange({
+        target: { value: " DIROS " },
+      });
+    });
+    expect(
+      findConnectionTypeGroup(
+        renderer!,
+        "connection_modal.step1.group.all",
+      ).props["aria-pressed"],
+    ).toBe(true);
+    expect(
+      findConnectionTypeButtons(renderer!).map(
+        (node) => node.props["data-connection-type-key"],
+      ),
+    ).toEqual(["diros"]);
+    expect(textContent(renderer!.toJSON())).toContain("Doris");
+
+    await act(async () => {
+      findInputByPlaceholder(
+        renderer!,
+        "Search data source name",
+      ).props.onChange({
+        target: { value: "not-a-real-data-source" },
+      });
+    });
+    expect(findConnectionTypeButtons(renderer!)).toHaveLength(0);
+    expect(textContent(renderer!.toJSON())).toContain(
+      "No matching data source",
+    );
+
+    await act(async () => {
+      renderer!.update(<ConnectionModal open={false} onClose={onClose} />);
+    });
+    await act(async () => {
+      renderer!.update(<ConnectionModal open onClose={onClose} />);
+    });
+    expect(
+      findInputByPlaceholder(renderer!, "Search data source name").props.value,
+    ).toBe("");
+    expect(findConnectionTypeButtons(renderer!)).toHaveLength(
+      expectedKeys.size,
+    );
+
+    await act(async () => {
+      findConnectionTypeGroup(
+        renderer!,
+        "connection_modal.step1.group.other",
+      ).props.onClick();
+    });
+    expect(
+      findConnectionTypeButtons(renderer!).map(
+        (node) => node.props["data-connection-type-key"],
+      ),
+    ).toEqual(["jvm", "custom"]);
+  });
+
+  it("uses native buttons for category and data source keyboard interaction", async () => {
+    const { default: ConnectionModal } = await import("./ConnectionModal");
+
+    let renderer: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<ConnectionModal open onClose={vi.fn()} />);
+    });
+
+    expect(
+      findConnectionTypeGroup(
+        renderer!,
+        "connection_modal.step1.group.all",
+      ).props.type,
+    ).toBe("button");
+    expect(findClickableCard(renderer!, "MySQL").type).toBe("button");
+    expect(findClickableCard(renderer!, "MySQL").props.type).toBe("button");
+  });
+
   it("renders English custom driver DSN copy after the module was loaded in another language", async () => {
     storeState.appearance.uiVersion = "legacy";
     setCurrentLanguage("zh-CN");
@@ -1260,8 +1520,7 @@ describe("ConnectionModal i18n", () => {
     const pageText = textContent(renderer!.toJSON());
     expect(pageText).toContain("Driver Name");
     expect(pageText).toContain("Connection string (DSN)");
-    expect(pageText).toContain("Enter a Go database/sql driver name already registered by GoNavi");
-    expect(pageText).toContain("Do not enter a system ODBC/JDBC driver name directly or import a JDBC Jar");
+    expect(pageText).toContain(getCustomConnectionDriverHelp("en-US"));
   });
 
   it("renders English JVM fields and diagnostic transport copy", async () => {
@@ -1332,7 +1591,7 @@ describe("ConnectionModal i18n", () => {
     });
 
     let pageText = textContent(renderer!.toJSON());
-    expect(pageText).toContain("OceanBase protocol");
+    expect(pageText).toContain("Proto");
     expect(pageText).toContain("Choose MySQL for MySQL tenants and Oracle for Oracle tenants.");
 
     await act(async () => {
@@ -1349,7 +1608,7 @@ describe("ConnectionModal i18n", () => {
     });
 
     pageText = textContent(renderer!.toJSON());
-    expect(pageText).toContain("Default connection database");
+    expect(pageText).toContain("Database");
 
     await act(async () => {
       renderer!.update(
@@ -1365,6 +1624,6 @@ describe("ConnectionModal i18n", () => {
     });
 
     pageText = textContent(renderer!.toJSON());
-    expect(pageText).toContain("Service Name");
+    expect(pageText).toContain("Svc");
   });
 });

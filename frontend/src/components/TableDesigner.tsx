@@ -35,6 +35,11 @@ import {
     resolveSqlDialect,
 } from '../utils/sqlDialect';
 import { splitQualifiedNameLast, stripIdentifierQuotes } from '../utils/qualifiedName';
+import {
+    cloneTableDesignerColumnsForPaste,
+    parseTableDesignerColumns,
+    serializeTableDesignerColumns,
+} from './tableDesignerColumnClipboard';
 
 interface EditableColumn extends ColumnDefinition {
     _key: string;
@@ -1435,6 +1440,28 @@ ${selectedTrigger.statement}`;
       setColumns(prev => prev.filter(c => c._key !== key));
   };
 
+  const isNativeColumnEditorTarget = (target: EventTarget | null): boolean => {
+      const element = target instanceof HTMLElement ? target : null;
+      return !!element?.closest('input:not([type="checkbox"]):not([type="radio"]), textarea, select, [contenteditable="true"]');
+  };
+
+  const handleColumnClipboardCopy = (event: React.ClipboardEvent<HTMLDivElement>) => {
+      if (readOnly || selectedColumns.length === 0 || isNativeColumnEditorTarget(event.target)) return;
+      event.clipboardData.setData('text/plain', serializeTableDesignerColumns(selectedColumns));
+      event.preventDefault();
+  };
+
+  const handleColumnClipboardPaste = (event: React.ClipboardEvent<HTMLDivElement>) => {
+      if (readOnly || isNativeColumnEditorTarget(event.target)) return;
+      const pastedColumns = parseTableDesignerColumns(event.clipboardData.getData('text/plain'));
+      if (!pastedColumns || pastedColumns.length === 0) return;
+      const nextColumns = cloneTableDesignerColumnsForPaste(pastedColumns, columns) as EditableColumn[];
+      setColumns(prev => [...prev, ...nextColumns]);
+      setSelectedColumnRowKeys(nextColumns.map(column => column._key));
+      pendingFocusColumnKeyRef.current = nextColumns[0]._key || null;
+      event.preventDefault();
+  };
+
   const selectedColumns = useMemo(() => {
       if (selectedColumnRowKeys.length === 0) return [];
       const selectedSet = new Set(selectedColumnRowKeys);
@@ -2810,6 +2837,8 @@ END;`;
       <div
           ref={containerRef}
           className={`table-designer-wrapper${isV2Ui ? ' gn-v2-designer-table-shell' : ''}`}
+          onCopy={handleColumnClipboardCopy}
+          onPaste={handleColumnClipboardPaste}
           style={{
               height: '100%',
               overflow: 'hidden',

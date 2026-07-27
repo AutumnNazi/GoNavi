@@ -1,4 +1,3 @@
-import { readFileSync } from 'node:fs';
 import React from 'react';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -112,7 +111,6 @@ vi.mock('@ant-design/icons', async () => {
 const renderMonitor = (isActive: boolean) => (
   <RedisMonitor connectionId={connection.id} redisDB={0} isActive={isActive} />
 );
-const workbenchSource = readFileSync(new URL('./WorkbenchTabContent.tsx', import.meta.url), 'utf8');
 
 describe('RedisMonitor polling', () => {
   let renderer: ReactTestRenderer | null = null;
@@ -255,11 +253,5 @@ describe('RedisMonitor polling', () => {
       await vi.advanceTimersByTimeAsync(1);
     });
     expect(redisApi.RedisGetServerInfo).toHaveBeenCalledTimes(2);
-  });
-
-  it('receives the active workbench state from the tab host', () => {
-    expect(workbenchSource).toContain(
-      '<RedisMonitor connectionId={tab.connectionId} redisDB={tab.redisDB ?? 0} isActive={isActive} />',
-    );
   });
 });

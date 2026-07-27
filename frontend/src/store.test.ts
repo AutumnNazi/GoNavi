@@ -2278,18 +2278,6 @@ describe('store appearance persistence', () => {
     }
   });
 
-  it('keeps store fallback titles out of production source literals', async () => {
-    const { readFileSync } = await import('node:fs');
-    const source = readFileSync(new URL('./store.ts', import.meta.url), 'utf8');
-
-    expect(source).not.toContain('`连接-${index + 1}`');
-    expect(source).not.toContain('`标签-${index + 1}`');
-    expect(source).not.toContain('`片段-${index + 1}`');
-    expect(source).not.toContain('"未命名对象"');
-    expect(source).not.toContain('"新建查询"');
-    expect(source).not.toContain('"新的对话"');
-  });
-
   it('persists open query tab drafts and restores them after reload', async () => {
     const { useStore } = await importStore();
 

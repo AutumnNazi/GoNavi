@@ -84,26 +84,26 @@ func GetOrCreateLocalForwarder(proxyConfig connection.ProxyConfig, remoteHost st
 
 	key := forwarderCacheKey(cfg, remoteHost, remotePort)
 	forwarderMu.RLock()
-	forwarder, exists := localForwarders[key]
-	forwarderMu.RUnlock()
-	if exists && forwarder != nil && !forwarder.IsClosed() {
-		return forwarder, nil
+	if existing, ok := localForwarders[key]; ok && existing != nil && !existing.IsClosed() {
+		forwarderMu.RUnlock()
+		return existing, nil
 	}
+	forwarderMu.RUnlock()
 
-	if exists {
-		forwarderMu.Lock()
+	forwarderMu.Lock()
+	defer forwarderMu.Unlock()
+	if existing, ok := localForwarders[key]; ok {
+		if existing != nil && !existing.IsClosed() {
+			return existing, nil
+		}
 		delete(localForwarders, key)
-		forwarderMu.Unlock()
 	}
 
 	next, err := NewLocalForwarder(cfg, remoteHost, remotePort)
 	if err != nil {
 		return nil, err
 	}
-
-	forwarderMu.Lock()
 	localForwarders[key] = next
-	forwarderMu.Unlock()
 	return next, nil
 }
 

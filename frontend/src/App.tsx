@@ -1,12 +1,13 @@
 ﻿import Modal from './components/common/ResizableDraggableModal';
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Layout, Button, ConfigProvider, theme, message, Spin, Slider, Progress, Switch, Input, InputNumber, Select, Segmented, Tooltip, Alert } from 'antd';
-import { PlusOutlined, ConsoleSqlOutlined, UploadOutlined, DownloadOutlined, CloudDownloadOutlined, BugOutlined, GlobalOutlined, InfoCircleOutlined, GithubOutlined, SkinOutlined, CheckOutlined, MinusOutlined, BorderOutlined, CloseOutlined, SettingOutlined, LinkOutlined, BgColorsOutlined, AppstoreOutlined, RobotOutlined, FolderOpenOutlined, HddOutlined, SafetyCertificateOutlined, SwitcherOutlined, CodeOutlined, RightOutlined, TableOutlined, MenuOutlined, MenuFoldOutlined, MenuUnfoldOutlined, PoweroffOutlined, TagOutlined, UserOutlined, UpCircleOutlined, MessageOutlined, FileTextOutlined, SyncOutlined, SendOutlined, AuditOutlined } from '@ant-design/icons';
+import { UploadOutlined, DownloadOutlined, CloudDownloadOutlined, BugOutlined, GlobalOutlined, InfoCircleOutlined, GithubOutlined, SkinOutlined, CheckOutlined, MinusOutlined, BorderOutlined, CloseOutlined, SettingOutlined, LinkOutlined, BgColorsOutlined, AppstoreOutlined, RobotOutlined, FolderOpenOutlined, HddOutlined, SafetyCertificateOutlined, SwitcherOutlined, CodeOutlined, RightOutlined, TableOutlined, MenuOutlined, MenuFoldOutlined, MenuUnfoldOutlined, PoweroffOutlined, TagOutlined, UserOutlined, UpCircleOutlined, MessageOutlined, FileTextOutlined, SyncOutlined, SendOutlined, AuditOutlined } from '@ant-design/icons';
 import { DndContext, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
 import { arrayMove, SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { BrowserOpenURL, Environment, EventsOn, WindowFullscreen, WindowGetPosition, WindowGetSize, WindowIsFullscreen, WindowIsMaximised, WindowIsMinimised, WindowIsNormal, WindowMaximise, WindowMinimise, WindowSetDarkTheme, WindowSetLightTheme, WindowSetPosition, WindowSetSize, WindowSetSystemDefaultTheme, WindowUnfullscreen, WindowUnmaximise } from '../wailsjs/runtime';
 import Sidebar from './components/Sidebar';
+import TitleBarPrimaryActions from './components/TitleBarPrimaryActions';
 import TabManager from './components/TabManager';
 import FloatingWorkbenchWindows from './components/FloatingWorkbenchWindows';
 import FloatingAIChatWindow from './components/FloatingAIChatWindow';
@@ -26,12 +27,12 @@ import SecurityUpdateProgressModal from './components/SecurityUpdateProgressModa
 import SecurityUpdateSettingsModal from './components/SecurityUpdateSettingsModal';
 import LanguageSettingsPanel from './components/LanguageSettingsPanel';
 import WebAuthSettingsPanel from './components/WebAuthSettingsPanel';
+import CloudBackupSettings from './components/CloudBackupSettings';
 import BrandIconPicker from './components/BrandIconPicker';
 import {
   resolveBrandAboutSrc,
   resolveBrandDockSrc,
   resolveBrandIconSrc,
-  resolveBrandTitlebarSrc,
   type BrandIconId,
 } from './brand/brandIcons';
 import { composeMacOSDockIconBase64, shouldSyncMacOSDockIcon } from './brand/macDockIcon';
@@ -550,6 +551,7 @@ type SettingsCenterPaneKey =
   | 'sidebar-objects'
   | 'proxy'
   | 'web-auth'
+  | 'cloud-backup'
   | 'ai'
   | ToolCenterPaneKey
   | 'about-go-navi';
@@ -2065,9 +2067,9 @@ function App() {
   const {
       bgContent, bgMain,
       floatingLogButtonBgColor, floatingLogButtonBorderColor, floatingLogButtonShadow, floatingLogButtonTextColor,
-      isSidebarCompact, isSidebarNarrow, isSidebarUltraCompact,
+      isSidebarNarrow, isSidebarUltraCompact,
       overlayTheme, renderUtilityModalTitle,
-      sidebarCreateConnectionActionStyle, sidebarHorizontalPadding, sidebarQueryActionStyle,
+      sidebarHorizontalPadding,
       toolCenterContentPanelStyle, toolCenterDetailBodyStyle, toolCenterDetailPanelStyle,
       toolCenterModalContentStyle, toolCenterModalSplitStyle, toolCenterModalWorkspaceStyle,
       toolCenterNavPanelStyle, toolCenterNavScrollStyle, toolCenterRowDescriptionStyle, toolCenterRowStyle,
@@ -7331,6 +7333,13 @@ function App() {
                   onClick: () => handleOpenSettingsCenterPane('services', 'web-auth'),
               }] : []),
               {
+                  key: 'cloud-backup',
+                  icon: <CloudDownloadOutlined />,
+                  title: t('app.settings.entry.cloud_backup.title'),
+                  description: t('app.settings.entry.cloud_backup.description'),
+                  onClick: () => handleOpenSettingsCenterPane('services', 'cloud-backup'),
+              },
+              {
                   key: 'ai',
                   icon: <RobotOutlined />,
                   title: t('app.settings.entry.ai.title'),
@@ -7435,6 +7444,11 @@ function App() {
               />
           );
       }
+      if (activeSettingsCenterPane.key === 'cloud-backup') {
+          return (
+              <CloudBackupSettings t={t} />
+          );
+      }
       if (activeSettingsCenterPane.key === 'ai') {
           return (
               <div style={{ height: '100%', minHeight: 0 }}>
@@ -7533,45 +7547,38 @@ function App() {
                 fontSize: tokenFontSize
             } as any}
           >
-              <div
-                data-titlebar-brand-region="true"
-                style={{ display: 'flex', alignItems: 'center', gap: Math.max(6, Math.round(8 * effectiveUiScale)), fontWeight: 600, minWidth: 0 }}
-              >
-                  <img
-                    src={resolveBrandTitlebarSrc(brandIconId)}
-                    alt="GoNavi"
-                    width={Math.max(24, Math.round(28 * effectiveUiScale))}
-                    height={Math.max(24, Math.round(28 * effectiveUiScale))}
-                    draggable={false}
-                    style={{
-                      width: Math.max(24, Math.round(28 * effectiveUiScale)),
-                      height: Math.max(24, Math.round(28 * effectiveUiScale)),
-                      objectFit: 'contain',
-                      borderRadius: 8,
-                      flexShrink: 0,
-                      background: 'transparent',
-                    }}
+              <div className="gonavi-titlebar-leading">
+                  <div
+                    data-titlebar-brand-region="true"
+                    style={{ display: 'flex', alignItems: 'center', gap: Math.max(6, Math.round(8 * effectiveUiScale)), fontWeight: 600, minWidth: 0 }}
+                  >
+                      <span>GoNavi</span>
+                      {!isV2Ui && (
+                          <Tooltip title={sidebarPanelToggleLabel} placement="bottom" mouseEnterDelay={0.35}>
+                              <Button
+                                ref={sidebarCollapsedToggleRef}
+                                type="text"
+                                size="small"
+                                className="gonavi-sidebar-collapse-trigger"
+                                data-sidebar-collapse-trigger="true"
+                                data-sidebar-toggle-placement="titlebar"
+                                data-no-titlebar-toggle="true"
+                                aria-label={sidebarPanelToggleLabel}
+                                aria-controls="gonavi-sidebar-tree-panel"
+                                aria-expanded={!isSidebarCollapsed}
+                                icon={isSidebarCollapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+                                onClick={handleTitlebarSidebarToggle}
+                                style={{ WebkitAppRegion: 'no-drag', '--wails-draggable': 'no-drag' } as any}
+                              />
+                          </Tooltip>
+                      )}
+                  </div>
+                  <TitleBarPrimaryActions
+                    newQueryLabel={t('query.new')}
+                    newConnectionLabel={t('connection.new')}
+                    onNewQuery={handleNewQuery}
+                    onNewConnection={handleCreateConnection}
                   />
-                  <span>GoNavi</span>
-                  {!isV2Ui && (
-                      <Tooltip title={sidebarPanelToggleLabel} placement="bottom" mouseEnterDelay={0.35}>
-                          <Button
-                            ref={sidebarCollapsedToggleRef}
-                            type="text"
-                            size="small"
-                            className="gonavi-sidebar-collapse-trigger"
-                            data-sidebar-collapse-trigger="true"
-                            data-sidebar-toggle-placement="titlebar"
-                            data-no-titlebar-toggle="true"
-                            aria-label={sidebarPanelToggleLabel}
-                            aria-controls="gonavi-sidebar-tree-panel"
-                            aria-expanded={!isSidebarCollapsed}
-                            icon={isSidebarCollapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
-                            onClick={handleTitlebarSidebarToggle}
-                            style={{ WebkitAppRegion: 'no-drag', '--wails-draggable': 'no-drag' } as any}
-                          />
-                      </Tooltip>
-                  )}
               </div>
               {isWebRuntime ? (
                   <div
@@ -7670,16 +7677,6 @@ function App() {
                                 <Button type="text" icon={item.icon} style={utilityButtonStyle} onClick={item.onClick} />
                             </Tooltip>
                         ))}
-                    </div>
-                </div>
-                <div style={{ padding: `0 ${sidebarHorizontalPadding}px 10px`, borderBottom: 'none', display: 'flex', alignItems: 'center', flexShrink: 0 }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: isSidebarCompact ? 'minmax(0, 1fr)' : 'minmax(0, 1fr) minmax(0, 1fr)', gap: 8, width: '100%' }}>
-                        <Button icon={<PlusOutlined />} onClick={handleCreateConnection} title={t('connection.new')} style={sidebarCreateConnectionActionStyle}>
-                            {t('connection.new')}
-                        </Button>
-                        <Button icon={<ConsoleSqlOutlined />} onClick={handleNewQuery} title={t('query.new')} style={sidebarQueryActionStyle}>
-                            {t('query.new')}
-                        </Button>
                     </div>
                 </div>
                 </>

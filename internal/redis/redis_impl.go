@@ -279,19 +279,20 @@ func sanitizeRedisPassword(password string) string {
 }
 
 // Connect establishes a connection to Redis
-func (r *RedisClientImpl) Connect(config connection.ConnectionConfig) error {
+func (r *RedisClientImpl) Connect(config connection.ConnectionConfig) (err error) {
+	_ = r.Close()
+	defer func() {
+		if err != nil {
+			_ = r.Close()
+		}
+	}()
+
 	config.Password = sanitizeRedisPassword(config.Password)
 	config.RedisSentinelPassword = sanitizeRedisPassword(config.RedisSentinelPassword)
 	r.config = config
 	if r.config.RedisDB < 0 {
 		r.config.RedisDB = 0
 	}
-	r.forwarder = nil
-	r.client = nil
-	r.singleClient = nil
-	r.clusterClient = nil
-	r.isCluster = false
-
 	seedAddrs, err := buildRedisSeedAddrs(config)
 	if err != nil {
 		return err
@@ -423,7 +424,7 @@ func (r *RedisClientImpl) Connect(config connection.ConnectionConfig) error {
 
 	addr := seedAddrs[0]
 	if config.UseSSH {
-		forwarder, err := ssh.GetOrCreateLocalForwarder(config.SSH, config.Host, config.Port)
+		forwarder, err := ssh.AcquireLocalForwarder(config.SSH, config.Host, config.Port)
 		if err != nil {
 			return localizedRedisBackendError("redis.backend.error.ssh_tunnel_create_failed", map[string]any{
 				"detail": err.Error(),
@@ -490,17 +491,22 @@ func (r *RedisClientImpl) Connect(config connection.ConnectionConfig) error {
 
 // Close closes the Redis connection
 func (r *RedisClientImpl) Close() error {
+	var firstErr error
 	if r.client != nil {
-		err := r.client.Close()
-		r.client = nil
-		r.singleClient = nil
-		r.clusterClient = nil
-		r.isCluster = false
-		r.seedAddrs = nil
-		r.forwarder = nil
-		return err
+		firstErr = r.client.Close()
 	}
-	return nil
+	r.client = nil
+	r.singleClient = nil
+	r.clusterClient = nil
+	r.isCluster = false
+	r.seedAddrs = nil
+	if r.forwarder != nil {
+		if err := r.forwarder.Release(); err != nil && firstErr == nil {
+			firstErr = err
+		}
+		r.forwarder = nil
+	}
+	return firstErr
 }
 
 // Ping tests the connection
@@ -644,9 +650,6 @@ func (r *RedisClientImpl) ScanKeys(pattern string, cursor uint64, count int64) (
 			}
 			seen[key] = struct{}{}
 			keys = append(keys, key)
-			if len(keys) >= int(targetCount) {
-				break
-			}
 		}
 
 		currentCursor = nextCursor

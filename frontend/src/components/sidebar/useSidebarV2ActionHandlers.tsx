@@ -8,7 +8,7 @@ import type { ConnectionTag, SavedConnection } from '../../types';
 import { buildRpcConnectionConfig } from '../../utils/connectionRpcConfig';
 import { resolveConnectionAccentColor, resolveConnectionIconType } from '../../utils/connectionVisual';
 import { normalizeConnectionEnvironmentType } from '../../utils/connectionEnvironment';
-import { buildTableSelectQuery } from '../../utils/objectQueryTemplates';
+import { resolveTableSelectQuery } from '../../utils/objectQueryTemplates';
 import { DBReleaseConnection } from '../../../wailsjs/go/app/App';
 import { getDbIcon } from '../DatabaseIcons';
 import { getMetadataDialect } from './sidebarMetadataLoaders';
@@ -172,16 +172,24 @@ export const useSidebarV2ActionHandlers = ({
         openDesign(node, 'columns', false);
         return;
       case 'new-query': {
-        const tableName = String(node.dataRef?.tableName || '').trim();
-        const queryTemplate = buildTableSelectQuery(getMetadataDialect(node.dataRef as SavedConnection), tableName);
-        addTab({
-          id: `query-${Date.now()}`,
-          title: t('query.new'),
-          type: 'query',
-          connectionId: node.dataRef.id,
-          dbName: node.dataRef.dbName,
-          query: queryTemplate,
-        });
+        void (async () => {
+          const tableName = String(node.dataRef?.tableName || '').trim();
+          const dbType = getMetadataDialect(node.dataRef as SavedConnection);
+          const queryTemplate = await resolveTableSelectQuery({
+            dbType,
+            tableName,
+            dbName: String(node.dataRef?.dbName || ''),
+            connectionConfig: node.dataRef?.config,
+          });
+          addTab({
+            id: `query-${Date.now()}`,
+            title: t('query.new'),
+            type: 'query',
+            connectionId: node.dataRef.id,
+            dbName: node.dataRef.dbName,
+            query: queryTemplate,
+          });
+        })();
         return;
       }
       case 'publish-message':

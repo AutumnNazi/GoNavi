@@ -796,6 +796,7 @@ var _ db.QueryMessageExecer = (*fakeBatchWriteDB)(nil)
 var _ db.StatementQueryMessageExecer = (*fakeBatchWriteSession)(nil)
 
 func TestDBQueryWithCancelReturnsResultSetForExecStoredProcedure(t *testing.T) {
+	installFakeOptionalDriverRuntime(t)
 	originalNewDatabaseFunc := newDatabaseFunc
 	t.Cleanup(func() {
 		newDatabaseFunc = originalNewDatabaseFunc
@@ -907,6 +908,7 @@ func TestDBQueryWithCancelRoutesMilvusSelectPreviewToQuery(t *testing.T) {
 }
 
 func TestDBQueryWithCancelReturnsMessagesForSQLServerQuery(t *testing.T) {
+	installFakeOptionalDriverRuntime(t)
 	originalNewDatabaseFunc := newDatabaseFunc
 	t.Cleanup(func() {
 		newDatabaseFunc = originalNewDatabaseFunc
@@ -942,6 +944,7 @@ func TestDBQueryWithCancelReturnsMessagesForSQLServerQuery(t *testing.T) {
 }
 
 func TestDBQueryWithCancel_DuckDBQueriesDoNotInheritConnectTimeout(t *testing.T) {
+	installFakeOptionalDriverRuntime(t)
 	originalNewDatabaseFunc := newDatabaseFunc
 	originalVerifyDriverAgentRevisionFunc := verifyDriverAgentRevisionFunc
 	t.Cleanup(func() {
@@ -1113,6 +1116,7 @@ func TestDBQueryMultiTransactionalKeepsDMLTransactionOpenUntilCommit(t *testing.
 }
 
 func TestDBQueryMultiTransactionalKeepsSQLServerBeginEndBlockOpenUntilRollback(t *testing.T) {
+	installFakeOptionalDriverRuntime(t)
 	originalNewDatabaseFunc := newDatabaseFunc
 	t.Cleanup(func() {
 		newDatabaseFunc = originalNewDatabaseFunc
@@ -1492,6 +1496,7 @@ func TestDBQueryMultiTransactionalOraclePrefersTransactionProviderForFinish(t *t
 }
 
 func TestDBQueryMultiTransactionalUsesOracleImplicitSessionForOceanBaseOracleProtocol(t *testing.T) {
+	installFakeOptionalDriverRuntime(t)
 	originalNewDatabaseFunc := newDatabaseFunc
 	originalVerifyDriverAgentRevisionFunc := verifyDriverAgentRevisionFunc
 	t.Cleanup(func() {
@@ -1865,6 +1870,7 @@ func TestDBQueryMultiTransactionalSkipsManagedTransactionForExplicitTransactionS
 }
 
 func TestDBQueryMultiPrefersResultSetForExecStoredProcedure(t *testing.T) {
+	installFakeOptionalDriverRuntime(t)
 	originalNewDatabaseFunc := newDatabaseFunc
 	t.Cleanup(func() {
 		newDatabaseFunc = originalNewDatabaseFunc
@@ -1909,6 +1915,7 @@ func TestDBQueryMultiPrefersResultSetForExecStoredProcedure(t *testing.T) {
 }
 
 func TestDBQueryMultiDoesNotBatchExecStoredProcedureAsWriteStatement(t *testing.T) {
+	installFakeOptionalDriverRuntime(t)
 	originalNewDatabaseFunc := newDatabaseFunc
 	t.Cleanup(func() {
 		newDatabaseFunc = originalNewDatabaseFunc
@@ -1953,6 +1960,7 @@ func TestDBQueryMultiDoesNotBatchExecStoredProcedureAsWriteStatement(t *testing.
 }
 
 func TestDBQueryMultiRunsSQLServerStatisticsBatchNatively(t *testing.T) {
+	installFakeOptionalDriverRuntime(t)
 	originalNewDatabaseFunc := newDatabaseFunc
 	t.Cleanup(func() {
 		newDatabaseFunc = originalNewDatabaseFunc
@@ -2019,6 +2027,7 @@ func TestDBQueryMultiRunsSQLServerStatisticsBatchNatively(t *testing.T) {
 }
 
 func TestDBQueryMultiFallsBackWhenNativeReadOnlyBatchReturnsEmptyResults(t *testing.T) {
+	installFakeOptionalDriverRuntime(t)
 	originalNewDatabaseFunc := newDatabaseFunc
 	t.Cleanup(func() {
 		newDatabaseFunc = originalNewDatabaseFunc
@@ -2248,6 +2257,7 @@ func TestDBQueryMultiFallsBackToPlainQueryWhenSequentialMultiStillReturnsBlankRe
 }
 
 func TestDBQueryMultiPrefersPlainQueryForKingbaseReadResults(t *testing.T) {
+	installFakeOptionalDriverRuntime(t)
 	originalNewDatabaseFunc := newDatabaseFunc
 	t.Cleanup(func() {
 		newDatabaseFunc = originalNewDatabaseFunc
@@ -2370,6 +2380,7 @@ func TestDBQueryMultiPrefersPlainQueryForDamengReadResults(t *testing.T) {
 }
 
 func TestDBQueryMultiPrefersPlainQueryForOceanBaseOracleReadResults(t *testing.T) {
+	installFakeOptionalDriverRuntime(t)
 	originalNewDatabaseFunc := newDatabaseFunc
 	t.Cleanup(func() {
 		newDatabaseFunc = originalNewDatabaseFunc
@@ -2437,6 +2448,7 @@ func TestDBQueryMultiPrefersPlainQueryForOceanBaseOracleReadResults(t *testing.T
 }
 
 func TestDBQueryMultiUsesPinnedSessionForSequentialFallback(t *testing.T) {
+	installFakeOptionalDriverRuntime(t)
 	originalNewDatabaseFunc := newDatabaseFunc
 	t.Cleanup(func() {
 		newDatabaseFunc = originalNewDatabaseFunc
@@ -2498,6 +2510,7 @@ func TestDBQueryMultiUsesPinnedSessionForSequentialFallback(t *testing.T) {
 }
 
 func TestDBQueryMultiKeepsAllResultSetsFromSingleSQLServerStatement(t *testing.T) {
+	installFakeOptionalDriverRuntime(t)
 	originalNewDatabaseFunc := newDatabaseFunc
 	t.Cleanup(func() {
 		newDatabaseFunc = originalNewDatabaseFunc
@@ -2552,6 +2565,7 @@ func TestDBQueryMultiKeepsAllResultSetsFromSingleSQLServerStatement(t *testing.T
 }
 
 func TestDBQueryMultiNormalizesSingleSQLServerSelectAffectedRowsStatementIndex(t *testing.T) {
+	installFakeOptionalDriverRuntime(t)
 	originalNewDatabaseFunc := newDatabaseFunc
 	t.Cleanup(func() {
 		newDatabaseFunc = originalNewDatabaseFunc
@@ -2597,6 +2611,7 @@ func TestDBQueryMultiNormalizesSingleSQLServerSelectAffectedRowsStatementIndex(t
 }
 
 func TestDBQueryMultiNormalizesSQLServerSelectAffectedRowsPairsByStatement(t *testing.T) {
+	installFakeOptionalDriverRuntime(t)
 	originalNewDatabaseFunc := newDatabaseFunc
 	t.Cleanup(func() {
 		newDatabaseFunc = originalNewDatabaseFunc
@@ -2672,6 +2687,7 @@ func TestNormalizeNativeResultStatementIndexesKeepsAmbiguousSQLServerResultsUnas
 }
 
 func TestDBQueryMultiTreatsBareSQLServerProcedureCallAsQueryFirst(t *testing.T) {
+	installFakeOptionalDriverRuntime(t)
 	originalNewDatabaseFunc := newDatabaseFunc
 	t.Cleanup(func() {
 		newDatabaseFunc = originalNewDatabaseFunc
@@ -2767,6 +2783,7 @@ func TestDBQueryMultiTreatsReturningWriteAsQueryFirst(t *testing.T) {
 }
 
 func TestDBQueryMultiTreatsSQLServerOutputWriteAsQueryFirst(t *testing.T) {
+	installFakeOptionalDriverRuntime(t)
 	originalNewDatabaseFunc := newDatabaseFunc
 	t.Cleanup(func() {
 		newDatabaseFunc = originalNewDatabaseFunc
@@ -2814,6 +2831,7 @@ func TestDBQueryMultiTreatsSQLServerOutputWriteAsQueryFirst(t *testing.T) {
 }
 
 func TestDBQueryMultiTreatsWrappedMessageBlocksAsQueryFirst(t *testing.T) {
+	installFakeOptionalDriverRuntime(t)
 	originalNewDatabaseFunc := newDatabaseFunc
 	t.Cleanup(func() {
 		newDatabaseFunc = originalNewDatabaseFunc

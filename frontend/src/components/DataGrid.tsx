@@ -44,7 +44,7 @@ import {
     resolveDataTableVerticalBorderColor,
 } from '../utils/dataGridDisplay';
 import { resolvePaginationPageText, resolvePaginationSummaryText, resolvePaginationTotalForControl } from '../utils/dataGridPagination';
-import { filterRowsByGridConditions } from '../utils/dataGridClientFilter';
+import { countGridColumnValues, filterRowsByGridConditions } from '../utils/dataGridClientFilter';
 import { resolveGridSortInfoFromTableSorter } from '../utils/dataGridSort';
 import {
     absorbExtraWidthIntoFlexibleColumns,
@@ -1602,6 +1602,23 @@ const DataGrid: React.FC<DataGridProps> = ({
   });
 
   // 表数据页：服务端筛选（onApplyFilter）；查询结果页：列头筛选 + 客户端过滤当前结果
+  const baseData = useMemo(() => (
+      isMongoDBConnection
+          ? data.map((row) => normalizeMongoDocumentForEditing(row))
+          : data
+  ), [data, isMongoDBConnection]);
+  const rowsBeforeClientFilter = useMemo(() => [...baseData, ...addedRows], [addedRows, baseData]);
+  const getCurrentColumnValueCounts = useMemo(() => {
+      const cache = new Map<string, ReturnType<typeof countGridColumnValues>>();
+      return (columnName: string) => {
+          if (exportScope !== 'queryResult') return undefined;
+          const cached = cache.get(columnName);
+          if (cached) return cached;
+          const counts = countGridColumnValues(rowsBeforeClientFilter, columnName);
+          cache.set(columnName, counts);
+          return counts;
+      };
+  }, [exportScope, rowsBeforeClientFilter]);
   const columnHeaderFilterEnabled = !!onApplyFilter || exportScope === 'queryResult';
   const columnHeaderFilterOpOptions = useMemo(
       () => filterOpOptions.filter((option) => option.value !== 'CUSTOM'),
@@ -1653,6 +1670,7 @@ const DataGrid: React.FC<DataGridProps> = ({
               pinnedLeft={pinnedLeftColumnSet.has(normalizedName)}
               translate={translateDataGrid}
               onOpenForeignKey={foreignKeyTarget ? () => openForeignKeyTarget(foreignKeyTarget) : undefined}
+              loadCurrentValueCounts={() => getCurrentColumnValueCounts(normalizedName)}
               columnFilter={columnFilterState ? {
                   active: columnFilterState.active,
                   operatorOptions: columnHeaderFilterOpOptions,
@@ -1689,6 +1707,7 @@ const DataGrid: React.FC<DataGridProps> = ({
       foreignKeyMap,
       foreignKeyMapByLowerName,
       getColumnHeaderFilterState,
+      getCurrentColumnValueCounts,
       highlightedColumnName,
       isBetweenOp,
       isListOp,
@@ -2039,6 +2058,7 @@ const DataGrid: React.FC<DataGridProps> = ({
     containerRef,
     copiedCellPatch,
     currentSelectionRef,
+    deletedRowKeys,
     displayColumnNames,
     displayDataRef,
     effectiveEditLocator,
@@ -2060,6 +2080,7 @@ const DataGrid: React.FC<DataGridProps> = ({
     setCellContextMenu,
     setCellEditMode,
     setCopiedCellPatch,
+    setModifiedColumns,
     setModifiedRows,
     setSelectedCells,
     markCellSelectionDeleteEligible,
@@ -2069,20 +2090,13 @@ const DataGrid: React.FC<DataGridProps> = ({
     updateCellSelection,
   });
 
-  const baseData = useMemo(() => (
-      isMongoDBConnection
-          ? data.map((row) => normalizeMongoDocumentForEditing(row))
-          : data
-  ), [data, isMongoDBConnection]);
-
   const displayData = useMemo(() => {
-      const rows = [...baseData, ...addedRows];
       // 查询结果页没有服务端 WHERE 回调时，用列头筛选条件在客户端过滤当前结果集
       if (exportScope === 'queryResult' && filterConditions.length > 0) {
-          return filterRowsByGridConditions(rows, filterConditions);
+          return filterRowsByGridConditions(rowsBeforeClientFilter, filterConditions);
       }
-      return rows;
-  }, [addedRows, baseData, exportScope, filterConditions]);
+      return rowsBeforeClientFilter;
+  }, [exportScope, filterConditions, rowsBeforeClientFilter]);
 
   useEffect(() => { displayDataRef.current = displayData; }, [displayData]);
 

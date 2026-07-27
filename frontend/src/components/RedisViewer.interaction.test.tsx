@@ -1,8 +1,11 @@
 import React from 'react';
+import { readFileSync } from 'node:fs';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import RedisViewer from './RedisViewer';
+
+const appCss = readFileSync(new URL('../App.css', import.meta.url), 'utf8');
 
 const storeState = vi.hoisted(() => ({
   connections: [
@@ -31,6 +34,7 @@ const redisBackend = vi.hoisted(() => ({
   RedisScanKeys: vi.fn(),
   RedisGetValue: vi.fn(),
   RedisListRemove: vi.fn(),
+  RedisListSet: vi.fn(),
   RedisExportKeys: vi.fn(),
   RedisPreviewImportKeys: vi.fn(),
   RedisImportKeys: vi.fn(),
@@ -69,6 +73,7 @@ vi.mock('@ant-design/icons', async () => {
     DeleteOutlined: Icon,
     PlusOutlined: Icon,
     EditOutlined: Icon,
+    EyeOutlined: Icon,
     SearchOutlined: Icon,
     ClockCircleOutlined: Icon,
     CopyOutlined: Icon,
@@ -219,9 +224,10 @@ describe('RedisViewer tree interactions', () => {
     });
     redisBackend.RedisGetValue.mockResolvedValue({
       success: true,
-      data: { key: 'app:user:1', type: 'string', ttl: -1, value: 'demo' },
+      data: { key: 'app:user:1', type: 'string', ttl: -1, value: 'demo', length: 4 },
     });
     redisBackend.RedisListRemove.mockResolvedValue({ success: true });
+    redisBackend.RedisListSet.mockResolvedValue({ success: true });
     redisBackend.RedisExportKeys.mockResolvedValue({
       success: true,
       data: { exported: 2 },
@@ -335,13 +341,18 @@ describe('RedisViewer tree interactions', () => {
     await flushEffects();
 
     const header = renderer!.root.findByProps({ className: 'redis-key-detail-header' });
+    const top = renderer!.root.findByProps({ className: 'redis-key-detail-top' });
+    const viewMode = renderer!.root.findByProps({ className: 'redis-key-view-mode' });
     const summary = renderer!.root.findByProps({ className: 'redis-key-detail-summary' });
     const identity = renderer!.root.findByProps({ className: 'redis-key-detail-identity' });
     const metadata = renderer!.root.findByProps({ className: 'redis-key-detail-metadata' });
     const actions = renderer!.root.findByProps({ className: 'redis-key-detail-actions' });
 
     expect(header.props.style).toMatchObject({ flexDirection: 'column' });
+    expect(header.parent).toBe(top);
+    expect(viewMode.parent).toBe(top);
     expect(summary.props.style).toMatchObject({ minWidth: 0, width: '100%' });
+    expect(identity.props.style).toMatchObject({ minWidth: 0, width: '100%' });
     expect(identity.parent).toBe(summary);
     expect(metadata.parent).toBe(summary);
     expect(actions.parent).toBe(summary);
@@ -352,9 +363,58 @@ describe('RedisViewer tree interactions', () => {
       flexWrap: 'wrap',
       maxWidth: '100%',
     });
+    const activeKey = renderer!.root.findByProps({ 'data-redis-active-key': 'true' });
+    expect(activeKey.props.style).toMatchObject({ flex: '0 1 auto', minWidth: 0, textOverflow: 'ellipsis' });
+    expect(activeKey.props.style).not.toHaveProperty('maxWidth');
     expect(findButtonByText(renderer!, 'Set TTL')).toBeTruthy();
     expect(findButtonByText(renderer!, 'Refresh')).toBeTruthy();
     expect(findButtonByText(renderer!, 'Delete Key')).toBeTruthy();
+
+    renderer!.unmount();
+  });
+
+  it('continues a filtered scan when the first cursor page has no matching keys', async () => {
+    redisBackend.RedisScanKeys.mockReset();
+    redisBackend.RedisScanKeys
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          cursor: '0',
+          keys: [{ key: 'app:user:1', type: 'string', ttl: -1 }],
+        },
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        data: { cursor: '27', keys: [] },
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          cursor: '0',
+          keys: [{ key: 'sub:v2:lock', type: 'string', ttl: 2400 }],
+        },
+      });
+
+    let renderer: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<RedisViewer connectionId="redis-1" redisDB={0} />);
+    });
+    await flushEffects();
+
+    const searchInput = renderer!.root.findAllByType('input')
+      .find((node) => typeof node.props.onSearch === 'function');
+    expect(searchInput).toBeTruthy();
+
+    await act(async () => {
+      searchInput!.props.onSearch('sub:v2');
+    });
+    await flushEffects();
+
+    expect(redisBackend.RedisScanKeys).toHaveBeenCalledTimes(3);
+    expect(redisBackend.RedisScanKeys.mock.calls[1]?.[2]).toBe('0');
+    expect(redisBackend.RedisScanKeys.mock.calls[2]?.[2]).toBe('27');
+    expect(countLeafNodes(antdState.treeProps.treeData)).toBe(1);
+    expect(findFirstLeafNode(antdState.treeProps.treeData)?.rawKey).toBe('sub:v2:lock');
 
     renderer!.unmount();
   });
@@ -534,7 +594,7 @@ describe('RedisViewer tree interactions', () => {
   it('removes one selected List value', async () => {
     redisBackend.RedisGetValue.mockResolvedValue({
       success: true,
-      data: { key: 'app:user:1', type: 'list', ttl: -1, value: ['todo', 'review'] },
+      data: { key: 'app:user:1', type: 'list', ttl: -1, value: ['todo', 'review'], length: 2 },
     });
 
     let renderer: ReactTestRenderer;
@@ -575,6 +635,93 @@ describe('RedisViewer tree interactions', () => {
       'review',
     );
     expect(antdState.message.success).toHaveBeenCalledWith('Deleted');
+
+    actionRenderer!.unmount();
+    renderer!.unmount();
+  });
+
+  it('keeps List pagination visible and reports the full item count', async () => {
+    const values = Array.from({ length: 211 }, (_, index) => `item-${index}`);
+    redisBackend.RedisGetValue.mockResolvedValue({
+      success: true,
+      data: { key: 'app:user:1', type: 'list', ttl: -1, value: values, length: 211 },
+    });
+
+    let renderer: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<RedisViewer connectionId="redis-1" redisDB={0} />);
+    });
+    await flushEffects();
+
+    const leafNode = findFirstLeafNode(antdState.treeProps.treeData);
+    await act(async () => {
+      antdState.treeProps.onSelect?.([leafNode.key]);
+    });
+    await flushEffects();
+
+    const listTable = antdState.tableProps.find((props) => props.dataSource?.length === 211);
+    expect(listTable).toBeTruthy();
+    expect(listTable.pagination).toMatchObject({ pageSize: 50, showSizeChanger: false });
+    expect(listTable.pagination.showTotal()).toBe('211 items');
+    expect(listTable.scroll.y).toBeTypeOf('number');
+
+    const tableShell = renderer!.root.findByProps({ className: 'redis-value-table-shell' });
+    expect(tableShell.props['data-redis-value-total']).toBe(211);
+    expect(tableShell.props.style).toMatchObject({ flex: 1, minHeight: 0, overflow: 'hidden' });
+
+    renderer!.unmount();
+  });
+
+  it('only shows the Redis value table scrollbar when its rows overflow', () => {
+    expect(appCss).toMatch(
+      /\.redis-value-table-shell \.ant-table-body\s*\{[^}]*overflow-y:\s*auto\s*!important;/s,
+    );
+  });
+
+  it('opens a List item in a read-only value viewer without writing to Redis', async () => {
+    redisBackend.RedisGetValue.mockResolvedValue({
+      success: true,
+      data: { key: 'app:user:1', type: 'list', ttl: -1, value: ['{"status":"ok"}'], length: 1 },
+    });
+
+    let renderer: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<RedisViewer connectionId="redis-1" redisDB={0} />);
+    });
+    await flushEffects();
+
+    const leafNode = findFirstLeafNode(antdState.treeProps.treeData);
+    await act(async () => {
+      antdState.treeProps.onSelect?.([leafNode.key]);
+    });
+    await flushEffects();
+
+    const listTable = antdState.tableProps.find((props) => props.dataSource?.[0]?.value === '{"status":"ok"}');
+    const actionColumn = listTable.columns.find((column: any) => column.key === 'action');
+    let actionRenderer: ReactTestRenderer;
+    await act(async () => {
+      actionRenderer = create(actionColumn.render(null, listTable.dataSource[0]));
+    });
+
+    const viewButton = actionRenderer!.root.findByProps({ 'aria-label': 'View value' });
+    await act(async () => {
+      viewButton.props.onClick();
+    });
+    await flushEffects();
+
+    const modalTitle = renderer!.root.findAllByProps({ 'data-modal-title': true })
+      .find((node) => collectRenderedText(node).includes('View index 0'));
+    expect(modalTitle).toBeTruthy();
+    const readOnlyEditor = renderer!.root.findAll((node) =>
+      node.props.gonaviTypography === 'data' && node.props.options?.readOnly === true,
+    );
+    expect(readOnlyEditor.length).toBeGreaterThan(0);
+
+    const modalOkButton = findButtonByText(renderer!, 'modal-ok');
+    await act(async () => {
+      await modalOkButton!.props.onClick?.();
+    });
+    expect(redisBackend.RedisListSet).not.toHaveBeenCalled();
 
     actionRenderer!.unmount();
     renderer!.unmount();

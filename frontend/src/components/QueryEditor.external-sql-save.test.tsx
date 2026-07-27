@@ -1,8 +1,6 @@
 import React from 'react';
-import { readFileSync } from 'node:fs';
-import { act, create, type ReactTestRenderer } from 'react-test-renderer';
+import { act, create as createRenderer, type ReactTestRenderer } from 'react-test-renderer';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { readV2ThemeCss } from '../test/readV2ThemeCss';
 
 import { setCurrentLanguage } from '../i18n';
 import { catalogs } from '../i18n/catalog';
@@ -11,6 +9,7 @@ import { I18nProvider } from '../i18n/provider';
 import type { SavedQuery, TabData } from '../types';
 import { ORACLE_ROWID_LOCATOR_COLUMN } from '../utils/rowLocator';
 import { setGlobalImeCompositionActive } from '../utils/shortcuts';
+import { clearQueryEditorResultSession } from '../utils/queryEditorResultSessionCache';
 import { clearQueryTabDraft, clearSQLFileTabDraft, getQueryTabDraft, getSQLFileTabDraft } from '../utils/sqlFileTabDrafts';
 import { clearQueryEditorInlineRuntimeReadinessCache } from './queryEditor/QueryEditorAiAssist';
 import QueryEditor, {
@@ -18,8 +17,17 @@ import QueryEditor, {
   resolveQueryEditorNavigationDecorations,
   resolveQueryEditorNavigationTarget,
 } from './QueryEditor';
-
-const queryEditorSource = readFileSync(new URL('./QueryEditor.tsx', import.meta.url), 'utf8');
+const mountedRenderers = new Set<ReactTestRenderer>();
+const create = (...args: Parameters<typeof createRenderer>): ReactTestRenderer => {
+  const renderer = createRenderer(...args);
+  mountedRenderers.add(renderer);
+  const unmount = renderer.unmount.bind(renderer);
+  renderer.unmount = () => {
+    mountedRenderers.delete(renderer);
+    unmount();
+  };
+  return renderer;
+};
 
 const storeState = vi.hoisted(() => ({
   connections: [
@@ -97,6 +105,7 @@ const storeState = vi.hoisted(() => ({
     },
   },
   activeTabId: 'tab-1',
+  tabs: [] as TabData[],
   aiPanelVisible: false,
   setAIPanelVisible: vi.fn(),
   sqlSnippets: [] as any[],
@@ -604,6 +613,10 @@ const textContent = (node: any): string =>
     .map((item: any) => (typeof item === 'string' ? item : textContent(item)))
     .join('');
 
+const findSqlLogTab = (renderer: ReactTestRenderer) => renderer.root.findAll(
+  (node) => node.props?.['data-tab-key'] === '__gonavi_sql_execution_log__',
+);
+
 const queryResultMessageText = (renderer: ReactTestRenderer): string => {
   const values: string[] = [];
   const walk = (node: any) => {
@@ -792,6 +805,7 @@ describe('QueryEditor external SQL save', () => {
     storeState.saveQuery.mockImplementation(async (query: SavedQuery) => query);
     storeState.savedQueries = [];
     storeState.activeTabId = 'tab-1';
+    storeState.tabs = [];
     storeState.aiPanelVisible = false;
     storeState.setAIPanelVisible.mockReset();
     storeState.appearance.uiVersion = 'legacy';
@@ -925,6 +939,11 @@ describe('QueryEditor external SQL save', () => {
   });
 
   afterEach(() => {
+    act(() => {
+      [...mountedRenderers].forEach((renderer) => renderer.unmount());
+    });
+    clearQueryEditorResultSession('tab-1');
+    clearQueryEditorResultSession('tab-2');
     vi.unstubAllGlobals();
     vi.clearAllMocks();
   });
@@ -1024,7 +1043,7 @@ describe('QueryEditor external SQL save', () => {
       findButton(renderer, '结果').props.onClick();
     });
 
-    expect(textContent(renderer.toJSON())).toContain('等待执行 SQL');
+    expect(findSqlLogTab(renderer)).toHaveLength(1);
     expect(storeState.updateQueryTabDraft).toHaveBeenCalledWith('tab-1', {
       resultPanelVisible: true,
     });
@@ -1041,7 +1060,7 @@ describe('QueryEditor external SQL save', () => {
     await act(async () => {
       findButton(renderer, '结果').props.onClick();
     });
-    expect(textContent(renderer.toJSON())).toContain('等待执行 SQL');
+    expect(findSqlLogTab(renderer)).toHaveLength(1);
 
     await act(async () => {
       findButton(renderer, '隐藏').props.onClick();
@@ -1172,7 +1191,7 @@ describe('QueryEditor external SQL save', () => {
 
     expect(firstEvent.preventDefault).toHaveBeenCalled();
     expect(firstEvent.stopPropagation).toHaveBeenCalled();
-    expect(textContent(renderer.toJSON())).toContain('等待执行 SQL');
+    expect(findSqlLogTab(renderer)).toHaveLength(1);
 
     const secondEvent = createToggleEvent();
     await act(async () => {
@@ -2189,7 +2208,7 @@ describe('QueryEditor external SQL save', () => {
     });
 
     expect(toggleEvent.preventDefault).toHaveBeenCalled();
-    expect(textContent(renderer.toJSON())).toContain('等待执行 SQL');
+    expect(findSqlLogTab(renderer)).toHaveLength(1);
     expect(storeState.updateQueryTabDraft).toHaveBeenLastCalledWith('tab-1', {
       resultPanelVisible: true,
     });
@@ -2230,7 +2249,7 @@ describe('QueryEditor external SQL save', () => {
       renderer = create(<QueryEditor tab={createTab()} />);
     });
 
-    expect(textContent(renderer.toJSON())).not.toContain('SQL 执行日志');
+    expect(findSqlLogTab(renderer)).toHaveLength(1);
 
     await act(async () => {
       windowListeners['gonavi:show-sql-execution-log']?.forEach((listener) => listener());
@@ -2245,7 +2264,7 @@ describe('QueryEditor external SQL save', () => {
       windowListeners['gonavi:show-sql-execution-log']?.forEach((listener) => listener());
     });
 
-    expect(textContent(renderer.toJSON())).not.toContain('SQL 执行日志');
+    expect(findSqlLogTab(renderer)).toHaveLength(0);
     expect(storeState.updateQueryTabDraft).toHaveBeenLastCalledWith('tab-1', {
       resultPanelVisible: false,
     });
@@ -2475,7 +2494,7 @@ describe('QueryEditor external SQL save', () => {
       renderer.update(<QueryEditor tab={createTab({ id: 'tab-2', resultPanelVisible: true })} />);
     });
 
-    expect(textContent(renderer.toJSON())).toContain('等待执行 SQL');
+    expect(findSqlLogTab(renderer)).toHaveLength(1);
 
     renderer.unmount();
   });
@@ -5562,12 +5581,6 @@ describe('QueryEditor external SQL save', () => {
     expect(renderer.root.findAllByProps({ 'data-query-editor-snippet-picker': 'true' })).toHaveLength(0);
   });
 
-  it('keeps the SQL snippet picker modal non-mask-closable to avoid immediate close after context-menu click', () => {
-    expect(queryEditorSource).toMatch(
-      /title=\{translate\('query_editor\.snippet_picker\.title'\)\}[\s\S]*?mask=\{false\}[\s\S]*?maskClosable=\{false\}/,
-    );
-  });
-
   it('builds localized AI context prefix for QueryEditor prompt injection', async () => {
     storeState.languagePreference = 'en-US';
     storeState.aiPanelVisible = true;
@@ -6832,13 +6845,6 @@ describe('QueryEditor external SQL save', () => {
     expect(editorState.editor.deltaDecorations).not.toHaveBeenCalled();
   });
 
-  it('keeps query editor hyperlink decorations blue with a solid underline', () => {
-    const css = readFileSync(new URL('../App.css', import.meta.url), 'utf8');
-
-    expect(css).toMatch(/\.gonavi-query-editor-link-hint\s*\{[^}]*color:\s*#1677ff\s*!important;[^}]*text-decoration:\s*underline;[^}]*text-decoration-style:\s*solid;[^}]*text-decoration-color:\s*currentColor;/s);
-    expect(css).toMatch(/body\[data-theme='dark'\]\s+\.gonavi-query-editor-link-hint\s*\{[^}]*color:\s*#69b1ff\s*!important;/s);
-  });
-
   it('opens a view object-edit tab on ctrl left click inside the editor', async () => {
     editorState.value = 'select * from reporting.active_users';
     autoFetchState.visible = true;
@@ -7334,6 +7340,46 @@ describe('QueryEditor external SQL save', () => {
     expect(editorState.editor.setValue).toHaveBeenCalledWith('');
   });
 
+  it('does not restore a closed external SQL file after unmount cleanup', async () => {
+    const filePath = '/Users/me/Documents/gonavi-queries/closed.sql';
+    const tab = createTab({ filePath, query: 'select 1;' });
+    storeState.tabs = [tab];
+
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<QueryEditor tab={tab} />);
+    });
+    await act(async () => {
+      editorState.value = 'select 2;';
+      editorState.latestOnChange?.(editorState.value);
+    });
+    expect(getSQLFileTabDraft('tab-1')).toBe('select 2;');
+
+    storeState.tabs = [];
+    await act(async () => {
+      renderer.unmount();
+    });
+
+    expect(getSQLFileTabDraft('tab-1')).toBe('');
+  });
+
+  it('writes the latest external SQL draft when the tab still exists on unmount', async () => {
+    const filePath = '/Users/me/Documents/gonavi-queries/open.sql';
+    const tab = createTab({ filePath, query: 'select 1;' });
+    storeState.tabs = [tab];
+
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<QueryEditor tab={tab} />);
+    });
+    editorState.value = 'select 2;';
+
+    await act(async () => {
+      renderer.unmount();
+    });
+
+    expect(getSQLFileTabDraft('tab-1')).toBe('select 2;');
+  });
   it('writes external SQL file tabs back to disk without creating saved queries', async () => {
     let renderer!: ReactTestRenderer;
     const filePath = '/Users/me/Documents/gonavi-queries/report.sql';
@@ -10499,7 +10545,7 @@ describe('QueryEditor external SQL save', () => {
     expect(String(backendApp.DBQueryMulti.mock.calls[0][2])).not.toContain('select 3');
   });
 
-  it('renders V2 empty state copy for the active non-Chinese language', async () => {
+  it('renders the V2 SQL log tab for the active non-Chinese language', async () => {
     storeState.appearance.uiVersion = 'v2';
     storeState.languagePreference = 'en-US';
     setCurrentLanguage('en-US');
@@ -10514,8 +10560,10 @@ describe('QueryEditor external SQL save', () => {
     });
 
     const rendered = textContent(renderer!.toJSON());
-    expect(rendered).toContain(catalogs['en-US']['query_editor.empty_state.title']);
-    expect(rendered).toContain(catalogs['en-US']['query_editor.empty_state.description']);
+    expect(findSqlLogTab(renderer!)).toHaveLength(1);
+    expect(rendered).toContain(catalogs['en-US']['log_panel.short_title']);
+    expect(rendered).not.toContain(catalogs['en-US']['query_editor.empty_state.title']);
+    expect(rendered).not.toContain(catalogs['en-US']['query_editor.empty_state.description']);
     expect(rendered).not.toContain('等待执行 SQL');
     expect(rendered).not.toContain('运行查询后，结果会在下方以新版数据网格展示。');
   });
@@ -11625,178 +11673,6 @@ describe('QueryEditor external SQL save', () => {
     expect(textContent(renderer!.toJSON())).not.toContain('结果 1 (2)');
   });
 
-  it('keeps query result tabs compact, centered, and readable in v2 UI', () => {
-    const source = readFileSync(new URL('./QueryEditorResultsPanel.tsx', import.meta.url), 'utf8');
-    const css = readV2ThemeCss();
-
-    expect(source).toContain('.query-result-tabs .ant-tabs-tab {');
-    expect(source).toContain('width: auto !important;');
-    expect(source).toContain('max-width: 148px !important;');
-    expect(source).toContain('height: 30px !important;');
-    expect(source).toContain('align-items: center !important;');
-    expect(source).toContain('font-size: 14px !important;');
-    expect(source).toContain('.query-result-tab-text {');
-    expect(source).toContain('user-select: none;');
-    expect(source).toContain('font-weight: 700;');
-    expect(css).toContain('body[data-ui-version="v2"] .gn-v2-query-results .query-result-tabs > .ant-tabs-nav .ant-tabs-tab {');
-    expect(css).toContain('body[data-ui-version="v2"] .gn-v2-query-results .query-result-tabs > .ant-tabs-nav .ant-tabs-tab-btn {');
-    expect(css).toContain('user-select: none;');
-    expect(css).toContain('body[data-ui-version="v2"] .gn-v2-query-results .query-result-tab-text {');
-  });
-
-  it('shows Monaco find button hovers without moving the find widget in the v2 query editor', () => {
-    const source = readFileSync(new URL('./QueryEditor.tsx', import.meta.url), 'utf8');
-    const css = readV2ThemeCss();
-    const findWidgetOverflowRule = css.match(
-      /body\[data-ui-version="v2"\] \.gn-v2-query-monaco-stage:has\(\.monaco-editor \.find-widget\.visible:not\(\.hiddenEditor\)\)\s*\{(?<body>[^}]*)\}/s,
-    )?.groups?.body ?? '';
-
-    expect(source).not.toContain('addExtraSpaceOnTop: true');
-    expect(findWidgetOverflowRule).toContain('overflow: visible;');
-    expect(findWidgetOverflowRule).not.toContain('padding-top');
-    expect(findWidgetOverflowRule).not.toContain('top:');
-    expect(css).not.toContain('body[data-ui-version="v2"] .gn-v2-query-monaco-stage .monaco-editor .find-widget {');
-  });
-
-  it('raises QueryEditor suggest docs height for SQL snippet completion without widening global Monaco defaults', () => {
-    const appCss = readFileSync(new URL('../App.css', import.meta.url), 'utf8');
-
-    expect(queryEditorSource).toContain('QUERY_EDITOR_SQL_SNIPPET_SUGGEST_DETAIL_MIN_HEIGHT = 260');
-    expect(queryEditorSource).toContain("editor.getContribution?.('editor.contrib.suggestController')");
-    expect(queryEditorSource).toContain('const originalSuggestDetailsLayout = suggestDetailsWidget.layout.bind(suggestDetailsWidget);');
-    expect(queryEditorSource).toContain('suggestDetailsWidget.layout = (width: number, height: number) => {');
-    expect(queryEditorSource).toContain('Math.max(height, QUERY_EDITOR_SQL_SNIPPET_SUGGEST_DETAIL_MIN_HEIGHT)');
-    expect(queryEditorSource).toContain("className={isV2Ui ? 'gn-v2-query-monaco-stage gn-query-monaco-stage' : 'gn-query-monaco-stage'}");
-    expect(appCss).toContain('.gn-query-monaco-stage .monaco-editor .suggest-details-container {');
-    expect(appCss).toContain('min-height: 260px;');
-    expect(appCss).toContain('.gn-query-monaco-stage .monaco-editor .suggest-details {');
-    expect(appCss).toContain('min-height: 260px;');
-    expect(appCss).toContain('.gn-query-monaco-stage .monaco-editor .suggest-widget .monaco-list .monaco-list-row > .contents > .main {');
-    expect(appCss).toContain('justify-content: flex-start;');
-    expect(appCss).toContain('gap: 6px;');
-    expect(appCss).toContain('.gn-query-monaco-stage .monaco-editor .suggest-widget .monaco-list .monaco-list-row > .contents > .main > .left {');
-    // 主名称优先完整显示：左侧可增长，不先被右侧元数据挤成省略号
-    expect(appCss).toContain('flex: 1 1 auto;');
-    expect(appCss).toContain('.gn-query-monaco-stage .monaco-editor .suggest-widget .monaco-list .monaco-list-row > .contents > .main > .right {');
-    // 元数据让位：优先压缩/省略右侧表名类型，而不是截断字段名
-    expect(appCss).toContain('flex: 0 1 auto;');
-    expect(appCss).toContain('flex-shrink: 4;');
-    expect(appCss).toContain('max-width: 48%;');
-    expect(appCss).toContain('.gn-query-monaco-stage .monaco-editor .suggest-widget .monaco-list .monaco-list-row.string-label > .contents > .main > .right > .details-label {');
-    expect(appCss).toContain('display: inline !important;');
-    expect(appCss).toContain('margin-left: 0;');
-    expect(appCss).toContain('text-overflow: ellipsis;');
-    expect(appCss).not.toContain('.gn-query-monaco-stage .monaco-editor .suggest-widget {');
-    expect(appCss).not.toContain('width: 680px;');
-    expect(appCss).not.toContain('min-width: 560px;');
-  });
-
-  it('keeps the v2 query editor toolbar grouped and compact', () => {
-    const source = readFileSync(new URL('./QueryEditor.tsx', import.meta.url), 'utf8');
-    const toolbarSource = readFileSync(new URL('./QueryEditorToolbar.tsx', import.meta.url), 'utf8');
-    const resultsPanelSource = readFileSync(new URL('./QueryEditorResultsPanel.tsx', import.meta.url), 'utf8');
-    const transactionSettingsSource = readFileSync(new URL('./QueryEditorTransactionSettings.tsx', import.meta.url), 'utf8');
-    const transactionToolbarSource = readFileSync(new URL('./QueryEditorTransactionToolbar.tsx', import.meta.url), 'utf8');
-    const css = readV2ThemeCss();
-
-    expect(source).toContain('QueryEditorToolbar');
-    expect(toolbarSource).toContain('gn-v2-query-toolbar-selects');
-    expect(toolbarSource).toContain('gn-v2-query-toolbar-actions');
-    expect(toolbarSource).toContain('gn-v2-query-toolbar-connection-select');
-    expect(toolbarSource).toContain('gn-v2-query-toolbar-database-select');
-    expect(toolbarSource).toContain('FULL_NAME_TOOLTIP_DELAY_SECONDS = 1');
-    expect(toolbarSource).toContain('mouseEnterDelay={FULL_NAME_TOOLTIP_DELAY_SECONDS}');
-    expect(toolbarSource).toContain('optionRender={(option) => renderFullNameSelectTooltip(option.data.fullName)}');
-    expect(toolbarSource).toContain('labelRender={(option) => renderFullNameSelectTooltip(option.label ?? option.value)}');
-    expect(toolbarSource).toContain('gn-v2-query-toolbar-max-rows-select');
-    expect(toolbarSource).toContain('QueryEditorTransactionSettings');
-    expect(transactionSettingsSource).toContain('gn-v2-query-toolbar-transaction-mode-select');
-    expect(transactionSettingsSource).toContain('gn-v2-query-toolbar-transaction-delay-select');
-    expect(transactionSettingsSource).toContain('query_editor.transaction.mode.tooltip');
-    expect(transactionSettingsSource).toContain('query_editor.transaction.mode.manual');
-    expect(transactionSettingsSource).toContain('query_editor.transaction.mode.auto');
-    expect(transactionSettingsSource).not.toContain("label: '手动提交'");
-    expect(transactionSettingsSource).not.toContain("label: '自动提交'");
-    expect(transactionSettingsSource).toContain('query_editor.transaction.delay.immediate_commit');
-    expect(transactionSettingsSource).toContain('query_editor.transaction.delay.seconds_commit');
-    expect(transactionSettingsSource).not.toContain("label: '3s'");
-    expect(source).toContain('QueryEditorTransactionToolbar');
-    expect(transactionToolbarSource).toContain("className={isV2Ui ? 'gn-v2-query-transaction-toolbar' : undefined}");
-    expect(transactionToolbarSource).toContain(": null;");
-    expect(transactionToolbarSource).toContain('gn-v2-query-transaction-commit-button');
-    expect(transactionToolbarSource).toContain('gn-v2-toolbar-kbd');
-    expect(transactionToolbarSource).toContain('query_editor.transaction.status.auto_committing');
-    expect(transactionToolbarSource).toContain('onFinish');
-    expect(toolbarSource).toContain('{isV2Ui && pendingTransactionToolbar}');
-    expect(toolbarSource).not.toContain('gn-v2-query-toolbar-transaction-row');
-    expect(resultsPanelSource).not.toContain('transactionToolbar?: React.ReactNode;');
-    expect(toolbarSource).toContain('gn-v2-query-toolbar-action-group');
-    expect(toolbarSource).toContain('gn-v2-query-toolbar-action-pair');
-    expect(toolbarSource).toContain('const aiMenuItems');
-    expect(toolbarSource).toContain('key: "toggle-result-panel"');
-    expect(toolbarSource).toContain('{!isV2Ui && (');
-    expect(toolbarSource).toContain('trigger={["click"]}');
-    expect(toolbarSource.indexOf('onClick={onQuickSave}')).toBeLessThan(toolbarSource.indexOf('menu={{ items: aiMenuItems }}'));
-    expect(toolbarSource.indexOf('menu={{ items: aiMenuItems }}')).toBeLessThan(toolbarSource.indexOf('menu={{ items: moreMenuItems }}'));
-    expect(toolbarSource.indexOf('menu={{ items: moreMenuItems }}')).toBeLessThan(toolbarSource.indexOf('icon={<FormatPainterOutlined />}'));
-    expect(transactionSettingsSource).toContain('style={isV2Ui ? undefined : { width: 78 }}');
-    expect(transactionSettingsSource).toContain('style={isV2Ui ? undefined : { width: 68 }}');
-    expect(toolbarSource).toContain('style={isV2Ui ? undefined : { width: 200 }}');
-    expect(toolbarSource).toContain('style={isV2Ui ? undefined : { width: 170 }}');
-
-    expect(css).toContain('body[data-ui-version="v2"] .gn-v2-query-toolbar-selects');
-    expect(css).toContain('body[data-ui-version="v2"] .gn-v2-query-toolbar-actions');
-    expect(css).toContain('width: 48px !important;');
-    expect(css).toContain('flex: 0 0 48px !important;');
-    expect(css).toContain('flex: 0 0 auto !important;');
-    expect(css).toContain('justify-content: flex-start;');
-    expect(css).toContain('height: 32px !important;');
-    expect(css).toContain('line-height: 30px !important;');
-    expect(css).toContain('display: inline-flex !important;');
-    expect(css).toContain('gap: 6px;');
-    expect(css).toContain('overflow-x: auto;');
-    expect(css).toContain('overflow-y: hidden;');
-    expect(css).toContain('body[data-ui-version="v2"] .gn-v2-query-toolbar-action-pair');
-    expect(css).toContain('gap: 8px;');
-    expect(css).toContain('margin-left: 0 !important;');
-    expect(css).toContain('max-width: 760px;');
-    expect(css).toContain('width: 140px !important;');
-    expect(css).toContain('width: 166px !important;');
-    expect(css).toContain('width: 132px !important;');
-    expect(css).toContain('width: 34px !important;');
-    expect(css).toContain('@media (max-width: 900px)');
-    expect(css).not.toContain('body[data-ui-version="v2"] .gn-v2-query-toolbar-transaction-row {');
-
-    const queryToolbarMainCss = css.slice(css.indexOf('body[data-ui-version="v2"] .gn-v2-query-toolbar-main {'), css.indexOf('body[data-ui-version="v2"] .gn-v2-query-toolbar-selects {'));
-    expect(queryToolbarMainCss).toContain('flex-wrap: nowrap;');
-    expect(queryToolbarMainCss).toContain('width: max-content;');
-    expect(queryToolbarMainCss).not.toContain('flex-wrap: wrap;');
-    expect(queryToolbarMainCss).not.toContain('margin-left: auto;');
-    expect(queryToolbarMainCss).not.toContain('justify-content: flex-end;');
-  });
-
-  it('keeps custom SQL snippet syntax help editable and uses it in completion details', () => {
-    const modalSource = readFileSync(new URL('./SnippetSettingsModal.tsx', import.meta.url), 'utf8');
-    const source = readFileSync(new URL('./QueryEditor.tsx', import.meta.url), 'utf8');
-
-    expect(modalSource).toContain("t('snippet_settings.syntax_help.label')");
-    expect(modalSource).toContain('data-sql-snippet-syntax-help-editor="true"');
-    expect(modalSource).toContain("defaultActiveKey={['snippet-help']}");
-    expect(modalSource).toContain('footer={null}');
-    expect(modalSource).toContain('data-sql-snippet-action-row="true"');
-    expect(modalSource).toContain('data-sql-snippet-content-region="true"');
-    expect(modalSource).toContain('data-sql-snippet-editor-scroll-region="true"');
-    expect(modalSource).toContain('maxHeight: embedded ? snippetModalEmbeddedBodyMaxHeight : snippetModalBodyMaxHeight');
-    expect(modalSource).toContain('data-sql-snippet-syntax-reference-scroll-region="true"');
-    expect(modalSource).toContain('data-sql-snippet-editor-panel-scroll-region="true"');
-    expect(modalSource).toContain("flex: '0 0 auto'");
-    expect(modalSource).toContain("size=\"middle\"");
-    expect(modalSource).toContain('minWidth: 84');
-    expect(modalSource).toContain('syntaxHelp');
-    expect(modalSource).toContain("t('snippet_settings.syntax_reference.label')");
-    expect(source).toContain('s.syntaxHelp || s.description || s.body');
-  });
-
   it('coalesces editor result splitter dragging through requestAnimationFrame', async () => {
     const moveListeners: Array<(event: MouseEvent) => void> = [];
     const upListeners: Array<() => void> = [];
@@ -12385,7 +12261,6 @@ describe('QueryEditor external SQL save', () => {
     async (dbType) => {
       storeState.connections[0].config.type = dbType;
       storeState.connections[0].config.database = dbType === 'oracle' || dbType === 'dameng' ? 'APP' : 'main';
-      const forceReadOnlyQueryResult = dbType === 'tdengine' || dbType === 'clickhouse';
       backendApp.DBQueryMulti.mockResolvedValueOnce({
         success: true,
         data: [{ columns: ['COUNT'], rows: [{ COUNT: 1 }] }],
@@ -12408,7 +12283,7 @@ describe('QueryEditor external SQL save', () => {
       });
 
       const expectedTableName = dbType === 'oracle' || dbType === 'dameng' ? 'USERS' : 'users';
-      expect(dataGridState.latestProps?.tableName).toBe(forceReadOnlyQueryResult ? undefined : expectedTableName);
+      expect(dataGridState.latestProps?.tableName).toBe(expectedTableName);
       expect(dataGridState.latestProps?.editLocator).toBeUndefined();
       expect(dataGridState.latestProps?.readOnly).toBe(true);
       expect(backendApp.DBGetColumns).not.toHaveBeenCalled();

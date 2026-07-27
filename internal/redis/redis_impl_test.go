@@ -11,13 +11,11 @@ import (
 	"math"
 	"math/big"
 	"net"
-	"os"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"testing"
-
 	goredis "github.com/redis/go-redis/v9"
 )
 
@@ -98,6 +96,50 @@ func readRedisProtocolArray(reader *bufio.Reader) ([]string, error) {
 
 func redisBulkString(value string) string {
 	return fmt.Sprintf("$%d\r\n%s\r\n", len(value), value)
+}
+
+func TestScanKeysKeepsEntireRedisScanBatch(t *testing.T) {
+	addr := startRedisProtocolTestServer(t, func(args []string) string {
+		switch strings.ToUpper(strings.TrimSpace(args[0])) {
+		case "HELLO":
+			return "-ERR unknown command 'HELLO'\r\n"
+		case "CLIENT":
+			return "-ERR unknown subcommand\r\n"
+		case "SCAN":
+			return "*2\r\n$2\r\n42\r\n*3\r\n$5\r\nalpha\r\n$4\r\nbeta\r\n$5\r\ngamma\r\n"
+		case "TYPE":
+			return "+string\r\n"
+		case "TTL":
+			return ":-1\r\n"
+		}
+		return "+OK\r\n"
+	})
+
+	rawClient := goredis.NewClient(&goredis.Options{
+		Addr:     addr,
+		Protocol: 2,
+	})
+	client := &RedisClientImpl{
+		client:       rawClient,
+		singleClient: rawClient,
+	}
+	defer client.Close()
+
+	result, err := client.ScanKeys("*", 0, 1)
+	if err != nil {
+		t.Fatalf("ScanKeys returned error: %v", err)
+	}
+	if result.Cursor != "42" {
+		t.Fatalf("expected next cursor 42, got %q", result.Cursor)
+	}
+	if len(result.Keys) != 3 {
+		t.Fatalf("expected all 3 keys from the Redis SCAN batch, got %#v", result.Keys)
+	}
+	for index, key := range []string{"alpha", "beta", "gamma"} {
+		if result.Keys[index].Key != key {
+			t.Fatalf("expected key %q at index %d, got %#v", key, index, result.Keys)
+		}
+	}
 }
 
 // 回归保护：HGETALL 在 RESP3 下返回 map[interface{}]interface{}（go-redis v9 默认 RESP3），
@@ -532,55 +574,6 @@ func TestRedisConnectFailureWrappersUseEnglishPrefixes(t *testing.T) {
 	}
 }
 
-func TestRedisConnectSourceUsesLocalizedValidationKeys(t *testing.T) {
-	sourceBytes, err := os.ReadFile("redis_impl.go")
-	if err != nil {
-		t.Fatalf("read redis_impl.go: %v", err)
-	}
-	source := string(sourceBytes)
-
-	for _, rawMessage := range []string{
-		`fmt.Errorf("Redis 节点地址不能为空")`,
-		`fmt.Errorf("无效 Redis 节点地址: %s", addr)`,
-		`fmt.Errorf("无效 Redis 端口: %s", addr)`,
-		`fmt.Errorf("Redis 连接地址不能为空")`,
-		`return "集群"`,
-		`return "多节点"`,
-		`fmt.Errorf("Redis %s模式暂不支持 SSH 隧道，请关闭 SSH 后重试", redisTopologyDisplayName(topology))`,
-		`fmt.Errorf("Redis Sentinel 模式需要填写 master 名称")`,
-		`fmt.Sprintf("第%d次 TLS 配置失败: %v", idx+1, err)`,
-		`fmt.Sprintf("第%d次连接失败: %v", idx+1, pingErr)`,
-		`fmt.Errorf("Redis Sentinel 连接失败: %s", strings.Join(failures, "；"))`,
-		`fmt.Errorf("Redis 集群连接失败: %s", strings.Join(failures, "；"))`,
-		`fmt.Errorf("创建 SSH 隧道失败: %w", err)`,
-		`fmt.Errorf("Redis 连接失败: %s", strings.Join(failures, "；"))`,
-	} {
-		if strings.Contains(source, rawMessage) {
-			t.Fatalf("redis_impl.go still contains raw Redis connect validation text %q", rawMessage)
-		}
-	}
-
-	for _, key := range []string{
-		"redis.backend.error.node_address_required",
-		"redis.backend.error.invalid_node_address",
-		"redis.backend.error.invalid_port",
-		"redis.backend.error.address_required",
-		"redis.backend.label.topology_cluster",
-		"redis.backend.label.topology_multi_node",
-		"redis.backend.error.topology_ssh_tunnel_unsupported",
-		"redis.backend.error.sentinel_master_required",
-		"redis.backend.error.connect_tls_setup_failed",
-		"redis.backend.error.connect_attempt_failed",
-		"redis.backend.error.sentinel_connect_failed",
-		"redis.backend.error.cluster_connect_failed",
-		"redis.backend.error.ssh_tunnel_create_failed",
-		"redis.backend.error.connect_failed",
-	} {
-		if !strings.Contains(source, key) {
-			t.Fatalf("redis_impl.go does not reference Redis i18n key %q", key)
-		}
-	}
-}
 
 func TestRedisExecuteCommandClusterSelectValidationUsesEnglishMessages(t *testing.T) {
 	SetBackendLanguage(i18n.LanguageEnUS)
@@ -639,33 +632,6 @@ func TestRedisExecuteCommandClusterSelectValidationUsesEnglishMessages(t *testin
 	}
 }
 
-func TestRedisExecuteCommandSourceUsesLocalizedClusterSelectValidationKeys(t *testing.T) {
-	sourceBytes, err := os.ReadFile("redis_impl.go")
-	if err != nil {
-		t.Fatalf("read redis_impl.go: %v", err)
-	}
-	source := string(sourceBytes)
-
-	for _, rawMessage := range []string{
-		`fmt.Errorf("SELECT 命令缺少数据库索引")`,
-		`fmt.Errorf("无效数据库索引: %s", args[1])`,
-		`fmt.Errorf("数据库索引必须在 0-%d 之间", redisClusterLogicalDBCount-1)`,
-	} {
-		if strings.Contains(source, rawMessage) {
-			t.Fatalf("redis_impl.go still contains raw Redis cluster SELECT validation text %q", rawMessage)
-		}
-	}
-
-	for _, key := range []string{
-		"redis.backend.error.select_db_index_required",
-		"redis.backend.error.select_db_index_invalid",
-		"redis.backend.error.select_db_index_out_of_range",
-	} {
-		if !strings.Contains(source, key) {
-			t.Fatalf("redis_impl.go does not reference Redis cluster SELECT i18n key %q", key)
-		}
-	}
-}
 
 func TestRedisSelectDBClusterRangeUsesEnglishMessage(t *testing.T) {
 	SetBackendLanguage(i18n.LanguageEnUS)

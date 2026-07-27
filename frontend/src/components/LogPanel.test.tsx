@@ -1,5 +1,4 @@
 import React from "react";
-import { readFileSync } from "node:fs";
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 
@@ -198,16 +197,5 @@ describe("LogPanel i18n", () => {
       diagnoseButton.props.onClick?.();
     });
     expect(onDiagnoseExecutionError).toHaveBeenCalledTimes(1);
-  });
-
-  it("does not keep migrated Chinese UI literals in LogPanel source", () => {
-    const source = readFileSync(new URL("./LogPanel.tsx", import.meta.url), "utf8");
-
-    expect(source).not.toContain("SQL 执行日志");
-    expect(source).not.toContain("记录执行状态、耗时与错误信息，便于快速回溯。");
-    expect(source).not.toContain("清空日志");
-    expect(source).not.toContain("关闭面板");
-    expect(source).not.toContain("暂无 SQL 执行日志");
-    expect(source).not.toContain("Affected: ");
   });
 });

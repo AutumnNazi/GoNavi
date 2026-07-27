@@ -644,24 +644,28 @@ const DataViewer: React.FC<{ tab: TabData; isActive?: boolean }> = React.memo(({
         if (pkKeyRef.current !== locatorKey || !editLocatorForQuery) {
             pkKeyRef.current = locatorKey;
             const locatorSeq = ++pkSeqRef.current;
-            try {
-                const [resCols, resIndexes] = await Promise.all([
-                    DBGetColumns(buildRpcConnectionConfig(config) as any, dbName, tableName),
-                    DBGetIndexes(buildRpcConnectionConfig(config) as any, dbName, tableName)
-                        .catch((error: any) => ({ success: false, message: String(error?.message || error || 'Failed to load indexes'), data: [] })),
-                ]);
-                if (fetchSeqRef.current !== seq) return;
-                if (pkSeqRef.current !== locatorSeq) return;
-                if (pkKeyRef.current !== locatorKey) return;
+            const loadEditLocator = async (): Promise<{
+                primaryKeys: string[];
+                locator: EditRowLocator;
+            } | null> => {
+                try {
+                    const [resCols, resIndexes] = await Promise.all([
+                        DBGetColumns(buildRpcConnectionConfig(config) as any, dbName, tableName),
+                        DBGetIndexes(buildRpcConnectionConfig(config) as any, dbName, tableName)
+                            .catch((error: any) => ({ success: false, message: String(error?.message || error || 'Failed to load indexes'), data: [] })),
+                    ]);
+                    if (fetchSeqRef.current !== seq) return null;
+                    if (pkSeqRef.current !== locatorSeq) return null;
+                    if (pkKeyRef.current !== locatorKey) return null;
 
-                if (!resCols?.success || !Array.isArray(resCols.data)) {
-                    const nextLocator = buildAllColumnsLocator([], { translate: tr });
-                    pkColumnsForQuery = [];
-                    editLocatorForQuery = nextLocator;
-                    setPkColumns([]);
-                    setEditLocator(nextLocator);
-                    if (nextLocator.reason) message.info(nextLocator.reason);
-                } else {
+                    if (!resCols?.success || !Array.isArray(resCols.data)) {
+                        const nextLocator = buildAllColumnsLocator([], { translate: tr });
+                        setPkColumns([]);
+                        setEditLocator(nextLocator);
+                        if (nextLocator.reason) message.info(nextLocator.reason);
+                        return { primaryKeys: [], locator: nextLocator };
+                    }
+
                     const columnDefs = resCols.data as ColumnDefinition[];
                     const primaryKeys = columnDefs
                         .filter((column: any) => getColumnDefinitionKey(column) === 'PRI')
@@ -686,8 +690,6 @@ const DataViewer: React.FC<{ tab: TabData; isActive?: boolean }> = React.memo(({
                         translate: tr,
                     }), tr);
 
-                    pkColumnsForQuery = primaryKeys;
-                    editLocatorForQuery = nextLocator;
                     setPkColumns(primaryKeys);
                     setEditLocator(nextLocator);
                     if (nextLocator.readOnly) {
@@ -695,17 +697,28 @@ const DataViewer: React.FC<{ tab: TabData; isActive?: boolean }> = React.memo(({
                     } else if (nextLocator.strategy === 'all-columns' && nextLocator.reason) {
                         message.info(nextLocator.reason);
                     }
+                    return { primaryKeys, locator: nextLocator };
+                } catch {
+                    if (fetchSeqRef.current !== seq) return null;
+                    if (pkSeqRef.current !== locatorSeq) return null;
+                    if (pkKeyRef.current !== locatorKey) return null;
+                    const nextLocator = buildAllColumnsLocator([], { translate: tr });
+                    setPkColumns([]);
+                    setEditLocator(nextLocator);
+                    if (nextLocator.reason) message.info(nextLocator.reason);
+                    return { primaryKeys: [], locator: nextLocator };
                 }
-            } catch {
-                if (fetchSeqRef.current !== seq) return;
-                if (pkSeqRef.current !== locatorSeq) return;
-                if (pkKeyRef.current !== locatorKey) return;
-                const nextLocator = buildAllColumnsLocator([], { translate: tr });
-                pkColumnsForQuery = [];
-                editLocatorForQuery = nextLocator;
-                setPkColumns([]);
-                setEditLocator(nextLocator);
-                if (nextLocator.reason) message.info(nextLocator.reason);
+            };
+
+            if (dbTypeLower === 'kingbase') {
+                // Kingbase catalog metadata can be noticeably slower than the page query.
+                // Keep the grid read-only briefly and enable editing when the locator arrives.
+                void loadEditLocator();
+            } else {
+                const locatorMetadata = await loadEditLocator();
+                if (!locatorMetadata) return;
+                pkColumnsForQuery = locatorMetadata.primaryKeys;
+                editLocatorForQuery = locatorMetadata.locator;
             }
         }
     }

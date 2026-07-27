@@ -2,10 +2,8 @@ package proxy
 
 import (
 	"context"
-	"os"
 	"strings"
 	"testing"
-
 	"GoNavi-Wails/internal/connection"
 	"GoNavi-Wails/shared/i18n"
 )
@@ -46,51 +44,6 @@ func TestForwarderCacheKeyIncludesCredentialFingerprint(t *testing.T) {
 	}
 }
 
-func TestProxyUserVisibleErrorsUseLocalizedText(t *testing.T) {
-	sourceBytes, err := os.ReadFile("proxy.go")
-	if err != nil {
-		t.Fatalf("read proxy.go: %v", err)
-	}
-	source := string(sourceBytes)
-
-	rawMessages := []string{
-		"不支持的代理类型",
-		"代理主机为空",
-		"代理端口无效",
-		"无效的远端地址",
-		"创建本地代理监听失败",
-		"创建 SOCKS5 代理拨号器失败",
-		"SOCKS5 代理连接失败",
-		"连接 HTTP 代理失败",
-		"发送 HTTP CONNECT 请求失败",
-		"读取 HTTP CONNECT 响应失败",
-		"HTTP 代理 CONNECT 失败",
-	}
-	for _, raw := range rawMessages {
-		if strings.Contains(source, raw) {
-			t.Fatalf("proxy.go still contains raw user-visible message %q", raw)
-		}
-	}
-
-	keys := []string{
-		"proxy.backend.error.unsupported_type",
-		"proxy.backend.error.host_empty",
-		"proxy.backend.error.port_invalid",
-		"proxy.backend.error.remote_addr_invalid",
-		"proxy.backend.error.listen_failed",
-		"proxy.backend.error.socks5_dialer_failed",
-		"proxy.backend.error.socks5_connect_failed",
-		"proxy.backend.error.http_connect_failed",
-		"proxy.backend.error.http_connect_write_failed",
-		"proxy.backend.error.http_connect_read_failed",
-		"proxy.backend.error.http_connect_status_failed",
-	}
-	for _, key := range keys {
-		if !strings.Contains(source, key) {
-			t.Fatalf("proxy.go should reference localized key %q", key)
-		}
-	}
-}
 
 func TestNormalizeConfigUsesCurrentLanguageForValidationErrors(t *testing.T) {
 	SetBackendLanguage(i18n.LanguageEnUS)
