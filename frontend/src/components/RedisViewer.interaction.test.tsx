@@ -341,7 +341,7 @@ describe('RedisViewer tree interactions', () => {
       expect.any(Object),
       '[aA][pP][pP]:[uU][sS][eE][rR]*',
       '0',
-      600,
+      2000,
     );
 
     groupTitleRenderer!.unmount();

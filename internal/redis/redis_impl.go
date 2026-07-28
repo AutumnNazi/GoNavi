@@ -45,7 +45,7 @@ const (
 	redisScanMaxStepCount       int64 = 2000
 	redisScanMaxRounds                = 64
 	redisScanMaxDuration              = 12 * time.Second
-	redisSearchMaxTargetCount   int64 = 1000
+	redisSearchMaxTargetCount   int64 = 2000
 	redisSearchMaxStepCount     int64 = 1000
 	redisSearchMaxDuration            = 3 * time.Second
 )

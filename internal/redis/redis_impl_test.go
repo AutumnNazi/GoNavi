@@ -817,6 +817,78 @@ func TestRedisSearchScanContinuesPastEmptyMatchedPages(t *testing.T) {
 	}
 }
 
+func TestRedisSearchScanCollectsMoreThanOneThousandKeys(t *testing.T) {
+	var mu sync.Mutex
+	scanCalls := 0
+	const searchPattern = "matched:*"
+
+	redisScanResponse := func(cursor string, keys ...string) string {
+		var builder strings.Builder
+		builder.WriteString("*2\r\n")
+		builder.WriteString(redisBulkString(cursor))
+		builder.WriteString(fmt.Sprintf("*%d\r\n", len(keys)))
+		for _, key := range keys {
+			builder.WriteString(redisBulkString(key))
+		}
+		return builder.String()
+	}
+
+	firstBatch := make([]string, 1000)
+	for i := range firstBatch {
+		firstBatch[i] = fmt.Sprintf("matched:%d", i)
+	}
+
+	addr := startRedisProtocolTestServer(t, func(args []string) string {
+		command := strings.ToUpper(strings.TrimSpace(args[0]))
+		switch command {
+		case "HELLO":
+			return "-ERR unknown command 'HELLO'\r\n"
+		case "CLIENT":
+			return "-ERR unknown subcommand\r\n"
+		case "SCAN":
+			mu.Lock()
+			defer mu.Unlock()
+			scanCalls++
+			if scanCalls == 1 {
+				return redisScanResponse("1", firstBatch...)
+			}
+			return redisScanResponse("0", "matched:1000")
+		case "TYPE":
+			return "+string\r\n"
+		case "TTL":
+			return ":-1\r\n"
+		}
+		return "+OK\r\n"
+	})
+
+	rawClient := goredis.NewClient(&goredis.Options{
+		Addr:     addr,
+		Protocol: 2,
+	})
+	client := &RedisClientImpl{
+		client:       rawClient,
+		singleClient: rawClient,
+	}
+	defer client.Close()
+
+	result, err := client.ScanKeys(searchPattern, 0, redisScanDefaultTargetCount)
+	if err != nil {
+		t.Fatalf("ScanKeys returned error: %v", err)
+	}
+	if result == nil || len(result.Keys) != 1001 {
+		t.Fatalf("expected all 1001 searched keys, got %#v", result)
+	}
+	if result.Cursor != "0" {
+		t.Fatalf("expected completed cursor, got %q", result.Cursor)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if scanCalls != 2 {
+		t.Fatalf("expected ScanKeys to read both search batches, got %d calls", scanCalls)
+	}
+}
+
 func TestRedisSelectDBReconnectsWithSentinelConfig(t *testing.T) {
 	oldConnect := redisDBSwitchConnect
 	defer func() {
