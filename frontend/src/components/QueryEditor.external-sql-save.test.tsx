@@ -4590,6 +4590,40 @@ describe('QueryEditor external SQL save', () => {
     );
   });
 
+  it('preserves postgres JSONB question-mark operators while formatting', async () => {
+    let renderer!: ReactTestRenderer;
+    storeState.connections[0].config.type = 'postgres';
+    storeState.connections[0].config.database = 'main';
+    const pgSql = "select * from items where data ?| array['a','b'] and data ?& array['c']";
+
+    await act(async () => {
+      renderer = create(<QueryEditor tab={createTab({ query: pgSql, dbName: 'main' })} />);
+    });
+
+    const formatButton = findButton(renderer, '美化');
+    await act(async () => {
+      await formatButton.props.onClick();
+    });
+
+    expect(messageApi.error).not.toHaveBeenCalled();
+    expect(editorState.editor.executeEdits).toHaveBeenCalledWith(
+      'gonavi-format-sql',
+      expect.arrayContaining([
+        expect.objectContaining({
+          text: expect.stringContaining("data ?| ARRAY['a', 'b']"),
+        }),
+      ]),
+    );
+    expect(editorState.editor.executeEdits).toHaveBeenCalledWith(
+      'gonavi-format-sql',
+      expect.arrayContaining([
+        expect.objectContaining({
+          text: expect.stringContaining("data ?& ARRAY['c']"),
+        }),
+      ]),
+    );
+  });
+
   it('formats postgres window-function SQL with cast syntax through Monaco edits', async () => {
     let renderer!: ReactTestRenderer;
     storeState.connections[0].config.type = 'postgres';

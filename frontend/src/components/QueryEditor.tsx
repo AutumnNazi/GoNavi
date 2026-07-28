@@ -222,7 +222,6 @@ const QUERY_EDITOR_AI_INLINE_DEBOUNCE_MS = 220;
 const QUERY_EDITOR_AI_INLINE_CONTEXT_KEY = 'gonaviAiInlineSuggestionVisible';
 const QUERY_EDITOR_IME_FALLBACK_DELAY_MS = 80;
 const QUERY_EDITOR_FORMAT_PARAM_TYPES = {
-    positional: true,
     custom: [
         { regex: String.raw`#\{[^{}]+\}` },
         { regex: String.raw`\$\{[^{}]+\}` },
@@ -6192,7 +6191,10 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           const formatted = format(sourceSql, {
               language: formatterLanguage,
               keywordCase: sqlFormatOptions.keywordCase,
-              paramTypes: QUERY_EDITOR_FORMAT_PARAM_TYPES,
+              paramTypes: {
+                  ...QUERY_EDITOR_FORMAT_PARAM_TYPES,
+                  ...(isOceanBaseOracleConnection(conn?.config) ? { positional: true } : {}),
+              },
           });
           if (sourceSql === formatted) {
               return;
