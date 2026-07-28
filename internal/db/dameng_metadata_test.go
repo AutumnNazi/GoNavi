@@ -146,6 +146,37 @@ func TestBuildDamengColumnsQuery_IncludesColumnCommentsJoin(t *testing.T) {
 	}
 }
 
+func TestBuildDamengTableCommentQueryUsesSchemaAppropriateDictionaryView(t *testing.T) {
+	t.Parallel()
+
+	userQuery := buildDamengTableCommentQuery("", "orders")
+	if !strings.Contains(userQuery, "FROM user_tab_comments") || !strings.Contains(userQuery, "table_name = 'ORDERS'") {
+		t.Fatalf("expected current-schema table comment query, got: %s", userQuery)
+	}
+
+	allQuery := buildDamengTableCommentQuery("biz", "orders")
+	if !strings.Contains(allQuery, "FROM all_tab_comments") || !strings.Contains(allQuery, "owner = 'BIZ'") || !strings.Contains(allQuery, "table_name = 'ORDERS'") {
+		t.Fatalf("expected schema table comment query, got: %s", allQuery)
+	}
+}
+
+func TestAppendDamengTableCommentDDLAvoidsDuplicateAndEscapesLiteral(t *testing.T) {
+	t.Parallel()
+
+	ddl := appendDamengTableCommentDDL(`CREATE TABLE "BIZ"."ORDERS" ("ID" NUMBER)`, "biz", "orders", "订单'归档")
+	if !strings.Contains(ddl, `COMMENT ON TABLE "BIZ"."ORDERS" IS '订单''归档';`) {
+		t.Fatalf("expected escaped table comment DDL, got: %s", ddl)
+	}
+	if !strings.Contains(ddl, "(\"ID\" NUMBER);\n\nCOMMENT ON TABLE") {
+		t.Fatalf("expected create statement terminator before table comment, got: %s", ddl)
+	}
+
+	duplicated := appendDamengTableCommentDDL(ddl, "biz", "orders", "新备注")
+	if duplicated != ddl {
+		t.Fatalf("expected existing table comment DDL to remain unchanged, got: %s", duplicated)
+	}
+}
+
 func TestBuildDamengColumnDefinitions_MapsComment(t *testing.T) {
 	t.Parallel()
 
