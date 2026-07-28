@@ -3342,6 +3342,7 @@ body[data-ui-version="v2"] .gn-v2-empty-hero {
 }
 
 body[data-ui-version="v2"] .gn-v2-empty-hero {
+  flex: 0 0 auto;
   display: flex;
   flex-direction: column;
   justify-content: flex-start;
