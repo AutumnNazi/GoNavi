@@ -140,14 +140,6 @@ func main() {
 		}, true)
 	}
 
-	// Windows 冷启动：原生先最大化，避免 main 默认小窗先闪一帧；
-	// 前端 hydration 后再按用户记忆（最大化 / 普通尺寸）精细恢复。
-	// 其它平台仍用 Normal，由前端恢复逻辑接管。
-	windowStartState := options.Normal
-	if strings.EqualFold(strings.TrimSpace(runtime.GOOS), "windows") {
-		windowStartState = options.Maximised
-	}
-
 	// Create application with options
 	err := wails.Run(&options.App{
 		Title:            "GoNavi",
@@ -155,7 +147,7 @@ func main() {
 		Height:           900,
 		MinWidth:         900,
 		MinHeight:        600,
-		WindowStartState: windowStartState,
+		WindowStartState: resolveInitialWindowStartState(runtime.GOOS),
 		Frameless:        true,
 		AssetServer: &assetserver.Options{
 			Assets: assets,
@@ -279,6 +271,12 @@ func isLowMemoryMode() bool {
 	default:
 		return false
 	}
+}
+
+// The startup preference lives in frontend storage, which is unavailable until
+// hydration. Native startup must stay normal so it cannot override a disabled preference.
+func resolveInitialWindowStartState(string) options.WindowStartState {
+	return options.Normal
 }
 
 func resolveWindowVisualOptions(goos string, lowMemoryMode bool) (*options.RGBA, *windows.Options) {

@@ -78,6 +78,16 @@ func TestIsLowMemoryMode(t *testing.T) {
 	}
 }
 
+func TestResolveInitialWindowStartStateDoesNotOverrideFrontendPreference(t *testing.T) {
+	for _, goos := range []string{"windows", "darwin", "linux"} {
+		t.Run(goos, func(t *testing.T) {
+			if got := resolveInitialWindowStartState(goos); got != options.Normal {
+				t.Fatalf("resolveInitialWindowStartState(%q) = %v, want Normal", goos, got)
+			}
+		})
+	}
+}
+
 func TestResolveWindowVisualOptions(t *testing.T) {
 	tests := []struct {
 		name                string

@@ -3229,7 +3229,7 @@ describe('store appearance persistence', () => {
     expect(hydrated.useStore.getState().autoCheckForUpdatesIntervalMinutes).toBe(30);
   });
 
-  it('persists window state and bounds immediately so Windows reopen keeps maximise or size memory', async () => {
+  it('persists window state and bounds immediately across store reloads', async () => {
     const { useStore } = await importStore();
 
     useStore.getState().setWindowState('maximized');

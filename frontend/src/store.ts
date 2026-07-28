@@ -1771,6 +1771,7 @@ interface AppState {
   appearance: AppearanceSettings;
   uiScale: number;
   fontSize: number;
+  /** Legacy persisted name; true means maximise the startup window on every desktop platform. */
   startupFullscreen: boolean;
   /** 启动后与定时静默检查更新；默认开启 */
   autoCheckForUpdates: boolean;
@@ -5338,7 +5339,7 @@ export const useStore = create<AppState>()(
       setWindowState: (state) => {
         const nextState = sanitizeWindowState(state);
         set({ windowState: nextState });
-        // 最大化/普通态也要同步写盘，否则下次冷启动会落到默认 1024×768「半窗」
+        // 与窗口尺寸一致即时落盘，避免退出阶段丢失最后一次观测状态。
         writePersistedStatePatch({ windowState: nextState });
       },
 
