@@ -3036,6 +3036,12 @@ body[data-theme='dark'] .gonavi-settings-center-entry:hover {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
   }
+
+  /* Loading indicators communicate ongoing work, rather than decorative motion. */
+  .gonavi-settings-center-modal .ant-btn-loading-icon .anticon-spin {
+    animation-duration: 1s !important;
+    animation-iteration-count: infinite !important;
+  }
 }
 
 .gonavi-ai-settings-nav-description {

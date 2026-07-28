@@ -6,6 +6,10 @@ const appSource = readFileSync(
   fileURLToPath(new globalThis.URL('./App.tsx', import.meta.url)),
   'utf8',
 );
+const appCss = readFileSync(
+  fileURLToPath(new globalThis.URL('./App.css', import.meta.url)),
+  'utf8',
+);
 
 describe('settings center tool entries', () => {
 
@@ -24,5 +28,11 @@ describe('settings center tool entries', () => {
     const resizeHandlerSource = appSource.slice(resizeHandlerStart, startupFixStart);
     const minimiseProbeIndex = resizeHandlerSource.indexOf('rememberMinimisedStateSoon();');
     const dprCheckIndex = resizeHandlerSource.indexOf("scheduleDevicePixelRatioCheck('resize');");
+  });
+
+  it('keeps button loading indicators animated when reduced motion is enabled', () => {
+    expect(appCss).toMatch(
+      /@media \(prefers-reduced-motion: reduce\) \{[\s\S]*?\.gonavi-settings-center-modal \.ant-btn-loading-icon \.anticon-spin \{[^}]*animation-duration: 1s !important;[^}]*animation-iteration-count: infinite !important;[^}]*\}/,
+    );
   });
 });
