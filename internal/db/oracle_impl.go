@@ -29,6 +29,8 @@ type OracleDB struct {
 var _ SessionExecerProvider = (*OracleDB)(nil)
 var _ TransactionExecerProvider = (*OracleDB)(nil)
 
+const oracleDefaultPrefetchRows = 25
+
 var (
 	oracleTriggerCreatePattern = regexp.MustCompile(`(?is)^\s*CREATE\s+(?:OR\s+REPLACE\s+)?TRIGGER\b`)
 	oracleTriggerTimingPattern = regexp.MustCompile(`(?is)^\s*(?:BEFORE|AFTER|INSTEAD\s+OF)\b`)
@@ -58,8 +60,9 @@ func (o *OracleDB) getDSN(config connection.ConnectionConfig) string {
 		q.Set("SSL", "TRUE")
 		q.Set("SSL VERIFY", "FALSE")
 	}
-	// 提高 prefetch 行数，减少大结果集的网络往返次数（默认仅 25 行/次）
-	q.Set("PREFETCH_ROWS", "10000")
+	// Keep fetch batches bounded. go-ora materializes every LOB in a fetched batch,
+	// so a large prefetch value can retain many BLOBs at once before rows are scanned.
+	q.Set("PREFETCH_ROWS", strconv.Itoa(oracleDefaultPrefetchRows))
 	// LOB 数据延迟加载，避免大 LOB 列影响普通查询性能
 	q.Set("LOB FETCH", "POST")
 	timeoutSeconds := strconv.Itoa(getConnectTimeoutSeconds(config))
