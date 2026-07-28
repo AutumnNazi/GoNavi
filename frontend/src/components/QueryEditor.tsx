@@ -221,6 +221,13 @@ const QUERY_EDITOR_MAC_FIND_WITH_SELECTION_GUARD_ACTION_ID = 'gonavi.suppressMac
 const QUERY_EDITOR_AI_INLINE_DEBOUNCE_MS = 220;
 const QUERY_EDITOR_AI_INLINE_CONTEXT_KEY = 'gonaviAiInlineSuggestionVisible';
 const QUERY_EDITOR_IME_FALLBACK_DELAY_MS = 80;
+const QUERY_EDITOR_FORMAT_PARAM_TYPES = {
+    positional: true,
+    custom: [
+        { regex: String.raw`#\{[^{}]+\}` },
+        { regex: String.raw`\$\{[^{}]+\}` },
+    ],
+};
 const EMPTY_QUERY_EDITOR_SQL_LOGS: SqlLog[] = [];
 
 const isOceanBaseOracleConnection = (config: any): boolean => {
@@ -6149,7 +6156,11 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           const formatSelection = !!selection && !!selectedRaw.trim();
           const fullQuery = getCurrentQuery();
           const sourceSql = formatSelection ? selectedRaw : fullQuery;
-          const formatted = format(sourceSql, { language: formatterLanguage, keywordCase: sqlFormatOptions.keywordCase });
+          const formatted = format(sourceSql, {
+              language: formatterLanguage,
+              keywordCase: sqlFormatOptions.keywordCase,
+              paramTypes: QUERY_EDITOR_FORMAT_PARAM_TYPES,
+          });
           if (sourceSql === formatted) {
               return;
           }

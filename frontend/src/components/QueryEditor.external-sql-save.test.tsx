@@ -4550,6 +4550,32 @@ describe('QueryEditor external SQL save', () => {
     expect(messageApi.success).toHaveBeenCalledWith('已还原到美化前 SQL');
   });
 
+  it('formats OceanBase Oracle SQL with parameter placeholders', async () => {
+    let renderer!: ReactTestRenderer;
+    storeState.connections[0].config.type = 'oceanbase';
+    (storeState.connections[0].config as any).oceanBaseProtocol = 'oracle';
+    const oracleSql = 'select * from users where id = #{id,jdbcType=NUMBER} and tenant = ${tenant} and status = :status and code = ?';
+
+    await act(async () => {
+      renderer = create(<QueryEditor tab={createTab({ query: oracleSql, dbName: 'main' })} />);
+    });
+
+    const formatButton = findButton(renderer, '美化');
+    await act(async () => {
+      await formatButton.props.onClick();
+    });
+
+    expect(messageApi.error).not.toHaveBeenCalled();
+    expect(editorState.editor.executeEdits).toHaveBeenCalledWith(
+      'gonavi-format-sql',
+      expect.arrayContaining([
+        expect.objectContaining({
+          text: expect.stringMatching(/#\{id,jdbcType=NUMBER\}[\s\S]*\$\{tenant\}[\s\S]*:status[\s\S]*\?/),
+        }),
+      ]),
+    );
+  });
+
   it('formats postgres window-function SQL with cast syntax through Monaco edits', async () => {
     let renderer!: ReactTestRenderer;
     storeState.connections[0].config.type = 'postgres';
