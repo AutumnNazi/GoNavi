@@ -336,10 +336,10 @@ describe('RedisViewer tree interactions', () => {
     expect(event.preventDefault).toHaveBeenCalled();
     expect(event.stopPropagation).toHaveBeenCalled();
     expect(searchInput?.props.value).toBe('app:user');
-    expect(updatedSearchModeGroup.props.value).toBe('fuzzy');
+    expect(updatedSearchModeGroup.props.value).toBe('prefix');
     expect(redisBackend.RedisScanKeys).toHaveBeenLastCalledWith(
       expect.any(Object),
-      '*[aA][pP][pP]:[uU][sS][eE][rR]*',
+      '[aA][pP][pP]:[uU][sS][eE][rR]*',
       '0',
       600,
     );

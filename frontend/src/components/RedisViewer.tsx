@@ -255,7 +255,7 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
     const [loading, setLoading] = useState(false);
     const [searchInput, setSearchInput] = useState('');
     const [searchPattern, setSearchPattern] = useState('*');
-    const [searchMode, setSearchMode] = useState<RedisSearchMode>('fuzzy');
+    const [searchMode, setSearchMode] = useState<RedisSearchMode>('prefix');
     const [cursor, setCursor] = useState<string>('0');
     const [hasMore, setHasMore] = useState(false);
     const [loadingAllKeys, setLoadingAllKeys] = useState(false);
@@ -1098,8 +1098,8 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
             return;
         }
 
-        setSearchMode('fuzzy');
-        executeSearch(groupPath, 'fuzzy');
+        setSearchMode('prefix');
+        executeSearch(groupPath, 'prefix');
     }, [executeSearch]);
 
     const stopTreeTitleEvent = (event: React.SyntheticEvent<HTMLElement>) => {
@@ -2279,13 +2279,13 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
                             buttonStyle="solid"
                             style={{ flexShrink: 0 }}
                         >
-                            <Radio.Button value="fuzzy">{tr('redis_viewer.search.fuzzy')}</Radio.Button>
+                            <Radio.Button value="prefix">{tr('redis_viewer.search.prefix')}</Radio.Button>
                             <Radio.Button value="exact">{tr('redis_viewer.search.exact')}</Radio.Button>
                         </Radio.Group>
                         <Search
                             {...noAutoCapInputProps}
                             style={{ flex: 1 }}
-                            placeholder={searchMode === 'exact' ? tr('redis_viewer.placeholder.search_exact') : tr('redis_viewer.placeholder.search_fuzzy')}
+                            placeholder={searchMode === 'exact' ? tr('redis_viewer.placeholder.search_exact') : tr('redis_viewer.placeholder.search_prefix')}
                             value={searchInput}
                             onChange={handleSearchInputChange}
                             onSearch={handleSearch}
