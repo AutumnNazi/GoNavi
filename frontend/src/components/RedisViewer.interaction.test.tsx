@@ -164,6 +164,12 @@ const findButtonByText = (renderer: ReactTestRenderer, text: string) => {
   return renderer.root.findAllByType('button').find((node) => collectRenderedText(node.props.children).includes(text));
 };
 
+const createRedisKeyBatch = (start: number, count: number) => Array.from({ length: count }, (_, index) => ({
+  key: `matched:${start + index}`,
+  type: 'string',
+  ttl: -1,
+}));
+
 const countLeafNodes = (nodes: any[]): number => {
   return nodes.reduce((total, node) => {
     if (!node || typeof node !== 'object') {
@@ -471,6 +477,343 @@ describe('RedisViewer tree interactions', () => {
     renderer!.unmount();
   });
 
+  it('loads and deduplicates every filtered cursor page automatically', async () => {
+    redisBackend.RedisScanKeys.mockReset();
+    redisBackend.RedisScanKeys
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          cursor: '0',
+          keys: [{ key: 'app:user:1', type: 'string', ttl: -1 }],
+        },
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          cursor: '27',
+          keys: [
+            { key: 'sub:v2:first', type: 'string', ttl: -1 },
+            { key: 'sub:v2:shared', type: 'string', ttl: -1 },
+          ],
+        },
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        data: { cursor: '31', keys: [] },
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          cursor: '0',
+          keys: [
+            { key: 'sub:v2:shared', type: 'string', ttl: -1 },
+            { key: 'sub:v2:last', type: 'string', ttl: -1 },
+          ],
+        },
+      });
+
+    let renderer: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<RedisViewer connectionId="redis-1" redisDB={0} />);
+    });
+    await flushEffects();
+
+    const searchInput = renderer!.root.findAllByType('input')
+      .find((node) => typeof node.props.onSearch === 'function');
+    await act(async () => {
+      searchInput!.props.onSearch('sub:v2');
+    });
+    await flushEffects();
+
+    expect(redisBackend.RedisScanKeys).toHaveBeenCalledTimes(4);
+    expect(redisBackend.RedisScanKeys.mock.calls.slice(1).map((call) => call[2])).toEqual(['0', '27', '31']);
+    expect(countLeafNodes(antdState.treeProps.treeData)).toBe(3);
+    expect(collectRenderedText(renderer!.toJSON())).toContain('Loaded 3 Keys');
+    expect(findButtonByText(renderer!, 'Load more')).toBeUndefined();
+
+    renderer!.unmount();
+  });
+
+  it('loads more than two thousand filtered keys without manual paging', async () => {
+    redisBackend.RedisScanKeys.mockReset();
+    redisBackend.RedisScanKeys
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          cursor: '0',
+          keys: [{ key: 'app:user:1', type: 'string', ttl: -1 }],
+        },
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        data: { cursor: '27', keys: createRedisKeyBatch(0, 1000) },
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        data: { cursor: '31', keys: createRedisKeyBatch(1000, 1000) },
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        data: { cursor: '0', keys: createRedisKeyBatch(2000, 1) },
+      });
+
+    let renderer: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<RedisViewer connectionId="redis-1" redisDB={0} />);
+    });
+    await flushEffects();
+
+    const searchInput = renderer!.root.findAllByType('input')
+      .find((node) => typeof node.props.onSearch === 'function');
+    await act(async () => {
+      searchInput!.props.onSearch('matched');
+    });
+    await flushEffects();
+
+    expect(redisBackend.RedisScanKeys.mock.calls.slice(1).map((call) => call[2])).toEqual(['0', '27', '31']);
+    expect(countLeafNodes(antdState.treeProps.treeData)).toBe(2001);
+    expect(collectRenderedText(renderer!.toJSON())).toContain('Loaded 2001 Keys');
+    expect(findButtonByText(renderer!, 'Load more')).toBeUndefined();
+
+    renderer!.unmount();
+  });
+
+  it('rejects filtered searches that exceed the result safety limit', async () => {
+    redisBackend.RedisScanKeys.mockReset();
+    redisBackend.RedisScanKeys
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          cursor: '0',
+          keys: [{ key: 'app:user:1', type: 'string', ttl: -1 }],
+        },
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        data: { cursor: '27', keys: createRedisKeyBatch(0, 5000) },
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        data: { cursor: '0', keys: createRedisKeyBatch(5000, 5001) },
+      });
+
+    let renderer: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<RedisViewer connectionId="redis-1" redisDB={0} />);
+    });
+    await flushEffects();
+
+    const searchInput = renderer!.root.findAllByType('input')
+      .find((node) => typeof node.props.onSearch === 'function');
+    await act(async () => {
+      searchInput!.props.onSearch('matched');
+    });
+    await flushEffects();
+
+    expect(redisBackend.RedisScanKeys).toHaveBeenCalledTimes(3);
+    expect(antdState.message.error).toHaveBeenCalledWith(expect.stringContaining('10000'));
+    expect(countLeafNodes(antdState.treeProps.treeData)).toBe(1);
+
+    renderer!.unmount();
+  });
+
+  it('keeps exact searches on the existing initial page size', async () => {
+    let renderer: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<RedisViewer connectionId="redis-1" redisDB={0} />);
+    });
+    await flushEffects();
+
+    const searchModeGroup = renderer!.root.findAll(
+      node => node.props.buttonStyle === 'solid' && typeof node.props.onChange === 'function',
+    )[0];
+    await act(async () => {
+      searchModeGroup.props.onChange({ target: { value: 'exact' } });
+    });
+    await flushEffects();
+
+    const searchInput = renderer!.root.findAllByType('input')
+      .find((node) => typeof node.props.onSearch === 'function');
+    await act(async () => {
+      searchInput!.props.onSearch('app:user');
+    });
+    await flushEffects();
+
+    expect(redisBackend.RedisScanKeys).toHaveBeenLastCalledWith(
+      expect.any(Object),
+      'app:user',
+      '0',
+      600,
+    );
+
+    renderer!.unmount();
+  });
+
+  it('keeps exact search continuation available after the first page', async () => {
+    const firstPage = Array.from({ length: 600 }, (_, index) => ({
+      key: `app:user:${index}`,
+      type: 'string',
+      ttl: -1,
+    }));
+    redisBackend.RedisScanKeys.mockReset();
+    redisBackend.RedisScanKeys
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          cursor: '0',
+          keys: [{ key: 'app:user:1', type: 'string', ttl: -1 }],
+        },
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        data: { cursor: '27', keys: firstPage },
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        data: { cursor: '0', keys: [{ key: 'app:user:600', type: 'string', ttl: -1 }] },
+      });
+
+    let renderer: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<RedisViewer connectionId="redis-1" redisDB={0} />);
+    });
+    await flushEffects();
+
+    const searchModeGroup = renderer!.root.findAll(
+      node => node.props.buttonStyle === 'solid' && typeof node.props.onChange === 'function',
+    )[0];
+    await act(async () => {
+      searchModeGroup.props.onChange({ target: { value: 'exact' } });
+    });
+    await flushEffects();
+
+    redisBackend.RedisScanKeys.mockReset();
+    redisBackend.RedisScanKeys
+      .mockResolvedValueOnce({
+        success: true,
+        data: { cursor: '27', keys: firstPage },
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        data: { cursor: '0', keys: [{ key: 'app:user:600', type: 'string', ttl: -1 }] },
+      });
+
+    const searchInput = renderer!.root.findAllByType('input')
+      .find((node) => typeof node.props.onSearch === 'function');
+    await act(async () => {
+      searchInput!.props.onSearch('app:user');
+    });
+    await flushEffects();
+
+    expect(redisBackend.RedisScanKeys.mock.calls[0]?.slice(1)).toEqual(['app:user', '0', 600]);
+    expect(countLeafNodes(antdState.treeProps.treeData)).toBe(600);
+    const loadMoreButton = findButtonByText(renderer!, 'Load more');
+    expect(loadMoreButton).toBeTruthy();
+    await act(async () => {
+      loadMoreButton!.props.onClick?.();
+    });
+    await flushEffects();
+
+    expect(redisBackend.RedisScanKeys.mock.calls[1]?.slice(1)).toEqual(['app:user', '27', 1000]);
+    expect(countLeafNodes(antdState.treeProps.treeData)).toBe(601);
+
+    renderer!.unmount();
+  });
+
+  it('rejects an exact search page that repeats its request cursor', async () => {
+    let renderer: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<RedisViewer connectionId="redis-1" redisDB={0} />);
+    });
+    await flushEffects();
+
+    const searchModeGroup = renderer!.root.findAll(
+      node => node.props.buttonStyle === 'solid' && typeof node.props.onChange === 'function',
+    )[0];
+    await act(async () => {
+      searchModeGroup.props.onChange({ target: { value: 'exact' } });
+    });
+    await flushEffects();
+
+    redisBackend.RedisScanKeys.mockReset();
+    redisBackend.RedisScanKeys
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          cursor: '27',
+          keys: [{ key: 'app:user:1', type: 'string', ttl: -1 }],
+        },
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          cursor: '27',
+          keys: [{ key: 'app:user:2', type: 'string', ttl: -1 }],
+        },
+      });
+
+    const searchInput = renderer!.root.findAllByType('input')
+      .find((node) => typeof node.props.onSearch === 'function');
+    await act(async () => {
+      searchInput!.props.onSearch('app:user');
+    });
+    await flushEffects();
+
+    const loadMoreButton = findButtonByText(renderer!, 'Load more');
+    expect(loadMoreButton).toBeTruthy();
+    await act(async () => {
+      loadMoreButton!.props.onClick?.();
+    });
+    await flushEffects();
+
+    expect(redisBackend.RedisScanKeys.mock.calls.map((call) => call[2])).toEqual(['0', '27']);
+    expect(antdState.message.error).toHaveBeenCalledWith(expect.stringContaining('cursor'));
+    expect(countLeafNodes(antdState.treeProps.treeData)).toBe(1);
+
+    renderer!.unmount();
+  });
+
+  it('stops a filtered scan when the backend repeats a cursor', async () => {
+    redisBackend.RedisScanKeys.mockReset();
+    redisBackend.RedisScanKeys
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          cursor: '0',
+          keys: [{ key: 'app:user:1', type: 'string', ttl: -1 }],
+        },
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          cursor: '27',
+          keys: [{ key: 'sub:v2:first', type: 'string', ttl: -1 }],
+        },
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        data: { cursor: '27', keys: [] },
+      });
+
+    let renderer: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<RedisViewer connectionId="redis-1" redisDB={0} />);
+    });
+    await flushEffects();
+
+    const searchInput = renderer!.root.findAllByType('input')
+      .find((node) => typeof node.props.onSearch === 'function');
+    await act(async () => {
+      searchInput!.props.onSearch('sub:v2');
+    });
+    await flushEffects();
+
+    expect(redisBackend.RedisScanKeys).toHaveBeenCalledTimes(3);
+    expect(antdState.message.error).toHaveBeenCalledWith(expect.stringContaining('cursor'));
+
+    renderer!.unmount();
+  });
+
   it('loads every key page when the load-all action is clicked', async () => {
     redisBackend.RedisScanKeys.mockReset();
     redisBackend.RedisScanKeys
@@ -526,6 +869,115 @@ describe('RedisViewer tree interactions', () => {
 
     const renderedText = collectRenderedText(renderer!.toJSON());
     expect(renderedText).toContain('Loaded 3 Keys');
+
+    renderer!.unmount();
+  });
+
+  it('stops load-all when the backend repeats a cursor', async () => {
+    redisBackend.RedisScanKeys.mockReset();
+    redisBackend.RedisScanKeys
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          cursor: '1',
+          keys: [{ key: 'app:user:1', type: 'string', ttl: -1 }],
+        },
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          cursor: '1',
+          keys: [{ key: 'app:user:1', type: 'string', ttl: -1 }],
+        },
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          cursor: '1',
+          keys: [{ key: 'app:user:2', type: 'string', ttl: -1 }],
+        },
+      });
+
+    let renderer: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<RedisViewer connectionId="redis-1" redisDB={0} />);
+    });
+    await flushEffects();
+
+    const loadAllButton = findButtonByText(renderer!, 'Load all');
+    await act(async () => {
+      loadAllButton!.props.onClick?.();
+    });
+    await flushEffects();
+
+    expect(redisBackend.RedisScanKeys).toHaveBeenCalledTimes(3);
+    expect(redisBackend.RedisScanKeys.mock.calls.slice(1).map((call) => call[2])).toEqual(['0', '1']);
+    expect(antdState.message.error).toHaveBeenCalledWith(expect.stringContaining('cursor'));
+    expect(findButtonByText(renderer!, 'Load all')?.props.loading).toBe(false);
+
+    renderer!.unmount();
+  });
+
+  it('keeps a newer search when it supersedes a pending load-all request', async () => {
+    let resolveLoadAll!: (value: any) => void;
+    const pendingLoadAll = new Promise<any>((resolve) => {
+      resolveLoadAll = resolve;
+    });
+    redisBackend.RedisScanKeys.mockReset();
+    redisBackend.RedisScanKeys
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          cursor: '1',
+          keys: [{ key: 'app:user:1', type: 'string', ttl: -1 }],
+        },
+      })
+      .mockReturnValueOnce(pendingLoadAll)
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          cursor: '0',
+          keys: [{ key: 'new:result', type: 'string', ttl: -1 }],
+        },
+      });
+
+    let renderer: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<RedisViewer connectionId="redis-1" redisDB={0} />);
+    });
+    await flushEffects();
+
+    await act(async () => {
+      findButtonByText(renderer!, 'Load all')!.props.onClick?.();
+    });
+    await flushEffects();
+    expect(findButtonByText(renderer!, 'Load all')?.props.loading).toBe(true);
+
+    const searchInput = renderer!.root.findAllByType('input')
+      .find((node) => typeof node.props.onSearch === 'function');
+    await act(async () => {
+      searchInput!.props.onSearch('new');
+    });
+    await flushEffects();
+
+    expect(findButtonByText(renderer!, 'Load all')?.props.loading).toBe(false);
+    expect(countLeafNodes(antdState.treeProps.treeData)).toBe(1);
+    expect(findFirstLeafNode(antdState.treeProps.treeData)?.rawKey).toBe('new:result');
+
+    await act(async () => {
+      resolveLoadAll({
+        success: true,
+        data: {
+          cursor: '0',
+          keys: [{ key: 'stale:result', type: 'string', ttl: -1 }],
+        },
+      });
+      await pendingLoadAll;
+    });
+    await flushEffects();
+
+    expect(countLeafNodes(antdState.treeProps.treeData)).toBe(1);
+    expect(findFirstLeafNode(antdState.treeProps.treeData)?.rawKey).toBe('new:result');
 
     renderer!.unmount();
   });

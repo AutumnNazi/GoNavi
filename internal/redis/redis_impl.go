@@ -47,6 +47,7 @@ const (
 	redisScanMaxDuration              = 12 * time.Second
 	redisSearchMaxTargetCount   int64 = 1000
 	redisSearchMaxStepCount     int64 = 1000
+	redisSearchMaxResultCount         = 10000
 	redisSearchMaxDuration            = 3 * time.Second
 )
 
@@ -391,13 +392,14 @@ func (r *RedisClientImpl) Connect(config connection.ConnectionConfig) (err error
 				tlsConfig = cfg
 			}
 			opts := &redis.ClusterOptions{
-				Addrs:        seedAddrs,
-				Username:     strings.TrimSpace(attempt.User),
-				Password:     attempt.Password,
-				DialTimeout:  timeout,
-				ReadTimeout:  timeout,
-				WriteTimeout: timeout,
-				TLSConfig:    tlsConfig,
+				Addrs:                 seedAddrs,
+				Username:              strings.TrimSpace(attempt.User),
+				Password:              attempt.Password,
+				DialTimeout:           timeout,
+				ReadTimeout:           timeout,
+				WriteTimeout:          timeout,
+				ContextTimeoutEnabled: true,
+				TLSConfig:             tlsConfig,
 			}
 			clusterClient := redis.NewClusterClient(opts)
 			ctx, cancel := context.WithTimeout(context.Background(), timeout)
@@ -529,7 +531,9 @@ func (r *RedisClientImpl) ScanKeys(pattern string, cursor uint64, count int64) (
 		pattern = "*"
 	}
 	exactPhysicalKey := ""
+	isExactPattern := false
 	if literalKey, ok := redisGlobPatternLiteralKey(pattern); ok {
+		isExactPattern = true
 		exactKey, namespacePattern := redisExactSearchPattern(literalKey)
 		exactPhysicalKey = r.toPhysicalKey(exactKey)
 		if exactPhysicalKey == "" {
@@ -562,6 +566,65 @@ func (r *RedisClientImpl) ScanKeys(pattern string, cursor uint64, count int64) (
 
 	// 集群模式：逐 master 节点 SCAN 后合并去重
 	if r.isCluster && r.clusterClient != nil {
+		if isSearchPattern && !isExactPattern {
+			searchCtx, searchCancel := context.WithTimeout(context.Background(), maxDuration)
+			defer searchCancel()
+
+			keys := make([]string, 0, int(targetCount))
+			seen := make(map[string]struct{}, int(targetCount))
+			var mu sync.Mutex
+			if exactPhysicalKey != "" {
+				exists, err := r.client.Exists(searchCtx, exactPhysicalKey).Result()
+				if err != nil {
+					return nil, fmt.Errorf("Redis 集群搜索检查精确 Key 失败: %w", err)
+				}
+				if exists > 0 {
+					keys = append(keys, exactPhysicalKey)
+					seen[exactPhysicalKey] = struct{}{}
+				}
+			}
+
+			err := r.clusterClient.ForEachMaster(searchCtx, func(nodeCtx context.Context, node *redis.Client) error {
+				var nodeCursor uint64
+				for {
+					batch, nextCursor, err := node.Scan(nodeCtx, nodeCursor, physicalPattern, scanStepCount).Result()
+					if err != nil {
+						searchCancel()
+						return err
+					}
+
+					mu.Lock()
+					for _, key := range batch {
+						if _, ok := seen[key]; ok {
+							continue
+						}
+						if len(keys) >= redisSearchMaxResultCount {
+							mu.Unlock()
+							searchCancel()
+							return fmt.Errorf("Redis 集群搜索结果超过安全上限 %d", redisSearchMaxResultCount)
+						}
+						seen[key] = struct{}{}
+						keys = append(keys, key)
+					}
+					mu.Unlock()
+
+					nodeCursor = nextCursor
+					if nodeCursor == 0 {
+						return nil
+					}
+				}
+			})
+			if err != nil {
+				return nil, fmt.Errorf("Redis 集群搜索未完成: %w", err)
+			}
+
+			keyInfos, err := r.loadRedisKeyInfosStrict(searchCtx, keys)
+			if err != nil {
+				return nil, fmt.Errorf("Redis 集群搜索读取 Key 元数据失败: %w", err)
+			}
+			return &RedisScanResult{Keys: keyInfos, Cursor: "0"}, nil
+		}
+
 		keys := make([]string, 0, int(targetCount))
 		seen := make(map[string]struct{}, int(targetCount))
 		var mu sync.Mutex
@@ -683,6 +746,45 @@ func normalizeRedisScanStepCount(targetCount int64) int64 {
 		return redisScanMaxStepCount
 	}
 	return targetCount
+}
+
+func (r *RedisClientImpl) loadRedisKeyInfosStrict(ctx context.Context, keys []string) ([]RedisKeyInfo, error) {
+	result := make([]RedisKeyInfo, 0, len(keys))
+	if len(keys) == 0 {
+		return result, nil
+	}
+
+	pipe := r.client.Pipeline()
+	typeResults := make([]*redis.StatusCmd, len(keys))
+	ttlResults := make([]*redis.DurationCmd, len(keys))
+	for i, key := range keys {
+		typeResults[i] = pipe.Type(ctx, key)
+		ttlResults[i] = pipe.TTL(ctx, key)
+	}
+	if _, err := pipe.Exec(ctx); err != nil && err != redis.Nil {
+		return nil, err
+	}
+
+	for i, key := range keys {
+		keyType, err := typeResults[i].Result()
+		if err != nil && err != redis.Nil {
+			return nil, err
+		}
+		ttlValue, err := ttlResults[i].Result()
+		if err != nil && err != redis.Nil {
+			return nil, err
+		}
+		ttlSeconds := toRedisTTLSeconds(ttlValue)
+		if isRedisKeyGone(keyType, ttlSeconds) {
+			continue
+		}
+		result = append(result, RedisKeyInfo{
+			Key:  r.toDisplayKey(key),
+			Type: keyType,
+			TTL:  ttlSeconds,
+		})
+	}
+	return result, nil
 }
 
 func (r *RedisClientImpl) loadRedisKeyInfos(ctx context.Context, keys []string) []RedisKeyInfo {
