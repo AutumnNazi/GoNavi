@@ -1365,6 +1365,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
   const triggerSqlAiCompletionActionRef = useRef<any>(null);
   const triggerSqlAiCompletionKeydownDisposableRef = useRef<any>(null);
   const insertSqlSnippetActionRef = useRef<any>(null);
+  const transformCaseActionDisposablesRef = useRef<any[]>([]);
   const aiContextMenuActionDisposablesRef = useRef<any[]>([]);
   const toggleQueryResultsPanelActionRef = useRef<any>(null);
   const lastExternalQueryRef = useRef<string>(getTabQueryValue(tab));
@@ -1628,6 +1629,36 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           run: handleOpenSqlSnippetPicker,
       });
   }, [handleOpenSqlSnippetPicker]);
+
+  const disposeTransformCaseContextMenuActions = useCallback(() => {
+      transformCaseActionDisposablesRef.current.forEach((disposable) => disposable?.dispose?.());
+      transformCaseActionDisposablesRef.current = [];
+  }, []);
+
+  const registerTransformCaseContextMenuActions = useCallback((editor: any) => {
+      disposeTransformCaseContextMenuActions();
+      transformCaseActionDisposablesRef.current = [
+          {
+              id: 'gonavi.queryEditor.transformToUppercase',
+              label: translate('query_editor.completion.action.uppercase'),
+              actionId: 'editor.action.transformToUppercase',
+              contextMenuOrder: 1,
+          },
+          {
+              id: 'gonavi.queryEditor.transformToLowercase',
+              label: translate('query_editor.completion.action.lowercase'),
+              actionId: 'editor.action.transformToLowercase',
+              contextMenuOrder: 2,
+          },
+      ].map((action) => editor.addAction({
+          id: action.id,
+          label: action.label,
+          precondition: '!editorReadonly',
+          contextMenuGroupId: '1_modification',
+          contextMenuOrder: action.contextMenuOrder,
+          run: (ed: any) => ed.getAction?.(action.actionId)?.run?.(),
+      }));
+  }, [disposeTransformCaseContextMenuActions]);
 
   // SQL 诊断 / 慢 SQL 历史的快捷键监听（必须在 binding 声明之后）
   useEffect(() => {
@@ -4795,6 +4826,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
               sharedActiveEditorModelUri = '';
           }
           disposeQueryEditorAiContextMenuActions();
+          disposeTransformCaseContextMenuActions();
           window.removeEventListener('keydown', syncModifierState);
           window.removeEventListener('keyup', syncModifierState);
           window.removeEventListener('blur', handleWindowBlur);
@@ -4811,6 +4843,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       // 注册 AI 右键菜单操作
       registerQueryEditorAiContextMenuActions(editor);
       registerInsertSqlSnippetContextMenuAction(editor);
+      registerTransformCaseContextMenuActions(editor);
       registerTriggerSqlAiCompletionAction(editor, monaco);
 
       // Register runQuery shortcut inside Monaco so it overrides Monaco's default keybinding
@@ -7738,6 +7771,17 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           }
       };
   }, [languagePreference, registerInsertSqlSnippetContextMenuAction]);
+
+  useEffect(() => {
+      const editor = editorRef.current;
+      if (!editor) return;
+
+      registerTransformCaseContextMenuActions(editor);
+
+      return () => {
+          disposeTransformCaseContextMenuActions();
+      };
+  }, [languagePreference, disposeTransformCaseContextMenuActions, registerTransformCaseContextMenuActions]);
 
   useEffect(() => {
       const editor = editorRef.current;

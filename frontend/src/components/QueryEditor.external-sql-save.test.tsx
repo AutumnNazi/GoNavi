@@ -225,6 +225,8 @@ const editorState = vi.hoisted(() => {
     decorationIds: [] as string[],
     contentHoverCalls: [] as any[],
     latestOnChange: null as null | ((value?: string) => void),
+    transformToUppercaseRun: vi.fn(),
+    transformToLowercaseRun: vi.fn(),
   };
   const offsetAt = (position: { lineNumber: number; column: number }) => {
     const text = state.value;
@@ -303,6 +305,15 @@ const editorState = vi.hoisted(() => {
         const end = offsetAt({ lineNumber: edit.range.endLineNumber, column: edit.range.endColumn });
         state.value = state.value.slice(0, start) + edit.text + state.value.slice(end);
       });
+    }),
+    getAction: vi.fn((id: string) => {
+      if (id === 'editor.action.transformToUppercase') {
+        return { run: state.transformToUppercaseRun };
+      }
+      if (id === 'editor.action.transformToLowercase') {
+        return { run: state.transformToLowercaseRun };
+      }
+      return null;
     }),
     addAction: vi.fn(),
     addCommand: vi.fn(),
@@ -925,6 +936,9 @@ describe('QueryEditor external SQL save', () => {
     editorState.editor.getModel().getValueLength.mockClear();
     editorState.editor.setValue.mockClear();
     editorState.editor.executeEdits.mockClear();
+    editorState.editor.getAction.mockClear();
+    editorState.transformToUppercaseRun.mockReset();
+    editorState.transformToLowercaseRun.mockReset();
     editorState.editor.getScrollLeft.mockClear();
     editorState.editor.setScrollLeft.mockClear();
     editorState.editor.deltaDecorations.mockClear();
@@ -4824,6 +4838,36 @@ describe('QueryEditor external SQL save', () => {
     }));
   });
 
+  it('registers SQL case conversion context-menu actions and delegates to Monaco', async () => {
+    await act(async () => {
+      create(<QueryEditor tab={createTab()} />);
+    });
+
+    const uppercaseAction = findEditorAction('gonavi.queryEditor.transformToUppercase');
+    const lowercaseAction = findEditorAction('gonavi.queryEditor.transformToLowercase');
+
+    expect(uppercaseAction).toMatchObject({
+      label: '转大写',
+      precondition: '!editorReadonly',
+      contextMenuGroupId: '1_modification',
+      contextMenuOrder: 1,
+    });
+    expect(lowercaseAction).toMatchObject({
+      label: '转小写',
+      precondition: '!editorReadonly',
+      contextMenuGroupId: '1_modification',
+      contextMenuOrder: 2,
+    });
+
+    await uppercaseAction.run(editorState.editor);
+    await lowercaseAction.run(editorState.editor);
+
+    expect(editorState.editor.getAction).toHaveBeenNthCalledWith(1, 'editor.action.transformToUppercase');
+    expect(editorState.editor.getAction).toHaveBeenNthCalledWith(2, 'editor.action.transformToLowercase');
+    expect(editorState.transformToUppercaseRun).toHaveBeenCalledOnce();
+    expect(editorState.transformToLowercaseRun).toHaveBeenCalledOnce();
+  });
+
   it('localizes Monaco action labels for the active language', async () => {
     setCurrentLanguage('en-US');
     storeState.shortcutOptions.runQuery.mac = { enabled: true, combo: 'Meta+Q' };
@@ -4845,6 +4889,12 @@ describe('QueryEditor external SQL save', () => {
     });
     expect(findEditorAction('gonavi.insertSqlSnippet')).toMatchObject({
       label: 'Insert SQL Snippet',
+    });
+    expect(findEditorAction('gonavi.queryEditor.transformToUppercase')).toMatchObject({
+      label: 'convert to uppercase',
+    });
+    expect(findEditorAction('gonavi.queryEditor.transformToLowercase')).toMatchObject({
+      label: 'convert to lowercase',
     });
     expect(findEditorAction('gonavi.selectCurrentStatement')).toMatchObject({
       label: 'GoNavi: Select Current Line and Copy',
@@ -4878,6 +4928,12 @@ describe('QueryEditor external SQL save', () => {
     expect(findEditorAction('gonavi.insertSqlSnippet')).toMatchObject({
       label: '插入 SQL 片段',
     });
+    expect(findEditorAction('gonavi.queryEditor.transformToUppercase')).toMatchObject({
+      label: '转大写',
+    });
+    expect(findEditorAction('gonavi.queryEditor.transformToLowercase')).toMatchObject({
+      label: '转小写',
+    });
     expect(findEditorAction('gonavi.selectCurrentStatement')).toMatchObject({
       label: 'GoNavi: 选择当前行并复制',
     });
@@ -4897,6 +4953,8 @@ describe('QueryEditor external SQL save', () => {
     expect(findEditorActionLabels('gonavi.queryEditor.showObjectInfo')).toContain('GoNavi: Show Object Info');
     expect(findEditorActionLabels('gonavi.runQuery')).toContain('GoNavi: Run SQL');
     expect(findEditorActionLabels('gonavi.insertSqlSnippet')).toContain('Insert SQL Snippet');
+    expect(findEditorActionLabels('gonavi.queryEditor.transformToUppercase')).toContain('convert to uppercase');
+    expect(findEditorActionLabels('gonavi.queryEditor.transformToLowercase')).toContain('convert to lowercase');
     expect(findEditorActionLabels('gonavi.selectCurrentStatement')).toContain('GoNavi: Select Current Line and Copy');
     expect(findEditorActionLabels('gonavi.duplicateCurrentLine')).toContain('GoNavi: Duplicate Current Line Below');
     expect(findEditorActionLabels('gonavi.saveQuery')).toContain('GoNavi: Save Query');
@@ -4908,6 +4966,12 @@ describe('QueryEditor external SQL save', () => {
     });
     expect(findEditorAction('gonavi.insertSqlSnippet')).toMatchObject({
       label: 'Insert SQL Snippet',
+    });
+    expect(findEditorAction('gonavi.queryEditor.transformToUppercase')).toMatchObject({
+      label: 'convert to uppercase',
+    });
+    expect(findEditorAction('gonavi.queryEditor.transformToLowercase')).toMatchObject({
+      label: 'convert to lowercase',
     });
     expect(findEditorAction('gonavi.selectCurrentStatement')).toMatchObject({
       label: 'GoNavi: Select Current Line and Copy',
