@@ -65,8 +65,10 @@ describe('QueryEditorToolbar layout', () => {
 
     expect(css).toContain('.gn-v2-query-transaction-commit-button:hover');
     expect(css).toContain('.gn-v2-query-transaction-commit-button:focus-visible');
-    expect(commitBaseCss).toContain('background: var(--gn-accent-soft) !important;');
-    expect(commitHoverCss).not.toContain('background: var(--gn-accent-soft) !important;');
+    expect(commitBaseCss).toContain('background: var(--gn-warn) !important;');
+    expect(commitHoverCss).toContain(
+      'background: var(--gn-warn-hover, var(--gn-warn)) !important;',
+    );
     expect(commitHoverCss).toContain('box-shadow:');
     expect(commitKbdHoverCss).toContain('background:');
   });

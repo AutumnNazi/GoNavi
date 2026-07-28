@@ -15,6 +15,7 @@ const translatedCopy: Record<string, string> = {
   'connection_modal.step1.group.vector': 'T:vector',
   'connection_modal.step1.group.timeseries': 'T:timeseries',
   'connection_modal.step1.group.message_queue': 'T:message-queue',
+  'connection_modal.step1.group.config_center': 'T:config-center',
   'connection_modal.step1.group.other': 'T:other',
   'connection_modal.step1.hint.redis': 'T:redis',
   'connection_modal.step1.hint.mongodb': 'T:mongodb',
@@ -22,6 +23,7 @@ const translatedCopy: Record<string, string> = {
   'connection_modal.step1.hint.chroma': 'T:chroma',
   'connection_modal.step1.hint.qdrant': 'T:qdrant',
   'connection_modal.step1.hint.milvus': 'T:milvus',
+  'connection_modal.step1.hint.nacos': 'T:nacos',
   'connection_modal.step1.hint.oceanBase': 'T:oceanbase',
   'connection_modal.step1.hint.goldendb': 'T:goldendb',
   'connection_modal.step1.hint.file': 'T:file',
@@ -40,6 +42,7 @@ describe('connectionTypeCatalog', () => {
       'connection_modal.step1.group.vector',
       'connection_modal.step1.group.timeseries',
       'connection_modal.step1.group.message_queue',
+      'connection_modal.step1.group.config_center',
       'connection_modal.step1.group.other',
     ]);
     expect(buildConnectionTypeGroups(translate).map((group) => group.label)).toEqual([
@@ -49,6 +52,7 @@ describe('connectionTypeCatalog', () => {
       'T:vector',
       'T:timeseries',
       'T:message-queue',
+      'T:config-center',
       'T:other',
     ]);
     expect(
@@ -71,6 +75,7 @@ describe('connectionTypeCatalog', () => {
     expect(keys).toContain('milvus');
     expect(keys).toContain('iotdb');
     expect(keys).toContain('kafka');
+    expect(keys).toContain('nacos');
     expect(keys).toContain('jvm');
     expect(keys).toContain('custom');
     expect(new Set(keys).size).toBe(keys.length);
@@ -93,6 +98,7 @@ describe('connectionTypeCatalog', () => {
     expect(getConnectionTypeDefaultPort('milvus')).toBe(19530);
     expect(getConnectionTypeDefaultPort('iotdb')).toBe(6667);
     expect(getConnectionTypeDefaultPort('kafka')).toBe(9092);
+    expect(getConnectionTypeDefaultPort('nacos')).toBe(8848);
     expect(getConnectionTypeDefaultPort('sqlite')).toBe(0);
     expect(getConnectionTypeDefaultPort('duckdb')).toBe(0);
     expect(getConnectionTypeDefaultPort('unknown')).toBe(3306);
@@ -107,6 +113,7 @@ describe('connectionTypeCatalog', () => {
     expect(getConnectionTypeHint('milvus', translate)).toBe('T:milvus');
     expect(getConnectionTypeHint('iotdb')).toContain('Timeseries');
     expect(getConnectionTypeHint('kafka')).toContain('Consumer Group');
+    expect(getConnectionTypeHint('nacos', translate)).toBe('T:nacos');
     expect(getConnectionTypeHint('oceanbase', translate)).toBe('T:oceanbase');
     expect(getConnectionTypeHint('goldendb', translate)).toBe('T:goldendb');
     expect(getConnectionTypeHint('trino')).toBe('HTTP / HTTPS / catalog.schema');
