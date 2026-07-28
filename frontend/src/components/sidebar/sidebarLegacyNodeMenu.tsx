@@ -46,6 +46,7 @@ import { buildRpcConnectionConfig } from '../../utils/connectionRpcConfig';
 import { supportsTableTruncateAction } from '../tableDataDangerActions';
 import { normalizeConnectionEnvironmentType } from '../../utils/connectionEnvironment';
 import { noAutoCapInputProps } from '../../utils/inputAutoCap';
+import { buildNacosServicesTabData } from '../sidebarV2Utils';
 
 type NacosNamespaceFormMode = 'create' | 'edit';
 
@@ -916,6 +917,15 @@ export const buildSidebarLegacyNodeMenuItems = (
                         ...(isAll ? {} : { nacosGroup: groupName }),
                     });
                 },
+            },
+        ];
+    } else if (node.type === 'nacos-service-group') {
+        return [
+            {
+                key: 'open-nacos-service-group',
+                label: t('nacos_service.title.service_explorer'),
+                icon: <CloudOutlined />,
+                onClick: () => addTab(buildNacosServicesTabData(node.dataRef || {})),
             },
         ];
     } else if (node.type === 'redis-db') {

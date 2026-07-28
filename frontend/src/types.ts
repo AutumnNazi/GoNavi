@@ -515,7 +515,7 @@ export interface TabData {
   redisDB?: number; // Redis database index for redis tabs
   nacosNamespaceId?: string; // Nacos namespace id (empty string means public)
   nacosNamespaceName?: string; // Nacos namespace display name
-  nacosGroup?: string; // Nacos config group filter for config workbench
+  nacosGroup?: string; // Nacos group filter for config or service workbenches
   triggerName?: string; // Trigger name for trigger tabs
   triggerTableName?: string; // Trigger target table for trigger tabs
   viewName?: string; // View name for view definition tabs

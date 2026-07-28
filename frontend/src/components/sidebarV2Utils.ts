@@ -7,7 +7,7 @@ import {
   buildSidebarTablePinKey,
   resolveSidebarRootOrderTokens,
 } from '../store';
-import type { ConnectionTag, SavedConnection } from '../types';
+import type { ConnectionTag, SavedConnection, TabData } from '../types';
 import type { SidebarTableMetadataField } from '../utils/sidebarTableMetadata';
 import { readTableAccessCount } from '../utils/tableAccessCount';
 import { t } from '../i18n';
@@ -56,6 +56,7 @@ export type SidebarTreeNodeType =
   | 'nacos-config-entry'
   | 'nacos-config-group'
   | 'nacos-services-entry'
+  | 'nacos-service-group'
   | 'tag'
   | 'jvm-mode'
   | 'jvm-resource'
@@ -87,7 +88,50 @@ export const shouldLoadSidebarNodeOnExpand = (
     || node.type === 'table'
     || node.type === 'jvm-mode'
     || node.type === 'jvm-resource'
-    || node.type === 'nacos-config-entry';
+    || node.type === 'nacos-config-entry'
+    || node.type === 'nacos-services-entry';
+};
+
+type NacosServicesTabDataRef = {
+  id?: unknown;
+  nacosNamespaceId?: unknown;
+  nacosNamespaceName?: unknown;
+  nacosGroup?: unknown;
+};
+
+export const buildNacosServicesTabData = (dataRef: NacosServicesTabDataRef): TabData => {
+  const connectionId = String(dataRef?.id || '').trim();
+  const namespaceId = String(dataRef?.nacosNamespaceId || '').trim();
+  const namespaceName = String(dataRef?.nacosNamespaceName || namespaceId || 'public').trim();
+  const groupName = String(dataRef?.nacosGroup || '').trim();
+  const namespaceKey = namespaceId || 'public';
+
+  return {
+    id: `nacos-services-${connectionId}-ns-${namespaceKey}${groupName ? `-g-${encodeURIComponent(groupName)}` : ''}`,
+    title: groupName
+      ? `${namespaceName} · ${groupName}`
+      : `${namespaceName} · ${t('nacos_service.title.service_explorer')}`,
+    type: 'nacos-services',
+    connectionId,
+    nacosNamespaceId: namespaceId,
+    nacosNamespaceName: namespaceName,
+    ...(groupName ? { nacosGroup: groupName } : {}),
+  };
+};
+
+export type NacosServicesDoubleClickAction =
+  | { kind: 'expand' }
+  | { kind: 'open'; tab: TabData }
+  | null;
+
+export const resolveNacosServicesDoubleClickAction = (
+  node: Pick<SidebarTreeNode, 'type' | 'dataRef'> | null | undefined,
+): NacosServicesDoubleClickAction => {
+  if (node?.type === 'nacos-services-entry') return { kind: 'expand' };
+  if (node?.type === 'nacos-service-group') {
+    return { kind: 'open', tab: buildNacosServicesTabData(node.dataRef || {}) };
+  }
+  return null;
 };
 
 export const resolveSidebarTableNameForCopy = (

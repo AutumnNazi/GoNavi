@@ -199,6 +199,7 @@ import {
   resolveV2ConnectionGroup,
   resolveV2ActiveConnectionId,
   resolveV2CommandSearchPersistentFilter,
+  resolveNacosServicesDoubleClickAction,
   shouldClearSidebarNodeChildrenOnCollapse,
   shouldSkipSidebarLoadOnExpandWhileDragging,
   shouldSkipSidebarSelectWhileDragging,
@@ -293,6 +294,42 @@ const { Search } = Input;
 const SIDEBAR_LOCATE_LOAD_WAIT_INTERVAL_MS = 50;
 const SIDEBAR_LOCATE_LOAD_WAIT_ATTEMPTS = 160;
 const SIDEBAR_CACHED_DATABASE_TREE_LIMIT = 12;
+const NACOS_SERVICES_CHANGED_EVENT = 'gonavi:nacos-services-changed';
+
+type NacosServiceRefreshTreeNode = {
+  key: React.Key;
+  children?: NacosServiceRefreshTreeNode[];
+};
+
+export const resolveNacosServiceGroupsRefreshTarget = (
+  detail: unknown,
+  treeData: readonly NacosServiceRefreshTreeNode[],
+  expandedKeys: readonly React.Key[],
+): { key: string; node: NacosServiceRefreshTreeNode; shouldReload: boolean } | null => {
+  if (!detail || typeof detail !== 'object') return null;
+  const eventDetail = detail as Record<string, unknown>;
+  const connectionId = String(eventDetail.connectionId || '').trim();
+  if (!connectionId) return null;
+  const namespaceId = String(eventDetail.namespaceId ?? '').trim();
+  const key = `${connectionId}-nacos-ns-${namespaceId || 'public'}-services`;
+
+  const findNode = (nodes: readonly NacosServiceRefreshTreeNode[]): NacosServiceRefreshTreeNode | null => {
+    for (const node of nodes) {
+      if (String(node.key) === key) return node;
+      const child = node.children?.length ? findNode(node.children) : null;
+      if (child) return child;
+    }
+    return null;
+  };
+
+  const node = findNode(treeData);
+  if (!node) return null;
+  return {
+    key,
+    node,
+    shouldReload: expandedKeys.some((expandedKey) => String(expandedKey) === key),
+  };
+};
 
 // resolveV2ObjectGroupTitle 已迁移到 ./sidebar/sidebarHelpers
 
@@ -688,6 +725,7 @@ const Sidebar: React.FC<{
   const deferredV2CommandSearchValue = useDeferredValue(v2CommandSearchValue);
   const [v2CommandActiveIndex, setV2CommandActiveIndex] = useState(0);
   const [expandedKeys, setExpandedKeys] = useState<React.Key[]>([]);
+  const expandedKeysRef = useRef<React.Key[]>([]);
   const [autoExpandParent, setAutoExpandParent] = useState(true);
   const [loadedKeys, setLoadedKeys] = useState<React.Key[]>([]);
   const [selectedKeys, setSelectedKeys] = useState<React.Key[]>([]);
@@ -695,6 +733,15 @@ const Sidebar: React.FC<{
   const loadingNodesRef = useRef<Set<string>>(new Set());
   const databaseTreeTouchedAtRef = useRef<Record<string, number>>({});
   const pruneLoadedDatabaseTreesRef = useRef<() => void>(() => {});
+  const loadNacosServiceGroupsRef = useRef<(
+      node: any,
+      options?: { force?: boolean },
+  ) => Promise<boolean>>(async () => false);
+  const replaceTreeNodeChildrenRef = useRef<(
+      key: React.Key,
+      children: TreeNode[] | undefined,
+      dataRef?: unknown,
+  ) => TreeNode[]>(() => []);
   const clickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const treeDragSelectSuppressUntilRef = useRef(0);
   const treeDragSelectionSnapshotRef = useRef<{
@@ -707,6 +754,7 @@ const Sidebar: React.FC<{
       activeContext: null,
   });
   const connectionReloadSignaturesRef = useRef<Record<string, string>>({});
+  expandedKeysRef.current = expandedKeys;
   const connectionIds = useMemo(() => connections.map((conn) => conn.id), [connections]);
   const connectionIdSet = useMemo(() => new Set(connectionIds), [connectionIds]);
   const unmatchedSavedQueries = useMemo(
@@ -1532,6 +1580,8 @@ const Sidebar: React.FC<{
         await loadTables({ key, dataRef });
     } else if (type === 'nacos-config-entry') {
         await loadNacosConfigGroups({ key, dataRef });
+    } else if (type === 'nacos-services-entry') {
+        await loadNacosServiceGroups({ key, dataRef });
     } else if (type === 'external-sql-root') {
         await refreshGlobalExternalSQLRootNode(false);
     } else if (type === 'table') {
@@ -1727,6 +1777,7 @@ const Sidebar: React.FC<{
           || type === 'nacos-config-entry'
           || type === 'nacos-config-group'
           || type === 'nacos-services-entry'
+          || type === 'nacos-service-group'
       ) {
           setActiveContext({
               connectionId: dataRef.id,
@@ -1811,6 +1862,7 @@ const Sidebar: React.FC<{
           || type === 'nacos-config-entry'
           || type === 'nacos-config-group'
           || type === 'nacos-services-entry'
+          || type === 'nacos-service-group'
       ) {
           setActiveContext({
               connectionId: dataRef.id,
@@ -1899,23 +1951,13 @@ const Sidebar: React.FC<{
               ...(isAll ? {} : { nacosGroup: groupName }),
           });
           return;
-      } else if (node.type === 'nacos-services-entry') {
-          const {
-              id,
-              nacosNamespaceId = '',
-              nacosNamespaceName = '',
-          } = node.dataRef || {};
-          const nsName = nacosNamespaceName || nacosNamespaceId || 'public';
-          const nsKey = nacosNamespaceId || 'public';
-          addTab({
-              id: `nacos-services-${id}-ns-${nsKey}`,
-              title: `${nsName} · services`,
-              type: 'nacos-services',
-              connectionId: id,
-              nacosNamespaceId: nacosNamespaceId || '',
-              nacosNamespaceName: nsName,
-          });
-          return;
+      } else if (node.type === 'nacos-services-entry' || node.type === 'nacos-service-group') {
+          const action = resolveNacosServicesDoubleClickAction(node);
+          if (action?.kind === 'open') {
+              addTab(action.tab);
+              return;
+          }
+          // Service explorer entry is a folder: fall through to expand/collapse + lazy load groups.
       } else if (node.type === 'db-trigger') {
           const { triggerName, triggerTableName, schemaName, dbName, id } = node.dataRef;
           addTab({
@@ -2159,6 +2201,7 @@ const Sidebar: React.FC<{
       loadJVMResources,
       loadTables,
       loadNacosConfigGroups,
+      loadNacosServiceGroups,
   } = useSidebarTreeLoaders({
       savedQueries,
       tableSortPreference,
@@ -2178,6 +2221,35 @@ const Sidebar: React.FC<{
           pruneLoadedDatabaseTrees();
       },
   });
+  loadNacosServiceGroupsRef.current = loadNacosServiceGroups;
+  replaceTreeNodeChildrenRef.current = replaceTreeNodeChildren;
+
+  useEffect(() => {
+      const handleNacosServicesChanged = (event: Event) => {
+          const target = resolveNacosServiceGroupsRefreshTarget(
+              (event as CustomEvent).detail,
+              treeDataRef.current,
+              expandedKeysRef.current,
+          );
+          if (!target) return;
+
+          replaceTreeNodeChildrenRef.current(target.key, undefined);
+          setLoadedKeys((prev) => prev.filter((key) => String(key) !== target.key));
+          if (!target.shouldReload) return;
+
+          void loadNacosServiceGroupsRef.current(
+              { ...target.node, children: undefined },
+              { force: true },
+          ).then((loaded) => {
+              if (!loaded) return;
+              setLoadedKeys((prev) => prev.includes(target.key) ? prev : [...prev, target.key]);
+          });
+      };
+      window.addEventListener(NACOS_SERVICES_CHANGED_EVENT, handleNacosServicesChanged as EventListener);
+      return () => {
+          window.removeEventListener(NACOS_SERVICES_CHANGED_EVENT, handleNacosServicesChanged as EventListener);
+      };
+  }, []);
 
   const openSchemaVisibilitySettings = useCallback((node: any) => {
       const dbName = String(node?.dataRef?.dbName || node?.title || '').trim();

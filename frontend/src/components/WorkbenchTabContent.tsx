@@ -129,6 +129,7 @@ export const WorkbenchTabContent: React.FC<WorkbenchTabContentProps> = React.mem
         connectionId={tab.connectionId}
         namespaceId={tab.nacosNamespaceId ?? ''}
         namespaceName={tab.nacosNamespaceName}
+        initialGroup={tab.nacosGroup}
       />
     );
   } else if (tab.type === 'trigger') {

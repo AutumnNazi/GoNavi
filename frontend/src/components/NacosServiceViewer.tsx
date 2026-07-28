@@ -34,6 +34,7 @@ import {
 import { t, type I18nParams } from '../i18n';
 import { useOptionalI18n } from '../i18n/provider';
 import { noAutoCapInputProps } from '../utils/inputAutoCap';
+import { parseNacosServiceName } from './nacosServiceName';
 
 type ServicePage = {
   count: number;
@@ -65,24 +66,22 @@ type NacosServiceViewerProps = {
   connectionId: string;
   namespaceId: string;
   namespaceName?: string;
+  initialGroup?: string;
 };
 
-const parseServiceName = (raw: string): { groupName: string; serviceName: string } => {
-  const text = String(raw || '').trim();
-  if (text.includes('@@')) {
-    const [groupName, serviceName] = text.split('@@');
-    return {
-      groupName: groupName || 'DEFAULT_GROUP',
-      serviceName: serviceName || text,
-    };
-  }
-  return { groupName: 'DEFAULT_GROUP', serviceName: text };
+type NacosServiceRow = {
+  rawName: string;
+  serviceName: string;
+  groupName: string;
 };
+
+const NACOS_SERVICES_CHANGED_EVENT = 'gonavi:nacos-services-changed';
 
 const NacosServiceViewer: React.FC<NacosServiceViewerProps> = ({
   connectionId,
   namespaceId,
   namespaceName,
+  initialGroup,
 }) => {
   const connections = useStore((state) => state.connections);
   const appTheme = useStore((state) => state.theme);
@@ -144,7 +143,7 @@ const NacosServiceViewer: React.FC<NacosServiceViewerProps> = ({
   const [serviceTotal, setServiceTotal] = useState(0);
   const [pageNo, setPageNo] = useState(1);
   const [pageSize] = useState(50);
-  const [groupFilter, setGroupFilter] = useState('');
+  const [groupFilter, setGroupFilter] = useState(() => String(initialGroup || '').trim());
   const [selectedServiceRaw, setSelectedServiceRaw] = useState<string | null>(null);
   const [instances, setInstances] = useState<NacosInstance[]>([]);
 
@@ -156,11 +155,24 @@ const NacosServiceViewer: React.FC<NacosServiceViewerProps> = ({
   // Left service list pane width; drag divider to adjust (same pattern as Redis).
   const [leftPanelWidth, setLeftPanelWidth] = useState<number | string>('38%');
   const leftPanelRef = useRef<HTMLDivElement>(null);
+  const instanceRequestIdRef = useRef(0);
 
   const selectedParsed = useMemo(
-    () => (selectedServiceRaw ? parseServiceName(selectedServiceRaw) : null),
+    () => (selectedServiceRaw ? parseNacosServiceName(selectedServiceRaw) : null),
     [selectedServiceRaw],
   );
+  const serviceRows = useMemo<NacosServiceRow[]>(
+    () => serviceNames.map((rawName) => ({ rawName, ...parseNacosServiceName(rawName) })),
+    [serviceNames],
+  );
+  const notifyServiceGroupsChanged = useCallback(() => {
+    window.dispatchEvent(new CustomEvent(NACOS_SERVICES_CHANGED_EVENT, {
+      detail: {
+        connectionId,
+        namespaceId: namespaceId || '',
+      },
+    }));
+  }, [connectionId, namespaceId]);
 
   const loadServices = useCallback(
     async (page = 1) => {
@@ -183,8 +195,10 @@ const NacosServiceViewer: React.FC<NacosServiceViewerProps> = ({
         setServiceTotal(Number(pageData.count) || names.length);
         setPageNo(Number(pageData.pageNo) || page);
         if (selectedServiceRaw && !names.includes(selectedServiceRaw)) {
+          instanceRequestIdRef.current += 1;
           setSelectedServiceRaw(null);
           setInstances([]);
+          setLoadingInstances(false);
         }
       } catch (error: any) {
         message.error(error?.message || String(error));
@@ -198,7 +212,8 @@ const NacosServiceViewer: React.FC<NacosServiceViewerProps> = ({
   const loadInstances = useCallback(
     async (rawServiceName: string) => {
       if (!rpcConfig) return;
-      const parsed = parseServiceName(rawServiceName);
+      const parsed = parseNacosServiceName(rawServiceName);
+      const requestId = ++instanceRequestIdRef.current;
       setLoadingInstances(true);
       try {
         const res = await (window as any).go.app.App.NacosListInstances(rpcConfig, {
@@ -206,6 +221,7 @@ const NacosServiceViewer: React.FC<NacosServiceViewerProps> = ({
           serviceName: parsed.serviceName,
           groupName: parsed.groupName,
         });
+        if (requestId !== instanceRequestIdRef.current) return;
         if (!res?.success) {
           message.error(res?.message || 'list instances failed');
           return;
@@ -213,16 +229,26 @@ const NacosServiceViewer: React.FC<NacosServiceViewerProps> = ({
         const list = (res.data || {}) as InstanceList;
         setInstances(Array.isArray(list.hosts) ? list.hosts : []);
       } catch (error: any) {
+        if (requestId !== instanceRequestIdRef.current) return;
         message.error(error?.message || String(error));
       } finally {
-        setLoadingInstances(false);
+        if (requestId === instanceRequestIdRef.current) {
+          setLoadingInstances(false);
+        }
       }
     },
     [rpcConfig, namespaceId],
   );
 
   useEffect(() => {
+    instanceRequestIdRef.current += 1;
+    setSelectedServiceRaw(null);
+    setInstances([]);
+    setLoadingInstances(false);
     void loadServices(1);
+    return () => {
+      instanceRequestIdRef.current += 1;
+    };
   }, [connectionId, namespaceId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleCreateService = async () => {
@@ -240,6 +266,7 @@ const NacosServiceViewer: React.FC<NacosServiceViewerProps> = ({
         return;
       }
       message.success(tr('nacos_service.message.service_create_success'));
+      notifyServiceGroupsChanged();
       setServiceModalOpen(false);
       serviceForm.resetFields();
       await loadServices(1);
@@ -251,7 +278,7 @@ const NacosServiceViewer: React.FC<NacosServiceViewerProps> = ({
 
   const handleDeleteService = async (raw: string) => {
     if (!rpcConfig || structureRestricted) return;
-    const parsed = parseServiceName(raw);
+    const parsed = parseNacosServiceName(raw);
     try {
       const res = await (window as any).go.app.App.NacosDeleteService(
         rpcConfig,
@@ -264,9 +291,12 @@ const NacosServiceViewer: React.FC<NacosServiceViewerProps> = ({
         return;
       }
       message.success(tr('nacos_service.message.service_delete_success'));
+      notifyServiceGroupsChanged();
       if (selectedServiceRaw === raw) {
+        instanceRequestIdRef.current += 1;
         setSelectedServiceRaw(null);
         setInstances([]);
+        setLoadingInstances(false);
       }
       await loadServices(pageNo);
     } catch (error: any) {
@@ -478,8 +508,8 @@ const NacosServiceViewer: React.FC<NacosServiceViewerProps> = ({
             <Table
               size="small"
               loading={loadingServices}
-              rowKey={(row) => row.name}
-              dataSource={serviceNames.map((name) => ({ name }))}
+              rowKey={(row) => row.rawName}
+              dataSource={serviceRows}
               pagination={{
                 current: pageNo,
                 pageSize,
@@ -489,30 +519,54 @@ const NacosServiceViewer: React.FC<NacosServiceViewerProps> = ({
               }}
               onRow={(record) => ({
                 onClick: () => {
-                  setSelectedServiceRaw(record.name);
-                  void loadInstances(record.name);
+                  setSelectedServiceRaw(record.rawName);
+                  setInstances([]);
+                  void loadInstances(record.rawName);
                 },
               })}
               rowClassName={(record) =>
-                selectedServiceRaw === record.name ? 'ant-table-row-selected' : ''
+                selectedServiceRaw === record.rawName ? 'ant-table-row-selected' : ''
               }
               scroll={{ y: 'calc(100vh - 280px)' }}
               columns={[
                 {
                   title: tr('nacos_service.field.service'),
-                  dataIndex: 'name',
-                  key: 'name',
+                  dataIndex: 'serviceName',
+                  key: 'serviceName',
                   ellipsis: true,
+                  render: (_: unknown, row: NacosServiceRow) => (
+                    <div style={{ minWidth: 0 }}>
+                      <div
+                        title={row.serviceName}
+                        style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                      >
+                        {row.serviceName}
+                      </div>
+                      <div
+                        title={row.groupName}
+                        style={{
+                          marginTop: 2,
+                          color: workbenchTheme.textMuted,
+                          fontSize: 12,
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        {row.groupName}
+                      </div>
+                    </div>
+                  ),
                 },
                 {
                   title: tr('nacos_viewer.action.delete'),
                   key: 'actions',
                   width: 90,
-                  render: (_: unknown, row: { name: string }) => (
+                  render: (_: unknown, row: NacosServiceRow) => (
                     <Popconfirm
-                      title={tr('nacos_service.message.confirm_delete_service', { name: row.name })}
+                      title={tr('nacos_service.message.confirm_delete_service', { name: row.rawName })}
                       disabled={structureRestricted}
-                      onConfirm={() => void handleDeleteService(row.name)}
+                      onConfirm={() => void handleDeleteService(row.rawName)}
                     >
                       <Button
                         size="small"
