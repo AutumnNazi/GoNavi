@@ -4,6 +4,7 @@ import (
 	"GoNavi-Wails/internal/connection"
 	"GoNavi-Wails/shared/i18n"
 	"bufio"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,6 +17,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 	goredis "github.com/redis/go-redis/v9"
 )
 
@@ -817,7 +819,7 @@ func TestRedisSearchScanContinuesPastEmptyMatchedPages(t *testing.T) {
 	}
 }
 
-func TestRedisSearchScanCollectsMoreThanOneThousandKeys(t *testing.T) {
+func TestRedisSearchScanPaginatesMoreThanOneThousandKeys(t *testing.T) {
 	var mu sync.Mutex
 	scanCalls := 0
 	const searchPattern = "matched:*"
@@ -850,7 +852,13 @@ func TestRedisSearchScanCollectsMoreThanOneThousandKeys(t *testing.T) {
 			defer mu.Unlock()
 			scanCalls++
 			if scanCalls == 1 {
+				if args[1] != "0" {
+					t.Fatalf("expected initial cursor 0, got %q", args[1])
+				}
 				return redisScanResponse("1", firstBatch...)
+			}
+			if args[1] != "1" {
+				t.Fatalf("expected continuation cursor 1, got %q", args[1])
 			}
 			return redisScanResponse("0", "matched:1000")
 		case "TYPE":
@@ -871,21 +879,335 @@ func TestRedisSearchScanCollectsMoreThanOneThousandKeys(t *testing.T) {
 	}
 	defer client.Close()
 
-	result, err := client.ScanKeys(searchPattern, 0, redisScanDefaultTargetCount)
+	firstResult, err := client.ScanKeys(searchPattern, 0, redisScanDefaultTargetCount)
 	if err != nil {
-		t.Fatalf("ScanKeys returned error: %v", err)
+		t.Fatalf("first ScanKeys returned error: %v", err)
 	}
-	if result == nil || len(result.Keys) != 1001 {
-		t.Fatalf("expected all 1001 searched keys, got %#v", result)
+	if firstResult == nil || len(firstResult.Keys) != 1000 || firstResult.Cursor != "1" {
+		t.Fatalf("expected first 1000 keys with continuation cursor, got %#v", firstResult)
 	}
-	if result.Cursor != "0" {
-		t.Fatalf("expected completed cursor, got %q", result.Cursor)
+
+	secondResult, err := client.ScanKeys(searchPattern, 1, redisScanDefaultTargetCount)
+	if err != nil {
+		t.Fatalf("second ScanKeys returned error: %v", err)
+	}
+	if secondResult == nil || len(secondResult.Keys) != 1 || secondResult.Cursor != "0" {
+		t.Fatalf("expected final searched key with completed cursor, got %#v", secondResult)
 	}
 
 	mu.Lock()
 	defer mu.Unlock()
 	if scanCalls != 2 {
-		t.Fatalf("expected ScanKeys to read both search batches, got %d calls", scanCalls)
+		t.Fatalf("expected exactly two paged SCAN calls, got %d", scanCalls)
+	}
+}
+
+func newRedisProtocolClusterClient(t *testing.T, addrs ...string) *goredis.ClusterClient {
+	t.Helper()
+	slots := make([]goredis.ClusterSlot, 0, len(addrs))
+	for index, addr := range addrs {
+		start := index * 16384 / len(addrs)
+		end := (index+1)*16384/len(addrs) - 1
+		slots = append(slots, goredis.ClusterSlot{
+			Start: start,
+			End:   end,
+			Nodes: []goredis.ClusterNode{{Addr: addr}},
+		})
+	}
+	client := goredis.NewClusterClient(&goredis.ClusterOptions{
+		ClusterSlots: func(context.Context) ([]goredis.ClusterSlot, error) {
+			return slots, nil
+		},
+		Protocol:              2,
+		ContextTimeoutEnabled: true,
+	})
+	t.Cleanup(func() {
+		_ = client.Close()
+	})
+	return client
+}
+
+func TestRedisClusterConnectEnablesContextTimeouts(t *testing.T) {
+	var addr string
+	addr = startRedisProtocolTestServer(t, func(args []string) string {
+		switch strings.ToUpper(strings.TrimSpace(args[0])) {
+		case "HELLO":
+			return "-ERR unknown command 'HELLO'\r\n"
+		case "CLIENT":
+			return "-ERR unknown subcommand\r\n"
+		case "CLUSTER":
+			host, port, err := net.SplitHostPort(addr)
+			if err != nil {
+				t.Fatalf("split cluster test address: %v", err)
+			}
+			return fmt.Sprintf("*1\r\n*3\r\n:0\r\n:16383\r\n*3\r\n%s%s%s", redisBulkString(host), redisBulkString(port), redisBulkString("node-1"))
+		case "PING":
+			return "+PONG\r\n"
+		}
+		return "+OK\r\n"
+	})
+	host, portText, err := net.SplitHostPort(addr)
+	if err != nil {
+		t.Fatalf("split cluster test address: %v", err)
+	}
+	port, err := strconv.Atoi(portText)
+	if err != nil {
+		t.Fatalf("parse cluster test port: %v", err)
+	}
+
+	client := &RedisClientImpl{}
+	if err := client.Connect(connection.ConnectionConfig{
+		Type:     "redis",
+		Host:     host,
+		Port:     port,
+		Topology: "cluster",
+		Timeout:  2,
+	}); err != nil {
+		t.Fatalf("Connect returned error: %v", err)
+	}
+	defer client.Close()
+
+	if client.clusterClient == nil || !client.clusterClient.Options().ContextTimeoutEnabled {
+		t.Fatalf("expected production cluster client to enable context timeouts")
+	}
+}
+
+func TestRedisClusterSearchScansEveryMasterToCompletion(t *testing.T) {
+	var mu sync.Mutex
+	scanCalls := map[string]int{}
+	redisScanResponse := func(cursor string, keys ...string) string {
+		var builder strings.Builder
+		builder.WriteString("*2\r\n")
+		builder.WriteString(redisBulkString(cursor))
+		builder.WriteString(fmt.Sprintf("*%d\r\n", len(keys)))
+		for _, key := range keys {
+			builder.WriteString(redisBulkString(key))
+		}
+		return builder.String()
+	}
+	startNode := func(name string, pages []string) string {
+		return startRedisProtocolTestServer(t, func(args []string) string {
+			switch strings.ToUpper(strings.TrimSpace(args[0])) {
+			case "HELLO":
+				return "-ERR unknown command 'HELLO'\r\n"
+			case "CLIENT":
+				return "-ERR unknown subcommand\r\n"
+			case "SCAN":
+				mu.Lock()
+				page := scanCalls[name]
+				scanCalls[name]++
+				mu.Unlock()
+				if page >= len(pages) {
+					t.Fatalf("unexpected extra SCAN on %s", name)
+				}
+				if page+1 < len(pages) {
+					return redisScanResponse(strconv.Itoa(page+1), pages[page])
+				}
+				return redisScanResponse("0", pages[page])
+			case "TYPE":
+				return "+string\r\n"
+			case "TTL":
+				return ":-1\r\n"
+			}
+			return "+OK\r\n"
+		})
+	}
+
+	firstAddr := startNode("first", []string{"matched:first:1", "matched:first:2"})
+	secondAddr := startNode("second", []string{"matched:second:1", "matched:second:2"})
+	clusterClient := newRedisProtocolClusterClient(t, firstAddr, secondAddr)
+	client := &RedisClientImpl{
+		client:        clusterClient,
+		clusterClient: clusterClient,
+		isCluster:     true,
+	}
+
+	result, err := client.ScanKeys("matched:*", 0, 1)
+	if err != nil {
+		t.Fatalf("ScanKeys returned error: %v", err)
+	}
+	if result == nil || len(result.Keys) != 4 {
+		t.Fatalf("expected all four cluster search results, got %#v", result)
+	}
+	if result.Cursor != "0" {
+		t.Fatalf("expected completed cluster cursor, got %q", result.Cursor)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if scanCalls["first"] != 2 || scanCalls["second"] != 2 {
+		t.Fatalf("expected every master to reach cursor 0, got %#v", scanCalls)
+	}
+}
+
+func TestRedisClusterExactSearchKeepsTargetCountLimit(t *testing.T) {
+	keys := make([]string, redisSearchMaxResultCount+1)
+	for i := range keys {
+		keys[i] = fmt.Sprintf("folder:item:%d", i)
+	}
+	var response strings.Builder
+	response.WriteString("*2\r\n$1\r\n0\r\n")
+	response.WriteString(fmt.Sprintf("*%d\r\n", len(keys)))
+	for _, key := range keys {
+		response.WriteString(redisBulkString(key))
+	}
+
+	addr := startRedisProtocolTestServer(t, func(args []string) string {
+		switch strings.ToUpper(strings.TrimSpace(args[0])) {
+		case "HELLO":
+			return "-ERR unknown command 'HELLO'\r\n"
+		case "CLIENT":
+			return "-ERR unknown subcommand\r\n"
+		case "SCAN":
+			return response.String()
+		case "TYPE":
+			return "+string\r\n"
+		case "TTL":
+			return ":-1\r\n"
+		}
+		return "+OK\r\n"
+	})
+	clusterClient := newRedisProtocolClusterClient(t, addr)
+	client := &RedisClientImpl{
+		client:        clusterClient,
+		clusterClient: clusterClient,
+		isCluster:     true,
+	}
+
+	result, err := client.ScanKeys("folder", 0, 2)
+	if err != nil {
+		t.Fatalf("ScanKeys returned error: %v", err)
+	}
+	if result == nil || len(result.Keys) != 2 {
+		t.Fatalf("expected exact search to keep the target count, got %#v", result)
+	}
+}
+
+func TestRedisClusterSearchKeepsEntireScanBatch(t *testing.T) {
+	addr := startRedisProtocolTestServer(t, func(args []string) string {
+		switch strings.ToUpper(strings.TrimSpace(args[0])) {
+		case "HELLO":
+			return "-ERR unknown command 'HELLO'\r\n"
+		case "CLIENT":
+			return "-ERR unknown subcommand\r\n"
+		case "SCAN":
+			return "*2\r\n$1\r\n0\r\n*2\r\n$15\r\nmatched:first:1\r\n$15\r\nmatched:first:2\r\n"
+		case "TYPE":
+			return "+string\r\n"
+		case "TTL":
+			return ":-1\r\n"
+		}
+		return "+OK\r\n"
+	})
+	clusterClient := newRedisProtocolClusterClient(t, addr)
+	client := &RedisClientImpl{
+		client:        clusterClient,
+		clusterClient: clusterClient,
+		isCluster:     true,
+	}
+
+	result, err := client.ScanKeys("matched:*", 0, 1)
+	if err != nil {
+		t.Fatalf("ScanKeys returned error: %v", err)
+	}
+	if result == nil || len(result.Keys) != 2 {
+		t.Fatalf("expected the entire Redis SCAN batch, got %#v", result)
+	}
+}
+
+func TestRedisClusterSearchRejectsResultsOverSafetyLimit(t *testing.T) {
+	keys := make([]string, redisSearchMaxResultCount+1)
+	for i := range keys {
+		keys[i] = fmt.Sprintf("matched:%d", i)
+	}
+	var response strings.Builder
+	response.WriteString("*2\r\n$1\r\n0\r\n")
+	response.WriteString(fmt.Sprintf("*%d\r\n", len(keys)))
+	for _, key := range keys {
+		response.WriteString(redisBulkString(key))
+	}
+
+	addr := startRedisProtocolTestServer(t, func(args []string) string {
+		switch strings.ToUpper(strings.TrimSpace(args[0])) {
+		case "HELLO":
+			return "-ERR unknown command 'HELLO'\r\n"
+		case "CLIENT":
+			return "-ERR unknown subcommand\r\n"
+		case "SCAN":
+			return response.String()
+		}
+		return "+OK\r\n"
+	})
+	clusterClient := newRedisProtocolClusterClient(t, addr)
+	client := &RedisClientImpl{
+		client:        clusterClient,
+		clusterClient: clusterClient,
+		isCluster:     true,
+	}
+
+	result, err := client.ScanKeys("matched:*", 0, redisScanDefaultTargetCount)
+	if err == nil || !strings.Contains(err.Error(), strconv.Itoa(redisSearchMaxResultCount)) {
+		t.Fatalf("expected safety-limit error, got result=%#v err=%v", result, err)
+	}
+}
+
+func TestRedisClusterSearchHonorsSharedDeadline(t *testing.T) {
+	addr := startRedisProtocolTestServer(t, func(args []string) string {
+		switch strings.ToUpper(strings.TrimSpace(args[0])) {
+		case "HELLO":
+			return "-ERR unknown command 'HELLO'\r\n"
+		case "CLIENT":
+			return "-ERR unknown subcommand\r\n"
+		case "SCAN":
+			time.Sleep(redisSearchMaxDuration + 2*time.Second)
+			return "*2\r\n$1\r\n0\r\n*0\r\n"
+		}
+		return "+OK\r\n"
+	})
+	clusterClient := newRedisProtocolClusterClient(t, addr)
+	client := &RedisClientImpl{
+		client:        clusterClient,
+		clusterClient: clusterClient,
+		isCluster:     true,
+	}
+
+	startedAt := time.Now()
+	result, err := client.ScanKeys("matched:*", 0, 10)
+	elapsed := time.Since(startedAt)
+	if err == nil {
+		t.Fatalf("expected cluster search deadline error, got result %#v", result)
+	}
+	if elapsed >= redisSearchMaxDuration+time.Second {
+		t.Fatalf("expected shared %s deadline, elapsed %s", redisSearchMaxDuration, elapsed)
+	}
+}
+
+func TestRedisClusterSearchReturnsMetadataErrors(t *testing.T) {
+	addr := startRedisProtocolTestServer(t, func(args []string) string {
+		switch strings.ToUpper(strings.TrimSpace(args[0])) {
+		case "HELLO":
+			return "-ERR unknown command 'HELLO'\r\n"
+		case "CLIENT":
+			return "-ERR unknown subcommand\r\n"
+		case "SCAN":
+			return "*2\r\n$1\r\n0\r\n*1\r\n$13\r\nmatched:first\r\n"
+		case "TYPE":
+			return "-ERR TYPE forbidden\r\n"
+		case "TTL":
+			return ":-1\r\n"
+		}
+		return "+OK\r\n"
+	})
+	clusterClient := newRedisProtocolClusterClient(t, addr)
+	client := &RedisClientImpl{
+		client:        clusterClient,
+		clusterClient: clusterClient,
+		isCluster:     true,
+	}
+
+	result, err := client.ScanKeys("matched:*", 0, 10)
+	if err == nil {
+		t.Fatalf("expected metadata error, got result %#v", result)
 	}
 }
 

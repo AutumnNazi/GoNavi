@@ -45,8 +45,9 @@ const REDIS_TREE_KEY_TTL_WIDTH = 92;
 const REDIS_TREE_HIDE_TTL_THRESHOLD = 460;
 const REDIS_KEY_INITIAL_LOAD_COUNT = 2000;
 const REDIS_KEY_LOAD_MORE_COUNT = 2000;
-const REDIS_KEY_SEARCH_INITIAL_LOAD_COUNT = 2000;
+const REDIS_KEY_SEARCH_INITIAL_LOAD_COUNT = 600;
 const REDIS_KEY_SEARCH_LOAD_MORE_COUNT = 1000;
+const REDIS_KEY_SEARCH_MAX_RESULT_COUNT = 10000;
 const REDIS_LARGE_KEYSPACE_THRESHOLD = 10000;
 const REDIS_LARGE_KEYSPACE_MAX_EXPANDED_GROUPS = 200;
 const REDIS_KEY_GONE_MESSAGE = 'Redis Key 不存在或已过期'; // i18n-scan: allow-raw backend sentinel
@@ -420,7 +421,8 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
         pattern: string = '*',
         fromCursor: string = '0',
         append: boolean = false,
-        targetCount?: number
+        targetCount?: number,
+        scanToCompletion: boolean = false
     ) => {
         const config = getConfig();
         if (!config) return;
@@ -431,16 +433,17 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
         latestLoadRequestIdRef.current = requestId;
 
         setLoading(true);
+        setLoadingAllKeys(false);
         try {
             let scanCursor = normalizeRedisCursor(fromCursor);
             let scannedKeys: RedisKeyInfo[] = [];
             let nextCursor = scanCursor;
+            const keyMap = new Map<string, RedisKeyInfo>();
             const visitedCursors = new Set<string>();
 
             while (true) {
                 if (visitedCursors.has(scanCursor)) {
-                    nextCursor = '0';
-                    break;
+                    throw new Error(`Redis scan cursor repeated: ${scanCursor}`);
                 }
                 visitedCursors.add(scanCursor);
 
@@ -456,16 +459,26 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
 
                 scannedKeys = page.scannedKeys;
                 nextCursor = page.nextCursor;
-                if (scannedKeys.length > 0 || nextCursor === '0') {
+                if (nextCursor !== '0' && nextCursor === scanCursor) {
+                    throw new Error(`Redis scan cursor repeated: ${nextCursor}`);
+                }
+                if (scanToCompletion) {
+                    scannedKeys.forEach((item) => keyMap.set(item.key, item));
+                    if (keyMap.size > REDIS_KEY_SEARCH_MAX_RESULT_COUNT) {
+                        throw new Error(`Redis search exceeded ${REDIS_KEY_SEARCH_MAX_RESULT_COUNT} Keys`);
+                    }
+                }
+                if (nextCursor === '0' || (!scanToCompletion && scannedKeys.length > 0)) {
                     break;
                 }
                 scanCursor = nextCursor;
             }
 
+            const loadedKeys = scanToCompletion ? Array.from(keyMap.values()) : scannedKeys;
             if (append) {
-                setKeys(prev => mergeRedisKeyInfoLists(prev, scannedKeys));
+                setKeys(prev => mergeRedisKeyInfoLists(prev, loadedKeys));
             } else {
-                setKeys(scannedKeys);
+                setKeys(loadedKeys);
             }
             setCursor(nextCursor);
             setHasMore(nextCursor !== '0');
@@ -482,7 +495,13 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
     }, [getConfig, scanRedisKeysPage, tr]);
 
     useEffect(() => {
-        loadKeys(searchPattern, '0', false, getRedisScanLoadCount(searchPattern, false));
+        loadKeys(
+            searchPattern,
+            '0',
+            false,
+            getRedisScanLoadCount(searchPattern, false),
+            searchMode === 'prefix' && searchPattern !== '*'
+        );
     }, [loadKeys, redisDB]);
 
     const executeSearch = useCallback((value: string, mode: RedisSearchMode = searchMode) => {
@@ -490,7 +509,13 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
         setSearchInput(normalized.keyword);
         setSearchPattern(normalized.pattern);
         setCursor('0');
-        loadKeys(normalized.pattern, '0', false, getRedisScanLoadCount(normalized.pattern, false));
+        loadKeys(
+            normalized.pattern,
+            '0',
+            false,
+            getRedisScanLoadCount(normalized.pattern, false),
+            mode === 'prefix' && normalized.keyword !== ''
+        );
     }, [loadKeys, searchMode]);
 
     const handleSearch = (value: string) => {
@@ -505,7 +530,13 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
         }
         setSearchPattern(normalized.pattern);
         setCursor('0');
-        loadKeys(normalized.pattern, '0', false, getRedisScanLoadCount(normalized.pattern, false));
+        loadKeys(
+            normalized.pattern,
+            '0',
+            false,
+            getRedisScanLoadCount(normalized.pattern, false),
+            searchMode === 'prefix' && normalized.keyword !== ''
+        );
     };
 
     const handleSearchModeChange = useCallback((event: RadioChangeEvent) => {
@@ -537,8 +568,14 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
         try {
             let nextCursor = '0';
             const keyMap = new Map<string, RedisKeyInfo>();
+            const visitedCursors = new Set<string>();
 
             do {
+                if (visitedCursors.has(nextCursor)) {
+                    throw new Error(`Redis scan cursor repeated: ${nextCursor}`);
+                }
+                visitedCursors.add(nextCursor);
+
                 const { scannedKeys, nextCursor: scannedCursor } = await scanRedisKeysPage(
                     config,
                     normalizedPattern,
@@ -549,6 +586,9 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
                     return;
                 }
                 scannedKeys.forEach((item) => keyMap.set(item.key, item));
+                if (scannedCursor !== '0' && scannedCursor === nextCursor) {
+                    throw new Error(`Redis scan cursor repeated: ${scannedCursor}`);
+                }
                 nextCursor = scannedCursor;
             } while (nextCursor !== '0');
 
@@ -570,7 +610,13 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
 
     const handleRefresh = () => {
         setCursor('0');
-        loadKeys(searchPattern, '0', false, getRedisScanLoadCount(searchPattern, false));
+        loadKeys(
+            searchPattern,
+            '0',
+            false,
+            getRedisScanLoadCount(searchPattern, false),
+            searchMode === 'prefix' && searchPattern !== '*'
+        );
     };
 
     const handleSelectAllLoadedKeys = useCallback(() => {
@@ -705,7 +751,13 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
                 setSelectedKey(null);
                 setKeyValue(null);
                 setCursor('0');
-                loadKeys(searchPattern, '0', false, getRedisScanLoadCount(searchPattern, false));
+                loadKeys(
+                    searchPattern,
+                    '0',
+                    false,
+                    getRedisScanLoadCount(searchPattern, false),
+                    searchMode === 'prefix' && searchPattern !== '*'
+                );
                 return;
             }
             if (String(res?.message || '').trim() === '已取消') {
@@ -717,7 +769,7 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
         } finally {
             setImportingKeys(false);
         }
-    }, [getConfig, importConflictMode, importPreview, importSelectedKeys, loadKeys, resetImportModalState, searchPattern, tr]);
+    }, [getConfig, importConflictMode, importPreview, importSelectedKeys, loadKeys, resetImportModalState, searchMode, searchPattern, tr]);
 
     const importSelectedKeySet = useMemo(() => new Set(importSelectedKeys), [importSelectedKeys]);
     const handleToggleImportPreviewKey = useCallback((key: string, checked: boolean) => {
