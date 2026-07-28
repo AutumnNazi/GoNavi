@@ -346,5 +346,6 @@ export const shouldLoadSidebarNodeOnExpand = (
       || node.type === 'external-sql-root'
       || node.type === 'table'
       || node.type === 'jvm-mode'
-      || node.type === 'jvm-resource';
+      || node.type === 'jvm-resource'
+      || node.type === 'nacos-config-entry';
 };

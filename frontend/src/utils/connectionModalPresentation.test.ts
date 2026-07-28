@@ -42,6 +42,7 @@ const layoutKindEntries = [
   ['timeseries', 'timeseries'],
   ['custom', 'custom'],
   ['jvm', 'jvm'],
+  ['nacos', 'nacos'],
   ['generic-sql', 'genericSql'],
 ] as const;
 

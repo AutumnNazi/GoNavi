@@ -14,6 +14,7 @@ import {
   ExportOutlined,
   EyeOutlined,
   FileAddOutlined,
+  FileTextOutlined,
   FolderAddOutlined,
   FolderOpenOutlined,
   FolderOutlined,
@@ -41,8 +42,102 @@ import {
   buildRedisDbNodeLabel,
   getRedisDbAlias,
 } from '../../utils/redisDbAlias';
+import { buildRpcConnectionConfig } from '../../utils/connectionRpcConfig';
 import { supportsTableTruncateAction } from '../tableDataDangerActions';
 import { normalizeConnectionEnvironmentType } from '../../utils/connectionEnvironment';
+import { noAutoCapInputProps } from '../../utils/inputAutoCap';
+
+type NacosNamespaceFormMode = 'create' | 'edit';
+
+const openNacosNamespaceFormModal = (options: {
+  mode: NacosNamespaceFormMode;
+  connection: SavedConnection;
+  initial?: { id?: string; showName?: string; description?: string };
+  onSuccess?: () => void;
+}) => {
+  const draft = {
+    id: String(options.initial?.id || ''),
+    showName: String(options.initial?.showName || ''),
+    description: String(options.initial?.description || ''),
+  };
+  const isEdit = options.mode === 'edit';
+  Modal.confirm({
+    title: isEdit ? t('nacos.namespace.menu.edit') : t('nacos.namespace.menu.create'),
+    icon: null,
+    width: 480,
+    content: (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 8 }}>
+        <div>
+          <div style={{ marginBottom: 4 }}>{t('nacos.namespace.field.id')}</div>
+          <Input
+            {...noAutoCapInputProps}
+            disabled={isEdit}
+            defaultValue={draft.id}
+            placeholder="optional"
+            onChange={(event) => {
+              draft.id = event.target.value;
+            }}
+          />
+        </div>
+        <div>
+          <div style={{ marginBottom: 4 }}>{t('nacos.namespace.field.name')}</div>
+          <Input
+            {...noAutoCapInputProps}
+            defaultValue={draft.showName}
+            onChange={(event) => {
+              draft.showName = event.target.value;
+            }}
+          />
+        </div>
+        <div>
+          <div style={{ marginBottom: 4 }}>{t('nacos.namespace.field.desc')}</div>
+          <Input.TextArea
+            {...noAutoCapInputProps}
+            rows={3}
+            defaultValue={draft.description}
+            onChange={(event) => {
+              draft.description = event.target.value;
+            }}
+          />
+        </div>
+      </div>
+    ),
+    okText: t('common.confirm'),
+    cancelText: t('common.cancel'),
+    onOk: async () => {
+      const showName = draft.showName.trim();
+      if (!showName) {
+        message.error(t('nacos.backend.error.namespace_name_required'));
+        throw new Error('namespace name required');
+      }
+      const rpcConfig = buildRpcConnectionConfig(options.connection.config as any);
+      if (isEdit) {
+        const res = await (window as any).go.app.App.NacosUpdateNamespace(rpcConfig, {
+          id: draft.id.trim(),
+          showName,
+          description: draft.description.trim(),
+        });
+        if (!res?.success) {
+          message.error(res?.message || 'update failed');
+          throw new Error(res?.message || 'update failed');
+        }
+        message.success(t('nacos.namespace.message.update_success'));
+      } else {
+        const res = await (window as any).go.app.App.NacosCreateNamespace(rpcConfig, {
+          id: draft.id.trim(),
+          showName,
+          description: draft.description.trim(),
+        });
+        if (!res?.success) {
+          message.error(res?.message || 'create failed');
+          throw new Error(res?.message || 'create failed');
+        }
+        message.success(t('nacos.namespace.message.create_success'));
+      }
+      options.onSuccess?.();
+    },
+  });
+};
 
 const updateRedisDbNodeAlias = (
   nodes: any[],
@@ -224,6 +319,7 @@ export const buildSidebarLegacyNodeMenuItems = (
   } = context;
     const conn = node.dataRef as SavedConnection;
     const isRedis = conn?.config?.type === 'redis';
+    const isNacos = conn?.config?.type === 'nacos';
 
     if (node.type === 'object-group' && node.dataRef?.groupKey === 'schema') {
         const dialect = getMetadataDialect(node.dataRef as SavedConnection);
@@ -508,6 +604,60 @@ export const buildSidebarLegacyNodeMenuItems = (
             ];
         }
 
+        if (isNacos) {
+            return [
+                {
+                    key: 'refresh',
+                    label: t('sidebar.menu.refresh'),
+                    icon: <ReloadOutlined />,
+                    onClick: () => {
+                        const connKey = String(node.key);
+                        setExpandedKeys((prev: any[]) => prev.filter((k: any) => !k.toString().startsWith(`${connKey}-`)));
+                        setLoadedKeys((prev: any[]) => prev.filter((k: any) => !k.toString().startsWith(`${connKey}-`)));
+                        loadDatabases(node);
+                    },
+                },
+                {
+                    key: 'create-nacos-namespace',
+                    label: t('nacos.namespace.menu.create'),
+                    icon: <PlusOutlined />,
+                    onClick: () => openNacosNamespaceFormModal({
+                        mode: 'create',
+                        connection: node.dataRef as SavedConnection,
+                        onSuccess: () => loadDatabases(node),
+                    }),
+                },
+                { type: 'divider' },
+                {
+                    key: 'edit',
+                    label: t('sidebar.menu.edit_connection'),
+                    icon: <EditOutlined />,
+                    onClick: () => {
+                        if (onEditConnection) onEditConnection(node.dataRef);
+                    },
+                },
+                {
+                    key: 'copy-connection',
+                    label: t('connection.sidebar.menu.copy'),
+                    icon: <CopyOutlined />,
+                    onClick: () => handleDuplicateConnection(node.dataRef as SavedConnection),
+                },
+                {
+                    key: 'disconnect',
+                    label: t('connection.sidebar.menu.disconnect'),
+                    icon: <DisconnectOutlined />,
+                    onClick: () => void disconnectConnectionNode(node),
+                },
+                {
+                    key: 'delete',
+                    label: t('connection.sidebar.menu.delete'),
+                    icon: <DeleteOutlined />,
+                    danger: true,
+                    onClick: () => deleteConnectionNode(node),
+                },
+            ];
+        }
+
         // Tag submenu for connection
         const tagSubMenuItems: NonNullable<MenuProps['items']> = connectionTags.map((tag: any) => ({
             key: `move-to-tag-${tag.id}`,
@@ -608,6 +758,165 @@ export const buildSidebarLegacyNodeMenuItems = (
                  danger: true,
                  onClick: () => deleteConnectionNode(node)
              }
+        ];
+    } else if (node.type === 'nacos-namespace') {
+        const {
+            id,
+            nacosNamespaceId = '',
+            nacosNamespaceName = '',
+            config,
+        } = node.dataRef || {};
+        const nsName = nacosNamespaceName || nacosNamespaceId || 'public';
+        const nsKey = nacosNamespaceId || 'public';
+        const isPublicNs = !String(nacosNamespaceId || '').trim() || String(nacosNamespaceId).toLowerCase() === 'public';
+        const parentConnectionNode = {
+            key: id,
+            type: 'connection',
+            dataRef: node.dataRef,
+        };
+        return [
+            {
+                key: 'open-nacos-config',
+                label: t('nacos_viewer.title.config_explorer'),
+                icon: <FileTextOutlined />,
+                onClick: () => {
+                    addTab({
+                        id: `nacos-config-${id}-ns-${nsKey}`,
+                        title: nsName,
+                        type: 'nacos-config',
+                        connectionId: id,
+                        nacosNamespaceId: nacosNamespaceId || '',
+                        nacosNamespaceName: nsName,
+                    });
+                },
+            },
+            {
+                key: 'open-nacos-services',
+                label: t('nacos_service.title.service_explorer'),
+                icon: <CloudOutlined />,
+                onClick: () => {
+                    addTab({
+                        id: `nacos-services-${id}-ns-${nsKey}`,
+                        title: `${nsName} · services`,
+                        type: 'nacos-services',
+                        connectionId: id,
+                        nacosNamespaceId: nacosNamespaceId || '',
+                        nacosNamespaceName: nsName,
+                    });
+                },
+            },
+            {
+                key: 'edit-nacos-namespace',
+                label: t('nacos.namespace.menu.edit'),
+                icon: <EditOutlined />,
+                disabled: isPublicNs,
+                onClick: () => openNacosNamespaceFormModal({
+                    mode: 'edit',
+                    connection: { id, config } as SavedConnection,
+                    initial: {
+                        id: nacosNamespaceId || '',
+                        showName: nsName,
+                        description: '',
+                    },
+                    onSuccess: () => loadDatabases(parentConnectionNode),
+                }),
+            },
+            {
+                key: 'delete-nacos-namespace',
+                label: t('nacos.namespace.menu.delete'),
+                icon: <DeleteOutlined />,
+                danger: true,
+                disabled: isPublicNs,
+                onClick: () => {
+                    Modal.confirm({
+                        title: t('nacos.namespace.menu.delete'),
+                        content: t('nacos.namespace.message.confirm_delete', {
+                            name: nsName,
+                            id: nacosNamespaceId || '',
+                        }),
+                        okButtonProps: { danger: true },
+                        onOk: async () => {
+                            const rpcConfig = buildRpcConnectionConfig(config as any);
+                            const res = await (window as any).go.app.App.NacosDeleteNamespace(
+                                rpcConfig,
+                                nacosNamespaceId || '',
+                            );
+                            if (!res?.success) {
+                                message.error(res?.message || 'delete failed');
+                                throw new Error(res?.message || 'delete failed');
+                            }
+                            message.success(t('nacos.namespace.message.delete_success'));
+                            loadDatabases(parentConnectionNode);
+                        },
+                    });
+                },
+            },
+        ];
+    } else if (node.type === 'nacos-config-entry' || node.type === 'nacos-services-entry') {
+        const {
+            id,
+            nacosNamespaceId = '',
+            nacosNamespaceName = '',
+        } = node.dataRef || {};
+        const nsName = nacosNamespaceName || nacosNamespaceId || 'public';
+        const nsKey = nacosNamespaceId || 'public';
+        const isServices = node.type === 'nacos-services-entry';
+        return [
+            {
+                key: 'open-nacos-entry',
+                label: isServices
+                    ? t('nacos_service.title.service_explorer')
+                    : t('nacos_viewer.action.open_all_configs'),
+                icon: isServices ? <CloudOutlined /> : <FileTextOutlined />,
+                onClick: () => {
+                    addTab({
+                        id: isServices
+                            ? `nacos-services-${id}-ns-${nsKey}`
+                            : `nacos-config-${id}-ns-${nsKey}`,
+                        title: isServices ? `${nsName} · services` : nsName,
+                        type: isServices ? 'nacos-services' : 'nacos-config',
+                        connectionId: id,
+                        nacosNamespaceId: nacosNamespaceId || '',
+                        nacosNamespaceName: nsName,
+                    });
+                },
+            },
+        ];
+    } else if (node.type === 'nacos-config-group') {
+        const {
+            id,
+            nacosNamespaceId = '',
+            nacosNamespaceName = '',
+            nacosGroup = '',
+            nacosAllConfigs = false,
+        } = node.dataRef || {};
+        const nsName = nacosNamespaceName || nacosNamespaceId || 'public';
+        const nsKey = nacosNamespaceId || 'public';
+        const isAll = !!nacosAllConfigs;
+        const groupName = isAll ? '' : (String(nacosGroup || '').trim() || 'DEFAULT_GROUP');
+        return [
+            {
+                key: 'open-nacos-group',
+                label: isAll
+                    ? t('nacos_viewer.action.open_all_configs')
+                    : t('nacos_viewer.action.open_group_configs'),
+                icon: <FileTextOutlined />,
+                onClick: () => {
+                    addTab({
+                        id: isAll
+                            ? `nacos-config-${id}-ns-${nsKey}`
+                            : `nacos-config-${id}-ns-${nsKey}-g-${encodeURIComponent(groupName)}`,
+                        title: isAll
+                            ? `${nsName} · ${t('nacos_viewer.label.all')}`
+                            : `${nsName} · ${groupName}`,
+                        type: 'nacos-config',
+                        connectionId: id,
+                        nacosNamespaceId: nacosNamespaceId || '',
+                        nacosNamespaceName: nsName,
+                        ...(isAll ? {} : { nacosGroup: groupName }),
+                    });
+                },
+            },
         ];
     } else if (node.type === 'redis-db') {
         // Redis database menu

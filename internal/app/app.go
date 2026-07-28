@@ -20,6 +20,7 @@ import (
 	"GoNavi-Wails/internal/db"
 	"GoNavi-Wails/internal/jvm"
 	"GoNavi-Wails/internal/logger"
+	nacosbackend "GoNavi-Wails/internal/nacos"
 	proxytunnel "GoNavi-Wails/internal/proxy"
 	redisbackend "GoNavi-Wails/internal/redis"
 	"GoNavi-Wails/internal/resultdiff"
@@ -315,6 +316,7 @@ func (a *App) SetLanguage(language string) {
 	jvm.SetBackendLanguage(normalized)
 	proxytunnel.SetBackendLanguage(normalized)
 	redisbackend.SetBackendLanguage(normalized)
+	nacosbackend.SetBackendLanguage(normalized)
 	syncbackend.SetBackendLanguage(normalized)
 }
 
@@ -441,6 +443,8 @@ func (a *App) Shutdown() {
 	proxytunnel.CloseAllForwarders()
 	// Close all Redis connections
 	CloseAllRedisClients()
+	// Close Nacos listeners and connections
+	CloseAllNacosClients()
 	logger.Infof("资源释放完成，应用已关闭")
 	logger.Close()
 }

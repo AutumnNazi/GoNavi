@@ -1,6 +1,8 @@
 import React, { useRef } from 'react';
 import { message } from 'antd';
 import {
+  AppstoreOutlined,
+  CloudOutlined,
   CodeOutlined,
   ClockCircleOutlined,
   DashboardOutlined,
@@ -374,6 +376,72 @@ export const useSidebarTreeLoaders = ({
                   message.error({
                       content: t('sidebar.message.connection_failed', { error: e?.message || String(e) }),
                       key: `conn-${conn.id}-dbs`,
+                  });
+              } finally {
+                  loadingNodesRef.current.delete(loadKey);
+                  if (shouldMarkConnectionSuccess) {
+                      setConnectionStates(prev => ({ ...prev, [conn.id]: 'success' }));
+                  }
+              }
+              return;
+          }
+
+          // Handle Nacos connections: expand namespaces
+          if (conn.config.type === 'nacos') {
+              try {
+                  const res = await (window as any).go.app.App.NacosListNamespaces(buildRpcConnectionConfig(config));
+                  if (res.success) {
+                      const rows: any[] = Array.isArray(res.data) ? res.data : [];
+                      const namespaces = rows.map((ns: any) => {
+                          const namespaceId = String(ns.id ?? ns.ID ?? '');
+                          const showName = String(ns.showName || ns.ShowName || (namespaceId || 'public'));
+                          const configCount = Number(ns.configCount ?? ns.ConfigCount ?? 0);
+                          const nodeKeyId = namespaceId || 'public';
+                          const nsDataRef = {
+                              ...conn,
+                              nacosNamespaceId: namespaceId,
+                              nacosNamespaceName: showName,
+                              nacosConfigCount: Number.isFinite(configCount) ? configCount : 0,
+                          };
+                          return {
+                              title: showName,
+                              key: `${conn.id}-nacos-ns-${nodeKeyId}`,
+                              icon: <DatabaseOutlined style={{ color: '#2E6BE6' }} />,
+                              type: 'nacos-namespace' as const,
+                              dataRef: nsDataRef,
+                              isLeaf: false,
+                              children: [
+                                  {
+                                      title: t('nacos_viewer.title.config_explorer'),
+                                      key: `${conn.id}-nacos-ns-${nodeKeyId}-config`,
+                                      icon: <DatabaseOutlined style={{ color: '#2E6BE6' }} />,
+                                      type: 'nacos-config-entry' as const,
+                                      dataRef: nsDataRef,
+                                      // Expand to load Group list.
+                                      isLeaf: false,
+                                  },
+                                  {
+                                      title: t('nacos_service.title.service_explorer'),
+                                      key: `${conn.id}-nacos-ns-${nodeKeyId}-services`,
+                                      icon: <CloudOutlined style={{ color: '#13C2C2' }} />,
+                                      type: 'nacos-services-entry' as const,
+                                      dataRef: nsDataRef,
+                                      isLeaf: true,
+                                  },
+                              ],
+                          };
+                      });
+                      replaceTreeNodeChildren(node.key, namespaces, conn);
+                      shouldMarkConnectionSuccess = true;
+                  } else {
+                      setConnectionStates(prev => ({ ...prev, [conn.id]: 'error' }));
+                      message.error({ content: res.message, key: `conn-${conn.id}-nacos-ns` });
+                  }
+              } catch (e: any) {
+                  setConnectionStates(prev => ({ ...prev, [conn.id]: 'error' }));
+                  message.error({
+                      content: t('sidebar.message.connection_failed', { error: e?.message || String(e) }),
+                      key: `conn-${conn.id}-nacos-ns`,
                   });
               } finally {
                   loadingNodesRef.current.delete(loadKey);
@@ -1169,9 +1237,81 @@ export const useSidebarTreeLoaders = ({
   };
 
 
+  const loadNacosConfigGroups = async (node: any) => {
+      const dataRef = node?.dataRef || {};
+      const connectionId = String(dataRef.id || '');
+      const namespaceId = String(dataRef.nacosNamespaceId ?? '');
+      const namespaceName = String(dataRef.nacosNamespaceName || namespaceId || 'public');
+      const nodeKeyId = namespaceId || 'public';
+      const loadKey = `nacos-groups-${connectionId}-${nodeKeyId}`;
+      if (!connectionId) return;
+      if (loadingNodesRef.current.has(loadKey)) return;
+      loadingNodesRef.current.add(loadKey);
+      try {
+          const res = await (window as any).go.app.App.NacosListConfigGroups(
+              buildRpcConnectionConfig(dataRef.config || {}),
+              namespaceId,
+          );
+          if (!res?.success) {
+              message.error({
+                  content: res?.message || t('sidebar.message.connection_failed', { error: 'list groups failed' }),
+                  key: loadKey,
+              });
+              setLoadedKeys((prev) => prev.filter((k) => k !== node.key));
+              return;
+          }
+          const groups: string[] = Array.isArray(res.data) ? res.data.map((g: any) => String(g || '').trim()).filter(Boolean) : [];
+          // Always offer "全部" so users can open the namespace without a group filter.
+          const allNode: TreeNode = {
+              title: t('nacos_viewer.label.all'),
+              key: `${connectionId}-nacos-ns-${nodeKeyId}-group-__all__`,
+              icon: <AppstoreOutlined style={{ color: '#2E6BE6' }} />,
+              type: 'nacos-config-group' as const,
+              dataRef: {
+                  ...dataRef,
+                  nacosNamespaceId: namespaceId,
+                  nacosNamespaceName: namespaceName,
+                  nacosGroup: '',
+                  nacosAllConfigs: true,
+              },
+              isLeaf: true,
+          };
+          const groupNodes: TreeNode[] = groups.map((group) => ({
+              title: group,
+              key: `${connectionId}-nacos-ns-${nodeKeyId}-group-${encodeURIComponent(group)}`,
+              icon: <FolderOpenOutlined style={{ color: '#2E6BE6' }} />,
+              type: 'nacos-config-group' as const,
+              dataRef: {
+                  ...dataRef,
+                  nacosNamespaceId: namespaceId,
+                  nacosNamespaceName: namespaceName,
+                  nacosGroup: group,
+                  nacosAllConfigs: false,
+              },
+              isLeaf: true,
+          }));
+          replaceTreeNodeChildren(node.key, [allNode, ...groupNodes], dataRef);
+          if (groups.length === 0) {
+              message.info({
+                  content: t('nacos_viewer.message.no_groups'),
+                  key: loadKey,
+              });
+          }
+      } catch (error: any) {
+          message.error({
+              content: t('sidebar.message.connection_failed', { error: error?.message || String(error) }),
+              key: loadKey,
+          });
+          setLoadedKeys((prev) => prev.filter((k) => k !== node.key));
+      } finally {
+          loadingNodesRef.current.delete(loadKey);
+      }
+  };
+
   return {
       loadDatabases,
       loadJVMResources,
       loadTables,
+      loadNacosConfigGroups,
   };
 };

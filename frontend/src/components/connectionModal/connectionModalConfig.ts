@@ -787,6 +787,7 @@ export const buildConnectionConfig = async ({
   const keepAliveEnabled =
     !isFileDatabaseType(type) &&
     type !== "jvm" &&
+    type !== "nacos" &&
     !!mergedValues.keepAliveEnabled;
   const keepAliveIntervalMinutesRaw = Number(
     mergedValues.keepAliveIntervalMinutes,
@@ -830,7 +831,7 @@ export const buildConnectionConfig = async ({
   const keepAliveSQL = keepAliveSQLSupported
     ? keepAliveSQLInput.slice(0, MAX_CONNECTION_KEEPALIVE_SQL_LENGTH)
     : "";
-  const normalizedConnectionParams = supportsConnectionParamsForType(type)
+  let normalizedConnectionParams = supportsConnectionParamsForType(type)
     ? type === "oceanbase"
       ? normalizeOceanBaseConnectionParamsText(
           mergedValues.connectionParams,
@@ -838,6 +839,11 @@ export const buildConnectionConfig = async ({
         )
       : normalizeConnectionParamsText(mergedValues.connectionParams)
     : "";
+  if (type === "nacos" && !/(?:^|[&;])contextPath=/.test(normalizedConnectionParams)) {
+    normalizedConnectionParams = normalizedConnectionParams
+      ? `${normalizedConnectionParams}&contextPath=/nacos`
+      : "contextPath=/nacos";
+  }
   const supportsProductionGuard = supportsConnectionReadOnlyMode({
     type,
     driver: mergedValues.driver,

@@ -52,6 +52,10 @@ export type SidebarTreeNodeType =
   | 'folder-fks'
   | 'folder-triggers'
   | 'redis-db'
+  | 'nacos-namespace'
+  | 'nacos-config-entry'
+  | 'nacos-config-group'
+  | 'nacos-services-entry'
   | 'tag'
   | 'jvm-mode'
   | 'jvm-resource'
@@ -82,7 +86,8 @@ export const shouldLoadSidebarNodeOnExpand = (
     || node.type === 'external-sql-root'
     || node.type === 'table'
     || node.type === 'jvm-mode'
-    || node.type === 'jvm-resource';
+    || node.type === 'jvm-resource'
+    || node.type === 'nacos-config-entry';
 };
 
 export const resolveSidebarTableNameForCopy = (

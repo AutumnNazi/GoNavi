@@ -296,6 +296,70 @@ export function OpenSQLFile():Promise<connection.QueryResult>;
 
 export function OpenSavedQueryDirectory():Promise<connection.QueryResult>;
 
+export function NacosConnect(arg1:connection.ConnectionConfig):Promise<connection.QueryResult>;
+
+export function NacosCreateNamespace(arg1:connection.ConnectionConfig,arg2:app.NacosCreateNamespacePayload):Promise<connection.QueryResult>;
+
+export function NacosCreateService(arg1:connection.ConnectionConfig,arg2:app.NacosServicePayload):Promise<connection.QueryResult>;
+
+export function NacosDeleteConfig(arg1:connection.ConnectionConfig,arg2:string,arg3:string,arg4:string):Promise<connection.QueryResult>;
+
+export function NacosDeleteNamespace(arg1:connection.ConnectionConfig,arg2:string):Promise<connection.QueryResult>;
+
+export function NacosDeleteService(arg1:connection.ConnectionConfig,arg2:string,arg3:string,arg4:string):Promise<connection.QueryResult>;
+
+export function NacosDeregisterInstance(arg1:connection.ConnectionConfig,arg2:app.NacosInstancePayload):Promise<connection.QueryResult>;
+
+export function NacosExportConfigs(arg1:connection.ConnectionConfig,arg2:app.NacosExportConfigsOptions):Promise<connection.QueryResult>;
+
+export function NacosGetBetaConfig(arg1:connection.ConnectionConfig,arg2:string,arg3:string,arg4:string):Promise<connection.QueryResult>;
+
+export function NacosGetConfig(arg1:connection.ConnectionConfig,arg2:string,arg3:string,arg4:string):Promise<connection.QueryResult>;
+
+export function NacosGetConfigHistory(arg1:connection.ConnectionConfig,arg2:string,arg3:string,arg4:string,arg5:string):Promise<connection.QueryResult>;
+
+export function NacosGetInstance(arg1:connection.ConnectionConfig,arg2:app.NacosInstancePayload):Promise<connection.QueryResult>;
+
+export function NacosGetService(arg1:connection.ConnectionConfig,arg2:string,arg3:string,arg4:string):Promise<connection.QueryResult>;
+
+export function NacosImportConfigs(arg1:connection.ConnectionConfig,arg2:app.NacosImportConfigsOptions):Promise<connection.QueryResult>;
+
+export function NacosListConfigGroups(arg1:connection.ConnectionConfig,arg2:string):Promise<connection.QueryResult>;
+
+export function NacosListConfigHistory(arg1:connection.ConnectionConfig,arg2:app.NacosHistoryQuery):Promise<connection.QueryResult>;
+
+export function NacosListInstances(arg1:connection.ConnectionConfig,arg2:app.NacosInstanceQuery):Promise<connection.QueryResult>;
+
+export function NacosListNamespaces(arg1:connection.ConnectionConfig):Promise<connection.QueryResult>;
+
+export function NacosListServices(arg1:connection.ConnectionConfig,arg2:app.NacosServiceQuery):Promise<connection.QueryResult>;
+
+export function NacosPreviewImportConfigs(arg1:connection.ConnectionConfig,arg2:string):Promise<connection.QueryResult>;
+
+export function NacosPublishConfig(arg1:connection.ConnectionConfig,arg2:app.NacosPublishConfigPayload):Promise<connection.QueryResult>;
+
+export function NacosRegisterInstance(arg1:connection.ConnectionConfig,arg2:app.NacosInstancePayload):Promise<connection.QueryResult>;
+
+export function NacosSearchConfigs(arg1:connection.ConnectionConfig,arg2:app.NacosConfigQuery):Promise<connection.QueryResult>;
+
+export function NacosStartConfigListen(arg1:connection.ConnectionConfig,arg2:app.NacosStartConfigListenPayload):Promise<connection.QueryResult>;
+
+export function NacosStopBetaConfig(arg1:connection.ConnectionConfig,arg2:string,arg3:string,arg4:string):Promise<connection.QueryResult>;
+
+export function NacosStopConfigListen(arg1:string):Promise<connection.QueryResult>;
+
+export function NacosTestConnection(arg1:connection.ConnectionConfig):Promise<connection.QueryResult>;
+
+export function NacosUpdateConfigListenMD5(arg1:string,arg2:string):Promise<connection.QueryResult>;
+
+export function NacosUpdateInstance(arg1:connection.ConnectionConfig,arg2:app.NacosInstancePayload):Promise<connection.QueryResult>;
+
+export function NacosUpdateInstanceHealth(arg1:connection.ConnectionConfig,arg2:app.NacosInstancePayload):Promise<connection.QueryResult>;
+
+export function NacosUpdateNamespace(arg1:connection.ConnectionConfig,arg2:app.NacosUpdateNamespacePayload):Promise<connection.QueryResult>;
+
+export function NacosUpdateService(arg1:connection.ConnectionConfig,arg2:app.NacosServicePayload):Promise<connection.QueryResult>;
+
 export function PreviewChanges(arg1:connection.ConnectionConfig,arg2:string,arg3:string,arg4:connection.ChangeSet):Promise<connection.QueryResult>;
 
 export function PreviewImportFile(arg1:string):Promise<connection.QueryResult>;

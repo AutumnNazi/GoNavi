@@ -803,6 +803,308 @@ export namespace app {
 	export class StartSecurityUpdateRequest {
 	    sourceType: string;
 	    rawPayload?: string;
+	export class NacosConfigIdentity {
+	    dataId: string;
+	    group: string;
+
+	    static createFrom(source: any = {}) {
+	        return new NacosConfigIdentity(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.dataId = source["dataId"];
+	        this.group = source["group"];
+	    }
+	}
+	export class NacosConfigQuery {
+	    namespaceId: string;
+	    dataId?: string;
+	    group?: string;
+	    appName?: string;
+	    pageNo?: number;
+	    pageSize?: number;
+	    search?: string;
+
+	    static createFrom(source: any = {}) {
+	        return new NacosConfigQuery(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.namespaceId = source["namespaceId"];
+	        this.dataId = source["dataId"];
+	        this.group = source["group"];
+	        this.appName = source["appName"];
+	        this.pageNo = source["pageNo"];
+	        this.pageSize = source["pageSize"];
+	        this.search = source["search"];
+	    }
+	}
+	export class NacosCreateNamespacePayload {
+	    id: string;
+	    showName: string;
+	    description?: string;
+
+	    static createFrom(source: any = {}) {
+	        return new NacosCreateNamespacePayload(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.showName = source["showName"];
+	        this.description = source["description"];
+	    }
+	}
+	export class NacosExportConfigsOptions {
+	    namespaceId: string;
+	    namespaceName?: string;
+	    scope?: string;
+	    items?: NacosConfigIdentity[];
+
+	    static createFrom(source: any = {}) {
+	        return new NacosExportConfigsOptions(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.namespaceId = source["namespaceId"];
+	        this.namespaceName = source["namespaceName"];
+	        this.scope = source["scope"];
+	        this.items = this.convertValues(source["items"], NacosConfigIdentity);
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class NacosHistoryQuery {
+	    namespaceId: string;
+	    dataId: string;
+	    group: string;
+	    pageNo?: number;
+	    pageSize?: number;
+
+	    static createFrom(source: any = {}) {
+	        return new NacosHistoryQuery(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.namespaceId = source["namespaceId"];
+	        this.dataId = source["dataId"];
+	        this.group = source["group"];
+	        this.pageNo = source["pageNo"];
+	        this.pageSize = source["pageSize"];
+	    }
+	}
+	export class NacosImportConfigsOptions {
+	    namespaceId: string;
+	    conflictMode?: string;
+	    file?: string;
+	    scope?: string;
+	    items?: NacosConfigIdentity[];
+
+	    static createFrom(source: any = {}) {
+	        return new NacosImportConfigsOptions(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.namespaceId = source["namespaceId"];
+	        this.conflictMode = source["conflictMode"];
+	        this.file = source["file"];
+	        this.scope = source["scope"];
+	        this.items = this.convertValues(source["items"], NacosConfigIdentity);
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class NacosInstancePayload {
+	    namespaceId: string;
+	    serviceName: string;
+	    groupName?: string;
+	    ip: string;
+	    port: number;
+	    clusterName?: string;
+	    weight?: number;
+	    enabled?: boolean;
+	    healthy?: boolean;
+	    ephemeral?: boolean;
+	    metadata?: Record<string, string>;
+
+	    static createFrom(source: any = {}) {
+	        return new NacosInstancePayload(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.namespaceId = source["namespaceId"];
+	        this.serviceName = source["serviceName"];
+	        this.groupName = source["groupName"];
+	        this.ip = source["ip"];
+	        this.port = source["port"];
+	        this.clusterName = source["clusterName"];
+	        this.weight = source["weight"];
+	        this.enabled = source["enabled"];
+	        this.healthy = source["healthy"];
+	        this.ephemeral = source["ephemeral"];
+	        this.metadata = source["metadata"];
+	    }
+	}
+	export class NacosInstanceQuery {
+	    namespaceId: string;
+	    serviceName: string;
+	    groupName?: string;
+	    clusters?: string;
+	    healthyOnly?: boolean;
+
+	    static createFrom(source: any = {}) {
+	        return new NacosInstanceQuery(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.namespaceId = source["namespaceId"];
+	        this.serviceName = source["serviceName"];
+	        this.groupName = source["groupName"];
+	        this.clusters = source["clusters"];
+	        this.healthyOnly = source["healthyOnly"];
+	    }
+	}
+	export class NacosPublishConfigPayload {
+	    namespaceId: string;
+	    dataId: string;
+	    group: string;
+	    content: string;
+	    type?: string;
+	    appName?: string;
+	    desc?: string;
+	    betaIps?: string;
+
+	    static createFrom(source: any = {}) {
+	        return new NacosPublishConfigPayload(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.namespaceId = source["namespaceId"];
+	        this.dataId = source["dataId"];
+	        this.group = source["group"];
+	        this.content = source["content"];
+	        this.type = source["type"];
+	        this.appName = source["appName"];
+	        this.desc = source["desc"];
+	        this.betaIps = source["betaIps"];
+	    }
+	}
+	export class NacosServicePayload {
+	    namespaceId: string;
+	    serviceName: string;
+	    groupName?: string;
+	    protectThreshold?: number;
+	    metadata?: Record<string, string>;
+
+	    static createFrom(source: any = {}) {
+	        return new NacosServicePayload(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.namespaceId = source["namespaceId"];
+	        this.serviceName = source["serviceName"];
+	        this.groupName = source["groupName"];
+	        this.protectThreshold = source["protectThreshold"];
+	        this.metadata = source["metadata"];
+	    }
+	}
+	export class NacosServiceQuery {
+	    namespaceId: string;
+	    groupName?: string;
+	    pageNo?: number;
+	    pageSize?: number;
+
+	    static createFrom(source: any = {}) {
+	        return new NacosServiceQuery(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.namespaceId = source["namespaceId"];
+	        this.groupName = source["groupName"];
+	        this.pageNo = source["pageNo"];
+	        this.pageSize = source["pageSize"];
+	    }
+	}
+	export class NacosStartConfigListenPayload {
+	    watchId?: string;
+	    connectionId?: string;
+	    namespaceId: string;
+	    dataId: string;
+	    group: string;
+	    contentMd5?: string;
+
+	    static createFrom(source: any = {}) {
+	        return new NacosStartConfigListenPayload(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.watchId = source["watchId"];
+	        this.connectionId = source["connectionId"];
+	        this.namespaceId = source["namespaceId"];
+	        this.dataId = source["dataId"];
+	        this.group = source["group"];
+	        this.contentMd5 = source["contentMd5"];
+	    }
+	}
+	export class NacosUpdateNamespacePayload {
+	    id: string;
+	    showName: string;
+	    description?: string;
+
+	    static createFrom(source: any = {}) {
+	        return new NacosUpdateNamespacePayload(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.showName = source["showName"];
+	        this.description = source["description"];
+	    }
+	}
 	    options?: SecurityUpdateOptions;
 	
 	    static createFrom(source: any = {}) {

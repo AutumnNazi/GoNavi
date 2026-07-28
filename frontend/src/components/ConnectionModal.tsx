@@ -140,6 +140,7 @@ import {
   TestConnection,
   RedisConnect,
   RedisGetDatabases,
+  NacosConnect,
   SelectDatabaseFile,
   SelectCertificateFile,
   SelectSSHKeyFile,
@@ -162,6 +163,7 @@ const PRIMARY_USERNAME_OPTIONAL_TYPES = new Set([
   "chroma",
   "qdrant",
   "milvus",
+  "nacos",
   "rocketmq",
   "mqtt",
   "kafka",
@@ -1915,17 +1917,22 @@ const ConnectionModal: React.FC<{
           : 30;
       const rpcTimeoutMs = (timeoutSeconds + 5) * 1000;
 
-      // Use different API for Redis / JVM
+      // Use different API for Redis / JVM / Nacos
       const isRedisType = values.type === "redis";
       const isJVMType = values.type === "jvm";
+      const isNacosType = values.type === "nacos";
       const dbTestConfig =
-        !isRedisType && !isJVMType ? buildRpcConnectionConfig(config as any) : config;
+        !isRedisType && !isJVMType && !isNacosType
+          ? buildRpcConnectionConfig(config as any)
+          : config;
       const res = await withClientTimeout(
         isJVMType
           ? TestJVMConnection(config as any)
           : isRedisType
             ? RedisConnect(config as any)
-            : TestConnection(dbTestConfig as any),
+            : isNacosType
+              ? NacosConnect(config as any)
+              : TestConnection(dbTestConfig as any),
         rpcTimeoutMs,
         t("connection.modal.test.timeout", { seconds: timeoutSeconds }),
       );
@@ -1972,7 +1979,7 @@ const ConnectionModal: React.FC<{
                   }),
                 );
               }
-            } else if (!isJVMType) {
+            } else if (!isJVMType && !isNacosType) {
               const dbRes = await withClientTimeout(
                 DBGetDatabases(dbTestConfig as any),
                 rpcTimeoutMs,

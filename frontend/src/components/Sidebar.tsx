@@ -1530,6 +1530,8 @@ const Sidebar: React.FC<{
         await loadJVMResources({ key, dataRef });
     } else if (type === 'database') {
         await loadTables({ key, dataRef });
+    } else if (type === 'nacos-config-entry') {
+        await loadNacosConfigGroups({ key, dataRef });
     } else if (type === 'external-sql-root') {
         await refreshGlobalExternalSQLRootNode(false);
     } else if (type === 'table') {
@@ -1720,6 +1722,16 @@ const Sidebar: React.FC<{
           setActiveContext({ connectionId: dataRef.connectionId, dbName: dataRef.dbName });
       } else if (type === 'redis-db') {
           setActiveContext({ connectionId: dataRef.id, dbName: `db${dataRef.redisDB}` });
+      } else if (
+          type === 'nacos-namespace'
+          || type === 'nacos-config-entry'
+          || type === 'nacos-config-group'
+          || type === 'nacos-services-entry'
+      ) {
+          setActiveContext({
+              connectionId: dataRef.id,
+              dbName: dataRef.nacosNamespaceName || dataRef.nacosNamespaceId || 'public',
+          });
       }
 
       if (type === 'folder-columns') openDesign(info.node, 'columns', false);
@@ -1794,6 +1806,17 @@ const Sidebar: React.FC<{
           setActiveContext({ connectionId: nodeConnectionId || dataRef.id, dbName: dataRef.dbName });
       } else if (type === 'saved-query') setActiveContext({ connectionId: dataRef.connectionId, dbName: dataRef.dbName });
       else if (type === 'redis-db') setActiveContext({ connectionId: dataRef.id, dbName: `db${dataRef.redisDB}` });
+      else if (
+          type === 'nacos-namespace'
+          || type === 'nacos-config-entry'
+          || type === 'nacos-config-group'
+          || type === 'nacos-services-entry'
+      ) {
+          setActiveContext({
+              connectionId: dataRef.id,
+              dbName: dataRef.nacosNamespaceName || dataRef.nacosNamespaceId || 'public',
+          });
+      }
 
       if (node.type === 'table') {
           const { tableName, dbName, id } = node.dataRef;
@@ -1848,6 +1871,49 @@ const Sidebar: React.FC<{
               type: 'redis-keys',
               connectionId: id,
               redisDB: redisDB
+          });
+          return;
+      } else if (node.type === 'nacos-config-entry') {
+          // Folder node: fall through to expand/collapse + lazy load groups.
+      } else if (node.type === 'nacos-config-group') {
+          const {
+              id,
+              nacosNamespaceId = '',
+              nacosNamespaceName = '',
+              nacosGroup = '',
+              nacosAllConfigs = false,
+          } = node.dataRef || {};
+          const nsName = nacosNamespaceName || nacosNamespaceId || 'public';
+          const nsKey = nacosNamespaceId || 'public';
+          const isAll = !!nacosAllConfigs;
+          const groupName = isAll ? '' : (String(nacosGroup || '').trim() || 'DEFAULT_GROUP');
+          addTab({
+              id: isAll
+                  ? `nacos-config-${id}-ns-${nsKey}`
+                  : `nacos-config-${id}-ns-${nsKey}-g-${encodeURIComponent(groupName)}`,
+              title: isAll ? `${nsName} · ${t('nacos_viewer.label.all')}` : `${nsName} · ${groupName}`,
+              type: 'nacos-config',
+              connectionId: id,
+              nacosNamespaceId: nacosNamespaceId || '',
+              nacosNamespaceName: nsName,
+              ...(isAll ? {} : { nacosGroup: groupName }),
+          });
+          return;
+      } else if (node.type === 'nacos-services-entry') {
+          const {
+              id,
+              nacosNamespaceId = '',
+              nacosNamespaceName = '',
+          } = node.dataRef || {};
+          const nsName = nacosNamespaceName || nacosNamespaceId || 'public';
+          const nsKey = nacosNamespaceId || 'public';
+          addTab({
+              id: `nacos-services-${id}-ns-${nsKey}`,
+              title: `${nsName} · services`,
+              type: 'nacos-services',
+              connectionId: id,
+              nacosNamespaceId: nacosNamespaceId || '',
+              nacosNamespaceName: nsName,
           });
           return;
       } else if (node.type === 'db-trigger') {
@@ -2092,6 +2158,7 @@ const Sidebar: React.FC<{
       loadDatabases,
       loadJVMResources,
       loadTables,
+      loadNacosConfigGroups,
   } = useSidebarTreeLoaders({
       savedQueries,
       tableSortPreference,
