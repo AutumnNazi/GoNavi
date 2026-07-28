@@ -1,5 +1,5 @@
 export namespace ai {
-	
+
 	export class ChatSendOptions {
 	    model?: string;
 	    temperature?: number;
@@ -53,11 +53,11 @@ export namespace ai {
 	    configPath?: string;
 	    command?: string;
 	    args?: string[];
-	
+
 	    static createFrom(source: any = {}) {
 	        return new MCPClientInstallStatus(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.client = source["client"];
@@ -79,11 +79,11 @@ export namespace ai {
 	    path?: string;
 	    token?: string;
 	    schemaOnly: boolean;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new MCPHTTPServerOptions(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.addr = source["addr"];
@@ -103,11 +103,11 @@ export namespace ai {
 	    authorizationHeader?: string;
 	    startedAt?: number;
 	    message: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new MCPHTTPServerStatus(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.enabled = source["enabled"];
@@ -131,11 +131,11 @@ export namespace ai {
 	    env?: Record<string, string>;
 	    enabled: boolean;
 	    timeoutSeconds: number;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new MCPServerConfig(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
@@ -157,11 +157,11 @@ export namespace ai {
 	    content: string;
 	    structuredContent?: any;
 	    isError: boolean;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new MCPToolCallResult(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.alias = source["alias"];
@@ -182,11 +182,11 @@ export namespace ai {
 	    title?: string;
 	    description?: string;
 	    inputSchema?: Record<string, any>;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new MCPToolDescriptor(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.alias = source["alias"];
@@ -201,11 +201,11 @@ export namespace ai {
 	export class ToolCallFunction {
 	    name: string;
 	    arguments: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new ToolCallFunction(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.name = source["name"];
@@ -216,18 +216,18 @@ export namespace ai {
 	    id: string;
 	    type: string;
 	    function: ToolCallFunction;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new ToolCall(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
 	        this.type = source["type"];
 	        this.function = this.convertValues(source["function"], ToolCallFunction);
 	    }
-	
+
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -253,11 +253,11 @@ export namespace ai {
 	    tool_call_id?: string;
 	    tool_calls?: ToolCall[];
 	    reasoning_content?: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new Message(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.role = source["role"];
@@ -267,7 +267,7 @@ export namespace ai {
 	        this.tool_calls = this.convertValues(source["tool_calls"], ToolCall);
 	        this.reasoning_content = source["reasoning_content"];
 	    }
-	
+
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -303,11 +303,11 @@ export namespace ai {
 	    maxTokens: number;
 	    temperature: number;
 	    thinkingIntensity?: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new ProviderConfig(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
@@ -333,11 +333,11 @@ export namespace ai {
 	    operationType: string;
 	    requiresConfirm: boolean;
 	    warningMessage?: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new SafetyResult(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.allowed = source["allowed"];
@@ -354,11 +354,11 @@ export namespace ai {
 	    enabled: boolean;
 	    scopes?: string[];
 	    requiredTools?: string[];
-	
+
 	    static createFrom(source: any = {}) {
 	        return new SkillConfig(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
@@ -374,11 +374,11 @@ export namespace ai {
 	    name: string;
 	    description: string;
 	    parameters: any;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new ToolFunction(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.name = source["name"];
@@ -389,17 +389,17 @@ export namespace ai {
 	export class Tool {
 	    type: string;
 	    function: ToolFunction;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new Tool(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.type = source["type"];
 	        this.function = this.convertValues(source["function"], ToolFunction);
 	    }
-	
+
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -418,19 +418,19 @@ export namespace ai {
 		    return a;
 		}
 	}
-	
-	
-	
+
+
+
 	export class UserPromptSettings {
 	    global: string;
 	    database: string;
 	    jvm: string;
 	    jvmDiagnostic: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new UserPromptSettings(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.global = source["global"];
@@ -443,16 +443,277 @@ export namespace ai {
 }
 
 export namespace app {
-	
+
+	export class CloudBackupConnectionSummary {
+	    id: string;
+	    name: string;
+	    host?: string;
+
+	    static createFrom(source: any = {}) {
+	        return new CloudBackupConnectionSummary(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.name = source["name"];
+	        this.host = source["host"];
+	    }
+	}
+	export class CloudBackupCategory {
+	    id: string;
+	    itemCount: number;
+	    files?: string[];
+	    connections?: CloudBackupConnectionSummary[];
+	    restartRequired: boolean;
+
+	    static createFrom(source: any = {}) {
+	        return new CloudBackupCategory(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.itemCount = source["itemCount"];
+	        this.files = source["files"];
+	        this.connections = this.convertValues(source["connections"], CloudBackupConnectionSummary);
+	        this.restartRequired = source["restartRequired"];
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class CloudBackupConfig {
+	    enabled: boolean;
+	    provider: string;
+	    webdavEndpoint?: string;
+	    webdavFilePath?: string;
+	    s3Endpoint?: string;
+	    s3Bucket?: string;
+	    s3Region?: string;
+	    s3ObjectKey?: string;
+	    schedule: string;
+	    backupCategories: string[];
+	    hasWebdavCredential?: boolean;
+	    hasS3Credential?: boolean;
+	    hasEncryptionKey?: boolean;
+	    webdavLastSyncAt?: string;
+	    webdavLastSyncSuccess: boolean;
+	    webdavLastSyncError?: string;
+	    webdavRemoteAvailable: boolean;
+	    webdavRemoteUpdatedAt?: string;
+	    s3LastSyncAt?: string;
+	    s3LastSyncSuccess: boolean;
+	    s3LastSyncError?: string;
+	    s3RemoteAvailable: boolean;
+	    s3RemoteUpdatedAt?: string;
+
+	    static createFrom(source: any = {}) {
+	        return new CloudBackupConfig(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.enabled = source["enabled"];
+	        this.provider = source["provider"];
+	        this.webdavEndpoint = source["webdavEndpoint"];
+	        this.webdavFilePath = source["webdavFilePath"];
+	        this.s3Endpoint = source["s3Endpoint"];
+	        this.s3Bucket = source["s3Bucket"];
+	        this.s3Region = source["s3Region"];
+	        this.s3ObjectKey = source["s3ObjectKey"];
+	        this.schedule = source["schedule"];
+	        this.backupCategories = source["backupCategories"];
+	        this.hasWebdavCredential = source["hasWebdavCredential"];
+	        this.hasS3Credential = source["hasS3Credential"];
+	        this.hasEncryptionKey = source["hasEncryptionKey"];
+	        this.webdavLastSyncAt = source["webdavLastSyncAt"];
+	        this.webdavLastSyncSuccess = source["webdavLastSyncSuccess"];
+	        this.webdavLastSyncError = source["webdavLastSyncError"];
+	        this.webdavRemoteAvailable = source["webdavRemoteAvailable"];
+	        this.webdavRemoteUpdatedAt = source["webdavRemoteUpdatedAt"];
+	        this.s3LastSyncAt = source["s3LastSyncAt"];
+	        this.s3LastSyncSuccess = source["s3LastSyncSuccess"];
+	        this.s3LastSyncError = source["s3LastSyncError"];
+	        this.s3RemoteAvailable = source["s3RemoteAvailable"];
+	        this.s3RemoteUpdatedAt = source["s3RemoteUpdatedAt"];
+	    }
+	}
+	export class CloudBackupConfigInput {
+	    enabled: boolean;
+	    provider: string;
+	    webdavEndpoint?: string;
+	    webdavFilePath?: string;
+	    s3Endpoint?: string;
+	    s3Bucket?: string;
+	    s3Region?: string;
+	    s3ObjectKey?: string;
+	    schedule: string;
+	    backupCategories: string[];
+	    webdavUsername?: string;
+	    webdavPassword?: string;
+	    s3AccessKey?: string;
+	    s3SecretKey?: string;
+	    encryptionPassword?: string;
+	    clearWebdavCredential: boolean;
+	    clearS3Credential: boolean;
+	    clearRemoteSecret: boolean;
+	    clearEncryptionKey: boolean;
+
+	    static createFrom(source: any = {}) {
+	        return new CloudBackupConfigInput(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.enabled = source["enabled"];
+	        this.provider = source["provider"];
+	        this.webdavEndpoint = source["webdavEndpoint"];
+	        this.webdavFilePath = source["webdavFilePath"];
+	        this.s3Endpoint = source["s3Endpoint"];
+	        this.s3Bucket = source["s3Bucket"];
+	        this.s3Region = source["s3Region"];
+	        this.s3ObjectKey = source["s3ObjectKey"];
+	        this.schedule = source["schedule"];
+	        this.backupCategories = source["backupCategories"];
+	        this.webdavUsername = source["webdavUsername"];
+	        this.webdavPassword = source["webdavPassword"];
+	        this.s3AccessKey = source["s3AccessKey"];
+	        this.s3SecretKey = source["s3SecretKey"];
+	        this.encryptionPassword = source["encryptionPassword"];
+	        this.clearWebdavCredential = source["clearWebdavCredential"];
+	        this.clearS3Credential = source["clearS3Credential"];
+	        this.clearRemoteSecret = source["clearRemoteSecret"];
+	        this.clearEncryptionKey = source["clearEncryptionKey"];
+	    }
+	}
+
+	export class CloudBackupRestorePoint {
+	    objectKey: string;
+	    lastModified?: string;
+	    size?: number;
+	    etag?: string;
+
+	    static createFrom(source: any = {}) {
+	        return new CloudBackupRestorePoint(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.objectKey = source["objectKey"];
+	        this.lastModified = source["lastModified"];
+	        this.size = source["size"];
+	        this.etag = source["etag"];
+	    }
+	}
+	export class CloudBackupRestorePreview {
+	    createdAt: string;
+	    connectionCount: number;
+	    fileCount: number;
+	    files: string[];
+	    restartRequired: boolean;
+	    categories: CloudBackupCategory[];
+	    confirmationToken?: string;
+
+	    static createFrom(source: any = {}) {
+	        return new CloudBackupRestorePreview(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.createdAt = source["createdAt"];
+	        this.connectionCount = source["connectionCount"];
+	        this.fileCount = source["fileCount"];
+	        this.files = source["files"];
+	        this.restartRequired = source["restartRequired"];
+	        this.categories = this.convertValues(source["categories"], CloudBackupCategory);
+	        this.confirmationToken = source["confirmationToken"];
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class CloudBackupRestoreRequest {
+	    confirmationToken: string;
+	    categories: string[];
+
+	    static createFrom(source: any = {}) {
+	        return new CloudBackupRestoreRequest(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.confirmationToken = source["confirmationToken"];
+	        this.categories = source["categories"];
+	    }
+	}
+	export class CloudBackupStatus {
+	    configured: boolean;
+	    enabled: boolean;
+	    provider: string;
+	    lastSyncAt?: string;
+	    lastSyncSuccess: boolean;
+	    lastSyncError?: string;
+	    remoteAvailable: boolean;
+	    remoteUpdatedAt?: string;
+	    dirty: boolean;
+
+	    static createFrom(source: any = {}) {
+	        return new CloudBackupStatus(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.configured = source["configured"];
+	        this.enabled = source["enabled"];
+	        this.provider = source["provider"];
+	        this.lastSyncAt = source["lastSyncAt"];
+	        this.lastSyncSuccess = source["lastSyncSuccess"];
+	        this.lastSyncError = source["lastSyncError"];
+	        this.remoteAvailable = source["remoteAvailable"];
+	        this.remoteUpdatedAt = source["remoteUpdatedAt"];
+	        this.dirty = source["dirty"];
+	    }
+	}
 	export class ConnectionExportOptions {
 	    includeSecrets: boolean;
 	    filePassword?: string;
 	    redisDbAliases?: Record<string, any>;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new ConnectionExportOptions(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.includeSecrets = source["includeSecrets"];
@@ -463,17 +724,17 @@ export namespace app {
 	export class ConnectionPackageImportResult {
 	    connections: connection.SavedConnectionView[];
 	    redisDbAliases?: Record<string, any>;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new ConnectionPackageImportResult(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.connections = this.convertValues(source["connections"], connection.SavedConnectionView);
 	        this.redisDbAliases = source["redisDbAliases"];
 	    }
-	
+
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -506,11 +767,11 @@ export namespace app {
 	    insertSQLColumnTypes?: Record<string, string>;
 	    insertSQLTargetColumns?: Record<string, string>;
 	    insertSQLAllowEmptyTargetTable?: boolean;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new ExportFileOptions(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.format = source["format"];
@@ -542,298 +803,10 @@ export namespace app {
 	        this.jobId = source["jobId"];
 	    }
 	}
-	export class RedisExportKeysOptions {
-	    scope?: string;
-	    keys?: string[];
-	    pattern?: string;
-	
-	    static createFrom(source: any = {}) {
-	        return new RedisExportKeysOptions(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.scope = source["scope"];
-	        this.keys = source["keys"];
-	        this.pattern = source["pattern"];
-	    }
-	}
-	export class RedisImportKeysOptions {
-	    conflictMode?: string;
-	    scope?: string;
-	    keys?: string[];
-	    file?: string;
-	
-	    static createFrom(source: any = {}) {
-	        return new RedisImportKeysOptions(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.conflictMode = source["conflictMode"];
-	        this.scope = source["scope"];
-	        this.keys = source["keys"];
-	        this.file = source["file"];
-	    }
-	}
-	export class SecurityUpdateOptions {
-	    allowPartial?: boolean;
-	    writeBackup?: boolean;
-	
-	    static createFrom(source: any = {}) {
-	        return new SecurityUpdateOptions(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.allowPartial = source["allowPartial"];
-	        this.writeBackup = source["writeBackup"];
-	    }
-	}
-	export class RestartSecurityUpdateRequest {
-	    migrationId?: string;
-	    sourceType: string;
-	    rawPayload?: string;
-	    options?: SecurityUpdateOptions;
-	
-	    static createFrom(source: any = {}) {
-	        return new RestartSecurityUpdateRequest(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.migrationId = source["migrationId"];
-	        this.sourceType = source["sourceType"];
-	        this.rawPayload = source["rawPayload"];
-	        this.options = this.convertValues(source["options"], SecurityUpdateOptions);
-	    }
-	
-		convertValues(a: any, classs: any, asMap: boolean = false): any {
-		    if (!a) {
-		        return a;
-		    }
-		    if (a.slice && a.map) {
-		        return (a as any[]).map(elem => this.convertValues(elem, classs));
-		    } else if ("object" === typeof a) {
-		        if (asMap) {
-		            for (const key of Object.keys(a)) {
-		                a[key] = new classs(a[key]);
-		            }
-		            return a;
-		        }
-		        return new classs(a);
-		    }
-		    return a;
-		}
-	}
-	export class ResultDiffStartRequest {
-	    jobId?: string;
-	    config: connection.ConnectionConfig;
-	    database: string;
-	    left: resultdiff.DatasetSpec;
-	    right: resultdiff.DatasetSpec;
-	    keyColumns: string[];
-	    compareColumns?: string[];
-	    ignoreColumns?: string[];
-	    options: resultdiff.CompareOptions;
-	    maxRowsPerSide?: number;
-	    includeSameRows?: boolean;
-	
-	    static createFrom(source: any = {}) {
-	        return new ResultDiffStartRequest(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.jobId = source["jobId"];
-	        this.config = this.convertValues(source["config"], connection.ConnectionConfig);
-	        this.database = source["database"];
-	        this.left = this.convertValues(source["left"], resultdiff.DatasetSpec);
-	        this.right = this.convertValues(source["right"], resultdiff.DatasetSpec);
-	        this.keyColumns = source["keyColumns"];
-	        this.compareColumns = source["compareColumns"];
-	        this.ignoreColumns = source["ignoreColumns"];
-	        this.options = this.convertValues(source["options"], resultdiff.CompareOptions);
-	        this.maxRowsPerSide = source["maxRowsPerSide"];
-	        this.includeSameRows = source["includeSameRows"];
-	    }
-	
-		convertValues(a: any, classs: any, asMap: boolean = false): any {
-		    if (!a) {
-		        return a;
-		    }
-		    if (a.slice && a.map) {
-		        return (a as any[]).map(elem => this.convertValues(elem, classs));
-		    } else if ("object" === typeof a) {
-		        if (asMap) {
-		            for (const key of Object.keys(a)) {
-		                a[key] = new classs(a[key]);
-		            }
-		            return a;
-		        }
-		        return new classs(a);
-		    }
-		    return a;
-		}
-	}
-	export class RetrySecurityUpdateRequest {
-	    migrationId?: string;
-	
-	    static createFrom(source: any = {}) {
-	        return new RetrySecurityUpdateRequest(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.migrationId = source["migrationId"];
-	    }
-	}
-	export class SecurityUpdateIssue {
-	    id: string;
-	    scope: string;
-	    refId?: string;
-	    title: string;
-	    severity: string;
-	    status: string;
-	    reasonCode: string;
-	    action: string;
-	    message: string;
-	
-	    static createFrom(source: any = {}) {
-	        return new SecurityUpdateIssue(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.id = source["id"];
-	        this.scope = source["scope"];
-	        this.refId = source["refId"];
-	        this.title = source["title"];
-	        this.severity = source["severity"];
-	        this.status = source["status"];
-	        this.reasonCode = source["reasonCode"];
-	        this.action = source["action"];
-	        this.message = source["message"];
-	    }
-	}
-	
-	export class SecurityUpdateSummary {
-	    total: number;
-	    updated: number;
-	    pending: number;
-	    skipped: number;
-	    failed: number;
-	
-	    static createFrom(source: any = {}) {
-	        return new SecurityUpdateSummary(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.total = source["total"];
-	        this.updated = source["updated"];
-	        this.pending = source["pending"];
-	        this.skipped = source["skipped"];
-	        this.failed = source["failed"];
-	    }
-	}
-	export class SecurityUpdateStatus {
-	    schemaVersion?: number;
-	    migrationId?: string;
-	    overallStatus: string;
-	    sourceType?: string;
-	    reminderVisible: boolean;
-	    canStart: boolean;
-	    canPostpone: boolean;
-	    canRetry: boolean;
-	    backupAvailable: boolean;
-	    backupPath?: string;
-	    startedAt?: string;
-	    updatedAt?: string;
-	    completedAt?: string;
-	    postponedAt?: string;
-	    summary: SecurityUpdateSummary;
-	    issues: SecurityUpdateIssue[];
-	    lastError?: string;
-	
-	    static createFrom(source: any = {}) {
-	        return new SecurityUpdateStatus(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.schemaVersion = source["schemaVersion"];
-	        this.migrationId = source["migrationId"];
-	        this.overallStatus = source["overallStatus"];
-	        this.sourceType = source["sourceType"];
-	        this.reminderVisible = source["reminderVisible"];
-	        this.canStart = source["canStart"];
-	        this.canPostpone = source["canPostpone"];
-	        this.canRetry = source["canRetry"];
-	        this.backupAvailable = source["backupAvailable"];
-	        this.backupPath = source["backupPath"];
-	        this.startedAt = source["startedAt"];
-	        this.updatedAt = source["updatedAt"];
-	        this.completedAt = source["completedAt"];
-	        this.postponedAt = source["postponedAt"];
-	        this.summary = this.convertValues(source["summary"], SecurityUpdateSummary);
-	        this.issues = this.convertValues(source["issues"], SecurityUpdateIssue);
-	        this.lastError = source["lastError"];
-	    }
-	
-		convertValues(a: any, classs: any, asMap: boolean = false): any {
-		    if (!a) {
-		        return a;
-		    }
-		    if (a.slice && a.map) {
-		        return (a as any[]).map(elem => this.convertValues(elem, classs));
-		    } else if ("object" === typeof a) {
-		        if (asMap) {
-		            for (const key of Object.keys(a)) {
-		                a[key] = new classs(a[key]);
-		            }
-		            return a;
-		        }
-		        return new classs(a);
-		    }
-		    return a;
-		}
-	}
-	
-	export class StartSecurityUpdateRequest {
-	    sourceType: string;
-	    rawPayload?: string;
-	    options?: SecurityUpdateOptions;
-	    static createFrom(source: any = {}) {
-	        return new StartSecurityUpdateRequest(source);
-	    }
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.sourceType = source["sourceType"];
-	        this.rawPayload = source["rawPayload"];
-	        this.options = this.convertValues(source["options"], SecurityUpdateOptions);
-	    }
-		convertValues(a: any, classs: any, asMap: boolean = false): any {
-		    if (!a) {
-		        return a;
-		    }
-		    if (a.slice && a.map) {
-		        return (a as any[]).map(elem => this.convertValues(elem, classs));
-		    } else if ("object" === typeof a) {
-		        if (asMap) {
-		            for (const key of Object.keys(a)) {
-		                a[key] = new classs(a[key]);
-		            }
-		            return a;
-		        }
-		        return new classs(a);
-		    }
-		    return a;
-		}
-	}
 	export class NacosConfigIdentity {
 	    dataId: string;
 	    group: string;
+	    index?: number;
 
 	    static createFrom(source: any = {}) {
 	        return new NacosConfigIdentity(source);
@@ -843,6 +816,7 @@ export namespace app {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.dataId = source["dataId"];
 	        this.group = source["group"];
+	        this.index = source["index"];
 	    }
 	}
 	export class NacosConfigQuery {
@@ -1061,6 +1035,7 @@ export namespace app {
 	    namespaceId: string;
 	    serviceName: string;
 	    groupName?: string;
+	    ephemeral?: boolean;
 	    protectThreshold?: number;
 	    metadata?: Record<string, string>;
 
@@ -1073,6 +1048,7 @@ export namespace app {
 	        this.namespaceId = source["namespaceId"];
 	        this.serviceName = source["serviceName"];
 	        this.groupName = source["groupName"];
+	        this.ephemeral = source["ephemeral"];
 	        this.protectThreshold = source["protectThreshold"];
 	        this.metadata = source["metadata"];
 	    }
@@ -1133,19 +1109,311 @@ export namespace app {
 	        this.description = source["description"];
 	    }
 	}
+	export class RedisExportKeysOptions {
+	    scope?: string;
+	    keys?: string[];
+	    pattern?: string;
+
+	    static createFrom(source: any = {}) {
+	        return new RedisExportKeysOptions(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.scope = source["scope"];
+	        this.keys = source["keys"];
+	        this.pattern = source["pattern"];
+	    }
+	}
+	export class RedisImportKeysOptions {
+	    conflictMode?: string;
+	    scope?: string;
+	    keys?: string[];
+	    file?: string;
+
+	    static createFrom(source: any = {}) {
+	        return new RedisImportKeysOptions(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.conflictMode = source["conflictMode"];
+	        this.scope = source["scope"];
+	        this.keys = source["keys"];
+	        this.file = source["file"];
+	    }
+	}
+	export class SecurityUpdateOptions {
+	    allowPartial?: boolean;
+	    writeBackup?: boolean;
+
+	    static createFrom(source: any = {}) {
+	        return new SecurityUpdateOptions(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.allowPartial = source["allowPartial"];
+	        this.writeBackup = source["writeBackup"];
+	    }
+	}
+	export class RestartSecurityUpdateRequest {
+	    migrationId?: string;
+	    sourceType: string;
+	    rawPayload?: string;
+	    options?: SecurityUpdateOptions;
+
+	    static createFrom(source: any = {}) {
+	        return new RestartSecurityUpdateRequest(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.migrationId = source["migrationId"];
+	        this.sourceType = source["sourceType"];
+	        this.rawPayload = source["rawPayload"];
+	        this.options = this.convertValues(source["options"], SecurityUpdateOptions);
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class ResultDiffStartRequest {
+	    jobId?: string;
+	    config: connection.ConnectionConfig;
+	    database: string;
+	    left: resultdiff.DatasetSpec;
+	    right: resultdiff.DatasetSpec;
+	    keyColumns: string[];
+	    compareColumns?: string[];
+	    ignoreColumns?: string[];
+	    options: resultdiff.CompareOptions;
+	    maxRowsPerSide?: number;
+	    includeSameRows?: boolean;
+
+	    static createFrom(source: any = {}) {
+	        return new ResultDiffStartRequest(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.jobId = source["jobId"];
+	        this.config = this.convertValues(source["config"], connection.ConnectionConfig);
+	        this.database = source["database"];
+	        this.left = this.convertValues(source["left"], resultdiff.DatasetSpec);
+	        this.right = this.convertValues(source["right"], resultdiff.DatasetSpec);
+	        this.keyColumns = source["keyColumns"];
+	        this.compareColumns = source["compareColumns"];
+	        this.ignoreColumns = source["ignoreColumns"];
+	        this.options = this.convertValues(source["options"], resultdiff.CompareOptions);
+	        this.maxRowsPerSide = source["maxRowsPerSide"];
+	        this.includeSameRows = source["includeSameRows"];
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class RetrySecurityUpdateRequest {
+	    migrationId?: string;
+
+	    static createFrom(source: any = {}) {
+	        return new RetrySecurityUpdateRequest(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.migrationId = source["migrationId"];
+	    }
+	}
+	export class SecurityUpdateIssue {
+	    id: string;
+	    scope: string;
+	    refId?: string;
+	    title: string;
+	    severity: string;
+	    status: string;
+	    reasonCode: string;
+	    action: string;
+	    message: string;
+
+	    static createFrom(source: any = {}) {
+	        return new SecurityUpdateIssue(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.scope = source["scope"];
+	        this.refId = source["refId"];
+	        this.title = source["title"];
+	        this.severity = source["severity"];
+	        this.status = source["status"];
+	        this.reasonCode = source["reasonCode"];
+	        this.action = source["action"];
+	        this.message = source["message"];
+	    }
+	}
+
+	export class SecurityUpdateSummary {
+	    total: number;
+	    updated: number;
+	    pending: number;
+	    skipped: number;
+	    failed: number;
+
+	    static createFrom(source: any = {}) {
+	        return new SecurityUpdateSummary(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.total = source["total"];
+	        this.updated = source["updated"];
+	        this.pending = source["pending"];
+	        this.skipped = source["skipped"];
+	        this.failed = source["failed"];
+	    }
+	}
+	export class SecurityUpdateStatus {
+	    schemaVersion?: number;
+	    migrationId?: string;
+	    overallStatus: string;
+	    sourceType?: string;
+	    reminderVisible: boolean;
+	    canStart: boolean;
+	    canPostpone: boolean;
+	    canRetry: boolean;
+	    backupAvailable: boolean;
+	    backupPath?: string;
+	    startedAt?: string;
+	    updatedAt?: string;
+	    completedAt?: string;
+	    postponedAt?: string;
+	    summary: SecurityUpdateSummary;
+	    issues: SecurityUpdateIssue[];
+	    lastError?: string;
+
+	    static createFrom(source: any = {}) {
+	        return new SecurityUpdateStatus(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.schemaVersion = source["schemaVersion"];
+	        this.migrationId = source["migrationId"];
+	        this.overallStatus = source["overallStatus"];
+	        this.sourceType = source["sourceType"];
+	        this.reminderVisible = source["reminderVisible"];
+	        this.canStart = source["canStart"];
+	        this.canPostpone = source["canPostpone"];
+	        this.canRetry = source["canRetry"];
+	        this.backupAvailable = source["backupAvailable"];
+	        this.backupPath = source["backupPath"];
+	        this.startedAt = source["startedAt"];
+	        this.updatedAt = source["updatedAt"];
+	        this.completedAt = source["completedAt"];
+	        this.postponedAt = source["postponedAt"];
+	        this.summary = this.convertValues(source["summary"], SecurityUpdateSummary);
+	        this.issues = this.convertValues(source["issues"], SecurityUpdateIssue);
+	        this.lastError = source["lastError"];
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+
+	export class StartSecurityUpdateRequest {
+	    sourceType: string;
+	    rawPayload?: string;
+	    options?: SecurityUpdateOptions;
+
+	    static createFrom(source: any = {}) {
+	        return new StartSecurityUpdateRequest(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.sourceType = source["sourceType"];
+	        this.rawPayload = source["rawPayload"];
+	        this.options = this.convertValues(source["options"], SecurityUpdateOptions);
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 
 }
 
 export namespace connection {
-	
+
 	export class UpdateRow {
 	    keys: Record<string, any>;
 	    values: Record<string, any>;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new UpdateRow(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.keys = source["keys"];
@@ -1157,11 +1425,11 @@ export namespace connection {
 	    updates: UpdateRow[];
 	    deletes: any[];
 	    locatorStrategy?: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new ChangeSet(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.inserts = source["inserts"];
@@ -1169,7 +1437,7 @@ export namespace connection {
 	        this.deletes = source["deletes"];
 	        this.locatorStrategy = source["locatorStrategy"];
 	    }
-	
+
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -1198,11 +1466,11 @@ export namespace connection {
 	    allowTraceCommands?: boolean;
 	    allowMutatingCommands?: boolean;
 	    timeoutSeconds?: number;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new JVMDiagnosticConfig(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.enabled = source["enabled"];
@@ -1221,11 +1489,11 @@ export namespace connection {
 	    baseUrl?: string;
 	    apiKey?: string;
 	    timeoutSeconds?: number;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new JVMAgentConfig(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.enabled = source["enabled"];
@@ -1239,11 +1507,11 @@ export namespace connection {
 	    baseUrl?: string;
 	    apiKey?: string;
 	    timeoutSeconds?: number;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new JVMEndpointConfig(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.enabled = source["enabled"];
@@ -1259,11 +1527,11 @@ export namespace connection {
 	    username?: string;
 	    password?: string;
 	    domainAllowlist?: string[];
-	
+
 	    static createFrom(source: any = {}) {
 	        return new JVMJMXConfig(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.enabled = source["enabled"];
@@ -1283,11 +1551,11 @@ export namespace connection {
 	    endpoint?: JVMEndpointConfig;
 	    agent?: JVMAgentConfig;
 	    diagnostic?: JVMDiagnosticConfig;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new JVMConfig(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.environment = source["environment"];
@@ -1299,7 +1567,7 @@ export namespace connection {
 	        this.agent = this.convertValues(source["agent"], JVMAgentConfig);
 	        this.diagnostic = this.convertValues(source["diagnostic"], JVMDiagnosticConfig);
 	    }
-	
+
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -1323,11 +1591,11 @@ export namespace connection {
 	    port: number;
 	    user?: string;
 	    password?: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new HTTPTunnelConfig(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.host = source["host"];
@@ -1342,11 +1610,11 @@ export namespace connection {
 	    port: number;
 	    user?: string;
 	    password?: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new ProxyConfig(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.type = source["type"];
@@ -1362,11 +1630,11 @@ export namespace connection {
 	    user: string;
 	    password: string;
 	    keyPath: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new SSHConfig(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.host = source["host"];
@@ -1381,11 +1649,11 @@ export namespace connection {
 	    restrictStructureEdit?: boolean;
 	    restrictScriptExecution?: boolean;
 	    restrictDataImport?: boolean;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new ConnectionProtectionConfig(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.restrictDataEdit = source["restrictDataEdit"];
@@ -1442,11 +1710,11 @@ export namespace connection {
 	    mongoReplicaUser?: string;
 	    mongoReplicaPassword?: string;
 	    jvm?: JVMConfig;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new ConnectionConfig(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
@@ -1497,7 +1765,7 @@ export namespace connection {
 	        this.mongoReplicaPassword = source["mongoReplicaPassword"];
 	        this.jvm = this.convertValues(source["jvm"], JVMConfig);
 	    }
-	
+
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -1516,7 +1784,7 @@ export namespace connection {
 		    return a;
 		}
 	}
-	
+
 	export class GlobalProxyView {
 	    enabled: boolean;
 	    type: string;
@@ -1526,11 +1794,11 @@ export namespace connection {
 	    password?: string;
 	    hasPassword?: boolean;
 	    secretRef?: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new GlobalProxyView(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.enabled = source["enabled"];
@@ -1543,13 +1811,13 @@ export namespace connection {
 	        this.secretRef = source["secretRef"];
 	    }
 	}
-	
-	
-	
-	
-	
-	
-	
+
+
+
+
+
+
+
 	export class QueryResult {
 	    success: boolean;
 	    message: string;
@@ -1559,11 +1827,11 @@ export namespace connection {
 	    queryId?: string;
 	    transactionId?: string;
 	    transactionPending?: boolean;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new QueryResult(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.success = source["success"];
@@ -1576,7 +1844,7 @@ export namespace connection {
 	        this.transactionPending = source["transactionPending"];
 	    }
 	}
-	
+
 	export class SaveGlobalProxyInput {
 	    enabled: boolean;
 	    type: string;
@@ -1585,11 +1853,11 @@ export namespace connection {
 	    user?: string;
 	    password?: string;
 	    clearPassword?: boolean;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new SaveGlobalProxyInput(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.enabled = source["enabled"];
@@ -1634,11 +1902,11 @@ export namespace connection {
 	    clearRedisSentinelPassword?: boolean;
 	    clearOpaqueURI?: boolean;
 	    clearOpaqueDSN?: boolean;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new SavedConnectionInput(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
@@ -1660,7 +1928,7 @@ export namespace connection {
 	        this.clearOpaqueURI = source["clearOpaqueURI"];
 	        this.clearOpaqueDSN = source["clearOpaqueDSN"];
 	    }
-	
+
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -1699,11 +1967,11 @@ export namespace connection {
 	    hasRedisSentinelPassword?: boolean;
 	    hasOpaqueURI?: boolean;
 	    hasOpaqueDSN?: boolean;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new SavedConnectionView(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
@@ -1726,7 +1994,7 @@ export namespace connection {
 	        this.hasOpaqueURI = source["hasOpaqueURI"];
 	        this.hasOpaqueDSN = source["hasOpaqueDSN"];
 	    }
-	
+
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -1756,11 +2024,11 @@ export namespace connection {
 	    fingerprintVersion?: string;
 	    bindingStatus?: string;
 	    originalConnectionId?: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new SavedQuery(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
@@ -1799,18 +2067,18 @@ export namespace connection {
 	    queries: SavedQuery[];
 	    groups?: SavedQueryGroup[];
 	    legacyConnections?: SavedConnectionInput[];
-	
+
 	    static createFrom(source: any = {}) {
 	        return new SavedQueryImportPayload(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.queries = this.convertValues(source["queries"], SavedQuery);
 	        this.groups = this.convertValues(source["groups"], SavedQueryGroup);
 	        this.legacyConnections = this.convertValues(source["legacyConnections"], SavedConnectionInput);
 	    }
-	
+
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -1834,18 +2102,18 @@ export namespace connection {
 	    proxy: SaveGlobalProxyInput;
 	    url: string;
 	    timeoutSeconds?: number;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new TestGlobalProxyInput(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.proxy = this.convertValues(source["proxy"], SaveGlobalProxyInput);
 	        this.url = source["url"];
 	        this.timeoutSeconds = source["timeoutSeconds"];
 	    }
-	
+
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -1868,7 +2136,7 @@ export namespace connection {
 }
 
 export namespace jvm {
-	
+
 	export class ChangeRequest {
 	    providerMode: string;
 	    resourceId: string;
@@ -1878,11 +2146,11 @@ export namespace jvm {
 	    expectedVersion?: string;
 	    confirmationToken?: string;
 	    payload?: Record<string, any>;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new ChangeRequest(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.providerMode = source["providerMode"];
@@ -1901,11 +2169,11 @@ export namespace jvm {
 	    command: string;
 	    source?: string;
 	    reason?: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new DiagnosticCommandRequest(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.sessionId = source["sessionId"];
@@ -1918,11 +2186,11 @@ export namespace jvm {
 	export class DiagnosticSessionRequest {
 	    title?: string;
 	    reason?: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new DiagnosticSessionRequest(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.title = source["title"];
@@ -2073,15 +2341,15 @@ export namespace nativewindow {
 }
 
 export namespace redis {
-	
+
 	export class ZSetMember {
 	    member: string;
 	    score: number;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new ZSetMember(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.member = source["member"];
@@ -2092,16 +2360,16 @@ export namespace redis {
 }
 
 export namespace resultdiff {
-	
+
 	export class CompareOptions {
 	    trimStrings: boolean;
 	    ignoreCase: boolean;
 	    nullEqualsEmpty: boolean;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new CompareOptions(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.trimStrings = source["trimStrings"];
@@ -2114,11 +2382,11 @@ export namespace resultdiff {
 	    sql?: string;
 	    columns?: string[];
 	    rows?: any[];
-	
+
 	    static createFrom(source: any = {}) {
 	        return new DatasetSpec(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.mode = source["mode"];
@@ -2134,11 +2402,11 @@ export namespace resultdiff {
 	    offset: number;
 	    limit: number;
 	    includeSameRows?: boolean;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new PageRequest(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.jobId = source["jobId"];
@@ -2155,11 +2423,11 @@ export namespace resultdiff {
 	    columns?: string[];
 	    rows: any[];
 	    done: boolean;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new UploadChunkRequest(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.jobId = source["jobId"];
@@ -2228,8 +2496,9 @@ export namespace sqlaudit {
 	}
 
 }
+
 export namespace sync {
-	
+
 	export class TableOptions {
 	    insert?: boolean;
 	    update?: boolean;
@@ -2237,11 +2506,11 @@ export namespace sync {
 	    selectedInsertPks?: string[];
 	    selectedUpdatePks?: string[];
 	    selectedDeletePks?: string[];
-	
+
 	    static createFrom(source: any = {}) {
 	        return new TableOptions(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.insert = source["insert"];
@@ -2268,11 +2537,11 @@ export namespace sync {
 	    createIndexes?: boolean;
 	    mongoCollectionName?: string;
 	    tableOptions?: Record<string, TableOptions>;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new SyncConfig(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.sourceConfig = this.convertValues(source["sourceConfig"], connection.ConnectionConfig);
@@ -2291,7 +2560,7 @@ export namespace sync {
 	        this.mongoCollectionName = source["mongoCollectionName"];
 	        this.tableOptions = this.convertValues(source["tableOptions"], TableOptions, true);
 	    }
-	
+
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -2318,11 +2587,11 @@ export namespace sync {
 	    rowsInserted: number;
 	    rowsUpdated: number;
 	    rowsDeleted: number;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new SyncResult(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.success = source["success"];

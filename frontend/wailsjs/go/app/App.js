@@ -58,6 +58,30 @@ export function ClearTables(arg1, arg2, arg3) {
   return window['go']['app']['App']['ClearTables'](arg1, arg2, arg3);
 }
 
+export function CloudBackupGetConfig() {
+  return window['go']['app']['App']['CloudBackupGetConfig']();
+}
+
+export function CloudBackupGetStatus() {
+  return window['go']['app']['App']['CloudBackupGetStatus']();
+}
+
+export function CloudBackupListRestorePoints() {
+  return window['go']['app']['App']['CloudBackupListRestorePoints']();
+}
+
+export function CloudBackupPreviewRestore() {
+  return window['go']['app']['App']['CloudBackupPreviewRestore']();
+}
+
+export function CloudBackupRestore(arg1) {
+  return window['go']['app']['App']['CloudBackupRestore'](arg1);
+}
+
+export function CloudBackupSyncNow() {
+  return window['go']['app']['App']['CloudBackupSyncNow']();
+}
+
 export function ConfigureDriverRuntimeDirectory(arg1) {
   return window['go']['app']['App']['ConfigureDriverRuntimeDirectory'](arg1);
 }
@@ -106,12 +130,12 @@ export function DBGetColumns(arg1, arg2, arg3) {
   return window['go']['app']['App']['DBGetColumns'](arg1, arg2, arg3);
 }
 
-export function DBGetDatabases(arg1) {
-  return window['go']['app']['App']['DBGetDatabases'](arg1);
-}
-
 export function DBGetDatabaseForeignKeys(arg1, arg2) {
   return window['go']['app']['App']['DBGetDatabaseForeignKeys'](arg1, arg2);
+}
+
+export function DBGetDatabases(arg1) {
+  return window['go']['app']['App']['DBGetDatabases'](arg1);
 }
 
 export function DBGetForeignKeys(arg1, arg2, arg3) {
@@ -554,30 +578,6 @@ export function MySQLShowCreateTable(arg1, arg2, arg3) {
   return window['go']['app']['App']['MySQLShowCreateTable'](arg1, arg2, arg3);
 }
 
-export function OpenDataRootDirectory() {
-  return window['go']['app']['App']['OpenDataRootDirectory']();
-}
-
-export function OpenDownloadedUpdateDirectory() {
-  return window['go']['app']['App']['OpenDownloadedUpdateDirectory']();
-}
-
-export function OpenDriverDownloadDirectory(arg1) {
-  return window['go']['app']['App']['OpenDriverDownloadDirectory'](arg1);
-}
-
-export function OpenLogDirectory() {
-  return window['go']['app']['App']['OpenLogDirectory']();
-}
-
-export function OpenSQLFile() {
-  return window['go']['app']['App']['OpenSQLFile']();
-}
-
-export function OpenSavedQueryDirectory() {
-  return window['go']['app']['App']['OpenSavedQueryDirectory']();
-}
-
 export function NacosConnect(arg1) {
   return window['go']['app']['App']['NacosConnect'](arg1);
 }
@@ -704,6 +704,30 @@ export function NacosUpdateNamespace(arg1, arg2) {
 
 export function NacosUpdateService(arg1, arg2) {
   return window['go']['app']['App']['NacosUpdateService'](arg1, arg2);
+}
+
+export function OpenDataRootDirectory() {
+  return window['go']['app']['App']['OpenDataRootDirectory']();
+}
+
+export function OpenDownloadedUpdateDirectory() {
+  return window['go']['app']['App']['OpenDownloadedUpdateDirectory']();
+}
+
+export function OpenDriverDownloadDirectory(arg1) {
+  return window['go']['app']['App']['OpenDriverDownloadDirectory'](arg1);
+}
+
+export function OpenLogDirectory() {
+  return window['go']['app']['App']['OpenLogDirectory']();
+}
+
+export function OpenSQLFile() {
+  return window['go']['app']['App']['OpenSQLFile']();
+}
+
+export function OpenSavedQueryDirectory() {
+  return window['go']['app']['App']['OpenSavedQueryDirectory']();
 }
 
 export function PreviewChanges(arg1, arg2, arg3, arg4) {
@@ -916,6 +940,10 @@ export function RetrySecurityUpdateCurrentRound(arg1) {
 
 export function RevealSavedQueryInFolder(arg1) {
   return window['go']['app']['App']['RevealSavedQueryInFolder'](arg1);
+}
+
+export function SaveCloudBackupConfig(arg1) {
+  return window['go']['app']['App']['SaveCloudBackupConfig'](arg1);
 }
 
 export function SaveConnection(arg1) {
