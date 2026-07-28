@@ -51,6 +51,22 @@ func (damengColumnsMetadataConn) QueryContext(_ context.Context, query string, _
 	failAutoIncrementQuery := damengColumnsMetadataQueryState.failAutoIncrementQuery
 	damengColumnsMetadataQueryState.Unlock()
 
+	if strings.Contains(query, "DBMS_METADATA.GET_DDL") {
+		return &damengColumnsMetadataRows{
+			columns: []string{"DDL"},
+			values: [][]driver.Value{{`CREATE TABLE "BIZ"."ORDERS" (
+  "ID" NUMBER NOT NULL
+)`}},
+		}, nil
+	}
+
+	if strings.Contains(query, "all_tab_comments") {
+		return &damengColumnsMetadataRows{
+			columns: []string{"TABLE_COMMENT"},
+			values:  [][]driver.Value{{"订单'归档"}},
+		}, nil
+	}
+
 	if strings.Contains(query, "SYS.SYSCOLUMNS") {
 		if failAutoIncrementQuery {
 			return nil, errors.New("insufficient privilege for SYS.SYSCOLUMNS")
@@ -171,6 +187,33 @@ func TestDamengGetColumnsKeepsBaseMetadataWhenAutoIncrementQueryFails(t *testing
 	}
 	if len(columns) != 2 || columns[0].Name != "ID" || columns[0].Extra != "" {
 		t.Fatalf("unexpected fallback columns: %+v", columns)
+	}
+}
+
+func TestDamengGetCreateStatementAppendsTableComment(t *testing.T) {
+	resetDamengColumnsMetadataQueryState(t, false)
+
+	damengDB := &DamengDB{conn: openDamengColumnsMetadataDB(t)}
+	ddl, err := damengDB.GetCreateStatement("biz", "orders")
+	if err != nil {
+		t.Fatalf("GetCreateStatement returned error: %v", err)
+	}
+
+	for _, want := range []string{
+		`CREATE TABLE "BIZ"."ORDERS"`,
+		`COMMENT ON TABLE "BIZ"."ORDERS" IS '订单''归档';`,
+	} {
+		if !strings.Contains(ddl, want) {
+			t.Fatalf("expected DDL to contain %q, got: %s", want, ddl)
+		}
+	}
+
+	queries := damengColumnsMetadataQueries()
+	if len(queries) != 2 || !strings.Contains(queries[1], "all_tab_comments") {
+		t.Fatalf("expected DDL and table comment metadata queries, got=%v", queries)
+	}
+	if !strings.Contains(queries[1], "owner = 'BIZ'") || !strings.Contains(queries[1], "table_name = 'ORDERS'") {
+		t.Fatalf("expected normalized schema and table comment predicates, got=%s", queries[1])
 	}
 }
 
