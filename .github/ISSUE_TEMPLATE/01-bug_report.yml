@@ -1,4 +1,4 @@
-name: 问题反馈
+name: 问题反馈（中文）
 description: 报告可复现的软件问题，并提供定位所需的环境与数据源信息
 title: "[Bug] "
 labels: ["bug"]
@@ -20,8 +20,6 @@ body:
           required: true
         - label: 我已经移除或脱敏密码、Token、连接串、私钥和业务数据
           required: true
-    validations:
-      required: true
 
   - type: dropdown
     id: area
