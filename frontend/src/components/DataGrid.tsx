@@ -114,6 +114,7 @@ import {
     collectDataGridFindResult,
     findDataGridTextRanges,
     hasDataGridFindRenderVersionChanged,
+    matchesDataGridColumnQuickFind,
     normalizeDataGridFindQuery,
     resolveDataGridColumnQuickFindTarget,
     resolveDataGridFindNavigationIndex,
@@ -4446,7 +4447,7 @@ const DataGrid: React.FC<DataGridProps> = ({
   const visibleColumnQuickFindMatches = useMemo(() => {
       if (!normalizedColumnQuickFindText) return [];
       return displayColumnNames.filter((columnName) => (
-          normalizeDataGridFindQuery(columnName).includes(normalizedColumnQuickFindText)
+          matchesDataGridColumnQuickFind(columnName, normalizedColumnQuickFindText)
       ));
   }, [displayColumnNames, normalizedColumnQuickFindText]);
 
