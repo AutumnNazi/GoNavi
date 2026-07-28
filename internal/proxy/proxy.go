@@ -295,6 +295,33 @@ func dialHTTPConnect(ctx context.Context, cfg connection.ProxyConfig, address st
 	if err != nil {
 		return nil, proxyWrapError("proxy.backend.error.http_connect_failed", map[string]any{"detail": err.Error()}, err)
 	}
+	if deadline, ok := ctx.Deadline(); ok {
+		if err := conn.SetDeadline(deadline); err != nil {
+			_ = conn.Close()
+			return nil, proxyWrapError("proxy.backend.error.http_connect_failed", map[string]any{"detail": err.Error()}, err)
+		}
+	}
+
+	stopContextWatch := make(chan struct{})
+	contextWatchDone := make(chan struct{})
+	go func() {
+		defer close(contextWatchDone)
+		select {
+		case <-ctx.Done():
+			// Closing is required for cancellation without a deadline and
+			// immediately unblocks both CONNECT writes and response reads.
+			_ = conn.Close()
+		case <-stopContextWatch:
+		}
+	}()
+	var stopContextWatchOnce sync.Once
+	stopWatchingContext := func() {
+		stopContextWatchOnce.Do(func() {
+			close(stopContextWatch)
+			<-contextWatchDone
+		})
+	}
+	defer stopWatchingContext()
 
 	connectReq := &http.Request{
 		Method: http.MethodConnect,
@@ -307,20 +334,38 @@ func dialHTTPConnect(ctx context.Context, cfg connection.ProxyConfig, address st
 		connectReq.Header.Set("Proxy-Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(raw)))
 	}
 	if err := connectReq.Write(conn); err != nil {
+		stopWatchingContext()
 		_ = conn.Close()
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return nil, ctxErr
+		}
 		return nil, proxyWrapError("proxy.backend.error.http_connect_write_failed", map[string]any{"detail": err.Error()}, err)
 	}
 
 	reader := bufio.NewReader(conn)
 	resp, err := http.ReadResponse(reader, connectReq)
 	if err != nil {
+		stopWatchingContext()
 		_ = conn.Close()
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return nil, ctxErr
+		}
 		return nil, proxyWrapError("proxy.backend.error.http_connect_read_failed", map[string]any{"detail": err.Error()}, err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
+		stopWatchingContext()
 		_ = conn.Close()
 		return nil, proxyTextError("proxy.backend.error.http_connect_status_failed", map[string]any{"status": strings.TrimSpace(resp.Status)})
+	}
+	stopWatchingContext()
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		_ = conn.Close()
+		return nil, ctxErr
+	}
+	if err := conn.SetDeadline(time.Time{}); err != nil {
+		_ = conn.Close()
+		return nil, proxyWrapError("proxy.backend.error.http_connect_failed", map[string]any{"detail": err.Error()}, err)
 	}
 
 	if reader.Buffered() == 0 {
