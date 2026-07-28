@@ -7670,6 +7670,7 @@
   "sidebar.table_folder.columns": "列",
   "sidebar.table_folder.foreign_keys": "外键",
   "sidebar.table_folder.indexes": "索引",
+  "sidebar.table_folder.partitions": "分区",
   "sidebar.table_folder.triggers": "触发器",
   "sidebar.tree.all_saved_queries": "全部已存查询",
   "sidebar.tree.ungrouped_saved_queries": "未分组",

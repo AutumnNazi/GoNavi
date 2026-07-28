@@ -11,8 +11,10 @@ import {
   FunctionOutlined,
   HddOutlined,
   KeyOutlined,
+  LinkOutlined,
   TableOutlined,
   ThunderboltOutlined,
+  UnorderedListOutlined,
 } from '@ant-design/icons';
 import type { SavedConnection, SavedQuery, JVMCapability, JVMResourceSummary } from '../../types';
 import { useStore } from '../../store';
@@ -53,6 +55,9 @@ import {
   type SidebarConnectionState,
   type SidebarTreeNode as TreeNode,
 } from '../sidebarV2Utils';
+import {
+  groupSidebarPartitionTableEntries,
+} from './sidebarPartitions';
 import { DBGetDatabases, DBGetTables, DBQuery, GetDriverStatusList, JVMProbeCapabilities } from '../../../wailsjs/go/app/App';
 import type { SidebarTableMetadataSnapshot } from '../../utils/sidebarTableMetadata';
 
@@ -64,6 +69,24 @@ type DriverStatusSnapshot = {
   needsUpdate?: boolean;
   updateReason?: string;
   message?: string;
+};
+
+type SidebarLoadedTableMetadata = SidebarTableMetadataSnapshot & {
+  schemaName?: string;
+  partitionParentTableName?: string;
+};
+
+type SidebarLoadedTableEntry = {
+  tableName: string;
+  schemaName: string;
+  displayName: string;
+  rowCount?: number;
+  tableSize?: number;
+  createdAt?: string;
+  updatedAt?: string;
+  tableComment?: string;
+  partitionParentTableName?: string;
+  partitionTables?: SidebarLoadedTableEntry[];
 };
 
 export const formatSidebarDriverAgentUpdateWarning = (
@@ -500,7 +523,7 @@ export const useSidebarTreeLoaders = ({
                 const tableStatsResult = tableStatusSql
                     ? await DBQuery(buildRpcConnectionConfig(config) as any, conn.dbName, tableStatusSql).catch(() => ({ success: false, data: [] as any[] }))
                     : { success: false, data: [] as any[] };
-                const tableMetadataMap = new Map<string, SidebarTableMetadataSnapshot & { schemaName?: string }>();
+                const tableMetadataMap = new Map<string, SidebarLoadedTableMetadata>();
                 const buildTableMetadataKeys = (rawTableName: string, rawSchemaName = ''): string[] => {
                     const tableName = String(rawTableName || '').trim();
                     if (!tableName) return [];
@@ -526,7 +549,7 @@ export const useSidebarTreeLoaders = ({
                 };
                 const mergeTableMetadata = (
                     rawTableName: string,
-                    patch: SidebarTableMetadataSnapshot & { schemaName?: string },
+                    patch: SidebarLoadedTableMetadata,
                     rawSchemaName = '',
                 ) => {
                     buildTableMetadataKeys(rawTableName, rawSchemaName).forEach((metadataKey) => {
@@ -534,6 +557,7 @@ export const useSidebarTreeLoaders = ({
                         tableMetadataMap.set(metadataKey, {
                             ...current,
                             ...(patch.schemaName ? { schemaName: patch.schemaName } : {}),
+                            ...(patch.partitionParentTableName ? { partitionParentTableName: patch.partitionParentTableName } : {}),
                             ...(patch.tableComment ? { tableComment: patch.tableComment } : {}),
                             ...(patch.rowCount !== undefined ? { rowCount: patch.rowCount } : {}),
                             ...(patch.tableSize !== undefined ? { tableSize: patch.tableSize } : {}),
@@ -558,6 +582,10 @@ export const useSidebarTreeLoaders = ({
                         ).trim();
                         if (!rawTableName) return;
                         const rawSchemaName = getCaseInsensitiveValue(row, ['schema_name', 'SCHEMA_NAME', 'owner', 'OWNER']);
+                        const partitionParentTableName = String(getCaseInsensitiveValue(row, [
+                            'partition_parent_table',
+                            'PARTITION_PARENT_TABLE',
+                        ]) || '').trim();
                         const tableComment = String(getCaseInsensitiveValue(row, [
                             'table_comment',
                             'TABLE_COMMENT',
@@ -596,6 +624,7 @@ export const useSidebarTreeLoaders = ({
                         ]));
                         mergeTableMetadata(rawTableName, {
                             schemaName: rawSchemaName ? String(rawSchemaName).trim() : undefined,
+                            ...(partitionParentTableName ? { partitionParentTableName } : {}),
                             ...(tableComment ? { tableComment } : {}),
                             ...(rowCount !== undefined ? { rowCount } : {}),
                             ...(tableSize !== undefined ? { tableSize } : {}),
@@ -610,7 +639,7 @@ export const useSidebarTreeLoaders = ({
                     const metadataKeys = buildTableMetadataKeys(tableName);
                     const resolvedMetadata = metadataKeys
                         .map((metadataKey) => tableMetadataMap.get(metadataKey))
-                        .find((value): value is SidebarTableMetadataSnapshot & { schemaName?: string } => !!value);
+                        .find((value): value is SidebarLoadedTableMetadata => !!value);
                     const rowSchemaName = getCaseInsensitiveValue(row, ['schema_name', 'SCHEMA_NAME', 'owner', 'OWNER']);
                     const mappedSchemaName = rowSchemaName
                         || resolvedMetadata?.schemaName
@@ -625,7 +654,7 @@ export const useSidebarTreeLoaders = ({
                     ]);
 	                return {
 	                    tableName,
-	                    schemaName: mappedSchemaName,
+	                    schemaName: String(mappedSchemaName || '').trim(),
 	                    displayName: getSidebarTableDisplayName(conn, tableName),
                         rowCount: parseMetadataRowCount(row) ?? resolvedMetadata?.rowCount,
                         tableSize: resolvedMetadata?.tableSize,
@@ -634,8 +663,9 @@ export const useSidebarTreeLoaders = ({
                         tableComment: rowComment
                             || resolvedMetadata?.tableComment
                             || '',
+	                    partitionParentTableName: resolvedMetadata?.partitionParentTableName,
 	                };
-	            });
+	            }) as SidebarLoadedTableEntry[];
 
 	            const [schemasResult, viewsResult, materializedViewsResult, triggersResult, routinesResult, sequencesResult, packagesResult, eventsResult] = await Promise.all([
 	                loadSchemas(conn, conn.dbName),
@@ -785,18 +815,30 @@ export const useSidebarTreeLoaders = ({
 	            const currentTableSortPreference = currentStoreState.tableSortPreference || tableSortPreference;
 	            const currentTableAccessCount = currentStoreState.tableAccessCount || tableAccessCount;
 	            const currentPinnedSidebarTables = currentStoreState.pinnedSidebarTables || pinnedSidebarTables;
+	            // Metadata loading can overlap with a schema visibility save. Build partition
+	            // relationships from the newest visible table set so hidden schemas cannot leak
+	            // through a visible parent, and visible children do not disappear with a hidden parent.
+	            const latestConnection = useStore.getState().connections.find(
+	                (candidate) => candidate.id === conn.id,
+	            ) || conn;
+	            const latestDatabaseConnection = { ...latestConnection, dbName };
+	            const shouldGroupBySchema = shouldHideSchemaPrefix(latestDatabaseConnection as SavedConnection);
+	            const schemaVisibilityRule = getSchemaVisibilityRule(latestDatabaseConnection, dbName);
 
 	            // 获取当前数据库的排序偏好
 	            const sortPreferenceKey = `${conn.id}-${conn.dbName}`;
 	            const sortBy = currentTableSortPreference[sortPreferenceKey] || 'name';
 
-	            const sortedTableEntries = sortSidebarTableEntries(normalizedTableEntries, {
+	            const sortedTableEntries = groupSidebarPartitionTableEntries(sortSidebarTableEntries(normalizedTableEntries, {
 	                connectionId: conn.id,
 	                dbName: conn.dbName,
 	                sortBy,
 	                tableAccessCount: currentTableAccessCount,
 	                pinnedSidebarTables: isV2Ui ? currentPinnedSidebarTables : [],
-	            });
+	            }), {
+	                isEntryVisible: (entry) => !shouldGroupBySchema
+	                    || isSchemaVisible(schemaVisibilityRule, entry.schemaName),
+	            }) as SidebarLoadedTableEntry[];
 
 	            // Sort views by name (case-insensitive)
 	            viewEntries.sort((a, b) => a.displayName.toLowerCase().localeCompare(b.displayName.toLowerCase()));
@@ -815,16 +857,7 @@ export const useSidebarTreeLoaders = ({
 
 	            eventEntries.sort((a, b) => a.displayName.toLowerCase().localeCompare(b.displayName.toLowerCase()));
 
-	            const buildTableNode = (entry: {
-	                tableName: string;
-	                schemaName: string;
-	                displayName: string;
-	                rowCount?: number;
-	                tableSize?: number;
-	                createdAt?: string;
-	                updatedAt?: string;
-	                tableComment?: string;
-	            }): TreeNode => {
+	            const buildTableNode = (entry: SidebarLoadedTableEntry): TreeNode => {
 	                const isPinned = isV2Ui && isSidebarTablePinned(
 	                    currentPinnedSidebarTables,
 	                    conn.id,
@@ -832,22 +865,76 @@ export const useSidebarTreeLoaders = ({
 	                    entry.tableName,
 	                    entry.schemaName,
 	                );
+	                const nodeKey = `${conn.id}-${conn.dbName}-${entry.tableName}`;
+	                const tableDataRef = {
+	                    ...conn,
+	                    tableName: entry.tableName,
+	                    schemaName: entry.schemaName,
+	                    ...(entry.rowCount !== undefined ? { rowCount: entry.rowCount } : {}),
+                        tableSize: entry.tableSize,
+                        createdAt: entry.createdAt,
+                        updatedAt: entry.updatedAt,
+                        tableComment: entry.tableComment,
+	                    ...(isPinned ? { pinnedSidebarTable: true } : {}),
+	                };
+	                const partitionNodes = (entry.partitionTables || []).map(buildTableNode);
+	                const children: TreeNode[] | undefined = partitionNodes.length > 0
+	                    ? [
+	                        {
+	                            title: t('sidebar.table_folder.columns'),
+	                            key: `${nodeKey}-columns`,
+	                            icon: <UnorderedListOutlined />,
+	                            type: 'folder-columns',
+	                            isLeaf: true,
+	                            dataRef: tableDataRef,
+	                        },
+	                        {
+	                            title: t('sidebar.table_folder.indexes'),
+	                            key: `${nodeKey}-indexes`,
+	                            icon: <KeyOutlined style={{ transform: 'rotate(45deg)' }} />,
+	                            type: 'folder-indexes',
+	                            isLeaf: true,
+	                            dataRef: tableDataRef,
+	                        },
+	                        {
+	                            title: t('sidebar.table_folder.foreign_keys'),
+	                            key: `${nodeKey}-fks`,
+	                            icon: <LinkOutlined />,
+	                            type: 'folder-fks',
+	                            isLeaf: true,
+	                            dataRef: tableDataRef,
+	                        },
+	                        {
+	                            title: t('sidebar.table_folder.triggers'),
+	                            key: `${nodeKey}-triggers`,
+	                            icon: <ThunderboltOutlined />,
+	                            type: 'folder-triggers',
+	                            isLeaf: true,
+	                            dataRef: tableDataRef,
+	                        },
+	                        {
+	                            title: t('sidebar.table_folder.partitions'),
+	                            key: `${nodeKey}-partitions`,
+	                            icon: <FolderOpenOutlined />,
+	                            type: 'object-group',
+	                            isLeaf: false,
+	                            selectable: false,
+	                            children: partitionNodes,
+	                            dataRef: {
+	                                ...tableDataRef,
+	                                groupKey: 'partitions',
+	                                partitionCount: partitionNodes.length,
+	                            },
+	                        },
+	                    ]
+	                    : undefined;
 	                return {
 	                    title: entry.displayName,
-	                    key: `${conn.id}-${conn.dbName}-${entry.tableName}`,
+	                    key: nodeKey,
 	                    icon: <TableOutlined />,
 	                    type: 'table',
-	                    dataRef: {
-	                        ...conn,
-	                        tableName: entry.tableName,
-	                        schemaName: entry.schemaName,
-	                        rowCount: entry.rowCount,
-                            tableSize: entry.tableSize,
-                            createdAt: entry.createdAt,
-                            updatedAt: entry.updatedAt,
-                            tableComment: entry.tableComment,
-	                        ...(isPinned ? { pinnedSidebarTable: true } : {}),
-	                    },
+	                    dataRef: tableDataRef,
+	                    ...(children ? { children } : {}),
 	                    isLeaf: false,
 	                };
 	            };
@@ -955,13 +1042,6 @@ export const useSidebarTreeLoaders = ({
 	                };
 	            };
 
-	            // Metadata loading can overlap with a schema visibility save. Render with the
-	            // newest saved connection so an in-flight request cannot restore stale groups.
-	            const latestConnection = useStore.getState().connections.find(
-	                (candidate) => candidate.id === conn.id,
-	            ) || conn;
-	            const latestDatabaseConnection = { ...latestConnection, dbName };
-	            const shouldGroupBySchema = shouldHideSchemaPrefix(latestDatabaseConnection as SavedConnection);
 	            if (shouldGroupBySchema) {
 	                type SchemaBucket = {
 	                    schemaName: string;
@@ -1014,7 +1094,6 @@ export const useSidebarTreeLoaders = ({
 	                const includeSequences = supportsDatabaseSequences(conn as SavedConnection);
 	                const includeEvents = supportsDatabaseEvents(conn as SavedConnection);
 
-	                const schemaVisibilityRule = getSchemaVisibilityRule(latestDatabaseConnection, dbName);
 	                const schemaNodes: TreeNode[] = Array.from(schemaMap.values())
 	                    .filter((bucket) => !(isOracleLike && !bucket.schemaName))
 	                    .filter((bucket) => isSchemaVisible(schemaVisibilityRule, bucket.schemaName))

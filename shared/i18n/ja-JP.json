@@ -7670,6 +7670,7 @@
   "sidebar.table_folder.columns": "列",
   "sidebar.table_folder.foreign_keys": "外部キー",
   "sidebar.table_folder.indexes": "インデックス",
+  "sidebar.table_folder.partitions": "パーティション",
   "sidebar.table_folder.triggers": "トリガー",
   "sidebar.tree.all_saved_queries": "すべての保存済みクエリ",
   "sidebar.tree.ungrouped_saved_queries": "未分類",

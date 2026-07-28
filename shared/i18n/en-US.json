@@ -7670,6 +7670,7 @@
   "sidebar.table_folder.columns": "Columns",
   "sidebar.table_folder.foreign_keys": "Foreign keys",
   "sidebar.table_folder.indexes": "Indexes",
+  "sidebar.table_folder.partitions": "Partitions",
   "sidebar.table_folder.triggers": "Triggers",
   "sidebar.tree.all_saved_queries": "All saved queries",
   "sidebar.tree.ungrouped_saved_queries": "Ungrouped",

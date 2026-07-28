@@ -7670,6 +7670,7 @@
   "sidebar.table_folder.columns": "Столбцы",
   "sidebar.table_folder.foreign_keys": "Внешние ключи",
   "sidebar.table_folder.indexes": "Индексы",
+  "sidebar.table_folder.partitions": "Секции",
   "sidebar.table_folder.triggers": "Триггеры",
   "sidebar.tree.all_saved_queries": "Все сохраненные запросы",
   "sidebar.tree.ungrouped_saved_queries": "Без группы",
