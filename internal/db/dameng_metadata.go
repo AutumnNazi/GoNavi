@@ -148,6 +148,43 @@ func buildDamengColumnsQuery(dbName, tableName string) string {
 		ORDER BY c.column_id`, upperDBName, upperTableName, upperDBName, upperTableName, upperDBName, upperTableName)
 }
 
+func buildDamengTableCommentQuery(dbName, tableName string) string {
+	upperTableName := strings.ReplaceAll(strings.ToUpper(strings.TrimSpace(tableName)), "'", "''")
+	upperDBName := strings.ReplaceAll(strings.ToUpper(strings.TrimSpace(dbName)), "'", "''")
+	if upperDBName == "" {
+		return fmt.Sprintf(`SELECT comments AS "TABLE_COMMENT"
+			FROM user_tab_comments
+			WHERE table_name = '%s' AND comments IS NOT NULL`, upperTableName)
+	}
+	return fmt.Sprintf(`SELECT comments AS "TABLE_COMMENT"
+		FROM all_tab_comments
+		WHERE owner = '%s' AND table_name = '%s' AND comments IS NOT NULL`, upperDBName, upperTableName)
+}
+
+func appendDamengTableCommentDDL(ddl, dbName, tableName, comment string) string {
+	baseDDL := strings.TrimSpace(ddl)
+	comment = strings.TrimSpace(comment)
+	if baseDDL == "" || comment == "" || strings.Contains(strings.ToUpper(baseDDL), "COMMENT ON TABLE ") {
+		return baseDDL
+	}
+
+	quoteIdentifier := func(value string) string {
+		value = strings.ToUpper(strings.TrimSpace(value))
+		return `"` + strings.ReplaceAll(value, `"`, `""`) + `"`
+	}
+	tableRef := quoteIdentifier(tableName)
+	if strings.TrimSpace(dbName) != "" {
+		tableRef = quoteIdentifier(dbName) + "." + tableRef
+	}
+
+	baseDDL = strings.TrimRight(baseDDL, " \t\r\n")
+	if !strings.HasSuffix(baseDDL, ";") && !strings.HasSuffix(baseDDL, "/") {
+		baseDDL += ";"
+	}
+	escapedComment := strings.ReplaceAll(comment, "'", "''")
+	return fmt.Sprintf("%s\n\nCOMMENT ON TABLE %s IS '%s';", baseDDL, tableRef, escapedComment)
+}
+
 // buildDamengAutoIncrementColumnsQuery reads the stable system-table flag that
 // records both IDENTITY and AUTO_INCREMENT columns. It intentionally remains a
 // separate query so restricted accounts can still load base column metadata.

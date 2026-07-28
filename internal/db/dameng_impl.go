@@ -305,7 +305,17 @@ func (d *DamengDB) GetCreateStatement(dbName, tableName string) (string, error) 
 
 	if len(data) > 0 {
 		if val, ok := data[0]["DDL"]; ok {
-			return fmt.Sprintf("%v", val), nil
+			ddl := fmt.Sprintf("%v", val)
+			commentData, _, commentErr := d.Query(buildDamengTableCommentQuery(dbName, tableName))
+			if commentErr != nil {
+				logger.Warnf("达梦 GetCreateStatement 表注释元数据查询失败，已返回基础 DDL：%v", commentErr)
+				return ddl, nil
+			}
+			if len(commentData) == 0 {
+				return ddl, nil
+			}
+			comment := getDamengRowString(commentData[0], "TABLE_COMMENT", "COMMENT", "COMMENTS")
+			return appendDamengTableCommentDDL(ddl, dbName, tableName, comment), nil
 		}
 	}
 	return "", localizedDatabaseRuntimeError("db.backend.error.create_table_statement_not_found", nil)
