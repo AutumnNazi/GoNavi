@@ -125,6 +125,7 @@ import {
   applyNoAutoCapAttributes,
   noAutoCapInputProps,
 } from "../utils/inputAutoCap";
+import { extractNacosConnectionScope } from "../utils/nacosConnectionScope";
 import {
   buildDefaultJVMConnectionValues,
   hasUnsupportedJVMEditableModes,
@@ -158,6 +159,7 @@ type ChoiceCardOption = {
 const MAX_TIMEOUT_SECONDS = 3600;
 const DEFAULT_KEEPALIVE_INTERVAL_MINUTES = 240;
 const PRIMARY_USERNAME_OPTIONAL_TYPES = new Set([
+  "redis",
   "mongodb",
   "elasticsearch",
   "chroma",
@@ -1487,6 +1489,27 @@ const ConnectionModal: React.FC<{
         const hasHttpTunnel = !!config.useHttpTunnel;
         const hasProxy = !hasHttpTunnel && !!config.useProxy;
         const protection = resolveConnectionProtectionConfig(config);
+        const parsedInitialUri = config.uri
+          ? parseUriToValues(config.uri, configType)
+          : null;
+        const hasStoredConnectionParams =
+          String(config.connectionParams || "").trim() !== "";
+        const initialConnectionParams =
+          (hasStoredConnectionParams ? config.connectionParams : "") ||
+          parsedInitialUri?.connectionParams ||
+          "";
+        const nacosConnectionScope =
+          configType === "nacos"
+            ? extractNacosConnectionScope(initialConnectionParams)
+            : null;
+        const initialNacosNamespaceId =
+          configType === "nacos" && !hasStoredConnectionParams
+            ? String(
+                parsedInitialUri?.nacosNamespaceId ||
+                  nacosConnectionScope?.scope.namespaceId ||
+                  "",
+              ).trim()
+            : nacosConnectionScope?.scope.namespaceId || "";
         form.setFieldsValue({
           type: configType,
           name: initialValues.name,
@@ -1505,10 +1528,8 @@ const ConnectionModal: React.FC<{
           restrictDataImport: protection.restrictDataImport === true,
           uri: config.uri || "",
           connectionParams:
-            config.connectionParams ||
-            (config.uri
-              ? parseUriToValues(config.uri, configType)?.connectionParams || ""
-              : ""),
+            nacosConnectionScope?.connectionParams ?? initialConnectionParams,
+          nacosNamespaceId: initialNacosNamespaceId,
           clickHouseProtocol:
             configType === "clickhouse"
               ? normalizeClickHouseProtocolValue(config.clickHouseProtocol)
@@ -1752,6 +1773,8 @@ const ConnectionModal: React.FC<{
         values,
         forPersist: true,
         initialValues,
+        nacosNamespaceIdTouched:
+          form.isFieldTouched?.("nacosNamespaceId") === true,
         translate: t,
       });
       const payload = buildSavedConnectionInput({
@@ -1904,6 +1927,8 @@ const ConnectionModal: React.FC<{
         values,
         forPersist: false,
         initialValues,
+        nacosNamespaceIdTouched:
+          form.isFieldTouched?.("nacosNamespaceId") === true,
         translate: t,
       });
       if (!isCurrentTestRun()) return;
@@ -2304,13 +2329,18 @@ const ConnectionModal: React.FC<{
       });
     } else if (type !== "custom") {
       const defaultUser =
-        type === "clickhouse" ? "default" : (type === "redis" || type === "elasticsearch" || type === "chroma" || type === "qdrant" || type === "milvus" || type === "rocketmq" || type === "mqtt" || type === "kafka" || type === "rabbitmq") ? "" : "root";
+        type === "clickhouse"
+          ? "default"
+          : PRIMARY_USERNAME_OPTIONAL_TYPES.has(type)
+            ? ""
+            : "root";
       const sslCapableType = supportsSSLForType(type);
       setUseSSL(false);
       setUseHttpTunnel(false);
       form.setFieldsValue({
         user: defaultUser,
         database: "",
+        nacosNamespaceId: "",
         port: defaultPort,
         useSSL: sslCapableType ? false : undefined,
         sslMode: sslCapableType ? "preferred" : undefined,

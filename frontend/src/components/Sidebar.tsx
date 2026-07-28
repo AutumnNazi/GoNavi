@@ -199,6 +199,7 @@ import {
   resolveV2ConnectionGroup,
   resolveV2ActiveConnectionId,
   resolveV2CommandSearchPersistentFilter,
+  resolveNacosNamespaceDiscoveryModeFromTreeNode,
   resolveNacosServicesDoubleClickAction,
   shouldClearSidebarNodeChildrenOnCollapse,
   shouldSkipSidebarLoadOnExpandWhileDragging,
@@ -1074,12 +1075,18 @@ const Sidebar: React.FC<{
         const iconType = resolveConnectionIconType(conn);
         const iconColor = resolveConnectionAccentColor(conn);
         const preserveChildren = existing && !staleConnectionIds.has(conn.id);
+        const nacosNamespaceDiscoveryMode =
+          preserveChildren && conn.config.type === 'nacos'
+            ? resolveNacosNamespaceDiscoveryModeFromTreeNode(existing)
+            : undefined;
         return {
           title: conn.name,
           key: conn.id,
           icon: getDbIcon(iconType, iconColor, 22),
           type: 'connection',
-          dataRef: conn,
+          dataRef: nacosNamespaceDiscoveryMode
+            ? { ...conn, nacosNamespaceDiscoveryMode }
+            : conn,
           isLeaf: false,
           children: preserveChildren ? existing.children : undefined,
         } as TreeNode;
@@ -2843,6 +2850,10 @@ const Sidebar: React.FC<{
     deleteSavedQueryGroup,
     moveSavedQueryToGroup,
     treeDataRef,
+    getNacosNamespaceDiscoveryMode: (connectionId: string) =>
+      resolveNacosNamespaceDiscoveryModeFromTreeNode(
+        findTreeNodeByKeyRef.current(treeDataRef.current, connectionId),
+      ),
     setTreeData,
     handleAddExternalSQLDirectory,
     openCreateExternalSQLFileModal,

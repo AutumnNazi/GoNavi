@@ -1626,4 +1626,89 @@ describe("ConnectionModal i18n", () => {
     pageText = textContent(renderer!.toJSON());
     expect(pageText).toContain("Svc");
   });
+
+  it("renders and restores the Nacos scoped namespace without requiring a username", async () => {
+    setCurrentLanguage("en-US");
+    const { default: ConnectionModal } = await import("./ConnectionModal");
+
+    let renderer: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(
+        <ConnectionModal
+          open
+          onClose={vi.fn()}
+          initialValues={initialConnection("nacos", {
+            port: 8848,
+            user: "",
+            connectionParams:
+              "contextPath=%2Fnacos&namespaceId=public&custom=value",
+          })}
+        />,
+      );
+    });
+
+    const pageText = textContent(renderer!.toJSON());
+    expect(pageText).toContain("Namespace ID");
+    expect(pageText).toContain(
+      "Administrators can leave this empty to discover all namespaces.",
+    );
+    expect(mockFormValues.nacosNamespaceId).toBe("public");
+    expect(new URLSearchParams(mockFormValues.connectionParams)).toEqual(
+      new URLSearchParams("contextPath=%2Fnacos&custom=value"),
+    );
+    expect(
+      findInputByPlaceholder(
+        renderer!,
+        "Leave empty when authentication is disabled",
+      ),
+    ).toBeDefined();
+  });
+
+  it("restores a legacy Nacos namespace stored only in the connection URI", async () => {
+    setCurrentLanguage("en-US");
+    const { default: ConnectionModal } = await import("./ConnectionModal");
+
+    let renderer: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(
+        <ConnectionModal
+          open
+          onClose={vi.fn()}
+          initialValues={initialConnection("nacos", {
+            port: 8848,
+            connectionParams: "",
+            uri: "https://nacos.example.test:8848/registry?namespaceId=dev-team&custom=value",
+          })}
+        />,
+      );
+    });
+
+    expect(mockFormValues.nacosNamespaceId).toBe("dev-team");
+    const params = new URLSearchParams(mockFormValues.connectionParams);
+    expect(params.get("contextPath")).toBe("/registry");
+    expect(params.get("custom")).toBe("value");
+    expect(params.has("namespaceId")).toBe(false);
+  });
+
+  it("starts a new Nacos connection with optional authentication and no namespace scope", async () => {
+    setCurrentLanguage("en-US");
+    const { default: ConnectionModal } = await import("./ConnectionModal");
+
+    let renderer: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<ConnectionModal open onClose={vi.fn()} />);
+    });
+    await act(async () => {
+      findClickableCard(renderer!, "Nacos").props.onClick();
+    });
+
+    expect(mockFormValues.user).toBe("");
+    expect(mockFormValues.nacosNamespaceId).toBe("");
+    expect(
+      findInputByPlaceholder(
+        renderer!,
+        "Leave empty when authentication is disabled",
+      ),
+    ).toBeDefined();
+  });
 });

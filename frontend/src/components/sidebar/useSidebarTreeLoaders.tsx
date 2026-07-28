@@ -26,6 +26,7 @@ import { buildRedisDbNodeLabel, getRedisDbAlias } from '../../utils/redisDbAlias
 import { buildJVMMonitoringActionDescriptors } from '../../utils/jvmSidebarActions';
 import { getSchemaVisibilityRule, isSchemaVisible } from '../../utils/schemaVisibility';
 import { type SidebarViewMetadataEntry } from '../../utils/sidebarMetadata';
+import { resolveNacosConnectionScope } from '../../utils/nacosConnectionScope';
 import {
   buildQualifiedName,
   buildSidebarObjectKeyName,
@@ -190,6 +191,10 @@ export const useSidebarTreeLoaders = ({
   } | null>(null);
   const driverUpdateWarningKeysRef = useRef<Set<string>>(new Set());
   const nacosServiceGroupRequestIdsRef = useRef<Record<string, number>>({});
+  const nacosNamespaceRequestIdsRef = useRef<Record<string, number>>({});
+  const nacosNamespaceActiveRequestsRef = useRef<
+      Record<string, { requestId: number; signature: string }>
+  >({});
 
 	  const fetchDriverStatusMap = async (): Promise<Record<string, DriverStatusSnapshot>> => {
 	      const cached = driverStatusCacheRef.current;
@@ -250,8 +255,27 @@ export const useSidebarTreeLoaders = ({
 	  const loadDatabases = async (node: any) => {
 		      const conn = node.dataRef as SavedConnection;
 		      const loadKey = `dbs-${conn.id}`;
-	      if (loadingNodesRef.current.has(loadKey)) return;
-	      loadingNodesRef.current.add(loadKey);
+          let nacosNamespaceRequest:
+              | { requestId: number; signature: string }
+              | undefined;
+          if (conn.config.type === 'nacos') {
+              const signature = buildConnectionReloadSignature(conn);
+              const activeRequest =
+                  nacosNamespaceActiveRequestsRef.current[conn.id];
+              if (activeRequest?.signature === signature) {
+                  return;
+              }
+              const requestId =
+                  (nacosNamespaceRequestIdsRef.current[conn.id] || 0) + 1;
+              nacosNamespaceRequestIdsRef.current[conn.id] = requestId;
+              nacosNamespaceRequest = { requestId, signature };
+              nacosNamespaceActiveRequestsRef.current[conn.id] =
+                  nacosNamespaceRequest;
+              loadingNodesRef.current.add(loadKey);
+          } else {
+              if (loadingNodesRef.current.has(loadKey)) return;
+              loadingNodesRef.current.add(loadKey);
+          }
           setConnectionStates(prev => ({ ...prev, [conn.id]: 'loading' }));
           let shouldMarkConnectionSuccess = false;
 	      const config = {
@@ -390,65 +414,159 @@ export const useSidebarTreeLoaders = ({
 
           // Handle Nacos connections: expand namespaces
           if (conn.config.type === 'nacos') {
+              const { requestId, signature: requestSignature } =
+                  nacosNamespaceRequest!;
+              const isLatestNamespaceRequest = () =>
+                  nacosNamespaceRequestIdsRef.current[conn.id] === requestId;
+              const resolveCurrentRequestConnection = (): SavedConnection | null => {
+                  if (!isLatestNamespaceRequest()) {
+                      return null;
+                  }
+                  const currentConnection = useStore.getState().connections.find(
+                      (candidate) => candidate.id === conn.id,
+                  );
+                  if (
+                      !currentConnection ||
+                      buildConnectionReloadSignature(currentConnection) !== requestSignature
+                  ) {
+                      return null;
+                  }
+                  return currentConnection;
+              };
+              type NacosNamespaceDiscoveryMode = 'listed' | 'configured';
+              const buildNamespaceNode = (
+                  sourceConnection: SavedConnection,
+                  namespaceId: string,
+                  showName: string,
+                  configCount: number,
+                  discoveryMode: NacosNamespaceDiscoveryMode,
+              ): TreeNode => {
+                  const nodeKeyId = namespaceId || 'public';
+                  const nsDataRef = {
+                      ...sourceConnection,
+                      nacosNamespaceId: namespaceId,
+                      nacosNamespaceName: showName,
+                      nacosConfigCount: Number.isFinite(configCount) ? configCount : 0,
+                      nacosNamespaceDiscoveryMode: discoveryMode,
+                  };
+                  return {
+                      title: showName,
+                      key: `${conn.id}-nacos-ns-${nodeKeyId}`,
+                      icon: <DatabaseOutlined style={{ color: '#2E6BE6' }} />,
+                      type: 'nacos-namespace',
+                      dataRef: nsDataRef,
+                      isLeaf: false,
+                      children: [
+                          {
+                              title: t('nacos_viewer.title.config_explorer'),
+                              key: `${conn.id}-nacos-ns-${nodeKeyId}-config`,
+                              icon: <DatabaseOutlined style={{ color: '#2E6BE6' }} />,
+                              type: 'nacos-config-entry',
+                              dataRef: nsDataRef,
+                              // Expand to load Group list.
+                              isLeaf: false,
+                          },
+                          {
+                              title: t('nacos_service.title.service_explorer'),
+                              key: `${conn.id}-nacos-ns-${nodeKeyId}-services`,
+                              icon: <CloudOutlined style={{ color: '#13C2C2' }} />,
+                              type: 'nacos-services-entry',
+                              dataRef: nsDataRef,
+                              isLeaf: false,
+                          },
+                      ],
+                  };
+              };
               try {
                   const res = await (window as any).go.app.App.NacosListNamespaces(buildRpcConnectionConfig(config));
+                  const currentConnection = resolveCurrentRequestConnection();
+                  if (!currentConnection) {
+                      return;
+                  }
                   if (res.success) {
                       const rows: any[] = Array.isArray(res.data) ? res.data : [];
                       const namespaces = rows.map((ns: any) => {
                           const namespaceId = String(ns.id ?? ns.ID ?? '');
                           const showName = String(ns.showName || ns.ShowName || (namespaceId || 'public'));
                           const configCount = Number(ns.configCount ?? ns.ConfigCount ?? 0);
-                          const nodeKeyId = namespaceId || 'public';
-                          const nsDataRef = {
-                              ...conn,
-                              nacosNamespaceId: namespaceId,
-                              nacosNamespaceName: showName,
-                              nacosConfigCount: Number.isFinite(configCount) ? configCount : 0,
-                          };
-                          return {
-                              title: showName,
-                              key: `${conn.id}-nacos-ns-${nodeKeyId}`,
-                              icon: <DatabaseOutlined style={{ color: '#2E6BE6' }} />,
-                              type: 'nacos-namespace' as const,
-                              dataRef: nsDataRef,
-                              isLeaf: false,
-                              children: [
-                                  {
-                                      title: t('nacos_viewer.title.config_explorer'),
-                                      key: `${conn.id}-nacos-ns-${nodeKeyId}-config`,
-                                      icon: <DatabaseOutlined style={{ color: '#2E6BE6' }} />,
-                                      type: 'nacos-config-entry' as const,
-                                      dataRef: nsDataRef,
-                                      // Expand to load Group list.
-                                      isLeaf: false,
-                                  },
-                                  {
-                                      title: t('nacos_service.title.service_explorer'),
-                                      key: `${conn.id}-nacos-ns-${nodeKeyId}-services`,
-                                      icon: <CloudOutlined style={{ color: '#13C2C2' }} />,
-                                      type: 'nacos-services-entry' as const,
-                                      dataRef: nsDataRef,
-                                      isLeaf: false,
-                                  },
-                              ],
-                          };
+                          return buildNamespaceNode(
+                              currentConnection,
+                              namespaceId,
+                              showName,
+                              configCount,
+                              'listed',
+                          );
                       });
-                      replaceTreeNodeChildren(node.key, namespaces, conn);
+                      replaceTreeNodeChildren(node.key, namespaces, {
+                          ...currentConnection,
+                          nacosNamespaceDiscoveryMode: 'listed',
+                      });
                       shouldMarkConnectionSuccess = true;
                   } else {
-                      setConnectionStates(prev => ({ ...prev, [conn.id]: 'error' }));
-                      message.error({ content: res.message, key: `conn-${conn.id}-nacos-ns` });
+                      const errorCode = String(res?.data?.errorCode || '');
+                      const scope = resolveNacosConnectionScope(
+                          currentConnection.config.connectionParams,
+                      );
+                      if (
+                          errorCode === 'nacos_namespace_list_forbidden' &&
+                          scope.configured
+                      ) {
+                          const namespace = buildNamespaceNode(
+                              currentConnection,
+                              scope.requestNamespaceId,
+                              scope.namespaceId,
+                              0,
+                              'configured',
+                          );
+                          replaceTreeNodeChildren(node.key, [namespace], {
+                              ...currentConnection,
+                              nacosNamespaceDiscoveryMode: 'configured',
+                          });
+                          shouldMarkConnectionSuccess = true;
+                          message.warning({
+                              content: t('nacos.namespace.message.scoped_fallback', {
+                                  id: scope.namespaceId,
+                              }),
+                              key: `conn-${currentConnection.id}-nacos-ns`,
+                          });
+                      } else {
+                          setConnectionStates(prev => ({ ...prev, [currentConnection.id]: 'error' }));
+                          setLoadedKeys(prev => prev.filter(k => k !== node.key));
+                          message.error({
+                              content:
+                                  errorCode === 'nacos_namespace_list_forbidden'
+                                      ? t('nacos.namespace.message.scope_required')
+                                      : res.message,
+                              key: `conn-${currentConnection.id}-nacos-ns`,
+                          });
+                      }
                   }
               } catch (e: any) {
-                  setConnectionStates(prev => ({ ...prev, [conn.id]: 'error' }));
+                  const currentConnection = resolveCurrentRequestConnection();
+                  if (!currentConnection) {
+                      return;
+                  }
+                  setConnectionStates(prev => ({ ...prev, [currentConnection.id]: 'error' }));
+                  setLoadedKeys(prev => prev.filter(k => k !== node.key));
                   message.error({
                       content: t('sidebar.message.connection_failed', { error: e?.message || String(e) }),
-                      key: `conn-${conn.id}-nacos-ns`,
+                      key: `conn-${currentConnection.id}-nacos-ns`,
                   });
               } finally {
-                  loadingNodesRef.current.delete(loadKey);
-                  if (shouldMarkConnectionSuccess) {
-                      setConnectionStates(prev => ({ ...prev, [conn.id]: 'success' }));
+                  const activeRequest =
+                      nacosNamespaceActiveRequestsRef.current[conn.id];
+                  if (activeRequest?.requestId === requestId) {
+                      delete nacosNamespaceActiveRequestsRef.current[conn.id];
+                      loadingNodesRef.current.delete(loadKey);
+                      const currentConnection = resolveCurrentRequestConnection();
+                      if (shouldMarkConnectionSuccess) {
+                          if (currentConnection) {
+                              setConnectionStates(prev => ({
+                                  ...prev,
+                                  [currentConnection.id]: 'success',
+                              }));
+                          }
+                      }
                   }
               }
               return;

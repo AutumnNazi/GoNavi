@@ -220,6 +220,40 @@ describe('buildRpcConnectionConfig', () => {
     });
   });
 
+  it('preserves Nacos legacy readOnly for backend mutation guards', () => {
+    const result = buildRpcConnectionConfig({
+      id: 'conn-nacos-readonly',
+      type: 'nacos',
+      host: 'nacos.local',
+      port: 8848,
+      readOnly: true,
+    } as any);
+
+    expect(result.readOnly).toBe(true);
+  });
+
+  it('preserves explicit Nacos protection flags for backend mutation guards', () => {
+    const result = buildRpcConnectionConfig({
+      id: 'conn-nacos-protected',
+      type: 'nacos',
+      host: 'nacos.local',
+      port: 8848,
+      protection: {
+        restrictDataEdit: true,
+        restrictStructureEdit: true,
+        restrictDataImport: true,
+      },
+    } as any);
+
+    expect(result.readOnly).toBe(false);
+    expect(result.protection).toEqual({
+      restrictDataEdit: true,
+      restrictStructureEdit: true,
+      restrictScriptExecution: false,
+      restrictDataImport: true,
+    });
+  });
+
   it('ignores the legacy readOnly flag for unsupported connection types', () => {
     const result = buildRpcConnectionConfig({
       id: 'conn-redis-readonly',

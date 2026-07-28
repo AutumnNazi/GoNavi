@@ -46,16 +46,68 @@ import { buildRpcConnectionConfig } from '../../utils/connectionRpcConfig';
 import { supportsTableTruncateAction } from '../tableDataDangerActions';
 import { normalizeConnectionEnvironmentType } from '../../utils/connectionEnvironment';
 import { noAutoCapInputProps } from '../../utils/inputAutoCap';
-import { buildNacosServicesTabData } from '../sidebarV2Utils';
+import {
+  buildNacosServicesTabData,
+  resolveNacosNamespaceDiscoveryModeFromTreeNode,
+  type NacosNamespaceDiscoveryMode,
+} from '../sidebarV2Utils';
 
 type NacosNamespaceFormMode = 'create' | 'edit';
+
+const isNacosNamespaceStructureRestricted = (config: SavedConnection['config'] | undefined) =>
+  config?.readOnly === true || config?.protection?.restrictStructureEdit === true;
+
+const resolveCurrentNacosConnection = (connection: SavedConnection): SavedConnection => {
+  const current = useStore.getState().connections.find((item) => item.id === connection.id);
+  return current || connection;
+};
+
+const assertNacosNamespaceStructureEditable = (connection: SavedConnection) => {
+  const current = resolveCurrentNacosConnection(connection);
+  if (!isNacosNamespaceStructureRestricted(current.config)) {
+    return current;
+  }
+  const error = new Error(t('nacos.backend.error.read_only'));
+  message.error(error.message);
+  throw error;
+};
+
+const resolveCurrentNacosNamespaceDiscoveryMode = (
+  connectionId: unknown,
+  node: any,
+  resolver?: (id: string) => unknown,
+): NacosNamespaceDiscoveryMode | undefined => {
+  const liveMode = resolver?.(String(connectionId || ''));
+  if (liveMode === 'listed' || liveMode === 'configured') {
+    return liveMode;
+  }
+  return resolveNacosNamespaceDiscoveryModeFromTreeNode(node);
+};
+
+const assertNacosNamespaceDiscoveryAllowsCrud = (
+  isBlocked: (() => boolean) | undefined,
+) => {
+  if (!isBlocked?.()) return;
+  const error = new Error(t('nacos.backend.error.read_only'));
+  message.error(error.message);
+  throw error;
+};
 
 const openNacosNamespaceFormModal = (options: {
   mode: NacosNamespaceFormMode;
   connection: SavedConnection;
   initial?: { id?: string; showName?: string; description?: string };
   onSuccess?: () => void;
+  isNamespaceManagementBlocked?: () => boolean;
 }) => {
+  if (
+    options.isNamespaceManagementBlocked?.() ||
+    isNacosNamespaceStructureRestricted(
+      resolveCurrentNacosConnection(options.connection).config,
+    )
+  ) {
+    return;
+  }
   const draft = {
     id: String(options.initial?.id || ''),
     showName: String(options.initial?.showName || ''),
@@ -106,12 +158,16 @@ const openNacosNamespaceFormModal = (options: {
     okText: t('common.confirm'),
     cancelText: t('common.cancel'),
     onOk: async () => {
+      assertNacosNamespaceDiscoveryAllowsCrud(
+        options.isNamespaceManagementBlocked,
+      );
+      const currentConnection = assertNacosNamespaceStructureEditable(options.connection);
       const showName = draft.showName.trim();
       if (!showName) {
         message.error(t('nacos.backend.error.namespace_name_required'));
         throw new Error('namespace name required');
       }
-      const rpcConfig = buildRpcConnectionConfig(options.connection.config as any);
+      const rpcConfig = buildRpcConnectionConfig(currentConnection.config as any);
       if (isEdit) {
         const res = await (window as any).go.app.App.NacosUpdateNamespace(rpcConfig, {
           id: draft.id.trim(),
@@ -305,6 +361,7 @@ export const buildSidebarLegacyNodeMenuItems = (
     deleteSavedQueryGroup,
     moveSavedQueryToGroup,
     treeDataRef,
+    getNacosNamespaceDiscoveryMode,
     setTreeData,
     handleAddExternalSQLDirectory,
     openCreateExternalSQLFileModal,
@@ -606,6 +663,17 @@ export const buildSidebarLegacyNodeMenuItems = (
         }
 
         if (isNacos) {
+            const nacosStructureRestricted = isNacosNamespaceStructureRestricted(
+                resolveCurrentNacosConnection(conn).config,
+            );
+            const isNamespaceManagementBlocked = () =>
+                resolveCurrentNacosNamespaceDiscoveryMode(
+                    conn.id,
+                    node,
+                    getNacosNamespaceDiscoveryMode,
+                ) === 'configured';
+            const usesConfiguredNacosNamespace =
+                isNamespaceManagementBlocked();
             return [
                 {
                     key: 'refresh',
@@ -622,11 +690,21 @@ export const buildSidebarLegacyNodeMenuItems = (
                     key: 'create-nacos-namespace',
                     label: t('nacos.namespace.menu.create'),
                     icon: <PlusOutlined />,
-                    onClick: () => openNacosNamespaceFormModal({
-                        mode: 'create',
-                        connection: node.dataRef as SavedConnection,
-                        onSuccess: () => loadDatabases(node),
-                    }),
+                    disabled:
+                        nacosStructureRestricted || usesConfiguredNacosNamespace,
+                    onClick: () => {
+                        if (isNamespaceManagementBlocked()) return;
+                        const currentConnection = resolveCurrentNacosConnection(
+                            node.dataRef as SavedConnection,
+                        );
+                        if (isNacosNamespaceStructureRestricted(currentConnection.config)) return;
+                        openNacosNamespaceFormModal({
+                            mode: 'create',
+                            connection: currentConnection,
+                            onSuccess: () => loadDatabases(node),
+                            isNamespaceManagementBlocked,
+                        });
+                    },
                 },
                 { type: 'divider' },
                 {
@@ -770,6 +848,18 @@ export const buildSidebarLegacyNodeMenuItems = (
         const nsName = nacosNamespaceName || nacosNamespaceId || 'public';
         const nsKey = nacosNamespaceId || 'public';
         const isPublicNs = !String(nacosNamespaceId || '').trim() || String(nacosNamespaceId).toLowerCase() === 'public';
+        const namespaceConnection = { id, config } as SavedConnection;
+        const nacosStructureRestricted = isNacosNamespaceStructureRestricted(
+            resolveCurrentNacosConnection(namespaceConnection).config,
+        );
+        const isNamespaceManagementBlocked = () =>
+            resolveCurrentNacosNamespaceDiscoveryMode(
+                id,
+                node,
+                getNacosNamespaceDiscoveryMode,
+            ) === 'configured';
+        const usesConfiguredNacosNamespace =
+            isNamespaceManagementBlocked();
         const parentConnectionNode = {
             key: id,
             type: 'connection',
@@ -810,25 +900,46 @@ export const buildSidebarLegacyNodeMenuItems = (
                 key: 'edit-nacos-namespace',
                 label: t('nacos.namespace.menu.edit'),
                 icon: <EditOutlined />,
-                disabled: isPublicNs,
-                onClick: () => openNacosNamespaceFormModal({
-                    mode: 'edit',
-                    connection: { id, config } as SavedConnection,
-                    initial: {
-                        id: nacosNamespaceId || '',
-                        showName: nsName,
-                        description: '',
-                    },
-                    onSuccess: () => loadDatabases(parentConnectionNode),
-                }),
+                disabled:
+                    isPublicNs ||
+                    nacosStructureRestricted ||
+                    usesConfiguredNacosNamespace,
+                onClick: () => {
+                    if (isNamespaceManagementBlocked()) return;
+                    const currentConnection = resolveCurrentNacosConnection(namespaceConnection);
+                    if (
+                        isPublicNs
+                        || isNacosNamespaceStructureRestricted(currentConnection.config)
+                    ) return;
+                    openNacosNamespaceFormModal({
+                        mode: 'edit',
+                        connection: currentConnection,
+                        initial: {
+                            id: nacosNamespaceId || '',
+                            showName: nsName,
+                            description: '',
+                        },
+                        onSuccess: () => loadDatabases(parentConnectionNode),
+                        isNamespaceManagementBlocked,
+                    });
+                },
             },
             {
                 key: 'delete-nacos-namespace',
                 label: t('nacos.namespace.menu.delete'),
                 icon: <DeleteOutlined />,
                 danger: true,
-                disabled: isPublicNs,
+                disabled:
+                    isPublicNs ||
+                    nacosStructureRestricted ||
+                    usesConfiguredNacosNamespace,
                 onClick: () => {
+                    if (isNamespaceManagementBlocked()) return;
+                    const currentConnection = resolveCurrentNacosConnection(namespaceConnection);
+                    if (
+                        isPublicNs
+                        || isNacosNamespaceStructureRestricted(currentConnection.config)
+                    ) return;
                     Modal.confirm({
                         title: t('nacos.namespace.menu.delete'),
                         content: t('nacos.namespace.message.confirm_delete', {
@@ -837,7 +948,14 @@ export const buildSidebarLegacyNodeMenuItems = (
                         }),
                         okButtonProps: { danger: true },
                         onOk: async () => {
-                            const rpcConfig = buildRpcConnectionConfig(config as any);
+                            assertNacosNamespaceDiscoveryAllowsCrud(
+                                isNamespaceManagementBlocked,
+                            );
+                            const latestConnection =
+                                assertNacosNamespaceStructureEditable(currentConnection);
+                            const rpcConfig = buildRpcConnectionConfig(
+                                latestConnection.config as any,
+                            );
                             const res = await (window as any).go.app.App.NacosDeleteNamespace(
                                 rpcConfig,
                                 nacosNamespaceId || '',

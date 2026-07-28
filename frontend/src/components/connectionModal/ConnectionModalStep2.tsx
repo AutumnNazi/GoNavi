@@ -89,6 +89,7 @@ const PRIMARY_USERNAME_OPTIONAL_TYPES = new Set([
   "mqtt",
   "kafka",
   "rabbitmq",
+  "nacos",
 ]);
 
 // URI 操作反馈统一保留 4 秒，便于用户读取后自动回收空间。
@@ -229,10 +230,13 @@ const ConnectionModalStep2: React.FC<ConnectionModalStep2Props> = (props) => {
     Form.useWatch("restrictScriptExecution", form) === true;
   const restrictDataImport =
     Form.useWatch("restrictDataImport", form) === true;
+  const isNacosProtection =
+    String(dbType || "").trim().toLowerCase() === "nacos";
+  const supportsScriptExecutionProtection = !isNacosProtection;
   const connectionProtectionEnabledCount = [
     restrictDataEdit,
     restrictStructureEdit,
-    restrictScriptExecution,
+    supportsScriptExecutionProtection && restrictScriptExecution,
     restrictDataImport,
   ].filter(Boolean).length;
 
@@ -1183,6 +1187,31 @@ const ConnectionModalStep2: React.FC<ConnectionModalStep2Props> = (props) => {
                   )}
               </div>
             </div>
+
+            {dbType === "nacos" && (
+              <div className="gn-conn-f-row" data-align="start">
+                {denseLabel(
+                  t("connection.modal.field.nacosNamespaceId.label"),
+                )}
+                <div className="gn-conn-f-ctrl">
+                  <Form.Item
+                    name="nacosNamespaceId"
+                    style={{ marginBottom: 0 }}
+                  >
+                    <Input
+                      {...noAutoCapInputProps}
+                      maxLength={256}
+                      placeholder={t(
+                        "connection.modal.field.nacosNamespaceId.placeholder",
+                      )}
+                    />
+                  </Form.Item>
+                  <div className="gn-conn-mode-hint">
+                    {t("connection.modal.field.nacosNamespaceId.help")}
+                  </div>
+                </div>
+              </div>
+            )}
 
             {dbType === "clickhouse" && (
               <div className="gn-conn-f-row">
@@ -2354,7 +2383,9 @@ const ConnectionModalStep2: React.FC<ConnectionModalStep2Props> = (props) => {
                           "connection.modal.field.readOnly.option.dataEdit.label",
                         ),
                         help: t(
-                          "connection.modal.field.readOnly.option.dataEdit.help",
+                          isNacosProtection
+                            ? "connection.modal.field.readOnly.option.nacos.dataEdit.help"
+                            : "connection.modal.field.readOnly.option.dataEdit.help",
                         ),
                       },
                       {
@@ -2364,19 +2395,25 @@ const ConnectionModalStep2: React.FC<ConnectionModalStep2Props> = (props) => {
                           "connection.modal.field.readOnly.option.structureEdit.label",
                         ),
                         help: t(
-                          "connection.modal.field.readOnly.option.structureEdit.help",
+                          isNacosProtection
+                            ? "connection.modal.field.readOnly.option.nacos.structureEdit.help"
+                            : "connection.modal.field.readOnly.option.structureEdit.help",
                         ),
                       },
-                      {
-                        field: "restrictScriptExecution",
-                        checked: restrictScriptExecution,
-                        label: t(
-                          "connection.modal.field.readOnly.option.scriptExecution.label",
-                        ),
-                        help: t(
-                          "connection.modal.field.readOnly.option.scriptExecution.help",
-                        ),
-                      },
+                      ...(supportsScriptExecutionProtection
+                        ? [
+                            {
+                              field: "restrictScriptExecution",
+                              checked: restrictScriptExecution,
+                              label: t(
+                                "connection.modal.field.readOnly.option.scriptExecution.label",
+                              ),
+                              help: t(
+                                "connection.modal.field.readOnly.option.scriptExecution.help",
+                              ),
+                            },
+                          ]
+                        : []),
                       {
                         field: "restrictDataImport",
                         checked: restrictDataImport,
@@ -2384,7 +2421,9 @@ const ConnectionModalStep2: React.FC<ConnectionModalStep2Props> = (props) => {
                           "connection.modal.field.readOnly.option.dataImport.label",
                         ),
                         help: t(
-                          "connection.modal.field.readOnly.option.dataImport.help",
+                          isNacosProtection
+                            ? "connection.modal.field.readOnly.option.nacos.dataImport.help"
+                            : "connection.modal.field.readOnly.option.dataImport.help",
                         ),
                       },
                     ].map((item) => (

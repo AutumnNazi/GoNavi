@@ -168,10 +168,27 @@ describe("connectionModalConfig keepalive", () => {
       forPersist: true,
       translate,
     });
+    const nacosConfig = await buildConnectionConfig({
+      values: {
+        ...buildBaseValues(),
+        type: "nacos",
+        port: 8848,
+        ...protection,
+      },
+      forPersist: true,
+      translate,
+    });
 
     expect(sqlConfig.protection).toEqual(protection);
     expect(sqlConfig.readOnly).toBe(true);
     expect(redisConfig.protection).toBeUndefined();
     expect(redisConfig.readOnly).toBe(false);
+    expect(nacosConfig.protection).toEqual({
+      restrictDataEdit: true,
+      restrictStructureEdit: true,
+      restrictScriptExecution: false,
+      restrictDataImport: true,
+    });
+    expect(nacosConfig.readOnly).toBe(false);
   });
 });
