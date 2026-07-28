@@ -7,9 +7,11 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	"GoNavi-Wails/internal/connection"
@@ -134,7 +136,7 @@ func TestClientAPIFamilyDetectionDoesNotFallbackOnForbidden(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
 		recorder.record(request)
 		switch request.URL.Path {
-		case routesForNacosAPI(nacosAPIV3).namespaceList:
+		case nacosV3ReadinessPath:
 			w.WriteHeader(http.StatusForbidden)
 			_, _ = io.WriteString(w, `{"code":403,"message":"no such api for this account"}`)
 		case routesForNacosAPI(nacosAPIV2).namespaceList, routesForNacosAPI(nacosAPIV1).namespaceList:
@@ -153,7 +155,7 @@ func TestClientAPIFamilyDetectionDoesNotFallbackOnForbidden(t *testing.T) {
 	if !strings.Contains(err.Error(), "403") {
 		t.Fatalf("Connect error = %q, want HTTP 403", err)
 	}
-	if got := recorder.countPath(routesForNacosAPI(nacosAPIV3).namespaceList); got == 0 {
+	if got := recorder.countPath(nacosV3ReadinessPath); got == 0 {
 		t.Fatal("v3 probe was not requested")
 	}
 	if got := recorder.countPath(routesForNacosAPI(nacosAPIV2).namespaceList); got != 0 {
@@ -164,8 +166,214 @@ func TestClientAPIFamilyDetectionDoesNotFallbackOnForbidden(t *testing.T) {
 	}
 }
 
-func TestClientAuthUsesV3LoginWithoutLegacyFallback(t *testing.T) {
+func TestClientAPIFamilyDetectionUsesV2ReadinessWithoutNamespacePermission(t *testing.T) {
 	recorder := &nacosAPIRequestRecorder{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		recorder.record(request)
+		switch request.URL.Path {
+		case nacosV3ReadinessPath:
+			http.NotFound(w, request)
+		case nacosV2ReadinessPath:
+			writeNacosResult(w, nacosAPIV2, "ok")
+		case routesForNacosAPI(nacosAPIV2).namespaceList:
+			http.Error(w, "namespace permission denied", http.StatusForbidden)
+		default:
+			http.NotFound(w, request)
+		}
+	}))
+	defer server.Close()
+
+	client := connectAPIVersionTestClient(t, server)
+	defer client.Close()
+	if client.apiFamily != nacosAPIV2 {
+		t.Fatalf("detected API family = %d, want v2", client.apiFamily)
+	}
+	if got := recorder.countPath(nacosV2ReadinessPath); got != 2 {
+		t.Fatalf("v2 readiness probe count = %d, want 2 for detection and ping", got)
+	}
+	if got := recorder.countPath(routesForNacosAPI(nacosAPIV2).namespaceList); got != 0 {
+		t.Fatalf("v2 namespace probe count = %d, want 0", got)
+	}
+}
+
+func TestClientAPIFamilyDetectionUsesV1ReadinessWithoutNamespacePermission(t *testing.T) {
+	recorder := &nacosAPIRequestRecorder{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		recorder.record(request)
+		switch request.URL.Path {
+		case nacosV3ReadinessPath, nacosV2ReadinessPath, routesForNacosAPI(nacosAPIV2).namespaceList:
+			http.NotFound(w, request)
+		case nacosV1ReadinessPath:
+			_, _ = io.WriteString(w, "OK")
+		case routesForNacosAPI(nacosAPIV1).namespaceList:
+			http.Error(w, "namespace permission denied", http.StatusForbidden)
+		default:
+			http.NotFound(w, request)
+		}
+	}))
+	defer server.Close()
+
+	client := connectAPIVersionTestClient(t, server)
+	defer client.Close()
+	if client.apiFamily != nacosAPIV1 {
+		t.Fatalf("detected API family = %d, want v1", client.apiFamily)
+	}
+	if got := recorder.countPath(nacosV1ReadinessPath); got != 2 {
+		t.Fatalf("v1 readiness probe count = %d, want 2 for detection and ping", got)
+	}
+	if got := recorder.countPath(routesForNacosAPI(nacosAPIV1).namespaceList); got != 0 {
+		t.Fatalf("v1 namespace probe count = %d, want 0", got)
+	}
+}
+
+func TestClientAPIFamilyDetectionKeepsNacos22NamespaceFallback(t *testing.T) {
+	recorder := &nacosAPIRequestRecorder{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		recorder.record(request)
+		switch request.URL.Path {
+		case nacosV3ReadinessPath, nacosV2ReadinessPath:
+			http.NotFound(w, request)
+		case routesForNacosAPI(nacosAPIV2).namespaceList:
+			writeNacosResult(w, nacosAPIV2, []any{})
+		default:
+			http.NotFound(w, request)
+		}
+	}))
+	defer server.Close()
+
+	client := connectAPIVersionTestClient(t, server)
+	defer client.Close()
+	if client.apiFamily != nacosAPIV2 {
+		t.Fatalf("detected API family = %d, want v2", client.apiFamily)
+	}
+	if got := recorder.countPath(nacosV2ReadinessPath); got != 2 {
+		t.Fatalf("v2 readiness probe count = %d, want 2 for detection and ping", got)
+	}
+	if got := recorder.countPath(routesForNacosAPI(nacosAPIV2).namespaceList); got != 2 {
+		t.Fatalf("v2 namespace probe count = %d, want 2 for detection and ping fallback", got)
+	}
+}
+
+func TestValidateNacosV1ReadinessProbe(t *testing.T) {
+	for _, body := range []string{"OK", " ok\r\n"} {
+		if err := validateNacosV1ReadinessProbe([]byte(body)); err != nil {
+			t.Fatalf("validate v1 readiness body %q: %v", body, err)
+		}
+	}
+	for _, body := range []string{"", "<html>console</html>", `{"code":200,"data":"OK"}`} {
+		if err := validateNacosV1ReadinessProbe([]byte(body)); err == nil {
+			t.Fatalf("validate v1 readiness body %q unexpectedly succeeded", body)
+		}
+	}
+}
+
+func TestValidateNacosAPIReadinessProbe(t *testing.T) {
+	for _, body := range []string{
+		`{"code":0,"message":"success","data":"ok"}`,
+		`{"code":200,"message":"success","data":" OK "}`,
+	} {
+		if err := validateNacosAPIReadinessProbe([]byte(body)); err != nil {
+			t.Fatalf("validate readiness body %q: %v", body, err)
+		}
+	}
+	for _, body := range []string{
+		`{"code":0,"message":"success","data":true}`,
+		`{"code":0,"message":"success","data":"ready"}`,
+		`{"code":0,"message":"success","data":null}`,
+		`{"code":0,"message":"success"}`,
+	} {
+		if err := validateNacosAPIReadinessProbe([]byte(body)); err == nil {
+			t.Fatalf("validate readiness body %q unexpectedly succeeded", body)
+		}
+	}
+}
+
+func TestClientReadinessRejectsNonOfficialSuccessPayload(t *testing.T) {
+	tests := []struct {
+		name          string
+		invalidOnCall int
+	}{
+		{name: "detection", invalidOnCall: 1},
+		{name: "connect ping", invalidOnCall: 2},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var readinessRequests atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+				switch request.URL.Path {
+				case nacosV3ReadinessPath:
+					requestNumber := int(readinessRequests.Add(1))
+					data := any("ok")
+					if requestNumber == test.invalidOnCall {
+						data = true
+					}
+					writeNacosResult(w, nacosAPIV3, data)
+				case routesForNacosAPI(nacosAPIV2).namespaceList:
+					writeNacosResult(w, nacosAPIV2, []any{})
+				default:
+					http.NotFound(w, request)
+				}
+			}))
+			defer server.Close()
+
+			client := &ClientImpl{}
+			err := client.Connect(nacosAPITestConnectionConfig(t, server))
+			if err == nil {
+				_ = client.Close()
+				t.Fatal("Connect unexpectedly accepted non-official readiness data")
+			}
+			if got := int(readinessRequests.Load()); got != test.invalidOnCall {
+				t.Fatalf("readiness requests = %d, want %d", got, test.invalidOnCall)
+			}
+		})
+	}
+}
+
+func TestClientPublicReadinessOmitsAccessToken(t *testing.T) {
+	const accessToken = "public-readiness-token"
+	var readinessMu sync.Mutex
+	var readinessTokens []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		switch request.URL.Path {
+		case "/v3/auth/user/login":
+			writeNacosJSON(w, map[string]any{"accessToken": accessToken, "tokenTtl": 3600})
+		case nacosV3ReadinessPath:
+			readinessMu.Lock()
+			readinessTokens = append(readinessTokens, request.URL.Query().Get("accessToken"))
+			readinessMu.Unlock()
+			writeNacosResult(w, nacosAPIV3, "ok")
+		default:
+			http.NotFound(w, request)
+		}
+	}))
+	defer server.Close()
+
+	config := nacosAPITestConnectionConfig(t, server)
+	config.User = "nacos"
+	config.Password = "secret"
+	client := &ClientImpl{}
+	if err := client.Connect(config); err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	defer client.Close()
+
+	readinessMu.Lock()
+	gotReadinessTokens := append([]string(nil), readinessTokens...)
+	readinessMu.Unlock()
+	if len(gotReadinessTokens) != 2 {
+		t.Fatalf("readiness requests = %d, want 2", len(gotReadinessTokens))
+	}
+	for index, token := range gotReadinessTokens {
+		if token != "" {
+			t.Fatalf("readiness request %d sent accessToken %q", index+1, token)
+		}
+	}
+}
+
+func TestClientReadinessRetriesWithTokenForAuthGatedProxy(t *testing.T) {
+	recorder := &nacosAPIRequestRecorder{}
+	var readinessMu sync.Mutex
+	var readinessTokens []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
 		recorder.record(request)
 		switch request.URL.Path {
@@ -177,12 +385,16 @@ func TestClientAuthUsesV3LoginWithoutLegacyFallback(t *testing.T) {
 			writeNacosJSON(w, map[string]any{"accessToken": "v3-token", "tokenTtl": 3600})
 		case "/v1/auth/users/login":
 			http.Error(w, "unexpected legacy login", http.StatusInternalServerError)
-		case routesForNacosAPI(nacosAPIV3).namespaceList:
-			if request.URL.Query().Get("accessToken") != "v3-token" {
+		case nacosV3ReadinessPath:
+			token := request.URL.Query().Get("accessToken")
+			readinessMu.Lock()
+			readinessTokens = append(readinessTokens, token)
+			readinessMu.Unlock()
+			if token != "v3-token" {
 				http.Error(w, "missing token", http.StatusForbidden)
 				return
 			}
-			writeNacosResult(w, nacosAPIV3, []any{})
+			writeNacosResult(w, nacosAPIV3, "ok")
 		default:
 			http.NotFound(w, request)
 		}
@@ -203,6 +415,18 @@ func TestClientAuthUsesV3LoginWithoutLegacyFallback(t *testing.T) {
 	}
 	if got := recorder.countPath("/v1/auth/users/login"); got != 0 {
 		t.Fatalf("legacy login count = %d, want 0", got)
+	}
+	wantReadinessTokens := []string{"", "v3-token", "", "v3-token"}
+	readinessMu.Lock()
+	gotReadinessTokens := append([]string(nil), readinessTokens...)
+	readinessMu.Unlock()
+	if len(gotReadinessTokens) != len(wantReadinessTokens) {
+		t.Fatalf("readiness tokens = %#v, want %#v", gotReadinessTokens, wantReadinessTokens)
+	}
+	for index := range wantReadinessTokens {
+		if gotReadinessTokens[index] != wantReadinessTokens[index] {
+			t.Fatalf("readiness tokens = %#v, want %#v", gotReadinessTokens, wantReadinessTokens)
+		}
 	}
 }
 
@@ -242,7 +466,7 @@ func TestNacosV2ListServicesWithoutGroupUsesV1Catalog(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
 		recorder.record(request)
 		switch request.URL.Path {
-		case routesForNacosAPI(nacosAPIV3).namespaceList:
+		case nacosV3ReadinessPath:
 			http.NotFound(w, request)
 		case routesForNacosAPI(nacosAPIV2).namespaceList:
 			writeNacosResult(w, nacosAPIV2, []any{})
@@ -292,8 +516,8 @@ func TestNacosV3ListServicesFiltersExactGroupAcrossPages(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
 		recorder.record(request)
 		switch request.URL.Path {
-		case routesForNacosAPI(nacosAPIV3).namespaceList:
-			writeNacosResult(w, nacosAPIV3, []any{})
+		case nacosV3ReadinessPath:
+			writeNacosResult(w, nacosAPIV3, "ok")
 		case routesForNacosAPI(nacosAPIV3).serviceList:
 			pageNumber, _ := strconv.Atoi(request.Form.Get("pageNo"))
 			pageItems := []any{
@@ -355,12 +579,118 @@ func TestNacosV3ListServicesFiltersExactGroupAcrossPages(t *testing.T) {
 	}
 }
 
+func TestNacosV3ListServicesEscapesExactGroupPattern(t *testing.T) {
+	const targetGroup = "PAY[1]"
+
+	recorder := &nacosAPIRequestRecorder{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		recorder.record(request)
+		switch request.URL.Path {
+		case nacosV3ReadinessPath:
+			writeNacosResult(w, nacosAPIV3, "ok")
+		case routesForNacosAPI(nacosAPIV3).serviceList:
+			groupPattern, err := regexp.Compile(request.Form.Get("groupNameParam"))
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			candidates := []nacosServiceItem{
+				{Name: "literal", GroupName: targetGroup},
+				{Name: "regex-lookalike", GroupName: "PAY1"},
+				{Name: "prefix", GroupName: targetGroup + "-ARCHIVE"},
+			}
+			pageItems := make([]nacosServiceItem, 0, len(candidates))
+			for _, candidate := range candidates {
+				if groupPattern.MatchString(candidate.GroupName) {
+					pageItems = append(pageItems, candidate)
+				}
+			}
+			writeNacosResult(w, nacosAPIV3, map[string]any{
+				"totalCount":     len(pageItems),
+				"pageNumber":     1,
+				"pagesAvailable": 1,
+				"pageItems":      pageItems,
+			})
+		default:
+			http.NotFound(w, request)
+		}
+	}))
+	defer server.Close()
+
+	client := connectAPIVersionTestClient(t, server)
+	defer client.Close()
+	page, err := client.ListServices(context.Background(), ServiceQuery{
+		NamespaceID: "dev-id",
+		GroupName:   targetGroup,
+		PageNo:      1,
+		PageSize:    20,
+	})
+	if err != nil {
+		t.Fatalf("ListServices: %v", err)
+	}
+	if page.Count != 1 || len(page.ServiceNames) != 1 || page.ServiceNames[0] != targetGroup+"@@literal" {
+		t.Fatalf("exact group page = %#v", page)
+	}
+
+	request := mustLastNacosAPIRequest(t, recorder, http.MethodGet, routesForNacosAPI(nacosAPIV3).serviceList)
+	if got, want := request.values.Get("groupNameParam"), regexp.QuoteMeta(targetGroup); got != want {
+		t.Fatalf("groupNameParam = %q, want %q", got, want)
+	}
+}
+
+func TestCreateEphemeralServiceAPIVersionBoundary(t *testing.T) {
+	tests := []struct {
+		name   string
+		family nacosAPIFamily
+	}{
+		{name: "v1 rejects before request", family: nacosAPIV1},
+		{name: "v2 forwards ephemeral", family: nacosAPIV2},
+		{name: "v3 forwards ephemeral", family: nacosAPIV3},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			recorder := &nacosAPIRequestRecorder{}
+			server := httptest.NewServer(nacosAPIMatrixHandler(test.family, recorder))
+			defer server.Close()
+
+			client := connectAPIVersionTestClient(t, server)
+			defer client.Close()
+			ephemeral := true
+			err := client.CreateService(context.Background(), CreateServiceRequest{
+				NamespaceID: "dev-id",
+				ServiceName: "orders",
+				GroupName:   "MKEFU",
+				Ephemeral:   &ephemeral,
+			})
+			routes := routesForNacosAPI(test.family)
+			if test.family == nacosAPIV1 {
+				if err == nil {
+					t.Fatal("expected v1 ephemeral service creation to fail")
+				}
+				if !strings.Contains(err.Error(), "Nacos v1") {
+					t.Fatalf("CreateService error = %q, want explicit Nacos v1 boundary", err)
+				}
+				if _, ok := recorder.last(http.MethodPost, routes.service); ok {
+					t.Fatal("v1 ephemeral service creation sent an HTTP request")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("CreateService: %v", err)
+			}
+			request := mustLastNacosAPIRequest(t, recorder, http.MethodPost, routes.service)
+			assertNacosAPIValues(t, request.values, map[string]string{"ephemeral": "true"})
+		})
+	}
+}
+
 func TestNacosV2GetConfigPreservesJSONContent(t *testing.T) {
 	recorder := &nacosAPIRequestRecorder{}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
 		recorder.record(request)
 		switch request.URL.Path {
-		case routesForNacosAPI(nacosAPIV3).namespaceList:
+		case nacosV3ReadinessPath:
 			http.NotFound(w, request)
 		case routesForNacosAPI(nacosAPIV2).namespaceList:
 			writeNacosResult(w, nacosAPIV2, []any{})
@@ -391,18 +721,19 @@ func assertProbeSequenceAndCache(
 	family nacosAPIFamily,
 ) {
 	t.Helper()
+	readinessPath := nacosV3ReadinessPath
 	v3Path := routesForNacosAPI(nacosAPIV3).namespaceList
 	v2Path := routesForNacosAPI(nacosAPIV2).namespaceList
 	v1Path := routesForNacosAPI(nacosAPIV1).namespaceList
 
 	wantBefore := map[nacosAPIFamily]map[string]int{
-		nacosAPIV3: {v3Path: 2, v2Path: 0, v1Path: 0},
-		nacosAPIV2: {v3Path: 1, v2Path: 2, v1Path: 0},
-		nacosAPIV1: {v3Path: 1, v2Path: 1, v1Path: 2},
+		nacosAPIV3: {readinessPath: 2, v3Path: 0, v2Path: 0, v1Path: 0},
+		nacosAPIV2: {readinessPath: 1, v3Path: 0, v2Path: 2, v1Path: 0},
+		nacosAPIV1: {readinessPath: 1, v3Path: 0, v2Path: 1, v1Path: 2},
 	}[family]
 	for path, want := range wantBefore {
 		if got := recorder.countPath(path); got != want {
-			t.Fatalf("namespace request count for %s = %d, want %d", path, got, want)
+			t.Fatalf("probe request count for %s = %d, want %d", path, got, want)
 		}
 	}
 
@@ -661,19 +992,28 @@ func exerciseNacosAPIFamily(
 	if err != nil {
 		t.Fatalf("GetService: %v", err)
 	}
-	if service.Name != "orders" || service.GroupName != "MKEFU" || service.NamespaceID != "dev-id" {
+	if service.Name != "orders" || service.GroupName != "MKEFU" || service.NamespaceID != "dev-id" || !service.Ephemeral {
 		t.Fatalf("service detail = %#v", service)
 	}
 	request = mustLastNacosAPIRequest(t, recorder, http.MethodGet, routes.service)
 	assertNacosNamingIdentity(t, request.values, test.qualifiedNaming)
 
+	serviceEphemeral := false
 	if err := client.CreateService(ctx, CreateServiceRequest{
 		NamespaceID: "dev-id", ServiceName: "orders", GroupName: "MKEFU", ProtectThreshold: 0.5,
+		Ephemeral: &serviceEphemeral,
 	}); err != nil {
 		t.Fatalf("CreateService: %v", err)
 	}
 	request = mustLastNacosAPIRequest(t, recorder, http.MethodPost, routes.service)
 	assertNacosNamingIdentity(t, request.values, test.qualifiedNaming)
+	if test.family == nacosAPIV1 {
+		if _, ok := request.values["ephemeral"]; ok {
+			t.Fatalf("v1 CreateService unexpectedly sent ephemeral=%q", request.values.Get("ephemeral"))
+		}
+	} else {
+		assertNacosAPIValues(t, request.values, map[string]string{"ephemeral": "false"})
+	}
 	if err := client.UpdateService(ctx, UpdateServiceRequest{
 		NamespaceID: "dev-id", ServiceName: "orders", GroupName: "MKEFU", ProtectThreshold: 0.25,
 	}); err != nil {
@@ -703,6 +1043,7 @@ func exerciseNacosAPIFamily(
 	request = mustLastNacosAPIRequest(t, recorder, http.MethodGet, routes.instanceList)
 	assertNacosNamingIdentity(t, request.values, test.qualifiedNaming)
 
+	zeroWeight := 0.0
 	instanceRequest := InstanceRequest{
 		NamespaceID: "dev-id",
 		ServiceName: "orders",
@@ -710,6 +1051,7 @@ func exerciseNacosAPIFamily(
 		IP:          "10.0.0.1",
 		Port:        8080,
 		ClusterName: "DEFAULT",
+		Weight:      &zeroWeight,
 	}
 	instance, err := client.GetInstance(ctx, instanceRequest)
 	if err != nil {
@@ -730,11 +1072,19 @@ func exerciseNacosAPIFamily(
 	}
 	request = mustLastNacosAPIRequest(t, recorder, http.MethodPost, routes.instance)
 	assertNacosNamingIdentity(t, request.values, test.qualifiedNaming)
+	assertNacosAPIValues(t, request.values, map[string]string{
+		"ephemeral": "false",
+		"weight":    "0",
+	})
 	if err := client.UpdateInstance(ctx, instanceRequest); err != nil {
 		t.Fatalf("UpdateInstance: %v", err)
 	}
 	request = mustLastNacosAPIRequest(t, recorder, http.MethodPut, routes.instance)
 	assertNacosNamingIdentity(t, request.values, test.qualifiedNaming)
+	assertNacosAPIValues(t, request.values, map[string]string{
+		"ephemeral": "false",
+		"weight":    "0",
+	})
 	if err := client.DeregisterInstance(ctx, instanceRequest); err != nil {
 		t.Fatalf("DeregisterInstance: %v", err)
 	}
@@ -757,6 +1107,12 @@ func nacosAPIMatrixHandler(family nacosAPIFamily, recorder *nacosAPIRequestRecor
 		recorder.record(request)
 		values := request.Form
 		switch {
+		case request.Method == http.MethodGet && request.URL.Path == nacosV3ReadinessPath:
+			if family == nacosAPIV3 {
+				writeNacosResult(w, nacosAPIV3, "ok")
+			} else {
+				http.NotFound(w, request)
+			}
 		case request.Method == http.MethodGet && request.URL.Path == routes.namespaceList:
 			writeNacosResult(w, family, []map[string]any{{
 				"namespace":         "dev-id",
@@ -791,6 +1147,7 @@ func nacosAPIMatrixHandler(family nacosAPIFamily, recorder *nacosAPIRequestRecor
 				"name":             "orders",
 				"groupName":        "MKEFU",
 				"namespaceId":      "dev-id",
+				"ephemeral":        true,
 				"protectThreshold": 0.5,
 				"metadata":         map[string]string{"owner": "team-a"},
 				"clusters":         []any{},

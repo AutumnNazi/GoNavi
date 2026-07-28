@@ -2,6 +2,7 @@ package nacos
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -36,6 +37,103 @@ func TestParseListenResponse(t *testing.T) {
 	got = parseListenResponse(encoded)
 	if len(got) != 1 || got[0].DataID != "app.yaml" || got[0].NamespaceID != "dev-id" {
 		t.Fatalf("parsed encoded response = %#v", got)
+	}
+}
+
+func TestNacosListenRequestErrorRedactsAccessToken(t *testing.T) {
+	const accessToken = "listen-error-secret+/= token"
+	baseURL, err := url.Parse("http://nacos.example.test/nacos")
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := &ClientImpl{
+		httpClient: &http.Client{
+			Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+				return nil, errors.New("dial failed")
+			}),
+		},
+		baseURL:     baseURL,
+		accessToken: accessToken,
+	}
+
+	_, _, err = client.doListenRequest(context.Background(), url.Values{
+		"Listening-Configs": {"app.yaml"},
+	}, defaultListenTimeoutMs)
+	if err == nil {
+		t.Fatal("expected listen request failure")
+	}
+	if strings.Contains(err.Error(), accessToken) {
+		t.Fatalf("listen request error exposed access token: %q", err)
+	}
+	if strings.Contains(err.Error(), url.QueryEscape(accessToken)) {
+		t.Fatalf("listen request error exposed encoded access token: %q", err)
+	}
+}
+
+func TestListenOnceReturnsTransportErrorAfterReauthentication(t *testing.T) {
+	const (
+		oldToken = "old-token"
+		newToken = "new-token"
+	)
+	baseURL, err := url.Parse("http://nacos.example.test/nacos")
+	if err != nil {
+		t.Fatal(err)
+	}
+	listenRequests := 0
+	loginRequests := 0
+	client := &ClientImpl{
+		config: connection.ConnectionConfig{
+			Type:     "nacos",
+			User:     "nacos",
+			Password: "nacos-password",
+		},
+		httpClient: &http.Client{
+			Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+				switch {
+				case strings.HasSuffix(request.URL.Path, "/v1/cs/configs/listener"):
+					listenRequests++
+					if listenRequests == 1 {
+						return &http.Response{
+							StatusCode: http.StatusUnauthorized,
+							Header:     make(http.Header),
+							Body:       io.NopCloser(strings.NewReader("unauthorized")),
+						}, nil
+					}
+					return nil, errors.New("retry transport failed")
+				case strings.HasSuffix(request.URL.Path, "/v3/auth/user/login"):
+					loginRequests++
+					return &http.Response{
+						StatusCode: http.StatusOK,
+						Header:     make(http.Header),
+						Body: io.NopCloser(strings.NewReader(
+							`{"accessToken":"` + newToken + `","tokenTtl":3600}`,
+						)),
+					}, nil
+				default:
+					return nil, errors.New("unexpected request: " + request.URL.Path)
+				}
+			}),
+		},
+		baseURL:     baseURL,
+		apiFamily:   nacosAPIV1,
+		accessToken: oldToken,
+		tokenExpiry: time.Now().Add(time.Hour),
+	}
+
+	_, err = client.ListenOnce(context.Background(), []ConfigListenTarget{{
+		DataID:      "app.yaml",
+		Group:       "DEFAULT_GROUP",
+		ContentMD5:  ContentMD5("old"),
+		NamespaceID: "dev",
+	}}, minListenTimeoutMs)
+	if err == nil || !strings.Contains(err.Error(), "retry transport failed") {
+		t.Fatalf("ListenOnce error = %v, want retry transport failure", err)
+	}
+	if listenRequests != 2 {
+		t.Fatalf("listen requests = %d, want 2", listenRequests)
+	}
+	if loginRequests != 1 {
+		t.Fatalf("login requests = %d, want 1", loginRequests)
 	}
 }
 
@@ -99,8 +197,8 @@ func TestListenOnceV3PollsConfigByMD5(t *testing.T) {
 	var legacyListenRequests int
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/v3/admin/core/namespace/list"):
-			_, _ = io.WriteString(w, `{"code":0,"message":"success","data":[]}`)
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, nacosV3ReadinessPath):
+			_, _ = io.WriteString(w, `{"code":0,"message":"success","data":"ok"}`)
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/v3/admin/cs/config"):
 			if r.URL.Query().Get("dataId") != "app.yaml" || r.URL.Query().Get("groupName") != "DEFAULT_GROUP" ||
 				r.URL.Query().Get("namespaceId") != "dev" {
@@ -153,8 +251,8 @@ func TestListenOnceV3PollsConfigByMD5(t *testing.T) {
 func TestListenOnceV3BoundsSlowPollByListenTimeout(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/v3/admin/core/namespace/list"):
-			_, _ = io.WriteString(w, `{"code":0,"message":"success","data":[]}`)
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, nacosV3ReadinessPath):
+			_, _ = io.WriteString(w, `{"code":0,"message":"success","data":"ok"}`)
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/v3/admin/cs/config"):
 			<-r.Context().Done()
 		default:

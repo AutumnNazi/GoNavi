@@ -4,7 +4,11 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -13,14 +17,28 @@ import (
 	"GoNavi-Wails/internal/connection"
 	"GoNavi-Wails/internal/logger"
 	"GoNavi-Wails/internal/nacos"
+	"golang.org/x/sync/singleflight"
 )
 
 var (
-	nacosCache         = make(map[string]nacos.Client)
-	nacosCacheConfigs  = make(map[string]connection.ConnectionConfig)
-	nacosCacheMu       sync.Mutex
-	newNacosClientFunc = nacos.NewClient
+	nacosCache                 = make(map[string]nacos.Client)
+	nacosCacheMu               sync.Mutex
+	nacosCacheGeneration       uint64
+	nacosCacheGenerationCtx    context.Context
+	nacosCacheGenerationCancel context.CancelFunc
+	nacosConnectGroup          singleflight.Group
+	newNacosClientFunc         = nacos.NewClient
 )
+
+var errNacosCacheInvalidated = errors.New("Nacos 连接缓存已关闭")
+
+const defaultNacosOperationTimeoutSeconds = 30
+
+const nacosNamespaceListForbiddenErrorCode = "nacos_namespace_list_forbidden"
+
+func init() {
+	nacosCacheGenerationCtx, nacosCacheGenerationCancel = context.WithCancel(context.Background())
+}
 
 // NacosConfigQuery is the frontend search payload.
 type NacosConfigQuery struct {
@@ -50,6 +68,7 @@ type NacosPublishConfigPayload struct {
 type NacosConfigIdentity struct {
 	DataID string `json:"dataId"`
 	Group  string `json:"group"`
+	Index  *int   `json:"index,omitempty"`
 }
 
 // NacosExportConfigsOptions controls config export.
@@ -105,6 +124,7 @@ type NacosServicePayload struct {
 	NamespaceID      string            `json:"namespaceId"`
 	ServiceName      string            `json:"serviceName"`
 	GroupName        string            `json:"groupName,omitempty"`
+	Ephemeral        *bool             `json:"ephemeral,omitempty"`
 	ProtectThreshold float64           `json:"protectThreshold,omitempty"`
 	Metadata         map[string]string `json:"metadata,omitempty"`
 }
@@ -126,7 +146,7 @@ type NacosInstancePayload struct {
 	IP          string            `json:"ip"`
 	Port        int               `json:"port"`
 	ClusterName string            `json:"clusterName,omitempty"`
-	Weight      float64           `json:"weight,omitempty"`
+	Weight      *float64          `json:"weight,omitempty"`
 	Enabled     *bool             `json:"enabled,omitempty"`
 	Healthy     *bool             `json:"healthy,omitempty"`
 	Ephemeral   *bool             `json:"ephemeral,omitempty"`
@@ -146,35 +166,121 @@ func formatNacosConnSummary(config connection.ConnectionConfig) string {
 		b.WriteString(" 用户=")
 		b.WriteString(user)
 	}
-	if params := strings.TrimSpace(config.ConnectionParams); params != "" {
-		b.WriteString(" params=")
-		b.WriteString(params)
+	if contextPath := nacosContextPathForSummary(config.ConnectionParams); contextPath != "" {
+		b.WriteString(" contextPath=")
+		b.WriteString(contextPath)
 	}
 	return b.String()
 }
 
+func nacosContextPathForSummary(raw string) string {
+	normalized := strings.NewReplacer(";", "&", "\r", "&", "\n", "&").Replace(raw)
+	values, _ := url.ParseQuery(normalized)
+	contextPath := strings.TrimSpace(values.Get("contextPath"))
+	if contextPath == "" {
+		return ""
+	}
+	for _, char := range contextPath {
+		if char < 0x20 || char == 0x7f {
+			return ""
+		}
+	}
+	if contextPath == "/" {
+		return "/"
+	}
+	if !strings.HasPrefix(contextPath, "/") {
+		contextPath = "/" + contextPath
+	}
+	return strings.TrimRight(contextPath, "/")
+}
+
 func getNacosClientCacheKey(config connection.ConnectionConfig) string {
 	normalized := normalizeCacheKeyConfig(config)
-	raw := strings.Join([]string{
-		"nacos",
-		strings.TrimSpace(normalized.Host),
-		strconv.Itoa(normalized.Port),
-		strings.TrimSpace(normalized.User),
-		strconv.FormatBool(normalized.UseSSL),
-		strings.TrimSpace(normalized.SSLMode),
-		strings.TrimSpace(normalized.ConnectionParams),
-		strings.TrimSpace(normalized.Database),
-		strconv.FormatBool(normalized.UseProxy),
-		strings.TrimSpace(normalized.Proxy.Type),
-		strings.TrimSpace(normalized.Proxy.Host),
-		strconv.Itoa(normalized.Proxy.Port),
-		strings.TrimSpace(normalized.Proxy.User),
-	}, "|")
-	sum := sha256.Sum256([]byte(raw))
+	identity := struct {
+		Type               string `json:"type"`
+		Host               string `json:"host"`
+		Port               int    `json:"port"`
+		User               string `json:"user"`
+		Password           string `json:"password"`
+		UseSSL             bool   `json:"useSSL"`
+		SSLMode            string `json:"sslMode"`
+		SSLCAPath          string `json:"sslCAPath"`
+		SSLCertPath        string `json:"sslCertPath"`
+		SSLKeyPath         string `json:"sslKeyPath"`
+		ConnectionParams   string `json:"connectionParams"`
+		Database           string `json:"database"`
+		UseSSH             bool   `json:"useSSH"`
+		SSHHost            string `json:"sshHost"`
+		SSHPort            int    `json:"sshPort"`
+		SSHUser            string `json:"sshUser"`
+		SSHPassword        string `json:"sshPassword"`
+		SSHKeyPath         string `json:"sshKeyPath"`
+		UseProxy           bool   `json:"useProxy"`
+		ProxyType          string `json:"proxyType"`
+		ProxyHost          string `json:"proxyHost"`
+		ProxyPort          int    `json:"proxyPort"`
+		ProxyUser          string `json:"proxyUser"`
+		ProxyPassword      string `json:"proxyPassword"`
+		UseHTTPTunnel      bool   `json:"useHttpTunnel"`
+		HTTPTunnelHost     string `json:"httpTunnelHost"`
+		HTTPTunnelPort     int    `json:"httpTunnelPort"`
+		HTTPTunnelUser     string `json:"httpTunnelUser"`
+		HTTPTunnelPassword string `json:"httpTunnelPassword"`
+	}{
+		Type:               "nacos",
+		Host:               strings.TrimSpace(normalized.Host),
+		Port:               normalized.Port,
+		User:               strings.TrimSpace(normalized.User),
+		Password:           normalized.Password,
+		UseSSL:             normalized.UseSSL,
+		SSLMode:            strings.TrimSpace(normalized.SSLMode),
+		SSLCAPath:          strings.TrimSpace(normalized.SSLCAPath),
+		SSLCertPath:        strings.TrimSpace(normalized.SSLCertPath),
+		SSLKeyPath:         strings.TrimSpace(normalized.SSLKeyPath),
+		ConnectionParams:   strings.TrimSpace(normalized.ConnectionParams),
+		Database:           strings.TrimSpace(normalized.Database),
+		UseSSH:             normalized.UseSSH,
+		SSHHost:            strings.TrimSpace(normalized.SSH.Host),
+		SSHPort:            normalized.SSH.Port,
+		SSHUser:            strings.TrimSpace(normalized.SSH.User),
+		SSHPassword:        normalized.SSH.Password,
+		SSHKeyPath:         strings.TrimSpace(normalized.SSH.KeyPath),
+		UseProxy:           normalized.UseProxy,
+		ProxyType:          strings.TrimSpace(normalized.Proxy.Type),
+		ProxyHost:          strings.TrimSpace(normalized.Proxy.Host),
+		ProxyPort:          normalized.Proxy.Port,
+		ProxyUser:          strings.TrimSpace(normalized.Proxy.User),
+		ProxyPassword:      normalized.Proxy.Password,
+		UseHTTPTunnel:      normalized.UseHTTPTunnel,
+		HTTPTunnelHost:     strings.TrimSpace(normalized.HTTPTunnel.Host),
+		HTTPTunnelPort:     normalized.HTTPTunnel.Port,
+		HTTPTunnelUser:     strings.TrimSpace(normalized.HTTPTunnel.User),
+		HTTPTunnelPassword: normalized.HTTPTunnel.Password,
+	}
+	raw, _ := json.Marshal(identity)
+	sum := sha256.Sum256(raw)
 	return hex.EncodeToString(sum[:])
 }
 
 func (a *App) getNacosClient(config connection.ConnectionConfig) (nacos.Client, error) {
+	ctx, cancel := a.nacosOperationContext(config)
+	defer cancel()
+	return a.getNacosClientWithContext(ctx, config)
+}
+
+func (a *App) getNacosClientWithContext(ctx context.Context, config connection.ConnectionConfig) (nacos.Client, error) {
+	if ctx == nil {
+		return nil, fmt.Errorf("Nacos 连接上下文不能为空")
+	}
+
+	nacosCacheMu.Lock()
+	requestGeneration := nacosCacheGeneration
+	requestGenerationCtx := nacosCacheGenerationCtx
+	nacosCacheMu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
 	resolvedConfig, err := a.resolveConnectionSecrets(config)
 	if err != nil {
 		wrapped := wrapConnectError(config, err)
@@ -189,39 +295,101 @@ func (a *App) getNacosClient(config connection.ConnectionConfig) (nacos.Client, 
 		return nil, wrapped
 	}
 	connectConfig.Type = "nacos"
-
-	key := getNacosClientCacheKey(connectConfig)
-	shortKey := key
-	if len(shortKey) > 12 {
-		shortKey = shortKey[:12]
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
 
-	nacosCacheMu.Lock()
-	defer nacosCacheMu.Unlock()
+	cacheIdentityConfig := resolvedConfig
+	cacheIdentityConfig.Type = "nacos"
+	key := getNacosClientCacheKey(cacheIdentityConfig)
 
-	if client, ok := nacosCache[key]; ok {
-		ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
-		defer cancel()
-		if err := client.Ping(ctx); err == nil {
-			return client, nil
-		} else {
-			logger.Error(err, "缓存 Nacos 连接不可用，准备重建：缓存Key=%s", shortKey)
-			_ = client.Close()
-			delete(nacosCache, key)
-			delete(nacosCacheConfigs, key)
+	flightKey := strconv.FormatUint(requestGeneration, 10) + ":" + key + ":" +
+		strconv.Itoa(nacosOperationTimeoutSeconds(connectConfig))
+
+	resultCh := nacosConnectGroup.DoChan(flightKey, func() (any, error) {
+		if requestGenerationCtx.Err() != nil {
+			return nil, errNacosCacheInvalidated
 		}
-	}
+		nacosCacheMu.Lock()
+		if nacosCacheGeneration != requestGeneration {
+			nacosCacheMu.Unlock()
+			return nil, errNacosCacheInvalidated
+		}
+		cachedClient := nacosCache[key]
+		nacosCacheMu.Unlock()
 
-	client := newNacosClientFunc()
-	if err := client.Connect(connectConfig); err != nil {
-		_ = client.Close()
-		wrapped := wrapConnectError(connectConfig, err)
-		logger.Error(wrapped, "Nacos 连接失败：%s 缓存Key=%s", formatNacosConnSummary(connectConfig), shortKey)
-		return nil, wrapped
+		if cachedClient != nil {
+			// net/http transports reconnect on demand. Returning the published
+			// client directly also prevents timeout-specific flights from racing
+			// to evict and close the same cached client.
+			return cachedClient, nil
+		}
+
+		// Another cache publisher may have won after this timeout-specific cold
+		// connection flight started. Recheck before opening a physical client.
+		nacosCacheMu.Lock()
+		if nacosCacheGeneration != requestGeneration {
+			nacosCacheMu.Unlock()
+			return nil, errNacosCacheInvalidated
+		}
+		cachedClient = nacosCache[key]
+		nacosCacheMu.Unlock()
+		if cachedClient != nil {
+			return cachedClient, nil
+		}
+		if requestGenerationCtx.Err() != nil {
+			return nil, errNacosCacheInvalidated
+		}
+
+		client := newNacosClientFunc()
+		if err := client.Connect(connectConfig); err != nil {
+			_ = client.Close()
+			wrapped := wrapConnectError(connectConfig, err)
+			logger.Error(wrapped, "Nacos 连接失败：%s", formatNacosConnSummary(connectConfig))
+			return nil, wrapped
+		}
+		if requestGenerationCtx.Err() != nil {
+			_ = client.Close()
+			return nil, errNacosCacheInvalidated
+		}
+
+		nacosCacheMu.Lock()
+		cacheInvalidated := nacosCacheGeneration != requestGeneration
+		if !cacheInvalidated {
+			cachedClient = nacosCache[key]
+		}
+		if !cacheInvalidated && cachedClient == nil {
+			nacosCache[key] = client
+		}
+		nacosCacheMu.Unlock()
+		if cacheInvalidated {
+			_ = client.Close()
+			return nil, errNacosCacheInvalidated
+		}
+		if cachedClient != nil {
+			// Defensive loser cleanup: a cache writer outside this keyed flight
+			// must never leave an unpublished physical client alive.
+			_ = client.Close()
+			return cachedClient, nil
+		}
+
+		logger.Infof("Nacos 连接成功并写入缓存：%s", formatNacosConnSummary(connectConfig))
+		return client, nil
+	})
+
+	var result singleflight.Result
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case result = <-resultCh:
 	}
-	nacosCache[key] = client
-	nacosCacheConfigs[key] = normalizeCacheKeyConfig(connectConfig)
-	logger.Infof("Nacos 连接成功并写入缓存：%s 缓存Key=%s", formatNacosConnSummary(connectConfig), shortKey)
+	if result.Err != nil {
+		return nil, result.Err
+	}
+	client, ok := result.Val.(nacos.Client)
+	if !ok || client == nil {
+		return nil, fmt.Errorf("Nacos 连接缓存返回了无效实例")
+	}
 	return client, nil
 }
 
@@ -250,17 +418,25 @@ func (a *App) openNacosClientIsolated(config connection.ConnectionConfig) (nacos
 }
 
 func (a *App) nacosOperationContext(config connection.ConnectionConfig) (context.Context, context.CancelFunc) {
-	timeout := config.Timeout
-	if timeout <= 0 {
-		timeout = 30
+	return context.WithTimeout(
+		context.Background(),
+		time.Duration(nacosOperationTimeoutSeconds(config))*time.Second,
+	)
+}
+
+func nacosOperationTimeoutSeconds(config connection.ConnectionConfig) int {
+	if config.Timeout <= 0 {
+		return defaultNacosOperationTimeoutSeconds
 	}
-	return context.WithTimeout(context.Background(), time.Duration(timeout)*time.Second)
+	return config.Timeout
 }
 
 // NacosConnect establishes and caches a Nacos connection.
 func (a *App) NacosConnect(config connection.ConnectionConfig) connection.QueryResult {
 	config.Type = "nacos"
-	_, err := a.getNacosClient(config)
+	ctx, cancel := a.nacosOperationContext(config)
+	defer cancel()
+	_, err := a.getNacosClientWithContext(ctx, config)
 	if err != nil {
 		logger.Error(err, "NacosConnect 连接失败：%s", formatNacosConnSummary(config))
 		return connection.QueryResult{Success: false, Message: err.Error()}
@@ -293,16 +469,22 @@ func (a *App) NacosTestConnection(config connection.ConnectionConfig) connection
 // NacosListNamespaces lists namespaces for a connection.
 func (a *App) NacosListNamespaces(config connection.ConnectionConfig) connection.QueryResult {
 	config.Type = "nacos"
-	client, err := a.getNacosClient(config)
+	ctx, cancel := a.nacosOperationContext(config)
+	defer cancel()
+	client, err := a.getNacosClientWithContext(ctx, config)
 	if err != nil {
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
-	ctx, cancel := a.nacosOperationContext(config)
-	defer cancel()
 	namespaces, err := client.ListNamespaces(ctx)
 	if err != nil {
 		logger.Error(err, "NacosListNamespaces 失败：%s", formatNacosConnSummary(config))
-		return connection.QueryResult{Success: false, Message: err.Error()}
+		result := connection.QueryResult{Success: false, Message: err.Error()}
+		if status, ok := nacos.HTTPStatusCode(err); ok && status == http.StatusForbidden {
+			result.Data = map[string]any{
+				"errorCode": nacosNamespaceListForbiddenErrorCode,
+			}
+		}
+		return result
 	}
 	return connection.QueryResult{Success: true, Data: namespaces}
 }
@@ -310,12 +492,12 @@ func (a *App) NacosListNamespaces(config connection.ConnectionConfig) connection
 // NacosListConfigGroups lists unique config groups under a namespace.
 func (a *App) NacosListConfigGroups(config connection.ConnectionConfig, namespaceID string) connection.QueryResult {
 	config.Type = "nacos"
-	client, err := a.getNacosClient(config)
+	ctx, cancel := a.nacosOperationContext(config)
+	defer cancel()
+	client, err := a.getNacosClientWithContext(ctx, config)
 	if err != nil {
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
-	ctx, cancel := a.nacosOperationContext(config)
-	defer cancel()
 	groups, err := client.ListConfigGroups(ctx, namespaceID)
 	if err != nil {
 		logger.Error(err, "NacosListConfigGroups 失败：%s", formatNacosConnSummary(config))
@@ -327,12 +509,12 @@ func (a *App) NacosListConfigGroups(config connection.ConnectionConfig, namespac
 // NacosSearchConfigs searches configs under a namespace.
 func (a *App) NacosSearchConfigs(config connection.ConnectionConfig, query NacosConfigQuery) connection.QueryResult {
 	config.Type = "nacos"
-	client, err := a.getNacosClient(config)
+	ctx, cancel := a.nacosOperationContext(config)
+	defer cancel()
+	client, err := a.getNacosClientWithContext(ctx, config)
 	if err != nil {
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
-	ctx, cancel := a.nacosOperationContext(config)
-	defer cancel()
 	page, err := client.SearchConfigs(ctx, nacos.ConfigQuery{
 		NamespaceID: query.NamespaceID,
 		DataID:      query.DataID,
@@ -352,12 +534,12 @@ func (a *App) NacosSearchConfigs(config connection.ConnectionConfig, query Nacos
 // NacosGetConfig loads one config.
 func (a *App) NacosGetConfig(config connection.ConnectionConfig, namespaceID, group, dataID string) connection.QueryResult {
 	config.Type = "nacos"
-	client, err := a.getNacosClient(config)
+	ctx, cancel := a.nacosOperationContext(config)
+	defer cancel()
+	client, err := a.getNacosClientWithContext(ctx, config)
 	if err != nil {
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
-	ctx, cancel := a.nacosOperationContext(config)
-	defer cancel()
 	detail, err := client.GetConfig(ctx, namespaceID, group, dataID)
 	if err != nil {
 		logger.Error(err, "NacosGetConfig 失败：dataId=%s group=%s", dataID, group)
@@ -372,12 +554,12 @@ func (a *App) NacosPublishConfig(config connection.ConnectionConfig, payload Nac
 	if err := a.ensureNacosDataEditAllowed(config); err != nil {
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
-	client, err := a.getNacosClient(config)
+	ctx, cancel := a.nacosOperationContext(config)
+	defer cancel()
+	client, err := a.getNacosClientWithContext(ctx, config)
 	if err != nil {
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
-	ctx, cancel := a.nacosOperationContext(config)
-	defer cancel()
 	if err := client.PublishConfig(ctx, nacos.PublishRequest{
 		NamespaceID: payload.NamespaceID,
 		DataID:      payload.DataID,
@@ -406,12 +588,12 @@ func (a *App) NacosPublishConfig(config connection.ConnectionConfig, payload Nac
 // NacosGetBetaConfig loads beta config for one dataId/group.
 func (a *App) NacosGetBetaConfig(config connection.ConnectionConfig, namespaceID, group, dataID string) connection.QueryResult {
 	config.Type = "nacos"
-	client, err := a.getNacosClient(config)
+	ctx, cancel := a.nacosOperationContext(config)
+	defer cancel()
+	client, err := a.getNacosClientWithContext(ctx, config)
 	if err != nil {
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
-	ctx, cancel := a.nacosOperationContext(config)
-	defer cancel()
 	detail, err := client.GetBetaConfig(ctx, namespaceID, group, dataID)
 	if err != nil {
 		logger.Error(err, "NacosGetBetaConfig 失败：dataId=%s group=%s", dataID, group)
@@ -426,12 +608,12 @@ func (a *App) NacosStopBetaConfig(config connection.ConnectionConfig, namespaceI
 	if err := a.ensureNacosDataEditAllowed(config); err != nil {
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
-	client, err := a.getNacosClient(config)
+	ctx, cancel := a.nacosOperationContext(config)
+	defer cancel()
+	client, err := a.getNacosClientWithContext(ctx, config)
 	if err != nil {
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
-	ctx, cancel := a.nacosOperationContext(config)
-	defer cancel()
 	if err := client.StopBetaConfig(ctx, namespaceID, group, dataID); err != nil {
 		logger.Error(err, "NacosStopBetaConfig 失败：dataId=%s group=%s", dataID, group)
 		return connection.QueryResult{Success: false, Message: err.Error()}
@@ -448,12 +630,12 @@ func (a *App) NacosDeleteConfig(config connection.ConnectionConfig, namespaceID,
 	if err := a.ensureNacosDataEditAllowed(config); err != nil {
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
-	client, err := a.getNacosClient(config)
+	ctx, cancel := a.nacosOperationContext(config)
+	defer cancel()
+	client, err := a.getNacosClientWithContext(ctx, config)
 	if err != nil {
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
-	ctx, cancel := a.nacosOperationContext(config)
-	defer cancel()
 	if err := client.DeleteConfig(ctx, namespaceID, group, dataID); err != nil {
 		logger.Error(err, "NacosDeleteConfig 失败：dataId=%s group=%s", dataID, group)
 		return connection.QueryResult{Success: false, Message: err.Error()}
@@ -470,12 +652,12 @@ func (a *App) NacosCreateNamespace(config connection.ConnectionConfig, payload N
 	if err := a.ensureNacosStructureEditAllowed(config); err != nil {
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
-	client, err := a.getNacosClient(config)
+	ctx, cancel := a.nacosOperationContext(config)
+	defer cancel()
+	client, err := a.getNacosClientWithContext(ctx, config)
 	if err != nil {
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
-	ctx, cancel := a.nacosOperationContext(config)
-	defer cancel()
 	if err := client.CreateNamespace(ctx, nacos.CreateNamespaceRequest{
 		ID:          payload.ID,
 		ShowName:    payload.ShowName,
@@ -496,12 +678,12 @@ func (a *App) NacosUpdateNamespace(config connection.ConnectionConfig, payload N
 	if err := a.ensureNacosStructureEditAllowed(config); err != nil {
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
-	client, err := a.getNacosClient(config)
+	ctx, cancel := a.nacosOperationContext(config)
+	defer cancel()
+	client, err := a.getNacosClientWithContext(ctx, config)
 	if err != nil {
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
-	ctx, cancel := a.nacosOperationContext(config)
-	defer cancel()
 	if err := client.UpdateNamespace(ctx, nacos.UpdateNamespaceRequest{
 		ID:          payload.ID,
 		ShowName:    payload.ShowName,
@@ -522,12 +704,12 @@ func (a *App) NacosDeleteNamespace(config connection.ConnectionConfig, namespace
 	if err := a.ensureNacosStructureEditAllowed(config); err != nil {
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
-	client, err := a.getNacosClient(config)
+	ctx, cancel := a.nacosOperationContext(config)
+	defer cancel()
+	client, err := a.getNacosClientWithContext(ctx, config)
 	if err != nil {
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
-	ctx, cancel := a.nacosOperationContext(config)
-	defer cancel()
 	if err := client.DeleteNamespace(ctx, namespaceID); err != nil {
 		logger.Error(err, "NacosDeleteNamespace 失败：id=%s", namespaceID)
 		return connection.QueryResult{Success: false, Message: err.Error()}
@@ -541,12 +723,12 @@ func (a *App) NacosDeleteNamespace(config connection.ConnectionConfig, namespace
 // NacosListConfigHistory lists history for one config.
 func (a *App) NacosListConfigHistory(config connection.ConnectionConfig, query NacosHistoryQuery) connection.QueryResult {
 	config.Type = "nacos"
-	client, err := a.getNacosClient(config)
+	ctx, cancel := a.nacosOperationContext(config)
+	defer cancel()
+	client, err := a.getNacosClientWithContext(ctx, config)
 	if err != nil {
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
-	ctx, cancel := a.nacosOperationContext(config)
-	defer cancel()
 	page, err := client.ListConfigHistory(ctx, nacos.HistoryQuery{
 		NamespaceID: query.NamespaceID,
 		DataID:      query.DataID,
@@ -564,12 +746,12 @@ func (a *App) NacosListConfigHistory(config connection.ConnectionConfig, query N
 // NacosGetConfigHistory loads one history detail.
 func (a *App) NacosGetConfigHistory(config connection.ConnectionConfig, namespaceID, group, dataID, nid string) connection.QueryResult {
 	config.Type = "nacos"
-	client, err := a.getNacosClient(config)
+	ctx, cancel := a.nacosOperationContext(config)
+	defer cancel()
+	client, err := a.getNacosClientWithContext(ctx, config)
 	if err != nil {
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
-	ctx, cancel := a.nacosOperationContext(config)
-	defer cancel()
 	item, err := client.GetConfigHistory(ctx, namespaceID, group, dataID, nid)
 	if err != nil {
 		logger.Error(err, "NacosGetConfigHistory 失败：nid=%s dataId=%s", nid, dataID)
@@ -581,12 +763,12 @@ func (a *App) NacosGetConfigHistory(config connection.ConnectionConfig, namespac
 // NacosListServices lists services under a namespace.
 func (a *App) NacosListServices(config connection.ConnectionConfig, query NacosServiceQuery) connection.QueryResult {
 	config.Type = "nacos"
-	client, err := a.getNacosClient(config)
+	ctx, cancel := a.nacosOperationContext(config)
+	defer cancel()
+	client, err := a.getNacosClientWithContext(ctx, config)
 	if err != nil {
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
-	ctx, cancel := a.nacosOperationContext(config)
-	defer cancel()
 	page, err := client.ListServices(ctx, nacos.ServiceQuery{
 		NamespaceID: query.NamespaceID,
 		GroupName:   query.GroupName,
@@ -603,12 +785,12 @@ func (a *App) NacosListServices(config connection.ConnectionConfig, query NacosS
 // NacosGetService loads service detail.
 func (a *App) NacosGetService(config connection.ConnectionConfig, namespaceID, serviceName, groupName string) connection.QueryResult {
 	config.Type = "nacos"
-	client, err := a.getNacosClient(config)
+	ctx, cancel := a.nacosOperationContext(config)
+	defer cancel()
+	client, err := a.getNacosClientWithContext(ctx, config)
 	if err != nil {
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
-	ctx, cancel := a.nacosOperationContext(config)
-	defer cancel()
 	detail, err := client.GetService(ctx, namespaceID, serviceName, groupName)
 	if err != nil {
 		logger.Error(err, "NacosGetService 失败：service=%s", serviceName)
@@ -623,16 +805,17 @@ func (a *App) NacosCreateService(config connection.ConnectionConfig, payload Nac
 	if err := a.ensureNacosStructureEditAllowed(config); err != nil {
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
-	client, err := a.getNacosClient(config)
+	ctx, cancel := a.nacosOperationContext(config)
+	defer cancel()
+	client, err := a.getNacosClientWithContext(ctx, config)
 	if err != nil {
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
-	ctx, cancel := a.nacosOperationContext(config)
-	defer cancel()
 	if err := client.CreateService(ctx, nacos.CreateServiceRequest{
 		NamespaceID:      payload.NamespaceID,
 		ServiceName:      payload.ServiceName,
 		GroupName:        payload.GroupName,
+		Ephemeral:        payload.Ephemeral,
 		ProtectThreshold: payload.ProtectThreshold,
 		Metadata:         payload.Metadata,
 	}); err != nil {
@@ -648,12 +831,12 @@ func (a *App) NacosUpdateService(config connection.ConnectionConfig, payload Nac
 	if err := a.ensureNacosStructureEditAllowed(config); err != nil {
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
-	client, err := a.getNacosClient(config)
+	ctx, cancel := a.nacosOperationContext(config)
+	defer cancel()
+	client, err := a.getNacosClientWithContext(ctx, config)
 	if err != nil {
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
-	ctx, cancel := a.nacosOperationContext(config)
-	defer cancel()
 	if err := client.UpdateService(ctx, nacos.UpdateServiceRequest{
 		NamespaceID:      payload.NamespaceID,
 		ServiceName:      payload.ServiceName,
@@ -673,12 +856,12 @@ func (a *App) NacosDeleteService(config connection.ConnectionConfig, namespaceID
 	if err := a.ensureNacosStructureEditAllowed(config); err != nil {
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
-	client, err := a.getNacosClient(config)
+	ctx, cancel := a.nacosOperationContext(config)
+	defer cancel()
+	client, err := a.getNacosClientWithContext(ctx, config)
 	if err != nil {
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
-	ctx, cancel := a.nacosOperationContext(config)
-	defer cancel()
 	if err := client.DeleteService(ctx, namespaceID, serviceName, groupName); err != nil {
 		logger.Error(err, "NacosDeleteService 失败：service=%s", serviceName)
 		return connection.QueryResult{Success: false, Message: err.Error()}
@@ -689,12 +872,12 @@ func (a *App) NacosDeleteService(config connection.ConnectionConfig, namespaceID
 // NacosListInstances lists instances of a service.
 func (a *App) NacosListInstances(config connection.ConnectionConfig, query NacosInstanceQuery) connection.QueryResult {
 	config.Type = "nacos"
-	client, err := a.getNacosClient(config)
+	ctx, cancel := a.nacosOperationContext(config)
+	defer cancel()
+	client, err := a.getNacosClientWithContext(ctx, config)
 	if err != nil {
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
-	ctx, cancel := a.nacosOperationContext(config)
-	defer cancel()
 	list, err := client.ListInstances(ctx, nacos.InstanceQuery{
 		NamespaceID: query.NamespaceID,
 		ServiceName: query.ServiceName,
@@ -712,12 +895,12 @@ func (a *App) NacosListInstances(config connection.ConnectionConfig, query Nacos
 // NacosGetInstance loads one instance.
 func (a *App) NacosGetInstance(config connection.ConnectionConfig, payload NacosInstancePayload) connection.QueryResult {
 	config.Type = "nacos"
-	client, err := a.getNacosClient(config)
+	ctx, cancel := a.nacosOperationContext(config)
+	defer cancel()
+	client, err := a.getNacosClientWithContext(ctx, config)
 	if err != nil {
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
-	ctx, cancel := a.nacosOperationContext(config)
-	defer cancel()
 	inst, err := client.GetInstance(ctx, toNacosInstanceRequest(payload))
 	if err != nil {
 		logger.Error(err, "NacosGetInstance 失败：%s:%d", payload.IP, payload.Port)
@@ -732,12 +915,12 @@ func (a *App) NacosRegisterInstance(config connection.ConnectionConfig, payload 
 	if err := a.ensureNacosDataEditAllowed(config); err != nil {
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
-	client, err := a.getNacosClient(config)
+	ctx, cancel := a.nacosOperationContext(config)
+	defer cancel()
+	client, err := a.getNacosClientWithContext(ctx, config)
 	if err != nil {
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
-	ctx, cancel := a.nacosOperationContext(config)
-	defer cancel()
 	if err := client.RegisterInstance(ctx, toNacosInstanceRequest(payload)); err != nil {
 		logger.Error(err, "NacosRegisterInstance 失败：%s:%d", payload.IP, payload.Port)
 		return connection.QueryResult{Success: false, Message: err.Error()}
@@ -751,12 +934,12 @@ func (a *App) NacosUpdateInstance(config connection.ConnectionConfig, payload Na
 	if err := a.ensureNacosDataEditAllowed(config); err != nil {
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
-	client, err := a.getNacosClient(config)
+	ctx, cancel := a.nacosOperationContext(config)
+	defer cancel()
+	client, err := a.getNacosClientWithContext(ctx, config)
 	if err != nil {
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
-	ctx, cancel := a.nacosOperationContext(config)
-	defer cancel()
 	if err := client.UpdateInstance(ctx, toNacosInstanceRequest(payload)); err != nil {
 		logger.Error(err, "NacosUpdateInstance 失败：%s:%d", payload.IP, payload.Port)
 		return connection.QueryResult{Success: false, Message: err.Error()}
@@ -770,12 +953,12 @@ func (a *App) NacosDeregisterInstance(config connection.ConnectionConfig, payloa
 	if err := a.ensureNacosDataEditAllowed(config); err != nil {
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
-	client, err := a.getNacosClient(config)
+	ctx, cancel := a.nacosOperationContext(config)
+	defer cancel()
+	client, err := a.getNacosClientWithContext(ctx, config)
 	if err != nil {
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
-	ctx, cancel := a.nacosOperationContext(config)
-	defer cancel()
 	if err := client.DeregisterInstance(ctx, toNacosInstanceRequest(payload)); err != nil {
 		logger.Error(err, "NacosDeregisterInstance 失败：%s:%d", payload.IP, payload.Port)
 		return connection.QueryResult{Success: false, Message: err.Error()}
@@ -789,12 +972,12 @@ func (a *App) NacosUpdateInstanceHealth(config connection.ConnectionConfig, payl
 	if err := a.ensureNacosDataEditAllowed(config); err != nil {
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
-	client, err := a.getNacosClient(config)
+	ctx, cancel := a.nacosOperationContext(config)
+	defer cancel()
+	client, err := a.getNacosClientWithContext(ctx, config)
 	if err != nil {
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
-	ctx, cancel := a.nacosOperationContext(config)
-	defer cancel()
 	if err := client.UpdateInstanceHealth(ctx, toNacosInstanceRequest(payload)); err != nil {
 		logger.Error(err, "NacosUpdateInstanceHealth 失败：%s:%d", payload.IP, payload.Port)
 		return connection.QueryResult{Success: false, Message: err.Error()}
@@ -819,7 +1002,7 @@ func toNacosInstanceRequest(payload NacosInstancePayload) nacos.InstanceRequest 
 }
 
 func (a *App) ensureNacosDataEditAllowed(config connection.ConnectionConfig) error {
-	// Nacos is outside the SQL read-only type set; honor explicit flags directly.
+	// Keep the Nacos-specific message while honoring the shared production guard.
 	if config.ReadOnly || config.Protection.RestrictDataEdit {
 		return fmt.Errorf("%s", a.appText("nacos.backend.error.read_only", nil))
 	}
@@ -827,7 +1010,7 @@ func (a *App) ensureNacosDataEditAllowed(config connection.ConnectionConfig) err
 }
 
 func (a *App) ensureNacosStructureEditAllowed(config connection.ConnectionConfig) error {
-	if config.ReadOnly || config.Protection.RestrictStructureEdit || config.Protection.RestrictDataEdit {
+	if config.ReadOnly || config.Protection.RestrictStructureEdit {
 		return fmt.Errorf("%s", a.appText("nacos.backend.error.read_only", nil))
 	}
 	return nil

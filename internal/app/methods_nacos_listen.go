@@ -52,8 +52,12 @@ type nacosListenSession struct {
 }
 
 var (
-	nacosListenMu       sync.Mutex
-	nacosListenSessions = make(map[string]*nacosListenSession)
+	nacosListenMu                                         sync.Mutex
+	nacosListenSessions                                   = make(map[string]*nacosListenSession)
+	nacosListenGeneration                                 uint64
+	nacosListenGenerationCtx, nacosListenGenerationCancel = context.WithCancel(context.Background())
+	nacosListenClosingCount                               uint64
+	nacosListenStartAfterConnectHook                      func()
 )
 
 // NacosStartConfigListen starts background long-poll for a config.
@@ -77,9 +81,28 @@ func (a *App) NacosStartConfigListen(config connection.ConnectionConfig, payload
 		contentMD5 = ""
 	}
 
+	nacosListenMu.Lock()
+	if nacosListenClosingCount > 0 {
+		nacosListenMu.Unlock()
+		return connection.QueryResult{Success: false, Message: errNacosCacheInvalidated.Error()}
+	}
+	startGeneration := nacosListenGeneration
+	startGenerationCtx := nacosListenGenerationCtx
+	afterConnectHook := nacosListenStartAfterConnectHook
+	nacosListenMu.Unlock()
+
 	// Ensure client can connect before starting loop.
-	if _, err := a.getNacosClient(config); err != nil {
+	connectCtx, cancelConnect := context.WithTimeout(
+		startGenerationCtx,
+		time.Duration(nacosOperationTimeoutSeconds(config))*time.Second,
+	)
+	_, err := a.getNacosClientWithContext(connectCtx, config)
+	cancelConnect()
+	if err != nil {
 		return connection.QueryResult{Success: false, Message: err.Error()}
+	}
+	if afterConnectHook != nil {
+		afterConnectHook()
 	}
 
 	watchID := strings.TrimSpace(payload.WatchID)
@@ -88,6 +111,10 @@ func (a *App) NacosStartConfigListen(config connection.ConnectionConfig, payload
 	}
 
 	nacosListenMu.Lock()
+	if nacosListenClosingCount > 0 || nacosListenGeneration != startGeneration {
+		nacosListenMu.Unlock()
+		return connection.QueryResult{Success: false, Message: errNacosCacheInvalidated.Error()}
+	}
 	if existing, ok := nacosListenSessions[watchID]; ok && existing != nil {
 		existing.cancel()
 		delete(nacosListenSessions, watchID)
@@ -172,7 +199,7 @@ func (a *App) runNacosConfigListenLoop(config connection.ConnectionConfig, sessi
 		if ctx.Err() != nil {
 			return
 		}
-		client, err := a.getNacosClient(config)
+		client, err := a.getNacosClientWithContext(ctx, config)
 		if err != nil {
 			logger.Warnf("Nacos 监听获取连接失败，稍后重试：watchId=%s err=%v", session.watchID, err)
 			if !sleepWithContext(ctx, nacosListenRestartBackoff) {
@@ -205,7 +232,8 @@ func (a *App) runNacosConfigListenLoop(config connection.ConnectionConfig, sessi
 			continue
 		}
 
-		// Emit change event for matching target.
+		// This watch is one-shot: after the matching target changes, the
+		// frontend reloads the config and starts a fresh watch with its new MD5.
 		for _, item := range changed {
 			if !nacosListenTargetMatch(session, item) {
 				continue
@@ -218,9 +246,6 @@ func (a *App) runNacosConfigListenLoop(config connection.ConnectionConfig, sessi
 				Group:        session.group,
 				ChangedAt:    time.Now().UnixMilli(),
 			})
-		}
-		// Small pause to avoid tight loop if client keeps reporting change before MD5 update.
-		if !sleepWithContext(ctx, 300*time.Millisecond) {
 			return
 		}
 	}
@@ -280,9 +305,12 @@ func newNacosWatchID() string {
 	return hex.EncodeToString(buf[:]) + hex.EncodeToString([]byte(time.Now().Format("150405")))
 }
 
-// CloseAllNacosListeners stops all config listeners.
-func CloseAllNacosListeners() {
+func beginNacosListenerClose() []*nacosListenSession {
 	nacosListenMu.Lock()
+	previousGenerationCancel := nacosListenGenerationCancel
+	nacosListenGeneration++
+	nacosListenGenerationCtx, nacosListenGenerationCancel = context.WithCancel(context.Background())
+	nacosListenClosingCount++
 	sessions := make([]*nacosListenSession, 0, len(nacosListenSessions))
 	for _, session := range nacosListenSessions {
 		sessions = append(sessions, session)
@@ -290,6 +318,21 @@ func CloseAllNacosListeners() {
 	nacosListenSessions = make(map[string]*nacosListenSession)
 	nacosListenMu.Unlock()
 
+	if previousGenerationCancel != nil {
+		previousGenerationCancel()
+	}
+	return sessions
+}
+
+func finishNacosListenerClose() {
+	nacosListenMu.Lock()
+	if nacosListenClosingCount > 0 {
+		nacosListenClosingCount--
+	}
+	nacosListenMu.Unlock()
+}
+
+func cancelNacosListenSessions(sessions []*nacosListenSession) {
 	for _, session := range sessions {
 		if session != nil && session.cancel != nil {
 			session.cancel()
@@ -297,20 +340,38 @@ func CloseAllNacosListeners() {
 	}
 }
 
+// CloseAllNacosListeners stops all config listeners.
+func CloseAllNacosListeners() {
+	sessions := beginNacosListenerClose()
+	defer finishNacosListenerClose()
+	cancelNacosListenSessions(sessions)
+}
+
 // CloseAllNacosClients closes cached nacos clients and listeners.
 func CloseAllNacosClients() {
-	CloseAllNacosListeners()
+	sessions := beginNacosListenerClose()
+	defer finishNacosListenerClose()
+	cancelNacosListenSessions(sessions)
 
 	nacosCacheMu.Lock()
-	defer nacosCacheMu.Unlock()
-	for key, client := range nacosCache {
+	previousGenerationCancel := nacosCacheGenerationCancel
+	nacosCacheGeneration++
+	nacosCacheGenerationCtx, nacosCacheGenerationCancel = context.WithCancel(context.Background())
+	clients := nacosCache
+	nacosCache = make(map[string]nacos.Client)
+	nacosCacheMu.Unlock()
+	if previousGenerationCancel != nil {
+		previousGenerationCancel()
+	}
+
+	closedClients := 0
+	for _, client := range clients {
 		if client != nil {
 			_ = client.Close()
-			if len(key) >= 12 {
-				logger.Infof("已关闭 Nacos 连接：%s", key[:12])
-			}
+			closedClients++
 		}
 	}
-	nacosCache = make(map[string]nacos.Client)
-	nacosCacheConfigs = make(map[string]connection.ConnectionConfig)
+	if closedClients > 0 {
+		logger.Infof("已关闭 %d 个 Nacos 连接", closedClients)
+	}
 }

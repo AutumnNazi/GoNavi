@@ -2,6 +2,8 @@ package nacos
 
 import (
 	"fmt"
+	"strconv"
+	"strings"
 	"sync"
 
 	"GoNavi-Wails/shared/i18n"
@@ -36,6 +38,8 @@ func SetBackendLanguage(language i18n.Language) {
 }
 
 func localizedNacosBackendText(key string, params map[string]any) string {
+	params = sanitizeNacosBackendDiagnosticParams(params)
+
 	nacosBackendTextMu.RLock()
 	if nacosBackendTextLocalizer != nil {
 		text := nacosBackendTextLocalizer.T(key, params)
@@ -57,6 +61,37 @@ func localizedNacosBackendText(key string, params map[string]any) string {
 	return nacosBackendTextLocalizer.T(key, params)
 }
 
+func sanitizeNacosBackendDiagnosticParams(params map[string]any) map[string]any {
+	if len(params) == 0 {
+		return params
+	}
+	sanitized := make(map[string]any, len(params))
+	for key, value := range params {
+		sanitized[key] = value
+	}
+	for _, key := range []string{"body", "detail", "message"} {
+		if text, ok := sanitized[key].(string); ok {
+			sanitized[key] = truncateForError(text)
+		}
+	}
+	return sanitized
+}
+
 func localizedNacosBackendError(key string, params map[string]any) error {
+	switch key {
+	case "nacos.backend.error.http_status":
+		status, err := strconv.Atoi(strings.TrimSpace(fmt.Sprint(params["status"])))
+		if err == nil && status >= 100 && status <= 599 {
+			return &nacosHTTPError{
+				status: status,
+				body:   truncateForError(fmt.Sprint(params["body"])),
+			}
+		}
+	case "nacos.backend.error.config_not_found":
+		return &nacosConfigNotFoundError{
+			group:  strings.TrimSpace(fmt.Sprint(params["group"])),
+			dataID: strings.TrimSpace(fmt.Sprint(params["dataId"])),
+		}
+	}
 	return fmt.Errorf("%s", localizedNacosBackendText(key, params))
 }

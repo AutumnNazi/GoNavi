@@ -185,6 +185,7 @@ type ServiceDetail struct {
 	Name             string            `json:"name"`
 	GroupName        string            `json:"groupName,omitempty"`
 	NamespaceID      string            `json:"namespaceId,omitempty"`
+	Ephemeral        bool              `json:"ephemeral"`
 	ProtectThreshold float64           `json:"protectThreshold,omitempty"`
 	Metadata         map[string]string `json:"metadata,omitempty"`
 	Selector         map[string]any    `json:"selector,omitempty"`
@@ -203,6 +204,7 @@ type CreateServiceRequest struct {
 	NamespaceID      string            `json:"namespaceId"`
 	ServiceName      string            `json:"serviceName"`
 	GroupName        string            `json:"groupName,omitempty"`
+	Ephemeral        *bool             `json:"ephemeral,omitempty"`
 	ProtectThreshold float64           `json:"protectThreshold,omitempty"`
 	Metadata         map[string]string `json:"metadata,omitempty"`
 }
@@ -256,7 +258,7 @@ type InstanceRequest struct {
 	IP          string            `json:"ip"`
 	Port        int               `json:"port"`
 	ClusterName string            `json:"clusterName,omitempty"`
-	Weight      float64           `json:"weight,omitempty"`
+	Weight      *float64          `json:"weight,omitempty"`
 	Enabled     *bool             `json:"enabled,omitempty"`
 	Healthy     *bool             `json:"healthy,omitempty"`
 	Ephemeral   *bool             `json:"ephemeral,omitempty"`

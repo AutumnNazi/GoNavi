@@ -38,6 +38,7 @@ func TestNamingServiceAndInstanceFlow(t *testing.T) {
 				"name":             "orders",
 				"groupName":        "DEFAULT_GROUP",
 				"namespaceId":      "dev",
+				"ephemeral":        true,
 				"protectThreshold": 0.5,
 				"metadata":         map[string]string{"owner": "team-a"},
 				"clusters": []map[string]any{
@@ -118,7 +119,7 @@ func TestNamingServiceAndInstanceFlow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetService: %v", err)
 	}
-	if detail.Name != "orders" || detail.ProtectThreshold != 0.5 {
+	if detail.Name != "orders" || !detail.Ephemeral || detail.ProtectThreshold != 0.5 {
 		t.Fatalf("service detail = %#v", detail)
 	}
 
@@ -148,13 +149,14 @@ func TestNamingServiceAndInstanceFlow(t *testing.T) {
 
 	ephemeral := true
 	enabled := true
+	weight := 1.0
 	if err := client.RegisterInstance(ctx, InstanceRequest{
 		NamespaceID: "dev",
 		ServiceName: "orders",
 		GroupName:   "DEFAULT_GROUP",
 		IP:          "10.0.0.2",
 		Port:        8081,
-		Weight:      1,
+		Weight:      &weight,
 		Enabled:     &enabled,
 		Ephemeral:   &ephemeral,
 		ClusterName: "DEFAULT",
@@ -271,9 +273,14 @@ func TestNamingOperationsQualifyNonDefaultGroup(t *testing.T) {
 		protectThreshold string
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodGet && (strings.HasSuffix(r.URL.Path, "/v3/admin/core/namespace/list") ||
+		if r.Method == http.MethodGet && (strings.HasSuffix(r.URL.Path, nacosV3ReadinessPath) ||
+			strings.HasSuffix(r.URL.Path, nacosV2ReadinessPath) ||
 			strings.HasSuffix(r.URL.Path, "/v2/console/namespace/list")) {
 			http.NotFound(w, r)
+			return
+		}
+		if r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, nacosV1ReadinessPath) {
+			_, _ = io.WriteString(w, "OK")
 			return
 		}
 		if r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/v1/console/namespaces") {

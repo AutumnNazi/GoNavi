@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/url"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -167,7 +168,7 @@ func (c *ClientImpl) listV3ServicesByExactGroup(
 		params.Set("pageSize", strconv.Itoa(maxServicePageSize))
 		params.Set("namespaceId", normalizeNamespaceID(namespaceID))
 		params.Set("serviceNameParam", "")
-		params.Set("groupNameParam", groupName)
+		params.Set("groupNameParam", regexp.QuoteMeta(groupName))
 
 		body, status, err := c.doRequest(ctx, http.MethodGet, c.currentAPIRoutes().serviceListByGroup, params, nil)
 		if err != nil {
@@ -261,6 +262,7 @@ func (c *ClientImpl) GetService(ctx context.Context, namespaceID, serviceName, g
 		GroupName        string            `json:"groupName"`
 		NamespaceID      string            `json:"namespaceId"`
 		Namespace        string            `json:"namespace"`
+		Ephemeral        bool              `json:"ephemeral"`
 		ProtectThreshold float64           `json:"protectThreshold"`
 		Metadata         map[string]string `json:"metadata"`
 		Selector         map[string]any    `json:"selector"`
@@ -306,6 +308,7 @@ func (c *ClientImpl) GetService(ctx context.Context, namespaceID, serviceName, g
 		Name:             firstNonEmpty(strings.TrimSpace(payload.Name), strings.TrimSpace(payload.ServiceName), plainServiceName),
 		GroupName:        firstNonEmpty(strings.TrimSpace(payload.GroupName), groupName),
 		NamespaceID:      normalizeNamespaceID(firstNonEmpty(payload.NamespaceID, payload.Namespace, namespaceID)),
+		Ephemeral:        payload.Ephemeral,
 		ProtectThreshold: payload.ProtectThreshold,
 		Metadata:         payload.Metadata,
 		Selector:         payload.Selector,
@@ -320,6 +323,9 @@ func (c *ClientImpl) CreateService(ctx context.Context, req CreateServiceRequest
 	if serviceName == "" {
 		return localizedNacosBackendError("nacos.backend.error.service_name_required", nil)
 	}
+	if family == nacosAPIV1 && req.Ephemeral != nil && *req.Ephemeral {
+		return localizedNacosBackendError("nacos.backend.error.ephemeral_service_unsupported_v1", nil)
+	}
 	serviceName, groupName := splitServiceName(serviceName, req.GroupName)
 	form := url.Values{}
 	if family == nacosAPIV1 {
@@ -329,6 +335,9 @@ func (c *ClientImpl) CreateService(ctx context.Context, req CreateServiceRequest
 	}
 	form.Set("groupName", groupName)
 	form.Set("namespaceId", normalizeNamespaceID(req.NamespaceID))
+	if family != nacosAPIV1 && req.Ephemeral != nil {
+		form.Set("ephemeral", strconv.FormatBool(*req.Ephemeral))
+	}
 	form.Set("protectThreshold", strconv.FormatFloat(req.ProtectThreshold, 'f', -1, 64))
 	if meta := encodeMetadata(req.Metadata); meta != "" {
 		form.Set("metadata", meta)
@@ -638,8 +647,8 @@ func buildInstanceParams(req InstanceRequest, includeEphemeral bool, family naco
 func buildInstanceForm(req InstanceRequest, includeAttrs bool, family nacosAPIFamily) url.Values {
 	form := buildInstanceParams(req, true, family)
 	if includeAttrs {
-		if req.Weight > 0 {
-			form.Set("weight", strconv.FormatFloat(req.Weight, 'f', -1, 64))
+		if req.Weight != nil {
+			form.Set("weight", strconv.FormatFloat(*req.Weight, 'f', -1, 64))
 		}
 		if req.Enabled != nil {
 			form.Set("enabled", strconv.FormatBool(*req.Enabled))

@@ -9,14 +9,19 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"GoNavi-Wails/internal/connection"
+	proxytunnel "GoNavi-Wails/internal/proxy"
+	"GoNavi-Wails/internal/ssh"
 	"GoNavi-Wails/internal/tlsconfig"
+	"golang.org/x/sync/singleflight"
 )
 
 const (
@@ -25,23 +30,100 @@ const (
 	defaultNacosTimeout     = 30 * time.Second
 	defaultConfigPageSize   = 20
 	maxConfigPageSize       = 200
-	tokenRefreshSkew        = 60 * time.Second
+	maxTokenRefreshSkew     = 60 * time.Second
 )
+
+var dialNacosProxyContext = proxytunnel.DialContext
+
+var (
+	nacosJSONSecretPattern = regexp.MustCompile(
+		`(?i)("(?:access[_-]?token|refresh[_-]?token|id[_-]?token|token|password|passwd|pwd|secret|client[_-]?secret|secret[_-]?key|api[_-]?key|authorization)"\s*:\s*")((?:\\.|[^"\\])*)(")`,
+	)
+	nacosAuthorizationPattern = regexp.MustCompile(
+		`(?i)(\bauthorization\s*[:=]\s*)(?:bearer|basic)\s+[a-z0-9._~+/%=-]+`,
+	)
+	nacosSecretAssignmentPattern = regexp.MustCompile(
+		`(?i)(\b(?:access[_-]?token|refresh[_-]?token|id[_-]?token|token|password|passwd|pwd|secret|client[_-]?secret|secret[_-]?key|api[_-]?key|authorization)\s*=\s*)([^&\s"'<>;,]+)`,
+	)
+	nacosBearerPattern = regexp.MustCompile(`(?i)(\bbearer\s+)[a-z0-9._~+/%=-]+`)
+)
+
+type nacosForwarderLease interface {
+	LocalAddress() string
+	Release() error
+}
+
+type nacosForwarderAcquirer func(connection.SSHConfig, string, int) (nacosForwarderLease, error)
+
+type nacosAuthResult struct {
+	token     string
+	expiry    time.Time
+	refreshAt time.Time
+}
+
+type nacosTokenSnapshot struct {
+	value      string
+	generation uint64
+}
+
+type nacosRawResponse struct {
+	body      []byte
+	status    int
+	usedToken nacosTokenSnapshot
+}
+
+type localForwarderLeaseAdapter struct {
+	forwarder *ssh.LocalForwarder
+}
+
+func (l *localForwarderLeaseAdapter) LocalAddress() string {
+	if l == nil || l.forwarder == nil {
+		return ""
+	}
+	return l.forwarder.LocalAddr
+}
+
+func (l *localForwarderLeaseAdapter) Release() error {
+	if l == nil || l.forwarder == nil {
+		return nil
+	}
+	return l.forwarder.Release()
+}
+
+func acquireNacosForwarder(
+	sshConfig connection.SSHConfig,
+	remoteHost string,
+	remotePort int,
+) (nacosForwarderLease, error) {
+	forwarder, err := ssh.AcquireLocalForwarder(sshConfig, remoteHost, remotePort)
+	if err != nil {
+		return nil, err
+	}
+	return &localForwarderLeaseAdapter{forwarder: forwarder}, nil
+}
 
 // ClientImpl is an HTTP client for the supported Nacos API families.
 type ClientImpl struct {
-	mu          sync.Mutex
-	config      connection.ConnectionConfig
-	httpClient  *http.Client
-	baseURL     *url.URL
-	apiFamily   nacosAPIFamily
-	accessToken string
-	tokenExpiry time.Time
+	mu                  sync.Mutex
+	config              connection.ConnectionConfig
+	httpClient          *http.Client
+	baseURL             *url.URL
+	requestHost         string
+	apiFamily           nacosAPIFamily
+	accessToken         string
+	tokenExpiry         time.Time
+	tokenRefreshAt      time.Time
+	sshForwarder        nacosForwarderLease
+	acquireSSHForwarder nacosForwarderAcquirer
+	authGroup           *singleflight.Group
+	lifecycleCtx        context.Context
+	lifecycleCancel     context.CancelFunc
+	lifecycleGeneration uint64
 }
 
 // NewClient creates a new Nacos client instance.
 func NewClient() Client {
-	return &ClientImpl{}
+	return &ClientImpl{acquireSSHForwarder: acquireNacosForwarder}
 }
 
 // Connect prepares the HTTP client and validates reachability.
@@ -51,18 +133,60 @@ func (c *ClientImpl) Connect(config connection.ConnectionConfig) error {
 		return err
 	}
 
-	httpClient, baseURL, err := buildNacosHTTPClient(normalized)
-	if err != nil {
+	if err := c.Close(); err != nil {
 		return err
 	}
 
+	var forwarder nacosForwarderLease
+	dialAddress := ""
+	if normalized.UseSSH {
+		acquire := c.acquireSSHForwarder
+		if acquire == nil {
+			acquire = acquireNacosForwarder
+		}
+		forwarder, err = acquire(normalized.SSH, normalized.Host, normalized.Port)
+		if err != nil {
+			return localizedNacosBackendError("nacos.backend.error.ssh_tunnel_create_failed", map[string]any{
+				"detail": err.Error(),
+			})
+		}
+		if forwarder == nil {
+			return localizedNacosBackendError("nacos.backend.error.ssh_tunnel_create_failed", map[string]any{
+				"detail": "forwarder acquisition returned no lease",
+			})
+		}
+		dialAddress = strings.TrimSpace(forwarder.LocalAddress())
+		if dialAddress == "" {
+			_ = forwarder.Release()
+			return localizedNacosBackendError("nacos.backend.error.ssh_tunnel_create_failed", map[string]any{
+				"detail": "local forward address is empty",
+			})
+		}
+	}
+
+	httpClient, baseURL, err := buildNacosHTTPClientWithDialAddress(normalized, dialAddress)
+	if err != nil {
+		if forwarder != nil {
+			_ = forwarder.Release()
+		}
+		return err
+	}
+	lifecycleCtx, lifecycleCancel := context.WithCancel(context.Background())
+
 	c.mu.Lock()
+	c.lifecycleGeneration++
 	c.config = normalized
 	c.httpClient = httpClient
 	c.baseURL = baseURL
+	c.requestHost = net.JoinHostPort(normalized.Host, strconv.Itoa(normalized.Port))
 	c.apiFamily = nacosAPIUnknown
 	c.accessToken = ""
 	c.tokenExpiry = time.Time{}
+	c.tokenRefreshAt = time.Time{}
+	c.sshForwarder = forwarder
+	c.authGroup = &singleflight.Group{}
+	c.lifecycleCtx = lifecycleCtx
+	c.lifecycleCancel = lifecycleCancel
 	c.mu.Unlock()
 
 	ctx, cancel := context.WithTimeout(context.Background(), normalizeNacosTimeout(normalized.Timeout))
@@ -85,21 +209,38 @@ func (c *ClientImpl) Connect(config connection.ConnectionConfig) error {
 // Close releases client resources.
 func (c *ClientImpl) Close() error {
 	c.mu.Lock()
-	defer c.mu.Unlock()
+	httpClient := c.httpClient
+	forwarder := c.sshForwarder
+	lifecycleCancel := c.lifecycleCancel
+	c.lifecycleGeneration++
+	c.config = connection.ConnectionConfig{}
 	c.httpClient = nil
 	c.baseURL = nil
+	c.requestHost = ""
 	c.apiFamily = nacosAPIUnknown
 	c.accessToken = ""
 	c.tokenExpiry = time.Time{}
+	c.tokenRefreshAt = time.Time{}
+	c.sshForwarder = nil
+	c.authGroup = nil
+	c.lifecycleCtx = nil
+	c.lifecycleCancel = nil
+	c.mu.Unlock()
+	if lifecycleCancel != nil {
+		lifecycleCancel()
+	}
+	if httpClient != nil {
+		httpClient.CloseIdleConnections()
+	}
+	if forwarder != nil {
+		return forwarder.Release()
+	}
 	return nil
 }
 
-// Ping checks server reachability via namespace list (works with/without auth).
+// Ping checks server reachability without requiring namespace administrator access.
 func (c *ClientImpl) Ping(ctx context.Context) error {
-	if _, err := c.ListNamespaces(ctx); err != nil {
-		return err
-	}
-	return nil
+	return c.probeReadiness(ctx, c.currentAPIFamily())
 }
 
 // ListNamespaces returns all namespaces including public.
@@ -109,10 +250,7 @@ func (c *ClientImpl) ListNamespaces(ctx context.Context) ([]Namespace, error) {
 		return nil, err
 	}
 	if status < 200 || status >= 300 {
-		return nil, localizedNacosBackendError("nacos.backend.error.http_status", map[string]any{
-			"status": status,
-			"body":   truncateForError(string(body)),
-		})
+		return nil, nacosHTTPStatusError(status, body)
 	}
 
 	data, err := unwrapNacosResult(body)
@@ -992,23 +1130,95 @@ func stringifyAnyID(value any) string {
 }
 
 func (c *ClientImpl) ensureAuth(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
 	c.mu.Lock()
 	username := strings.TrimSpace(c.config.User)
-	password := c.config.Password
-	needLogin := username != ""
-	tokenValid := c.accessToken != "" && time.Now().Before(c.tokenExpiry.Add(-tokenRefreshSkew))
+	if username == "" {
+		c.mu.Unlock()
+		return nil
+	}
+	c.ensureAuthLifecycleLocked()
+	if c.accessTokenValidLocked(time.Now()) {
+		c.mu.Unlock()
+		return nil
+	}
+	authGroup := c.authGroup
+	lifecycleCtx := c.lifecycleCtx
+	generation := c.lifecycleGeneration
 	c.mu.Unlock()
 
-	if !needLogin {
-		return nil
+	resultCh := authGroup.DoChan("login", func() (any, error) {
+		c.mu.Lock()
+		if c.lifecycleGeneration != generation || c.lifecycleCtx == nil || c.httpClient == nil {
+			c.mu.Unlock()
+			return nil, context.Canceled
+		}
+		if c.accessTokenValidLocked(time.Now()) {
+			c.mu.Unlock()
+			return nil, nil
+		}
+		loginUser := strings.TrimSpace(c.config.User)
+		loginPassword := c.config.Password
+		// Cached clients may be shared by operations with different deadlines.
+		// The caller context still controls how long that caller waits, while
+		// the shared login uses a stable lifecycle timeout so the first
+		// connection's short operation timeout cannot poison later refreshes.
+		loginTimeout := defaultNacosTimeout
+		c.mu.Unlock()
+
+		loginCtx, cancel := context.WithTimeout(lifecycleCtx, loginTimeout)
+		defer cancel()
+		authResult, err := c.login(loginCtx, loginUser, loginPassword)
+		if err != nil {
+			return nil, err
+		}
+
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		if c.lifecycleGeneration != generation || c.lifecycleCtx == nil ||
+			c.httpClient == nil || lifecycleCtx.Err() != nil {
+			return nil, context.Canceled
+		}
+		c.accessToken = authResult.token
+		c.tokenExpiry = authResult.expiry
+		c.tokenRefreshAt = authResult.refreshAt
+		return nil, nil
+	})
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case result := <-resultCh:
+		return result.Err
 	}
-	if tokenValid {
-		return nil
-	}
-	return c.login(ctx, username, password)
 }
 
-func (c *ClientImpl) login(ctx context.Context, username, password string) error {
+func (c *ClientImpl) ensureAuthLifecycleLocked() {
+	if c.authGroup != nil && c.lifecycleCtx != nil {
+		return
+	}
+	lifecycleCtx, lifecycleCancel := context.WithCancel(context.Background())
+	c.lifecycleGeneration++
+	c.authGroup = &singleflight.Group{}
+	c.lifecycleCtx = lifecycleCtx
+	c.lifecycleCancel = lifecycleCancel
+}
+
+func (c *ClientImpl) accessTokenValidLocked(now time.Time) bool {
+	if c.accessToken == "" {
+		return false
+	}
+	refreshAt := c.tokenRefreshAt
+	if refreshAt.IsZero() {
+		refreshAt = c.tokenExpiry.Add(-maxTokenRefreshSkew)
+	}
+	return now.Before(refreshAt)
+}
+
+func (c *ClientImpl) login(ctx context.Context, username, password string) (nacosAuthResult, error) {
 	query := url.Values{}
 	query.Set("username", username)
 	form := url.Values{}
@@ -1023,7 +1233,7 @@ func (c *ClientImpl) login(ctx context.Context, username, password string) error
 	for index, loginPath := range loginPaths {
 		body, status, err = c.doRequestRaw(ctx, http.MethodPost, loginPath, query, form, false)
 		if err != nil {
-			return err
+			return nacosAuthResult{}, err
 		}
 		if status >= 200 && status < 300 {
 			break
@@ -1031,7 +1241,7 @@ func (c *ClientImpl) login(ctx context.Context, username, password string) error
 		if index < len(loginPaths)-1 && isUnsupportedNacosLogin(status) {
 			continue
 		}
-		return localizedNacosBackendError("nacos.backend.error.login_failed", map[string]any{
+		return nacosAuthResult{}, localizedNacosBackendError("nacos.backend.error.login_failed", map[string]any{
 			"status": status,
 			"body":   truncateForError(string(body)),
 		})
@@ -1042,24 +1252,31 @@ func (c *ClientImpl) login(ctx context.Context, username, password string) error
 		TokenTtl    int64  `json:"tokenTtl"`
 	}
 	if err := json.Unmarshal(body, &payload); err != nil {
-		return localizedNacosBackendError("nacos.backend.error.login_parse", map[string]any{
+		return nacosAuthResult{}, localizedNacosBackendError("nacos.backend.error.login_parse", map[string]any{
 			"detail": err.Error(),
 		})
 	}
 	token := strings.TrimSpace(payload.AccessToken)
 	if token == "" {
-		return localizedNacosBackendError("nacos.backend.error.login_empty_token", nil)
+		return nacosAuthResult{}, localizedNacosBackendError("nacos.backend.error.login_empty_token", nil)
 	}
 	ttl := payload.TokenTtl
 	if ttl <= 0 {
 		ttl = 18000
 	}
+	issuedAt := time.Now()
+	ttlDuration := time.Duration(ttl) * time.Second
+	refreshSkew := ttlDuration / 10
+	if refreshSkew > maxTokenRefreshSkew {
+		refreshSkew = maxTokenRefreshSkew
+	}
+	expiry := issuedAt.Add(ttlDuration)
 
-	c.mu.Lock()
-	c.accessToken = token
-	c.tokenExpiry = time.Now().Add(time.Duration(ttl) * time.Second)
-	c.mu.Unlock()
-	return nil
+	return nacosAuthResult{
+		token:     token,
+		expiry:    expiry,
+		refreshAt: expiry.Add(-refreshSkew),
+	}, nil
 }
 
 func isUnsupportedNacosLogin(status int) bool {
@@ -1082,22 +1299,49 @@ func (c *ClientImpl) doRequestWithHeaders(
 	if err := c.ensureAuth(ctx); err != nil {
 		return nil, 0, err
 	}
-	body, status, err := c.doRequestRawWithHeaders(ctx, method, apiPath, query, form, headers, true)
+	response, err := c.doRequestRawWithHeadersResult(ctx, method, apiPath, query, form, headers, true)
 	if err != nil {
-		return nil, status, err
+		return nil, response.status, err
 	}
-	// Token expired mid-flight: force re-login once.
-	if status == http.StatusForbidden || status == http.StatusUnauthorized {
-		c.mu.Lock()
+	if response.status == http.StatusForbidden || response.status == http.StatusUnauthorized {
+		retry, authErr := c.reauthenticateAfterUnauthorized(ctx, response.usedToken)
+		if authErr != nil {
+			return nil, response.status, authErr
+		}
+		if retry {
+			response, err = c.doRequestRawWithHeadersResult(ctx, method, apiPath, query, form, headers, true)
+			if err != nil {
+				return nil, response.status, err
+			}
+		}
+	}
+	return response.body, response.status, nil
+}
+
+func (c *ClientImpl) reauthenticateAfterUnauthorized(
+	ctx context.Context,
+	usedToken nacosTokenSnapshot,
+) (bool, error) {
+	if strings.TrimSpace(usedToken.value) == "" {
+		return false, nil
+	}
+
+	c.mu.Lock()
+	if c.lifecycleGeneration != usedToken.generation {
+		c.mu.Unlock()
+		return false, nil
+	}
+	if c.accessToken == usedToken.value {
 		c.accessToken = ""
 		c.tokenExpiry = time.Time{}
-		c.mu.Unlock()
-		if err := c.ensureAuth(ctx); err != nil {
-			return nil, status, err
-		}
-		return c.doRequestRawWithHeaders(ctx, method, apiPath, query, form, headers, true)
+		c.tokenRefreshAt = time.Time{}
 	}
-	return body, status, nil
+	c.mu.Unlock()
+
+	if err := c.ensureAuth(ctx); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 func (c *ClientImpl) doRequestRaw(
@@ -1118,14 +1362,34 @@ func (c *ClientImpl) doRequestRawWithHeaders(
 	headers http.Header,
 	withToken bool,
 ) ([]byte, int, error) {
+	response, err := c.doRequestRawWithHeadersResult(ctx, method, apiPath, query, form, headers, withToken)
+	return response.body, response.status, err
+}
+
+func (c *ClientImpl) doRequestRawWithHeadersResult(
+	ctx context.Context,
+	method, apiPath string,
+	query url.Values,
+	form url.Values,
+	headers http.Header,
+	withToken bool,
+) (nacosRawResponse, error) {
 	c.mu.Lock()
 	httpClient := c.httpClient
 	baseURL := c.baseURL
+	requestHost := c.requestHost
 	token := c.accessToken
+	generation := c.lifecycleGeneration
 	c.mu.Unlock()
+	result := nacosRawResponse{
+		usedToken: nacosTokenSnapshot{
+			value:      token,
+			generation: generation,
+		},
+	}
 
 	if httpClient == nil || baseURL == nil {
-		return nil, 0, localizedNacosBackendError("nacos.backend.error.not_connected", nil)
+		return result, localizedNacosBackendError("nacos.backend.error.not_connected", nil)
 	}
 
 	rel := &url.URL{Path: joinAPIPath(baseURL.Path, apiPath)}
@@ -1147,9 +1411,12 @@ func (c *ClientImpl) doRequestRawWithHeaders(
 
 	req, err := http.NewRequestWithContext(ctx, method, fullURL, bodyReader)
 	if err != nil {
-		return nil, 0, localizedNacosBackendError("nacos.backend.error.build_request", map[string]any{
+		return result, localizedNacosBackendError("nacos.backend.error.build_request", map[string]any{
 			"detail": err.Error(),
 		})
+	}
+	if requestHost != "" {
+		req.Host = requestHost
 	}
 	if contentType != "" {
 		req.Header.Set("Content-Type", contentType)
@@ -1163,19 +1430,37 @@ func (c *ClientImpl) doRequestRawWithHeaders(
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		return nil, 0, localizedNacosBackendError("nacos.backend.error.request_failed", map[string]any{
-			"detail": err.Error(),
+		return result, localizedNacosBackendError("nacos.backend.error.request_failed", map[string]any{
+			"detail": redactNacosAccessToken(err.Error(), token),
 		})
 	}
 	defer resp.Body.Close()
+	result.status = resp.StatusCode
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 16<<20))
 	if err != nil {
-		return nil, resp.StatusCode, localizedNacosBackendError("nacos.backend.error.read_body", map[string]any{
+		return result, localizedNacosBackendError("nacos.backend.error.read_body", map[string]any{
 			"detail": err.Error(),
 		})
 	}
-	return body, resp.StatusCode, nil
+	result.body = body
+	return result, nil
+}
+
+func redactNacosAccessToken(detail, token string) string {
+	detail = redactNacosErrorText(detail)
+	if strings.TrimSpace(token) == "" {
+		return detail
+	}
+	redacted := strings.ReplaceAll(detail, url.QueryEscape(token), "[REDACTED]")
+	return strings.ReplaceAll(redacted, token, "[REDACTED]")
+}
+
+func redactNacosErrorText(text string) string {
+	redacted := nacosJSONSecretPattern.ReplaceAllString(text, `${1}[REDACTED]${3}`)
+	redacted = nacosAuthorizationPattern.ReplaceAllString(redacted, `${1}[REDACTED]`)
+	redacted = nacosSecretAssignmentPattern.ReplaceAllString(redacted, `${1}[REDACTED]`)
+	return nacosBearerPattern.ReplaceAllString(redacted, `${1}[REDACTED]`)
 }
 
 func normalizeNacosConfig(config connection.ConnectionConfig) (connection.ConnectionConfig, error) {
@@ -1195,6 +1480,13 @@ func normalizeNacosConfig(config connection.ConnectionConfig) (connection.Connec
 }
 
 func buildNacosHTTPClient(config connection.ConnectionConfig) (*http.Client, *url.URL, error) {
+	return buildNacosHTTPClientWithDialAddress(config, "")
+}
+
+func buildNacosHTTPClientWithDialAddress(
+	config connection.ConnectionConfig,
+	dialAddress string,
+) (*http.Client, *url.URL, error) {
 	scheme := "http"
 	if config.UseSSL || strings.EqualFold(strings.TrimSpace(config.SSLMode), "required") ||
 		strings.EqualFold(strings.TrimSpace(config.SSLMode), "preferred") {
@@ -1210,39 +1502,35 @@ func buildNacosHTTPClient(config connection.ConnectionConfig) (*http.Client, *ur
 	}
 	base.Path = contextPath
 
+	dialer := &net.Dialer{
+		Timeout:   10 * time.Second,
+		KeepAlive: 30 * time.Second,
+	}
+	dialContext := dialer.DialContext
+	if dialTarget := strings.TrimSpace(dialAddress); dialTarget != "" {
+		dialContext = func(ctx context.Context, network, _ string) (net.Conn, error) {
+			return dialer.DialContext(ctx, network, dialTarget)
+		}
+	} else if config.UseProxy {
+		proxyConfig := config.Proxy
+		dialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
+			return dialNacosProxyContext(ctx, proxyConfig, network, address)
+		}
+	}
+
 	transport := &http.Transport{
-		Proxy: http.ProxyFromEnvironment,
-		DialContext: (&net.Dialer{
-			Timeout:   10 * time.Second,
-			KeepAlive: 30 * time.Second,
-		}).DialContext,
+		Proxy:                 http.ProxyFromEnvironment,
+		DialContext:           dialContext,
 		ForceAttemptHTTP2:     true,
 		MaxIdleConns:          32,
 		IdleConnTimeout:       90 * time.Second,
 		TLSHandshakeTimeout:   10 * time.Second,
 		ExpectContinueTimeout: 1 * time.Second,
 	}
-
-	if config.UseProxy && strings.EqualFold(strings.TrimSpace(config.Proxy.Type), "http") {
-		proxyHost := strings.TrimSpace(config.Proxy.Host)
-		if proxyHost != "" {
-			proxyPort := config.Proxy.Port
-			if proxyPort <= 0 {
-				proxyPort = 8080
-			}
-			proxyURL := &url.URL{
-				Scheme: "http",
-				Host:   net.JoinHostPort(proxyHost, strconv.Itoa(proxyPort)),
-			}
-			if user := strings.TrimSpace(config.Proxy.User); user != "" {
-				if pass := config.Proxy.Password; pass != "" {
-					proxyURL.User = url.UserPassword(user, pass)
-				} else {
-					proxyURL.User = url.User(user)
-				}
-			}
-			transport.Proxy = http.ProxyURL(proxyURL)
-		}
+	if strings.TrimSpace(dialAddress) != "" || config.UseProxy {
+		// The explicit network hop is already handled by DialContext. Applying
+		// an environment/http.Transport proxy as well would double-proxy it.
+		transport.Proxy = nil
 	}
 
 	if scheme == "https" {
@@ -1261,17 +1549,26 @@ func buildNacosHTTPClient(config connection.ConnectionConfig) (*http.Client, *ur
 			})
 		}
 		if tlsCfg != nil {
+			if strings.TrimSpace(dialAddress) != "" {
+				tlsCfg.ServerName = strings.Trim(strings.TrimSpace(config.Host), "[]")
+			}
 			transport.TLSClientConfig = tlsCfg
 		} else {
 			transport.TLSClientConfig = &tls.Config{
 				MinVersion:         tls.VersionTLS12,
 				InsecureSkipVerify: insecure, //nolint:gosec
 			}
+			if strings.TrimSpace(dialAddress) != "" {
+				transport.TLSClientConfig.ServerName = strings.Trim(strings.TrimSpace(config.Host), "[]")
+			}
 		}
 	}
 
 	client := &http.Client{
-		Timeout:   normalizeNacosTimeout(config.Timeout),
+		// Request deadlines are supplied by the caller context. Keeping this
+		// unset prevents a cached client from retaining the first connection's
+		// timeout for later operations.
+		Timeout:   0,
 		Transport: transport,
 	}
 	return client, base, nil
@@ -1358,11 +1655,15 @@ func parseSimpleKV(raw string) map[string]string {
 
 func truncateForError(text string) string {
 	const max = 400
-	trimmed := strings.TrimSpace(text)
+	trimmed := strings.TrimSpace(redactNacosErrorText(text))
 	if len(trimmed) <= max {
 		return trimmed
 	}
-	return trimmed[:max] + "..."
+	cutoff := max
+	for cutoff > 0 && !utf8.RuneStart(trimmed[cutoff]) {
+		cutoff--
+	}
+	return trimmed[:cutoff] + "..."
 }
 
 func firstNonEmpty(values ...string) string {

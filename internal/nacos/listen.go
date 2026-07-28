@@ -80,7 +80,7 @@ func (c *ClientImpl) ListenOnce(ctx context.Context, targets []ConfigListenTarge
 	listenCtx, cancel := context.WithTimeout(ctx, time.Duration(timeoutMs+10000)*time.Millisecond)
 	defer cancel()
 
-	body, status, err := c.doListenRequest(listenCtx, form, timeoutMs)
+	response, err := c.doListenRequestResult(listenCtx, form, timeoutMs)
 	if err != nil {
 		// Context cancel/deadline is expected when stopping listeners.
 		if listenCtx.Err() != nil && (ctx.Err() != nil || listenCtx.Err() == context.DeadlineExceeded) {
@@ -92,30 +92,32 @@ func (c *ClientImpl) ListenOnce(ctx context.Context, targets []ConfigListenTarge
 		}
 		return nil, err
 	}
-	if status == http.StatusForbidden || status == http.StatusUnauthorized {
-		c.mu.Lock()
-		c.accessToken = ""
-		c.tokenExpiry = time.Time{}
-		c.mu.Unlock()
-		if err := c.ensureAuth(ctx); err != nil {
-			return nil, err
+	if response.status == http.StatusForbidden || response.status == http.StatusUnauthorized {
+		retry, authErr := c.reauthenticateAfterUnauthorized(ctx, response.usedToken)
+		if authErr != nil {
+			return nil, authErr
 		}
-		body, status, err = c.doListenRequest(listenCtx, form, timeoutMs)
-		if err != nil {
-			if ctx.Err() != nil {
-				return nil, ctx.Err()
+		if retry {
+			response, err = c.doListenRequestResult(listenCtx, form, timeoutMs)
+			if err != nil {
+				if ctx.Err() != nil {
+					return nil, ctx.Err()
+				}
+				if listenCtx.Err() == context.DeadlineExceeded {
+					return []ConfigListenTarget{}, nil
+				}
+				return nil, err
 			}
-			return []ConfigListenTarget{}, nil
 		}
 	}
-	if status < 200 || status >= 300 {
+	if response.status < 200 || response.status >= 300 {
 		return nil, localizedNacosBackendError("nacos.backend.error.http_status", map[string]any{
-			"status": status,
-			"body":   truncateForError(string(body)),
+			"status": response.status,
+			"body":   truncateForError(string(response.body)),
 		})
 	}
 
-	changed := parseListenResponse(string(body))
+	changed := parseListenResponse(string(response.body))
 	if len(changed) == 0 {
 		return []ConfigListenTarget{}, nil
 	}
@@ -123,14 +125,31 @@ func (c *ClientImpl) ListenOnce(ctx context.Context, targets []ConfigListenTarge
 }
 
 func (c *ClientImpl) doListenRequest(ctx context.Context, form url.Values, timeoutMs int) ([]byte, int, error) {
+	response, err := c.doListenRequestResult(ctx, form, timeoutMs)
+	return response.body, response.status, err
+}
+
+func (c *ClientImpl) doListenRequestResult(
+	ctx context.Context,
+	form url.Values,
+	timeoutMs int,
+) (nacosRawResponse, error) {
 	c.mu.Lock()
 	baseClient := c.httpClient
 	baseURL := c.baseURL
+	requestHost := c.requestHost
 	token := c.accessToken
+	generation := c.lifecycleGeneration
 	c.mu.Unlock()
+	result := nacosRawResponse{
+		usedToken: nacosTokenSnapshot{
+			value:      token,
+			generation: generation,
+		},
+	}
 
 	if baseClient == nil || baseURL == nil {
-		return nil, 0, localizedNacosBackendError("nacos.backend.error.not_connected", nil)
+		return result, localizedNacosBackendError("nacos.backend.error.not_connected", nil)
 	}
 
 	// Avoid inherited short Timeout from the shared client.
@@ -150,9 +169,12 @@ func (c *ClientImpl) doListenRequest(ctx context.Context, form url.Values, timeo
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, fullURL, strings.NewReader(form.Encode()))
 	if err != nil {
-		return nil, 0, localizedNacosBackendError("nacos.backend.error.build_request", map[string]any{
+		return result, localizedNacosBackendError("nacos.backend.error.build_request", map[string]any{
 			"detail": err.Error(),
 		})
+	}
+	if requestHost != "" {
+		req.Host = requestHost
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Long-Pulling-Timeout", strconv.Itoa(timeoutMs))
@@ -160,19 +182,21 @@ func (c *ClientImpl) doListenRequest(ctx context.Context, form url.Values, timeo
 
 	resp, err := listenClient.Do(req)
 	if err != nil {
-		return nil, 0, localizedNacosBackendError("nacos.backend.error.request_failed", map[string]any{
-			"detail": err.Error(),
+		return result, localizedNacosBackendError("nacos.backend.error.request_failed", map[string]any{
+			"detail": redactNacosAccessToken(err.Error(), token),
 		})
 	}
 	defer resp.Body.Close()
+	result.status = resp.StatusCode
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
-		return nil, resp.StatusCode, localizedNacosBackendError("nacos.backend.error.read_body", map[string]any{
+		return result, localizedNacosBackendError("nacos.backend.error.read_body", map[string]any{
 			"detail": err.Error(),
 		})
 	}
-	return body, resp.StatusCode, nil
+	result.body = body
+	return result, nil
 }
 
 func parseListenResponse(raw string) []ConfigListenTarget {
