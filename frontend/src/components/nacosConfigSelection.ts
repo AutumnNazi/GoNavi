@@ -3,6 +3,20 @@ export type NacosConfigIdentity = {
   group: string;
 };
 
+export type NacosImportIdentityInput =
+  | (Partial<NacosConfigIdentity> & { index?: number })
+  | null
+  | undefined;
+
+export type NacosImportSelectionItem = NacosConfigIdentity & {
+  index: number;
+};
+
+export type NacosImportSelectionRow = NacosImportSelectionItem &
+  Record<string, unknown> & {
+    selectionKey: string;
+  };
+
 export type NacosDeleteResponse = {
   success: boolean;
   message?: string;
@@ -15,6 +29,55 @@ export type NacosDeleteFailure<T extends NacosConfigIdentity> = {
 
 export const nacosConfigSelectionKey = (item: NacosConfigIdentity): string =>
   JSON.stringify([String(item.group || 'DEFAULT_GROUP'), String(item.dataId || '')]);
+
+const normalizeNacosImportIdentity = (
+  item: NacosImportIdentityInput,
+): NacosConfigIdentity => ({
+  group: String(item?.group ?? ''),
+  dataId: String(item?.dataId ?? ''),
+});
+
+export const nacosImportSelectionKey = (
+  item: NacosImportIdentityInput,
+  index: number,
+): string => {
+  const identity = normalizeNacosImportIdentity(item);
+  return JSON.stringify([index, identity.group, identity.dataId]);
+};
+
+export const buildNacosImportSelectionRows = (
+  rows: NacosImportIdentityInput[],
+): NacosImportSelectionRow[] =>
+  rows.map((row, index) => {
+    const identity = normalizeNacosImportIdentity(row);
+    const sourceIndex = Number(row?.index);
+    const previewIndex = Number.isInteger(sourceIndex) && sourceIndex >= 0
+      ? sourceIndex
+      : index;
+    return {
+      ...(row || {}),
+      ...identity,
+      index: previewIndex,
+      selectionKey: nacosImportSelectionKey(identity, previewIndex),
+    };
+  });
+
+export const selectedNacosImportItems = (
+  rows: NacosImportIdentityInput[],
+  keys: Array<string | number | bigint>,
+): NacosImportSelectionItem[] => {
+  const selectedKeys = new Set(keys.map((key) => String(key)));
+  return buildNacosImportSelectionRows(rows).flatMap((row) => {
+    if (!selectedKeys.has(row.selectionKey)) {
+      return [];
+    }
+    return [{
+      group: row.group,
+      dataId: row.dataId,
+      index: row.index,
+    }];
+  });
+};
 
 export const selectedNacosConfigItems = <T extends NacosConfigIdentity>(
   rows: T[],

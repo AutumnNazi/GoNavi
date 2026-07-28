@@ -27,6 +27,7 @@ import {
   SaveOutlined,
   UploadOutlined,
 } from '@ant-design/icons';
+import { v4 as uuidv4 } from 'uuid';
 import Editor from './MonacoEditor';
 import RedisResizableDivider from './RedisResizableDivider';
 import { buildRedisWorkbenchTheme } from './redisViewerWorkbenchTheme';
@@ -40,17 +41,18 @@ import {
 } from '../utils/appearance';
 import { buildRpcConnectionConfig } from '../utils/connectionRpcConfig';
 import {
-  isConnectionDataEditRestricted,
   isConnectionDataImportRestricted,
 } from '../utils/connectionReadOnly';
 import { t, type I18nParams } from '../i18n';
 import { useOptionalI18n } from '../i18n/provider';
 import { noAutoCapInputProps } from '../utils/inputAutoCap';
 import {
+  buildNacosImportSelectionRows,
   deleteSelectedNacosConfigs,
   nacosConfigSelectionKey,
   reconcileNacosConfigSelection,
   selectedNacosConfigItems,
+  selectedNacosImportItems,
 } from './nacosConfigSelection';
 
 type NacosConfigItem = {
@@ -202,9 +204,12 @@ const NacosViewer: React.FC<NacosViewerProps> = ({
   ), [isV2Ui, workbenchTheme]);
 
   const connection = connections.find((item) => item.id === connectionId);
-  const readOnly = isConnectionDataEditRestricted(connection?.config)
-    || !!connection?.config?.readOnly;
-  const importRestricted = isConnectionDataImportRestricted(connection?.config) || readOnly;
+  const connectionProtection = connection?.config?.protection;
+  const readOnly = !!connection?.config?.readOnly
+    || connectionProtection?.restrictDataEdit === true;
+  const importRestricted = readOnly
+    || connectionProtection?.restrictDataImport === true
+    || isConnectionDataImportRestricted(connection?.config);
 
   const [loadingList, setLoadingList] = useState(false);
   const [loadingDetail, setLoadingDetail] = useState(false);
@@ -256,13 +261,33 @@ const NacosViewer: React.FC<NacosViewerProps> = ({
   const watchIdRef = useRef<string | null>(null);
   const detailRef = useRef<NacosConfigDetail | null>(null);
   const draftDirtyRef = useRef(false);
+  const selectionGenerationRef = useRef(0);
+  const listenGenerationRef = useRef(0);
+  const mountedRef = useRef(true);
 
   const rpcConfig = useMemo(() => {
     if (!connection?.config) return null;
     return buildRpcConnectionConfig(connection.config as any);
   }, [connection?.config]);
+  const selectionContextRef = useRef({
+    connectionId,
+    namespaceId,
+    rpcConfig,
+  });
+  selectionContextRef.current = {
+    connectionId,
+    namespaceId,
+    rpcConfig,
+  };
 
   const selectedRowKey = selectedKey;
+  const importSelectionRows = useMemo(
+    () =>
+      buildNacosImportSelectionRows(
+        Array.isArray(importPreview?.items) ? importPreview.items : [],
+      ),
+    [importPreview],
+  );
   const selectedItems = useMemo(
     () => selectedNacosConfigItems(items, selectedRowKeys),
     [items, selectedRowKeys],
@@ -278,26 +303,54 @@ const NacosViewer: React.FC<NacosViewerProps> = ({
     draftDirtyRef.current = draftDirty;
   }, [draftDirty]);
 
-  const stopListen = useCallback(async () => {
-    const watchId = watchIdRef.current;
-    watchIdRef.current = null;
-    setListenActive(false);
+  const stopWatch = useCallback(async (watchId: string | null) => {
     if (!watchId) return;
     try {
       await (window as any).go.app.App.NacosStopConfigListen(watchId);
     } catch {
-      // ignore stop errors on unmount
+      // Stopping a listener is best-effort during selection changes/unmount.
     }
   }, []);
 
+  const stopListen = useCallback(async () => {
+    listenGenerationRef.current += 1;
+    const watchId = watchIdRef.current;
+    watchIdRef.current = null;
+    if (mountedRef.current) {
+      setListenActive(false);
+    }
+    await stopWatch(watchId);
+  }, [stopWatch]);
+
   const startListen = useCallback(
-    async (target: NacosConfigDetail) => {
+    async (target: NacosConfigDetail, selectionGeneration: number) => {
       if (!rpcConfig) return;
-      await stopListen();
-      setRemoteChanged(false);
+      const listenGeneration = ++listenGenerationRef.current;
+      const previousWatchId = watchIdRef.current;
+      watchIdRef.current = null;
+      if (mountedRef.current) {
+        setListenActive(false);
+        setRemoteChanged(false);
+      }
+      await stopWatch(previousWatchId);
+      const isCurrentListen = () => {
+        const currentContext = selectionContextRef.current;
+        return (
+          mountedRef.current &&
+          listenGenerationRef.current === listenGeneration &&
+          selectionGenerationRef.current === selectionGeneration &&
+          currentContext.connectionId === connectionId &&
+          currentContext.namespaceId === namespaceId &&
+          currentContext.rpcConfig === rpcConfig
+        );
+      };
+      if (!isCurrentListen()) return;
       const contentMd5 = String(target.md5 || '').trim();
+      const pendingWatchId = `nacos-${uuidv4()}`;
+      watchIdRef.current = pendingWatchId;
       try {
         const res = await (window as any).go.app.App.NacosStartConfigListen(rpcConfig, {
+          watchId: pendingWatchId,
           connectionId,
           namespaceId: namespaceId || '',
           dataId: target.dataId,
@@ -305,17 +358,31 @@ const NacosViewer: React.FC<NacosViewerProps> = ({
           contentMd5,
         });
         if (!res?.success) {
-          setListenActive(false);
+          if (isCurrentListen()) {
+            if (watchIdRef.current === pendingWatchId) {
+              watchIdRef.current = null;
+            }
+            setListenActive(false);
+          }
           return;
         }
         const nextWatchId = String(res?.data?.watchId || '').trim();
+        if (!isCurrentListen()) {
+          await stopWatch(nextWatchId || null);
+          return;
+        }
         watchIdRef.current = nextWatchId || null;
         setListenActive(!!nextWatchId);
       } catch {
-        setListenActive(false);
+        if (isCurrentListen()) {
+          if (watchIdRef.current === pendingWatchId) {
+            watchIdRef.current = null;
+          }
+          setListenActive(false);
+        }
       }
     },
-    [rpcConfig, connectionId, namespaceId, stopListen],
+    [rpcConfig, connectionId, namespaceId, stopWatch],
   );
 
   const mergeUniqueStrings = useCallback((prev: string[], next: string[]) => {
@@ -423,8 +490,26 @@ const NacosViewer: React.FC<NacosViewerProps> = ({
   );
 
   const loadBetaMeta = useCallback(
-    async (item: { dataId: string; group: string }) => {
+    async (
+      item: { dataId: string; group: string },
+      selectionGeneration = selectionGenerationRef.current,
+    ) => {
       if (!rpcConfig) return;
+      const requestContext = {
+        connectionId,
+        namespaceId,
+        rpcConfig,
+      };
+      const isCurrentSelection = () => {
+        const currentContext = selectionContextRef.current;
+        return (
+          mountedRef.current &&
+          selectionGenerationRef.current === selectionGeneration &&
+          currentContext.connectionId === requestContext.connectionId &&
+          currentContext.namespaceId === requestContext.namespaceId &&
+          currentContext.rpcConfig === requestContext.rpcConfig
+        );
+      };
       try {
         const res = await (window as any).go.app.App.NacosGetBetaConfig(
           rpcConfig,
@@ -432,6 +517,7 @@ const NacosViewer: React.FC<NacosViewerProps> = ({
           item.group,
           item.dataId,
         );
+        if (!isCurrentSelection()) return;
         if (!res?.success) {
           setBetaExists(false);
           return;
@@ -444,15 +530,33 @@ const NacosViewer: React.FC<NacosViewerProps> = ({
           setBetaIps('');
         }
       } catch {
-        setBetaExists(false);
+        if (isCurrentSelection()) {
+          setBetaExists(false);
+        }
       }
     },
-    [rpcConfig, namespaceId],
+    [rpcConfig, connectionId, namespaceId],
   );
 
   const loadDetail = useCallback(
     async (item: NacosConfigItem) => {
       if (!rpcConfig) return;
+      const generation = ++selectionGenerationRef.current;
+      void stopListen();
+      const requestContext = {
+        connectionId,
+        namespaceId,
+        rpcConfig,
+      };
+      const isCurrentSelection = () => {
+        const currentContext = selectionContextRef.current;
+        return (
+          selectionGenerationRef.current === generation &&
+          currentContext.connectionId === requestContext.connectionId &&
+          currentContext.namespaceId === requestContext.namespaceId &&
+          currentContext.rpcConfig === requestContext.rpcConfig
+        );
+      };
       setLoadingDetail(true);
       try {
         const res = await (window as any).go.app.App.NacosGetConfig(
@@ -461,6 +565,7 @@ const NacosViewer: React.FC<NacosViewerProps> = ({
           item.group,
           item.dataId,
         );
+        if (!isCurrentSelection()) return;
         if (!res?.success) {
           message.error(
             tr('nacos_viewer.message.load_failed', {
@@ -470,29 +575,59 @@ const NacosViewer: React.FC<NacosViewerProps> = ({
           return;
         }
         const next = (res.data || {}) as NacosConfigDetail;
+        detailRef.current = next;
+        draftDirtyRef.current = false;
         setDetail(next);
         setDraftContent(String(next.content ?? ''));
         setDraftType(String(next.type || item.type || 'text'));
         setDraftDirty(false);
         setRemoteChanged(false);
         setPublishMode('formal');
-        setSelectedKey(`${item.group}@@${item.dataId}`);
-        void startListen(next);
-        void loadBetaMeta({ dataId: next.dataId, group: next.group });
+        setSelectedKey(nacosConfigSelectionKey(item));
+        void startListen(next, generation);
+        void loadBetaMeta(
+          { dataId: next.dataId, group: next.group },
+          generation,
+        );
       } catch (error: any) {
+        if (!isCurrentSelection()) return;
         message.error(
           tr('nacos_viewer.message.load_failed', {
             detail: error?.message || String(error),
           }),
         );
       } finally {
-        setLoadingDetail(false);
+        if (isCurrentSelection()) {
+          setLoadingDetail(false);
+        }
       }
     },
-    [rpcConfig, namespaceId, tr, startListen, loadBetaMeta],
+    [
+      rpcConfig,
+      connectionId,
+      namespaceId,
+      tr,
+      startListen,
+      stopListen,
+      loadBetaMeta,
+    ],
   );
 
   useEffect(() => {
+    selectionGenerationRef.current += 1;
+    void stopListen();
+    detailRef.current = null;
+    draftDirtyRef.current = false;
+    setLoadingDetail(false);
+    setDetail(null);
+    setSelectedKey(null);
+    setDraftContent('');
+    setDraftType('text');
+    setDraftDirty(false);
+    setRemoteChanged(false);
+    setListenActive(false);
+    setBetaExists(false);
+    setBetaIps('');
     const nextGroup = String(initialGroup || '').trim();
     setFilterGroup(nextGroup);
     setDataIdSuggestions([]);
@@ -500,7 +635,7 @@ const NacosViewer: React.FC<NacosViewerProps> = ({
     // Reload when switching tab identity / initial group.
     void loadList(1);
     void loadFilterSuggestions();
-  }, [connectionId, namespaceId, initialGroup]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [connectionId, namespaceId, initialGroup, rpcConfig]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Keep table body height = available pane height (minus real pagination height).
   useEffect(() => {
@@ -589,12 +724,15 @@ const NacosViewer: React.FC<NacosViewerProps> = ({
       const current = detailRef.current;
       if (!current) return;
       const watchId = watchIdRef.current;
-      if (watchId && event?.watchId && event.watchId !== watchId) return;
+      if (!watchId) return;
+      if (event?.watchId && event.watchId !== watchId) return;
       if (event?.connectionId && event.connectionId !== connectionId) return;
+      if (event?.namespaceId && event.namespaceId !== namespaceId) return;
       const eventDataId = String(event?.dataId || '').trim();
       const eventGroup = String(event?.group || 'DEFAULT_GROUP').trim() || 'DEFAULT_GROUP';
       if (eventDataId && eventDataId !== current.dataId) return;
       if (eventGroup && eventGroup !== current.group) return;
+      void stopListen();
       setRemoteChanged(true);
       if (!draftDirtyRef.current) {
         message.info(tr('nacos_viewer.message.remote_changed'));
@@ -603,10 +741,13 @@ const NacosViewer: React.FC<NacosViewerProps> = ({
     return () => {
       if (typeof off === 'function') off();
     };
-  }, [connectionId, tr]);
+  }, [connectionId, namespaceId, stopListen, tr]);
 
   useEffect(() => {
+    mountedRef.current = true;
     return () => {
+      mountedRef.current = false;
+      selectionGenerationRef.current += 1;
       void stopListen();
     };
   }, [stopListen]);
@@ -764,9 +905,9 @@ const NacosViewer: React.FC<NacosViewerProps> = ({
       }
       const preview = res.data || {};
       setImportPreview(preview);
-      const keys = (Array.isArray(preview.items) ? preview.items : []).map(
-        (item: any) => `${item.group}@@${item.dataId}`,
-      );
+      const keys = buildNacosImportSelectionRows(
+        Array.isArray(preview.items) ? preview.items : [],
+      ).map((row) => row.selectionKey);
       setImportSelectedKeys(keys);
       setImportConflictMode('skip');
       setImportModalOpen(true);
@@ -779,10 +920,10 @@ const NacosViewer: React.FC<NacosViewerProps> = ({
     if (!rpcConfig || !importPreview || importRestricted) return;
     setImporting(true);
     try {
-      const selectedItems = importSelectedKeys.map((key) => {
-        const [group, dataId] = String(key).split('@@');
-        return { group, dataId };
-      });
+      const selectedItems = selectedNacosImportItems(
+        Array.isArray(importPreview.items) ? importPreview.items : [],
+        importSelectedKeys,
+      );
       const res = await (window as any).go.app.App.NacosImportConfigs(rpcConfig, {
         namespaceId: namespaceId || '',
         conflictMode: importConflictMode,
@@ -815,7 +956,6 @@ const NacosViewer: React.FC<NacosViewerProps> = ({
       group: detail.group,
       type: draftType || detail.type,
     });
-    setRemoteChanged(false);
   };
 
   const resetDetailState = () => {
@@ -1422,7 +1562,7 @@ const NacosViewer: React.FC<NacosViewerProps> = ({
                 },
               })}
               rowClassName={(record) =>
-                selectedRowKey === `${record.group}@@${record.dataId}`
+                selectedRowKey === nacosConfigSelectionKey(record)
                   ? 'ant-table-row-selected gn-nacos-config-table__row--active'
                   : 'gn-nacos-config-table__row'
               }
@@ -1614,7 +1754,7 @@ const NacosViewer: React.FC<NacosViewerProps> = ({
         open={newModalOpen}
         onCancel={() => setNewModalOpen(false)}
         onOk={() => void handleCreate()}
-        destroyOnClose
+        destroyOnHidden
       >
         <Form form={newForm} layout="vertical" initialValues={{ group: 'DEFAULT_GROUP', type: 'text' }}>
           <Form.Item
@@ -1642,7 +1782,7 @@ const NacosViewer: React.FC<NacosViewerProps> = ({
         onCancel={() => setHistoryOpen(false)}
         footer={null}
         width={860}
-        destroyOnClose
+        destroyOnHidden
       >
         <Table
           size="small"
@@ -1766,9 +1906,9 @@ const NacosViewer: React.FC<NacosViewerProps> = ({
         onCancel={() => setImportModalOpen(false)}
         onOk={() => void handleImport()}
         confirmLoading={importing}
-        okButtonProps={{ disabled: importSelectedKeys.length === 0 }}
+        okButtonProps={{ disabled: importRestricted || importSelectedKeys.length === 0 }}
         width={820}
-        destroyOnClose
+        destroyOnHidden
       >
         {importPreview ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -1792,8 +1932,8 @@ const NacosViewer: React.FC<NacosViewerProps> = ({
             />
             <Table
               size="small"
-              rowKey={(row: any) => `${row.group}@@${row.dataId}`}
-              dataSource={Array.isArray(importPreview.items) ? importPreview.items : []}
+              rowKey="selectionKey"
+              dataSource={importSelectionRows}
               pagination={{ pageSize: 8 }}
               rowSelection={{
                 selectedRowKeys: importSelectedKeys,

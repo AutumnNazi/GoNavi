@@ -1,9 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import {
+  buildNacosImportSelectionRows,
   deleteSelectedNacosConfigs,
   nacosConfigSelectionKey,
+  nacosImportSelectionKey,
   reconcileNacosConfigSelection,
+  selectedNacosImportItems,
   selectedNacosConfigItems,
 } from './nacosConfigSelection';
 
@@ -14,6 +17,78 @@ const rows = [
 ];
 
 describe('nacos config selection', () => {
+  it('round-trips import identities containing @@ without splitting fields', () => {
+    const importRows = [
+      { group: 'GROUP@@blue', dataId: 'config@@prod.yaml' },
+      { group: 'GROUP', dataId: 'other.yaml' },
+    ];
+    const selectedKey = nacosImportSelectionKey(importRows[0], 0);
+
+    expect(selectedNacosImportItems(importRows, [selectedKey])).toEqual([
+      { group: 'GROUP@@blue', dataId: 'config@@prod.yaml', index: 0 },
+    ]);
+  });
+
+  it('keeps duplicate and empty import rows independently selectable', () => {
+    const importRows = [
+      { group: 'DUPLICATE', dataId: 'same.yaml' },
+      { group: 'DUPLICATE', dataId: 'same.yaml' },
+      { group: '', dataId: '' },
+      null,
+    ];
+    const keys = importRows.map(nacosImportSelectionKey);
+
+    expect(new Set(keys).size).toBe(importRows.length);
+    expect(
+      selectedNacosImportItems(importRows, [keys[1], keys[2], keys[3]]),
+    ).toEqual([
+      { group: 'DUPLICATE', dataId: 'same.yaml', index: 1 },
+      { group: '', dataId: '', index: 2 },
+      { group: '', dataId: '', index: 3 },
+    ]);
+  });
+
+  it('materializes stable preview row keys without relying on paginated table indexes', () => {
+    const importRows = [
+      {
+        group: 'DUPLICATE',
+        dataId: 'same.yaml',
+        exists: false,
+        index: 7,
+      },
+      {
+        group: 'DUPLICATE',
+        dataId: 'same.yaml',
+        exists: true,
+        index: 9,
+      },
+      null,
+    ];
+
+    expect(buildNacosImportSelectionRows(importRows)).toEqual([
+      {
+        group: 'DUPLICATE',
+        dataId: 'same.yaml',
+        exists: false,
+        index: 7,
+        selectionKey: '[7,"DUPLICATE","same.yaml"]',
+      },
+      {
+        group: 'DUPLICATE',
+        dataId: 'same.yaml',
+        exists: true,
+        index: 9,
+        selectionKey: '[9,"DUPLICATE","same.yaml"]',
+      },
+      {
+        group: '',
+        dataId: '',
+        index: 2,
+        selectionKey: '[2,"",""]',
+      },
+    ]);
+  });
+
   it('builds collision-safe keys for arbitrary data ids and groups', () => {
     expect(nacosConfigSelectionKey(rows[2])).toBe('["APP_GROUP","contains@@separator"]');
     expect(nacosConfigSelectionKey({ dataId: 'separator', group: 'APP_GROUP@@contains' }))

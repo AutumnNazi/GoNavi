@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   buildNacosServicesTabData,
+  resolveNacosNamespaceDiscoveryModeFromTreeNode,
   resolveNacosServicesDoubleClickAction,
   shouldLoadSidebarNodeOnExpand as shouldLoadV2SidebarNodeOnExpand,
 } from './sidebarV2Utils';
@@ -14,6 +15,27 @@ const namespaceData = {
 };
 
 describe('Nacos service group navigation', () => {
+  it('recovers configured namespace discovery mode from preserved children after a root rebuild', () => {
+    expect(resolveNacosNamespaceDiscoveryModeFromTreeNode({
+      type: 'connection',
+      dataRef: {
+        id: 'nacos-1',
+        config: { type: 'nacos' },
+      },
+      children: [
+        {
+          title: 'Development',
+          key: 'nacos-1-nacos-ns-dev',
+          type: 'nacos-namespace',
+          dataRef: {
+            id: 'nacos-1',
+            nacosNamespaceDiscoveryMode: 'configured',
+          },
+        },
+      ],
+    })).toBe('configured');
+  });
+
   it('keeps the service explorer entry as a lazy folder on double click', () => {
     const entryNode = {
       type: 'nacos-services-entry' as const,
@@ -62,5 +84,21 @@ describe('Nacos service group navigation', () => {
         nacosGroup: 'MKEFU SERVICE',
       }),
     });
+  });
+
+  it('does not collide when a namespace contains the group delimiter', () => {
+    const allServices = buildNacosServicesTabData({
+      id: 'nacos-1',
+      nacosNamespaceId: 'dev-g-orders',
+      nacosNamespaceName: 'Combined namespace',
+    });
+    const groupServices = buildNacosServicesTabData({
+      id: 'nacos-1',
+      nacosNamespaceId: 'dev',
+      nacosNamespaceName: 'Development',
+      nacosGroup: 'orders',
+    });
+
+    expect(allServices.id).not.toBe(groupServices.id);
   });
 });
