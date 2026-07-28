@@ -42,6 +42,11 @@ type ViewerPaginationState = {
   totalCountCancelled: boolean;
 };
 
+type DataViewerFetchOptions = {
+  refreshTotal?: boolean;
+  navigateToLastPage?: boolean;
+};
+
 type DataViewerTranslator = (key: string, params?: I18nParams) => string;
 
 const JS_MAX_SAFE_INTEGER_BIGINT = BigInt(Number.MAX_SAFE_INTEGER);
@@ -583,8 +588,9 @@ const DataViewer: React.FC<{ tab: TabData; isActive?: boolean }> = React.memo(({
     setPagination(prev => ({ ...prev, totalCountLoading: false, totalCountCancelled: true }));
   }, []);
 
-  const fetchData = useCallback(async (page = pagination.current, size = pagination.pageSize, options?: { refreshTotal?: boolean }) => {
-    const refreshTotal = options?.refreshTotal === true;
+  const fetchData = useCallback(async (page = pagination.current, size = pagination.pageSize, options?: DataViewerFetchOptions) => {
+    const navigateToLastPage = options?.navigateToLastPage === true;
+    const refreshTotal = options?.refreshTotal === true || navigateToLastPage;
     const seq = ++fetchSeqRef.current;
     setLoading(true);
     const conn = connections.find(c => c.id === tab.connectionId);
@@ -726,12 +732,81 @@ const DataViewer: React.FC<{ tab: TabData; isActive?: boolean }> = React.memo(({
     const countSql = isMongoDB
       ? buildMongoCountCommand(tableName, mongoFilter || {})
       : `SELECT COUNT(*) as total FROM ${quoteQualifiedIdent(dbType, tableName)} ${whereSQL}`;
+    const countKey = `${tab.connectionId}|${dbName}|${tableName}|${whereSQL}`;
+    let refreshedTotal: number | null = null;
+
+    if (navigateToLastPage) {
+        countSeqRef.current++;
+        manualCountSeqRef.current++;
+        duckdbApproxSeqRef.current++;
+        oracleApproxSeqRef.current++;
+        countKeyRef.current = '';
+        autoCountKeyRef.current = '';
+        manualCountKeyRef.current = '';
+        duckdbApproxKeyRef.current = '';
+        oracleApproxKeyRef.current = '';
+        setPagination(prev => ({
+            ...prev,
+            totalCountLoading: false,
+            totalCountCancelled: false,
+        }));
+
+        latestConfigRef.current = config;
+        latestDbTypeRef.current = dbTypeLower;
+        latestDbNameRef.current = dbName;
+        latestCountSqlRef.current = countSql;
+        latestCountKeyRef.current = countKey;
+
+        const countStart = Date.now();
+        const countConfig = buildRpcConnectionConfig(config, { timeout: 120 });
+        try {
+            const resCount = await DBQuery(countConfig as any, dbName, countSql);
+            addSqlLog({
+                id: `log-${Date.now()}-last-page-count`,
+                timestamp: Date.now(),
+                sql: countSql,
+                status: resCount?.success ? 'success' : 'error',
+                duration: Date.now() - countStart,
+                message: resCount?.success ? '' : String(resCount?.message || tr('data_viewer.message.total_count_failed')),
+                dbName,
+            });
+
+            if (fetchSeqRef.current !== seq) return;
+            if (!resCount?.success) {
+                setPagination(prev => ({ ...prev, totalCountLoading: false }));
+                message.error(String(resCount?.message || tr('data_viewer.message.total_count_failed')));
+                setLoading(false);
+                return;
+            }
+            if (!Array.isArray(resCount.data) || resCount.data.length === 0) {
+                setPagination(prev => ({ ...prev, totalCountLoading: false }));
+                message.error(tr('data_viewer.message.total_count_failed'));
+                setLoading(false);
+                return;
+            }
+
+            refreshedTotal = parseTotalFromCountRow(resCount.data[0]);
+            if (refreshedTotal === null) {
+                setPagination(prev => ({ ...prev, totalCountLoading: false }));
+                message.error(tr('data_viewer.message.total_count_parse_failed'));
+                setLoading(false);
+                return;
+            }
+        } catch (e: any) {
+            if (fetchSeqRef.current !== seq) return;
+            setPagination(prev => ({ ...prev, totalCountLoading: false }));
+            message.error(tr('data_viewer.message.total_count_failed_detail', { detail: String(e?.message || e) }));
+            setLoading(false);
+            return;
+        }
+    }
+
     const orderBySQL = isMongoDB
       ? ''
       : buildOrderBySQL(dbType, sortInfo, resolveDataViewerOrderFallbackColumns(editLocatorForQuery, pkColumnsForQuery));
-    const totalRows = Number(pagination.total);
+    const totalRows = refreshedTotal ?? Number(pagination.total);
     const hasFiniteTotal = Number.isFinite(totalRows) && totalRows >= 0;
-    const totalKnown = !refreshTotal && pagination.totalKnown && hasFiniteTotal;
+    const totalKnown = refreshedTotal !== null || (!refreshTotal && pagination.totalKnown && hasFiniteTotal);
     const approximateTotalRows = Number(pagination.approximateTotal);
     const hasApproximateTotalPages =
       !refreshTotal &&
@@ -740,9 +815,10 @@ const DataViewer: React.FC<{ tab: TabData; isActive?: boolean }> = React.memo(({
       pagination.totalApprox &&
       Number.isFinite(approximateTotalRows) &&
       approximateTotalRows > 0;
-    const effectiveTotalRows = hasApproximateTotalPages ? approximateTotalRows : (refreshTotal ? 0 : totalRows);
+    const effectiveTotalRows = refreshedTotal ?? (hasApproximateTotalPages ? approximateTotalRows : (refreshTotal ? 0 : totalRows));
     const totalPages = Number.isFinite(effectiveTotalRows) && effectiveTotalRows > 0 ? Math.max(1, Math.ceil(effectiveTotalRows / size)) : 0;
-    const currentPage = totalPages > 0 ? Math.min(Math.max(1, page), totalPages) : Math.max(1, page);
+    const requestedPage = navigateToLastPage ? Math.max(1, totalPages) : page;
+    const currentPage = totalPages > 0 ? Math.min(Math.max(1, requestedPage), totalPages) : Math.max(1, requestedPage);
     const offset = (currentPage - 1) * size;
     const isClickHouse = !isMongoDB && dbTypeLower === 'clickhouse';
     const reverseOrderSQL = isClickHouse ? reverseOrderBySQL(orderBySQL) : '';
@@ -905,7 +981,6 @@ const DataViewer: React.FC<{ tab: TabData; isActive?: boolean }> = React.memo(({
                 if (row && typeof row === 'object') row[GONAVI_ROW_KEY] = `row-${offset + i}`;
             });
             setData(resultData);
-            const countKey = `${tab.connectionId}|${dbName}|${tableName}|${whereSQL}`;
             const derivedTotalKnown = !hasMore;
             const derivedTotal = derivedTotalKnown ? offset + resultData.length : currentPage * size + 1;
             const minExpectedTotal = hasMore ? offset + resultData.length + 1 : offset + resultData.length;
@@ -1193,6 +1268,9 @@ const DataViewer: React.FC<{ tab: TabData; isActive?: boolean }> = React.memo(({
     setSortInfo([{ columnKey: normalizedField, order: normalizedOrder, enabled: true }]);
   }, []);
   const handlePageChange = useCallback((page: number, size: number) => fetchData(page, size), [fetchData]);
+  const handleLastPage = useCallback((pageSize: number) => (
+    fetchData(1, pageSize, { navigateToLastPage: true })
+  ), [fetchData]);
   const handleToggleFilter = useCallback(() => setShowFilter(prev => !prev), []);
   const handleApplyFilter = useCallback((conditions: FilterCondition[]) => {
     skipNextAutoFetchRef.current = false;
@@ -1278,6 +1356,7 @@ const DataViewer: React.FC<{ tab: TabData; isActive?: boolean }> = React.memo(({
           onReload={handleReload}
           onSort={handleSort}
           onPageChange={handlePageChange}
+          onLastPage={handleLastPage}
           pagination={pagination}
           onRequestTotalCount={preferManualTotalCount ? handleManualTotalCount : undefined}
           onCancelTotalCount={preferManualTotalCount ? handleCancelManualTotalCount : undefined}

@@ -673,6 +673,203 @@ describe('DataViewer safe editing locator', () => {
     renderer!.unmount();
   });
 
+  it.each([
+    { label: 'shrinks', nextTotal: 51, expectedPage: 6, expectedOffset: 50 },
+    { label: 'grows', nextTotal: 151, expectedPage: 16, expectedOffset: 150 },
+  ])('recounts and navigates to the current last page when table data $label', async ({
+    nextTotal,
+    expectedPage,
+    expectedOffset,
+  }) => {
+    storeState.connections[0].config.type = 'mysql';
+    storeState.connections[0].config.database = 'main';
+    backendApp.DBGetColumns.mockResolvedValue({
+      success: true,
+      data: [{ name: 'ID', key: 'PRI' }, { name: 'NAME', key: '' }],
+    });
+
+    let databaseTotal = 101;
+    backendApp.DBQuery.mockImplementation(async (_config: any, _dbName: string, sql: string) => {
+      const normalizedSql = String(sql || '');
+      if (/count\s*\(/i.test(normalizedSql)) {
+        return {
+          success: true,
+          fields: ['total'],
+          data: [{ total: databaseTotal }],
+        };
+      }
+      const limit = Number(normalizedSql.match(/\bLIMIT\s+(\d+)/i)?.[1] || 101);
+      const offset = Number(normalizedSql.match(/\bOFFSET\s+(\d+)/i)?.[1] || 0);
+      const rowCount = Math.max(0, Math.min(limit, databaseTotal - offset));
+      return {
+        success: true,
+        fields: ['ID', 'NAME'],
+        data: createRows(rowCount),
+      };
+    });
+
+    let renderer: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<DataViewer tab={createTab({
+        id: `tab-last-page-${nextTotal}`,
+        dbName: 'main',
+        tableName: 'users',
+        title: 'users',
+      })} />);
+    });
+    await flushPromises();
+
+    expect(dataGridState.latestProps?.pagination).toMatchObject({ total: 101, totalKnown: true });
+
+    await act(async () => {
+      await dataGridState.latestProps.onPageChange(11, 10);
+    });
+    await flushPromises();
+    expect(dataGridState.latestProps?.pagination).toMatchObject({ current: 11, pageSize: 10, total: 101 });
+
+    databaseTotal = nextTotal;
+    const callsBeforeLastPage = backendApp.DBQuery.mock.calls.length;
+    expect(dataGridState.latestProps?.onLastPage).toEqual(expect.any(Function));
+    await act(async () => {
+      await dataGridState.latestProps.onLastPage(10);
+    });
+    await flushPromises();
+
+    const lastPageSql = backendApp.DBQuery.mock.calls
+      .slice(callsBeforeLastPage)
+      .map((call: any[]) => String(call[2] || ''));
+    expect(lastPageSql[0]).toMatch(/count\s*\(/i);
+    expect(lastPageSql.some((sql: string) => new RegExp(`\\bOFFSET\\s+${expectedOffset}\\b`, 'i').test(sql))).toBe(true);
+    expect(dataGridState.latestProps?.pagination).toMatchObject({
+      current: expectedPage,
+      pageSize: 10,
+      total: nextTotal,
+      totalKnown: true,
+    });
+    expect(dataGridState.latestProps?.data).toHaveLength(1);
+    renderer!.unmount();
+  });
+
+  it('ignores a stale last-page count after a newer page navigation starts', async () => {
+    storeState.connections[0].config.type = 'mysql';
+    storeState.connections[0].config.database = 'main';
+    backendApp.DBGetColumns.mockResolvedValue({
+      success: true,
+      data: [{ name: 'ID', key: 'PRI' }, { name: 'NAME', key: '' }],
+    });
+
+    let deferNextCount = false;
+    let resolveDeferredCount: ((value: any) => void) | undefined;
+    backendApp.DBQuery.mockImplementation(async (_config: any, _dbName: string, sql: string) => {
+      const normalizedSql = String(sql || '');
+      if (/count\s*\(/i.test(normalizedSql)) {
+        if (deferNextCount) {
+          deferNextCount = false;
+          return new Promise((resolve) => {
+            resolveDeferredCount = resolve;
+          });
+        }
+        return { success: true, fields: ['total'], data: [{ total: 101 }] };
+      }
+      const limit = Number(normalizedSql.match(/\bLIMIT\s+(\d+)/i)?.[1] || 101);
+      const offset = Number(normalizedSql.match(/\bOFFSET\s+(\d+)/i)?.[1] || 0);
+      return {
+        success: true,
+        fields: ['ID', 'NAME'],
+        data: createRows(Math.max(0, Math.min(limit, 101 - offset))),
+      };
+    });
+
+    let renderer: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<DataViewer tab={createTab({
+        id: 'tab-last-page-race',
+        dbName: 'main',
+        tableName: 'users',
+        title: 'users',
+      })} />);
+    });
+    await flushPromises();
+
+    deferNextCount = true;
+    let staleLastPageRequest!: Promise<void>;
+    act(() => {
+      staleLastPageRequest = dataGridState.latestProps.onLastPage(10);
+    });
+    await flushPromises();
+    expect(resolveDeferredCount).toEqual(expect.any(Function));
+
+    await act(async () => {
+      await dataGridState.latestProps.onPageChange(2, 10);
+    });
+    await flushPromises();
+
+    await act(async () => {
+      resolveDeferredCount?.({ success: true, fields: ['total'], data: [{ total: 151 }] });
+      await staleLastPageRequest;
+    });
+    await flushPromises();
+
+    expect(dataGridState.latestProps?.pagination).toMatchObject({
+      current: 2,
+      pageSize: 10,
+      total: 101,
+      totalKnown: true,
+    });
+    expect(backendApp.DBQuery.mock.calls
+      .map((call: any[]) => String(call[2] || ''))
+      .some((sql: string) => /\bOFFSET\s+150\b/i.test(sql))).toBe(false);
+    renderer!.unmount();
+  });
+
+  it('reports a fresh last-page count failure without querying the cached tail', async () => {
+    storeState.connections[0].config.type = 'mysql';
+    storeState.connections[0].config.database = 'main';
+    backendApp.DBGetColumns.mockResolvedValue({
+      success: true,
+      data: [{ name: 'ID', key: 'PRI' }, { name: 'NAME', key: '' }],
+    });
+
+    let failNextCount = false;
+    backendApp.DBQuery.mockImplementation(async (_config: any, _dbName: string, sql: string) => {
+      const normalizedSql = String(sql || '');
+      if (/count\s*\(/i.test(normalizedSql)) {
+        if (failNextCount) {
+          failNextCount = false;
+          return { success: false, message: '', data: [] };
+        }
+        return { success: true, fields: ['total'], data: [{ total: 101 }] };
+      }
+      return { success: true, fields: ['ID', 'NAME'], data: createRows(101) };
+    });
+
+    let renderer: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<DataViewer tab={createTab({
+        id: 'tab-last-page-count-failure',
+        dbName: 'main',
+        tableName: 'users',
+        title: 'users',
+      })} />);
+    });
+    await flushPromises();
+
+    failNextCount = true;
+    const callsBeforeLastPage = backendApp.DBQuery.mock.calls.length;
+    await act(async () => {
+      await dataGridState.latestProps.onLastPage(10);
+    });
+    await flushPromises();
+
+    const lastPageSql = backendApp.DBQuery.mock.calls
+      .slice(callsBeforeLastPage)
+      .map((call: any[]) => String(call[2] || ''));
+    expect(lastPageSql).toHaveLength(1);
+    expect(lastPageSql[0]).toMatch(/count\s*\(/i);
+    expect(messageApi.error).toHaveBeenCalledWith('统计总数失败');
+    renderer!.unmount();
+  });
+
   it('shows an actionable message for DuckDB timeout interruption errors', async () => {
     storeState.languagePreference = 'en-US';
     storeState.connections[0].config.type = 'duckdb';

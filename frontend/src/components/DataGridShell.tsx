@@ -228,6 +228,7 @@ const DataGridShell: React.FC<DataGridShellProps> = (props) => {
     onCancelTotalCount,
     onOpenErTable,
     onPageChange,
+    onLastPage,
     onReload,
     onRequestTotalCount,
     onSort,
@@ -490,6 +491,7 @@ const renderDataTableView = () => (
           manualTotalCountAvailable={prefersManualTotalCount && !!onRequestTotalCount}
           totalCountLoading={pagination?.totalCountLoading}
           onPageChange={onPageChange}
+          onLastPage={onLastPage}
           onPageSizeChange={handlePageSizeChange}
           onV2PageStep={handleV2PageStep}
           onToggleTotalCount={onRequestTotalCount ? handleToggleTotalCount : undefined}
