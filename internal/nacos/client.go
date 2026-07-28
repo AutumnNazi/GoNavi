@@ -28,12 +28,13 @@ const (
 	tokenRefreshSkew        = 60 * time.Second
 )
 
-// ClientImpl is an HTTP OpenAPI v1 client for Nacos.
+// ClientImpl is an HTTP client for the supported Nacos API families.
 type ClientImpl struct {
 	mu          sync.Mutex
 	config      connection.ConnectionConfig
 	httpClient  *http.Client
 	baseURL     *url.URL
+	apiFamily   nacosAPIFamily
 	accessToken string
 	tokenExpiry time.Time
 }
@@ -59,6 +60,7 @@ func (c *ClientImpl) Connect(config connection.ConnectionConfig) error {
 	c.config = normalized
 	c.httpClient = httpClient
 	c.baseURL = baseURL
+	c.apiFamily = nacosAPIUnknown
 	c.accessToken = ""
 	c.tokenExpiry = time.Time{}
 	c.mu.Unlock()
@@ -66,6 +68,10 @@ func (c *ClientImpl) Connect(config connection.ConnectionConfig) error {
 	ctx, cancel := context.WithTimeout(context.Background(), normalizeNacosTimeout(normalized.Timeout))
 	defer cancel()
 	if err := c.ensureAuth(ctx); err != nil {
+		_ = c.Close()
+		return err
+	}
+	if err := c.detectAPIFamily(ctx); err != nil {
 		_ = c.Close()
 		return err
 	}
@@ -82,6 +88,7 @@ func (c *ClientImpl) Close() error {
 	defer c.mu.Unlock()
 	c.httpClient = nil
 	c.baseURL = nil
+	c.apiFamily = nacosAPIUnknown
 	c.accessToken = ""
 	c.tokenExpiry = time.Time{}
 	return nil
@@ -97,7 +104,7 @@ func (c *ClientImpl) Ping(ctx context.Context) error {
 
 // ListNamespaces returns all namespaces including public.
 func (c *ClientImpl) ListNamespaces(ctx context.Context) ([]Namespace, error) {
-	body, status, err := c.doRequest(ctx, http.MethodGet, "/v1/console/namespaces", nil, nil)
+	body, status, err := c.doRequest(ctx, http.MethodGet, c.currentAPIRoutes().namespaceList, nil, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -108,34 +115,30 @@ func (c *ClientImpl) ListNamespaces(ctx context.Context) ([]Namespace, error) {
 		})
 	}
 
-	var payload struct {
-		Code    int    `json:"code"`
-		Message string `json:"message"`
-		Data    []struct {
-			Namespace         string `json:"namespace"`
-			NamespaceShowName string `json:"namespaceShowName"`
-			NamespaceDesc     string `json:"namespaceDesc"`
-			Quota             int64  `json:"quota"`
-			ConfigCount       int64  `json:"configCount"`
-			Type              int    `json:"type"`
-		} `json:"data"`
+	data, err := unwrapNacosResult(body)
+	if err != nil {
+		return nil, err
 	}
-	if err := json.Unmarshal(body, &payload); err != nil {
+	var payload []struct {
+		Namespace         string `json:"namespace"`
+		NamespaceID       string `json:"namespaceId"`
+		NamespaceShowName string `json:"namespaceShowName"`
+		NamespaceName     string `json:"namespaceName"`
+		NamespaceDesc     string `json:"namespaceDesc"`
+		Quota             int64  `json:"quota"`
+		ConfigCount       int64  `json:"configCount"`
+		Type              int    `json:"type"`
+	}
+	if err := json.Unmarshal(data, &payload); err != nil {
 		return nil, localizedNacosBackendError("nacos.backend.error.parse_namespaces", map[string]any{
 			"detail": err.Error(),
 		})
 	}
-	if payload.Code != 0 && payload.Code != 200 {
-		return nil, localizedNacosBackendError("nacos.backend.error.api_code", map[string]any{
-			"code":    payload.Code,
-			"message": strings.TrimSpace(payload.Message),
-		})
-	}
 
-	result := make([]Namespace, 0, len(payload.Data))
-	for _, item := range payload.Data {
-		id := strings.TrimSpace(item.Namespace)
-		showName := strings.TrimSpace(item.NamespaceShowName)
+	result := make([]Namespace, 0, len(payload))
+	for _, item := range payload {
+		id := firstNonEmpty(strings.TrimSpace(item.Namespace), strings.TrimSpace(item.NamespaceID))
+		showName := firstNonEmpty(strings.TrimSpace(item.NamespaceShowName), strings.TrimSpace(item.NamespaceName))
 		if showName == "" {
 			if id == "" {
 				showName = "public"
@@ -157,6 +160,7 @@ func (c *ClientImpl) ListNamespaces(ctx context.Context) ([]Namespace, error) {
 
 // SearchConfigs lists configs under a namespace with optional filters.
 func (c *ClientImpl) SearchConfigs(ctx context.Context, query ConfigQuery) (*ConfigPage, error) {
+	family := c.currentAPIFamily()
 	pageNo := query.PageNo
 	if pageNo <= 0 {
 		pageNo = 1
@@ -176,13 +180,22 @@ func (c *ClientImpl) SearchConfigs(ctx context.Context, query ConfigQuery) (*Con
 	params := url.Values{}
 	params.Set("search", searchMode)
 	params.Set("dataId", strings.TrimSpace(query.DataID))
-	params.Set("group", strings.TrimSpace(query.Group))
 	params.Set("appName", strings.TrimSpace(query.AppName))
-	params.Set("tenant", normalizeNamespaceID(query.NamespaceID))
 	params.Set("pageNo", strconv.Itoa(pageNo))
 	params.Set("pageSize", strconv.Itoa(pageSize))
+	if family == nacosAPIV3 {
+		params.Set("groupName", strings.TrimSpace(query.Group))
+		params.Set("namespaceId", normalizeNamespaceID(query.NamespaceID))
+		params.Set("configDetail", "")
+	} else {
+		params.Set("group", strings.TrimSpace(query.Group))
+		params.Set("tenant", normalizeNamespaceID(query.NamespaceID))
+		if family == nacosAPIV2 {
+			params.Set("config_detail", "")
+		}
+	}
 
-	body, status, err := c.doRequest(ctx, http.MethodGet, "/v1/cs/configs", params, nil)
+	body, status, err := c.doRequest(ctx, http.MethodGet, c.currentAPIRoutes().configList, params, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -193,6 +206,10 @@ func (c *ClientImpl) SearchConfigs(ctx context.Context, query ConfigQuery) (*Con
 		})
 	}
 
+	data, err := unwrapNacosResult(body)
+	if err != nil {
+		return nil, err
+	}
 	var payload struct {
 		TotalCount     int64 `json:"totalCount"`
 		PageNumber     int   `json:"pageNumber"`
@@ -201,17 +218,20 @@ func (c *ClientImpl) SearchConfigs(ctx context.Context, query ConfigQuery) (*Con
 			ID               string `json:"id"`
 			DataID           string `json:"dataId"`
 			Group            string `json:"group"`
+			GroupName        string `json:"groupName"`
 			Content          string `json:"content"`
 			MD5              string `json:"md5"`
 			Tenant           string `json:"tenant"`
+			NamespaceID      string `json:"namespaceId"`
 			AppName          string `json:"appName"`
 			Type             string `json:"type"`
 			Desc             string `json:"desc"`
 			LastModifiedTime any    `json:"lastModifiedTime"`
 			ModifiedTime     any    `json:"modifiedTime"`
+			ModifyTime       any    `json:"modifyTime"`
 		} `json:"pageItems"`
 	}
-	if err := json.Unmarshal(body, &payload); err != nil {
+	if err := json.Unmarshal(data, &payload); err != nil {
 		return nil, localizedNacosBackendError("nacos.backend.error.parse_configs", map[string]any{
 			"detail": err.Error(),
 		})
@@ -222,14 +242,14 @@ func (c *ClientImpl) SearchConfigs(ctx context.Context, query ConfigQuery) (*Con
 		items = append(items, ConfigItem{
 			ID:           strings.TrimSpace(item.ID),
 			DataID:       strings.TrimSpace(item.DataID),
-			Group:        strings.TrimSpace(item.Group),
-			NamespaceID:  normalizeNamespaceID(item.Tenant),
+			Group:        firstNonEmpty(strings.TrimSpace(item.Group), strings.TrimSpace(item.GroupName)),
+			NamespaceID:  normalizeNamespaceID(firstNonEmpty(item.Tenant, item.NamespaceID)),
 			Content:      item.Content,
 			Type:         strings.TrimSpace(item.Type),
 			MD5:          strings.TrimSpace(item.MD5),
 			AppName:      strings.TrimSpace(item.AppName),
 			Desc:         strings.TrimSpace(item.Desc),
-			ModifiedTime: stringifyAnyTime(item.LastModifiedTime, item.ModifiedTime),
+			ModifiedTime: stringifyAnyTime(item.LastModifiedTime, item.ModifiedTime, item.ModifyTime),
 		})
 	}
 	return &ConfigPage{
@@ -286,6 +306,7 @@ func (c *ClientImpl) ListConfigGroups(ctx context.Context, namespaceID string) (
 
 // GetConfig loads a single config content.
 func (c *ClientImpl) GetConfig(ctx context.Context, namespaceID, group, dataID string) (*ConfigDetail, error) {
+	family := c.currentAPIFamily()
 	dataID = strings.TrimSpace(dataID)
 	group = strings.TrimSpace(group)
 	if dataID == "" {
@@ -297,11 +318,19 @@ func (c *ClientImpl) GetConfig(ctx context.Context, namespaceID, group, dataID s
 
 	params := url.Values{}
 	params.Set("dataId", dataID)
-	params.Set("group", group)
-	params.Set("tenant", normalizeNamespaceID(namespaceID))
-	params.Set("show", "all")
+	if family == nacosAPIV3 {
+		params.Set("groupName", group)
+		params.Set("namespaceId", normalizeNamespaceID(namespaceID))
+	} else if family == nacosAPIV2 {
+		params.Set("group", group)
+		params.Set("namespaceId", normalizeNamespaceID(namespaceID))
+	} else {
+		params.Set("group", group)
+		params.Set("tenant", normalizeNamespaceID(namespaceID))
+		params.Set("show", "all")
+	}
 
-	body, status, err := c.doRequest(ctx, http.MethodGet, "/v1/cs/configs", params, nil)
+	body, status, err := c.doRequest(ctx, http.MethodGet, c.currentAPIRoutes().config, params, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -318,28 +347,48 @@ func (c *ClientImpl) GetConfig(ctx context.Context, namespaceID, group, dataID s
 		})
 	}
 
-	// Some Nacos builds return plain text content; others return JSON when show=all.
-	trimmed := strings.TrimSpace(string(body))
+	data := body
+	if family == nacosAPIV2 || family == nacosAPIV3 {
+		data, err = unwrapNacosResult(body)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if family == nacosAPIV2 {
+		content := decodeNacosStringData(data)
+		return &ConfigDetail{
+			DataID:      dataID,
+			Group:       group,
+			NamespaceID: normalizeNamespaceID(namespaceID),
+			Content:     content,
+			MD5:         ContentMD5(content),
+		}, nil
+	}
+
+	// Nacos v1 show=all and v3 return JSON details.
+	trimmed := strings.TrimSpace(string(data))
 	if strings.HasPrefix(trimmed, "{") {
 		var payload struct {
-			DataID  string `json:"dataId"`
-			Group   string `json:"group"`
-			Content string `json:"content"`
-			Type    string `json:"type"`
-			MD5     string `json:"md5"`
-			AppName string `json:"appName"`
-			Desc    string `json:"desc"`
-			Tenant  string `json:"tenant"`
+			DataID      string `json:"dataId"`
+			Group       string `json:"group"`
+			GroupName   string `json:"groupName"`
+			Content     string `json:"content"`
+			Type        string `json:"type"`
+			MD5         string `json:"md5"`
+			AppName     string `json:"appName"`
+			Desc        string `json:"desc"`
+			Tenant      string `json:"tenant"`
+			NamespaceID string `json:"namespaceId"`
 		}
-		if err := json.Unmarshal(body, &payload); err == nil && (payload.Content != "" || payload.DataID != "") {
+		if err := json.Unmarshal(data, &payload); err == nil && (payload.Content != "" || payload.DataID != "") {
 			md5Value := strings.TrimSpace(payload.MD5)
 			if md5Value == "" {
 				md5Value = ContentMD5(payload.Content)
 			}
 			return &ConfigDetail{
 				DataID:      firstNonEmpty(payload.DataID, dataID),
-				Group:       firstNonEmpty(payload.Group, group),
-				NamespaceID: normalizeNamespaceID(firstNonEmpty(payload.Tenant, namespaceID)),
+				Group:       firstNonEmpty(payload.Group, payload.GroupName, group),
+				NamespaceID: normalizeNamespaceID(firstNonEmpty(payload.Tenant, payload.NamespaceID, namespaceID)),
 				Content:     payload.Content,
 				Type:        strings.TrimSpace(payload.Type),
 				MD5:         md5Value,
@@ -349,7 +398,7 @@ func (c *ClientImpl) GetConfig(ctx context.Context, namespaceID, group, dataID s
 		}
 	}
 
-	content := string(body)
+	content := string(data)
 	return &ConfigDetail{
 		DataID:      dataID,
 		Group:       group,
@@ -359,8 +408,17 @@ func (c *ClientImpl) GetConfig(ctx context.Context, namespaceID, group, dataID s
 	}, nil
 }
 
+func decodeNacosStringData(data []byte) string {
+	var value string
+	if err := json.Unmarshal(data, &value); err == nil {
+		return value
+	}
+	return string(data)
+}
+
 // PublishConfig creates or updates a config.
 func (c *ClientImpl) PublishConfig(ctx context.Context, req PublishRequest) error {
+	family := c.currentAPIFamily()
 	dataID := strings.TrimSpace(req.DataID)
 	group := strings.TrimSpace(req.Group)
 	if dataID == "" {
@@ -372,9 +430,17 @@ func (c *ClientImpl) PublishConfig(ctx context.Context, req PublishRequest) erro
 
 	form := url.Values{}
 	form.Set("dataId", dataID)
-	form.Set("group", group)
 	form.Set("content", req.Content)
-	form.Set("tenant", normalizeNamespaceID(req.NamespaceID))
+	if family == nacosAPIV3 {
+		form.Set("groupName", group)
+		form.Set("namespaceId", normalizeNamespaceID(req.NamespaceID))
+	} else if family == nacosAPIV2 {
+		form.Set("group", group)
+		form.Set("namespaceId", normalizeNamespaceID(req.NamespaceID))
+	} else {
+		form.Set("group", group)
+		form.Set("tenant", normalizeNamespaceID(req.NamespaceID))
+	}
 	if typ := strings.TrimSpace(req.Type); typ != "" {
 		form.Set("type", typ)
 	}
@@ -384,11 +450,12 @@ func (c *ClientImpl) PublishConfig(ctx context.Context, req PublishRequest) erro
 	if desc := strings.TrimSpace(req.Desc); desc != "" {
 		form.Set("desc", desc)
 	}
+	headers := http.Header{}
 	if betaIPs := strings.TrimSpace(req.BetaIPs); betaIPs != "" {
-		form.Set("betaIps", betaIPs)
+		headers.Set("betaIps", betaIPs)
 	}
 
-	body, status, err := c.doRequest(ctx, http.MethodPost, "/v1/cs/configs", nil, form)
+	body, status, err := c.doRequestWithHeaders(ctx, http.MethodPost, c.currentAPIRoutes().config, nil, form, headers)
 	if err != nil {
 		return err
 	}
@@ -398,25 +465,12 @@ func (c *ClientImpl) PublishConfig(ctx context.Context, req PublishRequest) erro
 			"body":   truncateForError(string(body)),
 		})
 	}
-	text := strings.TrimSpace(string(body))
-	if text == "true" || text == "" {
-		return nil
-	}
-	// Some versions wrap JSON result
-	var boolResult bool
-	if err := json.Unmarshal(body, &boolResult); err == nil && boolResult {
-		return nil
-	}
-	if strings.EqualFold(text, "ok") {
-		return nil
-	}
-	return localizedNacosBackendError("nacos.backend.error.publish_failed", map[string]any{
-		"body": truncateForError(text),
-	})
+	return parseNacosBoolResult(body, status, "nacos.backend.error.publish_failed")
 }
 
 // DeleteConfig removes a config.
 func (c *ClientImpl) DeleteConfig(ctx context.Context, namespaceID, group, dataID string) error {
+	family := c.currentAPIFamily()
 	dataID = strings.TrimSpace(dataID)
 	group = strings.TrimSpace(group)
 	if dataID == "" {
@@ -428,34 +482,27 @@ func (c *ClientImpl) DeleteConfig(ctx context.Context, namespaceID, group, dataI
 
 	params := url.Values{}
 	params.Set("dataId", dataID)
-	params.Set("group", group)
-	params.Set("tenant", normalizeNamespaceID(namespaceID))
+	if family == nacosAPIV3 {
+		params.Set("groupName", group)
+		params.Set("namespaceId", normalizeNamespaceID(namespaceID))
+	} else if family == nacosAPIV2 {
+		params.Set("group", group)
+		params.Set("namespaceId", normalizeNamespaceID(namespaceID))
+	} else {
+		params.Set("group", group)
+		params.Set("tenant", normalizeNamespaceID(namespaceID))
+	}
 
-	body, status, err := c.doRequest(ctx, http.MethodDelete, "/v1/cs/configs", params, nil)
+	body, status, err := c.doRequest(ctx, http.MethodDelete, c.currentAPIRoutes().config, params, nil)
 	if err != nil {
 		return err
 	}
-	if status < 200 || status >= 300 {
-		return localizedNacosBackendError("nacos.backend.error.http_status", map[string]any{
-			"status": status,
-			"body":   truncateForError(string(body)),
-		})
-	}
-	text := strings.TrimSpace(string(body))
-	if text == "true" || text == "" || strings.EqualFold(text, "ok") {
-		return nil
-	}
-	var boolResult bool
-	if err := json.Unmarshal(body, &boolResult); err == nil && boolResult {
-		return nil
-	}
-	return localizedNacosBackendError("nacos.backend.error.delete_failed", map[string]any{
-		"body": truncateForError(text),
-	})
+	return parseNacosBoolResult(body, status, "nacos.backend.error.delete_failed")
 }
 
 // GetBetaConfig loads beta/gray config if present.
 func (c *ClientImpl) GetBetaConfig(ctx context.Context, namespaceID, group, dataID string) (*BetaConfigDetail, error) {
+	family := c.currentAPIFamily()
 	dataID = strings.TrimSpace(dataID)
 	group = strings.TrimSpace(group)
 	if dataID == "" {
@@ -467,12 +514,16 @@ func (c *ClientImpl) GetBetaConfig(ctx context.Context, namespaceID, group, data
 
 	params := url.Values{}
 	params.Set("dataId", dataID)
-	params.Set("group", group)
-	params.Set("tenant", normalizeNamespaceID(namespaceID))
-	params.Set("beta", "true")
-	params.Set("show", "all")
+	if family == nacosAPIV3 {
+		params.Set("groupName", group)
+		params.Set("namespaceId", normalizeNamespaceID(namespaceID))
+	} else {
+		params.Set("group", group)
+		params.Set("tenant", normalizeNamespaceID(namespaceID))
+		params.Set("beta", "true")
+	}
 
-	body, status, err := c.doRequest(ctx, http.MethodGet, "/v1/cs/configs", params, nil)
+	body, status, err := c.doRequest(ctx, http.MethodGet, c.currentAPIRoutes().beta, params, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -501,7 +552,11 @@ func (c *ClientImpl) GetBetaConfig(ctx context.Context, namespaceID, group, data
 		})
 	}
 
-	trimmed := strings.TrimSpace(string(body))
+	data, err := unwrapNacosResult(body)
+	if err != nil {
+		return nil, err
+	}
+	trimmed := strings.TrimSpace(string(data))
 	if trimmed == "" {
 		return &BetaConfigDetail{
 			DataID:      dataID,
@@ -512,15 +567,18 @@ func (c *ClientImpl) GetBetaConfig(ctx context.Context, namespaceID, group, data
 	}
 	if strings.HasPrefix(trimmed, "{") {
 		var payload struct {
-			DataID  string `json:"dataId"`
-			Group   string `json:"group"`
-			Content string `json:"content"`
-			Type    string `json:"type"`
-			MD5     string `json:"md5"`
-			BetaIPs string `json:"betaIps"`
-			Tenant  string `json:"tenant"`
+			DataID      string `json:"dataId"`
+			Group       string `json:"group"`
+			GroupName   string `json:"groupName"`
+			Content     string `json:"content"`
+			Type        string `json:"type"`
+			MD5         string `json:"md5"`
+			BetaIPs     string `json:"betaIps"`
+			GrayRule    string `json:"grayRule"`
+			Tenant      string `json:"tenant"`
+			NamespaceID string `json:"namespaceId"`
 		}
-		if err := json.Unmarshal(body, &payload); err == nil {
+		if err := json.Unmarshal(data, &payload); err == nil {
 			content := payload.Content
 			if strings.TrimSpace(content) == "" && strings.TrimSpace(payload.DataID) == "" {
 				return &BetaConfigDetail{
@@ -536,12 +594,12 @@ func (c *ClientImpl) GetBetaConfig(ctx context.Context, namespaceID, group, data
 			}
 			return &BetaConfigDetail{
 				DataID:      firstNonEmpty(payload.DataID, dataID),
-				Group:       firstNonEmpty(payload.Group, group),
-				NamespaceID: normalizeNamespaceID(firstNonEmpty(payload.Tenant, namespaceID)),
+				Group:       firstNonEmpty(payload.Group, payload.GroupName, group),
+				NamespaceID: normalizeNamespaceID(firstNonEmpty(payload.Tenant, payload.NamespaceID, namespaceID)),
 				Content:     content,
 				Type:        strings.TrimSpace(payload.Type),
 				MD5:         md5Value,
-				BetaIPs:     strings.TrimSpace(payload.BetaIPs),
+				BetaIPs:     firstNonEmpty(strings.TrimSpace(payload.BetaIPs), betaIPsFromGrayRule(payload.GrayRule)),
 				Exists:      true,
 			}, nil
 		}
@@ -551,14 +609,30 @@ func (c *ClientImpl) GetBetaConfig(ctx context.Context, namespaceID, group, data
 		DataID:      dataID,
 		Group:       group,
 		NamespaceID: normalizeNamespaceID(namespaceID),
-		Content:     string(body),
-		MD5:         ContentMD5(string(body)),
+		Content:     string(data),
+		MD5:         ContentMD5(string(data)),
 		Exists:      true,
 	}, nil
 }
 
+func betaIPsFromGrayRule(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	var rule struct {
+		Expr           string `json:"expr"`
+		RawGrayRuleExp string `json:"rawGrayRuleExp"`
+	}
+	if err := json.Unmarshal([]byte(raw), &rule); err == nil {
+		return firstNonEmpty(strings.TrimSpace(rule.Expr), strings.TrimSpace(rule.RawGrayRuleExp), raw)
+	}
+	return raw
+}
+
 // StopBetaConfig stops beta/gray publish for a config.
 func (c *ClientImpl) StopBetaConfig(ctx context.Context, namespaceID, group, dataID string) error {
+	family := c.currentAPIFamily()
 	dataID = strings.TrimSpace(dataID)
 	group = strings.TrimSpace(group)
 	if dataID == "" {
@@ -568,34 +642,26 @@ func (c *ClientImpl) StopBetaConfig(ctx context.Context, namespaceID, group, dat
 		group = "DEFAULT_GROUP"
 	}
 
-	// Preferred console-compatible path.
 	params := url.Values{}
 	params.Set("dataId", dataID)
-	params.Set("group", group)
-	params.Set("tenant", normalizeNamespaceID(namespaceID))
-	body, status, err := c.doRequest(ctx, http.MethodDelete, "/v1/cs/configs/beta", params, nil)
-	if err == nil && status >= 200 && status < 300 {
-		return parseNacosBoolResult(body, status, "nacos.backend.error.beta_stop_failed")
+	if family == nacosAPIV3 {
+		params.Set("groupName", group)
+		params.Set("namespaceId", normalizeNamespaceID(namespaceID))
+	} else {
+		params.Set("group", group)
+		params.Set("tenant", normalizeNamespaceID(namespaceID))
+		params.Set("beta", "true")
 	}
-
-	// Fallback: DELETE configs with beta=true.
-	params2 := url.Values{}
-	params2.Set("dataId", dataID)
-	params2.Set("group", group)
-	params2.Set("tenant", normalizeNamespaceID(namespaceID))
-	params2.Set("beta", "true")
-	body2, status2, err2 := c.doRequest(ctx, http.MethodDelete, "/v1/cs/configs", params2, nil)
-	if err2 != nil {
-		if err != nil {
-			return err
-		}
-		return err2
+	body, status, err := c.doRequest(ctx, http.MethodDelete, c.currentAPIRoutes().beta, params, nil)
+	if err != nil {
+		return err
 	}
-	return parseNacosBoolResult(body2, status2, "nacos.backend.error.beta_stop_failed")
+	return parseNacosBoolResult(body, status, "nacos.backend.error.beta_stop_failed")
 }
 
 // CreateNamespace creates a namespace.
 func (c *ClientImpl) CreateNamespace(ctx context.Context, req CreateNamespaceRequest) error {
+	family := c.currentAPIFamily()
 	showName := strings.TrimSpace(req.ShowName)
 	if showName == "" {
 		return localizedNacosBackendError("nacos.backend.error.namespace_name_required", nil)
@@ -609,11 +675,15 @@ func (c *ClientImpl) CreateNamespace(ctx context.Context, req CreateNamespaceReq
 	}
 
 	form := url.Values{}
-	form.Set("customNamespaceId", nsID)
+	if family == nacosAPIV1 {
+		form.Set("customNamespaceId", nsID)
+	} else {
+		form.Set("namespaceId", nsID)
+	}
 	form.Set("namespaceName", showName)
 	form.Set("namespaceDesc", strings.TrimSpace(req.Description))
 
-	body, status, err := c.doRequest(ctx, http.MethodPost, "/v1/console/namespaces", nil, form)
+	body, status, err := c.doRequest(ctx, http.MethodPost, c.currentAPIRoutes().namespace, nil, form)
 	if err != nil {
 		return err
 	}
@@ -622,6 +692,7 @@ func (c *ClientImpl) CreateNamespace(ctx context.Context, req CreateNamespaceReq
 
 // UpdateNamespace updates namespace show name / description.
 func (c *ClientImpl) UpdateNamespace(ctx context.Context, req UpdateNamespaceRequest) error {
+	family := c.currentAPIFamily()
 	nsID := strings.TrimSpace(req.ID)
 	// public is represented as empty id; do not allow renaming public id, but updating show name is usually blocked by server.
 	if nsID == "" || strings.EqualFold(nsID, "public") {
@@ -633,11 +704,16 @@ func (c *ClientImpl) UpdateNamespace(ctx context.Context, req UpdateNamespaceReq
 	}
 
 	form := url.Values{}
-	form.Set("namespace", nsID)
-	form.Set("namespaceShowName", showName)
+	if family == nacosAPIV1 {
+		form.Set("namespace", nsID)
+		form.Set("namespaceShowName", showName)
+	} else {
+		form.Set("namespaceId", nsID)
+		form.Set("namespaceName", showName)
+	}
 	form.Set("namespaceDesc", strings.TrimSpace(req.Description))
 
-	body, status, err := c.doRequest(ctx, http.MethodPut, "/v1/console/namespaces", nil, form)
+	body, status, err := c.doRequest(ctx, http.MethodPut, c.currentAPIRoutes().namespace, nil, form)
 	if err != nil {
 		return err
 	}
@@ -656,7 +732,7 @@ func (c *ClientImpl) DeleteNamespace(ctx context.Context, namespaceID string) er
 	params := url.Values{}
 	params.Set("namespaceId", nsID)
 
-	body, status, err := c.doRequest(ctx, http.MethodDelete, "/v1/console/namespaces", params, nil)
+	body, status, err := c.doRequest(ctx, http.MethodDelete, c.currentAPIRoutes().namespace, params, nil)
 	if err != nil {
 		return err
 	}
@@ -665,6 +741,7 @@ func (c *ClientImpl) DeleteNamespace(ctx context.Context, namespaceID string) er
 
 // ListConfigHistory lists history records for a config.
 func (c *ClientImpl) ListConfigHistory(ctx context.Context, query HistoryQuery) (*HistoryPage, error) {
+	family := c.currentAPIFamily()
 	dataID := strings.TrimSpace(query.DataID)
 	group := strings.TrimSpace(query.Group)
 	if dataID == "" {
@@ -686,14 +763,22 @@ func (c *ClientImpl) ListConfigHistory(ctx context.Context, query HistoryQuery) 
 	}
 
 	params := url.Values{}
-	params.Set("search", "accurate")
 	params.Set("dataId", dataID)
-	params.Set("group", group)
-	params.Set("tenant", normalizeNamespaceID(query.NamespaceID))
 	params.Set("pageNo", strconv.Itoa(pageNo))
 	params.Set("pageSize", strconv.Itoa(pageSize))
+	if family == nacosAPIV3 {
+		params.Set("groupName", group)
+		params.Set("namespaceId", normalizeNamespaceID(query.NamespaceID))
+	} else if family == nacosAPIV2 {
+		params.Set("group", group)
+		params.Set("namespaceId", normalizeNamespaceID(query.NamespaceID))
+	} else {
+		params.Set("search", "accurate")
+		params.Set("group", group)
+		params.Set("tenant", normalizeNamespaceID(query.NamespaceID))
+	}
 
-	body, status, err := c.doRequest(ctx, http.MethodGet, "/v1/cs/history", params, nil)
+	body, status, err := c.doRequest(ctx, http.MethodGet, c.currentAPIRoutes().historyList, params, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -704,6 +789,10 @@ func (c *ClientImpl) ListConfigHistory(ctx context.Context, query HistoryQuery) 
 		})
 	}
 
+	data, err := unwrapNacosResult(body)
+	if err != nil {
+		return nil, err
+	}
 	var payload struct {
 		TotalCount     int64 `json:"totalCount"`
 		PageNumber     int   `json:"pageNumber"`
@@ -713,7 +802,9 @@ func (c *ClientImpl) ListConfigHistory(ctx context.Context, query HistoryQuery) 
 			LastID           any    `json:"lastId"`
 			DataID           string `json:"dataId"`
 			Group            string `json:"group"`
+			GroupName        string `json:"groupName"`
 			Tenant           string `json:"tenant"`
+			NamespaceID      string `json:"namespaceId"`
 			AppName          string `json:"appName"`
 			MD5              string `json:"md5"`
 			Content          string `json:"content"`
@@ -721,10 +812,12 @@ func (c *ClientImpl) ListConfigHistory(ctx context.Context, query HistoryQuery) 
 			SrcUser          string `json:"srcUser"`
 			OpType           string `json:"opType"`
 			CreatedTime      any    `json:"createdTime"`
+			CreateTime       any    `json:"createTime"`
 			LastModifiedTime any    `json:"lastModifiedTime"`
+			ModifyTime       any    `json:"modifyTime"`
 		} `json:"pageItems"`
 	}
-	if err := json.Unmarshal(body, &payload); err != nil {
+	if err := json.Unmarshal(data, &payload); err != nil {
 		return nil, localizedNacosBackendError("nacos.backend.error.parse_history", map[string]any{
 			"detail": err.Error(),
 		})
@@ -736,16 +829,16 @@ func (c *ClientImpl) ListConfigHistory(ctx context.Context, query HistoryQuery) 
 			ID:           stringifyAnyID(item.ID),
 			LastID:       stringifyAnyID(item.LastID),
 			DataID:       strings.TrimSpace(item.DataID),
-			Group:        strings.TrimSpace(item.Group),
-			NamespaceID:  normalizeNamespaceID(item.Tenant),
+			Group:        firstNonEmpty(strings.TrimSpace(item.Group), strings.TrimSpace(item.GroupName)),
+			NamespaceID:  normalizeNamespaceID(firstNonEmpty(item.Tenant, item.NamespaceID)),
 			AppName:      strings.TrimSpace(item.AppName),
 			MD5:          strings.TrimSpace(item.MD5),
 			Content:      item.Content,
 			SrcIP:        strings.TrimSpace(item.SrcIP),
 			SrcUser:      strings.TrimSpace(item.SrcUser),
 			OpType:       strings.TrimSpace(item.OpType),
-			CreatedTime:  stringifyAnyTime(item.CreatedTime),
-			ModifiedTime: stringifyAnyTime(item.LastModifiedTime),
+			CreatedTime:  stringifyAnyTime(item.CreatedTime, item.CreateTime),
+			ModifiedTime: stringifyAnyTime(item.LastModifiedTime, item.ModifyTime),
 		})
 	}
 	return &HistoryPage{
@@ -758,6 +851,7 @@ func (c *ClientImpl) ListConfigHistory(ctx context.Context, query HistoryQuery) 
 
 // GetConfigHistory loads one history detail by nid.
 func (c *ClientImpl) GetConfigHistory(ctx context.Context, namespaceID, group, dataID, nid string) (*HistoryItem, error) {
+	family := c.currentAPIFamily()
 	dataID = strings.TrimSpace(dataID)
 	group = strings.TrimSpace(group)
 	nid = strings.TrimSpace(nid)
@@ -774,10 +868,18 @@ func (c *ClientImpl) GetConfigHistory(ctx context.Context, namespaceID, group, d
 	params := url.Values{}
 	params.Set("nid", nid)
 	params.Set("dataId", dataID)
-	params.Set("group", group)
-	params.Set("tenant", normalizeNamespaceID(namespaceID))
+	if family == nacosAPIV3 {
+		params.Set("groupName", group)
+		params.Set("namespaceId", normalizeNamespaceID(namespaceID))
+	} else if family == nacosAPIV2 {
+		params.Set("group", group)
+		params.Set("namespaceId", normalizeNamespaceID(namespaceID))
+	} else {
+		params.Set("group", group)
+		params.Set("tenant", normalizeNamespaceID(namespaceID))
+	}
 
-	body, status, err := c.doRequest(ctx, http.MethodGet, "/v1/cs/history", params, nil)
+	body, status, err := c.doRequest(ctx, http.MethodGet, c.currentAPIRoutes().configHistory, params, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -788,12 +890,18 @@ func (c *ClientImpl) GetConfigHistory(ctx context.Context, namespaceID, group, d
 		})
 	}
 
+	data, err := unwrapNacosResult(body)
+	if err != nil {
+		return nil, err
+	}
 	var payload struct {
 		ID               any    `json:"id"`
 		LastID           any    `json:"lastId"`
 		DataID           string `json:"dataId"`
 		Group            string `json:"group"`
+		GroupName        string `json:"groupName"`
 		Tenant           string `json:"tenant"`
+		NamespaceID      string `json:"namespaceId"`
 		AppName          string `json:"appName"`
 		MD5              string `json:"md5"`
 		Content          string `json:"content"`
@@ -801,9 +909,11 @@ func (c *ClientImpl) GetConfigHistory(ctx context.Context, namespaceID, group, d
 		SrcUser          string `json:"srcUser"`
 		OpType           string `json:"opType"`
 		CreatedTime      any    `json:"createdTime"`
+		CreateTime       any    `json:"createTime"`
 		LastModifiedTime any    `json:"lastModifiedTime"`
+		ModifyTime       any    `json:"modifyTime"`
 	}
-	if err := json.Unmarshal(body, &payload); err != nil {
+	if err := json.Unmarshal(data, &payload); err != nil {
 		return nil, localizedNacosBackendError("nacos.backend.error.parse_history", map[string]any{
 			"detail": err.Error(),
 		})
@@ -812,16 +922,16 @@ func (c *ClientImpl) GetConfigHistory(ctx context.Context, namespaceID, group, d
 		ID:           firstNonEmpty(stringifyAnyID(payload.ID), nid),
 		LastID:       stringifyAnyID(payload.LastID),
 		DataID:       firstNonEmpty(strings.TrimSpace(payload.DataID), dataID),
-		Group:        firstNonEmpty(strings.TrimSpace(payload.Group), group),
-		NamespaceID:  normalizeNamespaceID(firstNonEmpty(payload.Tenant, namespaceID)),
+		Group:        firstNonEmpty(strings.TrimSpace(payload.Group), strings.TrimSpace(payload.GroupName), group),
+		NamespaceID:  normalizeNamespaceID(firstNonEmpty(payload.Tenant, payload.NamespaceID, namespaceID)),
 		AppName:      strings.TrimSpace(payload.AppName),
 		MD5:          strings.TrimSpace(payload.MD5),
 		Content:      payload.Content,
 		SrcIP:        strings.TrimSpace(payload.SrcIP),
 		SrcUser:      strings.TrimSpace(payload.SrcUser),
 		OpType:       strings.TrimSpace(payload.OpType),
-		CreatedTime:  stringifyAnyTime(payload.CreatedTime),
-		ModifiedTime: stringifyAnyTime(payload.LastModifiedTime),
+		CreatedTime:  stringifyAnyTime(payload.CreatedTime, payload.CreateTime),
+		ModifiedTime: stringifyAnyTime(payload.LastModifiedTime, payload.ModifyTime),
 	}, nil
 }
 
@@ -899,15 +1009,28 @@ func (c *ClientImpl) ensureAuth(ctx context.Context) error {
 }
 
 func (c *ClientImpl) login(ctx context.Context, username, password string) error {
+	query := url.Values{}
+	query.Set("username", username)
 	form := url.Values{}
-	form.Set("username", username)
 	form.Set("password", password)
 
-	body, status, err := c.doRequestRaw(ctx, http.MethodPost, "/v1/auth/login", nil, form, false)
-	if err != nil {
-		return err
-	}
-	if status < 200 || status >= 300 {
+	var (
+		body   []byte
+		status int
+		err    error
+	)
+	loginPaths := []string{"/v3/auth/user/login", "/v1/auth/users/login", "/v1/auth/login"}
+	for index, loginPath := range loginPaths {
+		body, status, err = c.doRequestRaw(ctx, http.MethodPost, loginPath, query, form, false)
+		if err != nil {
+			return err
+		}
+		if status >= 200 && status < 300 {
+			break
+		}
+		if index < len(loginPaths)-1 && isUnsupportedNacosLogin(status) {
+			continue
+		}
 		return localizedNacosBackendError("nacos.backend.error.login_failed", map[string]any{
 			"status": status,
 			"body":   truncateForError(string(body)),
@@ -939,11 +1062,27 @@ func (c *ClientImpl) login(ctx context.Context, username, password string) error
 	return nil
 }
 
+func isUnsupportedNacosLogin(status int) bool {
+	return status == http.StatusNotFound ||
+		status == http.StatusMethodNotAllowed ||
+		status == http.StatusNotImplemented
+}
+
 func (c *ClientImpl) doRequest(ctx context.Context, method, apiPath string, query url.Values, form url.Values) ([]byte, int, error) {
+	return c.doRequestWithHeaders(ctx, method, apiPath, query, form, nil)
+}
+
+func (c *ClientImpl) doRequestWithHeaders(
+	ctx context.Context,
+	method, apiPath string,
+	query url.Values,
+	form url.Values,
+	headers http.Header,
+) ([]byte, int, error) {
 	if err := c.ensureAuth(ctx); err != nil {
 		return nil, 0, err
 	}
-	body, status, err := c.doRequestRaw(ctx, method, apiPath, query, form, true)
+	body, status, err := c.doRequestRawWithHeaders(ctx, method, apiPath, query, form, headers, true)
 	if err != nil {
 		return nil, status, err
 	}
@@ -956,7 +1095,7 @@ func (c *ClientImpl) doRequest(ctx context.Context, method, apiPath string, quer
 		if err := c.ensureAuth(ctx); err != nil {
 			return nil, status, err
 		}
-		return c.doRequestRaw(ctx, method, apiPath, query, form, true)
+		return c.doRequestRawWithHeaders(ctx, method, apiPath, query, form, headers, true)
 	}
 	return body, status, nil
 }
@@ -966,6 +1105,17 @@ func (c *ClientImpl) doRequestRaw(
 	method, apiPath string,
 	query url.Values,
 	form url.Values,
+	withToken bool,
+) ([]byte, int, error) {
+	return c.doRequestRawWithHeaders(ctx, method, apiPath, query, form, nil, withToken)
+}
+
+func (c *ClientImpl) doRequestRawWithHeaders(
+	ctx context.Context,
+	method, apiPath string,
+	query url.Values,
+	form url.Values,
+	headers http.Header,
 	withToken bool,
 ) ([]byte, int, error) {
 	c.mu.Lock()
@@ -1005,6 +1155,11 @@ func (c *ClientImpl) doRequestRaw(
 		req.Header.Set("Content-Type", contentType)
 	}
 	req.Header.Set("Accept", "*/*")
+	for name, values := range headers {
+		for _, value := range values {
+			req.Header.Add(name, value)
+		}
+	}
 
 	resp, err := httpClient.Do(req)
 	if err != nil {

@@ -18,7 +18,9 @@ import (
 
 func TestPublishBetaAndStopBeta(t *testing.T) {
 	var publishForm url.Values
+	var publishBetaIPs string
 	var stopPath string
+	var stopQuery url.Values
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
@@ -27,6 +29,7 @@ func TestPublishBetaAndStopBeta(t *testing.T) {
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/v1/cs/configs"):
 			_ = r.ParseForm()
 			publishForm = r.Form
+			publishBetaIPs = r.Header.Get("betaIps")
 			_, _ = io.WriteString(w, "true")
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/v1/cs/configs"):
 			if r.URL.Query().Get("beta") == "true" {
@@ -41,8 +44,9 @@ func TestPublishBetaAndStopBeta(t *testing.T) {
 				return
 			}
 			http.NotFound(w, r)
-		case r.Method == http.MethodDelete && strings.HasSuffix(r.URL.Path, "/v1/cs/configs/beta"):
+		case r.Method == http.MethodDelete && strings.HasSuffix(r.URL.Path, "/v1/cs/configs"):
 			stopPath = r.URL.Path
+			stopQuery = r.URL.Query()
 			_, _ = io.WriteString(w, "true")
 		default:
 			http.NotFound(w, r)
@@ -72,8 +76,8 @@ func TestPublishBetaAndStopBeta(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("Publish beta: %v", err)
 	}
-	if publishForm.Get("betaIps") != "10.0.0.1,10.0.0.2" {
-		t.Fatalf("publish form = %#v", publishForm)
+	if publishBetaIPs != "10.0.0.1,10.0.0.2" || publishForm.Get("betaIps") != "" {
+		t.Fatalf("publish header = %q form = %#v", publishBetaIPs, publishForm)
 	}
 
 	beta, err := client.GetBetaConfig(ctx, "dev", "DEFAULT_GROUP", "app.yaml")
@@ -87,8 +91,8 @@ func TestPublishBetaAndStopBeta(t *testing.T) {
 	if err := client.StopBetaConfig(ctx, "dev", "DEFAULT_GROUP", "app.yaml"); err != nil {
 		t.Fatalf("StopBetaConfig: %v", err)
 	}
-	if !strings.HasSuffix(stopPath, "/v1/cs/configs/beta") {
-		t.Fatalf("stop path = %q", stopPath)
+	if !strings.HasSuffix(stopPath, "/v1/cs/configs") || stopQuery.Get("beta") != "true" {
+		t.Fatalf("stop path = %q query = %#v", stopPath, stopQuery)
 	}
 }
 

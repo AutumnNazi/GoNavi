@@ -44,9 +44,11 @@ func TestClientConfigFlow(t *testing.T) {
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/v1/auth/login"):
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/v3/auth/user/login"):
+			http.NotFound(w, r)
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/v1/auth/users/login"):
 			_ = r.ParseForm()
-			gotLoginUser = r.Form.Get("username")
+			gotLoginUser = r.URL.Query().Get("username")
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"accessToken": "token-1",
 				"tokenTtl":    3600,

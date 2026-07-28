@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/md5"
 	"encoding/hex"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/url"
@@ -16,6 +17,7 @@ const (
 	defaultListenTimeoutMs = 30000
 	maxListenTimeoutMs     = 60000
 	minListenTimeoutMs     = 5000
+	nacosV3PollInterval    = 2 * time.Second
 )
 
 // ContentMD5 returns the hex MD5 used by Nacos config listening.
@@ -48,6 +50,9 @@ func (c *ClientImpl) ListenOnce(ctx context.Context, targets []ConfigListenTarge
 	}
 
 	timeoutMs = normalizeListenTimeoutMs(timeoutMs)
+	if c.currentAPIFamily() == nacosAPIV3 {
+		return c.listenOnceV3(ctx, cleaned, timeoutMs)
+	}
 	if err := c.ensureAuth(ctx); err != nil {
 		return nil, err
 	}
@@ -175,6 +180,9 @@ func parseListenResponse(raw string) []ConfigListenTarget {
 	if text == "" {
 		return nil
 	}
+	if decoded, err := url.QueryUnescape(text); err == nil {
+		text = decoded
+	}
 	// Response packets are separated by \x01, fields by \x02.
 	// Format: dataId\x02group\x02tenant\x01  (tenant optional)
 	parts := strings.Split(text, string(byte(1)))
@@ -207,6 +215,90 @@ func parseListenResponse(raw string) []ConfigListenTarget {
 		})
 	}
 	return result
+}
+
+func (c *ClientImpl) listenOnceV3(
+	ctx context.Context,
+	targets []ConfigListenTarget,
+	timeoutMs int,
+) ([]ConfigListenTarget, error) {
+	listenCtx, cancel := context.WithTimeout(ctx, time.Duration(timeoutMs)*time.Millisecond)
+	defer cancel()
+	ticker := time.NewTicker(nacosV3PollInterval)
+	defer ticker.Stop()
+
+	for {
+		changed, err := c.pollV3ConfigTargets(listenCtx, targets)
+		if err != nil {
+			if listenCtx.Err() != nil {
+				if ctx.Err() != nil {
+					return nil, ctx.Err()
+				}
+				return []ConfigListenTarget{}, nil
+			}
+			return nil, err
+		}
+		if len(changed) > 0 {
+			return changed, nil
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-listenCtx.Done():
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
+			return []ConfigListenTarget{}, nil
+		case <-ticker.C:
+		}
+	}
+}
+
+func (c *ClientImpl) pollV3ConfigTargets(
+	ctx context.Context,
+	targets []ConfigListenTarget,
+) ([]ConfigListenTarget, error) {
+	changed := make([]ConfigListenTarget, 0, len(targets))
+	for _, target := range targets {
+		params := url.Values{}
+		params.Set("dataId", target.DataID)
+		params.Set("groupName", target.Group)
+		params.Set("namespaceId", normalizeNamespaceID(target.NamespaceID))
+		body, status, err := c.doRequest(ctx, http.MethodGet, routesForNacosAPI(nacosAPIV3).config, params, nil)
+		if err != nil {
+			return nil, err
+		}
+		if status == http.StatusNotFound {
+			if target.ContentMD5 != "" {
+				changed = append(changed, target)
+			}
+			continue
+		}
+		if status < 200 || status >= 300 {
+			return nil, nacosHTTPStatusError(status, body)
+		}
+		data, err := unwrapNacosResult(body)
+		if err != nil {
+			return nil, err
+		}
+		var payload struct {
+			Content string `json:"content"`
+			MD5     string `json:"md5"`
+		}
+		if err := json.Unmarshal(data, &payload); err != nil {
+			return nil, localizedNacosBackendError("nacos.backend.error.parse_configs", map[string]any{
+				"detail": err.Error(),
+			})
+		}
+		remoteMD5 := strings.TrimSpace(payload.MD5)
+		if remoteMD5 == "" {
+			remoteMD5 = ContentMD5(payload.Content)
+		}
+		if remoteMD5 != target.ContentMD5 {
+			changed = append(changed, target)
+		}
+	}
+	return changed, nil
 }
 
 func normalizeListenTimeoutMs(timeoutMs int) int {

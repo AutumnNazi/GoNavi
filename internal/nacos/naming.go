@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -15,8 +16,21 @@ const (
 	defaultServiceGroup    = "DEFAULT_GROUP"
 )
 
+type nacosServiceItem struct {
+	Name      string `json:"name"`
+	GroupName string `json:"groupName"`
+}
+
+type nacosV3ServicePage struct {
+	TotalCount     int64              `json:"totalCount"`
+	PageNumber     int                `json:"pageNumber"`
+	PagesAvailable int                `json:"pagesAvailable"`
+	PageItems      []nacosServiceItem `json:"pageItems"`
+}
+
 // ListServices lists service names under a namespace.
 func (c *ClientImpl) ListServices(ctx context.Context, query ServiceQuery) (*ServicePage, error) {
+	family := c.currentAPIFamily()
 	pageNo := query.PageNo
 	if pageNo <= 0 {
 		pageNo = 1
@@ -29,15 +43,31 @@ func (c *ClientImpl) ListServices(ctx context.Context, query ServiceQuery) (*Ser
 		pageSize = maxServicePageSize
 	}
 
+	groupName := strings.TrimSpace(query.GroupName)
+	if family == nacosAPIV3 && groupName != "" {
+		return c.listV3ServicesByExactGroup(ctx, query.NamespaceID, groupName, pageNo, pageSize)
+	}
+
 	params := url.Values{}
 	params.Set("pageNo", strconv.Itoa(pageNo))
 	params.Set("pageSize", strconv.Itoa(pageSize))
 	params.Set("namespaceId", normalizeNamespaceID(query.NamespaceID))
-	if group := strings.TrimSpace(query.GroupName); group != "" {
-		params.Set("groupName", group)
+	routes := c.currentAPIRoutes()
+	apiPath := routes.serviceList
+	if (family == nacosAPIV1 || family == nacosAPIV2) && groupName == "" {
+		// Nacos 2.x has no cross-group v2 service list, but retains v1 Catalog.
+		apiPath = routesForNacosAPI(nacosAPIV1).serviceList
+		params.Set("serviceNameParam", "")
+		params.Set("groupNameParam", "")
+	} else if family == nacosAPIV1 || family == nacosAPIV2 {
+		apiPath = routes.serviceListByGroup
+		params.Set("groupName", normalizeServiceGroup(groupName))
+	} else {
+		params.Set("serviceNameParam", "")
+		params.Set("groupNameParam", groupName)
 	}
 
-	body, status, err := c.doRequest(ctx, http.MethodGet, "/v1/ns/service/list", params, nil)
+	body, status, err := c.doRequest(ctx, http.MethodGet, apiPath, params, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -48,24 +78,143 @@ func (c *ClientImpl) ListServices(ctx context.Context, query ServiceQuery) (*Ser
 		})
 	}
 
-	var payload struct {
-		Count int64    `json:"count"`
-		Doms  []string `json:"doms"`
+	data, err := unwrapNacosResult(body)
+	if err != nil {
+		return nil, err
 	}
-	if err := json.Unmarshal(body, &payload); err != nil {
-		return nil, localizedNacosBackendError("nacos.backend.error.parse_services", map[string]any{
-			"detail": err.Error(),
-		})
+	var count int64
+	var services []nacosServiceItem
+	if family == nacosAPIV3 {
+		var payload nacosV3ServicePage
+		if err := json.Unmarshal(data, &payload); err != nil {
+			return nil, localizedNacosBackendError("nacos.backend.error.parse_services", map[string]any{
+				"detail": err.Error(),
+			})
+		}
+		count = payload.TotalCount
+		services = payload.PageItems
+	} else if family == nacosAPIV1 && groupName != "" {
+		var payload struct {
+			Count int64    `json:"count"`
+			Doms  []string `json:"doms"`
+		}
+		if err := json.Unmarshal(data, &payload); err != nil {
+			return nil, localizedNacosBackendError("nacos.backend.error.parse_services", map[string]any{
+				"detail": err.Error(),
+			})
+		}
+		count = payload.Count
+		services = make([]nacosServiceItem, 0, len(payload.Doms))
+		for _, name := range payload.Doms {
+			services = append(services, nacosServiceItem{Name: name, GroupName: normalizeServiceGroup(groupName)})
+		}
+	} else if family == nacosAPIV2 && groupName != "" {
+		var payload struct {
+			Count    int64    `json:"count"`
+			Services []string `json:"services"`
+		}
+		if err := json.Unmarshal(data, &payload); err != nil {
+			return nil, localizedNacosBackendError("nacos.backend.error.parse_services", map[string]any{
+				"detail": err.Error(),
+			})
+		}
+		count = payload.Count
+		services = make([]nacosServiceItem, 0, len(payload.Services))
+		for _, name := range payload.Services {
+			services = append(services, nacosServiceItem{Name: name, GroupName: normalizeServiceGroup(groupName)})
+		}
+	} else {
+		var payload struct {
+			Count       int64              `json:"count"`
+			ServiceList []nacosServiceItem `json:"serviceList"`
+		}
+		if err := json.Unmarshal(data, &payload); err != nil {
+			return nil, localizedNacosBackendError("nacos.backend.error.parse_services", map[string]any{
+				"detail": err.Error(),
+			})
+		}
+		count = payload.Count
+		services = payload.ServiceList
 	}
-	names := make([]string, 0, len(payload.Doms))
-	for _, name := range payload.Doms {
-		name = strings.TrimSpace(name)
+
+	names := make([]string, 0, len(services))
+	for _, service := range services {
+		name := qualifyServiceName(service.Name, service.GroupName)
 		if name != "" {
 			names = append(names, name)
 		}
 	}
 	return &ServicePage{
-		Count:        payload.Count,
+		Count:        count,
+		ServiceNames: names,
+		PageNo:       pageNo,
+		PageSize:     pageSize,
+	}, nil
+}
+
+func (c *ClientImpl) listV3ServicesByExactGroup(
+	ctx context.Context,
+	namespaceID string,
+	groupName string,
+	pageNo int,
+	pageSize int,
+) (*ServicePage, error) {
+	groupName = normalizeServiceGroup(groupName)
+	matched := make([]nacosServiceItem, 0)
+	for remotePageNo := 1; ; remotePageNo++ {
+		params := url.Values{}
+		params.Set("pageNo", strconv.Itoa(remotePageNo))
+		params.Set("pageSize", strconv.Itoa(maxServicePageSize))
+		params.Set("namespaceId", normalizeNamespaceID(namespaceID))
+		params.Set("serviceNameParam", "")
+		params.Set("groupNameParam", groupName)
+
+		body, status, err := c.doRequest(ctx, http.MethodGet, c.currentAPIRoutes().serviceListByGroup, params, nil)
+		if err != nil {
+			return nil, err
+		}
+		if status < 200 || status >= 300 {
+			return nil, localizedNacosBackendError("nacos.backend.error.http_status", map[string]any{
+				"status": status,
+				"body":   truncateForError(string(body)),
+			})
+		}
+		data, err := unwrapNacosResult(body)
+		if err != nil {
+			return nil, err
+		}
+		var payload nacosV3ServicePage
+		if err := json.Unmarshal(data, &payload); err != nil {
+			return nil, localizedNacosBackendError("nacos.backend.error.parse_services", map[string]any{
+				"detail": err.Error(),
+			})
+		}
+		for _, service := range payload.PageItems {
+			if strings.TrimSpace(service.GroupName) == groupName {
+				matched = append(matched, service)
+			}
+		}
+		if payload.PagesAvailable <= remotePageNo {
+			break
+		}
+	}
+
+	start := (pageNo - 1) * pageSize
+	if start > len(matched) {
+		start = len(matched)
+	}
+	end := start + pageSize
+	if end > len(matched) {
+		end = len(matched)
+	}
+	names := make([]string, 0, end-start)
+	for _, service := range matched[start:end] {
+		if name := qualifyServiceName(service.Name, service.GroupName); name != "" {
+			names = append(names, name)
+		}
+	}
+	return &ServicePage{
+		Count:        int64(len(matched)),
 		ServiceNames: names,
 		PageNo:       pageNo,
 		PageSize:     pageSize,
@@ -74,18 +223,24 @@ func (c *ClientImpl) ListServices(ctx context.Context, query ServiceQuery) (*Ser
 
 // GetService loads service detail.
 func (c *ClientImpl) GetService(ctx context.Context, namespaceID, serviceName, groupName string) (*ServiceDetail, error) {
+	family := c.currentAPIFamily()
 	serviceName = strings.TrimSpace(serviceName)
 	if serviceName == "" {
 		return nil, localizedNacosBackendError("nacos.backend.error.service_name_required", nil)
 	}
-	groupName = normalizeServiceGroup(groupName)
+	plainServiceName, groupName := splitServiceName(serviceName, groupName)
+	qualifiedServiceName := qualifyServiceName(plainServiceName, groupName)
 
 	params := url.Values{}
-	params.Set("serviceName", serviceName)
+	if family == nacosAPIV1 {
+		params.Set("serviceName", qualifiedServiceName)
+	} else {
+		params.Set("serviceName", plainServiceName)
+	}
 	params.Set("groupName", groupName)
 	params.Set("namespaceId", normalizeNamespaceID(namespaceID))
 
-	body, status, err := c.doRequest(ctx, http.MethodGet, "/v1/ns/service", params, nil)
+	body, status, err := c.doRequest(ctx, http.MethodGet, c.currentAPIRoutes().service, params, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -96,10 +251,16 @@ func (c *ClientImpl) GetService(ctx context.Context, namespaceID, serviceName, g
 		})
 	}
 
+	data, err := unwrapNacosResult(body)
+	if err != nil {
+		return nil, err
+	}
 	var payload struct {
 		Name             string            `json:"name"`
+		ServiceName      string            `json:"serviceName"`
 		GroupName        string            `json:"groupName"`
 		NamespaceID      string            `json:"namespaceId"`
+		Namespace        string            `json:"namespace"`
 		ProtectThreshold float64           `json:"protectThreshold"`
 		Metadata         map[string]string `json:"metadata"`
 		Selector         map[string]any    `json:"selector"`
@@ -108,8 +269,13 @@ func (c *ClientImpl) GetService(ctx context.Context, namespaceID, serviceName, g
 			Metadata      map[string]string `json:"metadata"`
 			HealthChecker map[string]any    `json:"healthChecker"`
 		} `json:"clusters"`
+		ClusterMap map[string]struct {
+			ClusterName   string            `json:"clusterName"`
+			Metadata      map[string]string `json:"metadata"`
+			HealthChecker map[string]any    `json:"healthChecker"`
+		} `json:"clusterMap"`
 	}
-	if err := json.Unmarshal(body, &payload); err != nil {
+	if err := json.Unmarshal(data, &payload); err != nil {
 		return nil, localizedNacosBackendError("nacos.backend.error.parse_service", map[string]any{
 			"detail": err.Error(),
 		})
@@ -123,10 +289,23 @@ func (c *ClientImpl) GetService(ctx context.Context, namespaceID, serviceName, g
 			HealthChecker: cluster.HealthChecker,
 		})
 	}
+	clusterKeys := make([]string, 0, len(payload.ClusterMap))
+	for key := range payload.ClusterMap {
+		clusterKeys = append(clusterKeys, key)
+	}
+	sort.Strings(clusterKeys)
+	for _, key := range clusterKeys {
+		cluster := payload.ClusterMap[key]
+		clusters = append(clusters, ServiceCluster{
+			Name:          firstNonEmpty(strings.TrimSpace(cluster.ClusterName), strings.TrimSpace(key)),
+			Metadata:      cluster.Metadata,
+			HealthChecker: cluster.HealthChecker,
+		})
+	}
 	return &ServiceDetail{
-		Name:             firstNonEmpty(strings.TrimSpace(payload.Name), serviceName),
+		Name:             firstNonEmpty(strings.TrimSpace(payload.Name), strings.TrimSpace(payload.ServiceName), plainServiceName),
 		GroupName:        firstNonEmpty(strings.TrimSpace(payload.GroupName), groupName),
-		NamespaceID:      normalizeNamespaceID(firstNonEmpty(payload.NamespaceID, namespaceID)),
+		NamespaceID:      normalizeNamespaceID(firstNonEmpty(payload.NamespaceID, payload.Namespace, namespaceID)),
 		ProtectThreshold: payload.ProtectThreshold,
 		Metadata:         payload.Metadata,
 		Selector:         payload.Selector,
@@ -136,21 +315,25 @@ func (c *ClientImpl) GetService(ctx context.Context, namespaceID, serviceName, g
 
 // CreateService creates a service.
 func (c *ClientImpl) CreateService(ctx context.Context, req CreateServiceRequest) error {
+	family := c.currentAPIFamily()
 	serviceName := strings.TrimSpace(req.ServiceName)
 	if serviceName == "" {
 		return localizedNacosBackendError("nacos.backend.error.service_name_required", nil)
 	}
+	serviceName, groupName := splitServiceName(serviceName, req.GroupName)
 	form := url.Values{}
-	form.Set("serviceName", serviceName)
-	form.Set("groupName", normalizeServiceGroup(req.GroupName))
-	form.Set("namespaceId", normalizeNamespaceID(req.NamespaceID))
-	if req.ProtectThreshold > 0 {
-		form.Set("protectThreshold", strconv.FormatFloat(req.ProtectThreshold, 'f', -1, 64))
+	if family == nacosAPIV1 {
+		form.Set("serviceName", qualifyServiceName(serviceName, groupName))
+	} else {
+		form.Set("serviceName", serviceName)
 	}
+	form.Set("groupName", groupName)
+	form.Set("namespaceId", normalizeNamespaceID(req.NamespaceID))
+	form.Set("protectThreshold", strconv.FormatFloat(req.ProtectThreshold, 'f', -1, 64))
 	if meta := encodeMetadata(req.Metadata); meta != "" {
 		form.Set("metadata", meta)
 	}
-	body, status, err := c.doRequest(ctx, http.MethodPost, "/v1/ns/service", nil, form)
+	body, status, err := c.doRequest(ctx, http.MethodPost, c.currentAPIRoutes().service, nil, form)
 	if err != nil {
 		return err
 	}
@@ -159,21 +342,25 @@ func (c *ClientImpl) CreateService(ctx context.Context, req CreateServiceRequest
 
 // UpdateService updates a service.
 func (c *ClientImpl) UpdateService(ctx context.Context, req UpdateServiceRequest) error {
+	family := c.currentAPIFamily()
 	serviceName := strings.TrimSpace(req.ServiceName)
 	if serviceName == "" {
 		return localizedNacosBackendError("nacos.backend.error.service_name_required", nil)
 	}
+	serviceName, groupName := splitServiceName(serviceName, req.GroupName)
 	form := url.Values{}
-	form.Set("serviceName", serviceName)
-	form.Set("groupName", normalizeServiceGroup(req.GroupName))
-	form.Set("namespaceId", normalizeNamespaceID(req.NamespaceID))
-	if req.ProtectThreshold > 0 {
-		form.Set("protectThreshold", strconv.FormatFloat(req.ProtectThreshold, 'f', -1, 64))
+	if family == nacosAPIV1 {
+		form.Set("serviceName", qualifyServiceName(serviceName, groupName))
+	} else {
+		form.Set("serviceName", serviceName)
 	}
+	form.Set("groupName", groupName)
+	form.Set("namespaceId", normalizeNamespaceID(req.NamespaceID))
+	form.Set("protectThreshold", strconv.FormatFloat(req.ProtectThreshold, 'f', -1, 64))
 	if meta := encodeMetadata(req.Metadata); meta != "" {
 		form.Set("metadata", meta)
 	}
-	body, status, err := c.doRequest(ctx, http.MethodPut, "/v1/ns/service", nil, form)
+	body, status, err := c.doRequest(ctx, http.MethodPut, c.currentAPIRoutes().service, nil, form)
 	if err != nil {
 		return err
 	}
@@ -182,15 +369,21 @@ func (c *ClientImpl) UpdateService(ctx context.Context, req UpdateServiceRequest
 
 // DeleteService deletes a service (only when instance count is 0 on server side).
 func (c *ClientImpl) DeleteService(ctx context.Context, namespaceID, serviceName, groupName string) error {
+	family := c.currentAPIFamily()
 	serviceName = strings.TrimSpace(serviceName)
 	if serviceName == "" {
 		return localizedNacosBackendError("nacos.backend.error.service_name_required", nil)
 	}
+	serviceName, groupName = splitServiceName(serviceName, groupName)
 	params := url.Values{}
-	params.Set("serviceName", serviceName)
-	params.Set("groupName", normalizeServiceGroup(groupName))
+	if family == nacosAPIV1 {
+		params.Set("serviceName", qualifyServiceName(serviceName, groupName))
+	} else {
+		params.Set("serviceName", serviceName)
+	}
+	params.Set("groupName", groupName)
 	params.Set("namespaceId", normalizeNamespaceID(namespaceID))
-	body, status, err := c.doRequest(ctx, http.MethodDelete, "/v1/ns/service", params, nil)
+	body, status, err := c.doRequest(ctx, http.MethodDelete, c.currentAPIRoutes().service, params, nil)
 	if err != nil {
 		return err
 	}
@@ -199,22 +392,33 @@ func (c *ClientImpl) DeleteService(ctx context.Context, namespaceID, serviceName
 
 // ListInstances lists instances for a service.
 func (c *ClientImpl) ListInstances(ctx context.Context, query InstanceQuery) (*InstanceList, error) {
+	family := c.currentAPIFamily()
 	serviceName := strings.TrimSpace(query.ServiceName)
 	if serviceName == "" {
 		return nil, localizedNacosBackendError("nacos.backend.error.service_name_required", nil)
 	}
+	serviceName, groupName := splitServiceName(serviceName, query.GroupName)
+	qualifiedServiceName := qualifyServiceName(serviceName, groupName)
 	params := url.Values{}
-	params.Set("serviceName", serviceName)
-	params.Set("groupName", normalizeServiceGroup(query.GroupName))
+	if family == nacosAPIV1 {
+		params.Set("serviceName", qualifiedServiceName)
+	} else {
+		params.Set("serviceName", serviceName)
+	}
+	params.Set("groupName", groupName)
 	params.Set("namespaceId", normalizeNamespaceID(query.NamespaceID))
 	if clusters := strings.TrimSpace(query.Clusters); clusters != "" {
-		params.Set("clusters", clusters)
+		if family == nacosAPIV1 {
+			params.Set("clusters", clusters)
+		} else {
+			params.Set("clusterName", clusters)
+		}
 	}
 	if query.HealthyOnly {
 		params.Set("healthyOnly", "true")
 	}
 
-	body, status, err := c.doRequest(ctx, http.MethodGet, "/v1/ns/instance/list", params, nil)
+	body, status, err := c.doRequest(ctx, http.MethodGet, c.currentAPIRoutes().instanceList, params, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -225,25 +429,38 @@ func (c *ClientImpl) ListInstances(ctx context.Context, query InstanceQuery) (*I
 		})
 	}
 
-	var payload struct {
-		Name        string `json:"name"`
-		GroupName   string `json:"groupName"`
-		Clusters    string `json:"clusters"`
-		CacheMillis int64  `json:"cacheMillis"`
-		Hosts       []struct {
-			InstanceID  string            `json:"instanceId"`
-			IP          string            `json:"ip"`
-			Port        int               `json:"port"`
-			Weight      float64           `json:"weight"`
-			Healthy     bool              `json:"healthy"`
-			Enabled     bool              `json:"enabled"`
-			Ephemeral   bool              `json:"ephemeral"`
-			ClusterName string            `json:"clusterName"`
-			ServiceName string            `json:"serviceName"`
-			Metadata    map[string]string `json:"metadata"`
-		} `json:"hosts"`
+	data, err := unwrapNacosResult(body)
+	if err != nil {
+		return nil, err
 	}
-	if err := json.Unmarshal(body, &payload); err != nil {
+	type instancePayload struct {
+		InstanceID  string            `json:"instanceId"`
+		IP          string            `json:"ip"`
+		Port        int               `json:"port"`
+		Weight      float64           `json:"weight"`
+		Healthy     bool              `json:"healthy"`
+		Enabled     bool              `json:"enabled"`
+		Ephemeral   bool              `json:"ephemeral"`
+		ClusterName string            `json:"clusterName"`
+		ServiceName string            `json:"serviceName"`
+		Metadata    map[string]string `json:"metadata"`
+	}
+	var payload struct {
+		Name        string            `json:"name"`
+		GroupName   string            `json:"groupName"`
+		Clusters    string            `json:"clusters"`
+		CacheMillis int64             `json:"cacheMillis"`
+		Hosts       []instancePayload `json:"hosts"`
+	}
+	if family == nacosAPIV3 {
+		if err := json.Unmarshal(data, &payload.Hosts); err != nil {
+			return nil, localizedNacosBackendError("nacos.backend.error.parse_instances", map[string]any{
+				"detail": err.Error(),
+			})
+		}
+		payload.Name = qualifiedServiceName
+		payload.GroupName = groupName
+	} else if err := json.Unmarshal(data, &payload); err != nil {
 		return nil, localizedNacosBackendError("nacos.backend.error.parse_instances", map[string]any{
 			"detail": err.Error(),
 		})
@@ -260,13 +477,13 @@ func (c *ClientImpl) ListInstances(ctx context.Context, query InstanceQuery) (*I
 			Enabled:     host.Enabled,
 			Ephemeral:   host.Ephemeral,
 			ClusterName: strings.TrimSpace(host.ClusterName),
-			ServiceName: firstNonEmpty(strings.TrimSpace(host.ServiceName), serviceName),
+			ServiceName: firstNonEmpty(strings.TrimSpace(host.ServiceName), qualifiedServiceName),
 			Metadata:    host.Metadata,
 		})
 	}
 	return &InstanceList{
-		Name:        firstNonEmpty(strings.TrimSpace(payload.Name), serviceName),
-		GroupName:   firstNonEmpty(strings.TrimSpace(payload.GroupName), normalizeServiceGroup(query.GroupName)),
+		Name:        firstNonEmpty(strings.TrimSpace(payload.Name), qualifiedServiceName),
+		GroupName:   firstNonEmpty(strings.TrimSpace(payload.GroupName), groupName),
 		Clusters:    strings.TrimSpace(payload.Clusters),
 		CacheMillis: payload.CacheMillis,
 		Hosts:       hosts,
@@ -278,8 +495,8 @@ func (c *ClientImpl) GetInstance(ctx context.Context, req InstanceRequest) (*Ins
 	if err := validateInstanceIdentity(req); err != nil {
 		return nil, err
 	}
-	params := buildInstanceParams(req, false)
-	body, status, err := c.doRequest(ctx, http.MethodGet, "/v1/ns/instance", params, nil)
+	params := buildInstanceParams(req, false, c.currentAPIFamily())
+	body, status, err := c.doRequest(ctx, http.MethodGet, c.currentAPIRoutes().instance, params, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -288,6 +505,10 @@ func (c *ClientImpl) GetInstance(ctx context.Context, req InstanceRequest) (*Ins
 			"status": status,
 			"body":   truncateForError(string(body)),
 		})
+	}
+	data, err := unwrapNacosResult(body)
+	if err != nil {
+		return nil, err
 	}
 	var payload struct {
 		InstanceID  string            `json:"instanceId"`
@@ -302,7 +523,7 @@ func (c *ClientImpl) GetInstance(ctx context.Context, req InstanceRequest) (*Ins
 		ServiceName string            `json:"serviceName"`
 		Metadata    map[string]string `json:"metadata"`
 	}
-	if err := json.Unmarshal(body, &payload); err != nil {
+	if err := json.Unmarshal(data, &payload); err != nil {
 		return nil, localizedNacosBackendError("nacos.backend.error.parse_instance", map[string]any{
 			"detail": err.Error(),
 		})
@@ -326,8 +547,8 @@ func (c *ClientImpl) RegisterInstance(ctx context.Context, req InstanceRequest) 
 	if err := validateInstanceIdentity(req); err != nil {
 		return err
 	}
-	form := buildInstanceForm(req, true)
-	body, status, err := c.doRequest(ctx, http.MethodPost, "/v1/ns/instance", nil, form)
+	form := buildInstanceForm(req, true, c.currentAPIFamily())
+	body, status, err := c.doRequest(ctx, http.MethodPost, c.currentAPIRoutes().instance, nil, form)
 	if err != nil {
 		return err
 	}
@@ -339,8 +560,8 @@ func (c *ClientImpl) UpdateInstance(ctx context.Context, req InstanceRequest) er
 	if err := validateInstanceIdentity(req); err != nil {
 		return err
 	}
-	form := buildInstanceForm(req, true)
-	body, status, err := c.doRequest(ctx, http.MethodPut, "/v1/ns/instance", nil, form)
+	form := buildInstanceForm(req, true, c.currentAPIFamily())
+	body, status, err := c.doRequest(ctx, http.MethodPut, c.currentAPIRoutes().instance, nil, form)
 	if err != nil {
 		return err
 	}
@@ -352,8 +573,8 @@ func (c *ClientImpl) DeregisterInstance(ctx context.Context, req InstanceRequest
 	if err := validateInstanceIdentity(req); err != nil {
 		return err
 	}
-	params := buildInstanceParams(req, true)
-	body, status, err := c.doRequest(ctx, http.MethodDelete, "/v1/ns/instance", params, nil)
+	params := buildInstanceParams(req, true, c.currentAPIFamily())
+	body, status, err := c.doRequest(ctx, http.MethodDelete, c.currentAPIRoutes().instance, params, nil)
 	if err != nil {
 		return err
 	}
@@ -368,9 +589,9 @@ func (c *ClientImpl) UpdateInstanceHealth(ctx context.Context, req InstanceReque
 	if req.Healthy == nil {
 		return localizedNacosBackendError("nacos.backend.error.instance_healthy_required", nil)
 	}
-	form := buildInstanceForm(req, false)
+	form := buildInstanceForm(req, false, c.currentAPIFamily())
 	form.Set("healthy", strconv.FormatBool(*req.Healthy))
-	body, status, err := c.doRequest(ctx, http.MethodPut, "/v1/ns/health/instance", nil, form)
+	body, status, err := c.doRequest(ctx, http.MethodPut, c.currentAPIRoutes().health, nil, form)
 	if err != nil {
 		return err
 	}
@@ -390,16 +611,23 @@ func validateInstanceIdentity(req InstanceRequest) error {
 	return nil
 }
 
-func buildInstanceParams(req InstanceRequest, includeEphemeral bool) url.Values {
+func buildInstanceParams(req InstanceRequest, includeEphemeral bool, family nacosAPIFamily) url.Values {
+	serviceName, groupName := splitServiceName(req.ServiceName, req.GroupName)
 	params := url.Values{}
-	params.Set("serviceName", strings.TrimSpace(req.ServiceName))
-	params.Set("groupName", normalizeServiceGroup(req.GroupName))
+	if family == nacosAPIV1 {
+		params.Set("serviceName", qualifyServiceName(serviceName, groupName))
+	} else {
+		params.Set("serviceName", serviceName)
+	}
+	params.Set("groupName", groupName)
 	params.Set("namespaceId", normalizeNamespaceID(req.NamespaceID))
 	params.Set("ip", strings.TrimSpace(req.IP))
 	params.Set("port", strconv.Itoa(req.Port))
 	if cluster := strings.TrimSpace(req.ClusterName); cluster != "" {
 		params.Set("clusterName", cluster)
-		params.Set("cluster", cluster)
+		if family == nacosAPIV1 {
+			params.Set("cluster", cluster)
+		}
 	}
 	if includeEphemeral && req.Ephemeral != nil {
 		params.Set("ephemeral", strconv.FormatBool(*req.Ephemeral))
@@ -407,8 +635,8 @@ func buildInstanceParams(req InstanceRequest, includeEphemeral bool) url.Values 
 	return params
 }
 
-func buildInstanceForm(req InstanceRequest, includeAttrs bool) url.Values {
-	form := buildInstanceParams(req, true)
+func buildInstanceForm(req InstanceRequest, includeAttrs bool, family nacosAPIFamily) url.Values {
+	form := buildInstanceParams(req, true, family)
 	if includeAttrs {
 		if req.Weight > 0 {
 			form.Set("weight", strconv.FormatFloat(req.Weight, 'f', -1, 64))
@@ -434,6 +662,26 @@ func normalizeServiceGroup(group string) string {
 	return group
 }
 
+func splitServiceName(serviceName, groupName string) (string, string) {
+	serviceName = strings.TrimSpace(serviceName)
+	if separator := strings.Index(serviceName, "@@"); separator >= 0 {
+		qualifiedGroup := strings.TrimSpace(serviceName[:separator])
+		plainServiceName := strings.TrimSpace(serviceName[separator+2:])
+		if plainServiceName != "" {
+			return plainServiceName, normalizeServiceGroup(qualifiedGroup)
+		}
+	}
+	return serviceName, normalizeServiceGroup(groupName)
+}
+
+func qualifyServiceName(serviceName, groupName string) string {
+	serviceName, groupName = splitServiceName(serviceName, groupName)
+	if serviceName == "" {
+		return ""
+	}
+	return groupName + "@@" + serviceName
+}
+
 func encodeMetadata(metadata map[string]string) string {
 	if len(metadata) == 0 {
 		return ""
@@ -452,12 +700,23 @@ func parseNamingOKResult(body []byte, status int, failKey string) error {
 			"body":   truncateForError(string(body)),
 		})
 	}
-	text := strings.TrimSpace(string(body))
+	data, err := unwrapNacosResult(body)
+	if err != nil {
+		return err
+	}
+	if len(data) == 0 {
+		return nil
+	}
+	text := strings.TrimSpace(string(data))
 	if text == "" || strings.EqualFold(text, "ok") || text == "true" {
 		return nil
 	}
 	var boolResult bool
-	if err := json.Unmarshal(body, &boolResult); err == nil && boolResult {
+	if err := json.Unmarshal(data, &boolResult); err == nil && boolResult {
+		return nil
+	}
+	var stringResult string
+	if err := json.Unmarshal(data, &stringResult); err == nil && strings.EqualFold(strings.TrimSpace(stringResult), "ok") {
 		return nil
 	}
 	return localizedNacosBackendError(failKey, map[string]any{
