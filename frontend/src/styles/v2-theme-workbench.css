@@ -356,7 +356,8 @@ body[data-ui-version="v2"] .gn-v2-query-monaco-stage {
   overflow: hidden;
   border-top: 0.5px solid var(--gn-br-1);
   border-bottom: 0.5px solid var(--gn-br-1);
-  background: var(--gn-bg-panel);
+  /* Same token as Monaco surface */
+  background: var(--gn-monaco-bg, var(--gn-bg-panel));
 }
 
 body[data-ui-version="v2"] .gn-v2-query-monaco-stage:has(.monaco-editor .find-widget.visible:not(.hiddenEditor)) {
@@ -366,6 +367,7 @@ body[data-ui-version="v2"] .gn-v2-query-monaco-stage:has(.monaco-editor .find-wi
 body[data-ui-version="v2"] .gn-v2-query-monaco-shell {
   min-height: 0;
   overflow: visible;
+  background: var(--gn-monaco-bg, var(--gn-bg-panel));
 }
 
 body[data-ui-version="v2"] .gn-v2-query-resizer {

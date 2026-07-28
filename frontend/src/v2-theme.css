@@ -28,6 +28,8 @@ body[data-ui-version="v2"][data-theme="light"] {
   --gn-bg-chrome:   #ececea;
   --gn-bg-panel:    #ffffff;
   --gn-bg-panel-2:  #fafaf8;
+  /* All Monaco editors share this surface token (see .gn-monaco-surface). */
+  --gn-monaco-bg:   var(--gn-bg-panel);
   --gn-bg-hover:    rgba(15, 23, 42, 0.045);
   --gn-bg-active:   rgba(15, 23, 42, 0.075);
   --gn-bg-selected: rgba(34, 197, 94, 0.10);
@@ -79,6 +81,7 @@ body[data-ui-version="v2"][data-theme="dark"] {
   --gn-bg-chrome:   #14171c;
   --gn-bg-panel:    #161a21;
   --gn-bg-panel-2:  #1b1f27;
+  --gn-monaco-bg:   var(--gn-bg-panel);
   --gn-bg-hover:    rgba(255, 255, 255, 0.05);
   --gn-bg-active:   rgba(255, 255, 255, 0.08);
   --gn-bg-selected: rgba(34, 197, 94, 0.14);
@@ -385,6 +388,28 @@ body[data-ui-version="v2"] .ant-picker {
   transition: border-color 0.08s, background 0.08s !important;
 }
 
+/*
+ * allowClear / prefix / suffix wraps input in .ant-input-affix-wrapper.
+ * Only the wrapper should draw the border — otherwise it looks double-layered.
+ */
+body[data-ui-version="v2"] .ant-input-affix-wrapper > input.ant-input,
+body[data-ui-version="v2"] .ant-input-affix-wrapper .ant-input {
+  border: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  background: transparent !important;
+  outline: none !important;
+}
+
+body[data-ui-version="v2"] .ant-input-affix-wrapper > input.ant-input:focus,
+body[data-ui-version="v2"] .ant-input-affix-wrapper > input.ant-input:focus-visible,
+body[data-ui-version="v2"] .ant-input-affix-wrapper .ant-input:focus,
+body[data-ui-version="v2"] .ant-input-affix-wrapper .ant-input:focus-visible {
+  border: none !important;
+  box-shadow: none !important;
+  outline: none !important;
+}
+
 body[data-ui-version="v2"] .ant-input::placeholder,
 body[data-ui-version="v2"] .ant-input-affix-wrapper input::placeholder {
   color: var(--gn-fg-5) !important;
@@ -397,6 +422,13 @@ body[data-ui-version="v2"] .ant-select-focused .ant-select-selector,
 body[data-ui-version="v2"] .ant-picker-focused {
   border-color: var(--gn-info) !important;
   box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.12) !important;
+}
+
+/* Focus ring only on the wrapper when affix is present (not also on inner input). */
+body[data-ui-version="v2"] .ant-input-affix-wrapper-focused > input.ant-input,
+body[data-ui-version="v2"] .ant-input-affix-wrapper-focused .ant-input {
+  border: none !important;
+  box-shadow: none !important;
 }
 
 body[data-ui-version="v2"] .ant-input-search-button {
@@ -559,7 +591,8 @@ body[data-ui-version="v2"] .ant-modal .ant-modal-content {
 body[data-ui-version="v2"] .ant-modal .ant-modal-header {
   background: var(--gn-bg-panel-2) !important;
   border-bottom: 0.5px solid var(--gn-br-1) !important;
-  padding: 12px 18px !important;
+  /* Right padding reserves room for absolute close on content */
+  padding: 14px 48px 14px 18px !important;
   margin: 0 !important;
 }
 
@@ -567,6 +600,39 @@ body[data-ui-version="v2"] .ant-modal .ant-modal-title {
   font-size: 14px !important;
   font-weight: 600 !important;
   color: var(--gn-fg-1) !important;
+  line-height: 22px !important;
+}
+
+/*
+ * Ant mounts .ant-modal-close on .ant-modal-content (absolute).
+ * Center X against the title row: header padding 14 + title 22 ≈ 50 → top (50-28)/2 ≈ 11.
+ */
+body[data-ui-version="v2"] .ant-modal .ant-modal-close {
+  top: 11px !important;
+  inset-inline-end: 12px !important;
+  width: 28px !important;
+  height: 28px !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  transform: none !important;
+  color: var(--gn-fg-3) !important;
+  background: transparent !important;
+  border-radius: 6px !important;
+}
+
+body[data-ui-version="v2"] .ant-modal .ant-modal-close:hover {
+  color: var(--gn-fg-1) !important;
+  background: var(--gn-bg-hover) !important;
+}
+
+body[data-ui-version="v2"] .ant-modal .ant-modal-close-x {
+  width: 28px !important;
+  height: 28px !important;
+  line-height: 28px !important;
+  font-size: 14px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
 }
 
 body[data-ui-version="v2"] .ant-modal .ant-modal-body {
@@ -1348,11 +1414,48 @@ body[data-ui-version="v2"] [class*="AISend"] {
   color: #fff !important;
 }
 
-/* ─── Code / SQL editor surfaces ───────────────────────── */
+/* ─── Code / SQL editor surfaces (unified via MonacoEditor .gn-monaco-surface) ─
+ * Consumers must not set per-page Monaco bg; only --gn-monaco-bg (defaults to panel).
+ * Covers SQL workbench, Redis field modals, Nacos, DataGrid cell/JSON editors, etc.
+ * --gn-monaco-bg is set on light/dark roots and injected into custom themes.
+ */
+body[data-ui-version="v2"] .gn-monaco-surface {
+  background: var(--gn-monaco-bg, var(--gn-bg-panel)) !important;
+  background-color: var(--gn-monaco-bg, var(--gn-bg-panel)) !important;
+}
+
+/* Center line numbers in the gutter so single digits don't look left/right skewed */
+body[data-ui-version="v2"] .gn-monaco-surface .monaco-editor .margin-view-overlays .line-numbers,
+body[data-ui-version="v2"] .gn-monaco-surface .monaco-editor .line-numbers {
+  text-align: center !important;
+  /* Monaco defaults to right-align + padding-right; reset so digits sit in the middle */
+  padding-right: 0 !important;
+  box-sizing: border-box;
+}
+
+body[data-ui-version="v2"] .gn-monaco-surface .monaco-editor,
+body[data-ui-version="v2"] .gn-monaco-surface .monaco-editor-background,
+body[data-ui-version="v2"] .gn-monaco-surface .monaco-editor .margin,
+body[data-ui-version="v2"] .gn-monaco-surface .monaco-editor .overflow-guard,
+body[data-ui-version="v2"] .gn-monaco-surface .monaco-editor .monaco-scrollable-element,
+body[data-ui-version="v2"] .gn-monaco-surface .monaco-editor .lines-content,
+body[data-ui-version="v2"] .gn-monaco-surface .monaco-editor .inputarea,
+body[data-ui-version="v2"] .gn-monaco-surface .monaco-editor .view-overlays,
+body[data-ui-version="v2"] .gn-monaco-surface .monaco-editor .margin-view-overlays,
+body[data-ui-version="v2"] .gn-monaco-surface .monaco-editor .sticky-widget,
+body[data-ui-version="v2"] .gn-monaco-surface .monaco-editor .sticky-widget .sticky-line-content,
+body[data-ui-version="v2"] .gn-monaco-surface .monaco-editor .sticky-widget .sticky-line-number {
+  background: var(--gn-monaco-bg, var(--gn-bg-panel)) !important;
+  background-color: var(--gn-monaco-bg, var(--gn-bg-panel)) !important;
+}
+
+/* Fallback when editor is not wrapped (legacy/direct monaco mounts). */
 body[data-ui-version="v2"] .monaco-editor,
 body[data-ui-version="v2"] .monaco-editor-background,
-body[data-ui-version="v2"] .monaco-editor .margin {
-  background-color: var(--gn-bg-panel) !important;
+body[data-ui-version="v2"] .monaco-editor .margin,
+body[data-ui-version="v2"] .monaco-editor .overflow-guard {
+  background: var(--gn-monaco-bg, var(--gn-bg-panel)) !important;
+  background-color: var(--gn-monaco-bg, var(--gn-bg-panel)) !important;
 }
 
 body[data-ui-version="v2"] .monaco-editor,

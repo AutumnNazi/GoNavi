@@ -1095,6 +1095,7 @@ const DefinitionViewer: React.FC<DefinitionViewerProps> = ({ tab }) => {
                 <Editor
                     path={editorModelPath}
                     height="100%"
+                    gonaviTypography="sql"
                     language="sql"
                     theme={darkMode ? 'transparent-dark' : 'transparent-light'}
                     value={displayedDefinition}

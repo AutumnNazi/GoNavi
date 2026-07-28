@@ -254,6 +254,7 @@ body[data-custom-theme][data-ui-version="v2"] {
   --gn-bg-chrome: ${palette.chrome};
   --gn-bg-panel: ${palette.panel};
   --gn-bg-panel-2: ${palette.panel2};
+  --gn-monaco-bg: var(--gn-bg-panel);
   --gn-bg-input: ${palette.input};
   --gn-bg-subtle: ${palette.panel2};
   --gn-bg-hover: ${palette.hover};
