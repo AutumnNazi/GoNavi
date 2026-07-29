@@ -1754,7 +1754,7 @@ const ConnectionModal: React.FC<{
   const handleOk = async () => {
     try {
       await form.validateFields();
-      const values = form.getFieldsValue(true);
+      const values = { ...form.getFieldsValue(true), type: dbType };
       const unavailableReason = await resolveDriverUnavailableReason(
         values.type,
         values.driver,
@@ -1889,7 +1889,7 @@ const ConnectionModal: React.FC<{
     try {
       await form.validateFields();
       if (!isCurrentTestRun()) return;
-      const values = form.getFieldsValue(true);
+      const values = { ...form.getFieldsValue(true), type: dbType };
       const unavailableReason = await resolveDriverUnavailableReason(
         values.type,
         values.driver,

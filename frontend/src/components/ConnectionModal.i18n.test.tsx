@@ -39,6 +39,7 @@ const backendApp = {
   DBGetDatabases: vi.fn(),
   GetDriverStatusList: vi.fn(),
   MongoDiscoverMembers: vi.fn(),
+  SaveConnection: vi.fn(),
   TestConnection: vi.fn(),
   RedisConnect: vi.fn(),
   SelectDatabaseFile: vi.fn(),
@@ -390,6 +391,11 @@ describe("ConnectionModal i18n", () => {
     storeState.appearance.uiVersion = "legacy";
     storeState.appearance.opacity = 1;
     backendApp.GetDriverStatusList.mockResolvedValue({ success: true, data: { drivers: [] } });
+    backendApp.SaveConnection.mockReset();
+    backendApp.SaveConnection.mockImplementation(async (input) => ({
+      ...input,
+      config: { ...input.config, password: "" },
+    }));
     backendApp.TestConnection.mockResolvedValue({ success: false, message: "saved connection not found: conn-1" });
     backendApp.DBGetDatabases.mockResolvedValue({ success: true, data: [] });
     backendApp.MongoDiscoverMembers.mockResolvedValue({ success: true, data: { members: [] } });
@@ -409,6 +415,56 @@ describe("ConnectionModal i18n", () => {
     mockFormValues = {};
     mockValidateFields = undefined;
     setCurrentLanguage("zh-CN");
+  });
+
+  it("keeps the selected RabbitMQ type when the hidden form value drifts after a failed test", async () => {
+    setCurrentLanguage("zh-CN");
+    backendApp.TestConnection.mockResolvedValue({
+      success: false,
+      message: "RabbitMQ Management API port required",
+    });
+    const onClose = vi.fn();
+    Object.assign(window, {
+      go: { app: { App: backendApp } },
+    });
+    const { default: ConnectionModal } = await import("./ConnectionModal");
+
+    let renderer: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<ConnectionModal open onClose={onClose} />);
+    });
+    await act(async () => {
+      findClickableCard(renderer!, "RabbitMQ").props.onClick();
+    });
+    await act(async () => {
+      findButton(renderer!, "测试连接").props.onClick();
+      await flushConnectionTestTick();
+    });
+
+    expect(backendApp.TestConnection).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "rabbitmq", port: 15672 }),
+    );
+
+    // Reproduces the observed mismatch: the visible selected type remains
+    // RabbitMQ while Ant Design's hidden field falls back to its initial value.
+    mockFormValues = { ...mockFormValues, type: "mysql" };
+    await act(async () => {
+      findButton(renderer!, "保存").props.onClick();
+      await flushConnectionTestTick();
+    });
+
+    expect(backendApp.SaveConnection).toHaveBeenCalledWith(
+      expect.objectContaining({
+        iconType: "",
+        config: expect.objectContaining({ type: "rabbitmq", port: 15672 }),
+      }),
+    );
+    expect(storeState.addConnection).toHaveBeenCalledWith(
+      expect.objectContaining({
+        config: expect.objectContaining({ type: "rabbitmq", port: 15672 }),
+      }),
+    );
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 
   it("updates visible copy when languagePreference changes while the modal stays open", async () => {

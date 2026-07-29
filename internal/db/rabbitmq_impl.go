@@ -50,6 +50,9 @@ func (r *RabbitMQDB) Connect(config connection.ConnectionConfig) (err error) {
 	}()
 
 	runConfig := normalizeRabbitMQConfig(config)
+	if err := validateRabbitMQManagementPort(runConfig.Port, config.URI); err != nil {
+		return err
+	}
 	if runConfig.UseSSH {
 		forwarder, err := ssh.AcquireLocalForwarder(runConfig.SSH, runConfig.Host, runConfig.Port)
 		if err != nil {
@@ -85,6 +88,33 @@ func (r *RabbitMQDB) Connect(config connection.ConnectionConfig) (err error) {
 		return err
 	}
 	return nil
+}
+
+func validateRabbitMQManagementPort(port int, rawURI string) error {
+	if rabbitMQHasExplicitManagementURI(rawURI) {
+		return nil
+	}
+	switch port {
+	case 5672:
+		return fmt.Errorf("RabbitMQ 数据源使用 Management API，5672 是 AMQP 协议端口；请启用 rabbitmq_management 插件并填写 Management API 端口（通常为 15672）")
+	case 5671:
+		return fmt.Errorf("RabbitMQ 数据源使用 Management API，5671 是 AMQPS 协议端口；请启用 rabbitmq_management 插件并填写 HTTPS Management API 端口（通常为 15671）")
+	default:
+		return nil
+	}
+}
+
+func rabbitMQHasExplicitManagementURI(rawURI string) bool {
+	parsed, err := url.Parse(strings.TrimSpace(rawURI))
+	if err != nil || strings.TrimSpace(parsed.Host) == "" {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(parsed.Scheme)) {
+	case "http", "https":
+		return true
+	default:
+		return false
+	}
 }
 
 func (r *RabbitMQDB) Close() error {
