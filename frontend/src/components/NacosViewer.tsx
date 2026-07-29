@@ -762,8 +762,12 @@ const NacosViewer: React.FC<NacosViewerProps> = ({
       message.warning(tr('nacos_viewer.message.beta_ips_required'));
       return;
     }
+    const publishTarget = detail;
+    const publishSelectionGeneration = selectionGenerationRef.current;
+    let publishSucceeded = false;
     setPublishing(true);
     try {
+      await stopListen();
       const res = await (window as any).go.app.App.NacosPublishConfig(rpcConfig, {
         namespaceId: namespaceId || '',
         dataId: detail.dataId,
@@ -775,9 +779,11 @@ const NacosViewer: React.FC<NacosViewerProps> = ({
         betaIps: publishMode === 'beta' ? betaIps.trim() : '',
       });
       if (!res?.success) {
+        void startListen(publishTarget, publishSelectionGeneration);
         message.error(res?.message || 'publish failed');
         return;
       }
+      publishSucceeded = true;
       message.success(
         publishMode === 'beta'
           ? tr('nacos_viewer.message.beta_publish_success')
@@ -787,12 +793,15 @@ const NacosViewer: React.FC<NacosViewerProps> = ({
       setRemoteChanged(false);
       await loadList(pageNo);
       await loadDetail({
-        dataId: detail.dataId,
-        group: detail.group,
+        dataId: publishTarget.dataId,
+        group: publishTarget.group,
         type: draftType,
       });
-      await loadBetaMeta({ dataId: detail.dataId, group: detail.group });
+      await loadBetaMeta({ dataId: publishTarget.dataId, group: publishTarget.group });
     } catch (error: any) {
+      if (!publishSucceeded) {
+        void startListen(publishTarget, publishSelectionGeneration);
+      }
       message.error(error?.message || String(error));
     } finally {
       setPublishing(false);
@@ -1245,6 +1254,9 @@ const NacosViewer: React.FC<NacosViewerProps> = ({
   ];
 
   const namespaceLabel = namespaceName || (namespaceId ? namespaceId : 'public');
+  const remoteChangedHint = draftDirty
+    ? tr('nacos_viewer.message.remote_changed_dirty_hint')
+    : tr('nacos_viewer.message.remote_changed_clean_hint');
 
   return (
     <div
@@ -1266,19 +1278,33 @@ const NacosViewer: React.FC<NacosViewerProps> = ({
           type="warning"
           showIcon
           className={isV2Ui ? 'gn-v2-nacos-banner' : undefined}
-          style={isV2Ui ? { margin: 0, borderRadius: 0 } : undefined}
-          message={tr('nacos_viewer.message.remote_changed_banner')}
-          description={
-            draftDirty
-              ? tr('nacos_viewer.message.remote_changed_dirty_hint')
-              : tr('nacos_viewer.message.remote_changed_clean_hint')
+          message={
+            isV2Ui ? (
+              <span className="gn-v2-nacos-banner__copy">
+                <span className="gn-v2-nacos-banner__title">
+                  {tr('nacos_viewer.message.remote_changed_banner')}
+                </span>
+                {draftDirty ? (
+                  <span className="gn-v2-nacos-banner__hint" title={remoteChangedHint}>
+                    {remoteChangedHint}
+                  </span>
+                ) : null}
+              </span>
+            ) : (
+              tr('nacos_viewer.message.remote_changed_banner')
+            )
           }
+          description={isV2Ui ? undefined : remoteChangedHint}
           action={
-            <Space>
+            <Space size={4}>
               <Button size="small" type="primary" onClick={() => void handleReloadRemote()}>
                 {tr('nacos_viewer.action.reload_remote')}
               </Button>
-              <Button size="small" onClick={() => setRemoteChanged(false)}>
+              <Button
+                size="small"
+                type={isV2Ui ? 'text' : 'default'}
+                onClick={() => setRemoteChanged(false)}
+              >
                 {tr('nacos_viewer.action.dismiss_remote')}
               </Button>
             </Space>
@@ -1608,7 +1634,6 @@ const NacosViewer: React.FC<NacosViewerProps> = ({
                     <Tag>{detail.group}</Tag>
                     <strong style={{ color: workbenchTheme.textPrimary }}>{detail.dataId}</strong>
                     {detail.md5 ? <Tag color="default">{detail.md5}</Tag> : null}
-                    {draftDirty ? <Tag color="orange">dirty</Tag> : null}
                     {betaExists ? <Tag color="purple">{tr('nacos_viewer.status.beta_active')}</Tag> : null}
                   </>
                 ) : (
