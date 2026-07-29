@@ -15,8 +15,10 @@ import {
 } from 'antd';
 import {
   DeleteOutlined,
+  DownOutlined,
   PlusOutlined,
   ReloadOutlined,
+  RightOutlined,
 } from '@ant-design/icons';
 import RedisResizableDivider from './RedisResizableDivider';
 import { buildRedisWorkbenchTheme } from './redisViewerWorkbenchTheme';
@@ -103,6 +105,13 @@ const formatNacosInstanceEndpoint = (ip: string, port: number): string => {
   return `${displayHost}:${port}`;
 };
 
+const getNacosInstanceMetadataEntries = (
+  metadata?: Record<string, string>,
+): Array<[string, string]> => Object.entries(metadata || {})
+  .filter(([key]) => key.trim().length > 0)
+  .map(([key, value]): [string, string] => [key, String(value ?? '')])
+  .sort(([leftKey], [rightKey]) => leftKey.localeCompare(rightKey));
+
 const NACOS_SERVICES_CHANGED_EVENT = 'gonavi:nacos-services-changed';
 
 const NacosServiceViewer: React.FC<NacosServiceViewerProps> = ({
@@ -176,6 +185,9 @@ const NacosServiceViewer: React.FC<NacosServiceViewerProps> = ({
   const [selectedServiceRaw, setSelectedServiceRaw] = useState<string | null>(null);
   const [selectedServiceDetail, setSelectedServiceDetail] = useState<NacosServiceDetail | null>(null);
   const [instances, setInstances] = useState<NacosInstance[]>([]);
+  const [expandedInstanceKeys, setExpandedInstanceKeys] = useState<Set<string>>(
+    () => new Set(),
+  );
 
   const [serviceModalOpen, setServiceModalOpen] = useState(false);
   const [savingService, setSavingService] = useState(false);
@@ -208,6 +220,22 @@ const NacosServiceViewer: React.FC<NacosServiceViewerProps> = ({
     () => (selectedServiceRaw ? parseNacosServiceName(selectedServiceRaw) : null),
     [selectedServiceRaw],
   );
+
+  useEffect(() => {
+    setExpandedInstanceKeys(new Set());
+  }, [connectionId, namespaceId, selectedServiceRaw]);
+
+  const toggleInstanceDetails = useCallback((instanceKey: string) => {
+    setExpandedInstanceKeys((current) => {
+      const next = new Set(current);
+      if (next.has(instanceKey)) {
+        next.delete(instanceKey);
+      } else {
+        next.add(instanceKey);
+      }
+      return next;
+    });
+  }, []);
   const serviceRows = useMemo<NacosServiceRow[]>(
     () => serviceNames.map((rawName) => ({ rawName, ...parseNacosServiceName(rawName) })),
     [serviceNames],
@@ -1024,15 +1052,33 @@ const NacosServiceViewer: React.FC<NacosServiceViewerProps> = ({
                 ) : null}
                 {instances.map((instance) => {
                   const endpoint = formatNacosInstanceEndpoint(instance.ip, instance.port);
+                  const instanceKey = `${endpoint}:${instance.clusterName || ''}`;
+                  const detailsExpanded = expandedInstanceKeys.has(instanceKey);
+                  const metadataEntries = getNacosInstanceMetadataEntries(instance.metadata);
                   return (
                     <article
-                      key={`${endpoint}:${instance.clusterName || ''}`}
+                      key={instanceKey}
                       className="gn-nacos-instance-row"
                       data-instance-endpoint={endpoint}
+                      data-instance-details-expanded={detailsExpanded ? 'true' : 'false'}
                       role="listitem"
                     >
                       <div className="gn-nacos-instance-row__main">
                         <div className="gn-nacos-instance-row__identity">
+                          <Button
+                            type="text"
+                            size="small"
+                            className="gn-nacos-instance-row__details-toggle"
+                            icon={detailsExpanded ? <DownOutlined /> : <RightOutlined />}
+                            data-instance-action="toggle-details"
+                            aria-expanded={detailsExpanded}
+                            aria-label={`${tr(
+                              detailsExpanded
+                                ? 'nacos_service.action.collapse_instance_details'
+                                : 'nacos_service.action.expand_instance_details',
+                            )} ${endpoint}`}
+                            onClick={() => toggleInstanceDetails(instanceKey)}
+                          />
                           <span
                             className={[
                               'gn-nacos-instance-row__health-dot',
@@ -1059,6 +1105,37 @@ const NacosServiceViewer: React.FC<NacosServiceViewerProps> = ({
                             onChange={(checked) => void handleToggleHealth(instance, checked)}
                           />
                         </div>
+                        <div className="gn-nacos-instance-row__actions">
+                          <Button
+                            type="text"
+                            size="small"
+                            data-instance-action="edit"
+                            aria-label={`${tr('nacos_service.action.edit_instance')} ${endpoint}`}
+                            disabled={dataEditRestricted}
+                            onClick={() => openEditInstance(instance)}
+                          >
+                            {tr('nacos_service.action.edit_instance')}
+                          </Button>
+                          <Popconfirm
+                            title={tr('nacos_service.message.confirm_deregister', {
+                              ip: instance.ip,
+                              port: instance.port,
+                            })}
+                            disabled={dataEditRestricted}
+                            onConfirm={() => void handleDeregister(instance)}
+                          >
+                            <Button
+                              type="text"
+                              size="small"
+                              danger
+                              data-instance-action="deregister"
+                              aria-label={`${tr('nacos_service.action.deregister')} ${endpoint}`}
+                              disabled={dataEditRestricted}
+                            >
+                              {tr('nacos_service.action.deregister')}
+                            </Button>
+                          </Popconfirm>
+                        </div>
                         <dl className="gn-nacos-instance-row__metadata">
                           <div>
                             <dt>{tr('nacos_service.field.cluster')}</dt>
@@ -1077,35 +1154,45 @@ const NacosServiceViewer: React.FC<NacosServiceViewerProps> = ({
                             </dd>
                           </div>
                         </dl>
-                      </div>
-                      <div className="gn-nacos-instance-row__actions">
-                        <Button
-                          size="small"
-                          data-instance-action="edit"
-                          aria-label={`${tr('nacos_service.action.edit_instance')} ${endpoint}`}
-                          disabled={dataEditRestricted}
-                          onClick={() => openEditInstance(instance)}
-                        >
-                          {tr('nacos_service.action.edit_instance')}
-                        </Button>
-                        <Popconfirm
-                          title={tr('nacos_service.message.confirm_deregister', {
-                            ip: instance.ip,
-                            port: instance.port,
-                          })}
-                          disabled={dataEditRestricted}
-                          onConfirm={() => void handleDeregister(instance)}
-                        >
-                          <Button
-                            size="small"
-                            danger
-                            data-instance-action="deregister"
-                            aria-label={`${tr('nacos_service.action.deregister')} ${endpoint}`}
-                            disabled={dataEditRestricted}
+                        {detailsExpanded ? (
+                          <section
+                            className="gn-nacos-instance-row__metadata-panel"
+                            aria-label={tr('nacos_service.field.instance_metadata')}
                           >
-                            {tr('nacos_service.action.deregister')}
-                          </Button>
-                        </Popconfirm>
+                            <div className="gn-nacos-instance-row__metadata-header">
+                              <span>{tr('nacos_service.field.instance_metadata')}</span>
+                              <span className="gn-nacos-instance-row__metadata-count">
+                                {tr('nacos_service.field.metadata_count', {
+                                  count: metadataEntries.length,
+                                })}
+                              </span>
+                            </div>
+                            {metadataEntries.length > 0 ? (
+                              <ul className="gn-nacos-instance-row__metadata-list">
+                                {metadataEntries.map(([key, value]) => (
+                                  <li key={key} className="gn-nacos-instance-row__metadata-item">
+                                    <span
+                                      className="gn-nacos-instance-row__metadata-key"
+                                      title={key}
+                                    >
+                                      {key}
+                                    </span>
+                                    <span
+                                      className="gn-nacos-instance-row__metadata-value"
+                                      title={value}
+                                    >
+                                      {value || '—'}
+                                    </span>
+                                  </li>
+                                ))}
+                              </ul>
+                            ) : (
+                              <span className="gn-nacos-instance-row__metadata-empty">
+                                {tr('nacos_service.message.instance_metadata_empty')}
+                              </span>
+                            )}
+                          </section>
+                        ) : null}
                       </div>
                     </article>
                   );

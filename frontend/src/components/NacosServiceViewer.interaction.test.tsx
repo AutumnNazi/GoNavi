@@ -65,8 +65,10 @@ vi.mock('@ant-design/icons', async () => {
   const Icon = () => ReactModule.createElement('span', { 'data-icon': true });
   return {
     DeleteOutlined: Icon,
+    DownOutlined: Icon,
     PlusOutlined: Icon,
     ReloadOutlined: Icon,
+    RightOutlined: Icon,
   };
 });
 
@@ -160,7 +162,7 @@ const instanceHealthSwitch = (renderer: ReactTestRenderer, endpoint: string) =>
 const instanceAction = (
   renderer: ReactTestRenderer,
   endpoint: string,
-  action: 'edit' | 'deregister',
+  action: 'toggle-details' | 'edit' | 'deregister',
 ) => instanceRow(renderer, endpoint)?.find(
   (node) => node.type === 'button' && node.props['data-instance-action'] === action,
 );
@@ -262,6 +264,11 @@ describe('NacosServiceViewer interactions', () => {
           enabled: true,
           ephemeral: false,
           clusterName: 'EDGE',
+          metadata: {
+            version: '20260728163719',
+            slot: 'blue',
+            activeConnections: '2',
+          },
         }, {
           ip: '2001:db8::8',
           port: 8848,
@@ -295,6 +302,11 @@ describe('NacosServiceViewer interactions', () => {
 
     const row = instanceRow(renderer!, '10.0.0.8:8848');
     expect(row?.props.role).toBe('listitem');
+    expect(row?.props['data-instance-details-expanded']).toBe('false');
+    expect(
+      row?.findByProps({ className: 'gn-nacos-instance-row__main' })
+        .findAllByProps({ className: 'gn-nacos-instance-row__actions' }),
+    ).toHaveLength(1);
     expect(row?.findByProps({ className: 'gn-nacos-instance-row__endpoint' }).children)
       .toEqual(['10.0.0.8:8848']);
     expect(row?.findAllByType('dt').map((item) => item.children.join(''))).toEqual([
@@ -302,10 +314,43 @@ describe('NacosServiceViewer interactions', () => {
       'Weight',
       'Type',
     ]);
+    expect(
+      row?.findAllByProps({ className: 'gn-nacos-instance-row__metadata-panel' }),
+    ).toHaveLength(0);
+    expect(
+      instanceAction(renderer!, '10.0.0.8:8848', 'toggle-details')?.props['aria-expanded'],
+    ).toBe(false);
+
+    await act(async () => {
+      instanceAction(renderer!, '10.0.0.8:8848', 'toggle-details')?.props.onClick();
+      instanceAction(renderer!, '[2001:db8::8]:8848', 'toggle-details')?.props.onClick();
+    });
+
+    const expandedRow = instanceRow(renderer!, '10.0.0.8:8848');
+    expect(expandedRow?.props['data-instance-details-expanded']).toBe('true');
+    expect(
+      instanceAction(renderer!, '10.0.0.8:8848', 'toggle-details')?.props['aria-expanded'],
+    ).toBe(true);
+    expect(
+      expandedRow?.findByProps({ className: 'gn-nacos-instance-row__metadata-count' }).children,
+    ).toEqual(['3 entries']);
+    expect(
+      expandedRow?.findAllByProps({ className: 'gn-nacos-instance-row__metadata-key' })
+        .map((item) => item.children.join('')),
+    ).toEqual(['activeConnections', 'slot', 'version']);
+    expect(
+      expandedRow?.findAllByProps({ className: 'gn-nacos-instance-row__metadata-value' })
+        .map((item) => item.children.join('')),
+    ).toEqual(['2', 'blue', '20260728163719']);
+    expect(
+      instanceRow(renderer!, '[2001:db8::8]:8848')
+        ?.findByProps({ className: 'gn-nacos-instance-row__metadata-empty' }).children,
+    ).toEqual(['This instance has no metadata']);
     expect(instanceHealthSwitch(renderer!, '10.0.0.8:8848')?.props['aria-label'])
       .toContain('10.0.0.8:8848');
     expect(instanceAction(renderer!, '10.0.0.8:8848', 'edit')?.props['aria-label'])
       .toContain('10.0.0.8:8848');
+    expect(instanceAction(renderer!, '10.0.0.8:8848', 'edit')?.props.type).toBe('text');
     expect(instanceAction(renderer!, '10.0.0.8:8848', 'deregister')?.props['aria-label'])
       .toContain('10.0.0.8:8848');
   });
