@@ -48,6 +48,7 @@ const nacosBackend = vi.hoisted(() => ({
   NacosImportConfigs: vi.fn(),
   NacosDeleteConfig: vi.fn(),
   NacosGetConfig: vi.fn(),
+  NacosPublishConfig: vi.fn(),
   NacosGetBetaConfig: vi.fn(),
   NacosStartConfigListen: vi.fn(),
   NacosStopConfigListen: vi.fn(),
@@ -245,6 +246,7 @@ describe('NacosViewer config selection actions', () => {
         md5: 'test-md5',
       },
     });
+    nacosBackend.NacosPublishConfig.mockResolvedValue({ success: true });
     nacosBackend.NacosGetBetaConfig.mockResolvedValue({
       success: true,
       data: { exists: false },
@@ -775,6 +777,18 @@ describe('NacosViewer config selection actions', () => {
     expect(antdState.message.info).toHaveBeenCalledTimes(1);
     expect(renderedText(renderer!.toJSON())).not.toContain('Listening');
 
+    const compactBanner = renderer!.root.find(
+      (node) => String(node.type) === 'alert',
+    );
+    expect(compactBanner.props.className).toBe('gn-v2-nacos-banner');
+    expect(renderedText(compactBanner)).toContain('Remote config update detected');
+    expect(renderedText(compactBanner)).toContain('Reload remote');
+    expect(renderedText(compactBanner)).toContain('Dismiss');
+    expect(renderedText(compactBanner)).not.toContain('Local draft is clean');
+    expect(
+      compactBanner.findByProps({ className: 'gn-v2-nacos-banner__copy' }),
+    ).toBeTruthy();
+
     await act(async () => {
       findButtonByExactText(renderer!, 'Reload remote')!.props.onClick();
     });
@@ -856,6 +870,135 @@ describe('NacosViewer config selection actions', () => {
     expect(findButtonByExactText(renderer!, 'Delete')?.props.disabled).toBe(true);
 
     renderer!.unmount();
+  });
+
+  it('does not flash an internal dirty badge while publishing edited content', async () => {
+    const pendingPublish = deferred<any>();
+    nacosBackend.NacosPublishConfig.mockReturnValue(pendingPublish.promise);
+
+    let renderer: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(
+        <NacosViewer connectionId="nacos-1" namespaceId="dev" namespaceName="dev" />,
+      );
+    });
+    await flushEffects();
+
+    await act(async () => {
+      latestConfigTableProps().onRow(rows[0]).onClick();
+    });
+    await flushEffects();
+
+    await act(async () => {
+      renderer!.root.find(
+        (node) => (node.type as any) === 'nacos-editor',
+      ).props.onChange('server: changed');
+    });
+
+    const publish = findButtonByExactText(renderer!, 'Publish');
+    expect(publish?.props.disabled).toBe(false);
+    expect(renderedText(renderer!.toJSON())).not.toContain('dirty');
+
+    act(() => {
+      publish!.props.onClick();
+    });
+    await flushEffects();
+
+    expect(renderedText(renderer!.toJSON())).not.toContain('dirty');
+
+    pendingPublish.resolve({ success: true });
+    await flushEffects();
+
+    expect(antdState.message.success).toHaveBeenCalledWith('Published successfully');
+    expect(renderedText(renderer!.toJSON())).not.toContain('dirty');
+
+    await act(async () => {
+      renderer!.unmount();
+    });
+  });
+
+  it('does not report its own publish event as a remote config change', async () => {
+    const pendingListReload = deferred<any>();
+    let pageListCalls = 0;
+    nacosBackend.NacosSearchConfigs.mockImplementation(
+      async (_config: unknown, query: any) => {
+        if (query?.pageSize === 50) {
+          pageListCalls += 1;
+          if (pageListCalls === 2) return pendingListReload.promise;
+        }
+        return {
+          success: true,
+          data: {
+            totalCount: rows.length,
+            pageNumber: 1,
+            pagesAvailable: 1,
+            pageItems: rows,
+          },
+        };
+      },
+    );
+    nacosBackend.NacosStartConfigListen.mockResolvedValue({
+      success: true,
+      data: { watchId: 'watch-publish' },
+    });
+
+    let renderer: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(
+        <NacosViewer connectionId="nacos-1" namespaceId="dev" namespaceName="dev" />,
+      );
+    });
+    await flushEffects();
+
+    await act(async () => {
+      latestConfigTableProps().onRow(rows[0]).onClick();
+    });
+    await flushEffects();
+
+    await act(async () => {
+      renderer!.root.find(
+        (node) => (node.type as any) === 'nacos-editor',
+      ).props.onChange('server: published locally');
+    });
+    act(() => {
+      findButtonByExactText(renderer!, 'Publish')!.props.onClick();
+    });
+    await flushEffects();
+
+    expect(antdState.message.success).toHaveBeenCalledWith('Published successfully');
+
+    await act(async () => {
+      runtimeState.configChangedHandler!({
+        watchId: 'watch-publish',
+        connectionId: 'nacos-1',
+        namespaceId: 'dev',
+        group: rows[0].group,
+        dataId: rows[0].dataId,
+      });
+    });
+    await flushEffects();
+
+    const infoCallsDuringPublish = antdState.message.info.mock.calls.length;
+    const remoteBannerDuringPublish = renderedText(renderer!.toJSON()).includes(
+      'Remote config update detected',
+    );
+
+    pendingListReload.resolve({
+      success: true,
+      data: {
+        totalCount: rows.length,
+        pageNumber: 1,
+        pagesAvailable: 1,
+        pageItems: rows,
+      },
+    });
+    await flushEffects();
+    await act(async () => {
+      renderer!.unmount();
+    });
+
+    expect(infoCallsDuringPublish).toBe(0);
+    expect(remoteBannerDuringPublish).toBe(false);
   });
 
   it('disables config import for restrictDataImport protection only', async () => {
