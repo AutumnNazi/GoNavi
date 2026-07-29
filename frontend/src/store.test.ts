@@ -314,6 +314,23 @@ describe('store appearance persistence', () => {
     expect(reloaded.useStore.getState().queryOptions.wordWrap).toBe(true);
   });
 
+  it('persists zero as the unlimited SQL query row limit', async () => {
+    const { useStore } = await importStore();
+
+    useStore.getState().setQueryOptions({ maxRows: 0 });
+    expect(useStore.getState().queryOptions.maxRows).toBe(0);
+
+    const persisted = JSON.parse(storage.getItem('lite-db-storage') || '{}');
+    expect(persisted.state.queryOptions.maxRows).toBe(0);
+
+    vi.resetModules();
+    const reloaded = await importStore();
+    expect(reloaded.useStore.getState().queryOptions.maxRows).toBe(0);
+
+    reloaded.useStore.getState().setQueryOptions({ maxRows: -1 });
+    expect(reloaded.useStore.getState().queryOptions.maxRows).toBe(5000);
+  });
+
   it('persists the table overview view mode across store reloads', async () => {
     const { useStore } = await importStore();
     expect(useStore.getState().queryOptions.tableOverviewViewMode).toBeUndefined();

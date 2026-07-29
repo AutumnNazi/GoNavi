@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"sort"
 	"strconv"
 	"strings"
@@ -1865,8 +1866,33 @@ func ensureNonNilSlice[T any](items []T) []T {
 	return items
 }
 
+func resolveConfiguredMongoDatabase(config connection.ConnectionConfig) string {
+	if !strings.EqualFold(strings.TrimSpace(config.Type), "mongodb") {
+		return ""
+	}
+	if database := strings.TrimSpace(config.Database); database != "" {
+		return database
+	}
+
+	rawURI := strings.TrimSpace(config.URI)
+	lowerURI := strings.ToLower(rawURI)
+	if !strings.HasPrefix(lowerURI, "mongodb://") && !strings.HasPrefix(lowerURI, "mongodb+srv://") {
+		return ""
+	}
+	parsed, err := url.Parse(rawURI)
+	if err != nil {
+		return ""
+	}
+	database := strings.Trim(strings.TrimSpace(parsed.Path), "/")
+	if database == "" || strings.Contains(database, "/") {
+		return ""
+	}
+	return database
+}
+
 func (a *App) DBGetDatabases(config connection.ConnectionConfig) connection.QueryResult {
 	runConfig := normalizeRunConfig(config, "")
+	configuredMongoDatabase := resolveConfiguredMongoDatabase(runConfig)
 	if strings.EqualFold(strings.TrimSpace(runConfig.Type), "redis") {
 		runConfig.Type = "redis"
 		client, err := a.getRedisClient(runConfig)
@@ -1889,6 +1915,12 @@ func (a *App) DBGetDatabases(config connection.ConnectionConfig) connection.Quer
 	if err != nil {
 		logger.Error(err, "DBGetDatabases 获取连接失败：%s", formatConnSummary(runConfig))
 		return connection.QueryResult{Success: false, Message: err.Error()}
+	}
+	if configuredMongoDatabase != "" {
+		return connection.QueryResult{
+			Success: true,
+			Data:    []map[string]string{{"Database": configuredMongoDatabase}},
+		}
 	}
 
 	dbs, err := dbInst.GetDatabases()

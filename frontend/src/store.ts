@@ -2794,7 +2794,7 @@ const sanitizeQueryOptions = (value: unknown): QueryOptions => {
   const queryEditorEditorHeightRatio = sanitizeQueryEditorEditorHeightRatio(
     raw.queryEditorEditorHeightRatio,
   );
-  if (!Number.isFinite(maxRows) || maxRows <= 0) {
+  if (!Number.isFinite(maxRows) || maxRows < 0) {
     return {
       maxRows: 5000,
       wordWrap,
