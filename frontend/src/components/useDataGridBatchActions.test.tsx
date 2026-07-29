@@ -212,6 +212,37 @@ describe('useDataGridBatchActions clipboard paste', () => {
     expect(messageApi.success).toHaveBeenCalledWith('data_grid.message.pasted_columns_to_rows:{"rows":2,"cells":4}');
   });
 
+  it('fills the selected cells when pasting a single value', () => {
+    const hook = renderHook();
+    const cell = selectCell(hook.container, 'row-1', 'id');
+    hook.currentSelectionRef.current = new Set([
+      makeCellKey('row-1', 'id'),
+      makeCellKey('row-1', 'name'),
+      makeCellKey('row-2', 'id'),
+      makeCellKey('row-2', 'name'),
+    ]);
+
+    const preventDefault = vi.fn();
+    act(() => {
+      (windowTarget.listeners.get('paste') as any)?.({
+        target: cell,
+        clipboardData: { types: ['text/plain'], getData: vi.fn(() => 'filled') },
+        preventDefault,
+      });
+    });
+
+    expect(preventDefault).toHaveBeenCalledOnce();
+    const nextRows = hook.setModifiedRows.mock.calls[0][0]({});
+    expect(nextRows).toEqual({
+      'row-1': { id: 'filled', name: 'filled' },
+      'row-2': { id: 'filled', name: 'filled' },
+    });
+    const nextColumns = hook.setModifiedColumns.mock.calls[0][0]({});
+    expect(nextColumns['row-1']).toEqual(new Set(['id', 'name']));
+    expect(nextColumns['row-2']).toEqual(new Set(['id', 'name']));
+    expect(messageApi.success).toHaveBeenCalledWith('data_grid.message.pasted_columns_to_rows:{"rows":2,"cells":4}');
+  });
+
   it('resolves the selected row and column again before pasting', () => {
     const hook = renderHook();
     const cell = selectCell(hook.container, 'row-2', 'name');

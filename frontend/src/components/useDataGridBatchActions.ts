@@ -531,6 +531,23 @@ const handleBatchFillCells = useCallback(() => {
       const startColumnIndex = columnIndexMap.get(start.colName) ?? -1;
       if (startRowIndex === -1 || startColumnIndex === -1) return;
 
+      let targetCells: Array<{ rowIndex: number; columnIndex: number }> | undefined;
+      if (matrix.length === 1 && matrix[0]?.length === 1 && currentSelectionRef.current.size > 1) {
+        const rowIndexes = new Map<string, number>();
+        currentRows.forEach((row, rowIndex) => {
+          const key = row?.[GONAVI_ROW_KEY];
+          if (key !== undefined && key !== null) rowIndexes.set(rowKeyStr(key), rowIndex);
+        });
+        const selectedTargets = Array.from(currentSelectionRef.current).flatMap((cellKey) => {
+          const cell = splitCellKey(cellKey);
+          if (!cell) return [];
+          const rowIndex = rowIndexes.get(cell.rowKey);
+          const columnIndex = columnIndexMap.get(cell.colName);
+          return rowIndex === undefined || columnIndex === undefined ? [] : [{ rowIndex, columnIndex }];
+        });
+        if (selectedTargets.length > 1) targetCells = selectedTargets;
+      }
+
       const addedRowKeys = new Set<string>();
       addedRows.forEach((row) => {
         const key = row?.[GONAVI_ROW_KEY];
@@ -542,6 +559,7 @@ const handleBatchFillCells = useCallback(() => {
         columnNames: displayColumnNames,
         startRowIndex,
         startColumnIndex,
+        targetCells,
         rowKeyField: GONAVI_ROW_KEY,
         addedRowKeys,
         modifiedRows,
@@ -615,7 +633,7 @@ const handleBatchFillCells = useCallback(() => {
       cellSelectionPointerRef.current = null;
       isDraggingRef.current = false;
     };
-  }, [addedRows, canModifyData, deletedRowKeys, isActive, isTableSurfaceActive, displayColumnNames, columnIndexMap, effectiveEditLocator, isCellValueEqualForDiff, isWritableResultColumn, markCellSelectionDeleteEligible, modifiedRows, rowKeyStr, setAddedRows, setModifiedColumns, setModifiedRows, setSelectedCells, translateDataGrid, updateCellSelection]);
+  }, [addedRows, canModifyData, deletedRowKeys, isActive, isTableSurfaceActive, displayColumnNames, columnIndexMap, effectiveEditLocator, isCellValueEqualForDiff, isWritableResultColumn, markCellSelectionDeleteEligible, modifiedRows, rowKeyStr, setAddedRows, setModifiedColumns, setModifiedRows, setSelectedCells, splitCellKey, translateDataGrid, updateCellSelection]);
 
   const handleCopySelectedColumnsFromRow = useCallback(() => {
     const activeSelection = currentSelectionRef.current.size > 0 ? currentSelectionRef.current : selectedCells;
