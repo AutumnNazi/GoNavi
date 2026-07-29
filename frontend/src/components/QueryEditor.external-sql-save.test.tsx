@@ -9509,6 +9509,87 @@ describe('QueryEditor external SQL save', () => {
     expect(messageApi.warning).not.toHaveBeenCalled();
   });
 
+  it('keeps Dameng USER_COL_COMMENTS queries read-only without injecting ROWID', async () => {
+    storeState.connections[0].config.type = 'dameng';
+    storeState.connections[0].config.database = 'APP';
+    const sql = `SELECT T.TABLE_NAME, T.COLUMN_NAME, T.COMMENTS
+FROM USER_COL_COMMENTS T
+WHERE T.TABLE_NAME = 'MEITUAN_COMMENT_INFO';`;
+    backendApp.DBGetColumns.mockResolvedValueOnce({ success: true, data: [] });
+    backendApp.DBGetIndexes.mockResolvedValueOnce({ success: true, data: [] });
+    backendApp.DBQueryMulti.mockResolvedValueOnce({
+      success: true,
+      data: [{
+        columns: ['TABLE_NAME', 'COLUMN_NAME', 'COMMENTS'],
+        rows: [{
+          TABLE_NAME: 'MEITUAN_COMMENT_INFO',
+          COLUMN_NAME: 'CONTENT',
+          COMMENTS: '评论内容',
+        }],
+      }],
+    });
+
+    let renderer: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<QueryEditor tab={createTab({ dbName: 'APP', query: sql })} />);
+    });
+
+    await act(async () => {
+      await findButton(renderer!, '运行').props.onClick();
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const executedSql = String(backendApp.DBQueryMulti.mock.calls[0][2]);
+    expect(executedSql).toContain('FROM USER_COL_COMMENTS T');
+    expect(executedSql).not.toMatch(/\bROWID\b/i);
+    expect(dataGridState.latestProps?.editLocator).toMatchObject({ readOnly: true });
+    expect(dataGridState.latestProps?.readOnly).toBe(true);
+  });
+
+  it('keeps Dameng DBA_TAB_PRIVS queries read-only without injecting ROWID', async () => {
+    storeState.connections[0].config.type = 'dameng';
+    storeState.connections[0].config.database = 'APP';
+    const sql = `SELECT *
+FROM DBA_TAB_PRIVS
+WHERE GRANTEE = 'APPUSER';`;
+    backendApp.DBGetColumns.mockResolvedValueOnce({ success: true, data: [] });
+    backendApp.DBGetIndexes.mockResolvedValueOnce({ success: true, data: [] });
+    backendApp.DBQueryMulti.mockResolvedValueOnce({
+      success: true,
+      data: [{
+        columns: ['GRANTEE', 'OWNER', 'TABLE_NAME', 'PRIVILEGE'],
+        rows: [{
+          GRANTEE: 'APPUSER',
+          OWNER: 'APPUSER',
+          TABLE_NAME: 'MEITUAN_COMMENT_INFO',
+          PRIVILEGE: 'SELECT',
+        }],
+      }],
+    });
+
+    let renderer: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<QueryEditor tab={createTab({ dbName: 'APP', query: sql })} />);
+    });
+
+    await act(async () => {
+      await findButton(renderer!, '运行').props.onClick();
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const executedSql = String(backendApp.DBQueryMulti.mock.calls[0][2]);
+    expect(executedSql).toContain('FROM DBA_TAB_PRIVS');
+    expect(executedSql).not.toMatch(/\bROWID\b/i);
+    expect(dataGridState.latestProps?.editLocator).toMatchObject({ readOnly: true });
+    expect(dataGridState.latestProps?.readOnly).toBe(true);
+  });
+
   it('uses Oracle login user as default schema for unqualified query result metadata', async () => {
     storeState.connections[0].config.type = 'oracle';
     storeState.connections[0].config.user = 'dev';
