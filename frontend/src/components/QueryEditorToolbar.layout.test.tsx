@@ -1,8 +1,13 @@
 import React from 'react';
 import { readFileSync } from 'node:fs';
-import { describe, expect, it } from 'vitest';
+import { act, create, type ReactTestRenderer } from 'react-test-renderer';
+import { describe, expect, it, vi } from 'vitest';
 import { readV2ThemeCss } from '../test/readV2ThemeCss';
-import { formatQueryExecutionElapsed } from './QueryEditorToolbar';
+import {
+  formatQueryExecutionElapsed,
+  resolveQueryExecutionSpeedIcon,
+  useQueryExecutionElapsed,
+} from './QueryEditorToolbar';
 
 describe('QueryEditorToolbar layout', () => {
   it('keeps the v2 toolbar on a single scrollable row in small windows', () => {
@@ -42,22 +47,96 @@ describe('QueryEditorToolbar layout', () => {
     expect(formatQueryExecutionElapsed(Number.NaN)).toBe('00:00.0');
   });
 
-  it('keeps the live execution timer inside a fixed-width stop action', () => {
+  it('uses distinct speed icons at the one- and five-second boundaries', () => {
+    expect(resolveQueryExecutionSpeedIcon(0)).toBe('⚡');
+    expect(resolveQueryExecutionSpeedIcon(999)).toBe('⚡');
+    expect(resolveQueryExecutionSpeedIcon(1_000)).toBe('🐇');
+    expect(resolveQueryExecutionSpeedIcon(4_999)).toBe('🐇');
+    expect(resolveQueryExecutionSpeedIcon(5_000)).toBe('🐢');
+  });
+
+  it('keeps the completed duration until the next execution starts', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1_000);
+    let elapsedMs = -1;
+    let renderer: ReactTestRenderer | null = null;
+
+    const Harness: React.FC<{ loading: boolean; runToken: number }> = ({ loading, runToken }) => {
+      elapsedMs = useQueryExecutionElapsed(loading, runToken);
+      return null;
+    };
+
+    try {
+      act(() => {
+        renderer = create(<Harness loading={false} runToken={0} />);
+      });
+      expect(elapsedMs).toBe(0);
+
+      act(() => {
+        renderer?.update(<Harness loading runToken={1} />);
+      });
+      act(() => {
+        vi.advanceTimersByTime(350);
+      });
+      expect(elapsedMs).toBe(300);
+
+      act(() => {
+        renderer?.update(<Harness loading runToken={2} />);
+      });
+      expect(elapsedMs).toBe(0);
+
+      act(() => {
+        vi.advanceTimersByTime(350);
+      });
+      expect(elapsedMs).toBe(300);
+
+      act(() => {
+        renderer?.update(<Harness loading={false} runToken={2} />);
+      });
+      expect(elapsedMs).toBe(350);
+
+      act(() => {
+        vi.advanceTimersByTime(1_000);
+      });
+      expect(elapsedMs).toBe(350);
+
+      act(() => {
+        renderer?.update(<Harness loading runToken={3} />);
+      });
+      expect(elapsedMs).toBe(0);
+    } finally {
+      act(() => {
+        renderer?.unmount();
+      });
+      vi.useRealTimers();
+    }
+  });
+
+  it('keeps live and completed execution time at the editor bottom-left', () => {
     const toolbarSource = readFileSync(new URL('./QueryEditorToolbar.tsx', import.meta.url), 'utf8');
+    const editorSource = readFileSync(new URL('./QueryEditor.tsx', import.meta.url), 'utf8');
     const css = readV2ThemeCss();
-    const stopActionCss = css.slice(
-      css.indexOf('body[data-ui-version="v2"] .gn-v2-query-toolbar-stop-action.ant-btn {'),
-      css.indexOf('.gn-query-toolbar-execution-elapsed {'),
+    const statusbarCss = css.slice(
+      css.indexOf('.gn-query-execution-statusbar {'),
+      css.indexOf('.gn-query-execution-timer {'),
     );
     const elapsedCss = css.slice(
-      css.indexOf('.gn-query-toolbar-execution-elapsed {'),
-      css.indexOf('body[data-ui-version="v2"] .gn-v2-query-toolbar-menu-trigger {'),
+      css.indexOf('.gn-query-execution-elapsed {'),
+      css.indexOf('body[data-ui-version="v2"] .gn-v2-query-resizer {'),
     );
 
-    expect(toolbarSource).toContain('window.setInterval(updateElapsed, QUERY_EXECUTION_TIMER_INTERVAL_MS)');
-    expect(toolbarSource).toContain('query_editor.execution.elapsed');
-    expect(stopActionCss).toContain('width: 128px !important;');
-    expect(stopActionCss).toContain('flex: 0 0 128px;');
+    expect(toolbarSource).toContain('globalThis.setInterval(updateElapsed, QUERY_EXECUTION_TIMER_INTERVAL_MS)');
+    expect(toolbarSource).toContain('startedAtRef.current = null');
+    expect(toolbarSource).not.toContain('gn-query-toolbar-execution-slot');
+    expect(editorSource).toContain('className="gn-query-execution-statusbar"');
+    expect(editorSource).toContain('className="gn-query-execution-timer"');
+    expect(editorSource).toContain('role="timer"');
+    expect(editorSource).toContain('query_editor.execution.elapsed');
+    const statusbarIndex = editorSource.indexOf('className="gn-query-execution-statusbar"');
+    expect(statusbarIndex).toBeGreaterThan(editorSource.indexOf('<Editor'));
+    expect(statusbarIndex).toBeLessThan(editorSource.indexOf('<QueryEditorResultsPanel', statusbarIndex));
+    expect(statusbarCss).toContain('flex: 0 0 22px;');
+    expect(statusbarCss).toContain('padding: 0 10px;');
     expect(elapsedCss).toContain('min-width: 10ch;');
     expect(elapsedCss).toContain('font-variant-numeric: tabular-nums;');
     expect(elapsedCss).toContain('letter-spacing: 0;');

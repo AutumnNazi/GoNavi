@@ -100,7 +100,11 @@ import {
 } from '../utils/resultDiff/viewDataVerify';
 import { SQL_EDITOR_AUTO_COMMIT_DELAY_OPTIONS } from './QueryEditorTransactionSettings';
 import QueryEditorTransactionToolbar from './QueryEditorTransactionToolbar';
-import QueryEditorToolbar from './QueryEditorToolbar';
+import QueryEditorToolbar, {
+    formatQueryExecutionElapsed,
+    resolveQueryExecutionSpeedIcon,
+    useQueryExecutionElapsed,
+} from './QueryEditorToolbar';
 import { useSqlEditorTransactionController } from './useSqlEditorTransactionController';
 import {
     type CompletionColumnMeta,
@@ -1323,6 +1327,13 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
   resultSetsRef.current = resultSets;
   activeResultKeyRef.current = activeResultKey;
   const [loading, setLoading] = useState(false);
+  const [executionRunToken, setExecutionRunToken] = useState(0);
+  const executionElapsedMs = useQueryExecutionElapsed(loading, executionRunToken);
+  const executionElapsedText = formatQueryExecutionElapsed(executionElapsedMs);
+  const executionElapsedLabel = translate('query_editor.execution.elapsed', {
+      duration: executionElapsedText,
+  });
+  const executionSpeedIcon = resolveQueryExecutionSpeedIcon(executionElapsedMs);
   const [executionError, setExecutionError] = useState<string>('');
   const [, setCurrentQueryId] = useState<string>('');
   const [isSqlSnippetPickerOpen, setIsSqlSnippetPickerOpen] = useState(false);
@@ -7008,6 +7019,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
         clearQueryId();
     }
       const runSeq = ++runSeqRef.current;
+      setExecutionRunToken(runSeq);
       setLoading(true);
       setExecutionError('');
       const runStartTime = Date.now();
@@ -9200,6 +9212,21 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
             onMount={handleEditorDidMount}
             options={queryEditorMonacoOptions}
           />
+        </div>
+        <div className="gn-query-execution-statusbar">
+          <span
+            aria-label={executionElapsedLabel}
+            className="gn-query-execution-timer"
+            role="timer"
+            title={executionElapsedLabel}
+          >
+            <span aria-hidden="true" className="gn-query-execution-speed-icon">
+              {executionSpeedIcon}
+            </span>
+            <span className="gn-query-execution-elapsed">
+              {executionElapsedText}
+            </span>
+          </span>
         </div>
       </div>
 
