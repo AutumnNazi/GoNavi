@@ -316,6 +316,21 @@ body[data-ui-version="v2"] .gn-v2-query-toolbar .ant-btn-icon-only {
   flex: 0 0 34px;
 }
 
+body[data-ui-version="v2"] .gn-v2-query-toolbar-stop-action.ant-btn {
+  width: 128px !important;
+  min-width: 128px !important;
+  padding: 0 9px !important;
+  flex: 0 0 128px;
+}
+
+.gn-query-toolbar-execution-elapsed {
+  min-width: 10ch;
+  font-family: var(--gn-font-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+  text-align: left;
+}
+
 body[data-ui-version="v2"] .gn-v2-query-toolbar-menu-trigger {
   display: inline-flex;
   width: 34px;

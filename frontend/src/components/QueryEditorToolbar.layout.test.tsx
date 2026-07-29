@@ -2,6 +2,7 @@ import React from 'react';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { readV2ThemeCss } from '../test/readV2ThemeCss';
+import { formatQueryExecutionElapsed } from './QueryEditorToolbar';
 
 describe('QueryEditorToolbar layout', () => {
   it('keeps the v2 toolbar on a single scrollable row in small windows', () => {
@@ -32,6 +33,34 @@ describe('QueryEditorToolbar layout', () => {
     expect(css).toContain('body[data-ui-version="v2"] .gn-v2-query-toolbar-action-group {');
     expect(css).not.toContain('.gn-v2-query-toolbar-action-group.ant-btn-group');
     expect(css).toContain('gap: 6px;');
+  });
+
+  it('formats live query execution time with stable tenths-of-a-second precision', () => {
+    expect(formatQueryExecutionElapsed(0)).toBe('00:00.0');
+    expect(formatQueryExecutionElapsed(61_299)).toBe('01:01.2');
+    expect(formatQueryExecutionElapsed(3_661_999)).toBe('01:01:01.9');
+    expect(formatQueryExecutionElapsed(Number.NaN)).toBe('00:00.0');
+  });
+
+  it('keeps the live execution timer inside a fixed-width stop action', () => {
+    const toolbarSource = readFileSync(new URL('./QueryEditorToolbar.tsx', import.meta.url), 'utf8');
+    const css = readV2ThemeCss();
+    const stopActionCss = css.slice(
+      css.indexOf('body[data-ui-version="v2"] .gn-v2-query-toolbar-stop-action.ant-btn {'),
+      css.indexOf('.gn-query-toolbar-execution-elapsed {'),
+    );
+    const elapsedCss = css.slice(
+      css.indexOf('.gn-query-toolbar-execution-elapsed {'),
+      css.indexOf('body[data-ui-version="v2"] .gn-v2-query-toolbar-menu-trigger {'),
+    );
+
+    expect(toolbarSource).toContain('window.setInterval(updateElapsed, QUERY_EXECUTION_TIMER_INTERVAL_MS)');
+    expect(toolbarSource).toContain('query_editor.execution.elapsed');
+    expect(stopActionCss).toContain('width: 128px !important;');
+    expect(stopActionCss).toContain('flex: 0 0 128px;');
+    expect(elapsedCss).toContain('min-width: 10ch;');
+    expect(elapsedCss).toContain('font-variant-numeric: tabular-nums;');
+    expect(elapsedCss).toContain('letter-spacing: 0;');
   });
 
   it('optically centers the word-wrap icon in its v2 icon-only action', () => {

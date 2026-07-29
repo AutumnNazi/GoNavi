@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import type { Key, ReactNode } from 'react';
 
 import {
   resolveConnectionTagChildOrder,
@@ -1136,6 +1136,89 @@ export const shouldClearSidebarNodeChildrenOnCollapse = (
     return false;
   }
   return collectSidebarSubtreeKeys(node).length >= SIDEBAR_COLLAPSE_UNLOAD_SUBTREE_LIMIT;
+};
+
+type SidebarDatabaseExpansionNode = {
+  key: string;
+  groupKey: string;
+  subtreeKeys: string[];
+};
+
+export const resolveSidebarSingleDatabaseExpandedKeys = ({
+  previousExpandedKeys,
+  nextExpandedKeys,
+  treeData,
+}: {
+  previousExpandedKeys: Key[];
+  nextExpandedKeys: Key[];
+  treeData: SidebarTreeNode[];
+}): Key[] => {
+  const databaseNodesByKey = new Map<string, SidebarDatabaseExpansionNode>();
+
+  const visit = (nodes: SidebarTreeNode[], inheritedConnectionId = '') => {
+    nodes.forEach((node) => {
+      const nodeKey = String(node.key || '').trim();
+      const directConnectionId = String(
+        node.dataRef?.id || node.dataRef?.connectionId || '',
+      ).trim();
+      const connectionId = node.type === 'connection'
+        ? directConnectionId || nodeKey
+        : directConnectionId || inheritedConnectionId;
+
+      if (
+        nodeKey
+        && connectionId
+        && (node.type === 'database' || node.type === 'redis-db')
+      ) {
+        databaseNodesByKey.set(nodeKey, {
+          key: nodeKey,
+          groupKey: `${connectionId}\u0000${node.type}`,
+          subtreeKeys: collectSidebarSubtreeKeys(node),
+        });
+      }
+
+      if (node.children?.length) {
+        visit(node.children, connectionId);
+      }
+    });
+  };
+  visit(treeData);
+
+  if (databaseNodesByKey.size === 0) {
+    return nextExpandedKeys;
+  }
+
+  const previousKeySet = new Set(previousExpandedKeys.map((key) => String(key)));
+  const expandedByGroup = new Map<string, SidebarDatabaseExpansionNode[]>();
+  nextExpandedKeys.forEach((key) => {
+    const databaseNode = databaseNodesByKey.get(String(key));
+    if (!databaseNode) return;
+    const group = expandedByGroup.get(databaseNode.groupKey) || [];
+    group.push(databaseNode);
+    expandedByGroup.set(databaseNode.groupKey, group);
+  });
+
+  const winnerByGroup = new Map<string, string>();
+  expandedByGroup.forEach((nodes, groupKey) => {
+    const newlyExpanded = nodes.filter((node) => !previousKeySet.has(node.key));
+    const winner = newlyExpanded.length > 0
+      ? newlyExpanded[newlyExpanded.length - 1]
+      : nodes[nodes.length - 1];
+    winnerByGroup.set(groupKey, winner.key);
+  });
+
+  const keysToCollapse = new Set<string>();
+  databaseNodesByKey.forEach((node) => {
+    const winnerKey = winnerByGroup.get(node.groupKey);
+    if (!winnerKey || winnerKey === node.key) return;
+    keysToCollapse.add(node.key);
+    node.subtreeKeys.forEach((key) => keysToCollapse.add(key));
+  });
+
+  if (keysToCollapse.size === 0) {
+    return nextExpandedKeys;
+  }
+  return nextExpandedKeys.filter((key) => !keysToCollapse.has(String(key)));
 };
 
 export const resolveV2ActiveConnectionId = ({

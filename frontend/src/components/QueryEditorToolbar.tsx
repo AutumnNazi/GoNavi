@@ -69,6 +69,23 @@ type QueryEditorToolbarProps = {
 };
 
 const FULL_NAME_TOOLTIP_DELAY_SECONDS = 1;
+const QUERY_EXECUTION_TIMER_INTERVAL_MS = 100;
+
+export const formatQueryExecutionElapsed = (elapsedMs: number): string => {
+  const totalTenths = Math.floor(Math.max(0, Number(elapsedMs) || 0) / 100);
+  const tenths = totalTenths % 10;
+  const totalSeconds = Math.floor(totalTenths / 10);
+  const seconds = totalSeconds % 60;
+  const totalMinutes = Math.floor(totalSeconds / 60);
+  const minutes = totalMinutes % 60;
+  const hours = Math.floor(totalMinutes / 60);
+  const secondsText = String(seconds).padStart(2, "0");
+  const minutesText = String(minutes).padStart(2, "0");
+
+  return hours > 0
+    ? `${String(hours).padStart(2, "0")}:${minutesText}:${secondsText}.${tenths}`
+    : `${minutesText}:${secondsText}.${tenths}`;
+};
 
 const WrapTextIcon: React.FC = () => (
   <svg
@@ -154,6 +171,23 @@ const QueryEditorToolbar: React.FC<QueryEditorToolbarProps> = ({
   const i18n = useOptionalI18n();
   const t = i18n?.t ?? defaultTranslate;
   const [openToolbarMenu, setOpenToolbarMenu] = React.useState<QueryToolbarMenuKey | null>(null);
+  const [executionElapsedMs, setExecutionElapsedMs] = React.useState(0);
+  React.useEffect(() => {
+    if (!loading) {
+      setExecutionElapsedMs(0);
+      return;
+    }
+
+    const startedAt = Date.now();
+    const updateElapsed = () => setExecutionElapsedMs(Date.now() - startedAt);
+    updateElapsed();
+    const timer = window.setInterval(updateElapsed, QUERY_EXECUTION_TIMER_INTERVAL_MS);
+    return () => window.clearInterval(timer);
+  }, [loading]);
+  const executionElapsedText = formatQueryExecutionElapsed(executionElapsedMs);
+  const executionElapsedLabel = t("query_editor.execution.elapsed", {
+    duration: executionElapsedText,
+  });
   const updateToolbarMenuOpen = (key: QueryToolbarMenuKey, open: boolean) => {
     setOpenToolbarMenu((current) => open ? key : current === key ? null : current);
   };
@@ -396,16 +430,20 @@ const QueryEditorToolbar: React.FC<QueryEditorToolbarProps> = ({
           </Tooltip>
         )}
         {loading && (
-          <Tooltip title={t("query_editor.action.stop")}>
+          <Tooltip title={`${t("query_editor.action.stop")} · ${executionElapsedLabel}`}>
             <Button
-              aria-label={t("query_editor.action.stop")}
-              className={isV2Ui ? "gn-v2-query-toolbar-icon-action" : undefined}
+              aria-label={`${t("query_editor.action.stop")}. ${executionElapsedLabel}`}
+              className={isV2Ui ? "gn-v2-query-toolbar-stop-action" : undefined}
               type="primary"
               danger
               icon={<StopOutlined />}
               onClick={onCancel}
+              style={isV2Ui ? undefined : { minWidth: 166 }}
             >
               {!isV2Ui && t("query_editor.action.stop")}
+              <span className="gn-query-toolbar-execution-elapsed">
+                {executionElapsedText}
+              </span>
             </Button>
           </Tooltip>
         )}

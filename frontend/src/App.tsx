@@ -5850,6 +5850,16 @@ function App() {
                                               />
                                           ),
                                       }) : null}
+                                      {renderThemeSettingsRow({
+                                          label: t('app.theme.appearance.single_database_expansion_title'),
+                                          hint: t('app.theme.appearance.single_database_expansion_hint'),
+                                          control: (
+                                              <Switch
+                                                  checked={appearance.sidebarSingleDatabaseExpansion === true}
+                                                  onChange={(checked) => setAppearance({ sidebarSingleDatabaseExpansion: checked })}
+                                              />
+                                          ),
+                                      })}
                                   </>,
                               )}
                               {renderThemeSettingsSection(
@@ -6654,6 +6664,20 @@ function App() {
                                       </div>
                                   </div>
                               )}
+                              <div style={utilityPanelStyle}>
+                                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                                      <div>
+                                          <div style={{ fontWeight: 500 }}>{t('app.theme.appearance.single_database_expansion_title')}</div>
+                                          <div style={{ ...utilityMutedTextStyle, marginTop: 4 }}>
+                                              {t('app.theme.appearance.single_database_expansion_hint')}
+                                          </div>
+                                      </div>
+                                      <Switch
+                                          checked={appearance.sidebarSingleDatabaseExpansion === true}
+                                          onChange={(checked) => setAppearance({ sidebarSingleDatabaseExpansion: checked })}
+                                      />
+                                  </div>
+                              </div>
                               <div style={utilityPanelStyle}>
                                   <div style={{ marginBottom: 10, fontWeight: 500 }}>{t('app.theme.font_family.title')}</div>
                                   <div style={{ display: 'grid', gap: 14 }}>

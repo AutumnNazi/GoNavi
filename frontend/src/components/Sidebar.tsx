@@ -196,6 +196,7 @@ import {
   resolveSidebarDropTargetMetricsFromDomEvent,
   resolveSidebarDatabaseTreePruneKeys,
   resolveSidebarNodeConnectionId,
+  resolveSidebarSingleDatabaseExpandedKeys,
   resolveV2ConnectionGroup,
   resolveV2ActiveConnectionId,
   resolveV2CommandSearchPersistentFilter,
@@ -707,6 +708,7 @@ const Sidebar: React.FC<{
   const v2CommandSearchPersistentFilterEnabled = appearance.v2CommandSearchPersistentFilterEnabled === true;
   const v2PersistedSidebarFilter = appearance.v2SidebarPersistedFilter ?? '';
   const tableDoubleClickAction = appearance.tableDoubleClickAction === 'open-design' ? 'open-design' : 'open-data';
+  const sidebarSingleDatabaseExpansion = appearance.sidebarSingleDatabaseExpansion === true;
   const [searchValue, setSearchValue] = useState(v2PersistedSidebarFilter);
   const deferredSearchValue = useDeferredValue(searchValue);
   const [searchScopes, setSearchScopes] = useState<SearchScope[]>(['smart']);
@@ -725,7 +727,7 @@ const Sidebar: React.FC<{
   const [v2CommandSearchValue, setV2CommandSearchValue] = useState('');
   const deferredV2CommandSearchValue = useDeferredValue(v2CommandSearchValue);
   const [v2CommandActiveIndex, setV2CommandActiveIndex] = useState(0);
-  const [expandedKeys, setExpandedKeys] = useState<React.Key[]>([]);
+  const [expandedKeys, setExpandedKeysState] = useState<React.Key[]>([]);
   const expandedKeysRef = useRef<React.Key[]>([]);
   const [autoExpandParent, setAutoExpandParent] = useState(true);
   const [loadedKeys, setLoadedKeys] = useState<React.Key[]>([]);
@@ -882,9 +884,33 @@ const Sidebar: React.FC<{
   const externalSQLDirectoryTreesRef = useRef<Record<string, ExternalSQLTreeEntry[]>>({});
   const findTreeNodeByKeyRef = useRef<(nodes: TreeNode[], targetKey: React.Key) => TreeNode | null>(() => null);
   const expandConnectionFromRailRef = useRef<(connectionId: string) => void>(() => {});
+  const setExpandedKeys = useCallback<React.Dispatch<React.SetStateAction<React.Key[]>>>((update) => {
+      setExpandedKeysState((previousExpandedKeys) => {
+          const nextExpandedKeys = typeof update === 'function'
+              ? update(previousExpandedKeys)
+              : update;
+          if (!sidebarSingleDatabaseExpansion) {
+              return nextExpandedKeys;
+          }
+          return resolveSidebarSingleDatabaseExpandedKeys({
+              previousExpandedKeys,
+              nextExpandedKeys,
+              treeData: treeDataRef.current,
+          });
+      });
+  }, [sidebarSingleDatabaseExpansion]);
   useEffect(() => {
       treeDataRef.current = treeData;
   }, [treeData]);
+
+  useEffect(() => {
+      if (!sidebarSingleDatabaseExpansion) return;
+      setExpandedKeysState((previousExpandedKeys) => resolveSidebarSingleDatabaseExpandedKeys({
+          previousExpandedKeys,
+          nextExpandedKeys: previousExpandedKeys,
+          treeData: treeDataRef.current,
+      }));
+  }, [sidebarSingleDatabaseExpansion]);
 
   useEffect(() => {
       if (!treeContainerRef.current) return;

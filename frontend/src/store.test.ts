@@ -82,6 +82,7 @@ describe('store appearance persistence', () => {
     expect(appearance.v2CommandSearchPersistentFilterEnabled).toBe(false);
     expect(appearance.v2SidebarPersistedFilter).toBe('');
     expect(appearance.v2SidebarRailScale).toBe(1);
+    expect(appearance.sidebarSingleDatabaseExpansion).toBe(false);
     expect(appearance.sidebarHiddenObjectGroups).toEqual([]);
     expect(appearance.showDataTableVerticalBorders).toBe(false);
     expect(appearance.showDataTableRowNumber).toBe(true);
@@ -221,6 +222,7 @@ describe('store appearance persistence', () => {
       dataTableDensity: 'compact',
       tableDoubleClickAction: 'open-design',
       v2SidebarRailScale: 1.55,
+      sidebarSingleDatabaseExpansion: true,
     });
 
     const persisted = JSON.parse(storage.getItem('lite-db-storage') || '{}');
@@ -229,6 +231,7 @@ describe('store appearance persistence', () => {
     expect(persisted.state.appearance.dataTableDensity).toBe('compact');
     expect(persisted.state.appearance.tableDoubleClickAction).toBe('open-design');
     expect(persisted.state.appearance.v2SidebarRailScale).toBe(1.55);
+    expect(persisted.state.appearance.sidebarSingleDatabaseExpansion).toBe(true);
 
     vi.resetModules();
     const reloaded = await importStore();
@@ -239,6 +242,7 @@ describe('store appearance persistence', () => {
     expect(appearance.dataTableDensity).toBe('compact');
     expect(appearance.tableDoubleClickAction).toBe('open-design');
     expect(appearance.v2SidebarRailScale).toBe(1.55);
+    expect(appearance.sidebarSingleDatabaseExpansion).toBe(true);
   });
 
   it('persists and sanitizes hidden sidebar object groups', async () => {

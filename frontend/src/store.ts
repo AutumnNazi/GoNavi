@@ -163,6 +163,7 @@ export interface AppearanceSettings
   v2CommandSearchPersistentFilterEnabled: boolean;
   v2SidebarPersistedFilter: string;
   v2SidebarRailScale: number;
+  sidebarSingleDatabaseExpansion: boolean;
   sidebarHiddenObjectGroups: SidebarObjectGroupKey[];
   customUIFontFamily: string | null;
   customMonoFontFamily: string | null;
@@ -186,6 +187,7 @@ export const DEFAULT_APPEARANCE: AppearanceSettings = {
   v2CommandSearchPersistentFilterEnabled: false,
   v2SidebarPersistedFilter: "",
   v2SidebarRailScale: DEFAULT_V2_SIDEBAR_RAIL_SCALE,
+  sidebarSingleDatabaseExpansion: false,
   sidebarHiddenObjectGroups: [],
   customUIFontFamily: null,
   customMonoFontFamily: null,
@@ -2977,6 +2979,8 @@ const sanitizeAppearance = (
     v2SidebarRailScale: sanitizeV2SidebarRailScale(
       appearance.v2SidebarRailScale,
     ),
+    sidebarSingleDatabaseExpansion:
+      appearance.sidebarSingleDatabaseExpansion === true,
     sidebarHiddenObjectGroups: sanitizeSidebarHiddenObjectGroups(
       appearance.sidebarHiddenObjectGroups,
     ),
