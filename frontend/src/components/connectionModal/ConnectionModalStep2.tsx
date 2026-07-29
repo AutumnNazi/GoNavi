@@ -34,7 +34,6 @@ import {
   getDbIconLabel,
 } from "../DatabaseIcons";
 import ConnectionModalMongoSections from "../ConnectionModalMongoSections";
-import ConnectionModalRedisSections from "../ConnectionModalRedisSections";
 import { t } from "../../i18n";
 import {
   supportsConnectionReadOnlyMode,
@@ -297,6 +296,31 @@ const ConnectionModalStep2: React.FC<ConnectionModalStep2Props> = (props) => {
     <span className="gn-conn-f-label" title={fullTitle || shortText}>
       {shortText}
     </span>
+  );
+
+  /** 集群模式附加节点 · 扁平面板（Demo: .mode-extra .el/.eh + 全宽输入） */
+  const renderClusterHostsExtra = ({
+    fieldName,
+    labelKey,
+    helpKey,
+    placeholderKey,
+  }: {
+    fieldName: string;
+    labelKey: string;
+    helpKey: string;
+    placeholderKey: string;
+  }) => (
+    <div className="gn-conn-mode-extra">
+      <div className="gn-conn-el">{t(labelKey)}</div>
+      <div className="gn-conn-eh">{t(helpKey)}</div>
+      <Form.Item name={fieldName} style={{ marginBottom: 0 }}>
+        <Select
+          mode="tags"
+          placeholder={t(placeholderKey)}
+          tokenSeparators={[",", ";", " "]}
+        />
+      </Form.Item>
+    </div>
   );
 
   const denseIdentityRows = (
@@ -1483,6 +1507,65 @@ const ConnectionModalStep2: React.FC<ConnectionModalStep2Props> = (props) => {
               </div>
             )}
 
+            {isRedis && redisTopology === "sentinel" && (
+              <>
+                <div className="gn-conn-f-row">
+                  {denseLabel(
+                    t("connection.modal.dense.auth"),
+                    t("connection.modal.redis.credentials.sentinelUser.label"),
+                  )}
+                  <div className="gn-conn-f-ctrl gn-conn-f-inline">
+                    <div className="gn-conn-w gn-conn-w-user">
+                      <Form.Item
+                        name="redisSentinelUser"
+                        style={{ marginBottom: 0 }}
+                      >
+                        <Input
+                          {...noAutoCapInputProps}
+                          placeholder={t(
+                            "connection.modal.redis.credentials.sentinelUser.placeholder",
+                          )}
+                        />
+                      </Form.Item>
+                    </div>
+                    <div className="gn-conn-w gn-conn-w-pass">
+                      <Form.Item
+                        name="redisSentinelPassword"
+                        style={{ marginBottom: 0 }}
+                      >
+                        <Input.Password
+                          {...noAutoCapInputProps}
+                          placeholder={getStoredSecretPlaceholder({
+                            hasStoredSecret:
+                              initialValues?.hasRedisSentinelPassword,
+                            emptyPlaceholder: t(
+                              "connection.modal.redis.credentials.sentinelPassword.placeholder.empty",
+                            ),
+                            retainedLabel: t(
+                              "connection.modal.redis.credentials.sentinelPassword.placeholder.retained",
+                            ),
+                          })}
+                        />
+                      </Form.Item>
+                    </div>
+                  </div>
+                </div>
+                {initialValues?.hasRedisSentinelPassword
+                  ? renderStoredSecretControls({
+                      fieldName: "redisSentinelPassword",
+                      clearKey: "redisSentinelPassword",
+                      hasStoredSecret: initialValues?.hasRedisSentinelPassword,
+                      clearLabel: t(
+                        "connection.modal.redis.credentials.sentinelPassword.clear",
+                      ),
+                      description: t(
+                        "connection.modal.redis.credentials.sentinelPassword.description",
+                      ),
+                    })
+                  : null}
+              </>
+            )}
+
             {/* 库范围 · Demo #a-scope-wrap：整行 input width:100% */}
             {!isFileDb && !isRedis && !isKafka && (
               <div className="gn-conn-f-row">
@@ -1686,108 +1769,61 @@ const ConnectionModalStep2: React.FC<ConnectionModalStep2Props> = (props) => {
 
             {isKafka &&
               kafkaTopology === "cluster" &&
-              renderConfigSectionCard({
-                sectionKey: "replica",
-                icon: <ClusterOutlined />,
-                children: (
-                  <Form.Item
-                    name="kafkaHosts"
-                    label={t("connection.modal.messageQueue.kafka.extraBrokers.label")}
-                    help={t("connection.modal.messageQueue.kafka.extraBrokers.help")}
-                  >
-                    <Select
-                      mode="tags"
-                      placeholder={t(
-                        "connection.modal.messageQueue.kafka.extraBrokers.placeholder",
-                      )}
-                      tokenSeparators={[",", ";", " "]}
-                    />
-                  </Form.Item>
-                ),
+              renderClusterHostsExtra({
+                fieldName: "kafkaHosts",
+                labelKey: "connection.modal.messageQueue.kafka.extraBrokers.label",
+                helpKey: "connection.modal.messageQueue.kafka.extraBrokers.help",
+                placeholderKey:
+                  "connection.modal.messageQueue.kafka.extraBrokers.placeholder",
               })}
 
             {isRocketMQ &&
               rocketmqTopology === "cluster" &&
-              renderConfigSectionCard({
-                sectionKey: "replica",
-                icon: <ClusterOutlined />,
-                children: (
-                  <Form.Item
-                    name="rocketmqHosts"
-                    label={t("connection.modal.messageQueue.rocketmq.extraNameServers.label")}
-                    help={t("connection.modal.messageQueue.rocketmq.extraNameServers.help")}
-                  >
-                    <Select
-                      mode="tags"
-                      placeholder={t(
-                        "connection.modal.messageQueue.rocketmq.extraNameServers.placeholder",
-                      )}
-                      tokenSeparators={[",", ";", " "]}
-                    />
-                  </Form.Item>
-                ),
+              renderClusterHostsExtra({
+                fieldName: "rocketmqHosts",
+                labelKey:
+                  "connection.modal.messageQueue.rocketmq.extraNameServers.label",
+                helpKey:
+                  "connection.modal.messageQueue.rocketmq.extraNameServers.help",
+                placeholderKey:
+                  "connection.modal.messageQueue.rocketmq.extraNameServers.placeholder",
               })}
 
             {isMQTT &&
               mqttTopology === "cluster" &&
-              renderConfigSectionCard({
-                sectionKey: "replica",
-                icon: <ClusterOutlined />,
-                children: (
-                  <Form.Item
-                    name="mqttHosts"
-                    label={t("connection.modal.messageQueue.mqtt.extraBrokers.label")}
-                    help={t("connection.modal.messageQueue.mqtt.extraBrokers.help")}
-                  >
-                    <Select
-                      mode="tags"
-                      placeholder={t(
-                        "connection.modal.messageQueue.mqtt.extraBrokers.placeholder",
-                      )}
-                      tokenSeparators={[",", ";", " "]}
-                    />
-                  </Form.Item>
-                ),
+              renderClusterHostsExtra({
+                fieldName: "mqttHosts",
+                labelKey: "connection.modal.messageQueue.mqtt.extraBrokers.label",
+                helpKey: "connection.modal.messageQueue.mqtt.extraBrokers.help",
+                placeholderKey:
+                  "connection.modal.messageQueue.mqtt.extraBrokers.placeholder",
               })}
 
-            {isMySQLLike &&
-              mysqlTopology === "replica" &&
-              renderConfigSectionCard({
-                sectionKey: "replica",
-                icon: <ClusterOutlined />,
-                children: (
-                  <>
-                    <Form.Item
-                      name="mysqlReplicaHosts"
-                      label={t(
-                        "connection.modal.field.mysqlReplicaHosts.label",
-                      )}
-                      help={t(
-                        "connection.modal.field.mysqlReplicaHosts.help",
-                      )}
-                    >
-                      <Select
-                        mode="tags"
-                        placeholder={t(
-                          "connection.modal.field.mysqlReplicaHosts.placeholder",
-                        )}
-                        tokenSeparators={[",", ";", " "]}
-                      />
-                    </Form.Item>
-                    <div
-                      style={{
-                        display: "grid",
-                        gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-                        gap: 16,
-                      }}
-                    >
-                      <Form.Item
-                        name="mysqlReplicaUser"
-                        label={t(
-                          "connection.modal.field.mysqlReplicaUser.label",
-                        )}
-                        style={{ marginBottom: 0 }}
-                      >
+            {isMySQLLike && mysqlTopology === "replica" && (
+              <div className="gn-conn-mode-extra">
+                <div className="gn-conn-el">
+                  {t("connection.modal.field.mysqlReplicaHosts.label")}
+                </div>
+                <div className="gn-conn-eh">
+                  {t("connection.modal.field.mysqlReplicaHosts.help")}
+                </div>
+                <Form.Item name="mysqlReplicaHosts" style={{ marginBottom: 8 }}>
+                  <Select
+                    mode="tags"
+                    placeholder={t(
+                      "connection.modal.field.mysqlReplicaHosts.placeholder",
+                    )}
+                    tokenSeparators={[",", ";", " "]}
+                  />
+                </Form.Item>
+                <div className="gn-conn-f-row">
+                  {denseLabel(
+                    t("connection.modal.dense.auth"),
+                    t("connection.modal.field.mysqlReplicaUser.label"),
+                  )}
+                  <div className="gn-conn-f-ctrl gn-conn-f-inline">
+                    <div className="gn-conn-w gn-conn-w-user">
+                      <Form.Item name="mysqlReplicaUser" style={{ marginBottom: 0 }}>
                         <Input
                           {...noAutoCapInputProps}
                           placeholder={t(
@@ -1795,13 +1831,9 @@ const ConnectionModalStep2: React.FC<ConnectionModalStep2Props> = (props) => {
                           )}
                         />
                       </Form.Item>
-                      <Form.Item
-                        name="mysqlReplicaPassword"
-                        label={t(
-                          "connection.modal.field.mysqlReplicaPassword.label",
-                        )}
-                        style={{ marginBottom: 0 }}
-                      >
+                    </div>
+                    <div className="gn-conn-w gn-conn-w-pass">
+                      <Form.Item name="mysqlReplicaPassword" style={{ marginBottom: 0 }}>
                         <Input.Password
                           {...noAutoCapInputProps}
                           placeholder={getStoredSecretPlaceholder({
@@ -1817,197 +1849,137 @@ const ConnectionModalStep2: React.FC<ConnectionModalStep2Props> = (props) => {
                         />
                       </Form.Item>
                     </div>
-                    {renderStoredSecretControls({
-                      fieldName: "mysqlReplicaPassword",
-                      clearKey: "mysqlReplicaPassword",
-                      hasStoredSecret: initialValues?.hasMySQLReplicaPassword,
-                      clearLabel: t(
-                        "connection.modal.field.mysqlReplicaPassword.clear",
-                      ),
-                      description: t(
-                        "connection.modal.field.mysqlReplicaPassword.savedDescription",
-                      ),
-                    })}
-                  </>
-                ),
-              })}
+                  </div>
+                </div>
+                {renderStoredSecretControls({
+                  fieldName: "mysqlReplicaPassword",
+                  clearKey: "mysqlReplicaPassword",
+                  hasStoredSecret: initialValues?.hasMySQLReplicaPassword,
+                  clearLabel: t(
+                    "connection.modal.field.mysqlReplicaPassword.clear",
+                  ),
+                  description: t(
+                    "connection.modal.field.mysqlReplicaPassword.savedDescription",
+                  ),
+                })}
+              </div>
+            )}
 
-            {dbType === "mongodb" &&
-              renderConfigSectionCard({
-                sectionKey: "connectionMode",
-                icon: <ClusterOutlined />,
-                children: renderChoiceCards({
-                  fieldName: "mongoTopology",
-                  value: String(mongoTopology),
-                  options: [
-                    {
-                      value: "single",
-                      label: t("connection.modal.topology.single.label"),
-                      description: t(
-                        "connection.modal.topology.mongodb.single.description",
-                      ),
-                    },
-                    {
-                      value: "replica",
-                      label: t(
-                        "connection.modal.topology.mongodb.replica.label",
-                      ),
-                      description: t(
-                        "connection.modal.topology.mongodb.replica.description",
-                      ),
-                    },
-                  ],
-                }),
-              })}
+            {dbType === "mongodb" && (
+              <div className="gn-conn-f-row" data-align="start">
+                {denseLabel(
+                  t("connection.modal.dense.mode"),
+                  t("connection.modal.config_section.connectionMode.title"),
+                )}
+                <div className="gn-conn-f-ctrl">
+                  {renderChoiceCards({
+                    fieldName: "mongoTopology",
+                    value: String(mongoTopology),
+                    variant: "segment",
+                    options: [
+                      {
+                        value: "single",
+                        label: t("connection.modal.topology.single.label"),
+                        description: t(
+                          "connection.modal.topology.mongodb.single.description",
+                        ),
+                      },
+                      {
+                        value: "replica",
+                        label: t(
+                          "connection.modal.topology.mongodb.replica.label",
+                        ),
+                        description: t(
+                          "connection.modal.topology.mongodb.replica.description",
+                        ),
+                      },
+                    ],
+                  })}
+                </div>
+              </div>
+            )}
 
-            {dbType === "mongodb" &&
-              renderConfigSectionCard({
-                sectionKey: "mongoDiscovery",
-                icon: <ApiOutlined />,
-                children: (
-                  <>
-                    <Form.Item name="mongoSrv" hidden valuePropName="checked">
-                      <Checkbox />
-                    </Form.Item>
-                    <div
-                      style={{
-                        display: "grid",
-                        gridTemplateColumns:
-                          "repeat(auto-fit, minmax(180px, 1fr))",
-                        gap: 10,
-                      }}
-                    >
-                      {[
-                        {
-                          value: false,
-                          label: t(
-                            "connection.modal.mongo.discovery.standard.label",
-                          ),
-                          description: t(
-                            "connection.modal.mongo.discovery.standard.description",
-                          ),
-                        },
-                        {
-                          value: true,
-                          label: t(
-                            "connection.modal.mongo.discovery.srv.label",
-                          ),
-                          description: t(
-                            "connection.modal.mongo.discovery.srv.description",
-                          ),
-                        },
-                      ].map((option) => {
-                        const active = mongoSrv === option.value;
-                        return (
-                          <button
-                            key={String(option.value)}
-                            type="button"
-                            aria-pressed={active}
-                            onClick={() =>
-                              setChoiceFieldValue("mongoSrv", option.value)
-                            }
-                            style={{
-                              textAlign: "left",
-                              padding: "12px 14px",
-                              borderRadius: 14,
-                              border: active
-                                ? darkMode
-                                  ? "1px solid rgba(255,214,102,0.42)"
-                                  : "1px solid rgba(22,119,255,0.36)"
-                                : darkMode
-                                  ? "1px solid rgba(255,255,255,0.08)"
-                                  : "1px solid rgba(16,24,40,0.08)",
-                              background: active
-                                ? darkMode
-                                  ? "rgba(255,214,102,0.10)"
-                                  : "rgba(22,119,255,0.07)"
-                                : darkMode
-                                  ? "rgba(255,255,255,0.03)"
-                                  : "rgba(16,24,40,0.03)",
-                              color: darkMode ? "#f5f7ff" : "#162033",
-                              cursor: "pointer",
-                            }}
-                          >
-                            <Space size={8} wrap>
-                              <Text strong>{option.label}</Text>
-                              {active ? (
-                                <Tag color="blue">
-                                  {t("connection.modal.network.currentEditing")}
-                                </Tag>
-                              ) : null}
-                            </Space>
-                            <div
-                              style={{
-                                ...modalMutedTextStyle,
-                                marginTop: 6,
-                              }}
-                            >
-                              {option.description}
-                            </div>
-                          </button>
-                        );
-                      })}
-                    </div>
-                    {mongoSrv && useSSH && (
-                      <Alert
-                        type="warning"
-                        showIcon
-                        style={{ marginTop: 12 }}
-                        message={t(
-                          "connection.modal.mongo.discovery.srvSshWarning",
-                        )}
-                      />
-                    )}
-                  </>
-                ),
-              })}
+            {dbType === "mongodb" && (
+              <div className="gn-conn-f-row" data-align="start">
+                {denseLabel(
+                  t("connection.modal.dense.address"),
+                  t("connection.modal.config_section.mongoDiscovery.title"),
+                )}
+                <div className="gn-conn-f-ctrl">
+                  {renderChoiceCards({
+                    fieldName: "mongoSrv",
+                    value: mongoSrv ? "true" : "false",
+                    variant: "segment",
+                    onSelect: (value: string) =>
+                      setChoiceFieldValue("mongoSrv", value === "true"),
+                    options: [
+                      {
+                        value: "false",
+                        label: t(
+                          "connection.modal.mongo.discovery.standard.label",
+                        ),
+                        description: t(
+                          "connection.modal.mongo.discovery.standard.description",
+                        ),
+                      },
+                      {
+                        value: "true",
+                        label: t(
+                          "connection.modal.mongo.discovery.srv.label",
+                        ),
+                        description: t(
+                          "connection.modal.mongo.discovery.srv.description",
+                        ),
+                      },
+                    ],
+                  })}
+                  {mongoSrv && useSSH && (
+                    <Alert
+                      type="warning"
+                      showIcon
+                      style={{ marginTop: 8 }}
+                      message={t(
+                        "connection.modal.mongo.discovery.srvSshWarning",
+                      )}
+                    />
+                  )}
+                </div>
+              </div>
+            )}
 
-            {dbType === "mongodb" &&
-              mongoTopology === "replica" &&
-              renderConfigSectionCard({
-                sectionKey: "replica",
-                icon: <ClusterOutlined />,
-                children: (
-                  <>
-                    <Form.Item
-                      name="mongoHosts"
-                      label={
-                        mongoSrv
-                          ? t("connection.modal.field.mongoSrvHosts.label")
-                          : t("connection.modal.field.mongoHosts.label")
-                      }
-                      help={
-                        mongoSrv
-                          ? t("connection.modal.field.mongoSrvHosts.help")
-                          : t("connection.modal.field.mongoHosts.help")
-                      }
-                    >
-                      <Select
-                        mode="tags"
-                        placeholder={
-                          mongoSrv
-                            ? t(
-                                "connection.modal.field.mongoSrvHosts.placeholder",
-                              )
-                            : t(
-                                "connection.modal.field.mongoHosts.placeholder",
-                              )
-                        }
-                        tokenSeparators={[",", ";", " "]}
-                      />
-                    </Form.Item>
-                    <div
-                      style={{
-                        display: "grid",
-                        gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-                        gap: 16,
-                      }}
-                    >
+            {dbType === "mongodb" && mongoTopology === "replica" && (
+              <div className="gn-conn-mode-extra">
+                <div className="gn-conn-el">
+                  {mongoSrv
+                    ? t("connection.modal.field.mongoSrvHosts.label")
+                    : t("connection.modal.field.mongoHosts.label")}
+                </div>
+                <div className="gn-conn-eh">
+                  {mongoSrv
+                    ? t("connection.modal.field.mongoSrvHosts.help")
+                    : t("connection.modal.field.mongoHosts.help")}
+                </div>
+                <Form.Item name="mongoHosts" style={{ marginBottom: 8 }}>
+                  <Select
+                    mode="tags"
+                    placeholder={
+                      mongoSrv
+                        ? t("connection.modal.field.mongoSrvHosts.placeholder")
+                        : t("connection.modal.field.mongoHosts.placeholder")
+                    }
+                    tokenSeparators={[",", ";", " "]}
+                  />
+                </Form.Item>
+
+                <div className="gn-conn-f-row">
+                  {denseLabel(
+                    t("connection.modal.dense.name"),
+                    t("connection.modal.field.mongoReplicaSet.label"),
+                  )}
+                  <div className="gn-conn-f-ctrl">
+                    <div className="gn-conn-w gn-conn-w-name">
                       <Form.Item
                         name="mongoReplicaSet"
-                        label={t(
-                          "connection.modal.field.mongoReplicaSet.label",
-                        )}
                         style={{ marginBottom: 0 }}
                       >
                         <Input
@@ -2017,11 +1989,19 @@ const ConnectionModalStep2: React.FC<ConnectionModalStep2Props> = (props) => {
                           )}
                         />
                       </Form.Item>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="gn-conn-f-row">
+                  {denseLabel(
+                    t("connection.modal.dense.auth"),
+                    t("connection.modal.field.mongoReplicaUser.label"),
+                  )}
+                  <div className="gn-conn-f-ctrl gn-conn-f-inline">
+                    <div className="gn-conn-w gn-conn-w-user">
                       <Form.Item
                         name="mongoReplicaUser"
-                        label={t(
-                          "connection.modal.field.mongoReplicaUser.label",
-                        )}
                         style={{ marginBottom: 0 }}
                       >
                         <Input
@@ -2032,119 +2012,98 @@ const ConnectionModalStep2: React.FC<ConnectionModalStep2Props> = (props) => {
                         />
                       </Form.Item>
                     </div>
-                    <Form.Item
-                      name="mongoReplicaPassword"
-                      label={t(
-                        "connection.modal.field.mongoReplicaPassword.label",
-                      )}
-                      style={{ marginTop: 16, marginBottom: 0 }}
-                    >
-                      <Input.Password
-                        {...noAutoCapInputProps}
-                        placeholder={getStoredSecretPlaceholder({
-                          hasStoredSecret:
-                            initialValues?.hasMongoReplicaPassword,
-                          emptyPlaceholder: t(
-                            "connection.modal.field.mongoReplicaPassword.placeholder",
-                          ),
-                          retainedLabel: t(
-                            "connection.modal.field.mongoReplicaPassword.retained",
-                          ),
-                        })}
-                      />
-                    </Form.Item>
-                    {renderStoredSecretControls({
-                      fieldName: "mongoReplicaPassword",
-                      clearKey: "mongoReplicaPassword",
-                      hasStoredSecret: initialValues?.hasMongoReplicaPassword,
-                      clearLabel: t(
-                        "connection.modal.field.mongoReplicaPassword.clear",
-                      ),
-                      description: t(
-                        "connection.modal.field.mongoReplicaPassword.savedDescription",
-                      ),
-                    })}
-                    <Space
-                      size={8}
-                      style={{ marginTop: 12, marginBottom: 12 }}
-                    >
-                      <Button
-                        onClick={handleDiscoverMongoMembers}
-                        loading={discoveringMembers}
+                    <div className="gn-conn-w gn-conn-w-pass">
+                      <Form.Item
+                        name="mongoReplicaPassword"
+                        style={{ marginBottom: 0 }}
                       >
-                        {t("connection.modal.mongo.discoverMembers")}
-                      </Button>
-                    </Space>
-                    {mongoMembers.length > 0 && (
-                      <Table
-                        size="small"
-                        rowKey={(record) => record.host}
-                        pagination={false}
-                        dataSource={mongoMembers}
-                        style={{ marginBottom: 12 }}
-                        columns={[
-                          {
-                            title: t("connection.modal.field.host.label"),
-                            dataIndex: "host",
-                            width: "48%",
-                          },
-                          {
-                            title: t("connection.modal.mongo.member.role"),
-                            dataIndex: "role",
-                            width: "32%",
-                            render: (
-                              value: string,
-                              record: MongoMemberInfo,
-                            ) => (
-                              <Tag
-                                color={record.isSelf ? "blue" : "default"}
-                              >
-                                {value ||
-                                  record.state ||
-                                  t("common.unknown")}
-                              </Tag>
+                        <Input.Password
+                          {...noAutoCapInputProps}
+                          placeholder={getStoredSecretPlaceholder({
+                            hasStoredSecret:
+                              initialValues?.hasMongoReplicaPassword,
+                            emptyPlaceholder: t(
+                              "connection.modal.field.mongoReplicaPassword.placeholder",
                             ),
-                          },
-                          {
-                            title: t("connection.modal.mongo.member.health"),
-                            dataIndex: "healthy",
-                            width: "20%",
-                            render: (value: boolean) => (
-                              <Tag color={value ? "success" : "error"}>
-                                {value
-                                  ? t("connection.modal.mongo.member.healthy")
-                                  : t(
-                                      "connection.modal.mongo.member.unhealthy",
-                                    )}
-                              </Tag>
+                            retainedLabel: t(
+                              "connection.modal.field.mongoReplicaPassword.retained",
                             ),
-                          },
-                        ]}
-                      />
-                    )}
-                  </>
-                ),
-              })}
+                          })}
+                        />
+                      </Form.Item>
+                    </div>
+                  </div>
+                </div>
+                {renderStoredSecretControls({
+                  fieldName: "mongoReplicaPassword",
+                  clearKey: "mongoReplicaPassword",
+                  hasStoredSecret: initialValues?.hasMongoReplicaPassword,
+                  clearLabel: t(
+                    "connection.modal.field.mongoReplicaPassword.clear",
+                  ),
+                  description: t(
+                    "connection.modal.field.mongoReplicaPassword.savedDescription",
+                  ),
+                })}
 
-            {dbType === "mongodb" &&
-              renderConfigSectionCard({
-                sectionKey: "mongoPolicy",
-                icon: <ThunderboltOutlined />,
-                children: (
-                  <div
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-                      gap: 16,
-                    }}
+                <Space size={8} style={{ marginTop: 12, marginBottom: 12 }}>
+                  <Button
+                    onClick={handleDiscoverMongoMembers}
+                    loading={discoveringMembers}
                   >
-                    <Form.Item
-                      name="mongoAuthSource"
-                      label={t(
-                        "connection.modal.field.mongoAuthSource.label",
-                      )}
-                      style={{ marginBottom: 0 }}
-                    >
+                    {t("connection.modal.mongo.discoverMembers")}
+                  </Button>
+                </Space>
+                {mongoMembers.length > 0 && (
+                  <Table
+                    size="small"
+                    rowKey={(record) => record.host}
+                    pagination={false}
+                    dataSource={mongoMembers}
+                    style={{ marginBottom: 12 }}
+                    columns={[
+                      {
+                        title: t("connection.modal.field.host.label"),
+                        dataIndex: "host",
+                        width: "48%",
+                      },
+                      {
+                        title: t("connection.modal.mongo.member.role"),
+                        dataIndex: "role",
+                        width: "32%",
+                        render: (value: string, record: MongoMemberInfo) => (
+                          <Tag color={record.isSelf ? "blue" : "default"}>
+                            {value || record.state || t("common.unknown")}
+                          </Tag>
+                        ),
+                      },
+                      {
+                        title: t("connection.modal.mongo.member.health"),
+                        dataIndex: "healthy",
+                        width: "20%",
+                        render: (value: boolean) => (
+                          <Tag color={value ? "success" : "error"}>
+                            {value
+                              ? t("connection.modal.mongo.member.healthy")
+                              : t("connection.modal.mongo.member.unhealthy")}
+                          </Tag>
+                        ),
+                      },
+                    ]}
+                  />
+                )}
+              </div>
+            )}
+
+            {dbType === "mongodb" && (
+              <div className="gn-conn-f-row" data-align="start">
+                {denseLabel(
+                  t("connection.modal.dense.auth"),
+                  t("connection.modal.field.mongoAuthSource.label"),
+                )}
+                <div className="gn-conn-f-ctrl gn-conn-f-inline">
+                  <div className="gn-conn-w gn-conn-w-name">
+                    <Form.Item name="mongoAuthSource" style={{ marginBottom: 0 }}>
                       <Input
                         {...noAutoCapInputProps}
                         placeholder={t(
@@ -2152,56 +2111,63 @@ const ConnectionModalStep2: React.FC<ConnectionModalStep2Props> = (props) => {
                         )}
                       />
                     </Form.Item>
-                    <div style={{ display: "grid", gap: 8 }}>
-                      <Text strong>
-                        {t("connection.modal.mongo.readPreference.label")}
-                      </Text>
-                      {renderChoiceCards({
-                        fieldName: "mongoReadPreference",
-                        value: String(mongoReadPreference),
-                        minWidth: 130,
-                        options: [
-                          {
-                            value: "primary",
-                            label: "primary",
-                            description: t(
-                              "connection.modal.mongo.readPreference.primary.description",
-                            ),
-                          },
-                          {
-                            value: "primaryPreferred",
-                            label: "primaryPreferred",
-                            description: t(
-                              "connection.modal.mongo.readPreference.primaryPreferred.description",
-                            ),
-                          },
-                          {
-                            value: "secondary",
-                            label: "secondary",
-                            description: t(
-                              "connection.modal.mongo.readPreference.secondary.description",
-                            ),
-                          },
-                          {
-                            value: "secondaryPreferred",
-                            label: "secondaryPreferred",
-                            description: t(
-                              "connection.modal.mongo.readPreference.secondaryPreferred.description",
-                            ),
-                          },
-                          {
-                            value: "nearest",
-                            label: "nearest",
-                            description: t(
-                              "connection.modal.mongo.readPreference.nearest.description",
-                            ),
-                          },
-                        ],
-                      })}
-                    </div>
                   </div>
-                ),
-              })}
+                </div>
+              </div>
+            )}
+
+            {dbType === "mongodb" && (
+              <div className="gn-conn-f-row" data-align="start">
+                {denseLabel(
+                  t("connection.modal.dense.mode"),
+                  t("connection.modal.mongo.readPreference.label"),
+                )}
+                <div className="gn-conn-f-ctrl">
+                  {renderChoiceCards({
+                    fieldName: "mongoReadPreference",
+                    value: String(mongoReadPreference),
+                    variant: "segment",
+                    options: [
+                      {
+                        value: "primary",
+                        label: "primary",
+                        description: t(
+                          "connection.modal.mongo.readPreference.primary.description",
+                        ),
+                      },
+                      {
+                        value: "primaryPreferred",
+                        label: "primaryPreferred",
+                        description: t(
+                          "connection.modal.mongo.readPreference.primaryPreferred.description",
+                        ),
+                      },
+                      {
+                        value: "secondary",
+                        label: "secondary",
+                        description: t(
+                          "connection.modal.mongo.readPreference.secondary.description",
+                        ),
+                      },
+                      {
+                        value: "secondaryPreferred",
+                        label: "secondaryPreferred",
+                        description: t(
+                          "connection.modal.mongo.readPreference.secondaryPreferred.description",
+                        ),
+                      },
+                      {
+                        value: "nearest",
+                        label: "nearest",
+                        description: t(
+                          "connection.modal.mongo.readPreference.nearest.description",
+                        ),
+                      },
+                    ],
+                  })}
+                </div>
+              </div>
+            )}
 
             {isRedis && (
               <div className="gn-conn-f-row" data-align="start">
@@ -2231,23 +2197,87 @@ const ConnectionModalStep2: React.FC<ConnectionModalStep2Props> = (props) => {
                           "connection.modal.topology.redis.cluster.description",
                         ),
                       },
+                      {
+                        value: "sentinel",
+                        label: t(
+                          "connection.modal.redis.topology.sentinel.label",
+                        ),
+                        description: t(
+                          "connection.modal.redis.topology.sentinel.description",
+                        ),
+                      },
                     ],
                   })}
                   {redisTopology === "cluster" && (
-                    <Form.Item
-                      name="redisHosts"
-                      label={t("connection.modal.field.redisHosts.label")}
-                      help={t("connection.modal.field.redisHosts.help")}
-                      style={{ marginTop: 10, marginBottom: 0 }}
+                    <div
+                      className="gn-conn-mode-extra"
+                      style={{ width: "100%" }}
                     >
-                      <Select
-                        mode="tags"
-                        placeholder={t(
-                          "connection.modal.field.redisHosts.placeholder",
-                        )}
-                        tokenSeparators={[",", ";", " "]}
-                      />
-                    </Form.Item>
+                      <div className="gn-conn-el">
+                        {t("connection.modal.field.redisHosts.label")}
+                      </div>
+                      <div className="gn-conn-eh">
+                        {t("connection.modal.field.redisHosts.help")}
+                      </div>
+                      <Form.Item name="redisHosts" style={{ marginBottom: 0 }}>
+                        <Select
+                          mode="tags"
+                          placeholder={t(
+                            "connection.modal.field.redisHosts.placeholder",
+                          )}
+                          tokenSeparators={[",", ";", " "]}
+                        />
+                      </Form.Item>
+                    </div>
+                  )}
+                  {redisTopology === "sentinel" && (
+                    <div
+                      className="gn-conn-mode-extra"
+                      style={{ width: "100%" }}
+                    >
+                      <div className="gn-conn-el">
+                        {t("connection.modal.redis.hosts.sentinel.label")}
+                      </div>
+                      <div className="gn-conn-eh">
+                        {t("connection.modal.redis.hosts.sentinel.help")}
+                      </div>
+                      <Form.Item
+                        name="redisHosts"
+                        style={{ marginBottom: 8 }}
+                      >
+                        <Select
+                          mode="tags"
+                          placeholder={t(
+                            "connection.modal.redis.hosts.sentinel.placeholder",
+                          )}
+                          tokenSeparators={[",", ";", " "]}
+                        />
+                      </Form.Item>
+                      <div className="gn-conn-el">
+                        {t("connection.modal.redis.sentinel.master.label")}
+                      </div>
+                      <div className="gn-conn-eh">
+                        {t("connection.modal.redis.sentinel.master.help")}
+                      </div>
+                      <Form.Item
+                        name="redisSentinelMaster"
+                        style={{ marginBottom: 0 }}
+                        rules={[
+                          createUriAwareRequiredRule(
+                            t(
+                              "connection.modal.redis.sentinel.master.required",
+                            ),
+                          ),
+                        ]}
+                      >
+                        <Input
+                          {...noAutoCapInputProps}
+                          placeholder={t(
+                            "connection.modal.redis.sentinel.master.placeholder",
+                          )}
+                        />
+                      </Form.Item>
+                    </div>
                   )}
                 </div>
               </div>

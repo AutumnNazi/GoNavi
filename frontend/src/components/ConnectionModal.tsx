@@ -2817,6 +2817,7 @@ const ConnectionModal: React.FC<{
     if (step === 1) {
       return null;
     }
+    const typeName = dbTypes.find((t) => t.key === dbType)?.name || dbType;
     const isTestSuccess = testResult?.type === "success";
     const hasTestError = !!testResult && !isTestSuccess;
     const testFailureSummary = hasTestError
@@ -2856,7 +2857,7 @@ const ConnectionModal: React.FC<{
                 </span>
               </>
             ) : (
-              t("connection.modal.studio.test.idle")
+              `${t("connection.modal.studio.test.idle")} · ${typeName}`
             )}
           </span>
           {hasTestError && (

@@ -874,10 +874,13 @@ describe("ConnectionModal i18n", () => {
     });
 
     pageText = textContent(renderer!.toJSON());
-    expect(pageText).toContain("Proxy host");
+    // 密排布局：左列用短标签（Type/Addr/Auth），完整标题在 title 属性上；
+    // 描述性 placeholder 仍完整可见，作为断言锚点。
+    expect(pageText).toContain("Type");
+    expect(pageText).toContain("Addr");
     expect(pageText).toContain("For example: 127.0.0.1 or proxy.company.com");
-    expect(pageText).toContain("Proxy type");
-    expect(pageText).toContain("Proxy username");
+    expect(pageText).toContain("SOCKS5");
+    expect(pageText).toContain("HTTP CONNECT");
     expect(pageText).toContain("Leave blank for no authentication");
 
     await act(async () => {

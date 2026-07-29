@@ -1527,7 +1527,13 @@ body[data-theme='dark'] .gn-connection-type-group:hover:not([aria-pressed='true'
     min-width: 0 !important;
 }
 
-.gn-conn-dense .ant-form-item {
+.gn-conn-dense .ant-form-item,
+/* 覆盖 v2 主题的 body[data-ui-version="v2"] .ant-form-item{margin-bottom:14px}，
+   该规则特异性(0,2,1)高于 .gn-conn-dense .ant-form-item(0,2,0)，需同前缀提权。 */
+body[data-ui-version="v2"] .gn-conn-dense .ant-form-item,
+body[data-ui-version="v2"] .gn-conn-w .ant-form-item,
+body[data-ui-version="v2"] .gn-conn-f-ctrl > .ant-form-item,
+body[data-ui-version="v2"] .gn-conn-check-line .ant-form-item {
     margin-bottom: 0 !important;
 }
 
@@ -1644,6 +1650,36 @@ body[data-theme='dark'] .gn-connection-type-group:hover:not([aria-pressed='true'
     color: var(--gn-fg-5, rgba(0, 0, 0, 0.4));
     line-height: 1.35;
     width: 100%;
+}
+
+/* Mode-extra 扁平面板 — 规格源 demo .mode-extra / .el / .eh */
+.gn-conn-mode-extra {
+    margin-top: 10px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+}
+
+.gn-conn-el {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--gn-fg-3);
+    margin-bottom: 3px;
+}
+
+.gn-conn-eh {
+    font-size: 11px;
+    color: var(--gn-fg-5, rgba(0, 0, 0, 0.4));
+    margin-bottom: 6px;
+    line-height: 1.35;
+}
+
+.gn-conn-mode-extra .ant-form-item {
+    margin-bottom: 8px;
+}
+
+.gn-conn-mode-extra .ant-form-item:last-child {
+    margin-bottom: 0;
 }
 
 /* Production protection — 规格源 demo .prot / .prot-head / .chev */
@@ -1803,61 +1839,78 @@ body[data-theme='dark'] .gn-connection-type-group:hover:not([aria-pressed='true'
 }
 
 /* Network list rows */
+/* demo .net-list：扁平列表（非卡片） */
 .gn-conn-net-list {
     display: flex;
     flex-direction: column;
-    gap: 4px;
-    margin-bottom: 12px;
+    gap: 0;
+    margin-bottom: 8px;
 }
 
+/* demo .net-row：无外框、行间细分割线、选中=左侧强调线 */
 .gn-conn-net-row {
     display: grid;
-    grid-template-columns: 20px minmax(0, 1fr) auto;
+    grid-template-columns: 16px minmax(0, 1fr) auto;
     align-items: center;
-    column-gap: 10px;
+    column-gap: 8px;
     width: 100%;
     text-align: left;
-    padding: 9px 10px;
-    border-radius: 10px;
-    border: 1px solid var(--gn-br-2, rgba(16, 24, 40, 0.1));
-    background: var(--gn-bg-panel-2, rgba(16, 24, 40, 0.02));
+    padding: 8px 4px 8px 6px;
+    border: 0;
+    border-bottom: 1px solid var(--gn-br-1, rgba(16, 24, 40, 0.06));
+    border-left: 2px solid transparent;
+    border-radius: 0;
+    background: transparent;
     cursor: pointer;
     font: inherit;
     color: inherit;
-    transition: border-color 0.12s, background 0.12s;
+    box-sizing: border-box;
+    transition: background 0.12s, border-color 0.12s;
+}
+
+.gn-conn-net-row:last-child {
+    border-bottom: 0;
 }
 
 .gn-conn-net-row:hover {
     background: var(--gn-bg-hover, rgba(16, 24, 40, 0.04));
 }
 
+/* 选中=正在编辑：左侧强调线 + 文字色，不整行填色 */
 .gn-conn-net-row[data-active='true'] {
-    border-color: color-mix(in srgb, var(--gn-accent, #1677ff) 45%, transparent);
-    background: var(--gn-bg-selected, color-mix(in srgb, var(--gn-accent, #1677ff) 10%, transparent));
+    background: transparent;
+    border-left-color: var(--gn-accent, #1677ff);
+}
+
+.gn-conn-net-row[data-active='true'] .nt,
+.gn-conn-net-row[data-active='true'] .st {
+    color: var(--gn-accent, #1677ff);
 }
 
 .gn-conn-net-row .nt {
-    font-size: 13px;
-    font-weight: 700;
+    font-size: 12.5px;
+    font-weight: 650;
     line-height: 1.25;
+    color: var(--gn-fg-1, rgba(0, 0, 0, 0.88));
 }
 
 .gn-conn-net-row .nd {
-    font-size: 11.5px;
+    font-size: 11px;
     color: var(--gn-fg-5, rgba(0, 0, 0, 0.4));
-    margin-top: 2px;
-    line-height: 1.3;
+    margin-top: 1px;
+    line-height: 1.35;
 }
 
 .gn-conn-net-row .st {
     font-size: 11px;
-    font-weight: 650;
+    font-weight: 500;
     color: var(--gn-fg-5, rgba(0, 0, 0, 0.4));
     white-space: nowrap;
 }
 
 .gn-conn-net-row .st.on {
     color: var(--gn-accent, #1677ff);
+    font-weight: 650;
 }
 
 .gn-conn-net-hint {
@@ -1865,6 +1918,78 @@ body[data-theme='dark'] .gn-connection-type-group:hover:not([aria-pressed='true'
     color: var(--gn-fg-5, rgba(0, 0, 0, 0.4));
     margin-bottom: 6px;
     line-height: 1.4;
+}
+
+/* demo .net-detail：扁平详情区（h4 · 已启用 + ndesc + 密排字段） */
+.gn-conn-net-detail {
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    padding: 2px 0 10px;
+    margin-bottom: 4px;
+}
+
+.gn-conn-net-detail h4 {
+    margin: 0 0 2px;
+    font-size: 12.5px;
+    font-weight: 700;
+    color: var(--gn-fg-1, rgba(0, 0, 0, 0.88));
+}
+
+.gn-conn-net-detail h4 .on {
+    font-size: 11px;
+    font-weight: 650;
+    color: var(--gn-accent, #1677ff);
+    margin-left: 6px;
+}
+
+.gn-conn-net-detail .ndesc {
+    margin: 0 0 8px;
+    font-size: 11px;
+    color: var(--gn-fg-5, rgba(0, 0, 0, 0.4));
+    line-height: 1.4;
+}
+
+.gn-conn-net-detail .empty-hint {
+    font-size: 11.5px;
+    color: var(--gn-fg-4, rgba(0, 0, 0, 0.45));
+    padding: 4px 0;
+    border: 0;
+    background: transparent;
+    line-height: 1.45;
+}
+
+/* demo .path-pick：输入 + 浏览按钮 */
+.gn-conn-path-pick {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    width: 100%;
+    max-width: 100%;
+}
+
+.gn-conn-path-pick .ant-input,
+.gn-conn-path-pick .ant-input-affix-wrapper {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.gn-conn-path-pick .ant-btn {
+    flex: 0 0 auto;
+}
+
+/* 网络 · 高级连接区块内的小单位说明 */
+.gn-conn-unit-hint {
+    font-size: 11.5px;
+    color: var(--gn-fg-5, rgba(0, 0, 0, 0.4));
+    white-space: nowrap;
+}
+
+.gn-conn-field-hint {
+    font-size: 11px;
+    color: var(--gn-fg-5, rgba(0, 0, 0, 0.4));
+    line-height: 1.4;
+    margin-top: 4px;
 }
 
 /* Custom Title Bar Close Button Hover */
