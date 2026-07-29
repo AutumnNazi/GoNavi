@@ -778,6 +778,10 @@ export function RedisGetDatabases(arg1) {
   return window['go']['app']['App']['RedisGetDatabases'](arg1);
 }
 
+export function RedisGetListValue(arg1, arg2, arg3) {
+  return window['go']['app']['App']['RedisGetListValue'](arg1, arg2, arg3);
+}
+
 export function RedisGetServerInfo(arg1) {
   return window['go']['app']['App']['RedisGetServerInfo'](arg1);
 }

@@ -396,6 +396,8 @@ export function RedisFlushDB(arg1:connection.ConnectionConfig):Promise<connectio
 
 export function RedisGetDatabases(arg1:connection.ConnectionConfig):Promise<connection.QueryResult>;
 
+export function RedisGetListValue(arg1:connection.ConnectionConfig,arg2:string,arg3:boolean):Promise<connection.QueryResult>;
+
 export function RedisGetServerInfo(arg1:connection.ConnectionConfig):Promise<connection.QueryResult>;
 
 export function RedisGetValue(arg1:connection.ConnectionConfig,arg2:string):Promise<connection.QueryResult>;

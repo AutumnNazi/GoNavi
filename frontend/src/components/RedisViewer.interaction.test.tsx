@@ -33,6 +33,7 @@ const storeState = vi.hoisted(() => ({
 const redisBackend = vi.hoisted(() => ({
   RedisScanKeys: vi.fn(),
   RedisGetValue: vi.fn(),
+  RedisGetListValue: vi.fn(),
   RedisListRemove: vi.fn(),
   RedisListSet: vi.fn(),
   RedisExportKeys: vi.fn(),
@@ -231,6 +232,10 @@ describe('RedisViewer tree interactions', () => {
     redisBackend.RedisGetValue.mockResolvedValue({
       success: true,
       data: { key: 'app:user:1', type: 'string', ttl: -1, value: 'demo', length: 4 },
+    });
+    redisBackend.RedisGetListValue.mockResolvedValue({
+      success: true,
+      data: { key: 'app:user:1', type: 'list', ttl: -1, value: [], length: 0 },
     });
     redisBackend.RedisListRemove.mockResolvedValue({ success: true });
     redisBackend.RedisListSet.mockResolvedValue({ success: true });
@@ -1172,6 +1177,57 @@ describe('RedisViewer tree interactions', () => {
     const tableShell = renderer!.root.findByProps({ className: 'redis-value-table-shell' });
     expect(tableShell.props['data-redis-value-total']).toBe(211);
     expect(tableShell.props.style).toMatchObject({ flex: 1, minHeight: 0, overflow: 'hidden' });
+
+    renderer!.unmount();
+  });
+
+  it('loads the List tail in descending order while preserving the default order', async () => {
+    redisBackend.RedisGetValue.mockResolvedValue({
+      success: true,
+      data: { key: 'app:user:1', type: 'list', ttl: -1, value: ['item-0', 'item-1', 'item-2'], length: 1203 },
+    });
+    redisBackend.RedisGetListValue.mockResolvedValue({
+      success: true,
+      data: { key: 'app:user:1', type: 'list', ttl: -1, value: ['item-1202', 'item-1201', 'item-1200'], length: 1203 },
+    });
+
+    let renderer: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<RedisViewer connectionId="redis-1" redisDB={0} />);
+    });
+    await flushEffects();
+
+    const leafNode = findFirstLeafNode(antdState.treeProps.treeData);
+    await act(async () => {
+      antdState.treeProps.onSelect?.([leafNode.key]);
+    });
+    await flushEffects();
+
+    const listTable = antdState.tableProps.find((props) => props.dataSource?.[0]?.value === 'item-0');
+    expect(listTable.dataSource.map((row: any) => row.index)).toEqual([0, 1, 2]);
+
+    const indexColumn = listTable.columns.find((column: any) => column.key === 'index');
+    expect(indexColumn.sortDirections).toEqual(['descend', 'ascend']);
+    expect(indexColumn.sortOrder).toBeNull();
+
+    await act(async () => {
+      listTable.onChange?.({}, {}, { columnKey: 'index', order: 'descend' });
+    });
+    await flushEffects();
+
+    expect(redisBackend.RedisGetListValue).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'redis', host: '127.0.0.1', port: 6379, redisDB: 0 }),
+      'app:user:1',
+      true,
+    );
+    const descendingTables = antdState.tableProps.filter((props) => props.dataSource?.[0]?.value === 'item-1202');
+    const descendingTable = descendingTables[descendingTables.length - 1];
+    expect(descendingTable.dataSource.map((row: any) => [row.index, row.value])).toEqual([
+      [1202, 'item-1202'],
+      [1201, 'item-1201'],
+      [1200, 'item-1200'],
+    ]);
+    expect(descendingTable.columns.find((column: any) => column.key === 'index').sortOrder).toBe('descend');
 
     renderer!.unmount();
   });

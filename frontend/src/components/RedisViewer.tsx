@@ -136,6 +136,7 @@ interface RedisViewerProps {
 
 type RedisExportScope = 'all' | 'selected';
 type RedisImportConflictMode = 'overwrite' | 'skip';
+type RedisListSortOrder = 'ascend' | 'descend' | null;
 type RedisImportPreview = {
     file: string;
     exportedAt?: string;
@@ -264,6 +265,7 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
     const [importingKeys, setImportingKeys] = useState(false);
     const [selectedKey, setSelectedKey] = useState<string | null>(null);
     const [keyValue, setKeyValue] = useState<RedisValue | null>(null);
+    const [listSortOrder, setListSortOrder] = useState<RedisListSortOrder>(null);
     const [valueLoading, setValueLoading] = useState(false);
     const [editModalOpen, setEditModalOpen] = useState(false);
     const [newKeyModalOpen, setNewKeyModalOpen] = useState(false);
@@ -750,6 +752,7 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
                 setSelectedKeys([]);
                 setSelectedKey(null);
                 setKeyValue(null);
+                setListSortOrder(null);
                 setCursor('0');
                 loadKeys(
                     searchPattern,
@@ -793,18 +796,24 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
         setSelectedKeys(prev => prev.filter(item => item !== missingKey));
         setSelectedKey(null);
         setKeyValue(null);
+        setListSortOrder(null);
     }, []);
 
-    const loadKeyValue = async (key: string) => {
+    const loadKeyValue = async (key: string, requestedListSortOrder: RedisListSortOrder = listSortOrder) => {
         const config = getConfig();
         if (!config) return;
 
         setValueLoading(true);
         try {
-            const res = await (window as any).go.app.App.RedisGetValue(buildRpcConnectionConfig(config), key);
+            const appApi = (window as any).go.app.App;
+            const rpcConfig = buildRpcConnectionConfig(config);
+            const res = requestedListSortOrder === 'descend'
+                ? await appApi.RedisGetListValue(rpcConfig, key, true)
+                : await appApi.RedisGetValue(rpcConfig, key);
             if (res.success) {
                 setKeyValue(res.data);
                 setSelectedKey(key);
+                setListSortOrder(res.data?.type === 'list' ? requestedListSortOrder : null);
             } else {
                 const messageText = String(res.message || '');
                 if (isRedisKeyGoneErrorMessage(messageText)) {
@@ -839,6 +848,7 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
                 if (selectedKey && keysToDelete.includes(selectedKey)) {
                     setSelectedKey(null);
                     setKeyValue(null);
+                    setListSortOrder(null);
                 }
                 setSelectedKeys([]);
             } else {
@@ -1107,7 +1117,7 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
         if (!rawKey) {
             return;
         }
-        loadKeyValue(rawKey);
+        loadKeyValue(rawKey, null);
     };
 
     const handleTreeCheck = (
@@ -1616,7 +1626,10 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
         };
 
         const renderListValue = () => {
-            const data = (keyValue.value as string[]).map((value, index) => {
+            const data = (keyValue.value as string[]).map((value, position) => {
+                const index = listSortOrder === 'descend'
+                    ? keyValue.length - position - 1
+                    : position;
                 const { displayValue, isBinary, isJson, encoding } = processValueForCurrentView(value);
                 return { index, value, displayValue, isBinary, isJson, encoding };
             });
@@ -1712,7 +1725,15 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
                         totalLabel={tr('redis_viewer.pagination.total', { count: keyValue.length })}
                         dataSource={data}
                         columns={[
-                            { title: tr('redis_viewer.table.index'), dataIndex: 'index', key: 'index', width: 80 },
+                            {
+                                title: tr('redis_viewer.table.index'),
+                                dataIndex: 'index',
+                                key: 'index',
+                                width: 80,
+                                sorter: (left: { index: number }, right: { index: number }) => left.index - right.index,
+                                sortDirections: ['descend', 'ascend'],
+                                sortOrder: listSortOrder,
+                            },
                             {
                                 title: tr('redis_viewer.table.value'),
                                 dataIndex: 'displayValue',
@@ -1794,6 +1815,14 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
                             }
                         ]}
                         rowKey="index"
+                        onChange={(_pagination, _filters, sorter) => {
+                            const nextOrder = Array.isArray(sorter)
+                                ? null
+                                : (sorter.order || null) as RedisListSortOrder;
+                            if (nextOrder !== listSortOrder) {
+                                void loadKeyValue(selectedKey, nextOrder);
+                            }
+                        }}
                     />
                 </div>
             );
