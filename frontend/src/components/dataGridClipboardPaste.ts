@@ -23,6 +23,7 @@ export const buildDataGridClipboardPasteRows = ({
   columnNames,
   startRowIndex,
   startColumnIndex,
+  targetCells,
   rowKeyField,
   addedRowKeys,
   modifiedRows,
@@ -35,6 +36,7 @@ export const buildDataGridClipboardPasteRows = ({
   columnNames: string[];
   startRowIndex: number;
   startColumnIndex: number;
+  targetCells?: Array<{ rowIndex: number; columnIndex: number }>;
   rowKeyField: string;
   addedRowKeys: Set<string>;
   modifiedRows: Record<string, any>;
@@ -46,11 +48,28 @@ export const buildDataGridClipboardPasteRows = ({
     return { rows: [], updatedCellCount: 0 };
   }
 
+  const valuesByRowIndex = new Map<number, Array<{ columnIndex: number; value: DataGridClipboardValue }>>();
+  const appendValue = (rowIndex: number, columnIndex: number, value: DataGridClipboardValue) => {
+    const rowValues = valuesByRowIndex.get(rowIndex) || [];
+    rowValues.push({ columnIndex, value });
+    valuesByRowIndex.set(rowIndex, rowValues);
+  };
+
+  if (targetCells && matrix.length === 1 && matrix[0]?.length === 1) {
+    targetCells.forEach(({ rowIndex, columnIndex }) => appendValue(rowIndex, columnIndex, matrix[0][0]));
+  } else {
+    matrix.forEach((sourceValues, sourceRowIndex) => {
+      sourceValues.forEach((value, sourceColumnIndex) => {
+        appendValue(startRowIndex + sourceRowIndex, startColumnIndex + sourceColumnIndex, value);
+      });
+    });
+  }
+
   const pasteRows: DataGridClipboardPasteRow[] = [];
   let updatedCellCount = 0;
 
-  matrix.forEach((sourceValues, sourceRowIndex) => {
-    const baseRow = rows[startRowIndex + sourceRowIndex];
+  valuesByRowIndex.forEach((targetValues, targetRowIndex) => {
+    const baseRow = rows[targetRowIndex];
     const rowKeyValue = baseRow?.[rowKeyField];
     if (rowKeyValue === undefined || rowKeyValue === null) return;
 
@@ -61,11 +80,11 @@ export const buildDataGridClipboardPasteRows = ({
     const currentRow = addedRowKeys.has(rowKey) ? baseRow : { ...baseRow, ...existing };
     const values: Record<string, DataGridClipboardValue> = {};
 
-    sourceValues.forEach((nextValue, sourceColumnIndex) => {
-      const columnName = columnNames[startColumnIndex + sourceColumnIndex];
+    targetValues.forEach(({ columnIndex, value }) => {
+      const columnName = columnNames[columnIndex];
       if (!columnName || !isWritableColumn(columnName)) return;
-      if (isValueEqual(currentRow?.[columnName], nextValue)) return;
-      values[columnName] = nextValue;
+      if (isValueEqual(currentRow?.[columnName], value)) return;
+      values[columnName] = value;
       updatedCellCount += 1;
     });
 
