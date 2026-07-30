@@ -42,6 +42,14 @@ type queryRowScanner struct {
 }
 
 func scanRowsForDialect(rows *sql.Rows, dialect string) ([]map[string]interface{}, []string, error) {
+	return scanRowsForDialectWithPreview(rows, dialect, true)
+}
+
+func scanRowsUnboundedForDialect(rows *sql.Rows, dialect string) ([]map[string]interface{}, []string, error) {
+	return scanRowsForDialectWithPreview(rows, dialect, false)
+}
+
+func scanRowsForDialectWithPreview(rows *sql.Rows, dialect string, boundOracleLargeObjects bool) ([]map[string]interface{}, []string, error) {
 	columns, err := rows.Columns()
 	if err != nil {
 		return nil, nil, err
@@ -57,7 +65,12 @@ func scanRowsForDialect(rows *sql.Rows, dialect string) ([]map[string]interface{
 	resultData := make([]map[string]interface{}, 0)
 
 	for rows.Next() {
-		entry, err := scanner.scanCurrentPreviewRow(rows)
+		var entry map[string]interface{}
+		if boundOracleLargeObjects {
+			entry, err = scanner.scanCurrentPreviewRow(rows)
+		} else {
+			entry, err = scanner.scanCurrentRow(rows)
+		}
 		if err != nil {
 			continue
 		}

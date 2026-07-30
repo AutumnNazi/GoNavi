@@ -7329,7 +7329,6 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                 .length || sourceStatements.length;
 
             const forceReadOnlyResult = connCaps.forceReadOnlyQueryResult;
-            const oceanBaseOracleConnection = isOceanBaseOracleConnection(config);
             const defaultOracleSchema = isOracleLikeDialect(normalizedDbType)
                 ? resolveOracleLikeDefaultSchemaName(config)
                 : '';
@@ -7384,7 +7383,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
             const allowOracleRowIDByStatement: boolean[] = [];
             for (const statement of sourceStatements) {
                 let executableStatement = statement;
-                let allowOracleRowID = !oceanBaseOracleConnection;
+                let allowOracleRowID = false;
                 if (isOracleLikeDialect(normalizedDbType)) {
                     const leadingTable = matchLeadingSelectTableReference(statement);
                     if (leadingTable) {
@@ -7396,8 +7395,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                         for (const oracleLookupDbName of oracleLookupDbCandidates) {
                             const oracleTables = oracleLookupDbName ? await getOracleTablesForDb(oracleLookupDbName) : [];
                             if (
-                                oceanBaseOracleConnection
-                                && isOracleBaseTableReference(statement, oracleLookupDbName, oracleTables)
+                                isOracleBaseTableReference(statement, oracleLookupDbName, oracleTables)
                             ) {
                                 allowOracleRowID = true;
                             }

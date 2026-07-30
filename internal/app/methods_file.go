@@ -4337,7 +4337,7 @@ func tryGetViewCreateStatement(
 		if strings.TrimSpace(query) == "" {
 			continue
 		}
-		rows, _, err := queryDataForExport(dbInst, config, query)
+		rows, _, err := queryDataForViewDDL(dbInst, config, query)
 		if err != nil || len(rows) == 0 {
 			continue
 		}
@@ -4352,6 +4352,38 @@ func tryGetViewCreateStatement(
 		return ensureSQLTerminator(createSQL), true
 	}
 	return "", false
+}
+
+type viewDDLQueryCollector struct {
+	columns []string
+	rows    []map[string]interface{}
+}
+
+func (c *viewDDLQueryCollector) SetColumns(columns []string) error {
+	c.columns = append([]string(nil), columns...)
+	return nil
+}
+
+func (c *viewDDLQueryCollector) ConsumeRow(row map[string]interface{}) error {
+	c.rows = append(c.rows, row)
+	return nil
+}
+
+func queryDataForViewDDL(
+	dbInst db.Database,
+	config connection.ConnectionConfig,
+	query string,
+) ([]map[string]interface{}, []string, error) {
+	switch resolveDDLDBType(config) {
+	case "oracle", "dameng":
+		collector := &viewDDLQueryCollector{}
+		if err := streamQueryDataForExport(dbInst, config, query, collector); err != nil {
+			return nil, nil, err
+		}
+		return collector.rows, collector.columns, nil
+	default:
+		return queryDataForExport(dbInst, config, query)
+	}
 }
 
 func buildViewCreateQueries(config connection.ConnectionConfig, dbName, schemaName, viewName string) []string {
@@ -4415,10 +4447,12 @@ WHERE s.name = '%s' AND v.name = '%s'`,
 		if safeSchema != "" {
 			return []string{
 				fmt.Sprintf("SELECT DBMS_METADATA.GET_DDL('VIEW', '%s', '%s') AS ddl FROM DUAL", strings.ToUpper(escapedView), strings.ToUpper(escapeSQLLiteral(safeSchema))),
+				fmt.Sprintf("SELECT TEXT AS ddl FROM ALL_VIEWS WHERE OWNER = '%s' AND VIEW_NAME = '%s'", strings.ToUpper(escapeSQLLiteral(safeSchema)), strings.ToUpper(escapedView)),
 			}
 		}
 		return []string{
 			fmt.Sprintf("SELECT DBMS_METADATA.GET_DDL('VIEW', '%s') AS ddl FROM DUAL", strings.ToUpper(escapedView)),
+			fmt.Sprintf("SELECT TEXT AS ddl FROM USER_VIEWS WHERE VIEW_NAME = '%s'", strings.ToUpper(escapedView)),
 		}
 	case "sqlite":
 		return []string{

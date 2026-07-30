@@ -9650,6 +9650,10 @@ WHERE GRANTEE = 'APPUSER';`;
     storeState.connections[0].config.type = 'oracle';
     storeState.connections[0].config.user = 'dev';
     storeState.connections[0].config.database = 'ORCLPDB1';
+    backendApp.DBGetTables.mockResolvedValueOnce({
+      success: true,
+      data: [{ Table: 'DEV.PER_CERT_INFO' }],
+    });
     backendApp.DBQueryMulti.mockResolvedValueOnce({
       success: true,
       data: [{
@@ -9830,6 +9834,10 @@ WHERE GRANTEE = 'APPUSER';`;
   it('uses hidden Oracle ROWID for query results without primary or unique keys', async () => {
     storeState.connections[0].config.type = 'oracle';
     storeState.connections[0].config.database = 'ORCLPDB1';
+    backendApp.DBGetTables.mockResolvedValueOnce({
+      success: true,
+      data: [{ Table: 'MYCIMLED.EDC_LOG' }],
+    });
     backendApp.DBQueryMulti.mockResolvedValueOnce({
       success: true,
       data: [{ columns: ['NAME', ORACLE_ROWID_LOCATOR_COLUMN], rows: [{ NAME: 'old-name', [ORACLE_ROWID_LOCATOR_COLUMN]: 'AAAA' }] }],
@@ -9864,9 +9872,56 @@ WHERE GRANTEE = 'APPUSER';`;
     expect(messageApi.warning).not.toHaveBeenCalled();
   });
 
+  it('does not inject Oracle ROWID when the selected object is a view', async () => {
+    storeState.connections[0].config.type = 'oracle';
+    storeState.connections[0].config.database = 'ORCLPDB1';
+    backendApp.DBGetTables.mockResolvedValueOnce({
+      success: true,
+      data: [{ Table: 'H2.S_BUSI' }],
+    });
+    backendApp.DBGetColumns.mockResolvedValueOnce({
+      success: true,
+      data: [{ name: 'COMPID', key: '' }, { name: 'SALENO', key: '' }],
+    });
+    backendApp.DBQueryMulti.mockResolvedValueOnce({
+      success: true,
+      data: [{ columns: ['COMPID', 'SALENO'], rows: [{ COMPID: 'H2', SALENO: '1001' }] }],
+    });
+
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<QueryEditor tab={createTab({
+        dbName: 'H2',
+        query: 'select * from cv_gd_yncrm_salesdtllist',
+      })} />);
+    });
+
+    await act(async () => {
+      await findButton(renderer!, '运行').props.onClick();
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(backendApp.DBGetTables).toHaveBeenCalledWith(expect.anything(), 'H2');
+    const executedSql = String(backendApp.DBQueryMulti.mock.calls[0][2]);
+    expect(executedSql).toMatch(/select \* from cv_gd_yncrm_salesdtllist/i);
+    expect(executedSql).not.toMatch(/\bROWID\b/i);
+    expect(dataGridState.latestProps?.editLocator).toMatchObject({
+      strategy: 'all-columns',
+      columns: ['COMPID', 'SALENO'],
+    });
+    renderer?.unmount();
+  });
+
   it('rewrites Oracle SELECT * queries before injecting hidden ROWID locator columns', async () => {
     storeState.connections[0].config.type = 'oracle';
     storeState.connections[0].config.database = 'ORCLPDB1';
+    backendApp.DBGetTables.mockResolvedValueOnce({
+      success: true,
+      data: [{ Table: 'MYCIMLED.EDC_LOG' }],
+    });
     backendApp.DBQueryMulti.mockResolvedValueOnce({
       success: true,
       data: [{ columns: ['WAFER_ID', ORACLE_ROWID_LOCATOR_COLUMN], rows: [{ WAFER_ID: 'R015Z10F08', [ORACLE_ROWID_LOCATOR_COLUMN]: 'AAAA' }] }],

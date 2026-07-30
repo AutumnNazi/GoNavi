@@ -28,6 +28,7 @@ type OracleDB struct {
 
 var _ SessionExecerProvider = (*OracleDB)(nil)
 var _ TransactionExecerProvider = (*OracleDB)(nil)
+var _ StreamQueryExecer = (*OracleDB)(nil)
 
 const oracleDefaultPrefetchRows = 25
 
@@ -254,6 +255,36 @@ func (o *OracleDB) Query(query string) ([]map[string]interface{}, []string, erro
 	return scanRowsForDialect(rows, o.scanDialect)
 }
 
+func (o *OracleDB) queryUnbounded(query string) ([]map[string]interface{}, []string, error) {
+	if o.conn == nil {
+		return nil, nil, fmt.Errorf("连接未打开")
+	}
+
+	rows, err := o.conn.Query(query)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer rows.Close()
+	return scanRowsUnboundedForDialect(rows, o.scanDialect)
+}
+
+func (o *OracleDB) StreamQueryContext(ctx context.Context, query string, consumer QueryStreamConsumer) error {
+	if o.conn == nil {
+		return fmt.Errorf("连接未打开")
+	}
+
+	rows, err := o.conn.QueryContext(ctx, query)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	return streamRowsForDialect(rows, o.scanDialect, consumer)
+}
+
+func (o *OracleDB) StreamQuery(query string, consumer QueryStreamConsumer) error {
+	return o.StreamQueryContext(context.Background(), query, consumer)
+}
+
 func (o *OracleDB) ExecContext(ctx context.Context, query string) (int64, error) {
 	if o.conn == nil {
 		return 0, fmt.Errorf("连接未打开")
@@ -358,7 +389,7 @@ func (o *OracleDB) GetCreateStatement(dbName, tableName string) (string, error) 
 			query = fmt.Sprintf("SELECT DBMS_METADATA.GET_DDL('TABLE', '%s') as ddl FROM DUAL", metadataTableName)
 		}
 
-		data, _, err := o.Query(query)
+		data, _, err := o.queryUnbounded(query)
 		if err != nil {
 			if firstErr == nil {
 				firstErr = err
