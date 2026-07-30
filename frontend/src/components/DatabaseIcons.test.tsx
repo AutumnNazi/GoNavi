@@ -28,7 +28,7 @@ const BRAND_ICON_CASES: Array<[string, string, string]> = [
   ['chroma', 'Chroma', 'chroma.svg'],
   ['qdrant', 'Qdrant', 'qdrant.svg'],
   ['milvus', 'Milvus', 'milvus.svg'],
-  ['jvm', 'JVM', 'jvm.ico'],
+  ['jvm', 'JVM', 'java.svg'],
 ];
 
 describe('DatabaseIcons', () => {
