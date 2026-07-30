@@ -768,8 +768,8 @@ describe("ConnectionModal i18n", () => {
     pageText = textContent(renderer!.toJSON());
     expect(pageText).toContain("Replica set / multi-node");
     expect(pageText).toContain("Standard address");
-    expect(pageText).toContain("Auth database (authSource)");
-    expect(pageText).toContain("Read preference (readPreference)");
+    expect(pageText).toContain("Auth");
+    expect(pageText).toContain("Mode");
     expect(pageText).toContain("Read from the primary node only.");
     expect(pageText).toContain("Auth");
     expect(pageText).toContain("Auto-negotiate");
@@ -1051,7 +1051,7 @@ describe("ConnectionModal i18n", () => {
       );
     });
     await act(async () => {
-      findClickableByAnyText(renderer!, ["Basic information", "基础信息"]).props.onClick();
+      findClickableByAnyText(renderer!, ["Basic", "基础信息"]).props.onClick();
     });
     expect(textContent(renderer!.toJSON())).toContain("Auto");
 
@@ -1175,7 +1175,7 @@ describe("ConnectionModal i18n", () => {
     });
 
     await act(async () => {
-      findButton(renderer!, "Generate URI").props.onClick();
+      findButton(renderer!, "Generate from fields").props.onClick();
     });
 
     expect(textContent(renderer!.toJSON())).toContain("URI generated.");
@@ -1226,7 +1226,7 @@ describe("ConnectionModal i18n", () => {
     await act(async () => {
       expandUriSection(renderer!);
     });
-    const parseUriButton = findButton(renderer!, "Parse from URI");
+    const parseUriButton = findButton(renderer!, "Parse & fill");
     expect(parseUriButton, textContent(renderer!.toJSON())).toBeDefined();
     await act(async () => {
       parseUriButton.props.onClick();
