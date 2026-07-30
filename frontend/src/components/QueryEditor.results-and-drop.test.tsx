@@ -3487,11 +3487,30 @@ describe('QueryEditor external SQL save', () => {
     expect(textContent(renderer!.toJSON())).not.toContain('结果 1 (2)');
   });
 
-  it('keeps query result tabs compact, centered, and readable in v2 UI', () => {
+  it('keeps query result tabs flush, full-height, and readable in v2 UI', () => {
     const source = readFileSync(new URL('./QueryEditorResultsPanel.tsx', import.meta.url), 'utf8');
     const css = readV2ThemeCss();
+    const resultNavCss = css.slice(
+      css.indexOf('body[data-ui-version="v2"] .gn-v2-query-results .query-result-tabs > .ant-tabs-nav {'),
+      css.indexOf('body[data-ui-version="v2"] .gn-v2-query-results .query-result-tabs > .ant-tabs-nav .ant-tabs-extra-content {'),
+    );
+    const resultTabCss = css.slice(
+      css.indexOf('body[data-ui-version="v2"] .gn-v2-query-results .query-result-tabs > .ant-tabs-nav .ant-tabs-tab {'),
+      css.indexOf('body[data-ui-version="v2"] .gn-v2-query-results .query-result-tabs > .ant-tabs-nav .ant-tabs-nav-list {'),
+    );
     expect(css).toContain('body[data-ui-version="v2"] .gn-v2-query-results .query-result-tabs > .ant-tabs-nav .ant-tabs-tab {');
     expect(css).toContain('body[data-ui-version="v2"] .gn-v2-query-results .query-result-tabs > .ant-tabs-nav .ant-tabs-tab-btn {');
+    expect(resultNavCss).toContain('padding: 0 8px 0 0;');
+    expect(resultNavCss).toContain('min-height: 46px;');
+    expect(resultTabCss).toContain('height: 46px !important;');
+    expect(resultTabCss).toContain('margin: 0 !important;');
+    expect(resultTabCss).toContain('border-radius: 8px !important;');
+    expect(css).toContain([
+      'body[data-ui-version="v2"] .gn-v2-query-results .query-result-tabs > .ant-tabs-nav .ant-tabs-nav-wrap,',
+      'body[data-ui-version="v2"] .gn-v2-query-results .query-result-tabs > .ant-tabs-nav .ant-tabs-nav-list {',
+      '  min-height: 46px;',
+      '}',
+    ].join('\n'));
     expect(css).toContain('user-select: none;');
     expect(css).toContain('body[data-ui-version="v2"] .gn-v2-query-results .query-result-tab-text {');
   });
@@ -3767,6 +3786,25 @@ describe('QueryEditor external SQL save', () => {
     const v2Renderer = renderResultsPanel(true);
     expect(v2Renderer.root.findAll((node) => node.props?.['data-log-panel'] === 'true')).toHaveLength(1);
     expect(v2Renderer.root.findAll((node) => node.props?.['data-tab-key'] === '__gonavi_sql_execution_log__')).toHaveLength(1);
+    const tabActions = v2Renderer.root.findByProps({ className: 'query-result-panel-tab-actions' });
+    const actionButtons = tabActions.findAll((node) => node.type === 'button');
+    const resultPanelStyles = v2Renderer.root.findAll((node) => node.type === 'style')
+      .map((node) => textContent(node))
+      .join('\n');
+    expect(actionButtons.map((node) => node.props.className)).toEqual([
+      'query-result-panel-clear query-result-panel-tab-action',
+      'query-result-panel-hide query-result-panel-tab-action',
+    ]);
+    expect(resultPanelStyles).toContain(
+      '.query-result-panel-tab-actions { display: inline-flex; flex-direction: row;',
+    );
+    expect(resultPanelStyles).toContain(
+      '.query-result-tabs .ant-tabs-extra-content .query-result-panel-tab-action { width: 28px; min-width: 28px; height: 28px !important; min-height: 28px !important; padding: 0 !important;',
+    );
+    act(() => {
+      actionButtons[0].props.onClick();
+    });
+    expect(storeState.clearSqlLogs).toHaveBeenCalledTimes(1);
     v2Renderer.unmount();
 
     const emptyV2Renderer = renderResultsPanel(true, 0);

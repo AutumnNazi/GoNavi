@@ -51,11 +51,18 @@ describe('custom theme CSS validation', () => {
     );
   });
 
-  it('injects --gn-monaco-bg for hand-written themes that only set panel', () => {
+  it('injects --gn-monaco-bg for hand-written themes that only set theme surfaces', () => {
+    const css = 'body[data-custom-theme] {\n  --gn-bg-panel: #f7faf8;\n  --gn-bg-panel-2: #eef3f0;\n}';
+    const next = ensureCustomThemeMonacoSurfaceVars(css);
+    expect(next).toContain('--gn-monaco-bg: var(--gn-bg-panel-2)');
+    expect(next).toContain('--gn-bg-panel: #f7faf8');
+  });
+
+  it('keeps legacy hand-written themes aligned when they only define panel', () => {
     const css = 'body[data-custom-theme] {\n  --gn-bg-panel: #f7faf8;\n}';
     const next = ensureCustomThemeMonacoSurfaceVars(css);
+
     expect(next).toContain('--gn-monaco-bg: var(--gn-bg-panel)');
-    expect(next).toContain('--gn-bg-panel: #f7faf8');
   });
 
   it('does not override an explicit --gn-monaco-bg in custom theme CSS', () => {

@@ -32,6 +32,38 @@ describe('QueryEditorToolbar layout', () => {
     expect(css).toContain('body[data-ui-version="v2"] .gn-v2-query-toolbar-action-pair {');
   });
 
+  it('shares the active theme surface across the SQL toolbar and Monaco editor', () => {
+    const css = readV2ThemeCss();
+    const defaultMonacoCss = css.slice(
+      css.indexOf('body[data-ui-version="v2"]:not([data-custom-theme]) {'),
+      css.indexOf('body[data-ui-version="v2"] .gn-v2-query-editor {'),
+    );
+    const editorCss = css.slice(
+      css.indexOf('body[data-ui-version="v2"] .gn-v2-query-editor {'),
+      css.indexOf('body[data-ui-version="v2"] .gn-v2-query-editor-pane {'),
+    );
+    const toolbarCss = css.slice(
+      css.indexOf('body[data-ui-version="v2"] .gn-v2-query-toolbar {'),
+      css.indexOf('body[data-ui-version="v2"] .gn-v2-query-toolbar-main {'),
+    );
+    const toolbarSelectCss = css.slice(
+      css.indexOf('body[data-ui-version="v2"] .gn-v2-query-toolbar .ant-select-selector {'),
+      css.indexOf('body[data-ui-version="v2"] .gn-v2-query-toolbar .ant-select-selection-item,'),
+    );
+    const monacoStageCss = css.slice(
+      css.indexOf('body[data-ui-version="v2"] .gn-v2-query-monaco-stage {'),
+      css.indexOf('body[data-ui-version="v2"] .gn-v2-query-monaco-stage:has('),
+    );
+
+    expect(defaultMonacoCss).toContain('--gn-monaco-bg: var(--gn-bg-panel-2);');
+    expect(editorCss).toContain('--gn-query-workbench-bg: var(--gn-bg-panel-2);');
+    expect(toolbarCss).toContain('background: var(--gn-query-workbench-bg) !important;');
+    expect(toolbarSelectCss).toContain('background: var(--gn-query-workbench-bg) !important;');
+    expect(monacoStageCss).toContain(
+      'background: var(--gn-monaco-bg, var(--gn-query-workbench-bg));',
+    );
+  });
+
   it('keeps run and stop buttons separated in the v2 toolbar action group', () => {
     const toolbarSource = readFileSync(new URL('./QueryEditorToolbar.tsx', import.meta.url), 'utf8');
     const css = readV2ThemeCss();

@@ -3,6 +3,7 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 
 import { I18nProvider } from "../i18n/provider";
+import { readV2ThemeCss } from "../test/readV2ThemeCss";
 import LogPanel from "./LogPanel";
 
 const storeState = {
@@ -109,6 +110,8 @@ describe("LogPanel i18n", () => {
   beforeEach(() => {
     storeState.sqlLogs = [];
     storeState.clearSqlLogs.mockClear();
+    storeState.theme = "light";
+    storeState.appearance = { enabled: true, opacity: 1, blur: 0, uiVersion: "legacy" };
   });
 
   it("renders log panel chrome in the active language", () => {
@@ -197,5 +200,44 @@ describe("LogPanel i18n", () => {
       diagnoseButton.props.onClick?.();
     });
     expect(onDiagnoseExecutionError).toHaveBeenCalledTimes(1);
+  });
+
+  it("omits duplicate log chrome from the embedded log tab", () => {
+    storeState.sqlLogs = [{
+      id: "log-embedded",
+      timestamp: Date.UTC(2026, 6, 30, 8, 0, 0),
+      sql: "SELECT 1",
+      status: "success",
+      duration: 3,
+    }];
+
+    const renderer = renderLogPanel({ variant: "embedded" });
+    const renderedText = textContent(renderer.toJSON());
+
+    expect(renderedText).not.toContain("SQL execution log");
+    expect(renderedText).not.toContain("Track execution status, duration, and errors for quick review.");
+    expect(renderer.root.findAll((node) => node.props?.title === "Clear logs")).toHaveLength(0);
+    expect(renderedText).toContain("SELECT 1");
+  });
+
+  it("uses the shared SQL workbench background for the embedded log surface", () => {
+    storeState.appearance = { enabled: true, opacity: 1, blur: 0, uiVersion: "v2" };
+
+    const renderer = renderLogPanel({ variant: "embedded" });
+    const embeddedPanel = renderer.root.findByProps({ className: "log-panel-embedded" });
+    const scrollPanel = renderer.root.findByProps({ className: "log-panel-scroll" });
+    const css = readV2ThemeCss();
+    const embeddedTableCss = css.slice(
+      css.indexOf('body[data-ui-version="v2"] .log-panel-embedded .log-panel-table .ant-table {'),
+      css.indexOf('body[data-ui-version="v2"] .gn-v2-query-result-panel-header .query-result-panel-header-title'),
+    );
+
+    expect(embeddedPanel.props.style.background).toBe(
+      "var(--gn-query-workbench-bg, var(--gn-bg-panel-2))",
+    );
+    expect(scrollPanel.props.style.padding).toBe("0 0 12px");
+    expect(embeddedTableCss).toContain(
+      "background: var(--gn-query-workbench-bg, var(--gn-bg-panel-2)) !important;",
+    );
   });
 });

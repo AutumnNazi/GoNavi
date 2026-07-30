@@ -254,7 +254,7 @@ body[data-custom-theme][data-ui-version="v2"] {
   --gn-bg-chrome: ${palette.chrome};
   --gn-bg-panel: ${palette.panel};
   --gn-bg-panel-2: ${palette.panel2};
-  --gn-monaco-bg: var(--gn-bg-panel);
+  --gn-monaco-bg: var(--gn-bg-panel-2);
   --gn-bg-input: ${palette.input};
   --gn-bg-subtle: ${palette.panel2};
   --gn-bg-hover: ${palette.hover};
@@ -455,7 +455,7 @@ body[data-custom-theme][data-ui-version="v2"] .monaco-editor,
 body[data-custom-theme][data-ui-version="v2"] .monaco-editor-background,
 body[data-custom-theme][data-ui-version="v2"] .monaco-editor .margin,
 body[data-custom-theme][data-ui-version="v2"] .monaco-editor .sticky-widget {
-  background-color: var(--gn-bg-input) !important;
+  background-color: var(--gn-monaco-bg, var(--gn-bg-panel-2)) !important;
 }`;
 
 const createPreset = (

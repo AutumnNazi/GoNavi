@@ -220,19 +220,20 @@ export const createCustomThemeId = (): string => {
 
 /**
  * Ensure Monaco surface token exists for hand-written custom themes.
- * Presets already define it; user CSS that only sets --gn-bg-panel still needs this.
+ * Presets already define it; hand-written CSS still needs the shared theme surface default.
  * If the theme already declares --gn-monaco-bg, leave it alone (user override wins).
  */
 export const ensureCustomThemeMonacoSurfaceVars = (css: string): string => {
   const source = String(css || '');
   if (/--gn-monaco-bg\s*:/.test(source)) return source;
+  const surfaceVar = /--gn-bg-panel-2\s*:/.test(source) ? '--gn-bg-panel-2' : '--gn-bg-panel';
   const trimmed = source.trimEnd();
   const appendix = [
     '',
-    '/* GoNavi: Monaco surface follows panel unless the theme overrides --gn-monaco-bg */',
+    `/* GoNavi: Monaco surface follows ${surfaceVar} unless the theme overrides --gn-monaco-bg */`,
     'body[data-custom-theme],',
     'body[data-custom-theme][data-ui-version="v2"] {',
-    '  --gn-monaco-bg: var(--gn-bg-panel);',
+    `  --gn-monaco-bg: var(${surfaceVar});`,
     '}',
     '',
   ].join('\n');
@@ -396,7 +397,7 @@ body[data-custom-theme][data-ui-version="v2"] {
   --gn-bg-chrome: #171a23;
   --gn-bg-panel: #1d202b;
   --gn-bg-panel-2: #232733;
-  --gn-monaco-bg: var(--gn-bg-panel);
+  --gn-monaco-bg: var(--gn-bg-panel-2);
   --gn-bg-hover: rgba(255, 255, 255, 0.06);
   --gn-bg-active: rgba(255, 255, 255, 0.10);
   --gn-bg-selected: rgba(139, 92, 246, 0.18);
