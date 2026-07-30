@@ -327,6 +327,7 @@ const DataGrid: React.FC<DataGridProps> = ({
   const addSqlLog = useStore(state => state.addSqlLog);
   const theme = useStore(state => state.theme);
   const appearance = useStore(state => state.appearance);
+  const setAppearance = useStore(state => state.setAppearance);
   const uiScale = useStore(state => state.uiScale);
   const queryOptions = useStore(state => state.queryOptions);
   const setQueryOptions = useStore(state => state.setQueryOptions);
@@ -3897,6 +3898,7 @@ const DataGrid: React.FC<DataGridProps> = ({
           darkMode={darkMode}
           showColumnComment={showColumnComment}
           showColumnType={showColumnType}
+          showRowNumberColumn={resolvedShowRowNumberColumn}
           columnSearchText={columnSearchText}
           allOrderedColumnNames={allOrderedColumnNames}
           localHiddenColumns={localHiddenColumns}
@@ -3907,6 +3909,7 @@ const DataGrid: React.FC<DataGridProps> = ({
           translate={translateDataGrid}
           onShowColumnCommentChange={(checked) => setQueryOptions({ showColumnComment: checked })}
           onShowColumnTypeChange={(checked) => setQueryOptions({ showColumnType: checked })}
+          onShowRowNumberColumnChange={(checked) => setAppearance({ showDataTableRowNumber: checked })}
           onToggleAllColumnsVisibility={toggleAllColumnsVisibility}
           onColumnSearchTextChange={setColumnSearchText}
           onToggleColumnVisibility={toggleColumnVisibility}
