@@ -258,7 +258,9 @@ const DataGridColumnTitle: React.FC<DataGridColumnTitleProps> = ({
         styles={{ root: { maxWidth: 640 } }}
         {...(!darkMode ? { color: 'rgba(0, 0, 0, 0.82)' } : {})}
       >
-        <span style={{ display: 'inline-flex', maxWidth: '100%' }}>{titleNode}</span>
+        <span style={{ display: 'inline-flex', width: '100%', maxWidth: '100%', minWidth: 0, overflow: 'hidden' }}>
+          {titleNode}
+        </span>
       </Tooltip>
     );
   })();
@@ -483,15 +485,16 @@ const DataGridColumnTitle: React.FC<DataGridColumnTitleProps> = ({
     <span
       className="gn-v2-column-title-shell"
       style={{
-        display: 'inline-flex',
+        display: 'flex',
         // 顶对齐：有无注释时标题块高度不同，center 会让筛选图标上下错位
         alignItems: 'flex-start',
         gap: 4,
+        width: '100%',
         maxWidth: '100%',
         minWidth: 0,
       }}
     >
-      <span style={{ display: 'inline-flex', flex: '1 1 auto', minWidth: 0 }}>
+      <span style={{ display: 'inline-flex', flex: '1 1 auto', maxWidth: '100%', minWidth: 0, overflow: 'hidden' }}>
         {titleWithOptionalTooltip}
       </span>
       <Popover

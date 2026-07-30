@@ -176,12 +176,12 @@ describe('useDataGridColumnResize interaction cleanup', () => {
     expect(fakeWindow.listenerCount('blur')).toBe(0);
   });
 
-  it('clamps manual data column resizing to the shared 80px minimum', () => {
+  it('clamps manual data column resizing to the shared 120px minimum', () => {
     beginResize();
 
     act(() => fakeDocument.dispatch('mouseup', { clientX: 0 }));
 
-    expectLastWidthUpdate(80);
+    expectLastWidthUpdate(120);
   });
 
   it('cancels pending RAF and gate work without committing when unmounted mid-resize', () => {
