@@ -148,6 +148,25 @@ func buildDamengColumnsQuery(dbName, tableName string) string {
 		ORDER BY c.column_id`, upperDBName, upperTableName, upperDBName, upperTableName, upperDBName, upperTableName)
 }
 
+// buildDamengColumnCommentsQuery uses Dameng's native comment dictionary as a
+// fallback. Some DM8 deployments expose column metadata through the Oracle-
+// compatible ALL_COL_COMMENTS/USER_COL_COMMENTS views but return empty comment
+// values when those views are joined with the column dictionary.
+func buildDamengColumnCommentsQuery(dbName, tableName string) string {
+	upperTableName := strings.ReplaceAll(strings.ToUpper(strings.TrimSpace(tableName)), "'", "''")
+	upperDBName := strings.ReplaceAll(strings.ToUpper(strings.TrimSpace(dbName)), "'", "''")
+
+	schemaPredicate := "SCHNAME = USER"
+	if upperDBName != "" {
+		schemaPredicate = fmt.Sprintf("SCHNAME = '%s'", upperDBName)
+	}
+
+	return fmt.Sprintf(`SELECT COLNAME AS column_name, COMMENT$ AS col_comment
+		FROM SYS.SYSCOLUMNCOMMENTS
+		WHERE %s AND TVNAME = '%s' AND COMMENT$ IS NOT NULL
+		ORDER BY COLNAME`, schemaPredicate, upperTableName)
+}
+
 func buildDamengTableCommentQuery(dbName, tableName string) string {
 	upperTableName := strings.ReplaceAll(strings.ToUpper(strings.TrimSpace(tableName)), "'", "''")
 	upperDBName := strings.ReplaceAll(strings.ToUpper(strings.TrimSpace(dbName)), "'", "''")
@@ -391,5 +410,32 @@ func buildDamengColumnDefinitions(data []map[string]interface{}) []connection.Co
 		columns = append(columns, col)
 	}
 
+	return columns
+}
+
+func hasDamengColumnComments(columns []connection.ColumnDefinition) bool {
+	for _, column := range columns {
+		if strings.TrimSpace(column.Comment) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+func applyDamengColumnComments(columns []connection.ColumnDefinition, data []map[string]interface{}) []connection.ColumnDefinition {
+	commentsByColumn := make(map[string]string, len(data))
+	for _, row := range data {
+		columnName := strings.ToUpper(strings.TrimSpace(getDamengRowString(row, "COLUMN_NAME", "COLNAME")))
+		if columnName == "" {
+			continue
+		}
+		commentsByColumn[columnName] = getDamengRowString(row, "COL_COMMENT", "COMMENT$", "COMMENT", "COMMENTS")
+	}
+
+	for i := range columns {
+		if comment, ok := commentsByColumn[strings.ToUpper(strings.TrimSpace(columns[i].Name))]; ok {
+			columns[i].Comment = comment
+		}
+	}
 	return columns
 }

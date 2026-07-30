@@ -146,6 +146,28 @@ func TestBuildDamengColumnsQuery_IncludesColumnCommentsJoin(t *testing.T) {
 	}
 }
 
+func TestBuildDamengColumnCommentsQueryUsesNativeDictionary(t *testing.T) {
+	t.Parallel()
+
+	userQuery := buildDamengColumnCommentsQuery("", "orders")
+	for _, want := range []string{
+		"FROM SYS.SYSCOLUMNCOMMENTS",
+		"SCHNAME = USER",
+		"TVNAME = 'ORDERS'",
+		"COLNAME AS column_name",
+		"COMMENT$ AS col_comment",
+	} {
+		if !strings.Contains(userQuery, want) {
+			t.Fatalf("current-schema native comment query should contain %q, got: %s", want, userQuery)
+		}
+	}
+
+	ownerQuery := buildDamengColumnCommentsQuery("biz", "orders")
+	if !strings.Contains(ownerQuery, "SCHNAME = 'BIZ'") || !strings.Contains(ownerQuery, "TVNAME = 'ORDERS'") {
+		t.Fatalf("schema native comment query should target the selected table, got: %s", ownerQuery)
+	}
+}
+
 func TestBuildDamengTableCommentQueryUsesSchemaAppropriateDictionaryView(t *testing.T) {
 	t.Parallel()
 
@@ -182,11 +204,11 @@ func TestBuildDamengColumnDefinitions_MapsComment(t *testing.T) {
 
 	columns := buildDamengColumnDefinitions([]map[string]interface{}{
 		{
-			"COLUMN_NAME":  "ID",
-			"DATA_TYPE":    "NUMBER",
-			"NULLABLE":     "N",
-			"COLUMN_KEY":   "PRI",
-			"COL_COMMENT":  "主键",
+			"COLUMN_NAME": "ID",
+			"DATA_TYPE":   "NUMBER",
+			"NULLABLE":    "N",
+			"COLUMN_KEY":  "PRI",
+			"COL_COMMENT": "主键",
 		},
 	})
 

@@ -28,6 +28,7 @@ var registerDamengColumnsMetadataDriverOnce sync.Once
 var damengColumnsMetadataQueryState struct {
 	sync.Mutex
 	failAutoIncrementQuery bool
+	failColumnCommentQuery bool
 	queries                []string
 }
 
@@ -49,6 +50,7 @@ func (damengColumnsMetadataConn) QueryContext(_ context.Context, query string, _
 	damengColumnsMetadataQueryState.Lock()
 	damengColumnsMetadataQueryState.queries = append(damengColumnsMetadataQueryState.queries, query)
 	failAutoIncrementQuery := damengColumnsMetadataQueryState.failAutoIncrementQuery
+	failColumnCommentQuery := damengColumnsMetadataQueryState.failColumnCommentQuery
 	damengColumnsMetadataQueryState.Unlock()
 
 	if strings.Contains(query, "DBMS_METADATA.GET_DDL") {
@@ -64,6 +66,19 @@ func (damengColumnsMetadataConn) QueryContext(_ context.Context, query string, _
 		return &damengColumnsMetadataRows{
 			columns: []string{"TABLE_COMMENT"},
 			values:  [][]driver.Value{{"订单'归档"}},
+		}, nil
+	}
+
+	if strings.Contains(query, "SYS.SYSCOLUMNCOMMENTS") {
+		if failColumnCommentQuery {
+			return nil, errors.New("insufficient privilege for SYS.SYSCOLUMNCOMMENTS")
+		}
+		return &damengColumnsMetadataRows{
+			columns: []string{"COLUMN_NAME", "COL_COMMENT"},
+			values: [][]driver.Value{
+				{"ID", "订单主键"},
+				{"NAME", "客户名称"},
+			},
 		}, nil
 	}
 
@@ -132,16 +147,18 @@ func openDamengColumnsMetadataDB(t *testing.T) *sql.DB {
 	return conn
 }
 
-func resetDamengColumnsMetadataQueryState(t *testing.T, failAutoIncrementQuery bool) {
+func resetDamengColumnsMetadataQueryState(t *testing.T, failAutoIncrementQuery, failColumnCommentQuery bool) {
 	t.Helper()
 
 	damengColumnsMetadataQueryState.Lock()
 	damengColumnsMetadataQueryState.failAutoIncrementQuery = failAutoIncrementQuery
+	damengColumnsMetadataQueryState.failColumnCommentQuery = failColumnCommentQuery
 	damengColumnsMetadataQueryState.queries = nil
 	damengColumnsMetadataQueryState.Unlock()
 	t.Cleanup(func() {
 		damengColumnsMetadataQueryState.Lock()
 		damengColumnsMetadataQueryState.failAutoIncrementQuery = false
+		damengColumnsMetadataQueryState.failColumnCommentQuery = false
 		damengColumnsMetadataQueryState.queries = nil
 		damengColumnsMetadataQueryState.Unlock()
 	})
@@ -154,7 +171,7 @@ func damengColumnsMetadataQueries() []string {
 }
 
 func TestDamengGetColumnsMarksAutoIncrementColumns(t *testing.T) {
-	resetDamengColumnsMetadataQueryState(t, false)
+	resetDamengColumnsMetadataQueryState(t, false, false)
 
 	damengDB := &DamengDB{conn: openDamengColumnsMetadataDB(t)}
 	columns, err := damengDB.GetColumns("biz", "orders")
@@ -170,15 +187,18 @@ func TestDamengGetColumnsMarksAutoIncrementColumns(t *testing.T) {
 	if columns[1].Extra != "" {
 		t.Fatalf("non-identity column should not be marked: %+v", columns[1])
 	}
+	if columns[0].Comment != "订单主键" || columns[1].Comment != "客户名称" {
+		t.Fatalf("native column comments should fill empty compatibility-view values: %+v", columns)
+	}
 
 	queries := damengColumnsMetadataQueries()
-	if len(queries) != 2 || !strings.Contains(queries[1], "SYS.SYSCOLUMNS") {
-		t.Fatalf("expected base and system metadata queries, got=%v", queries)
+	if len(queries) != 3 || !strings.Contains(queries[1], "SYS.SYSCOLUMNCOMMENTS") || !strings.Contains(queries[2], "SYS.SYSCOLUMNS") {
+		t.Fatalf("expected base, native comment, and system column metadata queries, got=%v", queries)
 	}
 }
 
 func TestDamengGetColumnsKeepsBaseMetadataWhenAutoIncrementQueryFails(t *testing.T) {
-	resetDamengColumnsMetadataQueryState(t, true)
+	resetDamengColumnsMetadataQueryState(t, true, false)
 
 	damengDB := &DamengDB{conn: openDamengColumnsMetadataDB(t)}
 	columns, err := damengDB.GetColumns("biz", "orders")
@@ -190,8 +210,21 @@ func TestDamengGetColumnsKeepsBaseMetadataWhenAutoIncrementQueryFails(t *testing
 	}
 }
 
+func TestDamengGetColumnsKeepsBaseMetadataWhenNativeCommentQueryFails(t *testing.T) {
+	resetDamengColumnsMetadataQueryState(t, false, true)
+
+	damengDB := &DamengDB{conn: openDamengColumnsMetadataDB(t)}
+	columns, err := damengDB.GetColumns("biz", "orders")
+	if err != nil {
+		t.Fatalf("GetColumns should keep base metadata when native comments are unavailable: %v", err)
+	}
+	if len(columns) != 2 || columns[0].Name != "ID" || columns[0].Extra != "auto_increment" {
+		t.Fatalf("unexpected fallback columns: %+v", columns)
+	}
+}
+
 func TestDamengGetCreateStatementAppendsTableComment(t *testing.T) {
-	resetDamengColumnsMetadataQueryState(t, false)
+	resetDamengColumnsMetadataQueryState(t, false, false)
 
 	damengDB := &DamengDB{conn: openDamengColumnsMetadataDB(t)}
 	ddl, err := damengDB.GetCreateStatement("biz", "orders")
@@ -218,7 +251,7 @@ func TestDamengGetCreateStatementAppendsTableComment(t *testing.T) {
 }
 
 func TestDamengGetIndexesUsesIndexOwnerJoinAndMapsColumnOrder(t *testing.T) {
-	resetDamengColumnsMetadataQueryState(t, false)
+	resetDamengColumnsMetadataQueryState(t, false, false)
 
 	damengDB := &DamengDB{conn: openDamengColumnsMetadataDB(t)}
 	indexes, err := damengDB.GetIndexes("biz", "orders")

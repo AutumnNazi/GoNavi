@@ -331,6 +331,14 @@ func (d *DamengDB) GetColumns(dbName, tableName string) ([]connection.ColumnDefi
 	if len(columns) == 0 {
 		return columns, nil
 	}
+	if !hasDamengColumnComments(columns) {
+		commentData, _, commentErr := d.Query(buildDamengColumnCommentsQuery(dbName, tableName))
+		if commentErr != nil {
+			logger.Warnf("达梦 GetColumns 原生字段注释查询失败，已返回基础字段定义：%v", commentErr)
+		} else {
+			columns = applyDamengColumnComments(columns, commentData)
+		}
+	}
 
 	autoIncrementData, _, autoIncrementErr := d.Query(buildDamengAutoIncrementColumnsQuery(dbName, tableName))
 	if autoIncrementErr != nil {
