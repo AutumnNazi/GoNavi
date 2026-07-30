@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -288,6 +289,21 @@ func dialSOCKS5(ctx context.Context, cfg connection.ProxyConfig, network, addres
 	}
 }
 
+func contextErrorForProxyIO(ctx context.Context, err error) error {
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return ctxErr
+	}
+	if _, ok := ctx.Deadline(); !ok {
+		return nil
+	}
+	// A socket deadline copied from ctx can fire just before ctx.Err becomes visible.
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		return context.DeadlineExceeded
+	}
+	return nil
+}
+
 func dialHTTPConnect(ctx context.Context, cfg connection.ProxyConfig, address string) (net.Conn, error) {
 	proxyAddr := net.JoinHostPort(cfg.Host, fmt.Sprintf("%d", cfg.Port))
 	dialer := &net.Dialer{Timeout: defaultDialTimeout}
@@ -336,7 +352,7 @@ func dialHTTPConnect(ctx context.Context, cfg connection.ProxyConfig, address st
 	if err := connectReq.Write(conn); err != nil {
 		stopWatchingContext()
 		_ = conn.Close()
-		if ctxErr := ctx.Err(); ctxErr != nil {
+		if ctxErr := contextErrorForProxyIO(ctx, err); ctxErr != nil {
 			return nil, ctxErr
 		}
 		return nil, proxyWrapError("proxy.backend.error.http_connect_write_failed", map[string]any{"detail": err.Error()}, err)
@@ -347,7 +363,7 @@ func dialHTTPConnect(ctx context.Context, cfg connection.ProxyConfig, address st
 	if err != nil {
 		stopWatchingContext()
 		_ = conn.Close()
-		if ctxErr := ctx.Err(); ctxErr != nil {
+		if ctxErr := contextErrorForProxyIO(ctx, err); ctxErr != nil {
 			return nil, ctxErr
 		}
 		return nil, proxyWrapError("proxy.backend.error.http_connect_read_failed", map[string]any{"detail": err.Error()}, err)

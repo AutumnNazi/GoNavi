@@ -92,6 +92,25 @@ func TestDialContextUsesCurrentLanguageForHTTPConnectWrapper(t *testing.T) {
 	}
 }
 
+type proxyTimeoutError struct{}
+
+func (proxyTimeoutError) Error() string   { return "i/o timeout" }
+func (proxyTimeoutError) Timeout() bool   { return true }
+func (proxyTimeoutError) Temporary() bool { return true }
+
+func TestContextErrorForProxyIOMapsDeadlineSocketTimeout(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Hour)
+	defer cancel()
+
+	err := contextErrorForProxyIO(ctx, proxyTimeoutError{})
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("contextErrorForProxyIO error = %v, want context deadline exceeded", err)
+	}
+	if err := contextErrorForProxyIO(context.Background(), proxyTimeoutError{}); err != nil {
+		t.Fatalf("contextErrorForProxyIO without deadline = %v, want nil", err)
+	}
+}
+
 func TestDialContextCancelsStalledHTTPConnectHandshake(t *testing.T) {
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
