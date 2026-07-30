@@ -58,6 +58,7 @@ vi.mock('../store', () => ({
       dataTableDensity: 'comfortable',
       uiVersion: mockStoreState.uiVersion,
     },
+    setAppearance: vi.fn(),
     queryOptions: {
       showColumnComment: false,
       showColumnType: false,
