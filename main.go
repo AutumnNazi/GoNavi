@@ -17,6 +17,7 @@ import (
 	"GoNavi-Wails/internal/webserver"
 
 	"github.com/wailsapp/wails/v2"
+	wailslogger "github.com/wailsapp/wails/v2/pkg/logger"
 	"github.com/wailsapp/wails/v2/pkg/menu"
 	"github.com/wailsapp/wails/v2/pkg/menu/keys"
 	"github.com/wailsapp/wails/v2/pkg/options"
@@ -142,13 +143,16 @@ func main() {
 
 	// Create application with options
 	err := wails.Run(&options.App{
-		Title:            "GoNavi",
-		Width:            1440,
-		Height:           900,
-		MinWidth:         900,
-		MinHeight:        600,
-		WindowStartState: resolveInitialWindowStartState(runtime.GOOS),
-		Frameless:        true,
+		Title:              "GoNavi",
+		Logger:             logger.NewWailsAdapter(),
+		LogLevel:           wailslogger.INFO,
+		LogLevelProduction: wailslogger.INFO,
+		Width:              1440,
+		Height:             900,
+		MinWidth:           900,
+		MinHeight:          600,
+		WindowStartState:   resolveInitialWindowStartState(runtime.GOOS),
+		Frameless:          true,
 		AssetServer: &assetserver.Options{
 			Assets: assets,
 		},

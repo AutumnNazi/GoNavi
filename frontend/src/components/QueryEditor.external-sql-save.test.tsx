@@ -131,6 +131,7 @@ const runtimeApi = vi.hoisted(() => ({
     };
   }),
   ClipboardSetText: vi.fn(async () => true),
+  LogError: vi.fn(),
   LogInfo: vi.fn(),
 }));
 
@@ -814,6 +815,8 @@ describe('QueryEditor external SQL save', () => {
     storeState.shortcutOptions.saveQuery.mac = { enabled: true, combo: 'Meta+S' };
     storeState.shortcutOptions.saveQuery.windows = { enabled: true, combo: 'Ctrl+S' };
     runtimeApi.EventsOn.mockClear();
+    runtimeApi.LogError.mockReset();
+    runtimeApi.LogInfo.mockReset();
     runtimeEventListeners.clear();
     storeState.addTab.mockReset();
     storeState.setActiveContext.mockReset();
@@ -4588,6 +4591,59 @@ describe('QueryEditor external SQL save', () => {
         }),
       ]),
     );
+  });
+
+  it('formats Dameng SQL with positional parameter placeholders', async () => {
+    let renderer!: ReactTestRenderer;
+    storeState.connections[0].config.type = 'dameng';
+    const damengSql = 'SELECT COUNT(*) AS total FROM VULNERABILITY_RESOURCE_T WHERE (TASK_ID = ?)';
+
+    await act(async () => {
+      renderer = create(<QueryEditor tab={createTab({ query: damengSql, dbName: 'SLGZT' })} />);
+    });
+
+    const formatButton = findButton(renderer, '美化');
+    await act(async () => {
+      await formatButton.props.onClick();
+    });
+
+    expect(messageApi.error).not.toHaveBeenCalled();
+    expect(editorState.editor.executeEdits).toHaveBeenCalledWith(
+      'gonavi-format-sql',
+      expect.arrayContaining([
+        expect.objectContaining({
+          text: expect.stringContaining('TASK_ID = ?'),
+        }),
+      ]),
+    );
+    expect(runtimeApi.LogInfo).toHaveBeenCalledWith(expect.stringMatching(
+      /^\[SQL美化\] 成功：language=plsql dbType=dameng driver=\(default\) scope=full sqlLength=\d+ positional=true durationMs=\d+(?:\.\d+)? changed=true$/,
+    ));
+    const successLog = runtimeApi.LogInfo.mock.calls[runtimeApi.LogInfo.mock.calls.length - 1]?.[0];
+    expect(successLog).not.toContain('VULNERABILITY_RESOURCE_T');
+  });
+
+  it('logs SQL formatter failures without exposing the SQL text', async () => {
+    let renderer!: ReactTestRenderer;
+    storeState.connections[0].config.type = 'oracle';
+    const sensitiveSql = "SELECT * FROM CUSTOMER_SECRET WHERE TOKEN = 'do-not-log' AND ID = ?";
+
+    await act(async () => {
+      renderer = create(<QueryEditor tab={createTab({ query: sensitiveSql, dbName: 'APP' })} />);
+    });
+
+    const formatButton = findButton(renderer, '美化');
+    await act(async () => {
+      await formatButton.props.onClick();
+    });
+
+    expect(messageApi.error).toHaveBeenCalledWith('格式化失败：SQL 语法可能有误。');
+    expect(runtimeApi.LogError).toHaveBeenCalledWith(expect.stringMatching(
+      /^\[SQL美化\] 失败：language=plsql dbType=oracle driver=\(default\) scope=full sqlLength=\d+ positional=false durationMs=\d+(?:\.\d+)? error=Parse error:/,
+    ));
+    const failureLog = String(runtimeApi.LogError.mock.calls[runtimeApi.LogError.mock.calls.length - 1]?.[0] || '');
+    expect(failureLog).not.toContain('CUSTOMER_SECRET');
+    expect(failureLog).not.toContain('do-not-log');
   });
 
   it('preserves postgres JSONB question-mark operators while formatting', async () => {

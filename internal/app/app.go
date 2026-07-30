@@ -370,6 +370,7 @@ func (a *App) startup(ctx context.Context) {
 	}
 	db.SetExternalDriverDownloadDirectory(appdata.DriverRoot(a.configDir))
 	logger.Init()
+	logStartupDiagnostics(a.configDir)
 	if err := migrateDailySecretsIfNeeded(a); err != nil {
 		logger.Warnf("迁移日常密文失败：%v", err)
 	}

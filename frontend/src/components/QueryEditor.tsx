@@ -8,7 +8,7 @@ import { TabData, ColumnDefinition, type SavedQuery, type SqlSnippet } from '../
 import { type SqlLog, useStore } from '../store';
 import { DBQuery, DBQueryWithCancel, DBQueryMulti, DBQueryMultiInTransaction, DBQueryMultiTransactional, DBGetTables, DBGetAllColumns, DBGetDatabases, DBGetColumns, CancelQuery, GenerateQueryID, WriteSQLFile, ExportSQLFile } from '../../wailsjs/go/app/App';
 import { GONAVI_ROW_KEY } from './DataGrid';
-import { EventsOn } from '../../wailsjs/runtime';
+import { EventsOn, LogError, LogInfo } from '../../wailsjs/runtime';
 import { findConnectionMutatingStatements } from '../utils/connectionReadOnly';
 import { getDataSourceCapabilities } from '../utils/dataSourceCapabilities';
 import type { GridSortInfoItem } from '../utils/dataGridSort';
@@ -231,6 +231,7 @@ const QUERY_EDITOR_FORMAT_PARAM_TYPES = {
         { regex: String.raw`\$\{[^{}]+\}` },
     ],
 };
+const QUERY_EDITOR_FORMAT_ERROR_LOG_MAX_LENGTH = 500;
 const EMPTY_QUERY_EDITOR_SQL_LOGS: SqlLog[] = [];
 
 const isOceanBaseOracleConnection = (config: any): boolean => {
@@ -241,6 +242,55 @@ const isOceanBaseOracleConnection = (config: any): boolean => {
         return resolveOceanBaseProtocolFromConfig(config || {}) === 'oracle';
     } catch {
         return false;
+    }
+};
+
+const supportsPositionalSqlFormatParams = (config: any): boolean => (
+    isOceanBaseOracleConnection(config)
+    || resolveSqlDialect(
+        String(config?.type || ''),
+        String(config?.driver || ''),
+        { oceanBaseProtocol: config?.oceanBaseProtocol },
+    ) === 'dameng'
+);
+
+const queryEditorFormatNow = (): number => (
+    typeof globalThis.performance?.now === 'function'
+        ? globalThis.performance.now()
+        : Date.now()
+);
+
+const formatQueryEditorFormatDuration = (startedAt: number): string => (
+    String(Math.round(Math.max(0, queryEditorFormatNow() - startedAt) * 10) / 10)
+);
+
+const normalizeQueryEditorFormatLogField = (value: unknown, fallback: string): string => {
+    const normalized = String(value || '')
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9._-]+/g, '_')
+        .slice(0, 64);
+    return normalized || fallback;
+};
+
+const formatQueryEditorFormatError = (error: unknown): string => {
+    const messageText = error instanceof Error ? error.message : String(error || 'unknown');
+    return messageText
+        .replace(/\s+/g, ' ')
+        .replace(/Unexpected "(?:[^"\\]|\\.)*"/gi, 'Unexpected <token>')
+        .trim()
+        .slice(0, QUERY_EDITOR_FORMAT_ERROR_LOG_MAX_LENGTH) || 'unknown';
+};
+
+const writeQueryEditorFormatLog = (level: 'info' | 'error', messageText: string): void => {
+    try {
+        if (level === 'error') {
+            LogError(messageText);
+            return;
+        }
+        LogInfo(messageText);
+    } catch {
+        // Logging must never change whether formatting succeeds or fails.
     }
 };
 
@@ -6181,6 +6231,19 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
   };
 
   const handleFormat = () => {
+      const startedAt = queryEditorFormatNow();
+      let formatterLanguageLog = 'unknown';
+      let dbType = '(unknown)';
+      let driver = '(default)';
+      let formatScope = 'full';
+      let sqlLength = 0;
+      let positionalParams = false;
+      const logSuccess = (changed: boolean) => {
+          writeQueryEditorFormatLog(
+              'info',
+              `[SQL美化] 成功：language=${formatterLanguageLog} dbType=${dbType} driver=${driver} scope=${formatScope} sqlLength=${sqlLength} positional=${positionalParams} durationMs=${formatQueryEditorFormatDuration(startedAt)} changed=${changed}`,
+          );
+      };
       try {
           const activeConnectionId = String(currentConnectionIdRef.current || '').trim();
           const tabConnectionId = String(tab.connectionId || '').trim();
@@ -6189,6 +6252,9 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                   ? connectionsRef.current.find(c => c.id === tabConnectionId)
                   : undefined);
           const formatterLanguage = resolveQueryEditorFormatterLanguage(conn);
+          formatterLanguageLog = formatterLanguage;
+          dbType = normalizeQueryEditorFormatLogField(conn?.config?.type, '(unknown)');
+          driver = normalizeQueryEditorFormatLogField(conn?.config?.driver, '(default)');
           const editor = editorRef.current;
           const monaco = monacoRef.current;
           const model = editor?.getModel?.();
@@ -6197,17 +6263,21 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
               ? String(model.getValueInRange?.(selection) || '')
               : '';
           const formatSelection = !!selection && !!selectedRaw.trim();
+          formatScope = formatSelection ? 'selection' : 'full';
           const fullQuery = getCurrentQuery();
           const sourceSql = formatSelection ? selectedRaw : fullQuery;
+          sqlLength = sourceSql.length;
+          positionalParams = supportsPositionalSqlFormatParams(conn?.config);
           const formatted = format(sourceSql, {
               language: formatterLanguage,
               keywordCase: sqlFormatOptions.keywordCase,
               paramTypes: {
                   ...QUERY_EDITOR_FORMAT_PARAM_TYPES,
-                  ...(isOceanBaseOracleConnection(conn?.config) ? { positional: true } : {}),
+                  ...(positionalParams ? { positional: true } : {}),
               },
           });
           if (sourceSql === formatted) {
+              logSuccess(false);
               return;
           }
           updateQueryTabDraft(tab.id, {
@@ -6223,6 +6293,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                       || new monaco.Range(1, 1, model.getLineCount?.() || 1, model.getLineMaxColumn?.(model.getLineCount?.() || 1) || 1));
               const currentValue = String(model.getValue?.() || fullQuery);
               if (!formatSelection && currentValue === formatted) {
+                  logSuccess(false);
                   return;
               }
               editor.pushUndoStop?.();
@@ -6236,13 +6307,20 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
               applyQueryState(typeof nextValue === 'string' ? nextValue : (formatSelection ? currentValue : formatted));
               refreshObjectDecorations();
               editor.setScrollLeft?.(0);
+              logSuccess(true);
               return;
       }
       if (formatSelection) {
+          logSuccess(false);
           return;
       }
       syncQueryToEditor(formatted);
+      logSuccess(true);
   } catch (e) {
+          writeQueryEditorFormatLog(
+              'error',
+              `[SQL美化] 失败：language=${formatterLanguageLog} dbType=${dbType} driver=${driver} scope=${formatScope} sqlLength=${sqlLength} positional=${positionalParams} durationMs=${formatQueryEditorFormatDuration(startedAt)} error=${formatQueryEditorFormatError(e)}`,
+          );
           void message.error(translate('query_editor.message.format_failed'));
       }
   };
