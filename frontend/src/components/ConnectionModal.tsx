@@ -37,6 +37,9 @@ import {
   getDbIcon,
   getDbDefaultColor,
   getDbIconLabel,
+  getDbIconAssetSrc,
+  getDbIconContainerBg,
+  hasDbIconAsset,
   DB_ICON_TYPES,
   PRESET_ICON_COLORS,
 } from "./DatabaseIcons";
@@ -171,11 +174,13 @@ const PRIMARY_USERNAME_OPTIONAL_TYPES = new Set([
   "kafka",
   "rabbitmq",
 ]);
-/** Step1 选型网格需要较宽；Step2 密排表单对齐 Demo ~600，避免右侧空洞或输入框被拉超长 */
-const CONNECTION_MODAL_WIDTH_STEP1 = 960;
-const CONNECTION_MODAL_WIDTH_STEP2 = 600;
-// A · Studio 第一步整体高度约 560px，扣除头部后主体固定为 500px。
-const CONNECTION_MODAL_BODY_HEIGHT = 500;
+/** Step1/Step2 弹窗宽度统一为 760，centered 定位下切换步骤不再跳动；
+ * Step2 密排表单本身仍保持 ~600 视觉宽度（见 .gn-conn-form-layout 的 max-width），避免右侧空洞或输入框被拉超长，
+ * 只是在更宽的弹窗内居中显示。 */
+const CONNECTION_MODAL_WIDTH_STEP1 = 760;
+const CONNECTION_MODAL_WIDTH_STEP2 = 760;
+// 头部高度约 60px，主体固定为 700px，使弹窗整体（760×760）接近正方形。
+const CONNECTION_MODAL_BODY_HEIGHT = 700;
 const REDIS_DEFAULT_DATABASE_COUNT = 16;
 const CLICKHOUSE_PROTOCOL_OPTIONS: Array<{
   value: ClickHouseProtocolChoice;
@@ -389,6 +394,7 @@ const ConnectionModal: React.FC<{
   const addConnection = useStore((state) => state.addConnection);
   const updateConnection = useStore((state) => state.updateConnection);
   const savedConnections = useStore((state) => state.connections) ?? [];
+  const recentConnectionTargets = useStore((state) => state.recentConnectionTargets) ?? [];
   const theme = useStore((state) => state.theme);
   const appearance = useStore((state) => state.appearance);
   const languagePreference = useStore((state) => state.languagePreference);
@@ -2500,28 +2506,26 @@ const ConnectionModal: React.FC<{
   const dbTypes = getAllConnectionTypeCatalogItems();
 
   const recentConnectionChips = useMemo(() => {
-    const seen = new Set<string>();
-    const chips: Array<{
-      id: string;
-      type: string;
-      name: string;
-      color: string;
-    }> = [];
-    for (let i = savedConnections.length - 1; i >= 0; i -= 1) {
-      const conn = savedConnections[i];
+    // 按“最近实际使用”的连接（recentConnectionTargets，已按 openedAt 倒序）
+    // 去重取数据源类型，而不是按连接创建/添加顺序。
+    const connectionById = new Map(
+      savedConnections.map((conn) => [conn.id, conn] as const),
+    );
+    const seenTypes = new Set<string>();
+    const chips: Array<{ type: string; color: string }> = [];
+    for (const target of recentConnectionTargets) {
+      const conn = connectionById.get(target.connectionId);
       const type = String(conn?.config?.type || "").trim();
-      if (!type || seen.has(conn.id)) continue;
-      seen.add(conn.id);
+      if (!conn || !type || seenTypes.has(type)) continue;
+      seenTypes.add(type);
       chips.push({
-        id: conn.id,
         type,
-        name: conn.name || type,
         color: conn.iconColor || getDbDefaultColor(conn.iconType || type),
       });
       if (chips.length >= 5) break;
     }
     return chips;
-  }, [savedConnections]);
+  }, [savedConnections, recentConnectionTargets]);
 
   const activeGroupLabel =
     dbTypeGroups[activeGroup]?.label || t("connection.modal.step1.group.all");
@@ -2584,20 +2588,16 @@ const ConnectionModal: React.FC<{
               <div className="gn-conn-picker-recent">
                 {recentConnectionChips.map((chip) => (
                   <button
-                    key={chip.id}
+                    key={chip.type}
                     type="button"
                     className="gn-conn-picker-chip"
-                    title={chip.name}
+                    title={getDbIconLabel(chip.type)}
                     onClick={() => {
                       void handleTypeSelect(chip.type);
                     }}
                   >
-                    <span
-                      className="gn-conn-picker-chip-dot"
-                      style={{ background: chip.color }}
-                    />
                     <span className="gn-conn-picker-chip-text">
-                      {getDbIconLabel(chip.type)} · {chip.name}
+                      {getDbIconLabel(chip.type)}
                     </span>
                   </button>
                 ))}
@@ -2648,7 +2648,6 @@ const ConnectionModal: React.FC<{
           </div>
           <div className="gn-conn-picker-grid">
             {visibleDbTypeItems.map((item) => {
-              const color = getDbDefaultColor(item.key);
               // 卡片所属的数据源分类展示标签。
               const categoryLabel = localizedDbTypeGroups.find((group) =>
                 group.items.some((groupItem) => groupItem.key === item.key),
@@ -2672,9 +2671,25 @@ const ConnectionModal: React.FC<{
                   <div className="gn-conn-type-card-top">
                     <div
                       className="gn-conn-type-card-logo"
-                      style={{ background: color }}
+                      style={{
+                        background: hasDbIconAsset(item.key)
+                          ? getDbIconContainerBg(item.key)
+                          : (darkMode
+                              ? "rgba(255,255,255,0.05)"
+                              : "rgba(22,119,255,0.08)"),
+                      }}
                     >
-                      {getDbIcon(item.key, "#ffffff", 20)}
+                      {hasDbIconAsset(item.key) ? (
+                        <img
+                          src={getDbIconAssetSrc(item.key)}
+                          alt={item.name}
+                          width={34}
+                          height={34}
+                          style={{ display: "block", objectFit: "contain" }}
+                        />
+                      ) : (
+                        getDbIcon(item.key, undefined, 34)
+                      )}
                     </div>
                     <div className="gn-conn-type-card-meta">
                       <div className="gn-conn-type-card-name">{item.name}</div>
@@ -2985,7 +3000,7 @@ const ConnectionModal: React.FC<{
   const modalBodyStyle = {
     padding: 0,
     height: isFormStep ? "auto" : CONNECTION_MODAL_BODY_HEIGHT,
-    maxHeight: isFormStep ? "min(720px, calc(100vh - 132px))" : undefined,
+    maxHeight: isFormStep ? "min(780px, calc(100vh - 132px))" : undefined,
     minHeight: isFormStep ? 0 : CONNECTION_MODAL_BODY_HEIGHT,
     overflowY: "hidden" as const,
     overflowX: "hidden" as const,

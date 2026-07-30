@@ -480,11 +480,12 @@ body[data-ui-version='v2'] .connection-modal-wrap .ant-modal .ant-modal-footer {
 }
 
 .gn-conn-studio-header-left {
-    justify-self: start;
+    justify-self: stretch;
     display: flex;
     align-items: center;
     gap: 10px;
     min-width: 0;
+    overflow: hidden;
 }
 
 .gn-conn-studio-type-badge {
@@ -849,15 +850,9 @@ body[data-theme='dark'] .gn-connection-type-group:hover:not([aria-pressed='true'
 
 .gn-conn-picker-grid {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 10px;
     width: 100%;
-}
-
-@media (min-width: 1200px) {
-    .connection-modal-wrap .gn-conn-picker-grid {
-        grid-template-columns: repeat(4, minmax(0, 1fr));
-    }
 }
 
 .gn-conn-type-card {
@@ -893,9 +888,9 @@ body[data-theme='dark'] .gn-connection-type-group:hover:not([aria-pressed='true'
 }
 
 .gn-conn-type-card-logo {
-    width: 36px;
-    height: 36px;
-    border-radius: 9px;
+    width: 44px;
+    height: 44px;
+    border-radius: 10px;
     display: grid;
     place-items: center;
     flex-shrink: 0;
@@ -950,12 +945,16 @@ body[data-theme='dark'] .gn-connection-type-group:hover:not([aria-pressed='true'
 }
 
 /* ── Connection modal · form top tabs ── */
+/* 弹窗外框与 Step1 统一为 760 宽（避免 centered 切步骤时位置跳动）；
+   表单内容铺满弹窗宽度即可，和「拖拽调高后」的 100% 宽度表现保持一致，
+   不再额外收窄到 600 居中——收窄反而会在未拖拽时露出两侧大片空白。 */
 .gn-conn-form-layout {
     display: flex;
     flex-direction: column;
     min-height: 0;
     flex: 0 0 auto;
-    max-height: min(720px, calc(100vh - 132px));
+    max-height: min(780px, calc(100vh - 132px));
+    width: 100%;
 }
 
 .gn-conn-form-nav {
@@ -1314,10 +1313,6 @@ body[data-theme='dark'] .gn-connection-type-group:hover:not([aria-pressed='true'
         grid-template-columns: minmax(155px, 36%) minmax(0, 1fr);
     }
 
-    .gn-conn-picker-grid {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-
     .gn-conn-studio-foot-error,
     .gn-conn-studio-details-button {
         display: none;
@@ -1329,7 +1324,7 @@ body[data-theme='dark'] .gn-connection-type-group:hover:not([aria-pressed='true'
     border: 0;
     border-radius: 0;
     padding: 0;
-    margin-bottom: 10px;
+    margin-bottom: 4px;
     background: transparent;
 }
 
@@ -1358,7 +1353,7 @@ body[data-theme='dark'] .gn-connection-type-group:hover:not([aria-pressed='true'
     display: flex;
     align-items: center;
     gap: 8px;
-    margin: 2px 0 10px;
+    margin: 0 0 6px;
     font-size: 11px;
     color: var(--gn-fg-5, rgba(0, 0, 0, 0.4));
 }
@@ -1491,7 +1486,7 @@ body[data-theme='dark'] .gn-connection-type-group:hover:not([aria-pressed='true'
 .gn-conn-w-db { width: 120px; flex: 0 0 120px; }
 .gn-conn-w-user { width: 120px; flex: 0 0 120px; }
 .gn-conn-w-pass { width: 200px; max-width: min(200px, 100%); }
-.gn-conn-w-env { width: 100px; flex: 0 0 100px; }
+.gn-conn-w-env { width: 136px; flex: 0 0 136px; }
 .gn-conn-w-sm { width: 100px; flex: 0 0 100px; }
 .gn-conn-w-grow {
     flex: 1 1 auto;
@@ -1545,7 +1540,7 @@ body[data-ui-version="v2"] .gn-conn-check-line .ant-form-item {
     min-height: var(--gn-conn-ctrl-h) !important;
 }
 
-.gn-conn-dense .ant-input,
+.gn-conn-dense .ant-input:not(textarea),
 .gn-conn-dense .ant-input-affix-wrapper,
 .gn-conn-dense .ant-input-number,
 .gn-conn-dense .ant-input-number-input,
@@ -1556,10 +1551,18 @@ body[data-ui-version="v2"] .gn-conn-check-line .ant-form-item {
     border-radius: 6px !important;
 }
 
-.gn-conn-dense .ant-input,
+.gn-conn-dense .ant-input:not(textarea),
 .gn-conn-dense .ant-input-affix-wrapper {
     padding-top: 0 !important;
     padding-bottom: 0 !important;
+}
+
+/* URI 多行输入需保留原生 resize 拖拽：只锁最小高度/字号，不用 !important 锁 height，
+   否则会覆盖拖拽产生的内联 style.height（!important 规则始终优先于内联样式）。 */
+.gn-conn-dense textarea.ant-input {
+    min-height: var(--gn-conn-ctrl-h);
+    font-size: 12.5px !important;
+    border-radius: 6px !important;
 }
 
 .gn-conn-dense .ant-input-affix-wrapper .ant-input {

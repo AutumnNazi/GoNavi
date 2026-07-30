@@ -200,12 +200,12 @@ const ConnectionModalStep2: React.FC<ConnectionModalStep2Props> = (props) => {
     useSSL,
   } = props;
 
-  // A · Studio 默认展开生产保护，保留用户按需折叠的交互。
+  // 默认折叠生产保护，避免默认表单内容溢出触发滚动条；保留用户按需展开的交互。
   const [readOnlyProtectionExpanded, setReadOnlyProtectionExpanded] =
-    React.useState(true);
+    React.useState(false);
 
   React.useEffect(() => {
-    setReadOnlyProtectionExpanded(true);
+    setReadOnlyProtectionExpanded(false);
   }, [dbType]);
 
   React.useEffect(() => {

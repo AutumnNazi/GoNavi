@@ -182,6 +182,9 @@ vi.mock("./DatabaseIcons", () => ({
   getDbIcon: (type: string) => <span>{type}</span>,
   getDbDefaultColor: () => "#1677ff",
   getDbIconLabel: (type: string) => type,
+  getDbIconAssetSrc: () => "",
+  getDbIconContainerBg: () => "#1677ff",
+  hasDbIconAsset: () => false,
   DB_ICON_TYPES: ["mysql", "postgres"],
   PRESET_ICON_COLORS: ["#1677ff", "#52c41a"],
 }));
@@ -693,16 +696,18 @@ describe("ConnectionModal i18n", () => {
         findClickableCard(renderer!, sourceLabel).props.onClick();
       });
 
-      // A · Studio：生产保护默认展开，折叠后选项文案隐藏。
+      // A · Studio：生产保护默认折叠，展开后选项文案才可见。
       let pageText = textContent(renderer!.toJSON());
       expect(pageText).toContain(expectations[0]);
-      expect(pageText).toContain(expectations[2]);
-      expect(pageText).toContain(expectations[6]);
+      expect(pageText).not.toContain(expectations[2]);
+      expect(pageText).not.toContain(expectations[3]);
+      expect(pageText).not.toContain("connection.modal.section.undefined.title");
+      expect(pageText).not.toContain("connection.modal.section.undefined.description");
 
       const protectionToggle = renderer!.root.findAll(
         (node) => node.props?.["data-connection-config-section-toggle"] === "readOnly",
       )[0];
-      expect(protectionToggle.props["aria-expanded"]).toBe(true);
+      expect(protectionToggle.props["aria-expanded"]).toBe(false);
 
       await act(async () => {
         protectionToggle.props.onClick({ stopPropagation: vi.fn() });
@@ -710,10 +715,8 @@ describe("ConnectionModal i18n", () => {
 
       pageText = textContent(renderer!.toJSON());
       expect(pageText).toContain(expectations[0]);
-      expect(pageText).not.toContain(expectations[2]);
-      expect(pageText).not.toContain(expectations[3]);
-      expect(pageText).not.toContain("connection.modal.section.undefined.title");
-      expect(pageText).not.toContain("connection.modal.section.undefined.description");
+      expect(pageText).toContain(expectations[2]);
+      expect(pageText).toContain(expectations[6]);
     },
   );
 
