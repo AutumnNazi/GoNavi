@@ -90,6 +90,7 @@ describe('DataGridColumnTitle', () => {
     expect(markup).toContain('主键 ID');
     expect(markup).toContain('flex-direction:column');
     expect(markup).toContain('align-items:flex-start');
+    expect(markup).toContain('display:inline-flex;width:100%;max-width:100%;min-width:0;overflow:hidden');
   });
 
   it('keeps column metadata tooltip readable in light theme', () => {
@@ -187,6 +188,8 @@ describe('DataGridColumnTitle', () => {
     expect(markup).toContain('data-grid-column-filter-active="true"');
     expect(markup).toContain('data-grid-column-filter-popover="true"');
     expect(markup).toContain('flex:1 1 auto');
+    expect(markup).toContain('display:inline-flex;flex:1 1 auto;max-width:100%;min-width:0;overflow:hidden');
+    expect(markup).toContain('width:100%');
     expect(markup).toContain('Filter status');
     expect(markup).toContain('value="active"');
   });

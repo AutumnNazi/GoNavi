@@ -4331,13 +4331,23 @@ body[data-ui-version="v2"] .gn-v2-data-grid .gn-v2-table-designer.is-embedded .a
 }
 
 body[data-ui-version="v2"] .gn-v2-data-grid .ant-table-thead .ant-table-column-title {
+  min-width: 0;
+  overflow: hidden;
   font-size: var(--gn-data-table-font-size, var(--gn-font-size-mono, 12px));
   font-weight: 400 !important;
 }
 
 body[data-ui-version="v2"] .gn-v2-data-grid .ant-table-thead .ant-table-column-sorters {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
   min-height: 0 !important;
   align-items: flex-start !important;
+}
+
+body[data-ui-version="v2"] .gn-v2-data-grid .ant-table-thead .ant-table-column-sorter {
+  flex: 0 0 auto;
 }
 
 body[data-ui-version="v2"] .gn-v2-data-grid .ant-table-thead > tr > th.is-single-line-title {
@@ -4350,9 +4360,11 @@ body[data-ui-version="v2"] .gn-v2-data-grid .ant-table-thead > tr > th.is-single
 }
 
 body[data-ui-version="v2"] .gn-v2-data-grid .sortable-header-cell-drag-handle {
+  box-sizing: border-box;
   min-height: 48px !important;
   align-items: flex-start !important;
   padding: 3px 8px !important;
+  padding-right: 12px !important;
 }
 
 body[data-ui-version="v2"] .gn-v2-data-grid .sortable-header-cell-drag-handle > div {
