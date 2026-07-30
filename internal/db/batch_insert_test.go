@@ -160,6 +160,52 @@ func TestExecParameterizedInsertBatchesSplitsByArgumentLimit(t *testing.T) {
 	}
 }
 
+func TestExecParameterizedInsertBatchesRetriesMySQLPlaceholderLimitWithSmallerBatches(t *testing.T) {
+	t.Parallel()
+
+	const (
+		columnCount       = 24
+		rowCount          = 1000
+		serverPlaceholder = 12000
+	)
+	rows := make([]map[string]interface{}, 0, rowCount)
+	for rowIndex := 0; rowIndex < rowCount; rowIndex++ {
+		row := make(map[string]interface{}, columnCount)
+		for columnIndex := 0; columnIndex < columnCount; columnIndex++ {
+			row[fmt.Sprintf("column_%02d", columnIndex)] = rowIndex*columnCount + columnIndex
+		}
+		rows = append(rows, row)
+	}
+
+	attemptedArgCounts := make([]int, 0, 3)
+	succeededRows := 0
+	err := execParameterizedInsertBatches(parameterizedInsertConfig{
+		Table:       "`events`",
+		Rows:        rows,
+		QuoteColumn: func(column string) string { return "`" + column + "`" },
+		Placeholder: func(int) string { return "?" },
+		Exec: func(_ string, values ...interface{}) (sql.Result, error) {
+			attemptedArgCounts = append(attemptedArgCounts, len(values))
+			if len(values) > serverPlaceholder {
+				return nil, errors.New("Error 1390 (HY000): Prepared statement contains too many placeholders")
+			}
+			succeededRows += len(values) / columnCount
+			return driver.RowsAffected(len(values) / columnCount), nil
+		},
+		MaxRows: 1000,
+		MaxArgs: 60000,
+	})
+	if err != nil {
+		t.Fatalf("execParameterizedInsertBatches() error = %v", err)
+	}
+	if got, want := fmt.Sprint(attemptedArgCounts), "[24000 12000 12000]"; got != want {
+		t.Fatalf("attempted arg counts = %s, want %s", got, want)
+	}
+	if succeededRows != rowCount {
+		t.Fatalf("succeeded rows = %d, want %d", succeededRows, rowCount)
+	}
+}
+
 func TestExecParameterizedInsertBatchesOmitsColumnsPerRow(t *testing.T) {
 	t.Parallel()
 
