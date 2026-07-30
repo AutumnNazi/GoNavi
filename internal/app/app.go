@@ -660,6 +660,25 @@ func (a *App) databaseConnectionReturnError(cacheKey string, inst db.Database) e
 	return nil
 }
 
+func (a *App) markCachedDatabaseHealthy(inst db.Database, healthyAt time.Time) {
+	if a == nil || inst == nil {
+		return
+	}
+	if healthyAt.IsZero() {
+		healthyAt = time.Now()
+	}
+
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	for key, entry := range a.dbCache {
+		if entry.inst != inst || !healthyAt.After(entry.lastPing) {
+			continue
+		}
+		entry.lastPing = healthyAt
+		a.dbCache[key] = entry
+	}
+}
+
 func (a *App) cancelDatabaseConnectFlightsLocked(match func(*databaseConnectFlight) bool, cancelErr error, excludedFlightID uint64) []string {
 	groupKeys := make([]string, 0)
 	for _, flight := range a.dbConnectFlights {
