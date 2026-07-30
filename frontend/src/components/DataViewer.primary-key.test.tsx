@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { TabData } from '../types';
 import { DUCKDB_ROWID_LOCATOR_COLUMN, ORACLE_ROWID_LOCATOR_COLUMN } from '../utils/rowLocator';
+import { resetTableMetadataRequestCacheForTests } from '../utils/tableMetadataRequestCache';
 import DataViewer from './DataViewer';
 
 const storeState = vi.hoisted(() => ({
@@ -39,6 +40,7 @@ const messageApi = vi.hoisted(() => ({
 
 const dataGridState = vi.hoisted(() => ({
   latestProps: null as any,
+  renderedProps: [] as any[],
 }));
 
 vi.mock('../store', () => {
@@ -58,6 +60,7 @@ vi.mock('antd', () => ({
 vi.mock('./DataGrid', () => ({
   default: (props: any) => {
     dataGridState.latestProps = props;
+    dataGridState.renderedProps.push(props);
     return <div data-grid="true" />;
   },
   GONAVI_ROW_KEY: '__gonavi_row_key__',
@@ -102,7 +105,9 @@ describe('DataViewer safe editing locator', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    resetTableMetadataRequestCacheForTests();
     dataGridState.latestProps = null;
+    dataGridState.renderedProps = [];
     storeState.connections = [
       {
         id: 'conn-1',
@@ -190,6 +195,13 @@ describe('DataViewer safe editing locator', () => {
     await flushPromises();
 
     expect(backendApp.DBQuery).toHaveBeenCalled();
+    expect(dataGridState.renderedProps[0]?.loading).toBe(true);
+    expect(backendApp.DBQuery.mock.invocationCallOrder[0]).toBeLessThan(
+      backendApp.DBGetColumns.mock.invocationCallOrder[0],
+    );
+    expect(backendApp.DBQuery.mock.invocationCallOrder[0]).toBeLessThan(
+      backendApp.DBGetIndexes.mock.invocationCallOrder[0],
+    );
     expect(dataGridState.latestProps?.data).toEqual([
       expect.objectContaining({ ID: 7, NAME: 'old-name' }),
     ]);

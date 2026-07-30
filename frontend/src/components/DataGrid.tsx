@@ -1184,6 +1184,7 @@ const DataGrid: React.FC<DataGridProps> = ({
       tableName,
       exportScope,
       visibleColumnNames,
+      loading,
   });
 
   const displayColumnTypeMap = useMemo(() => {

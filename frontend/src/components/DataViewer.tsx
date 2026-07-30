@@ -30,6 +30,7 @@ import {
   getColumnDefinitionType,
 } from '../utils/columnDefinition';
 import { splitQualifiedNameLast, splitQualifiedNameSegments } from '../utils/qualifiedName';
+import { requestTableMetadata } from '../utils/tableMetadataRequestCache';
 
 type ViewerPaginationState = {
   current: number;
@@ -359,11 +360,17 @@ const getViewerFilterSnapshot = (tabId: string): ViewerFilterSnapshot => {
 
 const DataViewer: React.FC<{ tab: TabData; isActive?: boolean }> = React.memo(({ tab, isActive = true }) => {
   const initialViewerSnapshot = useMemo(() => getViewerFilterSnapshot(tab.id), [tab.id]);
+  const viewerLoadContextKey = `${tab.id}|${tab.connectionId}|${tab.dbName || ''}|${tab.tableName || ''}|${tab.objectType || 'table'}`;
+  const deferInitialDataFetch = shouldDeferInitialDataViewerFetch(tab.initialViewMode);
   const [data, setData] = useState<any[]>([]);
   const [columnNames, setColumnNames] = useState<string[]>([]);
   const [pkColumns, setPkColumns] = useState<string[]>([]);
   const [editLocator, setEditLocator] = useState<EditRowLocator | undefined>(undefined);
-  const [loading, setLoading] = useState(false);
+  const [loadingState, setLoading] = useState(() => !deferInitialDataFetch);
+  const loadingContextKeyRef = useRef(viewerLoadContextKey);
+  const loading = loadingContextKeyRef.current === viewerLoadContextKey
+    ? loadingState
+    : !deferInitialDataFetch;
   const connections = useStore(state => state.connections);
   const addSqlLog = useStore(state => state.addSqlLog);
   const appearance = useStore(state => state.appearance);
@@ -592,6 +599,7 @@ const DataViewer: React.FC<{ tab: TabData; isActive?: boolean }> = React.memo(({
     const navigateToLastPage = options?.navigateToLastPage === true;
     const refreshTotal = options?.refreshTotal === true || navigateToLastPage;
     const seq = ++fetchSeqRef.current;
+    loadingContextKeyRef.current = viewerLoadContextKey;
     setLoading(true);
     const conn = connections.find(c => c.id === tab.connectionId);
     if (!conn) {
@@ -642,6 +650,7 @@ const DataViewer: React.FC<{ tab: TabData; isActive?: boolean }> = React.memo(({
 
     let pkColumnsForQuery = pkColumns;
     let editLocatorForQuery = editLocator;
+    let deferredEditLocatorLoad: (() => Promise<void>) | null = null;
     if (isMongoDB && !forceReadOnly && tableName) {
         pkColumnsForQuery = [MONGODB_ID_COLUMN];
     }
@@ -655,9 +664,16 @@ const DataViewer: React.FC<{ tab: TabData; isActive?: boolean }> = React.memo(({
                 locator: EditRowLocator;
             } | null> => {
                 try {
+                    const rpcConfig = buildRpcConnectionConfig(config) as any;
                     const [resCols, resIndexes] = await Promise.all([
-                        DBGetColumns(buildRpcConnectionConfig(config) as any, dbName, tableName),
-                        DBGetIndexes(buildRpcConnectionConfig(config) as any, dbName, tableName)
+                        requestTableMetadata(
+                            { connectionId: tab.connectionId, dbName, tableName, kind: 'columns' },
+                            () => DBGetColumns(rpcConfig, dbName, tableName),
+                        ),
+                        requestTableMetadata(
+                            { connectionId: tab.connectionId, dbName, tableName, kind: 'indexes' },
+                            () => DBGetIndexes(rpcConfig, dbName, tableName),
+                        )
                             .catch((error: any) => ({ success: false, message: String(error?.message || error || 'Failed to load indexes'), data: [] })),
                     ]);
                     if (fetchSeqRef.current !== seq) return null;
@@ -719,7 +735,9 @@ const DataViewer: React.FC<{ tab: TabData; isActive?: boolean }> = React.memo(({
             if (dbTypeLower === 'kingbase') {
                 // Kingbase catalog metadata can be noticeably slower than the page query.
                 // Keep the grid read-only briefly and enable editing when the locator arrives.
-                void loadEditLocator();
+                deferredEditLocatorLoad = async () => {
+                    await loadEditLocator();
+                };
             } else {
                 const locatorMetadata = await loadEditLocator();
                 if (!locatorMetadata) return;
@@ -895,13 +913,20 @@ const DataViewer: React.FC<{ tab: TabData; isActive?: boolean }> = React.memo(({
         const hasSort = hasExplicitSort(sortInfo);
         const isSortMemoryErr = (msg: string) => /error\s*1038|out of sort memory/i.test(String(msg || ''));
         let resData = await executeDataQuery(sql, tr('data_viewer.sql_log.phase.main_query'));
+        if (deferredEditLocatorLoad) {
+            void deferredEditLocatorLoad();
+            deferredEditLocatorLoad = null;
+        }
 
         if (!resData.success && dbTypeLower === 'duckdb' && isDuckDBUnsupportedTypeError(String(resData.message || ''))) {
             const cacheKey = `${tab.connectionId}|${dbName}|${tableName}`;
             let safeSelect = duckdbSafeSelectCacheRef.current[cacheKey] || '';
             if (!safeSelect) {
                 try {
-                    const resCols = await DBGetColumns(buildRpcConnectionConfig(config) as any, dbName, tableName);
+                    const resCols = await requestTableMetadata(
+                        { connectionId: tab.connectionId, dbName, tableName, kind: 'columns' },
+                        () => DBGetColumns(buildRpcConnectionConfig(config) as any, dbName, tableName),
+                    );
                     if (resCols?.success && Array.isArray(resCols.data)) {
                         const columnDefs = resCols.data as ColumnDefinition[];
                         const selectParts = columnDefs.map((col) => {

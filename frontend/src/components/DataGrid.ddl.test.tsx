@@ -20,6 +20,7 @@ import { V2CellContextMenuView, V2ColumnHeaderContextMenuView, V2TableGroupConte
 import { setCurrentLanguage, t } from '../i18n';
 import { parseMongoEditedValue } from '../utils/mongodb';
 import { DUCKDB_ROWID_LOCATOR_COLUMN, ORACLE_ROWID_LOCATOR_COLUMN } from '../utils/rowLocator';
+import { resetTableMetadataRequestCacheForTests } from '../utils/tableMetadataRequestCache';
 
 const storeState = vi.hoisted(() => ({
   connections: [
@@ -949,6 +950,7 @@ describe('DataGrid commit change set', () => {
 
 describe('DataGrid DDL interactions', () => {
   beforeEach(() => {
+    resetTableMetadataRequestCacheForTests();
     backendApp.DBGetColumns.mockResolvedValue({ success: true, data: [] });
     backendApp.DBGetIndexes.mockResolvedValue({ success: true, data: [] });
     backendApp.DBGetForeignKeys.mockResolvedValue({ success: true, data: [] });
@@ -1903,6 +1905,52 @@ describe('DataGrid DDL interactions', () => {
     const headerText = renderHeaderText('id');
     expect(headerText).toContain('bigint');
     expect(headerText).toContain('主键 ID');
+    renderer!.unmount();
+  });
+
+  it('defers Kingbase table metadata until the initial data query finishes', async () => {
+    storeState.connections[0].config.type = 'kingbase';
+    storeState.connections[0].config.port = 54321;
+    backendApp.DBGetColumns.mockResolvedValue({
+      success: true,
+      data: [{ Name: 'andon_dash_events_id', Type: 'bigint' }],
+    });
+
+    const props = {
+      data: [] as any[],
+      columnNames: [] as string[],
+      loading: true,
+      tableName: 'ldf_server.andon_dash_events',
+      dbName: 'ldf_server_dbs',
+      connectionId: 'conn-1',
+      exportScope: 'table' as const,
+    };
+
+    let renderer: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<DataGrid {...props} />);
+    });
+    await waitForEffects();
+
+    expect(backendApp.DBGetColumns).not.toHaveBeenCalled();
+    expect(backendApp.DBGetIndexes).not.toHaveBeenCalled();
+    expect(backendApp.DBGetForeignKeys).not.toHaveBeenCalled();
+
+    await act(async () => {
+      renderer!.update(
+        <DataGrid
+          {...props}
+          data={[{ __gonavi_row_key__: 'row-1', andon_dash_events_id: 2 }]}
+          columnNames={['andon_dash_events_id']}
+          loading={false}
+        />,
+      );
+    });
+    await waitForEffects();
+
+    expect(backendApp.DBGetColumns).toHaveBeenCalledTimes(1);
+    expect(backendApp.DBGetIndexes).toHaveBeenCalledTimes(1);
+    expect(backendApp.DBGetForeignKeys).toHaveBeenCalledTimes(1);
     renderer!.unmount();
   });
 
