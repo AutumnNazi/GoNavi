@@ -240,7 +240,6 @@ import {
   SelectLogDirectory,
   SelectSavedQueryDirectory,
   SetApplicationBrandIcon,
-  SetMacNativeWindowControls,
   SetWindowTranslucency,
 } from '../wailsjs/go/app/App';
 import { getAntdLocale } from './i18n/frameworkLocale';
@@ -2285,7 +2284,7 @@ function App() {
   }, [connections, openSecurityUpdateSettings, runSecurityUpdateRound, securityUpdateStatus, t]);
   const isMacRuntime = runtimePlatform === 'darwin'
       || (runtimePlatform === '' && /mac/i.test(detectNavigatorPlatform()));
-  const useNativeMacWindowControls = isMacRuntime && appearance.useNativeMacWindowControls === true;
+  const useNativeMacWindowControls = isMacRuntime;
   const activeShortcutPlatform = getShortcutPlatform(isMacRuntime);
   const macWindowDiagnosticsEnabled = shouldEnableMacWindowDiagnostics(
       isMacRuntime,
@@ -2404,17 +2403,6 @@ function App() {
           console.warn('Failed to emit window diagnostic', error);
       }
   }, [macWindowDiagnosticsEnabled, useNativeMacWindowControls]);
-
-  useEffect(() => {
-      if (!isStoreHydrated || !isMacRuntime) {
-          return;
-      }
-      const backendApp = (window as any).go?.app?.App;
-      if (typeof backendApp?.SetMacNativeWindowControls !== 'function') {
-          return;
-      }
-      void safeWindowRuntimeCall(() => SetMacNativeWindowControls(useNativeMacWindowControls), undefined);
-  }, [isMacRuntime, isStoreHydrated, useNativeMacWindowControls]);
 
   useEffect(() => {
       if (!macWindowDiagnosticsEnabled) {
@@ -6362,20 +6350,6 @@ function App() {
                                       })}
                                   </>,
                               )}
-                              {isMacRuntime ? renderThemeSettingsSection(
-                                  t('app.theme.mac_window.title'),
-                                  renderThemeSettingsRow({
-                                      label: t('app.theme.mac_window.use_native_controls'),
-                                      hint: t('app.theme.mac_window.restart_hint'),
-                                      control: (
-                                          <Switch
-                                              checked={appearance.useNativeMacWindowControls === true}
-                                              onChange={(checked) => setAppearance({ useNativeMacWindowControls: checked })}
-                                          />
-                                      ),
-                                  }),
-                                  t('app.theme.mac_window.use_native_controls_hint'),
-                              ) : null}
                               {renderThemeSettingsSection(
                                   t('app.theme.startup_window.title'),
                                   renderThemeSettingsRow({
@@ -7174,24 +7148,6 @@ function App() {
                                       </div>
                                   </div>
                               </div>
-                              {isMacRuntime ? (
-                                  <div style={utilityPanelStyle}>
-                                      <div style={{ marginBottom: 8, fontWeight: 500 }}>{t('app.theme.mac_window.title')}</div>
-                                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-                                          <div>
-                                              <div style={{ fontWeight: 500 }}>{t('app.theme.mac_window.use_native_controls')}</div>
-                                              <div style={{ ...utilityMutedTextStyle, marginTop: 4 }}>{t('app.theme.mac_window.use_native_controls_hint')}</div>
-                                          </div>
-                                          <Switch
-                                              checked={appearance.useNativeMacWindowControls === true}
-                                              onChange={(checked) => setAppearance({ useNativeMacWindowControls: checked })}
-                                          />
-                                      </div>
-                                      <div style={{ fontSize: 12, color: darkMode ? 'rgba(255,255,255,0.5)' : 'rgba(16,24,40,0.55)', marginTop: 8 }}>
-                                          {t('app.theme.mac_window.restart_hint')}
-                                      </div>
-                                  </div>
-                              ) : null}
                               <div style={utilityPanelStyle}>
                                   <div style={{ marginBottom: 8, fontWeight: 500 }}>{t('app.theme.startup_window.title')}</div>
                                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>

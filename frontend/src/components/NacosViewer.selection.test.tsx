@@ -36,7 +36,6 @@ const storeState = vi.hoisted(() => ({
     enabled: true,
     opacity: 1,
     blur: 0,
-    useNativeMacWindowControls: false,
   },
 }));
 

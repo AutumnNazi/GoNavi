@@ -76,7 +76,7 @@ describe('store appearance persistence', () => {
     expect(appearance.enabled).toBe(false);
     expect(appearance.opacity).toBe(0.75);
     expect(appearance.blur).toBe(6);
-    expect(appearance.useNativeMacWindowControls).toBe(true);
+    expect(appearance).not.toHaveProperty('useNativeMacWindowControls');
     expect(appearance.tableDoubleClickAction).toBe('open-data');
     expect(appearance.v2SidebarSearchMode).toBe('command');
     expect(appearance.v2CommandSearchPersistentFilterEnabled).toBe(false);

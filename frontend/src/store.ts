@@ -157,7 +157,6 @@ export interface AppearanceSettings
   enabled: boolean;
   opacity: number;
   blur: number;
-  useNativeMacWindowControls: boolean;
   tableDoubleClickAction: TableDoubleClickAction;
   v2SidebarSearchMode: "command" | "filter";
   v2CommandSearchPersistentFilterEnabled: boolean;
@@ -181,7 +180,6 @@ export const DEFAULT_APPEARANCE: AppearanceSettings = {
   enabled: true,
   opacity: 1.0,
   blur: 0,
-  useNativeMacWindowControls: false,
   tableDoubleClickAction: "open-data",
   v2SidebarSearchMode: "command",
   v2CommandSearchPersistentFilterEnabled: false,
@@ -2959,10 +2957,6 @@ const sanitizeAppearance = (
       typeof appearance.blur === "number"
         ? appearance.blur
         : DEFAULT_APPEARANCE.blur,
-    useNativeMacWindowControls:
-      typeof appearance.useNativeMacWindowControls === "boolean"
-        ? appearance.useNativeMacWindowControls
-        : DEFAULT_APPEARANCE.useNativeMacWindowControls,
     tableDoubleClickAction: sanitizeTableDoubleClickAction(
       appearance.tableDoubleClickAction,
     ),

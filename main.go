@@ -37,6 +37,11 @@ type primaryWindowActivator struct {
 	show    func(context.Context)
 }
 
+type mainWindowChromeOptions struct {
+	Frameless bool
+	TitleBar  *mac.TitleBar
+}
+
 func (a *primaryWindowActivator) requestActivation() {
 	if a == nil {
 		return
@@ -130,6 +135,7 @@ func main() {
 	lowMemoryMode := isLowMemoryMode()
 	backgroundColour, windowsOptions := resolveWindowVisualOptions(runtime.GOOS, lowMemoryMode)
 	windowsOptions.WebviewUserDataPath = resolveWindowsWebviewUserDataPath()
+	windowChrome := resolveMainWindowChrome(runtime.GOOS)
 	var runtimeCtx context.Context
 	var appMenu *menu.Menu
 	if strings.EqualFold(strings.TrimSpace(runtime.GOOS), "darwin") {
@@ -138,7 +144,7 @@ func main() {
 				return
 			}
 			wailsRuntime.EventsEmit(runtimeCtx, nativeSelectCurrentLineEvent)
-		}, true)
+		}, windowChrome.Frameless)
 	}
 
 	// Create application with options
@@ -152,7 +158,7 @@ func main() {
 		MinWidth:           900,
 		MinHeight:          600,
 		WindowStartState:   resolveInitialWindowStartState(runtime.GOOS),
-		Frameless:          true,
+		Frameless:          windowChrome.Frameless,
 		AssetServer: &assetserver.Options{
 			Assets: assets,
 		},
@@ -191,6 +197,7 @@ func main() {
 		Bind:          bindings,
 		Windows:       windowsOptions,
 		Mac: &mac.Options{
+			TitleBar:             windowChrome.TitleBar,
 			WebviewIsTransparent: true,
 			WindowIsTranslucent:  true,
 		},
@@ -281,6 +288,17 @@ func isLowMemoryMode() bool {
 // hydration. Native startup must stay normal so it cannot override a disabled preference.
 func resolveInitialWindowStartState(string) options.WindowStartState {
 	return options.Normal
+}
+
+func resolveMainWindowChrome(goos string) mainWindowChromeOptions {
+	if strings.EqualFold(strings.TrimSpace(goos), "darwin") {
+		return mainWindowChromeOptions{
+			Frameless: false,
+			TitleBar:  mac.TitleBarHidden(),
+		}
+	}
+
+	return mainWindowChromeOptions{Frameless: true}
 }
 
 func resolveWindowVisualOptions(goos string, lowMemoryMode bool) (*options.RGBA, *windows.Options) {

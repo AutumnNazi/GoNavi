@@ -395,10 +395,10 @@ func (a *App) SetWindowTranslucency(opacity float64, blur float64) {
 	setMacWindowTranslucency(opacity, blur)
 }
 
-// SetMacNativeWindowControls toggles macOS native traffic-light window controls.
-// On non-macOS platforms this is a no-op.
-func (a *App) SetMacNativeWindowControls(enabled bool) {
-	setMacNativeWindowControls(enabled)
+// SetMacNativeWindowControls is retained for compatibility with older frontends.
+// macOS native traffic-light controls are now an application invariant.
+func (a *App) SetMacNativeWindowControls(bool) {
+	setMacNativeWindowControls(true)
 }
 
 // ResetWebViewZoom 把 WebView2 zoom factor 强制重置为 1.0，让 WebView2 重算字体度量。
