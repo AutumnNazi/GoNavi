@@ -27,6 +27,7 @@ const storeState = vi.hoisted(() => ({
     opacity: 1,
     blur: 0,
     useNativeMacWindowControls: false,
+    uiVersion: 'v1' as 'v1' | 'v2',
   },
 }));
 
@@ -219,6 +220,7 @@ describe('RedisViewer tree interactions', () => {
         },
       },
     ];
+    storeState.appearance.uiVersion = 'v1';
     redisBackend.RedisScanKeys.mockResolvedValue({
       success: true,
       data: {
@@ -432,6 +434,84 @@ describe('RedisViewer tree interactions', () => {
     expect(findButtonByText(renderer!, 'Set TTL')).toBeTruthy();
     expect(findButtonByText(renderer!, 'Refresh')).toBeTruthy();
     expect(findButtonByText(renderer!, 'Delete Key')).toBeTruthy();
+
+    renderer!.unmount();
+  });
+
+  it('keeps the V2 value grid mounted while refresh and key switches are pending', async () => {
+    storeState.appearance.uiVersion = 'v2';
+
+    let renderer: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<RedisViewer connectionId="redis-1" redisDB={0} />);
+    });
+    await flushEffects();
+
+    const firstLeaf = findFirstLeafNode(antdState.treeProps.treeData);
+    await act(async () => {
+      antdState.treeProps.onSelect?.([firstLeaf.key]);
+    });
+    await flushEffects();
+
+    let resolveRefresh!: (value: any) => void;
+    const pendingRefresh = new Promise<any>((resolve) => {
+      resolveRefresh = resolve;
+    });
+    redisBackend.RedisGetValue.mockReturnValueOnce(pendingRefresh);
+
+    const detailActions = renderer!.root.findByProps({ className: 'redis-key-detail-actions' });
+    const refreshButton = detailActions.findAllByType('button')
+      .find((node) => collectRenderedText(node.props.children).includes('Refresh'));
+    await act(async () => {
+      refreshButton!.props.onClick?.();
+      await Promise.resolve();
+    });
+
+    expect(renderer!.root.findByProps({ 'data-redis-active-key': 'true' }).children).toEqual(['app:user:1']);
+    expect(renderer!.root.findByProps({ 'data-redis-value-loading-overlay': 'true' }).props.style).toMatchObject({
+      gridColumn: 3,
+      gridRow: '1 / 3',
+    });
+
+    await act(async () => {
+      resolveRefresh({
+        success: true,
+        data: { key: 'app:user:1', type: 'string', ttl: -1, value: 'refreshed', length: 9 },
+      });
+      await pendingRefresh;
+    });
+    await flushEffects();
+    expect(renderer!.root.findAllByProps({ 'data-redis-value-loading-overlay': 'true' })).toHaveLength(0);
+
+    const secondLeaf = antdState.treeProps.treeData
+      .flatMap((node: any) => node.children || [])
+      .flatMap((node: any) => node.children || [])
+      .find((node: any) => node.rawKey === 'app:user:2');
+    let resolveSwitch!: (value: any) => void;
+    const pendingSwitch = new Promise<any>((resolve) => {
+      resolveSwitch = resolve;
+    });
+    redisBackend.RedisGetValue.mockReturnValueOnce(pendingSwitch);
+
+    await act(async () => {
+      antdState.treeProps.onSelect?.([secondLeaf.key]);
+      await Promise.resolve();
+    });
+
+    expect(renderer!.root.findByProps({ 'data-redis-active-key': 'true' }).children).toEqual(['app:user:1']);
+    expect(renderer!.root.findAllByProps({ 'data-redis-value-loading-overlay': 'true' })).toHaveLength(1);
+
+    await act(async () => {
+      resolveSwitch({
+        success: true,
+        data: { key: 'app:user:2', type: 'string', ttl: -1, value: 'next', length: 4 },
+      });
+      await pendingSwitch;
+    });
+    await flushEffects();
+
+    expect(renderer!.root.findByProps({ 'data-redis-active-key': 'true' }).children).toEqual(['app:user:2']);
+    expect(renderer!.root.findAllByProps({ 'data-redis-value-loading-overlay': 'true' })).toHaveLength(0);
 
     renderer!.unmount();
   });

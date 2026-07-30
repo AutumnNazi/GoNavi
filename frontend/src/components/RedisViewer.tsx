@@ -2483,11 +2483,37 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
             />
 
             {/* Right: Value Viewer */}
-            <div className={isV2Ui ? 'gn-v2-redis-value-pane' : undefined} style={{ flex: 1, overflow: 'hidden', minWidth: 300 }}>
-                {valueLoading ? (
-                    <div className={isV2Ui ? 'gn-v2-redis-empty-value' : undefined} style={{ ...workbenchCardStyle, padding: 20, textAlign: 'center', color: workbenchTheme.textMuted }}>{tr('common.loading')}...</div>
-                ) : (
-                    renderValueEditor()
+            <div
+                className={isV2Ui ? 'gn-v2-redis-value-pane' : undefined}
+                aria-busy={valueLoading}
+                style={{ flex: 1, overflow: 'hidden', minWidth: 300, position: 'relative' }}
+            >
+                {renderValueEditor()}
+                {valueLoading && (
+                    <div
+                        data-redis-value-loading-overlay="true"
+                        role="status"
+                        aria-live="polite"
+                        style={{
+                            ...(isV2Ui
+                                ? { gridColumn: 3, gridRow: '1 / 3' }
+                                : { position: 'absolute', inset: 0 }),
+                            zIndex: 2,
+                            minWidth: 0,
+                            minHeight: 0,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: 8,
+                            overflow: 'hidden',
+                            cursor: 'progress',
+                            background: isV2Ui ? 'var(--gn-bg-panel)' : workbenchTheme.panelBg,
+                            color: workbenchTheme.textMuted,
+                        }}
+                    >
+                        <Spin size="small" />
+                        <span>{tr('common.loading')}...</span>
+                    </div>
                 )}
             </div>
 
