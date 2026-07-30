@@ -4464,6 +4464,15 @@ describe('QueryEditor external SQL save', () => {
         rows: [{ COMPID: 1, MEMCARDNO: 'M-1', MODIFYUSER: 'admin', MODIFYTIME: '2026-07-10' }],
       }],
     });
+    backendApp.DBGetColumns.mockResolvedValueOnce({
+      success: true,
+      data: [
+        { name: 'COMPID', key: '' },
+        { name: 'MEMCARDNO', key: '' },
+        { name: 'MODIFYUSER', key: '' },
+        { name: 'MODIFYTIME', key: '' },
+      ],
+    });
 
     let renderer: ReactTestRenderer;
     await act(async () => {
