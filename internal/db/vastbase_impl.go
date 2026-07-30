@@ -231,25 +231,12 @@ func (v *VastbaseDB) GetDatabases() ([]string, error) {
 }
 
 func (v *VastbaseDB) GetTables(dbName string) ([]string, error) {
-	query := "SELECT schemaname, tablename FROM pg_catalog.pg_tables WHERE schemaname != 'information_schema' AND schemaname NOT LIKE 'pg|_%' ESCAPE '|' ORDER BY schemaname, tablename"
+	query := buildPostgresLegacyTablesQuery()
 	data, _, err := v.Query(query)
 	if err != nil {
 		return nil, err
 	}
-
-	var tables []string
-	for _, row := range data {
-		schema, okSchema := row["schemaname"]
-		name, okName := row["tablename"]
-		if okSchema && okName {
-			tables = append(tables, fmt.Sprintf("%v.%v", schema, name))
-			continue
-		}
-		if okName {
-			tables = append(tables, fmt.Sprintf("%v", name))
-		}
-	}
-	return tables, nil
+	return parsePostgresTableNames(data), nil
 }
 
 func (v *VastbaseDB) GetCreateStatement(dbName, tableName string) (string, error) {

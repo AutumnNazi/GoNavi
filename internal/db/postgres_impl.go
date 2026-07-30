@@ -379,9 +379,9 @@ func parsePostgresTableNames(data []map[string]interface{}) []string {
 		if name == "" {
 			continue
 		}
-		table := name
+		table := encodePGLikeQualifiedNamePart(name)
 		if schema != "" {
-			table = fmt.Sprintf("%s.%s", schema, name)
+			table = fmt.Sprintf("%s.%s", encodePGLikeQualifiedNamePart(schema), table)
 		}
 		key := strings.ToLower(table)
 		if _, exists := seen[key]; exists {
@@ -391,6 +391,13 @@ func parsePostgresTableNames(data []map[string]interface{}) []string {
 		tables = append(tables, table)
 	}
 	return tables
+}
+
+func encodePGLikeQualifiedNamePart(identifier string) string {
+	if !strings.ContainsAny(identifier, `."`) {
+		return identifier
+	}
+	return `"` + strings.ReplaceAll(identifier, `"`, `""`) + `"`
 }
 
 func (p *PostgresDB) GetCreateStatement(dbName, tableName string) (string, error) {
