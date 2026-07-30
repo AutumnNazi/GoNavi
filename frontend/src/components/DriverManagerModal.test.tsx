@@ -98,7 +98,7 @@ vi.mock('antd', () => {
       })}
     </select>
   );
-  const Progress = () => <div data-progress="true" />;
+  const Progress = (props: any) => <div data-progress="true" {...props} />;
   const Tag = ({ children }: any) => <span>{children}</span>;
   const Switch = ({ checked, onChange, disabled }: any) => (
     <button type="button" disabled={disabled} data-switch-checked={String(checked)} onClick={() => onChange?.(!checked)}>
@@ -245,6 +245,7 @@ describe('DriverManagerModal toolbar actions', () => {
       background: 'transparent',
     });
     expect(findButton(embeddedRenderer!, t('driver.modal.card.action.install')).props.size).toBe('small');
+    expect(embeddedRenderer!.root.findByProps({ 'data-progress': 'true' }).props.className).toBe('driver-manager-progress');
 
     let modalRenderer: ReactTestRenderer;
     await act(async () => {

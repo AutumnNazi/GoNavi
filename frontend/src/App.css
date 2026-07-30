@@ -2245,6 +2245,12 @@ body[data-platform='windows'] .titlebar-window-controls {
 .driver-manager-control-block {
     display: grid;
     gap: 4px;
+    min-width: 0;
+}
+
+.driver-manager-progress.ant-progress-line {
+    width: 100%;
+    min-width: 0;
 }
 
 .driver-manager-control-label,
@@ -2466,7 +2472,7 @@ body[data-platform='windows'] .titlebar-window-controls {
 
 .driver-manager-shell.is-embedded .driver-manager-card-controls {
     display: grid;
-    grid-template-columns: minmax(150px, 1fr) minmax(110px, 0.7fr);
+    grid-template-columns: minmax(0, 1fr) minmax(96px, 0.7fr);
     align-content: start;
     gap: 7px 12px;
 }

@@ -48,9 +48,8 @@ body[data-ui-version="v2"][data-theme="light"] {
   --gn-accent:      #15803d;
   --gn-accent-2:    #166534;
   --gn-accent-soft: #dcfce7;
-  /* --gn-on-accent 此前未定义，所有 var(--gn-on-accent, #fff) 都回退成白字：
-     白字压在 #16a34a 上仅 3.30，不满足 WCAG AA 的 4.5。深绿可得 4.52。 */
-  --gn-on-accent:   #052e16;
+  /* 浅色主题的主操作使用深绿填充，白色前景对 #15803d 的对比度为 5.02。 */
+  --gn-on-accent:   #ffffff;
   --gn-accent-strong: #15803d;
   --gn-accent-strong-hover: #126634;
   --gn-accent-strong-active: #0d4d27;
