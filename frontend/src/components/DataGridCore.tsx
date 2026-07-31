@@ -742,6 +742,7 @@ const ResizableTitle = React.forwardRef<HTMLTableCellElement, any>((props, ref) 
             right: 0, // Align to right edge
             bottom: 0,
             top: 0,
+            height: 'auto',
             width: 10,
             cursor: 'col-resize',
             // 必须低于固定列表头 z-index(30)，否则横向滚动时会穿透到勾选/行号上方

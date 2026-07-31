@@ -15,7 +15,6 @@ type ColumnResizeDragState = {
   startX: number;
   startWidth: number;
   key: string;
-  containerLeft: number;
 };
 type ColumnResizeListeners = {
   blur: () => void;
@@ -48,7 +47,6 @@ export const useDataGridColumnResize = (ctx: UseDataGridColumnResizeContext) => 
   } = ctx;
 
   const draggingRef = useRef<ColumnResizeDragState | null>(null);
-  const ghostRef = useRef<HTMLDivElement>(null);
   const resizeRafRef = useRef<number | null>(null);
   const latestClientXRef = useRef<number | null>(null);
   const isResizingRef = useRef(false);
@@ -77,10 +75,6 @@ export const useDataGridColumnResize = (ctx: UseDataGridColumnResizeContext) => 
     if (latestClientXRef.current === null) return;
     const dragState = draggingRef.current;
     const clientX = latestClientXRef.current;
-    if (ghostRef.current) {
-      const relativeLeft = clientX - dragState.containerLeft;
-      ghostRef.current.style.transform = `translateX(${relativeLeft}px)`;
-    }
     applyResizeWidth(dragState, clientX);
   }, [applyResizeWidth]);
 
@@ -115,9 +109,6 @@ export const useDataGridColumnResize = (ctx: UseDataGridColumnResizeContext) => 
       resizeRafRef.current = null;
     }
     latestClientXRef.current = null;
-    if (ghostRef.current) {
-      ghostRef.current.style.display = 'none';
-    }
     detachResizeListeners();
     restoreResizeBodyStyles();
 
@@ -157,16 +148,9 @@ export const useDataGridColumnResize = (ctx: UseDataGridColumnResizeContext) => 
           manualWidth: columnWidths[key],
           density: dataTableDensity,
         });
-    const containerLeft = containerRef.current?.getBoundingClientRect().left ?? 0;
-    draggingRef.current = { startX, startWidth: currentWidth, key, containerLeft };
+    draggingRef.current = { startX, startWidth: currentWidth, key };
     lastAppliedResizeWidthRef.current = currentWidth;
     latestClientXRef.current = startX;
-
-    if (ghostRef.current && containerRef.current) {
-      const relativeLeft = startX - containerLeft;
-      ghostRef.current.style.transform = `translateX(${relativeLeft}px)`;
-      ghostRef.current.style.display = 'block';
-    }
 
     const handleMove = (event: MouseEvent) => {
       if (!draggingRef.current) return;
@@ -306,7 +290,6 @@ export const useDataGridColumnResize = (ctx: UseDataGridColumnResizeContext) => 
 
   return {
     autoFitColumnWidth,
-    ghostRef,
     handleResizeAutoFit,
     handleResizeStart,
     isResizingRef,
