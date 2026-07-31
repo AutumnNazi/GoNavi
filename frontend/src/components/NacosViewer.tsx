@@ -18,6 +18,8 @@ import {
   message,
 } from 'antd';
 import {
+  CloseOutlined,
+  CloudSyncOutlined,
   DeleteOutlined,
   DownloadOutlined,
   ExperimentOutlined,
@@ -1273,28 +1275,12 @@ const NacosViewer: React.FC<NacosViewerProps> = ({
         color: workbenchTheme.textPrimary,
       }}
     >
-      {remoteChanged ? (
+      {remoteChanged && !isV2Ui ? (
         <Alert
           type="warning"
           showIcon
-          className={isV2Ui ? 'gn-v2-nacos-banner' : undefined}
-          message={
-            isV2Ui ? (
-              <span className="gn-v2-nacos-banner__copy">
-                <span className="gn-v2-nacos-banner__title">
-                  {tr('nacos_viewer.message.remote_changed_banner')}
-                </span>
-                {draftDirty ? (
-                  <span className="gn-v2-nacos-banner__hint" title={remoteChangedHint}>
-                    {remoteChangedHint}
-                  </span>
-                ) : null}
-              </span>
-            ) : (
-              tr('nacos_viewer.message.remote_changed_banner')
-            )
-          }
-          description={isV2Ui ? undefined : remoteChangedHint}
+          message={tr('nacos_viewer.message.remote_changed_banner')}
+          description={remoteChangedHint}
           action={
             <Space size={4}>
               <Button size="small" type="primary" onClick={() => void handleReloadRemote()}>
@@ -1302,7 +1288,6 @@ const NacosViewer: React.FC<NacosViewerProps> = ({
               </Button>
               <Button
                 size="small"
-                type={isV2Ui ? 'text' : 'default'}
                 onClick={() => setRemoteChanged(false)}
               >
                 {tr('nacos_viewer.action.dismiss_remote')}
@@ -1673,6 +1658,49 @@ const NacosViewer: React.FC<NacosViewerProps> = ({
                 </Popconfirm>
               </Space>
             </div>
+            {remoteChanged && isV2Ui ? (
+              <div
+                className={`gn-v2-nacos-remote-notice${draftDirty ? ' is-dirty' : ''}`}
+                role="status"
+                aria-live="polite"
+              >
+                <CloudSyncOutlined className="gn-v2-nacos-remote-notice__icon" />
+                <span className="gn-v2-nacos-remote-notice__copy">
+                  <span
+                    className="gn-v2-nacos-remote-notice__title"
+                    title={tr('nacos_viewer.message.remote_changed_banner')}
+                  >
+                    {tr('nacos_viewer.message.remote_changed_banner')}
+                  </span>
+                  {draftDirty ? (
+                    <span className="gn-v2-nacos-remote-notice__hint" title={remoteChangedHint}>
+                      {remoteChangedHint}
+                    </span>
+                  ) : null}
+                </span>
+                <span className="gn-v2-nacos-remote-notice__actions">
+                  <Button
+                    className="gn-v2-nacos-remote-notice__reload"
+                    size="small"
+                    type="primary"
+                    icon={<ReloadOutlined />}
+                    onClick={() => void handleReloadRemote()}
+                  >
+                    {tr('nacos_viewer.action.reload_remote')}
+                  </Button>
+                  <Tooltip title={tr('nacos_viewer.action.dismiss_remote')}>
+                    <Button
+                      className="gn-v2-nacos-remote-notice__dismiss"
+                      size="small"
+                      type="text"
+                      icon={<CloseOutlined />}
+                      aria-label={tr('nacos_viewer.action.dismiss_remote')}
+                      onClick={() => setRemoteChanged(false)}
+                    />
+                  </Tooltip>
+                </span>
+              </div>
+            ) : null}
           </div>
 
           <div
