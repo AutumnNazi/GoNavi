@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
     tableSortPreference: {} as Record<string, string>,
     tableAccessCount: {} as Record<string, number>,
     pinnedSidebarTables: [] as string[],
+    pinnedSidebarDatabases: [] as string[],
   },
 }));
 
@@ -85,6 +86,7 @@ describe('useSidebarTreeLoaders Nacos service groups', () => {
         tableSortPreference: {},
         tableAccessCount: {},
         pinnedSidebarTables: [],
+        pinnedSidebarDatabases: [],
         isV2Ui: true,
         loadingNodesRef,
         setConnectionStates: vi.fn(),
@@ -168,6 +170,7 @@ describe('useSidebarTreeLoaders Nacos namespace discovery', () => {
         tableSortPreference: {},
         tableAccessCount: {},
         pinnedSidebarTables: [],
+        pinnedSidebarDatabases: [],
         isV2Ui: true,
         loadingNodesRef,
         setConnectionStates,

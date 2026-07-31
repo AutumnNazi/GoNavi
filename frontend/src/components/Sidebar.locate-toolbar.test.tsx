@@ -5,9 +5,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { readV2ThemeCss } from '../test/readV2ThemeCss';
 
 import Sidebar, {
+  applySidebarDatabasePinning,
   buildAllSavedQueriesTreeNode,
   buildSidebarConnectionTagTree,
   buildSidebarTableChildrenForUi,
+  buildV2SidebarDatabaseSectionedChildren,
   buildV2SidebarTableSectionedChildren,
   buildSQLFileExecutionFooter,
   buildV2RailConnectionGroups,
@@ -16,6 +18,7 @@ import Sidebar, {
   filterV2ExplorerTreeByKind,
   getV2RailConnectionGroupBadgeText,
   hasSidebarLazyChildren,
+  isSidebarDatabasePinned,
   isConnectionTagDescendant,
   normalizeSidebarTreeRelativeDropPosition,
   parseV2CommandSearchQuery,
@@ -53,6 +56,7 @@ import {
   V2_EXPLORER_FILTER_OPTIONS as V2_UTILS_EXPLORER_FILTER_OPTIONS,
 } from './sidebarV2Utils';
 import {
+  buildSidebarDatabasePinKey,
   buildSidebarRootConnectionToken,
   buildSidebarRootTagToken,
   buildSidebarTablePinKey,
@@ -132,6 +136,10 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('../store', () => ({
+  buildSidebarDatabasePinKey: (
+    connectionId: string,
+    dbName: string,
+  ) => JSON.stringify([connectionId.trim(), dbName.trim()]),
   buildSidebarRootConnectionToken: (connectionId: string) => `connection:${connectionId.trim()}`,
   buildSidebarRootTagToken: (tagId: string) => `tag:${tagId.trim()}`,
   resolveConnectionTagChildOrder: (
@@ -193,6 +201,18 @@ vi.mock('../store', () => ({
     schemaName.trim(),
     tableName.trim(),
   ]),
+  updateSidebarDatabasePinKeys: (
+    pinnedKeys: string[],
+    connectionId: string,
+    dbName: string,
+    pinned: boolean,
+  ) => {
+    const key = JSON.stringify([connectionId.trim(), dbName.trim()]);
+    const next = new Set(pinnedKeys);
+    if (pinned) next.add(key);
+    else next.delete(key);
+    return Array.from(next);
+  },
   useStore: (selector: (state: any) => any) => selector({
     connections: mocks.state.connections,
     savedQueries: [],
@@ -231,9 +251,11 @@ vi.mock('../store', () => ({
     tableAccessCount: {},
     tableSortPreference: {},
     pinnedSidebarTables: [],
+    pinnedSidebarDatabases: [],
     recordTableAccess: mocks.noop,
     setTableSortPreference: mocks.noop,
     setSidebarTablePinned: mocks.noop,
+    setSidebarDatabasePinned: mocks.noop,
     queryOptions: { showSidebarTableComment: false },
     setQueryOptions: mocks.noop,
     addSqlLog: mocks.noop,
@@ -1589,6 +1611,134 @@ describe('Sidebar locate toolbar', () => {
     expect(markup).not.toContain('置顶表');
   });
 
+  it('renders the v2 database context menu pin and unpin states', () => {
+    const unpinnedMarkup = renderToStaticMarkup(
+      <V2DatabaseContextMenuView dbName="analytics" />,
+    );
+    const pinnedMarkup = renderToStaticMarkup(
+      <V2DatabaseContextMenuView dbName="analytics" isPinned />,
+    );
+
+    expect(unpinnedMarkup).toContain('置顶数据库');
+    expect(unpinnedMarkup).not.toContain('取消置顶数据库');
+    expect(pinnedMarkup).toContain('取消置顶数据库');
+    expect(pinnedMarkup).toContain('已置顶');
+  });
+
+  it('wires database pin actions to persistence and in-memory tree reordering', () => {
+    const actionSource = readSourceFile('./sidebar/useSidebarV2ActionHandlers.tsx');
+    const contextMenuSource = readSourceFile('./sidebar/useSidebarV2ContextMenu.tsx');
+    const loaderSource = readSourceFile('./sidebar/useSidebarTreeLoaders.tsx');
+
+    expect(actionSource).toContain("case 'pin-database':");
+    expect(actionSource).toContain("case 'unpin-database':");
+    expect(actionSource).toContain('setSidebarDatabasePinned(connectionId, dbName, shouldPin);');
+    expect(actionSource).toContain('applySidebarDatabasePinning(');
+    expect(actionSource).toContain('buildV2SidebarDatabaseSectionedChildren(');
+    expect(loaderSource).toContain('buildV2SidebarDatabaseSectionedChildren(');
+    expect(contextMenuSource).toContain('isSidebarDatabasePinned(');
+    expect(contextMenuSource).toContain('isPinned={isPinned}');
+  });
+
+  it('moves pinned databases first while preserving loaded database children', () => {
+    const pinnedSidebarDatabases = [
+      buildSidebarDatabasePinKey('conn-1', 'analytics'),
+    ];
+    const loadedChildren = [{ title: 'Tables', key: 'analytics-tables', type: 'object-group' as const }];
+    const nodes = [
+      { title: 'archive', key: 'conn-1-archive', type: 'database' as const, dataRef: { id: 'conn-1', dbName: 'archive' } },
+      { title: 'analytics', key: 'conn-1-analytics', type: 'database' as const, dataRef: { id: 'conn-1', dbName: 'analytics' }, children: loadedChildren },
+      { title: 'system', key: 'conn-1-system', type: 'database' as const, dataRef: { id: 'conn-1', dbName: 'system' } },
+    ];
+
+    expect(isSidebarDatabasePinned(pinnedSidebarDatabases, 'conn-1', 'analytics')).toBe(true);
+    const result = applySidebarDatabasePinning(nodes, {
+      connectionId: 'conn-1',
+      pinnedSidebarDatabases,
+    });
+
+    expect(result.map((node) => node.title)).toEqual(['analytics', 'archive', 'system']);
+    expect(result[0].dataRef?.pinnedSidebarDatabase).toBe(true);
+    expect(result[0].children).toBe(loadedChildren);
+    expect(result[1].dataRef?.pinnedSidebarDatabase).toBeUndefined();
+  });
+
+  it('restores a database to its original position after unpinning', () => {
+    const pinKey = buildSidebarDatabasePinKey('conn-1', 'analytics');
+    const loadedChildren = [{ title: 'Tables', key: 'analytics-tables', type: 'object-group' as const }];
+    const nodes = [
+      { title: 'archive', key: 'conn-1-archive', type: 'database' as const, dataRef: { id: 'conn-1', dbName: 'archive' } },
+      { title: 'analytics', key: 'conn-1-analytics', type: 'database' as const, dataRef: { id: 'conn-1', dbName: 'analytics' }, children: loadedChildren },
+      { title: 'system', key: 'conn-1-system', type: 'database' as const, dataRef: { id: 'conn-1', dbName: 'system' } },
+    ];
+
+    const pinned = applySidebarDatabasePinning(nodes, {
+      connectionId: 'conn-1',
+      pinnedSidebarDatabases: [pinKey],
+    });
+    const unpinned = applySidebarDatabasePinning(pinned, {
+      connectionId: 'conn-1',
+      pinnedSidebarDatabases: [],
+    });
+
+    expect(pinned.map((node) => node.title)).toEqual(['analytics', 'archive', 'system']);
+    expect(unpinned.map((node) => node.title)).toEqual(['archive', 'analytics', 'system']);
+    expect(unpinned[1].children).toBe(loadedChildren);
+    expect(unpinned[1].dataRef?.pinnedSidebarDatabase).toBeUndefined();
+  });
+
+  it('splits pinned databases into pinned and all sections', () => {
+    setCurrentLanguage('en-US');
+    const databaseNodes = [
+      { title: 'analytics', key: 'conn-1-analytics', type: 'database' as const, dataRef: { pinnedSidebarDatabase: true } },
+      { title: 'archive', key: 'conn-1-archive', type: 'database' as const, dataRef: {} },
+    ];
+
+    const children = buildV2SidebarDatabaseSectionedChildren('conn-1', databaseNodes);
+
+    expect(children.map((node) => node.title)).toEqual(['Pinned', 'analytics', 'All', 'archive']);
+    expect(children.map((node) => node.type)).toEqual([
+      'v2-database-section',
+      'database',
+      'v2-database-section',
+      'database',
+    ]);
+    expect(children[0]).toMatchObject({
+      key: 'conn-1-v2-pinned-databases-section',
+      isLeaf: true,
+      selectable: false,
+      dataRef: { sectionKind: 'pinned' },
+    });
+    expect(children[2]).toMatchObject({
+      key: 'conn-1-v2-all-databases-section',
+      isLeaf: true,
+      selectable: false,
+      dataRef: { sectionKind: 'all' },
+    });
+    const sectionMarkup = renderToStaticMarkup(renderSidebarV2TreeTitle({
+      node: children[0],
+      hoverTitle: 'Pinned',
+      statusBadge: null,
+      getV2TreeMetaText: () => '',
+      sidebarTableMetadataFields: [],
+      snapshotTreeSelectionBeforeDrag: vi.fn(),
+      restoreTreeSelectionAfterDrag: vi.fn(),
+      treeDragSelectSuppressUntilRef: { current: 0 },
+      setIsTreeDragging: vi.fn(),
+    }));
+    expect(sectionMarkup).toContain('class="gn-v2-tree-section-title"');
+    expect(sectionMarkup).toContain('data-section-kind="pinned"');
+    expect(sectionMarkup).toContain('Pinned');
+    expect(buildV2SidebarDatabaseSectionedChildren('conn-1', children).map((node) => node.title))
+      .toEqual(['Pinned', 'analytics', 'All', 'archive']);
+
+    const unpinnedNodes = databaseNodes.map((node) => ({
+      ...node,
+      dataRef: {},
+    }));
+    expect(buildV2SidebarDatabaseSectionedChildren('conn-1', unpinnedNodes)).toBe(unpinnedNodes);
+  });
+
   it('sorts sidebar table names in natural numeric order', () => {
     const entries = [
       { tableName: 'table_10', displayName: 'table_10' },
@@ -1664,6 +1814,36 @@ describe('Sidebar locate toolbar', () => {
     expect(pinnedMarkup).not.toContain('aria-pressed');
     expect(css).toMatch(/\.gn-v2-table-pin-indicator \{[^}]*pointer-events: none;[^}]*cursor: default;[^}]*color: var\(--gn-warn\);/s);
     expect(css).not.toContain('.gn-v2-table-pin-action');
+  });
+
+  it('renders the same non-interactive pin indicator for pinned databases', () => {
+    const baseOptions = {
+      hoverTitle: 'analytics',
+      statusBadge: null,
+      getV2TreeMetaText: () => '',
+      sidebarTableMetadataFields: [],
+      snapshotTreeSelectionBeforeDrag: vi.fn(),
+      restoreTreeSelectionAfterDrag: vi.fn(),
+      treeDragSelectSuppressUntilRef: { current: 0 },
+      setIsTreeDragging: vi.fn(),
+    };
+    const renderDatabaseTitle = (pinnedSidebarDatabase: boolean) => renderToStaticMarkup(
+      renderSidebarV2TreeTitle({
+        ...baseOptions,
+        node: {
+          type: 'database',
+          title: 'analytics',
+          key: 'conn-1-analytics',
+          dataRef: { id: 'conn-1', dbName: 'analytics', pinnedSidebarDatabase },
+        },
+      }),
+    );
+
+    expect(renderDatabaseTitle(false)).not.toContain('data-v2-sidebar-database-pin-indicator');
+    const pinnedMarkup = renderDatabaseTitle(true);
+    expect(pinnedMarkup).toContain('data-v2-sidebar-database-pin-indicator="true"');
+    expect(pinnedMarkup).toContain('gn-v2-database-pin-indicator');
+    expect(pinnedMarkup).toContain(`aria-label="${t('sidebar.status.pinned')}"`);
   });
 
   it('splits v2 sidebar pinned tables into a dedicated table section', () => {

@@ -3,6 +3,7 @@ import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { SavedConnection } from '../../types';
+import { buildSidebarDatabasePinKey } from '../../store';
 import { useSidebarTreeLoaders } from './useSidebarTreeLoaders';
 
 const mocks = vi.hoisted(() => ({
@@ -17,6 +18,7 @@ const mocks = vi.hoisted(() => ({
     tableSortPreference: {} as Record<string, string>,
     tableAccessCount: {} as Record<string, number>,
     pinnedSidebarTables: [] as string[],
+    pinnedSidebarDatabases: [] as string[],
   },
 }));
 
@@ -52,12 +54,84 @@ describe('useSidebarTreeLoaders PostgreSQL partitions', () => {
     mocks.storeState.tableSortPreference = {};
     mocks.storeState.tableAccessCount = {};
     mocks.storeState.pinnedSidebarTables = [];
+    mocks.storeState.pinnedSidebarDatabases = [];
     mocks.replaceTreeNodeChildren.mockImplementation((_key, children) => children || []);
   });
 
   afterEach(() => {
     act(() => renderer?.unmount());
     renderer = null;
+  });
+
+  it('loads pinned databases first from the latest persisted pin state', async () => {
+    const connection = {
+      id: 'conn-mysql',
+      name: 'MySQL',
+      config: {
+        type: 'mysql',
+        host: '127.0.0.1',
+        port: 3306,
+        user: 'root',
+      },
+    } as SavedConnection;
+    mocks.storeState.connections = [connection];
+    mocks.storeState.pinnedSidebarDatabases = [
+      buildSidebarDatabasePinKey(connection.id, 'analytics'),
+    ];
+    mocks.dbGetDatabases.mockResolvedValue({
+      success: true,
+      data: [
+        { Database: 'archive' },
+        { Database: 'analytics' },
+        { Database: 'system' },
+      ],
+    });
+
+    let loaders: ReturnType<typeof useSidebarTreeLoaders> | undefined;
+    const Harness = () => {
+      loaders = useSidebarTreeLoaders({
+        savedQueries: [],
+        tableSortPreference: {},
+        tableAccessCount: {},
+        pinnedSidebarTables: [],
+        pinnedSidebarDatabases: [],
+        isV2Ui: true,
+        loadingNodesRef: { current: new Set<string>() },
+        setConnectionStates: vi.fn(),
+        setLoadedKeys: vi.fn(),
+        replaceTreeNodeChildren: mocks.replaceTreeNodeChildren,
+        buildRuntimeConfig: (conn) => conn.config,
+        buildJVMRuntimeConfig: (conn) => conn.config,
+        buildJVMDiagnosticTreeNodes: () => [],
+        resolveSavedQueryDisplayName: (name) => String(name || ''),
+      });
+      return null;
+    };
+
+    act(() => {
+      renderer = create(<Harness />);
+    });
+    await act(async () => {
+      await loaders?.loadDatabases({ key: connection.id, dataRef: connection });
+    });
+
+    const [, databaseNodes] = mocks.replaceTreeNodeChildren.mock.calls[0];
+    expect(databaseNodes.map((node: any) => node.type)).toEqual([
+      'v2-database-section',
+      'database',
+      'v2-database-section',
+      'database',
+      'database',
+    ]);
+    expect(databaseNodes
+      .filter((node: any) => node.type === 'database')
+      .map((node: any) => node.title)).toEqual([
+      'analytics',
+      'archive',
+      'system',
+    ]);
+    expect(databaseNodes[1].dataRef.pinnedSidebarDatabase).toBe(true);
+    expect(databaseNodes[3].dataRef.pinnedSidebarDatabase).toBeUndefined();
   });
 
   it('builds a Partitions group with clickable table nodes and hides the parent row count', async () => {
@@ -113,6 +187,7 @@ describe('useSidebarTreeLoaders PostgreSQL partitions', () => {
         tableSortPreference: {},
         tableAccessCount: {},
         pinnedSidebarTables: [],
+        pinnedSidebarDatabases: [],
         isV2Ui: true,
         loadingNodesRef: { current: new Set<string>() },
         setConnectionStates: vi.fn(),

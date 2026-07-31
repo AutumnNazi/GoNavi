@@ -1796,6 +1796,7 @@ interface AppState {
   tableHiddenColumns: Record<string, string[]>;
   enableHiddenColumnMemory: boolean;
   pinnedSidebarTables: string[];
+  pinnedSidebarDatabases: string[];
   windowBounds: { width: number; height: number; x: number; y: number } | null;
   windowState: "normal" | "fullscreen" | "maximized";
   sidebarWidth: number;
@@ -1994,6 +1995,11 @@ interface AppState {
     dbName: string,
     tableName: string,
     schemaName: string | undefined,
+    pinned: boolean,
+  ) => void;
+  setSidebarDatabasePinned: (
+    connectionId: string,
+    dbName: string,
     pinned: boolean,
   ) => void;
   setTableColumnOrder: (
@@ -3225,6 +3231,31 @@ export const buildSidebarTablePinKey = (
   return parts[0] && parts[1] && parts[3] ? JSON.stringify(parts) : "";
 };
 
+export const buildSidebarDatabasePinKey = (
+  connectionId: string,
+  dbName: string,
+): string => {
+  const parts = [toTrimmedString(connectionId), toTrimmedString(dbName)];
+  return parts[0] && parts[1] ? JSON.stringify(parts) : "";
+};
+
+export const updateSidebarDatabasePinKeys = (
+  pinnedKeys: unknown,
+  connectionId: string,
+  dbName: string,
+  pinned: boolean,
+): string[] => {
+  const current = new Set(sanitizePinnedSidebarTables(pinnedKeys));
+  const key = buildSidebarDatabasePinKey(connectionId, dbName);
+  if (!key) return Array.from(current);
+  if (pinned) {
+    current.add(key);
+  } else {
+    current.delete(key);
+  }
+  return Array.from(current);
+};
+
 // --- AI 会话文件持久化辅助函数 ---
 
 /** 每个 session 独立防抖定时器（2秒） */
@@ -3397,6 +3428,7 @@ const PERSISTED_STATE_DEPENDENCY_KEYS = [
   "tableHiddenColumns",
   "enableHiddenColumnMemory",
   "pinnedSidebarTables",
+  "pinnedSidebarDatabases",
   "windowBounds",
   "windowState",
   "sidebarWidth",
@@ -3459,6 +3491,7 @@ const buildPersistedStateProjection = (
     tableHiddenColumns: state.tableHiddenColumns,
     enableHiddenColumnMemory: state.enableHiddenColumnMemory,
     pinnedSidebarTables: state.pinnedSidebarTables,
+    pinnedSidebarDatabases: state.pinnedSidebarDatabases,
     windowBounds: state.windowBounds,
     windowState: state.windowState,
     sidebarWidth: state.sidebarWidth,
@@ -3583,6 +3616,7 @@ export const useStore = create<AppState>()(
       tableHiddenColumns: {},
       enableHiddenColumnMemory: true,
       pinnedSidebarTables: [],
+      pinnedSidebarDatabases: [],
       windowBounds: null,
       windowState: "normal" as const,
       sidebarWidth: 330,
@@ -5251,6 +5285,16 @@ export const useStore = create<AppState>()(
           return { pinnedSidebarTables: Array.from(current) };
         }),
 
+      setSidebarDatabasePinned: (connectionId, dbName, pinned) =>
+        set((state) => ({
+          pinnedSidebarDatabases: updateSidebarDatabasePinKeys(
+            state.pinnedSidebarDatabases,
+            connectionId,
+            dbName,
+            pinned,
+          ),
+        })),
+
       setTableColumnOrder: (connectionId, dbName, tableName, order) =>
         set((state) => {
           const key = `${connectionId}-${dbName}-${tableName}`;
@@ -5862,6 +5906,9 @@ export const useStore = create<AppState>()(
         nextState.pinnedSidebarTables = sanitizePinnedSidebarTables(
           state.pinnedSidebarTables,
         );
+        nextState.pinnedSidebarDatabases = sanitizePinnedSidebarTables(
+          state.pinnedSidebarDatabases,
+        );
         nextState.windowBounds = sanitizeWindowBounds(state.windowBounds);
         nextState.windowState = sanitizeWindowState(state.windowState);
         nextState.sidebarWidth = sanitizeSidebarWidth(state.sidebarWidth);
@@ -5960,6 +6007,9 @@ export const useStore = create<AppState>()(
           enableHiddenColumnMemory: state.enableHiddenColumnMemory !== false,
           pinnedSidebarTables: sanitizePinnedSidebarTables(
             state.pinnedSidebarTables,
+          ),
+          pinnedSidebarDatabases: sanitizePinnedSidebarTables(
+            state.pinnedSidebarDatabases,
           ),
           windowBounds: sanitizeWindowBounds(state.windowBounds),
           windowState: sanitizeWindowState(state.windowState),

@@ -10,6 +10,7 @@ import { resolveConnectionAccentColor, resolveConnectionIconType } from '../../u
 import { normalizeConnectionEnvironmentType } from '../../utils/connectionEnvironment';
 import { resolveTableSelectQuery } from '../../utils/objectQueryTemplates';
 import { DBReleaseConnection } from '../../../wailsjs/go/app/App';
+import { updateSidebarDatabasePinKeys } from '../../store';
 import { getDbIcon } from '../DatabaseIcons';
 import { getMetadataDialect } from './sidebarMetadataLoaders';
 import {
@@ -20,6 +21,9 @@ import {
   type V2TableGroupContextMenuActionKey,
 } from '../V2TableContextMenu';
 import {
+  applySidebarDatabasePinning,
+  buildV2SidebarDatabaseSectionedChildren,
+  isSidebarDatabasePinned,
   isSidebarTablePinned,
   type SidebarConnectionState,
   type SidebarTreeNode as TreeNode,
@@ -30,6 +34,7 @@ type UseSidebarV2ActionHandlersArgs = {
   connections: SavedConnection[];
   connectionTags: ConnectionTag[];
   pinnedSidebarTables: any[];
+  pinnedSidebarDatabases: string[];
   loadingNodesRef: MutableRefObject<Set<string>>;
   treeDataRef: MutableRefObject<TreeNode[]>;
   findTreeNodeByKeyRef: MutableRefObject<(nodes: TreeNode[], targetKey: React.Key) => TreeNode | null>;
@@ -55,6 +60,7 @@ type UseSidebarV2ActionHandlersArgs = {
   removeConnectionTag: (tagId: string) => void;
   moveConnectionToTag: (connectionId: string, tagId: string | null) => void;
   setSidebarTablePinned: (connectionId: string, dbName: string, tableName: string, schemaName: string, pinned: boolean) => void;
+  setSidebarDatabasePinned: (connectionId: string, dbName: string, pinned: boolean) => void;
   setTableSortPreference: (connectionId: string, dbName: string, sortBy: 'name' | 'frequency') => void;
   replaceTreeNodeChildren: (key: React.Key, children: TreeNode[] | undefined) => void;
   loadDatabases: (node: any) => Promise<void>;
@@ -96,6 +102,7 @@ export const useSidebarV2ActionHandlers = ({
   connections,
   connectionTags,
   pinnedSidebarTables,
+  pinnedSidebarDatabases,
   loadingNodesRef,
   treeDataRef,
   findTreeNodeByKeyRef,
@@ -121,6 +128,7 @@ export const useSidebarV2ActionHandlers = ({
   removeConnectionTag,
   moveConnectionToTag,
   setSidebarTablePinned,
+  setSidebarDatabasePinned,
   setTableSortPreference,
   replaceTreeNodeChildren,
   loadDatabases,
@@ -265,6 +273,46 @@ export const useSidebarV2ActionHandlers = ({
     message.success(shouldPin ? t('sidebar.message.table_pinned') : t('sidebar.message.table_unpinned'));
   };
 
+  const toggleSidebarDatabasePinned = (node: any, pinned?: boolean) => {
+    const conn = node?.dataRef || {};
+    const connectionId = String(conn.id || '').trim();
+    const dbName = String(conn.dbName || node?.title || '').trim();
+    if (!connectionId || !dbName) return;
+    const currentlyPinned = isSidebarDatabasePinned(
+      pinnedSidebarDatabases,
+      connectionId,
+      dbName,
+    );
+    const shouldPin = pinned ?? !currentlyPinned;
+    const nextPinnedSidebarDatabases = updateSidebarDatabasePinKeys(
+      pinnedSidebarDatabases,
+      connectionId,
+      dbName,
+      shouldPin,
+    );
+    setSidebarDatabasePinned(connectionId, dbName, shouldPin);
+
+    const connectionNode = findTreeNodeByKeyRef.current(treeDataRef.current, connectionId);
+    if (connectionNode?.children?.length) {
+      replaceTreeNodeChildren(
+        connectionId,
+        buildV2SidebarDatabaseSectionedChildren(
+          connectionId,
+          applySidebarDatabasePinning(
+            connectionNode.children,
+            { connectionId, pinnedSidebarDatabases: nextPinnedSidebarDatabases },
+          ),
+        ),
+      );
+    } else {
+      const latestConnection = connections.find((candidate) => candidate.id === connectionId);
+      void loadDatabases({ key: connectionId, dataRef: latestConnection || conn });
+    }
+    message.success(shouldPin
+      ? t('sidebar.message.database_pinned')
+      : t('sidebar.message.database_unpinned'));
+  };
+
   const handleTableGroupSortAction = (node: any, sortBy: 'name' | 'frequency') => {
     const groupData = node.dataRef;
     setTableSortPreference(groupData.id, groupData.dbName, sortBy);
@@ -322,6 +370,10 @@ export const useSidebarV2ActionHandlers = ({
 
   const handleV2DatabaseContextMenuAction = (node: any, action: V2DatabaseContextMenuActionKey) => {
     switch (action) {
+      case 'pin-database':
+      case 'unpin-database':
+        toggleSidebarDatabasePinned(node, action === 'pin-database');
+        return;
       case 'copy-database-name':
         void handleCopyDatabaseName(node);
         return;

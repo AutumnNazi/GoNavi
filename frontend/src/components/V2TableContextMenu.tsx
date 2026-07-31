@@ -325,6 +325,8 @@ export const V2TableGroupContextMenuView: React.FC<{
 };
 
 export type V2DatabaseContextMenuActionKey =
+  | 'pin-database'
+  | 'unpin-database'
   | 'copy-database-name'
   | 'new-table'
   | 'new-schema'
@@ -356,6 +358,7 @@ export const V2DatabaseContextMenuView: React.FC<{
   supportsStarRocksActions?: boolean;
   supportsRenameDatabase?: boolean;
   supportsDropDatabase?: boolean;
+  isPinned?: boolean;
   onAction?: (action: V2DatabaseContextMenuActionKey) => void;
 }> = ({
   dbName,
@@ -366,6 +369,7 @@ export const V2DatabaseContextMenuView: React.FC<{
   supportsStarRocksActions = false,
   supportsRenameDatabase = true,
   supportsDropDatabase = true,
+  isPinned = false,
   onAction,
 }) => {
   const renderItems = (items: V2TableContextMenuItemConfig[]) => renderV2ContextMenuItems(
@@ -385,6 +389,7 @@ export const V2DatabaseContextMenuView: React.FC<{
       <div className="gn-v2-context-menu-body">
         {renderItems([
           { action: 'copy-database-name', icon: <CopyOutlined />, title: t('sidebar.menu.copy_database_name'), kbd: primaryShortcut('C', shortcutPlatform), featured: true },
+          { action: isPinned ? 'unpin-database' : 'pin-database', icon: <PushpinOutlined />, title: isPinned ? t('sidebar.action.unpin_database') : t('sidebar.action.pin_database'), kbd: isPinned ? t('sidebar.status.pinned') : undefined, selected: isPinned },
           { action: 'new-table', icon: <TableOutlined />, title: t('sidebar.menu.create_table'), kbd: primaryShortcut('N', shortcutPlatform), featured: true },
           ...(supportsSchemaActions ? [{ action: 'new-schema', icon: <FolderAddOutlined />, title: t('sidebar.v2_database_menu.new_schema') }] : []),
           ...(supportsSchemaVisibility ? [{ action: 'schema-visibility', icon: <FolderOpenOutlined />, title: t('sidebar.schema_visibility.menu.manage') }] : []),
