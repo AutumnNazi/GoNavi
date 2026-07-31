@@ -2028,13 +2028,34 @@ describe('QueryEditor external SQL save', () => {
         }
       });
 
-      const acceptInlineGhostCall = editorState.editor.addCommand.mock.calls.find(
-        (call: any[]) => call[2] === 'gonaviAiInlineSuggestionVisible',
-      );
-      expect(acceptInlineGhostCall).toBeTruthy();
+      const dispatchAcceptRightArrow = () => {
+        const shortcutEvent = {
+          type: 'keydown',
+          key: 'ArrowRight',
+          code: 'ArrowRight',
+          keyCode: 39,
+          which: 39,
+          ctrlKey: false,
+          metaKey: false,
+          altKey: false,
+          shiftKey: false,
+          isComposing: false,
+          preventDefault: vi.fn(),
+          stopPropagation: vi.fn(),
+        };
+        const monacoShortcutEvent = {
+          browserEvent: shortcutEvent,
+          preventDefault: vi.fn(),
+          stopPropagation: vi.fn(),
+        };
+        editorState.keyDownListeners.forEach((listener) => listener(monacoShortcutEvent));
+        return { monacoShortcutEvent, shortcutEvent };
+      };
 
       await act(async () => {
-        acceptInlineGhostCall?.[1]?.();
+        const { monacoShortcutEvent } = dispatchAcceptRightArrow();
+        expect(monacoShortcutEvent.preventDefault).toHaveBeenCalled();
+        expect(monacoShortcutEvent.stopPropagation).toHaveBeenCalled();
         vi.advanceTimersByTime(1);
         for (let i = 0; i < 8; i += 1) {
           await Promise.resolve();
@@ -2065,7 +2086,7 @@ describe('QueryEditor external SQL save', () => {
       editorState.editor.trigger.mockClear();
 
       await act(async () => {
-        acceptInlineGhostCall?.[1]?.();
+        dispatchAcceptRightArrow();
         vi.advanceTimersByTime(1);
         for (let i = 0; i < 8; i += 1) {
           await Promise.resolve();
