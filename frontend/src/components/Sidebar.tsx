@@ -1601,6 +1601,23 @@ const Sidebar: React.FC<{
       };
   }, []);
 
+  useEffect(() => {
+      const handleSidebarTableCreated = (event: Event) => {
+          const detail = (event as CustomEvent).detail || {};
+          const connectionId = String(detail.connectionId || '').trim();
+          const dbName = String(detail.dbName || '').trim();
+          if (!connectionId || !dbName) return;
+          const dbNode = findTreeNodeByKeyRef.current(treeDataRef.current, `${connectionId}-${dbName}`);
+          if (dbNode) {
+              void loadTables(dbNode);
+          }
+      };
+      window.addEventListener('gonavi:sidebar-table-created', handleSidebarTableCreated as EventListener);
+      return () => {
+          window.removeEventListener('gonavi:sidebar-table-created', handleSidebarTableCreated as EventListener);
+      };
+  }, []);
+
   const onLoadData = async ({ key, children, dataRef, type }: any) => {
     if (type === 'tag' || type === 'all-saved-queries' || type === 'saved-query-group' || type === 'saved-query-manual-group' || type === 'unmatched-saved-queries') return;
     if (hasSidebarLazyChildren(children)) return;

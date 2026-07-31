@@ -11,7 +11,7 @@ import { useStore } from '../store';
 import { DBGetColumns, DBGetIndexes, DBQueryAudited, DBGetForeignKeys, DBGetTriggers, DBShowCreateTable } from '../../wailsjs/go/app/App';
 import { hasIndexFormChanged, normalizeIndexFormFromRow, resolveIndexMetadataResponse, shouldRestoreOriginalIndex, toggleIndexSelection as getNextIndexSelection, type IndexDisplaySnapshot } from './tableDesignerIndexUtils';
 import { buildIndexCreateSqlPreview } from './tableDesignerIndexSql';
-import { buildAlterTablePreviewSql, buildCreateTablePreviewSql, hasAlterTableDraftChanges, type StarRocksCreateTableOptions, type StarRocksDistributionType, type StarRocksKeyModel, type StarRocksTableKind } from './tableDesignerSchemaSql';
+import { buildAlterTablePreviewSql, buildCreateTablePreviewSql, hasAlterTableDraftChanges, type StarRocksCreateTableOptions, type StarRocksDistributionType, type StarRocksKeyModel, type StarRocksTableKind, type TDengineCreateTableOptions, type TDengineTableKind, type TDengineTagDefinition } from './tableDesignerSchemaSql';
 import { summarizeDuckDbPrimaryKeyChange } from './tableDesignerDuckDbPrimaryKey';
 import { normalizeSchemaStatementForExecution, parseTableCommentFromDDL, splitSchemaExecutionStatements } from './tableDesignerExecutionSql';
 import TableDesignerSqlPreview from './TableDesignerSqlPreview';
@@ -71,6 +71,10 @@ interface IndexFormState {
     columnNames: string[];
     kind: IndexKind;
     indexType: string;
+}
+
+interface TDengineTagDraft extends TDengineTagDefinition {
+    _key: string;
 }
 
 interface ForeignKeyFormState {
@@ -446,6 +450,12 @@ const TableDesigner: React.FC<{ tab: TabData; embedded?: boolean }> = ({ tab, em
   const [starRocksRollups, setStarRocksRollups] = useState('');
   const [starRocksExternalEngine, setStarRocksExternalEngine] = useState('hive');
   const [starRocksExternalProperties, setStarRocksExternalProperties] = useState('"resource" = "hive0"\n"database" = "raw_db"\n"table" = "raw_table"');
+  const [tdengineTableKind, setTdengineTableKind] = useState<TDengineTableKind>('normal');
+  const [tdengineStableName, setTdengineStableName] = useState('');
+  const [tdengineTagDefinitions, setTdengineTagDefinitions] = useState<TDengineTagDraft[]>([
+      { _key: 'tag-1', name: 'location', type: 'BINARY(64)' },
+  ]);
+  const [tdengineTagValues, setTdengineTagValues] = useState('');
   
   const [columnsLoading, setColumnsLoading] = useState(false);
   const [indexesLoading, setIndexesLoading] = useState(false);
@@ -715,7 +725,7 @@ const TableDesigner: React.FC<{ tab: TabData; embedded?: boolean }> = ({ tab, em
               align: 'center',
               render: (text: string, record: EditableColumn) => (
                   renderDesignerCellCheck(
-                      <Checkbox checked={text === 'PRI'} disabled={readOnly} onChange={e => handleColumnChange(record._key, 'key', e.target.checked ? 'PRI' : '')} />,
+                      <Checkbox checked={text === 'PRI'} disabled={readOnly || isTDengineNewTable} onChange={e => handleColumnChange(record._key, 'key', e.target.checked ? 'PRI' : '')} />,
                       'is-left-aligned'
                   )
               )
@@ -728,7 +738,7 @@ const TableDesigner: React.FC<{ tab: TabData; embedded?: boolean }> = ({ tab, em
               align: 'center',
               render: (val: boolean, record: EditableColumn) => (
                   renderDesignerCellCheck(
-                      <Checkbox checked={val} disabled={readOnly} onChange={e => handleColumnChange(record._key, 'isAutoIncrement', e.target.checked)} />,
+                      <Checkbox checked={val} disabled={readOnly || isTDengineNewTable} onChange={e => handleColumnChange(record._key, 'isAutoIncrement', e.target.checked)} />,
                       'is-left-aligned'
                   )
               )
@@ -1643,6 +1653,18 @@ ${selectedTrigger.statement}`;
   );
 
   const isStarRocksNewTable = isNewTable && getDbType() === 'starrocks';
+  const isTDengineNewTable = isNewTable && getDbType() === 'tdengine';
+  const isTDengineChildNewTable = isTDengineNewTable && tdengineTableKind === 'child';
+  const tdengineTagTypeOptions = useMemo(
+      () => resolveColumnTypeOptions('tdengine').filter(option => option.value !== 'TIMESTAMP'),
+      [],
+  );
+
+  useEffect(() => {
+      if (isTDengineNewTable && (!tab.initialTab || tab.initialTab === 'columns')) {
+          setActiveKey('tdengine');
+      }
+  }, [isTDengineNewTable, tab.initialTab]);
 
   const parseStarRocksRollupOptions = (raw: string): StarRocksCreateTableOptions['rollups'] => (
       String(raw || '')
@@ -1676,6 +1698,16 @@ ${selectedTrigger.statement}`;
           rollups: parseStarRocksRollupOptions(starRocksRollups),
           externalEngine: starRocksExternalEngine,
           externalProperties: starRocksExternalProperties,
+      };
+  };
+
+  const buildTDengineCreateOptions = (): TDengineCreateTableOptions | undefined => {
+      if (!isTDengineNewTable) return undefined;
+      return {
+          tableKind: tdengineTableKind,
+          stableName: tdengineStableName,
+          tagDefinitions: tdengineTagDefinitions.map(({ _key, ...tag }) => tag),
+          tagValues: tdengineTagValues,
       };
   };
 
@@ -1851,6 +1883,7 @@ ${selectedTrigger.statement}`;
           charset: targetCharset,
           collation: targetCollation,
           starRocksOptions: buildStarRocksCreateOptions(),
+          tdengineOptions: buildTDengineCreateOptions(),
           translate: (key, params) => t(key, params, i18nLanguage),
       });
   };
@@ -2469,9 +2502,29 @@ END;`;
           message.error(t('table_designer.message.table_name_required', undefined, i18nLanguage));
           return;
       }
-      if (columns.length === 0) {
+      if (isNewTable && isTDengineChildNewTable) {
+          if (!tdengineStableName.trim()) {
+              message.error(t('table_designer.message.tdengine_stable_name_required', undefined, i18nLanguage));
+              return;
+          }
+          if (!tdengineTagValues.trim()) {
+              message.error(t('table_designer.message.tdengine_tag_values_required', undefined, i18nLanguage));
+              return;
+          }
+      } else if (columns.length === 0) {
           message.error(t('table_designer.message.add_at_least_one_column', undefined, i18nLanguage));
           return;
+      }
+
+      if (isNewTable && isTDengineNewTable && tdengineTableKind === 'stable') {
+          if (tdengineTagDefinitions.length === 0) {
+              message.error(t('table_designer.message.tdengine_tag_required', undefined, i18nLanguage));
+              return;
+          }
+          if (tdengineTagDefinitions.some(tag => !tag.name.trim() || !tag.type.trim())) {
+              message.error(t('table_designer.message.tdengine_tag_invalid', undefined, i18nLanguage));
+              return;
+          }
       }
 
       if (isNewTable) {
@@ -2536,8 +2589,17 @@ END;`;
 	      if (!isNewTable) {
               fetchData();
           } else {
-              // TODO: Close tab or reload sidebar?
-              // Ideally, refresh sidebar node.
+              const connectionId = String(tab.connectionId || '').trim();
+              const dbName = String(tab.dbName || '').trim();
+              if (connectionId && dbName) {
+                  window.dispatchEvent(new CustomEvent('gonavi:sidebar-table-created', {
+                      detail: {
+                          connectionId,
+                          dbName,
+                          tableName: String(newTableName || '').trim(),
+                      },
+                  }));
+              }
           }
 	  };
 
@@ -2838,6 +2900,87 @@ END;`;
                           placeholder={'"resource" = "hive0"\n"database" = "raw_db"\n"table" = "raw_table"'}
                       />
                   </>
+              )}
+          </Space>
+      </div>
+  );
+
+  const tdengineAdvancedTabContent = (
+      <div style={{ height: '100%', overflow: 'auto', padding: 12 }}>
+          <Space direction="vertical" size={14} style={{ width: '100%', maxWidth: 960 }}>
+              <Radio.Group
+                  value={tdengineTableKind}
+                  onChange={(event) => setTdengineTableKind(event.target.value)}
+                  optionType="button"
+                  buttonStyle="solid"
+                  options={[
+                      { label: t('table_designer.tdengine.table_kind.normal', undefined, i18nLanguage), value: 'normal' },
+                      { label: t('table_designer.tdengine.table_kind.stable', undefined, i18nLanguage), value: 'stable' },
+                      { label: t('table_designer.tdengine.table_kind.child', undefined, i18nLanguage), value: 'child' },
+                  ]}
+              />
+
+              {tdengineTableKind === 'stable' && (
+                  <Space direction="vertical" size={8} style={{ width: '100%' }}>
+                      <Space size={8} style={{ width: '100%' }}>
+                          <span style={{ width: 180, color: '#888', fontSize: 12 }}>{t('table_designer.tdengine.tag.name', undefined, i18nLanguage)}</span>
+                          <span style={{ width: 220, color: '#888', fontSize: 12 }}>{t('table_designer.tdengine.tag.type', undefined, i18nLanguage)}</span>
+                      </Space>
+                      {tdengineTagDefinitions.map((tag) => (
+                          <Space key={tag._key} align="start" wrap>
+                              <Input
+                                  {...noAutoCapInputProps}
+                                  value={tag.name}
+                                  onChange={(event) => setTdengineTagDefinitions(previous => previous.map(item => item._key === tag._key ? { ...item, name: event.target.value } : item))}
+                                  placeholder={t('table_designer.tdengine.placeholder.tag_name', undefined, i18nLanguage)}
+                                  style={{ width: 180 }}
+                              />
+                              <AutoComplete
+                                  value={tag.type}
+                                  onChange={(value) => setTdengineTagDefinitions(previous => previous.map(item => item._key === tag._key ? { ...item, type: value } : item))}
+                                  options={tdengineTagTypeOptions}
+                                  placeholder={t('table_designer.tdengine.placeholder.tag_type', undefined, i18nLanguage)}
+                                  style={{ width: 220 }}
+                              />
+                              <Tooltip title={t('table_designer.tdengine.action.remove_tag', undefined, i18nLanguage)}>
+                                  <Button
+                                      type="text"
+                                      danger
+                                      icon={<DeleteOutlined />}
+                                      onClick={() => setTdengineTagDefinitions(previous => previous.filter(item => item._key !== tag._key))}
+                                  />
+                              </Tooltip>
+                          </Space>
+                      ))}
+                      <Button
+                          size="small"
+                          icon={<PlusOutlined />}
+                          onClick={() => setTdengineTagDefinitions(previous => [
+                              ...previous,
+                              { _key: `tag-${Date.now()}-${previous.length}`, name: '', type: 'BINARY(64)' },
+                          ])}
+                      >
+                          {t('table_designer.tdengine.action.add_tag', undefined, i18nLanguage)}
+                      </Button>
+                  </Space>
+              )}
+
+              {tdengineTableKind === 'child' && (
+                  <Space direction="vertical" size={10} style={{ width: '100%' }}>
+                      <Input
+                          {...noAutoCapInputProps}
+                          value={tdengineStableName}
+                          onChange={(event) => setTdengineStableName(event.target.value)}
+                          placeholder={t('table_designer.tdengine.placeholder.stable_name', undefined, i18nLanguage)}
+                      />
+                      <Input.TextArea
+                          {...noAutoCapInputProps}
+                          value={tdengineTagValues}
+                          onChange={(event) => setTdengineTagValues(event.target.value)}
+                          autoSize={{ minRows: 3, maxRows: 8 }}
+                          placeholder={t('table_designer.tdengine.placeholder.tag_values', undefined, i18nLanguage)}
+                      />
+                  </Space>
               )}
           </Space>
       </div>
@@ -3249,23 +3392,27 @@ END;`;
                         onChange={e => setNewTableName(e.target.value)} 
                         style={{ width: 150 }} 
                     />
-                    <Select 
-                        value={charset} 
-                        onChange={v => {
-                            setCharset(v);
-                            // Set default collation
-                            const cols = (COLLATIONS as any)[v];
-                            if (cols && cols.length > 0) setCollation(cols[0].value);
-                        }}
-                        options={charsetOptions}
-                        style={{ width: 120 }}
-                    />
-                    <Select 
-                        value={collation} 
-                        onChange={setCollation} 
-                        options={(collationOptions as any)[charset] || []}
-                        style={{ width: 150 }} 
-                    />
+                    {!isTDengineNewTable && (
+                        <>
+                            <Select
+                                value={charset}
+                                onChange={v => {
+                                    setCharset(v);
+                                    // Set default collation
+                                    const cols = (COLLATIONS as any)[v];
+                                    if (cols && cols.length > 0) setCollation(cols[0].value);
+                                }}
+                                options={charsetOptions}
+                                style={{ width: 120 }}
+                            />
+                            <Select
+                                value={collation}
+                                onChange={setCollation}
+                                options={(collationOptions as any)[charset] || []}
+                                style={{ width: 150 }}
+                            />
+                        </>
+                    )}
                 </>
             )}
             {!readOnly && <Button size="small" icon={<SaveOutlined />} type="primary" onClick={generateDDL}>{t('table_designer.action.save', undefined, i18nLanguage)}</Button>}
@@ -3273,8 +3420,8 @@ END;`;
             {!isNewTable && !readOnly && supportsTableCommentOps() && (
                 <Button size="small" icon={<EditOutlined />} onClick={openTableCommentModal}>{t('table_designer.action.table_comment', undefined, i18nLanguage)}</Button>
             )}
-            {!readOnly && <Button size="small" icon={<PlusOutlined />} onClick={() => handleAddColumn()}>{t('table_designer.action.add_column', undefined, i18nLanguage)}</Button>}
-            {!readOnly && (
+            {!readOnly && !isTDengineChildNewTable && <Button size="small" icon={<PlusOutlined />} onClick={() => handleAddColumn()}>{t('table_designer.action.add_column', undefined, i18nLanguage)}</Button>}
+            {!readOnly && !isTDengineChildNewTable && (
                 <Button
                     size="small"
                     icon={<PlusOutlined />}
@@ -3284,7 +3431,7 @@ END;`;
                     {t('table_designer.action.add_after_selected', undefined, i18nLanguage)}
                 </Button>
             )}
-            {!readOnly && (
+            {!readOnly && !isTDengineChildNewTable && (
                 <Button
                     size="small"
                     icon={<CopyOutlined />}
@@ -3312,9 +3459,17 @@ END;`;
                 background: panelBodyBg
             }}
             items={[
+                ...(isTDengineNewTable ? [
+                    {
+                        key: 'tdengine',
+                        label: t('table_designer.tab.tdengine', undefined, i18nLanguage),
+                        children: tdengineAdvancedTabContent,
+                    },
+                ] : []),
                 {
                     key: 'columns',
                     label: t('table_designer.tab.columns', undefined, i18nLanguage),
+                    disabled: isTDengineChildNewTable,
                     children: columnsTabContent
                 },
                 ...(isStarRocksNewTable ? [
