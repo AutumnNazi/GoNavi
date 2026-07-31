@@ -232,6 +232,7 @@ vi.mock('./theme/CustomThemeStyleHost', () => ({
 
 import NativeDetachedWindowApp, {
   NATIVE_DETACHED_PAINT_FALLBACK_MS,
+  applyNativeDetachedDocumentAppearance,
   waitForNativeDetachedContentPaint,
 } from './NativeDetachedWindowApp';
 
@@ -278,6 +279,33 @@ describe('NativeDetachedWindowApp', () => {
       },
       updateQueryTabDraft: vi.fn(),
     };
+  });
+
+  it('applies the host theme context to the detached document before paint', () => {
+    const setAttribute = vi.fn();
+    const setProperty = vi.fn();
+    const documentRef = {
+      body: {
+        style: { backgroundColor: '', color: '', fontSize: '' },
+        setAttribute,
+      },
+      documentElement: {
+        style: { colorScheme: '', setProperty },
+      },
+    } as any;
+
+    applyNativeDetachedDocumentAppearance('dark', 'v2', 24, 0.5, documentRef);
+
+    expect(setAttribute).toHaveBeenCalledWith('data-theme', 'dark');
+    expect(setAttribute).toHaveBeenCalledWith('data-ui-version', 'v2');
+    expect(documentRef.body.style).toEqual({
+      backgroundColor: 'transparent',
+      color: '#ffffff',
+      fontSize: '20px',
+    });
+    expect(documentRef.documentElement.style.colorScheme).toBe('dark');
+    expect(setProperty).toHaveBeenCalledWith('--gn-ui-scale', '0.8');
+    expect(setProperty).toHaveBeenCalledWith('--gn-font-size', '20px');
   });
 
   it('falls back when a visible WebView temporarily throttles animation frames', async () => {
