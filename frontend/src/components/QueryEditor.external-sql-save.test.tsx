@@ -103,6 +103,10 @@ const storeState = vi.hoisted(() => ({
       mac: { enabled: true, combo: 'Meta+Shift+M' },
       windows: { enabled: true, combo: 'Ctrl+Shift+M' },
     },
+    acceptSqlAiCompletion: {
+      mac: { enabled: true, combo: 'Right' },
+      windows: { enabled: true, combo: 'Right' },
+    },
   },
   activeTabId: 'tab-1',
   tabs: [] as TabData[],
@@ -862,6 +866,10 @@ describe('QueryEditor external SQL save', () => {
       toggleQueryResultsPanel: {
         mac: { enabled: true, combo: 'Meta+Shift+M' },
         windows: { enabled: true, combo: 'Ctrl+Shift+M' },
+      },
+      acceptSqlAiCompletion: {
+        mac: { enabled: true, combo: 'Right' },
+        windows: { enabled: true, combo: 'Right' },
       },
     };
     storeState.setQueryOptions.mockReset();
