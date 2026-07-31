@@ -6,6 +6,7 @@ import {
   Form,
   Input,
   InputNumber,
+  Radio,
   Select,
   Space,
   Switch,
@@ -121,6 +122,7 @@ const ConnectionModalStep2: React.FC<ConnectionModalStep2Props> = (props) => {
     handleGenerateURI,
     handleJvmModeCardSelect,
     handleJvmModeToggle,
+    handleOracleModeChange,
     handleParseURI,
     handleSelectCertificateFile,
     handleSelectDatabaseFile,
@@ -155,6 +157,7 @@ const ConnectionModalStep2: React.FC<ConnectionModalStep2Props> = (props) => {
     normalizedJvmAllowedModes,
     oceanBaseProtocol,
     onOpenDriverManager,
+    oracleMode,
     primaryPasswordVisible,
     proxyType,
     redisDbList,
@@ -1372,13 +1375,36 @@ const ConnectionModalStep2: React.FC<ConnectionModalStep2Props> = (props) => {
               </div>
             )}
 
+            {dbType === "oracle" && (
+              <div className="gn-conn-f-row">
+                {denseLabel(
+                  t("connection.modal.dense.mode"),
+                  t("connection.modal.field.oracleMode.label"),
+                )}
+                <div className="gn-conn-f-ctrl">
+                  <Form.Item name="oracleMode" style={{ marginBottom: 0 }}>
+                    <Radio.Group onChange={handleOracleModeChange}>
+                      <Radio value="service">
+                        {t("connection.modal.field.oracleMode.service")}
+                      </Radio>
+                      <Radio value="sid">
+                        {t("connection.modal.field.oracleMode.sid")}
+                      </Radio>
+                    </Radio.Group>
+                  </Form.Item>
+                </div>
+              </div>
+            )}
+
             {(dbType === "oracle" || isOceanBaseOracle) && (
               <div className="gn-conn-f-row">
                 {denseLabel(
                   t("connection.modal.dense.service"),
-                  isOceanBaseOracle
-                    ? t("connection.modal.field.oceanBaseServiceName.label")
-                    : t("connection.modal.field.serviceName.label"),
+                  dbType === "oracle" && oracleMode === "sid"
+                    ? t("connection.modal.field.sid.label")
+                    : isOceanBaseOracle
+                      ? t("connection.modal.field.oceanBaseServiceName.label")
+                      : t("connection.modal.field.serviceName.label"),
                 )}
                 <div className="gn-conn-f-ctrl">
                   <Form.Item
@@ -1388,7 +1414,11 @@ const ConnectionModalStep2: React.FC<ConnectionModalStep2Props> = (props) => {
                         ? []
                         : [
                             createUriAwareRequiredRule(
-                              t("connection.modal.field.serviceName.required"),
+                              dbType === "oracle" && oracleMode === "sid"
+                                ? t("connection.modal.field.sid.required")
+                                : t(
+                                    "connection.modal.field.serviceName.required",
+                                  ),
                             ),
                           ]
                     }
@@ -1396,9 +1426,13 @@ const ConnectionModalStep2: React.FC<ConnectionModalStep2Props> = (props) => {
                   >
                     <Input
                       {...noAutoCapInputProps}
-                      placeholder={t(
-                        "connection.modal.field.serviceName.placeholder",
-                      )}
+                      placeholder={
+                        dbType === "oracle" && oracleMode === "sid"
+                          ? t("connection.modal.field.sid.placeholder")
+                          : t(
+                              "connection.modal.field.serviceName.placeholder",
+                            )
+                      }
                     />
                   </Form.Item>
                 </div>
@@ -2639,6 +2673,7 @@ const ConnectionModalStep2: React.FC<ConnectionModalStep2Props> = (props) => {
         restrictScriptExecution: false,
         restrictDataImport: false,
         oceanBaseProtocol: "mysql",
+        oracleMode: "service",
         mysqlTopology: "single",
         rocketmqTopology: "single",
         mqttTopology: "single",

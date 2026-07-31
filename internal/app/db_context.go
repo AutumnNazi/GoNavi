@@ -45,7 +45,7 @@ func normalizeRunConfig(config connection.ConnectionConfig, dbName string) conne
 			runConfig = runConfig.WithRuntimeDatabaseOverride(name)
 		}
 	default:
-		// oracle: dbName 表示 schema/owner，不能覆盖 config.Database（服务名）
+		// oracle: dbName 表示 schema/owner，不能覆盖 config.Database（服务名）或 SID（SID 模式）
 		// sqlite: 无需设置 Database
 		// 其他 custom: 语义不明确，避免污染缓存 key
 	}
