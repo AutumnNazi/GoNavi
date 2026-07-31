@@ -312,8 +312,8 @@ export const DEFAULT_SHORTCUT_OPTIONS: ShortcutOptions = {
     windows: { combo: 'Alt+\\', enabled: true },
   },
   acceptSqlAiCompletion: {
-    mac: { combo: 'Right', enabled: true },
-    windows: { combo: 'Right', enabled: true },
+    mac: { combo: 'Tab', enabled: true },
+    windows: { combo: 'Tab', enabled: true },
   },
   toggleQueryResultsPanel: {
     mac: { combo: 'Meta+Shift+M', enabled: true },

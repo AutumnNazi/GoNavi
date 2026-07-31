@@ -922,9 +922,9 @@ describe('comboToMonacoKeyBinding', () => {
 // ─── acceptSqlAiCompletion ──────────────────────────────────────────
 
 describe('acceptSqlAiCompletion', () => {
-  it('默认绑定为 Right 且启用(win/mac 一致)', () => {
-    expect(DEFAULT_SHORTCUT_OPTIONS.acceptSqlAiCompletion.mac).toEqual({ combo: 'Right', enabled: true });
-    expect(DEFAULT_SHORTCUT_OPTIONS.acceptSqlAiCompletion.windows).toEqual({ combo: 'Right', enabled: true });
+  it('默认绑定为 Tab 且启用(win/mac 一致)', () => {
+    expect(DEFAULT_SHORTCUT_OPTIONS.acceptSqlAiCompletion.mac).toEqual({ combo: 'Tab', enabled: true });
+    expect(DEFAULT_SHORTCUT_OPTIONS.acceptSqlAiCompletion.windows).toEqual({ combo: 'Tab', enabled: true });
   });
 
   it('允许录制无修饰键的 Tab(裸键场景)', () => {
@@ -939,8 +939,8 @@ describe('acceptSqlAiCompletion', () => {
     expect(canRecordShortcutForAction('acceptSqlAiCompletion', 'Ctrl+Right')).toBe(true);
   });
 
-  it('resolveShortcutBinding 对缺失配置回退默认 Right', () => {
+  it('resolveShortcutBinding 对缺失配置回退默认 Tab', () => {
     const binding = resolveShortcutBinding({}, 'acceptSqlAiCompletion', 'windows');
-    expect(binding).toEqual({ combo: 'Right', enabled: true });
+    expect(binding).toEqual({ combo: 'Tab', enabled: true });
   });
 });

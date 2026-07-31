@@ -104,8 +104,8 @@ const storeState = vi.hoisted(() => ({
       windows: { enabled: true, combo: 'Ctrl+Shift+M' },
     },
     acceptSqlAiCompletion: {
-      mac: { enabled: true, combo: 'Right' },
-      windows: { enabled: true, combo: 'Right' },
+      mac: { enabled: true, combo: 'Tab' },
+      windows: { enabled: true, combo: 'Tab' },
     },
   },
   activeTabId: 'tab-1',
@@ -868,8 +868,8 @@ describe('QueryEditor external SQL save', () => {
         windows: { enabled: true, combo: 'Ctrl+Shift+M' },
       },
       acceptSqlAiCompletion: {
-        mac: { enabled: true, combo: 'Right' },
-        windows: { enabled: true, combo: 'Right' },
+        mac: { enabled: true, combo: 'Tab' },
+        windows: { enabled: true, combo: 'Tab' },
       },
     };
     storeState.setQueryOptions.mockReset();
@@ -1960,7 +1960,7 @@ describe('QueryEditor external SQL save', () => {
     }
   });
 
-  it('accepts the AI inline ghost with the default Right shortcut and consumes the keydown', async () => {
+  it('accepts the AI inline ghost with the default Tab shortcut and consumes the keydown', async () => {
     vi.useFakeTimers();
     try {
       const inlineAiService = {
@@ -2038,10 +2038,10 @@ describe('QueryEditor external SQL save', () => {
 
       const shortcutEvent = {
         type: 'keydown',
-        key: 'ArrowRight',
-        code: 'ArrowRight',
-        keyCode: 39,
-        which: 39,
+        key: 'Tab',
+        code: 'Tab',
+        keyCode: 9,
+        which: 9,
         ctrlKey: false,
         metaKey: false,
         altKey: false,
@@ -2076,7 +2076,7 @@ describe('QueryEditor external SQL save', () => {
     }
   });
 
-  it('does not consume Right when no AI inline ghost is visible', async () => {
+  it('does not consume Tab when no AI inline ghost is visible', async () => {
     vi.useFakeTimers();
     try {
       const windowListeners: Record<string, ((event?: any) => void)[]> = {};
@@ -2105,10 +2105,10 @@ describe('QueryEditor external SQL save', () => {
 
       const shortcutEvent = {
         type: 'keydown',
-        key: 'ArrowRight',
-        code: 'ArrowRight',
-        keyCode: 39,
-        which: 39,
+        key: 'Tab',
+        code: 'Tab',
+        keyCode: 9,
+        which: 9,
         ctrlKey: false,
         metaKey: false,
         altKey: false,
@@ -2137,7 +2137,7 @@ describe('QueryEditor external SQL save', () => {
     }
   });
 
-  it('does not consume Right when the AI inline ghost is stale (cursor moved)', async () => {
+  it('does not consume Tab when the AI inline ghost is stale (cursor moved)', async () => {
     vi.useFakeTimers();
     try {
       const inlineAiService = {
@@ -2218,10 +2218,10 @@ describe('QueryEditor external SQL save', () => {
 
       const shortcutEvent = {
         type: 'keydown',
-        key: 'ArrowRight',
-        code: 'ArrowRight',
-        keyCode: 39,
-        which: 39,
+        key: 'Tab',
+        code: 'Tab',
+        keyCode: 9,
+        which: 9,
         ctrlKey: false,
         metaKey: false,
         altKey: false,
@@ -2250,12 +2250,12 @@ describe('QueryEditor external SQL save', () => {
     }
   });
 
-  it('accepts the AI inline ghost with a rebound Tab shortcut', async () => {
+  it('accepts the AI inline ghost with a rebound Right shortcut', async () => {
     vi.useFakeTimers();
     try {
       storeState.shortcutOptions.acceptSqlAiCompletion = {
-        mac: { enabled: true, combo: 'Tab' },
-        windows: { enabled: true, combo: 'Tab' },
+        mac: { enabled: true, combo: 'Right' },
+        windows: { enabled: true, combo: 'Right' },
       };
 
       const inlineAiService = {
@@ -2333,10 +2333,10 @@ describe('QueryEditor external SQL save', () => {
 
       const shortcutEvent = {
         type: 'keydown',
-        key: 'Tab',
-        code: 'Tab',
-        keyCode: 9,
-        which: 9,
+        key: 'ArrowRight',
+        code: 'ArrowRight',
+        keyCode: 39,
+        which: 39,
         ctrlKey: false,
         metaKey: false,
         altKey: false,
@@ -2564,13 +2564,13 @@ describe('QueryEditor external SQL save', () => {
         }
       });
 
-      const dispatchAcceptRightArrow = () => {
+      const dispatchAcceptTab = () => {
         const shortcutEvent = {
           type: 'keydown',
-          key: 'ArrowRight',
-          code: 'ArrowRight',
-          keyCode: 39,
-          which: 39,
+          key: 'Tab',
+          code: 'Tab',
+          keyCode: 9,
+          which: 9,
           ctrlKey: false,
           metaKey: false,
           altKey: false,
@@ -2589,7 +2589,7 @@ describe('QueryEditor external SQL save', () => {
       };
 
       await act(async () => {
-        const { monacoShortcutEvent } = dispatchAcceptRightArrow();
+        const { monacoShortcutEvent } = dispatchAcceptTab();
         expect(monacoShortcutEvent.preventDefault).toHaveBeenCalled();
         expect(monacoShortcutEvent.stopPropagation).toHaveBeenCalled();
         vi.advanceTimersByTime(1);
@@ -2622,7 +2622,7 @@ describe('QueryEditor external SQL save', () => {
       editorState.editor.trigger.mockClear();
 
       await act(async () => {
-        dispatchAcceptRightArrow();
+        dispatchAcceptTab();
         vi.advanceTimersByTime(1);
         for (let i = 0; i < 8; i += 1) {
           await Promise.resolve();
