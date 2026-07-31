@@ -154,6 +154,7 @@ const backendApp = vi.hoisted(() => ({
   DBGetDatabases: vi.fn(),
   DBGetColumns: vi.fn(),
   DBGetIndexes: vi.fn(),
+  DBShowCreateTable: vi.fn(),
   CancelQuery: vi.fn(),
   GenerateQueryID: vi.fn(),
   WriteSQLFile: vi.fn(),
@@ -901,6 +902,7 @@ describe('QueryEditor external SQL save', () => {
     backendApp.DBGetAllColumns.mockResolvedValue({ success: true, data: [] });
     backendApp.DBGetDatabases.mockResolvedValue({ success: true, data: [] });
     backendApp.DBGetTables.mockResolvedValue({ success: true, data: [] });
+    backendApp.DBShowCreateTable.mockResolvedValue({ success: false, data: '' });
     backendApp.GenerateQueryID.mockResolvedValue('query-1');
     storeState.connections = createDefaultConnections();
     storeState.sqlLogs = [];
@@ -7107,6 +7109,61 @@ describe('QueryEditor external SQL save', () => {
     }));
   });
 
+  it('uses the complete Oracle view DDL when opening object edit from the editor', async () => {
+    const viewName = 'H2.CV_GD_YNCRM_SALESDTLLIST';
+    const preview = '[CLOB preview: 4096/9362 bytes] SELECT compid, saleno FROM sales_detail';
+    const fullDDL = `CREATE OR REPLACE VIEW ${viewName} AS SELECT compid, saleno FROM sales_detail WHERE deleted_flag = 0`;
+    storeState.connections[0].config.type = 'oracle';
+    storeState.connections[0].config.database = 'hydeekf';
+    editorState.value = `select * from ${viewName}`;
+    autoFetchState.visible = true;
+    backendApp.DBGetDatabases.mockResolvedValueOnce({ success: true, data: [{ Database: 'H2' }] });
+    backendApp.DBGetTables.mockResolvedValueOnce({ success: true, data: [] });
+    backendApp.DBGetAllColumns.mockResolvedValueOnce({ success: true, data: [] });
+    backendApp.DBShowCreateTable.mockResolvedValueOnce({ success: true, data: fullDDL });
+    backendApp.DBQuery.mockImplementation(async (_config: any, _dbName: string, sql: string) => {
+      if (sql.includes('USER_VIEWS') || sql.includes('ALL_VIEWS')) {
+        if (sql.includes('TEXT AS view_definition')) {
+          return { success: true, data: [{ view_definition: preview }] };
+        }
+        return { success: true, data: [{ schema_name: 'H2', view_name: 'CV_GD_YNCRM_SALESDTLLIST' }] };
+      }
+      return { success: true, data: [] };
+    });
+
+    await act(async () => {
+      create(<QueryEditor tab={createTab({ query: editorState.value, dbName: 'H2' })} />);
+    });
+    await act(async () => {
+      for (let i = 0; i < 12; i += 1) {
+        await Promise.resolve();
+      }
+    });
+
+    await act(async () => {
+      editorState.mouseDownListeners[0]?.({
+        target: { position: { lineNumber: 1, column: editorState.value.indexOf(viewName) + Math.floor(viewName.length / 2) + 1 } },
+        event: {
+          leftButton: true,
+          ctrlKey: true,
+          metaKey: false,
+          preventDefault: vi.fn(),
+          stopPropagation: vi.fn(),
+        },
+      });
+      for (let i = 0; i < 12; i += 1) {
+        await Promise.resolve();
+      }
+    });
+
+    expect(backendApp.DBShowCreateTable).toHaveBeenCalledWith(expect.anything(), 'H2', viewName);
+    const addTabCall = storeState.addTab.mock.calls[storeState.addTab.mock.calls.length - 1]?.[0];
+    const editQuery = String(addTabCall?.query || '');
+    expect(editQuery).toMatch(/CREATE OR REPLACE VIEW H2\.CV_GD_YNCRM_SALESDTLLIST AS/i);
+    expect(editQuery).toContain('deleted_flag = 0');
+    expect(editQuery).not.toContain('[CLOB preview:');
+  });
+
   it('opens trigger and routine object-edit tabs on ctrl left click inside the editor', async () => {
     editorState.value = 'call audit.users_bi(); call reporting.refresh_stats();';
     autoFetchState.visible = true;
@@ -9913,6 +9970,57 @@ WHERE GRANTEE = 'APPUSER';`;
       columns: ['COMPID', 'SALENO'],
     });
     renderer?.unmount();
+  });
+
+  it('rechecks fresh Oracle table metadata before injecting ROWID after a stale completion cache', async () => {
+    storeState.connections[0].config.type = 'oracle';
+    storeState.connections[0].config.database = 'hydeekf';
+    editorState.value = 'select * from cv_gd_yncrm_salesdtllist';
+    autoFetchState.visible = true;
+    backendApp.DBGetDatabases.mockResolvedValueOnce({ success: true, data: [{ Database: 'H2' }] });
+    backendApp.DBGetTables.mockResolvedValueOnce({
+      success: true,
+      data: [{ Table: 'H2.CV_GD_YNCRM_SALESDTLLIST' }],
+    });
+    backendApp.DBGetAllColumns.mockResolvedValueOnce({ success: true, data: [] });
+
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<QueryEditor tab={createTab({ query: editorState.value, dbName: 'H2' })} />);
+    });
+    await act(async () => {
+      for (let i = 0; i < 12; i += 1) {
+        await Promise.resolve();
+      }
+    });
+
+    backendApp.DBGetTables.mockClear();
+    backendApp.DBGetTables.mockResolvedValueOnce({ success: true, data: [] });
+    backendApp.DBGetColumns.mockResolvedValueOnce({
+      success: true,
+      data: [{ name: 'COMPID', key: '' }, { name: 'SALENO', key: '' }],
+    });
+    backendApp.DBQueryMulti.mockResolvedValueOnce({
+      success: true,
+      data: [{ columns: ['COMPID', 'SALENO'], rows: [{ COMPID: 'H2', SALENO: '1001' }] }],
+    });
+
+    await act(async () => {
+      await findButton(renderer, '运行').props.onClick();
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(backendApp.DBGetTables).toHaveBeenCalledWith(expect.anything(), 'H2');
+    const executedSql = String(backendApp.DBQueryMulti.mock.calls[backendApp.DBQueryMulti.mock.calls.length - 1]?.[2] || '');
+    expect(executedSql).not.toMatch(/\bROWID\b/i);
+    expect(dataGridState.latestProps?.editLocator).toMatchObject({
+      strategy: 'all-columns',
+      columns: ['COMPID', 'SALENO'],
+    });
+    renderer.unmount();
   });
 
   it('rewrites Oracle SELECT * queries before injecting hidden ROWID locator columns', async () => {

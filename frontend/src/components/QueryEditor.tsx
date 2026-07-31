@@ -6,7 +6,7 @@ import { format } from 'sql-formatter';
 import { v4 as uuidv4 } from 'uuid';
 import { TabData, ColumnDefinition, type SavedQuery, type SqlSnippet } from '../types';
 import { type SqlLog, useStore } from '../store';
-import { DBQuery, DBQueryWithCancel, DBQueryMulti, DBQueryMultiInTransaction, DBQueryMultiTransactional, DBGetTables, DBGetAllColumns, DBGetDatabases, DBGetColumns, CancelQuery, GenerateQueryID, WriteSQLFile, ExportSQLFile } from '../../wailsjs/go/app/App';
+import { DBQuery, DBQueryWithCancel, DBQueryMulti, DBQueryMultiInTransaction, DBQueryMultiTransactional, DBGetTables, DBGetAllColumns, DBGetDatabases, DBGetColumns, DBShowCreateTable, CancelQuery, GenerateQueryID, WriteSQLFile, ExportSQLFile } from '../../wailsjs/go/app/App';
 import { GONAVI_ROW_KEY } from './DataGrid';
 import { EventsOn, LogError, LogInfo } from '../../wailsjs/runtime';
 import { findConnectionMutatingStatements } from '../utils/connectionReadOnly';
@@ -46,6 +46,7 @@ import { t as translate } from '../i18n';
 import { buildSqlAnalysisWorkbenchTab } from '../utils/sqlAnalysisTab';
 import { isLocalizedUntitledQueryTitle } from '../utils/queryTabTitle';
 import { buildSqlServerObjectDefinitionQueries } from '../utils/sqlServerObjectDefinition';
+import { formatDdlForDisplay } from '../utils/ddlFormat';
 import {
     clampQueryEditorEditorHeight,
     resolveQueryEditorEditorHeightFromRatio,
@@ -3789,7 +3790,16 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
               : [];
       }
 
-      if (conn && definitionQueries.length > 0) {
+      if (conn && definitionTabType === 'view-def' && dialect === 'oracle') {
+          const result = await DBShowCreateTable(
+              buildRpcConnectionConfig(buildQueryEditorObjectDefinitionConnectionConfig(conn)) as any,
+              targetDbName,
+              objectEditName,
+          );
+          if (result?.success && String(result.data || '').trim()) {
+              latestDefinition = formatDdlForDisplay(String(result.data), dialect);
+          }
+      } else if (conn && definitionQueries.length > 0) {
           const rows = await runQueryEditorObjectDefinitionCandidates(
               buildQueryEditorObjectDefinitionConnectionConfig(conn),
               targetDbName,
@@ -7339,12 +7349,6 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                 const cacheKey = normalizedDbName.toLowerCase();
                 const cached = oracleTableCache.get(cacheKey);
                 if (cached) return cached;
-
-                const existing = tablesRef.current.filter((table) => String(table.dbName || '').trim().toLowerCase() === cacheKey);
-                if (existing.length > 0) {
-                    oracleTableCache.set(cacheKey, existing);
-                    return existing;
-                }
 
                 try {
                     const resTables = await DBGetTables(buildRpcConnectionConfig(config) as any, normalizedDbName);
