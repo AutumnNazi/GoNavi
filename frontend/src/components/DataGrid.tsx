@@ -2196,7 +2196,6 @@ const DataGrid: React.FC<DataGridProps> = ({
 
   const {
       autoFitColumnWidth,
-      ghostRef,
       handleResizeAutoFit,
       handleResizeStart,
       isResizingRef,
@@ -5422,7 +5421,6 @@ const DataGrid: React.FC<DataGridProps> = ({
         formatTextViewValue,
         getTargets,
         getTemporalPickerType,
-        ghostRef,
         gridCssText,
         gridFieldSelectOptions,
         gridId,

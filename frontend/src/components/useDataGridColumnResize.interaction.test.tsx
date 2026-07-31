@@ -40,7 +40,6 @@ describe('useDataGridColumnResize interaction cleanup', () => {
   let resize: ReturnType<typeof useDataGridColumnResize> | null = null;
   let fakeWindow: FakeEventTarget;
   let fakeDocument: FakeEventTarget & { body: { style: { cursor: string; userSelect: string } } };
-  let ghost: { style: { display: string; transform: string } };
   let scheduledFrames: Map<number, FrameRequestCallback>;
   let nextFrameId: number;
   let setColumnWidths: ReturnType<typeof vi.fn>;
@@ -103,8 +102,6 @@ describe('useDataGridColumnResize interaction cleanup', () => {
     fakeDocument = Object.assign(new FakeEventTarget(), {
       body: { style: { cursor: 'crosshair', userSelect: 'text' } },
     });
-    ghost = { style: { display: 'none', transform: '' } };
-
     Object.defineProperty(globalThis, 'window', { configurable: true, value: fakeWindow });
     Object.defineProperty(globalThis, 'document', { configurable: true, value: fakeDocument });
     Object.defineProperty(globalThis, 'requestAnimationFrame', {
@@ -123,7 +120,6 @@ describe('useDataGridColumnResize interaction cleanup', () => {
     act(() => {
       renderer = create(<Harness />);
     });
-    (resize!.ghostRef as React.MutableRefObject<any>).current = ghost;
   });
 
   afterEach(() => {
@@ -146,19 +142,17 @@ describe('useDataGridColumnResize interaction cleanup', () => {
     }
   });
 
-  it('restores body styles, hides the ghost, and commits on window blur', () => {
+  it('restores body styles and commits on window blur', () => {
     beginResize();
     act(() => fakeDocument.dispatch('mousemove', { buttons: 1, clientX: 230 }));
 
     expect(fakeDocument.body.style).toEqual({ cursor: 'col-resize', userSelect: 'none' });
-    expect(ghost.style.display).toBe('block');
     expect(fakeWindow.listenerCount('blur')).toBe(1);
 
     act(() => fakeWindow.dispatch('blur'));
 
     expectLastWidthUpdate(150);
     expect(scheduledFrames.size).toBe(0);
-    expect(ghost.style.display).toBe('none');
     expect(fakeDocument.body.style).toEqual({ cursor: 'crosshair', userSelect: 'text' });
     expect(fakeDocument.listenerCount('mousemove')).toBe(0);
     expect(fakeDocument.listenerCount('mouseup')).toBe(0);
@@ -178,7 +172,6 @@ describe('useDataGridColumnResize interaction cleanup', () => {
     act(() => flushAnimationFrames());
 
     expectLastWidthUpdate(150);
-    expect(ghost.style.transform).toBe('translateX(190px)');
   });
 
   it('self-heals when movement reports no pressed button', () => {
@@ -187,7 +180,6 @@ describe('useDataGridColumnResize interaction cleanup', () => {
     act(() => fakeDocument.dispatch('mousemove', { buttons: 0, clientX: 260 }));
 
     expectLastWidthUpdate(180);
-    expect(ghost.style.display).toBe('none');
     expect(fakeDocument.body.style).toEqual({ cursor: 'crosshair', userSelect: 'text' });
     expect(fakeDocument.listenerCount('mousemove')).toBe(0);
     expect(fakeWindow.listenerCount('blur')).toBe(0);
@@ -212,7 +204,6 @@ describe('useDataGridColumnResize interaction cleanup', () => {
     expect(scheduledFrames.size).toBe(0);
     expect(cancelAnimationFrame).toHaveBeenCalledTimes(1);
     expect(resize?.isResizingRef.current).toBe(false);
-    expect(ghost.style.display).toBe('none');
     expect(fakeDocument.body.style).toEqual({ cursor: 'crosshair', userSelect: 'text' });
     expect(fakeDocument.listenerCount('mousemove')).toBe(0);
     expect(fakeDocument.listenerCount('mouseup')).toBe(0);
