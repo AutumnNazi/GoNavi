@@ -16,7 +16,6 @@ export const GONAVI_MONACO_BG_CSS_VAR = '--gn-monaco-bg';
 const DEFAULT_FONT_SIZE = 14;
 const MIN_FONT_SIZE = 12;
 const MAX_FONT_SIZE = 20;
-const QUERY_EDITOR_AI_INLINE_CONTEXT_KEY = 'gonaviAiInlineSuggestionVisible';
 const PRINTABLE_INPUT_FALLBACK_DELAY_MS = 80;
 let monacoConfiguredPromise: Promise<void> | null = null;
 let transparentThemesRegistered = false;
@@ -205,68 +204,6 @@ const installOceanBaseOracleNavigationFallback = (editor: any) => {
   editor.onDidDispose?.(() => {
     editorDomNode.removeEventListener('mousedown', handleMouseDownCapture, true);
   });
-};
-
-const patchQueryEditorAiInlineRightArrowFallback = (editor: any, monaco: any) => {
-  const rawAddCommand = editor?.addCommand;
-  const originalAddCommand = rawAddCommand?.bind?.(editor);
-  if (!originalAddCommand || !monaco?.KeyCode?.RightArrow) {
-    return;
-  }
-  if (editor.__gonaviAiInlineRightArrowFallbackPatched) {
-    return;
-  }
-  Object.defineProperty(editor, '__gonaviAiInlineRightArrowFallbackPatched', {
-    value: true,
-    configurable: true,
-  });
-
-  const patchedAddCommand = (keybinding: any, handler: any, context: any) => {
-    if (
-      keybinding === monaco.KeyCode.RightArrow
-      && context === QUERY_EDITOR_AI_INLINE_CONTEXT_KEY
-      && typeof handler === 'function'
-    ) {
-      return originalAddCommand(keybinding, (...args: any[]) => {
-        const beforePosition = editor.getPosition?.();
-        const beforeValue = String(editor.getValue?.() ?? '');
-        const result = handler(...args);
-        const afterPosition = editor.getPosition?.();
-        const afterValue = String(editor.getValue?.() ?? '');
-        if (beforeValue === afterValue && sameEditorPosition(beforePosition, afterPosition)) {
-          editor.trigger?.('gonavi-ai-inline-fallback', 'cursorRight', null);
-        }
-        return result;
-      }, context);
-    }
-    return originalAddCommand(keybinding, handler, context);
-  };
-
-  if (rawAddCommand?.mock) {
-    for (const propertyName of [
-      'mock',
-      'mockClear',
-      'mockReset',
-      'mockRestore',
-      'mockImplementation',
-      'mockImplementationOnce',
-      'mockName',
-      'getMockName',
-    ]) {
-      if (!(propertyName in rawAddCommand)) {
-        continue;
-      }
-      Object.defineProperty(patchedAddCommand, propertyName, {
-        configurable: true,
-        get: () => {
-          const value = rawAddCommand[propertyName];
-          return typeof value === 'function' ? value.bind(rawAddCommand) : value;
-        },
-      });
-    }
-  }
-
-  editor.addCommand = patchedAddCommand;
 };
 
 const isWebKitImeScrollRuntime = (): boolean => {
@@ -900,7 +837,6 @@ const MonacoEditor: React.FC<MonacoEditorProps> = ({
 
   const handleMount: OnMount = useCallback((editor, monaco) => {
     installOceanBaseOracleNavigationFallback(editor);
-    patchQueryEditorAiInlineRightArrowFallback(editor, monaco);
     installPrintableInputFallback(editor, monaco);
     installWebKitImeScrollStabilizer(editor);
     onMount?.(editor, monaco);
