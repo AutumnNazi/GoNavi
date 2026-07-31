@@ -396,6 +396,7 @@ const buildQueryEditorMonacoOptions = (
     scrollBeyondLastLine: false,
     quickSuggestions: { other: true, comments: false, strings: false },
     suggestOnTriggerCharacters: true,
+    suggestLineHeight: QUERY_EDITOR_TABLE_SUGGESTION_ROW_HEIGHT,
     inlineSuggest: buildQueryEditorAiInlineSuggestOptions(),
     ...(isObjectEditQueryTab
         ? {
@@ -991,6 +992,28 @@ let sharedCurrentConnectionId = '';
 let sharedConnections: any[] = [];
 let sharedTablesData: CompletionTableMeta[] = [];
 let sharedAllColumnsData: CompletionColumnMeta[] = [];
+
+const QUERY_EDITOR_TABLE_SUGGESTION_ROW_HEIGHT = 36;
+
+const normalizeQueryEditorTableSuggestionText = (value: unknown): string => (
+    String(value ?? '').replace(/\r\n|\r|\n/g, '').trim()
+);
+
+const buildQueryEditorTableSuggestionLabel = (
+    label: unknown,
+    description?: unknown,
+    useStructuredLabel = true,
+): any => {
+    const normalizedLabel = normalizeQueryEditorTableSuggestionText(label);
+    const normalizedDescription = normalizeQueryEditorTableSuggestionText(description);
+    if (!useStructuredLabel) {
+        return normalizedLabel;
+    }
+    return {
+        label: normalizedLabel,
+        description: normalizedDescription,
+    };
+};
 
 // AI 补全的元数据预热可能把整库列（数十万条）灌入 sharedAllColumnsData，普通补全逐列全量
 // 扫描会阻塞主线程；按 (库, 表名末段) 建索引，并以数组身份为键缓存，数组重新赋值时自动失效。
@@ -3876,6 +3899,9 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
   const handleEditorDidMount: OnMount = (editor, monaco) => {
       editorRef.current = editor;
       monacoRef.current = monaco;
+      // CompletionItemLabel is rendered by Monaco's DOM suggest widget. Keep
+      // the original string label for non-DOM adapters used by older hosts.
+      const useStructuredCompletionLabel = typeof editor?.getDomNode?.()?.querySelector === 'function';
 
       const suggestController = editor.getContribution?.('editor.contrib.suggestController') as {
           widget?: { value?: { _details?: { widget?: { layout?: (width: number, height: number) => void } } } };
@@ -5185,6 +5211,14 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                       dbQualifiedLabel,
                   };
               };
+              const buildTableSuggestion = (label: string, prefix: string, comment?: string) => ({
+                  label: buildQueryEditorTableSuggestionLabel(
+                      label,
+                      appendCommentToDetail(prefix, comment),
+                      useStructuredCompletionLabel,
+                  ),
+                  filterText: normalizeQueryEditorTableSuggestionText(label),
+              });
               const normalizeRoutineType = (routineType: string) => (
                   String(routineType || '').trim().toUpperCase().includes('PROC') ? 'PROCEDURE' : 'FUNCTION'
               );
@@ -5523,7 +5557,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                               return createEmptySqlCompletionResult();
                           }
                       }
-                      const tableBatch = createBoundedQueryEditorCompletionCandidateBatch({
+                      const tableBatch = createBoundedQueryEditorCompletionCandidateBatch<CompletionTableMeta, any>({
                           candidates: tables,
                           prefix,
                           getMatchRank: (table, normalizedPrefix) => {
@@ -5538,7 +5572,11 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                           buildSuggestion: (table) => {
                               const meta = buildDbQualifiedTableSuggestionMeta(table.dbName || qualifier, table.tableName || '');
                               return {
-                                  label: meta.displayName,
+                                  ...buildTableSuggestion(
+                                      meta.displayName,
+                                      `${translate('query_editor.object_info.table')} (${table.dbName})`,
+                                      table.comment,
+                                  ),
                                   kind: monaco.languages.CompletionItemKind.Class,
                                   insertText: meta.insertText,
                                   detail: appendCommentToDetail(`${translate('query_editor.object_info.table')} (${table.dbName})`, table.comment),
@@ -5627,7 +5665,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
 
                   // qualifier 是 schema（如 dbo/public）时，仅补全表名，避免输入 dbo. 后再补成 dbo.dbo.table
                   let hasKnownSchemaQualifier = false;
-                  const schemaTableBatch = createBoundedQueryEditorCompletionCandidateBatch({
+                  const schemaTableBatch = createBoundedQueryEditorCompletionCandidateBatch<CompletionTableMeta, any>({
                       candidates: sharedTablesData,
                       prefix,
                       getMatchRank: (table, normalizedPrefix) => {
@@ -5641,7 +5679,11 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                       buildSuggestion: (table) => {
                           const parsed = splitSchemaAndTable(table.tableName || '');
                           return {
-                              label: parsed.table,
+                              ...buildTableSuggestion(
+                                  parsed.table,
+                                  `${translate('query_editor.object_info.table')} (${table.dbName}${parsed.schema ? '.' + parsed.schema : ''})`,
+                                  table.comment,
+                              ),
                               kind: monaco.languages.CompletionItemKind.Class,
                               insertText: quoteCompletionPart(parsed.table),
                               detail: appendCommentToDetail(`${translate('query_editor.object_info.table')} (${table.dbName}${parsed.schema ? '.' + parsed.schema : ''})`, table.comment),
@@ -5911,7 +5953,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                   : [];
               const tableNameToSchemaCount = getCompletionTableSchemaCounts(currentDatabaseTables);
 
-              const tableBatch = createBoundedQueryEditorCompletionCandidateBatch({
+              const tableBatch = createBoundedQueryEditorCompletionCandidateBatch<CompletionTableMeta, any>({
                   candidates: completionTables,
                   prefix: wordPrefix,
                   getMatchRank: (table, normalizedPrefix) => {
@@ -5946,7 +5988,11 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                           const meta = buildDbQualifiedTableSuggestionMeta(table.dbName || '', table.tableName || '');
                           const label = meta.dbQualifiedLabel;
                           return {
-                              label,
+                              ...buildTableSuggestion(
+                                  label,
+                                  `${translate('query_editor.object_info.table')} (${table.dbName})`,
+                                  table.comment,
+                              ),
                               kind: monaco.languages.CompletionItemKind.Class,
                               insertText: quoteCompletionPath(label),
                               detail: appendCommentToDetail(`${translate('query_editor.object_info.table')} (${table.dbName})`, table.comment),
@@ -5959,7 +6005,11 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                       const label = hasDuplicate ? table.tableName : pureTable;
                       const schemaInfo = parsed.schema ? ` (${parsed.schema})` : '';
                       return {
-                          label,
+                          ...buildTableSuggestion(
+                              label,
+                              `${translate('query_editor.object_info.table')}${schemaInfo}`,
+                              table.comment,
+                          ),
                           kind: monaco.languages.CompletionItemKind.Class,
                           insertText: quoteCompletionPath(hasDuplicate ? table.tableName : pureTable),
                           detail: appendCommentToDetail(`${translate('query_editor.object_info.table')}${schemaInfo}`, table.comment),

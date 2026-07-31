@@ -294,6 +294,97 @@ body[data-theme='light'] ::-webkit-scrollbar-thumb:hover {
     white-space: nowrap;
 }
 
+/* 表候选使用 Monaco 原生 CompletionItemLabel：第一行表名，第二行注释。 */
+.gn-query-monaco-stage .monaco-editor .suggest-widget .monaco-list .monaco-list-row:not(.string-label) {
+    height: 36px !important;
+    min-height: 36px !important;
+    max-height: 36px !important;
+}
+
+.gn-query-monaco-stage .monaco-editor .suggest-widget .monaco-list .monaco-list-row:not(.string-label) > .contents {
+    height: 36px !important;
+    overflow: visible !important;
+}
+
+.gn-query-monaco-stage .monaco-editor .suggest-widget .monaco-list .monaco-list-row:not(.string-label) > .contents > .main {
+    display: grid !important;
+    grid-template-columns: 18px minmax(0, 1fr);
+    grid-template-rows: 18px 18px;
+    grid-template-areas:
+        "icon name"
+        "comment comment";
+    align-content: center;
+    gap: 0 !important;
+    height: 36px;
+    line-height: 18px !important;
+    overflow: visible;
+    white-space: normal;
+}
+
+.gn-query-monaco-stage .monaco-editor .suggest-widget .monaco-list .monaco-list-row:not(.string-label) > .contents > .main > .icon-label.codicon {
+    grid-area: icon;
+    width: 18px;
+    height: 18px;
+    align-self: center;
+}
+
+.gn-query-monaco-stage .monaco-editor .suggest-widget .monaco-list .monaco-list-row:not(.string-label) > .contents > .main > .left {
+    grid-area: name;
+    display: flex;
+    align-items: center;
+    width: 100%;
+    height: 18px;
+    min-width: 0;
+    max-width: none;
+    overflow: visible;
+    line-height: 18px !important;
+}
+
+.gn-query-monaco-stage .monaco-editor .suggest-widget .monaco-list .monaco-list-row:not(.string-label) > .contents > .main > .left > .monaco-icon-label {
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.gn-query-monaco-stage .monaco-editor .suggest-widget .monaco-list .monaco-list-row:not(.string-label) > .contents > .main > .right {
+    grid-area: comment;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    width: 100%;
+    height: 18px;
+    min-width: 0;
+    max-width: none;
+    overflow: visible;
+    line-height: 18px !important;
+}
+
+.gn-query-monaco-stage .monaco-editor .suggest-widget .monaco-list .monaco-list-row:not(.string-label) > .contents > .main > .right > .details-label {
+    display: block !important;
+    width: max-content;
+    min-width: 0;
+    max-width: none;
+    flex: 0 0 auto;
+    margin-left: 0 !important;
+    overflow: visible;
+    color: var(--vscode-editorSuggestWidget-foreground);
+    font-size: 11px !important;
+    line-height: 18px !important;
+    opacity: 0.68;
+    text-align: right;
+    white-space: nowrap;
+}
+
+.gn-query-monaco-stage .monaco-editor .suggest-widget .monaco-list .monaco-list-row.focused:not(.string-label) > .contents > .main > .right > .details-label {
+    color: var(--vscode-editorSuggestWidget-selectedForeground);
+}
+
+.gn-query-monaco-stage .monaco-editor .suggest-widget .monaco-list .monaco-list-row:not(.string-label) > .contents > .main > .right > .readMore {
+    display: none !important;
+}
+
 /* Ensure body background matches theme to avoid white flashes, but kept transparent for window composition */
 body {
     transition: color 0.3s;
