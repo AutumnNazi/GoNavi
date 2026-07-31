@@ -2853,6 +2853,8 @@
   "app.shortcuts.action.toggleTheme.label": "Toggle Theme",
   "app.shortcuts.action.triggerSqlAiCompletion.description": "Manually request AI inline completion in the current SQL editor",
   "app.shortcuts.action.triggerSqlAiCompletion.label": "Trigger SQL AI Completion",
+  "app.shortcuts.action.acceptSqlAiCompletion.description": "When an AI inline completion is shown in the editor, press this key to insert it into the editor",
+  "app.shortcuts.action.acceptSqlAiCompletion.label": "Accept SQL AI Completion",
   "app.shortcuts.capture_hint": "Press the shortcut after clicking \"Record\". Press Esc to cancel recording. Global shortcuts should include a modifier; AI chat send only supports Enter-related combinations, and Shift+Enter keeps inserting a new line.",
   "app.shortcuts.capture_waiting": "Press a shortcut...",
   "app.shortcuts.context.datagrid": "Data Grid",

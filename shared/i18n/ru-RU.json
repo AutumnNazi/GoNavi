@@ -2853,6 +2853,8 @@
   "app.shortcuts.action.toggleTheme.label": "Переключить тему",
   "app.shortcuts.action.triggerSqlAiCompletion.description": "Вручную запросить AI-автодополнение в текущем SQL-редакторе",
   "app.shortcuts.action.triggerSqlAiCompletion.label": "Запустить AI-автодополнение SQL",
+  "app.shortcuts.action.acceptSqlAiCompletion.description": "Когда в редакторе отображается встроенное дополнение ИИ, нажмите эту клавишу, чтобы вставить его в редактор",
+  "app.shortcuts.action.acceptSqlAiCompletion.label": "Принять автодополнение SQL AI",
   "app.shortcuts.capture_hint": "Нажмите сочетание клавиш после нажатия \"Записать\". Нажмите Esc, чтобы отменить запись. Для глобальных горячих клавиш рекомендуется модификатор; отправка AI-чата поддерживает только комбинации с Enter, а Shift+Enter сохраняет перенос строки.",
   "app.shortcuts.capture_waiting": "Нажмите сочетание клавиш...",
   "app.shortcuts.context.datagrid": "Таблица данных",

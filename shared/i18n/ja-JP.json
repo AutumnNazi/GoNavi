@@ -2853,6 +2853,8 @@
   "app.shortcuts.action.toggleTheme.label": "テーマを切り替え",
   "app.shortcuts.action.triggerSqlAiCompletion.description": "現在の SQL エディターで AI インライン補完を手動で要求します",
   "app.shortcuts.action.triggerSqlAiCompletion.label": "SQL AI 補完を実行",
+  "app.shortcuts.action.acceptSqlAiCompletion.description": "エディターに AI インライン補完が表示されているとき、このキーを押すと補完内容がエディターに挿入されます",
+  "app.shortcuts.action.acceptSqlAiCompletion.label": "SQL AI 自動補完を受け入れる",
   "app.shortcuts.capture_hint": "「記録」をクリックした後にショートカットを押してください。Esc で記録をキャンセルできます。グローバルショートカットには修飾キーを含めることを推奨します。AI チャット送信は Enter 関連の組み合わせのみ対応し、Shift+Enter は改行のままです。",
   "app.shortcuts.capture_waiting": "ショートカットを押してください...",
   "app.shortcuts.context.datagrid": "データグリッド",
