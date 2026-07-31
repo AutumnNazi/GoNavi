@@ -635,7 +635,8 @@ const TableDesigner: React.FC<{ tab: TabData; embedded?: boolean }> = ({ tab, em
   }, []);
 
   const focusColumnRow = useCallback((targetKey: string): boolean => {
-      if (activeKey !== 'columns') return false;
+      // TDengine's new-table view embeds the columns table in its tdengine tab.
+      if (activeKey !== 'columns' && activeKey !== 'tdengine') return false;
       const tableBody = containerRef.current?.querySelector('.ant-table-body') as HTMLElement | null;
       if (!tableBody) return false;
       const row = tableBody.querySelector(`tr[data-row-key="${targetKey}"]`) as HTMLTableRowElement | null;
@@ -671,7 +672,8 @@ const TableDesigner: React.FC<{ tab: TabData; embedded?: boolean }> = ({ tab, em
 
   useEffect(() => {
       const pendingKey = pendingFocusColumnKeyRef.current;
-      if (!pendingKey || activeKey !== 'columns') return;
+      // TDengine's new-table view embeds the columns table in its tdengine tab.
+      if (!pendingKey || (activeKey !== 'columns' && activeKey !== 'tdengine')) return;
 
       let cancelled = false;
       const tryFocus = () => {
@@ -2905,8 +2907,7 @@ END;`;
       </div>
   );
 
-  const tdengineAdvancedTabContent = (
-      <div style={{ height: '100%', overflow: 'auto', padding: 12 }}>
+  const tdengineAdvancedFormContent = (
           <Space direction="vertical" size={14} style={{ width: '100%', maxWidth: 960 }}>
               <Radio.Group
                   value={tdengineTableKind}
@@ -2983,7 +2984,6 @@ END;`;
                   </Space>
               )}
           </Space>
-      </div>
   );
 
   const columnsTabContent = (
@@ -3046,6 +3046,66 @@ END;`;
       </DndContext>
   )}
   </div>
+  );
+
+  const tdengineCombinedTabContent = (
+      <div
+          className="gn-v2-tdengine-combined"
+          style={{
+              display: 'flex',
+              flexDirection: 'column',
+              height: '100%',
+              minHeight: 0,
+              overflow: 'hidden',
+              background: panelBodyBg,
+          }}
+      >
+          <div
+              className="gn-v2-tdengine-options"
+              style={{
+                  flex: isTDengineChildNewTable ? '1 1 auto' : '0 0 auto',
+                  minHeight: 0,
+                  maxHeight: isTDengineChildNewTable ? undefined : 'min(42%, 320px)',
+                  overflow: 'auto',
+                  padding: '10px 12px',
+                  borderBottom: isTDengineChildNewTable ? undefined : `1px solid ${panelToolbarBorder}`,
+              }}
+          >
+              {tdengineAdvancedFormContent}
+          </div>
+          {!isTDengineChildNewTable && (
+              <div
+                  className="gn-v2-tdengine-columns-section"
+                  style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      flex: '1 1 auto',
+                      minHeight: 0,
+                      overflow: 'hidden',
+                  }}
+              >
+                  <div
+                      className="gn-v2-tdengine-columns-heading"
+                      style={{
+                          display: 'flex',
+                          alignItems: 'baseline',
+                          justifyContent: 'space-between',
+                          gap: 8,
+                          flex: '0 0 auto',
+                          padding: '8px 12px 6px',
+                      }}
+                  >
+                      <strong>{t('table_designer.tab.columns', undefined, i18nLanguage)}</strong>
+                      <span style={{ color: darkMode ? 'rgba(255,255,255,0.52)' : 'rgba(0,0,0,0.45)', fontSize: 12 }}>
+                          {designerColumnSummary}
+                      </span>
+                  </div>
+                  <div style={{ flex: '1 1 auto', minHeight: 0, overflow: 'hidden' }}>
+                      {columnsTabContent}
+                  </div>
+              </div>
+          )}
+      </div>
   );
 
   return (
@@ -3463,15 +3523,15 @@ END;`;
                     {
                         key: 'tdengine',
                         label: t('table_designer.tab.tdengine', undefined, i18nLanguage),
-                        children: tdengineAdvancedTabContent,
+                        children: tdengineCombinedTabContent,
                     },
-                ] : []),
-                {
-                    key: 'columns',
-                    label: t('table_designer.tab.columns', undefined, i18nLanguage),
-                    disabled: isTDengineChildNewTable,
-                    children: columnsTabContent
-                },
+                ] : [
+                    {
+                        key: 'columns',
+                        label: t('table_designer.tab.columns', undefined, i18nLanguage),
+                        children: columnsTabContent
+                    },
+                ]),
                 ...(isStarRocksNewTable ? [
                     {
                         key: 'starrocks',
