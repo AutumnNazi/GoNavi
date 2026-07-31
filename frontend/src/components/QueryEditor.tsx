@@ -1462,6 +1462,8 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
   const aiInlineGhostRequestSeqRef = useRef(0);
   const triggerAiInlineCompletionRef = useRef<(() => void) | null>(null);
   const acceptAiInlineCompletionRef = useRef<(() => boolean) | null>(null);
+  const acceptSqlAiCompletionBindingRef = useRef<{ combo: string; enabled: boolean }>({ combo: '', enabled: false });
+  const queryEditorActiveRef = useRef(false);
   const aiContextMetadataWarmupRef = useRef<Record<string, Promise<boolean> | undefined>>({});
   const aiContextCacheRef = useRef<{ deps: unknown[]; value: QueryEditorAiContext } | null>(null);
   const triggerSqlAiCompletionAltPressedRef = useRef(false);
@@ -1771,6 +1773,9 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       () => resolveShortcutBinding(shortcutOptions, 'acceptSqlAiCompletion', activeShortcutPlatform),
       [activeShortcutPlatform, shortcutOptions],
   );
+  // 渲染期同步最新绑定/激活态,keydown 监听从 ref 读取,editor 重建或改绑均无需重注册。
+  acceptSqlAiCompletionBindingRef.current = acceptSqlAiCompletionShortcutBinding;
+  queryEditorActiveRef.current = isActive;
   const toggleQueryResultsPanelShortcutBinding = useMemo(
       () => resolveShortcutBinding(shortcutOptions, 'toggleQueryResultsPanel', activeShortcutPlatform),
       [activeShortcutPlatform, shortcutOptions],
@@ -4301,6 +4306,30 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           requestAiInlineGhost(0, true, true);
       };
       acceptAiInlineCompletionRef.current = () => acceptAiInlineGhost();
+      acceptSqlAiCompletionKeydownDisposableRef.current?.dispose?.();
+      acceptSqlAiCompletionKeydownDisposableRef.current = editor.onKeyDown((event: any) => {
+          if (!queryEditorActiveRef.current) {
+              return;
+          }
+          const binding = acceptSqlAiCompletionBindingRef.current;
+          if (!binding?.enabled || !binding?.combo) {
+              return;
+          }
+          const browserEvent = event?.browserEvent || event?.event || event;
+          if (!browserEvent) {
+              return;
+          }
+          if (!isShortcutMatch(browserEvent, binding.combo)) {
+              return;
+          }
+          // 接受成功才拦截按键;幽灵不存在或已过期时返回 false,键走默认行为。
+          if (acceptAiInlineCompletionRef.current?.() === true) {
+              event?.preventDefault?.();
+              event?.stopPropagation?.();
+              browserEvent.preventDefault?.();
+              browserEvent.stopPropagation?.();
+          }
+      });
 
       if (monaco?.KeyCode?.RightArrow) {
           editor.addCommand?.(
@@ -4899,6 +4928,8 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           triggerSqlAiCompletionKeydownDisposableRef.current = null;
           triggerAiInlineCompletionRef.current = null;
           acceptAiInlineCompletionRef.current = null;
+          acceptSqlAiCompletionKeydownDisposableRef.current?.dispose?.();
+          acceptSqlAiCompletionKeydownDisposableRef.current = null;
           const disposedModelUri = String(editor.getModel?.()?.uri?.toString?.() || '');
           if (disposedModelUri && sharedActiveEditorModelUri === disposedModelUri) {
               sharedActiveEditorModelUri = '';
@@ -7943,43 +7974,6 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           triggerSqlAiCompletionKeydownDisposableRef.current = null;
       };
   }, [isActive, isPossibleTriggerSqlAiCompletionFallbackEvent, isTriggerSqlAiCompletionShortcutEvent, triggerSqlAiCompletionShortcutBinding]);
-
-  useEffect(() => {
-      acceptSqlAiCompletionKeydownDisposableRef.current?.dispose?.();
-      acceptSqlAiCompletionKeydownDisposableRef.current = null;
-
-      const editor = editorRef.current;
-      const binding = acceptSqlAiCompletionShortcutBinding;
-      if (!editor?.onKeyDown || !binding?.enabled || !binding.combo) {
-          return;
-      }
-
-      acceptSqlAiCompletionKeydownDisposableRef.current = editor.onKeyDown((event: any) => {
-          if (!isActive) {
-              return;
-          }
-
-          const browserEvent = event?.browserEvent || event?.event || event;
-          if (!browserEvent) {
-              return;
-          }
-          if (!isShortcutMatch(browserEvent, binding.combo)) {
-              return;
-          }
-          // 接受成功才拦截按键;幽灵不存在或已过期时返回 false,键走默认行为。
-          if (acceptAiInlineCompletionRef.current?.() === true) {
-              event?.preventDefault?.();
-              event?.stopPropagation?.();
-              browserEvent.preventDefault?.();
-              browserEvent.stopPropagation?.();
-          }
-      });
-
-      return () => {
-          acceptSqlAiCompletionKeydownDisposableRef.current?.dispose?.();
-          acceptSqlAiCompletionKeydownDisposableRef.current = null;
-      };
-  }, [isActive, acceptSqlAiCompletionShortcutBinding]);
 
   useEffect(() => {
       if (runQueryActionRef.current) {

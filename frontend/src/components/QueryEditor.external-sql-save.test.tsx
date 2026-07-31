@@ -2367,6 +2367,127 @@ describe('QueryEditor external SQL save', () => {
     }
   });
 
+  it('accepts the AI inline ghost with a rebound Shift+Tab shortcut', async () => {
+    vi.useFakeTimers();
+    try {
+      storeState.shortcutOptions.acceptSqlAiCompletion = {
+        mac: { enabled: true, combo: 'Shift+Tab' },
+        windows: { enabled: true, combo: 'Shift+Tab' },
+      };
+
+      const inlineAiService = {
+        AIGetProviders: vi.fn(async () => [{
+          id: 'openai-main',
+          type: 'openai',
+          name: 'OpenAI',
+          apiKey: '',
+          hasSecret: true,
+          baseUrl: 'https://api.openai.com/v1',
+          model: 'gpt-5-mini',
+          maxTokens: 2048,
+          temperature: 0.2,
+        }]),
+        AIGetActiveProvider: vi.fn(async () => 'openai-main'),
+        AIGetUserPromptSettings: vi.fn(async () => ({
+          global: '',
+          database: '',
+          jvm: '',
+          jvmDiagnostic: '',
+        })),
+        AIChatSend: vi.fn(async () => ({ success: true, content: 'videos' })),
+      };
+      backendApp.DBGetTables.mockResolvedValueOnce({
+        success: true,
+        data: [
+          { TABLE_NAME: 'videos' },
+          { TABLE_NAME: 'visits' },
+        ],
+      });
+
+      const windowListeners: Record<string, ((event?: any) => void)[]> = {};
+      vi.stubGlobal('window', {
+        addEventListener: vi.fn((type: string, listener: (event?: any) => void) => {
+          windowListeners[type] ||= [];
+          windowListeners[type].push(listener);
+        }),
+        removeEventListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+        setTimeout,
+        clearTimeout,
+        requestAnimationFrame: vi.fn((callback: FrameRequestCallback) => {
+          callback(0);
+          return 1;
+        }),
+        cancelAnimationFrame: vi.fn(),
+        innerHeight: 900,
+        go: {
+          aiservice: {
+            Service: inlineAiService,
+          },
+        },
+      });
+
+      await act(async () => {
+        create(<QueryEditor tab={createTab({ query: 'SELECT', dbName: 'main' })} />);
+      });
+
+      editorState.value = 'SELECT';
+      editorState.position = { lineNumber: 1, column: 'SELECT'.length + 1 };
+      editorState.editor.executeEdits.mockClear();
+      editorState.editor.trigger.mockClear();
+      editorState.domNode.appendChild.mockClear();
+
+      await act(async () => {
+        editorState.latestOnChange?.('SELECT');
+        editorState.modelContentListeners.forEach((listener) => listener({
+          changes: [{ text: 'T' }],
+        }));
+        vi.advanceTimersByTime(220);
+        for (let i = 0; i < 8; i += 1) {
+          await Promise.resolve();
+        }
+      });
+
+      const shortcutEvent = {
+        type: 'keydown',
+        key: 'Tab',
+        code: 'Tab',
+        keyCode: 9,
+        which: 9,
+        ctrlKey: false,
+        metaKey: false,
+        altKey: false,
+        shiftKey: true,
+        isComposing: false,
+        preventDefault: vi.fn(),
+        stopPropagation: vi.fn(),
+      };
+      const monacoShortcutEvent = {
+        browserEvent: shortcutEvent,
+        preventDefault: vi.fn(),
+        stopPropagation: vi.fn(),
+      };
+
+      await act(async () => {
+        editorState.keyDownListeners.forEach((listener) => listener(monacoShortcutEvent));
+        for (let i = 0; i < 8; i += 1) {
+          await Promise.resolve();
+        }
+      });
+
+      expect(editorState.editor.executeEdits).toHaveBeenCalledWith(
+        'gonavi-ai-inline-sql-completion',
+        [expect.objectContaining({ text: expect.any(String) })],
+      );
+      expect(monacoShortcutEvent.preventDefault).toHaveBeenCalled();
+      expect(monacoShortcutEvent.stopPropagation).toHaveBeenCalled();
+      expect(shortcutEvent.preventDefault).toHaveBeenCalled();
+      expect(shortcutEvent.stopPropagation).toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('continues accepted inline SQL ghost with grounded table AI completion', async () => {
     vi.useFakeTimers();
     try {

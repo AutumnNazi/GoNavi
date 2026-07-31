@@ -931,8 +931,8 @@ describe('acceptSqlAiCompletion', () => {
     expect(canRecordShortcutForAction('acceptSqlAiCompletion', 'Tab')).toBe(true);
   });
 
-  it('拒绝 Shift+Tab(disallowShift)', () => {
-    expect(canRecordShortcutForAction('acceptSqlAiCompletion', 'Shift+Tab')).toBe(false);
+  it('允许 Shift+Tab(接受键常为 Tab 相关组合)', () => {
+    expect(canRecordShortcutForAction('acceptSqlAiCompletion', 'Shift+Tab')).toBe(true);
   });
 
   it('允许带修饰键组合(如 Ctrl+Right)', () => {

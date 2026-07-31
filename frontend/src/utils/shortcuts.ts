@@ -192,7 +192,6 @@ const SHORTCUT_ACTION_META_DEFINITIONS: Record<ShortcutAction, ShortcutActionMet
     scope: 'queryEditor',
     allowInEditable: true,
     allowWithoutModifier: true,
-    disallowShift: true,
   },
   toggleQueryResultsPanel: {
     labelKey: 'app.shortcuts.action.toggleQueryResultsPanel.label',
