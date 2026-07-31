@@ -1327,6 +1327,10 @@ describe('DataGrid layout', () => {
       css.indexOf('body[data-ui-version="v2"] .gn-v2-data-grid .gn-v2-commit-button:disabled {'),
       css.indexOf('body[data-ui-version="v2"] .gn-v2-data-grid .gn-v2-commit-button .gn-v2-toolbar-kbd {'),
     );
+    const viewTabSelectionCss = css.slice(
+      css.indexOf('body[data-ui-version="v2"] .gn-v2-data-grid-view-tabs .ant-btn-primary {'),
+      css.indexOf('body[data-ui-version="v2"] .gn-v2-data-grid-statusbar .gn-v2-data-grid-toolbar-action.ant-btn {'),
+    );
     const resultViewSelectionCss = css.slice(
       css.indexOf('body[data-ui-version="v2"] .gn-v2-data-grid-result-switcher .ant-segmented-item-selected,'),
       css.indexOf('body[data-ui-version="v2"] .gn-v2-data-grid-page-find-overlay {'),
@@ -1340,6 +1344,12 @@ describe('DataGrid layout', () => {
     expect(commitDisabledCss).toContain('background: var(--gn-bg-active) !important;');
     expect(commitDisabledCss).toContain('color: var(--gn-fg-5) !important;');
     expect(commitDisabledCss).not.toContain('var(--gn-accent-soft)');
+    expect(viewTabSelectionCss).toContain('background: var(--gn-accent-strong, var(--gn-accent)) !important;');
+    expect(viewTabSelectionCss).toContain('color: var(--gn-on-accent, #fff) !important;');
+    expect(viewTabSelectionCss).not.toContain('background: var(--gn-bg-active) !important;');
+    expect(viewTabSelectionCss).toContain(':focus-visible');
+    expect(viewTabSelectionCss).toContain('background: var(--gn-accent-strong-hover, var(--gn-accent-2)) !important;');
+    expect(viewTabSelectionCss).toContain('background: var(--gn-accent-strong-active, var(--gn-accent-2)) !important;');
     expect(resultViewSelectionCss).toContain('background: var(--gn-accent-strong, var(--gn-accent)) !important;');
     expect(resultViewSelectionCss).toContain('border: 0 !important;');
     expect(resultViewSelectionCss).toContain('box-shadow: none !important;');
