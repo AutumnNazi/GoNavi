@@ -289,6 +289,12 @@ export const messages: Record<SupportedLanguage, Record<MessageKey, string>> = {
     "connection.modal.field.oceanBaseServiceName.help":
       "Oracle 租户必须填写监听器注册的 SERVICE_NAME；用户名仍按 OceanBase 租户格式填写。",
     "connection.modal.field.serviceName.placeholder": "例如：ORCLPDB1",
+    "connection.modal.field.oracleMode.label": "连接模式",
+    "connection.modal.field.oracleMode.service": "服务名称",
+    "connection.modal.field.oracleMode.sid": "SID",
+    "connection.modal.field.sid.label": "SID",
+    "connection.modal.field.sid.required": "请输入 SID",
+    "connection.modal.field.sid.placeholder": "例如：ORCL",
     "connection.modal.jvm.unsupportedMode.saveTest":
       "当前连接包含未支持的 JVM 模式；请先调整为 JMX、Endpoint 或 Agent 后再测试或保存",
     "connection.modal.jvm.unsupportedTransport.saveTest":
@@ -1171,6 +1177,12 @@ export const messages: Record<SupportedLanguage, Record<MessageKey, string>> = {
     "connection.modal.field.oceanBaseServiceName.help":
       "Oracle tenants require the SERVICE_NAME registered with the listener. Keep using the OceanBase tenant format for the username.",
     "connection.modal.field.serviceName.placeholder": "For example: ORCLPDB1",
+    "connection.modal.field.oracleMode.label": "Connection mode",
+    "connection.modal.field.oracleMode.service": "Service name",
+    "connection.modal.field.oracleMode.sid": "SID",
+    "connection.modal.field.sid.label": "SID",
+    "connection.modal.field.sid.required": "Please enter the SID",
+    "connection.modal.field.sid.placeholder": "For example: ORCL",
     "connection.modal.jvm.unsupportedMode.saveTest":
       "This connection contains unsupported JVM modes. Change them to JMX, Endpoint, or Agent before testing or saving.",
     "connection.modal.jvm.unsupportedTransport.saveTest":
