@@ -5,6 +5,7 @@ import {
 } from '../i18n';
 import {
   DEFAULT_SHORTCUT_OPTIONS,
+  canRecordShortcutForAction,
   findReservedConflict,
   findReservedConflicts,
   findReservedConflictsForAction,
@@ -915,5 +916,31 @@ describe('comboToMonacoKeyBinding', () => {
       keyMod: mockKeyMod.CtrlCmd | mockKeyMod.Alt,
       keyCode: mockKeyCode.Delete,
     });
+  });
+});
+
+// ─── acceptSqlAiCompletion ──────────────────────────────────────────
+
+describe('acceptSqlAiCompletion', () => {
+  it('默认绑定为 Right 且启用(win/mac 一致)', () => {
+    expect(DEFAULT_SHORTCUT_OPTIONS.acceptSqlAiCompletion.mac).toEqual({ combo: 'Right', enabled: true });
+    expect(DEFAULT_SHORTCUT_OPTIONS.acceptSqlAiCompletion.windows).toEqual({ combo: 'Right', enabled: true });
+  });
+
+  it('允许录制无修饰键的 Tab(裸键场景)', () => {
+    expect(canRecordShortcutForAction('acceptSqlAiCompletion', 'Tab')).toBe(true);
+  });
+
+  it('拒绝 Shift+Tab(disallowShift)', () => {
+    expect(canRecordShortcutForAction('acceptSqlAiCompletion', 'Shift+Tab')).toBe(false);
+  });
+
+  it('允许带修饰键组合(如 Ctrl+Right)', () => {
+    expect(canRecordShortcutForAction('acceptSqlAiCompletion', 'Ctrl+Right')).toBe(true);
+  });
+
+  it('resolveShortcutBinding 对缺失配置回退默认 Right', () => {
+    const binding = resolveShortcutBinding({}, 'acceptSqlAiCompletion', 'windows');
+    expect(binding).toEqual({ combo: 'Right', enabled: true });
   });
 });
