@@ -187,14 +187,17 @@ import {
 export { resolveSidebarContextMenuPosition } from './sidebarCoreUtils';
 export type { ExternalSQLFileModalMode, SearchScope } from './sidebarCoreUtils';
 import {
+  applySidebarDatabasePinning,
   buildSidebarTableChildrenForUi,
   buildSidebarConnectionTagTree,
   buildV2RailConnectionGroups,
+  buildV2SidebarDatabaseSectionedChildren,
   buildV2SidebarTableSectionedChildren,
   collectSidebarSubtreeKeys,
   estimateV2TreeHorizontalScrollWidth,
   filterV2CommandSearchTreeItems,
   filterV2ExplorerTreeByKind,
+  isSidebarDatabasePinned,
   isSidebarTablePinned,
   isConnectionTagDescendant,
   normalizeSidebarTreeRelativeDropPosition,
@@ -222,14 +225,17 @@ import {
 } from './sidebarV2Utils';
 
 export {
+  applySidebarDatabasePinning,
   buildSidebarTableChildrenForUi,
   buildSidebarConnectionTagTree,
   buildV2RailConnectionGroups,
+  buildV2SidebarDatabaseSectionedChildren,
   buildV2SidebarTableSectionedChildren,
   collectSidebarSubtreeKeys,
   estimateV2TreeHorizontalScrollWidth,
   filterV2CommandSearchTreeItems,
   filterV2ExplorerTreeByKind,
+  isSidebarDatabasePinned,
   isSidebarTablePinned,
   isConnectionTagDescendant,
   normalizeSidebarTreeRelativeDropPosition,
@@ -621,9 +627,11 @@ const Sidebar: React.FC<{
   const tableAccessCount = useStore(state => state.tableAccessCount);
   const tableSortPreference = useStore(state => state.tableSortPreference);
   const pinnedSidebarTables = useStore(state => state.pinnedSidebarTables);
+  const pinnedSidebarDatabases = useStore(state => state.pinnedSidebarDatabases);
   const recordTableAccess = useStore(state => state.recordTableAccess);
   const setTableSortPreference = useStore(state => state.setTableSortPreference);
   const setSidebarTablePinned = useStore(state => state.setSidebarTablePinned);
+  const setSidebarDatabasePinned = useStore(state => state.setSidebarDatabasePinned);
   const queryOptions = useStore(state => state.queryOptions);
   const setQueryOptions = useStore(state => state.setQueryOptions);
   const addSqlLog = useStore(state => state.addSqlLog);
@@ -1801,7 +1809,7 @@ const Sidebar: React.FC<{
   };
 
   const onSelect = (keys: React.Key[], info: any) => {
-      if (isV2Ui && info?.node?.type === 'v2-table-section') {
+      if (isV2Ui && (info?.node?.type === 'v2-table-section' || info?.node?.type === 'v2-database-section')) {
           return;
       }
       if (Date.now() < treeDragSelectSuppressUntilRef.current) {
@@ -1906,7 +1914,7 @@ const Sidebar: React.FC<{
           clickTimerRef.current = null;
       }
       const { type, dataRef, key: nodeKey } = node;
-      if (isV2Ui && type === 'v2-table-section') {
+      if (isV2Ui && (type === 'v2-table-section' || type === 'v2-database-section')) {
           return;
       }
       const nodeConnectionId = resolveSidebarNodeConnectionId(node, connectionIds);
@@ -2274,6 +2282,7 @@ const Sidebar: React.FC<{
       tableSortPreference,
       tableAccessCount,
       pinnedSidebarTables,
+      pinnedSidebarDatabases,
       isV2Ui,
       loadingNodesRef,
       setConnectionStates,
@@ -2604,6 +2613,7 @@ const Sidebar: React.FC<{
       connections,
       connectionTags,
       pinnedSidebarTables,
+      pinnedSidebarDatabases,
       loadingNodesRef,
       treeDataRef,
       findTreeNodeByKeyRef,
@@ -2629,6 +2639,7 @@ const Sidebar: React.FC<{
       removeConnectionTag,
       moveConnectionToTag,
       setSidebarTablePinned,
+      setSidebarDatabasePinned,
       setTableSortPreference,
       replaceTreeNodeChildren,
       loadDatabases,
@@ -2759,6 +2770,7 @@ const Sidebar: React.FC<{
       v2TreeMetrics,
       tableSortPreference,
       pinnedSidebarTables,
+      pinnedSidebarDatabases,
       getConnectionNodeForAction,
       buildRuntimeConfig,
       extractObjectName,
@@ -3033,7 +3045,7 @@ const Sidebar: React.FC<{
   };
 
   const onRightClick = ({ event, node }: any) => {
-      if (isV2Ui && node?.type === 'v2-table-section') {
+      if (isV2Ui && (node?.type === 'v2-table-section' || node?.type === 'v2-database-section')) {
           event.preventDefault();
           event.stopPropagation();
           return;

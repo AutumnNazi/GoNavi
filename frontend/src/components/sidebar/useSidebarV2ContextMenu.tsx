@@ -22,7 +22,12 @@ import { getDataSourceCapabilities } from '../../utils/dataSourceCapabilities';
 import { resolveConnectionHostSummary } from '../../utils/tabDisplay';
 import { resolveConnectionIconType } from '../../utils/connectionVisual';
 import { formatSidebarRowCount } from './sidebarHelpers';
-import { isSidebarTablePinned, type SidebarTreeNode as TreeNode, type V2RailConnectionGroup } from '../sidebarV2Utils';
+import {
+  isSidebarDatabasePinned,
+  isSidebarTablePinned,
+  type SidebarTreeNode as TreeNode,
+  type V2RailConnectionGroup,
+} from '../sidebarV2Utils';
 import { getTableDataDangerActionMeta, supportsTableTruncateAction } from '../tableDataDangerActions';
 import {
   SIDEBAR_CONTEXT_MENU_FALLBACK_HEIGHT,
@@ -55,6 +60,7 @@ type SidebarV2ContextMenuOptions = {
   };
   tableSortPreference: Record<string, any>;
   pinnedSidebarTables: any[];
+  pinnedSidebarDatabases: string[];
   getConnectionNodeForAction: (conn: SavedConnection) => TreeNode;
   buildRuntimeConfig: (conn: any, overrideDatabase?: string, clearDatabase?: boolean) => any;
   extractObjectName: (fullName: string) => string;
@@ -115,6 +121,7 @@ export const useSidebarV2ContextMenu = ({
   v2TreeMetrics,
   tableSortPreference,
   pinnedSidebarTables,
+  pinnedSidebarDatabases,
   getConnectionNodeForAction,
   buildRuntimeConfig,
   extractObjectName,
@@ -331,9 +338,15 @@ export const useSidebarV2ContextMenu = ({
   const renderV2DatabaseContextMenu = (node: any) => {
       const dialect = getMetadataDialect(node.dataRef as SavedConnection);
       const capabilities = getDataSourceCapabilities((node.dataRef as SavedConnection)?.config);
+      const dbName = String(node.dataRef?.dbName || node.title || '');
+      const isPinned = isSidebarDatabasePinned(
+          pinnedSidebarDatabases,
+          String(node.dataRef?.id || ''),
+          dbName,
+      );
       return (
           <V2DatabaseContextMenuView
-              dbName={String(node.dataRef?.dbName || node.title || '')}
+              dbName={dbName}
               shortcutPlatform={activeShortcutPlatform}
               dialect={dialect}
               supportsSchemaActions={isPostgresSchemaDialect(dialect)}
@@ -341,6 +354,7 @@ export const useSidebarV2ContextMenu = ({
               supportsStarRocksActions={dialect === 'starrocks'}
               supportsRenameDatabase={capabilities.supportsRenameDatabase}
               supportsDropDatabase={capabilities.supportsDropDatabase}
+              isPinned={isPinned}
               onAction={(action) => {
                   setContextMenu(null);
                   if (action === 'schema-visibility') {

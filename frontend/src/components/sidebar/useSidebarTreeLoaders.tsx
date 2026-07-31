@@ -52,7 +52,9 @@ import {
   supportsDatabaseSequences,
 } from './sidebarMetadataLoaders';
 import {
+  applySidebarDatabasePinning,
   buildSidebarTableChildrenForUi,
+  buildV2SidebarDatabaseSectionedChildren,
   isSidebarTablePinned,
   sortSidebarTableEntries,
   type SidebarConnectionState,
@@ -157,6 +159,7 @@ type UseSidebarTreeLoadersOptions = {
   tableSortPreference: Record<string, any>;
   tableAccessCount: Record<string, any>;
   pinnedSidebarTables: any[];
+  pinnedSidebarDatabases: string[];
   isV2Ui: boolean;
   loadingNodesRef: React.MutableRefObject<Set<string>>;
   setConnectionStates: React.Dispatch<React.SetStateAction<Record<string, SidebarConnectionState>>>;
@@ -174,6 +177,7 @@ export const useSidebarTreeLoaders = ({
   tableSortPreference,
   tableAccessCount,
   pinnedSidebarTables,
+  pinnedSidebarDatabases,
   isV2Ui,
   loadingNodesRef,
   setConnectionStates,
@@ -576,7 +580,7 @@ export const useSidebarTreeLoaders = ({
 	          const res = await DBGetDatabases(buildRpcConnectionConfig(config) as any);
 	          if (res.success) {
                 const dbRows: any[] = Array.isArray(res.data) ? res.data : [];
-	            let dbs = dbRows.map((row: any) => ({
+	            let dbs: TreeNode[] = dbRows.map((row: any) => ({
 	              title: row.Database || row.database,
               key: `${conn.id}-${row.Database || row.database}`,
               icon: <DatabaseOutlined />,
@@ -588,6 +592,18 @@ export const useSidebarTreeLoaders = ({
             // Filter databases if configured
             if (conn.includeDatabases && conn.includeDatabases.length > 0) {
                 dbs = dbs.filter(db => conn.includeDatabases!.includes(db.title));
+            }
+
+            if (isV2Ui) {
+                const currentPinnedSidebarDatabases =
+                    useStore.getState().pinnedSidebarDatabases || pinnedSidebarDatabases;
+                dbs = buildV2SidebarDatabaseSectionedChildren(
+                    String(node.key),
+                    applySidebarDatabasePinning(dbs, {
+                        connectionId: conn.id,
+                        pinnedSidebarDatabases: currentPinnedSidebarDatabases,
+                    }),
+                );
             }
 
             if (dbs.length > 0) {

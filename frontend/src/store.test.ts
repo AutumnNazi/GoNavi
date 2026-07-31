@@ -3591,3 +3591,39 @@ describe('store persistence hot path', () => {
     expect(Object.prototype.hasOwnProperty.call(scrubbedProjection, 'connections')).toBe(false);
   });
 });
+
+describe('sidebar database pin persistence', () => {
+  let storage: MemoryStorage;
+
+  beforeEach(() => {
+    storage = new MemoryStorage();
+    vi.stubGlobal('localStorage', storage);
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.resetModules();
+  });
+
+  it('persists database pins by connection and database name', async () => {
+    const { buildSidebarDatabasePinKey, updateSidebarDatabasePinKeys, useStore } = await importStore();
+    const pinKey = buildSidebarDatabasePinKey(' conn-1 ', ' analytics ');
+
+    expect(pinKey).toBe(JSON.stringify(['conn-1', 'analytics']));
+    expect(updateSidebarDatabasePinKeys([], 'conn-1', 'analytics', true)).toEqual([pinKey]);
+    expect(updateSidebarDatabasePinKeys([pinKey], 'conn-1', 'analytics', true)).toEqual([pinKey]);
+
+    useStore.getState().setSidebarDatabasePinned('conn-1', 'analytics', true);
+    expect(useStore.getState().pinnedSidebarDatabases).toEqual([pinKey]);
+    const persisted = JSON.parse(storage.getItem('lite-db-storage') || '{}');
+    expect(persisted.state.pinnedSidebarDatabases).toEqual([pinKey]);
+
+    vi.resetModules();
+    const reloaded = await importStore();
+    expect(reloaded.useStore.getState().pinnedSidebarDatabases).toEqual([pinKey]);
+
+    reloaded.useStore.getState().setSidebarDatabasePinned('conn-1', 'analytics', false);
+    expect(reloaded.useStore.getState().pinnedSidebarDatabases).toEqual([]);
+  });
+});
