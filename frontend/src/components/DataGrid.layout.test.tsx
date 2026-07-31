@@ -1345,7 +1345,7 @@ describe('DataGrid layout', () => {
     expect(commitDisabledCss).toContain('color: var(--gn-fg-5) !important;');
     expect(commitDisabledCss).not.toContain('var(--gn-accent-soft)');
     expect(viewTabSelectionCss).toContain('background: var(--gn-accent-strong, var(--gn-accent)) !important;');
-    expect(viewTabSelectionCss).toContain('color: var(--gn-on-accent, #fff) !important;');
+    expect(viewTabSelectionCss).toContain('color: var(--gn-ant-on-primary, var(--gn-on-accent, #fff)) !important;');
     expect(viewTabSelectionCss).not.toContain('background: var(--gn-bg-active) !important;');
     expect(viewTabSelectionCss).toContain(':focus-visible');
     expect(viewTabSelectionCss).toContain('background: var(--gn-accent-strong-hover, var(--gn-accent-2)) !important;');
@@ -1353,7 +1353,7 @@ describe('DataGrid layout', () => {
     expect(resultViewSelectionCss).toContain('background: var(--gn-accent-strong, var(--gn-accent)) !important;');
     expect(resultViewSelectionCss).toContain('border: 0 !important;');
     expect(resultViewSelectionCss).toContain('box-shadow: none !important;');
-    expect(resultViewSelectionCss).toContain('color: var(--gn-on-accent, #fff) !important;');
+    expect(resultViewSelectionCss).toContain('color: var(--gn-ant-on-primary, var(--gn-on-accent, #fff)) !important;');
     expect(css).toContain(
       'body[data-ui-version="v2"] .gn-v2-data-grid-statusbar .gn-v2-data-grid-toolbar-action.ant-btn {',
     );
@@ -1741,7 +1741,7 @@ describe('DataGrid layout', () => {
     const filterCss = css.slice(
       css.indexOf('body[data-ui-version="v2"] .gn-v2-smart-filter-panel'),
       css.indexOf('body[data-ui-version="v2"] .gn-v2-data-grid-table-shell'),
-    );
+    ).replace(/\r\n/g, '\n');
     const tableSurfaceCss = css.slice(
       css.indexOf('body[data-ui-version="v2"] .gn-v2-data-grid-table-shell'),
       css.indexOf('body[data-ui-version="v2"] .gn-v2-data-grid .ant-table-thead'),

@@ -2304,6 +2304,8 @@ body[data-platform='windows'] .titlebar-window-controls {
     border-radius: 8px;
     background: var(--ant-color-bg-container, #fff);
     overflow: hidden;
+    container-name: driver-card;
+    container-type: inline-size;
 }
 
 .driver-manager-card-warning {
@@ -2316,8 +2318,9 @@ body[data-platform='windows'] .titlebar-window-controls {
 
 .driver-manager-card-main {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(300px, 38%);
-    gap: 16px;
+    grid-template-columns: minmax(0, 1fr) minmax(320px, 400px);
+    gap: 16px 20px;
+    align-items: start;
     padding: 16px;
 }
 
@@ -2380,6 +2383,20 @@ body[data-platform='windows'] .titlebar-window-controls {
     min-width: 0;
 }
 
+.driver-manager-progress-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    min-width: 0;
+}
+
+.driver-manager-progress-value {
+    flex: 0 0 auto;
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+}
+
 .driver-manager-control-label,
 .driver-manager-small-text {
     font-size: 12px;
@@ -2388,6 +2405,11 @@ body[data-platform='windows'] .titlebar-window-controls {
 .driver-manager-version-control {
     display: grid;
     gap: 4px;
+}
+
+.driver-manager-version-summary {
+    overflow-wrap: anywhere;
+    font-variant-numeric: tabular-nums;
 }
 
 .driver-manager-version-lock {
@@ -2549,8 +2571,8 @@ body[data-platform='windows'] .titlebar-window-controls {
 }
 
 .driver-manager-shell.is-embedded .driver-manager-card-main {
-    grid-template-columns: minmax(0, 1fr) minmax(270px, 42%);
-    gap: 12px 16px;
+    grid-template-columns: minmax(0, 1fr) minmax(320px, 380px);
+    gap: 12px 20px;
     padding: 12px 2px;
 }
 
@@ -2599,9 +2621,9 @@ body[data-platform='windows'] .titlebar-window-controls {
 
 .driver-manager-shell.is-embedded .driver-manager-card-controls {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(96px, 0.7fr);
+    grid-template-columns: minmax(0, 1fr);
     align-content: start;
-    gap: 7px 12px;
+    gap: 8px;
 }
 
 .driver-manager-shell.is-embedded .driver-manager-control-block {
@@ -2609,7 +2631,8 @@ body[data-platform='windows'] .titlebar-window-controls {
 }
 
 .driver-manager-shell.is-embedded .driver-manager-card-actions {
-    grid-column: 1 / -1;
+    grid-column: 1;
+    justify-content: flex-start;
     gap: 6px !important;
 }
 
@@ -2621,6 +2644,21 @@ body[data-platform='windows'] .titlebar-window-controls {
     flex: 0 0 auto;
     padding-top: 10px;
     border-top: 1px solid var(--ant-color-border-secondary, rgba(5, 5, 5, 0.08));
+}
+
+@container driver-card (max-width: 780px) {
+    .driver-manager-card-main,
+    .driver-manager-shell.is-embedded .driver-manager-card-main {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .driver-manager-card-controls {
+        width: min(100%, 520px);
+    }
+
+    .driver-manager-card-actions {
+        justify-content: flex-start;
+    }
 }
 
 @media (max-width: 900px) {

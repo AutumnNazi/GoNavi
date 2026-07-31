@@ -367,7 +367,7 @@ body[data-custom-theme] .gonavi-custom-theme-manager.is-legacy {
 }
 
 body[data-custom-theme][data-ui-version="v2"] .ant-btn-primary:not(.ant-btn-dangerous):not(:disabled):not(.ant-btn-disabled) {
-  color: var(--gn-on-accent, #fff) !important;
+  color: var(--gn-ant-on-primary, var(--gn-on-accent, #fff)) !important;
 }
 
 body[data-custom-theme][data-ui-version="v2"] .ant-btn-primary.ant-btn-dangerous:not(:disabled):not(.ant-btn-disabled) {
