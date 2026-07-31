@@ -11,10 +11,24 @@ const ROW_NUMBER_MIN_WIDTH = 28;
 const ROW_NUMBER_MAX_WIDTH = 120;
 
 type UseDataGridColumnResizeContext = Record<string, any>;
+type ColumnResizeDragState = {
+  startX: number;
+  startWidth: number;
+  key: string;
+  containerLeft: number;
+};
 type ColumnResizeListeners = {
   blur: () => void;
   move: (event: MouseEvent) => void;
   up: (event: MouseEvent) => void;
+};
+
+const resolveColumnResizeWidth = (dragState: ColumnResizeDragState, clientX: number): number => {
+  const deltaX = clientX - dragState.startX;
+  const isRowNumberColumn = dragState.key === GONAVI_ROW_NUMBER_COLUMN_KEY;
+  const minWidth = isRowNumberColumn ? ROW_NUMBER_MIN_WIDTH : MIN_DATA_TABLE_COLUMN_WIDTH;
+  const maxWidth = isRowNumberColumn ? ROW_NUMBER_MAX_WIDTH : Number.POSITIVE_INFINITY;
+  return Math.min(maxWidth, Math.max(minWidth, dragState.startWidth + deltaX));
 };
 
 export const useDataGridColumnResize = (ctx: UseDataGridColumnResizeContext) => {
@@ -33,12 +47,7 @@ export const useDataGridColumnResize = (ctx: UseDataGridColumnResizeContext) => 
     showColumnType,
   } = ctx;
 
-  const draggingRef = useRef<{
-    startX: number;
-    startWidth: number;
-    key: string;
-    containerLeft: number;
-  } | null>(null);
+  const draggingRef = useRef<ColumnResizeDragState | null>(null);
   const ghostRef = useRef<HTMLDivElement>(null);
   const resizeRafRef = useRef<number | null>(null);
   const latestClientXRef = useRef<number | null>(null);
@@ -47,16 +56,33 @@ export const useDataGridColumnResize = (ctx: UseDataGridColumnResizeContext) => 
   const resizeBodyStyleRef = useRef<{ cursor: string; userSelect: string } | null>(null);
   const resizeListenersRef = useRef<ColumnResizeListeners | null>(null);
   const setColumnWidthsRef = useRef(setColumnWidths);
+  const lastAppliedResizeWidthRef = useRef<number | null>(null);
   const autoFitCanvasRef = useRef<HTMLCanvasElement | null>(null);
   setColumnWidthsRef.current = setColumnWidths;
 
-  const flushGhostPosition = useCallback(() => {
-    resizeRafRef.current = null;
-    if (!draggingRef.current || !ghostRef.current) return;
-    if (latestClientXRef.current === null) return;
-    const relativeLeft = latestClientXRef.current - draggingRef.current.containerLeft;
-    ghostRef.current.style.transform = `translateX(${relativeLeft}px)`;
+  const applyResizeWidth = useCallback((dragState: ColumnResizeDragState, clientX: number, force = false) => {
+    const newWidth = resolveColumnResizeWidth(dragState, clientX);
+    if (!force && lastAppliedResizeWidthRef.current === newWidth) return;
+    lastAppliedResizeWidthRef.current = newWidth;
+    setColumnWidthsRef.current((prev: Record<string, number>) => (
+      prev[dragState.key] === newWidth
+        ? prev
+        : { ...prev, [dragState.key]: newWidth }
+    ));
   }, []);
+
+  const flushResizeFrame = useCallback(() => {
+    resizeRafRef.current = null;
+    if (!draggingRef.current) return;
+    if (latestClientXRef.current === null) return;
+    const dragState = draggingRef.current;
+    const clientX = latestClientXRef.current;
+    if (ghostRef.current) {
+      const relativeLeft = clientX - dragState.containerLeft;
+      ghostRef.current.style.transform = `translateX(${relativeLeft}px)`;
+    }
+    applyResizeWidth(dragState, clientX);
+  }, [applyResizeWidth]);
 
   const detachResizeListeners = useCallback(() => {
     const listeners = resizeListenersRef.current;
@@ -110,14 +136,10 @@ export const useDataGridColumnResize = (ctx: UseDataGridColumnResizeContext) => 
 
     if (commit && dragState) {
       const finalClientX = Number.isFinite(clientX) ? clientX as number : latestClientX ?? dragState.startX;
-      const deltaX = finalClientX - dragState.startX;
-      const isRowNumberColumn = dragState.key === GONAVI_ROW_NUMBER_COLUMN_KEY;
-      const minWidth = isRowNumberColumn ? ROW_NUMBER_MIN_WIDTH : MIN_DATA_TABLE_COLUMN_WIDTH;
-      const maxWidth = isRowNumberColumn ? ROW_NUMBER_MAX_WIDTH : Number.POSITIVE_INFINITY;
-      const newWidth = Math.min(maxWidth, Math.max(minWidth, dragState.startWidth + deltaX));
-      setColumnWidthsRef.current((prev: Record<string, number>) => ({ ...prev, [dragState.key]: newWidth }));
+      applyResizeWidth(dragState, finalClientX, true);
     }
-  }, [detachResizeListeners, restoreResizeBodyStyles]);
+    lastAppliedResizeWidthRef.current = null;
+  }, [applyResizeWidth, detachResizeListeners, restoreResizeBodyStyles]);
 
   const handleResizeStart = useCallback((key: string) => (e: React.MouseEvent) => {
     e.preventDefault();
@@ -137,6 +159,7 @@ export const useDataGridColumnResize = (ctx: UseDataGridColumnResizeContext) => 
         });
     const containerLeft = containerRef.current?.getBoundingClientRect().left ?? 0;
     draggingRef.current = { startX, startWidth: currentWidth, key, containerLeft };
+    lastAppliedResizeWidthRef.current = currentWidth;
     latestClientXRef.current = startX;
 
     if (ghostRef.current && containerRef.current) {
@@ -153,7 +176,7 @@ export const useDataGridColumnResize = (ctx: UseDataGridColumnResizeContext) => 
         return;
       }
       if (resizeRafRef.current !== null) return;
-      resizeRafRef.current = requestAnimationFrame(flushGhostPosition);
+      resizeRafRef.current = requestAnimationFrame(flushResizeFrame);
     };
     const handleUp = (event: MouseEvent) => finishResize(event.clientX);
     const handleBlur = () => finishResize();
@@ -172,7 +195,7 @@ export const useDataGridColumnResize = (ctx: UseDataGridColumnResizeContext) => 
     };
     document.body.style.cursor = 'col-resize';
     document.body.style.userSelect = 'none';
-  }, [columnWidths, containerRef, dataTableDensity, finishResize, flushGhostPosition]);
+  }, [columnWidths, containerRef, dataTableDensity, finishResize, flushResizeFrame]);
 
   useEffect(() => () => {
     finishResize(undefined, false, false);

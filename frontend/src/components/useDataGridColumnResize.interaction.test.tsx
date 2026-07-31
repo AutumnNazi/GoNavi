@@ -88,6 +88,12 @@ describe('useDataGridColumnResize interaction cleanup', () => {
     expect(update({ name: 120 })).toEqual({ name: width });
   };
 
+  const flushAnimationFrames = () => {
+    const callbacks = [...scheduledFrames.values()];
+    scheduledFrames.clear();
+    callbacks.forEach((callback) => callback(0));
+  };
+
   beforeEach(() => {
     vi.useFakeTimers();
     scheduledFrames = new Map();
@@ -162,6 +168,17 @@ describe('useDataGridColumnResize interaction cleanup', () => {
       vi.advanceTimersByTime(100);
     });
     expect(resize?.isResizingRef.current).toBe(false);
+  });
+
+  it('updates the complete table width on the animation frame while dragging', () => {
+    beginResize();
+    act(() => fakeDocument.dispatch('mousemove', { buttons: 1, clientX: 230 }));
+
+    expect(setColumnWidths).not.toHaveBeenCalled();
+    act(() => flushAnimationFrames());
+
+    expectLastWidthUpdate(150);
+    expect(ghost.style.transform).toBe('translateX(190px)');
   });
 
   it('self-heals when movement reports no pressed button', () => {
