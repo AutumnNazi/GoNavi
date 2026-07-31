@@ -801,7 +801,7 @@ body[data-ui-version="v2"] .gn-v2-redis-workbench {
   grid-template-rows: max-content minmax(0, 1fr);
   gap: 0 !important;
   padding: 0 !important;
-  background: var(--gn-bg-panel) !important;
+  background: var(--gn-bg-panel-2) !important;
 }
 
 body[data-ui-version="v2"] .gn-v2-redis-sidebar {
@@ -812,7 +812,7 @@ body[data-ui-version="v2"] .gn-v2-redis-sidebar {
   width: 100% !important;
   min-width: 0 !important;
   gap: 0 !important;
-  background: var(--gn-bg-panel) !important;
+  background: var(--gn-bg-panel-2) !important;
 }
 
 body[data-ui-version="v2"] .gn-v2-redis-header,
@@ -822,7 +822,7 @@ body[data-ui-version="v2"] .gn-v2-redis-value-card,
 body[data-ui-version="v2"] .gn-v2-redis-empty-value {
   border: 0 !important;
   border-radius: 0 !important;
-  background: var(--gn-bg-panel) !important;
+  background: var(--gn-bg-panel-2) !important;
   box-shadow: none !important;
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
@@ -859,13 +859,13 @@ body[data-ui-version="v2"] .gn-v2-redis-workbench .ant-tree-checkbox {
 body[data-ui-version="v2"] .gn-v2-redis-value-pane {
   display: contents !important;
   min-width: 360px !important;
-  background: var(--gn-bg-panel) !important;
+  background: var(--gn-bg-panel-2) !important;
 }
 
 body[data-ui-version="v2"] .gn-v2-redis-value-layout {
   display: contents !important;
   gap: 0 !important;
-  background: var(--gn-bg-panel) !important;
+  background: var(--gn-bg-panel-2) !important;
 }
 
 body[data-ui-version="v2"] .gn-v2-redis-value-top {
@@ -875,7 +875,7 @@ body[data-ui-version="v2"] .gn-v2-redis-value-top {
   height: 100%;
   min-height: 0;
   gap: 0 !important;
-  background: var(--gn-bg-panel);
+  background: var(--gn-bg-panel-2);
 }
 
 body[data-ui-version="v2"] .gn-v2-redis-value-header {
@@ -895,7 +895,7 @@ body[data-ui-version="v2"] .gn-v2-redis-value-subtoolbar,
 body[data-ui-version="v2"] .gn-v2-redis-value-actionbar {
   border: 0 !important;
   border-radius: 0 !important;
-  background: var(--gn-bg-panel) !important;
+  background: var(--gn-bg-panel-2) !important;
   box-shadow: none !important;
 }
 
@@ -957,7 +957,7 @@ body[data-ui-version="v2"] .gn-v2-nacos-workbench {
   flex-direction: column !important;
   padding: 0 !important;
   gap: 0 !important;
-  background: var(--gn-bg-panel) !important;
+  background: var(--gn-bg-panel-2) !important;
   color: var(--gn-fg-1);
 }
 
@@ -1064,7 +1064,7 @@ body[data-ui-version="v2"] .gn-v2-nacos-split {
   flex: 1 1 auto !important;
   min-height: 0 !important;
   gap: 0 !important;
-  background: var(--gn-bg-panel) !important;
+  background: var(--gn-bg-panel-2) !important;
 }
 
 body[data-ui-version="v2"] .gn-v2-nacos-list-pane {
@@ -1080,7 +1080,7 @@ body[data-ui-version="v2"] .gn-v2-nacos-list-pane {
   border: 0 !important;
   border-radius: 0 !important;
   box-shadow: none !important;
-  background: var(--gn-bg-panel) !important;
+  background: var(--gn-bg-panel-2) !important;
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
 }
@@ -1095,7 +1095,7 @@ body[data-ui-version="v2"] .gn-v2-nacos-detail-pane {
   border: 0 !important;
   border-radius: 0 !important;
   box-shadow: none !important;
-  background: var(--gn-bg-panel) !important;
+  background: var(--gn-bg-panel-2) !important;
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
 }
@@ -1115,7 +1115,7 @@ body[data-ui-version="v2"] .gn-v2-nacos-pane-header {
   border: 0 !important;
   border-bottom: 1px solid var(--gn-br-1) !important;
   border-radius: 0 !important;
-  background: var(--gn-bg-panel) !important;
+  background: var(--gn-bg-panel-2) !important;
   box-shadow: none !important;
 }
 
@@ -1144,6 +1144,11 @@ body[data-ui-version="v2"] .gn-nacos-filter-row .gn-nacos-filter-group {
 body[data-ui-version="v2"] .gn-nacos-filter-row .ant-select,
 body[data-ui-version="v2"] .gn-nacos-filter-row .ant-select-selector {
   width: 100% !important;
+}
+
+/* Keep the filter fields continuous with the flat Nacos workbench surface. */
+body[data-ui-version="v2"] .gn-nacos-filter-row .ant-select-selector {
+  background: var(--gn-bg-panel-2) !important;
 }
 
 .gn-nacos-selection-toolbar {
@@ -1216,7 +1221,7 @@ body[data-ui-version="v2"] .gn-v2-nacos-pane-body {
   display: flex;
   flex-direction: column;
   padding: 10px 12px !important;
-  background: var(--gn-bg-panel) !important;
+  background: var(--gn-bg-panel-2) !important;
 }
 
 /* Full-height 1px divider like Redis */

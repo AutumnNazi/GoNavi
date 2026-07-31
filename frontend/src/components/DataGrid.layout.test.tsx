@@ -1327,6 +1327,10 @@ describe('DataGrid layout', () => {
       css.indexOf('body[data-ui-version="v2"] .gn-v2-data-grid .gn-v2-commit-button:disabled {'),
       css.indexOf('body[data-ui-version="v2"] .gn-v2-data-grid .gn-v2-commit-button .gn-v2-toolbar-kbd {'),
     );
+    const resultViewSelectionCss = css.slice(
+      css.indexOf('body[data-ui-version="v2"] .gn-v2-data-grid-result-switcher .ant-segmented-item-selected,'),
+      css.indexOf('body[data-ui-version="v2"] .gn-v2-data-grid-page-find-overlay {'),
+    );
     expect(iconActionCss).toContain('width: 28px !important;');
     expect(iconActionCss).toContain('min-width: 28px !important;');
     expect(iconActionCss).toContain('padding-inline: 0 !important;');
@@ -1336,6 +1340,10 @@ describe('DataGrid layout', () => {
     expect(commitDisabledCss).toContain('background: var(--gn-bg-active) !important;');
     expect(commitDisabledCss).toContain('color: var(--gn-fg-5) !important;');
     expect(commitDisabledCss).not.toContain('var(--gn-accent-soft)');
+    expect(resultViewSelectionCss).toContain('background: var(--gn-accent-strong, var(--gn-accent)) !important;');
+    expect(resultViewSelectionCss).toContain('border: 0 !important;');
+    expect(resultViewSelectionCss).toContain('box-shadow: none !important;');
+    expect(resultViewSelectionCss).toContain('color: var(--gn-on-accent, #fff) !important;');
     expect(css).toContain(
       'body[data-ui-version="v2"] .gn-v2-data-grid-statusbar .gn-v2-data-grid-toolbar-action.ant-btn {',
     );
@@ -1654,7 +1662,7 @@ describe('DataGrid layout', () => {
     expect(markup.match(/data-grid-query-copy-action="true"/g)?.length).toBe(1);
   });
 
-  it('renders a quick WHERE condition editor when table filters are visible', () => {
+  it('renders a manual query condition editor when table filters are visible', () => {
     const markup = renderDataGridWithI18n(
       <DataGrid
         data={[
@@ -1675,7 +1683,11 @@ describe('DataGrid layout', () => {
 
     expect(markup).toContain('data-grid-quick-where="true"');
     expect(markup).toContain('data-grid-quick-where-input="true"');
-    expect(markup).toContain('WHERE');
+    expect(markup).toContain('data-grid-quick-where-label="true"');
+    expect(markup).toContain('手动查询条件');
+    const manualConditionLabel = markup.match(/<span data-grid-quick-where-label="true"([^>]*)>/)?.[1] ?? '';
+    expect(manualConditionLabel).not.toContain('border');
+    expect(manualConditionLabel).not.toContain('background');
     const englishMarkup = renderDataGridWithI18n(
       <DataGrid
         data={[
@@ -1695,8 +1707,10 @@ describe('DataGrid layout', () => {
       { preference: 'en-US' },
     );
 
-    expect(englishMarkup).toContain('Enter the condition after WHERE');
-    expect(englishMarkup).not.toContain('输入 WHERE 后面的条件');
+    expect(englishMarkup).toContain('Manual query condition');
+    expect(englishMarkup).toContain('Enter a query condition');
+    expect(englishMarkup).not.toContain('Enter the condition after WHERE');
+    expect(englishMarkup).not.toContain('输入查询条件');
   });
 
   it('keeps quick WHERE input clipboard editing isolated from grid shortcuts', () => {
@@ -1706,6 +1720,35 @@ describe('DataGrid layout', () => {
     expect(css).toContain('[data-grid-quick-where-input="true"]');
     expect(css).toContain('font-size: var(--gn-font-size, 14px) !important;');
     expect(css).toContain('user-select: text !important;');
+  });
+
+  it('keeps V2 filter controls on the query workbench theme surface', () => {
+    const css = readV2ThemeCss();
+    const toolbarCss = css.slice(
+      css.indexOf('body[data-ui-version="v2"] .gn-v2-data-grid-toolbar-frame'),
+      css.indexOf('body[data-ui-version="v2"] .gn-v2-data-grid-toolbar-title'),
+    );
+    const filterCss = css.slice(
+      css.indexOf('body[data-ui-version="v2"] .gn-v2-smart-filter-panel'),
+      css.indexOf('body[data-ui-version="v2"] .gn-v2-data-grid-table-shell'),
+    );
+    const tableSurfaceCss = css.slice(
+      css.indexOf('body[data-ui-version="v2"] .gn-v2-data-grid-table-shell'),
+      css.indexOf('body[data-ui-version="v2"] .gn-v2-data-grid .ant-table-thead'),
+    );
+
+    expect(toolbarCss).toContain('background: var(--gn-query-workbench-bg, var(--gn-bg-panel-2)) !important;');
+    expect(filterCss).toContain('background: var(--gn-query-workbench-bg, var(--gn-bg-panel-2)) !important;');
+    expect(filterCss).toContain('padding-inline: 0 !important;');
+    expect(filterCss).toContain('.gn-v2-smart-filter-manual-input');
+    expect(filterCss).toContain('max-width: 680px !important;');
+    expect(filterCss).toContain('.gn-v2-smart-filter-panel .ant-select-selector');
+    expect(filterCss).toContain('.gn-v2-smart-filter-panel .ant-input-affix-wrapper');
+    expect(filterCss).not.toContain('background: var(--gn-bg-input)');
+    expect(filterCss).toContain('[data-grid-quick-where="true"] {\n  min-height: 38px;\n  padding-inline: 0 !important;\n  margin-bottom: 8px !important;\n  border: 0 !important;\n  border-radius: 0 !important;');
+    expect(tableSurfaceCss).toContain('background: var(--gn-query-workbench-bg, var(--gn-bg-panel-2)) !important;');
+    expect(tableSurfaceCss).toContain('.gn-v2-data-grid .ant-table-container');
+    expect(tableSurfaceCss).toContain('.gn-v2-data-grid .ant-table-tbody-virtual-holder');
   });
 
   it('keeps DataGrid scroll synchronization throttled to animation frames', () => {
