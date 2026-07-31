@@ -176,6 +176,7 @@ import { useDataGridMetadata } from './useDataGridMetadata';
 import { useDataGridColumnResize } from './useDataGridColumnResize';
 import { useDataGridPreviewPanel } from './useDataGridPreviewPanel';
 import { buildTableExportTab } from '../utils/tableExportTab';
+import { createSidebarResizeAwareFrameScheduler } from '../utils/sidebarResizeLifecycle';
 import { buildDataGridCssText } from './dataGridStyles';
 import { formatMongoEditableValue, normalizeMongoDocumentForEditing, parseMongoEditedValue } from '../utils/mongodb';
 
@@ -1517,21 +1518,16 @@ const DataGrid: React.FC<DataGridProps> = ({
       const el = containerRef.current;
       if (!el) return;
 
-      let rafId: number | null = null;
-
-      const resizeObserver = new ResizeObserver(entries => {
-          if (rafId !== null) cancelAnimationFrame(rafId);
-          rafId = requestAnimationFrame(() => {
-              const target = (entries[0]?.target as HTMLElement | undefined) || containerRef.current;
-              recalculateTableMetrics(target);
-          });
+      const scheduler = createSidebarResizeAwareFrameScheduler(() => {
+          recalculateTableMetrics(containerRef.current);
       });
+      const resizeObserver = new ResizeObserver(() => scheduler.schedule());
 
       resizeObserver.observe(el);
-      rafId = requestAnimationFrame(() => recalculateTableMetrics(el));
+      scheduler.schedule();
       return () => {
           resizeObserver.disconnect();
-          if (rafId !== null) cancelAnimationFrame(rafId);
+          scheduler.dispose();
       };
   }, [recalculateTableMetrics]);
 

@@ -464,6 +464,13 @@ describe('DataGrid layout', () => {
     expect(css).not.toContain('.gn-v2-data-grid-page-find-row');
   });
 
+  it('does not render a full-height guide line while resizing columns', () => {
+    const source = readDataGridShellSource();
+
+    expect(source).not.toContain('Ghost Resize Line for Columns');
+    expect(source).not.toContain('ghostRef');
+  });
+
   it('avoids duplicating legacy pagination page text beside the pager', () => {
     const markup = renderToStaticMarkup(
       <DataGridPaginationBar

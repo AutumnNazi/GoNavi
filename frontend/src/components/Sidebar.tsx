@@ -72,6 +72,7 @@ import React, { useEffect, useState, useMemo, useRef, useCallback, useDeferredVa
 import { createPortal } from 'react-dom';
 import { Tree, message, Dropdown, MenuProps, Input, Button, Form, Popover, Radio, Select, Tooltip } from 'antd';
 import { APP_POPUP_Z_INDEX } from '../utils/overlayZIndex';
+import { createSidebarResizeAwareFrameScheduler } from '../utils/sidebarResizeLifecycle';
 	import {
 	  AppstoreOutlined,
 	  AuditOutlined,
@@ -939,14 +940,20 @@ const Sidebar: React.FC<{
 
   useEffect(() => {
       if (!treeContainerRef.current) return;
-      const resizeObserver = new ResizeObserver(entries => {
-          for (let entry of entries) {
-              setTreeHeight(entry.contentRect.height);
-              setTreeViewportWidth(entry.contentRect.width);
-          }
+      const scheduler = createSidebarResizeAwareFrameScheduler(() => {
+          const target = treeContainerRef.current;
+          if (!target) return;
+          const rect = target.getBoundingClientRect();
+          setTreeHeight((current) => current === rect.height ? current : rect.height);
+          setTreeViewportWidth((current) => current === rect.width ? current : rect.width);
       });
+      const resizeObserver = new ResizeObserver(() => scheduler.schedule());
       resizeObserver.observe(treeContainerRef.current);
-      return () => resizeObserver.disconnect();
+      scheduler.schedule();
+      return () => {
+          resizeObserver.disconnect();
+          scheduler.dispose();
+      };
   }, []);
 
   useEffect(() => {

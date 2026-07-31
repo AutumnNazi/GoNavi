@@ -2828,6 +2828,16 @@ body[data-sidebar-resizing='true'] .ant-layout-sider[data-sidebar-panel='true'] 
   flex: 0 0 var(--gonavi-sidebar-resize-width) !important;
 }
 
+/*
+ * Keep the workbench viewport stable while the sider follows the pointer.
+ * This prevents Monaco, DataGrid and the tab strip from re-laying out on
+ * every mouse move; they receive the final available width after release.
+ */
+body[data-ui-version] .ant-layout-content[data-sidebar-resize-content='true'][data-sidebar-resize-content-locked='true'] {
+  width: var(--gonavi-sidebar-resize-content-width) !important;
+  flex: 0 0 var(--gonavi-sidebar-resize-content-width) !important;
+}
+
 body[data-ui-version] .ant-layout-sider[data-sidebar-collapsed='true'] {
   min-width: var(--gonavi-sidebar-collapsed-width, 0px) !important;
   max-width: var(--gonavi-sidebar-collapsed-width, 0px) !important;

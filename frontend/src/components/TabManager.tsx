@@ -46,6 +46,7 @@ import {
 import { openNativeWorkbenchTabWindow } from '../utils/nativeDetachedWindowHost';
 import { useWorkbenchTabs } from '../hooks/useWorkbenchTabs';
 import { resolveConnectionEnvironmentPresentation } from '../utils/connectionEnvironment';
+import { createSidebarResizeAwareFrameScheduler } from '../utils/sidebarResizeLifecycle';
 
 const getTabKindLabel = (tab: TabData): string => {
   if (tab.type === 'query') return t('tab_manager.kind_badge.query');
@@ -799,11 +800,13 @@ const TabManager: React.FC<TabManagerProps> = React.memo<TabManagerProps>(({ onF
       return () => window.removeEventListener('resize', measure);
     }
 
-    const observer = new ResizeObserver((entries) => {
-      updateWidth(entries[0]?.contentRect.width ?? target.getBoundingClientRect().width);
-    });
+    const scheduler = createSidebarResizeAwareFrameScheduler(measure);
+    const observer = new ResizeObserver(() => scheduler.schedule());
     observer.observe(target);
-    return () => observer.disconnect();
+    return () => {
+      observer.disconnect();
+      scheduler.dispose();
+    };
   }, [dockedTabs.length, isV2Ui]);
 
   const tabWorkbenchStyle = isV2Ui

@@ -4,6 +4,10 @@ import {
   SIDEBAR_RESIZE_MIN_WIDTH,
   resolveSidebarResizeMaxWidth,
 } from '../utils/sidebarLayout';
+import {
+  SIDEBAR_RESIZING_ATTRIBUTE,
+  notifySidebarResizeSettled,
+} from '../utils/sidebarResizeLifecycle';
 
 type SidebarResizeBounds = { minWidth: number; maxWidth: number };
 type SidebarResizeDragState = SidebarResizeBounds & {
@@ -39,6 +43,9 @@ const clampSidebarResizeWidth = (width: number, bounds: SidebarResizeBounds): nu
 );
 
 const SIDEBAR_RESIZE_WIDTH_CSS_VARIABLE = '--gonavi-sidebar-resize-width';
+const SIDEBAR_RESIZE_CONTENT_WIDTH_CSS_VARIABLE = '--gonavi-sidebar-resize-content-width';
+const SIDEBAR_RESIZE_CONTENT_ATTRIBUTE = 'data-sidebar-resize-content';
+const SIDEBAR_RESIZE_CONTENT_LOCK_ATTRIBUTE = 'data-sidebar-resize-content-locked';
 
 type UseAppSidebarResizeOptions = {
   effectiveUiScale: number;
@@ -55,6 +62,7 @@ export const useAppSidebarResize = ({
   const rafRef = useRef<number | null>(null);
   const clearResizingFrameRef = useRef<number | null>(null);
   const siderRef = useRef<HTMLDivElement | null>(null);
+  const lockedContentRef = useRef<HTMLElement | null>(null);
   const sidebarDragBodyStyleRef = useRef<{ cursor: string; userSelect: string; webkitUserSelect: string } | null>(null);
   const sidebarResizeListenersRef = useRef<SidebarResizeListeners | null>(null);
   const latestMouseX = useRef<number>(0);
@@ -68,6 +76,25 @@ export const useAppSidebarResize = ({
     clearResizingFrameRef.current = null;
   }, []);
 
+  const lockWorkbenchContentWidth = useCallback(() => {
+    const content = siderRef.current?.nextElementSibling as HTMLElement | null;
+    if (!(content instanceof HTMLElement)) return;
+    if (content.getAttribute(SIDEBAR_RESIZE_CONTENT_ATTRIBUTE) !== 'true') return;
+    const width = content.getBoundingClientRect().width;
+    if (!Number.isFinite(width) || width <= 0) return;
+    content.style.setProperty(SIDEBAR_RESIZE_CONTENT_WIDTH_CSS_VARIABLE, `${width}px`);
+    content.setAttribute(SIDEBAR_RESIZE_CONTENT_LOCK_ATTRIBUTE, 'true');
+    lockedContentRef.current = content;
+  }, []);
+
+  const unlockWorkbenchContentWidth = useCallback(() => {
+    const content = lockedContentRef.current;
+    lockedContentRef.current = null;
+    if (!content) return;
+    content.removeAttribute(SIDEBAR_RESIZE_CONTENT_LOCK_ATTRIBUTE);
+    content.style.removeProperty(SIDEBAR_RESIZE_CONTENT_WIDTH_CSS_VARIABLE);
+  }, []);
+
   /**
    * Mark the sider as mid-resize so CSS can disable Ant Design's default
    * `transition: all`. Without this, committing width animates for ~200ms and
@@ -75,22 +102,29 @@ export const useAppSidebarResize = ({
    */
   const setSidebarResizing = useCallback((active: boolean) => {
     const sider = siderRef.current;
+    let wasActive = false;
     if (sider instanceof HTMLElement) {
+      wasActive = sider.getAttribute(SIDEBAR_RESIZING_ATTRIBUTE) === 'true';
       if (active) {
-        sider.setAttribute('data-sidebar-resizing', 'true');
+        sider.setAttribute(SIDEBAR_RESIZING_ATTRIBUTE, 'true');
       } else {
-        sider.removeAttribute('data-sidebar-resizing');
+        sider.removeAttribute(SIDEBAR_RESIZING_ATTRIBUTE);
         sider.style.removeProperty(SIDEBAR_RESIZE_WIDTH_CSS_VARIABLE);
       }
     }
     if (typeof document !== 'undefined') {
+      wasActive = wasActive || document.body.getAttribute(SIDEBAR_RESIZING_ATTRIBUTE) === 'true';
       if (active) {
-        document.body.setAttribute('data-sidebar-resizing', 'true');
+        document.body.setAttribute(SIDEBAR_RESIZING_ATTRIBUTE, 'true');
       } else {
-        document.body.removeAttribute('data-sidebar-resizing');
+        document.body.removeAttribute(SIDEBAR_RESIZING_ATTRIBUTE);
       }
     }
-  }, []);
+    if (!active) {
+      unlockWorkbenchContentWidth();
+      if (wasActive) notifySidebarResizeSettled();
+    }
+  }, [unlockWorkbenchContentWidth]);
 
   const previewSidebarWidth = useCallback((width: number) => {
     const sider = siderRef.current;
@@ -206,6 +240,7 @@ export const useAppSidebarResize = ({
     const startWidth = siderRect?.width ?? sidebarWidth;
     const resizeBounds = resolveSidebarResizeBounds(siderRef.current);
 
+    lockWorkbenchContentWidth();
     previewSidebarWidth(startWidth);
     setSidebarResizing(true);
 
@@ -245,7 +280,7 @@ export const useAppSidebarResize = ({
     document.addEventListener('mousemove', handleMove);
     document.addEventListener('mouseup', handleUp);
     window.addEventListener('blur', handleBlur);
-  }, [cancelClearResizingFrame, finishSidebarResize, previewSidebarWidth, setSidebarResizing, sidebarWidth]);
+  }, [cancelClearResizingFrame, finishSidebarResize, lockWorkbenchContentWidth, previewSidebarWidth, setSidebarResizing, sidebarWidth]);
 
   useEffect(() => () => {
     finishSidebarResize(undefined, false);

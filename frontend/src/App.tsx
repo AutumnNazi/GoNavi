@@ -7732,7 +7732,10 @@ function App() {
                 )}
             </div>
           </Sider>
-           <Content style={{ background: bgContent, overflow: 'hidden', display: 'flex', flexDirection: 'column', minWidth: 0, flex: 1 }}>
+           <Content
+             data-sidebar-resize-content="true"
+             style={{ background: bgContent, overflow: 'hidden', display: 'flex', flexDirection: 'column', minWidth: 0, flex: 1 }}
+           >
              {securityUpdateEntryVisibility.showBanner && !isSecurityUpdateBannerDismissed && (
                 <SecurityUpdateBanner
                   status={securityUpdateStatus}

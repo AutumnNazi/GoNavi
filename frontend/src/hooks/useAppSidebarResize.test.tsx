@@ -25,6 +25,11 @@ class FakeEventTarget {
     }
   }
 
+  dispatchEvent(event: { type: string }) {
+    this.dispatch(event.type, event);
+    return true;
+  }
+
   listenerCount(type: string) {
     return this.listeners.get(type)?.size ?? 0;
   }
@@ -66,9 +71,14 @@ class FakeStyle {
 
 class FakeHTMLElement extends FakeAttributeHost {
   style = new FakeStyle();
+  nextElementSibling: FakeHTMLElement | null = null;
+
+  constructor(private readonly width = 240) {
+    super();
+  }
 
   getBoundingClientRect() {
-    return { right: 240, width: 240 };
+    return { right: this.width, width: this.width };
   }
 }
 
@@ -104,6 +114,8 @@ describe('useAppSidebarResize interaction cleanup', () => {
   let scheduledFrames: Map<number, FrameRequestCallback>;
   let nextFrameId: number;
   let setSidebarWidth: ReturnType<typeof vi.fn>;
+  let fakeSider: FakeHTMLElement;
+  let fakeContent: FakeHTMLElement;
 
   const Harness = () => {
     resize = useAppSidebarResize({
@@ -136,6 +148,10 @@ describe('useAppSidebarResize interaction cleanup', () => {
     fakeDocument = Object.assign(new FakeEventTarget(), {
       body: new FakeBody(),
     });
+    fakeSider = new FakeHTMLElement(240);
+    fakeContent = new FakeHTMLElement(960);
+    fakeContent.setAttribute('data-sidebar-resize-content', 'true');
+    fakeSider.nextElementSibling = fakeContent;
     Object.defineProperty(globalThis, 'window', { configurable: true, value: fakeWindow });
     Object.defineProperty(globalThis, 'document', { configurable: true, value: fakeDocument });
     Object.defineProperty(globalThis, 'HTMLElement', { configurable: true, value: FakeHTMLElement });
@@ -155,7 +171,7 @@ describe('useAppSidebarResize interaction cleanup', () => {
     act(() => {
       renderer = create(<Harness />);
     });
-    (resize!.siderRef as React.MutableRefObject<any>).current = new FakeHTMLElement();
+    (resize!.siderRef as React.MutableRefObject<any>).current = fakeSider;
   });
 
   afterEach(() => {
@@ -260,21 +276,30 @@ describe('useAppSidebarResize interaction cleanup', () => {
 
   it('marks the sider as resizing during drag and keeps the flag across width commit', () => {
     const sider = resize!.siderRef.current as unknown as FakeHTMLElement;
+    const settledListener = vi.fn();
+    fakeWindow.addEventListener('gonavi:sidebar-resize-settled', settledListener);
 
     beginResize();
     expect(sider.getAttribute('data-sidebar-resizing')).toBe('true');
     expect(fakeDocument.body.getAttribute('data-sidebar-resizing')).toBe('true');
+    expect(fakeContent.getAttribute('data-sidebar-resize-content-locked')).toBe('true');
+    expect(fakeContent.style.getPropertyValue('--gonavi-sidebar-resize-content-width')).toBe('960px');
 
     act(() => fakeDocument.dispatch('mouseup', { clientX: 280 }));
     expect(setSidebarWidth).toHaveBeenCalledWith(320);
     // Still marked while the commit paints, so Ant Design width transition stays off.
     expect(sider.getAttribute('data-sidebar-resizing')).toBe('true');
     expect(fakeDocument.body.getAttribute('data-sidebar-resizing')).toBe('true');
+    expect(fakeContent.getAttribute('data-sidebar-resize-content-locked')).toBe('true');
+    expect(settledListener).not.toHaveBeenCalled();
 
     act(() => flushAnimationFrames(scheduledFrames, 2));
 
     expect(sider.getAttribute('data-sidebar-resizing')).toBe(null);
     expect(fakeDocument.body.getAttribute('data-sidebar-resizing')).toBe(null);
     expect(sider.style.getPropertyValue('--gonavi-sidebar-resize-width')).toBe('');
+    expect(fakeContent.getAttribute('data-sidebar-resize-content-locked')).toBe(null);
+    expect(fakeContent.style.getPropertyValue('--gonavi-sidebar-resize-content-width')).toBe('');
+    expect(settledListener).toHaveBeenCalledTimes(1);
   });
 });
