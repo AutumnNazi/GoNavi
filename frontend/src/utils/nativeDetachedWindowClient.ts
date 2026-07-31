@@ -608,6 +608,13 @@ export const buildNativeDetachedAIHostStoreSnapshot = (
   const activeConnectionId = String(activeContext?.connectionId || activeTab?.connectionId || '');
   const activeConnection = resolveArrayRecordById(source.connections, activeConnectionId);
   return buildNativeDetachedStoreSnapshot({
+    // Presentation state is host-owned. Keep a detached AI window aligned with
+    // the main window when the user changes appearance after it is opened.
+    theme: source.theme,
+    themePreference: source.themePreference,
+    appearance: source.appearance,
+    fontSize: source.fontSize,
+    uiScale: source.uiScale,
     activeContext,
     activeTabId,
     activeTab,
@@ -740,6 +747,11 @@ export const applyNativeDetachedHostStateSync = <TState extends object>(
 ): TState => {
   const safe = buildNativeDetachedStoreSnapshot(snapshot);
   const hostStatePatch: NativeDetachedStoreSnapshot = {};
+  for (const key of ['theme', 'themePreference', 'appearance', 'fontSize', 'uiScale'] as const) {
+    if (Object.prototype.hasOwnProperty.call(safe, key)) {
+      hostStatePatch[key] = safe[key];
+    }
+  }
   if (Object.prototype.hasOwnProperty.call(safe, 'activeContext')) {
     hostStatePatch.activeContext = safe.activeContext ?? null;
   }

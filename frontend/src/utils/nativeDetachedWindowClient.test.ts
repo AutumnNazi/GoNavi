@@ -332,6 +332,11 @@ describe('nativeDetachedWindowClient', () => {
 
   it('keeps main-window AI context sync separate from child-owned conversation state', () => {
     const state = {
+      theme: 'light',
+      themePreference: 'light',
+      appearance: { uiVersion: 'v2' },
+      fontSize: 16,
+      uiScale: 1.15,
       activeContext: { connectionId: 'connection-2', dbName: 'analytics' },
       activeTabId: 'query-2',
       tabs: [queryTab, { ...queryTab, id: 'query-2', connectionId: 'connection-2' }],
@@ -342,6 +347,11 @@ describe('nativeDetachedWindowClient', () => {
 
     const snapshot = buildNativeDetachedAIHostStoreSnapshot(state);
     expect(snapshot).toEqual({
+      theme: 'light',
+      themePreference: 'light',
+      appearance: { uiVersion: 'v2' },
+      fontSize: 16,
+      uiScale: 1.15,
       activeContext: state.activeContext,
       activeTabId: 'query-2',
       activeTab: state.tabs[1],
@@ -351,6 +361,11 @@ describe('nativeDetachedWindowClient', () => {
 
     const current = {
       ...state,
+      theme: 'dark',
+      themePreference: 'dark',
+      appearance: { uiVersion: 'legacy' },
+      fontSize: 12,
+      uiScale: 0.9,
       activeTabId: queryTab.id,
       aiChatHistory: { 'session-1': [{ content: 'current child history' }] },
       closeTab: vi.fn(),
@@ -361,6 +376,11 @@ describe('nativeDetachedWindowClient', () => {
     expect(next.connections).toEqual(state.connections);
     expect(next.aiChatHistory).toEqual(current.aiChatHistory);
     expect(next.closeTab).toBe(current.closeTab);
+    expect(next.theme).toBe('light');
+    expect(next.themePreference).toBe('light');
+    expect(next.appearance).toEqual({ uiVersion: 'v2' });
+    expect(next.fontSize).toBe(16);
+    expect(next.uiScale).toBe(1.15);
 
     let childState = current;
     const childStore = {

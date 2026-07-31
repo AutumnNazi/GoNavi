@@ -11,6 +11,8 @@ import { clearQueryTabDraft, setQueryTabDraft } from '../utils/sqlFileTabDrafts'
 
 const {
   aiTerminalGuard,
+  aiChatRenderProps,
+  customThemeStyleHostProps,
   detachedResultAutoReport,
   detachedResultDataChangeHandlers,
   detachedResultGridProps,
@@ -18,6 +20,12 @@ const {
   flushAIChatSessionPersistence,
 } = vi.hoisted(() => ({
   aiTerminalGuard: vi.fn(async (): Promise<boolean> => true),
+  aiChatRenderProps: {
+    current: null as { darkMode?: boolean; bgColor?: string; presentation?: string } | null,
+  },
+  customThemeStyleHostProps: {
+    current: null as { contextKey?: string; onAntTokensChange?: (snapshot: unknown) => void } | null,
+  },
   detachedResultAutoReport: { current: false },
   detachedResultDataChangeHandlers: {
     current: [] as Array<((rows: Array<Record<string, unknown>>) => void) | undefined>,
@@ -172,6 +180,8 @@ vi.mock('./DataGrid', () => ({
 
 vi.mock('./AIChatPanel', () => ({
   default: ({
+    darkMode,
+    bgColor,
     presentation,
     onAttach,
     onClose,
@@ -179,27 +189,45 @@ vi.mock('./AIChatPanel', () => ({
     onRegisterTerminalGuard,
     interactionDisabled,
   }: {
+    darkMode?: boolean;
+    bgColor?: string;
     presentation?: string;
     onAttach?: () => void;
     onClose?: () => void;
     onOpenSettings?: () => void;
     onRegisterTerminalGuard?: (guard: (() => Promise<boolean>) | null) => void;
     interactionDisabled?: boolean;
-  }) => (
-    <div
-      data-ai-chat-presentation={presentation}
-      data-ai-chat-interaction-disabled={interactionDisabled ? 'true' : 'false'}
-      ref={() => onRegisterTerminalGuard?.(aiTerminalGuard)}
-    >
-      <button data-ai-chat-attach type="button" onClick={onAttach} />
-      <button data-ai-chat-close type="button" onClick={onClose} />
-      <button data-ai-chat-settings type="button" onClick={onOpenSettings} />
-    </div>
-  ),
+  }) => {
+    aiChatRenderProps.current = { darkMode, bgColor, presentation };
+    return (
+      <div
+        data-ai-chat-presentation={presentation}
+        data-ai-chat-interaction-disabled={interactionDisabled ? 'true' : 'false'}
+        ref={() => onRegisterTerminalGuard?.(aiTerminalGuard)}
+      >
+        <button data-ai-chat-attach type="button" onClick={onAttach} />
+        <button data-ai-chat-close type="button" onClick={onClose} />
+        <button data-ai-chat-settings type="button" onClick={onOpenSettings} />
+      </div>
+    );
+  },
 }));
 
 vi.mock('./NativeDetachedWindowController', () => ({
   default: () => null,
+}));
+
+vi.mock('./theme/CustomThemeStyleHost', () => ({
+  default: ({
+    contextKey,
+    onAntTokensChange,
+  }: {
+    contextKey?: string;
+    onAntTokensChange?: (snapshot: unknown) => void;
+  }) => {
+    customThemeStyleHostProps.current = { contextKey, onAntTokensChange };
+    return null;
+  },
 }));
 
 import NativeDetachedWindowApp, {
@@ -221,6 +249,8 @@ describe('NativeDetachedWindowApp', () => {
     flushAIChatSessionPersistence.mockResolvedValue(undefined);
     aiTerminalGuard.mockReset();
     aiTerminalGuard.mockResolvedValue(true);
+    aiChatRenderProps.current = null;
+    customThemeStyleHostProps.current = null;
     detachedResultAutoReport.current = false;
     detachedResultDataChangeHandlers.current = [];
     detachedResultGridProps.current = null;
@@ -231,8 +261,10 @@ describe('NativeDetachedWindowApp', () => {
       activeContext: null,
       connections: [],
       theme: 'light',
+      themePreference: 'light',
       appearance: { uiVersion: 'v2' },
       fontSize: 14,
+      uiScale: 1,
       aiPanelVisible: false,
       aiChatHistory: {},
       aiChatSessions: [],
@@ -515,6 +547,7 @@ describe('NativeDetachedWindowApp', () => {
 
     expect(renderer!.root.findByProps({ 'data-ai-chat-presentation': 'detached' })).toBeTruthy();
     expect(client.ready).toHaveBeenCalledWith({ id: 'ai-chat', kind: 'ai-chat' });
+    expect(customThemeStyleHostProps.current?.contextKey).toBe('dark:v2');
 
     await act(async () => {
       runtimeEventListeners.get('gonavi:native-detached-command')?.({
@@ -523,6 +556,11 @@ describe('NativeDetachedWindowApp', () => {
         payload: {
           revision: 2,
           storeState: {
+            theme: 'light',
+            themePreference: 'light',
+            appearance: { uiVersion: 'v2' },
+            fontSize: 16,
+            uiScale: 1.1,
             activeContext: { connectionId: 'connection-2', dbName: 'analytics' },
             activeTabId: 'query-native-2',
             activeTab: { ...queryTab, id: 'query-native-2', connectionId: 'connection-2' },
@@ -536,6 +574,17 @@ describe('NativeDetachedWindowApp', () => {
     expect(storeState.tabs).toEqual(expect.arrayContaining([
       expect.objectContaining({ id: 'query-native-2', connectionId: 'connection-2' }),
     ]));
+    expect(storeState.theme).toBe('light');
+    expect(storeState.themePreference).toBe('light');
+    expect(storeState.appearance).toEqual({ uiVersion: 'v2' });
+    expect(storeState.fontSize).toBe(16);
+    expect(storeState.uiScale).toBe(1.1);
+    expect(aiChatRenderProps.current).toEqual(expect.objectContaining({
+      presentation: 'detached',
+      darkMode: false,
+      bgColor: 'var(--gn-bg-panel, #ffffff)',
+    }));
+    expect(customThemeStyleHostProps.current?.contextKey).toBe('light:v2');
 
     await act(async () => {
       renderer!.root.findByProps({ 'data-ai-chat-attach': true }).props.onClick();

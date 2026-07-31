@@ -50,6 +50,9 @@ import { buildOverlayWorkbenchTheme } from '../utils/overlayWorkbenchTheme';
 import { APP_OVERLAY_Z_INDEX_BASE } from '../utils/overlayZIndex';
 import { resolveLiveQueryTab, resolveLiveQueryTabs } from '../utils/liveQueryTabs';
 import { subscribeQueryTabDraftChanges } from '../utils/sqlFileTabDrafts';
+import CustomThemeStyleHost, {
+  type CustomThemeAntTokenSnapshot,
+} from './theme/CustomThemeStyleHost';
 import {
   getShortcutPlatform,
   installGlobalImeCompositionTracking,
@@ -274,12 +277,15 @@ const NativeDetachedWindowContent: React.FC<{
       : null;
   }
   const isDark = themeMode === 'dark';
+  const aiPanelBackground = isDark
+    ? 'var(--gn-bg-panel, #161a21)'
+    : 'var(--gn-bg-panel, #ffffff)';
   return (
     <div className="gn-native-detached-ai-chat">
       <AIChatPanel
         width={typeof window === 'undefined' ? 440 : window.innerWidth}
         darkMode={isDark}
-        bgColor={isDark ? '#161a21' : '#ffffff'}
+        bgColor={aiPanelBackground}
         overlayTheme={buildOverlayWorkbenchTheme(isDark, {
           disableBackdropFilter: true,
           uiVersion,
@@ -359,6 +365,7 @@ const NativeDetachedWindowApp: React.FC<NativeDetachedWindowAppProps> = ({
   const fontSize = useStore((state) => state.fontSize);
   const uiScale = useStore((state) => state.uiScale);
   const shortcutOptions = useStore((state) => state.shortcutOptions);
+  const [computedCustomThemeAntTokens, setComputedCustomThemeAntTokens] = useState<CustomThemeAntTokenSnapshot | null>(null);
 
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
@@ -1173,22 +1180,74 @@ const NativeDetachedWindowApp: React.FC<NativeDetachedWindowAppProps> = ({
   }), [bootstrap?.kind, translate]);
 
   const isDark = themeMode === 'dark';
+  const customThemeStyleContextKey = `${themeMode}:${uiVersion}`;
+  const customThemeAntTokens = computedCustomThemeAntTokens?.contextKey === customThemeStyleContextKey
+    ? computedCustomThemeAntTokens.tokens
+    : {};
+  const v2PrimaryColor = customThemeAntTokens.primary ?? (isDark ? '#22c55e' : '#16a34a');
+  const v2PrimaryContrastColor = customThemeAntTokens.primaryContrast ?? '#ffffff';
+  const v2PrimaryHoverColor = customThemeAntTokens.primaryHover ?? (isDark ? '#4ade80' : '#15803d');
+  const v2PrimaryActiveColor = customThemeAntTokens.primaryActive ?? (isDark ? '#16a34a' : '#166534');
+  const v2PrimaryBgColor = customThemeAntTokens.primaryBg ?? (isDark ? 'rgba(34, 197, 94, 0.20)' : '#dcfce7');
+  const v2PrimaryBgHoverColor = customThemeAntTokens.primaryBgHover ?? (isDark ? 'rgba(34, 197, 94, 0.28)' : '#bbf7d0');
+  const v2PrimaryBorderColor = customThemeAntTokens.primaryBorder ?? (isDark ? 'rgba(34, 197, 94, 0.42)' : '#86efac');
+  const v2PrimaryBorderHoverColor = customThemeAntTokens.primaryBorderHover ?? (isDark ? 'rgba(74, 222, 128, 0.58)' : '#4ade80');
+  const v2ControlActiveBg = customThemeAntTokens.controlActiveBg ?? (isDark ? 'rgba(34, 197, 94, 0.16)' : 'rgba(34, 197, 94, 0.10)');
+  const v2ControlActiveHoverBg = customThemeAntTokens.controlActiveHoverBg ?? (isDark ? 'rgba(34, 197, 94, 0.24)' : 'rgba(34, 197, 94, 0.16)');
+  const v2ControlOutline = customThemeAntTokens.controlOutline ?? (isDark ? 'rgba(34, 197, 94, 0.42)' : 'rgba(22, 163, 74, 0.22)');
   const componentSize = uiScale <= 0.92 ? 'small' : (uiScale >= 1.12 ? 'large' : 'middle');
   return (
-    <ConfigProvider
-      locale={getAntdLocale(i18n?.language ?? 'en-US')}
-      componentSize={componentSize}
-      theme={{
-        algorithm: isDark ? antdTheme.darkAlgorithm : antdTheme.defaultAlgorithm,
-        token: {
-          fontSize: Math.max(10, Number(fontSize) || 14),
-          zIndexPopupBase: APP_OVERLAY_Z_INDEX_BASE,
-          colorPrimary: uiVersion === 'v2'
-            ? (isDark ? '#22c55e' : '#16a34a')
-            : (isDark ? '#f6c453' : '#1677ff'),
-        },
-      }}
-    >
+    <>
+      <CustomThemeStyleHost
+        contextKey={customThemeStyleContextKey}
+        onAntTokensChange={setComputedCustomThemeAntTokens}
+      />
+      <ConfigProvider
+        locale={getAntdLocale(i18n?.language ?? 'en-US')}
+        componentSize={componentSize}
+        theme={{
+          algorithm: isDark ? antdTheme.darkAlgorithm : antdTheme.defaultAlgorithm,
+          token: {
+            fontSize: Math.max(10, Number(fontSize) || 14),
+            zIndexPopupBase: APP_OVERLAY_Z_INDEX_BASE,
+            ...(uiVersion === 'v2' && customThemeAntTokens.bgContainer ? {
+              colorBgContainer: customThemeAntTokens.bgContainer,
+            } : {}),
+            ...(uiVersion === 'v2' && customThemeAntTokens.bgElevated ? {
+              colorBgElevated: customThemeAntTokens.bgElevated,
+            } : {}),
+            ...(uiVersion === 'v2' && customThemeAntTokens.fillAlter ? {
+              colorFillAlter: customThemeAntTokens.fillAlter,
+            } : {}),
+            ...(uiVersion === 'v2' && customThemeAntTokens.textPrimary ? {
+              colorText: customThemeAntTokens.textPrimary,
+            } : {}),
+            ...(uiVersion === 'v2' && customThemeAntTokens.textSecondary ? {
+              colorTextSecondary: customThemeAntTokens.textSecondary,
+            } : {}),
+            ...(uiVersion === 'v2' && customThemeAntTokens.border ? {
+              colorBorder: customThemeAntTokens.border,
+              colorBorderSecondary: customThemeAntTokens.border,
+            } : {}),
+            colorPrimary: uiVersion === 'v2'
+              ? v2PrimaryColor
+              : (isDark ? '#f6c453' : '#1677ff'),
+            colorTextLightSolid: uiVersion === 'v2' ? v2PrimaryContrastColor : '#ffffff',
+            colorPrimaryHover: uiVersion === 'v2' ? v2PrimaryHoverColor : (isDark ? '#ffd666' : '#4096ff'),
+            colorPrimaryActive: uiVersion === 'v2' ? v2PrimaryActiveColor : (isDark ? '#d8a93b' : '#0958d9'),
+            colorInfo: uiVersion === 'v2'
+              ? (customThemeAntTokens.info ?? v2PrimaryColor)
+              : (isDark ? '#f6c453' : '#1677ff'),
+            colorPrimaryBg: uiVersion === 'v2' ? v2PrimaryBgColor : (isDark ? 'rgba(246, 196, 83, 0.22)' : '#e6f4ff'),
+            colorPrimaryBgHover: uiVersion === 'v2' ? v2PrimaryBgHoverColor : (isDark ? 'rgba(246, 196, 83, 0.30)' : '#bae0ff'),
+            colorPrimaryBorder: uiVersion === 'v2' ? v2PrimaryBorderColor : (isDark ? 'rgba(246, 196, 83, 0.45)' : '#91caff'),
+            colorPrimaryBorderHover: uiVersion === 'v2' ? v2PrimaryBorderHoverColor : (isDark ? 'rgba(246, 196, 83, 0.60)' : '#69b1ff'),
+            controlItemBgActive: uiVersion === 'v2' ? v2ControlActiveBg : (isDark ? 'rgba(246, 196, 83, 0.20)' : 'rgba(22, 119, 255, 0.12)'),
+            controlItemBgActiveHover: uiVersion === 'v2' ? v2ControlActiveHoverBg : (isDark ? 'rgba(246, 196, 83, 0.28)' : 'rgba(22, 119, 255, 0.18)'),
+            controlOutline: uiVersion === 'v2' ? v2ControlOutline : (isDark ? 'rgba(246, 196, 83, 0.50)' : 'rgba(5, 145, 255, 0.24)'),
+          },
+        }}
+      >
       {bootstrap && controllerEnabled ? (
         <React.Suspense fallback={null}>
           <NativeDetachedWindowController currentWindowId={bootstrap.id} />
@@ -1382,7 +1441,8 @@ const NativeDetachedWindowApp: React.FC<NativeDetachedWindowAppProps> = ({
           ) : null}
         </div>
       </div>
-    </ConfigProvider>
+      </ConfigProvider>
+    </>
   );
 };
 

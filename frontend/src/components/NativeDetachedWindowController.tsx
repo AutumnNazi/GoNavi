@@ -518,6 +518,11 @@ const currentNativeWindowIds = (): Set<string> => {
 export const readAIHostStateRefs = () => {
   const state = useStore.getState();
   return {
+    theme: state.theme,
+    themePreference: state.themePreference,
+    appearance: state.appearance,
+    fontSize: state.fontSize,
+    uiScale: state.uiScale,
     activeContext: state.activeContext,
     activeTabId: state.activeTabId,
     aiContexts: state.aiContexts,
@@ -530,7 +535,12 @@ const areAIHostStateRefsEqual = (
   left: ReturnType<typeof readAIHostStateRefs>,
   right: ReturnType<typeof readAIHostStateRefs>,
 ): boolean => (
-  left.activeContext === right.activeContext
+  left.theme === right.theme
+  && left.themePreference === right.themePreference
+  && left.appearance === right.appearance
+  && left.fontSize === right.fontSize
+  && left.uiScale === right.uiScale
+  && left.activeContext === right.activeContext
   && left.activeTabId === right.activeTabId
   && left.aiContexts === right.aiContexts
   && left.connections === right.connections
