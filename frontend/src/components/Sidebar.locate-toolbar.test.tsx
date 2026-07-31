@@ -839,9 +839,10 @@ describe('Sidebar locate toolbar', () => {
     expect(markup).toContain('data-sidebar-legacy-toolbar-item="true"');
   });
 
-  it('renders the fixed v2 rail, explorer filters and workbench actions', () => {
+  it('renders the fixed v2 rail, titlebar quick actions, explorer filters and workbench actions', () => {
     const markup = renderSidebarMarkup({ uiVersion: 'v2', onCreateConnection: mocks.noop });
     const source = readSidebarSource();
+    const titlebarQuickActionsSource = readSourceFile('./TitleBarQuickActions.tsx');
 
     expect(markup).toContain('gn-v2-sidebar-redesign');
     expect(markup).toContain('gn-v2-connection-rail');
@@ -865,21 +866,32 @@ describe('Sidebar locate toolbar', () => {
     expect(markup).toContain('视图');
     expect(markup).toContain('函数');
     expect(markup).toContain('aria-pressed="true"');
-    expect(markup).toContain('gn-v2-rail-workbench-actions');
-    expect(markup).toContain('data-sidebar-sql-analysis-action="true"');
-    expect(markup).toContain('data-sidebar-sql-audit-action="true"');
+    expect(markup).not.toContain('gn-v2-rail-workbench-actions');
+    expect(markup).not.toContain('data-sidebar-sql-analysis-action="true"');
+    expect(markup).not.toContain('data-sidebar-sql-audit-action="true"');
     expect(markup).not.toContain('gn-v2-sidebar-log-footer');
     expect(markup).not.toContain('gn-v2-sidebar-slow-query-button');
     expect(markup).not.toContain('gn-v2-sidebar-log-button');
     expect(markup).not.toContain('SQL 执行日志');
     expect(markup).not.toContain('2,341');
-    expect(markup).toContain('gn-v2-rail-items');
-    expect(markup).toContain('data-sidebar-create-group-action="true"');
-    expect(markup).toContain('data-sidebar-batch-table-action="true"');
-    expect(markup).toContain('data-sidebar-batch-database-action="true"');
-    expect(markup).toContain('data-sidebar-data-import-action="true"');
-    expect(markup).toContain('data-sidebar-open-external-sql-file-action="true"');
-    expect(markup).toContain('data-sidebar-locate-current-tab-action="true"');
+    expect(markup).not.toContain('gn-v2-rail-items');
+    expect(markup).not.toContain('data-sidebar-create-group-action="true"');
+    expect(markup).not.toContain('data-sidebar-batch-table-action="true"');
+    expect(markup).not.toContain('data-sidebar-batch-database-action="true"');
+    expect(markup).not.toContain('data-sidebar-data-import-action="true"');
+    expect(markup).not.toContain('data-sidebar-open-external-sql-file-action="true"');
+    expect(markup).not.toContain('data-sidebar-locate-current-tab-action="true"');
+    expect(titlebarQuickActionsSource).toContain('data-titlebar-quick-actions');
+    expect(source).toContain("key: 'batch-actions'");
+    expect(source).toContain("sidebar.action.batch_operations");
+    expect(source).toContain("key: 'sql-tools'");
+    expect(source).toContain("sidebar.action.sql_tools");
+    expect(source).toContain("key: 'data-workflow'");
+    expect(source).toContain("app.tools.group.workflow.title");
+    expect(source).toContain("onOpenDataSyncWorkbench?.('schemaCompare')");
+    expect(source).toContain("onOpenDataSyncWorkbench?.('dataCompare')");
+    expect(source).toContain("onOpenDataSyncWorkbench?.('sync')");
+    expect(source).toContain('showObjectActions: false');
     expect(markup).not.toContain('data-gonavi-new-query-action="true"');
     expect(markup).not.toContain('data-gonavi-create-connection-action="true"');
     expect(markup).toContain('aria-label="AI 助手"');

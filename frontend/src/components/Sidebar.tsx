@@ -1,8 +1,8 @@
 ﻿import SidebarConnectionRail from './sidebar/SidebarConnectionRail';
 import Modal from './common/ResizableDraggableModal';
+import TitleBarQuickActions, { type TitleBarQuickAction } from './TitleBarQuickActions';
+import { type DataSyncEntryMode } from './dataSyncEntryMode';
 import SidebarSearchPanel, { type SidebarSearchPanelProps } from './sidebar/SidebarSearchPanel';
-import SlowQueryRailButton from './sidebar/SlowQueryRailButton';
-import SqlAuditRailButton from './sidebar/SqlAuditRailButton';
 import { buildSidebarLegacyNodeMenuItems } from './sidebar/sidebarLegacyNodeMenu';
 import {
   getMetadataDialect,
@@ -73,9 +73,15 @@ import { createPortal } from 'react-dom';
 import { Tree, message, Dropdown, MenuProps, Input, Button, Form, Popover, Radio, Select, Tooltip } from 'antd';
 import { APP_POPUP_Z_INDEX } from '../utils/overlayZIndex';
 	import {
+	  AppstoreOutlined,
+	  AuditOutlined,
 	  CaretDownFilled,
 	  DatabaseOutlined,
+	  HistoryOutlined,
 	  TableOutlined,
+	  ToolOutlined,
+	  SwitcherOutlined,
+	  UploadOutlined,
 	  ConsoleSqlOutlined,
   HddOutlined,
   FolderOutlined,
@@ -127,6 +133,8 @@ import { useAutoFetchVisibility } from '../utils/autoFetchVisibility';
 import { useWorkbenchTabs } from '../hooks/useWorkbenchTabs';
 import FindInDatabaseModal from './FindInDatabaseModal';
 import { buildRpcConnectionConfig } from '../utils/connectionRpcConfig';
+import { buildSqlAnalysisWorkbenchTab } from '../utils/sqlAnalysisTab';
+import { buildSqlAuditWorkbenchTab } from '../utils/sqlAuditTab';
 import { resolveDataSourceType } from '../utils/dataSourceCapabilities';
 import { isConnectionStructureEditRestricted } from '../utils/connectionReadOnly';
 import { noAutoCapInputProps } from '../utils/inputAutoCap';
@@ -546,6 +554,7 @@ const Sidebar: React.FC<{
   onCreateConnectionInGroup?: (targetTagId: string) => void;
   onEditConnection?: (conn: SavedConnection) => void;
   onOpenSettings?: () => void;
+  onOpenDataSyncWorkbench?: (entryMode: DataSyncEntryMode) => void;
   onToggleAI?: () => void;
   onToggleLogPanel?: () => void;
   uiVersion?: 'legacy' | 'v2';
@@ -561,6 +570,7 @@ const Sidebar: React.FC<{
   onCreateConnectionInGroup,
   onEditConnection,
   onOpenSettings,
+  onOpenDataSyncWorkbench,
   onToggleAI,
   onToggleLogPanel,
   uiVersion,
@@ -647,6 +657,13 @@ const Sidebar: React.FC<{
   const isV2Ui = (uiVersion ?? appearance.uiVersion) === 'v2';
   const [treeData, setTreeData] = useState<TreeNode[]>([]);
   const activeTab = useMemo(() => tabs.find(tab => tab.id === activeTabId) || null, [tabs, activeTabId]);
+  const activeTabHasConnection = useMemo(
+    () => Boolean(
+      activeTab?.connectionId
+      && connections.some((connection) => connection.id === activeTab.connectionId),
+    ),
+    [activeTab?.connectionId, connections],
+  );
   const activeTabLocateRequest = useMemo(() => normalizeSidebarLocateObjectRequestFromTab(activeTab), [activeTab]);
   const canLocateActiveTab = !!activeTabLocateRequest;
 
@@ -3129,9 +3146,17 @@ const Sidebar: React.FC<{
   const v2RailObjectActionsLabel = t('sidebar.rail.object_actions');
   const v2RailSystemActionsLabel = t('sidebar.rail.system_actions');
   const v2NewGroupLabel = t('sidebar.action.new_group');
+  const v2BatchActionsLabel = t('sidebar.action.batch_operations');
   const v2BatchTablesLabel = t('sidebar.action.batch_tables');
   const v2BatchDatabasesLabel = t('sidebar.action.batch_databases');
   const v2DataImportLabel = t('sidebar.action.data_import');
+  const v2DataWorkflowLabel = t('app.tools.group.workflow.title');
+  const v2SchemaCompareLabel = t('app.tools.entry.schema_compare.title');
+  const v2DataCompareLabel = t('app.tools.entry.data_compare.title');
+  const v2DataSyncLabel = t('app.tools.entry.sync.title');
+  const v2SqlToolsLabel = t('sidebar.action.sql_tools');
+  const v2SlowQueryLabel = t('sql_analysis.slow_query.rail.aria_label');
+  const v2SqlAuditLabel = t('sql_audit.rail.aria_label');
   const v2OpenExternalSqlFileLabel = t('sidebar.sql_file_exec.title');
   const v2LocateCurrentTableLabel = t('sidebar.action.locate_current_table');
   const v2LocateCurrentTableUnavailableLabel = t('sidebar.message.locate_current_table_unavailable');
@@ -3176,6 +3201,116 @@ const Sidebar: React.FC<{
       { connectionId, dbName, tableName, mode },
     ));
   }, [activeContext?.connectionId, activeContext?.dbName, activeTabId, addTab, tabs]);
+
+  const handleOpenSlowQueryWorkbench = useCallback(() => {
+    if (!activeTabHasConnection || !activeTab?.connectionId) return;
+    addTab(buildSqlAnalysisWorkbenchTab({
+      connectionId: activeTab.connectionId,
+      dbName: activeTab.dbName,
+      view: 'slow-query',
+    }));
+  }, [activeTab?.connectionId, activeTab?.dbName, activeTabHasConnection, addTab]);
+
+  const handleOpenSqlAuditWorkbench = useCallback(() => {
+    addTab(buildSqlAuditWorkbenchTab());
+  }, [addTab]);
+
+  const v2TitlebarQuickActions: TitleBarQuickAction[] = [
+    {
+      key: 'new-group',
+      label: v2NewGroupLabel,
+      icon: <FolderOpenOutlined aria-hidden="true" />,
+      onClick: () => { setRenameViewTarget(null); createTagForm.resetFields(); setIsCreateTagModalOpen(true); },
+      priority: 'secondary',
+    },
+    {
+      key: 'batch-actions',
+      label: v2BatchActionsLabel,
+      icon: <AppstoreOutlined aria-hidden="true" />,
+      menu: [
+        {
+          key: 'batch-tables',
+          label: v2BatchTablesLabel,
+          icon: <TableOutlined aria-hidden="true" />,
+          onClick: openBatchTableWorkbench,
+        },
+        {
+          key: 'batch-databases',
+          label: v2BatchDatabasesLabel,
+          icon: <DatabaseOutlined aria-hidden="true" />,
+          onClick: openBatchDatabaseWorkbench,
+        },
+        {
+          key: 'data-import',
+          label: v2DataImportLabel,
+          icon: <ImportOutlined aria-hidden="true" />,
+          onClick: handleOpenDataImportWorkbench,
+        },
+      ],
+    },
+    {
+      key: 'sql-tools',
+      label: v2SqlToolsLabel,
+      icon: <ToolOutlined aria-hidden="true" />,
+      menu: [
+        {
+          key: 'slow-query',
+          label: v2SlowQueryLabel,
+          icon: <HistoryOutlined aria-hidden="true" />,
+          onClick: handleOpenSlowQueryWorkbench,
+          disabled: !activeTabHasConnection,
+        },
+        {
+          key: 'sql-audit',
+          label: v2SqlAuditLabel,
+          icon: <AuditOutlined aria-hidden="true" />,
+          onClick: handleOpenSqlAuditWorkbench,
+        },
+      ],
+    },
+    {
+      key: 'data-workflow',
+      label: v2DataWorkflowLabel,
+      icon: <SwitcherOutlined aria-hidden="true" />,
+      menu: [
+        {
+          key: 'schema-compare',
+          label: v2SchemaCompareLabel,
+          icon: <AppstoreOutlined aria-hidden="true" />,
+          onClick: () => onOpenDataSyncWorkbench?.('schemaCompare'),
+        },
+        {
+          key: 'data-compare',
+          label: v2DataCompareLabel,
+          icon: <SwitcherOutlined aria-hidden="true" />,
+          onClick: () => onOpenDataSyncWorkbench?.('dataCompare'),
+        },
+        {
+          key: 'data-sync',
+          label: v2DataSyncLabel,
+          icon: <UploadOutlined rotate={90} aria-hidden="true" />,
+          onClick: () => onOpenDataSyncWorkbench?.('sync'),
+        },
+      ],
+    },
+    {
+      key: 'open-external-sql-file',
+      label: v2OpenExternalSqlFileLabel,
+      icon: <FileAddOutlined aria-hidden="true" />,
+      onClick: () => { void handleOpenSQLFileFromToolbar(); },
+      priority: 'secondary',
+    },
+    {
+      key: 'locate-current-table',
+      label: v2LocateCurrentTableLabel,
+      icon: <AimOutlined aria-hidden="true" />,
+      onClick: handleLocateActiveTabInSidebar,
+      priority: 'secondary',
+    },
+  ];
+  const v2TitlebarQuickActionsTarget = isV2Ui && typeof document !== 'undefined'
+    ? document.getElementById('gonavi-titlebar-quick-actions')
+    : null;
 
   const v2CommandSearchPanelProps: SidebarSearchPanelProps<V2CommandSearchItem> = {
     isOpen: isV2CommandSearchOpen,
@@ -3236,23 +3371,12 @@ const Sidebar: React.FC<{
       openSettings: onOpenSettings ?? (() => {}),
     },
     canLocateActiveTab,
+    showObjectActions: false,
     sidebarExpandAction: onExpandSidebar && expandSidebarLabel ? {
       label: expandSidebarLabel,
       onClick: onExpandSidebar,
       buttonRef: expandSidebarButtonRef,
     } : undefined,
-    workbenchActions: (
-      <>
-        <SlowQueryRailButton
-          className="gn-v2-rail-tool gn-v2-rail-sql-analysis-button"
-          tooltipPlacement="right"
-        />
-        <SqlAuditRailButton
-          className="gn-v2-rail-tool gn-v2-rail-sql-audit-button"
-          tooltipPlacement="right"
-        />
-      </>
-    ),
   };
 
   return (
@@ -3596,6 +3720,15 @@ const Sidebar: React.FC<{
 
         </div>
         <SidebarSearchPanel {...v2CommandSearchPanelProps} />
+
+        {v2TitlebarQuickActionsTarget && createPortal(
+          <TitleBarQuickActions
+            label={v2RailObjectActionsLabel}
+            moreLabel={t('query_editor.action.more')}
+            actions={v2TitlebarQuickActions}
+          />,
+          v2TitlebarQuickActionsTarget,
+        )}
 
         {contextMenu?.kind && typeof document !== 'undefined' && createPortal(
             <div

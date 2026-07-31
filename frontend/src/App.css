@@ -2015,25 +2015,130 @@ body[data-ui-version="v2"] .gn-conn-check-line .ant-form-item {
     --wails-draggable: no-drag;
 }
 
-.gonavi-titlebar-primary-action.ant-btn {
+.gonavi-titlebar-quick-actions-slot {
+    display: flex;
     min-width: 0;
-    height: 28px;
-    padding: 0 9px;
-    border: 0.5px solid var(--gn-br-2, var(--ant-color-border-secondary));
-    border-radius: 6px;
-    background: var(--gn-bg-panel, var(--ant-color-bg-container));
-    color: var(--gn-fg-2, var(--ant-color-text));
-    font-size: 12px;
-    font-weight: 500;
-    letter-spacing: 0;
-    box-shadow: none;
+    flex: 1 1 auto;
+    align-items: center;
+    -webkit-app-region: drag;
+    --wails-draggable: drag;
 }
 
-.gonavi-titlebar-primary-action.ant-btn:hover,
-.gonavi-titlebar-primary-action.ant-btn:focus-visible {
+.gonavi-titlebar-primary-action {
+    display: inline-flex;
+    min-width: 0;
+    height: 26px;
+    padding: 0 8px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--gn-fg-3, var(--ant-color-text-secondary));
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    font: inherit;
+    font-size: 11px;
+    font-weight: 550;
+    line-height: 1;
+    letter-spacing: 0;
+    box-shadow: none;
+    cursor: pointer;
+    -webkit-app-region: no-drag;
+    --wails-draggable: no-drag;
+    transition: outline-color 140ms ease, background-color 140ms ease, color 140ms ease;
+}
+
+.gonavi-titlebar-primary-action .anticon {
+    flex: 0 0 auto;
+    font-size: 13px;
+}
+
+.gonavi-titlebar-primary-action:hover,
+.gonavi-titlebar-primary-action:focus-visible {
+    background: var(--gn-accent-soft, var(--ant-color-primary-bg));
+    color: var(--gn-accent, var(--ant-color-primary));
+    outline: 1px solid color-mix(in srgb, var(--gn-accent, var(--ant-color-primary)) 42%, transparent);
+    outline-offset: -1px;
+}
+
+.gn-v2-titlebar-quick-actions {
+    display: flex;
+    min-width: 0;
+    max-width: 100%;
+    flex: 0 1 auto;
+    align-items: center;
+    gap: 5px;
+    margin-left: 6px;
+    overflow: hidden;
+    -webkit-app-region: drag;
+    --wails-draggable: drag;
+}
+
+.gn-v2-titlebar-quick-primary {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 3px;
+    overflow: hidden;
+}
+
+.gn-v2-titlebar-quick-action,
+.gn-v2-titlebar-quick-more {
+    display: inline-flex;
+    height: 26px;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 5px;
+    padding: 0 8px;
+    border: 0.5px solid transparent;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--gn-fg-3, var(--ant-color-text-secondary));
+    cursor: pointer;
+    font: inherit;
+    font-size: 11px;
+    font-weight: 550;
+    line-height: 1;
+    white-space: nowrap;
+    -webkit-app-region: no-drag;
+    --wails-draggable: no-drag;
+    transition: border-color 140ms ease, background-color 140ms ease, color 140ms ease;
+}
+
+.gn-v2-titlebar-quick-action:hover,
+.gn-v2-titlebar-quick-action:focus-visible,
+.gn-v2-titlebar-quick-more:hover,
+.gn-v2-titlebar-quick-more:focus-visible {
     border-color: color-mix(in srgb, var(--gn-accent, var(--ant-color-primary)) 42%, transparent);
     background: var(--gn-accent-soft, var(--ant-color-primary-bg));
     color: var(--gn-accent, var(--ant-color-primary));
+    outline: none;
+}
+
+.gn-v2-titlebar-quick-action .anticon,
+.gn-v2-titlebar-quick-more .anticon {
+    flex: 0 0 auto;
+    font-size: 13px;
+}
+
+@media (max-width: 1180px) {
+    .gn-v2-titlebar-quick-actions {
+        margin-left: 3px;
+    }
+
+    .gn-v2-titlebar-quick-action {
+        padding-inline: 6px;
+    }
+}
+
+@media (max-width: 920px) {
+    .gn-v2-titlebar-quick-primary {
+        display: none;
+    }
+
+    .gn-v2-titlebar-quick-more {
+        padding-inline: 8px;
+    }
 }
 
 @media (max-width: 720px) {
@@ -2045,7 +2150,7 @@ body[data-ui-version="v2"] .gn-conn-check-line .ant-form-item {
         gap: 3px;
     }
 
-    .gonavi-titlebar-primary-action.ant-btn {
+    .gonavi-titlebar-primary-action {
         padding-inline: 6px;
     }
 }

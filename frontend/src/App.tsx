@@ -7509,6 +7509,7 @@ function App() {
                     onNewQuery={handleNewQuery}
                     onNewConnection={handleCreateConnection}
                   />
+                  {isV2Ui && <div id="gonavi-titlebar-quick-actions" className="gonavi-titlebar-quick-actions-slot" />}
               </div>
               {isWebRuntime ? (
                   <div
@@ -7619,6 +7620,7 @@ function App() {
                             onCreateConnectionInGroup={handleCreateConnectionInGroup}
                             onEditConnection={handleEditConnection}
                             onOpenSettings={handleOpenSettingsModal}
+                            onOpenDataSyncWorkbench={handleOpenDataSyncWorkbench}
                             onToggleAI={toggleAIPanel}
                             onToggleLogPanel={handleToggleLogPanel}
                             uiVersion={appearance.uiVersion}
