@@ -158,6 +158,7 @@ const backendApp = vi.hoisted(() => ({
   DBGetDatabases: vi.fn(),
   DBGetColumns: vi.fn(),
   DBGetIndexes: vi.fn(),
+  DBGetTriggers: vi.fn(),
   DBShowCreateTable: vi.fn(),
   CancelQuery: vi.fn(),
   GenerateQueryID: vi.fn(),
@@ -907,6 +908,7 @@ describe('QueryEditor external SQL save', () => {
     backendApp.DBRollbackTransactionWithTrigger.mockResolvedValue({ success: true, message: '事务已回滚' });
     backendApp.DBGetColumns.mockResolvedValue({ success: true, data: [] });
     backendApp.DBGetIndexes.mockResolvedValue({ success: true, data: [] });
+    backendApp.DBGetTriggers.mockResolvedValue({ success: true, data: [] });
     backendApp.DBGetAllColumns.mockResolvedValue({ success: true, data: [] });
     backendApp.DBGetDatabases.mockResolvedValue({ success: true, data: [] });
     backendApp.DBGetTables.mockResolvedValue({ success: true, data: [] });
@@ -7719,6 +7721,74 @@ describe('QueryEditor external SQL save', () => {
     expect(editQuery).toMatch(/CREATE OR REPLACE VIEW H2\.CV_GD_YNCRM_SALESDTLLIST AS/i);
     expect(editQuery).toContain('deleted_flag = 0');
     expect(editQuery).not.toContain('[CLOB preview:');
+  });
+
+  it('uses the complete Oracle trigger DDL when opening object edit from the editor', async () => {
+    const triggerName = 'H2.TR_T_MEMCARD_REG';
+    const fullDDL = `CREATE OR REPLACE TRIGGER "H2"."TR_T_MEMCARD_REG"
+BEFORE INSERT OR UPDATE ON "H2"."T_MEMCARD_REG"
+FOR EACH ROW
+BEGIN
+${'  NULL;\n'.repeat(700)}  -- FULL_TRIGGER_DDL_TAIL
+END;`;
+    storeState.connections[0].config.type = 'oracle';
+    storeState.connections[0].config.database = 'hydeekf';
+    editorState.value = `call ${triggerName}();`;
+    autoFetchState.visible = true;
+    backendApp.DBGetDatabases.mockResolvedValueOnce({ success: true, data: [{ Database: 'H2' }] });
+    backendApp.DBGetTables.mockResolvedValueOnce({ success: true, data: [] });
+    backendApp.DBGetAllColumns.mockResolvedValueOnce({ success: true, data: [] });
+    backendApp.DBGetTriggers.mockResolvedValue({
+      success: true,
+      data: [{ name: 'TR_T_MEMCARD_REG', timing: 'BEFORE EACH ROW', event: 'INSERT OR UPDATE', statement: fullDDL }],
+    });
+    backendApp.DBQuery.mockImplementation(async (_config: any, _dbName: string, sql: string) => {
+      if (sql.includes('ALL_TRIGGERS') && sql.includes('ORDER BY TABLE_NAME')) {
+        return {
+          success: true,
+          data: [{ schema_name: 'H2', table_name: 'T_MEMCARD_REG', trigger_name: 'TR_T_MEMCARD_REG' }],
+        };
+      }
+      if (sql.includes('DBMS_METADATA.GET_DDL')) {
+        return {
+          success: true,
+          data: [{ trigger_definition: `[CLOB preview: 4096/${fullDDL.length} bytes] ${fullDDL.slice(0, 4096)}` }],
+        };
+      }
+      return { success: true, data: [] };
+    });
+
+    await act(async () => {
+      create(<QueryEditor tab={createTab({ query: editorState.value, dbName: 'H2' })} />);
+    });
+    await act(async () => {
+      for (let i = 0; i < 12; i += 1) {
+        await Promise.resolve();
+      }
+    });
+
+    await act(async () => {
+      editorState.mouseDownListeners[0]?.({
+        target: { position: { lineNumber: 1, column: editorState.value.indexOf(triggerName) + Math.floor(triggerName.length / 2) + 1 } },
+        event: {
+          leftButton: true,
+          ctrlKey: true,
+          metaKey: false,
+          preventDefault: vi.fn(),
+          stopPropagation: vi.fn(),
+        },
+      });
+      for (let i = 0; i < 12; i += 1) {
+        await Promise.resolve();
+      }
+    });
+
+    expect(backendApp.DBGetTriggers).toHaveBeenCalledWith(expect.anything(), 'H2', 'H2.T_MEMCARD_REG');
+    const addTabCall = storeState.addTab.mock.calls[storeState.addTab.mock.calls.length - 1]?.[0];
+    const editQuery = String(addTabCall?.query || '');
+    expect(editQuery).toContain('FULL_TRIGGER_DDL_TAIL');
+    expect(editQuery).not.toContain('[CLOB preview:');
+    expect(editQuery).not.toContain('请补全 CREATE TRIGGER 语句');
   });
 
   it('opens trigger and routine object-edit tabs on ctrl left click inside the editor', async () => {

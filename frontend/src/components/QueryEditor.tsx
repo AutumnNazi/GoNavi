@@ -6,7 +6,7 @@ import { format } from 'sql-formatter';
 import { v4 as uuidv4 } from 'uuid';
 import { TabData, ColumnDefinition, type SavedQuery, type SqlSnippet } from '../types';
 import { type SqlLog, useStore } from '../store';
-import { DBQuery, DBQueryWithCancel, DBQueryMulti, DBQueryMultiInTransaction, DBQueryMultiTransactional, DBGetTables, DBGetAllColumns, DBGetDatabases, DBGetColumns, DBShowCreateTable, CancelQuery, GenerateQueryID, WriteSQLFile, ExportSQLFile, InspectElasticsearchConsole, ExecuteElasticsearchConsole } from '../../wailsjs/go/app/App';
+import { DBQuery, DBQueryWithCancel, DBQueryMulti, DBQueryMultiInTransaction, DBQueryMultiTransactional, DBGetTables, DBGetAllColumns, DBGetDatabases, DBGetColumns, DBGetTriggers, DBShowCreateTable, CancelQuery, GenerateQueryID, WriteSQLFile, ExportSQLFile, InspectElasticsearchConsole, ExecuteElasticsearchConsole } from '../../wailsjs/go/app/App';
 import { GONAVI_ROW_KEY } from './DataGrid';
 import { EventsOn, LogError, LogInfo } from '../../wailsjs/runtime';
 import { findConnectionMutatingStatements } from '../utils/connectionReadOnly';
@@ -79,6 +79,7 @@ import {
     takeQueryEditorResultSession,
 } from '../utils/queryEditorResultSessionCache';
 import { buildEditableTriggerSql } from '../utils/triggerEditSql';
+import { findTriggerDefinitionStatement } from '../utils/triggerDefinition';
 import { openNativeQueryResultWindow } from '../utils/nativeDetachedWindowHost';
 import {
     isNativeDetachedWindow,
@@ -918,24 +919,8 @@ WHERE t.tgname = '${safeName}'
 LIMIT 1`];
         case 'sqlserver':
             return buildSqlServerObjectDefinitionQueries('trigger', triggerName, dbName, 'trigger_definition');
-        case 'oracle': {
-            if (schema) {
-                return [
-                    `SELECT DBMS_METADATA.GET_DDL('TRIGGER', '${safeName.toUpperCase()}', '${escapeQueryEditorObjectEditSqlLiteral(schema).toUpperCase()}') AS trigger_definition FROM DUAL`,
-                    `SELECT TRIGGER_BODY FROM ALL_TRIGGERS WHERE OWNER = '${escapeQueryEditorObjectEditSqlLiteral(schema).toUpperCase()}' AND TRIGGER_NAME = '${safeName.toUpperCase()}'`,
-                ];
-            }
-            if (safeDbName) {
-                return [
-                    `SELECT DBMS_METADATA.GET_DDL('TRIGGER', '${safeName.toUpperCase()}', '${safeDbName.toUpperCase()}') AS trigger_definition FROM DUAL`,
-                    `SELECT TRIGGER_BODY FROM ALL_TRIGGERS WHERE OWNER = '${safeDbName.toUpperCase()}' AND TRIGGER_NAME = '${safeName.toUpperCase()}'`,
-                ];
-            }
-            return [
-                `SELECT DBMS_METADATA.GET_DDL('TRIGGER', '${safeName.toUpperCase()}') AS trigger_definition FROM DUAL`,
-                `SELECT TRIGGER_BODY FROM USER_TRIGGERS WHERE TRIGGER_NAME = '${safeName.toUpperCase()}'`,
-            ];
-        }
+        case 'oracle':
+            return [];
         case 'sqlite':
             return [`SELECT sql AS trigger_definition FROM sqlite_master WHERE type = 'trigger' AND name = '${safeName}'`];
         default:
@@ -3977,17 +3962,32 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       let latestDefinition = '';
       if (conn) {
           const dialect = normalizeMetadataDialect(conn);
-          const rows = await runQueryEditorObjectDefinitionCandidates(
-              buildQueryEditorObjectDefinitionConnectionConfig(conn),
-              targetDbName,
-              buildQueryEditorTriggerDefinitionQueries(
-                  dialect,
-                  targetTriggerName,
+          const connectionConfig = buildQueryEditorObjectDefinitionConnectionConfig(conn);
+          const triggerTableName = String(navigationTarget.tableName || '').trim();
+          if (dialect === 'oracle') {
+              if (triggerTableName) {
+                  try {
+                      const result = await DBGetTriggers(connectionConfig as any, targetDbName, triggerTableName);
+                      if (result.success) {
+                          latestDefinition = findTriggerDefinitionStatement(result.data, targetTriggerName);
+                      }
+                  } catch {
+                      latestDefinition = '';
+                  }
+              }
+          } else {
+              const rows = await runQueryEditorObjectDefinitionCandidates(
+                  connectionConfig,
                   targetDbName,
-                  navigationTarget.schemaName,
-              ),
-          );
-          latestDefinition = extractQueryEditorTriggerDefinition(dialect, rows);
+                  buildQueryEditorTriggerDefinitionQueries(
+                      dialect,
+                      targetTriggerName,
+                      targetDbName,
+                      navigationTarget.schemaName,
+                  ),
+              );
+              latestDefinition = extractQueryEditorTriggerDefinition(dialect, rows);
+          }
       }
 
       addTab({

@@ -1068,7 +1068,7 @@ func parseOracleForeignKeys(data []map[string]interface{}) []connection.ForeignK
 
 func (o *OracleDB) GetTriggers(dbName, tableName string) ([]connection.TriggerDefinition, error) {
 	for _, candidate := range oracleMetadataNamePairs(dbName, tableName) {
-		data, _, err := o.Query(buildOracleTriggersQuery(candidate.schema, candidate.table))
+		data, _, err := o.queryUnbounded(buildOracleTriggersQuery(candidate.schema, candidate.table))
 		if err != nil {
 			return nil, err
 		}
@@ -1130,7 +1130,7 @@ func (o *OracleDB) fetchOracleTriggerDDL(owner string, triggerName string) strin
 			query = fmt.Sprintf("SELECT DBMS_METADATA.GET_DDL('TRIGGER', '%s') as ddl FROM DUAL", metadataTriggerName)
 		}
 
-		data, _, err := o.Query(query)
+		data, _, err := o.queryUnbounded(query)
 		if err != nil || len(data) == 0 {
 			continue
 		}
