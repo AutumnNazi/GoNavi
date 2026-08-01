@@ -63,6 +63,7 @@ const CONNECTION_READ_ONLY_TYPES = new Set([
   "clickhouse",
   "trino",
   "mongodb",
+  "elasticsearch",
 ]);
 
 const CONNECTION_PROTECTION_TYPES = new Set([
@@ -418,6 +419,7 @@ export const supportsConnectionKeepAliveSQL = (
   const type = resolveConnectionReadOnlyType(config);
   return (
     type !== "mongodb" &&
+    type !== "elasticsearch" &&
     type !== "sqlite" &&
     type !== "duckdb" &&
     CONNECTION_READ_ONLY_TYPES.has(type)

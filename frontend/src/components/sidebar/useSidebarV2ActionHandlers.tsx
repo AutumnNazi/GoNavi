@@ -8,7 +8,11 @@ import type { ConnectionTag, SavedConnection } from '../../types';
 import { buildRpcConnectionConfig } from '../../utils/connectionRpcConfig';
 import { resolveConnectionAccentColor, resolveConnectionIconType } from '../../utils/connectionVisual';
 import { normalizeConnectionEnvironmentType } from '../../utils/connectionEnvironment';
-import { resolveTableSelectQuery } from '../../utils/objectQueryTemplates';
+import {
+  buildTableSelectQuery,
+  isElasticsearchDbType,
+  resolveTableSelectQuery,
+} from '../../utils/objectQueryTemplates';
 import { DBReleaseConnection } from '../../../wailsjs/go/app/App';
 import { updateSidebarDatabasePinKeys } from '../../store';
 import { getDbIcon } from '../DatabaseIcons';
@@ -360,13 +364,17 @@ export const useSidebarV2ActionHandlers = ({
   };
 
   const openDatabaseQuery = (node: any) => {
+    const dbName = String(node.dataRef?.dbName || node.title || '').trim();
+    const dbType = getMetadataDialect(node.dataRef as SavedConnection);
     addTab({
       id: `query-${Date.now()}`,
       title: t('sidebar.tab.new_query_database', { database: node.title }),
       type: 'query',
       connectionId: node.dataRef.id,
-      dbName: node.title,
-      query: '',
+      dbName,
+      query: isElasticsearchDbType(dbType)
+        ? buildTableSelectQuery(dbType, dbName)
+        : '',
     });
   };
 

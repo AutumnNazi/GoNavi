@@ -198,6 +198,9 @@ type App struct {
 	jvmPreviewTokenMu             sync.Mutex
 	jvmPreviewTokens              map[string]jvmPreviewConfirmationToken
 	jvmPreviewTokenTTL            time.Duration
+	elasticsearchConsoleTokenMu   sync.Mutex
+	elasticsearchConsoleTokens    map[string]elasticsearchConsoleConfirmationToken
+	elasticsearchConsoleTokenTTL  time.Duration
 	keepAliveCancel               context.CancelFunc
 	keepAliveDone                 chan struct{}
 	resultDiffManager             *resultdiff.Manager
@@ -234,19 +237,21 @@ func NewAppWithSecretStore(store secretstore.SecretStore) *App {
 		store = secretstore.NewUnavailableStore("secret store unavailable")
 	}
 	return &App{
-		dbCache:                    make(map[string]cachedDatabase),
-		connectFailures:            make(map[string]cachedConnectFailure),
-		dbConnectFlights:           make(map[uint64]*databaseConnectFlight),
-		runningQueries:             make(map[string]queryContext),
-		sqlTransactions:            make(map[string]*managedSQLTransaction),
-		configDir:                  resolveAppConfigDir(),
-		secretStore:                store,
-		localizer:                  newAppLocalizer(),
-		jvmPreviewTokens:           make(map[string]jvmPreviewConfirmationToken),
-		jvmPreviewTokenTTL:         defaultJVMPreviewConfirmationTokenTTL,
-		cloudBackupRestoreTokens:   make(map[string]cloudBackupRestoreConfirmationToken),
-		cloudBackupRestoreTokenTTL: defaultCloudBackupRestoreConfirmationTokenTTL,
-		resultDiffManager:          resultdiff.NewManager(30 * time.Minute),
+		dbCache:                      make(map[string]cachedDatabase),
+		connectFailures:              make(map[string]cachedConnectFailure),
+		dbConnectFlights:             make(map[uint64]*databaseConnectFlight),
+		runningQueries:               make(map[string]queryContext),
+		sqlTransactions:              make(map[string]*managedSQLTransaction),
+		configDir:                    resolveAppConfigDir(),
+		secretStore:                  store,
+		localizer:                    newAppLocalizer(),
+		jvmPreviewTokens:             make(map[string]jvmPreviewConfirmationToken),
+		jvmPreviewTokenTTL:           defaultJVMPreviewConfirmationTokenTTL,
+		elasticsearchConsoleTokens:   make(map[string]elasticsearchConsoleConfirmationToken),
+		elasticsearchConsoleTokenTTL: defaultElasticsearchConsoleConfirmationTokenTTL,
+		cloudBackupRestoreTokens:     make(map[string]cloudBackupRestoreConfirmationToken),
+		cloudBackupRestoreTokenTTL:   defaultCloudBackupRestoreConfirmationTokenTTL,
+		resultDiffManager:            resultdiff.NewManager(30 * time.Minute),
 	}
 }
 

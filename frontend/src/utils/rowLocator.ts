@@ -81,8 +81,6 @@ export const buildAllColumnsLocator = (
     .filter(Boolean)
     .filter((column) => !isInternalLocatorColumn(column))
     .filter((column) => !hidden.has(column.toLowerCase()));
-  console.log(options);
-
   return {
     strategy: 'all-columns',
     columns,
@@ -90,7 +88,7 @@ export const buildAllColumnsLocator = (
     hiddenColumns: options?.hiddenColumns,
     writableColumns: options?.writableColumns,
     readOnly: false,
-    reason: translateReason(options?.translate, translateCatalog(ALL_COLUMNS_LOCATOR_HINT_KEY)),
+    reason: translateReason(options?.translate, ALL_COLUMNS_LOCATOR_HINT_KEY),
   };
 };
 

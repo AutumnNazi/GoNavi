@@ -838,12 +838,17 @@ export const normalizeMetadataDialect = (conn: any): string => {
     return String(dialect || '').toLowerCase();
 };
 
-export type QueryEditorMonacoLanguage = 'sql' | 'mysql';
+export type QueryEditorMonacoLanguage = 'sql' | 'mysql' | 'elasticsearch-console';
 
 export const resolveQueryEditorMonacoLanguage = (conn: any): QueryEditorMonacoLanguage => {
+    const connectionType = String(conn?.config?.type || '').trim().toLowerCase();
+    const connectionDriver = String(conn?.config?.driver || '').trim().toLowerCase();
+    if (connectionType === 'elasticsearch' || connectionType === 'elastic' || connectionDriver === 'elasticsearch' || connectionDriver === 'elastic') {
+        return 'elasticsearch-console';
+    }
     const dialect = resolveSqlDialect(
-        String(conn?.config?.type || ''),
-        String(conn?.config?.driver || ''),
+        connectionType,
+        connectionDriver,
         { oceanBaseProtocol: conn?.config?.oceanBaseProtocol },
     );
     return isMysqlFamilyDialect(dialect) ? 'mysql' : 'sql';
@@ -1078,6 +1083,18 @@ export const normalizeExecutedSqlKey = (sql: string): string => String(sql || ''
     .trim()
     .replace(/\s+/g, ' ')
     .toLowerCase();
+
+export const buildQueryEditorResultSetMergeKey = (result: {
+    sql?: string;
+    exportSql?: string;
+    sourceStatementIndex?: number;
+    statementResultIndex?: number;
+}): string => {
+    const sqlKey = normalizeExecutedSqlKey(result.exportSql || result.sql || '');
+    const sourceStatementIndex = Number(result.sourceStatementIndex ?? 1);
+    const statementResultIndex = Number(result.statementResultIndex ?? 1);
+    return `${sqlKey}::${sourceStatementIndex}::${statementResultIndex}`;
+};
 
 export const areSqlStatementListsEqual = (left: string[], right: string[]): boolean => (
     left.length === right.length

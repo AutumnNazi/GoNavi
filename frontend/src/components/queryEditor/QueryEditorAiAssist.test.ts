@@ -4,7 +4,9 @@ import {
     buildQueryEditorAiInlineSuggestOptions,
     buildQueryEditorInlineCompletionMessages,
     buildQueryEditorInlineCompletionContext,
+    buildQueryEditorTextToElasticsearchMessages,
     buildQueryEditorTextToSqlMessages,
+    requestQueryEditorTextToElasticsearch,
     requestQueryEditorInlineCompletion,
     resolveInlineSqlGhostPreviewText,
     resolveInlineSqlInsertText,
@@ -13,6 +15,7 @@ import {
     resolveQueryEditorInlineCompletionModel,
     resolveQueryEditorInlineCompletionIntentDetails,
     sanitizeSqlAssistantResponse,
+    sanitizeElasticsearchConsoleAssistantResponse,
     shouldAllowQueryEditorInlineMemoryCompletion,
     shouldTriggerQueryEditorInlineObjectSuggestFallback,
     shouldRequestQueryEditorInlineCompletion,
@@ -40,6 +43,60 @@ const readyService = (content = 'SELECT * FROM users;'): QueryEditorAiService =>
 });
 
 describe('QueryEditorAiAssist', () => {
+    it('builds a read-first Elasticsearch console prompt with version and mapping context', () => {
+        const messages = buildQueryEditorTextToElasticsearchMessages({
+            aiContext: {
+                sourceType: 'elasticsearch',
+                currentDb: 'orders-v1',
+                elasticsearchVersion: '8',
+                elasticsearchMapping: '{"properties":{"status":{"type":"keyword"}}}',
+            },
+            editorSnapshot: {
+                prefix: 'GET /orders-v1/_search\n',
+                suffix: '',
+                currentLineBeforeCursor: '',
+                currentLineAfterCursor: '',
+            },
+            instruction: '查询 status 为 paid 的文档',
+            userPromptSettings: { global: '', database: '', jvm: '', jvmDiagnostic: '' },
+        });
+
+        expect(messages[0]?.content).toContain('read-only');
+        expect(messages[0]?.content).toContain('METHOD /path');
+        expect(messages[messages.length - 1]?.content).toContain('Elasticsearch major version: 8');
+        expect(messages[messages.length - 1]?.content).toContain('"status"');
+    });
+
+    it('sanitizes Elasticsearch console output and rejects URLs or credential headers', () => {
+        expect(sanitizeElasticsearchConsoleAssistantResponse(
+            '```http\nGET /orders/_search\n{"query":{"match_all":{}}}\n```',
+        )).toBe('GET /orders/_search\n{"query":{"match_all":{}}}');
+        expect(sanitizeElasticsearchConsoleAssistantResponse(
+            'GET https://example.test/orders/_search',
+        )).toBe('');
+        expect(sanitizeElasticsearchConsoleAssistantResponse(
+            'GET /orders/_search\nAuthorization: ApiKey secret',
+        )).toBe('');
+    });
+
+    it('requests Elasticsearch console text without executing it', async () => {
+        const service = readyService('POST /orders/_search\n{"query":{"term":{"status":"paid"}}}');
+        const result = await requestQueryEditorTextToElasticsearch({
+            service,
+            aiContext: { sourceType: 'elasticsearch', currentDb: 'orders' },
+            editorSnapshot: {
+                prefix: '',
+                suffix: '',
+                currentLineBeforeCursor: '',
+                currentLineAfterCursor: '',
+            },
+            instruction: '查询 paid 订单',
+        });
+
+        expect(result.source).toContain('POST /orders/_search');
+        expect(service.AIChatSend).toHaveBeenCalledTimes(1);
+    });
+
     it('keeps AI inline suggestions visible when normal SQL suggestions are open', () => {
         expect(buildQueryEditorAiInlineSuggestOptions()).toMatchObject({
             enabled: true,

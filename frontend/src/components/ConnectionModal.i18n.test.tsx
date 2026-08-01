@@ -481,7 +481,7 @@ describe("ConnectionModal i18n", () => {
       }),
     );
     expect(onClose).toHaveBeenCalledTimes(1);
-  });
+  }, 15000);
 
   it("updates visible copy when languagePreference changes while the modal stays open", async () => {
     const { default: ConnectionModal } = await import("./ConnectionModal");

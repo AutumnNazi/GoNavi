@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
@@ -105,6 +106,19 @@ type fakeAgentTimeoutDB struct {
 	multiResults       []connection.ResultSetData
 	multiMessages      []string
 }
+
+type fakeAgentElasticsearchConsoleDB struct {
+	fakeAgentTimeoutDB
+	request  db.ElasticsearchConsoleRequest
+	response db.ElasticsearchConsoleResponse
+}
+
+func (f *fakeAgentElasticsearchConsoleDB) ExecuteElasticsearchConsoleRequest(_ context.Context, request db.ElasticsearchConsoleRequest) (db.ElasticsearchConsoleResponse, error) {
+	f.request = request
+	return f.response, nil
+}
+
+func (f *fakeAgentElasticsearchConsoleDB) ElasticsearchServerMajor() int { return 8 }
 
 func (f *fakeAgentTimeoutDB) Connect(config connection.ConnectionConfig) error { return nil }
 func (f *fakeAgentTimeoutDB) Close() error                                     { return nil }
@@ -373,6 +387,97 @@ func TestHandleRequest_QueryIncludesServerMessages(t *testing.T) {
 	}
 	if len(resp.Messages) != 2 || resp.Messages[0] != "PRINT sql line 1" {
 		t.Fatalf("expected query messages to be preserved, got %#v", resp.Messages)
+	}
+}
+
+func TestHandleRequest_ExecutesElasticsearchConsoleRequest(t *testing.T) {
+	fake := &fakeAgentElasticsearchConsoleDB{
+		response: db.ElasticsearchConsoleResponse{
+			StatusCode:  http.StatusBadRequest,
+			ContentType: "application/json",
+			RawBody:     `{"error":{"type":"parsing_exception"},"status":400}`,
+			ServerMajor: 8,
+		},
+	}
+	runtimeState := &agentRuntime{inst: fake, sessions: make(map[string]db.StatementExecer)}
+	request := db.ElasticsearchConsoleRequest{
+		Method:   http.MethodPost,
+		Path:     "/orders/_search",
+		Body:     `{"query":`,
+		BodyKind: db.ElasticsearchConsoleBodyKindJSON,
+	}
+
+	response := handleRequest(runtimeState, agentRequest{
+		ID:                   21,
+		Method:               agentMethodElasticsearchConsole,
+		ElasticsearchRequest: &request,
+		TimeoutMs:            int64((2 * time.Second).Milliseconds()),
+	})
+	if !response.Success {
+		t.Fatalf("console request failed: %s", response.Error)
+	}
+	if fake.request != request {
+		t.Fatalf("request was not preserved: %#v", fake.request)
+	}
+	got, ok := response.Data.(db.ElasticsearchConsoleResponse)
+	if !ok {
+		t.Fatalf("unexpected response type: %T", response.Data)
+	}
+	if got != fake.response {
+		t.Fatalf("response was not preserved: %#v", got)
+	}
+}
+
+func TestHandleRequest_ConnectReturnsElasticsearchServerMajor(t *testing.T) {
+	previousFactory := agentDatabaseFactory
+	previousDriverType := agentDriverType
+	t.Cleanup(func() {
+		agentDatabaseFactory = previousFactory
+		agentDriverType = previousDriverType
+	})
+
+	fake := &fakeAgentElasticsearchConsoleDB{}
+	agentDriverType = "elasticsearch"
+	agentDatabaseFactory = func() db.Database { return fake }
+	runtimeState := &agentRuntime{sessions: make(map[string]db.StatementExecer)}
+	config := connection.ConnectionConfig{Type: "elasticsearch"}
+
+	response := handleRequest(runtimeState, agentRequest{
+		ID:     23,
+		Method: agentMethodConnect,
+		Config: &config,
+	})
+	if !response.Success {
+		t.Fatalf("connect request failed: %s", response.Error)
+	}
+	info, ok := response.Data.(agentConnectionInfo)
+	if !ok {
+		t.Fatalf("unexpected connection info type: %T", response.Data)
+	}
+	if info.ElasticsearchServerMajor != 8 {
+		t.Fatalf("unexpected Elasticsearch server major: %d", info.ElasticsearchServerMajor)
+	}
+}
+
+func TestHandleRequest_RejectsElasticsearchConsoleForUnsupportedDriver(t *testing.T) {
+	fake := &fakeAgentTimeoutDB{}
+	runtimeState := &agentRuntime{inst: fake, sessions: make(map[string]db.StatementExecer)}
+	request := db.ElasticsearchConsoleRequest{
+		Method:   http.MethodGet,
+		Path:     "/_cluster/health",
+		BodyKind: db.ElasticsearchConsoleBodyKindNone,
+	}
+
+	response := handleRequest(runtimeState, agentRequest{
+		ID:                   22,
+		Method:               agentMethodElasticsearchConsole,
+		ElasticsearchRequest: &request,
+	})
+	if response.Success {
+		t.Fatal("unsupported driver must reject Elasticsearch Console requests")
+	}
+	if !strings.Contains(response.Error, "不支持 Elasticsearch Console") {
+		t.Fatalf("unexpected capability error: %q", response.Error)
 	}
 }
 

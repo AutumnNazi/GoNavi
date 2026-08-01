@@ -130,7 +130,13 @@ vi.mock('antd', () => ({
     <button {...props}>{icon}</button>
   ),
   ConfigProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  Segmented: ({ value, onChange }: { value: string; onChange?: (value: string) => void }) => (
+    <button data-component="segmented" type="button" onClick={() => onChange?.(value === 'table' ? 'raw' : 'table')}>
+      {value}
+    </button>
+  ),
   Spin: () => <span data-component="spin" />,
+  Tag: ({ children }: { children: React.ReactNode }) => <span data-component="tag">{children}</span>,
   Tooltip: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   theme: {
     darkAlgorithm: 'dark',
@@ -703,6 +709,71 @@ describe('NativeDetachedWindowApp', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('renders detached Elasticsearch raw responses with status metadata', async () => {
+    const rawResponse = '{"errors":true,"items":[]}';
+    const bootstrap: NativeDetachedWindowBootstrap = {
+      id: 'query-result:query-native-1:es-r1',
+      kind: 'query-result',
+      title: 'POST /_bulk',
+      payload: {
+        storeState: { appearance: { uiVersion: 'v2' }, theme: 'light', sqlLogs: [] },
+        resultWindow: {
+          id: 'query-result:query-native-1:es-r1',
+          sourceQueryTabId: queryTab.id,
+          connectionId: queryTab.connectionId,
+          dbName: 'events',
+          title: 'POST /_bulk',
+          x: 0,
+          y: 0,
+          width: 800,
+          height: 600,
+          zIndex: 1201,
+          result: {
+            key: 'es-r1',
+            sql: 'POST /_bulk',
+            rows: [],
+            columns: [],
+            resultType: 'elasticsearch',
+            requestLabel: 'POST /_bulk',
+            httpStatus: 200,
+            rawResponse,
+            partialFailure: true,
+            outcomeUnknown: true,
+            pkColumns: [],
+            readOnly: true,
+          },
+        },
+      },
+    };
+    const client = {
+      load: vi.fn(async () => bootstrap),
+      ready: vi.fn(async () => undefined),
+      sync: vi.fn(async () => undefined),
+      attach: vi.fn(async () => undefined),
+      close: vi.fn(async () => undefined),
+      openAISettings: vi.fn(async () => undefined),
+      closeCurrentWindow: vi.fn(async () => undefined),
+    };
+
+    let renderer: TestRenderer.ReactTestRenderer;
+    await act(async () => {
+      renderer = TestRenderer.create(<NativeDetachedWindowApp client={client} />);
+      await flushEffects();
+    });
+
+    const raw = renderer!.root.findByProps({
+      'aria-label': 'query_editor.elasticsearch.raw_response',
+    });
+    expect(raw.props.value).toBe(rawResponse);
+    expect(renderer!.root.findAllByProps({ 'data-component': 'data-grid' })).toHaveLength(0);
+    expect(renderer!.root.findAllByProps({ 'data-component': 'tag' }).map((tag) => tag.children.join('')))
+      .toEqual(expect.arrayContaining([
+        'HTTP 200',
+        'query_editor.elasticsearch.partial',
+        'query_editor.elasticsearch.outcome_unknown',
+      ]));
   });
 
   it('keeps query-result data reporting stable across unrelated parent renders', async () => {

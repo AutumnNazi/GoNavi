@@ -1,15 +1,23 @@
 import Modal from './common/ResizableDraggableModal';
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import Editor, { type OnMount } from './MonacoEditor';
+import Editor, { type BeforeMount, type OnMount } from './MonacoEditor';
 import { message, Input, Form, MenuProps, Button, Segmented } from 'antd';
 import { format } from 'sql-formatter';
 import { v4 as uuidv4 } from 'uuid';
 import { TabData, ColumnDefinition, type SavedQuery, type SqlSnippet } from '../types';
 import { type SqlLog, useStore } from '../store';
-import { DBQuery, DBQueryWithCancel, DBQueryMulti, DBQueryMultiInTransaction, DBQueryMultiTransactional, DBGetTables, DBGetAllColumns, DBGetDatabases, DBGetColumns, DBShowCreateTable, CancelQuery, GenerateQueryID, WriteSQLFile, ExportSQLFile } from '../../wailsjs/go/app/App';
+import { DBQuery, DBQueryWithCancel, DBQueryMulti, DBQueryMultiInTransaction, DBQueryMultiTransactional, DBGetTables, DBGetAllColumns, DBGetDatabases, DBGetColumns, DBShowCreateTable, CancelQuery, GenerateQueryID, WriteSQLFile, ExportSQLFile, InspectElasticsearchConsole, ExecuteElasticsearchConsole } from '../../wailsjs/go/app/App';
 import { GONAVI_ROW_KEY } from './DataGrid';
 import { EventsOn, LogError, LogInfo } from '../../wailsjs/runtime';
 import { findConnectionMutatingStatements } from '../utils/connectionReadOnly';
+import {
+    buildElasticsearchConsoleTemplates,
+    buildElasticsearchInspectionDisplayLabel,
+    formatElasticsearchConsoleSource,
+    isElasticsearchConsoleRunCurrent,
+    isElasticsearchConnection,
+    resolveElasticsearchConsoleExecution,
+} from '../utils/elasticsearchConsole';
 import { getDataSourceCapabilities } from '../utils/dataSourceCapabilities';
 import type { GridSortInfoItem } from '../utils/dataGridSort';
 import { applyMongoQueryAutoLimit, convertMongoShellToJsonCommand } from "../utils/mongodb";
@@ -87,6 +95,7 @@ import QueryEditorResultsPanel, {
     resolveEffectiveActiveResultKey,
     type QueryEditorResultSet,
 } from './QueryEditorResultsPanel';
+import { showCountdownDangerConfirm } from './common/countdownDangerConfirm';
 import ResultDiffWizard from './resultDiff/ResultDiffWizard';
 import ResultDiffPanel from './resultDiff/ResultDiffPanel';
 import ViewDataVerifyWizard from './resultDiff/ViewDataVerifyWizard';
@@ -143,6 +152,7 @@ import {
     buildCompletionViewsMetadataQuerySpecs,
     buildQueryEditorAliasMap,
     buildQueryEditorHoverMarkdown,
+    buildQueryEditorResultSetMergeKey,
     buildQualifiedCompletionName,
     clearQueryEditorLinkDecorations,
     clearQueryEditorObjectDecorations,
@@ -167,7 +177,6 @@ import {
     normalizeQueryResultMessages,
     normalizeCompletionQualifiedName,
     normalizeEditorPosition,
-    normalizeExecutedSqlKey,
     normalizeMetadataDialect,
     queryCompletionMetadataRowsBySpecs,
     readSidebarSqlDropText,
@@ -199,6 +208,7 @@ import {
     buildQueryEditorAiInlineSuggestOptions,
     getQueryEditorAiService,
     requestQueryEditorInlineCompletion,
+    requestQueryEditorTextToElasticsearch,
     requestQueryEditorTextToSql,
     resolveInlineSqlGhostPreviewText,
     resolveQueryEditorInlineMemoryInsertText,
@@ -234,6 +244,14 @@ const QUERY_EDITOR_FORMAT_PARAM_TYPES = {
 };
 const QUERY_EDITOR_FORMAT_ERROR_LOG_MAX_LENGTH = 500;
 const EMPTY_QUERY_EDITOR_SQL_LOGS: SqlLog[] = [];
+
+const hasElasticsearchUncertainOutcome = (response: any): boolean => (
+    response?.outcomeUnknown === true
+);
+
+const buildElasticsearchOutcomeMetadata = (response: any): { outcomeUnknown: boolean } => ({
+    outcomeUnknown: hasElasticsearchUncertainOutcome(response),
+});
 
 const isOceanBaseOracleConnection = (config: any): boolean => {
     const type = String(config?.type || '').trim().toLowerCase();
@@ -1363,10 +1381,15 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
   const queryOptions = useStore(state => state.queryOptions);
   const setQueryOptions = useStore(state => state.setQueryOptions);
   const wordWrapEnabled = queryOptions?.wordWrap === true;
-  const [query, setQuery] = useState(() => getInitialEditorQuery(
-      tab,
-      resolveNewQueryDefaultTemplate(appearance.newQuerySqlTemplate),
-  ));
+  const [query, setQuery] = useState(() => {
+      const initialConnection = useStore.getState().connections.find((connection) => connection.id === tab.connectionId);
+      return getInitialEditorQuery(
+          tab,
+          isElasticsearchConnection(initialConnection?.config)
+              ? ''
+              : resolveNewQueryDefaultTemplate(appearance.newQuerySqlTemplate),
+      );
+  });
   const isExternalSQLFileTab = Boolean(String(tab.filePath || '').trim());
   const isObjectEditQueryTab = tab.type === 'query' && tab.queryMode === 'object-edit';
   const queryEditorMonacoOptions = useMemo(
@@ -1534,12 +1557,55 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       ),
       [connections, currentConnectionId],
   );
+  const isElasticsearchMode = useMemo(
+      () => isElasticsearchConnection(
+          connections.find(connection => connection.id === currentConnectionId)?.config,
+      ),
+      [connections, currentConnectionId],
+  );
+  const [elasticsearchServerMajor, setElasticsearchServerMajor] = useState(0);
+  useEffect(() => {
+      setElasticsearchServerMajor(0);
+  }, [currentConnectionId]);
+  useEffect(() => {
+      if (!isElasticsearchMode) return;
+      const conn = connections.find((connection) => connection.id === currentConnectionId);
+      if (!conn) return;
+      let cancelled = false;
+      const config = buildRpcConnectionConfig({
+          ...conn.config,
+          port: Number(conn.config.port),
+          password: conn.config.password || '',
+          database: conn.config.database || '',
+          useSSH: conn.config.useSSH || false,
+          ssh: conn.config.ssh || { host: '', port: 22, user: '', password: '', keyPath: '' },
+      }) as any;
+      void InspectElasticsearchConsole(config, '', 'GET /')
+          .then((inspection: any) => {
+              const major = Number(inspection?.serverMajor || 0);
+              if (!cancelled && major > 0) {
+                  setElasticsearchServerMajor(major);
+              }
+          })
+          .catch(() => {
+              // Execution preflight will surface connection and policy errors.
+          });
+      return () => {
+          cancelled = true;
+      };
+  }, [connections, currentConnectionId, isElasticsearchMode]);
   const queryEditorMonacoLanguage = useMemo(
       () => resolveQueryEditorMonacoLanguage(
           connections.find(connection => connection.id === currentConnectionId),
       ),
       [connections, currentConnectionId],
   );
+  useEffect(() => {
+      const model = editorRef.current?.getModel?.();
+      if (model && monacoRef.current?.editor?.setModelLanguage) {
+          monacoRef.current.editor.setModelLanguage(model, queryEditorMonacoLanguage);
+      }
+  }, [queryEditorMonacoLanguage]);
 
   const addSqlLog = useStore(state => state.addSqlLog);
   const sqlLogs = useStore(state => (isActive ? state.sqlLogs : EMPTY_QUERY_EDITOR_SQL_LOGS));
@@ -1712,7 +1778,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           insertSqlSnippetActionRef.current.dispose();
           insertSqlSnippetActionRef.current = null;
       }
-      if (!editor) {
+      if (!editor || isElasticsearchMode) {
           return;
       }
 
@@ -1723,7 +1789,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           contextMenuOrder: 1,
           run: handleOpenSqlSnippetPicker,
       });
-  }, [handleOpenSqlSnippetPicker]);
+  }, [handleOpenSqlSnippetPicker, isElasticsearchMode]);
 
   const disposeTransformCaseContextMenuActions = useCallback(() => {
       transformCaseActionDisposablesRef.current.forEach((disposable) => disposable?.dispose?.());
@@ -1897,7 +1963,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           triggerSqlAiCompletionActionRef.current.dispose();
           triggerSqlAiCompletionActionRef.current = null;
       }
-      if (!editor || !monaco) {
+      if (!editor || !monaco || isElasticsearchMode) {
           return;
       }
 
@@ -1915,7 +1981,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
               triggerAiInlineCompletionRef.current?.();
           },
       });
-  }, [activeShortcutPlatform, triggerSqlAiCompletionShortcutBinding]);
+  }, [activeShortcutPlatform, isElasticsearchMode, triggerSqlAiCompletionShortcutBinding]);
   useEffect(() => {
       // Prefer remount session cache (detach/attach); otherwise follow tab draft flag.
       if (restoredResultSessionRef.current && restoredResultSessionRef.current.isResultPanelVisible !== undefined) {
@@ -2822,6 +2888,9 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
 
   const registerQueryEditorAiContextMenuActions = useCallback((editor: any) => {
       disposeQueryEditorAiContextMenuActions();
+      if (isElasticsearchMode) {
+          return;
+      }
       aiContextMenuActionDisposablesRef.current = buildQueryEditorAiContextMenuActions().map((action) => (
           editor.addAction({
               id: action.id,
@@ -2844,7 +2913,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
               },
           })
       ));
-  }, [buildQueryEditorAiContextMenuActions, disposeQueryEditorAiContextMenuActions]);
+  }, [buildQueryEditorAiContextMenuActions, disposeQueryEditorAiContextMenuActions, isElasticsearchMode]);
 
   const buildQueryEditorSlashCommandDefs = useCallback(() => ([
       {
@@ -2990,27 +3059,52 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
 
       setTextToSqlGenerating(true);
       try {
-          const { sql, readiness } = await requestQueryEditorTextToSql({
-              service: getQueryEditorAiService(),
-              aiContext: buildQueryEditorAiContext(),
-              editorSnapshot: buildQueryEditorAiEditorSnapshot(),
-              instruction,
-          });
+          const aiContext = buildQueryEditorAiContext();
+          const editorSnapshot = buildQueryEditorAiEditorSnapshot();
+          const response = isElasticsearchMode
+              ? await requestQueryEditorTextToElasticsearch({
+                  service: getQueryEditorAiService(),
+                  aiContext: {
+                      ...aiContext,
+                      elasticsearchVersion: elasticsearchServerMajor > 0
+                          ? String(elasticsearchServerMajor)
+                          : '',
+                      elasticsearchMapping: JSON.stringify({
+                          fields: (aiContext.columns || []).map((column) => ({
+                              index: column.dbName,
+                              field: column.name,
+                              type: column.type,
+                          })),
+                      }, null, 2),
+                  },
+                  editorSnapshot,
+                  instruction,
+              })
+              : await requestQueryEditorTextToSql({
+                  service: getQueryEditorAiService(),
+                  aiContext,
+                  editorSnapshot,
+                  instruction,
+              });
+          const generatedSource = 'source' in response ? response.source : response.sql;
+          const { readiness } = response;
           if (!readiness.ready) {
               showTextToSqlReadinessWarning(readiness.reason);
               return;
           }
-          if (!sql.trim()) {
+          if (!generatedSource.trim()) {
               void message.warning(translate('query_editor.message.text_to_sql_empty_result'));
               return;
           }
-          if (applyTextToSqlResult(sql, textToSqlApplyMode)) {
+          if (applyTextToSqlResult(generatedSource, textToSqlApplyMode)) {
               setIsTextToSqlModalOpen(false);
               setTextToSqlInstruction('');
               void message.success(translate('query_editor.message.text_to_sql_success'));
           }
       } catch (error: any) {
-          void message.error(translate('query_editor.message.text_to_sql_failed', {
+          void message.error(translate(isElasticsearchMode
+              ? 'query_editor.elasticsearch.ai_failed'
+              : 'query_editor.message.text_to_sql_failed', {
               error: error?.message || String(error || ''),
           }));
       } finally {
@@ -3020,6 +3114,8 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       applyTextToSqlResult,
       buildQueryEditorAiContext,
       buildQueryEditorAiEditorSnapshot,
+      elasticsearchServerMajor,
+      isElasticsearchMode,
       showTextToSqlReadinessWarning,
       textToSqlApplyMode,
       textToSqlInstruction,
@@ -3906,6 +4002,36 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       });
   }, [activeTabId, addTab]);
 
+  const handleEditorBeforeMount: BeforeMount = (monaco) => {
+      const languageId = 'elasticsearch-console';
+      const isRegistered = monaco.languages.getLanguages?.().some((language: any) => language.id === languageId);
+      if (!isRegistered) {
+          monaco.languages.register({ id: languageId });
+          monaco.languages.setLanguageConfiguration(languageId, {
+              comments: { lineComment: '#' },
+              brackets: [['{', '}'], ['[', ']']],
+              autoClosingPairs: [
+                  { open: '{', close: '}' },
+                  { open: '[', close: ']' },
+                  { open: '"', close: '"' },
+              ],
+          });
+          monaco.languages.setMonarchTokensProvider(languageId, {
+              tokenizer: {
+                  root: [
+                      [/^\s*(GET|POST|PUT|DELETE|HEAD)(\s+)(\/\S*)\s*$/, ['keyword', 'white', 'string']],
+                      [/^\s*(#|\/\/).*$/, 'comment'],
+                      [/"(?:\\.|[^"\\])*"(?=\s*:)/, 'type.identifier'],
+                      [/"(?:\\.|[^"\\])*"/, 'string'],
+                      [/-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/, 'number'],
+                      [/\b(?:true|false|null)\b/, 'keyword'],
+                      [/[{}\[\]]/, '@brackets'],
+                  ],
+              },
+          });
+      }
+  };
+
   // Setup Autocomplete and Editor
   const handleEditorDidMount: OnMount = (editor, monaco) => {
       editorRef.current = editor;
@@ -3931,13 +4057,19 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
 
       const mountedModel = editor.getModel?.();
       if (mountedModel && typeof monaco?.editor?.setModelLanguage === 'function') {
-          monaco.editor.setModelLanguage(mountedModel, 'sql');
+          monaco.editor.setModelLanguage(mountedModel, queryEditorMonacoLanguage);
       }
-      editor.updateOptions?.(buildQueryEditorMonacoOptions(
+      const mountedEditorOptions = buildQueryEditorMonacoOptions(
           isObjectEditQueryTab,
           wordWrapEnabled,
           !isV2Ui,
-      ));
+      );
+      editor.updateOptions?.(isElasticsearchMode ? {
+          ...mountedEditorOptions,
+          quickSuggestions: false,
+          suggestOnTriggerCharacters: false,
+          inlineSuggest: { enabled: false },
+      } : mountedEditorOptions);
 
       aiInlineGhostVisibleContextKeyRef.current = editor.createContextKey?.(
           QUERY_EDITOR_AI_INLINE_CONTEXT_KEY,
@@ -4211,6 +4343,9 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           const model = editor.getModel?.();
           let position = normalizeEditorPosition(editor.getPosition?.());
           if (!model || !position) {
+              return;
+          }
+          if (String(model.getLanguageId?.() || '') === 'elasticsearch-console') {
               return;
           }
 
@@ -6323,6 +6458,52 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
   };
 
   const handleFormat = () => {
+      if (isElasticsearchMode) {
+          const editor = editorRef.current;
+          const monaco = monacoRef.current;
+          const model = editor?.getModel?.();
+          const selection = editor?.getSelection?.();
+          const selectedRaw = model && selection
+              ? String(model.getValueInRange?.(selection) || '')
+              : '';
+          const formatSelection = !!selection && !!selectedRaw.trim();
+          const fullSource = getCurrentQuery();
+          const source = formatSelection ? selectedRaw : fullSource;
+          const formatted = formatElasticsearchConsoleSource(source);
+          if (!formatted.ok) {
+              void message.error(translate('query_editor.message.format_failed'));
+              return;
+          }
+          if (source === formatted.text) {
+              return;
+          }
+          updateQueryTabDraft(tab.id, {
+              formatRestoreSnapshot: {
+                  query: fullSource,
+                  createdAt: Date.now(),
+              },
+          });
+          if (editor && monaco && model) {
+              const editRange = formatSelection
+                  ? selection
+                  : (model.getFullModelRange?.()
+                      || new monaco.Range(1, 1, model.getLineCount?.() || 1, model.getLineMaxColumn?.(model.getLineCount?.() || 1) || 1));
+              editor.pushUndoStop?.();
+              editor.executeEdits?.('gonavi-format-elasticsearch-console', [{
+                  range: editRange,
+                  text: formatted.text,
+                  forceMoveMarkers: true,
+              }]);
+              editor.pushUndoStop?.();
+              applyQueryState(String(editor.getValue?.() || formatted.text));
+              editor.setScrollLeft?.(0);
+              return;
+          }
+          if (!formatSelection) {
+              syncQueryToEditor(formatted.text);
+          }
+          return;
+      }
       const startedAt = queryEditorFormatNow();
       let formatterLanguageLog = 'unknown';
       let dbType = '(unknown)';
@@ -6538,12 +6719,9 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       return selected;
   };
 
-  const buildResultSetMergeKey = (result: ResultSet): string => {
-      const sqlKey = normalizeExecutedSqlKey(result.exportSql || result.sql);
-      const sourceStatementIndex = Number(result.sourceStatementIndex || 1);
-      const statementResultIndex = Number(result.statementResultIndex || 1);
-      return `${sqlKey}::${sourceStatementIndex}::${statementResultIndex}`;
-  };
+  const buildResultSetMergeKey = (result: ResultSet): string => (
+      buildQueryEditorResultSetMergeKey(result)
+  );
 
   const mergeResultSets = (previous: ResultSet[], next: ResultSet[], replaceAll: boolean): ResultSet[] => {
       const merged = replaceAll ? previous.filter((result) => result.pinned) : [...previous];
@@ -7164,7 +7342,232 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       )));
   };
 
+  const handleElasticsearchRun = async (runAll = false) => {
+      const fullSource = getCurrentQuery();
+      if (!fullSource.trim()) return;
+      const conn = connections.find((connection) => connection.id === currentConnectionId);
+      if (!conn) {
+          void message.error(translate('query_editor.message.connection_not_found'));
+          return;
+      }
+
+      const firstExecutableLine = fullSource
+          .replace(/\r\n?/g, '\n')
+          .split('\n')
+          .find((line) => {
+              const trimmed = line.trim();
+              return trimmed && !trimmed.startsWith('#') && !trimmed.startsWith('//');
+          })
+          ?.trim() || '';
+      if (!currentDb && (firstExecutableLine.startsWith('{') || firstExecutableLine.startsWith('['))) {
+          void message.error(translate('query_editor.elasticsearch.no_index_for_json'));
+          return;
+      }
+
+      const editor = editorRef.current;
+      const model = editor?.getModel?.();
+      const selection = editor?.getSelection?.();
+      const position = normalizeEditorPosition(editor?.getPosition?.());
+      const cursorOffset = model && position && typeof model.getOffsetAt === 'function'
+          ? Number(model.getOffsetAt(position))
+          : fullSource.length;
+      const hasSelection = !!selection && !(typeof selection.isEmpty === 'function'
+          ? selection.isEmpty()
+          : selection.startLineNumber === selection.endLineNumber && selection.startColumn === selection.endColumn);
+      const selectionRange = hasSelection && model && typeof model.getOffsetAt === 'function'
+          ? {
+              start: Number(model.getOffsetAt({
+                  lineNumber: selection.startLineNumber,
+                  column: selection.startColumn,
+              })),
+              end: Number(model.getOffsetAt({
+                  lineNumber: selection.endLineNumber,
+                  column: selection.endColumn,
+              })),
+          }
+          : null;
+      const resolution = runAll
+          ? { ok: true as const, source: 'all' as const, text: fullSource }
+          : resolveElasticsearchConsoleExecution(fullSource, cursorOffset, selectionRange);
+      if (!resolution.ok) {
+          void message.error(translate(resolution.error === 'selection_must_include_complete_requests'
+              ? 'query_editor.elasticsearch.selection_incomplete'
+              : 'query_editor.message.no_executable_sql'));
+          return;
+      }
+
+      const sourceToExecute = resolution.text;
+      const config = buildRpcConnectionConfig({
+          ...conn.config,
+          port: Number(conn.config.port),
+          password: conn.config.password || '',
+          database: conn.config.database || '',
+          useSSH: conn.config.useSSH || false,
+          ssh: conn.config.ssh || { host: '', port: 22, user: '', password: '', keyPath: '' },
+          timeout: Math.max(Number(conn.config.timeout) || 30, 120),
+      }) as any;
+
+      const runSeq = ++runSeqRef.current;
+
+      if (currentQueryIdRef.current) {
+          const previousQueryID = currentQueryIdRef.current;
+          try {
+              await CancelQuery(previousQueryID);
+          } catch {
+              // A previous request may already have completed.
+          }
+          if (currentQueryIdRef.current === previousQueryID) {
+              clearQueryId();
+          }
+          if (!isElasticsearchConsoleRunCurrent(runSeqRef.current, runSeq)) return;
+      }
+
+      let inspection: any;
+      try {
+          inspection = await InspectElasticsearchConsole(config, currentDb || '', sourceToExecute);
+      } catch (error: any) {
+          if (!isElasticsearchConsoleRunCurrent(runSeqRef.current, runSeq)) return;
+          void message.error(`${translate('query_editor.elasticsearch.inspect_failed')}: ${error?.message || String(error || '')}`);
+          return;
+      }
+      if (!isElasticsearchConsoleRunCurrent(runSeqRef.current, runSeq)) return;
+      if (!inspection?.success || inspection?.blocked) {
+          void message.error(`${translate('query_editor.elasticsearch.inspect_failed')}: ${inspection?.message || inspection?.blockReason || translate('common.unknown')}`);
+          return;
+      }
+      if (Number(inspection.serverMajor) > 0) {
+          setElasticsearchServerMajor(Number(inspection.serverMajor));
+      }
+
+      let confirmationToken = '';
+      if (inspection.requiresConfirmation) {
+          confirmationToken = String(inspection.confirmationToken || '');
+          const confirmed = await new Promise<boolean>((resolve) => {
+              let settled = false;
+              const settle = (value: boolean) => {
+                  if (settled) return;
+                  settled = true;
+                  resolve(value);
+              };
+              showCountdownDangerConfirm({
+                  title: translate('query_editor.elasticsearch.confirm_title'),
+                  confirmText: translate('common.confirm'),
+                  content: (
+                      <div>
+                          <div>{translate('query_editor.elasticsearch.confirm_description')}</div>
+                          <ul style={{ margin: '10px 0 0', paddingLeft: 20 }}>
+                              {(Array.isArray(inspection.requests) ? inspection.requests : []).map((request: any) => (
+                                  <li key={`${request.index}-${request.method}-${request.path}`}>
+                                      {buildElasticsearchInspectionDisplayLabel(request)}
+                                  </li>
+                              ))}
+                          </ul>
+                      </div>
+                  ),
+                  onOk: () => settle(true),
+                  onCancel: () => settle(false),
+                  afterClose: () => settle(false),
+              });
+          });
+          if (!confirmed || !isElasticsearchConsoleRunCurrent(runSeqRef.current, runSeq)) return;
+      }
+
+      if (getCurrentQuery() !== fullSource) {
+          void message.error(translate('query_editor.elasticsearch.inspect_failed'));
+          return;
+      }
+
+      setExecutionRunToken(runSeq);
+      setLoading(true);
+      setExecutionError('');
+      let queryID = '';
+      try {
+          try {
+              queryID = await GenerateQueryID();
+          } catch {
+              queryID = `query-${uuidv4()}`;
+          }
+          if (!isElasticsearchConsoleRunCurrent(runSeqRef.current, runSeq)) return;
+          setQueryId(queryID);
+          const execution: any = await ExecuteElasticsearchConsole(
+              config,
+              currentDb || '',
+              sourceToExecute,
+              queryID,
+              String(inspection.fingerprint || ''),
+              confirmationToken,
+          );
+          if (!isElasticsearchConsoleRunCurrent(runSeqRef.current, runSeq)) {
+              return;
+          }
+
+          const responseResults = Array.isArray(execution?.results) ? execution.results : [];
+          const nextResultSets: ResultSet[] = responseResults.map((response: any, index: number) => {
+              const rows = Array.isArray(response.rows) ? response.rows : [];
+              const columns = Array.isArray(response.columns) ? response.columns.map(String) : [];
+              const affectedRows = Number(response.affectedRows);
+              const displayRows = rows.length === 0 && Number.isFinite(affectedRows) && affectedRows !== 0
+                  ? [{ affectedRows }]
+                  : rows;
+              const displayColumns = columns.length === 0 && displayRows.length > 0 && 'affectedRows' in displayRows[0]
+                  ? ['affectedRows']
+                  : columns;
+              const requestLabel = String(response.requestLabel || `${response.method || 'REQUEST'} ${response.path || ''}`).trim();
+              if (Number(response.serverMajor) > 0) {
+                  setElasticsearchServerMajor(Number(response.serverMajor));
+              }
+              return {
+                  key: `es-result-${runSeq}-${Number(response.index ?? index)}`,
+                  sql: requestLabel,
+                  sourceStatementIndex: Number(response.index ?? index),
+                  statementResultIndex: 0,
+                  rows: displayRows,
+                  columns: displayColumns,
+                  messages: response.message ? [String(response.message)] : [],
+                  resultType: 'elasticsearch',
+                  requestLabel,
+                  httpStatus: Number(response.httpStatus) || undefined,
+                  rawResponse: String(response.rawResponse || ''),
+                  partialFailure: response.partialFailure === true || response.outcome === 'partial',
+                  ...buildElasticsearchOutcomeMetadata(response),
+                  pkColumns: [],
+                  readOnly: true,
+              };
+          });
+          if (nextResultSets.length > 0) {
+              updateResultPanelVisibility(true);
+              const merged = mergeResultSets(resultSetsRef.current, nextResultSets, runAll);
+              setResultSets(merged);
+              activateExecutedResult(merged, nextResultSets, runSeq);
+          }
+          if (!execution?.success) {
+              const errorMessage = String(execution?.message || translate('query_editor.elasticsearch.execute_failed'));
+              setExecutionError(hasElasticsearchUncertainOutcome(execution)
+                  ? `${errorMessage} (${translate('query_editor.elasticsearch.outcome_unknown')})`
+                  : errorMessage);
+              updateResultPanelVisibility(true);
+              return;
+          }
+          void message.success(translate('query_editor.elasticsearch.execution_success'));
+      } catch (error: any) {
+          if (!isElasticsearchConsoleRunCurrent(runSeqRef.current, runSeq)) return;
+          setExecutionError(`${translate('query_editor.elasticsearch.execute_failed')}: ${error?.message || String(error || '')}`);
+          updateResultPanelVisibility(true);
+      } finally {
+          if (runSeqRef.current === runSeq) {
+              setLoading(false);
+          }
+          if (currentQueryIdRef.current === queryID) {
+              clearQueryId();
+          }
+      }
+  };
+
   const handleRun = async () => {
+    if (isElasticsearchMode) {
+        await handleElasticsearchRun(false);
+        return;
+    }
     const currentQuery = getCurrentQuery();
     if (!currentQuery.trim()) return;
     const executableSQL = getExecutableSQL();
@@ -7991,7 +8394,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
 
       const editor = editorRef.current;
       const binding = triggerSqlAiCompletionShortcutBinding;
-      if (!editor?.onKeyDown || !binding?.enabled || !binding.combo) {
+      if (isElasticsearchMode || !editor?.onKeyDown || !binding?.enabled || !binding.combo) {
           return;
       }
 
@@ -8023,7 +8426,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           triggerSqlAiCompletionKeydownDisposableRef.current?.dispose?.();
           triggerSqlAiCompletionKeydownDisposableRef.current = null;
       };
-  }, [isActive, isPossibleTriggerSqlAiCompletionFallbackEvent, isTriggerSqlAiCompletionShortcutEvent, triggerSqlAiCompletionShortcutBinding]);
+  }, [isActive, isElasticsearchMode, isPossibleTriggerSqlAiCompletionFallbackEvent, isTriggerSqlAiCompletionShortcutEvent, triggerSqlAiCompletionShortcutBinding]);
 
   useEffect(() => {
       if (runQueryActionRef.current) {
@@ -8681,6 +9084,55 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       }
   };
 
+  const insertElasticsearchConsoleTemplate = useCallback((templateSource: string) => {
+      const source = String(templateSource || '');
+      if (!source) return;
+      const editor = editorRef.current;
+      const monaco = monacoRef.current;
+      const model = editor?.getModel?.();
+      if (!editor || !monaco?.Range || !model) {
+          const current = getCurrentQuery();
+          syncQueryToEditor(current.trim() ? `${current.trimEnd()}\n\n${source}` : source);
+          return;
+      }
+      const current = String(model.getValue?.() || '');
+      const selection = editor.getSelection?.();
+      const position = normalizeEditorPosition(editor.getPosition?.())
+          || { lineNumber: model.getLineCount?.() || 1, column: model.getLineMaxColumn?.(model.getLineCount?.() || 1) || 1 };
+      const range = current.trim()
+          ? (selection || new monaco.Range(position.lineNumber, position.column, position.lineNumber, position.column))
+          : (model.getFullModelRange?.() || new monaco.Range(1, 1, 1, 1));
+      const selectedText = selection ? String(model.getValueInRange?.(selection) || '') : '';
+      const hasSelection = !!selectedText;
+      const cursorOffset = typeof model.getOffsetAt === 'function'
+          ? Number(model.getOffsetAt({ lineNumber: range.startLineNumber, column: range.startColumn }))
+          : current.length;
+      const leading = current.trim() && !hasSelection && cursorOffset > 0 ? '\n\n' : '';
+      const trailing = current.trim() && !hasSelection && cursorOffset < current.length ? '\n\n' : '';
+      editor.focus?.();
+      editor.pushUndoStop?.();
+      editor.executeEdits?.('gonavi-insert-elasticsearch-template', [{
+          range,
+          text: `${leading}${source}${trailing}`,
+          forceMoveMarkers: true,
+      }]);
+      editor.pushUndoStop?.();
+      applyQueryState(String(editor.getValue?.() || source));
+  }, [applyQueryState, getCurrentQuery]);
+
+  const elasticsearchTemplateMenuItems: MenuProps['items'] = useMemo(() => (
+      buildElasticsearchConsoleTemplates(currentDb, {
+          majorVersion: elasticsearchServerMajor || 8,
+      }).map((template) => ({
+          key: template.id,
+          danger: template.dangerous,
+          label: template.dangerous
+              ? `${translate('query_editor.elasticsearch.danger_badge')} · ${translate(template.labelKey)}`
+              : translate(template.labelKey),
+          onClick: () => insertElasticsearchConsoleTemplate(template.source),
+      }))
+  ), [currentDb, elasticsearchServerMajor, insertElasticsearchConsoleTemplate]);
+
   const saveMoreMenuItems: MenuProps['items'] = [
       {
           key: 'rename-query',
@@ -9130,6 +9582,11 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
               columns: target.columns,
               messages: target.messages,
               resultType: target.resultType,
+              requestLabel: target.requestLabel,
+              httpStatus: target.httpStatus,
+              rawResponse: target.rawResponse,
+              partialFailure: target.partialFailure,
+              outcomeUnknown: target.outcomeUnknown,
               tableName: target.metadataTableName || target.tableName,
               metadataDbName: target.metadataDbName,
               metadataTableName: target.metadataTableName,
@@ -9173,7 +9630,16 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                   rows: Array.isArray(restored.rows) ? restored.rows : [],
                   columns: Array.isArray(restored.columns) ? restored.columns : [],
                   messages: Array.isArray(restored.messages) ? restored.messages : undefined,
-                  resultType: restored.resultType === 'message' ? 'message' : 'grid',
+                  resultType: restored.resultType === 'message'
+                      ? 'message'
+                      : restored.resultType === 'elasticsearch'
+                          ? 'elasticsearch'
+                          : 'grid',
+                  requestLabel: restored.requestLabel,
+                  httpStatus: restored.httpStatus,
+                  rawResponse: restored.rawResponse,
+                  partialFailure: restored.partialFailure === true,
+                  outcomeUnknown: restored.outcomeUnknown === true,
                   tableName: restored.tableName,
                   metadataDbName: restored.metadataDbName,
                   metadataTableName: restored.metadataTableName,
@@ -9286,6 +9752,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
         style={{ display: 'flex', flexDirection: 'column', minHeight: 0, flex: isResultPanelVisible ? '0 0 auto' : '1 1 auto' }}
       >
       <QueryEditorToolbar
+        editorMode={isElasticsearchMode ? 'elasticsearch' : 'sql'}
         isV2Ui={isV2Ui}
         currentConnectionId={currentConnectionId}
         currentDb={currentDb}
@@ -9306,6 +9773,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
         loading={loading}
         saveMoreMenuItems={saveMoreMenuItems}
         formatSettingsMenu={formatSettingsMenu}
+        templateMenuItems={elasticsearchTemplateMenuItems}
         onConnectionChange={(val) => {
             setCurrentConnectionId(val);
             setCurrentDb('');
@@ -9320,6 +9788,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
         onAutoCommitDelayMsChange={(delayMs) => setSqlEditorTransactionOptions({ autoCommitDelayMs: delayMs })}
         onCaptureEditorCursorPosition={captureEditorCursorPosition}
         onRun={handleRun}
+        onRunAll={() => void handleElasticsearchRun(true)}
         onCancel={handleCancel}
         onQuickSave={handleQuickSave}
         onFindInEditor={handleOpenEditorFind}
@@ -9371,8 +9840,14 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                 const nextValue = val || '';
                 syncQueryDraft(nextValue);
             }}
+            beforeMount={handleEditorBeforeMount}
             onMount={handleEditorDidMount}
-            options={queryEditorMonacoOptions}
+            options={isElasticsearchMode ? {
+                ...queryEditorMonacoOptions,
+                quickSuggestions: false,
+                suggestOnTriggerCharacters: false,
+                inlineSuggest: { enabled: false },
+            } : queryEditorMonacoOptions}
           />
         </div>
         <div className="gn-query-execution-statusbar">
@@ -9508,7 +9983,9 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       />
 
       <Modal
-        title={translate('query_editor.text_to_sql.title')}
+        title={translate(isElasticsearchMode
+          ? 'query_editor.elasticsearch.ai_title'
+          : 'query_editor.text_to_sql.title')}
         open={isTextToSqlModalOpen}
         centered
         mask={false}
@@ -9528,7 +10005,9 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
             {translate('common.cancel')}
           </Button>,
           <Button key="generate" type="primary" loading={textToSqlGenerating} onClick={handleGenerateTextToSql}>
-            {translate('query_editor.text_to_sql.generate')}
+            {translate(isElasticsearchMode
+              ? 'query_editor.elasticsearch.action.ai_generate'
+              : 'query_editor.text_to_sql.generate')}
           </Button>,
         ]}
         styles={{
@@ -9555,13 +10034,17 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           style={{ display: 'flex', flexDirection: 'column', gap: 14 }}
         >
           <div style={{ fontSize: 12, lineHeight: 1.6, color: darkMode ? 'rgba(255,255,255,0.65)' : 'rgba(16,24,40,0.6)' }}>
-            {translate('query_editor.text_to_sql.description')}
+            {translate(isElasticsearchMode
+              ? 'query_editor.elasticsearch.ai_read_only_hint'
+              : 'query_editor.text_to_sql.description')}
           </div>
           <Input.TextArea
             autoFocus
             value={textToSqlInstruction}
             onChange={(event) => setTextToSqlInstruction(event.target.value)}
-            placeholder={translate('query_editor.text_to_sql.placeholder')}
+            placeholder={translate(isElasticsearchMode
+              ? 'query_editor.elasticsearch.ai_placeholder'
+              : 'query_editor.text_to_sql.placeholder')}
             autoSize={{ minRows: 5, maxRows: 10 }}
             disabled={textToSqlGenerating}
           />

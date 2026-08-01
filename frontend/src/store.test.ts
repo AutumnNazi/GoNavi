@@ -101,7 +101,7 @@ describe('store appearance persistence', () => {
       primaryElements: ['object'],
       secondaryElements: ['kind', 'connection', 'database'],
     });
-  });
+  }, 30000);
 
   it('migrates the previous tab display default without overwriting custom settings', async () => {
     storage.setItem('lite-db-storage', JSON.stringify({

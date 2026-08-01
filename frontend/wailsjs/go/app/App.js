@@ -282,6 +282,10 @@ export function DuplicateConnection(arg1) {
   return window['go']['app']['App']['DuplicateConnection'](arg1);
 }
 
+export function ExecuteElasticsearchConsole(arg1, arg2, arg3, arg4, arg5, arg6) {
+  return window['go']['app']['App']['ExecuteElasticsearchConsole'](arg1, arg2, arg3, arg4, arg5, arg6);
+}
+
 export function ExecuteSQLFile(arg1, arg2, arg3, arg4) {
   return window['go']['app']['App']['ExecuteSQLFile'](arg1, arg2, arg3, arg4);
 }
@@ -468,6 +472,10 @@ export function ImportLegacyGlobalProxy(arg1) {
 
 export function ImportSavedQueries(arg1) {
   return window['go']['app']['App']['ImportSavedQueries'](arg1);
+}
+
+export function InspectElasticsearchConsole(arg1, arg2, arg3) {
+  return window['go']['app']['App']['InspectElasticsearchConsole'](arg1, arg2, arg3);
 }
 
 export function InstallLocalDriverPackage(arg1, arg2, arg3, arg4) {

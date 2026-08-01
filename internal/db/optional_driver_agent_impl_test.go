@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"os"
@@ -594,6 +595,60 @@ func TestOptionalDriverAgentDBQueryWithMessagesParsesAgentMessages(t *testing.T)
 	}
 	if !strings.Contains(stdin.String(), `"method":"query"`) {
 		t.Fatalf("请求未使用 query 方法: %s", stdin.String())
+	}
+}
+
+func TestOptionalDriverAgentDBExecutesElasticsearchConsoleRequest(t *testing.T) {
+	var stdin optionalAgentTestWriteCloser
+	stdout := `{"id":1,"success":true,"data":{"statusCode":400,"contentType":"application/json","rawBody":"{\"error\":{\"type\":\"parsing_exception\"},\"status\":400}","serverMajor":8}}` + "\n"
+	database := &OptionalDriverAgentDB{
+		driverType: "elasticsearch",
+		client: &optionalDriverAgentClient{
+			stdin:  &stdin,
+			reader: bufio.NewReader(strings.NewReader(stdout)),
+			driver: "elasticsearch",
+		},
+	}
+	request := ElasticsearchConsoleRequest{
+		Method:   "POST",
+		Path:     "/orders/_search",
+		Body:     `{"query":`,
+		BodyKind: ElasticsearchConsoleBodyKindJSON,
+	}
+
+	response, err := database.ExecuteElasticsearchConsoleRequest(context.Background(), request)
+	if err != nil {
+		t.Fatalf("execute console request: %v", err)
+	}
+	if response.StatusCode != 400 || response.ServerMajor != 8 {
+		t.Fatalf("unexpected response: %#v", response)
+	}
+	if !strings.Contains(response.RawBody, `"parsing_exception"`) {
+		t.Fatalf("raw response was not preserved: %q", response.RawBody)
+	}
+
+	var wireRequest struct {
+		Method               string                       `json:"method"`
+		ElasticsearchRequest *ElasticsearchConsoleRequest `json:"elasticsearchRequest"`
+	}
+	if err := json.Unmarshal(bytes.TrimSpace(stdin.Bytes()), &wireRequest); err != nil {
+		t.Fatalf("decode agent request: %v", err)
+	}
+	if wireRequest.Method != optionalAgentMethodElasticsearchConsole {
+		t.Fatalf("unexpected agent method: %q", wireRequest.Method)
+	}
+	if wireRequest.ElasticsearchRequest == nil || *wireRequest.ElasticsearchRequest != request {
+		t.Fatalf("console request was not preserved: %#v", wireRequest.ElasticsearchRequest)
+	}
+}
+
+func TestOptionalDriverAgentDBProvidesCachedElasticsearchServerMajor(t *testing.T) {
+	var provider ElasticsearchServerVersionProvider = &OptionalDriverAgentDB{
+		driverType:  "elasticsearch",
+		serverMajor: 8,
+	}
+	if got := provider.ElasticsearchServerMajor(); got != 8 {
+		t.Fatalf("unexpected cached Elasticsearch server major: %d", got)
 	}
 }
 

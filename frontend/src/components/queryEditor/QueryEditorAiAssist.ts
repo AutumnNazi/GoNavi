@@ -49,6 +49,8 @@ export interface QueryEditorAiContext {
     inlineCompletionIntent?: 'general_sql' | 'table_name' | 'column_name';
     inlineCompletionFragment?: string;
     inlineCompletionQualifier?: string;
+    elasticsearchVersion?: string;
+    elasticsearchMapping?: string;
 }
 
 export interface QueryEditorAiEditorSnapshot {
@@ -471,6 +473,39 @@ export const requestQueryEditorTextToSql = async ({
     };
 };
 
+export const requestQueryEditorTextToElasticsearch = async ({
+    service,
+    aiContext,
+    editorSnapshot,
+    instruction,
+}: {
+    service: QueryEditorAiService | undefined;
+    aiContext: QueryEditorAiContext;
+    editorSnapshot: QueryEditorAiEditorSnapshot;
+    instruction: string;
+}): Promise<{ source: string; readiness: QueryEditorAiRuntimeReadiness }> => {
+    const readiness = await resolveQueryEditorAiRuntimeReadiness(service);
+    if (!readiness.ready) {
+        return { source: '', readiness };
+    }
+
+    const messages = buildQueryEditorTextToElasticsearchMessages({
+        aiContext,
+        editorSnapshot,
+        instruction,
+        userPromptSettings: readiness.userPromptSettings,
+    });
+    const result = await service!.AIChatSend!(messages, []);
+    if (!result?.success) {
+        throw new Error(String(result?.error || 'AI request failed'));
+    }
+
+    return {
+        source: sanitizeElasticsearchConsoleAssistantResponse(String(result.content || '')),
+        readiness,
+    };
+};
+
 export const buildQueryEditorInlineCompletionMessages = ({
     aiContext,
     editorSnapshot,
@@ -559,6 +594,74 @@ export const buildQueryEditorTextToSqlMessages = ({
         ].join('\n'),
     },
 ];
+
+export const buildQueryEditorTextToElasticsearchMessages = ({
+    aiContext,
+    editorSnapshot,
+    instruction,
+    userPromptSettings,
+}: {
+    aiContext: QueryEditorAiContext;
+    editorSnapshot: QueryEditorAiEditorSnapshot;
+    instruction: string;
+    userPromptSettings: AIUserPromptSettings;
+}): QueryEditorAiMessage[] => {
+    const currentIndex = String(aiContext.currentDb || '').trim() || '(not selected)';
+    const version = String(aiContext.elasticsearchVersion || '').trim() || '(unknown)';
+    const mapping = String(aiContext.elasticsearchMapping || '').trim() || '(not available)';
+    return [
+        {
+            role: 'system',
+            content: [
+                'You are GoNavi Elasticsearch REST console assistant.',
+                'Return only executable Elasticsearch DevTools requests in METHOD /path plus optional JSON or NDJSON body form.',
+                'Do not use Markdown, code fences, explanations, base URLs, HTTP headers, authentication, or credentials.',
+                'Generate read-only requests by default. Generate writes only when the user explicitly asks to create, change, or delete data or indexes.',
+                'Use GET, POST, PUT, DELETE, or HEAD and relative paths beginning with /.',
+                'Respect the server major version, current index, mapping, and existing editor context.',
+            ].join('\n'),
+        },
+        ...buildCustomPromptMessages(userPromptSettings),
+        {
+            role: 'user',
+            content: [
+                `Elasticsearch major version: ${version}`,
+                `Current index: ${currentIndex}`,
+                'Mapping:',
+                mapping,
+                '',
+                'User request:',
+                instruction.trim(),
+                '',
+                'Current editor context:',
+                '<prefix_before_cursor>',
+                truncateHead(editorSnapshot.prefix, TEXT_TO_SQL_PREFIX_LIMIT),
+                '</prefix_before_cursor>',
+                '<suffix_after_cursor>',
+                truncateTail(editorSnapshot.suffix, TEXT_TO_SQL_SUFFIX_LIMIT),
+                '</suffix_after_cursor>',
+            ].join('\n'),
+        },
+    ];
+};
+
+export const sanitizeElasticsearchConsoleAssistantResponse = (raw: string): string => {
+    let text = String(raw || '').trim();
+    const fenceMatch = text.match(/```(?:http|json|ndjson|elasticsearch|console)?\s*([\s\S]*?)```/i);
+    if (fenceMatch?.[1]) {
+        text = fenceMatch[1].trim();
+    }
+    text = text
+        .replace(/^\s*(?:request|answer|console)\s*[:：]\s*/i, '')
+        .trim();
+    if (/https?:\/\//i.test(text)) {
+        return '';
+    }
+    if (/^\s*(?:authorization|proxy-authorization|cookie|set-cookie|x-api-key)\s*:/im.test(text)) {
+        return '';
+    }
+    return text;
+};
 
 export const sanitizeSqlAssistantResponse = (raw: string): string => {
     let text = String(raw || '').trim();

@@ -753,6 +753,186 @@ export namespace app {
 		    return a;
 		}
 	}
+	export class ElasticsearchConsoleRequestResult {
+	    index: number;
+	    method: string;
+	    path: string;
+	    requestLabel: string;
+	    httpStatus?: number;
+	    durationMs: number;
+	    rawResponse?: string;
+	    contentType?: string;
+	    rows?: any[];
+	    columns?: string[];
+	    affectedRows?: number;
+	    outcome: string;
+	    message?: string;
+	    partialFailure?: boolean;
+	    outcomeUnknown?: boolean;
+	    readOnly: boolean;
+	    serverMajor?: number;
+
+	    static createFrom(source: any = {}) {
+	        return new ElasticsearchConsoleRequestResult(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.index = source["index"];
+	        this.method = source["method"];
+	        this.path = source["path"];
+	        this.requestLabel = source["requestLabel"];
+	        this.httpStatus = source["httpStatus"];
+	        this.durationMs = source["durationMs"];
+	        this.rawResponse = source["rawResponse"];
+	        this.contentType = source["contentType"];
+	        this.rows = source["rows"];
+	        this.columns = source["columns"];
+	        this.affectedRows = source["affectedRows"];
+	        this.outcome = source["outcome"];
+	        this.message = source["message"];
+	        this.partialFailure = source["partialFailure"];
+	        this.outcomeUnknown = source["outcomeUnknown"];
+	        this.readOnly = source["readOnly"];
+	        this.serverMajor = source["serverMajor"];
+	    }
+	}
+	export class ElasticsearchConsoleExecutionResult {
+	    success: boolean;
+	    status: string;
+	    message?: string;
+	    queryId: string;
+	    fingerprint?: string;
+	    results: ElasticsearchConsoleRequestResult[];
+	    completed: number;
+	    failedIndex?: number;
+	    outcomeUnknown?: boolean;
+
+	    static createFrom(source: any = {}) {
+	        return new ElasticsearchConsoleExecutionResult(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.success = source["success"];
+	        this.status = source["status"];
+	        this.message = source["message"];
+	        this.queryId = source["queryId"];
+	        this.fingerprint = source["fingerprint"];
+	        this.results = this.convertValues(source["results"], ElasticsearchConsoleRequestResult);
+	        this.completed = source["completed"];
+	        this.failedIndex = source["failedIndex"];
+	        this.outcomeUnknown = source["outcomeUnknown"];
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class ElasticsearchConsoleRequestInspection {
+	    index: number;
+	    method: string;
+	    path: string;
+	    route: string;
+	    target?: string;
+	    targetSummary?: string;
+	    bodyKind: string;
+	    bodyBytes: number;
+	    bodySha256: string;
+	    category: string;
+	    risk: string;
+	    containsScript?: boolean;
+	    operationCount?: number;
+	    blockReason?: string;
+
+	    static createFrom(source: any = {}) {
+	        return new ElasticsearchConsoleRequestInspection(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.index = source["index"];
+	        this.method = source["method"];
+	        this.path = source["path"];
+	        this.route = source["route"];
+	        this.target = source["target"];
+	        this.targetSummary = source["targetSummary"];
+	        this.bodyKind = source["bodyKind"];
+	        this.bodyBytes = source["bodyBytes"];
+	        this.bodySha256 = source["bodySha256"];
+	        this.category = source["category"];
+	        this.risk = source["risk"];
+	        this.containsScript = source["containsScript"];
+	        this.operationCount = source["operationCount"];
+	        this.blockReason = source["blockReason"];
+	    }
+	}
+	export class ElasticsearchConsoleInspection {
+	    success: boolean;
+	    message?: string;
+	    fingerprint?: string;
+	    requests: ElasticsearchConsoleRequestInspection[];
+	    containsWrite: boolean;
+	    containsScript: boolean;
+	    requiresConfirmation: boolean;
+	    confirmationToken?: string;
+	    blocked: boolean;
+	    blockReason?: string;
+	    serverMajor?: number;
+
+	    static createFrom(source: any = {}) {
+	        return new ElasticsearchConsoleInspection(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.success = source["success"];
+	        this.message = source["message"];
+	        this.fingerprint = source["fingerprint"];
+	        this.requests = this.convertValues(source["requests"], ElasticsearchConsoleRequestInspection);
+	        this.containsWrite = source["containsWrite"];
+	        this.containsScript = source["containsScript"];
+	        this.requiresConfirmation = source["requiresConfirmation"];
+	        this.confirmationToken = source["confirmationToken"];
+	        this.blocked = source["blocked"];
+	        this.blockReason = source["blockReason"];
+	        this.serverMajor = source["serverMajor"];
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+
+
 	export class ExportFileOptions {
 	    format: string;
 	    columns?: string[];

@@ -179,6 +179,7 @@ const editorState = vi.hoisted(() => {
     contentChangeListeners: [] as Array<() => void>,
     cursorPositionListeners: [] as Array<(event: any) => void>,
     modelContentListeners: [] as Array<(event: any) => void>,
+    keyDownListeners: [] as Array<(event: any) => void>,
     mouseMoveListeners: [] as Array<(event: any) => void>,
     mouseDownListeners: [] as Array<(event: any) => void>,
     mouseLeaveListeners: [] as Array<() => void>,
@@ -276,6 +277,10 @@ const editorState = vi.hoisted(() => {
     }),
     onDidChangeCursorPosition: vi.fn((listener: (event: any) => void) => {
       state.cursorPositionListeners.push(listener);
+      return { dispose: vi.fn() };
+    }),
+    onKeyDown: vi.fn((listener: (event: any) => void) => {
+      state.keyDownListeners.push(listener);
       return { dispose: vi.fn() };
     }),
     onMouseMove: vi.fn((listener: (event: any) => void) => {
@@ -846,6 +851,7 @@ describe('QueryEditor external SQL save', () => {
     editorState.contentChangeListeners = [];
     editorState.cursorPositionListeners = [];
     editorState.modelContentListeners = [];
+    editorState.keyDownListeners = [];
     editorState.mouseMoveListeners = [];
     editorState.mouseDownListeners = [];
     editorState.mouseLeaveListeners = [];
@@ -3498,6 +3504,11 @@ describe('QueryEditor external SQL save', () => {
       css.indexOf('body[data-ui-version="v2"] .gn-v2-query-results .query-result-tabs > .ant-tabs-nav .ant-tabs-tab {'),
       css.indexOf('body[data-ui-version="v2"] .gn-v2-query-results .query-result-tabs > .ant-tabs-nav .ant-tabs-nav-list {'),
     );
+    const resultNavSizingSelector = 'body[data-ui-version="v2"] .gn-v2-query-results .query-result-tabs > .ant-tabs-nav .ant-tabs-nav-wrap,';
+    const resultNavSizingStart = css.indexOf(resultNavSizingSelector);
+    const resultNavSizingCss = resultNavSizingStart >= 0
+      ? css.slice(resultNavSizingStart, css.indexOf('}', resultNavSizingStart) + 1)
+      : '';
     expect(css).toContain('body[data-ui-version="v2"] .gn-v2-query-results .query-result-tabs > .ant-tabs-nav .ant-tabs-tab {');
     expect(css).toContain('body[data-ui-version="v2"] .gn-v2-query-results .query-result-tabs > .ant-tabs-nav .ant-tabs-tab-btn {');
     expect(resultNavCss).toContain('padding: 0 8px 0 0;');
@@ -3505,12 +3516,9 @@ describe('QueryEditor external SQL save', () => {
     expect(resultTabCss).toContain('height: 46px !important;');
     expect(resultTabCss).toContain('margin: 0 !important;');
     expect(resultTabCss).toContain('border-radius: 8px !important;');
-    expect(css).toContain([
-      'body[data-ui-version="v2"] .gn-v2-query-results .query-result-tabs > .ant-tabs-nav .ant-tabs-nav-wrap,',
-      'body[data-ui-version="v2"] .gn-v2-query-results .query-result-tabs > .ant-tabs-nav .ant-tabs-nav-list {',
-      '  min-height: 46px;',
-      '}',
-    ].join('\n'));
+    expect(resultNavSizingCss).toContain(resultNavSizingSelector);
+    expect(resultNavSizingCss).toContain('body[data-ui-version="v2"] .gn-v2-query-results .query-result-tabs > .ant-tabs-nav .ant-tabs-nav-list {');
+    expect(resultNavSizingCss).toContain('min-height: 46px;');
     expect(css).toContain('user-select: none;');
     expect(css).toContain('body[data-ui-version="v2"] .gn-v2-query-results .query-result-tab-text {');
   });

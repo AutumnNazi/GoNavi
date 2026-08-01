@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
     buildBoundedQueryEditorCompletionSuggestions,
     buildQueryEditorAliasMap,
+    buildQueryEditorResultSetMergeKey,
     collectQueryEditorReferencedDatabaseNames,
     createBoundedQueryEditorCompletionCandidateBatch,
     findCompletionTablesByDatabase,
@@ -18,6 +19,25 @@ import {
     selectUnqualifiedCompletionSynonyms,
     shouldHandleQueryEditorRunShortcutFallback,
 } from './QueryEditorHelpers';
+
+describe('QueryEditor result merge identity', () => {
+    it('keeps zero-based Elasticsearch request indexes distinct', () => {
+        const first = buildQueryEditorResultSetMergeKey({
+            sql: 'GET /events/_count',
+            sourceStatementIndex: 0,
+            statementResultIndex: 0,
+        });
+        const second = buildQueryEditorResultSetMergeKey({
+            sql: 'GET /events/_count',
+            sourceStatementIndex: 1,
+            statementResultIndex: 0,
+        });
+
+        expect(first).not.toBe(second);
+        expect(first).toContain('::0::0');
+        expect(second).toContain('::1::0');
+    });
+});
 
 describe('QueryEditor completion candidate budget', () => {
     it('builds at most the budget after ranking exact, prefix, and substring matches', () => {
@@ -182,6 +202,7 @@ describe('QueryEditor Monaco SQL grammar', () => {
         [{ config: { type: 'oceanbase', oceanBaseProtocol: 'mysql' } }, 'mysql'],
         [{ config: { type: 'oceanbase', oceanBaseProtocol: 'oracle' } }, 'sql'],
         [{ config: { type: 'postgres' } }, 'sql'],
+        [{ config: { type: 'elasticsearch' } }, 'elasticsearch-console'],
     ])('maps connection row %# to the expected Monaco grammar', (connection, expectedLanguage) => {
         expect(resolveQueryEditorMonacoLanguage(connection)).toBe(expectedLanguage);
     });

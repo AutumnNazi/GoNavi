@@ -148,6 +148,8 @@ export function DropView(arg1:connection.ConnectionConfig,arg2:string,arg3:strin
 
 export function DuplicateConnection(arg1:string):Promise<connection.SavedConnectionView>;
 
+export function ExecuteElasticsearchConsole(arg1:connection.ConnectionConfig,arg2:string,arg3:string,arg4:string,arg5:string,arg6:string):Promise<app.ElasticsearchConsoleExecutionResult>;
+
 export function ExecuteSQLFile(arg1:connection.ConnectionConfig,arg2:string,arg3:string,arg4:string):Promise<connection.QueryResult>;
 
 export function ExportConnectionsPackage(arg1:app.ConnectionExportOptions):Promise<connection.QueryResult>;
@@ -241,6 +243,8 @@ export function ImportLegacyConnections(arg1:Array<connection.SavedConnectionInp
 export function ImportLegacyGlobalProxy(arg1:connection.SaveGlobalProxyInput):Promise<connection.GlobalProxyView>;
 
 export function ImportSavedQueries(arg1:connection.SavedQueryImportPayload):Promise<Array<connection.SavedQuery>>;
+
+export function InspectElasticsearchConsole(arg1:connection.ConnectionConfig,arg2:string,arg3:string):Promise<app.ElasticsearchConsoleInspection>;
 
 export function InstallLocalDriverPackage(arg1:string,arg2:string,arg3:string,arg4:string):Promise<connection.QueryResult>;
 

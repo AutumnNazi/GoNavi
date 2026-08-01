@@ -36,6 +36,13 @@ describe('connectionReadOnly', () => {
     expect(supportsConnectionKeepAliveSQL(config)).toBe(false);
   });
 
+  it('supports Elasticsearch production protection without treating it as a SQL keepalive source', () => {
+    const config = { type: 'elasticsearch' } as any;
+
+    expect(supportsConnectionReadOnlyMode(config)).toBe(true);
+    expect(supportsConnectionKeepAliveSQL(config)).toBe(false);
+  });
+
   it('maps legacy readOnly connections to the full production protection set', () => {
     expect(resolveConnectionProtectionConfig({
       type: 'postgres',

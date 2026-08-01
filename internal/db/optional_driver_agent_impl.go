@@ -22,32 +22,33 @@ import (
 )
 
 const (
-	optionalAgentMethodConnect             = "connect"
-	optionalAgentMethodClose               = "close"
-	optionalAgentMethodMetadata            = "metadata"
-	optionalAgentMethodPing                = "ping"
-	optionalAgentMethodOpenSession         = "openSession"
-	optionalAgentMethodCloseSession        = "closeSession"
-	optionalAgentMethodOpenTransaction     = "openTransaction"
-	optionalAgentMethodCommitTransaction   = "commitTransaction"
-	optionalAgentMethodRollbackTransaction = "rollbackTransaction"
-	optionalAgentMethodQuery               = "query"
-	optionalAgentMethodQueryMulti          = "queryMulti"
-	optionalAgentMethodStreamQuery         = "streamQuery"
-	optionalAgentMethodExec                = "exec"
-	optionalAgentMethodGetDatabases        = "getDatabases"
-	optionalAgentMethodGetTables           = "getTables"
-	optionalAgentMethodGetCreateStmt       = "getCreateStatement"
-	optionalAgentMethodGetColumns          = "getColumns"
-	optionalAgentMethodGetAllColumns       = "getAllColumns"
-	optionalAgentMethodGetIndexes          = "getIndexes"
-	optionalAgentMethodGetForeignKeys      = "getForeignKeys"
-	optionalAgentMethodGetTriggers         = "getTriggers"
-	optionalAgentMethodApplyChanges        = "applyChanges"
-	optionalAgentDefaultScannerMaxBytes    = 8 << 20
-	optionalAgentMetadataProbeTimeout      = 5 * time.Second
-	optionalAgentControlCallTimeout        = 30 * time.Second
-	optionalAgentShutdownCallTimeout       = 2 * time.Second
+	optionalAgentMethodConnect              = "connect"
+	optionalAgentMethodClose                = "close"
+	optionalAgentMethodMetadata             = "metadata"
+	optionalAgentMethodPing                 = "ping"
+	optionalAgentMethodOpenSession          = "openSession"
+	optionalAgentMethodCloseSession         = "closeSession"
+	optionalAgentMethodOpenTransaction      = "openTransaction"
+	optionalAgentMethodCommitTransaction    = "commitTransaction"
+	optionalAgentMethodRollbackTransaction  = "rollbackTransaction"
+	optionalAgentMethodQuery                = "query"
+	optionalAgentMethodQueryMulti           = "queryMulti"
+	optionalAgentMethodStreamQuery          = "streamQuery"
+	optionalAgentMethodExec                 = "exec"
+	optionalAgentMethodElasticsearchConsole = "executeElasticsearchConsoleRequest"
+	optionalAgentMethodGetDatabases         = "getDatabases"
+	optionalAgentMethodGetTables            = "getTables"
+	optionalAgentMethodGetCreateStmt        = "getCreateStatement"
+	optionalAgentMethodGetColumns           = "getColumns"
+	optionalAgentMethodGetAllColumns        = "getAllColumns"
+	optionalAgentMethodGetIndexes           = "getIndexes"
+	optionalAgentMethodGetForeignKeys       = "getForeignKeys"
+	optionalAgentMethodGetTriggers          = "getTriggers"
+	optionalAgentMethodApplyChanges         = "applyChanges"
+	optionalAgentDefaultScannerMaxBytes     = 8 << 20
+	optionalAgentMetadataProbeTimeout       = 5 * time.Second
+	optionalAgentControlCallTimeout         = 30 * time.Second
+	optionalAgentShutdownCallTimeout        = 2 * time.Second
 	// callStreamQueryGCInterval 控制 callStreamQuery 每接收多少行 driver-agent 数据触发一次 runtime.GC。
 	//
 	// 该路径不走 sql.Rows（scan_rows.go 的周期 GC 覆盖不到），但每个 chunk 解码
@@ -66,15 +67,16 @@ const (
 var errOptionalAgentTransportStopped = errors.New("驱动代理传输已关闭")
 
 type optionalAgentRequest struct {
-	ID        int64                        `json:"id"`
-	Method    string                       `json:"method"`
-	SessionID string                       `json:"sessionId,omitempty"`
-	Config    *connection.ConnectionConfig `json:"config,omitempty"`
-	Query     string                       `json:"query,omitempty"`
-	TimeoutMs int64                        `json:"timeoutMs,omitempty"`
-	DBName    string                       `json:"dbName,omitempty"`
-	TableName string                       `json:"tableName,omitempty"`
-	Changes   *connection.ChangeSet        `json:"changes,omitempty"`
+	ID                   int64                        `json:"id"`
+	Method               string                       `json:"method"`
+	SessionID            string                       `json:"sessionId,omitempty"`
+	Config               *connection.ConnectionConfig `json:"config,omitempty"`
+	Query                string                       `json:"query,omitempty"`
+	TimeoutMs            int64                        `json:"timeoutMs,omitempty"`
+	DBName               string                       `json:"dbName,omitempty"`
+	TableName            string                       `json:"tableName,omitempty"`
+	Changes              *connection.ChangeSet        `json:"changes,omitempty"`
+	ElasticsearchRequest *ElasticsearchConsoleRequest `json:"elasticsearchRequest,omitempty"`
 }
 
 type optionalAgentResponse struct {
@@ -92,6 +94,10 @@ type OptionalDriverAgentMetadata struct {
 	DriverType     string `json:"driverType,omitempty"`
 	AgentRevision  string `json:"agentRevision,omitempty"`
 	ProtocolSchema string `json:"protocolSchema,omitempty"`
+}
+
+type optionalAgentConnectionInfo struct {
+	ElasticsearchServerMajor int `json:"elasticsearchServerMajor,omitempty"`
 }
 
 type optionalDriverAgentClient struct {
@@ -576,6 +582,14 @@ type OptionalDriverAgentDB struct {
 	client             *optionalDriverAgentClient
 	kingbaseSearchPath string
 	pingTimeout        time.Duration
+	serverMajor        int
+}
+
+func (d *OptionalDriverAgentDB) ElasticsearchServerMajor() int {
+	if d == nil || normalizeRuntimeDriverType(d.driverType) != "elasticsearch" {
+		return 0
+	}
+	return d.serverMajor
 }
 
 type optionalDriverAgentTransactionalDB struct {
@@ -617,6 +631,7 @@ func newOptionalDriverAgentTransactionalDatabase(driverType string) databaseFact
 
 func (d *OptionalDriverAgentDB) Connect(config connection.ConnectionConfig) error {
 	d.kingbaseSearchPath = ""
+	d.serverMajor = 0
 	if d.client != nil {
 		_ = d.client.close()
 		d.client = nil
@@ -632,20 +647,23 @@ func (d *OptionalDriverAgentDB) Connect(config connection.ConnectionConfig) erro
 		return err
 	}
 	connectTimeout := getConnectTimeout(config)
+	var connectionInfo optionalAgentConnectionInfo
 	if err := client.callWithTimeout(optionalAgentRequest{
 		Method: optionalAgentMethodConnect,
 		Config: &config,
-	}, nil, nil, nil, nil, connectTimeout); err != nil {
+	}, &connectionInfo, nil, nil, nil, connectTimeout); err != nil {
 		_ = client.close()
 		return err
 	}
 	d.client = client
 	d.pingTimeout = connectTimeout
+	d.serverMajor = connectionInfo.ElasticsearchServerMajor
 	d.ensureKingbaseSearchPath(config)
 	return nil
 }
 
 func (d *OptionalDriverAgentDB) Close() error {
+	d.serverMajor = 0
 	if d.client == nil {
 		return nil
 	}
@@ -683,6 +701,36 @@ func (d *OptionalDriverAgentDB) PingContext(ctx context.Context) error {
 func (d *OptionalDriverAgentDB) QueryContext(ctx context.Context, query string) ([]map[string]interface{}, []string, error) {
 	data, fields, _, err := d.QueryContextWithMessages(ctx, query)
 	return data, fields, err
+}
+
+func (d *OptionalDriverAgentDB) ExecuteElasticsearchConsoleRequest(ctx context.Context, request ElasticsearchConsoleRequest) (ElasticsearchConsoleResponse, error) {
+	if normalizeRuntimeDriverType(d.driverType) != "elasticsearch" {
+		return ElasticsearchConsoleResponse{}, fmt.Errorf("当前驱动不支持 Elasticsearch Console")
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return ElasticsearchConsoleResponse{}, err
+	}
+	client, err := d.requireClient()
+	if err != nil {
+		return ElasticsearchConsoleResponse{}, err
+	}
+	var response ElasticsearchConsoleResponse
+	if err := client.callContext(ctx, optionalAgentRequest{
+		Method:               optionalAgentMethodElasticsearchConsole,
+		ElasticsearchRequest: &request,
+		TimeoutMs:            timeoutMsFromContext(ctx),
+	}, &response, nil, nil, nil); err != nil {
+		return ElasticsearchConsoleResponse{}, err
+	}
+	return response, nil
+}
+
+func (d *OptionalDriverAgentDB) ElasticsearchConsoleTransportUsable() bool {
+	client := d.client
+	return client != nil && client.stoppedError() == nil
 }
 
 func (d *OptionalDriverAgentDB) QueryContextWithMessages(ctx context.Context, query string) ([]map[string]interface{}, []string, []string, error) {

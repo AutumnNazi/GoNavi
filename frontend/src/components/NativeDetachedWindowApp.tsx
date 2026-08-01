@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Button, ConfigProvider, Spin, Tooltip, theme as antdTheme } from 'antd';
+import { Button, ConfigProvider, Segmented, Spin, Tag, Tooltip, theme as antdTheme } from 'antd';
 import { CloseOutlined, CompressOutlined } from '@ant-design/icons';
 import { EventsOn } from '../../wailsjs/runtime';
 
@@ -234,6 +234,74 @@ const NativeDetachedQueryResult: React.FC<{
   onDataChange: (rows: Array<Record<string, unknown>>) => void;
 }> = ({ windowState, onDataChange }) => {
   const result = windowState.result;
+  const i18n = useOptionalI18n();
+  const t = i18n?.t ?? defaultTranslate;
+  const themeMode = useStore((state) => state.theme);
+  const [elasticsearchViewMode, setElasticsearchViewMode] = useState<'table' | 'raw'>('table');
+  const isDark = themeMode === 'dark';
+  if (result.resultType === 'elasticsearch') {
+    const hasTable = Array.isArray(result.rows) && result.rows.length > 0 && (result.columns || []).length > 0;
+    const viewMode = hasTable ? elasticsearchViewMode : 'raw';
+    const status = Number(result.httpStatus || 0);
+    const statusColor = status >= 200 && status < 300
+      ? (result.partialFailure ? 'orange' : 'green')
+      : 'red';
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', minHeight: 0, height: '100%' }}>
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', flex: '0 0 auto',
+          borderBottom: isDark ? '1px solid rgba(255,255,255,0.1)' : '1px solid rgba(0,0,0,0.08)',
+        }}>
+          <span style={{ fontFamily: 'var(--gn-font-mono)', fontWeight: 600 }}>
+            {result.requestLabel || result.sql}
+          </span>
+          {status > 0 ? <Tag color={statusColor}>HTTP {status}</Tag> : null}
+          {result.partialFailure ? <Tag color="orange">{t('query_editor.elasticsearch.partial')}</Tag> : null}
+          {result.outcomeUnknown ? <Tag color="red">{t('query_editor.elasticsearch.outcome_unknown')}</Tag> : null}
+          <span style={{ flex: 1 }} />
+          {hasTable ? (
+            <Segmented
+              size="small"
+              value={viewMode}
+              options={[
+                { label: t('query_editor.elasticsearch.table'), value: 'table' },
+                { label: t('query_editor.elasticsearch.raw'), value: 'raw' },
+              ]}
+              onChange={(value) => setElasticsearchViewMode(value as 'table' | 'raw')}
+            />
+          ) : null}
+        </div>
+        {viewMode === 'raw' ? (
+          <textarea
+            aria-label={t('query_editor.elasticsearch.raw_response')}
+            readOnly
+            spellCheck={false}
+            value={String(result.rawResponse || '')}
+            style={{
+              flex: 1, minHeight: 0, margin: 12, padding: 12, resize: 'none', overflow: 'auto',
+              borderRadius: 6, fontFamily: 'var(--gn-font-mono)', whiteSpace: 'pre',
+              color: isDark ? '#d4d4d4' : '#333',
+              background: isDark ? 'rgba(0,0,0,0.18)' : 'rgba(0,0,0,0.018)',
+              border: isDark ? '1px solid rgba(255,255,255,0.14)' : '1px solid rgba(0,0,0,0.10)',
+            }}
+          />
+        ) : (
+          <DataGrid
+            data={result.rows || []}
+            columnNames={result.columns || []}
+            loading={false}
+            pkColumns={[]}
+            readOnly
+            connectionId={windowState.connectionId}
+            dbName={result.metadataDbName || windowState.dbName || ''}
+            resultSql={result.sql}
+            exportScope="queryResult"
+            isActive
+          />
+        )}
+      </div>
+    );
+  }
   const isMessage = result.resultType === 'message' || isAffectedRowsResult(result.columns || []);
   const messageText = (result.messages || []).join('\n')
     || (isAffectedRowsResult(result.columns || [])
