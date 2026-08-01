@@ -3393,13 +3393,6 @@ const Sidebar: React.FC<{
       onClick: () => { void handleOpenSQLFileFromToolbar(); },
       priority: 'secondary',
     },
-    {
-      key: 'locate-current-table',
-      label: v2LocateCurrentTableLabel,
-      icon: <AimOutlined aria-hidden="true" />,
-      onClick: handleLocateActiveTabInSidebar,
-      priority: 'secondary',
-    },
   ];
   const v2TitlebarQuickActionsTarget = isV2Ui && typeof document !== 'undefined'
     ? document.getElementById('gonavi-titlebar-quick-actions')

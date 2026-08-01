@@ -896,13 +896,13 @@ describe('Sidebar locate toolbar', () => {
     expect(markup).not.toContain('gn-v2-sidebar-log-button');
     expect(markup).not.toContain('SQL 执行日志');
     expect(markup).not.toContain('2,341');
-    expect(markup).not.toContain('gn-v2-rail-items');
+    expect(markup).toContain('gn-v2-rail-items');
     expect(markup).not.toContain('data-sidebar-create-group-action="true"');
     expect(markup).not.toContain('data-sidebar-batch-table-action="true"');
     expect(markup).not.toContain('data-sidebar-batch-database-action="true"');
     expect(markup).not.toContain('data-sidebar-data-import-action="true"');
     expect(markup).not.toContain('data-sidebar-open-external-sql-file-action="true"');
-    expect(markup).not.toContain('data-sidebar-locate-current-tab-action="true"');
+    expect(markup).toContain('data-sidebar-locate-current-tab-action="true"');
     expect(titlebarQuickActionsSource).toContain('data-titlebar-quick-actions');
     expect(source).toContain("key: 'batch-actions'");
     expect(source).toContain("sidebar.action.batch_operations");
@@ -914,6 +914,7 @@ describe('Sidebar locate toolbar', () => {
     expect(source).toContain("onOpenDataSyncWorkbench?.('dataCompare')");
     expect(source).toContain("onOpenDataSyncWorkbench?.('sync')");
     expect(source).toContain('showObjectActions: false');
+    expect(source).not.toContain("key: 'locate-current-table'");
     expect(markup).not.toContain('data-gonavi-new-query-action="true"');
     expect(markup).not.toContain('data-gonavi-create-connection-action="true"');
     expect(markup).toContain('aria-label="AI 助手"');

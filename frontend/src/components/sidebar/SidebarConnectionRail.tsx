@@ -46,7 +46,7 @@ export interface SidebarConnectionRailProps {
     openSettings: () => void;
   };
   canLocateActiveTab: boolean;
-  /** Object actions are rendered in the title bar for the V2 layout. */
+  /** General object actions are rendered in the title bar for the V2 layout. */
   showObjectActions?: boolean;
   /** Workbench actions can be moved to a wider host when the rail is compact. */
   showWorkbenchActions?: boolean;
@@ -68,9 +68,8 @@ const SidebarConnectionRail: React.FC<SidebarConnectionRailProps> = ({
   workbenchActions,
 }) => (
   <div className="gn-v2-connection-rail" data-sidebar-fixed-rail="true" aria-label={labels.railSystemActions}>
-    {(showObjectActions || sidebarExpandAction) && (
-      <div className="gn-v2-rail-items">
-        <div className="gn-v2-rail-primary-actions" aria-label={labels.railObjectActions}>
+    <div className="gn-v2-rail-items">
+      <div className="gn-v2-rail-primary-actions" aria-label={labels.railObjectActions}>
         {sidebarExpandAction && (
           <div className="gn-v2-rail-sidebar-toggle-slot">
             <Tooltip title={sidebarExpandAction.label} placement="right" mouseEnterDelay={0.35}>
@@ -147,25 +146,24 @@ const SidebarConnectionRail: React.FC<SidebarConnectionRailProps> = ({
                 <FileAddOutlined />
               </button>
             </Tooltip>
-            <Tooltip title={canLocateActiveTab ? labels.locateCurrentTable : labels.locateCurrentTableUnavailable} placement="right">
-              <span className="gn-v2-rail-action-wrap">
-                <button
-                  type="button"
-                  className="gn-v2-rail-tool gn-v2-rail-action"
-                  onClick={handlers.locateActiveTab}
-                  aria-label={labels.locateCurrentTable}
-                  data-sidebar-locate-current-tab-action="true"
-                  disabled={!canLocateActiveTab}
-                >
-                  <AimOutlined />
-                </button>
-              </span>
-            </Tooltip>
           </>
         )}
-        </div>
+        <Tooltip title={canLocateActiveTab ? labels.locateCurrentTable : labels.locateCurrentTableUnavailable} placement="right">
+          <span className="gn-v2-rail-action-wrap">
+            <button
+              type="button"
+              className="gn-v2-rail-tool gn-v2-rail-action"
+              onClick={handlers.locateActiveTab}
+              aria-label={labels.locateCurrentTable}
+              data-sidebar-locate-current-tab-action="true"
+              disabled={!canLocateActiveTab}
+            >
+              <AimOutlined />
+            </button>
+          </span>
+        </Tooltip>
       </div>
-    )}
+    </div>
     <div className="gn-v2-rail-secondary-actions" aria-label={labels.railSystemActions}>
       {showWorkbenchActions && workbenchActions && (
         <div className="gn-v2-rail-workbench-actions">
