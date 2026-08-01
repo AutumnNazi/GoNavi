@@ -1025,6 +1025,43 @@ export const resolveSidebarConnectionIdFromKey = (
   return sortedIds.find((id) => keyText === id || keyText.startsWith(`${id}-`)) || '';
 };
 
+export const resolveSidebarConnectionRefreshKeys = ({
+  treeData,
+  expandedKeys,
+  connectionId,
+}: {
+  treeData: SidebarTreeNode[];
+  expandedKeys: Key[];
+  connectionId: string;
+}): string[] => {
+  const normalizedConnectionId = String(connectionId || '').trim();
+  if (!normalizedConnectionId) return [];
+
+  const expandedKeySet = new Set(
+    expandedKeys
+      .map((key) => String(key || '').trim())
+      .filter((key) => key === normalizedConnectionId || key.startsWith(`${normalizedConnectionId}-`)),
+  );
+  if (expandedKeySet.size === 0) return [];
+
+  const depthByKey = new Map<string, number>();
+  const collectDepths = (nodes: SidebarTreeNode[], depth: number) => {
+    nodes.forEach((node) => {
+      const key = String(node.key || '').trim();
+      if (key) depthByKey.set(key, depth);
+      if (node.children?.length) collectDepths(node.children, depth + 1);
+    });
+  };
+  collectDepths(treeData, 0);
+
+  return Array.from(expandedKeySet)
+    .filter((key) => depthByKey.has(key))
+    .sort((left, right) => {
+      const depthDifference = (depthByKey.get(left) || 0) - (depthByKey.get(right) || 0);
+      return depthDifference || left.localeCompare(right);
+    });
+};
+
 export const resolveSidebarNodeConnectionId = (
   node: { key?: unknown; dataRef?: Record<string, unknown> } | null | undefined,
   connectionIds: string[],

@@ -37,6 +37,7 @@ type UseSidebarV2ActionHandlersArgs = {
   pinnedSidebarDatabases: string[];
   loadingNodesRef: MutableRefObject<Set<string>>;
   treeDataRef: MutableRefObject<TreeNode[]>;
+  refreshConnectionResources: (node: any) => Promise<void>;
   findTreeNodeByKeyRef: MutableRefObject<(nodes: TreeNode[], targetKey: React.Key) => TreeNode | null>;
   refreshV2TableContextMenuStatsRef: MutableRefObject<(node: any) => void>;
   setConnectionStates: Dispatch<SetStateAction<Record<string, SidebarConnectionState>>>;
@@ -105,6 +106,7 @@ export const useSidebarV2ActionHandlers = ({
   pinnedSidebarDatabases,
   loadingNodesRef,
   treeDataRef,
+  refreshConnectionResources,
   findTreeNodeByKeyRef,
   refreshV2TableContextMenuStatsRef,
   setConnectionStates,
@@ -420,19 +422,6 @@ export const useSidebarV2ActionHandlers = ({
     }
   };
 
-  const refreshConnectionNode = (node: any) => {
-    const connKey = String(node?.key || node?.dataRef?.id || '');
-    if (!connKey) return;
-    setExpandedKeys(prev => prev.filter(k => k !== connKey && !k.toString().startsWith(`${connKey}-`)));
-    setLoadedKeys(prev => prev.filter(k => k !== connKey && !k.toString().startsWith(`${connKey}-`)));
-    Array.from(loadingNodesRef.current).forEach((loadingKey) => {
-      if (loadingKey === `dbs-${connKey}` || loadingKey.startsWith(`tables-${connKey}-`)) {
-        loadingNodesRef.current.delete(loadingKey);
-      }
-    });
-    loadDatabases(node);
-  };
-
   const releaseConnectionResources = async (conn: SavedConnection | undefined) => {
     if (!conn?.config) return;
     const res = await DBReleaseConnection(buildRpcConnectionConfig(conn.config, { id: conn.id }) as any);
@@ -517,7 +506,7 @@ export const useSidebarV2ActionHandlers = ({
         setIsCreateDbModalOpen(true);
         return;
       case 'refresh':
-        refreshConnectionNode(node);
+        void refreshConnectionResources(node);
         return;
       case 'new-query':
         addTab({
