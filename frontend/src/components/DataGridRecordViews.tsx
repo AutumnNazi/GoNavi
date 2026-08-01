@@ -86,13 +86,13 @@ interface DataGridTextCellProps extends React.HTMLAttributes<HTMLDivElement> {
   'data-grid-text-value-copy'?: string;
 }
 
-interface DataGridTextValueCellProps extends DataGridTextCellProps {
+interface DataGridTextOverflowCellProps extends DataGridTextCellProps {
   value: string;
   cellBaseStyle: React.CSSProperties;
   tooltipInnerStyle: React.CSSProperties;
 }
 
-const DataGridTextValueCell: React.FC<DataGridTextValueCellProps> = ({
+const DataGridTextOverflowCell: React.FC<DataGridTextOverflowCellProps> = ({
   value,
   cellBaseStyle,
   tooltipInnerStyle,
@@ -192,18 +192,6 @@ export const DataGridTextView: React.FC<DataGridTextViewProps> = ({
     }
   }, [translate]);
 
-  const renderCell = (
-    value: string,
-    style: React.CSSProperties,
-    props?: DataGridTextCellProps,
-  ) => {
-    return (
-      <div {...props} style={{ ...cellBaseStyle, ...style }}>
-        {value}
-      </div>
-    );
-  };
-
   return (
     <div style={{ height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
       <div style={{ padding: '8px 12px', borderBottom: darkMode ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(0,0,0,0.08)', display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -267,18 +255,28 @@ export const DataGridTextView: React.FC<DataGridTextViewProps> = ({
                 role="row"
                 style={{ display: 'grid', gridTemplateColumns, borderBottom }}
               >
-                {renderCell(col, { fontWeight: 600, color: primaryTextColor }, { 'data-grid-text-view-cell': 'field' })}
-                {renderCell(
-                  showColumnType ? columnType : '',
-                  { color: metaTextColor },
-                  { 'data-grid-text-view-cell': 'type' },
-                )}
-                {renderCell(
-                  showColumnComment ? columnComment : '',
-                  { color: metaTextColor },
-                  { 'data-grid-text-view-cell': 'comment' },
-                )}
-                <DataGridTextValueCell
+                <DataGridTextOverflowCell
+                  value={col}
+                  cellBaseStyle={cellBaseStyle}
+                  tooltipInnerStyle={tooltipInnerStyle}
+                  style={{ fontWeight: 600, color: primaryTextColor }}
+                  data-grid-text-view-cell="field"
+                />
+                <DataGridTextOverflowCell
+                  value={showColumnType ? columnType : ''}
+                  cellBaseStyle={cellBaseStyle}
+                  tooltipInnerStyle={tooltipInnerStyle}
+                  style={{ color: metaTextColor }}
+                  data-grid-text-view-cell="type"
+                />
+                <DataGridTextOverflowCell
+                  value={showColumnComment ? columnComment : ''}
+                  cellBaseStyle={cellBaseStyle}
+                  tooltipInnerStyle={tooltipInnerStyle}
+                  style={{ color: metaTextColor }}
+                  data-grid-text-view-cell="comment"
+                />
+                <DataGridTextOverflowCell
                   value={formattedValue}
                   cellBaseStyle={cellBaseStyle}
                   tooltipInnerStyle={tooltipInnerStyle}
