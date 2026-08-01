@@ -1,11 +1,15 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Checkbox, Empty, Form, Input, Select, Space } from 'antd';
 import type { FormInstance } from 'antd/es/form';
 import { FolderOpenOutlined } from '@ant-design/icons';
 import Modal from '../common/ResizableDraggableModal';
 import type { ConnectionTag, SavedConnection, SavedQuery } from '../../types';
+import type { connection as ConnectionModels } from '../../../wailsjs/go/models';
+type DatabaseCharset = ConnectionModels.DatabaseCharset;
+type DatabaseCollation = ConnectionModels.DatabaseCollation;
 import { t } from '../../i18n';
 import { noAutoCapInputProps } from '../../utils/inputAutoCap';
+import { getDataSourceCapabilities } from '../../utils/dataSourceCapabilities';
 import {
   DEFAULT_CONNECTION_ENVIRONMENT,
   normalizeConnectionEnvironmentType,
@@ -104,6 +108,10 @@ type SidebarEntityModalsProps = {
   setIsCreateDbModalOpen: (open: boolean) => void;
   createDbForm: FormInstance;
   handleCreateDatabase: () => void;
+  createDbTarget: any;
+  createDbCharsets: DatabaseCharset[];
+  createDbCollations: DatabaseCollation[];
+  loadingCreateDbOptions: boolean;
   isCreateSchemaModalOpen: boolean;
   setIsCreateSchemaModalOpen: (open: boolean) => void;
   createSchemaForm: FormInstance;
@@ -158,6 +166,10 @@ export const SidebarEntityModals: React.FC<SidebarEntityModalsProps> = ({
   setIsCreateDbModalOpen,
   createDbForm,
   handleCreateDatabase,
+  createDbTarget,
+  createDbCharsets,
+  createDbCollations,
+  loadingCreateDbOptions,
   isCreateSchemaModalOpen,
   setIsCreateSchemaModalOpen,
   createSchemaForm,
@@ -201,6 +213,27 @@ export const SidebarEntityModals: React.FC<SidebarEntityModalsProps> = ({
     connections,
     connectionTags,
     editingTagId,
+  );
+
+  const createDatabaseCharsetSupported = Boolean(
+    createDbTarget?.dataRef?.config
+      && getDataSourceCapabilities(createDbTarget.dataRef.config).supportsCreateDatabaseCharset,
+  );
+  const selectedCreateDbCharset = Form.useWatch('charset', createDbForm);
+  const createDatabaseCharsetOptions = useMemo(
+    () => createDbCharsets.map((charset) => ({
+      value: charset.name,
+      label: charset.defaultCollation
+        ? `${charset.name}（${charset.defaultCollation}）`
+        : charset.name,
+    })),
+    [createDbCharsets],
+  );
+  const createDatabaseCollationOptions = useMemo(
+    () => createDbCollations
+      .filter((collation) => !selectedCreateDbCharset || collation.charset === selectedCreateDbCharset)
+      .map((collation) => ({ value: collation.name, label: collation.name })),
+    [createDbCollations, selectedCreateDbCharset],
   );
 
   return (<>
@@ -304,6 +337,30 @@ export const SidebarEntityModals: React.FC<SidebarEntityModalsProps> = ({
         >
           <Input {...noAutoCapInputProps} />
         </Form.Item>
+        {createDatabaseCharsetSupported && (
+          <>
+            <Form.Item name="charset" label={t('sidebar.field.database_charset')}>
+              <Select
+                allowClear
+                showSearch
+                loading={loadingCreateDbOptions}
+                placeholder={t('sidebar.placeholder.database_charset_default')}
+                options={createDatabaseCharsetOptions}
+                optionFilterProp="label"
+              />
+            </Form.Item>
+            <Form.Item name="collation" label={t('sidebar.field.database_collation')}>
+              <Select
+                allowClear
+                showSearch
+                loading={loadingCreateDbOptions}
+                placeholder={t('sidebar.placeholder.database_collation_default')}
+                options={createDatabaseCollationOptions}
+                optionFilterProp="label"
+              />
+            </Form.Item>
+          </>
+        )}
       </Form>
     </Modal>
 

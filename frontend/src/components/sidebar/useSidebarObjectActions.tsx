@@ -1,4 +1,4 @@
-import { useCallback, type Dispatch, type MutableRefObject, type SetStateAction } from 'react';
+import { useCallback, useEffect, type Dispatch, type MutableRefObject, type SetStateAction } from 'react';
 import { message } from 'antd';
 import type { FormInstance } from 'antd/es/form';
 
@@ -15,6 +15,9 @@ import { buildStarRocksMaterializedViewPreviewSql } from '../tableDesignerSchema
 import type { ExportRunResult, RunExportWithProgressOptions } from '../useExportProgressRunner';
 import { getTableDataDangerActionMeta, type TableDataDangerActionKind } from '../tableDataDangerActions';
 import { confirmCopyTable } from '../tableCopyAction';
+import type { connection as ConnectionModels } from '../../../wailsjs/go/models';
+type DatabaseCharset = ConnectionModels.DatabaseCharset;
+type DatabaseCollation = ConnectionModels.DatabaseCollation;
 import {
   buildDuckDBMacroDDL,
   escapeSQLLiteral,
@@ -38,6 +41,8 @@ import {
   DropTable,
   DropView,
   ExportTableWithOptions,
+  ListDatabaseCharsets,
+  ListDatabaseCollations,
   RenameDatabase,
   RenameTable,
   RenameView,
@@ -71,7 +76,14 @@ type UseSidebarObjectActionsArgs = {
   closeTabsByDatabase: (connectionId: string, dbName: string) => void;
   createDbForm: FormInstance;
   targetConnection: any;
+  isCreateDbModalOpen: boolean;
   setIsCreateDbModalOpen: Dispatch<SetStateAction<boolean>>;
+  createDbCharsets: DatabaseCharset[];
+  setCreateDbCharsets: Dispatch<SetStateAction<DatabaseCharset[]>>;
+  createDbCollations: DatabaseCollation[];
+  setCreateDbCollations: Dispatch<SetStateAction<DatabaseCollation[]>>;
+  loadingCreateDbOptions: boolean;
+  setLoadingCreateDbOptions: Dispatch<SetStateAction<boolean>>;
   createSchemaForm: FormInstance;
   createSchemaTarget: any;
   setCreateSchemaTarget: Dispatch<SetStateAction<any>>;
@@ -173,7 +185,14 @@ export const useSidebarObjectActions = ({
   closeTabsByDatabase,
   createDbForm,
   targetConnection,
+  isCreateDbModalOpen,
   setIsCreateDbModalOpen,
+  createDbCharsets,
+  setCreateDbCharsets,
+  createDbCollations,
+  setCreateDbCollations,
+  loadingCreateDbOptions,
+  setLoadingCreateDbOptions,
   createSchemaForm,
   createSchemaTarget,
   setCreateSchemaTarget,
@@ -419,7 +438,12 @@ export const useSidebarObjectActions = ({
         ssh: conn.config.ssh || { host: '', port: 22, user: '', password: '', keyPath: '' },
       };
 
-      const res = await CreateDatabase(buildRpcConnectionConfig(config) as any, values.name);
+      const res = await CreateDatabase(
+        buildRpcConnectionConfig(config) as any,
+        values.name,
+        String(values.charset || ''),
+        String(values.collation || ''),
+      );
       if (res.success) {
         message.success(t('sidebar.message.database_created'));
         setIsCreateDbModalOpen(false);
@@ -432,6 +456,46 @@ export const useSidebarObjectActions = ({
       // Validate failed
     }
   };
+
+  useEffect(() => {
+    if (!isCreateDbModalOpen || !targetConnection?.dataRef?.config) return;
+    if (!getDataSourceCapabilities(targetConnection.dataRef.config).supportsCreateDatabaseCharset) return;
+    let cancelled = false;
+    const conn = targetConnection.dataRef;
+    const config = {
+      ...conn.config,
+      port: Number(conn.config.port),
+      password: conn.config.password || '',
+      database: '',
+      useSSH: conn.config.useSSH || false,
+      ssh: conn.config.ssh || { host: '', port: 22, user: '', password: '', keyPath: '' },
+    };
+    setLoadingCreateDbOptions(true);
+    Promise.all([
+      ListDatabaseCharsets(buildRpcConnectionConfig(config) as any),
+      ListDatabaseCollations(buildRpcConnectionConfig(config) as any),
+    ])
+      .then(([charsetsResult, collationsResult]) => {
+        if (cancelled) return;
+        if (charsetsResult?.success) {
+          setCreateDbCharsets(Array.isArray(charsetsResult.data) ? charsetsResult.data : []);
+        }
+        if (collationsResult?.success) {
+          setCreateDbCollations(Array.isArray(collationsResult.data) ? collationsResult.data : []);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          message.error(t('sidebar.message.create_db_options_load_failed'));
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingCreateDbOptions(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isCreateDbModalOpen, targetConnection, t]);
 
   const openCreateSchemaModal = (node: any) => {
     const dialect = getMetadataDialect(node?.dataRef as SavedConnection);

@@ -2,6 +2,9 @@
 import Modal from './common/ResizableDraggableModal';
 import TitleBarQuickActions, { type TitleBarQuickAction } from './TitleBarQuickActions';
 import { type DataSyncEntryMode } from './dataSyncEntryMode';
+import type { connection as ConnectionModels } from '../../wailsjs/go/models';
+type DatabaseCharset = ConnectionModels.DatabaseCharset;
+type DatabaseCollation = ConnectionModels.DatabaseCollation;
 import SidebarSearchPanel, { type SidebarSearchPanelProps } from './sidebar/SidebarSearchPanel';
 import { buildSidebarLegacyNodeMenuItems } from './sidebar/sidebarLegacyNodeMenu';
 import {
@@ -1009,6 +1012,9 @@ const Sidebar: React.FC<{
   const [isCreateDbModalOpen, setIsCreateDbModalOpen] = useState(false);
   const [createDbForm] = Form.useForm();
   const [targetConnection, setTargetConnection] = useState<any>(null);
+  const [createDbCharsets, setCreateDbCharsets] = useState<DatabaseCharset[]>([]);
+  const [createDbCollations, setCreateDbCollations] = useState<DatabaseCollation[]>([]);
+  const [loadingCreateDbOptions, setLoadingCreateDbOptions] = useState(false);
   const [isCreateSchemaModalOpen, setIsCreateSchemaModalOpen] = useState(false);
   const [createSchemaForm] = Form.useForm();
   const [createSchemaTarget, setCreateSchemaTarget] = useState<any>(null);
@@ -2633,7 +2639,14 @@ const Sidebar: React.FC<{
       closeTabsByDatabase,
       createDbForm,
       targetConnection,
+      isCreateDbModalOpen,
       setIsCreateDbModalOpen,
+      createDbCharsets,
+      setCreateDbCharsets,
+      createDbCollations,
+      setCreateDbCollations,
+      loadingCreateDbOptions,
+      setLoadingCreateDbOptions,
       createSchemaForm,
       createSchemaTarget,
       setCreateSchemaTarget,
@@ -3870,6 +3883,10 @@ const Sidebar: React.FC<{
             setIsCreateDbModalOpen={setIsCreateDbModalOpen}
             createDbForm={createDbForm}
             handleCreateDatabase={handleCreateDatabase}
+            createDbTarget={targetConnection}
+            createDbCharsets={createDbCharsets}
+            createDbCollations={createDbCollations}
+            loadingCreateDbOptions={loadingCreateDbOptions}
             isCreateSchemaModalOpen={isCreateSchemaModalOpen}
             setIsCreateSchemaModalOpen={setIsCreateSchemaModalOpen}
             createSchemaForm={createSchemaForm}
