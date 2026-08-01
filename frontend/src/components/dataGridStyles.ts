@@ -386,6 +386,14 @@ export const buildDataGridCssText = ({
                 .${gridId} .data-grid-row-number-cell {
                     text-align: center !important;
                     overflow: hidden !important;
+                    padding: 0 !important;
+                }
+                .${gridId} .ant-table-tbody-virtual-holder .ant-table-row > .ant-table-cell.data-grid-row-number-cell,
+                .${gridId} .ant-table-tbody .ant-table-row > .ant-table-cell.data-grid-row-number-cell,
+                .${gridId} .ant-table-header th.data-grid-row-number-cell,
+                body[data-ui-version="v2"] .${gridId}.gn-v2-data-grid .ant-table-tbody-virtual-holder .ant-table-row > .ant-table-cell.data-grid-row-number-cell,
+                body[data-ui-version="v2"] .${gridId}.gn-v2-data-grid .ant-table-tbody .ant-table-row > .ant-table-cell.data-grid-row-number-cell {
+                    padding: 0 !important;
                 }
 .${gridId} .ant-table-thead > tr:first-child > th:first-child,
 
