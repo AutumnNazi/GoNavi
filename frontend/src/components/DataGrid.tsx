@@ -55,6 +55,8 @@ import {
     resolveExternalHorizontalScrollMetrics,
 } from './dataGridLayout';
 import {
+    applyDataGridFixedCellPreviewOffset,
+    commitDataGridFixedCellOffset,
     createDataGridIdleCommitScheduler,
     createDataGridVisualFrameGuard,
     type DataGridIdleCommitScheduler,
@@ -4124,8 +4126,8 @@ const DataGrid: React.FC<DataGridProps> = ({
 
   /**
    * 虚拟表横滚视觉同步：
-   * - 表体：filler marginLeft = -offset；固定列用 --gn-datagrid-h-scroll 做 translateX 补偿
-   *   （filler 有 transform:translateY，sticky 在表体不可靠）
+   * - 表体：filler marginLeft = -offset；预览时只移动当前固定单元格，避免修改
+   *   继承变量导致整棵虚拟表体重新计算样式
    * - 表头：真实 scrollLeft + sticky 固定全选/行号（不要对 header table 做 transform，
    *   否则会把全选 checkbox / # 裁没或钉飞）
    */
@@ -4141,18 +4143,13 @@ const DataGrid: React.FC<DataGridProps> = ({
       const clampedOffset = Math.max(0, Math.min(maxScroll, nextOffset));
       const currentOffset = Math.max(0, Math.abs(parseFloat(innerEl.style.marginLeft) || 0));
       const nextMarginLeft = `${-clampedOffset}px`;
-      const scrollVar = `${clampedOffset}px`;
       virtualHorizontalPostCommitGuardRef.current?.update(clampedOffset);
 
       if (innerEl.style.marginLeft !== nextMarginLeft) {
           innerEl.style.marginLeft = nextMarginLeft;
       }
 
-      // 只在固定列的最近公共祖先写一次，避免同一继承变量使整棵表体
-      // 连续发生三次 style invalidation。
-      if (innerEl.style.getPropertyValue('--gn-datagrid-h-scroll') !== scrollVar) {
-          innerEl.style.setProperty('--gn-datagrid-h-scroll', scrollVar);
-      }
+      applyDataGridFixedCellPreviewOffset(tableContainer, clampedOffset);
       if (tableContainer.style.getPropertyValue('--gn-datagrid-h-scroll')) {
           tableContainer.style.removeProperty('--gn-datagrid-h-scroll');
       }
@@ -4167,7 +4164,7 @@ const DataGrid: React.FC<DataGridProps> = ({
           }
       }
 
-      return { holderEl, clampedOffset, currentOffset };
+      return { holderEl, innerEl, clampedOffset, currentOffset };
   }, [resolveVirtualHorizontalElements, tableScrollX]);
 
   virtualHorizontalPostCommitFrameHandlerRef.current = (offset) => {
@@ -4216,7 +4213,7 @@ const DataGrid: React.FC<DataGridProps> = ({
           return false;
       }
 
-      const { holderEl, clampedOffset, currentOffset } = synced;
+      const { holderEl, innerEl, clampedOffset, currentOffset } = synced;
       const deltaX = clampedOffset - currentOffset;
       if (Math.abs(deltaX) < 0.5 && !options?.forceInternalScroll) {
           scheduleVirtualHorizontalPostCommit(tableContainer, clampedOffset);
@@ -4227,6 +4224,7 @@ const DataGrid: React.FC<DataGridProps> = ({
       if (tableInstance && typeof tableInstance.scrollTo === 'function') {
           // 更新 rc-virtual-list 内部 offsetLeft
           tableInstance.scrollTo({ left: clampedOffset });
+          commitDataGridFixedCellOffset(tableContainer, innerEl, clampedOffset);
           lastCommittedVirtualHorizontalOffsetRef.current = clampedOffset;
           scheduleVirtualHorizontalPostCommit(tableContainer, clampedOffset);
           return true;
@@ -4239,6 +4237,8 @@ const DataGrid: React.FC<DataGridProps> = ({
           bubbles: true,
           cancelable: true,
       }));
+      commitDataGridFixedCellOffset(tableContainer, innerEl, clampedOffset);
+      lastCommittedVirtualHorizontalOffsetRef.current = clampedOffset;
       scheduleVirtualHorizontalPostCommit(tableContainer, clampedOffset);
       return true;
   }, [scheduleVirtualHorizontalPostCommit, syncVirtualHorizontalVisualOffset]);
@@ -4582,6 +4582,12 @@ const DataGrid: React.FC<DataGridProps> = ({
               // rc-virtual-list 内部 offsetLeft，避免大结果集每帧触发行渲染。
               const alreadyCommitted = virtualListItemColumnVirtual
                   && Math.abs(lastCommittedVirtualHorizontalOffsetRef.current - resolvedScrollLeft) < 0.5;
+              if (alreadyCommitted) {
+                  const { innerEl } = resolveVirtualHorizontalElements(tableContainer);
+                  if (innerEl instanceof HTMLElement) {
+                      commitDataGridFixedCellOffset(tableContainer, innerEl, resolvedScrollLeft);
+                  }
+              }
               const applied = alreadyCommitted
                   || applyVirtualHorizontalOffset(tableContainer, resolvedScrollLeft, { forceInternalScroll: true });
               if (applied) {
@@ -4604,7 +4610,7 @@ const DataGrid: React.FC<DataGridProps> = ({
           }
           horizontalSyncSourceRef.current = '';
       });
-  }, [applyVirtualHorizontalOffset, enableVirtual, isExternalScrollbarInteractionActive, readVirtualHorizontalOffset, syncVirtualHorizontalVisualOffset, virtualListItemColumnVirtual]);
+  }, [applyVirtualHorizontalOffset, enableVirtual, isExternalScrollbarInteractionActive, readVirtualHorizontalOffset, resolveVirtualHorizontalElements, syncVirtualHorizontalVisualOffset, virtualListItemColumnVirtual]);
 
   externalIdleCommitHandlerRef.current = (syncSequence) => {
       externalScrollInteractionUntilRef.current = 0;
@@ -4653,7 +4659,7 @@ const DataGrid: React.FC<DataGridProps> = ({
           const requestedExternalScrollLeft = pendingExternalScrollLeftRef.current ?? latestExternalScroll.scrollLeft;
           pendingExternalScrollLeftRef.current = null;
           const tableContainer = tableContainerRef.current;
-          // 用户连续拖动/滚动时，只写 marginLeft、header.scrollLeft 和固定列 CSS 变量。
+          // 用户连续拖动/滚动时，只写 marginLeft、header.scrollLeft 和当前固定单元格。
           // 不在每一帧调用 Table.scrollTo，否则 rc-virtual-list 会随数据量放大渲染开销。
           if (enableVirtual && tableContainer instanceof HTMLElement) {
               if (isExternalScrollbarInteractionActive()) {

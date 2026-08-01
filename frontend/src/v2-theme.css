@@ -4549,19 +4549,8 @@ body[data-ui-version="v2"] .gn-v2-column-title-comment {
   font-weight: 400 !important;
 }
 
-body[data-ui-version="v2"] .gn-v2-data-grid .react-resizable-handle::after {
-  content: '';
-  position: absolute;
-  top: 8px;
-  bottom: 8px;
-  left: 4px;
-  width: 2px;
-  border-radius: 1px;
-  background: transparent;
-}
-
-body[data-ui-version="v2"] .gn-v2-data-grid .react-resizable-handle:hover::after {
-  background: color-mix(in srgb, var(--gn-info) 42%, transparent);
+body[data-ui-version="v2"] .gn-v2-data-grid .react-resizable-handle {
+  background-image: none !important;
 }
 
 body[data-ui-version="v2"] .gn-v2-data-grid .ant-table-tbody > tr > td,

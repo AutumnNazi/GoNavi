@@ -471,6 +471,16 @@ describe('DataGrid layout', () => {
     expect(source).not.toContain('ghostRef');
   });
 
+  it('keeps the V2 column resize hit target visually transparent', () => {
+    const css = readV2ThemeCss();
+
+    expect(css).toMatch(
+      /\.gn-v2-data-grid \.react-resizable-handle\s*\{[^}]*background-image:\s*none\s*!important;/s,
+    );
+    expect(css).not.toContain('.react-resizable-handle::after');
+    expect(css).not.toContain('.react-resizable-handle:hover::after');
+  });
+
   it('avoids duplicating legacy pagination page text beside the pager', () => {
     const markup = renderToStaticMarkup(
       <DataGridPaginationBar
