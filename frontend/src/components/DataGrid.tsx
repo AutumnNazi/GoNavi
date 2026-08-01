@@ -3322,6 +3322,10 @@ const DataGrid: React.FC<DataGridProps> = ({
       return ROW_NUMBER_COLUMN_WIDTH;
   }, [columnWidths]);
 
+  const handleRowNumberDoubleClick = useCallback((index: number) => {
+      handleViewModeChange('text', { textRecordIndex: index });
+  }, [handleViewModeChange]);
+
   const rowNumberColumn = useMemo<ColumnType<any>>(() => ({
       title: (
           <div
@@ -3368,12 +3372,18 @@ const DataGrid: React.FC<DataGridProps> = ({
               minWidth: 28,
           },
       }),
-      onCell: () => ({
+      onCell: (_record: Item, index?: number) => ({
+          'data-grid-row-number-action': 'true',
           style: {
               width: rowNumberColumnWidth,
               minWidth: 28,
-              paddingInline: 2,
+              padding: 0,
               textAlign: 'center' as const,
+            },
+          onDoubleClick: (event: React.MouseEvent<HTMLElement>) => {
+              event.preventDefault();
+              event.stopPropagation();
+              handleRowNumberDoubleClick(index ?? 0);
           },
       }),
       render: (_value: unknown, _record: Item, index: number) => {
@@ -3381,12 +3391,31 @@ const DataGrid: React.FC<DataGridProps> = ({
           const pageSize = Math.max(1, Number(pagination?.pageSize) || 0);
           const offset = pageSize > 0 ? (currentPage - 1) * pageSize : 0;
           return (
-              <span className="data-grid-row-number" data-grid-row-number="true">
-                  {offset + index + 1}
-              </span>
+              <Tooltip title={translateDataGrid('data_grid.row_number.double_click_to_view')}>
+                  <span
+                      className="data-grid-row-number"
+                      data-grid-row-number="true"
+                      style={{
+                          display: 'flex',
+                          width: '100%',
+                          height: '100%',
+                          minHeight: 24,
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          cursor: 'pointer',
+                      }}
+                      onDoubleClick={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          handleRowNumberDoubleClick(index);
+                      }}
+                  >
+                      {offset + index + 1}
+                  </span>
+              </Tooltip>
           );
       },
-  }), [handleResizeAutoFit, handleResizeStart, pagination?.current, pagination?.pageSize, rowNumberColumnWidth]);
+  }), [handleResizeAutoFit, handleResizeStart, handleRowNumberDoubleClick, pagination?.current, pagination?.pageSize, rowNumberColumnWidth, translateDataGrid]);
 
   const tableColumns = useMemo(() => {
       const baseColumns = resolvedShowRowNumberColumn

@@ -12,6 +12,7 @@ interface DataGridJsonViewProps {
   jsonViewText: string;
   translate?: DataGridRecordViewTranslate;
   onOpenJsonEditor: () => void;
+  onReturnToTable: () => void;
 }
 
 export const DataGridJsonView: React.FC<DataGridJsonViewProps> = ({
@@ -21,6 +22,7 @@ export const DataGridJsonView: React.FC<DataGridJsonViewProps> = ({
   jsonViewText,
   translate = defaultTranslate,
   onOpenJsonEditor,
+  onReturnToTable,
 }) => (
   <div style={{ height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
     <div style={{ padding: '8px 10px', borderBottom: darkMode ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(0,0,0,0.08)', display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -34,6 +36,9 @@ export const DataGridJsonView: React.FC<DataGridJsonViewProps> = ({
           {translate('data_grid.record_view.edit_json')}
         </Button>
       )}
+      <Button size="small" onClick={onReturnToTable}>
+        {translate('data_grid.record_view.back_to_table')}
+      </Button>
     </div>
     <div style={{ flex: 1, minHeight: 0, padding: '8px 10px 10px 10px' }}>
       <Editor
@@ -72,6 +77,7 @@ interface DataGridTextViewProps {
   onPrev: () => void;
   onNext: () => void;
   onEditCurrent: () => void;
+  onReturnToTable: () => void;
   formatTextViewValue: (value: any, columnName?: string) => string;
 }
 
@@ -90,6 +96,7 @@ export const DataGridTextView: React.FC<DataGridTextViewProps> = ({
   onPrev,
   onNext,
   onEditCurrent,
+  onReturnToTable,
   formatTextViewValue,
 }) => {
   const metaTextColor = darkMode ? 'rgba(255,255,255,0.52)' : 'rgba(0,0,0,0.48)';
@@ -113,6 +120,9 @@ export const DataGridTextView: React.FC<DataGridTextViewProps> = ({
             {translate('data_grid.record_view.edit_current')}
           </Button>
         )}
+        <Button size="small" onClick={onReturnToTable}>
+          {translate('data_grid.record_view.back_to_table')}
+        </Button>
       </div>
       <div className="custom-scrollbar" style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: '8px 12px' }}>
         {currentTextRow ? displayOutputColumnNames.map((col) => {

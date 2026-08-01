@@ -852,6 +852,7 @@ const renderDataTableView = () => (
                 canModifyData={canModifyData}
                 jsonViewText={jsonViewText}
                 translate={translateDataGrid}
+                onReturnToTable={() => handleViewModeChange('table')}
                 onOpenJsonEditor={handleOpenJsonEditor}
             />
         ) : (
@@ -867,6 +868,7 @@ const renderDataTableView = () => (
                 showColumnType={showColumnType}
                 showColumnComment={showColumnComment}
                 translate={translateDataGrid}
+                onReturnToTable={() => handleViewModeChange('table')}
                 onPrev={() => setTextRecordIndex((i: number) => Math.max(0, i - 1))}
                 onNext={() => setTextRecordIndex((i: number) => Math.min(textViewRows.length - 1, i + 1))}
                 onEditCurrent={openCurrentViewRowEditor}
