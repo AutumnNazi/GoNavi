@@ -94,8 +94,8 @@ export function CopyTable(arg1, arg2, arg3, arg4) {
   return window['go']['app']['App']['CopyTable'](arg1, arg2, arg3, arg4);
 }
 
-export function CreateDatabase(arg1, arg2) {
-  return window['go']['app']['App']['CreateDatabase'](arg1, arg2);
+export function CreateDatabase(arg1, arg2, arg3, arg4) {
+  return window['go']['app']['App']['CreateDatabase'](arg1, arg2, arg3, arg4);
 }
 
 export function CreateSQLDirectory(arg1, arg2) {
@@ -544,6 +544,14 @@ export function JVMStopMonitoring(arg1, arg2) {
 
 export function ListInstalledFontFamilies() {
   return window['go']['app']['App']['ListInstalledFontFamilies']();
+}
+
+export function ListDatabaseCharsets(arg1) {
+  return window['go']['app']['App']['ListDatabaseCharsets'](arg1);
+}
+
+export function ListDatabaseCollations(arg1) {
+  return window['go']['app']['App']['ListDatabaseCollations'](arg1);
 }
 
 export function ListSQLDirectory(arg1) {

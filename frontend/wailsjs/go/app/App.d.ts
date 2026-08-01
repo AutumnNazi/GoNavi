@@ -54,7 +54,7 @@ export function ConfigureGlobalProxy(arg1:boolean,arg2:connection.ProxyConfig):P
 
 export function CopyTable(arg1:connection.ConnectionConfig,arg2:string,arg3:string,arg4:string):Promise<connection.QueryResult>;
 
-export function CreateDatabase(arg1:connection.ConnectionConfig,arg2:string):Promise<connection.QueryResult>;
+export function CreateDatabase(arg1:connection.ConnectionConfig,arg2:string,arg3:string,arg4:string):Promise<connection.QueryResult>;
 
 export function CreateSQLDirectory(arg1:string,arg2:string):Promise<connection.QueryResult>;
 
@@ -279,6 +279,10 @@ export function JVMStartMonitoring(arg1:connection.ConnectionConfig):Promise<con
 export function JVMStopMonitoring(arg1:connection.ConnectionConfig,arg2:string):Promise<connection.QueryResult>;
 
 export function ListInstalledFontFamilies():Promise<connection.QueryResult>;
+
+export function ListDatabaseCharsets(arg1:connection.ConnectionConfig):Promise<connection.QueryResult>;
+
+export function ListDatabaseCollations(arg1:connection.ConnectionConfig):Promise<connection.QueryResult>;
 
 export function ListSQLDirectory(arg1:string):Promise<connection.QueryResult>;
 

@@ -1586,6 +1586,38 @@ export namespace app {
 
 export namespace connection {
 	
+	export class DatabaseCharset {
+	    name: string;
+	    description?: string;
+	    defaultCollation?: string;
+	    maxLength?: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new DatabaseCharset(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.name = source["name"];
+	        this.description = source["description"];
+	        this.defaultCollation = source["defaultCollation"];
+	        this.maxLength = source["maxLength"];
+	    }
+	}
+	export class DatabaseCollation {
+	    name: string;
+	    charset: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new DatabaseCollation(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.name = source["name"];
+	        this.charset = source["charset"];
+	    }
+	}
 	export class UpdateRow {
 	    keys: Record<string, any>;
 	    values: Record<string, any>;

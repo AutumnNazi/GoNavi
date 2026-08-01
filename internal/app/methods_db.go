@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/url"
 	"sort"
@@ -192,7 +193,7 @@ func (a *App) MongoDiscoverMembers(config connection.ConnectionConfig) connectio
 	}
 }
 
-func (a *App) CreateDatabase(config connection.ConnectionConfig, dbName string) (result connection.QueryResult) {
+func (a *App) CreateDatabase(config connection.ConnectionConfig, dbName string, charset string, collation string) (result connection.QueryResult) {
 	auditSQL := fmt.Sprintf("CREATE DATABASE %s", strings.TrimSpace(dbName))
 	defer a.beginSQLAuditUserAction(config, dbName, "object_editor", &auditSQL, &result)()
 	dbName = strings.TrimSpace(dbName)
@@ -214,26 +215,17 @@ func (a *App) CreateDatabase(config connection.ConnectionConfig, dbName string) 
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
 
-	escapedDbName := strings.ReplaceAll(dbName, "`", "``")
-	query := fmt.Sprintf("CREATE DATABASE `%s` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci", escapedDbName)
 	dbType := resolveDDLDBType(runConfig)
-	if dbType == "postgres" || dbType == "kingbase" || dbType == "highgo" || dbType == "vastbase" || dbType == "opengauss" || dbType == "gaussdb" {
-		escapedDbName = strings.ReplaceAll(dbName, `"`, `""`)
-		query = fmt.Sprintf("CREATE DATABASE \"%s\"", escapedDbName)
-	} else if dbType == "sqlserver" {
-		query = fmt.Sprintf("CREATE DATABASE %s", quoteIdentByType(dbType, dbName))
-	} else if dbType == "tdengine" {
-		query = fmt.Sprintf("CREATE DATABASE IF NOT EXISTS %s", quoteIdentByType(dbType, dbName))
-	} else if dbType == "clickhouse" {
-		query = fmt.Sprintf("CREATE DATABASE IF NOT EXISTS %s", quoteIdentByType(dbType, dbName))
-	} else if dbType == "starrocks" {
-		query = fmt.Sprintf("CREATE DATABASE IF NOT EXISTS %s", quoteIdentByType(dbType, dbName))
-	} else if dbType == "mariadb" || dbType == "diros" || dbType == "oceanbase" {
-		// MariaDB uses same syntax as MySQL
-	} else if dbType == "sphinx" {
-		return connection.QueryResult{Success: false, Message: a.appText("db.backend.error.database_create_sphinx_unsupported", nil)}
-	} else if dbType == "oracle" || dbType == "dameng" {
-		return connection.QueryResult{Success: false, Message: a.appText("db.backend.error.database_create_user_schema_unsupported", map[string]any{"dbType": dbType})}
+	query, err := buildCreateDatabaseQuery(dbType, dbName, charset, collation)
+	if err != nil {
+		switch {
+		case errors.Is(err, errCreateDatabaseSphinxUnsupported):
+			return connection.QueryResult{Success: false, Message: a.appText("db.backend.error.database_create_sphinx_unsupported", nil)}
+		case errors.Is(err, errCreateDatabaseUserSchemaUnsupported):
+			return connection.QueryResult{Success: false, Message: a.appText("db.backend.error.database_create_user_schema_unsupported", map[string]any{"dbType": dbType})}
+		default:
+			return connection.QueryResult{Success: false, Message: a.appText("db.backend.error.database_option_invalid", map[string]any{"detail": err.Error()})}
+		}
 	}
 
 	_, err = dbInst.Exec(query)
@@ -242,6 +234,160 @@ func (a *App) CreateDatabase(config connection.ConnectionConfig, dbName string) 
 	}
 
 	return connection.QueryResult{Success: true, Message: a.appText("db.backend.message.database_created", nil)}
+}
+
+var (
+	errCreateDatabaseSphinxUnsupported     = errors.New("sphinx create database unsupported")
+	errCreateDatabaseUserSchemaUnsupported = errors.New("user schema create database unsupported")
+)
+
+// buildCreateDatabaseQuery 构造创建数据库 SQL。
+//
+// MySQL 系方言（mysql/mariadb/diros/oceanbase，以及被归一化为 mysql 的
+// goldendb/greatdb 等）支持可选的字符集与排序规则；charset/collation 为空
+// 时使用服务器默认值。两者只允许字母、数字与下划线，防止注入。
+func buildCreateDatabaseQuery(dbType string, dbName string, charset string, collation string) (string, error) {
+	charset = strings.TrimSpace(charset)
+	collation = strings.TrimSpace(collation)
+	switch dbType {
+	case "postgres", "kingbase", "highgo", "vastbase", "opengauss", "gaussdb":
+		escaped := strings.ReplaceAll(dbName, `"`, `""`)
+		return fmt.Sprintf(`CREATE DATABASE "%s"`, escaped), nil
+	case "sqlserver":
+		return fmt.Sprintf("CREATE DATABASE %s", quoteIdentByType(dbType, dbName)), nil
+	case "tdengine", "clickhouse", "starrocks":
+		return fmt.Sprintf("CREATE DATABASE IF NOT EXISTS %s", quoteIdentByType(dbType, dbName)), nil
+	case "sphinx":
+		return "", errCreateDatabaseSphinxUnsupported
+	case "oracle", "dameng":
+		return "", errCreateDatabaseUserSchemaUnsupported
+	default:
+		escaped := strings.ReplaceAll(dbName, "`", "``")
+		query := fmt.Sprintf("CREATE DATABASE `%s`", escaped)
+		if charset != "" {
+			if !isSafeDatabaseOption(charset) {
+				return "", fmt.Errorf("invalid database charset: %q", charset)
+			}
+			query += " CHARACTER SET " + charset
+		}
+		if collation != "" {
+			if !isSafeDatabaseOption(collation) {
+				return "", fmt.Errorf("invalid database collation: %q", collation)
+			}
+			query += " COLLATE " + collation
+		}
+		return query, nil
+	}
+}
+
+// isSafeDatabaseOption 校验字符集/排序规则标识符，仅允许字母、数字与下划线。
+func isSafeDatabaseOption(value string) bool {
+	if value == "" {
+		return false
+	}
+	for _, r := range value {
+		if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '_') {
+			return false
+		}
+	}
+	return true
+}
+
+// supportsDatabaseCharsetOptions 判断数据源是否支持字符集/排序规则选项。
+func supportsDatabaseCharsetOptions(dbType string) bool {
+	switch dbType {
+	case "mysql", "mariadb", "diros", "oceanbase":
+		return true
+	default:
+		return false
+	}
+}
+
+// ListDatabaseCharsets 返回 MySQL 系数据源可用的字符集列表（SHOW CHARACTER SET）。
+// 非 MySQL 系返回空列表。
+func (a *App) ListDatabaseCharsets(config connection.ConnectionConfig) (result connection.QueryResult) {
+	if !supportsDatabaseCharsetOptions(resolveDDLDBType(config)) {
+		return connection.QueryResult{Success: true, Data: []connection.DatabaseCharset{}}
+	}
+	runConfig := config
+	runConfig.Database = ""
+	dbInst, err := a.getDatabase(runConfig)
+	if err != nil {
+		return connection.QueryResult{Success: false, Message: err.Error()}
+	}
+	rows, _, err := dbInst.Query("SHOW CHARACTER SET")
+	if err != nil {
+		return connection.QueryResult{Success: false, Message: err.Error()}
+	}
+	charsets := make([]connection.DatabaseCharset, 0, len(rows))
+	for _, row := range rows {
+		charsets = append(charsets, connection.DatabaseCharset{
+			Name:             rowStringValue(row, "Charset"),
+			Description:      rowStringValue(row, "Description"),
+			DefaultCollation: rowStringValue(row, "Default collation"),
+			MaxLength:        rowIntValue(row, "Maxlen"),
+		})
+	}
+	return connection.QueryResult{Success: true, Data: charsets}
+}
+
+// ListDatabaseCollations 返回 MySQL 系数据源可用的排序规则列表（SHOW COLLATION）。
+// 非 MySQL 系返回空列表。
+func (a *App) ListDatabaseCollations(config connection.ConnectionConfig) (result connection.QueryResult) {
+	if !supportsDatabaseCharsetOptions(resolveDDLDBType(config)) {
+		return connection.QueryResult{Success: true, Data: []connection.DatabaseCollation{}}
+	}
+	runConfig := config
+	runConfig.Database = ""
+	dbInst, err := a.getDatabase(runConfig)
+	if err != nil {
+		return connection.QueryResult{Success: false, Message: err.Error()}
+	}
+	rows, _, err := dbInst.Query("SHOW COLLATION")
+	if err != nil {
+		return connection.QueryResult{Success: false, Message: err.Error()}
+	}
+	collations := make([]connection.DatabaseCollation, 0, len(rows))
+	for _, row := range rows {
+		collations = append(collations, connection.DatabaseCollation{
+			Name:    rowStringValue(row, "Collation"),
+			Charset: rowStringValue(row, "Charset"),
+		})
+	}
+	return connection.QueryResult{Success: true, Data: collations}
+}
+
+// rowStringValue 从查询结果行中提取字符串列值。
+func rowStringValue(row map[string]interface{}, key string) string {
+	value, ok := row[key]
+	if !ok || value == nil {
+		return ""
+	}
+	return strings.TrimSpace(fmt.Sprintf("%v", value))
+}
+
+// rowIntValue 从查询结果行中提取整数列值。
+func rowIntValue(row map[string]interface{}, key string) int {
+	value, ok := row[key]
+	if !ok || value == nil {
+		return 0
+	}
+	switch n := value.(type) {
+	case int:
+		return n
+	case int64:
+		return int(n)
+	case float64:
+		return int(n)
+	case string:
+		parsed, err := strconv.Atoi(strings.TrimSpace(n))
+		if err != nil {
+			return 0
+		}
+		return parsed
+	default:
+		return 0
+	}
 }
 
 func isPostgresSchemaDDLDBType(dbType string) bool {
