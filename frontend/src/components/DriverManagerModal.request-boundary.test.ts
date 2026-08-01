@@ -1,35 +1,91 @@
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
-const source = readFileSync(
-  fileURLToPath(new globalThis.URL('./DriverManagerModal.tsx', import.meta.url)),
-  'utf8',
-).replace(/\r\n/g, '\n');
+import {
+  createDriverStatusSnapshotRegistry,
+  restoreDriverNetworkSnapshot,
+  restoreDriverStatusSnapshot,
+  settleLatestDriverRequest,
+} from '../utils/driverManagerRequestState';
 
 describe('DriverManagerModal request coordination boundary', () => {
-  it('lets the latest request clear a loading state even when it is a silent refresh', () => {
-    expect(source).toMatch(
-      /finally \{\s*if \(requestGeneration === statusRequestGenerationRef\.current\) \{\s*setLoading\(false\);/s,
-    );
-    expect(source).toMatch(
-      /finally \{\s*if \(requestGeneration === networkRequestGenerationRef\.current\) \{\s*setNetworkChecking\(false\);/s,
-    );
-    expect(source).not.toContain('showLoading && requestGeneration === statusRequestGenerationRef.current');
-    expect(source).not.toContain('showLoading && requestGeneration === networkRequestGenerationRef.current');
+  it('lets only the latest request clear loading, including silent refreshes', () => {
+    const setStatusLoading = vi.fn();
+    const setNetworkLoading = vi.fn();
+
+    expect(settleLatestDriverRequest(2, 3, setStatusLoading)).toBe(false);
+    expect(setStatusLoading).not.toHaveBeenCalled();
+    expect(settleLatestDriverRequest(3, 3, setStatusLoading)).toBe(true);
+    expect(setStatusLoading).toHaveBeenCalledWith(false);
+
+    expect(settleLatestDriverRequest(7, 7, setNetworkLoading)).toBe(true);
+    expect(setNetworkLoading).toHaveBeenCalledWith(false);
   });
 
-  it('clears cold loading flags when another instance populated a fresh snapshot first', () => {
-    expect(source).toMatch(/if \(cachedStatus\) \{\s*setRows\(cachedStatus\.rows\);\s*setLoading\(false\);/s);
-    expect(source).toContain('downloadDirRef.current = cachedStatus.downloadDir;');
-    expect(source).toMatch(/if \(cachedNetwork\) \{\s*setNetworkStatus\(cachedNetwork\.status\);\s*setNetworkChecking\(false\);/s);
+  it('restores fresh snapshots and clears cold loading flags', () => {
+    const setRows = vi.fn();
+    const setStatusLoading = vi.fn();
+    const setDownloadDir = vi.fn();
+    const setNetworkStatus = vi.fn();
+    const setNetworkLoading = vi.fn();
+    const rows = [{ type: 'mysql' }];
+    const networkStatus = { reachable: true };
+
+    expect(restoreDriverStatusSnapshot({
+      rows,
+      downloadDir: 'D:/drivers',
+      cachedAt: 100,
+      intentSequence: 4,
+    }, {
+      setRows,
+      setLoading: setStatusLoading,
+      setDownloadDir,
+    })).toBe(true);
+    expect(setRows).toHaveBeenCalledWith(rows);
+    expect(setStatusLoading).toHaveBeenCalledWith(false);
+    expect(setDownloadDir).toHaveBeenCalledWith('D:/drivers');
+
+    expect(restoreDriverNetworkSnapshot({ status: networkStatus, cachedAt: 100 }, {
+      setStatus: setNetworkStatus,
+      setLoading: setNetworkLoading,
+    })).toBe(true);
+    expect(setNetworkStatus).toHaveBeenCalledWith(networkStatus);
+    expect(setNetworkLoading).toHaveBeenCalledWith(false);
   });
 
-  it('keeps status snapshots keyed and rejects writes older than the latest intent for a directory', () => {
-    expect(source).toContain('const driverStatusSnapshotCache = new Map<string, DriverStatusSnapshot>();');
-    expect(source).toContain('const driverStatusSnapshotIntentByKey = new Map<string, number>();');
-    expect(source).toContain('preferredDriverStatusSnapshotKey = requestKey;');
-    expect(source).toContain('snapshot.intentSequence < latestIntentForKey');
-    expect(source).toContain('writeDriverStatusSnapshot(resolvedRequestKey, snapshot);');
+  it('keeps status snapshots keyed and rejects writes older than the latest intent', () => {
+    const snapshots = createDriverStatusSnapshotRegistry<{ type: string }>();
+    const mysqlKey = snapshots.beginRequest('D:/mysql', 2);
+
+    expect(snapshots.write(mysqlKey, {
+      rows: [{ type: 'stale' }],
+      downloadDir: 'D:/mysql',
+      cachedAt: 100,
+      intentSequence: 1,
+    })).toBe(false);
+    expect(snapshots.getPreferred()).toBeNull();
+
+    expect(snapshots.write(mysqlKey, {
+      rows: [{ type: 'mysql' }],
+      downloadDir: 'D:/mysql',
+      cachedAt: 200,
+      intentSequence: 2,
+    })).toBe(true);
+    expect(snapshots.getPreferred()?.rows).toEqual([{ type: 'mysql' }]);
+
+    const postgresKey = snapshots.beginRequest('D:/postgres', 3);
+    expect(snapshots.write(postgresKey, {
+      rows: [{ type: 'postgres' }],
+      downloadDir: 'D:/postgres',
+      cachedAt: 300,
+      intentSequence: 3,
+    })).toBe(true);
+    expect(snapshots.getPreferred()?.rows).toEqual([{ type: 'postgres' }]);
+
+    expect(snapshots.write(mysqlKey, {
+      rows: [{ type: 'older-mysql' }],
+      downloadDir: 'D:/mysql',
+      cachedAt: 150,
+      intentSequence: 1,
+    })).toBe(false);
   });
 });

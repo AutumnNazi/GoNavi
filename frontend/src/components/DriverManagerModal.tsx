@@ -17,6 +17,14 @@ import {
   getDriverLocalImportSingleFileHelp,
 } from '../utils/driverImportGuidance';
 import {
+  createDriverStatusSnapshotRegistry,
+  normalizeDriverStatusRequestKey,
+  restoreDriverNetworkSnapshot,
+  restoreDriverStatusSnapshot,
+  settleLatestDriverRequest,
+  type DriverStatusSnapshot as DriverStatusSnapshotState,
+} from '../utils/driverManagerRequestState';
+import {
   CheckDriverNetworkStatus,
   DownloadDriverPackage,
   GetDriverVersionList,
@@ -469,39 +477,13 @@ const createDriverBatchProgress = (total: number, currentMessage: string): Drive
   currentMessage,
 });
 
-type DriverStatusSnapshot = {
-  rows: DriverStatusRow[];
-  downloadDir: string;
-  cachedAt: number;
-  intentSequence: number;
-};
-const DEFAULT_DRIVER_STATUS_REQUEST_KEY = '<default>';
-const driverStatusSnapshotCache = new Map<string, DriverStatusSnapshot>();
-const driverStatusSnapshotIntentByKey = new Map<string, number>();
-let preferredDriverStatusSnapshotKey = DEFAULT_DRIVER_STATUS_REQUEST_KEY;
+const driverStatusSnapshots = createDriverStatusSnapshotRegistry<DriverStatusRow>();
 let driverNetworkSnapshotCache: { status: DriverNetworkStatus; cachedAt: number } | null = null;
 let driverStatusSnapshotIntentSequence = 0;
 type DriverStatusBackendResult = Awaited<ReturnType<typeof GetDriverStatusList>>;
 type DriverNetworkBackendResult = Awaited<ReturnType<typeof CheckDriverNetworkStatus>>;
 const driverStatusInFlightRequests = new Map<string, Promise<DriverStatusBackendResult>>();
 let driverNetworkInFlightRequest: Promise<DriverNetworkBackendResult> | null = null;
-
-const normalizeDriverStatusRequestKey = (downloadDir: string): string => (
-  String(downloadDir || '').trim() || DEFAULT_DRIVER_STATUS_REQUEST_KEY
-);
-
-const getPreferredDriverStatusSnapshot = (): DriverStatusSnapshot | null => (
-  driverStatusSnapshotCache.get(preferredDriverStatusSnapshotKey) || null
-);
-
-const writeDriverStatusSnapshot = (requestKey: string, snapshot: DriverStatusSnapshot): void => {
-  const latestIntentForKey = driverStatusSnapshotIntentByKey.get(requestKey) || 0;
-  const cachedSnapshot = driverStatusSnapshotCache.get(requestKey);
-  if (snapshot.intentSequence < latestIntentForKey || snapshot.intentSequence < (cachedSnapshot?.intentSequence || 0)) {
-    return;
-  }
-  driverStatusSnapshotCache.set(requestKey, snapshot);
-};
 
 const requestDriverStatusShared = (downloadDir: string): Promise<DriverStatusBackendResult> => {
   const requestKey = normalizeDriverStatusRequestKey(downloadDir);
@@ -601,12 +583,12 @@ const DriverManagerModal: React.FC<{ open: boolean; onClose: () => void; onBack?
     () => buildDriverManagerWorkbenchTheme(darkMode, opacity),
     [darkMode, opacity, appearance.uiVersion],
   );
-  const [loading, setLoading] = useState(() => open && !getPreferredDriverStatusSnapshot());
-  const [downloadDir, setDownloadDir] = useState(() => getPreferredDriverStatusSnapshot()?.downloadDir || '');
+  const [loading, setLoading] = useState(() => open && !driverStatusSnapshots.getPreferred());
+  const [downloadDir, setDownloadDir] = useState(() => driverStatusSnapshots.getPreferred()?.downloadDir || '');
   const [networkChecking, setNetworkChecking] = useState(() => open && !driverNetworkSnapshotCache);
   const [networkStatus, setNetworkStatus] = useState<DriverNetworkStatus | null>(() => driverNetworkSnapshotCache?.status || null);
   const [searchKeyword, setSearchKeyword] = useState('');
-  const [rows, setRows] = useState<DriverStatusRow[]>(() => getPreferredDriverStatusSnapshot()?.rows || []);
+  const [rows, setRows] = useState<DriverStatusRow[]>(() => driverStatusSnapshots.getPreferred()?.rows || []);
   const [actionState, setActionState] = useState<{ driverType: string; kind: DriverActionKind }>({ driverType: '', kind: '' });
   const [batchAction, setBatchAction] = useState<DriverBatchActionKind>('');
   const [batchProgress, setBatchProgress] = useState<DriverBatchProgressState | null>(null);
@@ -762,9 +744,7 @@ const DriverManagerModal: React.FC<{ open: boolean; onClose: () => void; onBack?
     const snapshotIntentSequence = driverStatusSnapshotIntentSequence + 1;
     driverStatusSnapshotIntentSequence = snapshotIntentSequence;
     const requestedDownloadDir = downloadDirRef.current;
-    const requestKey = normalizeDriverStatusRequestKey(requestedDownloadDir);
-    preferredDriverStatusSnapshotKey = requestKey;
-    driverStatusSnapshotIntentByKey.set(requestKey, snapshotIntentSequence);
+    const requestKey = driverStatusSnapshots.beginRequest(requestedDownloadDir, snapshotIntentSequence);
     const showLoading = options?.showLoading ?? true;
     if (showLoading) {
       setLoading(true);
@@ -816,25 +796,23 @@ const DriverManagerModal: React.FC<{ open: boolean; onClose: () => void; onBack?
         message: String(item.message || '').trim() || undefined,
       }));
       setRows(nextRows);
-      const snapshot: DriverStatusSnapshot = {
+      const snapshot: DriverStatusSnapshotState<DriverStatusRow> = {
         rows: nextRows,
         downloadDir: effectiveDownloadDir,
         cachedAt: Date.now(),
         intentSequence: snapshotIntentSequence,
       };
-      writeDriverStatusSnapshot(requestKey, snapshot);
+      driverStatusSnapshots.write(requestKey, snapshot);
       const resolvedRequestKey = normalizeDriverStatusRequestKey(effectiveDownloadDir);
       if (resolvedRequestKey !== requestKey) {
-        writeDriverStatusSnapshot(resolvedRequestKey, snapshot);
+        driverStatusSnapshots.write(resolvedRequestKey, snapshot);
       }
     } catch (err: any) {
       if (requestGeneration === statusRequestGenerationRef.current && toastOnError) {
         message.error(t('driver.modal.error.statusFetchWithDetail', { detail: err?.message || String(err) }));
       }
     } finally {
-      if (requestGeneration === statusRequestGenerationRef.current) {
-        setLoading(false);
-      }
+      settleLatestDriverRequest(requestGeneration, statusRequestGenerationRef.current, setLoading);
     }
   }, [resolveDriverErrorMessage]);
 
@@ -901,9 +879,7 @@ const DriverManagerModal: React.FC<{ open: boolean; onClose: () => void; onBack?
         message.error(t('driver.modal.error.networkCheckWithDetail', { detail: err?.message || String(err) }));
       }
     } finally {
-      if (requestGeneration === networkRequestGenerationRef.current) {
-        setNetworkChecking(false);
-      }
+      settleLatestDriverRequest(requestGeneration, networkRequestGenerationRef.current, setNetworkChecking);
     }
   }, [resolveDriverErrorMessage]);
 
@@ -1061,16 +1037,16 @@ const DriverManagerModal: React.FC<{ open: boolean; onClose: () => void; onBack?
       return;
     }
 
-    const cachedStatus = getPreferredDriverStatusSnapshot();
+    const cachedStatus = driverStatusSnapshots.getPreferred();
     const hasCachedStatus = !!cachedStatus;
-    if (cachedStatus) {
-      setRows(cachedStatus.rows);
-      setLoading(false);
-      if (cachedStatus.downloadDir) {
-        downloadDirRef.current = cachedStatus.downloadDir;
-        setDownloadDir(cachedStatus.downloadDir);
-      }
-    }
+    restoreDriverStatusSnapshot(cachedStatus, {
+      setRows,
+      setLoading,
+      setDownloadDir: (nextDownloadDir) => {
+        downloadDirRef.current = nextDownloadDir;
+        setDownloadDir(nextDownloadDir);
+      },
+    });
     const shouldRefreshStatus = !cachedStatus || !isFreshCache(cachedStatus.cachedAt, DRIVER_STATUS_CACHE_TTL_MS);
     if (shouldRefreshStatus) {
       void refreshStatus(false, { showLoading: !hasCachedStatus });
@@ -1078,10 +1054,10 @@ const DriverManagerModal: React.FC<{ open: boolean; onClose: () => void; onBack?
 
     const cachedNetwork = driverNetworkSnapshotCache;
     const hasCachedNetwork = !!cachedNetwork;
-    if (cachedNetwork) {
-      setNetworkStatus(cachedNetwork.status);
-      setNetworkChecking(false);
-    }
+    restoreDriverNetworkSnapshot(cachedNetwork, {
+      setStatus: setNetworkStatus,
+      setLoading: setNetworkChecking,
+    });
     const shouldRefreshNetwork = !cachedNetwork || !isFreshCache(cachedNetwork.cachedAt, DRIVER_NETWORK_CACHE_TTL_MS);
     if (shouldRefreshNetwork) {
       void checkNetworkStatus(false, { showLoading: !hasCachedNetwork });
