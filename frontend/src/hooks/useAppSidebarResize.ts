@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useRef } from 'react';
 import {
   SIDEBAR_RESIZE_MAX_WIDTH,
   SIDEBAR_RESIZE_MIN_WIDTH,
@@ -6,6 +6,7 @@ import {
 } from '../utils/sidebarLayout';
 import {
   SIDEBAR_RESIZING_ATTRIBUTE,
+  SIDEBAR_TRANSITIONING_ATTRIBUTE,
   notifySidebarResizeSettled,
 } from '../utils/sidebarResizeLifecycle';
 
@@ -43,26 +44,35 @@ const clampSidebarResizeWidth = (width: number, bounds: SidebarResizeBounds): nu
 );
 
 const SIDEBAR_RESIZE_WIDTH_CSS_VARIABLE = '--gonavi-sidebar-resize-width';
-const SIDEBAR_RESIZE_CONTENT_WIDTH_CSS_VARIABLE = '--gonavi-sidebar-resize-content-width';
-const SIDEBAR_RESIZE_CONTENT_ATTRIBUTE = 'data-sidebar-resize-content';
-const SIDEBAR_RESIZE_CONTENT_LOCK_ATTRIBUTE = 'data-sidebar-resize-content-locked';
 
 type UseAppSidebarResizeOptions = {
   effectiveUiScale: number;
   setSidebarWidth: (width: number) => void;
   sidebarWidth: number;
+  sidebarCollapsed?: boolean;
 };
+
+const SIDEBAR_COLLAPSE_TRANSITION_FALLBACK_MS = 260;
+const SIDEBAR_GEOMETRY_TRANSITION_PROPERTIES = new Set([
+  'flex-basis',
+  'max-width',
+  'min-width',
+  'width',
+]);
 
 export const useAppSidebarResize = ({
   effectiveUiScale,
   setSidebarWidth,
   sidebarWidth,
+  sidebarCollapsed,
 }: UseAppSidebarResizeOptions) => {
   const sidebarDragRef = useRef<SidebarResizeDragState | null>(null);
   const rafRef = useRef<number | null>(null);
   const clearResizingFrameRef = useRef<number | null>(null);
   const siderRef = useRef<HTMLDivElement | null>(null);
-  const lockedContentRef = useRef<HTMLElement | null>(null);
+  const previousSidebarCollapsedRef = useRef(sidebarCollapsed);
+  const sidebarTransitionActiveRef = useRef(false);
+  const sidebarTransitionCleanupRef = useRef<(() => void) | null>(null);
   const sidebarDragBodyStyleRef = useRef<{ cursor: string; userSelect: string; webkitUserSelect: string } | null>(null);
   const sidebarResizeListenersRef = useRef<SidebarResizeListeners | null>(null);
   const latestMouseX = useRef<number>(0);
@@ -74,25 +84,6 @@ export const useAppSidebarResize = ({
     if (clearResizingFrameRef.current === null) return;
     cancelAnimationFrame(clearResizingFrameRef.current);
     clearResizingFrameRef.current = null;
-  }, []);
-
-  const lockWorkbenchContentWidth = useCallback(() => {
-    const content = siderRef.current?.nextElementSibling as HTMLElement | null;
-    if (!(content instanceof HTMLElement)) return;
-    if (content.getAttribute(SIDEBAR_RESIZE_CONTENT_ATTRIBUTE) !== 'true') return;
-    const width = content.getBoundingClientRect().width;
-    if (!Number.isFinite(width) || width <= 0) return;
-    content.style.setProperty(SIDEBAR_RESIZE_CONTENT_WIDTH_CSS_VARIABLE, `${width}px`);
-    content.setAttribute(SIDEBAR_RESIZE_CONTENT_LOCK_ATTRIBUTE, 'true');
-    lockedContentRef.current = content;
-  }, []);
-
-  const unlockWorkbenchContentWidth = useCallback(() => {
-    const content = lockedContentRef.current;
-    lockedContentRef.current = null;
-    if (!content) return;
-    content.removeAttribute(SIDEBAR_RESIZE_CONTENT_LOCK_ATTRIBUTE);
-    content.style.removeProperty(SIDEBAR_RESIZE_CONTENT_WIDTH_CSS_VARIABLE);
   }, []);
 
   /**
@@ -121,10 +112,9 @@ export const useAppSidebarResize = ({
       }
     }
     if (!active) {
-      unlockWorkbenchContentWidth();
       if (wasActive) notifySidebarResizeSettled();
     }
-  }, [unlockWorkbenchContentWidth]);
+  }, []);
 
   const previewSidebarWidth = useCallback((width: number) => {
     const sider = siderRef.current;
@@ -147,6 +137,54 @@ export const useAppSidebarResize = ({
       });
     });
   }, [cancelClearResizingFrame, setSidebarResizing]);
+
+  const finishSidebarCollapseTransition = useCallback(() => {
+    sidebarTransitionCleanupRef.current?.();
+    sidebarTransitionCleanupRef.current = null;
+    if (!sidebarTransitionActiveRef.current) return;
+
+    sidebarTransitionActiveRef.current = false;
+    if (typeof document !== 'undefined') {
+      document.body.removeAttribute(SIDEBAR_TRANSITIONING_ATTRIBUTE);
+    }
+    notifySidebarResizeSettled();
+  }, []);
+
+  const beginSidebarCollapseTransition = useCallback(() => {
+    const sider = siderRef.current;
+    if (!(sider instanceof HTMLElement) || typeof document === 'undefined') return;
+
+    // Rapid toggle clicks restart one lifecycle without flushing observers at
+    // the intermediate width. Only the final settled layout is measured.
+    sidebarTransitionCleanupRef.current?.();
+    sidebarTransitionCleanupRef.current = null;
+    sidebarTransitionActiveRef.current = true;
+    document.body.setAttribute(SIDEBAR_TRANSITIONING_ATTRIBUTE, 'true');
+
+    const handleTransitionEnd = (event: TransitionEvent) => {
+      if (
+        event.target !== sider
+        || !SIDEBAR_GEOMETRY_TRANSITION_PROPERTIES.has(event.propertyName)
+      ) return;
+      finishSidebarCollapseTransition();
+    };
+    const fallbackTimer = setTimeout(
+      finishSidebarCollapseTransition,
+      SIDEBAR_COLLAPSE_TRANSITION_FALLBACK_MS,
+    );
+    sider.addEventListener('transitionend', handleTransitionEnd);
+    sidebarTransitionCleanupRef.current = () => {
+      clearTimeout(fallbackTimer);
+      sider.removeEventListener('transitionend', handleTransitionEnd);
+    };
+  }, [finishSidebarCollapseTransition]);
+
+  useLayoutEffect(() => {
+    if (sidebarCollapsed === undefined) return;
+    if (previousSidebarCollapsedRef.current === sidebarCollapsed) return;
+    previousSidebarCollapsedRef.current = sidebarCollapsed;
+    beginSidebarCollapseTransition();
+  }, [beginSidebarCollapseTransition, sidebarCollapsed]);
 
   const detachSidebarResizeListeners = useCallback(() => {
     const listeners = sidebarResizeListenersRef.current;
@@ -240,7 +278,6 @@ export const useAppSidebarResize = ({
     const startWidth = siderRect?.width ?? sidebarWidth;
     const resizeBounds = resolveSidebarResizeBounds(siderRef.current);
 
-    lockWorkbenchContentWidth();
     previewSidebarWidth(startWidth);
     setSidebarResizing(true);
 
@@ -280,12 +317,13 @@ export const useAppSidebarResize = ({
     document.addEventListener('mousemove', handleMove);
     document.addEventListener('mouseup', handleUp);
     window.addEventListener('blur', handleBlur);
-  }, [cancelClearResizingFrame, finishSidebarResize, lockWorkbenchContentWidth, previewSidebarWidth, setSidebarResizing, sidebarWidth]);
+  }, [cancelClearResizingFrame, finishSidebarResize, previewSidebarWidth, setSidebarResizing, sidebarWidth]);
 
   useEffect(() => () => {
     finishSidebarResize(undefined, false);
     cancelClearResizingFrame();
-  }, [cancelClearResizingFrame, finishSidebarResize]);
+    finishSidebarCollapseTransition();
+  }, [cancelClearResizingFrame, finishSidebarCollapseTransition, finishSidebarResize]);
 
   return {
     handleSidebarMouseDown,

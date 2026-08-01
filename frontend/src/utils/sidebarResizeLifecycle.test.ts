@@ -135,6 +135,24 @@ describe('sidebarResizeLifecycle', () => {
     scheduler.dispose();
   });
 
+  it('defers resize work throughout a sidebar collapse transition', () => {
+    const callback = vi.fn();
+    const scheduler = createSidebarResizeAwareFrameScheduler(callback);
+    fakeBody.setAttribute('data-sidebar-transitioning', 'true');
+
+    scheduler.schedule();
+
+    expect(scheduledFrames.size).toBe(0);
+    expect(callback).not.toHaveBeenCalled();
+
+    fakeBody.removeAttribute('data-sidebar-transitioning');
+    fakeWindow.dispatchEvent({ type: SIDEBAR_RESIZE_SETTLED_EVENT });
+    flushAnimationFrames();
+
+    expect(callback).toHaveBeenCalledTimes(1);
+    scheduler.dispose();
+  });
+
   it('cancels pending work when disposed', () => {
     const callback = vi.fn();
     const scheduler = createSidebarResizeAwareFrameScheduler(callback);

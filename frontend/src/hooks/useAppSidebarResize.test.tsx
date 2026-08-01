@@ -3,6 +3,7 @@ import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { useAppSidebarResize } from './useAppSidebarResize';
+import { createSidebarResizeAwareFrameScheduler } from '../utils/sidebarResizeLifecycle';
 
 type Listener = (event: any) => void;
 
@@ -72,6 +73,7 @@ class FakeStyle {
 class FakeHTMLElement extends FakeAttributeHost {
   style = new FakeStyle();
   nextElementSibling: FakeHTMLElement | null = null;
+  private listeners = new Map<string, Set<Listener>>();
 
   constructor(private readonly width = 240) {
     super();
@@ -79,6 +81,22 @@ class FakeHTMLElement extends FakeAttributeHost {
 
   getBoundingClientRect() {
     return { right: this.width, width: this.width };
+  }
+
+  addEventListener(type: string, listener: Listener) {
+    const listeners = this.listeners.get(type) ?? new Set<Listener>();
+    listeners.add(listener);
+    this.listeners.set(type, listeners);
+  }
+
+  removeEventListener(type: string, listener: Listener) {
+    this.listeners.get(type)?.delete(listener);
+  }
+
+  dispatch(type: string, event: any = {}) {
+    for (const listener of [...(this.listeners.get(type) ?? [])]) {
+      listener(event);
+    }
   }
 }
 
@@ -117,12 +135,14 @@ describe('useAppSidebarResize interaction cleanup', () => {
   let fakeSider: FakeHTMLElement;
   let fakeContent: FakeHTMLElement;
 
-  const Harness = () => {
-    resize = useAppSidebarResize({
+  const Harness = ({ sidebarCollapsed = false }: { sidebarCollapsed?: boolean }) => {
+    const options = {
       effectiveUiScale: 1,
       setSidebarWidth,
       sidebarWidth: 240,
-    });
+      sidebarCollapsed,
+    };
+    resize = useAppSidebarResize(options);
     return null;
   };
 
@@ -274,7 +294,7 @@ describe('useAppSidebarResize interaction cleanup', () => {
     expect(setSidebarWidth).not.toHaveBeenCalled();
   });
 
-  it('marks the sider as resizing during drag and keeps the flag across width commit', () => {
+  it('keeps the workbench fluid while marking the resize lifecycle', () => {
     const sider = resize!.siderRef.current as unknown as FakeHTMLElement;
     const settledListener = vi.fn();
     fakeWindow.addEventListener('gonavi:sidebar-resize-settled', settledListener);
@@ -282,15 +302,15 @@ describe('useAppSidebarResize interaction cleanup', () => {
     beginResize();
     expect(sider.getAttribute('data-sidebar-resizing')).toBe('true');
     expect(fakeDocument.body.getAttribute('data-sidebar-resizing')).toBe('true');
-    expect(fakeContent.getAttribute('data-sidebar-resize-content-locked')).toBe('true');
-    expect(fakeContent.style.getPropertyValue('--gonavi-sidebar-resize-content-width')).toBe('960px');
+    expect(fakeContent.getAttribute('data-sidebar-resize-content-locked')).toBe(null);
+    expect(fakeContent.style.getPropertyValue('--gonavi-sidebar-resize-content-width')).toBe('');
 
     act(() => fakeDocument.dispatch('mouseup', { clientX: 280 }));
     expect(setSidebarWidth).toHaveBeenCalledWith(320);
     // Still marked while the commit paints, so Ant Design width transition stays off.
     expect(sider.getAttribute('data-sidebar-resizing')).toBe('true');
     expect(fakeDocument.body.getAttribute('data-sidebar-resizing')).toBe('true');
-    expect(fakeContent.getAttribute('data-sidebar-resize-content-locked')).toBe('true');
+    expect(fakeContent.getAttribute('data-sidebar-resize-content-locked')).toBe(null);
     expect(settledListener).not.toHaveBeenCalled();
 
     act(() => flushAnimationFrames(scheduledFrames, 2));
@@ -301,5 +321,47 @@ describe('useAppSidebarResize interaction cleanup', () => {
     expect(fakeContent.getAttribute('data-sidebar-resize-content-locked')).toBe(null);
     expect(fakeContent.style.getPropertyValue('--gonavi-sidebar-resize-content-width')).toBe('');
     expect(settledListener).toHaveBeenCalledTimes(1);
+  });
+
+  it('suspends observer work and settles once across collapse and expand commits', () => {
+    const callback = vi.fn();
+    const settledListener = vi.fn();
+    const scheduler = createSidebarResizeAwareFrameScheduler(callback);
+    fakeWindow.addEventListener('gonavi:sidebar-resize-settled', settledListener);
+
+    act(() => renderer?.update(<Harness sidebarCollapsed />));
+
+    expect(fakeDocument.body.getAttribute('data-sidebar-transitioning')).toBe('true');
+    for (let index = 0; index < 100; index += 1) scheduler.schedule();
+    expect(scheduledFrames.size).toBe(0);
+    expect(callback).not.toHaveBeenCalled();
+
+    act(() => fakeSider.dispatch('transitionend', {
+      target: fakeSider,
+      propertyName: 'width',
+    }));
+
+    expect(fakeDocument.body.getAttribute('data-sidebar-transitioning')).toBe(null);
+    expect(settledListener).toHaveBeenCalledTimes(1);
+    expect(scheduledFrames.size).toBe(1);
+    act(() => flushAnimationFrames(scheduledFrames, 1));
+    expect(callback).toHaveBeenCalledTimes(1);
+
+    act(() => renderer?.update(<Harness sidebarCollapsed={false} />));
+    expect(fakeDocument.body.getAttribute('data-sidebar-transitioning')).toBe('true');
+    for (let index = 0; index < 100; index += 1) scheduler.schedule();
+    expect(callback).toHaveBeenCalledTimes(1);
+
+    act(() => fakeSider.dispatch('transitionend', {
+      target: fakeSider,
+      propertyName: 'flex-basis',
+    }));
+    act(() => flushAnimationFrames(scheduledFrames, 1));
+
+    expect(fakeDocument.body.getAttribute('data-sidebar-transitioning')).toBe(null);
+    expect(settledListener).toHaveBeenCalledTimes(2);
+    expect(callback).toHaveBeenCalledTimes(2);
+    expect(setSidebarWidth).not.toHaveBeenCalled();
+    scheduler.dispose();
   });
 });

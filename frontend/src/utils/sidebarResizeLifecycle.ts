@@ -1,9 +1,13 @@
 export const SIDEBAR_RESIZING_ATTRIBUTE = 'data-sidebar-resizing';
+export const SIDEBAR_TRANSITIONING_ATTRIBUTE = 'data-sidebar-transitioning';
 export const SIDEBAR_RESIZE_SETTLED_EVENT = 'gonavi:sidebar-resize-settled';
 
 export const isSidebarResizeActive = (): boolean => (
   typeof document !== 'undefined'
-  && document.body?.getAttribute(SIDEBAR_RESIZING_ATTRIBUTE) === 'true'
+  && (
+    document.body?.getAttribute(SIDEBAR_RESIZING_ATTRIBUTE) === 'true'
+    || document.body?.getAttribute(SIDEBAR_TRANSITIONING_ATTRIBUTE) === 'true'
+  )
 );
 
 export const notifySidebarResizeSettled = (): void => {
@@ -21,8 +25,9 @@ type SidebarResizeAwareFrameScheduler = {
 
 /**
  * Coalesces resize work into one animation frame and suspends it while the
- * sidebar is being dragged. The final sidebar width is measured once after
- * the drag settles instead of forcing React/layout work for every mouse move.
+ * sidebar is being dragged or collapsing/expanding. The final sidebar width is
+ * measured once after layout settles instead of forcing React/layout work for
+ * every intermediate geometry update.
  */
 export const createSidebarResizeAwareFrameScheduler = (
   callback: () => void,

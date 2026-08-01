@@ -4186,6 +4186,7 @@ function App() {
       effectiveUiScale,
       setSidebarWidth,
       sidebarWidth,
+      sidebarCollapsed: isSidebarCollapsed,
   });
 
   useEffect(() => {
@@ -7733,7 +7734,6 @@ function App() {
             </div>
           </Sider>
            <Content
-             data-sidebar-resize-content="true"
              style={{ background: bgContent, overflow: 'hidden', display: 'flex', flexDirection: 'column', minWidth: 0, flex: 1 }}
            >
              {securityUpdateEntryVisibility.showBanner && !isSecurityUpdateBannerDismissed && (
