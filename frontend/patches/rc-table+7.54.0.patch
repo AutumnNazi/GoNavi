@@ -11,11 +11,11 @@ index 42dcde8..2fc28a7 100644
      getComponent = _useContext2.getComponent,
      onTablePropScroll = _useContext2.onScroll;
 
-  // =========================== Ref ============================
+   // =========================== Ref ============================
    var listRef = React.useRef();
 +  var lastForwardedXRef = React.useRef(0);
 
-  // =========================== Data ===========================
+   // =========================== Data ===========================
    var flattenData = useFlattenRecords(data, childrenColumnName, expandedKeys, getRowKey);
 @@ -110,10 +113,16 @@ var Grid = /*#__PURE__*/React.forwardRef(function (props, ref) {
      return 1;
@@ -291,11 +291,11 @@ index dee2539..85f90af 100644
      getComponent = _useContext2.getComponent,
      onTablePropScroll = _useContext2.onScroll;
 
-  // =========================== Ref ============================
+   // =========================== Ref ============================
    var listRef = React.useRef();
 +  var lastForwardedXRef = React.useRef(0);
 
-  // =========================== Data ===========================
+   // =========================== Data ===========================
    var flattenData = (0, _useFlattenRecords.default)(data, childrenColumnName, expandedKeys, getRowKey);
 @@ -120,10 +123,16 @@ var Grid = /*#__PURE__*/React.forwardRef(function (props, ref) {
      return 1;
