@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildOrderBySQL, buildPaginatedSelectSQL, quoteQualifiedIdent, reverseOrderBySQL } from './sql';
+import { buildOrderBySQL, buildPaginatedSelectSQL, buildWhereSQL, quoteQualifiedIdent, reverseOrderBySQL } from './sql';
 
 describe('buildOrderBySQL', () => {
   it('does not add fallback ORDER BY for DuckDB without explicit sort', () => {
@@ -9,6 +9,16 @@ describe('buildOrderBySQL', () => {
 
   it('keeps explicit DuckDB sort', () => {
     expect(buildOrderBySQL('duckdb', { columnKey: 'ID', order: 'descend' }, ['NAME'])).toBe(' ORDER BY "ID" DESC');
+  });
+});
+
+describe('buildWhereSQL', () => {
+  it('builds one grouped expression for a structured value selection', () => {
+    expect(buildWhereSQL('mysql', [{
+      column: 'status',
+      op: 'IN',
+      valueSelection: { values: ['active', 'waiting,review'], includeNull: true, includeEmpty: true },
+    }])).toBe("WHERE ((`status` IN ('active', 'waiting,review') OR `status` IS NULL OR `status` = ''))");
   });
 });
 

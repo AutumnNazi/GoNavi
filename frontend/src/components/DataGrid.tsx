@@ -1612,14 +1612,18 @@ const DataGrid: React.FC<DataGridProps> = ({
   const getCurrentColumnValueCounts = useMemo(() => {
       const cache = new Map<string, ReturnType<typeof countGridColumnValues>>();
       return (columnName: string) => {
-          if (exportScope !== 'queryResult') return undefined;
           const cached = cache.get(columnName);
           if (cached) return cached;
-          const counts = countGridColumnValues(rowsBeforeClientFilter, columnName);
+          const rowsForValueCounts = exportScope === 'queryResult'
+              ? filterRowsByGridConditions(rowsBeforeClientFilter, filterConditions.filter((condition) => (
+                  String(condition?.column || '') !== columnName
+              )))
+              : rowsBeforeClientFilter;
+          const counts = countGridColumnValues(rowsForValueCounts, columnName);
           cache.set(columnName, counts);
           return counts;
       };
-  }, [exportScope, rowsBeforeClientFilter]);
+  }, [exportScope, filterConditions, rowsBeforeClientFilter]);
   const columnHeaderFilterEnabled = !!onApplyFilter || exportScope === 'queryResult';
   const columnHeaderFilterOpOptions = useMemo(
       () => filterOpOptions.filter((option) => option.value !== 'CUSTOM'),
@@ -1638,6 +1642,7 @@ const DataGrid: React.FC<DataGridProps> = ({
           initialOperator: String(firstCondition?.op || defaultOperator),
           initialValue: String(firstCondition?.value ?? ''),
           initialValue2: String(firstCondition?.value2 ?? ''),
+          initialValueSelection: firstCondition?.valueSelection,
       };
   }, [filterConditions, getColumnFilterType]);
 
@@ -1647,6 +1652,7 @@ const DataGrid: React.FC<DataGridProps> = ({
           op: draft.op,
           value: draft.value,
           value2: draft.value2,
+          valueSelection: draft.valueSelection,
       });
   }, [applyColumnFilter]);
 
@@ -1679,6 +1685,7 @@ const DataGrid: React.FC<DataGridProps> = ({
                   initialOperator: columnFilterState.initialOperator,
                   initialValue: columnFilterState.initialValue,
                   initialValue2: columnFilterState.initialValue2,
+                  initialValueSelection: columnFilterState.initialValueSelection,
                   filterLabel: translateDataGrid('data_grid.toolbar.filter'),
                   applyLabel: translateDataGrid('data_grid.filter.apply'),
                   clearLabel: translateDataGrid('data_grid.filter.clear'),
@@ -5505,7 +5512,13 @@ const DataGrid: React.FC<DataGridProps> = ({
         onOpenErTable: openTableByName,
         onPageChange,
         onLastPage,
-        onReload,
+        onReload: exportScope === 'queryResult'
+            ? () => {
+                setFilterConditions([]);
+                clearQuickWhereCondition();
+                onReload?.();
+            }
+            : onReload,
         onRequestTotalCount,
         onSort,
         onToggleFilter,

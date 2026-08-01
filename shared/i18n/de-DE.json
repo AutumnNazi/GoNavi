@@ -4140,6 +4140,7 @@
   "data_grid.filter.value_counts.no_matches": "Keine passenden Werte im aktuellen Ergebnis",
   "data_grid.filter.value_counts.nullish": "(NULL)",
   "data_grid.filter.value_counts.search_placeholder": "Werte im aktuellen Ergebnis suchen",
+  "data_grid.filter.value_counts.select_all": "Alle auswählen",
   "data_grid.filter.value_counts.title": "Wertanzahl im aktuellen Ergebnis",
   "data_grid.filter.op.between": "Zwischen",
   "data_grid.filter.op.contains": "Enthält",

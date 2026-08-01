@@ -4140,6 +4140,7 @@
   "data_grid.filter.value_counts.no_matches": "現在の結果に一致する値はありません",
   "data_grid.filter.value_counts.nullish": "（NULL）",
   "data_grid.filter.value_counts.search_placeholder": "現在の結果の値を検索",
+  "data_grid.filter.value_counts.select_all": "すべて選択",
   "data_grid.filter.value_counts.title": "現在の結果の値集計",
   "data_grid.filter.op.between": "範囲内",
   "data_grid.filter.op.contains": "含む",
