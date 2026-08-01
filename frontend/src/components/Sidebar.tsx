@@ -2,9 +2,7 @@
 import Modal from './common/ResizableDraggableModal';
 import TitleBarQuickActions, { type TitleBarQuickAction } from './TitleBarQuickActions';
 import { type DataSyncEntryMode } from './dataSyncEntryMode';
-import type { connection as ConnectionModels } from '../../wailsjs/go/models';
-type DatabaseCharset = ConnectionModels.DatabaseCharset;
-type DatabaseCollation = ConnectionModels.DatabaseCollation;
+import type { DatabaseCharsetOption, DatabaseCollationOption } from '../utils/databaseCharset';
 import SidebarSearchPanel, { type SidebarSearchPanelProps } from './sidebar/SidebarSearchPanel';
 import { buildSidebarLegacyNodeMenuItems } from './sidebar/sidebarLegacyNodeMenu';
 import {
@@ -1012,8 +1010,8 @@ const Sidebar: React.FC<{
   const [isCreateDbModalOpen, setIsCreateDbModalOpen] = useState(false);
   const [createDbForm] = Form.useForm();
   const [targetConnection, setTargetConnection] = useState<any>(null);
-  const [createDbCharsets, setCreateDbCharsets] = useState<DatabaseCharset[]>([]);
-  const [createDbCollations, setCreateDbCollations] = useState<DatabaseCollation[]>([]);
+  const [createDbCharsets, setCreateDbCharsets] = useState<DatabaseCharsetOption[]>([]);
+  const [createDbCollations, setCreateDbCollations] = useState<DatabaseCollationOption[]>([]);
   const [loadingCreateDbOptions, setLoadingCreateDbOptions] = useState(false);
   const [isCreateSchemaModalOpen, setIsCreateSchemaModalOpen] = useState(false);
   const [createSchemaForm] = Form.useForm();

@@ -15,9 +15,7 @@ import { buildStarRocksMaterializedViewPreviewSql } from '../tableDesignerSchema
 import type { ExportRunResult, RunExportWithProgressOptions } from '../useExportProgressRunner';
 import { getTableDataDangerActionMeta, type TableDataDangerActionKind } from '../tableDataDangerActions';
 import { confirmCopyTable } from '../tableCopyAction';
-import type { connection as ConnectionModels } from '../../../wailsjs/go/models';
-type DatabaseCharset = ConnectionModels.DatabaseCharset;
-type DatabaseCollation = ConnectionModels.DatabaseCollation;
+import type { DatabaseCharsetOption, DatabaseCollationOption } from '../../utils/databaseCharset';
 import {
   buildDuckDBMacroDDL,
   escapeSQLLiteral,
@@ -78,10 +76,10 @@ type UseSidebarObjectActionsArgs = {
   targetConnection: any;
   isCreateDbModalOpen: boolean;
   setIsCreateDbModalOpen: Dispatch<SetStateAction<boolean>>;
-  createDbCharsets: DatabaseCharset[];
-  setCreateDbCharsets: Dispatch<SetStateAction<DatabaseCharset[]>>;
-  createDbCollations: DatabaseCollation[];
-  setCreateDbCollations: Dispatch<SetStateAction<DatabaseCollation[]>>;
+  createDbCharsets: DatabaseCharsetOption[];
+  setCreateDbCharsets: Dispatch<SetStateAction<DatabaseCharsetOption[]>>;
+  createDbCollations: DatabaseCollationOption[];
+  setCreateDbCollations: Dispatch<SetStateAction<DatabaseCollationOption[]>>;
   loadingCreateDbOptions: boolean;
   setLoadingCreateDbOptions: Dispatch<SetStateAction<boolean>>;
   createSchemaForm: FormInstance;
