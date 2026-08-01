@@ -199,6 +199,7 @@ import {
   isConnectionTagDescendant,
   normalizeSidebarTreeRelativeDropPosition,
   resolveSidebarConnectionIdFromKey,
+  resolveSidebarConnectionRefreshKeys,
   resolveSidebarDropInsertBefore,
   resolveSidebarDropNodeFromDomEvent,
   resolveSidebarDropTargetMetricsFromDomEvent,
@@ -234,6 +235,7 @@ export {
   isConnectionTagDescendant,
   normalizeSidebarTreeRelativeDropPosition,
   resolveSidebarConnectionIdFromKey,
+  resolveSidebarConnectionRefreshKeys,
   resolveSidebarDropInsertBefore,
   resolveSidebarDropNodeFromDomEvent,
   resolveSidebarDropTargetMetricsFromDomEvent,
@@ -2291,6 +2293,76 @@ const Sidebar: React.FC<{
   loadNacosServiceGroupsRef.current = loadNacosServiceGroups;
   replaceTreeNodeChildrenRef.current = replaceTreeNodeChildren;
 
+  // Rehydrate descendants that were open before the connection loader replaces its tree.
+  const refreshConnectionResources = async (node: any): Promise<void> => {
+      const connectionId = String(node?.key || node?.dataRef?.id || '').trim();
+      if (!connectionId) return;
+
+      const expandedKeysToReload = resolveSidebarConnectionRefreshKeys({
+          treeData: treeDataRef.current,
+          expandedKeys: expandedKeysRef.current,
+          connectionId,
+      });
+
+      setLoadedKeys((previous) => previous.filter((key) => !isConnectionTreeKey(key, connectionId)));
+      Array.from(loadingNodesRef.current).forEach((loadingKey) => {
+          if (loadingKey === `dbs-${connectionId}` || loadingKey.startsWith(`tables-${connectionId}-`)) {
+              loadingNodesRef.current.delete(loadingKey);
+          }
+      });
+
+      await loadDatabases(node);
+
+      const loadedKeysToRestore = new Set<string>();
+      const refreshedConnection = findTreeNodeByKeyRef.current(treeDataRef.current, connectionId);
+      if (refreshedConnection?.children?.length) {
+          loadedKeysToRestore.add(connectionId);
+      }
+
+      for (const key of expandedKeysToReload) {
+          if (key === connectionId) continue;
+          if (!expandedKeysRef.current.some((expandedKey) => String(expandedKey) === key)) {
+              continue;
+          }
+          const currentNode = findTreeNodeByKeyRef.current(treeDataRef.current, key);
+          if (!currentNode) continue;
+
+          await onLoadData(currentNode);
+          const loadedNode = findTreeNodeByKeyRef.current(treeDataRef.current, key);
+          if (loadedNode?.children?.length) {
+              loadedKeysToRestore.add(key);
+          }
+      }
+
+      const availableConnectionKeys = new Set<string>();
+      const collectConnectionKeys = (nodes: TreeNode[]) => {
+          nodes.forEach((treeNode) => {
+              const key = String(treeNode.key || '').trim();
+              if (key && isConnectionTreeKey(key, connectionId)) {
+                  availableConnectionKeys.add(key);
+              }
+              if (treeNode.children?.length) collectConnectionKeys(treeNode.children);
+          });
+      };
+      collectConnectionKeys(treeDataRef.current);
+      const expandedKeysBeforeRefresh = new Set(expandedKeysToReload);
+
+      setExpandedKeys((previous) => previous.filter((key) => {
+          const keyText = String(key);
+          return !isConnectionTreeKey(keyText, connectionId)
+              || !expandedKeysBeforeRefresh.has(keyText)
+              || availableConnectionKeys.has(keyText);
+      }));
+      setLoadedKeys((previous) => {
+          const next = previous.filter((key) => {
+              const keyText = String(key);
+              return !isConnectionTreeKey(keyText, connectionId) || availableConnectionKeys.has(keyText);
+          });
+          loadedKeysToRestore.forEach((key) => next.push(key));
+          return Array.from(new Set(next));
+      });
+  };
+
   useEffect(() => {
       const handleNacosServicesChanged = (event: Event) => {
           const target = resolveNacosServiceGroupsRefreshTarget(
@@ -2606,6 +2678,7 @@ const Sidebar: React.FC<{
       pinnedSidebarTables,
       loadingNodesRef,
       treeDataRef,
+      refreshConnectionResources,
       findTreeNodeByKeyRef,
       refreshV2TableContextMenuStatsRef,
       setConnectionStates,
@@ -2858,6 +2931,7 @@ const Sidebar: React.FC<{
     setLoadedKeys,
     loadingNodesRef,
     loadDatabases,
+    refreshConnectionResources,
     buildConnectionRootRedisCommandTabTitle,
     buildConnectionRootRedisMonitorTabTitle,
     onEditConnection,

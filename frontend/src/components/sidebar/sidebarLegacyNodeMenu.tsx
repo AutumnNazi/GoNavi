@@ -309,6 +309,7 @@ export const buildSidebarLegacyNodeMenuItems = (
     setLoadedKeys,
     loadingNodesRef,
     loadDatabases,
+    refreshConnectionResources: refreshConnectionResourcesFromContext,
     buildConnectionRootRedisCommandTabTitle,
     buildConnectionRootRedisMonitorTabTitle,
     onEditConnection,
@@ -375,6 +376,10 @@ export const buildSidebarLegacyNodeMenuItems = (
     handleDeleteExternalSQLFile,
     extractObjectName,
   } = context;
+    const refreshConnectionResources = refreshConnectionResourcesFromContext || ((targetNode: any) => {
+      loadDatabases(targetNode);
+      return Promise.resolve();
+    });
     const conn = node.dataRef as SavedConnection;
     const isRedis = conn?.config?.type === 'redis';
     const isNacos = conn?.config?.type === 'nacos';
@@ -591,15 +596,7 @@ export const buildSidebarLegacyNodeMenuItems = (
                     label: t('sidebar.menu.refresh'),
                     icon: <ReloadOutlined />,
                     onClick: () => {
-                        const connKey = String(node.key);
-                        // 清除子节点的展开/已加载状态，确保刷新后重新展开时能触发 onLoadData
-                        setExpandedKeys((prev: any[]) => prev.filter((k: any) => !k.toString().startsWith(`${connKey}-`)));
-                        setLoadedKeys((prev: any[]) => prev.filter((k: any) => !k.toString().startsWith(`${connKey}-`)));
-                        // 清除 loadingNodesRef 中残留的子节点加载标记
-                        Array.from(loadingNodesRef.current as Set<string>).forEach(lk => {
-                            if (lk.startsWith(`tables-${connKey}-`)) loadingNodesRef.current.delete(lk);
-                        });
-                        loadDatabases(node);
+                        void refreshConnectionResources(node);
                     }
                 },
                 { type: 'divider' },
@@ -680,10 +677,7 @@ export const buildSidebarLegacyNodeMenuItems = (
                     label: t('sidebar.menu.refresh'),
                     icon: <ReloadOutlined />,
                     onClick: () => {
-                        const connKey = String(node.key);
-                        setExpandedKeys((prev: any[]) => prev.filter((k: any) => !k.toString().startsWith(`${connKey}-`)));
-                        setLoadedKeys((prev: any[]) => prev.filter((k: any) => !k.toString().startsWith(`${connKey}-`)));
-                        loadDatabases(node);
+                        void refreshConnectionResources(node);
                     },
                 },
                 {
@@ -770,15 +764,7 @@ export const buildSidebarLegacyNodeMenuItems = (
                 label: t('sidebar.menu.refresh'),
                 icon: <ReloadOutlined />,
                 onClick: () => {
-                    const connKey = String(node.key);
-                    // 清除子节点的展开/已加载状态，确保刷新后重新展开时能触发 onLoadData
-                    setExpandedKeys((prev: any[]) => prev.filter((k: any) => !k.toString().startsWith(`${connKey}-`)));
-                    setLoadedKeys((prev: any[]) => prev.filter((k: any) => !k.toString().startsWith(`${connKey}-`)));
-                    // 清除 loadingNodesRef 中残留的子节点加载标记
-                    Array.from(loadingNodesRef.current as Set<string>).forEach(lk => {
-                        if (lk.startsWith(`tables-${connKey}-`)) loadingNodesRef.current.delete(lk);
-                    });
-                    loadDatabases(node);
+                    void refreshConnectionResources(node);
                 }
             },
             { type: 'divider' },
