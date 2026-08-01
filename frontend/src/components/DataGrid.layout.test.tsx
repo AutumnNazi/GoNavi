@@ -934,6 +934,11 @@ describe('DataGrid layout', () => {
         'data_grid.record_view.json_record_count': `${params?.count} JSON rows label`,
         'data_grid.record_view.edit_json': 'Edit JSON label',
         'data_grid.record_view.back_to_table': 'Back to table label',
+        'data_grid.record_view.field': 'Field label',
+        'data_grid.record_view.value': 'Value label',
+        'data_grid.record_view.comment': 'Comment label',
+        'data_grid.record_view.type': 'Type label',
+        'data_grid.record_view.copy_value': 'Copy value label',
         'data_grid.record_view.previous': 'Previous label',
         'data_grid.record_view.next': 'Next label',
         'data_grid.record_view.record_position': `Record label ${params?.current} of ${params?.total}`,
@@ -1088,9 +1093,25 @@ describe('DataGrid layout', () => {
     expect(textRecordMarkup).toContain('Record label 1 of 2');
     expect(textRecordMarkup).toContain('Edit current label');
     expect(textRecordMarkup).toContain('Back to table label');
+    expect(textRecordMarkup).toContain('Field label');
+    expect(textRecordMarkup).toContain('Value label');
+    expect(textRecordMarkup).toContain('Comment label');
+    expect(textRecordMarkup).toContain('Type label');
+    expect(textRecordMarkup).toContain('data-grid-text-view-header="field"');
+    expect(textRecordMarkup).toContain('data-grid-text-view-header="value"');
+    expect(textRecordMarkup.indexOf('data-grid-text-view-header="field"'))
+      .toBeLessThan(textRecordMarkup.indexOf('data-grid-text-view-header="type"'));
+    expect(textRecordMarkup.indexOf('data-grid-text-view-header="type"'))
+      .toBeLessThan(textRecordMarkup.indexOf('data-grid-text-view-header="comment"'));
+    expect(textRecordMarkup.indexOf('data-grid-text-view-header="comment"'))
+      .toBeLessThan(textRecordMarkup.indexOf('data-grid-text-view-header="value"'));
+    expect(textRecordMarkup).toContain('data-grid-text-value-copy="true"');
+    expect(textRecordMarkup).toContain('aria-label="Copy value label"');
+    expect(textRecordMarkup).toContain('grid-template-columns:180px 140px 240px minmax(260px, 1fr)');
+    expect(textRecordMarkup).toContain('text-overflow:ellipsis');
     expect(textRecordMarkup).toContain('raw_sql');
-    expect(textRecordMarkup).toContain('TYPE varchar(128)');
-    expect(textRecordMarkup).toContain('COMMENT SQL text payload');
+    expect(textRecordMarkup).toContain('varchar(128)');
+    expect(textRecordMarkup).toContain('SQL text payload');
     expect(textRecordMarkup).toContain('GitHub release HTTP 500 checksum abc123');
     expect(textRecordMarkup).not.toContain('data_grid.record_view');
 

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Button } from 'antd';
+import { Button, message, Tooltip } from 'antd';
 import Editor from './MonacoEditor';
 import { t as defaultTranslate, type I18nParams } from '../i18n';
 
@@ -81,6 +81,68 @@ interface DataGridTextViewProps {
   formatTextViewValue: (value: any, columnName?: string) => string;
 }
 
+interface DataGridTextCellProps extends React.HTMLAttributes<HTMLDivElement> {
+  'data-grid-text-view-cell'?: string;
+  'data-grid-text-value-copy'?: string;
+}
+
+interface DataGridTextValueCellProps extends DataGridTextCellProps {
+  value: string;
+  cellBaseStyle: React.CSSProperties;
+  tooltipInnerStyle: React.CSSProperties;
+}
+
+const DataGridTextValueCell: React.FC<DataGridTextValueCellProps> = ({
+  value,
+  cellBaseStyle,
+  tooltipInnerStyle,
+  ...props
+}) => {
+  const cellRef = React.useRef<HTMLDivElement>(null);
+  const [isTruncated, setIsTruncated] = React.useState(false);
+
+  const measureTruncation = React.useCallback(() => {
+    const cell = cellRef.current;
+    const nextIsTruncated = Boolean(value)
+      && Boolean(cell?.clientWidth)
+      && Boolean(cell && cell.scrollWidth > cell.clientWidth);
+    setIsTruncated((previous) => (previous === nextIsTruncated ? previous : nextIsTruncated));
+  }, [value]);
+
+  React.useEffect(() => {
+    measureTruncation();
+    const cell = cellRef.current;
+    if (!cell || typeof ResizeObserver === 'undefined') return undefined;
+
+    const observer = new ResizeObserver(measureTruncation);
+    observer.observe(cell);
+    return () => observer.disconnect();
+  }, [measureTruncation]);
+
+  const cell = (
+    <div
+      {...props}
+      ref={cellRef}
+      style={{ ...cellBaseStyle, ...props.style }}
+      onMouseEnter={(event) => {
+        measureTruncation();
+        props.onMouseEnter?.(event);
+      }}
+    >
+      {value}
+    </div>
+  );
+
+  return (
+    <Tooltip
+      title={isTruncated && value ? <span style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{value}</span> : undefined}
+      overlayInnerStyle={tooltipInnerStyle}
+    >
+      {cell}
+    </Tooltip>
+  );
+};
+
 export const DataGridTextView: React.FC<DataGridTextViewProps> = ({
   darkMode,
   rowCount,
@@ -100,6 +162,47 @@ export const DataGridTextView: React.FC<DataGridTextViewProps> = ({
   formatTextViewValue,
 }) => {
   const metaTextColor = darkMode ? 'rgba(255,255,255,0.52)' : 'rgba(0,0,0,0.48)';
+  const primaryTextColor = darkMode ? 'rgba(255,255,255,0.9)' : 'rgba(0,0,0,0.88)';
+  const valueTextColor = darkMode ? 'rgba(255,255,255,0.88)' : 'rgba(0,0,0,0.88)';
+  const gridTemplateColumns = '180px 140px 240px minmax(260px, 1fr)';
+  const gridMinWidth = 820;
+  const cellBaseStyle: React.CSSProperties = {
+    minWidth: 0,
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+    padding: '8px 10px',
+    lineHeight: '20px',
+  };
+  const tooltipInnerStyle: React.CSSProperties = {
+    maxWidth: 560,
+    maxHeight: '60vh',
+    overflow: 'auto',
+    whiteSpace: 'pre-wrap',
+    wordBreak: 'break-word',
+  };
+
+  const copyValue = React.useCallback(async (value: string) => {
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error('Clipboard API unavailable');
+      await navigator.clipboard.writeText(value);
+      void message.success(translate('data_grid.message.copied_to_clipboard'));
+    } catch {
+      void message.error(translate('connection_modal.message.copy_failed'));
+    }
+  }, [translate]);
+
+  const renderCell = (
+    value: string,
+    style: React.CSSProperties,
+    props?: DataGridTextCellProps,
+  ) => {
+    return (
+      <div {...props} style={{ ...cellBaseStyle, ...style }}>
+        {value}
+      </div>
+    );
+  };
 
   return (
     <div style={{ height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
@@ -125,38 +228,84 @@ export const DataGridTextView: React.FC<DataGridTextViewProps> = ({
         </Button>
       </div>
       <div className="custom-scrollbar" style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: '8px 12px' }}>
-        {currentTextRow ? displayOutputColumnNames.map((col) => {
-          const columnMeta = columnMetaMap[col] || columnMetaMapByLowerName[col.toLowerCase()];
-          const columnType = String(columnMeta?.type || '').trim();
-          const columnComment = String(columnMeta?.comment || '').trim();
-
-          return (
-            <div key={col} style={{ display: 'grid', gridTemplateColumns: '240px 1fr', gap: 10, padding: '6px 0', borderBottom: darkMode ? '1px solid rgba(255,255,255,0.06)' : '1px solid rgba(0,0,0,0.06)', alignItems: 'start' }}>
-              <div style={{ wordBreak: 'break-all' }}>
-                <div style={{ fontWeight: 600, color: darkMode ? 'rgba(255,255,255,0.9)' : 'rgba(0,0,0,0.88)' }}>
-                  {col} :
-                </div>
-                {showColumnType && columnType && (
-                  <div style={{ marginTop: 3, fontSize: 11, lineHeight: 1.35, color: metaTextColor }}>
-                    {translate('data_grid.column.type_tooltip', { type: columnType })}
-                  </div>
-                )}
-                {showColumnComment && columnComment && (
-                  <div style={{ marginTop: 2, fontSize: 11, lineHeight: 1.35, color: metaTextColor }}>
-                    {translate('data_grid.column.comment_tooltip', { comment: columnComment })}
-                  </div>
-                )}
+        <div style={{ minWidth: gridMinWidth }}>
+          <div
+            role="row"
+            style={{
+              display: 'grid',
+              gridTemplateColumns,
+              borderBottom: darkMode ? '1px solid rgba(255,255,255,0.12)' : '1px solid rgba(0,0,0,0.12)',
+              background: darkMode ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.025)',
+            }}
+          >
+            {[
+              ['field', 'data_grid.record_view.field'],
+              ['type', 'data_grid.record_view.type'],
+              ['comment', 'data_grid.record_view.comment'],
+              ['value', 'data_grid.record_view.value'],
+            ].map(([key, label]) => (
+              <div
+                key={key}
+                role="columnheader"
+                data-grid-text-view-header={key}
+                style={{ ...cellBaseStyle, color: metaTextColor, fontWeight: 600 }}
+              >
+                {translate(label)}
               </div>
-              <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', color: darkMode ? 'rgba(255,255,255,0.88)' : 'rgba(0,0,0,0.88)' }}>
-                {formatTextViewValue(currentTextRow[col], col)}
-              </div>
-            </div>
-          );
-        }) : (
-          <div style={{ fontSize: 12, color: darkMode ? '#999' : '#666', paddingTop: 4 }}>
-            {translate('data_grid.record_view.empty')}
+            ))}
           </div>
-        )}
+          {currentTextRow ? displayOutputColumnNames.map((col) => {
+            const columnMeta = columnMetaMap[col] || columnMetaMapByLowerName[col.toLowerCase()];
+            const columnType = String(columnMeta?.type || '').trim();
+            const columnComment = String(columnMeta?.comment || '').trim();
+            const formattedValue = formatTextViewValue(currentTextRow[col], col);
+            const borderBottom = darkMode ? '1px solid rgba(255,255,255,0.06)' : '1px solid rgba(0,0,0,0.06)';
+
+            return (
+              <div
+                key={col}
+                role="row"
+                style={{ display: 'grid', gridTemplateColumns, borderBottom }}
+              >
+                {renderCell(col, { fontWeight: 600, color: primaryTextColor }, { 'data-grid-text-view-cell': 'field' })}
+                {renderCell(
+                  showColumnType ? columnType : '',
+                  { color: metaTextColor },
+                  { 'data-grid-text-view-cell': 'type' },
+                )}
+                {renderCell(
+                  showColumnComment ? columnComment : '',
+                  { color: metaTextColor },
+                  { 'data-grid-text-view-cell': 'comment' },
+                )}
+                <DataGridTextValueCell
+                  value={formattedValue}
+                  cellBaseStyle={cellBaseStyle}
+                  tooltipInnerStyle={tooltipInnerStyle}
+                  style={{ color: valueTextColor, fontWeight: 400, cursor: 'copy' }}
+                  data-grid-text-view-cell="value"
+                  data-grid-text-value-copy="true"
+                  role="button"
+                  tabIndex={0}
+                  aria-label={translate('data_grid.record_view.copy_value')}
+                  onClick={() => { void copyValue(formattedValue); }}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault();
+                      void copyValue(formattedValue);
+                    }
+                  }}
+                />
+              </div>
+            );
+          }) : (
+            <div
+              style={{ ...cellBaseStyle, gridColumn: '1 / -1', color: darkMode ? '#999' : '#666' }}
+            >
+              {translate('data_grid.record_view.empty')}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
