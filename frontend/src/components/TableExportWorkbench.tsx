@@ -25,6 +25,7 @@ import type {
   TableExportScopeOption,
 } from '../types';
 import { buildRpcConnectionConfig } from '../utils/connectionRpcConfig';
+import { filterVisibleDatabaseNames, isDatabaseVisible } from '../utils/databaseVisibility';
 import { getDataSourceCapabilities } from '../utils/dataSourceCapabilities';
 import { getColumnDefinitionName } from '../utils/columnDefinition';
 import { resolveConnectionHostSummary } from '../utils/tabDisplay';
@@ -372,6 +373,8 @@ const TableExportWorkbench: React.FC<{ tab: TabData }> = ({ tab }) => {
 
   const [selectedConnectionId, setSelectedConnectionId] = useState(() => String(tab.connectionId || '').trim());
   const [selectedDbName, setSelectedDbName] = useState(() => String(tab.dbName || '').trim());
+  const selectedDbNameRef = useRef(selectedDbName);
+  selectedDbNameRef.current = selectedDbName;
   const [availableDatabases, setAvailableDatabases] = useState<SelectOption[]>([]);
   const [availableObjects, setAvailableObjects] = useState<SelectOption[]>([]);
   const [availableColumns, setAvailableColumns] = useState<string[]>([]);
@@ -603,14 +606,28 @@ const TableExportWorkbench: React.FC<{ tab: TabData }> = ({ tab }) => {
       return;
     }
     let alive = true;
+    const requestedDbName = selectedDbNameRef.current;
+    setAvailableDatabases([]);
     setLoadingDatabases(true);
     setDatabaseLoadError('');
+    if (isBatchTablesWorkbench && requestedDbName && !isDatabaseVisible(connection, requestedDbName)) {
+      setSelectedDbName('');
+      setAvailableObjects([]);
+      setSelectedObjectNames([]);
+    } else if (isBatchDatabasesWorkbench) {
+      setSelectedDatabaseNames((prev) => filterVisibleDatabaseNames(connection, prev));
+    }
     DBGetDatabases(buildRpcConnectionConfig(connectionConfig) as any)
       .then((res) => {
         if (!alive) return;
         if (!res.success) {
           setAvailableDatabases([]);
           setSelectedDatabaseNames([]);
+          if (isBatchTablesWorkbench) {
+            setSelectedDbName('');
+            setAvailableObjects([]);
+            setSelectedObjectNames([]);
+          }
           setDatabaseLoadError(res.message || t('data_export.message.load_databases_failed'));
           return;
         }
@@ -618,13 +635,11 @@ const TableExportWorkbench: React.FC<{ tab: TabData }> = ({ tab }) => {
         let nextOptions = dbRows
           .map((row) => String(row.Database || row.database || '').trim())
           .filter(Boolean);
-        if (connection?.includeDatabases && connection.includeDatabases.length > 0) {
-          nextOptions = nextOptions.filter((name) => connection.includeDatabases!.includes(name));
-        }
+        nextOptions = filterVisibleDatabaseNames(connection, nextOptions);
         const normalizedOptions = toSortedSelectOptions(nextOptions);
         setAvailableDatabases(normalizedOptions);
         if (isBatchTablesWorkbench) {
-          const hasCurrentDb = normalizedOptions.some((item) => item.value === selectedDbName);
+          const hasCurrentDb = normalizedOptions.some((item) => item.value === requestedDbName);
           if (!hasCurrentDb) {
             setSelectedDbName('');
             setAvailableObjects([]);
@@ -639,6 +654,11 @@ const TableExportWorkbench: React.FC<{ tab: TabData }> = ({ tab }) => {
         if (!alive) return;
         setAvailableDatabases([]);
         setSelectedDatabaseNames([]);
+        if (isBatchTablesWorkbench) {
+          setSelectedDbName('');
+          setAvailableObjects([]);
+          setSelectedObjectNames([]);
+        }
         setDatabaseLoadError(error?.message || t('data_export.message.load_databases_failed'));
       })
       .finally(() => {
@@ -649,7 +669,14 @@ const TableExportWorkbench: React.FC<{ tab: TabData }> = ({ tab }) => {
     return () => {
       alive = false;
     };
-  }, [connection?.includeDatabases, connectionConfig, isBatchDatabasesWorkbench, isBatchTablesWorkbench, selectedDbName]);
+  }, [
+    connection?.excludeDatabasePatterns,
+    connection?.includeDatabasePatterns,
+    connection?.includeDatabases,
+    connectionConfig,
+    isBatchDatabasesWorkbench,
+    isBatchTablesWorkbench,
+  ]);
 
   useEffect(() => {
     if (!isBatchTablesWorkbench || !connectionConfig || !selectedDbName) {
@@ -852,7 +879,10 @@ const TableExportWorkbench: React.FC<{ tab: TabData }> = ({ tab }) => {
       .filter((item) => item.objectType === 'table' && selectedNameSet.has(item.value))
       .map((item) => item.value);
   }, [availableObjects, selectedObjectNames]);
-  const isConfigurationLocked = isRunning || destructiveOperation !== null;
+  const isConfigurationLocked = isRunning
+    || destructiveOperation !== null
+    || loadingDatabases
+    || loadingObjects;
 
   const canStart = useMemo(() => {
     if (!connectionConfig || isConfigurationLocked) {
@@ -910,7 +940,15 @@ const TableExportWorkbench: React.FC<{ tab: TabData }> = ({ tab }) => {
   });
 
   const handleClearSelectedTables = async () => {
-    if (connectionCapabilities.forceReadOnlyQueryResult || !connectionConfig || !selectedDbName || selectedTableNames.length === 0 || isConfigurationLocked) return;
+    if (
+      connectionCapabilities.forceReadOnlyQueryResult
+      || !connectionConfig
+      || !connection
+      || !selectedDbName
+      || !isDatabaseVisible(connection, selectedDbName)
+      || selectedTableNames.length === 0
+      || isConfigurationLocked
+    ) return;
     const confirmed = await confirmDestructiveAction({
       title: t('sidebar.modal.confirm_clear_selected_tables.title'),
       content: t('sidebar.modal.confirm_clear_selected_tables.content', {
@@ -980,7 +1018,15 @@ const TableExportWorkbench: React.FC<{ tab: TabData }> = ({ tab }) => {
   };
 
   const handleDeleteSelectedTables = async () => {
-    if (connectionCapabilities.forceReadOnlyStructureDesigner || !connectionConfig || !selectedDbName || selectedTableNames.length === 0 || isConfigurationLocked) return;
+    if (
+      connectionCapabilities.forceReadOnlyStructureDesigner
+      || !connectionConfig
+      || !connection
+      || !selectedDbName
+      || !isDatabaseVisible(connection, selectedDbName)
+      || selectedTableNames.length === 0
+      || isConfigurationLocked
+    ) return;
     const confirmed = await confirmDestructiveAction({
       title: t('sidebar.modal.confirm_delete_selected_tables.title'),
       content: t('sidebar.modal.confirm_delete_selected_tables.content', {
@@ -1046,7 +1092,14 @@ const TableExportWorkbench: React.FC<{ tab: TabData }> = ({ tab }) => {
   };
 
   const handleDeleteSelectedDatabases = async () => {
-    if (!connectionCapabilities.supportsDropDatabase || !connectionConfig || selectedDatabaseNames.length === 0 || isConfigurationLocked) return;
+    if (
+      !connectionCapabilities.supportsDropDatabase
+      || !connectionConfig
+      || !connection
+      || selectedDatabaseNames.length === 0
+      || filterVisibleDatabaseNames(connection, selectedDatabaseNames).length !== selectedDatabaseNames.length
+      || isConfigurationLocked
+    ) return;
     const confirmed = await confirmDestructiveAction({
       title: t('sidebar.modal.confirm_delete_selected_databases.title'),
       content: t('sidebar.modal.confirm_delete_selected_databases.content', {
@@ -1161,7 +1214,15 @@ const TableExportWorkbench: React.FC<{ tab: TabData }> = ({ tab }) => {
   };
 
   const handleStartBatchTablesExport = async () => {
-    if (!connectionConfig || !selectedDbName || selectedObjectNames.length === 0) {
+    if (
+      !connectionConfig
+      || !connection
+      || !selectedDbName
+      || !isDatabaseVisible(connection, selectedDbName)
+      || selectedObjectNames.length === 0
+      || loadingDatabases
+      || loadingObjects
+    ) {
       return;
     }
     const includeSchema = batchTableMode !== 'dataOnly';
@@ -1190,7 +1251,13 @@ const TableExportWorkbench: React.FC<{ tab: TabData }> = ({ tab }) => {
   };
 
   const handleStartBatchDatabasesExport = async () => {
-    if (!connectionConfig || selectedDatabaseNames.length === 0) {
+    if (
+      !connectionConfig
+      || !connection
+      || selectedDatabaseNames.length === 0
+      || filterVisibleDatabaseNames(connection, selectedDatabaseNames).length !== selectedDatabaseNames.length
+      || loadingDatabases
+    ) {
       return;
     }
     const includeData = batchDatabaseMode === 'backup';

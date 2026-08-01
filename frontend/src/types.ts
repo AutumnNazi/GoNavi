@@ -360,7 +360,12 @@ export interface SavedConnection {
   hasRedisSentinelPassword?: boolean;
   hasOpaqueURI?: boolean;
   hasOpaqueDSN?: boolean;
+  /** Legacy exact database names kept for backwards-compatible visibility rules. */
   includeDatabases?: string[];
+  /** Database name masks. `*`/`%` match any text and `_` matches one character. */
+  includeDatabasePatterns?: string[];
+  /** Database name masks that always take precedence over include rules. */
+  excludeDatabasePatterns?: string[];
   includeRedisDatabases?: number[]; // Redis databases to show
   schemaVisibilityByDatabase?: Record<string, SchemaVisibilityRule>;
   iconType?: string; // 自定义图标类型（如 'mysql','postgres'），不填则取 config.type

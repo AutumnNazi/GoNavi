@@ -166,6 +166,9 @@ if (
 
     const saveMockConnection = (input: any) => {
         const existing = mockConnections.find((item) => item.id === input?.id);
+        const hasIncludeDatabases = Object.prototype.hasOwnProperty.call(input || {}, 'includeDatabases');
+        const hasIncludeDatabasePatterns = Object.prototype.hasOwnProperty.call(input || {}, 'includeDatabasePatterns');
+        const hasExcludeDatabasePatterns = Object.prototype.hasOwnProperty.call(input || {}, 'excludeDatabasePatterns');
         const hasSchemaVisibilityByDatabase = Object.prototype.hasOwnProperty.call(input || {}, 'schemaVisibilityByDatabase');
         const existingSecrets = mockConnectionSecrets.get(existing?.id || input?.id || '') || {};
         const config = (input?.config && typeof input.config === 'object') ? input.config : {};
@@ -213,7 +216,15 @@ if (
                 mongoReplicaPassword: '',
                 redisSentinelPassword: '',
             },
-            includeDatabases: Array.isArray(input?.includeDatabases) ? [...input.includeDatabases] : existing?.includeDatabases,
+            includeDatabases: hasIncludeDatabases
+                ? (Array.isArray(input?.includeDatabases) ? [...input.includeDatabases] : undefined)
+                : existing?.includeDatabases,
+            includeDatabasePatterns: hasIncludeDatabasePatterns
+                ? (Array.isArray(input?.includeDatabasePatterns) ? [...input.includeDatabasePatterns] : undefined)
+                : existing?.includeDatabasePatterns,
+            excludeDatabasePatterns: hasExcludeDatabasePatterns
+                ? (Array.isArray(input?.excludeDatabasePatterns) ? [...input.excludeDatabasePatterns] : undefined)
+                : existing?.excludeDatabasePatterns,
             includeRedisDatabases: Array.isArray(input?.includeRedisDatabases) ? [...input.includeRedisDatabases] : existing?.includeRedisDatabases,
             schemaVisibilityByDatabase: hasSchemaVisibilityByDatabase
                 ? (input?.schemaVisibilityByDatabase && typeof input.schemaVisibilityByDatabase === 'object'

@@ -261,6 +261,8 @@ export const buildSavedConnectionInput = ({
       redisSentinelPassword: redisSentinelDraft.value,
     },
     includeDatabases: values.includeDatabases,
+    includeDatabasePatterns: values.includeDatabasePatterns,
+    excludeDatabasePatterns: values.excludeDatabasePatterns,
     includeRedisDatabases: isRedisType
       ? values.includeRedisDatabases
       : undefined,

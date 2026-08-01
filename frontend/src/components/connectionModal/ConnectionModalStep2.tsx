@@ -1600,37 +1600,96 @@ const ConnectionModalStep2: React.FC<ConnectionModalStep2Props> = (props) => {
               </>
             )}
 
-            {/* 库范围 · Demo #a-scope-wrap：整行 input width:100% */}
+            {/* 固定库范围保留精确匹配语义，避免历史下划线库名被通配符规则放宽。 */}
             {!isFileDb && !isRedis && !isKafka && (
-              <div className="gn-conn-f-row">
-                {denseLabel(
-                  t("connection.modal.dense.scope"),
-                  t("connection.modal.field.displayDatabases.label"),
-                )}
-                <div className="gn-conn-f-ctrl">
-                  <Form.Item
-                    name="includeDatabases"
-                    style={{ marginBottom: 0, width: "100%" }}
-                  >
-                    <Select
-                      className="gn-conn-scope-select"
-                      mode="tags"
-                      style={{ width: "100%", minWidth: "100%" }}
-                      popupMatchSelectWidth
-                      tokenSeparators={[",", ";", " "]}
-                      placeholder={t(
-                        "connection.modal.dense.scopePlaceholder",
-                      )}
-                      allowClear
-                      maxTagCount="responsive"
-                      options={dbList.map((db: string) => ({
-                        value: db,
-                        label: db,
-                      }))}
-                    />
-                  </Form.Item>
+              <>
+                <div className="gn-conn-f-row">
+                  {denseLabel(
+                    t("connection.modal.dense.scopeExact"),
+                    t("connection.modal.field.displayDatabases.help"),
+                  )}
+                  <div className="gn-conn-f-ctrl">
+                    <Form.Item
+                      name="includeDatabases"
+                      style={{ marginBottom: 0, width: "100%" }}
+                    >
+                      <Select
+                        className="gn-conn-scope-select"
+                        mode="tags"
+                        style={{ width: "100%", minWidth: "100%" }}
+                        popupMatchSelectWidth
+                        tokenSeparators={[",", ";", " "]}
+                        placeholder={t(
+                          "connection.modal.dense.scopePlaceholder",
+                        )}
+                        allowClear
+                        maxTagCount="responsive"
+                        options={dbList.map((db: string) => ({
+                          value: db,
+                          label: db,
+                        }))}
+                      />
+                    </Form.Item>
+                  </div>
                 </div>
-              </div>
+
+                {!isNacosProtection && (
+                  <>
+                    <div className="gn-conn-f-row">
+                      {denseLabel(
+                        t("connection.modal.dense.scopeIncludePattern"),
+                        t("connection.modal.field.includeDatabasePatterns.help"),
+                      )}
+                      <div className="gn-conn-f-ctrl">
+                        <Form.Item
+                          name="includeDatabasePatterns"
+                          style={{ marginBottom: 0, width: "100%" }}
+                        >
+                          <Select
+                            className="gn-conn-scope-select"
+                            mode="tags"
+                            style={{ width: "100%", minWidth: "100%" }}
+                            tokenSeparators={[",", ";"]}
+                            placeholder={t(
+                              "connection.modal.field.includeDatabasePatterns.placeholder",
+                            )}
+                            allowClear
+                            maxTagCount="responsive"
+                          />
+                        </Form.Item>
+                      </div>
+                    </div>
+
+                    <div className="gn-conn-f-row" data-align="start">
+                      {denseLabel(
+                        t("connection.modal.dense.scopeExcludePattern"),
+                        t("connection.modal.field.excludeDatabasePatterns.help"),
+                      )}
+                      <div className="gn-conn-f-ctrl">
+                        <Form.Item
+                          name="excludeDatabasePatterns"
+                          style={{ marginBottom: 0, width: "100%" }}
+                        >
+                          <Select
+                            className="gn-conn-scope-select"
+                            mode="tags"
+                            style={{ width: "100%", minWidth: "100%" }}
+                            tokenSeparators={[",", ";"]}
+                            placeholder={t(
+                              "connection.modal.field.excludeDatabasePatterns.placeholder",
+                            )}
+                            allowClear
+                            maxTagCount="responsive"
+                          />
+                        </Form.Item>
+                        <Text type="secondary" style={{ display: "block", marginTop: 4, fontSize: 12 }}>
+                          {t("connection.modal.field.databasePatterns.help")}
+                        </Text>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </>
             )}
 
             {/* demo .check-line：保存密码 + 保存后连接并展开（后者 UI 对齐；连接/展开由 onSaved 侧既有流程处理时可再接线） */}

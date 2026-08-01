@@ -892,6 +892,42 @@ describe('store appearance persistence', () => {
     expect(saved?.includeRedisDatabases).toEqual([0, 15, 16, 31]);
   });
 
+  it('sanitizes persisted database include and exclude masks without rewriting legacy exact names', async () => {
+    const { useStore } = await importStore();
+    const validUnicodePattern = '租'.repeat(85);
+    const invalidUnicodePattern = '租'.repeat(86);
+    const includePatterns = [
+      invalidUnicodePattern,
+      validUnicodePattern,
+      ' tenant_% ',
+      'tenant_%',
+      ...Array.from({ length: 260 }, (_, index) => `app_${index}%`),
+      'x'.repeat(257),
+    ];
+
+    useStore.getState().replaceConnections([{
+      id: 'filtered-db',
+      name: 'Filtered DB',
+      includeDatabases: ['app_db'],
+      includeDatabasePatterns: includePatterns,
+      excludeDatabasePatterns: [' archive_% ', 'archive_%', ''],
+      config: {
+        id: 'filtered-db',
+        type: 'mysql',
+        host: 'db.local',
+        port: 3306,
+        user: 'root',
+      },
+    }]);
+
+    const saved = useStore.getState().connections[0];
+    expect(saved?.includeDatabases).toEqual(['app_db']);
+    expect(saved?.includeDatabasePatterns?.[0]).toBe(validUnicodePattern);
+    expect(saved?.includeDatabasePatterns).not.toContain(invalidUnicodePattern);
+    expect(saved?.includeDatabasePatterns).toHaveLength(256);
+    expect(saved?.excludeDatabasePatterns).toEqual(['archive_%']);
+  });
+
   it('keeps InterSystems IRIS saved connections as independent datasource type', async () => {
     const { useStore } = await importStore();
 

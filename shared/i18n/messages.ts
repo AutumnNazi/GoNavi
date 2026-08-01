@@ -529,9 +529,20 @@ export const messages: Record<SupportedLanguage, Record<MessageKey, string>> = {
     "connection.modal.field.redisPassword.retained": "已保存 Redis 密码",
     "connection.modal.field.displayDatabases.label":
       "显示数据库 (留空显示全部)",
-    "connection.modal.field.displayDatabases.help": "连接测试成功后可选择",
+    "connection.modal.field.displayDatabases.help":
+      "精确库名，连接测试成功后可选择；与通配包含规则取并集",
     "connection.modal.field.displayDatabases.placeholder":
       "选择显示的数据库",
+    "connection.modal.field.includeDatabasePatterns.help":
+      "匹配后会自动显示当前和以后新增的数据库",
+    "connection.modal.field.includeDatabasePatterns.placeholder":
+      "例如：tenant_%、reporting*",
+    "connection.modal.field.excludeDatabasePatterns.help":
+      "排除规则优先于固定包含和通配包含规则",
+    "connection.modal.field.excludeDatabasePatterns.placeholder":
+      "例如：*_archive、test_%",
+    "connection.modal.field.databasePatterns.help":
+      "* 和 % 匹配任意长度，_ 匹配单个字符，\\ 用于转义；排除规则优先。",
     "connection.modal.field.displayRedisDatabases.placeholder":
       "选择显示的数据库 (0-15)",
     "connection.modal.field.username.label": "用户名",
@@ -1434,9 +1445,19 @@ export const messages: Record<SupportedLanguage, Record<MessageKey, string>> = {
     "connection.modal.field.redisPassword.retained": "saved Redis password",
     "connection.modal.field.displayDatabases.label": "Visible databases",
     "connection.modal.field.displayDatabases.help":
-      "Available after a successful connection test",
+      "Exact names available after a successful connection test; combined with include masks",
     "connection.modal.field.displayDatabases.placeholder":
       "Select visible databases",
+    "connection.modal.field.includeDatabasePatterns.help":
+      "Matching current and newly created databases are shown automatically",
+    "connection.modal.field.includeDatabasePatterns.placeholder":
+      "For example: tenant_%, reporting*",
+    "connection.modal.field.excludeDatabasePatterns.help":
+      "Exclude masks take precedence over exact names and include masks",
+    "connection.modal.field.excludeDatabasePatterns.placeholder":
+      "For example: *_archive, test_%",
+    "connection.modal.field.databasePatterns.help":
+      "* and % match any text, _ matches one character, and \\ escapes a wildcard. Excludes win.",
     "connection.modal.field.displayRedisDatabases.placeholder":
       "Select visible databases (0-15)",
     "connection.modal.field.username.label": "Username",

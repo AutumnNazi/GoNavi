@@ -22,6 +22,7 @@ import type { SavedConnection, SavedQuery, JVMCapability, JVMResourceSummary } f
 import { useStore } from '../../store';
 import { t } from '../../i18n';
 import { buildRpcConnectionConfig } from '../../utils/connectionRpcConfig';
+import { filterVisibleDatabaseNames } from '../../utils/databaseVisibility';
 import { buildRedisDbNodeLabel, getRedisDbAlias } from '../../utils/redisDbAlias';
 import { buildJVMMonitoringActionDescriptors } from '../../utils/jvmSidebarActions';
 import { getSchemaVisibilityRule, isSchemaVisible } from '../../utils/schemaVisibility';
@@ -115,6 +116,8 @@ const buildConnectionReloadSignature = (conn?: SavedConnection | null): string =
   return JSON.stringify({
     config: conn.config || {},
     includeDatabases: conn.includeDatabases || [],
+    includeDatabasePatterns: conn.includeDatabasePatterns || [],
+    excludeDatabasePatterns: conn.excludeDatabasePatterns || [],
     includeRedisDatabases: conn.includeRedisDatabases || [],
     schemaVisibilityByDatabase: conn.schemaVisibilityByDatabase || {},
   });
@@ -194,6 +197,7 @@ export const useSidebarTreeLoaders = ({
       items: Record<string, DriverStatusSnapshot>;
   } | null>(null);
   const driverUpdateWarningKeysRef = useRef<Set<string>>(new Set());
+  const databaseRequestIdsRef = useRef<Record<string, number>>({});
   const nacosServiceGroupRequestIdsRef = useRef<Record<string, number>>({});
   const nacosNamespaceRequestIdsRef = useRef<Record<string, number>>({});
   const nacosNamespaceActiveRequestsRef = useRef<
@@ -576,23 +580,48 @@ export const useSidebarTreeLoaders = ({
               return;
           }
 
+	      const databaseRequestId =
+              (databaseRequestIdsRef.current[conn.id] || 0) + 1;
+          databaseRequestIdsRef.current[conn.id] = databaseRequestId;
+          const databaseRequestSignature = buildConnectionReloadSignature(conn);
+          const resolveCurrentDatabaseRequestConnection = (): SavedConnection | null => {
+              if (databaseRequestIdsRef.current[conn.id] !== databaseRequestId) {
+                  return null;
+              }
+              const currentConnection = useStore.getState().connections.find(
+                  (candidate) => candidate.id === conn.id,
+              );
+              if (
+                  !currentConnection ||
+                  buildConnectionReloadSignature(currentConnection) !== databaseRequestSignature
+              ) {
+                  return null;
+              }
+              return currentConnection;
+          };
+
 	      try {
 	          const res = await DBGetDatabases(buildRpcConnectionConfig(config) as any);
+              const currentConnection = resolveCurrentDatabaseRequestConnection();
+              if (!currentConnection) {
+                  return;
+              }
 	          if (res.success) {
                 const dbRows: any[] = Array.isArray(res.data) ? res.data : [];
-	            let dbs: TreeNode[] = dbRows.map((row: any) => ({
-	              title: row.Database || row.database,
-              key: `${conn.id}-${row.Database || row.database}`,
+                const databaseNames = filterVisibleDatabaseNames(
+                    currentConnection,
+                    dbRows
+                        .map((row: any) => row.Database || row.database)
+                        .filter((name: unknown): name is string => typeof name === 'string' && name.length > 0),
+                );
+	            let dbs: TreeNode[] = databaseNames.map((databaseName) => ({
+	              title: databaseName,
+              key: `${currentConnection.id}-${databaseName}`,
               icon: <DatabaseOutlined />,
               type: 'database' as const,
-              dataRef: { ...conn, dbName: row.Database || row.database },
+              dataRef: { ...currentConnection, dbName: databaseName },
               isLeaf: false,
             }));
-
-            // Filter databases if configured
-            if (conn.includeDatabases && conn.includeDatabases.length > 0) {
-                dbs = dbs.filter(db => conn.includeDatabases!.includes(db.title));
-            }
 
             if (isV2Ui) {
                 const currentPinnedSidebarDatabases =
@@ -600,36 +629,46 @@ export const useSidebarTreeLoaders = ({
                 dbs = buildV2SidebarDatabaseSectionedChildren(
                     String(node.key),
                     applySidebarDatabasePinning(dbs, {
-                        connectionId: conn.id,
+                        connectionId: currentConnection.id,
                         pinnedSidebarDatabases: currentPinnedSidebarDatabases,
                     }),
                 );
             }
 
             if (dbs.length > 0) {
-                replaceTreeNodeChildren(node.key, dbs, conn);
+                replaceTreeNodeChildren(node.key, dbs, currentConnection);
             } else {
                 // 空列表：清理 loadedKeys 以允许重新加载，不设置 children = []
                 setLoadedKeys(prev => prev.filter(k => k !== node.key));
-                message.warning({ content: t('sidebar.message.no_visible_databases'), key: `conn-${conn.id}-dbs` });
+                message.warning({ content: t('sidebar.message.no_visible_databases'), key: `conn-${currentConnection.id}-dbs` });
             }
             shouldMarkConnectionSuccess = true;
 	          } else {
-	            setConnectionStates(prev => ({ ...prev, [conn.id]: 'error' }));
+	            setConnectionStates(prev => ({ ...prev, [currentConnection.id]: 'error' }));
 	            setLoadedKeys(prev => prev.filter(k => k !== node.key));
-	            message.error({ content: res.message, key: `conn-${conn.id}-dbs` });
+	            message.error({ content: res.message, key: `conn-${currentConnection.id}-dbs` });
 	          }
 	      } catch (e: any) {
-	          setConnectionStates(prev => ({ ...prev, [conn.id]: 'error' }));
+	          const currentConnection = resolveCurrentDatabaseRequestConnection();
+              if (!currentConnection) {
+                  return;
+              }
+	          setConnectionStates(prev => ({ ...prev, [currentConnection.id]: 'error' }));
 	          setLoadedKeys(prev => prev.filter(k => k !== node.key));
 	          message.error({
                 content: t('sidebar.message.connection_failed', { error: e?.message || String(e) }),
-                key: `conn-${conn.id}-dbs`,
+                key: `conn-${currentConnection.id}-dbs`,
             });
 	      } finally {
-	          loadingNodesRef.current.delete(loadKey);
-              if (shouldMarkConnectionSuccess) {
-                  setConnectionStates(prev => ({ ...prev, [conn.id]: 'success' }));
+              if (databaseRequestIdsRef.current[conn.id] === databaseRequestId) {
+	              loadingNodesRef.current.delete(loadKey);
+                  const currentConnection = resolveCurrentDatabaseRequestConnection();
+                  if (shouldMarkConnectionSuccess && currentConnection) {
+                      setConnectionStates(prev => ({
+                          ...prev,
+                          [currentConnection.id]: 'success',
+                      }));
+                  }
               }
 	      }
   };

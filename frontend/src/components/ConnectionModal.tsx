@@ -1561,6 +1561,8 @@ const ConnectionModal: React.FC<{
               ? resolveOceanBaseProtocolForConfig(config)
               : "mysql",
           includeDatabases: initialValues.includeDatabases,
+          includeDatabasePatterns: initialValues.includeDatabasePatterns,
+          excludeDatabasePatterns: initialValues.excludeDatabasePatterns,
           includeRedisDatabases: initialValues.includeRedisDatabases,
           useSSL: !!config.useSSL,
           sslMode: config.sslMode || "preferred",
@@ -2252,6 +2254,8 @@ const ConnectionModal: React.FC<{
         uri: "",
         connectionParams: "",
         includeDatabases: undefined,
+        includeDatabasePatterns: undefined,
+        excludeDatabasePatterns: undefined,
         includeRedisDatabases: undefined,
         mysqlTopology: "single",
         rocketmqTopology: "single",

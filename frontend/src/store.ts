@@ -454,6 +454,26 @@ const sanitizeStringArray = (value: unknown, maxLength = 256): string[] => {
   return result;
 };
 
+const DATABASE_FILTER_PATTERN_LIMIT = 256;
+const utf8Encoder = new TextEncoder();
+
+const sanitizeDatabasePatternArray = (value: unknown): string[] => {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const entry of value) {
+    const normalized = toTrimmedString(entry);
+    if (!normalized || utf8Encoder.encode(normalized).byteLength > DATABASE_FILTER_PATTERN_LIMIT) {
+      continue;
+    }
+    if (seen.has(normalized)) continue;
+    seen.add(normalized);
+    result.push(normalized);
+    if (result.length >= DATABASE_FILTER_PATTERN_LIMIT) break;
+  }
+  return result;
+};
+
 const sanitizeSchemaVisibilityByDatabase = (
   value: unknown,
 ): Record<string, SchemaVisibilityRule> | undefined => {
@@ -947,6 +967,12 @@ const sanitizeSavedConnection = (
     : indexedStoreFallback("store.fallback.connection_name", index);
   const name = toTrimmedString(raw.name, fallbackName) || fallbackName;
   const includeDatabases = sanitizeStringArray(raw.includeDatabases, 256);
+  const includeDatabasePatterns = sanitizeDatabasePatternArray(
+    raw.includeDatabasePatterns,
+  );
+  const excludeDatabasePatterns = sanitizeDatabasePatternArray(
+    raw.excludeDatabasePatterns,
+  );
   const includeRedisDatabases = sanitizeNumberArray(
     raw.includeRedisDatabases,
     0,
@@ -973,6 +999,14 @@ const sanitizeSavedConnection = (
     hasOpaqueDSN: raw.hasOpaqueDSN === true,
     includeDatabases:
       includeDatabases.length > 0 ? includeDatabases : undefined,
+    includeDatabasePatterns:
+      includeDatabasePatterns.length > 0
+        ? includeDatabasePatterns
+        : undefined,
+    excludeDatabasePatterns:
+      excludeDatabasePatterns.length > 0
+        ? excludeDatabasePatterns
+        : undefined,
     includeRedisDatabases:
       includeRedisDatabases.length > 0 ? includeRedisDatabases : undefined,
     schemaVisibilityByDatabase,

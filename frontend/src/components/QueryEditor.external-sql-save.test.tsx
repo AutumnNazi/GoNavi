@@ -3774,6 +3774,48 @@ describe('QueryEditor external SQL save', () => {
     });
   });
 
+  it('keeps an existing query tab on its database when a new pattern hides it from the picker', async () => {
+    let renderer!: ReactTestRenderer;
+    autoFetchState.visible = true;
+    storeState.connections[0].config.type = 'mysql';
+    storeState.connections[0].config.database = 'main';
+    backendApp.DBGetDatabases.mockResolvedValue({
+      success: true,
+      data: [{ Database: 'main' }, { Database: 'hidden' }],
+    });
+
+    await act(async () => {
+      renderer = create(<QueryEditor tab={createTab({ query: 'select 1;', dbName: 'hidden' })} />);
+    });
+    await vi.waitFor(() => {
+      expect(backendApp.DBGetDatabases).toHaveBeenCalledTimes(1);
+    });
+
+    await act(async () => {
+      (storeState.connections[0] as any).excludeDatabasePatterns = ['hidden'];
+      storeState.connections = [...storeState.connections];
+      notifyStoreSubscribers();
+    });
+    await vi.waitFor(() => {
+      expect(backendApp.DBGetDatabases).toHaveBeenCalledTimes(2);
+    });
+
+    await act(async () => {
+      await findButton(renderer, '运行').props.onClick();
+    });
+
+    expect(backendApp.DBQueryMulti).toHaveBeenCalledWith(
+      expect.anything(),
+      'hidden',
+      expect.stringContaining('select 1'),
+      'query-1',
+    );
+
+    await act(async () => {
+      renderer.unmount();
+    });
+  });
+
   it('suggests columns in WHERE for cross-database MySQL tables with quoted hyphenated database names', async () => {
     let renderer!: ReactTestRenderer;
     autoFetchState.visible = true;

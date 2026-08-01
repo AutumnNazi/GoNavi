@@ -380,6 +380,8 @@ const buildConnectionReloadSignature = (conn?: SavedConnection | null): string =
   return JSON.stringify({
     config: conn.config || {},
     includeDatabases: conn.includeDatabases || [],
+    includeDatabasePatterns: conn.includeDatabasePatterns || [],
+    excludeDatabasePatterns: conn.excludeDatabasePatterns || [],
     includeRedisDatabases: conn.includeRedisDatabases || [],
     schemaVisibilityByDatabase: conn.schemaVisibilityByDatabase || {},
   });
@@ -2493,6 +2495,8 @@ const Sidebar: React.FC<{
               name: nextConnection.name,
               config: nextConnection.config,
               includeDatabases: nextConnection.includeDatabases,
+              includeDatabasePatterns: nextConnection.includeDatabasePatterns,
+              excludeDatabasePatterns: nextConnection.excludeDatabasePatterns,
               includeRedisDatabases: nextConnection.includeRedisDatabases,
               schemaVisibilityByDatabase: nextConnection.schemaVisibilityByDatabase,
               iconType: nextConnection.iconType,
@@ -2553,6 +2557,8 @@ const Sidebar: React.FC<{
               name: nextConnection.name,
               config: nextConnection.config,
               includeDatabases: nextConnection.includeDatabases,
+              includeDatabasePatterns: nextConnection.includeDatabasePatterns,
+              excludeDatabasePatterns: nextConnection.excludeDatabasePatterns,
               includeRedisDatabases: nextConnection.includeRedisDatabases,
               schemaVisibilityByDatabase: nextConnection.schemaVisibilityByDatabase,
               iconType: nextConnection.iconType,

@@ -2101,6 +2101,8 @@ export namespace connection {
 	    environmentType?: string;
 	    config: ConnectionConfig;
 	    includeDatabases?: string[];
+	    includeDatabasePatterns?: string[];
+	    excludeDatabasePatterns?: string[];
 	    includeRedisDatabases?: number[];
 	    schemaVisibilityByDatabase?: Record<string, SchemaVisibilityRule>;
 	    iconType?: string;
@@ -2126,6 +2128,8 @@ export namespace connection {
 	        this.environmentType = source["environmentType"];
 	        this.config = this.convertValues(source["config"], ConnectionConfig);
 	        this.includeDatabases = source["includeDatabases"];
+	        this.includeDatabasePatterns = source["includeDatabasePatterns"];
+	        this.excludeDatabasePatterns = source["excludeDatabasePatterns"];
 	        this.includeRedisDatabases = source["includeRedisDatabases"];
 	        this.schemaVisibilityByDatabase = this.convertValues(source["schemaVisibilityByDatabase"], SchemaVisibilityRule, true);
 	        this.iconType = source["iconType"];
@@ -2165,6 +2169,8 @@ export namespace connection {
 	    environmentType?: string;
 	    config: ConnectionConfig;
 	    includeDatabases?: string[];
+	    includeDatabasePatterns?: string[];
+	    excludeDatabasePatterns?: string[];
 	    includeRedisDatabases?: number[];
 	    schemaVisibilityByDatabase?: Record<string, SchemaVisibilityRule>;
 	    iconType?: string;
@@ -2191,6 +2197,8 @@ export namespace connection {
 	        this.environmentType = source["environmentType"];
 	        this.config = this.convertValues(source["config"], ConnectionConfig);
 	        this.includeDatabases = source["includeDatabases"];
+	        this.includeDatabasePatterns = source["includeDatabasePatterns"];
+	        this.excludeDatabasePatterns = source["excludeDatabasePatterns"];
 	        this.includeRedisDatabases = source["includeRedisDatabases"];
 	        this.schemaVisibilityByDatabase = this.convertValues(source["schemaVisibilityByDatabase"], SchemaVisibilityRule, true);
 	        this.iconType = source["iconType"];
@@ -2817,4 +2825,3 @@ export namespace sync {
 	}
 
 }
-

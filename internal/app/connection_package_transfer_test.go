@@ -109,8 +109,10 @@ func TestBuildExportedConnectionPackageWithoutSecretsUsesV2AppManagedAndImportsW
 	app.configDir = t.TempDir()
 
 	_, err := app.SaveConnection(connection.SavedConnectionInput{
-		ID:   "conn-v2-no-secrets",
-		Name: "Primary",
+		ID:                      "conn-v2-no-secrets",
+		Name:                    "Primary",
+		IncludeDatabasePatterns: []string{"team_%", "archive*"},
+		ExcludeDatabasePatterns: []string{"team_tmp%"},
 		Config: connection.ConnectionConfig{
 			ID:       "conn-v2-no-secrets",
 			Type:     "postgres",
@@ -145,6 +147,15 @@ func TestBuildExportedConnectionPackageWithoutSecretsUsesV2AppManagedAndImportsW
 	if strings.Contains(string(raw), `"secrets"`) {
 		t.Fatalf("expected exported JSON to omit secrets when IncludeSecrets=false, got %s", string(raw))
 	}
+	if len(file.Connections) != 1 {
+		t.Fatalf("expected one exported connection, got %d", len(file.Connections))
+	}
+	if !reflect.DeepEqual(file.Connections[0].IncludeDatabasePatterns, []string{"team_%", "archive*"}) {
+		t.Fatalf("expected include database patterns in package, got %#v", file.Connections[0].IncludeDatabasePatterns)
+	}
+	if !reflect.DeepEqual(file.Connections[0].ExcludeDatabasePatterns, []string{"team_tmp%"}) {
+		t.Fatalf("expected exclude database patterns in package, got %#v", file.Connections[0].ExcludeDatabasePatterns)
+	}
 
 	importApp := NewAppWithSecretStore(newFakeAppSecretStore())
 	importApp.configDir = t.TempDir()
@@ -159,6 +170,12 @@ func TestBuildExportedConnectionPackageWithoutSecretsUsesV2AppManagedAndImportsW
 	}
 	if imported[0].HasPrimaryPassword {
 		t.Fatal("expected imported connection to keep empty password when secrets are excluded")
+	}
+	if !reflect.DeepEqual(imported[0].IncludeDatabasePatterns, []string{"team_%", "archive*"}) {
+		t.Fatalf("expected imported include database patterns, got %#v", imported[0].IncludeDatabasePatterns)
+	}
+	if !reflect.DeepEqual(imported[0].ExcludeDatabasePatterns, []string{"team_tmp%"}) {
+		t.Fatalf("expected imported exclude database patterns, got %#v", imported[0].ExcludeDatabasePatterns)
 	}
 
 	resolved, err := importApp.resolveConnectionSecrets(imported[0].Config)

@@ -24,6 +24,7 @@ import { applyMongoQueryAutoLimit, convertMongoShellToJsonCommand } from "../uti
 import { getShortcutDisplayLabel, getShortcutPlatform, getShortcutPrimaryModifierDisplayLabel, isEditableElement, isImeComposingKeyEvent, isShortcutMatch, comboToMonacoKeyBinding, normalizeShortcutCombo, resolveShortcutBinding } from "../utils/shortcuts";
 import { useAutoFetchVisibility } from '../utils/autoFetchVisibility';
 import { buildRpcConnectionConfig } from '../utils/connectionRpcConfig';
+import { filterVisibleDatabaseNames } from '../utils/databaseVisibility';
 import { isPostgresSchemaDialect } from '../utils/connectionDriverType';
 import { resolveOceanBaseProtocolFromConfig } from '../utils/oceanBaseProtocol';
 import { isOracleLikeDialect, resolveSqlDialect, resolveSqlFunctions, resolveSqlKeywords } from '../utils/sqlDialect';
@@ -3146,11 +3147,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           if (res.success && Array.isArray(res.data)) {
               let dbs = res.data.map((row: any) => row.Database || row.database);
 
-              // 过滤只显示 includeDatabases 中配置的数据库
-              const includeDbs = conn.includeDatabases;
-              if (includeDbs && includeDbs.length > 0) {
-                  dbs = dbs.filter((db: string) => includeDbs.includes(db));
-              }
+              dbs = filterVisibleDatabaseNames(conn, dbs);
 
               // 存储可见数据库列表用于跨库智能提示
               visibleDbsRef.current = dbs;
@@ -3195,7 +3192,17 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           const conn = connections.find(c => c.id === currentConnectionId);
           if (!conn) return;
 
-          const visibleDbs = visibleDbsRef.current;
+          const visibleDbs = filterVisibleDatabaseNames(conn, visibleDbsRef.current);
+          visibleDbsRef.current = visibleDbs;
+          if (isActive) {
+              sharedVisibleDbs = visibleDbs;
+          }
+          setDbList((current) => (
+              current.length === visibleDbs.length
+              && current.every((database, index) => database === visibleDbs[index])
+                  ? current
+                  : visibleDbs
+          ));
 
           const config = {
             ...conn.config,

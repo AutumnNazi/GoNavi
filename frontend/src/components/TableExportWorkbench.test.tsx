@@ -502,6 +502,64 @@ describe('TableExportWorkbench', () => {
     renderer.unmount();
   });
 
+  it('invalidates batch table actions while an excluded database list is reloading', async () => {
+    mockProgressRunnerState = createIdleProgressRunnerState();
+    let resolveReload!: (result: any) => void;
+    vi.mocked(DBGetDatabases)
+      .mockResolvedValueOnce({ success: true, data: [{ Database: 'SYS' }] } as any)
+      .mockReturnValueOnce(new Promise((resolve) => {
+        resolveReload = resolve;
+      }) as any);
+    vi.mocked(DBGetTables).mockResolvedValue({ success: true, data: [{ Name: 'users' }] } as any);
+
+    const tab = {
+      id: 'table-export-batch-tables-conn-1-SYS',
+      title: '批量处理表',
+      type: 'table-export' as const,
+      connectionId: 'conn-1',
+      dbName: 'SYS',
+      exportWorkbenchMode: 'batch-tables' as const,
+      tableExportInitialObjectNames: ['users'],
+    };
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<TableExportWorkbench tab={tab} />);
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(renderer.root.findByProps({ 'data-batch-clear-tables': 'true' }).props.disabled).toBe(false);
+
+    mockStoreState = {
+      ...mockStoreState,
+      connections: [{
+        ...mockStoreState.connections[0],
+        excludeDatabasePatterns: ['SYS'],
+      } as any],
+    };
+    await act(async () => {
+      renderer.update(<TableExportWorkbench tab={tab} />);
+      await Promise.resolve();
+    });
+
+    const clearButton = renderer.root.findByProps({ 'data-batch-clear-tables': 'true' });
+    expect(clearButton.props.disabled).toBe(true);
+    await act(async () => {
+      clearButton.props.onClick();
+      await Promise.resolve();
+    });
+    expect(ClearTables).not.toHaveBeenCalled();
+
+    await act(async () => {
+      resolveReload({ success: true, data: [{ Database: 'SYS' }] });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(renderer.root.findAllByType(Select).some((node) => node.props.value === 'SYS')).toBe(false);
+
+    renderer.unmount();
+  });
+
   it('clears selected tables after confirmation and records the executed operation', async () => {
     mockProgressRunnerState = createIdleProgressRunnerState();
     vi.mocked(DBGetDatabases).mockResolvedValue({ success: true, data: [{ Database: 'SYS' }] } as any);
