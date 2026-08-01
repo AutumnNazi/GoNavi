@@ -4140,6 +4140,7 @@
   "data_grid.filter.value_counts.no_matches": "当前结果中没有匹配值",
   "data_grid.filter.value_counts.nullish": "（NULL）",
   "data_grid.filter.value_counts.search_placeholder": "搜索当前结果值",
+  "data_grid.filter.value_counts.select_all": "全选",
   "data_grid.filter.value_counts.title": "当前结果值统计",
   "data_grid.filter.op.between": "介于",
   "data_grid.filter.op.contains": "包含",

@@ -4140,6 +4140,7 @@
   "data_grid.filter.value_counts.no_matches": "В текущем результате нет совпадающих значений",
   "data_grid.filter.value_counts.nullish": "(NULL)",
   "data_grid.filter.value_counts.search_placeholder": "Поиск значений в текущем результате",
+  "data_grid.filter.value_counts.select_all": "Выбрать все",
   "data_grid.filter.value_counts.title": "Количество значений в текущем результате",
   "data_grid.filter.op.between": "Между",
   "data_grid.filter.op.contains": "Содержит",

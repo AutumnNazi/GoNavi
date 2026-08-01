@@ -335,6 +335,11 @@ const normalizeViewerFilterConditions = (conditions: FilterCondition[] | undefin
     op: String(cond?.op || '='),
     value: String(cond?.value ?? ''),
     value2: String(cond?.value2 ?? ''),
+    valueSelection: cond?.valueSelection ? {
+      values: Array.from(new Set((cond.valueSelection.values || []).map((value) => String(value)))),
+      ...(cond.valueSelection.includeNull ? { includeNull: true } : {}),
+      ...(cond.valueSelection.includeEmpty ? { includeEmpty: true } : {}),
+    } : undefined,
   }));
 };
 
