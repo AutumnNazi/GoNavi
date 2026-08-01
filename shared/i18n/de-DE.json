@@ -2853,6 +2853,8 @@
   "app.shortcuts.action.toggleTheme.label": "Theme umschalten",
   "app.shortcuts.action.triggerSqlAiCompletion.description": "AI-Inline-Vervollständigung im aktuellen SQL-Editor manuell anfordern",
   "app.shortcuts.action.triggerSqlAiCompletion.label": "SQL-AI-Vervollständigung auslösen",
+  "app.shortcuts.action.acceptSqlAiCompletion.description": "Wenn eine KI-Inline-Vervollständigung im Editor angezeigt wird, drücken Sie diese Taste, um sie in den Editor einzufügen",
+  "app.shortcuts.action.acceptSqlAiCompletion.label": "SQL-AI-Vervollständigung übernehmen",
   "app.shortcuts.capture_hint": "Drücken Sie das Tastenkürzel, nachdem Sie auf \"Aufzeichnen\" geklickt haben. Mit Esc brechen Sie die Aufzeichnung ab. Globale Tastenkürzel sollten eine Modifikatortaste enthalten; AI-Chat-Senden unterstützt nur Enter-Kombinationen, Shift+Enter bleibt ein Zeilenumbruch.",
   "app.shortcuts.capture_waiting": "Tastenkürzel drücken...",
   "app.shortcuts.context.datagrid": "Datentabelle",

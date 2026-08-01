@@ -103,6 +103,10 @@ const storeState = vi.hoisted(() => ({
       mac: { enabled: true, combo: 'Meta+Shift+M' },
       windows: { enabled: true, combo: 'Ctrl+Shift+M' },
     },
+    acceptSqlAiCompletion: {
+      mac: { enabled: true, combo: 'Tab' },
+      windows: { enabled: true, combo: 'Tab' },
+    },
   },
   activeTabId: 'tab-1',
   tabs: [] as TabData[],
@@ -862,6 +866,10 @@ describe('QueryEditor external SQL save', () => {
       toggleQueryResultsPanel: {
         mac: { enabled: true, combo: 'Meta+Shift+M' },
         windows: { enabled: true, combo: 'Ctrl+Shift+M' },
+      },
+      acceptSqlAiCompletion: {
+        mac: { enabled: true, combo: 'Tab' },
+        windows: { enabled: true, combo: 'Tab' },
       },
     };
     storeState.setQueryOptions.mockReset();
@@ -1952,6 +1960,534 @@ describe('QueryEditor external SQL save', () => {
     }
   });
 
+  it('accepts the AI inline ghost with the default Tab shortcut and consumes the keydown', async () => {
+    vi.useFakeTimers();
+    try {
+      const inlineAiService = {
+        AIGetProviders: vi.fn(async () => [{
+          id: 'openai-main',
+          type: 'openai',
+          name: 'OpenAI',
+          apiKey: '',
+          hasSecret: true,
+          baseUrl: 'https://api.openai.com/v1',
+          model: 'gpt-5-mini',
+          maxTokens: 2048,
+          temperature: 0.2,
+        }]),
+        AIGetActiveProvider: vi.fn(async () => 'openai-main'),
+        AIGetUserPromptSettings: vi.fn(async () => ({
+          global: '',
+          database: '',
+          jvm: '',
+          jvmDiagnostic: '',
+        })),
+        AIChatSend: vi.fn(async () => ({ success: true, content: 'videos' })),
+      };
+      backendApp.DBGetTables.mockResolvedValueOnce({
+        success: true,
+        data: [
+          { TABLE_NAME: 'videos' },
+          { TABLE_NAME: 'visits' },
+        ],
+      });
+
+      const windowListeners: Record<string, ((event?: any) => void)[]> = {};
+      vi.stubGlobal('window', {
+        addEventListener: vi.fn((type: string, listener: (event?: any) => void) => {
+          windowListeners[type] ||= [];
+          windowListeners[type].push(listener);
+        }),
+        removeEventListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+        setTimeout,
+        clearTimeout,
+        requestAnimationFrame: vi.fn((callback: FrameRequestCallback) => {
+          callback(0);
+          return 1;
+        }),
+        cancelAnimationFrame: vi.fn(),
+        innerHeight: 900,
+        go: {
+          aiservice: {
+            Service: inlineAiService,
+          },
+        },
+      });
+
+      await act(async () => {
+        create(<QueryEditor tab={createTab({ query: 'SELECT', dbName: 'main' })} />);
+      });
+
+      editorState.value = 'SELECT';
+      editorState.position = { lineNumber: 1, column: 'SELECT'.length + 1 };
+      editorState.editor.executeEdits.mockClear();
+      editorState.editor.trigger.mockClear();
+      editorState.domNode.appendChild.mockClear();
+
+      await act(async () => {
+        editorState.latestOnChange?.('SELECT');
+        editorState.modelContentListeners.forEach((listener) => listener({
+          changes: [{ text: 'T' }],
+        }));
+        vi.advanceTimersByTime(220);
+        for (let i = 0; i < 8; i += 1) {
+          await Promise.resolve();
+        }
+      });
+
+      const shortcutEvent = {
+        type: 'keydown',
+        key: 'Tab',
+        code: 'Tab',
+        keyCode: 9,
+        which: 9,
+        ctrlKey: false,
+        metaKey: false,
+        altKey: false,
+        shiftKey: false,
+        isComposing: false,
+        preventDefault: vi.fn(),
+        stopPropagation: vi.fn(),
+      };
+      const monacoShortcutEvent = {
+        browserEvent: shortcutEvent,
+        preventDefault: vi.fn(),
+        stopPropagation: vi.fn(),
+      };
+
+      await act(async () => {
+        editorState.keyDownListeners.forEach((listener) => listener(monacoShortcutEvent));
+        for (let i = 0; i < 8; i += 1) {
+          await Promise.resolve();
+        }
+      });
+
+      expect(editorState.editor.executeEdits).toHaveBeenCalledWith(
+        'gonavi-ai-inline-sql-completion',
+        [expect.objectContaining({ text: expect.any(String) })],
+      );
+      expect(monacoShortcutEvent.preventDefault).toHaveBeenCalled();
+      expect(monacoShortcutEvent.stopPropagation).toHaveBeenCalled();
+      expect(shortcutEvent.preventDefault).toHaveBeenCalled();
+      expect(shortcutEvent.stopPropagation).toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not consume Tab when no AI inline ghost is visible', async () => {
+    vi.useFakeTimers();
+    try {
+      const windowListeners: Record<string, ((event?: any) => void)[]> = {};
+      vi.stubGlobal('window', {
+        addEventListener: vi.fn((type: string, listener: (event?: any) => void) => {
+          windowListeners[type] ||= [];
+          windowListeners[type].push(listener);
+        }),
+        removeEventListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+        setTimeout,
+        clearTimeout,
+        requestAnimationFrame: vi.fn((callback: FrameRequestCallback) => {
+          callback(0);
+          return 1;
+        }),
+        cancelAnimationFrame: vi.fn(),
+        innerHeight: 900,
+      });
+
+      await act(async () => {
+        create(<QueryEditor tab={createTab({ query: 'SELECT', dbName: 'main' })} />);
+      });
+
+      editorState.editor.executeEdits.mockClear();
+
+      const shortcutEvent = {
+        type: 'keydown',
+        key: 'Tab',
+        code: 'Tab',
+        keyCode: 9,
+        which: 9,
+        ctrlKey: false,
+        metaKey: false,
+        altKey: false,
+        shiftKey: false,
+        isComposing: false,
+        preventDefault: vi.fn(),
+        stopPropagation: vi.fn(),
+      };
+      const monacoShortcutEvent = {
+        browserEvent: shortcutEvent,
+        preventDefault: vi.fn(),
+        stopPropagation: vi.fn(),
+      };
+
+      await act(async () => {
+        editorState.keyDownListeners.forEach((listener) => listener(monacoShortcutEvent));
+      });
+
+      expect(monacoShortcutEvent.preventDefault).not.toHaveBeenCalled();
+      expect(monacoShortcutEvent.stopPropagation).not.toHaveBeenCalled();
+      expect(shortcutEvent.preventDefault).not.toHaveBeenCalled();
+      expect(shortcutEvent.stopPropagation).not.toHaveBeenCalled();
+      expect(editorState.editor.executeEdits).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not consume Tab when the AI inline ghost is stale (cursor moved)', async () => {
+    vi.useFakeTimers();
+    try {
+      const inlineAiService = {
+        AIGetProviders: vi.fn(async () => [{
+          id: 'openai-main',
+          type: 'openai',
+          name: 'OpenAI',
+          apiKey: '',
+          hasSecret: true,
+          baseUrl: 'https://api.openai.com/v1',
+          model: 'gpt-5-mini',
+          maxTokens: 2048,
+          temperature: 0.2,
+        }]),
+        AIGetActiveProvider: vi.fn(async () => 'openai-main'),
+        AIGetUserPromptSettings: vi.fn(async () => ({
+          global: '',
+          database: '',
+          jvm: '',
+          jvmDiagnostic: '',
+        })),
+        AIChatSend: vi.fn(async () => ({ success: true, content: 'videos' })),
+      };
+      backendApp.DBGetTables.mockResolvedValueOnce({
+        success: true,
+        data: [
+          { TABLE_NAME: 'videos' },
+          { TABLE_NAME: 'visits' },
+        ],
+      });
+
+      const windowListeners: Record<string, ((event?: any) => void)[]> = {};
+      vi.stubGlobal('window', {
+        addEventListener: vi.fn((type: string, listener: (event?: any) => void) => {
+          windowListeners[type] ||= [];
+          windowListeners[type].push(listener);
+        }),
+        removeEventListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+        setTimeout,
+        clearTimeout,
+        requestAnimationFrame: vi.fn((callback: FrameRequestCallback) => {
+          callback(0);
+          return 1;
+        }),
+        cancelAnimationFrame: vi.fn(),
+        innerHeight: 900,
+        go: {
+          aiservice: {
+            Service: inlineAiService,
+          },
+        },
+      });
+
+      await act(async () => {
+        create(<QueryEditor tab={createTab({ query: 'SELECT', dbName: 'main' })} />);
+      });
+
+      editorState.value = 'SELECT';
+      editorState.position = { lineNumber: 1, column: 'SELECT'.length + 1 };
+      editorState.editor.executeEdits.mockClear();
+      editorState.editor.trigger.mockClear();
+      editorState.domNode.appendChild.mockClear();
+
+      await act(async () => {
+        editorState.latestOnChange?.('SELECT');
+        editorState.modelContentListeners.forEach((listener) => listener({
+          changes: [{ text: 'T' }],
+        }));
+        vi.advanceTimersByTime(220);
+        for (let i = 0; i < 8; i += 1) {
+          await Promise.resolve();
+        }
+      });
+
+      // 光标已移走,幽灵与当前位置不匹配
+      editorState.position = { lineNumber: 1, column: 1 };
+
+      const shortcutEvent = {
+        type: 'keydown',
+        key: 'Tab',
+        code: 'Tab',
+        keyCode: 9,
+        which: 9,
+        ctrlKey: false,
+        metaKey: false,
+        altKey: false,
+        shiftKey: false,
+        isComposing: false,
+        preventDefault: vi.fn(),
+        stopPropagation: vi.fn(),
+      };
+      const monacoShortcutEvent = {
+        browserEvent: shortcutEvent,
+        preventDefault: vi.fn(),
+        stopPropagation: vi.fn(),
+      };
+
+      await act(async () => {
+        editorState.keyDownListeners.forEach((listener) => listener(monacoShortcutEvent));
+      });
+
+      expect(monacoShortcutEvent.preventDefault).not.toHaveBeenCalled();
+      expect(monacoShortcutEvent.stopPropagation).not.toHaveBeenCalled();
+      expect(shortcutEvent.preventDefault).not.toHaveBeenCalled();
+      expect(shortcutEvent.stopPropagation).not.toHaveBeenCalled();
+      expect(editorState.editor.executeEdits).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('accepts the AI inline ghost with a rebound Right shortcut', async () => {
+    vi.useFakeTimers();
+    try {
+      storeState.shortcutOptions.acceptSqlAiCompletion = {
+        mac: { enabled: true, combo: 'Right' },
+        windows: { enabled: true, combo: 'Right' },
+      };
+
+      const inlineAiService = {
+        AIGetProviders: vi.fn(async () => [{
+          id: 'openai-main',
+          type: 'openai',
+          name: 'OpenAI',
+          apiKey: '',
+          hasSecret: true,
+          baseUrl: 'https://api.openai.com/v1',
+          model: 'gpt-5-mini',
+          maxTokens: 2048,
+          temperature: 0.2,
+        }]),
+        AIGetActiveProvider: vi.fn(async () => 'openai-main'),
+        AIGetUserPromptSettings: vi.fn(async () => ({
+          global: '',
+          database: '',
+          jvm: '',
+          jvmDiagnostic: '',
+        })),
+        AIChatSend: vi.fn(async () => ({ success: true, content: 'videos' })),
+      };
+      backendApp.DBGetTables.mockResolvedValueOnce({
+        success: true,
+        data: [
+          { TABLE_NAME: 'videos' },
+          { TABLE_NAME: 'visits' },
+        ],
+      });
+
+      const windowListeners: Record<string, ((event?: any) => void)[]> = {};
+      vi.stubGlobal('window', {
+        addEventListener: vi.fn((type: string, listener: (event?: any) => void) => {
+          windowListeners[type] ||= [];
+          windowListeners[type].push(listener);
+        }),
+        removeEventListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+        setTimeout,
+        clearTimeout,
+        requestAnimationFrame: vi.fn((callback: FrameRequestCallback) => {
+          callback(0);
+          return 1;
+        }),
+        cancelAnimationFrame: vi.fn(),
+        innerHeight: 900,
+        go: {
+          aiservice: {
+            Service: inlineAiService,
+          },
+        },
+      });
+
+      await act(async () => {
+        create(<QueryEditor tab={createTab({ query: 'SELECT', dbName: 'main' })} />);
+      });
+
+      editorState.value = 'SELECT';
+      editorState.position = { lineNumber: 1, column: 'SELECT'.length + 1 };
+      editorState.editor.executeEdits.mockClear();
+      editorState.editor.trigger.mockClear();
+      editorState.domNode.appendChild.mockClear();
+
+      await act(async () => {
+        editorState.latestOnChange?.('SELECT');
+        editorState.modelContentListeners.forEach((listener) => listener({
+          changes: [{ text: 'T' }],
+        }));
+        vi.advanceTimersByTime(220);
+        for (let i = 0; i < 8; i += 1) {
+          await Promise.resolve();
+        }
+      });
+
+      const shortcutEvent = {
+        type: 'keydown',
+        key: 'ArrowRight',
+        code: 'ArrowRight',
+        keyCode: 39,
+        which: 39,
+        ctrlKey: false,
+        metaKey: false,
+        altKey: false,
+        shiftKey: false,
+        isComposing: false,
+        preventDefault: vi.fn(),
+        stopPropagation: vi.fn(),
+      };
+      const monacoShortcutEvent = {
+        browserEvent: shortcutEvent,
+        preventDefault: vi.fn(),
+        stopPropagation: vi.fn(),
+      };
+
+      await act(async () => {
+        editorState.keyDownListeners.forEach((listener) => listener(monacoShortcutEvent));
+        for (let i = 0; i < 8; i += 1) {
+          await Promise.resolve();
+        }
+      });
+
+      expect(editorState.editor.executeEdits).toHaveBeenCalledWith(
+        'gonavi-ai-inline-sql-completion',
+        [expect.objectContaining({ text: expect.any(String) })],
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('accepts the AI inline ghost with a rebound Shift+Tab shortcut', async () => {
+    vi.useFakeTimers();
+    try {
+      storeState.shortcutOptions.acceptSqlAiCompletion = {
+        mac: { enabled: true, combo: 'Shift+Tab' },
+        windows: { enabled: true, combo: 'Shift+Tab' },
+      };
+
+      const inlineAiService = {
+        AIGetProviders: vi.fn(async () => [{
+          id: 'openai-main',
+          type: 'openai',
+          name: 'OpenAI',
+          apiKey: '',
+          hasSecret: true,
+          baseUrl: 'https://api.openai.com/v1',
+          model: 'gpt-5-mini',
+          maxTokens: 2048,
+          temperature: 0.2,
+        }]),
+        AIGetActiveProvider: vi.fn(async () => 'openai-main'),
+        AIGetUserPromptSettings: vi.fn(async () => ({
+          global: '',
+          database: '',
+          jvm: '',
+          jvmDiagnostic: '',
+        })),
+        AIChatSend: vi.fn(async () => ({ success: true, content: 'videos' })),
+      };
+      backendApp.DBGetTables.mockResolvedValueOnce({
+        success: true,
+        data: [
+          { TABLE_NAME: 'videos' },
+          { TABLE_NAME: 'visits' },
+        ],
+      });
+
+      const windowListeners: Record<string, ((event?: any) => void)[]> = {};
+      vi.stubGlobal('window', {
+        addEventListener: vi.fn((type: string, listener: (event?: any) => void) => {
+          windowListeners[type] ||= [];
+          windowListeners[type].push(listener);
+        }),
+        removeEventListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+        setTimeout,
+        clearTimeout,
+        requestAnimationFrame: vi.fn((callback: FrameRequestCallback) => {
+          callback(0);
+          return 1;
+        }),
+        cancelAnimationFrame: vi.fn(),
+        innerHeight: 900,
+        go: {
+          aiservice: {
+            Service: inlineAiService,
+          },
+        },
+      });
+
+      await act(async () => {
+        create(<QueryEditor tab={createTab({ query: 'SELECT', dbName: 'main' })} />);
+      });
+
+      editorState.value = 'SELECT';
+      editorState.position = { lineNumber: 1, column: 'SELECT'.length + 1 };
+      editorState.editor.executeEdits.mockClear();
+      editorState.editor.trigger.mockClear();
+      editorState.domNode.appendChild.mockClear();
+
+      await act(async () => {
+        editorState.latestOnChange?.('SELECT');
+        editorState.modelContentListeners.forEach((listener) => listener({
+          changes: [{ text: 'T' }],
+        }));
+        vi.advanceTimersByTime(220);
+        for (let i = 0; i < 8; i += 1) {
+          await Promise.resolve();
+        }
+      });
+
+      const shortcutEvent = {
+        type: 'keydown',
+        key: 'Tab',
+        code: 'Tab',
+        keyCode: 9,
+        which: 9,
+        ctrlKey: false,
+        metaKey: false,
+        altKey: false,
+        shiftKey: true,
+        isComposing: false,
+        preventDefault: vi.fn(),
+        stopPropagation: vi.fn(),
+      };
+      const monacoShortcutEvent = {
+        browserEvent: shortcutEvent,
+        preventDefault: vi.fn(),
+        stopPropagation: vi.fn(),
+      };
+
+      await act(async () => {
+        editorState.keyDownListeners.forEach((listener) => listener(monacoShortcutEvent));
+        for (let i = 0; i < 8; i += 1) {
+          await Promise.resolve();
+        }
+      });
+
+      expect(editorState.editor.executeEdits).toHaveBeenCalledWith(
+        'gonavi-ai-inline-sql-completion',
+        [expect.objectContaining({ text: expect.any(String) })],
+      );
+      expect(monacoShortcutEvent.preventDefault).toHaveBeenCalled();
+      expect(monacoShortcutEvent.stopPropagation).toHaveBeenCalled();
+      expect(shortcutEvent.preventDefault).toHaveBeenCalled();
+      expect(shortcutEvent.stopPropagation).toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('continues accepted inline SQL ghost with grounded table AI completion', async () => {
     vi.useFakeTimers();
     try {
@@ -2028,13 +2564,34 @@ describe('QueryEditor external SQL save', () => {
         }
       });
 
-      const acceptInlineGhostCall = editorState.editor.addCommand.mock.calls.find(
-        (call: any[]) => call[2] === 'gonaviAiInlineSuggestionVisible',
-      );
-      expect(acceptInlineGhostCall).toBeTruthy();
+      const dispatchAcceptTab = () => {
+        const shortcutEvent = {
+          type: 'keydown',
+          key: 'Tab',
+          code: 'Tab',
+          keyCode: 9,
+          which: 9,
+          ctrlKey: false,
+          metaKey: false,
+          altKey: false,
+          shiftKey: false,
+          isComposing: false,
+          preventDefault: vi.fn(),
+          stopPropagation: vi.fn(),
+        };
+        const monacoShortcutEvent = {
+          browserEvent: shortcutEvent,
+          preventDefault: vi.fn(),
+          stopPropagation: vi.fn(),
+        };
+        editorState.keyDownListeners.forEach((listener) => listener(monacoShortcutEvent));
+        return { monacoShortcutEvent, shortcutEvent };
+      };
 
       await act(async () => {
-        acceptInlineGhostCall?.[1]?.();
+        const { monacoShortcutEvent } = dispatchAcceptTab();
+        expect(monacoShortcutEvent.preventDefault).toHaveBeenCalled();
+        expect(monacoShortcutEvent.stopPropagation).toHaveBeenCalled();
         vi.advanceTimersByTime(1);
         for (let i = 0; i < 8; i += 1) {
           await Promise.resolve();
@@ -2065,7 +2622,7 @@ describe('QueryEditor external SQL save', () => {
       editorState.editor.trigger.mockClear();
 
       await act(async () => {
-        acceptInlineGhostCall?.[1]?.();
+        dispatchAcceptTab();
         vi.advanceTimersByTime(1);
         for (let i = 0; i < 8; i += 1) {
           await Promise.resolve();

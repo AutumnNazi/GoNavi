@@ -2853,6 +2853,8 @@
   "app.shortcuts.action.toggleTheme.label": "切換主題",
   "app.shortcuts.action.triggerSqlAiCompletion.description": "在目前 SQL 編輯器中手動請求 AI 灰色自動補全",
   "app.shortcuts.action.triggerSqlAiCompletion.label": "觸發 SQL AI 自動補全",
+  "app.shortcuts.action.acceptSqlAiCompletion.description": "當編輯器中顯示 AI 灰色補全時,按下此鍵將補全內容寫入編輯器",
+  "app.shortcuts.action.acceptSqlAiCompletion.label": "接受 SQL AI 自動補全",
   "app.shortcuts.capture_hint": "點擊「錄製」後按下快捷鍵。按 Esc 可取消錄製。全域快捷鍵建議包含修飾鍵；AI 聊天傳送僅支援 Enter 相關組合，Shift+Enter 保留換行。",
   "app.shortcuts.capture_waiting": "請按下快捷鍵...",
   "app.shortcuts.context.datagrid": "資料表格",
