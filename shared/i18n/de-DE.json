@@ -2500,7 +2500,7 @@
   "app.about.update_status.not_checked": "Nicht geprüft",
   "app.about.version.current": "Aktuelle Version",
   "app.about.version.latest": "Neueste Version",
-  "app.about.version.release_notes": "Updateinhalt",
+  "app.about.version.release_notes": "Änderungsprotokoll",
   "app.about.version.release_time": "Veröffentlichungszeit",
   "app.about.version_update.available": "Update verfügbar",
   "app.about.version_update.auto_check_disabled_hint": "Wenn deaktiviert, werden Updates nur über die manuelle Aktion „Nach Updates suchen“ geprüft",
@@ -9216,5 +9216,12 @@
   "nacos_viewer.action.open_group_configs": "Group-Konfigurationen öffnen",
   "nacos_viewer.label.all": "Alle",
   "nacos_viewer.pagination.range": "{{from}}-{{to}} von {{total}}",
-  "nacos_viewer.pagination.empty": "Keine Konfigurationen"
+  "nacos_viewer.pagination.empty": "Keine Konfigurationen",
+  "app.about.release_notes.action.view": "Änderungsprotokoll anzeigen",
+  "app.about.release_notes.modal.title": "Änderungsprotokoll",
+  "app.about.release_notes.modal.open_github": "Auf GitHub öffnen",
+  "app.about.release_notes.modal.empty": "Kein Änderungsprotokoll verfügbar.",
+  "app.about.release_notes.modal.empty_with_link": "Kein Änderungsprotokoll-Text verfügbar. Vollständige Infos auf der GitHub-Release-Seite.",
+  "app.about.release_notes.unread_badge": "Ungelesenes Änderungsprotokoll",
+  "app.about.release_notes.modal.download_section": "Download-Fortschritt"
 }

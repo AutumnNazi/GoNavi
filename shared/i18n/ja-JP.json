@@ -2500,7 +2500,7 @@
   "app.about.update_status.not_checked": "未確認",
   "app.about.version.current": "現在のバージョン",
   "app.about.version.latest": "最新バージョン",
-  "app.about.version.release_notes": "更新内容",
+  "app.about.version.release_notes": "更新ログ",
   "app.about.version.release_time": "公開日時",
   "app.about.version_update.available": "利用可能な更新があります",
   "app.about.version_update.auto_check_disabled_hint": "オフの場合、手動の「更新を確認」でのみ新バージョンを取得します",
@@ -9216,5 +9216,12 @@
   "nacos_viewer.action.open_group_configs": "この Group の設定を開く",
   "nacos_viewer.label.all": "すべて",
   "nacos_viewer.pagination.range": "{{from}}-{{to}} / 全 {{total}} 件",
-  "nacos_viewer.pagination.empty": "設定がありません"
+  "nacos_viewer.pagination.empty": "設定がありません",
+  "app.about.release_notes.action.view": "更新ログを表示",
+  "app.about.release_notes.modal.title": "更新ログ",
+  "app.about.release_notes.modal.open_github": "GitHub で開く",
+  "app.about.release_notes.modal.empty": "更新ログ本文はありません。",
+  "app.about.release_notes.modal.empty_with_link": "更新ログ本文はありません。GitHub のリリースで詳細を確認できます。",
+  "app.about.release_notes.unread_badge": "未読の更新ログ",
+  "app.about.release_notes.modal.download_section": "ダウンロード状況"
 }

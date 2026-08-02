@@ -2500,7 +2500,7 @@
   "app.about.update_status.not_checked": "Not checked",
   "app.about.version.current": "Current Version",
   "app.about.version.latest": "Latest Version",
-  "app.about.version.release_notes": "Update Notes",
+  "app.about.version.release_notes": "Release notes",
   "app.about.version.release_time": "Release Time",
   "app.about.version_update.available": "Update available",
   "app.about.version_update.auto_check_disabled_hint": "When off, updates are only checked via the manual Check for Updates action",
@@ -9216,5 +9216,12 @@
   "nacos_viewer.action.open_group_configs": "Open group configs",
   "nacos_viewer.label.all": "All",
   "nacos_viewer.pagination.range": "{{from}}-{{to}} of {{total}}",
-  "nacos_viewer.pagination.empty": "No configs"
+  "nacos_viewer.pagination.empty": "No configs",
+  "app.about.release_notes.action.view": "View release notes",
+  "app.about.release_notes.modal.title": "Release notes",
+  "app.about.release_notes.modal.open_github": "Open on GitHub",
+  "app.about.release_notes.modal.empty": "No release notes are available.",
+  "app.about.release_notes.modal.empty_with_link": "No release notes body is available. You can open the GitHub release for full details.",
+  "app.about.release_notes.unread_badge": "Unread release notes",
+  "app.about.release_notes.modal.download_section": "Download progress"
 }

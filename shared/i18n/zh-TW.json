@@ -2500,7 +2500,7 @@
   "app.about.update_status.not_checked": "尚未檢查",
   "app.about.version.current": "目前版本",
   "app.about.version.latest": "最新版本",
-  "app.about.version.release_notes": "更新內容",
+  "app.about.version.release_notes": "更新日誌",
   "app.about.version.release_time": "發布時間",
   "app.about.version_update.available": "有可用更新",
   "app.about.version_update.auto_check_disabled_hint": "關閉後僅可透過手動「檢查更新」取得新版本",
@@ -9216,5 +9216,12 @@
   "nacos_viewer.action.open_group_configs": "打開該 Group 設定",
   "nacos_viewer.label.all": "全部",
   "nacos_viewer.pagination.range": "第 {{from}}-{{to}} 條 / 共 {{total}} 條",
-  "nacos_viewer.pagination.empty": "暫無設定"
+  "nacos_viewer.pagination.empty": "暫無設定",
+  "app.about.release_notes.action.view": "查看更新日誌",
+  "app.about.release_notes.modal.title": "更新日誌",
+  "app.about.release_notes.modal.open_github": "在 GitHub 開啟",
+  "app.about.release_notes.modal.empty": "暫無更新日誌正文。",
+  "app.about.release_notes.modal.empty_with_link": "暫無更新日誌正文，可前往 GitHub Release 查看完整說明。",
+  "app.about.release_notes.unread_badge": "未讀更新日誌",
+  "app.about.release_notes.modal.download_section": "下載進度"
 }

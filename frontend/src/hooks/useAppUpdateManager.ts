@@ -20,6 +20,8 @@ export type UpdateInfo = {
   releaseName?: string;
   releasePublishedAt?: string;
   releaseNotesUrl?: string;
+  /** Markdown 更新日志正文（来自 latest.json / GitHub release body） */
+  releaseNotes?: string;
   assetName?: string;
   assetUrl?: string;
   assetSize?: number;

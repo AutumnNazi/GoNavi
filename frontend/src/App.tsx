@@ -1,6 +1,6 @@
 ﻿import Modal from './components/common/ResizableDraggableModal';
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { Layout, Button, ConfigProvider, theme, message, Spin, Slider, Progress, Switch, Input, InputNumber, Select, Segmented, Tooltip, Alert } from 'antd';
+import { Layout, Button, ConfigProvider, theme, message, Spin, Slider, Switch, Input, InputNumber, Select, Segmented, Tooltip, Alert } from 'antd';
 import { UploadOutlined, DownloadOutlined, CloudDownloadOutlined, BugOutlined, GlobalOutlined, InfoCircleOutlined, GithubOutlined, SkinOutlined, CheckOutlined, MinusOutlined, BorderOutlined, CloseOutlined, SettingOutlined, LinkOutlined, BgColorsOutlined, AppstoreOutlined, RobotOutlined, FolderOpenOutlined, HddOutlined, SafetyCertificateOutlined, SwitcherOutlined, CodeOutlined, RightOutlined, TableOutlined, MenuOutlined, MenuFoldOutlined, MenuUnfoldOutlined, PoweroffOutlined, TagOutlined, UserOutlined, UpCircleOutlined, MessageOutlined, FileTextOutlined, SyncOutlined, SendOutlined, AuditOutlined } from '@ant-design/icons';
 import { DndContext, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
 import { arrayMove, SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
@@ -16,6 +16,12 @@ import NativeDetachedWindowController from './components/NativeDetachedWindowCon
 import ConnectionModal from './components/ConnectionModal';
 import SnippetSettingsModal from './components/SnippetSettingsModal';
 import ConnectionPackagePasswordModal from './components/ConnectionPackagePasswordModal';
+import UpdateReleaseNotesModal from './components/UpdateReleaseNotesModal';
+import {
+  buildReleaseNotesReadKey,
+  isReleaseNotesRead,
+  markReleaseNotesRead,
+} from './utils/updateReleaseNotesReadState';
 import { type DataSyncEntryMode } from './components/dataSyncEntryMode';
 import DriverManagerModal from './components/DriverManagerModal';
 import LinuxCJKFontBanner from './components/LinuxCJKFontBanner';
@@ -2338,6 +2344,8 @@ function App() {
       updateCenterBridgeRef,
   });
   const [aboutLastCheckedAt, setAboutLastCheckedAt] = useState('');
+  const [releaseNotesModalOpen, setReleaseNotesModalOpen] = useState(false);
+  const [releaseNotesReadTick, setReleaseNotesReadTick] = useState(0);
   useEffect(() => {
       if (!lastUpdateInfo) {
           return;
@@ -2349,6 +2357,47 @@ function App() {
       lastUpdateInfo?.hasUpdate,
       lastUpdateInfo?.latestVersion,
   ]);
+
+  const releaseNotesReadKey = useMemo(
+      () => buildReleaseNotesReadKey(lastUpdateInfo),
+      [lastUpdateInfo?.channel, lastUpdateInfo?.latestVersion],
+  );
+  // releaseNotesReadTick 强制在 mark 后重算未读态
+  const hasUnreadReleaseNotes = useMemo(() => {
+      void releaseNotesReadTick;
+      if (!lastUpdateInfo || !releaseNotesReadKey) return false;
+      // 有正文或至少有 GitHub 链接时，未读才有提示意义
+      if (!String(lastUpdateInfo.releaseNotes || '').trim() && !String(lastUpdateInfo.releaseNotesUrl || '').trim()) {
+          return false;
+      }
+      return !isReleaseNotesRead(releaseNotesReadKey);
+  }, [lastUpdateInfo, releaseNotesReadKey, releaseNotesReadTick]);
+
+  const openReleaseNotesModal = useCallback(() => {
+      if (!lastUpdateInfo) return;
+      setReleaseNotesModalOpen(true);
+  }, [lastUpdateInfo]);
+
+  const closeReleaseNotesModal = useCallback(() => {
+      setReleaseNotesModalOpen(false);
+      hideUpdateDownloadProgress();
+  }, [hideUpdateDownloadProgress]);
+
+  const handleReleaseNotesModalOpen = useCallback(() => {
+      if (!releaseNotesReadKey) return;
+      if (markReleaseNotesRead(releaseNotesReadKey)) {
+          setReleaseNotesReadTick((value) => value + 1);
+      }
+  }, [releaseNotesReadKey]);
+
+  /** 下载与更新日志同窗：点下载即打开弹窗并开始下载 */
+  const handleDownloadUpdateWithNotes = useCallback(() => {
+      if (!lastUpdateInfo) return;
+      setReleaseNotesModalOpen(true);
+      void downloadUpdate(lastUpdateInfo, false);
+  }, [downloadUpdate, lastUpdateInfo]);
+
+  const releaseNotesModalVisible = releaseNotesModalOpen || updateDownloadProgress.open;
 
   const emitWindowDiagnostic = useCallback(async (stage: string, extra: Record<string, unknown> = {}) => {
       if (!macWindowDiagnosticsEnabled) {
@@ -5175,6 +5224,32 @@ function App() {
       : (lastUpdateInfo?.packageType === 'portable'
           ? t('app.about.action.download_portable_update')
           : t('app.about.action.download_update'));
+  const renderReleaseNotesActionButton = (key = 'release-notes') => (
+      lastUpdateInfo ? (
+          <Button
+              key={key}
+              icon={<FileTextOutlined />}
+              onClick={openReleaseNotesModal}
+          >
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  {t('app.about.release_notes.action.view')}
+                  {hasUnreadReleaseNotes ? (
+                      <span
+                          aria-label={t('app.about.release_notes.unread_badge')}
+                          style={{
+                              width: 7,
+                              height: 7,
+                              borderRadius: 999,
+                              background: darkMode ? '#4ade80' : '#16a34a',
+                              boxShadow: darkMode ? '0 0 0 2px rgba(15,23,42,0.35)' : '0 0 0 2px rgba(255,255,255,0.9)',
+                          }}
+                      />
+                  ) : null}
+              </span>
+          </Button>
+      ) : null
+  );
+
   const renderAboutUpdateActions = (closeAction?: React.ReactNode) => [
       isBackgroundProgressForLatestUpdate && !isLatestUpdateDownloaded ? (
           <Button key="progress" icon={<DownloadOutlined />} onClick={showUpdateDownloadProgress}>{t('app.about.action.download_progress')}</Button>
@@ -5182,6 +5257,7 @@ function App() {
       lastUpdateInfo?.hasUpdate && !isLatestUpdateDownloaded && !isBackgroundProgressForLatestUpdate ? (
           <Button key="mute" onClick={muteLatestUpdate}>{t('app.about.action.mute_this_version')}</Button>
       ) : null,
+      renderReleaseNotesActionButton(),
       <Button
           key="check"
           icon={<CloudDownloadOutlined />}
@@ -5192,7 +5268,7 @@ function App() {
       </Button>,
       closeAction ?? null,
       lastUpdateInfo?.hasUpdate && !isLatestUpdateDownloaded && !isBackgroundProgressForLatestUpdate ? (
-          <Button key="download" type="primary" icon={<DownloadOutlined />} onClick={() => downloadUpdate(lastUpdateInfo, false)}>{updateDownloadActionLabel}</Button>
+          <Button key="download" type="primary" icon={<DownloadOutlined />} onClick={handleDownloadUpdateWithNotes}>{updateDownloadActionLabel}</Button>
       ) : null,
       isLatestUpdateDownloaded ? (
           <Button key="open-install-directory" onClick={openDownloadedUpdateDirectory}>
@@ -5350,23 +5426,49 @@ function App() {
           ? t('app.about.hero.update_available_version', { version: latestVersionText })
           : (lastUpdateInfo ? t('app.about.hero.no_update') : t('app.about.update_status.not_checked'));
       const currentVersionText = lastUpdateInfo?.currentVersion || aboutDisplayVersion;
-      const releaseNotesText = lastUpdateInfo?.releaseName || (hasUpdate ? t('app.about.release_notes.fallback') : '-');
       const releaseTimeText = formatAboutReleaseTime(lastUpdateInfo?.releasePublishedAt);
+      const canOpenReleaseNotes = Boolean(lastUpdateInfo);
       const packageType = ['portable', 'msi', 'dmg', 'archive'].includes(String(lastUpdateInfo?.packageType || ''))
           ? String(lastUpdateInfo?.packageType)
           : 'unknown';
       const mutedText = utilityMutedTextStyle.color;
       const dividerColor = darkMode ? 'rgba(255,255,255,0.09)' : 'rgba(16,24,40,0.09)';
-      const versionRows = [
+      const versionRows: Array<[string, React.ReactNode]> = [
           [t('app.about.version.current'), currentVersionText],
           [t('app.about.version.latest'), latestVersionText],
           [t('app.about.version.release_time'), releaseTimeText],
-          [t('app.about.version.release_notes'), releaseNotesText],
+          [
+              t('app.about.version.release_notes'),
+              (
+                  <Button
+                      type="link"
+                      size="small"
+                      disabled={!canOpenReleaseNotes}
+                      onClick={openReleaseNotesModal}
+                      style={{ padding: 0, height: 'auto', fontWeight: 600 }}
+                  >
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                          {t('app.about.release_notes.action.view')}
+                          {hasUnreadReleaseNotes ? (
+                              <span
+                                  aria-label={t('app.about.release_notes.unread_badge')}
+                                  style={{
+                                      width: 7,
+                                      height: 7,
+                                      borderRadius: 999,
+                                      background: darkMode ? '#4ade80' : '#16a34a',
+                                  }}
+                              />
+                          ) : null}
+                      </span>
+                  </Button>
+              ),
+          ],
           ...(installMode === 'msi' || installMode === 'portable'
-              ? [[t('app.about.version.install_mode'), t(`app.about.install_mode.${installMode}`)]]
+              ? [[t('app.about.version.install_mode'), t(`app.about.install_mode.${installMode}`)] as [string, React.ReactNode]]
               : []),
           ...(hasUpdate && packageType !== 'unknown'
-              ? [[t('app.about.version.package_type'), t(`app.about.package_type.${packageType}`)]]
+              ? [[t('app.about.version.package_type'), t(`app.about.package_type.${packageType}`)] as [string, React.ReactNode]]
               : []),
       ];
 
@@ -7504,9 +7606,7 @@ function App() {
           );
       }
       if (activeSettingsCenterPane.key === 'about-go-navi') {
-          return (
-              renderSettingsCenterAboutPane()
-          );
+          return renderSettingsCenterAboutPane();
       }
       return null;
   };
@@ -8950,6 +9050,95 @@ function App() {
             {renderAboutSettingsContent()}
           </Modal>
 
+          <UpdateReleaseNotesModal
+              open={releaseNotesModalVisible}
+              onClose={closeReleaseNotesModal}
+              onOpen={handleReleaseNotesModalOpen}
+              darkMode={darkMode}
+              version={lastUpdateInfo?.latestVersion || updateDownloadProgress.version}
+              channel={lastUpdateInfo?.channel}
+              releaseName={lastUpdateInfo?.releaseName}
+              releasePublishedAt={lastUpdateInfo?.releasePublishedAt}
+              releaseNotes={lastUpdateInfo?.releaseNotes}
+              releaseNotesUrl={lastUpdateInfo?.releaseNotesUrl || aboutInfo?.releaseUrl}
+              zIndex={settingsChildModalZIndex}
+              downloadProgress={
+                  updateDownloadProgress.status === 'idle'
+                      ? null
+                      : {
+                          status: updateDownloadProgress.status,
+                          percent: updateDownloadProgress.percent,
+                          downloaded: updateDownloadProgress.downloaded,
+                          total: updateDownloadProgress.total,
+                          message: updateDownloadProgress.message,
+                      }
+              }
+              formatBytes={formatBytes}
+              progressHint={
+                  updateInstallAction === 'restart'
+                      ? t('app.about.download_progress.complete_hint')
+                      : t('app.about.download_progress.installer_complete_hint')
+              }
+              footerActions={[
+                  lastUpdateInfo?.releaseNotesUrl || aboutInfo?.releaseUrl ? (
+                      <Button
+                          key="github"
+                          onClick={() => {
+                              const url = lastUpdateInfo?.releaseNotesUrl || aboutInfo?.releaseUrl;
+                              if (!url) return;
+                              try { BrowserOpenURL(url); } catch { window.open(url, '_blank', 'noopener,noreferrer'); }
+                          }}
+                      >
+                          {t('app.about.release_notes.modal.open_github')}
+                      </Button>
+                  ) : null,
+                  (updateDownloadProgress.status === 'start' || updateDownloadProgress.status === 'downloading') ? (
+                      <Button
+                          key="background"
+                          onClick={() => {
+                              markUpdateProgressDismissed();
+                              closeReleaseNotesModal();
+                          }}
+                      >
+                          {t('app.about.action.hide_to_background')}
+                      </Button>
+                  ) : null,
+                  lastUpdateInfo?.hasUpdate
+                      && !isLatestUpdateDownloaded
+                      && updateDownloadProgress.status !== 'start'
+                      && updateDownloadProgress.status !== 'downloading' ? (
+                      <Button
+                          key="download"
+                          type="primary"
+                          icon={<DownloadOutlined />}
+                          onClick={handleDownloadUpdateWithNotes}
+                      >
+                          {updateDownloadActionLabel}
+                      </Button>
+                  ) : null,
+                  isLatestUpdateDownloaded || updateDownloadProgress.status === 'done' ? (
+                      <Button key="open-install-directory" onClick={openDownloadedUpdateDirectory}>
+                          {t('app.about.action.open_install_directory')}
+                      </Button>
+                  ) : null,
+                  isLatestUpdateDownloaded || updateDownloadProgress.status === 'done' ? (
+                      <Button
+                          key="restart"
+                          type="primary"
+                          icon={<SyncOutlined />}
+                          onClick={() => { void handleInstallUpdateRequest(); }}
+                      >
+                          {updateInstallActionLabel}
+                      </Button>
+                  ) : null,
+                  (updateDownloadProgress.status !== 'start' && updateDownloadProgress.status !== 'downloading') ? (
+                      <Button key="close" onClick={closeReleaseNotesModal}>
+                          {t('common.close')}
+                      </Button>
+                  ) : null,
+              ].filter(Boolean) as React.ReactNode[]}
+          />
+
           {isThemeModalOpen && (
           <Modal
               title={renderUtilityModalTitle(
@@ -8992,65 +9181,6 @@ function App() {
               {renderProxySettingsContent()}
           </Modal>
           )}
-
-          <Modal
-              title={updateDownloadProgress.version
-                  ? t('app.about.download_progress.title_with_version', { version: updateDownloadProgress.version })
-                  : t('app.about.download_progress.title')}
-              open={updateDownloadProgress.open}
-              zIndex={settingsChildModalZIndex}
-              destroyOnHidden
-              closable
-              maskClosable
-              keyboard
-              onCancel={hideUpdateDownloadProgress}
-              footer={updateDownloadProgress.status === 'start' || updateDownloadProgress.status === 'downloading' ? [
-                  <Button
-                      key="background"
-                      onClick={() => {
-                          markUpdateProgressDismissed();
-                          hideUpdateDownloadProgress();
-                      }}
-                  >
-                      {t('app.about.action.hide_to_background')}
-                  </Button>
-              ] : (updateDownloadProgress.status === 'done' ? [
-                  <Button key="close" onClick={hideUpdateDownloadProgress}>{t('common.close')}</Button>,
-                  <Button key="open-install-directory" onClick={openDownloadedUpdateDirectory}>
-                      {t('app.about.action.open_install_directory')}
-                  </Button>,
-                  <Button key="restart" type="primary" icon={<SyncOutlined />} onClick={() => { void handleInstallUpdateRequest(); }}>
-                      {updateInstallActionLabel}
-                  </Button>
-              ] : (updateDownloadProgress.status === 'error' ? [
-                  <Button key="close" onClick={hideUpdateDownloadProgress}>{t('common.close')}</Button>
-              ] : null))}
-          >
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                  <Progress
-                      percent={Math.round(updateDownloadProgress.percent)}
-                      status={updateDownloadProgress.status === 'error' ? 'exception' : (updateDownloadProgress.status === 'done' ? 'success' : 'active')}
-                  />
-                  <div style={{ fontSize: 12, color: darkMode ? 'rgba(255,255,255,0.5)' : 'rgba(16,24,40,0.55)' }}>
-                      {updateDownloadProgress.status === 'done'
-                          ? (updateInstallAction === 'restart'
-                              ? t('app.about.download_progress.complete_hint')
-                              : t('app.about.download_progress.installer_complete_hint'))
-                          : `${formatBytes(updateDownloadProgress.downloaded)} / ${formatBytes(updateDownloadProgress.total)}`}
-                  </div>
-                  {updateDownloadProgress.message ? (
-                      <div style={{
-                          fontSize: 12,
-                          color: updateDownloadProgress.status === 'error'
-                              ? '#ff4d4f'
-                              : (darkMode ? 'rgba(255,255,255,0.65)' : 'rgba(16,24,40,0.65)'),
-                      }}
-                      >
-                          {updateDownloadProgress.message}
-                      </div>
-                  ) : null}
-              </div>
-          </Modal>
 
           {showLinuxResizeHandles && (
               <>

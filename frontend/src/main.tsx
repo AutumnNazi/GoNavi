@@ -136,6 +136,9 @@ if (
         releaseNotesUrl: mockUpdateChannel === 'dev'
             ? 'https://github.com/Syngnat/GoNavi/releases/tag/dev-latest'
             : 'https://github.com/Syngnat/GoNavi/releases/latest',
+        releaseNotes: mockUpdateChannel === 'dev'
+            ? '## 🧪 测试版本 (Dev Build)\n\n## ✨ 新功能\n\n- 浏览器 mock：dev 通道更新日志样例\n'
+            : '## ✨ 新功能\n\n- 浏览器 mock：latest 通道更新日志样例\n\n## 🐛 问题修复\n\n- 示例修复项\n',
     });
     let mockDataRootInfo: any = {
         path: 'C:/mock/.gonavi',

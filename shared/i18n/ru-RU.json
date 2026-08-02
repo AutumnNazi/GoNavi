@@ -2500,7 +2500,7 @@
   "app.about.update_status.not_checked": "Не проверялось",
   "app.about.version.current": "Текущая версия",
   "app.about.version.latest": "Последняя версия",
-  "app.about.version.release_notes": "Содержание обновления",
+  "app.about.version.release_notes": "Журнал изменений",
   "app.about.version.release_time": "Время выпуска",
   "app.about.version_update.available": "Доступно обновление",
   "app.about.version_update.auto_check_disabled_hint": "При отключении обновления проверяются только вручную через «Проверить обновления»",
@@ -9216,5 +9216,12 @@
   "nacos_viewer.action.open_group_configs": "Открыть конфигурации группы",
   "nacos_viewer.label.all": "Все",
   "nacos_viewer.pagination.range": "{{from}}-{{to}} из {{total}}",
-  "nacos_viewer.pagination.empty": "Нет конфигураций"
+  "nacos_viewer.pagination.empty": "Нет конфигураций",
+  "app.about.release_notes.action.view": "Посмотреть журнал изменений",
+  "app.about.release_notes.modal.title": "Журнал изменений",
+  "app.about.release_notes.modal.open_github": "Открыть на GitHub",
+  "app.about.release_notes.modal.empty": "Текст журнала изменений недоступен.",
+  "app.about.release_notes.modal.empty_with_link": "Текст журнала изменений недоступен. Полные сведения — на странице GitHub Release.",
+  "app.about.release_notes.unread_badge": "Непрочитанный журнал изменений",
+  "app.about.release_notes.modal.download_section": "Прогресс загрузки"
 }
