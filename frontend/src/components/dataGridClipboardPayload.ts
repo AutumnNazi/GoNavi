@@ -25,6 +25,12 @@ const normalizeClipboardMatrixCell = (value: unknown): string => (
   value === null || value === undefined ? '' : String(value)
 );
 
+const normalizePlainTextMatrixCell = (value: unknown): string => (
+  normalizeClipboardMatrixCell(value)
+    .replace(/\r\n/g, '\n')
+    .replace(/[\t\n\r]+/g, ' ')
+);
+
 const escapeHtml = (value: string): string => (
   value
     .replace(/&/g, '&amp;')
@@ -38,7 +44,7 @@ const escapeCsvCell = (value: string): string => `"${value.replace(/"/g, '""')}"
 
 const buildDelimitedText = (rows: string[][], delimiter: string, columns?: string[]): string => {
   const matrix = columns ? [columns, ...rows] : rows;
-  return matrix.map((row) => row.map(normalizeClipboardMatrixCell).join(delimiter)).join('\n');
+  return matrix.map((row) => row.map(normalizePlainTextMatrixCell).join(delimiter)).join('\n');
 };
 
 const buildCsvText = (rows: string[][], columns?: string[]): string => {
