@@ -588,6 +588,7 @@ describe('TableOverview metadata compatibility', () => {
     const renderedText = collectText(renderer!.toJSON());
     expect(renderedText).toContain('orders');
     expect(renderedText).toContain('订单表');
+    // 展示统一为 YYYY-MM-DD HH:mm:ss（有小数秒时保留，与侧栏 formatSidebarTableTimestamp 一致）
     expect(renderedText).toContain('2026-06-02 10:30:00');
     expect(renderedText).toContain('2026-05-01 09:00:00');
   });

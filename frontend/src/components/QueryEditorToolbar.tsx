@@ -557,7 +557,9 @@ const QueryEditorToolbar: React.FC<QueryEditorToolbarProps> = ({
           <Button
             aria-label={t("query_editor.action.save")}
             className={isV2Ui ? "gn-v2-query-toolbar-icon-action gn-v2-query-toolbar-save-action" : undefined}
-            type="primary"
+            /* v2 与终端等工具按钮同族（default），避免 primary 的 on-accent 前景在暗色下发脏绿；
+               可读性靠 CSS 把图标提到 fg-1。legacy 仍用 primary 实心按钮。 */
+            type={isV2Ui ? "default" : "primary"}
             icon={<SaveOutlined />}
             onClick={onQuickSave}
           >
