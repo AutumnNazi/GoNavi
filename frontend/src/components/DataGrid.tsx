@@ -71,7 +71,7 @@ import {
     type CopySqlError,
 } from './dataGridCopyInsert';
 import { calculateAutoFitColumnWidth } from './dataGridAutoWidth';
-import { buildSelectedCellClipboardText } from './dataGridSelectionCopy';
+import { buildSelectedCellClipboardPayload } from './dataGridSelectionCopy';
 import { buildCopiedRowsForPaste, buildPastedRowsFromCopiedRows } from './dataGridRowClipboard';
 import {
     buildDataGridSelectBaseSql,
@@ -84,6 +84,11 @@ import {
     buildClipboardMarkdown,
     pickRowsForClipboard,
 } from './dataGridClipboardExport';
+import {
+    buildTabularClipboardPayloadFromTsv,
+    writeClipboardPayload,
+    type DataGridClipboardPayload,
+} from './dataGridClipboardPayload';
 import { applyNoAutoCapAttributesWithin, noAutoCapInputProps } from '../utils/inputAutoCap';
 import {
     DEFAULT_SHORTCUT_OPTIONS,
@@ -3748,8 +3753,9 @@ const DataGrid: React.FC<DataGridProps> = ({
 
   useEffect(() => clearAutoCommitTimer, [clearAutoCommitTimer]);
 
-  const copyToClipboard = useCallback((text: string) => {
-      navigator.clipboard.writeText(text).catch(console.error);
+  const copyToClipboard = useCallback((value: string | DataGridClipboardPayload) => {
+      const payload = typeof value === 'string' ? { plainText: value } : value;
+      writeClipboardPayload(payload).catch(console.error);
       void message.success(translateDataGrid('data_grid.message.copied_to_clipboard'));
   }, [translateDataGrid]);
 
@@ -3778,7 +3784,7 @@ const DataGrid: React.FC<DataGridProps> = ({
       const text = mergedDisplayData
           .map((row) => normalizeClipboardTsvCell(formatClipboardCellText(row?.[normalizedColumnName], columnType, currentConnConfig)))
           .join('\n');
-      copyToClipboard(text);
+      copyToClipboard(buildTabularClipboardPayloadFromTsv(text));
   }, [columnMetaMap, columnMetaMapByLowerName, copyToClipboard, currentConnConfig, displayOutputColumnNames, mergedDisplayData, translateDataGrid]);
 
   const {
@@ -3819,7 +3825,7 @@ const DataGrid: React.FC<DataGridProps> = ({
     buildOrderBySQL,
     buildPaginatedSelectSQL,
     buildRpcConnectionConfig,
-    buildSelectedCellClipboardText,
+    buildSelectedCellClipboardPayload,
     buildTableExportTab,
     buildWhereSQL,
     cellContextMenu,

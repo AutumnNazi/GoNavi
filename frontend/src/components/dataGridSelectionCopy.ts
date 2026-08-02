@@ -1,3 +1,5 @@
+import { buildTabularClipboardPayload, type DataGridClipboardPayload } from './dataGridClipboardPayload';
+
 export interface SelectedGridCell {
   rowKey: string;
   colName: string;
@@ -44,8 +46,29 @@ export const buildSelectedCellClipboardText = ({
   columnOrder: string[];
   rowKeyField: string;
 }): string => {
+  const matrix = buildSelectedCellClipboardMatrix({
+    selectedCells,
+    rows,
+    columnOrder,
+    rowKeyField,
+  });
+
+  return matrix.map((row) => row.join('\t')).join('\n');
+};
+
+const buildSelectedCellClipboardMatrix = ({
+  selectedCells,
+  rows,
+  columnOrder,
+  rowKeyField,
+}: {
+  selectedCells: SelectedGridCell[];
+  rows: Array<Record<string, any>>;
+  columnOrder: string[];
+  rowKeyField: string;
+}): string[][] => {
   if (!selectedCells.length || !rows.length || !columnOrder.length || !rowKeyField) {
-    return '';
+    return [];
   }
 
   const selectedRowKeys = new Set(selectedCells.map((cell) => cell.rowKey));
@@ -54,7 +77,7 @@ export const buildSelectedCellClipboardText = ({
   const orderedColumns = columnOrder.filter((columnName) => selectedColumnKeys.has(columnName));
 
   if (!orderedRows.length || !orderedColumns.length) {
-    return '';
+    return [];
   }
 
   const selectedCellKeySet = new Set(selectedCells.map((cell) => `${cell.rowKey}::${cell.colName}`));
@@ -68,8 +91,26 @@ export const buildSelectedCellClipboardText = ({
             return '';
           }
           return normalizeClipboardCellValue(row?.[columnName]);
-        })
-        .join('\t');
-    })
-    .join('\n');
+        });
+    });
+};
+
+export const buildSelectedCellClipboardPayload = ({
+  selectedCells,
+  rows,
+  columnOrder,
+  rowKeyField,
+}: {
+  selectedCells: SelectedGridCell[];
+  rows: Array<Record<string, any>>;
+  columnOrder: string[];
+  rowKeyField: string;
+}): DataGridClipboardPayload => {
+  const matrix = buildSelectedCellClipboardMatrix({
+    selectedCells,
+    rows,
+    columnOrder,
+    rowKeyField,
+  });
+  return buildTabularClipboardPayload({ rows: matrix });
 };
