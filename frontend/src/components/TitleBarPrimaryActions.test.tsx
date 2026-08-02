@@ -16,11 +16,12 @@ vi.mock('@ant-design/icons', () => {
 });
 
 describe('TitleBarPrimaryActions', () => {
-  it('matches the borderless titlebar action treatment', () => {
+  it('matches the elevated primary titlebar action treatment', () => {
     const match = appCss.match(/\.gonavi-titlebar-primary-action\s*\{(?<body>[^}]*)\}/s);
-    expect(match?.groups?.body).toContain('border: 0;');
-    expect(match?.groups?.body).toContain('background: transparent;');
+    expect(match?.groups?.body).toContain('border-radius: 7px;');
+    expect(match?.groups?.body).toContain('font-weight: 600;');
     expect(match?.groups?.body).toContain('-webkit-app-region: no-drag;');
+    expect(match?.groups?.body).toMatch(/background:\s*color-mix/);
   });
 
   it('keeps the custom window controls borderless under the v2 button theme', () => {

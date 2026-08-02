@@ -2111,18 +2111,34 @@ body[data-ui-version="v2"] .gn-conn-check-line .ant-form-item {
     min-width: 0;
     flex: 1 1 auto;
     align-items: center;
-    gap: 10px;
+    gap: 8px;
     overflow: hidden;
 }
 
 .gonavi-titlebar-primary-actions {
     display: inline-flex;
+    position: relative;
     min-width: max-content;
     flex: 0 0 auto;
     align-items: center;
     gap: 5px;
+    margin-right: 0;
+    padding-right: 0;
     -webkit-app-region: no-drag;
     --wails-draggable: no-drag;
+}
+
+/* Divider sits in the leading flex gap: ~4px | 4px between button groups */
+.gonavi-titlebar-primary-actions::after {
+    content: '';
+    position: absolute;
+    right: -5px;
+    top: 50%;
+    width: 1px;
+    height: 12px;
+    transform: translateY(-50%);
+    background: color-mix(in srgb, var(--gn-br-2, rgba(15, 23, 42, 0.12)) 88%, transparent);
+    pointer-events: none;
 }
 
 .gonavi-titlebar-quick-actions-slot {
@@ -2130,45 +2146,48 @@ body[data-ui-version="v2"] .gn-conn-check-line .ant-form-item {
     min-width: 0;
     flex: 1 1 auto;
     align-items: center;
+    margin-left: 0;
     -webkit-app-region: drag;
     --wails-draggable: drag;
 }
 
+/* Primary: elevated capsule so "新建查询/连接" reads first */
 .gonavi-titlebar-primary-action {
     display: inline-flex;
     min-width: 0;
     height: 26px;
-    padding: 0 8px;
-    border: 0;
-    border-radius: 6px;
-    background: transparent;
-    color: var(--gn-fg-3, var(--ant-color-text-secondary));
+    padding: 0 9px;
+    border: 0.5px solid color-mix(in srgb, var(--gn-accent, var(--ant-color-primary)) 18%, transparent);
+    border-radius: 7px;
+    background: color-mix(in srgb, var(--gn-accent, var(--ant-color-primary)) 9%, var(--gn-bg-panel, #fff));
+    color: var(--gn-fg-2, var(--ant-color-text));
     align-items: center;
     justify-content: center;
     gap: 5px;
     font: inherit;
     font-size: 11px;
-    font-weight: 550;
+    font-weight: 600;
     line-height: 1;
     letter-spacing: 0;
     box-shadow: none;
     cursor: pointer;
     -webkit-app-region: no-drag;
     --wails-draggable: no-drag;
-    transition: outline-color 140ms ease, background-color 140ms ease, color 140ms ease;
+    transition: border-color 140ms ease, background-color 140ms ease, color 140ms ease;
 }
 
 .gonavi-titlebar-primary-action .anticon {
     flex: 0 0 auto;
     font-size: 13px;
+    color: var(--gn-accent, var(--ant-color-primary));
 }
 
 .gonavi-titlebar-primary-action:hover,
 .gonavi-titlebar-primary-action:focus-visible {
+    border-color: color-mix(in srgb, var(--gn-accent, var(--ant-color-primary)) 42%, transparent);
     background: var(--gn-accent-soft, var(--ant-color-primary-bg));
     color: var(--gn-accent, var(--ant-color-primary));
-    outline: 1px solid color-mix(in srgb, var(--gn-accent, var(--ant-color-primary)) 42%, transparent);
-    outline-offset: -1px;
+    outline: none;
 }
 
 .gn-v2-titlebar-quick-actions {
@@ -2177,8 +2196,8 @@ body[data-ui-version="v2"] .gn-conn-check-line .ant-form-item {
     max-width: 100%;
     flex: 0 1 auto;
     align-items: center;
-    gap: 5px;
-    margin-left: 6px;
+    gap: 2px;
+    margin-left: 0;
     overflow: hidden;
     -webkit-app-region: drag;
     --wails-draggable: drag;
@@ -2188,10 +2207,11 @@ body[data-ui-version="v2"] .gn-conn-check-line .ant-form-item {
     display: flex;
     min-width: 0;
     align-items: center;
-    gap: 3px;
+    gap: 2px;
     overflow: hidden;
 }
 
+/* Secondary tools: ghost text buttons, lower weight than primary */
 .gn-v2-titlebar-quick-action,
 .gn-v2-titlebar-quick-more {
     display: inline-flex;
@@ -2203,11 +2223,11 @@ body[data-ui-version="v2"] .gn-conn-check-line .ant-form-item {
     border: 0.5px solid transparent;
     border-radius: 6px;
     background: transparent;
-    color: var(--gn-fg-3, var(--ant-color-text-secondary));
+    color: var(--gn-fg-4, var(--ant-color-text-tertiary));
     cursor: pointer;
     font: inherit;
     font-size: 11px;
-    font-weight: 550;
+    font-weight: 500;
     line-height: 1;
     white-space: nowrap;
     -webkit-app-region: no-drag;
@@ -2219,7 +2239,7 @@ body[data-ui-version="v2"] .gn-conn-check-line .ant-form-item {
 .gn-v2-titlebar-quick-action:focus-visible,
 .gn-v2-titlebar-quick-more:hover,
 .gn-v2-titlebar-quick-more:focus-visible {
-    border-color: color-mix(in srgb, var(--gn-accent, var(--ant-color-primary)) 42%, transparent);
+    border-color: color-mix(in srgb, var(--gn-accent, var(--ant-color-primary)) 28%, transparent);
     background: var(--gn-accent-soft, var(--ant-color-primary-bg));
     color: var(--gn-accent, var(--ant-color-primary));
     outline: none;
@@ -2231,9 +2251,18 @@ body[data-ui-version="v2"] .gn-conn-check-line .ant-form-item {
     font-size: 13px;
 }
 
+/* "更多" shows icon + label like other titlebar quick actions */
+.gn-v2-titlebar-quick-more {
+    position: relative;
+    width: auto;
+    padding: 0 8px;
+    justify-content: center;
+    gap: 5px;
+}
+
 @media (max-width: 1180px) {
     .gn-v2-titlebar-quick-actions {
-        margin-left: 3px;
+        margin-left: 0;
     }
 
     .gn-v2-titlebar-quick-action {

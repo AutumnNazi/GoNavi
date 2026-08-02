@@ -1075,8 +1075,8 @@ describe('Sidebar locate toolbar', () => {
     expect(css).toContain('--gn-v2-rail-scale: calc(var(--gn-ui-scale, 1) * var(--gn-sidebar-rail-scale, 1));');
     expect(css).toMatch(/\.gn-v2-connection-rail \{[^}]*width: calc\(38px \* var\(--gn-v2-rail-scale\)\);[^}]*flex: 0 0 calc\(38px \* var\(--gn-v2-rail-scale\)\);/s);
     expect(css).toMatch(/body\[data-ui-version="v2"\] \.gn-v2-rail-item,\s*body\[data-ui-version="v2"\] \.gn-v2-rail-tool \{[^}]*width: calc\(36px \* var\(--gn-v2-rail-scale\)\);[^}]*height: calc\(38px \* var\(--gn-v2-rail-scale\)\);[^}]*font-size: calc\(var\(--gn-font-size-sm, 12px\) \* var\(--gn-sidebar-rail-scale, 1\)\);/s);
-    expect(css).toMatch(/\.gn-v2-rail-tool \{[^}]*height: calc\(32px \* var\(--gn-v2-rail-scale\)\);/s);
-    expect(css).toMatch(/\.gn-v2-rail-tool \{[^}]*width: calc\(24px \* var\(--gn-v2-rail-scale\)\);/s);
+    expect(css).toMatch(/\.gn-v2-rail-tool \{[^}]*height: calc\(28px \* var\(--gn-v2-rail-scale\)\);/s);
+    expect(css).toMatch(/\.gn-v2-rail-tool \{[^}]*width: calc\(28px \* var\(--gn-v2-rail-scale\)\);/s);
     expect(css).toMatch(/\.gn-v2-active-connection-trigger \{[^}]*height: 34px;[^}]*border: 0;[^}]*background: transparent;/s);
     expect(css).toMatch(/\.gn-v2-active-connection-tooltip \{[^}]*display: flex;[^}]*flex-direction: column;[^}]*gap: 2px;[^}]*max-width: min\(320px, calc\(100vw - 24px\)\);[^}]*overflow-wrap: anywhere;/s);
     expect(css).toMatch(/\.gn-v2-object-explorer \{[^}]*container-type: inline-size;[^}]*container-name: gn-v2-object-explorer;/s);
@@ -1295,7 +1295,7 @@ describe('Sidebar locate toolbar', () => {
     const markup = renderSidebarMarkup({ uiVersion: 'v2' });
 
     expect(markup).toMatch(new RegExp(`<strong aria-describedby="[^"]+">${t('sidebar.active_connection.no_host_selected')}</strong>`));
-    expect(markup).toMatch(new RegExp(`<span aria-describedby="[^"]+">${t('sidebar.active_connection.no_database_selected')}</span>`));
+    expect(markup).toMatch(new RegExp(`<span class="is-placeholder" aria-describedby="[^"]+">${t('sidebar.active_connection.no_database_selected')}</span>`));
     expect(markup).not.toContain(`title="${t('sidebar.active_connection.no_host_selected')}"`);
     expect(markup).not.toContain(`title="${t('sidebar.active_connection.no_database_selected')}"`);
     expect(markup).not.toContain('<strong>本地</strong>');
@@ -1587,6 +1587,7 @@ describe('Sidebar locate toolbar', () => {
     expect(markup).toContain('刷新统计信息');
     expect(markup).toContain('导出表数据');
     expect(markup).toContain('打开导出工作台…');
+    expect(markup).toContain('批量处理表');
     expect(markup).not.toContain('Excel · .xlsx');
     expect(markup).not.toContain('CSV · .csv');
     expect(markup).not.toContain('JSON · .json');
@@ -2102,6 +2103,8 @@ describe('Sidebar locate toolbar', () => {
     expect(markup).toContain(t('sidebar.v2_database_menu.export_backup_section'));
     expect(markup).toContain(t('sidebar.v2_database_menu.export_all_table_schema_sql'));
     expect(markup).toContain(t('sidebar.v2_database_menu.backup_all_tables_sql'));
+    expect(markup).toContain(t('sidebar.action.batch_tables'));
+    expect(markup).toContain(t('sidebar.action.batch_databases'));
     expect(markup).toContain(t('sidebar.v2_table_menu.item_with_suffix', { label: t('sidebar.menu.delete_database'), suffix: 'DROP' }));
   });
 
@@ -2158,6 +2161,8 @@ describe('Sidebar locate toolbar', () => {
     expect(markup).toContain('Export and backup');
     expect(markup).toContain('Export all table schemas · SQL');
     expect(markup).toContain('Back up all tables · schema + data SQL');
+    expect(markup).toContain('Batch tables');
+    expect(markup).toContain('Batch databases');
     expect(markup).toContain('Delete database · DROP');
     expect(markup).toContain('StarRocks');
     expect(markup).toContain('Catalog');
@@ -2507,6 +2512,7 @@ describe('Sidebar locate toolbar', () => {
       sort: t('sidebar.v2_table_group_menu.sort_frequency'),
     }));
     expect(markup).toContain(t('sidebar.menu.create_table'));
+    expect(markup).toContain(t('sidebar.menu.refresh'));
     expect(markup).toContain(t('data_grid.context_menu.sort_section'));
     expect(markup).toContain(t('sidebar.menu.sort_by_name'));
     expect(markup).toContain(t('sidebar.menu.sort_by_frequency'));
@@ -2599,14 +2605,14 @@ describe('Sidebar locate toolbar', () => {
     expect(visibleSuffixMarkup).toContain('用户表');
     expect(visibleSuffixMarkup).toContain(t('sidebar.v2_table_group_menu.metadata_value.rows', { count: '7' }));
     expect(visibleSuffixMarkup).toContain('4 KB');
-    expect(visibleSuffixMarkup).toContain(t('sidebar.v2_table_group_menu.metadata_value.created_at', { time: '2026-07-02 10:11' }));
-    expect(visibleSuffixMarkup).toContain(t('sidebar.v2_table_group_menu.metadata_value.updated_at', { time: '2026-07-03 11:12' }));
+    expect(visibleSuffixMarkup).toContain(t('sidebar.v2_table_group_menu.metadata_value.created_at', { time: '2026-07-02 10:11:12' }));
+    expect(visibleSuffixMarkup).toContain(t('sidebar.v2_table_group_menu.metadata_value.updated_at', { time: '2026-07-03 11:12:13' }));
 
     const sortedSuffixMarkup = renderToStaticMarkup(renderSidebarV2TreeTitle({
       ...baseOptions,
       sidebarTableMetadataFields: ['updatedAt', 'size', 'rows', 'comment', 'createdAt'],
     }));
-    expect(sortedSuffixMarkup.indexOf(t('sidebar.v2_table_group_menu.metadata_value.updated_at', { time: '2026-07-03 11:12' })))
+    expect(sortedSuffixMarkup.indexOf(t('sidebar.v2_table_group_menu.metadata_value.updated_at', { time: '2026-07-03 11:12:13' })))
       .toBeLessThan(sortedSuffixMarkup.indexOf('4 KB'));
     expect(sortedSuffixMarkup.indexOf('4 KB'))
       .toBeLessThan(sortedSuffixMarkup.indexOf(t('sidebar.v2_table_group_menu.metadata_value.rows', { count: '7' })));

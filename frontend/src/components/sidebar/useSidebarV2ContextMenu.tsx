@@ -309,6 +309,7 @@ export const useSidebarV2ContextMenu = ({
               supportsCopyTable={supportsCopyTable}
               supportsStarRocksRollup={isStarRocks}
               supportsMessagePublish={supportsMessagePublish}
+              supportsBatchTables={getDataSourceCapabilities(node.dataRef?.config).supportsSqlQueryExport}
               onAction={(action) => {
                   setContextMenu(null);
                   handleV2TableContextMenuAction(node, action);
@@ -354,6 +355,7 @@ export const useSidebarV2ContextMenu = ({
               supportsStarRocksActions={dialect === 'starrocks'}
               supportsRenameDatabase={capabilities.supportsRenameDatabase}
               supportsDropDatabase={capabilities.supportsDropDatabase}
+              supportsBatchWorkbench={capabilities.supportsSqlQueryExport}
               isPinned={isPinned}
               onAction={(action) => {
                   setContextMenu(null);

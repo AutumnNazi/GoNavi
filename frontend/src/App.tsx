@@ -632,6 +632,8 @@ type ConnectionPackageDialogState = {
   password: string;
   error: string;
   confirmLoading: boolean;
+  /** Export only: selected connection ids to include in the package. */
+  selectedConnectionIds: string[];
 };
 
 const createClosedConnectionPackageDialogState = (): ConnectionPackageDialogState => ({
@@ -642,6 +644,7 @@ const createClosedConnectionPackageDialogState = (): ConnectionPackageDialogStat
   password: '',
   error: '',
   confirmLoading: false,
+  selectedConnectionIds: [],
 });
 
 type SidebarMetadataSortableRowProps = {
@@ -2776,6 +2779,7 @@ function App() {
                   password: '',
                   error: '',
                   confirmLoading: false,
+                  selectedConnectionIds: [],
               });
               return;
           }
@@ -2845,6 +2849,8 @@ function App() {
           password: '',
           error: '',
           confirmLoading: false,
+          // Default to all connections; user can deselect for partial export.
+          selectedConnectionIds: connections.map((item) => item.id),
       });
   };
 
@@ -2856,6 +2862,17 @@ function App() {
           setConnectionPackageDialog((current) => ({
               ...current,
               error: t('app.connection_package.error.restore_password_required'),
+          }));
+          return;
+      }
+
+      if (
+          connectionPackageDialog.mode === 'export'
+          && connectionPackageDialog.selectedConnectionIds.length === 0
+      ) {
+          setConnectionPackageDialog((current) => ({
+              ...current,
+              error: t('app.connection_package.error.no_selected_connections'),
           }));
           return;
       }
@@ -2900,6 +2917,7 @@ function App() {
                           connectionPackageDialog.includeSecrets
                           && connectionPackageDialog.useFilePassword
                       ) ? password : '',
+                      connectionIds: connectionPackageDialog.selectedConnectionIds,
                       // Redis DB 别名仅存前端，导出时注入连接包
                       redisDbAliases: useStore.getState().appearance.redisDbAliases,
                   });
@@ -3436,6 +3454,72 @@ function App() {
       setActiveSettingsCenterPane({ key, group });
       setIsSettingsModalOpen(true);
   }, [clearSettingsCenterTransientPaneState]);
+  /** Title-bar「更多」→ settings/tool center navigation (mirrors 设置 left-nav groups). */
+  const handleTitleBarSettingsNavigation = useCallback((spec: {
+    group: 'preferences' | 'services' | 'config' | 'workflow' | 'workspace' | 'about';
+    pane?: string;
+    action?: 'import-connections' | 'export-connections' | 'schema-compare' | 'data-compare' | 'sync' | 'sql-audit';
+  }) => {
+      if (spec.action === 'import-connections') {
+          void handleImportConnections('config');
+          return;
+      }
+      if (spec.action === 'export-connections') {
+          void handleExportConnections('config');
+          return;
+      }
+      if (spec.action === 'schema-compare') {
+          handleOpenDataSyncWorkbench('schemaCompare');
+          return;
+      }
+      if (spec.action === 'data-compare') {
+          handleOpenDataSyncWorkbench('dataCompare');
+          return;
+      }
+      if (spec.action === 'sync') {
+          handleOpenDataSyncWorkbench('sync');
+          return;
+      }
+      if (spec.action === 'sql-audit') {
+          handleCancelSettingsCenterPane();
+          addTab(buildSqlAuditWorkbenchTab());
+          return;
+      }
+      if (!spec.pane) {
+          if (isToolCenterGroupKey(spec.group)) {
+              handleOpenToolsModal(spec.group);
+              return;
+          }
+          handleOpenSettingsModal(spec.group);
+          return;
+      }
+      if (isToolCenterGroupKey(spec.group)) {
+          handleOpenToolCenterPane(spec.group, spec.pane as ToolCenterPaneKey);
+          return;
+      }
+      if (spec.group === 'preferences' && spec.pane === 'theme') {
+          setThemeModalSection('theme');
+          handleOpenSettingsCenterPane('preferences', 'theme');
+          return;
+      }
+      if (spec.group === 'services' && spec.pane === 'ai') {
+          setSecurityUpdateRepairSource(null);
+          setFocusedAIProviderId(undefined);
+          handleOpenSettingsCenterPane('services', 'ai');
+          return;
+      }
+      handleOpenSettingsCenterPane(spec.group, spec.pane as SettingsCenterPaneKey);
+  }, [
+      addTab,
+      handleCancelSettingsCenterPane,
+      handleExportConnections,
+      handleImportConnections,
+      handleOpenDataSyncWorkbench,
+      handleOpenSettingsCenterPane,
+      handleOpenSettingsModal,
+      handleOpenToolCenterPane,
+      handleOpenToolsModal,
+  ]);
   const handleReturnToToolCenter = useCallback((closeChild?: () => void) => {
       const returnGroup = toolCenterBackGroupKey ?? 'config';
       closeChild?.();
@@ -7481,7 +7565,7 @@ function App() {
               <div className="gonavi-titlebar-leading">
                   <div
                     data-titlebar-brand-region="true"
-                    style={{ display: 'flex', alignItems: 'center', gap: Math.max(6, Math.round(8 * effectiveUiScale)), fontWeight: 600, minWidth: 0 }}
+                    style={{ display: 'flex', alignItems: 'center', gap: Math.max(6, Math.round(8 * effectiveUiScale)), fontWeight: 700, minWidth: 0, letterSpacing: '-0.01em' }}
                   >
                       <span>GoNavi</span>
                       {!isV2Ui && (
@@ -7621,6 +7705,8 @@ function App() {
                             onCreateConnectionInGroup={handleCreateConnectionInGroup}
                             onEditConnection={handleEditConnection}
                             onOpenSettings={handleOpenSettingsModal}
+                            onOpenSettingsNavigation={handleTitleBarSettingsNavigation}
+                            isWebRuntime={isWebRuntime}
                             onOpenDataSyncWorkbench={handleOpenDataSyncWorkbench}
                             onToggleAI={toggleAIPanel}
                             onToggleLogPanel={handleToggleLogPanel}
@@ -7734,7 +7820,7 @@ function App() {
             </div>
           </Sider>
            <Content
-             style={{ background: bgContent, overflow: 'hidden', display: 'flex', flexDirection: 'column', minWidth: 0, flex: 1 }}
+             style={{ background: isV2Ui ? 'var(--gn-bg-panel-2)' : bgContent, overflow: 'hidden', display: 'flex', flexDirection: 'column', minWidth: 0, flex: 1 }}
            >
              {securityUpdateEntryVisibility.showBanner && !isSecurityUpdateBannerDismissed && (
                 <SecurityUpdateBanner
@@ -7752,7 +7838,7 @@ function App() {
                 />
              )}
              <div style={{ flex: 1, minHeight: 0, minWidth: 0, overflow: 'hidden', display: 'flex', flexDirection: 'row', position: 'relative' }}>
-               <div style={{ flex: 1, minHeight: 0, minWidth: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', background: bgContent, marginBottom: isLogPanelOpen ? 8 : 0, borderRadius: isLogPanelOpen ? 'var(--gonavi-border-radius)' : 0, clipPath: isLogPanelOpen ? 'inset(0 round var(--gonavi-border-radius))' : 'none' }}>
+               <div style={{ flex: 1, minHeight: 0, minWidth: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', background: isV2Ui ? 'var(--gn-bg-panel-2)' : bgContent, marginBottom: isLogPanelOpen ? 8 : 0, borderRadius: isLogPanelOpen ? 'var(--gonavi-border-radius)' : 0, clipPath: isLogPanelOpen ? 'inset(0 round var(--gonavi-border-radius))' : 'none' }}>
                   <TabManager onFocusSidebarSearch={handleFocusSidebarSearch} />
                   <FloatingWorkbenchWindows />
                   <FloatingQueryResultWindows />
@@ -8116,6 +8202,15 @@ function App() {
                     password={connectionPackageDialog.password}
                     error={connectionPackageDialog.error}
                     confirmLoading={connectionPackageDialog.confirmLoading}
+                    connectionOptions={connections.map((item) => ({ value: item.id, label: item.name || item.id }))}
+                    selectedConnectionIds={connectionPackageDialog.selectedConnectionIds}
+                    onSelectedConnectionIdsChange={(ids) => {
+                        setConnectionPackageDialog((current) => ({
+                            ...current,
+                            selectedConnectionIds: ids,
+                            error: '',
+                        }));
+                    }}
                     confirmText={connectionPackageDialog.mode === 'export'
                         ? t('app.connection_package.action.start_export')
                         : t('app.connection_package.action.start_import')}
@@ -8801,6 +8896,15 @@ function App() {
             password={connectionPackageDialog.password}
             error={connectionPackageDialog.error}
             confirmLoading={connectionPackageDialog.confirmLoading}
+            connectionOptions={connections.map((item) => ({ value: item.id, label: item.name || item.id }))}
+            selectedConnectionIds={connectionPackageDialog.selectedConnectionIds}
+            onSelectedConnectionIdsChange={(ids) => {
+                setConnectionPackageDialog((current) => ({
+                    ...current,
+                    selectedConnectionIds: ids,
+                    error: '',
+                }));
+            }}
             confirmText={connectionPackageDialog.mode === 'export'
                 ? t('app.connection_package.action.start_export')
                 : t('app.connection_package.action.start_import')}

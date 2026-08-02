@@ -93,6 +93,8 @@ type UseSidebarV2ActionHandlersArgs = {
   openCreateStarRocksMaterializedView: (node: any) => void;
   openCreateStarRocksExternalCatalog: (node: any) => void;
   handleExportDatabaseSQL: (node: any, includeData: boolean) => Promise<void>;
+  openBatchTableWorkbench: (node?: any) => void;
+  openBatchDatabaseWorkbench: (node?: any) => void;
   handleRunSQLFile: (node: any) => void;
   handleDeleteDatabase: (node: any) => void;
   onCreateConnectionInGroup?: (targetTagId: string) => void;
@@ -162,6 +164,8 @@ export const useSidebarV2ActionHandlers = ({
   openCreateStarRocksMaterializedView,
   openCreateStarRocksExternalCatalog,
   handleExportDatabaseSQL,
+  openBatchTableWorkbench,
+  openBatchDatabaseWorkbench,
   handleRunSQLFile,
   handleDeleteDatabase,
   onCreateConnectionInGroup,
@@ -243,6 +247,9 @@ export const useSidebarV2ActionHandlers = ({
         return;
       case 'export-data':
         void openExportDialog(node);
+        return;
+      case 'batch-tables':
+        openBatchTableWorkbench(node);
         return;
       case 'ai-explain':
         void injectTablePromptToAI(node, 'explain');
@@ -329,10 +336,23 @@ export const useSidebarV2ActionHandlers = ({
     loadTables(dbNode);
   };
 
+  const handleTableGroupRefreshAction = (node: any) => {
+    const groupData = node.dataRef;
+    if (!groupData?.id || !groupData?.dbName) return;
+    const dbNode = {
+      key: `${groupData.id}-${groupData.dbName}`,
+      dataRef: groupData,
+    };
+    void loadTables(dbNode);
+  };
+
   const handleV2TableGroupContextMenuAction = (node: any, action: V2TableGroupContextMenuActionKey) => {
     switch (action) {
       case 'new-table':
         openNewTableDesign(node);
+        return;
+      case 'refresh':
+        handleTableGroupRefreshAction(node);
         return;
       case 'sort-by-name':
         handleTableGroupSortAction(node, 'name');
@@ -412,6 +432,12 @@ export const useSidebarV2ActionHandlers = ({
         return;
       case 'backup-db-sql':
         void handleExportDatabaseSQL(node, true);
+        return;
+      case 'batch-tables':
+        openBatchTableWorkbench(node);
+        return;
+      case 'batch-databases':
+        openBatchDatabaseWorkbench(node);
         return;
       case 'disconnect-db':
         closeDatabaseNode(node);

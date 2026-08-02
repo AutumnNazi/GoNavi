@@ -1,6 +1,7 @@
 import { Input, message, type MenuProps } from 'antd';
 import Modal from '../common/ResizableDraggableModal';
 import {
+  AppstoreOutlined,
   CheckSquareOutlined,
   CloudOutlined,
   CodeOutlined,
@@ -350,6 +351,8 @@ export const buildSidebarLegacyNodeMenuItems = (
     handleTableDataDangerAction,
     handleDeleteTable,
     openExportDialog,
+    openBatchTableWorkbench,
+    openBatchDatabaseWorkbench,
     isSavedQueryUnmatched,
     connections,
     handleRebindSavedQuery,
@@ -440,6 +443,18 @@ export const buildSidebarLegacyNodeMenuItems = (
                 icon: <TableOutlined />,
                 onClick: () => openNewTableDesign(node)
             }] : []),
+            {
+                key: 'refresh-tables',
+                label: t('sidebar.menu.refresh'),
+                icon: <ReloadOutlined />,
+                onClick: () => {
+                    const dbNode = {
+                        key: `${groupData.id}-${groupData.dbName}`,
+                        dataRef: groupData,
+                    };
+                    void loadTables(dbNode);
+                },
+            },
             { type: 'divider' },
             {
                 key: 'sort-by-name',
@@ -1188,6 +1203,20 @@ export const buildSidebarLegacyNodeMenuItems = (
                 icon: <SaveOutlined />,
                 onClick: () => handleV2DatabaseContextMenuAction(node, 'backup-db-sql')
             },
+            ...(capabilities.supportsSqlQueryExport ? [
+                {
+                    key: 'batch-tables',
+                    label: t('sidebar.action.batch_tables'),
+                    icon: <AppstoreOutlined />,
+                    onClick: () => handleV2DatabaseContextMenuAction(node, 'batch-tables'),
+                },
+                {
+                    key: 'batch-databases',
+                    label: t('sidebar.action.batch_databases'),
+                    icon: <DatabaseOutlined />,
+                    onClick: () => handleV2DatabaseContextMenuAction(node, 'batch-databases'),
+                },
+            ] : []),
             { type: 'divider' },
             {
                 key: 'disconnect-db',
@@ -1504,7 +1533,13 @@ export const buildSidebarLegacyNodeMenuItems = (
                 label: t('sidebar.menu.export_table_data'),
                 icon: <ExportOutlined />,
                 onClick: () => openExportDialog(node),
-            }
+            },
+            ...(getDataSourceCapabilities(node.dataRef?.config).supportsSqlQueryExport ? [{
+                key: 'batch-tables',
+                label: t('sidebar.action.batch_tables'),
+                icon: <AppstoreOutlined />,
+                onClick: () => openBatchTableWorkbench?.(node),
+            }] : []),
         ];
     }
 
