@@ -81,4 +81,21 @@ describe('dataGridSelectionCopy helpers', () => {
     expect(payload.html).toContain('<td>A&amp;B</td>');
     expect(payload.html).toContain('<td>&lt;owner&gt;</td>');
   });
+
+  it('preserves tabs and newlines in rich selected-cell formats', () => {
+    const payload = buildSelectedCellClipboardPayload({
+      selectedCells: [
+        { rowKey: 'row-1', colName: 'note' },
+      ],
+      rows: [
+        { __rowKey: 'row-1', note: 'left\tright\nnext' },
+      ],
+      columnOrder: ['note'],
+      rowKeyField: '__rowKey',
+    });
+
+    expect(payload.plainText).toBe('left right next');
+    expect(payload.csv).toBe('"left\tright\nnext"');
+    expect(payload.html).toContain('<td>left\tright\nnext</td>');
+  });
 });

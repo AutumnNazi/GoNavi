@@ -15,13 +15,18 @@ export const canSelectGridCellForClipboard = ({
   isWritableColumn: boolean;
 }): boolean => isDisplayedColumn && (!canModifyData || isWritableColumn);
 
-const normalizeClipboardCellValue = (value: unknown): string => {
+const normalizeUnsafePlainTextCell = (value: string): string => (
+  value.replace(/\r\n/g, '\n').replace(/[\t\n\r]+/g, ' ').trim()
+);
+
+const normalizeClipboardCellValue = (value: unknown, options: { preserveCellWhitespace?: boolean } = {}): string => {
   if (value === null || value === undefined) {
     return 'NULL';
   }
 
   if (typeof value === 'string') {
-    return value.replace(/\r\n/g, '\n').replace(/[\t\n\r]+/g, ' ').trim();
+    const normalized = value.replace(/\r\n/g, '\n');
+    return options.preserveCellWhitespace ? normalized : normalizeUnsafePlainTextCell(normalized);
   }
 
   if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint') {
@@ -29,10 +34,15 @@ const normalizeClipboardCellValue = (value: unknown): string => {
   }
 
   try {
-    return JSON.stringify(value).replace(/[\t\n\r]+/g, ' ').trim();
+    const text = JSON.stringify(value);
+    if (typeof text === 'string') {
+      return options.preserveCellWhitespace ? text : normalizeUnsafePlainTextCell(text);
+    }
   } catch {
-    return String(value).replace(/[\t\n\r]+/g, ' ').trim();
+    // Fall through to String(value) below.
   }
+  const text = String(value);
+  return options.preserveCellWhitespace ? text : normalizeUnsafePlainTextCell(text);
 };
 
 export const buildSelectedCellClipboardText = ({
@@ -61,11 +71,13 @@ const buildSelectedCellClipboardMatrix = ({
   rows,
   columnOrder,
   rowKeyField,
+  preserveCellWhitespace = false,
 }: {
   selectedCells: SelectedGridCell[];
   rows: Array<Record<string, any>>;
   columnOrder: string[];
   rowKeyField: string;
+  preserveCellWhitespace?: boolean;
 }): string[][] => {
   if (!selectedCells.length || !rows.length || !columnOrder.length || !rowKeyField) {
     return [];
@@ -90,7 +102,7 @@ const buildSelectedCellClipboardMatrix = ({
           if (!selectedCellKeySet.has(`${rowKey}::${columnName}`)) {
             return '';
           }
-          return normalizeClipboardCellValue(row?.[columnName]);
+          return normalizeClipboardCellValue(row?.[columnName], { preserveCellWhitespace });
         });
     });
 };
@@ -111,6 +123,7 @@ export const buildSelectedCellClipboardPayload = ({
     rows,
     columnOrder,
     rowKeyField,
+    preserveCellWhitespace: true,
   });
   return buildTabularClipboardPayload({ rows: matrix });
 };

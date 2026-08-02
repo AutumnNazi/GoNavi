@@ -37,6 +37,17 @@ describe('dataGridClipboardPayload', () => {
     expect(payload.csv).toBe('"id","name"\n"1","alpha"');
   });
 
+  it('keeps rich formats lossless while plain text remains a safe TSV fallback', () => {
+    const payload = buildTabularClipboardPayload({
+      rows: [['alpha\tbeta', 'line1\nline2']],
+    });
+
+    expect(payload.plainText).toBe('alpha beta\tline1 line2');
+    expect(payload.csv).toBe('"alpha\tbeta","line1\nline2"');
+    expect(payload.html).toContain('<td>alpha\tbeta</td>');
+    expect(payload.html).toContain('<td>line1\nline2</td>');
+  });
+
   it('sets multiple clipboard MIME types without overwriting different formats', () => {
     const values: Record<string, string> = {};
     const event = {
