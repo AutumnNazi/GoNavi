@@ -2269,7 +2269,13 @@ body[data-platform='windows'] .titlebar-window-controls {
     gap: 8px;
 }
 
-.titlebar-close-btn:hover {
+.titlebar-window-controls > .ant-btn.ant-btn-text {
+    border: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+}
+
+.titlebar-window-controls > .titlebar-close-btn.ant-btn-text:hover {
     background-color: #ff4d4f !important;
     color: #fff !important;
 }

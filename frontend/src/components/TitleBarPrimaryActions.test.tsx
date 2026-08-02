@@ -23,6 +23,24 @@ describe('TitleBarPrimaryActions', () => {
     expect(match?.groups?.body).toContain('-webkit-app-region: no-drag;');
   });
 
+  it('keeps the custom window controls borderless under the v2 button theme', () => {
+    const match = appCss.match(
+      /\.titlebar-window-controls > \.ant-btn\.ant-btn-text\s*\{(?<body>[^}]*)\}/s,
+    );
+    expect(match, 'Missing titlebar window-control override').not.toBeNull();
+    const body = match?.groups?.body ?? '';
+    expect(body).toContain('border: 0 !important;');
+    expect(body).toContain('border-radius: 0 !important;');
+    expect(body).toContain('box-shadow: none !important;');
+
+    const closeHoverMatch = appCss.match(
+      /\.titlebar-window-controls > \.titlebar-close-btn\.ant-btn-text:hover\s*\{(?<body>[^}]*)\}/s,
+    );
+    expect(closeHoverMatch, 'Missing close-button hover override').not.toBeNull();
+    expect(closeHoverMatch?.groups?.body).toContain('background-color: #ff4d4f !important;');
+    expect(closeHoverMatch?.groups?.body).toContain('color: #fff !important;');
+  });
+
   it('shows both labels in query-first order and invokes their actions', () => {
     const onNewQuery = vi.fn();
     const onNewConnection = vi.fn();
