@@ -61,7 +61,7 @@ func TestBuildConnectionPackagePayloadIncludesSecretBundles(t *testing.T) {
 		t.Fatalf("SaveConnection returned error: %v", err)
 	}
 
-	payload, err := app.buildConnectionPackagePayload(nil)
+	payload, err := app.buildConnectionPackagePayload(nil, nil)
 	if err != nil {
 		t.Fatalf("buildConnectionPackagePayload returned error: %v", err)
 	}
@@ -1105,7 +1105,7 @@ func TestBuildExportedConnectionPackageCarriesRedisDbAliases(t *testing.T) {
 	}
 
 	// payload 内连接项也应携带别名（便于单项迁移）
-	payload, err := app.buildConnectionPackagePayload(aliases)
+	payload, err := app.buildConnectionPackagePayload(aliases, nil)
 	if err != nil {
 		t.Fatalf("buildConnectionPackagePayload returned error: %v", err)
 	}
@@ -1114,6 +1114,53 @@ func TestBuildExportedConnectionPackageCarriesRedisDbAliases(t *testing.T) {
 	}
 	if payload.RedisDbAliases["redis-1"]["1"] != "sessions" {
 		t.Fatalf("expected top-level alias sessions, got %#v", payload.RedisDbAliases)
+	}
+}
+
+func TestBuildConnectionPackagePayloadFiltersByConnectionIDs(t *testing.T) {
+	app := NewAppWithSecretStore(newFakeAppSecretStore())
+	app.configDir = t.TempDir()
+
+	for _, item := range []connection.SavedConnectionInput{
+		{
+			ID:   "conn-a",
+			Name: "A",
+			Config: connection.ConnectionConfig{
+				ID:   "conn-a",
+				Type: "mysql",
+				Host: "127.0.0.1",
+				Port: 3306,
+			},
+		},
+		{
+			ID:   "conn-b",
+			Name: "B",
+			Config: connection.ConnectionConfig{
+				ID:   "conn-b",
+				Type: "mysql",
+				Host: "127.0.0.1",
+				Port: 3307,
+			},
+		},
+	} {
+		if _, err := app.SaveConnection(item); err != nil {
+			t.Fatalf("SaveConnection %s: %v", item.ID, err)
+		}
+	}
+
+	payload, err := app.buildConnectionPackagePayload(nil, []string{"conn-b"})
+	if err != nil {
+		t.Fatalf("buildConnectionPackagePayload returned error: %v", err)
+	}
+	if len(payload.Connections) != 1 {
+		t.Fatalf("expected 1 connection, got %d", len(payload.Connections))
+	}
+	if payload.Connections[0].ID != "conn-b" {
+		t.Fatalf("expected conn-b, got %q", payload.Connections[0].ID)
+	}
+
+	if _, err := app.buildConnectionPackagePayload(nil, []string{"missing-id"}); err == nil {
+		t.Fatal("expected error when filter matches no connections")
 	}
 }
 

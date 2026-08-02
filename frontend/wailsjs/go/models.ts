@@ -708,6 +708,7 @@ export namespace app {
 	export class ConnectionExportOptions {
 	    includeSecrets: boolean;
 	    filePassword?: string;
+	    connectionIds?: string[];
 	    redisDbAliases?: Record<string, any>;
 	
 	    static createFrom(source: any = {}) {
@@ -718,6 +719,7 @@ export namespace app {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.includeSecrets = source["includeSecrets"];
 	        this.filePassword = source["filePassword"];
+	        this.connectionIds = source["connectionIds"];
 	        this.redisDbAliases = source["redisDbAliases"];
 	    }
 	}
@@ -771,11 +773,11 @@ export namespace app {
 	    outcomeUnknown?: boolean;
 	    readOnly: boolean;
 	    serverMajor?: number;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new ElasticsearchConsoleRequestResult(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.index = source["index"];
@@ -807,11 +809,11 @@ export namespace app {
 	    completed: number;
 	    failedIndex?: number;
 	    outcomeUnknown?: boolean;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new ElasticsearchConsoleExecutionResult(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.success = source["success"];
@@ -824,7 +826,7 @@ export namespace app {
 	        this.failedIndex = source["failedIndex"];
 	        this.outcomeUnknown = source["outcomeUnknown"];
 	    }
-
+	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -858,11 +860,11 @@ export namespace app {
 	    containsScript?: boolean;
 	    operationCount?: number;
 	    blockReason?: string;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new ElasticsearchConsoleRequestInspection(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.index = source["index"];
@@ -893,11 +895,11 @@ export namespace app {
 	    blocked: boolean;
 	    blockReason?: string;
 	    serverMajor?: number;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new ElasticsearchConsoleInspection(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.success = source["success"];
@@ -912,7 +914,7 @@ export namespace app {
 	        this.blockReason = source["blockReason"];
 	        this.serverMajor = source["serverMajor"];
 	    }
-
+	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -931,8 +933,8 @@ export namespace app {
 		    return a;
 		}
 	}
-
-
+	
+	
 	export class ExportFileOptions {
 	    format: string;
 	    columns?: string[];
@@ -1586,38 +1588,6 @@ export namespace app {
 
 export namespace connection {
 	
-	export class DatabaseCharset {
-	    name: string;
-	    description?: string;
-	    defaultCollation?: string;
-	    maxLength?: number;
-	
-	    static createFrom(source: any = {}) {
-	        return new DatabaseCharset(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.name = source["name"];
-	        this.description = source["description"];
-	        this.defaultCollation = source["defaultCollation"];
-	        this.maxLength = source["maxLength"];
-	    }
-	}
-	export class DatabaseCollation {
-	    name: string;
-	    charset: string;
-	
-	    static createFrom(source: any = {}) {
-	        return new DatabaseCollation(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.name = source["name"];
-	        this.charset = source["charset"];
-	    }
-	}
 	export class UpdateRow {
 	    keys: Record<string, any>;
 	    values: Record<string, any>;
@@ -2825,3 +2795,4 @@ export namespace sync {
 	}
 
 }
+

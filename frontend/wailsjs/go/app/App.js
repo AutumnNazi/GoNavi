@@ -542,16 +542,16 @@ export function JVMStopMonitoring(arg1, arg2) {
   return window['go']['app']['App']['JVMStopMonitoring'](arg1, arg2);
 }
 
-export function ListInstalledFontFamilies() {
-  return window['go']['app']['App']['ListInstalledFontFamilies']();
-}
-
 export function ListDatabaseCharsets(arg1) {
   return window['go']['app']['App']['ListDatabaseCharsets'](arg1);
 }
 
 export function ListDatabaseCollations(arg1) {
   return window['go']['app']['App']['ListDatabaseCollations'](arg1);
+}
+
+export function ListInstalledFontFamilies() {
+  return window['go']['app']['App']['ListInstalledFontFamilies']();
 }
 
 export function ListSQLDirectory(arg1) {

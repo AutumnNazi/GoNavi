@@ -10,6 +10,7 @@ export type ConnectionPackageDialogSnapshot = {
   password: string;
   error: string;
   confirmLoading: boolean;
+  selectedConnectionIds?: string[];
 };
 export type ConnectionPackageDialogUpdater = (
   current: ConnectionPackageDialogSnapshot,
