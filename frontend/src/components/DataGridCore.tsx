@@ -59,6 +59,7 @@ import {
 } from './dataGridCopyInsert';
 import { calculateAutoFitColumnWidth } from './dataGridAutoWidth';
 import { buildSelectedCellClipboardText } from './dataGridSelectionCopy';
+import type { DataGridClipboardPayload } from './dataGridClipboardPayload';
 import { buildCopiedRowsForPaste, buildPastedRowsFromCopiedRows } from './dataGridRowClipboard';
 import {
     buildDataGridSelectBaseSql,
@@ -876,7 +877,7 @@ const DataContext = React.createContext<{
     handleCopyJson: (r: any) => void;
     handleCopyCsv: (r: any) => void;
     handleExportSelected: (options: DataExportFileOptions, r: any) => Promise<void>;
-    copyToClipboard: (t: string) => void;
+    copyToClipboard: (t: string | DataGridClipboardPayload) => void;
     tableName?: string;
     enableRowContextMenu: boolean;
     supportsCopyInsert: boolean;
