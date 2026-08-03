@@ -35,6 +35,7 @@ import {
     resolveSqlDialect,
 } from '../utils/sqlDialect';
 import { splitQualifiedNameLast, stripIdentifierQuotes } from '../utils/qualifiedName';
+import { buildTDengineStableOptions, buildTDengineStableQueries } from '../utils/tdengineStableMetadata';
 import {
     cloneTableDesignerColumnsForPaste,
     parseTableDesignerColumns,
@@ -1681,6 +1682,7 @@ ${selectedTrigger.statement}`;
       let cancelled = false;
       const fetchSuperTables = async () => {
           setTdengineStableOptionsLoading(true);
+          setTdengineStableOptions([]);
           try {
               const conn = connections.find(c => c.id === tab.connectionId);
               if (!conn) return;
@@ -1694,17 +1696,17 @@ ${selectedTrigger.statement}`;
               };
               const rpcConfig = buildRpcConnectionConfig(config) as any;
               const dbName = tab.dbName || '';
-              const res = await DBQuery(rpcConfig, dbName, 'SHOW STABLES');
-              if (cancelled) return;
-              if (res.success && Array.isArray(res.data)) {
-                  const options = res.data.map((row: any) => {
-                      const name = row?.table_name || row?.Table || row?.name || row?.tablename || '';
-                      return { label: String(name), value: String(name) };
-                  }).filter(opt => opt.value);
-                  setTdengineStableOptions(options);
-              } else {
-                  setTdengineStableOptions([]);
+              for (const query of buildTDengineStableQueries(dbName)) {
+                  const res = await DBQuery(rpcConfig, dbName, query);
+                  if (cancelled) return;
+                  if (!res?.success || !Array.isArray(res.data)) continue;
+                  const options = buildTDengineStableOptions(res.data);
+                  if (options.length > 0) {
+                      setTdengineStableOptions(options);
+                      return;
+                  }
               }
+              if (!cancelled) setTdengineStableOptions([]);
           } catch {
               if (!cancelled) setTdengineStableOptions([]);
           } finally {
