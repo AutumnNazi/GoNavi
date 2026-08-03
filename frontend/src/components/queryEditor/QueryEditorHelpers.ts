@@ -83,6 +83,28 @@ export const rankQueryEditorCompletionCandidate = (
     return null;
 };
 
+/**
+ * Monaco applies its own fuzzy filter after the provider returns. When a
+ * candidate is matched only by a substring, expose the matching suffix so
+ * Monaco can keep the item visible even when the match does not start at a
+ * word boundary (for example `title` in `subtitle`).
+ */
+export const resolveQueryEditorCompletionFilterText = (
+    prefix: string,
+    candidates: readonly string[],
+): string | undefined => {
+    const normalizedPrefix = String(prefix || '').trim().toLowerCase();
+    if (!normalizedPrefix) return undefined;
+    for (const candidate of candidates) {
+        const value = String(candidate || '').trim();
+        const matchIndex = value.toLowerCase().indexOf(normalizedPrefix);
+        if (matchIndex >= 0) {
+            return value.slice(matchIndex);
+        }
+    }
+    return undefined;
+};
+
 type RankedQueryEditorCompletionCandidate<Candidate> = {
     candidate: Candidate;
     selectionKey: string;
