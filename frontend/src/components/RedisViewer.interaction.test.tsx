@@ -467,10 +467,14 @@ describe('RedisViewer tree interactions', () => {
     });
 
     expect(renderer!.root.findByProps({ 'data-redis-active-key': 'true' }).children).toEqual(['app:user:1']);
-    expect(renderer!.root.findByProps({ 'data-redis-value-loading-overlay': 'true' }).props.style).toMatchObject({
-      gridColumn: 3,
-      gridRow: '1 / 3',
+    const loadingOverlay = renderer!.root.findByProps({ 'data-redis-value-loading-overlay': 'true' });
+    expect(loadingOverlay.parent?.props.className).toBe('gn-v2-redis-value-pane');
+    expect(loadingOverlay.props.style).toMatchObject({
+      position: 'absolute',
+      inset: 0,
     });
+    expect(loadingOverlay.props.style).not.toHaveProperty('gridColumn');
+    expect(loadingOverlay.props.style).not.toHaveProperty('gridRow');
 
     await act(async () => {
       resolveRefresh({

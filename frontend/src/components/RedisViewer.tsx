@@ -2521,9 +2521,8 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
                         role="status"
                         aria-live="polite"
                         style={{
-                            ...(isV2Ui
-                                ? { gridColumn: 3, gridRow: '1 / 3' }
-                                : { position: 'absolute', inset: 0 }),
+                            position: 'absolute',
+                            inset: 0,
                             zIndex: 2,
                             minWidth: 0,
                             minHeight: 0,

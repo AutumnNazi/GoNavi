@@ -19,6 +19,16 @@ const readSection = (css: string, startMarker: string, endMarker: string): strin
   return css.slice(start, end);
 };
 
+const readRule = (css: string, selector: string): string => {
+  const start = css.indexOf(selector);
+  const openingBrace = css.indexOf('{', start + selector.length);
+  const closingBrace = css.indexOf('}', openingBrace + 1);
+  expect(start).toBeGreaterThanOrEqual(0);
+  expect(openingBrace).toBeGreaterThan(start);
+  expect(closingBrace).toBeGreaterThan(openingBrace);
+  return css.slice(start, closingBrace + 1);
+};
+
 describe('V2 workbench theme surfaces', () => {
   it('keeps Redis and Nacos workbench backgrounds on the secondary theme panel', () => {
     const css = readWorkbenchCss();
@@ -64,5 +74,40 @@ describe('V2 workbench theme surfaces', () => {
     expect(explorerSearchCss).toContain('background: var(--gn-bg-panel-2)');
     expect(explorerSearchCss).not.toContain('background: var(--gn-bg-input)');
     expect(nacosFilterCss).toContain('background: var(--gn-bg-panel-2) !important;');
+  });
+
+  it('keeps Redis key-tree and value-detail vertical tracks independent', () => {
+    const css = readWorkbenchCss();
+    const redisCss = readSection(
+      css,
+      '/* ─── V2 Redis workbench ─ */',
+      '/* ─── V2 Nacos workbench',
+    );
+    const rootRule = readRule(redisCss, 'body[data-ui-version="v2"] .gn-v2-redis-workbench');
+    const sidebarRule = readRule(redisCss, 'body[data-ui-version="v2"] .gn-v2-redis-sidebar');
+    const valuePaneRule = readRule(redisCss, 'body[data-ui-version="v2"] .gn-v2-redis-value-pane');
+    const valueLayoutRule = readRule(redisCss, 'body[data-ui-version="v2"] .gn-v2-redis-value-layout');
+    const valueTopRule = readRule(redisCss, 'body[data-ui-version="v2"] .gn-v2-redis-value-top');
+    const dividerRule = readRule(
+      redisCss,
+      'body[data-ui-version="v2"] .gn-v2-redis-workbench > .redis-resizable-divider',
+    );
+
+    expect(rootRule).toContain('grid-template-rows: minmax(0, 1fr);');
+    expect(sidebarRule).toContain('grid-row: 1;');
+    expect(sidebarRule).toContain('grid-template-rows: max-content minmax(0, 1fr);');
+    expect(sidebarRule).not.toContain('grid-template-rows: subgrid;');
+    expect(valuePaneRule).toContain('display: block !important;');
+    expect(valuePaneRule).toContain('grid-column: 3;');
+    expect(valuePaneRule).toContain('grid-row: 1;');
+    expect(valuePaneRule).toContain('min-height: 0;');
+    expect(valuePaneRule).not.toContain('display: contents !important;');
+    expect(valueLayoutRule).toContain('display: flex !important;');
+    expect(valueLayoutRule).not.toContain('display: contents !important;');
+    expect(valueTopRule).toContain('height: auto;');
+    expect(valueTopRule).not.toContain('grid-column:');
+    expect(valueTopRule).not.toContain('grid-row:');
+    expect(dividerRule).toContain('grid-row: 1;');
+    expect(dividerRule).not.toContain('grid-row: 1 / 3;');
   });
 });
