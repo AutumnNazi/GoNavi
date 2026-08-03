@@ -1694,13 +1694,7 @@ ${selectedTrigger.statement}`;
               };
               const rpcConfig = buildRpcConnectionConfig(config) as any;
               const dbName = tab.dbName || '';
-              // Try SHOW STABLES with database name, fall back to SHOW STABLES without qualifier
-              let res;
-              if (dbName) {
-                  res = await DBQuery(rpcConfig, dbName, `SHOW STABLES FROM ${dbName}`);
-              } else {
-                  res = await DBQuery(rpcConfig, '', 'SHOW STABLES');
-              }
+              const res = await DBQuery(rpcConfig, dbName, 'SHOW STABLES');
               if (cancelled) return;
               if (res.success && Array.isArray(res.data)) {
                   const options = res.data.map((row: any) => {
