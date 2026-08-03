@@ -886,6 +886,10 @@ export function RedisZSetRemove(arg1, arg2, arg3) {
   return window['go']['app']['App']['RedisZSetRemove'](arg1, arg2, arg3);
 }
 
+export function RefreshWebViewBounds() {
+  return window['go']['app']['App']['RefreshWebViewBounds']();
+}
+
 export function RemoveDriverPackage(arg1, arg2) {
   return window['go']['app']['App']['RemoveDriverPackage'](arg1, arg2);
 }

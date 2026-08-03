@@ -450,6 +450,8 @@ export function RedisZSetAdd(arg1:connection.ConnectionConfig,arg2:string,arg3:A
 
 export function RedisZSetRemove(arg1:connection.ConnectionConfig,arg2:string,arg3:Array<string>):Promise<connection.QueryResult>;
 
+export function RefreshWebViewBounds():Promise<connection.QueryResult>;
+
 export function RemoveDriverPackage(arg1:string,arg2:string):Promise<connection.QueryResult>;
 
 export function RenameDatabase(arg1:connection.ConnectionConfig,arg2:string,arg3:string):Promise<connection.QueryResult>;

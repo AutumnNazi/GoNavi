@@ -425,6 +425,27 @@ func (a *App) ResetWebViewZoom() (result connection.QueryResult) {
 	return connection.QueryResult{Success: true, Message: "WebView2 zoom factor reset to 1.0"}
 }
 
+// RefreshWebViewBounds synchronises WebView2 controller bounds with the native
+// Windows client rect. It repairs a startup maximise race without toggling the window.
+func (a *App) RefreshWebViewBounds() (result connection.QueryResult) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			logger.Errorf("刷新 WebView2 窗口边界失败：%v", recovered)
+			result = connection.QueryResult{
+				Success: false,
+				Message: fmt.Sprintf("failed to refresh WebView2 bounds: %v", recovered),
+			}
+		}
+	}()
+	if a == nil || a.ctx == nil {
+		return connection.QueryResult{Success: false, Message: "application context is unavailable"}
+	}
+	if err := refreshWebViewBounds(a.ctx); err != nil {
+		return connection.QueryResult{Success: false, Message: err.Error()}
+	}
+	return connection.QueryResult{Success: true, Message: "WebView2 bounds refreshed"}
+}
+
 // LogWindowDiagnostic 记录前端采集到的窗口诊断信息，便于排查 macOS 原生全屏异常。
 func (a *App) LogWindowDiagnostic(stage string, payload string) {
 	stage = strings.TrimSpace(stage)

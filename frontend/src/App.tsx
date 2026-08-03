@@ -149,6 +149,8 @@ import {
 import { getWindowsScaleFixNudgedWidth, hasWindowsViewportScaleDrift } from './utils/windowsScaleFix';
 import {
   clearStartupWindowRestorePending,
+  isStartupMaximisedWindowSettled,
+  isStartupWindowSurfaceCoveringViewport,
   isStartupWindowRestorePending,
   markStartupWindowRestorePending,
   resolveDefaultStartupWindowBounds,
@@ -197,7 +199,7 @@ import {
   type WindowsScaleCheckTrigger,
 } from './utils/windowStateUi';
 import { resolveVisibleStartupWindowBounds } from './utils/windowRestoreBounds';
-import { resolveWailsWindowVisibleViewport } from './utils/wailsWindowViewport';
+import { resolveWailsWindowSetPosition, resolveWailsWindowVisibleViewport } from './utils/wailsWindowViewport';
 import {
   SIDEBAR_UTILITY_ITEM_KEYS,
   resolveAIEntryPlacement,
@@ -207,6 +209,7 @@ import {
 } from './utils/aiEntryLayout';
 import { DEFAULT_AI_PANEL_WIDTH, resolveOverlayAIPanelWidth, shouldOverlayAIPanel } from './utils/aiPanelLayout';
 import { safeWindowRuntimeCall } from './utils/wailsRuntime';
+import { waitForWindowCondition } from './utils/windowTransition';
 import {
   hasNativeDetachedWindowManager,
   openNativeAIChatWindow,
@@ -1356,16 +1359,95 @@ function App() {
       const applyRetryDelayMs = 350;
       const settleDelayMs = 180;
       const startupRestoreGraceMs = 6000;
+      let refreshWebViewBoundsUnavailableLogged = false;
+      let refreshWebViewBoundsDisabled = false;
+      const wait = (delayMs: number) => new Promise<void>((resolve) => window.setTimeout(resolve, delayMs));
+
+      const waitForMaximisedState = (expected: boolean): Promise<boolean> => waitForWindowCondition({
+          read: async () => (await WindowIsMaximised()) === expected,
+          wait,
+          isCancelled: () => cancelled,
+          maxChecks: 16,
+          intervalMs: 40,
+      });
 
       const checkStartupPreferenceApplied = async (): Promise<boolean> => {
           try {
-              if (await WindowIsMaximised()) {
-                  return true;
-              }
+              const isMaximised = await WindowIsMaximised();
+              return isStartupMaximisedWindowSettled({
+                  isMaximised,
+                  isWindows: isWindowsPlatform(),
+                  surfaceWidth: window.innerWidth,
+                  surfaceHeight: window.innerHeight,
+                  viewport: readCurrentVisibleViewport(),
+              });
           } catch (_) {
               // ignore
           }
           return false;
+      };
+
+      const tryRefreshStartupWebViewBounds = async (): Promise<boolean> => {
+          if (
+              !isWindowsPlatform()
+              || refreshWebViewBoundsDisabled
+              || (window as any).__GONAVI_WEB_RUNTIME__?.buildType === 'web'
+          ) {
+              return false;
+          }
+          const backendApp = (window as any).go?.app?.App;
+          if (typeof backendApp?.RefreshWebViewBounds !== 'function') {
+              refreshWebViewBoundsDisabled = true;
+              if (!refreshWebViewBoundsUnavailableLogged) {
+                  refreshWebViewBoundsUnavailableLogged = true;
+                  console.warn('RefreshWebViewBounds backend is unavailable during startup maximise');
+              }
+              return false;
+          }
+          try {
+              const result = await backendApp.RefreshWebViewBounds();
+              if (result?.success) {
+                  window.dispatchEvent(new Event('resize'));
+                  return true;
+              }
+              refreshWebViewBoundsDisabled = true;
+              if (!refreshWebViewBoundsUnavailableLogged) {
+                  refreshWebViewBoundsUnavailableLogged = true;
+                  console.warn('RefreshWebViewBounds failed during startup maximise:', result?.message);
+              }
+          } catch (error) {
+              refreshWebViewBoundsDisabled = true;
+              if (!refreshWebViewBoundsUnavailableLogged) {
+                  refreshWebViewBoundsUnavailableLogged = true;
+                  console.warn('RefreshWebViewBounds call failed during startup maximise', error);
+              }
+          }
+          return false;
+      };
+
+      const waitForStartupPreferenceApplied = (): Promise<boolean> => waitForWindowCondition({
+          read: checkStartupPreferenceApplied,
+          wait,
+          isCancelled: () => cancelled,
+          maxChecks: 10,
+          intervalMs: 40,
+      });
+
+      const repairStartupMaximisedSurface = async (): Promise<boolean> => {
+          if (!isWindowsPlatform()) {
+              return false;
+          }
+          markStartupWindowRestorePending(startupRestoreGraceMs);
+          WindowUnmaximise();
+          if (!await waitForMaximisedState(false)) {
+              return false;
+          }
+          WindowMaximise();
+          if (!await waitForMaximisedState(true)) {
+              return false;
+          }
+          await tryRefreshStartupWebViewBounds();
+          return waitForStartupPreferenceApplied();
       };
 
       const markStartupMaximised = () => {
@@ -1374,23 +1456,67 @@ function App() {
           clearStartupWindowRestorePending();
       };
 
-      /** Maximise 多次失败时：把窗口铺满工作区，避免残留 1024×768 / 84% 浮动半窗。 */
-      const applyWindowsWorkAreaFillFallback = () => {
+      /** Maximise 多次失败时：退回普通窗口并铺满工作区，避免残留默认半窗。 */
+      const applyWindowsWorkAreaFillFallback = async (): Promise<boolean> => {
           if (!isWindowsPlatform()) {
-              return;
+              return false;
           }
           try {
-              const nextBounds = resolveWorkAreaFillWindowBounds(readCurrentVisibleViewport());
+              markStartupWindowRestorePending(startupRestoreGraceMs);
+              if (await WindowIsMaximised()) {
+                  WindowUnmaximise();
+                  if (!await waitForMaximisedState(false)) {
+                      return false;
+                  }
+              }
+              const viewport = readCurrentVisibleViewport();
+              const nextBounds = resolveWorkAreaFillWindowBounds(viewport);
+              const setPosition = resolveWailsWindowSetPosition(nextBounds, viewport, {
+                  useMonitorLocalOrigin: true,
+              });
+              WindowSetPosition(setPosition.x, setPosition.y);
               WindowSetSize(nextBounds.width, nextBounds.height);
-              WindowSetPosition(nextBounds.x, nextBounds.y);
+              const boundsApplied = await waitForWindowCondition({
+                  read: async () => {
+                      const [size, position] = await Promise.all([
+                          WindowGetSize(),
+                          WindowGetPosition(),
+                      ]);
+                      return Math.abs(Math.trunc(Number(size?.w)) - nextBounds.width) <= 2
+                          && Math.abs(Math.trunc(Number(size?.h)) - nextBounds.height) <= 2
+                          && Math.abs(Math.trunc(Number(position?.x)) - nextBounds.x) <= 2
+                          && Math.abs(Math.trunc(Number(position?.y)) - nextBounds.y) <= 2;
+                  },
+                  wait,
+                  isCancelled: () => cancelled,
+                  maxChecks: 16,
+                  intervalMs: 40,
+              });
+              if (!boundsApplied) {
+                  return false;
+              }
+              await tryRefreshStartupWebViewBounds();
+              const surfaceFilled = await waitForWindowCondition({
+                  read: async () => isStartupWindowSurfaceCoveringViewport({
+                      surfaceWidth: window.innerWidth,
+                      surfaceHeight: window.innerHeight,
+                      viewport: readCurrentVisibleViewport(),
+                  }),
+                  wait,
+                  isCancelled: () => cancelled,
+                  maxChecks: 10,
+                  intervalMs: 40,
+              });
+              if (!surfaceFilled) return false;
               useStore.getState().setWindowBounds(nextBounds);
-              // 兜底结果视觉上等同最大化，保持标题栏状态与实际窗口一致。
-              useStore.getState().setWindowState('maximized');
+              useStore.getState().setWindowState('normal');
               void emitWindowDiagnostic('adjust:startup-work-area-fill-fallback', {
                   to: nextBounds,
               });
+              return true;
           } catch (e) {
               console.warn('Failed to apply Windows work-area fill fallback', e);
+              return false;
           }
       };
 
@@ -1407,29 +1533,42 @@ function App() {
               }
               void Promise.resolve()
                   .then(async () => {
+                      markStartupWindowRestorePending(startupRestoreGraceMs);
                       if (await checkStartupPreferenceApplied()) {
                           markStartupMaximised();
                           return;
                       }
                       try {
-                          await WindowMaximise();
-                          await new Promise((resolve) => window.setTimeout(resolve, settleDelayMs));
+                          WindowMaximise();
+                          if (await waitForMaximisedState(true)) {
+                              await tryRefreshStartupWebViewBounds();
+                          }
                       } catch (e) {
                           console.warn("Wails Window APIs unavailable", e);
                       }
 
-                      if (await checkStartupPreferenceApplied()) {
+                      if (await waitForStartupPreferenceApplied()) {
                           markStartupMaximised();
                           return;
                       }
                       if (attempt < maxApplyAttempts) {
                           applyStartupWindowChrome(attempt + 1);
                       } else {
+                          // WebView2 controller bounds may remain at the initial 1440x900 even
+                          // after WS_MAXIMIZE is set. Use one cold-start-only native transition
+                          // if the zero-animation bounds refresh could not settle the surface.
+                          if (await repairStartupMaximisedSurface()) {
+                              markStartupMaximised();
+                              return;
+                          }
                           // 最终仍失败：Windows 铺满工作区兜底，再结束宽限
                           void emitWindowDiagnostic('warn:startup-maximise-failed', {
                               attempts: attempt,
                           });
-                          applyWindowsWorkAreaFillFallback();
+                          const fallbackApplied = await applyWindowsWorkAreaFillFallback();
+                          if (!fallbackApplied) {
+                              void emitWindowDiagnostic('error:startup-work-area-fill-fallback-failed');
+                          }
                           clearStartupWindowRestorePending();
                       }
                   });
@@ -1455,7 +1594,8 @@ function App() {
               console.warn('Failed to restore normal window chrome', e);
           }
           const state = useStore.getState();
-          const nextBounds = resolveVisibleStartupWindowBounds(bounds, readCurrentVisibleViewport());
+          const viewport = readCurrentVisibleViewport();
+          const nextBounds = resolveVisibleStartupWindowBounds(bounds, viewport);
           if (
               nextBounds.x !== bounds.x ||
               nextBounds.y !== bounds.y ||
@@ -1468,7 +1608,10 @@ function App() {
               });
           }
           WindowSetSize(nextBounds.width, nextBounds.height);
-          WindowSetPosition(nextBounds.x, nextBounds.y);
+          const setPosition = resolveWailsWindowSetPosition(nextBounds, viewport, {
+              useMonitorLocalOrigin: isWindowsPlatform(),
+          });
+          WindowSetPosition(setPosition.x, setPosition.y);
           state.setWindowBounds(nextBounds);
           state.setWindowState('normal');
       };
@@ -1646,7 +1789,8 @@ function App() {
               if (currentBounds.width <= 0 || currentBounds.height <= 0) {
                   return;
               }
-              const nextBounds = resolveVisibleStartupWindowBounds(currentBounds, readCurrentVisibleViewport());
+              const viewport = readCurrentVisibleViewport();
+              const nextBounds = resolveVisibleStartupWindowBounds(currentBounds, viewport);
               if (
                   nextBounds.x === currentBounds.x &&
                   nextBounds.y === currentBounds.y &&
@@ -1660,7 +1804,10 @@ function App() {
                   to: nextBounds,
               });
               WindowSetSize(nextBounds.width, nextBounds.height);
-              WindowSetPosition(nextBounds.x, nextBounds.y);
+              const setPosition = resolveWailsWindowSetPosition(nextBounds, viewport, {
+                  useMonitorLocalOrigin: isWindowsPlatform(),
+              });
+              WindowSetPosition(setPosition.x, setPosition.y);
               lastSaved = `${nextBounds.width},${nextBounds.height},${nextBounds.x},${nextBounds.y}`;
               useStore.getState().setWindowBounds(nextBounds);
               window.dispatchEvent(new Event('resize'));
