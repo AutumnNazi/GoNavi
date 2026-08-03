@@ -1,4 +1,4 @@
-﻿import SidebarConnectionRail from './sidebar/SidebarConnectionRail';
+import SidebarConnectionRail from './sidebar/SidebarConnectionRail';
 import Modal from './common/ResizableDraggableModal';
 import TitleBarQuickActions, { type TitleBarQuickAction } from './TitleBarQuickActions';
 import { type DataSyncEntryMode } from './dataSyncEntryMode';
@@ -119,6 +119,7 @@ import { createSidebarResizeAwareFrameScheduler } from '../utils/sidebarResizeLi
   AimOutlined,
   MoreOutlined,
   MenuFoldOutlined,
+  VerticalAlignTopOutlined,
   RobotOutlined,
   SafetyCertificateOutlined,
   SettingOutlined,
@@ -3301,6 +3302,7 @@ const Sidebar: React.FC<{
   const v2ActiveConnectionHeaderLabel = t('sidebar.active_connection.current_host_database');
   const v2NoDatabaseSelectedLabel = t('sidebar.active_connection.no_database_selected');
   const v2ConnectionActionsLabel = t('sidebar.active_connection.actions');
+  const v2ScrollToTopLabel = t('sidebar.action.scroll_to_top');
   const v2ActiveConnectionTooltipContent = (
     <div className="gn-v2-active-connection-tooltip">
       <strong>{activeConnectionDisplayName}</strong>
@@ -3715,6 +3717,17 @@ const Sidebar: React.FC<{
                     </div>
                 </div>
                 <div className="gn-v2-active-connection-actions">
+                    <Tooltip title={v2ScrollToTopLabel} placement="bottom" mouseEnterDelay={0.35}>
+                        <Button
+                            size="small"
+                            type="text"
+                            icon={<VerticalAlignTopOutlined />}
+                            aria-label={v2ScrollToTopLabel}
+                            onClick={() => {
+                                treeRef.current?.scrollTo?.({ index: 0, align: 'top' });
+                            }}
+                        />
+                    </Tooltip>
                     <Tooltip title={v2ConnectionActionsLabel}>
                         <Button
                             size="small"
