@@ -1,6 +1,6 @@
 import Modal from './common/ResizableDraggableModal';
 import React, { useEffect, useState, useContext, useMemo, useRef, useCallback } from 'react';
-import { Table, Tabs, Button, message, Input, Checkbox, AutoComplete, Tooltip, Select, Empty, Space, Tag, Radio } from 'antd';
+import { Table, Tabs, Button, message, Input, Checkbox, AutoComplete, Tooltip, Select, Empty, Space, Tag, Radio, Spin } from 'antd';
 import { ReloadOutlined, SaveOutlined, PlusOutlined, DeleteOutlined, MenuOutlined, FileTextOutlined, EyeOutlined, EditOutlined, ExclamationCircleOutlined, CopyOutlined, TableOutlined } from '@ant-design/icons';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragOverlay } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
@@ -8,7 +8,7 @@ import { CSS } from '@dnd-kit/utilities';
 import Editor from './MonacoEditor';
 import { TabData, ColumnDefinition, IndexDefinition, ForeignKeyDefinition, TriggerDefinition } from '../types';
 import { useStore } from '../store';
-import { DBGetColumns, DBGetIndexes, DBQueryAudited, DBGetForeignKeys, DBGetTriggers, DBShowCreateTable } from '../../wailsjs/go/app/App';
+import { DBGetColumns, DBGetIndexes, DBQuery, DBQueryAudited, DBGetForeignKeys, DBGetTriggers, DBShowCreateTable } from '../../wailsjs/go/app/App';
 import { hasIndexFormChanged, normalizeIndexFormFromRow, resolveIndexMetadataResponse, shouldRestoreOriginalIndex, toggleIndexSelection as getNextIndexSelection, type IndexDisplaySnapshot } from './tableDesignerIndexUtils';
 import { buildIndexCreateSqlPreview } from './tableDesignerIndexSql';
 import { buildAlterTablePreviewSql, buildCreateTablePreviewSql, hasAlterTableDraftChanges, type StarRocksCreateTableOptions, type StarRocksDistributionType, type StarRocksKeyModel, type StarRocksTableKind, type TDengineCreateTableOptions, type TDengineTableKind, type TDengineTagDefinition } from './tableDesignerSchemaSql';
@@ -456,6 +456,11 @@ const TableDesigner: React.FC<{ tab: TabData; embedded?: boolean }> = ({ tab, em
       { _key: 'tag-1', name: 'location', type: 'BINARY(64)' },
   ]);
   const [tdengineTagValues, setTdengineTagValues] = useState('');
+  const [tdengineStableOptions, setTdengineStableOptions] = useState<{ label: string; value: string }[]>([]);
+  const [tdengineStableOptionsLoading, setTdengineStableOptionsLoading] = useState(false);
+  const [tdengineChildTagDefs, setTdengineChildTagDefs] = useState<TDengineTagDraft[]>([]);
+  const [tdengineChildTagValues, setTdengineChildTagValues] = useState<Record<string, string>>({});
+  const [tdengineChildTagDefsLoading, setTdengineChildTagDefsLoading] = useState(false);
   
   const [columnsLoading, setColumnsLoading] = useState(false);
   const [indexesLoading, setIndexesLoading] = useState(false);
@@ -1668,6 +1673,99 @@ ${selectedTrigger.statement}`;
       }
   }, [isTDengineNewTable, tab.initialTab]);
 
+  useEffect(() => {
+      if (!isTDengineChildNewTable) {
+          setTdengineStableOptions([]);
+          return;
+      }
+      let cancelled = false;
+      const fetchSuperTables = async () => {
+          setTdengineStableOptionsLoading(true);
+          try {
+              const conn = connections.find(c => c.id === tab.connectionId);
+              if (!conn) return;
+              const config = {
+                  ...conn.config,
+                  port: Number(conn.config.port),
+                  password: conn.config.password || "",
+                  database: conn.config.database || "",
+                  useSSH: conn.config.useSSH || false,
+                  ssh: conn.config.ssh || { host: "", port: 22, user: "", password: "", keyPath: "" }
+              };
+              const rpcConfig = buildRpcConnectionConfig(config) as any;
+              const dbName = tab.dbName || '';
+              const res = await DBQuery(rpcConfig, dbName, `SHOW STABLES FROM \`${dbName}\``);
+              if (cancelled) return;
+              if (res.success && Array.isArray(res.data)) {
+                  const options = res.data.map((row: any) => {
+                      const name = row?.table_name || row?.Table || row?.name || row?.tablename || '';
+                      return { label: String(name), value: String(name) };
+                  }).filter(opt => opt.value);
+                  setTdengineStableOptions(options);
+              } else {
+                  setTdengineStableOptions([]);
+              }
+          } catch {
+              if (!cancelled) setTdengineStableOptions([]);
+          } finally {
+              if (!cancelled) setTdengineStableOptionsLoading(false);
+          }
+      };
+      fetchSuperTables();
+      return () => { cancelled = true; };
+  }, [isTDengineChildNewTable, tab.connectionId, tab.dbName, connections]);
+
+	  useEffect(() => {
+	      if (!isTDengineChildNewTable || !tdengineStableName.trim()) {
+	          setTdengineChildTagDefs([]);
+	          setTdengineChildTagValues({});
+	          return;
+	      }
+	      let cancelled = false;
+	      const fetchTagDefs = async () => {
+	          setTdengineChildTagDefsLoading(true);
+	          try {
+	              const conn = connections.find(c => c.id === tab.connectionId);
+	              if (!conn) return;
+	              const config = {
+	                  ...conn.config,
+	                  port: Number(conn.config.port),
+	                  password: conn.config.password || "",
+	                  database: conn.config.database || "",
+	                  useSSH: conn.config.useSSH || false,
+	                  ssh: conn.config.ssh || { host: "", port: 22, user: "", password: "", keyPath: "" }
+	              };
+	              const rpcConfig = buildRpcConnectionConfig(config) as any;
+	              const dbName = tab.dbName || '';
+	              const res = await DBGetColumns(rpcConfig, dbName, tdengineStableName.trim());
+	              if (cancelled) return;
+	              if (res.success && Array.isArray(res.data)) {
+	                  const tagDefs: TDengineTagDraft[] = res.data
+	                      .filter((col: any) => (col?.key || col?.Key || '') === 'TAG')
+	                      .map((col: any, idx: number) => ({
+	                          _key: `tagdef-${idx}`,
+	                          name: String(col?.name || col?.Name || ''),
+	                          type: String(col?.type || col?.Type || ''),
+	                      }));
+	                  setTdengineChildTagDefs(tagDefs);
+	                  setTdengineChildTagValues({});
+	              } else {
+	                  setTdengineChildTagDefs([]);
+	                  setTdengineChildTagValues({});
+	              }
+	          } catch {
+	              if (!cancelled) {
+	                  setTdengineChildTagDefs([]);
+	                  setTdengineChildTagValues({});
+	              }
+	          } finally {
+	              if (!cancelled) setTdengineChildTagDefsLoading(false);
+	          }
+	      };
+	      fetchTagDefs();
+	      return () => { cancelled = true; };
+	  }, [isTDengineChildNewTable, tdengineStableName, tab.connectionId, tab.dbName, connections]);
+
   const parseStarRocksRollupOptions = (raw: string): StarRocksCreateTableOptions['rollups'] => (
       String(raw || '')
           .split(/\r?\n/)
@@ -1705,11 +1803,23 @@ ${selectedTrigger.statement}`;
 
   const buildTDengineCreateOptions = (): TDengineCreateTableOptions | undefined => {
       if (!isTDengineNewTable) return undefined;
+      let tagValues = tdengineTagValues;
+      if (tdengineTableKind === 'child' && tdengineChildTagDefs.length > 0) {
+          tagValues = tdengineChildTagDefs
+              .map(tag => {
+                  const val = tdengineChildTagValues[tag.name] ?? '';
+                  if (!val) return '';
+                  const needQuote = /^(BINARY|NCHAR|VARBINARY|TIMESTAMP)/i.test(tag.type);
+                  return needQuote ? `'${val.replace(/'/g, "\\'")}'` : val;
+              })
+              .filter(Boolean)
+              .join(', ');
+      }
       return {
           tableKind: tdengineTableKind,
           stableName: tdengineStableName,
           tagDefinitions: tdengineTagDefinitions.map(({ _key, ...tag }) => tag),
-          tagValues: tdengineTagValues,
+          tagValues,
       };
   };
 
@@ -2509,7 +2619,13 @@ END;`;
               message.error(t('table_designer.message.tdengine_stable_name_required', undefined, i18nLanguage));
               return;
           }
-          if (!tdengineTagValues.trim()) {
+          if (tdengineChildTagDefs.length > 0) {
+              const missing = tdengineChildTagDefs.filter(tag => !(tdengineChildTagValues[tag.name] ?? '').trim());
+              if (missing.length > 0) {
+                  message.error(t('table_designer.message.tdengine_tag_values_required', undefined, i18nLanguage));
+                  return;
+              }
+          } else if (!tdengineTagValues.trim()) {
               message.error(t('table_designer.message.tdengine_tag_values_required', undefined, i18nLanguage));
               return;
           }
@@ -2968,19 +3084,59 @@ END;`;
 
               {tdengineTableKind === 'child' && (
                   <Space direction="vertical" size={10} style={{ width: '100%' }}>
-                      <Input
+                      <Select
                           {...noAutoCapInputProps}
-                          value={tdengineStableName}
-                          onChange={(event) => setTdengineStableName(event.target.value)}
+                          showSearch
+                          allowClear
+                          value={tdengineStableName || undefined}
+                          onChange={(value) => setTdengineStableName(value || '')}
                           placeholder={t('table_designer.tdengine.placeholder.stable_name', undefined, i18nLanguage)}
+                          options={tdengineStableOptions}
+                          loading={tdengineStableOptionsLoading}
+                          style={{ width: '100%' }}
+                          filterOption={(input, option) =>
+                              (option?.label as string ?? '').toLowerCase().includes(input.toLowerCase())
+                          }
+                          notFoundContent={tdengineStableOptionsLoading ? null : t('table_designer.tdengine.message.no_stable_found', undefined, i18nLanguage)}
                       />
-                      <Input.TextArea
-                          {...noAutoCapInputProps}
-                          value={tdengineTagValues}
-                          onChange={(event) => setTdengineTagValues(event.target.value)}
-                          autoSize={{ minRows: 3, maxRows: 8 }}
-                          placeholder={t('table_designer.tdengine.placeholder.tag_values', undefined, i18nLanguage)}
-                      />
+                      {tdengineChildTagDefsLoading || tdengineChildTagDefs.length > 0 ? (
+                          <Spin spinning={tdengineChildTagDefsLoading}>
+                              {tdengineChildTagDefs.length > 0 ? (
+                                  <Space direction="vertical" size={8} style={{ width: '100%' }}>
+                                      <Space size={8} style={{ width: '100%' }}>
+                                          <span style={{ width: 160, color: '#888', fontSize: 12 }}>{t('table_designer.tdengine.tag.name', undefined, i18nLanguage)}</span>
+                                          <span style={{ width: 160, color: '#888', fontSize: 12 }}>{t('table_designer.tdengine.tag.type', undefined, i18nLanguage)}</span>
+                                          <span style={{ color: '#888', fontSize: 12 }}>{t('table_designer.tdengine.tag.value', undefined, i18nLanguage)}</span>
+                                      </Space>
+                                      {tdengineChildTagDefs.map((tag) => (
+                                          <Space key={tag._key} align="start" wrap>
+                                              <span style={{ width: 160, lineHeight: '32px', fontSize: 13, fontWeight: 500 }}>{tag.name}</span>
+                                              <span style={{ width: 160, lineHeight: '32px', fontSize: 12, color: '#888' }}>{tag.type}</span>
+                                              <Input
+                                                  {...noAutoCapInputProps}
+                                                  value={tdengineChildTagValues[tag.name] ?? ''}
+                                                  onChange={(event) => setTdengineChildTagValues(prev => ({ ...prev, [tag.name]: event.target.value }))}
+                                                  placeholder={t('table_designer.tdengine.placeholder.tag_value_input', undefined, i18nLanguage)}
+                                                  style={{ width: 280 }}
+                                              />
+                                          </Space>
+                                      ))}
+                                  </Space>
+                              ) : (
+                                  <div style={{ padding: '16px 0', textAlign: 'center', color: '#888' }}>
+                                      {t('table_designer.tdengine.message.loading_tag_defs', undefined, i18nLanguage)}
+                                  </div>
+                              )}
+                          </Spin>
+                      ) : (
+                          <Input.TextArea
+                              {...noAutoCapInputProps}
+                              value={tdengineTagValues}
+                              onChange={(event) => setTdengineTagValues(event.target.value)}
+                              autoSize={{ minRows: 3, maxRows: 8 }}
+                              placeholder={t('table_designer.tdengine.placeholder.tag_values', undefined, i18nLanguage)}
+                          />
+                      )}
                   </Space>
               )}
           </Space>
