@@ -3438,15 +3438,26 @@ describe('QueryEditor external SQL save', () => {
     });
   });
 
-  it('fuzzy matches table names in FROM completion before column candidates', async () => {
+  it('matches table names from the beginning in FROM completion', async () => {
     let renderer!: ReactTestRenderer;
     autoFetchState.visible = true;
     storeState.connections[0].config.database = '';
     backendApp.DBGetDatabases.mockResolvedValueOnce({ success: true, data: [{ Database: 'information_schema' }, { Database: 'main' }] });
-    backendApp.DBGetTables.mockResolvedValueOnce({ success: true, data: [{ Tables_in_main: 'fs_org_auth_application' }] });
+    backendApp.DBGetTables.mockResolvedValueOnce({
+      success: true,
+      data: [
+        { Tables_in_main: 'users' },
+        { Tables_in_main: 'hrmresource' },
+        { Tables_in_main: 'hrm_resource_export_template' },
+        { Tables_in_main: 'archive_hrmresource' },
+      ],
+    });
     backendApp.DBGetAllColumns.mockResolvedValueOnce({
       success: true,
-      data: [{ tableName: 'fs_org_auth_application', name: 'orgi', type: 'varchar(32)' }],
+      data: [
+        { tableName: 'hrmresource', name: 'hrmresult', type: 'varchar(32)' },
+        { tableName: 'users', name: 'hrmresult_from_users', type: 'varchar(32)' },
+      ],
     });
 
     await act(async () => {
@@ -3461,13 +3472,193 @@ describe('QueryEditor external SQL save', () => {
     const sqlProvider = editorState.providers.find((provider) => Array.isArray(provider.triggerCharacters) && provider.triggerCharacters.includes('.'));
     expect(sqlProvider).toBeTruthy();
 
-    editorState.value = 'SELECT * FROM org';
+    editorState.value = 'SELECT * FROM hrmres';
     editorState.latestOnChange?.(editorState.value);
     const result = await sqlProvider.provideCompletionItems(editorState.editor.getModel(), { lineNumber: 1, column: editorState.value.length + 1 });
     const labels = result.suggestions.map((item: any) => item.label);
 
-    expect(labels).toContain('fs_org_auth_application');
-    expect(labels).not.toContain('orgi');
+    expect(labels).toContain('hrmresource');
+    expect(labels).not.toContain('hrm_resource_export_template');
+    expect(labels).not.toContain('archive_hrmresource');
+    expect(labels).not.toContain('hrmresult');
+
+    editorState.value = 'SELECT * FROM users u, hrmres';
+    editorState.latestOnChange?.(editorState.value);
+    const commaResult = await sqlProvider.provideCompletionItems(
+      editorState.editor.getModel(),
+      { lineNumber: 1, column: editorState.value.length + 1 },
+    );
+    const commaLabels = commaResult.suggestions.map((item: any) => item.label);
+    expect(commaLabels).toContain('hrmresource');
+    expect(commaLabels).not.toContain('archive_hrmresource');
+    expect(commaLabels).not.toContain('hrmresult_from_users');
+    expect(backendApp.DBGetColumns.mock.calls.map((call: any[]) => call[2])).not.toContain('hrmres');
+
+    await act(async () => {
+      renderer.unmount();
+    });
+  });
+
+  it('marks bounded FROM completion as incomplete so Monaco retriggers with the final prefix', async () => {
+    let renderer!: ReactTestRenderer;
+    autoFetchState.visible = true;
+    storeState.connections[0].config.database = 'main';
+    backendApp.DBGetDatabases.mockResolvedValueOnce({ success: true, data: [{ Database: 'main' }] });
+    backendApp.DBGetTables.mockResolvedValueOnce({
+      success: true,
+      data: [
+        ...Array.from({ length: 201 }, (_, index) => ({
+          Tables_in_main: `hrm_resource_${String(index).padStart(3, '0')}`,
+        })),
+        { Tables_in_main: 'hrmresource' },
+      ],
+    });
+    backendApp.DBGetAllColumns.mockResolvedValueOnce({ success: true, data: [] });
+
+    await act(async () => {
+      renderer = create(<QueryEditor tab={createTab({ query: '', dbName: 'main' })} />);
+    });
+    await act(async () => {
+      for (let index = 0; index < 8; index += 1) {
+        await Promise.resolve();
+      }
+    });
+
+    const sqlProvider = findSqlCompletionProvider();
+    expect(sqlProvider).toBeTruthy();
+
+    editorState.value = 'SELECT * FROM h';
+    editorState.latestOnChange?.(editorState.value);
+    const initialResult = await sqlProvider.provideCompletionItems(
+      editorState.editor.getModel(),
+      { lineNumber: 1, column: editorState.value.length + 1 },
+    );
+    expect(initialResult.suggestions).toHaveLength(200);
+    expect(initialResult.suggestions.map((item: any) => item.label)).not.toContain('hrmresource');
+    expect(initialResult.incomplete).toBe(true);
+
+    editorState.value = 'SELECT * FROM hrmres';
+    editorState.latestOnChange?.(editorState.value);
+    const retriggeredResult = await sqlProvider.provideCompletionItems(
+      editorState.editor.getModel(),
+      { lineNumber: 1, column: editorState.value.length + 1 },
+      { triggerKind: 2 },
+    );
+    expect(retriggeredResult.suggestions.map((item: any) => item.label)).toEqual(['hrmresource']);
+    expect(retriggeredResult.incomplete).toBe(true);
+
+    await act(async () => {
+      renderer.unmount();
+    });
+  });
+
+  it('resolves columns from comma-separated Dameng table references and aliases', async () => {
+    let renderer!: ReactTestRenderer;
+    autoFetchState.visible = true;
+    storeState.connections[0].config.type = 'dameng';
+    storeState.connections[0].config.database = 'DEV';
+    backendApp.DBGetDatabases.mockResolvedValueOnce({ success: true, data: [{ Database: 'DEV' }] });
+    backendApp.DBGetTables.mockResolvedValueOnce({
+      success: true,
+      data: [
+        { Table: 'VULNERABILITY_INFO_T' },
+        { Table: 'VULNERABILITY_DETAIL_T' },
+      ],
+    });
+    backendApp.DBGetAllColumns.mockResolvedValueOnce({ success: true, data: [] });
+    backendApp.DBGetColumns.mockImplementation(async (_config: any, _dbName: string, tableName: string) => ({
+      success: true,
+      data: tableName === 'VULNERABILITY_DETAIL_T'
+        ? [
+            { name: 'DETAIL_ID', type: 'VARCHAR' },
+            { name: 'VULNERABILITY_ID', type: 'VARCHAR' },
+          ]
+        : [
+            { name: 'CODE', type: 'VARCHAR' },
+            { name: 'CONTENT', type: 'VARCHAR' },
+            { name: 'ID', type: 'VARCHAR' },
+          ],
+    }));
+
+    await act(async () => {
+      renderer = create(<QueryEditor tab={createTab({ query: '', dbName: 'DEV' })} />);
+    });
+    await act(async () => {
+      for (let index = 0; index < 16; index += 1) {
+        await Promise.resolve();
+      }
+    });
+
+    const sqlProvider = findSqlCompletionProvider();
+    expect(sqlProvider).toBeTruthy();
+    const sqlPrefix = 'SELECT * FROM VULNERABILITY_INFO_T a, VULNERABILITY_DETAIL_T b '
+      + 'WHERE VULNERABILITY_INFO_T.CODE = ';
+
+    for (const qualifier of ['VULNERABILITY_DETAIL_T', 'b']) {
+      editorState.value = `${sqlPrefix}${qualifier}.`;
+      editorState.latestOnChange?.(editorState.value);
+      const result = await sqlProvider.provideCompletionItems(
+        editorState.editor.getModel(),
+        { lineNumber: 1, column: editorState.value.length + 1 },
+      );
+      const labels = result.suggestions.map((item: any) => item.label);
+
+      expect(result.suggestions).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          label: 'DETAIL_ID',
+          detail: expect.stringContaining('VULNERABILITY_DETAIL_T'),
+        }),
+      ]));
+      expect(labels).toEqual(expect.arrayContaining(['DETAIL_ID', 'VULNERABILITY_ID']));
+      expect(labels).not.toEqual(expect.arrayContaining(['CODE', 'CONTENT', 'ID']));
+    }
+    expect(backendApp.DBGetColumns).toHaveBeenCalledWith(expect.anything(), 'DEV', 'VULNERABILITY_DETAIL_T');
+    expect(backendApp.DBGetColumns).not.toHaveBeenCalledWith(expect.anything(), 'DEV', 'VULNERABILITY_INFO_T');
+
+    await act(async () => {
+      renderer.unmount();
+    });
+  });
+
+  it('keeps FROM inside an unfinished EXTRACT expression in column completion context', async () => {
+    let renderer!: ReactTestRenderer;
+    autoFetchState.visible = true;
+    storeState.connections[0].config.type = 'postgres';
+    storeState.connections[0].config.database = 'main';
+    backendApp.DBGetDatabases.mockResolvedValueOnce({ success: true, data: [{ Database: 'main' }] });
+    backendApp.DBGetTables.mockResolvedValueOnce({
+      success: true,
+      data: [
+        { Table: 'users' },
+        { Table: 'archive_created_at' },
+      ],
+    });
+    backendApp.DBGetAllColumns.mockResolvedValueOnce({
+      success: true,
+      data: [{ tableName: 'users', name: 'created_at', type: 'timestamp' }],
+    });
+
+    const sql = 'SELECT EXTRACT(YEAR FROM creat) FROM users';
+    await act(async () => {
+      renderer = create(<QueryEditor tab={createTab({ query: sql, dbName: 'main' })} />);
+    });
+    await act(async () => {
+      for (let index = 0; index < 8; index += 1) {
+        await Promise.resolve();
+      }
+    });
+
+    const sqlProvider = findSqlCompletionProvider();
+    expect(sqlProvider).toBeTruthy();
+    const cursorPrefix = 'SELECT EXTRACT(YEAR FROM creat';
+    const result = await sqlProvider.provideCompletionItems(
+      createSqlCompletionModel(sql, 'creat'),
+      { lineNumber: 1, column: cursorPrefix.length + 1 },
+    );
+
+    expect(result.suggestions.map((item: any) => item.label)).toContain('created_at');
+    expect(backendApp.DBGetColumns.mock.calls.map((call: any[]) => call[2])).not.toContain('created_at');
+
     await act(async () => {
       renderer.unmount();
     });
@@ -3542,7 +3733,7 @@ describe('QueryEditor external SQL save', () => {
     const sqlProvider = editorState.providers.find((provider) => Array.isArray(provider.triggerCharacters) && provider.triggerCharacters.includes('.'));
     expect(sqlProvider).toBeTruthy();
 
-    editorState.value = 'SELECT * FROM or';
+    editorState.value = 'SELECT * FROM fs_org';
     editorState.latestOnChange?.(editorState.value);
     const result = await sqlProvider.provideCompletionItems(editorState.editor.getModel(), { lineNumber: 1, column: editorState.value.length + 1 });
     const labels = result.suggestions.map((item: any) => item.label);
@@ -4016,7 +4207,7 @@ describe('QueryEditor external SQL save', () => {
     storeState.connections[0].config.type = 'mysql';
     storeState.connections[0].config.database = 'main';
     const noisyTableRows = Array.from({ length: 2_000 }, (_, index) => ({
-      Tables_in_main: `archive_entity_${String(index).padStart(4, '0')}`,
+      Tables_in_main: `entity_z_archive_${String(index).padStart(4, '0')}`,
     }));
     const noisyColumnRows = Array.from({ length: 2_000 }, (_, index) => ({
       tableName: 'users',

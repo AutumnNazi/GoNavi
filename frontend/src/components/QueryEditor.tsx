@@ -139,7 +139,6 @@ import {
     QUERY_EDITOR_OBJECT_DECORATION_MAX_TEXT_LENGTH,
     QUERY_EDITOR_PERSISTED_DRAFT_MAX_TEXT_LENGTH,
     QUERY_EDITOR_SQL_QUALIFIER_COMPLETION_REGEX,
-    QUERY_EDITOR_SQL_TABLE_REFERENCE_REGEX,
     QUERY_EDITOR_SQL_THREE_PART_COMPLETION_REGEX,
     appendCommentToDetail,
     areSqlStatementListsEqual,
@@ -164,6 +163,7 @@ import {
     clearQueryEditorObjectDecorations,
     collectQueryEditorObjectDecorationCandidates,
     collectQueryEditorReferencedDatabaseNames,
+    collectQueryEditorTableReferences,
     findCompletionTablesByDatabase,
     getCaseInsensitiveValue,
     getCompletionTableSchemaCounts,
@@ -177,6 +177,7 @@ import {
     getQueryEditorObjectResolveText,
     getTabQueryValue,
     isOracleBaseTableReference,
+    isQueryEditorTableSourceCompletionContext,
     isDocumentLevelShortcutTarget,
     isQueryEditorPrimaryMouseButton,
     normalizeCommentText,
@@ -983,7 +984,7 @@ const resolveQueryEditorAiConnectionHost = (connection: any): string => {
 
 // HMR 重载时释放旧注册避免补全和 hover 内容重复
 const _g = globalThis as any;
-const SQL_COMPLETION_PROVIDER_VERSION = '20260718-mysql-language-v1';
+const SQL_COMPLETION_PROVIDER_VERSION = '20260803-prefix-retrigger-v2';
 const QUERY_EDITOR_MONACO_LANGUAGE_IDS = ['sql', 'mysql'] as const;
 if (!_g.__gonaviSqlCompletionState) {
     _g.__gonaviSqlCompletionState = { registered: false, version: '', disposables: [] as any[] };
@@ -1119,7 +1120,15 @@ let sharedColumnsCacheData: Record<string, any[]> = {};
 let sharedActiveEditorModelUri = '';
 const sharedLazyTablesCache: Record<string, CompletionTableMeta[] | undefined> = {};
 const sharedLazyTablesInFlight: Record<string, Promise<CompletionTableMeta[]> | undefined> = {};
-const createEmptySqlCompletionResult = () => ({ suggestions: [] as any[] });
+const createSqlCompletionResult = (suggestions: any[], retriggerOnContinue = false) => ({
+    suggestions,
+    // Monaco otherwise keeps filtering a cached list locally. Re-run strict
+    // object-name contexts as the prefix grows, and re-run any full 200-item
+    // window so omitted candidates can enter the next result.
+    incomplete: suggestions.length > 0
+        && (retriggerOnContinue || suggestions.length >= QUERY_EDITOR_COMPLETION_SUGGESTION_LIMIT),
+});
+const createEmptySqlCompletionResult = () => createSqlCompletionResult([]);
 const isSqlCompletionRequestCancelled = (token?: { isCancellationRequested?: boolean } | null) =>
     Boolean(token?.isCancellationRequested);
 const clearRecord = (record: Record<string, unknown>) => {
@@ -6086,7 +6095,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                           sortText: `0${rankQueryEditorCompletionCandidate(colPrefix, [column.name]) ?? 9}${column.name}`,
                       }),
                   });
-                  return { suggestions };
+                  return createSqlCompletionResult(suggestions);
               }
 
               // 1) 两段式 qualifier.xxx 格式
@@ -6113,7 +6122,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                           getMatchRank: (table, normalizedPrefix) => {
                               if (String(table.dbName || '').toLowerCase() !== qualifierLower) return null;
                               const meta = buildDbQualifiedTableSuggestionMeta(table.dbName || qualifier, table.tableName || '');
-                              return rankQueryEditorCompletionCandidate(normalizedPrefix, [meta.displayName, table.tableName]);
+                              return rankQueryEditorCompletionCandidate(normalizedPrefix, [meta.displayName, table.tableName], false);
                           },
                           getSelectionKey: (table, _prefix, matchRank) => {
                               const meta = buildDbQualifiedTableSuggestionMeta(table.dbName || qualifier, table.tableName || '');
@@ -6148,6 +6157,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                                   return rankQueryEditorCompletionCandidate(
                                       normalizedPrefix,
                                       [meta.displayName, meta.objectName, view.viewName],
+                                      false,
                                   );
                               },
                               getSelectionKey: (view, _prefix, matchRank) => `05${matchRank}${buildViewSuggestionMeta(view).displayName}`,
@@ -6205,15 +6215,16 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                               };
                           },
                       });
-                      return {
-                          suggestions: materializeBoundedQueryEditorCompletionBatches([
+                      return createSqlCompletionResult(
+                          materializeBoundedQueryEditorCompletionBatches([
                               tableBatch,
                               viewBatch,
                               materializedViewBatch,
                               synonymBatch,
                               routineBatch,
                           ]),
-                      };
+                          true,
+                      );
                   }
 
                   // qualifier 是 schema（如 dbo/public）时，仅补全表名，避免输入 dbo. 后再补成 dbo.dbo.table
@@ -6226,7 +6237,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                           if (parsed.schema.toLowerCase() !== qualifierLower) return null;
                           hasKnownSchemaQualifier = true;
                           if (!parsed.table) return null;
-                          return rankQueryEditorCompletionCandidate(normalizedPrefix, [parsed.table]);
+                          return rankQueryEditorCompletionCandidate(normalizedPrefix, [parsed.table], false);
                       },
                       getSelectionKey: (table, _prefix, matchRank) => `0${matchRank}${splitSchemaAndTable(table.tableName || '').table}`,
                       buildSuggestion: (table) => {
@@ -6257,7 +6268,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                               if (meta.schemaName.toLowerCase() !== qualifierLower) return null;
                               hasKnownSchemaQualifier = true;
                               if (!meta.objectName) return null;
-                              return rankQueryEditorCompletionCandidate(normalizedPrefix, [meta.objectName]);
+                              return rankQueryEditorCompletionCandidate(normalizedPrefix, [meta.objectName], false);
                           },
                           getSelectionKey: (view, _prefix, matchRank) => `05${matchRank}${buildViewSuggestionMeta(view).objectName}`,
                           buildSuggestion: (view) => {
@@ -6319,7 +6330,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                       schemaRoutineBatch,
                   ]);
                   if (hasKnownSchemaQualifier) {
-                      return { suggestions: schemaSuggestions };
+                      return createSqlCompletionResult(schemaSuggestions, true);
                   }
 
                   // 否则检查是否是表别名或表名，提示列
@@ -6352,17 +6363,14 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                               sortText: `0${rankQueryEditorCompletionCandidate(prefix, [column.name]) ?? 9}${column.name}`,
                           }),
                       });
-                      return { suggestions };
+                      return createSqlCompletionResult(suggestions);
                   }
               }
 
               // 2) global/table/column completion
-              const tableRegex = QUERY_EDITOR_SQL_TABLE_REFERENCE_REGEX;
-              tableRegex.lastIndex = 0;
               const foundTables = new Set<string>();
-              let match;
-              while ((match = tableRegex.exec(completionReferenceText)) !== null) {
-                  const t = normalizeQualifiedName(match[1] || '');
+              for (const reference of collectQueryEditorTableReferences(completionReferenceText)) {
+                  const t = normalizeQualifiedName(reference.tableIdent);
                   if (!t) continue;
                   // 存储完整标识 db.table 或 table
                   foundTables.add(t.toLowerCase());
@@ -6377,7 +6385,8 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                   const matchRank = rankQueryEditorCompletionCandidate(wordPrefix, candidates);
                   return matchRank === null ? '9' : String(matchRank);
               };
-              const expectsTableName = /\b(?:FROM|JOIN|UPDATE|INTO|DELETE\s+FROM|TABLE|DESCRIBE|DESC|EXPLAIN)\s+[`"]?[\w.]*$/i.test(linePrefix);
+              const expectsTableName = isQueryEditorTableSourceCompletionContext(completionScopeText)
+                  || /\b(?:TABLE|DESCRIBE|DESC|EXPLAIN)\s+[`"]?[\w.]*$/i.test(linePrefix);
               const expectsRoutineName = /\bCALL\s+[`"]?[\w.]*$/i.test(linePrefix);
               const matchesKeywordPrefix = wordPrefix.length > 0
                   && dialectKeywords.some((keyword) => keyword.toLowerCase().startsWith(wordPrefix));
@@ -6522,9 +6531,10 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                           return rankQueryEditorCompletionCandidate(
                               normalizedPrefix,
                               [meta.dbQualifiedLabel, table.tableName, pureTable],
+                              !expectsTableName,
                           );
                       }
-                      return rankQueryEditorCompletionCandidate(normalizedPrefix, [table.tableName, pureTable]);
+                      return rankQueryEditorCompletionCandidate(normalizedPrefix, [table.tableName, pureTable], !expectsTableName);
                   },
                   getSelectionKey: (table, _prefix, matchRank) => {
                       const isCurrentDb = isCurrentCompletionDatabase(table.dbName || '');
@@ -6591,6 +6601,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                           return rankQueryEditorCompletionCandidate(
                               normalizedPrefix,
                               [meta.dbQualifiedLabel, meta.displayName, meta.objectName, view.viewName],
+                              !expectsTableName,
                           );
                       },
                       getSelectionKey: (view, _prefix, matchRank) => {
@@ -6629,7 +6640,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                   candidates: selectUnqualifiedCompletionSynonyms(sharedSynonymsData, oracleLoginOwner),
                   prefix: wordPrefix,
                   getMatchRank: (synonym, normalizedPrefix) => (
-                      rankQueryEditorCompletionCandidate(normalizedPrefix, [synonym.synonymName])
+                      rankQueryEditorCompletionCandidate(normalizedPrefix, [synonym.synonymName], !expectsTableName)
                   ),
                   getSelectionKey: (synonym) => (
                       sortGroups.tableCurrent + '05' + getPrefixMatchRank(synonym.synonymName || '') + synonym.synonymName
@@ -6649,6 +6660,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                       return rankQueryEditorCompletionCandidate(
                           normalizedPrefix,
                           [meta.dbQualifiedLabel, meta.displayName, meta.objectName, routine.routineName],
+                          !expectsTableName && !expectsRoutineName,
                       );
                   },
                   getSelectionKey: (routine) => {
@@ -6737,7 +6749,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                   funcBatch,
                   keywordBatch,
               ], QUERY_EDITOR_COMPLETION_SUGGESTION_LIMIT);
-              return { suggestions };
+              return createSqlCompletionResult(suggestions, expectsTableName || expectsRoutineName);
           }
       });
       registerQueryEditorCompletionProvider({

@@ -1836,7 +1836,9 @@ export const maskQueryEditorSqlLiteralsAndComments = (source: string): string =>
             continue;
         }
 
-        if (ch === '#') {
+        // MySQL-style # comments must not consume PostgreSQL JSONB operators
+        // such as #>, #>>, and #-.
+        if (ch === '#' && next !== '>' && next !== '-') {
             maskAt(i);
             inLineComment = true;
             continue;
@@ -1966,23 +1968,261 @@ export const buildQueryEditorHoverMarkdown = (target: QueryEditorHoverTarget): s
     }
 };
 
+export type QueryEditorTableReference = {
+    tableIdent: string;
+    parts: string[];
+    alias?: string;
+};
+
+type QueryEditorSqlReferenceToken = {
+    raw: string;
+    quoted: boolean;
+};
+
+type QueryEditorSqlReferenceDepthState = {
+    fromListActive: boolean;
+    queryStatementActive: boolean;
+    sourceContextActive: boolean;
+    expectsSource?: 'from' | 'join' | 'comma' | 'update' | 'into';
+};
+
+const QUERY_EDITOR_SQL_REFERENCE_PUNCTUATION = new Set(['(', ')', '.', ',', ';']);
+const QUERY_EDITOR_SQL_FROM_LIST_END_WORDS = new Set([
+    'where', 'group', 'order', 'having', 'limit', 'fetch', 'offset', 'qualify', 'window',
+    'union', 'except', 'intersect', 'minus', 'returning', 'set', 'values',
+    'connect', 'start', 'model', 'match_recognize', 'for',
+]);
+const QUERY_EDITOR_SQL_TABLE_ALIAS_RESERVED_WORDS = new Set([
+    ...QUERY_EDITOR_SQL_FROM_LIST_END_WORDS,
+    'select', 'from', 'join', 'left', 'right', 'inner', 'outer', 'full', 'cross', 'natural',
+    'straight_join', 'apply', 'on', 'using', 'as', 'update', 'into', 'delete',
+    'only', 'lateral', 'partition', 'sample', 'tablesample', 'with',
+    'use', 'force', 'ignore', 'index', 'indexed', 'pivot', 'unpivot',
+]);
+const QUERY_EDITOR_SQL_TABLE_SOURCE_MODIFIERS = new Set(['only', 'lateral']);
+
+const tokenizeQueryEditorSqlReferences = (source: string): QueryEditorSqlReferenceToken[] => {
+    const masked = maskQueryEditorSqlLiteralsAndComments(source);
+    const tokenRegex = new RegExp(`${QUERY_EDITOR_SQL_IDENTIFIER_PATTERN}|[().,;]`, 'g');
+    const tokens: QueryEditorSqlReferenceToken[] = [];
+    let match: RegExpExecArray | null;
+    while ((match = tokenRegex.exec(masked)) !== null) {
+        const raw = match[0] || '';
+        tokens.push({
+            raw,
+            quoted: !QUERY_EDITOR_SQL_REFERENCE_PUNCTUATION.has(raw) && isQuotedQueryIdentifierPart(raw),
+        });
+    }
+    return tokens;
+};
+
+const isQueryEditorSqlIdentifierToken = (token: QueryEditorSqlReferenceToken | undefined): token is QueryEditorSqlReferenceToken => (
+    !!token && !QUERY_EDITOR_SQL_REFERENCE_PUNCTUATION.has(token.raw)
+);
+
+/**
+ * Collect physical table-like references with a small depth-aware scanner.
+ * Commas only introduce another source while the same parenthesis level is in
+ * a FROM list, so SELECT expressions and function arguments are not mistaken
+ * for tables.
+ */
+const analyzeQueryEditorTableReferences = (source: string): {
+    references: QueryEditorTableReference[];
+    expectsTableSource: boolean;
+} => {
+    const tokens = tokenizeQueryEditorSqlReferences(String(source || ''));
+    const references: QueryEditorTableReference[] = [];
+    const states: QueryEditorSqlReferenceDepthState[] = [{
+        fromListActive: false,
+        queryStatementActive: false,
+        sourceContextActive: false,
+    }];
+    let depth = 0;
+
+    const getState = () => {
+        if (!states[depth]) {
+            states[depth] = {
+                fromListActive: false,
+                queryStatementActive: false,
+                sourceContextActive: false,
+            };
+        }
+        return states[depth];
+    };
+
+    for (let index = 0; index < tokens.length; index += 1) {
+        const token = tokens[index];
+        const state = getState();
+
+        if (token.raw === '(') {
+            // A parenthesized source is a derived table or table-valued
+            // expression. Its inner SELECT is scanned independently.
+            state.expectsSource = undefined;
+            state.sourceContextActive = false;
+            depth += 1;
+            states[depth] = {
+                fromListActive: false,
+                queryStatementActive: false,
+                sourceContextActive: false,
+            };
+            continue;
+        }
+        if (token.raw === ')') {
+            states.splice(depth, 1);
+            depth = Math.max(0, depth - 1);
+            continue;
+        }
+        if (token.raw === ';') {
+            state.fromListActive = false;
+            state.queryStatementActive = false;
+            state.sourceContextActive = false;
+            state.expectsSource = undefined;
+            continue;
+        }
+        if (token.raw === ',') {
+            if (state.fromListActive) {
+                state.expectsSource = 'comma';
+                state.sourceContextActive = true;
+            }
+            continue;
+        }
+        if (token.raw === '.') {
+            continue;
+        }
+        if (!isQueryEditorSqlIdentifierToken(token)) {
+            continue;
+        }
+
+        const keyword = token.quoted ? '' : stripCompletionIdentifierQuotes(token.raw).toLowerCase();
+        if (state.expectsSource) {
+            if (QUERY_EDITOR_SQL_TABLE_SOURCE_MODIFIERS.has(keyword)) {
+                continue;
+            }
+
+            const pathTokens = [token.raw];
+            let pathEnd = index;
+            while (
+                pathTokens.length < 3
+                && tokens[pathEnd + 1]?.raw === '.'
+                && isQueryEditorSqlIdentifierToken(tokens[pathEnd + 2])
+            ) {
+                pathTokens.push(tokens[pathEnd + 2].raw);
+                pathEnd += 2;
+            }
+            const sourceKind = state.expectsSource;
+            state.expectsSource = undefined;
+
+            // FROM generate_series(...) and similar expressions are not
+            // physical table metadata targets.
+            if (
+                tokens[pathEnd + 1]?.raw === '('
+                && (sourceKind === 'from' || sourceKind === 'join' || sourceKind === 'comma')
+            ) {
+                state.sourceContextActive = false;
+                index = pathEnd;
+                continue;
+            }
+
+            const tableText = pathTokens.join('.');
+            const parts = splitQueryIdentifierPathSegments(tableText)
+                .map((part) => part.value.trim())
+                .filter(Boolean);
+            if (parts.length === 0) {
+                index = pathEnd;
+                continue;
+            }
+
+            let alias: string | undefined;
+            let consumedEnd = pathEnd;
+            const nextToken = tokens[pathEnd + 1];
+            const nextKeyword = isQueryEditorSqlIdentifierToken(nextToken) && !nextToken.quoted
+                ? stripCompletionIdentifierQuotes(nextToken.raw).toLowerCase()
+                : '';
+            if (nextKeyword === 'as') {
+                const aliasToken = tokens[pathEnd + 2];
+                if (isQueryEditorSqlIdentifierToken(aliasToken)) {
+                    const normalizedAlias = stripCompletionIdentifierQuotes(aliasToken.raw).trim();
+                    const aliasKeyword = aliasToken.quoted ? '' : normalizedAlias.toLowerCase();
+                    if (normalizedAlias && (aliasToken.quoted || !QUERY_EDITOR_SQL_TABLE_ALIAS_RESERVED_WORDS.has(aliasKeyword))) {
+                        alias = normalizedAlias;
+                        consumedEnd = pathEnd + 2;
+                    }
+                }
+            } else if (isQueryEditorSqlIdentifierToken(nextToken)) {
+                const normalizedAlias = stripCompletionIdentifierQuotes(nextToken.raw).trim();
+                if (normalizedAlias && (nextToken.quoted || !QUERY_EDITOR_SQL_TABLE_ALIAS_RESERVED_WORDS.has(nextKeyword))) {
+                    alias = normalizedAlias;
+                    consumedEnd = pathEnd + 1;
+                }
+            }
+
+            references.push({
+                tableIdent: parts.join('.'),
+                parts,
+                ...(alias ? { alias } : {}),
+            });
+            state.sourceContextActive = !alias;
+            index = consumedEnd;
+            continue;
+        }
+
+        if (keyword === 'select' || keyword === 'delete') {
+            state.queryStatementActive = true;
+            state.sourceContextActive = false;
+            continue;
+        }
+        if (keyword === 'from' && state.queryStatementActive) {
+            state.fromListActive = true;
+            state.expectsSource = 'from';
+            state.sourceContextActive = true;
+            continue;
+        }
+        if (keyword === 'join' || keyword === 'straight_join' || keyword === 'apply') {
+            state.fromListActive = true;
+            state.expectsSource = 'join';
+            state.sourceContextActive = true;
+            continue;
+        }
+        if (keyword === 'update' || keyword === 'into') {
+            state.queryStatementActive = true;
+            state.expectsSource = keyword;
+            state.sourceContextActive = true;
+            continue;
+        }
+        if (QUERY_EDITOR_SQL_FROM_LIST_END_WORDS.has(keyword)) {
+            state.fromListActive = false;
+            state.sourceContextActive = false;
+            state.expectsSource = undefined;
+            continue;
+        }
+        if (QUERY_EDITOR_SQL_TABLE_ALIAS_RESERVED_WORDS.has(keyword)) {
+            state.sourceContextActive = false;
+        }
+    }
+
+    return {
+        references,
+        expectsTableSource: getState().sourceContextActive,
+    };
+};
+
+export const collectQueryEditorTableReferences = (source: string): QueryEditorTableReference[] => (
+    analyzeQueryEditorTableReferences(source).references
+);
+
+export const isQueryEditorTableSourceCompletionContext = (source: string): boolean => (
+    analyzeQueryEditorTableReferences(source).expectsTableSource
+);
+
 export const buildQueryEditorAliasMap = (
     fullText: string,
     currentDb: string,
 ): Record<string, { dbName: string; tableName: string; explicitOwnerName?: string }> => {
     const aliasMap: Record<string, { dbName: string; tableName: string; explicitOwnerName?: string }> = {};
-    const reserved = new Set([
-        'where', 'on', 'group', 'order', 'limit', 'having',
-        'left', 'right', 'inner', 'outer', 'full', 'cross', 'join',
-        'union', 'except', 'intersect', 'as', 'set', 'values', 'returning',
-    ]);
-    const aliasRegex = QUERY_EDITOR_SQL_ALIAS_REFERENCE_REGEX;
-    aliasRegex.lastIndex = 0;
-    let match: RegExpExecArray | null;
-    while ((match = aliasRegex.exec(fullText)) !== null) {
-        const tableIdent = normalizeCompletionQualifiedName(match[1] || '');
+    for (const reference of collectQueryEditorTableReferences(fullText)) {
+        const tableIdent = reference.tableIdent;
         if (!tableIdent) continue;
-        const parts = tableIdent.split('.');
+        const parts = reference.parts;
         let dbName = currentDb || '';
         let tableName = tableIdent;
         let explicitOwnerName = '';
@@ -1994,17 +2234,15 @@ export const buildQueryEditorAliasMap = (
             dbName = parts[0];
             tableName = parts.slice(1).join('.');
         }
-        const shortTable = getCompletionQualifiedNameLastPart(tableIdent);
+        const shortTable = parts[parts.length - 1] || '';
         const aliasTarget = explicitOwnerName
             ? { dbName, tableName, explicitOwnerName }
             : { dbName, tableName };
         if (shortTable) aliasMap[shortTable.toLowerCase()] = aliasTarget;
 
-        const alias = stripCompletionIdentifierQuotes(match[2] || '').trim();
+        const alias = reference.alias || '';
         if (!alias) continue;
-        const loweredAlias = alias.toLowerCase();
-        if (reserved.has(loweredAlias)) continue;
-        aliasMap[loweredAlias] = aliasTarget;
+        aliasMap[alias.toLowerCase()] = aliasTarget;
     }
     return aliasMap;
 };
@@ -2051,13 +2289,10 @@ export const collectQueryEditorReferencedDatabaseNames = (
             .map((db) => [db.toLowerCase(), db] as const),
     );
     const currentDbKey = String(currentDb || '').trim().toLowerCase();
-    const tableRegex = QUERY_EDITOR_SQL_TABLE_REFERENCE_REGEX;
-    tableRegex.lastIndex = 0;
-    let match: RegExpExecArray | null;
-    while ((match = tableRegex.exec(String(fullText || ''))) !== null) {
-        const tableIdent = normalizeCompletionQualifiedName(match[1] || '');
+    for (const reference of collectQueryEditorTableReferences(fullText)) {
+        const tableIdent = reference.tableIdent;
         if (!tableIdent) continue;
-        const parts = tableIdent.split('.').map((part) => String(part || '').trim()).filter(Boolean);
+        const parts = reference.parts.map((part) => String(part || '').trim()).filter(Boolean);
         if (parts.length < 2) continue;
 
         const firstPart = parts[0];
