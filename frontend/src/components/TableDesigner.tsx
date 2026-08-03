@@ -1694,7 +1694,13 @@ ${selectedTrigger.statement}`;
               };
               const rpcConfig = buildRpcConnectionConfig(config) as any;
               const dbName = tab.dbName || '';
-              const res = await DBQuery(rpcConfig, dbName, `SHOW STABLES FROM \`${dbName}\``);
+              // Try SHOW STABLES with database name, fall back to SHOW STABLES without qualifier
+              let res;
+              if (dbName) {
+                  res = await DBQuery(rpcConfig, dbName, `SHOW STABLES FROM ${dbName}`);
+              } else {
+                  res = await DBQuery(rpcConfig, '', 'SHOW STABLES');
+              }
               if (cancelled) return;
               if (res.success && Array.isArray(res.data)) {
                   const options = res.data.map((row: any) => {
@@ -3084,20 +3090,18 @@ END;`;
 
               {tdengineTableKind === 'child' && (
                   <Space direction="vertical" size={10} style={{ width: '100%' }}>
-                      <Select
+                      <AutoComplete
                           {...noAutoCapInputProps}
-                          showSearch
                           allowClear
-                          value={tdengineStableName || undefined}
-                          onChange={(value) => setTdengineStableName(value || '')}
+                          value={tdengineStableName}
+                          onChange={(value) => setTdengineStableName(value)}
                           placeholder={t('table_designer.tdengine.placeholder.stable_name', undefined, i18nLanguage)}
                           options={tdengineStableOptions}
-                          loading={tdengineStableOptionsLoading}
                           style={{ width: '100%' }}
-                          filterOption={(input, option) =>
-                              (option?.label as string ?? '').toLowerCase().includes(input.toLowerCase())
+                          filterOption={(inputValue, option) =>
+                              (option?.value ?? '').toLowerCase().includes(inputValue.toLowerCase())
                           }
-                          notFoundContent={tdengineStableOptionsLoading ? null : t('table_designer.tdengine.message.no_stable_found', undefined, i18nLanguage)}
+                          notFoundContent={tdengineStableOptionsLoading ? t('table_designer.tdengine.message.loading_tag_defs', undefined, i18nLanguage) : t('table_designer.tdengine.message.no_stable_found', undefined, i18nLanguage)}
                       />
                       {tdengineChildTagDefsLoading || tdengineChildTagDefs.length > 0 ? (
                           <Spin spinning={tdengineChildTagDefsLoading}>
