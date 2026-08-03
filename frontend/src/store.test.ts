@@ -1196,7 +1196,7 @@ describe('store appearance persistence', () => {
     );
   });
 
-  it('normalizes connection and group environment metadata', async () => {
+  it('normalizes connection environment metadata without storing group presets', async () => {
     const { useStore } = await importStore();
 
     useStore.getState().replaceConnections([
@@ -1229,7 +1229,7 @@ describe('store appearance persistence', () => {
       name: 'Test',
       environmentType: 'test',
       connectionIds: ['conn-production'],
-    });
+    } as any);
     useStore.getState().addConnectionTag({
       id: 'tag-legacy',
       name: 'Legacy',
@@ -1240,10 +1240,11 @@ describe('store appearance persistence', () => {
       'production',
       'local',
     ]);
-    expect(useStore.getState().connectionTags.map((item) => item.environmentType)).toEqual([
-      'test',
-      'local',
+    expect(useStore.getState().connectionTags).toEqual([
+      expect.objectContaining({ id: 'tag-test', name: 'Test' }),
+      expect.objectContaining({ id: 'tag-legacy', name: 'Legacy' }),
     ]);
+    expect(useStore.getState().connectionTags.every((item) => !('environmentType' in item))).toBe(true);
   }, 30_000);
 
   it('reorders connections inside tags and ungrouped roots independently', async () => {

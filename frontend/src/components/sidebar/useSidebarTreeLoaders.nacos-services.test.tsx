@@ -280,6 +280,59 @@ describe('useSidebarTreeLoaders Nacos namespace discovery', () => {
     expect(harness.connectionStates['nacos-1']).toBe('success');
   });
 
+  it('waits for an in-flight namespace load before running an ensureFresh load', async () => {
+    const staleResponse = deferred<any>();
+    const freshResponse = deferred<any>();
+    const listNamespaces = vi.fn()
+      .mockReturnValueOnce(staleResponse.promise)
+      .mockReturnValueOnce(freshResponse.promise);
+    vi.stubGlobal('window', {
+      go: { app: { App: { NacosListNamespaces: listNamespaces } } },
+    });
+    const harness = renderNamespaceLoader();
+    const staleNode = buildNode('namespaceId=old');
+
+    const staleLoad = harness.loaders.loadDatabases(staleNode);
+    const freshNode = buildNode('namespaceId=dev');
+    let freshLoadResolved = false;
+    const freshLoad = harness.loaders.loadDatabases(freshNode, { ensureFresh: true }).then(() => {
+      freshLoadResolved = true;
+    });
+
+    expect(listNamespaces).toHaveBeenCalledTimes(1);
+    expect(freshLoadResolved).toBe(false);
+
+    staleResponse.resolve({
+      success: true,
+      data: [{ id: 'old', showName: 'Old', configCount: 1 }],
+    });
+    await act(async () => {
+      await staleLoad;
+      await Promise.resolve();
+    });
+
+    expect(listNamespaces).toHaveBeenCalledTimes(2);
+    expect(freshLoadResolved).toBe(false);
+
+    freshResponse.resolve({
+      success: true,
+      data: [{ id: 'new', showName: 'New', configCount: 1 }],
+    });
+    await act(async () => {
+      await freshLoad;
+    });
+
+    expect(freshLoadResolved).toBe(true);
+    const latestReplaceCall = mocks.replaceTreeNodeChildren.mock.calls[
+      mocks.replaceTreeNodeChildren.mock.calls.length - 1
+    ];
+    expect(latestReplaceCall?.[1]?.[0]).toMatchObject({
+      title: 'New',
+      dataRef: { nacosNamespaceId: 'new' },
+    });
+    expect(harness.loadingNodesRef.current.size).toBe(0);
+  });
+
   it('keeps the full namespace list when discovery is allowed even if a scope is configured', async () => {
     vi.stubGlobal('window', {
       go: {

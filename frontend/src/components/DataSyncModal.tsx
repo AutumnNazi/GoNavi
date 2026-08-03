@@ -60,6 +60,7 @@ import {
 } from "./dataSyncRequest";
 import { t } from "../i18n";
 import { useOptionalI18n } from "../i18n/provider";
+import { confirmProductionMutation } from "../utils/productionRiskConfirm";
 import {
   resolveDataSyncEntryModePresentation,
   type DataSyncEntryMode,
@@ -995,14 +996,20 @@ const DataSyncModal: React.FC<{
         if (!ok) return;
       }
 
+      const sConn = connections.find((c) => c.id === sourceConnId)!;
+      const tConn = connections.find((c) => c.id === targetConnId)!;
+      if (!await confirmProductionMutation(
+        tConn,
+        tr("connection.production_risk.action.sync_data"),
+        [targetDb, targetSchema, selectedTables.join(', ')].filter(Boolean).join(' / '),
+        tr,
+      )) return;
+
       setLoading(true);
       setSyncing(true);
       setCurrentStep(2);
       setSyncResult(null);
       setSyncLogs([]);
-
-      const sConn = connections.find((c) => c.id === sourceConnId)!;
-      const tConn = connections.find((c) => c.id === targetConnId)!;
 
       const jobId = `sync-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
       jobIdRef.current = jobId;

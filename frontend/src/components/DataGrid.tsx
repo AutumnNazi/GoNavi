@@ -35,6 +35,7 @@ import '../styles/v2-theme-workbench.css';
 import { buildOrderBySQL, buildPaginatedSelectSQL, buildWhereSQL, escapeLiteral, hasExplicitSort, quoteIdentPart, withSortBufferTuningSQL, type FilterCondition } from '../utils/sql';
 import { isMacLikePlatform, normalizeOpacityForPlatform, resolveAppearanceValues } from '../utils/appearance';
 import { isConnectionDataImportRestricted } from '../utils/connectionReadOnly';
+import { confirmProductionRisk } from '../utils/productionRiskConfirm';
 import { getDataSourceCapabilities, resolveDataSourceType } from '../utils/dataSourceCapabilities';
 import { buildRpcConnectionConfig } from '../utils/connectionRpcConfig';
 import { normalizeOceanBaseProtocol } from '../utils/oceanBaseProtocol';
@@ -3643,6 +3644,14 @@ const DataGrid: React.FC<DataGridProps> = ({
           useSSH: conn.config.useSSH || false, 
           ssh: conn.config.ssh || { host: "", port: 22, user: "", password: "", keyPath: "" } 
       };
+
+      const approved = await confirmProductionRisk({
+          connection: conn,
+          action: translateDataGrid('connection.production_risk.action.execute_sql'),
+          target: [dbName, tableName].filter(Boolean).join(' / '),
+          translate: translateDataGrid,
+      });
+      if (!approved) return;
       
       const startTime = Date.now();
       const res = await ApplyChanges(buildRpcConnectionConfig(config) as any, dbName || '', tableName, { inserts, updates, deletes, locatorStrategy: effectiveEditLocator?.strategy } as any);
@@ -3666,14 +3675,14 @@ const DataGrid: React.FC<DataGridProps> = ({
               message: res.message,
               dbName
           });
-          void message.success(source === 'auto'
-              ? translateDataGrid('data_grid.message.auto_commit_success')
-              : translateDataGrid('data_grid.message.transaction_committed'));
           setAddedRows([]);
           setModifiedRows({});
           setDeletedRowKeys(new Set());
           setModifiedColumns({});
-          if (onReload) onReload();
+          await onReload?.();
+          void message.success(source === 'auto'
+              ? translateDataGrid('data_grid.message.auto_commit_success')
+              : translateDataGrid('data_grid.message.transaction_committed'));
       } else {
           addSqlLog({
               id: Date.now().toString(),
@@ -3918,11 +3927,11 @@ const DataGrid: React.FC<DataGridProps> = ({
       }
   };
 
-  const handleImportSuccess = () => {
+  const handleImportSuccess = async () => {
       setImportPreviewVisible(false);
       setImportFilePath('');
+      await onReload?.();
       void message.success(translateDataGrid('data_grid.message.import_done'));
-      if (onReload) onReload();
   };
 
   const queryResultCopyMenu: MenuProps['items'] = [

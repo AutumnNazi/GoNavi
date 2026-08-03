@@ -33,6 +33,7 @@ import { V2TableContextMenuView, type V2TableContextMenuActionKey } from './V2Ta
 import { confirmCopyTable } from './tableCopyAction';
 import { APP_POPUP_Z_INDEX } from '../utils/overlayZIndex';
 import { formatSidebarTableTimestamp } from './sidebar/sidebarHelpers';
+import { confirmProductionMutation } from '../utils/productionRiskConfirm';
 
 interface TableOverviewProps {
     tab: TabData;
@@ -293,9 +294,16 @@ const TableOverview: React.FC<TableOverviewProps> = ({ tab }) => {
     const supportsDesignWrite = !getDataSourceCapabilities(connection?.config).forceReadOnlyStructureDesigner;
     const supportsCopyTable = getDataSourceCapabilities(connection?.config).supportsCopyTable;
     const autoFetchVisible = useAutoFetchVisibility();
+    const loadDataRequestIdRef = useRef(0);
 
     const loadData = useCallback(async () => {
-        if (!connection) return;
+        const requestId = loadDataRequestIdRef.current + 1;
+        loadDataRequestIdRef.current = requestId;
+        const isLatestRequest = () => loadDataRequestIdRef.current === requestId;
+        if (!connection) {
+            setLoading(false);
+            return;
+        }
         setLoading(true);
         try {
             const config = {
@@ -315,6 +323,7 @@ const TableOverview: React.FC<TableOverviewProps> = ({ tab }) => {
                 metadataDialect === 'milvus-db'
             ) {
                 const res = await DBGetTables(buildRpcConnectionConfig(config) as any, tab.dbName || '');
+                if (!isLatestRequest()) return;
                 if (res.success && Array.isArray(res.data)) {
                     setTables(parseTableStats(metadataDialect, res.data));
                 } else {
@@ -326,6 +335,7 @@ const TableOverview: React.FC<TableOverviewProps> = ({ tab }) => {
             }
             const sql = buildTableStatusSQL(metadataDialect, tab.dbName || '', schemaName);
             const res = await DBQuery(buildRpcConnectionConfig(config) as any, tab.dbName || '', sql);
+            if (!isLatestRequest()) return;
             if (res.success && Array.isArray(res.data)) {
                 setTables(parseTableStats(metadataDialect, res.data));
             } else {
@@ -334,11 +344,14 @@ const TableOverview: React.FC<TableOverviewProps> = ({ tab }) => {
                 }));
             }
         } catch (e: any) {
+            if (!isLatestRequest()) return;
             message.error(t('table_overview.message.load_tables_failed', {
                 detail: e?.message || String(e),
             }));
         } finally {
-            setLoading(false);
+            if (isLatestRequest()) {
+                setLoading(false);
+            }
         }
     }, [connection, metadataDialect, schemaName, t, tab.dbName]);
 
@@ -599,13 +612,19 @@ const TableOverview: React.FC<TableOverviewProps> = ({ tab }) => {
         }
     }, [t]);
 
-    const handleCopyTable = useCallback((tableName: string) => {
+    const handleCopyTable = useCallback(async (tableName: string) => {
         if (!supportsCopyTable) {
             message.warning(t('table_copy.message.unsupported'));
             return;
         }
         const config = buildConfig();
         if (!config) return;
+        if (!await confirmProductionMutation(
+            connection,
+            t('connection.production_risk.action.execute_sql'),
+            [tab.dbName, tableName].filter(Boolean).join(' / '),
+            t,
+        )) return;
         confirmCopyTable({
             config: buildRpcConnectionConfig(config) as any,
             dbName: tab.dbName || '',
@@ -615,7 +634,7 @@ const TableOverview: React.FC<TableOverviewProps> = ({ tab }) => {
                 await loadData();
             },
         });
-    }, [buildConfig, loadData, schemaName, supportsCopyTable, t, tab.dbName]);
+    }, [buildConfig, connection, loadData, schemaName, supportsCopyTable, t, tab.dbName]);
 
     const openTableSQLExportWorkbench = useCallback(async (tableName: string, mode: 'backup' | 'dataOnly') => {
         const normalizedTableName = String(tableName || '').trim();
@@ -656,16 +675,22 @@ const TableOverview: React.FC<TableOverviewProps> = ({ tab }) => {
             title: t('table_overview.modal.delete_table.title'),
             content: t('table_overview.modal.delete_table.content', { table: tableName }),
             onOk: async () => {
+                if (!await confirmProductionMutation(
+                    connection,
+                    t('connection.production_risk.action.execute_sql'),
+                    [tab.dbName, tableName].filter(Boolean).join(' / '),
+                    t,
+                )) return;
                 const res = await DropTable(buildRpcConnectionConfig(config) as any, tab.dbName || '', tableName);
                 if (res.success) {
+                    await loadData();
                     message.success(t('table_overview.message.delete_table_success'));
-                    loadData();
                 } else {
                     message.error(t('table_overview.message.delete_table_failed', { detail: res.message }));
                 }
             },
         });
-    }, [buildConfig, loadData, t, tab.dbName]);
+    }, [buildConfig, connection, loadData, t, tab.dbName]);
 
     const handleTableDataDangerAction = useCallback((tableName: string, action: TableDataDangerActionKind) => {
         const config = buildConfig();
@@ -682,6 +707,12 @@ const TableOverview: React.FC<TableOverviewProps> = ({ tab }) => {
             cancelText: t('common.cancel'),
             okButtonProps: { danger: true },
             onOk: async () => {
+                if (!await confirmProductionMutation(
+                    connection,
+                    t('connection.production_risk.action.execute_sql'),
+                    [tab.dbName, tableName].filter(Boolean).join(' / '),
+                    t,
+                )) return;
                 const app = (window as any).go.app.App;
                 const methodName = action === 'truncate' ? 'TruncateTables' : 'ClearTables';
                 const hide = message.loading(t('table_overview.message.table_data_action_loading', {
@@ -692,8 +723,8 @@ const TableOverview: React.FC<TableOverviewProps> = ({ tab }) => {
                     const res = await app[methodName](buildRpcConnectionConfig(config) as any, tab.dbName || '', [tableName]);
                     hide();
                     if (res.success) {
+                        await loadData();
                         message.success(t('table_overview.message.table_data_action_success', { action: actionLabel }));
-                        loadData();
                     } else {
                         message.error(t('table_overview.message.table_data_action_failed', { action: actionLabel, detail: res.message }));
                         return Promise.reject();
@@ -708,7 +739,7 @@ const TableOverview: React.FC<TableOverviewProps> = ({ tab }) => {
                 }
             },
         });
-    }, [buildConfig, loadData, t, tab.dbName]);
+    }, [buildConfig, connection, loadData, t, tab.dbName]);
 
     const toggleOverviewTablePinned = useCallback((tableName: string, pinned?: boolean) => {
         if (!connection?.id || !tab.dbName || !tableName) return;
@@ -750,16 +781,22 @@ const TableOverview: React.FC<TableOverviewProps> = ({ tab }) => {
                 const trimmed = newName.trim();
                 if (!trimmed) { message.error(t('table_overview.validation.table_name_required')); return Promise.reject(); }
                 if (trimmed === tableName) { message.warning(t('table_overview.validation.table_name_unchanged')); return; }
+                if (!await confirmProductionMutation(
+                    connection,
+                    t('connection.production_risk.action.execute_sql'),
+                    [tab.dbName, `${tableName} -> ${trimmed}`].filter(Boolean).join(' / '),
+                    t,
+                )) return;
                 const res = await RenameTable(buildRpcConnectionConfig(config) as any, tab.dbName || '', tableName, trimmed);
                 if (res.success) {
+                    await loadData();
                     message.success(t('table_overview.message.rename_table_success'));
-                    loadData();
                 } else {
                     message.error(t('table_overview.message.rename_table_failed', { detail: res.message }));
                 }
             },
         });
-    }, [buildConfig, loadData, t, tab.dbName]);
+    }, [buildConfig, connection, loadData, t, tab.dbName]);
 
     const openCreateStarRocksRollup = useCallback((tableName: string) => {
         if (!connection) return;

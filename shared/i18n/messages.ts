@@ -245,7 +245,6 @@ export const messages: Record<SupportedLanguage, Record<MessageKey, string>> = {
     "connection.environment.test": "测试环境",
     "connection.environment.development": "开发环境",
     "connection.environment.local": "本地环境",
-    "sidebar.field.environment_type": "预设分组类型",
     "connection.modal.field.name.placeholder.default": "例如：本地测试库",
     "connection.modal.field.name.placeholder.jvm":
       "例如：本地 JVM / 订单服务 JVM",
@@ -1142,7 +1141,6 @@ export const messages: Record<SupportedLanguage, Record<MessageKey, string>> = {
     "connection.environment.test": "Test environment",
     "connection.environment.development": "Development environment",
     "connection.environment.local": "Local environment",
-    "sidebar.field.environment_type": "Preset group type",
     "connection.modal.field.name.placeholder.default":
       "For example: local test database",
     "connection.modal.field.name.placeholder.jvm":

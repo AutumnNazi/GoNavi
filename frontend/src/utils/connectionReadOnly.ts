@@ -566,3 +566,14 @@ export const findConnectionMutatingStatements = (
     .filter((statement) => statement.length > 0)
     .filter((statement) => !isConnectionReadOnlyStatement(config, statement));
 };
+
+export const findPotentiallyMutatingConnectionStatements = (
+  config: ConnectionReadOnlyLike,
+  sql: string,
+): string[] => {
+  const dbType = resolveConnectionReadOnlyType(config);
+  return findSqlStatementRanges(String(sql || ""), dbType)
+    .map((range) => range.text.trim())
+    .filter((statement) => statement.length > 0)
+    .filter((statement) => !isConnectionReadOnlyStatement(config, statement));
+};

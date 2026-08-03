@@ -32,6 +32,7 @@ import { noAutoCapInputProps } from '../utils/inputAutoCap';
 import { normalizeRedisSearchDraftChange, normalizeRedisSearchInput, type RedisSearchMode } from '../utils/redisSearchPattern';
 import { decodeRedisUtf8Value, formatRedisStringValue, toHexDisplay } from '../utils/redisValueDisplay';
 import { isConnectionDataImportRestricted } from '../utils/connectionReadOnly';
+import { confirmProductionMutation } from '../utils/productionRiskConfirm';
 import { t, type I18nParams } from '../i18n';
 import { useOptionalI18n } from '../i18n/provider';
 import { APP_POPUP_Z_INDEX } from '../utils/overlayZIndex';
@@ -397,6 +398,15 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
         };
     }, [connection, redisDB]);
 
+    const confirmRedisMutation = useCallback((target: string) => (
+        confirmProductionMutation(
+            connection,
+            tr('connection.production_risk.action.modify_data'),
+            target,
+            tr,
+        )
+    ), [connection, tr]);
+
     const scanRedisKeysPage = useCallback(async (
         config: Record<string, any>,
         pattern: string,
@@ -612,7 +622,7 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
 
     const handleRefresh = () => {
         setCursor('0');
-        loadKeys(
+        return loadKeys(
             searchPattern,
             '0',
             false,
@@ -728,6 +738,7 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
             message.warning(tr('redis_viewer.message.import_selection_required'));
             return;
         }
+        if (!await confirmRedisMutation(`db${redisDB} / ${importPreview.file}`)) return;
 
         setImportingKeys(true);
         try {
@@ -744,23 +755,23 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
             if (res?.success) {
                 const imported = Number(res?.data?.imported ?? 0);
                 const skipped = Number(res?.data?.skipped ?? 0);
-                message.success(tr('redis_viewer.message.import_summary', {
-                    imported,
-                    skipped,
-                }));
                 resetImportModalState();
                 setSelectedKeys([]);
                 setSelectedKey(null);
                 setKeyValue(null);
                 setListSortOrder(null);
                 setCursor('0');
-                loadKeys(
+                await loadKeys(
                     searchPattern,
                     '0',
                     false,
                     getRedisScanLoadCount(searchPattern, false),
                     searchMode === 'prefix' && searchPattern !== '*'
                 );
+                message.success(tr('redis_viewer.message.import_summary', {
+                    imported,
+                    skipped,
+                }));
                 return;
             }
             if (String(res?.message || '').trim() === '已取消') {
@@ -772,7 +783,7 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
         } finally {
             setImportingKeys(false);
         }
-    }, [getConfig, importConflictMode, importPreview, importSelectedKeys, loadKeys, resetImportModalState, searchMode, searchPattern, tr]);
+    }, [confirmRedisMutation, getConfig, importConflictMode, importPreview, importSelectedKeys, loadKeys, redisDB, resetImportModalState, searchMode, searchPattern, tr]);
 
     const importSelectedKeySet = useMemo(() => new Set(importSelectedKeys), [importSelectedKeys]);
     const handleToggleImportPreviewKey = useCallback((key: string, checked: boolean) => {
@@ -839,11 +850,11 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
     const handleDeleteKeys = async (keysToDelete: string[]) => {
         const config = getConfig();
         if (!config) return;
+        if (!await confirmRedisMutation(`db${redisDB} / ${keysToDelete.join(', ')}`)) return;
 
         try {
             const res = await (window as any).go.app.App.RedisDeleteKeys(buildRpcConnectionConfig(config), keysToDelete);
             if (res.success) {
-                message.success(tr('redis_viewer.message.deleted_keys', { count: res.data.deleted }));
                 setKeys(prev => prev.filter(k => !keysToDelete.includes(k.key)));
                 if (selectedKey && keysToDelete.includes(selectedKey)) {
                     setSelectedKey(null);
@@ -851,6 +862,7 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
                     setListSortOrder(null);
                 }
                 setSelectedKeys([]);
+                message.success(tr('redis_viewer.message.deleted_keys', { count: res.data.deleted }));
             } else {
                 message.error(tr('redis_viewer.message.delete_failed', { detail: res.message }));
             }
@@ -870,12 +882,12 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
 
         try {
             const values = await ttlForm.validateFields();
+            if (!await confirmRedisMutation(`db${redisDB} / ${selectedKey}`)) return;
             const res = await (window as any).go.app.App.RedisSetTTL(buildRpcConnectionConfig(config), selectedKey, values.ttl);
             if (res.success) {
-                message.success(tr('redis_viewer.message.ttl_set_success'));
                 setTtlModalOpen(false);
-                loadKeyValue(selectedKey);
-                handleRefresh();
+                await Promise.all([loadKeyValue(selectedKey), handleRefresh()]);
+                message.success(tr('redis_viewer.message.ttl_set_success'));
             } else {
                 message.error(tr('redis_viewer.message.set_failed', { detail: res.message }));
             }
@@ -889,11 +901,12 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
         if (!config || !selectedKey) return;
 
         try {
+            if (!await confirmRedisMutation(`db${redisDB} / ${selectedKey}`)) return;
             const res = await (window as any).go.app.App.RedisSetString(buildRpcConnectionConfig(config), selectedKey, editValue, keyValue?.ttl || -1);
             if (res.success) {
-                message.success(tr('redis_viewer.message.save_success'));
                 setEditModalOpen(false);
-                loadKeyValue(selectedKey);
+                await loadKeyValue(selectedKey);
+                message.success(tr('redis_viewer.message.save_success'));
             } else {
                 message.error(tr('redis_viewer.message.save_failed', { detail: res.message }));
             }
@@ -908,12 +921,13 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
 
         try {
             const values = await newKeyForm.validateFields();
+            if (!await confirmRedisMutation(`db${redisDB} / ${values.key}`)) return;
             const res = await (window as any).go.app.App.RedisSetString(buildRpcConnectionConfig(config), values.key, values.value, values.ttl || -1);
             if (res.success) {
-                message.success(tr('redis_viewer.message.create_success'));
                 setNewKeyModalOpen(false);
                 newKeyForm.resetFields();
-                handleRefresh();
+                await handleRefresh();
+                message.success(tr('redis_viewer.message.create_success'));
             } else {
                 message.error(tr('redis_viewer.message.create_failed', { detail: res.message }));
             }
@@ -954,6 +968,7 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
                 message.error(tr('redis_viewer.message.target_key_exists', { key: nextKey }));
                 return;
             }
+            if (!await confirmRedisMutation(`db${redisDB} / ${renameTargetKey} -> ${nextKey}`)) return;
 
             const res = await (window as any).go.app.App.RedisRenameKey(buildRpcConnectionConfig(config), renameTargetKey, nextKey);
             if (res.success) {
@@ -972,11 +987,11 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
                 setRenameKeyModalOpen(false);
                 setRenameTargetKey(null);
                 renameKeyForm.resetFields();
+                await Promise.all([
+                    selectedKey === renameTargetKey ? loadKeyValue(nextKey) : Promise.resolve(),
+                    handleRefresh(),
+                ]);
                 message.success(tr('redis_viewer.message.rename_success'));
-                if (selectedKey === renameTargetKey) {
-                    void loadKeyValue(nextKey);
-                }
-                handleRefresh();
             } else {
                 message.error(tr('redis_viewer.message.rename_failed', { detail: res.message }));
             }
@@ -1497,11 +1512,12 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
             const handleEditHashField = async (field: string, newValue: string) => {
                 const config = getConfig();
                 if (!config) return;
+                if (!await confirmRedisMutation(`db${redisDB} / ${selectedKey} / ${field}`)) return;
                 try {
                     const res = await (window as any).go.app.App.RedisSetHashField(buildRpcConnectionConfig(config), selectedKey, field, newValue);
                     if (res.success) {
+                        await loadKeyValue(selectedKey);
                         message.success(tr('redis_viewer.message.update_success'));
-                        loadKeyValue(selectedKey);
                     } else {
                         message.error(tr('redis_viewer.message.update_failed', { detail: res.message }));
                     }
@@ -1513,11 +1529,12 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
             const handleDeleteHashField = async (field: string) => {
                 const config = getConfig();
                 if (!config) return;
+                if (!await confirmRedisMutation(`db${redisDB} / ${selectedKey} / ${field}`)) return;
                 try {
                     const res = await (window as any).go.app.App.RedisDeleteHashField(buildRpcConnectionConfig(config), selectedKey, [field]);
                     if (res.success) {
+                        await loadKeyValue(selectedKey);
                         message.success(tr('redis_viewer.message.delete_success'));
-                        loadKeyValue(selectedKey);
                     } else {
                         message.error(tr('redis_viewer.message.delete_failed', { detail: res.message }));
                     }
@@ -1637,11 +1654,12 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
             const handleEditListItem = async (index: number, newValue: string) => {
                 const config = getConfig();
                 if (!config) return;
+                if (!await confirmRedisMutation(`db${redisDB} / ${selectedKey} / ${index}`)) return;
                 try {
                     const res = await (window as any).go.app.App.RedisListSet(buildRpcConnectionConfig(config), selectedKey, index, newValue);
                     if (res.success) {
+                        await loadKeyValue(selectedKey);
                         message.success(tr('redis_viewer.message.update_success'));
-                        loadKeyValue(selectedKey);
                     } else {
                         message.error(tr('redis_viewer.message.update_failed', { detail: res.message }));
                     }
@@ -1653,11 +1671,12 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
             const handleAddListItem = async (value: string, position: 'left' | 'right') => {
                 const config = getConfig();
                 if (!config) return;
+                if (!await confirmRedisMutation(`db${redisDB} / ${selectedKey}`)) return;
                 try {
                     const res = await (window as any).go.app.App.RedisListPush(buildRpcConnectionConfig(config), selectedKey, { values: [value], position });
                     if (res.success) {
+                        await loadKeyValue(selectedKey);
                         message.success(tr('redis_viewer.message.add_success'));
-                        loadKeyValue(selectedKey);
                     } else {
                         message.error(tr('redis_viewer.message.add_failed', { detail: res.message }));
                     }
@@ -1669,11 +1688,12 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
             const handleDeleteListItem = async (value: string) => {
                 const config = getConfig();
                 if (!config) return;
+                if (!await confirmRedisMutation(`db${redisDB} / ${selectedKey}`)) return;
                 try {
                     const res = await (window as any).go.app.App.RedisListRemove(buildRpcConnectionConfig(config), selectedKey, value);
                     if (res.success) {
+                        await loadKeyValue(selectedKey);
                         message.success(tr('redis_viewer.message.delete_success'));
-                        loadKeyValue(selectedKey);
                     } else {
                         message.error(tr('redis_viewer.message.delete_failed', { detail: res.message }));
                     }
@@ -1837,11 +1857,12 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
             const handleAddSetMember = async (member: string) => {
                 const config = getConfig();
                 if (!config) return;
+                if (!await confirmRedisMutation(`db${redisDB} / ${selectedKey}`)) return;
                 try {
                     const res = await (window as any).go.app.App.RedisSetAdd(buildRpcConnectionConfig(config), selectedKey, [member]);
                     if (res.success) {
+                        await loadKeyValue(selectedKey);
                         message.success(tr('redis_viewer.message.add_success'));
-                        loadKeyValue(selectedKey);
                     } else {
                         message.error(tr('redis_viewer.message.add_failed', { detail: res.message }));
                     }
@@ -1853,11 +1874,12 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
             const handleRemoveSetMember = async (member: string) => {
                 const config = getConfig();
                 if (!config) return;
+                if (!await confirmRedisMutation(`db${redisDB} / ${selectedKey}`)) return;
                 try {
                     const res = await (window as any).go.app.App.RedisSetRemove(buildRpcConnectionConfig(config), selectedKey, [member]);
                     if (res.success) {
+                        await loadKeyValue(selectedKey);
                         message.success(tr('redis_viewer.message.delete_success'));
-                        loadKeyValue(selectedKey);
                     } else {
                         message.error(tr('redis_viewer.message.delete_failed', { detail: res.message }));
                     }
@@ -1949,11 +1971,12 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
             const handleAddZSetMember = async (member: string, score: number) => {
                 const config = getConfig();
                 if (!config) return;
+                if (!await confirmRedisMutation(`db${redisDB} / ${selectedKey}`)) return;
                 try {
                     const res = await (window as any).go.app.App.RedisZSetAdd(buildRpcConnectionConfig(config), selectedKey, [{ member, score }]);
                     if (res.success) {
+                        await loadKeyValue(selectedKey);
                         message.success(tr('redis_viewer.message.add_success'));
-                        loadKeyValue(selectedKey);
                     } else {
                         message.error(tr('redis_viewer.message.add_failed', { detail: res.message }));
                     }
@@ -1965,11 +1988,12 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
             const handleRemoveZSetMember = async (member: string) => {
                 const config = getConfig();
                 if (!config) return;
+                if (!await confirmRedisMutation(`db${redisDB} / ${selectedKey}`)) return;
                 try {
                     const res = await (window as any).go.app.App.RedisZSetRemove(buildRpcConnectionConfig(config), selectedKey, [member]);
                     if (res.success) {
+                        await loadKeyValue(selectedKey);
                         message.success(tr('redis_viewer.message.delete_success'));
-                        loadKeyValue(selectedKey);
                     } else {
                         message.error(tr('redis_viewer.message.delete_failed', { detail: res.message }));
                     }
@@ -2121,13 +2145,14 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
                     message.error(tr('redis_viewer.message.fields_required'));
                     return;
                 }
+                if (!await confirmRedisMutation(`db${redisDB} / ${selectedKey}`)) return;
 
                 try {
                     const res = await (window as any).go.app.App.RedisStreamAdd(buildRpcConnectionConfig(config), selectedKey, fieldMap, id || '*');
                     if (res.success) {
                         const newID = res.data?.id ? ` (${res.data.id})` : '';
+                        await loadKeyValue(selectedKey);
                         message.success(tr('redis_viewer.message.add_success_with_id', { id: newID }));
-                        loadKeyValue(selectedKey);
                     } else {
                         message.error(tr('redis_viewer.message.add_failed', { detail: res.message }));
                     }
@@ -2139,17 +2164,18 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
             const handleDeleteStreamEntry = async (id: string) => {
                 const config = getConfig();
                 if (!config) return;
+                if (!await confirmRedisMutation(`db${redisDB} / ${selectedKey} / ${id}`)) return;
 
                 try {
                     const res = await (window as any).go.app.App.RedisStreamDelete(buildRpcConnectionConfig(config), selectedKey, [id]);
                     if (res.success) {
                         const deleted = Number(res.data?.deleted ?? 0);
+                        await loadKeyValue(selectedKey);
                         if (deleted > 0) {
                             message.success(tr('redis_viewer.message.delete_success'));
                         } else {
                             message.warning(tr('redis_viewer.message.stream_entry_not_deleted'));
                         }
-                        loadKeyValue(selectedKey);
                     } else {
                         message.error(tr('redis_viewer.message.delete_failed', { detail: res.message }));
                     }

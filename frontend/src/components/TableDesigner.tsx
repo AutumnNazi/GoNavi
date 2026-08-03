@@ -24,6 +24,8 @@ import {
     normalizeColumnDefinition,
 } from '../utils/columnDefinition';
 import { buildEditableTriggerSql } from '../utils/triggerEditSql';
+import { confirmProductionRisk } from '../utils/productionRiskConfirm';
+import { findPotentiallyMutatingConnectionStatements } from '../utils/connectionReadOnly';
 import {
     isMysqlFamilyDialect as isMysqlFamilySqlDialect,
     isOracleLikeDialect as isOracleLikeSqlDialect,
@@ -87,9 +89,14 @@ interface ForeignKeyFormState {
 
 interface SchemaExecutionResult {
     ok: boolean;
+    cancelled?: boolean;
     message?: string;
     failedStatementIndex?: number;
     statementCount: number;
+}
+
+interface SchemaExecutionOptions {
+    skipProductionRiskConfirm?: boolean;
 }
 
 // 通用兜底类型列表
@@ -1306,14 +1313,22 @@ ${selectedTrigger.statement}`;
           ssh: conn.config.ssh || { host: "", port: 22, user: "", password: "", keyPath: "" }
         };
 
+        const approved = await confirmProductionRisk({
+          connection: conn,
+          action: t('connection.production_risk.action.execute_sql'),
+          target: [tab.dbName, selectedTrigger.name].filter(Boolean).join(' / '),
+          translate: (key, params) => t(key, params, i18nLanguage),
+        });
+        if (!approved) return;
+
         const dropSql = buildDropTriggerSql(selectedTrigger.name);
 
         try {
           const res = await DBQueryAudited(buildRpcConnectionConfig(config) as any, tab.dbName || '', dropSql, 'table_designer');
           if (res.success) {
-            message.success(t('table_designer.message.trigger_deleted', undefined, i18nLanguage));
             setSelectedTrigger(null);
-            fetchData(); // 刷新列表
+            await fetchData();
+            message.success(t('table_designer.message.trigger_deleted', undefined, i18nLanguage));
           } else {
             message.error(t('table_designer.message.delete_failed', { detail: res.message }, i18nLanguage));
           }
@@ -1340,6 +1355,14 @@ ${selectedTrigger.statement}`;
       ssh: conn.config.ssh || { host: "", port: 22, user: "", password: "", keyPath: "" }
     };
 
+    const approved = await confirmProductionRisk({
+      connection: conn,
+      action: t('connection.production_risk.action.execute_sql'),
+      target: [tab.dbName, selectedTrigger?.name].filter(Boolean).join(' / '),
+      translate: (key, params) => t(key, params, i18nLanguage),
+    });
+    if (!approved) return;
+
     setTriggerExecuting(true);
 
     try {
@@ -1357,12 +1380,12 @@ ${selectedTrigger.statement}`;
       // 执行创建语句
       const res = await DBQueryAudited(buildRpcConnectionConfig(config) as any, tab.dbName || '', triggerEditSql, 'table_designer');
       if (res.success) {
+        setIsTriggerEditModalOpen(false);
+        setSelectedTrigger(null);
+        await fetchData();
         message.success(triggerEditMode === 'create'
             ? t('table_designer.message.trigger_created', undefined, i18nLanguage)
             : t('table_designer.message.trigger_updated', undefined, i18nLanguage));
-        setIsTriggerEditModalOpen(false);
-        setSelectedTrigger(null);
-        fetchData(); // 刷新列表
       } else {
         message.error(t('table_designer.message.execution_failed', { detail: res.message }, i18nLanguage));
       }
@@ -2041,6 +2064,13 @@ ${selectedTrigger.statement}`;
           useSSH: conn.config.useSSH || false,
           ssh: conn.config.ssh || { host: "", port: 22, user: "", password: "", keyPath: "" }
       };
+      const approved = await confirmProductionRisk({
+          connection: conn,
+          action: t('connection.production_risk.action.execute_sql'),
+          target: [tab.dbName, copyTableName.trim()].filter(Boolean).join(' / '),
+          translate: (key, params) => t(key, params, i18nLanguage),
+      });
+      if (!approved) return;
       const sql = buildCreateTableSql(copyTableName.trim(), selectedColumns, copyCharset, copyCollation);
       setCopyExecuting(true);
       try {
@@ -2056,7 +2086,10 @@ ${selectedTrigger.statement}`;
       }
   };
 
-  const executeSchemaStatements = async (sqlText: string): Promise<SchemaExecutionResult> => {
+  const executeSchemaStatements = async (
+      sqlText: string,
+      options: SchemaExecutionOptions = {},
+  ): Promise<SchemaExecutionResult> => {
       const conn = connections.find(c => c.id === tab.connectionId);
       if (!conn) {
           return { ok: false, message: t('table_designer.message.connection_not_found', undefined, i18nLanguage), statementCount: 0 };
@@ -2071,6 +2104,20 @@ ${selectedTrigger.statement}`;
       };
       const dbType = resolveTableInfo().dbType;
       const statements = splitSchemaExecutionStatements(sqlText);
+      if (
+          !options.skipProductionRiskConfirm
+          && findPotentiallyMutatingConnectionStatements(conn.config, sqlText).length > 0
+      ) {
+          const approved = await confirmProductionRisk({
+              connection: conn,
+              action: t('connection.production_risk.action.execute_sql'),
+              target: [tab.dbName, tab.tableName].filter(Boolean).join(' / '),
+              translate: (key, params) => t(key, params, i18nLanguage),
+          });
+          if (!approved) {
+              return { ok: false, cancelled: true, statementCount: statements.length };
+          }
+      }
       for (let i = 0; i < statements.length; i++) {
           const stmt = normalizeSchemaStatementForExecution(statements[i], dbType);
           const res = await DBQueryAudited(buildRpcConnectionConfig(config) as any, tab.dbName || '', stmt, 'table_designer');
@@ -2098,9 +2145,10 @@ ${selectedTrigger.statement}`;
 
   const executeIndexEditSql = async (dropSql: string, addSql: string, previousIndex: IndexDisplayRow): Promise<boolean> => {
       const result = await executeSchemaStatements(`${dropSql}\n${addSql}`);
+      if (result.cancelled) return false;
       if (result.ok) {
-          message.success(t('table_designer.message.index_updated', undefined, i18nLanguage));
           await fetchData();
+          message.success(t('table_designer.message.index_updated', undefined, i18nLanguage));
           return true;
       }
 
@@ -2116,7 +2164,9 @@ ${selectedTrigger.statement}`;
           return false;
       }
 
-      const restoreResult = await executeSchemaStatements(oldCreateSql);
+      const restoreResult = await executeSchemaStatements(oldCreateSql, {
+          skipProductionRiskConfirm: true,
+      });
       if (restoreResult.ok) {
           message.error(t('table_designer.message.index_restored_after_failure', { detail: result.message || t('table_designer.message.execution_failed_plain', undefined, i18nLanguage) }, i18nLanguage));
       } else {
@@ -2133,12 +2183,13 @@ ${selectedTrigger.statement}`;
       try {
           const result = await executeSchemaStatements(sql);
           if (!result.ok) {
+              if (result.cancelled) return false;
               message.error(result.message || t('table_designer.message.execution_failed_plain', undefined, i18nLanguage));
               if ((result.failedStatementIndex ?? 0) > 0) await fetchData();
               return false;
           }
-          message.success(successMessage);
           await fetchData();
+          message.success(successMessage);
           return true;
       } catch (e: any) {
           message.error(t('table_designer.message.execution_failed', { detail: e?.message || String(e) }, i18nLanguage));
@@ -2699,15 +2750,13 @@ END;`;
 	  const handleExecuteSave = async () => {
 	      const result = await executeSchemaStatements(previewSql);
 	      if (!result.ok) {
+	          if (result.cancelled) return;
 	          message.error(result.message || t('table_designer.message.execution_failed_plain', undefined, i18nLanguage));
 	          return;
 	      }
-	      message.success(isNewTable
-              ? t('table_designer.message.schema_saved_create', undefined, i18nLanguage)
-              : t('table_designer.message.schema_saved_alter', undefined, i18nLanguage));
 	      setIsPreviewOpen(false);
 	      if (!isNewTable) {
-              fetchData();
+              await fetchData();
           } else {
               const connectionId = String(tab.connectionId || '').trim();
               const dbName = String(tab.dbName || '').trim();
@@ -2721,6 +2770,9 @@ END;`;
                   }));
               }
           }
+	      message.success(isNewTable
+              ? t('table_designer.message.schema_saved_create', undefined, i18nLanguage)
+              : t('table_designer.message.schema_saved_alter', undefined, i18nLanguage));
 	  };
 
   // Merge columns with resize handler

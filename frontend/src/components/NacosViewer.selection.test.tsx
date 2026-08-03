@@ -968,7 +968,7 @@ describe('NacosViewer config selection actions', () => {
     });
     await flushEffects();
 
-    expect(antdState.message.success).toHaveBeenCalledWith('Published successfully');
+    expect(antdState.message.success).not.toHaveBeenCalled();
 
     await act(async () => {
       runtimeState.configChangedHandler!({
@@ -996,6 +996,7 @@ describe('NacosViewer config selection actions', () => {
       },
     });
     await flushEffects();
+    expect(antdState.message.success).toHaveBeenCalledWith('Published successfully');
     await act(async () => {
       renderer!.unmount();
     });

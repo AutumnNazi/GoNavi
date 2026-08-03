@@ -7,7 +7,6 @@ import { t } from '../../i18n';
 import type { ConnectionTag, SavedConnection } from '../../types';
 import { buildRpcConnectionConfig } from '../../utils/connectionRpcConfig';
 import { resolveConnectionAccentColor, resolveConnectionIconType } from '../../utils/connectionVisual';
-import { normalizeConnectionEnvironmentType } from '../../utils/connectionEnvironment';
 import {
   buildTableSelectQuery,
   isElasticsearchDbType,
@@ -33,6 +32,7 @@ import {
   type SidebarTreeNode as TreeNode,
   type V2RailConnectionGroup,
 } from '../sidebarV2Utils';
+import type { SidebarTreeLoadOptions } from './useSidebarTreeLoaders';
 
 type UseSidebarV2ActionHandlersArgs = {
   connections: SavedConnection[];
@@ -68,8 +68,8 @@ type UseSidebarV2ActionHandlersArgs = {
   setSidebarDatabasePinned: (connectionId: string, dbName: string, pinned: boolean) => void;
   setTableSortPreference: (connectionId: string, dbName: string, sortBy: 'name' | 'frequency') => void;
   replaceTreeNodeChildren: (key: React.Key, children: TreeNode[] | undefined) => void;
-  loadDatabases: (node: any) => Promise<void>;
-  loadTables: (node: any) => Promise<void>;
+  loadDatabases: (node: any, options?: SidebarTreeLoadOptions) => Promise<void>;
+  loadTables: (node: any, options?: SidebarTreeLoadOptions) => Promise<void>;
   getDatabaseNodeRef: (connRef: any, dbName: string) => any;
   extractObjectName: (fullName: string) => string;
   openDesign: (node: any, initialTab: string, readOnly?: boolean) => void;
@@ -282,7 +282,7 @@ export const useSidebarV2ActionHandlers = ({
     );
     const shouldPin = pinned ?? !currentlyPinned;
     setSidebarTablePinned(conn.id, dbName, tableName, conn.schemaName || '', shouldPin);
-    void loadTables(getDatabaseNodeRef(conn, dbName));
+    void loadTables(getDatabaseNodeRef(conn, dbName), { ensureFresh: true });
     message.success(shouldPin ? t('sidebar.message.table_pinned') : t('sidebar.message.table_unpinned'));
   };
 
@@ -333,7 +333,7 @@ export const useSidebarV2ActionHandlers = ({
       key: `${groupData.id}-${groupData.dbName}`,
       dataRef: groupData,
     };
-    loadTables(dbNode);
+    loadTables(dbNode, { ensureFresh: true });
   };
 
   const handleTableGroupRefreshAction = (node: any) => {
@@ -425,7 +425,7 @@ export const useSidebarV2ActionHandlers = ({
         setIsRenameDbModalOpen(true);
         return;
       case 'refresh':
-        loadTables(node);
+        loadTables(node, { ensureFresh: true });
         return;
       case 'export-db-schema':
         void handleExportDatabaseSQL(node, false);
@@ -615,7 +615,6 @@ export const useSidebarV2ActionHandlers = ({
     if (action === 'edit-group') {
       createTagForm.setFieldsValue({
         name: tag.name,
-        environmentType: normalizeConnectionEnvironmentType(tag.environmentType),
         parentTagId: tag.parentTagId,
         connectionIds: tag.connectionIds,
       });
