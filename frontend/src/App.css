@@ -1464,7 +1464,7 @@ body[data-theme='dark'] .gn-connection-type-group:hover:not([aria-pressed='true'
  * 避免 Ant Form.Item 被 flex 拉成「输入框小、盒子很大 / 名称与环境中间留白」。
  */
 .gn-conn-dense {
-    --gn-conn-label-w: 40px;
+    --gn-conn-label-w: 52px;
     --gn-conn-ctrl-h: 32px;
     width: 100%;
 }
@@ -1704,7 +1704,7 @@ body[data-ui-version="v2"] .gn-conn-check-line .ant-form-item {
     flex-wrap: wrap;
     gap: 12px 16px;
     align-items: center;
-    padding: 2px 0 2px 48px;
+    padding: 2px 0 2px 60px;
     margin-bottom: 4px;
     font-size: 12px;
 }
