@@ -15,6 +15,7 @@ import {
   buildNativeDetachedSyncStoreSnapshot,
   buildNativeDetachedWorkbenchMutableStoreSnapshot,
   buildNativeDetachedWorkbenchPayload,
+  NATIVE_DETACHED_CUSTOM_THEME_CONTEXT_KEY,
   closeCurrentNativeDetachedWindow,
   fetchNativeDetachedWindowBootstrap,
   hideCurrentNativeDetachedWindow,
@@ -26,6 +27,7 @@ import {
   mergeNativeDetachedStoreDelta,
   openNativeDetachedAISettings,
   presentCurrentNativeDetachedWindow,
+  readNativeDetachedThemeContext,
 } from './nativeDetachedWindowClient';
 import {
   clearQueryTabDraft,
@@ -67,6 +69,31 @@ describe('nativeDetachedWindowClient', () => {
     expect((aiBootstrap.storeState.tabs as TabData[])[0]?.query).toBe('select live draft');
     expect((aiHost.activeTab as TabData).query).toBe('select live draft');
     expect(queryTab.query).toBe('select 1');
+  });
+
+  it('carries the resolved custom theme into detached bootstrap and host snapshots', () => {
+    const theme = {
+      schemaVersion: 1 as const,
+      id: 'theme-detached-sync',
+      name: 'Detached sync',
+      sourceFileName: 'detached-sync.css',
+      baseMode: 'light' as const,
+      css: 'body[data-custom-theme] { --gn-bg-panel: #e8f5ee; --gn-monaco-bg: #e8f5ee; --gn-accent: #287a58; }',
+      createdAt: 1,
+      updatedAt: 2,
+    };
+    const state = { tabs: [queryTab], activeTabId: queryTab.id };
+
+    const payload = buildNativeDetachedAIChatPayload(state, theme);
+    const hostSnapshot = buildNativeDetachedAIHostStoreSnapshot(state, [], theme);
+
+    expect(payload.storeState[NATIVE_DETACHED_CUSTOM_THEME_CONTEXT_KEY]).toEqual(theme);
+    expect(hostSnapshot[NATIVE_DETACHED_CUSTOM_THEME_CONTEXT_KEY]).toEqual(theme);
+    expect(readNativeDetachedThemeContext(payload.storeState)).toEqual(theme);
+    expect(readNativeDetachedThemeContext({
+      [NATIVE_DETACHED_CUSTOM_THEME_CONTEXT_KEY]: null,
+    })).toBeNull();
+    expect(readNativeDetachedThemeContext({})).toBeUndefined();
   });
 
   it('builds a workbench payload without Zustand actions or nested functions', () => {

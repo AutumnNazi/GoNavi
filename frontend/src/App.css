@@ -11,6 +11,14 @@ html, body, #root {
   background-color: transparent !important; /* CRITICAL: Allow Wails window transparency */
 }
 
+/* Native detached WebViews use the same transparent window composition as the
+   main macOS surface. Paint the resolved app token behind any child content so
+   loading gaps and transparent component pixels never fall back to white. */
+body[data-gonavi-detached='true'],
+body[data-gonavi-detached='true'] #root {
+  background-color: var(--gn-bg-app, transparent) !important;
+}
+
 body, #root {
   border-radius: var(--gonavi-border-radius); /* Slightly rounded app window corners */
 }

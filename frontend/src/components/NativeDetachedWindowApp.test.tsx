@@ -7,6 +7,7 @@ import type {
   NativeDetachedWindowActionPayload,
   NativeDetachedWindowBootstrap,
 } from '../utils/nativeDetachedWindowClient';
+import { NATIVE_DETACHED_CUSTOM_THEME_CONTEXT_KEY } from '../utils/nativeDetachedWindowClient';
 import { clearQueryTabDraft, setQueryTabDraft } from '../utils/sqlFileTabDrafts';
 
 const {
@@ -24,7 +25,11 @@ const {
     current: null as { darkMode?: boolean; bgColor?: string; presentation?: string } | null,
   },
   customThemeStyleHostProps: {
-    current: null as { contextKey?: string; onAntTokensChange?: (snapshot: unknown) => void } | null,
+    current: null as {
+      contextKey?: string;
+      onAntTokensChange?: (snapshot: unknown) => void;
+      themeOverride?: unknown;
+    } | null,
   },
   detachedResultAutoReport: { current: false },
   detachedResultDataChangeHandlers: {
@@ -227,11 +232,13 @@ vi.mock('./theme/CustomThemeStyleHost', () => ({
   default: ({
     contextKey,
     onAntTokensChange,
+    themeOverride,
   }: {
     contextKey?: string;
     onAntTokensChange?: (snapshot: unknown) => void;
+    themeOverride?: unknown;
   }) => {
-    customThemeStyleHostProps.current = { contextKey, onAntTokensChange };
+    customThemeStyleHostProps.current = { contextKey, onAntTokensChange, themeOverride };
     return null;
   },
 }));
@@ -418,6 +425,52 @@ describe('NativeDetachedWindowApp', () => {
     expect(client.closeCurrentWindow).toHaveBeenCalledOnce();
     await act(async () => renderer!.unmount());
     clearQueryTabDraft(queryTab.id);
+  });
+
+  it('uses the host custom theme definition in the detached style host', async () => {
+    const theme = {
+      schemaVersion: 1 as const,
+      id: 'theme-detached-app',
+      name: 'Detached app',
+      sourceFileName: 'detached-app.css',
+      baseMode: 'light' as const,
+      css: 'body[data-custom-theme] { --gn-bg-panel: #e8f5ee; --gn-monaco-bg: #e8f5ee; }',
+      createdAt: 1,
+      updatedAt: 2,
+    };
+    const bootstrap: NativeDetachedWindowBootstrap = {
+      id: 'native-themed-window',
+      kind: 'workbench',
+      title: queryTab.title,
+      payload: {
+        storeState: {
+          tabs: [queryTab],
+          theme: 'light',
+          appearance: { uiVersion: 'v2' },
+          [NATIVE_DETACHED_CUSTOM_THEME_CONTEXT_KEY]: theme,
+        },
+        tab: queryTab,
+      },
+    };
+    const client = {
+      load: vi.fn(async () => bootstrap),
+      present: vi.fn(async () => undefined),
+      ready: vi.fn(async () => undefined),
+      sync: vi.fn(async () => undefined),
+      attach: vi.fn(async () => undefined),
+      close: vi.fn(async () => undefined),
+      openAISettings: vi.fn(async () => undefined),
+      closeCurrentWindow: vi.fn(async () => undefined),
+    };
+
+    let renderer: TestRenderer.ReactTestRenderer;
+    await act(async () => {
+      renderer = TestRenderer.create(<NativeDetachedWindowApp client={client} />);
+      await flushEffects();
+    });
+
+    expect(customThemeStyleHostProps.current?.themeOverride).toEqual(theme);
+    await act(async () => renderer!.unmount());
   });
 
   it('signals ready only after committed native content crosses a paint frame', async () => {

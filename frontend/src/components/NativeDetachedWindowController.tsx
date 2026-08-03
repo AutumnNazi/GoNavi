@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 
 import { EventsOn, Show, WindowShow } from '../../wailsjs/runtime';
 import { type SqlLog, useStore } from '../store';
+import { useCustomThemeStore } from '../customThemeStore';
 import type { TabData } from '../types';
 import type { DetachedQueryResultWindow } from '../utils/detachedWindow';
 import {
@@ -14,6 +15,8 @@ import {
   shouldApplyNativeDetachedHideRevision,
   syncNativeAIChatHostState,
   syncNativeDetachedShortcutOptions,
+  syncNativeDetachedThemeContext,
+  getActiveNativeDetachedThemeContext,
 } from '../utils/nativeDetachedWindowHost';
 import {
   advanceNativeDetachedStoreSource,
@@ -547,6 +550,20 @@ const areAIHostStateRefsEqual = (
   && left.tabs === right.tabs
 );
 
+const areNativeDetachedThemeContextsEqual = (
+  left: ReturnType<typeof getActiveNativeDetachedThemeContext>,
+  right: ReturnType<typeof getActiveNativeDetachedThemeContext>,
+): boolean => (
+  left === right
+  || (
+    left !== null
+    && right !== null
+    && left.id === right.id
+    && left.updatedAt === right.updatedAt
+    && left.css === right.css
+  )
+);
+
 export interface NativeDetachedWindowControllerProps {
   currentWindowId?: string;
   onOpenAISettings?: () => void;
@@ -598,6 +615,7 @@ const NativeDetachedWindowController = ({
     let previousAIVisible = useStore.getState().aiPanelVisible;
     let previousAIHostStateRefs = readAIHostStateRefs();
     let previousShortcutOptions = useStore.getState().shortcutOptions;
+    let previousCustomTheme = getActiveNativeDetachedThemeContext();
     let aiHostSyncTimer: ReturnType<typeof setTimeout> | null = null;
     const scheduleAIHostStateSync = (delay = 100) => {
       if (currentWindowId || !useStore.getState().detachedAIChatWindow) return;
@@ -674,6 +692,17 @@ const NativeDetachedWindowController = ({
         clearTimeout(aiHostSyncTimer);
         aiHostSyncTimer = null;
       }
+    });
+    const unsubscribeCustomTheme = useCustomThemeStore.subscribe(() => {
+      const nextCustomTheme = getActiveNativeDetachedThemeContext();
+      if (areNativeDetachedThemeContextsEqual(previousCustomTheme, nextCustomTheme)) return;
+      previousCustomTheme = nextCustomTheme;
+      if (currentWindowId) return;
+      const targetWindowIds = currentNativeWindowIds();
+      if (targetWindowIds.size === 0) return;
+      void syncNativeDetachedThemeContext(targetWindowIds, nextCustomTheme).catch((error) => {
+        console.warn('[Native Detached Window] Failed to sync custom theme', error);
+      });
     });
     const unsubscribeQueryDrafts = subscribeQueryTabDraftChanges((tabId) => {
       if (tabId === useStore.getState().activeTabId) scheduleAIHostStateSync();
@@ -753,6 +782,7 @@ const NativeDetachedWindowController = ({
     return () => {
       off();
       unsubscribeStore();
+      unsubscribeCustomTheme();
       unsubscribeQueryDrafts();
       removeWindowEventListeners.forEach((remove) => remove());
       pendingLocalDispatchTimers.forEach((timer) => clearTimeout(timer));

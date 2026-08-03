@@ -31,6 +31,7 @@ import {
   readyNativeDetachedWindow,
   sendNativeDetachedHostEvent,
   syncNativeDetachedWindow,
+  readNativeDetachedThemeContext,
   type NativeDetachedHostEvent,
   type NativeDetachedHostEventName,
   type NativeDetachedStoreSnapshot,
@@ -39,6 +40,7 @@ import {
   NATIVE_DETACHED_WINDOW_COMMAND_EVENT,
   type NativeDetachedHostStateCommand,
 } from '../utils/nativeDetachedWindowClient';
+import type { CustomThemeDefinition } from '../utils/customTheme';
 import { isMacLikePlatform } from '../utils/appearance';
 import {
   peekQueryEditorResultSession,
@@ -98,6 +100,7 @@ export const applyNativeDetachedDocumentAppearance = (
   const rootStyle = documentRef.documentElement?.style;
   documentRef.body.setAttribute('data-theme', resolvedTheme);
   documentRef.body.setAttribute('data-ui-version', uiVersion);
+  documentRef.body.setAttribute('data-gonavi-detached', 'true');
   documentRef.body.style.backgroundColor = 'transparent';
   documentRef.body.style.color = resolvedTheme === 'dark' ? '#ffffff' : '#000000';
   documentRef.body.style.fontSize = `${effectiveFontSize}px`;
@@ -342,6 +345,7 @@ const NativeDetachedQueryResult: React.FC<{
 
 const NativeDetachedWindowContent: React.FC<{
   bootstrap: NativeDetachedWindowBootstrap;
+  themeModeOverride?: 'light' | 'dark';
   onContentReady: () => void;
   onAttach: () => void;
   onClose: () => void;
@@ -351,6 +355,7 @@ const NativeDetachedWindowContent: React.FC<{
   interactionDisabled?: boolean;
 }> = ({
   bootstrap,
+  themeModeOverride,
   onContentReady,
   onAttach,
   onClose,
@@ -363,7 +368,8 @@ const NativeDetachedWindowContent: React.FC<{
     ? state.tabs.find((item) => item.id === bootstrap.payload.tab?.id)
     : undefined);
   const tab = tabFromStore || bootstrap.payload.tab;
-  const themeMode = useStore((state) => state.theme);
+  const storeThemeMode = useStore((state) => state.theme);
+  const themeMode = themeModeOverride ?? storeThemeMode;
   const uiVersion = useStore((state) => state.appearance.uiVersion);
 
   if (bootstrap.kind === 'workbench') {
@@ -397,6 +403,7 @@ const NativeDetachedWindowContent: React.FC<{
         overlayTheme={buildOverlayWorkbenchTheme(isDark, {
           disableBackdropFilter: true,
           uiVersion,
+          useThemeVariables: true,
         })}
         presentation="detached"
         onClose={onClose}
@@ -427,6 +434,11 @@ const NativeDetachedWindowApp: React.FC<NativeDetachedWindowAppProps> = ({
   const [contentMounted, setContentMounted] = useState(true);
   const [contentReady, setContentReady] = useState(false);
   const [controllerEnabled, setControllerEnabled] = useState(false);
+  // A detached WebView has an independent custom-theme store. The host sends
+  // the resolved definition so it cannot fall back to a different local copy.
+  const [customThemeOverride, setCustomThemeOverride] = useState<
+    CustomThemeDefinition | null | undefined
+  >(undefined);
   const markContentReady = useCallback(() => setContentReady(true), []);
   const [terminalAction, setTerminalAction] = useState<'attach' | 'hide' | 'close' | null>(null);
   const [terminalCloseRecoveryAvailable, setTerminalCloseRecoveryAvailable] = useState(false);
@@ -474,10 +486,15 @@ const NativeDetachedWindowApp: React.FC<NativeDetachedWindowAppProps> = ({
   const uiScale = useStore((state) => state.uiScale);
   const shortcutOptions = useStore((state) => state.shortcutOptions);
   const [computedCustomThemeAntTokens, setComputedCustomThemeAntTokens] = useState<CustomThemeAntTokenSnapshot | null>(null);
+  const effectiveThemeMode = customThemeOverride?.baseMode === 'dark'
+    ? 'dark'
+    : customThemeOverride?.baseMode === 'light'
+      ? 'light'
+      : themeMode;
 
   useLayoutEffect(() => {
-    applyNativeDetachedDocumentAppearance(themeMode, uiVersion, fontSize, uiScale);
-  }, [fontSize, themeMode, uiScale, uiVersion]);
+    applyNativeDetachedDocumentAppearance(effectiveThemeMode, uiVersion, fontSize, uiScale);
+  }, [effectiveThemeMode, fontSize, uiScale, uiVersion]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
@@ -511,6 +528,7 @@ const NativeDetachedWindowApp: React.FC<NativeDetachedWindowAppProps> = ({
         setContentReady(false);
         setControllerEnabled(false);
         hydrateNativeDetachedStore(useStore, nextBootstrap.payload.storeState);
+        setCustomThemeOverride(readNativeDetachedThemeContext(nextBootstrap.payload.storeState));
         queryResultWindowRef.current = nextBootstrap.payload.resultWindow ?? null;
         previousHostAIContextsRef.current = useStore.getState().aiContexts;
         workbenchStateSourceRef.current = buildNativeDetachedWorkbenchMutableStoreSnapshot(
@@ -549,6 +567,16 @@ const NativeDetachedWindowApp: React.FC<NativeDetachedWindowAppProps> = ({
     return EventsOn(
       NATIVE_DETACHED_WINDOW_COMMAND_EVENT,
       (command: NativeDetachedHostStateCommand) => {
+        const themeContext = readNativeDetachedThemeContext(command?.payload?.storeState);
+        if (themeContext !== undefined) {
+          setCustomThemeOverride((current) => {
+            const currentKey = current ? `${current.id}:${current.updatedAt}:${current.css}` : current;
+            const nextKey = themeContext
+              ? `${themeContext.id}:${themeContext.updatedAt}:${themeContext.css}`
+              : themeContext;
+            return currentKey === nextKey ? current : themeContext;
+          });
+        }
         const isCurrentAIWindow = bootstrap.kind === 'ai-chat'
           && String(command?.id || '') === bootstrap.id;
         const visibilityRevision = Math.trunc(Number(command?.payload?.visibilityRevision));
@@ -686,12 +714,12 @@ const NativeDetachedWindowApp: React.FC<NativeDetachedWindowAppProps> = ({
 
   useEffect(() => {
     if (typeof document === 'undefined') return;
-    document.body.setAttribute('data-theme', themeMode === 'dark' ? 'dark' : 'light');
+    document.body.setAttribute('data-theme', effectiveThemeMode === 'dark' ? 'dark' : 'light');
     document.body.setAttribute('data-ui-version', uiVersion);
-    document.body.style.color = themeMode === 'dark' ? '#ffffff' : '#111827';
+    document.body.style.color = effectiveThemeMode === 'dark' ? '#ffffff' : '#111827';
     document.body.style.fontSize = `${Math.max(10, Number(fontSize) || 14)}px`;
-    document.documentElement.style.colorScheme = themeMode === 'dark' ? 'dark' : 'light';
-  }, [fontSize, themeMode, uiVersion]);
+    document.documentElement.style.colorScheme = effectiveThemeMode === 'dark' ? 'dark' : 'light';
+  }, [effectiveThemeMode, fontSize, uiVersion]);
 
   const readCurrentTab = useCallback((): TabData | undefined => {
     const bootstrapTab = bootstrap?.payload.tab;
@@ -1291,8 +1319,8 @@ const NativeDetachedWindowApp: React.FC<NativeDetachedWindowAppProps> = ({
         : translate('query_editor.results_panel.detached.close'),
   }), [bootstrap?.kind, translate]);
 
-  const isDark = themeMode === 'dark';
-  const customThemeStyleContextKey = `${themeMode}:${uiVersion}`;
+  const isDark = effectiveThemeMode === 'dark';
+  const customThemeStyleContextKey = `${effectiveThemeMode}:${uiVersion}`;
   const customThemeAntTokens = computedCustomThemeAntTokens?.contextKey === customThemeStyleContextKey
     ? computedCustomThemeAntTokens.tokens
     : {};
@@ -1313,6 +1341,7 @@ const NativeDetachedWindowApp: React.FC<NativeDetachedWindowAppProps> = ({
       <CustomThemeStyleHost
         contextKey={customThemeStyleContextKey}
         onAntTokensChange={setComputedCustomThemeAntTokens}
+        themeOverride={customThemeOverride}
       />
       <ConfigProvider
         locale={getAntdLocale(i18n?.language ?? 'en-US')}
@@ -1539,6 +1568,7 @@ const NativeDetachedWindowApp: React.FC<NativeDetachedWindowAppProps> = ({
             >
               <NativeDetachedWindowContent
                 bootstrap={bootstrap}
+                themeModeOverride={effectiveThemeMode}
                 onContentReady={markContentReady}
                 onAttach={() => requestTerminalAction('attach')}
                 onClose={requestWindowClose}
