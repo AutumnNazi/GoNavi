@@ -2309,6 +2309,8 @@ function App() {
       close: () => void;
       isOpen: () => boolean;
   } | null>(null);
+  // 手动「检查更新」发现新版本时，由 useAppUpdateManager 触发打开更新日志弹窗
+  const openReleaseNotesOnManualCheckRef = useRef<(() => void) | null>(null);
   const {
       aboutDisplayVersion,
       aboutInfo,
@@ -2342,6 +2344,7 @@ function App() {
       runtimeBuildType,
       t,
       updateCenterBridgeRef,
+      onManualCheckHasUpdateRef: openReleaseNotesOnManualCheckRef,
   });
   const [aboutLastCheckedAt, setAboutLastCheckedAt] = useState('');
   const [releaseNotesModalOpen, setReleaseNotesModalOpen] = useState(false);
@@ -3490,6 +3493,14 @@ function App() {
           updateCenterBridgeRef.current = null;
       };
   }, [handleOpenSettingsCenterPane]);
+  useEffect(() => {
+      openReleaseNotesOnManualCheckRef.current = () => {
+          setReleaseNotesModalOpen(true);
+      };
+      return () => {
+          openReleaseNotesOnManualCheckRef.current = null;
+      };
+  }, []);
   useEffect(() => {
       if (!isSettingsAboutPaneOpen) {
           return;

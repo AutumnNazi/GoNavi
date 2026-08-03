@@ -770,6 +770,114 @@ describe('useAppUpdateManager', () => {
     expect(hook?.lastUpdateInfo?.latestVersion).toBe('0.8.2');
   });
 
+  it('invokes the manual-check bridge when a manual check finds an update', async () => {
+    const openReleaseNotes = vi.fn();
+    const openReleaseNotesRef = { current: openReleaseNotes };
+
+    backendApp.CheckForUpdates.mockResolvedValue({
+      success: true,
+      data: {
+        hasUpdate: true,
+        channel: 'latest',
+        currentVersion: '0.8.1',
+        latestVersion: '0.8.2',
+        releaseNotesUrl: 'https://github.com/Syngnat/GoNavi/releases/tag/v0.8.2',
+      },
+    });
+
+    const Harness = () => {
+      hook = useAppUpdateManager({
+        runtimeBuildType: 'release',
+        t,
+        onManualCheckHasUpdateRef: openReleaseNotesRef,
+      });
+      return null;
+    };
+
+    act(() => {
+      renderer = create(<Harness />);
+    });
+
+    await act(async () => {
+      await hook?.checkForUpdates(false);
+    });
+
+    expect(openReleaseNotes).toHaveBeenCalledTimes(1);
+    expect(hook?.lastUpdateInfo?.hasUpdate).toBe(true);
+    expect(hook?.lastUpdateInfo?.latestVersion).toBe('0.8.2');
+  });
+
+  it('does not invoke the manual-check bridge when a manual check finds no update', async () => {
+    const openReleaseNotes = vi.fn();
+    const openReleaseNotesRef = { current: openReleaseNotes };
+
+    backendApp.CheckForUpdates.mockResolvedValue({
+      success: true,
+      data: {
+        hasUpdate: false,
+        channel: 'latest',
+        currentVersion: '0.8.1',
+        latestVersion: '0.8.1',
+      },
+    });
+
+    const Harness = () => {
+      hook = useAppUpdateManager({
+        runtimeBuildType: 'release',
+        t,
+        onManualCheckHasUpdateRef: openReleaseNotesRef,
+      });
+      return null;
+    };
+
+    act(() => {
+      renderer = create(<Harness />);
+    });
+
+    await act(async () => {
+      await hook?.checkForUpdates(false);
+    });
+
+    expect(openReleaseNotes).not.toHaveBeenCalled();
+    expect(hook?.lastUpdateInfo?.hasUpdate).toBe(false);
+    expect(messageApi.success).toHaveBeenCalled();
+  });
+
+  it('does not invoke the manual-check bridge on silent update discovery', async () => {
+    const openReleaseNotes = vi.fn();
+    const openReleaseNotesRef = { current: openReleaseNotes };
+
+    backendApp.CheckForUpdatesSilently.mockResolvedValue({
+      success: true,
+      data: {
+        hasUpdate: true,
+        channel: 'latest',
+        currentVersion: '0.8.1',
+        latestVersion: '0.8.2',
+      },
+    });
+
+    const Harness = () => {
+      hook = useAppUpdateManager({
+        runtimeBuildType: 'release',
+        t,
+        onManualCheckHasUpdateRef: openReleaseNotesRef,
+      });
+      return null;
+    };
+
+    act(() => {
+      renderer = create(<Harness />);
+    });
+
+    await act(async () => {
+      await hook?.checkForUpdates(true);
+    });
+
+    expect(openReleaseNotes).not.toHaveBeenCalled();
+    expect(hook?.lastUpdateInfo?.hasUpdate).toBe(true);
+  });
+
   it('opens the downloaded update directory when a package is already downloaded', async () => {
     backendApp.CheckForUpdates.mockResolvedValue({
       success: true,

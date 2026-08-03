@@ -63,6 +63,8 @@ type UseAppUpdateManagerOptions = {
   runtimeBuildType: string;
   t: Translator;
   updateCenterBridgeRef?: MutableRefObject<UpdateCenterBridge | null>;
+  /** 手动「检查更新」发现新版本时，触发打开更新日志弹窗的桥接回调 */
+  onManualCheckHasUpdateRef?: MutableRefObject<(() => void) | null>;
 };
 
 type AboutInfo = {
@@ -183,6 +185,7 @@ export const useAppUpdateManager = ({
   runtimeBuildType,
   t,
   updateCenterBridgeRef,
+  onManualCheckHasUpdateRef,
 }: UseAppUpdateManagerOptions) => {
   const autoCheckForUpdates = useStore((state) => state.autoCheckForUpdates);
   const autoCheckForUpdatesIntervalMinutes = useStore(
@@ -565,6 +568,8 @@ export const useAppUpdateManager = ({
       if (!silent) {
         void message.info(t('app.about.message.new_version_found', { version: info.latestVersion }));
         setAboutUpdateStatus(statusText);
+        // 手动「检查更新」发现新版本时，打开更新日志弹窗
+        onManualCheckHasUpdateRef?.current?.();
       }
       if (silent && aboutOpen) {
         setAboutUpdateStatus(statusText);
@@ -598,7 +603,7 @@ export const useAppUpdateManager = ({
     } else {
       setLastUpdateInfo(info);
     }
-  }, [formatAboutUpdateStatus, isUpdateCenterOpen, openUpdateCenter, t]);
+  }, [formatAboutUpdateStatus, isUpdateCenterOpen, onManualCheckHasUpdateRef, openUpdateCenter, t]);
 
   const loadAboutInfo = useCallback(async () => {
     setAboutLoading(true);
