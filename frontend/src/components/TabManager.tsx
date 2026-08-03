@@ -725,7 +725,6 @@ const TabManager: React.FC<TabManagerProps> = React.memo<TabManagerProps>(({ onF
   const tabs = useWorkbenchTabs();
   const detachedWorkbenchWindows = useStore(state => state.detachedWorkbenchWindows);
   const connections = useStore(state => state.connections);
-  const connectionTags = useStore(state => state.connectionTags);
   const savedQueries = useStore(state => state.savedQueries);
   const externalSQLDirectories = useStore(state => state.externalSQLDirectories);
   const recentConnectionTargets = useStore(state => state.recentConnectionTargets);
@@ -1250,7 +1249,7 @@ const TabManager: React.FC<TabManagerProps> = React.memo<TabManagerProps>(({ onF
     const connection = connections.find((conn) => conn.id === tab.connectionId);
     const displayModel = buildTabDisplayModel(tab, connection, appearance.tabDisplay, t);
     const environment = connection
-      ? resolveConnectionEnvironmentPresentation(connection, connectionTags, t)
+      ? resolveConnectionEnvironmentPresentation(connection, t)
       : undefined;
     const displayTitle = displayModel.fullTitle;
     const hostSummary = resolveConnectionHostSummary(connection?.config);
@@ -1317,7 +1316,7 @@ const TabManager: React.FC<TabManagerProps> = React.memo<TabManagerProps>(({ onF
       closable: !isV2Ui,
       children: <WorkbenchTabContent tab={tab} isActive={tabIsActive} />,
     };
-  }), [dockedTabs, dockedActiveTabId, tabs, connections, connectionTags, appearance.tabDisplay, closeOtherTabs, closeTabsToLeft, closeTabsToRight, closeAllTabs, closeTab, closeTabsWithSQLFilePrompt, detachTabToWindow, isV2Ui, languagePreference]);
+  }), [dockedTabs, dockedActiveTabId, tabs, connections, appearance.tabDisplay, closeOtherTabs, closeTabsToLeft, closeTabsToRight, closeAllTabs, closeTab, closeTabsWithSQLFilePrompt, detachTabToWindow, isV2Ui, languagePreference]);
 
   const queryCapableConnections = useMemo(
     () => connections.filter((connection) => getDataSourceCapabilities(connection.config).supportsQueryEditor),

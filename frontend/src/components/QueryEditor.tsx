@@ -9,7 +9,11 @@ import { type SqlLog, useStore } from '../store';
 import { DBQuery, DBQueryWithCancel, DBQueryMulti, DBQueryMultiInTransaction, DBQueryMultiTransactional, DBGetTables, DBTableExists, DBGetAllColumns, DBGetDatabases, DBGetColumns, DBGetTriggers, DBShowCreateTable, CancelQuery, GenerateQueryID, WriteSQLFile, ExportSQLFile, InspectElasticsearchConsole, ExecuteElasticsearchConsole } from '../../wailsjs/go/app/App';
 import { GONAVI_ROW_KEY } from './DataGrid';
 import { EventsOn, LogError, LogInfo } from '../../wailsjs/runtime';
-import { findConnectionMutatingStatements } from '../utils/connectionReadOnly';
+import {
+    findConnectionMutatingStatements,
+    findPotentiallyMutatingConnectionStatements,
+} from '../utils/connectionReadOnly';
+import { confirmProductionRisk } from '../utils/productionRiskConfirm';
 import {
     buildElasticsearchConsoleTemplates,
     buildElasticsearchInspectionDisplayLabel,
@@ -8000,11 +8004,25 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
 	        if (runSeqRef.current === runSeq) setLoading(false);
 	        return;
 	    }
-	    if (findConnectionMutatingStatements(conn.config, executableSQL).length > 0) {
-	        message.warning(translate('query_editor.message.connection_readonly_blocked'));
-	        if (runSeqRef.current === runSeq) setLoading(false);
-	        return;
-	    }
+    const restrictedStatements = findConnectionMutatingStatements(conn.config, executableSQL);
+    if (restrictedStatements.length > 0) {
+        message.warning(translate('query_editor.message.connection_readonly_blocked'));
+        if (runSeqRef.current === runSeq) setLoading(false);
+        return;
+    }
+
+    if (findPotentiallyMutatingConnectionStatements(conn.config, executableSQL).length > 0) {
+        const approved = await confirmProductionRisk({
+            connection: conn,
+            action: translate('connection.production_risk.action.execute_sql'),
+            target: currentDb,
+            translate,
+        });
+        if (!approved) {
+            if (runSeqRef.current === runSeq) setLoading(false);
+            return;
+        }
+    }
 
 	    const config = {
         ...conn.config,

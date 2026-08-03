@@ -97,8 +97,8 @@ interface QueryEditorResultsPanelProps {
     onCloseAllResultTabs: () => void;
     onResultPinnedChange: (key: string, pinned: boolean) => void;
     onOpenResultInWindow?: (key: string, preferred?: OpenResultInWindowPreferred) => void;
-    onReloadResult: (key: string, sql: string) => void;
-    onResultPageChange: (key: string, page: number, pageSize: number) => void;
+    onReloadResult: (key: string, sql: string) => void | Promise<void>;
+    onResultPageChange: (key: string, page: number, pageSize: number) => void | Promise<void>;
     onResultSort: (key: string, field: string, order: string) => void;
     onRequestResultTotalCount?: (key: string) => void;
     onCancelResultTotalCount?: (key: string) => void;
@@ -703,10 +703,9 @@ const QueryEditorResultsPanel: React.FC<QueryEditorResultsPanelProps> = ({
                         editLocator={rs.editLocator}
                         onReload={() => {
                             if (rs.page) {
-                                onResultPageChange(rs.key, rs.page.current, rs.page.pageSize);
-                                return;
+                                return onResultPageChange(rs.key, rs.page.current, rs.page.pageSize);
                             }
-                            onReloadResult(rs.key, rs.sql);
+                            return onReloadResult(rs.key, rs.sql);
                         }}
                         pagination={rs.page ? {
                             current: rs.page.current,

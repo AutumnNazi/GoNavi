@@ -162,7 +162,6 @@ import {
     type SidebarLocateTreeNodeLike,
 } from '../utils/sidebarLocate';
 import { resolveConnectionAccentColor, resolveConnectionIconType } from '../utils/connectionVisual';
-import { getConnectionEnvironmentMeta } from '../utils/connectionEnvironment';
 import {
   getSavedQueryGroupIdFromToken,
   getSavedQueryGroupOwnerIds,
@@ -1096,7 +1095,7 @@ const Sidebar: React.FC<{
       expandedKeys.forEach(key => {
           const node = findTreeNodeByKey(treeData, key);
           if (node && node.type === 'database') {
-              loadTables(node);
+              loadTables(node, { ensureFresh: true });
           }
       });
   }, [autoFetchVisible, savedQueries]);
@@ -1185,7 +1184,6 @@ const Sidebar: React.FC<{
         if (item.kind === 'connection') {
           return buildConnectionNode(item.connection);
         }
-        const environment = getConnectionEnvironmentMeta(item.tag.environmentType);
         return {
           title: item.tag.name,
           key: `tag-${item.tag.id}`,
@@ -1193,10 +1191,8 @@ const Sidebar: React.FC<{
             <span
               className="gn-v2-tree-folder-icon"
               data-sidebar-tree-folder-icon="true"
-              data-connection-environment={environment.type}
-              title={t(environment.labelKey)}
             >
-              <FolderOutlined style={{ color: environment.color }} />
+              <FolderOutlined />
             </span>
           ),
           type: 'tag',
@@ -1655,7 +1651,7 @@ const Sidebar: React.FC<{
           if (!connectionId || !dbName) return;
           const dbNode = findTreeNodeByKeyRef.current(treeDataRef.current, `${connectionId}-${dbName}`);
           if (dbNode) {
-              void loadTables(dbNode);
+              void loadTables(dbNode, { ensureFresh: true });
           }
       };
       window.addEventListener('gonavi:sidebar-table-pin-changed', handleSidebarTablePinChanged as EventListener);
@@ -1672,7 +1668,7 @@ const Sidebar: React.FC<{
           if (!connectionId || !dbName) return;
           const dbNode = findTreeNodeByKeyRef.current(treeDataRef.current, `${connectionId}-${dbName}`);
           if (dbNode) {
-              void loadTables(dbNode);
+              void loadTables(dbNode, { ensureFresh: true });
           }
       };
       window.addEventListener('gonavi:sidebar-table-created', handleSidebarTableCreated as EventListener);
@@ -2533,14 +2529,17 @@ const Sidebar: React.FC<{
           connectionReloadSignaturesRef.current[persistedConnection.id] =
               buildConnectionReloadSignature(persistedConnection);
           updateConnection(persistedConnection);
-          await loadTables({
-              key: schemaVisibilityTarget.databaseNodeKey,
-              type: 'database',
-              dataRef: {
-                  ...persistedConnection,
-                  dbName: schemaVisibilityTarget.dbName,
+          await loadTables(
+              {
+                  key: schemaVisibilityTarget.databaseNodeKey,
+                  type: 'database',
+                  dataRef: {
+                      ...persistedConnection,
+                      dbName: schemaVisibilityTarget.dbName,
+                  },
               },
-          });
+              { ensureFresh: true },
+          );
           setExpandedKeys((previous) => previous.includes(schemaVisibilityTarget.databaseNodeKey)
               ? previous
               : [...previous, schemaVisibilityTarget.databaseNodeKey]);

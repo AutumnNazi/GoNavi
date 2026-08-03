@@ -96,6 +96,57 @@ type SidebarLoadedTableEntry = {
   partitionTables?: SidebarLoadedTableEntry[];
 };
 
+export type SidebarTreeLoadOptions = {
+  ensureFresh?: boolean;
+};
+
+type TrackedSidebarLoad = {
+  promise: Promise<void>;
+  signature?: string;
+};
+
+const scheduleSidebarLoad = (
+  activeLoads: Map<string, TrackedSidebarLoad>,
+  loadKey: string,
+  run: () => Promise<void>,
+  options: SidebarTreeLoadOptions,
+  signature?: string,
+): Promise<void> => {
+  const activeLoad = activeLoads.get(loadKey);
+  const hasDifferentSignature =
+    signature !== undefined
+    && activeLoad?.signature !== undefined
+    && activeLoad.signature !== signature;
+  const shouldStartConcurrent = hasDifferentSignature && !options.ensureFresh;
+
+  if (activeLoad && !shouldStartConcurrent) {
+    if (!options.ensureFresh) {
+      return Promise.resolve();
+    }
+
+    let queuedLoad!: Promise<void>;
+    queuedLoad = activeLoad.promise
+      .catch(() => undefined)
+      .then(run)
+      .finally(() => {
+        if (activeLoads.get(loadKey)?.promise === queuedLoad) {
+          activeLoads.delete(loadKey);
+        }
+      });
+    activeLoads.set(loadKey, { promise: queuedLoad, signature });
+    return queuedLoad;
+  }
+
+  let currentLoad!: Promise<void>;
+  currentLoad = run().finally(() => {
+    if (activeLoads.get(loadKey)?.promise === currentLoad) {
+      activeLoads.delete(loadKey);
+    }
+  });
+  activeLoads.set(loadKey, { promise: currentLoad, signature });
+  return currentLoad;
+};
+
 export const formatSidebarDriverAgentUpdateWarning = (
   driverName: string,
   status: Pick<DriverStatusSnapshot, 'message' | 'updateReason'>,
@@ -203,6 +254,8 @@ export const useSidebarTreeLoaders = ({
   const nacosNamespaceActiveRequestsRef = useRef<
       Record<string, { requestId: number; signature: string }>
   >({});
+  const databaseLoadsRef = useRef<Map<string, TrackedSidebarLoad>>(new Map());
+  const tableLoadsRef = useRef<Map<string, TrackedSidebarLoad>>(new Map());
 
 	  const fetchDriverStatusMap = async (): Promise<Record<string, DriverStatusSnapshot>> => {
 	      const cached = driverStatusCacheRef.current;
@@ -260,7 +313,7 @@ export const useSidebarTreeLoaders = ({
 	          console.warn('检查驱动代理更新状态失败', error);
 	      }
 	  };
-	  const loadDatabases = async (node: any) => {
+	  const runLoadDatabases = async (node: any) => {
 		      const conn = node.dataRef as SavedConnection;
 		      const loadKey = `dbs-${conn.id}`;
           let nacosNamespaceRequest:
@@ -673,6 +726,22 @@ export const useSidebarTreeLoaders = ({
 	      }
   };
 
+  const loadDatabases = (
+      node: any,
+      options: SidebarTreeLoadOptions = {},
+  ): Promise<void> => {
+      const conn = node.dataRef as SavedConnection;
+      const loadKey = `dbs-${conn.id}`;
+      const signature = buildConnectionReloadSignature(conn);
+      return scheduleSidebarLoad(
+          databaseLoadsRef.current,
+          loadKey,
+          () => runLoadDatabases(node),
+          options,
+          signature,
+      );
+  };
+
   const loadJVMResources = async (node: any) => {
       const conn = node.dataRef as SavedConnection & { providerMode?: string; resourcePath?: string };
       const providerMode = String(conn.providerMode || '').trim().toLowerCase();
@@ -723,7 +792,7 @@ export const useSidebarTreeLoaders = ({
       }
   };
 
-	  const loadTables = async (node: any) => {
+	  const runLoadTables = async (node: any) => {
 	      const conn = node.dataRef; // has dbName
 	      const dbName = conn.dbName;
       const key = node.key;
@@ -1409,6 +1478,20 @@ export const useSidebarTreeLoaders = ({
                   setConnectionStates(prev => ({ ...prev, [key as string]: 'success' }));
               }
 	      }
+  };
+
+  const loadTables = (
+      node: any,
+      options: SidebarTreeLoadOptions = {},
+  ): Promise<void> => {
+      const conn = node.dataRef;
+      const loadKey = `tables-${conn.id}-${conn.dbName}`;
+      return scheduleSidebarLoad(
+          tableLoadsRef.current,
+          loadKey,
+          () => runLoadTables(node),
+          options,
+      );
   };
 
 

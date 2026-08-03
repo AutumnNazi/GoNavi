@@ -386,7 +386,6 @@ export interface GlobalProxyConfig extends ProxyConfig {
 export interface ConnectionTag {
   id: string;
   name: string;
-  environmentType?: ConnectionEnvironmentType;
   /**
    * Parent group id. An omitted value keeps the group at the sidebar root.
    * Hosts are always owned by exactly one direct group, while groups can nest.

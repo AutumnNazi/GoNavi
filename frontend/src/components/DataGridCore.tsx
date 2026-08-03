@@ -1346,7 +1346,7 @@ interface DataGridProps {
     editLocator?: EditRowLocator;
     readOnly?: boolean;
     showRowNumberColumn?: boolean;
-    onReload?: () => void;
+    onReload?: () => void | Promise<void>;
     onSort?: (field: string, order: string) => void;
     onPageChange?: (page: number, size: number) => void;
     onLastPage?: (pageSize: number) => void;

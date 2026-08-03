@@ -45,8 +45,8 @@ import {
 } from '../../utils/redisDbAlias';
 import { buildRpcConnectionConfig } from '../../utils/connectionRpcConfig';
 import { supportsTableTruncateAction } from '../tableDataDangerActions';
-import { normalizeConnectionEnvironmentType } from '../../utils/connectionEnvironment';
 import { noAutoCapInputProps } from '../../utils/inputAutoCap';
+import { confirmProductionMutation } from '../../utils/productionRiskConfirm';
 import {
   buildNacosServicesTabData,
   resolveNacosNamespaceDiscoveryModeFromTreeNode,
@@ -98,7 +98,7 @@ const openNacosNamespaceFormModal = (options: {
   mode: NacosNamespaceFormMode;
   connection: SavedConnection;
   initial?: { id?: string; showName?: string; description?: string };
-  onSuccess?: () => void;
+  onSuccess?: () => void | Promise<void>;
   isNamespaceManagementBlocked?: () => boolean;
 }) => {
   if (
@@ -169,6 +169,12 @@ const openNacosNamespaceFormModal = (options: {
         throw new Error('namespace name required');
       }
       const rpcConfig = buildRpcConnectionConfig(currentConnection.config as any);
+      if (!await confirmProductionMutation(
+        currentConnection,
+        t('connection.production_risk.action.modify_configuration'),
+        [draft.id.trim(), showName].filter(Boolean).join(' / '),
+        t,
+      )) return;
       if (isEdit) {
         const res = await (window as any).go.app.App.NacosUpdateNamespace(rpcConfig, {
           id: draft.id.trim(),
@@ -179,7 +185,6 @@ const openNacosNamespaceFormModal = (options: {
           message.error(res?.message || 'update failed');
           throw new Error(res?.message || 'update failed');
         }
-        message.success(t('nacos.namespace.message.update_success'));
       } else {
         const res = await (window as any).go.app.App.NacosCreateNamespace(rpcConfig, {
           id: draft.id.trim(),
@@ -190,9 +195,11 @@ const openNacosNamespaceFormModal = (options: {
           message.error(res?.message || 'create failed');
           throw new Error(res?.message || 'create failed');
         }
-        message.success(t('nacos.namespace.message.create_success'));
       }
-      options.onSuccess?.();
+      await options.onSuccess?.();
+      message.success(t(isEdit
+        ? 'nacos.namespace.message.update_success'
+        : 'nacos.namespace.message.create_success'));
     },
   });
 };
@@ -404,7 +411,10 @@ export const buildSidebarLegacyNodeMenuItems = (
                 key: 'refresh-schema',
                 label: t('sidebar.menu.refresh'),
                 icon: <ReloadOutlined />,
-                onClick: () => void loadTables(getDatabaseNodeRef(node.dataRef, node.dataRef.dbName))
+                onClick: () => void loadTables(
+                    getDatabaseNodeRef(node.dataRef, node.dataRef.dbName),
+                    { ensureFresh: true },
+                )
             },
             {
                 key: 'export-schema',
@@ -559,9 +569,6 @@ export const buildSidebarLegacyNodeMenuItems = (
                 onClick: () => {
                     createTagForm.setFieldsValue({
                         name: node.title,
-                        environmentType: normalizeConnectionEnvironmentType(
-                          node.dataRef.environmentType,
-                        ),
                         parentTagId: node.dataRef.parentTagId,
                         connectionIds: node.dataRef.connectionIds,
                     });
@@ -710,7 +717,7 @@ export const buildSidebarLegacyNodeMenuItems = (
                         openNacosNamespaceFormModal({
                             mode: 'create',
                             connection: currentConnection,
-                            onSuccess: () => loadDatabases(node),
+                            onSuccess: () => loadDatabases(node, { ensureFresh: true }),
                             isNamespaceManagementBlocked,
                         });
                     },
@@ -920,7 +927,7 @@ export const buildSidebarLegacyNodeMenuItems = (
                             showName: nsName,
                             description: '',
                         },
-                        onSuccess: () => loadDatabases(parentConnectionNode),
+                        onSuccess: () => loadDatabases(parentConnectionNode, { ensureFresh: true }),
                         isNamespaceManagementBlocked,
                     });
                 },
@@ -954,6 +961,12 @@ export const buildSidebarLegacyNodeMenuItems = (
                             );
                             const latestConnection =
                                 assertNacosNamespaceStructureEditable(currentConnection);
+                            if (!await confirmProductionMutation(
+                                latestConnection,
+                                t('connection.production_risk.action.modify_configuration'),
+                                [nacosNamespaceId, nsName].filter(Boolean).join(' / '),
+                                t,
+                            )) return;
                             const rpcConfig = buildRpcConnectionConfig(
                                 latestConnection.config as any,
                             );
@@ -965,8 +978,8 @@ export const buildSidebarLegacyNodeMenuItems = (
                                 message.error(res?.message || 'delete failed');
                                 throw new Error(res?.message || 'delete failed');
                             }
+                            await loadDatabases(parentConnectionNode, { ensureFresh: true });
                             message.success(t('nacos.namespace.message.delete_success'));
-                            loadDatabases(parentConnectionNode);
                         },
                     });
                 },

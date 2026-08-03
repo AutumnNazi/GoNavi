@@ -669,6 +669,7 @@ const DataImportWorkbench: React.FC<{ tab: TabData }> = ({ tab }) => {
           {filePath ? (
             importMode === 'database' ? (
               <DatabaseImportExecutionPanel
+                connection={selectedConnection}
                 connectionConfig={selectedConnectionConfig}
                 dbName={selectedDbName}
                 filePath={filePath}

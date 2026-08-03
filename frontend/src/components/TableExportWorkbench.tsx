@@ -54,6 +54,7 @@ import ExportProgressBar from './ExportProgressBar';
 import { useExportProgressRunner } from './useExportProgressRunner';
 import type { ExportProgressState } from './useExportProgressRunner';
 import { loadViews } from './sidebar/sidebarMetadataLoaders';
+import { confirmProductionMutation } from '../utils/productionRiskConfirm';
 
 const { Text, Paragraph, Title } = Typography;
 const EMPTY_HISTORY: TableExportHistoryEntry[] = [];
@@ -978,6 +979,12 @@ const TableExportWorkbench: React.FC<{ tab: TabData }> = ({ tab }) => {
       okText: t('sidebar.action.continue'),
     });
     if (!confirmed) return;
+    if (!await confirmProductionMutation(
+      connection,
+      t('connection.production_risk.action.execute_sql'),
+      [selectedDbName, selectedTableNames.join(', ')].filter(Boolean).join(' / '),
+      t,
+    )) return;
 
     setDestructiveOperation(isTruncate ? 'truncate-tables' : 'clear-tables');
     const hide = message.loading(
@@ -1083,6 +1090,12 @@ const TableExportWorkbench: React.FC<{ tab: TabData }> = ({ tab }) => {
       }),
     });
     if (!confirmed) return;
+    if (!await confirmProductionMutation(
+      connection,
+      t('connection.production_risk.action.execute_sql'),
+      [selectedDbName, selectedTableNames.join(', ')].filter(Boolean).join(' / '),
+      t,
+    )) return;
 
     setDestructiveOperation('delete-tables');
     const hide = message.loading(t('sidebar.message.deleting_selected_tables', { count: selectedTableNames.length }), 0);
@@ -1155,6 +1168,12 @@ const TableExportWorkbench: React.FC<{ tab: TabData }> = ({ tab }) => {
       }),
     });
     if (!confirmed) return;
+    if (!await confirmProductionMutation(
+      connection,
+      t('connection.production_risk.action.execute_sql'),
+      selectedDatabaseNames.join(', '),
+      t,
+    )) return;
 
     setDestructiveOperation('delete-databases');
     const hide = message.loading(t('sidebar.message.deleting_selected_databases', { count: selectedDatabaseNames.length }), 0);

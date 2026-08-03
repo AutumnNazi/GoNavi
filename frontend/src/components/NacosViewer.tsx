@@ -48,6 +48,7 @@ import {
 import { t, type I18nParams } from '../i18n';
 import { useOptionalI18n } from '../i18n/provider';
 import { noAutoCapInputProps } from '../utils/inputAutoCap';
+import { confirmProductionMutation } from '../utils/productionRiskConfirm';
 import {
   buildNacosImportSelectionRows,
   deleteSelectedNacosConfigs,
@@ -764,6 +765,12 @@ const NacosViewer: React.FC<NacosViewerProps> = ({
       message.warning(tr('nacos_viewer.message.beta_ips_required'));
       return;
     }
+    if (!await confirmProductionMutation(
+      connection,
+      tr('connection.production_risk.action.modify_configuration'),
+      [namespaceId, detail.dataId, detail.group].filter(Boolean).join(' / '),
+      tr,
+    )) return;
     const publishTarget = detail;
     const publishSelectionGeneration = selectionGenerationRef.current;
     let publishSucceeded = false;
@@ -786,11 +793,6 @@ const NacosViewer: React.FC<NacosViewerProps> = ({
         return;
       }
       publishSucceeded = true;
-      message.success(
-        publishMode === 'beta'
-          ? tr('nacos_viewer.message.beta_publish_success')
-          : tr('nacos_viewer.message.publish_success'),
-      );
       setDraftDirty(false);
       setRemoteChanged(false);
       await loadList(pageNo);
@@ -800,6 +802,11 @@ const NacosViewer: React.FC<NacosViewerProps> = ({
         type: draftType,
       });
       await loadBetaMeta({ dataId: publishTarget.dataId, group: publishTarget.group });
+      message.success(
+        publishMode === 'beta'
+          ? tr('nacos_viewer.message.beta_publish_success')
+          : tr('nacos_viewer.message.publish_success'),
+      );
     } catch (error: any) {
       if (!publishSucceeded) {
         void startListen(publishTarget, publishSelectionGeneration);
@@ -816,6 +823,12 @@ const NacosViewer: React.FC<NacosViewerProps> = ({
       message.warning(tr('nacos_viewer.message.read_only'));
       return;
     }
+    if (!await confirmProductionMutation(
+      connection,
+      tr('connection.production_risk.action.modify_configuration'),
+      [namespaceId, detail.dataId, detail.group].filter(Boolean).join(' / '),
+      tr,
+    )) return;
     try {
       const res = await (window as any).go.app.App.NacosStopBetaConfig(
         rpcConfig,
@@ -827,10 +840,10 @@ const NacosViewer: React.FC<NacosViewerProps> = ({
         message.error(res?.message || 'stop beta failed');
         return;
       }
-      message.success(tr('nacos_viewer.message.beta_stop_success'));
       setBetaExists(false);
       setBetaIps('');
       setPublishMode('formal');
+      message.success(tr('nacos_viewer.message.beta_stop_success'));
     } catch (error: any) {
       message.error(error?.message || String(error));
     }
@@ -929,6 +942,12 @@ const NacosViewer: React.FC<NacosViewerProps> = ({
 
   const handleImport = async () => {
     if (!rpcConfig || !importPreview || importRestricted) return;
+    if (!await confirmProductionMutation(
+      connection,
+      tr('connection.production_risk.action.modify_configuration'),
+      [namespaceId, importPreview.file].filter(Boolean).join(' / '),
+      tr,
+    )) return;
     setImporting(true);
     try {
       const selectedItems = selectedNacosImportItems(
@@ -946,13 +965,13 @@ const NacosViewer: React.FC<NacosViewerProps> = ({
         message.error(res?.message || 'import failed');
         return;
       }
+      setImportModalOpen(false);
+      setImportPreview(null);
+      await loadList(1);
       message.success(tr('nacos_viewer.message.import_success', {
         imported: res?.data?.imported ?? 0,
         skipped: res?.data?.skipped ?? 0,
       }));
-      setImportModalOpen(false);
-      setImportPreview(null);
-      await loadList(1);
     } catch (error: any) {
       message.error(error?.message || String(error));
     } finally {
@@ -987,6 +1006,12 @@ const NacosViewer: React.FC<NacosViewerProps> = ({
       message.warning(tr('nacos_viewer.message.read_only'));
       return;
     }
+    if (!await confirmProductionMutation(
+      connection,
+      tr('connection.production_risk.action.modify_configuration'),
+      `${namespaceId || 'public'} / ${selectedItems.length} configs`,
+      tr,
+    )) return;
 
     const deletingItems = [...selectedItems];
     setDeletingSelected(true);
@@ -1050,6 +1075,12 @@ const NacosViewer: React.FC<NacosViewerProps> = ({
       message.warning(tr('nacos_viewer.message.read_only'));
       return;
     }
+    if (!await confirmProductionMutation(
+      connection,
+      tr('connection.production_risk.action.modify_configuration'),
+      [namespaceId, detail.dataId, detail.group].filter(Boolean).join(' / '),
+      tr,
+    )) return;
     try {
       const res = await (window as any).go.app.App.NacosDeleteConfig(
         rpcConfig,
@@ -1061,7 +1092,6 @@ const NacosViewer: React.FC<NacosViewerProps> = ({
         message.error(res?.message || 'delete failed');
         return;
       }
-      message.success(tr('nacos_viewer.message.delete_success'));
       const deletedKey = nacosConfigSelectionKey(detail);
       setSelectedRowKeys((keys) => keys.filter((key) => String(key) !== deletedKey));
       await stopListen();
@@ -1069,6 +1099,7 @@ const NacosViewer: React.FC<NacosViewerProps> = ({
       const remainingTotal = Math.max(0, totalCount - 1);
       const lastPage = Math.max(1, Math.ceil(remainingTotal / pageSize));
       await loadList(Math.min(pageNo, lastPage));
+      message.success(tr('nacos_viewer.message.delete_success'));
     } catch (error: any) {
       message.error(error?.message || String(error));
     }
@@ -1086,6 +1117,12 @@ const NacosViewer: React.FC<NacosViewerProps> = ({
       const group = String(values.group || 'DEFAULT_GROUP').trim() || 'DEFAULT_GROUP';
       const type = String(values.type || 'text').trim() || 'text';
       const content = String(values.content ?? '');
+      if (!await confirmProductionMutation(
+        connection,
+        tr('connection.production_risk.action.modify_configuration'),
+        [namespaceId, dataId, group].filter(Boolean).join(' / '),
+        tr,
+      )) return;
       const res = await (window as any).go.app.App.NacosPublishConfig(rpcConfig, {
         namespaceId: namespaceId || '',
         dataId,
@@ -1097,11 +1134,11 @@ const NacosViewer: React.FC<NacosViewerProps> = ({
         message.error(res?.message || 'publish failed');
         return;
       }
-      message.success(tr('nacos_viewer.message.publish_success'));
       setNewModalOpen(false);
       newForm.resetFields();
       await loadList(1);
       await loadDetail({ dataId, group, type });
+      message.success(tr('nacos_viewer.message.publish_success'));
     } catch (error: any) {
       if (error?.errorFields) return;
       message.error(error?.message || String(error));
@@ -1183,6 +1220,12 @@ const NacosViewer: React.FC<NacosViewerProps> = ({
       message.warning(tr('nacos_viewer.message.read_only'));
       return;
     }
+    if (!await confirmProductionMutation(
+      connection,
+      tr('connection.production_risk.action.modify_configuration'),
+      [namespaceId, detail.dataId, detail.group, item.id].filter(Boolean).join(' / '),
+      tr,
+    )) return;
     setRollingBack(true);
     try {
       let content = item.content;
@@ -1213,7 +1256,6 @@ const NacosViewer: React.FC<NacosViewerProps> = ({
         message.error(res?.message || 'rollback failed');
         return;
       }
-      message.success(tr('nacos_viewer.message.rollback_success'));
       setHistoryOpen(false);
       setHistoryDetailOpen(false);
       await loadList(pageNo);
@@ -1222,6 +1264,7 @@ const NacosViewer: React.FC<NacosViewerProps> = ({
         group: detail.group,
         type: draftType || detail.type,
       });
+      message.success(tr('nacos_viewer.message.rollback_success'));
     } catch (error: any) {
       message.error(error?.message || String(error));
     } finally {

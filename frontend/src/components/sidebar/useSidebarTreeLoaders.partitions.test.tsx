@@ -352,4 +352,80 @@ describe('useSidebarTreeLoaders PostgreSQL partitions', () => {
     const executedSql = mocks.dbQuery.mock.calls.map((call) => String(call[2] || '')).join('\n');
     expect(executedSql).not.toMatch(/COUNT\s*\(/i);
   });
+
+  it('waits for an in-flight table load before running an ensureFresh load', async () => {
+    const staleResponse = deferred<any>();
+    const freshResponse = deferred<any>();
+    mocks.dbGetTables
+      .mockReturnValueOnce(staleResponse.promise)
+      .mockReturnValueOnce(freshResponse.promise);
+    mocks.dbQuery.mockResolvedValue({ success: false, data: [] });
+
+    const connection = {
+      id: 'conn-mysql',
+      name: 'MySQL',
+      dbName: 'app',
+      config: {
+        type: 'mysql',
+        host: '127.0.0.1',
+        port: 3306,
+        user: 'root',
+        database: 'app',
+      },
+    } as SavedConnection & { dbName: string };
+    mocks.storeState.connections = [connection];
+
+    let loaders: ReturnType<typeof useSidebarTreeLoaders> | undefined;
+    const loadingNodesRef = { current: new Set<string>() };
+    const Harness = () => {
+      loaders = useSidebarTreeLoaders({
+        savedQueries: [],
+        tableSortPreference: {},
+        tableAccessCount: {},
+        pinnedSidebarTables: [],
+        pinnedSidebarDatabases: [],
+        isV2Ui: true,
+        loadingNodesRef,
+        setConnectionStates: vi.fn(),
+        setLoadedKeys: vi.fn(),
+        replaceTreeNodeChildren: mocks.replaceTreeNodeChildren,
+        buildRuntimeConfig: (conn) => conn.config,
+        buildJVMRuntimeConfig: (conn) => conn.config,
+        buildJVMDiagnosticTreeNodes: () => [],
+        resolveSavedQueryDisplayName: (name) => String(name || ''),
+      });
+      return null;
+    };
+
+    act(() => {
+      renderer = create(<Harness />);
+    });
+
+    const node = { key: 'conn-mysql-app', dataRef: connection };
+    const staleLoad = loaders!.loadTables(node);
+    let freshLoadResolved = false;
+    const freshLoad = loaders!.loadTables(node, { ensureFresh: true }).then(() => {
+      freshLoadResolved = true;
+    });
+
+    expect(mocks.dbGetTables).toHaveBeenCalledTimes(1);
+    expect(freshLoadResolved).toBe(false);
+
+    staleResponse.resolve({ success: true, data: [{ Table: 'old_table' }] });
+    await act(async () => {
+      await staleLoad;
+      await Promise.resolve();
+    });
+
+    expect(mocks.dbGetTables).toHaveBeenCalledTimes(2);
+    expect(freshLoadResolved).toBe(false);
+
+    freshResponse.resolve({ success: true, data: [{ Table: 'new_table' }] });
+    await act(async () => {
+      await freshLoad;
+    });
+
+    expect(freshLoadResolved).toBe(true);
+    expect(loadingNodesRef.current.size).toBe(0);
+  });
 });
