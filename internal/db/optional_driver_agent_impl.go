@@ -38,6 +38,7 @@ const (
 	optionalAgentMethodElasticsearchConsole = "executeElasticsearchConsoleRequest"
 	optionalAgentMethodGetDatabases         = "getDatabases"
 	optionalAgentMethodGetTables            = "getTables"
+	optionalAgentMethodTableExists          = "tableExists"
 	optionalAgentMethodGetCreateStmt        = "getCreateStatement"
 	optionalAgentMethodGetColumns           = "getColumns"
 	optionalAgentMethodGetAllColumns        = "getAllColumns"
@@ -1155,6 +1156,45 @@ func (d *OptionalDriverAgentDB) GetTables(dbName string) ([]string, error) {
 		return nil, err
 	}
 	return tables, nil
+}
+
+func (d *OptionalDriverAgentDB) TableExists(dbName, tableName string) (bool, error) {
+	client, err := d.requireClient()
+	if err != nil {
+		return false, err
+	}
+	var exists bool
+	err = client.callWithTimeout(optionalAgentRequest{
+		Method:    optionalAgentMethodTableExists,
+		DBName:    dbName,
+		TableName: tableName,
+	}, &exists, nil, nil, nil, optionalAgentControlCallTimeout)
+	if err == nil {
+		return exists, nil
+	}
+	if !isOptionalAgentTableExistsUnsupported(err) {
+		return false, err
+	}
+
+	tables, fallbackErr := d.GetTables(dbName)
+	if fallbackErr != nil {
+		return false, fallbackErr
+	}
+	target := strings.TrimSpace(tableName)
+	for _, table := range tables {
+		if strings.TrimSpace(table) == target {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func isOptionalAgentTableExistsUnsupported(err error) bool {
+	if err == nil {
+		return false
+	}
+	text := strings.ToLower(strings.TrimSpace(err.Error()))
+	return strings.Contains(text, "不支持的方法") || strings.Contains(text, "unsupported method")
 }
 
 func (d *OptionalDriverAgentDB) GetTableRowCounts(_ string, tables []string) (map[string]int64, error) {

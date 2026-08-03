@@ -134,6 +134,7 @@ const backendApp = vi.hoisted(() => ({
   DBRollbackTransaction: vi.fn(),
   DBRollbackTransactionWithTrigger: vi.fn(),
   DBGetTables: vi.fn(),
+  DBTableExists: vi.fn(),
   DBGetAllColumns: vi.fn(),
   DBGetDatabases: vi.fn(),
   DBGetColumns: vi.fn(),
@@ -826,6 +827,7 @@ describe('QueryEditor external SQL save', () => {
     backendApp.DBGetAllColumns.mockResolvedValue({ success: true, data: [] });
     backendApp.DBGetDatabases.mockResolvedValue({ success: true, data: [] });
     backendApp.DBGetTables.mockResolvedValue({ success: true, data: [] });
+    backendApp.DBTableExists.mockResolvedValue({ success: true, data: { exists: true } });
     backendApp.GenerateQueryID.mockResolvedValue('query-1');
     storeState.connections = createDefaultConnections();
     storeState.sqlLogs = [];

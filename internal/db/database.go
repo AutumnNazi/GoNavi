@@ -102,6 +102,13 @@ type DatabaseForeignKeyProvider interface {
 	GetDatabaseForeignKeys(dbName string) (map[string][]connection.ForeignKeyDefinition, error)
 }
 
+// TableExistsChecker is an optional point lookup for a table's canonical
+// metadata identity. Callers must pass the exact name returned by driver
+// metadata; this interface does not parse arbitrary SQL identifiers.
+type TableExistsChecker interface {
+	TableExists(dbName, tableName string) (bool, error)
+}
+
 // TableRowCounter is an optional metadata interface for drivers that can
 // provide exact table row counts alongside a table list.
 type TableRowCounter interface {

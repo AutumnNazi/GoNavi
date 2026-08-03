@@ -705,6 +705,43 @@ func (e *ElasticsearchDB) GetTables(dbName string) ([]string, error) {
 	return tables, nil
 }
 
+// TableExists checks one concrete index or alias without assuming that the
+// selected index still exists after its metadata was cached.
+func (e *ElasticsearchDB) TableExists(dbName, tableName string) (bool, error) {
+	if e.client == nil {
+		return false, localizedDatabaseRuntimeError("db.backend.error.connection_not_open", nil)
+	}
+
+	indexName := resolveEsIndexName(dbName, tableName, e.database)
+	if indexName == "" {
+		return false, fmt.Errorf("未指定索引名")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), defaultEsPingTimeout)
+	defer cancel()
+	res, err := e.client.Indices.Exists(
+		[]string{indexName},
+		e.client.Indices.Exists.WithContext(ctx),
+		e.client.Indices.Exists.WithExpandWildcards("all"),
+		e.client.Indices.Exists.WithAllowNoIndices(true),
+		e.client.Indices.Exists.WithIgnoreUnavailable(true),
+	)
+	if err != nil {
+		return false, fmt.Errorf("检查索引是否存在失败：%w", err)
+	}
+	defer res.Body.Close()
+	_, _ = io.Copy(io.Discard, res.Body)
+
+	switch res.StatusCode {
+	case http.StatusOK:
+		return true, nil
+	case http.StatusNotFound:
+		return false, nil
+	default:
+		return false, fmt.Errorf("检查索引是否存在失败：%s", res.Status())
+	}
+}
+
 // GetCreateStatement 返回索引的 settings + mappings 组合 JSON。
 func (e *ElasticsearchDB) GetCreateStatement(dbName, tableName string) (string, error) {
 	if e.client == nil {

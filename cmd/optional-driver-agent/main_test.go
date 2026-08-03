@@ -113,6 +113,30 @@ type fakeAgentElasticsearchConsoleDB struct {
 	response db.ElasticsearchConsoleResponse
 }
 
+type fakeAgentTableExistsDB struct {
+	fakeAgentTimeoutDB
+	dbName    string
+	tableName string
+	exists    bool
+}
+
+type fakeAgentTableListDB struct {
+	fakeAgentTimeoutDB
+	dbName string
+	tables []string
+}
+
+func (f *fakeAgentTableExistsDB) TableExists(dbName, tableName string) (bool, error) {
+	f.dbName = dbName
+	f.tableName = tableName
+	return f.exists, nil
+}
+
+func (f *fakeAgentTableListDB) GetTables(dbName string) ([]string, error) {
+	f.dbName = dbName
+	return append([]string(nil), f.tables...), nil
+}
+
 func (f *fakeAgentElasticsearchConsoleDB) ExecuteElasticsearchConsoleRequest(_ context.Context, request db.ElasticsearchConsoleRequest) (db.ElasticsearchConsoleResponse, error) {
 	f.request = request
 	return f.response, nil
@@ -425,6 +449,64 @@ func TestHandleRequest_ExecutesElasticsearchConsoleRequest(t *testing.T) {
 	}
 	if got != fake.response {
 		t.Fatalf("response was not preserved: %#v", got)
+	}
+}
+
+func TestHandleRequest_TableExistsUsesDriverCapability(t *testing.T) {
+	fake := &fakeAgentTableExistsDB{exists: true}
+	runtimeState := &agentRuntime{inst: fake, sessions: make(map[string]db.StatementExecer)}
+
+	response := handleRequest(runtimeState, agentRequest{
+		ID:        24,
+		Method:    agentMethodTableExists,
+		DBName:    "analytics",
+		TableName: "orders-2026",
+	})
+	if !response.Success {
+		t.Fatalf("table existence request failed: %s", response.Error)
+	}
+	if fake.dbName != "analytics" || fake.tableName != "orders-2026" {
+		t.Fatalf("driver capability received %q.%q", fake.dbName, fake.tableName)
+	}
+	exists, ok := response.Data.(bool)
+	if !ok || !exists {
+		t.Fatalf("unexpected existence response: %#v", response.Data)
+	}
+}
+
+func TestHandleRequest_TableExistsFallsBackToExactTableList(t *testing.T) {
+	tests := []struct {
+		name      string
+		tableName string
+		want      bool
+	}{
+		{name: "exact qualified name", tableName: "dbo.users", want: true},
+		{name: "other schema", tableName: "public.users", want: false},
+		{name: "different case", tableName: "audit.users", want: false},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			fake := &fakeAgentTableListDB{tables: []string{"dbo.users", "audit.Users"}}
+			runtimeState := &agentRuntime{inst: fake, sessions: make(map[string]db.StatementExecer)}
+
+			response := handleRequest(runtimeState, agentRequest{
+				ID:        25,
+				Method:    agentMethodTableExists,
+				DBName:    "main",
+				TableName: test.tableName,
+			})
+			if !response.Success {
+				t.Fatalf("fallback table existence request failed: %s", response.Error)
+			}
+			if fake.dbName != "main" {
+				t.Fatalf("GetTables received database %q", fake.dbName)
+			}
+			exists, ok := response.Data.(bool)
+			if !ok || exists != test.want {
+				t.Fatalf("fallback existence response = %#v, want %v", response.Data, test.want)
+			}
+		})
 	}
 }
 

@@ -210,6 +210,10 @@ export function DBShowCreateTable(arg1, arg2, arg3) {
   return window['go']['app']['App']['DBShowCreateTable'](arg1, arg2, arg3);
 }
 
+export function DBTableExists(arg1, arg2, arg3) {
+  return window['go']['app']['App']['DBTableExists'](arg1, arg2, arg3);
+}
+
 export function DataSync(arg1) {
   return window['go']['app']['App']['DataSync'](arg1);
 }

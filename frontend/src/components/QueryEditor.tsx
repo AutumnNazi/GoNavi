@@ -6,7 +6,7 @@ import { format } from 'sql-formatter';
 import { v4 as uuidv4 } from 'uuid';
 import { TabData, ColumnDefinition, type SavedQuery, type SqlSnippet } from '../types';
 import { type SqlLog, useStore } from '../store';
-import { DBQuery, DBQueryWithCancel, DBQueryMulti, DBQueryMultiInTransaction, DBQueryMultiTransactional, DBGetTables, DBGetAllColumns, DBGetDatabases, DBGetColumns, DBGetTriggers, DBShowCreateTable, CancelQuery, GenerateQueryID, WriteSQLFile, ExportSQLFile, InspectElasticsearchConsole, ExecuteElasticsearchConsole } from '../../wailsjs/go/app/App';
+import { DBQuery, DBQueryWithCancel, DBQueryMulti, DBQueryMultiInTransaction, DBQueryMultiTransactional, DBGetTables, DBTableExists, DBGetAllColumns, DBGetDatabases, DBGetColumns, DBGetTriggers, DBShowCreateTable, CancelQuery, GenerateQueryID, WriteSQLFile, ExportSQLFile, InspectElasticsearchConsole, ExecuteElasticsearchConsole } from '../../wailsjs/go/app/App';
 import { GONAVI_ROW_KEY } from './DataGrid';
 import { EventsOn, LogError, LogInfo } from '../../wailsjs/runtime';
 import { findConnectionMutatingStatements } from '../utils/connectionReadOnly';
@@ -996,6 +996,9 @@ let sharedCurrentConnectionId = '';
 let sharedConnections: any[] = [];
 let sharedTablesData: CompletionTableMeta[] = [];
 let sharedAllColumnsData: CompletionColumnMeta[] = [];
+let sharedQueryEditorMetadataGeneration = 0;
+let sharedQueryEditorMetadataContextKey = '';
+let sharedQueryEditorMetadataConnectionConfig: unknown = null;
 
 const QUERY_EDITOR_TABLE_SUGGESTION_ROW_HEIGHT = 36;
 
@@ -1120,6 +1123,41 @@ const clearRecord = (record: Record<string, unknown>) => {
     });
 };
 const QUERY_EDITOR_SQL_SNIPPET_SUGGEST_DETAIL_MIN_HEIGHT = 260;
+const QUERY_EDITOR_TABLE_NAVIGATION_VALIDATION_TIMEOUT_MS = 5_000;
+
+type QueryEditorMetadataRequestSnapshot = {
+    generation: number;
+    connectionId: string;
+    connectionConfig: unknown;
+};
+
+const buildQueryEditorTableMetadataKey = (connectionId: string, dbName: string): string => (
+    `${String(connectionId || '').trim()}\u0000${String(dbName || '').trim()}`
+);
+
+const buildQueryEditorTableTargetKey = (
+    connectionId: string,
+    dbName: string,
+    tableName: string,
+): string => (
+    `${buildQueryEditorTableMetadataKey(connectionId, dbName)}\u0000${normalizeCompletionQualifiedName(tableName)}`
+);
+
+const isSharedQueryEditorMetadataRequestCurrent = (
+    snapshot: QueryEditorMetadataRequestSnapshot,
+    contextKey: string,
+): boolean => (
+    snapshot.generation === sharedQueryEditorMetadataGeneration
+    && contextKey === sharedQueryEditorMetadataContextKey
+    && snapshot.connectionId === sharedCurrentConnectionId
+    && sharedConnections.find((connection) => connection.id === snapshot.connectionId)?.config === snapshot.connectionConfig
+);
+
+const isExactQueryEditorTableName = (left: string, right: string): boolean => {
+    const normalizedLeft = normalizeCompletionQualifiedName(left);
+    const normalizedRight = normalizeCompletionQualifiedName(right);
+    return Boolean(normalizedLeft && normalizedLeft === normalizedRight);
+};
 
 const getCompletionTableNameFromRow = (row: any): string => (
     normalizeCommentText(extractTableNameFromMetadataRow(row))
@@ -1234,6 +1272,9 @@ const materializeSqlSnippetText = (body: string): string => {
 };
 
 const resetSharedQueryEditorMetadata = () => {
+    sharedQueryEditorMetadataGeneration += 1;
+    sharedQueryEditorMetadataContextKey = '';
+    sharedQueryEditorMetadataConnectionConfig = null;
     sharedCurrentDb = '';
     sharedTablesData = [];
     sharedAllColumnsData = [];
@@ -1516,6 +1557,12 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
   const queryEditorRootRef = useRef<HTMLDivElement | null>(null);
   const editorPaneRef = useRef<HTMLDivElement | null>(null);
   const tablesRef = useRef<CompletionTableMeta[]>([]); // Store tables for autocomplete (cross-db)
+  const metadataGenerationRef = useRef(0);
+  const missingTableMetadataKeysRef = useRef<Set<string>>(new Set());
+  const tableNavigationValidationInFlightRef = useRef<
+      Record<string, Promise<boolean | null> | undefined>
+  >({});
+  const tableNavigationActionInFlightRef = useRef<Record<string, Promise<void> | undefined>>({});
   const allColumnsRef = useRef<CompletionColumnMeta[]>([]); // Store all columns (cross-db)
   const viewsRef = useRef<CompletionViewMeta[]>([]);
   const materializedViewsRef = useRef<CompletionViewMeta[]>([]);
@@ -1527,12 +1574,31 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
   const visibleDbsRef = useRef<string[]>([]); // Store visible databases for cross-db intellisense
   const metadataFetchKeyRef = useRef<string>('');
   const metadataContextKeyRef = useRef<string>('');
+  const metadataContextConnectionConfigRef = useRef<unknown>(undefined);
   /** SQL 中引用到的库集合变化时触发跨库元数据补拉（供超链接/补全） */
   const [sqlReferencedMetadataKey, setSqlReferencedMetadataKey] = useState('');
   const sqlReferencedMetadataTimerRef = useRef<number | null>(null);
   const lastSqlReferencedMetadataKeyRef = useRef('');
 
   const connections = useStore(state => state.connections);
+  const currentConnectionConfig = connections.find(
+      (connection) => connection.id === currentConnectionId,
+  )?.config ?? null;
+  const metadataRenderContextRef = useRef<{ key: string; connectionConfig: unknown }>({
+      key: '',
+      connectionConfig: null,
+  });
+  const metadataRenderContextKey = `${isActive ? 'active' : 'inactive'}\u0000${tab.id}\u0000${currentConnectionId}\u0000${currentDb}`;
+  if (
+      metadataRenderContextRef.current.key !== metadataRenderContextKey
+      || metadataRenderContextRef.current.connectionConfig !== currentConnectionConfig
+  ) {
+      metadataGenerationRef.current += 1;
+      metadataRenderContextRef.current = {
+          key: metadataRenderContextKey,
+          connectionConfig: currentConnectionConfig,
+      };
+  }
   const queryCapableConnections = useMemo(
       () => connections.filter(c => getDataSourceCapabilities(c.config).supportsQueryEditor),
       [connections]
@@ -1604,6 +1670,22 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
   const sqlSnippets = useStore(state => state.sqlSnippets);
   const currentConnectionIdRef = useRef(currentConnectionId);
   const currentDbRef = useRef(currentDb);
+  const tableNavigationContextRef = useRef<{ key: string; connectionConfig: unknown; version: number }>({
+      key: '',
+      connectionConfig: null,
+      version: 0,
+  });
+  const tableNavigationContextKey = `${isActive ? 'active' : 'inactive'}\u0000${tab.id}\u0000${currentConnectionId}\u0000${currentDb}`;
+  if (
+      tableNavigationContextRef.current.key !== tableNavigationContextKey
+      || tableNavigationContextRef.current.connectionConfig !== currentConnectionConfig
+  ) {
+      tableNavigationContextRef.current = {
+          key: tableNavigationContextKey,
+          connectionConfig: currentConnectionConfig,
+          version: tableNavigationContextRef.current.version + 1,
+      };
+  }
   const inlineSqlMemoryEntries = useMemo(() => buildQueryEditorInlineMemoryEntries({
       currentConnectionId,
       currentDb,
@@ -1620,6 +1702,15 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       readOnly: tab.readOnly,
   }), [tab.connectionId, tab.dbName, tab.filePath, tab.id, tab.readOnly, tab.savedQueryId, tab.title]);
   const connectionsRef = useRef(connections);
+  const isQueryEditorMetadataRequestCurrent = useCallback((
+      snapshot: QueryEditorMetadataRequestSnapshot,
+  ): boolean => (
+      queryEditorMountedRef.current
+      && queryEditorActiveRef.current
+      && metadataGenerationRef.current === snapshot.generation
+      && String(currentConnectionIdRef.current || '').trim() === snapshot.connectionId
+      && connectionsRef.current.find((connection) => connection.id === snapshot.connectionId)?.config === snapshot.connectionConfig
+  ), []);
   const columnsCacheRef = useRef<Record<string, ColumnDefinition[]>>({});
   const saveQuery = useStore(state => state.saveQuery);
   const theme = useStore(state => state.theme);
@@ -2047,11 +2138,18 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           String(currentConnectionId || '').trim(),
           String(currentDb || '').trim().toLowerCase(),
       ].join('\u0000');
-      if (metadataContextKeyRef.current === nextContextKey) {
+      if (
+          metadataContextKeyRef.current === nextContextKey
+          && metadataContextConnectionConfigRef.current === currentConnectionConfig
+      ) {
           return;
       }
       metadataContextKeyRef.current = nextContextKey;
+      metadataContextConnectionConfigRef.current = currentConnectionConfig;
       metadataFetchKeyRef.current = '';
+      aiContextMetadataWarmupRef.current = {};
+      aiContextCacheRef.current = null;
+      missingTableMetadataKeysRef.current.clear();
       tablesRef.current = [];
       allColumnsRef.current = [];
       viewsRef.current = [];
@@ -2063,7 +2161,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       if (isActive) {
           resetSharedQueryEditorMetadata();
       }
-  }, [currentConnectionId, currentDb, isActive]);
+  }, [currentConnectionConfig, currentConnectionId, currentDb, isActive]);
 
   const currentSavedQuery = useMemo(() => {
       const savedId = String(tab.savedQueryId || '').trim();
@@ -2375,7 +2473,8 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           return;
       }
 
-      const warmupKey = `${connectionId}\u0000${normalizedDbName}\u0000${needsTables ? 'tables' : ''}\u0000${needsColumns ? 'columns' : ''}`;
+      const metadataGeneration = metadataGenerationRef.current;
+      const warmupKey = `${connectionId}\u0000${normalizedDbName}\u0000${needsTables ? 'tables' : ''}\u0000${needsColumns ? 'columns' : ''}\u0000${metadataGeneration}`;
       const existingWarmup = aiContextMetadataWarmupRef.current[warmupKey];
       if (existingWarmup) {
           await existingWarmup;
@@ -2387,6 +2486,14 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           if (!conn) {
               return false;
           }
+          const metadataSnapshot: QueryEditorMetadataRequestSnapshot = {
+              generation: metadataGeneration,
+              connectionId,
+              connectionConfig: conn.config,
+          };
+          const isCurrentMetadataRequest = () => (
+              isQueryEditorMetadataRequestCurrent(metadataSnapshot)
+          );
           let warmupSucceeded = true;
 
           const config = {
@@ -2400,11 +2507,17 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
 
           if (needsTables) {
               try {
+                  if (!isCurrentMetadataRequest()) {
+                      return false;
+                  }
                   const metadataDialect = normalizeMetadataDialect(conn);
                   const [tableComments, resTables] = await Promise.all([
                       fetchCompletionTableCommentMap(config, dbName, metadataDialect).catch(() => new Map<string, string>()),
                       DBGetTables(buildRpcConnectionConfig(config) as any, dbName),
                   ]);
+                  if (!isCurrentMetadataRequest()) {
+                      return false;
+                  }
                   if (!resTables?.success) {
                       warmupSucceeded = false;
                   }
@@ -2438,7 +2551,13 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
 
           if (needsColumns) {
               try {
+                  if (!isCurrentMetadataRequest()) {
+                      return false;
+                  }
                   const resCols = await DBGetAllColumns(buildRpcConnectionConfig(config) as any, dbName);
+                  if (!isCurrentMetadataRequest()) {
+                      return false;
+                  }
                   if (!resCols?.success) {
                       warmupSucceeded = false;
                   }
@@ -2485,7 +2604,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
               delete aiContextMetadataWarmupRef.current[warmupKey];
           }
       }
-  }, [currentConnectionId, currentDb, tab.connectionId, tab.dbName]);
+  }, [currentConnectionId, currentDb, isQueryEditorMetadataRequestCurrent, tab.connectionId, tab.dbName]);
 
   useEffect(() => {
       if (!isExternalSQLFileTab) return;
@@ -2510,6 +2629,18 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
   // 确保 completion provider 始终使用当前活跃 Tab 的上下文
   useEffect(() => {
       if (!isActive) return;
+      const activeConnectionConfig = connections.find(
+          (connection) => connection.id === currentConnectionId,
+      )?.config ?? null;
+      const nextSharedMetadataContextKey = `${tab.id}\u0000${currentConnectionId}\u0000${currentDb}`;
+      if (
+          sharedQueryEditorMetadataContextKey !== nextSharedMetadataContextKey
+          || sharedQueryEditorMetadataConnectionConfig !== activeConnectionConfig
+      ) {
+          sharedQueryEditorMetadataGeneration += 1;
+          sharedQueryEditorMetadataContextKey = nextSharedMetadataContextKey;
+          sharedQueryEditorMetadataConnectionConfig = activeConnectionConfig;
+      }
       sharedCurrentDb = currentDb;
       sharedCurrentConnectionId = currentConnectionId;
       sharedConnections = connections;
@@ -2525,7 +2656,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       sharedPackagesData = packagesRef.current;
       sharedColumnsCacheData = columnsCacheRef.current;
       sharedActiveEditorModelUri = String(editorRef.current?.getModel?.()?.uri?.toString?.() || '');
-  }, [isActive, currentDb, currentConnectionId, connections]);
+  }, [isActive, currentDb, currentConnectionId, connections, tab.id]);
 
   useEffect(() => {
       connectionsRef.current = connections;
@@ -2607,6 +2738,126 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
 
       objectDecorationIdsRef.current = editor.deltaDecorations(objectDecorationIdsRef.current, decorations);
   }, [isObjectEditQueryTab]);
+
+  const validateTableNavigationTarget = useCallback(async (
+      connectionId: string,
+      dbName: string,
+      targetTableName: string,
+      contextVersion: number,
+  ): Promise<boolean | null> => {
+      const metadataKey = buildQueryEditorTableMetadataKey(connectionId, dbName);
+      const normalizedTargetTableName = normalizeCompletionQualifiedName(targetTableName);
+      if (!metadataKey || !normalizedTargetTableName) {
+          return null;
+      }
+
+      const validationKey = `${metadataKey}\u0000${normalizedTargetTableName}\u0000${contextVersion}`;
+      const pendingValidation = tableNavigationValidationInFlightRef.current[validationKey];
+      if (pendingValidation) {
+          return pendingValidation;
+      }
+
+      const conn = connectionsRef.current.find((item) => item.id === connectionId);
+      if (!conn) {
+          return null;
+      }
+      const connectionConfig = conn.config;
+      const config = {
+          ...connectionConfig,
+          port: Number(connectionConfig.port),
+          password: connectionConfig.password || '',
+          database: connectionConfig.database || '',
+          useSSH: connectionConfig.useSSH || false,
+          ssh: connectionConfig.ssh || { host: '', port: 22, user: '', password: '', keyPath: '' },
+      };
+
+      const validationPromise = (async (): Promise<boolean | null> => {
+          let timeoutId: ReturnType<typeof setTimeout> | undefined;
+          try {
+              const result = await Promise.race([
+                  DBTableExists(
+                      buildRpcConnectionConfig(config) as any,
+                      dbName,
+                      targetTableName,
+                  ),
+                  new Promise<null>((resolve) => {
+                      timeoutId = globalThis.setTimeout(
+                          () => resolve(null),
+                          QUERY_EDITOR_TABLE_NAVIGATION_VALIDATION_TIMEOUT_MS,
+                      );
+                  }),
+              ]);
+              if (
+                  !queryEditorMountedRef.current
+                  || !queryEditorActiveRef.current
+                  || String(currentConnectionIdRef.current || '').trim() !== connectionId
+                  || connectionsRef.current.find((item) => item.id === connectionId)?.config !== connectionConfig
+                  || tableNavigationContextRef.current.version !== contextVersion
+              ) {
+                  return null;
+              }
+              if (!result) {
+                  return null;
+              }
+              const exists = (result?.data as { exists?: unknown } | null | undefined)?.exists;
+              return result?.success && typeof exists === 'boolean' ? exists : null;
+          } catch (error) {
+              console.warn('GoNavi table navigation validation failed', error);
+              return null;
+          } finally {
+              if (timeoutId !== undefined) {
+                  globalThis.clearTimeout(timeoutId);
+              }
+              delete tableNavigationValidationInFlightRef.current[validationKey];
+          }
+      })();
+
+      tableNavigationValidationInFlightRef.current[validationKey] = validationPromise;
+      return validationPromise;
+  }, []);
+
+  const clearMissingTableNavigationMetadata = useCallback((
+      connectionId: string,
+      dbName: string,
+      targetTableName: string,
+  ) => {
+      metadataGenerationRef.current += 1;
+      sharedQueryEditorMetadataGeneration += 1;
+      missingTableMetadataKeysRef.current.add(
+          buildQueryEditorTableTargetKey(connectionId, dbName, targetTableName),
+      );
+      const normalizedDbName = String(dbName || '').trim();
+      const isTargetTableName = (value: string): boolean => (
+          isExactQueryEditorTableName(value, targetTableName)
+      );
+      tablesRef.current = tablesRef.current.filter((table) => (
+          String(table.dbName || '').trim() !== normalizedDbName
+          || !isTargetTableName(String(table.tableName || ''))
+      ));
+      allColumnsRef.current = allColumnsRef.current.filter((column) => (
+          String(column.dbName || '').trim() !== normalizedDbName
+          || !isTargetTableName(String(column.tableName || ''))
+      ));
+      Object.keys(columnsCacheRef.current).forEach((cacheKey) => {
+          const [cachedConnectionId = '', cachedDbName = '', ...cachedTableParts] = cacheKey.split('|');
+          if (
+              cachedConnectionId === connectionId
+              && cachedDbName === normalizedDbName
+              && isTargetTableName(cachedTableParts.join('|'))
+          ) {
+              delete columnsCacheRef.current[cacheKey];
+          }
+      });
+      const sharedTablesCacheKey = `${connectionId}|${dbName}`;
+      sharedLazyTablesCache[sharedTablesCacheKey] = (sharedLazyTablesCache[sharedTablesCacheKey] || []).filter(
+          (table) => !isTargetTableName(String(table.tableName || '')),
+      );
+      aiContextCacheRef.current = null;
+      sharedTablesData = tablesRef.current;
+      sharedAllColumnsData = allColumnsRef.current;
+      sharedColumnsCacheData = columnsCacheRef.current;
+      refreshObjectDecorations(QUERY_EDITOR_LIVE_DECORATION_MAX_TEXT_LENGTH);
+  }, [refreshObjectDecorations]);
 
   const showObjectInfoAtPosition = useCallback((position?: { lineNumber: number; column: number } | null) => {
       const editor = editorRef.current;
@@ -2729,6 +2980,14 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       const dbName = String(payload.dbName || '').trim();
       const tableName = normalizeCompletionQualifiedName(payload.text);
       if (!dbName || !tableName) {
+          return;
+      }
+      const payloadConnectionId = String(
+          payload.connectionId || currentConnectionIdRef.current || '',
+      ).trim();
+      if (missingTableMetadataKeysRef.current.has(
+          buildQueryEditorTableTargetKey(payloadConnectionId, dbName, tableName),
+      )) {
           return;
       }
       const visibleKey = dbName.toLowerCase();
@@ -3186,11 +3445,20 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       }
 
       let cancelled = false;
+      const metadataGeneration = metadataGenerationRef.current;
       // 仅在本次 effect 成功完成后写入；中途 cancel 不得留下 key，否则同 key 永远不再拉取 → 超链接全灭
       let activeFetchKey = '';
       const fetchMetadata = async () => {
           const conn = connections.find(c => c.id === currentConnectionId);
           if (!conn) return;
+          const metadataSnapshot: QueryEditorMetadataRequestSnapshot = {
+              generation: metadataGeneration,
+              connectionId: currentConnectionId,
+              connectionConfig: conn.config,
+          };
+          const isCurrentMetadataRequest = () => (
+              !cancelled && isQueryEditorMetadataRequestCurrent(metadataSnapshot)
+          );
 
           const visibleDbs = filterVisibleDatabaseNames(conn, visibleDbsRef.current);
           visibleDbsRef.current = visibleDbs;
@@ -3249,7 +3517,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           const allPackages: CompletionPackageMeta[] = [];
           const metadataDialect = normalizeMetadataDialect(conn);
           const syncMetadataSnapshot = () => {
-              if (cancelled) {
+              if (!isCurrentMetadataRequest()) {
                   return false;
               }
               tablesRef.current = [...allTables];
@@ -3537,6 +3805,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       currentDb,
       connections,
       isActive,
+      isQueryEditorMetadataRequestCurrent,
       isObjectEditQueryTab,
       refreshObjectDecorations,
       sqlReferencedMetadataKey,
@@ -5044,18 +5313,87 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           if (navigationTarget.type === 'table') {
               const targetTableName = String(navigationTarget.tableName || '').trim();
               if (!targetTableName) return;
-              addTab({
-                  id: `${connectionId}-${targetDbName}-table-${targetTableName}`,
-                  title: targetTableName,
-                  type: 'table',
+              const openTableTab = () => {
+                  addTab({
+                      id: `${connectionId}-${targetDbName}-table-${targetTableName}`,
+                      title: targetTableName,
+                      type: 'table',
+                      connectionId,
+                      dbName: targetDbName,
+                      tableName: targetTableName,
+                      initialViewMode: 'fields',
+                      initialViewModeRequestId: String(Date.now()),
+                      objectType: 'table',
+                      returnToTabId: activeTabId || undefined,
+                  });
+              };
+              const navigationContextVersion = tableNavigationContextRef.current.version;
+              const navigationActionKey = [
                   connectionId,
-                  dbName: targetDbName,
-                  tableName: targetTableName,
-                  initialViewMode: 'fields',
-                  initialViewModeRequestId: String(Date.now()),
-                  objectType: 'table',
-                  returnToTabId: activeTabId || undefined,
-              });
+                  targetDbName,
+                  normalizeCompletionQualifiedName(targetTableName),
+                  navigationContextVersion,
+              ].join('\u0000');
+              if (tableNavigationActionInFlightRef.current[navigationActionKey]) {
+                  return;
+              }
+              const isCurrentNavigationEditor = () => {
+                  if (editorRef.current !== editor) {
+                      return false;
+                  }
+                  try {
+                      return Boolean(editor.getModel?.());
+                  } catch {
+                      return false;
+                  }
+              };
+              const navigationAction = (async () => {
+                  const targetExists = await validateTableNavigationTarget(
+                      connectionId,
+                      targetDbName,
+                      targetTableName,
+                      navigationContextVersion,
+                  );
+                  if (
+                      !queryEditorMountedRef.current
+                      || !queryEditorActiveRef.current
+                      || String(currentConnectionIdRef.current || '').trim() !== connectionId
+                      || tableNavigationContextRef.current.version !== navigationContextVersion
+                      || !isCurrentNavigationEditor()
+                  ) {
+                      return;
+                  }
+                  if (targetExists === null) {
+                      openTableTab();
+                      return;
+                  }
+                  if (targetExists) {
+                      missingTableMetadataKeysRef.current.delete(
+                          buildQueryEditorTableTargetKey(connectionId, targetDbName, targetTableName),
+                      );
+                      openTableTab();
+                      return;
+                  }
+
+                  clearMissingTableNavigationMetadata(connectionId, targetDbName, targetTableName);
+                  lastHoverTargetPositionRef.current = null;
+                  clearQueryEditorLinkDecorations(editor, linkDecorationIdsRef);
+                  editor.updateOptions?.({ mouseStyle: 'text' });
+                  setQueryEditorMouseCursor(editor, '');
+                  void message.warning(translate('query_editor.message.table_navigation_target_missing', {
+                      table: targetTableName,
+                  }));
+              })();
+              tableNavigationActionInFlightRef.current[navigationActionKey] = navigationAction;
+              void navigationAction
+                  .catch((error) => {
+                      console.warn('GoNavi table navigation handling failed', error);
+                  })
+                  .finally(() => {
+                      if (tableNavigationActionInFlightRef.current[navigationActionKey] === navigationAction) {
+                          delete tableNavigationActionInFlightRef.current[navigationActionKey];
+                      }
+                  });
               return;
           }
 
@@ -5508,29 +5846,40 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
               const getLazyTablesByDB = async (dbName: string) => {
                   const connId = sharedCurrentConnectionId;
                   if (!connId || !dbName) return [] as CompletionTableMeta[];
-                  const key = `${connId}|${dbName}`;
-                  if (sharedLazyTablesCache[key]) {
-                      return sharedLazyTablesCache[key];
+                  const cacheKey = `${connId}|${dbName}`;
+                  if (sharedLazyTablesCache[cacheKey]) {
+                      return sharedLazyTablesCache[cacheKey];
                   }
-                  if (sharedLazyTablesInFlight[key]) {
-                      return sharedLazyTablesInFlight[key];
+                  const conn = sharedConnections.find(c => c.id === connId);
+                  if (!conn) return [] as CompletionTableMeta[];
+                  const metadataSnapshot: QueryEditorMetadataRequestSnapshot = {
+                      generation: sharedQueryEditorMetadataGeneration,
+                      connectionId: connId,
+                      connectionConfig: conn.config,
+                  };
+                  const metadataContextKey = sharedQueryEditorMetadataContextKey;
+                  const inFlightKey = `${cacheKey}|${metadataSnapshot.generation}`;
+                  if (sharedLazyTablesInFlight[inFlightKey]) {
+                      return sharedLazyTablesInFlight[inFlightKey];
                   }
 
                   const config = buildConnConfig();
                   if (!config) return [] as CompletionTableMeta[];
-                  const conn = sharedConnections.find(c => c.id === connId);
 
-                  sharedLazyTablesInFlight[key] = Promise.all([
+                  const request = Promise.all([
                       fetchCompletionTableCommentMap(config, dbName, normalizeMetadataDialect(conn)),
                       DBGetTables(buildRpcConnectionConfig(config) as any, dbName),
                   ])
                       .then(([tableComments, res]) => {
+                          if (!isSharedQueryEditorMetadataRequestCurrent(metadataSnapshot, metadataContextKey)) {
+                              return [];
+                          }
                           const tables = res?.success && Array.isArray(res.data)
                               ? res.data
                                   .map((row: any) => buildCompletionTableMeta(dbName, row, tableComments))
                                   .filter((table): table is CompletionTableMeta => !!table)
                               : [];
-                          sharedLazyTablesCache[key] = tables;
+                          sharedLazyTablesCache[cacheKey] = tables;
                           if (tables.length > 0) {
                               const lazyTableByKey = new Map(tables.map((table) => [
                                   `${table.dbName.toLowerCase()}.${table.tableName.toLowerCase()}`,
@@ -5561,9 +5910,12 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                       })
                       .catch(() => [])
                       .finally(() => {
-                          delete sharedLazyTablesInFlight[key];
+                          if (sharedLazyTablesInFlight[inFlightKey] === request) {
+                              delete sharedLazyTablesInFlight[inFlightKey];
+                          }
                       });
-                  return sharedLazyTablesInFlight[key];
+                  sharedLazyTablesInFlight[inFlightKey] = request;
+                  return request;
               };
 
               const toCompletionColumns = (
@@ -5655,8 +6007,19 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
 
                   const config = buildConnConfig();
                   if (!config) return [] as CompletionColumnMeta[];
+                  const conn = sharedConnections.find(c => c.id === connId);
+                  if (!conn) return [] as CompletionColumnMeta[];
+                  const metadataSnapshot: QueryEditorMetadataRequestSnapshot = {
+                      generation: sharedQueryEditorMetadataGeneration,
+                      connectionId: connId,
+                      connectionConfig: conn.config,
+                  };
+                  const metadataContextKey = sharedQueryEditorMetadataContextKey;
 
                   const res = await DBGetColumns(buildRpcConnectionConfig(config) as any, lookupDbName, lookupTableName);
+                  if (!isSharedQueryEditorMetadataRequestCurrent(metadataSnapshot, metadataContextKey)) {
+                      return [] as CompletionColumnMeta[];
+                  }
                   if (res?.success && Array.isArray(res.data)) {
                       const cols = res.data as ColumnDefinition[];
                       sharedColumnsCacheData[key] = cols;
@@ -7843,6 +8206,11 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                 if (cached) return cached;
 
                 try {
+                    const metadataSnapshot: QueryEditorMetadataRequestSnapshot = {
+                        generation: metadataGenerationRef.current,
+                        connectionId: currentConnectionId,
+                        connectionConfig: conn.config,
+                    };
                     const resTables = await DBGetTables(buildRpcConnectionConfig(config) as any, normalizedDbName);
                     if (!resTables?.success || !Array.isArray(resTables.data)) {
                         oracleTableCache.set(cacheKey, []);
@@ -7858,7 +8226,10 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                             } as CompletionTableMeta;
                         })
                         .filter(Boolean) as CompletionTableMeta[];
-                    if (fetchedTables.length > 0) {
+                    if (
+                        fetchedTables.length > 0
+                        && isQueryEditorMetadataRequestCurrent(metadataSnapshot)
+                    ) {
                         const knownKeys = new Set(tablesRef.current.map((table) => `${String(table.dbName || '').trim().toLowerCase()}\u0000${String(table.tableName || '').trim()}`));
                         const missing = fetchedTables.filter((table) => !knownKeys.has(`${String(table.dbName || '').trim().toLowerCase()}\u0000${String(table.tableName || '').trim()}`));
                         if (missing.length > 0) {

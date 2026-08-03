@@ -112,6 +112,8 @@ export function DBRollbackTransactionWithTrigger(arg1:string,arg2:string):Promis
 
 export function DBShowCreateTable(arg1:connection.ConnectionConfig,arg2:string,arg3:string):Promise<connection.QueryResult>;
 
+export function DBTableExists(arg1:connection.ConnectionConfig,arg2:string,arg3:string):Promise<connection.QueryResult>;
+
 export function DataSync(arg1:sync.SyncConfig):Promise<sync.SyncResult>;
 
 export function DataSyncAnalyze(arg1:sync.SyncConfig):Promise<connection.QueryResult>;

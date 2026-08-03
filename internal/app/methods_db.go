@@ -2204,6 +2204,87 @@ func (a *App) DBGetTables(config connection.ConnectionConfig, dbName string) con
 	return connection.QueryResult{Success: true, Data: resData}
 }
 
+func containsExactTableName(tables []string, target string) bool {
+	target = strings.TrimSpace(target)
+	if target == "" {
+		return false
+	}
+	for _, table := range tables {
+		if strings.TrimSpace(table) == target {
+			return true
+		}
+	}
+	return false
+}
+
+type tableNameMetadataProvider interface {
+	GetTables(dbName string) ([]string, error)
+}
+
+func lookupExactTableExists(database tableNameMetadataProvider, dbName, tableName string) (bool, error) {
+	if checker, ok := database.(db.TableExistsChecker); ok {
+		return checker.TableExists(dbName, tableName)
+	}
+
+	tables, err := database.GetTables(dbName)
+	if err != nil {
+		return false, err
+	}
+	return containsExactTableName(tables, tableName), nil
+}
+
+// DBTableExists checks one table against the driver's table-name metadata without
+// loading row counts, storage statistics, or sampled message fields.
+func (a *App) DBTableExists(config connection.ConnectionConfig, dbName string, tableName string) connection.QueryResult {
+	targetTableName := strings.TrimSpace(tableName)
+	if targetTableName == "" {
+		return connection.QueryResult{Success: true, Data: map[string]bool{"exists": false}}
+	}
+
+	runConfig := normalizeRunConfig(config, dbName)
+	if strings.EqualFold(strings.TrimSpace(runConfig.Type), "redis") {
+		runConfig.Type = "redis"
+		client, err := a.getRedisClient(runConfig)
+		if err != nil {
+			logger.Error(err, "DBTableExists 获取 Redis 连接失败：%s key=%s", formatConnSummary(runConfig), targetTableName)
+			return connection.QueryResult{Success: false, Message: err.Error()}
+		}
+		exists, err := client.KeyExists(targetTableName)
+		if err != nil {
+			logger.Error(err, "DBTableExists 检查 Redis Key 失败：%s key=%s", formatConnSummary(runConfig), targetTableName)
+			return connection.QueryResult{Success: false, Message: err.Error()}
+		}
+		return connection.QueryResult{Success: true, Data: map[string]bool{"exists": exists}}
+	}
+
+	dbInst, err := a.getDatabase(runConfig)
+	if err != nil {
+		logger.Error(err, "DBTableExists 获取连接失败：%s 表=%s.%s", formatConnSummary(runConfig), dbName, targetTableName)
+		return connection.QueryResult{Success: false, Message: err.Error()}
+	}
+
+	exists, err := lookupExactTableExists(dbInst, dbName, targetTableName)
+	if err != nil && shouldRefreshCachedConnection(err) {
+		if a.invalidateCachedDatabase(runConfig, err) {
+			retryInst, retryErr := a.getDatabaseForcePing(runConfig)
+			if retryErr != nil {
+				logger.Error(retryErr, "DBTableExists 重建连接失败：%s 表=%s.%s", formatConnSummary(runConfig), dbName, targetTableName)
+				return connection.QueryResult{Success: false, Message: retryErr.Error()}
+			}
+			exists, err = lookupExactTableExists(retryInst, dbName, targetTableName)
+		}
+	}
+	if err != nil {
+		logger.Error(err, "DBTableExists 检查表是否存在失败：%s 表=%s.%s", formatConnSummary(runConfig), dbName, targetTableName)
+		return connection.QueryResult{Success: false, Message: err.Error()}
+	}
+
+	return connection.QueryResult{
+		Success: true,
+		Data:    map[string]bool{"exists": exists},
+	}
+}
+
 func (a *App) DBGetViews(config connection.ConnectionConfig, dbName string) connection.QueryResult {
 	runConfig := normalizeRunConfig(config, dbName)
 	if strings.EqualFold(strings.TrimSpace(runConfig.Type), "redis") {

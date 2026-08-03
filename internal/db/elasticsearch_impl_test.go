@@ -447,6 +447,81 @@ func TestElasticsearchGetTables(t *testing.T) {
 	})
 }
 
+func TestElasticsearchTableExistsUsesExactHeadRequest(t *testing.T) {
+	tests := []struct {
+		name       string
+		statusCode int
+		want       bool
+		wantErr    bool
+	}{
+		{name: "existing index", statusCode: http.StatusOK, want: true},
+		{name: "deleted index", statusCode: http.StatusNotFound, want: false},
+		{name: "server failure", statusCode: http.StatusServiceUnavailable, wantErr: true},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			server := newMockESServer(t, func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != http.MethodHead || r.URL.Path != "/orders-2026" {
+					t.Fatalf("unexpected existence request: %s %s", r.Method, r.URL.RequestURI())
+				}
+				w.WriteHeader(test.statusCode)
+			})
+
+			database := newTestESDB(t, server.URL, "default-index")
+			exists, err := database.TableExists("analytics", "orders-2026")
+			if test.wantErr {
+				if err == nil {
+					t.Fatal("expected existence check error")
+				}
+				if !strings.Contains(err.Error(), "503") {
+					t.Fatalf("expected status code in error, got %v", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("TableExists returned error: %v", err)
+			}
+			if exists != test.want {
+				t.Fatalf("TableExists = %v, want %v", exists, test.want)
+			}
+		})
+	}
+}
+
+func TestElasticsearchTableExistsAcceptsAliasHeadResponse(t *testing.T) {
+	server := newMockESServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodHead || r.URL.Path != "/orders-read" {
+			t.Fatalf("unexpected alias existence request: %s %s", r.Method, r.URL.RequestURI())
+		}
+		w.WriteHeader(http.StatusOK)
+	})
+
+	database := newTestESDB(t, server.URL, "orders-2026")
+	exists, err := database.TableExists("orders-2026", "orders-read")
+	if err != nil {
+		t.Fatalf("alias TableExists returned error: %v", err)
+	}
+	if !exists {
+		t.Fatal("alias HEAD 200 should be treated as existing")
+	}
+}
+
+func TestElasticsearchTableExistsRequiresConnectionAndIndex(t *testing.T) {
+	database := &ElasticsearchDB{}
+	if _, err := database.TableExists("orders", "orders"); err == nil || !strings.Contains(err.Error(), "连接未打开") {
+		t.Fatalf("expected connection error, got %v", err)
+	}
+
+	server := newMockESServer(t, func(w http.ResponseWriter, r *http.Request) {
+		t.Fatalf("empty index must not issue an HTTP request: %s %s", r.Method, r.URL.Path)
+	})
+	database = newTestESDB(t, server.URL, "")
+	if _, err := database.TableExists("", ""); err == nil || !strings.Contains(err.Error(), "未指定索引名") {
+		t.Fatalf("expected missing-index error, got %v", err)
+	}
+}
+
 // TestElasticsearchGetColumns 测试从 mapping 中提取字段定义。
 func TestElasticsearchGetColumns(t *testing.T) {
 	t.Run("正常提取字段", func(t *testing.T) {

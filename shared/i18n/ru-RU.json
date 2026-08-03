@@ -6704,6 +6704,7 @@
   "query_editor.message.no_format_restore_snapshot": "Нет сохранённого состояния SQL до форматирования для восстановления.",
   "query_editor.message.no_selectable_sql": "Нет SQL-инструкции для выбора.",
   "query_editor.message.object_info_target_not_found": "Текущий курсор не указывает на распознанную таблицу или колонку.",
+  "query_editor.message.table_navigation_target_missing": "Таблица {{table}} больше не существует. Метаданные SQL-редактора обновлены.",
   "query_editor.message.page_query_empty": "Запрос страницы не вернул набор результатов.",
   "query_editor.message.page_query_failed": "Ошибка запроса страницы: {{error}}",
   "query_editor.message.read_only_index_metadata_unavailable": "Не удалось загрузить метаданные уникального индекса, поэтому изменения нельзя безопасно зафиксировать.",

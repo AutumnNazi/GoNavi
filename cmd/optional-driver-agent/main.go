@@ -65,6 +65,7 @@ const (
 	agentMethodElasticsearchConsole = "executeElasticsearchConsoleRequest"
 	agentMethodGetDatabases         = "getDatabases"
 	agentMethodGetTables            = "getTables"
+	agentMethodTableExists          = "tableExists"
 	agentMethodGetCreateStmt        = "getCreateStatement"
 	agentMethodGetColumns           = "getColumns"
 	agentMethodGetAllColumns        = "getAllColumns"
@@ -392,6 +393,28 @@ func handleRequest(runtimeState *agentRuntime, req agentRequest) agentResponse {
 			return fail(resp, err.Error())
 		}
 		resp.Data = data
+	case agentMethodTableExists:
+		if checker, ok := runtimeState.inst.(db.TableExistsChecker); ok {
+			exists, err := checker.TableExists(req.DBName, req.TableName)
+			if err != nil {
+				return fail(resp, err.Error())
+			}
+			resp.Data = exists
+			break
+		}
+		tables, err := runtimeState.inst.GetTables(req.DBName)
+		if err != nil {
+			return fail(resp, err.Error())
+		}
+		target := strings.TrimSpace(req.TableName)
+		exists := false
+		for _, table := range tables {
+			if strings.TrimSpace(table) == target {
+				exists = true
+				break
+			}
+		}
+		resp.Data = exists
 	case agentMethodGetCreateStmt:
 		data, err := runtimeState.inst.GetCreateStatement(req.DBName, req.TableName)
 		if err != nil {
