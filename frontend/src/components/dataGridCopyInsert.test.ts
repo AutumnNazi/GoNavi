@@ -86,7 +86,7 @@ describe('buildCopyInsertSQL', () => {
       record: {
         disabled: 0,
         enabled: 1,
-        mask: '0x05',
+        mask: '0X0F',
         note: '1',
       },
       columnTypesByLowerName: {
@@ -97,7 +97,7 @@ describe('buildCopyInsertSQL', () => {
       },
     });
 
-    expect(sql).toBe("INSERT INTO `flags` (`disabled`, `enabled`, `mask`, `note`) VALUES (0, 1, 5, '1');");
+    expect(sql).toBe("INSERT INTO `flags` (`disabled`, `enabled`, `mask`, `note`) VALUES (0, 1, 15, '1');");
   });
 
   it('normalizes MySQL bit binary and decimal text values', () => {

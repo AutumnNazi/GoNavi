@@ -250,7 +250,7 @@ const formatMySQLBitLiteral = (value: any): string | null => {
   if (/^0[bB][01]+$/.test(raw)) {
     numericText = raw.slice(2);
     radix = 2;
-  } else if (/^0[xX][0-9a-f]+$/.test(raw)) {
+  } else if (/^0x[0-9a-f]+$/i.test(raw)) {
     numericText = raw.slice(2);
     radix = 16;
   } else if (!/^\d+$/.test(raw)) {
