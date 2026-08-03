@@ -11,6 +11,7 @@ import {
     isOracleBaseTableReference,
     materializeBoundedQueryEditorCompletionBatches,
     rankQueryEditorCompletionCandidate,
+    resolveQueryEditorCompletionFilterText,
     resolveOracleLikeDefaultSchemaName,
     resolveOracleLikeExecutionSchemaName,
     resolveOracleLikeLookupSchemaCandidates,
@@ -191,6 +192,18 @@ describe('QueryEditor completion candidate budget', () => {
         expect(firstCounts.get('orders')).toBe(1);
         expect(currentTableNameReads).toBe(3);
         expect(otherTableNameReads).toBe(0);
+    });
+});
+
+describe('QueryEditor completion filter text', () => {
+    it('returns the matching suffix for Monaco substring filtering', () => {
+        expect(resolveQueryEditorCompletionFilterText('title', ['short_title'])).toBe('title');
+        expect(resolveQueryEditorCompletionFilterText('title', ['subtitle'])).toBe('title');
+    });
+
+    it('does not override the filter text for an empty prefix or a non-match', () => {
+        expect(resolveQueryEditorCompletionFilterText('', ['short_title'])).toBeUndefined();
+        expect(resolveQueryEditorCompletionFilterText('name', ['short_title'])).toBeUndefined();
     });
 });
 
