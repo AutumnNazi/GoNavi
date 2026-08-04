@@ -63,6 +63,8 @@ type UseAppUpdateManagerOptions = {
   runtimeBuildType: string;
   t: Translator;
   updateCenterBridgeRef?: MutableRefObject<UpdateCenterBridge | null>;
+  /** 手动「检查更新」发现新版本时，触发打开更新日志弹窗的桥接回调 */
+  onManualCheckHasUpdateRef?: MutableRefObject<(() => void) | null>;
 };
 
 type AboutInfo = {
@@ -183,6 +185,7 @@ export const useAppUpdateManager = ({
   runtimeBuildType,
   t,
   updateCenterBridgeRef,
+  onManualCheckHasUpdateRef,
 }: UseAppUpdateManagerOptions) => {
   const autoCheckForUpdates = useStore((state) => state.autoCheckForUpdates);
   const autoCheckForUpdatesIntervalMinutes = useStore(
@@ -470,7 +473,7 @@ export const useAppUpdateManager = ({
     void message.success(res?.message || t('app.about.message.install_directory_opened_manual_replace'));
   }, [t]);
 
-  const checkForUpdates = useCallback(async (silent: boolean) => {
+  const checkForUpdates = useCallback(async (silent: boolean, openReleaseNotes = false) => {
     if (updateCheckInFlightRef.current) return;
     updateCheckInFlightRef.current = true;
     setIsCheckingForUpdates(true);
@@ -565,6 +568,11 @@ export const useAppUpdateManager = ({
       if (!silent) {
         void message.info(t('app.about.message.new_version_found', { version: info.latestVersion }));
         setAboutUpdateStatus(statusText);
+        // 仅当显式请求打开更新日志时（如用户点击「检查更新」按钮），才触发弹窗；
+        // 通道切换后的自动复查等场景不传 openReleaseNotes，避免越界打开弹窗（#818）
+        if (openReleaseNotes) {
+          onManualCheckHasUpdateRef?.current?.();
+        }
       }
       if (silent && aboutOpen) {
         setAboutUpdateStatus(statusText);
@@ -598,7 +606,7 @@ export const useAppUpdateManager = ({
     } else {
       setLastUpdateInfo(info);
     }
-  }, [formatAboutUpdateStatus, isUpdateCenterOpen, openUpdateCenter, t]);
+  }, [formatAboutUpdateStatus, isUpdateCenterOpen, onManualCheckHasUpdateRef, openUpdateCenter, t]);
 
   const loadAboutInfo = useCallback(async () => {
     setAboutLoading(true);
