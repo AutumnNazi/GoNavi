@@ -23,6 +23,18 @@ describe('buildWhereSQL', () => {
 });
 
 describe('buildPaginatedSelectSQL', () => {
+  it('uses native Dameng pagination without wrapping duplicate JOIN columns', () => {
+    const baseSql = 'SELECT t.ID, v.ID FROM VULNERABILITY_INFO_T t INNER JOIN VULNERABILITY_DETAIL_T v ON t.CODE = v.VULN_DETAIL';
+
+    expect(buildPaginatedSelectSQL('dameng', baseSql, '', 5000, 0))
+      .toBe(`${baseSql} LIMIT 5000 OFFSET 0`);
+  });
+
+  it('keeps the Oracle ROWNUM compatibility wrapper', () => {
+    expect(buildPaginatedSelectSQL('oracle', 'SELECT * FROM users', '', 50, 0))
+      .toBe('SELECT * FROM (SELECT * FROM users) WHERE ROWNUM <= 50');
+  });
+
   it('uses SQL Server TOP for the first page to support old compatibility levels', () => {
     const sql = buildPaginatedSelectSQL('sqlserver', 'SELECT * FROM [Users]', ' ORDER BY [ID] ASC', 101, 0);
 

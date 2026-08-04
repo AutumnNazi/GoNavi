@@ -318,8 +318,7 @@ export const buildPaginatedSelectSQL = (
   }
 
   switch (normalizedType) {
-    case 'oracle':
-    case 'dameng': {
+    case 'oracle': {
       const orderedSql = `${base}${orderBy}`;
       const upperBound = safeOffset + safeLimit;
       if (safeOffset <= 0) {
