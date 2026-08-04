@@ -1141,29 +1141,18 @@ func (a *App) dbQueryWithCancel(
 		return connection.QueryResult{Success: false, Message: err.Error(), QueryID: queryID}
 	}
 
+	ctx, cancel := newQueryExecutionContext(runConfig)
+	cleanupRunningQuery := a.registerRunningQuery(queryID, cancel, true)
+	defer func() {
+		cancel()
+		cleanupRunningQuery()
+	}()
+
 	dbInst, err := a.getDatabase(runConfig)
 	if err != nil {
 		logger.Error(err, "DBQuery 获取连接失败：%s", formatConnSummary(runConfig))
 		return connection.QueryResult{Success: false, Message: err.Error(), QueryID: queryID}
 	}
-
-	ctx, cancel := newQueryExecutionContext(runConfig)
-	defer cancel()
-
-	// Store cancel function for potential manual cancellation
-	a.queryMu.Lock()
-	a.runningQueries[queryID] = queryContext{
-		cancel:  cancel,
-		started: time.Now(),
-	}
-	a.queryMu.Unlock()
-
-	// Ensure query is removed from tracking when done
-	defer func() {
-		a.queryMu.Lock()
-		delete(a.runningQueries, queryID)
-		a.queryMu.Unlock()
-	}()
 
 	isReadQuery := isReadOnlySQLQuery(runConfig.Type, query)
 	tryQueryFirst := shouldTryQueryResultFirst(runConfig.Type, query)
@@ -1333,6 +1322,13 @@ func (a *App) dbQueryMulti(
 		return connection.QueryResult{Success: false, Message: err.Error(), QueryID: queryID}
 	}
 
+	ctx, cancel := newQueryExecutionContext(runConfig)
+	cleanupRunningQuery := a.registerRunningQuery(queryID, cancel, true)
+	defer func() {
+		cancel()
+		cleanupRunningQuery()
+	}()
+
 	dbInst, err := a.getDatabase(runConfig)
 	if err != nil {
 		logger.Error(err, "DBQueryMulti 获取连接失败：%s", formatConnSummary(runConfig))
@@ -1343,21 +1339,6 @@ func (a *App) dbQueryMulti(
 		if result.Success && queryExecuted {
 			a.markCachedDatabaseHealthy(dbInst, time.Now())
 		}
-	}()
-
-	ctx, cancel := newQueryExecutionContext(runConfig)
-	defer cancel()
-
-	a.queryMu.Lock()
-	a.runningQueries[queryID] = queryContext{
-		cancel:  cancel,
-		started: time.Now(),
-	}
-	a.queryMu.Unlock()
-	defer func() {
-		a.queryMu.Lock()
-		delete(a.runningQueries, queryID)
-		a.queryMu.Unlock()
 	}()
 
 	// 尝试使用驱动原生多结果集支持。

@@ -13222,11 +13222,14 @@ WHERE GRANTEE = 'APPUSER';`;
     });
   });
 
-  it('shows "No running query to cancel." in English when stop is clicked before a query id exists', async () => {
+  it('cancels the pending run before a query id exists', async () => {
     storeState.languagePreference = 'en-US';
     setCurrentLanguage('en-US');
 
-    backendApp.GenerateQueryID.mockReturnValueOnce(new Promise(() => {}));
+    let resolveQueryId!: (queryId: string) => void;
+    backendApp.GenerateQueryID.mockReturnValueOnce(new Promise((resolve) => {
+      resolveQueryId = resolve;
+    }));
 
     let renderer!: ReactTestRenderer;
     await act(async () => {
@@ -13242,8 +13245,16 @@ WHERE GRANTEE = 'APPUSER';`;
       await findButton(renderer, 'Stop').props.onClick();
     });
 
-    expect(messageApi.warning).toHaveBeenCalledWith('No running query to cancel.');
-    expect(messageApi.warning).not.toHaveBeenCalledWith('没有正在运行的查询可取消');
+    expect(messageApi.success).toHaveBeenCalledWith('Query canceled.');
+    expect(messageApi.warning).not.toHaveBeenCalledWith('No running query to cancel.');
+    expect(findButtons(renderer, 'Stop')).toHaveLength(0);
+
+    await act(async () => {
+      resolveQueryId('query-too-late');
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(backendApp.DBQueryMulti).not.toHaveBeenCalled();
   });
 
   it('shows "Query canceled." in English when stop cancels a running query', async () => {
@@ -13271,6 +13282,7 @@ WHERE GRANTEE = 'APPUSER';`;
 
     expect(messageApi.success).toHaveBeenCalledWith('Query canceled.');
     expect(messageApi.success).not.toHaveBeenCalledWith('查询已取消');
+    expect(findButtons(renderer, 'Stop')).toHaveLength(0);
   });
 
   it('shows "Failed to cancel query" in English while preserving the raw error detail', async () => {

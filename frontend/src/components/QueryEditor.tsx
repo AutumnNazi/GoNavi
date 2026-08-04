@@ -7365,8 +7365,25 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           { oceanBaseProtocol: String((config as any).oceanBaseProtocol || '') },
       )).trim().toLowerCase();
 
+      const runSeq = ++runSeqRef.current;
+      const isCurrentRun = () => runSeqRef.current === runSeq;
+      let runQueryId = '';
+      setExecutionRunToken(runSeq);
+      setLoading(true);
+
       try {
-          setLoading(true);
+          if (currentQueryIdRef.current) {
+              const previousQueryId = currentQueryIdRef.current;
+              try {
+                  await CancelQuery(previousQueryId);
+              } catch {
+                  // The previous query may already have completed.
+              }
+              if (!isCurrentRun()) return;
+              if (currentQueryIdRef.current === previousQueryId) {
+                  clearQueryId();
+              }
+          }
           // 保持与首次执行一致的后端路径，必要时复用挂起事务
           let queryId: string;
           try {
@@ -7374,6 +7391,9 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           } catch {
               queryId = 'reload-' + Date.now();
           }
+          if (!isCurrentRun()) return;
+          runQueryId = queryId;
+          setQueryId(queryId);
           const res = await executeSqlEditorMultiQuery(
               config,
               currentDb,
@@ -7382,6 +7402,11 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
               splitSQLStatements(sql, normalizedDbType),
               normalizedDbType,
           );
+          if (!isCurrentRun()) return;
+          if (currentQueryIdRef.current === queryId) {
+              clearQueryId();
+              runQueryId = '';
+          }
           if (!res?.success) {
               message.error(translate('query_editor.message.refresh_failed', {
                   error: formatSqlExecutionError(res?.message || translate('common.unknown'), { translate }),
@@ -7428,11 +7453,15 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                   : rs
           ));
       } catch (err: any) {
+          if (!isCurrentRun()) return;
           message.error(translate('query_editor.message.refresh_failed', {
               error: formatSqlExecutionError(err?.message || err || translate('common.unknown'), { translate }),
           }));
       } finally {
-          setLoading(false);
+          if (isCurrentRun()) setLoading(false);
+          if (runQueryId && currentQueryIdRef.current === runQueryId) {
+              clearQueryId();
+          }
       }
   };
 
@@ -7458,7 +7487,6 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           { oceanBaseProtocol: String((config as any).oceanBaseProtocol || '') },
       )).toLowerCase();
       const sequence = ++resultTotalCountSeqRef.current;
-      const requestRunSequence = runSeqRef.current;
       resultTotalCountRequestsRef.current[resultKey] = { sequence, queryId: '' };
       setResultSets(prev => prev.map(rs =>
           rs.key === resultKey && rs.page
@@ -7468,7 +7496,6 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       const countStartedAt = Date.now();
       const isCurrentRequest = () => {
           if (resultTotalCountRequestsRef.current[resultKey]?.sequence !== sequence) return false;
-          if (runSeqRef.current !== requestRunSequence) return false;
           const currentResult = resultSetsRef.current.find((item) => item.key === resultKey);
           return currentResult?.page?.baseSql === target.page?.baseSql;
       };
@@ -7638,19 +7665,39 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           sortInfo: sortInfoOverride || target.sortInfo || [],
       });
 
+      const runSeq = ++runSeqRef.current;
+      const isCurrentRun = () => runSeqRef.current === runSeq;
+      let runQueryId = '';
+      setExecutionRunToken(runSeq);
+      setLoading(true);
+
       try {
-          setLoading(true);
           setResultSets(prev => prev.map(rs =>
               rs.key === resultKey && rs.page
                   ? { ...rs, page: { ...rs.page, loading: true } }
                   : rs
           ));
+          if (currentQueryIdRef.current) {
+              const previousQueryId = currentQueryIdRef.current;
+              try {
+                  await CancelQuery(previousQueryId);
+              } catch {
+                  // The previous query may already have completed.
+              }
+              if (!isCurrentRun()) return;
+              if (currentQueryIdRef.current === previousQueryId) {
+                  clearQueryId();
+              }
+          }
           let queryId: string;
           try {
               queryId = await GenerateQueryID();
           } catch {
               queryId = 'query-page-' + Date.now();
           }
+          if (!isCurrentRun()) return;
+          runQueryId = queryId;
+          setQueryId(queryId);
           const res = await executeSqlEditorMultiQuery(
               config,
               currentDb,
@@ -7659,6 +7706,11 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
               splitSQLStatements(pageSql, normalizedDbType),
               normalizedDbType,
           );
+          if (!isCurrentRun()) return;
+          if (currentQueryIdRef.current === queryId) {
+              clearQueryId();
+              runQueryId = '';
+          }
           if (!res?.success) {
               message.error(translate('query_editor.message.page_query_failed', {
                   error: formatSqlExecutionError(res?.message || translate('common.unknown'), { translate }),
@@ -7713,16 +7765,22 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
               };
           }));
       } catch (err: any) {
+          if (!isCurrentRun()) return;
           message.error(translate('query_editor.message.page_query_failed', {
               error: formatSqlExecutionError(err?.message || err || translate('common.unknown'), { translate }),
           }));
       } finally {
-          setLoading(false);
-          setResultSets(prev => prev.map(rs =>
-              rs.key === resultKey && rs.page?.loading
-                  ? { ...rs, page: { ...rs.page, loading: false } }
-                  : rs
-          ));
+          if (isCurrentRun()) {
+              setLoading(false);
+              setResultSets(prev => prev.map(rs =>
+                  rs.key === resultKey && rs.page?.loading
+                      ? { ...rs, page: { ...rs.page, loading: false } }
+                      : rs
+              ));
+          }
+          if (runQueryId && currentQueryIdRef.current === runQueryId) {
+              clearQueryId();
+          }
       }
   };
 
@@ -7988,38 +8046,46 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
         message.error(translate('query_editor.message.select_database_first'));
         return;
     }
+
+    const runSeq = ++runSeqRef.current;
+    let runQueryId = '';
+    const isCurrentRun = () => runSeqRef.current === runSeq;
+    setExecutionRunToken(runSeq);
+    setLoading(true);
+    setExecutionError('');
+    const runStartTime = Date.now();
+
     await cancelResultTotalCountRequests(Object.keys(resultTotalCountRequestsRef.current));
+    if (!isCurrentRun()) return;
     // 如果已有查询在运行，先取消它
     if (currentQueryIdRef.current) {
+        const previousQueryID = currentQueryIdRef.current;
         try {
-            await CancelQuery(currentQueryIdRef.current);
+            await CancelQuery(previousQueryID);
         } catch (error) {
             // 忽略取消错误，可能查询已完成
         }
-        // 清除旧查询ID
-        clearQueryId();
+        if (!isCurrentRun()) return;
+        if (currentQueryIdRef.current === previousQueryID) {
+            clearQueryId();
+        }
     }
-      const runSeq = ++runSeqRef.current;
-      setExecutionRunToken(runSeq);
-      setLoading(true);
-      setExecutionError('');
-      const runStartTime = Date.now();
     const conn = connections.find(c => c.id === currentConnectionId);
     if (!conn) {
         message.error(translate('query_editor.message.connection_not_found'));
-        if (runSeqRef.current === runSeq) setLoading(false);
+        if (isCurrentRun()) setLoading(false);
         return;
     }
     const connCaps = getDataSourceCapabilities(conn.config);
 	    if (!connCaps.supportsQueryEditor) {
 	        message.error(translate('query_editor.message.unsupported_source'));
-	        if (runSeqRef.current === runSeq) setLoading(false);
+	        if (isCurrentRun()) setLoading(false);
 	        return;
 	    }
     const restrictedStatements = findConnectionMutatingStatements(conn.config, executableSQL);
     if (restrictedStatements.length > 0) {
         message.warning(translate('query_editor.message.connection_readonly_blocked'));
-        if (runSeqRef.current === runSeq) setLoading(false);
+        if (isCurrentRun()) setLoading(false);
         return;
     }
 
@@ -8030,8 +8096,9 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
             target: currentDb,
             translate,
         });
+        if (!isCurrentRun()) return;
         if (!approved) {
-            if (runSeqRef.current === runSeq) setLoading(false);
+            setLoading(false);
             return;
         }
     }
@@ -8116,9 +8183,16 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                     console.warn('GenerateQueryID failed, using local UUID fallback:', error);
                     queryId = 'query-' + uuidv4();
                 }
+                if (!isCurrentRun()) return;
+                runQueryId = queryId;
                 setQueryId(queryId);
 
                 const res = await DBQueryWithCancel(buildRpcConnectionConfig(config) as any, currentDb, executedSql, queryId);
+                if (!isCurrentRun()) return;
+                if (currentQueryIdRef.current === queryId) {
+                    clearQueryId();
+                    runQueryId = '';
+                }
                 const legacyResultMessages = normalizeQueryResultMessages(res?.messages);
                 const duration = Date.now() - startTime;
                 addSqlLog({
@@ -8313,6 +8387,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                         let exactQualifiedTable: string | undefined;
                         for (const oracleLookupDbName of oracleLookupDbCandidates) {
                             const oracleTables = oracleLookupDbName ? await getOracleTablesForDb(oracleLookupDbName) : [];
+                            if (!isCurrentRun()) return;
                             if (
                                 isOracleBaseTableReference(statement, oracleLookupDbName, oracleTables)
                             ) {
@@ -8341,7 +8416,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
             for (let index = 0; index < sourceStatements.length; index += 1) {
                 const statementForPlan = executedSourceStatements[index] || sourceStatements[index];
                 try {
-                    statementPlans.push(await resolveQueryLocatorPlan({
+                    const statementPlan = await resolveQueryLocatorPlan({
                         statement: statementForPlan,
                         originalStatement: sourceStatements[index],
                         dbType: normalizedDbType,
@@ -8349,8 +8424,11 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                         config,
                         forceReadOnly: forceReadOnlyResult,
                         allowOracleRowID: allowOracleRowIDByStatement[index],
-                    }));
+                    });
+                    if (!isCurrentRun()) return;
+                    statementPlans.push(statementPlan);
                 } catch (planError) {
+                    if (!isCurrentRun()) return;
                     // 行定位计划失败绝不能阻断查询执行，兜底裸计划保证结果页始终呈现。
                     console.warn('resolveQueryLocatorPlan failed; falling back to a bare statement plan', planError);
                     statementPlans.push({
@@ -8384,6 +8462,8 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                 console.warn('GenerateQueryID failed, using local UUID fallback:', error);
                 queryId = 'query-' + uuidv4();
             }
+            if (!isCurrentRun()) return;
+            runQueryId = queryId;
             setQueryId(queryId);
 
             const res = useManagedTransaction
@@ -8396,6 +8476,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                     executableStatements,
                     normalizedDbType,
                 );
+            if (!isCurrentRun()) return;
             const duration = Date.now() - startTime;
 
             addSqlLog({
@@ -8423,7 +8504,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
 
                 if (isCancelledError && !isTimeoutError) {
                     clearUnpinnedResultSets();
-                    if (currentQueryIdRef.current) {
+                    if (currentQueryIdRef.current === queryId) {
                         clearQueryId();
                     }
                     return;
@@ -8638,6 +8719,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
 
         }
     } catch (e: any) {
+        if (!isCurrentRun()) return;
         const formattedError = formatSqlExecutionError(e?.message || e, { translate });
         message.error(translate('query_editor.message.execution_failed_with_error', { error: formattedError }));
         addSqlLog({
@@ -8653,9 +8735,10 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
         setExecutionError(formattedError);
         clearUnpinnedResultSets(QUERY_EDITOR_SQL_LOG_TAB_KEY);
     } finally {
-        if (runSeqRef.current === runSeq) setLoading(false);
-        // Clear query ID after execution completes
-        clearQueryId();
+        if (isCurrentRun()) setLoading(false);
+        if (runQueryId && currentQueryIdRef.current === runQueryId) {
+            clearQueryId();
+        }
     }
   };
 
@@ -8664,7 +8747,22 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
   };
 
   const handleCancel = async () => {
+    const finishCancelledRun = () => {
+      runSeqRef.current += 1;
+      setLoading(false);
+      setResultSets(prev => prev.map(result =>
+        result.page?.loading
+          ? { ...result, page: { ...result.page, loading: false } }
+          : result
+      ));
+    };
+
     if (!currentQueryIdRef.current) {
+      if (loading) {
+        finishCancelledRun();
+        message.success(translate('query_editor.message.cancel_success'));
+        return;
+      }
       message.warning(translate('query_editor.message.cancel_no_running'));
       return;
     }
@@ -8673,9 +8771,9 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       const res = await CancelQuery(queryIdToCancel);
       if (res.success) {
         message.success(translate('query_editor.message.cancel_success'));
-        // Clear query ID after successful cancellation
         if (currentQueryIdRef.current === queryIdToCancel) {
-          clearQueryId()
+          finishCancelledRun();
+          clearQueryId();
         }
       } else {
         message.warning(res.message);

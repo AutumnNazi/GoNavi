@@ -137,6 +137,7 @@ type queryContext struct {
 	cancel          context.CancelFunc
 	started         time.Time
 	retainUntilDone bool
+	registrationID  uint64
 }
 
 type managedSQLTransaction struct {
@@ -175,6 +176,7 @@ type App struct {
 	allowApplicationQuit          bool
 	applicationQuitPromptInFlight bool
 	queryMu                       sync.RWMutex
+	nextQueryRegistrationID       uint64
 	dataRootApplyMu               sync.Mutex
 	configDir                     string
 	secretStore                   secretstore.SecretStore
@@ -1750,6 +1752,33 @@ func isTransientStartupConnectError(err error) bool {
 // generateQueryID generates a unique ID for a query using UUID v4
 func generateQueryID() string {
 	return "query-" + uuid.New().String()
+}
+
+func (a *App) registerRunningQuery(queryID string, cancel context.CancelFunc, retainUntilDone bool) func() {
+	a.queryMu.Lock()
+	if a.runningQueries == nil {
+		a.runningQueries = make(map[string]queryContext)
+	}
+	a.nextQueryRegistrationID++
+	if a.nextQueryRegistrationID == 0 {
+		a.nextQueryRegistrationID++
+	}
+	registrationID := a.nextQueryRegistrationID
+	a.runningQueries[queryID] = queryContext{
+		cancel:          cancel,
+		started:         time.Now(),
+		retainUntilDone: retainUntilDone,
+		registrationID:  registrationID,
+	}
+	a.queryMu.Unlock()
+
+	return func() {
+		a.queryMu.Lock()
+		if current, exists := a.runningQueries[queryID]; exists && current.registrationID == registrationID {
+			delete(a.runningQueries, queryID)
+		}
+		a.queryMu.Unlock()
+	}
 }
 
 // CancelQuery cancels a running query by its ID
