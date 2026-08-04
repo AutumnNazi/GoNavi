@@ -1175,6 +1175,37 @@ describe('Sidebar locate toolbar', () => {
     expect(css).not.toContain('.gn-v2-tree-connection-meta');
   });
 
+  it('shows the v2 tree vertical scrollbar only during user scrolling', () => {
+    const css = readV2ThemeCss();
+    const source = readSourceFile('./Sidebar.tsx');
+
+    expect(source).toContain("isTreeScrolling ? ' is-vertical-scrolling' : ''");
+    expect(source).toContain('onWheelCapture={handleTreeWheel}');
+    expect(source).toContain('onTouchMoveCapture={markTreeScrollActivity}');
+    expect(source).toContain('setIsTreeScrolling(false)');
+
+    const idleScrollbarCss = readCssRuleBlock(
+      css,
+      'body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .ant-tree-list-scrollbar-vertical',
+    );
+    expect(idleScrollbarCss).toContain('visibility: hidden !important;');
+    expect(idleScrollbarCss).toContain('pointer-events: none;');
+
+    const activeScrollbarCss = readCssRuleBlock(
+      css,
+      'body[data-ui-version="v2"] .gn-v2-explorer-tree-shell.is-vertical-scrolling .ant-tree-list-scrollbar-vertical',
+    );
+    expect(activeScrollbarCss).toContain('visibility: visible !important;');
+    expect(activeScrollbarCss).toContain('pointer-events: auto;');
+
+    const movingScrollbarCss = readCssRuleBlock(
+      css,
+      'body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .ant-tree-list-scrollbar-vertical:has(.ant-tree-list-scrollbar-thumb-moving)',
+    );
+    expect(movingScrollbarCss).toContain('visibility: visible !important;');
+    expect(movingScrollbarCss).toContain('pointer-events: auto;');
+  });
+
   it('estimates a v2 tree scroll width only when content is wider than the viewport', () => {
     const narrowWidth = estimateV2TreeHorizontalScrollWidth([
       {

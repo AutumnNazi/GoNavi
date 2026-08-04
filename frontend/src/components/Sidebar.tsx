@@ -931,7 +931,9 @@ const Sidebar: React.FC<{
   // Virtual Scroll State
   const [treeHeight, setTreeHeight] = useState(500);
   const [treeViewportWidth, setTreeViewportWidth] = useState(0);
+  const [isTreeScrolling, setIsTreeScrolling] = useState(false);
   const treeContainerRef = useRef<HTMLDivElement>(null);
+  const treeScrollIdleTimerRef = useRef<number | null>(null);
   const treeRef = useRef<any>(null);
   const treeDataRef = useRef<TreeNode[]>([]);
   const externalSQLDirectoryTreesRef = useRef<Record<string, ExternalSQLTreeEntry[]>>({});
@@ -981,6 +983,30 @@ const Sidebar: React.FC<{
           resizeObserver.disconnect();
           scheduler.dispose();
       };
+  }, []);
+
+  const markTreeScrollActivity = useCallback(() => {
+      if (!isV2Ui) return;
+      setIsTreeScrolling(true);
+      if (treeScrollIdleTimerRef.current !== null) {
+          window.clearTimeout(treeScrollIdleTimerRef.current);
+      }
+      treeScrollIdleTimerRef.current = window.setTimeout(() => {
+          treeScrollIdleTimerRef.current = null;
+          setIsTreeScrolling(false);
+      }, 500);
+  }, [isV2Ui]);
+
+  const handleTreeWheel = useCallback((event: React.WheelEvent<HTMLDivElement>) => {
+      if (Math.abs(event.deltaY) > Math.abs(event.deltaX)) {
+          markTreeScrollActivity();
+      }
+  }, [markTreeScrollActivity]);
+
+  useEffect(() => () => {
+      if (treeScrollIdleTimerRef.current !== null) {
+          window.clearTimeout(treeScrollIdleTimerRef.current);
+      }
   }, []);
 
   useEffect(() => {
@@ -3992,7 +4018,9 @@ const Sidebar: React.FC<{
 
         <div
             ref={treeContainerRef}
-            className={`sidebar-tree-scroll-shell${isV2Ui ? ' gn-v2-explorer-tree-shell' : ''}`}
+            className={`sidebar-tree-scroll-shell${isV2Ui ? ' gn-v2-explorer-tree-shell' : ''}${isTreeScrolling ? ' is-vertical-scrolling' : ''}`}
+            onWheelCapture={handleTreeWheel}
+            onTouchMoveCapture={markTreeScrollActivity}
             style={{
                 flex: 1,
                 overflow: 'hidden',
