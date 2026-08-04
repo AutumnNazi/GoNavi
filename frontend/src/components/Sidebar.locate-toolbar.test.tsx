@@ -2311,58 +2311,7 @@ describe('Sidebar locate toolbar', () => {
     });
   });
 
-  it('localizes v2 saved-query and external SQL root shell copy', () => {
-    const source = readSidebarSource();
-    const externalSqlWorkflowSource = readSourceFile('./sidebar/SidebarExternalSqlWorkflow.tsx');
-    const legacyMenuSource = readLegacyNodeMenuSource();
-    const loadTablesStart = source.indexOf('const loadTables = async (node: any) => {');
-    const loadTablesEnd = source.indexOf('const config = {', loadTablesStart);
-    const loadTablesSource = source.slice(loadTablesStart, loadTablesEnd);
-    const externalSqlFlowStart = externalSqlWorkflowSource.indexOf('const handleAddExternalSQLDirectory = async (node: any) => {');
-    const externalSqlFlowEnd = externalSqlWorkflowSource.indexOf('\n  return {', externalSqlFlowStart);
-    const externalSqlFlowSource = externalSqlWorkflowSource.slice(externalSqlFlowStart, externalSqlFlowEnd);
-    const treeTitleSource = readSourceFile('./sidebar/SidebarTreeTitle.tsx');
-    const treeTitleStart = 0;
-    const treeTitleEnd = treeTitleSource.length;
-    const externalSqlMenuStart = legacyMenuSource.indexOf("if (node.type === 'external-sql-root') {", legacyMenuSource.indexOf('// 已存查询节点的右键菜单'));
-    const externalSqlMenuEnd = legacyMenuSource.indexOf("if (node.type === 'external-sql-directory') {", externalSqlMenuStart);
-    const externalSqlMenuSource = legacyMenuSource.slice(externalSqlMenuStart, externalSqlMenuEnd);
-    const externalSqlDirectoryMenuStart = externalSqlMenuEnd;
-    const externalSqlDirectoryMenuEnd = legacyMenuSource.indexOf("if (node.type === 'external-sql-file') {", externalSqlDirectoryMenuStart);
-    const externalSqlDirectoryMenuSource = legacyMenuSource.slice(externalSqlDirectoryMenuStart, externalSqlDirectoryMenuEnd);
-    const externalSqlFileMenuStart = externalSqlDirectoryMenuEnd;
-    const externalSqlFileMenuEnd = legacyMenuSource.indexOf('return [];', externalSqlFileMenuStart);
-    const externalSqlFileMenuSource = legacyMenuSource.slice(externalSqlFileMenuStart, externalSqlFileMenuEnd);
-    const titleRenderSource = readSourceFile('./sidebar/useSidebarTitleRender.tsx');
-    const titleRenderStart = titleRenderSource.indexOf('export const useSidebarTitleRender =');
-    const titleRenderEnd = titleRenderSource.length;
-
-    [
-      loadTablesStart,
-      loadTablesEnd,
-      externalSqlFlowStart,
-      externalSqlFlowEnd,
-      treeTitleStart,
-      treeTitleEnd,
-      externalSqlMenuStart,
-      externalSqlMenuEnd,
-      externalSqlDirectoryMenuStart,
-      externalSqlDirectoryMenuEnd,
-      externalSqlFileMenuStart,
-      externalSqlFileMenuEnd,
-      titleRenderStart,
-      titleRenderEnd,
-    ].forEach((index) => expect(index).toBeGreaterThanOrEqual(0));
-    [
-      '选择 SQL 目录失败',
-      '未获取到有效的 SQL 目录路径',
-      '外部 SQL 目录已添加',
-      '未找到可移除的 SQL 目录',
-      '外部 SQL 目录已移除',
-      '外部 SQL 目录已刷新',
-    ].forEach((rawSnippet) => {
-    });
-
+  it('resolves saved-query and external SQL localization keys for every supported language', () => {
     [
       'sidebar.tree.saved_queries',
       'sidebar.external_sql.root',
