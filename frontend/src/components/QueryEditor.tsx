@@ -213,6 +213,7 @@ import {
     shouldHandleQueryEditorRunShortcutFallback,
 } from './queryEditor/QueryEditorHelpers';
 import {
+    applyQueryEditorCompletionFragmentCase,
     buildQueryEditorAiInlineSuggestOptions,
     getQueryEditorAiService,
     requestQueryEditorInlineCompletion,
@@ -221,6 +222,7 @@ import {
     resolveInlineSqlGhostPreviewText,
     resolveQueryEditorInlineMemoryInsertText,
     resolveQueryEditorInlineCompletionIntentDetails,
+    resolveQueryEditorInlineCompletionEdit,
     resolveQueryEditorInlineLocalCompletion,
     resolveQueryEditorInlineRuntimeReadiness,
     shouldTriggerQueryEditorInlineObjectSuggestFallback,
@@ -228,6 +230,7 @@ import {
     type QueryEditorAiApplyMode,
     type QueryEditorAiContext,
     type QueryEditorAiEditorSnapshot,
+    type QueryEditorInlineCompletionEdit,
 } from './queryEditor/QueryEditorAiAssist';
 export {
     collectQueryEditorObjectDecorationCandidates,
@@ -1559,6 +1562,8 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
   const triggerSqlAiCompletionFallbackApplyingRef = useRef(false);
   const aiInlineGhostRef = useRef<{
       insertText: string;
+      editText: string;
+      replacePrefixLength: number;
       modelUri: string;
       position: { lineNumber: number; column: number };
       snapshot: QueryEditorAiEditorSnapshot;
@@ -4418,7 +4423,10 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
               return false;
           }
           const changes = Array.isArray(event?.changes) ? event.changes : [];
-          return changes.some((change: any) => String(change?.text ?? '') === ghost.insertText);
+          return changes.some((change: any) => {
+              const changedText = String(change?.text ?? '');
+              return changedText === ghost.insertText || changedText === ghost.editText;
+          });
       };
 
       const buildInlineGhostEditorSnapshot = (model: any, position: { lineNumber: number; column: number }): QueryEditorAiEditorSnapshot => {
@@ -4527,8 +4535,14 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           position: { lineNumber: number; column: number },
           insertText: string,
           snapshot: QueryEditorAiEditorSnapshot,
+          edit?: QueryEditorInlineCompletionEdit,
       ) => {
-          const previewText = resolveInlineSqlGhostPreviewText(insertText);
+          const resolvedEdit = edit || {
+              previewText: insertText,
+              editText: insertText,
+              replacePrefixLength: 0,
+          };
+          const previewText = resolveInlineSqlGhostPreviewText(resolvedEdit.previewText);
           if (!previewText) {
               clearAiInlineGhost(false);
               return;
@@ -4536,7 +4550,9 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
 
           const modelUri = String(model?.uri?.toString?.() || '');
           aiInlineGhostRef.current = {
-              insertText,
+              insertText: resolvedEdit.previewText,
+              editText: resolvedEdit.editText,
+              replacePrefixLength: resolvedEdit.replacePrefixLength,
               modelUri,
               position,
               snapshot,
@@ -4592,23 +4608,31 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           aiInlineGhostAcceptingRef.current = true;
           try {
               editor.pushUndoStop?.();
+              const replacePrefixLength = Math.max(
+                  0,
+                  Math.min(ghost.replacePrefixLength, Math.max(0, position.column - 1)),
+              );
+              const editStartPosition = {
+                  lineNumber: position.lineNumber,
+                  column: position.column - replacePrefixLength,
+              };
               const startOffset = typeof model.getOffsetAt === 'function'
-                  ? Number(model.getOffsetAt(position))
+                  ? Number(model.getOffsetAt(editStartPosition))
                   : Number.NaN;
               editor.executeEdits?.('gonavi-ai-inline-sql-completion', [{
                   range: new monaco.Range(
-                      position.lineNumber,
-                      position.column,
+                      editStartPosition.lineNumber,
+                      editStartPosition.column,
                       position.lineNumber,
                       position.column,
                   ),
-                  text: ghost.insertText,
+                  text: ghost.editText,
                   forceMoveMarkers: true,
               }]);
               editor.pushUndoStop?.();
               syncQueryDraft(String(editor.getValue?.() ?? model.getValue?.() ?? ''));
               if (Number.isFinite(startOffset) && typeof model.getPositionAt === 'function') {
-                  const nextPosition = normalizeEditorPosition(model.getPositionAt(startOffset + ghost.insertText.length));
+                  const nextPosition = normalizeEditorPosition(model.getPositionAt(startOffset + ghost.editText.length));
                   if (nextPosition) {
                       editor.setPosition?.(nextPosition);
                   }
@@ -4652,20 +4676,26 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           }
           const intent = resolveQueryEditorInlineCompletionIntentDetails(editorSnapshot);
           const shouldUseInlineMemory = manualTrigger || intent.intent !== 'general_sql';
+          let memoryInsertText = '';
           if (shouldUseInlineMemory) {
-              const memoryInsertText = resolveQueryEditorInlineMemoryInsertText({
+              const initialAiContext = buildQueryEditorAiContext();
+              memoryInsertText = resolveQueryEditorInlineMemoryInsertText({
                   editorSnapshot,
                   memoryEntries: inlineSqlMemoryEntries,
+                  sourceType: initialAiContext.sourceType,
               });
-              if (memoryInsertText.trim()) {
-                  renderAiInlineGhost(model, position, memoryInsertText, editorSnapshot);
+              // Empty fragments do not need metadata-based case correction and retain
+              // the previous immediate memory-completion behavior.
+              if (memoryInsertText.trim() && !intent.fragment) {
+                  const memoryEdit = resolveQueryEditorInlineCompletionEdit({
+                      aiContext: initialAiContext,
+                      editorSnapshot,
+                      insertText: memoryInsertText,
+                  });
+                  renderAiInlineGhost(model, position, memoryEdit.previewText, editorSnapshot, memoryEdit);
                   return;
               }
           }
-          if (!shouldRequestQueryEditorInlineCompletion(editorSnapshot)) {
-              return;
-          }
-
           const requestId = ++aiInlineGhostRequestSeqRef.current;
           const runRequest = () => {
               if (aiInlineGhostTimerRef.current !== null) {
@@ -4679,6 +4709,41 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                       return;
                   }
                   try {
+                      if (shouldUseInlineMemory) {
+                          if (!memoryInsertText.trim()) {
+                              const initialAiContext = buildQueryEditorAiContext();
+                              memoryInsertText = resolveQueryEditorInlineMemoryInsertText({
+                                  editorSnapshot,
+                                  memoryEntries: inlineSqlMemoryEntries,
+                                  sourceType: initialAiContext.sourceType,
+                              });
+                          }
+                          if (memoryInsertText.trim()) {
+                              if (
+                                  (intent.intent === 'table_name' || intent.intent === 'column_name')
+                                  && intent.fragment
+                              ) {
+                                  await ensureQueryEditorAiContextMetadata(editorSnapshot);
+                                  if (
+                                      requestId !== aiInlineGhostRequestSeqRef.current
+                                      || editorRef.current !== editor
+                                  ) {
+                                      return;
+                                  }
+                              }
+                              const aiContext = buildQueryEditorAiContext();
+                              const memoryEdit = resolveQueryEditorInlineCompletionEdit({
+                                  aiContext,
+                                  editorSnapshot,
+                                  insertText: memoryInsertText,
+                              });
+                              renderAiInlineGhost(model, position, memoryEdit.previewText, editorSnapshot, memoryEdit);
+                              return;
+                          }
+                      }
+                      if (!shouldRequestQueryEditorInlineCompletion(editorSnapshot)) {
+                          return;
+                      }
                       const aiContext = buildQueryEditorAiContext();
                       const localCompletion = resolveQueryEditorInlineLocalCompletion({
                           aiContext,
@@ -4687,7 +4752,12 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                       });
                       if (localCompletion.handled) {
                           if (localCompletion.insertText.trim()) {
-                              renderAiInlineGhost(model, position, localCompletion.insertText, editorSnapshot);
+                              const localEdit = resolveQueryEditorInlineCompletionEdit({
+                                  aiContext,
+                                  editorSnapshot,
+                                  insertText: localCompletion.insertText,
+                              });
+                              renderAiInlineGhost(model, position, localEdit.previewText, editorSnapshot, localEdit);
                           }
                           return;
                       }
@@ -4735,7 +4805,12 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                           }
                           return;
                       }
-                      renderAiInlineGhost(model, position, insertText, editorSnapshot);
+                      const inlineEdit = resolveQueryEditorInlineCompletionEdit({
+                          aiContext: buildQueryEditorAiContext(),
+                          editorSnapshot,
+                          insertText,
+                      });
+                      renderAiInlineGhost(model, position, inlineEdit.previewText, editorSnapshot, inlineEdit);
                   } catch (error) {
                       console.warn('GoNavi AI inline SQL ghost failed', error);
                   }
@@ -4803,7 +4878,11 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
               clearAiInlineGhost();
               return;
           }
-          renderAiInlineGhost(model, ghost.position, ghost.insertText, ghost.snapshot);
+          renderAiInlineGhost(model, ghost.position, ghost.insertText, ghost.snapshot, {
+              previewText: ghost.insertText,
+              editText: ghost.editText,
+              replacePrefixLength: ghost.replacePrefixLength,
+          });
       };
 
       const applyNavigationHoverStateAtPosition = (targetPosition: { lineNumber: number; column: number } | null) => {
@@ -5710,6 +5789,11 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                   if (!raw) return raw;
                   return shouldQuoteCompletionIdentifiers ? quoteQualifiedIdent(activeDialect, raw) : raw;
               };
+              const applyCompletionFragmentCase = (ident: string, fragment: string) => (
+                  shouldQuoteCompletionIdentifiers
+                      ? ident
+                      : applyQueryEditorCompletionFragmentCase(ident, fragment)
+              );
               const getActiveCompletionDbName = () => String(sharedCurrentDb || currentDbRef.current || currentDb || tab.dbName || '').trim();
               const dialectKeywords = resolveSqlKeywords(activeDialect);
               const dialectFunctions = resolveSqlFunctions(activeDialect);
@@ -5725,14 +5809,16 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                       && !!parsed.table
                       && parsed.schema.toLowerCase() === rawDbName.toLowerCase();
                   const displayName = schemaMatchesDb ? parsed.table : rawTableName;
+                  const insertName = schemaMatchesDb ? parsed.table : rawTableName;
                   const insertText = schemaMatchesDb
-                      ? quoteCompletionPart(parsed.table)
-                      : quoteCompletionPath(rawTableName);
+                      ? quoteCompletionPart(insertName)
+                      : quoteCompletionPath(insertName);
                   const dbQualifiedLabel = rawDbName
                       ? `${rawDbName}.${displayName || rawTableName}`
                       : (displayName || rawTableName);
                   return {
                       displayName: displayName || rawTableName,
+                      insertName,
                       insertText,
                       dbQualifiedLabel,
                   };
@@ -6072,7 +6158,8 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
               if (threePartMatch) {
                   const dbPart = stripQuotes(threePartMatch[1]);
                   const tablePart = stripQuotes(threePartMatch[2]);
-                  const colPrefix = (threePartMatch[3] || '').toLowerCase();
+                  const rawColPrefix = String(threePartMatch[3] || '');
+                  const colPrefix = rawColPrefix.toLowerCase();
 
                   const cols = await getCompletionColumnsByTable(dbPart, tablePart, dbPart);
                   if (isSqlCompletionRequestCancelled(token)) {
@@ -6087,7 +6174,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                       buildSuggestion: (column) => ({
                           label: column.name,
                           kind: monaco.languages.CompletionItemKind.Field,
-                          insertText: quoteCompletionPart(column.name),
+                          insertText: quoteCompletionPart(applyCompletionFragmentCase(column.name, rawColPrefix)),
                           detail: buildColumnCompletionDetail(column),
                           documentation: buildColumnCompletionDocumentation(column),
                           filterText: resolveQueryEditorCompletionFilterText(colPrefix, [column.name]) || column.name,
@@ -6102,7 +6189,8 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
               const qualifierMatch = linePrefix.match(QUERY_EDITOR_SQL_QUALIFIER_COMPLETION_REGEX);
               if (qualifierMatch) {
                   const qualifier = stripQuotes(qualifierMatch[1]);
-                  const prefix = (qualifierMatch[2] || '').toLowerCase();
+                  const rawPrefix = String(qualifierMatch[2] || '');
+                  const prefix = rawPrefix.toLowerCase();
                   const qualifierLower = qualifier.toLowerCase();
 
                   // 首先检查 qualifier 是否是数据库名（跨库表提示）
@@ -6139,7 +6227,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                                       [meta.displayName, table.tableName],
                                   ),
                                   kind: monaco.languages.CompletionItemKind.Class,
-                                  insertText: meta.insertText,
+                                  insertText: quoteCompletionPath(applyCompletionFragmentCase(meta.insertName, rawPrefix)),
                                   detail: appendCommentToDetail(`${translate('query_editor.object_info.table')} (${table.dbName})`, table.comment),
                                   documentation: buildCompletionDocumentation(table.comment),
                                   range,
@@ -6251,7 +6339,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                                   [parsed.table, table.tableName],
                               ),
                               kind: monaco.languages.CompletionItemKind.Class,
-                              insertText: quoteCompletionPart(parsed.table),
+                              insertText: quoteCompletionPart(applyCompletionFragmentCase(parsed.table, rawPrefix)),
                               detail: appendCommentToDetail(`${translate('query_editor.object_info.table')} (${table.dbName}${parsed.schema ? '.' + parsed.schema : ''})`, table.comment),
                               documentation: buildCompletionDocumentation(table.comment),
                               range,
@@ -6355,7 +6443,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                           buildSuggestion: (column) => ({
                               label: column.name,
                               kind: monaco.languages.CompletionItemKind.Field,
-                              insertText: quoteCompletionPart(column.name),
+                              insertText: quoteCompletionPart(applyCompletionFragmentCase(column.name, rawPrefix)),
                               detail: buildColumnCompletionDetail(column),
                               documentation: buildColumnCompletionDocumentation(column),
                               filterText: resolveQueryEditorCompletionFilterText(prefix, [column.name]) || column.name,
@@ -6379,7 +6467,8 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
               const currentDatabase = getActiveCompletionDbName();
               const isCurrentCompletionDatabase = (dbName: string) =>
                   String(dbName || '').toLowerCase() === currentDatabase.toLowerCase();
-              const wordPrefix = (word.word || '').toLowerCase();
+              const rawWordPrefix = String(word.word || '');
+              const wordPrefix = rawWordPrefix.toLowerCase();
               const getPrefixMatchRank = (...candidates: string[]) => {
                   if (!wordPrefix) return '0';
                   const matchRank = rankQueryEditorCompletionCandidate(wordPrefix, candidates);
@@ -6502,7 +6591,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                       return {
                           label: column.name,
                           kind: monaco.languages.CompletionItemKind.Field,
-                          insertText: quoteCompletionPart(column.name),
+                          insertText: quoteCompletionPart(applyCompletionFragmentCase(column.name, rawWordPrefix)),
                           detail: buildColumnCompletionDetail(column),
                           documentation: buildColumnCompletionDocumentation(column),
                           filterText: resolveQueryEditorCompletionFilterText(wordPrefix, [column.name]) || column.name,
@@ -6563,7 +6652,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                                   [label, table.tableName || '', pureTable],
                               ),
                               kind: monaco.languages.CompletionItemKind.Class,
-                              insertText: quoteCompletionPath(label),
+                              insertText: quoteCompletionPath(applyCompletionFragmentCase(label, rawWordPrefix)),
                               detail: appendCommentToDetail(`${translate('query_editor.object_info.table')} (${table.dbName})`, table.comment),
                               documentation: buildCompletionDocumentation(table.comment),
                               range,
@@ -6582,7 +6671,10 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                               [label, table.tableName || '', pureTable],
                           ),
                           kind: monaco.languages.CompletionItemKind.Class,
-                          insertText: quoteCompletionPath(hasDuplicate ? table.tableName : pureTable),
+                          insertText: quoteCompletionPath(applyCompletionFragmentCase(
+                              hasDuplicate ? table.tableName : pureTable,
+                              rawWordPrefix,
+                          )),
                           detail: appendCommentToDetail(`${translate('query_editor.object_info.table')}${schemaInfo}`, table.comment),
                           documentation: buildCompletionDocumentation(table.comment),
                           range,

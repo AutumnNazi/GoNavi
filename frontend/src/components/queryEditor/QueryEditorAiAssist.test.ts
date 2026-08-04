@@ -12,6 +12,7 @@ import {
     resolveInlineSqlInsertText,
     resolveQueryEditorAiRuntimeReadiness,
     resolveQueryEditorInlineMemoryInsertText,
+    resolveQueryEditorInlineCompletionEdit,
     resolveQueryEditorInlineCompletionModel,
     resolveQueryEditorInlineCompletionIntentDetails,
     sanitizeSqlAssistantResponse,
@@ -171,6 +172,117 @@ describe('QueryEditorAiAssist', () => {
                 { sql: 'UPDATE videos SET status = 1 WHERE id = ?;' },
             ],
         })).toBe(' videos SET status = 1 WHERE id = ?;');
+    });
+
+    it('inherits the typed table fragment case without changing the remaining remembered SQL', () => {
+        expect(resolveQueryEditorInlineMemoryInsertText({
+            editorSnapshot: {
+                prefix: 'SELECT * FROM A_C',
+                suffix: '',
+                currentLineBeforeCursor: 'SELECT * FROM A_C',
+                currentLineAfterCursor: '',
+            },
+            memoryEntries: [
+                { sql: "SELECT * FROM a_cninfo_announcement where short_title like 'about%'" },
+            ],
+        })).toBe("ninfo_announcement where short_title like 'about%'");
+
+        expect(resolveQueryEditorInlineMemoryInsertText({
+            editorSnapshot: {
+                prefix: 'SELECT * FROM a_c',
+                suffix: '',
+                currentLineBeforeCursor: 'SELECT * FROM a_c',
+                currentLineAfterCursor: '',
+            },
+            memoryEntries: [
+                { sql: 'SELECT * FROM A_CNINFO_ANNOUNCEMENT WHERE SHORT_TITLE IS NOT NULL' },
+            ],
+        })).toBe('ninfo_announcement WHERE SHORT_TITLE IS NOT NULL');
+    });
+
+    it('uses the metadata identifier when accepting case-mismatched table completion', () => {
+        const aiContext = {
+            sourceType: 'mysql',
+            currentDb: 'main',
+            tables: [{ dbName: 'main', tableName: 'a_cninfo_announcement' }],
+            columns: [],
+        };
+
+        expect(resolveQueryEditorInlineCompletionEdit({
+            aiContext,
+            editorSnapshot: {
+                prefix: 'SELECT * FROM A_C',
+                suffix: '',
+                currentLineBeforeCursor: 'SELECT * FROM A_C',
+                currentLineAfterCursor: '',
+            },
+            insertText: "ninfo_announcement where short_title like 'about%'",
+        })).toEqual({
+            previewText: "ninfo_announcement where short_title like 'about%'",
+            editText: "a_cninfo_announcement where short_title like 'about%'",
+            replacePrefixLength: 3,
+        });
+
+        expect(resolveQueryEditorInlineCompletionEdit({
+            aiContext: {
+                ...aiContext,
+                tables: [{ dbName: 'main', tableName: 'TABLE' }],
+            },
+            editorSnapshot: {
+                prefix: 'SELECT * FROM ta',
+                suffix: '',
+                currentLineBeforeCursor: 'SELECT * FROM ta',
+                currentLineAfterCursor: '',
+            },
+            insertText: 'ble where id = 1',
+        })).toEqual({
+            previewText: 'ble where id = 1',
+            editText: 'table where id = 1',
+            replacePrefixLength: 2,
+        });
+
+        expect(resolveQueryEditorInlineCompletionEdit({
+            aiContext: {
+                ...aiContext,
+                currentDb: 'main',
+                tables: [{ dbName: 'analytics', tableName: 'a_cninfo_announcement' }],
+            },
+            editorSnapshot: {
+                prefix: 'SELECT * FROM analytics.A_C',
+                suffix: '',
+                currentLineBeforeCursor: 'SELECT * FROM analytics.A_C',
+                currentLineAfterCursor: '',
+            },
+            insertText: 'ninfo_announcement',
+        })).toEqual({
+            previewText: 'ninfo_announcement',
+            editText: 'analytics.a_cninfo_announcement',
+            replacePrefixLength: 'analytics.A_C'.length,
+        });
+    });
+
+    it('preserves exact-case inline identifiers for PostgreSQL-family dialects', () => {
+        const postgresContext = {
+            sourceType: 'postgres',
+            currentDb: 'main',
+            tables: [{ dbName: 'main', tableName: 'TABLE' }],
+            columns: [],
+        };
+
+        expect(resolveQueryEditorInlineCompletionEdit({
+            aiContext: postgresContext,
+            editorSnapshot: {
+                prefix: 'SELECT * FROM ta',
+                suffix: '',
+                currentLineBeforeCursor: 'SELECT * FROM ta',
+                currentLineAfterCursor: '',
+            },
+            insertText: 'ble',
+        })).toEqual({
+            previewText: 'BLE',
+            editText: 'TABLE',
+            replacePrefixLength: 2,
+        });
     });
 
     it('sanitizes fenced SQL and removes duplicated typed prefixes', () => {
@@ -613,6 +725,54 @@ describe('QueryEditorAiAssist', () => {
         expect(service.AIGetActiveProvider).not.toHaveBeenCalled();
     });
 
+    it('inherits the typed fragment case for deterministic table-name completion', async () => {
+        const service = readyService('TABLE');
+        const buildRequest = (fragment: string) => ({
+            service,
+            aiContext: {
+                connectionName: 'Local Dameng',
+                sourceType: 'dameng',
+                currentDb: 'APP',
+                tables: [{ dbName: 'APP', tableName: 'TABLE' }],
+                columns: [],
+            },
+            editorSnapshot: {
+                prefix: `SELECT * FROM ${fragment}`,
+                suffix: '',
+                currentLineBeforeCursor: `SELECT * FROM ${fragment}`,
+                currentLineAfterCursor: '',
+            },
+        });
+
+        await expect(requestQueryEditorInlineCompletion(buildRequest('ta'))).resolves.toBe('ble');
+        await expect(requestQueryEditorInlineCompletion(buildRequest('TA'))).resolves.toBe('BLE');
+        expect(service.AIChatSend).not.toHaveBeenCalled();
+    });
+
+    it('inherits the typed fragment case for deterministic column-name completion', async () => {
+        const service = readyService('SHORT_TITLE');
+
+        const insertText = await requestQueryEditorInlineCompletion({
+            service,
+            aiContext: {
+                connectionName: 'Local Dameng',
+                sourceType: 'dameng',
+                currentDb: 'APP',
+                tables: [{ dbName: 'APP', tableName: 'VIDEOS' }],
+                columns: [{ dbName: 'APP', tableName: 'VIDEOS', name: 'SHORT_TITLE', type: 'varchar' }],
+            },
+            editorSnapshot: {
+                prefix: 'SELECT v.sh FROM VIDEOS v WHERE v.sh',
+                suffix: '',
+                currentLineBeforeCursor: 'SELECT v.sh FROM VIDEOS v WHERE v.sh',
+                currentLineAfterCursor: '',
+            },
+        });
+
+        expect(insertText).toBe('ort_title');
+        expect(service.AIChatSend).not.toHaveBeenCalled();
+    });
+
     it('uses deterministic schema metadata for alter-table inline completion and skips AI', async () => {
         const service = readyService('ALTER TABLE orders ADD COLUMN status INT;');
 
@@ -664,6 +824,33 @@ describe('QueryEditorAiAssist', () => {
         });
 
         expect(insertText).toBe('deos');
+        expect(service.AIChatSend).toHaveBeenCalledTimes(1);
+    });
+
+    it('inherits the typed fragment case for grounded AI table-name completion', async () => {
+        const service = readyService('TABLE');
+
+        const insertText = await requestQueryEditorInlineCompletion({
+            service,
+            aiContext: {
+                connectionName: 'Local Dameng',
+                sourceType: 'dameng',
+                currentDb: 'APP',
+                tables: [
+                    { dbName: 'APP', tableName: 'TABLE' },
+                    { dbName: 'APP', tableName: 'TARGET' },
+                ],
+                columns: [],
+            },
+            editorSnapshot: {
+                prefix: 'SELECT * FROM ta',
+                suffix: '',
+                currentLineBeforeCursor: 'SELECT * FROM ta',
+                currentLineAfterCursor: '',
+            },
+        });
+
+        expect(insertText).toBe('ble');
         expect(service.AIChatSend).toHaveBeenCalledTimes(1);
     });
 

@@ -9,6 +9,7 @@ import type {
 import {
     buildQueryEditorAliasMap,
 } from './QueryEditorHelpers';
+import { isPostgresSchemaDialect } from '../../utils/connectionDriverType';
 
 export type QueryEditorAiApplyMode = 'insert' | 'replaceSelection' | 'replaceAll';
 
@@ -279,12 +280,53 @@ const normalizeInlineMemoryMatchText = (sql: string): string => (
         .toLowerCase()
 );
 
+export const applyQueryEditorCompletionFragmentCase = (
+    candidate: string,
+    fragment: string,
+    preserveCandidateCase = false,
+): string => {
+    if (preserveCandidateCase) {
+        return candidate;
+    }
+    const activeFragment = String(fragment || '').trim().split('.').pop() || '';
+    const fragmentCharacters = activeFragment.replace(/[^A-Za-z]/g, '');
+    const candidateParts = String(candidate || '').split('.');
+    const candidateLastPart = candidateParts.pop() || '';
+    const candidateCharacters = candidateLastPart.replace(/[^A-Za-z]/g, '');
+    if (!fragmentCharacters || !candidateCharacters) {
+        return candidate;
+    }
+    // Lowercase input may intentionally target an uppercase metadata name. Do not
+    // uppercase a lowercase metadata name: case-sensitive MySQL deployments would fail.
+    if (
+        fragmentCharacters === fragmentCharacters.toLowerCase()
+        && candidateCharacters === candidateCharacters.toUpperCase()
+    ) {
+        return [...candidateParts, candidateLastPart.toLowerCase()].join('.');
+    }
+    return candidate;
+};
+
+const applyInlineMemoryObjectCase = (
+    insertText: string,
+    fragment: string,
+    preserveCandidateCase = false,
+): string => {
+    const identifierSuffix = String(insertText || '').match(/^[A-Za-z0-9_$]+/)?.[0] || '';
+    if (!identifierSuffix) {
+        return insertText;
+    }
+    return `${applyQueryEditorCompletionFragmentCase(identifierSuffix, fragment, preserveCandidateCase)}${insertText.slice(identifierSuffix.length)}`;
+};
+
 export const resolveQueryEditorInlineMemoryInsertText = ({
     editorSnapshot,
     memoryEntries,
+    sourceType,
 }: {
     editorSnapshot: QueryEditorAiEditorSnapshot;
     memoryEntries: QueryEditorInlineMemoryEntry[];
+    sourceType?: string;
 }): string => {
     if (!shouldAllowQueryEditorInlineMemoryCompletion(editorSnapshot)) {
         return '';
@@ -300,7 +342,13 @@ export const resolveQueryEditorInlineMemoryInsertText = ({
         if (normalizedStatementPrefix && !normalizeInlineMemoryMatchText(candidateSql).startsWith(normalizedStatementPrefix)) {
             continue;
         }
-        return limitInlineInsertText(resolveInlineSqlInsertText(candidateSql, editorSnapshot.prefix));
+        const insertText = resolveInlineSqlInsertText(candidateSql, editorSnapshot.prefix);
+        const intent = resolveQueryEditorInlineCompletionIntentDetails(editorSnapshot);
+        return limitInlineInsertText(
+            intent.intent === 'table_name' || intent.intent === 'column_name'
+                ? applyInlineMemoryObjectCase(insertText, intent.fragment, isPostgresSchemaDialect(sourceType || ''))
+                : insertText,
+        );
     }
     return '';
 };
@@ -1201,15 +1249,22 @@ const filterInlineTableMatches = (
 ): CompletionTableMeta[] => {
     const normalizedFragment = normalizeInlineIdentifierPath(fragment).toLowerCase();
     const useQualifiedName = normalizedFragment.includes('.');
-    const matched = collectCurrentDatabaseTables(tables, currentDb).filter((table) => {
+    const sourceTables = useQualifiedName ? tables : collectCurrentDatabaseTables(tables, currentDb);
+    const matched = sourceTables.filter((table) => {
         if (!normalizedFragment) {
             return true;
         }
         const normalizedTableName = normalizeInlineIdentifierPath(table.tableName || '');
-        const candidate = useQualifiedName
-            ? normalizedTableName
-            : getInlineIdentifierLastPart(normalizedTableName);
-        return candidate.toLowerCase().startsWith(normalizedFragment);
+        const normalizedDbName = normalizeInlineIdentifierPath(table.dbName || '');
+        const candidatePaths = useQualifiedName
+            ? [
+                normalizedTableName,
+                normalizedDbName && !normalizedTableName.toLowerCase().startsWith(`${normalizedDbName.toLowerCase()}.`)
+                    ? `${normalizedDbName}.${normalizedTableName}`
+                    : '',
+            ].filter(Boolean)
+            : [getInlineIdentifierLastPart(normalizedTableName)];
+        return candidatePaths.some((candidate) => candidate.toLowerCase().startsWith(normalizedFragment));
     });
     return matched.slice(0, MAX_INLINE_SCHEMA_TABLES);
 };
@@ -1258,6 +1313,7 @@ const resolveInlineColumnOwnerReference = (
 const resolveUniqueCompletionCandidateInsertText = (
     candidates: string[],
     fragment: string,
+    preserveCandidateCase = false,
 ): string => {
     const dedupedCandidates = Array.from(new Map(
         candidates
@@ -1283,7 +1339,8 @@ const resolveUniqueCompletionCandidateInsertText = (
     if (prefixMatches.length !== 1) {
         return '';
     }
-    return prefixMatches[0].slice(normalizedFragment.length);
+    return applyQueryEditorCompletionFragmentCase(prefixMatches[0], normalizedFragment, preserveCandidateCase)
+        .slice(normalizedFragment.length);
 };
 
 const collectInlineTableCandidateLabels = (
@@ -1295,7 +1352,19 @@ const collectInlineTableCandidateLabels = (
     return filterInlineTableMatches(context.tables || [], currentDb, fragment)
         .map((table) => {
             const normalizedTableName = normalizeInlineIdentifierPath(table.tableName || '');
-            return useQualifiedName ? normalizedTableName : getInlineIdentifierLastPart(normalizedTableName);
+            if (!useQualifiedName) {
+                return getInlineIdentifierLastPart(normalizedTableName);
+            }
+            const normalizedDbName = normalizeInlineIdentifierPath(table.dbName || '');
+            const candidatePaths = [
+                normalizedTableName,
+                normalizedDbName && !normalizedTableName.toLowerCase().startsWith(`${normalizedDbName.toLowerCase()}.`)
+                    ? `${normalizedDbName}.${normalizedTableName}`
+                    : '',
+            ].filter(Boolean);
+            return candidatePaths.find((candidate) => candidate.toLowerCase().startsWith(normalizeInlineIdentifierPath(fragment).toLowerCase()))
+                || candidatePaths[0]
+                || '';
         })
         .filter(Boolean);
 };
@@ -1322,6 +1391,7 @@ const resolveValidatedInlineObjectCandidateInsertText = ({
     prefix,
     normalizer,
     safePattern,
+    preserveCandidateCase = false,
 }: {
     candidateLabels: string[];
     fragment: string;
@@ -1329,6 +1399,7 @@ const resolveValidatedInlineObjectCandidateInsertText = ({
     prefix: string;
     normalizer: (value: string) => string;
     safePattern: RegExp;
+    preserveCandidateCase?: boolean;
 }): string => {
     const trimmedInsertText = String(insertText || '').trim();
     if (!trimmedInsertText || !safePattern.test(trimmedInsertText)) {
@@ -1354,7 +1425,10 @@ const resolveValidatedInlineObjectCandidateInsertText = ({
         return '';
     }
 
-    return resolveInlineSqlInsertText(matchedCandidate, prefix);
+    return resolveInlineSqlInsertText(
+        applyQueryEditorCompletionFragmentCase(matchedCandidate, fragment, preserveCandidateCase),
+        prefix,
+    );
 };
 
 const shouldAllowInlineObjectAiFallback = (
@@ -1389,7 +1463,11 @@ const resolveDeterministicInlineTableInsertText = (
     fragment: string,
 ): string => {
     const candidateLabels = collectInlineTableCandidateLabels(context, fragment);
-    return resolveUniqueCompletionCandidateInsertText(candidateLabels, normalizeInlineIdentifierPath(fragment));
+    return resolveUniqueCompletionCandidateInsertText(
+        candidateLabels,
+        normalizeInlineIdentifierPath(fragment),
+        isPostgresSchemaDialect(context.sourceType || ''),
+    );
 };
 
 const resolveDeterministicInlineColumnInsertText = (
@@ -1399,7 +1477,11 @@ const resolveDeterministicInlineColumnInsertText = (
     fragment: string,
 ): string => {
     const candidateLabels = collectInlineColumnCandidateLabels(context, editorSnapshot, qualifier);
-    return resolveUniqueCompletionCandidateInsertText(candidateLabels, stripInlineIdentifierQuotes(fragment || '').trim());
+    return resolveUniqueCompletionCandidateInsertText(
+        candidateLabels,
+        stripInlineIdentifierQuotes(fragment || '').trim(),
+        isPostgresSchemaDialect(context.sourceType || ''),
+    );
 };
 
 const resolveValidatedInlineTableAiInsertText = (
@@ -1414,6 +1496,7 @@ const resolveValidatedInlineTableAiInsertText = (
     prefix: editorSnapshot.prefix,
     normalizer: normalizeInlineIdentifierPath,
     safePattern: INLINE_TABLE_FRAGMENT_SAFE_RE,
+    preserveCandidateCase: isPostgresSchemaDialect(context.sourceType || ''),
 });
 
 const resolveValidatedInlineColumnAiInsertText = (
@@ -1429,6 +1512,7 @@ const resolveValidatedInlineColumnAiInsertText = (
     prefix: editorSnapshot.prefix,
     normalizer: stripInlineIdentifierQuotes,
     safePattern: INLINE_COLUMN_FRAGMENT_SAFE_RE,
+    preserveCandidateCase: isPostgresSchemaDialect(context.sourceType || ''),
 });
 
 const shouldAllowInlineTableAiFallback = (
@@ -1477,6 +1561,71 @@ const resolveDeterministicInlineSchemaCompletion = (
     return {
         handled: false,
         insertText: '',
+    };
+};
+
+export interface QueryEditorInlineCompletionEdit {
+    previewText: string;
+    editText: string;
+    replacePrefixLength: number;
+}
+
+export const resolveQueryEditorInlineCompletionEdit = ({
+    aiContext,
+    editorSnapshot,
+    insertText,
+}: {
+    aiContext: QueryEditorAiContext;
+    editorSnapshot: QueryEditorAiEditorSnapshot;
+    insertText: string;
+}): QueryEditorInlineCompletionEdit => {
+    const fallback: QueryEditorInlineCompletionEdit = {
+        previewText: insertText,
+        editText: insertText,
+        replacePrefixLength: 0,
+    };
+    const intent = resolveQueryEditorInlineCompletionIntentDetails(editorSnapshot);
+    if ((intent.intent !== 'table_name' && intent.intent !== 'column_name') || !intent.fragment) {
+        return fallback;
+    }
+
+    const candidateLabels = intent.intent === 'table_name'
+        ? collectInlineTableCandidateLabels(aiContext, intent.fragment)
+        : collectInlineColumnCandidateLabels(aiContext, editorSnapshot, intent.qualifier);
+    const normalizer = intent.intent === 'table_name'
+        ? normalizeInlineIdentifierPath
+        : stripInlineIdentifierQuotes;
+    const token = String(insertText || '').match(/^[A-Za-z0-9_$]+/)?.[0] || '';
+    if (!token) {
+        return fallback;
+    }
+    const normalizedDirectSuggestion = normalizer(token).toLowerCase();
+    const normalizedCombinedSuggestion = normalizer(`${intent.fragment}${token}`).toLowerCase();
+    const matchedCandidate = Array.from(new Map(
+        candidateLabels
+            .map((candidate) => String(candidate || '').trim())
+            .filter(Boolean)
+            .map((candidate) => [normalizer(candidate).toLowerCase(), candidate] as const),
+    ).values()).find((candidate) => {
+        const normalizedCandidate = normalizer(candidate).toLowerCase();
+        return normalizedCandidate === normalizedDirectSuggestion
+            || normalizedCandidate === normalizedCombinedSuggestion;
+    });
+    if (!matchedCandidate) {
+        return fallback;
+    }
+
+    const canonicalIdentifier = applyQueryEditorCompletionFragmentCase(
+        matchedCandidate,
+        intent.fragment,
+        isPostgresSchemaDialect(aiContext.sourceType || ''),
+    );
+    const remainder = String(insertText).slice(token.length);
+    const editText = `${canonicalIdentifier}${remainder}`;
+    return {
+        previewText: editText.slice(intent.fragment.length),
+        editText,
+        replacePrefixLength: intent.fragment.length,
     };
 };
 
