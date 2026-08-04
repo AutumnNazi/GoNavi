@@ -481,6 +481,19 @@ describe('DataGrid layout', () => {
     expect(css).not.toContain('.react-resizable-handle:hover::after');
   });
 
+  it('uses the table cell as the only V2 inline edit frame', () => {
+    const css = readV2ThemeCss();
+    const inlineEditorCss = css.slice(
+      css.indexOf('body[data-ui-version="v2"] .gn-v2-data-grid .data-grid-virtual-inline-editing .ant-input,'),
+      css.indexOf('body[data-ui-version="v2"] .gn-v2-data-grid-statusbar'),
+    );
+
+    expect(inlineEditorCss).toContain('border: 0 !important;');
+    expect(inlineEditorCss).toContain('border-radius: 0 !important;');
+    expect(inlineEditorCss).toContain('background: transparent !important;');
+    expect(inlineEditorCss).toContain('box-shadow: none !important;');
+  });
+
   it('avoids duplicating legacy pagination page text beside the pager', () => {
     const markup = renderToStaticMarkup(
       <DataGridPaginationBar
