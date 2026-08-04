@@ -3021,6 +3021,21 @@ body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .ant-tree-list-holder {
   scrollbar-width: thin;
 }
 
+body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .ant-tree-list-scrollbar-vertical {
+  visibility: hidden !important;
+  pointer-events: none;
+}
+
+body[data-ui-version="v2"] .gn-v2-explorer-tree-shell.is-vertical-scrolling .ant-tree-list-scrollbar-vertical {
+  visibility: visible !important;
+  pointer-events: auto;
+}
+
+body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .ant-tree-list-scrollbar-vertical:has(.ant-tree-list-scrollbar-thumb-moving) {
+  visibility: visible !important;
+  pointer-events: auto;
+}
+
 body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .ant-tree-list-scrollbar-horizontal {
   height: 12px !important;
   left: 8px !important;
