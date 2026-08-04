@@ -1964,9 +1964,18 @@ describe('QueryEditor external SQL save', () => {
     }
   });
 
-  it('accepts the AI inline ghost with the default Tab shortcut and consumes the keydown', async () => {
+  it('accepts a metadata-normalized inline ghost with the default Tab shortcut and preserves trailing SQL', async () => {
     vi.useFakeTimers();
     try {
+      storeState.sqlLogs = [{
+        id: 'sql-log-inline-case',
+        timestamp: Date.now(),
+        sql: 'SELECT * FROM a_cninfo_announcement WHERE id = 1;',
+        status: 'success',
+        duration: 12,
+        dbName: 'main',
+      } as any];
+
       const inlineAiService = {
         AIGetProviders: vi.fn(async () => [{
           id: 'openai-main',
@@ -1991,8 +2000,7 @@ describe('QueryEditor external SQL save', () => {
       backendApp.DBGetTables.mockResolvedValueOnce({
         success: true,
         data: [
-          { TABLE_NAME: 'videos' },
-          { TABLE_NAME: 'visits' },
+          { TABLE_NAME: 'a_cninfo_announcement' },
         ],
       });
 
@@ -2020,25 +2028,30 @@ describe('QueryEditor external SQL save', () => {
       });
 
       await act(async () => {
-        create(<QueryEditor tab={createTab({ query: 'SELECT', dbName: 'main' })} />);
+        create(<QueryEditor tab={createTab({ query: 'SELECT * FROM A_C', dbName: 'main' })} />);
       });
 
-      editorState.value = 'SELECT';
-      editorState.position = { lineNumber: 1, column: 'SELECT'.length + 1 };
+      editorState.value = 'SELECT * FROM A_C';
+      editorState.position = { lineNumber: 1, column: 'SELECT * FROM A_C'.length + 1 };
       editorState.editor.executeEdits.mockClear();
       editorState.editor.trigger.mockClear();
       editorState.domNode.appendChild.mockClear();
 
       await act(async () => {
-        editorState.latestOnChange?.('SELECT');
+        editorState.latestOnChange?.('SELECT * FROM A_C');
         editorState.modelContentListeners.forEach((listener) => listener({
-          changes: [{ text: 'T' }],
+          changes: [{ text: 'C' }],
         }));
         vi.advanceTimersByTime(220);
         for (let i = 0; i < 8; i += 1) {
           await Promise.resolve();
         }
       });
+
+      const ghostOverlay = editorState.domNode.appendChild.mock.calls[
+        editorState.domNode.appendChild.mock.calls.length - 1
+      ]?.[0];
+      expect(ghostOverlay?.textContent).toBe('ninfo_announcement WHERE id = 1;');
 
       const shortcutEvent = {
         type: 'keydown',
@@ -2069,8 +2082,16 @@ describe('QueryEditor external SQL save', () => {
 
       expect(editorState.editor.executeEdits).toHaveBeenCalledWith(
         'gonavi-ai-inline-sql-completion',
-        [expect.objectContaining({ text: expect.any(String) })],
+        [expect.objectContaining({
+          text: 'a_cninfo_announcement WHERE id = 1;',
+          range: expect.objectContaining({
+            startColumn: 15,
+            endColumn: 18,
+          }),
+        })],
       );
+      expect(editorState.value).toBe('SELECT * FROM a_cninfo_announcement WHERE id = 1;');
+      expect(inlineAiService.AIChatSend).not.toHaveBeenCalled();
       expect(monacoShortcutEvent.preventDefault).toHaveBeenCalled();
       expect(monacoShortcutEvent.stopPropagation).toHaveBeenCalled();
       expect(shortcutEvent.preventDefault).toHaveBeenCalled();
@@ -3447,6 +3468,7 @@ describe('QueryEditor external SQL save', () => {
       success: true,
       data: [
         { Tables_in_main: 'users' },
+        { Tables_in_main: 'a_cninfo_announcement' },
         { Tables_in_main: 'hrmresource' },
         { Tables_in_main: 'hrm_resource_export_template' },
         { Tables_in_main: 'archive_hrmresource' },
@@ -3457,6 +3479,7 @@ describe('QueryEditor external SQL save', () => {
       data: [
         { tableName: 'hrmresource', name: 'hrmresult', type: 'varchar(32)' },
         { tableName: 'users', name: 'hrmresult_from_users', type: 'varchar(32)' },
+        { tableName: 'users', name: 'SHORT_TITLE', type: 'varchar(255)' },
       ],
     });
 
@@ -3493,6 +3516,24 @@ describe('QueryEditor external SQL save', () => {
     expect(commaLabels).not.toContain('archive_hrmresource');
     expect(commaLabels).not.toContain('hrmresult_from_users');
     expect(backendApp.DBGetColumns.mock.calls.map((call: any[]) => call[2])).not.toContain('hrmres');
+
+    editorState.value = 'SELECT * FROM A_C';
+    editorState.latestOnChange?.(editorState.value);
+    const uppercaseTableResult = await sqlProvider.provideCompletionItems(
+      editorState.editor.getModel(),
+      { lineNumber: 1, column: editorState.value.length + 1 },
+    );
+    const uppercaseTable = uppercaseTableResult.suggestions.find((item: any) => item.label === 'a_cninfo_announcement');
+    expect(uppercaseTable?.insertText).toBe('a_cninfo_announcement');
+
+    editorState.value = 'SELECT * FROM users WHERE sh';
+    editorState.latestOnChange?.(editorState.value);
+    const lowercaseColumnResult = await sqlProvider.provideCompletionItems(
+      editorState.editor.getModel(),
+      { lineNumber: 1, column: editorState.value.length + 1 },
+    );
+    const lowercaseColumn = lowercaseColumnResult.suggestions.find((item: any) => item.label === 'SHORT_TITLE');
+    expect(lowercaseColumn?.insertText).toBe('short_title');
 
     await act(async () => {
       renderer.unmount();
