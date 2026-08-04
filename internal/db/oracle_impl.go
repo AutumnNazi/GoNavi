@@ -35,6 +35,8 @@ const oracleDefaultPrefetchRows = 25
 var (
 	oracleTriggerCreatePattern = regexp.MustCompile(`(?is)^\s*CREATE\s+(?:OR\s+REPLACE\s+)?TRIGGER\b`)
 	oracleTriggerTimingPattern = regexp.MustCompile(`(?is)^\s*(?:BEFORE|AFTER|INSTEAD\s+OF)\b`)
+	// DBMS_METADATA appends the enabled state as a separate statement; it is not part of the trigger definition.
+	oracleTriggerEnableStatementPattern = regexp.MustCompile(`(?is)(?:\r?\n|;)\s*ALTER\s+TRIGGER\s+[^;]+?\s+ENABLE\s*;?\s*(?:/\s*)?$`)
 )
 
 func oracleRuntimeError(key string, params map[string]any) error {
@@ -1136,10 +1138,19 @@ func (o *OracleDB) fetchOracleTriggerDDL(owner string, triggerName string) strin
 		}
 		ddl := oracleRowString(data[0], "DDL", "ddl", "TRIGGER_DEFINITION", "trigger_definition")
 		if ddl != "" {
-			return ensureOracleDDLStatementTerminator(ddl)
+			return ensureOracleDDLStatementTerminator(stripOracleTriggerEnableStatement(ddl))
 		}
 	}
 	return ""
+}
+
+func stripOracleTriggerEnableStatement(ddl string) string {
+	trimmed := strings.TrimRight(ddl, " \t\r\n")
+	match := oracleTriggerEnableStatementPattern.FindStringIndex(trimmed)
+	if match == nil || match[1] != len(trimmed) {
+		return trimmed
+	}
+	return strings.TrimRight(trimmed[:match[0]], " \t\r\n")
 }
 
 func buildOracleTriggerDDLFromMetadata(row map[string]interface{}) string {
