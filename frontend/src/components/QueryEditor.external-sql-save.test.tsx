@@ -8111,6 +8111,45 @@ describe('QueryEditor external SQL save', () => {
       expect(completionItems?.suggestions?.some((item: any) => item?.label === 'sbdev.SBDEV.AAA3_NJ')).toBe(false);
     });
 
+    it('keeps a dotted Dameng owner intact in table completion detail', async () => {
+      storeState.languagePreference = 'zh-CN';
+      setCurrentLanguage('zh-CN');
+      storeState.connections[0].config.type = 'dameng';
+      storeState.connections[0].config.database = 'PEM2.4_V1_1';
+      editorState.value = 'select * from COM';
+      autoFetchState.visible = true;
+      backendApp.DBGetDatabases.mockResolvedValueOnce({
+        success: true,
+        data: [{ Database: 'PEM2.4_V1_1' }],
+      });
+      backendApp.DBGetTables.mockResolvedValueOnce({
+        success: true,
+        data: [{ Table: 'PEM2.4_V1_1.COM_APPROVE_INFO' }],
+      });
+      backendApp.DBGetAllColumns.mockResolvedValueOnce({ success: true, data: [] });
+
+      await act(async () => {
+        create(<QueryEditor tab={createTab({ query: editorState.value, dbName: 'PEM2.4_V1_1' })} />);
+      });
+      await act(async () => {
+        for (let index = 0; index < 6; index += 1) {
+          await Promise.resolve();
+        }
+      });
+
+      const completionProvider = findSqlCompletionProvider();
+      expect(completionProvider).toBeTruthy();
+      const completionItems = await completionProvider.provideCompletionItems(
+        editorState.editor.getModel(),
+        { lineNumber: 1, column: editorState.value.length + 1 },
+      );
+      const tableSuggestion = completionItems?.suggestions?.find((item: any) => item?.label === 'COM_APPROVE_INFO');
+
+      expect(tableSuggestion).toBeTruthy();
+      expect(tableSuggestion.detail).toContain('表 (PEM2.4_V1_1)');
+      expect(tableSuggestion.detail).not.toBe('表 (4_V1_1)');
+    });
+
     it('localizes schema-qualified table completion detail in zh-CN while preserving the raw database and schema names', async () => {
       storeState.languagePreference = 'zh-CN';
       setCurrentLanguage('zh-CN');
@@ -11240,6 +11279,44 @@ END;`;
     });
     expect(dataGridState.latestProps?.readOnly).toBe(false);
     expect(messageApi.warning).not.toHaveBeenCalled();
+  });
+
+  it('keeps dotted Dameng owner and table boundaries in editable query results', async () => {
+    storeState.connections[0].config.type = 'dameng';
+    storeState.connections[0].config.database = 'PEM2.4_V1_1';
+    backendApp.DBQueryMulti.mockResolvedValueOnce({
+      success: true,
+      data: [{ columns: ['ID', 'NAME'], rows: [{ ID: 7, NAME: 'old-name' }] }],
+    });
+    backendApp.DBGetColumns.mockResolvedValueOnce({
+      success: true,
+      data: [{ name: 'ID', key: 'PRI' }, { name: 'NAME', key: '' }],
+    });
+
+    let renderer: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<QueryEditor tab={createTab({
+        dbName: 'PEM2.4_V1_1',
+        query: 'SELECT * FROM "PEM2.4_V1_1"."COM_APPROVE_INFO"',
+      })} />);
+    });
+
+    await act(async () => {
+      await findButton(renderer!, '运行').props.onClick();
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(backendApp.DBGetColumns).toHaveBeenCalledWith(
+      expect.anything(),
+      'PEM2.4_V1_1',
+      'COM_APPROVE_INFO',
+    );
+    expect(dataGridState.latestProps?.dbName).toBe('PEM2.4_V1_1');
+    expect(dataGridState.latestProps?.tableName).toBe('PEM2.4_V1_1.COM_APPROVE_INFO');
+    expect(dataGridState.latestProps?.readOnly).toBe(false);
   });
 
   it('keeps Dameng USER_COL_COMMENTS queries read-only without injecting ROWID', async () => {

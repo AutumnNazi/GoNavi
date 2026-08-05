@@ -17,6 +17,7 @@ import {
 import { getQueryTabDraft, hasQueryTabDraft } from '../../utils/sqlFileTabDrafts';
 import { resolveSqlEditorOperationKeyword } from '../../utils/sqlEditorTransaction';
 import { getColumnDefinitionKey, getColumnDefinitionName } from '../../utils/columnDefinition';
+import { splitQualifiedNameSegments } from '../../utils/qualifiedName';
 import { resolveUniqueKeyGroupsFromIndexes } from '../dataGridCopyInsert';
 import { t as translate } from '../../i18n';
 
@@ -1009,24 +1010,38 @@ export const stripCompletionIdentifierQuotes = (ident: string): string => {
 export const normalizeCompletionQualifiedName = (ident: string): string => {
     const raw = String(ident || '').trim();
     if (!raw) return raw;
-    return raw
-        .split('.')
-        .map(p => stripCompletionIdentifierQuotes(p.trim()))
-        .filter(Boolean)
-        .join('.');
+    return splitQualifiedNameSegments(raw).filter(Boolean).join('.');
 };
 
 export const getCompletionQualifiedNameLastPart = (qualified: string): string => {
-    const raw = normalizeCompletionQualifiedName(qualified);
-    if (!raw) return raw;
-    const parts = raw.split('.').filter(Boolean);
-    return parts[parts.length - 1] || raw;
+    const parts = splitQualifiedNameSegments(qualified).filter(Boolean);
+    return parts[parts.length - 1] || '';
 };
 
-export const splitCompletionSchemaAndTable = (qualified: string): { schema: string; table: string } => {
-    const raw = normalizeCompletionQualifiedName(qualified);
-    if (!raw) return { schema: '', table: '' };
-    const parts = raw.split('.').filter(Boolean);
+export const splitCompletionSchemaAndTable = (
+    qualified: string,
+    knownDbName = '',
+): { schema: string; table: string } => {
+    const parts = splitQualifiedNameSegments(qualified).filter(Boolean);
+    if (parts.length === 0) return { schema: '', table: '' };
+
+    const dbName = String(knownDbName || '').trim();
+    if (dbName) {
+        const normalizedDbName = dbName.toLowerCase();
+        if (parts.length === 2 && parts[0].toLowerCase() === normalizedDbName) {
+            return { schema: dbName, table: parts[1] };
+        }
+
+        const dbNameParts = dbName.split('.').map((part) => part.trim()).filter(Boolean);
+        const prefixParts = parts.slice(0, dbNameParts.length);
+        if (
+            parts.length === dbNameParts.length + 1
+            && prefixParts.join('.').toLowerCase() === normalizedDbName
+        ) {
+            return { schema: dbName, table: parts[parts.length - 1] };
+        }
+    }
+
     if (parts.length >= 2) {
         return {
             schema: parts[parts.length - 2] || '',
@@ -1048,7 +1063,7 @@ export const getCompletionTableSchemaCounts = (
 
     const counts = new Map<string, number>();
     currentDatabaseTables.forEach((table) => {
-        const parsed = splitCompletionSchemaAndTable(table.tableName || '');
+        const parsed = splitCompletionSchemaAndTable(table.tableName || '', table.dbName);
         const pureTable = String(parsed.table || table.tableName || '').toLowerCase();
         if (!pureTable) return;
         counts.set(pureTable, (counts.get(pureTable) || 0) + 1);
@@ -1927,11 +1942,7 @@ export const findIdentifierWindowAtOffset = (
 };
 
 export const normalizeNavigationIdentifierParts = (text: string): string[] => (
-    String(text || '')
-        .split('.')
-        .map((part) => stripCompletionIdentifierQuotes(part))
-        .map((part) => part.trim())
-        .filter(Boolean)
+    splitQualifiedNameSegments(text).map((part) => part.trim()).filter(Boolean)
 );
 
 export const buildQueryEditorHoverMarkdown = (target: QueryEditorHoverTarget): string => {
@@ -2351,7 +2362,7 @@ export const resolveQueryEditorNavigationTarget = (
     if (!rawIdentifier) return null;
 
     const parts = normalizeNavigationIdentifierParts(rawIdentifier);
-    if (parts.length === 0 || parts.length > 3) return null;
+    if (parts.length === 0) return null;
 
     const currentDbName = String(currentDb || '').trim();
     const visibleDbSet = new Set(visibleDbs.map((db) => String(db || '').trim().toLowerCase()).filter(Boolean));
@@ -2369,6 +2380,27 @@ export const resolveQueryEditorNavigationTarget = (
             normalizedSchemaName: String(parsed.schemaName || '').trim().toLowerCase(),
         };
     });
+
+    const normalizedIdentifier = parts.join('.').toLowerCase();
+    const directTable = parts.length >= 2
+        ? tableMetas.find((meta) => (
+            normalizedIdentifier === `${meta.normalizedDbName}.${meta.normalizedObjectName}`
+            || normalizedIdentifier === `${meta.normalizedDbName}.${meta.normalizedRawTableName}`
+            || (
+                meta.normalizedDbName === currentDbName.toLowerCase()
+                && normalizedIdentifier === meta.normalizedRawTableName
+            )
+        ))
+        : undefined;
+    if (directTable) {
+        return {
+            type: 'table',
+            dbName: directTable.dbName,
+            tableName: directTable.rawTableName,
+            schemaName: directTable.schemaName || undefined,
+        };
+    }
+    if (parts.length > 3) return null;
 
     const buildObjectNameMeta = (
         dbName: string,
@@ -2742,11 +2774,11 @@ export const resolveQueryEditorHoverTarget = (
             if (String(item.dbName || '').trim().toLowerCase() !== normalizedDbName) return false;
             if (String(item.name || '').trim().toLowerCase() !== normalizedColumnName) return false;
             const rawTable = String(item.tableName || '').trim().toLowerCase();
-            const parsed = splitCompletionSchemaAndTable(item.tableName || '');
+            const parsed = splitCompletionSchemaAndTable(item.tableName || '', item.dbName);
             return rawTable === normalizedTableName || String(parsed.table || '').trim().toLowerCase() === normalizedTableName;
         });
         if (!column) return null;
-        const parsedTable = splitCompletionSchemaAndTable(column.tableName || '');
+        const parsedTable = splitCompletionSchemaAndTable(column.tableName || '', column.dbName);
         return {
             kind: 'column',
             dbName: column.dbName,
@@ -2789,7 +2821,7 @@ export const resolveQueryEditorHoverTarget = (
         );
         if (directColumns.length === 1) {
             const column = directColumns[0];
-            const parsedTable = splitCompletionSchemaAndTable(column.tableName || '');
+            const parsedTable = splitCompletionSchemaAndTable(column.tableName || '', column.dbName);
             return {
                 kind: 'column',
                 dbName: column.dbName,

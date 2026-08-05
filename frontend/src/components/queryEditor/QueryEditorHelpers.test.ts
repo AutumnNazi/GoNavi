@@ -21,6 +21,7 @@ import {
     resolveQueryEditorNavigationTarget,
     selectUnqualifiedCompletionSynonyms,
     shouldHandleQueryEditorRunShortcutFallback,
+    splitCompletionSchemaAndTable,
 } from './QueryEditorHelpers';
 
 describe('QueryEditor result merge identity', () => {
@@ -299,6 +300,36 @@ describe('QueryEditorHelpers Oracle-like execution schema', () => {
 });
 
 describe('QueryEditorHelpers qualified navigation (MySQL db.table + PG schema.table)', () => {
+    it('keeps a dotted Dameng owner intact when metadata already identifies it', () => {
+        expect(splitCompletionSchemaAndTable(
+            'PEM2.4_V1_1.COM_APPROVE_INFO',
+            'PEM2.4_V1_1',
+        )).toEqual({
+            schema: 'PEM2.4_V1_1',
+            table: 'COM_APPROVE_INFO',
+        });
+        expect(splitCompletionSchemaAndTable(
+            '"PEM2.4_V1_1"."COM_APPROVE_INFO"',
+        )).toEqual({
+            schema: 'PEM2.4_V1_1',
+            table: 'COM_APPROVE_INFO',
+        });
+
+        const sql = 'select * from PEM2.4_V1_1.COM_APPROVE_INFO';
+        expect(resolveQueryEditorNavigationTarget(
+            sql,
+            sql.length,
+            'PEM2.4_V1_1',
+            ['PEM2.4_V1_1'],
+            [{ dbName: 'PEM2.4_V1_1', tableName: 'COM_APPROVE_INFO' }],
+        )).toEqual({
+            type: 'table',
+            dbName: 'PEM2.4_V1_1',
+            tableName: 'COM_APPROVE_INFO',
+            schemaName: undefined,
+        });
+    });
+
     it('tracks an explicit two-part owner separately from the current database', () => {
         const qualified = buildQueryEditorAliasMap('SELECT p.* FROM IMP_BASICINFO.PERSON p', 'A');
         expect(qualified.p).toEqual({

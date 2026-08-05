@@ -53,6 +53,13 @@ func normalizeRunConfig(config connection.ConnectionConfig, dbName string) conne
 	return runConfig
 }
 
+func normalizeMetadataRunConfig(config connection.ConnectionConfig, dbName string) connection.ConnectionConfig {
+	if strings.EqualFold(strings.TrimSpace(config.Type), "oceanbase") && isOceanBaseOracleProtocol(config) {
+		return normalizeRunConfig(config, "")
+	}
+	return normalizeRunConfig(config, dbName)
+}
+
 func applyOceanBaseOracleCurrentSchemaInit(config connection.ConnectionConfig, schema string) connection.ConnectionConfig {
 	normalizedSchema := strings.TrimSpace(schema)
 	if normalizedSchema == "" {

@@ -1051,7 +1051,7 @@ const findSharedPreloadedColumns = (dbName: string, tableName: string): Completi
         columns.forEach((column) => {
             const dbLower = String(column.dbName || '').toLowerCase();
             const tableLower = String(column.tableName || '').toLowerCase();
-            const lastPartLower = String(splitCompletionSchemaAndTable(column.tableName || '').table || '').toLowerCase();
+            const lastPartLower = String(splitCompletionSchemaAndTable(column.tableName || '', column.dbName).table || '').toLowerCase();
             const keys = lastPartLower && lastPartLower !== tableLower
                 ? [`${dbLower}\u0000${tableLower}`, `${dbLower}\u0000${lastPartLower}`]
                 : [`${dbLower}\u0000${tableLower}`];
@@ -1083,7 +1083,7 @@ const collectSharedColumnsForTableIdents = (
         columns.forEach((column) => {
             const tableLower = String(column.tableName || '').toLowerCase();
             const fullLower = `${String(column.dbName || '').toLowerCase()}.${tableLower}`;
-            const pureLower = String(splitCompletionSchemaAndTable(column.tableName || '').table || '').toLowerCase();
+            const pureLower = String(splitCompletionSchemaAndTable(column.tableName || '', column.dbName).table || '').toLowerCase();
             new Set([fullLower, tableLower, pureLower]).forEach((key) => {
                 if (!key) {
                     return;
@@ -5804,7 +5804,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
               const buildDbQualifiedTableSuggestionMeta = (dbName: string, tableName: string) => {
                   const rawDbName = String(dbName || '').trim();
                   const rawTableName = String(tableName || '').trim();
-                  const parsed = splitSchemaAndTable(rawTableName);
+                  const parsed = splitSchemaAndTable(rawTableName, rawDbName);
                   const schemaMatchesDb = !!parsed.schema
                       && !!parsed.table
                       && parsed.schema.toLowerCase() === rawDbName.toLowerCase();
@@ -5849,7 +5849,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
               const buildRoutineSuggestionMeta = (routine: CompletionRoutineMeta) => {
                   const rawDbName = String(routine.dbName || '').trim();
                   const rawRoutineName = String(routine.routineName || '').trim();
-                  const parsed = splitSchemaAndTable(rawRoutineName);
+                  const parsed = splitSchemaAndTable(rawRoutineName, rawDbName);
                   const schemaName = String(routine.schemaName || parsed.schema || '').trim();
                   const objectName = String(parsed.table || rawRoutineName).trim();
                   const schemaMatchesDb = !!schemaName
@@ -5882,7 +5882,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
               const buildViewSuggestionMeta = (view: CompletionViewMeta) => {
                   const rawDbName = String(view.dbName || '').trim();
                   const rawViewName = String(view.viewName || '').trim();
-                  const parsed = splitSchemaAndTable(rawViewName);
+                  const parsed = splitSchemaAndTable(rawViewName, rawDbName);
                   const schemaName = String(view.schemaName || parsed.schema || '').trim();
                   const objectName = String(parsed.table || rawViewName).trim();
                   const schemaMatchesDb = !!schemaName
@@ -6321,15 +6321,15 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                       candidates: sharedTablesData,
                       prefix,
                       getMatchRank: (table, normalizedPrefix) => {
-                          const parsed = splitSchemaAndTable(table.tableName || '');
+                          const parsed = splitSchemaAndTable(table.tableName || '', table.dbName);
                           if (parsed.schema.toLowerCase() !== qualifierLower) return null;
                           hasKnownSchemaQualifier = true;
                           if (!parsed.table) return null;
                           return rankQueryEditorCompletionCandidate(normalizedPrefix, [parsed.table], false);
                       },
-                      getSelectionKey: (table, _prefix, matchRank) => `0${matchRank}${splitSchemaAndTable(table.tableName || '').table}`,
+                      getSelectionKey: (table, _prefix, matchRank) => `0${matchRank}${splitSchemaAndTable(table.tableName || '', table.dbName).table}`,
                       buildSuggestion: (table) => {
-                          const parsed = splitSchemaAndTable(table.tableName || '');
+                          const parsed = splitSchemaAndTable(table.tableName || '', table.dbName);
                           return {
                               ...buildTableSuggestion(
                                   parsed.table,
@@ -6572,7 +6572,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                   getMatchRank: (column, normalizedPrefix) => {
                       const fullIdent = `${column.dbName}.${column.tableName}`.toLowerCase();
                       const shortIdent = (column.tableName || '').toLowerCase();
-                      const parsed = splitSchemaAndTable(column.tableName || '');
+                      const parsed = splitSchemaAndTable(column.tableName || '', column.dbName);
                       const pureIdent = (parsed.table || '').toLowerCase();
                       if (!foundTables.has(fullIdent) && !foundTables.has(shortIdent) && (!pureIdent || !foundTables.has(pureIdent))) {
                           return null;
@@ -6613,7 +6613,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                   prefix: wordPrefix,
                   getMatchRank: (table, normalizedPrefix) => {
                       const isCurrentDb = isCurrentCompletionDatabase(table.dbName || '');
-                      const parsed = splitSchemaAndTable(table.tableName || '');
+                      const parsed = splitSchemaAndTable(table.tableName || '', table.dbName);
                       const pureTable = parsed.table || table.tableName || '';
                       if (!isCurrentDb) {
                           const meta = buildDbQualifiedTableSuggestionMeta(table.dbName || '', table.tableName || '');
@@ -6627,7 +6627,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                   },
                   getSelectionKey: (table, _prefix, matchRank) => {
                       const isCurrentDb = isCurrentCompletionDatabase(table.dbName || '');
-                      const parsed = splitSchemaAndTable(table.tableName || '');
+                      const parsed = splitSchemaAndTable(table.tableName || '', table.dbName);
                       const pureTable = parsed.table || table.tableName || '';
                       if (!isCurrentDb) {
                           const meta = buildDbQualifiedTableSuggestionMeta(table.dbName || '', table.tableName || '');
@@ -6638,7 +6638,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                   },
                   buildSuggestion: (table) => {
                       const isCurrentDb = isCurrentCompletionDatabase(table.dbName || '');
-                      const parsed = splitSchemaAndTable(table.tableName || '');
+                      const parsed = splitSchemaAndTable(table.tableName || '', table.dbName);
                       const pureTable = parsed.table || table.tableName || '';
                       if (!isCurrentDb) {
                           const meta = buildDbQualifiedTableSuggestionMeta(table.dbName || '', table.tableName || '');

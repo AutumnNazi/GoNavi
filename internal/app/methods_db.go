@@ -2085,7 +2085,7 @@ func (a *App) DBGetDatabases(config connection.ConnectionConfig) connection.Quer
 }
 
 func (a *App) DBGetTables(config connection.ConnectionConfig, dbName string) connection.QueryResult {
-	runConfig := normalizeRunConfig(config, dbName)
+	runConfig := normalizeMetadataRunConfig(config, dbName)
 	if strings.EqualFold(strings.TrimSpace(runConfig.Type), "redis") {
 		runConfig.Type = "redis"
 		client, err := a.getRedisClient(runConfig)
@@ -2222,7 +2222,7 @@ func (a *App) DBTableExists(config connection.ConnectionConfig, dbName string, t
 		return connection.QueryResult{Success: true, Data: map[string]bool{"exists": false}}
 	}
 
-	runConfig := normalizeRunConfig(config, dbName)
+	runConfig := normalizeMetadataRunConfig(config, dbName)
 	if strings.EqualFold(strings.TrimSpace(runConfig.Type), "redis") {
 		runConfig.Type = "redis"
 		client, err := a.getRedisClient(runConfig)
@@ -2267,7 +2267,7 @@ func (a *App) DBTableExists(config connection.ConnectionConfig, dbName string, t
 }
 
 func (a *App) DBGetViews(config connection.ConnectionConfig, dbName string) connection.QueryResult {
-	runConfig := normalizeRunConfig(config, dbName)
+	runConfig := normalizeMetadataRunConfig(config, dbName)
 	if strings.EqualFold(strings.TrimSpace(runConfig.Type), "redis") {
 		return connection.QueryResult{Success: true, Data: []map[string]string{}}
 	}
@@ -2290,6 +2290,9 @@ func (a *App) DBGetViews(config connection.ConnectionConfig, dbName string) conn
 func (a *App) DBShowCreateTable(config connection.ConnectionConfig, dbName string, tableName string) connection.QueryResult {
 	dbType := resolveDDLDBType(config)
 	runConfig := buildRunConfigForDDL(config, dbType, dbName)
+	if isOceanBaseOracleProtocol(config) {
+		runConfig = normalizeMetadataRunConfig(config, dbName)
+	}
 
 	dbInst, err := a.getDatabase(runConfig)
 	if err != nil {
@@ -2748,7 +2751,7 @@ func getColumnsWithMetadataFallback(
 }
 
 func (a *App) DBGetColumns(config connection.ConnectionConfig, dbName string, tableName string) connection.QueryResult {
-	runConfig := normalizeRunConfig(config, dbName)
+	runConfig := normalizeMetadataRunConfig(config, dbName)
 	text := a.appText
 
 	dbInst, err := a.getDatabase(runConfig)
@@ -3081,7 +3084,7 @@ func quoteOracleMetadataTableRef(schemaName string, tableName string) string {
 }
 
 func (a *App) DBGetIndexes(config connection.ConnectionConfig, dbName string, tableName string) connection.QueryResult {
-	runConfig := normalizeRunConfig(config, dbName)
+	runConfig := normalizeMetadataRunConfig(config, dbName)
 
 	dbInst, err := a.getDatabase(runConfig)
 	if err != nil {
@@ -3110,7 +3113,7 @@ func (a *App) DBGetIndexes(config connection.ConnectionConfig, dbName string, ta
 }
 
 func (a *App) DBGetForeignKeys(config connection.ConnectionConfig, dbName string, tableName string) connection.QueryResult {
-	runConfig := normalizeRunConfig(config, dbName)
+	runConfig := normalizeMetadataRunConfig(config, dbName)
 
 	dbInst, err := a.getDatabase(runConfig)
 	if err != nil {
@@ -3127,7 +3130,7 @@ func (a *App) DBGetForeignKeys(config connection.ConnectionConfig, dbName string
 }
 
 func (a *App) DBGetDatabaseForeignKeys(config connection.ConnectionConfig, dbName string) connection.QueryResult {
-	runConfig := normalizeRunConfig(config, dbName)
+	runConfig := normalizeMetadataRunConfig(config, dbName)
 
 	dbInst, err := a.getDatabase(runConfig)
 	if err != nil {
@@ -3150,7 +3153,7 @@ func (a *App) DBGetDatabaseForeignKeys(config connection.ConnectionConfig, dbNam
 }
 
 func (a *App) DBGetTriggers(config connection.ConnectionConfig, dbName string, tableName string) connection.QueryResult {
-	runConfig := normalizeRunConfig(config, dbName)
+	runConfig := normalizeMetadataRunConfig(config, dbName)
 
 	dbInst, err := a.getDatabase(runConfig)
 	if err != nil {
@@ -3306,7 +3309,7 @@ func (a *App) RenameView(config connection.ConnectionConfig, dbName string, oldN
 }
 
 func (a *App) DBGetAllColumns(config connection.ConnectionConfig, dbName string) connection.QueryResult {
-	runConfig := normalizeRunConfig(config, dbName)
+	runConfig := normalizeMetadataRunConfig(config, dbName)
 
 	dbInst, err := a.getDatabase(runConfig)
 	if err != nil {
