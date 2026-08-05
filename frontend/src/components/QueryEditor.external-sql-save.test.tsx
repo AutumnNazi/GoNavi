@@ -10,6 +10,7 @@ import type { SavedQuery, TabData } from '../types';
 import { ORACLE_ROWID_LOCATOR_COLUMN } from '../utils/rowLocator';
 import { setGlobalImeCompositionActive } from '../utils/shortcuts';
 import { clearQueryEditorResultSession } from '../utils/queryEditorResultSessionCache';
+import { QUERY_TAB_RENAME_REQUEST_EVENT } from '../utils/queryTabTitle';
 import { clearQueryTabDraft, clearSQLFileTabDraft, getQueryTabDraft, getSQLFileTabDraft } from '../utils/sqlFileTabDrafts';
 import { clearQueryEditorInlineRuntimeReadinessCache } from './queryEditor/QueryEditorAiAssist';
 import QueryEditor, {
@@ -10206,6 +10207,43 @@ END;`;
       savedQueryId: 'saved-1',
     }));
     expect(messageApi.success).toHaveBeenCalledWith('查询已重命名。');
+  });
+
+  it('opens the existing rename flow for the query tab context-menu request', async () => {
+    storeState.savedQueries = [
+      {
+        id: 'saved-1',
+        name: '常用查询',
+        sql: 'select 1;',
+        connectionId: 'conn-1',
+        dbName: 'main',
+        createdAt: 100,
+      },
+    ];
+
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<QueryEditor tab={createTab({ savedQueryId: 'saved-1' })} />);
+    });
+
+    const renameRequestListenerCalls = (window.addEventListener as any).mock.calls
+      .filter(([eventName]: [string]) => eventName === QUERY_TAB_RENAME_REQUEST_EVENT);
+    const renameRequestListener = renameRequestListenerCalls[renameRequestListenerCalls.length - 1]?.[1];
+    expect(renameRequestListener).toBeTypeOf('function');
+
+    await act(async () => {
+      renameRequestListener(new CustomEvent(QUERY_TAB_RENAME_REQUEST_EVENT, {
+        detail: { tabId: 'another-tab' },
+      }));
+    });
+    expect(findExactButton(renderer!, '重命名')).toBeUndefined();
+
+    await act(async () => {
+      renameRequestListener(new CustomEvent(QUERY_TAB_RENAME_REQUEST_EVENT, {
+        detail: { tabId: 'tab-1' },
+      }));
+    });
+    expect(findExactButton(renderer!, '重命名')).toBeTruthy();
   });
 
   it('exports the current editor SQL without changing saved query state', async () => {

@@ -1,7 +1,7 @@
 import Modal from './common/ResizableDraggableModal';
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Button, Dropdown, message, Tabs, Tooltip } from 'antd';
-import { CloseOutlined, ConsoleSqlOutlined, DatabaseOutlined, FileTextOutlined, FolderOpenOutlined, HistoryOutlined, PlusOutlined, PushpinOutlined, RightOutlined, RobotOutlined, SearchOutlined, SettingOutlined } from '@ant-design/icons';
+import { CloseOutlined, ConsoleSqlOutlined, DatabaseOutlined, EditOutlined, FileTextOutlined, FolderOpenOutlined, HistoryOutlined, PlusOutlined, PushpinOutlined, RightOutlined, RobotOutlined, SearchOutlined, SettingOutlined } from '@ant-design/icons';
 import type { MenuProps, TabsProps } from 'antd';
 import { DndContext, PointerSensor, closestCenter, useSensor, useSensors } from '@dnd-kit/core';
 import type { DragEndEvent, DragMoveEvent, DragStartEvent } from '@dnd-kit/core';
@@ -47,6 +47,7 @@ import { openNativeWorkbenchTabWindow } from '../utils/nativeDetachedWindowHost'
 import { useWorkbenchTabs } from '../hooks/useWorkbenchTabs';
 import { resolveConnectionEnvironmentPresentation } from '../utils/connectionEnvironment';
 import { createSidebarResizeAwareFrameScheduler } from '../utils/sidebarResizeLifecycle';
+import { QUERY_TAB_RENAME_REQUEST_EVENT } from '../utils/queryTabTitle';
 
 const getTabKindLabel = (tab: TabData): string => {
   if (tab.type === 'query') return t('tab_manager.kind_badge.query');
@@ -77,6 +78,13 @@ const getTabKindLabel = (tab: TabData): string => {
 export const isBackgroundTaskWorkbenchTab = (tab: Pick<TabData, 'type'>): boolean => (
   tab.type === 'table-export' || tab.type === 'data-import' || tab.type === 'data-sync'
 );
+
+export const resolveQueryTabRenameMenuState = (
+  tab: Pick<TabData, 'type' | 'filePath'>,
+): { visible: boolean; disabled: boolean } => ({
+  visible: tab.type === 'query',
+  disabled: Boolean(tab.filePath),
+});
 
 export const isRunningDataImportWorkbenchTab = (
   tab: Pick<TabData, 'type' | 'dataImportRunning'>,
@@ -1254,8 +1262,23 @@ const TabManager: React.FC<TabManagerProps> = React.memo<TabManagerProps>(({ onF
     const displayTitle = displayModel.fullTitle;
     const hostSummary = resolveConnectionHostSummary(connection?.config);
     const tabIsActive = tab.id === dockedActiveTabId;
+    const renameQueryMenuState = resolveQueryTabRenameMenuState(tab);
 
     const menuItems: MenuProps['items'] = [
+      ...(renameQueryMenuState.visible ? [{
+        key: 'rename-query',
+        icon: <EditOutlined />,
+        label: t('query_editor.action.rename_query'),
+        disabled: renameQueryMenuState.disabled,
+        onClick: () => {
+          setActiveTab(tab.id);
+          window.setTimeout(() => {
+            window.dispatchEvent(new CustomEvent(QUERY_TAB_RENAME_REQUEST_EVENT, {
+              detail: { tabId: tab.id },
+            }));
+          }, 0);
+        },
+      }] : []),
       {
         key: 'tab-display-settings',
         icon: <SettingOutlined />,
