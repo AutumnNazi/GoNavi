@@ -6888,6 +6888,8 @@
   "redis.backend.error.import_payload_invalid": "Redis 匯入檔案無效：{{detail}}",
   "redis.backend.error.invalid_node_address": "無效 Redis 節點地址：{{address}}",
   "redis.backend.error.invalid_port": "無效 Redis 連接埠：{{address}}",
+  "redis.backend.error.list_item_changed": "Redis List 已發生變化，請重新整理後再試",
+  "redis.backend.error.list_position_invalid": "Redis List 推入位置無效",
   "redis.backend.error.node_address_required": "Redis 節點地址不能為空",
   "redis.backend.error.select_db_index_invalid": "無效資料庫索引：{{value}}",
   "redis.backend.error.select_db_index_out_of_range": "資料庫索引必須在 {{min}}-{{max}} 之間",

@@ -6888,6 +6888,8 @@
   "redis.backend.error.import_payload_invalid": "Файл импорта Redis недействителен: {{detail}}",
   "redis.backend.error.invalid_node_address": "Недопустимый адрес узла Redis: {{address}}",
   "redis.backend.error.invalid_port": "Недопустимый порт Redis: {{address}}",
+  "redis.backend.error.list_item_changed": "Redis List изменился. Обновите данные и повторите попытку.",
+  "redis.backend.error.list_position_invalid": "Недопустимая позиция добавления в Redis List",
   "redis.backend.error.node_address_required": "Адрес узла Redis не может быть пустым",
   "redis.backend.error.select_db_index_invalid": "Недопустимый индекс базы данных: {{value}}",
   "redis.backend.error.select_db_index_out_of_range": "Индекс базы данных должен быть в диапазоне от {{min}} до {{max}}",

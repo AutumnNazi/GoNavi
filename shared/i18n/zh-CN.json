@@ -6888,6 +6888,8 @@
   "redis.backend.error.import_payload_invalid": "Redis 导入文件无效：{{detail}}",
   "redis.backend.error.invalid_node_address": "无效 Redis 节点地址：{{address}}",
   "redis.backend.error.invalid_port": "无效 Redis 端口：{{address}}",
+  "redis.backend.error.list_item_changed": "Redis List 已发生变化，请刷新后重试",
+  "redis.backend.error.list_position_invalid": "Redis List 推入位置无效",
   "redis.backend.error.node_address_required": "Redis 节点地址不能为空",
   "redis.backend.error.select_db_index_invalid": "无效数据库索引：{{value}}",
   "redis.backend.error.select_db_index_out_of_range": "数据库索引必须在 {{min}}-{{max}} 之间",

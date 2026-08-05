@@ -6888,6 +6888,8 @@
   "redis.backend.error.import_payload_invalid": "Redis インポートファイルが無効です: {{detail}}",
   "redis.backend.error.invalid_node_address": "無効な Redis ノードアドレス: {{address}}",
   "redis.backend.error.invalid_port": "無効な Redis ポート: {{address}}",
+  "redis.backend.error.list_item_changed": "Redis List が変更されました。更新してからもう一度お試しください",
+  "redis.backend.error.list_position_invalid": "Redis List の追加位置が無効です",
   "redis.backend.error.node_address_required": "Redis ノードアドレスは空にできません",
   "redis.backend.error.select_db_index_invalid": "無効なデータベースインデックス: {{value}}",
   "redis.backend.error.select_db_index_out_of_range": "データベースインデックスは {{min}} から {{max}} の間で指定してください",

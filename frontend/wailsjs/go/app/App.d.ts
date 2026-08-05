@@ -416,9 +416,9 @@ export function RedisImportKeys(arg1:connection.ConnectionConfig,arg2:app.RedisI
 
 export function RedisKeyExists(arg1:connection.ConnectionConfig,arg2:string):Promise<connection.QueryResult>;
 
-export function RedisListPush(arg1:connection.ConnectionConfig,arg2:string,arg3:Array<string>):Promise<connection.QueryResult>;
+export function RedisListPush(arg1:connection.ConnectionConfig,arg2:string,arg3:app.RedisListPushOptions):Promise<connection.QueryResult>;
 
-export function RedisListRemove(arg1:connection.ConnectionConfig,arg2:string,arg3:string):Promise<connection.QueryResult>;
+export function RedisListRemove(arg1:connection.ConnectionConfig,arg2:string,arg3:number,arg4:string):Promise<connection.QueryResult>;
 
 export function RedisListSet(arg1:connection.ConnectionConfig,arg2:string,arg3:number,arg4:string):Promise<connection.QueryResult>;
 

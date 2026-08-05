@@ -1325,6 +1325,20 @@ export namespace app {
 	        this.file = source["file"];
 	    }
 	}
+	export class RedisListPushOptions {
+	    values: string[];
+	    position: string;
+
+	    static createFrom(source: any = {}) {
+	        return new RedisListPushOptions(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.values = source["values"];
+	        this.position = source["position"];
+	    }
+	}
 	export class SecurityUpdateOptions {
 	    allowPartial?: boolean;
 	    writeBackup?: boolean;
@@ -2795,4 +2809,3 @@ export namespace sync {
 	}
 
 }
-

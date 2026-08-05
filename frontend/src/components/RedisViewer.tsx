@@ -37,6 +37,7 @@ import { t, type I18nParams } from '../i18n';
 import { useOptionalI18n } from '../i18n/provider';
 import { APP_POPUP_Z_INDEX } from '../utils/overlayZIndex';
 import RedisResizableDivider from './RedisResizableDivider';
+import { RedisListPush, RedisListRemove } from '../../wailsjs/go/app/App';
 
 const { Search } = Input;
 
@@ -1673,7 +1674,7 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
                 if (!config) return;
                 if (!await confirmRedisMutation(`db${redisDB} / ${selectedKey}`)) return;
                 try {
-                    const res = await (window as any).go.app.App.RedisListPush(buildRpcConnectionConfig(config), selectedKey, { values: [value], position });
+                    const res = await RedisListPush(buildRpcConnectionConfig(config), selectedKey, { values: [value], position });
                     if (res.success) {
                         await loadKeyValue(selectedKey);
                         message.success(tr('redis_viewer.message.add_success'));
@@ -1685,12 +1686,12 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
                 }
             };
 
-            const handleDeleteListItem = async (value: string) => {
+            const handleDeleteListItem = async (index: number, value: string) => {
                 const config = getConfig();
                 if (!config) return;
-                if (!await confirmRedisMutation(`db${redisDB} / ${selectedKey}`)) return;
+                if (!await confirmRedisMutation(`db${redisDB} / ${selectedKey} / ${index}`)) return;
                 try {
-                    const res = await (window as any).go.app.App.RedisListRemove(buildRpcConnectionConfig(config), selectedKey, value);
+                    const res = await RedisListRemove(buildRpcConnectionConfig(config), selectedKey, index, value);
                     if (res.success) {
                         await loadKeyValue(selectedKey);
                         message.success(tr('redis_viewer.message.delete_success'));
@@ -1827,7 +1828,7 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
                                                 setJsonEditModalOpen(true);
                                             }} />
                                         )}
-                                        <Popconfirm title={tr('redis_viewer.confirm.delete_list_item')} onConfirm={() => handleDeleteListItem(record.value)}>
+                                        <Popconfirm title={tr('redis_viewer.confirm.delete_list_item')} onConfirm={() => handleDeleteListItem(record.index, record.value)}>
                                             <Button type="text" size="small" danger icon={<DeleteOutlined />} />
                                         </Popconfirm>
                                     </Space>

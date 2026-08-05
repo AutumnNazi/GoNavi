@@ -6888,6 +6888,8 @@
   "redis.backend.error.import_payload_invalid": "Redis import file is invalid: {{detail}}",
   "redis.backend.error.invalid_node_address": "Invalid Redis node address: {{address}}",
   "redis.backend.error.invalid_port": "Invalid Redis port: {{address}}",
+  "redis.backend.error.list_item_changed": "The Redis List has changed. Refresh and try again.",
+  "redis.backend.error.list_position_invalid": "The Redis List push position is invalid",
   "redis.backend.error.node_address_required": "Redis node address cannot be empty",
   "redis.backend.error.select_db_index_invalid": "Invalid database index: {{value}}",
   "redis.backend.error.select_db_index_out_of_range": "Database index must be between {{min}} and {{max}}",

@@ -6888,6 +6888,8 @@
   "redis.backend.error.import_payload_invalid": "Redis-Importdatei ist ungültig: {{detail}}",
   "redis.backend.error.invalid_node_address": "Ungültige Redis-Knotenadresse: {{address}}",
   "redis.backend.error.invalid_port": "Ungültiger Redis-Port: {{address}}",
+  "redis.backend.error.list_item_changed": "Die Redis-Liste wurde geändert. Aktualisieren Sie die Ansicht und versuchen Sie es erneut.",
+  "redis.backend.error.list_position_invalid": "Die Einfügeposition der Redis-Liste ist ungültig",
   "redis.backend.error.node_address_required": "Redis-Knotenadresse darf nicht leer sein",
   "redis.backend.error.select_db_index_invalid": "Ungültiger Datenbankindex: {{value}}",
   "redis.backend.error.select_db_index_out_of_range": "Der Datenbankindex muss zwischen {{min}} und {{max}} liegen",
