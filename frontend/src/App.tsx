@@ -22,6 +22,10 @@ import {
   isReleaseNotesRead,
   markReleaseNotesRead,
 } from './utils/updateReleaseNotesReadState';
+import {
+  shouldShowFooterReleaseNotesAction,
+  type AboutUpdateActionsSurface,
+} from './utils/aboutUpdateActions';
 import { type DataSyncEntryMode } from './components/dataSyncEntryMode';
 import DriverManagerModal from './components/DriverManagerModal';
 import LinuxCJKFontBanner from './components/LinuxCJKFontBanner';
@@ -5408,14 +5412,17 @@ function App() {
       ) : null
   );
 
-  const renderAboutUpdateActions = (closeAction?: React.ReactNode) => [
+  const renderAboutUpdateActions = (
+      surface: AboutUpdateActionsSurface,
+      closeAction?: React.ReactNode,
+  ) => [
       isBackgroundProgressForLatestUpdate && !isLatestUpdateDownloaded ? (
           <Button key="progress" icon={<DownloadOutlined />} onClick={showUpdateDownloadProgress}>{t('app.about.action.download_progress')}</Button>
       ) : null,
       lastUpdateInfo?.hasUpdate && !isLatestUpdateDownloaded && !isBackgroundProgressForLatestUpdate ? (
           <Button key="mute" onClick={muteLatestUpdate}>{t('app.about.action.mute_this_version')}</Button>
       ) : null,
-      renderReleaseNotesActionButton(),
+      shouldShowFooterReleaseNotesAction(surface) ? renderReleaseNotesActionButton() : null,
       <Button
           key="check"
           icon={<CloudDownloadOutlined />}
@@ -5812,7 +5819,7 @@ function App() {
               </span>
           </div>
           <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-              {renderAboutUpdateActions()}
+              {renderAboutUpdateActions('settings-center')}
           </div>
       </>
   );
@@ -9202,6 +9209,7 @@ function App() {
             onCancel={() => setIsAboutOpen(false)}
             styles={{ content: utilityModalShellStyle, header: { background: 'transparent', borderBottom: 'none', paddingBottom: 8 }, body: { paddingTop: 8 }, footer: { background: 'transparent', borderTop: 'none', paddingTop: 10, display: 'flex', flexWrap: 'wrap', gap: 10, justifyContent: 'flex-end' } }}
             footer={renderAboutUpdateActions(
+                'legacy-modal',
                 <Button key="close" onClick={() => setIsAboutOpen(false)}>{t('common.close')}</Button>,
             )}
           >
