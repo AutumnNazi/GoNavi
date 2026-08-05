@@ -57,7 +57,7 @@ import {
 import { resolveUniqueKeyGroupsFromIndexes } from './dataGridCopyInsert';
 import { t as translate } from '../i18n';
 import { buildSqlAnalysisWorkbenchTab } from '../utils/sqlAnalysisTab';
-import { isLocalizedUntitledQueryTitle } from '../utils/queryTabTitle';
+import { isLocalizedUntitledQueryTitle, QUERY_TAB_RENAME_REQUEST_EVENT } from '../utils/queryTabTitle';
 import { buildSqlServerObjectDefinitionQueries } from '../utils/sqlServerObjectDefinition';
 import { formatDdlForDisplay } from '../utils/ddlFormat';
 import {
@@ -9679,6 +9679,20 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       }
       openSaveQueryModal('rename');
   };
+
+  useEffect(() => {
+      const handleRenameQueryRequest = (event: Event) => {
+          if (!(event instanceof CustomEvent) || event.detail?.tabId !== tab.id) {
+              return;
+          }
+          handleRenameQuery();
+      };
+
+      window.addEventListener(QUERY_TAB_RENAME_REQUEST_EVENT, handleRenameQueryRequest as EventListener);
+      return () => {
+          window.removeEventListener(QUERY_TAB_RENAME_REQUEST_EVENT, handleRenameQueryRequest as EventListener);
+      };
+  }, [handleRenameQuery, tab.id]);
 
   const handleExportSQLFile = async () => {
       try {
