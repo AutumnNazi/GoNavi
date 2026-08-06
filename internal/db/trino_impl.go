@@ -261,6 +261,9 @@ func buildTrinoDSN(config connection.ConnectionConfig, customClientName string) 
 	}
 
 	params := connectionParamsFromText(config.ConnectionParams)
+	if params == nil {
+		params = url.Values{}
+	}
 	catalog, schema := resolveTrinoNamespace(config.Database, "")
 	if catalog != "" {
 		params.Set("catalog", catalog)
@@ -274,9 +277,8 @@ func buildTrinoDSN(config connection.ConnectionConfig, customClientName string) 
 	if strings.TrimSpace(params.Get("explicitPrepare")) == "" {
 		params.Set("explicitPrepare", "false")
 	}
-	if strings.TrimSpace(params.Get("query_timeout")) == "" {
-		params.Set("query_timeout", fmt.Sprintf("%ds", getConnectTimeoutSeconds(config)))
-	}
+	// Do not derive Trino's server-side query_timeout from the connection
+	// timeout. The request context is the sole automatic query deadline.
 	if strings.TrimSpace(customClientName) != "" {
 		params.Set("custom_client", strings.TrimSpace(customClientName))
 	}

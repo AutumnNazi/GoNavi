@@ -705,8 +705,10 @@ func newKafkaGoRuntime(config connection.ConnectionConfig) (kafkaRuntime, error)
 		SASL:        mechanism,
 	}
 	client := &kafka.Client{
-		Addr:      kafka.TCP(brokers...),
-		Timeout:   timeout,
+		Addr: kafka.TCP(brokers...),
+		// Client.Timeout is a per-request deadline. Keep it unset so the
+		// caller's context (including an explicit queryTimeout) owns it.
+		Timeout:   0,
 		Transport: transport,
 	}
 	return &kafkaGoRuntime{
@@ -1060,12 +1062,12 @@ type kafkaParsedSQL struct {
 }
 
 var (
-	kafkaSQLFromRE        = regexp.MustCompile(`(?i)\bFROM\s+(?:"([^"]+)"|` + "`" + `([^` + "`" + `]+)` + "`" + `|([a-zA-Z0-9_.\-]+))`)
-	kafkaSQLLimitRE       = regexp.MustCompile(`(?i)\bLIMIT\s+(\d+)`)
-	kafkaSQLOffsetRE      = regexp.MustCompile(`(?i)\bOFFSET\s+(\d+)`)
-	kafkaShowTopicsRE     = regexp.MustCompile(`(?i)^\s*SHOW\s+TOPICS(?:\s+LIMIT\s+(\d+))?\s*$`)
-	kafkaDescribeTopicRE  = regexp.MustCompile(`(?i)^\s*(?:SHOW|DESCRIBE)\s+TOPIC\s+(?:"([^"]+)"|` + "`" + `([^` + "`" + `]+)` + "`" + `|([a-zA-Z0-9_.\-]+))\s*$`)
-	kafkaConsumeTopicRE   = regexp.MustCompile(`(?i)^\s*CONSUME(?:\s+GROUP\s+(?:"([^"]+)"|` + "`" + `([^` + "`" + `]+)` + "`" + `|([a-zA-Z0-9_.\-]+)))?\s+FROM\s+(?:"([^"]+)"|` + "`" + `([^` + "`" + `]+)` + "`" + `|([a-zA-Z0-9_.\-]+))`)
+	kafkaSQLFromRE       = regexp.MustCompile(`(?i)\bFROM\s+(?:"([^"]+)"|` + "`" + `([^` + "`" + `]+)` + "`" + `|([a-zA-Z0-9_.\-]+))`)
+	kafkaSQLLimitRE      = regexp.MustCompile(`(?i)\bLIMIT\s+(\d+)`)
+	kafkaSQLOffsetRE     = regexp.MustCompile(`(?i)\bOFFSET\s+(\d+)`)
+	kafkaShowTopicsRE    = regexp.MustCompile(`(?i)^\s*SHOW\s+TOPICS(?:\s+LIMIT\s+(\d+))?\s*$`)
+	kafkaDescribeTopicRE = regexp.MustCompile(`(?i)^\s*(?:SHOW|DESCRIBE)\s+TOPIC\s+(?:"([^"]+)"|` + "`" + `([^` + "`" + `]+)` + "`" + `|([a-zA-Z0-9_.\-]+))\s*$`)
+	kafkaConsumeTopicRE  = regexp.MustCompile(`(?i)^\s*CONSUME(?:\s+GROUP\s+(?:"([^"]+)"|` + "`" + `([^` + "`" + `]+)` + "`" + `|([a-zA-Z0-9_.\-]+)))?\s+FROM\s+(?:"([^"]+)"|` + "`" + `([^` + "`" + `]+)` + "`" + `|([a-zA-Z0-9_.\-]+))`)
 )
 
 func parseKafkaSQL(sqlText string, defaultLatest bool) (kafkaParsedSQL, bool) {

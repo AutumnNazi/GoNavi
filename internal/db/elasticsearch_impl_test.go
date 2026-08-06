@@ -59,6 +59,29 @@ func newTestESDB(t *testing.T, serverURL, defaultIndex string) *ElasticsearchDB 
 	}
 }
 
+func TestBuildESClientConfigSeparatesConnectionAndRequestTimeout(t *testing.T) {
+	config := buildESClientConfig(connection.ConnectionConfig{
+		Type:    "elasticsearch",
+		Host:    "127.0.0.1",
+		Port:    defaultEsPort,
+		Timeout: 1,
+	})
+	wrapped, ok := config.Transport.(*esProductCheckBypassTransport)
+	if !ok {
+		t.Fatalf("expected product-check transport wrapper, got %T", config.Transport)
+	}
+	transport, ok := wrapped.inner.(*http.Transport)
+	if !ok {
+		t.Fatalf("expected HTTP transport, got %T", wrapped.inner)
+	}
+	if transport.ResponseHeaderTimeout != 0 {
+		t.Fatalf("connection timeout leaked into Elasticsearch response timeout: %s", transport.ResponseHeaderTimeout)
+	}
+	if transport.DialContext == nil {
+		t.Fatal("expected bounded connection dial")
+	}
+}
+
 // buildMockESMappingResponse 构造模拟的 mapping 响应 JSON。
 func buildMockESMappingResponse(indexName string, fields map[string]string) map[string]interface{} {
 	properties := make(map[string]interface{})

@@ -112,6 +112,7 @@ type ConnectionConfig struct {
 	DSN                      string                     `json:"dsn,omitempty"`                      // For custom connection
 	ConnectionParams         string                     `json:"connectionParams,omitempty"`         // Extra URI query parameters for built-in drivers
 	Timeout                  int                        `json:"timeout,omitempty"`                  // Connection timeout in seconds (default: 30)
+	QueryTimeout             int                        `json:"queryTimeout,omitempty"`             // Per-request query timeout in seconds; 0 disables the automatic query deadline
 	KeepAliveEnabled         bool                       `json:"keepAliveEnabled,omitempty"`         // Enable background keep-alive ping for long-lived cached connections
 	KeepAliveIntervalMinutes int                        `json:"keepAliveIntervalMinutes,omitempty"` // Keep-alive ping interval in minutes (default: 240)
 	KeepAliveSQL             string                     `json:"keepAliveSQL,omitempty"`             // Optional single SELECT/WITH probe used instead of the driver ping

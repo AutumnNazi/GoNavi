@@ -5,6 +5,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"GoNavi-Wails/internal/connection"
 
@@ -12,13 +13,37 @@ import (
 )
 
 type fakeKafkaRuntime struct {
-	listTopicsResult    []kafkaTopicInfo
-	describeResult      kafkaTopicDescription
-	fetchResult         []kafkaMessageRecord
-	publishAffected     int64
-	lastDescribeTopic   string
-	lastFetchRequest    kafkaFetchRequest
-	lastPublishCommand  kafkaPublishCommand
+	listTopicsResult   []kafkaTopicInfo
+	describeResult     kafkaTopicDescription
+	fetchResult        []kafkaMessageRecord
+	publishAffected    int64
+	lastDescribeTopic  string
+	lastFetchRequest   kafkaFetchRequest
+	lastPublishCommand kafkaPublishCommand
+}
+
+func TestKafkaRuntimeDoesNotDeriveRequestTimeoutFromConnectionTimeout(t *testing.T) {
+	runtime, err := newKafkaGoRuntime(connection.ConnectionConfig{
+		Type:    "kafka",
+		Host:    "127.0.0.1",
+		Port:    9092,
+		Timeout: 1,
+	})
+	if err != nil {
+		t.Fatalf("newKafkaGoRuntime: %v", err)
+	}
+	defer runtime.Close()
+
+	concrete, ok := runtime.(*kafkaGoRuntime)
+	if !ok {
+		t.Fatalf("runtime type = %T", runtime)
+	}
+	if concrete.client.Timeout != 0 {
+		t.Fatalf("connection timeout leaked into Kafka request timeout: %s", concrete.client.Timeout)
+	}
+	if concrete.dialer.Timeout != time.Second {
+		t.Fatalf("Kafka dial timeout = %s, want 1s", concrete.dialer.Timeout)
+	}
 }
 
 type kafkaOffsetSeekerRecorder struct {

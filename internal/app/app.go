@@ -518,8 +518,9 @@ func normalizeCacheKeyConfig(config connection.ConnectionConfig) connection.Conn
 		normalized.ConnectionParams = normalizeOceanBaseConnectionParamsForCacheWithProtocol(normalized.ConnectionParams, protocol)
 		normalized.OceanBaseProtocol = ""
 	}
-	// timeout 仅用于 Query/Ping 控制，不应作为物理连接复用键的一部分。
+	// Connection/query timeouts affect operations, not physical connection identity.
 	normalized.Timeout = 0
+	normalized.QueryTimeout = 0
 	// keepalive 仅影响后台保活策略，不应参与物理连接复用键。
 	normalized.KeepAliveEnabled = false
 	normalized.KeepAliveIntervalMinutes = 0

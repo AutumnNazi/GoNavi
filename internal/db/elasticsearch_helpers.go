@@ -678,26 +678,23 @@ func buildESClientConfig(config connection.ConnectionConfig) elasticsearch.Confi
 		}
 	}
 
-	// 代理支持
-	if config.UseProxy {
-		transport, ok := cfg.Transport.(*http.Transport)
-		if !ok {
-			transport = http.DefaultTransport.(*http.Transport).Clone()
-		}
-		proxyCfg := config.Proxy
-		transport.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
-			return proxytunnel.DialContext(ctx, proxyCfg, network, addr)
-		}
-		cfg.Transport = transport
-	}
-
-	// 超时设置
+	// Keep the connection dial bounded, but let the request context own query
+	// cancellation. A connection timeout must not become a response deadline.
 	timeout := getConnectTimeout(config)
 	if cfg.Transport == nil {
 		cfg.Transport = http.DefaultTransport.(*http.Transport).Clone()
 	}
 	if transport, ok := cfg.Transport.(*http.Transport); ok {
-		transport.ResponseHeaderTimeout = timeout
+		transport.DialContext = (&net.Dialer{Timeout: timeout, KeepAlive: 30 * time.Second}).DialContext
+		if config.UseProxy {
+			proxyCfg := config.Proxy
+			transport.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+				dialCtx, cancel := context.WithTimeout(ctx, timeout)
+				defer cancel()
+				return proxytunnel.DialContext(dialCtx, proxyCfg, network, addr)
+			}
+		}
+		transport.ResponseHeaderTimeout = 0
 	}
 
 	// 包装 transport：注入 X-Elastic-Product 头以兼容 ES 6.x / 7.x 早期版本。

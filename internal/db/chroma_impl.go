@@ -467,16 +467,20 @@ func chromaAuthHeaders(config connection.ConnectionConfig) map[string]string {
 
 func buildChromaHTTPClient(config connection.ConnectionConfig) *http.Client {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
+	dialTimeout := getConnectTimeout(config)
+	transport.DialContext = (&net.Dialer{Timeout: dialTimeout, KeepAlive: 30 * time.Second}).DialContext
 	if tlsConfig, err := resolveGenericTLSConfig(config); err == nil && tlsConfig != nil {
 		transport.TLSClientConfig = tlsConfig
 	}
 	if config.UseProxy {
 		proxyCfg := config.Proxy
 		transport.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
-			return proxytunnel.DialContext(ctx, proxyCfg, network, addr)
+			dialCtx, cancel := context.WithTimeout(ctx, dialTimeout)
+			defer cancel()
+			return proxytunnel.DialContext(dialCtx, proxyCfg, network, addr)
 		}
 	}
-	return &http.Client{Transport: transport, Timeout: getConnectTimeout(config)}
+	return &http.Client{Transport: transport}
 }
 
 func (c *ChromaDB) detectVersion(ctx context.Context) error {

@@ -861,6 +861,11 @@ export const normalizeMetadataDialect = (conn: any): string => {
     return String(dialect || '').toLowerCase();
 };
 
+export const resolveQueryEditorConnectionTimeout = (config: Record<string, any>): number => {
+    const rawTimeout = Number(config?.timeout);
+    return Number.isFinite(rawTimeout) && rawTimeout > 0 ? rawTimeout : 30;
+};
+
 export type QueryEditorMonacoLanguage = 'sql' | 'mysql' | 'elasticsearch-console';
 
 export const resolveQueryEditorMonacoLanguage = (conn: any): QueryEditorMonacoLanguage => {

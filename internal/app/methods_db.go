@@ -29,14 +29,13 @@ func normalizeTestConnectionConfig(config connection.ConnectionConfig) connectio
 }
 
 func newQueryExecutionContext(config connection.ConnectionConfig) (context.Context, context.CancelFunc) {
-	if strings.EqualFold(strings.TrimSpace(config.Type), "duckdb") {
-		return context.WithCancel(context.Background())
+	if config.QueryTimeout > 0 {
+		return utils.ContextWithTimeout(time.Duration(config.QueryTimeout) * time.Second)
 	}
-	timeoutSeconds := config.Timeout
-	if timeoutSeconds <= 0 {
-		timeoutSeconds = 30
-	}
-	return utils.ContextWithTimeout(time.Duration(timeoutSeconds) * time.Second)
+
+	// Connection timeout is only for establishing the connection. Do not reuse it
+	// as a query deadline; long-running queries remain cancellable via CancelQuery.
+	return context.WithCancel(context.Background())
 }
 
 func validateTestConnectionInput(config connection.ConnectionConfig) error {

@@ -199,6 +199,7 @@ import {
     resolveOracleLikeLookupSchemaCandidates,
     resolveQueryEditorFormatterLanguage,
     resolveQueryEditorCompletionFilterText,
+    resolveQueryEditorConnectionTimeout,
     resolveQueryEditorMonacoLanguage,
     resolveQueryEditorHoverTarget,
     resolveQueryEditorNavigationDecorations,
@@ -7571,7 +7572,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           database: conn.config.database || '',
           useSSH: conn.config.useSSH || false,
           ssh: conn.config.ssh || { host: '', port: 22, user: '', password: '', keyPath: '' },
-          timeout: Math.max(Number(conn.config.timeout) || 30, 120),
+          timeout: resolveQueryEditorConnectionTimeout(conn.config),
       };
       const normalizedDbType = String(resolveSqlDialect(
           String(config.type || 'mysql'),
@@ -7962,7 +7963,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           database: conn.config.database || '',
           useSSH: conn.config.useSSH || false,
           ssh: conn.config.ssh || { host: '', port: 22, user: '', password: '', keyPath: '' },
-          timeout: Math.max(Number(conn.config.timeout) || 30, 120),
+          timeout: resolveQueryEditorConnectionTimeout(conn.config),
       }) as any;
 
       const runSeq = ++runSeqRef.current;
@@ -8202,7 +8203,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
         database: conn.config.database || "",
         useSSH: conn.config.useSSH || false,
         ssh: conn.config.ssh || { host: "", port: 22, user: "", password: "", keyPath: "" },
-        timeout: Math.max(Number(conn.config.timeout) || 30, 120),
+        timeout: resolveQueryEditorConnectionTimeout(conn.config),
     };
 
     try {

@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -292,17 +293,51 @@ func TestDBQueryWithCancel_QueryIDPropagation(t *testing.T) {
 	}
 }
 
-func TestNewQueryExecutionContext_UsesTimeoutForNetworkDatabases(t *testing.T) {
-	ctx, cancel := newQueryExecutionContext(connection.ConnectionConfig{Type: "mysql", Timeout: 7})
+func TestNewQueryExecutionContext_UsesExplicitQueryTimeout(t *testing.T) {
+	ctx, cancel := newQueryExecutionContext(connection.ConnectionConfig{
+		Type:         "mysql",
+		Timeout:      1,
+		QueryTimeout: 7,
+	})
 	defer cancel()
 
 	deadline, ok := ctx.Deadline()
 	if !ok {
-		t.Fatal("expected network database query context to carry a deadline")
+		t.Fatal("expected explicit query timeout to carry a deadline")
 	}
 	remaining := time.Until(deadline)
 	if remaining <= 0 || remaining > 8*time.Second {
 		t.Fatalf("expected deadline around 7s, got remaining=%s", remaining)
+	}
+}
+
+func TestNewQueryExecutionContext_AllDataSourcesDoNotApplyConnectTimeout(t *testing.T) {
+	tests := []struct {
+		name   string
+		config connection.ConnectionConfig
+	}{
+		{name: "mysql", config: connection.ConnectionConfig{Type: "mysql", Timeout: 7}},
+		{name: "goldendb", config: connection.ConnectionConfig{Type: "goldendb", Timeout: 7}},
+		{name: "custom gdb", config: connection.ConnectionConfig{Type: "custom", Driver: "gdb", Timeout: 7}},
+		{name: "postgres", config: connection.ConnectionConfig{Type: "postgres", Timeout: 7}},
+		{name: "oracle", config: connection.ConnectionConfig{Type: "oracle", Timeout: 7}},
+		{name: "sqlserver", config: connection.ConnectionConfig{Type: "sqlserver", Timeout: 7}},
+		{name: "elasticsearch", config: connection.ConnectionConfig{Type: "elasticsearch", Timeout: 7}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx, cancel := newQueryExecutionContext(tt.config)
+
+			if _, ok := ctx.Deadline(); ok {
+				cancel()
+				t.Fatal("expected query context to avoid inheriting the connection-timeout deadline")
+			}
+			cancel()
+			if !errors.Is(ctx.Err(), context.Canceled) {
+				t.Fatalf("expected manual cancellation to remain effective, got %v", ctx.Err())
+			}
+		})
 	}
 }
 

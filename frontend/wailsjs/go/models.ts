@@ -1884,6 +1884,7 @@ export namespace connection {
 	    dsn?: string;
 	    connectionParams?: string;
 	    timeout?: number;
+	    queryTimeout?: number;
 	    keepAliveEnabled?: boolean;
 	    keepAliveIntervalMinutes?: number;
 	    keepAliveSQL?: string;
@@ -1938,6 +1939,7 @@ export namespace connection {
 	        this.dsn = source["dsn"];
 	        this.connectionParams = source["connectionParams"];
 	        this.timeout = source["timeout"];
+	        this.queryTimeout = source["queryTimeout"];
 	        this.keepAliveEnabled = source["keepAliveEnabled"];
 	        this.keepAliveIntervalMinutes = source["keepAliveIntervalMinutes"];
 	        this.keepAliveSQL = source["keepAliveSQL"];

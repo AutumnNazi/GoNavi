@@ -32,8 +32,10 @@ const (
 	defaultClickHousePort     = 9000
 	defaultClickHouseUser     = "default"
 	defaultClickHouseDatabase = "default"
-	minClickHouseReadTimeout  = 5 * time.Minute
-	clickHouseHTTPPortHint    = "8123/8125/8132/8443"
+	// clickhouse-go replaces a zero ReadTimeout with five minutes. Max duration
+	// keeps context cancellation as the only practical automatic query deadline.
+	clickHouseNoAutomaticReadTimeout = time.Duration(1<<63 - 1)
+	clickHouseHTTPPortHint           = "8123/8125/8132/8443"
 
 	clickHouseProtocolAuto   = "auto"
 	clickHouseProtocolHTTP   = "http"
@@ -179,10 +181,6 @@ func (c *ClickHouseDB) buildClickHouseOptions(config connection.ConnectionConfig
 
 func (c *ClickHouseDB) buildClickHouseOptionsWithHTTPCompatibility(config connection.ConnectionConfig, stripHTTPClientProtocolVersion bool) (*clickhouse.Options, error) {
 	connectTimeout := getConnectTimeout(config)
-	readTimeout := connectTimeout
-	if readTimeout < minClickHouseReadTimeout {
-		readTimeout = minClickHouseReadTimeout
-	}
 	protocol := detectClickHouseProtocol(config)
 	opts := &clickhouse.Options{
 		Protocol: protocol,
@@ -195,7 +193,7 @@ func (c *ClickHouseDB) buildClickHouseOptionsWithHTTPCompatibility(config connec
 			Password: config.Password,
 		},
 		DialTimeout: connectTimeout,
-		ReadTimeout: readTimeout,
+		ReadTimeout: clickHouseNoAutomaticReadTimeout,
 	}
 	tlsConfig, err := resolveGenericTLSConfig(config)
 	if err != nil {

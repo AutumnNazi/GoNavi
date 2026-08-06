@@ -201,8 +201,11 @@ func (i *IoTDBDB) QueryContext(ctx context.Context, query string) ([]map[string]
 	if text == "" {
 		return nil, nil, fmt.Errorf("查询语句不能为空")
 	}
-	timeoutMs := int64(i.effectiveTimeout().Milliseconds())
-	ds, err := i.session.Query(ctx, text, &timeoutMs)
+	var timeoutMs *int64
+	if remaining := timeoutMsFromContext(ctx); remaining > 0 {
+		timeoutMs = &remaining
+	}
+	ds, err := i.session.Query(ctx, text, timeoutMs)
 	if err != nil {
 		return nil, nil, err
 	}

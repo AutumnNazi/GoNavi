@@ -306,6 +306,7 @@ export interface ConnectionConfig {
   dsn?: string;
   connectionParams?: string;
   timeout?: number;
+  queryTimeout?: number; // transient per-request override; not a saved connection setting
   keepAliveEnabled?: boolean;
   keepAliveIntervalMinutes?: number;
   keepAliveSQL?: string;

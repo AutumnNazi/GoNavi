@@ -988,6 +988,41 @@ func TestDBQueryWithCancel_DuckDBQueriesDoNotInheritConnectTimeout(t *testing.T)
 	}
 }
 
+func TestDBQueryMulti_MySQLQueriesDoNotInheritConnectTimeout(t *testing.T) {
+	originalNewDatabaseFunc := newDatabaseFunc
+	t.Cleanup(func() {
+		newDatabaseFunc = originalNewDatabaseFunc
+	})
+
+	query := "SELECT 1"
+	fakeDB := &fakeBatchWriteDB{
+		queryMap: map[string][]map[string]interface{}{
+			query: {{"value": 1}},
+		},
+		fieldMap: map[string][]string{
+			query: {"value"},
+		},
+		queryErr: map[string]error{},
+	}
+	newDatabaseFunc = func(dbType string) (db.Database, error) {
+		return fakeDB, nil
+	}
+
+	app := NewAppWithSecretStore(secretstore.NewUnavailableStore("test"))
+	config := connection.ConnectionConfig{Type: "mysql", Host: "127.0.0.1", Port: 3306, Timeout: 1}
+
+	result := app.DBQueryMulti(config, "testdb", query, "mysql-no-connect-deadline-test")
+	if !result.Success {
+		t.Fatalf("expected MySQL DBQueryMulti success, got failure: %s", result.Message)
+	}
+	if fakeDB.lastCtx == nil {
+		t.Fatal("expected MySQL query path to receive a context")
+	}
+	if _, ok := fakeDB.lastCtx.Deadline(); ok {
+		t.Fatal("expected MySQL query context to avoid connection-timeout deadline")
+	}
+}
+
 func TestDBQueryMultiPreservesPerStatementResultsForMultipleWriteStatements(t *testing.T) {
 	originalNewDatabaseFunc := newDatabaseFunc
 	t.Cleanup(func() {

@@ -39,11 +39,28 @@ describe('buildRpcConnectionConfig', () => {
     expect(result.ssh?.port).toBe(2222);
     expect(result.proxy?.port).toBe(8080);
     expect(result.timeout).toBe(120);
+    expect(result.queryTimeout).toBeUndefined();
     expect(result.redisDB).toBe(6);
     expect(result.database).toBe('app');
     expect(result.keepAliveEnabled).toBe(true);
     expect(result.keepAliveIntervalMinutes).toBe(15);
     expect(result.keepAliveSQL).toBe('SELECT 1');
+  });
+
+  it('preserves a per-request query timeout override separately from connection timeout', () => {
+    const result = buildRpcConnectionConfig({
+      type: 'mysql',
+      host: 'db.local',
+      port: 3306,
+      user: 'root',
+      timeout: 30,
+    } as any, {
+      timeout: 5,
+      queryTimeout: 5,
+    });
+
+    expect(result.timeout).toBe(5);
+    expect(result.queryTimeout).toBe(5);
   });
 
   it('preserves ClickHouse protocol override for RPC calls', () => {
