@@ -3047,6 +3047,8 @@
   "app.theme.tab_display.element.connection.label": "連線名稱",
   "app.theme.tab_display.element.database.description": "目前 DB / catalog 名稱",
   "app.theme.tab_display.element.database.label": "資料庫",
+  "app.theme.tab_display.element.group.description": "連線所屬的分組名稱，未分組時為空",
+  "app.theme.tab_display.element.group.label": "分組",
   "app.theme.tab_display.element.host.description": "連線目標位址摘要",
   "app.theme.tab_display.element.host.label": "Host/IP",
   "app.theme.tab_display.element.kind.description": "SQL / TABLE / VIEW 等類型標籤",

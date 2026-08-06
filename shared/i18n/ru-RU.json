@@ -3047,6 +3047,8 @@
   "app.theme.tab_display.element.connection.label": "Подключение",
   "app.theme.tab_display.element.database.description": "Текущее имя DB / catalog",
   "app.theme.tab_display.element.database.label": "База данных",
+  "app.theme.tab_display.element.group.description": "Имя группы подключения, пусто, если не в группе",
+  "app.theme.tab_display.element.group.label": "Группа",
   "app.theme.tab_display.element.host.description": "Краткий адрес целевого подключения",
   "app.theme.tab_display.element.host.label": "Host/IP",
   "app.theme.tab_display.element.kind.description": "Метки типов, например SQL / TABLE / VIEW",
