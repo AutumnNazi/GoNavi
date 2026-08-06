@@ -76,6 +76,26 @@ export interface SidebarTreeNode {
   type?: SidebarTreeNodeType;
 }
 
+// Keep these values aligned with the V2 explorer tree layout in v2-theme.css.
+const V2_TREE_HORIZONTAL_SCROLL_RESERVE_PX = 32;
+const V2_TREE_CONTENT_TOP_PADDING_PX = 4;
+
+export const resolveSidebarTreeVirtualHeight = (
+  containerHeight: number,
+  isV2Ui: boolean,
+): number => {
+  if (!Number.isFinite(containerHeight)) return 0;
+  const normalizedHeight = Math.max(0, containerHeight);
+  return Math.max(
+    0,
+    normalizedHeight - (
+      isV2Ui
+        ? V2_TREE_HORIZONTAL_SCROLL_RESERVE_PX + V2_TREE_CONTENT_TOP_PADDING_PX
+        : 0
+    ),
+  );
+};
+
 export const hasSidebarLazyChildren = (children: unknown): boolean => {
   return Array.isArray(children) && children.length > 0;
 };
