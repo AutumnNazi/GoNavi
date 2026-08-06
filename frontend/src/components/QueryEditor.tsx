@@ -51,6 +51,12 @@ import { splitSidebarQualifiedName } from '../utils/sidebarLocate';
 import { buildMySQLCompatibleViewMetadataSqls, isSidebarViewTableType, normalizeSidebarViewName } from '../utils/sidebarMetadata';
 import { SIDEBAR_SQL_EDITOR_DRAG_MIME, decodeSidebarSqlEditorDragPayload, hasSidebarSqlEditorDragPayload } from '../utils/sidebarSqlDrag';
 import {
+  buildSqlFieldDropEdit,
+  hasSqlFieldDragPayload,
+  resolveSqlFieldDropAnchorRange,
+  resolveSqlFieldDropCursorOffset,
+} from '../utils/sqlFieldDrop';
+import {
     CLOSE_ACTIVE_RESULT_TAB_EVENT,
     type CloseActiveResultShortcutRequest,
 } from '../utils/closeTabShortcut';
@@ -1548,6 +1554,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
   const linkDecorationIdsRef = useRef<string[]>([]);
   const ctrlMetaPressedRef = useRef(false);
   const objectDecorationIdsRef = useRef<string[]>([]);
+  const sqlFieldDropDecorationIdsRef = useRef<string[]>([]);
   const aiInlineGhostDecorationIdsRef = useRef<string[]>([]);
   const aiInlineGhostOverlayRef = useRef<HTMLSpanElement | null>(null);
   const aiInlineGhostVisibleContextKeyRef = useRef<any>(null);
@@ -2995,6 +3002,113 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       return true;
   }, []);
 
+  const resolveSqlFieldDropPosition = useCallback((editor: any, event: DragEvent) => {
+      const model = editor?.getModel?.();
+      if (!editor || !model) return null;
+
+      const monacoTarget = editor.getTargetAtClientPoint?.(event.clientX, event.clientY);
+      // CONTENT_EMPTY 会把文字下方的鼠标位置钳制到行尾，必须保留横坐标重新投影。
+      let position = Number(monacoTarget?.type) === 6
+          ? normalizeEditorPosition(monacoTarget?.position)
+          : null;
+      if (!position) {
+          const editorDomNode = editor.getDomNode?.() as HTMLElement | null;
+          const bounds = editorDomNode?.getBoundingClientRect?.();
+          const visibleRanges = editor.getVisibleRanges?.() || [];
+          if (bounds && visibleRanges.length > 0) {
+              const localX = event.clientX - bounds.left;
+              const localY = event.clientY - bounds.top;
+              const visibleLines: number[] = [];
+              visibleRanges.forEach((range: any) => {
+                  const startLine = Math.max(1, Number(range?.startLineNumber || 1));
+                  const endLine = Math.max(startLine, Number(range?.endLineNumber || startLine));
+                  for (let lineNumber = startLine; lineNumber <= endLine; lineNumber += 1) {
+                      if (!visibleLines.includes(lineNumber)) visibleLines.push(lineNumber);
+                  }
+              });
+              const nonEmptyLines = visibleLines.filter((lineNumber) => (
+                  String(model.getLineContent?.(lineNumber) || '').trim().length > 0
+              ));
+              const candidateLines = nonEmptyLines.length > 0 ? nonEmptyLines : visibleLines;
+              let nearestLine = Number(candidateLines[0] || 1);
+              let nearestLineDistance = Number.POSITIVE_INFINITY;
+              candidateLines.forEach((lineNumber) => {
+                  const visible = editor.getScrolledVisiblePosition?.({ lineNumber, column: 1 });
+                  if (!visible) return;
+                  const distance = Math.abs(localY - (visible.top + visible.height / 2));
+                  if (distance < nearestLineDistance) {
+                      nearestLine = lineNumber;
+                      nearestLineDistance = distance;
+                  }
+              });
+
+              const maxColumn = Math.max(1, Number(model.getLineMaxColumn?.(nearestLine) || 1));
+              let low = 1;
+              let high = maxColumn;
+              while (low < high) {
+                  const middle = Math.floor((low + high) / 2);
+                  const visible = editor.getScrolledVisiblePosition?.({ lineNumber: nearestLine, column: middle });
+                  if (!visible || visible.left < localX) low = middle + 1;
+                  else high = middle;
+              }
+              const candidateColumns = [Math.max(1, low - 1), low, Math.min(maxColumn, low + 1)];
+              const nearestColumn = candidateColumns.reduce((best, column) => {
+                  const bestVisible = editor.getScrolledVisiblePosition?.({ lineNumber: nearestLine, column: best });
+                  const candidateVisible = editor.getScrolledVisiblePosition?.({ lineNumber: nearestLine, column });
+                  if (!candidateVisible) return best;
+                  if (!bestVisible) return column;
+                  return Math.abs(candidateVisible.left - localX) < Math.abs(bestVisible.left - localX)
+                      ? column
+                      : best;
+              }, candidateColumns[0]);
+              position = normalizeEditorPosition({ lineNumber: nearestLine, column: nearestColumn });
+          }
+      }
+      position = position
+          || normalizeEditorPosition(editor.getPosition?.())
+          || normalizeEditorPosition(lastEditorCursorPositionRef.current);
+      if (!position) return null;
+
+      const rawOffset = Number(model.getOffsetAt?.(position));
+      if (!Number.isFinite(rawOffset) || typeof model.getPositionAt !== 'function') return position;
+      return normalizeEditorPosition(model.getPositionAt(
+          resolveSqlFieldDropCursorOffset(String(model.getValue?.() || ''), rawOffset),
+      )) || position;
+  }, []);
+
+  const clearSqlFieldDropPreview = useCallback((editor: any) => {
+      if (!editor?.deltaDecorations) {
+          sqlFieldDropDecorationIdsRef.current = [];
+          return;
+      }
+      sqlFieldDropDecorationIdsRef.current = editor.deltaDecorations(
+          sqlFieldDropDecorationIdsRef.current,
+          [],
+      );
+  }, []);
+
+  const updateSqlFieldDropPreview = useCallback((editor: any, position: any) => {
+      const model = editor?.getModel?.();
+      const monaco = monacoRef.current;
+      const offset = Number(model?.getOffsetAt?.(position));
+      const anchor = model && Number.isFinite(offset)
+          ? resolveSqlFieldDropAnchorRange(String(model.getValue?.() || ''), offset)
+          : null;
+      if (!anchor || !monaco?.Range || typeof model?.getPositionAt !== 'function') {
+          clearSqlFieldDropPreview(editor);
+          return;
+      }
+      const start = model.getPositionAt(anchor.startOffset);
+      const end = model.getPositionAt(anchor.endOffset);
+      sqlFieldDropDecorationIdsRef.current = editor.deltaDecorations(
+          sqlFieldDropDecorationIdsRef.current,
+          [{
+              range: new monaco.Range(start.lineNumber, start.column, end.lineNumber, end.column),
+              options: { inlineClassName: 'gonavi-query-editor-field-drop-anchor' },
+          }],
+      );
+  }, [clearSqlFieldDropPreview]);
+
   const mergeSidebarDropObjectMetadata = useCallback((payload: ReturnType<typeof decodeSidebarSqlEditorDragPayload>) => {
       if (!payload?.text || !payload.dbName) {
           return;
@@ -3042,12 +3156,42 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           return;
       }
       const editor = editorRef.current;
-      const dropTarget = editor?.getTargetAtClientPoint?.(event.clientX, event.clientY);
-      if (insertTextIntoEditorAtPosition(dragText, normalizeEditorPosition(dropTarget?.position))) {
+      clearSqlFieldDropPreview(editor);
+      const payloadNodeType = String(payload?.nodeType || '').trim().toLowerCase();
+      const targetPosition = payloadNodeType === 'column'
+          ? resolveSqlFieldDropPosition(editor, event)
+          : normalizeEditorPosition(editor?.getTargetAtClientPoint?.(event.clientX, event.clientY)?.position)
+              || normalizeEditorPosition(editor?.getPosition?.())
+              || normalizeEditorPosition(lastEditorCursorPositionRef.current);
+      let inserted = false;
+      if (payloadNodeType === 'column' && editor && targetPosition) {
+          const model = editor.getModel?.();
+          const monaco = monacoRef.current;
+          const offset = Number(model?.getOffsetAt?.(targetPosition));
+          const edit = model && monaco?.Range && typeof model.getPositionAt === 'function' && Number.isFinite(offset)
+              ? buildSqlFieldDropEdit({ sql: String(model?.getValue?.() || ''), offset, fieldName: dragText })
+              : null;
+          if (edit) {
+              const start = model.getPositionAt(edit.startOffset);
+              const end = model.getPositionAt(edit.endOffset);
+              editor.focus?.();
+              editor.setPosition?.(targetPosition);
+              editor.executeEdits?.('gonavi-result-field-drop', [{
+                  range: new monaco.Range(start.lineNumber, start.column, end.lineNumber, end.column),
+                  text: edit.text,
+                  forceMoveMarkers: true,
+              }]);
+              editor.pushUndoStop?.();
+              inserted = true;
+          }
+      } else {
+          inserted = insertTextIntoEditorAtPosition(dragText, targetPosition);
+      }
+      if (inserted) {
           mergeSidebarDropObjectMetadata(payload);
           refreshObjectDecorations(QUERY_EDITOR_LIVE_DECORATION_MAX_TEXT_LENGTH);
       }
-  }, [insertTextIntoEditorAtPosition, mergeSidebarDropObjectMetadata, refreshObjectDecorations]);
+  }, [clearSqlFieldDropPreview, insertTextIntoEditorAtPosition, mergeSidebarDropObjectMetadata, refreshObjectDecorations, resolveSqlFieldDropPosition]);
 
   const handleSelectCurrentStatement = async () => {
       const editor = editorRef.current;
@@ -5109,6 +5253,25 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           if (event.dataTransfer) {
               event.dataTransfer.dropEffect = 'copy';
           }
+          if (hasSqlFieldDragPayload(event.dataTransfer)) {
+              const dropPosition = resolveSqlFieldDropPosition(editor, event);
+              if (dropPosition) {
+                  editor.setPosition?.(dropPosition);
+                  lastEditorCursorPositionRef.current = dropPosition;
+                  updateSqlFieldDropPreview(editor, dropPosition);
+                  editor.render?.(false);
+              } else {
+                  clearSqlFieldDropPreview(editor);
+              }
+          }
+      };
+      const handleEditorDragLeave = (rawEvent: Event) => {
+          const relatedTarget = (rawEvent as DragEvent).relatedTarget as Node | null;
+          if (relatedTarget && editorDomNode?.contains?.(relatedTarget)) return;
+          clearSqlFieldDropPreview(editor);
+      };
+      const handleSqlFieldDragEnd = () => {
+          clearSqlFieldDropPreview(editor);
       };
       const handleEditorDrop = (rawEvent: Event) => {
           handleSidebarObjectDrop(rawEvent as DragEvent);
@@ -5348,10 +5511,13 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       window.addEventListener('keydown', syncModifierState);
       window.addEventListener('keyup', syncModifierState);
       window.addEventListener('blur', handleWindowBlur);
+      window.addEventListener('dragend', handleSqlFieldDragEnd);
+      window.addEventListener('drop', handleSqlFieldDragEnd);
       editorDomNode?.addEventListener('beforeinput', handleImeBeforeInput, true);
       editorDomNode?.addEventListener('compositionstart', handleImeCompositionStart, true);
       editorDomNode?.addEventListener('compositionend', handleImeCompositionEnd, true);
       editorDomNode?.addEventListener('dragover', handleEditorDragOver, true);
+      editorDomNode?.addEventListener('dragleave', handleEditorDragLeave, true);
       editorDomNode?.addEventListener('drop', handleEditorDrop, true);
 
       editor.onMouseDown?.((event: any) => {
@@ -5523,6 +5689,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       editor.onDidDispose?.(() => {
           clearQueryEditorLinkDecorations(editor, linkDecorationIdsRef);
           clearQueryEditorObjectDecorations(editor, objectDecorationIdsRef);
+          clearSqlFieldDropPreview(editor);
           setQueryEditorMouseCursor(editor, '');
           objectHoverActionRef.current?.dispose?.();
           objectHoverActionRef.current = null;
@@ -5545,11 +5712,14 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           window.removeEventListener('keydown', syncModifierState);
           window.removeEventListener('keyup', syncModifierState);
           window.removeEventListener('blur', handleWindowBlur);
+          window.removeEventListener('dragend', handleSqlFieldDragEnd);
+          window.removeEventListener('drop', handleSqlFieldDragEnd);
           clearImeCompositionFallbackTimer();
           editorDomNode?.removeEventListener('beforeinput', handleImeBeforeInput, true);
           editorDomNode?.removeEventListener('compositionstart', handleImeCompositionStart, true);
           editorDomNode?.removeEventListener('compositionend', handleImeCompositionEnd, true);
           editorDomNode?.removeEventListener('dragover', handleEditorDragOver, true);
+          editorDomNode?.removeEventListener('dragleave', handleEditorDragLeave, true);
           editorDomNode?.removeEventListener('drop', handleEditorDrop, true);
       });
 

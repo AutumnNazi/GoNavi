@@ -75,6 +75,8 @@ import {
 import { applyNoAutoCapAttributesWithin, noAutoCapInputProps } from '../utils/inputAutoCap';
 import { DEFAULT_SHORTCUT_OPTIONS, getShortcutPlatform, resolveShortcutDisplay } from '../utils/shortcuts';
 import { formatMongoValueForDisplay } from '../utils/mongodb';
+import { SIDEBAR_SQL_EDITOR_DRAG_MIME, encodeSidebarSqlEditorDragPayload } from '../utils/sidebarSqlDrag';
+import { SQL_FIELD_DRAG_MIME } from '../utils/sqlFieldDrop';
 import {
     TEMPORAL_FORMATS,
     formatFromDayjs,
@@ -877,7 +879,24 @@ const SortableHeaderCell: React.FC<SortableHeaderCellProps> = React.memo((props)
             }}
         >
             <style>{sortableHeaderStaticStyles}</style>
-            <div className="sortable-header-cell-drag-handle" title={t('data_grid.column.drag_tooltip')}>
+            <div
+                className="sortable-header-cell-drag-handle"
+                title={t('data_grid.column.drag_tooltip')}
+                draggable
+                onDragStart={(event) => {
+                    const columnName = String(id || '').trim();
+                    if (!columnName || !event.dataTransfer) return;
+                    event.stopPropagation();
+                    event.dataTransfer.effectAllowed = 'copy';
+                    const payload = encodeSidebarSqlEditorDragPayload({
+                        text: columnName,
+                        nodeType: 'column',
+                    });
+                    event.dataTransfer.setData(SIDEBAR_SQL_EDITOR_DRAG_MIME, payload);
+                    event.dataTransfer.setData(SQL_FIELD_DRAG_MIME, columnName);
+                    event.dataTransfer.setData('text/plain', columnName);
+                }}
+            >
                 <div style={{ flex: 1, display: 'flex', alignItems: 'center', minWidth: 0, cursor: 'inherit' }}>
                     {children}
                 </div>
