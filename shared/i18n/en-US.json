@@ -4341,6 +4341,7 @@
   "data_grid.record_view.edit_json": "Edit JSON",
   "data_grid.record_view.back_to_table": "Back to table",
   "data_grid.record_view.field": "Field",
+  "data_grid.record_view.field_or_comment_search_placeholder": "Search field or comment...",
   "data_grid.record_view.value": "Value",
   "data_grid.record_view.comment": "Comment",
   "data_grid.record_view.type": "Type",

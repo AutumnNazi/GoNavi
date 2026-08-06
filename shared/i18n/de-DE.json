@@ -4341,6 +4341,7 @@
   "data_grid.record_view.edit_json": "JSON bearbeiten",
   "data_grid.record_view.back_to_table": "Zur Tabelle",
   "data_grid.record_view.field": "Feld",
+  "data_grid.record_view.field_or_comment_search_placeholder": "Feld oder Kommentar suchen...",
   "data_grid.record_view.value": "Wert",
   "data_grid.record_view.comment": "Kommentar",
   "data_grid.record_view.type": "Datentyp",

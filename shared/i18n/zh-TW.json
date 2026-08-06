@@ -4341,6 +4341,7 @@
   "data_grid.record_view.edit_json": "編輯 JSON",
   "data_grid.record_view.back_to_table": "返回表格",
   "data_grid.record_view.field": "欄位",
+  "data_grid.record_view.field_or_comment_search_placeholder": "搜尋欄位或註解...",
   "data_grid.record_view.value": "值",
   "data_grid.record_view.comment": "註解",
   "data_grid.record_view.type": "類型",

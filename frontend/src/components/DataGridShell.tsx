@@ -851,6 +851,7 @@ const renderDataTableView = () => (
                 rowCount={mergedDisplayData.length}
                 canModifyData={canModifyData}
                 jsonViewText={jsonViewText}
+                displayOutputColumnNames={displayOutputColumnNames}
                 translate={translateDataGrid}
                 onReturnToTable={() => handleViewModeChange('table')}
                 onOpenJsonEditor={handleOpenJsonEditor}
