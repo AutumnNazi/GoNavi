@@ -623,7 +623,14 @@ export interface ExternalSQLDirectory {
   path: string;
   connectionId?: string;
   dbName?: string;
+  fileBindings?: ExternalSQLFileBinding[];
   createdAt: number;
+}
+
+export interface ExternalSQLFileBinding {
+  filePath: string;
+  connectionId: string;
+  dbName: string;
 }
 
 export interface ExternalSQLTreeEntry {

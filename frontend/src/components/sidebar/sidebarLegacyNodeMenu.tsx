@@ -382,6 +382,7 @@ export const buildSidebarLegacyNodeMenuItems = (
     handleDeleteExternalSQLDirectory,
     handleRemoveExternalSQLDirectory,
     openExternalSQLFile,
+    openExternalSQLBindingModal,
     openRenameExternalSQLFileModal,
     handleDeleteExternalSQLFile,
     extractObjectName,
@@ -1853,6 +1854,14 @@ export const buildSidebarLegacyNodeMenuItems = (
                 icon: <ConsoleSqlOutlined />,
                 onClick: () => {
                     void openExternalSQLFile(node);
+                }
+            },
+            {
+                key: 'bind-external-sql-file-database',
+                label: t('sidebar.menu.bind_sql_file_database'),
+                icon: <LinkOutlined />,
+                onClick: () => {
+                    openExternalSQLBindingModal(node);
                 }
             },
             {

@@ -28,7 +28,11 @@ import {
   normalizeSQLFileReadContent,
 } from '../utils/sqlFileTabDirty';
 import { clearSQLFileTabDraft, getSQLFileTabDraft } from '../utils/sqlFileTabDrafts';
-import { buildExternalSQLTabId } from '../utils/externalSqlTree';
+import {
+  buildExternalSQLTabId,
+  normalizeExternalSQLPath,
+  resolveExternalSQLFileBinding,
+} from '../utils/externalSqlTree';
 import { buildSQLFileExecutionWorkbenchTab } from '../utils/sqlFileExecutionTab';
 import { getDataSourceCapabilities } from '../utils/dataSourceCapabilities';
 import { CLOSE_ACTIVE_WORKSPACE_TAB_EVENT, resolveDockedActiveTabId } from '../utils/closeTabShortcut';
@@ -201,6 +205,37 @@ export const buildPinnedTableShortcuts = (
     }
   }
   return result;
+};
+
+export const buildRecentSQLFileShortcuts = (
+  connections: SavedConnection[],
+  directories: ExternalSQLDirectory[],
+  recentFiles: RecentSQLFile[],
+): RecentSQLFile[] => {
+  const connectionIds = new Set(connections.map((connection) => connection.id));
+  const seenFilePaths = new Set<string>();
+  return [...recentFiles]
+    .map((file) => {
+      const binding = resolveExternalSQLFileBinding(directories, file.filePath, {
+        connectionId: file.connectionId,
+        dbName: file.dbName,
+      });
+      return binding
+        ? { ...file, connectionId: binding.connectionId, dbName: binding.dbName }
+        : file;
+    })
+    .filter((file) => connectionIds.has(file.connectionId))
+    .sort((left, right) => right.openedAt - left.openedAt)
+    .filter((file) => {
+      const normalizedPath = normalizeExternalSQLPath(file.filePath);
+      const filePathKey = /^[a-z]:\//iu.test(normalizedPath) || normalizedPath.startsWith('//')
+        ? normalizedPath.toLowerCase()
+        : normalizedPath;
+      if (!filePathKey || seenFilePaths.has(filePathKey)) return false;
+      seenFilePaths.add(filePathKey);
+      return true;
+    })
+    .slice(0, RECENT_WORKBENCH_ITEM_LIMIT);
 };
 
 const buildLinkedExternalSQLDirectoryShortcuts = (
@@ -1368,11 +1403,8 @@ const TabManager: React.FC<TabManagerProps> = React.memo<TabManagerProps>(({ onF
     [connectionById, savedQueries],
   );
   const recentSQLFileShortcuts = useMemo(
-    () => [...recentSQLFiles]
-      .filter((file) => connectionById.has(file.connectionId))
-      .sort((left, right) => right.openedAt - left.openedAt)
-      .slice(0, RECENT_WORKBENCH_ITEM_LIMIT),
-    [connectionById, recentSQLFiles],
+    () => buildRecentSQLFileShortcuts(queryCapableConnections, externalSQLDirectories, recentSQLFiles),
+    [externalSQLDirectories, queryCapableConnections, recentSQLFiles],
   );
   const pinnedTableShortcuts = useMemo(
     () => buildPinnedTableShortcuts(queryCapableConnections, pinnedSidebarTables),
@@ -1450,9 +1482,13 @@ const TabManager: React.FC<TabManagerProps> = React.memo<TabManagerProps>(({ onF
   }, [addTab, connectionById]);
 
   const handleOpenRecentSQLFile = useCallback(async (file: RecentSQLFile) => {
-    const connectionId = String(file.connectionId || '').trim();
-    const dbName = String(file.dbName || '').trim();
     const filePath = String(file.filePath || '').trim();
+    const fileBinding = resolveExternalSQLFileBinding(externalSQLDirectories, filePath, {
+      connectionId: file.connectionId,
+      dbName: file.dbName,
+    });
+    const connectionId = String(fileBinding?.connectionId || file.connectionId || '').trim();
+    const dbName = String(fileBinding?.dbName || file.dbName || '').trim();
     if (!connectionId || !connectionById.has(connectionId)) {
       message.error(t('sidebar.message.connection_config_not_found'));
       return;
@@ -1500,7 +1536,7 @@ const TabManager: React.FC<TabManagerProps> = React.memo<TabManagerProps>(({ onF
     } finally {
       setOpeningRecentSQLFileKey((current) => current === openKey ? null : current);
     }
-  }, [addTab, connectionById]);
+  }, [addTab, connectionById, externalSQLDirectories]);
 
   const EmptyWorkbench = (
     <div className="gn-v2-empty-workbench">

@@ -35,6 +35,7 @@ import {
 } from './sidebar/useSidebarTreeLoaders';
 export { formatSidebarDriverAgentUpdateWarning } from './sidebar/useSidebarTreeLoaders';
 import {
+  ExternalSQLBindingModal,
   ExternalSQLFileModal,
   useSidebarExternalSqlWorkflow,
 } from './sidebar/SidebarExternalSqlWorkflow';
@@ -1462,6 +1463,7 @@ const Sidebar: React.FC<{
       handleRunSQLFile,
       handleOpenSQLFileFromToolbar,
       openExternalSQLFile,
+      openExternalSQLBindingModal,
       openCreateExternalSQLFileModal,
       openRenameExternalSQLFileModal,
       openCreateExternalSQLDirectoryModal,
@@ -1472,6 +1474,7 @@ const Sidebar: React.FC<{
       handleRemoveExternalSQLDirectory,
       handleRefreshExternalSQLDirectory,
       externalSQLFileModalProps,
+      externalSQLBindingModalProps,
   } = useSidebarExternalSqlWorkflow({
       connections,
       externalSQLDirectories,
@@ -3087,6 +3090,7 @@ const Sidebar: React.FC<{
     handleDeleteExternalSQLDirectory,
     handleRemoveExternalSQLDirectory,
     openExternalSQLFile,
+    openExternalSQLBindingModal,
     openRenameExternalSQLFileModal,
     handleDeleteExternalSQLFile,
     extractObjectName,
@@ -4267,6 +4271,7 @@ const Sidebar: React.FC<{
         </Modal>
 
         <ExternalSQLFileModal {...externalSQLFileModalProps} />
+        <ExternalSQLBindingModal {...externalSQLBindingModalProps} />
 
         <FindInDatabaseModal
             open={findInDbContext.open}

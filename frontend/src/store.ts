@@ -30,7 +30,10 @@ import {
   type ShortcutPlatformBinding,
   type ShortcutPlatform,
 } from "./utils/shortcuts";
-import { buildExternalSQLDirectoryId } from "./utils/externalSqlTree";
+import {
+  buildExternalSQLDirectoryId,
+  normalizeExternalSQLPath,
+} from "./utils/externalSqlTree";
 import {
   DEFAULT_SQL_SNIPPETS,
   BUILTIN_SNIPPET_MAP,
@@ -2171,6 +2174,23 @@ const resolveExternalSQLDirectoryName = (name: unknown, path: string): string =>
   return pathSegment || translate("sidebar.sql_directory.default_name");
 };
 
+const sanitizeExternalSQLFileBindings = (
+  value: unknown,
+): NonNullable<ExternalSQLDirectory["fileBindings"]> => {
+  if (!Array.isArray(value)) return [];
+  const bindings = new Map<string, NonNullable<ExternalSQLDirectory["fileBindings"]>[number]>();
+  value.forEach((entry) => {
+    if (!entry || typeof entry !== "object") return;
+    const raw = entry as Record<string, unknown>;
+    const filePath = normalizeExternalSQLPath(toTrimmedString(raw.filePath));
+    const connectionId = toTrimmedString(raw.connectionId);
+    const dbName = toTrimmedString(raw.dbName);
+    if (!filePath || !connectionId || !dbName) return;
+    bindings.set(filePath, { filePath, connectionId, dbName });
+  });
+  return [...bindings.values()];
+};
+
 const sanitizeExternalSQLDirectories = (
   value: unknown,
 ): ExternalSQLDirectory[] => {
@@ -2184,6 +2204,7 @@ const sanitizeExternalSQLDirectories = (
     if (!path) return;
     const connectionId = toTrimmedString(raw.connectionId);
     const dbName = toTrimmedString(raw.dbName);
+    const fileBindings = sanitizeExternalSQLFileBindings(raw.fileBindings);
     const id =
       toTrimmedString(
         raw.id,
@@ -2197,6 +2218,7 @@ const sanitizeExternalSQLDirectories = (
       path,
       ...(connectionId ? { connectionId } : {}),
       ...(dbName ? { dbName } : {}),
+      ...(fileBindings.length > 0 ? { fileBindings } : {}),
       createdAt: Number.isFinite(Number(raw.createdAt))
         ? Number(raw.createdAt)
         : Date.now(),
@@ -5005,6 +5027,7 @@ export const useStore = create<AppState>()(
           }
           const connectionId = toTrimmedString(directory.connectionId);
           const dbName = toTrimmedString(directory.dbName);
+          const fileBindings = sanitizeExternalSQLFileBindings(directory.fileBindings);
           const nextDirectory: ExternalSQLDirectory = {
             id:
               toTrimmedString(
@@ -5015,6 +5038,7 @@ export const useStore = create<AppState>()(
             path,
             ...(connectionId ? { connectionId } : {}),
             ...(dbName ? { dbName } : {}),
+            ...(fileBindings.length > 0 ? { fileBindings } : {}),
             createdAt: Number.isFinite(Number(directory.createdAt))
               ? Number(directory.createdAt)
               : Date.now(),
