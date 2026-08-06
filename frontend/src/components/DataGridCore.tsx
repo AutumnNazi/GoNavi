@@ -255,6 +255,30 @@ const collectDataGridCellSelectionRowKeys = (cellKeys: Iterable<string>): string
     }
     return Array.from(rowKeys);
 };
+const collectDataGridFillTemplateTargetRowKeys = ({
+    selectedRowKeys,
+    selectedCellKeys,
+    sourceRowKey,
+    rowKeyToString,
+}: {
+    selectedRowKeys: Iterable<React.Key>;
+    selectedCellKeys: Iterable<string>;
+    sourceRowKey?: string | null;
+    rowKeyToString: (key: React.Key) => string;
+}): string[] => {
+    const targetRowKeys = new Set<string>();
+    for (const rowKey of selectedRowKeys) {
+        const normalized = rowKeyToString(rowKey);
+        if (normalized) targetRowKeys.add(normalized);
+    }
+    for (const rowKey of collectDataGridCellSelectionRowKeys(selectedCellKeys)) {
+        targetRowKeys.add(rowKey);
+    }
+    if (sourceRowKey !== undefined && sourceRowKey !== null) {
+        targetRowKeys.delete(sourceRowKey);
+    }
+    return Array.from(targetRowKeys);
+};
 export const resolveContextMenuFieldName = (dataIndex: string, title?: string): string => {
     const name = String(dataIndex || title || '').trim();
     return name;
@@ -903,7 +927,6 @@ interface EditableCellProps {
   modifiedColumns?: Record<string, Set<string>>;
   rowKeyStr?: (k: React.Key) => string;
   deletedRowKeys?: Set<string>;
-  darkMode?: boolean;
   [key: string]: any;
 }
 
@@ -954,7 +977,6 @@ const areEditableCellPropsEqual = (prevProps: EditableCellProps, nextProps: Edit
   if ((prevProps.connectionConfig?.type ?? null) !== (nextProps.connectionConfig?.type ?? null)) return false;
   if ((prevProps.connectionConfig?.driver ?? null) !== (nextProps.connectionConfig?.driver ?? null)) return false;
   if ((prevProps.connectionConfig?.oceanBaseProtocol ?? null) !== (nextProps.connectionConfig?.oceanBaseProtocol ?? null)) return false;
-  if (prevProps.darkMode !== nextProps.darkMode) return false;
   if (prevProps.as !== nextProps.as) return false;
   if (prevProps.handleSave !== nextProps.handleSave) return false;
   if (prevProps.focusCell !== nextProps.focusCell) return false;
@@ -998,7 +1020,6 @@ const EditableCell: React.FC<EditableCellProps> = React.memo(({
   modifiedColumns,
   rowKeyStr,
   deletedRowKeys,
-  darkMode,
   ...restProps
 }) => {
   const [editing, setEditing] = useState(false);
@@ -1089,13 +1110,9 @@ const EditableCell: React.FC<EditableCellProps> = React.memo(({
     ? deletedRowKeys.has(rowKeyStr(record[GONAVI_ROW_KEY]))
     : false;
 
-  const isModified = !editing && modifiedColumns && rowKeyStr && record?.[GONAVI_ROW_KEY] !== undefined
-    ? modifiedColumns[rowKeyStr(record[GONAVI_ROW_KEY])]?.has(dataIndex)
+  const isModified = !editing && !isRowDeleted && modifiedColumns && rowKeyStr && record?.[GONAVI_ROW_KEY] !== undefined
+    ? !!modifiedColumns[rowKeyStr(record[GONAVI_ROW_KEY])]?.has(dataIndex)
     : false;
-
-  const modifiedStyle: React.CSSProperties | undefined = isModified
-    ? { backgroundColor: darkMode ? 'rgba(255, 214, 102, 0.16)' : '#FFF3B0' }
-    : undefined;
 
   if (editable) {
     childNode = editing ? (
@@ -1184,7 +1201,6 @@ const EditableCell: React.FC<EditableCellProps> = React.memo(({
     ) : (
       <div
         className="editable-cell-value-wrap"
-        style={modifiedStyle}
         onContextMenu={handleContextMenu}
       >
         {children}
@@ -1193,13 +1209,7 @@ const EditableCell: React.FC<EditableCellProps> = React.memo(({
   } else if (cellContextMenuContext) {
     // 非编辑模式（只读查询结果）也绑定右键菜单，支持复制为 INSERT/JSON/CSV 等操作
     childNode = (
-      <div onContextMenu={handleContextMenu} style={modifiedStyle ? { ...READONLY_CELL_WRAP_STYLE, ...modifiedStyle } : READONLY_CELL_WRAP_STYLE}>
-        {children}
-      </div>
-    );
-  } else if (isModified) {
-    childNode = (
-      <div style={modifiedStyle}>
+      <div onContextMenu={handleContextMenu} style={READONLY_CELL_WRAP_STYLE}>
         {children}
       </div>
     );
@@ -1228,6 +1238,8 @@ const EditableCell: React.FC<EditableCellProps> = React.memo(({
           {...restProps}
           data-row-key={record ? String(record?.[GONAVI_ROW_KEY]) : undefined}
           data-col-name={dataIndex || undefined}
+          data-cell-modified={isModified ? 'true' : undefined}
+          data-cell-editing={editing && !isRowDeleted ? 'true' : undefined}
           onDoubleClick={editable ? handleDoubleClick : restProps?.onDoubleClick}
       >
           {childNode}
@@ -1704,6 +1716,7 @@ export {
     makeCellKey,
     splitCellKey,
     collectDataGridCellSelectionRowKeys,
+    collectDataGridFillTemplateTargetRowKeys,
     trimSimpleCache,
     looksLikeDateTimeText,
     normalizeDateTimeString,

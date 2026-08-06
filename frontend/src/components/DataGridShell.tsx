@@ -282,6 +282,8 @@ const DataGridShell: React.FC<DataGridShellProps> = (props) => {
     rowEditorRowKey,
     rowSelectionConfig,
     selectedCells,
+    selectedCellRowCount,
+    fillTemplateTargetRowCount,
     selectedRowKeys,
     selectionAccentHex,
     sensors,
@@ -615,6 +617,8 @@ const renderDataTableView = () => (
             allSelectedAreDeleted={allSelectedAreDeleted}
             cellEditMode={cellEditMode}
             selectedCellsSize={selectedCells.size}
+            selectedCellRowCount={selectedCellRowCount}
+            fillTemplateTargetRowCount={fillTemplateTargetRowCount}
             copiedCellPatchColumnCount={copiedCellPatch ? Object.keys(copiedCellPatch.values).length : 0}
             hasChanges={hasChanges}
             pendingChangeCount={pendingChangeCount}

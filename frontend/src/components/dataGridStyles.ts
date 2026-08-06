@@ -503,6 +503,57 @@ export const buildDataGridCssText = ({
                     ) !important;
                 }
 
+                /* 待提交编辑：由真实 table cell 统一承载底色；data-grid-root 的特异性保证其压过整行选中/悬停及固定列底色。 */
+                .${gridId}.data-grid-root .ant-table-tbody > tr > td.ant-table-cell[data-cell-modified="true"],
+                .${gridId}.data-grid-root .ant-table-tbody .ant-table-row > .ant-table-cell[data-cell-modified="true"],
+                .${gridId}.data-grid-root .ant-table-tbody-virtual-holder .ant-table-row > .ant-table-cell[data-cell-modified="true"] {
+                    background-color: var(--gn-bg-panel, ${bgContent || (darkMode ? '#141414' : '#ffffff')}) !important;
+                    background-image: linear-gradient(
+                        var(--gn-warn-soft, ${darkMode ? 'rgba(255, 214, 102, 0.16)' : '#FFF3B0'}),
+                        var(--gn-warn-soft, ${darkMode ? 'rgba(255, 214, 102, 0.16)' : '#FFF3B0'})
+                    ) !important;
+                }
+
+                .${gridId}.data-grid-root .ant-table-tbody > tr:hover > td.ant-table-cell[data-cell-modified="true"],
+                .${gridId}.data-grid-root .ant-table-tbody .ant-table-row:hover > .ant-table-cell[data-cell-modified="true"],
+                .${gridId}.data-grid-root .ant-table-tbody-virtual-holder .ant-table-row:hover > .ant-table-cell[data-cell-modified="true"] {
+                    background-color: var(--gn-bg-panel, ${bgContent || (darkMode ? '#141414' : '#ffffff')}) !important;
+                    background-image: linear-gradient(
+                        var(--gn-warn-soft, ${darkMode ? 'rgba(255, 214, 102, 0.16)' : '#FFF3B0'}),
+                        var(--gn-warn-soft, ${darkMode ? 'rgba(255, 214, 102, 0.16)' : '#FFF3B0'})
+                    ) !important;
+                }
+
+                .${gridId}.data-grid-root .ant-table-tbody > tr > td.ant-table-cell[data-cell-modified="true"][data-cell-selected="true"],
+                .${gridId}.data-grid-root .ant-table-tbody .ant-table-row > .ant-table-cell[data-cell-modified="true"][data-cell-selected="true"],
+                .${gridId}.data-grid-root .ant-table-tbody-virtual-holder .ant-table-row > .ant-table-cell[data-cell-modified="true"][data-cell-selected="true"] {
+                    box-shadow: inset 0 0 0 2px var(--gn-accent, #22c55e) !important;
+                    background-color: var(--gn-bg-panel, ${bgContent || (darkMode ? '#141414' : '#ffffff')}) !important;
+                    background-image: linear-gradient(
+                        var(--gn-warn-soft, ${darkMode ? 'rgba(255, 214, 102, 0.16)' : '#FFF3B0'}),
+                        var(--gn-warn-soft, ${darkMode ? 'rgba(255, 214, 102, 0.16)' : '#FFF3B0'})
+                    ) !important;
+                }
+
+                /* V2 虚拟编辑器自身无边框，由实际 cell 提供不被 overflow 裁切的焦点描边。 */
+                .${gridId}.gn-v2-data-grid .ant-table-tbody-virtual-holder .ant-table-row > .ant-table-cell[data-cell-editing="true"] {
+                    box-shadow: inset 0 0 0 2px var(--gn-accent, #22c55e) !important;
+                }
+
+                .${gridId} .ant-table-tbody-virtual-holder .ant-table-row > .ant-table-cell.ant-table-cell-fix-left-last[data-cell-modified="true"][data-cell-selected="true"],
+                .${gridId}.gn-v2-data-grid .ant-table-tbody-virtual-holder .ant-table-row > .ant-table-cell.ant-table-cell-fix-left-last[data-cell-editing="true"] {
+                    box-shadow: inset 0 0 0 2px var(--gn-accent, #22c55e), ${darkMode
+                        ? '4px 0 6px -2px rgba(0,0,0,0.45)'
+                        : '4px 0 6px -2px rgba(15, 23, 42, 0.16)'} !important;
+                }
+
+                .${gridId} .ant-table-tbody-virtual-holder .ant-table-row > .ant-table-cell.ant-table-cell-fix-right-first[data-cell-modified="true"][data-cell-selected="true"],
+                .${gridId}.gn-v2-data-grid .ant-table-tbody-virtual-holder .ant-table-row > .ant-table-cell.ant-table-cell-fix-right-first[data-cell-editing="true"] {
+                    box-shadow: inset 0 0 0 2px var(--gn-accent, #22c55e), ${darkMode
+                        ? '-4px 0 6px -2px rgba(0,0,0,0.45)'
+                        : '-4px 0 6px -2px rgba(15, 23, 42, 0.16)'} !important;
+                }
+
                 .${gridId} .ant-table-content,
 
                 .${gridId} .ant-table-body {

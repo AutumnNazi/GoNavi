@@ -495,6 +495,56 @@ describe('DataGrid layout', () => {
     expect(inlineEditorCss).toContain('box-shadow: none !important;');
   });
 
+  it('paints pending edits across the real table cell without mixing selection color', () => {
+    const css = buildDataGridCssText({
+      darkMode: false,
+      densityParams: { dataFontSize: 12 },
+      gridId: 'pending-grid',
+    });
+    const getRuleBlock = (selector: string) => {
+      const start = css.indexOf(selector);
+      expect(start).toBeGreaterThanOrEqual(0);
+      const end = css.indexOf('}', start);
+      expect(end).toBeGreaterThan(start);
+      return css.slice(start, end + 1);
+    };
+
+    const pendingRule = getRuleBlock(
+      '.pending-grid.data-grid-root .ant-table-tbody-virtual-holder .ant-table-row > .ant-table-cell[data-cell-modified="true"]',
+    );
+    expect(pendingRule).toContain('background-color: var(--gn-bg-panel, #ffffff) !important;');
+    expect(pendingRule).toContain('background-image: linear-gradient(');
+    expect(pendingRule).toContain('var(--gn-warn-soft, #FFF3B0)');
+    expect(pendingRule).not.toContain('background-image: none');
+
+    const selectedPendingRule = getRuleBlock(
+      '.pending-grid.data-grid-root .ant-table-tbody-virtual-holder .ant-table-row > .ant-table-cell[data-cell-modified="true"][data-cell-selected="true"]',
+    );
+    expect(selectedPendingRule).toContain('box-shadow: inset 0 0 0 2px var(--gn-accent, #22c55e) !important;');
+    expect(selectedPendingRule).toContain('background-color: var(--gn-bg-panel, #ffffff) !important;');
+    expect(selectedPendingRule).toContain('background-image: linear-gradient(');
+    expect(selectedPendingRule).toContain('var(--gn-warn-soft, #FFF3B0)');
+
+    const editingRule = getRuleBlock(
+      '.pending-grid.gn-v2-data-grid .ant-table-tbody-virtual-holder .ant-table-row > .ant-table-cell[data-cell-editing="true"]',
+    );
+    expect(editingRule).toContain('box-shadow: inset 0 0 0 2px var(--gn-accent, #22c55e) !important;');
+
+    const fixedEditingRule = getRuleBlock(
+      '.pending-grid.gn-v2-data-grid .ant-table-tbody-virtual-holder .ant-table-row > .ant-table-cell.ant-table-cell-fix-left-last[data-cell-editing="true"]',
+    );
+    expect(fixedEditingRule).toContain(
+      'box-shadow: inset 0 0 0 2px var(--gn-accent, #22c55e), 4px 0 6px -2px rgba(15, 23, 42, 0.16) !important;',
+    );
+
+    const darkCss = buildDataGridCssText({
+      darkMode: true,
+      densityParams: { dataFontSize: 12 },
+      gridId: 'pending-grid-dark',
+    });
+    expect(darkCss).toContain('var(--gn-warn-soft, rgba(255, 214, 102, 0.16))');
+  });
+
   it('avoids duplicating legacy pagination page text beside the pager', () => {
     const markup = renderToStaticMarkup(
       <DataGridPaginationBar
@@ -549,11 +599,15 @@ describe('DataGrid layout', () => {
       'data_grid.toolbar.undo_delete',
       'data_grid.toolbar.delete_selected',
       'data_grid.toolbar.selected_count',
-      'data_grid.toolbar.cell_editor',
+      'data_grid.toolbar.cell_selection_enter',
+      'data_grid.toolbar.cell_selection_exit',
+      'data_grid.toolbar.cell_selection_mode',
       'data_grid.toolbar.copy_selection',
       'data_grid.toolbar.copy_selection_columns',
+      'data_grid.toolbar.copy_selection_columns_same_row',
       'data_grid.toolbar.batch_fill',
       'data_grid.toolbar.paste_to_selected_rows',
+      'data_grid.toolbar.select_fill_template_targets',
       'data_grid.toolbar.copied_columns_count',
       'data_grid.toolbar.commit_label',
       'data_grid.toolbar.commit',
@@ -599,7 +653,7 @@ describe('DataGrid layout', () => {
       /translate\('data_grid\.toolbar\.copy_selection', \{ count: selectedCellsSize \}\)/,
       /translate\('data_grid\.toolbar\.copy_selection_columns', \{ count: selectedCellsSize \}\)/,
       /translate\('data_grid\.toolbar\.batch_fill', \{ count: selectedCellsSize \}\)/,
-      /translate\('data_grid\.toolbar\.paste_to_selected_rows', \{ count: selectedRowKeysLength \}\)/,
+      /translate\('data_grid\.toolbar\.paste_to_selected_rows', \{[\s\S]*count: fillTemplateTargetRowCount,[\s\S]*\}\)/,
       /translate\('data_grid\.toolbar\.copied_columns_count', \{ count: copiedCellPatchColumnCount \}\)/,
       /translate\('data_grid\.toolbar\.commit', \{ count: pendingChangeCount \}\)/,
     ].forEach((pattern) => {
@@ -611,11 +665,14 @@ describe('DataGrid layout', () => {
       '添加行',
       '撤销删除',
       '删除选中',
-      '单元格编辑器',
-      '复制选区',
-      '复制选区列值',
-      '批量填充',
-      '粘贴到选中行',
+      '选择多个单元格',
+      '单元格选择模式',
+      '退出单元格选择',
+      '复制到剪贴板',
+      '复制为填充模板',
+      '批量设值',
+      '将模板应用到目标行',
+      '请框选目标单元格，或勾选目标行',
       '提交事务',
       '生成预览 SQL',
       '预览SQL',
@@ -1354,7 +1411,7 @@ describe('DataGrid layout', () => {
       '筛选',
       '新增行',
       '删除选中',
-      '单元格编辑',
+      '单元格选择模式',
       '提交事务',
       '手动提交',
       '导入',

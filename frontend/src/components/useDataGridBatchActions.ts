@@ -1,6 +1,7 @@
 import { useCallback, useEffect } from 'react';
 import type React from 'react';
 import { message } from 'antd';
+import { collectDataGridFillTemplateTargetRowKeys } from './DataGridCore';
 import type { Item } from './DataGridCore';
 import { buildDataGridClipboardPasteRows, parseDataGridClipboardData } from './dataGridClipboardPaste';
 import { canSelectGridCellForClipboard } from './dataGridSelectionCopy';
@@ -13,6 +14,7 @@ type DataGridBatchActionsContext = Record<string, any> & {
   modifiedRows: Record<string, any>;
   selectedCells: Set<string>;
   copiedCellPatch: { sourceRowKey: string; values: Record<string, any> } | null;
+  canUseCellSelectionAsFillTemplateTargets: boolean;
   displayDataRef: React.MutableRefObject<any[]>;
   currentSelectionRef: React.MutableRefObject<Set<string>>;
   rowIndexMapRef: React.MutableRefObject<Map<string, number>>;
@@ -49,6 +51,7 @@ type DataGridBatchActionsContext = Record<string, any> & {
   setSelectedCells: React.Dispatch<React.SetStateAction<Set<string>>>;
   markCellSelectionDeleteEligible: (eligible: boolean) => void;
   rowKeyStr: (key: React.Key) => string;
+  resetCellSelection: () => void;
   makeCellKey: (rowKey: string, colName: string) => string;
   splitCellKey: (cellKey: string) => { rowKey: string; colName: string } | null;
   updateCellSelection: (cells: Set<string>) => void;
@@ -75,6 +78,7 @@ export const useDataGridBatchActions = (ctx: DataGridBatchActionsContext) => {
     columnIndexMap,
     containerRef,
     copiedCellPatch,
+    canUseCellSelectionAsFillTemplateTargets,
     currentSelectionRef,
     deletedRowKeys,
     displayColumnNames,
@@ -89,6 +93,7 @@ export const useDataGridBatchActions = (ctx: DataGridBatchActionsContext) => {
     modifiedRows,
     pendingCellSelectionStartRef,
     requestAnimationFrame,
+    resetCellSelection,
     rowIndexMapRef,
     rowKeyStr,
     selectedCells,
@@ -689,8 +694,9 @@ const handleBatchFillCells = useCallback(() => {
     });
 
     setCopiedCellPatch({ sourceRowKey, values });
+    resetCellSelection();
     void message.success(translateDataGrid('data_grid.message.copied_columns', { count: selectedColumnNames.length }));
-  }, [selectedCells, rowKeyStr, addedRows, modifiedRows, translateDataGrid]);
+  }, [selectedCells, rowKeyStr, addedRows, modifiedRows, resetCellSelection, translateDataGrid]);
 
   const handlePasteCopiedColumnsToSelectedRows = useCallback((fallbackRowKey?: React.Key) => {
     if (!copiedCellPatch || Object.keys(copiedCellPatch.values).length === 0) {
@@ -707,13 +713,15 @@ const handleBatchFillCells = useCallback(() => {
       return;
     }
 
-    const targetKeySet = new Set<string>();
-    const selectedKeys = selectedRowKeysRef.current;
-    if (selectedKeys.length > 0) {
-      selectedKeys.forEach((key) => targetKeySet.add(rowKeyStr(key)));
-    } else if (fallbackRowKey !== undefined && fallbackRowKey !== null) {
-      targetKeySet.add(rowKeyStr(fallbackRowKey));
-    } else {
+    const targetKeySet = fallbackRowKey !== undefined && fallbackRowKey !== null
+      ? new Set([rowKeyStr(fallbackRowKey)])
+      : new Set(collectDataGridFillTemplateTargetRowKeys({
+          selectedRowKeys: selectedRowKeysRef.current,
+          selectedCellKeys: canUseCellSelectionAsFillTemplateTargets ? selectedCells : [],
+          sourceRowKey: copiedCellPatch.sourceRowKey,
+          rowKeyToString: rowKeyStr,
+        }));
+    if (targetKeySet.size === 0) {
       void message.info(translateDataGrid('data_grid.message.select_target_rows'));
       return;
     }
@@ -799,7 +807,7 @@ const handleBatchFillCells = useCallback(() => {
 
     void message.success(translateDataGrid('data_grid.message.pasted_columns_to_rows', { rows: patchesByRow.size, cells: updatedCellCount }));
     setCellContextMenu((prev: any) => ({ ...prev, visible: false }));
-  }, [copiedCellPatch, addedRows, modifiedRows, rowKeyStr, effectiveEditLocator, translateDataGrid]);
+  }, [copiedCellPatch, addedRows, modifiedRows, rowKeyStr, selectedCells, canUseCellSelectionAsFillTemplateTargets, effectiveEditLocator, translateDataGrid]);
 
   // 批量填充到选中行
   const handleBatchFillToSelected = useCallback((sourceRecord: Item, dataIndex: string) => {

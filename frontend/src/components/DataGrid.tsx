@@ -208,6 +208,7 @@ import {
     makeCellKey,
     splitCellKey,
     collectDataGridCellSelectionRowKeys,
+    collectDataGridFillTemplateTargetRowKeys,
     resolveContextMenuFieldName,
     trimSimpleCache,
     looksLikeDateTimeText,
@@ -309,6 +310,7 @@ export {
     buildGridFieldSelectOptions,
     buildDataGridCommitChangeSet,
     collectDataGridCellSelectionRowKeys,
+    collectDataGridFillTemplateTargetRowKeys,
     buildColumnMetaMap,
     shouldOmitBlankDataGridInsertValue,
 } from './DataGridCore';
@@ -2048,6 +2050,10 @@ const DataGrid: React.FC<DataGridProps> = ({
     closeCellEditModeRef.current = closeCellEditMode;
   }, [closeCellEditMode]);
 
+  const canUseCellSelectionAsFillTemplateTargets = cellEditMode
+      && cellSelectionDeleteEligible
+      && cellSelectionSourceDataRef.current === data;
+
   // 批量填充选中的单元格
     const {
     handleBatchFillCells,
@@ -2071,6 +2077,7 @@ const DataGrid: React.FC<DataGridProps> = ({
     columnIndexMap,
     containerRef,
     copiedCellPatch,
+    canUseCellSelectionAsFillTemplateTargets,
     currentSelectionRef,
     deletedRowKeys,
     displayColumnNames,
@@ -2085,6 +2092,7 @@ const DataGrid: React.FC<DataGridProps> = ({
     modifiedRows,
     pendingCellSelectionStartRef,
     requestAnimationFrame,
+    resetCellSelection,
     rowIndexMapRef,
     rowKeyStr,
     selectedCells,
@@ -2137,6 +2145,21 @@ const DataGrid: React.FC<DataGridProps> = ({
       setAutoCommitRemainingSeconds(null);
   }, []);
 
+  const selectedCellRowCount = useMemo(
+      () => collectDataGridCellSelectionRowKeys(selectedCells).length,
+      [selectedCells],
+  );
+  const fillTemplateTargetRowCount = useMemo(
+      () => copiedCellPatch
+          ? collectDataGridFillTemplateTargetRowKeys({
+              selectedRowKeys,
+              selectedCellKeys: canUseCellSelectionAsFillTemplateTargets ? selectedCells : [],
+              sourceRowKey: copiedCellPatch.sourceRowKey,
+              rowKeyToString: rowKeyStr,
+          }).length
+          : 0,
+      [canUseCellSelectionAsFillTemplateTargets, copiedCellPatch, rowKeyStr, selectedCells, selectedRowKeys],
+  );
   const selectedCellRowKeys = useMemo(
       () => cellEditMode
           && cellSelectionDeleteEligible
@@ -3141,9 +3164,21 @@ const DataGrid: React.FC<DataGridProps> = ({
           ...col,
           onCell: (record: Item) => {
               const rowKey = record?.[GONAVI_ROW_KEY];
+              const rowKeyText = rowKey === undefined || rowKey === null ? '' : rowKeyStr(rowKey);
+              const rowDeletedForCell = !!rowKeyText && deletedRowKeys.has(rowKeyText);
+              const isVirtualInlineEditingCell = !rowDeletedForCell
+                  && !!virtualEditingCellForRender
+                  && virtualEditingCellForRender.rowKey === rowKeyText
+                  && virtualEditingCellForRender.dataIndex === dataIndex;
+              const isModifiedCell = !!rowKeyText
+                  && !rowDeletedForCell
+                  && !isVirtualInlineEditingCell
+                  && !!modifiedColumns[rowKeyText]?.has(dataIndex);
               const cellProps: any = {
                   'data-row-key': rowKey === undefined || rowKey === null ? undefined : String(rowKey),
                   'data-col-name': dataIndex,
+                  'data-cell-modified': isModifiedCell ? 'true' : undefined,
+                  'data-cell-editing': isVirtualInlineEditingCell ? 'true' : undefined,
               };
               if (!enableVirtual && dataPanelOpenRef.current) {
                   // 非虚拟表保留最直接的点击同步；虚拟表改走容器级事件委托，避免每格闭包。
@@ -3167,7 +3202,6 @@ const DataGrid: React.FC<DataGridProps> = ({
                   cellProps.modifiedColumns = modifiedColumns;
                   cellProps.rowKeyStr = rowKeyStr;
                   cellProps.deletedRowKeys = deletedRowKeys;
-                  cellProps.darkMode = darkMode;
               } else if (enableVirtual) {
                   // 虚拟表格主要走容器级事件委托；这里保留共享 handler，
                   // 兼容测试桩与非标准事件分发，同时避免为每个单元格创建闭包。
@@ -3188,21 +3222,16 @@ const DataGrid: React.FC<DataGridProps> = ({
               const isVirtualInlineEditingCell = !!virtualEditingCellForRender
                   && virtualEditingCellForRender.rowKey === rowKeyText
                   && virtualEditingCellForRender.dataIndex === dataIndex;
-              const isModifiedCell = !!rowKeyText && !!modifiedColumns[rowKeyText]?.has(dataIndex);
-              const modifiedStyle: React.CSSProperties | undefined = isModifiedCell
-                  ? { backgroundColor: darkMode ? 'rgba(255, 214, 102, 0.16)' : '#FFF3B0' }
-                  : undefined;
-              const shouldUsePlainVirtualContent = isV2Ui && !modifiedStyle;
+              const shouldUsePlainVirtualContent = isV2Ui;
               if (enableVirtual && enableInlineEditableCell) {
                   const pickerType = getTemporalPickerType(columnType, dbType, currentConnConfig);
                   const isDateTimeField = !!pickerType && !(/^0{4}-0{2}-0{2}/.test(String(record?.[dataIndex] || '')));
-                  const virtualCellStyle = modifiedStyle ? { ...virtualCellWrapperStyle, ...modifiedStyle } : virtualCellWrapperStyle;
                   const virtualEditable = !!col.editable && !rowDeletedForRender;
                   if (isVirtualInlineEditingCell && virtualEditable && virtualEditingCellForRender) {
                       const currentVirtualEditingCell = virtualEditingCellForRender;
                       return (
                           <div
-                              style={modifiedStyle ? { ...VIRTUAL_EDITING_CELL_STYLE, ...modifiedStyle } : VIRTUAL_EDITING_CELL_STYLE}
+                              style={VIRTUAL_EDITING_CELL_STYLE}
                               className="data-grid-virtual-inline-editing"
                               onContextMenu={(e) => handleVirtualCellContextMenu(e, record, dataIndex)}
                           >
@@ -3306,7 +3335,7 @@ const DataGrid: React.FC<DataGridProps> = ({
                   if (shouldUsePlainVirtualContent) {
                       return originalRenderContent;
                   }
-                  return <div style={virtualCellStyle}>{originalRenderContent}</div>;
+                  return <div style={virtualCellWrapperStyle}>{originalRenderContent}</div>;
               }
               if (enableVirtual) {
                   if (shouldUsePlainVirtualContent) {
@@ -3317,7 +3346,7 @@ const DataGrid: React.FC<DataGridProps> = ({
               return originalRenderContent;
           }
       };
-  }), [closeVirtualInlineEditor, columns, currentConnConfig, darkMode, dbType, deletedRowKeys, displayColumnTypeMap, enableInlineEditableCell, enableVirtual, form, handleCellSave, handleSharedCellContextMenu, handleSharedCellDoubleClick, handleVirtualCellActivate, inputCellPadding, isVirtualEditingSessionCurrent, lockVirtualInlineTableScroll, modifiedColumns, openCellEditor, rowKeyStr, saveVirtualInlineEditor, updateFocusedCell, useInlineEditableBodyCell, virtualCellWrapperStyle, virtualEditingCellForRender]);
+  }), [closeVirtualInlineEditor, columns, currentConnConfig, dbType, deletedRowKeys, displayColumnTypeMap, enableInlineEditableCell, enableVirtual, form, handleCellSave, handleSharedCellContextMenu, handleSharedCellDoubleClick, handleVirtualCellActivate, inputCellPadding, isVirtualEditingSessionCurrent, lockVirtualInlineTableScroll, modifiedColumns, openCellEditor, rowKeyStr, saveVirtualInlineEditor, updateFocusedCell, useInlineEditableBodyCell, virtualCellWrapperStyle, virtualEditingCellForRender]);
 
   const rowNumberColumnWidth = useMemo(() => {
       const manual = columnWidths[GONAVI_ROW_NUMBER_COLUMN_KEY];
@@ -5616,6 +5645,8 @@ const DataGrid: React.FC<DataGridProps> = ({
         rowEditorRowKey,
         rowSelectionConfig,
         selectedCells,
+        selectedCellRowCount,
+        fillTemplateTargetRowCount,
         selectedRowKeys,
         selectionAccentHex,
         sensors,

@@ -80,6 +80,10 @@ describe('useDataGridBatchActions clipboard paste', () => {
     canModifyData = true,
     addedRows = [] as any[],
     modifiedRows = {} as Record<string, any>,
+    selectedCells = new Set<string>(),
+    selectedRowKeys = [] as React.Key[],
+    copiedCellPatch = null as { sourceRowKey: string; values: Record<string, any> } | null,
+    canUseCellSelectionAsFillTemplateTargets = true,
   } = {}) => {
     const containerTarget = createEventTarget();
     const container = {
@@ -90,9 +94,9 @@ describe('useDataGridBatchActions clipboard paste', () => {
     const rows = [
       { key: 'row-1', id: '1', generated: 'A', name: 'alpha' },
       { key: 'row-2', id: '2', generated: 'B', name: 'beta' },
+      { key: 'row-3', id: '3', generated: 'C', name: 'gamma' },
       ...addedRows,
     ];
-    const selectedCells = new Set<string>();
     const currentSelectionRef = { current: selectedCells };
     const selectionStartRef = { current: null as null | { rowKey: string; colName: string; rowIndex: number; colIndex: number } };
     const setAddedRows = vi.fn();
@@ -100,6 +104,7 @@ describe('useDataGridBatchActions clipboard paste', () => {
     const setModifiedColumns = vi.fn();
     const setSelectedCells = vi.fn();
     const updateCellSelection = vi.fn();
+    const resetCellSelection = vi.fn();
 
     const ctx = {
       CELL_SELECTION_DRAG_THRESHOLD_PX: 4,
@@ -117,7 +122,8 @@ describe('useDataGridBatchActions clipboard paste', () => {
       closeBatchEditModal: vi.fn(),
       columnIndexMap: new Map([['id', 0], ['generated', 1], ['name', 2]]),
       containerRef: { current: container },
-      copiedCellPatch: null,
+      copiedCellPatch,
+      canUseCellSelectionAsFillTemplateTargets,
       currentSelectionRef,
       deletedRowKeys: new Set<string>(),
       displayColumnNames: ['id', 'generated', 'name'],
@@ -133,10 +139,11 @@ describe('useDataGridBatchActions clipboard paste', () => {
       modifiedRows,
       pendingCellSelectionStartRef: { current: null },
       requestAnimationFrame: (callback: FrameRequestCallback) => { callback(0); return 1; },
+      resetCellSelection,
       rowIndexMapRef: { current: new Map<string, number>() },
       rowKeyStr: String,
       selectedCells,
-      selectedRowKeysRef: { current: [] },
+      selectedRowKeysRef: { current: selectedRowKeys },
       selectionStartRef,
       setAddedRows,
       setCellContextMenu: vi.fn(),
@@ -151,8 +158,9 @@ describe('useDataGridBatchActions clipboard paste', () => {
       updateCellSelection,
     };
 
+    let actions: ReturnType<typeof useDataGridBatchActions> | null = null;
     const Harness = () => {
-      useDataGridBatchActions(ctx as any);
+      actions = useDataGridBatchActions(ctx as any);
       return null;
     };
     act(() => { renderer = create(<Harness />); });
@@ -167,6 +175,8 @@ describe('useDataGridBatchActions clipboard paste', () => {
       setModifiedColumns,
       setSelectedCells,
       updateCellSelection,
+      resetCellSelection,
+      getActions: () => actions!,
       rerender: () => act(() => { renderer?.update(<Harness />); }),
     };
   };
@@ -241,6 +251,100 @@ describe('useDataGridBatchActions clipboard paste', () => {
     expect(nextColumns['row-1']).toEqual(new Set(['id', 'name']));
     expect(nextColumns['row-2']).toEqual(new Set(['id', 'name']));
     expect(messageApi.success).toHaveBeenCalledWith('data_grid.message.pasted_columns_to_rows:{"rows":2,"cells":4}');
+  });
+
+  it('clears the source selection after creating a fill template', () => {
+    const hook = renderHook({
+      selectedCells: new Set([makeCellKey('row-1', 'name')]),
+    });
+
+    act(() => {
+      hook.getActions().handleCopySelectedColumnsFromRow();
+    });
+
+    expect(hook.ctx.setCopiedCellPatch).toHaveBeenCalledWith({
+      sourceRowKey: 'row-1',
+      values: { name: 'alpha' },
+    });
+    expect(hook.resetCellSelection).toHaveBeenCalledOnce();
+  });
+
+  it('applies a fill template to rows represented by selected cells', () => {
+    const hook = renderHook({
+      copiedCellPatch: { sourceRowKey: 'row-1', values: { name: 'template' } },
+      selectedCells: new Set([
+        makeCellKey('row-1', 'name'),
+        makeCellKey('row-2', 'id'),
+        makeCellKey('row-2', 'name'),
+      ]),
+    });
+
+    act(() => {
+      hook.getActions().handlePasteCopiedColumnsToSelectedRows();
+    });
+
+    expect(messageApi.info).not.toHaveBeenCalledWith('data_grid.message.select_target_rows:{}');
+    expect(hook.setModifiedRows).toHaveBeenCalledOnce();
+    const nextRows = hook.setModifiedRows.mock.calls[0][0]({});
+    expect(nextRows).toEqual({ 'row-2': { name: 'template' } });
+    expect(messageApi.success).toHaveBeenCalledWith(
+      'data_grid.message.pasted_columns_to_rows:{"rows":1,"cells":1}',
+    );
+  });
+
+  it('merges checked rows and selected-cell rows without updating the template source row', () => {
+    const hook = renderHook({
+      copiedCellPatch: { sourceRowKey: 'row-1', values: { name: 'template' } },
+      selectedRowKeys: ['row-1', 'row-2'],
+      selectedCells: new Set([
+        makeCellKey('row-1', 'name'),
+        makeCellKey('row-3', 'id'),
+      ]),
+    });
+
+    act(() => {
+      hook.getActions().handlePasteCopiedColumnsToSelectedRows();
+    });
+
+    const nextRows = hook.setModifiedRows.mock.calls[0][0]({});
+    expect(nextRows).toEqual({
+      'row-2': { name: 'template' },
+      'row-3': { name: 'template' },
+    });
+    expect(nextRows).not.toHaveProperty('row-1');
+    expect(messageApi.success).toHaveBeenCalledWith(
+      'data_grid.message.pasted_columns_to_rows:{"rows":2,"cells":2}',
+    );
+  });
+
+  it('does not treat page-find highlighting as fill-template targets', () => {
+    const hook = renderHook({
+      copiedCellPatch: { sourceRowKey: 'row-1', values: { name: 'template' } },
+      selectedCells: new Set([makeCellKey('row-2', 'name')]),
+      canUseCellSelectionAsFillTemplateTargets: false,
+    });
+
+    act(() => {
+      hook.getActions().handlePasteCopiedColumnsToSelectedRows();
+    });
+
+    expect(hook.setModifiedRows).not.toHaveBeenCalled();
+    expect(messageApi.info).toHaveBeenCalledWith('data_grid.message.select_target_rows:{}');
+  });
+
+  it('applies a context-menu template action only to the clicked row', () => {
+    const hook = renderHook({
+      copiedCellPatch: { sourceRowKey: 'row-1', values: { name: 'template' } },
+      selectedRowKeys: ['row-2'],
+      selectedCells: new Set([makeCellKey('row-2', 'name')]),
+    });
+
+    act(() => {
+      hook.getActions().handlePasteCopiedColumnsToSelectedRows('row-3');
+    });
+
+    const nextRows = hook.setModifiedRows.mock.calls[0][0]({});
+    expect(nextRows).toEqual({ 'row-3': { name: 'template' } });
   });
 
   it('resolves the selected row and column again before pasting', () => {
