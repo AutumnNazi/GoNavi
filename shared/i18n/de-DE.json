@@ -3047,6 +3047,8 @@
   "app.theme.tab_display.element.connection.label": "Verbindung",
   "app.theme.tab_display.element.database.description": "Aktueller DB- / catalog-Name",
   "app.theme.tab_display.element.database.label": "Datenbank",
+  "app.theme.tab_display.element.group.description": "Name der Gruppe der Verbindung, leer wenn nicht zugeordnet",
+  "app.theme.tab_display.element.group.label": "Gruppe",
   "app.theme.tab_display.element.host.description": "Zusammenfassung der Zieladresse der Verbindung",
   "app.theme.tab_display.element.host.label": "Host/IP",
   "app.theme.tab_display.element.kind.description": "Typkennzeichen wie SQL / TABLE / VIEW",

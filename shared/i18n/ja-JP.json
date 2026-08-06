@@ -3047,6 +3047,8 @@
   "app.theme.tab_display.element.connection.label": "接続名",
   "app.theme.tab_display.element.database.description": "現在の DB / catalog 名",
   "app.theme.tab_display.element.database.label": "データベース",
+  "app.theme.tab_display.element.group.description": "接続が属するグループ名。未グループの場合は空",
+  "app.theme.tab_display.element.group.label": "グループ",
   "app.theme.tab_display.element.host.description": "接続先アドレスの要約",
   "app.theme.tab_display.element.host.label": "Host/IP",
   "app.theme.tab_display.element.kind.description": "SQL / TABLE / VIEW などの種別ラベル",

@@ -3047,6 +3047,8 @@
   "app.theme.tab_display.element.connection.label": "连接名",
   "app.theme.tab_display.element.database.description": "当前 DB / catalog 名称",
   "app.theme.tab_display.element.database.label": "数据库",
+  "app.theme.tab_display.element.group.description": "连接所属的分组名称，未分组时为空",
+  "app.theme.tab_display.element.group.label": "分组",
   "app.theme.tab_display.element.host.description": "连接目标地址摘要",
   "app.theme.tab_display.element.host.label": "Host/IP",
   "app.theme.tab_display.element.kind.description": "SQL / TABLE / VIEW 等类型标签",

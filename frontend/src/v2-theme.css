@@ -4106,7 +4106,8 @@ body[data-ui-version="v2"] .gn-v2-tab-label-part-connection {
 
 body[data-ui-version="v2"] .gn-v2-tab-label-part-host,
 body[data-ui-version="v2"] .gn-v2-tab-label-part-database,
-body[data-ui-version="v2"] .gn-v2-tab-label-part-schema {
+body[data-ui-version="v2"] .gn-v2-tab-label-part-schema,
+body[data-ui-version="v2"] .gn-v2-tab-label-part-group {
   flex: 0 2 auto;
   max-width: 112px;
 }
