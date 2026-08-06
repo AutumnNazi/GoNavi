@@ -318,7 +318,7 @@ export {
 const EXTERNAL_HORIZONTAL_SCROLL_IDLE_SETTLE_MS = 80;
 
 const DataGrid: React.FC<DataGridProps> = ({
-    data, columnNames, loading, tableName, columnPinScope, objectType = 'table', exportScope = 'table', dbName, ddlDbName, ddlTableName, connectionId, pkColumns = [], editLocator, readOnly = false,
+    data, columnNames, loading, tableName, columnPinScope, objectType = 'table', exportScope = 'table', dbName, schemaName, ddlDbName, ddlTableName, connectionId, pkColumns = [], editLocator, readOnly = false,
     resultSql,
     resultExportAllSql,
     onReload, onSort, onPageChange, onLastPage, pagination, onRequestTotalCount, onCancelTotalCount, sortInfoExternal, showFilter, onToggleFilter, exportSqlWithFilter, onApplyFilter, appliedFilterConditions, quickWhereCondition,
@@ -5448,6 +5448,7 @@ const DataGrid: React.FC<DataGridProps> = ({
         dataPanelOriginalRef,
         dataPanelValue,
         dbName,
+        schemaName,
         dbType,
         ddlLoading,
         ddlModalOpen,
