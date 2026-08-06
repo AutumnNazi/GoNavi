@@ -680,7 +680,11 @@ func mqttTransportScheme(config connection.ConnectionConfig) string {
 
 func mqttBrokerAddresses(config connection.ConnectionConfig) ([]string, error) {
 	hosts := make([]string, 0, 4)
-	if host, port, ok := parseHostPortWithDefault(net.JoinHostPort(strings.TrimSpace(config.Host), strconv.Itoa(config.Port)), defaultMQTTPort); ok && strings.TrimSpace(host) != "" {
+	if host := strings.TrimSpace(config.Host); host != "" {
+		port := config.Port
+		if port <= 0 {
+			port = defaultMQTTPort
+		}
 		hosts = append(hosts, mqttFormatHostPort(host, port))
 	}
 	for _, entry := range config.Hosts {
