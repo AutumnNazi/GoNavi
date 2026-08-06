@@ -1770,13 +1770,13 @@ const Sidebar: React.FC<{
   };
 
   const openDesign = (node: any, initialTab: string, readOnly: boolean = false) => {
-      const { tableName, dbName, id } = node.dataRef;
+      const { tableName, dbName, id, schemaName } = node.dataRef;
       const conn = connections.find(c => c.id === id);
       const forceReadOnly = readOnly
           || isStructureOnlyDbType(id)
           || isConnectionStructureEditRestricted(conn?.config);
       addTab({
-          id: `design-${id}-${dbName}-${tableName}`,
+          id: `design-${id}-${dbName}-${schemaName || 'default'}-${tableName}`,
           title: forceReadOnly
               ? t('sidebar.tab.table_structure', { table: tableName })
               : t('sidebar.tab.design_table', { table: tableName }),
@@ -1784,13 +1784,14 @@ const Sidebar: React.FC<{
           connectionId: id,
           dbName: dbName,
           tableName: tableName,
+          schemaName,
           initialTab: initialTab,
           readOnly: forceReadOnly
       });
   };
 
   const openNewTableDesign = (node: any) => {
-      const { dbName, id } = node.dataRef;
+      const { dbName, id, schemaName } = node.dataRef;
       const conn = connections.find(c => c.id === id);
       if (isStructureOnlyDbType(id) || isConnectionStructureEditRestricted(conn?.config)) {
           message.warning(t('sidebar.message.visual_new_table_unsupported'));
@@ -1803,6 +1804,7 @@ const Sidebar: React.FC<{
           connectionId: id,
           dbName: dbName,
           tableName: '', // Empty tableName signals creation mode
+          schemaName,
           initialTab: 'columns',
           readOnly: false
       });

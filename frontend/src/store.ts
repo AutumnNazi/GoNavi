@@ -1821,6 +1821,7 @@ interface AppState {
   tableExportHistories: Record<string, TableExportHistoryEntry[]>;
   tableAccessCount: Record<string, number>;
   tableSortPreference: Record<string, "name" | "frequency">;
+  tableDesignerSchemaByConnection: Record<string, string>;
   tableColumnOrders: Record<string, string[]>;
   enableColumnOrderMemory: boolean;
   /** 数据表横向滚动时左侧固定的数据列（按表维度记忆；勾选列/行号列始终固定） */
@@ -2022,6 +2023,7 @@ interface AppState {
     dbName: string,
     sortBy: "name" | "frequency",
   ) => void;
+  setTableDesignerSchema: (connectionId: string, schemaName: string) => void;
   setSidebarTablePinned: (
     connectionId: string,
     dbName: string,
@@ -2909,6 +2911,24 @@ const sanitizeTableSortPreference = (
   return result;
 };
 
+const sanitizeTableDesignerSchemaByConnection = (
+  value: unknown,
+): Record<string, string> => {
+  const raw =
+    value && typeof value === "object"
+      ? (value as Record<string, unknown>)
+      : {};
+  const result: Record<string, string> = {};
+  Object.entries(raw).forEach(([connectionId, schemaName]) => {
+    const safeConnectionId = toTrimmedString(connectionId);
+    const safeSchemaName = toTrimmedString(schemaName).slice(0, 256);
+    if (safeConnectionId && safeSchemaName) {
+      result[safeConnectionId] = safeSchemaName;
+    }
+  });
+  return result;
+};
+
 const sanitizeTableColumnOrders = (
   value: unknown,
 ): Record<string, string[]> => {
@@ -3454,6 +3474,7 @@ const PERSISTED_STATE_DEPENDENCY_KEYS = [
   "sqlSnippets",
   "tableAccessCount",
   "tableSortPreference",
+  "tableDesignerSchemaByConnection",
   "tableColumnOrders",
   "enableColumnOrderMemory",
   "tablePinnedLeftColumns",
@@ -3517,6 +3538,9 @@ const buildPersistedStateProjection = (
     sqlSnippets: state.sqlSnippets,
     tableAccessCount: sanitizeTableAccessCount(state.tableAccessCount),
     tableSortPreference: state.tableSortPreference,
+    tableDesignerSchemaByConnection: sanitizeTableDesignerSchemaByConnection(
+      state.tableDesignerSchemaByConnection,
+    ),
     tableColumnOrders: state.tableColumnOrders,
     enableColumnOrderMemory: state.enableColumnOrderMemory,
     tablePinnedLeftColumns: state.tablePinnedLeftColumns,
@@ -3642,6 +3666,7 @@ export const useStore = create<AppState>()(
       tableExportHistories: {},
       tableAccessCount: {},
       tableSortPreference: {},
+      tableDesignerSchemaByConnection: {},
       tableColumnOrders: {},
       enableColumnOrderMemory: true,
       tablePinnedLeftColumns: {},
@@ -3707,6 +3732,8 @@ export const useStore = create<AppState>()(
             ),
             nextConnections,
           );
+          const nextDesignerSchemas = { ...state.tableDesignerSchemaByConnection };
+          delete nextDesignerSchemas[id];
           return {
             connections: nextConnections,
             connectionTags: normalized.connectionTags,
@@ -3721,6 +3748,7 @@ export const useStore = create<AppState>()(
               id,
               nextConnections.map((connection) => connection.id),
             ),
+            tableDesignerSchemaByConnection: nextDesignerSchemas,
             sidebarRootOrder: normalized.sidebarRootOrder,
           };
         }),
@@ -3732,10 +3760,16 @@ export const useStore = create<AppState>()(
             state.sidebarRootOrder,
             nextConnections,
           );
+          const validConnectionIds = new Set(nextConnections.map((connection) => connection.id));
+          const nextDesignerSchemas = Object.fromEntries(
+            Object.entries(state.tableDesignerSchemaByConnection)
+              .filter(([connectionId]) => validConnectionIds.has(connectionId)),
+          );
           return {
             connections: nextConnections,
             connectionTags: normalized.connectionTags,
             sidebarRootOrder: normalized.sidebarRootOrder,
+            tableDesignerSchemaByConnection: nextDesignerSchemas,
             shortcutOptions:
               readPersistedShortcutOptions() ?? state.shortcutOptions,
           };
@@ -5298,6 +5332,19 @@ export const useStore = create<AppState>()(
           };
         }),
 
+      setTableDesignerSchema: (connectionId, schemaName) =>
+        set((state) => {
+          const safeConnectionId = toTrimmedString(connectionId);
+          const safeSchemaName = toTrimmedString(schemaName).slice(0, 256);
+          if (!safeConnectionId || !safeSchemaName) return state;
+          return {
+            tableDesignerSchemaByConnection: {
+              ...state.tableDesignerSchemaByConnection,
+              [safeConnectionId]: safeSchemaName,
+            },
+          };
+        }),
+
       setSidebarTablePinned: (connectionId, dbName, tableName, schemaName, pinned) =>
         set((state) => {
           const key = buildSidebarTablePinKey(connectionId, dbName, tableName, schemaName);
@@ -5917,6 +5964,9 @@ export const useStore = create<AppState>()(
         nextState.tableSortPreference = sanitizeTableSortPreference(
           state.tableSortPreference,
         );
+        nextState.tableDesignerSchemaByConnection = sanitizeTableDesignerSchemaByConnection(
+          state.tableDesignerSchemaByConnection,
+        );
         // 新增的列排序记忆状态不需要做版本特殊兼容，直接做基本的类型保护
         const safeOrders = sanitizeTableColumnOrders(state.tableColumnOrders);
         nextState.tableColumnOrders = safeOrders;
@@ -6021,6 +6071,9 @@ export const useStore = create<AppState>()(
           globalProxy: sanitizeGlobalProxy(state.globalProxy),
           tableSortPreference: sanitizeTableSortPreference(
             state.tableSortPreference,
+          ),
+          tableDesignerSchemaByConnection: sanitizeTableDesignerSchemaByConnection(
+            state.tableDesignerSchemaByConnection,
           ),
           tableColumnOrders: sanitizeTableColumnOrders(state.tableColumnOrders),
           enableColumnOrderMemory: state.enableColumnOrderMemory !== false,

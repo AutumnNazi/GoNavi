@@ -1449,6 +1449,45 @@ describe('store appearance persistence', () => {
     ]);
   });
 
+  it('persists the table designer schema per connection and clears it with the connection', async () => {
+    const { useStore } = await importStore();
+    useStore.getState().replaceConnections([{
+      id: 'pg-conn',
+      name: 'PostgreSQL',
+      config: { id: 'pg-conn', type: 'postgres', host: 'localhost', port: 5432, user: 'postgres' },
+    }]);
+
+    useStore.getState().setTableDesignerSchema('pg-conn', 'sales');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(useStore.getState().tableDesignerSchemaByConnection).toEqual({ 'pg-conn': 'sales' });
+    expect(JSON.parse(storage.getItem('lite-db-storage') || '{}').state.tableDesignerSchemaByConnection)
+      .toEqual({ 'pg-conn': 'sales' });
+
+    vi.resetModules();
+    const reloaded = await importStore();
+    expect(reloaded.useStore.getState().tableDesignerSchemaByConnection).toEqual({ 'pg-conn': 'sales' });
+
+    reloaded.useStore.getState().removeConnection('pg-conn');
+    expect(reloaded.useStore.getState().tableDesignerSchemaByConnection).toEqual({});
+  });
+
+  it('clears remembered table designer schemas when connections are replaced', async () => {
+    const { useStore } = await importStore();
+    useStore.getState().replaceConnections([
+      { id: 'pg-1', name: 'PG 1', config: { id: 'pg-1', type: 'postgres', host: 'one', port: 5432, user: 'postgres' } },
+      { id: 'pg-2', name: 'PG 2', config: { id: 'pg-2', type: 'postgres', host: 'two', port: 5432, user: 'postgres' } },
+    ]);
+    useStore.getState().setTableDesignerSchema('pg-1', 'sales');
+    useStore.getState().setTableDesignerSchema('pg-2', 'archive');
+
+    useStore.getState().replaceConnections([
+      { id: 'pg-2', name: 'PG 2', config: { id: 'pg-2', type: 'postgres', host: 'two', port: 5432, user: 'postgres' } },
+    ]);
+
+    expect(useStore.getState().tableDesignerSchemaByConnection).toEqual({ 'pg-2': 'archive' });
+  });
+
   it('migrates flat v15 connection groups to explicit root child order', async () => {
     storage.setItem('lite-db-storage', JSON.stringify({
       state: {

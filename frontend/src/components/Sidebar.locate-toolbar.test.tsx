@@ -1673,6 +1673,14 @@ describe('Sidebar locate toolbar', () => {
     expect(contextMenuSource).toContain('isPinned={isPinned}');
   });
 
+  it('preserves schema context when opening table designer tabs', () => {
+    const source = readSourceFile('./Sidebar.tsx');
+
+    expect(source).toMatch(/const openDesign = \(node: any,[\s\S]*?schemaName[\s\S]*?type: 'design',[\s\S]*?schemaName,/);
+    expect(source).toMatch(/const openNewTableDesign = \(node: any\)[\s\S]*?schemaName[\s\S]*?type: 'design',[\s\S]*?schemaName,/);
+    expect(source).toContain("design-${id}-${dbName}-${schemaName || 'default'}-${tableName}");
+  });
+
   it('moves pinned databases first while preserving loaded database children', () => {
     const pinnedSidebarDatabases = [
       buildSidebarDatabasePinKey('conn-1', 'analytics'),
