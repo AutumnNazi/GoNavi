@@ -431,6 +431,10 @@ func (m *MQTTDB) ApplyChanges(tableName string, changes connection.ChangeSet) er
 
 func normalizeMQTTConfig(config connection.ConnectionConfig) connection.ConnectionConfig {
 	runConfig := applyMQTTURI(config)
+	if host, port, ok := parseMQTTBrokerEndpoint(runConfig.Host, runConfig.Port); ok {
+		runConfig.Host = host
+		runConfig.Port = port
+	}
 	if strings.TrimSpace(runConfig.Host) == "" && len(runConfig.Hosts) == 0 {
 		runConfig.Host = "localhost"
 	}
@@ -680,15 +684,11 @@ func mqttTransportScheme(config connection.ConnectionConfig) string {
 
 func mqttBrokerAddresses(config connection.ConnectionConfig) ([]string, error) {
 	hosts := make([]string, 0, 4)
-	if host := strings.TrimSpace(config.Host); host != "" {
-		port := config.Port
-		if port <= 0 {
-			port = defaultMQTTPort
-		}
+	if host, port, ok := parseMQTTBrokerEndpoint(config.Host, config.Port); ok {
 		hosts = append(hosts, mqttFormatHostPort(host, port))
 	}
 	for _, entry := range config.Hosts {
-		host, port, ok := parseHostPortWithDefault(strings.TrimSpace(entry), defaultMQTTPort)
+		host, port, ok := parseMQTTBrokerEndpoint(entry, defaultMQTTPort)
 		if !ok {
 			continue
 		}
@@ -699,6 +699,67 @@ func mqttBrokerAddresses(config connection.ConnectionConfig) ([]string, error) {
 		return nil, fmt.Errorf("MQTT 至少需要一个 broker 地址")
 	}
 	return hosts, nil
+}
+
+func parseMQTTBrokerEndpoint(raw string, fallbackPort int) (string, int, bool) {
+	text := strings.TrimSpace(raw)
+	if text == "" {
+		return "", 0, false
+	}
+	if fallbackPort <= 0 || fallbackPort > 65535 {
+		fallbackPort = defaultMQTTPort
+	}
+
+	if schemeEnd := strings.Index(text, "://"); schemeEnd >= 0 {
+		scheme := strings.ToLower(strings.TrimSpace(text[:schemeEnd]))
+		switch scheme {
+		case "mqtt", "tcp":
+			text = text[schemeEnd+3:]
+		default:
+			return "", 0, false
+		}
+	}
+	if authorityEnd := strings.IndexAny(text, "/?#"); authorityEnd >= 0 {
+		text = text[:authorityEnd]
+	}
+	if userInfoEnd := strings.LastIndex(text, "@"); userInfoEnd >= 0 {
+		text = text[userInfoEnd+1:]
+	}
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return "", 0, false
+	}
+
+	if net.ParseIP(text) != nil {
+		return text, fallbackPort, true
+	}
+	if !strings.HasPrefix(text, "[") && strings.Count(text, ":") > 1 {
+		parts := strings.Split(text, ":")
+		suffixStart := len(parts)
+		for suffixStart > 1 {
+			if _, err := strconv.Atoi(strings.TrimSpace(parts[suffixStart-1])); err != nil {
+				break
+			}
+			suffixStart--
+		}
+		host := strings.TrimSpace(strings.Join(parts[:suffixStart], ":"))
+		if suffixStart < len(parts) && host != "" && !strings.Contains(host, ":") {
+			port, err := strconv.Atoi(strings.TrimSpace(parts[suffixStart]))
+			if err == nil && port > 0 && port <= 65535 {
+				return host, port, true
+			}
+			return host, fallbackPort, true
+		}
+	}
+
+	host, port, ok := parseHostPortWithDefault(text, fallbackPort)
+	if !ok || strings.TrimSpace(host) == "" {
+		return "", 0, false
+	}
+	if port <= 0 || port > 65535 {
+		port = fallbackPort
+	}
+	return strings.TrimSpace(host), port, true
 }
 
 func mqttFormatHostPort(host string, port int) string {
