@@ -17,6 +17,7 @@ import DataGridPreviewPanel from './DataGridPreviewPanel';
 import { DataGridJsonView, DataGridTextView } from './DataGridRecordViews';
 import DataGridResultViewSwitcher from './DataGridResultViewSwitcher';
 import DataGridSecondaryActions from './DataGridSecondaryActions';
+import { buildDataGridCssText } from './dataGridStyles';
 import { DataGridV2DdlSideWorkspace, DataGridV2DdlView } from './DataGridV2DdlWorkspace';
 import { DataGridV2ErView, DataGridV2FieldsView } from './DataGridV2MetadataViews';
 import { I18nProvider } from '../i18n/provider';
@@ -956,6 +957,8 @@ describe('DataGrid layout', () => {
         'data_grid.record_view.next': 'Next label',
         'data_grid.record_view.record_position': `Record label ${params?.current} of ${params?.total}`,
         'data_grid.record_view.edit_current': 'Edit current label',
+        'data_grid.record_view.field_or_comment_search_placeholder': 'Search field or comment label',
+        'data_grid.column_quick_find.placeholder': 'Search field label',
         'data_grid.column.type_tooltip': `TYPE ${params?.type}`,
         'data_grid.column.comment_tooltip': `COMMENT ${params?.comment}`,
         'data_grid.preview_panel.no_cell_title': 'Select cell title',
@@ -1079,6 +1082,10 @@ describe('DataGrid layout', () => {
     expect(jsonRecordMarkup).toContain('5 JSON rows label');
     expect(jsonRecordMarkup).toContain('Edit JSON label');
     expect(jsonRecordMarkup).toContain('Back to table label');
+    expect(jsonRecordMarkup).toContain('Search field label');
+    expect(jsonRecordMarkup).toContain('data-grid-record-field-search="true"');
+    expect(jsonRecordMarkup).toContain('data-grid-record-field-search--navigation');
+    expect(jsonRecordMarkup).toContain('data-grid-record-field-search-navigation');
     expect(jsonRecordMarkup).not.toContain('data_grid.record_view');
 
     const textRecordMarkup = renderToStaticMarkup(
@@ -1106,6 +1113,8 @@ describe('DataGrid layout', () => {
     expect(textRecordMarkup).toContain('Record label 1 of 2');
     expect(textRecordMarkup).toContain('Edit current label');
     expect(textRecordMarkup).toContain('Back to table label');
+    expect(textRecordMarkup).toContain('Search field or comment label');
+    expect(textRecordMarkup).toContain('data-grid-record-field-search="true"');
     expect(textRecordMarkup).toContain('Field label');
     expect(textRecordMarkup).toContain('Value label');
     expect(textRecordMarkup).toContain('Comment label');
@@ -1127,6 +1136,19 @@ describe('DataGrid layout', () => {
     expect(textRecordMarkup).toContain('SQL text payload');
     expect(textRecordMarkup).toContain('GitHub release HTTP 500 checksum abc123');
     expect(textRecordMarkup).not.toContain('data_grid.record_view');
+
+    const recordSearchCss = buildDataGridCssText({
+      darkMode: false,
+      densityParams: { dataFontSize: 12 },
+      gridId: 'record-grid',
+    });
+    expect(recordSearchCss).toContain('.record-grid .data-grid-record-field-search-navigation.ant-btn');
+    expect(recordSearchCss).toContain('.record-grid .data-grid-record-field-search .ant-input-affix-wrapper-focused');
+    expect(recordSearchCss).toContain('.record-grid .data-grid-record-field-search-autocomplete.ant-select-focused .ant-select-selector');
+    expect(recordSearchCss).toContain('.record-grid .data-grid-record-field-search .ant-input::placeholder');
+    expect(recordSearchCss).toContain('font-size: 12px !important;');
+    expect(recordSearchCss).toContain('height: 24px !important;');
+    expect(recordSearchCss).toContain('box-shadow: none !important;');
 
     const hiddenTextRecordMarkup = renderToStaticMarkup(
       <DataGridTextView

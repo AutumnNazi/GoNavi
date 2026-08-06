@@ -4341,6 +4341,7 @@
   "data_grid.record_view.edit_json": "JSON を編集",
   "data_grid.record_view.back_to_table": "テーブルに戻る",
   "data_grid.record_view.field": "フィールド",
+  "data_grid.record_view.field_or_comment_search_placeholder": "フィールドまたはコメントを検索...",
   "data_grid.record_view.value": "値",
   "data_grid.record_view.comment": "コメント",
   "data_grid.record_view.type": "型",

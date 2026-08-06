@@ -4341,6 +4341,7 @@
   "data_grid.record_view.edit_json": "Редактировать JSON",
   "data_grid.record_view.back_to_table": "Вернуться к таблице",
   "data_grid.record_view.field": "Поле",
+  "data_grid.record_view.field_or_comment_search_placeholder": "Поиск поля или комментария...",
   "data_grid.record_view.value": "Значение",
   "data_grid.record_view.comment": "Комментарий",
   "data_grid.record_view.type": "Тип",
