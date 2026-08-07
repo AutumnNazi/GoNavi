@@ -426,7 +426,7 @@ const buildUpdateSetEdit = (
     && token.end <= rawOffset);
   if (!setToken) return null;
   const clauseEndToken = tokens.find((token) => token.kind === 'word'
-    && ['where', 'returning', 'order', 'limit'].includes(token.value.toLowerCase())
+    && ['from', 'output', 'where', 'returning', 'order', 'limit'].includes(token.value.toLowerCase())
     && token.depth === updateToken.depth
     && token.start >= setToken.end);
   const clauseEnd = clauseEndToken?.start ?? statement.end;

@@ -51,6 +51,20 @@ describe('buildSqlFieldDropEdit', () => {
       .toBe(populatedInsertSql);
   });
 
+  it('does not treat update FROM and OUTPUT clauses as SET lists', () => {
+    const postgresSql = 'UPDATE users SET active = source.active FROM source WHERE users.id = source.user_id';
+    expect(applyEdit(postgresSql, postgresSql.indexOf(' WHERE'), 'archived_at'))
+      .toBe('UPDATE users SET active = source.active FROM source archived_at WHERE users.id = source.user_id');
+
+    const sqlServerOutputSql = 'UPDATE users SET active = 1 OUTPUT  FROM users WHERE users.id = 1';
+    expect(applyEdit(sqlServerOutputSql, sqlServerOutputSql.indexOf(' FROM'), 'updated_at'))
+      .toBe('UPDATE users SET active = 1 OUTPUT updated_at FROM users WHERE users.id = 1');
+
+    const sqlServerFromSql = 'UPDATE users SET active = 1 FROM users WHERE users.id = 1';
+    expect(applyEdit(sqlServerFromSql, sqlServerFromSql.indexOf(' WHERE'), 'audit'))
+      .toBe('UPDATE users SET active = 1 FROM users audit WHERE users.id = 1');
+  });
+
   it('does not add a comma in predicate contexts', () => {
     const sql = 'delete from users where  = 1';
     expect(applyEdit(sql, sql.indexOf('=') - 1, 'id')).toBe('delete from users where id = 1');
