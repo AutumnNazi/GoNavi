@@ -102,6 +102,8 @@ import {
 import { downloadBrowserTextFile } from './utils/browserFileTransfer';
 import { buildDataSyncWorkbenchTab } from './utils/dataSyncTab';
 import { buildSqlAuditWorkbenchTab } from './utils/sqlAuditTab';
+import { resolveDataSourceType } from './utils/dataSourceCapabilities';
+import { buildContextualNewQueryTemplate } from './utils/objectQueryTemplates';
 import {
   extractCustomThemeAntTokens,
 } from './utils/customTheme';
@@ -2723,6 +2725,7 @@ function App() {
   const handleNewQuery = useCallback(() => {
       let connId = '';
       let db = '';
+      let tableName = '';
 
       // Priority: Active Tab Context (if connection still valid) > Sidebar Selection (activeContext)
       if (activeTabId) {
@@ -2730,6 +2733,9 @@ function App() {
           if (currentTab && currentTab.connectionId && connections.some(c => c.id === currentTab.connectionId)) {
               connId = currentTab.connectionId;
               db = currentTab.dbName || '';
+              if (currentTab.type === 'table' || currentTab.type === 'design') {
+                  tableName = String(currentTab.tableName || '').trim();
+              }
           }
       }
 
@@ -2739,15 +2745,24 @@ function App() {
           db = activeContext.dbName || '';
       }
 
+      const connection = connections.find(c => c.id === connId);
+      const contextualQuery = tableName && connection
+          ? buildContextualNewQueryTemplate({
+              dbType: resolveDataSourceType(connection.config),
+              tableName,
+              customTemplate: appearance.newQuerySqlTemplate,
+          })
+          : null;
+
       addTab({
           id: `query-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
           title: t('query.new'),
           type: 'query',
           connectionId: connId,
           dbName: db,
-          query: ''
+          query: contextualQuery ?? ''
       });
-  }, [activeTabId, tabs, connections, activeContext, addTab, t]);
+  }, [activeTabId, tabs, connections, activeContext, addTab, appearance.newQuerySqlTemplate, t]);
 
   const switchActiveTabByOffset = useCallback((offset: 1 | -1) => {
       if (tabs.length < 2) return;
