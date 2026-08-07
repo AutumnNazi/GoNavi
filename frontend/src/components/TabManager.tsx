@@ -54,6 +54,8 @@ import { useWorkbenchTabs } from '../hooks/useWorkbenchTabs';
 import { resolveConnectionEnvironmentPresentation } from '../utils/connectionEnvironment';
 import { createSidebarResizeAwareFrameScheduler } from '../utils/sidebarResizeLifecycle';
 import { QUERY_TAB_RENAME_REQUEST_EVENT } from '../utils/queryTabTitle';
+import { getDbIcon } from './DatabaseIcons';
+import { resolveConnectionAccentColor, resolveConnectionIconType } from '../utils/connectionVisual';
 
 const getTabKindLabel = (tab: TabData): string => {
   if (tab.type === 'query') return t('tab_manager.kind_badge.query');
@@ -117,7 +119,7 @@ export const resolveV2WorkbenchTabWidth = (availableWidth: number, tabCount: num
   );
 };
 
-type RecentConnectionShortcut = {
+export type RecentConnectionShortcut = {
   connection: SavedConnection;
   dbName?: string;
 };
@@ -171,6 +173,28 @@ export const buildRecentConnectionShortcuts = (
   });
   return result;
 };
+
+export const RecentConnectionShortcutItem: React.FC<{
+  shortcut: RecentConnectionShortcut;
+  onOpen: (shortcut: RecentConnectionShortcut) => void;
+}> = ({ shortcut, onOpen }) => (
+  <button
+    type="button"
+    className="gn-v2-empty-recent-item"
+    onClick={() => onOpen(shortcut)}
+  >
+    {getDbIcon(
+      resolveConnectionIconType(shortcut.connection),
+      resolveConnectionAccentColor(shortcut.connection),
+      22,
+    )}
+    <span>
+      <strong title={shortcut.connection.name}>{shortcut.connection.name}</strong>
+      <small>{shortcut.dbName || t('tab_manager.empty.recent.connection.default_database')}</small>
+    </span>
+    <RightOutlined className="gn-v2-empty-recent-arrow" />
+  </button>
+);
 
 export const buildPinnedTableShortcuts = (
   connections: SavedConnection[],
@@ -1573,19 +1597,11 @@ const TabManager: React.FC<TabManagerProps> = React.memo<TabManagerProps>(({ onF
           {recentConnectionShortcuts.length > 0 ? (
             <div className="gn-v2-empty-recent-list">
               {recentConnectionShortcuts.map((shortcut) => (
-                <button
+                <RecentConnectionShortcutItem
                   key={`${shortcut.connection.id}::${shortcut.dbName || ''}`}
-                  type="button"
-                  className="gn-v2-empty-recent-item"
-                  onClick={() => handleOpenRecentConnection(shortcut)}
-                >
-                  <DatabaseOutlined />
-                  <span>
-                    <strong title={shortcut.connection.name}>{shortcut.connection.name}</strong>
-                    <small>{shortcut.dbName || t('tab_manager.empty.recent.connection.default_database')}</small>
-                  </span>
-                  <RightOutlined className="gn-v2-empty-recent-arrow" />
-                </button>
+                  shortcut={shortcut}
+                  onOpen={handleOpenRecentConnection}
+                />
               ))}
             </div>
           ) : (

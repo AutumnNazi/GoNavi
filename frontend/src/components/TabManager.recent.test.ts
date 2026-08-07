@@ -1,9 +1,12 @@
+import React from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 
 import {
   buildPinnedTableShortcuts,
   buildRecentConnectionShortcuts,
   buildRecentSQLFileShortcuts,
+  RecentConnectionShortcutItem,
 } from './TabManager';
 import type { ExternalSQLDirectory, SavedConnection } from '../types';
 
@@ -20,6 +23,38 @@ const connection = (id: string, type: string): SavedConnection => ({
 });
 
 describe('recent workbench shortcuts', () => {
+  it('renders recent connections with the same database identity as the sidebar tree', () => {
+    const mysqlConnection = connection('mysql-1', 'mysql');
+    const customizedConnection: SavedConnection = {
+      ...connection('customized-1', 'mysql'),
+      iconType: 'postgres',
+      iconColor: '#2f855a',
+    };
+    const [mysqlShortcut, customizedShortcut] = buildRecentConnectionShortcuts([
+      mysqlConnection,
+      customizedConnection,
+    ], [
+      { connectionId: 'mysql-1', dbName: 'orders', openedAt: 2 },
+      { connectionId: 'customized-1', dbName: 'reporting', openedAt: 1 },
+    ]);
+
+    const mysqlMarkup = renderToStaticMarkup(React.createElement(RecentConnectionShortcutItem, {
+      shortcut: mysqlShortcut,
+      onOpen: () => undefined,
+    }));
+    const customizedMarkup = renderToStaticMarkup(React.createElement(RecentConnectionShortcutItem, {
+      shortcut: customizedShortcut,
+      onOpen: () => undefined,
+    }));
+
+    expect(mysqlMarkup).toContain('data-db-icon-frame="true"');
+    expect(mysqlMarkup).toContain('/db-icons/mysql.svg');
+    expect(customizedMarkup).toContain('/db-icons/postgres.svg');
+    expect(customizedMarkup).toContain('#2f855a');
+    expect(mysqlMarkup).not.toContain('anticon-database');
+    expect(customizedMarkup).not.toContain('anticon-database');
+  });
+
   it('only offers connections that can open the SQL query editor', () => {
     const shortcuts = buildRecentConnectionShortcuts([
       connection('redis-1', 'redis'),
