@@ -1958,6 +1958,13 @@ describe('store appearance persistence', () => {
       id: 'ext-1',
       name: 'scripts',
       path: 'D:/sql/scripts',
+      fileBindings: [
+        {
+          filePath: 'D:\\sql\\scripts\\report.sql',
+          connectionId: 'conn-2',
+          dbName: 'reporting',
+        },
+      ],
       createdAt: 1,
     });
 
@@ -1967,6 +1974,13 @@ describe('store appearance persistence', () => {
         id: 'ext-1',
         name: 'scripts',
         path: 'D:/sql/scripts',
+        fileBindings: [
+          {
+            filePath: 'D:/sql/scripts/report.sql',
+            connectionId: 'conn-2',
+            dbName: 'reporting',
+          },
+        ],
         createdAt: 1,
       },
     ]);
@@ -1996,6 +2010,13 @@ describe('store appearance persistence', () => {
         id: 'ext-1',
         name: 'scripts',
         path: 'D:/sql/scripts',
+        fileBindings: [
+          {
+            filePath: 'D:/sql/scripts/report.sql',
+            connectionId: 'conn-2',
+            dbName: 'reporting',
+          },
+        ],
         createdAt: 1,
       },
       {
