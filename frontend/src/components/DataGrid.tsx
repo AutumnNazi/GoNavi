@@ -684,8 +684,6 @@ const DataGrid: React.FC<DataGridProps> = ({
           bgContextMenu: darkMode ? '#1f1f1f' : '#ffffff',
           rowAddedBg: darkMode ? _rowBg(22, 43, 22) : _rowBg(246, 255, 237),
           rowModBg: darkMode ? _rowBg(22, 34, 56) : _rowBg(230, 247, 255),
-          rowAddedHover: darkMode ? _rowBg(31, 61, 31) : _rowBg(217, 247, 190),
-          rowModHover: darkMode ? _rowBg(29, 53, 94) : _rowBg(186, 231, 255),
           selectionAccentHex: darkMode ? '#f6c453' : '#1890ff',
           selectionAccentRgb: darkMode ? '246, 196, 83' : '24, 144, 255',
           columnMetaHintColor: darkMode ? 'rgba(255, 236, 179, 0.98)' : '#595959',
@@ -732,7 +730,7 @@ const DataGrid: React.FC<DataGridProps> = ({
   // 解构常用变量以保持后续代码引用不变
   const {
       bgContent, bgFilter, bgContextMenu,
-      rowAddedBg, rowModBg, rowAddedHover, rowModHover,
+      rowAddedBg, rowModBg,
       selectionAccentHex, selectionAccentRgb,
       columnMetaHintColor, columnMetaTooltipColor,
       panelFrameColor,
@@ -1446,9 +1444,7 @@ const DataGrid: React.FC<DataGridProps> = ({
           paginationShellShadow,
           panelRadius,
           rowAddedBg,
-          rowAddedHover,
           rowModBg,
-          rowModHover,
           selectionAccentHex,
           selectionAccentRgb,
           tableBodyBottomPadding,
@@ -3357,6 +3353,12 @@ const DataGrid: React.FC<DataGridProps> = ({
       return ROW_NUMBER_COLUMN_WIDTH;
   }, [columnWidths]);
 
+  const handleRowNumberClick = useCallback((record: Item) => {
+      const key = record?.[GONAVI_ROW_KEY];
+      if (key === undefined || key === null) return;
+      setSelectedRowKeys([key]);
+  }, []);
+
   const handleRowNumberDoubleClick = useCallback((index: number) => {
       handleViewModeChange('text', { textRecordIndex: index });
   }, [handleViewModeChange]);
@@ -3407,7 +3409,7 @@ const DataGrid: React.FC<DataGridProps> = ({
               minWidth: 28,
           },
       }),
-      onCell: (_record: Item, index?: number) => ({
+      onCell: (record: Item, index?: number) => ({
           'data-grid-row-number-action': 'true',
           style: {
               width: rowNumberColumnWidth,
@@ -3415,6 +3417,10 @@ const DataGrid: React.FC<DataGridProps> = ({
               padding: 0,
               textAlign: 'center' as const,
             },
+          onClick: (event: React.MouseEvent<HTMLElement>) => {
+              event.stopPropagation();
+              handleRowNumberClick(record);
+          },
           onDoubleClick: (event: React.MouseEvent<HTMLElement>) => {
               event.preventDefault();
               event.stopPropagation();
@@ -3450,7 +3456,7 @@ const DataGrid: React.FC<DataGridProps> = ({
               </Tooltip>
           );
       },
-  }), [handleResizeAutoFit, handleResizeStart, handleRowNumberDoubleClick, pagination?.current, pagination?.pageSize, rowNumberColumnWidth, translateDataGrid]);
+  }), [handleResizeAutoFit, handleResizeStart, handleRowNumberClick, handleRowNumberDoubleClick, pagination?.current, pagination?.pageSize, rowNumberColumnWidth, translateDataGrid]);
 
   const tableColumns = useMemo(() => {
       const baseColumns = resolvedShowRowNumberColumn

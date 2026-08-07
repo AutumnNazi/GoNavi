@@ -482,6 +482,26 @@ describe('DataGrid layout', () => {
     expect(css).not.toContain('.react-resizable-handle:hover::after');
   });
 
+  it('keeps DataGrid rows unchanged on hover', () => {
+    const css = buildDataGridCssText({
+      darkMode: false,
+      densityParams: { dataFontSize: 12 },
+      gridId: 'hover-grid',
+      rowAddedBg: 'added-bg',
+      rowAddedHover: 'added-hover',
+      rowModBg: 'modified-bg',
+      rowModHover: 'modified-hover',
+    });
+
+    expect(css).toContain(
+      '.hover-grid.data-grid-root .ant-table-tbody .ant-table-row:hover > .ant-table-cell { background-color: transparent !important; }',
+    );
+    expect(css).not.toContain('var(--gn-bg-hover');
+    expect(css).not.toContain('rgba(34, 197, 94, 0.18)');
+    expect(css).not.toContain('added-hover');
+    expect(css).not.toContain('modified-hover');
+  });
+
   it('uses the table cell as the only V2 inline edit frame', () => {
     const css = readV2ThemeCss();
     const inlineEditorCss = css.slice(

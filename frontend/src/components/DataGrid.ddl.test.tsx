@@ -1073,6 +1073,43 @@ describe('DataGrid DDL interactions', () => {
     vi.unstubAllGlobals();
   });
 
+  it('selects one row when its row number cell is clicked', async () => {
+    storeState.appearance.uiVersion = 'v2';
+    const rows = [
+      { [GONAVI_ROW_KEY]: 'row-1', id: 1 },
+      { [GONAVI_ROW_KEY]: 'row-2', id: 2 },
+    ];
+    let renderer: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(
+        <DataGrid
+          data={rows}
+          columnNames={['id']}
+          loading={false}
+          tableName="users"
+          dbName="main"
+          connectionId="conn-1"
+          showRowNumberColumn
+        />,
+      );
+    });
+    await waitForEffects();
+
+    const rowNumberColumn = testRenderState.latestColumns.find(
+      (column) => column.key === '__gonavi_row_number__',
+    );
+    const stopPropagation = vi.fn();
+    await act(async () => {
+      rowNumberColumn.onCell(rows[1], 1).onClick({ stopPropagation });
+    });
+    await waitForEffects();
+
+    expect(stopPropagation).toHaveBeenCalledTimes(1);
+    expect(testRenderState.latestTableProps.rowHoverable).toBe(false);
+    expect(testRenderState.latestTableProps.rowSelection.selectedRowKeys).toEqual(['row-2']);
+    renderer!.unmount();
+  });
+
   it.each(['legacy', 'v2'] as const)(
     'opens the referenced table DDL from a %s query result',
     async (uiVersion) => {

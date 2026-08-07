@@ -390,7 +390,7 @@ const renderDataTableView = () => (
                                       rowKey={GONAVI_ROW_KEY}
                                       pagination={false}
                                       onChange={handleTableChange}
-                                      rowHoverable={!enableVirtual}
+                                      rowHoverable={false}
                                       bordered
                                       rowSelection={rowSelectionConfig}
                                       rowClassName={rowClassName}
