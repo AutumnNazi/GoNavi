@@ -236,6 +236,7 @@ import {
 import { useAppUpdateManager } from './hooks/useAppUpdateManager';
 import { useAppLogPanelResize } from './hooks/useAppLogPanelResize';
 import { useAppSidebarResize } from './hooks/useAppSidebarResize';
+import { resolveNewQueryContext } from './utils/newQueryContext';
 import { useAppUtilityStyles } from './hooks/useAppUtilityStyles';
 import { useWorkbenchTabs } from './hooks/useWorkbenchTabs';
 import {
@@ -2721,30 +2722,19 @@ function App() {
   }, [emitWindowDiagnostic, macWindowDiagnosticsEnabled]);
 
   const handleNewQuery = useCallback(() => {
-      let connId = '';
-      let db = '';
-
-      // Priority: Active Tab Context (if connection still valid) > Sidebar Selection (activeContext)
-      if (activeTabId) {
-          const currentTab = tabs.find(t => t.id === activeTabId);
-          if (currentTab && currentTab.connectionId && connections.some(c => c.id === currentTab.connectionId)) {
-              connId = currentTab.connectionId;
-              db = currentTab.dbName || '';
-          }
-      }
-
-      // Fallback: Sidebar selection context (only if connection still valid)
-      if (!connId && activeContext?.connectionId && connections.some(c => c.id === activeContext.connectionId)) {
-          connId = activeContext.connectionId;
-          db = activeContext.dbName || '';
-      }
+      const currentTab = activeTabId ? tabs.find(tab => tab.id === activeTabId) : undefined;
+      const targetContext = resolveNewQueryContext({
+          sidebarContext: activeContext,
+          activeTab: currentTab,
+          validConnectionIds: new Set(connections.map(connection => connection.id)),
+      });
 
       addTab({
           id: `query-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
           title: t('query.new'),
           type: 'query',
-          connectionId: connId,
-          dbName: db,
+          connectionId: targetContext.connectionId,
+          dbName: targetContext.dbName,
           query: ''
       });
   }, [activeTabId, tabs, connections, activeContext, addTab, t]);

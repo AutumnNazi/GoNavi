@@ -2159,19 +2159,23 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
   }, [finishPendingSqlTransaction, handleShowSqlExecutionLog]);
   const autoFetchVisible = useAutoFetchVisibility();
 
-  useEffect(() => {
+  const resetMetadataForContext = useCallback((
+      connectionId: string,
+      dbName: string,
+      connectionConfig: unknown,
+  ) => {
       const nextContextKey = [
-          String(currentConnectionId || '').trim(),
-          String(currentDb || '').trim().toLowerCase(),
+          String(connectionId || '').trim(),
+          String(dbName || '').trim().toLowerCase(),
       ].join('\u0000');
       if (
           metadataContextKeyRef.current === nextContextKey
-          && metadataContextConnectionConfigRef.current === currentConnectionConfig
+          && metadataContextConnectionConfigRef.current === connectionConfig
       ) {
-          return;
+          return false;
       }
       metadataContextKeyRef.current = nextContextKey;
-      metadataContextConnectionConfigRef.current = currentConnectionConfig;
+      metadataContextConnectionConfigRef.current = connectionConfig;
       metadataFetchKeyRef.current = '';
       aiContextMetadataWarmupRef.current = {};
       aiContextCacheRef.current = null;
@@ -2183,11 +2187,18 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       synonymsRef.current = [];
       triggersRef.current = [];
       routinesRef.current = [];
+      sequencesRef.current = [];
+      packagesRef.current = [];
       columnsCacheRef.current = {};
       if (isActive) {
           resetSharedQueryEditorMetadata();
       }
-  }, [currentConnectionConfig, currentConnectionId, currentDb, isActive]);
+      return true;
+  }, [isActive]);
+
+  useEffect(() => {
+      resetMetadataForContext(currentConnectionId, currentDb, currentConnectionConfig);
+  }, [currentConnectionConfig, currentConnectionId, currentDb, resetMetadataForContext]);
 
   const currentSavedQuery = useMemo(() => {
       const savedId = String(tab.savedQueryId || '').trim();
@@ -2687,6 +2698,45 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
   useEffect(() => {
       connectionsRef.current = connections;
   }, [connections]);
+
+  const handleDatabaseChange = useCallback((dbName: string) => {
+      const nextDbName = String(dbName || '');
+      const connectionId = String(currentConnectionIdRef.current || currentConnectionId || '').trim();
+      currentDbRef.current = nextDbName;
+
+      if (isActive) {
+          const activeConnectionConfig = connections.find(
+              (connection) => connection.id === connectionId,
+          )?.config ?? null;
+          const metadataContextChanged = resetMetadataForContext(
+              connectionId,
+              nextDbName,
+              activeConnectionConfig,
+          );
+          const nextSharedMetadataContextKey = `${tab.id}\u0000${connectionId}\u0000${nextDbName}`;
+          if (
+              !metadataContextChanged
+              && (
+                  sharedQueryEditorMetadataContextKey !== nextSharedMetadataContextKey
+                  || sharedQueryEditorMetadataConnectionConfig !== activeConnectionConfig
+              )
+          ) {
+              resetSharedQueryEditorMetadata();
+          }
+          sharedQueryEditorMetadataContextKey = nextSharedMetadataContextKey;
+          sharedQueryEditorMetadataConnectionConfig = activeConnectionConfig;
+          sharedCurrentDb = nextDbName;
+          sharedCurrentConnectionId = connectionId;
+          sharedConnections = connections;
+          sharedVisibleDbs = visibleDbsRef.current;
+          sharedActiveEditorModelUri = String(editorRef.current?.getModel?.()?.uri?.toString?.() || '');
+      }
+
+      if (connectionId) {
+          setActiveContext({ connectionId, dbName: nextDbName });
+      }
+      setCurrentDb(nextDbName);
+  }, [connections, currentConnectionId, isActive, resetMetadataForContext, setActiveContext, tab.id]);
 
   const refreshObjectDecorations = useCallback((maxTextLength = QUERY_EDITOR_OBJECT_DECORATION_MAX_TEXT_LENGTH) => {
       const editor = editorRef.current;
@@ -3441,15 +3491,6 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
               }
 
               setDbList(dbs);
-              if (!currentDbRef.current) {
-                  const configuredDb = String(conn.config.database || '').trim();
-                  const fallbackDb = dbs.find((db: string) => String(db || '').toLowerCase() !== 'information_schema') || dbs[0] || '';
-                  const nextDb = configuredDb && dbs.includes(configuredDb) ? configuredDb : fallbackDb;
-                  if (nextDb) {
-                      currentDbRef.current = nextDb;
-                      setCurrentDb(nextDb);
-                  }
-              }
           } else {
               visibleDbsRef.current = [];
               if (isActive) {
@@ -10573,7 +10614,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
             setCurrentConnectionId(val);
             setCurrentDb('');
         }}
-        onDatabaseChange={setCurrentDb}
+        onDatabaseChange={handleDatabaseChange}
         onMaxRowsChange={(maxRows) => setQueryOptions({ maxRows })}
         onCommitModeChange={(mode) => setSqlEditorTransactionOptions(
             mode === 'auto'

@@ -18,6 +18,7 @@ import QueryEditor, {
   resolveQueryEditorNavigationDecorations,
   resolveQueryEditorNavigationTarget,
 } from './QueryEditor';
+import QueryEditorToolbar from './QueryEditorToolbar';
 const mountedRenderers = new Set<ReactTestRenderer>();
 const create = (...args: Parameters<typeof createRenderer>): ReactTestRenderer => {
   const renderer = createRenderer(...args);
@@ -3230,16 +3231,26 @@ describe('QueryEditor external SQL save', () => {
     });
   });
 
-  it('keeps table name completion available after typing in a fresh query tab', async () => {
+  it('loads table completions after selecting a database in a connection-scoped query tab', async () => {
     let renderer!: ReactTestRenderer;
     autoFetchState.visible = true;
     storeState.connections[0].config.database = '';
     backendApp.DBGetDatabases.mockResolvedValueOnce({ success: true, data: [{ Database: 'information_schema' }, { Database: 'main' }] });
-    backendApp.DBGetTables.mockResolvedValueOnce({ success: true, data: [{ Tables_in_main: 'organization' }] });
+    backendApp.DBGetTables.mockImplementation(async (_config: unknown, dbName: string) => ({
+      success: true,
+      data: dbName === 'main'
+        ? [{ Tables_in_main: 'organization' }]
+        : [{ Tables_in_database_a: 'legacy_table' }],
+    }));
     backendApp.DBGetAllColumns.mockResolvedValueOnce({ success: true, data: [] });
 
     await act(async () => {
-      renderer = create(<QueryEditor tab={createTab({ query: '' })} />);
+      renderer = create(
+        <>
+          <QueryEditor tab={createTab({ id: 'old-tab', dbName: 'database_a' })} isActive={false} />
+          <QueryEditor tab={createTab({ dbName: '', query: '' })} isActive />
+        </>,
+      );
     });
     await act(async () => {
       await Promise.resolve();
@@ -3249,15 +3260,61 @@ describe('QueryEditor external SQL save', () => {
 
     const sqlProvider = editorState.providers.find((provider) => Array.isArray(provider.triggerCharacters) && provider.triggerCharacters.includes('.'));
     expect(sqlProvider).toBeTruthy();
+    expect(backendApp.DBGetTables).not.toHaveBeenCalled();
+
+    let immediateCompletion!: Promise<any>;
+    await act(async () => {
+      const activeToolbar = renderer.root.findAllByType(QueryEditorToolbar).find((toolbar) => toolbar.props.currentDb === '');
+      expect(activeToolbar).toBeTruthy();
+      activeToolbar!.props.onDatabaseChange('main');
+
+      editorState.value = 'SELECT * FROM org';
+      editorState.latestOnChange?.(editorState.value);
+      immediateCompletion = sqlProvider.provideCompletionItems(
+        editorState.editor.getModel(),
+        { lineNumber: 1, column: editorState.value.length + 1 },
+      );
+      await immediateCompletion;
+    });
+    await vi.waitFor(() => {
+      expect(backendApp.DBGetTables).toHaveBeenCalledWith(expect.any(Object), 'main');
+    });
     expect(storeState.updateQueryTabDraft).toHaveBeenLastCalledWith('tab-1', expect.objectContaining({
       dbName: 'main',
     }));
+    expect(storeState.setActiveContext).toHaveBeenCalledWith({ connectionId: 'conn-1', dbName: 'main' });
 
-    editorState.value = 'SELECT * FROM org';
-    editorState.latestOnChange?.(editorState.value);
-    const result = await sqlProvider.provideCompletionItems(editorState.editor.getModel(), { lineNumber: 1, column: editorState.value.length + 1 });
+    const result = await immediateCompletion;
 
     expect(result.suggestions.map((item: any) => item.label)).toContain('organization');
+    await act(async () => {
+      renderer.unmount();
+    });
+  });
+
+  it('keeps the database empty after loading options for a connection-scoped query tab', async () => {
+    let renderer!: ReactTestRenderer;
+    autoFetchState.visible = true;
+    backendApp.DBGetDatabases.mockResolvedValueOnce({
+      success: true,
+      data: [{ Database: 'information_schema' }, { Database: 'main' }],
+    });
+
+    await act(async () => {
+      renderer = create(<QueryEditor tab={createTab({ dbName: '', query: '' })} />);
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(backendApp.DBGetDatabases).toHaveBeenCalledTimes(1);
+    expect(storeState.updateQueryTabDraft).toHaveBeenCalledWith('tab-1', expect.objectContaining({
+      dbName: '',
+    }));
+    expect(backendApp.DBGetTables).not.toHaveBeenCalled();
+
     await act(async () => {
       renderer.unmount();
     });
