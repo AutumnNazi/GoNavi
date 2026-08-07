@@ -4359,7 +4359,7 @@
   "data_grid.record_view.record_position": "Datensatz {{current}} / {{total}}",
   "data_grid.row_editor.popup_edit": "Im Popup bearbeiten",
   "data_grid.row_editor.title": "Zeile bearbeiten",
-  "data_grid.secondary.column_display": "Spaltenanzeige",
+  "data_grid.secondary.column_display": "Spalten ein-/ausblenden",
   "data_grid.secondary.data_preview": "Datenvorschau",
   "data_grid.secondary.er_diagram": "ER-Diagramm",
   "data_grid.secondary.jump_column": "Zur Spalte springen",

@@ -4359,7 +4359,7 @@
   "data_grid.record_view.record_position": "Record {{current}} / {{total}}",
   "data_grid.row_editor.popup_edit": "Edit in popup",
   "data_grid.row_editor.title": "Edit row",
-  "data_grid.secondary.column_display": "Column display",
+  "data_grid.secondary.column_display": "Show/hide columns",
   "data_grid.secondary.data_preview": "Data preview",
   "data_grid.secondary.er_diagram": "ER diagram",
   "data_grid.secondary.jump_column": "Jump column",
