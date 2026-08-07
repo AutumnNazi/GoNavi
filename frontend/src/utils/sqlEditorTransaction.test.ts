@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   canReusePendingSqlEditorTransactionForType,
+  hasTopLevelSqlEditorForUpdate,
   resolveSqlEditorOperationKeyword,
   shouldUseSqlEditorManagedTransaction,
   shouldUseSqlEditorManagedTransactionForType,
@@ -38,6 +39,16 @@ describe('sqlEditorTransaction', () => {
     expect(resolveSqlEditorOperationKeyword('WITH target AS (SELECT id FROM users) SELECT * FROM target')).toBe('select');
     expect(resolveSqlEditorOperationKeyword('WITH target AS (SELECT id FROM users) UPDATE users SET synced = 1')).toBe('update');
     expect(resolveSqlEditorOperationKeyword('WITH target AS (SELECT id FROM users) DELETE FROM users WHERE id IN (SELECT id FROM target)')).toBe('delete');
+  });
+
+  it('detects only top-level SELECT FOR UPDATE clauses', () => {
+    expect(hasTopLevelSqlEditorForUpdate('SELECT * FROM users FOR UPDATE')).toBe(true);
+    expect(hasTopLevelSqlEditorForUpdate('SELECT * FROM users FOR /* lock */ UPDATE')).toBe(true);
+    expect(hasTopLevelSqlEditorForUpdate('SELECT * FROM users FOR JSON AUTO FOR UPDATE')).toBe(true);
+    expect(hasTopLevelSqlEditorForUpdate("SELECT 'FOR UPDATE' AS marker FROM users")).toBe(false);
+    expect(hasTopLevelSqlEditorForUpdate('SELECT * FROM (SELECT * FROM users FOR UPDATE) source')).toBe(false);
+    expect(hasTopLevelSqlEditorForUpdate('SELECT * FROM users -- FOR UPDATE')).toBe(false);
+    expect(hasTopLevelSqlEditorForUpdate('UPDATE users SET locked = 1')).toBe(false);
   });
 
   it('uses managed transactions for WITH DML but not WITH SELECT', () => {

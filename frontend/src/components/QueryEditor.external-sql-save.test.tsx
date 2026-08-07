@@ -11860,6 +11860,49 @@ WHERE GRANTEE = 'APPUSER';`;
     expect(messageApi.warning).not.toHaveBeenCalled();
   });
 
+  it('keeps Oracle FOR UPDATE result columns editable when column metadata is unavailable', async () => {
+    storeState.connections[0].config.type = 'oracle';
+    storeState.connections[0].config.user = 'dev';
+    storeState.connections[0].config.database = 'ORCLPDB1';
+    backendApp.DBGetTables.mockResolvedValueOnce({ success: true, data: [] });
+    backendApp.DBQueryMulti.mockResolvedValueOnce({
+      success: true,
+      data: [{
+        columns: ['WAFER_ID', 'STATUS'],
+        rows: [{ WAFER_ID: 'R015Z10F08', STATUS: 'READY' }],
+      }],
+    });
+    backendApp.DBGetColumns.mockResolvedValueOnce({ success: true, data: [] });
+
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<QueryEditor tab={createTab({
+        dbName: 'ORCLPDB1',
+        query: 'SELECT * FROM table_name FOR UPDATE;',
+      })} />);
+    });
+
+    await act(async () => {
+      await findButton(renderer!, '运行').props.onClick();
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const executedSql = String(backendApp.DBQueryMulti.mock.calls[0][2]);
+    expect(executedSql).toBe('SELECT * FROM table_name FOR UPDATE');
+    expect(dataGridState.latestProps?.tableName).toBe('DEV.TABLE_NAME');
+    expect(dataGridState.latestProps?.editLocator).toMatchObject({
+      strategy: 'all-columns',
+      columns: [],
+      valueColumns: [],
+      readOnly: false,
+    });
+    expect(dataGridState.latestProps?.readOnly).toBe(false);
+    renderer?.unmount();
+  });
+
   it('does not inject Oracle ROWID when the selected object is a view', async () => {
     storeState.connections[0].config.type = 'oracle';
     storeState.connections[0].config.database = 'ORCLPDB1';
@@ -11880,7 +11923,7 @@ WHERE GRANTEE = 'APPUSER';`;
     await act(async () => {
       renderer = create(<QueryEditor tab={createTab({
         dbName: 'H2',
-        query: 'select * from cv_gd_yncrm_salesdtllist',
+        query: 'select * from cv_gd_yncrm_salesdtllist for update',
       })} />);
     });
 

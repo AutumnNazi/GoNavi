@@ -15,7 +15,7 @@ import {
     type EditRowLocator,
 } from '../../utils/rowLocator';
 import { getQueryTabDraft, hasQueryTabDraft } from '../../utils/sqlFileTabDrafts';
-import { resolveSqlEditorOperationKeyword } from '../../utils/sqlEditorTransaction';
+import { hasTopLevelSqlEditorForUpdate, resolveSqlEditorOperationKeyword } from '../../utils/sqlEditorTransaction';
 import { getColumnDefinitionKey, getColumnDefinitionName } from '../../utils/columnDefinition';
 import { splitQualifiedNameSegments } from '../../utils/qualifiedName';
 import { resolveUniqueKeyGroupsFromIndexes } from '../dataGridCopyInsert';
@@ -3083,7 +3083,11 @@ export const resolveQueryLocatorPlan = async ({
         const tableColumns = resCols.data as ColumnDefinition[];
         const tableColumnNames = tableColumns.map(getColumnDefinitionName).filter(Boolean);
         if (tableColumnNames.length === 0) {
-            plan.editLocator = buildQueryReadOnlyLocator(translate('query_editor.message.read_only_system_metadata'));
+            plan.editLocator = isOracleLikeDialect(dbType)
+                && selectInfo.selectsAll
+                && hasTopLevelSqlEditorForUpdate(statement)
+                ? buildAllColumnsLocator([], { translate })
+                : buildQueryReadOnlyLocator(translate('query_editor.message.read_only_system_metadata'));
             return plan;
         }
         let executableStatement = statement;

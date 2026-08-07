@@ -255,6 +255,19 @@ export const resolveSqlEditorOperationKeyword = (statement: string): string => {
     return resolveSqlEditorWithAnalysis(text, leading.end).keyword || leading.keyword;
 };
 
+export const hasTopLevelSqlEditorForUpdate = (statement: string): boolean => {
+    const text = String(statement || '');
+    if (resolveSqlEditorOperationKeyword(text) !== 'select') return false;
+    let searchFrom = 0;
+    while (searchFrom < text.length) {
+        const forEnd = findTopLevelSqlEditorKeyword(text, searchFrom, 'for');
+        if (forEnd < 0) return false;
+        if (readSqlEditorKeyword(text, forEnd).keyword === 'update') return true;
+        searchFrom = forEnd;
+    }
+    return false;
+};
+
 const sqlEditorStatementHasManagedWrite = (statement: string): boolean => {
     const text = String(statement || '');
     const leading = readSqlEditorKeyword(text, 0);
