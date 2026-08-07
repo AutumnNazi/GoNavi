@@ -2899,6 +2899,11 @@ body[data-platform='windows'] .titlebar-window-controls {
   color: #0f766e;
 }
 
+.gonavi-query-editor-field-drop-anchor {
+  background-color: rgba(0, 0, 0, 0.12);
+  border-radius: 2px;
+}
+
 .gonavi-query-editor-db-token {
   color: #7c3aed;
 }
@@ -2913,6 +2918,10 @@ body[data-theme='dark'] .gonavi-query-editor-link-hint {
 
 body[data-theme='dark'] .gonavi-query-editor-column-token {
   color: #5eead4;
+}
+
+body[data-theme='dark'] .gonavi-query-editor-field-drop-anchor {
+  background-color: rgba(255, 255, 255, 0.16);
 }
 
 body[data-theme='dark'] .gonavi-query-editor-db-token {

@@ -19,10 +19,15 @@ import {
 import { 
     SortableContext, 
     useSortable, 
-    horizontalListSortingStrategy, 
-    arrayMove 
+    horizontalListSortingStrategy
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
+import {
+    DATA_GRID_COLUMN_ORDER_DRAG_MIME,
+    decodeDataGridColumnOrderDragPayload,
+    hasDataGridColumnOrderDragPayload,
+    moveDataGridColumnInVisibleOrder,
+} from './dataGridColumnOrder';
 import { ImportData, ExportDataWithOptions, ExportQueryWithOptions, ApplyChanges, PreviewChanges, DBGetColumns, DBGetIndexes, DBGetForeignKeys, DBShowCreateTable } from '../../wailsjs/go/app/App';
 import ImportPreviewModal from './ImportPreviewModal';
 import { useStore } from '../store';
@@ -576,42 +581,29 @@ const DataGrid: React.FC<DataGridProps> = ({
       useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
   );
 
-  const handleDragEnd = (event: DragEndEvent) => {
-    // 防御性检查：若正在调整列宽，忽略拖拽排序事件
-    if (isResizingRef.current) return;
-    const { active, over } = event;
-    if (active.id !== over?.id && over) {
+  const columnOrderDragScopeRef = useRef(generateUuid());
+  const reorderVisibleColumns = useCallback((sourceColumnName: string, targetColumnName: string) => {
       setAllOrderedColumnNames((prevAllOrder) => {
-          // Calculate the new order of all columns by applying the movement
-          // We only move the visible columns relative to each other, but the easiest way 
-          // is to map the visible column movement back to the full array.
-          const hiddenSet = new Set(localHiddenColumns);
-          const visibleOrder = prevAllOrder.filter(col => !hiddenSet.has(col));
-          
-          const oldVisibleIndex = visibleOrder.indexOf(active.id as string);
-          const newVisibleIndex = visibleOrder.indexOf(over.id as string);
-          
-          if (oldVisibleIndex === -1 || newVisibleIndex === -1) return prevAllOrder;
-          
-          const nextVisibleOrder = arrayMove(visibleOrder, oldVisibleIndex, newVisibleIndex);
-          
-          // Reconstruct allOrderedColumnNames by inserting hidden columns back to their original relative positions
-          // Or simpler: just keep hidden columns at the end, but that ruins user's layout.
-          // Better approach: build a new array
-          let vIndex = 0;
-          const nextOrder = prevAllOrder.map(col => {
-              if (hiddenSet.has(col)) {
-                  return col; // Hidden columns stay at their absolute index in the master list
-              } else {
-                  return nextVisibleOrder[vIndex++];
-              }
-          });
-
+          const nextOrder = moveDataGridColumnInVisibleOrder(
+              prevAllOrder,
+              new Set(localHiddenColumns),
+              sourceColumnName,
+              targetColumnName,
+          );
+          if (nextOrder === prevAllOrder) return prevAllOrder;
           if (enableColumnOrderMemory && connectionId && dbName && tableName) {
               setTableColumnOrder(connectionId, dbName, tableName, nextOrder);
           }
           return nextOrder;
       });
+  }, [connectionId, dbName, enableColumnOrderMemory, localHiddenColumns, setTableColumnOrder, tableName]);
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    // 防御性检查：若正在调整列宽，忽略拖拽排序事件
+    if (isResizingRef.current) return;
+    const { active, over } = event;
+    if (active.id !== over?.id && over) {
+      reorderVisibleColumns(String(active.id), String(over.id));
     }
   };
 
@@ -3106,11 +3098,28 @@ const DataGrid: React.FC<DataGridProps> = ({
           },
           onHeaderCell: (column: any) => ({
               id: key,
+              columnOrderDragScope: columnOrderDragScopeRef.current,
               width: column.width,
               className: `gonavi-sortable-header-cell${showColumnComment || showColumnType ? '' : ' is-single-line-title'}`,
               'data-i18n-language': language,
               onResizeStart: handleResizeStart(key), // Only need start
               onResizeAutoFit: handleResizeAutoFit(key),
+              onDragOver: (event: React.DragEvent<HTMLElement>) => {
+                  if (!hasDataGridColumnOrderDragPayload(event.dataTransfer)) return;
+                  event.preventDefault();
+                  event.stopPropagation();
+                  event.dataTransfer.dropEffect = 'move';
+              },
+              onDrop: (event: React.DragEvent<HTMLElement>) => {
+                  if (!hasDataGridColumnOrderDragPayload(event.dataTransfer)) return;
+                  const payload = decodeDataGridColumnOrderDragPayload(
+                      event.dataTransfer.getData(DATA_GRID_COLUMN_ORDER_DRAG_MIME),
+                  );
+                  if (!payload || payload.scope !== columnOrderDragScopeRef.current) return;
+                  event.preventDefault();
+                  event.stopPropagation();
+                  reorderVisibleColumns(payload.columnName, key);
+              },
               onContextMenu: (event: React.MouseEvent<HTMLElement>) => {
                   if (!isV2Ui) return;
                   showColumnHeaderContextMenu(event, key);
@@ -3151,7 +3160,7 @@ const DataGrid: React.FC<DataGridProps> = ({
               },
           }),
       }));
-  }, [canModifyData, cellEditMode, columnWidths, currentConnConfig, dataTableDensity, displayColumnNames, displayColumnTypeMap, effectiveEditLocator, enableVirtual, handleResizeAutoFit, handleResizeStart, isV2Ui, language, normalizedPageFindText, onSort, pinnedLeftColumnSet, renderColumnTitle, selectEditableColumnCells, showColumnComment, showColumnHeaderContextMenu, showColumnType, sortInfo]);
+  }, [canModifyData, cellEditMode, columnWidths, currentConnConfig, dataTableDensity, displayColumnNames, displayColumnTypeMap, effectiveEditLocator, enableVirtual, handleResizeAutoFit, handleResizeStart, isV2Ui, language, normalizedPageFindText, onSort, pinnedLeftColumnSet, renderColumnTitle, reorderVisibleColumns, selectEditableColumnCells, showColumnComment, showColumnHeaderContextMenu, showColumnType, sortInfo]);
 
   const mergedColumns = useMemo(() => columns.map((col): ColumnType<any> => {
       const dataIndex = String(col.dataIndex);
