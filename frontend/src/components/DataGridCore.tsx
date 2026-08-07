@@ -75,6 +75,13 @@ import {
 import { applyNoAutoCapAttributesWithin, noAutoCapInputProps } from '../utils/inputAutoCap';
 import { DEFAULT_SHORTCUT_OPTIONS, getShortcutPlatform, resolveShortcutDisplay } from '../utils/shortcuts';
 import { formatMongoValueForDisplay } from '../utils/mongodb';
+import { SIDEBAR_SQL_EDITOR_DRAG_MIME, encodeSidebarSqlEditorDragPayload } from '../utils/sidebarSqlDrag';
+import { SQL_FIELD_DRAG_MIME } from '../utils/sqlFieldDrop';
+import {
+    DATA_GRID_COLUMN_ORDER_DRAG_MIME,
+    encodeDataGridColumnOrderDragPayload,
+    shouldBypassDndKitForNativeColumnHeaderDrag,
+} from './dataGridColumnOrder';
 import {
     TEMPORAL_FORMATS,
     formatFromDayjs,
@@ -782,6 +789,7 @@ const ResizableTitle = React.forwardRef<HTMLTableCellElement, any>((props, ref) 
 // --- Sortable Header Cell ---
 interface SortableHeaderCellProps extends React.HTMLAttributes<HTMLTableCellElement> {
     id?: string;
+    columnOrderDragScope?: string;
 }
 
 // --- Sortable Header Cell ---
@@ -815,7 +823,7 @@ const sortableHeaderStaticStyles = `
 `;
 
 const SortableHeaderCell: React.FC<SortableHeaderCellProps> = React.memo((props) => {
-    const { id, children, style: propStyle, className: propClassName, ...restProps } = props;
+    const { id, children, style: propStyle, className: propClassName, columnOrderDragScope, ...restProps } = props;
     const [isPressed, setIsPressed] = useState(false);
     const {
         attributes,
@@ -873,11 +881,43 @@ const SortableHeaderCell: React.FC<SortableHeaderCellProps> = React.memo((props)
             {...listeners}
             onPointerDown={(e: any) => {
                 setIsPressed(true);
+                if (
+                    (e.target as HTMLElement | null)?.closest?.('.sortable-header-cell-drag-handle')
+                    && shouldBypassDndKitForNativeColumnHeaderDrag(e.pointerType)
+                ) {
+                    return;
+                }
                 if (listeners?.onPointerDown) listeners.onPointerDown(e);
             }}
         >
             <style>{sortableHeaderStaticStyles}</style>
-            <div className="sortable-header-cell-drag-handle" title={t('data_grid.column.drag_tooltip')}>
+            <div
+                className="sortable-header-cell-drag-handle"
+                title={t('data_grid.column.drag_tooltip')}
+                draggable
+                onDragStart={(event) => {
+                    const columnName = String(id || '').trim();
+                    if (!columnName || !event.dataTransfer) return;
+                    event.stopPropagation();
+                    event.dataTransfer.effectAllowed = 'copyMove';
+                    const payload = encodeSidebarSqlEditorDragPayload({
+                        text: columnName,
+                        nodeType: 'column',
+                    });
+                    event.dataTransfer.setData(SIDEBAR_SQL_EDITOR_DRAG_MIME, payload);
+                    event.dataTransfer.setData(SQL_FIELD_DRAG_MIME, columnName);
+                    if (columnOrderDragScope) {
+                        event.dataTransfer.setData(
+                            DATA_GRID_COLUMN_ORDER_DRAG_MIME,
+                            encodeDataGridColumnOrderDragPayload({
+                                scope: columnOrderDragScope,
+                                columnName,
+                            }),
+                        );
+                    }
+                    event.dataTransfer.setData('text/plain', columnName);
+                }}
+            >
                 <div style={{ flex: 1, display: 'flex', alignItems: 'center', minWidth: 0, cursor: 'inherit' }}>
                     {children}
                 </div>

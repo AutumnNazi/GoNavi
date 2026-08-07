@@ -4299,6 +4299,89 @@ describe('QueryEditor external SQL save', () => {
     }));
   });
 
+  it('projects field drops from editor whitespace by x coordinate and previews the same anchor', async () => {
+    const domListeners: Record<string, ((event?: any) => void)[]> = {};
+    const sql = 'SELECT org_id, title FROM a_cninfo_announcement\n\n';
+    editorState.domNode = {
+      style: { cursor: '' },
+      addEventListener: vi.fn((type: string, listener: (event?: any) => void) => {
+        domListeners[type] ||= [];
+        domListeners[type].push(listener);
+      }),
+      removeEventListener: vi.fn(),
+      contains: vi.fn(() => false),
+      getBoundingClientRect: vi.fn(() => ({ left: 0, top: 0, width: 800, height: 300 })),
+    } as any;
+    editorState.editor.getTargetAtClientPoint = vi.fn(() => ({
+      type: 7,
+      position: { lineNumber: 3, column: 1 },
+    }));
+    editorState.editor.getVisibleRanges = vi.fn(() => [{ startLineNumber: 1, endLineNumber: 3 }]);
+    editorState.editor.getScrolledVisiblePosition = vi.fn(({ lineNumber, column }: any) => ({
+      left: (column - 1) * 10,
+      top: (lineNumber - 1) * 20,
+      height: 20,
+    }));
+    editorState.editor.render = vi.fn();
+    editorState.value = sql;
+
+    await act(async () => {
+      create(<QueryEditor tab={createTab({ query: sql })} />);
+    });
+
+    const titleOffset = sql.indexOf('title');
+    const createDataTransfer = () => ({
+      types: [
+        'application/x-gonavi-sql-object',
+        'application/x-gonavi-sql-field',
+        'text/plain',
+      ],
+      dropEffect: 'none',
+      getData: (type: string) => {
+        if (type === 'application/x-gonavi-sql-object') {
+          return JSON.stringify({ text: 'announcement_id', nodeType: 'column' });
+        }
+        return 'announcement_id';
+      },
+    });
+    const dragCoordinates = {
+      clientX: (titleOffset + 2) * 10,
+      clientY: 100,
+    };
+
+    await act(async () => {
+      domListeners.dragover?.forEach((listener) => listener({
+        ...dragCoordinates,
+        preventDefault: vi.fn(),
+        stopPropagation: vi.fn(),
+        dataTransfer: createDataTransfer(),
+      }));
+    });
+
+    const previewDecoration = editorState.editor.deltaDecorations.mock.calls
+      .flatMap((call: any[]) => call[1] || [])
+      .find((decoration: any) => decoration?.options?.inlineClassName === 'gonavi-query-editor-field-drop-anchor');
+    expect(previewDecoration?.range).toMatchObject({
+      startLineNumber: 1,
+      startColumn: titleOffset + 1,
+      endLineNumber: 1,
+      endColumn: titleOffset + 'title'.length + 1,
+    });
+
+    await act(async () => {
+      domListeners.drop?.forEach((listener) => listener({
+        ...dragCoordinates,
+        preventDefault: vi.fn(),
+        stopPropagation: vi.fn(),
+        dataTransfer: createDataTransfer(),
+      }));
+    });
+
+    expect(editorState.value).toBe(
+      'SELECT org_id, title, announcement_id FROM a_cninfo_announcement\n\n',
+    );
+  });
+
   it('fetches database and completion metadata only for the active query tab', async () => {
     autoFetchState.visible = true;
     backendApp.DBGetDatabases.mockResolvedValue({

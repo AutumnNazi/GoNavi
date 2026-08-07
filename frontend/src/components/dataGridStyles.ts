@@ -36,9 +36,7 @@ export const buildDataGridCssText = ({
     paginationShellShadow,
     panelRadius,
     rowAddedBg,
-    rowAddedHover,
     rowModBg,
-    rowModHover,
     selectionAccentHex,
     selectionAccentRgb,
     tableBodyBottomPadding,
@@ -349,18 +347,15 @@ export const buildDataGridCssText = ({
                         ? '-4px 0 6px -2px rgba(0,0,0,0.45)'
                         : '-4px 0 6px -2px rgba(15, 23, 42, 0.16)'} !important;
                 }
-                /* hover / 选中：与 v2-theme 的 --gn-bg-hover / --gn-bg-selected 对齐 */
+                /* 固定列悬浮时保持实心底，防止透出横向滚动内容 */
                 .${gridId} .ant-table-tbody-virtual-holder .ant-table-row:hover > .ant-table-cell.ant-table-cell-fix-left,
                 .${gridId} .ant-table-tbody-virtual-holder .ant-table-row:hover > .ant-table-cell.ant-table-cell-fix-right,
                 .${gridId} .ant-table-tbody-virtual-holder .ant-table-row:hover > .ant-table-cell.ant-table-selection-column,
                 .${gridId} .ant-table-tbody > tr:hover > td.ant-table-cell-fix-left,
                 .${gridId} .ant-table-tbody > tr:hover > td.ant-table-cell-fix-right,
                 .${gridId} .ant-table-tbody > tr:hover > td.ant-table-selection-column {
-                    background-color: var(--gn-bg-panel, ${bgContent}) !important;
-                    background-image: linear-gradient(
-                        var(--gn-bg-hover, ${darkMode ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.02)'}),
-                        var(--gn-bg-hover, ${darkMode ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.02)'})
-                    ) !important;
+                    background: var(--gn-bg-panel, ${bgContent}) !important;
+                    background-image: none !important;
                 }
                 /* 固定列选中：与整行同一绿色（实心底防透出滚动内容） */
                 .${gridId} .ant-table-tbody-virtual-holder .ant-table-row.ant-table-row-selected > .ant-table-cell.ant-table-cell-fix-left,
@@ -379,8 +374,8 @@ export const buildDataGridCssText = ({
                 .${gridId} .ant-table-tbody > tr.ant-table-row-selected:hover > td.ant-table-cell-fix-left,
                 .${gridId} .ant-table-tbody > tr.ant-table-row-selected:hover > td.ant-table-cell-fix-right,
                 .${gridId} .ant-table-tbody > tr.ant-table-row-selected:hover > td.ant-table-selection-column {
-                    background: rgba(34, 197, 94, 0.18) !important;
-                    background-color: rgba(34, 197, 94, 0.18) !important;
+                    background: rgba(34, 197, 94, 0.14) !important;
+                    background-color: rgba(34, 197, 94, 0.14) !important;
                     background-image: none !important;
                 }
                 .${gridId} .data-grid-row-number-cell {
@@ -427,9 +422,9 @@ export const buildDataGridCssText = ({
 
                 .${gridId} .ant-table-thead > tr > th .ant-table-column-sorter * { cursor: pointer !important; }
 
-                .${gridId} .ant-table-tbody > tr:hover > td,
+                .${gridId}.data-grid-root .ant-table-tbody > tr:hover > td,
 
-                .${gridId} .ant-table-tbody .ant-table-row:hover > .ant-table-cell { background-color: ${darkMode ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.02)'} !important; }
+                .${gridId}.data-grid-root .ant-table-tbody .ant-table-row:hover > .ant-table-cell { background-color: transparent !important; }
 
                 /*
                  * 行选中：整行统一绿色。
@@ -457,8 +452,8 @@ export const buildDataGridCssText = ({
                 .${gridId} .ant-table-tbody .ant-table-row.ant-table-row-selected:hover > .ant-table-cell,
                 .${gridId} .ant-table-tbody > tr.ant-table-row-selected:hover > td,
                 .${gridId} .ant-table-row.ant-table-row-selected:hover > .ant-table-cell {
-                    background: rgba(34, 197, 94, 0.18) !important;
-                    background-color: rgba(34, 197, 94, 0.18) !important;
+                    background: rgba(34, 197, 94, 0.14) !important;
+                    background-color: rgba(34, 197, 94, 0.14) !important;
                     background-image: none !important;
                 }
 
@@ -476,15 +471,15 @@ export const buildDataGridCssText = ({
 
                 .${gridId} .ant-table-tbody > tr.row-added:hover > td,
 
-                .${gridId} .ant-table-tbody .ant-table-row.row-added:hover > .ant-table-cell { background-color: ${rowAddedHover} !important; }
+                .${gridId} .ant-table-tbody .ant-table-row.row-added:hover > .ant-table-cell { background-color: ${rowAddedBg} !important; }
 
                 .${gridId} .ant-table-tbody > tr.row-modified:hover > td,
 
-                .${gridId} .ant-table-tbody .ant-table-row.row-modified:hover > .ant-table-cell { background-color: ${rowModHover} !important; }
+                .${gridId} .ant-table-tbody .ant-table-row.row-modified:hover > .ant-table-cell { background-color: ${rowModBg} !important; }
 
                 .${gridId} .ant-table-tbody > tr.row-deleted:hover > td,
 
-                .${gridId} .ant-table-tbody .ant-table-row.row-deleted:hover > .ant-table-cell { background-color: ${darkMode ? '#2a2a2a' : '#e8e8e8'} !important; }
+                .${gridId} .ant-table-tbody .ant-table-row.row-deleted:hover > .ant-table-cell { background-color: ${darkMode ? '#1f1f1f' : '#f0f0f0'} !important; }
 
                 .${gridId}.cell-edit-mode .ant-table-tbody > tr > td[data-col-name],
 

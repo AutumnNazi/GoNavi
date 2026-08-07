@@ -462,7 +462,7 @@ func TestFetchReleaseForChannelPreferringStaticUsesStaticFirst(t *testing.T) {
 	}
 }
 
-func TestFetchReleaseForChannelPreferringStaticUsesFreshestOnlyForManualChecks(t *testing.T) {
+func TestFetchReleaseForChannelPreferringStaticUsesFreshestForDevChecks(t *testing.T) {
 	t.Setenv("GONAVI_DATA_ROOT", t.TempDir())
 	updateReleaseCache = sync.Map{}
 	updateNetworkCheckMu.Lock()
@@ -486,10 +486,10 @@ func TestFetchReleaseForChannelPreferringStaticUsesFreshestOnlyForManualChecks(t
 	if err != nil {
 		t.Fatalf("silent static fetch: %v", err)
 	}
-	if got := resolveReleaseVersion(updateChannelDev, silentRelease); got != "dev-mirror" {
-		t.Fatalf("silent version = %q, want mirror", got)
+	if got := resolveReleaseVersion(updateChannelDev, silentRelease); got != "dev-github" {
+		t.Fatalf("silent version = %q, want freshest", got)
 	}
-	if staticCalls != 1 || freshestCalls != 0 {
+	if staticCalls != 0 || freshestCalls != 1 {
 		t.Fatalf("silent calls: static=%d freshest=%d", staticCalls, freshestCalls)
 	}
 
@@ -500,7 +500,7 @@ func TestFetchReleaseForChannelPreferringStaticUsesFreshestOnlyForManualChecks(t
 	if got := resolveReleaseVersion(updateChannelDev, manualRelease); got != "dev-github" {
 		t.Fatalf("manual version = %q, want freshest", got)
 	}
-	if staticCalls != 1 || freshestCalls != 1 {
+	if staticCalls != 0 || freshestCalls != 2 {
 		t.Fatalf("manual calls: static=%d freshest=%d", staticCalls, freshestCalls)
 	}
 }

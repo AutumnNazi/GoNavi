@@ -238,6 +238,7 @@ import {
 import { useAppUpdateManager } from './hooks/useAppUpdateManager';
 import { useAppLogPanelResize } from './hooks/useAppLogPanelResize';
 import { useAppSidebarResize } from './hooks/useAppSidebarResize';
+import { resolveNewQueryContext } from './utils/newQueryContext';
 import { useAppUtilityStyles } from './hooks/useAppUtilityStyles';
 import { useWorkbenchTabs } from './hooks/useWorkbenchTabs';
 import {
@@ -2723,29 +2724,18 @@ function App() {
   }, [emitWindowDiagnostic, macWindowDiagnosticsEnabled]);
 
   const handleNewQuery = useCallback(() => {
-      let connId = '';
-      let db = '';
-      let tableName = '';
-
-      // Priority: Active Tab Context (if connection still valid) > Sidebar Selection (activeContext)
-      if (activeTabId) {
-          const currentTab = tabs.find(t => t.id === activeTabId);
-          if (currentTab && currentTab.connectionId && connections.some(c => c.id === currentTab.connectionId)) {
-              connId = currentTab.connectionId;
-              db = currentTab.dbName || '';
-              if (currentTab.type === 'table' || currentTab.type === 'design') {
-                  tableName = String(currentTab.tableName || '').trim();
-              }
-          }
-      }
-
-      // Fallback: Sidebar selection context (only if connection still valid)
-      if (!connId && activeContext?.connectionId && connections.some(c => c.id === activeContext.connectionId)) {
-          connId = activeContext.connectionId;
-          db = activeContext.dbName || '';
-      }
-
-      const connection = connections.find(c => c.id === connId);
+      const currentTab = activeTabId ? tabs.find(tab => tab.id === activeTabId) : undefined;
+      const targetContext = resolveNewQueryContext({
+          sidebarContext: activeContext,
+          activeTab: currentTab,
+          validConnectionIds: new Set(connections.map(connection => connection.id)),
+      });
+      const connection = connections.find(c => c.id === targetContext.connectionId);
+      const inheritsTableContext = currentTab
+          && (currentTab.type === 'table' || currentTab.type === 'design')
+          && String(currentTab.connectionId || '').trim() === targetContext.connectionId
+          && String(currentTab.dbName || '').trim() === targetContext.dbName;
+      const tableName = inheritsTableContext ? String(currentTab.tableName || '').trim() : '';
       const contextualQuery = tableName && connection
           ? buildContextualNewQueryTemplate({
               dbType: resolveDataSourceType(connection.config),
@@ -2758,9 +2748,9 @@ function App() {
           id: `query-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
           title: t('query.new'),
           type: 'query',
-          connectionId: connId,
-          dbName: db,
-          query: contextualQuery ?? ''
+          connectionId: targetContext.connectionId,
+          dbName: targetContext.dbName,
+          query: contextualQuery ?? '',
       });
   }, [activeTabId, tabs, connections, activeContext, addTab, appearance.newQuerySqlTemplate, t]);
 

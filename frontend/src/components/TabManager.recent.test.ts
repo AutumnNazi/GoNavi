@@ -1,11 +1,12 @@
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import {
   buildPinnedTableShortcuts,
   buildRecentConnectionShortcuts,
   buildRecentSQLFileShortcuts,
+  dispatchRecentConnectionShortcut,
   RecentConnectionShortcutItem,
 } from './TabManager';
 import type { ExternalSQLDirectory, SavedConnection } from '../types';
@@ -55,7 +56,7 @@ describe('recent workbench shortcuts', () => {
     expect(customizedMarkup).not.toContain('anticon-database');
   });
 
-  it('only offers connections that can open the SQL query editor', () => {
+  it('keeps recent connections even when they do not support the SQL query editor', () => {
     const shortcuts = buildRecentConnectionShortcuts([
       connection('redis-1', 'redis'),
       connection('mysql-1', 'mysql'),
@@ -66,10 +67,28 @@ describe('recent workbench shortcuts', () => {
 
     expect(shortcuts).toEqual([
       expect.objectContaining({
+        connection: expect.objectContaining({ id: 'redis-1' }),
+        dbName: '0',
+      }),
+      expect.objectContaining({
         connection: expect.objectContaining({ id: 'mysql-1' }),
         dbName: 'orders',
       }),
     ]);
+  });
+
+  it('dispatches a sidebar navigation request instead of creating a query tab', () => {
+    const eventTarget = { dispatchEvent: vi.fn() };
+    const mysqlConnection = connection('mysql-1', 'mysql');
+
+    expect(dispatchRecentConnectionShortcut({
+      connection: mysqlConnection,
+      dbName: 'orders',
+    }, eventTarget)).toBe(true);
+
+    const event = eventTarget.dispatchEvent.mock.calls[0]?.[0] as CustomEvent;
+    expect(event.type).toBe('gonavi:locate-sidebar-connection');
+    expect(event.detail).toEqual({ connectionId: 'mysql-1', dbName: 'orders' });
   });
 
   it('only exposes valid pinned tables whose connection still exists', () => {

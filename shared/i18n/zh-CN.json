@@ -4359,7 +4359,7 @@
   "data_grid.record_view.record_position": "记录 {{current}} / {{total}}",
   "data_grid.row_editor.popup_edit": "弹窗编辑",
   "data_grid.row_editor.title": "编辑行",
-  "data_grid.secondary.column_display": "字段显示",
+  "data_grid.secondary.column_display": "显示/隐藏字段列",
   "data_grid.secondary.data_preview": "数据预览",
   "data_grid.secondary.er_diagram": "ER 图",
   "data_grid.secondary.jump_column": "跳列",

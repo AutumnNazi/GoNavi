@@ -4359,7 +4359,7 @@
   "data_grid.record_view.record_position": "Запись {{current}} / {{total}}",
   "data_grid.row_editor.popup_edit": "Редактировать во всплывающем окне",
   "data_grid.row_editor.title": "Редактировать строку",
-  "data_grid.secondary.column_display": "Отображение столбцов",
+  "data_grid.secondary.column_display": "Показать/скрыть столбцы",
   "data_grid.secondary.data_preview": "Предпросмотр данных",
   "data_grid.secondary.er_diagram": "ER-диаграмма",
   "data_grid.secondary.jump_column": "Перейти к столбцу",

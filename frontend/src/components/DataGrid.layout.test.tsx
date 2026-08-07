@@ -209,7 +209,7 @@ describe('DataGrid layout', () => {
     expect(markup).toContain('data-grid-view-switcher="true"');
     expect(markup).toContain('data-grid-column-display-action="true"');
     expect(markup).toContain('data-grid-column-quick-find-action="true"');
-    expect(markup).toContain('字段显示');
+    expect(markup).toContain('显示/隐藏字段列');
     expect(markup).toContain('跳列');
     expect(markup).toContain('日志');
     expect(markup).toContain(zhObjectDesignLabel);
@@ -480,6 +480,26 @@ describe('DataGrid layout', () => {
     );
     expect(css).not.toContain('.react-resizable-handle::after');
     expect(css).not.toContain('.react-resizable-handle:hover::after');
+  });
+
+  it('keeps DataGrid rows unchanged on hover', () => {
+    const css = buildDataGridCssText({
+      darkMode: false,
+      densityParams: { dataFontSize: 12 },
+      gridId: 'hover-grid',
+      rowAddedBg: 'added-bg',
+      rowAddedHover: 'added-hover',
+      rowModBg: 'modified-bg',
+      rowModHover: 'modified-hover',
+    });
+
+    expect(css).toContain(
+      '.hover-grid.data-grid-root .ant-table-tbody .ant-table-row:hover > .ant-table-cell { background-color: transparent !important; }',
+    );
+    expect(css).not.toContain('var(--gn-bg-hover');
+    expect(css).not.toContain('rgba(34, 197, 94, 0.18)');
+    expect(css).not.toContain('added-hover');
+    expect(css).not.toContain('modified-hover');
   });
 
   it('uses the table cell as the only V2 inline edit frame', () => {
@@ -808,7 +828,7 @@ describe('DataGrid layout', () => {
       '文本',
       '数据预览',
       '字段信息',
-      '字段显示',
+      '显示/隐藏字段列',
       '跳列',
       '未提交',
       '跳页',
@@ -1426,7 +1446,7 @@ describe('DataGrid layout', () => {
       '查看 DDL',
       'ER 图',
       '日志',
-      '字段显示',
+      '显示/隐藏字段列',
     ].forEach((label) => {
       expect(getButtonBody(label)).not.toContain(label);
     });

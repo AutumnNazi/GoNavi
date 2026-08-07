@@ -10,6 +10,7 @@ import type { SavedQuery, TabData } from '../types';
 import { ORACLE_ROWID_LOCATOR_COLUMN } from '../utils/rowLocator';
 import { setGlobalImeCompositionActive } from '../utils/shortcuts';
 import { clearQueryEditorResultSession } from '../utils/queryEditorResultSessionCache';
+import { resolveNewQueryContext } from '../utils/newQueryContext';
 import { QUERY_TAB_RENAME_REQUEST_EVENT } from '../utils/queryTabTitle';
 import { clearQueryTabDraft, clearSQLFileTabDraft, getQueryTabDraft, getSQLFileTabDraft } from '../utils/sqlFileTabDrafts';
 import { clearQueryEditorInlineRuntimeReadinessCache } from './queryEditor/QueryEditorAiAssist';
@@ -18,6 +19,7 @@ import QueryEditor, {
   resolveQueryEditorNavigationDecorations,
   resolveQueryEditorNavigationTarget,
 } from './QueryEditor';
+import QueryEditorToolbar from './QueryEditorToolbar';
 const mountedRenderers = new Set<ReactTestRenderer>();
 const create = (...args: Parameters<typeof createRenderer>): ReactTestRenderer => {
   const renderer = createRenderer(...args);
@@ -55,6 +57,7 @@ const storeState = vi.hoisted(() => ({
   clearSqlLogs: vi.fn(),
   addSqlLog: vi.fn(),
   addTab: vi.fn(),
+  activeContext: null as { connectionId: string; dbName: string } | null,
   setActiveContext: vi.fn(),
   updateQueryTabDraft: vi.fn(),
   savedQueries: [] as SavedQuery[],
@@ -852,6 +855,10 @@ describe('QueryEditor external SQL save', () => {
     runtimeEventListeners.clear();
     storeState.addTab.mockReset();
     storeState.setActiveContext.mockReset();
+    storeState.activeContext = null;
+    storeState.setActiveContext.mockImplementation((context: { connectionId: string; dbName: string } | null) => {
+      storeState.activeContext = context;
+    });
     storeState.saveQuery.mockReset();
     storeState.saveQuery.mockImplementation(async (query: SavedQuery) => query);
     storeState.savedQueries = [];
@@ -3230,16 +3237,69 @@ describe('QueryEditor external SQL save', () => {
     });
   });
 
-  it('keeps table name completion available after typing in a fresh query tab', async () => {
+  it('syncs a cleared database to the active context when the toolbar switches connections', async () => {
+    storeState.connections = [
+      ...createDefaultConnections(),
+      {
+        id: 'conn-2',
+        name: 'analytics',
+        config: {
+          type: 'mysql',
+          host: '127.0.0.2',
+          port: 3306,
+          user: 'root',
+          password: '',
+          database: '',
+        },
+      },
+    ];
+
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<QueryEditor tab={createTab({ connectionId: 'conn-1', dbName: 'main' })} />);
+    });
+
+    const toolbar = renderer.root.findByType(QueryEditorToolbar);
+    await act(async () => {
+      toolbar.props.onConnectionChange('conn-2');
+    });
+
+    expect(storeState.setActiveContext).toHaveBeenLastCalledWith({
+      connectionId: 'conn-2',
+      dbName: '',
+    });
+    expect(storeState.activeContext).toEqual({ connectionId: 'conn-2', dbName: '' });
+    expect(resolveNewQueryContext({
+      sidebarContext: storeState.activeContext,
+      activeTab: createTab({ connectionId: 'conn-1', dbName: 'main' }),
+      validConnectionIds: new Set(storeState.connections.map((connection) => connection.id)),
+    })).toEqual({ connectionId: 'conn-2', dbName: '' });
+
+    await act(async () => {
+      renderer.unmount();
+    });
+  });
+
+  it('loads table completions after selecting a database in a connection-scoped query tab', async () => {
     let renderer!: ReactTestRenderer;
     autoFetchState.visible = true;
     storeState.connections[0].config.database = '';
     backendApp.DBGetDatabases.mockResolvedValueOnce({ success: true, data: [{ Database: 'information_schema' }, { Database: 'main' }] });
-    backendApp.DBGetTables.mockResolvedValueOnce({ success: true, data: [{ Tables_in_main: 'organization' }] });
+    backendApp.DBGetTables.mockImplementation(async (_config: unknown, dbName: string) => ({
+      success: true,
+      data: dbName === 'main'
+        ? [{ Tables_in_main: 'organization' }]
+        : [{ Tables_in_database_a: 'legacy_table' }],
+    }));
     backendApp.DBGetAllColumns.mockResolvedValueOnce({ success: true, data: [] });
 
     await act(async () => {
-      renderer = create(<QueryEditor tab={createTab({ query: '' })} />);
+      renderer = create(
+        <>
+          <QueryEditor tab={createTab({ id: 'old-tab', dbName: 'database_a' })} isActive={false} />
+          <QueryEditor tab={createTab({ dbName: '', query: '' })} isActive />
+        </>,
+      );
     });
     await act(async () => {
       await Promise.resolve();
@@ -3249,15 +3309,61 @@ describe('QueryEditor external SQL save', () => {
 
     const sqlProvider = editorState.providers.find((provider) => Array.isArray(provider.triggerCharacters) && provider.triggerCharacters.includes('.'));
     expect(sqlProvider).toBeTruthy();
+    expect(backendApp.DBGetTables).not.toHaveBeenCalled();
+
+    let immediateCompletion!: Promise<any>;
+    await act(async () => {
+      const activeToolbar = renderer.root.findAllByType(QueryEditorToolbar).find((toolbar) => toolbar.props.currentDb === '');
+      expect(activeToolbar).toBeTruthy();
+      activeToolbar!.props.onDatabaseChange('main');
+
+      editorState.value = 'SELECT * FROM org';
+      editorState.latestOnChange?.(editorState.value);
+      immediateCompletion = sqlProvider.provideCompletionItems(
+        editorState.editor.getModel(),
+        { lineNumber: 1, column: editorState.value.length + 1 },
+      );
+      await immediateCompletion;
+    });
+    await vi.waitFor(() => {
+      expect(backendApp.DBGetTables).toHaveBeenCalledWith(expect.any(Object), 'main');
+    });
     expect(storeState.updateQueryTabDraft).toHaveBeenLastCalledWith('tab-1', expect.objectContaining({
       dbName: 'main',
     }));
+    expect(storeState.setActiveContext).toHaveBeenCalledWith({ connectionId: 'conn-1', dbName: 'main' });
 
-    editorState.value = 'SELECT * FROM org';
-    editorState.latestOnChange?.(editorState.value);
-    const result = await sqlProvider.provideCompletionItems(editorState.editor.getModel(), { lineNumber: 1, column: editorState.value.length + 1 });
+    const result = await immediateCompletion;
 
     expect(result.suggestions.map((item: any) => item.label)).toContain('organization');
+    await act(async () => {
+      renderer.unmount();
+    });
+  });
+
+  it('keeps the database empty after loading options for a connection-scoped query tab', async () => {
+    let renderer!: ReactTestRenderer;
+    autoFetchState.visible = true;
+    backendApp.DBGetDatabases.mockResolvedValueOnce({
+      success: true,
+      data: [{ Database: 'information_schema' }, { Database: 'main' }],
+    });
+
+    await act(async () => {
+      renderer = create(<QueryEditor tab={createTab({ dbName: '', query: '' })} />);
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(backendApp.DBGetDatabases).toHaveBeenCalledTimes(1);
+    expect(storeState.updateQueryTabDraft).toHaveBeenCalledWith('tab-1', expect.objectContaining({
+      dbName: '',
+    }));
+    expect(backendApp.DBGetTables).not.toHaveBeenCalled();
+
     await act(async () => {
       renderer.unmount();
     });

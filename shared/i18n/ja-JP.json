@@ -4359,7 +4359,7 @@
   "data_grid.record_view.record_position": "レコード {{current}} / {{total}}",
   "data_grid.row_editor.popup_edit": "ポップアップで編集",
   "data_grid.row_editor.title": "行を編集",
-  "data_grid.secondary.column_display": "列表示",
+  "data_grid.secondary.column_display": "列を表示/非表示",
   "data_grid.secondary.data_preview": "データプレビュー",
   "data_grid.secondary.er_diagram": "ER 図",
   "data_grid.secondary.jump_column": "列へ移動",

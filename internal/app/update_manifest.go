@@ -502,7 +502,7 @@ func fetchReleaseForChannelPreferringStatic(channel updateChannel, forceNetwork 
 	}
 
 	staticFetcher := updateFetchStaticManifest
-	if forceNetwork {
+	if forceNetwork || channel == updateChannelDev {
 		staticFetcher = updateFetchFreshestStaticManifest
 	}
 

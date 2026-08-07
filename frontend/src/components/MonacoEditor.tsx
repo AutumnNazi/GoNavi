@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Editor, { loader, type BeforeMount, type EditorProps, type OnMount } from '@monaco-editor/react';
 import { useStore } from '../store';
 import { sanitizeDataTableFontSize } from '../utils/dataGridDisplay';
@@ -7,6 +7,7 @@ import {
   resolveSqlEditorFontSize,
   resolveSqlEditorSuggestionLayout,
 } from '../utils/sqlEditorTypography';
+import { installWailsMonacoClipboardPasteHandler } from '../utils/monacoClipboard';
 
 export type { BeforeMount, OnMount } from '@monaco-editor/react';
 export type GonaviMonacoTypography = 'code' | 'data' | 'sql';
@@ -808,6 +809,7 @@ const MonacoEditor: React.FC<MonacoEditorProps> = ({
   const sqlEditorFontSizeFollowGlobal = useStore((state) => state.appearance.sqlEditorFontSizeFollowGlobal);
   const monoFontFamily = useStore((state) => state.appearance.customMonoFontFamily);
   const globalFontSize = useStore((state) => state.fontSize);
+  const clipboardPasteCleanupRef = useRef<(() => void) | null>(null);
   // Monaco theme is process-global; never fall back to "light" or other editors get polluted.
   const resolvedTheme = theme
     ?? (appTheme === 'dark' ? 'transparent-dark' : 'transparent-light');
@@ -833,17 +835,26 @@ const MonacoEditor: React.FC<MonacoEditorProps> = ({
     };
   }, []);
 
+  useEffect(() => () => {
+    clipboardPasteCleanupRef.current?.();
+    clipboardPasteCleanupRef.current = null;
+  }, []);
+
   const handleBeforeMount: BeforeMount = useCallback((monaco) => {
     registerGonaviMonacoThemes(monaco);
     beforeMount?.(monaco);
   }, [beforeMount]);
 
   const handleMount: OnMount = useCallback((editor, monaco) => {
+    clipboardPasteCleanupRef.current?.();
+    clipboardPasteCleanupRef.current = gonaviTypography === 'sql'
+      ? installWailsMonacoClipboardPasteHandler(monaco, editor)
+      : null;
     installOceanBaseOracleNavigationFallback(editor);
     installPrintableInputFallback(editor, monaco);
     installWebKitImeScrollStabilizer(editor);
     onMount?.(editor, monaco);
-  }, [onMount]);
+  }, [gonaviTypography, onMount]);
 
   const resolvedOptions = useMemo(() => {
     if (uiVersion !== 'v2') {
