@@ -2808,6 +2808,56 @@ describe('store appearance persistence', () => {
     }));
   });
 
+  it('keeps saved-query source and copy tabs distinct when reopening the source', async () => {
+    const { useStore } = await importStore();
+
+    useStore.getState().addTab({
+      id: 'saved-source',
+      title: '原查询',
+      type: 'query',
+      connectionId: 'conn-1',
+      dbName: 'main',
+      query: 'select 1;',
+      savedQueryId: 'saved-source',
+    });
+    useStore.getState().addTab({
+      id: 'saved-copy',
+      title: '查询副本',
+      type: 'query',
+      connectionId: 'conn-1',
+      dbName: 'main',
+      query: 'select 9;',
+      savedQueryId: 'saved-copy',
+    });
+
+    expect(useStore.getState().tabs).toHaveLength(2);
+    expect(useStore.getState().activeTabId).toBe('saved-copy');
+
+    useStore.getState().addTab({
+      id: 'saved-source',
+      title: '原查询',
+      type: 'query',
+      connectionId: 'conn-1',
+      dbName: 'main',
+      query: 'select 1; -- reloaded',
+      savedQueryId: 'saved-source',
+    });
+
+    expect(useStore.getState().tabs).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: 'saved-source',
+        savedQueryId: 'saved-source',
+        query: 'select 1; -- reloaded',
+      }),
+      expect.objectContaining({
+        id: 'saved-copy',
+        savedQueryId: 'saved-copy',
+        query: 'select 9;',
+      }),
+    ]));
+    expect(useStore.getState().activeTabId).toBe('saved-source');
+  });
+
   it('reuses the same table-export tab for the same connection and table identity', async () => {
     const { useStore } = await importStore();
 
@@ -3280,6 +3330,33 @@ describe('store appearance persistence', () => {
     expect(reloaded.useStore.getState().shortcutOptions.sendAIChatMessage).toEqual({
       mac: { combo: 'Meta+Enter', enabled: true },
       windows: { combo: 'Enter', enabled: true },
+    });
+  });
+
+  it('persists save query as shortcut with platform defaults', async () => {
+    const { useStore } = await importStore();
+
+    expect(useStore.getState().shortcutOptions.saveQueryAs).toEqual({
+      mac: { combo: 'Meta+Shift+S', enabled: true },
+      windows: { combo: 'Ctrl+Shift+S', enabled: true },
+    });
+
+    useStore.getState().updateShortcut('saveQueryAs', {
+      combo: 'Meta+Alt+S',
+      enabled: true,
+    }, 'mac');
+
+    const persisted = JSON.parse(storage.getItem('lite-db-storage') || '{}');
+    expect(persisted.state.shortcutOptions.saveQueryAs).toEqual({
+      mac: { combo: 'Meta+Alt+S', enabled: true },
+      windows: { combo: 'Ctrl+Shift+S', enabled: true },
+    });
+
+    vi.resetModules();
+    const reloaded = await importStore();
+    expect(reloaded.useStore.getState().shortcutOptions.saveQueryAs).toEqual({
+      mac: { combo: 'Meta+Alt+S', enabled: true },
+      windows: { combo: 'Ctrl+Shift+S', enabled: true },
     });
   });
 

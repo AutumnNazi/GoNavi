@@ -100,6 +100,10 @@ const storeState = vi.hoisted(() => ({
       mac: { enabled: true, combo: 'Meta+S' },
       windows: { enabled: true, combo: 'Ctrl+S' },
     },
+    saveQueryAs: {
+      mac: { enabled: true, combo: 'Meta+Shift+S' },
+      windows: { enabled: true, combo: 'Ctrl+Shift+S' },
+    },
     toggleQueryResultsPanel: {
       mac: { enabled: true, combo: 'Meta+Shift+M' },
       windows: { enabled: true, combo: 'Ctrl+Shift+M' },
@@ -174,6 +178,8 @@ const messageApi = vi.hoisted(() => ({
   success: vi.fn(),
   warning: vi.fn(),
 }));
+
+const saveQueryNameInputFocus = vi.hoisted(() => vi.fn());
 
 const dataGridState = vi.hoisted(() => ({
   latestProps: null as any,
@@ -555,10 +561,31 @@ vi.mock('antd', () => {
   );
   const Empty = ({ description }: { description?: React.ReactNode }) => <div>{description}</div>;
   (Empty as any).PRESENTED_IMAGE_SIMPLE = 'simple';
-  const Input: any = ({ value, onChange, placeholder }: any) => <input value={value} onChange={onChange} placeholder={placeholder} />;
+  const Input: any = React.forwardRef(({ value, onChange, placeholder }: any, ref) => {
+    React.useImperativeHandle(ref, () => ({
+      focus: saveQueryNameInputFocus,
+    }), []);
+    return <input value={value} onChange={onChange} placeholder={placeholder} />;
+  });
+  Input.displayName = 'Input';
   Input.TextArea = ({ value, onChange, placeholder, disabled }: any) => (
     <textarea value={value} onChange={onChange} placeholder={placeholder} disabled={disabled} />
   );
+
+  const Modal = ({ children, open, onOk, okText = '确认', afterOpenChange }: any) => {
+    React.useEffect(() => {
+      if (open) {
+        afterOpenChange?.(true);
+      }
+    }, [afterOpenChange, open]);
+
+    return open ? (
+      <section>
+        {children}
+        <button type="button" onClick={onOk}>{okText}</button>
+      </section>
+    ) : null;
+  };
 
   return {
     Button,
@@ -567,12 +594,7 @@ vi.mock('antd', () => {
     Tag: ({ children }: { children?: React.ReactNode }) => <span>{children}</span>,
     Empty,
     message: messageApi,
-    Modal: ({ children, open, onOk, okText = '确认' }: any) => (open ? (
-      <section>
-        {children}
-        <button type="button" onClick={onOk}>{okText}</button>
-      </section>
-    ) : null),
+    Modal,
     Input,
     Form,
     Dropdown: ({ children, menu }: any) => (
@@ -822,6 +844,8 @@ describe('QueryEditor external SQL save', () => {
     storeState.shortcutOptions.duplicateCurrentLine.windows = { enabled: false, combo: '' };
     storeState.shortcutOptions.saveQuery.mac = { enabled: true, combo: 'Meta+S' };
     storeState.shortcutOptions.saveQuery.windows = { enabled: true, combo: 'Ctrl+S' };
+    storeState.shortcutOptions.saveQueryAs.mac = { enabled: true, combo: 'Meta+Shift+S' };
+    storeState.shortcutOptions.saveQueryAs.windows = { enabled: true, combo: 'Ctrl+Shift+S' };
     runtimeApi.EventsOn.mockClear();
     runtimeApi.LogError.mockReset();
     runtimeApi.LogInfo.mockReset();
@@ -866,6 +890,10 @@ describe('QueryEditor external SQL save', () => {
         mac: { enabled: true, combo: 'Meta+S' },
         windows: { enabled: true, combo: 'Ctrl+S' },
       },
+      saveQueryAs: {
+        mac: { enabled: true, combo: 'Meta+Shift+S' },
+        windows: { enabled: true, combo: 'Ctrl+Shift+S' },
+      },
       toggleQueryResultsPanel: {
         mac: { enabled: true, combo: 'Meta+Shift+M' },
         windows: { enabled: true, combo: 'Ctrl+Shift+M' },
@@ -897,6 +925,7 @@ describe('QueryEditor external SQL save', () => {
     messageApi.error.mockReset();
     messageApi.info.mockReset();
     messageApi.warning.mockReset();
+    saveQueryNameInputFocus.mockReset();
     backendApp.DBQuery.mockResolvedValue({ success: true, data: [] });
     backendApp.WriteSQLFile.mockResolvedValue({ success: true });
     backendApp.ExportSQLFile.mockResolvedValue({ success: true });
@@ -9823,6 +9852,117 @@ END;`;
     expect(messageApi.success).toHaveBeenCalledWith('查询已保存。');
   });
 
+  it('registers Cmd/Ctrl+Shift+S to open save as for a saved query', async () => {
+    const windowListeners: Record<string, ((event?: any) => void)[]> = {};
+    vi.stubGlobal('window', {
+      addEventListener: vi.fn((type: string, listener: (event?: any) => void) => {
+        windowListeners[type] ||= [];
+        windowListeners[type].push(listener);
+      }),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    });
+
+    storeState.savedQueries = [
+      {
+        id: 'saved-1',
+        name: '常用查询',
+        sql: 'select 1;',
+        connectionId: 'conn-1',
+        dbName: 'main',
+        createdAt: 100,
+      },
+    ];
+
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<QueryEditor tab={createTab({ savedQueryId: 'saved-1' })} />);
+    });
+
+    const saveAsAction = findEditorAction('gonavi.saveQueryAs');
+    expect(saveAsAction).toMatchObject({
+      label: 'GoNavi: 查询另存为',
+      keybindings: [2048 | 1024 | 83],
+    });
+    expect(textContent(findButton(renderer, '另存为'))).toContain('⌘⇧S');
+
+    const event = {
+      ctrlKey: false,
+      metaKey: true,
+      altKey: false,
+      shiftKey: true,
+      key: 's',
+      target: null,
+      preventDefault: vi.fn(),
+      stopPropagation: vi.fn(),
+    };
+
+    await act(async () => {
+      windowListeners.keydown?.forEach((listener) => listener(event));
+    });
+
+    expect(event.preventDefault).toHaveBeenCalled();
+    expect(event.stopPropagation).toHaveBeenCalled();
+    expect(saveQueryNameInputFocus).toHaveBeenCalledWith({ cursor: 'all' });
+    expect(storeState.saveQuery).not.toHaveBeenCalled();
+  });
+
+  it('does not consume Cmd/Ctrl+Shift+S for new or external SQL query tabs', async () => {
+    const windowListeners: Record<string, ((event?: any) => void)[]> = {};
+    vi.stubGlobal('window', {
+      addEventListener: vi.fn((type: string, listener: (event?: any) => void) => {
+        windowListeners[type] ||= [];
+        windowListeners[type].push(listener);
+      }),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    });
+
+    await act(async () => {
+      create(<QueryEditor tab={createTab({ title: '新建查询' })} />);
+    });
+
+    const newQueryEvent = {
+      ctrlKey: false,
+      metaKey: true,
+      altKey: false,
+      shiftKey: true,
+      key: 's',
+      target: null,
+      preventDefault: vi.fn(),
+      stopPropagation: vi.fn(),
+    };
+    await act(async () => {
+      windowListeners.keydown?.forEach((listener) => listener(newQueryEvent));
+    });
+    expect(newQueryEvent.preventDefault).not.toHaveBeenCalled();
+    expect(newQueryEvent.stopPropagation).not.toHaveBeenCalled();
+    expect(saveQueryNameInputFocus).not.toHaveBeenCalled();
+
+    let externalRenderer!: ReactTestRenderer;
+    await act(async () => {
+      externalRenderer = create(<QueryEditor tab={createTab({ filePath: '/tmp/report.sql' })} />);
+    });
+
+    const externalQueryEvent = {
+      ctrlKey: false,
+      metaKey: true,
+      altKey: false,
+      shiftKey: true,
+      key: 's',
+      target: null,
+      preventDefault: vi.fn(),
+      stopPropagation: vi.fn(),
+    };
+    await act(async () => {
+      windowListeners.keydown?.forEach((listener) => listener(externalQueryEvent));
+    });
+    expect(externalQueryEvent.preventDefault).not.toHaveBeenCalled();
+    expect(externalQueryEvent.stopPropagation).not.toHaveBeenCalled();
+    expect(saveQueryNameInputFocus).not.toHaveBeenCalled();
+    externalRenderer.unmount();
+  });
+
   it('allows Ctrl/Cmd+S to save external SQL files from document-level targets', async () => {
     const windowListeners: Record<string, ((event?: any) => void)[]> = {};
     vi.stubGlobal('window', {
@@ -9885,6 +10025,20 @@ END;`;
     expect(messageApi.error).toHaveBeenCalledWith('保存 SQL 文件失败：磁盘只读');
   });
 
+  it('focuses the query name input when first saving a new query', async () => {
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<QueryEditor tab={createTab({ title: '新建查询' })} />);
+    });
+
+    await act(async () => {
+      findButton(renderer!, '保存').props.onClick();
+      await Promise.resolve();
+    });
+
+    expect(saveQueryNameInputFocus).toHaveBeenCalledWith({ cursor: 'all' });
+  });
+
   it('keeps saved query quick-save behavior for non-file tabs', async () => {
     storeState.savedQueries = [
       {
@@ -9929,6 +10083,86 @@ END;`;
       createdAt: 100,
     }));
     expect(getQueryTabDraft('tab-1')).toBe('');
+  });
+
+  it('saves a copy of an existing query without overwriting the original', async () => {
+    const originalQuery: SavedQuery = {
+      id: 'saved-1',
+      name: '常用查询',
+      sql: 'select 1;',
+      connectionId: 'conn-1',
+      dbName: 'main',
+      createdAt: 100,
+    };
+    storeState.savedQueries = [originalQuery];
+    const sourceTab = createTab({
+      id: originalQuery.id,
+      title: originalQuery.name,
+      query: originalQuery.sql,
+      savedQueryId: originalQuery.id,
+    });
+    storeState.tabs = [sourceTab];
+    storeState.addTab.mockImplementation((nextTab: TabData) => {
+      const existingIndex = storeState.tabs.findIndex((item) => item.id === nextTab.id);
+      storeState.tabs = existingIndex >= 0
+        ? storeState.tabs.map((item, index) => index === existingIndex ? { ...item, ...nextTab } : item)
+        : [...storeState.tabs, nextTab];
+      storeState.activeTabId = nextTab.id;
+      notifyStoreSubscribers();
+    });
+    storeState.saveQuery.mockImplementation(async (savedQuery: SavedQuery) => {
+      const existing = storeState.savedQueries.some((item) => item.id === savedQuery.id);
+      storeState.savedQueries = existing
+        ? storeState.savedQueries.map((item) => item.id === savedQuery.id ? savedQuery : item)
+        : [...storeState.savedQueries, savedQuery];
+      notifyStoreSubscribers();
+      return savedQuery;
+    });
+
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<QueryEditor tab={sourceTab} />);
+    });
+
+    await act(async () => {
+      editorState.value = 'select 9;';
+      editorState.latestOnChange?.(editorState.value);
+      findButton(renderer!, '另存为').props.onClick();
+    });
+    await act(async () => {
+      const saveAsButtons = renderer!.root.findAll(
+        (node) => node.type === 'button' && textContent(node) === '另存为',
+      );
+      await saveAsButtons[saveAsButtons.length - 1]?.props.onClick();
+    });
+
+    const copiedQuery = storeState.saveQuery.mock.calls[0]?.[0] as SavedQuery;
+    expect(copiedQuery).toEqual(expect.objectContaining({
+      name: '查询',
+      sql: 'select 9;',
+      connectionId: 'conn-1',
+      dbName: 'main',
+    }));
+    expect(copiedQuery.id).not.toBe(originalQuery.id);
+    expect(copiedQuery.createdAt).not.toBe(originalQuery.createdAt);
+    expect(storeState.savedQueries).toEqual(expect.arrayContaining([originalQuery, copiedQuery]));
+    expect(storeState.addTab).toHaveBeenLastCalledWith(expect.objectContaining({
+      id: copiedQuery.id,
+      title: '查询',
+      savedQueryId: copiedQuery.id,
+      query: 'select 9;',
+    }));
+    expect(storeState.tabs).toEqual(expect.arrayContaining([
+      sourceTab,
+      expect.objectContaining({
+        id: copiedQuery.id,
+        savedQueryId: copiedQuery.id,
+        query: 'select 9;',
+      }),
+    ]));
+    expect(storeState.activeTabId).toBe(copiedQuery.id);
+    expect(getQueryTabDraft(sourceTab.id)).toBe('select 9;');
+    expect(getQueryTabDraft(copiedQuery.id)).toBe('');
   });
 
   it('keeps edits made while a saved-query write is pending', async () => {

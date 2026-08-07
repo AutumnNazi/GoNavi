@@ -1,7 +1,7 @@
 import Modal from './common/ResizableDraggableModal';
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import Editor, { type BeforeMount, type OnMount } from './MonacoEditor';
-import { message, Input, Form, MenuProps, Button, Segmented } from 'antd';
+import { message, Input, Form, MenuProps, Button, Segmented, type InputRef } from 'antd';
 import { format } from 'sql-formatter';
 import { v4 as uuidv4 } from 'uuid';
 import { TabData, ColumnDefinition, type SavedQuery, type SqlSnippet } from '../types';
@@ -1485,8 +1485,9 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
   const resultTotalCountSeqRef = useRef(0);
   const resultTotalCountRequestsRef = useRef<Record<string, { sequence: number; queryId: string }>>({});
   const [isSaveModalOpen, setIsSaveModalOpen] = useState(false);
-  const [saveModalMode, setSaveModalMode] = useState<'save' | 'rename'>('save');
+  const [saveModalMode, setSaveModalMode] = useState<'save' | 'saveAs' | 'rename'>('save');
   const [saveForm] = Form.useForm();
+  const saveQueryNameInputRef = useRef<InputRef>(null);
 
   // Database Selection
   const [currentConnectionId, setCurrentConnectionId] = useState<string>(tab.connectionId);
@@ -1519,6 +1520,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
   const macFindWithSelectionGuardActionRef = useRef<any>(null);
   const duplicateCurrentLineActionRef = useRef<any>(null);
   const saveQueryActionRef = useRef<any>(null);
+  const saveQueryAsActionRef = useRef<any>(null);
   const findInEditorActionRef = useRef<any>(null);
   const formatSqlActionRef = useRef<any>(null);
   const triggerSqlAiCompletionActionRef = useRef<any>(null);
@@ -1945,6 +1947,10 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
   );
   const saveQueryShortcutBinding = useMemo(
       () => resolveShortcutBinding(shortcutOptions, 'saveQuery', activeShortcutPlatform),
+      [activeShortcutPlatform, shortcutOptions],
+  );
+  const saveQueryAsShortcutBinding = useMemo(
+      () => resolveShortcutBinding(shortcutOptions, 'saveQueryAs', activeShortcutPlatform),
       [activeShortcutPlatform, shortcutOptions],
   );
   const formatSqlShortcutBinding = useMemo(
@@ -5649,6 +5655,23 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           }
       }
 
+      const saveAsBinding = saveQueryAsShortcutBinding;
+      if (currentSavedQuery && !tab.filePath && saveAsBinding?.enabled && saveAsBinding.combo) {
+          const keyBinding = comboToMonacoKeyBinding(
+              saveAsBinding.combo, monaco.KeyMod, monaco.KeyCode, activeShortcutPlatform,
+          );
+          if (keyBinding) {
+              saveQueryAsActionRef.current = editor.addAction({
+                  id: 'gonavi.saveQueryAs',
+                  label: buildQueryEditorMonacoActionLabel('app.shortcuts.action.saveQueryAs.label'),
+                  keybindings: [keyBinding.keyMod | keyBinding.keyCode],
+                  run: () => {
+                      window.dispatchEvent(new CustomEvent('gonavi:save-active-query-as'));
+                  },
+              });
+          }
+      }
+
       const findInEditorKeyBinding = comboToMonacoKeyBinding(
           findInEditorShortcutCombo, monaco.KeyMod, monaco.KeyCode, activeShortcutPlatform,
       );
@@ -9224,6 +9247,41 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
   }, [activeShortcutPlatform, languagePreference, saveQueryShortcutBinding]);
 
   useEffect(() => {
+      if (saveQueryAsActionRef.current) {
+          saveQueryAsActionRef.current.dispose();
+          saveQueryAsActionRef.current = null;
+      }
+
+      const editor = editorRef.current;
+      const monaco = monacoRef.current;
+      if (!editor || !monaco || !currentSavedQuery || tab.filePath) return;
+
+      const binding = saveQueryAsShortcutBinding;
+      if (!binding?.enabled || !binding.combo) return;
+
+      const keyBinding = comboToMonacoKeyBinding(
+          binding.combo, monaco.KeyMod, monaco.KeyCode, activeShortcutPlatform,
+      );
+      if (keyBinding) {
+          saveQueryAsActionRef.current = editor.addAction({
+              id: 'gonavi.saveQueryAs',
+              label: buildQueryEditorMonacoActionLabel('app.shortcuts.action.saveQueryAs.label'),
+              keybindings: [keyBinding.keyMod | keyBinding.keyCode],
+              run: () => {
+                  window.dispatchEvent(new CustomEvent('gonavi:save-active-query-as'));
+              },
+          });
+      }
+
+      return () => {
+          if (saveQueryAsActionRef.current) {
+              saveQueryAsActionRef.current.dispose();
+              saveQueryAsActionRef.current = null;
+          }
+      };
+  }, [activeShortcutPlatform, currentSavedQuery, languagePreference, saveQueryAsShortcutBinding, tab.filePath]);
+
+  useEffect(() => {
       if (findInEditorActionRef.current) {
           findInEditorActionRef.current.dispose();
           findInEditorActionRef.current = null;
@@ -9556,7 +9614,12 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       return rawTitle;
   };
 
-  const persistQuery = async (payload: { id: string; name: string; createdAt?: number }): Promise<boolean> => {
+  const persistQuery = async (payload: {
+      id: string;
+      name: string;
+      createdAt?: number;
+      openCopyInNewTab?: boolean;
+  }): Promise<boolean> => {
       const sql = getCurrentQuery();
       lastLocalQueryRef.current = sql;
       const saved = {
@@ -9578,6 +9641,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       const latestTab = useStore.getState().tabs?.find((item) => item.id === tab.id) || tab;
       const nextTab = {
           ...latestTab,
+          id: payload.openCopyInNewTab ? persisted.id : latestTab.id,
           title: persisted.name,
           query: latestSql,
           connectionId: latestConnectionId,
@@ -9591,7 +9655,27 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       const savedSnapshotStillCurrent = latestSql === String(persisted.sql ?? '')
           && String(latestConnectionId || '').trim() === String(persisted.connectionId || '').trim()
           && String(latestDbName || '').trim() === String(persisted.dbName || '').trim();
-      if (savedSnapshotStillCurrent) {
+      if (payload.openCopyInNewTab) {
+          const sourceSnapshotStillCurrent = latestSql === String(currentSavedQuery?.sql ?? '')
+              && String(latestConnectionId || '').trim() === String(currentSavedQuery?.connectionId || '').trim()
+              && String(latestDbName || '').trim() === String(currentSavedQuery?.dbName || '').trim();
+          if (sourceSnapshotStillCurrent) {
+              clearQueryTabDraft(latestTab.id);
+          } else {
+              persistQueryTabDraftSnapshot(latestTab, latestSql, {
+                  connectionId: latestConnectionId,
+                  dbName: latestDbName,
+              });
+          }
+          if (savedSnapshotStillCurrent) {
+              clearQueryTabDraft(nextTab.id);
+          } else {
+              persistQueryTabDraftSnapshot(nextTab, latestSql, {
+                  connectionId: latestConnectionId,
+                  dbName: latestDbName,
+              });
+          }
+      } else if (savedSnapshotStillCurrent) {
           clearQueryTabDraft(tab.id);
       } else {
           persistQueryTabDraftSnapshot(nextTab, latestSql, {
@@ -9603,7 +9687,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       return true;
   };
 
-  const openSaveQueryModal = (mode: 'save' | 'rename') => {
+  const openSaveQueryModal = (mode: 'save' | 'saveAs' | 'rename') => {
       setSaveModalMode(mode);
       saveForm.setFieldsValue({ name: currentSavedQuery?.name || resolveDefaultQueryName() });
       setIsSaveModalOpen(true);
@@ -9679,6 +9763,13 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           return;
       }
       openSaveQueryModal('rename');
+  };
+
+  const handleSaveQueryAs = () => {
+      if (!currentSavedQuery || tab.filePath) {
+          return;
+      }
+      openSaveQueryModal('saveAs');
   };
 
   useEffect(() => {
@@ -9769,6 +9860,20 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
   ), [currentDb, elasticsearchServerMajor, insertElasticsearchConsoleTemplate]);
 
   const saveMoreMenuItems: MenuProps['items'] = [
+      ...(currentSavedQuery && !tab.filePath ? [{
+          key: 'save-query-as',
+          label: (
+              <span>
+                  {translate('query_editor.action.save_as')}
+                  {saveQueryAsShortcutBinding?.enabled && saveQueryAsShortcutBinding.combo && (
+                      <span style={{ marginLeft: 8, color: 'var(--gn-text-muted, #6c757d)', fontSize: 11 }}>
+                          {getShortcutDisplayLabel(saveQueryAsShortcutBinding.combo, activeShortcutPlatform)}
+                      </span>
+                  )}
+              </span>
+          ),
+          onClick: handleSaveQueryAs,
+      }] : []),
       {
           key: 'rename-query',
           label: translate('query_editor.action.rename_query'),
@@ -9889,6 +9994,39 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           window.removeEventListener('keydown', handleSaveShortcut, true);
       };
   }, [isActive, saveQueryShortcutBinding, handleQuickSave]);
+
+  useEffect(() => {
+      const binding = saveQueryAsShortcutBinding;
+      if (!binding?.enabled || !binding.combo) {
+          return;
+      }
+
+      const handleSaveAsShortcut = (event: KeyboardEvent) => {
+          if (!isActive || !currentSavedQuery || tab.filePath) {
+              return;
+          }
+          if (!isShortcutMatch(event, binding.combo)) {
+              return;
+          }
+
+          const editor = editorRef.current;
+          const targetNode = resolveEventTargetNode(event.target);
+          const editorHasFocus = !!editor?.hasTextFocus?.();
+          const inQueryEditor = !!(targetNode && queryEditorRootRef.current?.contains(targetNode));
+          if (!editorHasFocus && !inQueryEditor && !isDocumentLevelShortcutTarget(targetNode)) {
+              return;
+          }
+
+          event.preventDefault();
+          event.stopPropagation();
+          handleSaveQueryAs();
+      };
+
+      window.addEventListener('keydown', handleSaveAsShortcut, true);
+      return () => {
+          window.removeEventListener('keydown', handleSaveAsShortcut, true);
+      };
+  }, [currentSavedQuery, handleSaveQueryAs, isActive, saveQueryAsShortcutBinding, tab.filePath]);
 
   useEffect(() => {
       const binding = formatSqlShortcutBinding;
@@ -10039,6 +10177,20 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
   }, [isActive, handleQuickSave]);
 
   useEffect(() => {
+      const handleSaveActiveQueryAs = () => {
+          if (!isActive || !currentSavedQuery || tab.filePath) {
+              return;
+          }
+          handleSaveQueryAs();
+      };
+
+      window.addEventListener('gonavi:save-active-query-as', handleSaveActiveQueryAs as EventListener);
+      return () => {
+          window.removeEventListener('gonavi:save-active-query-as', handleSaveActiveQueryAs as EventListener);
+      };
+  }, [currentSavedQuery, handleSaveQueryAs, isActive, tab.filePath]);
+
+  useEffect(() => {
       const handleOpenSqlExecutionLog = (event: Event) => {
           const mode = event instanceof CustomEvent && event.detail?.mode === 'open' ? 'open' : 'toggle';
           handleShowSqlExecutionLog(mode);
@@ -10055,17 +10207,25 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           const values = await saveForm.validateFields();
           const existed = currentSavedQuery || null;
           const fallbackSavedId = String(tab.savedQueryId || '').trim();
-          const nextSavedId = existed?.id || fallbackSavedId || `saved-${Date.now()}`;
+          const isSaveAs = saveModalMode === 'saveAs';
+          const nextSavedId = isSaveAs
+              ? `saved-${uuidv4()}`
+              : existed?.id || fallbackSavedId || `saved-${Date.now()}`;
           const applied = await persistQuery({
               id: nextSavedId,
               name: String(values.name || '').trim() || translate('query_editor.save_modal.unnamed'),
-              createdAt: existed?.createdAt,
+              createdAt: isSaveAs ? Date.now() : existed?.createdAt,
+              openCopyInNewTab: isSaveAs,
           });
           if (!applied) {
               return;
           }
           message.success(translate(
-              saveModalMode === 'rename' ? 'query_editor.message.renamed' : 'query_editor.message.saved'
+              saveModalMode === 'rename'
+                  ? 'query_editor.message.renamed'
+                  : isSaveAs
+                      ? 'query_editor.message.saved_as'
+                      : 'query_editor.message.saved'
           ));
           setIsSaveModalOpen(false);
       } catch (e) {
@@ -10849,16 +11009,33 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       </Modal>
 
       <Modal 
-        title={translate(saveModalMode === 'rename' ? 'query_editor.save_modal.rename_title' : 'query_editor.save_modal.title')}
+        title={translate(
+          saveModalMode === 'rename'
+            ? 'query_editor.save_modal.rename_title'
+            : saveModalMode === 'saveAs'
+              ? 'query_editor.save_modal.save_as_title'
+              : 'query_editor.save_modal.title',
+        )}
         open={isSaveModalOpen} 
         onOk={handleSave} 
         onCancel={() => setIsSaveModalOpen(false)}
-        okText={translate(saveModalMode === 'rename' ? 'query_editor.save_modal.rename_ok' : 'common.save')}
+        okText={translate(
+          saveModalMode === 'rename'
+            ? 'query_editor.save_modal.rename_ok'
+            : saveModalMode === 'saveAs'
+              ? 'query_editor.action.save_as'
+              : 'common.save',
+        )}
         cancelText={translate('common.cancel')}
+        afterOpenChange={(open) => {
+          if (open) {
+            saveQueryNameInputRef.current?.focus({ cursor: 'all' });
+          }
+        }}
       >
           <Form form={saveForm} layout="vertical">
               <Form.Item name="name" label={translate('query_editor.save_modal.name_label')} rules={[{ required: true, message: translate('query_editor.save_modal.name_required') }]}>
-                  <Input placeholder={translate('query_editor.save_modal.name_placeholder')} />
+                  <Input ref={saveQueryNameInputRef} placeholder={translate('query_editor.save_modal.name_placeholder')} />
               </Form.Item>
           </Form>
       </Modal>
