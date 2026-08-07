@@ -20,33 +20,179 @@ export interface MonacoClipboardScope {
   window?: WailsWindowLike;
 }
 
+interface DisposableLike {
+  dispose: () => void;
+}
+
 interface MonacoClipboardEditorLike {
+  getOption?: (option: any) => unknown;
   getRawOptions?: () => { readOnly?: boolean };
   hasModel?: () => boolean;
   hasTextFocus?: () => boolean;
+  onDidDispose?: (listener: () => void) => DisposableLike;
   trigger?: (source: string, handlerId: string, payload: unknown) => void;
 }
 
 interface MonacoEditorApiLike {
-  addCommand?: (descriptor: {
-    id: string;
-    run: () => Promise<void>;
-  }) => { dispose: () => void };
-  getEditors?: () => MonacoClipboardEditorLike[];
+  EditorOption?: {
+    emptySelectionClipboard?: unknown;
+  };
 }
 
 export interface MonacoClipboardApiLike {
   editor?: MonacoEditorApiLike;
 }
 
-interface InstalledClipboardCommand {
-  refCount: number;
-  dispose: () => void;
+interface MonacoClipboardMetadata {
+  isFromEmptySelection?: boolean;
+  multicursorText?: string[] | null;
+  mode?: unknown;
 }
 
-const MONACO_PASTE_COMMAND_ID = 'editor.action.clipboardPasteAction';
-const installedClipboardCommands = new WeakMap<object, InstalledClipboardCommand>();
+interface MonacoClipboardMetadataManagerLike {
+  get: (text: string) => MonacoClipboardMetadata | null;
+}
+
+export interface MonacoClipboardPasteActionLike {
+  addImplementation?: (
+    priority: number,
+    name: string,
+    implementation: () => boolean | Promise<void>,
+  ) => DisposableLike;
+}
+
+export interface MonacoClipboardInternals {
+  metadataManager: MonacoClipboardMetadataManagerLike;
+  pasteAction?: MonacoClipboardPasteActionLike;
+}
+
+const MONACO_PASTE_IMPLEMENTATION_PRIORITY = 10001;
 const noop = () => {};
+
+let monacoClipboardInternalsPromise: Promise<MonacoClipboardInternals | null> | null = null;
+
+const isWailsClipboardRuntime = (scope: MonacoClipboardScope): boolean => (
+  typeof scope.window?.WailsInvoke === 'function'
+  && typeof scope.window.runtime?.ClipboardGetText === 'function'
+);
+
+const getBrowserClipboardReader = (scope: MonacoClipboardScope): ClipboardReadText | undefined => {
+  try {
+    const clipboard = scope.navigator?.clipboard;
+    return typeof clipboard?.readText === 'function' ? clipboard.readText.bind(clipboard) : undefined;
+  } catch {
+    return undefined;
+  }
+};
+
+const loadMonacoClipboardInternals = (): Promise<MonacoClipboardInternals | null> => {
+  if (!monacoClipboardInternalsPromise) {
+    monacoClipboardInternalsPromise = Promise.all([
+      import('monaco-editor/esm/vs/editor/contrib/clipboard/browser/clipboard.js'),
+      import('monaco-editor/esm/vs/editor/browser/controller/editContext/clipboardUtils.js'),
+    ]).then(([clipboardModule, clipboardUtilsModule]) => {
+      // Monaco 0.55.1 ships these symbols without public declarations. The main editor bundle
+      // imports both modules, so these are the same instances used by Monaco's default action.
+      const pasteAction = (clipboardModule as unknown as {
+        PasteAction?: MonacoClipboardPasteActionLike;
+      }).PasteAction;
+      const metadataManager = (clipboardUtilsModule as unknown as {
+        InMemoryClipboardMetadataManager?: { INSTANCE?: MonacoClipboardMetadataManagerLike };
+      }).InMemoryClipboardMetadataManager?.INSTANCE;
+
+      return metadataManager ? { pasteAction, metadataManager } : null;
+    }).catch(() => null);
+  }
+
+  return monacoClipboardInternalsPromise;
+};
+
+const createPastePayload = (
+  monaco: MonacoClipboardApiLike,
+  editor: MonacoClipboardEditorLike,
+  text: string,
+  metadataManager: MonacoClipboardMetadataManagerLike,
+) => {
+  // This is Monaco's own text-keyed fallback for data that cannot carry custom clipboard MIME types.
+  const metadata = metadataManager.get(text);
+  const emptySelectionClipboard = monaco.editor?.EditorOption?.emptySelectionClipboard;
+  const pasteOnNewLine = emptySelectionClipboard !== undefined
+    && editor.getOption?.(emptySelectionClipboard) === true
+    && metadata?.isFromEmptySelection === true;
+
+  return {
+    text,
+    pasteOnNewLine,
+    // Wails only exposes text. Never reconstruct multicursorText from arbitrary line breaks.
+    multicursorText: metadata && typeof metadata.multicursorText !== 'undefined'
+      ? metadata.multicursorText
+      : null,
+    mode: metadata?.mode ?? null,
+  };
+};
+
+const installPasteImplementation = (
+  monaco: MonacoClipboardApiLike,
+  editor: MonacoClipboardEditorLike,
+  scope: MonacoClipboardScope,
+  internals: MonacoClipboardInternals,
+): (() => void) => {
+  const pasteAction = internals.pasteAction;
+  const wailsReadText = scope.window?.runtime?.ClipboardGetText;
+  if (!pasteAction?.addImplementation || typeof wailsReadText !== 'function') {
+    return noop;
+  }
+
+  const browserReadText = getBrowserClipboardReader(scope);
+  let released = false;
+  const implementationDisposable = pasteAction.addImplementation(
+    MONACO_PASTE_IMPLEMENTATION_PRIORITY,
+    'gonavi-wails-sql-editor',
+    () => {
+      const trigger = editor.trigger;
+      if (
+        editor.hasModel?.() === false
+        || editor.hasTextFocus?.() !== true
+        || editor.getRawOptions?.().readOnly === true
+        || typeof trigger !== 'function'
+      ) {
+        // Let Monaco's default implementation handle another focused editor.
+        return false;
+      }
+
+      return (async () => {
+        let text: string;
+        try {
+          text = await readClipboardTextWithFallback(wailsReadText.bind(scope.window?.runtime), browserReadText);
+        } catch {
+          return;
+        }
+        if (
+          released
+          || !text
+          || editor.hasModel?.() === false
+          || editor.hasTextFocus?.() !== true
+          || editor.getRawOptions?.().readOnly === true
+        ) {
+          return;
+        }
+
+        trigger('keyboard', 'paste', createPastePayload(monaco, editor, text, internals.metadataManager));
+      })();
+    },
+  );
+
+  let editorDisposeDisposable: DisposableLike | undefined;
+  const release = () => {
+    if (released) return;
+    released = true;
+    implementationDisposable.dispose();
+    editorDisposeDisposable?.dispose();
+  };
+  editorDisposeDisposable = editor.onDidDispose?.(release);
+
+  return release;
+};
 
 export const readClipboardTextWithFallback = async (
   primaryReadText: ClipboardReadText,
@@ -62,98 +208,31 @@ export const readClipboardTextWithFallback = async (
   }
 };
 
-export const installWailsMonacoClipboardPasteCommand = (
+export const installWailsMonacoClipboardPasteHandler = (
   monaco: MonacoClipboardApiLike,
+  editor: MonacoClipboardEditorLike,
   scope: MonacoClipboardScope = globalThis as unknown as MonacoClipboardScope,
+  internals?: MonacoClipboardInternals,
 ): (() => void) => {
-  const wailsWindow = scope.window;
-  const runtime = wailsWindow?.runtime;
-  const editorApi = monaco.editor;
-  if (
-    typeof wailsWindow?.WailsInvoke !== 'function'
-    || typeof runtime?.ClipboardGetText !== 'function'
-    || !editorApi
-    || typeof editorApi.addCommand !== 'function'
-    || typeof editorApi.getEditors !== 'function'
-  ) {
+  if (!isWailsClipboardRuntime(scope)) {
     return noop;
   }
 
-  const existing = installedClipboardCommands.get(editorApi);
-  if (existing) {
-    existing.refCount += 1;
-    let released = false;
-    return () => {
-      if (released) return;
-      released = true;
-      existing.refCount -= 1;
-      if (existing.refCount === 0) {
-        existing.dispose();
-        installedClipboardCommands.delete(editorApi);
-      }
-    };
+  if (internals) {
+    return installPasteImplementation(monaco, editor, scope, internals);
   }
-
-  const wailsReadText = runtime.ClipboardGetText.bind(runtime);
-  let browserReadText: ClipboardReadText | undefined;
-  try {
-    const clipboard = scope.navigator?.clipboard;
-    if (typeof clipboard?.readText === 'function') {
-      browserReadText = clipboard.readText.bind(clipboard);
-    }
-  } catch {
-    browserReadText = undefined;
-  }
-
-  let commandDisposable: { dispose: () => void };
-  try {
-    commandDisposable = editorApi.addCommand({
-      id: MONACO_PASTE_COMMAND_ID,
-      run: async () => {
-        const editor = editorApi.getEditors!().find((candidate) => (
-          candidate.hasModel?.() !== false && candidate.hasTextFocus?.() === true
-        ));
-        if (!editor || editor.getRawOptions?.().readOnly === true || typeof editor.trigger !== 'function') {
-          return;
-        }
-
-        let text: string;
-        try {
-          text = await readClipboardTextWithFallback(wailsReadText, browserReadText);
-        } catch {
-          return;
-        }
-        if (!text) {
-          return;
-        }
-
-        // Keep Monaco responsible for selections, multi-cursor edits and the undo stack.
-        editor.trigger('keyboard', 'paste', {
-          text,
-          pasteOnNewLine: false,
-          multicursorText: null,
-          mode: null,
-        });
-      },
-    });
-  } catch {
-    return noop;
-  }
-
-  const installed: InstalledClipboardCommand = {
-    refCount: 1,
-    dispose: () => commandDisposable.dispose(),
-  };
-  installedClipboardCommands.set(editorApi, installed);
 
   let released = false;
+  let installedCleanup = noop;
+  void loadMonacoClipboardInternals().then((loadedInternals) => {
+    if (!released && loadedInternals) {
+      installedCleanup = installPasteImplementation(monaco, editor, scope, loadedInternals);
+    }
+  });
+
   return () => {
     if (released) return;
     released = true;
-    installed.refCount -= 1;
-    if (installed.refCount === 0) {
-      installed.dispose();
-      installedClipboardCommands.delete(editorApi);
-    }
+    installedCleanup();
   };
 };

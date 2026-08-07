@@ -7,7 +7,7 @@ import {
   resolveSqlEditorFontSize,
   resolveSqlEditorSuggestionLayout,
 } from '../utils/sqlEditorTypography';
-import { installWailsMonacoClipboardPasteCommand } from '../utils/monacoClipboard';
+import { installWailsMonacoClipboardPasteHandler } from '../utils/monacoClipboard';
 
 export type { BeforeMount, OnMount } from '@monaco-editor/react';
 export type GonaviMonacoTypography = 'code' | 'data' | 'sql';
@@ -848,7 +848,7 @@ const MonacoEditor: React.FC<MonacoEditorProps> = ({
   const handleMount: OnMount = useCallback((editor, monaco) => {
     clipboardPasteCleanupRef.current?.();
     clipboardPasteCleanupRef.current = gonaviTypography === 'sql'
-      ? installWailsMonacoClipboardPasteCommand(monaco)
+      ? installWailsMonacoClipboardPasteHandler(monaco, editor)
       : null;
     installOceanBaseOracleNavigationFallback(editor);
     installPrintableInputFallback(editor, monaco);
