@@ -10611,8 +10611,14 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
         formatSettingsMenu={formatSettingsMenu}
         templateMenuItems={elasticsearchTemplateMenuItems}
         onConnectionChange={(val) => {
-            setCurrentConnectionId(val);
+            const connectionId = String(val || '').trim();
+            currentConnectionIdRef.current = connectionId;
+            currentDbRef.current = '';
+            setCurrentConnectionId(connectionId);
             setCurrentDb('');
+            if (connectionId) {
+                setActiveContext({ connectionId, dbName: '' });
+            }
         }}
         onDatabaseChange={handleDatabaseChange}
         onMaxRowsChange={(maxRows) => setQueryOptions({ maxRows })}

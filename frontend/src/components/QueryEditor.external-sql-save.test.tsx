@@ -10,6 +10,7 @@ import type { SavedQuery, TabData } from '../types';
 import { ORACLE_ROWID_LOCATOR_COLUMN } from '../utils/rowLocator';
 import { setGlobalImeCompositionActive } from '../utils/shortcuts';
 import { clearQueryEditorResultSession } from '../utils/queryEditorResultSessionCache';
+import { resolveNewQueryContext } from '../utils/newQueryContext';
 import { QUERY_TAB_RENAME_REQUEST_EVENT } from '../utils/queryTabTitle';
 import { clearQueryTabDraft, clearSQLFileTabDraft, getQueryTabDraft, getSQLFileTabDraft } from '../utils/sqlFileTabDrafts';
 import { clearQueryEditorInlineRuntimeReadinessCache } from './queryEditor/QueryEditorAiAssist';
@@ -56,6 +57,7 @@ const storeState = vi.hoisted(() => ({
   clearSqlLogs: vi.fn(),
   addSqlLog: vi.fn(),
   addTab: vi.fn(),
+  activeContext: null as { connectionId: string; dbName: string } | null,
   setActiveContext: vi.fn(),
   updateQueryTabDraft: vi.fn(),
   savedQueries: [] as SavedQuery[],
@@ -853,6 +855,10 @@ describe('QueryEditor external SQL save', () => {
     runtimeEventListeners.clear();
     storeState.addTab.mockReset();
     storeState.setActiveContext.mockReset();
+    storeState.activeContext = null;
+    storeState.setActiveContext.mockImplementation((context: { connectionId: string; dbName: string } | null) => {
+      storeState.activeContext = context;
+    });
     storeState.saveQuery.mockReset();
     storeState.saveQuery.mockImplementation(async (query: SavedQuery) => query);
     storeState.savedQueries = [];
@@ -3225,6 +3231,49 @@ describe('QueryEditor external SQL save', () => {
 
     expect(result.suggestions).toEqual([]);
     expect(backendApp.DBGetTables).not.toHaveBeenCalled();
+
+    await act(async () => {
+      renderer.unmount();
+    });
+  });
+
+  it('syncs a cleared database to the active context when the toolbar switches connections', async () => {
+    storeState.connections = [
+      ...createDefaultConnections(),
+      {
+        id: 'conn-2',
+        name: 'analytics',
+        config: {
+          type: 'mysql',
+          host: '127.0.0.2',
+          port: 3306,
+          user: 'root',
+          password: '',
+          database: '',
+        },
+      },
+    ];
+
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<QueryEditor tab={createTab({ connectionId: 'conn-1', dbName: 'main' })} />);
+    });
+
+    const toolbar = renderer.root.findByType(QueryEditorToolbar);
+    await act(async () => {
+      toolbar.props.onConnectionChange('conn-2');
+    });
+
+    expect(storeState.setActiveContext).toHaveBeenLastCalledWith({
+      connectionId: 'conn-2',
+      dbName: '',
+    });
+    expect(storeState.activeContext).toEqual({ connectionId: 'conn-2', dbName: '' });
+    expect(resolveNewQueryContext({
+      sidebarContext: storeState.activeContext,
+      activeTab: createTab({ connectionId: 'conn-1', dbName: 'main' }),
+      validConnectionIds: new Set(storeState.connections.map((connection) => connection.id)),
+    })).toEqual({ connectionId: 'conn-2', dbName: '' });
 
     await act(async () => {
       renderer.unmount();
