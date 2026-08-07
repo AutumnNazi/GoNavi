@@ -745,6 +745,12 @@ const DataSyncModal: React.FC<{
   ]);
 
   useEffect(() => {
+    if (syncContent === "data" && autoAddColumns) {
+      setAutoAddColumns(false);
+    }
+  }, [syncContent, autoAddColumns]);
+
+  useEffect(() => {
     if (sourceDatasetMode !== "query") return;
     if (workflowType !== "sync") {
       setWorkflowType("sync");
@@ -1982,7 +1988,7 @@ const DataSyncModal: React.FC<{
                     <Checkbox
                       checked={autoAddColumns}
                       onChange={(e) => setAutoAddColumns(e.target.checked)}
-                      disabled={isSourceQueryMode}
+                      disabled={isSourceQueryMode || syncContent === "data"}
                     >
                       {isSchemaCompareEntry
                         ? tr("data_sync.compare_entry.option.auto_add_columns")

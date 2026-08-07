@@ -117,6 +117,9 @@ func (s *SyncEngine) prepareDirectImportTargetColumnSet(config SyncConfig, res *
 	}
 
 	if config.AutoAddColumns && supportsAutoAddColumnsForPair(sourceType, targetType) {
+		if !syncContentAllowsSchemaChanges(config.Content) {
+			return nil, fmt.Errorf("目标表缺少字段，仅同步数据模式不允许自动补齐：%s", strings.Join(missing, ", "))
+		}
 		s.appendLog(config.JobID, res, "warn", fmt.Sprintf("  -> 目标表缺少字段 %d 个，开始自动补齐: %s", len(missing), strings.Join(missing, ", ")))
 		added := 0
 		sourceColsByLower := make(map[string]connection.ColumnDefinition, len(sourceCols))

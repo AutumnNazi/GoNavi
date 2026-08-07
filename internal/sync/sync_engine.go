@@ -116,6 +116,7 @@ func (s *SyncEngine) RunSync(config SyncConfig) SyncResult {
 	}
 	defaultMode := normalizeSyncMode(config.Mode)
 	strategy := normalizeTargetTableStrategy(config.TargetTableStrategy)
+	schemaChangesAllowed := syncContentAllowsSchemaChanges(config.Content)
 
 	contentLabel := "仅同步数据"
 	if syncSchema && syncData {
@@ -191,6 +192,20 @@ func (s *SyncEngine) RunSync(config SyncConfig) SyncResult {
 			}
 			if strings.TrimSpace(plan.PlannedAction) != "" {
 				s.appendLog(config.JobID, &result, "info", fmt.Sprintf("  -> %s", plan.PlannedAction))
+			}
+			if !schemaChangesAllowed {
+				if !plan.TargetTableExists && plan.AutoCreate {
+					message := fmt.Sprintf("表 %s 目标表不存在，仅同步数据模式不允许自动创建目标表", tableName)
+					s.appendLog(config.JobID, &result, "warn", message)
+					markTableFailure(message)
+					return
+				}
+				if len(plan.PreDataSQL) > 0 {
+					message := fmt.Sprintf("表 %s 存在结构差异，仅同步数据模式不允许修改目标表结构", tableName)
+					s.appendLog(config.JobID, &result, "warn", message)
+					markTableFailure(message)
+					return
+				}
 			}
 
 			if !plan.TargetTableExists && !plan.AutoCreate {
@@ -281,7 +296,7 @@ func (s *SyncEngine) RunSync(config SyncConfig) SyncResult {
 			if !hasEffectiveSyncDataOperation(tableMode, opts) {
 				if tableMode == "insert_update" {
 					s.appendLog(config.JobID, &result, "info", fmt.Sprintf("表 %s 未选择数据变更，按无变更处理", tableName))
-					if len(plan.PostDataSQL) > 0 {
+					if schemaChangesAllowed && len(plan.PostDataSQL) > 0 {
 						s.progress(config.JobID, i, totalTables, tableName, "创建索引")
 						if err := executeSQLStatements(targetDB.Exec, plan.PostDataSQL); err != nil {
 							message := fmt.Sprintf("创建索引失败：表=%s 错误=%v", tableName, err)
@@ -345,7 +360,7 @@ func (s *SyncEngine) RunSync(config SyncConfig) SyncResult {
 				} else {
 					s.appendLog(config.JobID, &result, "info", "  -> 源表无可导入数据")
 				}
-				if len(plan.PostDataSQL) > 0 {
+				if schemaChangesAllowed && len(plan.PostDataSQL) > 0 {
 					s.progress(config.JobID, i, totalTables, tableName, "创建索引")
 					if err := executeSQLStatements(targetDB.Exec, plan.PostDataSQL); err != nil {
 						message := fmt.Sprintf("创建索引失败：表=%s 错误=%v", tableName, err)
@@ -374,7 +389,7 @@ func (s *SyncEngine) RunSync(config SyncConfig) SyncResult {
 				} else {
 					s.appendLog(config.JobID, &result, "info", "  -> 数据一致，无需变更.")
 				}
-				if len(plan.PostDataSQL) > 0 {
+				if schemaChangesAllowed && len(plan.PostDataSQL) > 0 {
 					s.progress(config.JobID, i, totalTables, tableName, "创建索引")
 					if err := executeSQLStatements(targetDB.Exec, plan.PostDataSQL); err != nil {
 						message := fmt.Sprintf("创建索引失败：表=%s 错误=%v", tableName, err)
@@ -496,6 +511,12 @@ func (s *SyncEngine) RunSync(config SyncConfig) SyncResult {
 				}
 				sort.Strings(missing)
 				if len(missing) > 0 {
+					if config.AutoAddColumns && !schemaChangesAllowed {
+						message := fmt.Sprintf("目标表缺少字段，仅同步数据模式不允许自动补齐：%s", strings.Join(missing, ", "))
+						s.appendLog(config.JobID, &result, "warn", "  -> "+message)
+						markTableFailure(message)
+						return
+					}
 					if config.AutoAddColumns && supportsAutoAddColumnsForPair(sourceType, targetType) {
 						s.appendLog(config.JobID, &result, "warn", fmt.Sprintf("  -> 目标表缺少字段 %d 个，开始自动补齐: %s", len(missing), strings.Join(missing, ", ")))
 						added := 0
@@ -581,7 +602,7 @@ func (s *SyncEngine) RunSync(config SyncConfig) SyncResult {
 				s.appendLog(config.JobID, &result, "info", "  -> 数据一致，无需变更.")
 			}
 
-			if len(plan.PostDataSQL) > 0 {
+			if schemaChangesAllowed && len(plan.PostDataSQL) > 0 {
 				s.progress(config.JobID, i, totalTables, tableName, "创建索引")
 				if err := executeSQLStatements(targetDB.Exec, plan.PostDataSQL); err != nil {
 					message := fmt.Sprintf("创建索引失败：表=%s 错误=%v", tableName, err)
