@@ -31,6 +31,8 @@
 <p align="center">
   <b>Language</b>: English · <a href="README.zh-CN.md">简体中文</a>
   &nbsp;·&nbsp;
+  <a href="https://gonavi.org"><b>🌐 Website</b></a>
+  ·
   <a href="https://github.com/Syngnat/GoNavi/releases"><b>⬇ Download</b></a>
   ·
   <a href="#-quick-start"><b>⚡ Quick Start</b></a>

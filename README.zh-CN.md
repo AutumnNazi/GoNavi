@@ -30,6 +30,8 @@
 <p align="center">
   <b>语言</b>：<a href="README.md">English</a> · 简体中文
   &nbsp;·&nbsp;
+  <a href="https://gonavi.org"><b>🌐 官网</b></a>
+  ·
   <a href="https://github.com/Syngnat/GoNavi/releases"><b>⬇ 下载</b></a>
   ·
   <a href="#-快速开始"><b>⚡ 快速开始</b></a>
