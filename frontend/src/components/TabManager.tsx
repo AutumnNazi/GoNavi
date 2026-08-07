@@ -56,6 +56,7 @@ import { createSidebarResizeAwareFrameScheduler } from '../utils/sidebarResizeLi
 import { QUERY_TAB_RENAME_REQUEST_EVENT } from '../utils/queryTabTitle';
 import { getDbIcon } from './DatabaseIcons';
 import { resolveConnectionAccentColor, resolveConnectionIconType } from '../utils/connectionVisual';
+import { dispatchSidebarLocateConnection } from '../utils/sidebarLocate';
 
 const getTabKindLabel = (tab: TabData): string => {
   if (tab.type === 'query') return t('tab_manager.kind_badge.query');
@@ -124,6 +125,14 @@ export type RecentConnectionShortcut = {
   dbName?: string;
 };
 
+export const dispatchRecentConnectionShortcut = (
+  shortcut: Pick<RecentConnectionShortcut, 'connection' | 'dbName'>,
+  eventTarget?: Pick<Window, 'dispatchEvent'> | null,
+): boolean => dispatchSidebarLocateConnection({
+  connectionId: shortcut.connection.id,
+  ...(shortcut.dbName ? { dbName: shortcut.dbName } : {}),
+}, eventTarget);
+
 export type PinnedTableShortcut = {
   connection: SavedConnection;
   dbName: string;
@@ -143,10 +152,7 @@ export const buildRecentConnectionShortcuts = (
   connections: SavedConnection[],
   recentTargets: RecentConnectionTarget[],
 ): RecentConnectionShortcut[] => {
-  const queryCapableConnections = connections.filter((connection) =>
-    getDataSourceCapabilities(connection.config).supportsQueryEditor,
-  );
-  const connectionById = new Map(queryCapableConnections.map((connection) => [connection.id, connection]));
+  const connectionById = new Map(connections.map((connection) => [connection.id, connection]));
   const seen = new Set<string>();
   const seenConnectionIds = new Set<string>();
   const result: RecentConnectionShortcut[] = [];
@@ -166,7 +172,7 @@ export const buildRecentConnectionShortcuts = (
       append(connection, target.dbName);
     }
   });
-  queryCapableConnections.forEach((connection) => {
+  connections.forEach((connection) => {
     if (!seenConnectionIds.has(connection.id)) {
       append(connection);
     }
@@ -1461,6 +1467,10 @@ const TabManager: React.FC<TabManagerProps> = React.memo<TabManagerProps>(({ onF
   };
 
   const handleOpenRecentConnection = useCallback((shortcut: RecentConnectionShortcut) => {
+    dispatchRecentConnectionShortcut(shortcut);
+  }, []);
+
+  const handleCreateQueryForConnection = useCallback((shortcut: Pick<RecentConnectionShortcut, 'connection' | 'dbName'>) => {
     addTab({
       id: buildWorkbenchQueryTabId(),
       title: t('query.new'),
@@ -1722,7 +1732,7 @@ const TabManager: React.FC<TabManagerProps> = React.memo<TabManagerProps>(({ onF
                   key={shortcut.directory.id}
                   type="button"
                   className="gn-v2-empty-recent-item"
-                  onClick={() => handleOpenRecentConnection(shortcut)}
+                  onClick={() => handleCreateQueryForConnection(shortcut)}
                 >
                   <FolderOpenOutlined />
                   <span>

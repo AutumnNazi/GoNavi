@@ -155,12 +155,14 @@ import {
   resolveSidebarRuntimeDatabase,
 } from '../utils/sidebarMetadata';
 import {
-    findSidebarNodePathByKey,
-    findSidebarNodePathForLocate,
-    normalizeSidebarLocateObjectRequest,
-    normalizeSidebarLocateObjectRequestFromTab,
-    resolveSidebarLocateTarget,
-    type SidebarLocateTreeNodeLike,
+  findSidebarNodePathByKey,
+  findSidebarNodePathForLocate,
+  SIDEBAR_LOCATE_CONNECTION_EVENT,
+  normalizeSidebarLocateConnectionRequest,
+  normalizeSidebarLocateObjectRequest,
+  normalizeSidebarLocateObjectRequestFromTab,
+  resolveSidebarLocateTarget,
+  type SidebarLocateTreeNodeLike,
 } from '../utils/sidebarLocate';
 import { resolveConnectionAccentColor, resolveConnectionIconType } from '../utils/connectionVisual';
 import {
@@ -2990,9 +2992,52 @@ const Sidebar: React.FC<{
   expandConnectionFromRailRef.current = (connectionId: string) => {
       const conn = connections.find((item) => item.id === connectionId);
       if (conn) {
-          selectConnectionFromRail(conn);
+          void selectConnectionFromRail(conn);
       }
   };
+
+  const locateConnectionInSidebar = useCallback(async (detail: unknown) => {
+      const request = normalizeSidebarLocateConnectionRequest(detail);
+      if (!request) return;
+
+      const connection = connections.find((item) => item.id === request.connectionId);
+      if (!connection) return;
+
+      onExpandSidebar?.();
+      setSearchValue('');
+      await selectConnectionFromRail(connection);
+
+      if (!request.dbName) {
+          scrollSidebarTreeToKey(connection.id);
+          return;
+      }
+
+      await waitForSidebarLoadKey(`dbs-${connection.id}`);
+      const databaseNode = findTreeNodeByKeyRef.current(
+          treeDataRef.current,
+          `${connection.id}-${request.dbName}`,
+      );
+      if (!databaseNode) {
+          scrollSidebarTreeToKey(connection.id);
+          return;
+      }
+
+      const dbName = String(databaseNode.dataRef?.dbName || request.dbName).trim();
+      setSelectedKeys([databaseNode.key]);
+      selectedNodesRef.current = [databaseNode];
+      setActiveContext({ connectionId: connection.id, dbName });
+      scrollSidebarTreeToKey(databaseNode.key);
+  }, [connections, findTreeNodeByKeyRef, onExpandSidebar, scrollSidebarTreeToKey, selectConnectionFromRail, selectedNodesRef, setActiveContext, setSearchValue, setSelectedKeys, treeDataRef]);
+
+  useEffect(() => {
+      const handleLocateSidebarConnection = (event: Event) => {
+          void locateConnectionInSidebar((event as CustomEvent).detail);
+      };
+      window.addEventListener(SIDEBAR_LOCATE_CONNECTION_EVENT, handleLocateSidebarConnection as EventListener);
+      return () => {
+          window.removeEventListener(SIDEBAR_LOCATE_CONNECTION_EVENT, handleLocateSidebarConnection as EventListener);
+      };
+  }, [locateConnectionInSidebar]);
 
   const getNodeMenuItems = (node: any): MenuProps['items'] => buildSidebarLegacyNodeMenuItems(node, {
     addTab,

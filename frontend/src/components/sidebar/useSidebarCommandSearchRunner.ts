@@ -45,7 +45,7 @@ export const useSidebarCommandSearchRunner = ({
   treeDataRef,
   v2CommandActiveIndex,
 }: UseSidebarCommandSearchRunnerArgs) => {
-  const selectConnectionFromRail = useCallback((conn: SavedConnection) => {
+  const selectConnectionFromRail = useCallback((conn: SavedConnection): Promise<void> => {
     const key = conn.id;
     const connectionNode = findTreeNodeByKeyRef.current(treeDataRef.current, key);
     setSelectedKeys([key]);
@@ -57,7 +57,7 @@ export const useSidebarCommandSearchRunner = ({
       dataRef: conn,
       type: 'connection',
     };
-    void loadDatabases(targetNode);
+    return loadDatabases(targetNode);
   }, [findTreeNodeByKeyRef, loadDatabases, mergeExpandedTreeKeys, selectedNodesRef, setActiveContext, setSelectedKeys, treeDataRef]);
 
   const runCommandSearchItem = useCallback((item?: V2CommandSearchItem) => {
@@ -82,7 +82,7 @@ export const useSidebarCommandSearchRunner = ({
     const node = item.node;
     const dataRef = node.dataRef || {};
     if (node.type === 'connection') {
-      selectConnectionFromRail(dataRef as SavedConnection);
+      void selectConnectionFromRail(dataRef as SavedConnection);
       return;
     }
     if (node.type === 'database') {
