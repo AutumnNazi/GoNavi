@@ -238,7 +238,7 @@ import {
 import { useAppUpdateManager } from './hooks/useAppUpdateManager';
 import { useAppLogPanelResize } from './hooks/useAppLogPanelResize';
 import { useAppSidebarResize } from './hooks/useAppSidebarResize';
-import { resolveNewQueryContext } from './utils/newQueryContext';
+import { canInheritNewQueryTableContext, resolveNewQueryContext } from './utils/newQueryContext';
 import { useAppUtilityStyles } from './hooks/useAppUtilityStyles';
 import { useWorkbenchTabs } from './hooks/useWorkbenchTabs';
 import {
@@ -2731,11 +2731,11 @@ function App() {
           validConnectionIds: new Set(connections.map(connection => connection.id)),
       });
       const connection = connections.find(c => c.id === targetContext.connectionId);
-      const inheritsTableContext = currentTab
-          && (currentTab.type === 'table' || currentTab.type === 'design')
-          && String(currentTab.connectionId || '').trim() === targetContext.connectionId
-          && String(currentTab.dbName || '').trim() === targetContext.dbName;
-      const tableName = inheritsTableContext ? String(currentTab.tableName || '').trim() : '';
+      const inheritsTableContext = canInheritNewQueryTableContext({
+          activeTab: currentTab,
+          targetContext,
+      });
+      const tableName = inheritsTableContext ? String(currentTab?.tableName || '').trim() : '';
       const contextualQuery = tableName && connection
           ? buildContextualNewQueryTemplate({
               dbType: resolveDataSourceType(connection.config),

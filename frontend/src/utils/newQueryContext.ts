@@ -35,3 +35,20 @@ export const resolveNewQueryContext = ({
   || normalizeValidContext(activeTab, validConnectionIds)
   || { connectionId: '', dbName: '' }
 );
+export interface NewQueryTableContextLike extends NewQueryContextLike {
+  type?: unknown;
+  tableName?: unknown;
+}
+
+export const canInheritNewQueryTableContext = ({
+  activeTab,
+  targetContext,
+}: {
+  activeTab?: NewQueryTableContextLike | null;
+  targetContext: NewQueryContext;
+}): boolean => {
+  const tabType = String(activeTab?.type || '');
+  return (tabType === 'table' || tabType === 'design')
+    && String(activeTab?.connectionId || '').trim() === targetContext.connectionId
+    && String(activeTab?.dbName || '').trim() === targetContext.dbName;
+};
