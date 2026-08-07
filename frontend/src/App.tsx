@@ -7,7 +7,9 @@ import { arrayMove, SortableContext, useSortable, verticalListSortingStrategy } 
 import { CSS } from '@dnd-kit/utilities';
 import { BrowserOpenURL, Environment, EventsOn, WindowFullscreen, WindowGetPosition, WindowGetSize, WindowIsFullscreen, WindowIsMaximised, WindowIsMinimised, WindowIsNormal, WindowMaximise, WindowMinimise, WindowSetDarkTheme, WindowSetLightTheme, WindowSetPosition, WindowSetSize, WindowSetSystemDefaultTheme, WindowUnfullscreen, WindowUnmaximise } from '../wailsjs/runtime';
 import Sidebar from './components/Sidebar';
-import TitleBarPrimaryActions from './components/TitleBarPrimaryActions';
+import TitleBarPrimaryActions, {
+  resolveTitleBarPrimaryActionShortcut,
+} from './components/TitleBarPrimaryActions';
 import TabManager from './components/TabManager';
 import FloatingWorkbenchWindows from './components/FloatingWorkbenchWindows';
 import FloatingAIChatWindow from './components/FloatingAIChatWindow';
@@ -2446,6 +2448,16 @@ function App() {
       || (runtimePlatform === '' && /mac/i.test(detectNavigatorPlatform()));
   const useNativeMacWindowControls = isMacRuntime;
   const activeShortcutPlatform = getShortcutPlatform(isMacRuntime);
+  const titleBarNewQueryShortcut = resolveTitleBarPrimaryActionShortcut(
+      shortcutOptions,
+      'newQueryTab',
+      activeShortcutPlatform,
+  );
+  const titleBarNewConnectionShortcut = resolveTitleBarPrimaryActionShortcut(
+      shortcutOptions,
+      'newConnection',
+      activeShortcutPlatform,
+  );
   const macWindowDiagnosticsEnabled = shouldEnableMacWindowDiagnostics(
       isMacRuntime,
       import.meta.env.DEV,
@@ -7856,6 +7868,8 @@ function App() {
                   <TitleBarPrimaryActions
                     newQueryLabel={t('query.new')}
                     newConnectionLabel={t('connection.new')}
+                    newQueryShortcut={titleBarNewQueryShortcut}
+                    newConnectionShortcut={titleBarNewConnectionShortcut}
                     onNewQuery={handleNewQuery}
                     onNewConnection={handleCreateConnection}
                   />
