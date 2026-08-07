@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { resolveNewQueryContext } from './newQueryContext';
+import { canInheritNewQueryTableContext, resolveNewQueryContext } from './newQueryContext';
 
 describe('resolveNewQueryContext', () => {
   const validConnectionIds = new Set(['conn-a', 'conn-b']);
@@ -43,5 +43,21 @@ describe('resolveNewQueryContext', () => {
       activeTab: { connectionId: 'removed-connection', dbName: 'old_db' },
       validConnectionIds,
     })).toEqual({ connectionId: '', dbName: '' });
+  });
+
+  it('only inherits a table tab when it belongs to the resolved target context', () => {
+    const tableTab = { type: 'table', connectionId: 'conn-a', dbName: 'database_a', tableName: 'users' };
+    expect(canInheritNewQueryTableContext({
+      activeTab: tableTab,
+      targetContext: { connectionId: 'conn-a', dbName: 'database_a' },
+    })).toBe(true);
+    expect(canInheritNewQueryTableContext({
+      activeTab: tableTab,
+      targetContext: { connectionId: 'conn-b', dbName: 'database_b' },
+    })).toBe(false);
+    expect(canInheritNewQueryTableContext({
+      activeTab: { ...tableTab, type: 'query' },
+      targetContext: { connectionId: 'conn-a', dbName: 'database_a' },
+    })).toBe(false);
   });
 });

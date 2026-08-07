@@ -102,6 +102,8 @@ import {
 import { downloadBrowserTextFile } from './utils/browserFileTransfer';
 import { buildDataSyncWorkbenchTab } from './utils/dataSyncTab';
 import { buildSqlAuditWorkbenchTab } from './utils/sqlAuditTab';
+import { resolveDataSourceType } from './utils/dataSourceCapabilities';
+import { buildContextualNewQueryTemplate } from './utils/objectQueryTemplates';
 import {
   extractCustomThemeAntTokens,
 } from './utils/customTheme';
@@ -236,7 +238,7 @@ import {
 import { useAppUpdateManager } from './hooks/useAppUpdateManager';
 import { useAppLogPanelResize } from './hooks/useAppLogPanelResize';
 import { useAppSidebarResize } from './hooks/useAppSidebarResize';
-import { resolveNewQueryContext } from './utils/newQueryContext';
+import { canInheritNewQueryTableContext, resolveNewQueryContext } from './utils/newQueryContext';
 import { useAppUtilityStyles } from './hooks/useAppUtilityStyles';
 import { useWorkbenchTabs } from './hooks/useWorkbenchTabs';
 import {
@@ -2728,6 +2730,19 @@ function App() {
           activeTab: currentTab,
           validConnectionIds: new Set(connections.map(connection => connection.id)),
       });
+      const connection = connections.find(c => c.id === targetContext.connectionId);
+      const inheritsTableContext = canInheritNewQueryTableContext({
+          activeTab: currentTab,
+          targetContext,
+      });
+      const tableName = inheritsTableContext ? String(currentTab?.tableName || '').trim() : '';
+      const contextualQuery = tableName && connection
+          ? buildContextualNewQueryTemplate({
+              dbType: resolveDataSourceType(connection.config),
+              tableName,
+              customTemplate: appearance.newQuerySqlTemplate,
+          })
+          : null;
 
       addTab({
           id: `query-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -2735,9 +2750,9 @@ function App() {
           type: 'query',
           connectionId: targetContext.connectionId,
           dbName: targetContext.dbName,
-          query: ''
+          query: contextualQuery ?? '',
       });
-  }, [activeTabId, tabs, connections, activeContext, addTab, t]);
+  }, [activeTabId, tabs, connections, activeContext, addTab, appearance.newQuerySqlTemplate, t]);
 
   const switchActiveTabByOffset = useCallback((offset: 1 | -1) => {
       if (tabs.length < 2) return;
