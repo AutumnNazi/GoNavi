@@ -806,6 +806,7 @@ describe("ConnectionModal i18n", () => {
 
     pageText = textContent(renderer!.toJSON());
     expect(pageText).toContain("Cluster mode");
+    expect(pageText).toContain("Leave empty when authentication is disabled");
     expect(pageText).toContain("Redis password");
     expect(pageText).toContain("Scope");
   });
