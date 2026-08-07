@@ -3397,6 +3397,64 @@ describe('QueryEditor external SQL save', () => {
     expect(dataGridState.latestProps?.data).toEqual(expect.arrayContaining([expect.objectContaining({ a: 1 })]));
   });
 
+  it('preserves a restored result execution snapshot when reopening it in a native window', async () => {
+    const executionConnectionParams = 'application_name=gonavi&options=-c%20search_path%3D%22sales%22%2C%22public%22';
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<QueryEditor tab={createTab({ connectionId: 'conn-current', dbName: 'current_db' })} />);
+    });
+
+    const restoreRegistration = (window.addEventListener as any).mock.calls
+      .find(([eventName]: [string]) => eventName === 'gonavi:restore-query-result');
+    expect(restoreRegistration).toBeTruthy();
+
+    await act(async () => {
+      restoreRegistration[1](new CustomEvent('gonavi:restore-query-result', {
+        detail: {
+          sourceQueryTabId: 'tab-1',
+          result: {
+            key: 'result-snapshot',
+            sql: 'select * from orders',
+            columns: ['id'],
+            rows: [{ id: 1 }],
+            tableName: 'orders',
+            pkColumns: ['id'],
+            readOnly: false,
+            executionConnectionId: 'conn-snapshot',
+            executionDbName: 'snapshot_db',
+            executionConnectionParams,
+          },
+        },
+      }));
+    });
+
+    expect(dataGridState.latestProps).toMatchObject({
+      connectionId: 'conn-snapshot',
+      dbName: 'snapshot_db',
+      connectionParamsOverride: executionConnectionParams,
+    });
+
+    const openInWindowButton = renderer.root.findAll((node) =>
+      node.type === 'button' && textContent(node) === '在独立窗口打开',
+    )[0];
+    await act(async () => {
+      openInWindowButton.props.onClick();
+      await Promise.resolve();
+    });
+
+    expect(nativeDetachedWindowState.openNativeQueryResultWindow).toHaveBeenCalledWith(
+      expect.objectContaining({
+        connectionId: 'conn-snapshot',
+        dbName: 'snapshot_db',
+        result: expect.objectContaining({
+          executionConnectionId: 'conn-snapshot',
+          executionDbName: 'snapshot_db',
+          executionConnectionParams,
+        }),
+      }),
+    );
+  });
+
   it('removes only the inline result inserted by a rolled-back native attach', async () => {
     let renderer!: ReactTestRenderer;
     await act(async () => {

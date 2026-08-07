@@ -29,6 +29,14 @@ import QueryEditorTransactionSettings, {
 
 export type QueryEditorMode = "sql" | "elasticsearch";
 
+export type QueryEditorSchemaSelectProps = {
+  value: string;
+  options: string[];
+  loading?: boolean;
+  disabled?: boolean;
+  onChange: (schemaName: string) => void;
+};
+
 export type QueryEditorToolbarProps = {
   editorMode?: QueryEditorMode;
   isV2Ui: boolean;
@@ -36,6 +44,7 @@ export type QueryEditorToolbarProps = {
   currentDb: string;
   queryCapableConnections: SavedConnection[];
   dbList: string[];
+  schemaSelect?: QueryEditorSchemaSelectProps;
   maxRows: number;
   sqlEditorCommitMode: SqlEditorCommitMode;
   sqlEditorAutoCommitDelayMs: number;
@@ -49,6 +58,8 @@ export type QueryEditorToolbarProps = {
   isResultPanelVisible: boolean;
   wordWrapEnabled: boolean;
   loading: boolean;
+  contextSelectionDisabled?: boolean;
+  runDisabled?: boolean;
   saveMoreMenuItems: MenuProps["items"];
   formatSettingsMenu: MenuProps["items"];
   templateMenuItems?: MenuProps["items"];
@@ -174,6 +185,7 @@ const QueryEditorToolbar: React.FC<QueryEditorToolbarProps> = ({
   currentDb,
   queryCapableConnections,
   dbList,
+  schemaSelect,
   maxRows,
   sqlEditorCommitMode,
   sqlEditorAutoCommitDelayMs,
@@ -187,6 +199,8 @@ const QueryEditorToolbar: React.FC<QueryEditorToolbarProps> = ({
   isResultPanelVisible,
   wordWrapEnabled,
   loading,
+  contextSelectionDisabled = false,
+  runDisabled = false,
   saveMoreMenuItems,
   formatSettingsMenu,
   templateMenuItems,
@@ -229,6 +243,12 @@ const QueryEditorToolbar: React.FC<QueryEditorToolbarProps> = ({
     value: db,
     title: "",
     fullName: db,
+  }));
+  const schemaSelectOptions: FullNameSelectOption[] = (schemaSelect?.options ?? []).map((schema) => ({
+    label: schema,
+    value: schema,
+    title: "",
+    fullName: schema,
   }));
   const toggleResultPanelShortcutLabel =
     toggleQueryResultsPanelShortcutBinding.enabled &&
@@ -362,7 +382,7 @@ const QueryEditorToolbar: React.FC<QueryEditorToolbarProps> = ({
         style={isV2Ui ? undefined : { width: 150 }}
         placeholder={t("query_editor.placeholder.connection")}
         value={currentConnectionId}
-        disabled={isElasticsearchMode && loading}
+        disabled={isElasticsearchMode ? loading : contextSelectionDisabled}
         onChange={onConnectionChange}
         options={connectionSelectOptions}
         optionFilterProp="label"
@@ -381,7 +401,7 @@ const QueryEditorToolbar: React.FC<QueryEditorToolbarProps> = ({
           ? "query_editor.elasticsearch.placeholder.index_optional"
           : "query_editor.placeholder.database")}
         value={currentDb}
-        disabled={isElasticsearchMode && loading}
+        disabled={isElasticsearchMode ? loading : contextSelectionDisabled}
         onChange={(value) => onDatabaseChange(String(value || ""))}
         allowClear={isElasticsearchMode}
         options={databaseSelectOptions}
@@ -390,6 +410,27 @@ const QueryEditorToolbar: React.FC<QueryEditorToolbarProps> = ({
         labelRender={(option) => renderFullNameSelectTooltip(option.label ?? option.value)}
         showSearch
       />
+      {!isElasticsearchMode && schemaSelect && (
+        <Select
+          aria-label={t("query_editor.object_info.label.schema")}
+          className={
+            isV2Ui
+              ? "gn-v2-query-toolbar-select gn-v2-query-toolbar-schema-select"
+              : undefined
+          }
+          style={isV2Ui ? undefined : { width: 150 }}
+          placeholder={t("query_editor.object_info.label.schema")}
+          value={schemaSelect.value || undefined}
+          loading={schemaSelect.loading}
+          disabled={schemaSelect.disabled}
+          onChange={(value) => schemaSelect.onChange(String(value || ""))}
+          options={schemaSelectOptions}
+          optionFilterProp="label"
+          optionRender={(option) => renderFullNameSelectTooltip(option.data.fullName)}
+          labelRender={(option) => renderFullNameSelectTooltip(option.label ?? option.value)}
+          showSearch
+        />
+      )}
       {isElasticsearchMode && Array.isArray(templateMenuItems) && templateMenuItems.length > 0 && (
         <Tooltip
           title={isV2Ui ? t("query_editor.elasticsearch.action.templates") : undefined}
@@ -489,6 +530,7 @@ const QueryEditorToolbar: React.FC<QueryEditorToolbarProps> = ({
             onMouseDown={onCaptureEditorCursorPosition}
             onClick={onRun}
             loading={loading}
+            disabled={runDisabled}
           >
             {!isV2Ui && t(isElasticsearchMode
               ? "query_editor.elasticsearch.action.run_current"

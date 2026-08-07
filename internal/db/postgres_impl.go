@@ -570,12 +570,24 @@ ORDER BY c.table_schema, c.table_name, c.ordinal_position`
 	return cols, nil
 }
 
+func postgresDSNHasExplicitSearchPath(dsn string) bool {
+	u, err := url.Parse(dsn)
+	if err != nil {
+		return false
+	}
+
+	return strings.TrimSpace(u.Query().Get("search_path")) != ""
+}
+
 // ensureSearchPath 查询当前数据库中所有用户 schema，通过重建连接池将 search_path 写入 DSN。
 // 仅使用 SET search_path 只对连接池中的单个连接生效，后续查询可能拿到未设置的连接。
 // 将 search_path 写入 DSN (lib/pq 支持任意 PostgreSQL runtime parameter)，
 // 使连接池中每个连接建立时自动携带 search_path，与金仓行为一致。
 func (p *PostgresDB) ensureSearchPath(baseDSN string) {
 	if p.conn == nil {
+		return
+	}
+	if postgresDSNHasExplicitSearchPath(baseDSN) {
 		return
 	}
 

@@ -196,6 +196,10 @@ const autoFetchState = vi.hoisted(() => ({
   visible: false,
 }));
 
+const antdSelectState = vi.hoisted(() => ({
+  props: [] as any[],
+}));
+
 const monacoEditorMockState = vi.hoisted(() => ({
   deferOnMount: false,
   latestProps: null as any,
@@ -611,7 +615,10 @@ vi.mock('antd', () => {
       </>
     ),
     Tooltip: ({ children }: any) => <>{children}</>,
-    Select: () => null,
+    Select: (props: any) => {
+      antdSelectState.props.push(props);
+      return null;
+    },
     Segmented: ({ value, onChange, options }: any) => (
       <div>
         {(options || []).map((option: any) => {
@@ -962,6 +969,7 @@ describe('QueryEditor external SQL save', () => {
     storeState.connections[0].config.database = 'main';
     storeState.appearance.uiVersion = 'legacy';
     autoFetchState.visible = false;
+    antdSelectState.props = [];
     dataGridState.latestProps = null;
     tabsState.activeKey = undefined;
     editorState.value = '';
@@ -1101,6 +1109,165 @@ describe('QueryEditor external SQL save', () => {
     await act(async () => {
       renderer.unmount();
     });
+  });
+
+  it('loads PostgreSQL schemas and executes SQL with the selected search_path', async () => {
+    storeState.connections[0].config.type = 'postgres';
+    storeState.connections[0].config.port = 5432;
+    (storeState.connections[0].config as any).connectionParams = 'application_name=gonavi';
+    autoFetchState.visible = true;
+    backendApp.DBGetDatabases.mockResolvedValue({
+      success: true,
+      data: [{ Database: 'main' }],
+    });
+    backendApp.DBQuery.mockImplementation((_config: unknown, _dbName: string, sql: string) => {
+      const normalizedSql = String(sql || '').toLowerCase();
+      if (normalizedSql.includes('current_schema()')) {
+        return Promise.resolve({ success: true, data: [{ schema_name: 'public' }] });
+      }
+      if (normalizedSql.includes('pg_namespace')) {
+        return Promise.resolve({
+          success: true,
+          data: [{ schema_name: 'public' }, { schema_name: 'sales' }],
+        });
+      }
+      return Promise.resolve({ success: true, data: [] });
+    });
+    backendApp.DBGetColumns.mockResolvedValue({
+      success: true,
+      data: [{ name: 'sales_id', key: 'PRI' }, { name: 'name', key: '' }],
+    });
+    backendApp.DBGetIndexes.mockResolvedValue({ success: true, data: [] });
+    backendApp.DBQueryMulti.mockResolvedValue({
+      success: true,
+      data: [{ columns: ['sales_id', 'name'], rows: [{ sales_id: 1, name: 'Alice' }] }],
+    });
+
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<QueryEditor tab={createTab({
+        query: 'SELECT * FROM users',
+        schemaName: 'removed_schema',
+      })} />);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const latestSchemaSelect = () => [...antdSelectState.props].reverse().find((props) => (
+      String(props.className || '').includes('gn-v2-query-toolbar-schema-select')
+      || props['aria-label'] === catalogs['zh-CN']['query_editor.object_info.label.schema']
+    ));
+    expect(latestSchemaSelect()).toMatchObject({
+      value: 'public',
+      options: [
+        { label: 'public', value: 'public', title: '', fullName: 'public' },
+        { label: 'sales', value: 'sales', title: '', fullName: 'sales' },
+      ],
+    });
+
+    await act(async () => {
+      latestSchemaSelect()?.onChange('sales');
+    });
+    await act(async () => {
+      await findButton(renderer, '运行').props.onClick();
+    });
+
+    const executionConfig = backendApp.DBQueryMulti.mock.calls[0]?.[0];
+    const connectionParams = new URLSearchParams(String(executionConfig?.connectionParams || ''));
+    expect(connectionParams.get('application_name')).toBe('gonavi');
+    expect(connectionParams.get('search_path')).toBe('"sales","public"');
+    const locatorColumnsCall = backendApp.DBGetColumns.mock.calls.find((call) => call[2] === 'users');
+    const locatorIndexesCall = backendApp.DBGetIndexes.mock.calls.find((call) => call[2] === 'users');
+    expect(new URLSearchParams(String(locatorColumnsCall?.[0]?.connectionParams || '')).get('search_path'))
+      .toBe('"sales","public"');
+    expect(new URLSearchParams(String(locatorIndexesCall?.[0]?.connectionParams || '')).get('search_path'))
+      .toBe('"sales","public"');
+    expect(dataGridState.latestProps?.pkColumns).toEqual(['sales_id']);
+    expect(dataGridState.latestProps?.editLocator).toMatchObject({
+      strategy: 'primary-key',
+      columns: ['sales_id'],
+    });
+    const resultConnectionParams = new URLSearchParams(String(
+      dataGridState.latestProps?.connectionParamsOverride || '',
+    ));
+    expect(resultConnectionParams.get('application_name')).toBe('gonavi');
+    expect(resultConnectionParams.get('search_path')).toBe('"sales","public"');
+    expect(storeState.updateQueryTabDraft).toHaveBeenCalledWith('tab-1', {
+      schemaName: 'sales',
+    });
+
+    await act(async () => {
+      latestSchemaSelect()?.onChange('public');
+    });
+    backendApp.DBQueryMulti.mockClear();
+    backendApp.DBQueryMulti.mockResolvedValueOnce({
+      success: true,
+      data: [{ columns: ['sales_id', 'name'], rows: [{ sales_id: 2, name: 'Bob' }] }],
+    });
+    await act(async () => {
+      await dataGridState.latestProps?.onReload?.();
+    });
+    const reloadConfig = backendApp.DBQueryMulti.mock.calls[0]?.[0];
+    expect(new URLSearchParams(String(reloadConfig?.connectionParams || '')).get('search_path'))
+      .toBe('"sales","public"');
+  });
+
+  it('does not reload an old database result through the current managed transaction', async () => {
+    backendApp.DBQueryMulti.mockResolvedValueOnce({
+      success: true,
+      data: [{ columns: ['id'], rows: [{ id: 1 }] }],
+    });
+    backendApp.DBQueryMultiTransactional.mockResolvedValueOnce({
+      success: true,
+      transactionId: 'tx-archive',
+      transactionPending: true,
+      data: [{ columns: ['affectedRows'], rows: [{ affectedRows: 1 }] }],
+    });
+
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<QueryEditor tab={createTab({ dbName: 'main', query: 'SELECT id FROM users' })} />);
+    });
+    await act(async () => {
+      await findButton(renderer, '运行').props.onClick();
+    });
+    const oldResultProps = dataGridState.latestProps;
+    expect(oldResultProps?.onReload).toEqual(expect.any(Function));
+
+    const databaseSelect = [...antdSelectState.props].reverse().find((props) => (
+      props.placeholder === catalogs['zh-CN']['query_editor.placeholder.database']
+    ));
+    await act(async () => {
+      databaseSelect?.onChange('archive');
+      await Promise.resolve();
+    });
+
+    editorState.value = "UPDATE users SET name = 'archived' WHERE id = 1";
+    await act(async () => {
+      await findButton(renderer, '运行').props.onClick();
+    });
+    expect(storeState.sqlEditorPendingTransactions['tab-1']).toMatchObject({
+      id: 'tx-archive',
+      dbName: 'archive',
+    });
+
+    backendApp.DBQueryMulti.mockClear();
+    backendApp.DBQueryMultiInTransaction.mockClear();
+    backendApp.DBQueryMulti.mockResolvedValueOnce({
+      success: true,
+      data: [{ columns: ['id'], rows: [{ id: 2 }] }],
+    });
+    await act(async () => {
+      await oldResultProps.onReload();
+    });
+
+    expect(backendApp.DBQueryMultiInTransaction).not.toHaveBeenCalled();
+    expect(backendApp.DBQueryMulti).toHaveBeenCalledWith(
+      expect.anything(),
+      'main',
+      expect.stringContaining('SELECT id FROM users'),
+      expect.any(String),
+    );
   });
 
   it('shows the empty query results panel after toggling the results button', async () => {
@@ -10807,6 +10974,23 @@ END;`;
       executionDurationMs: expect.any(Number),
     });
 
+    const latestConnectionSelect = [...antdSelectState.props].reverse().find((props) => (
+      props.placeholder === catalogs['zh-CN']['query_editor.placeholder.connection']
+    ));
+    const latestDatabaseSelect = [...antdSelectState.props].reverse().find((props) => (
+      props.placeholder === catalogs['zh-CN']['query_editor.placeholder.database']
+    ));
+    expect(latestConnectionSelect?.disabled).toBe(true);
+    expect(latestDatabaseSelect?.disabled).toBe(true);
+
+    await act(async () => {
+      latestDatabaseSelect?.onChange('analytics');
+    });
+    expect(storeState.updateQueryTabDraft).not.toHaveBeenCalledWith(
+      'tab-1',
+      expect.objectContaining({ dbName: 'analytics' }),
+    );
+
     await act(async () => {
       await findButton(renderer!, '提交').props.onClick();
     });
@@ -10822,6 +11006,54 @@ END;`;
       dbName: 'main',
     }));
     expect(textContent(renderer!.root)).not.toContain('未提交');
+  });
+
+  it('locks the query context while a managed transaction request is in flight', async () => {
+    let resolveTransaction!: (value: any) => void;
+    backendApp.DBQueryMultiTransactional.mockImplementationOnce(() => new Promise((resolve) => {
+      resolveTransaction = resolve;
+    }));
+
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<QueryEditor tab={createTab({ query: "UPDATE users SET name = 'new' WHERE id = 1" })} />);
+    });
+
+    let runPromise!: Promise<void>;
+    await act(async () => {
+      runPromise = Promise.resolve(findButton(renderer!, '运行').props.onClick());
+      await vi.waitFor(() => {
+        expect(backendApp.DBQueryMultiTransactional).toHaveBeenCalledTimes(1);
+      });
+    });
+
+    const inFlightToolbar = renderer.root.findByType(QueryEditorToolbar);
+    expect(inFlightToolbar.props.contextSelectionDisabled).toBe(true);
+
+    await act(async () => {
+      inFlightToolbar.props.onDatabaseChange('analytics');
+    });
+    expect(storeState.updateQueryTabDraft).not.toHaveBeenCalledWith(
+      'tab-1',
+      expect.objectContaining({ dbName: 'analytics' }),
+    );
+    expect(renderer.root.findByType(QueryEditorToolbar).props.currentDb).toBe('main');
+
+    await act(async () => {
+      resolveTransaction({
+        success: true,
+        transactionId: 'tx-in-flight',
+        transactionPending: true,
+        data: [],
+      });
+      await runPromise;
+    });
+
+    expect(storeState.sqlEditorPendingTransactions['tab-1']).toMatchObject({
+      id: 'tx-in-flight',
+      dbName: 'main',
+    });
+    expect(renderer.root.findByType(QueryEditorToolbar).props.contextSelectionDisabled).toBe(true);
   });
 
   it('keeps DML with a trailing line comment in a pending managed transaction', async () => {
@@ -13787,6 +14019,16 @@ WHERE GRANTEE = 'APPUSER';`;
     expect(messageApi.success).toHaveBeenCalledWith('Query canceled.');
     expect(messageApi.warning).not.toHaveBeenCalledWith('No running query to cancel.');
     expect(findButtons(renderer, 'Stop')).toHaveLength(0);
+    const unlockedToolbar = renderer.root.findByType(QueryEditorToolbar);
+    expect(unlockedToolbar.props.contextSelectionDisabled).toBe(false);
+
+    await act(async () => {
+      unlockedToolbar.props.onDatabaseChange('analytics');
+    });
+    expect(storeState.updateQueryTabDraft).toHaveBeenCalledWith(
+      'tab-1',
+      expect.objectContaining({ dbName: 'analytics' }),
+    );
 
     await act(async () => {
       resolveQueryId('query-too-late');

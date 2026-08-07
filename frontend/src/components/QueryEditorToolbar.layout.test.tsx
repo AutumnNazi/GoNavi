@@ -245,7 +245,7 @@ describe('QueryEditorToolbar layout', () => {
     expect(iconActionCss).toContain('padding: 0 !important;');
   });
 
-  it('shows delayed full-name tooltips for truncated connection and database selectors', () => {
+  it('shows delayed full-name tooltips for truncated connection database and schema selectors', () => {
     const toolbarSource = readFileSync(new URL('./QueryEditorToolbar.tsx', import.meta.url), 'utf8');
     const css = readV2ThemeCss();
     const connectionSelectSource = toolbarSource.slice(
@@ -254,8 +254,16 @@ describe('QueryEditorToolbar layout', () => {
     );
     const databaseSelectSource = toolbarSource.slice(
       toolbarSource.indexOf('gn-v2-query-toolbar-database-select'),
+      toolbarSource.indexOf('gn-v2-query-toolbar-schema-select'),
+    );
+    const schemaSelectSource = toolbarSource.slice(
+      toolbarSource.indexOf('gn-v2-query-toolbar-schema-select'),
       toolbarSource.indexOf('gn-v2-query-toolbar-max-rows-select'),
     );
+    expect(connectionSelectSource).toContain('renderFullNameSelectTooltip');
+    expect(databaseSelectSource).toContain('renderFullNameSelectTooltip');
+    expect(schemaSelectSource).toContain('renderFullNameSelectTooltip');
+    expect(css).toContain('.gn-v2-query-toolbar-schema-select {');
     expect(css).toContain('.gn-query-toolbar-select-full-name {');
     expect(css).toContain('text-overflow: ellipsis;');
     expect(css).toContain('white-space: nowrap;');

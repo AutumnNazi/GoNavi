@@ -15,6 +15,7 @@ import {
   getSidebarTableName,
   loadFunctions,
   loadPackages,
+  loadSchemas,
   loadSequences,
   loadViews,
   supportsDatabaseSequences,
@@ -65,6 +66,23 @@ describe("buildSchemasMetadataQuerySpecs", () => {
 
   it("keeps unsupported dialects empty", () => {
     expect(buildSchemasMetadataQuerySpecs("mysql", "app")).toEqual([]);
+  });
+
+  it("keeps case-distinct PostgreSQL schemas selectable", async () => {
+    mockedDBQuery.mockResolvedValue({
+      success: true,
+      message: "",
+      data: [
+        { schema_name: "foo" },
+        { schema_name: "Foo" },
+        { schema_name: "foo" },
+      ],
+    });
+
+    await expect(loadSchemas({ config: { type: "postgres" } }, "analytics")).resolves.toEqual({
+      supported: true,
+      schemas: ["foo", "Foo"],
+    });
   });
 
   it("deduplicates MySQL view metadata when fallback queries omit schema names", async () => {

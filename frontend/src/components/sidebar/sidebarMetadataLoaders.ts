@@ -1297,7 +1297,9 @@ const loadSchemas = async (
         ]) || getFirstRowValue(row);
       if (!schemaName) return;
       if (dialect === "iris" && isIRISSystemSchemaName(schemaName)) return;
-      const key = schemaName.toLowerCase();
+      // PostgreSQL quoted identifiers are case-sensitive, so `foo` and `Foo`
+      // can be distinct schemas and must both remain selectable.
+      const key = dialect === "postgres" ? schemaName : schemaName.toLowerCase();
       if (seen.has(key)) return;
       seen.add(key);
       schemas.push(schemaName);

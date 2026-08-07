@@ -1395,6 +1395,8 @@ interface DataGridProps {
     /** DDL 查询使用的表名；查询结果页仅在该目标明确时显示 DDL 入口。 */
     ddlTableName?: string;
     connectionId?: string;
+    /** Query-result connection params snapshot (for example PostgreSQL search_path). */
+    connectionParamsOverride?: string;
     pkColumns?: string[];
     editLocator?: EditRowLocator;
     readOnly?: boolean;

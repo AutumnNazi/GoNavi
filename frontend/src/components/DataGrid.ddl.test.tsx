@@ -3991,7 +3991,7 @@ describe('DataGrid DDL interactions', () => {
     renderer!.unmount();
   });
 
-  it('auto commits pending table edits after the configured delay', async () => {
+  it('auto commits pending table edits with the query result connection params override', async () => {
     vi.useFakeTimers();
     storeState.appearance.uiVersion = 'v2';
     storeState.dataEditTransactionOptions = {
@@ -4020,6 +4020,7 @@ describe('DataGrid DDL interactions', () => {
           tableName="users"
           dbName="main"
           connectionId="conn-1"
+          connectionParamsOverride={'application_name=gonavi&search_path=%22sales%22%2C%22public%22'}
           pkColumns={['id']}
         />,
       );
@@ -4083,6 +4084,10 @@ describe('DataGrid DDL interactions', () => {
     });
 
     expect(backendApp.ApplyChanges).toHaveBeenCalledTimes(1);
+    const appliedConfig = backendApp.ApplyChanges.mock.calls[0][0];
+    const appliedConnectionParams = new URLSearchParams(String(appliedConfig?.connectionParams || ''));
+    expect(appliedConnectionParams.get('application_name')).toBe('gonavi');
+    expect(appliedConnectionParams.get('search_path')).toBe('"sales","public"');
     expect(backendApp.ApplyChanges.mock.calls[0][3]).toMatchObject({
       inserts: [
         expect.objectContaining({

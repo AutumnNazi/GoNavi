@@ -223,6 +223,7 @@ const DataGridShell: React.FC<DataGridShellProps> = (props) => {
     localizedDataEditAutoCommitDelayOptions,
     looksLikeJsonText,
     mergedDisplayData,
+    metadataCacheKey,
     noAutoCapInputProps,
     normalizedPageFindText,
     onCancelTotalCount,
@@ -528,16 +529,14 @@ const renderDataTableView = () => (
       setSelectedRowKeys([]);
       resetCellSelection();
       const normalizedTableName = String(tableName || '').trim();
-      const normalizedDbName = String(dbName || '').trim();
       if (connectionId && normalizedTableName) {
-          const cacheKey = `${connectionId}|${normalizedDbName}|${normalizedTableName}`;
-          delete columnMetaCacheRef.current[cacheKey];
-          delete foreignKeyCacheRef.current[cacheKey];
-          delete uniqueKeyGroupsCacheRef.current[cacheKey];
+          delete columnMetaCacheRef.current[metadataCacheKey];
+          delete foreignKeyCacheRef.current[metadataCacheKey];
+          delete uniqueKeyGroupsCacheRef.current[metadataCacheKey];
           setMetadataReloadVersion((value: number) => value + 1);
       }
       if (onReload) onReload();
-  }, [connectionId, dbName, onReload, resetCellSelection, tableName]);
+  }, [connectionId, metadataCacheKey, onReload, resetCellSelection, tableName]);
 
   const handleResetPendingChanges = useCallback(() => {
       clearAutoCommitTimer();

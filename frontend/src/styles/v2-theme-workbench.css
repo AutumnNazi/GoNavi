@@ -154,6 +154,12 @@ body[data-ui-version="v2"] .gn-v2-query-toolbar-database-select {
   max-width: 220px;
 }
 
+body[data-ui-version="v2"] .gn-v2-query-toolbar-schema-select {
+  width: 150px !important;
+  flex: 0 1 150px !important;
+  max-width: 200px;
+}
+
 .gn-query-toolbar-select-full-name {
   display: block;
   min-width: 0;

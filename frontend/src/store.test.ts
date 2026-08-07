@@ -2411,6 +2411,7 @@ describe('store appearance persistence', () => {
       query: 'select * from orders where status = "paid";',
       connectionId: 'conn-2',
       dbName: 'reporting',
+      schemaName: 'sales',
       formatRestoreSnapshot: {
         query: 'select * from orders where status="paid";',
         createdAt: 123,
@@ -2425,6 +2426,7 @@ describe('store appearance persistence', () => {
         type: 'query',
         connectionId: 'conn-2',
         dbName: 'reporting',
+        schemaName: 'sales',
         query: 'select * from orders where status = "paid";',
         formatRestoreSnapshot: {
           query: 'select * from orders where status="paid";',
@@ -2442,6 +2444,7 @@ describe('store appearance persistence', () => {
         type: 'query',
         connectionId: 'conn-2',
         dbName: 'reporting',
+        schemaName: 'sales',
         query: 'select * from orders where status = "paid";',
         formatRestoreSnapshot: {
           query: 'select * from orders where status="paid";',

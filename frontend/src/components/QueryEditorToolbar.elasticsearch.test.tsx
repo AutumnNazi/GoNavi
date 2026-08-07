@@ -195,6 +195,59 @@ describe('QueryEditorToolbar Elasticsearch mode', () => {
     expect(JSON.stringify(renderer?.toJSON())).toContain('pending transaction');
   });
 
+  it('shows a searchable schema selector for PostgreSQL query contexts', () => {
+    const onSchemaChange = vi.fn();
+
+    act(() => {
+      renderer = create(<QueryEditorToolbar {...buildProps({
+        currentConnectionId: 'pg-1',
+        currentDb: 'analytics',
+        queryCapableConnections: [{
+          id: 'pg-1',
+          name: 'PostgreSQL',
+          config: { type: 'postgres' },
+        } as any],
+        schemaSelect: {
+          value: 'sales',
+          options: ['public', 'sales'],
+          loading: false,
+          disabled: false,
+          onChange: onSchemaChange,
+        },
+      })} />);
+    });
+
+    expect(antdState.selectProps).toHaveLength(4);
+    expect(antdState.selectProps[2]).toMatchObject({
+      className: expect.stringContaining('gn-v2-query-toolbar-schema-select'),
+      value: 'sales',
+      loading: false,
+      disabled: false,
+      showSearch: true,
+      options: [
+        { label: 'public', value: 'public' },
+        { label: 'sales', value: 'sales' },
+      ],
+    });
+
+    act(() => {
+      antdState.selectProps[2].onChange('public');
+    });
+    expect(onSchemaChange).toHaveBeenCalledWith('public');
+  });
+
+  it('disables SQL connection context selectors while the transaction context is locked', () => {
+    act(() => {
+      renderer = create(<QueryEditorToolbar {...buildProps({
+        contextSelectionDisabled: true,
+      })} />);
+    });
+
+    expect(antdState.selectProps[0]).toMatchObject({ disabled: true });
+    expect(antdState.selectProps[1]).toMatchObject({ disabled: true });
+    expect(antdState.selectProps[2]?.disabled).not.toBe(true);
+  });
+
   it('shows a working stop action while an ES request is running', () => {
     const onCancel = vi.fn();
     act(() => {

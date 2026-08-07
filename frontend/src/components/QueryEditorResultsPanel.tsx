@@ -50,6 +50,10 @@ export type QueryEditorResultSet = {
     /** DDL 查询目标，与列元数据目标独立，避免多段限定名被误解析。 */
     ddlDbName?: string;
     ddlTableName?: string;
+    /** 查询执行时的连接参数快照，用于保持 PG schema/search_path 上下文。 */
+    executionConnectionParams?: string;
+    executionConnectionId?: string;
+    executionDbName?: string;
     pkColumns: string[];
     editLocator?: EditRowLocator;
     readOnly: boolean;
@@ -692,10 +696,11 @@ const QueryEditorResultsPanel: React.FC<QueryEditorResultsPanelProps> = ({
                         exportScope="queryResult"
                         resultSql={rs.exportSql || rs.sql}
                         resultExportAllSql={rs.page?.exportAllSql}
-                        dbName={rs.metadataDbName || currentDb}
+                        dbName={rs.metadataDbName || rs.executionDbName || currentDb}
                         ddlDbName={rs.ddlDbName}
                         ddlTableName={rs.ddlTableName}
-                        connectionId={currentConnectionId}
+                        connectionId={rs.executionConnectionId || currentConnectionId}
+                        connectionParamsOverride={rs.executionConnectionParams}
                         initialViewMode={dataPreviewRequest?.resultKey === rs.key ? 'table' : undefined}
                         initialViewModeRequestId={dataPreviewRequest?.resultKey === rs.key ? dataPreviewRequest.requestId : undefined}
                         initialViewModeScope={dataPreviewRequest?.resultKey === rs.key ? 'local' : undefined}

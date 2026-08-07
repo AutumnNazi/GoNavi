@@ -127,6 +127,14 @@ import QueryEditorToolbar, {
     resolveQueryExecutionSpeedIcon,
     useQueryExecutionElapsed,
 } from './QueryEditorToolbar';
+import { loadSchemas } from './sidebar/sidebarMetadataLoaders';
+import {
+    applyQueryEditorSchemaSearchPath,
+    extractQueryEditorCurrentSchema,
+    QUERY_EDITOR_CURRENT_SCHEMA_SQL,
+    resolveLoadedQueryEditorSchema,
+    supportsQueryEditorSchemaSelection,
+} from './queryEditor/queryEditorSchemaContext';
 import { useSqlEditorTransactionController } from './useSqlEditorTransactionController';
 import {
     type CompletionColumnMeta,
@@ -1475,6 +1483,17 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
   resultSetsRef.current = resultSets;
   activeResultKeyRef.current = activeResultKey;
   const [loading, setLoading] = useState(false);
+  const [queryContextLockRunSeq, setQueryContextLockRunSeq] = useState(0);
+  const queryContextLockRunSeqRef = useRef(0);
+  const lockQueryContextForRun = useCallback((runSeq: number) => {
+      queryContextLockRunSeqRef.current = runSeq;
+      setQueryContextLockRunSeq(runSeq);
+  }, []);
+  const unlockQueryContextForRun = useCallback((runSeq: number) => {
+      if (queryContextLockRunSeqRef.current !== runSeq) return;
+      queryContextLockRunSeqRef.current = 0;
+      setQueryContextLockRunSeq(0);
+  }, []);
   const [executionRunToken, setExecutionRunToken] = useState(0);
   const executionElapsedMs = useQueryExecutionElapsed(loading, executionRunToken);
   const executionElapsedText = formatQueryExecutionElapsed(executionElapsedMs);
@@ -1498,7 +1517,17 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
   // Database Selection
   const [currentConnectionId, setCurrentConnectionId] = useState<string>(tab.connectionId);
   const [currentDb, setCurrentDb] = useState<string>(tab.dbName || '');
-  const resultTotalCountContextRef = useRef(`${tab.connectionId}\u0000${tab.dbName || ''}`);
+  const [currentSchema, setCurrentSchema] = useState<string>(String(tab.schemaName || '').trim());
+  const [schemaList, setSchemaList] = useState<string[]>([]);
+  const [schemaLoading, setSchemaLoadingState] = useState(false);
+  const schemaLoadingRef = useRef(false);
+  const setSchemaLoading = useCallback((nextLoading: boolean) => {
+      schemaLoadingRef.current = nextLoading;
+      setSchemaLoadingState(nextLoading);
+  }, []);
+  const resultTotalCountContextRef = useRef(
+      `${tab.connectionId}\u0000${tab.dbName || ''}\u0000${tab.schemaName || ''}`,
+  );
   const [dbList, setDbList] = useState<string[]>([]);
   const [isTextToSqlModalOpen, setIsTextToSqlModalOpen] = useState(false);
   const [textToSqlInstruction, setTextToSqlInstruction] = useState('');
@@ -1521,6 +1550,9 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
   const editorShellRef = useRef<HTMLDivElement | null>(null);
   const editorRef = useRef<any>(null);
   const monacoRef = useRef<any>(null);
+  const handleRunRef = useRef<(() => Promise<void>) | null>(null);
+  const pendingRunAfterSchemaLoadRef = useRef(false);
+  const deferredContextRunSeqRef = useRef(0);
   const runQueryActionRef = useRef<any>(null);
   const selectCurrentStatementActionRef = useRef<any>(null);
   const macFindWithSelectionGuardActionRef = useRef<any>(null);
@@ -1610,9 +1642,13 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
   const lastSqlReferencedMetadataKeyRef = useRef('');
 
   const connections = useStore(state => state.connections);
-  const currentConnectionConfig = connections.find(
+  const currentConnection = connections.find(
       (connection) => connection.id === currentConnectionId,
-  )?.config ?? null;
+  );
+  const currentConnectionConfig = currentConnection?.config ?? null;
+  const canSelectQuerySchema = !isObjectEditQueryTab && supportsQueryEditorSchemaSelection(
+      String(currentConnectionConfig?.type || ''),
+  );
   const metadataRenderContextRef = useRef<{ key: string; connectionConfig: unknown }>({
       key: '',
       connectionConfig: null,
@@ -1699,6 +1735,10 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
   const sqlSnippets = useStore(state => state.sqlSnippets);
   const currentConnectionIdRef = useRef(currentConnectionId);
   const currentDbRef = useRef(currentDb);
+  const currentSchemaRef = useRef(currentSchema);
+  const latestSelectedSchemaRef = useRef('');
+  const schemaLoadSeqRef = useRef(0);
+  const schemaContextKeyRef = useRef('');
   const tableNavigationContextRef = useRef<{ key: string; connectionConfig: unknown; version: number }>({
       key: '',
       connectionConfig: null,
@@ -2203,6 +2243,104 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       return true;
   }, [isActive]);
 
+  const resetQuerySchemaContext = useCallback((
+      nextConnectionId: string,
+      nextDbName: string,
+  ) => {
+      currentSchemaRef.current = '';
+      latestSelectedSchemaRef.current = '';
+      schemaContextKeyRef.current = '';
+      schemaLoadSeqRef.current += 1;
+      setCurrentSchema('');
+      setSchemaList([]);
+
+      const targetConnection = connections.find((item) => item.id === nextConnectionId);
+      const shouldLoadSchema = !isObjectEditQueryTab
+          && Boolean(String(nextDbName || '').trim())
+          && supportsQueryEditorSchemaSelection(String(targetConnection?.config?.type || ''));
+      setSchemaLoading(shouldLoadSchema);
+  }, [connections, isObjectEditQueryTab, setSchemaLoading]);
+
+  const switchQueryContext = useCallback((
+      nextConnectionId: string,
+      nextDbName: string,
+      options: { persist?: boolean; silentPending?: boolean } = {},
+  ): boolean => {
+      const normalizedConnectionId = String(nextConnectionId || '').trim();
+      const normalizedDbName = String(nextDbName || '').trim();
+      const contextChanged = normalizedConnectionId !== String(currentConnectionIdRef.current || '').trim()
+          || normalizedDbName !== String(currentDbRef.current || '').trim();
+      if (!contextChanged) return true;
+      if (queryContextLockRunSeqRef.current !== 0) {
+          if (!options.silentPending) {
+              void message.info(translate('common.loading'));
+          }
+          return false;
+      }
+      if (pendingSqlTransactionRef.current) {
+          if (!options.silentPending) {
+              void message.warning(translate('query_editor.transaction.message.pending_managed_transaction'));
+          }
+          return false;
+      }
+
+      deferredContextRunSeqRef.current += 1;
+      pendingRunAfterSchemaLoadRef.current = false;
+      currentConnectionIdRef.current = normalizedConnectionId;
+      currentDbRef.current = normalizedDbName;
+      setCurrentConnectionId(normalizedConnectionId);
+      setCurrentDb(normalizedDbName);
+      resetQuerySchemaContext(normalizedConnectionId, normalizedDbName);
+
+      const targetConnectionConfig = connections.find(
+          (connection) => connection.id === normalizedConnectionId,
+      )?.config ?? null;
+      if (isActive) {
+          const metadataContextChanged = resetMetadataForContext(
+              normalizedConnectionId,
+              normalizedDbName,
+              targetConnectionConfig,
+          );
+          const nextSharedMetadataContextKey = `${tab.id}\u0000${normalizedConnectionId}\u0000${normalizedDbName}`;
+          if (
+              !metadataContextChanged
+              && (
+                  sharedQueryEditorMetadataContextKey !== nextSharedMetadataContextKey
+                  || sharedQueryEditorMetadataConnectionConfig !== targetConnectionConfig
+              )
+          ) {
+              resetSharedQueryEditorMetadata();
+          }
+          sharedQueryEditorMetadataContextKey = nextSharedMetadataContextKey;
+          sharedQueryEditorMetadataConnectionConfig = targetConnectionConfig;
+          sharedCurrentDb = normalizedDbName;
+          sharedCurrentConnectionId = normalizedConnectionId;
+          sharedConnections = connections;
+          sharedVisibleDbs = visibleDbsRef.current;
+          sharedActiveEditorModelUri = String(editorRef.current?.getModel?.()?.uri?.toString?.() || '');
+      }
+      if (isActive && normalizedConnectionId) {
+          setActiveContext({ connectionId: normalizedConnectionId, dbName: normalizedDbName });
+      }
+      if (options.persist !== false) {
+          updateQueryTabDraft(tab.id, {
+              connectionId: normalizedConnectionId,
+              dbName: normalizedDbName,
+              schemaName: '',
+          });
+      }
+      return true;
+  }, [
+      connections,
+      isActive,
+      pendingSqlTransactionRef,
+      resetMetadataForContext,
+      resetQuerySchemaContext,
+      setActiveContext,
+      tab.id,
+      updateQueryTabDraft,
+  ]);
+
   useEffect(() => {
       resetMetadataForContext(currentConnectionId, currentDb, currentConnectionConfig);
   }, [currentConnectionConfig, currentConnectionId, currentDb, resetMetadataForContext]);
@@ -2347,28 +2485,58 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       if (!queryCapableConnections.some(c => c.id === currentConnectionId)) {
           const fallback = queryCapableConnections[0]?.id || '';
           if (fallback && fallback !== currentConnectionId) {
-              setCurrentConnectionId(fallback);
-              setCurrentDb('');
+              void switchQueryContext(fallback, '', { silentPending: true });
           }
       }
-  }, [queryCapableConnections, currentConnectionId]);
+  }, [currentConnectionId, pendingSqlTransaction?.id, queryCapableConnections, queryContextLockRunSeq, switchQueryContext]);
 
   useEffect(() => {
       currentDbRef.current = currentDb;
   }, [currentDb]);
 
   useEffect(() => {
+      currentSchemaRef.current = currentSchema;
+  }, [currentSchema]);
+
+  useEffect(() => {
       const nextConnectionId = String(tab.connectionId || '').trim();
       const nextDb = String(tab.dbName || '').trim();
-      if (nextConnectionId !== currentConnectionIdRef.current) {
-          currentConnectionIdRef.current = nextConnectionId;
-          setCurrentConnectionId(nextConnectionId);
+      const nextSchema = String(tab.schemaName || '').trim();
+      const contextChanged = nextConnectionId !== currentConnectionIdRef.current
+          || nextDb !== currentDbRef.current;
+      const schemaChanged = nextSchema !== currentSchemaRef.current;
+      if (
+          (queryContextLockRunSeqRef.current !== 0 || pendingSqlTransactionRef.current)
+          && (contextChanged || schemaChanged)
+      ) {
+          return;
       }
-      if (nextDb !== currentDbRef.current) {
-          currentDbRef.current = nextDb;
-          setCurrentDb(nextDb);
+      if (contextChanged && !switchQueryContext(nextConnectionId, nextDb, {
+          persist: false,
+          silentPending: true,
+      })) {
+          return;
       }
-  }, [tab.id, tab.connectionId, tab.dbName]);
+      if (nextSchema !== currentSchemaRef.current) {
+          currentSchemaRef.current = nextSchema;
+          if (!contextChanged) {
+              latestSelectedSchemaRef.current = nextSchema;
+          }
+          setCurrentSchema(nextSchema);
+          setSchemaList((current) => nextSchema && !current.includes(nextSchema)
+              ? [nextSchema, ...current]
+              : nextSchema ? current : []);
+      }
+  }, [
+      pendingSqlTransaction?.id,
+      pendingSqlTransactionRef,
+      queryContextLockRunSeq,
+      switchQueryContext,
+      tab.connectionId,
+      tab.dbName,
+      tab.id,
+      tab.schemaName,
+  ]);
 
   useEffect(() => {
       if (isExternalSQLFileTab) return;
@@ -2707,43 +2875,8 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
   }, [connections]);
 
   const handleDatabaseChange = useCallback((dbName: string) => {
-      const nextDbName = String(dbName || '');
-      const connectionId = String(currentConnectionIdRef.current || currentConnectionId || '').trim();
-      currentDbRef.current = nextDbName;
-
-      if (isActive) {
-          const activeConnectionConfig = connections.find(
-              (connection) => connection.id === connectionId,
-          )?.config ?? null;
-          const metadataContextChanged = resetMetadataForContext(
-              connectionId,
-              nextDbName,
-              activeConnectionConfig,
-          );
-          const nextSharedMetadataContextKey = `${tab.id}\u0000${connectionId}\u0000${nextDbName}`;
-          if (
-              !metadataContextChanged
-              && (
-                  sharedQueryEditorMetadataContextKey !== nextSharedMetadataContextKey
-                  || sharedQueryEditorMetadataConnectionConfig !== activeConnectionConfig
-              )
-          ) {
-              resetSharedQueryEditorMetadata();
-          }
-          sharedQueryEditorMetadataContextKey = nextSharedMetadataContextKey;
-          sharedQueryEditorMetadataConnectionConfig = activeConnectionConfig;
-          sharedCurrentDb = nextDbName;
-          sharedCurrentConnectionId = connectionId;
-          sharedConnections = connections;
-          sharedVisibleDbs = visibleDbsRef.current;
-          sharedActiveEditorModelUri = String(editorRef.current?.getModel?.()?.uri?.toString?.() || '');
-      }
-
-      if (connectionId) {
-          setActiveContext({ connectionId, dbName: nextDbName });
-      }
-      setCurrentDb(nextDbName);
-  }, [connections, currentConnectionId, isActive, resetMetadataForContext, setActiveContext, tab.id]);
+      void switchQueryContext(currentConnectionIdRef.current, dbName);
+  }, [switchQueryContext]);
 
   const refreshObjectDecorations = useCallback((maxTextLength = QUERY_EDITOR_OBJECT_DECORATION_MAX_TEXT_LENGTH) => {
       const editor = editorRef.current;
@@ -3648,6 +3781,108 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           cancelled = true;
       };
   }, [autoFetchVisible, currentConnectionId, connections, isActive]);
+
+  // PostgreSQL keeps database and schema as separate execution contexts. Load the
+  // available schemas without mutating the saved connection configuration.
+  useEffect(() => {
+      if (!isActive || !autoFetchVisible) {
+          schemaLoadSeqRef.current += 1;
+          setSchemaLoading(false);
+          return;
+      }
+      if (!canSelectQuerySchema) {
+          schemaLoadSeqRef.current += 1;
+          schemaContextKeyRef.current = '';
+          currentSchemaRef.current = '';
+          latestSelectedSchemaRef.current = '';
+          setCurrentSchema('');
+          setSchemaList([]);
+          setSchemaLoading(false);
+          return;
+      }
+
+      const conn = currentConnection;
+      const dbName = String(currentDb || '').trim();
+      if (!conn || !dbName) {
+          schemaLoadSeqRef.current += 1;
+          setSchemaList([]);
+          setSchemaLoading(false);
+          return;
+      }
+
+      const contextKey = `${tab.id}\u0000${currentConnectionId}\u0000${dbName}`;
+      if (schemaContextKeyRef.current !== contextKey) {
+          schemaContextKeyRef.current = contextKey;
+          latestSelectedSchemaRef.current = '';
+          const rememberedSchema = String(currentSchemaRef.current || '').trim();
+          setSchemaList(rememberedSchema ? [rememberedSchema] : []);
+      }
+
+      const requestSeq = schemaLoadSeqRef.current + 1;
+      schemaLoadSeqRef.current = requestSeq;
+      let cancelled = false;
+      setSchemaLoading(true);
+
+      const config = {
+          ...conn.config,
+          port: Number(conn.config.port),
+          password: conn.config.password || '',
+          database: conn.config.database || '',
+          useSSH: conn.config.useSSH || false,
+          ssh: conn.config.ssh || { host: '', port: 22, user: '', password: '', keyPath: '' },
+      };
+      const loadCurrentSchema = DBQuery(
+          buildRpcConnectionConfig(config) as any,
+          dbName,
+          QUERY_EDITOR_CURRENT_SCHEMA_SQL,
+      ).then((result) => (
+          result.success ? extractQueryEditorCurrentSchema(result.data) : ''
+      )).catch(() => '');
+
+      void Promise.all([loadSchemas(conn, dbName), loadCurrentSchema])
+          .then(([result, databaseDefaultSchema]) => {
+              if (cancelled) return;
+              const resolved = resolveLoadedQueryEditorSchema({
+                  requestSeq,
+                  currentRequestSeq: schemaLoadSeqRef.current,
+                  latestSelectedSchema: latestSelectedSchemaRef.current,
+                  rememberedSchema: String(tab.schemaName || ''),
+                  currentSchema: databaseDefaultSchema,
+                  schemaNames: Array.isArray(result.schemas) ? result.schemas : [],
+              });
+              if (!resolved) return;
+              currentSchemaRef.current = resolved.selectedSchema;
+              setCurrentSchema(resolved.selectedSchema);
+              setSchemaList(resolved.schemaNames);
+              if (resolved.selectedSchema) {
+                  updateQueryTabDraft(tab.id, { schemaName: resolved.selectedSchema });
+              }
+          })
+          .catch(() => {
+              if (cancelled || requestSeq !== schemaLoadSeqRef.current) return;
+              const fallbackSchema = String(currentSchemaRef.current || tab.schemaName || '').trim();
+              setSchemaList(fallbackSchema ? [fallbackSchema] : []);
+          })
+          .finally(() => {
+              if (!cancelled && requestSeq === schemaLoadSeqRef.current) {
+                  setSchemaLoading(false);
+              }
+          });
+
+      return () => {
+          cancelled = true;
+      };
+  }, [
+      autoFetchVisible,
+      canSelectQuerySchema,
+      currentConnection,
+      currentConnectionId,
+      currentDb,
+      isActive,
+      setSchemaLoading,
+      tab.id,
+      updateQueryTabDraft,
+  ]);
 
   // Fetch Metadata for Autocomplete (Cross-database)
   useEffect(() => {
@@ -5606,9 +5841,9 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
               if (!nextDbName) {
                   return;
               }
-              setCurrentDb(nextDbName);
-              currentDbRef.current = nextDbName;
-              setActiveContext({ connectionId, dbName: nextDbName });
+              if (!switchQueryContext(connectionId, nextDbName)) {
+                  return;
+              }
               return;
           }
 
@@ -7655,6 +7890,16 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       }
   };
 
+  const buildSqlExecutionConnectionConfig = useCallback((
+      config: Record<string, any>,
+      schemaName = currentSchemaRef.current,
+  ) => {
+      if (!canSelectQuerySchema || !supportsQueryEditorSchemaSelection(String(config.type || ''))) {
+          return config;
+      }
+      return applyQueryEditorSchemaSearchPath(config, schemaName);
+  }, [canSelectQuerySchema]);
+
   const executeSqlEditorMultiQuery = useCallback((
       config: Record<string, any>,
       dbName: string,
@@ -7662,20 +7907,45 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       queryId: string,
       sourceStatements: string[],
       dbType = String(config.type || ''),
+      connectionParamsOverride?: string,
+      executionConnectionId = currentConnectionIdRef.current,
   ) => {
+      const executionConfig = connectionParamsOverride === undefined
+          ? buildSqlExecutionConnectionConfig(config)
+          : { ...config, connectionParams: connectionParamsOverride };
+      const currentContextConfig = buildSqlExecutionConnectionConfig(config);
+      const matchesCurrentExecutionContext = String(executionConnectionId || '').trim()
+              === String(currentConnectionIdRef.current || '').trim()
+          && String(dbName || '').trim() === String(currentDbRef.current || '').trim()
+          && (
+              connectionParamsOverride === undefined
+              || String(executionConfig.connectionParams || '')
+                  === String(currentContextConfig.connectionParams || '')
+          );
       const pendingTransaction = pendingSqlTransactionRef.current;
-      if (pendingTransaction && canReusePendingSqlEditorTransactionForType(dbType, sourceStatements)) {
+      if (
+          pendingTransaction
+          && matchesCurrentExecutionContext
+          && canReusePendingSqlEditorTransactionForType(dbType, sourceStatements)
+      ) {
           return DBQueryMultiInTransaction(pendingTransaction.id, sql, queryId);
       }
-      return DBQueryMulti(buildRpcConnectionConfig(config) as any, dbName, sql, queryId);
-  }, []);
+      return DBQueryMulti(
+          buildRpcConnectionConfig(executionConfig) as any,
+          dbName,
+          sql,
+          queryId,
+      );
+  }, [buildSqlExecutionConnectionConfig]);
 
   // 精准重查询单个结果集（提交事务 / 刷新按钮使用），不会重跑整个编辑器 SQL
   const handleReloadResult = async (resultKey: string, sql: string) => {
-      if (!sql?.trim() || !currentDb) return;
-      const conn = connections.find(c => c.id === currentConnectionId);
-      if (!conn) return;
       const currentResult = resultSets.find((item) => item.key === resultKey);
+      const executionConnectionId = currentResult?.executionConnectionId || currentConnectionId;
+      const executionDbName = currentResult?.executionDbName || currentDb;
+      if (!sql?.trim() || !executionDbName) return;
+      const conn = connections.find(c => c.id === executionConnectionId);
+      if (!conn) return;
       const statementResultIndex = Math.max(1, Number(currentResult?.statementResultIndex || 1));
 
       const config = {
@@ -7723,11 +7993,13 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           setQueryId(queryId);
           const res = await executeSqlEditorMultiQuery(
               config,
-              currentDb,
+              executionDbName,
               sql,
               queryId,
               splitSQLStatements(sql, normalizedDbType),
               normalizedDbType,
+              currentResult?.executionConnectionParams,
+              executionConnectionId,
           );
           if (!isCurrentRun()) return;
           if (currentQueryIdRef.current === queryId) {
@@ -7794,8 +8066,10 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
 
   const handleRequestResultTotalCount = async (resultKey: string) => {
       const target = resultSetsRef.current.find((item) => item.key === resultKey);
-      if (!target?.page?.baseSql || !currentDb || resultTotalCountRequestsRef.current[resultKey]) return;
-      const conn = connections.find(c => c.id === currentConnectionId);
+      const executionConnectionId = target?.executionConnectionId || currentConnectionId;
+      const executionDbName = target?.executionDbName || currentDb;
+      if (!target?.page?.baseSql || !executionDbName || resultTotalCountRequestsRef.current[resultKey]) return;
+      const conn = connections.find(c => c.id === executionConnectionId);
       if (!conn) return;
       const countSql = buildQueryResultCountSql(target.page.baseSql);
       if (!countSql) return;
@@ -7847,11 +8121,13 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           resultTotalCountRequestsRef.current[resultKey] = { sequence, queryId };
           const res = await executeSqlEditorMultiQuery(
               config,
-              currentDb,
+              executionDbName,
               countSql,
               queryId,
               [countSql],
               normalizedDbType,
+              target.executionConnectionParams,
+              executionConnectionId,
           );
           const duration = Date.now() - countStartedAt;
           addSqlLog({
@@ -7861,7 +8137,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
               status: res?.success ? 'success' : 'error',
               duration,
               message: res?.success ? '' : String(res?.message || translate('data_viewer.message.total_count_failed')),
-              dbName: currentDb,
+              dbName: executionDbName,
           });
           if (!isCurrentRequest()) return;
           if (!res?.success) {
@@ -7902,7 +8178,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
               status: 'error',
               duration: Date.now() - countStartedAt,
               message: String(error?.message || error || translate('common.unknown')),
-              dbName: currentDb,
+              dbName: executionDbName,
           });
           finishLoading();
           message.error(translate('data_viewer.message.total_count_failed_detail', {
@@ -7937,11 +8213,11 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
   };
 
   useEffect(() => {
-      const nextContext = `${currentConnectionId}\u0000${currentDb}`;
+      const nextContext = `${currentConnectionId}\u0000${currentDb}\u0000${currentSchema}`;
       if (resultTotalCountContextRef.current === nextContext) return;
       resultTotalCountContextRef.current = nextContext;
       void cancelResultTotalCountRequests(Object.keys(resultTotalCountRequestsRef.current));
-  }, [currentConnectionId, currentDb]);
+  }, [currentConnectionId, currentDb, currentSchema]);
 
   useEffect(() => () => {
       const requests = Object.values(resultTotalCountRequestsRef.current);
@@ -7963,8 +8239,10 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       sortInfoOverride?: GridSortInfoItem[],
   ) => {
       const target = resultSetsRef.current.find((item) => item.key === resultKey);
-      if (!target?.page?.baseSql || !currentDb) return;
-      const conn = connections.find(c => c.id === currentConnectionId);
+      const executionConnectionId = target?.executionConnectionId || currentConnectionId;
+      const executionDbName = target?.executionDbName || currentDb;
+      if (!target?.page?.baseSql || !executionDbName) return;
+      const conn = connections.find(c => c.id === executionConnectionId);
       if (!conn) return;
       const safePage = Math.max(1, Math.floor(Number(page) || 1));
       const safePageSize = Math.max(1, Math.floor(Number(pageSize) || target.page.pageSize || 1));
@@ -8027,11 +8305,13 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           setQueryId(queryId);
           const res = await executeSqlEditorMultiQuery(
               config,
-              currentDb,
+              executionDbName,
               pageSql,
               queryId,
               splitSQLStatements(pageSql, normalizedDbType),
               normalizedDbType,
+              target.executionConnectionParams,
+              executionConnectionId,
           );
           if (!isCurrentRun()) return;
           if (currentQueryIdRef.current === queryId) {
@@ -8361,6 +8641,10 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
         await handleElasticsearchRun(false);
         return;
     }
+    if (canSelectQuerySchema && schemaLoading) {
+        message.info(translate('common.loading'));
+        return;
+    }
     const currentQuery = getCurrentQuery();
     if (!currentQuery.trim()) return;
     const executableSQL = getExecutableSQL();
@@ -8378,10 +8662,12 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
     let runQueryId = '';
     const isCurrentRun = () => runSeqRef.current === runSeq;
     setExecutionRunToken(runSeq);
+    lockQueryContextForRun(runSeq);
     setLoading(true);
     setExecutionError('');
     const runStartTime = Date.now();
 
+    try {
     await cancelResultTotalCountRequests(Object.keys(resultTotalCountRequestsRef.current));
     if (!isCurrentRun()) return;
     // 如果已有查询在运行，先取消它
@@ -8404,11 +8690,11 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
         return;
     }
     const connCaps = getDataSourceCapabilities(conn.config);
-	    if (!connCaps.supportsQueryEditor) {
-	        message.error(translate('query_editor.message.unsupported_source'));
-	        if (isCurrentRun()) setLoading(false);
-	        return;
-	    }
+    if (!connCaps.supportsQueryEditor) {
+        message.error(translate('query_editor.message.unsupported_source'));
+        if (isCurrentRun()) setLoading(false);
+        return;
+    }
     const restrictedStatements = findConnectionMutatingStatements(conn.config, executableSQL);
     if (restrictedStatements.length > 0) {
         message.warning(translate('query_editor.message.connection_readonly_blocked'));
@@ -8430,7 +8716,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
         }
     }
 
-	    const config = {
+    const config = {
         ...conn.config,
         port: Number(conn.config.port),
         password: conn.config.password || "",
@@ -8439,10 +8725,12 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
         ssh: conn.config.ssh || { host: "", port: 22, user: "", password: "", keyPath: "" },
         timeout: resolveQueryEditorConnectionTimeout(conn.config),
     };
-
-    try {
+        const executionConfig = buildSqlExecutionConnectionConfig(config);
+        const executionConnectionParams = canSelectQuerySchema
+            ? String(executionConfig.connectionParams || '')
+            : undefined;
         const rawSQL = executableSQL;
-        const rpcConfig = buildRpcConnectionConfig(config) as any;
+        const rpcConfig = buildRpcConnectionConfig(executionConfig) as any;
         const dbType = String(rpcConfig.type || 'mysql');
         const driver = String((config as any).driver || '');
         const normalizedDbType = String(resolveSqlDialect(dbType, driver, {
@@ -8748,7 +9036,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                         originalStatement: sourceStatements[index],
                         dbType: normalizedDbType,
                         currentDb,
-                        config,
+                        config: executionConfig,
                         forceReadOnly: forceReadOnlyResult,
                         allowOracleRowID: allowOracleRowIDByStatement[index],
                     });
@@ -8794,7 +9082,12 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
             setQueryId(queryId);
 
             const res = useManagedTransaction
-                ? await DBQueryMultiTransactional(buildRpcConnectionConfig(config) as any, currentDb, fullSQL, queryId)
+                ? await DBQueryMultiTransactional(
+                    buildRpcConnectionConfig(executionConfig) as any,
+                    currentDb,
+                    fullSQL,
+                    queryId,
+                )
                 : await executeSqlEditorMultiQuery(
                     config,
                     currentDb,
@@ -8802,6 +9095,8 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                     queryId,
                     executableStatements,
                     normalizedDbType,
+                    executionConnectionParams,
+                    currentConnectionId,
                 );
             if (!isCurrentRun()) return;
             const duration = Date.now() - startTime;
@@ -8992,6 +9287,9 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                         metadataTableName: tableRef?.metadataTableName,
                         ddlDbName: tableRef?.ddlDbName,
                         ddlTableName: tableRef?.ddlTableName,
+                        executionConnectionId: currentConnectionId,
+                        executionDbName: currentDb,
+                        executionConnectionParams,
                         pkColumns: plan?.pkColumns || [],
                         editLocator,
                         readOnly: forceReadOnlyResult || !editLocator || editLocator.readOnly,
@@ -9062,6 +9360,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
         setExecutionError(formattedError);
         clearUnpinnedResultSets(QUERY_EDITOR_SQL_LOG_TAB_KEY);
     } finally {
+        unlockQueryContextForRun(runSeq);
         if (isCurrentRun()) setLoading(false);
         if (runQueryId && currentQueryIdRef.current === runQueryId) {
             clearQueryId();
@@ -9069,13 +9368,64 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
     }
   };
 
+  useEffect(() => {
+      handleRunRef.current = handleRun;
+      return () => {
+          if (handleRunRef.current === handleRun) {
+              handleRunRef.current = null;
+          }
+      };
+  }, [handleRun]);
+
+  const runAfterQueryContextReady = useCallback(() => {
+      const requestSeq = deferredContextRunSeqRef.current + 1;
+      deferredContextRunSeqRef.current = requestSeq;
+      window.setTimeout(() => {
+          if (
+              requestSeq !== deferredContextRunSeqRef.current
+              || !queryEditorActiveRef.current
+          ) {
+              return;
+          }
+          if (schemaLoadingRef.current) {
+              pendingRunAfterSchemaLoadRef.current = true;
+              return;
+          }
+          void handleRunRef.current?.();
+      }, 500);
+  }, []);
+
+  useEffect(() => {
+      if (isActive) return;
+      deferredContextRunSeqRef.current += 1;
+      pendingRunAfterSchemaLoadRef.current = false;
+  }, [isActive]);
+
+  useEffect(() => {
+      if (schemaLoading || !pendingRunAfterSchemaLoadRef.current) return;
+      pendingRunAfterSchemaLoadRef.current = false;
+      deferredContextRunSeqRef.current += 1;
+      if (queryEditorActiveRef.current) {
+          void handleRunRef.current?.();
+      }
+  }, [schemaLoading]);
+
+  useEffect(() => () => {
+      deferredContextRunSeqRef.current += 1;
+      pendingRunAfterSchemaLoadRef.current = false;
+  }, []);
+
   const handleRunSelectedShortcut = async () => {
       await handleRun();
   };
 
   const handleCancel = async () => {
     const finishCancelledRun = () => {
+      const lockedRunSeq = queryContextLockRunSeqRef.current;
       runSeqRef.current += 1;
+      if (lockedRunSeq !== 0) {
+        unlockQueryContextForRun(lockedRunSeq);
+      }
       setLoading(false);
       setResultSets(prev => prev.map(result =>
         result.page?.loading
@@ -9736,18 +10086,12 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           if (e.detail?.tabId !== tab.id || !e.detail?.sql) return;
           const { sql: sqlText, connectionId, dbName } = e.detail;
 
-          // 同步更新 ref，防止异步 fetchDbs 竞态覆盖正确的 dbName
-          if (connectionId && connectionId !== currentConnectionId) {
-              if (dbName) {
-                  currentDbRef.current = dbName;
-                  setCurrentDb(dbName);
-              }
-              setCurrentConnectionId(connectionId);
-          } else if (dbName && dbName !== currentDb) {
-              currentDbRef.current = dbName;
-              setCurrentDb(dbName);
-          }
-
+          const activeConnectionId = String(currentConnectionIdRef.current || '').trim();
+          const targetConnectionId = String(connectionId || activeConnectionId).trim();
+          const targetDbName = String(
+              dbName || (targetConnectionId === activeConnectionId ? currentDbRef.current : ''),
+          ).trim();
+          if (!switchQueryContext(targetConnectionId, targetDbName)) return;
 
           const editor = editorRef.current;
           const monaco = monacoRef.current;
@@ -9763,7 +10107,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                       const maxCol = model.getLineMaxColumn(lineCount);
                       editor.setSelection(new monaco.Range(1, 1, lineCount, maxCol));
                       editor.focus();
-                      setTimeout(() => handleRun(), 500);
+                      runAfterQueryContextReady();
                   }
               } else {
               let position = editor.getPosition();
@@ -9804,7 +10148,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                           endPosition.lineNumber, endPosition.column
                       ));
                       // 🔧 延迟 500ms 等待连接/数据库切换的 setState 生效后再执行
-                      setTimeout(() => handleRun(), 500);
+                      runAfterQueryContextReady();
                   }
               }
               }
@@ -9815,7 +10159,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       };
       window.addEventListener('gonavi:insert-sql-to-tab', handleInsertSql as EventListener);
       return () => window.removeEventListener('gonavi:insert-sql-to-tab', handleInsertSql as EventListener);
-  }, [tab.id, handleRun]);
+  }, [runAfterQueryContextReady, switchQueryContext, tab.id]);
 
   const resolveDefaultQueryName = () => {
       const rawTitle = String(tab.title || '').trim();
@@ -10570,9 +10914,9 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       const detachedWindow = {
           id: windowId,
           sourceQueryTabId: tab.id,
-          connectionId: currentConnectionId || tab.connectionId || '',
+          connectionId: target.executionConnectionId || currentConnectionId || tab.connectionId || '',
           // 独立窗也要带上结果表元数据所属库，否则列类型/注释会丢
-          dbName: target.metadataDbName || currentDb || tab.dbName || '',
+          dbName: target.metadataDbName || target.executionDbName || currentDb || tab.dbName || '',
           title,
           ...(preferred?.x !== undefined ? { x: preferred.x } : {}),
           ...(preferred?.y !== undefined ? { y: preferred.y } : {}),
@@ -10598,6 +10942,9 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
               metadataTableName: target.metadataTableName,
               ddlDbName: target.ddlDbName,
               ddlTableName: target.ddlTableName,
+              executionConnectionId: target.executionConnectionId,
+              executionDbName: target.executionDbName,
+              executionConnectionParams: target.executionConnectionParams,
               pkColumns: target.pkColumns || [],
               editLocator: target.editLocator as any,
               readOnly: target.readOnly !== false,
@@ -10651,6 +10998,9 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                   metadataTableName: restored.metadataTableName,
                   ddlDbName: restored.ddlDbName,
                   ddlTableName: restored.ddlTableName,
+                  executionConnectionId: restored.executionConnectionId,
+                  executionDbName: restored.executionDbName,
+                  executionConnectionParams: restored.executionConnectionParams,
                   pkColumns: Array.isArray(restored.pkColumns) ? restored.pkColumns : [],
                   editLocator: restored.editLocator,
                   readOnly: restored.readOnly !== false,
@@ -10764,6 +11114,28 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
         currentDb={currentDb}
         queryCapableConnections={queryCapableConnections}
         dbList={dbList}
+        contextSelectionDisabled={queryContextLockRunSeq !== 0 || Boolean(pendingSqlTransaction)}
+        schemaSelect={canSelectQuerySchema ? {
+            value: currentSchema,
+            options: schemaList,
+            loading: schemaLoading,
+            disabled: schemaLoading || loading || queryContextLockRunSeq !== 0 || Boolean(pendingSqlTransaction),
+            onChange: (schemaName) => {
+                const nextSchema = String(schemaName || '').trim();
+                if (
+                    !nextSchema
+                    || queryContextLockRunSeqRef.current !== 0
+                    || pendingSqlTransactionRef.current
+                ) return;
+                currentSchemaRef.current = nextSchema;
+                latestSelectedSchemaRef.current = nextSchema;
+                setCurrentSchema(nextSchema);
+                setSchemaList((current) => current.includes(nextSchema)
+                    ? current
+                    : [nextSchema, ...current]);
+                updateQueryTabDraft(tab.id, { schemaName: nextSchema });
+            },
+        } : undefined}
         maxRows={queryOptions?.maxRows ?? 5000}
         sqlEditorCommitMode={sqlEditorCommitMode}
         sqlEditorAutoCommitDelayMs={sqlEditorAutoCommitDelayMs}
@@ -10777,18 +11149,12 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
         isResultPanelVisible={isResultPanelVisible}
         wordWrapEnabled={wordWrapEnabled}
         loading={loading}
+        runDisabled={canSelectQuerySchema && schemaLoading}
         saveMoreMenuItems={saveMoreMenuItems}
         formatSettingsMenu={formatSettingsMenu}
         templateMenuItems={elasticsearchTemplateMenuItems}
         onConnectionChange={(val) => {
-            const connectionId = String(val || '').trim();
-            currentConnectionIdRef.current = connectionId;
-            currentDbRef.current = '';
-            setCurrentConnectionId(connectionId);
-            setCurrentDb('');
-            if (connectionId) {
-                setActiveContext({ connectionId, dbName: '' });
-            }
+            void switchQueryContext(val, '');
         }}
         onDatabaseChange={handleDatabaseChange}
         onMaxRowsChange={(maxRows) => setQueryOptions({ maxRows })}
@@ -10944,15 +11310,30 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
             rows: (rs.rows || []) as Record<string, unknown>[],
             pkColumns: rs.pkColumns || [],
             truncated: Boolean(rs.truncated),
-            metadataDbName: rs.metadataDbName || currentDb,
+            executionConnectionId: rs.executionConnectionId || currentConnectionId,
+            executionDbName: rs.executionDbName || currentDb,
+            executionConnectionParams: rs.executionConnectionParams,
+            metadataDbName: rs.metadataDbName || rs.executionDbName || currentDb,
             metadataTableName: rs.metadataTableName || rs.tableName,
           }))}
         initialRightKey={resultDiffAnchorKey}
         connectionConfig={(() => {
           const conn = connections.find((c) => c.id === currentConnectionId);
-          return conn ? buildRpcConnectionConfig(conn) : {};
+          return conn ? buildRpcConnectionConfig(conn.config) : {};
         })()}
         database={currentDb}
+        resolveExecutionConnectionConfig={(result) => {
+          const connectionId = result.executionConnectionId || currentConnectionId;
+          const conn = connections.find((item) => item.id === connectionId);
+          if (!conn) return {};
+          const config = result.executionConnectionParams === undefined
+            ? conn.config
+            : {
+                ...conn.config,
+                connectionParams: result.executionConnectionParams,
+              };
+          return buildRpcConnectionConfig(config);
+        }}
         onCancel={() => setResultDiffWizardOpen(false)}
         onCompleted={(payload) => {
           setResultDiffWizardOpen(false);

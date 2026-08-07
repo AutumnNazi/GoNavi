@@ -1910,6 +1910,7 @@ interface AppState {
         | "query"
         | "connectionId"
         | "dbName"
+        | "schemaName"
         | "title"
         | "resultPanelVisible"
         | "formatRestoreSnapshot"
@@ -2541,6 +2542,7 @@ const sanitizeQueryTabs = (value: unknown): TabData[] => {
         persistedDraft?.connectionId,
       ),
       dbName: toTrimmedString(raw.dbName, persistedDraft?.dbName),
+      schemaName: toTrimmedString(raw.schemaName).slice(0, 256) || undefined,
       query,
       resultPanelVisible:
         typeof raw.resultPanelVisible === "boolean"
@@ -4286,6 +4288,13 @@ export const useStore = create<AppState>()(
                 nextTab.dbName = nextDbName;
                 changed = true;
                 connectionContextChanged = true;
+              }
+            }
+            if (draft.schemaName !== undefined) {
+              const nextSchemaName = toTrimmedString(draft.schemaName).slice(0, 256);
+              if ((nextTab.schemaName || "") !== nextSchemaName) {
+                nextTab.schemaName = nextSchemaName || undefined;
+                changed = true;
               }
             }
             if (draft.title !== undefined) {

@@ -325,7 +325,7 @@ export {
 const EXTERNAL_HORIZONTAL_SCROLL_IDLE_SETTLE_MS = 80;
 
 const DataGrid: React.FC<DataGridProps> = ({
-    data, columnNames, loading, tableName, columnPinScope, objectType = 'table', exportScope = 'table', dbName, schemaName, ddlDbName, ddlTableName, connectionId, pkColumns = [], editLocator, readOnly = false,
+    data, columnNames, loading, tableName, columnPinScope, objectType = 'table', exportScope = 'table', dbName, schemaName, ddlDbName, ddlTableName, connectionId, connectionParamsOverride, pkColumns = [], editLocator, readOnly = false,
     resultSql,
     resultExportAllSql,
     onReload, onSort, onPageChange, onLastPage, pagination, onRequestTotalCount, onCancelTotalCount, sortInfoExternal, showFilter, onToggleFilter, exportSqlWithFilter, onApplyFilter, appliedFilterConditions, quickWhereCondition,
@@ -337,7 +337,21 @@ const DataGrid: React.FC<DataGridProps> = ({
     onDataViewActivate,
     onDataChange,
 }) => {
-  const connections = useStore(state => state.connections);
+  const storedConnections = useStore(state => state.connections);
+  const connections = useMemo(() => {
+      if (connectionParamsOverride === undefined || !connectionId) return storedConnections;
+      return storedConnections.map((connection) => (
+          connection.id === connectionId
+              ? {
+                  ...connection,
+                  config: {
+                      ...connection.config,
+                      connectionParams: connectionParamsOverride,
+                  },
+              }
+              : connection
+      ));
+  }, [connectionId, connectionParamsOverride, storedConnections]);
   const addTab = useStore(state => state.addTab);
   const setActiveContext = useStore(state => state.setActiveContext);
   const addSqlLog = useStore(state => state.addSqlLog);
@@ -1175,6 +1189,7 @@ const DataGrid: React.FC<DataGridProps> = ({
       foreignKeyMap,
       foreignKeyMapByLowerName,
       getColumnFilterType,
+      metadataCacheKey,
       metadataReloadVersion,
       setMetadataReloadVersion,
       uniqueKeyGroups,
@@ -1182,6 +1197,7 @@ const DataGrid: React.FC<DataGridProps> = ({
   } = useDataGridMetadata({
       connections,
       connectionId,
+      connectionParamsOverride,
       dbName,
       tableName,
       exportScope,
@@ -2524,8 +2540,8 @@ const DataGrid: React.FC<DataGridProps> = ({
   }, [dataChangeOutputColumnNames, deletedRowKeys, mergedDisplayData, onDataChange, rowKeyStr]);
 
   const dataSourceContextKey = useMemo(
-      () => `${connectionId || ''}\u0001${dbName || ''}\u0001${tableName || ''}\u0001${resolvedDdlDbName || ''}\u0001${resolvedDdlTableName || ''}`,
-      [connectionId, dbName, resolvedDdlDbName, resolvedDdlTableName, tableName],
+      () => `${connectionId || ''}\u0001${dbName || ''}\u0001${tableName || ''}\u0001${resolvedDdlDbName || ''}\u0001${resolvedDdlTableName || ''}\u0001${connectionParamsOverride || ''}`,
+      [connectionId, connectionParamsOverride, dbName, resolvedDdlDbName, resolvedDdlTableName, tableName],
   );
   const previousDataSourceContextKeyRef = useRef<string | null>(null);
 
@@ -5595,6 +5611,7 @@ const DataGrid: React.FC<DataGridProps> = ({
         localizedDataEditAutoCommitDelayOptions,
         looksLikeJsonText,
         mergedDisplayData,
+        metadataCacheKey,
         noAutoCapInputProps,
         normalizedPageFindText,
         onCancelTotalCount,
