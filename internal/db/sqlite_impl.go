@@ -23,6 +23,8 @@ type SQLiteDB struct {
 	pingTimeout time.Duration
 }
 
+var _ BatchApplierContext = (*SQLiteDB)(nil)
+
 func (s *SQLiteDB) Connect(config connection.ConnectionConfig) error {
 	dsn, err := resolveSQLiteDSN(config)
 	if err != nil {
@@ -613,15 +615,20 @@ func (s *SQLiteDB) GetTriggers(dbName, tableName string) ([]connection.TriggerDe
 }
 
 func (s *SQLiteDB) ApplyChanges(tableName string, changes connection.ChangeSet) error {
+	return s.ApplyChangesContext(context.Background(), tableName, changes)
+}
+
+func (s *SQLiteDB) ApplyChangesContext(ctx context.Context, tableName string, changes connection.ChangeSet) (err error) {
 	if s.conn == nil {
 		return fmt.Errorf("连接未打开")
 	}
 
-	tx, err := s.conn.Begin()
+	tx, err := s.conn.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	transactionCommitted := false
+	defer func() { rollbackUnfinishedWriteTransaction(tx, transactionCommitted, &err) }()
 
 	quoteIdent := func(name string) string {
 		n := strings.TrimSpace(name)
@@ -659,7 +666,7 @@ func (s *SQLiteDB) ApplyChanges(tableName string, changes connection.ChangeSet) 
 			continue
 		}
 		query := fmt.Sprintf("DELETE FROM %s WHERE %s", qualifiedTable, strings.Join(wheres, " AND "))
-		if _, err := tx.Exec(query, args...); err != nil {
+		if _, err := tx.ExecContext(ctx, query, args...); err != nil {
 			return fmt.Errorf("删除失败：%v", err)
 		}
 	}
@@ -689,7 +696,7 @@ func (s *SQLiteDB) ApplyChanges(tableName string, changes connection.ChangeSet) 
 		}
 
 		query := fmt.Sprintf("UPDATE %s SET %s WHERE %s", qualifiedTable, strings.Join(sets, ", "), strings.Join(wheres, " AND "))
-		if _, err := tx.Exec(query, args...); err != nil {
+		if _, err := tx.ExecContext(ctx, query, args...); err != nil {
 			return fmt.Errorf("更新失败：%v", err)
 		}
 	}
@@ -700,14 +707,18 @@ func (s *SQLiteDB) ApplyChanges(tableName string, changes connection.ChangeSet) 
 		QuoteColumn: quoteIdent,
 		Placeholder: func(int) string { return "?" },
 		Exec: func(query string, args ...interface{}) (sql.Result, error) {
-			return tx.Exec(query, args...)
+			return tx.ExecContext(ctx, query, args...)
 		},
 		MaxArgs: sqliteBatchInsertArgs,
 	}); err != nil {
 		return err
 	}
 
-	return tx.Commit()
+	if err := commitWriteTransaction(tx); err != nil {
+		return err
+	}
+	transactionCommitted = true
+	return nil
 }
 
 func (s *SQLiteDB) GetAllColumns(dbName string) ([]connection.ColumnDefinitionWithTable, error) {

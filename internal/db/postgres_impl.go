@@ -25,6 +25,8 @@ type PostgresDB struct {
 	forwarder   *ssh.LocalForwarder // Store SSH tunnel forwarder
 }
 
+var _ BatchApplierContext = (*PostgresDB)(nil)
+
 type postgresSessionExecer struct {
 	*sqlConnStatementExecer
 }
@@ -679,15 +681,20 @@ func (p *PostgresDB) queryUserSchemas() []string {
 }
 
 func (p *PostgresDB) ApplyChanges(tableName string, changes connection.ChangeSet) error {
+	return p.ApplyChangesContext(context.Background(), tableName, changes)
+}
+
+func (p *PostgresDB) ApplyChangesContext(ctx context.Context, tableName string, changes connection.ChangeSet) (err error) {
 	if p.conn == nil {
 		return fmt.Errorf("连接未打开")
 	}
 
-	tx, err := p.conn.Begin()
+	tx, err := p.conn.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	transactionCommitted := false
+	defer func() { rollbackUnfinishedWriteTransaction(tx, transactionCommitted, &err) }()
 
 	quoteIdent := func(name string) string {
 		n := strings.TrimSpace(name)
@@ -727,7 +734,7 @@ func (p *PostgresDB) ApplyChanges(tableName string, changes connection.ChangeSet
 			continue
 		}
 		query := fmt.Sprintf("DELETE FROM %s WHERE %s", qualifiedTable, strings.Join(wheres, " AND "))
-		res, err := tx.Exec(query, args...)
+		res, err := tx.ExecContext(ctx, query, args...)
 		if err != nil {
 			return fmt.Errorf("删除失败：%v", err)
 		}
@@ -764,7 +771,7 @@ func (p *PostgresDB) ApplyChanges(tableName string, changes connection.ChangeSet
 		}
 
 		query := fmt.Sprintf("UPDATE %s SET %s WHERE %s", qualifiedTable, strings.Join(sets, ", "), strings.Join(wheres, " AND "))
-		res, err := tx.Exec(query, args...)
+		res, err := tx.ExecContext(ctx, query, args...)
 		if err != nil {
 			return fmt.Errorf("更新失败：%v", err)
 		}
@@ -781,7 +788,7 @@ func (p *PostgresDB) ApplyChanges(tableName string, changes connection.ChangeSet
 			return fmt.Sprintf("$%d", idx)
 		},
 		Exec: func(query string, args ...interface{}) (sql.Result, error) {
-			return tx.Exec(query, args...)
+			return tx.ExecContext(ctx, query, args...)
 		},
 		EmptyInsertSQL: func(table string) string {
 			return fmt.Sprintf("INSERT INTO %s DEFAULT VALUES", table)
@@ -790,5 +797,9 @@ func (p *PostgresDB) ApplyChanges(tableName string, changes connection.ChangeSet
 		return err
 	}
 
-	return tx.Commit()
+	if err := commitWriteTransaction(tx); err != nil {
+		return err
+	}
+	transactionCommitted = true
+	return nil
 }

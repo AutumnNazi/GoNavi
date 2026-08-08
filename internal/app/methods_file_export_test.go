@@ -1546,6 +1546,13 @@ func TestFormatImportSQLValue_LeavesTextLiteralUntouched(t *testing.T) {
 	}
 }
 
+func TestFormatImportSQLValue_MySQLHexLookingTextRemainsText(t *testing.T) {
+	got := formatImportSQLValue("mysql", "varchar(32)", "0xDEADBEEF")
+	if got != "'0xDEADBEEF'" {
+		t.Fatalf("hex-looking text must remain quoted during import, got %q", got)
+	}
+}
+
 func TestFormatImportSQLValue_PostgresBooleanColumnUsesBooleanLiteral(t *testing.T) {
 	cases := []struct {
 		name       string

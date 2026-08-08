@@ -256,6 +256,13 @@ type BatchWriteExecer interface {
 	ExecBatchContext(ctx context.Context, query string) (int64, error)
 }
 
+// BatchWriteCapability lets a driver that conditionally supports the
+// multi-statement protocol opt out at runtime. MySQL uses this when the
+// connection had to fall back to multiStatements=false.
+type BatchWriteCapability interface {
+	SupportsBatchWrites() bool
+}
+
 // StatementExecer is a single-session SQL execution handle.
 // It is used by long-running import jobs that must preserve session-scoped
 // settings across multiple statements.
@@ -793,6 +800,15 @@ func (e *sqlTxStatementExecer) Close() error {
 type BatchApplier interface {
 	// ApplyChanges 将一组变更（新增、修改、删除）批量提交到指定表。
 	ApplyChanges(tableName string, changes connection.ChangeSet) error
+}
+
+// BatchApplierContext is the optional cancellation-aware form of BatchApplier.
+// Long-running import and synchronization jobs prefer it so cancellation can
+// reach an in-flight driver transaction. BatchApplier remains for backwards
+// compatibility with drivers that cannot yet expose context cancellation.
+type BatchApplierContext interface {
+	BatchApplier
+	ApplyChangesContext(ctx context.Context, tableName string, changes connection.ChangeSet) error
 }
 
 // ChangePreviewer 是可选的变更预览接口。

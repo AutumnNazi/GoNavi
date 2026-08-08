@@ -1520,7 +1520,7 @@ func (a *App) dbQueryMulti(
 			if shouldTryQueryResultFirst(runConfig.Type, stmt) {
 				containsQueryFirstWrite = true
 			}
-			if isPLSQLBlockStatement(stmt) {
+			if isPLSQLBlockStatementForDialect(resolvedDBType, stmt) {
 				containsPLSQLBlock = true
 			}
 		}

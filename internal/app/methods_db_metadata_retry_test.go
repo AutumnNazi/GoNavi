@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -88,7 +89,16 @@ func (f *fakeMetadataRetryDB) Query(query string) ([]map[string]interface{}, []s
 	return f.queryRows, f.queryFields, nil
 }
 func (f *fakeMetadataRetryDB) Exec(query string) (int64, error) { return 0, nil }
-func (f *fakeMetadataRetryDB) GetDatabases() ([]string, error)  { return nil, nil }
+func (f *fakeMetadataRetryDB) ApplyChanges(string, connection.ChangeSet) error {
+	return nil
+}
+func (f *fakeMetadataRetryDB) ApplyChangesContext(ctx context.Context, tableName string, changes connection.ChangeSet) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return f.ApplyChanges(tableName, changes)
+}
+func (f *fakeMetadataRetryDB) GetDatabases() ([]string, error) { return nil, nil }
 func (f *fakeMetadataRetryDB) GetTables(dbName string) ([]string, error) {
 	f.tableCalls++
 	f.tableSchema = dbName

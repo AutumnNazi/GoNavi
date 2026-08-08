@@ -19,9 +19,12 @@ import (
 // MariaDB implements Database interface for MariaDB
 // MariaDB is MySQL-compatible, so we reuse the MySQL driver
 type MariaDB struct {
-	conn        *sql.DB
-	pingTimeout time.Duration
+	conn               *sql.DB
+	pingTimeout        time.Duration
+	batchWritesEnabled bool
 }
+
+var _ BatchApplierContext = (*MariaDB)(nil)
 
 func (m *MariaDB) getDSN(config connection.ConnectionConfig) (string, error) {
 	database := config.Database
@@ -40,6 +43,7 @@ func (m *MariaDB) getDSN(config connection.ConnectionConfig) (string, error) {
 }
 
 func (m *MariaDB) Connect(config connection.ConnectionConfig) error {
+	m.batchWritesEnabled = false
 	runConfig := applyMySQLURI(config)
 	dsn, err := m.getDSN(runConfig)
 	if err != nil {
@@ -58,7 +62,12 @@ func (m *MariaDB) Connect(config connection.ConnectionConfig) error {
 		m.conn = nil
 		return wrapDatabaseConnectionVerifyError(err)
 	}
+	m.batchWritesEnabled = mysqlDSNSupportsBatchWrites(dsn)
 	return nil
+}
+
+func (m *MariaDB) SupportsBatchWrites() bool {
+	return m != nil && m.batchWritesEnabled
 }
 
 func (m *MariaDB) Close() error {
@@ -357,15 +366,20 @@ func (m *MariaDB) GetTriggers(dbName, tableName string) ([]connection.TriggerDef
 }
 
 func (m *MariaDB) ApplyChanges(tableName string, changes connection.ChangeSet) error {
+	return m.ApplyChangesContext(context.Background(), tableName, changes)
+}
+
+func (m *MariaDB) ApplyChangesContext(ctx context.Context, tableName string, changes connection.ChangeSet) (err error) {
 	if m.conn == nil {
 		return fmt.Errorf("连接未打开")
 	}
 
-	tx, err := m.conn.Begin()
+	tx, err := m.conn.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	transactionCommitted := false
+	defer func() { rollbackUnfinishedWriteTransaction(tx, transactionCommitted, &err) }()
 
 	// 1. Deletes
 	for _, pk := range changes.Deletes {
@@ -379,9 +393,9 @@ func (m *MariaDB) ApplyChanges(tableName string, changes connection.ChangeSet) e
 			continue
 		}
 		query := fmt.Sprintf("DELETE FROM `%s` WHERE %s", tableName, strings.Join(wheres, " AND "))
-		res, err := tx.Exec(query, args...)
+		res, err := tx.ExecContext(ctx, query, args...)
 		if err != nil {
-			return fmt.Errorf("删除失败：%v", err)
+			return markWriteOutcomeUnknownIfAmbiguous(ctx, fmt.Errorf("删除失败：%w", err))
 		}
 		// 与 mysql_impl.go:1259 一致：本函数是 MySQL 版的拷贝，但漏掉了影响行数校验。
 		// 缺少该校验时，无主键表上一次单元格编辑可能静默改写多行；
@@ -416,9 +430,9 @@ func (m *MariaDB) ApplyChanges(tableName string, changes connection.ChangeSet) e
 		}
 
 		query := fmt.Sprintf("UPDATE `%s` SET %s WHERE %s", tableName, strings.Join(sets, ", "), strings.Join(wheres, " AND "))
-		res, err := tx.Exec(query, args...)
+		res, err := tx.ExecContext(ctx, query, args...)
 		if err != nil {
-			return fmt.Errorf("更新失败：%v", err)
+			return markWriteOutcomeUnknownIfAmbiguous(ctx, fmt.Errorf("更新失败：%w", err))
 		}
 		// 与 mysql_impl.go:1293 一致，避免一次编辑静默改写多行或 0 行命中仍提示成功。
 		if err := requireSingleRowAffected(res, rowMutationActionUpdate); err != nil {
@@ -426,6 +440,7 @@ func (m *MariaDB) ApplyChanges(tableName string, changes connection.ChangeSet) e
 		}
 	}
 
+	var unknownWriteErr error
 	if err := execParameterizedInsertBatches(parameterizedInsertConfig{
 		Table: fmt.Sprintf("`%s`", escapeMySQLBacktickIdent(tableName)),
 		Rows:  changes.Inserts,
@@ -437,15 +452,27 @@ func (m *MariaDB) ApplyChanges(tableName string, changes connection.ChangeSet) e
 			return normalizeMySQLComplexValue(normalizeMySQLDateTimeValue(value)), false
 		},
 		Exec: func(query string, args ...interface{}) (sql.Result, error) {
-			return tx.Exec(query, args...)
+			result, err := tx.ExecContext(ctx, query, args...)
+			err = markWriteOutcomeUnknownIfAmbiguous(ctx, err)
+			if IsWriteOutcomeUnknown(err) {
+				unknownWriteErr = err
+			}
+			return result, err
 		},
 		MaxRows: defaultMySQLInsertBatchSize,
 		MaxArgs: maxMySQLInsertBatchArgs,
 	}); err != nil {
+		if unknownWriteErr != nil {
+			return fmt.Errorf("%s: %w", err.Error(), unknownWriteErr)
+		}
 		return err
 	}
 
-	return tx.Commit()
+	if err := commitWriteTransaction(tx); err != nil {
+		return err
+	}
+	transactionCommitted = true
+	return nil
 }
 
 func (m *MariaDB) GetAllColumns(dbName string) ([]connection.ColumnDefinitionWithTable, error) {
