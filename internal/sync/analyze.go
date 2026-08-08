@@ -33,7 +33,13 @@ type SyncAnalyzeResult struct {
 
 func (s *SyncEngine) Analyze(config SyncConfig) SyncAnalyzeResult {
 	config = normalizeSyncConnectionDatabases(config)
+	config = normalizeMappedSyncTables(config)
 	result := SyncAnalyzeResult{Success: true, Tables: []TableDiffSummary{}}
+	if err := validateSyncMappings(config); err != nil {
+		result.Success = false
+		result.Message = err.Error()
+		return result
+	}
 	if isRedisToMongoKeyspacePair(config) {
 		return s.analyzeRedisToMongo(config)
 	}
@@ -42,6 +48,11 @@ func (s *SyncEngine) Analyze(config SyncConfig) SyncAnalyzeResult {
 	}
 	if hasSourceQuery(config) {
 		return s.analyzeSourceQuery(config)
+	}
+	if err := ValidateMigrationCapability(config); err != nil {
+		result.Success = false
+		result.Message = err.Error()
+		return result
 	}
 
 	contentRaw := strings.ToLower(strings.TrimSpace(config.Content))
@@ -113,6 +124,12 @@ func (s *SyncEngine) Analyze(config SyncConfig) SyncAnalyzeResult {
 				result.Tables = append(result.Tables, summary)
 				return
 			}
+			projection, err := projectionForSyncTable(config, tableName)
+			if err != nil {
+				summary.Message = err.Error()
+				result.Tables = append(result.Tables, summary)
+				return
+			}
 			summary.TargetTableExists = plan.TargetTableExists
 			summary.PlannedAction = plan.PlannedAction
 			summary.Warnings = append(summary.Warnings, plan.Warnings...)
@@ -141,11 +158,11 @@ func (s *SyncEngine) Analyze(config SyncConfig) SyncAnalyzeResult {
 			}
 
 			tableMode := normalizeSyncMode(config.Mode)
-			pkCols := make([]string, 0, 2)
-			for _, c := range cols {
-				if c.Key == "PRI" || c.Key == "PK" {
-					pkCols = append(pkCols, c.Name)
-				}
+			pkCols, err := syncKeyColumnsForTable(config, tableName, cols)
+			if err != nil {
+				summary.Message = err.Error()
+				result.Tables = append(result.Tables, summary)
+				return
 			}
 
 			sourceType := resolveMigrationDBType(config.SourceConfig)
@@ -194,10 +211,26 @@ func (s *SyncEngine) Analyze(config SyncConfig) SyncAnalyzeResult {
 				result.Tables = append(result.Tables, summary)
 				return
 			}
-			summary.PKColumn = pkCols[0]
+			sourcePKCol := pkCols[0]
+			comparisonPKCol := sourcePKCol
+			if hasExplicitSyncMappings(config) {
+				mappedPK, ok := projection.TargetColumn(sourcePKCol)
+				if !ok || strings.TrimSpace(mappedPK) == "" {
+					summary.Message = fmt.Sprintf("表 %s 的主键字段 %s 未映射到目标字段，无法执行差异分析", tableName, sourcePKCol)
+					result.Tables = append(result.Tables, summary)
+					return
+				}
+				comparisonPKCol = mappedPK
+			}
+			summary.PKColumn = comparisonPKCol
 
 			targetColSet := buildTargetColumnSet(targetCols)
-			handled, counts, scanErr := scanTableDiffInPages(sourceDB, targetDB, sourceType, targetType, plan, cols, targetCols, summary.PKColumn, targetColSet, true, nil)
+			handled := false
+			counts := pagedDiffCounts{}
+			var scanErr error
+			if !hasExplicitSyncMappings(config) {
+				handled, counts, scanErr = scanTableDiffInPages(sourceDB, targetDB, sourceType, targetType, plan, cols, targetCols, sourcePKCol, targetColSet, true, nil)
+			}
 			if handled {
 				if scanErr != nil {
 					summary.Message = scanErr.Error()
@@ -222,14 +255,22 @@ func (s *SyncEngine) Analyze(config SyncConfig) SyncAnalyzeResult {
 				result.Tables = append(result.Tables, summary)
 				return
 			}
-			targetRows, _, err := targetDB.Query(fmt.Sprintf("SELECT * FROM %s", quoteQualifiedIdentByType(config.TargetConfig.Type, plan.TargetQueryTable)))
+			if hasExplicitSyncMappings(config) {
+				sourceRows, err = projectSyncRows(projection, sourceRows)
+				if err != nil {
+					summary.Message = err.Error()
+					result.Tables = append(result.Tables, summary)
+					return
+				}
+			}
+			targetRows, _, err := targetDB.Query(fmt.Sprintf("SELECT * FROM %s", quoteQualifiedIdentByType(targetType, plan.TargetQueryTable)))
 			if err != nil {
 				summary.Message = localizedSyncBackendDetailText("data_sync.backend.error.read_target_table_failed", err)
 				result.Tables = append(result.Tables, summary)
 				return
 			}
 
-			pkCol := summary.PKColumn
+			pkCol := comparisonPKCol
 			targetMap := make(map[string]map[string]interface{}, len(targetRows))
 			for _, row := range targetRows {
 				if row[pkCol] == nil {

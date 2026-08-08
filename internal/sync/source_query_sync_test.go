@@ -135,7 +135,6 @@ func assertNoLegacySourceQueryChinese(t *testing.T, text string) {
 	}
 }
 
-
 func TestSourceQuerySyncCatalogKeysExist(t *testing.T) {
 	catalogs, err := i18n.LoadCatalogs()
 	if err != nil {
@@ -1160,6 +1159,235 @@ func TestRunSync_BatchesLargeTableChanges(t *testing.T) {
 		if got := len(targetDB.appliedBatches[idx].Inserts); got != want {
 			t.Fatalf("batch %d inserts=%d, want %d", idx+1, got, want)
 		}
+	}
+}
+
+func TestRunSync_UsesConfiguredBatchSizeForSnapshotReadAndApply(t *testing.T) {
+	sourceRows := []map[string]interface{}{
+		{"id": 1, "name": "one"},
+		{"id": 2, "name": "two"},
+		{"id": 3, "name": "three"},
+		{"id": 4, "name": "four"},
+		{"id": 5, "name": "five"},
+	}
+	columns := []connection.ColumnDefinition{
+		{Name: "id", Type: "bigint", Nullable: "NO", Key: "PRI"},
+		{Name: "name", Type: "varchar(64)", Nullable: "YES"},
+	}
+	sourceDB := &fakeMigrationDB{
+		columns: map[string][]connection.ColumnDefinition{"app.events": columns},
+		queryData: map[string][]map[string]interface{}{
+			"SELECT `id`, `name` FROM `app`.`events` ORDER BY `id` ASC LIMIT 2 OFFSET 0": sourceRows[:2],
+			"SELECT `id`, `name` FROM `app`.`events` ORDER BY `id` ASC LIMIT 2 OFFSET 2": sourceRows[2:4],
+			"SELECT `id`, `name` FROM `app`.`events` ORDER BY `id` ASC LIMIT 2 OFFSET 4": sourceRows[4:],
+		},
+	}
+	targetDB := &fakeQuerySyncTargetDB{fakeMigrationDB: fakeMigrationDB{columns: map[string][]connection.ColumnDefinition{"app.events": columns}}}
+	useSyncDatabaseFactorySequence(t,
+		syncDatabaseFactoryStep{db: sourceDB},
+		syncDatabaseFactoryStep{db: targetDB},
+	)
+
+	result := NewSyncEngine(Reporter{}).RunSync(SyncConfig{
+		SourceConfig: connection.ConnectionConfig{Type: "mysql", Database: "app"},
+		TargetConfig: connection.ConnectionConfig{Type: "mysql", Database: "app"},
+		Tables:       []string{"events"},
+		Mode:         "insert_only",
+		BatchSize:    2,
+	})
+	if !result.Success || result.RowsInserted != 5 {
+		t.Fatalf("RunSync() = %+v, want five inserts", result)
+	}
+	if len(targetDB.appliedBatches) != 3 {
+		t.Fatalf("applied batches = %#v, want three configured batches", targetDB.appliedBatches)
+	}
+	for index, want := range []int{2, 2, 1} {
+		if got := len(targetDB.appliedBatches[index].Inserts); got != want {
+			t.Fatalf("batch %d size = %d, want %d", index+1, got, want)
+		}
+	}
+}
+
+func TestRunSync_RejectsInvalidBatchSizeBeforeConnect(t *testing.T) {
+	oldFactory := newSyncDatabase
+	factoryCalls := 0
+	newSyncDatabase = func(string) (db.Database, error) {
+		factoryCalls++
+		return nil, fmt.Errorf("must not connect")
+	}
+	t.Cleanup(func() { newSyncDatabase = oldFactory })
+
+	result := NewSyncEngine(Reporter{}).RunSync(SyncConfig{
+		SourceConfig: connection.ConnectionConfig{Type: "mysql", Database: "app"},
+		TargetConfig: connection.ConnectionConfig{Type: "mysql", Database: "app"},
+		Tables:       []string{"events"},
+		Mode:         "insert_only",
+		BatchSize:    maxSyncBatchSize + 1,
+	})
+	if result.Success || !strings.Contains(result.Message, "不能超过 10000") {
+		t.Fatalf("RunSync() = %+v, want batch-size rejection", result)
+	}
+	if factoryCalls != 0 {
+		t.Fatalf("invalid batch opened %d connections", factoryCalls)
+	}
+}
+
+func TestRunSync_SourceQueryAppliesSingleExplicitProjectionMapping(t *testing.T) {
+	const sourceSQL = "SELECT external_id, raw_name, amount FROM active_accounts"
+	sourceDB := &fakeMigrationDB{queryData: map[string][]map[string]interface{}{
+		sourceSQL: {{
+			"external_id": "7",
+			"raw_name":    "  alice  ",
+			"amount":      "9223372036854775808.125",
+		}},
+	}}
+	targetColumns := []connection.ColumnDefinition{
+		{Name: "user_id", Type: "bigint", Nullable: "NO", Key: "PRI"},
+		{Name: "display_name", Type: "varchar(100)"},
+		{Name: "amount_exact", Type: "decimal(30,3)"},
+		{Name: "status", Type: "varchar(20)"},
+	}
+	targetDB := &fakeQuerySyncTargetDB{fakeMigrationDB: fakeMigrationDB{
+		columns: map[string][]connection.ColumnDefinition{"app.people": targetColumns},
+		queryData: map[string][]map[string]interface{}{
+			"SELECT * FROM `app`.`people`": {{
+				"user_id": int64(7), "display_name": "OLD", "amount_exact": "0", "status": "inactive",
+			}},
+		},
+	}}
+	useSyncDatabaseFactorySequence(t,
+		syncDatabaseFactoryStep{db: sourceDB},
+		syncDatabaseFactoryStep{db: targetDB},
+	)
+
+	result := NewSyncEngine(Reporter{}).RunSync(SyncConfig{
+		SourceConfig: connection.ConnectionConfig{Type: "mysql", Database: "src"},
+		TargetConfig: connection.ConnectionConfig{Type: "mysql", Database: "app"},
+		Tables:       []string{"people"},
+		SourceQuery:  sourceSQL,
+		Content:      "data",
+		Mode:         "insert_update",
+		Mappings: []SyncObjectMapping{{
+			ID:         "active-query-to-people",
+			Source:     SyncObjectRef{Name: "active_query"},
+			Target:     SyncObjectRef{Schema: "app", Name: "people"},
+			KeyColumns: []string{"external_id"},
+			Columns: []SyncColumnMapping{
+				{Source: "external_id", Target: "user_id", Transforms: []SyncValueTransform{{Type: "int64"}}},
+				{Source: "raw_name", Target: "display_name", Transforms: []SyncValueTransform{{Type: "trim"}, {Type: "upper"}}},
+				{Source: "amount", Target: "amount_exact", Transforms: []SyncValueTransform{{Type: "decimal-safe"}}},
+				{Target: "status", Default: &SyncDefaultValue{ValueType: "string", Value: "active"}},
+			},
+		}},
+	})
+	if !result.Success || result.RowsInserted != 0 || result.RowsUpdated != 1 {
+		t.Fatalf("RunSync() = %+v, want mapped source-query update", result)
+	}
+	if len(targetDB.appliedBatches) != 1 || len(targetDB.appliedBatches[0].Updates) != 1 {
+		t.Fatalf("mapped source-query batches = %#v", targetDB.appliedBatches)
+	}
+	update := targetDB.appliedBatches[0].Updates[0]
+	if update.Keys["user_id"] != int64(7) || update.Values["display_name"] != "ALICE" || fmt.Sprint(update.Values["amount_exact"]) != "9223372036854775808.125" || update.Values["status"] != "active" {
+		t.Fatalf("mapped source-query update = %#v", update)
+	}
+	if len(sourceDB.queryLog) != 1 || sourceDB.queryLog[0] != sourceSQL {
+		t.Fatalf("mapped source query must fail closed to full execution, queries=%#v", sourceDB.queryLog)
+	}
+}
+
+func TestRunSync_SourceQueryMappingProjectionErrorDoesNotLeakPayload(t *testing.T) {
+	const sourceSQL = "SELECT external_id FROM active_accounts"
+	sourceDB := &fakeMigrationDB{queryData: map[string][]map[string]interface{}{
+		sourceSQL: {{"external_id": "customer-password-raw"}},
+	}}
+	targetDB := &fakeQuerySyncTargetDB{fakeMigrationDB: fakeMigrationDB{columns: map[string][]connection.ColumnDefinition{
+		"app.people": {{Name: "user_id", Type: "bigint", Nullable: "NO", Key: "PRI"}},
+	}}}
+	useSyncDatabaseFactorySequence(t,
+		syncDatabaseFactoryStep{db: sourceDB},
+		syncDatabaseFactoryStep{db: targetDB},
+	)
+
+	result := NewSyncEngine(Reporter{}).RunSync(SyncConfig{
+		SourceConfig: connection.ConnectionConfig{Type: "mysql", Database: "src"},
+		TargetConfig: connection.ConnectionConfig{Type: "mysql", Database: "app"},
+		SourceQuery:  sourceSQL,
+		Content:      "data",
+		Mode:         "insert_update",
+		Mappings: []SyncObjectMapping{{
+			Source:     SyncObjectRef{Name: "active_query"},
+			Target:     SyncObjectRef{Schema: "app", Name: "people"},
+			KeyColumns: []string{"external_id"},
+			Columns: []SyncColumnMapping{{
+				Source: "external_id", Target: "user_id", Transforms: []SyncValueTransform{{Type: "int64"}},
+			}},
+		}},
+	})
+	if result.Success || !strings.Contains(result.Message, "字段投影失败") {
+		t.Fatalf("RunSync() = %+v, want projection failure", result)
+	}
+	if strings.Contains(result.Message, "customer-password-raw") || strings.Contains(strings.Join(result.Logs, " "), "customer-password-raw") {
+		t.Fatalf("projection payload leaked: result=%+v", result)
+	}
+}
+
+func TestRunSync_SourceQueryMappingRejectsKeyThatDoesNotMatchTargetPK(t *testing.T) {
+	sourceDB := &fakeMigrationDB{}
+	targetDB := &fakeQuerySyncTargetDB{fakeMigrationDB: fakeMigrationDB{columns: map[string][]connection.ColumnDefinition{
+		"app.people": {
+			{Name: "user_id", Type: "bigint", Nullable: "NO", Key: "PRI"},
+			{Name: "external_code", Type: "varchar(50)", Nullable: "NO"},
+		},
+	}}}
+	useSyncDatabaseFactorySequence(t,
+		syncDatabaseFactoryStep{db: sourceDB},
+		syncDatabaseFactoryStep{db: targetDB},
+	)
+	result := NewSyncEngine(Reporter{}).RunSync(SyncConfig{
+		SourceConfig: connection.ConnectionConfig{Type: "mysql", Database: "src"},
+		TargetConfig: connection.ConnectionConfig{Type: "mysql", Database: "app"},
+		SourceQuery:  "SELECT external_id FROM active_accounts",
+		Content:      "data",
+		Mode:         "insert_update",
+		Mappings: []SyncObjectMapping{{
+			Source:     SyncObjectRef{Name: "active_query"},
+			Target:     SyncObjectRef{Schema: "app", Name: "people"},
+			KeyColumns: []string{"external_id"},
+			Columns:    []SyncColumnMapping{{Source: "external_id", Target: "external_code"}},
+		}},
+	})
+	if result.Success || !strings.Contains(result.Message, "必须与目标表主键 user_id 一致") {
+		t.Fatalf("RunSync() = %+v, want mapped-key rejection", result)
+	}
+	if len(sourceDB.queryLog) != 0 {
+		t.Fatalf("invalid mapped key executed source query: %#v", sourceDB.queryLog)
+	}
+}
+
+func TestRunSync_SourceQueryRejectsMultipleMappingsBeforeConnect(t *testing.T) {
+	oldFactory := newSyncDatabase
+	factoryCalls := 0
+	newSyncDatabase = func(string) (db.Database, error) {
+		factoryCalls++
+		return nil, fmt.Errorf("must not connect")
+	}
+	t.Cleanup(func() { newSyncDatabase = oldFactory })
+	result := NewSyncEngine(Reporter{}).RunSync(SyncConfig{
+		SourceConfig: connection.ConnectionConfig{Type: "mysql", Database: "src"},
+		TargetConfig: connection.ConnectionConfig{Type: "mysql", Database: "app"},
+		SourceQuery:  "SELECT id FROM active_accounts",
+		Content:      "data",
+		Mode:         "insert_only",
+		Mappings: []SyncObjectMapping{
+			{Source: SyncObjectRef{Name: "query_a"}, Target: SyncObjectRef{Name: "people"}, Columns: []SyncColumnMapping{{Source: "id", Target: "id"}}},
+			{Source: SyncObjectRef{Name: "query_b"}, Target: SyncObjectRef{Name: "archive"}, Columns: []SyncColumnMapping{{Source: "id", Target: "id"}}},
+		},
+	})
+	if result.Success || !strings.Contains(result.Message, "恰好一个对象映射") {
+		t.Fatalf("RunSync() = %+v, want multiple-mapping rejection", result)
+	}
+	if factoryCalls != 0 {
+		t.Fatalf("invalid mapping opened %d connections", factoryCalls)
 	}
 }
 

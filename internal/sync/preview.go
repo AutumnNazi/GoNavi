@@ -34,11 +34,15 @@ type TableDiffPreview struct {
 
 func (s *SyncEngine) Preview(config SyncConfig, tableName string, limit int) (TableDiffPreview, error) {
 	config = normalizeSyncConnectionDatabases(config)
+	config = normalizeMappedSyncTables(config)
 	if limit <= 0 {
 		limit = 200
 	}
 	if limit > 500 {
 		limit = 500
+	}
+	if err := validateSyncMappings(config); err != nil {
+		return TableDiffPreview{}, err
 	}
 	if isRedisToMongoKeyspacePair(config) {
 		return s.previewRedisToMongo(config, tableName, limit)
@@ -48,6 +52,9 @@ func (s *SyncEngine) Preview(config SyncConfig, tableName string, limit int) (Ta
 	}
 	if hasSourceQuery(config) {
 		return s.previewSourceQuery(config, limit)
+	}
+	if err := ValidateMigrationCapability(config); err != nil {
+		return TableDiffPreview{}, err
 	}
 
 	sourceDB, err := newSyncDatabase(config.SourceConfig.Type)
@@ -69,12 +76,16 @@ func (s *SyncEngine) Preview(config SyncConfig, tableName string, limit int) (Ta
 	}
 	defer targetDB.Close()
 
-	plan, cols, _, err := buildSchemaMigrationPlan(config, tableName, sourceDB, targetDB)
+	plan, cols, targetCols, err := buildSchemaMigrationPlan(config, tableName, sourceDB, targetDB)
 	if err != nil {
 		return TableDiffPreview{}, err
 	}
 	if !plan.TargetTableExists && !plan.AutoCreate {
 		return TableDiffPreview{}, syncTextError("data_sync.plan.target_missing_preview_unavailable", nil)
+	}
+	projection, err := projectionForSyncTable(config, tableName)
+	if err != nil {
+		return TableDiffPreview{}, err
 	}
 	schemaStatements := make([]string, 0, len(plan.PreDataSQL)+len(plan.PostDataSQL))
 	schemaStatements = append(schemaStatements, plan.PreDataSQL...)
@@ -90,11 +101,9 @@ func (s *SyncEngine) Preview(config SyncConfig, tableName string, limit int) (Ta
 		}, nil
 	}
 
-	pkCols := make([]string, 0, 2)
-	for _, c := range cols {
-		if c.Key == "PRI" || c.Key == "PK" {
-			pkCols = append(pkCols, c.Name)
-		}
+	pkCols, err := syncKeyColumnsForTable(config, tableName, cols)
+	if err != nil {
+		return TableDiffPreview{}, err
 	}
 	if len(pkCols) == 0 {
 		return TableDiffPreview{}, syncTextError("data_sync.backend.error.preview_pk_required", nil)
@@ -104,7 +113,15 @@ func (s *SyncEngine) Preview(config SyncConfig, tableName string, limit int) (Ta
 			"columns": strings.Join(pkCols, ","),
 		})
 	}
-	pkCol := pkCols[0]
+	sourcePKCol := pkCols[0]
+	pkCol := sourcePKCol
+	if hasExplicitSyncMappings(config) {
+		mappedPK, ok := projection.TargetColumn(sourcePKCol)
+		if !ok || strings.TrimSpace(mappedPK) == "" {
+			return TableDiffPreview{}, fmt.Errorf("表 %s 的主键字段 %s 未映射到目标字段，无法生成差异预览", tableName, sourcePKCol)
+		}
+		pkCol = mappedPK
+	}
 
 	sourceType := resolveMigrationDBType(config.SourceConfig)
 	targetType := resolveMigrationDBType(config.TargetConfig)
@@ -122,7 +139,11 @@ func (s *SyncEngine) Preview(config SyncConfig, tableName string, limit int) (Ta
 		Updates:          make([]PreviewUpdateRow, 0),
 		Deletes:          make([]PreviewRow, 0),
 	}
-	for _, col := range cols {
+	columnTypes := cols
+	if hasExplicitSyncMappings(config) {
+		columnTypes = targetCols
+	}
+	for _, col := range columnTypes {
 		name := strings.ToLower(strings.TrimSpace(col.Name))
 		typ := strings.TrimSpace(col.Type)
 		if name == "" || typ == "" {
@@ -134,9 +155,12 @@ func (s *SyncEngine) Preview(config SyncConfig, tableName string, limit int) (Ta
 	tableMode := normalizeSyncMode(config.Mode)
 	targetColSet := map[string]struct{}{}
 	if plan.TargetTableExists {
-		targetCols, err := targetDB.GetColumns(plan.TargetSchema, plan.TargetTable)
+		resolvedTargetCols := targetCols
+		if len(resolvedTargetCols) == 0 {
+			resolvedTargetCols, err = targetDB.GetColumns(plan.TargetSchema, plan.TargetTable)
+		}
 		if err == nil {
-			targetColSet = buildTargetColumnSet(targetCols)
+			targetColSet = buildTargetColumnSet(resolvedTargetCols)
 		}
 	}
 
@@ -145,13 +169,19 @@ func (s *SyncEngine) Preview(config SyncConfig, tableName string, limit int) (Ta
 		if err != nil {
 			return TableDiffPreview{}, fmt.Errorf("读取源表数量失败: %w", err)
 		}
-		query := buildPagedSourceTableQuery(sourceType, plan.SourceQueryTable, cols, pkCol, limit, 0)
+		query := buildPagedSourceTableQuery(sourceType, plan.SourceQueryTable, cols, sourcePKCol, limit, 0)
 		if strings.TrimSpace(query) == "" {
 			return TableDiffPreview{}, fmt.Errorf("当前数据源不支持分页预览")
 		}
 		sourceRows, _, err := sourceDB.Query(query)
 		if err != nil {
 			return TableDiffPreview{}, fmt.Errorf("读取源表失败: %w", err)
+		}
+		if hasExplicitSyncMappings(config) {
+			sourceRows, err = projectSyncRows(projection, sourceRows)
+			if err != nil {
+				return TableDiffPreview{}, err
+			}
 		}
 		if !counted {
 			sourceCount = len(sourceRows)
@@ -170,48 +200,51 @@ func (s *SyncEngine) Preview(config SyncConfig, tableName string, limit int) (Ta
 		return out, nil
 	}
 
-	handled, _, err := scanTableDiffInPages(sourceDB, targetDB, sourceType, targetType, plan, cols, nil, pkCol, targetColSet, true, func(page pagedDiffPage) error {
-		out.TotalInserts += len(page.Inserts)
-		out.TotalUpdates += len(page.Updates)
-		out.TotalDeletes += len(page.Deletes)
+	handled := false
+	if !hasExplicitSyncMappings(config) {
+		handled, _, err = scanTableDiffInPages(sourceDB, targetDB, sourceType, targetType, plan, cols, nil, sourcePKCol, targetColSet, true, func(page pagedDiffPage) error {
+			out.TotalInserts += len(page.Inserts)
+			out.TotalUpdates += len(page.Updates)
+			out.TotalDeletes += len(page.Deletes)
 
-		for _, row := range page.Inserts {
-			if len(out.Inserts) >= limit {
-				break
+			for _, row := range page.Inserts {
+				if len(out.Inserts) >= limit {
+					break
+				}
+				pkVal := strings.TrimSpace(fmt.Sprintf("%v", row[pkCol]))
+				if pkVal == "" || pkVal == "<nil>" {
+					continue
+				}
+				out.Inserts = append(out.Inserts, PreviewRow{PK: pkVal, Row: row})
 			}
-			pkVal := strings.TrimSpace(fmt.Sprintf("%v", row[pkCol]))
-			if pkVal == "" || pkVal == "<nil>" {
-				continue
+			for _, update := range page.Updates {
+				if len(out.Updates) >= limit {
+					break
+				}
+				pkVal := strings.TrimSpace(fmt.Sprintf("%v", update.UpdateRow.Keys[pkCol]))
+				if pkVal == "" || pkVal == "<nil>" {
+					continue
+				}
+				out.Updates = append(out.Updates, PreviewUpdateRow{
+					PK:             pkVal,
+					ChangedColumns: append([]string(nil), update.ChangedColumns...),
+					Source:         update.Source,
+					Target:         update.Target,
+				})
 			}
-			out.Inserts = append(out.Inserts, PreviewRow{PK: pkVal, Row: row})
-		}
-		for _, update := range page.Updates {
-			if len(out.Updates) >= limit {
-				break
+			for _, row := range page.Deletes {
+				if len(out.Deletes) >= limit {
+					break
+				}
+				pkVal := strings.TrimSpace(fmt.Sprintf("%v", row[pkCol]))
+				if pkVal == "" || pkVal == "<nil>" {
+					continue
+				}
+				out.Deletes = append(out.Deletes, PreviewRow{PK: pkVal, Row: row})
 			}
-			pkVal := strings.TrimSpace(fmt.Sprintf("%v", update.UpdateRow.Keys[pkCol]))
-			if pkVal == "" || pkVal == "<nil>" {
-				continue
-			}
-			out.Updates = append(out.Updates, PreviewUpdateRow{
-				PK:             pkVal,
-				ChangedColumns: append([]string(nil), update.ChangedColumns...),
-				Source:         update.Source,
-				Target:         update.Target,
-			})
-		}
-		for _, row := range page.Deletes {
-			if len(out.Deletes) >= limit {
-				break
-			}
-			pkVal := strings.TrimSpace(fmt.Sprintf("%v", row[pkCol]))
-			if pkVal == "" || pkVal == "<nil>" {
-				continue
-			}
-			out.Deletes = append(out.Deletes, PreviewRow{PK: pkVal, Row: row})
-		}
-		return nil
-	})
+			return nil
+		})
+	}
 	if handled {
 		if err != nil {
 			return TableDiffPreview{}, err
@@ -222,6 +255,12 @@ func (s *SyncEngine) Preview(config SyncConfig, tableName string, limit int) (Ta
 	sourceRows, _, err := sourceDB.Query(fmt.Sprintf("SELECT * FROM %s", quoteQualifiedIdentByType(sourceType, plan.SourceQueryTable)))
 	if err != nil {
 		return TableDiffPreview{}, fmt.Errorf("读取源表失败: %w", err)
+	}
+	if hasExplicitSyncMappings(config) {
+		sourceRows, err = projectSyncRows(projection, sourceRows)
+		if err != nil {
+			return TableDiffPreview{}, err
+		}
 	}
 
 	targetRows := make([]map[string]interface{}, 0)
