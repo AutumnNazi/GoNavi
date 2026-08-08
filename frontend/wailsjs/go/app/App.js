@@ -26,6 +26,10 @@ export function CancelApplicationQuit() {
   return window['go']['app']['App']['CancelApplicationQuit']();
 }
 
+export function CancelImportJob(arg1) {
+  return window['go']['app']['App']['CancelImportJob'](arg1);
+}
+
 export function CancelQuery(arg1) {
   return window['go']['app']['App']['CancelQuery'](arg1);
 }
@@ -214,6 +218,10 @@ export function DBTableExists(arg1, arg2, arg3) {
   return window['go']['app']['App']['DBTableExists'](arg1, arg2, arg3);
 }
 
+export function DataImportCapability(arg1) {
+  return window['go']['app']['App']['DataImportCapability'](arg1);
+}
+
 export function DataSync(arg1) {
   return window['go']['app']['App']['DataSync'](arg1);
 }
@@ -342,6 +350,10 @@ export function DeleteConnection(arg1) {
   return window['go']['app']['App']['DeleteConnection'](arg1);
 }
 
+export function DeleteImportJob(arg1) {
+  return window['go']['app']['App']['DeleteImportJob'](arg1);
+}
+
 export function DeleteQuery(arg1) {
   return window['go']['app']['App']['DeleteQuery'](arg1);
 }
@@ -434,6 +446,10 @@ export function ExportDatabasesSQLWithOptions(arg1, arg2, arg3, arg4) {
   return window['go']['app']['App']['ExportDatabasesSQLWithOptions'](arg1, arg2, arg3, arg4);
 }
 
+export function ExportImportErrorRows(arg1) {
+  return window['go']['app']['App']['ExportImportErrorRows'](arg1);
+}
+
 export function ExportQuery(arg1, arg2, arg3, arg4, arg5) {
   return window['go']['app']['App']['ExportQuery'](arg1, arg2, arg3, arg4, arg5);
 }
@@ -514,6 +530,10 @@ export function GetGlobalProxyConfig() {
   return window['go']['app']['App']['GetGlobalProxyConfig']();
 }
 
+export function GetImportJob(arg1) {
+  return window['go']['app']['App']['GetImportJob'](arg1);
+}
+
 export function GetSQLAuditEvents(arg1) {
   return window['go']['app']['App']['GetSQLAuditEvents'](arg1);
 }
@@ -574,8 +594,8 @@ export function ImportDataWithProgressOptions(arg1, arg2, arg3, arg4, arg5) {
   return window['go']['app']['App']['ImportDataWithProgressOptions'](arg1, arg2, arg3, arg4, arg5);
 }
 
-export function ImportDatabaseSQL(arg1, arg2, arg3, arg4) {
-  return window['go']['app']['App']['ImportDatabaseSQL'](arg1, arg2, arg3, arg4);
+export function ImportDatabaseSQL(arg1, arg2, arg3, arg4, arg5) {
+  return window['go']['app']['App']['ImportDatabaseSQL'](arg1, arg2, arg3, arg4, arg5);
 }
 
 export function ImportLegacyConnections(arg1) {
@@ -664,6 +684,10 @@ export function ListDatabaseCharsets(arg1) {
 
 export function ListDatabaseCollations(arg1) {
   return window['go']['app']['App']['ListDatabaseCollations'](arg1);
+}
+
+export function ListImportJobs() {
+  return window['go']['app']['App']['ListImportJobs']();
 }
 
 export function ListInstalledFontFamilies() {
@@ -868,6 +892,10 @@ export function PreviewChanges(arg1, arg2, arg3, arg4) {
 
 export function PreviewImportFile(arg1) {
   return window['go']['app']['App']['PreviewImportFile'](arg1);
+}
+
+export function PreviewImportFileWithOptions(arg1, arg2) {
+  return window['go']['app']['App']['PreviewImportFileWithOptions'](arg1, arg2);
 }
 
 export function ReadAppLogTail(arg1, arg2) {

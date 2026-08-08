@@ -21,6 +21,8 @@ export function BuildSQLAuditExport(arg1:sqlaudit.Filter,arg2:string):Promise<co
 
 export function CancelApplicationQuit():Promise<connection.QueryResult>;
 
+export function CancelImportJob(arg1:string):Promise<connection.QueryResult>;
+
 export function CancelQuery(arg1:string):Promise<connection.QueryResult>;
 
 export function CancelSQLFileExecution(arg1:string):Promise<connection.QueryResult>;
@@ -115,6 +117,8 @@ export function DBShowCreateTable(arg1:connection.ConnectionConfig,arg2:string,a
 
 export function DBTableExists(arg1:connection.ConnectionConfig,arg2:string,arg3:string):Promise<connection.QueryResult>;
 
+export function DataImportCapability(arg1:connection.ConnectionConfig):Promise<app.DataImportCapability>;
+
 export function DataSync(arg1:sync.SyncConfig):Promise<sync.SyncResult>;
 
 export function DataSyncAnalyze(arg1:sync.SyncConfig):Promise<connection.QueryResult>;
@@ -179,6 +183,8 @@ export function DataSyncSchedulePreview(arg1:syncjob.JobDefinition,arg2:number):
 
 export function DeleteConnection(arg1:string):Promise<void>;
 
+export function DeleteImportJob(arg1:string):Promise<connection.QueryResult>;
+
 export function DeleteQuery(arg1:string):Promise<void>;
 
 export function DeleteSQLDirectory(arg1:string):Promise<connection.QueryResult>;
@@ -225,6 +231,8 @@ export function ExportDatabaseSQLWithOptions(arg1:connection.ConnectionConfig,ar
 
 export function ExportDatabasesSQLWithOptions(arg1:connection.ConnectionConfig,arg2:Array<string>,arg3:boolean,arg4:app.ExportFileOptions):Promise<connection.QueryResult>;
 
+export function ExportImportErrorRows(arg1:string):Promise<connection.QueryResult>;
+
 export function ExportQuery(arg1:connection.ConnectionConfig,arg2:string,arg3:string,arg4:string,arg5:string):Promise<connection.QueryResult>;
 
 export function ExportQueryWithOptions(arg1:connection.ConnectionConfig,arg2:string,arg3:string,arg4:string,arg5:app.ExportFileOptions):Promise<connection.QueryResult>;
@@ -265,6 +273,8 @@ export function GetEditableSavedConnection(arg1:string):Promise<connection.Saved
 
 export function GetGlobalProxyConfig():Promise<connection.QueryResult>;
 
+export function GetImportJob(arg1:string):Promise<connection.QueryResult>;
+
 export function GetSQLAuditEvents(arg1:sqlaudit.Filter):Promise<connection.QueryResult>;
 
 export function GetSQLAuditHealth():Promise<connection.QueryResult>;
@@ -295,7 +305,7 @@ export function ImportDataWithProgress(arg1:connection.ConnectionConfig,arg2:str
 
 export function ImportDataWithProgressOptions(arg1:connection.ConnectionConfig,arg2:string,arg3:string,arg4:string,arg5:app.ImportFileOptions):Promise<connection.QueryResult>;
 
-export function ImportDatabaseSQL(arg1:connection.ConnectionConfig,arg2:string,arg3:string,arg4:string):Promise<connection.QueryResult>;
+export function ImportDatabaseSQL(arg1:connection.ConnectionConfig,arg2:string,arg3:string,arg4:string,arg5:boolean):Promise<connection.QueryResult>;
 
 export function ImportLegacyConnections(arg1:Array<connection.SavedConnectionInput>):Promise<Array<connection.SavedConnectionView>>;
 
@@ -340,6 +350,8 @@ export function JVMStopMonitoring(arg1:connection.ConnectionConfig,arg2:string):
 export function ListDatabaseCharsets(arg1:connection.ConnectionConfig):Promise<connection.QueryResult>;
 
 export function ListDatabaseCollations(arg1:connection.ConnectionConfig):Promise<connection.QueryResult>;
+
+export function ListImportJobs():Promise<connection.QueryResult>;
 
 export function ListInstalledFontFamilies():Promise<connection.QueryResult>;
 
@@ -442,6 +454,8 @@ export function OpenSavedQueryDirectory():Promise<connection.QueryResult>;
 export function PreviewChanges(arg1:connection.ConnectionConfig,arg2:string,arg3:string,arg4:connection.ChangeSet):Promise<connection.QueryResult>;
 
 export function PreviewImportFile(arg1:string):Promise<connection.QueryResult>;
+
+export function PreviewImportFileWithOptions(arg1:string,arg2:app.ImportFileOptions):Promise<connection.QueryResult>;
 
 export function ReadAppLogTail(arg1:number,arg2:string):Promise<connection.QueryResult>;
 
