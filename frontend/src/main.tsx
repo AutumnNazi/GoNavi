@@ -433,6 +433,23 @@ if (
                 GetTableColumns: async () => [],
                 DBGetDatabases: async () => ({ success: true, data: ['missav_bot'] }),
                 DBGetTables: async () => ({ success: true, data: cloneBrowserMockValue(mockQueryTables) }),
+                DataSyncCapability: async (sourceConfig: any, targetConfig: any) => {
+                    const sourceType = String(sourceConfig?.type || sourceConfig?.driver || '').trim().toLowerCase();
+                    const targetType = String(targetConfig?.type || targetConfig?.driver || '').trim().toLowerCase();
+                    const canExecute = sourceType !== '' && targetType !== '';
+                    return {
+                        sourceType,
+                        targetType,
+                        sourceModel: 'custom',
+                        targetModel: 'custom',
+                        planner: canExecute ? 'browser-mock-existing-target' : '',
+                        supportLevel: canExecute ? 'partial' : 'unsupported',
+                        canExecute,
+                        supportsAutoCreate: false,
+                        supportsAutoAddColumns: false,
+                        requiresExistingTarget: true,
+                    };
+                },
                 DBGetAllColumns: async () => ({ success: true, data: cloneBrowserMockValue(mockQueryColumns) }),
                 DBGetDatabaseForeignKeys: async () => ({ success: true, data: {} }),
                 DBGetColumns: async (_config: any, _dbName: string, tableName: string) => ({

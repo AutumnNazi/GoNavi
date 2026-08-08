@@ -31,6 +31,7 @@ import {
   DBGetTables,
   DataSync,
   DataSyncAnalyze,
+  DataSyncCapability,
   DataSyncPreview,
 } from "../../wailsjs/go/app/App";
 import { SavedConnection } from "../types";
@@ -76,6 +77,11 @@ import {
   startDataSyncBackgroundTask,
   useDataSyncBackgroundTask,
 } from "./dataSyncBackgroundTask";
+import {
+  resolveDataSyncCapabilityPresentation,
+  type DataSyncCapabilitySnapshot,
+} from "./dataSyncCapability";
+import { resolveDataSyncDatabaseSelection } from "./dataSyncDatabaseSelection";
 const { Title, Text } = Typography;
 const { Step } = Steps;
 const { Option } = Select;
@@ -413,6 +419,11 @@ const DataSyncModal: React.FC<{
   const [targetSchema, setTargetSchema] = useState<string>("");
   const [targetSchemaLoading, setTargetSchemaLoading] =
     useState<boolean>(false);
+  const [migrationCapability, setMigrationCapability] =
+    useState<DataSyncCapabilitySnapshot | null>(null);
+  const [migrationCapabilityStatus, setMigrationCapabilityStatus] = useState<
+    "idle" | "loading" | "ready" | "error"
+  >("idle");
 
   // Step 2: Tables
   const [allTables, setAllTables] = useState<string[]>([]);
@@ -713,17 +724,22 @@ const DataSyncModal: React.FC<{
       return;
     }
     if (workflowType === "migration") {
+      const supportsAutoCreate = migrationCapability?.supportsAutoCreate === true;
       if (syncMode === "insert_update") {
         setSyncMode("insert_only");
       }
       if (syncContent === "schema") {
         setSyncContent("both");
       }
-      if (targetTableStrategy === "existing_only") {
+      if (supportsAutoCreate && targetTableStrategy === "existing_only") {
         setTargetTableStrategy("smart");
+      } else if (!supportsAutoCreate && targetTableStrategy !== "existing_only") {
+        setTargetTableStrategy("existing_only");
       }
-      if (!createIndexes) {
+      if (supportsAutoCreate && !createIndexes) {
         setCreateIndexes(true);
+      } else if (!supportsAutoCreate && createIndexes) {
+        setCreateIndexes(false);
       }
     } else {
       if (targetTableStrategy !== "existing_only") {
@@ -742,6 +758,7 @@ const DataSyncModal: React.FC<{
     syncMode,
     targetTableStrategy,
     createIndexes,
+    migrationCapability?.supportsAutoCreate,
   ]);
 
   useEffect(() => {
@@ -749,6 +766,12 @@ const DataSyncModal: React.FC<{
       setAutoAddColumns(false);
     }
   }, [syncContent, autoAddColumns]);
+
+  useEffect(() => {
+    if (migrationCapability?.supportsAutoAddColumns === false && autoAddColumns) {
+      setAutoAddColumns(false);
+    }
+  }, [migrationCapability?.supportsAutoAddColumns, autoAddColumns]);
 
   useEffect(() => {
     if (sourceDatasetMode !== "query") return;
@@ -794,18 +817,17 @@ const DataSyncModal: React.FC<{
       try {
         const res = await DBGetDatabases(normalizeConnConfig(conn) as any);
         if (requestSeq !== sourceDatabaseRequestSeqRef.current) return;
-        if (res.success) {
-          const dbRows = Array.isArray(res.data) ? res.data : [];
-          setSourceDbs(
-            dbRows
-              .map((r: any) => r?.Database || r?.database || r?.username)
-              .filter(
-                (name: any) => typeof name === "string" && name.trim() !== "",
-              ),
-          );
-        }
+        const selection = resolveDataSyncDatabaseSelection(
+          conn.config,
+          res.success && Array.isArray(res.data) ? res.data : [],
+        );
+        setSourceDbs(selection.options);
+        setSourceDb(selection.preferred);
       } catch (e: any) {
         if (requestSeq !== sourceDatabaseRequestSeqRef.current) return;
+        const selection = resolveDataSyncDatabaseSelection(conn.config, []);
+        setSourceDbs(selection.options);
+        setSourceDb(selection.preferred);
         message.error(
           tr("data_sync.message.fetch_source_databases_failed_detail", {
             detail: e?.message || String(e),
@@ -836,18 +858,17 @@ const DataSyncModal: React.FC<{
       try {
         const res = await DBGetDatabases(normalizeConnConfig(conn) as any);
         if (requestSeq !== targetDatabaseRequestSeqRef.current) return;
-        if (res.success) {
-          const dbRows = Array.isArray(res.data) ? res.data : [];
-          setTargetDbs(
-            dbRows
-              .map((r: any) => r?.Database || r?.database || r?.username)
-              .filter(
-                (name: any) => typeof name === "string" && name.trim() !== "",
-              ),
-          );
-        }
+        const selection = resolveDataSyncDatabaseSelection(
+          conn.config,
+          res.success && Array.isArray(res.data) ? res.data : [],
+        );
+        setTargetDbs(selection.options);
+        setTargetDb(selection.preferred);
       } catch (e: any) {
         if (requestSeq !== targetDatabaseRequestSeqRef.current) return;
+        const selection = resolveDataSyncDatabaseSelection(conn.config, []);
+        setTargetDbs(selection.options);
+        setTargetDb(selection.preferred);
         message.error(
           tr("data_sync.message.fetch_target_databases_failed_detail", {
             detail: e?.message || String(e),
@@ -871,6 +892,21 @@ const DataSyncModal: React.FC<{
 
   const nextToTables = async () => {
     if (!sourceConnId || !targetConnId) return message.error(tr('data_sync.message.select_connections_first'));
+    if (!isSourceQueryMode && migrationCapabilityStatus === "loading") {
+      return message.info(tr("data_sync.capability.loading"));
+    }
+    if (!isSourceQueryMode && migrationCapabilityStatus === "error") {
+      return message.error(tr("data_sync.capability.load_failed"));
+    }
+    if (
+      !isSourceQueryMode &&
+      migrationCapability &&
+      !migrationCapability.canExecute
+    ) {
+      return message.error(
+        resolveDataSyncCapabilityPresentation(migrationCapability, tr).message,
+      );
+    }
     if (!sourceDb) return message.error(tr('data_sync.message.select_source_database'));
     if (!targetDb) return message.error(tr('data_sync.message.select_target_database'));
     if (!ensureTargetSchemaSelected()) return;
@@ -1320,6 +1356,28 @@ const DataSyncModal: React.FC<{
     () => connections.find((c) => c.id === targetConnId),
     [connections, targetConnId],
   );
+  const capabilityPresentation = useMemo(
+    () =>
+      migrationCapability
+        ? resolveDataSyncCapabilityPresentation(migrationCapability, tr)
+        : null,
+    [migrationCapability, i18nLanguage],
+  );
+  const capabilityStatusPresentation = useMemo(() => {
+    if (migrationCapabilityStatus === "loading") {
+      return {
+        alertType: "info" as const,
+        message: tr("data_sync.capability.loading"),
+      };
+    }
+    if (migrationCapabilityStatus === "error") {
+      return {
+        alertType: "error" as const,
+        message: tr("data_sync.capability.load_failed"),
+      };
+    }
+    return null;
+  }, [migrationCapabilityStatus, i18nLanguage]);
   const targetDialect = useMemo(
     () =>
       resolveSqlDialect(
@@ -1339,6 +1397,46 @@ const DataSyncModal: React.FC<{
     isMigrationWorkflow &&
     ((sourceType === "redis" && targetType === "mongodb") ||
       (sourceType === "mongodb" && targetType === "redis"));
+
+  useEffect(() => {
+    if (!sourceConn || !targetConn) {
+      setMigrationCapability(null);
+      setMigrationCapabilityStatus("idle");
+      return;
+    }
+
+    let cancelled = false;
+    setMigrationCapability(null);
+    setMigrationCapabilityStatus("loading");
+    void DataSyncCapability(
+      {
+        type: String(sourceConn.config?.type || ""),
+        driver: String(sourceConn.config?.driver || ""),
+        oceanBaseProtocol: String(sourceConn.config?.oceanBaseProtocol || ""),
+      } as any,
+      {
+        type: String(targetConn.config?.type || ""),
+        driver: String(targetConn.config?.driver || ""),
+        oceanBaseProtocol: String(targetConn.config?.oceanBaseProtocol || ""),
+      } as any,
+    )
+      .then((capability) => {
+        if (!cancelled) {
+          setMigrationCapability(capability as DataSyncCapabilitySnapshot);
+          setMigrationCapabilityStatus("ready");
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setMigrationCapability(null);
+          setMigrationCapabilityStatus("error");
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [sourceConn, targetConn]);
   const defaultMongoCollectionName = useMemo(() => {
     if (sourceType === "redis" && targetType === "mongodb") {
       return `redis_db_${resolveRedisDbIndex(sourceDb || sourceConn?.config?.database)}_keys`;
@@ -1713,13 +1811,21 @@ const DataSyncModal: React.FC<{
                     </Select>
                   </Form.Item>
                   <Form.Item label={tr("data_sync.field.database")}>
-                    <Select value={sourceDb} onChange={setSourceDb} showSearch>
-                      {sourceDbs.map((d) => (
-                        <Option key={d} value={d}>
-                          {d}
-                        </Option>
-                      ))}
-                    </Select>
+                    {sourceDbs.length > 0 ? (
+                      <Select value={sourceDb} onChange={setSourceDb} showSearch>
+                        {sourceDbs.map((d) => (
+                          <Option key={d} value={d}>
+                            {d}
+                          </Option>
+                        ))}
+                      </Select>
+                    ) : (
+                      <Input
+                        value={sourceDb}
+                        onChange={(event) => setSourceDb(event.target.value)}
+                        placeholder={tr("data_sync.placeholder.database_manual")}
+                      />
+                    )}
                   </Form.Item>
                 </Form>
               </Card>
@@ -1764,13 +1870,21 @@ const DataSyncModal: React.FC<{
                     </Select>
                   </Form.Item>
                   <Form.Item label={tr("data_sync.field.database")}>
-                    <Select value={targetDb} onChange={setTargetDb} showSearch>
-                      {targetDbs.map((d) => (
-                        <Option key={d} value={d}>
-                          {d}
-                        </Option>
-                      ))}
-                    </Select>
+                    {targetDbs.length > 0 ? (
+                      <Select value={targetDb} onChange={setTargetDb} showSearch>
+                        {targetDbs.map((d) => (
+                          <Option key={d} value={d}>
+                            {d}
+                          </Option>
+                        ))}
+                      </Select>
+                    ) : (
+                      <Input
+                        value={targetDb}
+                        onChange={(event) => setTargetDb(event.target.value)}
+                        placeholder={tr("data_sync.placeholder.database_manual")}
+                      />
+                    )}
                   </Form.Item>
                   {targetSupportsSchemaSelection && (
                     <Form.Item label={tr("data_sync.field.schema")}>
@@ -1946,17 +2060,28 @@ const DataSyncModal: React.FC<{
                     <Select
                       value={targetTableStrategy}
                       onChange={setTargetTableStrategy}
-                      disabled={!isMigrationWorkflow || isSourceQueryMode}
+                      disabled={
+                        !isMigrationWorkflow ||
+                        isSourceQueryMode ||
+                        migrationCapabilityStatus !== "ready" ||
+                        capabilityPresentation?.forceExistingTarget === true
+                      }
                     >
                       <Option value="existing_only">
                         {tr("data_sync.option.target_strategy.existing_only")}
                       </Option>
-                      <Option value="auto_create_if_missing">
+                      <Option
+                        value="auto_create_if_missing"
+                        disabled={migrationCapability?.supportsAutoCreate !== true}
+                      >
                         {tr(
                           "data_sync.option.target_strategy.auto_create_if_missing",
                         )}
                       </Option>
-                      <Option value="smart">
+                      <Option
+                        value="smart"
+                        disabled={migrationCapability?.supportsAutoCreate !== true}
+                      >
                         {tr("data_sync.option.target_strategy.smart")}
                       </Option>
                     </Select>
@@ -1988,7 +2113,11 @@ const DataSyncModal: React.FC<{
                     <Checkbox
                       checked={autoAddColumns}
                       onChange={(e) => setAutoAddColumns(e.target.checked)}
-                      disabled={isSourceQueryMode || syncContent === "data"}
+                      disabled={
+                        isSourceQueryMode ||
+                        syncContent === "data" ||
+                        migrationCapability?.supportsAutoAddColumns !== true
+                      }
                     >
                       {isSchemaCompareEntry
                         ? tr("data_sync.compare_entry.option.auto_add_columns")
@@ -2004,14 +2133,35 @@ const DataSyncModal: React.FC<{
                       disabled={
                         !isMigrationWorkflow ||
                         targetTableStrategy === "existing_only" ||
-                        isSourceQueryMode
+                        isSourceQueryMode ||
+                        migrationCapability?.supportsAutoCreate !== true
                       }
                     >
                       {tr("data_sync.option.create_indexes")}
                     </Checkbox>
                   </Form.Item>
                 )}
+                {!isSourceQueryMode && capabilityStatusPresentation && (
+                  <Alert
+                    type={capabilityStatusPresentation.alertType}
+                    showIcon
+                    message={capabilityStatusPresentation.message}
+                    style={{ marginBottom: 12 }}
+                  />
+                )}
+                {!isSourceQueryMode &&
+                  capabilityPresentation &&
+                  (isMigrationWorkflow ||
+                    capabilityPresentation.blocksExecution) && (
+                    <Alert
+                      type={capabilityPresentation.alertType}
+                      showIcon
+                      message={capabilityPresentation.message}
+                      style={{ marginBottom: 12 }}
+                    />
+                  )}
                 {isMigrationWorkflow &&
+                  !capabilityPresentation &&
                   targetTableStrategy !== "existing_only" && (
                     <Alert
                       type="info"
@@ -2020,14 +2170,16 @@ const DataSyncModal: React.FC<{
                       style={{ marginBottom: 12 }}
                     />
                   )}
-                {!isCompareEntry && !isMigrationWorkflow && (
-                  <Alert
-                    type="info"
-                    showIcon
-                    message={tr("data_sync.alert.existing_target_only")}
-                    style={{ marginBottom: 12 }}
-                  />
-                )}
+                {!isCompareEntry &&
+                  !isMigrationWorkflow &&
+                  !capabilityPresentation?.blocksExecution && (
+                    <Alert
+                      type="info"
+                      showIcon
+                      message={tr("data_sync.alert.existing_target_only")}
+                      style={{ marginBottom: 12 }}
+                    />
+                  )}
                 {syncContent !== "schema" && syncMode === "full_overwrite" && (
                   <Alert
                     type="warning"
@@ -2493,7 +2645,17 @@ const DataSyncModal: React.FC<{
 
       <div style={modalFooterBarStyle}>
         {currentStep === 0 && (
-          <Button type="primary" onClick={nextToTables} loading={loading}>
+          <Button
+            type="primary"
+            onClick={nextToTables}
+            loading={loading}
+            disabled={
+              !isSourceQueryMode &&
+              (migrationCapabilityStatus === "loading" ||
+                migrationCapabilityStatus === "error" ||
+                capabilityPresentation?.blocksExecution === true)
+            }
+          >
             {tr("data_sync.action.next")}
           </Button>
         )}
@@ -2512,6 +2674,8 @@ const DataSyncModal: React.FC<{
                 (isCompareEntry ? false : syncContent === "schema") ||
                 selectedTables.length === 0 ||
                 analyzing ||
+                (!isSourceQueryMode && migrationCapabilityStatus !== "ready") ||
+                (!isSourceQueryMode && capabilityPresentation?.blocksExecution === true) ||
                 (isSourceQueryMode && !sourceQuery.trim())
               }
               style={{ marginRight: 8 }}
@@ -2533,6 +2697,8 @@ const DataSyncModal: React.FC<{
                 disabled={
                   selectedTables.length === 0 ||
                   (isSourceQueryMode && !sourceQuery.trim()) ||
+                  (!isSourceQueryMode && migrationCapabilityStatus !== "ready") ||
+                  (!isSourceQueryMode && capabilityPresentation?.blocksExecution === true) ||
                   !executionReadiness.ready
                 }
               >
