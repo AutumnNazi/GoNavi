@@ -29,6 +29,7 @@ type SidebarV2TreeTitleOptions = {
   restoreTreeSelectionAfterDrag: () => void;
   treeDragSelectSuppressUntilRef: React.MutableRefObject<number>;
   setIsTreeDragging: (dragging: boolean) => void;
+  sidebarDropPlacement?: 'before' | 'inside' | 'after' | null;
 };
 
 const SIDEBAR_TREE_NODE_CONTENT_SELECTOR = '.ant-tree-node-content-wrapper';
@@ -119,6 +120,7 @@ export const renderSidebarV2TreeTitle = ({
   restoreTreeSelectionAfterDrag,
   treeDragSelectSuppressUntilRef,
   setIsTreeDragging,
+  sidebarDropPlacement,
 }: SidebarV2TreeTitleOptions): React.ReactNode => {
   const rawTitle = String(node.title ?? '');
   const groupKey = String(node?.dataRef?.groupKey || '');
@@ -173,6 +175,8 @@ export const renderSidebarV2TreeTitle = ({
     'gn-v2-tree-title',
     isMono ? 'is-mono' : '',
     node.type === 'object-group' ? 'is-group' : '',
+    node.type === 'tag' ? 'is-connection-group' : '',
+    sidebarDropPlacement ? `is-drop-${sidebarDropPlacement}` : '',
     node.type === 'redis-db' ? 'is-redis-db' : '',
     node.type === 'table' && node?.dataRef?.pinnedSidebarTable ? 'is-pinned-table' : '',
   ].filter(Boolean).join(' ');
@@ -219,6 +223,7 @@ export const renderSidebarV2TreeTitle = ({
       data-group-key={groupKey || undefined}
       data-sidebar-node-key={String(node.key || '')}
       data-sidebar-node-type={String(node.type || '')}
+      data-sidebar-drop-placement={sidebarDropPlacement || undefined}
       onPointerOverCapture={tableHoverInfo ? clearSidebarTableNativeHoverTitle : undefined}
       onMouseOverCapture={tableHoverInfo ? clearSidebarTableNativeHoverTitle : undefined}
       onDragStart={dragText ? (event) => {
