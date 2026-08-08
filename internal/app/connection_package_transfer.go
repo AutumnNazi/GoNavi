@@ -226,6 +226,11 @@ func newSavedConnectionInputFromPackageItem(item connectionPackageItem) connecti
 	config.RedisSentinelPassword = secrets.RedisSentinelPassword
 	config.URI = secrets.OpaqueURI
 	config.DSN = secrets.OpaqueDSN
+	config.JVM.JMX.Password = secrets.JVMJMXPassword
+	config.JVM.Endpoint.APIKey = secrets.JVMEndpointAPIKey
+	config.JVM.Agent.APIKey = secrets.JVMAgentAPIKey
+	config.JVM.Diagnostic.APIKey = secrets.JVMDiagnosticAPIKey
+	config.ConnectionParams = mergeConnectionParams(config.ConnectionParams, secrets.SensitiveParams)
 
 	return connection.SavedConnectionInput{
 		ID:                         id,
@@ -249,6 +254,11 @@ func newSavedConnectionInputFromPackageItem(item connectionPackageItem) connecti
 		ClearRedisSentinelPassword: strings.TrimSpace(secrets.RedisSentinelPassword) == "",
 		ClearOpaqueURI:             strings.TrimSpace(secrets.OpaqueURI) == "",
 		ClearOpaqueDSN:             strings.TrimSpace(secrets.OpaqueDSN) == "",
+		ClearJVMJMXPassword:        strings.TrimSpace(secrets.JVMJMXPassword) == "",
+		ClearJVMEndpointAPIKey:     strings.TrimSpace(secrets.JVMEndpointAPIKey) == "",
+		ClearJVMAgentAPIKey:        strings.TrimSpace(secrets.JVMAgentAPIKey) == "",
+		ClearJVMDiagnosticAPIKey:   strings.TrimSpace(secrets.JVMDiagnosticAPIKey) == "",
+		ClearSensitiveParams:       strings.TrimSpace(secrets.SensitiveParams) == "",
 	}
 }
 

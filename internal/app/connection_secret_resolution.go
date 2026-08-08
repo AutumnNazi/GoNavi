@@ -61,7 +61,15 @@ func connectionConfigCarriesInlineSecrets(config connection.ConnectionConfig) bo
 		strings.TrimSpace(config.MongoReplicaPassword) != "" ||
 		strings.TrimSpace(config.RedisSentinelPassword) != "" ||
 		strings.TrimSpace(config.URI) != "" ||
-		strings.TrimSpace(config.DSN) != ""
+		strings.TrimSpace(config.DSN) != "" ||
+		strings.TrimSpace(config.JVM.JMX.Password) != "" ||
+		strings.TrimSpace(config.JVM.Endpoint.APIKey) != "" ||
+		strings.TrimSpace(config.JVM.Agent.APIKey) != "" ||
+		strings.TrimSpace(config.JVM.Diagnostic.APIKey) != "" ||
+		func() bool {
+			_, sensitive := partitionConnectionParams(config.ConnectionParams)
+			return strings.TrimSpace(sensitive) != ""
+		}()
 }
 
 func mergeInlineConnectionSecrets(base connection.ConnectionConfig, inline connection.ConnectionConfig) connection.ConnectionConfig {
@@ -92,6 +100,24 @@ func mergeInlineConnectionSecrets(base connection.ConnectionConfig, inline conne
 	}
 	if strings.TrimSpace(inline.DSN) != "" {
 		merged.DSN = inline.DSN
+	}
+	if strings.TrimSpace(inline.JVM.JMX.Password) != "" {
+		merged.JVM.JMX.Password = inline.JVM.JMX.Password
+	}
+	if strings.TrimSpace(inline.JVM.Endpoint.APIKey) != "" {
+		merged.JVM.Endpoint.APIKey = inline.JVM.Endpoint.APIKey
+	}
+	if strings.TrimSpace(inline.JVM.Agent.APIKey) != "" {
+		merged.JVM.Agent.APIKey = inline.JVM.Agent.APIKey
+	}
+	if strings.TrimSpace(inline.JVM.Diagnostic.APIKey) != "" {
+		merged.JVM.Diagnostic.APIKey = inline.JVM.Diagnostic.APIKey
+	}
+	publicParams, sensitiveParams := partitionConnectionParams(inline.ConnectionParams)
+	if strings.TrimSpace(sensitiveParams) != "" {
+		merged.ConnectionParams = mergeConnectionParams(merged.ConnectionParams, sensitiveParams)
+	} else if strings.TrimSpace(merged.ConnectionParams) == "" {
+		merged.ConnectionParams = publicParams
 	}
 	return merged
 }
@@ -157,5 +183,18 @@ func mergeConnectionSecretBundleIntoConfig(config connection.ConnectionConfig, b
 	if strings.TrimSpace(merged.DSN) == "" {
 		merged.DSN = bundle.OpaqueDSN
 	}
+	if strings.TrimSpace(merged.JVM.JMX.Password) == "" {
+		merged.JVM.JMX.Password = bundle.JVMJMXPassword
+	}
+	if strings.TrimSpace(merged.JVM.Endpoint.APIKey) == "" {
+		merged.JVM.Endpoint.APIKey = bundle.JVMEndpointAPIKey
+	}
+	if strings.TrimSpace(merged.JVM.Agent.APIKey) == "" {
+		merged.JVM.Agent.APIKey = bundle.JVMAgentAPIKey
+	}
+	if strings.TrimSpace(merged.JVM.Diagnostic.APIKey) == "" {
+		merged.JVM.Diagnostic.APIKey = bundle.JVMDiagnosticAPIKey
+	}
+	merged.ConnectionParams = mergeConnectionParams(merged.ConnectionParams, bundle.SensitiveParams)
 	return merged
 }

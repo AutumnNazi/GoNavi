@@ -60,6 +60,11 @@ type connectionSecretBundle struct {
 	RedisSentinelPassword string `json:"redisSentinelPassword,omitempty"`
 	OpaqueURI             string `json:"opaqueURI,omitempty"`
 	OpaqueDSN             string `json:"opaqueDSN,omitempty"`
+	JVMJMXPassword        string `json:"jvmJMXPassword,omitempty"`
+	JVMEndpointAPIKey     string `json:"jvmEndpointAPIKey,omitempty"`
+	JVMAgentAPIKey        string `json:"jvmAgentAPIKey,omitempty"`
+	JVMDiagnosticAPIKey   string `json:"jvmDiagnosticAPIKey,omitempty"`
+	SensitiveParams       string `json:"sensitiveConnectionParams,omitempty"`
 }
 
 type savedConnectionsFile struct {
@@ -94,7 +99,12 @@ func (b connectionSecretBundle) hasAny() bool {
 		strings.TrimSpace(b.MongoReplicaPassword) != "" ||
 		strings.TrimSpace(b.RedisSentinelPassword) != "" ||
 		strings.TrimSpace(b.OpaqueURI) != "" ||
-		strings.TrimSpace(b.OpaqueDSN) != ""
+		strings.TrimSpace(b.OpaqueDSN) != "" ||
+		strings.TrimSpace(b.JVMJMXPassword) != "" ||
+		strings.TrimSpace(b.JVMEndpointAPIKey) != "" ||
+		strings.TrimSpace(b.JVMAgentAPIKey) != "" ||
+		strings.TrimSpace(b.JVMDiagnosticAPIKey) != "" ||
+		strings.TrimSpace(b.SensitiveParams) != ""
 }
 
 func mergeConnectionSecretBundles(base, overlay connectionSecretBundle) connectionSecretBundle {
@@ -125,6 +135,21 @@ func mergeConnectionSecretBundles(base, overlay connectionSecretBundle) connecti
 	}
 	if strings.TrimSpace(overlay.OpaqueDSN) != "" {
 		merged.OpaqueDSN = overlay.OpaqueDSN
+	}
+	if strings.TrimSpace(overlay.JVMJMXPassword) != "" {
+		merged.JVMJMXPassword = overlay.JVMJMXPassword
+	}
+	if strings.TrimSpace(overlay.JVMEndpointAPIKey) != "" {
+		merged.JVMEndpointAPIKey = overlay.JVMEndpointAPIKey
+	}
+	if strings.TrimSpace(overlay.JVMAgentAPIKey) != "" {
+		merged.JVMAgentAPIKey = overlay.JVMAgentAPIKey
+	}
+	if strings.TrimSpace(overlay.JVMDiagnosticAPIKey) != "" {
+		merged.JVMDiagnosticAPIKey = overlay.JVMDiagnosticAPIKey
+	}
+	if strings.TrimSpace(overlay.SensitiveParams) != "" {
+		merged.SensitiveParams = overlay.SensitiveParams
 	}
 	return merged
 }
@@ -157,6 +182,21 @@ func applyConnectionSecretClears(bundle connectionSecretBundle, input connection
 	}
 	if input.ClearOpaqueDSN {
 		cleared.OpaqueDSN = ""
+	}
+	if input.ClearJVMJMXPassword {
+		cleared.JVMJMXPassword = ""
+	}
+	if input.ClearJVMEndpointAPIKey {
+		cleared.JVMEndpointAPIKey = ""
+	}
+	if input.ClearJVMAgentAPIKey {
+		cleared.JVMAgentAPIKey = ""
+	}
+	if input.ClearJVMDiagnosticAPIKey {
+		cleared.JVMDiagnosticAPIKey = ""
+	}
+	if input.ClearSensitiveParams {
+		cleared.SensitiveParams = ""
 	}
 	return cleared
 }
@@ -332,6 +372,11 @@ func splitConnectionSecrets(input connection.SavedConnectionInput) (connection.S
 		HasRedisSentinelPassword:   strings.TrimSpace(bundle.RedisSentinelPassword) != "",
 		HasOpaqueURI:               strings.TrimSpace(bundle.OpaqueURI) != "",
 		HasOpaqueDSN:               strings.TrimSpace(bundle.OpaqueDSN) != "",
+		HasJVMJMXPassword:          strings.TrimSpace(bundle.JVMJMXPassword) != "",
+		HasJVMEndpointAPIKey:       strings.TrimSpace(bundle.JVMEndpointAPIKey) != "",
+		HasJVMAgentAPIKey:          strings.TrimSpace(bundle.JVMAgentAPIKey) != "",
+		HasJVMDiagnosticAPIKey:     strings.TrimSpace(bundle.JVMDiagnosticAPIKey) != "",
+		HasSensitiveParams:         strings.TrimSpace(bundle.SensitiveParams) != "",
 	}
 	return view, bundle
 }
@@ -589,7 +634,8 @@ func (r *savedConnectionRepository) loadSecretBundleFromStore(view connection.Sa
 
 func savedConnectionViewHasSecrets(view connection.SavedConnectionView) bool {
 	return view.HasPrimaryPassword || view.HasSSHPassword || view.HasProxyPassword || view.HasHTTPTunnelPassword ||
-		view.HasMySQLReplicaPassword || view.HasMongoReplicaPassword || view.HasRedisSentinelPassword || view.HasOpaqueURI || view.HasOpaqueDSN
+		view.HasMySQLReplicaPassword || view.HasMongoReplicaPassword || view.HasRedisSentinelPassword || view.HasOpaqueURI || view.HasOpaqueDSN ||
+		view.HasJVMJMXPassword || view.HasJVMEndpointAPIKey || view.HasJVMAgentAPIKey || view.HasJVMDiagnosticAPIKey || view.HasSensitiveParams
 }
 
 func applyConnectionBundleFlags(view *connection.SavedConnectionView, bundle connectionSecretBundle) {
@@ -602,6 +648,11 @@ func applyConnectionBundleFlags(view *connection.SavedConnectionView, bundle con
 	view.HasRedisSentinelPassword = strings.TrimSpace(bundle.RedisSentinelPassword) != ""
 	view.HasOpaqueURI = strings.TrimSpace(bundle.OpaqueURI) != ""
 	view.HasOpaqueDSN = strings.TrimSpace(bundle.OpaqueDSN) != ""
+	view.HasJVMJMXPassword = strings.TrimSpace(bundle.JVMJMXPassword) != ""
+	view.HasJVMEndpointAPIKey = strings.TrimSpace(bundle.JVMEndpointAPIKey) != ""
+	view.HasJVMAgentAPIKey = strings.TrimSpace(bundle.JVMAgentAPIKey) != ""
+	view.HasJVMDiagnosticAPIKey = strings.TrimSpace(bundle.JVMDiagnosticAPIKey) != ""
+	view.HasSensitiveParams = strings.TrimSpace(bundle.SensitiveParams) != ""
 }
 
 func buildDuplicateConnectionName(baseName string, existing []connection.SavedConnectionView, unnamedName string, copySuffix string) string {

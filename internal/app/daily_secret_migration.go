@@ -103,35 +103,39 @@ func migrateSavedConnectionSecrets(repo *savedConnectionRepository, legacy legac
 
 func (r *savedConnectionRepository) resolveMigrationConnectionBundle(view connection.SavedConnectionView, legacy legacyWebKitVisibleConfig) (connectionSecretBundle, bool, error) {
 	inline := extractConnectionSecretBundle(view.Config)
-	if inline.hasAny() {
-		return inline, true, nil
-	}
-
 	stored, ok, err := r.dailySecrets().GetConnection(view.ID)
 	if err != nil {
 		return connectionSecretBundle{}, false, err
 	}
 	if ok {
-		return fromDailyConnectionBundle(stored), true, nil
+		return mergeConnectionSecretBundles(fromDailyConnectionBundle(stored), inline), true, nil
 	}
 
 	legacyBundle := findLegacyConnectionSecretBundle(legacy.Connections, view.ID)
 	if legacyBundle.hasAny() {
-		return legacyBundle, true, nil
+		return mergeConnectionSecretBundles(legacyBundle, inline), true, nil
 	}
-
 	if !shouldReadLegacySecretStoreForDailySecrets() {
+		if inline.hasAny() {
+			return inline, true, nil
+		}
 		return connectionSecretBundle{}, false, nil
 	}
 
 	if strings.TrimSpace(view.SecretRef) == "" {
+		if inline.hasAny() {
+			return inline, true, nil
+		}
 		return connectionSecretBundle{}, false, nil
 	}
 	bundle, err := r.loadSecretBundleFromStore(view)
 	if err == nil {
-		return bundle, true, nil
+		return mergeConnectionSecretBundles(bundle, inline), true, nil
 	}
 	if os.IsNotExist(err) || secretstore.IsUnavailable(err) {
+		if inline.hasAny() {
+			return inline, true, nil
+		}
 		return connectionSecretBundle{}, false, nil
 	}
 	return connectionSecretBundle{}, false, err

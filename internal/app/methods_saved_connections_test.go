@@ -225,7 +225,7 @@ func TestSaveConnectionSanitizesSchemaVisibilityRules(t *testing.T) {
 	}
 }
 
-func TestGetEditableSavedConnectionReturnsResolvedSecretsForEdit(t *testing.T) {
+func TestGetEditableSavedConnectionReturnsSecretlessViewForEdit(t *testing.T) {
 	app := NewAppWithSecretStore(newFakeAppSecretStore())
 	app.configDir = t.TempDir()
 
@@ -255,11 +255,11 @@ func TestGetEditableSavedConnectionReturnsResolvedSecretsForEdit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if view.Config.Password != "mysql-secret" {
-		t.Fatalf("expected editable primary password, got %q", view.Config.Password)
+	if view.Config.Password != "" {
+		t.Fatalf("editable view must not expose primary password, got %q", view.Config.Password)
 	}
-	if view.Config.SSH.Password != "ssh-secret" {
-		t.Fatalf("expected editable SSH password, got %q", view.Config.SSH.Password)
+	if view.Config.SSH.Password != "" {
+		t.Fatalf("editable view must not expose SSH password, got %q", view.Config.SSH.Password)
 	}
 	if !view.HasPrimaryPassword || !view.HasSSHPassword {
 		t.Fatalf("expected secret flags to stay true, got %#v", view)

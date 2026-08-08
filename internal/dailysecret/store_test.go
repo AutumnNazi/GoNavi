@@ -1,15 +1,23 @@
 package dailysecret
 
-import "testing"
+import (
+	"reflect"
+	"testing"
+)
 
 func TestStorePutGetDeleteConnectionSecret(t *testing.T) {
 	root := t.TempDir()
 	store := NewStore(root)
 
 	bundle := ConnectionBundle{
-		Password:    "postgres-secret",
-		OpaqueDSN:   "postgres://user:pass@db.local/app",
-		SSHPassword: "ssh-secret",
+		Password:            "postgres-secret",
+		OpaqueDSN:           "postgres://user:pass@db.local/app",
+		SSHPassword:         "ssh-secret",
+		JVMJMXPassword:      "jmx-secret",
+		JVMEndpointAPIKey:   "endpoint-key",
+		JVMAgentAPIKey:      "agent-key",
+		JVMDiagnosticAPIKey: "diagnostic-key",
+		SensitiveParams:     "accessToken=param-secret",
 	}
 	if err := store.PutConnection("conn-1", bundle); err != nil {
 		t.Fatalf("PutConnection returned error: %v", err)
@@ -22,7 +30,7 @@ func TestStorePutGetDeleteConnectionSecret(t *testing.T) {
 	if !ok {
 		t.Fatal("expected connection bundle to exist")
 	}
-	if got.Password != "postgres-secret" || got.OpaqueDSN != bundle.OpaqueDSN || got.SSHPassword != "ssh-secret" {
+	if !reflect.DeepEqual(got, bundle) {
 		t.Fatalf("unexpected bundle: %#v", got)
 	}
 

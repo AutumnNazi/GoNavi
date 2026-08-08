@@ -22,6 +22,11 @@ type ConnectionBundle struct {
 	RedisSentinelPassword string `json:"redisSentinelPassword,omitempty"`
 	OpaqueURI             string `json:"opaqueURI,omitempty"`
 	OpaqueDSN             string `json:"opaqueDSN,omitempty"`
+	JVMJMXPassword        string `json:"jvmJMXPassword,omitempty"`
+	JVMEndpointAPIKey     string `json:"jvmEndpointAPIKey,omitempty"`
+	JVMAgentAPIKey        string `json:"jvmAgentAPIKey,omitempty"`
+	JVMDiagnosticAPIKey   string `json:"jvmDiagnosticAPIKey,omitempty"`
+	SensitiveParams       string `json:"sensitiveConnectionParams,omitempty"`
 }
 
 func (b ConnectionBundle) HasAny() bool {
@@ -33,7 +38,12 @@ func (b ConnectionBundle) HasAny() bool {
 		strings.TrimSpace(b.MongoReplicaPassword) != "" ||
 		strings.TrimSpace(b.RedisSentinelPassword) != "" ||
 		strings.TrimSpace(b.OpaqueURI) != "" ||
-		strings.TrimSpace(b.OpaqueDSN) != ""
+		strings.TrimSpace(b.OpaqueDSN) != "" ||
+		strings.TrimSpace(b.JVMJMXPassword) != "" ||
+		strings.TrimSpace(b.JVMEndpointAPIKey) != "" ||
+		strings.TrimSpace(b.JVMAgentAPIKey) != "" ||
+		strings.TrimSpace(b.JVMDiagnosticAPIKey) != "" ||
+		strings.TrimSpace(b.SensitiveParams) != ""
 }
 
 type GlobalProxyBundle struct {
