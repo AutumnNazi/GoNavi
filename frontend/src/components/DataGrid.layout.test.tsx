@@ -92,6 +92,8 @@ vi.mock('../store', () => ({
 
 vi.mock('../../wailsjs/go/app/App', () => ({
   ImportData: vi.fn(),
+  PreviewImportFileWithOptions: vi.fn(),
+  CancelImportJob: vi.fn(),
   ExportTable: vi.fn(),
   ExportData: vi.fn(),
   ExportQuery: vi.fn(),

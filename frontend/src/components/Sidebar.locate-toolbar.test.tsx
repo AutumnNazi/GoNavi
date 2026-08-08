@@ -2619,7 +2619,7 @@ describe('Sidebar locate toolbar', () => {
     expect(runningMarkup).toContain('Status:');
     expect(runningMarkup).toContain('Running');
     expect(runningMarkup).toContain('Executed:');
-    expect(runningMarkup).toContain('rows | Failed:');
+    expect(runningMarkup).toContain('statements | Failed:');
     expect(runningMarkup).toContain('SELECT * FROM users');
     expect(runningMarkup).not.toContain('文件大小：');
     expect(runningMarkup).not.toContain('状态：');

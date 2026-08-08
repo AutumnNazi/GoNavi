@@ -225,9 +225,9 @@ export const SQLFileExecutionProgressContent: React.FC<SQLFileExecutionProgressS
       <div>
         {t('sidebar.sql_file_exec.executed_label')}
         <strong style={{ color: '#52c41a' }}>{executed}</strong>
-        {t('sidebar.sql_file_exec.rows_separator')}
+        {t('sidebar.sql_file_exec.statements_separator')}
         <strong style={{ color: failed > 0 ? '#ff4d4f' : undefined }}>{failed}</strong>
-        {t('sidebar.sql_file_exec.rows_suffix')}
+        {t('sidebar.sql_file_exec.statements_suffix')}
       </div>
     </div>
     {currentSQL && status === 'running' && (

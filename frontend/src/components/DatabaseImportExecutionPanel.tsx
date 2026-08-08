@@ -11,6 +11,8 @@ import { t as defaultTranslate } from '../i18n';
 import { useOptionalI18n } from '../i18n/provider';
 import type { SavedConnection } from '../types';
 import { confirmProductionRisk } from '../utils/productionRiskConfirm';
+import { formatImportBytes, formatImportDuration } from './importProgressMetrics';
+import Modal from './common/ResizableDraggableModal';
 import {
   useSQLFileExecutionRunner,
   type SQLFileExecutionRunnerStatus,
@@ -25,6 +27,7 @@ type DatabaseImportExecutionPanelProps = {
   filePath: string;
   fileSizeMB?: string;
   darkMode: boolean;
+  continueOnError: boolean;
   onRunningChange?: (running: boolean) => void;
 };
 
@@ -38,7 +41,7 @@ const resolveProgressStatus = (
 ): 'active' | 'success' | 'exception' | 'normal' => {
   if (status === 'done') return 'success';
   if (status === 'error') return 'exception';
-  if (status === 'start' || status === 'running') return 'active';
+  if (status === 'start' || status === 'running' || status === 'stopping') return 'active';
   return 'normal';
 };
 
@@ -49,6 +52,7 @@ const DatabaseImportExecutionPanel: React.FC<DatabaseImportExecutionPanelProps> 
   filePath,
   fileSizeMB,
   darkMode,
+  continueOnError,
   onRunningChange,
 }) => {
   const i18n = useOptionalI18n();
@@ -69,8 +73,32 @@ const DatabaseImportExecutionPanel: React.FC<DatabaseImportExecutionPanelProps> 
   const terminal = state.status === 'done'
     || state.status === 'cancelled'
     || state.status === 'error';
-  const subtleBackground = darkMode ? 'rgba(255,255,255,0.04)' : '#f8fafc';
-  const dividerColor = darkMode ? 'rgba(255,255,255,0.08)' : 'rgba(15,23,42,0.08)';
+  const completedWithErrors = state.status === 'done' && state.failed > 0;
+  const subtleBackground = `var(--gn-bg-subtle, var(--gn-bg-panel-2, ${darkMode
+    ? 'rgba(255,255,255,0.04)'
+    : '#f8fafc'}))`;
+  const dividerColor = `var(--gn-br-1, ${darkMode
+    ? 'rgba(255,255,255,0.08)'
+    : 'rgba(15,23,42,0.08)'})`;
+  const warningColor = 'var(--gn-warn, #faad14)';
+  const transferMetrics = useMemo(() => {
+    if (state.bytesRead <= 0 && state.totalBytes <= 0) return '';
+    const details = [t('data_import.workbench.progress.bytes', {
+      processed: formatImportBytes(state.bytesRead),
+      total: state.totalBytes > 0 ? formatImportBytes(state.totalBytes) : '—',
+    })];
+    if (state.bytesPerSecond > 0) {
+      details.push(t('data_import.workbench.progress.throughput', {
+        rate: formatImportBytes(state.bytesPerSecond),
+      }));
+    }
+    if (state.etaSeconds > 0) {
+      details.push(t('data_import.workbench.progress.eta', {
+        duration: formatImportDuration(state.etaSeconds, i18n?.language),
+      }));
+    }
+    return details.join(' · ');
+  }, [i18n?.language, state.bytesPerSecond, state.bytesRead, state.etaSeconds, state.totalBytes, t]);
 
   useEffect(() => {
     if (lastReportedRunningRef.current === taskRunning) return;
@@ -94,14 +122,27 @@ const DatabaseImportExecutionPanel: React.FC<DatabaseImportExecutionPanelProps> 
         title: getFileName(filePath),
         filePath,
         fileSizeMB,
-        run: (jobId) => ImportDatabaseSQL(
-          connectionConfig as any,
-          String(dbName || '').trim(),
-          filePath,
-          jobId,
-        ),
+        run: async (jobId) => {
+          const result = await ImportDatabaseSQL(
+            connectionConfig as any,
+            String(dbName || '').trim(),
+            filePath,
+            jobId,
+            continueOnError,
+          );
+          // Reaching EOF with recorded statement errors is a completed import,
+          // not a transport/fatal failure. Preserve the counters and render it
+          // as a warning result instead of offering a misleading fatal retry.
+          if (continueOnError && result.data?.completed === true) {
+            return { ...result, success: true };
+          }
+          return result;
+        },
         cancel: async (jobId) => {
-          await CancelSQLFileExecution(jobId);
+          const result = await CancelSQLFileExecution(jobId);
+          if (!result?.success) {
+            throw new Error(result?.message || t('import_preview.error.stop_failed'));
+          }
         },
       });
     } catch {
@@ -112,6 +153,7 @@ const DatabaseImportExecutionPanel: React.FC<DatabaseImportExecutionPanelProps> 
   }, [
     connectionConfig,
     connection,
+    continueOnError,
     dbName,
     filePath,
     fileSizeMB,
@@ -136,6 +178,21 @@ const DatabaseImportExecutionPanel: React.FC<DatabaseImportExecutionPanelProps> 
     reset();
   }, [reset, taskRunning]);
 
+  const requestStartImport = useCallback(() => {
+    if (!terminal) {
+      void startImport();
+      return;
+    }
+    Modal.confirm({
+      title: t('data_import.workbench.confirm.rerun_title'),
+      content: t('data_import.workbench.confirm.rerun_content'),
+      okText: t('data_import.workbench.action.retry_database_import'),
+      cancelText: t('common.cancel'),
+      okButtonProps: { danger: true },
+      onOk: startImport,
+    });
+  }, [startImport, t, terminal]);
+
   const statusText = useMemo(() => {
     if (cancelRequested && taskRunning) return t('data_import.workbench.state.cancelling');
     switch (state.status) {
@@ -143,7 +200,9 @@ const DatabaseImportExecutionPanel: React.FC<DatabaseImportExecutionPanelProps> 
       case 'running':
         return t('data_import.workbench.state.running');
       case 'done':
-        return t('data_import.workbench.state.completed');
+        return state.failed > 0
+          ? t('data_import.workbench.state.completed_with_errors')
+          : t('data_import.workbench.state.completed');
       case 'error':
         return t('data_import.workbench.state.failed');
       case 'cancelled':
@@ -151,13 +210,34 @@ const DatabaseImportExecutionPanel: React.FC<DatabaseImportExecutionPanelProps> 
       default:
         return t('data_import.workbench.state.ready_sql_title');
     }
-  }, [cancelRequested, state.status, t, taskRunning]);
+  }, [cancelRequested, state.failed, state.status, t, taskRunning]);
+
+  const stageText = useMemo(() => {
+    switch (state.stage) {
+      case 'prepare':
+        return t('import_preview.stage.prepare');
+      case 'preflight':
+        return t('import_preview.stage.preflight');
+      case 'read':
+        return t('import_preview.stage.read');
+      case 'parse':
+        return t('import_preview.stage.parse');
+      case 'write':
+        return t('import_preview.stage.write');
+      case 'finalize':
+        return t('import_preview.stage.finalize');
+      default:
+        return state.stage || statusText;
+    }
+  }, [state.stage, statusText, t]);
 
   const resultAlertType = state.status === 'error'
     ? 'error'
     : state.status === 'cancelled'
       ? 'warning'
-      : 'success';
+      : completedWithErrors
+        ? 'warning'
+        : 'success';
 
   return (
     <div
@@ -167,7 +247,9 @@ const DatabaseImportExecutionPanel: React.FC<DatabaseImportExecutionPanelProps> 
       <Alert
         type="warning"
         showIcon
-        message={t('data_import.workbench.notice.partial_execution')}
+        message={continueOnError
+          ? t('data_import.workbench.notice.continue_on_error')
+          : t('data_import.workbench.notice.stop_on_error')}
       />
       <Alert
         type="info"
@@ -176,6 +258,7 @@ const DatabaseImportExecutionPanel: React.FC<DatabaseImportExecutionPanelProps> 
       />
 
       <div
+        data-database-import-status-card="true"
         style={{
           padding: 16,
           borderRadius: 8,
@@ -206,11 +289,11 @@ const DatabaseImportExecutionPanel: React.FC<DatabaseImportExecutionPanelProps> 
             <Progress
               data-database-import-progress="true"
               percent={Math.round(progressPercent)}
-              status={resolveProgressStatus(state.status)}
-              strokeColor={state.status === 'cancelled' ? '#faad14' : undefined}
+              status={completedWithErrors ? 'normal' : resolveProgressStatus(state.status)}
+              strokeColor={state.status === 'cancelled' || completedWithErrors ? warningColor : undefined}
             />
             <div style={{ marginTop: 8, display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-              <Text type="secondary">{state.stage || statusText}</Text>
+              <Text data-database-import-stage="true" type="secondary">{stageText}</Text>
               <Text type="secondary">
                 {t('data_import.workbench.progress.statements', {
                   executed: state.executed,
@@ -219,6 +302,15 @@ const DatabaseImportExecutionPanel: React.FC<DatabaseImportExecutionPanelProps> 
                 })}
               </Text>
             </div>
+            {transferMetrics ? (
+              <Text
+                data-database-import-transfer-metrics="true"
+                type="secondary"
+                style={{ display: 'block', marginTop: 6, fontSize: 12 }}
+              >
+                {transferMetrics}
+              </Text>
+            ) : null}
           </div>
         ) : null}
 
@@ -247,7 +339,7 @@ const DatabaseImportExecutionPanel: React.FC<DatabaseImportExecutionPanelProps> 
             style={{ marginTop: 14 }}
             type={resultAlertType}
             showIcon
-            message={state.message}
+            message={<div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{state.message}</div>}
           />
         ) : null}
 
@@ -271,7 +363,7 @@ const DatabaseImportExecutionPanel: React.FC<DatabaseImportExecutionPanelProps> 
               type="primary"
               icon={terminal ? <ReloadOutlined /> : <PlayCircleOutlined />}
               disabled={!connectionConfig || !String(filePath || '').trim()}
-              onClick={() => void startImport()}
+              onClick={requestStartImport}
             >
               {terminal
                 ? t('data_import.workbench.action.retry_database_import')
