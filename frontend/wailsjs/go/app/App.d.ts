@@ -4,6 +4,7 @@ import {connection} from '../models';
 import {sqlaudit} from '../models';
 import {app} from '../models';
 import {sync} from '../models';
+import {syncjob} from '../models';
 import {jvm} from '../models';
 import {redis} from '../models';
 import {resultdiff} from '../models';
@@ -118,7 +119,63 @@ export function DataSync(arg1:sync.SyncConfig):Promise<sync.SyncResult>;
 
 export function DataSyncAnalyze(arg1:sync.SyncConfig):Promise<connection.QueryResult>;
 
+export function DataSyncCDCAdapterList():Promise<connection.QueryResult>;
+
+export function DataSyncCDCProbe(arg1:string,arg2:string,arg3:string,arg4:string):Promise<connection.QueryResult>;
+
+export function DataSyncCapability(arg1:connection.ConnectionConfig,arg2:connection.ConnectionConfig):Promise<sync.MigrationCapability>;
+
+export function DataSyncCapabilityResolve(arg1:string,arg2:string,arg3:string,arg4:string,arg5:string,arg6:string):Promise<connection.QueryResult>;
+
+export function DataSyncCheckpointGet(arg1:string):Promise<connection.QueryResult>;
+
+export function DataSyncCheckpointReset(arg1:string,arg2:number):Promise<connection.QueryResult>;
+
+export function DataSyncDatabaseList(arg1:string):Promise<connection.QueryResult>;
+
+export function DataSyncErrorRowDiscard(arg1:string):Promise<connection.QueryResult>;
+
+export function DataSyncErrorRowGet(arg1:string):Promise<connection.QueryResult>;
+
+export function DataSyncErrorRowList(arg1:string,arg2:string,arg3:number):Promise<connection.QueryResult>;
+
+export function DataSyncErrorRowRetry(arg1:string,arg2:number,arg3:string):Promise<connection.QueryResult>;
+
+export function DataSyncFieldList(arg1:string,arg2:string,arg3:string,arg4:string):Promise<connection.QueryResult>;
+
+export function DataSyncJobApprovalBegin(arg1:syncjob.JobDefinition):Promise<connection.QueryResult>;
+
+export function DataSyncJobApprove(arg1:syncjob.JobDefinition,arg2:string):Promise<connection.QueryResult>;
+
+export function DataSyncJobDelete(arg1:string):Promise<connection.QueryResult>;
+
+export function DataSyncJobGet(arg1:string):Promise<connection.QueryResult>;
+
+export function DataSyncJobList():Promise<connection.QueryResult>;
+
+export function DataSyncJobPreflight(arg1:syncjob.JobDefinition):Promise<connection.QueryResult>;
+
+export function DataSyncJobSave(arg1:syncjob.JobDefinition,arg2:string):Promise<connection.QueryResult>;
+
+export function DataSyncObjectList(arg1:string,arg2:string,arg3:string):Promise<connection.QueryResult>;
+
 export function DataSyncPreview(arg1:sync.SyncConfig,arg2:string,arg3:number):Promise<connection.QueryResult>;
+
+export function DataSyncRunCancel(arg1:string):Promise<connection.QueryResult>;
+
+export function DataSyncRunEventList(arg1:string,arg2:number,arg3:number):Promise<connection.QueryResult>;
+
+export function DataSyncRunGet(arg1:string):Promise<connection.QueryResult>;
+
+export function DataSyncRunList(arg1:string,arg2:number):Promise<connection.QueryResult>;
+
+export function DataSyncRunResume(arg1:string):Promise<connection.QueryResult>;
+
+export function DataSyncRunRetry(arg1:string):Promise<connection.QueryResult>;
+
+export function DataSyncRunStart(arg1:string,arg2:number,arg3:string):Promise<connection.QueryResult>;
+
+export function DataSyncSchedulePreview(arg1:syncjob.JobDefinition,arg2:number):Promise<connection.QueryResult>;
 
 export function DeleteConnection(arg1:string):Promise<void>;
 

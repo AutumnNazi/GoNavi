@@ -222,8 +222,120 @@ export function DataSyncAnalyze(arg1) {
   return window['go']['app']['App']['DataSyncAnalyze'](arg1);
 }
 
+export function DataSyncCDCAdapterList() {
+  return window['go']['app']['App']['DataSyncCDCAdapterList']();
+}
+
+export function DataSyncCDCProbe(arg1, arg2, arg3, arg4) {
+  return window['go']['app']['App']['DataSyncCDCProbe'](arg1, arg2, arg3, arg4);
+}
+
+export function DataSyncCapability(arg1, arg2) {
+  return window['go']['app']['App']['DataSyncCapability'](arg1, arg2);
+}
+
+export function DataSyncCapabilityResolve(arg1, arg2, arg3, arg4, arg5, arg6) {
+  return window['go']['app']['App']['DataSyncCapabilityResolve'](arg1, arg2, arg3, arg4, arg5, arg6);
+}
+
+export function DataSyncCheckpointGet(arg1) {
+  return window['go']['app']['App']['DataSyncCheckpointGet'](arg1);
+}
+
+export function DataSyncCheckpointReset(arg1, arg2) {
+  return window['go']['app']['App']['DataSyncCheckpointReset'](arg1, arg2);
+}
+
+export function DataSyncDatabaseList(arg1) {
+  return window['go']['app']['App']['DataSyncDatabaseList'](arg1);
+}
+
+export function DataSyncErrorRowDiscard(arg1) {
+  return window['go']['app']['App']['DataSyncErrorRowDiscard'](arg1);
+}
+
+export function DataSyncErrorRowGet(arg1) {
+  return window['go']['app']['App']['DataSyncErrorRowGet'](arg1);
+}
+
+export function DataSyncErrorRowList(arg1, arg2, arg3) {
+  return window['go']['app']['App']['DataSyncErrorRowList'](arg1, arg2, arg3);
+}
+
+export function DataSyncErrorRowRetry(arg1, arg2, arg3) {
+  return window['go']['app']['App']['DataSyncErrorRowRetry'](arg1, arg2, arg3);
+}
+
+export function DataSyncFieldList(arg1, arg2, arg3, arg4) {
+  return window['go']['app']['App']['DataSyncFieldList'](arg1, arg2, arg3, arg4);
+}
+
+export function DataSyncJobApprovalBegin(arg1) {
+  return window['go']['app']['App']['DataSyncJobApprovalBegin'](arg1);
+}
+
+export function DataSyncJobApprove(arg1, arg2) {
+  return window['go']['app']['App']['DataSyncJobApprove'](arg1, arg2);
+}
+
+export function DataSyncJobDelete(arg1) {
+  return window['go']['app']['App']['DataSyncJobDelete'](arg1);
+}
+
+export function DataSyncJobGet(arg1) {
+  return window['go']['app']['App']['DataSyncJobGet'](arg1);
+}
+
+export function DataSyncJobList() {
+  return window['go']['app']['App']['DataSyncJobList']();
+}
+
+export function DataSyncJobPreflight(arg1) {
+  return window['go']['app']['App']['DataSyncJobPreflight'](arg1);
+}
+
+export function DataSyncJobSave(arg1, arg2) {
+  return window['go']['app']['App']['DataSyncJobSave'](arg1, arg2);
+}
+
+export function DataSyncObjectList(arg1, arg2, arg3) {
+  return window['go']['app']['App']['DataSyncObjectList'](arg1, arg2, arg3);
+}
+
 export function DataSyncPreview(arg1, arg2, arg3) {
   return window['go']['app']['App']['DataSyncPreview'](arg1, arg2, arg3);
+}
+
+export function DataSyncRunCancel(arg1) {
+  return window['go']['app']['App']['DataSyncRunCancel'](arg1);
+}
+
+export function DataSyncRunEventList(arg1, arg2, arg3) {
+  return window['go']['app']['App']['DataSyncRunEventList'](arg1, arg2, arg3);
+}
+
+export function DataSyncRunGet(arg1) {
+  return window['go']['app']['App']['DataSyncRunGet'](arg1);
+}
+
+export function DataSyncRunList(arg1, arg2) {
+  return window['go']['app']['App']['DataSyncRunList'](arg1, arg2);
+}
+
+export function DataSyncRunResume(arg1) {
+  return window['go']['app']['App']['DataSyncRunResume'](arg1);
+}
+
+export function DataSyncRunRetry(arg1) {
+  return window['go']['app']['App']['DataSyncRunRetry'](arg1);
+}
+
+export function DataSyncRunStart(arg1, arg2, arg3) {
+  return window['go']['app']['App']['DataSyncRunStart'](arg1, arg2, arg3);
+}
+
+export function DataSyncSchedulePreview(arg1, arg2) {
+  return window['go']['app']['App']['DataSyncSchedulePreview'](arg1, arg2);
 }
 
 export function DeleteConnection(arg1) {

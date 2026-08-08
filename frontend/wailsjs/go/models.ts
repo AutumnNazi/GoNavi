@@ -2704,7 +2704,163 @@ export namespace sqlaudit {
 }
 
 export namespace sync {
-	
+
+	export class MigrationCapability {
+	    sourceType: string;
+	    targetType: string;
+	    sourceModel: string;
+	    targetModel: string;
+	    planner: string;
+	    supportLevel: string;
+	    canExecute: boolean;
+	    supportsAutoCreate: boolean;
+	    supportsAutoAddColumns: boolean;
+	    requiresExistingTarget: boolean;
+
+	    static createFrom(source: any = {}) {
+	        return new MigrationCapability(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.sourceType = source["sourceType"];
+	        this.targetType = source["targetType"];
+	        this.sourceModel = source["sourceModel"];
+	        this.targetModel = source["targetModel"];
+	        this.planner = source["planner"];
+	        this.supportLevel = source["supportLevel"];
+	        this.canExecute = source["canExecute"];
+	        this.supportsAutoCreate = source["supportsAutoCreate"];
+	        this.supportsAutoAddColumns = source["supportsAutoAddColumns"];
+	        this.requiresExistingTarget = source["requiresExistingTarget"];
+	    }
+	}
+	export class SyncValueTransform {
+	    type: string;
+	    args?: Record<string, string>;
+
+	    static createFrom(source: any = {}) {
+	        return new SyncValueTransform(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.type = source["type"];
+	        this.args = source["args"];
+	    }
+	}
+	export class SyncDefaultValue {
+	    when?: string[];
+	    valueType?: string;
+	    value?: string;
+
+	    static createFrom(source: any = {}) {
+	        return new SyncDefaultValue(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.when = source["when"];
+	        this.valueType = source["valueType"];
+	        this.value = source["value"];
+	    }
+	}
+	export class SyncColumnMapping {
+	    source?: string;
+	    target?: string;
+	    drop?: boolean;
+	    default?: SyncDefaultValue;
+	    transforms?: SyncValueTransform[];
+
+	    static createFrom(source: any = {}) {
+	        return new SyncColumnMapping(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.source = source["source"];
+	        this.target = source["target"];
+	        this.drop = source["drop"];
+	        this.default = this.convertValues(source["default"], SyncDefaultValue);
+	        this.transforms = this.convertValues(source["transforms"], SyncValueTransform);
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class SyncObjectRef {
+	    catalog?: string;
+	    database?: string;
+	    schema?: string;
+	    name: string;
+
+	    static createFrom(source: any = {}) {
+	        return new SyncObjectRef(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.catalog = source["catalog"];
+	        this.database = source["database"];
+	        this.schema = source["schema"];
+	        this.name = source["name"];
+	    }
+	}
+	export class SyncObjectMapping {
+	    id?: string;
+	    source: SyncObjectRef;
+	    target: SyncObjectRef;
+	    keyColumns?: string[];
+	    filter?: string;
+	    columns?: SyncColumnMapping[];
+
+	    static createFrom(source: any = {}) {
+	        return new SyncObjectMapping(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.source = this.convertValues(source["source"], SyncObjectRef);
+	        this.target = this.convertValues(source["target"], SyncObjectRef);
+	        this.keyColumns = source["keyColumns"];
+	        this.filter = source["filter"];
+	        this.columns = this.convertValues(source["columns"], SyncColumnMapping);
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	export class TableOptions {
 	    insert?: boolean;
 	    update?: boolean;
@@ -2743,11 +2899,14 @@ export namespace sync {
 	    createIndexes?: boolean;
 	    mongoCollectionName?: string;
 	    tableOptions?: Record<string, TableOptions>;
-	
+	    mappings?: SyncObjectMapping[];
+	    batchSize?: number;
+	    rowErrorPolicy?: string;
+
 	    static createFrom(source: any = {}) {
 	        return new SyncConfig(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.sourceConfig = this.convertValues(source["sourceConfig"], connection.ConnectionConfig);
@@ -2765,8 +2924,11 @@ export namespace sync {
 	        this.createIndexes = source["createIndexes"];
 	        this.mongoCollectionName = source["mongoCollectionName"];
 	        this.tableOptions = this.convertValues(source["tableOptions"], TableOptions, true);
+	        this.mappings = this.convertValues(source["mappings"], SyncObjectMapping);
+	        this.batchSize = source["batchSize"];
+	        this.rowErrorPolicy = source["rowErrorPolicy"];
 	    }
-	
+
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -2793,11 +2955,13 @@ export namespace sync {
 	    rowsInserted: number;
 	    rowsUpdated: number;
 	    rowsDeleted: number;
-	
+	    rowsSkipped?: number;
+	    cancelled?: boolean;
+
 	    static createFrom(source: any = {}) {
 	        return new SyncResult(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.success = source["success"];
@@ -2807,7 +2971,326 @@ export namespace sync {
 	        this.rowsInserted = source["rowsInserted"];
 	        this.rowsUpdated = source["rowsUpdated"];
 	        this.rowsDeleted = source["rowsDeleted"];
+	        this.rowsSkipped = source["rowsSkipped"];
+	        this.cancelled = source["cancelled"];
 	    }
 	}
+
+
+}
+
+export namespace syncjob {
+
+	export class CDCSpec {
+	    adapter?: string;
+	    startPosition?: string;
+	    initialSnapshot?: boolean;
+	    slotName?: string;
+	    publicationName?: string;
+
+	    static createFrom(source: any = {}) {
+	        return new CDCSpec(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.adapter = source["adapter"];
+	        this.startPosition = source["startPosition"];
+	        this.initialSnapshot = source["initialSnapshot"];
+	        this.slotName = source["slotName"];
+	        this.publicationName = source["publicationName"];
+	    }
+	}
+	export class TransformSpec {
+	    kind?: string;
+	    argument?: number[];
+
+	    static createFrom(source: any = {}) {
+	        return new TransformSpec(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.kind = source["kind"];
+	        this.argument = source["argument"];
+	    }
+	}
+	export class ColumnMapping {
+	    source?: string;
+	    target: string;
+	    transform?: TransformSpec;
+	    defaultValue?: number[];
+	    required?: boolean;
+
+	    static createFrom(source: any = {}) {
+	        return new ColumnMapping(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.source = source["source"];
+	        this.target = source["target"];
+	        this.transform = this.convertValues(source["transform"], TransformSpec);
+	        this.defaultValue = source["defaultValue"];
+	        this.required = source["required"];
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class EndpointRef {
+	    connectionId: string;
+	    connectionType?: string;
+	    connectionName?: string;
+	    database?: string;
+	    schema?: string;
+	    fingerprint?: string;
+
+	    static createFrom(source: any = {}) {
+	        return new EndpointRef(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.connectionId = source["connectionId"];
+	        this.connectionType = source["connectionType"];
+	        this.connectionName = source["connectionName"];
+	        this.database = source["database"];
+	        this.schema = source["schema"];
+	        this.fingerprint = source["fingerprint"];
+	    }
+	}
+	export class ExecutionApproval {
+	    definitionHash: string;
+	    targetFingerprint: string;
+	    approvedAt: number;
+	    approvedByRuntime: string;
+
+	    static createFrom(source: any = {}) {
+	        return new ExecutionApproval(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.definitionHash = source["definitionHash"];
+	        this.targetFingerprint = source["targetFingerprint"];
+	        this.approvedAt = source["approvedAt"];
+	        this.approvedByRuntime = source["approvedByRuntime"];
+	    }
+	}
+	export class ExecutionOptions {
+	    content?: string;
+	    syncMode?: string;
+	    targetTableStrategy?: string;
+	    autoAddColumns?: boolean;
+	    createIndexes?: boolean;
+	    propagateDeletes?: boolean;
+	    batchSize?: number;
+	    errorPolicy?: string;
+	    maxRetries?: number;
+	    retryBackoffMillis?: number;
+	    captureErrorPayload?: boolean;
+
+	    static createFrom(source: any = {}) {
+	        return new ExecutionOptions(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.content = source["content"];
+	        this.syncMode = source["syncMode"];
+	        this.targetTableStrategy = source["targetTableStrategy"];
+	        this.autoAddColumns = source["autoAddColumns"];
+	        this.createIndexes = source["createIndexes"];
+	        this.propagateDeletes = source["propagateDeletes"];
+	        this.batchSize = source["batchSize"];
+	        this.errorPolicy = source["errorPolicy"];
+	        this.maxRetries = source["maxRetries"];
+	        this.retryBackoffMillis = source["retryBackoffMillis"];
+	        this.captureErrorPayload = source["captureErrorPayload"];
+	    }
+	}
+	export class ScheduleSpec {
+	    kind: string;
+	    runAt?: number;
+	    intervalSeconds?: number;
+	    cronExpression?: string;
+	    timezone?: string;
+	    anchorAt?: number;
+	    misfirePolicy?: string;
+
+	    static createFrom(source: any = {}) {
+	        return new ScheduleSpec(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.kind = source["kind"];
+	        this.runAt = source["runAt"];
+	        this.intervalSeconds = source["intervalSeconds"];
+	        this.cronExpression = source["cronExpression"];
+	        this.timezone = source["timezone"];
+	        this.anchorAt = source["anchorAt"];
+	        this.misfirePolicy = source["misfirePolicy"];
+	    }
+	}
+	export class WatermarkSpec {
+	    column: string;
+	    initialValue?: number[];
+	    tieBreakerColumns?: string[];
+
+	    static createFrom(source: any = {}) {
+	        return new WatermarkSpec(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.column = source["column"];
+	        this.initialValue = source["initialValue"];
+	        this.tieBreakerColumns = source["tieBreakerColumns"];
+	    }
+	}
+	export class TableMapping {
+	    sourceSchema?: string;
+	    sourceTable: string;
+	    targetSchema?: string;
+	    targetTable: string;
+	    targetTableStrategy?: string;
+	    filter?: string;
+	    keyColumns?: string[];
+	    columns?: ColumnMapping[];
+	    watermark?: WatermarkSpec;
+	    enabled: boolean;
+
+	    static createFrom(source: any = {}) {
+	        return new TableMapping(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.sourceSchema = source["sourceSchema"];
+	        this.sourceTable = source["sourceTable"];
+	        this.targetSchema = source["targetSchema"];
+	        this.targetTable = source["targetTable"];
+	        this.targetTableStrategy = source["targetTableStrategy"];
+	        this.filter = source["filter"];
+	        this.keyColumns = source["keyColumns"];
+	        this.columns = this.convertValues(source["columns"], ColumnMapping);
+	        this.watermark = this.convertValues(source["watermark"], WatermarkSpec);
+	        this.enabled = source["enabled"];
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class JobDefinition {
+	    version: number;
+	    id: string;
+	    name: string;
+	    description?: string;
+	    lifecycle: string;
+	    enabled: boolean;
+	    kind: string;
+	    incrementalMode: string;
+	    source: EndpointRef;
+	    target: EndpointRef;
+	    sourceQuery?: string;
+	    mappings: TableMapping[];
+	    options: ExecutionOptions;
+	    schedule: ScheduleSpec;
+	    cdc?: CDCSpec;
+	    approval?: ExecutionApproval;
+	    concurrencyPolicy?: string;
+	    resumePolicy?: string;
+	    revision: number;
+	    createdAt: number;
+	    updatedAt: number;
+	    nextRunAt?: number;
+	    lastScheduledAt?: number;
+	    archivedAt?: number;
+
+	    static createFrom(source: any = {}) {
+	        return new JobDefinition(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.version = source["version"];
+	        this.id = source["id"];
+	        this.name = source["name"];
+	        this.description = source["description"];
+	        this.lifecycle = source["lifecycle"];
+	        this.enabled = source["enabled"];
+	        this.kind = source["kind"];
+	        this.incrementalMode = source["incrementalMode"];
+	        this.source = this.convertValues(source["source"], EndpointRef);
+	        this.target = this.convertValues(source["target"], EndpointRef);
+	        this.sourceQuery = source["sourceQuery"];
+	        this.mappings = this.convertValues(source["mappings"], TableMapping);
+	        this.options = this.convertValues(source["options"], ExecutionOptions);
+	        this.schedule = this.convertValues(source["schedule"], ScheduleSpec);
+	        this.cdc = this.convertValues(source["cdc"], CDCSpec);
+	        this.approval = this.convertValues(source["approval"], ExecutionApproval);
+	        this.concurrencyPolicy = source["concurrencyPolicy"];
+	        this.resumePolicy = source["resumePolicy"];
+	        this.revision = source["revision"];
+	        this.createdAt = source["createdAt"];
+	        this.updatedAt = source["updatedAt"];
+	        this.nextRunAt = source["nextRunAt"];
+	        this.lastScheduledAt = source["lastScheduledAt"];
+	        this.archivedAt = source["archivedAt"];
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+
+
+
 
 }
