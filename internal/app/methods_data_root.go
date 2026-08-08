@@ -144,9 +144,25 @@ func (a *App) ApplyDataRootDirectory(directory string, migrate bool) connection.
 		}
 	}
 
-	// The audit database uses SQLite WAL journaling. Pause it and checkpoint/close
-	// every audit connection before copying or switching the data root so the
-	// migration never copies a live database or an incomplete WAL sidecar.
+	// Both audit and data-sync task stores use SQLite WAL journaling. Stop the
+	// sync scheduler/runs first, then checkpoint and close both stores so root
+	// migration never copies a live WAL or starts the same scheduled run twice.
+	resumeDataSyncJobs, suspendSyncErr := a.suspendDataSyncJobs()
+	if suspendSyncErr != nil {
+		a.resumeDataSyncJobs(resumeDataSyncJobs)
+		return connection.QueryResult{
+			Success: false,
+			Message: dataRootErrorWithDetail(
+				a.appText,
+				"app.data_root.backend.error.migrate_directory_failed",
+				suspendSyncErr.Error(),
+				suspendSyncErr,
+				map[string]any{"entry": "data_sync"},
+			).Error(),
+		}
+	}
+	defer a.resumeDataSyncJobs(resumeDataSyncJobs)
+
 	resumeSQLAudit, suspendErr := a.suspendSQLAudit()
 	if suspendErr != nil {
 		a.resumeSQLAudit(resumeSQLAudit)

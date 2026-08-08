@@ -27,6 +27,8 @@ import (
 	"GoNavi-Wails/internal/secretstore"
 	"GoNavi-Wails/internal/sqlaudit"
 	syncbackend "GoNavi-Wails/internal/sync"
+	"GoNavi-Wails/internal/synccdc"
+	"GoNavi-Wails/internal/syncjob"
 	"GoNavi-Wails/shared/i18n"
 	"github.com/google/uuid"
 	"golang.org/x/sync/singleflight"
@@ -218,6 +220,20 @@ type App struct {
 	cloudBackupRestoreTokenMu     sync.Mutex
 	cloudBackupRestoreTokens      map[string]cloudBackupRestoreConfirmationToken
 	cloudBackupRestoreTokenTTL    time.Duration
+	dataSyncJobApprovalMu         sync.Mutex
+	dataSyncJobApprovalTokens     map[string]dataSyncJobApprovalToken
+	dataSyncJobApprovalChallenges map[string]dataSyncJobApprovalChallenge
+	dataSyncJobApprovalTokenTTL   time.Duration
+	dataSyncJobApprovalDelay      time.Duration
+	dataSyncFingerprintMu         sync.Mutex
+	dataSyncFingerprintKey        []byte
+	dataSyncJobsMu                sync.Mutex
+	dataSyncJobStore              *syncjob.Store
+	dataSyncJobManager            *syncjob.Manager
+	dataSyncJobLeaseOwner         string
+	dataSyncJobsDraining          bool
+	dataSyncCDCRegistry           *synccdc.Registry
+	dataSyncChangeEventRunner     func(context.Context, syncbackend.ChangeEventRequest) syncbackend.ChangeEventResult
 }
 
 // NewApp creates a new App application struct
@@ -239,21 +255,27 @@ func NewAppWithSecretStore(store secretstore.SecretStore) *App {
 		store = secretstore.NewUnavailableStore("secret store unavailable")
 	}
 	return &App{
-		dbCache:                      make(map[string]cachedDatabase),
-		connectFailures:              make(map[string]cachedConnectFailure),
-		dbConnectFlights:             make(map[uint64]*databaseConnectFlight),
-		runningQueries:               make(map[string]queryContext),
-		sqlTransactions:              make(map[string]*managedSQLTransaction),
-		configDir:                    resolveAppConfigDir(),
-		secretStore:                  store,
-		localizer:                    newAppLocalizer(),
-		jvmPreviewTokens:             make(map[string]jvmPreviewConfirmationToken),
-		jvmPreviewTokenTTL:           defaultJVMPreviewConfirmationTokenTTL,
-		elasticsearchConsoleTokens:   make(map[string]elasticsearchConsoleConfirmationToken),
-		elasticsearchConsoleTokenTTL: defaultElasticsearchConsoleConfirmationTokenTTL,
-		cloudBackupRestoreTokens:     make(map[string]cloudBackupRestoreConfirmationToken),
-		cloudBackupRestoreTokenTTL:   defaultCloudBackupRestoreConfirmationTokenTTL,
-		resultDiffManager:            resultdiff.NewManager(30 * time.Minute),
+		dbCache:                       make(map[string]cachedDatabase),
+		connectFailures:               make(map[string]cachedConnectFailure),
+		dbConnectFlights:              make(map[uint64]*databaseConnectFlight),
+		runningQueries:                make(map[string]queryContext),
+		sqlTransactions:               make(map[string]*managedSQLTransaction),
+		configDir:                     resolveAppConfigDir(),
+		secretStore:                   store,
+		localizer:                     newAppLocalizer(),
+		jvmPreviewTokens:              make(map[string]jvmPreviewConfirmationToken),
+		jvmPreviewTokenTTL:            defaultJVMPreviewConfirmationTokenTTL,
+		elasticsearchConsoleTokens:    make(map[string]elasticsearchConsoleConfirmationToken),
+		elasticsearchConsoleTokenTTL:  defaultElasticsearchConsoleConfirmationTokenTTL,
+		cloudBackupRestoreTokens:      make(map[string]cloudBackupRestoreConfirmationToken),
+		cloudBackupRestoreTokenTTL:    defaultCloudBackupRestoreConfirmationTokenTTL,
+		dataSyncJobApprovalTokens:     make(map[string]dataSyncJobApprovalToken),
+		dataSyncJobApprovalChallenges: make(map[string]dataSyncJobApprovalChallenge),
+		dataSyncJobApprovalTokenTTL:   defaultDataSyncJobApprovalTokenTTL,
+		dataSyncJobApprovalDelay:      defaultDataSyncJobApprovalDelay,
+		dataSyncJobLeaseOwner:         "sync-manager-" + uuid.NewString(),
+		dataSyncCDCRegistry:           synccdc.NewRegistry(),
+		resultDiffManager:             resultdiff.NewManager(30 * time.Minute),
 	}
 }
 
@@ -391,6 +413,7 @@ func (a *App) startup(ctx context.Context) {
 	}
 	applyMacWindowTranslucencyFix()
 	a.startConnectionKeepAliveLoop()
+	a.initializeDataSyncJobs(ctx)
 	a.initializeCloudBackup(ctx)
 	logger.Infof("应用启动完成（首次连接保护窗口=%s，最多重试=%d 次）", startupConnectRetryWindow, startupConnectRetryAttempts)
 }
@@ -462,6 +485,7 @@ func (a *App) LogWindowDiagnostic(stage string, payload string) {
 func (a *App) Shutdown() {
 	logger.Infof("应用开始关闭，准备释放资源")
 	a.shutdownCloudBackup()
+	a.shutdownDataSyncJobs()
 	a.beginDatabaseShutdown()
 	a.stopConnectionKeepAliveLoop()
 	closeJVMMonitoringSessions()
