@@ -404,7 +404,7 @@ func (s *SyncEngine) runSync(config SyncConfig) SyncResult {
 			}
 			requirePK := tableMode == "insert_update" && plan.TargetTableExists
 			pkCol := ""
-			targetPKCol := ""
+			targetPKCols := []string(nil)
 			if requirePK {
 				if len(pkCols) == 0 {
 					message := fmt.Sprintf("表 %s 未找到主键，当前模式需要差异对比，已跳过", tableName)
@@ -412,23 +412,19 @@ func (s *SyncEngine) runSync(config SyncConfig) SyncResult {
 					markTableFailure(message)
 					return
 				}
-				if len(pkCols) > 1 {
-					message := fmt.Sprintf("表 %s 为复合主键（%s），当前暂不支持差异同步", tableName, strings.Join(pkCols, ","))
-					s.appendLog(config.JobID, &result, "warn", message)
-					markTableFailure(message)
-					return
-				}
 				pkCol = pkCols[0]
-				targetPKCol = pkCol
+				targetPKCols = append([]string(nil), pkCols...)
 				if hasExplicitSyncMappings(config) {
-					mappedPK, ok := projection.TargetColumn(pkCol)
-					if !ok || strings.TrimSpace(mappedPK) == "" {
-						message := fmt.Sprintf("表 %s 的主键字段 %s 未映射到目标字段，无法执行差异同步", tableName, pkCol)
-						s.appendLog(config.JobID, &result, "warn", message)
-						markTableFailure(message)
-						return
+					for index, sourcePKCol := range pkCols {
+						mappedPK, ok := projection.TargetColumn(sourcePKCol)
+						if !ok || strings.TrimSpace(mappedPK) == "" {
+							message := fmt.Sprintf("表 %s 的主键字段 %s 未映射到目标字段，无法执行差异同步", tableName, sourcePKCol)
+							s.appendLog(config.JobID, &result, "warn", message)
+							markTableFailure(message)
+							return
+						}
+						targetPKCols[index] = mappedPK
 					}
-					targetPKCol = mappedPK
 				}
 			}
 
@@ -459,33 +455,35 @@ func (s *SyncEngine) runSync(config SyncConfig) SyncResult {
 				return
 			}
 
-			if handled, counts, err := s.tryApplyDiffInPages(config, &result, i, totalTables, tableName, sourceDB, targetDB, plan, cols, targetCols, opts, sourceType, targetType, applyTableName, pkCol); handled {
-				result.RowsInserted += counts.Inserts
-				result.RowsUpdated += counts.Updates
-				result.RowsDeleted += counts.Deletes
-				if err != nil {
-					logger.Error(err, "分页差异同步失败：表=%s", tableName)
-					message := fmt.Sprintf("分页差异同步失败: %v", err)
-					s.appendLog(config.JobID, &result, "error", "  -> "+message)
-					markTableFailure(message)
-					return
-				}
-				if counts.Inserts > 0 || counts.Updates > 0 || counts.Deletes > 0 {
-					s.appendLog(config.JobID, &result, "info", fmt.Sprintf("  -> 分页差异同步完成：插入=%d 更新=%d 删除=%d", counts.Inserts, counts.Updates, counts.Deletes))
-				} else {
-					s.appendLog(config.JobID, &result, "info", "  -> 数据一致，无需变更.")
-				}
-				if schemaChangesAllowed && len(plan.PostDataSQL) > 0 {
-					s.progress(config.JobID, i, totalTables, tableName, "创建索引")
-					if err := executeSyncSQLStatementsContext(s.context(), targetDB, plan.PostDataSQL); err != nil {
-						message := fmt.Sprintf("创建索引失败：表=%s 错误=%v", tableName, err)
-						s.appendLog(config.JobID, &result, "error", message)
+			if len(targetPKCols) <= 1 {
+				if handled, counts, err := s.tryApplyDiffInPages(config, &result, i, totalTables, tableName, sourceDB, targetDB, plan, cols, targetCols, opts, sourceType, targetType, applyTableName, pkCol); handled {
+					result.RowsInserted += counts.Inserts
+					result.RowsUpdated += counts.Updates
+					result.RowsDeleted += counts.Deletes
+					if err != nil {
+						logger.Error(err, "分页差异同步失败：表=%s", tableName)
+						message := fmt.Sprintf("分页差异同步失败: %v", err)
+						s.appendLog(config.JobID, &result, "error", "  -> "+message)
 						markTableFailure(message)
 						return
 					}
+					if counts.Inserts > 0 || counts.Updates > 0 || counts.Deletes > 0 {
+						s.appendLog(config.JobID, &result, "info", fmt.Sprintf("  -> 分页差异同步完成：插入=%d 更新=%d 删除=%d", counts.Inserts, counts.Updates, counts.Deletes))
+					} else {
+						s.appendLog(config.JobID, &result, "info", "  -> 数据一致，无需变更.")
+					}
+					if schemaChangesAllowed && len(plan.PostDataSQL) > 0 {
+						s.progress(config.JobID, i, totalTables, tableName, "创建索引")
+						if err := executeSyncSQLStatementsContext(s.context(), targetDB, plan.PostDataSQL); err != nil {
+							message := fmt.Sprintf("创建索引失败：表=%s 错误=%v", tableName, err)
+							s.appendLog(config.JobID, &result, "error", message)
+							markTableFailure(message)
+							return
+						}
+					}
+					tableCompleted = true
+					return
 				}
-				tableCompleted = true
-				return
 			}
 
 			s.progress(config.JobID, i, totalTables, tableName, "读取源表数据")
@@ -525,52 +523,10 @@ func (s *SyncEngine) runSync(config SyncConfig) SyncResult {
 				}
 
 				s.progress(config.JobID, i, totalTables, tableName, "对比差异")
-				targetMap := make(map[string]map[string]interface{}, len(targetRows))
-				for _, row := range targetRows {
-					if row[targetPKCol] == nil {
-						continue
-					}
-					pkVal := fmt.Sprintf("%v", row[targetPKCol])
-					if strings.TrimSpace(pkVal) == "" || pkVal == "<nil>" {
-						continue
-					}
-					targetMap[pkVal] = row
-				}
-				sourcePKSet := make(map[string]struct{}, len(sourceRows))
-				for _, sRow := range sourceRows {
-					if sRow[targetPKCol] == nil {
-						continue
-					}
-					pkVal := fmt.Sprintf("%v", sRow[targetPKCol])
-					if strings.TrimSpace(pkVal) == "" || pkVal == "<nil>" {
-						continue
-					}
-					sourcePKSet[pkVal] = struct{}{}
-					if tRow, exists := targetMap[pkVal]; exists {
-						changes := make(map[string]interface{})
-						for k, v := range sRow {
-							if fmt.Sprintf("%v", v) != fmt.Sprintf("%v", tRow[k]) {
-								changes[k] = v
-							}
-						}
-						if len(changes) > 0 {
-							updates = append(updates, connection.UpdateRow{Keys: map[string]interface{}{targetPKCol: sRow[targetPKCol]}, Values: changes})
-						}
-					} else {
-						inserts = append(inserts, sRow)
-					}
-				}
-				if opts.Delete {
-					for pkStr, row := range targetMap {
-						if _, ok := sourcePKSet[pkStr]; ok {
-							continue
-						}
-						deletes = append(deletes, map[string]interface{}{targetPKCol: row[targetPKCol]})
-					}
-				}
-				inserts = filterRowsByPKSelection(targetPKCol, inserts, opts.Insert, opts.SelectedInsertPKs)
-				updates = filterUpdatesByPKSelection(targetPKCol, updates, opts.Update, opts.SelectedUpdatePKs)
-				deletes = filterRowsByPKSelection(targetPKCol, deletes, opts.Delete, opts.SelectedDeletePKs)
+				inserts, updates, deletes, _ = diffRowsByKeyColumns(targetPKCols, sourceRows, targetRows)
+				inserts = filterRowsByKeySelection(targetPKCols, inserts, opts.Insert, opts.SelectedInsertPKs)
+				updates = filterUpdatesByKeySelection(targetPKCols, updates, opts.Update, opts.SelectedUpdatePKs)
+				deletes = filterRowsByKeySelection(targetPKCols, deletes, opts.Delete, opts.SelectedDeletePKs)
 			} else {
 				inserts = sourceRows
 				if !opts.Insert {

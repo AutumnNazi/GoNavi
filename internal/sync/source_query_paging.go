@@ -12,6 +12,9 @@ func (s *SyncEngine) tryApplySourceQueryInPages(config SyncConfig, res *SyncResu
 	if hasExplicitSyncMappings(config) {
 		return false, pagedDiffCounts{}, nil
 	}
+	if len(ctx.PKColumns) > 1 {
+		return false, pagedDiffCounts{}, nil
+	}
 	sourceType := resolveMigrationDBType(config.SourceConfig)
 	if !supportsPagedSourceQuery(sourceType) || !supportsPagedDiffPKLookup(ctx.TargetType) {
 		return false, pagedDiffCounts{}, nil

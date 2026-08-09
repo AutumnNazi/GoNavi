@@ -11,6 +11,45 @@ import (
 	"testing"
 )
 
+func TestDiffRowsByKeyColumnsUsesCompleteCompositeKey(t *testing.T) {
+	source := []map[string]interface{}{
+		{"tenant_id": int64(1), "order_id": int64(7), "status": "paid"},
+		{"tenant_id": int64(2), "order_id": int64(7), "status": "new"},
+	}
+	target := []map[string]interface{}{
+		{"tenant_id": int64(1), "order_id": int64(7), "status": "new"},
+		{"tenant_id": int64(3), "order_id": int64(7), "status": "old"},
+	}
+	inserts, updates, deletes, same := diffRowsByKeyColumns([]string{"tenant_id", "order_id"}, source, target)
+	if len(inserts) != 1 || len(updates) != 1 || len(deletes) != 1 || same != 0 {
+		t.Fatalf("unexpected composite diff: inserts=%#v updates=%#v deletes=%#v same=%d", inserts, updates, deletes, same)
+	}
+	if got := updates[0].Keys; len(got) != 2 || got["tenant_id"] != int64(1) || got["order_id"] != int64(7) {
+		t.Fatalf("update keys = %#v, want complete composite key", got)
+	}
+	if got := deletes[0]; len(got) != 2 || got["tenant_id"] != int64(3) || got["order_id"] != int64(7) {
+		t.Fatalf("delete keys = %#v, want complete composite key", got)
+	}
+}
+
+func TestDiffRowsByKeyColumnsPreservesWhitespaceAndEmptyStrings(t *testing.T) {
+	source := []map[string]interface{}{
+		{"tenant_id": "", "order_id": "7", "status": "insert"},
+		{"tenant_id": " tenant", "order_id": "8", "status": "left-space"},
+	}
+	target := []map[string]interface{}{
+		{"tenant_id": "tenant", "order_id": "8", "status": "no-space"},
+	}
+
+	inserts, updates, deletes, same := diffRowsByKeyColumns([]string{"tenant_id", "order_id"}, source, target)
+	if len(inserts) != 2 || len(updates) != 0 || len(deletes) != 1 || same != 0 {
+		t.Fatalf("whitespace-sensitive diff: inserts=%#v updates=%#v deletes=%#v same=%d", inserts, updates, deletes, same)
+	}
+	if key, ok := syncRowKey(source[0], []string{"tenant_id", "order_id"}); !ok || key != `["","7"]` {
+		t.Fatalf("empty-string composite key = %q, %v", key, ok)
+	}
+}
+
 type fakeQuerySyncTargetDB struct {
 	fakeMigrationDB
 	appliedTable   string
@@ -237,14 +276,14 @@ func TestValidateSourceQuerySyncConfigUsesCurrentLanguageForValidationErrors(t *
 	}
 }
 
-func TestResolveSinglePKColumnUsesCurrentLanguageForQueryDiffErrors(t *testing.T) {
+func TestResolvePKColumnsUsesCurrentLanguageForQueryDiffErrors(t *testing.T) {
 	SetBackendLanguage(i18n.LanguageEnUS)
 	t.Cleanup(func() {
 		SetBackendLanguage(i18n.LanguageZhCN)
 	})
 
 	t.Run("target primary key required", func(t *testing.T) {
-		_, err := resolveSinglePKColumn([]connection.ColumnDefinition{
+		_, err := resolvePKColumns([]connection.ColumnDefinition{
 			{Name: "id", Type: "bigint", Nullable: "NO"},
 		})
 		if err == nil {
@@ -258,22 +297,18 @@ func TestResolveSinglePKColumnUsesCurrentLanguageForQueryDiffErrors(t *testing.T
 		assertNoLegacySourceQueryChinese(t, err.Error())
 	})
 
-	t.Run("composite primary key unsupported", func(t *testing.T) {
-		_, err := resolveSinglePKColumn([]connection.ColumnDefinition{
+	t.Run("composite primary key preserves column order", func(t *testing.T) {
+		keys, err := resolvePKColumns([]connection.ColumnDefinition{
 			{Name: "id", Type: "bigint", Nullable: "NO", Key: "PRI"},
 			{Name: "tenant_id", Type: "bigint", Nullable: "NO", Key: "PRI"},
 		})
-		if err == nil {
-			t.Fatal("expected composite primary key error")
+		if err != nil {
+			t.Fatalf("resolvePKColumns() error = %v", err)
 		}
-
-		want := localizedSyncTestText(t, i18n.LanguageEnUS, "data_sync.backend.error.target_composite_pk_query_diff_unsupported", map[string]any{
-			"columns": "id,tenant_id",
-		})
-		if err.Error() != want {
-			t.Fatalf("expected localized composite PK message %q, got %q", want, err.Error())
+		want := []string{"id", "tenant_id"}
+		if !reflect.DeepEqual(keys, want) {
+			t.Fatalf("resolvePKColumns() = %#v, want %#v", keys, want)
 		}
-		assertNoLegacySourceQueryChinese(t, err.Error())
 	})
 }
 
@@ -804,6 +839,51 @@ func TestPreviewSourceQueryUsesCurrentLanguageForSchemaSummary(t *testing.T) {
 		t.Fatalf("expected localized preview schema summary %q, got %q", want, preview.SchemaSummary)
 	}
 	assertNoLegacySourceQueryChinese(t, preview.SchemaSummary)
+}
+
+func TestPreviewSourceQueryFallbackKeepsSingleKeyDisplayAndRows(t *testing.T) {
+	const sourceSQL = "SELECT id, name FROM active_users"
+	sourceDB := &fakeMigrationDB{queryData: map[string][]map[string]interface{}{
+		sourceSQL: {{"id": int64(1), "name": "new"}},
+	}}
+	targetDB := &fakeQuerySyncTargetDB{fakeMigrationDB: fakeMigrationDB{
+		columns: map[string][]connection.ColumnDefinition{
+			"app.users": {
+				{Name: "id", Type: "bigint", Nullable: "NO", Key: "PRI"},
+				{Name: "name", Type: "varchar(64)", Nullable: "YES"},
+			},
+		},
+		queryData: map[string][]map[string]interface{}{
+			"SELECT * FROM `app`.`users`": {{"id": int64(1), "name": "old"}},
+		},
+	}}
+	useSyncDatabaseFactorySequence(t,
+		syncDatabaseFactoryStep{db: sourceDB},
+		syncDatabaseFactoryStep{db: targetDB},
+	)
+
+	preview, err := NewSyncEngine(Reporter{}).previewSourceQuery(SyncConfig{
+		SourceConfig: connection.ConnectionConfig{Type: "mysql", Database: "source_db"},
+		TargetConfig: connection.ConnectionConfig{Type: "mysql", Database: "app"},
+		SourceQuery:  sourceSQL,
+		Content:      "data",
+		Mode:         "insert_update",
+		Mappings: []SyncObjectMapping{{
+			Source:     SyncObjectRef{Name: "active_users"},
+			Target:     SyncObjectRef{Schema: "app", Name: "users"},
+			KeyColumns: []string{"id"},
+			Columns: []SyncColumnMapping{
+				{Source: "id", Target: "id"},
+				{Source: "name", Target: "name"},
+			},
+		}},
+	}, 20)
+	if err != nil {
+		t.Fatalf("previewSourceQuery() error = %v", err)
+	}
+	if len(preview.Updates) != 1 || preview.Updates[0].PK != "1" || preview.Updates[0].Source["name"] != "new" || preview.Updates[0].Target["name"] != "old" {
+		t.Fatalf("preview updates = %#v", preview.Updates)
+	}
 }
 
 func TestRunSourceQuerySyncUsesCurrentLanguageForStartProgressAndSourceLog(t *testing.T) {
