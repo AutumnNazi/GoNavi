@@ -5164,6 +5164,7 @@
   "db.backend.error.connection_open_failed_prefix": "Datenbankverbindung konnte nicht geöffnet werden: ",
   "db.backend.error.connection_verify_failed_prefix": "Verbindung konnte nach dem Aufbau nicht verifiziert werden: ",
   "db.backend.error.create_table_statement_not_found": "Die CREATE TABLE-Anweisung wurde nicht gefunden",
+  "db.backend.error.sqlserver_create_statement_unsupported": "Das Anzeigen der SQL Server-Tabellen-DDL wird vom aktuellen Backend nicht unterstützt",
   "db.backend.error.custom_clickhouse_dsn_invalid": "Die DSN der benutzerdefinierten ClickHouse-Verbindung ist ungültig. Verwenden Sie eine Einzelknoten-Adresse im Format clickhouse://, http(s)://, jdbc:clickhouse:// oder jdbc:ch://",
   "db.backend.error.custom_clickhouse_dsn_required": "Für eine benutzerdefinierte ClickHouse-Verbindung ist eine DSN im Format clickhouse://, http(s)://, jdbc:clickhouse:// oder jdbc:ch:// erforderlich",
   "db.backend.error.custom_driver_system_odbc_unsupported_prefix": "Datenbankverbindung konnte nicht geöffnet werden: Benutzerdefinierte Verbindungen unterstützen es nicht, den System-ODBC/JDBC-Treibernamen \"{{driver}}\" direkt einzugeben. Geben Sie stattdessen einen bereits in GoNavi registrierten Go database/sql-Treibernamen ein. Der aktuelle Build registriert keinen generischen ODBC-Treiber, daher wird eine Verbindung zu InterSystems IRIS über \"{{driver}}\" derzeit noch nicht unterstützt: ",

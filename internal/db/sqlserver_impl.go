@@ -530,7 +530,7 @@ ORDER BY s.name, t.name`, safeDB, safeDB)
 }
 
 func (s *SqlServerDB) GetCreateStatement(dbName, tableName string) (string, error) {
-	return fmt.Sprintf("-- SHOW CREATE TABLE not supported for SQL Server in this version.\n-- Table: %s.%s", dbName, tableName), nil
+	return "", localizedDatabaseRuntimeError("db.backend.error.sqlserver_create_statement_unsupported", nil)
 }
 
 func (s *SqlServerDB) GetColumns(dbName, tableName string) ([]connection.ColumnDefinition, error) {
