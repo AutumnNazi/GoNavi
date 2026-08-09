@@ -3,6 +3,9 @@
 package db
 
 import (
+	"context"
+	"errors"
+	"net"
 	"strings"
 	"testing"
 
@@ -10,6 +13,59 @@ import (
 
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
+
+func TestMongoSSHDialerRoutesAllMembersThroughSSH(t *testing.T) {
+	tests := []struct {
+		name       string
+		uri        string
+		wantScheme string
+	}{
+		{name: "standard", uri: "mongodb://mongo.internal:27017/app", wantScheme: "mongodb://"},
+		{name: "srv", uri: "mongodb+srv://cluster.example.test/app", wantScheme: "mongodb+srv://"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			config := applyMongoURI(connection.ConnectionConfig{
+				URI:    tt.uri,
+				UseSSH: true,
+				SSH: connection.SSHConfig{
+					Host: "bastion.example.test",
+					Port: 22,
+					User: "operator",
+				},
+			})
+			if uri := (&MongoDB{}).getURI(config); !strings.HasPrefix(uri, tt.wantScheme) {
+				t.Fatalf("expected URI scheme %q, got %q", tt.wantScheme, uri)
+			}
+
+			dialer := mongoConnectionDialer(config)
+			sshDialer, ok := dialer.(*mongoSSHDialer)
+			if !ok {
+				t.Fatalf("expected SSH dialer, got %T", dialer)
+			}
+
+			wantErr := errors.New("dial stopped")
+			var addresses []string
+			sshDialer.dialContext = func(_ context.Context, _ connection.SSHConfig, network, address string) (net.Conn, error) {
+				if network != "tcp" {
+					t.Fatalf("expected tcp network, got %q", network)
+				}
+				addresses = append(addresses, address)
+				return nil, wantErr
+			}
+
+			for _, address := range []string{"mongo-1.internal:27017", "mongo-2.internal:27018"} {
+				if _, err := dialer.DialContext(context.Background(), "tcp", address); !errors.Is(err, wantErr) {
+					t.Fatalf("expected SSH dial error for %s, got %v", address, err)
+				}
+			}
+			if strings.Join(addresses, ",") != "mongo-1.internal:27017,mongo-2.internal:27018" {
+				t.Fatalf("unexpected SSH targets: %v", addresses)
+			}
+		})
+	}
+}
 
 func TestApplyMongoURI_ExplicitHostDoesNotAdoptURIHosts(t *testing.T) {
 	config := connection.ConnectionConfig{
