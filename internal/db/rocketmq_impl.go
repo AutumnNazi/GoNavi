@@ -125,6 +125,7 @@ var newRocketMQRuntime = func(config connection.ConnectionConfig) (rocketmqRunti
 
 type RocketMQDB struct {
 	runtime              rocketmqRuntime
+	tunnel               *rocketmqTunnelSet
 	defaultTopic         string
 	defaultConsumerGroup string
 	defaultTagExpression string
@@ -137,15 +138,16 @@ func (r *RocketMQDB) Connect(config connection.ConnectionConfig) error {
 	_ = r.Close()
 
 	runConfig := normalizeRocketMQConfig(config)
-	if runConfig.UseSSH {
-		return fmt.Errorf("RocketMQ 当前暂不支持 SSH 隧道；请直接连通 NameServer 与 Broker")
+	preparedConfig, tunnel, err := prepareRocketMQTunnel(runConfig)
+	if err != nil {
+		return err
 	}
-	if runConfig.UseProxy || runConfig.UseHTTPTunnel {
-		return fmt.Errorf("RocketMQ 当前暂不支持代理或 HTTP 隧道；请直接连通 NameServer 与 Broker")
-	}
+	r.tunnel = tunnel
+	runConfig = preparedConfig
 
 	runtime, err := newRocketMQRuntime(runConfig)
 	if err != nil {
+		_ = r.Close()
 		return err
 	}
 	r.runtime = runtime
@@ -170,7 +172,13 @@ func (r *RocketMQDB) Close() error {
 			firstErr = err
 		}
 	}
+	if r.tunnel != nil {
+		if err := r.tunnel.Close(); err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
 	r.runtime = nil
+	r.tunnel = nil
 	r.defaultTopic = ""
 	r.defaultConsumerGroup = ""
 	r.defaultTagExpression = ""

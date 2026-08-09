@@ -88,6 +88,11 @@ func resolveDialConfigWithProxy(raw connection.ConnectionConfig) (connection.Con
 		// normalized proxy directly instead of using a local TCP forwarder.
 		return config, nil
 	}
+	if normalizedType == "rocketmq" || normalizedType == "rocket-mq" || normalizedType == "rocket_mq" || normalizedType == "apache-rocketmq" || normalizedType == "apache_rocketmq" || normalizedType == "rmq" {
+		// RocketMQ discovers broker addresses from NameServer responses. Its
+		// driver must keep the proxy so it can forward both address layers.
+		return config, nil
+	}
 	if normalizedType == "sqlite" || normalizedType == "duckdb" || normalizedType == "custom" {
 		// 文件型/自定义 DSN 类型不走标准 host:port，不在此层改写。
 		return config, nil
