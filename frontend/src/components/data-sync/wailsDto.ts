@@ -833,6 +833,10 @@ export const decodeRouteCapability = (value: unknown): DataSyncRouteCapability =
       capability.requiresExistingTarget,
       'DataSyncCapabilityResolve.data.requiresExistingTarget',
     ),
+    supportsMutations: optionalBoolean(
+      capability.supportsMutations,
+      'DataSyncCapabilityResolve.data.supportsMutations',
+    ),
     supportsCdc: false,
   };
 };
@@ -909,6 +913,7 @@ export const decodeDataSyncPreflight = (
         supportsAutoCreate: false,
         supportsAutoAddColumns: false,
         requiresExistingTarget: false,
+        supportsMutations: false,
         supportsCdc: false,
       };
     }

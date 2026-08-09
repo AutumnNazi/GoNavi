@@ -58,6 +58,7 @@ func (a *App) preflightDataSyncJob(input syncjob.JobDefinition, now time.Time) D
 		message := fmt.Sprintf("migration route %s -> %s is %s", result.Capability.SourceType, result.Capability.TargetType, result.Capability.SupportLevel)
 		result.Issues = append(result.Issues, preflightIssue("route_unsupported", DataSyncJobPreflightBlocker, "endpoints", message, ""))
 	}
+	result.Issues = append(result.Issues, appendOnlyTargetPreflightIssues(definition, result.Capability)...)
 	if definition.Kind != syncjob.JobKindCompare {
 		for _, mapping := range definition.Mappings {
 			if !mapping.Enabled {
@@ -223,6 +224,32 @@ func (a *App) preflightDataSyncJob(input syncjob.JobDefinition, now time.Time) D
 	}
 	result.NextRunAt = previewDataSyncJobSchedule(definition, now, 5)
 	return finishDataSyncJobPreflight(result)
+}
+
+func appendOnlyTargetPreflightIssues(definition syncjob.JobDefinition, capability sync.MigrationCapability) []DataSyncJobPreflightIssue {
+	if definition.Kind == syncjob.JobKindCompare || capability.SupportsMutations {
+		return nil
+	}
+	issues := make([]DataSyncJobPreflightIssue, 0, 2)
+	if !strings.EqualFold(definition.Options.SyncMode, "insert_only") {
+		issues = append(issues, preflightIssue(
+			"append_only_target_requires_insert_only",
+			DataSyncJobPreflightBlocker,
+			"delivery",
+			fmt.Sprintf("%s targets support append/INSERT-only delivery; updates are not supported", capability.TargetType),
+			"",
+		))
+	}
+	if definition.Options.PropagateDeletes {
+		issues = append(issues, preflightIssue(
+			"append_only_target_delete_unsupported",
+			DataSyncJobPreflightBlocker,
+			"delivery",
+			fmt.Sprintf("%s targets support append/INSERT-only delivery; deletes are not supported", capability.TargetType),
+			"",
+		))
+	}
+	return issues
 }
 
 func (a *App) preflightDataSyncMappings(definition syncjob.JobDefinition, source, target resolvedDataSyncJobEndpoint) []DataSyncJobPreflightIssue {

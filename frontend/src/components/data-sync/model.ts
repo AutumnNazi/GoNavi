@@ -295,6 +295,7 @@ export type DataSyncRouteCapability = {
   supportsAutoCreate: boolean;
   supportsAutoAddColumns?: boolean;
   requiresExistingTarget?: boolean;
+  supportsMutations?: boolean;
   supportsCdc: boolean;
 };
 
