@@ -1,7 +1,7 @@
 import Modal from './common/ResizableDraggableModal';
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Button, Dropdown, message, Tabs, Tooltip } from 'antd';
-import { CloseOutlined, ConsoleSqlOutlined, DatabaseOutlined, EditOutlined, FileTextOutlined, FolderOpenOutlined, HistoryOutlined, PlusOutlined, PushpinOutlined, RightOutlined, RobotOutlined, SearchOutlined, SettingOutlined } from '@ant-design/icons';
+import { ArrowLeftOutlined, ArrowRightOutlined, CloseCircleOutlined, CloseOutlined, ConsoleSqlOutlined, DatabaseOutlined, EditOutlined, ExportOutlined, FileTextOutlined, FolderOpenOutlined, HistoryOutlined, PlusOutlined, PushpinOutlined, RightOutlined, RobotOutlined, SearchOutlined, SettingOutlined } from '@ant-design/icons';
 import type { MenuProps, TabsProps } from 'antd';
 import { DndContext, PointerSensor, closestCenter, useSensor, useSensors } from '@dnd-kit/core';
 import type { DragEndEvent, DragMoveEvent, DragStartEvent } from '@dnd-kit/core';
@@ -57,6 +57,7 @@ import { QUERY_TAB_RENAME_REQUEST_EVENT } from '../utils/queryTabTitle';
 import { getDbIcon } from './DatabaseIcons';
 import { resolveConnectionAccentColor, resolveConnectionIconType } from '../utils/connectionVisual';
 import { dispatchSidebarLocateConnection } from '../utils/sidebarLocate';
+import { renderV2ActionMenuPopup } from './common/V2ActionMenuPopup';
 
 const getTabKindLabel = (tab: TabData): string => {
   if (tab.type === 'query') return t('tab_manager.kind_badge.query');
@@ -632,6 +633,12 @@ const SortableTabLabel: React.FC<SortableTabLabelProps> = ({
       trigger={['contextMenu']}
       onOpenChange={handleTabMenuOpenChange}
       rootClassName={isV2Ui ? 'gn-v2-tab-context-menu-popup' : undefined}
+      popupRender={(menu) => renderV2ActionMenuPopup(menu, Boolean(isV2Ui), {
+        title: displayTitle,
+        meta: displayModel.secondaryText || getTabKindLabel(tab),
+        icon: tab.type === 'query' ? <ConsoleSqlOutlined /> : <FileTextOutlined />,
+        badge: getTabKindLabel(tab),
+      })}
     >
       {wrappedLabel}
     </Dropdown>
@@ -1337,57 +1344,74 @@ const TabManager: React.FC<TabManagerProps> = React.memo<TabManagerProps>(({ onF
     const renameQueryMenuState = resolveQueryTabRenameMenuState(tab);
 
     const menuItems: MenuProps['items'] = [
-      ...(renameQueryMenuState.visible ? [{
-        key: 'rename-query',
-        icon: <EditOutlined />,
-        label: t('query_editor.action.rename_query'),
-        disabled: renameQueryMenuState.disabled,
-        onClick: () => {
-          setActiveTab(tab.id);
-          window.setTimeout(() => {
-            window.dispatchEvent(new CustomEvent(QUERY_TAB_RENAME_REQUEST_EVENT, {
-              detail: { tabId: tab.id },
-            }));
-          }, 0);
-        },
-      }] : []),
       {
-        key: 'tab-display-settings',
-        icon: <SettingOutlined />,
-        label: t('tab_manager.menu.tab_display_settings'),
-        onClick: openTabDisplaySettings,
+        type: 'group',
+        key: 'tab-actions',
+        label: t('tab_manager.kind_badge.fallback'),
+        children: [
+          ...(renameQueryMenuState.visible ? [{
+            key: 'rename-query',
+            icon: <EditOutlined />,
+            label: t('query_editor.action.rename_query'),
+            disabled: renameQueryMenuState.disabled,
+            onClick: () => {
+              setActiveTab(tab.id);
+              window.setTimeout(() => {
+                window.dispatchEvent(new CustomEvent(QUERY_TAB_RENAME_REQUEST_EVENT, {
+                  detail: { tabId: tab.id },
+                }));
+              }, 0);
+            },
+          }] : []),
+          {
+            key: 'tab-display-settings',
+            icon: <SettingOutlined />,
+            label: t('tab_manager.menu.tab_display_settings'),
+            onClick: openTabDisplaySettings,
+          },
+          {
+            key: 'open-in-window',
+            icon: <ExportOutlined />,
+            label: t('tab_manager.menu.open_in_window'),
+            disabled: isBackgroundTaskWorkbenchTab(tab),
+            onClick: () => detachTabToWindow(tab.id),
+          },
+        ],
       },
       {
-        key: 'open-in-window',
-        label: t('tab_manager.menu.open_in_window'),
-        disabled: isBackgroundTaskWorkbenchTab(tab),
-        onClick: () => detachTabToWindow(tab.id),
-      },
-      { type: 'divider' },
-      {
-        key: 'close-other',
-        label: t('tab_manager.menu.close_other'),
-        disabled: tabs.length <= 1,
-        onClick: () => closeTabsWithSQLFilePrompt(getCloseOtherTabIds(tabs, tab.id), () => closeOtherTabs(tab.id)),
-      },
-      {
-        key: 'close-left',
-        label: t('tab_manager.menu.close_left'),
-        disabled: index === 0,
-        onClick: () => closeTabsWithSQLFilePrompt(getCloseTabsToLeftIds(dockedTabs, tab.id), () => closeTabsToLeft(tab.id)),
-      },
-      {
-        key: 'close-right',
-        label: t('tab_manager.menu.close_right'),
-        disabled: index === dockedTabs.length - 1,
-        onClick: () => closeTabsWithSQLFilePrompt(getCloseTabsToRightIds(dockedTabs, tab.id), () => closeTabsToRight(tab.id)),
-      },
-      { type: 'divider' },
-      {
-        key: 'close-all',
-        label: t('tab_manager.menu.close_all'),
-        disabled: tabs.length === 0,
-        onClick: () => closeTabsWithSQLFilePrompt(tabs.map((item) => item.id), () => closeAllTabs()),
+        type: 'group',
+        key: 'close-actions',
+        label: t('common.close'),
+        children: [
+          {
+            key: 'close-other',
+            icon: <CloseCircleOutlined />,
+            label: t('tab_manager.menu.close_other'),
+            disabled: tabs.length <= 1,
+            onClick: () => closeTabsWithSQLFilePrompt(getCloseOtherTabIds(tabs, tab.id), () => closeOtherTabs(tab.id)),
+          },
+          {
+            key: 'close-left',
+            icon: <ArrowLeftOutlined />,
+            label: t('tab_manager.menu.close_left'),
+            disabled: index === 0,
+            onClick: () => closeTabsWithSQLFilePrompt(getCloseTabsToLeftIds(dockedTabs, tab.id), () => closeTabsToLeft(tab.id)),
+          },
+          {
+            key: 'close-right',
+            icon: <ArrowRightOutlined />,
+            label: t('tab_manager.menu.close_right'),
+            disabled: index === dockedTabs.length - 1,
+            onClick: () => closeTabsWithSQLFilePrompt(getCloseTabsToRightIds(dockedTabs, tab.id), () => closeTabsToRight(tab.id)),
+          },
+          {
+            key: 'close-all',
+            icon: <CloseOutlined />,
+            label: t('tab_manager.menu.close_all'),
+            disabled: tabs.length === 0,
+            onClick: () => closeTabsWithSQLFilePrompt(tabs.map((item) => item.id), () => closeAllTabs()),
+          },
+        ],
       },
     ];
     

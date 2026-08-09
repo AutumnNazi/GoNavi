@@ -32,6 +32,47 @@ describe('QueryEditorToolbar layout', () => {
     expect(css).toContain('body[data-ui-version="v2"] .gn-v2-query-toolbar-action-pair {');
   });
 
+  it('uses the table context-menu density across v2 action menus', () => {
+    const css = readV2ThemeCss();
+    const baseTokensCss = css.slice(
+      css.indexOf('body[data-ui-version="v2"] {'),
+      css.indexOf('body[data-ui-version="v2"][data-platform="darwin"] {'),
+    );
+    const dropdownItemCss = css.slice(
+      css.indexOf('/* Compact action menus share the table context-menu geometry. */'),
+      css.indexOf('/* Icon + label share one baseline/vertical center'),
+    );
+    const titlebarMenuCss = css.slice(
+      css.indexOf('/* Title-bar more menu: leaf rows and submenu rows share the same hover fill + alignment */'),
+      css.indexOf('body[data-ui-version="v2"] .gn-v2-titlebar-quick-dropdown .ant-dropdown-menu-item:hover'),
+    );
+    const tabMenuCss = css.slice(
+      css.indexOf('body[data-ui-version="v2"] .gn-v2-tab-context-menu-popup .ant-dropdown-menu {'),
+      css.indexOf('/* ─── V2 DataGrid: toolbar, smart filters, table, statusbar ─ */'),
+    );
+    const tableMenuItemCss = css.slice(
+      css.indexOf('body[data-ui-version="v2"] .gn-v2-context-menu-item {'),
+      css.indexOf('body[data-ui-version="v2"] .gn-v2-context-menu-item:hover {'),
+    );
+    const monacoMenuCss = css.slice(
+      css.indexOf('/* Monaco context menu follows the same compact action-menu surface. */'),
+      css.indexOf('/* Nested dropdown menus: collapse double border, no glow/halo */'),
+    );
+
+    expect(baseTokensCss).toContain('--gn-v2-menu-row-height: 28px;');
+    expect(baseTokensCss).toContain('--gn-v2-menu-item-radius: 5px;');
+    expect(dropdownItemCss).toContain('height: var(--gn-v2-menu-row-height) !important;');
+    expect(dropdownItemCss).toContain('min-height: var(--gn-v2-menu-row-height) !important;');
+    expect(dropdownItemCss).toContain('box-sizing: border-box !important;');
+    expect(dropdownItemCss).toContain('padding: 4px 8px !important;');
+    expect(titlebarMenuCss).toContain('min-height: var(--gn-v2-menu-row-height) !important;');
+    expect(tabMenuCss).not.toContain('min-height: 34px');
+    expect(tabMenuCss).not.toContain('.ant-dropdown-menu-item:first-child');
+    expect(tableMenuItemCss).toContain('height: var(--gn-v2-menu-row-height);');
+    expect(monacoMenuCss).toContain('min-height: var(--gn-v2-menu-row-height) !important;');
+    expect(monacoMenuCss).toContain('background: var(--gn-bg-panel) !important;');
+  });
+
   it('shares the active theme surface across the SQL toolbar and Monaco editor', () => {
     const css = readV2ThemeCss();
     const defaultMonacoCss = css.slice(
@@ -267,5 +308,21 @@ describe('QueryEditorToolbar layout', () => {
     expect(css).toContain('.gn-query-toolbar-select-full-name {');
     expect(css).toContain('text-overflow: ellipsis;');
     expect(css).toContain('white-space: nowrap;');
+  });
+
+  it('uses the table context-menu visual grammar for every v2 action popup', () => {
+    const toolbarSource = readFileSync(new URL('./QueryEditorToolbar.tsx', import.meta.url), 'utf8');
+    const queryEditorSource = readFileSync(new URL('./QueryEditor.tsx', import.meta.url), 'utf8');
+    const sharedPopupSource = readFileSync(new URL('./common/V2ActionMenuPopup.tsx', import.meta.url), 'utf8');
+    const css = readV2ThemeCss();
+
+    expect(toolbarSource).toContain('renderV2ActionMenuPopup');
+    expect(queryEditorSource).toContain('decorateV2MonacoContextMenu');
+    expect(sharedPopupSource).toContain('gn-v2-context-menu-header gn-v2-action-menu-header');
+    expect(sharedPopupSource).toContain('gn-v2-context-menu-engine-pill');
+    expect(css).toContain('.gn-v2-action-menu-surface {');
+    expect(css).toContain('.gn-v2-action-menu-body .ant-dropdown-menu-item-group-title {');
+    expect(css).toContain('.gn-v2-action-menu-body .ant-dropdown-menu-item:not(:has(.ant-dropdown-menu-item-icon))::before');
+    expect(css).toContain('.monaco-menu > .gn-v2-monaco-context-menu-header {');
   });
 });

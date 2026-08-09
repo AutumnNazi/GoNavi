@@ -26,6 +26,7 @@ import {
 import QueryEditorTransactionSettings, {
   type SqlEditorCommitMode,
 } from "./QueryEditorTransactionSettings";
+import { renderV2ActionMenuPopup } from './common/V2ActionMenuPopup';
 
 export type QueryEditorMode = "sql" | "elasticsearch";
 
@@ -304,6 +305,11 @@ const QueryEditorToolbar: React.FC<QueryEditorToolbarProps> = ({
     ? t("query_editor.elasticsearch.action.ai")
     : `AI · ${t("query_editor.action.more")}`;
   const formatSettingsTitle = `${t("query_editor.action.format_sql")} · ${t("settings.title")}`;
+  const activeConnectionLabel = queryCapableConnections.find(
+    (connection) => connection.id === currentConnectionId,
+  )?.name;
+  const menuContextMeta = [activeConnectionLabel, currentDb].filter(Boolean).join(' · ')
+    || t('tab_manager.kind_badge.query');
   const aiMenuItems: MenuProps["items"] = isElasticsearchMode
     ? [
         {
@@ -350,16 +356,20 @@ const QueryEditorToolbar: React.FC<QueryEditorToolbarProps> = ({
   const moreMenuItems: MenuProps["items"] = isV2Ui
     ? [
         ...baseMoreMenuItems,
-        ...(baseMoreMenuItems.length > 0 ? [{ type: "divider" as const }] : []),
         {
-          key: "toggle-result-panel",
-          label: toggleResultPanelTitle,
-          icon: isResultPanelVisible ? (
-            <EyeInvisibleOutlined />
-          ) : (
-            <EyeOutlined />
-          ),
-          onClick: onToggleResultPanelVisibility,
+          type: 'group',
+          key: 'result-visibility',
+          label: t('query_editor.action.results'),
+          children: [{
+            key: "toggle-result-panel",
+            label: toggleResultPanelTitle,
+            icon: isResultPanelVisible ? (
+              <EyeInvisibleOutlined />
+            ) : (
+              <EyeOutlined />
+            ),
+            onClick: onToggleResultPanelVisibility,
+          }],
         },
       ]
     : baseMoreMenuItems;
@@ -437,11 +447,17 @@ const QueryEditorToolbar: React.FC<QueryEditorToolbarProps> = ({
           open={isV2Ui && openToolbarMenu === "templates" ? false : undefined}
         >
           <span className={isV2Ui ? "gn-v2-query-toolbar-menu-trigger" : undefined}>
-            <Dropdown
-              menu={{ items: templateMenuItems }}
-              placement="bottomLeft"
-              trigger={["click"]}
-              open={isV2Ui ? openToolbarMenu === "templates" : undefined}
+              <Dropdown
+                menu={{ items: templateMenuItems }}
+                placement="bottomLeft"
+                trigger={["click"]}
+                rootClassName={isV2Ui ? 'gn-v2-action-menu-popup-host' : undefined}
+                popupRender={(menu) => renderV2ActionMenuPopup(menu, isV2Ui, {
+                  title: t('query_editor.elasticsearch.action.templates'),
+                  meta: menuContextMeta,
+                  icon: <DownOutlined />,
+                })}
+                open={isV2Ui ? openToolbarMenu === "templates" : undefined}
               onOpenChange={isV2Ui ? (open) => updateToolbarMenuOpen("templates", open) : undefined}
             >
               <Button
@@ -618,6 +634,13 @@ const QueryEditorToolbar: React.FC<QueryEditorToolbarProps> = ({
                 menu={{ items: aiMenuItems }}
                 placement="bottomRight"
                 trigger={["click"]}
+                rootClassName={isV2Ui ? 'gn-v2-action-menu-popup-host' : undefined}
+                popupRender={(menu) => renderV2ActionMenuPopup(menu, isV2Ui, {
+                  title: aiMoreTitle,
+                  meta: menuContextMeta,
+                  icon: <RobotOutlined />,
+                  badge: 'AI',
+                })}
                 open={isV2Ui ? openToolbarMenu === "ai" : undefined}
                 onOpenChange={isV2Ui ? (open) => updateToolbarMenuOpen("ai", open) : undefined}
               >
@@ -659,6 +682,13 @@ const QueryEditorToolbar: React.FC<QueryEditorToolbarProps> = ({
                     menu={{ items: aiMenuItems }}
                     placement="bottomRight"
                     trigger={["click"]}
+                    rootClassName={isV2Ui ? 'gn-v2-action-menu-popup-host' : undefined}
+                    popupRender={(menu) => renderV2ActionMenuPopup(menu, isV2Ui, {
+                      title: aiMoreTitle,
+                      meta: menuContextMeta,
+                      icon: <RobotOutlined />,
+                      badge: 'AI',
+                    })}
                     open={isV2Ui ? openToolbarMenu === "ai" : undefined}
                     onOpenChange={isV2Ui ? (open) => updateToolbarMenuOpen("ai", open) : undefined}
                   >
@@ -683,6 +713,13 @@ const QueryEditorToolbar: React.FC<QueryEditorToolbarProps> = ({
                   menu={{ items: moreMenuItems }}
                   placement="bottomRight"
                   trigger={["click"]}
+                  rootClassName={isV2Ui ? 'gn-v2-action-menu-popup-host' : undefined}
+                  popupRender={(menu) => renderV2ActionMenuPopup(menu, isV2Ui, {
+                    title: t('query_editor.action.more'),
+                    meta: menuContextMeta,
+                    icon: <EllipsisOutlined />,
+                    badge: t('tab_manager.kind_badge.query'),
+                  })}
                   open={isV2Ui ? openToolbarMenu === "more" : undefined}
                   onOpenChange={isV2Ui ? (open) => updateToolbarMenuOpen("more", open) : undefined}
                 >
@@ -766,6 +803,13 @@ const QueryEditorToolbar: React.FC<QueryEditorToolbarProps> = ({
                 menu={{ items: formatSettingsMenu }}
                 placement="bottomRight"
                 trigger={["click"]}
+                rootClassName={isV2Ui ? 'gn-v2-action-menu-popup-host' : undefined}
+                popupRender={(menu) => renderV2ActionMenuPopup(menu, isV2Ui, {
+                  title: formatSettingsTitle,
+                  meta: menuContextMeta,
+                  icon: <FormatPainterOutlined />,
+                  badge: t('tab_manager.kind_badge.query'),
+                })}
                 open={isV2Ui ? openToolbarMenu === "format" : undefined}
                 onOpenChange={isV2Ui ? (open) => updateToolbarMenuOpen("format", open) : undefined}
               >

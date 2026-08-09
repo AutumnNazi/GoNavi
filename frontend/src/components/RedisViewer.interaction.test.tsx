@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import RedisViewer from './RedisViewer';
 
 const appCss = readFileSync(new URL('../App.css', import.meta.url), 'utf8');
+const redisViewerSource = readFileSync(new URL('./RedisViewer.tsx', import.meta.url), 'utf8');
 
 const storeState = vi.hoisted(() => ({
   connections: [
@@ -204,6 +205,18 @@ const findFirstLeafNode = (nodes: any[]): any | null => {
 };
 
 describe('RedisViewer tree interactions', () => {
+  it('uses the shared compact context-menu item class for v2 key actions', () => {
+    const contextMenuStart = redisViewerSource.indexOf('{treeContextMenu && typeof document');
+    const contextMenuSource = redisViewerSource.slice(
+      contextMenuStart,
+      redisViewerSource.indexOf('), document.body)}', contextMenuStart),
+    );
+
+    expect(contextMenuSource).toContain("'gn-v2-context-menu-item'");
+    expect(contextMenuSource).toContain('style={isV2Ui ? undefined : {');
+    expect(contextMenuSource).not.toContain("style={{ width: '100%', justifyContent: 'flex-start', height: 40");
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
     antdState.treeProps = null;

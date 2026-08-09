@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Dropdown, Tooltip } from 'antd';
 import type { MenuProps } from 'antd';
 import { MoreOutlined } from '@ant-design/icons';
+import { renderV2ActionMenuPopup } from './common/V2ActionMenuPopup';
 
 export interface TitleBarQuickAction {
   key: string;
@@ -65,7 +66,12 @@ const TitleBarQuickActions: React.FC<TitleBarQuickActionsProps> = ({ label, more
                 menu={{ items: buildMenuItems(action.menu), className: 'gn-v2-titlebar-quick-menu' }}
                 trigger={['click']}
                 placement="bottomLeft"
-                rootClassName="gn-v2-titlebar-quick-dropdown"
+                rootClassName="gn-v2-titlebar-quick-dropdown gn-v2-action-menu-popup-host"
+                popupRender={(menu) => renderV2ActionMenuPopup(menu, true, {
+                  title: action.label,
+                  meta: label,
+                  icon: action.icon,
+                })}
                 open={openMenuKey === action.key}
                 onOpenChange={(open) => handleMenuOpenChange(action.key, open)}
               >
@@ -108,7 +114,12 @@ const TitleBarQuickActions: React.FC<TitleBarQuickActionsProps> = ({ label, more
             menu={dropdownMenuProps}
             trigger={['click']}
             placement="bottomLeft"
-            rootClassName="gn-v2-titlebar-quick-dropdown"
+            rootClassName="gn-v2-titlebar-quick-dropdown gn-v2-action-menu-popup-host"
+            popupRender={(menu) => renderV2ActionMenuPopup(menu, true, {
+              title: moreLabel,
+              meta: label,
+              icon: <MoreOutlined />,
+            })}
             open={openMenuKey === '__more__'}
             onOpenChange={(open) => handleMenuOpenChange('__more__', open)}
           >

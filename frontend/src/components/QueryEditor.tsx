@@ -122,6 +122,7 @@ import {
 } from '../utils/resultDiff/viewDataVerify';
 import { SQL_EDITOR_AUTO_COMMIT_DELAY_OPTIONS } from './QueryEditorTransactionSettings';
 import QueryEditorTransactionToolbar from './QueryEditorTransactionToolbar';
+import { decorateV2MonacoContextMenu } from './common/V2ActionMenuPopup';
 import QueryEditorToolbar, {
     formatQueryExecutionElapsed,
     resolveQueryExecutionSpeedIcon,
@@ -4793,6 +4794,28 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           inlineSuggest: { enabled: false },
       } : mountedEditorOptions);
 
+      if (isV2Ui && typeof editor.onContextMenu === 'function') {
+          editor.onContextMenu(() => {
+              const decorateContextMenu = () => {
+                  const connectionName = connectionsRef.current.find(
+                      (connection) => connection.id === currentConnectionIdRef.current,
+                  )?.name;
+                  const contextMeta = [connectionName, currentDbRef.current]
+                      .filter(Boolean)
+                      .join(' · ');
+                  decorateV2MonacoContextMenu(
+                      translate('tab_manager.kind_badge.query'),
+                      contextMeta || translate('query_editor.placeholder.database'),
+                  );
+              };
+              // Monaco appends the menu asynchronously after dispatching onContextMenu.
+              // Retry across the next paint window so the first open is decorated too.
+              window.setTimeout(decorateContextMenu, 0);
+              window.setTimeout(decorateContextMenu, 48);
+              window.setTimeout(decorateContextMenu, 120);
+          });
+      }
+
       aiInlineGhostVisibleContextKeyRef.current = editor.createContextKey?.(
           QUERY_EDITOR_AI_INLINE_CONTEXT_KEY,
           false,
@@ -7630,35 +7653,47 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
   };
 
   const formatSettingsMenu: MenuProps['items'] = [
-      { 
-          key: 'upper', 
-          label: translate('query_editor.format.keyword_upper'),
-          icon: sqlFormatOptions.keywordCase === 'upper' ? '✓' : undefined,
-          onClick: () => setSqlFormatOptions({ keywordCase: 'upper' }) 
-      },
-      { 
-          key: 'lower', 
-          label: translate('query_editor.format.keyword_lower'),
-          icon: sqlFormatOptions.keywordCase === 'lower' ? '✓' : undefined,
-          onClick: () => setSqlFormatOptions({ keywordCase: 'lower' }) 
-      },
-      { type: 'divider' },
       {
-          key: 'restore-last-format',
-          label: translate('query_editor.format.restore_last_format'),
-          disabled: !tab.formatRestoreSnapshot?.query,
-          onClick: handleRestoreLastFormat,
+          type: 'group',
+          key: 'format-actions',
+          label: translate('query_editor.action.format_sql'),
+          children: [
+              {
+                  key: 'upper',
+                  label: translate('query_editor.format.keyword_upper'),
+                  icon: sqlFormatOptions.keywordCase === 'upper' ? '✓' : undefined,
+                  onClick: () => setSqlFormatOptions({ keywordCase: 'upper' }),
+              },
+              {
+                  key: 'lower',
+                  label: translate('query_editor.format.keyword_lower'),
+                  icon: sqlFormatOptions.keywordCase === 'lower' ? '✓' : undefined,
+                  onClick: () => setSqlFormatOptions({ keywordCase: 'lower' }),
+              },
+              {
+                  key: 'restore-last-format',
+                  label: translate('query_editor.format.restore_last_format'),
+                  disabled: !tab.formatRestoreSnapshot?.query,
+                  onClick: handleRestoreLastFormat,
+              },
+          ],
       },
-      { type: 'divider' },
       {
-          key: 'snippet-settings',
-          label: translate('query_editor.format.snippet_settings'),
-          onClick: () => window.dispatchEvent(new CustomEvent('gonavi:open-snippet-settings')),
-      },
-      {
-          key: 'shortcut-settings',
-          label: translate('query_editor.format.shortcut_settings'),
-          onClick: () => window.dispatchEvent(new CustomEvent('gonavi:open-shortcut-settings')),
+          type: 'group',
+          key: 'format-settings',
+          label: translate('settings.title'),
+          children: [
+              {
+                  key: 'snippet-settings',
+                  label: translate('query_editor.format.snippet_settings'),
+                  onClick: () => window.dispatchEvent(new CustomEvent('gonavi:open-snippet-settings')),
+              },
+              {
+                  key: 'shortcut-settings',
+                  label: translate('query_editor.format.shortcut_settings'),
+                  onClick: () => window.dispatchEvent(new CustomEvent('gonavi:open-shortcut-settings')),
+              },
+          ],
       },
   ];
 
@@ -10415,60 +10450,73 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
   ), [currentDb, elasticsearchServerMajor, insertElasticsearchConsoleTemplate]);
 
   const saveMoreMenuItems: MenuProps['items'] = [
-      ...(currentSavedQuery && !tab.filePath ? [{
-          key: 'save-query-as',
-          label: (
-              <span>
-                  {translate('query_editor.action.save_as')}
-                  {saveQueryAsShortcutBinding?.enabled && saveQueryAsShortcutBinding.combo && (
-                      <span style={{ marginLeft: 8, color: 'var(--gn-text-muted, #6c757d)', fontSize: 11 }}>
-                          {getShortcutDisplayLabel(saveQueryAsShortcutBinding.combo, activeShortcutPlatform)}
-                      </span>
-                  )}
-              </span>
-          ),
-          onClick: handleSaveQueryAs,
-      }] : []),
       {
-          key: 'rename-query',
-          label: translate('query_editor.action.rename_query'),
-          disabled: !!tab.filePath,
-          onClick: handleRenameQuery,
+          type: 'group',
+          key: 'query-actions',
+          label: translate('tab_manager.kind_badge.query'),
+          children: [
+              ...(currentSavedQuery && !tab.filePath ? [{
+                  key: 'save-query-as',
+                  label: (
+                      <span className="gn-v2-context-menu-item-title">
+                          {translate('query_editor.action.save_as')}
+                          {saveQueryAsShortcutBinding?.enabled && saveQueryAsShortcutBinding.combo && (
+                              <span className="gn-v2-context-menu-kbd">
+                                  {getShortcutDisplayLabel(saveQueryAsShortcutBinding.combo, activeShortcutPlatform)}
+                              </span>
+                          )}
+                      </span>
+                  ),
+                  onClick: handleSaveQueryAs,
+              }] : []),
+              {
+                  key: 'rename-query',
+                  label: translate('query_editor.action.rename_query'),
+                  disabled: !!tab.filePath,
+                  onClick: handleRenameQuery,
+              },
+              {
+                  key: 'export-sql-file',
+                  label: translate('query_editor.action.export_sql_file'),
+                  onClick: () => void handleExportSQLFile(),
+              },
+          ],
       },
       {
-          key: 'export-sql-file',
-          label: translate('query_editor.action.export_sql_file'),
-          onClick: () => void handleExportSQLFile(),
-      },
-      { type: 'divider' },
-      {
-          key: 'diagnose-query',
-          label: (
-              <span>
-                  {translate('app.shortcuts.action.diagnoseQuery.label' as any)}
-                  {diagnoseQueryShortcutBinding?.enabled && diagnoseQueryShortcutBinding.combo && (
-                      <span style={{ marginLeft: 8, color: 'var(--gn-text-muted, #6c757d)', fontSize: 11 }}>
-                          {getShortcutDisplayLabel(diagnoseQueryShortcutBinding.combo, activeShortcutPlatform)}
+          type: 'group',
+          key: 'analysis-actions',
+          label: translate('tab_manager.kind_badge.sql_analysis'),
+          children: [
+              {
+                  key: 'diagnose-query',
+                  label: (
+                      <span className="gn-v2-context-menu-item-title">
+                          {translate('app.shortcuts.action.diagnoseQuery.label' as any)}
+                          {diagnoseQueryShortcutBinding?.enabled && diagnoseQueryShortcutBinding.combo && (
+                              <span className="gn-v2-context-menu-kbd">
+                                  {getShortcutDisplayLabel(diagnoseQueryShortcutBinding.combo, activeShortcutPlatform)}
+                              </span>
+                          )}
                       </span>
-                  )}
-              </span>
-          ),
-          disabled: !currentConnectionCapabilities.supportsExplainDiagnosis,
-          onClick: () => openSqlAnalysisWorkbench('diagnose', getCurrentQuery()),
-      },
-      {
-          key: 'show-slow-queries',
-          label: (
-              <span>
-                  {translate('app.shortcuts.action.showSlowQueries.label' as any)}
-                  {showSlowQueriesShortcutBinding?.enabled && showSlowQueriesShortcutBinding.combo && (
-                      <span style={{ marginLeft: 8, color: 'var(--gn-text-muted, #6c757d)', fontSize: 11 }}>
-                          {getShortcutDisplayLabel(showSlowQueriesShortcutBinding.combo, activeShortcutPlatform)}
+                  ),
+                  disabled: !currentConnectionCapabilities.supportsExplainDiagnosis,
+                  onClick: () => openSqlAnalysisWorkbench('diagnose', getCurrentQuery()),
+              },
+              {
+                  key: 'show-slow-queries',
+                  label: (
+                      <span className="gn-v2-context-menu-item-title">
+                          {translate('app.shortcuts.action.showSlowQueries.label' as any)}
+                          {showSlowQueriesShortcutBinding?.enabled && showSlowQueriesShortcutBinding.combo && (
+                              <span className="gn-v2-context-menu-kbd">
+                                  {getShortcutDisplayLabel(showSlowQueriesShortcutBinding.combo, activeShortcutPlatform)}
+                              </span>
+                          )}
                       </span>
-                  )}
-              </span>
-          ),
-          onClick: () => openSqlAnalysisWorkbench('slow-query'),
+                  ),
+                  onClick: () => openSqlAnalysisWorkbench('slow-query'),
+              },
+          ],
       },
   ];
 

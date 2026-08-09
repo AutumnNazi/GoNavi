@@ -989,7 +989,7 @@ body[data-ui-version="v2"] .gn-v2-redis-data-section .ant-table-wrapper {
 body[data-ui-version="v2"] .gn-v2-redis-context-menu {
   width: 208px !important;
   min-width: 188px !important;
-  padding: 6px !important;
+  padding: var(--gn-v2-menu-surface-padding) !important;
 }
 
 /* ─── V2 Nacos workbench (flat split + aligned headers, match Redis) ─ */

@@ -2841,7 +2841,8 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
                 >
                     <Button
                         type="text"
-                        style={{ width: '100%', justifyContent: 'flex-start', height: 40, borderRadius: 10, color: workbenchTheme.textPrimary, fontWeight: 600 }}
+                        className={isV2Ui ? 'gn-v2-context-menu-item' : undefined}
+                        style={isV2Ui ? undefined : { width: '100%', justifyContent: 'flex-start', height: 40, borderRadius: 10, color: workbenchTheme.textPrimary, fontWeight: 600 }}
                         icon={<EditOutlined />}
                         onClick={() => openRenameKeyModal(treeContextMenu.rawKey)}
                     >
@@ -2849,7 +2850,8 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
                     </Button>
                     <Button
                         type="text"
-                        style={{ width: '100%', justifyContent: 'flex-start', height: 40, borderRadius: 10, color: workbenchTheme.textPrimary, fontWeight: 600 }}
+                        className={isV2Ui ? 'gn-v2-context-menu-item' : undefined}
+                        style={isV2Ui ? undefined : { width: '100%', justifyContent: 'flex-start', height: 40, borderRadius: 10, color: workbenchTheme.textPrimary, fontWeight: 600 }}
                         icon={<CopyOutlined />}
                         onClick={async () => {
                             try {

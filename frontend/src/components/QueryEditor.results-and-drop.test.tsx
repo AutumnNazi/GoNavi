@@ -435,6 +435,10 @@ vi.mock('@ant-design/icons', () => {
     ClearOutlined: Icon,
     CopyOutlined: Icon,
     DiffOutlined: Icon,
+    ExportOutlined: Icon,
+    TableOutlined: Icon,
+    ArrowLeftOutlined: Icon,
+    ArrowRightOutlined: Icon,
     PlayCircleOutlined: Icon,
     SaveOutlined: Icon,
     FormatPainterOutlined: Icon,
@@ -504,16 +508,26 @@ vi.mock('antd', () => {
     Input,
     Segmented: () => null,
     Form,
-    Dropdown: ({ children, menu }: any) => (
-      <>
-        {children}
-        {menu?.items?.map((item: any) => (
-          item?.type === 'divider'
-            ? null
-            : <button key={item.key} type="button" disabled={item.disabled} onClick={item.onClick}>{item.label}</button>
-        ))}
-      </>
-    ),
+    Dropdown: ({ children, menu }: any) => {
+      const renderMenuItems = (items: any[] = []): React.ReactNode => items.map((item: any) => {
+        if (item?.type === 'divider') return null;
+        if (item?.type === 'group') {
+          return (
+            <React.Fragment key={item.key}>
+              <span>{item.label}</span>
+              {renderMenuItems(item.children)}
+            </React.Fragment>
+          );
+        }
+        return <button key={item.key} type="button" disabled={item.disabled} onClick={item.onClick}>{item.label}</button>;
+      });
+      return (
+        <>
+          {children}
+          {renderMenuItems(menu?.items)}
+        </>
+      );
+    },
     Tooltip: ({ children }: any) => <>{children}</>,
     Select: () => null,
     Tabs: ({ activeKey, items, onChange, tabBarExtraContent }: any) => {

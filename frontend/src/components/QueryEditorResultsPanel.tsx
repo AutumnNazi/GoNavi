@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Button, Dropdown, Segmented, Tag, Tabs, Tooltip, message, type MenuProps } from 'antd';
-import { BugOutlined, ClearOutlined, CloseOutlined, CopyOutlined, EyeInvisibleOutlined, PushpinOutlined, RobotOutlined } from '@ant-design/icons';
+import { ArrowLeftOutlined, ArrowRightOutlined, BugOutlined, ClearOutlined, CloseOutlined, CopyOutlined, DiffOutlined, ExportOutlined, EyeInvisibleOutlined, PushpinOutlined, RobotOutlined, TableOutlined } from '@ant-design/icons';
 
 import { useStore } from '../store';
 import type { EditRowLocator } from '../utils/rowLocator';
@@ -22,6 +22,7 @@ import DetachDragPreview, {
 } from './DetachDragPreview';
 import DataGrid from './DataGrid';
 import LogPanel from './LogPanel';
+import { renderV2ActionMenuPopup } from './common/V2ActionMenuPopup';
 
 export type OpenResultInWindowPreferred = Partial<Pick<DetachedWindowBounds, 'x' | 'y' | 'width' | 'height'>>;
 
@@ -496,40 +497,67 @@ const QueryEditorResultsPanel: React.FC<QueryEditorResultsPanelProps> = ({
         const hasClosableResult = resultSets.some((item) => !item.pinned);
         return [
             {
-                key: result?.pinned ? 'unpin' : 'pin',
-                label: t(result?.pinned
-                    ? 'query_editor.results_panel.menu.unpin'
-                    : 'query_editor.results_panel.menu.pin'),
-                onClick: () => onResultPinnedChange(key, !result?.pinned),
+                type: 'group',
+                key: 'result-actions',
+                label: t('query_editor.action.results'),
+                children: [
+                    {
+                        key: result?.pinned ? 'unpin' : 'pin',
+                        icon: <PushpinOutlined />,
+                        label: t(result?.pinned
+                            ? 'query_editor.results_panel.menu.unpin'
+                            : 'query_editor.results_panel.menu.pin'),
+                        onClick: () => onResultPinnedChange(key, !result?.pinned),
+                    },
+                    ...(onOpenResultInWindow
+                        ? [{
+                            key: 'open-in-window',
+                            icon: <ExportOutlined />,
+                            label: t('query_editor.results_panel.menu.open_in_window'),
+                            onClick: () => onOpenResultInWindow(key),
+                        }]
+                        : []),
+                    ...(onCompareResult
+                        ? [{
+                            key: 'compare-results',
+                            icon: <DiffOutlined />,
+                            label: t('query_editor.results_panel.menu.compare_results'),
+                            disabled: comparableCount < 2,
+                            onClick: () => onCompareResult(key),
+                        }]
+                        : []),
+                ],
             },
-            { type: 'divider' as const },
-            ...(onOpenResultInWindow
-                ? [{
-                    key: 'open-in-window',
-                    label: t('query_editor.results_panel.menu.open_in_window'),
-                    onClick: () => onOpenResultInWindow(key),
-                }, { type: 'divider' as const }]
-                : []),
-            ...(onCompareResult
-                ? [{
-                    key: 'compare-results',
-                    label: t('query_editor.results_panel.menu.compare_results'),
-                    disabled: comparableCount < 2,
-                    onClick: () => onCompareResult(key),
-                }, { type: 'divider' as const }]
-                : []),
-            { key: 'close-other', label: t('query_editor.results_panel.menu.close_other'), disabled: !hasClosableOtherResult, onClick: () => onCloseOtherResultTabs(key) },
-            { key: 'close-left', label: t('query_editor.results_panel.menu.close_left'), disabled: !hasClosableResultToLeft, onClick: () => onCloseResultTabsToLeft(key) },
-            { key: 'close-right', label: t('query_editor.results_panel.menu.close_right'), disabled: !hasClosableResultToRight, onClick: () => onCloseResultTabsToRight(key) },
-            { type: 'divider' },
-            { key: 'close-all', label: t('query_editor.results_panel.menu.close_all'), disabled: !hasClosableResult, onClick: onCloseAllResultTabs },
+            {
+                type: 'group',
+                key: 'close-actions',
+                label: t('common.close'),
+                children: [
+                    { key: 'close-other', icon: <CloseOutlined />, label: t('query_editor.results_panel.menu.close_other'), disabled: !hasClosableOtherResult, onClick: () => onCloseOtherResultTabs(key) },
+                    { key: 'close-left', icon: <ArrowLeftOutlined />, label: t('query_editor.results_panel.menu.close_left'), disabled: !hasClosableResultToLeft, onClick: () => onCloseResultTabsToLeft(key) },
+                    { key: 'close-right', icon: <ArrowRightOutlined />, label: t('query_editor.results_panel.menu.close_right'), disabled: !hasClosableResultToRight, onClick: () => onCloseResultTabsToRight(key) },
+                    { key: 'close-all', icon: <CloseOutlined />, label: t('query_editor.results_panel.menu.close_all'), disabled: !hasClosableResult, onClick: onCloseAllResultTabs },
+                ],
+            },
         ];
     }
 
     const resultTabItems = resultSets.map((rs, idx) => ({
         key: rs.key,
         label: (
-            <Dropdown menu={{ items: buildResultTabMenuItems(rs.key, idx) }} trigger={['contextMenu']} rootClassName={isV2Ui ? 'gn-v2-tab-context-menu-popup' : undefined}>
+            <Dropdown
+                menu={{ items: buildResultTabMenuItems(rs.key, idx) }}
+                trigger={['contextMenu']}
+                rootClassName={isV2Ui ? 'gn-v2-tab-context-menu-popup' : undefined}
+                popupRender={(menu) => renderV2ActionMenuPopup(menu, isV2Ui, {
+                    title: rs.resultType === 'message'
+                        ? t('query_editor.results_panel.tab.message', { index: idx + 1 })
+                        : t('query_editor.results_panel.tab.result', { index: idx + 1 }),
+                    meta: Array.isArray(rs.rows) ? `${rs.rows.length} × ${rs.columns.length}` : currentDb,
+                    icon: <TableOutlined />,
+                    badge: currentDb || undefined,
+                })}
+            >
                 <div
                     className={`query-result-tab-label${onOpenResultInWindow ? ' is-detachable' : ''}${draggingResultKey === rs.key ? ' is-dragging-detach' : ''}`}
                     title={onOpenResultInWindow ? t('query_editor.results_panel.menu.open_in_window') : undefined}
