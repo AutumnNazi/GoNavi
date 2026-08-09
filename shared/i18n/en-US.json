@@ -5164,6 +5164,7 @@
   "db.backend.error.connection_open_failed_prefix": "Failed to open database connection: ",
   "db.backend.error.connection_verify_failed_prefix": "Failed to verify the established connection: ",
   "db.backend.error.create_table_statement_not_found": "The CREATE TABLE statement was not found",
+  "db.backend.error.sqlserver_create_statement_unsupported": "Viewing SQL Server table DDL is not supported by the current backend",
   "db.backend.error.custom_clickhouse_dsn_invalid": "The ClickHouse custom connection DSN is invalid. Use a single-node clickhouse://, http(s)://, jdbc:clickhouse://, or jdbc:ch:// address",
   "db.backend.error.custom_clickhouse_dsn_required": "A ClickHouse custom connection requires a clickhouse://, http(s)://, jdbc:clickhouse://, or jdbc:ch:// DSN",
   "db.backend.error.custom_driver_system_odbc_unsupported_prefix": "Failed to open database connection: custom connections do not support entering the system ODBC/JDBC driver name \"{{driver}}\" directly. Enter a Go database/sql driver name already registered by GoNavi. The current build does not register a generic ODBC driver, so connecting to InterSystems IRIS through \"{{driver}}\" is not supported yet: ",

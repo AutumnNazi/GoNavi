@@ -398,6 +398,13 @@ func TestSQLServerMetadataErrorsUseCurrentLanguage(t *testing.T) {
 		call func() error
 	}{
 		{
+			name: "create statement unsupported",
+			call: func() error {
+				_, err := sqlServer.GetCreateStatement("dbo", "orders")
+				return err
+			},
+		},
+		{
 			name: "columns table name required",
 			call: func() error {
 				_, err := sqlServer.GetColumns("", " ")
@@ -432,6 +439,12 @@ func TestSQLServerMetadataErrorsUseCurrentLanguage(t *testing.T) {
 			err := tc.call()
 			if err == nil {
 				t.Fatal("expected SQL Server metadata call to fail")
+			}
+			if tc.name == "create statement unsupported" {
+				if err.Error() != "Viewing SQL Server table DDL is not supported by the current backend" {
+					t.Fatalf("expected English unsupported DDL error, got %q", err.Error())
+				}
+				return
 			}
 			if err.Error() != "Table name is required" {
 				t.Fatalf("expected English table-name-required error, got %q", err.Error())
