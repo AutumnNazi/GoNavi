@@ -9065,6 +9065,8 @@
   "connection_modal.step1.recent": "Недавние",
   "connection_modal.step1.categories": "Категории",
   "connection_modal.step1.clickToConfigure": "Нажмите для настройки",
+  "connection_modal.step1.pin": "Закрепить {{name}}",
+  "connection_modal.step1.unpin": "Открепить {{name}}",
   "connection_modal.step1.recent.empty": "Нет недавних подключений",
   "connection_modal.studio.step.chooseType": "Выбрать тип",
   "connection_modal.studio.step.configure": "Параметры",

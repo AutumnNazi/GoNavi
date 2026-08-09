@@ -32,6 +32,7 @@ import {
   DownOutlined,
   RightOutlined,
   SearchOutlined,
+  PushpinOutlined,
 } from "@ant-design/icons";
 import {
   getDbIcon,
@@ -107,6 +108,7 @@ import {
   getAllConnectionTypeCatalogItems,
   getConnectionTypeDefaultPort as getDefaultPortByType,
   getConnectionTypeHint,
+  orderConnectionTypeCatalogItems,
 } from "../utils/connectionTypeCatalog";
 import {
   isFileDatabaseType,
@@ -397,6 +399,10 @@ const ConnectionModal: React.FC<{
   const updateConnection = useStore((state) => state.updateConnection);
   const savedConnections = useStore((state) => state.connections) ?? [];
   const recentConnectionTargets = useStore((state) => state.recentConnectionTargets) ?? [];
+  const pinnedConnectionTypes = useStore((state) => state.pinnedConnectionTypes) ?? [];
+  const setConnectionTypePinned = useStore(
+    (state) => state.setConnectionTypePinned,
+  );
   const theme = useStore((state) => state.theme);
   const appearance = useStore((state) => state.appearance);
   const languagePreference = useStore((state) => state.languagePreference);
@@ -2487,13 +2493,18 @@ const ConnectionModal: React.FC<{
   ];
 
   const normalizedDbTypeQuery = dbTypeQuery.trim().toLowerCase();
-  const visibleDbTypeItems = normalizedDbTypeQuery
+  const filteredDbTypeItems = normalizedDbTypeQuery
     ? (dbTypeGroups[0]?.items ?? []).filter(
         (item) =>
           item.name.toLowerCase().includes(normalizedDbTypeQuery) ||
           String(item.key).toLowerCase().includes(normalizedDbTypeQuery),
       )
     : (dbTypeGroups[activeGroup]?.items ?? []);
+  const visibleDbTypeItems = orderConnectionTypeCatalogItems(
+    filteredDbTypeItems,
+    pinnedConnectionTypes,
+  );
+  const pinnedConnectionTypeSet = new Set(pinnedConnectionTypes);
 
   const handleDbTypeQueryChange = (value: string) => {
     setDbTypeQuery(value);
@@ -2671,6 +2682,7 @@ const ConnectionModal: React.FC<{
           </div>
           <div className="gn-conn-picker-grid">
             {visibleDbTypeItems.map((item) => {
+              const pinned = pinnedConnectionTypeSet.has(item.key);
               // 卡片所属的数据源分类展示标签。
               const categoryLabel = localizedDbTypeGroups.find((group) =>
                 group.items.some((groupItem) => groupItem.key === item.key),
@@ -2681,56 +2693,85 @@ const ConnectionModal: React.FC<{
                 supportsSSLForType(item.key) ? "SSL" : null,
               ].filter((tag): tag is string => Boolean(tag));
               return (
-                <button
+                <div
                   key={item.key}
-                  type="button"
-                  data-connection-type-key={item.key}
-                  aria-label={item.name}
-                  onClick={() => {
-                    void handleTypeSelect(item.key);
-                  }}
                   className="gn-conn-type-card"
+                  data-connection-type-card-key={item.key}
+                  data-connection-type-pinned={pinned ? "true" : "false"}
                 >
-                  <div className="gn-conn-type-card-top">
-                    <div
-                      className="gn-conn-type-card-logo"
-                      style={{
-                        background: hasDbIconAsset(item.key)
-                          ? getDbIconContainerBg(item.key)
-                          : (darkMode
-                              ? "rgba(255,255,255,0.05)"
-                              : "rgba(22,119,255,0.08)"),
-                      }}
-                    >
-                      {hasDbIconAsset(item.key) ? (
-                        <img
-                          src={getDbIconAssetSrc(item.key)}
-                          alt={item.name}
-                          width={34}
-                          height={34}
-                          style={{ display: "block", objectFit: "contain" }}
-                        />
-                      ) : (
-                        getDbIcon(item.key, undefined, 34)
-                      )}
-                    </div>
-                    <div className="gn-conn-type-card-meta">
-                      <div className="gn-conn-type-card-name">{item.name}</div>
-                      <div className="gn-conn-type-card-hint">
-                        {getConnectionTypeHint(item.key, t)}
+                  <button
+                    type="button"
+                    data-connection-type-key={item.key}
+                    aria-label={item.name}
+                    onClick={() => {
+                      void handleTypeSelect(item.key);
+                    }}
+                    className="gn-conn-type-card-select"
+                  >
+                    <div className="gn-conn-type-card-top">
+                      <div
+                        className="gn-conn-type-card-logo"
+                        style={{
+                          background: hasDbIconAsset(item.key)
+                            ? getDbIconContainerBg(item.key)
+                            : (darkMode
+                                ? "rgba(255,255,255,0.05)"
+                                : "rgba(22,119,255,0.08)"),
+                        }}
+                      >
+                        {hasDbIconAsset(item.key) ? (
+                          <img
+                            src={getDbIconAssetSrc(item.key)}
+                            alt={item.name}
+                            width={34}
+                            height={34}
+                            style={{ display: "block", objectFit: "contain" }}
+                          />
+                        ) : (
+                          getDbIcon(item.key, undefined, 34)
+                        )}
+                      </div>
+                      <div className="gn-conn-type-card-meta">
+                        <div className="gn-conn-type-card-name">{item.name}</div>
+                        <div className="gn-conn-type-card-hint">
+                          {getConnectionTypeHint(item.key, t)}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                  {studioTags.length > 0 ? (
-                    <div className="gn-conn-type-card-tags" aria-hidden="true">
-                      {studioTags.map((tag) => (
-                        <span key={tag} className="gn-conn-type-card-tag">
-                          {tag}
-                        </span>
-                      ))}
-                    </div>
-                  ) : null}
-                </button>
+                    {studioTags.length > 0 ? (
+                      <div className="gn-conn-type-card-tags" aria-hidden="true">
+                        {studioTags.map((tag) => (
+                          <span key={tag} className="gn-conn-type-card-tag">
+                            {tag}
+                          </span>
+                        ))}
+                      </div>
+                    ) : null}
+                  </button>
+                  <button
+                    type="button"
+                    className="gn-conn-type-card-pin"
+                    data-connection-type-pin={item.key}
+                    aria-label={t(
+                      pinned
+                        ? "connection.modal.step1.unpin"
+                        : "connection.modal.step1.pin",
+                      { name: item.name },
+                    )}
+                    aria-pressed={pinned}
+                    title={t(
+                      pinned
+                        ? "connection.modal.step1.unpin"
+                        : "connection.modal.step1.pin",
+                      { name: item.name },
+                    )}
+                    onClick={() => {
+                      setConnectionTypePinned(item.key, !pinned);
+                    }}
+                  >
+                    <PushpinOutlined aria-hidden="true" />
+                  </button>
+                </div>
               );
             })}
           </div>

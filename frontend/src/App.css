@@ -957,17 +957,14 @@ body[data-theme='dark'] .gn-connection-type-group:hover:not([aria-pressed='true'
 }
 
 .gn-conn-type-card {
-    appearance: none;
-    text-align: left;
-    cursor: pointer;
-    font: inherit;
+    position: relative;
     color: inherit;
     background: var(--gn-bg-panel-2, rgba(16, 24, 40, 0.03));
     border: 1px solid var(--gn-br-2, rgba(16, 24, 40, 0.1));
     border-radius: var(--radius, 8px);
-    padding: 12px;
     transition: border-color 0.15s, transform 0.15s, background 0.15s;
     min-width: 0;
+    overflow: hidden;
 }
 
 .gn-conn-type-card:hover {
@@ -976,9 +973,70 @@ body[data-theme='dark'] .gn-connection-type-group:hover:not([aria-pressed='true'
     transform: translateY(-1px);
 }
 
-.gn-conn-type-card:focus-visible {
+.gn-conn-type-card[data-connection-type-pinned='true'] {
+    border-color: color-mix(in srgb, var(--gn-accent, #1677ff) 54%, var(--gn-br-2, transparent));
+    background: color-mix(in srgb, var(--gn-accent, #1677ff) 7%, var(--gn-bg-panel-2, transparent));
+}
+
+.gn-conn-type-card-select {
+    appearance: none;
+    display: block;
+    width: 100%;
+    min-height: 100%;
+    padding: 12px 42px 12px 12px;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.gn-conn-type-card-select:focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--gn-accent, #1677ff) 68%, transparent);
+    outline-offset: -3px;
+}
+
+.gn-conn-type-card-pin {
+    appearance: none;
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    z-index: 1;
+    width: 28px;
+    height: 28px;
+    display: grid;
+    place-items: center;
+    padding: 0;
+    border: 0;
+    border-radius: 7px;
+    background: transparent;
+    color: var(--gn-fg-5, rgba(0, 0, 0, 0.4));
+    cursor: pointer;
+    transition: color 0.15s, background 0.15s;
+}
+
+.gn-conn-type-card-pin .anticon {
+    transition: transform 0.15s;
+}
+
+.gn-conn-type-card-pin:hover {
+    color: var(--gn-accent, #1677ff);
+    background: color-mix(in srgb, var(--gn-accent, #1677ff) 12%, transparent);
+}
+
+.gn-conn-type-card-pin:focus-visible {
     outline: 2px solid color-mix(in srgb, var(--gn-accent, #1677ff) 68%, transparent);
     outline-offset: 1px;
+}
+
+.gn-conn-type-card-pin[aria-pressed='true'] {
+    color: var(--gn-accent, #1677ff);
+    background: color-mix(in srgb, var(--gn-accent, #1677ff) 14%, transparent);
+}
+
+.gn-conn-type-card-pin[aria-pressed='true'] .anticon {
+    transform: rotate(-18deg);
 }
 
 .gn-conn-type-card-top {

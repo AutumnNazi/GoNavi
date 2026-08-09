@@ -9065,6 +9065,8 @@
   "connection_modal.step1.recent": "Zuletzt",
   "connection_modal.step1.categories": "Kategorien",
   "connection_modal.step1.clickToConfigure": "Zum Konfigurieren klicken",
+  "connection_modal.step1.pin": "{{name}} anheften",
+  "connection_modal.step1.unpin": "Anheften von {{name}} lösen",
   "connection_modal.step1.recent.empty": "Keine letzten Verbindungen",
   "connection_modal.studio.step.chooseType": "Typ wählen",
   "connection_modal.studio.step.configure": "Konfigurieren",

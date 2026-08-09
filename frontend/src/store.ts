@@ -1798,6 +1798,7 @@ interface AppState {
   externalSQLDirectories: ExternalSQLDirectory[];
   recentConnectionTargets: RecentConnectionTarget[];
   recentSQLFiles: RecentSQLFile[];
+  pinnedConnectionTypes: string[];
   theme: ThemeMode;
   themePreference: ThemePreference;
   /** Built-in brand mascot icon id (01-10), used in title bar / about / favicon. */
@@ -2040,6 +2041,7 @@ interface AppState {
     dbName: string,
     pinned: boolean,
   ) => void;
+  setConnectionTypePinned: (dbType: string, pinned: boolean) => void;
   setTableColumnOrder: (
     connectionId: string,
     dbName: string,
@@ -2996,6 +2998,31 @@ const sanitizePinnedSidebarTables = (value: unknown): string[] => {
   );
 };
 
+const sanitizePinnedConnectionTypes = (value: unknown): string[] => {
+  if (!Array.isArray(value)) return [];
+  return Array.from(
+    new Set(
+      value
+        .map((entry) => toTrimmedString(entry).toLowerCase())
+        .filter((entry) => /^[a-z0-9][a-z0-9_-]{0,63}$/.test(entry)),
+    ),
+  ).slice(0, 64);
+};
+
+export const updatePinnedConnectionTypeKeys = (
+  pinnedTypes: unknown,
+  dbType: string,
+  pinned: boolean,
+): string[] => {
+  const current = sanitizePinnedConnectionTypes(pinnedTypes);
+  const normalizedType = toTrimmedString(dbType).toLowerCase();
+  if (!/^[a-z0-9][a-z0-9_-]{0,63}$/.test(normalizedType)) {
+    return current;
+  }
+  const withoutCurrent = current.filter((entry) => entry !== normalizedType);
+  return pinned ? [normalizedType, ...withoutCurrent] : withoutCurrent;
+};
+
 const isLegacyDefaultTabDisplaySettings = (value: unknown): boolean => {
   if (!value || typeof value !== "object") return false;
   const raw = value as Partial<TabDisplaySettings>;
@@ -3475,6 +3502,7 @@ const PERSISTED_STATE_DEPENDENCY_KEYS = [
   "externalSQLDirectories",
   "recentConnectionTargets",
   "recentSQLFiles",
+  "pinnedConnectionTypes",
   "theme",
   "themePreference",
   "brandIconId",
@@ -3531,6 +3559,9 @@ const buildPersistedStateProjection = (
       state.recentConnectionTargets,
     ),
     recentSQLFiles: sanitizeRecentSQLFiles(state.recentSQLFiles),
+    pinnedConnectionTypes: sanitizePinnedConnectionTypes(
+      state.pinnedConnectionTypes,
+    ),
     theme: state.theme,
     themePreference: state.themePreference,
     brandIconId: sanitizeBrandIconIdLocal(state.brandIconId),
@@ -3651,6 +3682,7 @@ export const useStore = create<AppState>()(
       externalSQLDirectories: [],
       recentConnectionTargets: [],
       recentSQLFiles: [],
+      pinnedConnectionTypes: [],
       theme: "light",
       themePreference: "light",
       brandIconId: "02",
@@ -5401,6 +5433,15 @@ export const useStore = create<AppState>()(
           ),
         })),
 
+      setConnectionTypePinned: (dbType, pinned) =>
+        set((state) => ({
+          pinnedConnectionTypes: updatePinnedConnectionTypeKeys(
+            state.pinnedConnectionTypes,
+            dbType,
+            pinned,
+          ),
+        })),
+
       setTableColumnOrder: (connectionId, dbName, tableName, order) =>
         set((state) => {
           const key = `${connectionId}-${dbName}-${tableName}`;
@@ -5937,6 +5978,9 @@ export const useStore = create<AppState>()(
           state.recentConnectionTargets,
         );
         nextState.recentSQLFiles = sanitizeRecentSQLFiles(state.recentSQLFiles);
+        nextState.pinnedConnectionTypes = sanitizePinnedConnectionTypes(
+          state.pinnedConnectionTypes,
+        );
         nextState.theme = sanitizeTheme(state.theme);
         nextState.themePreference = sanitizeThemePreference(
           state.themePreference,
@@ -6081,6 +6125,9 @@ export const useStore = create<AppState>()(
             state.recentConnectionTargets,
           ),
           recentSQLFiles: sanitizeRecentSQLFiles(state.recentSQLFiles),
+          pinnedConnectionTypes: sanitizePinnedConnectionTypes(
+            state.pinnedConnectionTypes,
+          ),
           theme: sanitizeTheme(state.theme),
           themePreference: sanitizeThemePreference(
             state.themePreference,

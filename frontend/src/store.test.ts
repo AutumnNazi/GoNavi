@@ -3804,3 +3804,52 @@ describe('sidebar database pin persistence', () => {
     expect(reloaded.useStore.getState().pinnedSidebarDatabases).toEqual([]);
   });
 });
+
+describe('connection type pin persistence', () => {
+  let storage: MemoryStorage;
+
+  beforeEach(() => {
+    storage = new MemoryStorage();
+    vi.stubGlobal('localStorage', storage);
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.resetModules();
+  });
+
+  it('persists an ordered and sanitized list of pinned connection types', async () => {
+    const { updatePinnedConnectionTypeKeys, useStore } = await importStore();
+
+    expect(updatePinnedConnectionTypeKeys(['mysql'], ' Redis ', true)).toEqual([
+      'redis',
+      'mysql',
+    ]);
+    expect(updatePinnedConnectionTypeKeys(['redis', 'mysql'], 'redis', true)).toEqual([
+      'redis',
+      'mysql',
+    ]);
+    expect(updatePinnedConnectionTypeKeys(['redis', 'mysql'], '../bad', true)).toEqual([
+      'redis',
+      'mysql',
+    ]);
+
+    useStore.getState().setConnectionTypePinned('mysql', true);
+    useStore.getState().setConnectionTypePinned('redis', true);
+    expect(useStore.getState().pinnedConnectionTypes).toEqual(['redis', 'mysql']);
+
+    const persisted = JSON.parse(storage.getItem('lite-db-storage') || '{}');
+    expect(persisted.state.pinnedConnectionTypes).toEqual(['redis', 'mysql']);
+
+    vi.resetModules();
+    const reloaded = await importStore();
+    expect(reloaded.useStore.getState().pinnedConnectionTypes).toEqual([
+      'redis',
+      'mysql',
+    ]);
+
+    reloaded.useStore.getState().setConnectionTypePinned('redis', false);
+    expect(reloaded.useStore.getState().pinnedConnectionTypes).toEqual(['mysql']);
+  });
+});

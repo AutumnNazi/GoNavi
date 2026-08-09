@@ -9065,6 +9065,8 @@
   "connection_modal.step1.recent": "最近",
   "connection_modal.step1.categories": "カテゴリ",
   "connection_modal.step1.clickToConfigure": "クリックして設定",
+  "connection_modal.step1.pin": "{{name}}をピン留め",
+  "connection_modal.step1.unpin": "{{name}}のピン留めを解除",
   "connection_modal.step1.recent.empty": "最近の接続なし",
   "connection_modal.studio.step.chooseType": "種類を選択",
   "connection_modal.studio.step.configure": "パラメータ",

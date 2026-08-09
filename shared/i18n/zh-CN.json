@@ -9065,6 +9065,8 @@
   "connection_modal.step1.recent": "最近",
   "connection_modal.step1.categories": "分类",
   "connection_modal.step1.clickToConfigure": "单击进入配置表单",
+  "connection_modal.step1.pin": "置顶 {{name}}",
+  "connection_modal.step1.unpin": "取消置顶 {{name}}",
   "connection_modal.step1.recent.empty": "暂无连接记录",
   "connection_modal.studio.step.chooseType": "选类型",
   "connection_modal.studio.step.configure": "配参数",

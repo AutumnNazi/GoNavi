@@ -9065,6 +9065,8 @@
   "connection_modal.step1.recent": "Recent",
   "connection_modal.step1.categories": "Categories",
   "connection_modal.step1.clickToConfigure": "Click to configure",
+  "connection_modal.step1.pin": "Pin {{name}}",
+  "connection_modal.step1.unpin": "Unpin {{name}}",
   "connection_modal.step1.recent.empty": "No recent connections",
   "connection_modal.studio.step.chooseType": "Choose type",
   "connection_modal.studio.step.configure": "Configure",

@@ -10,6 +10,14 @@ import { getCustomConnectionDriverHelp } from "../utils/driverImportGuidance";
 const storeState = {
   addConnection: vi.fn(),
   updateConnection: vi.fn(),
+  pinnedConnectionTypes: [] as string[],
+  setConnectionTypePinned: vi.fn((dbType: string, pinned: boolean) => {
+    const normalized = dbType.trim().toLowerCase();
+    storeState.pinnedConnectionTypes = pinned
+      ? [normalized, ...storeState.pinnedConnectionTypes.filter((item) => item !== normalized)]
+      : storeState.pinnedConnectionTypes.filter((item) => item !== normalized);
+    notifyStoreSubscribers();
+  }),
   theme: "light",
   languagePreference: "zh-CN",
   setLanguagePreference: vi.fn((languagePreference: "zh-CN" | "en-US") => {
@@ -92,6 +100,16 @@ const findConnectionTypeGroup = (
       node.props?.["data-connection-group-key"] === groupKey,
   )[0];
 
+const findConnectionTypePin = (
+  renderer: ReactTestRenderer,
+  dbType: string,
+) =>
+  renderer.root.findAll(
+    (node) =>
+      node.type === "button" &&
+      node.props?.["data-connection-type-pin"] === dbType,
+  )[0];
+
 const findInputByPlaceholder = (
   renderer: ReactTestRenderer,
   placeholder: string,
@@ -120,6 +138,7 @@ const flushConnectionTestTick = async () => {
 };
 
 const source = readFileSync(new URL("./ConnectionModal.tsx", import.meta.url), "utf8");
+const appCssSource = readFileSync(new URL("../App.css", import.meta.url), "utf8");
 const step2Source = readFileSync(new URL("./connectionModal/ConnectionModalStep2.tsx", import.meta.url), "utf8");
 const networkSecuritySource = readFileSync(
   new URL("./connectionModal/ConnectionModalNetworkSecuritySection.tsx", import.meta.url),
@@ -210,6 +229,7 @@ vi.mock("@ant-design/icons", () => {
     DownOutlined: Icon,
     RightOutlined: Icon,
     SearchOutlined: Icon,
+    PushpinOutlined: Icon,
   };
 });
 
@@ -406,6 +426,7 @@ describe("ConnectionModal i18n", () => {
     storeState.languagePreference = "zh-CN";
     storeState.appearance.uiVersion = "legacy";
     storeState.appearance.opacity = 1;
+    storeState.pinnedConnectionTypes = [];
     backendApp.GetDriverStatusList.mockResolvedValue({ success: true, data: { drivers: [] } });
     backendApp.SaveConnection.mockReset();
     backendApp.SaveConnection.mockImplementation(async (input) => ({
@@ -427,6 +448,7 @@ describe("ConnectionModal i18n", () => {
     modalConfirm.mockReset();
     storeState.addConnection.mockReset();
     storeState.updateConnection.mockReset();
+    storeState.setConnectionTypePinned.mockClear();
     storeState.setLanguagePreference.mockClear();
     mockFormValues = {};
     mockValidateFields = undefined;
@@ -1571,6 +1593,74 @@ describe("ConnectionModal i18n", () => {
     ).toBe("button");
     expect(findClickableCard(renderer!, "MySQL").type).toBe("button");
     expect(findClickableCard(renderer!, "MySQL").props.type).toBe("button");
+  });
+
+  it("pins data source types without opening the form and restores their personal order", async () => {
+    setCurrentLanguage("en-US");
+    const { default: ConnectionModal } = await import("./ConnectionModal");
+
+    let renderer: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<ConnectionModal open onClose={vi.fn()} />);
+    });
+
+    expect(
+      findConnectionTypeButtons(renderer!).slice(0, 3).map(
+        (node) => node.props["data-connection-type-key"],
+      ),
+    ).toEqual(["mysql", "mariadb", "diros"]);
+    expect(findConnectionTypePin(renderer!, "postgres").props["aria-pressed"]).toBe(false);
+    expect(findConnectionTypePin(renderer!, "postgres").props["aria-label"]).toBe(
+      "Pin PostgreSQL",
+    );
+
+    await act(async () => {
+      findConnectionTypePin(renderer!, "postgres").props.onClick();
+    });
+
+    expect(storeState.setConnectionTypePinned).toHaveBeenCalledWith("postgres", true);
+    expect(findConnectionTypeButtons(renderer!)[0].props["data-connection-type-key"]).toBe(
+      "postgres",
+    );
+    expect(findConnectionTypePin(renderer!, "postgres").props["aria-pressed"]).toBe(true);
+    expect(findConnectionTypePin(renderer!, "postgres").props["aria-label"]).toBe(
+      "Unpin PostgreSQL",
+    );
+    expect(
+      renderer!.root.findAll(
+        (node) => node.props?.["data-connection-step"] === "1",
+      ),
+    ).toHaveLength(1);
+
+    await act(async () => {
+      findConnectionTypePin(renderer!, "redis").props.onClick();
+    });
+    expect(
+      findConnectionTypeButtons(renderer!).slice(0, 3).map(
+        (node) => node.props["data-connection-type-key"],
+      ),
+    ).toEqual(["redis", "postgres", "mysql"]);
+
+    await act(async () => {
+      findConnectionTypePin(renderer!, "redis").props.onClick();
+    });
+    expect(findConnectionTypeButtons(renderer!)[0].props["data-connection-type-key"]).toBe(
+      "postgres",
+    );
+  });
+
+  it("keeps the pinned button frame level while rotating only the pushpin icon", () => {
+    const pinnedButtonRule = appCssSource.match(
+      /\.gn-conn-type-card-pin\[aria-pressed='true'\]\s*\{([^}]*)\}/,
+    );
+    const pinnedIconRule = appCssSource.match(
+      /\.gn-conn-type-card-pin\[aria-pressed='true'\]\s+\.anticon\s*\{([^}]*)\}/,
+    );
+
+    expect(pinnedButtonRule).not.toBeNull();
+    expect(pinnedButtonRule?.[1]).not.toMatch(/transform\s*:/);
+    expect(pinnedIconRule).not.toBeNull();
+    expect(pinnedIconRule?.[1]).toMatch(/transform:\s*rotate\(-18deg\)/);
   });
 
   it("renders English custom driver DSN copy after the module was loaded in another language", async () => {
