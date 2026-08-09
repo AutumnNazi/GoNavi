@@ -7,6 +7,7 @@ import {
   type DataSyncErrorRow,
   type DataSyncFieldMetadata,
   type DataSyncObjectMetadata,
+  type DataSyncIndexColumn,
   type DataSyncPreflightSnapshot,
   type DataSyncRouteCapability,
   type DataSyncRunRecord,
@@ -15,6 +16,7 @@ import {
   type DataSyncTableMapping,
   type DataSyncTaskDefinition,
   type DataSyncTaskLifecycle,
+  type DataSyncUnmigratedIndex,
   type DataSyncValidationCode,
   type DataSyncValidationIssue,
 } from './model';
@@ -883,6 +885,14 @@ export const decodeDataSyncPreflight = (
       ),
       mappingId: optionalString(issue.mappingId, 'issue.mappingId') || undefined,
       message: optionalString(issue.message, 'issue.message') || undefined,
+      detail: isRecord(issue.detail) && issue.detail.unmigratedIndex
+        ? {
+            unmigratedIndex: decodeUnmigratedIndex(
+              issue.detail.unmigratedIndex,
+              `DataSyncJobPreflight.data.issues[${index}].detail.unmigratedIndex`,
+            ),
+          }
+        : undefined,
     };
   });
   let capability: DataSyncRouteCapability;
@@ -1080,6 +1090,34 @@ export const decodeRunRecord = (
 const previewJSON = (value: unknown, limit = 480): string => {
   const text = rawJSONText(value, 'payload');
   return text.length > limit ? `${text.slice(0, limit)}…` : text;
+};
+
+const decodeIndexColumns = (value: unknown, path: string): DataSyncIndexColumn[] =>
+  array(value, path).map((item, index) => {
+    const column = record(item, `${path}[${index}]`);
+    return {
+      name: string(column.name, `${path}[${index}].name`, false),
+      prefixLength:
+        optionalNumber(column.prefixLength, `${path}[${index}].prefixLength`) || undefined,
+    };
+  });
+
+const decodeUnmigratedIndex = (value: unknown, path: string): DataSyncUnmigratedIndex => {
+  const index = record(value, path);
+  return {
+    name: string(index.name, `${path}.name`, false),
+    columns: decodeIndexColumns(index.columns || [], `${path}.columns`),
+    unique: boolean(index.unique, `${path}.unique`),
+    indexType: optionalString(index.indexType, `${path}.indexType`) || '',
+    reasonCode: optionalString(index.reasonCode, `${path}.reasonCode`) || undefined,
+    reason: string(index.reason, `${path}.reason`, false),
+    remediationStatements: array(
+      index.remediationStatements || [],
+      `${path}.remediationStatements`,
+    ).map((statement, indexOffset) =>
+      string(statement, `${path}.remediationStatements[${indexOffset}]`, false),
+    ),
+  };
 };
 
 export const decodeErrorRow = (value: unknown): DataSyncErrorRow => {

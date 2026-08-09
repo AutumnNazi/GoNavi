@@ -7,22 +7,23 @@ import (
 )
 
 type TableDiffSummary struct {
-	Table              string   `json:"table"`
-	PKColumn           string   `json:"pkColumn,omitempty"`
-	CanSync            bool     `json:"canSync"`
-	Inserts            int      `json:"inserts"`
-	Updates            int      `json:"updates"`
-	Deletes            int      `json:"deletes"`
-	Same               int      `json:"same"`
-	SchemaDiffCount    int      `json:"schemaDiffCount,omitempty"`
-	Message            string   `json:"message,omitempty"`
-	HasSchema          bool     `json:"hasSchema,omitempty"`
-	TargetTableExists  bool     `json:"targetTableExists,omitempty"`
-	PlannedAction      string   `json:"plannedAction,omitempty"`
-	Warnings           []string `json:"warnings,omitempty"`
-	UnsupportedObjects []string `json:"unsupportedObjects,omitempty"`
-	IndexesToCreate    int      `json:"indexesToCreate,omitempty"`
-	IndexesSkipped     int      `json:"indexesSkipped,omitempty"`
+	Table              string            `json:"table"`
+	PKColumn           string            `json:"pkColumn,omitempty"`
+	CanSync            bool              `json:"canSync"`
+	Inserts            int               `json:"inserts"`
+	Updates            int               `json:"updates"`
+	Deletes            int               `json:"deletes"`
+	Same               int               `json:"same"`
+	SchemaDiffCount    int               `json:"schemaDiffCount,omitempty"`
+	Message            string            `json:"message,omitempty"`
+	HasSchema          bool              `json:"hasSchema,omitempty"`
+	TargetTableExists  bool              `json:"targetTableExists,omitempty"`
+	PlannedAction      string            `json:"plannedAction,omitempty"`
+	Warnings           []string          `json:"warnings,omitempty"`
+	UnsupportedObjects []string          `json:"unsupportedObjects,omitempty"`
+	UnmigratedIndexes  []UnmigratedIndex `json:"unmigratedIndexes,omitempty"`
+	IndexesToCreate    int               `json:"indexesToCreate,omitempty"`
+	IndexesSkipped     int               `json:"indexesSkipped,omitempty"`
 }
 
 type SyncAnalyzeResult struct {
@@ -134,6 +135,7 @@ func (s *SyncEngine) Analyze(config SyncConfig) SyncAnalyzeResult {
 			summary.PlannedAction = plan.PlannedAction
 			summary.Warnings = append(summary.Warnings, plan.Warnings...)
 			summary.UnsupportedObjects = append(summary.UnsupportedObjects, plan.UnsupportedObjects...)
+			summary.UnmigratedIndexes = append(summary.UnmigratedIndexes, plan.UnmigratedIndexes...)
 			summary.IndexesToCreate = plan.IndexesToCreate
 			summary.IndexesSkipped = plan.IndexesSkipped
 			summary.SchemaDiffCount = len(plan.PreDataSQL) + len(plan.PostDataSQL)

@@ -18,18 +18,19 @@ type PreviewUpdateRow struct {
 }
 
 type TableDiffPreview struct {
-	Table            string             `json:"table"`
-	PKColumn         string             `json:"pkColumn"`
-	ColumnTypes      map[string]string  `json:"columnTypes,omitempty"`
-	SchemaSummary    string             `json:"schemaSummary,omitempty"`
-	SchemaWarnings   []string           `json:"schemaWarnings,omitempty"`
-	SchemaStatements []string           `json:"schemaStatements,omitempty"`
-	TotalInserts     int                `json:"totalInserts"`
-	TotalUpdates     int                `json:"totalUpdates"`
-	TotalDeletes     int                `json:"totalDeletes"`
-	Inserts          []PreviewRow       `json:"inserts"`
-	Updates          []PreviewUpdateRow `json:"updates"`
-	Deletes          []PreviewRow       `json:"deletes"`
+	Table             string             `json:"table"`
+	PKColumn          string             `json:"pkColumn"`
+	ColumnTypes       map[string]string  `json:"columnTypes,omitempty"`
+	SchemaSummary     string             `json:"schemaSummary,omitempty"`
+	SchemaWarnings    []string           `json:"schemaWarnings,omitempty"`
+	SchemaStatements  []string           `json:"schemaStatements,omitempty"`
+	UnmigratedIndexes []UnmigratedIndex  `json:"unmigratedIndexes,omitempty"`
+	TotalInserts      int                `json:"totalInserts"`
+	TotalUpdates      int                `json:"totalUpdates"`
+	TotalDeletes      int                `json:"totalDeletes"`
+	Inserts           []PreviewRow       `json:"inserts"`
+	Updates           []PreviewUpdateRow `json:"updates"`
+	Deletes           []PreviewRow       `json:"deletes"`
 }
 
 func (s *SyncEngine) Preview(config SyncConfig, tableName string, limit int) (TableDiffPreview, error) {
@@ -94,10 +95,11 @@ func (s *SyncEngine) Preview(config SyncConfig, tableName string, limit int) (Ta
 	contentRaw := strings.ToLower(strings.TrimSpace(config.Content))
 	if contentRaw == "schema" {
 		return TableDiffPreview{
-			Table:            tableName,
-			SchemaSummary:    firstNonEmpty(plan.PlannedAction, "仅同步结构"),
-			SchemaWarnings:   append([]string(nil), plan.Warnings...),
-			SchemaStatements: append([]string(nil), schemaStatements...),
+			Table:             tableName,
+			SchemaSummary:     firstNonEmpty(plan.PlannedAction, "仅同步结构"),
+			SchemaWarnings:    append([]string(nil), plan.Warnings...),
+			SchemaStatements:  append([]string(nil), schemaStatements...),
+			UnmigratedIndexes: append([]UnmigratedIndex(nil), plan.UnmigratedIndexes...),
 		}, nil
 	}
 
@@ -126,18 +128,19 @@ func (s *SyncEngine) Preview(config SyncConfig, tableName string, limit int) (Ta
 	sourceType := resolveMigrationDBType(config.SourceConfig)
 	targetType := resolveMigrationDBType(config.TargetConfig)
 	out := TableDiffPreview{
-		Table:            tableName,
-		PKColumn:         pkCol,
-		ColumnTypes:      make(map[string]string, len(cols)),
-		SchemaSummary:    firstNonEmpty(plan.PlannedAction, "结构预览"),
-		SchemaWarnings:   append([]string(nil), plan.Warnings...),
-		SchemaStatements: append([]string(nil), schemaStatements...),
-		TotalInserts:     0,
-		TotalUpdates:     0,
-		TotalDeletes:     0,
-		Inserts:          make([]PreviewRow, 0),
-		Updates:          make([]PreviewUpdateRow, 0),
-		Deletes:          make([]PreviewRow, 0),
+		Table:             tableName,
+		PKColumn:          pkCol,
+		ColumnTypes:       make(map[string]string, len(cols)),
+		SchemaSummary:     firstNonEmpty(plan.PlannedAction, "结构预览"),
+		SchemaWarnings:    append([]string(nil), plan.Warnings...),
+		SchemaStatements:  append([]string(nil), schemaStatements...),
+		UnmigratedIndexes: append([]UnmigratedIndex(nil), plan.UnmigratedIndexes...),
+		TotalInserts:      0,
+		TotalUpdates:      0,
+		TotalDeletes:      0,
+		Inserts:           make([]PreviewRow, 0),
+		Updates:           make([]PreviewUpdateRow, 0),
+		Deletes:           make([]PreviewRow, 0),
 	}
 	columnTypes := cols
 	if hasExplicitSyncMappings(config) {
