@@ -20,6 +20,7 @@ type PreviewUpdateRow struct {
 type TableDiffPreview struct {
 	Table             string             `json:"table"`
 	PKColumn          string             `json:"pkColumn"`
+	PKColumns         []string           `json:"pkColumns,omitempty"`
 	ColumnTypes       map[string]string  `json:"columnTypes,omitempty"`
 	SchemaSummary     string             `json:"schemaSummary,omitempty"`
 	SchemaWarnings    []string           `json:"schemaWarnings,omitempty"`
@@ -110,26 +111,25 @@ func (s *SyncEngine) Preview(config SyncConfig, tableName string, limit int) (Ta
 	if len(pkCols) == 0 {
 		return TableDiffPreview{}, syncTextError("data_sync.backend.error.preview_pk_required", nil)
 	}
-	if len(pkCols) > 1 {
-		return TableDiffPreview{}, syncTextError("data_sync.backend.error.preview_composite_pk_unsupported", map[string]any{
-			"columns": strings.Join(pkCols, ","),
-		})
-	}
 	sourcePKCol := pkCols[0]
-	pkCol := sourcePKCol
+	pkColsForCompare := append([]string(nil), pkCols...)
 	if hasExplicitSyncMappings(config) {
-		mappedPK, ok := projection.TargetColumn(sourcePKCol)
-		if !ok || strings.TrimSpace(mappedPK) == "" {
-			return TableDiffPreview{}, fmt.Errorf("表 %s 的主键字段 %s 未映射到目标字段，无法生成差异预览", tableName, sourcePKCol)
+		for index, sourceKey := range pkCols {
+			mappedPK, ok := projection.TargetColumn(sourceKey)
+			if !ok || strings.TrimSpace(mappedPK) == "" {
+				return TableDiffPreview{}, fmt.Errorf("表 %s 的主键字段 %s 未映射到目标字段，无法生成差异预览", tableName, sourceKey)
+			}
+			pkColsForCompare[index] = mappedPK
 		}
-		pkCol = mappedPK
 	}
+	pkCol := pkColsForCompare[0]
 
 	sourceType := resolveMigrationDBType(config.SourceConfig)
 	targetType := resolveMigrationDBType(config.TargetConfig)
 	out := TableDiffPreview{
 		Table:             tableName,
-		PKColumn:          pkCol,
+		PKColumn:          strings.Join(pkColsForCompare, ","),
+		PKColumns:         append([]string(nil), pkColsForCompare...),
 		ColumnTypes:       make(map[string]string, len(cols)),
 		SchemaSummary:     firstNonEmpty(plan.PlannedAction, "结构预览"),
 		SchemaWarnings:    append([]string(nil), plan.Warnings...),
@@ -194,17 +194,17 @@ func (s *SyncEngine) Preview(config SyncConfig, tableName string, limit int) (Ta
 			if len(out.Inserts) >= limit {
 				break
 			}
-			pkVal := strings.TrimSpace(fmt.Sprintf("%v", row[pkCol]))
-			if pkVal == "" || pkVal == "<nil>" {
+			key, ok := selectionRowKey(row, pkColsForCompare)
+			if !ok {
 				continue
 			}
-			out.Inserts = append(out.Inserts, PreviewRow{PK: pkVal, Row: row})
+			out.Inserts = append(out.Inserts, PreviewRow{PK: key, Row: row})
 		}
 		return out, nil
 	}
 
 	handled := false
-	if !hasExplicitSyncMappings(config) {
+	if !hasExplicitSyncMappings(config) && len(pkCols) == 1 {
 		handled, _, err = scanTableDiffInPages(sourceDB, targetDB, sourceType, targetType, plan, cols, nil, sourcePKCol, targetColSet, true, func(page pagedDiffPage) error {
 			out.TotalInserts += len(page.Inserts)
 			out.TotalUpdates += len(page.Updates)
@@ -274,58 +274,46 @@ func (s *SyncEngine) Preview(config SyncConfig, tableName string, limit int) (Ta
 		}
 	}
 
-	targetMap := make(map[string]map[string]interface{}, len(targetRows))
-	for _, row := range targetRows {
-		if row[pkCol] == nil {
-			continue
-		}
-		pkVal := strings.TrimSpace(fmt.Sprintf("%v", row[pkCol]))
-		if pkVal == "" || pkVal == "<nil>" {
-			continue
-		}
-		targetMap[pkVal] = row
-	}
-
-	sourcePKSet := make(map[string]struct{}, len(sourceRows))
-	for _, sRow := range sourceRows {
-		if sRow[pkCol] == nil {
-			continue
-		}
-		pkVal := strings.TrimSpace(fmt.Sprintf("%v", sRow[pkCol]))
-		if pkVal == "" || pkVal == "<nil>" {
-			continue
-		}
-		sourcePKSet[pkVal] = struct{}{}
-
-		if tRow, exists := targetMap[pkVal]; exists {
-			changedColumns := make([]string, 0)
-			for k, v := range sRow {
-				if fmt.Sprintf("%v", v) != fmt.Sprintf("%v", tRow[k]) {
-					changedColumns = append(changedColumns, k)
-				}
-			}
-			if len(changedColumns) > 0 {
-				out.TotalUpdates++
-				if len(out.Updates) < limit {
-					out.Updates = append(out.Updates, PreviewUpdateRow{PK: pkVal, ChangedColumns: changedColumns, Source: sRow, Target: tRow})
-				}
-			}
-			continue
-		}
-
-		out.TotalInserts++
+	inserts, updates, deletes, _ := diffRowsByKeyColumns(pkColsForCompare, sourceRows, targetRows)
+	out.TotalInserts, out.TotalUpdates, out.TotalDeletes = len(inserts), len(updates), len(deletes)
+	for _, row := range inserts {
 		if len(out.Inserts) < limit {
-			out.Inserts = append(out.Inserts, PreviewRow{PK: pkVal, Row: sRow})
+			key, _ := selectionRowKey(row, pkColsForCompare)
+			out.Inserts = append(out.Inserts, PreviewRow{PK: key, Row: row})
 		}
 	}
-
-	for pkVal, row := range targetMap {
-		if _, ok := sourcePKSet[pkVal]; ok {
-			continue
+	targetRowsByKey := make(map[string]map[string]interface{}, len(targetRows))
+	for _, row := range targetRows {
+		if key, ok := syncRowKey(row, pkColsForCompare); ok {
+			targetRowsByKey[key] = row
 		}
-		out.TotalDeletes++
+	}
+	sourceRowsByKey := make(map[string]map[string]interface{}, len(sourceRows))
+	for _, row := range sourceRows {
+		if key, ok := syncRowKey(row, pkColsForCompare); ok {
+			sourceRowsByKey[key] = row
+		}
+	}
+	for _, update := range updates {
+		if len(out.Updates) < limit {
+			identityKey, _ := syncRowKey(update.Keys, pkColsForCompare)
+			displayKey, _ := selectionRowKey(update.Keys, pkColsForCompare)
+			changed := make([]string, 0, len(update.Values))
+			for column := range update.Values {
+				changed = append(changed, column)
+			}
+			out.Updates = append(out.Updates, PreviewUpdateRow{
+				PK:             displayKey,
+				ChangedColumns: changed,
+				Source:         sourceRowsByKey[identityKey],
+				Target:         targetRowsByKey[identityKey],
+			})
+		}
+	}
+	for _, row := range deletes {
 		if len(out.Deletes) < limit {
-			out.Deletes = append(out.Deletes, PreviewRow{PK: pkVal, Row: row})
+			key, _ := selectionRowKey(row, pkColsForCompare)
+			out.Deletes = append(out.Deletes, PreviewRow{PK: key, Row: row})
 		}
 	}
 

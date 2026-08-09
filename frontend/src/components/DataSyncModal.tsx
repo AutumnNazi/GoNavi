@@ -264,7 +264,7 @@ const isServiceNameBackedSyncConnection = (conn?: SavedConnection): boolean => {
   return protocol === "oracle";
 };
 
-const buildSqlPreview = (
+export const buildSqlPreview = (
   previewData: any,
   tableName: string,
   dbType: string,
@@ -273,6 +273,13 @@ const buildSqlPreview = (
   if (!previewData || !tableName) return { sqlText: "", statementCount: 0 };
   const tableExpr = quoteSqlTable(dbType, tableName);
   const pkCol = String(previewData.pkColumn || "id");
+  const pkColumns = Array.isArray(previewData.pkColumns)
+    ? previewData.pkColumns
+        .map((column: unknown) => String(column || "").trim())
+        .filter((column: string) => column.length > 0)
+    : [];
+  if (pkColumns.length === 0) pkColumns.push(pkCol);
+  const pkColumnSet = new Set(pkColumns);
   const columnTypesByLowerName =
     previewData?.columnTypes && typeof previewData.columnTypes === "object"
       ? (previewData.columnTypes as Record<string, string>)
@@ -308,6 +315,30 @@ const buildSqlPreview = (
     (ops?.selectedDeletePks || []).map((v) => String(v)),
   );
 
+  const buildWhereExpr = (rowWrap: any, fallbackPk: string): string => {
+    const locator = {
+      ...(rowWrap?.source || {}),
+      ...(rowWrap?.target || {}),
+      ...(rowWrap?.row || {}),
+    } as Record<string, unknown>;
+    const conditions: string[] = [];
+    for (const column of pkColumns) {
+      let value = locator[column];
+      if (
+        value === undefined &&
+        pkColumns.length === 1 &&
+        fallbackPk !== ""
+      ) {
+        value = fallbackPk;
+      }
+      if (value === undefined) return "";
+      conditions.push(
+        `${quoteSqlIdent(dbType, column)} = ${toTypedSqlLiteral(value, dbType, columnTypesByLowerName[column.toLowerCase()])}`,
+      );
+    }
+    return conditions.join(" AND ");
+  };
+
   if (ops?.insert !== false) {
     insertRows.forEach((rowWrap: any) => {
       const pk = String(rowWrap?.pk ?? "");
@@ -338,8 +369,10 @@ const buildSqlPreview = (
       const source = rowWrap?.source || {};
       const changedColumns = Array.isArray(rowWrap?.changedColumns)
         ? rowWrap.changedColumns
-        : Object.keys(source).filter((k) => k !== pkCol);
-      const setCols = changedColumns.filter((c: string) => String(c) !== pkCol);
+        : Object.keys(source).filter((k) => !pkColumnSet.has(k));
+      const setCols = changedColumns.filter(
+        (c: string) => !pkColumnSet.has(String(c)),
+      );
       if (setCols.length === 0) return;
       const setExpr = setCols
         .map(
@@ -347,9 +380,9 @@ const buildSqlPreview = (
             `${quoteSqlIdent(dbType, c)} = ${toTypedSqlLiteral(source[c], dbType, columnTypesByLowerName[String(c).toLowerCase()])}`,
         )
         .join(", ");
-      statements.push(
-        `UPDATE ${tableExpr} SET ${setExpr} WHERE ${quoteSqlIdent(dbType, pkCol)} = ${toTypedSqlLiteral(pk, dbType, columnTypesByLowerName[String(pkCol).toLowerCase()])};`,
-      );
+      const whereExpr = buildWhereExpr(rowWrap, pk);
+      if (whereExpr === "") return;
+      statements.push(`UPDATE ${tableExpr} SET ${setExpr} WHERE ${whereExpr};`);
     });
   }
 
@@ -357,9 +390,9 @@ const buildSqlPreview = (
     deleteRows.forEach((rowWrap: any) => {
       const pk = String(rowWrap?.pk ?? "");
       if (selectedDelete.size > 0 && !selectedDelete.has(pk)) return;
-      statements.push(
-        `DELETE FROM ${tableExpr} WHERE ${quoteSqlIdent(dbType, pkCol)} = ${toTypedSqlLiteral(pk, dbType, columnTypesByLowerName[String(pkCol).toLowerCase()])};`,
-      );
+      const whereExpr = buildWhereExpr(rowWrap, pk);
+      if (whereExpr === "") return;
+      statements.push(`DELETE FROM ${tableExpr} WHERE ${whereExpr};`);
     });
   }
 

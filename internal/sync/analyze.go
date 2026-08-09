@@ -206,31 +206,26 @@ func (s *SyncEngine) Analyze(config SyncConfig) SyncAnalyzeResult {
 				result.Tables = append(result.Tables, summary)
 				return
 			}
-			if len(pkCols) > 1 {
-				summary.Message = localizedSyncBackendText("data_sync.backend.error.diff_composite_pk_unsupported", map[string]any{
-					"columns": strings.Join(pkCols, ","),
-				})
-				result.Tables = append(result.Tables, summary)
-				return
-			}
 			sourcePKCol := pkCols[0]
-			comparisonPKCol := sourcePKCol
+			comparisonPKCols := append([]string(nil), pkCols...)
 			if hasExplicitSyncMappings(config) {
-				mappedPK, ok := projection.TargetColumn(sourcePKCol)
-				if !ok || strings.TrimSpace(mappedPK) == "" {
-					summary.Message = fmt.Sprintf("表 %s 的主键字段 %s 未映射到目标字段，无法执行差异分析", tableName, sourcePKCol)
-					result.Tables = append(result.Tables, summary)
-					return
+				for index, sourceKey := range pkCols {
+					mappedPK, ok := projection.TargetColumn(sourceKey)
+					if !ok || strings.TrimSpace(mappedPK) == "" {
+						summary.Message = fmt.Sprintf("表 %s 的主键字段 %s 未映射到目标字段，无法执行差异分析", tableName, sourceKey)
+						result.Tables = append(result.Tables, summary)
+						return
+					}
+					comparisonPKCols[index] = mappedPK
 				}
-				comparisonPKCol = mappedPK
 			}
-			summary.PKColumn = comparisonPKCol
+			summary.PKColumn = strings.Join(comparisonPKCols, ",")
 
 			targetColSet := buildTargetColumnSet(targetCols)
 			handled := false
 			counts := pagedDiffCounts{}
 			var scanErr error
-			if !hasExplicitSyncMappings(config) {
+			if !hasExplicitSyncMappings(config) && len(pkCols) == 1 {
 				handled, counts, scanErr = scanTableDiffInPages(sourceDB, targetDB, sourceType, targetType, plan, cols, targetCols, sourcePKCol, targetColSet, true, nil)
 			}
 			if handled {
@@ -272,53 +267,8 @@ func (s *SyncEngine) Analyze(config SyncConfig) SyncAnalyzeResult {
 				return
 			}
 
-			pkCol := comparisonPKCol
-			targetMap := make(map[string]map[string]interface{}, len(targetRows))
-			for _, row := range targetRows {
-				if row[pkCol] == nil {
-					continue
-				}
-				pkVal := strings.TrimSpace(fmt.Sprintf("%v", row[pkCol]))
-				if pkVal == "" || pkVal == "<nil>" {
-					continue
-				}
-				targetMap[pkVal] = row
-			}
-
-			sourcePKSet := make(map[string]struct{}, len(sourceRows))
-			for _, sRow := range sourceRows {
-				if sRow[pkCol] == nil {
-					continue
-				}
-				pkVal := strings.TrimSpace(fmt.Sprintf("%v", sRow[pkCol]))
-				if pkVal == "" || pkVal == "<nil>" {
-					continue
-				}
-				sourcePKSet[pkVal] = struct{}{}
-
-				if tRow, exists := targetMap[pkVal]; exists {
-					changed := false
-					for k, v := range sRow {
-						if fmt.Sprintf("%v", v) != fmt.Sprintf("%v", tRow[k]) {
-							changed = true
-							break
-						}
-					}
-					if changed {
-						summary.Updates++
-					} else {
-						summary.Same++
-					}
-				} else {
-					summary.Inserts++
-				}
-			}
-
-			for pkVal := range targetMap {
-				if _, ok := sourcePKSet[pkVal]; !ok {
-					summary.Deletes++
-				}
-			}
+			inserts, updates, deletes, same := diffRowsByKeyColumns(comparisonPKCols, sourceRows, targetRows)
+			summary.Inserts, summary.Updates, summary.Deletes, summary.Same = len(inserts), len(updates), len(deletes), same
 
 			summary.CanSync = true
 			if strings.TrimSpace(summary.Message) == "" {
