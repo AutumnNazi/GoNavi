@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"GoNavi-Wails/internal/sync"
 	"GoNavi-Wails/internal/syncjob"
 )
 
@@ -160,5 +161,23 @@ func TestDataSyncJobPreflightDiscardsCallerSuppliedApproval(t *testing.T) {
 	result := application.preflightDataSyncJob(definition, time.Now())
 	if result.Definition.Approval != nil {
 		t.Fatal("preflight must not trust or echo a caller-supplied approval")
+	}
+}
+
+func TestAppendOnlyTargetPreflightIssuesBlockMutations(t *testing.T) {
+	definition := approvalTestDefinition()
+	definition.Options.SyncMode = "insert_update"
+	definition.Options.PropagateDeletes = true
+	issues := appendOnlyTargetPreflightIssues(definition, sync.MigrationCapability{
+		TargetType:        "tdengine",
+		SupportsMutations: false,
+	})
+	if len(issues) != 2 || issues[0].Code != "append_only_target_requires_insert_only" || issues[1].Code != "append_only_target_delete_unsupported" {
+		t.Fatalf("unexpected append-only target issues: %#v", issues)
+	}
+
+	definition.Kind = syncjob.JobKindCompare
+	if issues := appendOnlyTargetPreflightIssues(definition, sync.MigrationCapability{TargetType: "tdengine"}); len(issues) != 0 {
+		t.Fatalf("compare task must not be blocked by write capability: %#v", issues)
 	}
 }

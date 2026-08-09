@@ -103,6 +103,7 @@ describe('data sync Wails DTO boundary', () => {
         supportsAutoCreate: true,
         supportsAutoAddColumns: true,
         requiresExistingTarget: true,
+        supportsMutations: true,
       }),
     ).toMatchObject({
       level: 'full',
@@ -110,6 +111,7 @@ describe('data sync Wails DTO boundary', () => {
       supportsAutoCreate: true,
       supportsAutoAddColumns: true,
       requiresExistingTarget: true,
+      supportsMutations: true,
     });
     expect(
       decodeRouteCapability({
@@ -120,6 +122,7 @@ describe('data sync Wails DTO boundary', () => {
     ).toMatchObject({
       supportsAutoAddColumns: false,
       requiresExistingTarget: false,
+      supportsMutations: false,
     });
   });
 

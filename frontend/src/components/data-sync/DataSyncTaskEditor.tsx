@@ -300,6 +300,8 @@ const DeliveryStage: React.FC<{
       (task.kind !== 'cdc' || capability.supportsCdc === true));
   const rowIsolationAvailable =
     routeCanWrite && canUseDataSyncRowErrorIsolation(task);
+  const appendOnlyTarget =
+    capability.level !== 'unknown' && capability.supportsMutations === false;
   const enabledMappings = task.mappings.filter((mapping) => mapping.enabled);
   const allEnabledMappingsHaveKeys =
     enabledMappings.length > 0 &&
@@ -308,6 +310,7 @@ const DeliveryStage: React.FC<{
     );
   const canPropagateDeletes =
     routeCanWrite &&
+    !appendOnlyTarget &&
     task.delivery.writeMode === 'upsert' &&
     ((task.kind === 'reconcile' &&
       task.incremental.mode === 'snapshot' &&
@@ -370,6 +373,10 @@ const DeliveryStage: React.FC<{
     if (!canPropagateDeletes && task.delivery.propagateDeletes) {
       patch.propagateDeletes = false;
     }
+    if (appendOnlyTarget && task.delivery.writeMode !== 'append') {
+      patch.writeMode = 'append';
+      patch.retryLimit = 0;
+    }
     if (
       structureCapabilityResolved &&
       !canAutoAddColumns &&
@@ -391,6 +398,7 @@ const DeliveryStage: React.FC<{
     canAutoAddColumns,
     canCreateIndexes,
     canPropagateDeletes,
+    appendOnlyTarget,
     onPatch,
     readOnly,
     rowIsolationAvailable,
@@ -400,6 +408,7 @@ const DeliveryStage: React.FC<{
     task.delivery.createIndexes,
     task.delivery.errorPolicy,
     task.delivery.propagateDeletes,
+    task.delivery.writeMode,
   ]);
 
   if (readOnly) {
@@ -428,6 +437,11 @@ const DeliveryStage: React.FC<{
         </div>
       </header>
       <div className="gn-data-sync-delivery-main">
+        {appendOnlyTarget ? (
+          <p className="gn-data-sync-inline-note" role="note" data-append-only-target="true">
+            {t('delivery.append_only_target_note')}
+          </p>
+        ) : null}
         <Field label={t('delivery.write_mode')}>
           <select
             className="gn-data-sync-control"
@@ -451,7 +465,11 @@ const DeliveryStage: React.FC<{
             >
               {t('delivery.write.append')}
             </option>
-            <option value="upsert">{t('delivery.write.upsert')}</option>
+            <option value="upsert" disabled={appendOnlyTarget}>
+              {appendOnlyTarget
+                ? t('delivery.write.upsert_unavailable')
+                : t('delivery.write.upsert')}
+            </option>
             <option value="overwrite" disabled>
               {t('delivery.write.overwrite_unavailable')}
             </option>
