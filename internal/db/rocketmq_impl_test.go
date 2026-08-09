@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"net"
 	"reflect"
 	"strings"
 	"testing"
@@ -87,6 +88,89 @@ func TestNormalizeRocketMQConfigParsesURIAndParams(t *testing.T) {
 	}
 	if params.Get("producerGroup") != "writer" || params.Get("sendTimeoutMs") != "6000" {
 		t.Fatalf("unexpected rocketmq producer params: %#v", params)
+	}
+}
+
+func TestRocketMQConnectSupportsNetworkTunnels(t *testing.T) {
+	tests := []struct {
+		name   string
+		config connection.ConnectionConfig
+	}{
+		{
+			name: "SSH",
+			config: connection.ConnectionConfig{
+				Type:   "rocketmq",
+				Host:   "nameserver.internal.test",
+				Port:   9876,
+				UseSSH: true,
+				SSH: connection.SSHConfig{
+					Host: "ssh.internal.test",
+					Port: 22,
+					User: "ssh-user",
+				},
+			},
+		},
+		{
+			name: "proxy",
+			config: connection.ConnectionConfig{
+				Type:     "rocketmq",
+				Host:     "nameserver.internal.test",
+				Port:     9876,
+				UseProxy: true,
+				Proxy: connection.ProxyConfig{
+					Type: "socks5",
+					Host: "proxy.internal.test",
+					Port: 1080,
+				},
+			},
+		},
+		{
+			name: "HTTP tunnel",
+			config: connection.ConnectionConfig{
+				Type:          "rocketmq",
+				Host:          "nameserver.internal.test",
+				Port:          9876,
+				UseHTTPTunnel: true,
+				HTTPTunnel: connection.HTTPTunnelConfig{
+					Host: "tunnel.internal.test",
+					Port: 8080,
+				},
+			},
+		},
+	}
+
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			var runtimeConfig connection.ConnectionConfig
+			originalFactory := newRocketMQRuntime
+			newRocketMQRuntime = func(config connection.ConnectionConfig) (rocketmqRuntime, error) {
+				runtimeConfig = config
+				return &fakeRocketMQRuntime{}, nil
+			}
+			defer func() {
+				newRocketMQRuntime = originalFactory
+			}()
+
+			client := &RocketMQDB{}
+			if err := client.Connect(testCase.config); err != nil {
+				t.Fatalf("Connect failed: %v", err)
+			}
+
+			if runtimeConfig.UseSSH || runtimeConfig.UseProxy || runtimeConfig.UseHTTPTunnel {
+				t.Fatalf("runtime received unresolved tunnel config: %#v", runtimeConfig)
+			}
+			if runtimeConfig.Host != "127.0.0.1" || runtimeConfig.Port <= 0 {
+				t.Fatalf("runtime NameServer = %s:%d, want local forwarded address", runtimeConfig.Host, runtimeConfig.Port)
+			}
+			localAddress := rocketmqFormatHostPort(runtimeConfig.Host, runtimeConfig.Port)
+			if err := client.Close(); err != nil {
+				t.Fatalf("Close failed: %v", err)
+			}
+			if conn, err := net.DialTimeout("tcp", localAddress, 50*time.Millisecond); err == nil {
+				_ = conn.Close()
+				t.Fatalf("RocketMQ tunnel listener still accepts connections after Close: %s", localAddress)
+			}
+		})
 	}
 }
 

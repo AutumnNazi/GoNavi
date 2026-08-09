@@ -140,6 +140,7 @@ const UNKNOWN_CAPABILITY: DataSyncRouteCapability = {
   level: 'unknown',
   canExecute: false,
   supportsAutoCreate: false,
+  supportsMutations: false,
   supportsCdc: false,
 };
 

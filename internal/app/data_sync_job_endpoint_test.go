@@ -8,6 +8,24 @@ import (
 	"GoNavi-Wails/internal/syncjob"
 )
 
+func TestDataSyncJobSourceIndexLocationUsesMappingThenEndpointSelection(t *testing.T) {
+	endpoint := resolvedDataSyncJobEndpoint{Database: "sales", Schema: "public"}
+
+	schema, table := dataSyncJobSourceIndexLocation(endpoint, syncjob.TableMapping{SourceSchema: " tenant ", SourceTable: " orders "})
+	if schema != "tenant" || table != "orders" {
+		t.Fatalf("mapping schema must win: schema=%q table=%q", schema, table)
+	}
+	schema, _ = dataSyncJobSourceIndexLocation(endpoint, syncjob.TableMapping{SourceTable: "orders"})
+	if schema != "public" {
+		t.Fatalf("endpoint schema must win over database: %q", schema)
+	}
+	endpoint.Schema = ""
+	schema, _ = dataSyncJobSourceIndexLocation(endpoint, syncjob.TableMapping{SourceTable: "orders"})
+	if schema != "sales" {
+		t.Fatalf("database must be the final fallback: %q", schema)
+	}
+}
+
 func TestDataSyncJobEndpointFingerprintHMACTracksSecretsAndSelection(t *testing.T) {
 	key := []byte("0123456789abcdef0123456789abcdef")
 	base := resolvedDataSyncJobEndpoint{

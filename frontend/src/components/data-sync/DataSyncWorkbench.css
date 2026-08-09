@@ -1673,6 +1673,44 @@ textarea.gn-data-sync-control {
 
 .gn-data-sync-preflight-checklist p { margin: 0; }
 
+.gn-data-sync-index-remediation {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 0.5px solid var(--gn-br-2, rgba(15, 23, 42, 0.12));
+}
+
+.gn-data-sync-index-remediation__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.gn-data-sync-index-remediation__error {
+  margin: 0 0 8px;
+  color: var(--gn-danger, #dc2626);
+  font-size: var(--gn-font-size-xs, 11px);
+}
+
+.gn-data-sync-index-remediation .gn-data-sync-summary-list li {
+  padding: 10px 0;
+  border-bottom: 0.5px solid var(--gn-br-1, rgba(15, 23, 42, 0.08));
+}
+
+.gn-data-sync-index-remediation .gn-data-sync-summary-list p {
+  margin: 4px 0 0;
+}
+
+.gn-data-sync-index-remediation pre {
+  margin: 8px 0 0;
+  padding: 8px;
+  overflow: auto;
+  white-space: pre-wrap;
+  border-radius: 10px;
+  background: var(--gn-bg-soft, rgba(15, 23, 42, 0.04));
+}
+
 .gn-data-sync-action-bar {
   display: flex;
   min-height: 52px;

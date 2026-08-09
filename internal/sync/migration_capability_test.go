@@ -21,6 +21,7 @@ func TestResolveMigrationCapability_MySQLToPostgresUsesFullPlanner(t *testing.T)
 		SupportsAutoCreate:     true,
 		SupportsAutoAddColumns: true,
 		RequiresExistingTarget: false,
+		SupportsMutations:      true,
 	}
 
 	if got != want {
@@ -44,6 +45,7 @@ func TestResolveMigrationCapability_PostgresToKingbaseUsesSameFamilyPlanner(t *t
 		SupportsAutoCreate:     true,
 		SupportsAutoAddColumns: true,
 		RequiresExistingTarget: false,
+		SupportsMutations:      true,
 	}
 
 	if got != want {
@@ -67,6 +69,7 @@ func TestResolveMigrationCapability_OracleToSQLServerUsesExistingTargetCompatibi
 		SupportsAutoCreate:     false,
 		SupportsAutoAddColumns: false,
 		RequiresExistingTarget: true,
+		SupportsMutations:      true,
 	}
 
 	if got != want {
@@ -90,6 +93,7 @@ func TestResolveMigrationCapability_MongoToOracleReportsPlannedNonExecutablePath
 		SupportsAutoCreate:     false,
 		SupportsAutoAddColumns: false,
 		RequiresExistingTarget: true,
+		SupportsMutations:      true,
 	}
 
 	if got != want {
@@ -113,6 +117,7 @@ func TestResolveMigrationCapability_RedisToMongoReportsFullKeyspaceBridge(t *tes
 		SupportsAutoCreate:     true,
 		SupportsAutoAddColumns: false,
 		RequiresExistingTarget: false,
+		SupportsMutations:      true,
 	}
 
 	if got != want {
@@ -136,6 +141,7 @@ func TestResolveMigrationCapability_MongoToRedisReportsFullKeyspaceBridge(t *tes
 		SupportsAutoCreate:     true,
 		SupportsAutoAddColumns: false,
 		RequiresExistingTarget: false,
+		SupportsMutations:      true,
 	}
 
 	if got != want {
@@ -159,6 +165,7 @@ func TestResolveMigrationCapability_CustomPostgresUsesResolvedDriverFamily(t *te
 		SupportsAutoCreate:     true,
 		SupportsAutoAddColumns: true,
 		RequiresExistingTarget: false,
+		SupportsMutations:      true,
 	}
 
 	if got != want {
@@ -182,6 +189,7 @@ func TestResolveMigrationCapability_KafkaToQdrantIsUnsupported(t *testing.T) {
 		SupportsAutoCreate:     false,
 		SupportsAutoAddColumns: false,
 		RequiresExistingTarget: true,
+		SupportsMutations:      true,
 	}
 
 	if got != want {
@@ -197,6 +205,20 @@ func TestResolveMigrationCapability_RedisToNonMongoTargetIsUnsupported(t *testin
 
 	if got.SupportLevel != MigrationSupportLevelUnsupported || got.CanExecute {
 		t.Fatalf("expected Redis to non-Mongo target to be blocked, got %+v", got)
+	}
+}
+
+func TestResolveMigrationCapability_TimeSeriesTargetsAreAppendOnly(t *testing.T) {
+	for _, targetType := range []string{"tdengine", "iotdb"} {
+		t.Run(targetType, func(t *testing.T) {
+			capability := ResolveMigrationCapability(
+				connection.ConnectionConfig{Type: "mysql"},
+				connection.ConnectionConfig{Type: targetType},
+			)
+			if !capability.CanExecute || capability.SupportsMutations {
+				t.Fatalf("expected %s target to be executable and append-only, got %+v", targetType, capability)
+			}
+		})
 	}
 }
 

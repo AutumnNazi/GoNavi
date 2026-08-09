@@ -58,6 +58,7 @@ func (a *App) preflightDataSyncJob(input syncjob.JobDefinition, now time.Time) D
 		message := fmt.Sprintf("migration route %s -> %s is %s", result.Capability.SourceType, result.Capability.TargetType, result.Capability.SupportLevel)
 		result.Issues = append(result.Issues, preflightIssue("route_unsupported", DataSyncJobPreflightBlocker, "endpoints", message, ""))
 	}
+	result.Issues = append(result.Issues, appendOnlyTargetPreflightIssues(definition, result.Capability)...)
 	if definition.Kind != syncjob.JobKindCompare {
 		for _, mapping := range definition.Mappings {
 			if !mapping.Enabled {
@@ -225,6 +226,32 @@ func (a *App) preflightDataSyncJob(input syncjob.JobDefinition, now time.Time) D
 	return finishDataSyncJobPreflight(result)
 }
 
+func appendOnlyTargetPreflightIssues(definition syncjob.JobDefinition, capability sync.MigrationCapability) []DataSyncJobPreflightIssue {
+	if definition.Kind == syncjob.JobKindCompare || capability.SupportsMutations {
+		return nil
+	}
+	issues := make([]DataSyncJobPreflightIssue, 0, 2)
+	if !strings.EqualFold(definition.Options.SyncMode, "insert_only") {
+		issues = append(issues, preflightIssue(
+			"append_only_target_requires_insert_only",
+			DataSyncJobPreflightBlocker,
+			"delivery",
+			fmt.Sprintf("%s targets support append/INSERT-only delivery; updates are not supported", capability.TargetType),
+			"",
+		))
+	}
+	if definition.Options.PropagateDeletes {
+		issues = append(issues, preflightIssue(
+			"append_only_target_delete_unsupported",
+			DataSyncJobPreflightBlocker,
+			"delivery",
+			fmt.Sprintf("%s targets support append/INSERT-only delivery; deletes are not supported", capability.TargetType),
+			"",
+		))
+	}
+	return issues
+}
+
 func (a *App) preflightDataSyncMappings(definition syncjob.JobDefinition, source, target resolvedDataSyncJobEndpoint) []DataSyncJobPreflightIssue {
 	issues := make([]DataSyncJobPreflightIssue, 0)
 	for _, mapping := range definition.Mappings {
@@ -273,6 +300,7 @@ func (a *App) preflightDataSyncMappings(definition syncjob.JobDefinition, source
 				issues = append(issues, preflightIssue("target_table_missing", DataSyncJobPreflightBlocker, "mappings", "target table does not exist and this mapping cannot auto-create it", mappingID))
 			} else {
 				issues = append(issues, preflightIssue("target_table_will_be_created", DataSyncJobPreflightInfo, "mappings", "target table will be created by the migration planner", mappingID))
+				issues = append(issues, a.preflightUnmigratedIndexes(definition, source, target, mapping)...)
 			}
 			continue
 		}
@@ -293,6 +321,54 @@ func (a *App) preflightDataSyncMappings(definition syncjob.JobDefinition, source
 				issues = append(issues, preflightIssue("target_column_missing", DataSyncJobPreflightBlocker, "mappings", fmt.Sprintf("target column %s does not exist", column.Target), mappingID))
 			}
 		}
+	}
+	return issues
+}
+
+func dataSyncJobSourceIndexLocation(source resolvedDataSyncJobEndpoint, mapping syncjob.TableMapping) (string, string) {
+	schema := firstNonEmptySyncJob(mapping.SourceSchema, source.Schema, source.Database)
+	return strings.TrimSpace(schema), strings.TrimSpace(mapping.SourceTable)
+}
+
+func (a *App) preflightUnmigratedIndexes(definition syncjob.JobDefinition, source, target resolvedDataSyncJobEndpoint, mapping syncjob.TableMapping) []DataSyncJobPreflightIssue {
+	if !definition.Options.CreateIndexes {
+		return nil
+	}
+	config, err := buildDataSyncJobEngineConfig(definition, "preflight", source, target, mapping)
+	if err != nil {
+		return []DataSyncJobPreflightIssue{preflightIssue("mapping_compile_failed", DataSyncJobPreflightBlocker, "mappings", err.Error(), dataSyncJobMappingLabel(mapping))}
+	}
+	sourceDB, sourceErr := a.getDatabase(normalizeMetadataRunConfig(source.Config, source.Database))
+	if sourceErr != nil {
+		return []DataSyncJobPreflightIssue{preflightIssue("source_connect_failed", DataSyncJobPreflightBlocker, "endpoints", sourceErr.Error(), dataSyncJobMappingLabel(mapping))}
+	}
+	sourceSchema, sourceTable := dataSyncJobSourceIndexLocation(source, mapping)
+	if _, indexErr := sourceDB.GetIndexes(sourceSchema, sourceTable); indexErr != nil {
+		return []DataSyncJobPreflightIssue{preflightIssue("index_inspection_failed", DataSyncJobPreflightWarning, "mappings", indexErr.Error(), dataSyncJobMappingLabel(mapping))}
+	}
+	targetDB, targetErr := a.getDatabase(normalizeMetadataRunConfig(target.Config, target.Database))
+	if targetErr != nil {
+		return []DataSyncJobPreflightIssue{preflightIssue("target_connect_failed", DataSyncJobPreflightBlocker, "endpoints", targetErr.Error(), dataSyncJobMappingLabel(mapping))}
+	}
+	qualifiedSourceTable := strings.TrimSpace(mapping.SourceTable)
+	if strings.TrimSpace(mapping.SourceSchema) != "" {
+		qualifiedSourceTable = strings.TrimSpace(mapping.SourceSchema) + "." + qualifiedSourceTable
+	}
+	plan, planErr := sync.InspectSchemaMigrationPlan(config, qualifiedSourceTable, sourceDB, targetDB)
+	if planErr != nil {
+		return []DataSyncJobPreflightIssue{preflightIssue("schema_inspection_failed", DataSyncJobPreflightWarning, "mappings", planErr.Error(), dataSyncJobMappingLabel(mapping))}
+	}
+	issues := make([]DataSyncJobPreflightIssue, 0, len(plan.UnmigratedIndexes))
+	for _, index := range plan.UnmigratedIndexes {
+		indexCopy := index
+		issues = append(issues, DataSyncJobPreflightIssue{
+			Code:      "unmigrated_index",
+			Severity:  DataSyncJobPreflightWarning,
+			Stage:     "mappings",
+			Message:   index.Reason,
+			MappingID: dataSyncJobMappingLabel(mapping),
+			Detail:    &DataSyncJobPreflightIssueDetail{UnmigratedIndex: &indexCopy},
+		})
 	}
 	return issues
 }

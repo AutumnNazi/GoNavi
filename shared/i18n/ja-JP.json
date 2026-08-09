@@ -5164,6 +5164,7 @@
   "db.backend.error.connection_open_failed_prefix": "データベース接続を開けませんでした: ",
   "db.backend.error.connection_verify_failed_prefix": "接続確立後の検証に失敗しました: ",
   "db.backend.error.create_table_statement_not_found": "CREATE TABLE 文が見つかりませんでした",
+  "db.backend.error.sqlserver_create_statement_unsupported": "現在のバックエンドでは SQL Server テーブル DDL の表示はサポートされていません",
   "db.backend.error.custom_clickhouse_dsn_invalid": "ClickHouse カスタム接続の DSN が無効です。clickhouse://、http(s)://、jdbc:clickhouse://、または jdbc:ch:// 形式の単一ノードアドレスを使用してください",
   "db.backend.error.custom_clickhouse_dsn_required": "ClickHouse カスタム接続には clickhouse://、http(s)://、jdbc:clickhouse://、または jdbc:ch:// 形式の DSN が必要です",
   "db.backend.error.custom_driver_system_odbc_unsupported_prefix": "データベース接続を開けませんでした: カスタム接続ではシステム ODBC/JDBC ドライバー名 \"{{driver}}\" を直接入力できません。GoNavi に登録済みの Go database/sql ドライバー名を入力してください。現在のビルドには汎用 ODBC ドライバーが登録されていないため、\"{{driver}}\" 経由で InterSystems IRIS に接続することはまだサポートされていません: ",

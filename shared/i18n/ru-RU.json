@@ -5164,6 +5164,7 @@
   "db.backend.error.connection_open_failed_prefix": "Не удалось открыть подключение к базе данных: ",
   "db.backend.error.connection_verify_failed_prefix": "Не удалось проверить подключение после установления: ",
   "db.backend.error.create_table_statement_not_found": "Инструкция CREATE TABLE не найдена",
+  "db.backend.error.sqlserver_create_statement_unsupported": "Текущий бэкенд не поддерживает просмотр DDL таблиц SQL Server",
   "db.backend.error.custom_clickhouse_dsn_invalid": "Недопустимая DSN пользовательского подключения ClickHouse. Используйте адрес одного узла в формате clickhouse://, http(s)://, jdbc:clickhouse:// или jdbc:ch://",
   "db.backend.error.custom_clickhouse_dsn_required": "Для пользовательского подключения ClickHouse требуется DSN в формате clickhouse://, http(s)://, jdbc:clickhouse:// или jdbc:ch://",
   "db.backend.error.custom_driver_system_odbc_unsupported_prefix": "Не удалось открыть подключение к базе данных: пользовательские подключения не поддерживают прямой ввод имени системного драйвера ODBC/JDBC \"{{driver}}\". Укажите имя драйвера Go database/sql, уже зарегистрированного в GoNavi. Текущая сборка не регистрирует универсальный ODBC-драйвер, поэтому подключение к InterSystems IRIS через \"{{driver}}\" пока не поддерживается: ",

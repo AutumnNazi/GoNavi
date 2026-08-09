@@ -103,6 +103,7 @@ describe('data sync Wails DTO boundary', () => {
         supportsAutoCreate: true,
         supportsAutoAddColumns: true,
         requiresExistingTarget: true,
+        supportsMutations: true,
       }),
     ).toMatchObject({
       level: 'full',
@@ -110,6 +111,7 @@ describe('data sync Wails DTO boundary', () => {
       supportsAutoCreate: true,
       supportsAutoAddColumns: true,
       requiresExistingTarget: true,
+      supportsMutations: true,
     });
     expect(
       decodeRouteCapability({
@@ -120,6 +122,7 @@ describe('data sync Wails DTO boundary', () => {
     ).toMatchObject({
       supportsAutoAddColumns: false,
       requiresExistingTarget: false,
+      supportsMutations: false,
     });
   });
 
@@ -322,6 +325,23 @@ describe('data sync Wails DTO boundary', () => {
               stage: 'endpoints',
               message: 'unsupported route',
             },
+            {
+              code: 'unmigrated_index',
+              severity: 'warning',
+              stage: 'mappings',
+              message: 'index requires review',
+              detail: {
+                unmigratedIndex: {
+                  name: 'idx_name_prefix',
+                  columns: [{ name: 'name', prefixLength: 12 }],
+                  unique: false,
+                  indexType: 'BTREE',
+                  reasonCode: 'prefix_index_requires_review',
+                  reason: 'index requires review',
+                  remediationStatements: ['CREATE INDEX idx_name_prefix ON public.users (left(name, 12))'],
+                },
+              },
+            },
           ],
           checkedAt: Date.parse('2026-08-08T00:02:00.000Z'),
         },
@@ -332,7 +352,18 @@ describe('data sync Wails DTO boundary', () => {
     expect(blocked.snapshot).toMatchObject({
       status: 'blocked',
       approvalSatisfied: false,
-      issues: [{ message: 'unsupported route' }],
+      issues: [
+        { message: 'unsupported route' },
+        {
+          detail: {
+            unmigratedIndex: {
+              name: 'idx_name_prefix',
+              reasonCode: 'prefix_index_requires_review',
+              remediationStatements: ['CREATE INDEX idx_name_prefix ON public.users (left(name, 12))'],
+            },
+          },
+        },
+      ],
     });
     const earlyBlocked = decodeDataSyncPreflightQuery(
       {

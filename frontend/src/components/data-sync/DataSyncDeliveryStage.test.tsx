@@ -19,6 +19,7 @@ const supportedCapability: DataSyncRouteCapability = {
   supportsAutoCreate: true,
   supportsAutoAddColumns: true,
   requiresExistingTarget: false,
+  supportsMutations: true,
   supportsCdc: true,
 };
 
@@ -137,6 +138,43 @@ describe('DataSyncTaskEditor delivery stage', () => {
     ).toHaveLength(0);
     expect(invalidCdc.onPatch).toHaveBeenCalledWith({
       delivery: expect.objectContaining({ propagateDeletes: false }),
+    });
+  });
+
+  it('constrains append-only targets to inserts and removes delete propagation', async () => {
+    const mapping = {
+      ...createDataSyncTableMapping('timeseries:mapping:1', 'orders', 'orders'),
+      keyColumns: ['id'],
+    };
+    const base = createDataSyncTaskDraft({ id: 'timeseries', kind: 'reconcile' });
+    const task = reviseDataSyncTask(base, {
+      source: endpoint('source'),
+      target: endpoint('target'),
+      mappings: [mapping],
+      delivery: {
+        ...base.delivery,
+        writeMode: 'upsert',
+        retryLimit: 3,
+        propagateDeletes: true,
+      },
+    });
+    const { renderer, onPatch } = await renderDelivery(task, vi.fn(), {
+      ...supportedCapability,
+      supportsMutations: false,
+    });
+
+    expect(JSON.stringify(renderer.toJSON())).toContain('当前时序目标仅支持追加写入');
+    expect(renderer.root.findAllByProps({ 'data-delete-propagation': 'true' })).toHaveLength(0);
+    const upsert = renderer.root
+      .findAllByType('option')
+      .find((option) => option.props.value === 'upsert')!;
+    expect(upsert.props.disabled).toBe(true);
+    expect(onPatch).toHaveBeenCalledWith({
+      delivery: expect.objectContaining({
+        writeMode: 'append',
+        retryLimit: 0,
+        propagateDeletes: false,
+      }),
     });
   });
 

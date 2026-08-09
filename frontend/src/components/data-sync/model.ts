@@ -226,7 +226,24 @@ export type DataSyncValidationCode =
   | 'cdc_checkpoint_required'
   | 'cdc_checkpoint_incompatible'
   | 'compare_route_unsupported'
+  | 'index_inspection_failed'
+  | 'unmigrated_index'
   | 'capability_unverified';
+
+export type DataSyncIndexColumn = {
+  name: string;
+  prefixLength?: number;
+};
+
+export type DataSyncUnmigratedIndex = {
+  name: string;
+  columns: DataSyncIndexColumn[];
+  unique: boolean;
+  indexType: string;
+  reasonCode?: string;
+  reason: string;
+  remediationStatements?: string[];
+};
 
 export type DataSyncValidationIssue = {
   id: string;
@@ -235,6 +252,9 @@ export type DataSyncValidationIssue = {
   stage: DataSyncTaskStage;
   mappingId?: string;
   message?: string;
+  detail?: {
+    unmigratedIndex?: DataSyncUnmigratedIndex;
+  };
 };
 
 export type DataSyncPreflightStatus =
@@ -275,6 +295,7 @@ export type DataSyncRouteCapability = {
   supportsAutoCreate: boolean;
   supportsAutoAddColumns?: boolean;
   requiresExistingTarget?: boolean;
+  supportsMutations?: boolean;
   supportsCdc: boolean;
 };
 

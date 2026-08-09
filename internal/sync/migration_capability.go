@@ -16,6 +16,7 @@ type MigrationCapability struct {
 	SupportsAutoCreate     bool                  `json:"supportsAutoCreate"`
 	SupportsAutoAddColumns bool                  `json:"supportsAutoAddColumns"`
 	RequiresExistingTarget bool                  `json:"requiresExistingTarget"`
+	SupportsMutations      bool                  `json:"supportsMutations"`
 }
 
 // ResolveMigrationCapability returns the migration runtime's effective support
@@ -28,6 +29,12 @@ func ResolveMigrationCapability(sourceConfig connection.ConnectionConfig, target
 		TargetType:  targetType,
 		SourceModel: classifyMigrationDataModel(sourceType),
 		TargetModel: classifyMigrationDataModel(targetType),
+		// Most writable targets support the job engine's update/delete semantics.
+		// Time-series targets are deliberately narrowed below.
+		SupportsMutations: true,
+	}
+	if targetType == "tdengine" || targetType == "iotdb" {
+		capability.SupportsMutations = false
 	}
 	syncConfig := SyncConfig{
 		SourceConfig: sourceConfig,

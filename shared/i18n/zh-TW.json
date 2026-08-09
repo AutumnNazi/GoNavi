@@ -5164,6 +5164,7 @@
   "db.backend.error.connection_open_failed_prefix": "開啟資料庫連線失敗：",
   "db.backend.error.connection_verify_failed_prefix": "連線建立後驗證失敗：",
   "db.backend.error.create_table_statement_not_found": "未找到 CREATE TABLE 語句",
+  "db.backend.error.sqlserver_create_statement_unsupported": "目前後端暫不支援查看 SQL Server 表格 DDL",
   "db.backend.error.custom_clickhouse_dsn_invalid": "ClickHouse 自訂連線 DSN 無效；請使用 clickhouse://、http(s)://、jdbc:clickhouse:// 或 jdbc:ch:// 格式的單一節點位址",
   "db.backend.error.custom_clickhouse_dsn_required": "ClickHouse 自訂連線需要填寫 clickhouse://、http(s)://、jdbc:clickhouse:// 或 jdbc:ch:// 格式的 DSN",
   "db.backend.error.custom_driver_system_odbc_unsupported_prefix": "開啟資料庫連線失敗：自訂連線不支援直接填寫系統 ODBC/JDBC 驅動名稱 \"{{driver}}\"。請填寫 GoNavi 已註冊的 Go database/sql 驅動名稱。目前建置未註冊通用 ODBC 驅動，因此暫不支援透過 \"{{driver}}\" 連線 InterSystems IRIS：",

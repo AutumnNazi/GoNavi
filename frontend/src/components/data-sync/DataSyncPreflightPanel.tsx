@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 
+import { ClipboardSetText } from '../../../wailsjs/runtime/runtime';
+
 import type {
   DataSyncPreflightSnapshot,
   DataSyncApprovalChallenge,
@@ -7,6 +9,11 @@ import type {
   DataSyncTaskStage,
   DataSyncValidationIssue,
 } from './model';
+import {
+  buildDataSyncPreflightRemediationSQL,
+  collectDataSyncPreflightIndexes,
+  formatDataSyncPreflightIndexColumns,
+} from './dataSyncPreflightIndexes';
 import {
   dataSyncValidationIssueText,
   type DataSyncWorkbenchTranslate,
@@ -69,6 +76,7 @@ export const DataSyncPreflightPanel: React.FC<{
   onApprove,
 }) => {
   const [clock, setClock] = useState(Date.now());
+  const [copyError, setCopyError] = useState(false);
   const effectiveIssues = stale ? [] : snapshot?.issues || [];
   const approvalRequired = Boolean(snapshot && snapshot.approvalRequired !== false);
   const approvalCurrent = Boolean(
@@ -93,6 +101,29 @@ export const DataSyncPreflightPanel: React.FC<{
     : stale
       ? 'stale'
       : snapshot?.status || 'stale';
+  const unmigratedIndexes = useMemo(
+    () => collectDataSyncPreflightIndexes(effectiveIssues),
+    [effectiveIssues],
+  );
+  const remediationSQL = useMemo(
+    () => buildDataSyncPreflightRemediationSQL(unmigratedIndexes),
+    [unmigratedIndexes],
+  );
+
+  const copyRemediationSQL = async () => {
+    if (!remediationSQL) return;
+    setCopyError(false);
+    try {
+      if (await ClipboardSetText(remediationSQL)) return;
+    } catch {
+      // Fall back to the browser clipboard when the Wails runtime is unavailable.
+    }
+    try {
+      await navigator.clipboard.writeText(remediationSQL);
+    } catch {
+      setCopyError(true);
+    }
+  };
 
   useEffect(() => {
     setClock(Date.now());
@@ -183,25 +214,69 @@ export const DataSyncPreflightPanel: React.FC<{
           <p>{running ? t('preflight.running') : t('preflight.empty')}</p>
         </div>
       ) : (
-        <ol className="gn-data-sync-issue-list">
-          {effectiveIssues.map((issue) => (
-            <li key={issue.id} data-severity={issue.severity}>
-              <div>
-                <span className="gn-data-sync-issue-list__severity">
-                  {t(`preflight.severity.${issue.severity}`)}
-                </span>
-                <p title={issue.message || undefined}>{issueText(issue, t)}</p>
+        <>
+          <ol className="gn-data-sync-issue-list">
+            {effectiveIssues.map((issue) => (
+              <li key={issue.id} data-severity={issue.severity}>
+                <div>
+                  <span className="gn-data-sync-issue-list__severity">
+                    {t(`preflight.severity.${issue.severity}`)}
+                  </span>
+                  <p title={issue.message || undefined}>{issueText(issue, t)}</p>
+                </div>
+                <button
+                  type="button"
+                  className="gn-data-sync-link-button"
+                  onClick={() => onLocateIssue(issue.stage, issue.mappingId)}
+                >
+                  {t('preflight.open_issue')}
+                </button>
+              </li>
+            ))}
+          </ol>
+          {unmigratedIndexes.length > 0 ? (
+            <section className="gn-data-sync-index-remediation">
+              <div className="gn-data-sync-index-remediation__header">
+                <strong>
+                  {t('preflight.index_remediation.title', {
+                    count: unmigratedIndexes.length,
+                  })}
+                </strong>
+                <button
+                  type="button"
+                  className="gn-data-sync-button"
+                  disabled={!remediationSQL}
+                  onClick={() => void copyRemediationSQL()}
+                >
+                  {t('preflight.index_remediation.copy')}
+                </button>
               </div>
-              <button
-                type="button"
-                className="gn-data-sync-link-button"
-                onClick={() => onLocateIssue(issue.stage, issue.mappingId)}
-              >
-                {t('preflight.open_issue')}
-              </button>
-            </li>
-          ))}
-        </ol>
+              {copyError ? (
+                <p className="gn-data-sync-index-remediation__error" role="alert">
+                  {t('preflight.index_remediation.copy_failed')}
+                </p>
+              ) : null}
+              <ol className="gn-data-sync-summary-list">
+                {unmigratedIndexes.map((index, itemIndex) => {
+                  const remediationStatements = index.remediationStatements || [];
+                  return (
+                    <li key={`${index.name}:${index.mappingId || ''}:${itemIndex}`}>
+                      <strong>{index.name}</strong>
+                      <span>{index.indexType || 'BTREE'}</span>
+                      <p>{t('preflight.index_remediation.columns', {
+                        columns: formatDataSyncPreflightIndexColumns(index.columns),
+                      })}</p>
+                      <p>{index.reason}</p>
+                      {remediationStatements.length > 0 ? (
+                        <pre>{remediationStatements.join('\n')}</pre>
+                      ) : null}
+                    </li>
+                  );
+                })}
+              </ol>
+            </section>
+          ) : null}
+        </>
       )}
     </aside>
   );

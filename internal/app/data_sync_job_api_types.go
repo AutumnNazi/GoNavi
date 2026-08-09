@@ -14,12 +14,17 @@ const (
 	DataSyncJobPreflightInfo    DataSyncJobPreflightSeverity = "info"
 )
 
+type DataSyncJobPreflightIssueDetail struct {
+	UnmigratedIndex *sync.UnmigratedIndex `json:"unmigratedIndex,omitempty"`
+}
+
 type DataSyncJobPreflightIssue struct {
-	Code      string                       `json:"code"`
-	Severity  DataSyncJobPreflightSeverity `json:"severity"`
-	Stage     string                       `json:"stage"`
-	Message   string                       `json:"message"`
-	MappingID string                       `json:"mappingId,omitempty"`
+	Code      string                           `json:"code"`
+	Severity  DataSyncJobPreflightSeverity     `json:"severity"`
+	Stage     string                           `json:"stage"`
+	Message   string                           `json:"message"`
+	MappingID string                           `json:"mappingId,omitempty"`
+	Detail    *DataSyncJobPreflightIssueDetail `json:"detail,omitempty"`
 }
 
 type DataSyncJobPreflightResult struct {

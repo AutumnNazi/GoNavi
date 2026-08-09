@@ -384,19 +384,11 @@ func (r *RabbitMQDB) GetColumns(dbName, tableName string) ([]connection.ColumnDe
 	if r.client == nil {
 		return nil, fmt.Errorf("连接未打开")
 	}
-	vhost := rabbitmqResolveVHost(dbName, r.defaultVHost)
 	queue := rabbitmqResolveQueue(tableName, r.defaultQueue)
 	if queue == "" {
 		return nil, fmt.Errorf("RabbitMQ queue 不能为空")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
 
-	items, err := r.getQueueMessages(ctx, vhost, queue, 20)
-	if err != nil {
-		return nil, err
-	}
-	rows := rabbitmqMessageRows(vhost, queue, items)
 	columns := []connection.ColumnDefinition{
 		{Name: "vhost", Type: "string", Nullable: "NO", Comment: "RabbitMQ virtual host"},
 		{Name: "queue", Type: "string", Nullable: "NO", Key: "PRI", Comment: "RabbitMQ queue"},
@@ -409,28 +401,6 @@ func (r *RabbitMQDB) GetColumns(dbName, tableName string) ([]connection.ColumnDe
 		{Name: "payload_bytes", Type: "int", Nullable: "YES", Comment: "Payload size in bytes"},
 		{Name: "properties", Type: "json", Nullable: "YES", Comment: "AMQP properties"},
 		{Name: "headers", Type: "json", Nullable: "YES", Comment: "AMQP headers"},
-	}
-	seen := map[string]struct{}{
-		"vhost": {}, "queue": {}, "exchange": {}, "routing_key": {}, "redelivered": {},
-		"message_count": {}, "payload": {}, "payload_encoding": {}, "payload_bytes": {},
-		"properties": {}, "headers": {},
-	}
-	for _, row := range rows {
-		for key, value := range row {
-			if _, exists := seen[key]; exists {
-				continue
-			}
-			if !strings.HasPrefix(key, "payload.") && !strings.HasPrefix(key, "properties.") && !strings.HasPrefix(key, "headers.") {
-				continue
-			}
-			seen[key] = struct{}{}
-			columns = append(columns, connection.ColumnDefinition{
-				Name:     key,
-				Type:     inferChromaValueType(value),
-				Nullable: "YES",
-				Comment:  "Derived RabbitMQ field",
-			})
-		}
 	}
 	return columns, nil
 }
