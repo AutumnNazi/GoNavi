@@ -518,16 +518,21 @@ vi.mock('./LogPanel', () => ({
 vi.mock('@ant-design/icons', () => {
   const Icon = () => <span />;
   return {
+    ArrowLeftOutlined: Icon,
+    ArrowRightOutlined: Icon,
     BugOutlined: Icon,
     ClearOutlined: Icon,
     CopyOutlined: Icon,
     DiffOutlined: Icon,
+    ExportOutlined: Icon,
     PlayCircleOutlined: Icon,
+    PushpinOutlined: Icon,
     SaveOutlined: Icon,
     FormatPainterOutlined: Icon,
     SettingOutlined: Icon,
     CloseOutlined: Icon,
     StopOutlined: Icon,
+    TableOutlined: Icon,
     RobotOutlined: Icon,
     SearchOutlined: Icon,
     DatabaseOutlined: Icon,
@@ -593,6 +598,17 @@ vi.mock('antd', () => {
       </section>
     ) : null;
   };
+  const renderMenuItems = (items: any[] = []): React.ReactNode => items.map((item: any) => {
+    if (!item || item.type === 'divider') return null;
+    if (Array.isArray(item.children)) {
+      return <React.Fragment key={item.key}>{renderMenuItems(item.children)}</React.Fragment>;
+    }
+    return (
+      <button key={item.key} type="button" disabled={item.disabled} onClick={item.onClick}>
+        {item.label}
+      </button>
+    );
+  });
 
   return {
     Button,
@@ -607,11 +623,7 @@ vi.mock('antd', () => {
     Dropdown: ({ children, menu }: any) => (
       <>
         {children}
-        {menu?.items?.map((item: any) => (
-          item?.type === 'divider'
-            ? null
-            : <button key={item.key} type="button" disabled={item.disabled} onClick={item.onClick}>{item.label}</button>
-        ))}
+        {renderMenuItems(menu?.items)}
       </>
     ),
     Tooltip: ({ children }: any) => <>{children}</>,
