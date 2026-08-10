@@ -335,17 +335,6 @@ func (k *KafkaDB) GetColumns(dbName, tableName string) ([]connection.ColumnDefin
 	if topic == "" {
 		return nil, fmt.Errorf("Kafka topic 不能为空")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	records, err := k.runtime.FetchMessages(ctx, kafkaFetchRequest{
-		Topic:  topic,
-		Limit:  20,
-		Latest: false,
-	})
-	if err != nil {
-		return nil, err
-	}
-	rows := kafkaMessageRows(records)
 	columns := []connection.ColumnDefinition{
 		{Name: "topic", Type: "string", Nullable: "NO", Comment: "Kafka topic"},
 		{Name: "partition", Type: "int", Nullable: "NO", Key: "PRI", Comment: "Kafka partition id"},
@@ -357,27 +346,6 @@ func (k *KafkaDB) GetColumns(dbName, tableName string) ([]connection.ColumnDefin
 		{Name: "headers", Type: "json", Nullable: "YES", Comment: "Message headers"},
 		{Name: "key_size", Type: "int", Nullable: "YES", Comment: "Message key size in bytes"},
 		{Name: "value_size", Type: "int", Nullable: "YES", Comment: "Message value size in bytes"},
-	}
-	seen := map[string]struct{}{
-		"topic": {}, "partition": {}, "offset": {}, "timestamp": {}, "high_water_mark": {},
-		"key": {}, "value": {}, "headers": {}, "key_size": {}, "value_size": {},
-	}
-	for _, row := range rows {
-		for key, value := range row {
-			if _, exists := seen[key]; exists {
-				continue
-			}
-			if !strings.HasPrefix(key, "headers.") && !strings.HasPrefix(key, "key.") && !strings.HasPrefix(key, "value.") {
-				continue
-			}
-			seen[key] = struct{}{}
-			columns = append(columns, connection.ColumnDefinition{
-				Name:     key,
-				Type:     inferChromaValueType(value),
-				Nullable: "YES",
-				Comment:  "Derived Kafka field",
-			})
-		}
 	}
 	return columns, nil
 }

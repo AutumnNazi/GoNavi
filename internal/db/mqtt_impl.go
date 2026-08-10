@@ -337,18 +337,6 @@ func (m *MQTTDB) GetColumns(dbName, tableName string) ([]connection.ColumnDefini
 	if topic == "" {
 		return nil, fmt.Errorf("MQTT topic 不能为空")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	records, err := m.runtime.FetchMessages(ctx, mqttFetchRequest{
-		Topic: topic,
-		Limit: 20,
-		QoS:   m.defaultQoS,
-		Wait:  m.fetchWait,
-	})
-	if err != nil {
-		return nil, err
-	}
-	rows := mqttMessageRows(records)
 	columns := []connection.ColumnDefinition{
 		{Name: "topic", Type: "string", Nullable: "NO", Comment: "MQTT topic"},
 		{Name: "qos", Type: "tinyint", Nullable: "NO", Comment: "MQTT QoS level"},
@@ -359,27 +347,6 @@ func (m *MQTTDB) GetColumns(dbName, tableName string) ([]connection.ColumnDefini
 		{Name: "payload_encoding", Type: "string", Nullable: "YES", Comment: "json / text / base64"},
 		{Name: "payload_bytes", Type: "int", Nullable: "YES", Comment: "Payload size in bytes"},
 		{Name: "received_at", Type: "timestamp", Nullable: "YES", Comment: "Client receive timestamp"},
-	}
-	seen := map[string]struct{}{
-		"topic": {}, "qos": {}, "retained": {}, "duplicate": {}, "message_id": {},
-		"payload": {}, "payload_encoding": {}, "payload_bytes": {}, "received_at": {},
-	}
-	for _, row := range rows {
-		for key, value := range row {
-			if _, exists := seen[key]; exists {
-				continue
-			}
-			if !strings.HasPrefix(key, "payload.") {
-				continue
-			}
-			seen[key] = struct{}{}
-			columns = append(columns, connection.ColumnDefinition{
-				Name:     key,
-				Type:     inferChromaValueType(value),
-				Nullable: "YES",
-				Comment:  "Derived MQTT payload field",
-			})
-		}
 	}
 	return columns, nil
 }
