@@ -435,6 +435,79 @@ describe('TableOverview metadata compatibility', () => {
     expect(renderedText).toContain('embeddings');
   });
 
+  it.each(['postgres', 'kingbase'])('shows bare table names for %s while preserving qualified operation targets', async (type) => {
+    storeState.appearance = { uiVersion: 'v2', tableDoubleClickAction: 'open-data' };
+    storeState.connections = [
+      {
+        id: 'conn-1',
+        config: {
+          type,
+          host: '127.0.0.1',
+          port: 20035,
+          user: 'postgres',
+          password: 'secret',
+          database: 'dbx_test',
+          useSSH: false,
+          ssh: { host: '', port: 22, user: '', password: '', keyPath: '' },
+        },
+      },
+    ];
+    backendApp.DBQuery.mockResolvedValue({
+      success: true,
+      data: [
+        {
+          table_name: 'reporting.orders',
+          table_comment: 'Orders',
+          table_rows: 12,
+          data_length: 4096,
+          index_length: 1024,
+        },
+      ],
+    });
+
+    let renderer: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<TableOverview tab={{
+        id: 'tab-1',
+        title: '表概览 - dbx_test',
+        type: 'table-overview',
+        connectionId: 'conn-1',
+        dbName: 'dbx_test',
+        schemaName: 'reporting',
+      } as any} />);
+    });
+    await flushPromises();
+
+    expect(backendApp.DBQuery).toHaveBeenCalledOnce();
+    expect(String(backendApp.DBQuery.mock.calls[0]?.[2] || '')).toContain("n.nspname = 'reporting'");
+
+    const assertBareTableName = () => {
+      const renderedText = collectText(renderer!.toJSON());
+      expect(renderedText).toContain('dbx_test · reporting');
+      expect(renderedText).toContain('orders');
+      expect(renderedText).not.toContain('reporting.orders');
+    };
+
+    assertBareTableName();
+    await act(async () => {
+      renderer!.root.findByProps({ 'data-table-overview-view-mode': 'list' }).props.onClick();
+    });
+    assertBareTableName();
+    await act(async () => {
+      renderer!.root.findByProps({ 'data-table-overview-view-mode': 'table' }).props.onClick();
+    });
+    assertBareTableName();
+
+    storeState.addTab.mockClear();
+    await act(async () => {
+      renderer!.root.findByProps({ 'data-table-overview-row': 'reporting.orders' }).props.onDoubleClick();
+    });
+    expect(storeState.addTab).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'table',
+      tableName: 'reporting.orders',
+    }));
+  });
+
   it.each([
     { type: 'oracle', dbName: 'APP' },
     { type: 'trino', dbName: 'catalog' },
