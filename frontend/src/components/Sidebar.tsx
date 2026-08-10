@@ -335,6 +335,7 @@ const SIDEBAR_LOCATE_LOAD_WAIT_ATTEMPTS = 160;
 const SIDEBAR_CACHED_DATABASE_TREE_LIMIT = 12;
 const NACOS_SERVICES_CHANGED_EVENT = 'gonavi:nacos-services-changed';
 const SIDEBAR_GROUP_HOVER_EXPAND_DELAY_MS = 500;
+const SIDEBAR_TREE_SCROLL_IDLE_DELAY_MS = 2000;
 
 type SidebarTreeDragEventLike = {
   dataTransfer?: DataTransfer | null;
@@ -1048,7 +1049,7 @@ const Sidebar: React.FC<{
       treeScrollIdleTimerRef.current = window.setTimeout(() => {
           treeScrollIdleTimerRef.current = null;
           setIsTreeScrolling(false);
-      }, 500);
+      }, SIDEBAR_TREE_SCROLL_IDLE_DELAY_MS);
   }, [isV2Ui]);
 
   const handleTreeWheel = useCallback((event: React.WheelEvent<HTMLDivElement>) => {
