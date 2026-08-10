@@ -1470,7 +1470,7 @@ const Sidebar: React.FC<{
         case 'external-sql-root':
           return <FolderOpenOutlined />;
         case 'external-sql-directory':
-          return <HddOutlined />;
+          return node.dataRef.directoryStatus === 'missing' ? <WarningOutlined /> : <HddOutlined />;
         case 'external-sql-folder':
           return <FolderOutlined />;
         default:
@@ -1488,9 +1488,14 @@ const Sidebar: React.FC<{
   const buildExternalSQLRootTreeNode = useCallback((
       directories: ExternalSQLDirectory[] = externalSQLDirectories,
       directoryTrees: Record<string, ExternalSQLTreeEntry[]> = externalSQLDirectoryTreesRef.current,
+      directoryStatuses: Record<string, 'missing'> = {},
   ): TreeNode => decorateExternalSQLTreeNode(buildExternalSQLRootNode({
       directories,
       directoryTrees,
+      directoryStatuses,
+      labels: {
+          missingDirectory: t('sidebar.message.external_sql_directory_not_found'),
+      },
   })), [externalSQLDirectories]);
 
   const refreshGlobalExternalSQLRootNode = useCallback(async (
@@ -1499,16 +1504,22 @@ const Sidebar: React.FC<{
   ) => {
       const targetDirectories = directoriesOverride || externalSQLDirectories;
       const directoryTrees: Record<string, ExternalSQLTreeEntry[]> = {};
+      const directoryStatuses: Record<string, 'missing'> = {};
       await Promise.all(targetDirectories.map(async (directory) => {
           const directoryRes = await ListSQLDirectory(directory.path);
           if (!directoryRes.success) {
-              message.warning({
-                  key: `external-sql-${directory.id}`,
-                  content: t('sidebar.message.external_sql_directory_read_failed', {
-                      name: directory.name,
-                      error: directoryRes.message,
-                  }),
-              });
+              const errorCode = String((directoryRes.data as Record<string, unknown> | undefined)?.errorCode || '').trim();
+              if (errorCode === 'directory_not_found') {
+                  directoryStatuses[directory.id] = 'missing';
+              } else {
+                  message.warning({
+                      key: `external-sql-${directory.id}`,
+                      content: t('sidebar.message.external_sql_directory_read_failed', {
+                          name: directory.name,
+                          error: directoryRes.message,
+                      }),
+                  });
+              }
               directoryTrees[directory.id] = [];
               return;
           }
@@ -1517,7 +1528,7 @@ const Sidebar: React.FC<{
               : [];
       }));
       externalSQLDirectoryTreesRef.current = directoryTrees;
-      const rootNode = buildExternalSQLRootTreeNode(targetDirectories, directoryTrees);
+      const rootNode = buildExternalSQLRootTreeNode(targetDirectories, directoryTrees, directoryStatuses);
       setTreeData((prev) => {
           const withoutExternalRoot = prev.filter((node) => node.type !== 'external-sql-root');
           const nextTreeData = [...withoutExternalRoot, rootNode];
