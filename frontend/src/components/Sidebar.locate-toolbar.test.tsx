@@ -1186,6 +1186,8 @@ describe('Sidebar locate toolbar', () => {
     expect(source).toContain('onWheelCapture={handleTreeWheel}');
     expect(source).toContain('onTouchMoveCapture={markTreeScrollActivity}');
     expect(source).toContain('setIsTreeScrolling(false)');
+    expect(source).toContain('SIDEBAR_TREE_SCROLL_IDLE_DELAY_MS = 2000');
+    expect(source).toContain('}, SIDEBAR_TREE_SCROLL_IDLE_DELAY_MS);');
 
     const idleScrollbarCss = readCssRuleBlock(
       css,
