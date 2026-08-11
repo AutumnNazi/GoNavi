@@ -423,4 +423,15 @@ describe('useDataGridBatchActions clipboard paste', () => {
     expect(editablePreventDefault).not.toHaveBeenCalled();
     expect(editableHook.setModifiedRows).not.toHaveBeenCalled();
   });
+
+  it('selects a single cell in read-only results without enabling mutation actions', () => {
+    const hook = renderHook({ canModifyData: false });
+
+    selectCell(hook.container, 'row-1', 'id');
+
+    expect(hook.selectionStartRef.current).toEqual({ rowKey: 'row-1', colName: 'id', rowIndex: 0, colIndex: 0 });
+    expect(hook.setSelectedCells).toHaveBeenCalledWith(new Set([makeCellKey('row-1', 'id')]));
+    expect(hook.ctx.markCellSelectionDeleteEligible).toHaveBeenCalledWith(false);
+    expect(hook.updateCellSelection).toHaveBeenCalledWith(new Set([makeCellKey('row-1', 'id')]));
+  });
 });
