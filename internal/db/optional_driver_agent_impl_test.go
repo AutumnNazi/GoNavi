@@ -23,6 +23,12 @@ type optionalAgentCancelWhenDoneObservedContext struct {
 	once   sync.Once
 }
 
+func TestOptionalAgentMetadataProbeTimeout(t *testing.T) {
+	if got := optionalAgentMetadataProbeTimeout; got != 30*time.Second {
+		t.Fatalf("metadata probe timeout = %s, want 30s on every platform", got)
+	}
+}
+
 func (c *optionalAgentCancelWhenDoneObservedContext) Done() <-chan struct{} {
 	done := c.Context.Done()
 	c.once.Do(c.cancel)

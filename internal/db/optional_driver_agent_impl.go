@@ -47,9 +47,10 @@ const (
 	optionalAgentMethodGetTriggers          = "getTriggers"
 	optionalAgentMethodApplyChanges         = "applyChanges"
 	optionalAgentDefaultScannerMaxBytes     = 8 << 20
-	optionalAgentMetadataProbeTimeout       = 5 * time.Second
-	optionalAgentControlCallTimeout         = 30 * time.Second
-	optionalAgentShutdownCallTimeout        = 2 * time.Second
+	// Freshly downloaded agents may start slowly while OS security scanning completes.
+	optionalAgentMetadataProbeTimeout = 30 * time.Second
+	optionalAgentControlCallTimeout   = 30 * time.Second
+	optionalAgentShutdownCallTimeout  = 2 * time.Second
 	// callStreamQueryGCInterval 控制 callStreamQuery 每接收多少行 driver-agent 数据触发一次 runtime.GC。
 	//
 	// 该路径不走 sql.Rows（scan_rows.go 的周期 GC 覆盖不到），但每个 chunk 解码
