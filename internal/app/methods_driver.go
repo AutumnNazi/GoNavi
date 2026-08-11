@@ -1298,22 +1298,33 @@ func (a *App) GetDriverStatusList(downloadDir string, manifestURL string) connec
 	}
 }
 
-func (a *App) CheckDriverNetworkStatus() connection.QueryResult {
-	checks := []driverNetworkProbeItem{
-		{
-			ProbeCode: driverNetworkProbeCodeDownloadMirror,
-			Name:      driverNetworkProbeNameDownloadMirror,
-			URL:       "https://download.syngnat.top/health.txt",
-		},
+func buildDriverNetworkProbeItems() []driverNetworkProbeItem {
+	mirrorIndexURL := driverReleaseMirrorLatestIndexURL
+	if strings.EqualFold(currentDriverReleaseTag(), driverReleaseDevTag) {
+		mirrorIndexURL = driverReleaseMirrorDevLatestIndexURL
+	}
+	return []driverNetworkProbeItem{{
+		ProbeCode: driverNetworkProbeCodeDownloadMirror,
+		Name:      driverNetworkProbeNameDownloadMirror,
+		URL:       mirrorIndexURL,
+	}}
+}
+
+func buildDriverNetworkFallbackProbeItems(a *App) []driverNetworkProbeItem {
+	githubAPIURL := driverReleaseLatestAPIURL
+	if strings.EqualFold(currentDriverReleaseTag(), driverReleaseDevTag) {
+		githubAPIURL = fmt.Sprintf("https://api.github.com/repos/%s/releases/tags/%s", driverReleaseRepo, driverReleaseDevTag)
+	}
+	return []driverNetworkProbeItem{
 		{
 			ProbeCode: driverNetworkProbeCodeGitHubAPI,
-			Name:      "GitHub API",
-			URL:       "https://api.github.com/rate_limit",
+			Name:      a.appText("driver_manager.backend.network.probe.github_api", nil),
+			URL:       githubAPIURL,
 		},
 		{
 			ProbeCode: driverNetworkProbeCodeGitHubRelease,
 			Name:      a.appText("driver_manager.backend.network.probe.github_driver_release", nil),
-			URL:       driverReleaseLatestDownloadURL(optionalDriverBundleAssetName),
+			URL:       driverReleaseLatestDownloadURLForCurrentChannel(optionalDriverBundleAssetName),
 		},
 		{
 			ProbeCode: driverNetworkProbeCodeGitHubReleaseAsset,
@@ -1326,15 +1337,40 @@ func (a *App) CheckDriverNetworkStatus() connection.QueryResult {
 			URL:       "https://proxy.golang.org/github.com/go-sql-driver/mysql/@v/list",
 		},
 	}
+}
+
+type driverNetworkProbeFunc func(*http.Client, driverNetworkProbeItem) driverNetworkProbeItem
+
+func isDriverNetworkDownloadRouteAvailable(item driverNetworkProbeItem) bool {
+	if !item.Reachable {
+		return false
+	}
+	return item.HTTPStatus == 0 || item.HTTPStatus < http.StatusBadRequest
+}
+
+func (a *App) CheckDriverNetworkStatus() connection.QueryResult {
+	return a.checkDriverNetworkStatusWithProbe(probeDriverNetworkEndpoint)
+}
+
+func (a *App) checkDriverNetworkStatusWithProbe(probe driverNetworkProbeFunc) connection.QueryResult {
+	if probe == nil {
+		probe = probeDriverNetworkEndpoint
+	}
 
 	client := newHTTPClientWithGlobalProxy(driverNetworkProbeTimeout)
-	allReachable := true
-	for index := range checks {
-		checks[index] = probeDriverNetworkEndpoint(client, checks[index])
-		if !checks[index].Reachable {
-			allReachable = false
+	mirrorItems := buildDriverNetworkProbeItems()
+	checks := make([]driverNetworkProbeItem, 0, len(mirrorItems)+4)
+	for _, item := range mirrorItems {
+		checks = append(checks, probe(client, item))
+	}
+	mirrorReachable := len(checks) > 0 && isDriverNetworkDownloadRouteAvailable(checks[0])
+	fallbackChecked := !mirrorReachable
+	if fallbackChecked {
+		for _, item := range buildDriverNetworkFallbackProbeItems(a) {
+			checks = append(checks, probe(client, item))
 		}
 	}
+
 	findProbe := func(probeCode string) (driverNetworkProbeItem, bool) {
 		for _, item := range checks {
 			if strings.EqualFold(strings.TrimSpace(item.ProbeCode), strings.TrimSpace(probeCode)) {
@@ -1343,23 +1379,42 @@ func (a *App) CheckDriverNetworkStatus() connection.QueryResult {
 		}
 		return driverNetworkProbeItem{}, false
 	}
-	mirrorCheck, _ := findProbe(driverNetworkProbeCodeDownloadMirror)
-	githubAPICheck, _ := findProbe(driverNetworkProbeCodeGitHubAPI)
 	githubReleaseCheck, _ := findProbe(driverNetworkProbeCodeGitHubRelease)
-	releaseAssetsCheck, _ := findProbe(driverNetworkProbeCodeGitHubReleaseAsset)
-	downloadChainReachable := mirrorCheck.Reachable || (githubReleaseCheck.Reachable && releaseAssetsCheck.Reachable)
+	fallbackReachable := fallbackChecked && isDriverNetworkDownloadRouteAvailable(githubReleaseCheck)
+	downloadChainReachable := mirrorReachable || fallbackReachable
+	usingFallback := !mirrorReachable && fallbackReachable
+	allReachable := mirrorReachable
+	for _, item := range checks[1:] {
+		if !item.Reachable {
+			allReachable = false
+			break
+		}
+	}
 
 	proxyEnv := collectDriverProxyEnv()
 	proxyConfigured := len(proxyEnv) > 0
 	summary := a.appText("driver_manager.network.summary.reachable", nil)
-	if githubAPICheck.Reachable && !downloadChainReachable {
-		summary = a.appText("driver_manager.backend.network.summary.download_chain_unreachable", nil)
+	if mirrorReachable && proxyConfigured {
+		summary = a.appText("driver_manager.network.summary.reachable_with_proxy", nil)
+	} else if usingFallback {
+		summary = a.appText("driver_manager.network.summary.mirror_fallback_available", nil)
 	} else if !downloadChainReachable {
 		if proxyConfigured {
 			summary = a.appText("driver_manager.network.summary.unreachable_proxy_configured", nil)
 		} else {
 			summary = a.appText("driver_manager.network.summary.proxy_recommended", nil)
 		}
+	}
+
+	downloadRequiredHosts := []string{"download.syngnat.top"}
+	if fallbackChecked {
+		downloadRequiredHosts = append(downloadRequiredHosts,
+			"github.com",
+			"api.github.com",
+			"release-assets.githubusercontent.com",
+			"objects.githubusercontent.com",
+			"proxy.golang.org",
+		)
 	}
 
 	data := map[string]interface{}{
@@ -1369,17 +1424,14 @@ func (a *App) CheckDriverNetworkStatus() connection.QueryResult {
 		"recommendedProxy":       !downloadChainReachable,
 		"proxyConfigured":        proxyConfigured,
 		"proxyEnv":               proxyEnv,
+		"mirrorReachable":        mirrorReachable,
+		"fallbackChecked":        fallbackChecked,
+		"fallbackReachable":      fallbackReachable,
+		"usingFallback":          usingFallback,
 		"downloadChainReachable": downloadChainReachable,
-		"downloadRequiredHosts": []string{
-			"download.syngnat.top",
-			"github.com",
-			"api.github.com",
-			"release-assets.githubusercontent.com",
-			"objects.githubusercontent.com",
-			"raw.githubusercontent.com",
-		},
-		"checkedAt": time.Now().Format(time.RFC3339),
-		"checks":    checks,
+		"downloadRequiredHosts":  downloadRequiredHosts,
+		"checkedAt":              time.Now().Format(time.RFC3339),
+		"checks":                 checks,
 	}
 	if logPath := strings.TrimSpace(logger.Path()); logPath != "" {
 		data["logPath"] = logPath

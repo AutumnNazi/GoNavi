@@ -109,12 +109,29 @@ type DriverNetworkStatus = {
   summary: string;
   recommendedProxy: boolean;
   proxyConfigured: boolean;
+  mirrorReachable?: boolean;
+  fallbackChecked?: boolean;
+  fallbackReachable?: boolean;
+  usingFallback?: boolean;
   downloadChainReachable?: boolean;
   downloadRequiredHosts?: string[];
   proxyEnv?: Record<string, string>;
   checks: DriverNetworkProbe[];
   checkedAt?: string;
   logPath?: string;
+};
+
+const DRIVER_NETWORK_PROBE_LABEL_KEYS: Record<string, string> = {
+  download_mirror: 'driver_manager.backend.network.probe.download_mirror',
+  github_api: 'driver_manager.backend.network.probe.github_api',
+  github_release: 'driver_manager.backend.network.probe.github_driver_release',
+  github_release_asset: 'driver_manager.backend.network.probe.github_release_asset_domain',
+  go_module_proxy: 'driver_manager.backend.network.probe.go_module_proxy',
+};
+
+const resolveDriverNetworkProbeLabel = (probe: DriverNetworkProbe): string => {
+  const key = DRIVER_NETWORK_PROBE_LABEL_KEYS[String(probe.probeCode || '').trim()];
+  return key ? t(key) : String(probe.name || '').trim();
 };
 
 const parseOptionalLatency = (value: unknown): number | undefined => {
@@ -450,6 +467,9 @@ const formatDriverCardStatusMessage = (row: DriverStatusRow): string => {
   return parts.join(' ');
 };
 const formatDriverNetworkSummary = (status: DriverNetworkStatus): string => {
+  if (status.usingFallback || (status.mirrorReachable === false && status.fallbackReachable === true)) {
+    return t('driver_manager.network.summary.mirror_fallback_available');
+  }
   if (status.reachable) {
     return t(status.proxyConfigured
       ? 'driver_manager.network.summary.reachable_with_proxy'
@@ -856,6 +876,12 @@ const DriverManagerModal: React.FC<{ open: boolean; onClose: () => void; onBack?
         summary: '',
         recommendedProxy: !!data.recommendedProxy,
         proxyConfigured: !!data.proxyConfigured,
+        mirrorReachable: typeof data.mirrorReachable === 'boolean' ? data.mirrorReachable : undefined,
+        fallbackChecked: typeof data.fallbackChecked === 'boolean' ? data.fallbackChecked : undefined,
+        fallbackReachable: typeof data.fallbackReachable === 'boolean' ? data.fallbackReachable : undefined,
+        usingFallback: typeof data.usingFallback === 'boolean'
+          ? data.usingFallback
+          : data.mirrorReachable === false && data.fallbackReachable === true,
         downloadChainReachable: typeof data.downloadChainReachable === 'boolean' ? data.downloadChainReachable : undefined,
         downloadRequiredHosts: Array.isArray(data.downloadRequiredHosts)
           ? data.downloadRequiredHosts.map((item: unknown) => String(item || '').trim()).filter(Boolean)
@@ -1988,17 +2014,20 @@ const DriverManagerModal: React.FC<{ open: boolean; onClose: () => void; onBack?
   const downloadRequiredHosts = (networkStatus?.downloadRequiredHosts || []).filter(Boolean);
   const showDownloadChainAlert = networkStatus?.downloadChainReachable === false;
   const networkUnreachable = networkStatus?.reachable === false;
+  const usingFallback = networkStatus?.usingFallback === true
+    || (networkStatus?.mirrorReachable === false && networkStatus?.fallbackReachable === true);
   const listSeparator = t('driver_manager.punctuation.list_separator');
   const downloadRequiredHostText = (downloadRequiredHosts.length > 0
     ? downloadRequiredHosts
-    : ['github.com', 'api.github.com', 'release-assets.githubusercontent.com', 'objects.githubusercontent.com', 'raw.githubusercontent.com']).join(listSeparator);
-  const githubConnectivityProbe = networkStatus?.checks.find((item) => item.probeCode === 'github_api')
-    || networkStatus?.checks.find((item) => item.probeCode === 'github_release')
-    || null;
+    : [
+        'download.syngnat.top',
+        'github.com',
+        'api.github.com',
+        'release-assets.githubusercontent.com',
+        'objects.githubusercontent.com',
+        'proxy.golang.org',
+      ]).join(listSeparator);
   const networkSummaryText = networkStatus ? formatDriverNetworkSummary(networkStatus) : '';
-  const githubConnectivityLatencyMs = githubConnectivityProbe
-    ? (githubConnectivityProbe.httpLatencyMs ?? githubConnectivityProbe.latencyMs ?? githubConnectivityProbe.tcpLatencyMs)
-    : undefined;
   const logBlockBackground = darkMode
     ? `rgba(28, 28, 28, ${Math.max(opacity, 0.82)})`
     : `rgba(255, 255, 255, ${Math.max(opacity, 0.92)})`;
@@ -2069,7 +2098,7 @@ const DriverManagerModal: React.FC<{ open: boolean; onClose: () => void; onBack?
             />
           ) : (
             <Alert
-              type="success"
+              type={usingFallback ? 'warning' : 'success'}
               showIcon
               message={networkSummaryText}
               description={(
@@ -2081,19 +2110,27 @@ const DriverManagerModal: React.FC<{ open: boolean; onClose: () => void; onBack?
                       label: t('driver_manager.network.details_label'),
                       children: (
                         <Space direction="vertical" size={4} style={{ width: '100%' }}>
-                          <Text type="secondary">
-                            {t('driver_manager.network.github_latency', {
-                              status: githubConnectivityProbe
-                                ? (githubConnectivityProbe.reachable ? t('driver_manager.network.reachable') : t('driver_manager.network.unreachable'))
-                                : t('driver_manager.network.no_result'),
-                              latency: githubConnectivityLatencyMs !== undefined
-                                ? t('driver_manager.network.latency_value', { latency: githubConnectivityLatencyMs })
-                                : '',
-                              detail: githubConnectivityProbe?.error
-                                ? t('driver_manager.network.error_value', { detail: githubConnectivityProbe.error })
-                                : '',
-                            })}
-                          </Text>
+                          {(networkStatus?.checks || []).length > 0
+                            ? (networkStatus?.checks || []).map((probe, index) => {
+                                const latency = probe.httpLatencyMs ?? probe.latencyMs ?? probe.tcpLatencyMs;
+                                return (
+                                  <Text key={`${probe.probeCode || probe.url || 'probe'}-${index}`} type="secondary">
+                                    {t('driver_manager.network.probe_latency', {
+                                      name: resolveDriverNetworkProbeLabel(probe),
+                                      status: probe.reachable
+                                        ? t('driver_manager.network.reachable')
+                                        : t('driver_manager.network.unreachable'),
+                                      latency: latency !== undefined
+                                        ? t('driver_manager.network.latency_value', { latency })
+                                        : '',
+                                      detail: probe.error
+                                        ? t('driver_manager.network.error_value', { detail: probe.error })
+                                        : '',
+                                    })}
+                                  </Text>
+                                );
+                              })
+                            : <Text type="secondary">{t('driver_manager.network.no_result')}</Text>}
                           {proxyEnvEntries.length > 0 ? (
                             <Text type="secondary">
                               {t('driver_manager.network.proxy_env_detected', { keys: proxyEnvEntries.map(([key]) => key).join(listSeparator) })}
