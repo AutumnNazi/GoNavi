@@ -6854,6 +6854,8 @@
   "query_editor.message.cancel_failed": "取消查询失败：{{error}}",
   "query_editor.message.cancel_no_running": "没有正在运行的查询可取消。",
   "query_editor.message.cancel_success": "查询已中止。",
+  "query_editor.message.clipboard_permission_required": "浏览器无法读取剪贴板，请允许此站点的剪贴板权限后重试。",
+  "query_editor.message.clipboard_read_failed": "无法读取剪贴板，请重试。",
   "query_editor.message.connection_not_found": "未找到连接。",
   "query_editor.message.connection_readonly_blocked": "当前连接已启用生产保护，仅允许执行查询操作。",
   "query_editor.message.current_line_no_copyable_content": "当前行没有可复制内容。",

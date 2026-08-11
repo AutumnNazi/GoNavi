@@ -3381,7 +3381,9 @@ const DataGrid: React.FC<DataGridProps> = ({
   const handleRowNumberClick = useCallback((record: Item) => {
       const key = record?.[GONAVI_ROW_KEY];
       if (key === undefined || key === null) return;
-      setSelectedRowKeys([key]);
+      setSelectedRowKeys((previousKeys) => (
+          previousKeys.length === 1 && previousKeys[0] === key ? [] : [key]
+      ));
   }, []);
 
   const handleRowNumberDoubleClick = useCallback((index: number) => {

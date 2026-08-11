@@ -1,5 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Editor, { loader, type BeforeMount, type EditorProps, type OnMount } from '@monaco-editor/react';
+import { message } from 'antd';
+import { t } from '../i18n';
 import { useStore } from '../store';
 import { sanitizeDataTableFontSize } from '../utils/dataGridDisplay';
 import { DEFAULT_MONO_FONT_FAMILY } from '../utils/fontFamilies';
@@ -7,7 +9,11 @@ import {
   resolveSqlEditorFontSize,
   resolveSqlEditorSuggestionLayout,
 } from '../utils/sqlEditorTypography';
-import { installWailsMonacoClipboardPasteHandler } from '../utils/monacoClipboard';
+import {
+  installWailsMonacoClipboardPasteHandler,
+  MONACO_CLIPBOARD_HANDLER_REVISION,
+  type MonacoClipboardReadFailure,
+} from '../utils/monacoClipboard';
 
 export type { BeforeMount, OnMount } from '@monaco-editor/react';
 export type GonaviMonacoTypography = 'code' | 'data' | 'sql';
@@ -810,6 +816,8 @@ const MonacoEditor: React.FC<MonacoEditorProps> = ({
   const monoFontFamily = useStore((state) => state.appearance.customMonoFontFamily);
   const globalFontSize = useStore((state) => state.fontSize);
   const clipboardPasteCleanupRef = useRef<(() => void) | null>(null);
+  const clipboardEditorRef = useRef<Parameters<OnMount>[0] | null>(null);
+  const clipboardMonacoRef = useRef<Parameters<OnMount>[1] | null>(null);
   // Monaco theme is process-global; never fall back to "light" or other editors get polluted.
   const resolvedTheme = theme
     ?? (appTheme === 'dark' ? 'transparent-dark' : 'transparent-light');
@@ -835,26 +843,57 @@ const MonacoEditor: React.FC<MonacoEditorProps> = ({
     };
   }, []);
 
-  useEffect(() => () => {
-    clipboardPasteCleanupRef.current?.();
-    clipboardPasteCleanupRef.current = null;
-  }, []);
-
   const handleBeforeMount: BeforeMount = useCallback((monaco) => {
     registerGonaviMonacoThemes(monaco);
     beforeMount?.(monaco);
   }, [beforeMount]);
 
-  const handleMount: OnMount = useCallback((editor, monaco) => {
+  const handleClipboardReadFailure = useCallback(({ source, error }: MonacoClipboardReadFailure) => {
+    console.warn('Failed to read clipboard text for Monaco paste', error);
+    void message.warning({
+      key: 'gonavi-query-editor-clipboard-read-failed',
+      content: t(source === 'browser'
+        ? 'query_editor.message.clipboard_permission_required'
+        : 'query_editor.message.clipboard_read_failed'),
+      duration: 5,
+    });
+  }, []);
+
+  const replaceClipboardPasteHandler = useCallback((editor: Parameters<OnMount>[0], monaco: Parameters<OnMount>[1]) => {
     clipboardPasteCleanupRef.current?.();
     clipboardPasteCleanupRef.current = gonaviTypography === 'sql'
-      ? installWailsMonacoClipboardPasteHandler(monaco, editor)
+      ? installWailsMonacoClipboardPasteHandler(
+        monaco,
+        editor,
+        undefined,
+        undefined,
+        handleClipboardReadFailure,
+      )
       : null;
+  }, [gonaviTypography, handleClipboardReadFailure]);
+
+  useEffect(() => {
+    const editor = clipboardEditorRef.current;
+    const monaco = clipboardMonacoRef.current;
+    if (editor && monaco) {
+      replaceClipboardPasteHandler(editor, monaco);
+    }
+
+    return () => {
+      clipboardPasteCleanupRef.current?.();
+      clipboardPasteCleanupRef.current = null;
+    };
+  }, [MONACO_CLIPBOARD_HANDLER_REVISION, replaceClipboardPasteHandler]);
+
+  const handleMount: OnMount = useCallback((editor, monaco) => {
+    clipboardEditorRef.current = editor;
+    clipboardMonacoRef.current = monaco;
+    replaceClipboardPasteHandler(editor, monaco);
     installOceanBaseOracleNavigationFallback(editor);
     installPrintableInputFallback(editor, monaco);
     installWebKitImeScrollStabilizer(editor);
     onMount?.(editor, monaco);
-  }, [gonaviTypography, onMount]);
+  }, [onMount, replaceClipboardPasteHandler]);
 
   const resolvedOptions = useMemo(() => {
     if (uiVersion !== 'v2') {

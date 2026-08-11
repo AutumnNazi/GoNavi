@@ -6854,6 +6854,8 @@
   "query_editor.message.cancel_failed": "クエリのキャンセルに失敗しました: {{error}}",
   "query_editor.message.cancel_no_running": "キャンセルできる実行中のクエリはありません。",
   "query_editor.message.cancel_success": "クエリをキャンセルしました。",
+  "query_editor.message.clipboard_permission_required": "ブラウザーがクリップボードを読み取れません。このサイトのクリップボード権限を許可してから再試行してください。",
+  "query_editor.message.clipboard_read_failed": "クリップボードを読み取れません。再試行してください。",
   "query_editor.message.connection_not_found": "接続が見つかりません。",
   "query_editor.message.connection_readonly_blocked": "この接続では本番保護が有効なため、問い合わせ操作のみ実行できます。",
   "query_editor.message.current_line_no_copyable_content": "現在の行にコピーできる内容がありません。",
