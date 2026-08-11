@@ -39,6 +39,7 @@ const minClickHouseExportQueryTimeout = 2 * time.Hour
 const maxSQLFileSizeBytes int64 = 50 * 1024 * 1024
 
 const sqlFileErrorCodeNotFound = "file_not_found"
+const sqlDirectoryErrorCodeNotFound = "directory_not_found"
 const sqlFileBatchMaxStatements = 1000
 const sqlFileBatchMaxBytes = 4 * 1024 * 1024
 const sqlFileProgressStatementInterval = 100
@@ -748,9 +749,22 @@ func deleteSQLDirectoryByPath(directoryPath string) connection.QueryResult {
 }
 
 func deleteSQLDirectoryByPathWithText(directoryPath string, text fileBackendTextFunc) connection.QueryResult {
-	target, _, err := normalizeExistingSQLDirectoryPathWithText(directoryPath, text)
+	target := strings.TrimSpace(directoryPath)
+	if target == "" {
+		return connection.QueryResult{Success: false, Message: fileBackendText(text, "file.backend.error.directory_path_required", nil)}
+	}
+	if abs, err := filepath.Abs(target); err == nil {
+		target = abs
+	}
+	info, err := os.Stat(target)
+	if os.IsNotExist(err) {
+		return connection.QueryResult{Success: true, Data: map[string]interface{}{"directoryPath": target, "alreadyMissing": true}}
+	}
 	if err != nil {
-		return connection.QueryResult{Success: false, Message: err.Error()}
+		return connection.QueryResult{Success: false, Message: fileBackendText(text, "file.backend.error.read_directory_info_failed", map[string]any{"detail": err.Error()})}
+	}
+	if !info.IsDir() {
+		return connection.QueryResult{Success: false, Message: fileBackendText(text, "file.backend.error.selected_path_not_directory", nil)}
 	}
 	if err := os.Remove(target); err != nil {
 		return connection.QueryResult{Success: false, Message: fileBackendText(text, "file.backend.error.delete_sql_directory_failed", map[string]any{"detail": err.Error()})}
@@ -1277,7 +1291,11 @@ func (a *App) ListSQLDirectory(directory string) connection.QueryResult {
 
 	info, err := os.Stat(target)
 	if err != nil {
-		return connection.QueryResult{Success: false, Message: err.Error()}
+		data := map[string]interface{}{"directoryPath": target}
+		if os.IsNotExist(err) {
+			data["errorCode"] = sqlDirectoryErrorCodeNotFound
+		}
+		return connection.QueryResult{Success: false, Message: err.Error(), Data: data}
 	}
 	if !info.IsDir() {
 		return connection.QueryResult{Success: false, Message: a.appText("file.backend.error.selected_path_not_directory", nil)}

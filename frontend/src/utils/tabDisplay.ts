@@ -600,7 +600,6 @@ const getTabDisplayElementValue = (
 const formatTabDisplayPartValue = (key: TabDisplayElementKey, value: string): string => {
   if (!value) return '';
   if (key === 'connection') return `[${value}]`;
-  if (key === 'schema') return `SCHEMA:${value}`;
   return value;
 };
 

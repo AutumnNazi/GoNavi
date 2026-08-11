@@ -2352,6 +2352,8 @@
   "ai_settings.provider.no_model": "モデル未選択",
   "ai_settings.provider_preset.anthropic.desc": "Claude Opus/Sonnet モデル",
   "ai_settings.provider_preset.anthropic.label": "Claude",
+  "ai_settings.provider_preset.atlascloud.desc": "Qwen3.8 Max / OpenAI 互換",
+  "ai_settings.provider_preset.atlascloud.label": "Atlas Cloud",
   "ai_settings.provider_preset.claude_subscription.desc": "ローカル Claude Code CLI / Claude サブスクリプションログイン",
   "ai_settings.provider_preset.claude_subscription.label": "Claude サブスクリプション",
   "ai_settings.provider_preset.codex.desc": "ローカル Codex CLI / ChatGPT サブスクリプションログイン",

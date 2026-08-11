@@ -25,12 +25,14 @@ type BuildExternalSQLRootNodeParams = {
   dbName?: string;
   directories: ExternalSQLDirectory[];
   directoryTrees: Record<string, ExternalSQLTreeEntry[]>;
+  directoryStatuses?: Record<string, 'missing'>;
   labels?: Partial<ExternalSQLTreeLabels>;
 };
 
 export type ExternalSQLTreeLabels = {
   root: string;
   directoryFallback: string;
+  missingDirectory: string;
 };
 
 export const normalizeExternalSQLPath = (value: string): string =>
@@ -96,6 +98,17 @@ export const resolveExternalSQLFileBinding = (
     }
   }
   return undefined;
+};
+
+export const findExternalSQLDirectoriesByPath = (
+  directories: ExternalSQLDirectory[],
+  directoryPath: string,
+): ExternalSQLDirectory[] => {
+  const normalizedDirectoryPath = normalizeExternalSQLPath(directoryPath);
+  if (!normalizedDirectoryPath) return [];
+  return directories.filter(
+    (directory) => normalizeExternalSQLPath(directory.path) === normalizedDirectoryPath,
+  );
 };
 
 export const setExternalSQLFileBinding = (
@@ -174,12 +187,15 @@ export const removeExternalSQLFileBindings = (
 const DEFAULT_EXTERNAL_SQL_TREE_LABELS: ExternalSQLTreeLabels = {
   root: 'External SQL files',
   directoryFallback: 'SQL directory',
+  missingDirectory: 'Missing',
 };
 
 const resolveExternalSQLTreeLabels = (labels?: Partial<ExternalSQLTreeLabels>): ExternalSQLTreeLabels => ({
   root: String(labels?.root || '').trim() || DEFAULT_EXTERNAL_SQL_TREE_LABELS.root,
   directoryFallback:
     String(labels?.directoryFallback || '').trim() || DEFAULT_EXTERNAL_SQL_TREE_LABELS.directoryFallback,
+  missingDirectory:
+    String(labels?.missingDirectory || '').trim() || DEFAULT_EXTERNAL_SQL_TREE_LABELS.missingDirectory,
 });
 
 const resolveDirectoryDisplayName = (
@@ -289,6 +305,7 @@ export const buildExternalSQLRootNode = ({
   dbName = '',
   directories,
   directoryTrees,
+  directoryStatuses = {},
   labels,
 }: BuildExternalSQLRootNodeParams): ExternalSQLTreeNode => {
   const resolvedLabels = resolveExternalSQLTreeLabels(labels);
@@ -303,6 +320,7 @@ export const buildExternalSQLRootNode = ({
     // must retain its own target so every nested SQL file opens against that DB.
     const directoryConnectionId = String(directory.connectionId || '').trim() || connectionId;
     const directoryDbName = String(directory.dbName || '').trim() || dbName;
+    const directoryStatus = directoryStatuses[directory.id];
     const directoryChildren = mapExternalSQLTreeEntries(directoryTrees[directory.id] || [], {
       connectionId: directoryConnectionId,
       dbName: directoryDbName,
@@ -310,14 +328,18 @@ export const buildExternalSQLRootNode = ({
       directoryId: directory.id,
       fileBindings: directory.fileBindings,
     });
+    const directoryTitle = resolveDirectoryDisplayName(directory, resolvedLabels);
     return {
-      title: resolveDirectoryDisplayName(directory, resolvedLabels),
+      title: directoryStatus === 'missing'
+        ? `${directoryTitle} (${resolvedLabels.missingDirectory})`
+        : directoryTitle,
       key: buildExternalSQLNodeKey('external-sql-directory', directory.id),
       type: 'external-sql-directory' as const,
       isLeaf: directoryChildren.length === 0,
       children: directoryChildren.length > 0 ? directoryChildren : undefined,
       dataRef: {
         ...directory,
+        ...(directoryStatus ? { directoryStatus } : {}),
         connectionId: directoryConnectionId,
         dbName: directoryDbName,
         dbNodeKey,

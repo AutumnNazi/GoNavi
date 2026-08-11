@@ -2053,8 +2053,9 @@ func TestDownloadOptionalDriverAgentFromBundleSharesConcurrentDownload(t *testin
 			t.Fatalf("bundle install failed: %v", err)
 		}
 	}
-	if got := atomic.LoadInt32(&requestCount); got != 1 {
-		t.Fatalf("expected one shared bundle download, got %d requests", got)
+	expectedRequests := int32(1 + updateDownloadParallelism) // 1 次 Range 探测 + 8 个并发分片
+	if got := atomic.LoadInt32(&requestCount); got != expectedRequests {
+		t.Fatalf("expected one shared parallel bundle download with %d requests, got %d", expectedRequests, got)
 	}
 }
 

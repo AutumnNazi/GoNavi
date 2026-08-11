@@ -2352,6 +2352,8 @@
   "ai_settings.provider.no_model": "Модель не выбрана",
   "ai_settings.provider_preset.anthropic.desc": "Модели Claude Opus/Sonnet",
   "ai_settings.provider_preset.anthropic.label": "Claude",
+  "ai_settings.provider_preset.atlascloud.desc": "Qwen3.8 Max / совместимо с OpenAI",
+  "ai_settings.provider_preset.atlascloud.label": "Atlas Cloud",
   "ai_settings.provider_preset.claude_subscription.desc": "Локальный Claude Code CLI / вход по подписке Claude",
   "ai_settings.provider_preset.claude_subscription.label": "Подписка Claude",
   "ai_settings.provider_preset.codex.desc": "Локальный Codex CLI / вход по подписке ChatGPT",

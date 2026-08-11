@@ -390,20 +390,6 @@ func (r *RocketMQDB) GetColumns(dbName, tableName string) ([]connection.ColumnDe
 	if topic == "" {
 		return nil, fmt.Errorf("RocketMQ topic 不能为空")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	records, err := r.runtime.FetchMessages(ctx, rocketmqFetchRequest{
-		Topic:         topic,
-		Limit:         20,
-		ConsumerGroup: r.resolveConsumerGroup("columns"),
-		TagExpression: r.defaultTagExpression,
-		Latest:        false,
-		PullBatchSize: r.pullBatchSize,
-	})
-	if err != nil {
-		return nil, err
-	}
-	rows := rocketmqMessageRows(records)
 	columns := []connection.ColumnDefinition{
 		{Name: "topic", Type: "string", Nullable: "NO", Comment: "RocketMQ topic"},
 		{Name: "broker_name", Type: "string", Nullable: "NO", Comment: "Broker name"},
@@ -419,28 +405,6 @@ func (r *RocketMQDB) GetColumns(dbName, tableName string) ([]connection.ColumnDe
 		{Name: "body", Type: "json", Nullable: "YES", Comment: "Decoded message body"},
 		{Name: "body_encoding", Type: "string", Nullable: "YES", Comment: "Message body encoding"},
 		{Name: "properties", Type: "json", Nullable: "YES", Comment: "Message properties"},
-	}
-	seen := map[string]struct{}{
-		"topic": {}, "broker_name": {}, "queue_id": {}, "queue_offset": {}, "msg_id": {}, "offset_msg_id": {},
-		"tags": {}, "keys": {}, "born_timestamp": {}, "store_timestamp": {}, "reconsume_times": {},
-		"body": {}, "body_encoding": {}, "properties": {},
-	}
-	for _, row := range rows {
-		for key, value := range row {
-			if _, exists := seen[key]; exists {
-				continue
-			}
-			if !strings.HasPrefix(key, "body.") && !strings.HasPrefix(key, "properties.") {
-				continue
-			}
-			seen[key] = struct{}{}
-			columns = append(columns, connection.ColumnDefinition{
-				Name:     key,
-				Type:     inferChromaValueType(value),
-				Nullable: "YES",
-				Comment:  "Derived RocketMQ field",
-			})
-		}
 	}
 	return columns, nil
 }

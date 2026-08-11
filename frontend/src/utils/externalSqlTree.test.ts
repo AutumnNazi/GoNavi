@@ -4,6 +4,7 @@ import type { ExternalSQLDirectory, ExternalSQLTreeEntry } from '../types';
 import {
   buildExternalSQLRootNode,
   buildExternalSQLTabId,
+  findExternalSQLDirectoriesByPath,
   moveExternalSQLFileBindings,
   removeExternalSQLFileBindings,
   resolveExternalSQLFileBinding,
@@ -57,6 +58,32 @@ describe('externalSqlTree helpers', () => {
     expect(node.children?.[0].children?.[0].children?.[0]).toMatchObject({
       title: 'init.sql',
       type: 'external-sql-file',
+    });
+  });
+
+  it('marks a missing directory instead of presenting it as empty', () => {
+    const node = buildExternalSQLRootNode({
+      directories: [{
+        id: 'dir-missing',
+        name: 'archived scripts',
+        path: 'D:/sql/missing',
+        createdAt: 1,
+      }],
+      directoryTrees: {},
+      directoryStatuses: {
+        'dir-missing': 'missing',
+      },
+      labels: {
+        missingDirectory: 'Missing',
+      },
+    });
+
+    expect(node.children?.[0]).toMatchObject({
+      title: 'archived scripts (Missing)',
+      isLeaf: true,
+      dataRef: {
+        directoryStatus: 'missing',
+      },
     });
   });
 
@@ -235,6 +262,38 @@ describe('externalSqlTree helpers', () => {
       connectionId: 'connection-2',
       dbName: 'reporting',
     });
+  });
+
+  it('finds every binding for the same directory path', () => {
+    const matching = findExternalSQLDirectoriesByPath([
+      {
+        id: 'dir-orders',
+        name: 'scripts',
+        path: 'D:/sql/shared',
+        connectionId: 'connection-1',
+        dbName: 'orders',
+        createdAt: 1,
+      },
+      {
+        id: 'dir-reporting',
+        name: 'scripts',
+        path: 'D:\\sql\\shared',
+        connectionId: 'connection-2',
+        dbName: 'reporting',
+        createdAt: 2,
+      },
+      {
+        id: 'dir-other',
+        name: 'other',
+        path: 'D:/sql/other',
+        createdAt: 3,
+      },
+    ], 'D:/sql/shared');
+
+    expect(matching.map((directory) => directory.id)).toEqual([
+      'dir-orders',
+      'dir-reporting',
+    ]);
   });
 
   it('updates file bindings when a file or containing folder moves and removes deleted subtrees', () => {

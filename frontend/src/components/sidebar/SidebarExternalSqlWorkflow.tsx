@@ -7,6 +7,7 @@ import { noAutoCapInputProps } from '../../utils/inputAutoCap';
 import {
   buildExternalSQLDirectoryId,
   buildExternalSQLTabId,
+  findExternalSQLDirectoriesByPath,
   moveExternalSQLFileBindings,
   normalizeExternalSQLPath,
   removeExternalSQLFileBindings,
@@ -913,9 +914,9 @@ export const useSidebarExternalSqlWorkflow = ({
         }
         if (externalSQLFileTarget?.type === 'external-sql-directory') {
           const nextName = String(payload.name || name).trim();
-          const previousDirectoryPath = normalizeExternalSQLPath(directoryPath);
-          const matchingDirectories = externalSQLDirectories.filter(
-            (directory) => normalizeExternalSQLPath(directory.path) === previousDirectoryPath,
+          const matchingDirectories = findExternalSQLDirectoriesByPath(
+            externalSQLDirectories,
+            directoryPath,
           );
           if (!nextPath || matchingDirectories.length === 0) {
             message.error(t('sidebar.message.external_sql_directory_rename_sync_failed'));
@@ -1020,9 +1021,9 @@ export const useSidebarExternalSqlWorkflow = ({
         removeRecentSQLFilesByDirectory(directoryPath);
 
         if (node?.type === 'external-sql-directory') {
-          const normalizedDirectoryPath = normalizeExternalSQLPath(directoryPath);
-          const matchingDirectories = externalSQLDirectories.filter(
-            (directory) => normalizeExternalSQLPath(directory.path) === normalizedDirectoryPath,
+          const matchingDirectories = findExternalSQLDirectoriesByPath(
+            externalSQLDirectories,
+            directoryPath,
           );
           if (matchingDirectories.length > 0) {
             const matchingDirectoryIds = new Set(matchingDirectories.map((directory) => directory.id));
@@ -1087,13 +1088,18 @@ export const useSidebarExternalSqlWorkflow = ({
   };
 
   const handleRemoveExternalSQLDirectory = async (node: any) => {
-    const directoryId = String(node?.dataRef?.id || '').trim();
-    if (!directoryId) {
+    const directoryPath = String(node?.dataRef?.path || '').trim();
+    if (!directoryPath) {
       message.error(t('sidebar.message.external_sql_directory_not_found'));
       return;
     }
-    deleteExternalSQLDirectory(directoryId);
-    const nextDirectories = externalSQLDirectories.filter((item) => item.id !== directoryId);
+    const matchingDirectories = findExternalSQLDirectoriesByPath(
+      externalSQLDirectories,
+      directoryPath,
+    );
+    matchingDirectories.forEach((directory) => deleteExternalSQLDirectory(directory.id));
+    const matchingDirectoryIds = new Set(matchingDirectories.map((directory) => directory.id));
+    const nextDirectories = externalSQLDirectories.filter((item) => !matchingDirectoryIds.has(item.id));
     await refreshGlobalExternalSQLRootNode(false, nextDirectories);
     message.success(t('sidebar.message.external_sql_directory_removed'));
   };

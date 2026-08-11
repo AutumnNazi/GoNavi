@@ -426,6 +426,15 @@ export const buildDataGridCssText = ({
 
                 .${gridId}.data-grid-root .ant-table-tbody .ant-table-row:hover > .ant-table-cell { background-color: transparent !important; }
 
+                /* 固定行控制列（序号/单选/多选）在整行 hover 透明时仍保持实心底。 */
+                .${gridId}.data-grid-root .ant-table-tbody-virtual-holder .ant-table-row:hover > .ant-table-cell:is(.data-grid-row-number-cell, .ant-table-selection-column),
+                .${gridId}.data-grid-root .ant-table-tbody-virtual .ant-table-row:hover > .ant-table-cell:is(.data-grid-row-number-cell, .ant-table-selection-column),
+                .${gridId}.data-grid-root .ant-table-tbody-virtual-holder-inner .ant-table-row:hover > .ant-table-cell:is(.data-grid-row-number-cell, .ant-table-selection-column),
+                .${gridId}.data-grid-root .ant-table-tbody > tr:hover > td:is(.data-grid-row-number-cell, .ant-table-selection-column) {
+                    background: var(--gn-bg-panel, ${bgContent}) !important;
+                    background-image: none !important;
+                }
+
                 /*
                  * 行选中：整行统一绿色。
                  * 关键：virtual-holder 下有
@@ -455,6 +464,18 @@ export const buildDataGridCssText = ({
                     background: rgba(34, 197, 94, 0.14) !important;
                     background-color: rgba(34, 197, 94, 0.14) !important;
                     background-image: none !important;
+                }
+
+                /* 选中行同样覆盖固定行控制列，保持与整行一致的选中底色。 */
+                .${gridId}.data-grid-root .ant-table-tbody-virtual-holder .ant-table-row:is(.ant-table-row-selected, .ant-table-row-selected:hover) > .ant-table-cell:is(.data-grid-row-number-cell, .ant-table-selection-column),
+                .${gridId}.data-grid-root .ant-table-tbody-virtual .ant-table-row:is(.ant-table-row-selected, .ant-table-row-selected:hover) > .ant-table-cell:is(.data-grid-row-number-cell, .ant-table-selection-column),
+                .${gridId}.data-grid-root .ant-table-tbody-virtual-holder-inner .ant-table-row:is(.ant-table-row-selected, .ant-table-row-selected:hover) > .ant-table-cell:is(.data-grid-row-number-cell, .ant-table-selection-column),
+                .${gridId}.data-grid-root .ant-table-tbody > tr:is(.ant-table-row-selected, .ant-table-row-selected:hover) > td:is(.data-grid-row-number-cell, .ant-table-selection-column) {
+                    background-color: var(--gn-bg-panel, ${bgContent}) !important;
+                    background-image: linear-gradient(
+                        var(--gn-bg-selected, rgba(34, 197, 94, 0.14)),
+                        var(--gn-bg-selected, rgba(34, 197, 94, 0.14))
+                    ) !important;
                 }
 
                 .${gridId} .row-added td,

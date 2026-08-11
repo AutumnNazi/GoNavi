@@ -504,6 +504,52 @@ describe('DataGrid layout', () => {
     expect(css).not.toContain('modified-hover');
   });
 
+  it('keeps fixed row controls opaque when their row is hovered or selected', () => {
+    const css = buildDataGridCssText({
+      darkMode: false,
+      densityParams: { dataFontSize: 12 },
+      gridId: 'row-number-state-grid',
+      bgContent: '#ffffff',
+    });
+
+    const transparentHover = css.indexOf(
+      '.row-number-state-grid.data-grid-root .ant-table-tbody .ant-table-row:hover > .ant-table-cell',
+    );
+    expect(transparentHover).toBeGreaterThanOrEqual(0);
+
+    const fixedRowControl = ':is(.data-grid-row-number-cell, .ant-table-selection-column)';
+    const fixedRowControlHoverSelectors = [
+      `.row-number-state-grid.data-grid-root .ant-table-tbody-virtual-holder .ant-table-row:hover > .ant-table-cell${fixedRowControl}`,
+      `.row-number-state-grid.data-grid-root .ant-table-tbody-virtual .ant-table-row:hover > .ant-table-cell${fixedRowControl}`,
+      `.row-number-state-grid.data-grid-root .ant-table-tbody-virtual-holder-inner .ant-table-row:hover > .ant-table-cell${fixedRowControl}`,
+      `.row-number-state-grid.data-grid-root .ant-table-tbody > tr:hover > td${fixedRowControl}`,
+    ];
+    fixedRowControlHoverSelectors.forEach((selector) => {
+      const ruleStart = css.indexOf(selector);
+      expect(ruleStart).toBeGreaterThan(transparentHover);
+      const ruleEnd = css.indexOf('}', ruleStart);
+      const rule = css.slice(ruleStart, ruleEnd + 1);
+      expect(rule).toContain('background: var(--gn-bg-panel, #ffffff) !important;');
+      expect(rule).toContain('background-image: none !important;');
+    });
+
+    const fixedRowControlSelectedSelectors = [
+      `.row-number-state-grid.data-grid-root .ant-table-tbody-virtual-holder .ant-table-row:is(.ant-table-row-selected, .ant-table-row-selected:hover) > .ant-table-cell${fixedRowControl}`,
+      `.row-number-state-grid.data-grid-root .ant-table-tbody-virtual .ant-table-row:is(.ant-table-row-selected, .ant-table-row-selected:hover) > .ant-table-cell${fixedRowControl}`,
+      `.row-number-state-grid.data-grid-root .ant-table-tbody-virtual-holder-inner .ant-table-row:is(.ant-table-row-selected, .ant-table-row-selected:hover) > .ant-table-cell${fixedRowControl}`,
+      `.row-number-state-grid.data-grid-root .ant-table-tbody > tr:is(.ant-table-row-selected, .ant-table-row-selected:hover) > td${fixedRowControl}`,
+    ];
+    fixedRowControlSelectedSelectors.forEach((selector) => {
+      const ruleStart = css.indexOf(selector);
+      expect(ruleStart).toBeGreaterThan(transparentHover);
+      const ruleEnd = css.indexOf('}', ruleStart);
+      const rule = css.slice(ruleStart, ruleEnd + 1);
+      expect(rule).toContain('background-color: var(--gn-bg-panel, #ffffff) !important;');
+      expect(rule).toContain('background-image: linear-gradient(');
+      expect(rule).toContain('var(--gn-bg-selected, rgba(34, 197, 94, 0.14))');
+    });
+  });
+
   it('uses the table cell as the only V2 inline edit frame', () => {
     const css = readV2ThemeCss();
     const inlineEditorCss = css.slice(

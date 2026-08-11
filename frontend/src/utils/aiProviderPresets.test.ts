@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { AIProviderAuthMode, AIProviderType } from '../types';
 import {
+  ATLAS_CLOUD_BASE_URL,
   LEGACY_QWEN_CODING_PLAN_OPENAI_BASE_URL,
   QWEN_BAILIAN_ANTHROPIC_BASE_URL,
   QWEN_BAILIAN_MODELS_BASE_URL,
@@ -24,6 +25,7 @@ type PresetMatcher = {
 
 const PRESETS: PresetMatcher[] = [
   { key: 'openai', backendType: 'openai', defaultBaseUrl: 'https://api.openai.com/v1' },
+  { key: 'atlascloud', backendType: 'openai', defaultBaseUrl: ATLAS_CLOUD_BASE_URL },
   { key: 'qwen-bailian', backendType: 'anthropic', defaultBaseUrl: QWEN_BAILIAN_ANTHROPIC_BASE_URL },
   {
     key: 'qwen-coding-plan',
@@ -212,6 +214,13 @@ describe('ai provider preset helpers', () => {
 });
 
 describe('resolveProviderPresetKey', () => {
+  it('recognizes Atlas Cloud by its OpenAI-compatible endpoint', () => {
+    expect(resolveProviderPresetKey({
+      type: 'openai',
+      baseUrl: `${ATLAS_CLOUD_BASE_URL}/`,
+    }, PRESETS, 'custom')).toBe('atlascloud');
+  });
+
   it('不会把自定义 OpenAI 端点误识别成千问 Coding Plan', () => {
     const key = resolveProviderPresetKey(
       {
