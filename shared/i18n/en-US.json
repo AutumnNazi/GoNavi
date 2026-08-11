@@ -6842,6 +6842,8 @@
   "query_editor.message.cancel_failed": "Failed to cancel query: {{error}}",
   "query_editor.message.cancel_no_running": "No running query to cancel.",
   "query_editor.message.cancel_success": "Query canceled.",
+  "query_editor.message.clipboard_permission_required": "The browser cannot read the clipboard. Allow clipboard access for this site and try again.",
+  "query_editor.message.clipboard_read_failed": "Unable to read the clipboard. Try again.",
   "query_editor.message.connection_not_found": "Connection not found.",
   "query_editor.message.connection_readonly_blocked": "This connection has production guard enabled and only allows query operations.",
   "query_editor.message.current_line_no_copyable_content": "No copyable content on the current line.",
