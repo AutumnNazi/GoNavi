@@ -5,6 +5,7 @@ export interface V2ActionMenuPopupProps {
   meta?: React.ReactNode;
   icon?: React.ReactNode;
   badge?: React.ReactNode;
+  showHeader?: boolean;
   children: React.ReactNode;
 }
 
@@ -13,19 +14,22 @@ const V2ActionMenuPopup: React.FC<V2ActionMenuPopupProps> = ({
   meta,
   icon,
   badge,
+  showHeader = true,
   children,
 }) => (
   <div className="gn-v2-action-menu-surface">
-    <div className="gn-v2-context-menu-header gn-v2-action-menu-header">
-      <span className="gn-v2-context-menu-table-icon gn-v2-action-menu-header-icon" aria-hidden="true">
-        {icon}
-      </span>
-      <span className="gn-v2-context-menu-heading">
-        <strong>{title}</strong>
-        {meta ? <small>{meta}</small> : null}
-      </span>
-      {badge ? <span className="gn-v2-context-menu-engine-pill">{badge}</span> : null}
-    </div>
+    {showHeader ? (
+      <div className="gn-v2-context-menu-header gn-v2-action-menu-header">
+        <span className="gn-v2-context-menu-table-icon gn-v2-action-menu-header-icon" aria-hidden="true">
+          {icon}
+        </span>
+        <span className="gn-v2-context-menu-heading">
+          <strong>{title}</strong>
+          {meta ? <small>{meta}</small> : null}
+        </span>
+        {badge ? <span className="gn-v2-context-menu-engine-pill">{badge}</span> : null}
+      </div>
+    ) : null}
     <div className="gn-v2-action-menu-body">{children}</div>
   </div>
 );
