@@ -477,7 +477,7 @@ const handleBatchFillCells = useCallback(() => {
       const pendingStart = pendingCellSelectionStartRef.current;
       pendingCellSelectionStartRef.current = null;
       if (!isDraggingRef.current) {
-        if (pendingStart && canModifyData) {
+        if (pendingStart) {
           selectSingleCell(pendingStart);
         }
         return;
