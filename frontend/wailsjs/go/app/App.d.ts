@@ -309,6 +309,8 @@ export function ImportDataWithProgressOptions(arg1:connection.ConnectionConfig,a
 
 export function ImportDatabaseSQL(arg1:connection.ConnectionConfig,arg2:string,arg3:string,arg4:string,arg5:boolean):Promise<connection.QueryResult>;
 
+export function ImportDatabaseSQLWithOptions(arg1:connection.ConnectionConfig,arg2:string,arg3:string,arg4:string,arg5:boolean,arg6:string):Promise<connection.QueryResult>;
+
 export function ImportLegacyConnections(arg1:Array<connection.SavedConnectionInput>):Promise<Array<connection.SavedConnectionView>>;
 
 export function ImportLegacyGlobalProxy(arg1:connection.SaveGlobalProxyInput):Promise<connection.GlobalProxyView>;
@@ -452,6 +454,8 @@ export function OpenLogDirectory():Promise<connection.QueryResult>;
 export function OpenSQLFile():Promise<connection.QueryResult>;
 
 export function OpenSavedQueryDirectory():Promise<connection.QueryResult>;
+
+export function PreflightDatabaseSQLImport(arg1:connection.ConnectionConfig,arg2:string,arg3:string):Promise<connection.QueryResult>;
 
 export function PreviewChanges(arg1:connection.ConnectionConfig,arg2:string,arg3:string,arg4:connection.ChangeSet):Promise<connection.QueryResult>;
 

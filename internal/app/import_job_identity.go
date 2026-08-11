@@ -107,3 +107,26 @@ func buildSQLImportOptionsHashWithTransactionMode(continueOnError bool, maxState
 		TransactionMode:   string(transactionMode),
 	})
 }
+
+func buildSQLImportOptionsHashWithGTIDMode(continueOnError bool, maxStatementBytes int64, transactionMode sqlFileTransactionMode, gtidMode mysqlGTIDImportMode) string {
+	if gtidMode == "" {
+		return buildSQLImportOptionsHashWithTransactionMode(continueOnError, maxStatementBytes, transactionMode)
+	}
+	if maxStatementBytes <= 0 {
+		maxStatementBytes = DefaultSQLImportMaxStatementBytes
+	}
+	if transactionMode != sqlFileTransactionModeSingle {
+		transactionMode = sqlFileTransactionModeOff
+	}
+	return hashImportJobContract(struct {
+		ContinueOnError   bool   `json:"continueOnError"`
+		MaxStatementBytes int64  `json:"maxStatementBytes"`
+		TransactionMode   string `json:"transactionMode"`
+		MySQLGTIDMode     string `json:"mysqlGTIDMode"`
+	}{
+		ContinueOnError:   continueOnError,
+		MaxStatementBytes: maxStatementBytes,
+		TransactionMode:   string(transactionMode),
+		MySQLGTIDMode:     string(gtidMode),
+	})
+}

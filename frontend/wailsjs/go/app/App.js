@@ -602,6 +602,10 @@ export function ImportDatabaseSQL(arg1, arg2, arg3, arg4, arg5) {
   return window['go']['app']['App']['ImportDatabaseSQL'](arg1, arg2, arg3, arg4, arg5);
 }
 
+export function ImportDatabaseSQLWithOptions(arg1, arg2, arg3, arg4, arg5, arg6) {
+  return window['go']['app']['App']['ImportDatabaseSQLWithOptions'](arg1, arg2, arg3, arg4, arg5, arg6);
+}
+
 export function ImportLegacyConnections(arg1) {
   return window['go']['app']['App']['ImportLegacyConnections'](arg1);
 }
@@ -888,6 +892,10 @@ export function OpenSQLFile() {
 
 export function OpenSavedQueryDirectory() {
   return window['go']['app']['App']['OpenSavedQueryDirectory']();
+}
+
+export function PreflightDatabaseSQLImport(arg1, arg2, arg3) {
+  return window['go']['app']['App']['PreflightDatabaseSQLImport'](arg1, arg2, arg3);
 }
 
 export function PreviewChanges(arg1, arg2, arg3, arg4) {

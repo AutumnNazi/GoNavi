@@ -184,6 +184,7 @@ import { buildJVMDiagnosticActionDescriptor, buildJVMMonitoringActionDescriptors
 import {
   DATA_IMPORT_WORKBENCH_TAB_ID,
   resolveDataImportWorkbenchLaunchTab,
+  type BuildDataImportWorkbenchTabInput,
 } from '../utils/dataImportTab';
 import { useExportProgressDialog } from './ExportProgressModal';
 import { getShortcutPlatform, resolveShortcutDisplay } from '../utils/shortcuts';
@@ -1544,6 +1545,11 @@ const Sidebar: React.FC<{
       void refreshGlobalExternalSQLRootNode(false);
   }, [refreshGlobalExternalSQLRootNode]);
 
+  const openDataImportWorkbench = useCallback((input: BuildDataImportWorkbenchTabInput) => {
+    const existingImportTab = tabs.find((tab) => tab.id === DATA_IMPORT_WORKBENCH_TAB_ID);
+    addTab(resolveDataImportWorkbenchLaunchTab(existingImportTab, input));
+  }, [addTab, tabs]);
+
   const {
       handleRunSQLFile,
       handleOpenSQLFileFromToolbar,
@@ -1567,6 +1573,7 @@ const Sidebar: React.FC<{
       connectionIds,
       selectedNodesRef,
       addTab,
+      openDataImportWorkbench,
       saveExternalSQLDirectory,
       deleteExternalSQLDirectory,
       updateRecentSQLFilePath,
@@ -3643,12 +3650,8 @@ const Sidebar: React.FC<{
     ).trim();
     const mode = node?.type === 'database' ? 'database' : 'table';
 
-    const existingImportTab = tabs.find((tab) => tab.id === DATA_IMPORT_WORKBENCH_TAB_ID);
-    addTab(resolveDataImportWorkbenchLaunchTab(
-      existingImportTab,
-      { connectionId, dbName, tableName, mode },
-    ));
-  }, [activeContext?.connectionId, activeContext?.dbName, activeTabId, addTab, tabs]);
+    openDataImportWorkbench({ connectionId, dbName, tableName, mode });
+  }, [activeContext?.connectionId, activeContext?.dbName, activeTabId, openDataImportWorkbench, tabs]);
 
   const handleOpenSlowQueryWorkbench = useCallback(() => {
     if (!activeTabHasConnection || !activeTab?.connectionId) return;

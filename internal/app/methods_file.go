@@ -88,6 +88,7 @@ type sqlFileExecutionOptions struct {
 	PreflightEachStatement bool
 	TransactionMode        sqlFileTransactionMode
 	StatementGuard         func(index int, stmt string) error
+	SkipStatement          func(index int, stmt string) bool
 	Text                   fileBackendTextFunc
 	OnProgress             func(sqlFileExecutionProgress)
 }
@@ -103,6 +104,8 @@ type sqlFileExecutionPolicy struct {
 	TransactionMode    sqlFileTransactionMode
 	ForceFullPreflight bool
 	StatementGuard     func(index int, stmt string) error
+	SkipStatement      func(index int, stmt string) bool
+	MySQLGTIDMode      mysqlGTIDImportMode
 }
 
 type sqlFileExecutionResult struct {
@@ -2246,6 +2249,9 @@ func executeSQLFileSingleTransactionStream(ctx context.Context, dbInst db.Databa
 				return err
 			}
 		}
+		if options.SkipStatement != nil && options.SkipStatement(index, stmt) {
+			return nil
+		}
 		if err := validateSQLFileSingleTransactionStatement(options.DBType, stmt); err != nil {
 			return err
 		}
@@ -2614,6 +2620,9 @@ func executeSQLFileStream(ctx context.Context, dbInst db.Database, reader io.Rea
 			if err := options.StatementGuard(index, stmt); err != nil {
 				return err
 			}
+		}
+		if options.SkipStatement != nil && options.SkipStatement(index, stmt) {
+			return nil
 		}
 
 		if supportsBatch && !safeSequentialContinue && userTransactionDepth == 0 && !mysqlAutocommitDisabled && !mysqlTablesLocked && isSQLFileBatchableWriteStatement(options.DBType, stmt) {
@@ -3032,24 +3041,39 @@ func buildSQLFileExecutionPayload(executed, failed int, outcome string) map[stri
 // ImportDatabaseSQL restores a database from a SQL file while honoring the
 // connection protections that apply to destructive import workflows.
 func (a *App) ImportDatabaseSQL(config connection.ConnectionConfig, dbName string, filePath string, jobID string, continueOnError bool) connection.QueryResult {
-	for _, protection := range []connectionProtectionKey{
-		connectionProtectionDataImport,
-		connectionProtectionStructureEdit,
-		connectionProtectionScriptExecution,
-	} {
-		if err := ensureConnectionAllowsActionWithText(
-			config,
-			protection,
-			"connection.backend.action.import_data",
-			a.appText,
-		); err != nil {
-			return connection.QueryResult{Success: false, Message: err.Error()}
-		}
+	return a.importDatabaseSQLWithGTIDMode(config, dbName, filePath, jobID, continueOnError, mysqlGTIDImportModeReject)
+}
+
+func (a *App) ImportDatabaseSQLWithOptions(config connection.ConnectionConfig, dbName string, filePath string, jobID string, continueOnError bool, mysqlGTIDMode string) connection.QueryResult {
+	mode, err := normalizeMySQLGTIDImportMode(mysqlGTIDMode)
+	if err != nil {
+		return connection.QueryResult{Success: false, Message: a.appText("file.backend.error.mysql_gtid_mode_invalid", nil)}
 	}
-	if !isDataImportSQLDialectSupported(config) {
-		return connection.QueryResult{Success: false, Message: a.appText("data_import.capability.reason.database_type_unsupported", nil)}
+	return a.importDatabaseSQLWithGTIDMode(config, dbName, filePath, jobID, continueOnError, mode)
+}
+
+func (a *App) importDatabaseSQLWithGTIDMode(config connection.ConnectionConfig, dbName string, filePath string, jobID string, continueOnError bool, mode mysqlGTIDImportMode) connection.QueryResult {
+	if err := a.validateDatabaseSQLImportAccess(config); err != nil {
+		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
-	return a.executeSQLFileWithStatementLimitPolicy(config, dbName, filePath, jobID, continueOnError, DefaultSQLImportMaxStatementBytes, true)
+	if !isMySQLGTIDImportConfig(config) {
+		mode = ""
+	}
+	return a.executeSQLFileWithStatementLimitPolicyContextWithPolicy(
+		context.Background(),
+		config,
+		dbName,
+		filePath,
+		jobID,
+		continueOnError,
+		DefaultSQLImportMaxStatementBytes,
+		true,
+		"sql_file",
+		sqlFileExecutionPolicy{
+			TransactionMode: sqlFileTransactionModeOff,
+			MySQLGTIDMode:   mode,
+		},
+	)
 }
 
 func (a *App) ExecuteSQLFile(config connection.ConnectionConfig, dbName string, filePath string, jobID string) connection.QueryResult {
@@ -3123,6 +3147,25 @@ func (a *App) executeSQLFileWithStatementLimitPolicyContextWithPolicy(parent con
 			return connection.QueryResult{Success: false, Message: "single-transaction SQL-file execution cannot prove atomicity for this database type"}
 		}
 	}
+	containsMySQLGTIDPurged := false
+	if policy.MySQLGTIDMode != "" && isMySQLGTIDImportConfig(config) {
+		policy.ForceFullPreflight = true
+		originalGuard := policy.StatementGuard
+		policy.StatementGuard = func(index int, statement string) error {
+			if isMySQLGTIDPurgedStatement(statement) {
+				containsMySQLGTIDPurged = true
+			}
+			if originalGuard != nil {
+				return originalGuard(index, statement)
+			}
+			return nil
+		}
+		if policy.MySQLGTIDMode == mysqlGTIDImportModeSkip {
+			policy.SkipStatement = func(_ int, statement string) bool {
+				return isMySQLGTIDPurgedStatement(statement)
+			}
+		}
+	}
 	if maxStatementBytes <= 0 {
 		maxStatementBytes = DefaultSQLImportMaxStatementBytes
 	}
@@ -3168,7 +3211,7 @@ func (a *App) executeSQLFileWithStatementLimitPolicyContextWithPolicy(parent con
 		TargetFingerprint:   buildImportTargetFingerprint(config, dbName, ""),
 		ConnectionID:        config.ID,
 		DatabaseName:        dbName,
-		OptionsHash:         buildSQLImportOptionsHashWithTransactionMode(continueOnError, maxStatementBytes, policy.TransactionMode),
+		OptionsHash:         buildSQLImportOptionsHashWithGTIDMode(continueOnError, maxStatementBytes, policy.TransactionMode, policy.MySQLGTIDMode),
 	})
 	if err != nil {
 		return connection.QueryResult{Success: false, Message: err.Error()}
@@ -3316,6 +3359,42 @@ func (a *App) executeSQLFileWithStatementLimitPolicyContextWithPolicy(parent con
 			}
 		}
 	}
+	if containsMySQLGTIDPurged {
+		switch policy.MySQLGTIDMode {
+		case mysqlGTIDImportModeReject:
+			state, stateErr := queryMySQLGTIDTargetState(dbInst)
+			if stateErr != nil {
+				return connection.QueryResult{Success: false, Message: a.appText("file.backend.error.mysql_gtid_preflight_failed", map[string]any{"detail": sanitizeSQLFileExecutionErr(stateErr)})}
+			}
+			if strings.TrimSpace(state.GTIDExecuted) != "" {
+				return connection.QueryResult{
+					Success: false,
+					Data:    buildMySQLGTIDPreflightPayload(true, state),
+					Message: a.appText("file.backend.error.mysql_gtid_decision_required", nil),
+				}
+			}
+		case mysqlGTIDImportModeReset:
+			state, stateErr := queryMySQLGTIDTargetState(dbInst)
+			if stateErr != nil {
+				return connection.QueryResult{Success: false, Message: a.appText("file.backend.error.mysql_gtid_preflight_failed", map[string]any{"detail": sanitizeSQLFileExecutionErr(stateErr)})}
+			}
+			resetStatement, resetErr := mysqlGTIDResetStatement(state.ServerVersion)
+			if resetErr != nil {
+				return connection.QueryResult{Success: false, Message: a.appText("file.backend.error.mysql_gtid_preflight_failed", map[string]any{"detail": sanitizeSQLFileExecutionErr(resetErr)})}
+			}
+			mayHaveDatabaseSideEffects = true
+			if _, resetErr = execSQLFileStatement(ctx, dbInst, resetStatement); resetErr != nil {
+				return connection.QueryResult{
+					Success: false,
+					Data: map[string]interface{}{
+						"gtidResetAttempted": true,
+						"outcomeUnknown":     db.IsWriteOutcomeUnknown(resetErr) || db.IsAmbiguousWriteResponse(resetErr),
+					},
+					Message: a.appText("file.backend.error.mysql_gtid_reset_failed", map[string]any{"detail": sanitizeSQLFileExecutionErr(resetErr)}),
+				}
+			}
+		}
+	}
 
 	totalSize := preparedSource.rawSize
 	totalSizeKnown := true
@@ -3388,6 +3467,7 @@ func (a *App) executeSQLFileWithStatementLimitPolicyContextWithPolicy(parent con
 		ContinueOnError:   continueOnError,
 		TransactionMode:   policy.TransactionMode,
 		StatementGuard:    policy.StatementGuard,
+		SkipStatement:     policy.SkipStatement,
 		// Keep the callback guard even after a full small-file preflight so a
 		// source replacement between the two opens cannot send client commands
 		// to the database.
