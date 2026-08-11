@@ -2352,6 +2352,8 @@
   "ai_settings.provider.no_model": "Kein Modell ausgewählt",
   "ai_settings.provider_preset.anthropic.desc": "Claude Opus/Sonnet Modelle",
   "ai_settings.provider_preset.anthropic.label": "Claude",
+  "ai_settings.provider_preset.atlascloud.desc": "Qwen3.8 Max / OpenAI-kompatibel",
+  "ai_settings.provider_preset.atlascloud.label": "Atlas Cloud",
   "ai_settings.provider_preset.claude_subscription.desc": "Lokale Claude Code CLI / Claude-Abonnementanmeldung",
   "ai_settings.provider_preset.claude_subscription.label": "Claude-Abonnement",
   "ai_settings.provider_preset.codex.desc": "Lokale Codex CLI / ChatGPT-Abonnementanmeldung",

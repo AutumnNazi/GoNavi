@@ -5,6 +5,8 @@ export const LEGACY_QWEN_CODING_PLAN_OPENAI_BASE_URL = 'https://coding.dashscope
 export const QWEN_BAILIAN_ANTHROPIC_BASE_URL = 'https://dashscope.aliyuncs.com/apps/anthropic';
 export const QWEN_CODING_PLAN_ANTHROPIC_BASE_URL = 'https://coding.dashscope.aliyuncs.com/apps/anthropic';
 export const QWEN_BAILIAN_MODELS_BASE_URL = LEGACY_QWEN_BAILIAN_OPENAI_BASE_URL;
+export const ATLAS_CLOUD_BASE_URL = 'https://api.atlascloud.ai/v1';
+export const ATLAS_CLOUD_DEFAULT_MODEL = 'qwen/qwen3.8-max';
 
 export const QWEN_CODING_PLAN_MODELS = [
   'qwen3.5-plus',
