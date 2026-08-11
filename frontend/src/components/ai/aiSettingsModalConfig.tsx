@@ -16,6 +16,8 @@ import type {
   AIUserPromptSettings,
 } from '../../types';
 import {
+  ATLAS_CLOUD_BASE_URL,
+  ATLAS_CLOUD_DEFAULT_MODEL,
   QWEN_BAILIAN_ANTHROPIC_BASE_URL,
   QWEN_CODING_PLAN_ANTHROPIC_BASE_URL,
   QWEN_CODING_PLAN_MODELS,
@@ -50,6 +52,7 @@ export const MINIMAX_ENDPOINTS: ProviderPresetEndpoint[] = [
 
 export const PROVIDER_PRESETS: ProviderPreset[] = [
   { key: 'openai', label: 'OpenAI', labelKey: 'ai_settings.provider_preset.openai.label', icon: <ApiOutlined />, desc: 'GPT-5.4 / 5.3 series', descKey: 'ai_settings.provider_preset.openai.desc', color: '#10b981', backendType: 'openai', defaultBaseUrl: 'https://api.openai.com/v1', defaultModel: 'gpt-4o', models: [] },
+  { key: 'atlascloud', label: 'Atlas Cloud', labelKey: 'ai_settings.provider_preset.atlascloud.label', icon: <CloudOutlined />, desc: 'Qwen3.8 Max / OpenAI-compatible', descKey: 'ai_settings.provider_preset.atlascloud.desc', color: '#0891b2', backendType: 'openai', defaultBaseUrl: ATLAS_CLOUD_BASE_URL, defaultModel: ATLAS_CLOUD_DEFAULT_MODEL, models: [] },
   { key: 'codex', label: 'Codex Subscription', labelKey: 'ai_settings.provider_preset.codex.label', icon: <ApiOutlined />, desc: 'Local Codex CLI / ChatGPT subscription login', descKey: 'ai_settings.provider_preset.codex.desc', color: '#111827', backendType: 'custom', fixedApiFormat: 'codex-cli', authMode: 'local-cli', defaultBaseUrl: '', defaultModel: '', models: [] },
   { key: 'deepseek', label: 'DeepSeek', labelKey: 'ai_settings.provider_preset.deepseek.label', icon: <ThunderboltOutlined />, desc: 'DeepSeek-V4 / R1', descKey: 'ai_settings.provider_preset.deepseek.desc', color: '#3b82f6', backendType: 'openai', defaultBaseUrl: 'https://api.deepseek.com/v1', defaultModel: 'deepseek-chat', models: [] },
   { key: 'qwen-bailian', label: 'Qwen (Bailian General)', labelKey: 'ai_settings.provider_preset.qwen_bailian.label', icon: <CloudOutlined />, desc: 'Bailian Anthropic-compatible endpoint / remote model list', descKey: 'ai_settings.provider_preset.qwen_bailian.desc', color: '#6366f1', backendType: 'anthropic', defaultBaseUrl: QWEN_BAILIAN_ANTHROPIC_BASE_URL, defaultModel: '', models: [] },
