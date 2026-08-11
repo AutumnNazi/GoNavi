@@ -226,7 +226,7 @@ import {
 import {
   buildApplicationQuitUnsavedSQLLabel,
   collectApplicationQuitUnsavedSQLTargets,
-  saveApplicationQuitUnsavedSQLTargets,
+  saveLatestApplicationQuitUnsavedSQLState,
 } from './utils/sqlEditorApplicationQuit';
 import { prepareApplicationQuitPersistence } from './utils/applicationQuitPersistence';
 import { flushQueryTabDraftSnapshots } from './utils/sqlFileTabDrafts';
@@ -2894,7 +2894,19 @@ function App() {
           },
           onOk: async () => {
               try {
-                  await saveApplicationQuitUnsavedSQLTargets(targets, saveQuery);
+                  await saveLatestApplicationQuitUnsavedSQLState({
+                      getState: () => {
+                          const latestState = useStore.getState();
+                          return {
+                              tabs: latestState.tabs,
+                              savedQueries: latestState.savedQueries,
+                          };
+                      },
+                      updateTabs: (update) => {
+                          useStore.setState((state) => ({ tabs: update(state.tabs) }));
+                      },
+                      saveQuery,
+                  });
                   message.success(t('app.quit.unsaved_sql.saved'));
               } catch (error) {
                   cancelRequest();
