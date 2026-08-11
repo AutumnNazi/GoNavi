@@ -2823,6 +2823,7 @@ export namespace sync {
 	    supportsAutoCreate: boolean;
 	    supportsAutoAddColumns: boolean;
 	    requiresExistingTarget: boolean;
+	    supportsMutations: boolean;
 
 	    static createFrom(source: any = {}) {
 	        return new MigrationCapability(source);
@@ -2840,6 +2841,7 @@ export namespace sync {
 	        this.supportsAutoCreate = source["supportsAutoCreate"];
 	        this.supportsAutoAddColumns = source["supportsAutoAddColumns"];
 	        this.requiresExistingTarget = source["requiresExistingTarget"];
+	        this.supportsMutations = source["supportsMutations"];
 	    }
 	}
 	export class SyncValueTransform {

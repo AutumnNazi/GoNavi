@@ -18,6 +18,10 @@ export function ApplySavedQueryDirectory(arg1) {
   return window['go']['app']['App']['ApplySavedQueryDirectory'](arg1);
 }
 
+export function AuthorizeMCPConnectionSQL(arg1, arg2) {
+  return window['go']['app']['App']['AuthorizeMCPConnectionSQL'](arg1, arg2);
+}
+
 export function BuildSQLAuditExport(arg1, arg2) {
   return window['go']['app']['App']['BuildSQLAuditExport'](arg1, arg2);
 }

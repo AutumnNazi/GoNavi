@@ -17,6 +17,8 @@ export function ApplyLogDirectory(arg1:string):Promise<connection.QueryResult>;
 
 export function ApplySavedQueryDirectory(arg1:string):Promise<connection.QueryResult>;
 
+export function AuthorizeMCPConnectionSQL(arg1:connection.ConnectionConfig,arg2:string):Promise<void>;
+
 export function BuildSQLAuditExport(arg1:sqlaudit.Filter,arg2:string):Promise<connection.QueryResult>;
 
 export function CancelApplicationQuit():Promise<connection.QueryResult>;
