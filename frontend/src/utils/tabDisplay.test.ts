@@ -248,7 +248,7 @@ describe('tabDisplay', () => {
       layout: 'single',
       primaryElements: ['object', 'schema', 'host'],
       secondaryElements: [],
-    })).toBe('andon_events SCHEMA:ldf_server 192.168.10.8');
+    })).toBe('andon_events ldf_server 192.168.10.8');
   });
 
   it('builds the default configurable model with the object on the primary line', () => {
@@ -404,8 +404,8 @@ describe('tabDisplay', () => {
 
     expect(model.layout).toBe('double');
     expect(model.primaryText).toBe('TABLE events');
-    expect(model.secondaryText).toBe('[PROD]·analytics·SCHEMA:reporting·10.0.0.9');
-    expect(model.fullTitle).toBe('TABLE events · [PROD]·analytics·SCHEMA:reporting·10.0.0.9');
+    expect(model.secondaryText).toBe('[PROD]·analytics·reporting·10.0.0.9');
+    expect(model.fullTitle).toBe('TABLE events · [PROD]·analytics·reporting·10.0.0.9');
   });
 
   it('uses explicit schema metadata for unqualified table names', () => {
@@ -426,7 +426,7 @@ describe('tabDisplay', () => {
     });
 
     expect(model.primaryText).toBe('events');
-    expect(model.secondaryText).toBe('SCHEMA:reporting');
+    expect(model.secondaryText).toBe('reporting');
   });
 
   it('sanitizes tab display settings with fallback defaults', () => {
