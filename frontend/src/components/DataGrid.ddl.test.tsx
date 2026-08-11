@@ -1073,7 +1073,7 @@ describe('DataGrid DDL interactions', () => {
     vi.unstubAllGlobals();
   });
 
-  it('selects one row when its row number cell is clicked', async () => {
+  it('toggles one row when its row number cell is clicked', async () => {
     storeState.appearance.uiVersion = 'v2';
     const rows = [
       { [GONAVI_ROW_KEY]: 'row-1', id: 1 },
@@ -1107,6 +1107,14 @@ describe('DataGrid DDL interactions', () => {
     expect(stopPropagation).toHaveBeenCalledTimes(1);
     expect(testRenderState.latestTableProps.rowHoverable).toBe(false);
     expect(testRenderState.latestTableProps.rowSelection.selectedRowKeys).toEqual(['row-2']);
+
+    await act(async () => {
+      rowNumberColumn.onCell(rows[1], 1).onClick({ stopPropagation });
+    });
+    await waitForEffects();
+
+    expect(stopPropagation).toHaveBeenCalledTimes(2);
+    expect(testRenderState.latestTableProps.rowSelection.selectedRowKeys).toEqual([]);
     renderer!.unmount();
   });
 
