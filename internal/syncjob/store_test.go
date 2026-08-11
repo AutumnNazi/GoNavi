@@ -93,6 +93,117 @@ func TestStorePersistsConcurrentRunEventsWithContiguousSequences(t *testing.T) {
 	}
 }
 
+func TestStoreCompletesOwnedRunWithTerminalEventForEveryStatus(t *testing.T) {
+	testCases := []struct {
+		status    RunStatus
+		eventType RunEventType
+		resumable bool
+	}{
+		{status: RunStatusSucceeded, eventType: RunEventSucceeded},
+		{status: RunStatusPartial, eventType: RunEventPartial},
+		{status: RunStatusFailed, eventType: RunEventFailed},
+		{status: RunStatusCanceled, eventType: RunEventCanceled},
+		{status: RunStatusInterrupted, eventType: RunEventInterrupted, resumable: true},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(string(testCase.status), func(t *testing.T) {
+			store := openTestStore(t)
+			definition := putTestJob(t, store, "queue")
+			run := createStoredRun(t, store, definition, RunStatusQueued)
+			if _, err := store.AppendRunEvent(context.Background(), RunEvent{
+				RunID: run.ID, Type: RunEventQueued, Status: RunStatusQueued, Message: "queued",
+			}); err != nil {
+				t.Fatalf("append queued event: %v", err)
+			}
+			claimed, ok, err := store.ClaimRun(context.Background(), run.ID, time.Now().UnixMilli())
+			if err != nil || !ok {
+				t.Fatalf("claim run = %#v, claimed=%v, err=%v", claimed, ok, err)
+			}
+			claimed, err = store.UpdateRunProgressOwned(context.Background(), claimed.ID, claimed.OwnerToken, RunProgress{
+				Current: 2, Total: 3, Table: "orders", Stage: "write",
+			}, claimed.StartedAt+1)
+			if err != nil {
+				t.Fatalf("update owned progress: %v", err)
+			}
+			if _, err := store.AppendRunEvent(context.Background(), RunEvent{
+				RunID: claimed.ID, Type: RunEventStarted, Status: RunStatusRunning, Message: "started",
+			}); err != nil {
+				t.Fatalf("append started event: %v", err)
+			}
+
+			finishedAt := claimed.StartedAt + 2
+			outcome := ExecutionOutcome{RowsInserted: 2, Message: "terminal " + string(testCase.status)}
+			completed, event, err := store.CompleteRunOwnedWithTerminalEvent(
+				context.Background(), claimed.ID, claimed.OwnerToken, testCase.status, outcome, "", finishedAt,
+			)
+			if err != nil {
+				t.Fatalf("complete run with terminal event: %v", err)
+			}
+			if completed.Status != testCase.status || completed.OwnerToken != "" || completed.FinishedAt != finishedAt || completed.Resumable != testCase.resumable {
+				t.Fatalf("completed run = %#v", completed)
+			}
+			if event.Type != testCase.eventType || event.Status != testCase.status || event.Sequence != 3 || event.Message != outcome.Message {
+				t.Fatalf("terminal event = %#v", event)
+			}
+			if event.Current != completed.Current || event.Total != completed.Total || event.Table != completed.Table || event.Stage != completed.Stage {
+				t.Fatalf("terminal event progress = %#v, completed run = %#v", event, completed)
+			}
+			events, err := store.ListRunEvents(context.Background(), run.ID, 0, 10)
+			if err != nil {
+				t.Fatalf("list run events: %v", err)
+			}
+			if len(events) != 3 {
+				t.Fatalf("event count = %d, want 3: %#v", len(events), events)
+			}
+			for index, persisted := range events {
+				if persisted.Sequence != int64(index+1) {
+					t.Fatalf("event sequence at %d = %d, want %d", index, persisted.Sequence, index+1)
+				}
+			}
+		})
+	}
+}
+
+func TestStoreRollsBackOwnedCompletionWhenTerminalEventCannotPersist(t *testing.T) {
+	store := openTestStore(t)
+	definition := putTestJob(t, store, "queue")
+	run := createStoredRun(t, store, definition, RunStatusQueued)
+	claimed, ok, err := store.ClaimRun(context.Background(), run.ID, time.Now().UnixMilli())
+	if err != nil || !ok {
+		t.Fatalf("claim run = %#v, claimed=%v, err=%v", claimed, ok, err)
+	}
+	if _, err := store.AppendRunEvent(context.Background(), RunEvent{
+		RunID: claimed.ID, Type: RunEventStarted, Status: RunStatusRunning, Message: "started",
+	}); err != nil {
+		t.Fatalf("append started event: %v", err)
+	}
+	if _, err := store.db.ExecContext(context.Background(), `CREATE TRIGGER fail_terminal_run_event
+		BEFORE INSERT ON data_sync_run_events WHEN NEW.event_type IN ('succeeded', 'partial', 'failed', 'canceled', 'interrupted')
+		BEGIN SELECT RAISE(ABORT, 'injected terminal event failure'); END`); err != nil {
+		t.Fatalf("create terminal event failure trigger: %v", err)
+	}
+
+	if _, _, err := store.CompleteRunOwnedWithTerminalEvent(context.Background(), claimed.ID, claimed.OwnerToken,
+		RunStatusSucceeded, ExecutionOutcome{RowsInserted: 1}, "completed", claimed.StartedAt+1); err == nil {
+		t.Fatal("completion succeeded despite terminal event failure")
+	}
+	persisted, err := store.GetRun(context.Background(), claimed.ID)
+	if err != nil {
+		t.Fatalf("get run after rollback: %v", err)
+	}
+	if persisted.Status != RunStatusRunning || persisted.OwnerToken != claimed.OwnerToken || persisted.FinishedAt != 0 {
+		t.Fatalf("run completion was not rolled back: %#v", persisted)
+	}
+	events, err := store.ListRunEvents(context.Background(), claimed.ID, 0, 10)
+	if err != nil {
+		t.Fatalf("list events after rollback: %v", err)
+	}
+	if len(events) != 1 || events[0].Type != RunEventStarted || events[0].Sequence != 1 {
+		t.Fatalf("events changed despite rollback: %#v", events)
+	}
+}
+
 func TestStorePersistsIncompleteDraftButManagerWillNotRunIt(t *testing.T) {
 	store := openTestStore(t)
 	draft, err := store.PutJob(context.Background(), JobDefinition{
