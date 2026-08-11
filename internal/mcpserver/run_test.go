@@ -57,10 +57,47 @@ func TestNormalizeHTTPServerOptionsRejectsNonLoopbackAddresses(t *testing.T) {
 	}
 }
 
+func TestNormalizeHTTPServerOptionsAllowsNonLoopbackWithExplicitEnvOptIn(t *testing.T) {
+	t.Setenv("GONAVI_MCP_HTTP_ADDR", "0.0.0.0:8765")
+	t.Setenv("GONAVI_MCP_HTTP_TOKEN", "secret")
+	t.Setenv("GONAVI_MCP_HTTP_ALLOW_NON_LOOPBACK", "true")
+
+	options, err := ParseHTTPServerOptions(nil)
+	if err != nil {
+		t.Fatalf("ParseHTTPServerOptions returned error: %v", err)
+	}
+	if _, err := normalizeHTTPServerOptions(options); err != nil {
+		t.Fatalf("explicit non-loopback env opt-in returned error: %v", err)
+	}
+}
+
+func TestNormalizeHTTPServerOptionsAllowsNonLoopbackWithExplicitFlagOptIn(t *testing.T) {
+	options, err := ParseHTTPServerOptions([]string{
+		"--addr", "0.0.0.0:8765",
+		"--token", "secret",
+		"--allow-non-loopback",
+	})
+	if err != nil {
+		t.Fatalf("ParseHTTPServerOptions returned error: %v", err)
+	}
+	if _, err := normalizeHTTPServerOptions(options); err != nil {
+		t.Fatalf("explicit non-loopback flag opt-in returned error: %v", err)
+	}
+}
+
 func TestNormalizeHTTPServerOptionsRequiresBearerToken(t *testing.T) {
 	_, err := normalizeHTTPServerOptions(HTTPServerOptions{Addr: "127.0.0.1:8765", Path: "/mcp"})
 	if err == nil || !strings.Contains(err.Error(), "bearer token") {
 		t.Fatalf("expected missing bearer token error, got %v", err)
+	}
+
+	_, err = normalizeHTTPServerOptions(HTTPServerOptions{
+		Addr:             "0.0.0.0:8765",
+		Path:             "/mcp",
+		AllowNonLoopback: true,
+	})
+	if err == nil || !strings.Contains(err.Error(), "bearer token") {
+		t.Fatalf("expected non-loopback opt-in to keep requiring a bearer token, got %v", err)
 	}
 }
 
