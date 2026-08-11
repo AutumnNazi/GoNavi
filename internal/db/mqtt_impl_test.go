@@ -181,19 +181,26 @@ func TestMQTTQueryExecAndColumns(t *testing.T) {
 		t.Fatalf("unexpected mqtt publish command: %#v", fakeRuntime.published[0])
 	}
 
+	fakeRuntime.fetchRequests = nil
 	columnDefs, err := client.GetColumns(mqttSyntheticDatabase, "devices/+/telemetry")
 	if err != nil {
 		t.Fatalf("GetColumns failed: %v", err)
+	}
+	if len(fakeRuntime.fetchRequests) != 0 {
+		t.Fatalf("GetColumns must not read MQTT messages, requests=%d", len(fakeRuntime.fetchRequests))
 	}
 	names := make([]string, 0, len(columnDefs))
 	for _, col := range columnDefs {
 		names = append(names, col.Name)
 	}
 	joined := strings.Join(names, ",")
-	for _, want := range []string{"topic", "payload.meta.source", "payload_encoding"} {
-		if !strings.Contains(joined, want) {
+	for _, want := range []string{"topic", "payload", "payload_encoding"} {
+		if !containsString(names, want) {
 			t.Fatalf("expected mqtt column %q in %s", want, joined)
 		}
+	}
+	if containsString(names, "payload.meta.source") {
+		t.Fatalf("unexpected sample-derived MQTT column in %s", joined)
 	}
 
 	databases, err := client.GetDatabases()

@@ -21,6 +21,7 @@ type fakeRocketMQRuntime struct {
 	lastDescribe       rocketmqDescribeRequest
 	lastFetch          rocketmqFetchRequest
 	lastPublish        rocketmqPublishCommand
+	fetchCount         int
 }
 
 func (f *fakeRocketMQRuntime) Close() error { return nil }
@@ -44,6 +45,7 @@ func (f *fakeRocketMQRuntime) DescribeTopic(ctx context.Context, request rocketm
 }
 
 func (f *fakeRocketMQRuntime) FetchMessages(ctx context.Context, request rocketmqFetchRequest) ([]rocketmqMessageRecord, error) {
+	f.fetchCount++
 	f.lastFetch = request
 	items := append([]rocketmqMessageRecord(nil), f.fetchResult...)
 	if request.Offset > 0 {
@@ -314,18 +316,27 @@ func TestRocketMQQueryExecAndColumns(t *testing.T) {
 		t.Fatalf("unexpected publish properties: %#v", fakeRuntime.lastPublish.Properties)
 	}
 
+	fakeRuntime.fetchCount = 0
 	columnDefs, err := client.GetColumns(rocketMQSyntheticDatabase, "orders.events")
 	if err != nil {
 		t.Fatalf("GetColumns failed: %v", err)
+	}
+	if fakeRuntime.fetchCount != 0 {
+		t.Fatalf("GetColumns must not read RocketMQ messages, fetches=%d", fakeRuntime.fetchCount)
 	}
 	names := make([]string, 0, len(columnDefs))
 	for _, col := range columnDefs {
 		names = append(names, col.Name)
 	}
 	joined := strings.Join(names, ",")
-	for _, want := range []string{"topic", "body.meta.source", "properties.trace"} {
-		if !strings.Contains(joined, want) {
+	for _, want := range []string{"topic", "body", "properties"} {
+		if !containsString(names, want) {
 			t.Fatalf("expected rocketmq column %q in %s", want, joined)
+		}
+	}
+	for _, unexpected := range []string{"body.meta.source", "properties.trace"} {
+		if containsString(names, unexpected) {
+			t.Fatalf("unexpected sample-derived RocketMQ column %q in %s", unexpected, joined)
 		}
 	}
 
