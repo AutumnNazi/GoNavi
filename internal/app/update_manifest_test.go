@@ -1,6 +1,7 @@
 package app
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/json"
 	"errors"
@@ -114,6 +115,128 @@ func TestDownloadUpdateAssetWithFallbackRetriesChecksumMismatch(t *testing.T) {
 	}
 	if string(payload) != string(goodPayload) {
 		t.Fatalf("downloaded payload = %q", payload)
+	}
+}
+
+func TestDownloadFileWithHashUsesEightParallelRanges(t *testing.T) {
+	configureUpdateManifestHTTPTest(t)
+	payload := make([]byte, 100_003)
+	for index := range payload {
+		payload[index] = byte(index % 251)
+	}
+	expectedHash := fmt.Sprintf("%x", sha256.Sum256(payload))
+
+	var probeHits atomic.Int32
+	var rangeHits atomic.Int32
+	started := make(chan struct{}, updateDownloadParallelism)
+	release := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		rawRange := req.Header.Get("Range")
+		var start, end int64
+		if count, err := fmt.Sscanf(rawRange, "bytes=%d-%d", &start, &end); err != nil || count != 2 || start < 0 || end < start || end >= int64(len(payload)) {
+			http.Error(w, "invalid range", http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", start, end, len(payload)))
+		w.Header().Set("Content-Length", fmt.Sprintf("%d", end-start+1))
+		w.WriteHeader(http.StatusPartialContent)
+		if rawRange == "bytes=0-0" {
+			probeHits.Add(1)
+			_, _ = w.Write(payload[:1])
+			return
+		}
+
+		rangeHits.Add(1)
+		started <- struct{}{}
+		select {
+		case <-release:
+		case <-req.Context().Done():
+			return
+		}
+		_, _ = w.Write(payload[start : end+1])
+	}))
+	defer server.Close()
+
+	type downloadOutcome struct {
+		hash string
+		err  error
+	}
+	assetPath := filepath.Join(t.TempDir(), "GoNavi.bin")
+	var downloaded atomic.Int64
+	var total atomic.Int64
+	done := make(chan downloadOutcome, 1)
+	go func() {
+		hash, err := downloadFileWithHashWithTimeout(server.URL, assetPath, func(current, expected int64) {
+			downloaded.Store(current)
+			total.Store(expected)
+		}, 5*time.Second)
+		done <- downloadOutcome{hash: hash, err: err}
+	}()
+
+	for index := 0; index < updateDownloadParallelism; index++ {
+		select {
+		case <-started:
+		case <-time.After(2 * time.Second):
+			close(release)
+			t.Fatalf("only %d parallel range requests started", index)
+		}
+	}
+	close(release)
+	outcome := <-done
+	if outcome.err != nil {
+		t.Fatalf("parallel range download failed: %v", outcome.err)
+	}
+	if outcome.hash != expectedHash {
+		t.Fatalf("hash = %q, want %q", outcome.hash, expectedHash)
+	}
+	if probeHits.Load() != 1 || rangeHits.Load() != updateDownloadParallelism {
+		t.Fatalf("request counts: probe=%d ranges=%d", probeHits.Load(), rangeHits.Load())
+	}
+	if downloaded.Load() != int64(len(payload)) || total.Load() != int64(len(payload)) {
+		t.Fatalf("progress = %d/%d, want %d/%d", downloaded.Load(), total.Load(), len(payload), len(payload))
+	}
+	actual, err := os.ReadFile(assetPath)
+	if err != nil {
+		t.Fatalf("read downloaded asset: %v", err)
+	}
+	if !bytes.Equal(actual, payload) {
+		t.Fatal("parallel range download reconstructed different content")
+	}
+}
+
+func TestDownloadFileWithHashFallsBackWhenRangeIsUnsupported(t *testing.T) {
+	configureUpdateManifestHTTPTest(t)
+	payload := []byte("single request fallback payload")
+	expectedHash := fmt.Sprintf("%x", sha256.Sum256(payload))
+	var hits atomic.Int32
+	var rangeHits atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		hits.Add(1)
+		if req.Header.Get("Range") != "" {
+			rangeHits.Add(1)
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(payload)
+	}))
+	defer server.Close()
+
+	assetPath := filepath.Join(t.TempDir(), "GoNavi.bin")
+	actualHash, err := downloadFileWithHashWithTimeout(server.URL, assetPath, nil, 5*time.Second)
+	if err != nil {
+		t.Fatalf("single request fallback failed: %v", err)
+	}
+	if actualHash != expectedHash {
+		t.Fatalf("hash = %q, want %q", actualHash, expectedHash)
+	}
+	if hits.Load() != 1 || rangeHits.Load() != 1 {
+		t.Fatalf("request counts: total=%d range=%d, want 1/1", hits.Load(), rangeHits.Load())
+	}
+	actual, err := os.ReadFile(assetPath)
+	if err != nil {
+		t.Fatalf("read downloaded asset: %v", err)
+	}
+	if !bytes.Equal(actual, payload) {
+		t.Fatal("single request fallback wrote different content")
 	}
 }
 
