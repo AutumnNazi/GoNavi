@@ -47,6 +47,27 @@ SKIP_NAMES = {
     ".DS_Store",
 }
 
+# GitHub release assets share one flat namespace.  Keep the desktop updater's
+# manifest deliberately narrow so headless CLI archives cannot become update
+# candidates merely because they were uploaded beside the GUI packages.
+GUI_ASSET_PATTERNS = (
+    re.compile(r"^GoNavi-[A-Za-z0-9][A-Za-z0-9._-]*-MacOS-(?:Amd64|Arm64)\.dmg$"),
+    re.compile(
+        r"^GoNavi-[A-Za-z0-9][A-Za-z0-9._-]*-Windows-"
+        r"(?:Amd64|Arm64)-(?:Installer\.msi|Portable\.(?:exe|zip))$"
+    ),
+    re.compile(
+        r"^GoNavi-[A-Za-z0-9][A-Za-z0-9._-]*-Linux-"
+        r"(?:Amd64(?:-WebKit41)?\.(?:tar\.gz|AppImage)|Arm64\.tar\.gz)$"
+    ),
+)
+CLI_ASSET_PATTERNS = (
+    re.compile(
+        r"^gonavi-cli_[A-Za-z0-9][A-Za-z0-9.-]*_(?:darwin|linux)_(?:amd64|arm64)\.tar\.gz$"
+    ),
+    re.compile(r"^gonavi-cli_[A-Za-z0-9][A-Za-z0-9.-]*_windows_(?:amd64|arm64)\.zip$"),
+)
+
 
 def load_release_notes(path: Path | None) -> str:
     if path is None:
@@ -112,7 +133,29 @@ def collect_assets(
     hashes: dict[str, str],
     download_base_url: str = "",
     download_tag: str = "",
+    component: str = "gui",
+    version: str = "",
 ) -> list[dict]:
+    if component not in {"gui", "cli"}:
+        raise ValueError(f"unsupported manifest component: {component}")
+    # The release directory can contain assets from more than one build or a
+    # stale file left by a previous job.  The manifest must only describe the
+    # exact version it was generated for, in addition to the component
+    # allowlist.
+    normalized_version = normalize_version(version) or normalize_version(tag)
+    if not normalized_version:
+        raise ValueError("manifest asset version is required")
+    escaped_version = re.escape(normalized_version)
+    if component == "gui":
+        patterns = tuple(
+            re.compile(pattern.pattern.replace("[A-Za-z0-9][A-Za-z0-9._-]*", escaped_version))
+            for pattern in GUI_ASSET_PATTERNS
+        )
+    else:
+        patterns = tuple(
+            re.compile(pattern.pattern.replace("[A-Za-z0-9][A-Za-z0-9.-]*", escaped_version))
+            for pattern in CLI_ASSET_PATTERNS
+        )
     assets: list[dict] = []
     for path in sorted(assets_dir.iterdir()):
         if not path.is_file():
@@ -121,6 +164,8 @@ def collect_assets(
         if name in SKIP_NAMES:
             continue
         if name.startswith("."):
+            continue
+        if not any(pattern.fullmatch(name) for pattern in patterns):
             continue
         github_url = browser_download_url(tag, name)
         item = {
@@ -150,16 +195,26 @@ def build_manifest(
     download_base_url: str = "",
     download_tag: str = "",
     release_notes: str = "",
+    component: str = "gui",
 ) -> dict:
     hashes = parse_sha256sums(assets_dir / "SHA256SUMS")
     tag = tag.strip() or f"v{normalize_version(version)}"
     version = normalize_version(version) or normalize_version(tag)
-    assets = collect_assets(assets_dir, tag, hashes, download_base_url, download_tag)
+    assets = collect_assets(
+        assets_dir,
+        tag,
+        hashes,
+        download_base_url,
+        download_tag,
+        component,
+        version,
+    )
     if not assets:
         raise SystemExit(f"no release assets found under {assets_dir}")
 
     payload = {
         "schemaVersion": SCHEMA_VERSION,
+        "component": component,
         "channel": channel,
         "tagName": tag,
         "version": version,
@@ -184,6 +239,12 @@ def main() -> int:
         choices=("latest", "dev"),
         default="latest",
         help="Update channel (default: latest)",
+    )
+    parser.add_argument(
+        "--component",
+        choices=("gui", "cli"),
+        default="gui",
+        help="Asset component to include (default: gui; CLI is not consumed by the desktop updater)",
     )
     parser.add_argument("--name", default="", help="Release display name")
     parser.add_argument("--published-at", default="", help="ISO8601 published time")
@@ -237,6 +298,7 @@ def main() -> int:
         download_base_url=args.download_base_url,
         download_tag=args.download_tag,
         release_notes=release_notes,
+        component=args.component,
     )
     output.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     notes_hint = f", notes={len(manifest.get('releaseNotes', ''))} chars" if manifest.get("releaseNotes") else ""

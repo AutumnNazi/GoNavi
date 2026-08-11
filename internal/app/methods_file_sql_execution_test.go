@@ -122,6 +122,39 @@ func TestExecuteSQLFileStreamRedactsBatchExecutionErrors(t *testing.T) {
 	}
 }
 
+func TestExecuteSQLFileStreamDoesNotContinueAfterUnknownWriteOutcome(t *testing.T) {
+	database := &fakeSQLFileBatchDB{execError: func(query string) error {
+		if strings.HasPrefix(query, "CREATE TABLE") {
+			return db.MarkWriteOutcomeUnknown(errors.New("write response lost"))
+		}
+		return nil
+	}}
+	result, err := executeSQLFileStream(context.Background(), database, strings.NewReader("CREATE TABLE demo(id integer); INSERT INTO demo(id) VALUES (1);"), sqlFileExecutionOptions{
+		DBType:          "postgres",
+		TransactionMode: sqlFileTransactionModeOff,
+		ContinueOnError: true,
+	}, nil)
+	if err == nil || !result.OutcomeUnknown {
+		t.Fatalf("unknown write result = %#v, err=%v; want stopped unknown outcome", result, err)
+	}
+	if len(database.execQueries) != 1 || database.execQueries[0] != "CREATE TABLE demo(id integer)" {
+		t.Fatalf("unknown write was continued or replayed: %#v", database.execQueries)
+	}
+}
+
+func TestExecuteSQLFileBatchUnknownOutcomeDisablesFallback(t *testing.T) {
+	database := &fakeSQLFileBatchDB{
+		failBatch:  true,
+		batchError: db.MarkWriteOutcomeUnknown(errors.New("batch response lost")),
+	}
+	canFallback, outcomeUnknown, err := executeSQLFileBatchWithOutcome(
+		context.Background(), database, database, "mysql", "INSERT INTO demo(id) VALUES (1)", false, nil,
+	)
+	if err == nil || canFallback || !outcomeUnknown {
+		t.Fatalf("batch unknown result = canFallback=%t outcomeUnknown=%t err=%v; want no fallback and unknown", canFallback, outcomeUnknown, err)
+	}
+}
+
 func (f *fakeSQLFileBatchDB) GetDatabases() ([]string, error) {
 	return nil, nil
 }

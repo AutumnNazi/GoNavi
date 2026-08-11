@@ -261,6 +261,54 @@ Artifacts → `build/bin`.
 Grab the latest build from **[Releases](https://github.com/Syngnat/GoNavi/releases)**  
 (macOS AMD64/ARM64 · Windows AMD64 · Linux WebKitGTK 4.0/4.1).
 
+### Standalone CLI
+
+The standalone CLI release track is being introduced. Dev builds already carry
+headless `gonavi` archives, and the first stable CLI release will publish the
+same assets under the `gonavi-cli_${VERSION}_${GOOS}_${GOARCH}` namespace with a
+matching `gonavi-cli_${VERSION}_checksums.txt` file. Until that stable release
+exists, use the dev archives for testing only. Extract an archive and run:
+
+```bash
+gonavi list-connections
+gonavi query --conn CONNECTION_ID --sql 'SELECT * FROM orders LIMIT 10'
+gonavi export --conn CONNECTION_ID --output orders.csv --sql 'SELECT * FROM orders'
+gonavi batch --conn CONNECTION_ID --file migration.sql --allow-write
+```
+
+After the first stable CLI release, the verified npm wrapper will be published
+and will select the matching CLI archive and checksum file for the host
+platform. Until the package appears in the npm registry, install from a release
+archive instead. Once it is published, install with:
+
+```bash
+npm install -g @syngnat/gonavi-cli
+```
+
+The stable workflow also generates and retains a checksum-driven WinGet
+manifest artifact for `Syngnat.GoNavi.CLI`; it must be accepted by the WinGet
+community repository before the package is available there. The existing
+desktop GoNavi package is separate. After acceptance, install with:
+
+```powershell
+winget install --id Syngnat.GoNavi.CLI -e
+```
+
+The CLI shares the active data root with the desktop application:
+`GONAVI_DATA_ROOT` first, then `~/.gonavi/storage_root.json`, then `~/.gonavi`.
+Use a `0600` owner-only `--connection-file` for transient credentials; secrets
+are never accepted as command-line flags. Query output defaults to JSONL, while
+diagnostics go to stderr. Mutating SQL also requires the stored AI safety level,
+connection protections, and `--allow-write`.
+
+For Linux containers, copy `docker.cli.env.example`, set the host data root and
+your host UID/GID, then run the CLI against the same mounted `/data` directory:
+
+```bash
+cp docker.cli.env.example docker.cli.env
+docker compose --env-file docker.cli.env -f docker-compose.cli.yml run --rm gonavi-cli list-connections
+```
+
 ---
 
 ## 🌐 Web Server (Experimental)
@@ -418,15 +466,9 @@ Tracker / discussion: [#672](https://github.com/Syngnat/GoNavi/issues/672).
 </details>
 
 <details>
-<summary><b>macOS: “App is damaged and can’t be opened”</b></summary>
+<summary><b>macOS Gatekeeper</b></summary>
 
-Without Apple notarization, Gatekeeper may block the app:
-
-```bash
-sudo xattr -rd com.apple.quarantine /Applications/GoNavi.app
-```
-
-Or right-click → Open (Control-click flow). Move the app to **Applications** first.
+The next stable macOS release is gated on Developer ID signing and Apple notarization. Download the DMG from the matching GitHub Release, move GoNavi to **Applications**, and open it normally. Do not remove Gatekeeper quarantine metadata.
 
 </details>
 

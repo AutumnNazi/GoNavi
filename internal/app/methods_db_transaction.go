@@ -557,6 +557,11 @@ func executeManagedSQLTransactionStatementsWithObserver(
 				emitObservation(0, 0, statementErr)
 				return nil, statementErr
 			}
+			// Query-first writes may already have reached the server. Falling
+			// through to Exec would replay the same statement in this transaction.
+			statementErr := buildStatementExecutionFailedError(statementIndex, classifyDispatchedWriteError(err))
+			emitObservation(0, 0, statementErr)
+			return nil, statementErr
 		}
 
 		affected, err := session.ExecContext(ctx, stmt)

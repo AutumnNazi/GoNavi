@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -638,6 +639,34 @@ func TestQueryDataForExport_UsesLargerConfiguredTimeout(t *testing.T) {
 	upperBound := expected + 5*time.Second
 	if fake.lastContextTimeout < lowerBound || fake.lastContextTimeout > upperBound {
 		t.Fatalf("导出配置超时异常，want≈%s got=%s", expected, fake.lastContextTimeout)
+	}
+}
+
+func TestGetExportQueryTimeout_ExplicitQueryTimeoutOverridesExportMinimum(t *testing.T) {
+	timeout := getExportQueryTimeout(connection.ConnectionConfig{
+		Type:         "mysql",
+		Timeout:      900,
+		QueryTimeout: 17,
+	})
+	if timeout != 17*time.Second {
+		t.Fatalf("explicit query timeout should take precedence, want=%s got=%s", 17*time.Second, timeout)
+	}
+}
+
+func TestQueryDataForExportWithContext_PreservesCallerCancellation(t *testing.T) {
+	fake := &fakeExportQueryDB{
+		data: []map[string]interface{}{{"v": 1}},
+		cols: []string{"v"},
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, _, err := queryDataForExportWithContext(ctx, fake, connection.ConnectionConfig{QueryTimeout: 60}, "SELECT 1")
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("buffered export fallback should return caller cancellation, got %v", err)
+	}
+	if !fake.hasContextDeadline {
+		t.Fatal("buffered export fallback must still apply its query deadline")
 	}
 }
 

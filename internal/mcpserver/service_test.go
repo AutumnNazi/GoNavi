@@ -2,6 +2,7 @@ package mcpserver
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -30,6 +31,12 @@ type fakeBackend struct {
 	inspection          appcore.SQLInspection
 	safetyLevel         ai.SQLPermissionLevel
 	queryCalled         bool
+	queryContext        context.Context
+	authorizeErr        error
+	authorizeCalls      int
+	authorizedConfig    connection.ConnectionConfig
+	authorizedSQL       string
+	events              []string
 }
 
 func (f *fakeBackend) Close(context.Context) error {
@@ -84,8 +91,10 @@ func (f *fakeBackend) DBShowCreateTable(config connection.ConnectionConfig, dbNa
 	return f.ddlResult
 }
 
-func (f *fakeBackend) ExecuteSQLFromMCP(config connection.ConnectionConfig, dbName string, query string) connection.QueryResult {
+func (f *fakeBackend) ExecuteSQLFromMCP(ctx context.Context, config connection.ConnectionConfig, dbName string, query string) connection.QueryResult {
 	f.queryCalled = true
+	f.queryContext = ctx
+	f.events = append(f.events, "query")
 	return f.queryResult
 }
 
@@ -98,6 +107,14 @@ func (f *fakeBackend) GetSQLSafetyLevel() ai.SQLPermissionLevel {
 		return ai.PermissionReadOnly
 	}
 	return f.safetyLevel
+}
+
+func (f *fakeBackend) AuthorizeSQLConnection(config connection.ConnectionConfig, sql string) error {
+	f.authorizeCalls++
+	f.authorizedConfig = config
+	f.authorizedSQL = sql
+	f.events = append(f.events, "authorize")
+	return f.authorizeErr
 }
 
 func TestGetConnectionsReturnsSavedConnectionSummaries(t *testing.T) {
@@ -640,6 +657,182 @@ func TestExecuteSQLAllowsDMLWhenAISafetyIsReadWriteAndAllowMutating(t *testing.T
 	}
 	if out.ReadOnly {
 		t.Fatalf("expected mutating SQL result, got %#v", out)
+	}
+}
+
+func TestExecuteSQLRejectsConnectionWriteProtection(t *testing.T) {
+	backend := &fakeBackend{
+		editableConnection: connection.SavedConnectionView{
+			ID:     "mysql-main",
+			Config: connection.ConnectionConfig{Type: "mysql", Database: "app"},
+		},
+		inspection: appcore.SQLInspection{
+			StatementCount: 1,
+			ReadOnly:       false,
+			Statements:     []appcore.SQLStatementInspection{{Index: 1, Keyword: "update", ReadOnly: false}},
+		},
+		safetyLevel:  ai.PermissionReadWrite,
+		authorizeErr: errors.New("data editing is disabled for this connection"),
+	}
+
+	result, _, err := NewService(backend).ExecuteSQL(context.Background(), nil, executeSQLArgs{
+		ConnectionID:  "mysql-main",
+		SQL:           "UPDATE users SET active = 1",
+		AllowMutating: true,
+	})
+	if err != nil {
+		t.Fatalf("ExecuteSQL returned error: %v", err)
+	}
+	if result == nil || !result.IsError || backend.queryCalled {
+		t.Fatalf("connection protection should stop execution: result=%#v called=%t", result, backend.queryCalled)
+	}
+	if !strings.Contains(firstTextContent(result), "data editing is disabled") {
+		t.Fatalf("unexpected protection error: %q", firstTextContent(result))
+	}
+	if backend.authorizeCalls != 1 {
+		t.Fatalf("connection authorization calls = %d, want 1", backend.authorizeCalls)
+	}
+}
+
+func TestExecuteSQLAuthorizesExactlyOnceBeforeExecution(t *testing.T) {
+	tests := []struct {
+		name          string
+		sql           string
+		keyword       string
+		readOnly      bool
+		safetyLevel   ai.SQLPermissionLevel
+		allowMutating bool
+	}{
+		{name: "query", sql: "SELECT 1", keyword: "select", readOnly: true, safetyLevel: ai.PermissionReadOnly},
+		{name: "DML", sql: "UPDATE users SET active = 1", keyword: "update", safetyLevel: ai.PermissionReadWrite, allowMutating: true},
+		{name: "DDL", sql: "CREATE TABLE audit_probe(id INT)", keyword: "create", safetyLevel: ai.PermissionFull, allowMutating: true},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			config := connection.ConnectionConfig{ID: "postgres-main", Type: "postgres", Database: "app"}
+			backend := &fakeBackend{
+				editableConnection: connection.SavedConnectionView{ID: config.ID, Config: config},
+				inspection: appcore.SQLInspection{
+					StatementCount: 1,
+					ReadOnly:       test.readOnly,
+					Statements:     []appcore.SQLStatementInspection{{Index: 1, Keyword: test.keyword, ReadOnly: test.readOnly}},
+				},
+				safetyLevel: test.safetyLevel,
+				queryResult: connection.QueryResult{Success: true, Data: []connection.ResultSetData{}},
+			}
+
+			result, _, err := NewService(backend).ExecuteSQL(context.Background(), nil, executeSQLArgs{
+				ConnectionID:  config.ID,
+				SQL:           test.sql,
+				AllowMutating: test.allowMutating,
+			})
+			if err != nil || result == nil || result.IsError {
+				t.Fatalf("ExecuteSQL result=%#v err=%v", result, err)
+			}
+			if backend.authorizeCalls != 1 || backend.authorizedConfig.ID != config.ID || backend.authorizedSQL != test.sql {
+				t.Fatalf("authorization calls=%d config=%#v sql=%q", backend.authorizeCalls, backend.authorizedConfig, backend.authorizedSQL)
+			}
+			if strings.Join(backend.events, ",") != "authorize,query" {
+				t.Fatalf("execution order = %v, want authorize before query", backend.events)
+			}
+		})
+	}
+}
+
+func TestExecuteSQLRejectsInconsistentSafetyInspection(t *testing.T) {
+	tests := []struct {
+		name       string
+		inspection appcore.SQLInspection
+	}{
+		{
+			name: "statement count mismatch",
+			inspection: appcore.SQLInspection{
+				StatementCount: 1,
+				ReadOnly:       true,
+			},
+		},
+		{
+			name: "aggregate read-only mismatch",
+			inspection: appcore.SQLInspection{
+				StatementCount: 1,
+				ReadOnly:       true,
+				Statements:     []appcore.SQLStatementInspection{{Index: 1, Keyword: "update", ReadOnly: false}},
+			},
+		},
+		{
+			name: "non-sequential statement index",
+			inspection: appcore.SQLInspection{
+				StatementCount: 1,
+				ReadOnly:       false,
+				Statements:     []appcore.SQLStatementInspection{{Index: 2, Keyword: "update", ReadOnly: false}},
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			backend := &fakeBackend{
+				editableConnection: connection.SavedConnectionView{
+					ID:     "postgres-main",
+					Config: connection.ConnectionConfig{Type: "postgres", Database: "app"},
+				},
+				inspection:  test.inspection,
+				safetyLevel: ai.PermissionFull,
+				queryResult: connection.QueryResult{Success: true, Data: []connection.ResultSetData{}},
+			}
+
+			result, _, err := NewService(backend).ExecuteSQL(context.Background(), nil, executeSQLArgs{
+				ConnectionID:  "postgres-main",
+				SQL:           "UPDATE users SET active = 1",
+				AllowMutating: true,
+			})
+			if err != nil {
+				t.Fatalf("ExecuteSQL returned error: %v", err)
+			}
+			if result == nil || !result.IsError || backend.authorizeCalls != 0 || backend.queryCalled {
+				t.Fatalf("inconsistent inspection crossed execution boundary: result=%#v authorize=%d query=%t", result, backend.authorizeCalls, backend.queryCalled)
+			}
+			if !strings.Contains(firstTextContent(result), "安全检查结果无效") {
+				t.Fatalf("unexpected error text: %q", firstTextContent(result))
+			}
+		})
+	}
+}
+
+func TestExecuteSQLForwardsRequestContextToBackend(t *testing.T) {
+	backend := &fakeBackend{
+		editableConnection: connection.SavedConnectionView{
+			ID: "postgres-main",
+			Config: connection.ConnectionConfig{
+				Type:     "postgres",
+				Database: "app",
+			},
+		},
+		inspection: appcore.SQLInspection{
+			StatementCount: 1,
+			ReadOnly:       true,
+			Statements: []appcore.SQLStatementInspection{
+				{Index: 1, Keyword: "select", ReadOnly: true},
+			},
+		},
+		queryResult: connection.QueryResult{Success: true, Data: []connection.ResultSetData{}},
+	}
+
+	requestCtx, cancel := context.WithCancel(context.Background())
+	cancel()
+	result, _, err := NewService(backend).ExecuteSQL(requestCtx, nil, executeSQLArgs{
+		ConnectionID: "postgres-main",
+		SQL:          "SELECT 1",
+	})
+	if err != nil {
+		t.Fatalf("ExecuteSQL returned error: %v", err)
+	}
+	if result == nil || result.IsError || !backend.queryCalled {
+		t.Fatalf("ExecuteSQL did not reach the backend: result=%#v called=%t", result, backend.queryCalled)
+	}
+	if backend.queryContext == nil || backend.queryContext.Err() != context.Canceled {
+		t.Fatalf("backend request context = %v, want cancelled request context", backend.queryContext)
 	}
 }
 

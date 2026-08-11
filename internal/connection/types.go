@@ -137,6 +137,7 @@ type ConnectionConfig struct {
 	JVM                      JVMConfig                  `json:"jvm,omitempty"`                      // JVM connector config
 	runtimeDBOverride        string                     // App-only selected database; never persisted or sent over RPC.
 	runtimeDBOverrideSet     bool                       // Distinguishes an explicit server-level override from no override.
+	resolvedSavedSnapshot    bool                       // App-only marker for one lock-consistent metadata and secret snapshot.
 }
 
 // WithRuntimeDatabaseOverride carries a caller-selected database through runtime
@@ -163,6 +164,21 @@ func (c ConnectionConfig) WithoutRuntimeDatabaseOverride() ConnectionConfig {
 	c.runtimeDBOverride = ""
 	c.runtimeDBOverrideSet = false
 	return c
+}
+
+// WithResolvedSavedSnapshot marks a config whose saved metadata and secrets
+// were loaded together under the shared storage lock. The marker is not
+// serialized and prevents a later execution layer from mixing in a newer
+// secret bundle.
+func (c ConnectionConfig) WithResolvedSavedSnapshot() ConnectionConfig {
+	c.resolvedSavedSnapshot = true
+	return c
+}
+
+// HasResolvedSavedSnapshot reports whether the config already contains the
+// complete saved connection snapshot required for one execution.
+func (c ConnectionConfig) HasResolvedSavedSnapshot() bool {
+	return c.resolvedSavedSnapshot
 }
 
 // ResultSetData 表示一个查询结果集（行 + 列名），用于多结果集场景。

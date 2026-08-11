@@ -22,15 +22,28 @@ jobs:
         with:
           go-version-file: 'go.mod'
 
+      - name: Validate stable npm CLI package version
+        shell: bash
+        run: python3 tools/validate-npm-cli-package-version.py --tag "$GITHUB_REF_NAME"
+
       - name: Test release asset contracts
         run: |
+          go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 -shellcheck= -pyflakes= \
+            .github/workflows/release.yml \
+            .github/workflows/dev-build.yml \
+            .github/workflows/publish-release.yml
           bash tools/detect-changed-driver-agents.test.sh
           bash tools/generate-driver-agent-revisions.test.sh
           python3 tools/generate-driver-release-manifest.test.py
           python3 tools/generate-update-latest-manifest.test.py
+          python3 tools/validate-gui-update-manifest.test.py
           python3 tools/prepare-vps-release-payload.test.py
           bash tools/vps-release-commit.test.sh
           python3 tools/package-driver-release-assets.test.py
+          python3 tools/cli-release-assets.test.py
+          python3 tools/npm-cli-wrapper.test.py
+          python3 tools/validate-npm-cli-package-version.test.py
+          python3 tools/generate-winget-cli-manifest.test.py
           python3 tools/legal-release-assets.test.py
           python3 tools/windows-release-artifacts.test.py
           python3 tools/generate-release-notes.test.py
@@ -223,6 +236,85 @@ jobs:
           if [[ "$FORCE_GLOBAL_DRIVER_BUILDS" == "true" ]]; then
             echo "🧭 Driver build/release plumbing changed; preserve global driver rebuild set on every platform"
           fi
+
+  cli:
+    name: Build CLI ${{ matrix.goos }}/${{ matrix.goarch }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: darwin
+            goarch: amd64
+            extension: tar.gz
+            binary: gonavi
+          - goos: darwin
+            goarch: arm64
+            extension: tar.gz
+            binary: gonavi
+          - goos: linux
+            goarch: amd64
+            extension: tar.gz
+            binary: gonavi
+          - goos: linux
+            goarch: arm64
+            extension: tar.gz
+            binary: gonavi
+          - goos: windows
+            goarch: amd64
+            extension: zip
+            binary: gonavi.exe
+          - goos: windows
+            goarch: arm64
+            extension: zip
+            binary: gonavi.exe
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: 'go.mod'
+
+      - name: Build and package CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          asset="gonavi-cli_${version}_${{ matrix.goos }}_${{ matrix.goarch }}.${{ matrix.extension }}"
+          stage="${RUNNER_TEMP}/gonavi-cli-${{ matrix.goos }}-${{ matrix.goarch }}"
+          mkdir -p "$stage"
+          ./tools/generate-driver-agent-revisions.sh --platform "${{ matrix.goos }}/${{ matrix.goarch }}"
+          CGO_ENABLED=0 GOOS="${{ matrix.goos }}" GOARCH="${{ matrix.goarch }}" \
+            go build -trimpath -ldflags="-s -w -X GoNavi-Wails/internal/cli.Version=${version}" \
+            -o "$stage/${{ matrix.binary }}" ./cmd/gonavi
+          install -m 0644 LICENSE NOTICE "$stage/"
+          if [[ "${{ matrix.extension }}" == "zip" ]]; then
+            (cd "$stage" && zip -q -X "${GITHUB_WORKSPACE}/${asset}" "${{ matrix.binary }}" LICENSE NOTICE)
+          else
+            tar -C "$stage" -czf "$asset" "${{ matrix.binary }}" LICENSE NOTICE
+          fi
+          test -s "$asset"
+          expected_entries="$(printf '%s\n' "${{ matrix.binary }}" LICENSE NOTICE | sort)"
+          if [[ "${{ matrix.extension }}" == "zip" ]]; then
+            actual_entries="$(unzip -Z1 "$asset" | sort)"
+          else
+            actual_entries="$(tar -tzf "$asset" | sed 's#^\./##' | sort)"
+          fi
+          if [[ "$actual_entries" != "$expected_entries" ]]; then
+            echo "CLI archive contents are invalid for $asset" >&2
+            printf 'expected:\n%s\nactual:\n%s\n' "$expected_entries" "$actual_entries" >&2
+            exit 1
+          fi
+
+      - name: Upload CLI artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: cli-artifact-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: gonavi-cli_*
+          if-no-files-found: error
+          retention-days: 1
 
   # Phase 1: Build in parallel and output artifacts
   build:
@@ -769,21 +861,40 @@ jobs:
       # macOS Packaging
       - name: Package macOS DMG
         if: contains(matrix.platform, 'darwin')
+        env:
+          MACOS_SIGNING_CERTIFICATE_P12: ${{ secrets.MACOS_SIGNING_CERTIFICATE_P12 }}
+          MACOS_SIGNING_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_SIGNING_CERTIFICATE_PASSWORD }}
+          MACOS_SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           brew install create-dmg
           VERSION="${{ github.ref_name }}"
           VERSION="${VERSION#v}"
           cd build/bin
           
-          APP_PATH=$(find . -maxdepth 1 -name "*.app" | head -n 1)
-          if [ -z "$APP_PATH" ]; then
-            echo "❌ 未找到 .app 应用包!"
+          APP_PATH="./GoNavi.app"
+          if [ ! -d "$APP_PATH" ]; then
+            echo "❌ 未找到固定名称 GoNavi.app 应用包!"
             exit 1
           fi
-          APP_NAME=$(basename "$APP_PATH")
+          APP_NAME="GoNavi.app"
           mkdir -p "$APP_NAME/Contents/Resources"
           cp ../../LICENSE "$APP_NAME/Contents/Resources/LICENSE"
           cp ../../NOTICE "$APP_NAME/Contents/Resources/NOTICE"
+
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "❌ macOS stable bundle version must be X.Y.Z: ${VERSION}" >&2
+            exit 1
+          fi
+          APP_INFO_PLIST="$APP_PATH/Contents/Info.plist"
+          test -f "$APP_INFO_PLIST"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${VERSION}" "$APP_INFO_PLIST"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${VERSION}" "$APP_INFO_PLIST"
+          plutil -lint "$APP_INFO_PLIST"
+          [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP_INFO_PLIST")" == "$VERSION" ]]
+          [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP_INFO_PLIST")" == "$VERSION" ]]
 
           APP_BIN=$(find "$APP_PATH/Contents/MacOS" -maxdepth 1 -type f | head -n 1)
           if [ -z "$APP_BIN" ]; then
@@ -792,13 +903,50 @@ jobs:
           fi
           echo "ℹ️ macOS 产物不执行 UPX 压缩，保留原始主程序。"
           
-          echo "🔏 正在进行 Ad-hoc 签名..."
-          # 注意：Ad-hoc + hardened runtime（--options runtime）在未配置 entitlements 时，
-          # 可能导致部分 macOS 机型上应用双击无响应。这里保持 Ad-hoc 深签名但禁用 runtime hardened。
-          if command -v xattr >/dev/null 2>&1; then
-            xattr -cr "$APP_NAME" || true
+          : "${MACOS_SIGNING_CERTIFICATE_P12:?macOS production signing certificate is required}"
+          : "${MACOS_SIGNING_CERTIFICATE_PASSWORD:?macOS production signing certificate password is required}"
+          : "${MACOS_SIGNING_IDENTITY:?macOS Developer ID signing identity is required}"
+          : "${APPLE_ID:?Apple ID is required for notarization}"
+          : "${APPLE_APP_SPECIFIC_PASSWORD:?Apple app-specific password is required for notarization}"
+          : "${APPLE_TEAM_ID:?Apple team ID is required for notarization}"
+          if [[ ! "$MACOS_SIGNING_IDENTITY" =~ ^Developer\ ID\ Application:\ .+\ \([A-Z0-9]{10}\)$ ]]; then
+            echo "macOS signing identity must be a Developer ID Application certificate" >&2
+            exit 1
           fi
-          codesign --force --deep --sign - "$APP_NAME"
+          signing_team_id="${MACOS_SIGNING_IDENTITY##*\(}"
+          signing_team_id="${signing_team_id%\)}"
+          if [[ "$signing_team_id" != "$APPLE_TEAM_ID" ]]; then
+            echo "macOS signing identity team does not match APPLE_TEAM_ID" >&2
+            exit 1
+          fi
+          keychain_path="$RUNNER_TEMP/gonavi-signing.keychain-db"
+          security create-keychain -p "$MACOS_SIGNING_CERTIFICATE_PASSWORD" "$keychain_path"
+          security set-keychain-settings -lut 21600 "$keychain_path"
+          security unlock-keychain -p "$MACOS_SIGNING_CERTIFICATE_PASSWORD" "$keychain_path"
+          certificate_path="$RUNNER_TEMP/gonavi-signing.p12"
+          if ! printf '%s' "$MACOS_SIGNING_CERTIFICATE_P12" | base64 --decode > "$certificate_path" 2>/dev/null; then
+            : > "$certificate_path"
+            printf '%s' "$MACOS_SIGNING_CERTIFICATE_P12" | base64 -D > "$certificate_path"
+          fi
+          security import "$certificate_path" -k "$keychain_path" -P "$MACOS_SIGNING_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security list-keychain -d user -s "$keychain_path"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$MACOS_SIGNING_CERTIFICATE_PASSWORD" "$keychain_path"
+          if ! security find-identity -v -p codesigning "$keychain_path" | grep -Fq "\"$MACOS_SIGNING_IDENTITY\""; then
+            echo "Developer ID Application signing identity was not imported" >&2
+            exit 1
+          fi
+          verify_team_identifier() {
+            local target="$1"
+            local actual_team_id
+            actual_team_id="$(codesign -dv --verbose=4 "$target" 2>&1 | awk -F= '$1 == "TeamIdentifier" { print $2 }')"
+            if [[ "$actual_team_id" != "$APPLE_TEAM_ID" ]]; then
+              echo "unexpected TeamIdentifier for $target: ${actual_team_id:-not set}" >&2
+              exit 1
+            fi
+          }
+          codesign --force --deep --options runtime --timestamp --sign "$MACOS_SIGNING_IDENTITY" "$APP_NAME"
+          codesign --verify --deep --strict --verbose=4 "$APP_NAME"
+          verify_team_identifier "$APP_NAME"
           
           DMG_NAME="${{ matrix.build_name }}.dmg"
           FINAL_NAME="GoNavi-$VERSION-${{ matrix.os_name }}-${{ matrix.arch_name }}${{ matrix.artifact_suffix }}.dmg"
@@ -815,15 +963,47 @@ jobs:
             "$DMG_NAME" \
             "$APP_NAME"
 
+          codesign --force --timestamp --sign "$MACOS_SIGNING_IDENTITY" "$DMG_NAME"
+          codesign --verify --verbose=4 "$DMG_NAME"
+          verify_team_identifier "$DMG_NAME"
+          NOTARY_RESULT="$RUNNER_TEMP/gonavi-notary-${{ matrix.arch_name }}.json"
+          xcrun notarytool submit "$DMG_NAME" \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_APP_SPECIFIC_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID" \
+            --wait \
+            --output-format json > "$NOTARY_RESULT"
+          python3 - "$NOTARY_RESULT" <<'PY'
+          import json
+          import sys
+
+          with open(sys.argv[1], encoding="utf-8") as result_file:
+              result = json.load(result_file)
+          status = result.get("status")
+          if status != "Accepted":
+              raise SystemExit(f"notarization was not accepted: {status or 'missing status'}")
+          print(f"notarization accepted: {result.get('id', 'unknown submission')}")
+          PY
+          xcrun stapler staple "$DMG_NAME"
+          xcrun stapler validate "$DMG_NAME"
+          codesign --verify --verbose=4 "$DMG_NAME"
+          verify_team_identifier "$DMG_NAME"
+
           VERIFY_MOUNT_DIR=$(mktemp -d "${TMPDIR:-/tmp}/gonavi-release-verify.XXXXXX")
           hdiutil attach -nobrowse -readonly -mountpoint "$VERIFY_MOUNT_DIR" "$DMG_NAME" >/dev/null
-          PACKAGED_APP=$(find "$VERIFY_MOUNT_DIR" -maxdepth 1 -name "*.app" | head -n 1)
-          if [ -z "$PACKAGED_APP" ]; then
-            echo "❌ DMG 内未找到 .app 应用包!"
+          PACKAGED_APP="$VERIFY_MOUNT_DIR/GoNavi.app"
+          if [ ! -d "$PACKAGED_APP" ]; then
+            echo "❌ DMG 内未找到固定名称 GoNavi.app 应用包!"
             hdiutil detach "$VERIFY_MOUNT_DIR" -quiet >/dev/null 2>&1 || true
             exit 1
           fi
           codesign --verify --deep --strict --verbose=4 "$PACKAGED_APP"
+          verify_team_identifier "$PACKAGED_APP"
+          PACKAGED_INFO_PLIST="$PACKAGED_APP/Contents/Info.plist"
+          [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$PACKAGED_INFO_PLIST")" == "$VERSION" ]]
+          [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$PACKAGED_INFO_PLIST")" == "$VERSION" ]]
+          spctl -a -t exec -vv "$PACKAGED_APP"
+          spctl --assess --type open --context context:primary-signature -vv "$DMG_NAME"
           hdiutil detach "$VERIFY_MOUNT_DIR" -quiet >/dev/null 2>&1 || true
             
           mv "$DMG_NAME" "../../$FINAL_NAME"
@@ -1059,6 +1239,7 @@ jobs:
     name: Publish Release
     needs:
       - build
+      - cli
       - driver_agents
     runs-on: ubuntu-latest
     steps:
@@ -1077,12 +1258,44 @@ jobs:
           pattern: build-artifacts-*
           merge-multiple: true
 
+      - name: Download CLI artifacts
+        uses: actions/download-artifact@v7
+        with:
+          path: cli-assets
+          pattern: cli-artifact-*
+          merge-multiple: true
+
+      - name: Validate CLI artifact staging
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          expected=(
+            "gonavi-cli_${version}_darwin_amd64.tar.gz"
+            "gonavi-cli_${version}_darwin_arm64.tar.gz"
+            "gonavi-cli_${version}_linux_amd64.tar.gz"
+            "gonavi-cli_${version}_linux_arm64.tar.gz"
+            "gonavi-cli_${version}_windows_amd64.zip"
+            "gonavi-cli_${version}_windows_arm64.zip"
+          )
+          mapfile -t actual < <(find cli-assets -type f -printf '%P\n' | sort)
+          expected_list="$(printf '%s\n' "${expected[@]}" | sort)"
+          actual_list="$(printf '%s\n' "${actual[@]}")"
+          if [[ "$actual_list" != "$expected_list" ]]; then
+            echo "CLI artifact set is invalid" >&2
+            printf 'expected:\n%s\nactual:\n%s\n' "$expected_list" "$actual_list" >&2
+            exit 1
+          fi
+          for asset in "${expected[@]}"; do
+            test -s "cli-assets/${asset}"
+          done
+
       - name: Add legal documents
         shell: bash
         run: install -m 0644 LICENSE NOTICE release-assets/
 
       - name: List Assets
-        run: ls -R release-assets
+        run: ls -R release-assets cli-assets
 
       - name: Download Previous Driver Manifest
         if: needs.driver_agents.outputs.has_changes == 'true' && needs.driver_agents.outputs.release_source != 'all'
@@ -1189,25 +1402,120 @@ jobs:
           rm -rf drivers driver-provenance
           echo "has_driver_assets=true" >> "$GITHUB_OUTPUT"
 
+      - name: Generate CLI checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          expected=(
+            "gonavi-cli_${version}_darwin_amd64.tar.gz"
+            "gonavi-cli_${version}_darwin_arm64.tar.gz"
+            "gonavi-cli_${version}_linux_amd64.tar.gz"
+            "gonavi-cli_${version}_linux_arm64.tar.gz"
+            "gonavi-cli_${version}_windows_amd64.zip"
+            "gonavi-cli_${version}_windows_arm64.zip"
+          )
+          (cd cli-assets && sha256sum "${expected[@]}" > "gonavi-cli_${version}_checksums.txt")
+
       - name: Generate SHA256SUMS
         shell: bash
         run: |
-          cd release-assets
-          FILES=()
+          set -euo pipefail
+          output="release-assets/SHA256SUMS"
+          count=0
+          declare -A seen=()
+          : > "$output"
           while IFS= read -r file; do
-            if [ -n "$file" ]; then
-              case "$file" in
-                SHA256SUMS|latest.json|latest-dev.json) continue ;;
-              esac
-              FILES+=("$file")
+            name="$(basename "$file")"
+            if [[ -n "${seen[$name]:-}" ]]; then
+              echo "Duplicate release asset name across staging directories: ${name}" >&2
+              exit 1
             fi
-          done < <(find . -maxdepth 1 -type f ! -name SHA256SUMS -exec basename {} \; | sort)
-          if [ ${#FILES[@]} -eq 0 ]; then
+            seen["$name"]=1
+            digest="$(sha256sum "$file" | awk '{ print $1 }')"
+            printf '%s  %s\n' "$digest" "$name" >> "$output"
+            count=$((count + 1))
+          done < <(find release-assets cli-assets -maxdepth 1 -type f \
+            ! -name SHA256SUMS ! -name latest.json ! -name latest-dev.json -print | sort)
+          if [ "$count" -eq 0 ]; then
             echo "⚠️ 未找到可签名资产，生成空 SHA256SUMS"
-            : > SHA256SUMS
-          else
-            sha256sum "${FILES[@]}" > SHA256SUMS
           fi
+
+      - name: Verify CLI release assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          cli_checksum_name="gonavi-cli_${version}_checksums.txt"
+          expected=(
+            "gonavi-cli_${version}_darwin_amd64.tar.gz"
+            "gonavi-cli_${version}_darwin_arm64.tar.gz"
+            "gonavi-cli_${version}_linux_amd64.tar.gz"
+            "gonavi-cli_${version}_linux_arm64.tar.gz"
+            "gonavi-cli_${version}_windows_amd64.zip"
+            "gonavi-cli_${version}_windows_arm64.zip"
+          )
+          expected_cli_files=("${expected[@]}" "$cli_checksum_name")
+          mapfile -t actual_cli_files < <(find cli-assets -maxdepth 1 -type f -name 'gonavi-cli_*' -printf '%f\n' | sort)
+          expected_cli_list="$(printf '%s\n' "${expected_cli_files[@]}" | sort)"
+          actual_cli_list="$(printf '%s\n' "${actual_cli_files[@]}")"
+          if [[ "$actual_cli_list" != "$expected_cli_list" ]]; then
+            echo "CLI release asset set is invalid" >&2
+            printf 'expected:\n%s\nactual:\n%s\n' "$expected_cli_list" "$actual_cli_list" >&2
+            exit 1
+          fi
+          test -s "cli-assets/${cli_checksum_name}"
+          if ! awk 'NF != 2 || length($1) != 64 || $1 !~ /^[0-9a-fA-F]+$/ { exit 1 }' "cli-assets/${cli_checksum_name}"; then
+            echo "CLI checksum file contents are invalid" >&2
+            exit 1
+          fi
+          mapfile -t checksum_assets < <(awk '{ print $2 }' "cli-assets/${cli_checksum_name}" | sort)
+          checksum_asset_list="$(printf '%s\n' "${checksum_assets[@]}")"
+          expected_checksum_list="$(printf '%s\n' "${expected[@]}" | sort)"
+          if [[ "$checksum_asset_list" != "$expected_checksum_list" ]]; then
+            echo "CLI checksum file contents are invalid" >&2
+            printf 'expected:\n%s\nactual:\n%s\n' "$expected_checksum_list" "$checksum_asset_list" >&2
+            exit 1
+          fi
+          for asset in "${expected[@]}"; do
+            test -s "cli-assets/${asset}"
+            grep -Fq "  ${asset}" release-assets/SHA256SUMS
+            global_digest="$(awk -v name="$asset" '$2 == name { print $1 }' release-assets/SHA256SUMS)"
+            cli_digest="$(awk -v name="$asset" '$2 == name { print $1 }' "cli-assets/${cli_checksum_name}")"
+            actual_digest="$(sha256sum "cli-assets/${asset}" | awk '{ print $1 }')"
+            [[ -n "$global_digest" && "$global_digest" == "$cli_digest" && "$cli_digest" == "$actual_digest" ]]
+          done
+          grep -Fq "  ${cli_checksum_name}" release-assets/SHA256SUMS
+          (cd cli-assets && sha256sum --check "$cli_checksum_name")
+          while read -r expected_digest asset; do
+            if [[ -f "release-assets/${asset}" && -f "cli-assets/${asset}" ]]; then
+              echo "Duplicate release asset name across staging directories: ${asset}" >&2
+              exit 1
+            elif [[ -f "release-assets/${asset}" ]]; then
+              file="release-assets/${asset}"
+            elif [[ -f "cli-assets/${asset}" ]]; then
+              file="cli-assets/${asset}"
+            else
+              echo "Release asset listed in SHA256SUMS is missing: ${asset}" >&2
+              exit 1
+            fi
+            actual_digest="$(sha256sum "$file" | awk '{ print $1 }')"
+            [[ "$actual_digest" == "$expected_digest" ]]
+          done < release-assets/SHA256SUMS
+
+      - name: Generate WinGet CLI manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          python3 tools/generate-winget-cli-manifest.py \
+            --version "$version" \
+            --checksums "cli-assets/gonavi-cli_${version}_checksums.txt" \
+            --output "$RUNNER_TEMP/Syngnat.GoNavi.CLI.yaml"
+          test -s "$RUNNER_TEMP/Syngnat.GoNavi.CLI.yaml"
+          grep -Fq "PackageIdentifier: Syngnat.GoNavi.CLI" "$RUNNER_TEMP/Syngnat.GoNavi.CLI.yaml"
+          grep -Fq "gonavi-cli_${version}_windows_amd64.zip" "$RUNNER_TEMP/Syngnat.GoNavi.CLI.yaml"
+          grep -Fq "gonavi-cli_${version}_windows_arm64.zip" "$RUNNER_TEMP/Syngnat.GoNavi.CLI.yaml"
 
       # 静态更新清单：客户端优先下载 github.com/.../latest/download/latest.json，
       # 避免终端用户检查更新打爆 api.github.com 未认证配额。
@@ -1222,6 +1530,7 @@ jobs:
             --version "$VERSION" \
             --tag "$TAG" \
             --channel latest \
+            --component gui \
             --download-base-url https://download.syngnat.top/gonavi/releases/download \
             --output release-assets/latest.json
           test -s release-assets/latest.json
@@ -1306,6 +1615,7 @@ jobs:
             --version "$VERSION" \
             --tag "$TAG" \
             --channel latest \
+            --component gui \
             --download-base-url https://download.syngnat.top/gonavi/releases/download \
             --release-notes-file "$CHANGELOG_FILE" \
             --output release-assets/latest.json
@@ -1316,7 +1626,9 @@ jobs:
         uses: softprops/action-gh-release@v3
         if: startsWith(github.ref, 'refs/tags/')
         with:
-          files: release-assets/*
+          files: |
+            release-assets/*
+            cli-assets/*
           draft: true
           make_latest: true
           body_path: ${{ steps.changelog.outputs.changelog_file }}

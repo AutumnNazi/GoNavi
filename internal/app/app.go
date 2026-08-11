@@ -30,6 +30,7 @@ import (
 	syncbackend "GoNavi-Wails/internal/sync"
 	"GoNavi-Wails/internal/synccdc"
 	"GoNavi-Wails/internal/syncjob"
+	"GoNavi-Wails/internal/uievents"
 	"GoNavi-Wails/shared/i18n"
 	"github.com/google/uuid"
 	"golang.org/x/sync/singleflight"
@@ -162,6 +163,7 @@ type managedSQLTransaction struct {
 type App struct {
 	ctx                           context.Context
 	webRuntime                    bool
+	headlessRuntime               bool
 	startedAt                     time.Time
 	dbCache                       map[string]cachedDatabase // Cache for DB connections
 	connectFailures               map[string]cachedConnectFailure
@@ -257,6 +259,16 @@ func NewWebApp() *App {
 	app := NewApp()
 	app.webRuntime = true
 	return app
+}
+
+// NewHeadlessApp creates an App with only the lifecycle resources required by
+// non-GUI callers such as the CLI and MCP server.
+func NewHeadlessApp(ctx context.Context, configDir string) (*App, error) {
+	app := NewApp()
+	if err := InitializeHeadlessLifecycle(app, ctx, configDir); err != nil {
+		return nil, err
+	}
+	return app, nil
 }
 
 func NewAppWithSecretStore(store secretstore.SecretStore) *App {
@@ -385,6 +397,52 @@ func (a *App) appText(key string, params map[string]any) string {
 // InitializeLifecycle attaches runtime context without exposing lifecycle internals to Wails bindings.
 func InitializeLifecycle(a *App, ctx context.Context) {
 	a.startup(ctx)
+}
+
+type headlessEventEmitter struct{}
+
+func (headlessEventEmitter) Emit(string, ...any) {}
+
+// InitializeHeadlessLifecycle attaches a non-Wails context and starts the
+// shared config, import-job, proxy, and SQL-audit services. It intentionally
+// excludes desktop window APIs, keep-alives, cloud backup, and data-sync
+// schedulers.
+func InitializeHeadlessLifecycle(a *App, ctx context.Context, configDir string) error {
+	if a == nil {
+		return errors.New("application is unavailable")
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	configDir = strings.TrimSpace(configDir)
+	if configDir == "" {
+		configDir = resolveAppConfigDir()
+	}
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		return err
+	}
+
+	a.headlessRuntime = true
+	a.ctx = uievents.WithEmitter(ctx, headlessEventEmitter{})
+	a.startedAt = time.Now()
+	a.configDir = configDir
+	db.SetExternalDriverDownloadDirectory(appdata.DriverRoot(configDir))
+	logger.Init()
+	if err := migrateDailySecretsIfNeeded(a); err != nil {
+		logger.Warnf("无头运行时迁移日常密文失败：%v", err)
+	}
+	// A headless process can run alongside the desktop app. Opening the shared
+	// store is required by batch commands, but crash recovery is desktop-owned:
+	// without a process lease it cannot distinguish stale jobs from work that a
+	// live GUI process is still executing.
+	if _, err := a.ensureImportJobStore(); err != nil {
+		a.Shutdown()
+		return fmt.Errorf("initialize SQL-file job store: %w", err)
+	}
+	a.loadPersistedGlobalProxy()
+	a.activateSQLAudit()
+	logger.Infof("无头运行时启动完成")
+	return nil
 }
 
 // HandleFrontendDomReady 在 WebView 每次完成导航（含前端刷新）后调用。
@@ -1220,6 +1278,39 @@ func (a *App) getDatabaseForcePing(config connection.ConnectionConfig) (db.Datab
 // Helper: Get or create a database connection
 func (a *App) getDatabase(config connection.ConnectionConfig) (db.Database, error) {
 	return a.getDatabaseWithPing(config, false)
+}
+
+type databaseWaitResult struct {
+	instance db.Database
+	err      error
+}
+
+// getDatabaseWithContext makes waiting for cache lookup, singleflight, and a
+// driver's non-context-aware Connect call cancellable. The physical Connect
+// may finish in the worker after the caller leaves; the normal flight and
+// shutdown checks still decide whether that instance may enter the cache.
+func (a *App) getDatabaseWithContext(ctx context.Context, config connection.ConnectionConfig, forcePing bool) (db.Database, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	resultCh := make(chan databaseWaitResult, 1)
+	go func() {
+		instance, err := a.getDatabaseWithPing(config, forcePing)
+		resultCh <- databaseWaitResult{instance: instance, err: err}
+	}()
+
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case result := <-resultCh:
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		return result.instance, result.err
+	}
 }
 
 func (a *App) openDatabaseIsolated(config connection.ConnectionConfig) (db.Database, error) {

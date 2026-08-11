@@ -2218,11 +2218,9 @@ on run argv
     "rm -rf " & quoted form of tmpPath & " " & quoted form of bakPath & "; " & ¬
     "/usr/bin/ditto " & quoted form of srcPath & " " & quoted form of tmpPath & "; " & ¬
     "if [ ! -x " & quoted form of (tmpPath & "/" & binRel) & " ]; then echo 'tmp app binary missing' >> " & quoted form of logPath & "; exit 1; fi; " & ¬
-    "xattr -rd com.apple.quarantine " & quoted form of tmpPath & " >> " & quoted form of logPath & " 2>&1 || true; " & ¬
     "if [ -d " & quoted form of dstPath & " ]; then mv " & quoted form of dstPath & " " & quoted form of bakPath & "; fi; " & ¬
     "mv " & quoted form of tmpPath & " " & quoted form of dstPath & "; " & ¬
-    "rm -rf " & quoted form of bakPath & "; " & ¬
-    "xattr -rd com.apple.quarantine " & quoted form of dstPath & " >> " & quoted form of logPath & " 2>&1 || true"
+    "rm -rf " & quoted form of bakPath
   do shell script cmd with administrator privileges
 end run
 APPLESCRIPT
@@ -2235,7 +2233,6 @@ replace_app_direct() {
     log "tmp app binary missing: $TMP_APP/$APP_BIN_REL"
     return 1
   fi
-  /usr/bin/xattr -rd com.apple.quarantine "$TMP_APP" >>"$LOG_FILE" 2>&1 || true
   if [ -d "$TARGET_APP" ]; then
     /bin/mv "$TARGET_APP" "$BACKUP_APP" >>"$LOG_FILE" 2>&1
   fi
@@ -2248,7 +2245,6 @@ replace_app_direct() {
     return 1
   fi
   /bin/rm -rf "$BACKUP_APP" >>"$LOG_FILE" 2>&1 || true
-  /usr/bin/xattr -rd com.apple.quarantine "$TARGET_APP" >>"$LOG_FILE" 2>&1 || true
   return 0
 }
 

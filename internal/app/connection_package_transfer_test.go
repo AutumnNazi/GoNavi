@@ -1,6 +1,7 @@
 package app
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"os"
@@ -454,6 +455,86 @@ func TestImportConnectionsPayloadLegacyJSONRollsBackOnSaveFailure(t *testing.T) 
 
 	if _, err := store.Get(failRef); !os.IsNotExist(err) {
 		t.Fatalf("expected rollback to remove partially imported legacy secret ref, got err=%v", err)
+	}
+}
+
+func TestImportSavedConnectionsRollbackRestoresDailySecretsAndMetadata(t *testing.T) {
+	app := NewAppWithSecretStore(newFakeAppSecretStore())
+	app.configDir = t.TempDir()
+	_, err := app.SaveConnection(connection.SavedConnectionInput{
+		ID:   "conn-existing",
+		Name: "Existing",
+		Config: connection.ConnectionConfig{
+			ID:       "conn-existing",
+			Type:     "postgres",
+			Host:     "old.example.test",
+			Password: "old-secret",
+		},
+	})
+	if err != nil {
+		t.Fatalf("seed SaveConnection: %v", err)
+	}
+	repository := app.savedConnectionRepository()
+	connectionsBefore, err := os.ReadFile(repository.connectionsPath())
+	if err != nil {
+		t.Fatalf("read connections snapshot: %v", err)
+	}
+	secretsBefore, err := os.ReadFile(repository.dailySecrets().Path())
+	if err != nil {
+		t.Fatalf("read daily secrets snapshot: %v", err)
+	}
+
+	originalWriter := writeSavedConnectionsFileAtomicFunc
+	t.Cleanup(func() { writeSavedConnectionsFileAtomicFunc = originalWriter })
+	writes := 0
+	writeSavedConnectionsFileAtomicFunc = func(path string, payload []byte) error {
+		writes++
+		if writes == 2 {
+			return errors.New("injected second connection metadata write failure")
+		}
+		return writeSavedConnectionsFileAtomic(path, payload)
+	}
+
+	_, err = app.importConnectionPackagePayload(connectionPackagePayload{Connections: []connectionPackageItem{
+		{
+			ID:      "conn-existing",
+			Name:    "Updated",
+			Config:  connection.ConnectionConfig{ID: "conn-existing", Type: "postgres", Host: "new.example.test"},
+			Secrets: connectionSecretBundle{Password: "new-secret"},
+		},
+		{
+			ID:      "conn-new",
+			Name:    "New",
+			Config:  connection.ConnectionConfig{ID: "conn-new", Type: "mysql", Host: "new-db.example.test"},
+			Secrets: connectionSecretBundle{Password: "new-db-secret"},
+		},
+	}})
+	if err == nil || !strings.Contains(err.Error(), "injected second") {
+		t.Fatalf("import error = %v, want injected metadata failure", err)
+	}
+
+	connectionsAfter, err := os.ReadFile(repository.connectionsPath())
+	if err != nil {
+		t.Fatalf("read restored connections: %v", err)
+	}
+	secretsAfter, err := os.ReadFile(repository.dailySecrets().Path())
+	if err != nil {
+		t.Fatalf("read restored daily secrets: %v", err)
+	}
+	if !bytes.Equal(connectionsAfter, connectionsBefore) {
+		t.Fatalf("connections metadata was not restored:\nbefore=%s\nafter=%s", connectionsBefore, connectionsAfter)
+	}
+	if !bytes.Equal(secretsAfter, secretsBefore) {
+		t.Fatalf("daily secrets were not restored:\nbefore=%s\nafter=%s", secretsBefore, secretsAfter)
+	}
+
+	saved, err := app.GetSavedConnections()
+	if err != nil || len(saved) != 1 || saved[0].Name != "Existing" || saved[0].Config.Host != "old.example.test" {
+		t.Fatalf("restored connections = %#v err=%v", saved, err)
+	}
+	resolved, err := app.resolveConnectionSecrets(saved[0].Config)
+	if err != nil || resolved.Password != "old-secret" {
+		t.Fatalf("restored existing secret = %q err=%v", resolved.Password, err)
 	}
 }
 

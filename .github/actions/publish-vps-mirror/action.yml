@@ -89,6 +89,13 @@ runs:
         remote_cleanup_enabled=false
         ssh_options=()
 
+        python3 "${GITHUB_WORKSPACE}/tools/validate-gui-update-manifest.py" \
+          --channel "${MIRROR_CHANNEL}" \
+          --app-tag "${MIRROR_APP_TAG}" \
+          --app-dir "${MIRROR_APP_DIR}" \
+          --manifest "${MIRROR_APP_MANIFEST}" \
+          --github-repository "${GITHUB_REPOSITORY}"
+
         cleanup() {
           local exit_code=$?
           local cleanup_remote_command=""

@@ -96,6 +96,107 @@ class GenerateUpdateLatestManifestTest(unittest.TestCase):
             self.assertNotIn("LICENSE", [a["name"] for a in data["assets"]])
             self.assertNotIn("NOTICE", [a["name"] for a in data["assets"]])
 
+    def test_gui_manifest_excludes_cli_archives_and_unrecognized_files(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            assets = Path(tmp)
+            gui_name = "GoNavi-1.2.3-MacOS-Arm64.dmg"
+            cli_name = "gonavi-cli_1.2.3_darwin_arm64.tar.gz"
+            unexpected_name = "GoNavi-1.2.3-Linux-Amd64-unknown.bin"
+            for name in (gui_name, cli_name, unexpected_name):
+                (assets / name).write_bytes(name.encode("ascii"))
+            (assets / "SHA256SUMS").write_text(
+                f"{'a' * 64}  {gui_name}\n",
+                encoding="utf-8",
+            )
+            out = assets / "latest.json"
+            subprocess.check_call(
+                [
+                    sys.executable,
+                    str(SCRIPT),
+                    "--assets-dir",
+                    str(assets),
+                    "--version",
+                    "1.2.3",
+                    "--tag",
+                    "v1.2.3",
+                    "--channel",
+                    "latest",
+                    "--component",
+                    "gui",
+                    "--output",
+                    str(out),
+                ],
+                cwd=str(ROOT),
+            )
+            data = json.loads(out.read_text(encoding="utf-8"))
+            self.assertEqual(data["component"], "gui")
+            self.assertEqual([asset["name"] for asset in data["assets"]], [gui_name])
+            self.assertEqual(data["assets"][0]["sha256"], "a" * 64)
+
+    def test_gui_manifest_excludes_assets_from_other_versions(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            assets = Path(tmp)
+            current = "GoNavi-1.2.3-MacOS-Arm64.dmg"
+            stale = "GoNavi-1.2.2-MacOS-Arm64.dmg"
+            (assets / current).write_bytes(b"current")
+            (assets / stale).write_bytes(b"stale")
+            out = assets / "latest.json"
+            subprocess.check_call(
+                [
+                    sys.executable,
+                    str(SCRIPT),
+                    "--assets-dir",
+                    str(assets),
+                    "--version",
+                    "1.2.3",
+                    "--tag",
+                    "v1.2.3",
+                    "--channel",
+                    "latest",
+                    "--output",
+                    str(out),
+                ],
+                cwd=str(ROOT),
+            )
+            data = json.loads(out.read_text(encoding="utf-8"))
+            self.assertEqual(data["component"], "gui")
+            self.assertEqual([asset["name"] for asset in data["assets"]], [current])
+
+    def test_cli_manifest_accepts_only_cli_archive_contract(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            assets = Path(tmp)
+            cli_names = (
+                "gonavi-cli_1.2.3_darwin_amd64.tar.gz",
+                "gonavi-cli_1.2.3_windows_arm64.zip",
+            )
+            for name in cli_names:
+                (assets / name).write_bytes(name.encode("ascii"))
+            (assets / "gonavi-cli_1.2.3_linux_amd64.exe").write_bytes(b"invalid")
+            (assets / "SHA256SUMS").write_text("", encoding="ascii")
+            out = assets / "latest-cli.json"
+            subprocess.check_call(
+                [
+                    sys.executable,
+                    str(SCRIPT),
+                    "--assets-dir",
+                    str(assets),
+                    "--version",
+                    "1.2.3",
+                    "--tag",
+                    "v1.2.3",
+                    "--channel",
+                    "latest",
+                    "--component",
+                    "cli",
+                    "--output",
+                    str(out),
+                ],
+                cwd=str(ROOT),
+            )
+            data = json.loads(out.read_text(encoding="utf-8"))
+            self.assertEqual(data["component"], "cli")
+            self.assertEqual([asset["name"] for asset in data["assets"]], list(cli_names))
+
     def test_dev_manifest_keeps_github_tag_but_uses_unique_mirror_tag(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             assets = Path(tmp)

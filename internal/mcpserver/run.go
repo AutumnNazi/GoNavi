@@ -90,7 +90,10 @@ func RunAppStdioServer(ctx context.Context) error {
 		ctx = context.Background()
 	}
 
-	backend := NewAppBackend(ctx)
+	backend, err := NewAppBackend(ctx)
+	if err != nil {
+		return err
+	}
 	defer backend.Close(ctx)
 
 	return RunStdioServer(ctx, backend)
@@ -112,7 +115,10 @@ func StartAppStreamableHTTPServer(ctx context.Context, options HTTPServerOptions
 		ctx = context.Background()
 	}
 
-	backend := NewAppBackend(ctx)
+	backend, err := NewAppBackend(ctx)
+	if err != nil {
+		return nil, err
+	}
 	handle, err := StartStreamableHTTPServer(ctx, backend, options)
 	if err != nil {
 		_ = backend.Close(context.Background())
@@ -278,6 +284,9 @@ func normalizeHTTPServerOptions(options HTTPServerOptions) (HTTPServerOptions, e
 	if options.Addr == "" {
 		options.Addr = defaultStreamableHTTPAddr
 	}
+	if err := validateLoopbackHTTPAddr(options.Addr); err != nil {
+		return HTTPServerOptions{}, err
+	}
 	options.Path = strings.TrimSpace(options.Path)
 	if options.Path == "" {
 		options.Path = defaultStreamableHTTPPath
@@ -290,6 +299,22 @@ func normalizeHTTPServerOptions(options HTTPServerOptions) (HTTPServerOptions, e
 		return HTTPServerOptions{}, errors.New("远程 MCP HTTP 模式必须设置 bearer token，可使用 --token 或 GONAVI_MCP_HTTP_TOKEN")
 	}
 	return options, nil
+}
+
+func validateLoopbackHTTPAddr(addr string) error {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return fmt.Errorf("MCP HTTP address must include a loopback host and port: %w", err)
+	}
+	host = strings.Trim(host, "[]")
+	if strings.EqualFold(host, "localhost") {
+		return nil
+	}
+	ip := net.ParseIP(host)
+	if ip == nil || !ip.IsLoopback() {
+		return fmt.Errorf("MCP HTTP server must bind to loopback (127.0.0.1, ::1, or localhost), got %q", addr)
+	}
+	return nil
 }
 
 func bearerTokenAuthHandler(token string, next http.Handler) http.Handler {

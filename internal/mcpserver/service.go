@@ -518,7 +518,6 @@ func (s *Service) GetTableDDL(ctx context.Context, req *mcp.CallToolRequest, arg
 }
 
 func (s *Service) ExecuteSQL(ctx context.Context, req *mcp.CallToolRequest, args executeSQLArgs) (*mcp.CallToolResult, executeSQLResult, error) {
-	_ = ctx
 	_ = req
 
 	view, errResult := s.resolveConnection(args.ConnectionID)
@@ -535,6 +534,9 @@ func (s *Service) ExecuteSQL(ctx context.Context, req *mcp.CallToolRequest, args
 	if inspection.StatementCount == 0 {
 		return toolError("未识别到可执行的 SQL 语句"), executeSQLResult{}, nil
 	}
+	if !isConsistentSQLInspection(inspection) {
+		return toolError("SQL 安全检查结果无效，已拒绝执行"), executeSQLResult{}, nil
+	}
 
 	safetyLevel := normalizeSQLSafetyLevel(s.backend.GetSQLSafetyLevel())
 	safetyDecision := evaluateSQLSafety(safetyLevel, inspection)
@@ -544,9 +546,12 @@ func (s *Service) ExecuteSQL(ctx context.Context, req *mcp.CallToolRequest, args
 	if safetyDecision.requiresConfirm && !args.AllowMutating {
 		return toolError("当前 SQL 已通过 GoNavi AI 安全控制（%s），但包含非只读语句 %s，请显式传入 allowMutating=true 后重试", safetyLevelDisplayName(safetyLevel), formatSafetyStatements(safetyDecision.confirmRequired)), executeSQLResult{}, nil
 	}
+	if err := s.backend.AuthorizeSQLConnection(view.Config, sqlText); err != nil {
+		return toolError("连接写保护拒绝 SQL 执行: %s", strings.TrimSpace(err.Error())), executeSQLResult{}, nil
+	}
 
 	dbName := effectiveDBName(args.DBName, view.Config)
-	queryResult := s.backend.ExecuteSQLFromMCP(view.Config, dbName, sqlText)
+	queryResult := s.executeAuthorizedSQL(ctx, view, dbName, sqlText, args.AllowMutating)
 	if !queryResult.Success {
 		return toolError("SQL 执行失败: %s", strings.TrimSpace(queryResult.Message)), executeSQLResult{}, nil
 	}
@@ -569,6 +574,13 @@ func (s *Service) ExecuteSQL(ctx context.Context, req *mcp.CallToolRequest, args
 		Results:        normalizedResults,
 	}
 	return textResult(formatExecuteSQLResultContent(output)), output, nil
+}
+
+func (s *Service) executeAuthorizedSQL(ctx context.Context, view connection.SavedConnectionView, dbName string, sqlText string, allowMutating bool) connection.QueryResult {
+	if backend, ok := s.backend.(executionAuthorizingBackend); ok {
+		return backend.ExecuteAuthorizedSQLFromMCP(ctx, view.ID, view.Config, dbName, sqlText, allowMutating)
+	}
+	return s.backend.ExecuteSQLFromMCP(ctx, view.Config, dbName, sqlText)
 }
 
 func successResult() *mcp.CallToolResult {
@@ -1140,6 +1152,22 @@ type sqlSafetyDecision struct {
 	requiresConfirm bool
 	disallowed      []sqlSafetyStatement
 	confirmRequired []sqlSafetyStatement
+}
+
+func isConsistentSQLInspection(inspection appcore.SQLInspection) bool {
+	if inspection.StatementCount <= 0 || inspection.StatementCount != len(inspection.Statements) {
+		return false
+	}
+	readOnly := true
+	for index, statement := range inspection.Statements {
+		if statement.Index != index+1 {
+			return false
+		}
+		if !statement.ReadOnly {
+			readOnly = false
+		}
+	}
+	return inspection.ReadOnly == readOnly
 }
 
 func evaluateSQLSafety(level ai.SQLPermissionLevel, inspection appcore.SQLInspection) sqlSafetyDecision {

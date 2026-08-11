@@ -15,25 +15,27 @@ import (
 )
 
 type fakeBatchWriteDB struct {
-	batchCalls   int
-	execCalls    int
-	pingCalls    int
-	execQueries  []string
-	lastQuery    string
-	lastCtx      context.Context
-	queryCalls   int
-	queryQueries []string
-	queryMap     map[string][]map[string]interface{}
-	fieldMap     map[string][]string
-	messageMap   map[string][]string
-	multiResult  map[string][]connection.ResultSetData
-	queryErr     map[string]error
-	execErr      map[string]error
-	execAffected map[string]int64
-	execDelay    map[string]time.Duration
-	execStarted  chan<- string
-	execRelease  <-chan struct{}
-	session      *fakeBatchWriteSession
+	batchCalls        int
+	execCalls         int
+	pingCalls         int
+	execQueries       []string
+	lastQuery         string
+	lastCtx           context.Context
+	queryCalls        int
+	queryQueries      []string
+	queryMap          map[string][]map[string]interface{}
+	fieldMap          map[string][]string
+	messageMap        map[string][]string
+	multiResult       map[string][]connection.ResultSetData
+	queryErr          map[string]error
+	execErr           map[string]error
+	execAffected      map[string]int64
+	batchErr          error
+	execDelay         map[string]time.Duration
+	execStarted       chan<- string
+	execRelease       <-chan struct{}
+	execIgnoreContext bool
+	session           *fakeBatchWriteSession
 }
 
 type fakeNativeMultiResultDB struct {
@@ -188,10 +190,14 @@ func (f *fakeBatchWriteDB) ExecContext(ctx context.Context, query string) (int64
 		}
 	}
 	if f.execRelease != nil {
-		select {
-		case <-f.execRelease:
-		case <-ctx.Done():
-			return 0, ctx.Err()
+		if f.execIgnoreContext {
+			<-f.execRelease
+		} else {
+			select {
+			case <-f.execRelease:
+			case <-ctx.Done():
+				return 0, ctx.Err()
+			}
 		}
 	}
 	if delay := f.execDelay[query]; delay > 0 {
@@ -230,6 +236,9 @@ func (f *fakeBatchWriteDB) QueryContextWithMessages(ctx context.Context, query s
 func (f *fakeBatchWriteDB) ExecBatchContext(ctx context.Context, query string) (int64, error) {
 	f.batchCalls++
 	f.lastQuery = query
+	if f.batchErr != nil {
+		return 0, f.batchErr
+	}
 	return 500, nil
 }
 
@@ -1993,6 +2002,74 @@ func TestDBQueryMultiDoesNotBatchExecStoredProcedureAsWriteStatement(t *testing.
 	}
 	if got := resultSets[0].Rows[0]["SPID"]; got != 88 {
 		t.Fatalf("expected SPID=88, got %#v", got)
+	}
+}
+
+func TestDBQueryMultiSurfacesUnknownBatchWriteOutcome(t *testing.T) {
+	installFakeOptionalDriverRuntime(t)
+	originalNewDatabaseFunc := newDatabaseFunc
+	t.Cleanup(func() { newDatabaseFunc = originalNewDatabaseFunc })
+
+	query := "UPDATE demo SET value = 2"
+	fakeDB := &fakeBatchWriteDB{batchErr: db.MarkWriteOutcomeUnknown(errors.New("write response lost"))}
+	newDatabaseFunc = func(string) (db.Database, error) { return fakeDB, nil }
+
+	app := NewAppWithSecretStore(secretstore.NewUnavailableStore("test"))
+	result := app.DBQueryMulti(connection.ConnectionConfig{Type: "postgres", Host: "127.0.0.1", Port: 5432}, "app", query, "cli-unknown-batch")
+	if result.Success {
+		t.Fatalf("unknown batch write unexpectedly succeeded: %#v", result)
+	}
+	data, ok := result.Data.(map[string]any)
+	if !ok || data["outcomeUnknown"] != true {
+		t.Fatalf("unknown batch write did not expose outcomeUnknown: %#v", result)
+	}
+	if fakeDB.batchCalls != 1 {
+		t.Fatalf("unknown batch write was retried: batchCalls=%d", fakeDB.batchCalls)
+	}
+}
+
+func TestDBQueryMultiDoesNotReplayOpaqueConnectionLossWrite(t *testing.T) {
+	installFakeOptionalDriverRuntime(t)
+	originalNewDatabaseFunc := newDatabaseFunc
+	t.Cleanup(func() { newDatabaseFunc = originalNewDatabaseFunc })
+
+	query := "UPDATE demo SET value = 3"
+	fakeDB := &fakeBatchWriteDB{batchErr: errors.New("connection reset by peer")}
+	newDatabaseFunc = func(string) (db.Database, error) { return fakeDB, nil }
+
+	app := NewAppWithSecretStore(secretstore.NewUnavailableStore("test"))
+	result := app.DBQueryMulti(connection.ConnectionConfig{Type: "postgres", Host: "127.0.0.1", Port: 5432}, "app", query, "cli-opaque-batch")
+	if result.Success {
+		t.Fatalf("opaque connection-loss write unexpectedly succeeded: %#v", result)
+	}
+	data, ok := result.Data.(map[string]any)
+	if !ok || data["outcomeUnknown"] != true {
+		t.Fatalf("opaque connection-loss write did not expose outcomeUnknown: %#v", result)
+	}
+	if fakeDB.batchCalls != 1 {
+		t.Fatalf("opaque connection-loss write was replayed: batchCalls=%d", fakeDB.batchCalls)
+	}
+}
+
+func TestDBQueryWithCancelDoesNotReplayOpaqueConnectionLossReturningWrite(t *testing.T) {
+	originalNewDatabaseFunc := newDatabaseFunc
+	t.Cleanup(func() { newDatabaseFunc = originalNewDatabaseFunc })
+
+	query := "INSERT INTO audit_logs(id) VALUES (3) RETURNING id"
+	fakeDB := &fakeBatchWriteDB{queryErr: map[string]error{query: errors.New("connection reset by peer")}}
+	newDatabaseFunc = func(string) (db.Database, error) { return fakeDB, nil }
+
+	app := NewAppWithSecretStore(secretstore.NewUnavailableStore("test"))
+	result := app.DBQueryWithCancel(connection.ConnectionConfig{Type: "postgres", Host: "127.0.0.1", Port: 5432}, "app", query, "cli-opaque-returning")
+	if result.Success {
+		t.Fatalf("opaque connection-loss returning write unexpectedly succeeded: %#v", result)
+	}
+	data, ok := result.Data.(map[string]any)
+	if !ok || data["outcomeUnknown"] != true {
+		t.Fatalf("opaque connection-loss returning write did not expose outcomeUnknown: %#v", result)
+	}
+	if fakeDB.queryCalls != 1 || fakeDB.execCalls != 0 {
+		t.Fatalf("opaque connection-loss returning write was replayed: queryCalls=%d execCalls=%d", fakeDB.queryCalls, fakeDB.execCalls)
 	}
 }
 

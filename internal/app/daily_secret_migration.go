@@ -51,54 +51,51 @@ func migrateSavedConnectionSecrets(repo *savedConnectionRepository, legacy legac
 		return nil
 	}
 
-	// 与 Save/Delete/Duplicate 共用同一把包级锁：本函数直接走 load/saveAll 的读改写序列，
-	// 不经过 Save，因此不会重入。
-	savedConnectionsMu.Lock()
-	defer savedConnectionsMu.Unlock()
-
-	items, err := repo.load()
-	if err != nil {
-		return err
-	}
-
-	changed := false
-	for index, item := range items {
-		bundle, found, err := repo.resolveMigrationConnectionBundle(item, legacy)
+	return repo.withWriteLock(func() error {
+		items, err := repo.load()
 		if err != nil {
 			return err
 		}
-		if found && bundle.hasAny() {
-			if err := repo.saveSecretBundle(item.ID, bundle); err != nil {
+
+		changed := false
+		for index, item := range items {
+			bundle, found, err := repo.resolveMigrationConnectionBundle(item, legacy)
+			if err != nil {
 				return err
 			}
-			normalized := item
-			normalized.Config = stripConnectionSecretFields(normalized.Config)
-			normalized.SecretRef = ""
-			applyConnectionBundleFlags(&normalized, bundle)
-			items[index] = normalized
+			if found && bundle.hasAny() {
+				if err := repo.saveSecretBundle(item.ID, bundle); err != nil {
+					return err
+				}
+				normalized := item
+				normalized.Config = stripConnectionSecretFields(normalized.Config)
+				normalized.SecretRef = ""
+				applyConnectionBundleFlags(&normalized, bundle)
+				items[index] = normalized
+				changed = true
+				continue
+			}
+
+			inline := extractConnectionSecretBundle(item.Config)
+			if !inline.hasAny() && !savedConnectionViewHasSecrets(item) && strings.TrimSpace(item.SecretRef) == "" {
+				continue
+			}
+			if err := repo.deleteSecretBundle(item.ID); err != nil {
+				return err
+			}
+			item.Config = stripConnectionSecretFields(item.Config)
+			item.SecretRef = ""
+			applyConnectionBundleFlags(&item, connectionSecretBundle{})
+			items[index] = item
 			changed = true
-			continue
+			logger.Warnf("日常连接密文未回填：连接=%s，已停用旧系统密文引用，请重新保存连接密码", strings.TrimSpace(item.ID))
 		}
 
-		inline := extractConnectionSecretBundle(item.Config)
-		if !inline.hasAny() && !savedConnectionViewHasSecrets(item) && strings.TrimSpace(item.SecretRef) == "" {
-			continue
+		if changed {
+			return repo.saveAll(items)
 		}
-		if err := repo.deleteSecretBundle(item.ID); err != nil {
-			return err
-		}
-		item.Config = stripConnectionSecretFields(item.Config)
-		item.SecretRef = ""
-		applyConnectionBundleFlags(&item, connectionSecretBundle{})
-		items[index] = item
-		changed = true
-		logger.Warnf("日常连接密文未回填：连接=%s，已停用旧系统密文引用，请重新保存连接密码", strings.TrimSpace(item.ID))
-	}
-
-	if changed {
-		return repo.saveAll(items)
-	}
-	return nil
+		return nil
+	})
 }
 
 func (r *savedConnectionRepository) resolveMigrationConnectionBundle(view connection.SavedConnectionView, legacy legacyWebKitVisibleConfig) (connectionSecretBundle, bool, error) {
