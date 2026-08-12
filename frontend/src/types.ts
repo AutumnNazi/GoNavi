@@ -4,6 +4,8 @@ export interface SSHConfig {
   user: string;
   password?: string;
   keyPath?: string;
+  knownHostsPath?: string;
+  hostKeyFingerprint?: string;
 }
 
 export interface ProxyConfig {

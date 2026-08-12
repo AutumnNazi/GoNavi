@@ -191,6 +191,7 @@ import { useDataGridPreviewPanel } from './useDataGridPreviewPanel';
 import { buildTableExportTab } from '../utils/tableExportTab';
 import { createSidebarResizeAwareFrameScheduler } from '../utils/sidebarResizeLifecycle';
 import { buildDataGridCssText } from './dataGridStyles';
+import { syncDataGridCellSelectionVisuals } from './dataGridCellHighlight';
 import { formatMongoEditableValue, normalizeMongoDocumentForEditing, parseMongoEditedValue } from '../utils/mongodb';
 
 // --- Error Boundary ---
@@ -1962,24 +1963,19 @@ const DataGrid: React.FC<DataGridProps> = ({
     return map;
   }, [displayColumnNames]);
 
-  // 直接操作 DOM 更新选中效果，避免 React 重渲染
+  // 直接操作 DOM 同步单元格选区与活动行列，避免拖选时触发 React 重渲染。
   const updateCellSelection = useCallback((newSelection: Set<string>) => {
     const container = containerRef.current;
     if (!container) return;
 
-    // 只同步可见单元格，严格限定 `.ant-table-cell`，避免虚拟列表中内嵌的 EditableCell 被重复获取并打上 selected 样式从而产生白边。
-    const visibleCells = container.querySelectorAll('.ant-table-cell[data-row-key][data-col-name]');
-    visibleCells.forEach((cell) => {
-      const el = cell as HTMLElement;
-      const rowKey = el.getAttribute('data-row-key');
-      const colName = el.getAttribute('data-col-name');
-      if (!rowKey || !colName) return;
-      const key = makeCellKey(rowKey, colName);
-      if (newSelection.has(key)) {
-        if (el.getAttribute('data-cell-selected') !== 'true') el.setAttribute('data-cell-selected', 'true');
-      } else {
-        if (el.hasAttribute('data-cell-selected')) el.removeAttribute('data-cell-selected');
-      }
+    const selectionStart = selectionStartRef.current;
+    syncDataGridCellSelectionVisuals({
+      container,
+      selectedCells: newSelection,
+      activeCell: selectionStart
+        ? { rowKey: selectionStart.rowKey, colName: selectionStart.colName }
+        : null,
+      makeCellKey,
     });
   }, []);
 
@@ -3114,6 +3110,7 @@ const DataGrid: React.FC<DataGridProps> = ({
           },
           onHeaderCell: (column: any) => ({
               id: key,
+              'data-col-name': key,
               columnOrderDragScope: columnOrderDragScopeRef.current,
               width: column.width,
               className: `gonavi-sortable-header-cell${showColumnComment || showColumnType ? '' : ' is-single-line-title'}`,

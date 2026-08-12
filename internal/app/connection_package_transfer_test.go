@@ -50,10 +50,12 @@ func TestBuildConnectionPackagePayloadIncludesSecretBundles(t *testing.T) {
 			Password: "db-secret",
 			UseSSH:   true,
 			SSH: connection.SSHConfig{
-				Host:     "jump.local",
-				Port:     22,
-				User:     "ops",
-				Password: "ssh-secret",
+				Host:               "jump.local",
+				Port:               22,
+				User:               "ops",
+				Password:           "ssh-secret",
+				KnownHostsPath:     "/home/user/.ssh/known_hosts",
+				HostKeyFingerprint: "SHA256:pinned-host-key",
 			},
 			URI: "postgres://postgres:db-secret@db.local/app",
 		},
@@ -82,6 +84,10 @@ func TestBuildConnectionPackagePayloadIncludesSecretBundles(t *testing.T) {
 	}
 	if item.Config.SSH.Password != "" {
 		t.Fatalf("payload metadata must stay secretless for SSH, got %q", item.Config.SSH.Password)
+	}
+	if item.Config.SSH.KnownHostsPath != "/home/user/.ssh/known_hosts" ||
+		item.Config.SSH.HostKeyFingerprint != "SHA256:pinned-host-key" {
+		t.Fatalf("SSH host key metadata was not preserved in package: %#v", item.Config.SSH)
 	}
 	if item.Config.URI != "" {
 		t.Fatalf("payload metadata must stay secretless for URI, got %q", item.Config.URI)
