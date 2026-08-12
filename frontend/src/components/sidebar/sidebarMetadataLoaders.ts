@@ -262,6 +262,26 @@ const parseMetadataRowCount = (
   return Math.round(parsed);
 };
 
+const parseSidebarTableRowCount = (
+  row: Record<string, any>,
+  conn: SavedConnection,
+): number | undefined => {
+  const rowCount = parseMetadataRowCount(row);
+  if (rowCount !== 0 || getMetadataDialect(conn) !== "mysql") {
+    return rowCount;
+  }
+  const engine = String(getCaseInsensitiveValue(row, [
+    "table_engine",
+    "TABLE_ENGINE",
+    "engine",
+    "ENGINE",
+  ]) || "").trim().toLowerCase();
+  // InnoDB exposes TABLE_ROWS as an estimate. Immediately after bulk writes it
+  // can remain zero even when the table contains rows, so zero is not proof of
+  // an empty table. Keep exact engines (for example MyISAM) unchanged.
+  return !engine || engine === "innodb" ? undefined : rowCount;
+};
+
 const buildSidebarTableStatusSQL = (
   conn: SavedConnection,
   dbName: string,
@@ -270,6 +290,16 @@ const buildSidebarTableStatusSQL = (
   const safeDbName = escapeSQLLiteral(dbName);
   switch (dialect) {
     case "mysql":
+      return [
+        "SELECT TABLE_NAME AS table_name, TABLE_COMMENT AS table_comment, TABLE_ROWS AS table_rows,",
+        "ENGINE AS table_engine,",
+        "COALESCE(DATA_LENGTH, 0) + COALESCE(INDEX_LENGTH, 0) AS table_size,",
+        "CREATE_TIME AS create_time, UPDATE_TIME AS update_time",
+        "FROM information_schema.tables",
+        `WHERE table_schema = '${safeDbName}'`,
+        "AND table_type = 'BASE TABLE'",
+        "ORDER BY table_name",
+      ].join("\n");
     case "starrocks":
       return [
         "SELECT TABLE_NAME AS table_name, TABLE_COMMENT AS table_comment, TABLE_ROWS AS table_rows,",
@@ -1342,6 +1372,7 @@ export {
   normalizeMetadataQuerySpecs,
   parseDuckDBParameterNames,
   parseMetadataRowCount,
+  parseSidebarTableRowCount,
   quoteSqlServerIdentifier,
   shouldHideSchemaPrefix,
   splitQualifiedName,

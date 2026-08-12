@@ -11,7 +11,10 @@ import {
   type DataSyncErrorRow,
   type DataSyncRunRecord,
 } from './model';
-import { DataSyncWorkbenchShell } from './DataSyncWorkbenchShell';
+import {
+  DataSyncWorkbenchShell,
+  resolveDataSyncSidebarRefreshes,
+} from './DataSyncWorkbenchShell';
 
 const buildTask = () => {
   const draft = createDataSyncTaskDraft({
@@ -47,6 +50,51 @@ const buildTask = () => {
 describe('DataSyncWorkbenchShell', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
+  });
+
+  it('requests one target database refresh when a run finishes after writing rows', () => {
+    const task = buildTask();
+    const completedRun: DataSyncRunRecord = {
+      id: 'run-completed',
+      taskId: task.id,
+      taskName: task.name,
+      status: 'succeeded',
+      trigger: 'manual',
+      attempt: 1,
+      resumable: false,
+      message: '',
+      startedAt: '2026-08-08T01:00:00.000Z',
+      finishedAt: '2026-08-08T01:01:00.000Z',
+      rowsRead: 10,
+      rowsWritten: 10,
+      rowsFailed: 0,
+      throughput: 10,
+      checkpoint: '',
+    };
+
+    expect(resolveDataSyncSidebarRefreshes({
+      previousStatuses: new Map([[completedRun.id, 'running']]),
+      runs: [completedRun],
+      tasks: [task],
+    })).toEqual([{
+      runId: completedRun.id,
+      request: {
+        connectionId: 'postgres-warehouse',
+        dbName: 'warehouse',
+        schemaName: 'ods',
+        reason: 'data-sync',
+      },
+    }]);
+    expect(resolveDataSyncSidebarRefreshes({
+      previousStatuses: new Map([[completedRun.id, 'succeeded']]),
+      runs: [completedRun],
+      tasks: [task],
+    })).toEqual([]);
+    expect(resolveDataSyncSidebarRefreshes({
+      previousStatuses: new Map(),
+      runs: [completedRun],
+      tasks: [task],
+    })).toEqual([]);
   });
 
   it('renders a compact full-page shell with route, task list, and five editor stages', () => {

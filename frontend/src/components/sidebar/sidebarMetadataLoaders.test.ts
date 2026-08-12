@@ -18,6 +18,7 @@ import {
   loadSchemas,
   loadSequences,
   loadViews,
+  parseSidebarTableRowCount,
   supportsDatabaseSequences,
 } from "./sidebarMetadataLoaders";
 
@@ -44,6 +45,29 @@ describe("sidebar table metadata", () => {
     expect(sql).toContain(
       "CASE WHEN c.relkind = 'p' THEN NULL ELSE c.reltuples::bigint END AS table_rows",
     );
+    expect(sql).not.toMatch(/COUNT\s*\(/i);
+  });
+
+  it("treats a zero InnoDB estimate as unknown without hiding reliable zero counts", () => {
+    const mysql = { config: { type: "mysql" } } as any;
+
+    expect(parseSidebarTableRowCount({ table_rows: 0, table_engine: "InnoDB" }, mysql)).toBeUndefined();
+    expect(parseSidebarTableRowCount({ table_rows: 0 }, mysql)).toBeUndefined();
+    expect(parseSidebarTableRowCount({ table_rows: 12, table_engine: "InnoDB" }, mysql)).toBe(12);
+    expect(parseSidebarTableRowCount({ table_rows: 0, table_engine: "MyISAM" }, mysql)).toBe(0);
+    expect(parseSidebarTableRowCount(
+      { table_rows: 0, table_engine: "InnoDB" },
+      { config: { type: "starrocks" } } as any,
+    )).toBe(0);
+  });
+
+  it("loads the MySQL engine so unreliable InnoDB zero estimates can be identified", () => {
+    const sql = buildSidebarTableStatusSQL(
+      { config: { type: "mysql" } } as any,
+      "sales",
+    );
+
+    expect(sql).toContain("ENGINE AS table_engine");
     expect(sql).not.toMatch(/COUNT\s*\(/i);
   });
 });
