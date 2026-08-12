@@ -143,6 +143,9 @@ func (c *ChromaDB) QueryContext(ctx context.Context, query string) ([]map[string
 	}
 
 	if parsed, ok := parseChromaSQL(text); ok {
+		if parsed.WhereError != nil {
+			return nil, nil, fmt.Errorf("Chroma WHERE 解析失败：%w", parsed.WhereError)
+		}
 		if parsed.Count {
 			total, err := c.countCollection(ctx, parsed.Collection, parsed.Where)
 			if err != nil {
@@ -852,6 +855,7 @@ type chromaParsedSQL struct {
 	Where             interface{}
 	Count             bool
 	IncludeEmbeddings bool
+	WhereError        error
 }
 
 var chromaSQLFromRE = regexp.MustCompile(`(?i)\bFROM\s+(?:"([^"]+)"|` + "`" + `([^` + "`" + `]+)` + "`" + `|([a-zA-Z0-9_.\-]+))`)
@@ -875,6 +879,11 @@ func parseChromaSQL(sqlText string) (chromaParsedSQL, bool) {
 	lower := strings.ToLower(text)
 	parsed.Count = strings.Contains(lower, "count(")
 	parsed.IncludeEmbeddings = strings.Contains(lower, "embedding")
+	whereExpr, _, whereErr := parseVectorSQLWhere(text)
+	parsed.WhereError = whereErr
+	if whereErr == nil && whereExpr != nil {
+		parsed.Where = chromaWhereFromExpr(whereExpr)
+	}
 	if m := chromaSQLLimitRE.FindStringSubmatch(text); len(m) > 1 {
 		parsed.Limit, _ = strconv.Atoi(m[1])
 	}

@@ -158,14 +158,17 @@ func (q *QdrantDB) QueryContext(ctx context.Context, query string) ([]map[string
 	}
 
 	if parsed, ok := parseQdrantSQL(text); ok {
+		if parsed.WhereError != nil {
+			return nil, nil, fmt.Errorf("Qdrant WHERE 解析失败：%w", parsed.WhereError)
+		}
 		if parsed.Count {
-			total, err := q.countPoints(ctx, parsed.Collection, nil)
+			total, err := q.countPoints(ctx, parsed.Collection, parsed.Filter)
 			if err != nil {
 				return nil, nil, err
 			}
 			return []map[string]interface{}{{"total": total}}, []string{"total"}, nil
 		}
-		return q.scrollPoints(ctx, parsed.Collection, parsed.Limit, parsed.Offset, nil, true, parsed.IncludeVector)
+		return q.scrollPoints(ctx, parsed.Collection, parsed.Limit, parsed.Offset, parsed.Filter, true, parsed.IncludeVector)
 	}
 
 	return nil, nil, fmt.Errorf("Qdrant 查询仅支持 JSON 命令或简单 SELECT 预览")
@@ -818,6 +821,8 @@ type qdrantParsedSQL struct {
 	Offset        interface{}
 	Count         bool
 	IncludeVector bool
+	Filter        interface{}
+	WhereError    error
 }
 
 var qdrantSQLFromRE = regexp.MustCompile(`(?i)\bFROM\s+(?:"([^"]+)"|` + "`" + `([^` + "`" + `]+)` + "`" + `|([a-zA-Z0-9_.\-]+))`)
@@ -841,6 +846,14 @@ func parseQdrantSQL(sqlText string) (qdrantParsedSQL, bool) {
 	lower := strings.ToLower(text)
 	parsed.Count = strings.Contains(lower, "count(")
 	parsed.IncludeVector = strings.Contains(lower, "vector")
+	whereExpr, _, whereErr := parseVectorSQLWhere(text)
+	if whereErr == nil {
+		whereErr = validateQdrantWhereExpr(whereExpr)
+	}
+	parsed.WhereError = whereErr
+	if whereErr == nil && whereExpr != nil {
+		parsed.Filter = qdrantFilterFromExpr(whereExpr)
+	}
 	if m := qdrantSQLLimitRE.FindStringSubmatch(text); len(m) > 1 {
 		parsed.Limit, _ = strconv.Atoi(m[1])
 	}
