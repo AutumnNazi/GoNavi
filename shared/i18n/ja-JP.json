@@ -3758,6 +3758,7 @@
   "connection_modal.secret.error.saved_connection_missing": "現在の接続に対応する保存済みシークレットが見つかりません。パスワードを入力し直して保存してから再試行してください。",
   "connection_modal.secret.error.store_unavailable": "システムのシークレットストレージは現在利用できません。システムのキーチェーンまたは資格情報マネージャーを確認してから再試行してください。",
   "connection_modal.secret.new_value_replaces_saved": "新しい値が入力されています。保存時に保存済みの値を置き換えます。",
+  "connection_modal.secret.reveal_failed": "保存済みパスワードを表示できませんでした: {{detail}}",
   "connection_modal.secret.saved_dsn_description": "DSN は安全に保存されています。空のままにするとその DSN を使い続けます。",
   "connection_modal.secret.saved_mongo_replica_password": "保存済み MongoDB レプリカパスワード",
   "connection_modal.secret.saved_mongo_replica_password_description": "セキュアストレージに MongoDB レプリカパスワードが保存されています。保持する場合は空にします。",
