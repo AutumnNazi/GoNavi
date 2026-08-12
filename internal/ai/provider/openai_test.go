@@ -576,13 +576,15 @@ func TestBuildOpenAIMessages_ReplaysDeepSeekReasoningContentForToolCalls(t *test
 }
 
 func TestBuildOpenAIMessages_OmitsReasoningContentForNonDeepSeekProviders(t *testing.T) {
+	toolCall := testOpenAIToolCall()
 	got := buildOpenAIMessages([]ai.Message{
 		{
 			Role:             "assistant",
 			Content:          "",
-			ToolCalls:        []ai.ToolCall{testOpenAIToolCall()},
+			ToolCalls:        []ai.ToolCall{toolCall},
 			ReasoningContent: "reasoning should stay local",
 		},
+		{Role: "tool", ToolCallID: toolCall.ID, Content: `{"ok":true}`},
 	}, "gpt-4o", "https://api.openai.com/v1")
 
 	if got[0].ReasoningContent != "" {
@@ -594,6 +596,44 @@ func TestBuildOpenAIMessages_OmitsReasoningContentForNonDeepSeekProviders(t *tes
 	}
 	if strings.Contains(string(body), "reasoning_content") {
 		t.Fatalf("expected JSON payload to omit reasoning_content for non-DeepSeek provider, got %s", body)
+	}
+}
+
+func TestBuildOpenAIMessagesDropsIncompleteToolCallHistory(t *testing.T) {
+	callA := testOpenAIToolCall()
+	callA.ID = "call_a"
+	callB := callA
+	callB.ID = "call_b"
+
+	got := buildOpenAIMessages([]ai.Message{
+		{Role: "user", Content: "Inspect the order tables."},
+		{Role: "assistant", ToolCalls: []ai.ToolCall{callA, callB}},
+		{Role: "tool", ToolCallID: callA.ID, Content: `{"ok":true}`},
+		{Role: "user", Content: "Continue with the available results."},
+	}, "deepseek-v4-flash", "https://api.deepseek.com/v1")
+
+	if len(got) != 2 {
+		t.Fatalf("expected incomplete tool-call turn to be removed, got %#v", got)
+	}
+	if got[0].Role != "user" || got[1].Role != "user" {
+		t.Fatalf("expected user messages to remain after removing incomplete turn, got %#v", got)
+	}
+}
+
+func TestBuildOpenAIMessagesKeepsCompleteToolCallHistory(t *testing.T) {
+	callA := testOpenAIToolCall()
+	callA.ID = "call_a"
+	callB := callA
+	callB.ID = "call_b"
+
+	got := buildOpenAIMessages([]ai.Message{
+		{Role: "assistant", ToolCalls: []ai.ToolCall{callA, callB}},
+		{Role: "tool", ToolCallID: callA.ID, Content: `{"a":true}`},
+		{Role: "tool", ToolCallID: callB.ID, Content: `{"b":true}`},
+	}, "deepseek-v4-flash", "https://api.deepseek.com/v1")
+
+	if len(got) != 3 || len(got[0].ToolCalls) != 2 {
+		t.Fatalf("expected complete tool-call turn to remain intact, got %#v", got)
 	}
 }
 

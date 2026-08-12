@@ -850,6 +850,10 @@ func defaultStaticModelsForProvider(config ai.ProviderConfig) []string {
 func normalizeProviderConfig(config ai.ProviderConfig) ai.ProviderConfig {
 	config.AuthMode = strings.ToLower(strings.TrimSpace(config.AuthMode))
 	switch {
+	case isDeepSeekResponsesProvider(config):
+		config.Type = "openai"
+		config.APIFormat = "openai-responses"
+		config.BaseURL = normalizeDeepSeekResponsesBaseURL(config.BaseURL)
 	case isDashScopeBailianAnthropicProvider(config):
 		config.Models = nil
 	case isDashScopeCodingPlanProvider(config):
@@ -869,6 +873,23 @@ func normalizeProviderConfig(config ai.ProviderConfig) ai.ProviderConfig {
 		config.Model = miniMaxAnthropicModels[0]
 	}
 	return config
+}
+
+func isDeepSeekResponsesProvider(config ai.ProviderConfig) bool {
+	model := strings.ToLower(strings.TrimSpace(config.Model))
+	if model != "deepseek-v4-flash" {
+		return false
+	}
+	host, _ := parseProviderBaseURL(config.BaseURL)
+	return host == "api.deepseek.com"
+}
+
+func normalizeDeepSeekResponsesBaseURL(baseURL string) string {
+	normalized := provider.NormalizeOpenAICompatibleBaseURL(baseURL)
+	if host, _ := parseProviderBaseURL(normalized); host == "api.deepseek.com" {
+		return strings.TrimSuffix(normalized, "/v1")
+	}
+	return strings.TrimRight(strings.TrimSpace(baseURL), "/")
 }
 
 func applyChatSendOptionsToProviderConfig(config ai.ProviderConfig, options ai.ChatSendOptions) ai.ProviderConfig {
@@ -933,6 +954,9 @@ func resolveModelsURL(config ai.ProviderConfig) string {
 	case "codex-cli", "codebuddy-cli":
 		return ""
 	case "openai":
+		if isDeepSeekResponsesProvider(config) {
+			return "https://api.deepseek.com/models"
+		}
 		fallthrough
 	default:
 		return provider.ResolveOpenAICompatibleEndpoint(baseURL, "models")

@@ -2,6 +2,10 @@ import { describe, expect, it } from 'vitest';
 import type { AIProviderAuthMode, AIProviderType } from '../types';
 import {
   ATLAS_CLOUD_BASE_URL,
+  DEEPSEEK_DEFAULT_MODEL,
+  DEEPSEEK_RESPONSES_BASE_URL,
+  MOONSHOT_ANTHROPIC_BASE_URL,
+  MOONSHOT_OPENAI_BASE_URL,
   LEGACY_QWEN_CODING_PLAN_OPENAI_BASE_URL,
   QWEN_BAILIAN_ANTHROPIC_BASE_URL,
   QWEN_BAILIAN_MODELS_BASE_URL,
@@ -9,6 +13,7 @@ import {
   QWEN_CODING_PLAN_MODELS,
   isLocalCLISubscriptionProvider,
   matchQwenPresetKey,
+  matchDeepSeekPresetKey,
   resolvePresetBaseURL,
   resolvePresetModelSelection,
   resolvePresetTransport,
@@ -26,6 +31,8 @@ type PresetMatcher = {
 const PRESETS: PresetMatcher[] = [
   { key: 'openai', backendType: 'openai', defaultBaseUrl: 'https://api.openai.com/v1' },
   { key: 'atlascloud', backendType: 'openai', defaultBaseUrl: ATLAS_CLOUD_BASE_URL },
+  { key: 'moonshot', backendType: 'openai', defaultBaseUrl: MOONSHOT_OPENAI_BASE_URL },
+  { key: 'deepseek', backendType: 'openai', defaultBaseUrl: DEEPSEEK_RESPONSES_BASE_URL, fixedApiFormat: 'openai-responses' },
   { key: 'qwen-bailian', backendType: 'anthropic', defaultBaseUrl: QWEN_BAILIAN_ANTHROPIC_BASE_URL },
   {
     key: 'qwen-coding-plan',
@@ -46,6 +53,48 @@ describe('ai provider preset helpers', () => {
       type: 'openai',
       baseUrl: QWEN_BAILIAN_MODELS_BASE_URL,
     })).toBe('qwen-bailian');
+  });
+
+  it('recognizes legacy DeepSeek /v1 configs and routes them to Responses', () => {
+    expect(matchDeepSeekPresetKey({
+      type: 'openai',
+      baseUrl: 'https://api.deepseek.com/v1',
+      model: 'deepseek-v4-flash',
+    })).toBe('deepseek');
+
+    expect(matchDeepSeekPresetKey({
+      type: 'openai',
+      baseUrl: 'https://api.deepseek.com/v1',
+      model: 'deepseek-chat',
+    })).toBeNull();
+
+    expect(resolvePresetTransport({
+      presetKey: 'deepseek',
+      presetBackendType: 'openai',
+      presetFixedApiFormat: 'openai-responses',
+      valuesBaseUrl: 'https://api.deepseek.com/v1',
+    })).toEqual({
+      type: 'openai',
+      apiFormat: 'openai-responses',
+    });
+  });
+
+  it('recognizes current Kimi OpenAI-compatible configs', () => {
+    expect(resolveProviderPresetKey({
+      type: 'openai',
+      baseUrl: 'https://api.moonshot.cn/v1',
+      model: 'kimi-k3',
+  }, PRESETS, 'custom')).toBe('moonshot');
+  });
+
+  it('keeps Kimi endpoint variants mapped by their actual protocol', () => {
+    expect(MOONSHOT_OPENAI_BASE_URL).toBe('https://api.moonshot.cn/v1');
+    expect(MOONSHOT_ANTHROPIC_BASE_URL).toBe('https://api.moonshot.cn/anthropic');
+  });
+
+  it('uses the current DeepSeek Responses endpoint and model as the preset defaults', () => {
+    expect(DEEPSEEK_RESPONSES_BASE_URL).toBe('https://api.deepseek.com');
+    expect(DEEPSEEK_DEFAULT_MODEL).toBe('deepseek-v4-flash');
   });
 
   it('maps Coding Plan Claude CLI config back to the dedicated Coding Plan preset', () => {

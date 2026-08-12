@@ -25,6 +25,35 @@ describe('aiSettingsModalConfig', () => {
     expect(findPreset('missing-preset').key).toBe('custom');
   });
 
+  it('matches DeepSeek to the Responses preset and current model', () => {
+    const preset = matchProviderPreset({
+      type: 'openai',
+      baseUrl: 'https://api.deepseek.com/v1',
+    });
+
+    expect(preset).toMatchObject({
+      key: 'deepseek',
+      fixedApiFormat: 'openai-responses',
+      defaultBaseUrl: 'https://api.deepseek.com',
+      defaultModel: 'deepseek-v4-flash',
+    });
+  });
+
+  it('uses stable Gemini and Kimi OpenAI-compatible defaults', () => {
+    expect(findPreset('gemini')).toMatchObject({
+      defaultModel: 'gemini-3.6-flash',
+    });
+    expect(findPreset('moonshot')).toMatchObject({
+      backendType: 'openai',
+      defaultBaseUrl: 'https://api.moonshot.cn/v1',
+      defaultModel: 'kimi-k3',
+    });
+    expect(matchProviderPreset({
+      type: 'anthropic',
+      baseUrl: 'https://api.moonshot.cn/anthropic',
+    }).key).toBe('moonshot');
+  });
+
   it('matches an anthropic-compatible provider back to the qwen coding plan preset', () => {
     const preset = matchProviderPreset({
       type: 'custom',
@@ -199,8 +228,8 @@ describe('aiSettingsModalConfig', () => {
       '通义千问（Coding Plan）',
       'Claude Code CLI 代理链路 / 使用官方支持模型清单',
       '智谱 GLM',
-      'Kimi K2.5 (Anthropic 兼容)',
-      'Gemini 3.1 / 2.5 系列',
+      'Kimi K3 / OpenAI 兼容',
+      'Gemini 3.6 Flash',
       '火山方舟',
       'Ark 通用推理 / 豆包模型',
       '火山 Coding Plan',
