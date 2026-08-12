@@ -1511,41 +1511,43 @@ const ConnectionModalStep2: React.FC<ConnectionModalStep2Props> = (props) => {
             )}
 
             {isRedis && (
-              <div className="gn-conn-f-row">
-                {denseLabel(
-                  t("connection.modal.dense.auth"),
-                  t("connection.modal.field.username.label"),
-                )}
-                <div className="gn-conn-f-ctrl gn-conn-f-inline">
-                  <div className="gn-conn-w gn-conn-w-user">
-                    <Form.Item name="user" style={{ marginBottom: 0 }}>
-                      <Input
-                        {...noAutoCapInputProps}
-                        placeholder={t(
-                          "connection.modal.field.username.optional_placeholder",
-                        )}
-                      />
-                    </Form.Item>
-                  </div>
-                  <div className="gn-conn-w gn-conn-w-pass">
-                    <Form.Item name="password" style={{ marginBottom: 0 }}>
-                      <Input.Password
-                        {...noAutoCapInputProps}
-                        visibilityToggle={{
-                          visible: primaryPasswordVisible,
-                          onVisibleChange: handlePrimaryPasswordVisibleChange,
-                        }}
-                        placeholder={getStoredSecretPlaceholder({
-                          hasStoredSecret: initialValues?.hasPrimaryPassword,
-                          emptyPlaceholder: t(
-                            "connection.modal.field.redisPassword.placeholder",
-                          ),
-                          retainedLabel: t(
-                            "connection.modal.field.redisPassword.retained",
-                          ),
-                        })}
-                      />
-                    </Form.Item>
+              <>
+                <div className="gn-conn-f-row">
+                  {denseLabel(
+                    t("connection.modal.dense.auth"),
+                    t("connection.modal.field.username.label"),
+                  )}
+                  <div className="gn-conn-f-ctrl gn-conn-f-inline">
+                    <div className="gn-conn-w gn-conn-w-user">
+                      <Form.Item name="user" style={{ marginBottom: 0 }}>
+                        <Input
+                          {...noAutoCapInputProps}
+                          placeholder={t(
+                            "connection.modal.field.username.optional_placeholder",
+                          )}
+                        />
+                      </Form.Item>
+                    </div>
+                    <div className="gn-conn-w gn-conn-w-pass">
+                      <Form.Item name="password" style={{ marginBottom: 0 }}>
+                        <Input.Password
+                          {...noAutoCapInputProps}
+                          visibilityToggle={{
+                            visible: primaryPasswordVisible,
+                            onVisibleChange: handlePrimaryPasswordVisibleChange,
+                          }}
+                          placeholder={getStoredSecretPlaceholder({
+                            hasStoredSecret: initialValues?.hasPrimaryPassword,
+                            emptyPlaceholder: t(
+                              "connection.modal.field.redisPassword.placeholder",
+                            ),
+                            retainedLabel: t(
+                              "connection.modal.field.redisPassword.retained",
+                            ),
+                          })}
+                        />
+                      </Form.Item>
+                    </div>
                   </div>
                 </div>
                 {initialValues?.hasPrimaryPassword
@@ -1561,7 +1563,7 @@ const ConnectionModalStep2: React.FC<ConnectionModalStep2Props> = (props) => {
                       ),
                     })
                   : null}
-              </div>
+              </>
             )}
 
             {isRedis && redisTopology === "sentinel" && (
