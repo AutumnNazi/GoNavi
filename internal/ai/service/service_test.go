@@ -93,10 +93,9 @@ func TestResolveModelsURL_UsesOpenAIModelsEndpointForResponsesProvider(t *testin
 
 func TestNormalizeProviderConfigRoutesDeepSeekV4FlashToResponses(t *testing.T) {
 	got := normalizeProviderConfig(ai.ProviderConfig{
-		Type:      "openai",
-		APIFormat: "openai",
-		BaseURL:   "https://api.deepseek.com/v1/",
-		Model:     "deepseek-v4-flash",
+		Type:    "openai",
+		BaseURL: "https://api.deepseek.com/v1/",
+		Model:   "deepseek-v4-flash",
 	})
 
 	if got.Type != "openai" {
@@ -107,6 +106,35 @@ func TestNormalizeProviderConfigRoutesDeepSeekV4FlashToResponses(t *testing.T) {
 	}
 	if got.BaseURL != "https://api.deepseek.com" {
 		t.Fatalf("expected DeepSeek Responses root base URL, got %q", got.BaseURL)
+	}
+}
+
+func TestNormalizeProviderConfigPreservesExplicitDeepSeekChatSelection(t *testing.T) {
+	got := normalizeProviderConfig(ai.ProviderConfig{
+		Type:      "openai",
+		APIFormat: "openai",
+		BaseURL:   "https://api.deepseek.com",
+		Model:     "deepseek-v4-flash",
+	})
+
+	if got.APIFormat != "openai" {
+		t.Fatalf("explicit DeepSeek Chat selection should remain Chat Completions, got %q", got.APIFormat)
+	}
+	if got.BaseURL != "https://api.deepseek.com/v1" {
+		t.Fatalf("explicit DeepSeek Chat selection should use the /v1 base URL, got %q", got.BaseURL)
+	}
+}
+
+func TestNormalizeProviderConfigKeepsDeepSeekResponsesBaseForExplicitResponsesSelection(t *testing.T) {
+	got := normalizeProviderConfig(ai.ProviderConfig{
+		Type:      "openai",
+		APIFormat: "openai-responses",
+		BaseURL:   "https://api.deepseek.com/v1",
+		Model:     "deepseek-v4-flash",
+	})
+
+	if got.APIFormat != "openai-responses" || got.BaseURL != "https://api.deepseek.com" {
+		t.Fatalf("explicit DeepSeek Responses selection should use root endpoint, got %#v", got)
 	}
 }
 
@@ -135,6 +163,22 @@ func TestNewProviderHealthCheckRequestUsesDeepSeekModelsEndpointAfterMigration(t
 	}
 	if req.Method != http.MethodGet || req.URL.String() != "https://api.deepseek.com/models" {
 		t.Fatalf("expected DeepSeek health check to use /models, got %s %s", req.Method, req.URL.String())
+	}
+}
+
+func TestNewProviderHealthCheckRequestUsesDeepSeekChatModelsEndpointWhenChatSelected(t *testing.T) {
+	req, err := newProviderHealthCheckRequest(ai.ProviderConfig{
+		Type:      "openai",
+		APIFormat: "openai",
+		BaseURL:   "https://api.deepseek.com",
+		Model:     "deepseek-v4-flash",
+		APIKey:    "sk-test",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if req.Method != http.MethodGet || req.URL.String() != "https://api.deepseek.com/v1/models" {
+		t.Fatalf("expected DeepSeek Chat health check to use /v1/models, got %s %s", req.Method, req.URL.String())
 	}
 }
 

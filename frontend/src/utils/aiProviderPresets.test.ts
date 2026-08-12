@@ -25,6 +25,7 @@ type PresetMatcher = {
   backendType: AIProviderType;
   defaultBaseUrl: string;
   fixedApiFormat?: string;
+  defaultApiFormat?: string;
   authMode?: AIProviderAuthMode;
 };
 
@@ -32,7 +33,7 @@ const PRESETS: PresetMatcher[] = [
   { key: 'openai', backendType: 'openai', defaultBaseUrl: 'https://api.openai.com/v1' },
   { key: 'atlascloud', backendType: 'openai', defaultBaseUrl: ATLAS_CLOUD_BASE_URL },
   { key: 'moonshot', backendType: 'openai', defaultBaseUrl: MOONSHOT_OPENAI_BASE_URL },
-  { key: 'deepseek', backendType: 'openai', defaultBaseUrl: DEEPSEEK_RESPONSES_BASE_URL, fixedApiFormat: 'openai-responses' },
+  { key: 'deepseek', backendType: 'openai', defaultBaseUrl: DEEPSEEK_RESPONSES_BASE_URL, defaultApiFormat: 'openai-responses' },
   { key: 'qwen-bailian', backendType: 'anthropic', defaultBaseUrl: QWEN_BAILIAN_ANTHROPIC_BASE_URL },
   {
     key: 'qwen-coding-plan',
@@ -55,7 +56,7 @@ describe('ai provider preset helpers', () => {
     })).toBe('qwen-bailian');
   });
 
-  it('recognizes legacy DeepSeek /v1 configs and routes them to Responses', () => {
+  it('recognizes DeepSeek Chat and Responses configs as one editable preset', () => {
     expect(matchDeepSeekPresetKey({
       type: 'openai',
       baseUrl: 'https://api.deepseek.com/v1',
@@ -66,16 +67,29 @@ describe('ai provider preset helpers', () => {
       type: 'openai',
       baseUrl: 'https://api.deepseek.com/v1',
       model: 'deepseek-chat',
-    })).toBeNull();
+      apiFormat: 'openai',
+    })).toBe('deepseek');
 
     expect(resolvePresetTransport({
       presetKey: 'deepseek',
       presetBackendType: 'openai',
-      presetFixedApiFormat: 'openai-responses',
+      presetDefaultApiFormat: 'openai-responses',
       valuesBaseUrl: 'https://api.deepseek.com/v1',
     })).toEqual({
       type: 'openai',
       apiFormat: 'openai-responses',
+    });
+
+    expect(resolvePresetTransport({
+      presetKey: 'deepseek',
+      presetBackendType: 'openai',
+      presetDefaultApiFormat: 'openai-responses',
+      valuesBaseUrl: 'https://api.deepseek.com/v1',
+      valuesApiFormat: 'openai',
+      valuesModel: 'deepseek-v4-flash',
+    })).toEqual({
+      type: 'openai',
+      apiFormat: 'openai',
     });
   });
 
@@ -252,12 +266,38 @@ describe('ai provider preset helpers', () => {
 
   it('does not carry the Responses protocol into another OpenAI-compatible preset', () => {
     expect(resolvePresetTransport({
-      presetKey: 'deepseek',
+      presetKey: 'atlascloud',
       presetBackendType: 'openai',
       valuesApiFormat: 'openai-responses',
     })).toEqual({
       type: 'openai',
       apiFormat: undefined,
+    });
+  });
+
+  it('defaults the DeepSeek preset to Responses when no format is selected', () => {
+    expect(resolvePresetTransport({
+      presetKey: 'deepseek',
+      presetBackendType: 'openai',
+      presetDefaultApiFormat: 'openai-responses',
+      valuesBaseUrl: DEEPSEEK_RESPONSES_BASE_URL,
+      valuesModel: DEEPSEEK_DEFAULT_MODEL,
+    })).toEqual({
+      type: 'openai',
+      apiFormat: 'openai-responses',
+    });
+  });
+
+  it('preserves Chat for legacy DeepSeek models without a stored format', () => {
+    expect(resolvePresetTransport({
+      presetKey: 'deepseek',
+      presetBackendType: 'openai',
+      presetDefaultApiFormat: 'openai-responses',
+      valuesBaseUrl: 'https://api.deepseek.com/v1',
+      valuesModel: 'deepseek-chat',
+    })).toEqual({
+      type: 'openai',
+      apiFormat: 'openai',
     });
   });
 });

@@ -2360,7 +2360,7 @@
   "ai_settings.provider_preset.codex.label": "Codex-Abonnement",
   "ai_settings.provider_preset.custom.desc": "Benutzerdefinierter API-Endpunkt",
   "ai_settings.provider_preset.custom.label": "Benutzerdefiniert",
-  "ai_settings.provider_preset.deepseek.desc": "DeepSeek-V4-Flash / Responses API",
+  "ai_settings.provider_preset.deepseek.desc": "DeepSeek-V4-Flash / Responses- und Chat-API",
   "ai_settings.provider_preset.deepseek.label": "DeepSeek",
   "ai_settings.provider_preset.gemini.desc": "Gemini 3.6 Flash",
   "ai_settings.provider_preset.gemini.label": "Gemini",

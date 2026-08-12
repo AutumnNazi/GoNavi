@@ -854,6 +854,10 @@ func normalizeProviderConfig(config ai.ProviderConfig) ai.ProviderConfig {
 		config.Type = "openai"
 		config.APIFormat = "openai-responses"
 		config.BaseURL = normalizeDeepSeekResponsesBaseURL(config.BaseURL)
+	case isDeepSeekProvider(config):
+		config.Type = "openai"
+		config.APIFormat = strings.ToLower(strings.TrimSpace(config.APIFormat))
+		config.BaseURL = provider.NormalizeOpenAICompatibleBaseURL(config.BaseURL)
 	case isDashScopeBailianAnthropicProvider(config):
 		config.Models = nil
 	case isDashScopeCodingPlanProvider(config):
@@ -876,8 +880,19 @@ func normalizeProviderConfig(config ai.ProviderConfig) ai.ProviderConfig {
 }
 
 func isDeepSeekResponsesProvider(config ai.ProviderConfig) bool {
+	if !isDeepSeekProvider(config) {
+		return false
+	}
+	apiFormat := strings.ToLower(strings.TrimSpace(config.APIFormat))
+	if apiFormat == "openai-responses" {
+		return true
+	}
 	model := strings.ToLower(strings.TrimSpace(config.Model))
-	if model != "deepseek-v4-flash" {
+	return apiFormat == "" && model == "deepseek-v4-flash"
+}
+
+func isDeepSeekProvider(config ai.ProviderConfig) bool {
+	if !strings.EqualFold(strings.TrimSpace(config.Type), "openai") {
 		return false
 	}
 	host, _ := parseProviderBaseURL(config.BaseURL)

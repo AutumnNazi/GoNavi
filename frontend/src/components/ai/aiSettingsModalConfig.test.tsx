@@ -25,7 +25,7 @@ describe('aiSettingsModalConfig', () => {
     expect(findPreset('missing-preset').key).toBe('custom');
   });
 
-  it('matches DeepSeek to the Responses preset and current model', () => {
+  it('matches DeepSeek to an editable preset with Responses as the default', () => {
     const preset = matchProviderPreset({
       type: 'openai',
       baseUrl: 'https://api.deepseek.com/v1',
@@ -33,10 +33,19 @@ describe('aiSettingsModalConfig', () => {
 
     expect(preset).toMatchObject({
       key: 'deepseek',
-      fixedApiFormat: 'openai-responses',
+      defaultApiFormat: 'openai-responses',
       defaultBaseUrl: 'https://api.deepseek.com',
       defaultModel: 'deepseek-v4-flash',
     });
+  });
+
+  it('matches legacy DeepSeek Chat Completions configs to the editable preset', () => {
+    expect(matchProviderPreset({
+      type: 'openai',
+      apiFormat: 'openai',
+      baseUrl: 'https://api.deepseek.com/v1',
+      model: 'deepseek-chat',
+    }).key).toBe('deepseek');
   });
 
   it('uses stable Gemini and Kimi OpenAI-compatible defaults', () => {

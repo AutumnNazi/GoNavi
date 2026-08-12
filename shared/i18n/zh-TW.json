@@ -2360,7 +2360,7 @@
   "ai_settings.provider_preset.codex.label": "Codex 訂閱",
   "ai_settings.provider_preset.custom.desc": "自訂 API 端點",
   "ai_settings.provider_preset.custom.label": "自訂",
-  "ai_settings.provider_preset.deepseek.desc": "DeepSeek-V4-Flash / Responses API",
+  "ai_settings.provider_preset.deepseek.desc": "DeepSeek-V4-Flash / Responses 與 Chat API",
   "ai_settings.provider_preset.deepseek.label": "DeepSeek",
   "ai_settings.provider_preset.gemini.desc": "Gemini 3.6 Flash",
   "ai_settings.provider_preset.gemini.label": "Gemini",

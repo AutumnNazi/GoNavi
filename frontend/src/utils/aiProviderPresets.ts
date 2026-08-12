@@ -55,9 +55,11 @@ export interface ResolvePresetTransportInput {
   presetKey?: string;
   presetBackendType: AIProviderType;
   presetFixedApiFormat?: string;
+  presetDefaultApiFormat?: string;
   presetEndpoints?: ProviderPresetEndpoint[];
   valuesBaseUrl?: string;
   valuesApiFormat?: string;
+  valuesModel?: string;
 }
 
 export interface ResolvePresetTransportResult {
@@ -71,6 +73,7 @@ export interface ProviderPresetMatcher {
   defaultBaseUrl: string;
   endpoints?: ProviderPresetEndpoint[];
   fixedApiFormat?: string;
+  defaultApiFormat?: string;
   authMode?: AIProviderAuthMode;
 }
 
@@ -148,12 +151,9 @@ export const matchQwenPresetKey = (provider: ProviderPresetCandidate): string | 
 };
 
 export const matchDeepSeekPresetKey = (provider: ProviderPresetCandidate): string | null => {
-  const model = String(provider.model || '').trim().toLowerCase();
-  const apiFormat = String(provider.apiFormat || '').trim().toLowerCase();
   if (
     provider.type === 'openai'
     && getProviderHostname(provider.baseUrl) === 'api.deepseek.com'
-    && (model === '' || model === DEEPSEEK_DEFAULT_MODEL || apiFormat === 'openai-responses')
   ) {
     return 'deepseek';
   }
@@ -277,9 +277,11 @@ export const resolvePresetTransport = ({
   presetKey,
   presetBackendType,
   presetFixedApiFormat,
+  presetDefaultApiFormat,
   presetEndpoints,
   valuesBaseUrl,
   valuesApiFormat,
+  valuesModel,
 }: ResolvePresetTransportInput): ResolvePresetTransportResult => {
   const valuesFingerprint = getProviderFingerprint(valuesBaseUrl);
   const selectedEndpoint = presetEndpoints?.find((endpoint) =>
@@ -304,6 +306,17 @@ export const resolvePresetTransport = ({
     return {
       type: presetBackendType,
       apiFormat: valuesApiFormat || 'openai',
+    };
+  }
+
+  if (presetKey === 'deepseek') {
+    const model = String(valuesModel || '').trim().toLowerCase();
+    return {
+      type: presetBackendType,
+      apiFormat: valuesApiFormat
+        || (model && model !== DEEPSEEK_DEFAULT_MODEL ? 'openai' : undefined)
+        || presetDefaultApiFormat
+        || 'openai-responses',
     };
   }
 
