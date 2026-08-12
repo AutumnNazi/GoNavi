@@ -1,0 +1,140 @@
+import React from 'react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, create, type ReactTestRenderer } from 'react-test-renderer';
+
+import { t } from '../../i18n';
+import ConnectionModalNetworkSecuritySection from './ConnectionModalNetworkSecuritySection';
+
+// 按项目既有测试模式 mock antd：真实 Form.useWatch 在 react-test-renderer 下的
+// 订阅时机不可靠，且 antd/图标组件在 node 环境会向 DOM 注入样式。
+// formApi 通过 globalThis 暴露给用例，供组件内 form.getFieldValue 等直接调用。
+const state = vi.hoisted(() => ({
+  mockFormValues: {} as Record<string, unknown>,
+}));
+
+vi.mock('antd', () => {
+  const formApi = {
+    getFieldValue: (name: string) => state.mockFormValues[name],
+    setFieldValue: (name: string, value: unknown) => {
+      state.mockFormValues[name] = value;
+    },
+  };
+  (globalThis as any).__gonaviNetworkSectionTestFormApi = formApi;
+  const Form: any = ({ children }: any) => <form>{children}</form>;
+  Form.Item = ({ children, name }: any) => (
+    <div data-form-item={String(name ?? '')}>
+      {typeof children === 'function' ? children(formApi) : children}
+    </div>
+  );
+  Form.useForm = () => [formApi];
+  Form.useWatch = (name: string) => state.mockFormValues[name];
+  const Checkbox = ({ disabled, checked, onClick, children }: any) => (
+    <label>
+      <input
+        type="checkbox"
+        disabled={disabled === true}
+        checked={checked === true}
+        onClick={(event) => onClick?.(event)}
+        readOnly
+      />
+      {children}
+    </label>
+  );
+  const Button = ({ onClick, children }: any) => (
+    <button type="button" onClick={onClick}>
+      {children}
+    </button>
+  );
+  const Input = (props: any) => <input {...props} />;
+  const InputNumber = (props: any) => <input type="number" {...props} />;
+  const Select = ({ children }: any) => <select>{children}</select>;
+  Select.Option = ({ children }: any) => <option>{children}</option>;
+  return { Form, Checkbox, Button, Input, InputNumber, Select };
+});
+
+const renderSection = async (
+  formValues: Record<string, unknown>,
+): Promise<ReactTestRenderer> => {
+  state.mockFormValues = { ...formValues };
+  let renderer: ReactTestRenderer | undefined;
+  const Harness = () => (
+    <ConnectionModalNetworkSecuritySection
+      dbType="redis"
+      form={(globalThis as any).__gonaviNetworkSectionTestFormApi}
+      activeNetworkConfig="ssh"
+      setActiveNetworkConfig={() => undefined}
+      isSSLType={false}
+      isFileDb={false}
+      isJVM={false}
+      initialValues={{}}
+      handleSelectCertificateFile={() => undefined}
+      handleSelectSSHKeyFile={() => undefined}
+      renderStoredSecretControls={() => null}
+      proxyType="socks5"
+      selectingCertificateField={null}
+      selectingSSHKey={null}
+      sslHintText=""
+      sslMode=""
+      supportsSSLCAPath={false}
+      supportsSSLClientCertificate={false}
+      useHttpTunnel={false}
+      useProxy={false}
+      useSSH={false}
+      useSSL={false}
+    />
+  );
+  await act(async () => {
+    renderer = create(<Harness />);
+  });
+  return renderer!;
+};
+
+const findAllText = (renderer: ReactTestRenderer): string =>
+  JSON.stringify(renderer.toJSON());
+
+const findSshCheckboxDisabled = (renderer: ReactTestRenderer): boolean | undefined => {
+  const formItem = renderer.root.findAll(
+    (node) => node.props?.['data-form-item'] === 'useSSH',
+  )[0];
+  if (!formItem) return undefined;
+  const input = formItem.findAllByType('input')[0];
+  return input?.props.disabled === true;
+};
+
+const UNSUPPORTED_HINT = t('connection.modal.network.ssh.redisTopologyUnsupportedHint');
+const DISABLE_ACTION = t('connection.modal.network.ssh.disableAction');
+
+describe('ConnectionModalNetworkSecuritySection redis SSH topology gating', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('disables the SSH checkbox for Redis Cluster and shows the reason', async () => {
+    const renderer = await renderSection({ redisTopology: 'cluster', useSSH: false });
+    expect(findSshCheckboxDisabled(renderer)).toBe(true);
+    expect(findAllText(renderer)).toContain(UNSUPPORTED_HINT);
+    expect(findAllText(renderer)).not.toContain(DISABLE_ACTION);
+  });
+
+  it('disables the SSH checkbox for Redis Sentinel and shows the reason', async () => {
+    const renderer = await renderSection({ redisTopology: 'sentinel', useSSH: false });
+    expect(findSshCheckboxDisabled(renderer)).toBe(true);
+    expect(findAllText(renderer)).toContain(UNSUPPORTED_HINT);
+  });
+
+  it('keeps a loaded conflicting SSH config recoverable with an explicit disable action', async () => {
+    const renderer = await renderSection({ redisTopology: 'cluster', useSSH: true });
+    expect(findSshCheckboxDisabled(renderer)).toBe(true);
+    const text = findAllText(renderer);
+    expect(text).toContain(UNSUPPORTED_HINT);
+    expect(text).toContain(DISABLE_ACTION);
+  });
+
+  it('keeps SSH available for standalone Redis', async () => {
+    const renderer = await renderSection({ redisTopology: 'single', useSSH: false });
+    expect(findSshCheckboxDisabled(renderer)).toBe(false);
+    const text = findAllText(renderer);
+    expect(text).not.toContain(UNSUPPORTED_HINT);
+    expect(text).toContain(t('connection.modal.network.ssh.disabledHint'));
+  });
+});
