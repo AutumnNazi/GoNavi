@@ -124,6 +124,7 @@ import {
   supportsSSLClientCertificateForType,
   supportsSSLForType,
 } from "../utils/connectionTypeCapabilities";
+import { supportsRedisSshTunnel } from "../utils/redisTopologySsh";
 import {
   normalizeDriverType,
   resolveConnectionDriverType,
@@ -935,6 +936,14 @@ const ConnectionModal: React.FC<{
           supportedDbs,
         ),
       );
+      // Cluster/Sentinel 与 SSH 组合后端不支持：切换拓扑时关闭 SSH 开关，
+      // 已填写的隧道字段保留在表单中，切回单机拓扑可恢复。
+      if (
+        !supportsRedisSshTunnel(nextRedisTopology) &&
+        form.getFieldValue("useSSH")
+      ) {
+        form.setFieldValue("useSSH", false);
+      }
     }
     if (fieldName === "proxyType") {
       const nextType = String(value || "socks5").toLowerCase();
