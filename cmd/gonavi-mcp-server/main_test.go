@@ -1,11 +1,30 @@
 package main
 
 import (
+	"context"
 	"errors"
+	"io"
 	"os"
 	"os/exec"
 	"testing"
 )
+
+func TestIsNormalServerExit(t *testing.T) {
+	for name, err := range map[string]error{
+		"context canceled": context.Canceled,
+		"EOF":              io.EOF,
+	} {
+		t.Run(name, func(t *testing.T) {
+			if !isNormalServerExit(err) {
+				t.Fatalf("isNormalServerExit(%v) = false, want true", err)
+			}
+		})
+	}
+
+	if isNormalServerExit(errors.New("startup failed")) {
+		t.Fatal("startup failure was treated as a normal server exit")
+	}
+}
 
 func TestMainReturnsNonZeroForStartupFailure(t *testing.T) {
 	const helperEnv = "GONAVI_MCP_MAIN_FAILURE_HELPER"

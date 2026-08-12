@@ -117,13 +117,28 @@ jobs:
           trap 'docker rm -f "$cid" >/dev/null 2>&1 || true' EXIT
           for _ in 1 2 3 4 5 6 7 8 9 10; do
             if curl --fail --silent http://127.0.0.1:8765/healthz >/dev/null; then
-              exit 0
+              break
             fi
             sleep 1
           done
-          docker logs "$cid"
-          echo "MCP Server image smoke test failed" >&2
-          exit 1
+          if ! curl --fail --silent http://127.0.0.1:8765/healthz >/dev/null; then
+            docker logs "$cid"
+            echo "MCP Server image smoke test failed" >&2
+            exit 1
+          fi
+          docker kill --signal=TERM "$cid" >/dev/null
+          for _ in 1 2 3 4 5 6 7 8 9 10; do
+            if [[ "$(docker inspect -f '{{.State.Status}}' "$cid")" == "exited" ]]; then
+              break
+            fi
+            sleep 1
+          done
+          if [[ "$(docker inspect -f '{{.State.Status}}' "$cid")" != "exited" ]]; then
+            docker logs "$cid"
+            echo "MCP Server image did not exit after SIGTERM" >&2
+            exit 1
+          fi
+          [[ "$(docker inspect -f '{{.State.ExitCode}}' "$cid")" == "0" ]]
 
       - name: Smoke test CLI image
         if: matrix.image_name == 'gonavi-cli'
@@ -179,6 +194,19 @@ jobs:
           grep -Fq '"success":true' <<<"$login"
           app_status="$(curl --silent --show-error -o /dev/null -w '%{http_code}' -b "$cookie_jar" "${base_url}/")"
           [[ "$app_status" == "200" ]]
+          docker kill --signal=TERM "$cid" >/dev/null
+          for _ in 1 2 3 4 5 6 7 8 9 10; do
+            if [[ "$(docker inspect -f '{{.State.Status}}' "$cid")" == "exited" ]]; then
+              break
+            fi
+            sleep 1
+          done
+          if [[ "$(docker inspect -f '{{.State.Status}}' "$cid")" != "exited" ]]; then
+            docker logs "$cid"
+            echo "Web Server image did not exit after SIGTERM" >&2
+            exit 1
+          fi
+          [[ "$(docker inspect -f '{{.State.ExitCode}}' "$cid")" == "0" ]]
 
       - name: Smoke test build environment image
         if: matrix.image_name == 'gonavi-build-env'
