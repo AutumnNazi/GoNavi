@@ -102,7 +102,7 @@ import {
 import { downloadBrowserTextFile } from './utils/browserFileTransfer';
 import { buildDataSyncWorkbenchTab } from './utils/dataSyncTab';
 import { buildSqlAuditWorkbenchTab } from './utils/sqlAuditTab';
-import { resolveDataSourceType } from './utils/dataSourceCapabilities';
+import { getDataSourceCapabilities, resolveDataSourceType } from './utils/dataSourceCapabilities';
 import { buildContextualNewQueryTemplate } from './utils/objectQueryTemplates';
 import {
   extractCustomThemeAntTokens,
@@ -2749,10 +2749,17 @@ function App() {
 
   const handleNewQuery = useCallback(() => {
       const currentTab = activeTabId ? tabs.find(tab => tab.id === activeTabId) : undefined;
+      // 只继承支持查询编辑器的活动连接；Nacos/JVM 等工作台活动时不预选连接，
+      // 避免新建查询落入必然失败的 SQL 工作流。
+      const validConnectionIds = new Set(
+          connections
+              .filter(connection => getDataSourceCapabilities(connection.config).supportsQueryEditor)
+              .map(connection => connection.id),
+      );
       const targetContext = resolveNewQueryContext({
           sidebarContext: activeContext,
           activeTab: currentTab,
-          validConnectionIds: new Set(connections.map(connection => connection.id)),
+          validConnectionIds,
       });
       const connection = connections.find(c => c.id === targetContext.connectionId);
       const inheritsTableContext = canInheritNewQueryTableContext({
