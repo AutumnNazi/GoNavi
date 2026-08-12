@@ -122,6 +122,7 @@ type openAIChatMessage struct {
 
 func buildOpenAIMessages(reqMessages []ai.Message, modelName string, baseURL string) []openAIChatMessage {
 	reqMessages = normalizeOpenAISystemMessageOrder(reqMessages)
+	reqMessages = normalizeOpenAIToolCallHistory(reqMessages)
 	messages := make([]openAIChatMessage, len(reqMessages))
 	replayReasoningContent := shouldReplayReasoningContent(modelName, baseURL)
 	for i, m := range reqMessages {
@@ -171,6 +172,60 @@ func buildOpenAIMessages(reqMessages []ai.Message, modelName string, baseURL str
 		}
 	}
 	return messages
+}
+
+// normalizeOpenAIToolCallHistory removes incomplete tool-call groups and orphan
+// tool results. OpenAI-compatible APIs require every assistant tool_call to be
+// answered by a contiguous tool message before another conversation turn.
+func normalizeOpenAIToolCallHistory(messages []ai.Message) []ai.Message {
+	normalized := make([]ai.Message, 0, len(messages))
+	for index := 0; index < len(messages); {
+		message := messages[index]
+		if message.Role == "tool" {
+			index++
+			continue
+		}
+		if message.Role != "assistant" || len(message.ToolCalls) == 0 {
+			normalized = append(normalized, message)
+			index++
+			continue
+		}
+
+		expected := make(map[string]struct{}, len(message.ToolCalls))
+		valid := true
+		for _, call := range message.ToolCalls {
+			if call.ID == "" {
+				valid = false
+				break
+			}
+			if _, duplicate := expected[call.ID]; duplicate {
+				valid = false
+				break
+			}
+			expected[call.ID] = struct{}{}
+		}
+		end := index + 1
+		results := make([]ai.Message, 0, len(expected))
+		seen := make(map[string]struct{}, len(expected))
+		for end < len(messages) && messages[end].Role == "tool" {
+			result := messages[end]
+			if _, ok := expected[result.ToolCallID]; !ok {
+				valid = false
+			} else if _, duplicate := seen[result.ToolCallID]; duplicate {
+				valid = false
+			} else {
+				seen[result.ToolCallID] = struct{}{}
+				results = append(results, result)
+			}
+			end++
+		}
+		if valid && len(seen) == len(expected) {
+			normalized = append(normalized, message)
+			normalized = append(normalized, results...)
+		}
+		index = end
+	}
+	return normalized
 }
 
 // normalizeOpenAISystemMessageOrder keeps strict OpenAI-compatible endpoints
