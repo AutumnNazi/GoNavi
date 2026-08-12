@@ -6703,7 +6703,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                           getMatchRank: (table, normalizedPrefix) => {
                               if (String(table.dbName || '').toLowerCase() !== qualifierLower) return null;
                               const meta = buildDbQualifiedTableSuggestionMeta(table.dbName || qualifier, table.tableName || '');
-                              return rankQueryEditorCompletionCandidate(normalizedPrefix, [meta.displayName, table.tableName], false);
+                              return rankQueryEditorCompletionCandidate(normalizedPrefix, [meta.displayName, table.tableName]);
                           },
                           getSelectionKey: (table, _prefix, matchRank) => {
                               const meta = buildDbQualifiedTableSuggestionMeta(table.dbName || qualifier, table.tableName || '');
@@ -6764,7 +6764,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                           prefix,
                           getMatchRank: (synonym, normalizedPrefix) => (
                               String(synonym.ownerName || '').trim().toLowerCase() === qualifierLower
-                                  ? rankQueryEditorCompletionCandidate(normalizedPrefix, [synonym.synonymName], false)
+                                  ? rankQueryEditorCompletionCandidate(normalizedPrefix, [synonym.synonymName])
                                   : null
                           ),
                           getSelectionKey: (synonym) => '06' + synonym.synonymName,
@@ -6779,7 +6779,6 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                               return rankQueryEditorCompletionCandidate(
                                   normalizedPrefix,
                                   [meta.displayName, meta.objectName, routine.routineName],
-                                  false,
                               );
                           },
                           getSelectionKey: (routine) => '1' + buildRoutineSuggestionMeta(routine).displayName,
@@ -6818,7 +6817,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                           if (parsed.schema.toLowerCase() !== qualifierLower) return null;
                           hasKnownSchemaQualifier = true;
                           if (!parsed.table) return null;
-                          return rankQueryEditorCompletionCandidate(normalizedPrefix, [parsed.table], false);
+                          return rankQueryEditorCompletionCandidate(normalizedPrefix, [parsed.table]);
                       },
                       getSelectionKey: (table, _prefix, matchRank) => `0${matchRank}${splitSchemaAndTable(table.tableName || '', table.dbName).table}`,
                       buildSuggestion: (table) => {
@@ -6849,7 +6848,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                               if (meta.schemaName.toLowerCase() !== qualifierLower) return null;
                               hasKnownSchemaQualifier = true;
                               if (!meta.objectName) return null;
-                              return rankQueryEditorCompletionCandidate(normalizedPrefix, [meta.objectName], false);
+                              return rankQueryEditorCompletionCandidate(normalizedPrefix, [meta.objectName]);
                           },
                           getSelectionKey: (view, _prefix, matchRank) => `05${matchRank}${buildViewSuggestionMeta(view).objectName}`,
                           buildSuggestion: (view) => {
@@ -6875,7 +6874,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                       getMatchRank: (synonym, normalizedPrefix) => {
                           if (String(synonym.ownerName || '').trim().toLowerCase() !== qualifierLower) return null;
                           hasKnownSchemaQualifier = true;
-                          return rankQueryEditorCompletionCandidate(normalizedPrefix, [synonym.synonymName], false);
+                          return rankQueryEditorCompletionCandidate(normalizedPrefix, [synonym.synonymName]);
                       },
                       getSelectionKey: (synonym) => '06' + synonym.synonymName,
                       buildSuggestion: (synonym) => buildSynonymSuggestion(synonym, '06' + synonym.synonymName),
@@ -6887,7 +6886,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                           const meta = buildRoutineSuggestionMeta(routine);
                           if (meta.schemaName.toLowerCase() !== qualifierLower) return null;
                           hasKnownSchemaQualifier = true;
-                          return rankQueryEditorCompletionCandidate(normalizedPrefix, [meta.objectName], false);
+                          return rankQueryEditorCompletionCandidate(normalizedPrefix, [meta.objectName]);
                       },
                       getSelectionKey: (routine) => '1' + buildRoutineSuggestionMeta(routine).objectName,
                       buildSuggestion: (routine) => {
@@ -7113,10 +7112,9 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                           return rankQueryEditorCompletionCandidate(
                               normalizedPrefix,
                               [meta.dbQualifiedLabel, table.tableName, pureTable],
-                              !expectsTableName,
                           );
                       }
-                      return rankQueryEditorCompletionCandidate(normalizedPrefix, [table.tableName, pureTable], !expectsTableName);
+                      return rankQueryEditorCompletionCandidate(normalizedPrefix, [table.tableName, pureTable]);
                   },
                   getSelectionKey: (table, _prefix, matchRank) => {
                       const isCurrentDb = isCurrentCompletionDatabase(table.dbName || '');
@@ -7186,7 +7184,6 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                           return rankQueryEditorCompletionCandidate(
                               normalizedPrefix,
                               [meta.dbQualifiedLabel, meta.displayName, meta.objectName, view.viewName],
-                              !expectsTableName,
                           );
                       },
                       getSelectionKey: (view, _prefix, matchRank) => {
@@ -7225,7 +7222,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                   candidates: selectUnqualifiedCompletionSynonyms(sharedSynonymsData, oracleLoginOwner),
                   prefix: wordPrefix,
                   getMatchRank: (synonym, normalizedPrefix) => (
-                      rankQueryEditorCompletionCandidate(normalizedPrefix, [synonym.synonymName], !expectsTableName)
+                      rankQueryEditorCompletionCandidate(normalizedPrefix, [synonym.synonymName])
                   ),
                   getSelectionKey: (synonym) => (
                       sortGroups.tableCurrent + '05' + getPrefixMatchRank(synonym.synonymName || '') + synonym.synonymName
@@ -7245,7 +7242,6 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                       return rankQueryEditorCompletionCandidate(
                           normalizedPrefix,
                           [meta.dbQualifiedLabel, meta.displayName, meta.objectName, routine.routineName],
-                          !expectsTableName && !expectsRoutineName,
                       );
                   },
                   getSelectionKey: (routine) => {
