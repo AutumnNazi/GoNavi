@@ -791,27 +791,29 @@ export const buildSidebarLegacyNodeMenuItems = (
                 }
             },
             { type: 'divider' },
-             {
-               key: 'new-query',
-               label: t('sidebar.menu.new_query'),
-               icon: <ConsoleSqlOutlined />,
-               onClick: () => {
-                   addTab({
-                       id: `query-${Date.now()}`,
-                       title: buildConnectionRootQueryTabTitle(),
-                       type: 'query',
-                       connectionId: node.key,
-                       dbName: undefined,
-                       query: ''
-                   });
-               }
-             },
-             {
-                 key: 'open-sql-file',
-                 label: t('sidebar.sql_file_exec.title'),
-                 icon: <FileAddOutlined />,
-                 onClick: () => handleRunSQLFile(node)
-             },
+             ...(connectionCapabilities.supportsQueryEditor ? [
+                 {
+                   key: 'new-query',
+                   label: t('sidebar.menu.new_query'),
+                   icon: <ConsoleSqlOutlined />,
+                   onClick: () => {
+                       addTab({
+                           id: `query-${Date.now()}`,
+                           title: buildConnectionRootQueryTabTitle(),
+                           type: 'query',
+                           connectionId: node.key,
+                           dbName: undefined,
+                           query: ''
+                       });
+                   }
+                 },
+                 {
+                     key: 'open-sql-file',
+                     label: t('sidebar.sql_file_exec.title'),
+                     icon: <FileAddOutlined />,
+                     onClick: () => handleRunSQLFile(node)
+                 },
+             ] : []),
              { type: 'divider' },
              {
                  key: 'edit',
