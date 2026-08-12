@@ -64,7 +64,13 @@ const ConnectionModalNetworkSecuritySection: React.FC<ConnectionModalNetworkSecu
   const keepAliveEnabled = !!Form.useWatch("keepAliveEnabled", form);
   const connectionDriver = Form.useWatch("driver", form);
   const oceanBaseProtocol = Form.useWatch("oceanBaseProtocol", form);
-  const redisTopology = Form.useWatch("redisTopology", form);
+  // redisTopology 的表单项在「基本」页签内，查看「网络与安全」页签时该字段未注册；
+  // 默认 useWatch 只读已注册字段的值（getFieldsValue()），此时会拿到 undefined 导致
+  // Cluster/Sentinel 的 SSH 门控失效。preserve: true 改为读取含保留值的全量 store。
+  const redisTopology = Form.useWatch("redisTopology", {
+    form,
+    preserve: true,
+  });
   const keepAliveSQLSupported = supportsConnectionKeepAliveSQL({
     type: dbType,
     driver: connectionDriver,
@@ -705,7 +711,9 @@ const ConnectionModalNetworkSecuritySection: React.FC<ConnectionModalNetworkSecu
         <div className="gn-conn-net-detail">
           <h4>
             {activeItem.title}
-            {activeItem.enabled ? (
+            {activeItem.unavailable ? (
+              <span>· {t("connection.modal.network.unsupported")}</span>
+            ) : activeItem.enabled ? (
               <span className="on">· {t("connection.modal.network.enabled")}</span>
             ) : null}
           </h4>

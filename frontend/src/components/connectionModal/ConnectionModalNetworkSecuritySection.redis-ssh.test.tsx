@@ -89,8 +89,26 @@ const renderSection = async (
   return renderer!;
 };
 
+// 只收集可见文本叶子节点，避免 data-form-item 等属性名（如 keepAliveEnabled）
+// 干扰状态文案断言。
+const collectTextLeaves = (node: unknown, acc: string[]): string[] => {
+  if (typeof node === 'string') {
+    acc.push(node);
+    return acc;
+  }
+  if (Array.isArray(node)) {
+    node.forEach((child) => collectTextLeaves(child, acc));
+    return acc;
+  }
+  if (node && typeof node === 'object') {
+    const children = (node as { children?: unknown }).children;
+    if (children) collectTextLeaves(children, acc);
+  }
+  return acc;
+};
+
 const findAllText = (renderer: ReactTestRenderer): string =>
-  JSON.stringify(renderer.toJSON());
+  collectTextLeaves(renderer.toJSON(), []).join('\n');
 
 const findSshCheckboxDisabled = (renderer: ReactTestRenderer): boolean | undefined => {
   const formItem = renderer.root.findAll(
@@ -128,6 +146,9 @@ describe('ConnectionModalNetworkSecuritySection redis SSH topology gating', () =
     const text = findAllText(renderer);
     expect(text).toContain(UNSUPPORTED_HINT);
     expect(text).toContain(DISABLE_ACTION);
+    // 行状态与详情面板标题都不能再把冲突配置描述为「已启用」。
+    expect(text).toContain(t('connection.modal.network.unsupported'));
+    expect(text).not.toContain(t('connection.modal.network.enabled'));
   });
 
   it('keeps SSH available for standalone Redis', async () => {
