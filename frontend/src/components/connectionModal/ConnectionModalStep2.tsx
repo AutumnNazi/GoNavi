@@ -58,6 +58,7 @@ import ConnectionModalNetworkSecuritySection from "./ConnectionModalNetworkSecur
 import type { MongoMemberInfo } from "../../types";
 import ConnectionEnvironmentSelect from "../ConnectionEnvironmentSelect";
 import { DEFAULT_CONNECTION_ENVIRONMENT } from "../../utils/connectionEnvironment";
+import { supportsRedisSshTunnel } from "../../utils/redisTopologySsh";
 
 const { Text } = Typography;
 
@@ -2923,6 +2924,14 @@ const ConnectionModalStep2: React.FC<ConnectionModalStep2Props> = (props) => {
               supportedDbs,
             ),
           );
+          // Cluster/Sentinel 与 SSH 组合后端不支持：切换拓扑时关闭 SSH 开关，
+          // 已填写的隧道字段保留在表单中，切回单机拓扑可恢复。
+          if (
+            !supportsRedisSshTunnel(nextRedisTopology) &&
+            form.getFieldValue("useSSH")
+          ) {
+            form.setFieldValue("useSSH", false);
+          }
         }
         if (
           changed.type !== undefined ||
