@@ -121,7 +121,7 @@ type openAIChatMessage struct {
 }
 
 func buildOpenAIMessages(reqMessages []ai.Message, modelName string, baseURL string) []openAIChatMessage {
-	reqMessages = normalizeOpenAISystemMessageOrder(normalizeToolCallHistory(reqMessages))
+	reqMessages = normalizeOpenAISystemMessageOrder(normalizeOpenAIToolCallHistory(reqMessages))
 	messages := make([]openAIChatMessage, len(reqMessages))
 	replayReasoningContent := shouldReplayReasoningContent(modelName, baseURL)
 	for i, m := range reqMessages {
@@ -178,7 +178,7 @@ func buildOpenAIMessages(reqMessages []ai.Message, modelName string, baseURL str
 // followed immediately by a result for each call ID; a canceled stream can
 // otherwise leave an invalid turn in the persisted chat history.
 func normalizeToolCallHistory(messages []ai.Message) []ai.Message {
-	return normalizeToolCallHistoryWithOptions(messages, false, nil)
+	return normalizeOpenAIToolCallHistory(messages)
 }
 
 func normalizeToolCallHistoryForResponses(messages []ai.Message) []ai.Message {
@@ -252,6 +252,14 @@ func normalizeToolCallHistoryWithOptions(messages []ai.Message, preserveStandalo
 func hasToolCallID(toolCallIDs map[string]struct{}, id string) bool {
 	_, ok := toolCallIDs[strings.TrimSpace(id)]
 	return ok
+}
+
+// normalizeOpenAIToolCallHistory is the Chat Completions entry point added by
+// PR #935. It shares the stricter validator with Responses while retaining the
+// Responses session mode, which may legitimately replay known standalone tool
+// results.
+func normalizeOpenAIToolCallHistory(messages []ai.Message) []ai.Message {
+	return normalizeToolCallHistoryWithOptions(messages, false, nil)
 }
 
 // normalizeOpenAISystemMessageOrder keeps strict OpenAI-compatible endpoints
