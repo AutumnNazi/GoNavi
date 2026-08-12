@@ -498,7 +498,9 @@ describe('DataGrid layout', () => {
     expect(css).toContain(
       '.hover-grid.data-grid-root .ant-table-tbody .ant-table-row:hover > .ant-table-cell { background-color: transparent !important; }',
     );
-    expect(css).not.toContain('var(--gn-bg-hover');
+    expect(css).not.toContain(
+      '.hover-grid.data-grid-root .ant-table-tbody .ant-table-row:hover > .ant-table-cell { background-color: var(--gn-bg-hover',
+    );
     expect(css).not.toContain('rgba(34, 197, 94, 0.18)');
     expect(css).not.toContain('added-hover');
     expect(css).not.toContain('modified-hover');
@@ -548,6 +550,47 @@ describe('DataGrid layout', () => {
       expect(rule).toContain('background-image: linear-gradient(');
       expect(rule).toContain('var(--gn-bg-selected, rgba(34, 197, 94, 0.14))');
     });
+  });
+
+  it('paints a neutral crosshair for the active cell while preserving selection precedence', () => {
+    const css = buildDataGridCssText({
+      darkMode: false,
+      densityParams: { dataFontSize: 12 },
+      gridId: 'active-cell-grid',
+      bgContent: '#ffffff',
+    });
+    const rowSelector = '.active-cell-grid.data-grid-root .ant-table-tbody-virtual-holder .ant-table-row[data-active-cell-row="true"] > .ant-table-cell';
+    const columnSelector = '.active-cell-grid.data-grid-root .ant-table-tbody-virtual-holder .ant-table-row > .ant-table-cell[data-active-cell-column="true"]';
+    const fixedControlHoverSelector = '.active-cell-grid.data-grid-root .ant-table-tbody-virtual-holder .ant-table-row[data-active-cell-row="true"]:hover > .ant-table-cell:is(.data-grid-row-number-cell, .ant-table-selection-column)';
+    const headerSelector = '.active-cell-grid.data-grid-root .ant-table-header .ant-table-thead > tr > th.ant-table-cell[data-active-cell-column="true"]';
+
+    [rowSelector, columnSelector, fixedControlHoverSelector, headerSelector].forEach((selector) => {
+      expect(css).toContain(selector);
+    });
+    const fixedControlHoverRuleStart = css.indexOf(fixedControlHoverSelector);
+    const fixedControlHoverRuleEnd = css.indexOf('}', fixedControlHoverRuleStart);
+    const fixedControlHoverRule = css.slice(fixedControlHoverRuleStart, fixedControlHoverRuleEnd + 1);
+    expect(fixedControlHoverRule).toContain('background-color: var(--gn-bg-panel, #ffffff) !important;');
+    expect(fixedControlHoverRule).toContain('background-image: linear-gradient(');
+    expect(fixedControlHoverRule).toContain(
+      'var(--gn-bg-hover, rgba(15, 23, 42, 0.045))',
+    );
+    expect(css).toContain('var(--gn-bg-hover, rgba(15, 23, 42, 0.045))');
+    expect(css).toContain('var(--gn-bg-active, rgba(15, 23, 42, 0.075))');
+    expect(css.indexOf('[data-cell-selected="true"]')).toBeGreaterThan(css.indexOf(rowSelector));
+
+    const darkCss = buildDataGridCssText({
+      darkMode: true,
+      densityParams: { dataFontSize: 12 },
+      gridId: 'active-cell-dark-grid',
+      bgContent: '#161a21',
+    });
+    expect(darkCss).toContain('var(--gn-bg-hover, rgba(255, 255, 255, 0.05))');
+    expect(darkCss).toContain('var(--gn-bg-active, rgba(255, 255, 255, 0.08))');
+
+    const source = readDataGridSource();
+    expect(source).toContain("'data-col-name': key");
+    expect(source).toContain('syncDataGridCellSelectionVisuals({');
   });
 
   it('uses the table cell as the only V2 inline edit frame', () => {
