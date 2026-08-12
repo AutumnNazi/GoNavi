@@ -159,6 +159,7 @@ const ConnectionModalStep2: React.FC<ConnectionModalStep2Props> = (props) => {
     onOpenDriverManager,
     oracleMode,
     primaryPasswordVisible,
+    handlePrimaryPasswordVisibleChange,
     proxyType,
     redisDbList,
     redisTopology,
@@ -179,7 +180,6 @@ const ConnectionModalStep2: React.FC<ConnectionModalStep2Props> = (props) => {
     setCustomIconType,
     setDbType,
     setMongoMembers,
-    setPrimaryPasswordVisible,
     setRedisDbList,
     setTestErrorLogOpen,
     setTestResult,
@@ -1480,7 +1480,7 @@ const ConnectionModalStep2: React.FC<ConnectionModalStep2Props> = (props) => {
                           {...noAutoCapInputProps}
                           visibilityToggle={{
                             visible: primaryPasswordVisible,
-                            onVisibleChange: setPrimaryPasswordVisible,
+                            onVisibleChange: handlePrimaryPasswordVisibleChange,
                           }}
                           placeholder={getStoredSecretPlaceholder({
                             hasStoredSecret: initialValues?.hasPrimaryPassword,
@@ -1533,7 +1533,7 @@ const ConnectionModalStep2: React.FC<ConnectionModalStep2Props> = (props) => {
                         {...noAutoCapInputProps}
                         visibilityToggle={{
                           visible: primaryPasswordVisible,
-                          onVisibleChange: setPrimaryPasswordVisible,
+                          onVisibleChange: handlePrimaryPasswordVisibleChange,
                         }}
                         placeholder={getStoredSecretPlaceholder({
                           hasStoredSecret: initialValues?.hasPrimaryPassword,
@@ -1548,6 +1548,19 @@ const ConnectionModalStep2: React.FC<ConnectionModalStep2Props> = (props) => {
                     </Form.Item>
                   </div>
                 </div>
+                {initialValues?.hasPrimaryPassword
+                  ? renderStoredSecretControls({
+                      fieldName: "password",
+                      clearKey: "primaryPassword",
+                      hasStoredSecret: initialValues?.hasPrimaryPassword,
+                      clearLabel: t(
+                        "connection.modal.secret.clear_saved_password",
+                      ),
+                      description: t(
+                        "connection.modal.secret.saved_redis_password",
+                      ),
+                    })
+                  : null}
               </div>
             )}
 

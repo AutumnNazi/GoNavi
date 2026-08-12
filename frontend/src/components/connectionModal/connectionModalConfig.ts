@@ -137,10 +137,7 @@ export const buildSavedConnectionInput = ({
   const primaryDraft = resolveConnectionSecretDraft({
     hasSecret: initialValues?.hasPrimaryPassword,
     valueInput: config.password,
-    clearSecret:
-      clearSecrets.primaryPassword ||
-      (initialValues?.hasPrimaryPassword === true &&
-        String(config.password || "") === ""),
+    clearSecret: clearSecrets.primaryPassword,
     forceClear: values.type === "mongodb" && values.savePassword === false,
   });
   const sshDraft = resolveConnectionSecretDraft({

@@ -3758,6 +3758,7 @@
   "connection_modal.secret.error.saved_connection_missing": "Das gespeicherte Secret für die aktuelle Verbindung wurde nicht gefunden. Geben Sie das Passwort erneut ein, speichern Sie und versuchen Sie es noch einmal.",
   "connection_modal.secret.error.store_unavailable": "Der sichere Secret-Speicher ist derzeit nicht verfügbar. Prüfen Sie den System-Schlüsselbund oder die Anmeldeinformationsverwaltung und versuchen Sie es erneut.",
   "connection_modal.secret.new_value_replaces_saved": "Der neu eingegebene Wert ersetzt beim Speichern den aktuell gesicherten Wert.",
+  "connection_modal.secret.reveal_failed": "Das gespeicherte Passwort konnte nicht angezeigt werden: {{detail}}",
   "connection_modal.secret.saved_dsn_description": "Eine DSN ist bereits sicher gespeichert. Lassen Sie das Feld leer, um sie weiter zu verwenden.",
   "connection_modal.secret.saved_mongo_replica_password": "Gespeichertes MongoDB-Replica-Passwort",
   "connection_modal.secret.saved_mongo_replica_password_description": "Ein MongoDB-Replica-Passwort ist bereits im sicheren Speicher vorhanden. Leer lassen, um es beizubehalten.",

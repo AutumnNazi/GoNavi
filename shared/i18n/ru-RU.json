@@ -3758,6 +3758,7 @@
   "connection_modal.secret.error.saved_connection_missing": "Сохраненный секрет для текущего подключения не найден. Повторно введите пароль, сохраните и попробуйте снова.",
   "connection_modal.secret.error.store_unavailable": "Безопасное хранилище секретов сейчас недоступно. Проверьте системную связку ключей или диспетчер учетных данных и попробуйте снова.",
   "connection_modal.secret.new_value_replaces_saved": "Введено новое значение. При сохранении оно заменит текущие сохраненные данные.",
+  "connection_modal.secret.reveal_failed": "Не удалось показать сохраненный пароль: {{detail}}",
   "connection_modal.secret.saved_dsn_description": "DSN уже сохранен в защищенном хранилище. Оставьте поле пустым, чтобы сохранить его.",
   "connection_modal.secret.saved_mongo_replica_password": "Сохраненный пароль реплики MongoDB",
   "connection_modal.secret.saved_mongo_replica_password_description": "Пароль реплики MongoDB уже сохранен в защищенном хранилище. Оставьте поле пустым, чтобы сохранить его.",

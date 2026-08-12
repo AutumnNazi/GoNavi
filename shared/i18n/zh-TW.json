@@ -3758,6 +3758,7 @@
   "connection_modal.secret.error.saved_connection_missing": "找不到目前連線對應的已儲存密文，請重新填寫密碼並儲存後再試",
   "connection_modal.secret.error.store_unavailable": "系統密文儲存目前無法使用，請檢查系統鑰匙圈或認證管理員後再試",
   "connection_modal.secret.new_value_replaces_saved": "已輸入新值，儲存時會取代目前已儲存內容。",
+  "connection_modal.secret.reveal_failed": "顯示已儲存密碼失敗：{{detail}}",
   "connection_modal.secret.saved_dsn_description": "安全儲存中已有 DSN。留空將繼續使用該 DSN。",
   "connection_modal.secret.saved_mongo_replica_password": "已儲存 MongoDB 複本密碼",
   "connection_modal.secret.saved_mongo_replica_password_description": "安全儲存中已有 MongoDB 複本密碼。留空將繼續使用該密碼。",
