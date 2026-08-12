@@ -408,6 +408,45 @@ describe('dataSourceCapabilities', () => {
     });
   });
 
+  it('excludes dedicated-workbench datasources without a query workflow from the query editor', () => {
+    expect(getDataSourceCapabilities({ type: 'nacos' }).supportsQueryEditor).toBe(false);
+    expect(getDataSourceCapabilities({ type: 'jvm' }).supportsQueryEditor).toBe(false);
+    expect(getDataSourceCapabilities({ type: 'redis' }).supportsQueryEditor).toBe(false);
+    // 自定义连接驱动指向这些类型时同样排除，避免绕过白名单
+    expect(getDataSourceCapabilities({ type: 'custom', driver: 'nacos' }).supportsQueryEditor).toBe(false);
+    expect(getDataSourceCapabilities({ type: 'custom', driver: 'jvm' }).supportsQueryEditor).toBe(false);
+    expect(getDataSourceCapabilities({ type: 'custom', driver: 'redis' }).supportsQueryEditor).toBe(false);
+  });
+
+  it('keeps the query editor available for all currently queryable datasource families', () => {
+    [
+      { type: 'mysql' },
+      { type: 'postgres' },
+      { type: 'mongodb' },
+      { type: 'clickhouse' },
+      { type: 'sphinx' },
+      { type: 'duckdb' },
+      { type: 'sqlite' },
+      { type: 'dameng' },
+      { type: 'trino' },
+      { type: 'tdengine' },
+      { type: 'iotdb' },
+      { type: 'rocketmq' },
+      { type: 'mqtt' },
+      { type: 'kafka' },
+      { type: 'rabbitmq' },
+      { type: 'elasticsearch' },
+      { type: 'chroma' },
+      { type: 'qdrant' },
+      { type: 'milvus' },
+      { type: 'custom', driver: 'clickhouse' },
+      // 未识别驱动的通用自定义连接仍保留查询入口
+      { type: 'custom', driver: 'some-jdbc-driver' },
+    ].forEach((config) => {
+      expect(getDataSourceCapabilities(config).supportsQueryEditor, JSON.stringify(config)).toBe(true);
+    });
+  });
+
   it('treats RabbitMQ as a queryable messaging datasource with publish support', () => {
     expect(getDataSourceCapabilities({ type: 'rabbitmq' })).toMatchObject({
       type: 'rabbitmq',
