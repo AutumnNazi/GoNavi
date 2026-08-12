@@ -327,6 +327,37 @@ func TestCheckForUpdatesRestoresPersistedGlobalProxyRuntime(t *testing.T) {
 	}
 }
 
+func TestStrictUpdateTransportNeverEnablesInsecureTLSFallback(t *testing.T) {
+	previousProxy := currentGlobalProxyConfig()
+	t.Cleanup(func() {
+		_, _ = setGlobalProxyConfig(previousProxy.Enabled, previousProxy.Proxy)
+	})
+	if _, err := setGlobalProxyConfig(true, connection.ProxyConfig{
+		Type: "http",
+		Host: "127.0.0.1",
+		Port: 18080,
+	}); err != nil {
+		t.Fatalf("configure loopback proxy: %v", err)
+	}
+	transport, ok := buildStrictHTTPTransportWithGlobalProxy().(*http.Transport)
+	if !ok || transport == nil {
+		t.Fatalf("unexpected strict update transport: %T", transport)
+	}
+	if transport.TLSClientConfig != nil && transport.TLSClientConfig.InsecureSkipVerify {
+		t.Fatal("strict update transport must not skip TLS verification")
+	}
+}
+
+func TestStrictUpdateClientRejectsHTTPSDowngradeRedirect(t *testing.T) {
+	req, err := http.NewRequest(http.MethodGet, "http://43.139.148.5/asset", nil)
+	if err != nil {
+		t.Fatalf("build request: %v", err)
+	}
+	if err := strictHTTPSRedirectPolicy(req, []*http.Request{{}}); err == nil {
+		t.Fatal("strict update redirect policy must reject plaintext destinations")
+	}
+}
+
 func TestFetchLatestUpdateInfoMapsReleaseNotesFromStaticManifest(t *testing.T) {
 	assetName, err := expectedAssetName(stdRuntime.GOOS, stdRuntime.GOARCH, "1.2.3")
 	if err != nil {

@@ -38,7 +38,9 @@ jobs:
           python3 tools/generate-update-latest-manifest.test.py
           python3 tools/validate-gui-update-manifest.test.py
           python3 tools/prepare-vps-release-payload.test.py
-          bash tools/vps-release-commit.test.sh
+          python3 tools/edge-release-transaction.test.py
+          python3 tools/edge-release-retention.test.py
+          python3 tools/download-mirror-config.test.py
           python3 tools/package-driver-release-assets.test.py
           python3 tools/cli-release-assets.test.py
           python3 tools/npm-cli-wrapper.test.py
@@ -1531,7 +1533,8 @@ jobs:
             --tag "$TAG" \
             --channel latest \
             --component gui \
-            --download-base-url https://download.syngnat.top/gonavi/releases/download \
+            --download-dispatcher-url https://download-dispatch.syngnat.top/v1/resolve \
+            --download-path-prefix /gonavi/releases/download \
             --output release-assets/latest.json
           test -s release-assets/latest.json
           echo "📄 latest.json ready:"
@@ -1616,7 +1619,8 @@ jobs:
             --tag "$TAG" \
             --channel latest \
             --component gui \
-            --download-base-url https://download.syngnat.top/gonavi/releases/download \
+            --download-dispatcher-url https://download-dispatch.syngnat.top/v1/resolve \
+            --download-path-prefix /gonavi/releases/download \
             --release-notes-file "$CHANGELOG_FILE" \
             --output release-assets/latest.json
           jq -e '(.releaseNotes | type == "string" and length > 0)' release-assets/latest.json >/dev/null

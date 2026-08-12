@@ -1,9 +1,6 @@
 package app
 
 import (
-	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -38,7 +35,6 @@ const (
 	updateReleaseCacheTTL       = 10 * time.Minute
 	updateGitHubAPIVersion      = "2022-11-28"
 	updateHTTPBodySnippetLimit  = 240
-	updateDownloadParallelism   = 8
 )
 
 type cachedGitHubRelease struct {
@@ -65,7 +61,6 @@ var (
 )
 
 var errUpdateChecksumMismatch = errors.New("update package checksum mismatch")
-var errUpdateRangeUnsupported = errors.New("update server does not support byte ranges")
 
 type updateState struct {
 	lastCheck   *UpdateInfo
@@ -679,6 +674,7 @@ func (a *App) downloadAndStageUpdate(info UpdateInfo, expectedRevision uint64) (
 		[]string{info.AssetURL, info.AssetAPIURL},
 		assetPath,
 		info.SHA256,
+		info.AssetSize,
 		progressCB,
 	)
 	if err != nil {
@@ -727,6 +723,7 @@ func downloadUpdateAssetWithFallback(
 	candidates []string,
 	assetPath string,
 	expectedSHA256 string,
+	expectedSize int64,
 	onProgress func(downloaded, total int64),
 ) (string, error) {
 	seen := make(map[string]struct{}, len(candidates))
@@ -754,6 +751,14 @@ func downloadUpdateAssetWithFallback(
 	for index, candidate := range urls {
 		_ = os.Remove(assetPath)
 		actualHash, err := downloadFileWithHash(candidate, assetPath, onProgress)
+		if err == nil && expectedSize > 0 {
+			stat, statErr := os.Stat(assetPath)
+			if statErr != nil {
+				err = statErr
+			} else if stat.Size() != expectedSize {
+				err = fmt.Errorf("update package size mismatch: expected=%d actual=%d", expectedSize, stat.Size())
+			}
+		}
 		if err == nil && expectedHash != "" && !strings.EqualFold(expectedHash, actualHash) {
 			err = errUpdateChecksumMismatch
 		}
@@ -928,7 +933,7 @@ func fetchReleaseByURL(apiURL string) (*githubRelease, error) {
 		return nil, localizedUpdateError{key: "app.update.backend.error.latest_version_unparseable"}
 	}
 
-	client := newHTTPClientWithGlobalProxy(15 * time.Second)
+	client := newStrictHTTPClientWithGlobalProxy(15 * time.Second)
 	req, err := http.NewRequest(http.MethodGet, apiURL, nil)
 	if err != nil {
 		return nil, err
@@ -1248,7 +1253,7 @@ func fetchReleaseSHA256(assets []githubAsset) (map[string]string, error) {
 		return nil, localizedUpdateError{key: "app.update.backend.error.sha256sums_missing"}
 	}
 
-	client := newHTTPClientWithGlobalProxy(15 * time.Second)
+	client := newStrictHTTPClientWithGlobalProxy(15 * time.Second)
 	var lastStatus int
 	for _, candidate := range candidates {
 		resp, err := doGitHubDownload(client, candidate)
@@ -1354,278 +1359,7 @@ func downloadFileWithHash(url, filePath string, onProgress func(downloaded, tota
 }
 
 func downloadFileWithHashWithTimeout(url, filePath string, onProgress func(downloaded, total int64), timeout time.Duration) (string, error) {
-	if timeout <= 0 {
-		timeout = 10 * time.Minute
-	}
-	client := newHTTPClientWithGlobalProxy(timeout)
-	probeResp, err := doGitHubDownloadRange(client, url, "bytes=0-0", context.Background())
-	if err != nil {
-		return "", err
-	}
-
-	if probeResp.StatusCode == http.StatusPartialContent {
-		start, end, total, valid := parseDownloadContentRange(probeResp.Header.Get("Content-Range"))
-		_, _ = io.Copy(io.Discard, probeResp.Body)
-		_ = probeResp.Body.Close()
-		if valid && start == 0 && end == 0 && total >= updateDownloadParallelism {
-			hash, parallelErr := downloadFileWithParallelRanges(client, url, filePath, total, onProgress)
-			if parallelErr == nil {
-				return hash, nil
-			}
-			if !errors.Is(parallelErr, errUpdateRangeUnsupported) {
-				return "", parallelErr
-			}
-		} else {
-			return downloadFileWithSingleRequest(client, url, filePath, onProgress)
-		}
-	} else if probeResp.StatusCode == http.StatusOK {
-		defer probeResp.Body.Close()
-		return downloadResponseWithHash(probeResp, filePath, onProgress)
-	} else {
-		body, _ := io.ReadAll(io.LimitReader(probeResp.Body, 64<<10))
-		_ = probeResp.Body.Close()
-		return "", classifyGitHubUpdateHTTPError(probeResp.StatusCode, body, probeResp.Header, false)
-	}
-
-	return downloadFileWithSingleRequest(client, url, filePath, onProgress)
-}
-
-func downloadFileWithSingleRequest(client *http.Client, url, filePath string, onProgress func(downloaded, total int64)) (string, error) {
-	resp, err := doGitHubDownload(client, url)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
-		return "", classifyGitHubUpdateHTTPError(resp.StatusCode, body, resp.Header, false)
-	}
-	return downloadResponseWithHash(resp, filePath, onProgress)
-}
-
-func downloadResponseWithHash(resp *http.Response, filePath string, onProgress func(downloaded, total int64)) (string, error) {
-	out, err := createUpdateDownloadFile(filePath)
-	if err != nil {
-		return "", err
-	}
-
-	hasher := sha256.New()
-	total := resp.ContentLength
-	progressWriter := &downloadProgressWriter{
-		total:      total,
-		emitEvery:  120 * time.Millisecond,
-		onProgress: onProgress,
-	}
-	writers := []io.Writer{out, hasher, progressWriter}
-	if onProgress != nil {
-		onProgress(0, total)
-	}
-	if _, err := io.Copy(io.MultiWriter(writers...), resp.Body); err != nil {
-		_ = out.Close()
-		return "", wrapUpdateNetworkError(err)
-	}
-	progressWriter.finish()
-
-	// 显式 Sync + Close，确保数据落盘且文件句柄释放
-	if err := out.Sync(); err != nil {
-		_ = out.Close()
-		return "", err
-	}
-	if err := out.Close(); err != nil {
-		return "", err
-	}
-
-	return hex.EncodeToString(hasher.Sum(nil)), nil
-}
-
-func downloadFileWithParallelRanges(
-	client *http.Client,
-	url string,
-	filePath string,
-	total int64,
-	onProgress func(downloaded, total int64),
-) (string, error) {
-	out, err := createUpdateDownloadFile(filePath)
-	if err != nil {
-		return "", err
-	}
-	if err := out.Truncate(total); err != nil {
-		_ = out.Close()
-		return "", err
-	}
-
-	progressWriter := &downloadProgressWriter{
-		total:      total,
-		emitEvery:  120 * time.Millisecond,
-		onProgress: onProgress,
-	}
-	if onProgress != nil {
-		onProgress(0, total)
-	}
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	errCh := make(chan error, updateDownloadParallelism)
-	for index := 0; index < updateDownloadParallelism; index++ {
-		start := total * int64(index) / updateDownloadParallelism
-		end := total*int64(index+1)/updateDownloadParallelism - 1
-		go func() {
-			errCh <- downloadUpdateRange(ctx, client, url, out, progressWriter, start, end, total)
-		}()
-	}
-
-	var firstErr error
-	rangeUnsupported := false
-	for range updateDownloadParallelism {
-		rangeErr := <-errCh
-		if rangeErr == nil {
-			continue
-		}
-		if errors.Is(rangeErr, errUpdateRangeUnsupported) {
-			rangeUnsupported = true
-		}
-		if firstErr == nil {
-			firstErr = rangeErr
-			cancel()
-		}
-	}
-	close(errCh)
-
-	if firstErr != nil {
-		_ = out.Close()
-		if rangeUnsupported {
-			return "", errUpdateRangeUnsupported
-		}
-		return "", firstErr
-	}
-	progressWriter.finish()
-	if err := out.Sync(); err != nil {
-		_ = out.Close()
-		return "", err
-	}
-	if err := out.Close(); err != nil {
-		return "", err
-	}
-	return hashDownloadedFile(filePath)
-}
-
-func downloadUpdateRange(
-	ctx context.Context,
-	client *http.Client,
-	url string,
-	out *os.File,
-	progressWriter *downloadProgressWriter,
-	start, end, total int64,
-) error {
-	resp, err := doGitHubDownloadRange(client, url, fmt.Sprintf("bytes=%d-%d", start, end), ctx)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusPartialContent {
-		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))
-		if resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusRequestedRangeNotSatisfiable {
-			return errUpdateRangeUnsupported
-		}
-		return classifyGitHubUpdateHTTPError(resp.StatusCode, nil, resp.Header, false)
-	}
-
-	actualStart, actualEnd, actualTotal, valid := parseDownloadContentRange(resp.Header.Get("Content-Range"))
-	if !valid || actualStart != start || actualEnd != end || actualTotal != total {
-		return errUpdateRangeUnsupported
-	}
-
-	expected := end - start + 1
-	writer := io.NewOffsetWriter(out, start)
-	written, err := io.Copy(io.MultiWriter(writer, progressWriter), io.LimitReader(resp.Body, expected+1))
-	if err != nil {
-		return wrapUpdateNetworkError(err)
-	}
-	if written != expected {
-		return wrapUpdateNetworkError(io.ErrUnexpectedEOF)
-	}
-	return nil
-}
-
-func doGitHubDownloadRange(client *http.Client, rawURL, byteRange string, ctx context.Context) (*http.Response, error) {
-	rawURL = strings.TrimSpace(rawURL)
-	if rawURL == "" {
-		return nil, localizedUpdateError{
-			key:    "app.update.backend.error.package_download_http_failed",
-			params: map[string]any{"status": 0},
-		}
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
-	if err != nil {
-		return nil, err
-	}
-	applyGitHubDownloadRequestHeaders(req, isGitHubReleaseAssetAPIURL(rawURL))
-	req.Header.Set("Range", byteRange)
-	req.Header.Set("Accept-Encoding", "identity")
-	return doUpdateRequest(client, req)
-}
-
-func parseDownloadContentRange(value string) (start, end, total int64, valid bool) {
-	fields := strings.Fields(strings.TrimSpace(value))
-	if len(fields) != 2 || !strings.EqualFold(fields[0], "bytes") {
-		return 0, 0, 0, false
-	}
-	rangePart, totalPart, ok := strings.Cut(fields[1], "/")
-	if !ok || totalPart == "*" {
-		return 0, 0, 0, false
-	}
-	startPart, endPart, ok := strings.Cut(rangePart, "-")
-	if !ok {
-		return 0, 0, 0, false
-	}
-	start, err := strconv.ParseInt(startPart, 10, 64)
-	if err != nil {
-		return 0, 0, 0, false
-	}
-	end, err = strconv.ParseInt(endPart, 10, 64)
-	if err != nil {
-		return 0, 0, 0, false
-	}
-	total, err = strconv.ParseInt(totalPart, 10, 64)
-	if err != nil || start < 0 || end < start || total <= end {
-		return 0, 0, 0, false
-	}
-	return start, end, total, true
-}
-
-func createUpdateDownloadFile(filePath string) (*os.File, error) {
-	// Windows 上旧文件可能被杀毒软件/索引服务占用，先尝试删除并重试。
-	_ = os.Remove(filePath)
-	var (
-		out *os.File
-		err error
-	)
-	for retry := 0; retry < 5; retry++ {
-		out, err = os.Create(filePath)
-		if err == nil {
-			return out, nil
-		}
-		if retry < 4 {
-			time.Sleep(time.Duration(retry+1) * 500 * time.Millisecond)
-		}
-	}
-	return nil, localizedUpdateError{
-		key:    "app.update.backend.error.package_file_busy",
-		params: map[string]any{"detail": err.Error()},
-	}
-}
-
-func hashDownloadedFile(filePath string) (string, error) {
-	file, err := os.Open(filePath)
-	if err != nil {
-		return "", err
-	}
-	defer file.Close()
-	hasher := sha256.New()
-	if _, err := io.Copy(hasher, file); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(hasher.Sum(nil)), nil
+	return downloadFileWithHashParallelAware(url, filePath, onProgress, timeout)
 }
 
 func doUpdateRequest(client *http.Client, req *http.Request) (*http.Response, error) {

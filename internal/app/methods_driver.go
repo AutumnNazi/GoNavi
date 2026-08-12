@@ -321,6 +321,7 @@ type driverVersionOptionItem struct {
 type driverReleaseAssetSizeCacheEntry struct {
 	LoadedAt           time.Time
 	SizeByKey          map[string]int64
+	SHA256ByKey        map[string]string
 	PublishedAssets    map[string]bool
 	MirrorDownloadURLs map[string]string
 	Err                string
@@ -348,9 +349,10 @@ type goModuleVersionMeta struct {
 }
 
 type driverBundleAssetIndex struct {
-	TagName       string           `json:"tagName,omitempty"`
-	MirrorTagName string           `json:"mirrorTagName,omitempty"`
-	Assets        map[string]int64 `json:"assets"`
+	TagName       string            `json:"tagName,omitempty"`
+	MirrorTagName string            `json:"mirrorTagName,omitempty"`
+	Assets        map[string]int64  `json:"assets"`
+	AssetSHA256   map[string]string `json:"assetSha256,omitempty"`
 }
 
 const (
@@ -358,9 +360,9 @@ const (
 	defaultDriverManifestURLValue        = "builtin://manifest"
 	driverReleaseRepo                    = "Syngnat/GoNavi-DriverAgents"
 	driverReleaseMirrorBaseURL           = "https://download.syngnat.top/drivers/releases/download"
-	driverReleaseMirrorLatestIndexURL    = "https://download.syngnat.top/drivers/releases/latest/GoNavi-DriverAgents-Index.json"
+	driverReleaseMirrorLatestIndexURL    = "https://download-dispatch.syngnat.top/v1/resolve?path=%2Fdrivers%2Freleases%2Flatest%2FGoNavi-DriverAgents-Index.json"
 	driverReleaseMirrorDevBaseURL        = "https://download.syngnat.top/drivers/dev/releases/download"
-	driverReleaseMirrorDevLatestIndexURL = "https://download.syngnat.top/drivers/dev/releases/latest/GoNavi-DriverAgents-Index.json"
+	driverReleaseMirrorDevLatestIndexURL = "https://download-dispatch.syngnat.top/v1/resolve?path=%2Fdrivers%2Fdev%2Freleases%2Flatest%2FGoNavi-DriverAgents-Index.json"
 	driverReleaseLatestAPIURL            = "https://api.github.com/repos/" + driverReleaseRepo + "/releases/latest"
 	driverReleaseDevTag                  = "dev-latest"
 	optionalDriverBundleAssetName        = "GoNavi-DriverAgents.zip"
@@ -1357,7 +1359,7 @@ func (a *App) checkDriverNetworkStatusWithProbe(probe driverNetworkProbeFunc) co
 		probe = probeDriverNetworkEndpoint
 	}
 
-	client := newHTTPClientWithGlobalProxy(driverNetworkProbeTimeout)
+	client := newStrictHTTPClientWithGlobalProxy(driverNetworkProbeTimeout)
 	mirrorItems := buildDriverNetworkProbeItems()
 	checks := make([]driverNetworkProbeItem, 0, len(mirrorItems)+4)
 	for _, item := range mirrorItems {
@@ -1682,7 +1684,7 @@ func probeDriverNetworkEndpoint(client *http.Client, item driverNetworkProbeItem
 	}
 
 	if client == nil {
-		client = newHTTPClientWithGlobalProxy(driverNetworkProbeTimeout)
+		client = newStrictHTTPClientWithGlobalProxy(driverNetworkProbeTimeout)
 	}
 	start := time.Now()
 	resp, method, err := doDriverProbeRequest(client, urlText, http.MethodGet)
@@ -2705,7 +2707,7 @@ func fetchGoModuleVersionMetas(modulePath string) ([]goModuleVersionMeta, error)
 	}
 
 	endpoint := fmt.Sprintf("https://proxy.golang.org/%s/@v/list", escapeGoModulePathForProxy(trimmed))
-	client := newHTTPClientWithGlobalProxy(driverModuleLatestProbeTimeout)
+	client := newStrictHTTPClientWithGlobalProxy(driverModuleLatestProbeTimeout)
 	req, err := http.NewRequest(http.MethodGet, endpoint, nil)
 	if err != nil {
 		return nil, err
@@ -2855,7 +2857,7 @@ func loadDriverReleaseListCached() ([]githubRelease, error) {
 
 func fetchDriverReleaseList() ([]githubRelease, error) {
 	apiURL := fmt.Sprintf("https://api.github.com/repos/%s/releases?per_page=30", driverReleaseRepo)
-	client := newHTTPClientWithGlobalProxy(driverReleaseListProbeTimeout)
+	client := newStrictHTTPClientWithGlobalProxy(driverReleaseListProbeTimeout)
 	req, err := http.NewRequest(http.MethodGet, apiURL, nil)
 	if err != nil {
 		return nil, err
@@ -3207,7 +3209,7 @@ func loadManifestContent(resolvedURL string) ([]byte, error) {
 		scheme := strings.ToLower(strings.TrimSpace(parsed.Scheme))
 		switch scheme {
 		case "http", "https":
-			client := newHTTPClientWithGlobalProxy(12 * time.Second)
+			client := newStrictHTTPClientWithGlobalProxy(12 * time.Second)
 			req, reqErr := http.NewRequest(http.MethodGet, parsed.String(), nil)
 			if reqErr != nil {
 				return nil, reqErr
@@ -4188,7 +4190,7 @@ func ensureOptionalDriverAgentBinary(a *App, definition driverDefinition, execut
 	}
 
 	if !forceSourceBuild {
-		downloadURLs = reorderOptionalDriverDownloadURLsBySpeed(downloadURLs)
+		downloadURLs = keepOptionalDriverDownloadURLOrder(downloadURLs)
 		if len(downloadURLs) > 0 {
 			for _, candidateURL := range downloadURLs {
 				if a != nil {
@@ -4310,6 +4312,9 @@ func isOptionalDriverDownloadZipURL(urlText string) bool {
 	if trimmedURL == "" {
 		return false
 	}
+	if assetPath, ok := downloadDispatcherAssetPath(trimmedURL); ok {
+		return strings.EqualFold(path.Ext(assetPath), ".zip")
+	}
 	if parsed, err := url.Parse(trimmedURL); err == nil {
 		if strings.TrimSpace(parsed.Path) != "" && strings.EqualFold(path.Ext(parsed.Path), ".zip") {
 			return true
@@ -4333,15 +4338,26 @@ func downloadOptionalDriverAgentBinary(a *App, definition driverDefinition, urlT
 		tempPath := executablePath + ".download.zip"
 		_ = os.Remove(tempPath)
 
-		if _, err := downloadFileWithHash(trimmedURL, tempPath, func(downloaded, total int64) {
+		downloadHash, err := downloadFileWithHash(trimmedURL, tempPath, func(downloaded, total int64) {
 			if a == nil {
 				return
 			}
 			scaledDownloaded, scaledTotal := scaleProgress(downloaded, total, 20, 90)
 			a.emitDriverDownloadProgress(driverType, "downloading", scaledDownloaded, scaledTotal, a.appText("driver_manager.progress.download_prebuilt_package", map[string]any{"name": displayName}))
-		}); err != nil {
+		})
+		if err != nil {
 			_ = os.Remove(tempPath)
 			return "", newLocalizedDriverBackendError("driver_manager.backend.error.download_failed", nil, err)
+		}
+		if expectedSize, expectedHash, ok := expectedDriverReleaseAssetMetadata(trimmedURL); ok {
+			if metadataErr := validateDownloadedDriverAssetMetadata(tempPath, downloadHash, expectedSize, expectedHash); metadataErr != nil {
+				_ = os.Remove(tempPath)
+				return "", newLocalizedDriverBackendError(
+					"driver_manager.backend.error.download_failed",
+					nil,
+					metadataErr,
+				)
+			}
 		}
 
 		if _, err := installOptionalDriverAgentFromLocalZip(tempPath, definition, executablePath, selectedVersion); err != nil {
@@ -4404,6 +4420,20 @@ func downloadOptionalDriverAgentBinary(a *App, definition driverDefinition, urlT
 		return "", validateErr
 	}
 	return hash, nil
+}
+
+func validateDownloadedDriverAssetMetadata(filePath string, actualHash string, expectedSize int64, expectedHash string) error {
+	stat, err := os.Stat(filePath)
+	if err != nil {
+		return err
+	}
+	if expectedSize > 0 && stat.Size() != expectedSize {
+		return fmt.Errorf("driver archive size mismatch: expected=%d actual=%d", expectedSize, stat.Size())
+	}
+	if normalized := normalizeGitHubAssetSHA256(expectedHash); normalized != "" && !strings.EqualFold(actualHash, normalized) {
+		return errors.New("driver archive SHA256 mismatch")
+	}
+	return nil
 }
 
 func downloadOptionalDriverAgentFromBundle(a *App, definition driverDefinition, bundleURL, executablePath string) (string, string, error) {

@@ -37,7 +37,9 @@ jobs:
           python3 tools/generate-update-latest-manifest.test.py
           python3 tools/validate-gui-update-manifest.test.py
           python3 tools/prepare-vps-release-payload.test.py
-          bash tools/vps-release-commit.test.sh
+          python3 tools/edge-release-transaction.test.py
+          python3 tools/edge-release-retention.test.py
+          python3 tools/download-mirror-config.test.py
           python3 tools/package-driver-release-assets.test.py
           python3 tools/cli-release-assets.test.py
           python3 tools/npm-cli-wrapper.test.py
@@ -1183,7 +1185,7 @@ jobs:
     # Serialize only the publication stage with stable releases so both
     # channels cannot publish shared mirror targets concurrently.
     concurrency:
-      group: gonavi-release-publication
+      group: gonavi-download-publication
       cancel-in-progress: false
     runs-on: ubuntu-latest
     steps:
@@ -1548,7 +1550,8 @@ jobs:
             --channel dev \
             --component gui \
             --name "Dev Build (${DEV_VERSION})" \
-            --download-base-url "https://download.syngnat.top/gonavi/dev/releases/download" \
+            --download-dispatcher-url "https://download-dispatch.syngnat.top/v1/resolve" \
+            --download-path-prefix "/gonavi/dev/releases/download" \
             --download-tag "$DEV_VERSION" \
             --release-notes-file "$CHANGELOG_FILE" \
             --output release-assets/latest-dev.json
@@ -1706,8 +1709,11 @@ jobs:
             --app-tag "${DEV_VERSION}" \
             --app-dir "${app_dir}" \
             --manifest "${app_dir}/latest-dev.json" \
-            --github-repository "${GITHUB_REPOSITORY}"
+            --github-repository "${GITHUB_REPOSITORY}" \
+            --download-dispatcher-url "https://download-dispatch.syngnat.top/v1/resolve" \
+            --download-path-prefix "/gonavi/dev/releases/download"
 
+          driver_version_file="${RUNNER_TEMP}/driver-dev-version-index.json"
           driver_latest_file="${RUNNER_TEMP}/driver-dev-latest-index.json"
           if [[ "${HAS_DRIVER_ASSETS}" == "true" ]]; then
             [[ -s "${driver_dir}/SHA256SUMS" ]] || {
@@ -1715,12 +1721,27 @@ jobs:
               exit 1
             }
             (cd "${driver_dir}" && sha256sum --check SHA256SUMS)
+            driver_hashes="${RUNNER_TEMP}/driver-dev-asset-sha256.json"
             jq \
-              --arg tag "dev-latest" \
+              --arg tag "${DEV_VERSION}" \
               --arg mirror_tag "${DEV_VERSION}" \
-              '.tagName = $tag | .mirrorTagName = $mirror_tag | del(.assets["GoNavi-DriverAgents.zip"])' \
+              '.tagName = $tag | del(.mirrorTagName) | del(.assets["GoNavi-DriverAgents.zip"]) | del(.assetSha256)' \
               "${driver_dir}/GoNavi-DriverAgents-Index.json" \
-              > "${driver_latest_file}"
+              > "${RUNNER_TEMP}/driver-dev-version-index-base.json"
+            while IFS= read -r name; do
+              [[ "${name}" == "$(basename "${name}")" && -f "${driver_dir}/${name}" ]] || {
+                echo "Invalid or missing dev driver asset: ${name}" >&2
+                exit 1
+              }
+              printf '%s\t%s\n' "${name}" "$(sha256sum "${driver_dir}/${name}" | awk '{print $1}')"
+            done < <(jq -r '.assets | keys[]' "${RUNNER_TEMP}/driver-dev-version-index-base.json") \
+              | jq -Rn '[inputs | split("\t") | {(.[0]): .[1]}] | add // {}' > "${driver_hashes}"
+            jq --slurpfile hashes "${driver_hashes}" \
+              '.assetSha256 = $hashes[0]' \
+              "${RUNNER_TEMP}/driver-dev-version-index-base.json" > "${driver_version_file}"
+            jq --arg tag "dev-latest" --arg mirror_tag "${DEV_VERSION}" \
+              '.tagName = $tag | .mirrorTagName = $mirror_tag' \
+              "${driver_version_file}" > "${driver_latest_file}"
             jq -e '.assets | type == "object" and length > 0' "${driver_latest_file}" >/dev/null
           fi
 
@@ -1761,7 +1782,7 @@ jobs:
             done < <(jq -r '.assets | to_entries[] | [.key, (.value | tostring)] | @tsv' "${driver_latest_file}")
           fi
 
-      - name: Mirror dev release to Gatewaysentry
+      - name: Publish dev release to verified static edges
         uses: ./.github/actions/publish-vps-mirror
         with:
           channel: dev
@@ -1771,10 +1792,18 @@ jobs:
           driver-enabled: ${{ steps.driver_assets.outputs.has_driver_assets }}
           driver-tag: ${{ steps.version.outputs.version }}
           driver-dir: driver-release-assets
-          driver-version-index: ${{ runner.temp }}/driver-dev-latest-index.json
+          driver-version-index: ${{ runner.temp }}/driver-dev-version-index.json
           driver-latest-index: ${{ runner.temp }}/driver-dev-latest-index.json
-          ssh-host: ${{ secrets.MIRROR_SSH_HOST }}
-          ssh-port: ${{ secrets.MIRROR_SSH_PORT }}
-          ssh-user: ${{ secrets.MIRROR_SSH_USER }}
-          ssh-private-key: ${{ secrets.MIRROR_SSH_PRIVATE_KEY }}
-          ssh-known-hosts: ${{ secrets.MIRROR_SSH_KNOWN_HOSTS }}
+          dmit-ssh-host: ${{ secrets.CDN_DMIT_SSH_HOST }}
+          dmit-ssh-port: ${{ secrets.CDN_DMIT_SSH_PORT }}
+          dmit-ssh-user: ${{ secrets.CDN_DMIT_SSH_USER }}
+          dmit-ssh-private-key: ${{ secrets.CDN_DMIT_SSH_PRIVATE_KEY }}
+          dmit-ssh-known-hosts: ${{ secrets.CDN_DMIT_SSH_KNOWN_HOSTS }}
+          tencent-ssh-host: ${{ secrets.CDN_TENCENT_SSH_HOST }}
+          tencent-ssh-port: ${{ secrets.CDN_TENCENT_SSH_PORT }}
+          tencent-ssh-user: ${{ secrets.CDN_TENCENT_SSH_USER }}
+          tencent-ssh-private-key: ${{ secrets.CDN_TENCENT_SSH_PRIVATE_KEY }}
+          tencent-ssh-known-hosts: ${{ secrets.CDN_TENCENT_SSH_KNOWN_HOSTS }}
+          cloudflare-account-id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          cloudflare-api-token: ${{ secrets.CLOUDFLARE_KV_API_TOKEN }}
+          routing-state-kv-id: ${{ vars.ROUTING_STATE_KV_ID }}

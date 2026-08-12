@@ -17,7 +17,7 @@ permissions:
 
 concurrency:
   # Stable and dev publications share the same mirror targets.
-  group: gonavi-release-publication
+  group: gonavi-download-publication
   cancel-in-progress: false
 
 jobs:
@@ -300,7 +300,9 @@ jobs:
             --app-tag "${RELEASE_TAG}" \
             --app-dir "${app_dir}" \
             --manifest "${app_dir}/latest.json" \
-            --github-repository "${GITHUB_REPOSITORY}"
+            --github-repository "${GITHUB_REPOSITORY}" \
+            --download-dispatcher-url "https://download-dispatch.syngnat.top/v1/resolve" \
+            --download-path-prefix "/gonavi/releases/download"
           if [[ "${has_driver_release}" == true ]]; then
             jq -e '.assets | type == "object" and length > 0' \
               "${driver_dir}/GoNavi-DriverAgents-Index.json" >/dev/null
@@ -309,10 +311,24 @@ jobs:
               exit 1
             }
             (cd "${driver_dir}" && sha256sum --check SHA256SUMS)
+            driver_version_index="${RUNNER_TEMP}/driver-version-index.json"
+            driver_hashes="${RUNNER_TEMP}/driver-asset-sha256.json"
             jq --arg tag "${RELEASE_TAG}" \
-              '.tagName = $tag' \
+              '.tagName = $tag | del(.mirrorTagName) | del(.assets["GoNavi-DriverAgents.zip"]) | del(.assetSha256)' \
               "${driver_dir}/GoNavi-DriverAgents-Index.json" \
-              > "${RUNNER_TEMP}/driver-latest-index.json"
+              > "${RUNNER_TEMP}/driver-version-index-base.json"
+            while IFS= read -r name; do
+              [[ "${name}" == "$(basename "${name}")" && -f "${driver_dir}/${name}" ]] || {
+                echo "Invalid or missing driver asset: ${name}" >&2
+                exit 1
+              }
+              printf '%s\t%s\n' "${name}" "$(sha256sum "${driver_dir}/${name}" | awk '{print $1}')"
+            done < <(jq -r '.assets | keys[]' "${RUNNER_TEMP}/driver-version-index-base.json") \
+              | jq -Rn '[inputs | split("\t") | {(.[0]): .[1]}] | add // {}' > "${driver_hashes}"
+            jq --slurpfile hashes "${driver_hashes}" \
+              '.assetSha256 = $hashes[0]' \
+              "${RUNNER_TEMP}/driver-version-index-base.json" > "${driver_version_index}"
+            cp "${driver_version_index}" "${RUNNER_TEMP}/driver-latest-index.json"
           fi
 
           while IFS=$'\t' read -r name expected_size expected_sha; do
@@ -530,7 +546,7 @@ jobs:
           if-no-files-found: error
           retention-days: 90
 
-      - name: Mirror stable release to Gatewaysentry
+      - name: Publish stable release to verified static edges
         uses: ./.github/actions/publish-vps-mirror
         with:
           channel: stable
@@ -540,10 +556,18 @@ jobs:
           driver-enabled: ${{ steps.mirror_payload.outputs.has_driver_release }}
           driver-tag: ${{ steps.validate.outputs.tag }}
           driver-dir: ${{ runner.temp }}/driver-release
-          driver-version-index: ${{ runner.temp }}/driver-release/GoNavi-DriverAgents-Index.json
+          driver-version-index: ${{ runner.temp }}/driver-version-index.json
           driver-latest-index: ${{ runner.temp }}/driver-latest-index.json
-          ssh-host: ${{ secrets.MIRROR_SSH_HOST }}
-          ssh-port: ${{ secrets.MIRROR_SSH_PORT }}
-          ssh-user: ${{ secrets.MIRROR_SSH_USER }}
-          ssh-private-key: ${{ secrets.MIRROR_SSH_PRIVATE_KEY }}
-          ssh-known-hosts: ${{ secrets.MIRROR_SSH_KNOWN_HOSTS }}
+          dmit-ssh-host: ${{ secrets.CDN_DMIT_SSH_HOST }}
+          dmit-ssh-port: ${{ secrets.CDN_DMIT_SSH_PORT }}
+          dmit-ssh-user: ${{ secrets.CDN_DMIT_SSH_USER }}
+          dmit-ssh-private-key: ${{ secrets.CDN_DMIT_SSH_PRIVATE_KEY }}
+          dmit-ssh-known-hosts: ${{ secrets.CDN_DMIT_SSH_KNOWN_HOSTS }}
+          tencent-ssh-host: ${{ secrets.CDN_TENCENT_SSH_HOST }}
+          tencent-ssh-port: ${{ secrets.CDN_TENCENT_SSH_PORT }}
+          tencent-ssh-user: ${{ secrets.CDN_TENCENT_SSH_USER }}
+          tencent-ssh-private-key: ${{ secrets.CDN_TENCENT_SSH_PRIVATE_KEY }}
+          tencent-ssh-known-hosts: ${{ secrets.CDN_TENCENT_SSH_KNOWN_HOSTS }}
+          cloudflare-account-id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          cloudflare-api-token: ${{ secrets.CLOUDFLARE_KV_API_TOKEN }}
+          routing-state-kv-id: ${{ vars.ROUTING_STATE_KV_ID }}

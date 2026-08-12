@@ -2,6 +2,7 @@ package app
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -19,8 +20,8 @@ import (
 
 const (
 	// 静态清单优先走自建下载镜像，GitHub Release 作为故障回退。
-	updateMirrorLatestManifestURL = "https://download.syngnat.top/gonavi/releases/latest/latest.json"
-	updateMirrorDevManifestURL    = "https://download.syngnat.top/gonavi/dev/releases/latest/latest-dev.json"
+	updateMirrorLatestManifestURL = "https://download-dispatch.syngnat.top/v1/resolve?path=%2Fgonavi%2Freleases%2Flatest%2Flatest.json"
+	updateMirrorDevManifestURL    = "https://download-dispatch.syngnat.top/v1/resolve?path=%2Fgonavi%2Fdev%2Freleases%2Flatest%2Flatest-dev.json"
 	updateGitHubLatestManifestURL = "https://github.com/" + updateRepo + "/releases/latest/download/latest.json"
 	updateGitHubDevManifestURL    = "https://github.com/" + updateRepo + "/releases/download/" + updateDevReleaseTag + "/latest-dev.json"
 
@@ -256,12 +257,31 @@ func fetchStaticUpdateManifestFromURL(channel updateChannel, manifestURL string)
 }
 
 func fetchStaticUpdateManifestPayloadFromURL(channel updateChannel, manifestURL string) (*updateReleaseManifest, error) {
-	url := strings.TrimSpace(manifestURL)
-	if url == "" {
+	rawURL := strings.TrimSpace(manifestURL)
+	if rawURL == "" {
 		return nil, fmt.Errorf("static update manifest URL is empty")
 	}
-	client := newHTTPClientWithGlobalProxy(15 * time.Second)
-	req, err := http.NewRequest(http.MethodGet, url, nil)
+	client := newStrictHTTPClientWithGlobalProxy(15 * time.Second)
+	candidates, resolveErr := resolveDispatcherDownloadCandidates(client, rawURL)
+	if resolveErr != nil {
+		candidates = []string{rawURL}
+	}
+	failures := make([]error, 0, len(candidates)+1)
+	if resolveErr != nil {
+		failures = append(failures, resolveErr)
+	}
+	for _, candidate := range candidates {
+		manifest, err := fetchStaticUpdateManifestCandidate(client, channel, candidate)
+		if err == nil {
+			return manifest, nil
+		}
+		failures = append(failures, fmt.Errorf("%s: %w", redactDownloadURL(candidate), err))
+	}
+	return nil, errors.Join(failures...)
+}
+
+func fetchStaticUpdateManifestCandidate(client *http.Client, channel updateChannel, rawURL string) (*updateReleaseManifest, error) {
+	req, err := http.NewRequest(http.MethodGet, rawURL, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -281,7 +301,7 @@ func fetchStaticUpdateManifestPayloadFromURL(channel updateChannel, manifestURL 
 	if resp.StatusCode != http.StatusOK {
 		// 静态资产 404：尚未发布 latest.json 的旧版本 Release，正常回退 API
 		if resp.StatusCode == http.StatusNotFound {
-			return nil, fmt.Errorf("static update manifest not found: %s", url)
+			return nil, fmt.Errorf("static update manifest not found")
 		}
 		return nil, classifyGitHubUpdateHTTPError(resp.StatusCode, body, resp.Header, true)
 	}
@@ -297,7 +317,7 @@ func fetchStaticUpdateManifestPayloadFromURL(channel updateChannel, manifestURL 
 		return nil, fmt.Errorf("unsupported update manifest schema: %d", manifest.SchemaVersion)
 	}
 	if err := validateRemoteUpdateManifest(channel, &manifest); err != nil {
-		return nil, fmt.Errorf("invalid static update manifest %s: %w", url, err)
+		return nil, fmt.Errorf("invalid static update manifest: %w", err)
 	}
 	manifest.FetchedAt = time.Now().UTC()
 	manifest.Source = "static"

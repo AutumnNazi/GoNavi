@@ -29,7 +29,7 @@ import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from urllib.parse import quote
+from urllib.parse import quote, urlencode, urlsplit
 
 REPO = "Syngnat/GoNavi"
 SCHEMA_VERSION = 1
@@ -123,6 +123,28 @@ def mirror_download_url(base_url: str, tag: str, asset_name: str) -> str:
     return f"{base}/{quote(tag.strip(), safe='')}/{quote(asset_name.strip(), safe='')}"
 
 
+def dispatcher_download_url(
+    dispatcher_url: str,
+    path_prefix: str,
+    tag: str,
+    asset_name: str,
+) -> str:
+    endpoint = (dispatcher_url or "").strip()
+    parsed = urlsplit(endpoint)
+    if (
+        parsed.scheme != "https"
+        or not parsed.netloc
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise SystemExit("download dispatcher URL must be a query-free HTTPS URL")
+    prefix = "/" + (path_prefix or "").strip().strip("/")
+    asset_path = "/".join((prefix.rstrip("/"), tag.strip(), asset_name.strip()))
+    return f"{endpoint}?{urlencode({'path': asset_path})}"
+
+
 def html_url(tag: str) -> str:
     return f"https://github.com/{REPO}/releases/tag/{tag.strip()}"
 
@@ -135,6 +157,8 @@ def collect_assets(
     download_tag: str = "",
     component: str = "gui",
     version: str = "",
+    download_dispatcher_url: str = "",
+    download_path_prefix: str = "",
 ) -> list[dict]:
     if component not in {"gui", "cli"}:
         raise ValueError(f"unsupported manifest component: {component}")
@@ -168,14 +192,22 @@ def collect_assets(
         if not any(pattern.fullmatch(name) for pattern in patterns):
             continue
         github_url = browser_download_url(tag, name)
+        primary_url = github_url
+        if download_dispatcher_url:
+            primary_url = dispatcher_download_url(
+                download_dispatcher_url,
+                download_path_prefix,
+                download_tag or tag,
+                name,
+            )
+        elif download_base_url:
+            primary_url = mirror_download_url(download_base_url, download_tag or tag, name)
         item = {
             "name": name,
-            "url": mirror_download_url(download_base_url, download_tag or tag, name)
-            if download_base_url
-            else github_url,
+            "url": primary_url,
             "size": path.stat().st_size,
         }
-        if download_base_url:
+        if download_base_url or download_dispatcher_url:
             item["apiUrl"] = github_url
         sha = hashes.get(name, "").strip().lower()
         if sha:
@@ -194,6 +226,8 @@ def build_manifest(
     published_at: str | None,
     download_base_url: str = "",
     download_tag: str = "",
+    download_dispatcher_url: str = "",
+    download_path_prefix: str = "",
     release_notes: str = "",
     component: str = "gui",
 ) -> dict:
@@ -208,6 +242,8 @@ def build_manifest(
         download_tag,
         component,
         version,
+        download_dispatcher_url,
+        download_path_prefix,
     )
     if not assets:
         raise SystemExit(f"no release assets found under {assets_dir}")
@@ -259,6 +295,16 @@ def main() -> int:
         help="Optional tag/path segment for the primary download URL; manifest and GitHub tag stay unchanged",
     )
     parser.add_argument(
+        "--download-dispatcher-url",
+        default="",
+        help="HTTPS JSON/302 dispatcher endpoint used for immutable assets",
+    )
+    parser.add_argument(
+        "--download-path-prefix",
+        default="",
+        help="Immutable asset path prefix passed to the dispatcher",
+    )
+    parser.add_argument(
         "--output",
         default="",
         help="Output path (default: <assets-dir>/latest.json or latest-dev.json)",
@@ -287,6 +333,12 @@ def main() -> int:
     output = Path(args.output).resolve() if args.output else assets_dir / out_name
     notes_path = Path(args.release_notes_file).resolve() if args.release_notes_file.strip() else None
     release_notes = load_release_notes(notes_path)
+    if args.download_base_url and args.download_dispatcher_url:
+        print("choose either --download-base-url or --download-dispatcher-url", file=sys.stderr)
+        return 2
+    if args.download_dispatcher_url and not args.download_path_prefix.strip():
+        print("--download-path-prefix is required with --download-dispatcher-url", file=sys.stderr)
+        return 2
 
     manifest = build_manifest(
         channel=args.channel,
@@ -297,6 +349,8 @@ def main() -> int:
         published_at=args.published_at or None,
         download_base_url=args.download_base_url,
         download_tag=args.download_tag,
+        download_dispatcher_url=args.download_dispatcher_url,
+        download_path_prefix=args.download_path_prefix,
         release_notes=release_notes,
         component=args.component,
     )

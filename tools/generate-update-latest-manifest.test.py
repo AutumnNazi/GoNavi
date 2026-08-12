@@ -41,8 +41,10 @@ class GenerateUpdateLatestManifestTest(unittest.TestCase):
                     "v1.2.3",
                     "--channel",
                     "latest",
-                    "--download-base-url",
-                    "https://download.syngnat.top/gonavi/releases/download/",
+                    "--download-dispatcher-url",
+                    "https://download-dispatch.syngnat.top/v1/resolve",
+                    "--download-path-prefix",
+                    "/gonavi/releases/download",
                     "--output",
                     str(out),
                 ],
@@ -65,7 +67,7 @@ class GenerateUpdateLatestManifestTest(unittest.TestCase):
             portable_asset = assets_by_name["GoNavi-1.2.3-Windows-Amd64-Portable.exe"]
             self.assertEqual(
                 portable_asset["url"],
-                "https://download.syngnat.top/gonavi/releases/download/v1.2.3/GoNavi-1.2.3-Windows-Amd64-Portable.exe",
+                "https://download-dispatch.syngnat.top/v1/resolve?path=%2Fgonavi%2Freleases%2Fdownload%2Fv1.2.3%2FGoNavi-1.2.3-Windows-Amd64-Portable.exe",
             )
             self.assertEqual(
                 portable_asset["apiUrl"],
@@ -75,7 +77,7 @@ class GenerateUpdateLatestManifestTest(unittest.TestCase):
             portable_zip_asset = assets_by_name["GoNavi-1.2.3-Windows-Amd64-Portable.zip"]
             self.assertEqual(
                 portable_zip_asset["url"],
-                "https://download.syngnat.top/gonavi/releases/download/v1.2.3/GoNavi-1.2.3-Windows-Amd64-Portable.zip",
+                "https://download-dispatch.syngnat.top/v1/resolve?path=%2Fgonavi%2Freleases%2Fdownload%2Fv1.2.3%2FGoNavi-1.2.3-Windows-Amd64-Portable.zip",
             )
             self.assertEqual(
                 portable_zip_asset["apiUrl"],
@@ -85,7 +87,7 @@ class GenerateUpdateLatestManifestTest(unittest.TestCase):
             installer_asset = assets_by_name["GoNavi-1.2.3-Windows-Amd64-Installer.msi"]
             self.assertEqual(
                 installer_asset["url"],
-                "https://download.syngnat.top/gonavi/releases/download/v1.2.3/GoNavi-1.2.3-Windows-Amd64-Installer.msi",
+                "https://download-dispatch.syngnat.top/v1/resolve?path=%2Fgonavi%2Freleases%2Fdownload%2Fv1.2.3%2FGoNavi-1.2.3-Windows-Amd64-Installer.msi",
             )
             self.assertEqual(
                 installer_asset["apiUrl"],
@@ -219,8 +221,10 @@ class GenerateUpdateLatestManifestTest(unittest.TestCase):
                     "dev-latest",
                     "--channel",
                     "dev",
-                    "--download-base-url",
-                    "https://download.syngnat.top/gonavi/dev/releases/download",
+                    "--download-dispatcher-url",
+                    "https://download-dispatch.syngnat.top/v1/resolve",
+                    "--download-path-prefix",
+                    "/gonavi/dev/releases/download",
                     "--download-tag",
                     "dev-a1b2c3d",
                     "--output",
@@ -237,7 +241,7 @@ class GenerateUpdateLatestManifestTest(unittest.TestCase):
             asset = data["assets"][0]
             self.assertEqual(
                 asset["url"],
-                f"https://download.syngnat.top/gonavi/dev/releases/download/dev-a1b2c3d/{asset_name}",
+                f"https://download-dispatch.syngnat.top/v1/resolve?path=%2Fgonavi%2Fdev%2Freleases%2Fdownload%2Fdev-a1b2c3d%2F{asset_name}",
             )
             self.assertEqual(
                 asset["apiUrl"],

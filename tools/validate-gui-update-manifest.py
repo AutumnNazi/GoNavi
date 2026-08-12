@@ -52,6 +52,16 @@ def parse_args() -> argparse.Namespace:
         default="",
         help="Override the expected mirror download base URL",
     )
+    parser.add_argument(
+        "--download-dispatcher-url",
+        default="",
+        help="Expected HTTPS dispatcher endpoint for immutable asset URLs",
+    )
+    parser.add_argument(
+        "--download-path-prefix",
+        default="",
+        help="Immutable asset path prefix passed to the dispatcher",
+    )
     return parser.parse_args()
 
 
@@ -172,6 +182,8 @@ def validate_manifest(
     manifest: dict[str, Any],
     repository: str,
     mirror_base: str,
+    download_dispatcher_url: str = "",
+    download_path_prefix: str = "",
 ) -> int:
     generator = load_generator()
     version = normalize_version(generator, app_tag) if channel == "stable" else app_tag
@@ -206,6 +218,9 @@ def validate_manifest(
         fail(f"GUI manifest app directory does not exist: {app_dir}")
 
     patterns = gui_patterns_for_version(generator, version)
+    dispatcher_url_builder = getattr(generator, "dispatcher_download_url", None)
+    if download_dispatcher_url and not callable(dispatcher_url_builder):
+        fail("update manifest generator has no dispatcher URL builder")
     expected_url_prefix = f"{mirror_base}/{quote(app_tag, safe='')}/"
     expected_api_url_prefix = (
         f"https://github.com/{repository}/releases/download/"
@@ -221,7 +236,15 @@ def validate_manifest(
             fail(f"duplicate GUI manifest asset: {name}")
         seen.add(normalized_name)
 
-        expected_url = expected_url_prefix + quote(name, safe="")
+        if download_dispatcher_url:
+            expected_url = dispatcher_url_builder(
+                download_dispatcher_url,
+                download_path_prefix,
+                app_tag,
+                name,
+            )
+        else:
+            expected_url = expected_url_prefix + quote(name, safe="")
         if entry.get("url") != expected_url:
             fail(f"GUI manifest asset URL is invalid: {name}")
         expected_api_url = expected_api_url_prefix + quote(name, safe="")
@@ -250,6 +273,18 @@ def main() -> int:
     try:
         app_tag = validate_tag(args.channel, args.app_tag)
         repository = validate_repository(args.github_repository)
+        if args.mirror_base and args.download_dispatcher_url:
+            fail("choose either --mirror-base or --download-dispatcher-url")
+        if args.download_dispatcher_url and not args.download_path_prefix.strip():
+            fail("--download-path-prefix is required with --download-dispatcher-url")
+        dispatcher_url = ""
+        download_path_prefix = ""
+        if args.download_dispatcher_url:
+            dispatcher_url = validate_https_base(
+                args.download_dispatcher_url,
+                "download dispatcher URL",
+            )
+            download_path_prefix = "/" + args.download_path_prefix.strip().strip("/")
         mirror_base = validate_https_base(
             args.mirror_base or DEFAULT_MIRROR_BASES[args.channel],
             "mirror base URL",
@@ -263,6 +298,8 @@ def main() -> int:
             manifest=manifest,
             repository=repository,
             mirror_base=mirror_base,
+            download_dispatcher_url=dispatcher_url,
+            download_path_prefix=download_path_prefix,
         )
     except ValueError as exc:
         print(f"error: {exc}", file=sys.stderr)
