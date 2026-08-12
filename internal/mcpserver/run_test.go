@@ -1,11 +1,35 @@
 package mcpserver
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 )
+
+func TestStartStreamableHTTPServerStopsWhenContextIsCanceled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	handle, err := StartStreamableHTTPServer(ctx, &fakeBackend{}, HTTPServerOptions{
+		Addr:  "127.0.0.1:0",
+		Path:  "/mcp",
+		Token: "test-token",
+	})
+	if err != nil {
+		t.Fatalf("StartStreamableHTTPServer returned error: %v", err)
+	}
+
+	if handle.Addr == "" {
+		t.Fatal("StartStreamableHTTPServer returned an empty listener address")
+	}
+	cancel()
+
+	if err := handle.Wait(); err != nil {
+		t.Fatalf("HTTP server returned error after context cancellation: %v", err)
+	}
+}
 
 func TestParseHTTPServerOptionsSupportsFlagsAndEnvFallback(t *testing.T) {
 	t.Setenv("GONAVI_MCP_HTTP_ADDR", "127.0.0.1:9000")
