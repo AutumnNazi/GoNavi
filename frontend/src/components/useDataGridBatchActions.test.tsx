@@ -90,6 +90,7 @@ describe('useDataGridBatchActions clipboard paste', () => {
       ...containerTarget,
       contains: vi.fn(() => true),
       querySelector: vi.fn(() => null),
+      querySelectorAll: vi.fn(() => []),
     };
     const rows = [
       { key: 'row-1', id: '1', generated: 'A', name: 'alpha' },
@@ -433,5 +434,37 @@ describe('useDataGridBatchActions clipboard paste', () => {
     expect(hook.setSelectedCells).toHaveBeenCalledWith(new Set([makeCellKey('row-1', 'id')]));
     expect(hook.ctx.markCellSelectionDeleteEligible).toHaveBeenCalledWith(false);
     expect(hook.updateCellSelection).toHaveBeenCalledWith(new Set([makeCellKey('row-1', 'id')]));
+  });
+
+  it('moves a single active cell with arrow keys without changing row-selection semantics', () => {
+    const selectedCells = new Set([makeCellKey('row-1', 'id')]);
+    const hook = renderHook({ selectedCells });
+    hook.selectionStartRef.current = { rowKey: 'row-1', colName: 'id', rowIndex: 0, colIndex: 0 };
+    const preventDefault = vi.fn();
+
+    act(() => {
+      (windowTarget.listeners.get('keydown') as any)?.({
+        key: 'ArrowRight',
+        defaultPrevented: false,
+        altKey: false,
+        ctrlKey: false,
+        metaKey: false,
+        shiftKey: false,
+        target: null,
+        preventDefault,
+      });
+    });
+
+    const expectedSelection = new Set([makeCellKey('row-1', 'name')]);
+    expect(preventDefault).toHaveBeenCalledOnce();
+    expect(hook.selectionStartRef.current).toEqual({
+      rowKey: 'row-1',
+      colName: 'name',
+      rowIndex: 0,
+      colIndex: 2,
+    });
+    expect(hook.setSelectedCells).toHaveBeenCalledWith(expectedSelection);
+    expect(hook.ctx.markCellSelectionDeleteEligible).toHaveBeenCalledWith(false);
+    expect(hook.updateCellSelection).toHaveBeenCalledWith(expectedSelection);
   });
 });
