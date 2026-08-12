@@ -159,6 +159,57 @@ func TestChromaSelectConvertsToGetRows(t *testing.T) {
 	}
 }
 
+func TestChromaSelectPassesWhereToGetAndCount(t *testing.T) {
+	var bodies []map[string]interface{}
+	server := newMockChromaServer(t, func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/api/v2/heartbeat":
+			writeChromaJSON(w, map[string]interface{}{"ok": true})
+		case strings.HasSuffix(r.URL.Path, "/collections"):
+			writeChromaJSON(w, []chromaCollection{{ID: "col-products", Name: "products"}})
+		case strings.HasSuffix(r.URL.Path, "/collections/col-products/get"):
+			var body map[string]interface{}
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			bodies = append(bodies, body)
+			writeChromaJSON(w, chromaGetResponse{})
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+	db := newTestChromaDB(t, server.URL)
+
+	queries := []string{
+		`SELECT * FROM "products" WHERE metadata.category = 'book' AND price >= 10 LIMIT 10 OFFSET 2`,
+		"select count(*) from `products` where active = true OR price < 5",
+	}
+	for _, query := range queries {
+		if _, _, err := db.Query(query); err != nil {
+			t.Fatalf("Query(%q) failed: %v", query, err)
+		}
+	}
+	if len(bodies) != 2 || bodies[0]["where"] == nil || bodies[1]["where"] == nil {
+		t.Fatalf("WHERE was not passed to Chroma: %#v", bodies)
+	}
+	first := bodies[0]["where"].(map[string]interface{})
+	if first["$and"] == nil {
+		t.Fatalf("compound WHERE = %#v, want $and", first)
+	}
+	second := bodies[1]["where"].(map[string]interface{})
+	if second["$or"] == nil {
+		t.Fatalf("COUNT WHERE = %#v, want $or", second)
+	}
+}
+
+func TestChromaSelectRejectsUnsupportedWhereWithoutDataRequest(t *testing.T) {
+	db := &ChromaDB{client: &http.Client{Transport: vectorWhereRoundTripFunc(func(*http.Request) (*http.Response, error) {
+		t.Fatal("unsupported WHERE must not make an HTTP request")
+		return nil, nil
+	})}}
+	if _, _, err := db.Query(`SELECT * FROM products WHERE category LIKE 'book%'`); err == nil || !strings.Contains(err.Error(), "不支持") {
+		t.Fatalf("error = %v, want unsupported syntax error", err)
+	}
+}
+
 func TestChromaJSONQueryFlattensResults(t *testing.T) {
 	server := newMockChromaServer(t, func(w http.ResponseWriter, r *http.Request) {
 		switch {
