@@ -2726,6 +2726,8 @@ const ConnectionModalStep2: React.FC<ConnectionModalStep2Props> = (props) => {
         sslKeyPath: "",
         useSSH: false,
         sshPort: 22,
+        sshKnownHostsPath: "",
+        sshHostKeyFingerprint: "",
         useProxy: false,
         proxyType: "socks5",
         proxyPort: 1080,

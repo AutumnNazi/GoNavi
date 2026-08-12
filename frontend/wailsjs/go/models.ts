@@ -1913,6 +1913,8 @@ export namespace connection {
 	    user: string;
 	    password: string;
 	    keyPath: string;
+	    knownHostsPath?: string;
+	    hostKeyFingerprint?: string;
 
 	    static createFrom(source: any = {}) {
 	        return new SSHConfig(source);
@@ -1925,6 +1927,8 @@ export namespace connection {
 	        this.user = source["user"];
 	        this.password = source["password"];
 	        this.keyPath = source["keyPath"];
+	        this.knownHostsPath = source["knownHostsPath"];
+	        this.hostKeyFingerprint = source["hostKeyFingerprint"];
 	    }
 	}
 	export class ConnectionProtectionConfig {

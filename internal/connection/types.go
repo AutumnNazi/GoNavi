@@ -2,11 +2,13 @@ package connection
 
 // SSHConfig 存储 SSH 隧道连接配置。
 type SSHConfig struct {
-	Host     string `json:"host"`
-	Port     int    `json:"port"`
-	User     string `json:"user"`
-	Password string `json:"password"`
-	KeyPath  string `json:"keyPath"`
+	Host               string `json:"host"`
+	Port               int    `json:"port"`
+	User               string `json:"user"`
+	Password           string `json:"password"`
+	KeyPath            string `json:"keyPath"`
+	KnownHostsPath     string `json:"knownHostsPath,omitempty"`
+	HostKeyFingerprint string `json:"hostKeyFingerprint,omitempty"`
 }
 
 // ProxyConfig 存储代理连接配置。

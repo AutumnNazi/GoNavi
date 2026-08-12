@@ -232,6 +232,8 @@ export const buildSavedConnectionInput = ({
           user: "",
           password: "",
           keyPath: "",
+          knownHostsPath: "",
+          hostKeyFingerprint: "",
         }),
         password: sshDraft.value,
       },
@@ -798,8 +800,20 @@ export const buildConnectionConfig = async ({
         user: mergedValues.sshUser,
         password: mergedValues.sshPassword || "",
         keyPath: mergedValues.sshKeyPath || "",
+        knownHostsPath: String(mergedValues.sshKnownHostsPath || "").trim(),
+        hostKeyFingerprint: String(
+          mergedValues.sshHostKeyFingerprint || "",
+        ).trim(),
       }
-    : { host: "", port: 22, user: "", password: "", keyPath: "" };
+    : {
+        host: "",
+        port: 22,
+        user: "",
+        password: "",
+        keyPath: "",
+        knownHostsPath: "",
+        hostKeyFingerprint: "",
+      };
   const effectiveUseHttpTunnel =
     !isFileDbType && !!mergedValues.useHttpTunnel;
   const effectiveUseProxy =
