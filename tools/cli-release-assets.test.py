@@ -316,7 +316,7 @@ class CLIReleaseAssetsTest(unittest.TestCase):
         )
         self.assertLess(
             source.index("Verify npm CLI package metadata"),
-            source.index("Publish stable release to verified static edges"),
+            source.index("Publish stable release to verified static edge"),
         )
 
     def test_stable_release_validates_npm_cli_version_before_build(self) -> None:
