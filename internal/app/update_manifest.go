@@ -262,12 +262,20 @@ func fetchStaticUpdateManifestPayloadFromURL(channel updateChannel, manifestURL 
 		return nil, fmt.Errorf("static update manifest URL is empty")
 	}
 	client := newStrictHTTPClientWithGlobalProxy(15 * time.Second)
+	failures := make([]error, 0, 3)
+	if _, isDispatcher := downloadDispatcherAssetPath(rawURL); isDispatcher {
+		// The normal dispatcher response is a 302 to the selected mirror. Follow
+		// that redirect directly so a healthy manifest costs one request; JSON
+		// candidate resolution remains a fallback for routing or mirror failures.
+		if manifest, directErr := fetchStaticUpdateManifestCandidate(client, channel, rawURL); directErr == nil {
+			return manifest, nil
+		} else {
+			failures = append(failures, fmt.Errorf("%s: %w", redactDownloadURL(rawURL), directErr))
+		}
+	}
 	candidates, resolveErr := resolveDispatcherDownloadCandidates(client, rawURL)
 	if resolveErr != nil {
 		candidates = []string{rawURL}
-	}
-	failures := make([]error, 0, len(candidates)+1)
-	if resolveErr != nil {
 		failures = append(failures, resolveErr)
 	}
 	for _, candidate := range candidates {

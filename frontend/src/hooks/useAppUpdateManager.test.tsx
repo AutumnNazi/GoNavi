@@ -369,12 +369,7 @@ describe('useAppUpdateManager', () => {
     };
     backendApp.CheckForUpdates.mockResolvedValue({
       success: true,
-      data: {
-        ...refreshedInfo,
-        latestVersion: 'dev-old',
-        assetName: 'GoNavi-dev-old-Windows-Amd64-Portable.exe',
-        assetSize: 4096,
-      },
+      data: refreshedInfo,
     });
     backendApp.DownloadUpdate.mockReturnValue(downloadPromise);
 
@@ -386,6 +381,10 @@ describe('useAppUpdateManager', () => {
     let pendingDownload: Promise<void> | undefined;
     act(() => {
       pendingDownload = hook?.downloadUpdate(hook.lastUpdateInfo!, false);
+    });
+    expect(hook?.updateDownloadProgress).toMatchObject({
+      status: 'start',
+      message: 'app.about.download_progress.downloading',
     });
 
     const progressListener = (runtimeApi.EventsOn.mock.calls as unknown as Array<[string, unknown]>)
@@ -410,6 +409,7 @@ describe('useAppUpdateManager', () => {
       key: 'dev:dev-new:portable:gonavi-dev-new-windows-amd64-portable.exe',
       status: 'start',
       total: 8192,
+      message: 'app.about.download_progress.downloading',
     });
 
     await act(async () => {
@@ -1043,6 +1043,7 @@ describe('useAppUpdateManager', () => {
       pendingDownload = hook?.downloadUpdate(hook.lastUpdateInfo!, false);
     });
     expect(hook?.updateDownloadProgress.open).toBe(true);
+    expect(hook?.updateDownloadProgress.message).toBe('app.about.download_progress.downloading');
 
     act(() => {
       hook?.markUpdateProgressDismissed();

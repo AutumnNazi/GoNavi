@@ -24,6 +24,7 @@ const (
 	parallelDownloadRangeRetries  = 3
 	parallelDownloadMinimumSize   = 8 << 20
 	parallelDownloadProgressEvery = 120 * time.Millisecond
+	parallelDownloadHeaderTimeout = 15 * time.Second
 	downloadDispatcherHostname    = "download-dispatch.syngnat.top"
 	downloadDispatcherPath        = "/v1/resolve"
 	downloadDispatcherMaxResponse = 64 << 10
@@ -34,6 +35,12 @@ const (
 )
 
 var errParallelRangeUnsupported = errors.New("download source does not support validated byte ranges")
+
+type downloadCurrentAssetMismatchError struct{}
+
+func (downloadCurrentAssetMismatchError) Error() string {
+	return "download dispatcher reports that the dev asset is no longer current"
+}
 
 type dispatcherDownloadCandidate struct {
 	Source string `json:"source"`
@@ -62,6 +69,42 @@ func downloadDispatcherAssetPath(rawURL string) (string, bool) {
 	}
 	assetPath := strings.TrimSpace(parsed.Query().Get("path"))
 	return assetPath, strings.HasPrefix(assetPath, "/")
+}
+
+func downloadDispatcherURLRequiringCurrentDevAsset(rawURL string) string {
+	assetPath, ok := downloadDispatcherAssetPath(rawURL)
+	if !ok || !strings.HasPrefix(assetPath, "/gonavi/dev/releases/download/") {
+		return strings.TrimSpace(rawURL)
+	}
+	parsed, err := url.Parse(strings.TrimSpace(rawURL))
+	if err != nil {
+		return strings.TrimSpace(rawURL)
+	}
+	query := parsed.Query()
+	query.Set("require-current", "1")
+	parsed.RawQuery = query.Encode()
+	return parsed.String()
+}
+
+func dispatcherURLRequiresCurrentDevAsset(rawURL string) bool {
+	assetPath, ok := downloadDispatcherAssetPath(rawURL)
+	if !ok || !strings.HasPrefix(assetPath, "/gonavi/dev/releases/download/") {
+		return false
+	}
+	parsed, err := url.Parse(strings.TrimSpace(rawURL))
+	return err == nil && parsed.Query().Get("require-current") == "1"
+}
+
+func shouldResolveDispatcherFallback(rawURL string, expectedSize int64, downloadErr error) bool {
+	if expectedSize <= 0 || dispatcherURLRequiresCurrentDevAsset(rawURL) {
+		return false
+	}
+	var currentAssetMismatch downloadCurrentAssetMismatchError
+	if errors.As(downloadErr, &currentAssetMismatch) {
+		return false
+	}
+	_, isDispatcher := downloadDispatcherAssetPath(rawURL)
+	return isDispatcher
 }
 
 func validatedHTTPSDownloadCandidates(value dispatcherDownloadResponse) []string {
@@ -159,6 +202,16 @@ func newDownloadRangeRequest(ctx context.Context, rawURL string, start, end int6
 	req.Header.Set("Range", fmt.Sprintf("bytes=%d-%d", start, end))
 	applyGitHubDownloadRequestHeaders(req, isGitHubReleaseAssetAPIURL(rawURL))
 	return req, nil
+}
+
+func downloadRangeClient(client *http.Client) *http.Client {
+	rangeClient := *client
+	if transport, ok := client.Transport.(*http.Transport); ok && transport != nil {
+		cloned := transport.Clone()
+		cloned.ResponseHeaderTimeout = parallelDownloadHeaderTimeout
+		rangeClient.Transport = cloned
+	}
+	return &rangeClient
 }
 
 type downloadCandidateProbe struct {
@@ -427,11 +480,20 @@ func downloadOneValidatedRange(
 		} else {
 			parsed, rangeErr := parseValidatedContentRange(resp.Header.Get("Content-Range"))
 			if resp.StatusCode != http.StatusPartialContent || rangeErr != nil || parsed.start != start || parsed.end != end || parsed.total != total || resp.ContentLength != wantLength {
+				status := resp.StatusCode
+				body, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
 				_ = resp.Body.Close()
-				if resp.StatusCode == http.StatusOK {
+				if status == http.StatusOK {
 					return errParallelRangeUnsupported
 				}
-				lastErr = fmt.Errorf("range response validation failed: status=%d content-range=%q content-length=%d", resp.StatusCode, resp.Header.Get("Content-Range"), resp.ContentLength)
+				if status == http.StatusConflict && dispatcherURLRequiresCurrentDevAsset(rawURL) {
+					return downloadCurrentAssetMismatchError{}
+				}
+				if status == http.StatusNotFound || status == http.StatusGone || status == http.StatusConflict {
+					return classifyGitHubUpdateHTTPError(status, body, resp.Header, false)
+				} else {
+					lastErr = fmt.Errorf("range response validation failed: status=%d content-range=%q content-length=%d", status, resp.Header.Get("Content-Range"), resp.ContentLength)
+				}
 			} else {
 				writer := io.NewOffsetWriter(file, start)
 				progressWriter := &rangeProgressWriter{segmentIndex: segmentIndex, progress: progress}
@@ -566,6 +628,7 @@ type rangeDownloadOutcome struct {
 func (session *persistentRangeDownload) attempt(client *http.Client, rawURL string) (bool, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+	rangeClient := downloadRangeClient(client)
 	outcomes := make(chan rangeDownloadOutcome, session.workerCount)
 	launched := 0
 	for index := 0; index < session.workerCount; index++ {
@@ -582,22 +645,44 @@ func (session *persistentRangeDownload) attempt(client *http.Client, rawURL stri
 			outcomes <- rangeDownloadOutcome{
 				index: index,
 				err: downloadOneValidatedRange(
-					ctx, client, rawURL, session.file, index, start, end, session.total, session.progress,
+					ctx, rangeClient, rawURL, session.file, index, start, end, session.total, session.progress,
 				),
 			}
 		}(index, start, end)
 	}
 	var firstErr error
+	var unsupportedErr error
+	var terminalAssetError error
 	for count := 0; count < launched; count++ {
 		outcome := <-outcomes
 		if outcome.err == nil {
 			session.completed[outcome.index] = true
 			continue
 		}
+		if errors.Is(outcome.err, errParallelRangeUnsupported) {
+			// Other workers may observe context.Canceled after this worker
+			// cancels the group. Preserve the decisive unsupported-range error
+			// so the caller can perform the sequential fallback.
+			unsupportedErr = errParallelRangeUnsupported
+		}
+		var mismatch downloadCurrentAssetMismatchError
+		var localized localizedUpdateError
+		if errors.As(outcome.err, &mismatch) ||
+			(errors.As(outcome.err, &localized) &&
+				(localized.httpStatus == http.StatusNotFound || localized.httpStatus == http.StatusGone)) {
+			// Cancellation races must not hide an expired or superseded dev asset.
+			terminalAssetError = outcome.err
+		}
 		if firstErr == nil {
 			firstErr = outcome.err
 			cancel()
 		}
+	}
+	if terminalAssetError != nil {
+		return false, terminalAssetError
+	}
+	if unsupportedErr != nil {
+		return false, unsupportedErr
 	}
 	if firstErr != nil {
 		return false, firstErr
@@ -666,6 +751,9 @@ func downloadFileWithHashSequential(
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
+		if resp.StatusCode == http.StatusConflict && dispatcherURLRequiresCurrentDevAsset(rawURL) {
+			return "", downloadCurrentAssetMismatchError{}
+		}
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
 		return "", classifyGitHubUpdateHTTPError(resp.StatusCode, body, resp.Header, false)
 	}
@@ -712,17 +800,53 @@ func downloadFileWithHashParallelAware(
 	onProgress func(downloaded, total int64),
 	timeout time.Duration,
 ) (string, error) {
+	return downloadFileWithHashParallelAwareAndExpectedSize(rawURL, filePath, onProgress, timeout, 0)
+}
+
+func downloadFileWithHashParallelAwareAndExpectedSize(
+	rawURL string,
+	filePath string,
+	onProgress func(downloaded, total int64),
+	timeout time.Duration,
+	expectedSize int64,
+) (string, error) {
 	if timeout <= 0 {
 		timeout = 10 * time.Minute
 	}
 	client := newStrictHTTPClientWithGlobalProxy(timeout)
-	candidates, dispatcherErr := resolveDispatcherDownloadCandidates(client, rawURL)
-	if dispatcherErr != nil {
-		// The 302 endpoint remains a compatibility fallback when JSON resolution is
-		// temporarily unavailable. It still uses normal TLS and pins its redirect.
+	var candidates []string
+	var dispatcherErr error
+	if expectedSize > 0 && func() bool {
+		_, ok := downloadDispatcherAssetPath(rawURL)
+		return ok
+	}() {
+		// The manifest already authenticates the asset size. Resolve the dispatcher
+		// redirect only after the Range path starts, avoiding JSON resolution and a
+		// separate 256 KiB probe on the healthy path.
 		candidates = []string{strings.TrimSpace(rawURL)}
+	} else {
+		candidates, dispatcherErr = resolveDispatcherDownloadCandidates(client, rawURL)
+		if dispatcherErr != nil {
+			// The 302 endpoint remains a compatibility fallback when JSON resolution
+			// is temporarily unavailable. It still uses normal TLS.
+			candidates = []string{strings.TrimSpace(rawURL)}
+		}
 	}
-	return downloadFileWithHashFromCandidates(client, candidates, filePath, onProgress, dispatcherErr)
+	result, err := downloadFileWithHashFromCandidatesWithExpectedSize(client, candidates, filePath, onProgress, dispatcherErr, expectedSize)
+	if err == nil || len(candidates) != 1 || expectedSize <= 0 {
+		return result, err
+	}
+	if !shouldResolveDispatcherFallback(candidates[0], expectedSize, err) {
+		return result, err
+	}
+	// Older cached manifests may omit AssetAPIURL. Only pay for the dispatcher
+	// JSON fallback after the zero-probe path fails, so GitHub remains available
+	// without adding latency to healthy DMIT downloads.
+	fallbackCandidates, resolveErr := resolveDispatcherDownloadCandidates(client, candidates[0])
+	if resolveErr != nil {
+		return result, errors.Join(err, resolveErr)
+	}
+	return downloadFileWithHashFromCandidatesWithExpectedSize(client, fallbackCandidates, filePath, onProgress, err, expectedSize)
 }
 
 func downloadFileWithHashFromCandidates(
@@ -731,6 +855,17 @@ func downloadFileWithHashFromCandidates(
 	filePath string,
 	onProgress func(downloaded, total int64),
 	initialErr error,
+) (string, error) {
+	return downloadFileWithHashFromCandidatesWithExpectedSize(client, candidates, filePath, onProgress, initialErr, 0)
+}
+
+func downloadFileWithHashFromCandidatesWithExpectedSize(
+	client *http.Client,
+	candidates []string,
+	filePath string,
+	onProgress func(downloaded, total int64),
+	initialErr error,
+	expectedSize int64,
 ) (string, error) {
 	errorsBySource := make([]error, 0, len(candidates)+1)
 	if initialErr != nil {
@@ -746,7 +881,22 @@ func downloadFileWithHashFromCandidates(
 		// The Dispatcher order is strict: probe and download a candidate before
 		// touching its fallback, so an unreachable GitHub endpoint cannot hold an
 		// otherwise healthy DMIT download at 0%.
-		ranked, probeErrors := rankDownloadCandidates(client, []string{candidate})
+		var ranked []downloadCandidateProbe
+		var probeErrors []error
+		if expectedSize > 0 {
+			// The manifest authenticates the size, so workers can issue their real
+			// requests through the Dispatcher immediately. Do not serially probe
+			// bytes=0-0 first: a slow redirect was leaving the UI at 0% for seconds.
+			ranked = []downloadCandidateProbe{{
+				candidate:     strings.TrimSpace(candidate),
+				resolvedURL:   strings.TrimSpace(candidate),
+				total:         expectedSize,
+				supportsRange: true,
+			}}
+		}
+		if len(ranked) == 0 {
+			ranked, probeErrors = rankDownloadCandidates(client, []string{candidate})
+		}
 		errorsBySource = append(errorsBySource, probeErrors...)
 		if len(ranked) == 0 {
 			continue
