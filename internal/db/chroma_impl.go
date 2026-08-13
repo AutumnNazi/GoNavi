@@ -255,32 +255,18 @@ func (c *ChromaDB) GetCreateStatement(dbName, tableName string) (string, error) 
 }
 
 func (c *ChromaDB) GetColumns(dbName, tableName string) ([]connection.ColumnDefinition, error) {
-	rows, _, err := c.getCollectionRows(context.Background(), tableNameOrDB(dbName, tableName), 20, 0, nil, []string{"documents", "metadatas", "embeddings"})
-	if err != nil {
+	// Chroma does not expose a collection-level schema for arbitrary metadata keys.
+	// Keep metadata inspection side-effect free: sampling documents would implicitly
+	// expose user data and embeddings while opening the fields node.
+	if _, err := c.resolveCollection(context.Background(), dbName, tableName); err != nil {
 		return nil, err
 	}
-	cols := []connection.ColumnDefinition{
+	return []connection.ColumnDefinition{
 		{Name: "id", Type: "string", Nullable: "NO", Key: "PRI", Comment: "Chroma document id"},
 		{Name: "document", Type: "text", Nullable: "YES", Comment: "Document text"},
 		{Name: "metadata", Type: "json", Nullable: "YES", Comment: "Full metadata object"},
 		{Name: "embedding", Type: "vector<float>", Nullable: "YES", Comment: "Embedding vector"},
-	}
-	seen := map[string]struct{}{"id": {}, "document": {}, "metadata": {}, "embedding": {}}
-	for _, row := range rows {
-		for key, value := range row {
-			if _, exists := seen[key]; exists || !strings.HasPrefix(key, "metadata.") {
-				continue
-			}
-			seen[key] = struct{}{}
-			cols = append(cols, connection.ColumnDefinition{
-				Name:     key,
-				Type:     inferChromaValueType(value),
-				Nullable: "YES",
-				Comment:  "Metadata field",
-			})
-		}
-	}
-	return cols, nil
+	}, nil
 }
 
 func (c *ChromaDB) GetAllColumns(dbName string) ([]connection.ColumnDefinitionWithTable, error) {
