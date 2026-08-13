@@ -108,6 +108,9 @@ vi.mock('antd', async () => {
   const Button = ({ children, ...props }: React.PropsWithChildren<Record<string, unknown>>) => (
     <button {...props}>{children}</button>
   );
+  const Checkbox = ({ children, ...props }: React.PropsWithChildren<Record<string, unknown>>) => (
+    React.createElement('mock-checkbox', props, children)
+  );
   const Empty = Object.assign(
     (props: Record<string, unknown>) => React.createElement('mock-empty', props),
     { PRESENTED_IMAGE_SIMPLE: 'simple' },
@@ -125,6 +128,7 @@ vi.mock('antd', async () => {
   return {
     Alert,
     Button,
+    Checkbox,
     Empty,
     Progress,
     Typography: { Paragraph, Text, Title },
@@ -219,6 +223,7 @@ describe('SQLFileExecutionWorkbench', () => {
   it('starts the first manual execution without a rerun confirmation', async () => {
     const renderer = await renderWorkbench();
 
+    expect(findRunButton(renderer).props.children).toBe('query.run');
     await act(async () => {
       findRunButton(renderer).props.onClick();
       await Promise.resolve();
@@ -259,6 +264,69 @@ describe('SQLFileExecutionWorkbench', () => {
       false,
     );
     expect(mocks.executeSQLFile).not.toHaveBeenCalled();
+  });
+
+  it('lets users continue after SQL statement errors and preserves a completed partial result', async () => {
+    mocks.importDatabaseSQL.mockResolvedValue({
+      success: false,
+      message: 'completed with errors',
+      data: { completed: true, failed: 1 },
+    });
+    const renderer = await renderWorkbench();
+    const continueOnError = renderer.root.findByProps({
+      'data-sql-file-execution-continue-on-error': 'true',
+    });
+
+    expect(continueOnError.props.checked).toBe(false);
+    await act(async () => {
+      continueOnError.props.onChange({ target: { checked: true } });
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      findRunButton(renderer).props.onClick();
+      await Promise.resolve();
+    });
+    const runnerOptions = mocks.run.mock.calls[0][0];
+    const result = await runnerOptions.run('sql-file-continue-job');
+
+    expect(mocks.importDatabaseSQL).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'mysql' }),
+      'app',
+      tab.filePath,
+      'sql-file-continue-job',
+      true,
+    );
+    expect(result).toMatchObject({
+      success: true,
+      data: { completed: true, failed: 1 },
+    });
+  });
+
+  it('renders completed SQL files with recorded errors as a warning', async () => {
+    mocks.state = createRunnerState({
+      jobId: 'sql-file-partial-job',
+      status: 'done',
+      stage: 'done',
+      filePath: tab.filePath,
+      executed: 368,
+      failed: 1,
+      total: 369,
+      percent: 100,
+      message: 'completed with errors',
+    });
+
+    const renderer = await renderWorkbench();
+    const progress = renderer.root.findByProps({
+      'data-sql-file-execution-progress': 'true',
+    });
+    const resultAlert = renderer.root.find((node) => (
+      node.props.message === 'completed with errors'
+    ));
+
+    expect(progress.props.status).toBe('normal');
+    expect(progress.props.strokeColor).toContain('var(--gn-warn');
+    expect(resultAlert?.props.type).toBe('warning');
   });
 
   it('does not start when production confirmation is declined', async () => {

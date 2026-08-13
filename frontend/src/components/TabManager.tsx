@@ -1574,6 +1574,7 @@ const TabManager: React.FC<TabManagerProps> = React.memo<TabManagerProps>(({ onF
           filePath: String(payload.filePath || '').trim() || filePath,
           fileName: file.fileName,
           fileSizeMB: String(payload.fileSizeMB || '').trim() || undefined,
+          autoStart: false,
         }));
         return;
       }

@@ -181,9 +181,6 @@ const normalizeSQLFileDialogData = (data: unknown): { content: string; filePath:
   };
 };
 
-const buildSQLFileExecutionRequestKey = (): string =>
-  `sql-file-execution-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-
 const resolveSQLFileExecutionStatusLabel = (status: SQLFileExecutionStatus): string => {
   switch (status) {
     case 'done':
@@ -544,7 +541,7 @@ export const useSidebarExternalSqlWorkflow = ({
       filePath: normalizedFilePath,
       fileName: String(fileName || '').trim() || undefined,
       fileSizeMB: String(fileSizeMB || '').trim() || undefined,
-      requestKey: buildSQLFileExecutionRequestKey(),
+      autoStart: false,
     }));
     return true;
   }, [addTab, connections]);
