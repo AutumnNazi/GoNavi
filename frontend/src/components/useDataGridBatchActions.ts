@@ -431,6 +431,75 @@ const handleBatchFillCells = useCallback(() => {
       updateCellSelection(nextSelection);
     };
 
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+      if (!['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.key)) return;
+
+      const activeElement = document.activeElement as HTMLElement | null;
+      const eventTarget = event.target instanceof HTMLElement ? event.target : null;
+      if (isInteractiveTarget(activeElement) || isInteractiveTarget(eventTarget)) return;
+
+      const activeSelection = currentSelectionRef.current.size > 0
+        ? currentSelectionRef.current
+        : selectedCells;
+      const start = selectionStartRef.current;
+      if (!start || activeSelection.size !== 1) return;
+
+      const currentData = displayDataRef.current;
+      const currentRowIndex = currentData.findIndex((row) => (
+        rowKeyStr(row?.[GONAVI_ROW_KEY]) === start.rowKey
+      ));
+      const currentColumnIndex = columnIndexMap.get(start.colName) ?? -1;
+      if (currentRowIndex === -1 || currentColumnIndex === -1) return;
+
+      let nextRowIndex = currentRowIndex;
+      let nextColumnIndex = currentColumnIndex;
+      if (event.key === 'ArrowUp') nextRowIndex -= 1;
+      if (event.key === 'ArrowDown') nextRowIndex += 1;
+      if (event.key === 'ArrowLeft') nextColumnIndex -= 1;
+      if (event.key === 'ArrowRight') nextColumnIndex += 1;
+
+      if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+        const columnStep = event.key === 'ArrowLeft' ? -1 : 1;
+        while (nextColumnIndex >= 0 && nextColumnIndex < displayColumnNames.length) {
+          const candidateColumn = displayColumnNames[nextColumnIndex];
+          if (canSelectGridCellForClipboard({
+            canModifyData,
+            isDisplayedColumn: true,
+            isWritableColumn: isWritableResultColumn(candidateColumn, effectiveEditLocator),
+          })) break;
+          nextColumnIndex += columnStep;
+        }
+      }
+
+      if (
+        nextRowIndex < 0
+        || nextRowIndex >= currentData.length
+        || nextColumnIndex < 0
+        || nextColumnIndex >= displayColumnNames.length
+      ) {
+        event.preventDefault();
+        return;
+      }
+
+      const nextRow = currentData[nextRowIndex];
+      const nextRowKey = nextRow?.[GONAVI_ROW_KEY];
+      const nextColumnName = displayColumnNames[nextColumnIndex];
+      if (nextRowKey === undefined || nextRowKey === null || !nextColumnName) return;
+
+      event.preventDefault();
+      const nextCellInfo = { rowKey: rowKeyStr(nextRowKey), colName: nextColumnName };
+      selectSingleCell(nextCellInfo);
+
+      const visibleCell = Array.from(
+        container.querySelectorAll<HTMLElement>('.ant-table-cell[data-row-key][data-col-name]'),
+      ).find((cell) => (
+        cell.getAttribute('data-row-key') === nextCellInfo.rowKey
+        && cell.getAttribute('data-col-name') === nextCellInfo.colName
+      ));
+      visibleCell?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
+    };
+
     const onMouseDown = (e: MouseEvent) => {
       if (e.button !== 0) return;
       const target = e.target instanceof HTMLElement ? e.target : null;
@@ -477,7 +546,7 @@ const handleBatchFillCells = useCallback(() => {
       const pendingStart = pendingCellSelectionStartRef.current;
       pendingCellSelectionStartRef.current = null;
       if (!isDraggingRef.current) {
-        if (pendingStart && canModifyData) {
+        if (pendingStart) {
           selectSingleCell(pendingStart);
         }
         return;
@@ -616,6 +685,7 @@ const handleBatchFillCells = useCallback(() => {
     container.addEventListener('click', onClickCapture, true);
     container.addEventListener('scroll', onScroll, true);
     document.addEventListener('mouseup', onMouseUp);
+    window.addEventListener('keydown', onKeyDown);
     window.addEventListener('paste', onPaste);
 
     return () => {
@@ -624,6 +694,7 @@ const handleBatchFillCells = useCallback(() => {
       container.removeEventListener('click', onClickCapture, true);
       container.removeEventListener('scroll', onScroll, true);
       document.removeEventListener('mouseup', onMouseUp);
+      window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('paste', onPaste);
       if (cellSelectionRafRef.current !== null) {
         cancelAnimationFrame(cellSelectionRafRef.current);
@@ -638,7 +709,7 @@ const handleBatchFillCells = useCallback(() => {
       cellSelectionPointerRef.current = null;
       isDraggingRef.current = false;
     };
-  }, [addedRows, canModifyData, deletedRowKeys, isActive, isTableSurfaceActive, displayColumnNames, columnIndexMap, effectiveEditLocator, isCellValueEqualForDiff, isWritableResultColumn, markCellSelectionDeleteEligible, modifiedRows, rowKeyStr, setAddedRows, setModifiedColumns, setModifiedRows, setSelectedCells, splitCellKey, translateDataGrid, updateCellSelection]);
+  }, [addedRows, canModifyData, deletedRowKeys, isActive, isTableSurfaceActive, displayColumnNames, columnIndexMap, effectiveEditLocator, isCellValueEqualForDiff, isWritableResultColumn, markCellSelectionDeleteEligible, modifiedRows, rowKeyStr, selectedCells, setAddedRows, setModifiedColumns, setModifiedRows, setSelectedCells, splitCellKey, translateDataGrid, updateCellSelection]);
 
   const handleCopySelectedColumnsFromRow = useCallback(() => {
     const activeSelection = currentSelectionRef.current.size > 0 ? currentSelectionRef.current : selectedCells;

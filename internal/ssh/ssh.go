@@ -3,6 +3,7 @@ package ssh
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -19,6 +20,7 @@ import (
 
 	"github.com/go-sql-driver/mysql"
 	"golang.org/x/crypto/ssh"
+	"golang.org/x/crypto/ssh/knownhosts"
 	"golang.org/x/sync/singleflight"
 )
 
@@ -57,7 +59,6 @@ func dialContext(ctx context.Context, client *ssh.Client, network, addr string) 
 	}
 }
 
-// connectSSH establishes an SSH connection and returns a Dialer
 func connectSSH(config connection.SSHConfig) (*ssh.Client, error) {
 	logger.Infof("开始建立 SSH 连接：地址=%s:%d 用户=%s", config.Host, config.Port, config.User)
 	authMethods := []ssh.AuthMethod{}
@@ -87,10 +88,14 @@ func connectSSH(config connection.SSHConfig) (*ssh.Client, error) {
 		logger.Warnf("SSH 未配置认证方式（密码或私钥）")
 	}
 
+	hostKeyCallback, err := newHostKeyCallback(config)
+	if err != nil {
+		return nil, err
+	}
 	sshConfig := &ssh.ClientConfig{
 		User:            config.User,
 		Auth:            authMethods,
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(), // Use strict checking in production!
+		HostKeyCallback: hostKeyCallback,
 		Timeout:         5 * time.Second,
 	}
 
@@ -102,6 +107,41 @@ func connectSSH(config connection.SSHConfig) (*ssh.Client, error) {
 	}
 	logger.Infof("SSH 连接建立成功：地址=%s 用户=%s", addr, config.User)
 	return client, nil
+}
+
+func newHostKeyCallback(config connection.SSHConfig) (ssh.HostKeyCallback, error) {
+	fingerprint := strings.TrimSpace(config.HostKeyFingerprint)
+	if fingerprint != "" {
+		const prefix = "SHA256:"
+		if !strings.HasPrefix(fingerprint, prefix) {
+			return nil, fmt.Errorf("invalid SSH host key fingerprint %q: expected SHA256:<base64>", fingerprint)
+		}
+		encoded := strings.TrimPrefix(fingerprint, prefix)
+		decoded, err := base64.RawStdEncoding.DecodeString(encoded)
+		if err != nil || len(decoded) != sha256.Size {
+			if err == nil {
+				err = fmt.Errorf("decoded fingerprint has length %d, want %d", len(decoded), sha256.Size)
+			}
+			return nil, fmt.Errorf("invalid SSH host key fingerprint %q: %w", fingerprint, err)
+		}
+		return func(hostname string, remote net.Addr, key ssh.PublicKey) error {
+			actual := ssh.FingerprintSHA256(key)
+			if actual != fingerprint {
+				return fmt.Errorf("SSH host key fingerprint mismatch for %s: expected %s, got %s", hostname, fingerprint, actual)
+			}
+			return nil
+		}, nil
+	}
+
+	knownHostsPath := strings.TrimSpace(config.KnownHostsPath)
+	if knownHostsPath == "" {
+		return nil, fmt.Errorf("SSH host key verification is required: configure hostKeyFingerprint or knownHostsPath")
+	}
+	callback, err := knownhosts.New(knownHostsPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load SSH known_hosts file %s: %w", knownHostsPath, err)
+	}
+	return callback, nil
 }
 
 // sshNetworkName 按 SSH 目标确定性派生 go-sql-driver 的自定义 network 名。
@@ -187,6 +227,10 @@ func sshAuthFingerprint(config connection.SSHConfig) string {
 	_, _ = hasher.Write([]byte(config.Password))
 	_, _ = hasher.Write([]byte{0})
 	_, _ = hasher.Write([]byte(config.KeyPath))
+	_, _ = hasher.Write([]byte{0})
+	_, _ = hasher.Write([]byte(strings.TrimSpace(config.KnownHostsPath)))
+	_, _ = hasher.Write([]byte{0})
+	_, _ = hasher.Write([]byte(strings.TrimSpace(config.HostKeyFingerprint)))
 	if config.KeyPath != "" {
 		if st, err := os.Stat(config.KeyPath); err == nil {
 			_, _ = hasher.Write([]byte{0})

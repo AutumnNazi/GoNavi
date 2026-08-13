@@ -1913,6 +1913,8 @@ export namespace connection {
 	    user: string;
 	    password: string;
 	    keyPath: string;
+	    knownHostsPath?: string;
+	    hostKeyFingerprint?: string;
 
 	    static createFrom(source: any = {}) {
 	        return new SSHConfig(source);
@@ -1925,6 +1927,8 @@ export namespace connection {
 	        this.user = source["user"];
 	        this.password = source["password"];
 	        this.keyPath = source["keyPath"];
+	        this.knownHostsPath = source["knownHostsPath"];
+	        this.hostKeyFingerprint = source["hostKeyFingerprint"];
 	    }
 	}
 	export class ConnectionProtectionConfig {
@@ -2823,6 +2827,7 @@ export namespace sync {
 	    supportsAutoCreate: boolean;
 	    supportsAutoAddColumns: boolean;
 	    requiresExistingTarget: boolean;
+	    supportsMutations: boolean;
 
 	    static createFrom(source: any = {}) {
 	        return new MigrationCapability(source);
@@ -2840,6 +2845,7 @@ export namespace sync {
 	        this.supportsAutoCreate = source["supportsAutoCreate"];
 	        this.supportsAutoAddColumns = source["supportsAutoAddColumns"];
 	        this.requiresExistingTarget = source["requiresExistingTarget"];
+	        this.supportsMutations = source["supportsMutations"];
 	    }
 	}
 	export class SyncValueTransform {

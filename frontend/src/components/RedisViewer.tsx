@@ -513,7 +513,7 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
             '0',
             false,
             getRedisScanLoadCount(searchPattern, false),
-            searchMode === 'prefix' && searchPattern !== '*'
+            searchMode !== 'exact' && searchPattern !== '*'
         );
     }, [loadKeys, redisDB]);
 
@@ -527,7 +527,7 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
             '0',
             false,
             getRedisScanLoadCount(normalized.pattern, false),
-            mode === 'prefix' && normalized.keyword !== ''
+            mode !== 'exact' && normalized.keyword !== ''
         );
     }, [loadKeys, searchMode]);
 
@@ -548,7 +548,7 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
             '0',
             false,
             getRedisScanLoadCount(normalized.pattern, false),
-            searchMode === 'prefix' && normalized.keyword !== ''
+            searchMode !== 'exact' && normalized.keyword !== ''
         );
     };
 
@@ -628,7 +628,7 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
             '0',
             false,
             getRedisScanLoadCount(searchPattern, false),
-            searchMode === 'prefix' && searchPattern !== '*'
+            searchMode !== 'exact' && searchPattern !== '*'
         );
     };
 
@@ -767,7 +767,7 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
                     '0',
                     false,
                     getRedisScanLoadCount(searchPattern, false),
-                    searchMode === 'prefix' && searchPattern !== '*'
+                    searchMode !== 'exact' && searchPattern !== '*'
                 );
                 message.success(tr('redis_viewer.message.import_summary', {
                     imported,
@@ -2400,12 +2400,17 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
                             style={{ flexShrink: 0 }}
                         >
                             <Radio.Button value="prefix">{tr('redis_viewer.search.prefix')}</Radio.Button>
+                            <Radio.Button value="fuzzy">{tr('redis_viewer.search.fuzzy')}</Radio.Button>
                             <Radio.Button value="exact">{tr('redis_viewer.search.exact')}</Radio.Button>
                         </Radio.Group>
                         <Search
                             {...noAutoCapInputProps}
                             style={{ flex: 1 }}
-                            placeholder={searchMode === 'exact' ? tr('redis_viewer.placeholder.search_exact') : tr('redis_viewer.placeholder.search_prefix')}
+                            placeholder={searchMode === 'exact'
+                                ? tr('redis_viewer.placeholder.search_exact')
+                                : searchMode === 'fuzzy'
+                                    ? tr('redis_viewer.placeholder.search_fuzzy')
+                                    : tr('redis_viewer.placeholder.search_prefix')}
                             value={searchInput}
                             onChange={handleSearchInputChange}
                             onSearch={handleSearch}

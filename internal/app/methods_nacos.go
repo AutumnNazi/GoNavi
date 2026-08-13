@@ -197,65 +197,69 @@ func nacosContextPathForSummary(raw string) string {
 func getNacosClientCacheKey(config connection.ConnectionConfig) string {
 	normalized := normalizeCacheKeyConfig(config)
 	identity := struct {
-		Type               string `json:"type"`
-		Host               string `json:"host"`
-		Port               int    `json:"port"`
-		User               string `json:"user"`
-		Password           string `json:"password"`
-		UseSSL             bool   `json:"useSSL"`
-		SSLMode            string `json:"sslMode"`
-		SSLCAPath          string `json:"sslCAPath"`
-		SSLCertPath        string `json:"sslCertPath"`
-		SSLKeyPath         string `json:"sslKeyPath"`
-		ConnectionParams   string `json:"connectionParams"`
-		Database           string `json:"database"`
-		UseSSH             bool   `json:"useSSH"`
-		SSHHost            string `json:"sshHost"`
-		SSHPort            int    `json:"sshPort"`
-		SSHUser            string `json:"sshUser"`
-		SSHPassword        string `json:"sshPassword"`
-		SSHKeyPath         string `json:"sshKeyPath"`
-		UseProxy           bool   `json:"useProxy"`
-		ProxyType          string `json:"proxyType"`
-		ProxyHost          string `json:"proxyHost"`
-		ProxyPort          int    `json:"proxyPort"`
-		ProxyUser          string `json:"proxyUser"`
-		ProxyPassword      string `json:"proxyPassword"`
-		UseHTTPTunnel      bool   `json:"useHttpTunnel"`
-		HTTPTunnelHost     string `json:"httpTunnelHost"`
-		HTTPTunnelPort     int    `json:"httpTunnelPort"`
-		HTTPTunnelUser     string `json:"httpTunnelUser"`
-		HTTPTunnelPassword string `json:"httpTunnelPassword"`
+		Type                  string `json:"type"`
+		Host                  string `json:"host"`
+		Port                  int    `json:"port"`
+		User                  string `json:"user"`
+		Password              string `json:"password"`
+		UseSSL                bool   `json:"useSSL"`
+		SSLMode               string `json:"sslMode"`
+		SSLCAPath             string `json:"sslCAPath"`
+		SSLCertPath           string `json:"sslCertPath"`
+		SSLKeyPath            string `json:"sslKeyPath"`
+		ConnectionParams      string `json:"connectionParams"`
+		Database              string `json:"database"`
+		UseSSH                bool   `json:"useSSH"`
+		SSHHost               string `json:"sshHost"`
+		SSHPort               int    `json:"sshPort"`
+		SSHUser               string `json:"sshUser"`
+		SSHPassword           string `json:"sshPassword"`
+		SSHKeyPath            string `json:"sshKeyPath"`
+		SSHKnownHostsPath     string `json:"sshKnownHostsPath"`
+		SSHHostKeyFingerprint string `json:"sshHostKeyFingerprint"`
+		UseProxy              bool   `json:"useProxy"`
+		ProxyType             string `json:"proxyType"`
+		ProxyHost             string `json:"proxyHost"`
+		ProxyPort             int    `json:"proxyPort"`
+		ProxyUser             string `json:"proxyUser"`
+		ProxyPassword         string `json:"proxyPassword"`
+		UseHTTPTunnel         bool   `json:"useHttpTunnel"`
+		HTTPTunnelHost        string `json:"httpTunnelHost"`
+		HTTPTunnelPort        int    `json:"httpTunnelPort"`
+		HTTPTunnelUser        string `json:"httpTunnelUser"`
+		HTTPTunnelPassword    string `json:"httpTunnelPassword"`
 	}{
-		Type:               "nacos",
-		Host:               strings.TrimSpace(normalized.Host),
-		Port:               normalized.Port,
-		User:               strings.TrimSpace(normalized.User),
-		Password:           normalized.Password,
-		UseSSL:             normalized.UseSSL,
-		SSLMode:            strings.TrimSpace(normalized.SSLMode),
-		SSLCAPath:          strings.TrimSpace(normalized.SSLCAPath),
-		SSLCertPath:        strings.TrimSpace(normalized.SSLCertPath),
-		SSLKeyPath:         strings.TrimSpace(normalized.SSLKeyPath),
-		ConnectionParams:   strings.TrimSpace(normalized.ConnectionParams),
-		Database:           strings.TrimSpace(normalized.Database),
-		UseSSH:             normalized.UseSSH,
-		SSHHost:            strings.TrimSpace(normalized.SSH.Host),
-		SSHPort:            normalized.SSH.Port,
-		SSHUser:            strings.TrimSpace(normalized.SSH.User),
-		SSHPassword:        normalized.SSH.Password,
-		SSHKeyPath:         strings.TrimSpace(normalized.SSH.KeyPath),
-		UseProxy:           normalized.UseProxy,
-		ProxyType:          strings.TrimSpace(normalized.Proxy.Type),
-		ProxyHost:          strings.TrimSpace(normalized.Proxy.Host),
-		ProxyPort:          normalized.Proxy.Port,
-		ProxyUser:          strings.TrimSpace(normalized.Proxy.User),
-		ProxyPassword:      normalized.Proxy.Password,
-		UseHTTPTunnel:      normalized.UseHTTPTunnel,
-		HTTPTunnelHost:     strings.TrimSpace(normalized.HTTPTunnel.Host),
-		HTTPTunnelPort:     normalized.HTTPTunnel.Port,
-		HTTPTunnelUser:     strings.TrimSpace(normalized.HTTPTunnel.User),
-		HTTPTunnelPassword: normalized.HTTPTunnel.Password,
+		Type:                  "nacos",
+		Host:                  strings.TrimSpace(normalized.Host),
+		Port:                  normalized.Port,
+		User:                  strings.TrimSpace(normalized.User),
+		Password:              normalized.Password,
+		UseSSL:                normalized.UseSSL,
+		SSLMode:               strings.TrimSpace(normalized.SSLMode),
+		SSLCAPath:             strings.TrimSpace(normalized.SSLCAPath),
+		SSLCertPath:           strings.TrimSpace(normalized.SSLCertPath),
+		SSLKeyPath:            strings.TrimSpace(normalized.SSLKeyPath),
+		ConnectionParams:      strings.TrimSpace(normalized.ConnectionParams),
+		Database:              strings.TrimSpace(normalized.Database),
+		UseSSH:                normalized.UseSSH,
+		SSHHost:               strings.TrimSpace(normalized.SSH.Host),
+		SSHPort:               normalized.SSH.Port,
+		SSHUser:               strings.TrimSpace(normalized.SSH.User),
+		SSHPassword:           normalized.SSH.Password,
+		SSHKeyPath:            strings.TrimSpace(normalized.SSH.KeyPath),
+		SSHKnownHostsPath:     strings.TrimSpace(normalized.SSH.KnownHostsPath),
+		SSHHostKeyFingerprint: strings.TrimSpace(normalized.SSH.HostKeyFingerprint),
+		UseProxy:              normalized.UseProxy,
+		ProxyType:             strings.TrimSpace(normalized.Proxy.Type),
+		ProxyHost:             strings.TrimSpace(normalized.Proxy.Host),
+		ProxyPort:             normalized.Proxy.Port,
+		ProxyUser:             strings.TrimSpace(normalized.Proxy.User),
+		ProxyPassword:         normalized.Proxy.Password,
+		UseHTTPTunnel:         normalized.UseHTTPTunnel,
+		HTTPTunnelHost:        strings.TrimSpace(normalized.HTTPTunnel.Host),
+		HTTPTunnelPort:        normalized.HTTPTunnel.Port,
+		HTTPTunnelUser:        strings.TrimSpace(normalized.HTTPTunnel.User),
+		HTTPTunnelPassword:    normalized.HTTPTunnel.Password,
 	}
 	raw, _ := json.Marshal(identity)
 	sum := sha256.Sum256(raw)

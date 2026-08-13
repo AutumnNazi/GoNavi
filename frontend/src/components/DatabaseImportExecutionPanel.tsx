@@ -1,12 +1,16 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Button, Progress, Typography } from 'antd';
+import { Alert, Button, Progress, Radio, Typography } from 'antd';
 import {
   PlayCircleOutlined,
   ReloadOutlined,
   StopOutlined,
 } from '@ant-design/icons';
 
-import { CancelSQLFileExecution, ImportDatabaseSQL } from '../../wailsjs/go/app/App';
+import {
+  CancelSQLFileExecution,
+  ImportDatabaseSQLWithOptions,
+  PreflightDatabaseSQLImport,
+} from '../../wailsjs/go/app/App';
 import { t as defaultTranslate } from '../i18n';
 import { useOptionalI18n } from '../i18n/provider';
 import type { SavedConnection } from '../types';
@@ -30,6 +34,61 @@ type DatabaseImportExecutionPanelProps = {
   continueOnError: boolean;
   onRunningChange?: (running: boolean) => void;
 };
+
+type MySQLGTIDImportMode = 'reject' | 'skip' | 'reset';
+
+const requestMySQLGTIDImportMode = (
+  translate: typeof defaultTranslate,
+): Promise<Exclude<MySQLGTIDImportMode, 'reject'> | null> => new Promise((resolve) => {
+  let selectedMode: Exclude<MySQLGTIDImportMode, 'reject'> = 'skip';
+  let settled = false;
+  const settle = (value: Exclude<MySQLGTIDImportMode, 'reject'> | null) => {
+    if (settled) return;
+    settled = true;
+    resolve(value);
+  };
+
+  Modal.confirm({
+    title: translate('data_import.workbench.gtid.title'),
+    width: 560,
+    content: (
+      <div style={{ display: 'grid', gap: 14 }}>
+        <Paragraph style={{ margin: 0 }}>
+          {translate('data_import.workbench.gtid.description')}
+        </Paragraph>
+        <Radio.Group
+          data-mysql-gtid-mode-selector="true"
+          defaultValue="skip"
+          onChange={(event) => {
+            selectedMode = event.target.value === 'reset' ? 'reset' : 'skip';
+          }}
+          style={{ display: 'grid', gap: 12 }}
+        >
+          <div>
+            <Radio value="skip">
+              <Text strong>{translate('data_import.workbench.gtid.option.skip')}</Text>
+            </Radio>
+            <Text type="secondary" style={{ display: 'block', margin: '4px 0 0 24px' }}>
+              {translate('data_import.workbench.gtid.option.skip_description')}
+            </Text>
+          </div>
+          <div>
+            <Radio value="reset">
+              <Text strong>{translate('data_import.workbench.gtid.option.reset')}</Text>
+            </Radio>
+            <Text type="danger" style={{ display: 'block', margin: '4px 0 0 24px' }}>
+              {translate('data_import.workbench.gtid.option.reset_description')}
+            </Text>
+          </div>
+        </Radio.Group>
+      </div>
+    ),
+    okText: translate('data_import.workbench.gtid.action.continue'),
+    cancelText: translate('common.cancel'),
+    onOk: () => settle(selectedMode),
+    onCancel: () => settle(null),
+  });
+});
 
 const getFileName = (filePath: string): string => {
   const parts = String(filePath || '').split(/[\\/]/);
@@ -58,6 +117,8 @@ const DatabaseImportExecutionPanel: React.FC<DatabaseImportExecutionPanelProps> 
   const i18n = useOptionalI18n();
   const t = i18n?.t ?? defaultTranslate;
   const [executionPending, setExecutionPending] = useState(false);
+  const [executionStarted, setExecutionStarted] = useState(false);
+  const [preflightError, setPreflightError] = useState('');
   const [cancelRequested, setCancelRequested] = useState(false);
   const lastReportedRunningRef = useRef<boolean | null>(null);
   const {
@@ -69,6 +130,7 @@ const DatabaseImportExecutionPanel: React.FC<DatabaseImportExecutionPanelProps> 
   } = useSQLFileExecutionRunner({ showToast: false });
 
   const taskRunning = isRunning || executionPending;
+  const canCancelExecution = isRunning || executionStarted;
   const progressPercent = Math.max(0, Math.min(100, Number(state.percent) || 0));
   const terminal = state.status === 'done'
     || state.status === 'cancelled'
@@ -117,18 +179,42 @@ const DatabaseImportExecutionPanel: React.FC<DatabaseImportExecutionPanelProps> 
     if (!approved) return;
     setExecutionPending(true);
     setCancelRequested(false);
+    setPreflightError('');
     try {
+      let mysqlGTIDMode: MySQLGTIDImportMode = 'reject';
+      const preflightResult = await PreflightDatabaseSQLImport(
+        connectionConfig as any,
+        String(dbName || '').trim(),
+        filePath,
+      );
+      if (!preflightResult?.success) {
+        setPreflightError(
+          preflightResult?.message || t('data_import.workbench.gtid.preflight_failed'),
+        );
+        return;
+      }
+      const preflightData = preflightResult.data as {
+        requiresGTIDDecision?: unknown;
+      } | undefined;
+      if (preflightData?.requiresGTIDDecision === true) {
+        const selectedMode = await requestMySQLGTIDImportMode(t);
+        if (!selectedMode) return;
+        mysqlGTIDMode = selectedMode;
+      }
+
+      setExecutionStarted(true);
       await runSQLFileExecutionWithProgress({
         title: getFileName(filePath),
         filePath,
         fileSizeMB,
         run: async (jobId) => {
-          const result = await ImportDatabaseSQL(
+          const result = await ImportDatabaseSQLWithOptions(
             connectionConfig as any,
             String(dbName || '').trim(),
             filePath,
             jobId,
             continueOnError,
+            mysqlGTIDMode,
           );
           // Reaching EOF with recorded statement errors is a completed import,
           // not a transport/fatal failure. Preserve the counters and render it
@@ -148,6 +234,7 @@ const DatabaseImportExecutionPanel: React.FC<DatabaseImportExecutionPanelProps> 
     } catch {
       // The shared runner already records and displays the RPC error state.
     } finally {
+      setExecutionStarted(false);
       setExecutionPending(false);
     }
   }, [
@@ -163,14 +250,14 @@ const DatabaseImportExecutionPanel: React.FC<DatabaseImportExecutionPanelProps> 
   ]);
 
   const requestCancel = useCallback(async () => {
-    if (!taskRunning || cancelRequested) return;
+    if (!canCancelExecution || cancelRequested) return;
     setCancelRequested(true);
     try {
       await cancelExecution();
     } catch {
       setCancelRequested(false);
     }
-  }, [cancelExecution, cancelRequested, taskRunning]);
+  }, [canCancelExecution, cancelExecution, cancelRequested]);
 
   const resetProgress = useCallback(() => {
     if (taskRunning) return;
@@ -251,6 +338,14 @@ const DatabaseImportExecutionPanel: React.FC<DatabaseImportExecutionPanelProps> 
           ? t('data_import.workbench.notice.continue_on_error')
           : t('data_import.workbench.notice.stop_on_error')}
       />
+      {preflightError ? (
+        <Alert
+          data-database-import-preflight-error="true"
+          type="error"
+          showIcon
+          message={preflightError}
+        />
+      ) : null}
       <Alert
         type="info"
         showIcon
@@ -344,7 +439,7 @@ const DatabaseImportExecutionPanel: React.FC<DatabaseImportExecutionPanelProps> 
         ) : null}
 
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 16 }}>
-          {taskRunning ? (
+          {canCancelExecution ? (
             <Button
               data-database-import-cancel-action="true"
               danger
@@ -362,7 +457,8 @@ const DatabaseImportExecutionPanel: React.FC<DatabaseImportExecutionPanelProps> 
               data-database-import-start-action="true"
               type="primary"
               icon={terminal ? <ReloadOutlined /> : <PlayCircleOutlined />}
-              disabled={!connectionConfig || !String(filePath || '').trim()}
+              loading={executionPending}
+              disabled={executionPending || !connectionConfig || !String(filePath || '').trim()}
               onClick={requestStartImport}
             >
               {terminal

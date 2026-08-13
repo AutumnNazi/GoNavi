@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -544,6 +545,68 @@ func TestWriteSQLAuditExportPreservesExistingFileWhenAtomicReplacementFails(t *t
 	}
 	if string(content) != "original" {
 		t.Fatalf("existing export was not preserved: %q", content)
+	}
+}
+
+func TestWriteSQLAuditExportNoReplacePreservesExistingFile(t *testing.T) {
+	directory := t.TempDir()
+	target := filepath.Join(directory, "audit.json")
+	if err := os.WriteFile(target, []byte("original"), 0o600); err != nil {
+		t.Fatalf("write original export: %v", err)
+	}
+
+	if err := writeSQLAuditExportAtomicallyNoReplace(target, []byte("replacement")); err == nil {
+		t.Fatal("expected no-replace export to fail when target already exists")
+	}
+	content, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatalf("read preserved export: %v", err)
+	}
+	if string(content) != "original" {
+		t.Fatalf("existing export was overwritten: %q", content)
+	}
+}
+
+func TestWriteSQLAuditExportNoReplacePublishesNewFile(t *testing.T) {
+	target := filepath.Join(t.TempDir(), "audit.json")
+	if err := writeSQLAuditExportAtomicallyNoReplace(target, []byte("new content")); err != nil {
+		t.Fatalf("no-replace export failed for a new target: %v", err)
+	}
+	content, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatalf("read new export: %v", err)
+	}
+	if string(content) != "new content" {
+		t.Fatalf("new export content = %q", content)
+	}
+}
+
+func TestWriteSQLAuditExportNoReplaceAllowsOnlyOneConcurrentPublisher(t *testing.T) {
+	target := filepath.Join(t.TempDir(), "audit.json")
+	const writers = 8
+	results := make(chan error, writers)
+	var group sync.WaitGroup
+	group.Add(writers)
+	for i := 0; i < writers; i++ {
+		go func(index int) {
+			defer group.Done()
+			results <- writeSQLAuditExportAtomicallyNoReplace(target, []byte("publisher"))
+		}(i)
+	}
+	group.Wait()
+	close(results)
+
+	successes := 0
+	for err := range results {
+		if err == nil {
+			successes++
+		}
+	}
+	if successes != 1 {
+		t.Fatalf("concurrent no-replace publishers succeeded %d times, want exactly one", successes)
+	}
+	if content, err := os.ReadFile(target); err != nil || string(content) != "publisher" {
+		t.Fatalf("published export = %q, err=%v", content, err)
 	}
 }
 

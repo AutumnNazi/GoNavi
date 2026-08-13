@@ -47,9 +47,15 @@ const (
 	optionalAgentMethodGetTriggers          = "getTriggers"
 	optionalAgentMethodApplyChanges         = "applyChanges"
 	optionalAgentDefaultScannerMaxBytes     = 8 << 20
-	optionalAgentMetadataProbeTimeout       = 5 * time.Second
-	optionalAgentControlCallTimeout         = 30 * time.Second
-	optionalAgentShutdownCallTimeout        = 2 * time.Second
+	// Freshly downloaded agents may start slowly while OS security scanning completes.
+	optionalAgentMetadataProbeTimeout = 30 * time.Second
+	// A Windows security scanner can hold the first process start long enough to
+	// hit the primary budget, then allow the same file to start immediately.
+	// Keep this as a retry budget only; the primary metadata contract remains 30s.
+	optionalAgentMetadataProbeRetryTimeout = 5 * time.Second
+	optionalAgentMetadataProbeRetryDelay   = 100 * time.Millisecond
+	optionalAgentControlCallTimeout        = 30 * time.Second
+	optionalAgentShutdownCallTimeout       = 2 * time.Second
 	// callStreamQueryGCInterval 控制 callStreamQuery 每接收多少行 driver-agent 数据触发一次 runtime.GC。
 	//
 	// 该路径不走 sql.Rows（scan_rows.go 的周期 GC 覆盖不到），但每个 chunk 解码
@@ -119,22 +125,54 @@ type optionalDriverAgentClient struct {
 }
 
 func ProbeOptionalDriverAgentMetadata(driverType string, executablePath string) (OptionalDriverAgentMetadata, error) {
-	client, err := newOptionalDriverAgentClient(driverType, executablePath)
-	if err != nil {
-		return OptionalDriverAgentMetadata{}, err
-	}
-	defer func() {
-		_ = client.close()
-	}()
+	metadata, err := probeOptionalDriverAgentMetadataWithRetry(func(timeout time.Duration) (OptionalDriverAgentMetadata, error) {
+		client, clientErr := newOptionalDriverAgentClient(driverType, executablePath)
+		if clientErr != nil {
+			return OptionalDriverAgentMetadata{}, clientErr
+		}
+		defer func() {
+			_ = client.close()
+		}()
 
-	var metadata OptionalDriverAgentMetadata
-	if err := client.callWithTimeout(optionalAgentRequest{Method: optionalAgentMethodMetadata}, &metadata, nil, nil, nil, optionalAgentMetadataProbeTimeout); err != nil {
+		var result OptionalDriverAgentMetadata
+		if callErr := client.callWithTimeout(optionalAgentRequest{Method: optionalAgentMethodMetadata}, &result, nil, nil, nil, timeout); callErr != nil {
+			return OptionalDriverAgentMetadata{}, callErr
+		}
+		return result, nil
+	}, runtime.GOOS == "windows", optionalAgentMetadataProbeRetryDelay)
+	if err != nil {
 		return OptionalDriverAgentMetadata{}, err
 	}
 	metadata.DriverType = normalizeRuntimeDriverType(metadata.DriverType)
 	metadata.AgentRevision = strings.TrimSpace(metadata.AgentRevision)
 	metadata.ProtocolSchema = strings.TrimSpace(metadata.ProtocolSchema)
 	return metadata, nil
+}
+
+func probeOptionalDriverAgentMetadataWithRetry(
+	probe func(time.Duration) (OptionalDriverAgentMetadata, error),
+	retryOnTimeout bool,
+	delay time.Duration,
+) (OptionalDriverAgentMetadata, error) {
+	if probe == nil {
+		return OptionalDriverAgentMetadata{}, errors.New("driver-agent metadata probe is nil")
+	}
+
+	metadata, firstErr := probe(optionalAgentMetadataProbeTimeout)
+	if firstErr == nil || !retryOnTimeout || !errors.Is(firstErr, context.DeadlineExceeded) {
+		return metadata, firstErr
+	}
+	if delay > 0 {
+		time.Sleep(delay)
+	}
+
+	metadata, retryErr := probe(optionalAgentMetadataProbeRetryTimeout)
+	if retryErr == nil {
+		return metadata, nil
+	}
+	// Preserve the 30s primary timeout as the causal error while retaining the
+	// second attempt's detail for logs and localized error rendering.
+	return OptionalDriverAgentMetadata{}, fmt.Errorf("首次 metadata 探测失败：%w；冷启动重试失败：%v", firstErr, retryErr)
 }
 
 func newOptionalDriverAgentClient(driverType string, executablePath string) (*optionalDriverAgentClient, error) {

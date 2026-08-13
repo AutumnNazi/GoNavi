@@ -616,6 +616,12 @@ export const messages: Record<SupportedLanguage, Record<MessageKey, string>> = {
     "connection.modal.network.ssh.password": "SSH 密码",
     "connection.modal.network.ssh.keyPath": "私钥路径 (可选)",
     "connection.modal.network.ssh.keyPathPlaceholder": "绝对路径",
+    "connection.modal.network.ssh.knownHostsPath": "known_hosts 路径 (可选)",
+    "connection.modal.network.ssh.knownHostsPathPlaceholder": "绝对路径",
+    "connection.modal.network.ssh.hostKeyFingerprint": "服务端 SHA256 指纹 (可选)",
+    "connection.modal.network.ssh.hostKeyFingerprintPlaceholder": "SHA256:<base64>",
+    "connection.modal.network.ssh.hostKeyVerificationHint":
+      "必须配置 known_hosts 路径或 SHA256 指纹；未知或变更的服务端密钥会被拒绝，应用不会自动写入或覆盖密钥。",
     "connection.modal.network.ssh.retained": "已保存 SSH 密码",
     "connection.modal.network.ssh.clearPassword": "清除已保存 SSH 密码",
     "connection.modal.network.ssh.savedDescription":
@@ -1537,6 +1543,12 @@ export const messages: Record<SupportedLanguage, Record<MessageKey, string>> = {
     "connection.modal.network.ssh.password": "SSH password",
     "connection.modal.network.ssh.keyPath": "Private key path",
     "connection.modal.network.ssh.keyPathPlaceholder": "Absolute path",
+    "connection.modal.network.ssh.knownHostsPath": "known_hosts path (optional)",
+    "connection.modal.network.ssh.knownHostsPathPlaceholder": "Absolute path",
+    "connection.modal.network.ssh.hostKeyFingerprint": "Server SHA256 fingerprint (optional)",
+    "connection.modal.network.ssh.hostKeyFingerprintPlaceholder": "SHA256:<base64>",
+    "connection.modal.network.ssh.hostKeyVerificationHint":
+      "Configure a known_hosts path or SHA256 fingerprint. Unknown or changed server keys are rejected; keys are never written or overwritten automatically.",
     "connection.modal.network.ssh.retained": "saved SSH password",
     "connection.modal.network.ssh.clearPassword": "Clear saved SSH password",
     "connection.modal.network.ssh.savedDescription":

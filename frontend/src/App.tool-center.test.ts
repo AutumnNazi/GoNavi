@@ -13,6 +13,41 @@ const appCss = readFileSync(
 
 describe('settings center tool entries', () => {
 
+  it('captures native window bounds before maximising and before the final quit flush', () => {
+    const startupRestoreStart = appSource.indexOf('const restoreWindowState = async');
+    const startupRestoreEnd = appSource.indexOf('if (useStore.persist.hasHydrated())', startupRestoreStart);
+    const startupRestoreSource = appSource.slice(startupRestoreStart, startupRestoreEnd);
+    const restoreNormalBoundsBeforeMaximise = startupRestoreSource.indexOf('applyRestoredWindowBounds(bounds);');
+    const startupMaximiseCall = startupRestoreSource.indexOf('applyStartupWindowChrome(1);');
+
+    expect(startupRestoreStart).toBeGreaterThanOrEqual(0);
+    expect(startupRestoreEnd).toBeGreaterThan(startupRestoreStart);
+    expect(restoreNormalBoundsBeforeMaximise).toBeGreaterThanOrEqual(0);
+    expect(startupMaximiseCall).toBeGreaterThan(restoreNormalBoundsBeforeMaximise);
+
+    const titleBarToggleStart = appSource.indexOf('const handleTitleBarWindowToggle = async');
+    const titleBarToggleEnd = appSource.indexOf('const handleTitleBarDoubleClick =', titleBarToggleStart);
+    const titleBarToggleSource = appSource.slice(titleBarToggleStart, titleBarToggleEnd);
+    const captureBeforeMaximise = titleBarToggleSource.indexOf('await captureMainWindowStateRef.current();');
+    const maximiseCall = titleBarToggleSource.indexOf('WindowMaximise();', captureBeforeMaximise);
+
+    expect(titleBarToggleStart).toBeGreaterThanOrEqual(0);
+    expect(titleBarToggleEnd).toBeGreaterThan(titleBarToggleStart);
+    expect(captureBeforeMaximise).toBeGreaterThanOrEqual(0);
+    expect(maximiseCall).toBeGreaterThan(captureBeforeMaximise);
+
+    const confirmedActionStart = appSource.indexOf('const runConfirmedAction = async');
+    const confirmedActionEnd = appSource.indexOf('if (confirmedAction)', confirmedActionStart);
+    const confirmedActionSource = appSource.slice(confirmedActionStart, confirmedActionEnd);
+    const captureOnQuit = confirmedActionSource.indexOf('captureWindowState:');
+    const flushOnQuit = confirmedActionSource.indexOf('flushAppState:');
+
+    expect(confirmedActionStart).toBeGreaterThanOrEqual(0);
+    expect(confirmedActionEnd).toBeGreaterThan(confirmedActionStart);
+    expect(captureOnQuit).toBeGreaterThanOrEqual(0);
+    expect(flushOnQuit).toBeGreaterThan(captureOnQuit);
+  });
+
   it('keeps the resize minimise probe independent from DPR debounce and clears it on unmount', () => {
     const scaleEffectStart = appSource.indexOf('let minimisedCheckTimer: number | null = null;');
     const dprScheduleStart = appSource.indexOf('const scheduleDevicePixelRatioCheck = (trigger: WindowsScaleCheckTrigger) => {', scaleEffectStart);

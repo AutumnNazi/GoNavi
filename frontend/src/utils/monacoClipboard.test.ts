@@ -45,19 +45,37 @@ const createInternals = (
   },
 });
 
-const createEditor = (overrides: Record<string, unknown> = {}) => ({
-  getOption: vi.fn(() => true),
-  getRawOptions: vi.fn(() => ({ readOnly: false })),
-  hasModel: vi.fn(() => true),
-  hasTextFocus: vi.fn(() => false),
-  onDidDispose: vi.fn(() => ({ dispose: vi.fn() })),
-  trigger: vi.fn(),
-  ...overrides,
-});
+const createEditorDomNode = () => {
+  const listeners = new Map<string, (event?: unknown) => void>();
+  return {
+    addEventListener: vi.fn((type: string, listener: (event?: unknown) => void) => {
+      listeners.set(type, listener);
+    }),
+    removeEventListener: vi.fn((type: string, listener: (event?: unknown) => void) => {
+      if (listeners.get(type) === listener) listeners.delete(type);
+    }),
+    dispatch: (type: string, event?: unknown) => listeners.get(type)?.(event),
+  };
+};
+
+const createEditor = (overrides: Record<string, unknown> = {}) => {
+  const domNode = createEditorDomNode();
+  return {
+    getDomNode: vi.fn(() => domNode),
+    getOption: vi.fn(() => true),
+    getRawOptions: vi.fn(() => ({ readOnly: false })),
+    hasModel: vi.fn(() => true),
+    hasTextFocus: vi.fn(() => false),
+    hasWidgetFocus: vi.fn(() => false),
+    onDidDispose: vi.fn(() => ({ dispose: vi.fn() })),
+    trigger: vi.fn(),
+    dispatchDomEvent: domNode.dispatch,
+    ...overrides,
+  };
+};
 
 const wailsScope = (readText = vi.fn().mockResolvedValue('native text')) => ({
   window: {
-    WailsInvoke: vi.fn(),
     runtime: { ClipboardGetText: readText },
   },
 });
@@ -90,7 +108,53 @@ describe('Monaco clipboard fallback', () => {
       .resolves.toBe('SELECT * FROM users;');
   });
 
-  it('only handles paste while a registered SQL editor has text focus', async () => {
+  it('leaves Ctrl+V to Monaco when no context-menu paste was requested', async () => {
+    const pasteAction = createPasteAction();
+    const readText = vi.fn().mockResolvedValue('custom clipboard text');
+    const editor = createEditor({ hasTextFocus: vi.fn(() => true) });
+    const nativePaste = vi.fn(() => true);
+    const release = installWailsMonacoClipboardPasteHandler(
+      { editor: { EditorOption: { emptySelectionClipboard: 45 } } },
+      editor,
+      wailsScope(readText),
+      createInternals(pasteAction),
+    );
+
+    await runPasteAction([...pasteAction.implementations, nativePaste]);
+
+    expect(nativePaste).toHaveBeenCalledTimes(1);
+    expect(readText).not.toHaveBeenCalled();
+    expect(editor.trigger).not.toHaveBeenCalled();
+    release();
+  });
+
+  it('clears a stale context-menu owner before Ctrl+V reaches Monaco', async () => {
+    const pasteAction = createPasteAction();
+    const editorDomNode = createEditorDomNode();
+    const readText = vi.fn().mockResolvedValue('custom clipboard text');
+    const editor = createEditor({
+      getDomNode: vi.fn(() => editorDomNode),
+      hasTextFocus: vi.fn(() => true),
+    });
+    const nativePaste = vi.fn(() => true);
+    const release = installWailsMonacoClipboardPasteHandler(
+      { editor: { EditorOption: { emptySelectionClipboard: 45 } } },
+      editor,
+      wailsScope(readText),
+      createInternals(pasteAction),
+    );
+
+    editorDomNode.dispatch('contextmenu');
+    editorDomNode.dispatch('keydown');
+    await runPasteAction([...pasteAction.implementations, nativePaste]);
+
+    expect(nativePaste).toHaveBeenCalledTimes(1);
+    expect(readText).not.toHaveBeenCalled();
+    expect(editor.trigger).not.toHaveBeenCalled();
+    release();
+  });
+
+  it('only handles context-menu paste for the registered SQL editor', async () => {
     const pasteAction = createPasteAction();
     const internals = createInternals(pasteAction);
     const sqlEditor = createEditor({ hasTextFocus: vi.fn(() => true) });
@@ -105,6 +169,7 @@ describe('Monaco clipboard fallback', () => {
     );
 
     expect(pasteAction.addImplementation).toHaveBeenCalledTimes(1);
+    sqlEditor.dispatchDomEvent('contextmenu');
     await runPasteAction(pasteAction.implementations);
     expect(scope.window.runtime.ClipboardGetText).toHaveBeenCalledTimes(1);
     expect(sqlEditor.trigger).toHaveBeenCalledWith('keyboard', 'paste', {
@@ -116,6 +181,277 @@ describe('Monaco clipboard fallback', () => {
     expect(nonSqlEditor.trigger).not.toHaveBeenCalled();
 
     releaseSql();
+  });
+
+  it('handles context-menu paste while the SQL editor retains widget focus', async () => {
+    const pasteAction = createPasteAction();
+    const internals = createInternals(pasteAction);
+    const editor = createEditor({ hasWidgetFocus: vi.fn(() => true) });
+    const scope = wailsScope();
+
+    const release = installWailsMonacoClipboardPasteHandler(
+      { editor: { EditorOption: { emptySelectionClipboard: 45 } } },
+      editor,
+      scope,
+      internals,
+    );
+
+    editor.dispatchDomEvent('contextmenu');
+    await runPasteAction(pasteAction.implementations);
+
+    expect(scope.window.runtime.ClipboardGetText).toHaveBeenCalledTimes(1);
+    expect(editor.trigger).toHaveBeenCalledWith(
+      'keyboard',
+      'paste',
+      expect.objectContaining({ text: 'native text' }),
+    );
+    release();
+  });
+
+  it('routes context-menu paste to its editor after the menu takes focus', async () => {
+    const pasteAction = createPasteAction();
+    const editorDomNode = createEditorDomNode();
+    const editor = createEditor({ getDomNode: vi.fn(() => editorDomNode) });
+    const scope = wailsScope();
+
+    const release = installWailsMonacoClipboardPasteHandler(
+      { editor: { EditorOption: { emptySelectionClipboard: 45 } } },
+      editor,
+      scope,
+      createInternals(pasteAction),
+    );
+
+    editorDomNode.dispatch('contextmenu');
+    await runPasteAction(pasteAction.implementations);
+
+    expect(scope.window.runtime.ClipboardGetText).toHaveBeenCalledTimes(1);
+    expect(editor.trigger).toHaveBeenCalledWith(
+      'keyboard',
+      'paste',
+      expect.objectContaining({ text: 'native text' }),
+    );
+
+    release();
+    expect(editorDomNode.removeEventListener).toHaveBeenCalledWith('contextmenu', expect.any(Function));
+  });
+
+  it('keeps context-menu ownership while clicking Monaco menu items', async () => {
+    const pasteAction = createPasteAction();
+    const editor = createEditor();
+    const scope = wailsScope();
+    const release = installWailsMonacoClipboardPasteHandler(
+      { editor: { EditorOption: { emptySelectionClipboard: 45 } } },
+      editor,
+      scope,
+      createInternals(pasteAction),
+    );
+
+    editor.dispatchDomEvent('contextmenu');
+    editor.dispatchDomEvent('pointerdown', {
+      target: {
+        closest: vi.fn(() => null),
+      },
+      composedPath: vi.fn(() => [{
+        closest: vi.fn((selector: string) => (
+          selector === '.monaco-menu-container' ? {} : null
+        )),
+      }]),
+    });
+    await runPasteAction(pasteAction.implementations);
+
+    expect(scope.window.runtime.ClipboardGetText).toHaveBeenCalledTimes(1);
+    expect(editor.trigger).toHaveBeenCalledWith(
+      'keyboard',
+      'paste',
+      expect.objectContaining({ text: 'native text' }),
+    );
+    release();
+  });
+
+  it('routes context-menu paste only to the most recently requested editor', async () => {
+    const pasteAction = createPasteAction();
+    const internals = createInternals(pasteAction);
+    const firstEditorDomNode = createEditorDomNode();
+    const secondEditorDomNode = createEditorDomNode();
+    const firstEditor = createEditor({ getDomNode: vi.fn(() => firstEditorDomNode) });
+    const secondEditor = createEditor({ getDomNode: vi.fn(() => secondEditorDomNode) });
+    const firstScope = wailsScope(vi.fn().mockResolvedValue('first editor text'));
+    const secondScope = wailsScope(vi.fn().mockResolvedValue('second editor text'));
+    const monaco = { editor: { EditorOption: { emptySelectionClipboard: 45 } } };
+
+    const releaseFirst = installWailsMonacoClipboardPasteHandler(monaco, firstEditor, firstScope, internals);
+    const releaseSecond = installWailsMonacoClipboardPasteHandler(monaco, secondEditor, secondScope, internals);
+
+    firstEditorDomNode.dispatch('contextmenu');
+    secondEditorDomNode.dispatch('contextmenu');
+    await runPasteAction(pasteAction.implementations);
+
+    releaseFirst();
+    releaseSecond();
+    expect(firstScope.window.runtime.ClipboardGetText).not.toHaveBeenCalled();
+    expect(firstEditor.trigger).not.toHaveBeenCalled();
+    expect(secondScope.window.runtime.ClipboardGetText).toHaveBeenCalledTimes(1);
+    expect(secondEditor.trigger).toHaveBeenCalledWith(
+      'keyboard',
+      'paste',
+      expect.objectContaining({ text: 'second editor text' }),
+    );
+  });
+
+  it('leaves Ctrl+V in another SQL editor to Monaco after a context menu is cancelled', async () => {
+    const pasteAction = createPasteAction();
+    const internals = createInternals(pasteAction);
+    const firstEditor = createEditor();
+    const secondEditor = createEditor();
+    const firstReadText = vi.fn().mockResolvedValue('stale editor text');
+    const secondReadText = vi.fn().mockResolvedValue('second editor text');
+    const nativePaste = vi.fn(() => true);
+    const monaco = { editor: { EditorOption: { emptySelectionClipboard: 45 } } };
+
+    const releaseFirst = installWailsMonacoClipboardPasteHandler(
+      monaco,
+      firstEditor,
+      wailsScope(firstReadText),
+      internals,
+    );
+    const releaseSecond = installWailsMonacoClipboardPasteHandler(
+      monaco,
+      secondEditor,
+      wailsScope(secondReadText),
+      internals,
+    );
+
+    firstEditor.dispatchDomEvent('contextmenu');
+    secondEditor.dispatchDomEvent('keydown');
+    await runPasteAction([...pasteAction.implementations, nativePaste]);
+
+    expect(nativePaste).toHaveBeenCalledTimes(1);
+    expect(firstReadText).not.toHaveBeenCalled();
+    expect(secondReadText).not.toHaveBeenCalled();
+    expect(firstEditor.trigger).not.toHaveBeenCalled();
+    expect(secondEditor.trigger).not.toHaveBeenCalled();
+    releaseFirst();
+    releaseSecond();
+  });
+
+  it('leaves Ctrl+V outside the SQL editor to Monaco after a context menu is cancelled', async () => {
+    const pasteAction = createPasteAction();
+    const internals = createInternals(pasteAction);
+    const documentNode = createEditorDomNode();
+    const editorDomNode = {
+      ...createEditorDomNode(),
+      ownerDocument: documentNode,
+    };
+    const editor = createEditor({
+      getDomNode: vi.fn(() => editorDomNode),
+    });
+    const scope = wailsScope();
+    const defaultPaste = vi.fn(() => true);
+    pasteAction.addImplementation(10000, 'monaco-default-paste', defaultPaste);
+
+    const release = installWailsMonacoClipboardPasteHandler(
+      { editor: { EditorOption: { emptySelectionClipboard: 45 } } },
+      editor,
+      scope,
+      internals,
+    );
+
+    editorDomNode.dispatch('contextmenu');
+    documentNode.dispatch('keydown');
+    await runPasteAction(pasteAction.implementations);
+
+    expect(defaultPaste).toHaveBeenCalledTimes(1);
+    expect(scope.window.runtime.ClipboardGetText).not.toHaveBeenCalled();
+    expect(editor.trigger).not.toHaveBeenCalled();
+    release();
+  });
+
+  it('does not finish an async context-menu paste after another SQL editor is activated', async () => {
+    const pasteAction = createPasteAction();
+    const internals = createInternals(pasteAction);
+    let resolveRead: ((text: string) => void) | undefined;
+    const firstEditor = createEditor();
+    const secondEditor = createEditor();
+    const firstReadText = vi.fn(() => new Promise<string>((resolve) => {
+      resolveRead = resolve;
+    }));
+    const monaco = { editor: { EditorOption: { emptySelectionClipboard: 45 } } };
+
+    const releaseFirst = installWailsMonacoClipboardPasteHandler(
+      monaco,
+      firstEditor,
+      wailsScope(firstReadText),
+      internals,
+    );
+    const releaseSecond = installWailsMonacoClipboardPasteHandler(
+      monaco,
+      secondEditor,
+      wailsScope(),
+      internals,
+    );
+
+    firstEditor.dispatchDomEvent('contextmenu');
+    const pastePromise = runPasteAction(pasteAction.implementations);
+    secondEditor.dispatchDomEvent('pointerdown');
+    resolveRead?.('stale editor text');
+    await pastePromise;
+
+    expect(firstReadText).toHaveBeenCalledTimes(1);
+    expect(firstEditor.trigger).not.toHaveBeenCalled();
+    expect(secondEditor.trigger).not.toHaveBeenCalled();
+    releaseFirst();
+    releaseSecond();
+  });
+
+  it('invokes Monaco trigger with the editor as its receiver', async () => {
+    const pasteAction = createPasteAction();
+    const internals = createInternals(pasteAction);
+    const editor = createEditor({ hasWidgetFocus: vi.fn(() => true) });
+    editor.trigger = vi.fn(function (this: unknown) {
+      if (this !== editor) {
+        throw new Error('trigger called without editor receiver');
+      }
+    });
+
+    const release = installWailsMonacoClipboardPasteHandler(
+      { editor: { EditorOption: { emptySelectionClipboard: 45 } } },
+      editor,
+      wailsScope(),
+      internals,
+    );
+
+    editor.dispatchDomEvent('contextmenu');
+    await runPasteAction(pasteAction.implementations);
+
+    expect(editor.trigger).toHaveBeenCalledTimes(1);
+    release();
+  });
+
+  it('does not paste after keyboard input interrupts an async context-menu read', async () => {
+    const pasteAction = createPasteAction();
+    const internals = createInternals(pasteAction);
+    let resolveRead: ((text: string) => void) | undefined;
+    const editor = createEditor();
+    const scope = wailsScope(vi.fn(() => new Promise<string>((resolve) => {
+      resolveRead = resolve;
+    })));
+
+    const release = installWailsMonacoClipboardPasteHandler(
+      { editor: { EditorOption: { emptySelectionClipboard: 45 } } },
+      editor,
+      scope,
+      internals,
+    );
+
+    editor.dispatchDomEvent('contextmenu');
+    const pastePromise = runPasteAction(pasteAction.implementations);
+    editor.dispatchDomEvent('keydown');
+    resolveRead?.('stale text');
+    await pastePromise;
+
+    expect(scope.window.runtime.ClipboardGetText).toHaveBeenCalledTimes(1);
+    expect(editor.trigger).not.toHaveBeenCalled();
+    release();
   });
 
   it('leaves the global paste action to Monaco when only a non-SQL editor is focused', async () => {
@@ -140,23 +476,23 @@ describe('Monaco clipboard fallback', () => {
     release();
   });
 
-  it('routes paste to the SQL editor that currently has focus and cleans each editor independently', async () => {
+  it('routes context-menu paste to its requesting editor and cleans each editor independently', async () => {
     const pasteAction = createPasteAction();
     const internals = createInternals(pasteAction);
-    let focusedEditor = 'first';
-    const firstEditor = createEditor({ hasTextFocus: vi.fn(() => focusedEditor === 'first') });
-    const secondEditor = createEditor({ hasTextFocus: vi.fn(() => focusedEditor === 'second') });
+    const firstEditor = createEditor();
+    const secondEditor = createEditor();
     const scope = wailsScope(vi.fn().mockResolvedValue('native text'));
     const monaco = { editor: { EditorOption: { emptySelectionClipboard: 45 } } };
 
     const releaseFirst = installWailsMonacoClipboardPasteHandler(monaco, firstEditor, scope, internals);
     const releaseSecond = installWailsMonacoClipboardPasteHandler(monaco, secondEditor, scope, internals);
 
+    firstEditor.dispatchDomEvent('contextmenu');
     await runPasteAction(pasteAction.implementations);
     expect(firstEditor.trigger).toHaveBeenCalledTimes(1);
     expect(secondEditor.trigger).not.toHaveBeenCalled();
 
-    focusedEditor = 'second';
+    secondEditor.dispatchDomEvent('contextmenu');
     await runPasteAction(pasteAction.implementations);
     expect(firstEditor.trigger).toHaveBeenCalledTimes(1);
     expect(secondEditor.trigger).toHaveBeenCalledTimes(1);
@@ -208,6 +544,7 @@ describe('Monaco clipboard fallback', () => {
       internals,
     );
 
+    editor.dispatchDomEvent('contextmenu');
     const pastePromise = runPasteAction(pasteAction.implementations);
     release();
     resolveRead?.('late text');
@@ -245,6 +582,7 @@ describe('Monaco clipboard fallback', () => {
       internals,
     );
 
+    editor.dispatchDomEvent('contextmenu');
     await runPasteAction(pasteAction.implementations);
     expect(editor.trigger).toHaveBeenLastCalledWith('keyboard', 'paste', {
       text: 'first value\nsecond value',
@@ -253,6 +591,7 @@ describe('Monaco clipboard fallback', () => {
       mode: null,
     });
 
+    editor.dispatchDomEvent('contextmenu');
     await runPasteAction(pasteAction.implementations);
     expect(editor.trigger).toHaveBeenLastCalledWith('keyboard', 'paste', {
       text: 'whole line\n',
@@ -261,6 +600,7 @@ describe('Monaco clipboard fallback', () => {
       mode: null,
     });
 
+    editor.dispatchDomEvent('contextmenu');
     await runPasteAction(pasteAction.implementations);
     expect(editor.trigger).toHaveBeenLastCalledWith('keyboard', 'paste', {
       text: 'foreign text',
@@ -290,6 +630,7 @@ describe('Monaco clipboard fallback', () => {
       internals,
     );
 
+    editor.dispatchDomEvent('contextmenu');
     await runPasteAction(pasteAction.implementations);
     expect(wailsReadText).toHaveBeenCalledTimes(1);
     expect(browserReadText).toHaveBeenCalledTimes(1);
@@ -297,19 +638,123 @@ describe('Monaco clipboard fallback', () => {
     release();
   });
 
-  it('does not register outside the Wails runtime', () => {
+  it('registers for the generated Wails runtime shape without a legacy WailsInvoke global', async () => {
     const pasteAction = createPasteAction();
+    const readText = vi.fn().mockResolvedValue('bridge text');
+    const editor = createEditor({ hasTextFocus: vi.fn(() => true) });
     const release = installWailsMonacoClipboardPasteHandler(
       { editor: { EditorOption: { emptySelectionClipboard: 45 } } },
-      createEditor(),
+      editor,
       {
         navigator: { clipboard: { readText: vi.fn().mockResolvedValue('browser text') } },
-        window: { runtime: { ClipboardGetText: vi.fn().mockResolvedValue('bridge text') } },
+        window: { runtime: { ClipboardGetText: readText } },
       },
       createInternals(pasteAction),
     );
 
-    expect(pasteAction.addImplementation).not.toHaveBeenCalled();
+    expect(pasteAction.addImplementation).toHaveBeenCalledTimes(1);
+    editor.dispatchDomEvent('contextmenu');
+    await runPasteAction(pasteAction.implementations);
+    expect(readText).toHaveBeenCalledTimes(1);
+    expect(editor.trigger).toHaveBeenCalledWith(
+      'keyboard',
+      'paste',
+      expect.objectContaining({ text: 'bridge text' }),
+    );
+    release();
+  });
+
+  it('keeps the Monaco paste action in a plain browser runtime', async () => {
+    const pasteAction = createPasteAction();
+    const browserReadText = vi.fn().mockResolvedValue('browser text');
+    const editor = createEditor({ hasTextFocus: vi.fn(() => true) });
+    const release = installWailsMonacoClipboardPasteHandler(
+      { editor: { EditorOption: { emptySelectionClipboard: 45 } } },
+      editor,
+      {
+        navigator: { clipboard: { readText: browserReadText } },
+        window: {},
+      },
+      createInternals(pasteAction),
+    );
+
+    expect(pasteAction.addImplementation).toHaveBeenCalledTimes(1);
+    editor.dispatchDomEvent('contextmenu');
+    await runPasteAction(pasteAction.implementations);
+    expect(browserReadText).toHaveBeenCalledTimes(1);
+    expect(editor.trigger).toHaveBeenCalledWith(
+      'keyboard',
+      'paste',
+      expect.objectContaining({ text: 'browser text' }),
+    );
+    release();
+  });
+
+  it('falls through when no clipboard reader is available at invocation time', () => {
+    const pasteAction = createPasteAction();
+    const editor = createEditor({ hasTextFocus: vi.fn(() => true) });
+    const release = installWailsMonacoClipboardPasteHandler(
+      { editor: { EditorOption: { emptySelectionClipboard: 45 } } },
+      editor,
+      { window: {} },
+      createInternals(pasteAction),
+    );
+
+    expect(pasteAction.addImplementation).toHaveBeenCalledTimes(1);
+    editor.dispatchDomEvent('contextmenu');
+    expect(pasteAction.implementations[0]()).toBe(false);
+    expect(editor.trigger).not.toHaveBeenCalled();
+    release();
+  });
+
+  it('resolves a Wails clipboard reader injected after editor mount', async () => {
+    const pasteAction = createPasteAction();
+    const editor = createEditor({ hasTextFocus: vi.fn(() => true) });
+    const scope: any = { window: { runtime: {} } };
+    const readText = vi.fn().mockResolvedValue('late bridge text');
+
+    const release = installWailsMonacoClipboardPasteHandler(
+      { editor: { EditorOption: { emptySelectionClipboard: 45 } } },
+      editor,
+      scope,
+      createInternals(pasteAction),
+    );
+    scope.window.runtime.ClipboardGetText = readText;
+
+    editor.dispatchDomEvent('contextmenu');
+    await runPasteAction(pasteAction.implementations);
+
+    expect(readText).toHaveBeenCalledTimes(1);
+    expect(editor.trigger).toHaveBeenCalledWith(
+      'keyboard',
+      'paste',
+      expect.objectContaining({ text: 'late bridge text' }),
+    );
+    release();
+  });
+
+  it('reports browser clipboard permission failures instead of swallowing them', async () => {
+    const pasteAction = createPasteAction();
+    const error = new DOMException('Read permission denied', 'NotAllowedError');
+    const onReadFailure = vi.fn();
+    const editor = createEditor({ hasTextFocus: vi.fn(() => true) });
+
+    const release = installWailsMonacoClipboardPasteHandler(
+      { editor: { EditorOption: { emptySelectionClipboard: 45 } } },
+      editor,
+      {
+        navigator: { clipboard: { readText: vi.fn().mockRejectedValue(error) } },
+        window: {},
+      },
+      createInternals(pasteAction),
+      onReadFailure,
+    );
+
+    editor.dispatchDomEvent('contextmenu');
+    await runPasteAction(pasteAction.implementations);
+
+    expect(onReadFailure).toHaveBeenCalledWith({ source: 'browser', error });
+    expect(editor.trigger).not.toHaveBeenCalled();
     release();
   });
 
@@ -329,6 +774,7 @@ describe('Monaco clipboard fallback', () => {
       internals,
     );
 
+    editor.dispatchDomEvent('contextmenu');
     expect(pasteAction.implementations[0]()).toBe(false);
     expect(scope.window.runtime.ClipboardGetText).not.toHaveBeenCalled();
     expect(editor.trigger).not.toHaveBeenCalled();

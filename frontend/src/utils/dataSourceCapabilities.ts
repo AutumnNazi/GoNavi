@@ -171,7 +171,53 @@ const COPY_TABLE_TYPES = new Set([
   'postgres',
 ]);
 
-const QUERY_EDITOR_DISABLED_TYPES = new Set(['redis']);
+// 查询编辑器能力使用显式白名单：只有具备真实查询工作流的类型才允许
+// 进入查询编辑器。Nacos/JVM 等只有专用工作台的数据源不在此列，
+// 否则会进入必然失败的 SQL 工作流（后端仅有通用 unsupported 兜底）。
+const QUERY_EDITOR_SUPPORTED_TYPES = new Set([
+  // 关系型 / SQL 方言
+  'mysql',
+  'goldendb',
+  'mariadb',
+  'oceanbase',
+  'diros',
+  'starrocks',
+  'sphinx',
+  'postgres',
+  'kingbase',
+  'highgo',
+  'vastbase',
+  'opengauss',
+  'gaussdb',
+  'sqlserver',
+  'iris',
+  'sqlite',
+  'duckdb',
+  'oracle',
+  'dameng',
+  'trino',
+  // 时序 / 分析
+  'tdengine',
+  'clickhouse',
+  'iotdb',
+  // 消息
+  'rocketmq',
+  'mqtt',
+  'kafka',
+  'rabbitmq',
+  // 文档 / 搜索 / 向量
+  'mongodb',
+  'elasticsearch',
+  'chroma',
+  'qdrant',
+  'milvus',
+  // 通用自定义连接（driver 未识别时仍保留查询入口）
+  'custom',
+]);
+
+// 自定义连接的未知 driver 走兜底：保持原有“默认可查询”行为，
+// 只有已知且无查询工作流的类型（Nacos/JVM/Redis 等专用工作台）始终排除。
+const CUSTOM_CONNECTION_QUERY_DISABLED_TYPES = new Set(['nacos', 'jvm', 'redis']);
 const EXPLAIN_DIAGNOSIS_TYPES = new Set([
   'mysql',
   'goldendb',
@@ -278,7 +324,9 @@ export const getDataSourceCapabilities = (config: ConnectionLike): DataSourceCap
   const structureEditRestricted = isConnectionStructureEditRestricted(config);
   return {
     type,
-    supportsQueryEditor: !QUERY_EDITOR_DISABLED_TYPES.has(type),
+    supportsQueryEditor:
+      QUERY_EDITOR_SUPPORTED_TYPES.has(type)
+      || (customConnection && !CUSTOM_CONNECTION_QUERY_DISABLED_TYPES.has(type)),
     supportsExplainDiagnosis: EXPLAIN_DIAGNOSIS_TYPES.has(type),
     supportsSqlQueryExport: SQL_QUERY_EXPORT_TYPES.has(type),
     supportsCopyInsert: COPY_INSERT_TYPES.has(type),

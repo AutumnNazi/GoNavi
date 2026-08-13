@@ -435,6 +435,42 @@ export const buildDataGridCssText = ({
                     background-image: none !important;
                 }
 
+                /* 当前单元格行列交叉高亮：仅增加中性半透明蒙层，不改变行勾选或单元格选区语义。 */
+                .${gridId}.data-grid-root .ant-table-tbody-virtual-holder .ant-table-row[data-active-cell-row="true"] > .ant-table-cell,
+                .${gridId}.data-grid-root .ant-table-tbody-virtual .ant-table-row[data-active-cell-row="true"] > .ant-table-cell,
+                .${gridId}.data-grid-root .ant-table-tbody-virtual-holder-inner .ant-table-row[data-active-cell-row="true"] > .ant-table-cell,
+                .${gridId}.data-grid-root .ant-table-tbody > tr[data-active-cell-row="true"] > td.ant-table-cell,
+                .${gridId}.data-grid-root .ant-table-tbody-virtual-holder .ant-table-row > .ant-table-cell[data-active-cell-column="true"],
+                .${gridId}.data-grid-root .ant-table-tbody-virtual .ant-table-row > .ant-table-cell[data-active-cell-column="true"],
+                .${gridId}.data-grid-root .ant-table-tbody-virtual-holder-inner .ant-table-row > .ant-table-cell[data-active-cell-column="true"],
+                .${gridId}.data-grid-root .ant-table-tbody > tr > td.ant-table-cell[data-active-cell-column="true"] {
+                    background-image: linear-gradient(
+                        var(--gn-bg-hover, ${darkMode ? 'rgba(255, 255, 255, 0.05)' : 'rgba(15, 23, 42, 0.045)'}),
+                        var(--gn-bg-hover, ${darkMode ? 'rgba(255, 255, 255, 0.05)' : 'rgba(15, 23, 42, 0.045)'})
+                    ) !important;
+                }
+
+                /* 固定的勾选框/序号列在活动行 hover 时继续保留十字高亮蒙层。 */
+                .${gridId}.data-grid-root .ant-table-tbody-virtual-holder .ant-table-row[data-active-cell-row="true"]:hover > .ant-table-cell:is(.data-grid-row-number-cell, .ant-table-selection-column),
+                .${gridId}.data-grid-root .ant-table-tbody-virtual .ant-table-row[data-active-cell-row="true"]:hover > .ant-table-cell:is(.data-grid-row-number-cell, .ant-table-selection-column),
+                .${gridId}.data-grid-root .ant-table-tbody-virtual-holder-inner .ant-table-row[data-active-cell-row="true"]:hover > .ant-table-cell:is(.data-grid-row-number-cell, .ant-table-selection-column),
+                .${gridId}.data-grid-root .ant-table-tbody > tr[data-active-cell-row="true"]:hover > td:is(.data-grid-row-number-cell, .ant-table-selection-column) {
+                    background-color: var(--gn-bg-panel, ${bgContent}) !important;
+                    background-image: linear-gradient(
+                        var(--gn-bg-hover, ${darkMode ? 'rgba(255, 255, 255, 0.05)' : 'rgba(15, 23, 42, 0.045)'}),
+                        var(--gn-bg-hover, ${darkMode ? 'rgba(255, 255, 255, 0.05)' : 'rgba(15, 23, 42, 0.045)'})
+                    ) !important;
+                }
+
+                .${gridId}.data-grid-root .ant-table-header .ant-table-thead > tr > th.ant-table-cell[data-active-cell-column="true"],
+                .${gridId}.data-grid-root .ant-table-thead > tr > th.ant-table-cell[data-active-cell-column="true"] {
+                    background-color: var(--gn-bg-panel, ${bgContent}) !important;
+                    background-image: linear-gradient(
+                        var(--gn-bg-active, ${darkMode ? 'rgba(255, 255, 255, 0.08)' : 'rgba(15, 23, 42, 0.075)'}),
+                        var(--gn-bg-active, ${darkMode ? 'rgba(255, 255, 255, 0.08)' : 'rgba(15, 23, 42, 0.075)'})
+                    ) !important;
+                }
+
                 /*
                  * 行选中：整行统一绿色。
                  * 关键：virtual-holder 下有

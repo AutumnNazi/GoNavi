@@ -102,7 +102,7 @@ import {
 import { downloadBrowserTextFile } from './utils/browserFileTransfer';
 import { buildDataSyncWorkbenchTab } from './utils/dataSyncTab';
 import { buildSqlAuditWorkbenchTab } from './utils/sqlAuditTab';
-import { resolveDataSourceType } from './utils/dataSourceCapabilities';
+import { getDataSourceCapabilities, resolveDataSourceType } from './utils/dataSourceCapabilities';
 import { buildContextualNewQueryTemplate } from './utils/objectQueryTemplates';
 import {
   extractCustomThemeAntTokens,
@@ -226,8 +226,9 @@ import {
 import {
   buildApplicationQuitUnsavedSQLLabel,
   collectApplicationQuitUnsavedSQLTargets,
-  saveApplicationQuitUnsavedSQLTargets,
+  saveLatestApplicationQuitUnsavedSQLState,
 } from './utils/sqlEditorApplicationQuit';
+import { prepareApplicationQuitPersistence } from './utils/applicationQuitPersistence';
 import { flushQueryTabDraftSnapshots } from './utils/sqlFileTabDrafts';
 import {
   APP_APPLICATION_QUIT_MODAL_Z_INDEX,
@@ -1155,6 +1156,7 @@ function App() {
   const windowDiagSequenceRef = React.useRef(0);
   const windowDiagLastSignatureRef = React.useRef('');
   const windowDiagLastAtRef = React.useRef(0);
+  const captureMainWindowStateRef = React.useRef<() => Promise<void>>(async () => undefined);
   const connectionWorkbenchState = getConnectionWorkbenchState(isStoreHydrated, hasLoadedSecureConfig);
   const securityUpdateStatusMeta = useMemo(
       () => getSecurityUpdateStatusMeta(securityUpdateStatus, t),
@@ -1584,24 +1586,12 @@ function App() {
           }, delayMs);
       };
 
-      const restoreNormalWindowBounds = async (bounds: {
+      const applyRestoredWindowBounds = (bounds: {
           width: number;
           height: number;
           x: number;
           y: number;
       }) => {
-          try {
-              if (await WindowIsFullscreen()) {
-                  WindowUnfullscreen();
-                  await new Promise((resolve) => window.setTimeout(resolve, settleDelayMs));
-              }
-              if (await WindowIsMaximised()) {
-                  WindowUnmaximise();
-                  await new Promise((resolve) => window.setTimeout(resolve, settleDelayMs));
-              }
-          } catch (e) {
-              console.warn('Failed to restore normal window chrome', e);
-          }
           const state = useStore.getState();
           const viewport = readCurrentVisibleViewport();
           const nextBounds = resolveVisibleStartupWindowBounds(bounds, viewport);
@@ -1622,7 +1612,28 @@ function App() {
           });
           WindowSetPosition(setPosition.x, setPosition.y);
           state.setWindowBounds(nextBounds);
-          state.setWindowState('normal');
+      };
+
+      const restoreNormalWindowBounds = async (bounds: {
+          width: number;
+          height: number;
+          x: number;
+          y: number;
+      }) => {
+          try {
+              if (await WindowIsFullscreen()) {
+                  WindowUnfullscreen();
+                  await new Promise((resolve) => window.setTimeout(resolve, settleDelayMs));
+              }
+              if (await WindowIsMaximised()) {
+                  WindowUnmaximise();
+                  await new Promise((resolve) => window.setTimeout(resolve, settleDelayMs));
+              }
+          } catch (e) {
+              console.warn('Failed to restore normal window chrome', e);
+          }
+          applyRestoredWindowBounds(bounds);
+          useStore.getState().setWindowState('normal');
       };
 
       const restoreWindowState = async () => {
@@ -1637,19 +1648,28 @@ function App() {
           restoredOnce = true;
 
           const state = useStore.getState();
+          const bounds = state.windowBounds;
           const restoreMode = resolveStartupWindowRestoreMode(
               state.startupFullscreen,
+              state.windowState,
           );
           if (restoreMode !== 'normal') {
+              if (bounds && bounds.width >= 400 && bounds.height >= 300) {
+                  try {
+                      // Seed the OS restore rectangle before maximising so a later
+                      // unmaximise returns to the user's last normal window bounds.
+                      applyRestoredWindowBounds(bounds);
+                  } catch (e) {
+                      console.warn('Failed to prepare remembered normal window bounds', e);
+                  }
+              }
               markStartupWindowRestorePending(startupRestoreGraceMs);
               applyStartupWindowChrome(1);
               return;
           }
 
-          // The disabled preference is strict: restore a normal window even if
-          // an older build persisted an automatic maximised/fullscreen state.
+          // Without a remembered maximised state, restore the last normal bounds.
           markStartupWindowRestorePending(startupRestoreGraceMs);
-          const bounds = state.windowBounds;
           const viewport = readCurrentVisibleViewport();
           try {
               if (!bounds || bounds.width < 400 || bounds.height < 300) {
@@ -1752,6 +1772,7 @@ function App() {
                 // 静默忽略
             }
       };
+      captureMainWindowStateRef.current = saveWindowState;
 
       const scheduleWindowStateSave = (delayMs = 120) => {
           if (cancelled || !hydrated) {
@@ -1885,6 +1906,9 @@ function App() {
       });
       return () => {
           cancelled = true;
+          if (captureMainWindowStateRef.current === saveWindowState) {
+              captureMainWindowStateRef.current = async () => undefined;
+          }
           if (eventSaveTimer !== null) {
               window.clearTimeout(eventSaveTimer);
           }
@@ -2725,10 +2749,17 @@ function App() {
 
   const handleNewQuery = useCallback(() => {
       const currentTab = activeTabId ? tabs.find(tab => tab.id === activeTabId) : undefined;
+      // 只继承支持查询编辑器的活动连接；Nacos/JVM 等工作台活动时不预选连接，
+      // 避免新建查询落入必然失败的 SQL 工作流。
+      const validConnectionIds = new Set(
+          connections
+              .filter(connection => getDataSourceCapabilities(connection.config).supportsQueryEditor)
+              .map(connection => connection.id),
+      );
       const targetContext = resolveNewQueryContext({
           sidebarContext: activeContext,
           activeTab: currentTab,
-          validConnectionIds: new Set(connections.map(connection => connection.id)),
+          validConnectionIds,
       });
       const connection = connections.find(c => c.id === targetContext.connectionId);
       const inheritsTableContext = canInheritNewQueryTableContext({
@@ -2792,8 +2823,11 @@ function App() {
       const runConfirmedAction = async (): Promise<boolean> => {
           let accepted = false;
           try {
-              flushQueryTabDraftSnapshots();
-              await flushAppStatePersistence();
+              await prepareApplicationQuitPersistence({
+                  captureWindowState: () => captureMainWindowStateRef.current(),
+                  flushDrafts: flushQueryTabDraftSnapshots,
+                  flushAppState: flushAppStatePersistence,
+              });
               if (confirmedAction) {
                   accepted = await confirmedAction();
               } else {
@@ -2867,7 +2901,19 @@ function App() {
           },
           onOk: async () => {
               try {
-                  await saveApplicationQuitUnsavedSQLTargets(targets, saveQuery);
+                  await saveLatestApplicationQuitUnsavedSQLState({
+                      getState: () => {
+                          const latestState = useStore.getState();
+                          return {
+                              tabs: latestState.tabs,
+                              savedQueries: latestState.savedQueries,
+                          };
+                      },
+                      updateTabs: (update) => {
+                          useStore.setState((state) => ({ tabs: update(state.tabs) }));
+                      },
+                      saveQuery,
+                  });
                   message.success(t('app.quit.unsaved_sql.saved'));
               } catch (error) {
                   cancelRequest();
@@ -4421,9 +4467,17 @@ function App() {
           if (isMaximised) {
               WindowUnmaximise();
           } else {
+              // Preserve the latest normal bounds before the native maximise transition
+              // makes WindowGetSize report the maximised surface.
+              await captureMainWindowStateRef.current();
               WindowMaximise();
           }
-          await new Promise((resolve) => window.setTimeout(resolve, 96));
+          await waitForWindowCondition({
+              read: async () => (await WindowIsMaximised()) !== isMaximised,
+              wait: (delayMs) => new Promise((resolve) => window.setTimeout(resolve, delayMs)),
+              maxChecks: 16,
+              intervalMs: 40,
+          });
           await syncWindowStateFromRuntime();
           void emitWindowDiagnostic('action:titlebar-toggle:after-set-maximise-state');
       } catch (_) {

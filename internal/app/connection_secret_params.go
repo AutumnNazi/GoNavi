@@ -34,6 +34,15 @@ func partitionConnectionParams(raw string) (public string, sensitive string) {
 	return publicValues.Encode(), sensitiveValues.Encode()
 }
 
+// HasSensitiveConnectionParams reports whether raw contains credential-like
+// parameters. It intentionally exposes no key or value so command adapters can
+// reject argv secrets without retaining or logging them. Malformed input is
+// treated as sensitive by partitionConnectionParams and therefore fails closed.
+func HasSensitiveConnectionParams(raw string) bool {
+	_, sensitive := partitionConnectionParams(raw)
+	return strings.TrimSpace(sensitive) != ""
+}
+
 func isSensitiveConnectionParamKey(key string) bool {
 	compact := strings.ToLower(strings.TrimSpace(key))
 	compact = strings.NewReplacer("_", "", "-", "", ".", "", " ", "").Replace(compact)

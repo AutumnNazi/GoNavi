@@ -95,9 +95,12 @@ docker compose --env-file docker.mcp-server.env \
 
 - `GONAVI_DATA_ROOT=/data`
 - `GONAVI_MCP_HTTP_ADDR=0.0.0.0:8765`
+- `GONAVI_MCP_HTTP_ALLOW_NON_LOOPBACK=true`
 - `GONAVI_MCP_HTTP_PATH=/mcp`
 
 `GONAVI_DATA_ROOT` 会覆盖默认活动数据目录解析逻辑，避免宿主机路径与容器内路径不一致时依赖 `storage_root.json` 的绝对路径。
+
+`GONAVI_MCP_HTTP_ALLOW_NON_LOOPBACK` 是容器部署的显式许可。直接在宿主机运行二进制时默认关闭，仍只允许绑定 `127.0.0.1`、`::1` 或 `localhost`；即使显式开启，Bearer Token 仍然必填。
 
 如果你只想手动构建镜像：
 

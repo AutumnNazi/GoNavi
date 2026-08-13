@@ -551,6 +551,13 @@ func TestManagerPersistsReporterOutputBeforePublishingHooks(t *testing.T) {
 			if listErr != nil || len(persisted) != 1 || persisted[0].Sequence != event.Sequence {
 				t.Errorf("hook observed event before persistence: event=%#v persisted=%#v err=%v", event, persisted, listErr)
 			}
+			switch event.Type {
+			case RunEventSucceeded, RunEventPartial, RunEventFailed, RunEventCanceled, RunEventInterrupted:
+				run, runErr := store.GetRun(context.Background(), event.RunID)
+				if runErr != nil || run.Status != event.Status || run.OwnerToken != "" {
+					t.Errorf("hook observed terminal event before run completion commit: event=%#v run=%#v err=%v", event, run, runErr)
+				}
+			}
 			hookMu.Lock()
 			hooked = append(hooked, event)
 			hookMu.Unlock()

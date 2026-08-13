@@ -11,32 +11,47 @@ import (
 )
 
 func (a *App) resolveConnectionSecrets(config connection.ConnectionConfig) (connection.ConnectionConfig, error) {
+	if config.HasResolvedSavedSnapshot() {
+		return config, nil
+	}
 	if strings.TrimSpace(config.ID) == "" {
 		return config, nil
 	}
 
 	repo := newSavedConnectionRepository(a.configDir, a.secretStore)
-	view, err := repo.Find(config.ID)
+	view, bundle, err := repo.loadConnectionSnapshot(config.ID)
 	if err != nil {
 		if shouldFallbackToInlineConnectionSecrets(config, err) {
-			return config, nil
+			base := config
+			if strings.TrimSpace(view.ID) != "" && (a.headlessRuntime || connectionMetadataLooksEmpty(base)) {
+				base = view.Config
+			}
+			resolved := mergeInlineConnectionSecrets(base, config)
+			if a.headlessRuntime {
+				resolved = resolved.WithResolvedSavedSnapshot()
+			}
+			return resolved, nil
 		}
 		return config, a.normalizeConnectionSecretResolutionError(config, err)
 	}
 
 	base := config
-	if connectionMetadataLooksEmpty(base) {
+	if a.headlessRuntime {
+		// Headless callers resolve a stable saved ID. Always pair the current
+		// metadata with the secret bundle captured under the same lock instead
+		// of trusting a view that may have been read before a concurrent save.
 		base = view.Config
-	}
-	bundle, err := repo.loadSecretBundle(view)
-	if err != nil {
-		if shouldFallbackToInlineConnectionSecrets(config, err) {
-			return mergeInlineConnectionSecrets(base, config), nil
+		if config.QueryTimeout > 0 {
+			base.QueryTimeout = config.QueryTimeout
 		}
-		return base, a.normalizeConnectionSecretResolutionError(base, err)
+	} else if connectionMetadataLooksEmpty(base) {
+		base = view.Config
 	}
 	resolved := mergeConnectionSecretBundleIntoConfig(base, bundle)
 	resolved.ID = view.ID
+	if a.headlessRuntime {
+		resolved = resolved.WithResolvedSavedSnapshot()
+	}
 
 	return resolved, nil
 }

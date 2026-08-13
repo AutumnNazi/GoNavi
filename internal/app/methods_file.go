@@ -29,7 +29,6 @@ import (
 	"GoNavi-Wails/internal/logger"
 	"GoNavi-Wails/internal/sqlaudit"
 	"GoNavi-Wails/internal/uievents"
-	"GoNavi-Wails/internal/utils"
 
 	"github.com/google/uuid"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
@@ -87,8 +86,26 @@ type sqlFileExecutionOptions struct {
 	MaxStatementBytes      int64
 	ContinueOnError        bool
 	PreflightEachStatement bool
+	TransactionMode        sqlFileTransactionMode
+	StatementGuard         func(index int, stmt string) error
+	SkipStatement          func(index int, stmt string) bool
 	Text                   fileBackendTextFunc
 	OnProgress             func(sqlFileExecutionProgress)
+}
+
+type sqlFileTransactionMode string
+
+const (
+	sqlFileTransactionModeOff    sqlFileTransactionMode = "off"
+	sqlFileTransactionModeSingle sqlFileTransactionMode = "single"
+)
+
+type sqlFileExecutionPolicy struct {
+	TransactionMode    sqlFileTransactionMode
+	ForceFullPreflight bool
+	StatementGuard     func(index int, stmt string) error
+	SkipStatement      func(index int, stmt string) bool
+	MySQLGTIDMode      mysqlGTIDImportMode
 }
 
 type sqlFileExecutionResult struct {
@@ -123,6 +140,27 @@ type sqlFilePreflightRejectedError struct {
 	failed              int
 	possibleSideEffects bool
 	outcomeUnknown      bool
+}
+
+// sqlFilePolicyRejectedError marks a statement guard denial found while the
+// source is still being preflighted. The outer runner can then report it as a
+// pre-execution failure rather than an open-file error.
+type sqlFilePolicyRejectedError struct {
+	err error
+}
+
+func (err *sqlFilePolicyRejectedError) Error() string {
+	if err == nil || err.err == nil {
+		return "SQL file execution policy rejected the source"
+	}
+	return err.err.Error()
+}
+
+func (err *sqlFilePolicyRejectedError) Unwrap() error {
+	if err == nil {
+		return nil
+	}
+	return err.err
 }
 
 func (err *sqlFilePreflightRejectedError) Error() string {
@@ -161,9 +199,10 @@ func buildSQLFilePreflightFailurePayload(err *sqlFilePreflightRejectedError) map
 
 func isSQLFilePreExecutionValidationError(err error) bool {
 	var preflightErr *sqlFilePreflightRejectedError
+	var policyErr *sqlFilePolicyRejectedError
 	var statementLimitErr *SQLStatementTooLargeError
 	var sourceLimitErr *SQLImportSourceLimitError
-	return errors.As(err, &preflightErr) || errors.As(err, &statementLimitErr) || errors.As(err, &sourceLimitErr)
+	return errors.As(err, &preflightErr) || errors.As(err, &policyErr) || errors.As(err, &statementLimitErr) || errors.As(err, &sourceLimitErr)
 }
 
 func (e *sqlFileStoppedOnError) Error() string {
@@ -1470,6 +1509,9 @@ func normalizeSQLFileExecutionOptions(options sqlFileExecutionOptions) sqlFileEx
 	if options.MaxStatementBytes <= 0 {
 		options.MaxStatementBytes = DefaultSQLImportMaxStatementBytes
 	}
+	if options.TransactionMode != sqlFileTransactionModeSingle {
+		options.TransactionMode = sqlFileTransactionModeOff
+	}
 	return options
 }
 
@@ -1920,25 +1962,27 @@ func executeSQLFileBatch(ctx context.Context, execer sqlFileStatementExecer, bat
 func executeSQLFileBatchWithOutcome(ctx context.Context, execer sqlFileStatementExecer, batcher sqlFileBatchStatementExecer, dbType string, batchSQL string, useTransaction bool, text fileBackendTextFunc) (canFallback bool, outcomeUnknown bool, err error) {
 	if !useTransaction {
 		_, err = batcher.ExecBatchContext(ctx, batchSQL)
-		return false, false, err
+		return false, db.IsWriteOutcomeUnknown(err) || db.IsAmbiguousWriteResponse(err), err
 	}
 
 	beginSQL, commitSQL, rollbackSQL, ok := sqlFileBatchTransactionSQL(dbType)
 	if !ok {
 		_, err = batcher.ExecBatchContext(ctx, batchSQL)
-		return false, false, err
+		return false, db.IsWriteOutcomeUnknown(err) || db.IsAmbiguousWriteResponse(err), err
 	}
 
 	if _, err := execSQLFileStatement(ctx, execer, beginSQL); err != nil {
+		unknown := db.IsWriteOutcomeUnknown(err) || db.IsAmbiguousWriteResponse(err)
 		if rollbackErr := rollbackSQLFileTransaction(execer, rollbackSQL); rollbackErr != nil {
 			return false, true, errors.New(fileBackendText(text, "file.backend.error.sql_file_batch_rollback_failed", map[string]any{
 				"detail":         sanitizeSQLFileExecutionErr(err),
 				"rollbackDetail": sanitizeSQLFileExecutionErr(rollbackErr),
 			}))
 		}
-		return false, false, err
+		return false, unknown, err
 	}
 	if _, err := batcher.ExecBatchContext(ctx, batchSQL); err != nil {
+		unknown := db.IsWriteOutcomeUnknown(err) || db.IsAmbiguousWriteResponse(err)
 		if rollbackErr := rollbackSQLFileTransaction(execer, rollbackSQL); rollbackErr != nil {
 			return false, true, errors.New(fileBackendText(text, "file.backend.error.sql_file_batch_rollback_failed", map[string]any{
 				"detail":         sanitizeSQLFileExecutionErr(err),
@@ -1949,6 +1993,9 @@ func executeSQLFileBatchWithOutcome(ctx context.Context, execer sqlFileStatement
 		// ROLLBACK therefore cannot prove that a partially executed batch left no
 		// writes behind. Stop and surface the uncertainty instead of inviting a
 		// blind replay.
+		if unknown {
+			return false, true, err
+		}
 		return true, isSQLFileMySQLCompatibleDialect(dbType), err
 	}
 	if _, err := execSQLFileStatement(ctx, execer, commitSQL); err != nil {
@@ -1965,8 +2012,297 @@ func executeSQLFileBatchWithOutcome(ctx context.Context, execer sqlFileStatement
 	return false, false, nil
 }
 
+func isSQLFileSingleTransactionDialectSupported(dbType string) bool {
+	switch normalizeSQLClassifierDBType(dbType) {
+	case "postgres", "kingbase", "highgo", "vastbase", "opengauss", "gaussdb", "sqlite", "duckdb", "iris", "sqlserver", "oracle", "dameng":
+		return true
+	default:
+		return false
+	}
+}
+
+func sqlFileSingleTransactionRequiresDriverExecer(dbType string) bool {
+	switch normalizeSQLClassifierDBType(dbType) {
+	case "oracle", "dameng":
+		return true
+	default:
+		return false
+	}
+}
+
+func sqlFileSingleTransactionSQL(dbType string) (beginSQL string, commitSQL string, rollbackSQL string, ok bool) {
+	switch normalizeSQLClassifierDBType(dbType) {
+	case "sqlserver":
+		return "BEGIN TRANSACTION", "COMMIT TRANSACTION", "ROLLBACK TRANSACTION", true
+	case "postgres", "kingbase", "highgo", "vastbase", "opengauss", "gaussdb", "sqlite", "duckdb", "iris":
+		return "BEGIN", "COMMIT", "ROLLBACK", true
+	default:
+		return "", "", "", false
+	}
+}
+
+func isSQLFileSingleTransactionControlStatement(dbType, stmt string) bool {
+	if isSQLTransactionControlStatement(stmt) {
+		return true
+	}
+	keyword, keywordEnd := nextSQLKeyword(stmt, 0)
+	switch keyword {
+	case "end":
+		return sqlFileStatementIsTransactionEndAlias(dbType, stmt, keywordEnd)
+	case "abort":
+		switch normalizeSQLClassifierDBType(dbType) {
+		case "postgres", "kingbase", "highgo", "vastbase", "opengauss", "gaussdb", "duckdb":
+			return true
+		}
+	case "set":
+		// Session and transaction settings can alter the outer transaction's
+		// semantics. Other SET statements are rejected below as unknown too.
+		return sqlContainsKeyword(stmt, "autocommit") || sqlContainsKeyword(stmt, "transaction") || sqlContainsKeyword(stmt, "isolation")
+	}
+	return false
+}
+
+func validateSQLFileSingleTransactionStatement(dbType, stmt string) error {
+	dbType = normalizeSQLClassifierDBType(dbType)
+	if !isSQLFileSingleTransactionDialectSupported(dbType) {
+		return fmt.Errorf("single-transaction SQL-file execution cannot prove atomicity for database type %q", dbType)
+	}
+	if isSQLFileMySQLCompatibleDialect(dbType) || sqlFileMySQLImplicitCommitBeforeStatement(dbType, stmt) {
+		return errors.New("single-transaction SQL-file execution rejects MySQL-family implicit commits")
+	}
+	if isSQLFileSingleTransactionControlStatement(dbType, stmt) {
+		return errors.New("single-transaction SQL-file execution rejects explicit transaction control or transaction settings")
+	}
+	if isReadOnlySQLQuery(dbType, stmt) || isBatchableWriteSQLStatement(dbType, stmt) {
+		return nil
+	}
+	return errors.New("single-transaction SQL-file execution rejects statements whose atomicity cannot be proven")
+}
+
+func executeSQLFileSingleTransactionStream(ctx context.Context, dbInst db.Database, reader io.Reader, options sqlFileExecutionOptions, bytesRead func() int64) (result sqlFileExecutionResult, runErr error) {
+	if options.ContinueOnError {
+		return result, errors.New("single-transaction SQL-file execution does not support continue-on-error")
+	}
+	if !isSQLFileSingleTransactionDialectSupported(options.DBType) {
+		return result, fmt.Errorf("single-transaction SQL-file execution cannot prove atomicity for database type %q", normalizeSQLClassifierDBType(options.DBType))
+	}
+
+	var execer sqlFileStatementExecer
+	var closeHandle func() error
+	var discardHandle func() error
+	var rollbackTransaction func() error
+	var commitTransaction func() error
+	transactionActive := false
+	discardOnCleanup := false
+
+	if provider, ok := dbInst.(db.TransactionExecerProvider); ok {
+		transaction, err := provider.OpenTransactionExecer(ctx)
+		if err != nil {
+			return result, err
+		}
+		execer = transaction
+		transactionActive = true
+		closeHandle = transaction.Close
+		if discarder, ok := transaction.(db.StatementExecerDiscarter); ok {
+			discardHandle = discarder.Discard
+		}
+		rollbackTransaction = func() error {
+			transactionActive = false
+			return transaction.Rollback()
+		}
+		commitTransaction = func() error {
+			err := transaction.Commit()
+			if err == nil {
+				transactionActive = false
+			}
+			return err
+		}
+	} else {
+		if sqlFileSingleTransactionRequiresDriverExecer(options.DBType) {
+			return result, errors.New("single-transaction SQL-file execution requires a driver-backed transaction handle for this database type")
+		}
+		provider, ok := dbInst.(db.SessionExecerProvider)
+		if !ok {
+			return result, errors.New("single-transaction SQL-file execution requires a pinned database session")
+		}
+		session, err := provider.OpenSessionExecer(ctx)
+		if err != nil {
+			return result, err
+		}
+		execer = session
+		closeHandle = session.Close
+		if discarder, ok := session.(db.StatementExecerDiscarter); ok {
+			discardHandle = discarder.Discard
+		}
+		beginSQL, commitSQL, rollbackSQL, ok := sqlFileSingleTransactionSQL(options.DBType)
+		if !ok {
+			_ = session.Close()
+			return result, errors.New("single-transaction SQL-file execution cannot open a dialect transaction")
+		}
+		if _, err := execSQLFileStatement(ctx, execer, beginSQL); err != nil {
+			discardOnCleanup = true
+			if discardHandle != nil {
+				_ = discardHandle()
+			}
+			_ = session.Close()
+			return result, err
+		}
+		transactionActive = true
+		rollbackTransaction = func() error {
+			transactionActive = false
+			return rollbackSQLFileTransaction(execer, rollbackSQL)
+		}
+		commitTransaction = func() error {
+			_, err := execSQLFileStatement(ctx, execer, commitSQL)
+			if err == nil {
+				transactionActive = false
+			}
+			return err
+		}
+	}
+
+	defer func() {
+		if transactionActive && rollbackTransaction != nil {
+			if err := rollbackTransaction(); err != nil {
+				result.OutcomeUnknown = true
+				discardOnCleanup = true
+				logger.Warnf("ExecuteSQLFile single transaction rollback failed: type=%s err=%s", options.DBType, sanitizeSQLFileExecutionErr(err))
+			}
+		}
+		if discardOnCleanup && discardHandle != nil {
+			if err := discardHandle(); err != nil {
+				logger.Warnf("ExecuteSQLFile single transaction discard failed: type=%s err=%s", options.DBType, sanitizeSQLFileExecutionErr(err))
+			}
+		}
+		if closeHandle != nil {
+			if err := closeHandle(); err != nil {
+				if discardHandle != nil {
+					_ = discardHandle()
+				}
+				logger.Warnf("ExecuteSQLFile single transaction session close failed: type=%s err=%s", options.DBType, sanitizeSQLFileExecutionErr(err))
+			}
+		}
+	}()
+
+	readBytes := func() int64 {
+		if bytesRead == nil {
+			return 0
+		}
+		return bytesRead()
+	}
+	var lastProgressAt time.Time
+	emitProgress := func(currentSQL string) {
+		if options.OnProgress == nil {
+			return
+		}
+		total := result.Executed + result.Failed
+		options.OnProgress(sqlFileExecutionProgress{
+			Status:     "running",
+			Executed:   result.Executed,
+			Failed:     result.Failed,
+			Total:      total,
+			BytesRead:  readBytes(),
+			CurrentSQL: currentSQL,
+		})
+		lastProgressAt = time.Now()
+	}
+	shouldEmitProgress := func() bool {
+		total := result.Executed + result.Failed
+		if total <= 10 || total%sqlFileProgressStatementInterval == 0 {
+			return true
+		}
+		return !lastProgressAt.IsZero() && time.Since(lastProgressAt) >= sqlFileProgressTimeInterval
+	}
+	recordError := func(index int, stmt string, err error) string {
+		result.Failed++
+		detail := fileBackendText(options.Text, "file.backend.message.statement_failed", map[string]any{
+			"index":  index + 1,
+			"detail": sanitizeSQLFileExecutionError(err.Error()),
+			"sql":    sqlFileStatementSnippet(stmt, 200),
+		})
+		if len(result.Errors) < sqlFileMaxErrorDetails {
+			result.Errors = append(result.Errors, detail)
+		}
+		logger.Warnf("ExecuteSQLFile %s", detail)
+		return detail
+	}
+
+	_, streamErr := StreamSQLFileWithOptions(reader, SQLStreamOptions{
+		DBType:            options.DBType,
+		MaxStatementBytes: options.MaxStatementBytes,
+	}, func(index int, stmt string) error {
+		if err := ctx.Err(); err != nil {
+			return errSQLFileCancelled
+		}
+		stmt = strings.TrimSpace(stmt)
+		if stmt == "" {
+			return nil
+		}
+		if options.PreflightEachStatement {
+			preflightResult := PreflightSQLStatement(stmt, options.DBType, index)
+			if !preflightResult.Safe && preflightResult.Reason != nil {
+				return &sqlFilePreflightRejectedError{reason: *preflightResult.Reason}
+			}
+		}
+		if options.StatementGuard != nil {
+			if err := options.StatementGuard(index, stmt); err != nil {
+				return err
+			}
+		}
+		if options.SkipStatement != nil && options.SkipStatement(index, stmt) {
+			return nil
+		}
+		if err := validateSQLFileSingleTransactionStatement(options.DBType, stmt); err != nil {
+			return err
+		}
+
+		if _, err := execSQLFileStatement(ctx, execer, stmt); err != nil {
+			if db.IsWriteOutcomeUnknown(err) || db.IsAmbiguousWriteResponse(err) {
+				// A driver can lose the response after dispatch without the
+				// context being cancelled. Do not flatten that into an ordinary
+				// statement failure: the transaction's server-side state is not
+				// knowable from the client.
+				result.OutcomeUnknown = true
+			}
+			if ctx.Err() != nil {
+				// The driver may have sent the statement before cancellation was
+				// observed, so a later rollback result cannot prove the outcome.
+				result.OutcomeUnknown = true
+				return errSQLFileCancelled
+			}
+			detail := recordError(index, stmt, err)
+			if shouldEmitProgress() {
+				emitProgress(sqlFileStatementSnippet(stmt, 100))
+			}
+			return &sqlFileStoppedOnError{detail: detail}
+		}
+		result.Executed++
+		if shouldEmitProgress() {
+			emitProgress(sqlFileStatementSnippet(stmt, 100))
+		}
+		return nil
+	})
+	if streamErr != nil {
+		return result, streamErr
+	}
+	if err := ctx.Err(); err != nil {
+		return result, errSQLFileCancelled
+	}
+	if err := commitTransaction(); err != nil {
+		// A commit response can be lost after the server has committed. Retain
+		// the ambiguity even when a best-effort rollback succeeds during cleanup.
+		result.OutcomeUnknown = true
+		discardOnCleanup = true
+		return result, fmt.Errorf("single-transaction SQL-file commit failed: %w", err)
+	}
+	return result, nil
+}
+
 func executeSQLFileStream(ctx context.Context, dbInst db.Database, reader io.Reader, options sqlFileExecutionOptions, bytesRead func() int64) (sqlFileExecutionResult, error) {
 	options = normalizeSQLFileExecutionOptions(options)
+	if options.TransactionMode == sqlFileTransactionModeSingle {
+		return executeSQLFileSingleTransactionStream(ctx, dbInst, reader, options, bytesRead)
+	}
 	var result sqlFileExecutionResult
 	var batch []sqlFilePendingStatement
 	var batchBytes int
@@ -2085,6 +2421,12 @@ func executeSQLFileStream(ctx context.Context, dbInst db.Database, reader io.Rea
 			return false, errSQLFileCancelled
 		}
 		if _, err := execSQLFileStatement(ctx, execer, item.SQL); err != nil {
+			unknown := db.IsWriteOutcomeUnknown(err) || db.IsAmbiguousWriteResponse(err)
+			if unknown {
+				// A lost response must stop the file even in transaction=off
+				// continue mode; replaying the statement could duplicate a write.
+				result.OutcomeUnknown = true
+			}
 			if sqlFileStatementFinishesTransaction(item.SQL) {
 				// A user-authored COMMIT/ROLLBACK may have reached the server even
 				// when its result (including cancellation) was not observed.
@@ -2095,6 +2437,12 @@ func executeSQLFileStream(ctx context.Context, dbInst db.Database, reader io.Rea
 				return false, errSQLFileCancelled
 			}
 			errLog := recordError(item.Index, item.SQL, err)
+			if unknown {
+				if shouldEmitProgress() {
+					emitProgress(sqlFileStatementSnippet(item.SQL, 100))
+				}
+				return false, &sqlFileStoppedOnError{detail: errLog}
+			}
 			if !options.ContinueOnError {
 				if shouldEmitProgress() {
 					emitProgress(sqlFileStatementSnippet(item.SQL, 100))
@@ -2156,6 +2504,14 @@ func executeSQLFileStream(ctx context.Context, dbInst db.Database, reader io.Rea
 		canFallback, outcomeUnknown, err := executeSQLFileBatchWithOutcome(ctx, execer, batcher, options.DBType, batchSQL, useTransactionalBatch, options.Text)
 		if outcomeUnknown {
 			result.OutcomeUnknown = true
+			// Never bisect or replay a batch after a response whose server-side
+			// outcome cannot be established.
+			if err != nil {
+				return errors.New(fileBackendText(options.Text, "file.backend.error.sql_file_batch_execution_failed", map[string]any{
+					"index":  items[0].Index + 1,
+					"detail": sanitizeSQLFileExecutionErr(err),
+				}))
+			}
 		}
 		if err == nil {
 			result.Executed += len(items)
@@ -2259,6 +2615,14 @@ func executeSQLFileStream(ctx context.Context, dbInst db.Database, reader io.Rea
 					outcomeUnknown:      result.Failed > 0,
 				}
 			}
+		}
+		if options.StatementGuard != nil {
+			if err := options.StatementGuard(index, stmt); err != nil {
+				return err
+			}
+		}
+		if options.SkipStatement != nil && options.SkipStatement(index, stmt) {
+			return nil
 		}
 
 		if supportsBatch && !safeSequentialContinue && userTransactionDepth == 0 && !mysqlAutocommitDisabled && !mysqlTablesLocked && isSQLFileBatchableWriteStatement(options.DBType, stmt) {
@@ -2474,6 +2838,43 @@ func prepareSQLFileExecutionSource(filePath, dbType string, maxStatementBytes in
 }
 
 func prepareSQLFileExecutionSourceWithContext(ctx context.Context, filePath, dbType string, maxStatementBytes int64, rawObserver io.Writer, preflightRawObserver io.Writer) (*preparedSQLFileExecutionSource, error) {
+	return prepareSQLFileExecutionSourceWithPolicyContext(ctx, filePath, dbType, maxStatementBytes, rawObserver, preflightRawObserver, sqlFileExecutionPolicy{})
+}
+
+func preflightSQLFileExecutionSourceWithPolicy(reader io.Reader, dbType string, maxStatementBytes int64, statementGuard func(index int, stmt string) error) (SQLImportPreflightResult, error) {
+	if statementGuard == nil {
+		return PreflightSQLImportWithOptions(reader, SQLStreamOptions{
+			DBType:            dbType,
+			MaxStatementBytes: maxStatementBytes,
+		})
+	}
+
+	result := SQLImportPreflightResult{Safe: true}
+	normalizedType := normalizeExplainLexicalDBType(dbType)
+	_, err := StreamSQLFileWithOptions(reader, SQLStreamOptions{
+		DBType:            normalizedType,
+		MaxStatementBytes: maxStatementBytes,
+	}, func(index int, stmt string) error {
+		statementResult := PreflightSQLStatement(stmt, normalizedType, index)
+		if !statementResult.Safe {
+			result = statementResult
+			return errSQLImportPreflightRejected
+		}
+		if err := statementGuard(index, strings.TrimSpace(stmt)); err != nil {
+			return &sqlFilePolicyRejectedError{err: err}
+		}
+		return nil
+	})
+	if errors.Is(err, errSQLImportPreflightRejected) {
+		return result, nil
+	}
+	if err != nil {
+		return SQLImportPreflightResult{}, err
+	}
+	return result, nil
+}
+
+func prepareSQLFileExecutionSourceWithPolicyContext(ctx context.Context, filePath, dbType string, maxStatementBytes int64, rawObserver io.Writer, preflightRawObserver io.Writer, policy sqlFileExecutionPolicy) (*preparedSQLFileExecutionSource, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -2487,7 +2888,7 @@ func prepareSQLFileExecutionSourceWithContext(ctx context.Context, filePath, dbT
 	if info.IsDir() {
 		return nil, fmt.Errorf("SQL import source is a directory")
 	}
-	fullPreflight := shouldFullyPreflightSQLFile(info.Size())
+	fullPreflight := policy.ForceFullPreflight || shouldFullyPreflightSQLFile(info.Size())
 	var preamble []byte
 	if fullPreflight {
 		preflightSource, err := OpenSQLImportSource(filePath, SQLImportSourceOptions{RawObserver: preflightRawObserver})
@@ -2501,10 +2902,7 @@ func prepareSQLFileExecutionSourceWithContext(ctx context.Context, filePath, dbT
 		})
 		if readErr == nil {
 			var preflightResult SQLImportPreflightResult
-			preflightResult, readErr = PreflightSQLImportWithOptions(preflightReader, SQLStreamOptions{
-				DBType:            dbType,
-				MaxStatementBytes: maxStatementBytes,
-			})
+			preflightResult, readErr = preflightSQLFileExecutionSourceWithPolicy(preflightReader, dbType, maxStatementBytes, policy.StatementGuard)
 			if readErr == nil && !preflightResult.Safe && preflightResult.Reason != nil {
 				readErr = &sqlFilePreflightRejectedError{reason: *preflightResult.Reason}
 			}
@@ -2643,24 +3041,39 @@ func buildSQLFileExecutionPayload(executed, failed int, outcome string) map[stri
 // ImportDatabaseSQL restores a database from a SQL file while honoring the
 // connection protections that apply to destructive import workflows.
 func (a *App) ImportDatabaseSQL(config connection.ConnectionConfig, dbName string, filePath string, jobID string, continueOnError bool) connection.QueryResult {
-	for _, protection := range []connectionProtectionKey{
-		connectionProtectionDataImport,
-		connectionProtectionStructureEdit,
-		connectionProtectionScriptExecution,
-	} {
-		if err := ensureConnectionAllowsActionWithText(
-			config,
-			protection,
-			"connection.backend.action.import_data",
-			a.appText,
-		); err != nil {
-			return connection.QueryResult{Success: false, Message: err.Error()}
-		}
+	return a.importDatabaseSQLWithGTIDMode(config, dbName, filePath, jobID, continueOnError, mysqlGTIDImportModeReject)
+}
+
+func (a *App) ImportDatabaseSQLWithOptions(config connection.ConnectionConfig, dbName string, filePath string, jobID string, continueOnError bool, mysqlGTIDMode string) connection.QueryResult {
+	mode, err := normalizeMySQLGTIDImportMode(mysqlGTIDMode)
+	if err != nil {
+		return connection.QueryResult{Success: false, Message: a.appText("file.backend.error.mysql_gtid_mode_invalid", nil)}
 	}
-	if !isDataImportSQLDialectSupported(config) {
-		return connection.QueryResult{Success: false, Message: a.appText("data_import.capability.reason.database_type_unsupported", nil)}
+	return a.importDatabaseSQLWithGTIDMode(config, dbName, filePath, jobID, continueOnError, mode)
+}
+
+func (a *App) importDatabaseSQLWithGTIDMode(config connection.ConnectionConfig, dbName string, filePath string, jobID string, continueOnError bool, mode mysqlGTIDImportMode) connection.QueryResult {
+	if err := a.validateDatabaseSQLImportAccess(config); err != nil {
+		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
-	return a.executeSQLFileWithStatementLimitPolicy(config, dbName, filePath, jobID, continueOnError, DefaultSQLImportMaxStatementBytes, true)
+	if !isMySQLGTIDImportConfig(config) {
+		mode = ""
+	}
+	return a.executeSQLFileWithStatementLimitPolicyContextWithPolicy(
+		context.Background(),
+		config,
+		dbName,
+		filePath,
+		jobID,
+		continueOnError,
+		DefaultSQLImportMaxStatementBytes,
+		true,
+		"sql_file",
+		sqlFileExecutionPolicy{
+			TransactionMode: sqlFileTransactionModeOff,
+			MySQLGTIDMode:   mode,
+		},
+	)
 }
 
 func (a *App) ExecuteSQLFile(config connection.ConnectionConfig, dbName string, filePath string, jobID string) connection.QueryResult {
@@ -2687,13 +3100,82 @@ func (a *App) executeSQLFileWithStatementLimit(config connection.ConnectionConfi
 }
 
 func (a *App) executeSQLFileWithStatementLimitPolicy(config connection.ConnectionConfig, dbName string, filePath string, jobID string, continueOnError bool, maxStatementBytes int64, requirePinnedSession bool) (result connection.QueryResult) {
+	return a.executeSQLFileWithStatementLimitPolicyContext(
+		context.Background(),
+		config,
+		dbName,
+		filePath,
+		jobID,
+		continueOnError,
+		maxStatementBytes,
+		requirePinnedSession,
+		"sql_file",
+	)
+}
+
+// executeSQLFileWithStatementLimitPolicyContext is the shared streaming
+// runner used by desktop and headless callers. The audit source stays an
+// internal argument so an external caller cannot forge a provenance value.
+func (a *App) executeSQLFileWithStatementLimitPolicyContext(parent context.Context, config connection.ConnectionConfig, dbName string, filePath string, jobID string, continueOnError bool, maxStatementBytes int64, requirePinnedSession bool, auditSource string) (result connection.QueryResult) {
+	return a.executeSQLFileWithStatementLimitPolicyContextWithPolicy(
+		parent,
+		config,
+		dbName,
+		filePath,
+		jobID,
+		continueOnError,
+		maxStatementBytes,
+		requirePinnedSession,
+		auditSource,
+		sqlFileExecutionPolicy{TransactionMode: sqlFileTransactionModeOff},
+	)
+}
+
+func (a *App) executeSQLFileWithStatementLimitPolicyContextWithPolicy(parent context.Context, config connection.ConnectionConfig, dbName string, filePath string, jobID string, continueOnError bool, maxStatementBytes int64, requirePinnedSession bool, auditSource string, policy sqlFileExecutionPolicy) (result connection.QueryResult) {
+	if parent == nil {
+		parent = context.Background()
+	}
+	if policy.TransactionMode != sqlFileTransactionModeSingle {
+		policy.TransactionMode = sqlFileTransactionModeOff
+	}
+	if policy.TransactionMode == sqlFileTransactionModeSingle {
+		policy.ForceFullPreflight = true
+		if continueOnError {
+			return connection.QueryResult{Success: false, Message: "single-transaction SQL-file execution does not support continue-on-error"}
+		}
+		if !isSQLFileSingleTransactionDialectSupported(resolveDDLDBType(config)) {
+			return connection.QueryResult{Success: false, Message: "single-transaction SQL-file execution cannot prove atomicity for this database type"}
+		}
+	}
+	containsMySQLGTIDPurged := false
+	if policy.MySQLGTIDMode != "" && isMySQLGTIDImportConfig(config) {
+		policy.ForceFullPreflight = true
+		originalGuard := policy.StatementGuard
+		policy.StatementGuard = func(index int, statement string) error {
+			if isMySQLGTIDPurgedStatement(statement) {
+				containsMySQLGTIDPurged = true
+			}
+			if originalGuard != nil {
+				return originalGuard(index, statement)
+			}
+			return nil
+		}
+		if policy.MySQLGTIDMode == mysqlGTIDImportModeSkip {
+			policy.SkipStatement = func(_ int, statement string) bool {
+				return isMySQLGTIDPurgedStatement(statement)
+			}
+		}
+	}
 	if maxStatementBytes <= 0 {
 		maxStatementBytes = DefaultSQLImportMaxStatementBytes
+	}
+	if strings.ToLower(strings.TrimSpace(auditSource)) != "cli" {
+		auditSource = "sql_file"
 	}
 	auditSQL := "EXECUTE SQL FILE"
 	auditStatementCount := 0
 	auditSafeError := "SQL file task failed before an execution summary was available"
-	defer a.beginSQLAuditUserActionWithOptions(config, dbName, "sql_file", &auditSQL, &result, sqlAuditUserActionOptions{
+	defer a.beginSQLAuditUserActionWithOptions(config, dbName, auditSource, &auditSQL, &result, sqlAuditUserActionOptions{
 		StatementCount: &auditStatementCount,
 		SafeError:      &auditSafeError,
 	})()
@@ -2710,7 +3192,7 @@ func (a *App) executeSQLFileWithStatementLimitPolicy(config connection.Connectio
 	}
 	logger.Warnf("ExecuteSQLFile 开始：source=%s size=%d db=%s jobID=%s", sourceIdentity.Token, sourceIdentity.Size, dbName, jobID)
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(parent)
 	cleanupRegistration, registered := a.registerImportTask(jobID, cancel, importjob.KindSQL)
 	if !registered {
 		cancel()
@@ -2729,7 +3211,7 @@ func (a *App) executeSQLFileWithStatementLimitPolicy(config connection.Connectio
 		TargetFingerprint:   buildImportTargetFingerprint(config, dbName, ""),
 		ConnectionID:        config.ID,
 		DatabaseName:        dbName,
-		OptionsHash:         buildSQLImportOptionsHash(continueOnError, maxStatementBytes),
+		OptionsHash:         buildSQLImportOptionsHashWithGTIDMode(continueOnError, maxStatementBytes, policy.TransactionMode, policy.MySQLGTIDMode),
 	})
 	if err != nil {
 		return connection.QueryResult{Success: false, Message: err.Error()}
@@ -2790,7 +3272,7 @@ func (a *App) executeSQLFileWithStatementLimitPolicy(config connection.Connectio
 		return jobPersistErr
 	}}
 	fileDigest := sha256.New()
-	preparedSource, err := prepareSQLFileExecutionSourceWithContext(ctx, filePath, resolveDDLDBType(config), maxStatementBytes, fileDigest, preflightObserver)
+	preparedSource, err := prepareSQLFileExecutionSourceWithPolicyContext(ctx, filePath, resolveDDLDBType(config), maxStatementBytes, fileDigest, preflightObserver, policy)
 	if err != nil {
 		if jobPersistErr != nil {
 			return connection.QueryResult{
@@ -2811,6 +3293,10 @@ func (a *App) executeSQLFileWithStatementLimitPolicy(config connection.Connectio
 			data := buildSQLFileExecutionPayload(0, 0, "failed")
 			if errors.As(err, &preflightErr) {
 				data = buildSQLFilePreflightFailurePayload(preflightErr)
+			}
+			var policyErr *HeadlessSQLPolicyError
+			if errors.As(err, &policyErr) {
+				data["errorKind"] = headlessResultErrorKindPolicy
 			}
 			return connection.QueryResult{
 				Success: false,
@@ -2841,7 +3327,7 @@ func (a *App) executeSQLFileWithStatementLimitPolicy(config connection.Connectio
 	// GoNavi 的 MySQL 整库备份会在脚本中创建并 USE 源库，因此不能先连接到该库。
 	runConfig := resolveSQLFileExecutionRunConfig(config, dbName, preamble)
 
-	dbInst, err := a.getDatabase(runConfig)
+	dbInst, err := a.getDatabaseWithContext(ctx, runConfig, false)
 	if err != nil {
 		if errors.Is(err, context.Canceled) || errors.Is(ctx.Err(), context.Canceled) {
 			return connection.QueryResult{
@@ -2851,7 +3337,11 @@ func (a *App) executeSQLFileWithStatementLimitPolicy(config connection.Connectio
 			}
 		}
 		logger.Errorf("ExecuteSQLFile 获取连接失败：%s err=%s", formatConnSummary(runConfig), sanitizeSQLFileExecutionErr(err))
-		return connection.QueryResult{Success: false, Message: sanitizeSQLFileExecutionErr(err)}
+		result := connection.QueryResult{Success: false, Message: sanitizeSQLFileExecutionErr(err)}
+		if strings.EqualFold(strings.TrimSpace(auditSource), "cli") {
+			result.Data = map[string]interface{}{"errorKind": headlessResultErrorKindConnection}
+		}
+		return result
 	}
 	if err := ctx.Err(); err != nil {
 		return connection.QueryResult{
@@ -2866,6 +3356,42 @@ func (a *App) executeSQLFileWithStatementLimitPolicy(config connection.Connectio
 				Success: false,
 				Data:    buildSQLFileExecutionPayload(0, 0, "failed"),
 				Message: a.appText("data_import.capability.reason.pinned_session_unavailable", nil),
+			}
+		}
+	}
+	if containsMySQLGTIDPurged {
+		switch policy.MySQLGTIDMode {
+		case mysqlGTIDImportModeReject:
+			state, stateErr := queryMySQLGTIDTargetState(dbInst)
+			if stateErr != nil {
+				return connection.QueryResult{Success: false, Message: a.appText("file.backend.error.mysql_gtid_preflight_failed", map[string]any{"detail": sanitizeSQLFileExecutionErr(stateErr)})}
+			}
+			if strings.TrimSpace(state.GTIDExecuted) != "" {
+				return connection.QueryResult{
+					Success: false,
+					Data:    buildMySQLGTIDPreflightPayload(true, state),
+					Message: a.appText("file.backend.error.mysql_gtid_decision_required", nil),
+				}
+			}
+		case mysqlGTIDImportModeReset:
+			state, stateErr := queryMySQLGTIDTargetState(dbInst)
+			if stateErr != nil {
+				return connection.QueryResult{Success: false, Message: a.appText("file.backend.error.mysql_gtid_preflight_failed", map[string]any{"detail": sanitizeSQLFileExecutionErr(stateErr)})}
+			}
+			resetStatement, resetErr := mysqlGTIDResetStatement(state.ServerVersion)
+			if resetErr != nil {
+				return connection.QueryResult{Success: false, Message: a.appText("file.backend.error.mysql_gtid_preflight_failed", map[string]any{"detail": sanitizeSQLFileExecutionErr(resetErr)})}
+			}
+			mayHaveDatabaseSideEffects = true
+			if _, resetErr = execSQLFileStatement(ctx, dbInst, resetStatement); resetErr != nil {
+				return connection.QueryResult{
+					Success: false,
+					Data: map[string]interface{}{
+						"gtidResetAttempted": true,
+						"outcomeUnknown":     db.IsWriteOutcomeUnknown(resetErr) || db.IsAmbiguousWriteResponse(resetErr),
+					},
+					Message: a.appText("file.backend.error.mysql_gtid_reset_failed", map[string]any{"detail": sanitizeSQLFileExecutionErr(resetErr)}),
+				}
 			}
 		}
 	}
@@ -2939,6 +3465,9 @@ func (a *App) executeSQLFileWithStatementLimitPolicy(config connection.Connectio
 		DBType:            resolveDDLDBType(runConfig),
 		MaxStatementBytes: maxStatementBytes,
 		ContinueOnError:   continueOnError,
+		TransactionMode:   policy.TransactionMode,
+		StatementGuard:    policy.StatementGuard,
+		SkipStatement:     policy.SkipStatement,
 		// Keep the callback guard even after a full small-file preflight so a
 		// source replacement between the two opens cannot send client commands
 		// to the database.
@@ -2967,7 +3496,7 @@ func (a *App) executeSQLFileWithStatementLimitPolicy(config connection.Connectio
 	auditSQL = fmt.Sprintf("EXECUTE SQL FILE EXECUTED_%d FAILED_%d", executedCount, failedCount)
 	auditSafeError = fmt.Sprintf("SQL file task failed after executing %d statement(s); %d statement(s) failed", executedCount, failedCount)
 	rawBytesRead := preparedSource.source.RawBytesRead()
-	mayHaveDatabaseSideEffects = mayHaveDatabaseSideEffects || executedCount > 0 || failedCount > 0
+	mayHaveDatabaseSideEffects = mayHaveDatabaseSideEffects || executedCount > 0 || failedCount > 0 || execResult.OutcomeUnknown
 	contentSHA256 := ""
 	if totalSizeKnown && rawBytesRead == totalSize {
 		contentSHA256 = hex.EncodeToString(fileDigest.Sum(nil))
@@ -3047,6 +3576,10 @@ func (a *App) executeSQLFileWithStatementLimitPolicy(config connection.Connectio
 			data = buildSQLFilePreflightFailurePayload(preflightErr)
 		} else if execResult.OutcomeUnknown || failedCount > 0 {
 			data["outcomeUnknown"] = true
+		}
+		var policyErr *HeadlessSQLPolicyError
+		if errors.As(streamErr, &policyErr) {
+			data["errorKind"] = headlessResultErrorKindPolicy
 		}
 		return connection.QueryResult{
 			Success: false,
@@ -6458,23 +6991,42 @@ func (a *App) ExportQueryWithOptions(config connection.ConnectionConfig, dbName 
 }
 
 func queryDataForExport(dbInst db.Database, config connection.ConnectionConfig, query string) ([]map[string]interface{}, []string, error) {
+	return queryDataForExportWithContext(context.Background(), dbInst, config, query)
+}
+
+// queryDataForExportWithContext is the buffered export fallback. It retains
+// the caller's cancellation signal instead of creating an unrelated
+// background deadline, which is required for the headless CLI export path.
+func queryDataForExportWithContext(parent context.Context, dbInst db.Database, config connection.ConnectionConfig, query string) ([]map[string]interface{}, []string, error) {
+	if parent == nil {
+		parent = context.Background()
+	}
 	timeout := getExportQueryTimeout(config)
 	dbType := resolveDDLDBType(config)
 	if dbType == "clickhouse" {
 		logger.Infof("ClickHouse 导出查询开始：timeout=%s SQL片段=%q", timeout, sqlSnippet(query))
 	}
+	ctx, cancel := context.WithTimeout(parent, timeout)
+	defer cancel()
 	if q, ok := dbInst.(interface {
 		QueryContext(context.Context, string) ([]map[string]interface{}, []string, error)
 	}); ok {
-		ctx, cancel := utils.ContextWithTimeout(timeout)
-		defer cancel()
 		data, columns, err := q.QueryContext(ctx, query)
+		if err == nil && ctx.Err() != nil {
+			err = ctx.Err()
+		}
 		if err != nil && dbType == "clickhouse" {
 			logger.Warnf("ClickHouse 导出查询失败：timeout=%s SQL片段=%q err=%v", timeout, sqlSnippet(query), err)
 		}
 		return data, columns, err
 	}
+	if err := ctx.Err(); err != nil {
+		return nil, nil, err
+	}
 	data, columns, err := dbInst.Query(query)
+	if err == nil && ctx.Err() != nil {
+		err = ctx.Err()
+	}
 	if err != nil && dbType == "clickhouse" {
 		logger.Warnf("ClickHouse 导出查询失败（无 QueryContext）：timeout=%s SQL片段=%q err=%v", timeout, sqlSnippet(query), err)
 	}
@@ -6482,6 +7034,9 @@ func queryDataForExport(dbInst db.Database, config connection.ConnectionConfig, 
 }
 
 func getExportQueryTimeout(config connection.ConnectionConfig) time.Duration {
+	if config.QueryTimeout > 0 {
+		return time.Duration(config.QueryTimeout) * time.Second
+	}
 	timeout := time.Duration(config.Timeout) * time.Second
 	if timeout <= 0 {
 		timeout = minExportQueryTimeout
@@ -7233,12 +7788,21 @@ func newExportFileWriter(f *os.File, options ExportFileOptions) (exportFileWrite
 }
 
 func streamQueryDataForExport(dbInst db.Database, config connection.ConnectionConfig, query string, consumer db.QueryStreamConsumer) error {
+	return streamQueryDataForExportWithContext(context.Background(), dbInst, config, query, consumer)
+}
+
+// streamQueryDataForExportWithContext preserves the existing streaming and
+// fallback behavior while allowing headless callers to cancel a live export.
+func streamQueryDataForExportWithContext(ctx context.Context, dbInst db.Database, config connection.ConnectionConfig, query string, consumer db.QueryStreamConsumer) error {
 	if consumer == nil {
 		return fmt.Errorf("export consumer required")
 	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
 
 	timeout := getExportQueryTimeout(config)
-	ctx, cancel := utils.ContextWithTimeout(timeout)
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
 	if streamer, ok := dbInst.(db.StreamQueryExecer); ok {
@@ -7258,15 +7822,21 @@ func streamQueryDataForExport(dbInst db.Database, config connection.ConnectionCo
 	}
 
 	logger.Warnf("导出流式查询不可用，回退到缓冲导出：type=%s", strings.TrimSpace(config.Type))
-	data, columns, err := queryDataForExport(dbInst, config, query)
+	data, columns, err := queryDataForExportWithContext(ctx, dbInst, config, query)
 	if err != nil {
 		return err
 	}
 	columns = resolveExportColumns(columns, data)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if err := consumer.SetColumns(columns); err != nil {
 		return err
 	}
 	for _, row := range data {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		if err := consumer.ConsumeRow(row); err != nil {
 			return err
 		}
@@ -7275,6 +7845,10 @@ func streamQueryDataForExport(dbInst db.Database, config connection.ConnectionCo
 }
 
 func exportQueryResultToFile(f *os.File, dbInst db.Database, config connection.ConnectionConfig, query string, options ExportFileOptions, reporter *exportProgressReporter) (int64, []string, error) {
+	return exportQueryResultToFileWithContext(context.Background(), f, dbInst, config, query, options, reporter)
+}
+
+func exportQueryResultToFileWithContext(ctx context.Context, f *os.File, dbInst db.Database, config connection.ConnectionConfig, query string, options ExportFileOptions, reporter *exportProgressReporter) (int64, []string, error) {
 	options = normalizeExportFileOptions("", options)
 	if err := validateExportColumnsSelection(options); err != nil {
 		return 0, nil, err
@@ -7297,7 +7871,7 @@ func exportQueryResultToFile(f *os.File, dbInst db.Database, config connection.C
 		delegate = projection
 	}
 	consumer := &countingExportConsumer{delegate: delegate, reporter: reporter}
-	streamErr := streamQueryDataForExport(dbInst, config, query, consumer)
+	streamErr := streamQueryDataForExportWithContext(ctx, dbInst, config, query, consumer)
 	if reporter != nil && streamErr == nil {
 		reporter.Finalizing(consumer.rowCount)
 	}

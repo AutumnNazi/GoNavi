@@ -148,7 +148,7 @@ import FindInDatabaseModal from './FindInDatabaseModal';
 import { buildRpcConnectionConfig } from '../utils/connectionRpcConfig';
 import { buildSqlAnalysisWorkbenchTab } from '../utils/sqlAnalysisTab';
 import { buildSqlAuditWorkbenchTab } from '../utils/sqlAuditTab';
-import { resolveDataSourceType } from '../utils/dataSourceCapabilities';
+import { getDataSourceCapabilities, resolveDataSourceType } from '../utils/dataSourceCapabilities';
 import { isConnectionStructureEditRestricted } from '../utils/connectionReadOnly';
 import { noAutoCapInputProps } from '../utils/inputAutoCap';
 import {
@@ -184,6 +184,7 @@ import { buildJVMDiagnosticActionDescriptor, buildJVMMonitoringActionDescriptors
 import {
   DATA_IMPORT_WORKBENCH_TAB_ID,
   resolveDataImportWorkbenchLaunchTab,
+  type BuildDataImportWorkbenchTabInput,
 } from '../utils/dataImportTab';
 import { useExportProgressDialog } from './ExportProgressModal';
 import { getShortcutPlatform, resolveShortcutDisplay } from '../utils/shortcuts';
@@ -867,6 +868,14 @@ const Sidebar: React.FC<{
   const connectionReloadSignaturesRef = useRef<Record<string, string>>({});
   expandedKeysRef.current = expandedKeys;
   const connectionIds = useMemo(() => connections.map((conn) => conn.id), [connections]);
+  const queryCapableConnectionIds = useMemo(
+      () => new Set(
+          connections
+              .filter((conn) => getDataSourceCapabilities(conn.config).supportsQueryEditor)
+              .map((conn) => conn.id),
+      ),
+      [connections],
+  );
   const connectionIdSet = useMemo(() => new Set(connectionIds), [connectionIds]);
   const unmatchedSavedQueries = useMemo(
       () => savedQueries.filter((query) => isSavedQueryUnmatchedForConnectionIds(query, connectionIdSet)),
@@ -1544,6 +1553,11 @@ const Sidebar: React.FC<{
       void refreshGlobalExternalSQLRootNode(false);
   }, [refreshGlobalExternalSQLRootNode]);
 
+  const openDataImportWorkbench = useCallback((input: BuildDataImportWorkbenchTabInput) => {
+    const existingImportTab = tabs.find((tab) => tab.id === DATA_IMPORT_WORKBENCH_TAB_ID);
+    addTab(resolveDataImportWorkbenchLaunchTab(existingImportTab, input));
+  }, [addTab, tabs]);
+
   const {
       handleRunSQLFile,
       handleOpenSQLFileFromToolbar,
@@ -1567,6 +1581,7 @@ const Sidebar: React.FC<{
       connectionIds,
       selectedNodesRef,
       addTab,
+      openDataImportWorkbench,
       saveExternalSQLDirectory,
       deleteExternalSQLDirectory,
       updateRecentSQLFilePath,
@@ -3074,6 +3089,7 @@ const Sidebar: React.FC<{
       closeV2CommandSearch,
       commandSearchFlatItems,
       connectionIds,
+      queryCapableConnectionIds,
       findTreeNodeByKeyRef,
       locateObjectInSidebar,
       loadDatabases,
@@ -3643,12 +3659,8 @@ const Sidebar: React.FC<{
     ).trim();
     const mode = node?.type === 'database' ? 'database' : 'table';
 
-    const existingImportTab = tabs.find((tab) => tab.id === DATA_IMPORT_WORKBENCH_TAB_ID);
-    addTab(resolveDataImportWorkbenchLaunchTab(
-      existingImportTab,
-      { connectionId, dbName, tableName, mode },
-    ));
-  }, [activeContext?.connectionId, activeContext?.dbName, activeTabId, addTab, tabs]);
+    openDataImportWorkbench({ connectionId, dbName, tableName, mode });
+  }, [activeContext?.connectionId, activeContext?.dbName, activeTabId, openDataImportWorkbench, tabs]);
 
   const handleOpenSlowQueryWorkbench = useCallback(() => {
     if (!activeTabHasConnection || !activeTab?.connectionId) return;

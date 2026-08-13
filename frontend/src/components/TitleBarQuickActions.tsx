@@ -71,6 +71,7 @@ const TitleBarQuickActions: React.FC<TitleBarQuickActionsProps> = ({ label, more
                   title: action.label,
                   meta: label,
                   icon: action.icon,
+                  showHeader: false,
                 })}
                 open={openMenuKey === action.key}
                 onOpenChange={(open) => handleMenuOpenChange(action.key, open)}
@@ -119,6 +120,7 @@ const TitleBarQuickActions: React.FC<TitleBarQuickActionsProps> = ({ label, more
               title: moreLabel,
               meta: label,
               icon: <MoreOutlined />,
+              showHeader: false,
             })}
             open={openMenuKey === '__more__'}
             onOpenChange={(open) => handleMenuOpenChange('__more__', open)}

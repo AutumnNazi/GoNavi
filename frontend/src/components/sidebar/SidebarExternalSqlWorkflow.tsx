@@ -15,6 +15,7 @@ import {
   setExternalSQLFileBinding,
 } from '../../utils/externalSqlTree';
 import { buildSQLFileExecutionWorkbenchTab } from '../../utils/sqlFileExecutionTab';
+import type { BuildDataImportWorkbenchTabInput } from '../../utils/dataImportTab';
 import { buildRpcConnectionConfig } from '../../utils/connectionRpcConfig';
 import { filterVisibleDatabaseNames } from '../../utils/databaseVisibility';
 import { getDataSourceCapabilities } from '../../utils/dataSourceCapabilities';
@@ -76,6 +77,7 @@ type UseSidebarExternalSqlWorkflowOptions = {
   connectionIds: string[];
   selectedNodesRef: React.MutableRefObject<any[]>;
   addTab: (tab: any) => void;
+  openDataImportWorkbench: (input: BuildDataImportWorkbenchTabInput) => void;
   saveExternalSQLDirectory: (directory: ExternalSQLDirectory) => void;
   deleteExternalSQLDirectory: (directoryId: string) => void;
   updateRecentSQLFilePath: (previousPath: string, nextPath: string) => void;
@@ -86,6 +88,23 @@ type UseSidebarExternalSqlWorkflowOptions = {
   setExpandedKeys: React.Dispatch<React.SetStateAction<React.Key[]>>;
   setAutoExpandParent: React.Dispatch<React.SetStateAction<boolean>>;
   getActiveContext: () => ActiveExecutionContext;
+};
+
+export const launchDatabaseSQLImportWorkbench = (
+  node: any,
+  openDataImportWorkbench: (input: BuildDataImportWorkbenchTabInput) => void,
+): boolean => {
+  const connectionId = node?.type === 'connection'
+    ? String(node?.key || '').trim()
+    : String(node?.dataRef?.id || '').trim();
+  if (!connectionId) return false;
+
+  openDataImportWorkbench({
+    connectionId,
+    dbName: String(node?.dataRef?.dbName || '').trim(),
+    mode: 'database',
+  });
+  return true;
 };
 
 type ExternalSQLFileModalProps = {
@@ -419,6 +438,7 @@ export const useSidebarExternalSqlWorkflow = ({
   connectionIds,
   selectedNodesRef,
   addTab,
+  openDataImportWorkbench,
   saveExternalSQLDirectory,
   deleteExternalSQLDirectory,
   updateRecentSQLFilePath,
@@ -529,32 +549,9 @@ export const useSidebarExternalSqlWorkflow = ({
     return true;
   }, [addTab, connections]);
 
-  const handleRunSQLFile = async (node: any) => {
-    const connectionId = node.type === 'connection'
-      ? String(node.key || '').trim()
-      : String(node?.dataRef?.id || '').trim();
-    const dbName = String(node?.dataRef?.dbName || '').trim();
-    if (!connectionId) {
+  const handleRunSQLFile = (node: any) => {
+    if (!launchDatabaseSQLImportWorkbench(node, openDataImportWorkbench)) {
       message.warning(t('sidebar.message.select_connection_or_database_first'));
-      return;
-    }
-
-    const res = await selectSQLFileForExecution();
-    if (res.success) {
-      const data = normalizeSQLFileDialogData(res.data);
-      if (!data.filePath) {
-        message.error(t('sidebar.message.sql_file_path_incomplete'));
-        return;
-      }
-      openSQLFileExecutionWorkbench({
-        connectionId,
-        dbName: dbName,
-        filePath: data.filePath,
-        fileName: data.fileName,
-        fileSizeMB: data.fileSizeMB,
-      });
-    } else if (res.message !== '已取消') {
-      message.error(t('sidebar.message.read_file_failed', { error: res.message }));
     }
   };
 

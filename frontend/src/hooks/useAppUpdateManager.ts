@@ -39,6 +39,7 @@ type UpdateDownloadProgressEvent = {
   downloaded?: number;
   total?: number;
   message?: string;
+  info?: UpdateInfo;
 };
 
 type UpdateDownloadResultData = {
@@ -739,6 +740,22 @@ export const useAppUpdateManager = ({
     try {
       offDownloadProgress = EventsOn('update:download-progress', (event: UpdateDownloadProgressEvent) => {
         if (!event) return;
+        const eventInfo = event.info && typeof event.info === 'object'
+          ? normalizeUpdateInfo(event.info)
+          : null;
+        const eventKey = buildUpdateKey(eventInfo);
+        if (eventInfo) {
+          setLastUpdateInfo((current) => {
+            if (buildUpdateKey(current) === eventKey
+              && Boolean(current?.downloaded) === Boolean(eventInfo.downloaded)
+              && current?.downloadPath === eventInfo.downloadPath) {
+              return current;
+            }
+            return eventInfo;
+          });
+          setUpdateChannelState(normalizeUpdateChannel(eventInfo.channel));
+          setInstallMode(normalizeUpdateInstallMode(eventInfo.installMode));
+        }
         const status = event.status || 'downloading';
         const nextStatus: 'idle' | 'start' | 'downloading' | 'done' | 'error' =
           status === 'start' || status === 'downloading' || status === 'done' || status === 'error'
@@ -759,7 +776,7 @@ export const useAppUpdateManager = ({
           let message = eventMessage;
           if (!message) {
             if (nextStatus === 'done') {
-              message = resolveUpdateInstallAction(lastUpdateInfo) === 'restart'
+              message = resolveUpdateInstallAction(eventInfo || lastUpdateInfo) === 'restart'
                 ? t('app.about.download_progress.ready_to_restart')
                 : t('app.about.download_progress.ready_to_install');
             } else if (nextStatus === 'start' || nextStatus === 'downloading') {
@@ -768,8 +785,8 @@ export const useAppUpdateManager = ({
           }
           return {
             open: prev.open || !updateUserDismissedRef.current,
-            version: prev.version,
-            key: prev.key,
+            version: eventInfo?.latestVersion || prev.version,
+            key: eventKey || prev.key,
             status: nextStatus,
             percent: nextStatus === 'done' ? 100 : percent,
             downloaded: nextStatus === 'done' && total > 0 ? total : downloaded,

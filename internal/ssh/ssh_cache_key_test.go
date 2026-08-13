@@ -44,3 +44,23 @@ func TestNewSSHClientCacheKey_DiffKeyPath(t *testing.T) {
 		t.Fatalf("expected different cache key when keyPath differs")
 	}
 }
+
+func TestNewSSHClientCacheKey_DiffHostKeyVerification(t *testing.T) {
+	a := newSSHClientCacheKey(connection.SSHConfig{
+		Host:               "127.0.0.1",
+		Port:               22,
+		User:               "root",
+		KnownHostsPath:     "/tmp/a/known_hosts",
+		HostKeyFingerprint: "SHA256:a",
+	})
+	b := newSSHClientCacheKey(connection.SSHConfig{
+		Host:               "127.0.0.1",
+		Port:               22,
+		User:               "root",
+		KnownHostsPath:     "/tmp/b/known_hosts",
+		HostKeyFingerprint: "SHA256:b",
+	})
+	if a == b {
+		t.Fatal("expected different cache key when host key verification differs")
+	}
+}

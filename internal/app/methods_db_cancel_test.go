@@ -143,20 +143,12 @@ func TestDBQueryMulti_CanBeCancelledWhileConnecting(t *testing.T) {
 
 	firstCancel := app.CancelQuery(queryID)
 	secondCancel := app.CancelQuery(queryID)
-	close(database.connectRelease)
-	released = true
 
 	var result connection.QueryResult
 	select {
 	case result = <-resultCh:
 	case <-time.After(2 * time.Second):
-		t.Fatal("timed out waiting for cancelled query to return")
-	}
-	var observedContextErr error
-	select {
-	case observedContextErr = <-database.queryContextErr:
-	case <-time.After(2 * time.Second):
-		t.Fatal("timed out waiting for query context observation")
+		t.Fatal("cancelled query did not return while Connect was still blocked")
 	}
 
 	if !firstCancel.Success {
@@ -165,12 +157,21 @@ func TestDBQueryMulti_CanBeCancelledWhileConnecting(t *testing.T) {
 	if !secondCancel.Success {
 		t.Errorf("repeated cancellation should succeed until the query owner exits, got: %s", secondCancel.Message)
 	}
-	if observedContextErr != context.Canceled {
-		t.Errorf("query should receive the cancellation requested during connect, got context error: %v", observedContextErr)
-	}
 	if result.Success {
 		t.Fatalf("query should not execute successfully after cancellation, got: %+v", result)
 	}
+	if !strings.Contains(strings.ToLower(result.Message), "canceled") {
+		t.Fatalf("cancelled connect returned unexpected result: %+v", result)
+	}
+	select {
+	case observedContextErr := <-database.queryContextErr:
+		t.Fatalf("SQL execution started after connect cancellation: %v", observedContextErr)
+	default:
+	}
+
+	close(database.connectRelease)
+	released = true
+	app.Shutdown()
 
 	app.queryMu.RLock()
 	_, stillRegistered := app.runningQueries[queryID]
@@ -308,6 +309,114 @@ func TestNewQueryExecutionContext_UsesExplicitQueryTimeout(t *testing.T) {
 	remaining := time.Until(deadline)
 	if remaining <= 0 || remaining > 8*time.Second {
 		t.Fatalf("expected deadline around 7s, got remaining=%s", remaining)
+	}
+}
+
+func TestCLIQueryExecutor_CancelledOpaqueWriteFailureIsUnknown(t *testing.T) {
+	originalNewDatabaseFunc := newDatabaseFunc
+	t.Cleanup(func() { newDatabaseFunc = originalNewDatabaseFunc })
+
+	const statement = "CREATE TABLE cancelled_write_probe (id INTEGER)"
+	database := &fakeBatchWriteDB{
+		execErr:           map[string]error{statement: errors.New("driver returned an opaque write failure")},
+		execIgnoreContext: true,
+	}
+	execStarted := make(chan string, 1)
+	execRelease := make(chan struct{})
+	database.execStarted = execStarted
+	database.execRelease = execRelease
+	newDatabaseFunc = func(string) (db.Database, error) { return database, nil }
+
+	ctx, cancel := context.WithCancel(context.Background())
+	resultCh := make(chan connection.QueryResult, 1)
+	go func() {
+		resultCh <- NewCLIQueryExecutor(NewApp()).DBQueryMulti(ctx, connection.ConnectionConfig{
+			Type: "postgres",
+			Host: "127.0.0.1",
+			Port: 5432,
+		}, "app", statement, "cli-cancelled-write")
+	}()
+	select {
+	case <-execStarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for write execution")
+	}
+	cancel()
+	close(execRelease)
+	result := <-resultCh
+	if result.Success {
+		t.Fatalf("cancelled write should fail, got %#v", result)
+	}
+	data, _ := result.Data.(map[string]any)
+	if data["outcomeUnknown"] != true {
+		t.Fatalf("cancelled opaque write must be outcome-unknown, got %#v", result)
+	}
+}
+
+func TestCLIQueryExecutor_CancelledBeforeConnectionIsCancelled(t *testing.T) {
+	originalNewDatabaseFunc := newDatabaseFunc
+	t.Cleanup(func() { newDatabaseFunc = originalNewDatabaseFunc })
+	newDatabaseFunc = func(string) (db.Database, error) { return &fakeBatchWriteDB{}, nil }
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	result := NewCLIQueryExecutor(NewApp()).DBQueryMulti(ctx, connection.ConnectionConfig{
+		Type: "postgres",
+		Host: "cancel-before-connect.test",
+		Port: 5432,
+	}, "app", "CREATE TABLE cancelled_write_probe (id INTEGER)", "cli-cancel-before-connect")
+	if result.Success {
+		t.Fatalf("cancelled query should fail, got %#v", result)
+	}
+	data, _ := result.Data.(map[string]any)
+	if data["cancelled"] != true || data["errorKind"] != nil || data["outcomeUnknown"] != nil {
+		t.Fatalf("pre-connect cancellation must be classified as cancelled, got %#v", result)
+	}
+}
+
+func TestCLIQueryExecutor_ContextDeadlineDuringReadIsCancelled(t *testing.T) {
+	originalNewDatabaseFunc := newDatabaseFunc
+	t.Cleanup(func() { newDatabaseFunc = originalNewDatabaseFunc })
+
+	const statement = "SELECT 1"
+	database := &fakeBatchWriteDB{
+		queryErr: map[string]error{statement: context.DeadlineExceeded},
+	}
+	newDatabaseFunc = func(string) (db.Database, error) { return database, nil }
+
+	result := NewCLIQueryExecutor(NewApp()).DBQueryMulti(
+		context.Background(),
+		connection.ConnectionConfig{Type: "postgres", Host: "127.0.0.1", Port: 5432, QueryTimeout: 1},
+		"app",
+		statement,
+		"cli-deadline-read",
+	)
+	if result.Success {
+		t.Fatalf("deadline read should fail, got %#v", result)
+	}
+	data, _ := result.Data.(map[string]any)
+	if data["cancelled"] != true || data["outcomeUnknown"] != nil {
+		t.Fatalf("deadline read must be classified as cancelled, got %#v", result)
+	}
+}
+
+func TestCLIQueryExecutor_ConnectionFailureIsStructured(t *testing.T) {
+	originalNewDatabaseFunc := newDatabaseFunc
+	t.Cleanup(func() { newDatabaseFunc = originalNewDatabaseFunc })
+	newDatabaseFunc = func(string) (db.Database, error) {
+		return nil, errors.New("database authentication failed")
+	}
+
+	result := NewCLIQueryExecutor(newSQLAuditTestApp(t)).DBQueryMulti(
+		context.Background(),
+		connection.ConnectionConfig{Type: "postgres", Host: "127.0.0.1", Port: 5432},
+		"app",
+		"SELECT 1",
+		"cli-connection-failure",
+	)
+	data, _ := result.Data.(map[string]any)
+	if result.Success || data["errorKind"] != headlessResultErrorKindConnection {
+		t.Fatalf("CLI connection failure should be structured, got %#v", result)
 	}
 }
 

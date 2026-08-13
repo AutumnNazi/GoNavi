@@ -82,6 +82,11 @@ const importMain = async () => {
             CheckForUpdates: () => Promise<{ success: boolean; data?: Record<string, unknown> }>;
             CheckForUpdatesSilently: () => Promise<{ success: boolean; data?: Record<string, unknown> }>;
             SetUpdateChannel: (channel: string) => Promise<{ success: boolean; data?: { channel?: string } }>;
+            SaveConnection: (input: Record<string, unknown>) => Promise<any>;
+            GetEditableSavedConnection: (id: string) => Promise<any>;
+            RevealSavedConnectionPrimaryPassword: (id: string) => Promise<string>;
+            DeleteConnection: (id: string) => Promise<null>;
+            DuplicateConnection: (id: string) => Promise<any>;
           };
         };
       };
@@ -166,6 +171,60 @@ describe('main browser mock', () => {
       t('app.browser_mock.import_connection_package_unsupported'),
     );
   });
+
+  it('reveals saved host passwords on demand without exposing them in editable connection metadata', async () => {
+    const app = await importMain();
+    const saved = await app!.SaveConnection({
+      id: 'browser-mock-password',
+      name: 'Password host',
+      config: {
+        id: 'browser-mock-password',
+        type: 'mysql',
+        host: 'db.local',
+        port: 3306,
+        user: 'root',
+        password: 'primary-secret',
+      },
+    });
+
+    await expect(app!.GetEditableSavedConnection(saved.id)).resolves.toMatchObject({
+      config: { password: '' },
+      hasPrimaryPassword: true,
+    });
+    await expect(app!.RevealSavedConnectionPrimaryPassword(saved.id)).resolves.toBe('primary-secret');
+
+    const duplicated = await app!.DuplicateConnection(saved.id);
+    await expect(app!.RevealSavedConnectionPrimaryPassword(duplicated.id)).resolves.toBe('primary-secret');
+
+    await app!.SaveConnection({
+      ...saved,
+      name: 'Renamed host',
+      config: { ...saved.config, password: '' },
+    });
+    await expect(app!.RevealSavedConnectionPrimaryPassword(saved.id)).resolves.toBe('primary-secret');
+
+    await app!.SaveConnection({
+      ...saved,
+      config: { ...saved.config, password: '' },
+      clearPrimaryPassword: true,
+    });
+    await expect(app!.RevealSavedConnectionPrimaryPassword(saved.id)).rejects.toThrow('no stored primary password');
+
+    await app!.SaveConnection({
+      ...saved,
+      config: { ...saved.config, password: 'must-not-survive-delete' },
+    });
+    await app!.DeleteConnection(saved.id);
+    await expect(app!.RevealSavedConnectionPrimaryPassword(saved.id)).rejects.toThrow('saved connection not found');
+
+    const recreated = await app!.SaveConnection({
+      id: saved.id,
+      name: 'Recreated without password',
+      config: { ...saved.config, password: '' },
+    });
+    expect(recreated.hasPrimaryPassword).toBe(false);
+    await expect(app!.RevealSavedConnectionPrimaryPassword(saved.id)).rejects.toThrow('no stored primary password');
+  }, 30000);
 
   it('localizes generated browser mock saved query names', async () => {
     vi.stubGlobal('navigator', {

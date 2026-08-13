@@ -14,7 +14,6 @@ import (
 	"GoNavi-Wails/internal/db"
 	"GoNavi-Wails/internal/logger"
 	"GoNavi-Wails/internal/sqlaudit"
-	"GoNavi-Wails/internal/utils"
 	"GoNavi-Wails/shared/i18n"
 )
 
@@ -29,13 +28,23 @@ func normalizeTestConnectionConfig(config connection.ConnectionConfig) connectio
 }
 
 func newQueryExecutionContext(config connection.ConnectionConfig) (context.Context, context.CancelFunc) {
+	return newQueryExecutionContextWithParent(context.Background(), config)
+}
+
+// newQueryExecutionContextWithParent keeps query cancellation linked to the
+// caller while deliberately keeping connection establishment timeout separate
+// from the query deadline.
+func newQueryExecutionContextWithParent(parent context.Context, config connection.ConnectionConfig) (context.Context, context.CancelFunc) {
+	if parent == nil {
+		parent = context.Background()
+	}
 	if config.QueryTimeout > 0 {
-		return utils.ContextWithTimeout(time.Duration(config.QueryTimeout) * time.Second)
+		return context.WithTimeout(parent, time.Duration(config.QueryTimeout)*time.Second)
 	}
 
 	// Connection timeout is only for establishing the connection. Do not reuse it
 	// as a query deadline; long-running queries remain cancellable via CancelQuery.
-	return context.WithCancel(context.Background())
+	return context.WithCancel(parent)
 }
 
 func validateTestConnectionInput(config connection.ConnectionConfig) error {
@@ -1047,16 +1056,48 @@ func (a *App) MySQLShowCreateTable(config connection.ConnectionConfig, dbName st
 }
 
 type dbQueryAuditOptions struct {
-	trackHistory bool
-	auditAll     bool
-	auditWrites  bool
-	source       string
+	trackHistory             bool
+	auditAll                 bool
+	auditWrites              bool
+	source                   string
+	executionContext         context.Context
+	classifyConnectionErrors bool
 }
 
 type dbQueryMultiAuditOptions struct {
-	auditAll    bool
-	auditWrites bool
-	source      string
+	auditAll                 bool
+	auditWrites              bool
+	source                   string
+	executionContext         context.Context
+	classifyConnectionErrors bool
+}
+
+func buildQueryConnectionFailure(err error, queryID string, classify bool) connection.QueryResult {
+	result := connection.QueryResult{Success: false, Message: err.Error(), QueryID: queryID}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		result.Data = map[string]any{"cancelled": true}
+		return result
+	}
+	if classify {
+		result.Data = map[string]any{"errorKind": headlessResultErrorKindConnection}
+	}
+	return result
+}
+
+// buildQueryExecutionFailure preserves cancellation provenance when a driver
+// returns context.Canceled or context.DeadlineExceeded from an in-flight read.
+// The query context may already have been cleaned up by the time the CLI maps
+// the result, so the marker must travel with the QueryResult itself.
+func buildQueryExecutionFailure(ctx context.Context, err error, message string, queryID string) connection.QueryResult {
+	if message == "" && err != nil {
+		message = err.Error()
+	}
+	result := connection.QueryResult{Success: false, Message: message, QueryID: queryID}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) ||
+		(ctx != nil && (errors.Is(ctx.Err(), context.Canceled) || errors.Is(ctx.Err(), context.DeadlineExceeded))) {
+		result.Data = map[string]any{"cancelled": true}
+	}
+	return result
 }
 
 func containsSQLAuditWrite(dbType string, query string) bool {
@@ -1071,6 +1112,42 @@ func containsSQLAuditWrite(dbType string, query string) bool {
 		}
 	}
 	return false
+}
+
+// writeExecutionOutcomeUnknown covers both a driver-level ambiguous response
+// and a caller cancellation observed while a write was in flight. The latter
+// must be treated as unknown even when a driver returns an opaque error rather
+// than context.Canceled after it may already have dispatched the statement.
+func writeExecutionOutcomeUnknown(ctx context.Context, err error) bool {
+	return db.IsWriteOutcomeUnknown(err) || db.IsAmbiguousWriteResponse(err) || (ctx != nil && ctx.Err() != nil)
+}
+
+// classifyDispatchedWriteError treats opaque connection-loss messages as an
+// unknown write outcome. Once a write has been dispatched, reconnecting and
+// replaying it is unsafe even when the driver did not return a typed network
+// error.
+func classifyDispatchedWriteError(err error) error {
+	if err == nil || db.IsWriteOutcomeUnknown(err) || !shouldRefreshCachedConnection(err) {
+		return err
+	}
+	return db.MarkWriteOutcomeUnknown(err)
+}
+
+// buildWriteExecutionFailure keeps the no-retry/unknown-outcome contract
+// visible to headless callers. Drivers normally attach WriteOutcomeUnknown
+// themselves; transport failures and a cancelled in-flight context are
+// conservatively treated the same way so a statement that may have reached
+// the server is never reported as rejected.
+func buildWriteExecutionFailure(ctx context.Context, err error, queryID string) connection.QueryResult {
+	data := map[string]any{}
+	if writeExecutionOutcomeUnknown(ctx, err) {
+		data["outcomeUnknown"] = true
+	}
+	result := connection.QueryResult{Success: false, Message: err.Error(), QueryID: queryID}
+	if len(data) > 0 {
+		result.Data = data
+	}
+	return result
 }
 
 func (a *App) DBQuery(config connection.ConnectionConfig, dbName string, query string) connection.QueryResult {
@@ -1140,17 +1217,17 @@ func (a *App) dbQueryWithCancel(
 		return connection.QueryResult{Success: false, Message: err.Error(), QueryID: queryID}
 	}
 
-	ctx, cancel := newQueryExecutionContext(runConfig)
+	ctx, cancel := newQueryExecutionContextWithParent(auditOptions.executionContext, runConfig)
 	cleanupRunningQuery := a.registerRunningQuery(queryID, cancel, true)
 	defer func() {
 		cancel()
 		cleanupRunningQuery()
 	}()
 
-	dbInst, err := a.getDatabase(runConfig)
+	dbInst, err := a.getDatabaseWithContext(ctx, runConfig, false)
 	if err != nil {
 		logger.Error(err, "DBQuery 获取连接失败：%s", formatConnSummary(runConfig))
-		return connection.QueryResult{Success: false, Message: err.Error(), QueryID: queryID}
+		return buildQueryConnectionFailure(err, queryID, auditOptions.classifyConnectionErrors)
 	}
 
 	isReadQuery := isReadOnlySQLQuery(runConfig.Type, query)
@@ -1191,12 +1268,12 @@ func (a *App) dbQueryWithCancel(
 
 	if isReadQuery || tryQueryFirst {
 		data, columns, messages, err := runReadQueryWithMessages(dbInst)
-		if err != nil && shouldRefreshCachedConnection(err) {
+		if err != nil && isReadQuery && shouldRefreshCachedConnection(err) {
 			if a.invalidateCachedDatabase(runConfig, err) {
-				retryInst, retryErr := a.getDatabaseForcePing(runConfig)
+				retryInst, retryErr := a.getDatabaseWithContext(ctx, runConfig, true)
 				if retryErr != nil {
 					logger.Error(retryErr, "DBQuery 重建连接失败：%s SQL片段=%q", formatConnSummary(runConfig), sqlSnippet(query))
-					return connection.QueryResult{Success: false, Message: retryErr.Error()}
+					return buildQueryConnectionFailure(retryErr, queryID, auditOptions.classifyConnectionErrors)
 				}
 				data, columns, messages, err = runReadQueryWithMessages(retryInst)
 			}
@@ -1206,24 +1283,24 @@ func (a *App) dbQueryWithCancel(
 		}
 		if isReadQuery {
 			logger.Error(err, "DBQuery 查询失败：%s SQL片段=%q", formatConnSummary(runConfig), sqlSnippet(query))
-			return connection.QueryResult{Success: false, Message: err.Error(), QueryID: queryID}
+			return buildQueryExecutionFailure(ctx, err, err.Error(), queryID)
 		}
+		if shouldRefreshCachedConnection(err) {
+			a.invalidateCachedDatabase(runConfig, err)
+		}
+		err = classifyDispatchedWriteError(err)
+		logger.Error(err, "DBQuery 写入查询失败：%s SQL片段=%q", formatConnSummary(runConfig), sqlSnippet(query))
+		return buildWriteExecutionFailure(ctx, err, queryID)
 	}
 
 	affected, err := runExecQuery(dbInst)
-	if err != nil && shouldRefreshCachedConnection(err) {
-		if a.invalidateCachedDatabase(runConfig, err) {
-			retryInst, retryErr := a.getDatabaseForcePing(runConfig)
-			if retryErr != nil {
-				logger.Error(retryErr, "DBQuery 重建连接失败：%s SQL片段=%q", formatConnSummary(runConfig), sqlSnippet(query))
-				return connection.QueryResult{Success: false, Message: retryErr.Error()}
-			}
-			affected, err = runExecQuery(retryInst)
-		}
-	}
 	if err != nil {
+		if shouldRefreshCachedConnection(err) {
+			a.invalidateCachedDatabase(runConfig, err)
+		}
+		err = classifyDispatchedWriteError(err)
 		logger.Error(err, "DBQuery 执行失败：%s SQL片段=%q", formatConnSummary(runConfig), sqlSnippet(query))
-		return connection.QueryResult{Success: false, Message: err.Error(), QueryID: queryID}
+		return buildWriteExecutionFailure(ctx, err, queryID)
 	}
 	return connection.QueryResult{Success: true, Data: map[string]int64{"affectedRows": affected}, QueryID: queryID}
 }
@@ -1321,17 +1398,17 @@ func (a *App) dbQueryMulti(
 		return connection.QueryResult{Success: false, Message: err.Error(), QueryID: queryID}
 	}
 
-	ctx, cancel := newQueryExecutionContext(runConfig)
+	ctx, cancel := newQueryExecutionContextWithParent(auditOptions.executionContext, runConfig)
 	cleanupRunningQuery := a.registerRunningQuery(queryID, cancel, true)
 	defer func() {
 		cancel()
 		cleanupRunningQuery()
 	}()
 
-	dbInst, err := a.getDatabase(runConfig)
+	dbInst, err := a.getDatabaseWithContext(ctx, runConfig, false)
 	if err != nil {
 		logger.Error(err, "DBQueryMulti 获取连接失败：%s", formatConnSummary(runConfig))
-		return connection.QueryResult{Success: false, Message: err.Error(), QueryID: queryID}
+		return buildQueryConnectionFailure(err, queryID, auditOptions.classifyConnectionErrors)
 	}
 	defer func() {
 		// A successful SQL round trip is at least as strong a health signal as Ping.
@@ -1427,10 +1504,10 @@ func (a *App) dbQueryMulti(
 	results, resultMessages, err := runMultiQuery(dbInst)
 	if err != nil && shouldRefreshCachedConnection(err) {
 		if a.invalidateCachedDatabase(runConfig, err) {
-			retryInst, retryErr := a.getDatabaseForcePing(runConfig)
+			retryInst, retryErr := a.getDatabaseWithContext(ctx, runConfig, true)
 			if retryErr != nil {
 				logger.Error(retryErr, "DBQueryMulti 重建连接失败：%s SQL片段=%q", formatConnSummary(runConfig), sqlSnippet(query))
-				return connection.QueryResult{Success: false, Message: retryErr.Error(), QueryID: queryID}
+				return buildQueryConnectionFailure(retryErr, queryID, auditOptions.classifyConnectionErrors)
 			}
 			dbInst = retryInst
 			results, resultMessages, err = runMultiQuery(retryInst)
@@ -1438,7 +1515,7 @@ func (a *App) dbQueryMulti(
 	}
 	if err != nil {
 		logger.Error(err, "DBQueryMulti 执行失败：%s SQL片段=%q", formatConnSummary(runConfig), sqlSnippet(query))
-		return connection.QueryResult{Success: false, Message: err.Error(), QueryID: queryID}
+		return buildQueryExecutionFailure(ctx, err, err.Error(), queryID)
 	}
 
 	// 某些 optional driver-agent 的原生多结果集路径会异常返回“成功但无可展示列/行”。
@@ -1539,24 +1616,13 @@ func (a *App) dbQueryMulti(
 				measureQueryExecution(func() {
 					affected, batchErr = batcher.ExecBatchContext(ctx, query)
 				})
-				if batchErr != nil && shouldRefreshCachedConnection(batchErr) {
-					if a.invalidateCachedDatabase(runConfig, batchErr) {
-						retryInst, retryErr := a.getDatabaseForcePing(runConfig)
-						if retryErr != nil {
-							logger.Error(retryErr, "DBQueryMulti 批量写重建连接失败：%s", formatConnSummary(runConfig))
-							return connection.QueryResult{Success: false, Message: retryErr.Error(), QueryID: queryID}
-						}
-						dbInst = retryInst
-						if retryBatcher, ok2 := retryInst.(db.BatchWriteExecer); ok2 {
-							measureQueryExecution(func() {
-								affected, batchErr = retryBatcher.ExecBatchContext(ctx, query)
-							})
-						}
-					}
-				}
 				if batchErr != nil {
+					if shouldRefreshCachedConnection(batchErr) {
+						a.invalidateCachedDatabase(runConfig, batchErr)
+					}
+					batchErr = classifyDispatchedWriteError(batchErr)
 					logger.Error(batchErr, "DBQueryMulti 批量写执行失败：%s SQL片段=%q", formatConnSummary(runConfig), sqlSnippet(query))
-					return connection.QueryResult{Success: false, Message: batchErr.Error(), QueryID: queryID}
+					return buildWriteExecutionFailure(ctx, batchErr, queryID)
 				}
 				logger.Infof("DBQueryMulti 批量写执行成功：%s 语句数=%d affectedRows=%d", formatConnSummary(runConfig), len(statements), affected)
 				return connection.QueryResult{
@@ -1692,8 +1758,18 @@ func (a *App) dbQueryMulti(
 				logger.Error(err, "DBQueryMulti 逐条查询失败（第 %d/%d 条）：%s SQL片段=%q", idx+1, len(statements), formatConnSummary(runConfig), sqlSnippet(stmt))
 				errMsg := buildStatementExecutionFailedMessage(idx+1, err, len(resultSets))
 				appendStatementAudit(stmt, idx+1, statementStartedAt, 0, 0, err)
-				return connection.QueryResult{Success: false, Message: errMsg, QueryID: queryID}
+				return buildQueryExecutionFailure(ctx, err, errMsg, queryID)
 			}
+			if shouldRefreshCachedConnection(err) {
+				a.invalidateCachedDatabase(runConfig, err)
+			}
+			err = classifyDispatchedWriteError(err)
+			logger.Error(err, "DBQueryMulti 写入查询失败（第 %d/%d 条）：%s SQL片段=%q", idx+1, len(statements), formatConnSummary(runConfig), sqlSnippet(stmt))
+			errMsg := buildStatementExecutionFailedMessage(idx+1, err, len(resultSets))
+			appendStatementAudit(stmt, idx+1, statementStartedAt, 0, 0, err)
+			failure := buildWriteExecutionFailure(ctx, err, queryID)
+			failure.Message = errMsg
+			return failure
 		}
 
 		var affected int64
@@ -1709,9 +1785,16 @@ func (a *App) dbQueryMulti(
 			}
 		})
 		if err != nil {
+			if shouldRefreshCachedConnection(err) {
+				a.invalidateCachedDatabase(runConfig, err)
+			}
+			err = classifyDispatchedWriteError(err)
 			logger.Error(err, "DBQueryMulti 逐条执行失败（第 %d/%d 条）：%s SQL片段=%q", idx+1, len(statements), formatConnSummary(runConfig), sqlSnippet(stmt))
 			errMsg := buildStatementExecutionFailedMessage(idx+1, err, len(resultSets))
 			appendStatementAudit(stmt, idx+1, statementStartedAt, 0, 0, err)
+			if writeExecutionOutcomeUnknown(ctx, err) {
+				return connection.QueryResult{Success: false, Message: errMsg, Data: map[string]any{"outcomeUnknown": true}, QueryID: queryID}
+			}
 			return connection.QueryResult{Success: false, Message: errMsg, QueryID: queryID}
 		}
 		resultSets = append(resultSets, connection.ResultSetData{
@@ -1969,6 +2052,9 @@ func (a *App) DBQueryIsolated(config connection.ConnectionConfig, dbName string,
 			logger.Error(err, "DBQueryIsolated 查询失败：%s SQL片段=%q", formatConnSummary(runConfig), sqlSnippet(query))
 			return connection.QueryResult{Success: false, Message: err.Error()}
 		}
+		err = classifyDispatchedWriteError(err)
+		logger.Error(err, "DBQueryIsolated 写入查询失败：%s SQL片段=%q", formatConnSummary(runConfig), sqlSnippet(query))
+		return buildWriteExecutionFailure(ctx, err, "")
 	}
 
 	var affected int64
@@ -1980,8 +2066,9 @@ func (a *App) DBQueryIsolated(config connection.ConnectionConfig, dbName string,
 		affected, err = dbInst.Exec(query)
 	}
 	if err != nil {
+		err = classifyDispatchedWriteError(err)
 		logger.Error(err, "DBQueryIsolated 执行失败：%s SQL片段=%q", formatConnSummary(runConfig), sqlSnippet(query))
-		return connection.QueryResult{Success: false, Message: err.Error()}
+		return buildWriteExecutionFailure(ctx, err, "")
 	}
 	return connection.QueryResult{Success: true, Data: map[string]int64{"affectedRows": affected}}
 }

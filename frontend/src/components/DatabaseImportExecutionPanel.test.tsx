@@ -31,7 +31,8 @@ const createRunnerState = (
 });
 
 const mocks = vi.hoisted(() => ({
-  importDatabaseSQL: vi.fn(),
+  preflightDatabaseSQLImport: vi.fn(),
+  importDatabaseSQLWithOptions: vi.fn(),
   cancelSQLFileExecution: vi.fn(),
   run: vi.fn(),
   cancel: vi.fn(),
@@ -50,7 +51,8 @@ vi.mock('./common/ResizableDraggableModal', () => ({
 }));
 
 vi.mock('../../wailsjs/go/app/App', () => ({
-  ImportDatabaseSQL: mocks.importDatabaseSQL,
+  PreflightDatabaseSQLImport: mocks.preflightDatabaseSQLImport,
+  ImportDatabaseSQLWithOptions: mocks.importDatabaseSQLWithOptions,
   CancelSQLFileExecution: mocks.cancelSQLFileExecution,
 }));
 
@@ -73,6 +75,8 @@ vi.mock('antd', async () => {
   const Alert = (props: Record<string, unknown>) => React.createElement('mock-alert', props);
   const Button = ({ children, ...props }: any) => <button {...props}>{children}</button>;
   const Progress = (props: Record<string, unknown>) => React.createElement('mock-progress', props);
+  const Radio = ({ children, ...props }: any) => React.createElement('mock-radio', props, children);
+  Radio.Group = ({ children, ...props }: any) => React.createElement('mock-radio-group', props, children);
   const Paragraph = ({ children, ...props }: any) => <p {...props}>{children}</p>;
   const Text = ({ children, ...props }: any) => <span {...props}>{children}</span>;
   const Title = ({ children, ...props }: any) => <h3 {...props}>{children}</h3>;
@@ -80,6 +84,7 @@ vi.mock('antd', async () => {
     Alert,
     Button,
     Progress,
+    Radio,
     Typography: { Paragraph, Text, Title },
   };
 });
@@ -121,7 +126,13 @@ describe('DatabaseImportExecutionPanel', () => {
     mocks.state = createRunnerState();
     mocks.isRunning = false;
     mocks.lastRunOptions = null;
-    mocks.importDatabaseSQL.mockReset();
+    mocks.preflightDatabaseSQLImport.mockReset();
+    mocks.preflightDatabaseSQLImport.mockResolvedValue({
+      success: true,
+      data: { requiresGTIDDecision: false },
+      message: '',
+    });
+    mocks.importDatabaseSQLWithOptions.mockReset();
     mocks.cancelSQLFileExecution.mockReset();
     mocks.reset.mockReset();
     mocks.modalConfirm.mockReset();
@@ -148,13 +159,13 @@ describe('DatabaseImportExecutionPanel', () => {
 
   it('waits for an explicit start action and reports the full RPC lifetime as running', async () => {
     let resolveImport!: (value: { success: boolean; message: string }) => void;
-    mocks.importDatabaseSQL.mockReturnValue(new Promise((resolve) => {
+    mocks.importDatabaseSQLWithOptions.mockReturnValue(new Promise((resolve) => {
       resolveImport = resolve;
     }));
     const onRunningChange = vi.fn();
     const renderer = await renderPanel({ onRunningChange });
 
-    expect(mocks.importDatabaseSQL).not.toHaveBeenCalled();
+    expect(mocks.importDatabaseSQLWithOptions).not.toHaveBeenCalled();
     const startButton = renderer.root.findByProps({
       'data-database-import-start-action': 'true',
     });
@@ -164,12 +175,18 @@ describe('DatabaseImportExecutionPanel', () => {
       await Promise.resolve();
     });
 
-    expect(mocks.importDatabaseSQL).toHaveBeenCalledWith(
+    expect(mocks.preflightDatabaseSQLImport).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'mysql' }),
+      'app',
+      '/tmp/database.sql',
+    );
+    expect(mocks.importDatabaseSQLWithOptions).toHaveBeenCalledWith(
       expect.objectContaining({ type: 'mysql' }),
       'app',
       '/tmp/database.sql',
       'database-import-job-1',
       false,
+      'reject',
     );
     expect(onRunningChange).toHaveBeenLastCalledWith(true);
     expect(renderer.root.findAllByProps({
@@ -184,7 +201,7 @@ describe('DatabaseImportExecutionPanel', () => {
   });
 
   it('passes an explicit continue-on-error choice to the database import RPC', async () => {
-    mocks.importDatabaseSQL.mockResolvedValue({
+    mocks.importDatabaseSQLWithOptions.mockResolvedValue({
       success: false,
       data: { completed: true, failed: 1 },
       message: 'completed with errors',
@@ -198,18 +215,65 @@ describe('DatabaseImportExecutionPanel', () => {
       await Promise.resolve();
     });
 
-    expect(mocks.importDatabaseSQL).toHaveBeenCalledWith(
+    expect(mocks.importDatabaseSQLWithOptions).toHaveBeenCalledWith(
       expect.objectContaining({ type: 'mysql' }),
       'app',
       '/tmp/database.sql',
       'database-import-job-1',
       true,
+      'reject',
+    );
+  });
+
+  it('requires a GTID conflict choice before creating the import task', async () => {
+    mocks.preflightDatabaseSQLImport.mockResolvedValue({
+      success: true,
+      data: {
+        containsMySQLGTIDPurged: true,
+        targetGTIDExecutedNonEmpty: true,
+        requiresGTIDDecision: true,
+        serverVersion: '8.4.3',
+      },
+      message: '',
+    });
+    mocks.importDatabaseSQLWithOptions.mockResolvedValue({ success: true, message: 'done' });
+    const renderer = await renderPanel();
+
+    await act(async () => {
+      renderer.root.findByProps({
+        'data-database-import-start-action': 'true',
+      }).props.onClick();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(mocks.modalConfirm).toHaveBeenCalledOnce();
+    expect(mocks.run).not.toHaveBeenCalled();
+    const confirmOptions = mocks.modalConfirm.mock.calls[0][0];
+    const modeSelector = confirmOptions.content.props.children.find(
+      (child: any) => child?.props?.['data-mysql-gtid-mode-selector'] === 'true',
+    );
+
+    await act(async () => {
+      modeSelector.props.onChange({ target: { value: 'reset' } });
+      await confirmOptions.onOk();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(mocks.importDatabaseSQLWithOptions).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'mysql' }),
+      'app',
+      '/tmp/database.sql',
+      'database-import-job-1',
+      false,
+      'reset',
     );
   });
 
   it('cancels the active SQL import with the runner job id', async () => {
     let resolveImport!: (value: { success: boolean; message: string }) => void;
-    mocks.importDatabaseSQL.mockReturnValue(new Promise((resolve) => {
+    mocks.importDatabaseSQLWithOptions.mockReturnValue(new Promise((resolve) => {
       resolveImport = resolve;
     }));
     mocks.cancelSQLFileExecution.mockResolvedValue({ success: true });

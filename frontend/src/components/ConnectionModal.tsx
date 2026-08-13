@@ -1,4 +1,10 @@
-import React, { useState, useEffect, useRef, useMemo } from "react";
+import React, {
+  useState,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useMemo,
+} from "react";
 import Modal from './common/ResizableDraggableModal';
 import {
   Form,
@@ -118,6 +124,7 @@ import {
   supportsSSLClientCertificateForType,
   supportsSSLForType,
 } from "../utils/connectionTypeCapabilities";
+import { supportsRedisSshTunnel } from "../utils/redisTopologySsh";
 import {
   normalizeDriverType,
   resolveConnectionDriverType,
@@ -391,9 +398,13 @@ const ConnectionModal: React.FC<{
     createEmptyConnectionSecretClearState,
   );
   const [primaryPasswordVisible, setPrimaryPasswordVisible] = useState(false);
+  const [, setPrimaryPasswordVisibilityRevision] = useState(0);
   const testInFlightRef = useRef(false);
   const testTimerRef = useRef<number | null>(null);
   const testRunIdRef = useRef(0);
+  const primaryPasswordRevealRequestRef = useRef(0);
+  const revealedPrimaryPasswordRef = useRef("");
+  const clearSecretsRef = useRef(clearSecrets);
   const oracleModeTouchedRef = useRef(false);
   const addConnection = useStore((state) => state.addConnection);
   const updateConnection = useStore((state) => state.updateConnection);
@@ -574,6 +585,27 @@ const ConnectionModal: React.FC<{
     [overlayTheme],
   );
 
+  const resetPrimaryPasswordRevealState = () => {
+    primaryPasswordRevealRequestRef.current += 1;
+    revealedPrimaryPasswordRef.current = "";
+    form.setFieldValue("password", "");
+    setPrimaryPasswordVisible(false);
+  };
+
+  const handleModalClose = () => {
+    resetPrimaryPasswordRevealState();
+    onClose();
+  };
+
+  useLayoutEffect(() => {
+    resetPrimaryPasswordRevealState();
+    return () => {
+      primaryPasswordRevealRequestRef.current += 1;
+      revealedPrimaryPasswordRef.current = "";
+      form.setFieldValue("password", "");
+    };
+  }, [open, initialValues?.id]);
+
   const renderStoredSecretControls = ({
     fieldName,
     clearKey,
@@ -597,10 +629,11 @@ const ConnectionModal: React.FC<{
       >
         {({ getFieldValue }) => {
           const draftValue = getFieldValue(fieldName);
-          const initialSecretValue = resolveInitialSecretFieldValue(
-            initialValues,
-            fieldName,
-          );
+          const initialSecretValue =
+            clearKey === "primaryPassword" &&
+            revealedPrimaryPasswordRef.current !== ""
+              ? revealedPrimaryPasswordRef.current
+              : resolveInitialSecretFieldValue(initialValues, fieldName);
           const normalizedDraftValue = String(draftValue ?? "");
           const matchesInitialSecret =
             initialSecretValue !== "" &&
@@ -644,7 +677,12 @@ const ConnectionModal: React.FC<{
                   if (checked && matchesInitialSecret) {
                     form.setFieldValue(fieldName, "");
                   }
-                  setClearSecrets((prev) => ({ ...prev, [clearKey]: checked }));
+                  const nextClearSecrets = {
+                    ...clearSecretsRef.current,
+                    [clearKey]: checked,
+                  };
+                  clearSecretsRef.current = nextClearSecrets;
+                  setClearSecrets(nextClearSecrets);
                 }}
               >
                 {clearLabel}
@@ -898,6 +936,14 @@ const ConnectionModal: React.FC<{
           supportedDbs,
         ),
       );
+      // Cluster/Sentinel 与 SSH 组合后端不支持：切换拓扑时关闭 SSH 开关，
+      // 已填写的隧道字段保留在表单中，切回单机拓扑可恢复。
+      if (
+        !supportsRedisSshTunnel(nextRedisTopology) &&
+        form.getFieldValue("useSSH")
+      ) {
+        form.setFieldValue("useSSH", false);
+      }
     }
     if (fieldName === "proxyType") {
       const nextType = String(value || "socks5").toLowerCase();
@@ -1389,6 +1435,71 @@ const ConnectionModal: React.FC<{
     }
   };
 
+  const handlePrimaryPasswordVisibleChange = async (nextVisible: boolean) => {
+    const requestId = primaryPasswordRevealRequestRef.current + 1;
+    primaryPasswordRevealRequestRef.current = requestId;
+    if (!nextVisible) {
+      setPrimaryPasswordVisible(false);
+      return;
+    }
+
+    const currentPassword = String(form.getFieldValue("password") ?? "");
+    if (currentPassword !== "" || !initialValues?.hasPrimaryPassword) {
+      setPrimaryPasswordVisible(true);
+      return;
+    }
+
+    setPrimaryPasswordVisible(false);
+    setPrimaryPasswordVisibilityRevision((revision) => revision + 1);
+    const connectionId = String(initialValues.id || "").trim();
+    const backendApp = (window as any).go?.app?.App;
+    if (
+      connectionId === "" ||
+      typeof backendApp?.RevealSavedConnectionPrimaryPassword !== "function"
+    ) {
+      setPrimaryPasswordVisible(false);
+      setPrimaryPasswordVisibilityRevision((revision) => revision + 1);
+      message.error(
+        t("connection.modal.secret.reveal_failed", {
+          detail: t("connection.modal.message.save_backend_unavailable"),
+        }),
+      );
+      return;
+    }
+
+    const canApplyRevealResult = () =>
+      primaryPasswordRevealRequestRef.current === requestId &&
+      String(form.getFieldValue("password") ?? "") === "" &&
+      !clearSecretsRef.current.primaryPassword;
+
+    try {
+      const password = await backendApp.RevealSavedConnectionPrimaryPassword(
+        connectionId,
+      );
+      if (!canApplyRevealResult()) {
+        return;
+      }
+      const revealedPassword = String(password ?? "");
+      revealedPrimaryPasswordRef.current = revealedPassword;
+      form.setFieldValue("password", revealedPassword);
+      setPrimaryPasswordVisible(true);
+    } catch (error: any) {
+      if (!canApplyRevealResult()) {
+        return;
+      }
+      setPrimaryPasswordVisible(false);
+      setPrimaryPasswordVisibilityRevision((revision) => revision + 1);
+      message.error(
+        t("connection.modal.secret.reveal_failed", {
+          detail: normalizeConnectionSecretErrorMessage(
+            error?.message || error,
+            t("connection.modal.error.unknown"),
+          ),
+        }),
+      );
+    }
+  };
+
   useEffect(() => {
     testRunIdRef.current += 1;
     if (open) {
@@ -1408,8 +1519,9 @@ const ConnectionModal: React.FC<{
       setUriFeedback(null);
       setCustomIconType(undefined);
       setCustomIconColor(undefined);
-      setClearSecrets(createEmptyConnectionSecretClearState());
-      setPrimaryPasswordVisible(false);
+      const emptyClearSecrets = createEmptyConnectionSecretClearState();
+      clearSecretsRef.current = emptyClearSecrets;
+      setClearSecrets(emptyClearSecrets);
       setTypeSelectWarning(null);
       setDriverStatusLoaded(false);
       void refreshDriverStatus();
@@ -1581,6 +1693,8 @@ const ConnectionModal: React.FC<{
           sshUser: config.ssh?.user,
           sshPassword: config.ssh?.password,
           sshKeyPath: config.ssh?.keyPath,
+          sshKnownHostsPath: config.ssh?.knownHostsPath,
+          sshHostKeyFingerprint: config.ssh?.hostKeyFingerprint,
           useProxy: hasProxy,
           proxyType: config.proxy?.type || "socks5",
           proxyHost: config.proxy?.host,
@@ -1627,7 +1741,10 @@ const ConnectionModal: React.FC<{
           mongoAuthSource: config.authSource || "",
           mongoReadPreference: config.readPreference || "primary",
           mongoAuthMechanism: config.mongoAuthMechanism || "",
-          savePassword: config.savePassword !== false,
+          savePassword:
+            config.savePassword !== false ||
+            (config.type === "mongodb" &&
+              initialValues.hasPrimaryPassword === true),
           redisDB: Number.isFinite(Number(config.redisDB))
             ? Number(config.redisDB)
             : 0,
@@ -1774,6 +1891,8 @@ const ConnectionModal: React.FC<{
   useEffect(() => {
     return () => {
       testRunIdRef.current += 1;
+      primaryPasswordRevealRequestRef.current += 1;
+      revealedPrimaryPasswordRef.current = "";
       if (testTimerRef.current !== null) {
         window.clearTimeout(testTimerRef.current);
         testTimerRef.current = null;
@@ -1784,7 +1903,16 @@ const ConnectionModal: React.FC<{
   const handleOk = async () => {
     try {
       await form.validateFields();
-      const values = { ...form.getFieldsValue(true), type: dbType };
+      const formValues = { ...form.getFieldsValue(true), type: dbType };
+      const revealedPrimaryPassword = revealedPrimaryPasswordRef.current;
+      const values = {
+        ...formValues,
+        password:
+          revealedPrimaryPassword !== "" &&
+          String(formValues.password ?? "") === revealedPrimaryPassword
+            ? ""
+            : formValues.password,
+      };
       const unavailableReason = await resolveDriverUnavailableReason(
         values.type,
         values.driver,
@@ -1812,7 +1940,7 @@ const ConnectionModal: React.FC<{
         config,
         values,
         initialValues,
-        clearSecrets,
+        clearSecrets: clearSecretsRef.current,
         customIconType,
         customIconColor,
       });
@@ -1848,8 +1976,10 @@ const ConnectionModal: React.FC<{
       setUseHttpTunnel(false);
       setDbType("mysql");
       setStep(1);
-      setClearSecrets(createEmptyConnectionSecretClearState());
-      onClose();
+      const emptyClearSecrets = createEmptyConnectionSecretClearState();
+      clearSecretsRef.current = emptyClearSecrets;
+      setClearSecrets(emptyClearSecrets);
+      handleModalClose();
     } catch (e: any) {
       message.error(
         normalizeConnectionSecretErrorMessage(
@@ -2242,6 +2372,8 @@ const ConnectionModal: React.FC<{
         sshUser: "",
         sshPassword: "",
         sshKeyPath: "",
+        sshKnownHostsPath: "",
+        sshHostKeyFingerprint: "",
         useProxy: false,
         proxyType: "socks5",
         proxyHost: "",
@@ -2320,6 +2452,8 @@ const ConnectionModal: React.FC<{
         sshUser: "",
         sshPassword: "",
         sshKeyPath: "",
+        sshKnownHostsPath: "",
+        sshHostKeyFingerprint: "",
         useProxy: false,
         proxyType: "socks5",
         proxyHost: "",
@@ -2850,6 +2984,7 @@ const ConnectionModal: React.FC<{
         onOpenDriverManager,
         oracleMode,
         primaryPasswordVisible,
+        handlePrimaryPasswordVisibleChange,
         proxyType,
         redisDbList,
         redisTopology,
@@ -2870,7 +3005,6 @@ const ConnectionModal: React.FC<{
         setCustomIconType,
         setDbType,
         setMongoMembers,
-        setPrimaryPasswordVisible,
         setRedisDbList,
         setTestErrorLogOpen,
         setTestResult,
@@ -2973,7 +3107,11 @@ const ConnectionModal: React.FC<{
           >
             {t("connection.action.test")}
           </Button>
-          <Button key="cancel" className="gn-conn-studio-button" onClick={onClose}>
+          <Button
+            key="cancel"
+            className="gn-conn-studio-button"
+            onClick={handleModalClose}
+          >
             {t("common.action.cancel")}
           </Button>
           <Button
@@ -3055,7 +3193,7 @@ const ConnectionModal: React.FC<{
           className="gn-conn-studio-close"
           aria-label={t("common.action.close")}
           title={t("common.action.close")}
-          onClick={onClose}
+          onClick={handleModalClose}
         >
           <CloseOutlined />
         </button>
@@ -3079,7 +3217,7 @@ const ConnectionModal: React.FC<{
       <Modal
         title={getStudioTitle()}
         open={open}
-        onCancel={onClose}
+        onCancel={handleModalClose}
         footer={getFooter()}
         closable={false}
         centered

@@ -1140,6 +1140,14 @@ func (a *App) buildSQLAuditExport(filter sqlaudit.Filter, format string) ([]byte
 }
 
 func writeSQLAuditExportAtomically(fileName string, content []byte) error {
+	return writeSQLAuditExportAtomicallyWithReplace(fileName, content, true)
+}
+
+func writeSQLAuditExportAtomicallyNoReplace(fileName string, content []byte) error {
+	return writeSQLAuditExportAtomicallyWithReplace(fileName, content, false)
+}
+
+func writeSQLAuditExportAtomicallyWithReplace(fileName string, content []byte, replace bool) error {
 	directory := filepath.Dir(filepath.Clean(fileName))
 	temporary, err := os.CreateTemp(directory, ".gonavi-sql-audit-*.tmp")
 	if err != nil {
@@ -1162,8 +1170,14 @@ func writeSQLAuditExportAtomically(fileName string, content []byte) error {
 	if err := temporary.Close(); err != nil {
 		return err
 	}
-	if err := replaceSQLAuditFile(temporaryName, fileName); err != nil {
-		return err
+	var publishErr error
+	if replace {
+		publishErr = replaceSQLAuditFile(temporaryName, fileName)
+	} else {
+		publishErr = atomicCreateSQLAuditFile(temporaryName, fileName)
+	}
+	if publishErr != nil {
+		return publishErr
 	}
 	return os.Chmod(fileName, 0o600)
 }

@@ -350,6 +350,74 @@ describe('useAppUpdateManager', () => {
     });
   });
 
+  it('shows the refreshed dev version as soon as the backend starts downloading it', async () => {
+    let resolveDownload: ((result: Record<string, unknown>) => void) | undefined;
+    const downloadPromise = new Promise<Record<string, unknown>>((resolve) => {
+      resolveDownload = resolve;
+    });
+    const refreshedInfo = {
+      hasUpdate: true,
+      channel: 'dev',
+      currentVersion: 'dev-current',
+      latestVersion: 'dev-new',
+      assetName: 'GoNavi-dev-new-Windows-Amd64-Portable.exe',
+      packageType: 'portable',
+      installMode: 'portable',
+      autoRelaunch: true,
+      downloaded: false,
+      assetSize: 8192,
+    };
+    backendApp.CheckForUpdates.mockResolvedValue({
+      success: true,
+      data: {
+        ...refreshedInfo,
+        latestVersion: 'dev-old',
+        assetName: 'GoNavi-dev-old-Windows-Amd64-Portable.exe',
+        assetSize: 4096,
+      },
+    });
+    backendApp.DownloadUpdate.mockReturnValue(downloadPromise);
+
+    renderHook();
+    await act(async () => {
+      await hook?.checkForUpdates(false);
+    });
+
+    let pendingDownload: Promise<void> | undefined;
+    act(() => {
+      pendingDownload = hook?.downloadUpdate(hook.lastUpdateInfo!, false);
+    });
+
+    const progressListener = (runtimeApi.EventsOn.mock.calls as unknown as Array<[string, unknown]>)
+      .filter(([eventName]) => eventName === 'update:download-progress')
+      .slice(-1)[0]?.[1] as ((event: Record<string, unknown>) => void) | undefined;
+    expect(progressListener).toBeTypeOf('function');
+    act(() => {
+      progressListener?.({
+        status: 'start',
+        downloaded: 0,
+        total: refreshedInfo.assetSize,
+        info: refreshedInfo,
+      });
+    });
+
+    expect(hook?.lastUpdateInfo).toMatchObject({
+      latestVersion: 'dev-new',
+      assetName: 'GoNavi-dev-new-Windows-Amd64-Portable.exe',
+    });
+    expect(hook?.updateDownloadProgress).toMatchObject({
+      version: 'dev-new',
+      key: 'dev:dev-new:portable:gonavi-dev-new-windows-amd64-portable.exe',
+      status: 'start',
+      total: 8192,
+    });
+
+    await act(async () => {
+      resolveDownload?.({ success: true, data: { info: refreshedInfo } });
+      await pendingDownload;
+    });
+  });
+
   it('keeps same-version Portable and MSI downloads in separate cache identities', async () => {
     const portableInfo = {
       hasUpdate: true,

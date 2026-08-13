@@ -102,6 +102,10 @@ var desktopOnlyAppMethods = map[string]struct{}{
 	"ExportSQLAuditFile":            {},
 }
 
+var desktopOnlyCredentialAppMethods = map[string]struct{}{
+	"RevealSavedConnectionPrimaryPassword": {},
+}
+
 type Options struct {
 	Addr string
 }
@@ -435,7 +439,11 @@ func (i *methodInvoker) Invoke(req invokeRequest) (any, error) {
 }
 
 func isDesktopOnlyAppMethod(methodName string) bool {
-	_, denied := desktopOnlyAppMethods[strings.TrimSpace(methodName)]
+	methodName = strings.TrimSpace(methodName)
+	if _, denied := desktopOnlyAppMethods[methodName]; denied {
+		return true
+	}
+	_, denied := desktopOnlyCredentialAppMethods[methodName]
 	return denied
 }
 

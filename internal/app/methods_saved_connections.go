@@ -1,6 +1,7 @@
 package app
 
 import (
+	"fmt"
 	"strings"
 
 	"GoNavi-Wails/internal/connection"
@@ -26,6 +27,17 @@ func (a *App) GetEditableSavedConnection(id string) (connection.SavedConnectionV
 	// Editing relies on the Has* flags and explicit clear fields. Returning the
 	// resolved bundle would expose every saved credential to the WebView.
 	return sanitizeSavedConnectionView(view), nil
+}
+
+func (a *App) RevealSavedConnectionPrimaryPassword(id string) (string, error) {
+	view, bundle, err := a.savedConnectionRepository().loadConnectionSnapshot(id)
+	if err != nil {
+		return "", err
+	}
+	if !view.HasPrimaryPassword || strings.TrimSpace(bundle.Password) == "" {
+		return "", fmt.Errorf("saved connection has no stored primary password: %s", strings.TrimSpace(id))
+	}
+	return bundle.Password, nil
 }
 
 func (a *App) SaveConnection(input connection.SavedConnectionInput) (connection.SavedConnectionView, error) {
