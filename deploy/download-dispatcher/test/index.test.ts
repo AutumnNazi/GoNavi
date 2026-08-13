@@ -5,6 +5,7 @@ import {
   isRoutingStateFresh,
   nextNodeHealth,
   orderedNodeIds,
+  probeEdge,
   refreshChannel,
   selectLegacyRedirectCandidate,
 } from "../src/core";
@@ -77,6 +78,43 @@ describe("download dispatcher", () => {
       ready: true,
       channels: { stable: { generation: "stable-1" } },
     }, "stable", "stable-1")).toBe(true);
+  });
+
+  it("uses manual redirect handling for Worker edge probes", async () => {
+    const requests: RequestInit[] = [];
+    const control = {
+      schemaVersion: 1 as const,
+      channel: "dev" as const,
+      generation: "dev-1",
+      probePath: "/gonavi/dev/releases/download/dev-1/GoNavi-dev-1-Windows-Amd64-Portable.exe",
+      probeSize: 1024,
+      probeSha256: "a".repeat(64),
+      nodes: {
+        dmit: { baseUrl: "https://download.syngnat.top", enabled: true },
+        tencent: { baseUrl: "https://43.139.148.5", enabled: true },
+      },
+    };
+    const fetchImpl: typeof fetch = async (_input, init) => {
+      requests.push(init ?? {});
+      if (requests.length === 1) {
+        return Response.json({
+          status: "ok",
+          ready: true,
+          channels: { dev: { generation: "dev-1" } },
+        });
+      }
+      return new Response(new Uint8Array(1024), {
+        status: 206,
+        headers: {
+          "Content-Length": "1024",
+          "Content-Range": "bytes 0-1023/1024",
+        },
+      });
+    };
+
+    await expect(probeEdge(control, "dmit", fetchImpl)).resolves.toEqual({ ok: true, detail: "ok" });
+    expect(requests).toHaveLength(2);
+    expect(requests.map((request) => request.redirect)).toEqual(["manual", "manual"]);
   });
 
   it("reads publication control from the routing KV namespace", async () => {

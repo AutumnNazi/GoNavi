@@ -199,14 +199,19 @@ export function isReadyHealthPayload(value: unknown, channel: Channel, generatio
   return isRecord(channelHealth) && channelHealth.generation === generation;
 }
 
-async function probeEdge(control: PublicationControl, nodeId: NodeId): Promise<{ ok: boolean; detail: string }> {
+export async function probeEdge(
+  control: PublicationControl,
+  nodeId: NodeId,
+  fetchImpl: typeof fetch = fetch,
+): Promise<{ ok: boolean; detail: string }> {
   const node = control.nodes[nodeId];
   if (!node.enabled) return { ok: false, detail: "disabled by publication control" };
 
   try {
-    const healthResponse = await fetch(node.baseUrl + "/healthz", {
+    const healthResponse = await fetchImpl(node.baseUrl + "/healthz", {
       headers: { Accept: "application/json", "Cache-Control": "no-cache" },
-      redirect: "error",
+      // Workers supports only follow/manual; manual makes a redirect fail the status checks below.
+      redirect: "manual",
       signal: AbortSignal.timeout(10_000),
     });
     if (!healthResponse.ok) return { ok: false, detail: `healthz status ${healthResponse.status}` };
@@ -216,12 +221,12 @@ async function probeEdge(control: PublicationControl, nodeId: NodeId): Promise<{
     }
 
     const rangeEnd = Math.min(control.probeSize, RANGE_PROBE_BYTES) - 1;
-    const rangeResponse = await fetch(node.baseUrl + control.probePath, {
+    const rangeResponse = await fetchImpl(node.baseUrl + control.probePath, {
       headers: {
         Range: `bytes=0-${rangeEnd}`,
         "Cache-Control": "no-cache",
       },
-      redirect: "error",
+      redirect: "manual",
       signal: AbortSignal.timeout(10_000),
     });
     const contentRange = parseContentRange(rangeResponse.headers.get("Content-Range"));
