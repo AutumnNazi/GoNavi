@@ -242,7 +242,7 @@ func (q *QdrantDB) GetCreateStatement(dbName, tableName string) (string, error) 
 }
 
 func (q *QdrantDB) GetColumns(dbName, tableName string) ([]connection.ColumnDefinition, error) {
-	rows, _, err := q.scrollPoints(context.Background(), tableNameOrDB(dbName, tableName), 20, nil, nil, true, true)
+	info, err := q.getCollectionInfo(context.Background(), tableNameOrDB(dbName, tableName))
 	if err != nil {
 		return nil, err
 	}
@@ -251,21 +251,7 @@ func (q *QdrantDB) GetColumns(dbName, tableName string) ([]connection.ColumnDefi
 		{Name: "vector", Type: "vector<float>", Nullable: "YES", Comment: "Vector or named vectors"},
 		{Name: "payload", Type: "json", Nullable: "YES", Comment: "Full payload object"},
 	}
-	seen := map[string]struct{}{"id": {}, "vector": {}, "payload": {}}
-	for _, row := range rows {
-		for key, value := range row {
-			if _, exists := seen[key]; exists || !strings.HasPrefix(key, "payload.") {
-				continue
-			}
-			seen[key] = struct{}{}
-			cols = append(cols, connection.ColumnDefinition{
-				Name:     key,
-				Type:     inferChromaValueType(value),
-				Nullable: "YES",
-				Comment:  "Payload field",
-			})
-		}
-	}
+	cols = append(cols, qdrantPayloadSchemaColumns(info)...)
 	return cols, nil
 }
 
@@ -1036,6 +1022,39 @@ func qdrantPayloadIndexes(info map[string]interface{}) []connection.IndexDefinit
 		})
 	}
 	return indexes
+}
+
+func qdrantPayloadSchemaColumns(info map[string]interface{}) []connection.ColumnDefinition {
+	schema := nestedMapValue(info, "payload_schema")
+	if len(schema) == 0 {
+		schema = nestedMapValue(info, "payload_schema", "schema")
+	}
+	if len(schema) == 0 {
+		return nil
+	}
+	names := make([]string, 0, len(schema))
+	for name := range schema {
+		if strings.TrimSpace(name) != "" {
+			names = append(names, name)
+		}
+	}
+	sort.Strings(names)
+	columns := make([]connection.ColumnDefinition, 0, len(names))
+	for _, name := range names {
+		fieldType := "json"
+		if definition, ok := schema[name].(map[string]interface{}); ok {
+			if dataType := strings.TrimSpace(mapString(definition, "data_type")); dataType != "" {
+				fieldType = dataType
+			}
+		}
+		columns = append(columns, connection.ColumnDefinition{
+			Name:     "payload." + name,
+			Type:     fieldType,
+			Nullable: "YES",
+			Comment:  "Payload schema field",
+		})
+	}
+	return columns
 }
 
 func nestedMapValue(value interface{}, path ...string) map[string]interface{} {

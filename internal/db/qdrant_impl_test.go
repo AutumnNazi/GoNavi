@@ -138,6 +138,45 @@ func TestQdrantSelectConvertsToScroll(t *testing.T) {
 	}
 }
 
+func TestQdrantGetColumnsUsesCollectionSchemaWithoutReadingPoints(t *testing.T) {
+	pointReadRequests := 0
+	server := newMockQdrantServer(t, func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/collections":
+			writeQdrantJSON(w, map[string]interface{}{"result": map[string]interface{}{"collections": []interface{}{}}})
+		case r.Method == http.MethodGet && r.URL.Path == "/collections/products":
+			writeQdrantJSON(w, map[string]interface{}{
+				"result": map[string]interface{}{
+					"payload_schema": map[string]interface{}{
+						"category": map[string]interface{}{"data_type": "keyword"},
+						"price":    map[string]interface{}{"data_type": "float"},
+					},
+				},
+			})
+		case r.Method == http.MethodPost && r.URL.Path == "/collections/products/points/scroll":
+			pointReadRequests++
+			w.WriteHeader(http.StatusInternalServerError)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+
+	db := newTestQdrantDB(t, server.URL)
+	columns, err := db.GetColumns("default", "products")
+	if err != nil {
+		t.Fatalf("GetColumns failed: %v", err)
+	}
+	if pointReadRequests != 0 {
+		t.Fatalf("GetColumns must not read Qdrant points, requests=%d", pointReadRequests)
+	}
+	if got := columnDefinitionNames(columns); strings.Join(got, ",") != "id,vector,payload,payload.category,payload.price" {
+		t.Fatalf("columns = %v", got)
+	}
+	if columns[3].Type != "keyword" || columns[4].Type != "float" {
+		t.Fatalf("payload schema types = %#v", columns[3:])
+	}
+}
+
 func TestQdrantJSONSearchFlattensResults(t *testing.T) {
 	server := newMockQdrantServer(t, func(w http.ResponseWriter, r *http.Request) {
 		switch {

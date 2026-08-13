@@ -47,6 +47,14 @@ func writeChromaJSON(w http.ResponseWriter, value interface{}) {
 	_ = json.NewEncoder(w).Encode(value)
 }
 
+func columnDefinitionNames(columns []connection.ColumnDefinition) []string {
+	names := make([]string, 0, len(columns))
+	for _, column := range columns {
+		names = append(names, column.Name)
+	}
+	return names
+}
+
 func TestChromaConnectDetectsV2(t *testing.T) {
 	server := newMockChromaServer(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet && r.URL.Path == "/api/v2/heartbeat" {
@@ -188,6 +196,35 @@ func TestChromaJSONQueryFlattensResults(t *testing.T) {
 	}
 	if !containsString(columns, "distance") || !containsString(columns, "metadata.category") {
 		t.Fatalf("columns = %v", columns)
+	}
+}
+
+func TestChromaGetColumnsDoesNotReadDocumentsOrEmbeddings(t *testing.T) {
+	dataReadRequests := 0
+	server := newMockChromaServer(t, func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/api/v2/heartbeat":
+			writeChromaJSON(w, map[string]interface{}{"ok": true})
+		case strings.HasSuffix(r.URL.Path, "/collections"):
+			writeChromaJSON(w, []chromaCollection{{ID: "col-products", Name: "products", Database: "default_database"}})
+		case strings.HasSuffix(r.URL.Path, "/get"):
+			dataReadRequests++
+			w.WriteHeader(http.StatusInternalServerError)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+
+	db := newTestChromaDB(t, server.URL)
+	columns, err := db.GetColumns("default_database", "products")
+	if err != nil {
+		t.Fatalf("GetColumns failed: %v", err)
+	}
+	if dataReadRequests != 0 {
+		t.Fatalf("GetColumns must not read Chroma documents or embeddings, requests=%d", dataReadRequests)
+	}
+	if got := columnDefinitionNames(columns); strings.Join(got, ",") != "id,document,metadata,embedding" {
+		t.Fatalf("columns = %v", got)
 	}
 }
 
