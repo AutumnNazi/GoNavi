@@ -298,7 +298,7 @@ export const useAppUpdateManager = ({
       percent: 0,
       downloaded: 0,
       total: info.assetSize || 0,
-      message: '',
+      message: t('app.about.download_progress.downloading'),
     });
     let res: any = null;
     try {

@@ -487,10 +487,42 @@ async function resolveDownload(request: Request, env: Env): Promise<Response> {
   if (!coordinates) {
     return Response.json({ error: "invalid asset path" }, { status: 400, headers: { "Cache-Control": "no-store" } });
   }
+  const requiresCurrentDevApp = url.searchParams.get("require-current") === "1";
+  if (requiresCurrentDevApp && (coordinates.channel !== "dev" || coordinates.immutable?.kind !== "app")) {
+    return Response.json(
+      {
+        error: "require-current is only supported for immutable dev app assets",
+        code: "invalid_current_asset_request",
+      },
+      { status: 400, headers: { "Cache-Control": "no-store" } },
+    );
+  }
   const [control, state] = await Promise.all([
     readCurrentControl(env, coordinates.channel),
     readRoutingState(env, coordinates.channel),
   ]);
+  const requestedDevAppTag = requiresCurrentDevApp && coordinates.immutable?.kind === "app"
+    ? coordinates.immutable.tag
+    : null;
+  if (requiresCurrentDevApp && requestedDevAppTag !== null) {
+    if (!control) {
+      return Response.json(
+        { error: "current dev app asset is temporarily unavailable", code: "current_asset_unavailable" },
+        { status: 503, headers: { "Cache-Control": "no-store" } },
+      );
+    }
+    if (requestedDevAppTag !== control.appTag) {
+      return Response.json(
+        {
+          error: "requested dev app asset is no longer current",
+          code: "current_asset_mismatch",
+          requestedTag: requestedDevAppTag,
+          currentTag: control.appTag,
+        },
+        { status: 409, headers: { "Cache-Control": "no-store" } },
+      );
+    }
+  }
   const candidates: Array<{ source: string; url: string }> = [];
   const activeTag = coordinates.immutable?.kind === "app"
     ? control?.appTag
@@ -518,7 +550,19 @@ async function resolveDownload(request: Request, env: Env): Promise<Response> {
       }
     }
   }
-  candidates.push({ source: "github", url: coordinates.githubUrl });
+  if (requiresCurrentDevApp && candidates.length === 0) {
+    return Response.json(
+      {
+        error: "current dev app asset is temporarily unavailable",
+        code: "current_asset_unavailable",
+        currentTag: control?.appTag ?? "",
+      },
+      { status: 503, headers: { "Cache-Control": "no-store" } },
+    );
+  }
+  if (!requiresCurrentDevApp) {
+    candidates.push({ source: "github", url: coordinates.githubUrl });
+  }
 
   const wantsJSON = url.searchParams.get("format") === "json";
   const selected = wantsJSON ? candidates[0] : selectLegacyRedirectCandidate(candidates);

@@ -306,6 +306,195 @@ describe("download dispatcher", () => {
     }
   });
 
+  it("rejects a gated stale dev app tag instead of falling back to mutable GitHub", async () => {
+    const generation = "dev-gate-stale";
+    const control = {
+      schemaVersion: 1,
+      channel: "dev",
+      generation,
+      appTag: "dev-current",
+      driverTag: null,
+      probePath: "/gonavi/dev/releases/download/dev-current/GoNavi.zip",
+      probeSize: 1024,
+      probeSha256: "a".repeat(64),
+      nodes: {
+        dmit: { baseUrl: "https://download.syngnat.top", enabled: true },
+      },
+    };
+    await env.ROUTING_STATE.put("control:dev", JSON.stringify(control));
+    await env.ROUTING_STATE.put("routing:dev", JSON.stringify({
+      schemaVersion: 1,
+      channel: "dev",
+      generation,
+      control,
+      nodes: {
+        dmit: {
+          generation,
+          healthy: true,
+          consecutiveFailures: 0,
+          consecutiveSuccesses: 2,
+          checkedAt: new Date().toISOString(),
+          detail: "ok",
+        },
+      },
+      checkedAt: new Date().toISOString(),
+    }));
+
+    const response = await SELF.fetch(
+      "https://download-dispatch.syngnat.top/v1/resolve?require-current=1&path=/gonavi/dev/releases/download/dev-stale/GoNavi.zip",
+      { redirect: "manual" },
+    );
+    const body = await response.json<{ error: string; code: string; requestedTag: string; currentTag: string }>();
+    expect(response.status).toBe(409);
+    expect(response.headers.get("Location")).toBeNull();
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
+    expect(body).toEqual({
+      error: "requested dev app asset is no longer current",
+      code: "current_asset_mismatch",
+      requestedTag: "dev-stale",
+      currentTag: "dev-current",
+    });
+  });
+
+  it("redirects a gated current dev app tag directly to healthy DMIT", async () => {
+    const generation = "dev-gate-current";
+    const control = {
+      schemaVersion: 1,
+      channel: "dev",
+      generation,
+      appTag: "dev-current",
+      driverTag: null,
+      probePath: "/gonavi/dev/releases/download/dev-current/GoNavi.zip",
+      probeSize: 1024,
+      probeSha256: "a".repeat(64),
+      nodes: {
+        dmit: { baseUrl: "https://download.syngnat.top", enabled: true },
+      },
+    };
+    await env.ROUTING_STATE.put("control:dev", JSON.stringify(control));
+    await env.ROUTING_STATE.put("routing:dev", JSON.stringify({
+      schemaVersion: 1,
+      channel: "dev",
+      generation,
+      control,
+      nodes: {
+        dmit: {
+          generation,
+          healthy: true,
+          consecutiveFailures: 0,
+          consecutiveSuccesses: 2,
+          checkedAt: new Date().toISOString(),
+          detail: "ok",
+        },
+      },
+      checkedAt: new Date().toISOString(),
+    }));
+
+    const response = await SELF.fetch(
+      "https://download-dispatch.syngnat.top/v1/resolve?require-current=1&path=/gonavi/dev/releases/download/dev-current/GoNavi.zip",
+      { redirect: "manual" },
+    );
+    expect(response.status).toBe(302);
+    expect(response.headers.get("Location")).toBe(
+      "https://download.syngnat.top/gonavi/dev/releases/download/dev-current/GoNavi.zip",
+    );
+    expect(response.headers.get("X-GoNavi-Download-Source")).toBe("dmit");
+  });
+
+  it("returns only DMIT in gated current dev app JSON candidates", async () => {
+    const generation = "dev-gate-json";
+    const control = {
+      schemaVersion: 1,
+      channel: "dev",
+      generation,
+      appTag: "dev-current",
+      driverTag: null,
+      probePath: "/gonavi/dev/releases/download/dev-current/GoNavi.zip",
+      probeSize: 1024,
+      probeSha256: "a".repeat(64),
+      nodes: {
+        dmit: { baseUrl: "https://download.syngnat.top", enabled: true },
+      },
+    };
+    await env.ROUTING_STATE.put("control:dev", JSON.stringify(control));
+    await env.ROUTING_STATE.put("routing:dev", JSON.stringify({
+      schemaVersion: 1,
+      channel: "dev",
+      generation,
+      control,
+      nodes: {
+        dmit: {
+          generation,
+          healthy: true,
+          consecutiveFailures: 0,
+          consecutiveSuccesses: 2,
+          checkedAt: new Date().toISOString(),
+          detail: "ok",
+        },
+      },
+      checkedAt: new Date().toISOString(),
+    }));
+
+    const response = await SELF.fetch(
+      "https://download-dispatch.syngnat.top/v1/resolve?format=json&require-current=1&path=/gonavi/dev/releases/download/dev-current/GoNavi.zip",
+    );
+    expect(response.status).toBe(200);
+    const body = await response.json<{ candidates: Array<{ source: string; url: string }> }>();
+    expect(body.candidates).toEqual([{
+      source: "dmit",
+      url: "https://download.syngnat.top/gonavi/dev/releases/download/dev-current/GoNavi.zip",
+    }]);
+  });
+
+  it("does not fall back to mutable GitHub when a gated current dev app tag has no healthy DMIT", async () => {
+    const generation = "dev-gate-unhealthy";
+    const control = {
+      schemaVersion: 1,
+      channel: "dev",
+      generation,
+      appTag: "dev-current",
+      driverTag: null,
+      probePath: "/gonavi/dev/releases/download/dev-current/GoNavi.zip",
+      probeSize: 1024,
+      probeSha256: "a".repeat(64),
+      nodes: {
+        dmit: { baseUrl: "https://download.syngnat.top", enabled: true },
+      },
+    };
+    await env.ROUTING_STATE.put("control:dev", JSON.stringify(control));
+    await env.ROUTING_STATE.put("routing:dev", JSON.stringify({
+      schemaVersion: 1,
+      channel: "dev",
+      generation,
+      control,
+      nodes: {
+        dmit: {
+          generation,
+          healthy: false,
+          consecutiveFailures: 3,
+          consecutiveSuccesses: 0,
+          checkedAt: new Date().toISOString(),
+          detail: "timeout",
+        },
+      },
+      checkedAt: new Date().toISOString(),
+    }));
+
+    const response = await SELF.fetch(
+      "https://download-dispatch.syngnat.top/v1/resolve?require-current=1&path=/gonavi/dev/releases/download/dev-current/GoNavi.zip",
+      { redirect: "manual" },
+    );
+    const body = await response.json<{ error: string; code: string; currentTag: string }>();
+    expect(response.status).toBe(503);
+    expect(response.headers.get("Location")).toBeNull();
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
+    expect(body).toEqual({
+      error: "current dev app asset is temporarily unavailable",
+      code: "current_asset_unavailable",
+      currentTag: "dev-current",
+    });
+  });
+
   it("routes a freshly CI-verified current generation through DMIT before cron has state", async () => {
     const control = {
       schemaVersion: 1,
