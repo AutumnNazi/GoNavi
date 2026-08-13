@@ -65,6 +65,34 @@ samp {
   padding-right: 8px;
 }
 
+.gonavi-sidebar-object-status {
+  display: inline-flex;
+  align-items: center;
+  min-height: 16px;
+  margin-left: 6px;
+  padding: 0 5px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-family: var(--gn-font-mono);
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  line-height: 1;
+  vertical-align: middle;
+}
+
+.gonavi-sidebar-object-status.is-valid {
+  border-color: rgba(47, 158, 68, 0.42);
+  background: rgba(47, 158, 68, 0.12);
+  color: #16803a;
+}
+
+.gonavi-sidebar-object-status.is-invalid {
+  border-color: rgba(217, 72, 65, 0.45);
+  background: rgba(217, 72, 65, 0.12);
+  color: #c92a2a;
+}
+
 .sidebar-tree-scroll-shell {
   overflow-x: auto;
   overflow-y: hidden;

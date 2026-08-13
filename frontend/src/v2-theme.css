@@ -3278,6 +3278,32 @@ body[data-ui-version="v2"] .gn-v2-tree-title.is-mono .gn-v2-tree-label {
   font-weight: 400 !important;
 }
 
+body[data-ui-version="v2"] .gn-v2-tree-object-status {
+  display: inline-flex;
+  align-items: center;
+  min-height: 16px;
+  padding: 0 5px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-family: var(--gn-font-mono);
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  line-height: 1;
+}
+
+body[data-ui-version="v2"] .gn-v2-tree-object-status.is-valid {
+  border-color: color-mix(in srgb, #2f9e44 42%, transparent);
+  background: color-mix(in srgb, #2f9e44 13%, transparent);
+  color: #16803a;
+}
+
+body[data-ui-version="v2"] .gn-v2-tree-object-status.is-invalid {
+  border-color: color-mix(in srgb, #d94841 45%, transparent);
+  background: color-mix(in srgb, #d94841 13%, transparent);
+  color: #c92a2a;
+}
+
 body[data-ui-version="v2"] .gn-v2-tree-title.is-group {
   font-weight: 400 !important;
   color: var(--gn-fg-1);

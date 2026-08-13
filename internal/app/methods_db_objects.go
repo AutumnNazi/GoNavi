@@ -166,13 +166,14 @@ func databaseObjectFromRow(dbName string, objectType string, rawType string, row
 		rawType = rowStringCI(row, "raw_type", "table_type", "object_type", "routine_type", "type", "event_type", "status")
 	}
 	return connection.DatabaseObject{
-		Database: strings.TrimSpace(dbName),
-		Schema:   strings.TrimSpace(schema),
-		Name:     strings.TrimSpace(name),
-		Type:     strings.TrimSpace(objectType),
-		Parent:   strings.TrimSpace(parent),
-		RawType:  strings.TrimSpace(rawType),
-		Comment:  rowStringCI(row, "comment", "comments", "description", "table_comment"),
+		Database:     strings.TrimSpace(dbName),
+		Schema:       strings.TrimSpace(schema),
+		Name:         strings.TrimSpace(name),
+		Type:         strings.TrimSpace(objectType),
+		Parent:       strings.TrimSpace(parent),
+		RawType:      strings.TrimSpace(rawType),
+		ObjectStatus: rowStringCI(row, "object_status"),
+		Comment:      rowStringCI(row, "comment", "comments", "description", "table_comment"),
 	}
 }
 
@@ -373,10 +374,14 @@ func buildObjectRoutineMetadataQueries(dbType string, dbName string) []objectMet
 		safeDB := quoteIdentByType("sqlserver", firstNonEmptyString(dbName, "master"))
 		return []objectMetadataQuerySpec{{sql: fmt.Sprintf(`SELECT s.name AS schema_name, o.name AS routine_name, CASE o.type WHEN 'P' THEN 'PROCEDURE' WHEN 'FN' THEN 'FUNCTION' WHEN 'IF' THEN 'FUNCTION' WHEN 'TF' THEN 'FUNCTION' END AS routine_type FROM %s.sys.objects o JOIN %s.sys.schemas s ON o.schema_id = s.schema_id WHERE o.type IN ('P','FN','IF','TF') ORDER BY o.type, s.name, o.name`, safeDB, safeDB)}}
 	case "oracle", "dameng":
-		if strings.TrimSpace(dbName) == "" {
-			return []objectMetadataQuerySpec{{sql: `SELECT OBJECT_NAME AS routine_name, OBJECT_TYPE AS routine_type FROM USER_OBJECTS WHERE OBJECT_TYPE IN ('FUNCTION','PROCEDURE') ORDER BY OBJECT_TYPE, OBJECT_NAME`}}
+		objectStatusProjection := ""
+		if dbType == "oracle" {
+			objectStatusProjection = ", STATUS AS object_status"
 		}
-		return []objectMetadataQuerySpec{{sql: fmt.Sprintf("SELECT OWNER AS schema_name, OBJECT_NAME AS routine_name, OBJECT_TYPE AS routine_type FROM ALL_OBJECTS WHERE OWNER = '%s' AND OBJECT_TYPE IN ('FUNCTION','PROCEDURE') ORDER BY OBJECT_TYPE, OBJECT_NAME", strings.ToUpper(safeDbName))}}
+		if strings.TrimSpace(dbName) == "" {
+			return []objectMetadataQuerySpec{{sql: fmt.Sprintf(`SELECT OBJECT_NAME AS routine_name, OBJECT_TYPE AS routine_type%s FROM USER_OBJECTS WHERE OBJECT_TYPE IN ('FUNCTION','PROCEDURE') ORDER BY OBJECT_TYPE, OBJECT_NAME`, objectStatusProjection)}}
+		}
+		return []objectMetadataQuerySpec{{sql: fmt.Sprintf("SELECT OWNER AS schema_name, OBJECT_NAME AS routine_name, OBJECT_TYPE AS routine_type%s FROM ALL_OBJECTS WHERE OWNER = '%s' AND OBJECT_TYPE IN ('FUNCTION','PROCEDURE') ORDER BY OBJECT_TYPE, OBJECT_NAME", objectStatusProjection, strings.ToUpper(safeDbName))}}
 	case "duckdb":
 		return []objectMetadataQuerySpec{{sql: `SELECT schema_name, function_name AS routine_name, 'FUNCTION' AS routine_type FROM duckdb_functions() WHERE internal = false AND lower(function_type) = 'macro' AND COALESCE(macro_definition, '') <> '' ORDER BY schema_name, function_name`, inferredType: "FUNCTION"}}
 	default:
@@ -400,7 +405,12 @@ func buildObjectTriggerMetadataQueries(dbType string, dbName string) []objectMet
 	case "sqlserver":
 		safeDB := quoteIdentByType("sqlserver", firstNonEmptyString(dbName, "master"))
 		return []objectMetadataQuerySpec{{sql: fmt.Sprintf(`SELECT s.name AS schema_name, t.name AS table_name, tr.name AS trigger_name FROM %s.sys.triggers tr JOIN %s.sys.tables t ON tr.parent_id = t.object_id JOIN %s.sys.schemas s ON t.schema_id = s.schema_id WHERE tr.parent_class = 1 ORDER BY s.name, t.name, tr.name`, safeDB, safeDB, safeDB)}}
-	case "oracle", "dameng":
+	case "oracle":
+		if strings.TrimSpace(dbName) == "" {
+			return []objectMetadataQuerySpec{{sql: `SELECT t.TRIGGER_NAME AS trigger_name, t.TABLE_NAME AS table_name, o.STATUS AS object_status FROM USER_TRIGGERS t LEFT JOIN USER_OBJECTS o ON o.OBJECT_NAME = t.TRIGGER_NAME AND o.OBJECT_TYPE = 'TRIGGER' ORDER BY t.TABLE_NAME, t.TRIGGER_NAME`}}
+		}
+		return []objectMetadataQuerySpec{{sql: fmt.Sprintf("SELECT t.OWNER AS schema_name, t.TABLE_NAME AS table_name, t.TRIGGER_NAME AS trigger_name, o.STATUS AS object_status FROM ALL_TRIGGERS t LEFT JOIN ALL_OBJECTS o ON o.OWNER = t.OWNER AND o.OBJECT_NAME = t.TRIGGER_NAME AND o.OBJECT_TYPE = 'TRIGGER' WHERE t.OWNER = '%s' ORDER BY t.TABLE_NAME, t.TRIGGER_NAME", strings.ToUpper(safeDbName))}}
+	case "dameng":
 		if strings.TrimSpace(dbName) == "" {
 			return []objectMetadataQuerySpec{{sql: `SELECT TRIGGER_NAME AS trigger_name, TABLE_NAME AS table_name FROM USER_TRIGGERS ORDER BY TABLE_NAME, TRIGGER_NAME`}}
 		}

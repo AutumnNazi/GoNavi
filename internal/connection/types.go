@@ -205,13 +205,14 @@ type QueryResult struct {
 
 // DatabaseObject 描述数据库或类数据库数据源中的可浏览对象。
 type DatabaseObject struct {
-	Name     string `json:"name"`
-	Type     string `json:"type"`
-	Schema   string `json:"schema,omitempty"`
-	Database string `json:"database,omitempty"`
-	Parent   string `json:"parent,omitempty"`
-	RawType  string `json:"rawType,omitempty"`
-	Comment  string `json:"comment,omitempty"`
+	Name         string `json:"name"`
+	Type         string `json:"type"`
+	Schema       string `json:"schema,omitempty"`
+	Database     string `json:"database,omitempty"`
+	Parent       string `json:"parent,omitempty"`
+	RawType      string `json:"rawType,omitempty"`
+	ObjectStatus string `json:"objectStatus,omitempty"`
+	Comment      string `json:"comment,omitempty"`
 }
 
 // DatabaseCharset 描述 MySQL 系数据源可用的字符集（SHOW CHARACTER SET）。

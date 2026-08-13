@@ -13,6 +13,7 @@ import {
 } from "../../utils/sidebarMetadata";
 import { isPostgresSchemaDialect } from "../sidebarCoreUtils";
 import { extractTableNameFromMetadataRow } from "../../utils/tableMetadataRows";
+import { normalizeOracleObjectCompileStatus } from './oracleObjectCompilation';
 
 export const buildSidebarRuntimeConfig = (
   conn: any,
@@ -529,6 +530,18 @@ const buildTriggersMetadataQuerySpecs = (
       ];
     }
     case "oracle":
+      if (!safeDbName) {
+        return [
+          {
+            sql: `SELECT t.TRIGGER_NAME AS trigger_name, t.TABLE_NAME AS table_name, o.STATUS AS object_status FROM USER_TRIGGERS t LEFT JOIN USER_OBJECTS o ON o.OBJECT_NAME = t.TRIGGER_NAME AND o.OBJECT_TYPE = 'TRIGGER' ORDER BY t.TABLE_NAME, t.TRIGGER_NAME`,
+          },
+        ];
+      }
+      return [
+        {
+          sql: `SELECT t.OWNER AS schema_name, t.TABLE_NAME AS table_name, t.TRIGGER_NAME AS trigger_name, o.STATUS AS object_status FROM ALL_TRIGGERS t LEFT JOIN ALL_OBJECTS o ON o.OWNER = t.OWNER AND o.OBJECT_NAME = t.TRIGGER_NAME AND o.OBJECT_TYPE = 'TRIGGER' WHERE t.OWNER = '${safeDbName.toUpperCase()}' ORDER BY t.TABLE_NAME, t.TRIGGER_NAME`,
+        },
+      ];
     case "dm":
       if (!safeDbName) {
         return [
@@ -611,25 +624,27 @@ const buildFunctionsMetadataQuerySpecs = (
       ];
     }
     case "oracle":
-    case "dm":
+    case "dm": {
+      const objectStatusProjection = dialect === "oracle" ? ", STATUS AS object_status" : "";
       if (safeDbName) {
         // See the corresponding view query above. Oracle CURRENT_SCHEMA only
         // changes name resolution, so USER_OBJECTS still belongs to the login
         // account rather than the schema selected in the sidebar.
         return [
           {
-            sql: `SELECT OWNER AS schema_name, OBJECT_NAME AS routine_name, OBJECT_TYPE AS routine_type FROM ALL_OBJECTS WHERE OWNER = '${safeDbName.toUpperCase()}' AND OBJECT_TYPE IN ('FUNCTION','PROCEDURE') ORDER BY OBJECT_TYPE, OBJECT_NAME`,
+            sql: `SELECT OWNER AS schema_name, OBJECT_NAME AS routine_name, OBJECT_TYPE AS routine_type${objectStatusProjection} FROM ALL_OBJECTS WHERE OWNER = '${safeDbName.toUpperCase()}' AND OBJECT_TYPE IN ('FUNCTION','PROCEDURE') ORDER BY OBJECT_TYPE, OBJECT_NAME`,
           },
         ];
       }
       return normalizeMetadataQuerySpecs([
         {
-          sql: `SELECT OBJECT_NAME AS routine_name, OBJECT_TYPE AS routine_type FROM USER_OBJECTS WHERE OBJECT_TYPE IN ('FUNCTION','PROCEDURE') ORDER BY OBJECT_TYPE, OBJECT_NAME`,
+          sql: `SELECT OBJECT_NAME AS routine_name, OBJECT_TYPE AS routine_type${objectStatusProjection} FROM USER_OBJECTS WHERE OBJECT_TYPE IN ('FUNCTION','PROCEDURE') ORDER BY OBJECT_TYPE, OBJECT_NAME`,
         },
         {
-          sql: `SELECT OWNER AS schema_name, OBJECT_NAME AS routine_name, OBJECT_TYPE AS routine_type FROM ALL_OBJECTS WHERE OWNER = USER AND OBJECT_TYPE IN ('FUNCTION','PROCEDURE') ORDER BY OBJECT_TYPE, OBJECT_NAME`,
+          sql: `SELECT OWNER AS schema_name, OBJECT_NAME AS routine_name, OBJECT_TYPE AS routine_type${objectStatusProjection} FROM ALL_OBJECTS WHERE OWNER = USER AND OBJECT_TYPE IN ('FUNCTION','PROCEDURE') ORDER BY OBJECT_TYPE, OBJECT_NAME`,
         },
       ]);
+    }
     case "duckdb":
       return [
         {
@@ -938,6 +953,7 @@ const loadDatabaseTriggers = async (
     displayName: string;
     triggerName: string;
     tableName: string;
+    objectStatus?: string;
   }>;
   supported: boolean;
 }> => {
@@ -1009,10 +1025,14 @@ const loadDatabaseTriggers = async (
       const displayName = fullTableName
         ? `${resolvedTriggerName} (${fullTableName})`
         : resolvedTriggerName;
+      const objectStatus = dialect === "oracle"
+        ? normalizeOracleObjectCompileStatus(getCaseInsensitiveValue(row, ["object_status"]))
+        : "";
       triggers.push({
         displayName,
         triggerName: resolvedTriggerName,
         tableName: fullTableName || resolvedTableName,
+        ...(objectStatus ? { objectStatus } : {}),
       });
     });
   });
@@ -1027,6 +1047,7 @@ const loadFunctions = async (
     displayName: string;
     routineName: string;
     routineType: string;
+    objectStatus?: string;
   }>;
   supported: boolean;
 }> => {
@@ -1073,10 +1094,14 @@ const loadFunctions = async (
       if (!fullName || seen.has(uniqueKey)) return;
       seen.add(uniqueKey);
       const typeLabel = normalizedType === "PROCEDURE" ? "P" : "F";
+      const objectStatus = dialect === "oracle"
+        ? normalizeOracleObjectCompileStatus(getCaseInsensitiveValue(row, ["object_status"]))
+        : "";
       routines.push({
         displayName: `${fullName} [${typeLabel}]`,
         routineName: fullName,
         routineType: normalizedType,
+        ...(objectStatus ? { objectStatus } : {}),
       });
     });
   });

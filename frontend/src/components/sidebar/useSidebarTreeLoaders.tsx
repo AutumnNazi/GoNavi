@@ -1029,7 +1029,7 @@ export const useSidebarTreeLoaders = ({
             });
 
             const triggerEntries = (() => {
-                const deduped: Array<{ displayName: string; triggerName: string; tableName: string; schemaName: string }> = [];
+                const deduped: Array<{ displayName: string; triggerName: string; tableName: string; schemaName: string; objectStatus?: string }> = [];
                 const triggerSeen = new Set<string>();
                 const metadataDialect = getMetadataDialect(conn as SavedConnection);
 
@@ -1040,6 +1040,7 @@ export const useSidebarTreeLoaders = ({
                     const triggerObjectName = (triggerParsed.objectName || trigger.triggerName).trim();
                     const tableObjectName = (tableParsed.objectName || trigger.tableName).trim();
                     const displayName = tableObjectName ? `${triggerObjectName} (${tableObjectName})` : triggerObjectName;
+                    const objectStatus = String(trigger.objectStatus || '').trim();
                     const dedupeKey = metadataDialect === 'mysql'
                         ? `${schemaName.toLowerCase()}@@${triggerObjectName.toLowerCase()}`
                         : `${schemaName.toLowerCase()}@@${triggerObjectName.toLowerCase()}@@${tableObjectName.toLowerCase()}`;
@@ -1052,6 +1053,7 @@ export const useSidebarTreeLoaders = ({
                         triggerName: triggerObjectName,
                         tableName: buildQualifiedName(schemaName, tableObjectName) || tableObjectName,
                         displayName,
+                        ...(objectStatus ? { objectStatus } : {}),
                     });
                 });
 
@@ -1059,7 +1061,7 @@ export const useSidebarTreeLoaders = ({
             })();
 
             const routineEntries = (() => {
-                const deduped: Array<{ routineName: string; routineType: string; schemaName: string; displayName: string }> = [];
+                const deduped: Array<{ routineName: string; routineType: string; schemaName: string; displayName: string; objectStatus?: string }> = [];
                 const routineSeen = new Set<string>();
                 routineRows.forEach((routine: any) => {
                     const parsed = splitQualifiedName(routine.routineName);
@@ -1071,6 +1073,7 @@ export const useSidebarTreeLoaders = ({
                     if (!objectName) return;
                     const routineName = String(routine.routineName || objectName).trim();
                     const typeLabel = routineType === 'PROCEDURE' ? 'P' : 'F';
+                    const objectStatus = String(routine.objectStatus || '').trim();
                     const dedupeKey = `${schemaName.toLowerCase()}@@${objectName.toLowerCase()}@@${routineType}`;
                     if (routineSeen.has(dedupeKey)) return;
                     routineSeen.add(dedupeKey);
@@ -1079,6 +1082,7 @@ export const useSidebarTreeLoaders = ({
                         routineType,
                         schemaName,
                         displayName: `${objectName} [${typeLabel}]`,
+                        ...(objectStatus ? { objectStatus } : {}),
                     });
                 });
                 return deduped;
@@ -1275,16 +1279,16 @@ export const useSidebarTreeLoaders = ({
 	                };
 	            };
 
-	            const buildTriggerNode = (entry: { triggerName: string; tableName: string; schemaName: string; displayName: string }): TreeNode => ({
+            const buildTriggerNode = (entry: { triggerName: string; tableName: string; schemaName: string; displayName: string; objectStatus?: string }): TreeNode => ({
 	                title: entry.displayName,
 	                key: `${conn.id}-${conn.dbName}-trigger-${entry.triggerName}-${entry.tableName}`,
 	                icon: <FunctionOutlined />,
 	                type: 'db-trigger',
-	                dataRef: { ...conn, triggerName: entry.triggerName, triggerTableName: entry.tableName, tableName: entry.tableName, schemaName: entry.schemaName },
+                dataRef: { ...conn, triggerName: entry.triggerName, triggerTableName: entry.tableName, tableName: entry.tableName, schemaName: entry.schemaName, ...(entry.objectStatus ? { objectStatus: entry.objectStatus } : {}) },
 	                isLeaf: true,
 	            });
 
-	            const buildRoutineNode = (entry: { routineName: string; routineType: string; schemaName: string; displayName: string }): TreeNode => {
+            const buildRoutineNode = (entry: { routineName: string; routineType: string; schemaName: string; displayName: string; objectStatus?: string }): TreeNode => {
 	                const typeToken = entry.routineType === 'PROCEDURE' ? 'proc' : 'func';
 	                const keyName = buildSidebarObjectKeyName(conn.dbName, entry.schemaName, entry.routineName);
 	                return {
@@ -1293,7 +1297,7 @@ export const useSidebarTreeLoaders = ({
 	                    key: `${conn.id}-${conn.dbName}-routine-${typeToken}-${keyName}`,
 	                    icon: <CodeOutlined />,
 	                    type: 'routine',
-	                    dataRef: { ...conn, routineName: entry.routineName, routineType: entry.routineType, schemaName: entry.schemaName },
+                    dataRef: { ...conn, routineName: entry.routineName, routineType: entry.routineType, schemaName: entry.schemaName, ...(entry.objectStatus ? { objectStatus: entry.objectStatus } : {}) },
 	                    isLeaf: true,
 	                };
 	            };
