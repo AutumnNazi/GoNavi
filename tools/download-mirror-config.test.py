@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 import unittest
 from pathlib import Path
 
@@ -20,23 +21,97 @@ class DownloadMirrorConfigTest(unittest.TestCase):
         self.assertIn("file_server", snippet)
         self.assertNotIn("reverse_proxy", snippet)
         self.assertFalse((ROOT / "deploy/download-mirror/dmit-nginx.conf").exists())
+        self.assertFalse((ROOT / "deploy/download-mirror/tencent-ip-nginx.conf").exists())
         self.assertIn("DMIT must retain its existing Caddy listener", installer)
+        self.assertIn('[[ "${node_id}" == dmit ]]', installer)
+        self.assertNotIn("tencent", installer.lower())
         self.assertIn("caddy validate", installer)
         self.assertIn("/usr/local/libexec/gonavi-edge-transaction", installer)
         self.assertIn("NOPASSWD: GONAVI_EDGE_CONTROL", installer)
 
-    def test_publication_uses_per_node_budgets_and_observability_only_throughput(self) -> None:
+    def test_publication_uses_dmit_only_and_observability_only_throughput(self) -> None:
         action = (ROOT / ".github/actions/publish-vps-mirror/action.yml").read_text(encoding="utf-8")
         publication = (ROOT / "tools/publish-edge-release.sh").read_text(encoding="utf-8")
+        stable_workflow = (ROOT / ".github/workflows/publish-release.yml").read_text(encoding="utf-8")
+        dev_workflow = (ROOT / ".github/workflows/dev-build.yml").read_text(encoding="utf-8")
 
         self.assertIn("dmit-max-bytes", action)
         self.assertIn("default: '9000000000'", action)
-        self.assertIn("tencent-max-bytes", action)
-        self.assertIn("default: '45000000000'", action)
+        self.assertNotIn("tencent-ssh-", action)
+        self.assertNotIn("tencent-max-bytes", action)
+        self.assertNotIn("EDGE_TENCENT_", action)
+        self.assertNotIn("CDN_TENCENT_", stable_workflow)
+        self.assertNotIn("CDN_TENCENT_", dev_workflow)
+        self.assertIn("stage_node dmit", publication)
+        self.assertIn("activate_node dmit", publication)
+        self.assertNotIn("node_value tencent", publication)
+        self.assertNotIn("tencent", publication.lower())
         self.assertIn("PUB_THROUGHPUT_WARN_MBPS", publication)
         self.assertIn("::warning::Edge {node} throughput", publication)
         self.assertNotIn("PUB_MIN_THROUGHPUT_MBPS", publication)
         self.assertIn("--min-free-bytes", publication)
+        self.assertIn("ConnectTimeout=${PUB_SSH_CONNECT_TIMEOUT_SECONDS}", publication)
+        self.assertIn("--timeout=\"${PUB_RSYNC_IO_TIMEOUT_SECONDS}\"", publication)
+        self.assertIn("PUB_RSYNC_COMMAND_TIMEOUT_SECONDS", publication)
+        self.assertNotIn("timeout --foreground", publication)
+        self.assertIn('PUB_PREPARE_COMMAND_TIMEOUT_SECONDS="${PUB_PREPARE_COMMAND_TIMEOUT_SECONDS:-600}"', publication)
+        self.assertIn('PUB_SSH_QUICK_COMMAND_TIMEOUT_SECONDS="${PUB_SSH_QUICK_COMMAND_TIMEOUT_SECONDS:-60}"', publication)
+        self.assertIn('PUB_SSH_TRANSACTION_COMMAND_TIMEOUT_SECONDS="${PUB_SSH_TRANSACTION_COMMAND_TIMEOUT_SECONDS:-300}"', publication)
+        self.assertIn('PUB_SSH_RETENTION_COMMAND_TIMEOUT_SECONDS="${PUB_SSH_RETENTION_COMMAND_TIMEOUT_SECONDS:-120}"', publication)
+        self.assertIn('PUB_RSYNC_COMMAND_TIMEOUT_SECONDS="${PUB_RSYNC_COMMAND_TIMEOUT_SECONDS:-900}"', publication)
+        self.assertIn('PUB_THROUGHPUT_REQUEST_TIMEOUT_SECONDS="${PUB_THROUGHPUT_REQUEST_TIMEOUT_SECONDS:-120}"', publication)
+        self.assertIn('PUB_KV_REQUEST_TIMEOUT_SECONDS="${PUB_KV_REQUEST_TIMEOUT_SECONDS:-30}"', publication)
+        self.assertIn('run_timed "${PUB_PREPARE_COMMAND_TIMEOUT_SECONDS}"', publication)
+        self.assertIn('--max-time "${PUB_THROUGHPUT_REQUEST_TIMEOUT_SECONDS}"', publication)
+        self.assertIn('--max-time "${PUB_KV_REQUEST_TIMEOUT_SECONDS}"', publication)
+        self.assertIn('timeout-minutes: 120', stable_workflow)
+        self.assertIn('timeout-minutes: 120', dev_workflow)
+        self.assertIn('echo "[${node}] uploading payload"', publication)
+        self.assertIn('echo "[${node}] verifying immutable Range"', publication)
+
+    def test_publication_control_contains_only_dmit(self) -> None:
+        publication = (ROOT / "tools/publish-edge-release.sh").read_text(encoding="utf-8")
+        filter_start = publication.index("'{schemaVersion:1") + 1
+        filter_end = publication.index("}'", filter_start) + 1
+        jq_filter = publication[filter_start:filter_end]
+        result = subprocess.run(
+            [
+                "jq",
+                "-n",
+                "--arg",
+                "channel",
+                "dev",
+                "--arg",
+                "generation",
+                "dev-test-1",
+                "--arg",
+                "appTag",
+                "dev-abc123",
+                "--arg",
+                "driverTag",
+                "driver-abc123",
+                "--arg",
+                "probePath",
+                "/gonavi/dev/releases/download/dev-abc123/GoNavi.zip",
+                "--argjson",
+                "probeSize",
+                "1024",
+                "--arg",
+                "probeSha256",
+                "a" * 64,
+                "--arg",
+                "dmitBase",
+                "https://download.syngnat.top",
+                jq_filter,
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        control = json.loads(result.stdout)
+        self.assertEqual(control["nodes"], {"dmit": {"baseUrl": "https://download.syngnat.top", "enabled": True}})
+        self.assertEqual(control["appTag"], "dev-abc123")
+        self.assertEqual(control["driverTag"], "driver-abc123")
 
     def test_publication_commits_control_to_kv_without_object_storage(self) -> None:
         action = (ROOT / ".github/actions/publish-vps-mirror/action.yml").read_text(encoding="utf-8")

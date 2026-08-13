@@ -22,19 +22,11 @@ retention_source="${script_dir}/../../tools/edge-release-retention.py"
 transaction_target="/usr/local/libexec/gonavi-edge-transaction"
 retention_target="/usr/local/libexec/gonavi-edge-retention"
 
-[[ "${node_id}" == dmit || "${node_id}" == tencent ]] || { echo "invalid node id" >&2; exit 2; }
+[[ "${node_id}" == dmit ]] || { echo "only the DMIT edge is supported" >&2; exit 2; }
 [[ "${public_root}" == /srv/* && -f "${server_source}" ]] || { echo "invalid root or server config" >&2; exit 2; }
 [[ -f "${transaction_source}" && -f "${retention_source}" ]] || { echo "run installer from a complete GoNavi checkout" >&2; exit 2; }
-[[ "${server_kind}" == caddy || "${server_kind}" == nginx ]] || { echo "server kind must be caddy or nginx" >&2; exit 2; }
+[[ "${server_kind}" == caddy ]] || { echo "DMIT must retain its existing Caddy listener" >&2; exit 2; }
 getent group "${server_group}" >/dev/null || { echo "server group does not exist" >&2; exit 2; }
-if [[ "${node_id}" == dmit && "${server_kind}" != caddy ]]; then
-  echo "DMIT must retain its existing Caddy listener" >&2
-  exit 2
-fi
-if [[ "${node_id}" == tencent && "${server_kind}" != nginx ]]; then
-  echo "Tencent must use the deployed Nginx IP TLS site" >&2
-  exit 2
-fi
 
 if ! id "${deploy_user}" >/dev/null 2>&1; then
   useradd --create-home --shell /bin/bash "${deploy_user}"
@@ -84,61 +76,36 @@ rm -f -- "${sudoers_tmp}"
 
 # The installer never installs another listener or rewrites Caddy's existing
 # hosts. DMIT must explicitly import the managed snippet from its Caddyfile.
-if [[ "${server_kind}" == caddy ]]; then
-  command -v caddy >/dev/null || { echo "caddy is not installed" >&2; exit 2; }
-  caddyfile="/etc/caddy/Caddyfile"
-  site_dir="/etc/caddy/conf.d"
-  site_path="${site_dir}/gonavi-download.caddy"
-  [[ -f "${caddyfile}" ]] || { echo "missing ${caddyfile}" >&2; exit 2; }
-  caddy validate --config "${server_source}" --adapter caddyfile
-  install -d -m 0755 "${site_dir}"
-  backup_path="$(mktemp)"
-  had_site=false
-  if [[ -f "${site_path}" ]]; then
-    cp -- "${site_path}" "${backup_path}"
-    had_site=true
-  fi
-  install -m 0644 "${server_source}" "${site_path}"
-  if ! grep -Eq '^[[:space:]]*import[[:space:]]+/etc/caddy/conf\.d/(\*|\*\.caddy)[[:space:]]*$' "${caddyfile}"; then
-    rm -f -- "${backup_path}"
-    echo "Caddy snippet staged at ${site_path}; add import /etc/caddy/conf.d/*.caddy while replacing only the existing download.syngnat.top block, then validate and reload Caddy"
-    exit 3
-  fi
-  if ! caddy validate --config "${caddyfile}" --adapter caddyfile; then
-    if [[ "${had_site}" == true ]]; then
-      install -m 0644 "${backup_path}" "${site_path}"
-    else
-      rm -f -- "${site_path}"
-    fi
-    rm -f -- "${backup_path}"
-    echo "Caddy validation failed; managed snippet was rolled back" >&2
-    exit 1
-  fi
-  rm -f -- "${backup_path}"
-  systemctl reload caddy
-else
-  command -v nginx >/dev/null || { echo "nginx is not installed" >&2; exit 2; }
-  site_path="/etc/nginx/conf.d/gonavi-download.conf"
-  install -d -m 0755 /var/lib/letsencrypt/.well-known/acme-challenge
-  backup_path="$(mktemp)"
-  had_site=false
-  if [[ -f "${site_path}" ]]; then
-    cp -- "${site_path}" "${backup_path}"
-    had_site=true
-  fi
-  install -m 0644 "${server_source}" "${site_path}"
-  if ! nginx -t; then
-    if [[ "${had_site}" == true ]]; then
-      install -m 0644 "${backup_path}" "${site_path}"
-    else
-      rm -f -- "${site_path}"
-    fi
-    rm -f -- "${backup_path}"
-    echo "Nginx validation failed; managed site was rolled back" >&2
-    exit 1
-  fi
-  rm -f -- "${backup_path}"
-  systemctl reload nginx
+command -v caddy >/dev/null || { echo "caddy is not installed" >&2; exit 2; }
+caddyfile="/etc/caddy/Caddyfile"
+site_dir="/etc/caddy/conf.d"
+site_path="${site_dir}/gonavi-download.caddy"
+[[ -f "${caddyfile}" ]] || { echo "missing ${caddyfile}" >&2; exit 2; }
+caddy validate --config "${server_source}" --adapter caddyfile
+install -d -m 0755 "${site_dir}"
+backup_path="$(mktemp)"
+had_site=false
+if [[ -f "${site_path}" ]]; then
+  cp -- "${site_path}" "${backup_path}"
+  had_site=true
 fi
+install -m 0644 "${server_source}" "${site_path}"
+if ! grep -Eq '^[[:space:]]*import[[:space:]]+/etc/caddy/conf\.d/(\*|\*\.caddy)[[:space:]]*$' "${caddyfile}"; then
+  rm -f -- "${backup_path}"
+  echo "Caddy snippet staged at ${site_path}; add import /etc/caddy/conf.d/*.caddy while replacing only the existing download.syngnat.top block, then validate and reload Caddy"
+  exit 3
+fi
+if ! caddy validate --config "${caddyfile}" --adapter caddyfile; then
+  if [[ "${had_site}" == true ]]; then
+    install -m 0644 "${backup_path}" "${site_path}"
+  else
+    rm -f -- "${site_path}"
+  fi
+  rm -f -- "${backup_path}"
+  echo "Caddy validation failed; managed snippet was rolled back" >&2
+  exit 1
+fi
+rm -f -- "${backup_path}"
+systemctl reload caddy
 
 echo "GoNavi static edge installed: node=${node_id} server=${server_kind} root=${public_root} user=${deploy_user}"

@@ -24,6 +24,7 @@ jobs:
   publish:
     name: Validate, mirror, and publish release
     runs-on: ubuntu-latest
+    timeout-minutes: 120
     env:
       RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
     steps:
@@ -546,7 +547,7 @@ jobs:
           if-no-files-found: error
           retention-days: 90
 
-      - name: Publish stable release to verified static edges
+      - name: Publish stable release to verified static edge
         uses: ./.github/actions/publish-vps-mirror
         with:
           channel: stable
@@ -563,11 +564,6 @@ jobs:
           dmit-ssh-user: ${{ secrets.CDN_DMIT_SSH_USER }}
           dmit-ssh-private-key: ${{ secrets.CDN_DMIT_SSH_PRIVATE_KEY }}
           dmit-ssh-known-hosts: ${{ secrets.CDN_DMIT_SSH_KNOWN_HOSTS }}
-          tencent-ssh-host: ${{ secrets.CDN_TENCENT_SSH_HOST }}
-          tencent-ssh-port: ${{ secrets.CDN_TENCENT_SSH_PORT }}
-          tencent-ssh-user: ${{ secrets.CDN_TENCENT_SSH_USER }}
-          tencent-ssh-private-key: ${{ secrets.CDN_TENCENT_SSH_PRIVATE_KEY }}
-          tencent-ssh-known-hosts: ${{ secrets.CDN_TENCENT_SSH_KNOWN_HOSTS }}
           cloudflare-account-id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           cloudflare-api-token: ${{ secrets.CLOUDFLARE_KV_API_TOKEN }}
           routing-state-kv-id: ${{ vars.ROUTING_STATE_KV_ID }}

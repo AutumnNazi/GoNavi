@@ -1188,6 +1188,7 @@ jobs:
       group: gonavi-download-publication
       cancel-in-progress: false
     runs-on: ubuntu-latest
+    timeout-minutes: 120
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
@@ -1782,7 +1783,7 @@ jobs:
             done < <(jq -r '.assets | to_entries[] | [.key, (.value | tostring)] | @tsv' "${driver_latest_file}")
           fi
 
-      - name: Publish dev release to verified static edges
+      - name: Publish dev release to verified static edge
         uses: ./.github/actions/publish-vps-mirror
         with:
           channel: dev
@@ -1799,11 +1800,6 @@ jobs:
           dmit-ssh-user: ${{ secrets.CDN_DMIT_SSH_USER }}
           dmit-ssh-private-key: ${{ secrets.CDN_DMIT_SSH_PRIVATE_KEY }}
           dmit-ssh-known-hosts: ${{ secrets.CDN_DMIT_SSH_KNOWN_HOSTS }}
-          tencent-ssh-host: ${{ secrets.CDN_TENCENT_SSH_HOST }}
-          tencent-ssh-port: ${{ secrets.CDN_TENCENT_SSH_PORT }}
-          tencent-ssh-user: ${{ secrets.CDN_TENCENT_SSH_USER }}
-          tencent-ssh-private-key: ${{ secrets.CDN_TENCENT_SSH_PRIVATE_KEY }}
-          tencent-ssh-known-hosts: ${{ secrets.CDN_TENCENT_SSH_KNOWN_HOSTS }}
           cloudflare-account-id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           cloudflare-api-token: ${{ secrets.CLOUDFLARE_KV_API_TOKEN }}
           routing-state-kv-id: ${{ vars.ROUTING_STATE_KV_ID }}

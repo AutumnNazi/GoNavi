@@ -1,4 +1,4 @@
-const NODE_IDS = ["tencent", "dmit"] as const;
+const NODE_IDS = ["dmit"] as const;
 const CHANNELS = ["stable", "dev"] as const;
 const SUCCESS_THRESHOLD = 2;
 const FAILURE_THRESHOLD = 3;
@@ -17,6 +17,8 @@ type PublicationControl = {
   schemaVersion: 1;
   channel: Channel;
   generation: string;
+  appTag: string;
+  driverTag: string | null;
   probePath: string;
   probeSize: number;
   probeSha256: string;
@@ -43,6 +45,7 @@ type RoutingState = {
 
 type AssetCoordinates = {
   channel: Channel;
+  immutable: { kind: "app" | "driver"; tag: string } | null;
   relativePath: string;
   githubUrl: string;
 };
@@ -50,21 +53,25 @@ type AssetCoordinates = {
 const MUTABLE_PATHS: Record<string, AssetCoordinates> = {
   "/gonavi/releases/latest/latest.json": {
     channel: "stable",
+    immutable: null,
     relativePath: "/gonavi/releases/latest/latest.json",
     githubUrl: "https://github.com/Syngnat/GoNavi/releases/latest/download/latest.json",
   },
   "/gonavi/dev/releases/latest/latest-dev.json": {
     channel: "dev",
+    immutable: null,
     relativePath: "/gonavi/dev/releases/latest/latest-dev.json",
     githubUrl: "https://github.com/Syngnat/GoNavi/releases/download/dev-latest/latest-dev.json",
   },
   "/drivers/releases/latest/GoNavi-DriverAgents-Index.json": {
     channel: "stable",
+    immutable: null,
     relativePath: "/drivers/releases/latest/GoNavi-DriverAgents-Index.json",
     githubUrl: "https://github.com/Syngnat/GoNavi-DriverAgents/releases/latest/download/GoNavi-DriverAgents-Index.json",
   },
   "/drivers/dev/releases/latest/GoNavi-DriverAgents-Index.json": {
     channel: "dev",
+    immutable: null,
     relativePath: "/drivers/dev/releases/latest/GoNavi-DriverAgents-Index.json",
     githubUrl: "https://github.com/Syngnat/GoNavi-DriverAgents/releases/download/dev-latest/GoNavi-DriverAgents-Index.json",
   },
@@ -128,10 +135,25 @@ function validateControl(value: unknown, expectedChannel: Channel): PublicationC
     nodes[nodeId] = { baseUrl, enabled: rawNode.enabled };
   }
 
+  const probe = parseAssetCoordinates(value.probePath);
+  if (!probe || probe.channel !== expectedChannel || probe.immutable?.kind !== "app") {
+    throw new Error("publication control probe must be an immutable app asset");
+  }
+  const appTag = typeof value.appTag === "string" ? value.appTag : probe.immutable.tag;
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(appTag) || appTag !== probe.immutable.tag) {
+    throw new Error("invalid publication control app tag");
+  }
+  const driverTag = typeof value.driverTag === "string" && value.driverTag !== "" ? value.driverTag : null;
+  if (driverTag !== null && !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(driverTag)) {
+    throw new Error("invalid publication control driver tag");
+  }
+
   return {
     schemaVersion: 1,
     channel: expectedChannel,
     generation: value.generation,
+    appTag,
+    driverTag,
     probePath: value.probePath,
     probeSize: value.probeSize,
     probeSha256: value.probeSha256,
@@ -174,6 +196,7 @@ function parseAssetCoordinates(rawPath: string): AssetCoordinates | null {
   const repository = isDriver ? "Syngnat/GoNavi-DriverAgents" : "Syngnat/GoNavi";
   return {
     channel: isDev ? "dev" : "stable",
+    immutable: { kind: isDriver ? "driver" : "app", tag },
     relativePath: "/" + parts.map(encodeURIComponent).join("/"),
     githubUrl: `https://github.com/${repository}/releases/download/${encodeURIComponent(githubTag)}/${encodeURIComponent(asset)}`,
   };
@@ -359,8 +382,8 @@ export async function refreshChannel(env: Env, channel: Channel): Promise<Routin
   return state;
 }
 
-export function orderedNodeIds(country: string | undefined): NodeId[] {
-  return country?.toUpperCase() === "CN" ? ["tencent", "dmit"] : ["dmit", "tencent"];
+export function orderedNodeIds(): NodeId[] {
+  return ["dmit"];
 }
 
 export function isRoutingStateFresh(checkedAt: string, now: number = Date.now()): boolean {
@@ -376,7 +399,6 @@ function joinBaseAndPath(baseUrl: string, relativePath: string): string {
 
 export function selectLegacyRedirectCandidate<T extends { source: string }>(candidates: T[]): T {
   return candidates.find((candidate) => candidate.source === "dmit")
-    ?? candidates.find((candidate) => candidate.source === "tencent")
     ?? candidates[0];
 }
 
@@ -388,9 +410,14 @@ async function resolveDownload(request: Request, env: Env): Promise<Response> {
   }
   const state = await readRoutingState(env, coordinates.channel);
   const candidates: Array<{ source: string; url: string }> = [];
-  const cfCountry = typeof request.cf?.country === "string" ? request.cf.country : undefined;
-  if (state && isRoutingStateFresh(state.checkedAt)) {
-    for (const nodeId of orderedNodeIds(cfCountry)) {
+  const activeTag = coordinates.immutable?.kind === "app"
+    ? state?.control.appTag
+    : coordinates.immutable?.kind === "driver"
+      ? state?.control.driverTag
+      : null;
+  const isCurrentImmutable = coordinates.immutable === null || activeTag === coordinates.immutable.tag;
+  if (state && isRoutingStateFresh(state.checkedAt) && isCurrentImmutable) {
+    for (const nodeId of orderedNodeIds()) {
       const node = state.nodes[nodeId];
       const config = state.control.nodes[nodeId];
       if (config.enabled && node.healthy && node.generation === state.generation) {
@@ -405,14 +432,12 @@ async function resolveDownload(request: Request, env: Env): Promise<Response> {
   console.log(JSON.stringify({
     message: "download source selected",
     channel: coordinates.channel,
-    country: cfCountry ?? "",
     generation: state?.generation ?? "",
     source: selected.source,
   }));
   const headers = new Headers({
     "Cache-Control": "no-store",
     Location: selected.url,
-    Vary: "CF-IPCountry",
     "X-GoNavi-Download-Source": selected.source,
   });
   if (wantsJSON) {

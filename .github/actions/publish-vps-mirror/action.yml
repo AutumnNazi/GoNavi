@@ -1,5 +1,5 @@
-name: Publish verified download mirrors
-description: Publish immutable assets to verified static edges before mutable pointers and KV control
+name: Publish verified download mirror
+description: Publish immutable assets to the DMIT static edge before mutable pointers and KV control
 
 inputs:
   channel: { required: true, description: stable or dev }
@@ -16,19 +16,12 @@ inputs:
   dmit-ssh-user: { required: true, description: Restricted gonavi-cdn user }
   dmit-ssh-private-key: { required: true, description: DMIT deployment key }
   dmit-ssh-known-hosts: { required: true, description: Pinned DMIT host key }
-  tencent-ssh-host: { required: true, description: Tencent SSH host }
-  tencent-ssh-port: { required: true, description: Tencent SSH port }
-  tencent-ssh-user: { required: true, description: Restricted gonavi-cdn user }
-  tencent-ssh-private-key: { required: true, description: Tencent deployment key }
-  tencent-ssh-known-hosts: { required: true, description: Pinned Tencent host key }
   cloudflare-account-id: { required: true, description: Cloudflare account ID }
   cloudflare-api-token: { required: true, description: Token restricted to Workers KV Storage Write }
   routing-state-kv-id: { required: true, description: Download dispatcher routing KV namespace ID }
   throughput-warning-mbps: { required: false, default: '20', description: Observability-only public eight-Range warning threshold }
   dmit-max-bytes: { required: false, default: '9000000000', description: Maximum DMIT mirror bytes }
   dmit-reserve-free-bytes: { required: false, default: '2000000000', description: Minimum free bytes preserved on DMIT }
-  tencent-max-bytes: { required: false, default: '45000000000', description: Maximum Tencent mirror bytes }
-  tencent-reserve-free-bytes: { required: false, default: '2000000000', description: Minimum free bytes preserved on Tencent }
 
 runs:
   using: composite
@@ -82,13 +75,4 @@ runs:
         EDGE_DMIT_BASE_URL: https://download.syngnat.top
         EDGE_DMIT_MAX_BYTES: ${{ inputs.dmit-max-bytes }}
         EDGE_DMIT_RESERVE_FREE_BYTES: ${{ inputs.dmit-reserve-free-bytes }}
-        EDGE_TENCENT_HOST: ${{ inputs.tencent-ssh-host }}
-        EDGE_TENCENT_PORT: ${{ inputs.tencent-ssh-port }}
-        EDGE_TENCENT_USER: ${{ inputs.tencent-ssh-user }}
-        EDGE_TENCENT_PRIVATE_KEY: ${{ inputs.tencent-ssh-private-key }}
-        EDGE_TENCENT_KNOWN_HOSTS: ${{ inputs.tencent-ssh-known-hosts }}
-        EDGE_TENCENT_ROOT: /srv/gonavi-cdn/public
-        EDGE_TENCENT_BASE_URL: https://43.139.148.5
-        EDGE_TENCENT_MAX_BYTES: ${{ inputs.tencent-max-bytes }}
-        EDGE_TENCENT_RESERVE_FREE_BYTES: ${{ inputs.tencent-reserve-free-bytes }}
       run: bash "${GITHUB_WORKSPACE}/tools/publish-edge-release.sh"

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Publish one prepared generation to two independent static edges, then commit
-# its routing control to Cloudflare KV.
+# Publish one prepared generation to the DMIT static edge, then commit its
+# routing control to Cloudflare KV.
 # Secrets are consumed only from the environment and are never printed.
 
 require_value() {
@@ -24,8 +24,37 @@ PUB_THROUGHPUT_WARN_MBPS="${PUB_THROUGHPUT_WARN_MBPS:-20}"
 [[ "${PUB_THROUGHPUT_WARN_MBPS}" =~ ^[0-9]+([.][0-9]+)?$ ]] || { echo "Invalid throughput warning threshold" >&2; exit 1; }
 EDGE_DMIT_MAX_BYTES="${EDGE_DMIT_MAX_BYTES:-9000000000}"
 EDGE_DMIT_RESERVE_FREE_BYTES="${EDGE_DMIT_RESERVE_FREE_BYTES:-2000000000}"
-EDGE_TENCENT_MAX_BYTES="${EDGE_TENCENT_MAX_BYTES:-45000000000}"
-EDGE_TENCENT_RESERVE_FREE_BYTES="${EDGE_TENCENT_RESERVE_FREE_BYTES:-2000000000}"
+PUB_TIMEOUT_KILL_AFTER_SECONDS="${PUB_TIMEOUT_KILL_AFTER_SECONDS:-15}"
+PUB_PREPARE_COMMAND_TIMEOUT_SECONDS="${PUB_PREPARE_COMMAND_TIMEOUT_SECONDS:-600}"
+PUB_SSH_CONNECT_TIMEOUT_SECONDS="${PUB_SSH_CONNECT_TIMEOUT_SECONDS:-15}"
+PUB_SSH_SERVER_ALIVE_INTERVAL_SECONDS="${PUB_SSH_SERVER_ALIVE_INTERVAL_SECONDS:-15}"
+PUB_SSH_SERVER_ALIVE_COUNT_MAX="${PUB_SSH_SERVER_ALIVE_COUNT_MAX:-4}"
+PUB_SSH_QUICK_COMMAND_TIMEOUT_SECONDS="${PUB_SSH_QUICK_COMMAND_TIMEOUT_SECONDS:-60}"
+PUB_SSH_TRANSACTION_COMMAND_TIMEOUT_SECONDS="${PUB_SSH_TRANSACTION_COMMAND_TIMEOUT_SECONDS:-300}"
+PUB_SSH_RETENTION_COMMAND_TIMEOUT_SECONDS="${PUB_SSH_RETENTION_COMMAND_TIMEOUT_SECONDS:-120}"
+PUB_RSYNC_IO_TIMEOUT_SECONDS="${PUB_RSYNC_IO_TIMEOUT_SECONDS:-120}"
+PUB_RSYNC_COMMAND_TIMEOUT_SECONDS="${PUB_RSYNC_COMMAND_TIMEOUT_SECONDS:-900}"
+PUB_HTTP_CONNECT_TIMEOUT_SECONDS="${PUB_HTTP_CONNECT_TIMEOUT_SECONDS:-10}"
+PUB_HTTP_REQUEST_TIMEOUT_SECONDS="${PUB_HTTP_REQUEST_TIMEOUT_SECONDS:-60}"
+PUB_THROUGHPUT_REQUEST_TIMEOUT_SECONDS="${PUB_THROUGHPUT_REQUEST_TIMEOUT_SECONDS:-120}"
+PUB_KV_REQUEST_TIMEOUT_SECONDS="${PUB_KV_REQUEST_TIMEOUT_SECONDS:-30}"
+for name in \
+  PUB_TIMEOUT_KILL_AFTER_SECONDS PUB_PREPARE_COMMAND_TIMEOUT_SECONDS \
+  PUB_SSH_CONNECT_TIMEOUT_SECONDS PUB_SSH_SERVER_ALIVE_INTERVAL_SECONDS \
+  PUB_SSH_SERVER_ALIVE_COUNT_MAX PUB_SSH_QUICK_COMMAND_TIMEOUT_SECONDS \
+  PUB_SSH_TRANSACTION_COMMAND_TIMEOUT_SECONDS PUB_SSH_RETENTION_COMMAND_TIMEOUT_SECONDS \
+  PUB_RSYNC_IO_TIMEOUT_SECONDS PUB_RSYNC_COMMAND_TIMEOUT_SECONDS \
+  PUB_HTTP_CONNECT_TIMEOUT_SECONDS PUB_HTTP_REQUEST_TIMEOUT_SECONDS \
+  PUB_THROUGHPUT_REQUEST_TIMEOUT_SECONDS PUB_KV_REQUEST_TIMEOUT_SECONDS; do
+  [[ "${!name}" =~ ^[1-9][0-9]*$ ]] || { echo "Invalid positive timeout: ${name}" >&2; exit 1; }
+done
+command -v timeout >/dev/null || { echo "GNU timeout is required for edge publication" >&2; exit 1; }
+
+run_timed() {
+  local limit_seconds="$1"
+  shift
+  timeout --signal=TERM --kill-after="${PUB_TIMEOUT_KILL_AFTER_SECONDS}s" "${limit_seconds}s" "$@"
+}
 
 stage_dir="${RUNNER_TEMP}/gonavi-edge-${PUB_GENERATION}"
 credential_root="${RUNNER_TEMP}/gonavi-edge-ssh-${PUB_GENERATION}"
@@ -67,7 +96,8 @@ case "${PUB_DRIVER_ENABLED}" in
   *) echo "PUB_DRIVER_ENABLED must be true or false" >&2; exit 1 ;;
 esac
 
-python3 "${GITHUB_WORKSPACE}/tools/prepare-vps-release-payload.py" "${prepare_args[@]}"
+run_timed "${PUB_PREPARE_COMMAND_TIMEOUT_SECONDS}" \
+  python3 "${GITHUB_WORKSPACE}/tools/prepare-vps-release-payload.py" "${prepare_args[@]}"
 
 payload_bytes="$(jq -r '.payloadBytes' "${stage_dir}/deployment.json")"
 [[ "${payload_bytes}" =~ ^[0-9]+$ ]] || { echo "Prepared payload has invalid byte count" >&2; exit 1; }
@@ -107,31 +137,46 @@ stage_node() (
   ssh_options=(
     -i "${ssh_dir}/id_ed25519" -p "${port}" -o BatchMode=yes -o IdentitiesOnly=yes
     -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=${ssh_dir}/known_hosts"
+    -o "ConnectTimeout=${PUB_SSH_CONNECT_TIMEOUT_SECONDS}"
+    -o "ServerAliveInterval=${PUB_SSH_SERVER_ALIVE_INTERVAL_SECONDS}"
+    -o "ServerAliveCountMax=${PUB_SSH_SERVER_ALIVE_COUNT_MAX}"
   )
   remote="${user}@${host}"
   remote_stage="${root}/.incoming/${PUB_GENERATION}"
+  run_ssh() {
+    local limit_seconds="$1"
+    shift
+    run_timed "${limit_seconds}" ssh "${ssh_options[@]}" "${remote}" "$@"
+  }
   transaction_args=(
     --root "${root}" --staging-dir "${remote_stage}" --channel "${PUB_CHANNEL}"
     --app-tag "${PUB_APP_TAG}" --driver-tag "${effective_driver_tag}"
     --generation "${PUB_GENERATION}" --node-id "${node}"
   )
 
-  marker="$(ssh "${ssh_options[@]}" "${remote}" "cat '${root}/.gonavi-mirror-root'")"
+  echo "[${node}] checking mirror marker"
+  marker="$(run_ssh "${PUB_SSH_QUICK_COMMAND_TIMEOUT_SECONDS}" "cat '${root}/.gonavi-mirror-root'")"
   [[ "${marker}" == gonavi-download-mirror-v1 ]] || { echo "${node} mirror marker is invalid" >&2; exit 1; }
-  available_kib="$(ssh "${ssh_options[@]}" "${remote}" "LC_ALL=C df -Pk '${root}' | awk 'NR == 2 { print \$4 }'")"
+  echo "[${node}] checking free space"
+  available_kib="$(run_ssh "${PUB_SSH_QUICK_COMMAND_TIMEOUT_SECONDS}" "LC_ALL=C df -Pk '${root}' | awk 'NR == 2 { print \$4 }'")"
   [[ "${available_kib}" =~ ^[0-9]+$ ]] || { echo "${node} returned invalid free space" >&2; exit 1; }
   (( available_kib * 1024 >= payload_bytes + reserve_free_bytes )) || { echo "${node} has insufficient free space" >&2; exit 1; }
+  echo "[${node}] clearing previous staging"
   printf -v remote_command 'sudo -- %q %q' "/usr/local/libexec/gonavi-edge-transaction" abort
   for argument in "${transaction_args[@]}"; do printf -v remote_command '%s %q' "${remote_command}" "${argument}"; done
-  ssh "${ssh_options[@]}" "${remote}" "${remote_command}"
-  ssh "${ssh_options[@]}" "${remote}" "mkdir -p '${remote_stage}'"
-  rsync -rlt --delete --partial --chmod=Du=rwx,Dgo=rx,Fu=rw,Fgo=r \
-    -e "ssh -i ${ssh_dir}/id_ed25519 -p ${port} -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=${ssh_dir}/known_hosts" \
+  run_ssh "${PUB_SSH_TRANSACTION_COMMAND_TIMEOUT_SECONDS}" "${remote_command}"
+  echo "[${node}] creating staging directory"
+  run_ssh "${PUB_SSH_QUICK_COMMAND_TIMEOUT_SECONDS}" "mkdir -p '${remote_stage}'"
+  echo "[${node}] uploading payload"
+  run_timed "${PUB_RSYNC_COMMAND_TIMEOUT_SECONDS}" \
+    rsync -rlt --delete --partial --timeout="${PUB_RSYNC_IO_TIMEOUT_SECONDS}" --chmod=Du=rwx,Dgo=rx,Fu=rw,Fgo=r \
+    -e "ssh -i ${ssh_dir}/id_ed25519 -p ${port} -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=${ssh_dir}/known_hosts -o ConnectTimeout=${PUB_SSH_CONNECT_TIMEOUT_SECONDS} -o ServerAliveInterval=${PUB_SSH_SERVER_ALIVE_INTERVAL_SECONDS} -o ServerAliveCountMax=${PUB_SSH_SERVER_ALIVE_COUNT_MAX}" \
     "${stage_dir}/" "${remote}:${remote_stage}/"
   for command in verify promote-immutable; do
+    echo "[${node}] ${command}"
     printf -v remote_command 'sudo -- %q %q' "/usr/local/libexec/gonavi-edge-transaction" "${command}"
     for argument in "${transaction_args[@]}"; do printf -v remote_command '%s %q' "${remote_command}" "${argument}"; done
-    ssh "${ssh_options[@]}" "${remote}" "${remote_command}"
+    run_ssh "${PUB_SSH_TRANSACTION_COMMAND_TIMEOUT_SECONDS}" "${remote_command}"
   done
 
   probe_path="$(jq -r '.probePath' "${stage_dir}/deployment.json")"
@@ -139,8 +184,9 @@ stage_node() (
   probe_end=$(( probe_size < 1024 ? probe_size - 1 : 1023 ))
   headers="${status_root}/${node}.headers"
   body="${status_root}/${node}.body"
+  echo "[${node}] verifying immutable Range"
   curl --fail --silent --show-error --proto '=https' --tlsv1.2 \
-    --connect-timeout 10 --max-time 60 \
+    --connect-timeout "${PUB_HTTP_CONNECT_TIMEOUT_SECONDS}" --max-time "${PUB_HTTP_REQUEST_TIMEOUT_SECONDS}" \
     --range "0-${probe_end}" --dump-header "${headers}" --output "${body}" \
     "${base_url}/${probe_path}?generation=${PUB_GENERATION}"
   grep -Eiq '^HTTP/[^ ]+ 206([[:space:]]|$)' "${headers}"
@@ -156,13 +202,14 @@ stage_node() (
   perf_chunk=$(( (sample_bytes + 7) / 8 ))
   perf_started="$(date +%s%N)"
   perf_pids=()
+  echo "[${node}] observing eight-range throughput"
   for index in $(seq 0 7); do
     start=$(( index * perf_chunk ))
     (( start < sample_bytes )) || continue
     end=$(( start + perf_chunk - 1 ))
     (( end < sample_bytes )) || end=$(( sample_bytes - 1 ))
     curl --fail --silent --show-error --proto '=https' --tlsv1.2 \
-      --connect-timeout 10 --max-time 600 \
+      --connect-timeout "${PUB_HTTP_CONNECT_TIMEOUT_SECONDS}" --max-time "${PUB_THROUGHPUT_REQUEST_TIMEOUT_SECONDS}" \
       --range "${start}-${end}" --output "${perf_dir}/${index}.part" \
       "${base_url}/${probe_path}?throughput=${PUB_GENERATION}" &
     perf_pids+=("$!")
@@ -173,11 +220,13 @@ stage_node() (
       perf_failed=true
     fi
   done
-  [[ "${perf_failed}" == false ]] || { echo "${node} throughput observation failed" >&2; exit 1; }
   perf_finished="$(date +%s%N)"
   received_bytes="$(find "${perf_dir}" -type f -name '*.part' -printf '%s\n' | awk '{ total += $1 } END { print total + 0 }')"
-  [[ "${received_bytes}" == "${sample_bytes}" ]] || { echo "${node} throughput sample size mismatch" >&2; exit 1; }
-  python3 - "${sample_bytes}" "${perf_started}" "${perf_finished}" "${PUB_THROUGHPUT_WARN_MBPS}" "${node}" "${status_root}/${node}.performance.json" <<'PY'
+  if [[ "${perf_failed}" == true || "${received_bytes}" != "${sample_bytes}" ]]; then
+    echo "::warning::Edge ${node} throughput observation did not complete; publishing with limited performance status" >&2
+    printf '{"status":"limited","observedMbps":0}\n' > "${status_root}/${node}.performance.json"
+  else
+    python3 - "${sample_bytes}" "${perf_started}" "${perf_finished}" "${PUB_THROUGHPUT_WARN_MBPS}" "${node}" "${status_root}/${node}.performance.json" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -197,30 +246,17 @@ if mbps < warning_threshold:
         f"{mbps:.2f} < {warning_threshold:.2f} Mbps"
     )
 PY
+  fi
 
   printf 'immutable\n' > "${status_root}/${node}.status"
 )
 
-pids=()
-nodes=(dmit tencent)
-for node in "${nodes[@]}"; do
-  stage_node "${node}" >"${status_root}/${node}.log" 2>&1 &
-  pids+=("$!")
-done
-for index in "${!pids[@]}"; do
-  if ! wait "${pids[$index]}"; then
-    echo "::warning::Edge ${nodes[$index]} did not join generation ${PUB_GENERATION}"
-    sed -e 's/^/  /' "${status_root}/${nodes[$index]}.log" >&2
-  else
-    sed -e "s/^/[${nodes[$index]}] /" "${status_root}/${nodes[$index]}.log"
-  fi
-done
-
-dmit_immutable=false
-tencent_immutable=false
-[[ "$(cat "${status_root}/dmit.status" 2>/dev/null || true)" == immutable ]] && dmit_immutable=true
-[[ "$(cat "${status_root}/tencent.status" 2>/dev/null || true)" == immutable ]] && tencent_immutable=true
-[[ "${dmit_immutable}" == true || "${tencent_immutable}" == true ]] || { echo "No edge passed immutable verification" >&2; exit 1; }
+echo "[dmit] staging generation ${PUB_GENERATION}"
+stage_node dmit
+[[ "$(cat "${status_root}/dmit.status" 2>/dev/null || true)" == immutable ]] || {
+  echo "DMIT did not pass immutable verification" >&2
+  exit 1
+}
 
 probe_path="/$(jq -r '.probePath' "${stage_dir}/deployment.json")"
 probe_size="$(jq -r '.probeSize' "${stage_dir}/deployment.json")"
@@ -242,9 +278,17 @@ activate_node() (
   ssh_options=(
     -i "${ssh_dir}/id_ed25519" -p "${port}" -o BatchMode=yes -o IdentitiesOnly=yes
     -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=${ssh_dir}/known_hosts"
+    -o "ConnectTimeout=${PUB_SSH_CONNECT_TIMEOUT_SECONDS}"
+    -o "ServerAliveInterval=${PUB_SSH_SERVER_ALIVE_INTERVAL_SECONDS}"
+    -o "ServerAliveCountMax=${PUB_SSH_SERVER_ALIVE_COUNT_MAX}"
   )
   remote="${user}@${host}"
   remote_stage="${root}/.incoming/${PUB_GENERATION}"
+  run_ssh() {
+    local limit_seconds="$1"
+    shift
+    run_timed "${limit_seconds}" ssh "${ssh_options[@]}" "${remote}" "$@"
+  }
   transaction_args=(
     --root "${root}" --staging-dir "${remote_stage}" --channel "${PUB_CHANNEL}"
     --app-tag "${PUB_APP_TAG}" --driver-tag "${effective_driver_tag}"
@@ -257,64 +301,60 @@ activate_node() (
     local command="$1" remote_command
     printf -v remote_command 'sudo -- %q %q' "/usr/local/libexec/gonavi-edge-transaction" "${command}"
     for argument in "${transaction_args[@]}"; do printf -v remote_command '%s %q' "${remote_command}" "${argument}"; done
-    ssh "${ssh_options[@]}" "${remote}" "${remote_command}"
+    run_ssh "${PUB_SSH_TRANSACTION_COMMAND_TIMEOUT_SECONDS}" "${remote_command}"
   }
+  echo "[${node}] promote-mutable"
   run_remote_transaction promote-mutable
+  echo "[${node}] finalize"
   if ! run_remote_transaction finalize; then
+    echo "[${node}] rollback-mutable"
     run_remote_transaction rollback-mutable || echo "warning: ${node} mutable rollback needs operator attention" >&2
     return 1
   fi
+  echo "[${node}] verifying mutable health"
   curl --fail --silent --show-error --proto '=https' --tlsv1.2 \
-    --connect-timeout 10 --max-time 60 \
+    --connect-timeout "${PUB_HTTP_CONNECT_TIMEOUT_SECONDS}" --max-time "${PUB_HTTP_REQUEST_TIMEOUT_SECONDS}" \
     "${base_url}/healthz?generation=${PUB_GENERATION}" \
     | jq -e --arg channel "${PUB_CHANNEL}" --arg generation "${PUB_GENERATION}" \
       '.status == "ok" and .ready == true and .channels[$channel].generation == $generation' >/dev/null
   printf -v retention_command 'sudo -- %q --root %q --min-age-seconds 604800 --max-bytes %q --min-free-bytes %q' \
     "/usr/local/libexec/gonavi-edge-retention" "${root}" "${max_bytes}" "${reserve_free_bytes}"
-  ssh "${ssh_options[@]}" "${remote}" "${retention_command}" || echo "warning: ${node} retention needs operator attention" >&2
+  echo "[${node}] applying retention"
+  run_ssh "${PUB_SSH_RETENTION_COMMAND_TIMEOUT_SECONDS}" "${retention_command}" || echo "warning: ${node} retention needs operator attention" >&2
   printf 'ready\n' > "${status_root}/${node}.status"
 )
 
-pids=()
-for node in "${nodes[@]}"; do
-  [[ "$(cat "${status_root}/${node}.status" 2>/dev/null || true)" == immutable ]] || continue
-  activate_node "${node}" >"${status_root}/${node}-activate.log" 2>&1 &
-  pids+=("$!|${node}")
-done
-for entry in "${pids[@]}"; do
-  pid="${entry%%|*}"
-  node="${entry#*|}"
-  if ! wait "${pid}"; then
-    echo "::warning::Edge ${node} mutable activation failed for ${PUB_GENERATION}"
-    sed -e 's/^/  /' "${status_root}/${node}-activate.log" >&2
-  fi
-done
-
-dmit_ready=false
-tencent_ready=false
-[[ "$(cat "${status_root}/dmit.status" 2>/dev/null || true)" == ready ]] && dmit_ready=true
-[[ "$(cat "${status_root}/tencent.status" 2>/dev/null || true)" == ready ]] && tencent_ready=true
-[[ "${dmit_ready}" == true || "${tencent_ready}" == true ]] || { echo "No edge passed mutable activation" >&2; exit 1; }
+echo "[dmit] activating generation ${PUB_GENERATION}"
+activate_node dmit
+[[ "$(cat "${status_root}/dmit.status" 2>/dev/null || true)" == ready ]] || {
+  echo "DMIT did not pass mutable activation" >&2
+  exit 1
+}
 
 control_file="${stage_dir}/control-${PUB_CHANNEL}.json"
 jq -n \
   --arg channel "${PUB_CHANNEL}" --arg generation "${PUB_GENERATION}" \
+  --arg appTag "${PUB_APP_TAG}" --arg driverTag "${effective_driver_tag}" \
   --arg probePath "${probe_path}" --argjson probeSize "${probe_size}" --arg probeSha256 "${probe_sha}" \
-  --arg dmitBase "$(node_value dmit BASE_URL)" --argjson dmitEnabled "${dmit_ready}" \
-  --arg tencentBase "$(node_value tencent BASE_URL)" --argjson tencentEnabled "${tencent_ready}" \
-  '{schemaVersion:1,channel:$channel,generation:$generation,probePath:$probePath,probeSize:$probeSize,probeSha256:$probeSha256,nodes:{dmit:{baseUrl:$dmitBase,enabled:$dmitEnabled},tencent:{baseUrl:$tencentBase,enabled:$tencentEnabled}}}' \
+  --arg dmitBase "$(node_value dmit BASE_URL)" \
+  '{schemaVersion:1,channel:$channel,generation:$generation,appTag:$appTag,driverTag:$driverTag,probePath:$probePath,probeSize:$probeSize,probeSha256:$probeSha256,nodes:{dmit:{baseUrl:$dmitBase,enabled:true}}}' \
   > "${control_file}"
 
 put_kv_control() {
   local key="$1" file="$2" encoded_key response_file http_status
   encoded_key="${key//:/%3A}"
   response_file="${status_root}/kv-response.json"
-  http_status="$(curl --silent --show-error --output "${response_file}" --write-out '%{http_code}' \
+  if ! http_status="$(curl --silent --show-error --proto '=https' --tlsv1.2 \
+    --connect-timeout "${PUB_HTTP_CONNECT_TIMEOUT_SECONDS}" --max-time "${PUB_KV_REQUEST_TIMEOUT_SECONDS}" \
+    --output "${response_file}" --write-out '%{http_code}' \
     --request PUT \
     --header "Authorization: Bearer ${PUB_CLOUDFLARE_API_TOKEN}" \
     --header 'Content-Type: application/json' \
     --data-binary "@${file}" \
-    "https://api.cloudflare.com/client/v4/accounts/${PUB_CLOUDFLARE_ACCOUNT_ID}/storage/kv/namespaces/${PUB_ROUTING_STATE_KV_ID}/values/${encoded_key}")"
+    "https://api.cloudflare.com/client/v4/accounts/${PUB_CLOUDFLARE_ACCOUNT_ID}/storage/kv/namespaces/${PUB_ROUTING_STATE_KV_ID}/values/${encoded_key}")"; then
+    echo "Cloudflare KV request failed for ${key}" >&2
+    return 1
+  fi
   if [[ "${http_status}" != 200 ]] || ! jq -e '.success == true' "${response_file}" >/dev/null; then
     echo "Cloudflare KV write failed for ${key} (HTTP ${http_status})" >&2
     jq -c '{success,errors}' "${response_file}" >&2 || true
@@ -327,4 +367,4 @@ put_kv_control() {
 put_kv_control "control:history:${PUB_CHANNEL}:${PUB_GENERATION}" "${control_file}"
 put_kv_control "control:${PUB_CHANNEL}" "${control_file}"
 
-echo "Published generation ${PUB_GENERATION}: dmit=${dmit_ready} tencent=${tencent_ready}"
+echo "Published generation ${PUB_GENERATION}: dmit=true"
