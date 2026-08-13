@@ -635,9 +635,7 @@ const SortableTabLabel: React.FC<SortableTabLabelProps> = ({
       rootClassName={isV2Ui ? 'gn-v2-tab-context-menu-popup' : undefined}
       popupRender={(menu) => renderV2ActionMenuPopup(menu, Boolean(isV2Ui), {
         title: displayTitle,
-        meta: displayModel.secondaryText || getTabKindLabel(tab),
-        icon: tab.type === 'query' ? <ConsoleSqlOutlined /> : <FileTextOutlined />,
-        badge: getTabKindLabel(tab),
+        showHeader: false,
       })}
     >
       {wrappedLabel}
@@ -1344,74 +1342,61 @@ const TabManager: React.FC<TabManagerProps> = React.memo<TabManagerProps>(({ onF
     const renameQueryMenuState = resolveQueryTabRenameMenuState(tab);
 
     const menuItems: MenuProps['items'] = [
+      ...(renameQueryMenuState.visible ? [{
+        key: 'rename-query',
+        icon: <EditOutlined />,
+        label: t('query_editor.action.rename_query'),
+        disabled: renameQueryMenuState.disabled,
+        onClick: () => {
+          setActiveTab(tab.id);
+          window.setTimeout(() => {
+            window.dispatchEvent(new CustomEvent(QUERY_TAB_RENAME_REQUEST_EVENT, {
+              detail: { tabId: tab.id },
+            }));
+          }, 0);
+        },
+      }] : []),
       {
-        type: 'group',
-        key: 'tab-actions',
-        label: t('tab_manager.kind_badge.fallback'),
-        children: [
-          ...(renameQueryMenuState.visible ? [{
-            key: 'rename-query',
-            icon: <EditOutlined />,
-            label: t('query_editor.action.rename_query'),
-            disabled: renameQueryMenuState.disabled,
-            onClick: () => {
-              setActiveTab(tab.id);
-              window.setTimeout(() => {
-                window.dispatchEvent(new CustomEvent(QUERY_TAB_RENAME_REQUEST_EVENT, {
-                  detail: { tabId: tab.id },
-                }));
-              }, 0);
-            },
-          }] : []),
-          {
-            key: 'tab-display-settings',
-            icon: <SettingOutlined />,
-            label: t('tab_manager.menu.tab_display_settings'),
-            onClick: openTabDisplaySettings,
-          },
-          {
-            key: 'open-in-window',
-            icon: <ExportOutlined />,
-            label: t('tab_manager.menu.open_in_window'),
-            disabled: isBackgroundTaskWorkbenchTab(tab),
-            onClick: () => detachTabToWindow(tab.id),
-          },
-        ],
+        key: 'tab-display-settings',
+        icon: <SettingOutlined />,
+        label: t('tab_manager.menu.tab_display_settings'),
+        onClick: openTabDisplaySettings,
       },
       {
-        type: 'group',
-        key: 'close-actions',
-        label: t('common.close'),
-        children: [
-          {
-            key: 'close-other',
-            icon: <CloseCircleOutlined />,
-            label: t('tab_manager.menu.close_other'),
-            disabled: tabs.length <= 1,
-            onClick: () => closeTabsWithSQLFilePrompt(getCloseOtherTabIds(tabs, tab.id), () => closeOtherTabs(tab.id)),
-          },
-          {
-            key: 'close-left',
-            icon: <ArrowLeftOutlined />,
-            label: t('tab_manager.menu.close_left'),
-            disabled: index === 0,
-            onClick: () => closeTabsWithSQLFilePrompt(getCloseTabsToLeftIds(dockedTabs, tab.id), () => closeTabsToLeft(tab.id)),
-          },
-          {
-            key: 'close-right',
-            icon: <ArrowRightOutlined />,
-            label: t('tab_manager.menu.close_right'),
-            disabled: index === dockedTabs.length - 1,
-            onClick: () => closeTabsWithSQLFilePrompt(getCloseTabsToRightIds(dockedTabs, tab.id), () => closeTabsToRight(tab.id)),
-          },
-          {
-            key: 'close-all',
-            icon: <CloseOutlined />,
-            label: t('tab_manager.menu.close_all'),
-            disabled: tabs.length === 0,
-            onClick: () => closeTabsWithSQLFilePrompt(tabs.map((item) => item.id), () => closeAllTabs()),
-          },
-        ],
+        key: 'open-in-window',
+        icon: <ExportOutlined />,
+        label: t('tab_manager.menu.open_in_window'),
+        disabled: isBackgroundTaskWorkbenchTab(tab),
+        onClick: () => detachTabToWindow(tab.id),
+      },
+      { type: 'divider' },
+      {
+        key: 'close-other',
+        icon: <CloseCircleOutlined />,
+        label: t('tab_manager.menu.close_other'),
+        disabled: tabs.length <= 1,
+        onClick: () => closeTabsWithSQLFilePrompt(getCloseOtherTabIds(tabs, tab.id), () => closeOtherTabs(tab.id)),
+      },
+      {
+        key: 'close-left',
+        icon: <ArrowLeftOutlined />,
+        label: t('tab_manager.menu.close_left'),
+        disabled: index === 0,
+        onClick: () => closeTabsWithSQLFilePrompt(getCloseTabsToLeftIds(dockedTabs, tab.id), () => closeTabsToLeft(tab.id)),
+      },
+      {
+        key: 'close-right',
+        icon: <ArrowRightOutlined />,
+        label: t('tab_manager.menu.close_right'),
+        disabled: index === dockedTabs.length - 1,
+        onClick: () => closeTabsWithSQLFilePrompt(getCloseTabsToRightIds(dockedTabs, tab.id), () => closeTabsToRight(tab.id)),
+      },
+      {
+        key: 'close-all',
+        icon: <CloseOutlined />,
+        label: t('tab_manager.menu.close_all'),
+        disabled: tabs.length === 0,
+        onClick: () => closeTabsWithSQLFilePrompt(tabs.map((item) => item.id), () => closeAllTabs()),
       },
     ];
     

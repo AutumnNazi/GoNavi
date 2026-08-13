@@ -325,4 +325,10 @@ describe('QueryEditorToolbar layout', () => {
     expect(css).toContain('.gn-v2-action-menu-body .ant-dropdown-menu-item:not(:has(.ant-dropdown-menu-item-icon))::before');
     expect(css).toContain('.monaco-menu > .gn-v2-monaco-context-menu-header {');
   });
+
+  it('uses the title-bar more menu surface for editor action popups', () => {
+    const toolbarSource = readFileSync(new URL('./QueryEditorToolbar.tsx', import.meta.url), 'utf8');
+    expect(toolbarSource).toContain("showHeader: false");
+    expect(toolbarSource).toContain('gn-v2-titlebar-quick-dropdown');
+  });
 });

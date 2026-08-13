@@ -1,4 +1,5 @@
 import React from 'react';
+import { readFileSync } from 'node:fs';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -51,6 +52,18 @@ afterEach(() => {
 });
 
 describe('TabManager hover info', () => {
+  it('renders the v2 tab context menu without headings and separates action regions with a divider', () => {
+    const source = readFileSync(new URL('./TabManager.tsx', import.meta.url), 'utf8');
+    const menuSource = source.slice(
+      source.indexOf("const menuItems: MenuProps['items'] = ["),
+      source.indexOf('return {', source.indexOf("const menuItems: MenuProps['items'] = [")),
+    );
+
+    expect(source).toContain('showHeader: false');
+    expect(menuSource).not.toContain("type: 'group'");
+    expect(menuSource).toContain("type: 'divider'");
+  });
+
   it('starts tab dragging only from a primary pointer on non-interactive tab content', () => {
     const tabContent = {
       closest: vi.fn(() => null),

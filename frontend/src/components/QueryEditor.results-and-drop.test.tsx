@@ -25,6 +25,7 @@ import QueryEditorResultsPanel, {
   resolveEffectiveActiveResultKey,
   shouldActivateResultTabDetachPointer,
 } from './QueryEditorResultsPanel';
+import QueryEditorToolbar from './QueryEditorToolbar';
 
 const mountedRenderers = new Set<ReactTestRenderer>();
 const create = (...args: Parameters<typeof createRenderer>): ReactTestRenderer => {
@@ -78,7 +79,7 @@ const storeState = vi.hoisted(() => ({
     sqlEditorFontSize: null as number | null,
     sqlEditorFontSizeFollowGlobal: true,
   },
-  sqlFormatOptions: { keywordCase: 'upper' as const },
+  sqlFormatOptions: { keywordCase: 'upper' as 'upper' | 'lower' },
   setSqlFormatOptions: vi.fn(),
   queryOptions: {
     maxRows: 5000,
@@ -432,19 +433,30 @@ vi.mock('@ant-design/icons', () => {
   const Icon = () => <span />;
   return {
     BugOutlined: Icon,
+    ArrowDownOutlined: Icon,
+    ArrowUpOutlined: Icon,
+    BulbOutlined: Icon,
+    CheckOutlined: Icon,
     ClearOutlined: Icon,
+    CodeOutlined: Icon,
     CopyOutlined: Icon,
     DiffOutlined: Icon,
+    EditOutlined: Icon,
     ExportOutlined: Icon,
+    FileTextOutlined: Icon,
+    HistoryOutlined: Icon,
+    KeyOutlined: Icon,
     TableOutlined: Icon,
     ArrowLeftOutlined: Icon,
     ArrowRightOutlined: Icon,
     PlayCircleOutlined: Icon,
     SaveOutlined: Icon,
+    UndoOutlined: Icon,
     FormatPainterOutlined: Icon,
     SettingOutlined: Icon,
     CloseOutlined: Icon,
     StopOutlined: Icon,
+    ThunderboltOutlined: Icon,
     DownOutlined: Icon,
     RobotOutlined: Icon,
     SearchOutlined: Icon,
@@ -731,6 +743,100 @@ describe('QueryEditor external SQL save', () => {
     });
   });
 
+  it('closes non-log result tabs with the middle mouse button and leaves the log tab unchanged', async () => {
+    vi.stubGlobal('window', {
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    });
+    const onCloseResult = vi.fn();
+    let renderer!: ReactTestRenderer;
+
+    await act(async () => {
+      renderer = create(
+        <QueryEditorResultsPanel
+          resultSets={[{
+            key: 'result-1',
+            sql: 'select 1',
+            rows: [{ value: 1 }],
+            columns: ['value'],
+            pkColumns: [],
+            readOnly: true,
+          }]}
+          activeResultKey="result-1"
+          isActive
+          loading={false}
+          executionError=""
+          sqlLogCount={1}
+          darkMode={false}
+          isV2Ui
+          currentDb="main"
+          currentConnectionId="conn-1"
+          toggleShortcutLabel=""
+          onActiveResultKeyChange={vi.fn()}
+          onHide={vi.fn()}
+          onCloseResult={onCloseResult}
+          onCloseOtherResultTabs={vi.fn()}
+          onCloseResultTabsToLeft={vi.fn()}
+          onCloseResultTabsToRight={vi.fn()}
+          onCloseAllResultTabs={vi.fn()}
+          onResultPinnedChange={vi.fn()}
+          onReloadResult={vi.fn()}
+          onResultPageChange={vi.fn()}
+          onResultSort={vi.fn()}
+          onDiagnoseExecutionError={vi.fn()}
+        />,
+      );
+    });
+
+    const resultTabLabel = renderer.root.findAll((node) =>
+      typeof node.props?.onPointerDown === 'function'
+      && String(node.props?.className || '').split(/\s+/).includes('query-result-tab-label'),
+    )[0];
+    const logTabLabel = renderer.root.findAll((node) =>
+      typeof node.props?.onPointerDown !== 'function'
+      && String(node.props?.className || '').split(/\s+/).includes('query-result-tab-label'),
+    )[0];
+    expect(resultTabLabel.props.onMouseDown).toEqual(expect.any(Function));
+    expect(resultTabLabel.props.onAuxClick).toEqual(expect.any(Function));
+    expect(logTabLabel.props.onMouseDown).toBeUndefined();
+    expect(logTabLabel.props.onAuxClick).toBeUndefined();
+
+    const mouseDownEvent = { button: 1, preventDefault: vi.fn(), stopPropagation: vi.fn() };
+    resultTabLabel.props.onMouseDown(mouseDownEvent);
+    expect(mouseDownEvent.preventDefault).toHaveBeenCalledOnce();
+    expect(mouseDownEvent.stopPropagation).toHaveBeenCalledOnce();
+    expect(onCloseResult).not.toHaveBeenCalled();
+
+    const auxClickEvent = { button: 1, preventDefault: vi.fn(), stopPropagation: vi.fn() };
+    resultTabLabel.props.onAuxClick(auxClickEvent);
+    expect(auxClickEvent.preventDefault).toHaveBeenCalledOnce();
+    expect(auxClickEvent.stopPropagation).toHaveBeenCalledOnce();
+    expect(onCloseResult).toHaveBeenCalledWith('result-1');
+
+    const rightAuxClickEvent = { button: 2, preventDefault: vi.fn(), stopPropagation: vi.fn() };
+    resultTabLabel.props.onAuxClick(rightAuxClickEvent);
+    expect(rightAuxClickEvent.preventDefault).not.toHaveBeenCalled();
+    expect(rightAuxClickEvent.stopPropagation).not.toHaveBeenCalled();
+    expect(onCloseResult).toHaveBeenCalledTimes(1);
+    renderer.unmount();
+  });
+
+  it('passes the current keyword case to the format menu selection', async () => {
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<QueryEditor tab={createTab()} />);
+    });
+
+    expect(renderer.root.findByType(QueryEditorToolbar).props.formatSettingsSelectedKeys).toEqual(['upper']);
+
+    await act(async () => {
+      storeState.sqlFormatOptions = { keywordCase: 'lower' };
+      notifyStoreSubscribers();
+    });
+    expect(renderer.root.findByType(QueryEditorToolbar).props.formatSettingsSelectedKeys).toEqual(['lower']);
+    renderer.unmount();
+  });
+
   beforeEach(() => {
     const completionState = (globalThis as any).__gonaviSqlCompletionState;
     if (completionState) {
@@ -771,6 +877,7 @@ describe('QueryEditor external SQL save', () => {
     storeState.saveQuery.mockReset();
     storeState.saveQuery.mockImplementation(async (query: SavedQuery) => query);
     storeState.savedQueries = [];
+    storeState.sqlFormatOptions = { keywordCase: 'upper' };
     storeState.activeTabId = 'tab-1';
     storeState.aiPanelVisible = false;
     storeState.setAIPanelVisible.mockReset();
@@ -3363,6 +3470,22 @@ describe('QueryEditor external SQL save', () => {
     })).toHaveLength(0);
   });
 
+  it('uses the query-tab popup structure for result tab context menus', () => {
+    const source = readFileSync(new URL('./QueryEditorResultsPanel.tsx', import.meta.url), 'utf8');
+    const menuSource = source.slice(
+      source.indexOf('function buildResultTabMenuItems'),
+      source.indexOf('const resultTabItems'),
+    );
+    const popupSource = source.slice(
+      source.indexOf('const resultTabItems'),
+      source.indexOf('children: (() => {', source.indexOf('const resultTabItems')),
+    );
+
+    expect(menuSource).not.toContain("type: 'group'");
+    expect(menuSource).toContain("type: 'divider'");
+    expect(popupSource).toContain('showHeader: false');
+  });
+
   it('closes the active result tab directly without switching to the log tab', async () => {
     backendApp.DBQueryMulti.mockResolvedValueOnce({
       success: true,
@@ -3827,34 +3950,44 @@ describe('QueryEditor external SQL save', () => {
     expect(textContent(renderer!.toJSON())).not.toContain('结果 1 (2)');
   });
 
-  it('keeps query result tabs flush, full-height, and readable in v2 UI', () => {
+  it('keeps query result tabs and count badges compact in v2 UI', () => {
     const source = readFileSync(new URL('./QueryEditorResultsPanel.tsx', import.meta.url), 'utf8');
     const css = readV2ThemeCss();
-    const resultNavCss = css.slice(
+    const resultNavCss = source.slice(
+      source.indexOf('.query-result-tabs .ant-tabs-nav {'),
+      source.indexOf('.query-result-tabs .ant-tabs-nav-wrap {'),
+    );
+    const resultTabCss = source.slice(
+      source.indexOf('.query-result-tabs .ant-tabs-tab {'),
+      source.indexOf('.query-result-tabs .ant-tabs-tab-btn {'),
+    );
+    const resultCountCss = source.slice(
+      source.indexOf('.query-result-tab-count {'),
+      source.indexOf('.query-result-tab-close {'),
+    );
+
+    expect(resultNavCss).toContain('min-height: 36px;');
+    expect(resultTabCss).toContain('height: 30px !important;');
+    expect(resultTabCss).toContain('min-height: 30px;');
+    expect(resultCountCss).toContain('height: 17px;');
+    expect(resultCountCss).toContain('padding: 0 5px;');
+    expect(resultCountCss).toContain('border-radius: 3px;');
+    expect(resultCountCss).toContain('font-family: var(--gn-font-mono);');
+    expect(resultCountCss).toContain('font-size: 9.5px;');
+    expect(resultCountCss).not.toContain('border-radius: 999px;');
+
+    const workbenchResultCss = css.slice(
       css.indexOf('body[data-ui-version="v2"] .gn-v2-query-results .query-result-tabs > .ant-tabs-nav {'),
       css.indexOf('body[data-ui-version="v2"] .gn-v2-query-results .query-result-tabs > .ant-tabs-nav .ant-tabs-extra-content {'),
     );
-    const resultTabCss = css.slice(
+    const workbenchResultTabCss = css.slice(
       css.indexOf('body[data-ui-version="v2"] .gn-v2-query-results .query-result-tabs > .ant-tabs-nav .ant-tabs-tab {'),
-      css.indexOf('body[data-ui-version="v2"] .gn-v2-query-results .query-result-tabs > .ant-tabs-nav .ant-tabs-nav-list {'),
+      css.indexOf('body[data-ui-version="v2"] .gn-v2-query-results .query-result-tabs > .ant-tabs-nav .ant-tabs-nav-wrap,'),
     );
-    const resultNavSizingSelector = 'body[data-ui-version="v2"] .gn-v2-query-results .query-result-tabs > .ant-tabs-nav .ant-tabs-nav-wrap,';
-    const resultNavSizingStart = css.indexOf(resultNavSizingSelector);
-    const resultNavSizingCss = resultNavSizingStart >= 0
-      ? css.slice(resultNavSizingStart, css.indexOf('}', resultNavSizingStart) + 1)
-      : '';
-    expect(css).toContain('body[data-ui-version="v2"] .gn-v2-query-results .query-result-tabs > .ant-tabs-nav .ant-tabs-tab {');
-    expect(css).toContain('body[data-ui-version="v2"] .gn-v2-query-results .query-result-tabs > .ant-tabs-nav .ant-tabs-tab-btn {');
-    expect(resultNavCss).toContain('padding: 0 8px 0 0;');
-    expect(resultNavCss).toContain('min-height: 46px;');
-    expect(resultTabCss).toContain('height: 46px !important;');
-    expect(resultTabCss).toContain('margin: 0 !important;');
-    expect(resultTabCss).toContain('border-radius: 8px !important;');
-    expect(resultNavSizingCss).toContain(resultNavSizingSelector);
-    expect(resultNavSizingCss).toContain('body[data-ui-version="v2"] .gn-v2-query-results .query-result-tabs > .ant-tabs-nav .ant-tabs-nav-list {');
-    expect(resultNavSizingCss).toContain('min-height: 46px;');
-    expect(css).toContain('user-select: none;');
-    expect(css).toContain('body[data-ui-version="v2"] .gn-v2-query-results .query-result-tab-text {');
+    expect(workbenchResultCss).toContain('min-height: 36px;');
+    expect(workbenchResultTabCss).toContain('height: 30px !important;');
+    expect(workbenchResultTabCss).toContain('min-height: 30px;');
+    expect(workbenchResultTabCss).toContain('margin: 0 !important;');
   });
 
   it('connects each query result sort state and callback to DataGrid', async () => {
