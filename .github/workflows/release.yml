@@ -42,6 +42,7 @@ jobs:
           python3 tools/edge-release-retention.test.py
           python3 tools/download-mirror-config.test.py
           python3 tools/package-driver-release-assets.test.py
+          python3 tools/complete-driver-release-assets.test.py
           python3 tools/cli-release-assets.test.py
           python3 tools/npm-cli-wrapper.test.py
           python3 tools/validate-npm-cli-package-version.test.py
