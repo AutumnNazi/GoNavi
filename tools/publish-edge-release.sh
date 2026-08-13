@@ -332,12 +332,14 @@ activate_node dmit
 }
 
 control_file="${stage_dir}/control-${PUB_CHANNEL}.json"
+verified_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 jq -n \
   --arg channel "${PUB_CHANNEL}" --arg generation "${PUB_GENERATION}" \
   --arg appTag "${PUB_APP_TAG}" --arg driverTag "${effective_driver_tag}" \
+  --arg verifiedAt "${verified_at}" \
   --arg probePath "${probe_path}" --argjson probeSize "${probe_size}" --arg probeSha256 "${probe_sha}" \
   --arg dmitBase "$(node_value dmit BASE_URL)" \
-  '{schemaVersion:1,channel:$channel,generation:$generation,appTag:$appTag,driverTag:$driverTag,probePath:$probePath,probeSize:$probeSize,probeSha256:$probeSha256,nodes:{dmit:{baseUrl:$dmitBase,enabled:true}}}' \
+  '{schemaVersion:1,channel:$channel,generation:$generation,appTag:$appTag,driverTag:$driverTag,verifiedAt:$verifiedAt,probePath:$probePath,probeSize:$probeSize,probeSha256:$probeSha256,nodes:{dmit:{baseUrl:$dmitBase,enabled:true}}}' \
   > "${control_file}"
 
 put_kv_control() {

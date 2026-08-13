@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -33,12 +34,12 @@ func TestParseValidatedContentRange(t *testing.T) {
 
 func TestValidatedHTTPSDownloadCandidatesAcceptsPublicIPTLSURL(t *testing.T) {
 	got := validatedHTTPSDownloadCandidates(dispatcherDownloadResponse{Candidates: []dispatcherDownloadCandidate{
-		{Source: "tencent", URL: "https://43.139.148.5/gonavi/releases/download/v1/GoNavi.zip"},
-		{Source: "plaintext", URL: "http://43.139.148.5/gonavi/releases/download/v1/GoNavi.zip"},
+		{Source: "public-ip", URL: "https://192.0.2.1/gonavi/releases/download/v1/GoNavi.zip"},
+		{Source: "plaintext", URL: "http://192.0.2.1/gonavi/releases/download/v1/GoNavi.zip"},
 		{Source: "credentials", URL: "https://user:secret@example.com/file"},
-		{Source: "duplicate", URL: "https://43.139.148.5/gonavi/releases/download/v1/GoNavi.zip"},
+		{Source: "duplicate", URL: "https://192.0.2.1/gonavi/releases/download/v1/GoNavi.zip"},
 	}})
-	want := []string{"https://43.139.148.5/gonavi/releases/download/v1/GoNavi.zip"}
+	want := []string{"https://192.0.2.1/gonavi/releases/download/v1/GoNavi.zip"}
 	if len(got) != len(want) || got[0] != want[0] {
 		t.Fatalf("unexpected validated candidates: %#v", got)
 	}
@@ -222,6 +223,58 @@ func TestDownloadFileWithHashFromCandidatesFailsOverWholeTask(t *testing.T) {
 	wantHashBytes := sha256.Sum256(payload)
 	if gotHash != hex.EncodeToString(wantHashBytes[:]) {
 		t.Fatalf("hash mismatch after failover: got %s", gotHash)
+	}
+}
+
+func TestDownloadFileWithHashFromCandidatesUsesFirstHealthyCandidateBeforeFallbackProbe(t *testing.T) {
+	payload := bytes.Repeat([]byte("dmit-first"), (parallelDownloadMinimumSize/len("dmit-first"))+1)
+	payload = payload[:parallelDownloadMinimumSize]
+	wantHash := sha256.Sum256(payload)
+
+	dmit := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		rawRange := strings.TrimPrefix(request.Header.Get("Range"), "bytes=")
+		parts := strings.Split(rawRange, "-")
+		if len(parts) != 2 {
+			http.Error(writer, "bad range", http.StatusRequestedRangeNotSatisfiable)
+			return
+		}
+		start, startErr := strconv.ParseInt(parts[0], 10, 64)
+		end, endErr := strconv.ParseInt(parts[1], 10, 64)
+		if startErr != nil || endErr != nil || start < 0 || end < start || end >= int64(len(payload)) {
+			http.Error(writer, "bad range", http.StatusRequestedRangeNotSatisfiable)
+			return
+		}
+		body := payload[start : end+1]
+		writer.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", start, end, len(payload)))
+		writer.Header().Set("Content-Length", strconv.Itoa(len(body)))
+		writer.WriteHeader(http.StatusPartialContent)
+		_, _ = writer.Write(body)
+	}))
+	defer dmit.Close()
+
+	var fallbackRequests atomic.Int32
+	fallback := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		fallbackRequests.Add(1)
+		http.Error(writer, "fallback should not be probed", http.StatusServiceUnavailable)
+	}))
+	defer fallback.Close()
+
+	target := filepath.Join(t.TempDir(), "dmit-first.zip")
+	gotHash, err := downloadFileWithHashFromCandidates(
+		&http.Client{Timeout: 30 * time.Second},
+		[]string{dmit.URL + "/asset.zip", fallback.URL + "/asset.zip"},
+		target,
+		nil,
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("download first healthy candidate: %v", err)
+	}
+	if gotHash != hex.EncodeToString(wantHash[:]) {
+		t.Fatalf("hash mismatch: got %s", gotHash)
+	}
+	if got := fallbackRequests.Load(); got != 0 {
+		t.Fatalf("fallback must not be probed after DMIT succeeds, got %d requests", got)
 	}
 }
 

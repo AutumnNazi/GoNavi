@@ -21,7 +21,7 @@ flowchart LR
 2. `tools/publish-edge-release.sh` 仅通过受限 `gonavi-cdn` 用户上传 DMIT 的 `.incoming/<generation>`。
 3. DMIT 上的 root-owned transaction 依次执行 `verify`、`promote-immutable`、`promote-mutable` 和 `finalize`。
 4. CI 通过公网 HTTPS 校验真实 Range、generation、`healthz`，并记录八路吞吐观测。
-5. CI 先写 `control:history:<channel>:<generation>`，再原子写入 `control:<channel>` 到 Worker KV。
+5. CI 在公网 Range 和 `/healthz` 校验后，以短期 `verifiedAt` 证明先写 `control:history:<channel>:<generation>`，再原子写入 `control:<channel>` 到 Worker KV。
 
 `control:<channel>` 只记录 DMIT，并记录本次 app 和 driver 的实际发布 tag。Worker 仅为 tag 与当前 control 一致的 immutable 文件下发 DMIT，避免 GitHub 新版本先公开时被误导向旧 DMIT 目录；latest manifest 和 driver index 仍可走当前健康 DMIT。
 
@@ -45,7 +45,7 @@ Worker 每 5 分钟检查 DMIT 的：
 - `/healthz` 中的 `ready=true` 和目标 generation；
 - control 指定 immutable 文件的真实 `206`、`Content-Range`、`Content-Length` 和总大小。
 
-DMIT 连续 2 次成功后进入候选；连续 3 次失败或健康状态超过 12 分钟未刷新后被摘除。JSON 和旧客户端 `302` 的顺序均为：健康 DMIT，随后 GitHub Releases。客户端可以对返回候选执行严格 Range 校验和并行下载，但不再有区域偏置或腾讯节点选择。
+新 control 携带 CI 刚完成的 `verifiedAt` 时，Worker 只会在 15 分钟内为同一 app/driver tag 立即选择 DMIT；旧 routing state 不会复用于新 generation。首轮 cron 会把这次验证固化为健康状态，之后仍遵循连续 2 次成功和连续 3 次失败、或健康状态超过 12 分钟未刷新后摘除的规则。KV 跨 PoP 尚未传播时安全回退 GitHub。JSON 和旧客户端 `302` 的顺序均为：健康 DMIT，随后 GitHub Releases。客户端按候选顺序执行严格 Range 校验并立即开始下载，DMIT 失败才探测 GitHub；不再有区域偏置或腾讯节点选择。
 
 单边缘的边界是明确的：DMIT 故障时下载会回退到 GitHub，而没有第二个自建边缘。
 

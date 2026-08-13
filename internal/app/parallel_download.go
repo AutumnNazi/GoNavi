@@ -736,16 +736,23 @@ func downloadFileWithHashFromCandidates(
 	if initialErr != nil {
 		errorsBySource = append(errorsBySource, initialErr)
 	}
-	ranked, probeErrors := rankDownloadCandidates(client, candidates)
-	errorsBySource = append(errorsBySource, probeErrors...)
 	var rangeSession *persistentRangeDownload
 	defer func() {
 		if rangeSession != nil {
 			rangeSession.closeAndRemove()
 		}
 	}()
-	for _, probe := range ranked {
-		candidate := probe.candidate
+	for _, candidate := range candidates {
+		// The Dispatcher order is strict: probe and download a candidate before
+		// touching its fallback, so an unreachable GitHub endpoint cannot hold an
+		// otherwise healthy DMIT download at 0%.
+		ranked, probeErrors := rankDownloadCandidates(client, []string{candidate})
+		errorsBySource = append(errorsBySource, probeErrors...)
+		if len(ranked) == 0 {
+			continue
+		}
+		probe := ranked[0]
+		candidate = probe.candidate
 		if probe.fromCache {
 			refreshed, refreshErr := measureValidatedDownloadRange(client, candidate)
 			if refreshErr != nil {

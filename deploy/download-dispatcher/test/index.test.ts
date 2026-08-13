@@ -1,6 +1,7 @@
 import { env, SELF } from "cloudflare:test";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import {
+  isPublicationVerificationFresh,
   isReadyHealthPayload,
   isRoutingStateFresh,
   nextNodeHealth,
@@ -11,6 +12,15 @@ import {
 } from "../src/core";
 
 describe("download dispatcher", () => {
+  afterEach(async () => {
+    await Promise.all([
+      env.ROUTING_STATE.delete("control:stable"),
+      env.ROUTING_STATE.delete("control:dev"),
+      env.ROUTING_STATE.delete("routing:stable"),
+      env.ROUTING_STATE.delete("routing:dev"),
+    ]);
+  });
+
   it("uses DMIT as the only static edge in every region", () => {
     expect(orderedNodeIds()).toEqual(["dmit"]);
   });
@@ -57,6 +67,16 @@ describe("download dispatcher", () => {
     expect(isRoutingStateFresh("2026-08-12T11:48:01Z", now)).toBe(true);
     expect(isRoutingStateFresh("2026-08-12T11:47:59Z", now)).toBe(false);
     expect(isRoutingStateFresh("invalid", now)).toBe(false);
+  });
+
+  it("accepts only a recent, canonical CI publication verification", () => {
+    const now = Date.parse("2026-08-12T12:00:00Z");
+    expect(isPublicationVerificationFresh("2026-08-12T11:45:00Z", now)).toBe(true);
+    expect(isPublicationVerificationFresh("2026-08-12T11:44:59Z", now)).toBe(false);
+    expect(isPublicationVerificationFresh("2026-08-12T12:00:01Z", now)).toBe(false);
+    expect(isPublicationVerificationFresh("2026-08-12T11:45:00.001Z", now)).toBe(true);
+    expect(isPublicationVerificationFresh("2026-08-12T11:45:00+00:00", now)).toBe(false);
+    expect(isPublicationVerificationFresh(null, now)).toBe(false);
   });
 
   it("requires ready=true and the exact channel generation", () => {
@@ -117,6 +137,19 @@ describe("download dispatcher", () => {
 
   it("accepts legacy dual-node routing state but routes only through DMIT", async () => {
     const generation = "stable-legacy";
+    await env.ROUTING_STATE.put("control:stable", JSON.stringify({
+      schemaVersion: 1,
+      channel: "stable",
+      generation,
+      appTag: "v1.2.3",
+      driverTag: null,
+      probePath: "/gonavi/releases/download/v1.2.3/GoNavi.zip",
+      probeSize: 1024,
+      probeSha256: "a".repeat(64),
+      nodes: {
+        dmit: { baseUrl: "https://download.syngnat.top", enabled: true },
+      },
+    }));
     await env.ROUTING_STATE.put("routing:stable", JSON.stringify({
       schemaVersion: 1,
       channel: "stable",
@@ -167,23 +200,25 @@ describe("download dispatcher", () => {
 
   it("routes immutable assets to DMIT only when their app or driver tag matches the active control", async () => {
     const generation = "stable-run-1";
+    const control = {
+      schemaVersion: 1,
+      channel: "stable",
+      generation,
+      appTag: "v1.2.3",
+      driverTag: "driver-v1",
+      probePath: "/gonavi/releases/download/v1.2.3/GoNavi.zip",
+      probeSize: 1024,
+      probeSha256: "a".repeat(64),
+      nodes: {
+        dmit: { baseUrl: "https://download.syngnat.top", enabled: true },
+      },
+    };
+    await env.ROUTING_STATE.put("control:stable", JSON.stringify(control));
     await env.ROUTING_STATE.put("routing:stable", JSON.stringify({
       schemaVersion: 1,
       channel: "stable",
       generation,
-      control: {
-        schemaVersion: 1,
-        channel: "stable",
-        generation,
-        appTag: "v1.2.3",
-        driverTag: "driver-v1",
-        probePath: "/gonavi/releases/download/v1.2.3/GoNavi.zip",
-        probeSize: 1024,
-        probeSha256: "a".repeat(64),
-        nodes: {
-          dmit: { baseUrl: "https://download.syngnat.top", enabled: true },
-        },
-      },
+      control,
       nodes: {
         dmit: {
           generation,
@@ -219,23 +254,25 @@ describe("download dispatcher", () => {
 
   it("keeps a newly published dev tag on GitHub until the matching DMIT generation is active", async () => {
     const generation = "dev-run-1";
+    const control = {
+      schemaVersion: 1,
+      channel: "dev",
+      generation,
+      appTag: "dev-current",
+      driverTag: "driver-current",
+      probePath: "/gonavi/dev/releases/download/dev-current/GoNavi.zip",
+      probeSize: 1024,
+      probeSha256: "a".repeat(64),
+      nodes: {
+        dmit: { baseUrl: "https://download.syngnat.top", enabled: true },
+      },
+    };
+    await env.ROUTING_STATE.put("control:dev", JSON.stringify(control));
     await env.ROUTING_STATE.put("routing:dev", JSON.stringify({
       schemaVersion: 1,
       channel: "dev",
       generation,
-      control: {
-        schemaVersion: 1,
-        channel: "dev",
-        generation,
-        appTag: "dev-current",
-        driverTag: "driver-current",
-        probePath: "/gonavi/dev/releases/download/dev-current/GoNavi.zip",
-        probeSize: 1024,
-        probeSha256: "a".repeat(64),
-        nodes: {
-          dmit: { baseUrl: "https://download.syngnat.top", enabled: true },
-        },
-      },
+      control,
       nodes: {
         dmit: {
           generation,
@@ -267,6 +304,225 @@ describe("download dispatcher", () => {
     } finally {
       await env.ROUTING_STATE.delete("routing:dev");
     }
+  });
+
+  it("routes a freshly CI-verified current generation through DMIT before cron has state", async () => {
+    const control = {
+      schemaVersion: 1,
+      channel: "dev",
+      generation: "dev-verified-1",
+      appTag: "dev-current",
+      driverTag: "driver-current",
+      verifiedAt: new Date().toISOString(),
+      probePath: "/gonavi/dev/releases/download/dev-current/GoNavi.zip",
+      probeSize: 1024,
+      probeSha256: "a".repeat(64),
+      nodes: {
+        dmit: { baseUrl: "https://download.syngnat.top", enabled: true },
+      },
+    };
+    await env.ROUTING_STATE.put("control:dev", JSON.stringify(control));
+
+    const resolveSources = async (path: string): Promise<string[]> => {
+      const response = await SELF.fetch(
+        `https://download-dispatch.syngnat.top/v1/resolve?format=json&path=${encodeURIComponent(path)}`,
+      );
+      const body = await response.json<{ candidates: Array<{ source: string }> }>();
+      return body.candidates.map((candidate) => candidate.source);
+    };
+
+    await expect(resolveSources("/gonavi/dev/releases/download/dev-current/GoNavi.zip")).resolves.toEqual(["dmit", "github"]);
+    await expect(resolveSources("/drivers/dev/releases/download/driver-current/mysql.zip")).resolves.toEqual(["dmit", "github"]);
+    await expect(resolveSources("/gonavi/dev/releases/latest/latest-dev.json")).resolves.toEqual(["dmit", "github"]);
+    await expect(resolveSources("/gonavi/dev/releases/download/dev-next/GoNavi.zip")).resolves.toEqual(["github"]);
+    await expect(resolveSources("/drivers/dev/releases/download/driver-next/mysql.zip")).resolves.toEqual(["github"]);
+  });
+
+  it("does not reuse an old healthy routing state after control advances", async () => {
+    const oldControl = {
+      schemaVersion: 1,
+      channel: "dev",
+      generation: "dev-old",
+      appTag: "dev-old",
+      driverTag: null,
+      probePath: "/gonavi/dev/releases/download/dev-old/GoNavi.zip",
+      probeSize: 1024,
+      probeSha256: "a".repeat(64),
+      nodes: {
+        dmit: { baseUrl: "https://old-edge.example", enabled: true },
+      },
+    };
+    const currentControl = {
+      ...oldControl,
+      generation: "dev-new",
+      appTag: "dev-new",
+      probePath: "/gonavi/dev/releases/download/dev-new/GoNavi.zip",
+      nodes: {
+        dmit: { baseUrl: "https://download.syngnat.top", enabled: true },
+      },
+    };
+    await env.ROUTING_STATE.put("routing:dev", JSON.stringify({
+      schemaVersion: 1,
+      channel: "dev",
+      generation: oldControl.generation,
+      control: oldControl,
+      nodes: {
+        dmit: {
+          generation: oldControl.generation,
+          healthy: true,
+          consecutiveFailures: 0,
+          consecutiveSuccesses: 2,
+          checkedAt: new Date().toISOString(),
+          detail: "ok",
+        },
+      },
+      checkedAt: new Date().toISOString(),
+    }));
+    await env.ROUTING_STATE.put("control:dev", JSON.stringify(currentControl));
+
+    const response = await SELF.fetch(
+      "https://download-dispatch.syngnat.top/v1/resolve?format=json&path=/gonavi/dev/releases/download/dev-new/GoNavi.zip",
+    );
+    const body = await response.json<{ candidates: Array<{ source: string; url: string }> }>();
+    expect(body.candidates.map((candidate) => candidate.source)).toEqual(["github"]);
+    expect(body.candidates.some((candidate) => candidate.url.includes("old-edge.example"))).toBe(false);
+  });
+
+  it("does not bootstrap an unverified or expired control", async () => {
+    const control = {
+      schemaVersion: 1,
+      channel: "dev",
+      generation: "dev-expired",
+      appTag: "dev-current",
+      driverTag: null,
+      verifiedAt: new Date(Date.now() - 16 * 60 * 1000).toISOString(),
+      probePath: "/gonavi/dev/releases/download/dev-current/GoNavi.zip",
+      probeSize: 1024,
+      probeSha256: "a".repeat(64),
+      nodes: {
+        dmit: { baseUrl: "https://download.syngnat.top", enabled: true },
+      },
+    };
+    await env.ROUTING_STATE.put("control:dev", JSON.stringify(control));
+
+    const response = await SELF.fetch(
+      "https://download-dispatch.syngnat.top/v1/resolve?format=json&path=/gonavi/dev/releases/download/dev-current/GoNavi.zip",
+    );
+    const body = await response.json<{ candidates: Array<{ source: string }> }>();
+    expect(body.candidates.map((candidate) => candidate.source)).toEqual(["github"]);
+  });
+
+  it("does not let a fresh publication proof override a stale unhealthy state", async () => {
+    const control = {
+      schemaVersion: 1,
+      channel: "dev",
+      generation: "dev-stale-unhealthy",
+      appTag: "dev-current",
+      driverTag: null,
+      verifiedAt: new Date().toISOString(),
+      probePath: "/gonavi/dev/releases/download/dev-current/GoNavi.zip",
+      probeSize: 1024,
+      probeSha256: "a".repeat(64),
+      nodes: {
+        dmit: { baseUrl: "https://download.syngnat.top", enabled: true },
+      },
+    };
+    await env.ROUTING_STATE.put("control:dev", JSON.stringify(control));
+    await env.ROUTING_STATE.put("routing:dev", JSON.stringify({
+      schemaVersion: 1,
+      channel: "dev",
+      generation: control.generation,
+      control,
+      nodes: {
+        dmit: {
+          generation: control.generation,
+          healthy: false,
+          consecutiveFailures: 3,
+          consecutiveSuccesses: 0,
+          checkedAt: new Date(Date.now() - 13 * 60 * 1000).toISOString(),
+          detail: "timeout",
+        },
+      },
+      checkedAt: new Date(Date.now() - 13 * 60 * 1000).toISOString(),
+    }));
+
+    const response = await SELF.fetch(
+      "https://download-dispatch.syngnat.top/v1/resolve?format=json&path=/gonavi/dev/releases/download/dev-current/GoNavi.zip",
+    );
+    const body = await response.json<{ candidates: Array<{ source: string }> }>();
+    expect(body.candidates.map((candidate) => candidate.source)).toEqual(["github"]);
+  });
+
+  it("promotes a freshly verified generation after its first successful cron probe", async () => {
+    const control = {
+      schemaVersion: 1,
+      channel: "dev",
+      generation: "dev-cron-verified",
+      appTag: "dev-current",
+      driverTag: null,
+      verifiedAt: new Date().toISOString(),
+      probePath: "/gonavi/dev/releases/download/dev-current/GoNavi.zip",
+      probeSize: 1024,
+      probeSha256: "a".repeat(64),
+      nodes: {
+        dmit: { baseUrl: "https://download.syngnat.top", enabled: true },
+      },
+    };
+    await env.ROUTING_STATE.put("control:dev", JSON.stringify(control));
+    let requests = 0;
+    const fetchImpl: typeof fetch = async () => {
+      requests += 1;
+      if (requests === 1) {
+        return Response.json({
+          status: "ok",
+          ready: true,
+          channels: { dev: { generation: control.generation } },
+        });
+      }
+      return new Response(new Uint8Array(1024), {
+        status: 206,
+        headers: {
+          "Content-Length": "1024",
+          "Content-Range": "bytes 0-1023/1024",
+        },
+      });
+    };
+
+    const state = await refreshChannel(env, "dev", fetchImpl);
+    expect(requests).toBe(2);
+    expect(state.nodes.dmit).toMatchObject({
+      generation: control.generation,
+      healthy: true,
+      consecutiveFailures: 0,
+      consecutiveSuccesses: 2,
+    });
+  });
+
+  it("does not promote a freshly verified generation when its first cron probe fails", async () => {
+    const control = {
+      schemaVersion: 1,
+      channel: "dev",
+      generation: "dev-cron-failed",
+      appTag: "dev-current",
+      driverTag: null,
+      verifiedAt: new Date().toISOString(),
+      probePath: "/gonavi/dev/releases/download/dev-current/GoNavi.zip",
+      probeSize: 1024,
+      probeSha256: "a".repeat(64),
+      nodes: {
+        dmit: { baseUrl: "https://download.syngnat.top", enabled: true },
+      },
+    };
+    await env.ROUTING_STATE.put("control:dev", JSON.stringify(control));
+    const fetchImpl: typeof fetch = async () => new Response(null, { status: 503 });
+
+    const state = await refreshChannel(env, "dev", fetchImpl);
+    expect(state.nodes.dmit).toMatchObject({
+      generation: control.generation,
+      healthy: false,
+      consecutiveFailures: 1,
+      consecutiveSuccesses: 0,
+    });
   });
 
   it("reads publication control from the routing KV namespace", async () => {

@@ -91,6 +91,9 @@ class DownloadMirrorConfigTest(unittest.TestCase):
                 "driverTag",
                 "driver-abc123",
                 "--arg",
+                "verifiedAt",
+                "2026-08-13T06:00:00Z",
+                "--arg",
                 "probePath",
                 "/gonavi/dev/releases/download/dev-abc123/GoNavi.zip",
                 "--argjson",
@@ -112,6 +115,7 @@ class DownloadMirrorConfigTest(unittest.TestCase):
         self.assertEqual(control["nodes"], {"dmit": {"baseUrl": "https://download.syngnat.top", "enabled": True}})
         self.assertEqual(control["appTag"], "dev-abc123")
         self.assertEqual(control["driverTag"], "driver-abc123")
+        self.assertEqual(control["verifiedAt"], "2026-08-13T06:00:00Z")
 
     def test_publication_commits_control_to_kv_without_object_storage(self) -> None:
         action = (ROOT / ".github/actions/publish-vps-mirror/action.yml").read_text(encoding="utf-8")
@@ -126,6 +130,8 @@ class DownloadMirrorConfigTest(unittest.TestCase):
         self.assertIn('encoded_key="${key//:/%3A}"', publication)
         self.assertIn('put_kv_control "control:history:', publication)
         self.assertIn('put_kv_control "control:${PUB_CHANNEL}"', publication)
+        self.assertIn('verified_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"', publication)
+        self.assertIn('verifiedAt:$verifiedAt', publication)
         self.assertIn('env.ROUTING_STATE.get(`control:${channel}`', dispatcher)
         self.assertEqual(stable_workflow.count("group: gonavi-download-publication"), 1)
         self.assertEqual(dev_workflow.count("group: gonavi-download-publication"), 1)

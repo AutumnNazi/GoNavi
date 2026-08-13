@@ -4,6 +4,8 @@ const SUCCESS_THRESHOLD = 2;
 const FAILURE_THRESHOLD = 3;
 const RANGE_PROBE_BYTES = 1024;
 const ROUTING_STATE_MAX_AGE_MS = 12 * 60 * 1000;
+const PUBLICATION_VERIFICATION_MAX_AGE_MS = 15 * 60 * 1000;
+const UTC_TIMESTAMP_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/;
 
 type NodeId = (typeof NODE_IDS)[number];
 type Channel = (typeof CHANNELS)[number];
@@ -19,6 +21,7 @@ type PublicationControl = {
   generation: string;
   appTag: string;
   driverTag: string | null;
+  verifiedAt: string | null;
   probePath: string;
   probeSize: number;
   probeSha256: string;
@@ -103,6 +106,15 @@ function normalizeHttpsBaseUrl(value: unknown): string | null {
   }
 }
 
+function parseStrictUTCTimestamp(value: string): number | null {
+  if (!UTC_TIMESTAMP_PATTERN.test(value)) return null;
+  const milliseconds = Date.parse(value);
+  if (!Number.isFinite(milliseconds)) return null;
+  const canonical = new Date(milliseconds).toISOString();
+  if (value !== canonical && value !== canonical.replace(".000Z", "Z")) return null;
+  return milliseconds;
+}
+
 function validateControl(value: unknown, expectedChannel: Channel): PublicationControl {
   if (!isRecord(value) || value.schemaVersion !== 1 || value.channel !== expectedChannel) {
     throw new Error("invalid publication control envelope");
@@ -147,6 +159,13 @@ function validateControl(value: unknown, expectedChannel: Channel): PublicationC
   if (driverTag !== null && !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(driverTag)) {
     throw new Error("invalid publication control driver tag");
   }
+  let verifiedAt: string | null = null;
+  if (value.verifiedAt !== undefined) {
+    if (typeof value.verifiedAt !== "string" || parseStrictUTCTimestamp(value.verifiedAt) === null) {
+      throw new Error("invalid publication control verification time");
+    }
+    verifiedAt = value.verifiedAt;
+  }
 
   return {
     schemaVersion: 1,
@@ -154,11 +173,31 @@ function validateControl(value: unknown, expectedChannel: Channel): PublicationC
     generation: value.generation,
     appTag,
     driverTag,
+    verifiedAt,
     probePath: value.probePath,
     probeSize: value.probeSize,
     probeSha256: value.probeSha256,
     nodes,
   };
+}
+
+function controlsShareRoutingIdentity(left: PublicationControl, right: PublicationControl): boolean {
+  if (
+    left.channel !== right.channel
+    || left.generation !== right.generation
+    || left.appTag !== right.appTag
+    || left.driverTag !== right.driverTag
+    || left.probePath !== right.probePath
+    || left.probeSize !== right.probeSize
+    || left.probeSha256 !== right.probeSha256
+  ) {
+    return false;
+  }
+  return NODE_IDS.every((nodeId) => {
+    const leftNode = left.nodes[nodeId];
+    const rightNode = right.nodes[nodeId];
+    return leftNode.baseUrl === rightNode.baseUrl && leftNode.enabled === rightNode.enabled;
+  });
 }
 
 function isAllowedAssetPath(value: string): boolean {
@@ -316,6 +355,7 @@ async function readRoutingState(env: Env, channel: Channel): Promise<RoutingStat
   }
   try {
     const control = validateControl(value.control, channel);
+    if (value.generation !== control.generation) return null;
     const nodes = {} as Record<NodeId, NodeHealth>;
     for (const nodeId of NODE_IDS) {
       const raw = value.nodes[nodeId];
@@ -352,17 +392,48 @@ async function readRoutingState(env: Env, channel: Channel): Promise<RoutingStat
   }
 }
 
-export async function refreshChannel(env: Env, channel: Channel): Promise<RoutingState> {
+async function readCurrentControl(env: Env, channel: Channel): Promise<PublicationControl | null> {
+  const value: unknown = await env.ROUTING_STATE.get(`control:${channel}`, "json");
+  if (value === null) return null;
+  try {
+    return validateControl(value, channel);
+  } catch {
+    return null;
+  }
+}
+
+function routingStateMatchesControl(state: RoutingState, control: PublicationControl): boolean {
+  return state.generation === control.generation && controlsShareRoutingIdentity(state.control, control);
+}
+
+export async function refreshChannel(
+  env: Env,
+  channel: Channel,
+  fetchImpl: typeof fetch = fetch,
+): Promise<RoutingState> {
   const controlValue: unknown = await env.ROUTING_STATE.get(`control:${channel}`, "json");
   if (controlValue === null) throw new Error(`publication control is missing for ${channel}`);
   const control = validateControl(controlValue, channel);
   const previous = await readRoutingState(env, channel);
+  const previousForControl = previous && routingStateMatchesControl(previous, control) ? previous : null;
   const checkedAt = new Date().toISOString();
-  const probeResults = await Promise.all(NODE_IDS.map((nodeId) => probeEdge(control, nodeId)));
+  const probeResults = await Promise.all(NODE_IDS.map((nodeId) => probeEdge(control, nodeId, fetchImpl)));
   const nodes = {} as Record<NodeId, NodeHealth>;
   for (let index = 0; index < NODE_IDS.length; index += 1) {
     const nodeId = NODE_IDS[index];
-    nodes[nodeId] = nextNodeHealth(previous?.nodes[nodeId], control.generation, probeResults[index], checkedAt);
+    const result = probeResults[index];
+    if (!previousForControl && result.ok && isPublicationVerificationFresh(control.verifiedAt)) {
+      nodes[nodeId] = {
+        generation: control.generation,
+        healthy: true,
+        consecutiveFailures: 0,
+        consecutiveSuccesses: SUCCESS_THRESHOLD,
+        checkedAt,
+        detail: result.detail,
+      };
+      continue;
+    }
+    nodes[nodeId] = nextNodeHealth(previousForControl?.nodes[nodeId], control.generation, result, checkedAt);
   }
   const state: RoutingState = {
     schemaVersion: 1,
@@ -393,6 +464,14 @@ export function isRoutingStateFresh(checkedAt: string, now: number = Date.now())
     && now - checkedAtMillis <= ROUTING_STATE_MAX_AGE_MS;
 }
 
+export function isPublicationVerificationFresh(verifiedAt: string | null, now: number = Date.now()): boolean {
+  if (verifiedAt === null) return false;
+  const verifiedAtMillis = parseStrictUTCTimestamp(verifiedAt);
+  return verifiedAtMillis !== null
+    && verifiedAtMillis <= now
+    && now - verifiedAtMillis <= PUBLICATION_VERIFICATION_MAX_AGE_MS;
+}
+
 function joinBaseAndPath(baseUrl: string, relativePath: string): string {
   return baseUrl.replace(/\/+$/, "") + relativePath;
 }
@@ -408,19 +487,33 @@ async function resolveDownload(request: Request, env: Env): Promise<Response> {
   if (!coordinates) {
     return Response.json({ error: "invalid asset path" }, { status: 400, headers: { "Cache-Control": "no-store" } });
   }
-  const state = await readRoutingState(env, coordinates.channel);
+  const [control, state] = await Promise.all([
+    readCurrentControl(env, coordinates.channel),
+    readRoutingState(env, coordinates.channel),
+  ]);
   const candidates: Array<{ source: string; url: string }> = [];
   const activeTag = coordinates.immutable?.kind === "app"
-    ? state?.control.appTag
+    ? control?.appTag
     : coordinates.immutable?.kind === "driver"
-      ? state?.control.driverTag
+      ? control?.driverTag
       : null;
   const isCurrentImmutable = coordinates.immutable === null || activeTag === coordinates.immutable.tag;
-  if (state && isRoutingStateFresh(state.checkedAt) && isCurrentImmutable) {
+  const currentState = control && state && routingStateMatchesControl(state, control) ? state : null;
+  const stateIsFresh = currentState !== null && isRoutingStateFresh(currentState.checkedAt);
+  // A CI proof can bridge only the no-state publication gap. It must never
+  // override an existing (including stale or unhealthy) health observation.
+  const canBootstrapFromPublication = currentState === null
+    && control !== null
+    && isPublicationVerificationFresh(control.verifiedAt);
+  if (control && isCurrentImmutable) {
     for (const nodeId of orderedNodeIds()) {
-      const node = state.nodes[nodeId];
-      const config = state.control.nodes[nodeId];
-      if (config.enabled && node.healthy && node.generation === state.generation) {
+      const node = currentState?.nodes[nodeId];
+      const config = control.nodes[nodeId];
+      const isHealthyInCurrentState = stateIsFresh
+        && node !== undefined
+        && node.healthy
+        && node.generation === control.generation;
+      if (config.enabled && (isHealthyInCurrentState || canBootstrapFromPublication)) {
         candidates.push({ source: nodeId, url: joinBaseAndPath(config.baseUrl, coordinates.relativePath) });
       }
     }
@@ -432,7 +525,7 @@ async function resolveDownload(request: Request, env: Env): Promise<Response> {
   console.log(JSON.stringify({
     message: "download source selected",
     channel: coordinates.channel,
-    generation: state?.generation ?? "",
+    generation: control?.generation ?? "",
     source: selected.source,
   }));
   const headers = new Headers({
@@ -445,7 +538,7 @@ async function resolveDownload(request: Request, env: Env): Promise<Response> {
       {
         url: selected.url,
         source: selected.source,
-        generation: state?.generation ?? "",
+        generation: control?.generation ?? "",
         candidates,
       },
       { headers },
