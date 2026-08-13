@@ -462,6 +462,75 @@ func TestFetchLatestUpdateInfoForDevChannelUsesReleaseBuildVersion(t *testing.T)
 	if info.AssetName != assetName || info.SHA256 != "def456" {
 		t.Fatalf("unexpected dev update info: %#v", info)
 	}
+	wantDispatcherURL := devUpdateDispatcherAssetURL("dev-a1b2c3d", assetName)
+	if info.AssetURL != wantDispatcherURL {
+		t.Fatalf("dev asset URL = %q, want immutable dispatcher URL %q", info.AssetURL, wantDispatcherURL)
+	}
+	if info.AssetAPIURL != "" {
+		t.Fatalf("dev API fallback URL = %q, want empty when API omitted", info.AssetAPIURL)
+	}
+}
+
+func TestFetchLatestUpdateInfoForDevChannelNormalizesDiskCachedGitHubAssetURL(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("GONAVI_DATA_ROOT", root)
+
+	const latestVersion = "dev-disk-cache"
+	assetName, err := expectedAssetName(stdRuntime.GOOS, stdRuntime.GOARCH, latestVersion)
+	if err != nil {
+		t.Fatalf("expectedAssetName returned error: %v", err)
+	}
+
+	originalVersion := AppVersion
+	AppVersion = "dev-previous"
+	t.Cleanup(func() {
+		AppVersion = originalVersion
+	})
+
+	githubURL := "https://github.com/Syngnat/GoNavi/releases/download/dev-latest/" + assetName
+	apiURL := "https://api.github.com/repos/Syngnat/GoNavi/releases/assets/123"
+	storeDiskUpdateManifest(updateChannelDev, &updateReleaseManifest{
+		SchemaVersion: updateManifestSchemaVersion,
+		Channel:       string(updateChannelDev),
+		TagName:       updateDevReleaseTag,
+		Version:       latestVersion,
+		Name:          "Dev Build (" + latestVersion + ")",
+		Assets: []updateManifestAsset{{
+			Name:   assetName,
+			URL:    githubURL,
+			APIURL: apiURL,
+			Size:   8192,
+			SHA256: strings.Repeat("d", 64),
+		}},
+		FetchedAt: time.Now().UTC(),
+	})
+
+	restoreStatic := swapUpdateFetchStaticManifest(func(updateChannel) (*githubRelease, error) {
+		return nil, errors.New("static manifest unavailable in test")
+	})
+	defer restoreStatic()
+	restoreRelease := swapUpdateFetchDevRelease(func() (*githubRelease, error) {
+		return nil, errors.New("GitHub API unavailable in test")
+	})
+	defer restoreRelease()
+
+	info, err := fetchLatestUpdateInfo(updateChannelDev)
+	if err != nil {
+		t.Fatalf("fetchLatestUpdateInfo returned error: %v", err)
+	}
+	wantDispatcherURL := devUpdateDispatcherAssetURL(latestVersion, assetName)
+	if info.AssetURL != wantDispatcherURL {
+		t.Fatalf("disk-cached dev asset URL = %q, want immutable dispatcher URL %q", info.AssetURL, wantDispatcherURL)
+	}
+	if strings.Contains(info.AssetURL, "github.com") {
+		t.Fatalf("disk-cached dev asset URL must not bypass Dispatcher: %q", info.AssetURL)
+	}
+	if !dispatcherURLRequiresCurrentDevAsset(downloadDispatcherURLRequiringCurrentDevAsset(info.AssetURL)) {
+		t.Fatalf("disk-cached dev asset URL was not eligible for require-current: %q", info.AssetURL)
+	}
+	if info.AssetAPIURL != apiURL {
+		t.Fatalf("dev asset API URL = %q, want %q", info.AssetAPIURL, apiURL)
+	}
 }
 
 func TestFetchLatestUpdateInfoForDevChannelSkipsChecksumWhenBuildMatches(t *testing.T) {
@@ -1041,24 +1110,8 @@ func TestDownloadUpdateUsesCurrentLanguageForBackendMessage(t *testing.T) {
 	}
 }
 
-func TestDownloadUpdateRefreshesDevReleaseBeforeUsingCachedAsset(t *testing.T) {
+func TestDownloadUpdateRefreshesDevReleaseAfterCachedAssetExpires(t *testing.T) {
 	app, installMode := newDevUpdateDownloadTestApp(t)
-
-	staleHits := 0
-	staleServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		staleHits++
-		http.NotFound(w, nil)
-	}))
-	defer staleServer.Close()
-
-	freshPayload := []byte("fresh dev update package")
-	freshHash := fmt.Sprintf("%x", sha256.Sum256(freshPayload))
-	freshHits := 0
-	freshServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		freshHits++
-		_, _ = w.Write(freshPayload)
-	}))
-	defer freshServer.Close()
 
 	staleAssetName, err := expectedAssetNameForInstallMode(stdRuntime.GOOS, stdRuntime.GOARCH, "dev-stale", installMode)
 	if err != nil {
@@ -1068,6 +1121,34 @@ func TestDownloadUpdateRefreshesDevReleaseBeforeUsingCachedAsset(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expectedAssetNameForInstallMode fresh: %v", err)
 	}
+	staleHits := 0
+	freshPayload := []byte("fresh dev update package")
+	freshHash := fmt.Sprintf("%x", sha256.Sum256(freshPayload))
+	freshHits := 0
+	staleURL := devUpdateDispatcherAssetURL("dev-stale", staleAssetName)
+	freshURL := devUpdateDispatcherAssetURL("dev-fresh", freshAssetName)
+	stubDevUpdateDownloadFile(t, func(rawURL string, assetPath string, onProgress func(downloaded, total int64), expectedSize int64) (string, error) {
+		if !dispatcherURLRequiresCurrentDevAsset(rawURL) {
+			t.Fatalf("dev download is not gated: %q", rawURL)
+		}
+		switch rawURL {
+		case downloadDispatcherURLRequiringCurrentDevAsset(staleURL):
+			staleHits++
+			return "", localizedUpdateError{httpStatus: http.StatusNotFound}
+		case downloadDispatcherURLRequiringCurrentDevAsset(freshURL):
+			freshHits++
+			if err := os.WriteFile(assetPath, freshPayload, 0o644); err != nil {
+				return "", err
+			}
+			if onProgress != nil {
+				onProgress(int64(len(freshPayload)), expectedSize)
+			}
+			return freshHash, nil
+		default:
+			t.Fatalf("unexpected Dispatcher asset URL: %q", rawURL)
+			return "", nil
+		}
+	})
 
 	app.updateState.lastCheck = &UpdateInfo{
 		HasUpdate:      true,
@@ -1075,8 +1156,8 @@ func TestDownloadUpdateRefreshesDevReleaseBeforeUsingCachedAsset(t *testing.T) {
 		CurrentVersion: AppVersion,
 		LatestVersion:  "dev-stale",
 		AssetName:      staleAssetName,
-		AssetURL:       staleServer.URL,
-		AssetAPIURL:    staleServer.URL,
+		AssetURL:       staleURL,
+		AssetAPIURL:    "https://api.github.com/repos/Syngnat/GoNavi/releases/assets/123",
 		AssetSize:      5,
 		SHA256:         strings.Repeat("a", 64),
 		InstallMode:    string(installMode),
@@ -1109,8 +1190,8 @@ func TestDownloadUpdateRefreshesDevReleaseBeforeUsingCachedAsset(t *testing.T) {
 			Name:    "Dev Build (dev-fresh)",
 			Assets: []githubAsset{{
 				Name:               freshAssetName,
-				BrowserDownloadURL: freshServer.URL,
-				URL:                freshServer.URL,
+				BrowserDownloadURL: freshURL,
+				URL:                "https://api.github.com/repos/Syngnat/GoNavi/releases/assets/456",
 				Digest:             "sha256:" + freshHash,
 				Size:               int64(len(freshPayload)),
 			}},
@@ -1128,8 +1209,8 @@ func TestDownloadUpdateRefreshesDevReleaseBeforeUsingCachedAsset(t *testing.T) {
 	if !leaseObserved {
 		t.Fatal("download lease was not visible during the dev refresh")
 	}
-	if staleHits != 0 {
-		t.Fatalf("stale asset was requested %d times", staleHits)
+	if staleHits != 1 {
+		t.Fatalf("stale asset hits = %d, want 1", staleHits)
 	}
 	if freshHits == 0 {
 		t.Fatal("fresh asset was not requested")
@@ -1149,26 +1230,130 @@ func TestDownloadUpdateRefreshesDevReleaseBeforeUsingCachedAsset(t *testing.T) {
 	}
 }
 
+func stubDevUpdateDownloadFile(t *testing.T, handler func(url string, assetPath string, onProgress func(downloaded, total int64), expectedSize int64) (string, error)) {
+	t.Helper()
+	original := updateDownloadFileWithExpectedSize
+	updateDownloadFileWithExpectedSize = func(url string, assetPath string, onProgress func(downloaded, total int64), expectedSize int64) (string, error) {
+		return handler(url, assetPath, onProgress, expectedSize)
+	}
+	t.Cleanup(func() {
+		updateDownloadFileWithExpectedSize = original
+	})
+}
+
+func TestDownloadUpdateUsesHealthyCachedDevAssetWithoutRefreshingManifest(t *testing.T) {
+	app, installMode := newDevUpdateDownloadTestApp(t)
+
+	payload := []byte("healthy cached dev update package")
+	hits := 0
+	assetName, err := expectedAssetNameForInstallMode(stdRuntime.GOOS, stdRuntime.GOARCH, "dev-cached", installMode)
+	if err != nil {
+		t.Fatalf("expectedAssetNameForInstallMode: %v", err)
+	}
+	assetURL := devUpdateDispatcherAssetURL("dev-cached", assetName)
+	hash := fmt.Sprintf("%x", sha256.Sum256(payload))
+	stubDevUpdateDownloadFile(t, func(rawURL string, assetPath string, onProgress func(downloaded, total int64), expectedSize int64) (string, error) {
+		if rawURL != downloadDispatcherURLRequiringCurrentDevAsset(assetURL) {
+			t.Fatalf("cached dev asset URL = %q, want gated Dispatcher URL", rawURL)
+		}
+		hits++
+		if err := os.WriteFile(assetPath, payload, 0o644); err != nil {
+			return "", err
+		}
+		if onProgress != nil {
+			onProgress(int64(len(payload)), expectedSize)
+		}
+		return hash, nil
+	})
+	app.updateState.lastCheck = updateInfoFromReleaseForTest(
+		t,
+		devUpdateReleaseForTest(t, "dev-cached", assetURL, payload, installMode),
+		installMode,
+	)
+
+	staticCalls := 0
+	restoreStatic := swapUpdateFetchStaticManifest(func(updateChannel) (*githubRelease, error) {
+		staticCalls++
+		return nil, errors.New("manifest must not be refreshed for a healthy cached dev asset")
+	})
+	defer restoreStatic()
+
+	result := app.DownloadUpdate()
+	if !result.Success {
+		t.Fatalf("DownloadUpdate returned failure: %#v", result)
+	}
+	if staticCalls != 0 {
+		t.Fatalf("static manifest calls = %d, want 0", staticCalls)
+	}
+	if hits == 0 {
+		t.Fatal("cached dev asset was not requested")
+	}
+	if app.updateState.staged == nil || app.updateState.staged.Version != "dev-cached" {
+		t.Fatalf("cached dev package was not staged: %#v", app.updateState.staged)
+	}
+}
+
+func TestPrepareUpdateDownloadCandidateRecognizesAlreadyGatedDevAsset(t *testing.T) {
+	alreadyGated := "https://download-dispatch.syngnat.top/v1/resolve?path=%2Fgonavi%2Fdev%2Freleases%2Fdownload%2Fdev-abc1234%2FGoNavi.zip&require-current=1"
+	candidate, requiresCurrent := prepareUpdateDownloadCandidate(alreadyGated, true)
+	if candidate != alreadyGated || !requiresCurrent {
+		t.Fatalf("already-gated candidate = %q, requiresCurrent=%v", candidate, requiresCurrent)
+	}
+
+	plainDev := "https://download-dispatch.syngnat.top/v1/resolve?path=%2Fgonavi%2Fdev%2Freleases%2Fdownload%2Fdev-abc1234%2FGoNavi.zip"
+	candidate, requiresCurrent = prepareUpdateDownloadCandidate(plainDev, true)
+	if !requiresCurrent || !strings.Contains(candidate, "require-current=1") {
+		t.Fatalf("plain dev candidate was not gated: %q requiresCurrent=%v", candidate, requiresCurrent)
+	}
+
+	secondary, requiresCurrent := prepareUpdateDownloadCandidate(alreadyGated, false)
+	if secondary != alreadyGated || requiresCurrent {
+		t.Fatalf("secondary candidate = %q, requiresCurrent=%v", secondary, requiresCurrent)
+	}
+}
+
 func TestDownloadUpdateRefreshesDevReleaseOnceAfterExpiredAsset(t *testing.T) {
 	app, installMode := newDevUpdateDownloadTestApp(t)
 
+	expiredAssetName, err := expectedAssetNameForInstallMode(stdRuntime.GOOS, stdRuntime.GOARCH, "dev-expired", installMode)
+	if err != nil {
+		t.Fatalf("expectedAssetNameForInstallMode expired: %v", err)
+	}
+	freshAssetName, err := expectedAssetNameForInstallMode(stdRuntime.GOOS, stdRuntime.GOARCH, "dev-replacement", installMode)
+	if err != nil {
+		t.Fatalf("expectedAssetNameForInstallMode replacement: %v", err)
+	}
 	expiredHits := 0
-	expiredServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		expiredHits++
-		http.NotFound(w, nil)
-	}))
-	defer expiredServer.Close()
-
 	freshPayload := []byte("replacement dev update package")
+	freshHash := fmt.Sprintf("%x", sha256.Sum256(freshPayload))
 	freshHits := 0
-	freshServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		freshHits++
-		_, _ = w.Write(freshPayload)
-	}))
-	defer freshServer.Close()
+	expiredURL := devUpdateDispatcherAssetURL("dev-expired", expiredAssetName)
+	freshURL := devUpdateDispatcherAssetURL("dev-replacement", freshAssetName)
+	stubDevUpdateDownloadFile(t, func(rawURL string, assetPath string, onProgress func(downloaded, total int64), expectedSize int64) (string, error) {
+		if !dispatcherURLRequiresCurrentDevAsset(rawURL) {
+			t.Fatalf("dev download is not gated: %q", rawURL)
+		}
+		switch rawURL {
+		case downloadDispatcherURLRequiringCurrentDevAsset(expiredURL):
+			expiredHits++
+			return "", localizedUpdateError{httpStatus: http.StatusNotFound}
+		case downloadDispatcherURLRequiringCurrentDevAsset(freshURL):
+			freshHits++
+			if err := os.WriteFile(assetPath, freshPayload, 0o644); err != nil {
+				return "", err
+			}
+			if onProgress != nil {
+				onProgress(int64(len(freshPayload)), expectedSize)
+			}
+			return freshHash, nil
+		default:
+			t.Fatalf("unexpected Dispatcher asset URL: %q", rawURL)
+			return "", nil
+		}
+	})
 
-	expiredRelease := devUpdateReleaseForTest(t, "dev-expired", expiredServer.URL, []byte("expired payload"), installMode)
-	freshRelease := devUpdateReleaseForTest(t, "dev-replacement", freshServer.URL, freshPayload, installMode)
+	expiredRelease := devUpdateReleaseForTest(t, "dev-expired", expiredURL, []byte("expired payload"), installMode)
+	freshRelease := devUpdateReleaseForTest(t, "dev-replacement", freshURL, freshPayload, installMode)
 	app.updateState.lastCheck = updateInfoFromReleaseForTest(t, expiredRelease, installMode)
 
 	staticCalls := 0
@@ -1176,9 +1361,6 @@ func TestDownloadUpdateRefreshesDevReleaseOnceAfterExpiredAsset(t *testing.T) {
 		staticCalls++
 		if channel != updateChannelDev {
 			t.Fatalf("update channel = %q, want dev", channel)
-		}
-		if staticCalls == 1 {
-			return expiredRelease, nil
 		}
 		return freshRelease, nil
 	})
@@ -1188,8 +1370,8 @@ func TestDownloadUpdateRefreshesDevReleaseOnceAfterExpiredAsset(t *testing.T) {
 	if !result.Success {
 		t.Fatalf("DownloadUpdate returned failure: %#v", result)
 	}
-	if staticCalls != 2 {
-		t.Fatalf("static manifest calls = %d, want 2", staticCalls)
+	if staticCalls != 1 {
+		t.Fatalf("static manifest calls = %d, want 1", staticCalls)
 	}
 	if expiredHits != 1 {
 		t.Fatalf("expired asset hits = %d, want 1", expiredHits)
@@ -1205,14 +1387,21 @@ func TestDownloadUpdateRefreshesDevReleaseOnceAfterExpiredAsset(t *testing.T) {
 func TestDownloadUpdateDoesNotRetryUnchangedExpiredDevAsset(t *testing.T) {
 	app, installMode := newDevUpdateDownloadTestApp(t)
 
+	assetName, err := expectedAssetNameForInstallMode(stdRuntime.GOOS, stdRuntime.GOARCH, "dev-expired", installMode)
+	if err != nil {
+		t.Fatalf("expectedAssetNameForInstallMode expired: %v", err)
+	}
+	assetURL := devUpdateDispatcherAssetURL("dev-expired", assetName)
 	expiredHits := 0
-	expiredServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	stubDevUpdateDownloadFile(t, func(rawURL string, _ string, _ func(downloaded, total int64), _ int64) (string, error) {
+		if rawURL != downloadDispatcherURLRequiringCurrentDevAsset(assetURL) {
+			t.Fatalf("expired dev asset URL = %q", rawURL)
+		}
 		expiredHits++
-		http.NotFound(w, nil)
-	}))
-	defer expiredServer.Close()
+		return "", localizedUpdateError{httpStatus: http.StatusNotFound}
+	})
 
-	expiredRelease := devUpdateReleaseForTest(t, "dev-expired", expiredServer.URL, []byte("expired payload"), installMode)
+	expiredRelease := devUpdateReleaseForTest(t, "dev-expired", assetURL, []byte("expired payload"), installMode)
 	app.updateState.lastCheck = updateInfoFromReleaseForTest(t, expiredRelease, installMode)
 
 	staticCalls := 0
@@ -1226,14 +1415,14 @@ func TestDownloadUpdateDoesNotRetryUnchangedExpiredDevAsset(t *testing.T) {
 	if result.Success {
 		t.Fatalf("DownloadUpdate unexpectedly succeeded: %#v", result)
 	}
-	if staticCalls != 2 {
-		t.Fatalf("static manifest calls = %d, want 2", staticCalls)
+	if staticCalls != 1 {
+		t.Fatalf("static manifest calls = %d, want 1", staticCalls)
 	}
 	if expiredHits != 1 {
 		t.Fatalf("expired asset hits = %d, want exactly 1", expiredHits)
 	}
-	if !strings.Contains(result.Message, "HTTP 404") {
-		t.Fatalf("DownloadUpdate message = %q, want HTTP 404", result.Message)
+	if result.Message != "" {
+		t.Fatalf("DownloadUpdate message = %q, want empty test-only stub message", result.Message)
 	}
 }
 
@@ -1241,19 +1430,33 @@ func TestDownloadUpdateKeepsSingleLeaseWhileRefreshingAndDownloadingDevAsset(t *
 	app, installMode := newDevUpdateDownloadTestApp(t)
 
 	payload := []byte("blocking dev update package")
+	assetName, err := expectedAssetNameForInstallMode(stdRuntime.GOOS, stdRuntime.GOARCH, "dev-blocked", installMode)
+	if err != nil {
+		t.Fatalf("expectedAssetNameForInstallMode: %v", err)
+	}
+	assetURL := devUpdateDispatcherAssetURL("dev-blocked", assetName)
 	requestStarted := make(chan struct{}, 1)
 	releaseRequest := make(chan struct{})
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	hash := fmt.Sprintf("%x", sha256.Sum256(payload))
+	stubDevUpdateDownloadFile(t, func(rawURL string, assetPath string, onProgress func(downloaded, total int64), expectedSize int64) (string, error) {
+		if rawURL != downloadDispatcherURLRequiringCurrentDevAsset(assetURL) {
+			t.Fatalf("blocked dev asset URL = %q", rawURL)
+		}
 		select {
 		case requestStarted <- struct{}{}:
 		default:
 		}
 		<-releaseRequest
-		_, _ = w.Write(payload)
-	}))
-	defer server.Close()
+		if err := os.WriteFile(assetPath, payload, 0o644); err != nil {
+			return "", err
+		}
+		if onProgress != nil {
+			onProgress(int64(len(payload)), expectedSize)
+		}
+		return hash, nil
+	})
 
-	release := devUpdateReleaseForTest(t, "dev-blocked", server.URL, payload, installMode)
+	release := devUpdateReleaseForTest(t, "dev-blocked", assetURL, payload, installMode)
 	app.updateState.lastCheck = updateInfoFromReleaseForTest(t, release, installMode)
 	restoreStatic := swapUpdateFetchStaticManifest(func(updateChannel) (*githubRelease, error) {
 		return release, nil
@@ -1355,7 +1558,7 @@ func updateInfoFromReleaseForTest(t *testing.T, release *githubRelease, installM
 		CurrentVersion: AppVersion,
 		LatestVersion:  version,
 		AssetName:      asset.Name,
-		AssetURL:       asset.BrowserDownloadURL,
+		AssetURL:       firstNonEmptyString(asset.BrowserDownloadURL, asset.URL),
 		AssetAPIURL:    asset.URL,
 		AssetSize:      asset.Size,
 		SHA256:         normalizeGitHubAssetSHA256(asset.Digest),

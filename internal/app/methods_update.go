@@ -58,6 +58,7 @@ var (
 	updateAcquireWindowsMaintenance    = acquireWindowsUpdateMaintenance
 	updateQuitSleep                    = time.Sleep
 	updateExitProcess                  = os.Exit
+	updateDownloadFileWithExpectedSize = downloadFileWithHashWithExpectedSize
 )
 
 var errUpdateChecksumMismatch = errors.New("update package checksum mismatch")
@@ -301,18 +302,16 @@ func (a *App) DownloadUpdate() connection.QueryResult {
 		a.updateMu.Unlock()
 		return connection.QueryResult{Success: false, Message: a.localizedUpdateError(err)}
 	}
-	if channel != updateChannelDev {
-		if invalid := a.validateUpdateInfoForDownload(info); invalid != nil {
-			a.updateMu.Unlock()
-			return *invalid
-		}
-		staged := resolveReusableStagedUpdate(*info, snapshotStagedUpdate(a.updateState.staged))
-		if staged != nil {
-			a.updateState.staged = staged
-			a.updateState.revision++
-			a.updateMu.Unlock()
-			return connection.QueryResult{Success: true, Message: a.appText("app.update.backend.message.package_already_downloaded", nil), Data: buildUpdateDownloadResult(*info, staged)}
-		}
+	if invalid := a.validateUpdateInfoForDownload(info); invalid != nil {
+		a.updateMu.Unlock()
+		return *invalid
+	}
+	staged := resolveReusableStagedUpdate(*info, snapshotStagedUpdate(a.updateState.staged))
+	if staged != nil {
+		a.updateState.staged = staged
+		a.updateState.revision++
+		a.updateMu.Unlock()
+		return connection.QueryResult{Success: true, Message: a.appText("app.update.backend.message.package_already_downloaded", nil), Data: buildUpdateDownloadResult(*info, staged)}
 	}
 	// Once the lease is visible, install APIs must not be able to reuse the old
 	// package while the dev channel resolves a newer release.
@@ -322,21 +321,6 @@ func (a *App) DownloadUpdate() connection.QueryResult {
 	downloadRevision := a.updateState.revision
 	a.updateMu.Unlock()
 	defer a.finishUpdateDownload()
-
-	if channel == updateChannelDev {
-		refreshed, staged, revision, refreshErr := a.refreshDevUpdateInfoForDownload(downloadRevision)
-		if refreshErr != nil {
-			return connection.QueryResult{Success: false, Message: a.localizedUpdateError(refreshErr)}
-		}
-		info = refreshed
-		downloadRevision = revision
-		if invalid := a.validateUpdateInfoForDownload(info); invalid != nil {
-			return *invalid
-		}
-		if staged != nil {
-			return connection.QueryResult{Success: true, Message: a.appText("app.update.backend.message.package_already_downloaded", nil), Data: buildUpdateDownloadResult(*info, staged)}
-		}
-	}
 
 	a.emitUpdateDownloadProgress(info, "start", 0, info.AssetSize, "")
 	result, downloadErr := a.downloadAndStageUpdate(*info, downloadRevision)
@@ -425,11 +409,16 @@ func updateAssetIdentityChanged(previous, current UpdateInfo) bool {
 }
 
 func isExpiredUpdateAssetError(err error) bool {
+	var currentAssetMismatch downloadCurrentAssetMismatchError
+	if errors.As(err, &currentAssetMismatch) {
+		return true
+	}
 	var localized localizedUpdateError
 	if !errors.As(err, &localized) {
 		return false
 	}
-	return localized.httpStatus == http.StatusNotFound || localized.httpStatus == http.StatusGone
+	return localized.httpStatus == http.StatusNotFound ||
+		localized.httpStatus == http.StatusGone
 }
 
 func (a *App) InstallUpdateAndRestart(closeAllWindowsInstancesConfirmed bool) connection.QueryResult {
@@ -749,8 +738,9 @@ func downloadUpdateAssetWithFallback(
 	expectedHash := strings.TrimSpace(expectedSHA256)
 	var lastErr error
 	for index, candidate := range urls {
+		candidate, requiresCurrentDevAsset := prepareUpdateDownloadCandidate(candidate, index == 0)
 		_ = os.Remove(assetPath)
-		actualHash, err := downloadFileWithHash(candidate, assetPath, onProgress)
+		actualHash, err := updateDownloadFileWithExpectedSize(candidate, assetPath, onProgress, expectedSize)
 		if err == nil && expectedSize > 0 {
 			stat, statErr := os.Stat(assetPath)
 			if statErr != nil {
@@ -765,6 +755,11 @@ func downloadUpdateAssetWithFallback(
 		if err == nil {
 			return actualHash, nil
 		}
+		var currentAssetMismatch downloadCurrentAssetMismatchError
+		if requiresCurrentDevAsset || errors.As(err, &currentAssetMismatch) {
+			_ = os.Remove(assetPath)
+			return "", err
+		}
 		lastErr = err
 		if index+1 < len(urls) {
 			logger.Warnf("更新包下载源失败，尝试下一下载源：attempt=%d err=%v", index+1, err)
@@ -772,6 +767,15 @@ func downloadUpdateAssetWithFallback(
 	}
 	_ = os.Remove(assetPath)
 	return "", lastErr
+}
+
+func prepareUpdateDownloadCandidate(rawURL string, primary bool) (string, bool) {
+	candidate := strings.TrimSpace(rawURL)
+	if !primary {
+		return candidate, false
+	}
+	candidate = downloadDispatcherURLRequiringCurrentDevAsset(candidate)
+	return candidate, dispatcherURLRequiresCurrentDevAsset(candidate)
 }
 
 func fetchLatestUpdateInfo(channel updateChannel) (UpdateInfo, error) {
@@ -849,6 +853,10 @@ func fetchLatestUpdateInfoWithOptions(channel updateChannel, forceNetwork bool) 
 	if sha256Value == "" {
 		return UpdateInfo{}, localizedUpdateError{key: "app.update.backend.error.sha256_missing_current_package"}
 	}
+	assetURL := firstNonEmptyString(asset.BrowserDownloadURL, asset.URL)
+	if channel == updateChannelDev {
+		assetURL = devUpdateDispatcherAssetURL(assetVersion, asset.Name)
+	}
 	return UpdateInfo{
 		HasUpdate:          hasUpdate,
 		Channel:            string(channel),
@@ -859,7 +867,7 @@ func fetchLatestUpdateInfoWithOptions(channel updateChannel, forceNetwork bool) 
 		ReleaseNotesURL:    release.HTMLURL,
 		ReleaseNotes:       strings.TrimSpace(release.Body),
 		AssetName:          asset.Name,
-		AssetURL:           firstNonEmptyString(asset.BrowserDownloadURL, asset.URL),
+		AssetURL:           assetURL,
 		AssetAPIURL:        strings.TrimSpace(asset.URL),
 		AssetSize:          asset.Size,
 		SHA256:             sha256Value,
@@ -867,6 +875,16 @@ func fetchLatestUpdateInfoWithOptions(channel updateChannel, forceNetwork bool) 
 		PackageType:        string(packageType),
 		AutoRelaunch:       true,
 	}, nil
+}
+
+func devUpdateDispatcherAssetURL(version string, assetName string) string {
+	version = strings.TrimSpace(version)
+	assetName = strings.TrimSpace(assetName)
+	if version == "" || assetName == "" {
+		return ""
+	}
+	assetPath := "/gonavi/dev/releases/download/" + urlpkg.PathEscape(version) + "/" + urlpkg.PathEscape(assetName)
+	return downloadDispatcherURLForPath(assetPath)
 }
 
 func fetchReleaseForChannel(channel updateChannel) (*githubRelease, error) {
@@ -1356,6 +1374,10 @@ func (w *downloadProgressWriter) finish() int64 {
 
 func downloadFileWithHash(url, filePath string, onProgress func(downloaded, total int64)) (string, error) {
 	return downloadFileWithHashWithTimeout(url, filePath, onProgress, 10*time.Minute)
+}
+
+func downloadFileWithHashWithExpectedSize(url, filePath string, onProgress func(downloaded, total int64), expectedSize int64) (string, error) {
+	return downloadFileWithHashParallelAwareAndExpectedSize(url, filePath, onProgress, 10*time.Minute, expectedSize)
 }
 
 func downloadFileWithHashWithTimeout(url, filePath string, onProgress func(downloaded, total int64), timeout time.Duration) (string, error) {
