@@ -436,6 +436,10 @@ body[data-theme='dark'] .ant-checkbox-wrapper:hover .ant-checkbox-inner {
     border-color: #f6c453 !important;
 }
 
+.table-designer-shell .table-designer-cell-check .ant-checkbox-disabled.ant-checkbox-checked .ant-checkbox-inner::after {
+    border-color: var(--gn-on-accent, #fff) !important;
+}
+
 body[data-theme='dark'] .ant-radio-checked .ant-radio-inner {
     border-color: #f6c453 !important;
     background-color: #f6c453 !important;
