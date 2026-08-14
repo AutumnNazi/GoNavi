@@ -64,7 +64,7 @@ import {
 import {
   groupSidebarPartitionTableEntries,
 } from './sidebarPartitions';
-import { DBGetDatabases, DBGetTables, DBQuery, GetDriverStatusList, JVMProbeCapabilities } from '../../../wailsjs/go/app/App';
+import { DBGetDatabases, DBGetTables, DBQuery, DBRefreshTableStats, GetDriverStatusList, JVMProbeCapabilities } from '../../../wailsjs/go/app/App';
 import type { SidebarTableMetadataSnapshot } from '../../utils/sidebarTableMetadata';
 import { collectNacosServiceGroupsByPage } from '../nacosServiceName';
 
@@ -94,6 +94,46 @@ type SidebarLoadedTableEntry = {
   tableComment?: string;
   partitionParentTableName?: string;
   partitionTables?: SidebarLoadedTableEntry[];
+};
+
+const applyRefreshedSQLiteStatsToTree = (
+  nodes: TreeNode[],
+  rows: Record<string, any>[],
+): TreeNode[] => {
+  const statsByTable = new Map<string, { rowCount?: number; tableSize?: number }>();
+  rows.forEach((row) => {
+    const tableName = getSidebarTableName(row).trim().toLowerCase();
+    if (!tableName) return;
+    const rowCount = parseMetadataRowCount(row);
+    const rawTableSize = getCaseInsensitiveValue(row, ['Data_length', 'data_length', 'DATA_LENGTH']);
+    const parsedTableSize = rawTableSize === undefined || rawTableSize === null || rawTableSize === ''
+      ? undefined
+      : Number(rawTableSize);
+    statsByTable.set(tableName, {
+      ...(rowCount !== undefined ? { rowCount } : {}),
+      ...(parsedTableSize !== undefined && Number.isFinite(parsedTableSize) ? { tableSize: parsedTableSize } : {}),
+    });
+  });
+
+  const updateNode = (node: TreeNode): TreeNode => {
+    const dataRef = node.dataRef as Record<string, any> | undefined;
+    const tableName = String(dataRef?.tableName || '').trim().toLowerCase();
+    const stat = tableName ? statsByTable.get(tableName) : undefined;
+    const children = Array.isArray(node.children) ? node.children.map(updateNode) : node.children;
+    return {
+      ...node,
+      ...(stat && dataRef ? {
+        dataRef: {
+          ...dataRef,
+          ...(stat.rowCount !== undefined ? { rowCount: stat.rowCount } : {}),
+          ...(stat.tableSize !== undefined ? { tableSize: stat.tableSize } : {}),
+        },
+      } : {}),
+      ...(children ? { children } : {}),
+    };
+  };
+
+  return nodes.map(updateNode);
 };
 
 export type SidebarTreeLoadOptions = {
@@ -881,8 +921,16 @@ export const useSidebarTreeLoaders = ({
                 tableRows.forEach((row: Record<string, any>) => {
                     const tableName = getSidebarTableName(row);
                     const rowCount = parseMetadataRowCount(row);
-                    if (tableName && rowCount !== undefined) {
-                        mergeTableMetadata(tableName, { rowCount });
+                    const tableSize = readNumericMetadataValue(row, [
+                        'Data_length',
+                        'data_length',
+                        'DATA_LENGTH',
+                    ]);
+                    if (tableName && (rowCount !== undefined || tableSize !== undefined)) {
+                        mergeTableMetadata(tableName, {
+                            ...(rowCount !== undefined ? { rowCount } : {}),
+                            ...(tableSize !== undefined ? { tableSize } : {}),
+                        });
                     }
                 });
                 if (tableStatsResult?.success && Array.isArray(tableStatsResult.data)) {
@@ -1358,6 +1406,7 @@ export const useSidebarTreeLoaders = ({
 	                };
 	            };
 
+	            let renderedDatabaseChildren: TreeNode[];
 	            if (shouldGroupBySchema) {
 	                type SchemaBucket = {
 	                    schemaName: string;
@@ -1444,7 +1493,7 @@ export const useSidebarTreeLoaders = ({
 	                        };
 	                    });
 
-	                replaceTreeNodeChildren(key, [queriesNode, ...schemaNodes], latestDatabaseConnection);
+	                renderedDatabaseChildren = [queriesNode, ...schemaNodes];
 	            } else {
 	                const dialect = getMetadataDialect(conn as SavedConnection);
 	                const includeMaterializedViews = dialect === 'starrocks';
@@ -1462,10 +1511,29 @@ export const useSidebarTreeLoaders = ({
 	                    ...(includeEvents ? [buildObjectGroup(key as string, 'events', t('sidebar.object_group.events'), <ClockCircleOutlined />, eventEntries.map(buildEventNode))] : []),
 	                ];
 
-	                replaceTreeNodeChildren(key, [queriesNode, ...groupedNodes], latestDatabaseConnection);
+	                renderedDatabaseChildren = [queriesNode, ...groupedNodes];
 	            }
+	            replaceTreeNodeChildren(key, renderedDatabaseChildren, latestDatabaseConnection);
                 onDatabaseTreeLoaded?.(String(key));
                 shouldMarkDatabaseSuccess = true;
+
+	            if (getMetadataDialect(conn as SavedConnection) === 'sqlite') {
+	                const tableNames = tableRows
+	                    .map((row) => getSidebarTableName(row as Record<string, any>))
+	                    .filter((tableName) => String(tableName || '').trim() !== '');
+	                const refreshed = await DBRefreshTableStats(
+	                    buildRpcConnectionConfig(config) as any,
+	                    conn.dbName,
+	                    tableNames,
+	                ).catch(() => null);
+	                if (refreshed?.success && Array.isArray(refreshed.data)) {
+	                    renderedDatabaseChildren = applyRefreshedSQLiteStatsToTree(
+	                        renderedDatabaseChildren,
+	                        refreshed.data as Record<string, any>[],
+	                    );
+	                    replaceTreeNodeChildren(key, renderedDatabaseChildren, latestDatabaseConnection);
+	                }
+	            }
 	          } else {
 	            setConnectionStates(prev => ({ ...prev, [key as string]: 'error' }));
 	            message.error({ content: res.message, key: `db-${key}-tables` });

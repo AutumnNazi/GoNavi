@@ -9,6 +9,7 @@ import { useSidebarTreeLoaders } from './useSidebarTreeLoaders';
 const mocks = vi.hoisted(() => ({
   dbGetDatabases: vi.fn(),
   dbGetTables: vi.fn(),
+  dbRefreshTableStats: vi.fn(),
   dbQuery: vi.fn(),
   getDriverStatusList: vi.fn(),
   jvmProbeCapabilities: vi.fn(),
@@ -54,6 +55,7 @@ vi.mock('../../store', async () => {
 vi.mock('../../../wailsjs/go/app/App', () => ({
   DBGetDatabases: mocks.dbGetDatabases,
   DBGetTables: mocks.dbGetTables,
+  DBRefreshTableStats: mocks.dbRefreshTableStats,
   DBQuery: mocks.dbQuery,
   GetDriverStatusList: mocks.getDriverStatusList,
   JVMProbeCapabilities: mocks.jvmProbeCapabilities,
@@ -70,6 +72,7 @@ describe('useSidebarTreeLoaders PostgreSQL partitions', () => {
     mocks.storeState.pinnedSidebarTables = [];
     mocks.storeState.pinnedSidebarDatabases = [];
     mocks.replaceTreeNodeChildren.mockImplementation((_key, children) => children || []);
+    mocks.dbRefreshTableStats.mockResolvedValue({ success: false });
   });
 
   afterEach(() => {
@@ -427,5 +430,81 @@ describe('useSidebarTreeLoaders PostgreSQL partitions', () => {
 
     expect(freshLoadResolved).toBe(true);
     expect(loadingNodesRef.current.size).toBe(0);
+  });
+
+  it('renders cached sqlite table stats before applying the asynchronous refresh', async () => {
+    const refresh = deferred<any>();
+    const connection = {
+      id: 'conn-sqlite',
+      name: 'SQLite',
+      dbName: 'main',
+      config: {
+        id: 'conn-sqlite',
+        type: 'sqlite',
+        database: 'E:\\data\\app.db',
+      },
+    } as SavedConnection & { dbName: string };
+    mocks.storeState.connections = [connection];
+    mocks.dbGetTables.mockResolvedValue({
+      success: true,
+      data: [{ Table: 'orders', Rows: '5', Data_length: '1024' }],
+    });
+    mocks.dbQuery.mockResolvedValue({ success: true, data: [] });
+    mocks.dbRefreshTableStats.mockReturnValue(refresh.promise);
+
+    let loaders: ReturnType<typeof useSidebarTreeLoaders> | undefined;
+    const Harness = () => {
+      loaders = useSidebarTreeLoaders({
+        savedQueries: [],
+        tableSortPreference: {},
+        tableAccessCount: {},
+        pinnedSidebarTables: [],
+        pinnedSidebarDatabases: [],
+        isV2Ui: true,
+        loadingNodesRef: { current: new Set<string>() },
+        setConnectionStates: vi.fn(),
+        setLoadedKeys: vi.fn(),
+        replaceTreeNodeChildren: mocks.replaceTreeNodeChildren,
+        buildRuntimeConfig: (conn) => conn.config,
+        buildJVMRuntimeConfig: (conn) => conn.config,
+        buildJVMDiagnosticTreeNodes: () => [],
+        resolveSavedQueryDisplayName: (name) => String(name || ''),
+      });
+      return null;
+    };
+
+    act(() => {
+      renderer = create(<Harness />);
+    });
+    const load = loaders!.loadTables({ key: 'conn-sqlite-main', dataRef: connection });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(mocks.replaceTreeNodeChildren).toHaveBeenCalledTimes(1);
+    const initialChildren = mocks.replaceTreeNodeChildren.mock.calls[0][1];
+    const findTableNode = (nodes: any[]): any => {
+      for (const node of nodes || []) {
+        if (node.type === 'table' && node.dataRef?.tableName === 'orders') return node;
+        const nested = findTableNode(node.children || []);
+        if (nested) return nested;
+      }
+      return undefined;
+    };
+    expect(findTableNode(initialChildren).dataRef).toMatchObject({ rowCount: 5, tableSize: 1024 });
+
+    refresh.resolve({
+      success: true,
+      data: [{ Table: 'orders', Rows: '9', Data_length: '2048' }],
+    });
+    await act(async () => {
+      await load;
+    });
+
+    expect(mocks.replaceTreeNodeChildren).toHaveBeenCalledTimes(2);
+    const refreshedChildren = mocks.replaceTreeNodeChildren.mock.calls[1][1];
+    expect(findTableNode(refreshedChildren).dataRef).toMatchObject({ rowCount: 9, tableSize: 2048 });
   });
 });

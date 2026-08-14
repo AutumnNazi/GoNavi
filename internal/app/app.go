@@ -192,6 +192,7 @@ type App struct {
 	importTasksClosing            bool
 	dataRootApplyMu               sync.Mutex
 	configDir                     string
+	sqliteTableStatsMu            sync.Mutex
 	secretStore                   secretstore.SecretStore
 	runningQueries                map[string]queryContext // queryID -> cancelFunc and start time
 	sqlTransactionMu              sync.Mutex
