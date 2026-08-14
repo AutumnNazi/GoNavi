@@ -3,8 +3,6 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import Editor, { type BeforeMount, type OnMount } from './MonacoEditor';
 import { message, Input, Form, MenuProps, Button, Segmented, type InputRef } from 'antd';
 import {
-    ArrowDownOutlined,
-    ArrowUpOutlined,
     CodeOutlined,
     EditOutlined,
     ExportOutlined,
@@ -4809,23 +4807,10 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
 
       if (isV2Ui && typeof editor.onContextMenu === 'function') {
           editor.onContextMenu(() => {
-              const decorateContextMenu = () => {
-                  const connectionName = connectionsRef.current.find(
-                      (connection) => connection.id === currentConnectionIdRef.current,
-                  )?.name;
-                  const contextMeta = [connectionName, currentDbRef.current]
-                      .filter(Boolean)
-                      .join(' · ');
-                  decorateV2MonacoContextMenu(
-                      translate('tab_manager.kind_badge.query'),
-                      contextMeta || translate('query_editor.placeholder.database'),
-                  );
-              };
-              // Monaco appends the menu asynchronously after dispatching onContextMenu.
-              // Retry across the next paint window so the first open is decorated too.
-              window.setTimeout(decorateContextMenu, 0);
-              window.setTimeout(decorateContextMenu, 48);
-              window.setTimeout(decorateContextMenu, 120);
+              decorateV2MonacoContextMenu();
+              window.setTimeout(decorateV2MonacoContextMenu, 0);
+              window.setTimeout(decorateV2MonacoContextMenu, 48);
+              window.setTimeout(decorateV2MonacoContextMenu, 120);
           });
       }
 
@@ -7670,13 +7655,13 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
               {
                   key: 'upper',
                   label: translate('query_editor.format.keyword_upper'),
-                  icon: <ArrowUpOutlined />,
+                  icon: <span aria-hidden="true" className="gn-query-format-case-icon gn-query-format-case-icon-upper">AA</span>,
                   onClick: () => setSqlFormatOptions({ keywordCase: 'upper' }),
               },
               {
                   key: 'lower',
                   label: translate('query_editor.format.keyword_lower'),
-                  icon: <ArrowDownOutlined />,
+                  icon: <span aria-hidden="true" className="gn-query-format-case-icon gn-query-format-case-icon-lower">aa</span>,
                   onClick: () => setSqlFormatOptions({ keywordCase: 'lower' }),
               },
               {

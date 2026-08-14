@@ -318,17 +318,50 @@ describe('QueryEditorToolbar layout', () => {
 
     expect(toolbarSource).toContain('renderV2ActionMenuPopup');
     expect(queryEditorSource).toContain('decorateV2MonacoContextMenu');
+    expect(queryEditorSource).toContain('window.setTimeout(decorateV2MonacoContextMenu, 0)');
+    expect(queryEditorSource).toContain('window.setTimeout(decorateV2MonacoContextMenu, 48)');
+    expect(queryEditorSource).toContain('window.setTimeout(decorateV2MonacoContextMenu, 120)');
     expect(sharedPopupSource).toContain('gn-v2-context-menu-header gn-v2-action-menu-header');
     expect(sharedPopupSource).toContain('gn-v2-context-menu-engine-pill');
+    expect(sharedPopupSource).toContain('.monaco-menu {');
+    expect(sharedPopupSource).toContain('font-family: var(--gn-font-sans) !important;');
+    expect(sharedPopupSource).toContain('color: var(--gn-fg-1) !important;');
+    expect(sharedPopupSource).toContain('background: transparent !important;');
+    expect(sharedPopupSource).toContain('background: var(--gn-bg-active) !important;');
+    expect(sharedPopupSource).toContain('.monaco-menu .monaco-action-bar.vertical .action-item > .action-menu-item:hover');
+    expect(sharedPopupSource).toContain('.monaco-menu .monaco-action-bar.vertical .action-item > .action-menu-item:focus');
+    expect(sharedPopupSource).not.toContain('gn-v2-monaco-context-menu-header');
+    expect(sharedPopupSource).not.toContain('menu.prepend(header)');
     expect(css).toContain('.gn-v2-action-menu-surface {');
     expect(css).toContain('.gn-v2-action-menu-body .ant-dropdown-menu-item-group-title {');
     expect(css).toContain('.gn-v2-action-menu-body .ant-dropdown-menu-item:not(:has(.ant-dropdown-menu-item-icon))::before');
-    expect(css).toContain('.monaco-menu > .gn-v2-monaco-context-menu-header {');
+    expect(css).toContain('body[data-ui-version="v2"] .monaco-menu {');
+    expect(css).toContain('body[data-ui-version="v2"] .monaco-menu .monaco-action-bar .action-item .action-label.separator {');
+    expect(css).not.toContain('.monaco-menu > .gn-v2-monaco-context-menu-header {');
   });
 
   it('uses the title-bar more menu surface for editor action popups', () => {
     const toolbarSource = readFileSync(new URL('./QueryEditorToolbar.tsx', import.meta.url), 'utf8');
     expect(toolbarSource).toContain("showHeader: false");
     expect(toolbarSource).toContain('gn-v2-titlebar-quick-dropdown');
+  });
+
+  it('uses distinct case icons for keyword case actions', () => {
+    const queryEditorSource = readFileSync(new URL('./QueryEditor.tsx', import.meta.url), 'utf8');
+    const css = readV2ThemeCss();
+    const caseIconCss = css.match(/\.gn-query-format-case-icon \{[\s\S]*?\}/)?.[0] || '';
+    expect(queryEditorSource).toContain('gn-query-format-case-icon-upper');
+    expect(queryEditorSource).toContain('gn-query-format-case-icon-lower');
+    expect(queryEditorSource).toContain('>AA</span>');
+    expect(queryEditorSource).toContain('>aa</span>');
+    expect(queryEditorSource).not.toContain('FontSizeOutlined');
+    expect(queryEditorSource).not.toContain('FontColorsOutlined');
+    expect(queryEditorSource).not.toContain('ArrowUpOutlined');
+    expect(queryEditorSource).not.toContain('ArrowDownOutlined');
+    expect(caseIconCss).toContain('.gn-query-format-case-icon {');
+    expect(caseIconCss).toContain('width: 14px;');
+    expect(caseIconCss).toContain('height: 14px;');
+    expect(caseIconCss).toContain('font-size: 10px;');
+    expect(caseIconCss).toContain('font-weight: 400;');
   });
 });
