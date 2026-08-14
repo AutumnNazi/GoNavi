@@ -3,13 +3,70 @@
 package db
 
 import (
+	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"GoNavi-Wails/internal/connection"
 )
+
+func TestSQLiteConnectConfiguresBoundedPoolAndSerializesWrites(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "pool.sqlite")
+	client := &SQLiteDB{}
+	if err := client.Connect(connection.ConnectionConfig{Type: "sqlite", Host: dbPath}); err != nil {
+		t.Fatalf("连接 SQLite 失败: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = client.Close()
+	})
+
+	if got := client.conn.Stats().MaxOpenConnections; got != sqliteSQLMaxOpenConns {
+		t.Fatalf("期望最大连接数为 %d，实际=%d", sqliteSQLMaxOpenConns, got)
+	}
+	if _, err := client.conn.Exec(`CREATE TABLE pool_items (id INTEGER PRIMARY KEY, value TEXT NOT NULL)`); err != nil {
+		t.Fatalf("创建测试表失败: %v", err)
+	}
+
+	const requestCount = 20
+	var wg sync.WaitGroup
+	errCh := make(chan error, requestCount)
+	for i := 0; i < requestCount; i++ {
+		wg.Add(1)
+		go func(id int) {
+			defer wg.Done()
+			_, err := client.conn.ExecContext(
+				context.Background(),
+				`INSERT INTO pool_items (id, value) VALUES (?, ?)`,
+				id,
+				fmt.Sprintf("value-%d", id),
+			)
+			errCh <- err
+		}(i)
+	}
+	wg.Wait()
+	close(errCh)
+	for err := range errCh {
+		if err != nil {
+			t.Fatalf("并发写入失败: %v", err)
+		}
+	}
+
+	var count int
+	if err := client.conn.QueryRow(`SELECT COUNT(*) FROM pool_items`).Scan(&count); err != nil {
+		t.Fatalf("统计写入结果失败: %v", err)
+	}
+	if count != requestCount {
+		t.Fatalf("期望写入 %d 行，实际=%d", requestCount, count)
+	}
+	stats := client.conn.Stats()
+	if stats.OpenConnections > sqliteSQLMaxOpenConns || stats.Idle > sqliteSQLMaxIdleConns {
+		t.Fatalf("SQLite 连接池超出边界: %+v", stats)
+	}
+}
 
 func TestResolveSQLiteDSNRejectsHostPort(t *testing.T) {
 	_, err := resolveSQLiteDSN(connection.ConnectionConfig{Type: "sqlite", Host: "localhost:3306"})
