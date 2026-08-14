@@ -1,11 +1,15 @@
 import React from "react";
 import { Button, Dropdown, Select, Tooltip, type MenuProps } from "antd";
 import {
+  BulbOutlined,
+  CheckOutlined,
+  DatabaseOutlined,
   DiffOutlined,
   DownOutlined,
   EyeInvisibleOutlined,
   EyeOutlined,
   EllipsisOutlined,
+  FileTextOutlined,
   FormatPainterOutlined,
   PlayCircleOutlined,
   RobotOutlined,
@@ -13,6 +17,7 @@ import {
   SaveOutlined,
   SettingOutlined,
   StopOutlined,
+  ThunderboltOutlined,
 } from "@ant-design/icons";
 
 import { t as defaultTranslate } from '../i18n';
@@ -63,6 +68,7 @@ export type QueryEditorToolbarProps = {
   runDisabled?: boolean;
   saveMoreMenuItems: MenuProps["items"];
   formatSettingsMenu: MenuProps["items"];
+  formatSettingsSelectedKeys?: string[];
   templateMenuItems?: MenuProps["items"];
   onConnectionChange: (connectionId: string) => void;
   onDatabaseChange: (dbName: string) => void;
@@ -160,6 +166,40 @@ type FullNameSelectOption = {
 
 type QueryToolbarMenuKey = "ai" | "more" | "format" | "templates";
 
+const normalizeV2ActionMenuItems = (
+  items: MenuProps["items"],
+  fallbackIcon: React.ReactNode,
+): MenuProps["items"] => {
+  const normalized: NonNullable<MenuProps["items"]> = [];
+  const appendDivider = () => {
+    if (normalized.length > 0 && (normalized[normalized.length - 1] as { type?: string }).type !== "divider") {
+      normalized.push({ type: "divider" });
+    }
+  };
+  const appendItem = (item: any) => {
+    if (!item) return;
+    if (item.type === "divider") {
+      appendDivider();
+      return;
+    }
+    if (item.type === "group") {
+      const children = (item.children ?? []).filter(Boolean);
+      if (children.length > 0) {
+        appendDivider();
+        children.forEach(appendItem);
+      }
+      return;
+    }
+    normalized.push({ ...item, icon: item.icon ?? fallbackIcon });
+  };
+
+  (items ?? []).forEach(appendItem);
+  if ((normalized[normalized.length - 1] as { type?: string } | undefined)?.type === "divider") {
+    normalized.pop();
+  }
+  return normalized;
+};
+
 const renderFullNameSelectTooltip = (fullName: React.ReactNode) => {
   const fullNameText = String(fullName ?? "");
 
@@ -204,6 +244,7 @@ const QueryEditorToolbar: React.FC<QueryEditorToolbarProps> = ({
   runDisabled = false,
   saveMoreMenuItems,
   formatSettingsMenu,
+  formatSettingsSelectedKeys = [],
   templateMenuItems,
   onConnectionChange,
   onDatabaseChange,
@@ -305,17 +346,12 @@ const QueryEditorToolbar: React.FC<QueryEditorToolbarProps> = ({
     ? t("query_editor.elasticsearch.action.ai")
     : `AI · ${t("query_editor.action.more")}`;
   const formatSettingsTitle = `${t("query_editor.action.format_sql")} · ${t("settings.title")}`;
-  const activeConnectionLabel = queryCapableConnections.find(
-    (connection) => connection.id === currentConnectionId,
-  )?.name;
-  const menuContextMeta = [activeConnectionLabel, currentDb].filter(Boolean).join(' · ')
-    || t('tab_manager.kind_badge.query');
   const aiMenuItems: MenuProps["items"] = isElasticsearchMode
     ? [
         {
           key: "ai-generate",
           label: t("query_editor.elasticsearch.action.ai_generate"),
-          icon: <RobotOutlined />,
+          icon: <FileTextOutlined />,
           onClick: () => onAIAction("generate"),
         },
       ]
@@ -330,26 +366,26 @@ const QueryEditorToolbar: React.FC<QueryEditorToolbarProps> = ({
         {
           key: "ai-generate",
           label: t("query_editor.action.ai_text_to_sql_menu"),
-          icon: <RobotOutlined />,
+          icon: <FileTextOutlined />,
           onClick: () => onAIAction("generate"),
         },
         {
           key: "ai-explain",
           label: t("query_editor.action.ai_explain_sql_menu"),
-          icon: <RobotOutlined />,
+          icon: <BulbOutlined />,
           onClick: () => onAIAction("explain"),
         },
         {
           key: "ai-optimize",
           label: t("query_editor.action.ai_optimize_sql_menu"),
-          icon: <RobotOutlined />,
+          icon: <ThunderboltOutlined />,
           onClick: () => onAIAction("optimize"),
         },
         { type: "divider" as const },
         {
           key: "ai-schema",
           label: t("query_editor.action.ai_schema_analysis"),
-          icon: <RobotOutlined />,
+          icon: <DatabaseOutlined />,
           onClick: () => onAIAction("schema"),
         },
       ];
@@ -373,6 +409,24 @@ const QueryEditorToolbar: React.FC<QueryEditorToolbarProps> = ({
         },
       ]
     : baseMoreMenuItems;
+  const templateActionMenuItems = normalizeV2ActionMenuItems(templateMenuItems, <FileTextOutlined />);
+  const aiActionMenuItems = normalizeV2ActionMenuItems(aiMenuItems, <RobotOutlined />);
+  const moreActionMenuItems = normalizeV2ActionMenuItems(moreMenuItems, <EllipsisOutlined />);
+  const selectedFormatKeys = new Set(formatSettingsSelectedKeys);
+  const markSelectedFormatItems = (items: MenuProps['items']): MenuProps['items'] => (items ?? []).map((item) => {
+    if (!item || item.type === 'divider') {
+      return item;
+    }
+    if (item.type === 'group') {
+      return { ...item, children: markSelectedFormatItems(item.children) };
+    }
+    return {
+      ...item,
+      extra: selectedFormatKeys.has(String(item.key)) ? <CheckOutlined aria-label="selected" /> : undefined,
+    };
+  });
+  const formatMenuItemsWithSelection = markSelectedFormatItems(formatSettingsMenu);
+  const formatActionMenuItems = normalizeV2ActionMenuItems(formatMenuItemsWithSelection, <FormatPainterOutlined />);
   const selects = (
     <div
       className={isV2Ui ? "gn-v2-query-toolbar-selects" : undefined}
@@ -447,15 +501,14 @@ const QueryEditorToolbar: React.FC<QueryEditorToolbarProps> = ({
           open={isV2Ui && openToolbarMenu === "templates" ? false : undefined}
         >
           <span className={isV2Ui ? "gn-v2-query-toolbar-menu-trigger" : undefined}>
-              <Dropdown
-                menu={{ items: templateMenuItems }}
+            <Dropdown
+                menu={{ items: isV2Ui ? templateActionMenuItems : templateMenuItems }}
                 placement="bottomLeft"
                 trigger={["click"]}
-                rootClassName={isV2Ui ? 'gn-v2-action-menu-popup-host' : undefined}
+                rootClassName={isV2Ui ? 'gn-v2-titlebar-quick-dropdown gn-v2-action-menu-popup-host' : undefined}
                 popupRender={(menu) => renderV2ActionMenuPopup(menu, isV2Ui, {
                   title: t('query_editor.elasticsearch.action.templates'),
-                  meta: menuContextMeta,
-                  icon: <DownOutlined />,
+                  showHeader: false,
                 })}
                 open={isV2Ui ? openToolbarMenu === "templates" : undefined}
               onOpenChange={isV2Ui ? (open) => updateToolbarMenuOpen("templates", open) : undefined}
@@ -631,15 +684,13 @@ const QueryEditorToolbar: React.FC<QueryEditorToolbarProps> = ({
           >
             <span className={isV2Ui ? "gn-v2-query-toolbar-menu-trigger" : undefined}>
               <Dropdown
-                menu={{ items: aiMenuItems }}
+                menu={{ items: isV2Ui ? aiActionMenuItems : aiMenuItems }}
                 placement="bottomRight"
                 trigger={["click"]}
-                rootClassName={isV2Ui ? 'gn-v2-action-menu-popup-host' : undefined}
+                  rootClassName={isV2Ui ? 'gn-v2-titlebar-quick-dropdown gn-v2-action-menu-popup-host' : undefined}
                 popupRender={(menu) => renderV2ActionMenuPopup(menu, isV2Ui, {
                   title: aiMoreTitle,
-                  meta: menuContextMeta,
-                  icon: <RobotOutlined />,
-                  badge: 'AI',
+                  showHeader: false,
                 })}
                 open={isV2Ui ? openToolbarMenu === "ai" : undefined}
                 onOpenChange={isV2Ui ? (open) => updateToolbarMenuOpen("ai", open) : undefined}
@@ -679,15 +730,13 @@ const QueryEditorToolbar: React.FC<QueryEditorToolbarProps> = ({
               >
                 <span className={isV2Ui ? "gn-v2-query-toolbar-menu-trigger" : undefined}>
                   <Dropdown
-                    menu={{ items: aiMenuItems }}
+                    menu={{ items: isV2Ui ? aiActionMenuItems : aiMenuItems }}
                     placement="bottomRight"
                     trigger={["click"]}
-                    rootClassName={isV2Ui ? 'gn-v2-action-menu-popup-host' : undefined}
+                    rootClassName={isV2Ui ? 'gn-v2-titlebar-quick-dropdown gn-v2-action-menu-popup-host' : undefined}
                     popupRender={(menu) => renderV2ActionMenuPopup(menu, isV2Ui, {
                       title: aiMoreTitle,
-                      meta: menuContextMeta,
-                      icon: <RobotOutlined />,
-                      badge: 'AI',
+                      showHeader: false,
                     })}
                     open={isV2Ui ? openToolbarMenu === "ai" : undefined}
                     onOpenChange={isV2Ui ? (open) => updateToolbarMenuOpen("ai", open) : undefined}
@@ -710,15 +759,13 @@ const QueryEditorToolbar: React.FC<QueryEditorToolbarProps> = ({
             >
               <span className={isV2Ui ? "gn-v2-query-toolbar-menu-trigger" : undefined}>
                 <Dropdown
-                  menu={{ items: moreMenuItems }}
+                  menu={{ items: isV2Ui ? moreActionMenuItems : moreMenuItems }}
                   placement="bottomRight"
                   trigger={["click"]}
-                  rootClassName={isV2Ui ? 'gn-v2-action-menu-popup-host' : undefined}
+                  rootClassName={isV2Ui ? 'gn-v2-titlebar-quick-dropdown gn-v2-action-menu-popup-host' : undefined}
                   popupRender={(menu) => renderV2ActionMenuPopup(menu, isV2Ui, {
                     title: t('query_editor.action.more'),
-                    meta: menuContextMeta,
-                    icon: <EllipsisOutlined />,
-                    badge: t('tab_manager.kind_badge.query'),
+                    showHeader: false,
                   })}
                   open={isV2Ui ? openToolbarMenu === "more" : undefined}
                   onOpenChange={isV2Ui ? (open) => updateToolbarMenuOpen("more", open) : undefined}
@@ -799,16 +846,18 @@ const QueryEditorToolbar: React.FC<QueryEditorToolbarProps> = ({
             open={isV2Ui && openToolbarMenu === "format" ? false : undefined}
           >
             <span className={isV2Ui ? "gn-v2-query-toolbar-menu-trigger" : undefined}>
-              <Dropdown
-                menu={{ items: formatSettingsMenu }}
+            <Dropdown
+                menu={{
+                  items: isV2Ui ? formatActionMenuItems : formatMenuItemsWithSelection,
+                  selectable: true,
+                  selectedKeys: formatSettingsSelectedKeys,
+                }}
                 placement="bottomRight"
                 trigger={["click"]}
-                rootClassName={isV2Ui ? 'gn-v2-action-menu-popup-host' : undefined}
+                rootClassName={isV2Ui ? 'gn-v2-titlebar-quick-dropdown gn-v2-action-menu-popup-host' : undefined}
                 popupRender={(menu) => renderV2ActionMenuPopup(menu, isV2Ui, {
                   title: formatSettingsTitle,
-                  meta: menuContextMeta,
-                  icon: <FormatPainterOutlined />,
-                  badge: t('tab_manager.kind_badge.query'),
+                  showHeader: false,
                 })}
                 open={isV2Ui ? openToolbarMenu === "format" : undefined}
                 onOpenChange={isV2Ui ? (open) => updateToolbarMenuOpen("format", open) : undefined}

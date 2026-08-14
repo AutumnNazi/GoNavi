@@ -2,6 +2,17 @@ import Modal from './common/ResizableDraggableModal';
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import Editor, { type BeforeMount, type OnMount } from './MonacoEditor';
 import { message, Input, Form, MenuProps, Button, Segmented, type InputRef } from 'antd';
+import {
+    CodeOutlined,
+    EditOutlined,
+    ExportOutlined,
+    FileTextOutlined,
+    HistoryOutlined,
+    KeyOutlined,
+    SaveOutlined,
+    SearchOutlined,
+    UndoOutlined,
+} from '@ant-design/icons';
 import { format } from 'sql-formatter';
 import { v4 as uuidv4 } from 'uuid';
 import { TabData, ColumnDefinition, type SavedQuery, type SqlSnippet } from '../types';
@@ -4796,23 +4807,10 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
 
       if (isV2Ui && typeof editor.onContextMenu === 'function') {
           editor.onContextMenu(() => {
-              const decorateContextMenu = () => {
-                  const connectionName = connectionsRef.current.find(
-                      (connection) => connection.id === currentConnectionIdRef.current,
-                  )?.name;
-                  const contextMeta = [connectionName, currentDbRef.current]
-                      .filter(Boolean)
-                      .join(' · ');
-                  decorateV2MonacoContextMenu(
-                      translate('tab_manager.kind_badge.query'),
-                      contextMeta || translate('query_editor.placeholder.database'),
-                  );
-              };
-              // Monaco appends the menu asynchronously after dispatching onContextMenu.
-              // Retry across the next paint window so the first open is decorated too.
-              window.setTimeout(decorateContextMenu, 0);
-              window.setTimeout(decorateContextMenu, 48);
-              window.setTimeout(decorateContextMenu, 120);
+              decorateV2MonacoContextMenu();
+              window.setTimeout(decorateV2MonacoContextMenu, 0);
+              window.setTimeout(decorateV2MonacoContextMenu, 48);
+              window.setTimeout(decorateV2MonacoContextMenu, 120);
           });
       }
 
@@ -7657,18 +7655,19 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
               {
                   key: 'upper',
                   label: translate('query_editor.format.keyword_upper'),
-                  icon: sqlFormatOptions.keywordCase === 'upper' ? '✓' : undefined,
+                  icon: <span aria-hidden="true" className="gn-query-format-case-icon gn-query-format-case-icon-upper">AA</span>,
                   onClick: () => setSqlFormatOptions({ keywordCase: 'upper' }),
               },
               {
                   key: 'lower',
                   label: translate('query_editor.format.keyword_lower'),
-                  icon: sqlFormatOptions.keywordCase === 'lower' ? '✓' : undefined,
+                  icon: <span aria-hidden="true" className="gn-query-format-case-icon gn-query-format-case-icon-lower">aa</span>,
                   onClick: () => setSqlFormatOptions({ keywordCase: 'lower' }),
               },
               {
                   key: 'restore-last-format',
                   label: translate('query_editor.format.restore_last_format'),
+                  icon: <UndoOutlined />,
                   disabled: !tab.formatRestoreSnapshot?.query,
                   onClick: handleRestoreLastFormat,
               },
@@ -7682,11 +7681,13 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
               {
                   key: 'snippet-settings',
                   label: translate('query_editor.format.snippet_settings'),
+                  icon: <CodeOutlined />,
                   onClick: () => window.dispatchEvent(new CustomEvent('gonavi:open-snippet-settings')),
               },
               {
                   key: 'shortcut-settings',
                   label: translate('query_editor.format.shortcut_settings'),
+                  icon: <KeyOutlined />,
                   onClick: () => window.dispatchEvent(new CustomEvent('gonavi:open-shortcut-settings')),
               },
           ],
@@ -10437,6 +10438,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           majorVersion: elasticsearchServerMajor || 8,
       }).map((template) => ({
           key: template.id,
+          icon: <FileTextOutlined />,
           danger: template.dangerous,
           label: template.dangerous
               ? `${translate('query_editor.elasticsearch.danger_badge')} · ${translate(template.labelKey)}`
@@ -10453,6 +10455,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           children: [
               ...(currentSavedQuery && !tab.filePath ? [{
                   key: 'save-query-as',
+                  icon: <SaveOutlined />,
                   label: (
                       <span className="gn-v2-context-menu-item-title">
                           {translate('query_editor.action.save_as')}
@@ -10468,12 +10471,14 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
               {
                   key: 'rename-query',
                   label: translate('query_editor.action.rename_query'),
+                  icon: <EditOutlined />,
                   disabled: !!tab.filePath,
                   onClick: handleRenameQuery,
               },
               {
                   key: 'export-sql-file',
                   label: translate('query_editor.action.export_sql_file'),
+                  icon: <ExportOutlined />,
                   onClick: () => void handleExportSQLFile(),
               },
           ],
@@ -10485,6 +10490,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           children: [
               {
                   key: 'diagnose-query',
+                  icon: <SearchOutlined />,
                   label: (
                       <span className="gn-v2-context-menu-item-title">
                           {translate('app.shortcuts.action.diagnoseQuery.label' as any)}
@@ -10500,6 +10506,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
               },
               {
                   key: 'show-slow-queries',
+                  icon: <HistoryOutlined />,
                   label: (
                       <span className="gn-v2-context-menu-item-title">
                           {translate('app.shortcuts.action.showSlowQueries.label' as any)}
@@ -11196,6 +11203,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
         runDisabled={canSelectQuerySchema && schemaLoading}
         saveMoreMenuItems={saveMoreMenuItems}
         formatSettingsMenu={formatSettingsMenu}
+        formatSettingsSelectedKeys={[sqlFormatOptions.keywordCase]}
         templateMenuItems={elasticsearchTemplateMenuItems}
         onConnectionChange={(val) => {
             void switchQueryContext(val, '');
