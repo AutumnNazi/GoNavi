@@ -1776,7 +1776,7 @@ jobs:
         with:
           tag_name: ${{ needs.validate_release_tag.outputs.tag }}
           target_commitish: ${{ needs.validate_release_tag.outputs.sha }}
-          name: GoNavi ${{ needs.validate_release_tag.outputs.tag }}
+          name: ${{ needs.validate_release_tag.outputs.tag }}
           files: |
             release-assets/*
             cli-assets/*

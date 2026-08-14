@@ -141,6 +141,17 @@ class CLIReleaseAssetsTest(unittest.TestCase):
                     f"invalid bash in {workflow_name} step {step_name!r}:\n{result.stderr}",
                 )
 
+    def test_stable_release_title_matches_immutable_tag(self) -> None:
+        source = (ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
+        self.assertIn(
+            "name: ${{ needs.validate_release_tag.outputs.tag }}",
+            source,
+        )
+        self.assertNotIn(
+            "name: GoNavi ${{ needs.validate_release_tag.outputs.tag }}",
+            source,
+        )
+
     def test_gui_manifest_input_never_contains_cli_assets(self) -> None:
         workflow_steps = {
             "release.yml": (
