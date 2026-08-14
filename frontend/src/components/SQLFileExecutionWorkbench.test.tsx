@@ -33,6 +33,8 @@ const createRunnerState = (
 const mocks = vi.hoisted(() => ({
   executeSQLFile: vi.fn(),
   importDatabaseSQL: vi.fn(),
+  importDatabaseSQLWithOptions: vi.fn(),
+  preflightDatabaseSQLImport: vi.fn(),
   dataImportCapability: vi.fn(),
   cancelSQLFileExecution: vi.fn(),
   confirmProductionRisk: vi.fn(),
@@ -51,6 +53,8 @@ vi.mock('./common/ResizableDraggableModal', () => ({
 vi.mock('../../wailsjs/go/app/App', () => ({
   ExecuteSQLFile: mocks.executeSQLFile,
   ImportDatabaseSQL: mocks.importDatabaseSQL,
+  ImportDatabaseSQLWithOptions: mocks.importDatabaseSQLWithOptions,
+  PreflightDatabaseSQLImport: mocks.preflightDatabaseSQLImport,
   DataImportCapability: mocks.dataImportCapability,
   CancelSQLFileExecution: mocks.cancelSQLFileExecution,
 }));
@@ -116,6 +120,12 @@ vi.mock('antd', async () => {
     { PRESENTED_IMAGE_SIMPLE: 'simple' },
   );
   const Progress = (props: Record<string, unknown>) => React.createElement('mock-progress', props);
+  const Radio = ({ children, ...props }: React.PropsWithChildren<Record<string, unknown>>) => (
+    React.createElement('mock-radio', props, children)
+  );
+  Radio.Group = ({ children, ...props }: React.PropsWithChildren<Record<string, unknown>>) => (
+    React.createElement('mock-radio-group', props, children)
+  );
   const Paragraph = ({ children, ...props }: React.PropsWithChildren<Record<string, unknown>>) => (
     <p {...props}>{children}</p>
   );
@@ -131,6 +141,7 @@ vi.mock('antd', async () => {
     Checkbox,
     Empty,
     Progress,
+    Radio,
     Typography: { Paragraph, Text, Title },
   };
 });
@@ -173,6 +184,14 @@ describe('SQLFileExecutionWorkbench', () => {
     mocks.executeSQLFile.mockReset();
     mocks.importDatabaseSQL.mockReset();
     mocks.importDatabaseSQL.mockResolvedValue({ success: true, message: '', data: {} });
+    mocks.importDatabaseSQLWithOptions.mockReset();
+    mocks.importDatabaseSQLWithOptions.mockResolvedValue({ success: true, message: '', data: {} });
+    mocks.preflightDatabaseSQLImport.mockReset();
+    mocks.preflightDatabaseSQLImport.mockResolvedValue({
+      success: true,
+      data: { requiresGTIDDecision: false },
+      message: '',
+    });
     mocks.dataImportCapability.mockReset();
     mocks.dataImportCapability.mockResolvedValue({
       databaseType: 'mysql',
@@ -256,18 +275,73 @@ describe('SQLFileExecutionWorkbench', () => {
     const runnerOptions = mocks.run.mock.calls[0][0];
     await runnerOptions.run('sql-file-safe-job');
 
-    expect(mocks.importDatabaseSQL).toHaveBeenCalledWith(
+    expect(mocks.importDatabaseSQLWithOptions).toHaveBeenCalledWith(
       expect.objectContaining({ type: 'mysql' }),
       'app',
       tab.filePath,
       'sql-file-safe-job',
       false,
+      'reject',
     );
+    expect(mocks.importDatabaseSQL).not.toHaveBeenCalled();
     expect(mocks.executeSQLFile).not.toHaveBeenCalled();
   });
 
+  it('asks for a GTID conflict decision before starting a SQL file execution', async () => {
+    mocks.preflightDatabaseSQLImport.mockResolvedValue({
+      success: true,
+      data: {
+        containsMySQLGTIDPurged: true,
+        targetGTIDExecutedNonEmpty: true,
+        requiresGTIDDecision: true,
+        serverVersion: '8.4.3',
+      },
+      message: '',
+    });
+    const renderer = await renderWorkbench();
+
+    await act(async () => {
+      findRunButton(renderer).props.onClick();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(mocks.preflightDatabaseSQLImport).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'mysql' }),
+      'app',
+      tab.filePath,
+    );
+    expect(mocks.modalConfirm).toHaveBeenCalledOnce();
+    expect(mocks.run).not.toHaveBeenCalled();
+
+    const confirmOptions = mocks.modalConfirm.mock.calls[0][0];
+    const modeSelector = confirmOptions.content.props.children.find(
+      (child: any) => child?.props?.['data-mysql-gtid-mode-selector'] === 'true',
+    );
+
+    await act(async () => {
+      modeSelector.props.onChange({ target: { value: 'reset' } });
+      await confirmOptions.onOk();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(mocks.run).toHaveBeenCalledOnce();
+    const runnerOptions = mocks.run.mock.calls[0][0];
+    await runnerOptions.run('sql-file-gtid-job');
+    expect(mocks.importDatabaseSQLWithOptions).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'mysql' }),
+      'app',
+      tab.filePath,
+      'sql-file-gtid-job',
+      false,
+      'reset',
+    );
+    expect(mocks.importDatabaseSQL).not.toHaveBeenCalled();
+  });
+
   it('lets users continue after SQL statement errors and preserves a completed partial result', async () => {
-    mocks.importDatabaseSQL.mockResolvedValue({
+    mocks.importDatabaseSQLWithOptions.mockResolvedValue({
       success: false,
       message: 'completed with errors',
       data: { completed: true, failed: 1 },
@@ -290,12 +364,13 @@ describe('SQLFileExecutionWorkbench', () => {
     const runnerOptions = mocks.run.mock.calls[0][0];
     const result = await runnerOptions.run('sql-file-continue-job');
 
-    expect(mocks.importDatabaseSQL).toHaveBeenCalledWith(
+    expect(mocks.importDatabaseSQLWithOptions).toHaveBeenCalledWith(
       expect.objectContaining({ type: 'mysql' }),
       'app',
       tab.filePath,
       'sql-file-continue-job',
       true,
+      'reject',
     );
     expect(result).toMatchObject({
       success: true,

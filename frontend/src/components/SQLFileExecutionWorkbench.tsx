@@ -10,7 +10,8 @@ import {
 import {
   CancelSQLFileExecution,
   DataImportCapability as LoadDataImportCapability,
-  ImportDatabaseSQL,
+  ImportDatabaseSQLWithOptions,
+  PreflightDatabaseSQLImport,
 } from '../../wailsjs/go/app/App';
 import { useStore } from '../store';
 import type { TabData } from '../types';
@@ -31,6 +32,10 @@ import {
   type SQLFileExecutionState,
 } from './useSQLFileExecutionRunner';
 import Modal from './common/ResizableDraggableModal';
+import {
+  requestMySQLGTIDImportMode,
+  type MySQLGTIDImportMode,
+} from './MySQLGTIDImportModePrompt';
 
 const { Paragraph, Text, Title } = Typography;
 const t = defaultTranslate;
@@ -176,6 +181,8 @@ const SQLFileExecutionWorkbench: React.FC<{ tab: TabData }> = ({ tab }) => {
   const [nowTick, setNowTick] = useState(() => Date.now());
   const [historyEntries, setHistoryEntries] = useState<SQLFileExecutionHistoryEntry[]>(EMPTY_HISTORY);
   const [capabilityRequestToken, setCapabilityRequestToken] = useState(0);
+  const [executionPending, setExecutionPending] = useState(false);
+  const [preflightError, setPreflightError] = useState('');
   const [capabilityState, setCapabilityState] = useState<{
     status: 'idle' | 'loading' | 'ready' | 'error';
     supported: boolean;
@@ -322,45 +329,76 @@ const SQLFileExecutionWorkbench: React.FC<{ tab: TabData }> = ({ tab }) => {
 
   const startExecution = React.useCallback(async () => {
     const filePath = String(tab.filePath || '').trim();
-    if (!connectionConfig || !filePath || !capabilityAllowsExecution) {
+    if (!connectionConfig || !filePath || !capabilityAllowsExecution || executionPending || isRunning) {
       return;
     }
-    const approved = await confirmProductionRisk({
-      connection,
-      action: t('connection.production_risk.action.execute_sql'),
-      target: [tab.dbName, getFileName(filePath)].filter(Boolean).join(' / '),
-      translate: t,
-    });
-    if (!approved) return;
-    await runSQLFileExecutionWithProgress({
-      title: tab.title || t('sidebar.sql_file_exec.title'),
-      filePath,
-      fileSizeMB: tab.sqlFileExecutionFileSizeMB,
-      run: async (jobId) => {
-        const result = await ImportDatabaseSQL(
-          connectionConfig as any,
-          tab.dbName || '',
-          filePath,
-          jobId,
-          continueOnError,
+    setExecutionPending(true);
+    setPreflightError('');
+    try {
+      const approved = await confirmProductionRisk({
+        connection,
+        action: t('connection.production_risk.action.execute_sql'),
+        target: [tab.dbName, getFileName(filePath)].filter(Boolean).join(' / '),
+        translate: t,
+      });
+      if (!approved) return;
+
+      let mysqlGTIDMode: MySQLGTIDImportMode = 'reject';
+      const preflightResult = await PreflightDatabaseSQLImport(
+        connectionConfig as any,
+        String(tab.dbName || '').trim(),
+        filePath,
+      );
+      if (!preflightResult?.success) {
+        setPreflightError(
+          preflightResult?.message || t('data_import.workbench.gtid.preflight_failed'),
         );
-        if (continueOnError && result.data?.completed === true) {
-          return { ...result, success: true };
-        }
-        return result;
-      },
-      cancel: async (jobId) => {
-        const result = await CancelSQLFileExecution(jobId);
-        if (!result?.success) {
-          throw new Error(result?.message || t('import_preview.error.stop_failed'));
-        }
-      },
-    });
+        return;
+      }
+      const preflightData = preflightResult.data as {
+        requiresGTIDDecision?: unknown;
+      } | undefined;
+      if (preflightData?.requiresGTIDDecision === true) {
+        const selectedMode = await requestMySQLGTIDImportMode(t);
+        if (!selectedMode) return;
+        mysqlGTIDMode = selectedMode;
+      }
+
+      await runSQLFileExecutionWithProgress({
+        title: tab.title || t('sidebar.sql_file_exec.title'),
+        filePath,
+        fileSizeMB: tab.sqlFileExecutionFileSizeMB,
+        run: async (jobId) => {
+          const result = await ImportDatabaseSQLWithOptions(
+            connectionConfig as any,
+            String(tab.dbName || '').trim(),
+            filePath,
+            jobId,
+            continueOnError,
+            mysqlGTIDMode,
+          );
+          if (continueOnError && result.data?.completed === true) {
+            return { ...result, success: true };
+          }
+          return result;
+        },
+        cancel: async (jobId) => {
+          const result = await CancelSQLFileExecution(jobId);
+          if (!result?.success) {
+            throw new Error(result?.message || t('import_preview.error.stop_failed'));
+          }
+        },
+      });
+    } finally {
+      setExecutionPending(false);
+    }
   }, [
     capabilityAllowsExecution,
     connection,
     connectionConfig,
     continueOnError,
+    executionPending,
+    isRunning,
     runSQLFileExecutionWithProgress,
     tab.dbName,
     tab.filePath,
@@ -477,7 +515,7 @@ const SQLFileExecutionWorkbench: React.FC<{ tab: TabData }> = ({ tab }) => {
                 <Checkbox
                   data-sql-file-execution-continue-on-error="true"
                   checked={continueOnError}
-                  disabled={isRunning || !capabilityAllowsContinue}
+                  disabled={isRunning || executionPending || !capabilityAllowsContinue}
                   onChange={(event) => {
                     if (capabilityAllowsContinue) {
                       updateContinueOnError(event.target.checked);
@@ -523,6 +561,15 @@ const SQLFileExecutionWorkbench: React.FC<{ tab: TabData }> = ({ tab }) => {
             />
           ) : null}
 
+          {preflightError ? (
+            <Alert
+              data-sql-file-execution-preflight-error="true"
+              type="error"
+              showIcon
+              message={preflightError}
+            />
+          ) : null}
+
           <div
             style={{
               marginTop: 'auto',
@@ -558,6 +605,7 @@ const SQLFileExecutionWorkbench: React.FC<{ tab: TabData }> = ({ tab }) => {
                   icon={state.status === 'idle' ? <FileTextOutlined /> : <ReloadOutlined />}
                   disabled={!connectionConfig
                     || !String(tab.filePath || '').trim()
+                    || executionPending
                     || !capabilityAllowsExecution}
                   onClick={requestStartExecution}
                 >
