@@ -71,10 +71,6 @@ jobs:
         with:
           go-version-file: 'go.mod'
 
-      - name: Validate stable npm CLI package version
-        shell: bash
-        run: python3 tools/validate-npm-cli-package-version.py --tag "$RELEASE_TAG"
-
       - name: Test release asset contracts
         run: |
           go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 -shellcheck= -pyflakes= \

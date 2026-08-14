@@ -1,6 +1,6 @@
 ---
 name: gonavi-cli
-description: Operate databases through the GoNavi headless CLI — the `gonavi` executable shipped by `@syngnat/gonavi-cli`. Covers listing/adding/importing saved connections, running SQL queries against saved connections or ad-hoc connection files, exporting result sets to csv/json/md/html/xlsx, batch-executing SQL files with transaction control, exporting the SQL audit log, and launching the MCP server (stdio/http/remote-config). Use whenever the user mentions GoNavi, the gonavi CLI, running SQL from the terminal, exporting database query results, executing SQL files, managing saved database connections without the GUI, or the GoNavi MCP server — even if they don't name the tool explicitly.
+description: Operate databases through the GoNavi headless CLI — the `gonavi` executable shipped in verified GitHub Release archives. Covers listing/adding/importing saved connections, running SQL queries against saved connections or ad-hoc connection files, exporting result sets to csv/json/md/html/xlsx, batch-executing SQL files with transaction control, exporting the SQL audit log, and launching the MCP server (stdio/http/remote-config). Use whenever the user mentions GoNavi, the gonavi CLI, running SQL from the terminal, exporting database query results, executing SQL files, managing saved database connections without the GUI, or the GoNavi MCP server — even if they don't name the tool explicitly.
 ---
 
 # GoNavi CLI
@@ -13,16 +13,16 @@ invocation exits with a stable exit code.
 
 ## Install
 
+Download the matching `gonavi-cli_${VERSION}_${goos}_${arch}` archive and
+`gonavi-cli_${VERSION}_checksums.txt` file from a GoNavi GitHub Release, verify
+the SHA256 checksum, extract the archive, then run:
+
 ```bash
-npm install -g @syngnat/gonavi-cli     # installs the verified `gonavi` binary
 gonavi version                         # -> {"version":"0.9.3"}
 ```
 
-- The npm package downloads the matching GoNavi release archive, verifies its
-  SHA256 checksum, and only then installs the executable (`bin/.gonavi/gonavi`
-  on macOS/Linux, `gonavi.exe` on Windows).
-- Before the first stable CLI release is published, install from a release
-  archive instead of the npm registry.
+- The CLI is currently distributed through verified GitHub Release archives,
+  not npm.
 - `GONAVI_CLI_RELEASE_BASE_URL` may point at a mirror that preserves the same
   release asset names and checksum file. Release assets are named
   `gonavi-cli_${VERSION}_${goos}_${arch}.tar.gz` (darwin/linux) or `.zip`

@@ -10,6 +10,11 @@ on:
         description: Release tag to publish (for example, v0.8.7)
         required: true
         type: string
+      publish_npm:
+        description: Publish the optional npm CLI wrapper after the GitHub Release is public
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   actions: read
@@ -27,6 +32,9 @@ jobs:
     timeout-minutes: 120
     env:
       RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+      # npm distribution is opt-in. Stable GitHub/edge publication must not depend
+      # on an npm organization, token, or registry availability.
+      PUBLISH_NPM: ${{ inputs.publish_npm && 'true' || 'false' }}
     steps:
       - name: Validate release
         id: validate
@@ -261,8 +269,8 @@ jobs:
       - name: Checkout release tooling
         uses: actions/checkout@v5
         with:
-          # Publish the package and mirror payload from the exact immutable tag
-          # whose assets were validated above, never from the dispatch branch.
+          # Publish the mirror payload from the exact immutable tag whose assets
+          # were validated above, never from the dispatch branch.
           ref: ${{ steps.validate.outputs.tag }}
 
       - name: Validate stable npm CLI package version
@@ -486,6 +494,7 @@ jobs:
             core.notice(`Verified GitHub latest release ${tag}`);
 
       - name: Validate npm publication credentials
+        if: ${{ env.PUBLISH_NPM == 'true' }}
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
         shell: bash
@@ -496,6 +505,7 @@ jobs:
       # npm postinstall downloads the exact CLI archive from GitHub.  The
       # release must therefore be public and verified before npm publish.
       - name: Verify public CLI release assets for npm postinstall
+        if: ${{ env.PUBLISH_NPM == 'true' }}
         env:
           RELEASE_TAG: ${{ steps.validate.outputs.tag }}
         shell: bash
@@ -517,12 +527,14 @@ jobs:
           done
 
       - name: Setup Node for npm CLI publication
+        if: ${{ env.PUBLISH_NPM == 'true' }}
         uses: actions/setup-node@v5
         with:
           node-version: '20'
           registry-url: https://registry.npmjs.org
 
       - name: Publish npm CLI package
+        if: ${{ env.PUBLISH_NPM == 'true' }}
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
@@ -547,6 +559,7 @@ jobs:
           fi
 
       - name: Verify npm CLI package metadata
+        if: ${{ env.PUBLISH_NPM == 'true' }}
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
@@ -583,6 +596,10 @@ jobs:
           }
           console.log(`verified npm metadata for ${metadata.name}@${metadata.version}`);
           NODE
+
+      - name: Skip npm CLI publication
+        if: ${{ env.PUBLISH_NPM != 'true' }}
+        run: echo "npm CLI publication is disabled for this release; GitHub and edge downloads remain enabled."
 
       - name: Generate and retain WinGet CLI manifest
         env:
