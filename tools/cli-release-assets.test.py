@@ -104,6 +104,8 @@ class CLIReleaseAssetsTest(unittest.TestCase):
                 "Generate SHA256SUMS",
                 "Verify CLI release assets",
                 "Generate static update manifest (latest.json)",
+                "Annotate macOS signing status",
+                "Record release provenance",
             ),
             "dev-build.yml": (
                 "Build and package dev CLI",

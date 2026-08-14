@@ -1709,12 +1709,12 @@ jobs:
           set -euo pipefail
           test -s "$CHANGELOG_FILE"
           if [[ -z "$MACOS_SIGNING_CERTIFICATE_P12" ]]; then
-            cat >> "$CHANGELOG_FILE" <<'EOF'
-
-            ## macOS 安装提示
-
-            此版本的 macOS DMG 使用 ad-hoc 签名，未进行 Apple 公证。首次打开可能被 Gatekeeper 拦截；请确认来源后，在 Finder 中按住 Control 点击应用并选择“打开”。
-            EOF
+            printf '%s\n' \
+              '' \
+              '## macOS 安装提示' \
+              '' \
+              '此版本的 macOS DMG 使用 ad-hoc 签名，未进行 Apple 公证。首次打开可能被 Gatekeeper 拦截；请确认来源后，在 Finder 中按住 Control 点击应用并选择“打开”。' \
+              >> "$CHANGELOG_FILE"
           fi
 
       # 将同一份 changelog 写入 latest.json，供应用内「更新日志」弹窗使用（静态清单优先路径）。
