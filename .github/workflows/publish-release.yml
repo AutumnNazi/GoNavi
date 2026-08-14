@@ -59,6 +59,18 @@ jobs:
               commitSha = annotatedTag.data.object.sha;
             }
 
+            const releaseListForValidation = await github.rest.repos.listReleases({
+              owner,
+              repo,
+              per_page: 100,
+            });
+            const releaseForValidation = releaseListForValidation.data
+              .find((item) => item.tag_name === tag);
+            if (!releaseForValidation) {
+              core.setFailed('Release not found for ' + tag);
+              return;
+            }
+
             const workflowRuns = await github.rest.actions.listWorkflowRuns({
               owner,
               repo,
@@ -68,14 +80,66 @@ jobs:
               per_page: 100,
             });
             const runs = workflowRuns.data.workflow_runs;
-            const successfulRun = runs.find((run) => (
+            let successfulRun = runs.find((run) => (
               run.head_sha === commitSha
               && run.status === 'completed'
               && run.conclusion === 'success'
             ));
             if (!successfulRun) {
-              core.setFailed(`No successful Release workflow found for ${tag} at ${commitSha}`);
-              return;
+              const provenanceMatch = String(releaseForValidation.body || '').match(
+                /<!--\s*gonavi-release-provenance\s+(\{[\s\S]*?\})\s*-->/
+              );
+              if (!provenanceMatch) {
+                core.setFailed(
+                  'No successful tag-push Release workflow found for ' + tag
+                  + ' at ' + commitSha
+                  + ', and the draft release has no manual-release provenance'
+                );
+                return;
+              }
+              let provenance;
+              try {
+                provenance = JSON.parse(provenanceMatch[1]);
+              } catch (error) {
+                core.setFailed('Release provenance is not valid JSON: ' + error.message);
+                return;
+              }
+              const provenanceRunId = Number(provenance?.runId);
+              if (
+                !provenance
+                || provenance.schema !== 1
+                || provenance.tag !== tag
+                || String(provenance.commit || '').toLowerCase() !== commitSha.toLowerCase()
+                || !Number.isSafeInteger(provenanceRunId)
+                || provenanceRunId <= 0
+              ) {
+                core.setFailed('Release provenance does not bind this draft to its immutable tag');
+                return;
+              }
+              const repository = await github.rest.repos.get({ owner, repo });
+              const dispatchedWorkflowRuns = await github.rest.actions.listWorkflowRuns({
+                owner,
+                repo,
+                workflow_id: 'release.yml',
+                event: 'workflow_dispatch',
+                branch: repository.data.default_branch,
+                per_page: 100,
+              });
+              successfulRun = dispatchedWorkflowRuns.data.workflow_runs.find((run) => (
+                Number(run.id) === provenanceRunId
+                && run.status === 'completed'
+                && run.conclusion === 'success'
+              ));
+              if (!successfulRun) {
+                core.setFailed(
+                  'No successful manual Release workflow matches provenance run ' + provenanceRunId
+                );
+                return;
+              }
+              core.notice(
+                'Validated manual Release workflow ' + provenanceRunId
+                + ' for immutable tag ' + tag
+              );
             }
 
             const releaseList = await github.rest.repos.listReleases({

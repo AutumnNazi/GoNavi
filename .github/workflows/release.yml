@@ -4,18 +4,67 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing immutable release tag to rebuild (for example, v0.9.3)
+        required: true
+        type: string
 
 permissions:
   contents: write
   pull-requests: read
 
 jobs:
+  validate_release_tag:
+    name: Validate immutable release tag
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.resolve.outputs.tag }}
+      sha: ${{ steps.resolve.outputs.sha }}
+    steps:
+      - name: Checkout workflow source
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Resolve immutable release tag
+        id: resolve
+        env:
+          REQUESTED_TAG: ${{ inputs.tag || github.ref_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${REQUESTED_TAG}"
+          if [[ ! "${tag}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Release tag must be vX.Y.Z: ${tag}" >&2
+            exit 1
+          fi
+          git fetch --force --tags
+          if ! git show-ref --verify --quiet "refs/tags/${tag}"; then
+            echo "Release tag does not exist: ${tag}" >&2
+            exit 1
+          fi
+          sha="$(git rev-parse "${tag}^{commit}")"
+          if [[ ! "${sha}" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "Release tag does not resolve to a commit: ${tag}" >&2
+            exit 1
+          fi
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+          echo "sha=${sha}" >> "$GITHUB_OUTPUT"
+          echo "🧭 Releasing immutable tag ${tag} at ${sha}"
+
   frontend:
     name: Build frontend
+    needs: validate_release_tag
     runs-on: ubuntu-latest
+    env:
+      RELEASE_TAG: ${{ needs.validate_release_tag.outputs.tag }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.validate_release_tag.outputs.tag }}
 
       - name: Setup Go
         uses: actions/setup-go@v6
@@ -24,7 +73,7 @@ jobs:
 
       - name: Validate stable npm CLI package version
         shell: bash
-        run: python3 tools/validate-npm-cli-package-version.py --tag "$GITHUB_REF_NAME"
+        run: python3 tools/validate-npm-cli-package-version.py --tag "$RELEASE_TAG"
 
       - name: Test release asset contracts
         run: |
@@ -94,7 +143,11 @@ jobs:
 
   driver_agents:
     name: Detect changed driver agents
+    needs: validate_release_tag
     runs-on: ubuntu-latest
+    env:
+      RELEASE_TAG: ${{ needs.validate_release_tag.outputs.tag }}
+      RELEASE_SHA: ${{ needs.validate_release_tag.outputs.sha }}
     outputs:
       drivers: ${{ steps.detect.outputs.drivers }}
       has_changes: ${{ steps.detect.outputs.has_changes }}
@@ -108,6 +161,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v5
         with:
+          ref: ${{ needs.validate_release_tag.outputs.tag }}
           fetch-depth: 0
 
       - name: Resolve published driver release source
@@ -117,7 +171,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          PREV_TAG="$(git describe --tags --match 'v*' --abbrev=0 "${GITHUB_SHA}^" 2>/dev/null || true)"
+          PREV_TAG="$(git describe --tags --match 'v*' --abbrev=0 "${RELEASE_SHA}^" 2>/dev/null || true)"
           manifest_path="$RUNNER_TEMP/published-driver-manifest.json"
           if [[ -z "$PREV_TAG" ]]; then
             echo "source_commit=" >> "$GITHUB_OUTPUT"
@@ -188,7 +242,7 @@ jobs:
           }
 
           git fetch --force --tags
-          PREV_TAG="$(git describe --tags --match 'v*' --abbrev=0 "${GITHUB_SHA}^" 2>/dev/null || true)"
+          PREV_TAG="$(git describe --tags --match 'v*' --abbrev=0 "${RELEASE_SHA}^" 2>/dev/null || true)"
           if [ -n "$PREV_TAG" ]; then
             BASE_REF="$PREV_TAG"
             RELEASE_SOURCE="$PREV_TAG"
@@ -207,13 +261,13 @@ jobs:
             BASE_REF="all"
             RELEASE_SOURCE="all"
           fi
-          DRIVERS="$(bash ./tools/detect-changed-driver-agents.sh --base "$BASE_REF" --head "$GITHUB_SHA")"
+          DRIVERS="$(bash ./tools/detect-changed-driver-agents.sh --base "$BASE_REF" --head "$RELEASE_SHA")"
           if [[ "$BASE_REF" != "all" ]]; then
             REVISION_DRIVERS=""
             for PLATFORM in darwin/amd64 darwin/arm64 windows/amd64 windows/arm64 linux/amd64 linux/arm64; do
-              PLATFORM_DRIVERS="$(bash ./tools/diff-driver-agent-revisions.sh --base "$BASE_REF" --head "$GITHUB_SHA" --platform "$PLATFORM")" || {
+              PLATFORM_DRIVERS="$(bash ./tools/diff-driver-agent-revisions.sh --base "$BASE_REF" --head "$RELEASE_SHA" --platform "$PLATFORM")" || {
                 echo "⚠️ 平台 revision 差异对比失败（${PLATFORM}），保守回退为全量驱动重建"
-                DRIVERS="$(bash ./tools/detect-changed-driver-agents.sh --base all --head "$GITHUB_SHA")"
+                DRIVERS="$(bash ./tools/detect-changed-driver-agents.sh --base all --head "$RELEASE_SHA")"
                 REVISION_DRIVERS=""
                 break
               }
@@ -224,7 +278,7 @@ jobs:
               DRIVERS="$(merge_csv "$DRIVERS" "$REVISION_DRIVERS")"
             fi
           fi
-          FORCE_GLOBAL_DRIVER_BUILDS="$(bash ./tools/should-force-global-driver-builds.sh --base "$BASE_REF" --head "$GITHUB_SHA")"
+          FORCE_GLOBAL_DRIVER_BUILDS="$(bash ./tools/should-force-global-driver-builds.sh --base "$BASE_REF" --head "$RELEASE_SHA")"
           echo "drivers=${DRIVERS}" >> "$GITHUB_OUTPUT"
           echo "release_source=${RELEASE_SOURCE}" >> "$GITHUB_OUTPUT"
           echo "compare_base=${BASE_REF}" >> "$GITHUB_OUTPUT"
@@ -242,7 +296,10 @@ jobs:
 
   cli:
     name: Build CLI ${{ matrix.goos }}/${{ matrix.goarch }}
+    needs: validate_release_tag
     runs-on: ubuntu-latest
+    env:
+      RELEASE_TAG: ${{ needs.validate_release_tag.outputs.tag }}
     strategy:
       fail-fast: false
       matrix:
@@ -274,6 +331,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.validate_release_tag.outputs.tag }}
 
       - name: Setup Go
         uses: actions/setup-go@v6
@@ -284,7 +343,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          version="${GITHUB_REF_NAME#v}"
+          version="${RELEASE_TAG#v}"
           asset="gonavi-cli_${version}_${{ matrix.goos }}_${{ matrix.goarch }}.${{ matrix.extension }}"
           stage="${RUNNER_TEMP}/gonavi-cli-${{ matrix.goos }}-${{ matrix.goarch }}"
           mkdir -p "$stage"
@@ -323,9 +382,13 @@ jobs:
   build:
     name: Build ${{ matrix.platform }}
     needs:
+      - validate_release_tag
       - frontend
       - driver_agents
     runs-on: ${{ matrix.os }}
+    env:
+      RELEASE_TAG: ${{ needs.validate_release_tag.outputs.tag }}
+      RELEASE_SHA: ${{ needs.validate_release_tag.outputs.sha }}
     strategy:
       fail-fast: false
       matrix:
@@ -399,6 +462,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v5
         with:
+          ref: ${{ needs.validate_release_tag.outputs.tag }}
           fetch-depth: 0
 
       - name: Setup Go
@@ -604,9 +668,9 @@ jobs:
           mkdir -p "$GOCACHE"
           echo "🧭 使用隔离 GOCACHE：$GOCACHE"
           if [ -n "${{ matrix.wails_tags }}" ]; then
-            wails build -s -skipbindings -trimpath -platform ${{ matrix.platform }} -clean -o ${{ matrix.build_name }} -tags "${{ matrix.wails_tags }}" -ldflags "-s -w -X GoNavi-Wails/internal/app.AppVersion=${{ github.ref_name }}"
+            wails build -s -skipbindings -trimpath -platform ${{ matrix.platform }} -clean -o ${{ matrix.build_name }} -tags "${{ matrix.wails_tags }}" -ldflags "-s -w -X GoNavi-Wails/internal/app.AppVersion=${RELEASE_TAG}"
           else
-            wails build -s -skipbindings -trimpath -platform ${{ matrix.platform }} -clean -o ${{ matrix.build_name }} -ldflags "-s -w -X GoNavi-Wails/internal/app.AppVersion=${{ github.ref_name }}"
+            wails build -s -skipbindings -trimpath -platform ${{ matrix.platform }} -clean -o ${{ matrix.build_name }} -ldflags "-s -w -X GoNavi-Wails/internal/app.AppVersion=${RELEASE_TAG}"
           fi
 
       - name: Resolve Platform Driver Revision Diff
@@ -627,13 +691,13 @@ jobs:
             fi
             echo "drivers=${FALLBACK_DRIVERS}" >> "$GITHUB_OUTPUT"
           else
-            echo "🧭 对比当前平台 revision：base=${BASE_REF} head=${GITHUB_SHA} platform=${{ matrix.platform }}"
-            if DRIVERS="$(bash ./tools/diff-driver-agent-revisions.sh --base "$BASE_REF" --head "$GITHUB_SHA" --platform "${{ matrix.platform }}")"; then
+            echo "🧭 对比当前平台 revision：base=${BASE_REF} head=${RELEASE_SHA} platform=${{ matrix.platform }}"
+            if DRIVERS="$(bash ./tools/diff-driver-agent-revisions.sh --base "$BASE_REF" --head "$RELEASE_SHA" --platform "${{ matrix.platform }}")"; then
               echo "🧭 当前平台实际需要重建的 driver agents: ${DRIVERS:-<empty>}"
               echo "drivers=${DRIVERS}" >> "$GITHUB_OUTPUT"
             else
               echo "⚠️ revision 差异对比失败，保守回退为全量重建"
-              ALL_DRIVERS="$(bash ./tools/detect-changed-driver-agents.sh --base all --head "$GITHUB_SHA")"
+              ALL_DRIVERS="$(bash ./tools/detect-changed-driver-agents.sh --base all --head "$RELEASE_SHA")"
               echo "drivers=${ALL_DRIVERS}" >> "$GITHUB_OUTPUT"
             fi
           fi
@@ -873,8 +937,7 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           brew install create-dmg
-          VERSION="${{ github.ref_name }}"
-          VERSION="${VERSION#v}"
+          VERSION="${RELEASE_TAG#v}"
           cd build/bin
           
           APP_PATH="./GoNavi.app"
@@ -906,12 +969,30 @@ jobs:
           fi
           echo "ℹ️ macOS 产物不执行 UPX 压缩，保留原始主程序。"
           
-          : "${MACOS_SIGNING_CERTIFICATE_P12:?macOS production signing certificate is required}"
-          : "${MACOS_SIGNING_CERTIFICATE_PASSWORD:?macOS production signing certificate password is required}"
-          : "${MACOS_SIGNING_IDENTITY:?macOS Developer ID signing identity is required}"
-          : "${APPLE_ID:?Apple ID is required for notarization}"
-          : "${APPLE_APP_SPECIFIC_PASSWORD:?Apple app-specific password is required for notarization}"
-          : "${APPLE_TEAM_ID:?Apple team ID is required for notarization}"
+          signing_inputs=(
+            MACOS_SIGNING_CERTIFICATE_P12
+            MACOS_SIGNING_CERTIFICATE_PASSWORD
+            MACOS_SIGNING_IDENTITY
+            APPLE_ID
+            APPLE_APP_SPECIFIC_PASSWORD
+            APPLE_TEAM_ID
+          )
+          signing_input_count=0
+          for signing_input in "${signing_inputs[@]}"; do
+            if [[ -n "${!signing_input:-}" ]]; then
+              signing_input_count=$((signing_input_count + 1))
+            fi
+          done
+
+          if (( signing_input_count == 0 )); then
+            MACOS_SIGNING_MODE="ad-hoc"
+            echo "⚠️ 未配置 Apple Developer 凭据；生成 ad-hoc 签名、未公证的 macOS DMG。"
+            codesign --force --deep --sign - "$APP_NAME"
+          elif (( signing_input_count != ${#signing_inputs[@]} )); then
+            echo "macOS signing credentials are partially configured; refusing an ambiguous release mode" >&2
+            exit 1
+          else
+            MACOS_SIGNING_MODE="developer-id"
           if [[ ! "$MACOS_SIGNING_IDENTITY" =~ ^Developer\ ID\ Application:\ .+\ \([A-Z0-9]{10}\)$ ]]; then
             echo "macOS signing identity must be a Developer ID Application certificate" >&2
             exit 1
@@ -950,6 +1031,7 @@ jobs:
           codesign --force --deep --options runtime --timestamp --sign "$MACOS_SIGNING_IDENTITY" "$APP_NAME"
           codesign --verify --deep --strict --verbose=4 "$APP_NAME"
           verify_team_identifier "$APP_NAME"
+          fi
           
           DMG_NAME="${{ matrix.build_name }}.dmg"
           FINAL_NAME="GoNavi-$VERSION-${{ matrix.os_name }}-${{ matrix.arch_name }}${{ matrix.artifact_suffix }}.dmg"
@@ -966,16 +1048,17 @@ jobs:
             "$DMG_NAME" \
             "$APP_NAME"
 
-          codesign --force --timestamp --sign "$MACOS_SIGNING_IDENTITY" "$DMG_NAME"
-          codesign --verify --verbose=4 "$DMG_NAME"
-          verify_team_identifier "$DMG_NAME"
-          NOTARY_RESULT="$RUNNER_TEMP/gonavi-notary-${{ matrix.arch_name }}.json"
-          xcrun notarytool submit "$DMG_NAME" \
-            --apple-id "$APPLE_ID" \
-            --password "$APPLE_APP_SPECIFIC_PASSWORD" \
-            --team-id "$APPLE_TEAM_ID" \
-            --wait \
-            --output-format json > "$NOTARY_RESULT"
+          if [[ "$MACOS_SIGNING_MODE" == "developer-id" ]]; then
+            codesign --force --timestamp --sign "$MACOS_SIGNING_IDENTITY" "$DMG_NAME"
+            codesign --verify --verbose=4 "$DMG_NAME"
+            verify_team_identifier "$DMG_NAME"
+            NOTARY_RESULT="$RUNNER_TEMP/gonavi-notary-${{ matrix.arch_name }}.json"
+            xcrun notarytool submit "$DMG_NAME" \
+              --apple-id "$APPLE_ID" \
+              --password "$APPLE_APP_SPECIFIC_PASSWORD" \
+              --team-id "$APPLE_TEAM_ID" \
+              --wait \
+              --output-format json > "$NOTARY_RESULT"
           python3 - "$NOTARY_RESULT" <<'PY'
           import json
           import sys
@@ -987,10 +1070,13 @@ jobs:
               raise SystemExit(f"notarization was not accepted: {status or 'missing status'}")
           print(f"notarization accepted: {result.get('id', 'unknown submission')}")
           PY
-          xcrun stapler staple "$DMG_NAME"
-          xcrun stapler validate "$DMG_NAME"
-          codesign --verify --verbose=4 "$DMG_NAME"
-          verify_team_identifier "$DMG_NAME"
+            xcrun stapler staple "$DMG_NAME"
+            xcrun stapler validate "$DMG_NAME"
+            codesign --verify --verbose=4 "$DMG_NAME"
+            verify_team_identifier "$DMG_NAME"
+          else
+            echo "⚠️ 跳过 macOS DMG 的 Developer ID 签名和 Apple 公证。"
+          fi
 
           VERIFY_MOUNT_DIR=$(mktemp -d "${TMPDIR:-/tmp}/gonavi-release-verify.XXXXXX")
           hdiutil attach -nobrowse -readonly -mountpoint "$VERIFY_MOUNT_DIR" "$DMG_NAME" >/dev/null
@@ -1001,12 +1087,16 @@ jobs:
             exit 1
           fi
           codesign --verify --deep --strict --verbose=4 "$PACKAGED_APP"
-          verify_team_identifier "$PACKAGED_APP"
           PACKAGED_INFO_PLIST="$PACKAGED_APP/Contents/Info.plist"
           [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$PACKAGED_INFO_PLIST")" == "$VERSION" ]]
           [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$PACKAGED_INFO_PLIST")" == "$VERSION" ]]
-          spctl -a -t exec -vv "$PACKAGED_APP"
-          spctl --assess --type open --context context:primary-signature -vv "$DMG_NAME"
+          if [[ "$MACOS_SIGNING_MODE" == "developer-id" ]]; then
+            verify_team_identifier "$PACKAGED_APP"
+            spctl -a -t exec -vv "$PACKAGED_APP"
+            spctl --assess --type open --context context:primary-signature -vv "$DMG_NAME"
+          else
+            echo "⚠️ ad-hoc 签名产物不执行 Gatekeeper 公证验证。"
+          fi
           hdiutil detach "$VERIFY_MOUNT_DIR" -quiet >/dev/null 2>&1 || true
             
           mv "$DMG_NAME" "../../$FINAL_NAME"
@@ -1017,7 +1107,7 @@ jobs:
         shell: pwsh
         run: |
           Set-Location build/bin
-          $version = "${{ github.ref_name }}"
+          $version = "$env:RELEASE_TAG"
           if ($version.StartsWith("v")) {
               $version = $version.Substring(1)
           }
@@ -1130,8 +1220,7 @@ jobs:
       - name: Package Linux
         if: contains(matrix.platform, 'linux')
         run: |
-          VERSION="${{ github.ref_name }}"
-          VERSION="${VERSION#v}"
+          VERSION="${RELEASE_TAG#v}"
           cd build/bin
           TARGET="${{ matrix.build_name }}"
           TAR_NAME="GoNavi-$VERSION-${{ matrix.os_name }}-${{ matrix.arch_name }}${{ matrix.artifact_suffix }}.tar.gz"
@@ -1241,13 +1330,19 @@ jobs:
   release:
     name: Publish Release
     needs:
+      - validate_release_tag
       - build
       - cli
       - driver_agents
     runs-on: ubuntu-latest
+    env:
+      RELEASE_TAG: ${{ needs.validate_release_tag.outputs.tag }}
+      RELEASE_SHA: ${{ needs.validate_release_tag.outputs.sha }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.validate_release_tag.outputs.tag }}
 
       - name: Setup Go
         uses: actions/setup-go@v6
@@ -1272,7 +1367,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          version="${GITHUB_REF_NAME#v}"
+          version="${RELEASE_TAG#v}"
           expected=(
             "gonavi-cli_${version}_darwin_amd64.tar.gz"
             "gonavi-cli_${version}_darwin_arm64.tar.gz"
@@ -1409,7 +1504,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          version="${GITHUB_REF_NAME#v}"
+          version="${RELEASE_TAG#v}"
           expected=(
             "gonavi-cli_${version}_darwin_amd64.tar.gz"
             "gonavi-cli_${version}_darwin_arm64.tar.gz"
@@ -1448,7 +1543,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          version="${GITHUB_REF_NAME#v}"
+          version="${RELEASE_TAG#v}"
           cli_checksum_name="gonavi-cli_${version}_checksums.txt"
           expected=(
             "gonavi-cli_${version}_darwin_amd64.tar.gz"
@@ -1510,7 +1605,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          version="${GITHUB_REF_NAME#v}"
+          version="${RELEASE_TAG#v}"
           python3 tools/generate-winget-cli-manifest.py \
             --version "$version" \
             --checksums "cli-assets/gonavi-cli_${version}_checksums.txt" \
@@ -1526,7 +1621,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          TAG="${{ github.ref_name }}"
+          TAG="${RELEASE_TAG}"
           VERSION="${TAG#v}"
           python3 tools/generate-update-latest-manifest.py \
             --assets-dir release-assets \
@@ -1559,7 +1654,7 @@ jobs:
           sha256sum "${FILES[@]}" > SHA256SUMS
 
       - name: Create Driver Agents Release
-        if: startsWith(github.ref, 'refs/tags/') && steps.driver_assets.outputs.has_driver_assets == 'true'
+        if: steps.driver_assets.outputs.has_driver_assets == 'true'
         env:
           GH_TOKEN: ${{ secrets.DRIVER_RELEASE_TOKEN }}
         shell: bash
@@ -1572,19 +1667,24 @@ jobs:
           fi
 
           NOTES_FILE="$RUNNER_TEMP/driver-release-notes.md"
-          cat > "$NOTES_FILE" <<'EOF'
-            GoNavi driver-agent assets for `${{ github.ref_name }}`.
+          cat > "$NOTES_FILE" <<EOF
+            GoNavi driver-agent assets for $RELEASE_TAG.
           EOF
 
-          gh release create "${{ github.ref_name }}" "${DRIVER_RELEASE_ASSETS[@]}" \
-            --repo Syngnat/GoNavi-DriverAgents \
-            --title "GoNavi Driver Agents ${{ github.ref_name }}" \
-            --notes-file "$NOTES_FILE" \
-            --latest
+          if gh release view "$RELEASE_TAG" --repo Syngnat/GoNavi-DriverAgents >/dev/null 2>&1; then
+            echo "🧭 Driver Agents release $RELEASE_TAG already exists; preserving immutable assets."
+          else
+            gh release create "$RELEASE_TAG" "${DRIVER_RELEASE_ASSETS[@]}" \
+              --repo Syngnat/GoNavi-DriverAgents \
+              --title "GoNavi Driver Agents $RELEASE_TAG" \
+              --notes-file "$NOTES_FILE" \
+              --latest
+          fi
 
       - name: Checkout code for changelog
         uses: actions/checkout@v5
         with:
+          ref: ${{ needs.validate_release_tag.outputs.tag }}
           fetch-depth: 0
           path: repo-for-changelog
 
@@ -1599,17 +1699,34 @@ jobs:
           CHANGELOG_FILE="$RUNNER_TEMP/changelog.md"
           python3 tools/generate-release-notes.py \
             --repo "${{ github.repository }}" \
-            --tag "${{ github.ref_name }}" \
+            --tag "$RELEASE_TAG" \
             --repository-url "${{ github.server_url }}/${{ github.repository }}" \
             --output "$CHANGELOG_FILE"
           echo "changelog_file=$CHANGELOG_FILE" >> "$GITHUB_OUTPUT"
+
+      - name: Annotate macOS signing status
+        env:
+          CHANGELOG_FILE: ${{ steps.changelog.outputs.changelog_file }}
+          MACOS_SIGNING_CERTIFICATE_P12: ${{ secrets.MACOS_SIGNING_CERTIFICATE_P12 }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s "$CHANGELOG_FILE"
+          if [[ -z "$MACOS_SIGNING_CERTIFICATE_P12" ]]; then
+            cat >> "$CHANGELOG_FILE" <<'EOF'
+
+            ## macOS 安装提示
+
+            此版本的 macOS DMG 使用 ad-hoc 签名，未进行 Apple 公证。首次打开可能被 Gatekeeper 拦截；请确认来源后，在 Finder 中按住 Control 点击应用并选择“打开”。
+            EOF
+          fi
 
       # 将同一份 changelog 写入 latest.json，供应用内「更新日志」弹窗使用（静态清单优先路径）。
       - name: Embed changelog into latest.json
         shell: bash
         run: |
           set -euo pipefail
-          TAG="${{ github.ref_name }}"
+          TAG="$RELEASE_TAG"
           VERSION="${TAG#v}"
           CHANGELOG_FILE="${{ steps.changelog.outputs.changelog_file }}"
           test -s "$CHANGELOG_FILE"
@@ -1627,10 +1744,43 @@ jobs:
           jq -e '(.releaseNotes | type == "string" and length > 0)' release-assets/latest.json >/dev/null
           echo "📄 latest.json releaseNotes embedded ($(jq -r '.releaseNotes | length' release-assets/latest.json) chars)"
 
+      - name: Record release provenance
+        env:
+          CHANGELOG_FILE: ${{ steps.changelog.outputs.changelog_file }}
+          WORKFLOW_RUN_ID: ${{ github.run_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - "$CHANGELOG_FILE" "$RELEASE_TAG" "$RELEASE_SHA" "$WORKFLOW_RUN_ID" <<'PY'
+          import json
+          import re
+          import sys
+
+          changelog_path, tag, commit, run_id = sys.argv[1:]
+          if not re.fullmatch(r"v\d+\.\d+\.\d+", tag):
+              raise SystemExit(f"invalid release tag for provenance: {tag}")
+          if not re.fullmatch(r"[0-9a-f]{40}", commit):
+              raise SystemExit(f"invalid release commit for provenance: {commit}")
+          if not run_id.isdigit() or int(run_id) <= 0:
+              raise SystemExit(f"invalid workflow run id for provenance: {run_id}")
+          provenance = {
+              "schema": 1,
+              "tag": tag,
+              "commit": commit,
+              "runId": int(run_id),
+          }
+          with open(changelog_path, "a", encoding="utf-8") as changelog:
+              changelog.write("\n<!-- gonavi-release-provenance ")
+              changelog.write(json.dumps(provenance, separators=(",", ":"), sort_keys=True))
+              changelog.write(" -->\n")
+          PY
+
       - name: Create Release
         uses: softprops/action-gh-release@v3
-        if: startsWith(github.ref, 'refs/tags/')
         with:
+          tag_name: ${{ needs.validate_release_tag.outputs.tag }}
+          target_commitish: ${{ needs.validate_release_tag.outputs.sha }}
+          name: GoNavi ${{ needs.validate_release_tag.outputs.tag }}
           files: |
             release-assets/*
             cli-assets/*
