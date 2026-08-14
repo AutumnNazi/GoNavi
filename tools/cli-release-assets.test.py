@@ -166,7 +166,7 @@ class CLIReleaseAssetsTest(unittest.TestCase):
                 "release.yml",
                 "Generate CLI checksums",
                 "1.2.3",
-                {"GITHUB_REF_NAME": "v1.2.3"},
+                {"RELEASE_TAG": "v1.2.3"},
             ),
             (
                 "dev-build.yml",
@@ -322,7 +322,7 @@ class CLIReleaseAssetsTest(unittest.TestCase):
     def test_stable_release_validates_npm_cli_version_before_build(self) -> None:
         source = (ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
         self.assertIn(
-            'python3 tools/validate-npm-cli-package-version.py --tag "$GITHUB_REF_NAME"',
+            'python3 tools/validate-npm-cli-package-version.py --tag "$RELEASE_TAG"',
             source,
         )
 
