@@ -30,6 +30,8 @@ const nacosBackend = vi.hoisted(() => ({
   NacosDeleteService: vi.fn(),
 }));
 
+const productionConfirm = vi.hoisted(() => vi.fn());
+
 const antdState = vi.hoisted(() => ({
   tableProps: [] as any[],
   paginationProps: [] as any[],
@@ -52,6 +54,10 @@ vi.mock('../store', () => ({
 
 vi.mock('../i18n/provider', () => ({
   useOptionalI18n: () => ({ language: 'en-US' }),
+}));
+
+vi.mock('../utils/productionRiskConfirm', () => ({
+  confirmProductionMutation: productionConfirm,
 }));
 
 vi.mock('./RedisResizableDivider', async () => {
@@ -156,7 +162,12 @@ const instanceRow = (renderer: ReactTestRenderer, endpoint: string) =>
   instanceRows(renderer).find((row) => row.props['data-instance-endpoint'] === endpoint);
 
 const instanceHealthSwitch = (renderer: ReactTestRenderer, endpoint: string) =>
-  instanceRow(renderer, endpoint)?.find((node) => (node.type as any) === 'switch-control');
+  instanceRow(renderer, endpoint)?.find((node) => (node.type as any) === 'switch-control'
+    && node.props['data-instance-action'] === undefined);
+
+const instanceEnabledSwitch = (renderer: ReactTestRenderer, endpoint: string) =>
+  instanceRow(renderer, endpoint)?.find((node) => (node.type as any) === 'switch-control'
+    && node.props['data-instance-action'] === 'toggle-enabled');
 
 const instanceAction = (
   renderer: ReactTestRenderer,
@@ -171,6 +182,7 @@ describe('NacosServiceViewer interactions', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    productionConfirm.mockResolvedValue(true);
     storeState.connections[0].config = {
       type: 'nacos',
       host: '127.0.0.1',
@@ -863,6 +875,278 @@ describe('NacosServiceViewer interactions', () => {
       .find((button) => button.props.type === 'primary');
     expect(registerButton?.props.disabled).toBe(true);
     expect(registerButton?.props.title).toEqual(expect.any(String));
+  });
+
+  it('toggles instance online state from the list and keeps disabled instances editable', async () => {
+    let enabled = true;
+    nacosBackend.NacosListInstances.mockImplementation(async () => ({
+      success: true,
+      data: {
+        hosts: [{
+          ip: '10.0.0.1',
+          port: 8080,
+          weight: 2,
+          healthy: true,
+          enabled,
+          ephemeral: false,
+          clusterName: 'DEFAULT',
+          metadata: { zone: 'east' },
+        }],
+      },
+    }));
+    nacosBackend.NacosUpdateInstance.mockImplementation(
+      async (_config: unknown, payload: { enabled: boolean }) => {
+        enabled = payload.enabled;
+        return { success: true };
+      },
+    );
+
+    await act(async () => {
+      renderer = create(
+        <NacosServiceViewer connectionId="nacos-1" namespaceId="dev" namespaceName="dev" />,
+      );
+    });
+    await flushEffects();
+
+    const serviceTable = latestServiceTableProps();
+    await act(async () => {
+      serviceTable.onRow(serviceTable.dataSource[0]).onClick();
+    });
+    await flushEffects();
+
+    const onlineSwitch = instanceEnabledSwitch(renderer!, '10.0.0.1:8080');
+    expect(onlineSwitch?.props.checked).toBe(true);
+    expect(onlineSwitch?.props.disabled).toBe(false);
+    expect(onlineSwitch?.props['aria-label']).toContain('Take offline');
+
+    await act(async () => {
+      onlineSwitch?.props.onChange(false);
+    });
+    await flushEffects();
+
+    expect(nacosBackend.NacosUpdateInstance).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        serviceName: 'alpha',
+        groupName: 'GROUP_A',
+        ip: '10.0.0.1',
+        port: 8080,
+        clusterName: 'DEFAULT',
+        weight: 2,
+        enabled: false,
+        healthy: true,
+        ephemeral: false,
+        metadata: { zone: 'east' },
+      }),
+    );
+    expect(nacosBackend.NacosListInstances).toHaveBeenCalledTimes(2);
+    expect(instanceEndpoints(renderer!)).toEqual(['10.0.0.1:8080']);
+    expect(instanceEnabledSwitch(renderer!, '10.0.0.1:8080')?.props.checked).toBe(false);
+    expect(instanceEnabledSwitch(renderer!, '10.0.0.1:8080')?.props['aria-label'])
+      .toContain('Bring online');
+    expect(instanceAction(renderer!, '10.0.0.1:8080', 'edit')?.props.disabled).toBe(false);
+  });
+
+  it('keeps the current instance state when an online toggle fails', async () => {
+    nacosBackend.NacosListInstances.mockResolvedValue({
+      success: true,
+      data: {
+        hosts: [{
+          ip: '10.0.0.1',
+          port: 8080,
+          weight: 1,
+          healthy: true,
+          enabled: true,
+          ephemeral: false,
+          clusterName: 'DEFAULT',
+        }],
+      },
+    });
+    nacosBackend.NacosUpdateInstance.mockResolvedValue({
+      success: false,
+      message: 'update rejected',
+    });
+
+    await act(async () => {
+      renderer = create(
+        <NacosServiceViewer connectionId="nacos-1" namespaceId="dev" namespaceName="dev" />,
+      );
+    });
+    await flushEffects();
+
+    const serviceTable = latestServiceTableProps();
+    await act(async () => {
+      serviceTable.onRow(serviceTable.dataSource[0]).onClick();
+    });
+    await flushEffects();
+
+    await act(async () => {
+      instanceEnabledSwitch(renderer!, '10.0.0.1:8080')?.props.onChange(false);
+    });
+    await flushEffects();
+
+    expect(antdState.message.error).toHaveBeenCalledWith('update rejected');
+    expect(nacosBackend.NacosListInstances).toHaveBeenCalledTimes(1);
+    expect(instanceEnabledSwitch(renderer!, '10.0.0.1:8080')?.props.checked).toBe(true);
+  });
+
+  it('keeps the confirmed online state when the follow-up refresh fails', async () => {
+    nacosBackend.NacosListInstances
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          hosts: [{
+            ip: '10.0.0.1',
+            port: 8080,
+            weight: 1,
+            healthy: true,
+            enabled: true,
+            ephemeral: false,
+            clusterName: 'DEFAULT',
+          }],
+        },
+      })
+      .mockResolvedValueOnce({ success: false, message: 'refresh failed' });
+    nacosBackend.NacosUpdateInstance.mockResolvedValue({ success: true });
+
+    await act(async () => {
+      renderer = create(
+        <NacosServiceViewer connectionId="nacos-1" namespaceId="dev" namespaceName="dev" />,
+      );
+    });
+    await flushEffects();
+
+    const serviceTable = latestServiceTableProps();
+    await act(async () => {
+      serviceTable.onRow(serviceTable.dataSource[0]).onClick();
+    });
+    await flushEffects();
+
+    await act(async () => {
+      instanceEnabledSwitch(renderer!, '10.0.0.1:8080')?.props.onChange(false);
+    });
+    await flushEffects();
+
+    expect(antdState.message.error).toHaveBeenCalledWith('refresh failed');
+    expect(instanceEnabledSwitch(renderer!, '10.0.0.1:8080')?.props.checked).toBe(false);
+    expect(instanceEnabledSwitch(renderer!, '10.0.0.1:8080')?.props['aria-label'])
+      .toContain('Bring online');
+    expect(antdState.message.success).toHaveBeenCalledWith('Instance updated');
+  });
+
+  it('does not submit an online toggle after confirmation returns in another service', async () => {
+    const confirmation = deferred<boolean>();
+    productionConfirm.mockReturnValue(confirmation.promise);
+    nacosBackend.NacosListInstances.mockResolvedValue({
+      success: true,
+      data: {
+        hosts: [{
+          ip: '10.0.0.1',
+          port: 8080,
+          weight: 1,
+          healthy: true,
+          enabled: true,
+          ephemeral: false,
+          clusterName: 'DEFAULT',
+        }],
+      },
+    });
+
+    await act(async () => {
+      renderer = create(
+        <NacosServiceViewer connectionId="nacos-1" namespaceId="dev" namespaceName="dev" />,
+      );
+    });
+    await flushEffects();
+
+    let serviceTable = latestServiceTableProps();
+    await act(async () => {
+      serviceTable.onRow(serviceTable.dataSource[0]).onClick();
+    });
+    await flushEffects();
+    await act(async () => {
+      instanceEnabledSwitch(renderer!, '10.0.0.1:8080')?.props.onChange(false);
+    });
+
+    serviceTable = latestServiceTableProps();
+    await act(async () => {
+      serviceTable.onRow(serviceTable.dataSource[1]).onClick();
+    });
+    await flushEffects();
+
+    confirmation.resolve(true);
+    await flushEffects();
+
+    expect(nacosBackend.NacosUpdateInstance).not.toHaveBeenCalled();
+  });
+
+  it('does not let an old online toggle clear a newer ABA mutation', async () => {
+    const firstUpdate = deferred<any>();
+    const secondUpdate = deferred<any>();
+    nacosBackend.NacosUpdateInstance
+      .mockReset()
+      .mockReturnValueOnce(firstUpdate.promise)
+      .mockReturnValueOnce(secondUpdate.promise);
+    nacosBackend.NacosListInstances.mockImplementation(
+      async (_config: unknown, payload: { serviceName: string }) => ({
+        success: true,
+        data: {
+          hosts: [{
+            ip: '10.0.0.1',
+            port: 8080,
+            weight: 1,
+            healthy: true,
+            enabled: true,
+            ephemeral: false,
+            clusterName: 'DEFAULT',
+            serviceName: payload.serviceName,
+          }],
+        },
+      }),
+    );
+
+    await act(async () => {
+      renderer = create(
+        <NacosServiceViewer connectionId="nacos-1" namespaceId="dev" namespaceName="dev" />,
+      );
+    });
+    await flushEffects();
+
+    let serviceTable = latestServiceTableProps();
+    await act(async () => {
+      serviceTable.onRow(serviceTable.dataSource[0]).onClick();
+    });
+    await flushEffects();
+    await act(async () => {
+      instanceEnabledSwitch(renderer!, '10.0.0.1:8080')?.props.onChange(false);
+    });
+
+    serviceTable = latestServiceTableProps();
+    await act(async () => {
+      serviceTable.onRow(serviceTable.dataSource[1]).onClick();
+    });
+    await flushEffects();
+    serviceTable = latestServiceTableProps();
+    await act(async () => {
+      serviceTable.onRow(serviceTable.dataSource[0]).onClick();
+    });
+    await flushEffects();
+    await act(async () => {
+      instanceEnabledSwitch(renderer!, '10.0.0.1:8080')?.props.onChange(false);
+    });
+
+    firstUpdate.resolve({ success: true });
+    await flushEffects();
+
+    expect(nacosBackend.NacosListInstances).toHaveBeenCalledTimes(3);
+    expect(instanceEnabledSwitch(renderer!, '10.0.0.1:8080')?.props.loading).toBe(true);
+    expect(instanceEnabledSwitch(renderer!, '10.0.0.1:8080')?.props.disabled).toBe(true);
+
+    secondUpdate.resolve({ success: true });
+    await flushEffects();
+
+    expect(nacosBackend.NacosListInstances).toHaveBeenCalledTimes(4);
+    expect(instanceEnabledSwitch(renderer!, '10.0.0.1:8080')?.props.loading).toBe(false);
   });
 
   it('only allows manual health changes for persistent instances with no health checker', async () => {

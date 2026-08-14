@@ -1675,6 +1675,19 @@ body[data-ui-version="v2"] .gn-v2-nacos-detail-pane .ant-table-tbody > tr.ant-ta
   margin: 0;
 }
 
+.gn-nacos-instance-row__enabled-control {
+  min-width: 88px;
+  min-height: 24px;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 7px;
+  color: var(--gn-fg-3, inherit);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
 .gn-nacos-instance-row__details-toggle.ant-btn {
   width: 24px;
   min-width: 24px;
