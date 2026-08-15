@@ -157,14 +157,21 @@ stage_node() (
   echo "[${node}] checking mirror marker"
   marker="$(run_ssh "${PUB_SSH_QUICK_COMMAND_TIMEOUT_SECONDS}" "cat '${root}/.gonavi-mirror-root'")"
   [[ "${marker}" == gonavi-download-mirror-v1 ]] || { echo "${node} mirror marker is invalid" >&2; exit 1; }
-  echo "[${node}] checking free space"
-  available_kib="$(run_ssh "${PUB_SSH_QUICK_COMMAND_TIMEOUT_SECONDS}" "LC_ALL=C df -Pk '${root}' | awk 'NR == 2 { print \$4 }'")"
-  [[ "${available_kib}" =~ ^[0-9]+$ ]] || { echo "${node} returned invalid free space" >&2; exit 1; }
-  (( available_kib * 1024 >= payload_bytes + reserve_free_bytes )) || { echo "${node} has insufficient free space" >&2; exit 1; }
   echo "[${node}] clearing previous staging"
   printf -v remote_command 'sudo -- %q %q' "/usr/local/libexec/gonavi-edge-transaction" abort
   for argument in "${transaction_args[@]}"; do printf -v remote_command '%s %q' "${remote_command}" "${argument}"; done
   run_ssh "${PUB_SSH_TRANSACTION_COMMAND_TIMEOUT_SECONDS}" "${remote_command}"
+  # A release that is no longer referenced by either channel is superseded.
+  # Prune before staging so a small edge cannot deadlock before it reaches the
+  # post-publish cleanup below.
+  printf -v retention_command 'sudo -- %q --root %q --min-age-seconds 0 --max-bytes %q --min-free-bytes %q' \
+    "/usr/local/libexec/gonavi-edge-retention" "${root}" "${max_bytes}" "${reserve_free_bytes}"
+  echo "[${node}] applying preflight retention"
+  run_ssh "${PUB_SSH_RETENTION_COMMAND_TIMEOUT_SECONDS}" "${retention_command}"
+  echo "[${node}] checking free space"
+  available_kib="$(run_ssh "${PUB_SSH_QUICK_COMMAND_TIMEOUT_SECONDS}" "LC_ALL=C df -Pk '${root}' | awk 'NR == 2 { print \$4 }'")"
+  [[ "${available_kib}" =~ ^[0-9]+$ ]] || { echo "${node} returned invalid free space" >&2; exit 1; }
+  (( available_kib * 1024 >= payload_bytes + reserve_free_bytes )) || { echo "${node} has insufficient free space" >&2; exit 1; }
   echo "[${node}] creating staging directory"
   run_ssh "${PUB_SSH_QUICK_COMMAND_TIMEOUT_SECONDS}" "mkdir -p '${remote_stage}'"
   echo "[${node}] uploading payload"
@@ -317,7 +324,7 @@ activate_node() (
     "${base_url}/healthz?generation=${PUB_GENERATION}" \
     | jq -e --arg channel "${PUB_CHANNEL}" --arg generation "${PUB_GENERATION}" \
       '.status == "ok" and .ready == true and .channels[$channel].generation == $generation' >/dev/null
-  printf -v retention_command 'sudo -- %q --root %q --min-age-seconds 604800 --max-bytes %q --min-free-bytes %q' \
+  printf -v retention_command 'sudo -- %q --root %q --min-age-seconds 0 --max-bytes %q --min-free-bytes %q' \
     "/usr/local/libexec/gonavi-edge-retention" "${root}" "${max_bytes}" "${reserve_free_bytes}"
   echo "[${node}] applying retention"
   run_ssh "${PUB_SSH_RETENTION_COMMAND_TIMEOUT_SECONDS}" "${retention_command}" || echo "warning: ${node} retention needs operator attention" >&2

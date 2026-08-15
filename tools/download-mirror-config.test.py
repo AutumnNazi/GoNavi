@@ -50,6 +50,16 @@ class DownloadMirrorConfigTest(unittest.TestCase):
         self.assertIn("::warning::Edge {node} throughput", publication)
         self.assertNotIn("PUB_MIN_THROUGHPUT_MBPS", publication)
         self.assertIn("--min-free-bytes", publication)
+        self.assertNotIn("--min-age-seconds 604800", publication)
+        self.assertGreaterEqual(publication.count("--min-age-seconds 0"), 2)
+        self.assertLess(
+            publication.index('echo "[${node}] applying preflight retention"'),
+            publication.index('echo "[${node}] checking free space"'),
+        )
+        self.assertLess(
+            publication.index('echo "[${node}] clearing previous staging"'),
+            publication.index('echo "[${node}] applying preflight retention"'),
+        )
         self.assertIn("ConnectTimeout=${PUB_SSH_CONNECT_TIMEOUT_SECONDS}", publication)
         self.assertIn("--timeout=\"${PUB_RSYNC_IO_TIMEOUT_SECONDS}\"", publication)
         self.assertIn("PUB_RSYNC_COMMAND_TIMEOUT_SECONDS", publication)

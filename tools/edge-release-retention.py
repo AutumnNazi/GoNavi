@@ -14,6 +14,7 @@ from typing import Any
 
 
 MARKER = "gonavi-download-mirror-v1"
+DEFAULT_MIN_AGE_SECONDS = 0
 RELEASE_ROOTS = {
     "stable": {
         "app": Path("gonavi/releases/download"),
@@ -73,7 +74,7 @@ def tree_bytes(root: Path) -> int:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, required=True)
-    parser.add_argument("--min-age-seconds", type=int, default=7 * 24 * 60 * 60)
+    parser.add_argument("--min-age-seconds", type=int, default=DEFAULT_MIN_AGE_SECONDS)
     parser.add_argument("--max-bytes", type=int, required=True)
     parser.add_argument("--min-free-bytes", type=int, default=2_000_000_000)
     parser.add_argument("--dry-run", action="store_true")

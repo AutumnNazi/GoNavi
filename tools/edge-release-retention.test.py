@@ -18,6 +18,9 @@ SPEC.loader.exec_module(MODULE)
 
 
 class EdgeReleaseRetentionTest(unittest.TestCase):
+    def test_default_retention_age_prunes_immediately(self) -> None:
+        self.assertEqual(MODULE.DEFAULT_MIN_AGE_SECONDS, 0)
+
     def test_preserves_channel_without_publication_state(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -50,6 +53,26 @@ class EdgeReleaseRetentionTest(unittest.TestCase):
             os.utime(fresh, (950, 950))
 
             selected = MODULE.select_prunable_directories(root, 100, now=1000)
+
+            self.assertEqual(selected, [old])
+
+    def test_zero_retention_age_selects_fresh_unreferenced_directories(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / ".state/channels").mkdir(parents=True)
+            (root / ".state/channels/dev.json").write_text(json.dumps({
+                "channel": "dev",
+                "appTag": "dev-current",
+                "driverTag": "dev-current",
+            }), encoding="utf-8")
+            old = root / "gonavi/dev/releases/download/dev-old"
+            current = root / "gonavi/dev/releases/download/dev-current"
+            for path in (old, current):
+                path.mkdir(parents=True)
+                (path / "asset.bin").write_bytes(b"x")
+            os.utime(old, (999, 999))
+
+            selected = MODULE.select_prunable_directories(root, 0, now=1000)
 
             self.assertEqual(selected, [old])
 
