@@ -121,7 +121,91 @@ if (
             command: 'C:/Program Files/GoNavi/GoNavi.exe',
             args: ['mcp-server'],
         },
+        {
+            client: 'zcode',
+            displayName: 'ZCode',
+            installMode: 'auto',
+            installed: false,
+            matchesCurrent: false,
+            clientDetected: false,
+            clientCommand: 'zcode',
+            message: t('ai_chat.mcp_client.install.summary.missing', { label: 'ZCode' }),
+            configPath: 'C:/Users/mock/.zcode/cli/config.json',
+            command: 'C:/Program Files/GoNavi/GoNavi.exe',
+            args: ['mcp-server'],
+        },
+        {
+            client: 'deepseek-harness',
+            displayName: 'DeepSeek Harness',
+            installMode: 'auto',
+            installed: false,
+            matchesCurrent: false,
+            clientDetected: false,
+            clientCommand: 'dsh',
+            message: t('ai_chat.mcp_client.install.summary.missing', { label: 'DeepSeek Harness' }),
+            configPath: 'C:/Users/mock/.dsh/cordis.patch.yml',
+            command: 'C:/Program Files/GoNavi/GoNavi.exe',
+            args: ['mcp-server'],
+        },
+        {
+            client: 'kimi',
+            displayName: 'Kimi Code',
+            installMode: 'auto',
+            installed: false,
+            matchesCurrent: false,
+            clientDetected: false,
+            clientCommand: 'kimi',
+            message: t('ai_chat.mcp_client.install.summary.missing', { label: 'Kimi Code' }),
+            configPath: 'C:/Users/mock/.kimi-code/mcp.json',
+            command: 'C:/Program Files/GoNavi/GoNavi.exe',
+            args: ['mcp-server'],
+        },
+        {
+            client: 'grok-build',
+            displayName: 'Grok Build',
+            installMode: 'auto',
+            installed: false,
+            matchesCurrent: false,
+            clientDetected: false,
+            clientCommand: 'grok',
+            message: t('ai_chat.mcp_client.install.summary.missing', { label: 'Grok Build' }),
+            configPath: 'C:/Users/mock/.grok/config.toml',
+            command: 'C:/Program Files/GoNavi/GoNavi.exe',
+            args: ['mcp-server'],
+        },
     ];
+    const requireBrowserMockMCPClientDetected = (client: string, displayName: string) => {
+        const status = mockMCPClientStatuses.find((item) => item.client === client);
+        if (status?.clientDetected) {
+            return;
+        }
+        throw new Error(t('ai.service.mcp_client.local_client_not_detected', {
+            label: displayName,
+            command: String(status?.clientCommand || client).trim() || client,
+        }));
+    };
+    const installBrowserMockMCPClient = (client: string, displayName: string, configPath: string) => {
+        requireBrowserMockMCPClientDetected(client, displayName);
+        const message = t('ai_chat.mcp_client.install.message.install_success', { label: displayName });
+        mockMCPClientStatuses = mockMCPClientStatuses.map((item) => item.client === client
+            ? {
+                ...item,
+                installed: true,
+                matchesCurrent: true,
+                message,
+                command: 'C:/Program Files/GoNavi/GoNavi.exe',
+                args: ['mcp-server'],
+            }
+            : item);
+        return {
+            success: true,
+            client,
+            message,
+            configPath,
+            command: 'C:/Program Files/GoNavi/GoNavi.exe',
+            args: ['mcp-server'],
+        };
+    };
     let mockSkills: any[] = [];
     let mockGlobalProxy: any = { enabled: false, type: 'socks5', host: '', port: 1080, user: '', password: '', hasPassword: false };
     let mockUpdateChannel: 'latest' | 'dev' = 'latest';
@@ -863,6 +947,7 @@ if (
                 },
                 AIGetMCPServers: async () => cloneBrowserMockValue(mockMCPServers),
                 AIInstallClaudeCodeMCP: async () => {
+                    requireBrowserMockMCPClientDetected('claude-code', 'Claude Code');
                     mockMCPClientStatuses = mockMCPClientStatuses.map((item) => item.client === 'claude-code'
                         ? {
                             ...item,
@@ -883,6 +968,7 @@ if (
                     };
                 },
                 AIInstallCodexMCP: async () => {
+                    requireBrowserMockMCPClientDetected('codex', 'Codex');
                     mockMCPClientStatuses = mockMCPClientStatuses.map((item) => item.client === 'codex'
                         ? {
                             ...item,
@@ -903,6 +989,7 @@ if (
                     };
                 },
                 AIInstallOpenCodeMCP: async () => {
+                    requireBrowserMockMCPClientDetected('opencode', 'OpenCode');
                     mockMCPClientStatuses = mockMCPClientStatuses.map((item) => item.client === 'opencode'
                         ? {
                             ...item,
@@ -922,6 +1009,10 @@ if (
                         args: ['mcp-server'],
                     };
                 },
+                AIInstallZCodeMCP: async () => installBrowserMockMCPClient('zcode', 'ZCode', 'C:/Users/mock/.zcode/cli/config.json'),
+                AIInstallDeepSeekHarnessMCP: async () => installBrowserMockMCPClient('deepseek-harness', 'DeepSeek Harness', 'C:/Users/mock/.dsh/cordis.patch.yml'),
+                AIInstallKimiMCP: async () => installBrowserMockMCPClient('kimi', 'Kimi Code', 'C:/Users/mock/.kimi-code/mcp.json'),
+                AIInstallGrokBuildMCP: async () => installBrowserMockMCPClient('grok-build', 'Grok Build', 'C:/Users/mock/.grok/config.toml'),
                 AISaveMCPServer: async (input: any) => {
                     const next = {
                         id: String(input?.id || `mcp-${Date.now()}`),

@@ -413,7 +413,7 @@ describe('main browser mock', () => {
     }));
   });
 
-  it('localizes browser mock MCP client status and install messages', async () => {
+  it('localizes browser mock MCP client status and blocks writes for undetected local clients', async () => {
     vi.stubGlobal('navigator', {
       languages: ['en-US'],
       language: 'en-US',
@@ -436,35 +436,54 @@ describe('main browser mock', () => {
         client: 'opencode',
         message: t('app.browser_mock.mcp_client.opencode.not_detected'),
       }),
+      expect.objectContaining({
+        client: 'zcode',
+        message: t('ai_chat.mcp_client.install.summary.missing', { label: 'ZCode' }),
+      }),
+      expect.objectContaining({
+        client: 'deepseek-harness',
+        message: t('ai_chat.mcp_client.install.summary.missing', { label: 'DeepSeek Harness' }),
+      }),
+      expect.objectContaining({
+        client: 'kimi',
+        message: t('ai_chat.mcp_client.install.summary.missing', { label: 'Kimi Code' }),
+      }),
+      expect.objectContaining({
+        client: 'grok-build',
+        message: t('ai_chat.mcp_client.install.summary.missing', { label: 'Grok Build' }),
+      }),
     ]));
 
-    await expect(service.AIInstallClaudeCodeMCP()).resolves.toEqual(expect.objectContaining({
-      client: 'claude-code',
-      message: t('app.browser_mock.mcp_client.claude_code.installed'),
+    await expect(service.AIInstallClaudeCodeMCP()).rejects.toThrow(t('ai.service.mcp_client.local_client_not_detected', {
+      label: 'Claude Code',
+      command: 'claude',
     }));
     await expect(service.AIInstallCodexMCP()).resolves.toEqual(expect.objectContaining({
       client: 'codex',
       message: t('app.browser_mock.mcp_client.codex.installed'),
     }));
-    await expect(service.AIInstallOpenCodeMCP()).resolves.toEqual(expect.objectContaining({
-      client: 'opencode',
-      message: t('app.browser_mock.mcp_client.opencode.installed'),
+    await expect(service.AIInstallOpenCodeMCP()).rejects.toThrow(t('ai.service.mcp_client.local_client_not_detected', {
+      label: 'OpenCode',
+      command: 'opencode',
     }));
+    for (const [method, label, command] of [
+      ['AIInstallZCodeMCP', 'ZCode', 'zcode'],
+      ['AIInstallDeepSeekHarnessMCP', 'DeepSeek Harness', 'dsh'],
+      ['AIInstallKimiMCP', 'Kimi Code', 'kimi'],
+      ['AIInstallGrokBuildMCP', 'Grok Build', 'grok'],
+    ]) {
+      await expect(service[method]()).rejects.toThrow(t('ai.service.mcp_client.local_client_not_detected', { label, command }));
+    }
     await expect(service.AIGetMCPClientInstallStatuses()).resolves.toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        client: 'claude-code',
-        installed: true,
-        message: t('app.browser_mock.mcp_client.claude_code.installed'),
-      }),
       expect.objectContaining({
         client: 'codex',
         installed: true,
         message: t('app.browser_mock.mcp_client.codex.installed'),
       }),
       expect.objectContaining({
-        client: 'opencode',
-        installed: true,
-        message: t('app.browser_mock.mcp_client.opencode.installed'),
+        client: 'deepseek-harness',
+        installed: false,
+        clientDetected: false,
       }),
     ]));
   });

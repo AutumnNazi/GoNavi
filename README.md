@@ -113,7 +113,7 @@ Each image is a **full GoNavi application window**, scaled proportionally for RE
 - OpenAI · Gemini · Claude · custom OpenAI-compatible APIs  
 - Attach live table schemas as context  
 - Slash commands: generate SQL, explain, optimize, review  
-- **MCP**: install into Claude Code / Codex, or Streamable HTTP for remote agents  
+- **MCP**: after detecting a locally installed CLI, one-click connect Claude Code / Codex / OpenCode / ZCode / DeepSeek Harness / Kimi Code / Grok Build, or use Streamable HTTP for remote agents
 - Secrets stay on the GoNavi host — agents get tools, not raw passwords  
 
 </td>
