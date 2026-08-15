@@ -51,6 +51,8 @@ func TestResolveLocalMCPCommandKeepsDedicatedServerBinary(t *testing.T) {
 
 func TestRepairInstalledLocalMCPClientConfigsUpdatesMissingManagedCommands(t *testing.T) {
 	isolateOpenCodeMCPConfig(t)
+	isolateAdditionalMCPClientConfigs(t)
+	mockLocalMCPClientCommandsDetected(t)
 	originalClaudeConfigPathFunc := claudeCodeConfigPathFunc
 	originalCodexConfigPathFunc := codexConfigPathFunc
 	originalExecutablePathFunc := localMCPExecutablePathFunc
@@ -555,6 +557,7 @@ func TestInspectCodexMCPInstallStatusKeepsMissingCLISignalSeparateFromConfigStat
 
 func TestMCPClientInstallResultMessagesUseServiceLanguage(t *testing.T) {
 	isolateOpenCodeMCPConfig(t)
+	mockLocalMCPClientCommandsDetected(t)
 	originalClaudeConfigPathFunc := claudeCodeConfigPathFunc
 	originalCodexConfigPathFunc := codexConfigPathFunc
 	originalExecutablePathFunc := localMCPExecutablePathFunc
@@ -615,6 +618,7 @@ func TestMCPClientInstallResultMessagesUseServiceLanguage(t *testing.T) {
 
 func TestMCPClientInstallStatusMessagesUseServiceLanguage(t *testing.T) {
 	isolateOpenCodeMCPConfig(t)
+	isolateAdditionalMCPClientConfigs(t)
 	originalClaudeConfigPathFunc := claudeCodeConfigPathFunc
 	originalCodexConfigPathFunc := codexConfigPathFunc
 	originalExecutablePathFunc := localMCPExecutablePathFunc
@@ -651,8 +655,8 @@ func TestMCPClientInstallStatusMessagesUseServiceLanguage(t *testing.T) {
 		}
 	}
 
-	if len(statuses) != 5 {
-		t.Fatalf("expected 5 MCP client statuses, got %d", len(statuses))
+	if len(statuses) != 9 {
+		t.Fatalf("expected 9 MCP client statuses, got %d", len(statuses))
 	}
 	if !strings.Contains(statuses[0].Message, "No Claude Code user-level GoNavi MCP configuration") {
 		t.Fatalf("unexpected Claude Code status message: %q", statuses[0].Message)
@@ -663,13 +667,19 @@ func TestMCPClientInstallStatusMessagesUseServiceLanguage(t *testing.T) {
 	if !strings.Contains(statuses[2].Message, "No OpenCode user-level GoNavi MCP configuration") {
 		t.Fatalf("unexpected OpenCode status message: %q", statuses[2].Message)
 	}
-	if !strings.Contains(statuses[3].Message, "usually runs in the cloud or a remote environment") {
-		t.Fatalf("unexpected remote client status message: %q", statuses[3].Message)
+	for _, index := range []int{3, 4, 5, 6} {
+		if !strings.Contains(statuses[index].Message, "No ") || !strings.Contains(statuses[index].Message, "user-level GoNavi MCP configuration") {
+			t.Fatalf("unexpected %s status message: %q", statuses[index].Client, statuses[index].Message)
+		}
+	}
+	if !strings.Contains(statuses[7].Message, "usually runs in the cloud or a remote environment") {
+		t.Fatalf("unexpected remote client status message: %q", statuses[7].Message)
 	}
 }
 
 func TestMCPClientInstallConfigPathFailuresUseServiceLanguage(t *testing.T) {
 	isolateOpenCodeMCPConfig(t)
+	isolateAdditionalMCPClientConfigs(t)
 	originalClaudeConfigPathFunc := claudeCodeConfigPathFunc
 	originalCodexConfigPathFunc := codexConfigPathFunc
 	originalExecutablePathFunc := localMCPExecutablePathFunc
@@ -724,6 +734,7 @@ func TestMCPClientInstallConfigPathFailuresUseServiceLanguage(t *testing.T) {
 
 func TestMCPClientInstallHomeDirDetailUsesServiceLanguage(t *testing.T) {
 	isolateOpenCodeMCPConfig(t)
+	isolateAdditionalMCPClientConfigs(t)
 	originalClaudeConfigPathFunc := claudeCodeConfigPathFunc
 	originalCodexConfigPathFunc := codexConfigPathFunc
 	originalExecutablePathFunc := localMCPExecutablePathFunc
@@ -778,15 +789,15 @@ func TestMCPClientInstallHomeDirDetailUsesServiceLanguage(t *testing.T) {
 
 func TestMCPClientInstallExecutablePathFailuresUseServiceLanguage(t *testing.T) {
 	openCodeConfigPath := isolateOpenCodeMCPConfig(t)
+	isolateAdditionalMCPClientConfigs(t)
+	mockLocalMCPClientCommandsDetected(t)
 	originalClaudeConfigPathFunc := claudeCodeConfigPathFunc
 	originalCodexConfigPathFunc := codexConfigPathFunc
 	originalExecutablePathFunc := localMCPExecutablePathFunc
-	originalCLIPathFunc := localCLICommandPathFunc
 	t.Cleanup(func() {
 		claudeCodeConfigPathFunc = originalClaudeConfigPathFunc
 		codexConfigPathFunc = originalCodexConfigPathFunc
 		localMCPExecutablePathFunc = originalExecutablePathFunc
-		localCLICommandPathFunc = originalCLIPathFunc
 	})
 
 	tempDir := t.TempDir()
@@ -797,9 +808,6 @@ func TestMCPClientInstallExecutablePathFailuresUseServiceLanguage(t *testing.T) 
 	}
 	codexConfigPathFunc = func() (string, error) {
 		return codexConfigPath, nil
-	}
-	localCLICommandPathFunc = func(string) (string, error) {
-		return "", errors.New("not found")
 	}
 	if err := os.WriteFile(claudeConfigPath, []byte(`{"mcpServers":{"gonavi":{"type":"stdio","command":"old-gonavi","args":["mcp-server"]}}}`), 0o644); err != nil {
 		t.Fatalf("WriteFile Claude config returned error: %v", err)
@@ -854,15 +862,15 @@ func TestMCPClientInstallExecutablePathFailuresUseServiceLanguage(t *testing.T) 
 
 func TestMCPClientInstallConfigFormatFailuresUseServiceLanguage(t *testing.T) {
 	isolateOpenCodeMCPConfig(t)
+	isolateAdditionalMCPClientConfigs(t)
+	mockLocalMCPClientCommandsDetected(t)
 	originalClaudeConfigPathFunc := claudeCodeConfigPathFunc
 	originalCodexConfigPathFunc := codexConfigPathFunc
 	originalExecutablePathFunc := localMCPExecutablePathFunc
-	originalCLIPathFunc := localCLICommandPathFunc
 	t.Cleanup(func() {
 		claudeCodeConfigPathFunc = originalClaudeConfigPathFunc
 		codexConfigPathFunc = originalCodexConfigPathFunc
 		localMCPExecutablePathFunc = originalExecutablePathFunc
-		localCLICommandPathFunc = originalCLIPathFunc
 	})
 
 	tempDir := t.TempDir()
@@ -876,9 +884,6 @@ func TestMCPClientInstallConfigFormatFailuresUseServiceLanguage(t *testing.T) {
 	}
 	localMCPExecutablePathFunc = func() (string, error) {
 		return `C:\Program Files\GoNavi\GoNavi.exe`, nil
-	}
-	localCLICommandPathFunc = func(string) (string, error) {
-		return "", errors.New("not found")
 	}
 
 	service := NewService()
@@ -1022,6 +1027,18 @@ func TestMCPClientInstallMessageCatalogKeysExist(t *testing.T) {
 		"ai.service.mcp_client.claude_code.status.path_mismatch",
 		"ai.service.mcp_client.codex.status.path_mismatch",
 		"ai.service.mcp_client.opencode.status.path_mismatch",
+		"ai.service.mcp_client.external.config_dir_create_failed",
+		"ai.service.mcp_client.external.config_format_invalid",
+		"ai.service.mcp_client.external.config_parse_failed",
+		"ai.service.mcp_client.external.config_path_failed",
+		"ai.service.mcp_client.external.config_read_failed",
+		"ai.service.mcp_client.external.config_serialize_failed",
+		"ai.service.mcp_client.external.config_write_failed",
+		"ai.service.mcp_client.external.install_success",
+		"ai.service.mcp_client.external.status.connected",
+		"ai.service.mcp_client.external.status.missing",
+		"ai.service.mcp_client.external.status.path_check_failed",
+		"ai.service.mcp_client.external.status.path_mismatch",
 		"ai.service.mcp_client.remote.status.message",
 	}
 	for _, language := range i18n.SupportedLanguages() {
