@@ -20,6 +20,7 @@ import (
 	aiservice "GoNavi-Wails/internal/ai/service"
 	appcore "GoNavi-Wails/internal/app"
 	"GoNavi-Wails/internal/logger"
+	"GoNavi-Wails/internal/requesttrace"
 	"GoNavi-Wails/internal/uievents"
 )
 
@@ -118,8 +119,9 @@ type invokeRequest struct {
 }
 
 type invokeResponse struct {
-	Result any    `json:"result,omitempty"`
-	Error  string `json:"error,omitempty"`
+	Result    any    `json:"result,omitempty"`
+	Error     string `json:"error,omitempty"`
+	RequestID string `json:"requestId,omitempty"`
 }
 
 type eventMessage struct {
@@ -864,21 +866,43 @@ func (s *Server) handleInvoke(w http.ResponseWriter, r *http.Request) {
 		s.writeInvokeResponse(w, http.StatusBadRequest, invokeResponse{Error: err.Error()})
 		return
 	}
+	var webTrace *requesttrace.Handle
+	if shouldTraceWebInvoke(request) {
+		if traceStore := appcore.RequestTraceStoreForEntryPoint(s.app); traceStore != nil {
+			webTrace = traceStore.Start(webInvokeTraceInput(request))
+		}
+	}
+	writeResponse := func(status int, response invokeResponse) {
+		requestID := ""
+		if resultRequestID := webInvokeResultRequestID(response.Result); resultRequestID != "" {
+			requestID = resultRequestID
+		} else if webTrace != nil && webTrace.ID() != "" {
+			requestID = webTrace.ID()
+		}
+		response.RequestID = requestID
+		if webTrace != nil {
+			completeWebInvokeTrace(webTrace, response)
+		}
+		if requestID != "" {
+			w.Header().Set("X-GoNavi-Request-ID", requestID)
+		}
+		s.writeInvokeResponse(w, status, response)
+	}
 	if isSQLAuditHeavyInvoke(request) && s.auditHeavySem != nil {
 		select {
 		case s.auditHeavySem <- struct{}{}:
 			defer func() { <-s.auditHeavySem }()
 		default:
-			s.writeInvokeResponse(w, http.StatusTooManyRequests, invokeResponse{Error: "another SQL audit export or integrity verification is already in progress"})
+			writeResponse(http.StatusTooManyRequests, invokeResponse{Error: "another SQL audit export or integrity verification is already in progress"})
 			return
 		}
 	}
 	result, err := s.invoker.Invoke(request)
 	if err != nil {
-		s.writeInvokeResponse(w, http.StatusBadRequest, invokeResponse{Error: err.Error()})
+		writeResponse(http.StatusBadRequest, invokeResponse{Error: err.Error()})
 		return
 	}
-	s.writeInvokeResponse(w, http.StatusOK, invokeResponse{Result: result})
+	writeResponse(http.StatusOK, invokeResponse{Result: result})
 }
 
 func isSQLAuditHeavyInvoke(request invokeRequest) bool {

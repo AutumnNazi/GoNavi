@@ -24,6 +24,7 @@ import (
 	nacosbackend "GoNavi-Wails/internal/nacos"
 	proxytunnel "GoNavi-Wails/internal/proxy"
 	redisbackend "GoNavi-Wails/internal/redis"
+	"GoNavi-Wails/internal/requesttrace"
 	"GoNavi-Wails/internal/resultdiff"
 	"GoNavi-Wails/internal/secretstore"
 	"GoNavi-Wails/internal/sqlaudit"
@@ -202,6 +203,8 @@ type App struct {
 	sqlAuditRuntimeActive         bool
 	sqlAuditSuspended             bool
 	sqlAuditAppendMu              sync.Mutex
+	requestTraceMu                sync.Mutex
+	requestTraceStore             *requesttrace.Store
 	sqlAuditHealthMu              sync.RWMutex
 	sqlAuditHealth                sqlAuditHealthState
 	sqlAuditHealthPath            string
@@ -282,6 +285,7 @@ func NewAppWithSecretStore(store secretstore.SecretStore) *App {
 		runningQueries:                make(map[string]queryContext),
 		importTasks:                   make(map[string]importTaskRegistration),
 		sqlTransactions:               make(map[string]*managedSQLTransaction),
+		requestTraceStore:             requesttrace.NewStore(requesttrace.DefaultCapacity),
 		configDir:                     resolveAppConfigDir(),
 		secretStore:                   store,
 		localizer:                     newAppLocalizer(),
@@ -1955,12 +1959,14 @@ func (a *App) CancelQuery(queryID string) connection.QueryResult {
 
 	if ctx, exists := a.runningQueries[queryID]; exists {
 		ctx.cancel()
+		a.requestDiagnostics().MarkCancellation(queryID, true)
 		if !ctx.retainUntilDone {
 			delete(a.runningQueries, queryID)
 		}
 		logger.Infof("查询已取消：queryID=%s", queryID)
 		return connection.QueryResult{Success: true, Message: a.appText("query_editor.message.cancel_success", nil)}
 	}
+	a.requestDiagnostics().MarkCancellation(queryID, false)
 	logger.Warnf("取消查询失败：queryID=%s 不存在或已完成", queryID)
 	return connection.QueryResult{Success: false, Message: a.appText("query_editor.message.cancel_no_running", nil)}
 }

@@ -102,6 +102,7 @@ import {
 import { downloadBrowserTextFile } from './utils/browserFileTransfer';
 import { buildDataSyncWorkbenchTab } from './utils/dataSyncTab';
 import { buildSqlAuditWorkbenchTab } from './utils/sqlAuditTab';
+import { buildRequestDiagnosticsWorkbenchTab } from './utils/requestDiagnosticsTab';
 import { getDataSourceCapabilities, resolveDataSourceType } from './utils/dataSourceCapabilities';
 import { buildContextualNewQueryTemplate } from './utils/objectQueryTemplates';
 import {
@@ -8481,6 +8482,16 @@ function App() {
                     onClick: () => {
                       handleCancelSettingsCenterPane();
                       addTab(buildSqlAuditWorkbenchTab());
+                    },
+                  },
+                  {
+                    key: 'request-diagnostics',
+                    icon: <BugOutlined />,
+                    title: '请求诊断',
+                    description: '按请求 ID 查看默认脱敏、可复制导出的调用追踪。',
+                    onClick: () => {
+                      handleCancelSettingsCenterPane();
+                      addTab(buildRequestDiagnosticsWorkbenchTab());
                     },
                   },
                 ],

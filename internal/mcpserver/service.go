@@ -161,6 +161,7 @@ type sqlResultSet struct {
 }
 
 type executeSQLResult struct {
+	RequestID      string                `json:"requestId,omitempty"`
 	ConnectionID   string                `json:"connectionId"`
 	DBName         string                `json:"dbName,omitempty"`
 	StatementCount int                   `json:"statementCount"`
@@ -563,6 +564,7 @@ func (s *Service) ExecuteSQL(ctx context.Context, req *mcp.CallToolRequest, args
 
 	normalizedResults, truncated := normalizeResultSets(resultSets, normalizeMaxRowsPerResult(args.MaxRowsPerResult))
 	output := executeSQLResult{
+		RequestID:      mcpRequestID(ctx),
 		ConnectionID:   view.ID,
 		DBName:         dbName,
 		StatementCount: inspection.StatementCount,

@@ -485,6 +485,7 @@ export interface TabData {
     | "sql-file-execution"
     | "sql-analysis"
     | "sql-audit"
+    | "request-diagnostics"
     | "redis-keys"
     | "redis-command"
     | "redis-monitor"

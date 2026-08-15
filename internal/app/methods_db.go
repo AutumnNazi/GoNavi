@@ -1179,13 +1179,29 @@ func (a *App) dbQueryWithCancel(
 	queryID string,
 	auditOptions dbQueryAuditOptions,
 ) (result connection.QueryResult) {
-	trackQueryHistory := auditOptions.trackHistory
-	auditStartedAt := time.Now()
-	var queryExecutionDuration time.Duration
 	runConfig := normalizeRunConfig(config, dbName)
+	if queryID == "" {
+		queryID = requestTraceIDFromContext(auditOptions.executionContext)
+	}
 	if queryID == "" {
 		queryID = generateQueryID()
 	}
+	traceContext, requestTrace, ownsRequestTrace := a.beginQueryRequestTrace(
+		auditOptions.executionContext,
+		runConfig,
+		queryID,
+		auditOptions.source,
+		"database.query",
+	)
+	auditOptions.executionContext = traceContext
+	defer func() {
+		a.recordQueryRequestTraceOutcome(requestTrace, result, ownsRequestTrace)
+	}()
+	requestTrace.AddEvent("query.accepted", nil)
+
+	trackQueryHistory := auditOptions.trackHistory
+	auditStartedAt := time.Now()
+	var queryExecutionDuration time.Duration
 	query = sanitizeSQLForPgLike(resolveDDLDBType(config), query)
 	trackSQLAudit := auditOptions.auditAll || (auditOptions.auditWrites && containsSQLAuditWrite(resolveDDLDBType(runConfig), query))
 	if trackSQLAudit {
@@ -1218,6 +1234,10 @@ func (a *App) dbQueryWithCancel(
 	}
 
 	ctx, cancel := newQueryExecutionContextWithParent(auditOptions.executionContext, runConfig)
+	if deadline, ok := ctx.Deadline(); ok {
+		requestTrace.SetRequestMetadata("", "", deadline)
+	}
+	requestTrace.AddEvent("driver.dispatched", nil)
 	cleanupRunningQuery := a.registerRunningQuery(queryID, cancel, true)
 	defer func() {
 		cancel()
@@ -1270,6 +1290,7 @@ func (a *App) dbQueryWithCancel(
 		data, columns, messages, err := runReadQueryWithMessages(dbInst)
 		if err != nil && isReadQuery && shouldRefreshCachedConnection(err) {
 			if a.invalidateCachedDatabase(runConfig, err) {
+				requestTrace.MarkRetry("cached connection refresh")
 				retryInst, retryErr := a.getDatabaseWithContext(ctx, runConfig, true)
 				if retryErr != nil {
 					logger.Error(retryErr, "DBQuery 重建连接失败：%s SQL片段=%q", formatConnSummary(runConfig), sqlSnippet(query))
@@ -1329,6 +1350,25 @@ func (a *App) dbQueryMulti(
 	auditOptions dbQueryMultiAuditOptions,
 ) (result connection.QueryResult) {
 	runConfig := normalizeRunConfig(config, dbName)
+	if queryID == "" {
+		queryID = requestTraceIDFromContext(auditOptions.executionContext)
+	}
+	if queryID == "" {
+		queryID = generateQueryID()
+	}
+	traceContext, requestTrace, ownsRequestTrace := a.beginQueryRequestTrace(
+		auditOptions.executionContext,
+		runConfig,
+		queryID,
+		auditOptions.source,
+		"database.query_multi",
+	)
+	auditOptions.executionContext = traceContext
+	defer func() {
+		a.recordQueryRequestTraceOutcome(requestTrace, result, ownsRequestTrace)
+	}()
+	requestTrace.AddEvent("query.accepted", nil)
+
 	resolvedDBType := resolveDDLDBType(runConfig)
 	trackSQLAudit := auditOptions.auditAll || (auditOptions.auditWrites && containsSQLAuditWrite(resolvedDBType, query))
 	auditSource := normalizeSQLAuditSource(auditOptions.source)
@@ -1389,16 +1429,16 @@ func (a *App) dbQueryMulti(
 		})
 	}
 
-	if queryID == "" {
-		queryID = generateQueryID()
-	}
-
 	query = sanitizeSQLForPgLike(resolveDDLDBType(config), query)
 	if err := ensureConnectionAllowsQuery(config, query); err != nil {
 		return connection.QueryResult{Success: false, Message: err.Error(), QueryID: queryID}
 	}
 
 	ctx, cancel := newQueryExecutionContextWithParent(auditOptions.executionContext, runConfig)
+	if deadline, ok := ctx.Deadline(); ok {
+		requestTrace.SetRequestMetadata("", "", deadline)
+	}
+	requestTrace.AddEvent("driver.dispatched", nil)
 	cleanupRunningQuery := a.registerRunningQuery(queryID, cancel, true)
 	defer func() {
 		cancel()
@@ -1504,6 +1544,7 @@ func (a *App) dbQueryMulti(
 	results, resultMessages, err := runMultiQuery(dbInst)
 	if err != nil && shouldRefreshCachedConnection(err) {
 		if a.invalidateCachedDatabase(runConfig, err) {
+			requestTrace.MarkRetry("cached connection refresh")
 			retryInst, retryErr := a.getDatabaseWithContext(ctx, runConfig, true)
 			if retryErr != nil {
 				logger.Error(retryErr, "DBQueryMulti 重建连接失败：%s SQL片段=%q", formatConnSummary(runConfig), sqlSnippet(query))
