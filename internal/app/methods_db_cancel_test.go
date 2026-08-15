@@ -18,6 +18,59 @@ type blockingConnectCancelDB struct {
 	queryContextErr chan error
 }
 
+type blockingLegacyCancelDB struct {
+	db.Database
+	queryStarted chan struct{}
+	queryRelease chan struct{}
+	queryDone    chan struct{}
+	execStarted  chan struct{}
+	execRelease  chan struct{}
+	execDone     chan struct{}
+}
+
+func (f *blockingLegacyCancelDB) Connect(connection.ConnectionConfig) error { return nil }
+func (f *blockingLegacyCancelDB) Close() error                              { return nil }
+func (f *blockingLegacyCancelDB) Ping() error                               { return nil }
+
+func (f *blockingLegacyCancelDB) Query(string) ([]map[string]interface{}, []string, error) {
+	close(f.queryStarted)
+	<-f.queryRelease
+	close(f.queryDone)
+	return []map[string]interface{}{{"value": 1}}, []string{"value"}, nil
+}
+
+func (f *blockingLegacyCancelDB) Exec(string) (int64, error) {
+	if f.execStarted == nil || f.execRelease == nil || f.execDone == nil {
+		return 0, errors.New("unexpected legacy Exec call")
+	}
+	close(f.execStarted)
+	<-f.execRelease
+	close(f.execDone)
+	return 1, nil
+}
+
+type blockingContextCancelDB struct {
+	*blockingLegacyCancelDB
+	contextQueryStarted chan struct{}
+	contextQueryDone    chan struct{}
+	contextExecStarted  chan struct{}
+	contextExecDone     chan struct{}
+}
+
+func (f *blockingContextCancelDB) QueryContext(ctx context.Context, _ string) ([]map[string]interface{}, []string, error) {
+	close(f.contextQueryStarted)
+	<-ctx.Done()
+	close(f.contextQueryDone)
+	return nil, nil, ctx.Err()
+}
+
+func (f *blockingContextCancelDB) ExecContext(ctx context.Context, _ string) (int64, error) {
+	close(f.contextExecStarted)
+	<-ctx.Done()
+	close(f.contextExecDone)
+	return 0, ctx.Err()
+}
+
 func (f *blockingConnectCancelDB) Connect(connection.ConnectionConfig) error {
 	close(f.connectStarted)
 	<-f.connectRelease
@@ -181,6 +234,267 @@ func TestDBQueryMulti_CanBeCancelledWhileConnecting(t *testing.T) {
 	}
 	if thirdCancel := app.CancelQuery(queryID); thirdCancel.Success {
 		t.Fatal("cancellation should fail after the query owner exits")
+	}
+}
+
+func TestDBQueryWithCancel_LegacyOnlyDriverReportsCancellationUnsupported(t *testing.T) {
+	originalNewDatabaseFunc := newDatabaseFunc
+	t.Cleanup(func() { newDatabaseFunc = originalNewDatabaseFunc })
+
+	database := &blockingLegacyCancelDB{
+		queryStarted: make(chan struct{}),
+		queryRelease: make(chan struct{}),
+		queryDone:    make(chan struct{}),
+	}
+	newDatabaseFunc = func(string) (db.Database, error) { return database, nil }
+
+	app := NewApp()
+	t.Cleanup(app.Shutdown)
+	const queryID = "legacy-single-query"
+	resultCh := make(chan connection.QueryResult, 1)
+	go func() {
+		resultCh <- app.DBQueryWithCancel(connection.ConnectionConfig{
+			Type: "postgres", Host: "legacy-single.test", Port: 5432,
+		}, "app", "SELECT 1", queryID)
+	}()
+
+	select {
+	case <-database.queryStarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for legacy query execution")
+	}
+
+	cancelResult := app.CancelQuery(queryID)
+	if cancelResult.Success || cancelResult.CancellationState != connection.QueryCancellationStateUnsupported {
+		t.Fatalf("legacy cancellation must report unsupported, got %#v", cancelResult)
+	}
+	select {
+	case result := <-resultCh:
+		t.Fatalf("legacy query falsely returned before underlying execution completed: %#v", result)
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	close(database.queryRelease)
+	result := <-resultCh
+	if !result.Success {
+		t.Fatalf("legacy query should return its real completion result, got %#v", result)
+	}
+	select {
+	case <-database.queryDone:
+	default:
+		t.Fatal("query result returned before the legacy driver completed")
+	}
+	app.queryMu.RLock()
+	_, stillRegistered := app.runningQueries[queryID]
+	app.queryMu.RUnlock()
+	if stillRegistered {
+		t.Fatal("legacy query registration was not released after real completion")
+	}
+}
+
+func TestDBQueryMulti_LegacyOnlyParentCancellationIsExplicit(t *testing.T) {
+	originalNewDatabaseFunc := newDatabaseFunc
+	t.Cleanup(func() { newDatabaseFunc = originalNewDatabaseFunc })
+
+	database := &blockingLegacyCancelDB{
+		queryStarted: make(chan struct{}),
+		queryRelease: make(chan struct{}),
+		queryDone:    make(chan struct{}),
+	}
+	newDatabaseFunc = func(string) (db.Database, error) { return database, nil }
+
+	app := NewApp()
+	t.Cleanup(app.Shutdown)
+	ctx, cancel := context.WithCancel(context.Background())
+	resultCh := make(chan connection.QueryResult, 1)
+	go func() {
+		resultCh <- NewCLIQueryExecutor(app).DBQueryMulti(ctx, connection.ConnectionConfig{
+			Type: "postgres", Host: "legacy-parent-context.test", Port: 5432,
+		}, "app", "SELECT 1", "legacy-parent-context")
+	}()
+
+	select {
+	case <-database.queryStarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for legacy multi-query execution")
+	}
+	cancel()
+	select {
+	case result := <-resultCh:
+		t.Fatalf("legacy multi-query falsely returned on parent cancellation: %#v", result)
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	close(database.queryRelease)
+	result := <-resultCh
+	if !result.Success || result.CancellationState != connection.QueryCancellationStateUnsupported {
+		t.Fatalf("legacy parent cancellation must be explicit, got %#v", result)
+	}
+	data, _ := result.Data.(map[string]any)
+	if data["cancelled"] == true {
+		t.Fatalf("legacy execution must not be reported as stopped, got %#v", result)
+	}
+	select {
+	case <-database.queryDone:
+	default:
+		t.Fatal("legacy multi-query returned before its underlying execution completed")
+	}
+}
+
+func TestDBQueryMulti_ContextDriverStopsOnParentCancellation(t *testing.T) {
+	originalNewDatabaseFunc := newDatabaseFunc
+	t.Cleanup(func() { newDatabaseFunc = originalNewDatabaseFunc })
+
+	legacy := &blockingLegacyCancelDB{
+		queryStarted: make(chan struct{}),
+		queryRelease: make(chan struct{}),
+		queryDone:    make(chan struct{}),
+	}
+	database := &blockingContextCancelDB{
+		blockingLegacyCancelDB: legacy,
+		contextQueryStarted:    make(chan struct{}),
+		contextQueryDone:       make(chan struct{}),
+	}
+	newDatabaseFunc = func(string) (db.Database, error) { return database, nil }
+
+	app := NewApp()
+	t.Cleanup(app.Shutdown)
+	ctx, cancel := context.WithCancel(context.Background())
+	resultCh := make(chan connection.QueryResult, 1)
+	go func() {
+		resultCh <- NewCLIQueryExecutor(app).DBQueryMulti(ctx, connection.ConnectionConfig{
+			Type: "postgres", Host: "context-parent.test", Port: 5432,
+		}, "app", "SELECT 1", "context-parent")
+	}()
+
+	select {
+	case <-database.contextQueryStarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for QueryContext execution")
+	}
+	cancel()
+	select {
+	case result := <-resultCh:
+		if result.Success {
+			t.Fatalf("cancelled Context query should fail, got %#v", result)
+		}
+		data, _ := result.Data.(map[string]any)
+		if data["cancelled"] != true || result.CancellationState != "" {
+			t.Fatalf("Context cancellation should report a real stop, got %#v", result)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Context-capable query did not stop after parent cancellation")
+	}
+	select {
+	case <-database.contextQueryDone:
+	default:
+		t.Fatal("QueryContext result returned before the driver observed cancellation")
+	}
+	select {
+	case <-legacy.queryStarted:
+		t.Fatal("Context-capable driver unexpectedly fell back to legacy Query")
+	default:
+	}
+}
+
+func TestDBQueryMulti_LegacyOnlyWriteParentCancellationIsExplicit(t *testing.T) {
+	originalNewDatabaseFunc := newDatabaseFunc
+	t.Cleanup(func() { newDatabaseFunc = originalNewDatabaseFunc })
+
+	database := &blockingLegacyCancelDB{
+		execStarted: make(chan struct{}),
+		execRelease: make(chan struct{}),
+		execDone:    make(chan struct{}),
+	}
+	newDatabaseFunc = func(string) (db.Database, error) { return database, nil }
+
+	app := NewApp()
+	t.Cleanup(app.Shutdown)
+	ctx, cancel := context.WithCancel(context.Background())
+	resultCh := make(chan connection.QueryResult, 1)
+	go func() {
+		resultCh <- NewCLIQueryExecutor(app).DBQueryMulti(ctx, connection.ConnectionConfig{
+			Type: "postgres", Host: "legacy-write-context.test", Port: 5432,
+		}, "app", "UPDATE users SET active = 1", "legacy-write-context")
+	}()
+
+	select {
+	case <-database.execStarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for legacy Exec")
+	}
+	cancel()
+	select {
+	case result := <-resultCh:
+		t.Fatalf("legacy Exec falsely returned on parent cancellation: %#v", result)
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	close(database.execRelease)
+	result := <-resultCh
+	if !result.Success || result.CancellationState != connection.QueryCancellationStateUnsupported {
+		t.Fatalf("legacy Exec cancellation must report unsupported, got %#v", result)
+	}
+	select {
+	case <-database.execDone:
+	default:
+		t.Fatal("legacy write result returned before Exec completed")
+	}
+}
+
+func TestDBQueryMulti_ContextWriteStopsOnParentCancellation(t *testing.T) {
+	originalNewDatabaseFunc := newDatabaseFunc
+	t.Cleanup(func() { newDatabaseFunc = originalNewDatabaseFunc })
+
+	legacy := &blockingLegacyCancelDB{
+		execStarted: make(chan struct{}),
+		execRelease: make(chan struct{}),
+		execDone:    make(chan struct{}),
+	}
+	database := &blockingContextCancelDB{
+		blockingLegacyCancelDB: legacy,
+		contextExecStarted:     make(chan struct{}),
+		contextExecDone:        make(chan struct{}),
+	}
+	newDatabaseFunc = func(string) (db.Database, error) { return database, nil }
+
+	app := NewApp()
+	t.Cleanup(app.Shutdown)
+	ctx, cancel := context.WithCancel(context.Background())
+	resultCh := make(chan connection.QueryResult, 1)
+	go func() {
+		resultCh <- NewCLIQueryExecutor(app).DBQueryMulti(ctx, connection.ConnectionConfig{
+			Type: "postgres", Host: "context-write.test", Port: 5432,
+		}, "app", "UPDATE users SET active = 1", "context-write")
+	}()
+
+	select {
+	case <-database.contextExecStarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for ExecContext")
+	}
+	cancel()
+	select {
+	case result := <-resultCh:
+		if result.Success || result.CancellationState != "" {
+			t.Fatalf("cancelled Context write returned an invalid state: %#v", result)
+		}
+		data, _ := result.Data.(map[string]any)
+		if data["outcomeUnknown"] != true {
+			t.Fatalf("dispatched Context write cancellation must keep outcome unknown, got %#v", result)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Context-capable Exec did not stop after parent cancellation")
+	}
+	select {
+	case <-database.contextExecDone:
+	default:
+		t.Fatal("ExecContext result returned before the driver observed cancellation")
+	}
+	select {
+	case <-legacy.execStarted:
+		t.Fatal("Context-capable driver unexpectedly fell back to legacy Exec")
+	default:
 	}
 }
 

@@ -161,15 +161,16 @@ type sqlResultSet struct {
 }
 
 type executeSQLResult struct {
-	ConnectionID   string                `json:"connectionId"`
-	DBName         string                `json:"dbName,omitempty"`
-	StatementCount int                   `json:"statementCount"`
-	ReadOnly       bool                  `json:"readOnly"`
-	QueryID        string                `json:"queryId,omitempty"`
-	Message        string                `json:"message,omitempty"`
-	Truncated      bool                  `json:"truncated,omitempty"`
-	Statements     []sqlStatementSummary `json:"statements"`
-	Results        []sqlResultSet        `json:"results"`
+	ConnectionID      string                `json:"connectionId"`
+	DBName            string                `json:"dbName,omitempty"`
+	StatementCount    int                   `json:"statementCount"`
+	ReadOnly          bool                  `json:"readOnly"`
+	QueryID           string                `json:"queryId,omitempty"`
+	CancellationState string                `json:"cancellationState,omitempty"`
+	Message           string                `json:"message,omitempty"`
+	Truncated         bool                  `json:"truncated,omitempty"`
+	Statements        []sqlStatementSummary `json:"statements"`
+	Results           []sqlResultSet        `json:"results"`
 }
 
 func (s *Service) GetConnections(ctx context.Context, req *mcp.CallToolRequest, args emptyArgs) (*mcp.CallToolResult, getConnectionsResult, error) {
@@ -553,6 +554,9 @@ func (s *Service) ExecuteSQL(ctx context.Context, req *mcp.CallToolRequest, args
 	dbName := effectiveDBName(args.DBName, view.Config)
 	queryResult := s.executeAuthorizedSQL(ctx, view, dbName, sqlText, args.AllowMutating)
 	if !queryResult.Success {
+		if queryResult.CancellationState != "" {
+			return toolError("SQL 执行失败（cancellationState=%s）: %s", queryResult.CancellationState, strings.TrimSpace(queryResult.Message)), executeSQLResult{}, nil
+		}
 		return toolError("SQL 执行失败: %s", strings.TrimSpace(queryResult.Message)), executeSQLResult{}, nil
 	}
 
@@ -563,15 +567,16 @@ func (s *Service) ExecuteSQL(ctx context.Context, req *mcp.CallToolRequest, args
 
 	normalizedResults, truncated := normalizeResultSets(resultSets, normalizeMaxRowsPerResult(args.MaxRowsPerResult))
 	output := executeSQLResult{
-		ConnectionID:   view.ID,
-		DBName:         dbName,
-		StatementCount: inspection.StatementCount,
-		ReadOnly:       inspection.ReadOnly,
-		QueryID:        strings.TrimSpace(queryResult.QueryID),
-		Message:        strings.TrimSpace(queryResult.Message),
-		Truncated:      truncated,
-		Statements:     toStatementSummaries(inspection.Statements),
-		Results:        normalizedResults,
+		ConnectionID:      view.ID,
+		DBName:            dbName,
+		StatementCount:    inspection.StatementCount,
+		ReadOnly:          inspection.ReadOnly,
+		QueryID:           strings.TrimSpace(queryResult.QueryID),
+		CancellationState: strings.TrimSpace(queryResult.CancellationState),
+		Message:           strings.TrimSpace(queryResult.Message),
+		Truncated:         truncated,
+		Statements:        toStatementSummaries(inspection.Statements),
+		Results:           normalizedResults,
 	}
 	return textResult(formatExecuteSQLResultContent(output)), output, nil
 }
@@ -956,6 +961,10 @@ func formatExecuteSQLResultContent(result executeSQLResult) string {
 	builder.WriteString(fmt.Sprintf("语句数：%d，结果集：%d", result.StatementCount, len(result.Results)))
 	if result.Truncated {
 		builder.WriteString("，结果已截断")
+	}
+	if result.CancellationState != "" {
+		builder.WriteString("\n取消状态：")
+		builder.WriteString(result.CancellationState)
 	}
 	if result.Message != "" {
 		builder.WriteString("\n消息：")

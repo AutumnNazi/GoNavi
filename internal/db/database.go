@@ -244,6 +244,18 @@ type MultiResultQuerier interface {
 	QueryMulti(query string) ([]connection.ResultSetData, error)
 }
 
+// QueryContexter is the optional cancellation-capable query contract.
+// Callers must not assume Database.Query can be interrupted without it.
+type QueryContexter interface {
+	QueryContext(ctx context.Context, query string) ([]map[string]interface{}, []string, error)
+}
+
+// ExecContexter is the optional cancellation-capable write contract.
+// Callers must not assume Database.Exec can be interrupted without it.
+type ExecContexter interface {
+	ExecContext(ctx context.Context, query string) (int64, error)
+}
+
 // MultiResultQuerierContext 是带 context 的多结果集查询接口。
 type MultiResultQuerierContext interface {
 	QueryMultiContext(ctx context.Context, query string) ([]connection.ResultSetData, error)
