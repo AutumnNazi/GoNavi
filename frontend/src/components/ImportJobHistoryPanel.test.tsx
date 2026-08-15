@@ -10,6 +10,8 @@ const mocks = vi.hoisted(() => ({
   deleteImportJob: vi.fn(),
   cancelImportJob: vi.fn(),
   exportImportErrorRows: vi.fn(),
+  resumeImportJob: vi.fn(),
+  retryImportJobFailedRows: vi.fn(),
   modalConfirm: vi.fn(),
   messageError: vi.fn(),
   messageSuccess: vi.fn(),
@@ -21,6 +23,8 @@ vi.mock('../../wailsjs/go/app/App', () => ({
   DeleteImportJob: mocks.deleteImportJob,
   CancelImportJob: mocks.cancelImportJob,
   ExportImportErrorRows: mocks.exportImportErrorRows,
+  ResumeImportJob: mocks.resumeImportJob,
+  RetryImportJobFailedRows: mocks.retryImportJobFailedRows,
 }));
 
 vi.mock('./common/ResizableDraggableModal', () => ({
@@ -49,6 +53,8 @@ vi.mock('@ant-design/icons', () => ({
   DeleteOutlined: () => React.createElement('mock-icon', { name: 'delete' }),
   DownloadOutlined: () => React.createElement('mock-icon', { name: 'download' }),
   EyeOutlined: () => React.createElement('mock-icon', { name: 'eye' }),
+  PlayCircleOutlined: () => React.createElement('mock-icon', { name: 'play-circle' }),
+  RedoOutlined: () => React.createElement('mock-icon', { name: 'redo' }),
   ReloadOutlined: () => React.createElement('mock-icon', { name: 'reload' }),
   StopOutlined: () => React.createElement('mock-icon', { name: 'stop' }),
 }));
@@ -81,6 +87,21 @@ const runningJob = {
   updatedAt: 1_700_000_001_000,
 };
 
+const interruptedJob = {
+  id: 'import-interrupted-1',
+  kind: 'table',
+  status: 'interrupted',
+  stage: 'interrupted',
+  databaseName: 'app',
+  tableName: 'users',
+  current: 12,
+  succeeded: 11,
+  failed: 1,
+  checkpoint: { safe: true },
+  resumable: true,
+  updatedAt: 1_700_000_002_000,
+};
+
 let renderedHistories: ReactTestRenderer[] = [];
 
 const renderHistory = async () => {
@@ -97,7 +118,7 @@ const renderHistory = async () => {
 describe('ImportJobHistoryPanel', () => {
   beforeEach(() => {
     mocks.listImportJobs.mockReset();
-    mocks.listImportJobs.mockResolvedValue({ success: true, data: [runningJob, failedJob] });
+    mocks.listImportJobs.mockResolvedValue({ success: true, data: [runningJob, failedJob, interruptedJob] });
     mocks.getImportJob.mockReset();
     mocks.getImportJob.mockResolvedValue({ success: true, data: failedJob });
     mocks.deleteImportJob.mockReset();
@@ -106,6 +127,10 @@ describe('ImportJobHistoryPanel', () => {
     mocks.cancelImportJob.mockResolvedValue({ success: true });
     mocks.exportImportErrorRows.mockReset();
     mocks.exportImportErrorRows.mockResolvedValue({ success: true });
+    mocks.resumeImportJob.mockReset();
+    mocks.resumeImportJob.mockResolvedValue({ success: true });
+    mocks.retryImportJobFailedRows.mockReset();
+    mocks.retryImportJobFailedRows.mockResolvedValue({ success: true });
     mocks.modalConfirm.mockReset();
     mocks.messageError.mockReset();
     mocks.messageSuccess.mockReset();
@@ -122,8 +147,7 @@ describe('ImportJobHistoryPanel', () => {
   it('lists jobs and exposes only safe supported actions', async () => {
     const renderer = await renderHistory();
 
-    expect(renderer.root.findAllByProps({ 'data-import-history-job': true })).toHaveLength(2);
-    expect(renderer.root.findAllByProps({ 'data-import-history-resume-action': true })).toHaveLength(0);
+    expect(renderer.root.findAllByProps({ 'data-import-history-job': true })).toHaveLength(3);
     expect(renderer.root.findByProps({
       'data-import-history-cancel-action': 'import-running-1',
     })).toBeDefined();
@@ -135,6 +159,12 @@ describe('ImportJobHistoryPanel', () => {
     })).toBeDefined();
     expect(renderer.root.findByProps({
       'data-import-history-export-action': 'import-failed-1',
+    })).toBeDefined();
+    expect(renderer.root.findByProps({
+      'data-import-history-retry-failed-rows-action': 'import-failed-1',
+    })).toBeDefined();
+    expect(renderer.root.findByProps({
+      'data-import-history-resume-action': 'import-interrupted-1',
     })).toBeDefined();
     expect(String(renderer.root.findByProps({
       'data-import-history-progress': 'import-failed-1',
@@ -154,6 +184,61 @@ describe('ImportJobHistoryPanel', () => {
 
     expect(mocks.cancelImportJob).toHaveBeenCalledWith('import-running-1');
     expect(mocks.listImportJobs).toHaveBeenCalledTimes(2);
+  });
+
+  it('starts a safe checkpoint resume from history', async () => {
+    const renderer = await renderHistory();
+
+    renderer.root.findByProps({
+      'data-import-history-resume-action': 'import-interrupted-1',
+    }).props.onClick();
+    expect(mocks.modalConfirm).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      await mocks.modalConfirm.mock.calls[0][0].onOk();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(mocks.resumeImportJob).toHaveBeenCalledWith('import-interrupted-1');
+    expect(mocks.listImportJobs).toHaveBeenCalledTimes(2);
+  });
+
+  it('retries only failed rows through the durable history action', async () => {
+    const renderer = await renderHistory();
+
+    renderer.root.findByProps({
+      'data-import-history-retry-failed-rows-action': 'import-failed-1',
+    }).props.onClick();
+    expect(mocks.modalConfirm).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      await mocks.modalConfirm.mock.calls[0][0].onOk();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(mocks.retryImportJobFailedRows).toHaveBeenCalledWith('import-failed-1');
+    expect(mocks.listImportJobs).toHaveBeenCalledTimes(2);
+  });
+
+  it('blocks recovery for an unsafe or unknown interrupted outcome with an explanation', async () => {
+    const unsafeInterruptedJob = {
+      ...interruptedJob,
+      id: 'import-unsafe-1',
+      resumable: false,
+      checkpoint: { safe: false },
+      outcomeUnknown: true,
+    };
+    mocks.listImportJobs.mockResolvedValueOnce({ success: true, data: [unsafeInterruptedJob] });
+    const renderer = await renderHistory();
+
+    expect(renderer.root.findAllByProps({
+      'data-import-history-resume-action': 'import-unsafe-1',
+    })).toHaveLength(0);
+    expect(renderer.root.findByProps({
+      'data-import-history-resume-unavailable': 'import-unsafe-1',
+    })).toBeDefined();
   });
 
   it('polls a running import until its durable status becomes terminal', async () => {

@@ -55,9 +55,12 @@ func TestRecoverImportJobsOnStartupSkipsCorruptMetadataAndRecoversValidJobs(t *t
 		ID:                  "import-running-valid",
 		Kind:                importjob.KindTable,
 		Status:              importjob.StatusRunning,
+		SourcePath:          "D:/imports/users.csv",
+		ConnectionID:        "connection-v1",
 		SourceIdentityToken: "source-v1",
 		TargetFingerprint:   "target-v1",
 		OptionsHash:         "options-v1",
+		TableImportOptions:  &importjob.TableImportOptions{},
 		Checkpoint:          importjob.Checkpoint{Safe: true, SourceRow: 1000},
 	})
 	if err != nil {
@@ -91,9 +94,12 @@ func TestImportJobsRecoverAcrossApplicationRestart(t *testing.T) {
 		ID:                  "import-persisted-job",
 		Kind:                importjob.KindTable,
 		Status:              importjob.StatusRunning,
+		SourcePath:          "D:/imports/users.csv",
+		ConnectionID:        "connection-v1",
 		SourceIdentityToken: "source-v1",
 		TargetFingerprint:   "target-v1",
 		OptionsHash:         "options-v1",
+		TableImportOptions:  &importjob.TableImportOptions{},
 		Checkpoint:          importjob.Checkpoint{Safe: true, SourceRow: 1000},
 	}); err != nil {
 		t.Fatal(err)

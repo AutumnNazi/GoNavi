@@ -4390,6 +4390,15 @@ func (a *App) stoppedImportResult(resultData importExecutionResult, detail strin
 // ImportDataWithProgressOptions executes a streamed import with optional source-header
 // to database-column mappings. ImportDataWithProgress remains the compatibility entrypoint.
 func (a *App) ImportDataWithProgressOptions(config connection.ConnectionConfig, dbName, tableName, filePath string, options ImportFileOptions) (result connection.QueryResult) {
+	return a.importDataWithProgressOptions(config, dbName, tableName, filePath, options, nil)
+}
+
+func (a *App) importDataWithProgressOptions(
+	config connection.ConnectionConfig,
+	dbName, tableName, filePath string,
+	options ImportFileOptions,
+	recovery *tableImportRecoveryPlan,
+) (result connection.QueryResult) {
 	if strings.TrimSpace(filePath) == "" {
 		return connection.QueryResult{Success: false, Message: a.appText("file.backend.error.import_file_empty", nil)}
 	}
@@ -4416,7 +4425,7 @@ func (a *App) ImportDataWithProgressOptions(config connection.ConnectionConfig, 
 	if err := validateImportConflictPolicyForDB(dbType, options); err != nil {
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
-	if strings.TrimSpace(options.ResumeJobID) != "" {
+	if strings.TrimSpace(options.ResumeJobID) != "" && recovery == nil {
 		return connection.QueryResult{Success: false, Message: a.appText("file.backend.error.import_resume_unavailable", nil)}
 	}
 	sourceIdentity, err := captureImportSourceIdentity(filePath)
@@ -4426,11 +4435,19 @@ func (a *App) ImportDataWithProgressOptions(config connection.ConnectionConfig, 
 	if expected := strings.TrimSpace(options.SourceIdentityToken); expected != "" && expected != sourceIdentity.Token {
 		return connection.QueryResult{Success: false, Message: a.appText("file.backend.error.import_source_changed", nil)}
 	}
+	if recovery != nil {
+		if err := a.validateTableImportRecovery(recovery, config, dbName, tableName, options, sourceIdentity); err != nil {
+			return connection.QueryResult{Success: false, Message: importJobRecoveryErrorMessage(a, err)}
+		}
+	}
 	metadataSchemaName, metadataTableName := normalizeMetadataSchemaAndTable(config, dbName, tableName)
 
 	importCtx, importCancel := context.WithCancel(context.Background())
 	defer importCancel()
 	jobID := strings.TrimSpace(options.JobID)
+	if recovery != nil && jobID == "" {
+		return connection.QueryResult{Success: false, Message: a.appText("file.backend.error.import_resume_unavailable", nil)}
+	}
 	var managedJob *managedImportJob
 	var managedArtifact *managedImportErrorArtifact
 	mayHaveDatabaseSideEffects := false
@@ -4440,7 +4457,12 @@ func (a *App) ImportDataWithProgressOptions(config connection.ConnectionConfig, 
 			return connection.QueryResult{Success: false, Message: a.appText("file.backend.error.import_job_already_running", nil)}
 		}
 		defer cleanupRegistration()
-		managedJob, err = a.beginManagedImportJob(managedImportJobStart{
+		if recovery != nil {
+			if err := a.claimTableImportRecovery(recovery, sourceIdentity.Token, buildImportTargetFingerprint(config, dbName, tableName), buildImportFileOptionsHash(options)); err != nil {
+				return connection.QueryResult{Success: false, Message: importJobRecoveryErrorMessage(a, err)}
+			}
+		}
+		start := managedImportJobStart{
 			ID:                  jobID,
 			Kind:                importjob.KindTable,
 			SourcePath:          filePath,
@@ -4452,8 +4474,24 @@ func (a *App) ImportDataWithProgressOptions(config connection.ConnectionConfig, 
 			DatabaseName:        dbName,
 			TableName:           tableName,
 			OptionsHash:         buildImportFileOptionsHash(options),
-		})
+			TableImportOptions:  importJobTableOptionsFromImportFileOptions(options),
+		}
+		if recovery != nil {
+			start.Stage = "resuming"
+			start.ParentJobID = recovery.ParentJob.ID
+			start.RecoveryAction = "resume"
+			start.Current = recovery.ParentJob.Checkpoint.SourceRow
+			start.Succeeded = recovery.ParentJob.Succeeded
+			start.Skipped = recovery.ParentJob.Skipped
+			start.Failed = recovery.ParentJob.Failed
+			start.BytesRead = recovery.ParentJob.Checkpoint.ByteOffset
+			start.Checkpoint = recovery.ParentJob.Checkpoint
+		}
+		managedJob, err = a.beginManagedImportJob(start)
 		if err != nil {
+			if recovery != nil {
+				_ = a.releaseTableImportRecovery(recovery)
+			}
 			return connection.QueryResult{Success: false, Message: err.Error()}
 		}
 		defer func() {
@@ -4463,6 +4501,9 @@ func (a *App) ImportDataWithProgressOptions(config connection.ConnectionConfig, 
 		}()
 		managedArtifact, err = a.beginManagedImportErrorArtifact(jobID)
 		if err != nil {
+			if recovery != nil {
+				_ = a.releaseTableImportRecovery(recovery)
+			}
 			return connection.QueryResult{Success: false, Message: err.Error()}
 		}
 		defer managedArtifact.abort()
@@ -4517,7 +4558,6 @@ func (a *App) ImportDataWithProgressOptions(config connection.ConnectionConfig, 
 	}
 
 	writer := newImportDatabaseRowWriterWithOptions(dbInst, dbType, tableName, newImportColumnTypeLookup(targetColumns), options)
-	continueOnError := resolveImportContinueOnError(options)
 	var jobPersistErr error
 	batchConsumer := newImportBatchConsumer(writer, defaultImportApplyBatchSize, 0, false, resolveImportContinueOnError(options), func(state importProgressState) {
 		if state.Success+state.Skipped+state.Errors > 0 {
@@ -4538,11 +4578,11 @@ func (a *App) ImportDataWithProgressOptions(config connection.ConnectionConfig, 
 			SourceBytesTotal: state.TotalBytes,
 			ByteProgressKind: "rawSource",
 			Checkpoint: importjob.Checkpoint{
-				Safe:       false,
+				Safe:       state.CheckpointSafe,
 				SourceRow:  int64(state.Current),
 				ByteOffset: state.BytesRead,
 			},
-			ForcePersist: !continueOnError,
+			ForcePersist: state.CheckpointSafe,
 		})
 		if jobPersistErr != nil {
 			importCancel()
@@ -4550,12 +4590,24 @@ func (a *App) ImportDataWithProgressOptions(config connection.ConnectionConfig, 
 	})
 	batchConsumer.SetContext(importCtx)
 	batchConsumer.jobID = jobID
+	if recovery != nil {
+		batchConsumer.SetInitialProgress(
+			int(recovery.ParentJob.Checkpoint.SourceRow),
+			int(recovery.ParentJob.Succeeded),
+			int(recovery.ParentJob.Skipped),
+			int(recovery.ParentJob.Failed),
+		)
+	}
 	if managedArtifact != nil {
 		batchConsumer.SetRowErrorHandler(managedArtifact.append)
 	}
-	consumer, err := newImportColumnMappingConsumer(batchConsumer, options.ColumnMappings, targetColumns)
+	mappedConsumer, err := newImportColumnMappingConsumer(batchConsumer, options.ColumnMappings, targetColumns)
 	if err != nil {
 		return connection.QueryResult{Success: false, Message: err.Error()}
+	}
+	var consumer importFileConsumer = mappedConsumer
+	if recovery != nil {
+		consumer = newImportResumeSkippingConsumer(consumer, recovery.ParentJob.Checkpoint.SourceRow)
 	}
 	finishArtifact := func(resultData *importExecutionResult) error {
 		if managedArtifact == nil {

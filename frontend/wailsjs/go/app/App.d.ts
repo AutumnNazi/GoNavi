@@ -565,6 +565,10 @@ export function ResultDiffStart(arg1:app.ResultDiffStartRequest):Promise<connect
 
 export function ResultDiffUploadChunk(arg1:resultdiff.UploadChunkRequest):Promise<connection.QueryResult>;
 
+export function ResumeImportJob(arg1:string):Promise<connection.QueryResult>;
+
+export function RetryImportJobFailedRows(arg1:string):Promise<connection.QueryResult>;
+
 export function RetrySecurityUpdateCurrentRound(arg1:app.RetrySecurityUpdateRequest):Promise<app.SecurityUpdateStatus>;
 
 export function RevealSavedQueryInFolder(arg1:string):Promise<connection.QueryResult>;

@@ -4,6 +4,8 @@ import {
   DeleteOutlined,
   DownloadOutlined,
   EyeOutlined,
+  PlayCircleOutlined,
+  RedoOutlined,
   ReloadOutlined,
   StopOutlined,
 } from '@ant-design/icons';
@@ -14,6 +16,8 @@ import {
   ExportImportErrorRows,
   GetImportJob,
   ListImportJobs,
+  ResumeImportJob,
+  RetryImportJobFailedRows,
 } from '../../wailsjs/go/app/App';
 import { t as defaultTranslate } from '../i18n';
 import { useOptionalI18n } from '../i18n/provider';
@@ -47,7 +51,11 @@ type ImportJobRecord = {
   skipped?: number;
   bytesRead?: number;
   outcomeUnknown?: boolean;
+  resumable?: boolean;
+  checkpointSafe?: boolean;
   errorArtifactId?: string;
+  parentJobId?: string;
+  recoveryAction?: string;
   message?: string;
   createdAt?: number;
   updatedAt?: number;
@@ -97,7 +105,15 @@ const normalizeJobs = (value: unknown): ImportJobRecord[] => {
       failed: Number(candidate.failed) || 0,
       bytesRead: Number(candidate.bytesRead) || 0,
       outcomeUnknown: candidate.outcomeUnknown === true,
+      resumable: candidate.resumable === true,
+      checkpointSafe: Boolean(
+        candidate.checkpoint
+        && typeof candidate.checkpoint === 'object'
+        && (candidate.checkpoint as Record<string, unknown>).safe === true,
+      ),
       errorArtifactId: String(candidate.errorArtifactId || ''),
+      parentJobId: String(candidate.parentJobId || ''),
+      recoveryAction: String(candidate.recoveryAction || ''),
       message: String(candidate.message || ''),
       createdAt: Number(candidate.createdAt) || 0,
       updatedAt: Number(candidate.updatedAt) || 0,
@@ -158,14 +174,16 @@ const ImportJobHistoryPanel: React.FC<ImportJobHistoryPanelProps> = ({ refreshTo
   }, [loadJobs, refreshToken]);
 
   useEffect(() => {
-    if (!jobs.some((job) => pollingStatuses.has(job.status as ImportJobStatus))) return undefined;
+    const hasRunningJob = jobs.some((job) => pollingStatuses.has(job.status as ImportJobStatus));
+    const isStartingRecovery = pendingAction.startsWith('resume:') || pendingAction.startsWith('retry:');
+    if (!hasRunningJob && !isStartingRecovery) return undefined;
     const timer = globalThis.setTimeout(() => {
       void loadJobs();
     }, 1_000);
     return () => {
       globalThis.clearTimeout(timer);
     };
-  }, [jobs, loadJobs]);
+  }, [jobs, loadJobs, pendingAction]);
 
   const loadDetails = async (jobID: string) => {
     setPendingAction(`details:${jobID}`);
@@ -255,6 +273,62 @@ const ImportJobHistoryPanel: React.FC<ImportJobHistoryPanelProps> = ({ refreshTo
     });
   };
 
+  const confirmResume = (job: ImportJobRecord) => {
+    Modal.confirm({
+      title: t('data_import.history.confirm.resume_title'),
+      content: t('data_import.history.confirm.resume_content'),
+      okText: t('data_import.history.action.resume'),
+      cancelText: t('common.cancel'),
+      onOk: async () => {
+        setPendingAction(`resume:${job.id}`);
+        try {
+          const result = await ResumeImportJob(job.id);
+          if (!result?.success) {
+            throw new Error(result?.message || t('data_import.history.error.resume_failed'));
+          }
+          setSelectedJob((current) => (current?.id === job.id ? null : current));
+          await loadJobs();
+          void message.success(t('data_import.history.message.resumed'));
+        } catch (resumeError: any) {
+          void message.error(t('data_import.history.error.resume_failed_detail', {
+            detail: resumeError?.message || String(resumeError),
+          }));
+          throw resumeError;
+        } finally {
+          setPendingAction('');
+        }
+      },
+    });
+  };
+
+  const confirmRetryFailedRows = (job: ImportJobRecord) => {
+    Modal.confirm({
+      title: t('data_import.history.confirm.retry_failed_rows_title'),
+      content: t('data_import.history.confirm.retry_failed_rows_content'),
+      okText: t('data_import.history.action.retry_failed_rows'),
+      cancelText: t('common.cancel'),
+      onOk: async () => {
+        setPendingAction(`retry:${job.id}`);
+        try {
+          const result = await RetryImportJobFailedRows(job.id);
+          if (!result?.success) {
+            throw new Error(result?.message || t('data_import.history.error.retry_failed_rows_failed'));
+          }
+          setSelectedJob((current) => (current?.id === job.id ? null : current));
+          await loadJobs();
+          void message.success(t('data_import.history.message.retry_failed_rows_started'));
+        } catch (retryError: any) {
+          void message.error(t('data_import.history.error.retry_failed_rows_failed_detail', {
+            detail: retryError?.message || String(retryError),
+          }));
+          throw retryError;
+        } finally {
+          setPendingAction('');
+        }
+      },
+    });
+  };
+
   return (
     <section
       data-import-history-panel="true"
@@ -293,6 +367,22 @@ const ImportJobHistoryPanel: React.FC<ImportJobHistoryPanelProps> = ({ refreshTo
           const canCancel = job.status === 'preparing' || job.status === 'running';
           const hasArtifact = Boolean(String(job.errorArtifactId || '').trim());
           const canExport = canDelete && hasArtifact;
+          const canResume = job.kind === 'table'
+            && job.status === 'interrupted'
+            && job.resumable === true
+            && job.checkpointSafe === true
+            && !job.outcomeUnknown;
+          const canRetryFailedRows = job.kind === 'table'
+            && (job.status === 'failed' || job.status === 'partial')
+            && hasArtifact
+            && Number(job.failed) > 0
+            && !job.outcomeUnknown;
+          const hasRunningResume = jobs.some((candidate) => (
+            candidate.parentJobId === job.id
+            && candidate.recoveryAction === 'resume'
+            && pollingStatuses.has(candidate.status as ImportJobStatus)
+          ));
+          const resumeUnavailable = job.status === 'interrupted' && !canResume && !hasRunningResume;
           return (
             <div
               key={job.id}
@@ -323,6 +413,23 @@ const ImportJobHistoryPanel: React.FC<ImportJobHistoryPanelProps> = ({ refreshTo
                   skipped: Number(job.skipped) || 0,
                 })}
               </Text>
+              {job.recoveryAction ? (
+                <Text data-import-history-recovery={job.id} type="secondary">
+                  {t(`data_import.history.recovery.${job.recoveryAction}`)}
+                </Text>
+              ) : null}
+              {resumeUnavailable ? (
+                <Alert
+                  data-import-history-resume-unavailable={job.id}
+                  type="warning"
+                  showIcon
+                  message={t(
+                    job.outcomeUnknown
+                      ? 'data_import.history.detail.resume_unknown_outcome'
+                      : 'data_import.history.detail.resume_unavailable',
+                  )}
+                />
+              ) : null}
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                 <Button
                   data-import-history-details-action={job.id}
@@ -354,6 +461,29 @@ const ImportJobHistoryPanel: React.FC<ImportJobHistoryPanelProps> = ({ refreshTo
                     onClick={() => void exportRejectedRows(job)}
                   >
                     {t('data_import.history.action.export_errors')}
+                  </Button>
+                ) : null}
+                {canResume ? (
+                  <Button
+                    data-import-history-resume-action={job.id}
+                    size="small"
+                    type="primary"
+                    icon={<PlayCircleOutlined />}
+                    loading={pendingAction === `resume:${job.id}`}
+                    onClick={() => confirmResume(job)}
+                  >
+                    {t('data_import.history.action.resume')}
+                  </Button>
+                ) : null}
+                {canRetryFailedRows ? (
+                  <Button
+                    data-import-history-retry-failed-rows-action={job.id}
+                    size="small"
+                    icon={<RedoOutlined />}
+                    loading={pendingAction === `retry:${job.id}`}
+                    onClick={() => confirmRetryFailedRows(job)}
+                  >
+                    {t('data_import.history.action.retry_failed_rows')}
                   </Button>
                 ) : null}
                 {canDelete ? (
