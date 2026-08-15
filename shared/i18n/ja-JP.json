@@ -6877,6 +6877,7 @@
   "query_editor.message.cancel_failed": "クエリのキャンセルに失敗しました: {{error}}",
   "query_editor.message.cancel_no_running": "キャンセルできる実行中のクエリはありません。",
   "query_editor.message.cancel_success": "クエリをキャンセルしました。",
+  "query_editor.message.cancel_unsupported": "現在のデータベースドライバーは実行中のステートメントをキャンセルできないため、キャンセル要求は基盤側の SQL を停止できませんでした。",
   "query_editor.message.clipboard_permission_required": "ブラウザーがクリップボードを読み取れません。このサイトのクリップボード権限を許可してから再試行してください。",
   "query_editor.message.clipboard_read_failed": "クリップボードを読み取れません。再試行してください。",
   "query_editor.message.connection_not_found": "接続が見つかりません。",

@@ -191,6 +191,8 @@ type ResultSetData struct {
 	StatementIndex int                      `json:"statementIndex,omitempty"`
 }
 
+const QueryCancellationStateUnsupported = "unsupported"
+
 // QueryResult 是 Wails 绑定方法的统一响应格式，前端通过此结构体接收后端结果。
 type QueryResult struct {
 	Success            bool        `json:"success"`
@@ -199,6 +201,7 @@ type QueryResult struct {
 	Fields             []string    `json:"fields,omitempty"`
 	Messages           []string    `json:"messages,omitempty"`
 	QueryID            string      `json:"queryId,omitempty"` // Unique ID for query cancellation
+	CancellationState  string      `json:"cancellationState,omitempty"`
 	TransactionID      string      `json:"transactionId,omitempty"`
 	TransactionPending bool        `json:"transactionPending,omitempty"`
 }

@@ -6877,6 +6877,7 @@
   "query_editor.message.cancel_failed": "Не удалось отменить запрос: {{error}}",
   "query_editor.message.cancel_no_running": "Нет выполняющегося запроса для отмены.",
   "query_editor.message.cancel_success": "Запрос отменен.",
+  "query_editor.message.cancel_unsupported": "Запрос на отмену не остановил выполнение SQL, поскольку текущий драйвер базы данных не поддерживает отмену выполняемых операторов.",
   "query_editor.message.clipboard_permission_required": "Браузер не может прочитать буфер обмена. Разрешите этому сайту доступ к буферу обмена и повторите попытку.",
   "query_editor.message.clipboard_read_failed": "Не удалось прочитать буфер обмена. Повторите попытку.",
   "query_editor.message.connection_not_found": "Подключение не найдено.",

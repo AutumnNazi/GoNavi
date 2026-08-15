@@ -68,6 +68,7 @@ func (d *DuckDB) Connect(config connection.ConnectionConfig) error {
 	if err != nil {
 		return duckDBWrapRuntimeError("db.backend.error.connection_open_failed_prefix", err)
 	}
+	configureSQLConnectionPool(db, "duckdb")
 	d.conn = db
 	d.pingTimeout = getConnectTimeout(config)
 

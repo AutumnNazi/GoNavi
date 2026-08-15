@@ -6877,6 +6877,7 @@
   "query_editor.message.cancel_failed": "取消查詢失敗：{{error}}",
   "query_editor.message.cancel_no_running": "沒有正在執行的查詢可取消。",
   "query_editor.message.cancel_success": "查詢已終止。",
+  "query_editor.message.cancel_unsupported": "取消要求未能中止底層 SQL；目前資料庫驅動程式不支援取消執行中的語句。",
   "query_editor.message.clipboard_permission_required": "瀏覽器無法讀取剪貼簿，請允許此網站的剪貼簿權限後重試。",
   "query_editor.message.clipboard_read_failed": "無法讀取剪貼簿，請重試。",
   "query_editor.message.connection_not_found": "找不到連線。",
