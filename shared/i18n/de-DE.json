@@ -6858,6 +6858,7 @@
   "query_editor.message.cancel_failed": "Abfrage konnte nicht abgebrochen werden: {{error}}",
   "query_editor.message.cancel_no_running": "Keine laufende Abfrage zum Abbrechen.",
   "query_editor.message.cancel_success": "Abfrage abgebrochen.",
+  "query_editor.message.cancel_unsupported": "Die Abbruchanforderung hat die zugrunde liegende SQL-Ausführung nicht beendet, da der aktuelle Datenbanktreiber laufende Anweisungen nicht abbrechen kann.",
   "query_editor.message.clipboard_permission_required": "Der Browser kann die Zwischenablage nicht lesen. Erlauben Sie dieser Website den Zugriff auf die Zwischenablage und versuchen Sie es erneut.",
   "query_editor.message.clipboard_read_failed": "Die Zwischenablage kann nicht gelesen werden. Versuchen Sie es erneut.",
   "query_editor.message.connection_not_found": "Verbindung nicht gefunden.",

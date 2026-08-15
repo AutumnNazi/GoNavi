@@ -836,6 +836,48 @@ func TestExecuteSQLForwardsRequestContextToBackend(t *testing.T) {
 	}
 }
 
+func TestExecuteSQLExposesUnsupportedCancellationState(t *testing.T) {
+	backend := &fakeBackend{
+		editableConnection: connection.SavedConnectionView{
+			ID: "legacy-main",
+			Config: connection.ConnectionConfig{
+				Type:     "custom",
+				Database: "app",
+			},
+		},
+		inspection: appcore.SQLInspection{
+			StatementCount: 1,
+			ReadOnly:       true,
+			Statements: []appcore.SQLStatementInspection{
+				{Index: 1, Keyword: "select", ReadOnly: true},
+			},
+		},
+		queryResult: connection.QueryResult{
+			Success:           true,
+			Message:           "driver cannot stop the underlying SQL",
+			CancellationState: connection.QueryCancellationStateUnsupported,
+			Data:              []connection.ResultSetData{},
+		},
+	}
+
+	result, out, err := NewService(backend).ExecuteSQL(context.Background(), nil, executeSQLArgs{
+		ConnectionID: "legacy-main",
+		SQL:          "SELECT 1",
+	})
+	if err != nil {
+		t.Fatalf("ExecuteSQL returned error: %v", err)
+	}
+	if result == nil || result.IsError {
+		t.Fatalf("expected the completed SQL result with explicit cancellation state, got %#v", result)
+	}
+	if out.CancellationState != connection.QueryCancellationStateUnsupported {
+		t.Fatalf("unsupported cancellation state was lost from structured MCP output: %#v", out)
+	}
+	if text := firstTextContent(result); !strings.Contains(text, "取消状态：unsupported") {
+		t.Fatalf("unsupported cancellation state was lost at the MCP boundary: %q", text)
+	}
+}
+
 func TestExecuteSQLAllowsDDLWhenAISafetyIsFullAndAllowMutating(t *testing.T) {
 	backend := &fakeBackend{
 		editableConnection: connection.SavedConnectionView{

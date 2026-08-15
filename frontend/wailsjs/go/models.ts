@@ -2114,6 +2114,7 @@ export namespace connection {
 	    fields?: string[];
 	    messages?: string[];
 	    queryId?: string;
+	    cancellationState?: string;
 	    transactionId?: string;
 	    transactionPending?: boolean;
 
@@ -2129,6 +2130,7 @@ export namespace connection {
 	        this.fields = source["fields"];
 	        this.messages = source["messages"];
 	        this.queryId = source["queryId"];
+	        this.cancellationState = source["cancellationState"];
 	        this.transactionId = source["transactionId"];
 	        this.transactionPending = source["transactionPending"];
 	    }
