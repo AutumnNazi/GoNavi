@@ -38,6 +38,7 @@ func (s *SQLiteDB) Connect(config connection.ConnectionConfig) error {
 	if err != nil {
 		return wrapDatabaseConnectionOpenError(err)
 	}
+	configureSQLConnectionPool(db, "sqlite")
 	s.conn = db
 	s.pingTimeout = getConnectTimeout(config)
 
