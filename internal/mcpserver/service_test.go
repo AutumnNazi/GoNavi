@@ -368,6 +368,8 @@ func TestGetObjectsPreservesPartialMetadataWarnings(t *testing.T) {
 			Success:           true,
 			Partial:           true,
 			Retryable:         true,
+			Truncated:         true,
+			ScannedCount:      1,
 			Warnings:          []string{"读取 view 对象元数据失败: permission denied"},
 			FailedObjectTypes: []string{"view"},
 			Data:              []connection.DatabaseObject{{Database: "app", Name: "users", Type: "table"}},
@@ -378,7 +380,7 @@ func TestGetObjectsPreservesPartialMetadataWarnings(t *testing.T) {
 	if err != nil || result == nil || result.IsError {
 		t.Fatalf("expected partial metadata success, result=%#v err=%v", result, err)
 	}
-	if !out.Partial || !out.Retryable || len(out.Warnings) != 1 || len(out.FailedObjectTypes) != 1 || out.FailedObjectTypes[0] != "view" {
+	if !out.Partial || !out.Retryable || !out.Truncated || out.ScannedCount != 1 || len(out.Warnings) != 1 || len(out.FailedObjectTypes) != 1 || out.FailedObjectTypes[0] != "view" {
 		t.Fatalf("partial metadata details were lost: %#v", out)
 	}
 }

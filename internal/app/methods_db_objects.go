@@ -29,7 +29,17 @@ func (a *App) DBGetObjects(config connection.ConnectionConfig, dbName string) co
 		if err != nil {
 			return failedObjectMetadataResult("key", err)
 		}
-		return connection.QueryResult{Success: true, Data: buildNamedObjects(dbName, "key", names)}
+		return connection.QueryResult{
+			Success:           true,
+			Data:              buildNamedObjects(dbName, "key", names),
+			Message:           keys.Message,
+			Partial:           keys.Partial,
+			Warnings:          keys.Warnings,
+			FailedObjectTypes: keys.FailedObjectTypes,
+			Retryable:         keys.Retryable,
+			Truncated:         keys.Truncated,
+			ScannedCount:      keys.ScannedCount,
+		}
 	}
 
 	dbInst, err := a.getDatabase(runConfig)

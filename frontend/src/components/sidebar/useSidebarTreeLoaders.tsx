@@ -892,6 +892,29 @@ export const useSidebarTreeLoaders = ({
 	          const res = await DBGetTables(buildRpcConnectionConfig(config) as any, conn.dbName);
 	          if (res.success) {
                 const tableRows: any[] = Array.isArray(res.data) ? res.data : [];
+                if (res.partial || res.truncated) {
+                    const warningDetail = String(
+                        res.message
+                        || (Array.isArray(res.warnings) ? res.warnings.join('; ') : '')
+                        || t('sidebar.message.load_table_list_failed', { error: 'metadata scan was truncated' }),
+                    );
+                    message.warning({
+                        key: `db-${key}-tables-partial`,
+                        duration: 10,
+                        content: (
+                            <span>
+                                {warningDetail}
+                                <Button
+                                    type="link"
+                                    size="small"
+                                    onClick={() => void loadTables(node, { ensureFresh: true })}
+                                >
+                                    {t('common.retry')}
+                                </Button>
+                            </span>
+                        ),
+                    });
+                }
                 const tableStatusSql = buildSidebarTableStatusSQL(conn as SavedConnection, conn.dbName);
                 const tableStatsResult = tableStatusSql
                     ? await DBQuery(buildRpcConnectionConfig(config) as any, conn.dbName, tableStatusSql).catch(() => ({ success: false, data: [] as any[] }))

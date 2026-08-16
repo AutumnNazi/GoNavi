@@ -107,6 +107,8 @@ type getObjectsResult struct {
 	Warnings          []string                    `json:"warnings,omitempty"`
 	FailedObjectTypes []string                    `json:"failedObjectTypes,omitempty"`
 	Retryable         bool                        `json:"retryable,omitempty"`
+	Truncated         bool                        `json:"truncated,omitempty"`
+	ScannedCount      int                         `json:"scannedCount,omitempty"`
 }
 
 type getAllColumnsResult struct {
@@ -322,6 +324,8 @@ func (s *Service) GetObjects(ctx context.Context, req *mcp.CallToolRequest, args
 			Warnings:          objectMetadataWarnings(queryResult),
 			FailedObjectTypes: queryResult.FailedObjectTypes,
 			Retryable:         queryResult.Retryable,
+			Truncated:         queryResult.Truncated,
+			ScannedCount:      queryResult.ScannedCount,
 		}
 		if queryResult.Retryable {
 			failedTypes := strings.Join(queryResult.FailedObjectTypes, ", ")
@@ -347,6 +351,8 @@ func (s *Service) GetObjects(ctx context.Context, req *mcp.CallToolRequest, args
 		Warnings:          objectMetadataWarnings(queryResult),
 		FailedObjectTypes: queryResult.FailedObjectTypes,
 		Retryable:         queryResult.Retryable,
+		Truncated:         queryResult.Truncated,
+		ScannedCount:      queryResult.ScannedCount,
 	}, nil
 }
 
