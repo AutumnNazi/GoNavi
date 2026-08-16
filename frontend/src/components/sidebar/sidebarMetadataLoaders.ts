@@ -129,6 +129,11 @@ type MetadataQueryResult = {
   inferredType?: "FUNCTION" | "PROCEDURE";
 };
 
+type MetadataLoadState = {
+  supported: boolean;
+  failureMessage?: string;
+};
+
 const isSphinxConnection = (conn: SavedConnection | undefined): boolean => {
   const type = String(conn?.config?.type || "")
     .trim()
@@ -784,7 +789,7 @@ const queryMetadataRowsBySpecs = async (
   conn: any,
   dbName: string,
   specs: MetadataQuerySpec[],
-): Promise<{ results: MetadataQueryResult[]; hasSuccessfulQuery: boolean }> => {
+): Promise<{ results: MetadataQueryResult[]; hasSuccessfulQuery: boolean; failureMessage?: string }> => {
   const normalizedSpecs = normalizeMetadataQuerySpecs(specs);
   if (normalizedSpecs.length === 0) {
     return { results: [], hasSuccessfulQuery: false };
@@ -792,6 +797,7 @@ const queryMetadataRowsBySpecs = async (
   const config = buildSidebarRuntimeConfig(conn, dbName);
   const results: MetadataQueryResult[] = [];
   let hasSuccessfulQuery = false;
+  let failureMessage = "";
   // Full queries (no inferredType) are mutually exclusive fallbacks: first success wins.
   // Partial queries (inferredType set) are complementary (e.g. SHOW FUNCTION + SHOW PROCEDURE).
   let hasFullSuccess = false;
@@ -807,6 +813,9 @@ const queryMetadataRowsBySpecs = async (
         spec.sql,
       );
       if (!result.success || !Array.isArray(result.data)) {
+        if (!failureMessage) {
+          failureMessage = String(result.message || "metadata query failed").trim();
+        }
         continue;
       }
       hasSuccessfulQuery = true;
@@ -819,21 +828,27 @@ const queryMetadataRowsBySpecs = async (
         // (Kingbase/PG 上多条成功会把同一函数叠加多次).
         hasFullSuccess = true;
       }
-    } catch {
-      // 忽略单条查询失败，继续尝试后续回退语句
+    } catch (error) {
+      if (!failureMessage) {
+        failureMessage = error instanceof Error ? error.message : String(error || "metadata query failed");
+      }
     }
   }
-  return { results, hasSuccessfulQuery };
+  return {
+    results,
+    hasSuccessfulQuery,
+    ...(hasSuccessfulQuery || !failureMessage ? {} : { failureMessage }),
+  };
 };
 
 const loadViews = async (
   conn: any,
   dbName: string,
-): Promise<{ views: SidebarViewMetadataEntry[]; supported: boolean }> => {
+): Promise<{ views: SidebarViewMetadataEntry[] } & MetadataLoadState> => {
   const savedConn = conn as SavedConnection;
   const dialect = getMetadataDialect(savedConn);
   const querySpecs = buildViewsMetadataQuerySpecs(dialect, dbName);
-  const { results, hasSuccessfulQuery } = await queryMetadataRowsBySpecs(
+  const { results, hasSuccessfulQuery, failureMessage } = await queryMetadataRowsBySpecs(
     conn,
     dbName,
     querySpecs,
@@ -878,13 +893,13 @@ const loadViews = async (
       views.push(entry);
     });
   });
-  return { views, supported: hasSuccessfulQuery };
+  return { views, supported: hasSuccessfulQuery, failureMessage };
 };
 
 const loadStarRocksMaterializedViews = async (
   conn: any,
   dbName: string,
-): Promise<{ views: SidebarViewMetadataEntry[]; supported: boolean }> => {
+): Promise<{ views: SidebarViewMetadataEntry[] } & MetadataLoadState> => {
   const dialect = getMetadataDialect(conn as SavedConnection);
   if (dialect !== "starrocks") {
     return { views: [], supported: false };
@@ -903,7 +918,7 @@ const loadStarRocksMaterializedViews = async (
     { sql: dbIdent ? `SHOW MATERIALIZED VIEWS FROM \`${dbIdent}\`` : "" },
     { sql: `SHOW MATERIALIZED VIEWS` },
   ]);
-  const { results, hasSuccessfulQuery } = await queryMetadataRowsBySpecs(
+  const { results, hasSuccessfulQuery, failureMessage } = await queryMetadataRowsBySpecs(
     conn,
     dbName,
     querySpecs,
@@ -942,7 +957,7 @@ const loadStarRocksMaterializedViews = async (
     });
   });
 
-  return { views, supported: hasSuccessfulQuery };
+  return { views, supported: hasSuccessfulQuery, failureMessage };
 };
 
 const loadDatabaseTriggers = async (
@@ -955,11 +970,10 @@ const loadDatabaseTriggers = async (
     tableName: string;
     objectStatus?: string;
   }>;
-  supported: boolean;
-}> => {
+} & MetadataLoadState> => {
   const dialect = getMetadataDialect(conn as SavedConnection);
   const querySpecs = buildTriggersMetadataQuerySpecs(dialect, dbName);
-  const { results, hasSuccessfulQuery } = await queryMetadataRowsBySpecs(
+  const { results, hasSuccessfulQuery, failureMessage } = await queryMetadataRowsBySpecs(
     conn,
     dbName,
     querySpecs,
@@ -1036,7 +1050,7 @@ const loadDatabaseTriggers = async (
       });
     });
   });
-  return { triggers, supported: hasSuccessfulQuery };
+  return { triggers, supported: hasSuccessfulQuery, failureMessage };
 };
 
 const loadFunctions = async (
@@ -1049,11 +1063,10 @@ const loadFunctions = async (
     routineType: string;
     objectStatus?: string;
   }>;
-  supported: boolean;
-}> => {
+} & MetadataLoadState> => {
   const dialect = getMetadataDialect(conn as SavedConnection);
   const querySpecs = buildFunctionsMetadataQuerySpecs(dialect, dbName);
-  const { results, hasSuccessfulQuery } = await queryMetadataRowsBySpecs(
+  const { results, hasSuccessfulQuery, failureMessage } = await queryMetadataRowsBySpecs(
     conn,
     dbName,
     querySpecs,
@@ -1105,7 +1118,7 @@ const loadFunctions = async (
       });
     });
   });
-  return { routines, supported: hasSuccessfulQuery };
+  return { routines, supported: hasSuccessfulQuery, failureMessage };
 };
 
 const loadSequences = async (
@@ -1117,11 +1130,10 @@ const loadSequences = async (
     sequenceName: string;
     schemaName: string;
   }>;
-  supported: boolean;
-}> => {
+} & MetadataLoadState> => {
   const dialect = getMetadataDialect(conn as SavedConnection);
   const querySpecs = buildSequencesMetadataQuerySpecs(dialect, dbName);
-  const { results, hasSuccessfulQuery } = await queryMetadataRowsBySpecs(
+  const { results, hasSuccessfulQuery, failureMessage } = await queryMetadataRowsBySpecs(
     conn,
     dbName,
     querySpecs,
@@ -1166,7 +1178,7 @@ const loadSequences = async (
       });
     });
   });
-  return { sequences, supported: hasSuccessfulQuery };
+  return { sequences, supported: hasSuccessfulQuery, failureMessage };
 };
 
 const loadPackages = async (
@@ -1178,11 +1190,10 @@ const loadPackages = async (
     packageName: string;
     schemaName: string;
   }>;
-  supported: boolean;
-}> => {
+} & MetadataLoadState> => {
   const dialect = getMetadataDialect(conn as SavedConnection);
   const querySpecs = buildPackagesMetadataQuerySpecs(dialect, dbName);
-  const { results, hasSuccessfulQuery } = await queryMetadataRowsBySpecs(
+  const { results, hasSuccessfulQuery, failureMessage } = await queryMetadataRowsBySpecs(
     conn,
     dbName,
     querySpecs,
@@ -1226,7 +1237,7 @@ const loadPackages = async (
       });
     });
   });
-  return { packages, supported: hasSuccessfulQuery };
+  return { packages, supported: hasSuccessfulQuery, failureMessage };
 };
 
 const loadDatabaseEvents = async (
@@ -1240,11 +1251,10 @@ const loadDatabaseEvents = async (
     eventType: string;
     status: string;
   }>;
-  supported: boolean;
-}> => {
+} & MetadataLoadState> => {
   const dialect = getMetadataDialect(conn as SavedConnection);
   const querySpecs = buildEventsMetadataQuerySpecs(dialect, dbName);
-  const { results, hasSuccessfulQuery } = await queryMetadataRowsBySpecs(
+  const { results, hasSuccessfulQuery, failureMessage } = await queryMetadataRowsBySpecs(
     conn,
     dbName,
     querySpecs,
@@ -1295,16 +1305,16 @@ const loadDatabaseEvents = async (
     });
   });
 
-  return { events, supported: hasSuccessfulQuery };
+  return { events, supported: hasSuccessfulQuery, failureMessage };
 };
 
 const loadSchemas = async (
   conn: any,
   dbName: string,
-): Promise<{ schemas: string[]; supported: boolean }> => {
+): Promise<{ schemas: string[] } & MetadataLoadState> => {
   const dialect = getMetadataDialect(conn as SavedConnection);
   const querySpecs = buildSchemasMetadataQuerySpecs(dialect, dbName);
-  const { results, hasSuccessfulQuery } = await queryMetadataRowsBySpecs(
+  const { results, hasSuccessfulQuery, failureMessage } = await queryMetadataRowsBySpecs(
     conn,
     dbName,
     querySpecs,
@@ -1331,7 +1341,7 @@ const loadSchemas = async (
     });
   });
 
-  return { schemas, supported: hasSuccessfulQuery };
+  return { schemas, supported: hasSuccessfulQuery, failureMessage };
 };
 
 export {

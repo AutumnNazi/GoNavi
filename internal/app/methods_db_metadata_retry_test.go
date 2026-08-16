@@ -10,6 +10,7 @@ import (
 
 	"GoNavi-Wails/internal/connection"
 	"GoNavi-Wails/internal/db"
+	"GoNavi-Wails/internal/redis"
 	"GoNavi-Wails/internal/secretstore"
 )
 
@@ -30,6 +31,7 @@ type fakeMetadataRetryDB struct {
 	allColumns       []connection.ColumnDefinitionWithTable
 	indexes          []connection.IndexDefinition
 	createStatement  string
+	tablesErr        error
 	columnsErr       error
 	indexesErr       error
 	queryResults     []fakeMetadataQueryResult
@@ -102,6 +104,9 @@ func (f *fakeMetadataRetryDB) GetDatabases() ([]string, error) { return nil, nil
 func (f *fakeMetadataRetryDB) GetTables(dbName string) ([]string, error) {
 	f.tableCalls++
 	f.tableSchema = dbName
+	if f.tablesErr != nil {
+		return nil, f.tablesErr
+	}
 	return f.tables, nil
 }
 func (f *fakeMetadataRetryDB) GetCreateStatement(dbName, tableName string) (string, error) {
@@ -341,6 +346,72 @@ func TestDBGetSchemaMetadataReusesOceanBaseOracleBaseConnectionForSelectedSchema
 	}
 	if !strings.Contains(strings.Join(dbInst.queries, "\n"), "FROM all_views WHERE OWNER = 'CRH_AC'") {
 		t.Fatalf("expected explicit CRH_AC owner view query, got %v", dbInst.queries)
+	}
+}
+
+func TestDBGetObjectsMarksExtensionMetadataFailuresPartial(t *testing.T) {
+	dbInst := &fakeMetadataRetryDB{
+		tables:   []string{"CRH_AC.ORDERS"},
+		queryErr: errors.New("metadata permission denied"),
+	}
+	fixture := newOceanBaseOracleMetadataFixture(t, dbInst)
+
+	result := fixture.app.DBGetObjects(fixture.config, "CRH_AC")
+	if !result.Success || !result.Partial || !result.Retryable {
+		t.Fatalf("expected retryable partial object metadata result, got %#v", result)
+	}
+	if !strings.Contains(strings.Join(result.FailedObjectTypes, ","), "view") {
+		t.Fatalf("expected failed view metadata to be identified, got %#v", result.FailedObjectTypes)
+	}
+	if !strings.Contains(strings.Join(result.Warnings, "\n"), "metadata permission denied") {
+		t.Fatalf("expected query error summary in warnings, got %#v", result.Warnings)
+	}
+	objects, ok := result.Data.([]connection.DatabaseObject)
+	if !ok || len(objects) != 1 || objects[0].Name != "ORDERS" || objects[0].Type != "table" {
+		t.Fatalf("expected discovered table to be retained, got %#v", result.Data)
+	}
+}
+
+func TestDBGetObjectsFailsWhenBaseTableMetadataFails(t *testing.T) {
+	dbInst := &fakeMetadataRetryDB{tablesErr: errors.New("table metadata permission denied")}
+	fixture := newOceanBaseOracleMetadataFixture(t, dbInst)
+
+	result := fixture.app.DBGetObjects(fixture.config, "CRH_AC")
+	if result.Success || !result.Partial || !result.Retryable {
+		t.Fatalf("expected retryable base metadata failure, got %#v", result)
+	}
+	if len(result.FailedObjectTypes) != 1 || result.FailedObjectTypes[0] != "table" {
+		t.Fatalf("expected table failure type, got %#v", result.FailedObjectTypes)
+	}
+	if !strings.Contains(result.Message, "table metadata permission denied") {
+		t.Fatalf("expected base error summary, got %q", result.Message)
+	}
+}
+
+func TestDBGetObjectsMarksRedisKeyMetadataFailuresPartial(t *testing.T) {
+	originalNewRedisClientFunc := newRedisClientFunc
+	t.Cleanup(func() {
+		newRedisClientFunc = originalNewRedisClientFunc
+		CloseAllRedisClients()
+	})
+	CloseAllRedisClients()
+	newRedisClientFunc = func() redis.RedisClient {
+		return &capturingRedisClient{scanErr: errors.New("key scan denied")}
+	}
+
+	result := NewApp().DBGetObjects(connection.ConnectionConfig{
+		Type: "redis",
+		Host: "redis.local",
+		Port: 6379,
+	}, "0")
+	if result.Success || !result.Partial || !result.Retryable {
+		t.Fatalf("expected retryable Redis key metadata failure, got %#v", result)
+	}
+	if len(result.FailedObjectTypes) != 1 || result.FailedObjectTypes[0] != "key" {
+		t.Fatalf("expected key failure type, got %#v", result.FailedObjectTypes)
+	}
+	if !strings.Contains(result.Message, "key scan denied") {
+		t.Fatalf("expected key scan error summary, got %q", result.Message)
 	}
 }
 

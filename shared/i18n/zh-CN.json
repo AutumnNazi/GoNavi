@@ -7743,6 +7743,7 @@
   "sidebar.message.load_database_list_failed": "加载数据库失败：{{error}}",
   "sidebar.message.load_jvm_resources_failed": "加载 JVM 资源失败：{{error}}",
   "sidebar.message.load_table_list_failed": "加载表失败：{{error}}",
+  "sidebar.message.object_metadata_partial": "部分数据库对象元数据加载失败（{{objects}}）：{{error}}",
   "sidebar.message.load_tables_failed": "加载对象失败：{{error}}",
   "sidebar.message.locate_connection_not_found_for_object": "未找到当前对象对应的连接",
   "sidebar.message.locate_connection_not_in_tree": "未在左侧树找到当前连接",

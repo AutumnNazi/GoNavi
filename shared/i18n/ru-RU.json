@@ -7743,6 +7743,7 @@
   "sidebar.message.load_database_list_failed": "Не удалось загрузить базы данных: {{error}}",
   "sidebar.message.load_jvm_resources_failed": "Не удалось загрузить ресурсы JVM: {{error}}",
   "sidebar.message.load_table_list_failed": "Не удалось загрузить таблицы: {{error}}",
+  "sidebar.message.object_metadata_partial": "Не удалось загрузить часть метаданных объектов базы данных ({{objects}}): {{error}}",
   "sidebar.message.load_tables_failed": "Не удалось загрузить объекты: {{error}}",
   "sidebar.message.locate_connection_not_found_for_object": "Подключение для текущего объекта не найдено",
   "sidebar.message.locate_connection_not_in_tree": "Текущее подключение не найдено в левом дереве",

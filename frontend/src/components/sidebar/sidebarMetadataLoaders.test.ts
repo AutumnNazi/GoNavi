@@ -120,6 +120,20 @@ describe("buildSchemasMetadataQuerySpecs", () => {
       { viewName: "CHARACTER_SETS", schemaName: "information_schema" },
     ]);
   });
+
+  it("retains a view metadata failure when every fallback query fails", async () => {
+    mockedDBQuery.mockResolvedValue({
+      success: false,
+      message: "view metadata permission denied",
+      data: [],
+    });
+
+    await expect(loadViews({ config: { type: "mysql" } }, "app")).resolves.toMatchObject({
+      supported: false,
+      views: [],
+      failureMessage: "view metadata permission denied",
+    });
+  });
 });
 
 describe("PostgreSQL sequence metadata", () => {

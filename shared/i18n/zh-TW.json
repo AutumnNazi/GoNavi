@@ -7743,6 +7743,7 @@
   "sidebar.message.load_database_list_failed": "載入資料庫失敗：{{error}}",
   "sidebar.message.load_jvm_resources_failed": "載入 JVM 資源失敗：{{error}}",
   "sidebar.message.load_table_list_failed": "載入資料表失敗：{{error}}",
+  "sidebar.message.object_metadata_partial": "部分資料庫物件中繼資料載入失敗（{{objects}}）：{{error}}",
   "sidebar.message.load_tables_failed": "載入物件失敗：{{error}}",
   "sidebar.message.locate_connection_not_found_for_object": "找不到目前物件對應的連線",
   "sidebar.message.locate_connection_not_in_tree": "未在左側樹找到目前連線",

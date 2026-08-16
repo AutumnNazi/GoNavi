@@ -6203,7 +6203,14 @@ func normalizeExportObjectKeyByParts(schemaName, objectName string) string {
 }
 
 func listViewNameLookup(dbInst db.Database, config connection.ConnectionConfig, dbName string) map[string]string {
+	viewLookup, _ := listViewNameLookupWithStatus(dbInst, config, dbName)
+	return viewLookup
+}
+
+func listViewNameLookupWithStatus(dbInst db.Database, config connection.ConnectionConfig, dbName string) (map[string]string, error) {
 	viewLookup := make(map[string]string)
+	var firstErr error
+	querySucceeded := false
 	queries := buildListViewQueries(config, dbName)
 	for _, query := range queries {
 		if strings.TrimSpace(query) == "" {
@@ -6211,8 +6218,12 @@ func listViewNameLookup(dbInst db.Database, config connection.ConnectionConfig, 
 		}
 		rows, _, err := queryDataForExport(dbInst, config, query)
 		if err != nil {
+			if firstErr == nil {
+				firstErr = err
+			}
 			continue
 		}
+		querySucceeded = true
 		for _, row := range rows {
 			tableType := strings.ToUpper(exportRowValueCI(row, "table_type", "type"))
 			if tableType != "" && tableType != "VIEW" {
@@ -6239,7 +6250,10 @@ func listViewNameLookup(dbInst db.Database, config connection.ConnectionConfig, 
 			}
 		}
 	}
-	return viewLookup
+	if !querySucceeded && firstErr != nil {
+		return viewLookup, firstErr
+	}
+	return viewLookup, nil
 }
 
 func buildListViewQueries(config connection.ConnectionConfig, dbName string) []string {

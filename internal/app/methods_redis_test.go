@@ -31,6 +31,7 @@ type capturingRedisClient struct {
 	listCalls          int
 	closed             int
 	closeErr           error
+	scanErr            error
 }
 
 func (c *capturingRedisClient) Connect(config connection.ConnectionConfig) error {
@@ -46,6 +47,9 @@ func (c *capturingRedisClient) Close() error {
 func (c *capturingRedisClient) Ping() error { return nil }
 
 func (c *capturingRedisClient) ScanKeys(pattern string, cursor uint64, count int64) (*redislib.RedisScanResult, error) {
+	if c.scanErr != nil {
+		return nil, c.scanErr
+	}
 	return &redislib.RedisScanResult{}, nil
 }
 

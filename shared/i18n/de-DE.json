@@ -7743,6 +7743,7 @@
   "sidebar.message.load_database_list_failed": "Datenbanken konnten nicht geladen werden: {{error}}",
   "sidebar.message.load_jvm_resources_failed": "JVM-Ressourcen konnten nicht geladen werden: {{error}}",
   "sidebar.message.load_table_list_failed": "Tabellen konnten nicht geladen werden: {{error}}",
+  "sidebar.message.object_metadata_partial": "Einige Datenbankobjektmetadaten konnten nicht geladen werden ({{objects}}): {{error}}",
   "sidebar.message.load_tables_failed": "Objekte konnten nicht geladen werden: {{error}}",
   "sidebar.message.locate_connection_not_found_for_object": "Die Verbindung für das aktuelle Objekt wurde nicht gefunden",
   "sidebar.message.locate_connection_not_in_tree": "Die aktuelle Verbindung wurde im linken Baum nicht gefunden",

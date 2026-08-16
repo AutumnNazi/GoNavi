@@ -99,9 +99,14 @@ type getViewsResult struct {
 }
 
 type getObjectsResult struct {
-	ConnectionID string                      `json:"connectionId"`
-	DBName       string                      `json:"dbName,omitempty"`
-	Objects      []connection.DatabaseObject `json:"objects"`
+	ConnectionID      string                      `json:"connectionId"`
+	DBName            string                      `json:"dbName,omitempty"`
+	Objects           []connection.DatabaseObject `json:"objects"`
+	Message           string                      `json:"message,omitempty"`
+	Partial           bool                        `json:"partial,omitempty"`
+	Warnings          []string                    `json:"warnings,omitempty"`
+	FailedObjectTypes []string                    `json:"failedObjectTypes,omitempty"`
+	Retryable         bool                        `json:"retryable,omitempty"`
 }
 
 type getAllColumnsResult struct {
@@ -308,7 +313,24 @@ func (s *Service) GetObjects(ctx context.Context, req *mcp.CallToolRequest, args
 	dbName := effectiveDBName(args.DBName, view.Config)
 	queryResult := s.backend.DBGetObjects(view.Config, dbName)
 	if !queryResult.Success {
-		return toolError("获取数据库对象列表失败: %s", strings.TrimSpace(queryResult.Message)), getObjectsResult{}, nil
+		output := getObjectsResult{
+			ConnectionID:      view.ID,
+			DBName:            dbName,
+			Objects:           []connection.DatabaseObject{},
+			Message:           strings.TrimSpace(queryResult.Message),
+			Partial:           queryResult.Partial,
+			Warnings:          objectMetadataWarnings(queryResult),
+			FailedObjectTypes: queryResult.FailedObjectTypes,
+			Retryable:         queryResult.Retryable,
+		}
+		if queryResult.Retryable {
+			failedTypes := strings.Join(queryResult.FailedObjectTypes, ", ")
+			if failedTypes != "" {
+				return toolError("获取数据库对象列表失败（失败类别: %s，可重试）: %s", failedTypes, strings.TrimSpace(queryResult.Message)), output, nil
+			}
+			return toolError("获取数据库对象列表失败（可重试）: %s", strings.TrimSpace(queryResult.Message)), output, nil
+		}
+		return toolError("获取数据库对象列表失败: %s", strings.TrimSpace(queryResult.Message)), output, nil
 	}
 
 	objects, err := decodeDatabaseObjects(queryResult.Data)
@@ -317,10 +339,25 @@ func (s *Service) GetObjects(ctx context.Context, req *mcp.CallToolRequest, args
 	}
 
 	return successResult(), getObjectsResult{
-		ConnectionID: view.ID,
-		DBName:       dbName,
-		Objects:      filterDatabaseObjects(objects, args.ObjectTypes),
+		ConnectionID:      view.ID,
+		DBName:            dbName,
+		Objects:           filterDatabaseObjects(objects, args.ObjectTypes),
+		Message:           strings.TrimSpace(queryResult.Message),
+		Partial:           queryResult.Partial,
+		Warnings:          objectMetadataWarnings(queryResult),
+		FailedObjectTypes: queryResult.FailedObjectTypes,
+		Retryable:         queryResult.Retryable,
 	}, nil
+}
+
+func objectMetadataWarnings(result connection.QueryResult) []string {
+	if len(result.Warnings) > 0 {
+		return result.Warnings
+	}
+	if message := strings.TrimSpace(result.Message); message != "" {
+		return []string{message}
+	}
+	return nil
 }
 
 func (s *Service) GetAllColumns(ctx context.Context, req *mcp.CallToolRequest, args databaseArgs) (*mcp.CallToolResult, getAllColumnsResult, error) {

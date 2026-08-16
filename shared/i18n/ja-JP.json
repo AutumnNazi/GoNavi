@@ -7743,6 +7743,7 @@
   "sidebar.message.load_database_list_failed": "データベースの読み込みに失敗しました: {{error}}",
   "sidebar.message.load_jvm_resources_failed": "JVM リソースの読み込みに失敗しました: {{error}}",
   "sidebar.message.load_table_list_failed": "テーブルの読み込みに失敗しました: {{error}}",
+  "sidebar.message.object_metadata_partial": "一部のデータベースオブジェクトメタデータを読み込めませんでした（{{objects}}）：{{error}}",
   "sidebar.message.load_tables_failed": "オブジェクトの読み込みに失敗しました: {{error}}",
   "sidebar.message.locate_connection_not_found_for_object": "現在のオブジェクトに対応する接続が見つかりません",
   "sidebar.message.locate_connection_not_in_tree": "左側ツリーで現在の接続が見つかりません",
