@@ -928,10 +928,13 @@ func (e *ElasticsearchDB) esBulkActionMeta(action, indexName string, docID strin
 	return map[string]interface{}{action: meta}
 }
 
-// resolveWriteIndex 解析别名对应的实际可写索引名。
-// 如果 indexOrAlias 是直接索引名，原样返回。
-// 如果是别名，返回该别名下最新的索引名（按名称倒序）。
+// resolveWriteIndex 解析别名 metadata 中唯一标记为 is_write_index 的索引。
+// 直接索引名通过 GetAlias 的 404 判定；别名缺失或冲突时拒绝写入。
 func (e *ElasticsearchDB) resolveWriteIndex(indexOrAlias string) (string, error) {
+	indexOrAlias = strings.TrimSpace(indexOrAlias)
+	if indexOrAlias == "" {
+		return "", fmt.Errorf("未指定索引或别名")
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
@@ -940,41 +943,47 @@ func (e *ElasticsearchDB) resolveWriteIndex(indexOrAlias string) (string, error)
 		e.client.Indices.GetAlias.WithIndex(indexOrAlias),
 	)
 	if err != nil {
-		return indexOrAlias, nil // 网络错误时回退到原名
+		return "", fmt.Errorf("读取别名 metadata 失败：%w", err)
 	}
 	defer res.Body.Close()
 
 	if res.IsError() {
-		// 404 表示不是别名而是直接索引名
-		return indexOrAlias, nil
+		if res.StatusCode == http.StatusNotFound {
+			// 404 表示不是别名，按直接索引名处理。
+			_, _ = io.Copy(io.Discard, res.Body)
+			return indexOrAlias, nil
+		}
+		body, _ := io.ReadAll(res.Body)
+		return "", fmt.Errorf("读取别名 metadata 失败（HTTP %d）：%s", res.StatusCode, strings.TrimSpace(string(body)))
 	}
 
 	body, err := io.ReadAll(res.Body)
 	if err != nil {
-		return indexOrAlias, nil
+		return "", fmt.Errorf("读取别名 metadata 失败：%w", err)
 	}
 
-	var aliasMap map[string]interface{}
+	type aliasConfig struct {
+		IsWriteIndex *bool `json:"is_write_index"`
+	}
+	type indexAliasMetadata struct {
+		Aliases map[string]aliasConfig `json:"aliases"`
+	}
+	var aliasMap map[string]indexAliasMetadata
 	if err := json.Unmarshal(body, &aliasMap); err != nil {
-		return indexOrAlias, nil
+		return "", fmt.Errorf("解析别名 metadata 失败：%w", err)
 	}
 
-	// aliasMap 的 key 是实际索引名，如果没有 key 或只有一个，直接用
-	var indices []string
-	for name := range aliasMap {
-		indices = append(indices, name)
+	writeIndexes := make([]string, 0, 1)
+	for indexName, metadata := range aliasMap {
+		config, ok := metadata.Aliases[indexOrAlias]
+		if ok && config.IsWriteIndex != nil && *config.IsWriteIndex {
+			writeIndexes = append(writeIndexes, indexName)
+		}
 	}
-
-	if len(indices) == 0 {
-		return indexOrAlias, nil
+	if len(writeIndexes) != 1 {
+		return "", fmt.Errorf("别名 %q 必须且只能有一个 is_write_index=true 索引，实际 %d 个", indexOrAlias, len(writeIndexes))
 	}
-	if len(indices) == 1 {
-		return indices[0], nil
-	}
-
-	// 多个索引对应同一别名时，取名称最新的（ES 通常用日期后缀，倒序取第一个）
-	sort.Sort(sort.Reverse(sort.StringSlice(indices)))
-	return indices[0], nil
+	return writeIndexes[0], nil
 }
 
 // isESMetaField 判断字段名是否为 ES 元字段（不应写入文档 _source）。
@@ -1000,9 +1009,9 @@ func (e *ElasticsearchDB) ApplyChanges(tableName string, changes connection.Chan
 	var bulkBody bytes.Buffer
 
 	// 如果目标是别名（非直接索引），解析出实际的可写索引名。
-	writeIndexName := indexName
-	if resolved, err := e.resolveWriteIndex(indexName); err == nil && resolved != "" {
-		writeIndexName = resolved
+	writeIndexName, err := e.resolveWriteIndex(indexName)
+	if err != nil {
+		return fmt.Errorf("解析写入索引失败：%w", err)
 	}
 
 	// resolveWriteIndex 确定写操作的目标索引。

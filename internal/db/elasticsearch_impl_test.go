@@ -82,6 +82,103 @@ func TestBuildESClientConfigSeparatesConnectionAndRequestTimeout(t *testing.T) {
 	}
 }
 
+func TestElasticsearchApplyChangesResolvesWriteAliasMetadata(t *testing.T) {
+	testCases := []struct {
+		name          string
+		aliasResponse map[string]interface{}
+		wantIndex     string
+		wantErr       string
+	}{
+		{
+			name: "unique write index",
+			aliasResponse: map[string]interface{}{
+				"events-000001": map[string]interface{}{"aliases": map[string]interface{}{
+					"events": map[string]interface{}{"is_write_index": false},
+				}},
+				"events-000002": map[string]interface{}{"aliases": map[string]interface{}{
+					"events": map[string]interface{}{"is_write_index": true},
+				}},
+			},
+			wantIndex: "events-000002",
+		},
+		{
+			name: "missing write index",
+			aliasResponse: map[string]interface{}{
+				"events-000001": map[string]interface{}{"aliases": map[string]interface{}{
+					"events": map[string]interface{}{},
+				}},
+				"events-000002": map[string]interface{}{"aliases": map[string]interface{}{
+					"events": map[string]interface{}{"is_write_index": false},
+				}},
+			},
+			wantErr: "is_write_index=true",
+		},
+		{
+			name: "conflicting write indexes",
+			aliasResponse: map[string]interface{}{
+				"events-000001": map[string]interface{}{"aliases": map[string]interface{}{
+					"events": map[string]interface{}{"is_write_index": true},
+				}},
+				"events-000002": map[string]interface{}{"aliases": map[string]interface{}{
+					"events": map[string]interface{}{"is_write_index": true},
+				}},
+			},
+			wantErr: "is_write_index=true",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			var bulkCalls atomic.Int32
+			var bulkIndex string
+			server := newMockESServer(t, func(w http.ResponseWriter, r *http.Request) {
+				switch {
+				case r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/_alias"):
+					writeJSON(w, tc.aliasResponse)
+				case r.Method == http.MethodPost && r.URL.Path == "/_bulk":
+					bulkCalls.Add(1)
+					body, err := io.ReadAll(r.Body)
+					if err != nil {
+						t.Errorf("读取 bulk 请求失败：%v", err)
+						w.WriteHeader(http.StatusBadRequest)
+						return
+					}
+					var action map[string]map[string]interface{}
+					if err := json.Unmarshal([]byte(strings.SplitN(strings.TrimSpace(string(body)), "\n", 2)[0]), &action); err != nil {
+						t.Errorf("解析 bulk action 失败：%v", err)
+						w.WriteHeader(http.StatusBadRequest)
+						return
+					}
+					bulkIndex, _ = action["index"]["_index"].(string)
+					writeJSON(w, map[string]interface{}{"errors": false, "items": []interface{}{map[string]interface{}{"index": map[string]interface{}{"status": 201}}}})
+				default:
+					w.WriteHeader(http.StatusNotFound)
+				}
+			})
+
+			db := newTestESDB(t, server.URL, "events")
+			err := db.ApplyChanges("events", connection.ChangeSet{
+				Inserts: []map[string]interface{}{{"message": "hello"}},
+			})
+			if tc.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+					t.Fatalf("expected error containing %q, got %v", tc.wantErr, err)
+				}
+				if bulkCalls.Load() != 0 {
+					t.Fatalf("bulk must not run after alias validation failure, calls=%d", bulkCalls.Load())
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("ApplyChanges returned error: %v", err)
+			}
+			if bulkCalls.Load() != 1 || bulkIndex != tc.wantIndex {
+				t.Fatalf("expected one bulk write to %q, calls=%d index=%q", tc.wantIndex, bulkCalls.Load(), bulkIndex)
+			}
+		})
+	}
+}
+
 // buildMockESMappingResponse 构造模拟的 mapping 响应 JSON。
 func buildMockESMappingResponse(indexName string, fields map[string]string) map[string]interface{} {
 	properties := make(map[string]interface{})
