@@ -1,6 +1,7 @@
 import React from 'react';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { message } from 'antd';
 
 import type { SavedConnection } from '../../types';
 import { buildSidebarDatabasePinKey } from '../../store';
@@ -37,6 +38,7 @@ const deferred = <T,>(): Deferred<T> => {
 };
 
 vi.mock('antd', () => ({
+  Button: ({ children }: { children: React.ReactNode }) => <button>{children}</button>,
   message: {
     error: vi.fn(),
     info: vi.fn(),
@@ -506,5 +508,98 @@ describe('useSidebarTreeLoaders PostgreSQL partitions', () => {
     expect(mocks.replaceTreeNodeChildren).toHaveBeenCalledTimes(2);
     const refreshedChildren = mocks.replaceTreeNodeChildren.mock.calls[1][1];
     expect(findTableNode(refreshedChildren).dataRef).toMatchObject({ rowCount: 9, tableSize: 2048 });
+  });
+
+  it('warns and exposes a retry action when extension metadata is incomplete', async () => {
+    const connection = {
+      id: 'conn-mysql',
+      name: 'MySQL',
+      dbName: 'app',
+      config: { type: 'mysql', host: '127.0.0.1', port: 3306, user: 'root', database: 'app' },
+    } as SavedConnection & { dbName: string };
+    mocks.storeState.connections = [connection];
+    mocks.dbGetTables.mockResolvedValue({ success: true, data: [{ Table: 'users' }] });
+    mocks.dbQuery.mockResolvedValue({ success: false, message: 'metadata permission denied', data: [] });
+
+    let loaders: ReturnType<typeof useSidebarTreeLoaders> | undefined;
+    const Harness = () => {
+      loaders = useSidebarTreeLoaders({
+        savedQueries: [], tableSortPreference: {}, tableAccessCount: {}, pinnedSidebarTables: [], pinnedSidebarDatabases: [],
+        isV2Ui: true, loadingNodesRef: { current: new Set<string>() }, setConnectionStates: vi.fn(), setLoadedKeys: vi.fn(),
+        replaceTreeNodeChildren: mocks.replaceTreeNodeChildren, buildRuntimeConfig: (conn) => conn.config,
+        buildJVMRuntimeConfig: (conn) => conn.config, buildJVMDiagnosticTreeNodes: () => [], resolveSavedQueryDisplayName: (name) => String(name || ''),
+      });
+      return null;
+    };
+
+    act(() => { renderer = create(<Harness />); });
+    await act(async () => {
+      await loaders?.loadTables({ key: 'conn-mysql-app', dataRef: connection });
+    });
+
+    expect(message.warning).toHaveBeenCalledWith(expect.objectContaining({
+      key: 'db-conn-mysql-app-metadata-partial',
+      content: expect.anything(),
+    }));
+
+    const warningContent = (message.warning as any).mock.calls[0][0].content as React.ReactElement<any>;
+    const retryButton = React.Children.toArray(warningContent.props.children)
+      .find((child: any) => React.isValidElement(child) && typeof (child as React.ReactElement<any>).props.onClick === 'function') as React.ReactElement<any>;
+    expect(retryButton).toBeDefined();
+    await act(async () => {
+      retryButton.props.onClick();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(mocks.dbGetTables).toHaveBeenCalledTimes(2);
+  });
+
+  it('shows a retry action and clears loaded state when base table metadata fails', async () => {
+    const connection = {
+      id: 'conn-mysql',
+      name: 'MySQL',
+      dbName: 'app',
+      config: { type: 'mysql', host: '127.0.0.1', port: 3306, user: 'root', database: 'app' },
+    } as SavedConnection & { dbName: string };
+    mocks.storeState.connections = [connection];
+    mocks.dbGetTables
+      .mockResolvedValueOnce({ success: false, message: 'table metadata permission denied' })
+      .mockResolvedValueOnce({ success: true, data: [{ Table: 'users' }] });
+    const setLoadedKeys = vi.fn();
+
+    let loaders: ReturnType<typeof useSidebarTreeLoaders> | undefined;
+    const Harness = () => {
+      loaders = useSidebarTreeLoaders({
+        savedQueries: [], tableSortPreference: {}, tableAccessCount: {}, pinnedSidebarTables: [], pinnedSidebarDatabases: [],
+        isV2Ui: true, loadingNodesRef: { current: new Set<string>() }, setConnectionStates: vi.fn(), setLoadedKeys,
+        replaceTreeNodeChildren: mocks.replaceTreeNodeChildren, buildRuntimeConfig: (conn) => conn.config,
+        buildJVMRuntimeConfig: (conn) => conn.config, buildJVMDiagnosticTreeNodes: () => [], resolveSavedQueryDisplayName: (name) => String(name || ''),
+      });
+      return null;
+    };
+
+    act(() => { renderer = create(<Harness />); });
+    const node = { key: 'conn-mysql-app', dataRef: connection };
+    await act(async () => {
+      await loaders?.loadTables(node);
+    });
+
+    expect(setLoadedKeys).toHaveBeenCalled();
+    expect(message.error).toHaveBeenCalledWith(expect.objectContaining({
+      key: 'db-conn-mysql-app-tables',
+      content: expect.anything(),
+    }));
+    const errorContent = (message.error as any).mock.calls[0][0].content as React.ReactElement<any>;
+    const retryButton = React.Children.toArray(errorContent.props.children)
+      .find((child: any) => React.isValidElement(child) && typeof (child as React.ReactElement<any>).props.onClick === 'function') as React.ReactElement<any>;
+    expect(retryButton).toBeDefined();
+    await act(async () => {
+      retryButton.props.onClick();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(mocks.dbGetTables).toHaveBeenCalledTimes(2);
+    expect(mocks.replaceTreeNodeChildren).toHaveBeenCalledTimes(1);
   });
 });

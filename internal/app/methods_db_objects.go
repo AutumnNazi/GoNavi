@@ -1,6 +1,7 @@
 package app
 
 import (
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -22,11 +23,11 @@ func (a *App) DBGetObjects(config connection.ConnectionConfig, dbName string) co
 	if strings.EqualFold(strings.TrimSpace(runConfig.Type), "redis") {
 		keys := a.DBGetTables(config, dbName)
 		if !keys.Success {
-			return keys
+			return failedObjectMetadataResult("key", errors.New(strings.TrimSpace(keys.Message)))
 		}
 		names, err := decodeStringRows(keys.Data, "Table", "table", "name")
 		if err != nil {
-			return connection.QueryResult{Success: false, Message: err.Error()}
+			return failedObjectMetadataResult("key", err)
 		}
 		return connection.QueryResult{Success: true, Data: buildNamedObjects(dbName, "key", names)}
 	}
@@ -34,31 +35,81 @@ func (a *App) DBGetObjects(config connection.ConnectionConfig, dbName string) co
 	dbInst, err := a.getDatabase(runConfig)
 	if err != nil {
 		logger.Error(err, "DBGetObjects 获取连接失败：%s", formatConnSummary(runConfig))
-		return connection.QueryResult{Success: false, Message: err.Error()}
+		return failedObjectMetadataResult(tableObjectTypeForDB(dbType), err)
 	}
 
 	objects := make([]connection.DatabaseObject, 0, 128)
 	tableType := tableObjectTypeForDB(dbType)
-	if tables, tableErr := dbInst.GetTables(dbName); tableErr == nil {
-		objects = append(objects, buildNamedObjects(dbName, tableType, tables)...)
-	} else {
+	tables, tableErr := dbInst.GetTables(dbName)
+	if tableErr != nil {
 		logger.Warnf("DBGetObjects 获取基础对象失败：%s err=%v", formatConnSummary(runConfig), tableErr)
+		return failedObjectMetadataResult(tableType, tableErr)
+	}
+	objects = append(objects, buildNamedObjects(dbName, tableType, tables)...)
+
+	warnings := make([]string, 0)
+	failedObjectTypes := make([]string, 0)
+	appendMetadataObjects := func(objectType string, metadataObjects []connection.DatabaseObject, metadataErr error) {
+		objects = append(objects, metadataObjects...)
+		if metadataErr == nil {
+			return
+		}
+		warning := objectMetadataWarning(objectType, metadataErr)
+		logger.Warnf("DBGetObjects %s 元数据不完整：%s err=%v", objectType, formatConnSummary(runConfig), metadataErr)
+		warnings = append(warnings, warning)
+		failedObjectTypes = append(failedObjectTypes, objectType)
 	}
 
 	if dbType == "rabbitmq" {
-		objects = append(objects, listObjectsByQueries(dbInst, runConfig, dbName, "exchange", buildMessageExchangeMetadataQueries(dbType))...)
+		metadataObjects, metadataErr := listObjectsByQueries(dbInst, runConfig, dbName, "exchange", buildMessageExchangeMetadataQueries(dbType))
+		appendMetadataObjects("exchange", metadataObjects, metadataErr)
 	}
 
-	viewLookup := listViewNameLookup(dbInst, runConfig, dbName)
-	objects = append(objects, buildNamedObjects(dbName, "view", mapValuesSorted(viewLookup))...)
-	objects = append(objects, listObjectsByQueries(dbInst, runConfig, dbName, "materialized_view", buildMaterializedViewMetadataQueries(dbType, dbName))...)
-	objects = append(objects, listObjectsByQueries(dbInst, runConfig, dbName, "trigger", buildObjectTriggerMetadataQueries(dbType, dbName))...)
-	objects = append(objects, listRoutineObjects(dbInst, runConfig, dbName, buildObjectRoutineMetadataQueries(dbType, dbName))...)
-	objects = append(objects, listObjectsByQueries(dbInst, runConfig, dbName, "sequence", buildObjectSequenceMetadataQueries(dbType, dbName))...)
-	objects = append(objects, listObjectsByQueries(dbInst, runConfig, dbName, "package", buildObjectPackageMetadataQueries(dbType, dbName))...)
-	objects = append(objects, listObjectsByQueries(dbInst, runConfig, dbName, "event", buildObjectEventMetadataQueries(dbType, dbName))...)
+	viewLookup, viewErr := listViewNameLookupWithStatus(dbInst, runConfig, dbName)
+	appendMetadataObjects("view", buildNamedObjects(dbName, "view", mapValuesSorted(viewLookup)), viewErr)
+	metadataObjects, metadataErr := listObjectsByQueries(dbInst, runConfig, dbName, "materialized_view", buildMaterializedViewMetadataQueries(dbType, dbName))
+	appendMetadataObjects("materialized_view", metadataObjects, metadataErr)
+	metadataObjects, metadataErr = listObjectsByQueries(dbInst, runConfig, dbName, "trigger", buildObjectTriggerMetadataQueries(dbType, dbName))
+	appendMetadataObjects("trigger", metadataObjects, metadataErr)
+	metadataObjects, metadataErr = listRoutineObjects(dbInst, runConfig, dbName, buildObjectRoutineMetadataQueries(dbType, dbName))
+	appendMetadataObjects("routine", metadataObjects, metadataErr)
+	metadataObjects, metadataErr = listObjectsByQueries(dbInst, runConfig, dbName, "sequence", buildObjectSequenceMetadataQueries(dbType, dbName))
+	appendMetadataObjects("sequence", metadataObjects, metadataErr)
+	metadataObjects, metadataErr = listObjectsByQueries(dbInst, runConfig, dbName, "package", buildObjectPackageMetadataQueries(dbType, dbName))
+	appendMetadataObjects("package", metadataObjects, metadataErr)
+	metadataObjects, metadataErr = listObjectsByQueries(dbInst, runConfig, dbName, "event", buildObjectEventMetadataQueries(dbType, dbName))
+	appendMetadataObjects("event", metadataObjects, metadataErr)
 
-	return connection.QueryResult{Success: true, Data: dedupeSortDatabaseObjects(objects)}
+	partial := len(failedObjectTypes) > 0
+	result := connection.QueryResult{
+		Success:           true,
+		Data:              dedupeSortDatabaseObjects(objects),
+		Partial:           partial,
+		Warnings:          warnings,
+		FailedObjectTypes: failedObjectTypes,
+		Retryable:         partial,
+	}
+	if partial {
+		result.Message = "对象元数据不完整，可重试"
+	}
+	return result
+}
+
+func objectMetadataWarning(objectType string, err error) string {
+	return fmt.Sprintf("读取 %s 对象元数据失败: %v", strings.TrimSpace(objectType), err)
+}
+
+func failedObjectMetadataResult(objectType string, err error) connection.QueryResult {
+	warning := objectMetadataWarning(objectType, err)
+	return connection.QueryResult{
+		Success:           false,
+		Partial:           true,
+		Message:           warning,
+		Data:              []connection.DatabaseObject{},
+		Warnings:          []string{warning},
+		FailedObjectTypes: []string{objectType},
+		Retryable:         true,
+	}
 }
 
 func tableObjectTypeForDB(dbType string) string {
@@ -92,13 +143,19 @@ func buildNamedObjects(dbName string, objectType string, names []string) []conne
 	return objects
 }
 
-func listObjectsByQueries(dbInst db.Database, config connection.ConnectionConfig, dbName string, objectType string, specs []objectMetadataQuerySpec) []connection.DatabaseObject {
+func listObjectsByQueries(dbInst db.Database, config connection.ConnectionConfig, dbName string, objectType string, specs []objectMetadataQuerySpec) ([]connection.DatabaseObject, error) {
 	objects := make([]connection.DatabaseObject, 0)
+	querySucceeded := false
+	var firstErr error
 	for _, spec := range normalizeObjectMetadataQuerySpecs(specs) {
 		rows, _, err := queryDataForExport(dbInst, config, spec.sql)
 		if err != nil {
+			if firstErr == nil {
+				firstErr = err
+			}
 			continue
 		}
+		querySucceeded = true
 		for _, row := range rows {
 			object := databaseObjectFromRow(dbName, objectType, spec.inferredType, row)
 			if object.Name == "" {
@@ -107,16 +164,25 @@ func listObjectsByQueries(dbInst db.Database, config connection.ConnectionConfig
 			objects = append(objects, object)
 		}
 	}
-	return objects
+	if !querySucceeded && firstErr != nil {
+		return objects, firstErr
+	}
+	return objects, nil
 }
 
-func listRoutineObjects(dbInst db.Database, config connection.ConnectionConfig, dbName string, specs []objectMetadataQuerySpec) []connection.DatabaseObject {
+func listRoutineObjects(dbInst db.Database, config connection.ConnectionConfig, dbName string, specs []objectMetadataQuerySpec) ([]connection.DatabaseObject, error) {
 	objects := make([]connection.DatabaseObject, 0)
+	querySucceeded := false
+	var firstErr error
 	for _, spec := range normalizeObjectMetadataQuerySpecs(specs) {
 		rows, _, err := queryDataForExport(dbInst, config, spec.sql)
 		if err != nil {
+			if firstErr == nil {
+				firstErr = err
+			}
 			continue
 		}
+		querySucceeded = true
 		for _, row := range rows {
 			rawType := rowStringCI(row, "routine_type", "object_type", "type")
 			if rawType == "" {
@@ -133,7 +199,10 @@ func listRoutineObjects(dbInst db.Database, config connection.ConnectionConfig, 
 			objects = append(objects, object)
 		}
 	}
-	return objects
+	if !querySucceeded && firstErr != nil {
+		return objects, firstErr
+	}
+	return objects, nil
 }
 
 func databaseObjectFromRow(dbName string, objectType string, rawType string, row map[string]interface{}) connection.DatabaseObject {

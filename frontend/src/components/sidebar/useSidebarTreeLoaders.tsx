@@ -1,5 +1,5 @@
 import React, { useRef } from 'react';
-import { message } from 'antd';
+import { Button, message } from 'antd';
 import {
   AppstoreOutlined,
   CloudOutlined,
@@ -841,6 +841,27 @@ export const useSidebarTreeLoaders = ({
       loadingNodesRef.current.add(loadKey);
       setConnectionStates(prev => ({ ...prev, [key as string]: 'loading' }));
       let shouldMarkDatabaseSuccess = false;
+      const showTableLoadFailure = (error: unknown) => {
+          const errorMessage = String(error || t('sidebar.message.load_table_list_failed', { error: 'unknown error' }));
+          setConnectionStates(prev => ({ ...prev, [key as string]: 'error' }));
+          setLoadedKeys(prev => prev.filter(loadedKey => loadedKey !== node.key));
+          message.error({
+              key: `db-${key}-tables`,
+              duration: 10,
+              content: (
+                  <span>
+                      {errorMessage}
+                      <Button
+                          type="link"
+                          size="small"
+                          onClick={() => void loadTables(node, { ensureFresh: true })}
+                      >
+                          {t('common.retry')}
+                      </Button>
+                  </span>
+              ),
+          });
+      };
       
       const dbQueries = savedQueries.filter(q => q.connectionId === conn.id && q.dbName === dbName);
       const queriesNode: TreeNode = {
@@ -1173,6 +1194,38 @@ export const useSidebarTreeLoaders = ({
                         }),
                     });
                 }
+            }
+
+            const metadataFailures = [
+                { label: t('sidebar.object_group.views'), message: viewsResult.failureMessage },
+                { label: t('sidebar.object_group.materialized_views'), message: materializedViewsResult.failureMessage },
+                { label: t('sidebar.object_group.triggers'), message: triggersResult.failureMessage },
+                { label: t('sidebar.object_group.routines'), message: routinesResult.failureMessage },
+                { label: t('sidebar.object_group.sequences'), message: sequencesResult.failureMessage },
+                { label: t('sidebar.object_group.packages'), message: packagesResult.failureMessage },
+                { label: t('sidebar.object_group.events'), message: eventsResult.failureMessage },
+            ].filter((failure) => failure.message);
+            if (metadataFailures.length > 0) {
+                const warningKey = `db-${key}-metadata-partial`;
+                message.warning({
+                    key: warningKey,
+                    duration: 10,
+                    content: (
+                        <span>
+                            {t('sidebar.message.object_metadata_partial', {
+                                objects: metadataFailures.map((failure) => failure.label).join(t('sidebar.punctuation.list_separator')),
+                                error: metadataFailures.map((failure) => failure.message).join('; '),
+                            })}
+                            <Button
+                                type="link"
+                                size="small"
+                                onClick={() => void loadTables(node, { ensureFresh: true })}
+                            >
+                                {t('common.retry')}
+                            </Button>
+                        </span>
+                    ),
+                });
             }
 
 	            const currentStoreState = useStore.getState();
@@ -1535,15 +1588,10 @@ export const useSidebarTreeLoaders = ({
 	                }
 	            }
 	          } else {
-	            setConnectionStates(prev => ({ ...prev, [key as string]: 'error' }));
-	            message.error({ content: res.message, key: `db-${key}-tables` });
+	            showTableLoadFailure(res.message);
           }
 	      } catch (e: any) {
-	          setConnectionStates(prev => ({ ...prev, [key as string]: 'error' }));
-	          message.error({
-	              content: t('sidebar.message.load_table_list_failed', { error: e?.message || String(e) }),
-	              key: `db-${key}-tables`,
-	          });
+	          showTableLoadFailure(t('sidebar.message.load_table_list_failed', { error: e?.message || String(e) }));
 	      } finally {
 	          loadingNodesRef.current.delete(loadKey);
               if (shouldMarkDatabaseSuccess) {

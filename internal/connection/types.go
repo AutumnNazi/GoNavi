@@ -200,6 +200,10 @@ type QueryResult struct {
 	Data               interface{} `json:"data"`
 	Fields             []string    `json:"fields,omitempty"`
 	Messages           []string    `json:"messages,omitempty"`
+	Partial            bool        `json:"partial,omitempty"`
+	Warnings           []string    `json:"warnings,omitempty"`
+	FailedObjectTypes  []string    `json:"failedObjectTypes,omitempty"`
+	Retryable          bool        `json:"retryable,omitempty"`
 	QueryID            string      `json:"queryId,omitempty"` // Unique ID for query cancellation
 	CancellationState  string      `json:"cancellationState,omitempty"`
 	TransactionID      string      `json:"transactionId,omitempty"`
