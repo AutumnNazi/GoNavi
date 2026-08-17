@@ -6,6 +6,7 @@ import {
   DEEPSEEK_RESPONSES_BASE_URL,
   MOONSHOT_ANTHROPIC_BASE_URL,
   MOONSHOT_OPENAI_BASE_URL,
+  ORCAROUTER_BASE_URL,
   LEGACY_QWEN_CODING_PLAN_OPENAI_BASE_URL,
   QWEN_BAILIAN_ANTHROPIC_BASE_URL,
   QWEN_BAILIAN_MODELS_BASE_URL,
@@ -32,6 +33,7 @@ type PresetMatcher = {
 const PRESETS: PresetMatcher[] = [
   { key: 'openai', backendType: 'openai', defaultBaseUrl: 'https://api.openai.com/v1' },
   { key: 'atlascloud', backendType: 'openai', defaultBaseUrl: ATLAS_CLOUD_BASE_URL },
+  { key: 'orcarouter', backendType: 'openai', defaultBaseUrl: ORCAROUTER_BASE_URL },
   { key: 'moonshot', backendType: 'openai', defaultBaseUrl: MOONSHOT_OPENAI_BASE_URL },
   { key: 'deepseek', backendType: 'openai', defaultBaseUrl: DEEPSEEK_RESPONSES_BASE_URL, defaultApiFormat: 'openai-responses' },
   { key: 'qwen-bailian', backendType: 'anthropic', defaultBaseUrl: QWEN_BAILIAN_ANTHROPIC_BASE_URL },
@@ -308,6 +310,13 @@ describe('resolveProviderPresetKey', () => {
       type: 'openai',
       baseUrl: `${ATLAS_CLOUD_BASE_URL}/`,
     }, PRESETS, 'custom')).toBe('atlascloud');
+  });
+
+  it('recognizes OrcaRouter by its OpenAI-compatible endpoint', () => {
+    expect(resolveProviderPresetKey({
+      type: 'openai',
+      baseUrl: `${ORCAROUTER_BASE_URL}/`,
+    }, PRESETS, 'custom')).toBe('orcarouter');
   });
 
   it('不会把自定义 OpenAI 端点误识别成千问 Coding Plan', () => {

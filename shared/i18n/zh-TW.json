@@ -2394,6 +2394,8 @@
   "ai_settings.provider_preset.ollama.label": "Ollama",
   "ai_settings.provider_preset.openai.desc": "GPT-5.6 系列",
   "ai_settings.provider_preset.openai.label": "OpenAI",
+  "ai_settings.provider_preset.orcarouter.desc": "智慧路由至 200+ 模型 / OpenAI 相容",
+  "ai_settings.provider_preset.orcarouter.label": "OrcaRouter",
   "ai_settings.provider_preset.qwen_bailian.desc": "百煉 Anthropic 相容端點 / 模型從遠端拉取",
   "ai_settings.provider_preset.qwen_bailian.label": "通義千問（百煉通用）",
   "ai_settings.provider_preset.qwen_coding_plan.desc": "Claude Code CLI 代理鏈路 / 使用官方支援模型清單",

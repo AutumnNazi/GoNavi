@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest';
 import {
   ATLAS_CLOUD_BASE_URL,
   ATLAS_CLOUD_DEFAULT_MODEL,
+  ORCAROUTER_BASE_URL,
+  ORCAROUTER_DEFAULT_MODEL,
   QWEN_CODING_PLAN_ANTHROPIC_BASE_URL,
   resolvePresetBaseURL,
   resolvePresetTransport,
@@ -108,6 +110,21 @@ describe('aiSettingsModalConfig', () => {
     }).key).toBe('atlascloud');
   });
 
+  it('exposes and recognizes the OrcaRouter preset', () => {
+    const preset = findPreset('orcarouter');
+
+    expect(preset).toMatchObject({
+      label: 'OrcaRouter',
+      backendType: 'openai',
+      defaultBaseUrl: ORCAROUTER_BASE_URL,
+      defaultModel: ORCAROUTER_DEFAULT_MODEL,
+    });
+    expect(matchProviderPreset({
+      type: 'openai',
+      baseUrl: ORCAROUTER_BASE_URL,
+    }).key).toBe('orcarouter');
+  });
+
   it('supports every configured MiniMax region and protocol endpoint', () => {
     const preset = findPreset('minimax');
 
@@ -181,6 +198,7 @@ describe('aiSettingsModalConfig', () => {
 
   it('keeps the provider preset list available for the settings modal', () => {
     expect(PROVIDER_PRESETS.some((item) => item.key === 'atlascloud')).toBe(true);
+    expect(PROVIDER_PRESETS.some((item) => item.key === 'orcarouter')).toBe(true);
     expect(PROVIDER_PRESETS.some((item) => item.key === 'codex')).toBe(true);
     expect(PROVIDER_PRESETS.some((item) => item.key === 'claude-subscription')).toBe(true);
     expect(PROVIDER_PRESETS.some((item) => item.key === 'codebuddy')).toBe(true);

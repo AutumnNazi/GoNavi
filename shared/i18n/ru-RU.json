@@ -2394,6 +2394,8 @@
   "ai_settings.provider_preset.ollama.label": "Ollama",
   "ai_settings.provider_preset.openai.desc": "Серия GPT-5.6",
   "ai_settings.provider_preset.openai.label": "OpenAI",
+  "ai_settings.provider_preset.orcarouter.desc": "Умная маршрутизация к 200+ моделям / совместимо с OpenAI",
+  "ai_settings.provider_preset.orcarouter.label": "OrcaRouter",
   "ai_settings.provider_preset.qwen_bailian.desc": "Anthropic-совместимая конечная точка Bailian / удаленный список моделей",
   "ai_settings.provider_preset.qwen_bailian.label": "Qwen (Bailian общий)",
   "ai_settings.provider_preset.qwen_coding_plan.desc": "Прокси-цепочка Claude Code CLI / официальный список поддерживаемых моделей",
