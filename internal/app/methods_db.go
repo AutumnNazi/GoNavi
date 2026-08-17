@@ -3472,7 +3472,7 @@ func (a *App) DBGetForeignKeys(config connection.ConnectionConfig, dbName string
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
 
-	schemaName, pureTableName := normalizeSchemaAndTable(config, dbName, tableName)
+	schemaName, pureTableName := normalizeMetadataSchemaAndTable(config, dbName, tableName)
 	fks, err := dbInst.GetForeignKeys(schemaName, pureTableName)
 	if err != nil {
 		return connection.QueryResult{Success: false, Message: err.Error()}
@@ -3512,7 +3512,7 @@ func (a *App) DBGetTriggers(config connection.ConnectionConfig, dbName string, t
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
 
-	schemaName, pureTableName := normalizeSchemaAndTable(config, dbName, tableName)
+	schemaName, pureTableName := normalizeMetadataSchemaAndTable(config, dbName, tableName)
 	triggers, err := dbInst.GetTriggers(schemaName, pureTableName)
 	if err != nil {
 		return connection.QueryResult{Success: false, Message: err.Error()}

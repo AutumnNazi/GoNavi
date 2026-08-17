@@ -435,37 +435,12 @@ func (p *PostgresDB) GetIndexes(dbName, tableName string) ([]connection.IndexDef
 }
 
 func (p *PostgresDB) GetForeignKeys(dbName, tableName string) ([]connection.ForeignKeyDefinition, error) {
-	schema := strings.TrimSpace(dbName)
-	if schema == "" {
-		schema = "public"
-	}
-	table := strings.TrimSpace(tableName)
+	schema, table := normalizePGLikeMetadataTable(dbName, tableName)
 	if table == "" {
 		return nil, localizedDatabaseRuntimeError("db.backend.error.table_name_required", nil)
 	}
 
-	esc := func(s string) string { return strings.ReplaceAll(s, "'", "''") }
-
-	query := fmt.Sprintf(`
-SELECT
-	tc.constraint_name AS constraint_name,
-	kcu.column_name AS column_name,
-	ccu.table_schema AS foreign_table_schema,
-	ccu.table_name AS foreign_table_name,
-	ccu.column_name AS foreign_column_name
-FROM information_schema.table_constraints AS tc
-JOIN information_schema.key_column_usage AS kcu
-  ON tc.constraint_name = kcu.constraint_name
-  AND tc.table_schema = kcu.table_schema
-JOIN information_schema.constraint_column_usage AS ccu
-  ON ccu.constraint_name = tc.constraint_name
-  AND ccu.table_schema = tc.table_schema
-WHERE tc.constraint_type = 'FOREIGN KEY'
-  AND tc.table_name = '%s'
-  AND tc.table_schema = '%s'
-ORDER BY tc.constraint_name, kcu.ordinal_position`, esc(table), esc(schema))
-
-	data, _, err := p.Query(query)
+	data, _, err := p.Query(buildPGLikeForeignKeysMetadataQuery(schema, table))
 	if err != nil {
 		return nil, err
 	}
@@ -495,25 +470,12 @@ ORDER BY tc.constraint_name, kcu.ordinal_position`, esc(table), esc(schema))
 }
 
 func (p *PostgresDB) GetTriggers(dbName, tableName string) ([]connection.TriggerDefinition, error) {
-	schema := strings.TrimSpace(dbName)
-	if schema == "" {
-		schema = "public"
-	}
-	table := strings.TrimSpace(tableName)
+	schema, table := normalizePGLikeMetadataTable(dbName, tableName)
 	if table == "" {
 		return nil, localizedDatabaseRuntimeError("db.backend.error.table_name_required", nil)
 	}
 
-	esc := func(s string) string { return strings.ReplaceAll(s, "'", "''") }
-
-	query := fmt.Sprintf(`
-SELECT trigger_name, action_timing, event_manipulation, action_statement
-FROM information_schema.triggers
-WHERE event_object_table = '%s'
-  AND event_object_schema = '%s'
-ORDER BY trigger_name, event_manipulation`, esc(table), esc(schema))
-
-	data, _, err := p.Query(query)
+	data, _, err := p.Query(buildPGLikeTriggersMetadataQuery(schema, table))
 	if err != nil {
 		return nil, err
 	}
