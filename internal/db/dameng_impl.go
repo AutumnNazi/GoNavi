@@ -258,9 +258,10 @@ func (d *DamengDB) GetDatabases() ([]string, error) {
 func (d *DamengDB) GetTables(dbName string) ([]string, error) {
 	// 始终返回 OWNER.TABLE_NAME，与 Oracle 实现对齐，避免下游 SQL 缺少 schema 前缀（refs issue #445）
 	// 列别名用双引号包裹强制大写，避免不同驱动版本返回不一致 case 导致 row map 取值失败
+	escapedDBName := escapeDamengMetadataLiteral(dbName)
 	var query string
-	if dbName != "" {
-		query = fmt.Sprintf(`SELECT owner AS "OWNER", table_name AS "TABLE_NAME" FROM all_tables WHERE owner = '%s' ORDER BY table_name`, strings.ToUpper(dbName))
+	if escapedDBName != "" {
+		query = fmt.Sprintf(`SELECT owner AS "OWNER", table_name AS "TABLE_NAME" FROM all_tables WHERE owner = '%s' ORDER BY table_name`, escapedDBName)
 	} else {
 		query = `SELECT USER AS "OWNER", table_name AS "TABLE_NAME" FROM user_tables ORDER BY table_name`
 	}
@@ -291,11 +292,13 @@ func (d *DamengDB) GetCreateStatement(dbName, tableName string) (string, error) 
 	// We'll try a common DM approach.
 	// SELECT DBMS_METADATA.GET_DDL('TABLE', 'TABLE_NAME', 'OWNER') FROM DUAL;
 
+	escapedDBName := escapeDamengMetadataLiteral(dbName)
+	escapedTableName := escapeDamengMetadataLiteral(tableName)
 	query := fmt.Sprintf("SELECT DBMS_METADATA.GET_DDL('TABLE', '%s', '%s') as ddl FROM DUAL",
-		strings.ToUpper(tableName), strings.ToUpper(dbName))
+		escapedTableName, escapedDBName)
 
-	if dbName == "" {
-		query = fmt.Sprintf("SELECT DBMS_METADATA.GET_DDL('TABLE', '%s') as ddl FROM DUAL", strings.ToUpper(tableName))
+	if escapedDBName == "" {
+		query = fmt.Sprintf("SELECT DBMS_METADATA.GET_DDL('TABLE', '%s') as ddl FROM DUAL", escapedTableName)
 	}
 
 	data, _, err := d.Query(query)
@@ -382,7 +385,7 @@ func (d *DamengDB) GetTriggers(dbName, tableName string) ([]connection.TriggerDe
 	query := fmt.Sprintf(`SELECT trigger_name, trigger_type, triggering_event 
 		FROM all_triggers 
 		WHERE table_owner = '%s' AND table_name = '%s'`,
-		strings.ToUpper(dbName), strings.ToUpper(tableName))
+		escapeDamengMetadataLiteral(dbName), escapeDamengMetadataLiteral(tableName))
 
 	data, _, err := d.Query(query)
 	if err != nil {
@@ -526,7 +529,7 @@ func (d *DamengDB) GetAllColumns(dbName string) ([]connection.ColumnDefinitionWi
 		FROM all_tab_columns c
 		LEFT JOIN all_col_comments cc
 		  ON cc.owner = c.owner AND cc.table_name = c.table_name AND cc.column_name = c.column_name
-		WHERE c.owner = '%s'`, strings.ReplaceAll(strings.ToUpper(dbName), "'", "''"))
+		WHERE c.owner = '%s'`, escapeDamengMetadataLiteral(dbName))
 
 	data, _, err := d.Query(query)
 	if err != nil {
