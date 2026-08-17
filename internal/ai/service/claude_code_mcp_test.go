@@ -1,15 +1,19 @@
 package aiservice
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"GoNavi-Wails/shared/i18n"
 )
@@ -21,6 +25,13 @@ func isolateOpenCodeMCPConfig(t *testing.T) string {
 	openCodeConfigPathFunc = func() (string, error) { return configPath, nil }
 	t.Cleanup(func() { openCodeConfigPathFunc = originalConfigPathFunc })
 	return configPath
+}
+
+func disableLocalCLICommandShellFallback(t *testing.T) {
+	t.Helper()
+	original := localCLICommandShellCandidatesFunc
+	localCLICommandShellCandidatesFunc = func() []string { return nil }
+	t.Cleanup(func() { localCLICommandShellCandidatesFunc = original })
 }
 
 func TestResolveLocalMCPCommandUsesMainBinaryWithArgument(t *testing.T) {
@@ -46,6 +57,173 @@ func TestResolveLocalMCPCommandKeepsDedicatedServerBinary(t *testing.T) {
 	}
 	if len(args) != 0 {
 		t.Fatalf("expected dedicated server args to be empty, got %#v", args)
+	}
+}
+
+func TestDetectLocalCLICommandFallsBackToLoginShellPath(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("login-shell PATH fallback is Unix-only")
+	}
+
+	originalPathFunc := localCLICommandPathFunc
+	originalShellCandidatesFunc := localCLICommandShellCandidatesFunc
+	originalShellOutputFunc := localCLICommandShellOutputFunc
+	originalTimeout := localCLICommandShellLookupTimeout
+	t.Cleanup(func() {
+		localCLICommandPathFunc = originalPathFunc
+		localCLICommandShellCandidatesFunc = originalShellCandidatesFunc
+		localCLICommandShellOutputFunc = originalShellOutputFunc
+		localCLICommandShellLookupTimeout = originalTimeout
+	})
+
+	const command = "claude"
+	const shellPath = "/Users/mock/.local/bin/claude"
+	localCLICommandPathFunc = func(value string) (string, error) {
+		if value == command {
+			return "", exec.ErrNotFound
+		}
+		if value == "/usr/bin/ls" {
+			t.Fatal("shell startup output with a different basename must be ignored")
+		}
+		if value == shellPath {
+			return shellPath, nil
+		}
+		return "", exec.ErrNotFound
+	}
+	localCLICommandShellCandidatesFunc = func() []string { return []string{"/bin/zsh"} }
+	localCLICommandShellOutputFunc = func(ctx context.Context, shell string, lookupCommand string) ([]byte, error) {
+		if shell != "/bin/zsh" {
+			t.Fatalf("shell = %q, want /bin/zsh", shell)
+		}
+		if lookupCommand != "command -v -- 'claude'" {
+			t.Fatalf("lookup command = %q", lookupCommand)
+		}
+		if err := ctx.Err(); err != nil {
+			t.Fatalf("lookup context already canceled: %v", err)
+		}
+		return []byte("shell startup notice\n/usr/bin/ls\n" + shellPath + "\n"), nil
+	}
+	localCLICommandShellLookupTimeout = time.Second
+
+	detected, resolvedPath := detectLocalCLICommand(command)
+	if !detected {
+		t.Fatal("expected shell PATH fallback to detect Claude CLI")
+	}
+	if resolvedPath != shellPath {
+		t.Fatalf("resolved path = %q, want %q", resolvedPath, shellPath)
+	}
+}
+
+func TestDetectLocalCLICommandUsesRealLoginShellForDesktopPath(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("login-shell PATH fallback is Unix-only")
+	}
+
+	originalPathFunc := localCLICommandPathFunc
+	originalShellCandidatesFunc := localCLICommandShellCandidatesFunc
+	originalShellOutputFunc := localCLICommandShellOutputFunc
+	originalTimeout := localCLICommandShellLookupTimeout
+	t.Cleanup(func() {
+		localCLICommandPathFunc = originalPathFunc
+		localCLICommandShellCandidatesFunc = originalShellCandidatesFunc
+		localCLICommandShellOutputFunc = originalShellOutputFunc
+		localCLICommandShellLookupTimeout = originalTimeout
+	})
+
+	command := "gonavi-login-shell-client"
+	commandPath := filepath.Join(t.TempDir(), command)
+	if err := os.WriteFile(commandPath, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatalf("WriteFile CLI fixture returned error: %v", err)
+	}
+	shellPath := filepath.Join(t.TempDir(), "login-shell")
+	if err := os.WriteFile(shellPath, []byte("#!/bin/sh\nprintf '%s\\n' \"$GONAVI_TEST_LOGIN_SHELL_CLIENT\"\n"), 0o755); err != nil {
+		t.Fatalf("WriteFile shell fixture returned error: %v", err)
+	}
+
+	t.Setenv("PATH", "/usr/bin:/bin")
+	t.Setenv("SHELL", shellPath)
+	t.Setenv("GONAVI_TEST_LOGIN_SHELL_CLIENT", commandPath)
+	localCLICommandPathFunc = exec.LookPath
+	localCLICommandShellCandidatesFunc = localCLICommandShellCandidates
+	localCLICommandShellOutputFunc = runLocalCLICommandShell
+	localCLICommandShellLookupTimeout = time.Second
+
+	detected, resolvedPath := detectLocalCLICommand(command)
+	if !detected {
+		t.Fatal("expected login shell to recover a CLI hidden from the desktop PATH")
+	}
+	if resolvedPath != commandPath {
+		t.Fatalf("resolved path = %q, want %q", resolvedPath, commandPath)
+	}
+}
+
+func TestDetectLocalCLICommandRejectsUnsafeNameBeforeShellLookup(t *testing.T) {
+	originalPathFunc := localCLICommandPathFunc
+	originalShellCandidatesFunc := localCLICommandShellCandidatesFunc
+	originalShellOutputFunc := localCLICommandShellOutputFunc
+	t.Cleanup(func() {
+		localCLICommandPathFunc = originalPathFunc
+		localCLICommandShellCandidatesFunc = originalShellCandidatesFunc
+		localCLICommandShellOutputFunc = originalShellOutputFunc
+	})
+
+	localCLICommandPathFunc = func(value string) (string, error) {
+		if value != "claude; touch /tmp/pwned" {
+			t.Fatalf("unexpected direct lookup: %q", value)
+		}
+		return "", exec.ErrNotFound
+	}
+	localCLICommandShellCandidatesFunc = func() []string {
+		t.Fatal("unsafe command name must not invoke a shell")
+		return nil
+	}
+	localCLICommandShellOutputFunc = func(context.Context, string, string) ([]byte, error) {
+		t.Fatal("unsafe command name must not execute shell lookup")
+		return nil, nil
+	}
+
+	detected, resolvedPath := detectLocalCLICommand("claude; touch /tmp/pwned")
+	if detected || resolvedPath != "" {
+		t.Fatalf("unsafe command lookup = (%t, %q), want (false, empty)", detected, resolvedPath)
+	}
+}
+
+func TestDetectLocalCLICommandShellLookupHonorsTimeout(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("login-shell PATH fallback is Unix-only")
+	}
+
+	originalPathFunc := localCLICommandPathFunc
+	originalShellCandidatesFunc := localCLICommandShellCandidatesFunc
+	originalShellOutputFunc := localCLICommandShellOutputFunc
+	originalTimeout := localCLICommandShellLookupTimeout
+	t.Cleanup(func() {
+		localCLICommandPathFunc = originalPathFunc
+		localCLICommandShellCandidatesFunc = originalShellCandidatesFunc
+		localCLICommandShellOutputFunc = originalShellOutputFunc
+		localCLICommandShellLookupTimeout = originalTimeout
+	})
+
+	localCLICommandPathFunc = func(string) (string, error) { return "", exec.ErrNotFound }
+	localCLICommandShellCandidatesFunc = func() []string { return []string{"/bin/zsh", "/bin/bash"} }
+	var shellCalls int
+	localCLICommandShellOutputFunc = func(ctx context.Context, _ string, _ string) ([]byte, error) {
+		shellCalls++
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
+	localCLICommandShellLookupTimeout = 10 * time.Millisecond
+
+	started := time.Now()
+	detected, resolvedPath := detectLocalCLICommand("claude")
+	if detected || resolvedPath != "" {
+		t.Fatalf("timed-out shell lookup = (%t, %q), want (false, empty)", detected, resolvedPath)
+	}
+	if elapsed := time.Since(started); elapsed > time.Second {
+		t.Fatalf("shell lookup exceeded timeout budget: %s", elapsed)
+	}
+	if shellCalls != 1 {
+		t.Fatalf("shell lookup used %d shells after the shared timeout expired, want 1", shellCalls)
 	}
 }
 
@@ -522,6 +700,7 @@ func TestInspectClaudeCodeMCPInstallStatusIncludesLocalCLIAvailability(t *testin
 }
 
 func TestInspectCodexMCPInstallStatusKeepsMissingCLISignalSeparateFromConfigState(t *testing.T) {
+	disableLocalCLICommandShellFallback(t)
 	originalConfigPathFunc := codexConfigPathFunc
 	originalCLIPathFunc := localCLICommandPathFunc
 	t.Cleanup(func() {
@@ -617,6 +796,7 @@ func TestMCPClientInstallResultMessagesUseServiceLanguage(t *testing.T) {
 }
 
 func TestMCPClientInstallStatusMessagesUseServiceLanguage(t *testing.T) {
+	disableLocalCLICommandShellFallback(t)
 	isolateOpenCodeMCPConfig(t)
 	isolateAdditionalMCPClientConfigs(t)
 	originalClaudeConfigPathFunc := claudeCodeConfigPathFunc
@@ -678,6 +858,7 @@ func TestMCPClientInstallStatusMessagesUseServiceLanguage(t *testing.T) {
 }
 
 func TestMCPClientInstallConfigPathFailuresUseServiceLanguage(t *testing.T) {
+	disableLocalCLICommandShellFallback(t)
 	isolateOpenCodeMCPConfig(t)
 	isolateAdditionalMCPClientConfigs(t)
 	originalClaudeConfigPathFunc := claudeCodeConfigPathFunc
@@ -733,6 +914,7 @@ func TestMCPClientInstallConfigPathFailuresUseServiceLanguage(t *testing.T) {
 }
 
 func TestMCPClientInstallHomeDirDetailUsesServiceLanguage(t *testing.T) {
+	disableLocalCLICommandShellFallback(t)
 	isolateOpenCodeMCPConfig(t)
 	isolateAdditionalMCPClientConfigs(t)
 	originalClaudeConfigPathFunc := claudeCodeConfigPathFunc
@@ -788,6 +970,7 @@ func TestMCPClientInstallHomeDirDetailUsesServiceLanguage(t *testing.T) {
 }
 
 func TestMCPClientInstallExecutablePathFailuresUseServiceLanguage(t *testing.T) {
+	disableLocalCLICommandShellFallback(t)
 	openCodeConfigPath := isolateOpenCodeMCPConfig(t)
 	isolateAdditionalMCPClientConfigs(t)
 	mockLocalMCPClientCommandsDetected(t)
@@ -861,6 +1044,7 @@ func TestMCPClientInstallExecutablePathFailuresUseServiceLanguage(t *testing.T) 
 }
 
 func TestMCPClientInstallConfigFormatFailuresUseServiceLanguage(t *testing.T) {
+	disableLocalCLICommandShellFallback(t)
 	isolateOpenCodeMCPConfig(t)
 	isolateAdditionalMCPClientConfigs(t)
 	mockLocalMCPClientCommandsDetected(t)

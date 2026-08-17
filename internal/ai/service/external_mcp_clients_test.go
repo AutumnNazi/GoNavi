@@ -69,6 +69,7 @@ func mockLocalMCPClientCommandsDetected(t *testing.T) {
 }
 
 func TestLocalMCPClientInstallersRejectUndetectedClientsWithoutWritingConfig(t *testing.T) {
+	disableLocalCLICommandShellFallback(t)
 	additionalPaths := isolateAdditionalMCPClientConfigs(t)
 	openCodePath := isolateOpenCodeMCPConfig(t)
 	originalClaudeConfigPathFunc := claudeCodeConfigPathFunc
@@ -119,6 +120,7 @@ func TestLocalMCPClientInstallersRejectUndetectedClientsWithoutWritingConfig(t *
 }
 
 func TestDeepSeekHarnessStatusDoesNotReportConnectedWhenClientCommandIsMissing(t *testing.T) {
+	disableLocalCLICommandShellFallback(t)
 	paths := isolateAdditionalMCPClientConfigs(t)
 	executablePath := isolateAdditionalMCPClientExecutable(t)
 	originalCLIPathFunc := localCLICommandPathFunc

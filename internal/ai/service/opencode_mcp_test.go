@@ -672,6 +672,7 @@ func TestRepairOpenCodeMCPClientConfigLeavesCustomCommandUntouched(t *testing.T)
 }
 
 func TestInspectOpenCodeMCPInstallStatusKeepsMissingCLISignalSeparate(t *testing.T) {
+	disableLocalCLICommandShellFallback(t)
 	originalConfigPathFunc := openCodeConfigPathFunc
 	originalCLIPathFunc := localCLICommandPathFunc
 	t.Cleanup(func() {

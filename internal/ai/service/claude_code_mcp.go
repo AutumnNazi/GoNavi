@@ -1,6 +1,7 @@
 package aiservice
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -8,8 +9,10 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strconv"
 	"strings"
+	"time"
 
 	"GoNavi-Wails/internal/ai"
 )
@@ -52,6 +55,9 @@ var codexConfigPathFunc = func() (string, error) {
 
 var localMCPExecutablePathFunc = os.Executable
 var localCLICommandPathFunc = exec.LookPath
+var localCLICommandShellCandidatesFunc = localCLICommandShellCandidates
+var localCLICommandShellOutputFunc = runLocalCLICommandShell
+var localCLICommandShellLookupTimeout = 2 * time.Second
 
 type claudeCodeMCPServerConfig struct {
 	Type    string            `json:"type"`
@@ -343,14 +349,107 @@ func detectLocalCLICommand(commandName string) (bool, string) {
 		return false, ""
 	}
 	resolvedPath, err := localCLICommandPathFunc(commandName)
-	if err != nil {
+	if err == nil && strings.TrimSpace(resolvedPath) != "" {
+		return true, filepath.Clean(strings.TrimSpace(resolvedPath))
+	}
+
+	// GUI launches on Unix commonly omit the user's login-shell PATH. Keep the
+	// normal LookPath result authoritative, then ask a bounded login shell for
+	// an absolute command path before reporting the client as unavailable.
+	if runtime.GOOS == "windows" {
 		return false, ""
 	}
-	resolvedPath = strings.TrimSpace(resolvedPath)
-	if resolvedPath == "" {
+	return detectLocalCLICommandFromLoginShell(commandName)
+}
+
+func detectLocalCLICommandFromLoginShell(commandName string) (bool, string) {
+	if !isSafeLocalCLICommandName(commandName) {
 		return false, ""
 	}
-	return true, filepath.Clean(resolvedPath)
+	lookupCommand := "command -v -- " + shellQuoteLocalCLICommand(commandName)
+	ctx, cancel := context.WithTimeout(context.Background(), localCLICommandShellLookupTimeout)
+	defer cancel()
+	for _, shell := range localCLICommandShellCandidatesFunc() {
+		shell = strings.TrimSpace(shell)
+		if shell == "" {
+			continue
+		}
+		if ctx.Err() != nil {
+			break
+		}
+		output, err := localCLICommandShellOutputFunc(ctx, shell, lookupCommand)
+		ctxErr := ctx.Err()
+		if err != nil || ctxErr != nil {
+			continue
+		}
+		for _, line := range strings.Split(string(output), "\n") {
+			candidate := strings.TrimSpace(strings.TrimSuffix(line, "\r"))
+			if !isLocalCLICommandPathCandidate(candidate, commandName) {
+				continue
+			}
+			resolvedPath, err := localCLICommandPathFunc(candidate)
+			resolvedPath = strings.TrimSpace(resolvedPath)
+			if err != nil || !isLocalCLICommandPathCandidate(resolvedPath, commandName) {
+				continue
+			}
+			return true, filepath.Clean(resolvedPath)
+		}
+	}
+	return false, ""
+}
+
+func isLocalCLICommandPathCandidate(candidate string, commandName string) bool {
+	candidate = strings.TrimSpace(candidate)
+	commandName = strings.TrimSpace(commandName)
+	if candidate == "" || commandName == "" || !filepath.IsAbs(candidate) {
+		return false
+	}
+	return portablePathBase(candidate) == commandName
+}
+
+func runLocalCLICommandShell(ctx context.Context, shell string, lookupCommand string) ([]byte, error) {
+	return exec.CommandContext(ctx, shell, "-ilc", lookupCommand).Output()
+}
+
+func localCLICommandShellCandidates() []string {
+	seen := make(map[string]struct{}, 4)
+	result := make([]string, 0, 4)
+	appendShell := func(value string) {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			return
+		}
+		if _, ok := seen[value]; ok {
+			return
+		}
+		seen[value] = struct{}{}
+		result = append(result, value)
+	}
+	appendShell(os.Getenv("SHELL"))
+	appendShell("/bin/zsh")
+	appendShell("/bin/bash")
+	appendShell("/bin/sh")
+	return result
+}
+
+func isSafeLocalCLICommandName(commandName string) bool {
+	if commandName == "" {
+		return false
+	}
+	for _, char := range commandName {
+		if (char >= 'a' && char <= 'z') ||
+			(char >= 'A' && char <= 'Z') ||
+			(char >= '0' && char <= '9') ||
+			char == '.' || char == '_' || char == '-' {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+func shellQuoteLocalCLICommand(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'"
 }
 
 func isLocalMCPClientCommandDetected(commandName string) bool {
