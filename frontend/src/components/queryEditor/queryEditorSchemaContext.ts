@@ -1,13 +1,22 @@
 import type { ConnectionConfig } from '../../types';
-import { normalizeDriverType } from '../../utils/connectionDriverType';
+import { isPostgresSchemaDialect } from '../../utils/connectionDriverType';
 
 export const QUERY_EDITOR_CURRENT_SCHEMA_SQL = 'SELECT current_schema() AS schema_name';
 
 const normalizeSchemaName = (value: unknown): string => String(value ?? '').trim();
 
 export const supportsQueryEditorSchemaSelection = (dbType: string): boolean => (
-  normalizeDriverType(dbType) === 'postgres'
+  isPostgresSchemaDialect(dbType)
 );
+
+export const shouldIncludeQueryEditorSchemaObject = (
+  selectedSchema: string,
+  objectSchema: string,
+): boolean => {
+  const selected = normalizeSchemaName(selectedSchema);
+  const object = normalizeSchemaName(objectSchema);
+  return !selected || !object || selected === object;
+};
 
 export const extractQueryEditorCurrentSchema = (rows: unknown): string => {
   if (!Array.isArray(rows) || rows.length === 0 || !rows[0] || typeof rows[0] !== 'object') return '';

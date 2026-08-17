@@ -5,16 +5,25 @@ import {
   extractQueryEditorCurrentSchema,
   quotePostgresSearchPathIdentifier,
   resolveLoadedQueryEditorSchema,
+  shouldIncludeQueryEditorSchemaObject,
   supportsQueryEditorSchemaSelection,
 } from './queryEditorSchemaContext';
 
 describe('queryEditorSchemaContext', () => {
-  it.each(['postgres', 'postgresql', 'pg'])('enables schema selection for %s', (dbType) => {
+  it.each(['postgres', 'postgresql', 'pg', 'kingbase', 'highgo', 'vastbase', 'opengauss', 'gaussdb'])('enables schema selection for %s', (dbType) => {
     expect(supportsQueryEditorSchemaSelection(dbType)).toBe(true);
   });
 
-  it.each(['mysql', 'kingbase', 'custom'])('does not enable PostgreSQL search_path for %s', (dbType) => {
+  it.each(['mysql', 'custom'])('does not enable query editor schema selection for %s', (dbType) => {
     expect(supportsQueryEditorSchemaSelection(dbType)).toBe(false);
+  });
+
+  it('keeps unqualified metadata but excludes objects from other selected schemas', () => {
+    expect(shouldIncludeQueryEditorSchemaObject('advert_statis', 'advert_statis')).toBe(true);
+    expect(shouldIncludeQueryEditorSchemaObject('advert_statis', '')).toBe(true);
+    expect(shouldIncludeQueryEditorSchemaObject('', 'advert_dev')).toBe(true);
+    expect(shouldIncludeQueryEditorSchemaObject('advert_statis', 'advert_dev')).toBe(false);
+    expect(shouldIncludeQueryEditorSchemaObject('Foo', 'foo')).toBe(false);
   });
 
   it('extracts the current schema from PostgreSQL metadata rows', () => {
