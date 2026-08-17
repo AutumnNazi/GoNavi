@@ -539,6 +539,80 @@ func TestDBGetIndexesUsesSearchPathForPostgresPureTableMetadata(t *testing.T) {
 	}
 }
 
+func TestDBGetForeignKeysAndTriggersUseSearchPathForPostgresPureTableMetadata(t *testing.T) {
+	originalNewDatabaseFunc := newDatabaseFunc
+	originalResolveDialConfigWithProxyFunc := resolveDialConfigWithProxyFunc
+	t.Cleanup(func() {
+		newDatabaseFunc = originalNewDatabaseFunc
+		resolveDialConfigWithProxyFunc = originalResolveDialConfigWithProxyFunc
+	})
+
+	dbInst := &fakeMetadataRetryDB{}
+	newDatabaseFunc = func(dbType string) (db.Database, error) {
+		return dbInst, nil
+	}
+	resolveDialConfigWithProxyFunc = func(raw connection.ConnectionConfig) (connection.ConnectionConfig, error) {
+		return raw, nil
+	}
+
+	app := NewAppWithSecretStore(secretstore.NewUnavailableStore("test"))
+	config := connection.ConnectionConfig{
+		Type:     "postgres",
+		Host:     "127.0.0.1",
+		Port:     5432,
+		User:     "postgres",
+		Database: "demo_db",
+	}
+
+	if result := app.DBGetForeignKeys(config, "demo_db", "users"); !result.Success {
+		t.Fatalf("expected DBGetForeignKeys success, got failure: %s", result.Message)
+	}
+	if dbInst.foreignKeySchema != "" || dbInst.foreignKeyTable != "users" {
+		t.Fatalf("expected postgres pure table foreign-key metadata to pass empty schema/users, got %q.%q", dbInst.foreignKeySchema, dbInst.foreignKeyTable)
+	}
+
+	if result := app.DBGetTriggers(config, "demo_db", "users"); !result.Success {
+		t.Fatalf("expected DBGetTriggers success, got failure: %s", result.Message)
+	}
+	if dbInst.triggerSchema != "" || dbInst.triggerTable != "users" {
+		t.Fatalf("expected postgres pure table trigger metadata to pass empty schema/users, got %q.%q", dbInst.triggerSchema, dbInst.triggerTable)
+	}
+}
+
+func TestDBGetForeignKeysAndTriggersKeepExplicitPostgresSchema(t *testing.T) {
+	originalNewDatabaseFunc := newDatabaseFunc
+	originalResolveDialConfigWithProxyFunc := resolveDialConfigWithProxyFunc
+	t.Cleanup(func() {
+		newDatabaseFunc = originalNewDatabaseFunc
+		resolveDialConfigWithProxyFunc = originalResolveDialConfigWithProxyFunc
+	})
+
+	dbInst := &fakeMetadataRetryDB{}
+	newDatabaseFunc = func(dbType string) (db.Database, error) {
+		return dbInst, nil
+	}
+	resolveDialConfigWithProxyFunc = func(raw connection.ConnectionConfig) (connection.ConnectionConfig, error) {
+		return raw, nil
+	}
+
+	app := NewAppWithSecretStore(secretstore.NewUnavailableStore("test"))
+	config := connection.ConnectionConfig{Type: "postgres", Host: "127.0.0.1", Port: 5432, User: "postgres", Database: "demo_db"}
+
+	if result := app.DBGetForeignKeys(config, "demo_db", "public.users"); !result.Success {
+		t.Fatalf("expected DBGetForeignKeys success, got failure: %s", result.Message)
+	}
+	if dbInst.foreignKeySchema != "public" || dbInst.foreignKeyTable != "users" {
+		t.Fatalf("expected explicit postgres foreign-key metadata to pass public/users, got %q.%q", dbInst.foreignKeySchema, dbInst.foreignKeyTable)
+	}
+
+	if result := app.DBGetTriggers(config, "demo_db", "public.users"); !result.Success {
+		t.Fatalf("expected DBGetTriggers success, got failure: %s", result.Message)
+	}
+	if dbInst.triggerSchema != "public" || dbInst.triggerTable != "users" {
+		t.Fatalf("expected explicit postgres trigger metadata to pass public/users, got %q.%q", dbInst.triggerSchema, dbInst.triggerTable)
+	}
+}
+
 func TestDBGetColumnsKeepsCurrentDatabaseForKingbaseQualifiedTableMetadata(t *testing.T) {
 	installFakeOptionalDriverRuntime(t)
 	originalNewDatabaseFunc := newDatabaseFunc
