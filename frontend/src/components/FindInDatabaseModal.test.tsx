@@ -186,4 +186,32 @@ describe("FindInDatabaseModal i18n", () => {
 
     expect(mocks.message.error).toHaveBeenCalledWith("Failed to get table list: driver raw detail");
   });
+
+  it("warns and stops before searching an incomplete table list", async () => {
+    mocks.dbGetTables.mockResolvedValue({
+      success: true,
+      partial: true,
+      truncated: true,
+      message: "Redis key scan truncated after 2 keys: cursor loop detected",
+      data: [{ Table: "orders" }, { Table: "users" }],
+    });
+    const renderer = renderFindModal();
+
+    const input = renderer.root.findByType("input");
+    await act(async () => {
+      input.props.onChange({ target: { value: "alice" } });
+    });
+    const searchButton = renderer.root.findAllByType("button").find((button) => textContent(button).includes("Search"));
+
+    await act(async () => {
+      searchButton?.props.onClick();
+      await Promise.resolve();
+    });
+
+    expect(mocks.message.warning).toHaveBeenCalledWith(
+      "Failed to get table list: Redis key scan truncated after 2 keys: cursor loop detected",
+    );
+    expect(mocks.dbGetAllColumns).not.toHaveBeenCalled();
+    expect(mocks.dbQuery).not.toHaveBeenCalled();
+  });
 });

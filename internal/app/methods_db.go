@@ -2362,6 +2362,7 @@ func (a *App) DBGetTables(config connection.ConnectionConfig, dbName string) con
 		cursor := uint64(0)
 		tables := make([]string, 0, 128)
 		seen := make(map[string]struct{}, 128)
+		seenCursors := map[uint64]struct{}{cursor: {}}
 		for {
 			result, err := client.ScanKeys("*", cursor, 1000)
 			if err != nil {
@@ -2387,9 +2388,10 @@ func (a *App) DBGetTables(config connection.ConnectionConfig, dbName string) con
 			if err != nil {
 				return buildRedisTablesPartialResult(tables, fmt.Sprintf("invalid cursor %q: %v", rawCursor, err))
 			}
-			if next == cursor {
-				return buildRedisTablesPartialResult(tables, fmt.Sprintf("cursor did not advance (cursor=%d)", cursor))
+			if _, exists := seenCursors[next]; exists {
+				return buildRedisTablesPartialResult(tables, fmt.Sprintf("cursor loop detected (cursor=%d next=%d)", cursor, next))
 			}
+			seenCursors[next] = struct{}{}
 			cursor = next
 		}
 		resData := make([]map[string]string, 0, len(tables))

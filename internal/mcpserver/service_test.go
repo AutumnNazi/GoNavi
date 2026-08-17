@@ -315,6 +315,39 @@ func TestGetTablesIncludesViewsInDedicatedField(t *testing.T) {
 	}
 }
 
+func TestGetTablesPreservesPartialMetadataWarnings(t *testing.T) {
+	backend := &fakeBackend{
+		editableConnection: connection.SavedConnectionView{
+			ID:     "redis-main",
+			Config: connection.ConnectionConfig{Type: "redis", Database: "0"},
+		},
+		tablesResult: connection.QueryResult{
+			Success:      true,
+			Message:      "Redis key scan truncated after 2 keys: cursor loop detected",
+			Partial:      true,
+			Truncated:    true,
+			Retryable:    true,
+			ScannedCount: 2,
+			Warnings:     []string{"Redis key scan truncated after 2 keys: cursor loop detected"},
+			Data:         []map[string]string{{"Table": "orders"}, {"Table": "users"}},
+		},
+	}
+
+	result, out, err := NewService(backend).GetTables(context.Background(), nil, databaseArgs{
+		ConnectionID: "redis-main",
+		DBName:       "0",
+	})
+	if err != nil || result == nil || result.IsError {
+		t.Fatalf("expected partial table metadata success, result=%#v err=%v", result, err)
+	}
+	if !out.Partial || !out.Truncated || !out.Retryable || out.ScannedCount != 2 || len(out.Warnings) != 1 {
+		t.Fatalf("partial table metadata details were lost: %#v", out)
+	}
+	if out.Message != backend.tablesResult.Message || out.Warnings[0] != backend.tablesResult.Warnings[0] {
+		t.Fatalf("expected table metadata message and warnings to propagate, got %#v", out)
+	}
+}
+
 func TestGetObjectsReturnsDatabaseObjectsAndFiltersByType(t *testing.T) {
 	backend := &fakeBackend{
 		editableConnection: connection.SavedConnectionView{

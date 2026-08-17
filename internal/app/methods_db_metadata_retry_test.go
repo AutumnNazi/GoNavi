@@ -423,6 +423,7 @@ func TestDBGetTablesRedisCursorState(t *testing.T) {
 		wantPartial   bool
 		wantTruncated bool
 		wantWarning   string
+		wantScanCalls int
 	}{
 		{
 			name: "invalid cursor",
@@ -444,7 +445,21 @@ func TestDBGetTablesRedisCursorState(t *testing.T) {
 			wantKeys:      2,
 			wantPartial:   true,
 			wantTruncated: true,
-			wantWarning:   "cursor did not advance",
+			wantWarning:   "cursor loop detected",
+			wantScanCalls: 2,
+		},
+		{
+			name: "cursor loop",
+			scanResults: []*redis.RedisScanResult{
+				{Keys: []redis.RedisKeyInfo{{Key: "orders"}}, Cursor: "7"},
+				{Keys: []redis.RedisKeyInfo{{Key: "users"}}, Cursor: "8"},
+				{Keys: []redis.RedisKeyInfo{{Key: "products"}}, Cursor: "7"},
+			},
+			wantKeys:      3,
+			wantPartial:   true,
+			wantTruncated: true,
+			wantWarning:   "cursor loop detected",
+			wantScanCalls: 3,
 		},
 		{
 			name: "normal zero cursor",
@@ -464,8 +479,9 @@ func TestDBGetTablesRedisCursorState(t *testing.T) {
 				CloseAllRedisClients()
 			})
 			CloseAllRedisClients()
+			client := &capturingRedisClient{scanResults: tc.scanResults}
 			newRedisClientFunc = func() redis.RedisClient {
-				return &capturingRedisClient{scanResults: tc.scanResults}
+				return client
 			}
 
 			result := NewApp().DBGetTables(connection.ConnectionConfig{
@@ -488,6 +504,9 @@ func TestDBGetTablesRedisCursorState(t *testing.T) {
 			}
 			if tc.wantWarning != "" && !strings.Contains(strings.Join(result.Warnings, "\n"), tc.wantWarning) {
 				t.Fatalf("expected warning containing %q, got %#v", tc.wantWarning, result.Warnings)
+			}
+			if tc.wantScanCalls > 0 && client.scanCalls != tc.wantScanCalls {
+				t.Fatalf("expected %d scan calls, got %d", tc.wantScanCalls, client.scanCalls)
 			}
 		})
 	}

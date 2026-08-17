@@ -50,6 +50,7 @@ import {
 import { resolveSqlDialect } from "../utils/sqlDialect";
 import { quoteIdentPart, quoteQualifiedIdent } from "../utils/sql";
 import { normalizeTableNamesFromMetadataRows } from "../utils/tableMetadataRows";
+import { getTableMetadataIssueDetail, isTableMetadataIncomplete } from "../utils/tableMetadataResult";
 import {
   formatLocalDateTimeLiteral,
   normalizeTemporalLiteralText,
@@ -960,7 +961,7 @@ const DataSyncModal: React.FC<{
         ) {
           return;
         }
-        if (res.success) {
+        if (res.success && !isTableMetadataIncomplete(res)) {
           const tables = normalizeTableNamesFromMetadataRows(res.data);
           const nextTables = (
             isSourceQueryMode && targetSupportsSchemaSelection && targetSchema
@@ -977,10 +978,12 @@ const DataSyncModal: React.FC<{
           });
           setCurrentStep(1);
         } else {
-          message.error(
-            res.message
+          const detail = getTableMetadataIssueDetail(res);
+          const notify = res.success ? message.warning : message.error;
+          notify(
+            detail
               ? tr("data_sync.message.fetch_tables_failed_detail", {
-                  detail: res.message,
+                  detail,
                 })
               : tr("data_sync.message.fetch_tables_failed"),
           );
