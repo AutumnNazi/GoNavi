@@ -2117,6 +2117,8 @@ export namespace connection {
 	    warnings?: string[];
 	    failedObjectTypes?: string[];
 	    retryable?: boolean;
+	    truncated?: boolean;
+	    scannedCount?: number;
 	    queryId?: string;
 	    cancellationState?: string;
 	    transactionId?: string;
@@ -2137,6 +2139,8 @@ export namespace connection {
 	        this.warnings = source["warnings"];
 	        this.failedObjectTypes = source["failedObjectTypes"];
 	        this.retryable = source["retryable"];
+	        this.truncated = source["truncated"];
+	        this.scannedCount = source["scannedCount"];
 	        this.queryId = source["queryId"];
 	        this.cancellationState = source["cancellationState"];
 	        this.transactionId = source["transactionId"];

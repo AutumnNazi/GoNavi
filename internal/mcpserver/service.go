@@ -90,6 +90,12 @@ type getTablesResult struct {
 	DBName       string   `json:"dbName,omitempty"`
 	Tables       []string `json:"tables"`
 	Views        []string `json:"views"`
+	Message      string   `json:"message,omitempty"`
+	Partial      bool     `json:"partial,omitempty"`
+	Warnings     []string `json:"warnings,omitempty"`
+	Retryable    bool     `json:"retryable,omitempty"`
+	Truncated    bool     `json:"truncated,omitempty"`
+	ScannedCount int      `json:"scannedCount,omitempty"`
 }
 
 type getViewsResult struct {
@@ -107,6 +113,8 @@ type getObjectsResult struct {
 	Warnings          []string                    `json:"warnings,omitempty"`
 	FailedObjectTypes []string                    `json:"failedObjectTypes,omitempty"`
 	Retryable         bool                        `json:"retryable,omitempty"`
+	Truncated         bool                        `json:"truncated,omitempty"`
+	ScannedCount      int                         `json:"scannedCount,omitempty"`
 }
 
 type getAllColumnsResult struct {
@@ -271,6 +279,12 @@ func (s *Service) GetTables(ctx context.Context, req *mcp.CallToolRequest, args 
 		DBName:       dbName,
 		Tables:       ensureNonNilStrings(tables),
 		Views:        ensureNonNilStrings(views),
+		Message:      strings.TrimSpace(queryResult.Message),
+		Partial:      queryResult.Partial,
+		Warnings:     objectMetadataWarnings(queryResult),
+		Retryable:    queryResult.Retryable,
+		Truncated:    queryResult.Truncated,
+		ScannedCount: queryResult.ScannedCount,
 	}, nil
 }
 
@@ -322,6 +336,8 @@ func (s *Service) GetObjects(ctx context.Context, req *mcp.CallToolRequest, args
 			Warnings:          objectMetadataWarnings(queryResult),
 			FailedObjectTypes: queryResult.FailedObjectTypes,
 			Retryable:         queryResult.Retryable,
+			Truncated:         queryResult.Truncated,
+			ScannedCount:      queryResult.ScannedCount,
 		}
 		if queryResult.Retryable {
 			failedTypes := strings.Join(queryResult.FailedObjectTypes, ", ")
@@ -347,6 +363,8 @@ func (s *Service) GetObjects(ctx context.Context, req *mcp.CallToolRequest, args
 		Warnings:          objectMetadataWarnings(queryResult),
 		FailedObjectTypes: queryResult.FailedObjectTypes,
 		Retryable:         queryResult.Retryable,
+		Truncated:         queryResult.Truncated,
+		ScannedCount:      queryResult.ScannedCount,
 	}, nil
 }
 

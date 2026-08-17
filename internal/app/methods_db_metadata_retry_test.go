@@ -415,6 +415,133 @@ func TestDBGetObjectsMarksRedisKeyMetadataFailuresPartial(t *testing.T) {
 	}
 }
 
+func TestDBGetTablesRedisCursorState(t *testing.T) {
+	testCases := []struct {
+		name          string
+		scanResults   []*redis.RedisScanResult
+		wantKeys      int
+		wantPartial   bool
+		wantTruncated bool
+		wantWarning   string
+		wantScanCalls int
+	}{
+		{
+			name: "invalid cursor",
+			scanResults: []*redis.RedisScanResult{{
+				Keys:   []redis.RedisKeyInfo{{Key: "orders"}},
+				Cursor: "not-a-cursor",
+			}},
+			wantKeys:      1,
+			wantPartial:   true,
+			wantTruncated: true,
+			wantWarning:   "invalid cursor",
+		},
+		{
+			name: "repeated cursor",
+			scanResults: []*redis.RedisScanResult{
+				{Keys: []redis.RedisKeyInfo{{Key: "orders"}}, Cursor: "7"},
+				{Keys: []redis.RedisKeyInfo{{Key: "users"}}, Cursor: "7"},
+			},
+			wantKeys:      2,
+			wantPartial:   true,
+			wantTruncated: true,
+			wantWarning:   "cursor loop detected",
+			wantScanCalls: 2,
+		},
+		{
+			name: "cursor loop",
+			scanResults: []*redis.RedisScanResult{
+				{Keys: []redis.RedisKeyInfo{{Key: "orders"}}, Cursor: "7"},
+				{Keys: []redis.RedisKeyInfo{{Key: "users"}}, Cursor: "8"},
+				{Keys: []redis.RedisKeyInfo{{Key: "products"}}, Cursor: "7"},
+			},
+			wantKeys:      3,
+			wantPartial:   true,
+			wantTruncated: true,
+			wantWarning:   "cursor loop detected",
+			wantScanCalls: 3,
+		},
+		{
+			name: "normal zero cursor",
+			scanResults: []*redis.RedisScanResult{{
+				Keys:   []redis.RedisKeyInfo{{Key: "orders"}},
+				Cursor: "0",
+			}},
+			wantKeys: 1,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			originalNewRedisClientFunc := newRedisClientFunc
+			t.Cleanup(func() {
+				newRedisClientFunc = originalNewRedisClientFunc
+				CloseAllRedisClients()
+			})
+			CloseAllRedisClients()
+			client := &capturingRedisClient{scanResults: tc.scanResults}
+			newRedisClientFunc = func() redis.RedisClient {
+				return client
+			}
+
+			result := NewApp().DBGetTables(connection.ConnectionConfig{
+				Type: "redis",
+				Host: "redis-" + tc.name + ".local",
+				Port: 6379,
+			}, "0")
+			if !result.Success {
+				t.Fatalf("expected scan result, got failure: %#v", result)
+			}
+			rows, ok := result.Data.([]map[string]string)
+			if !ok || len(rows) != tc.wantKeys {
+				t.Fatalf("expected %d scanned keys, got %#v", tc.wantKeys, result.Data)
+			}
+			if result.Partial != tc.wantPartial || result.Truncated != tc.wantTruncated {
+				t.Fatalf("unexpected cursor state: %#v", result)
+			}
+			if result.ScannedCount != tc.wantKeys {
+				t.Fatalf("expected scannedCount=%d, got %d", tc.wantKeys, result.ScannedCount)
+			}
+			if tc.wantWarning != "" && !strings.Contains(strings.Join(result.Warnings, "\n"), tc.wantWarning) {
+				t.Fatalf("expected warning containing %q, got %#v", tc.wantWarning, result.Warnings)
+			}
+			if tc.wantScanCalls > 0 && client.scanCalls != tc.wantScanCalls {
+				t.Fatalf("expected %d scan calls, got %d", tc.wantScanCalls, client.scanCalls)
+			}
+		})
+	}
+}
+
+func TestDBGetObjectsPreservesRedisCursorTruncation(t *testing.T) {
+	originalNewRedisClientFunc := newRedisClientFunc
+	t.Cleanup(func() {
+		newRedisClientFunc = originalNewRedisClientFunc
+		CloseAllRedisClients()
+	})
+	CloseAllRedisClients()
+	newRedisClientFunc = func() redis.RedisClient {
+		return &capturingRedisClient{scanResults: []*redis.RedisScanResult{{
+			Keys:   []redis.RedisKeyInfo{{Key: "orders"}},
+			Cursor: "invalid",
+		}}}
+	}
+
+	result := NewApp().DBGetObjects(connection.ConnectionConfig{
+		Type: "redis",
+		Host: "redis-object-cursor.local",
+		Port: 6379,
+	}, "0")
+	if !result.Success || !result.Partial || !result.Truncated || !result.Retryable {
+		t.Fatalf("expected partial Redis object result, got %#v", result)
+	}
+	if len(result.FailedObjectTypes) != 1 || result.FailedObjectTypes[0] != "key" {
+		t.Fatalf("expected key failure type, got %#v", result.FailedObjectTypes)
+	}
+	if result.ScannedCount != 1 || !strings.Contains(result.Message, "invalid cursor") {
+		t.Fatalf("expected cursor warning and count, got %#v", result)
+	}
+}
+
 func TestDBGetColumnsRetriesAfterCachedConnectionRefresh(t *testing.T) {
 	originalNewDatabaseFunc := newDatabaseFunc
 	originalResolveDialConfigWithProxyFunc := resolveDialConfigWithProxyFunc

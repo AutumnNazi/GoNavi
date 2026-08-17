@@ -2362,6 +2362,7 @@ func (a *App) DBGetTables(config connection.ConnectionConfig, dbName string) con
 		cursor := uint64(0)
 		tables := make([]string, 0, 128)
 		seen := make(map[string]struct{}, 128)
+		seenCursors := map[uint64]struct{}{cursor: {}}
 		for {
 			result, err := client.ScanKeys("*", cursor, 1000)
 			if err != nil {
@@ -2379,20 +2380,25 @@ func (a *App) DBGetTables(config connection.ConnectionConfig, dbName string) con
 				seen[key] = struct{}{}
 				tables = append(tables, key)
 			}
-			if strings.TrimSpace(result.Cursor) == "" || strings.TrimSpace(result.Cursor) == "0" {
+			rawCursor := strings.TrimSpace(result.Cursor)
+			if rawCursor == "0" {
 				break
 			}
-			next, err := strconv.ParseUint(strings.TrimSpace(result.Cursor), 10, 64)
-			if err != nil || next == cursor {
-				break
+			next, err := strconv.ParseUint(rawCursor, 10, 64)
+			if err != nil {
+				return buildRedisTablesPartialResult(tables, fmt.Sprintf("invalid cursor %q: %v", rawCursor, err))
 			}
+			if _, exists := seenCursors[next]; exists {
+				return buildRedisTablesPartialResult(tables, fmt.Sprintf("cursor loop detected (cursor=%d next=%d)", cursor, next))
+			}
+			seenCursors[next] = struct{}{}
 			cursor = next
 		}
 		resData := make([]map[string]string, 0, len(tables))
 		for _, name := range tables {
 			resData = append(resData, map[string]string{"Table": name})
 		}
-		return connection.QueryResult{Success: true, Data: resData}
+		return connection.QueryResult{Success: true, Data: resData, ScannedCount: len(tables)}
 	}
 
 	dbInst, err := a.getDatabase(runConfig)
@@ -2466,6 +2472,25 @@ func (a *App) DBGetTables(config connection.ConnectionConfig, dbName string) con
 	}
 
 	return connection.QueryResult{Success: true, Data: resData}
+}
+
+func buildRedisTablesPartialResult(tables []string, reason string) connection.QueryResult {
+	warning := fmt.Sprintf("Redis key scan truncated after %d keys: %s", len(tables), strings.TrimSpace(reason))
+	resData := make([]map[string]string, 0, len(tables))
+	for _, name := range tables {
+		resData = append(resData, map[string]string{"Table": name})
+	}
+	return connection.QueryResult{
+		Success:           true,
+		Data:              resData,
+		Message:           warning,
+		Partial:           true,
+		Warnings:          []string{warning},
+		Retryable:         true,
+		Truncated:         true,
+		ScannedCount:      len(tables),
+		FailedObjectTypes: []string{"key"},
+	}
 }
 
 func (a *App) DBRefreshTableStats(config connection.ConnectionConfig, dbName string, rawTables []string) connection.QueryResult {

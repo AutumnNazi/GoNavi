@@ -602,4 +602,43 @@ describe('useSidebarTreeLoaders PostgreSQL partitions', () => {
     expect(mocks.dbGetTables).toHaveBeenCalledTimes(2);
     expect(mocks.replaceTreeNodeChildren).toHaveBeenCalledTimes(1);
   });
+
+  it('warns when table metadata scanning is truncated', async () => {
+    const connection = {
+      id: 'conn-redis',
+      name: 'Redis',
+      dbName: '0',
+      config: { type: 'redis', host: '127.0.0.1', port: 6379, database: '0' },
+    } as SavedConnection & { dbName: string };
+    mocks.storeState.connections = [connection];
+    mocks.dbGetTables.mockResolvedValue({
+      success: true,
+      data: [{ Table: 'orders' }],
+      partial: true,
+      truncated: true,
+      scannedCount: 1,
+      message: 'Redis key scan truncated after 1 keys: invalid cursor',
+    });
+
+    let loaders: ReturnType<typeof useSidebarTreeLoaders> | undefined;
+    const Harness = () => {
+      loaders = useSidebarTreeLoaders({
+        savedQueries: [], tableSortPreference: {}, tableAccessCount: {}, pinnedSidebarTables: [], pinnedSidebarDatabases: [],
+        isV2Ui: true, loadingNodesRef: { current: new Set<string>() }, setConnectionStates: vi.fn(), setLoadedKeys: vi.fn(),
+        replaceTreeNodeChildren: mocks.replaceTreeNodeChildren, buildRuntimeConfig: (conn) => conn.config,
+        buildJVMRuntimeConfig: (conn) => conn.config, buildJVMDiagnosticTreeNodes: () => [], resolveSavedQueryDisplayName: (name) => String(name || ''),
+      });
+      return null;
+    };
+
+    act(() => { renderer = create(<Harness />); });
+    await act(async () => {
+      await loaders?.loadTables({ key: 'conn-redis-0', dataRef: connection });
+    });
+
+    expect(message.warning).toHaveBeenCalledWith(expect.objectContaining({
+      key: 'db-conn-redis-0-tables-partial',
+      content: expect.anything(),
+    }));
+  });
 });
