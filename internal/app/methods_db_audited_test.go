@@ -14,6 +14,17 @@ import (
 	datasync "GoNavi-Wails/internal/sync"
 )
 
+func TestSQLSnippet_RedactsSensitiveSQL(t *testing.T) {
+	query := "SELECT * FROM users WHERE phone = '13800138000' AND token = 'raw-token' AND id = 42"
+	snippet := sqlSnippet(query)
+	if strings.Contains(snippet, "13800138000") || strings.Contains(snippet, "raw-token") || strings.Contains(snippet, "42") {
+		t.Fatalf("SQL log snippet leaked raw literal: %q", snippet)
+	}
+	if !strings.Contains(snippet, "SELECT") || !strings.Contains(snippet, "FROM users") {
+		t.Fatalf("SQL log snippet lost diagnostic structure: %q", snippet)
+	}
+}
+
 func TestDBQueryAuditedWritesOneUserActionEventWithoutSlowQueryHistory(t *testing.T) {
 	originalNewDatabaseFunc := newDatabaseFunc
 	t.Cleanup(func() { newDatabaseFunc = originalNewDatabaseFunc })

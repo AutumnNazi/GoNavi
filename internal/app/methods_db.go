@@ -2254,12 +2254,12 @@ func (a *App) DBQueryIsolated(config connection.ConnectionConfig, dbName string,
 }
 
 func sqlSnippet(query string) string {
-	q := strings.TrimSpace(query)
+	q := strings.TrimSpace(sqlaudit.RedactSQL(query))
 	const max = 200
-	if len(q) <= max {
+	if len([]rune(q)) <= max {
 		return q
 	}
-	return q[:max] + "..."
+	return string([]rune(q)[:max]) + "..."
 }
 
 func ensureNonNilSlice[T any](items []T) []T {

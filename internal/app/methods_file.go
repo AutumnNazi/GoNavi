@@ -1333,6 +1333,73 @@ func normalizeAppLogTailLineLimit(input int) int {
 	return input
 }
 
+func redactAppLogSQLFields(line string) string {
+	searchFrom := 0
+	for searchFrom < len(line) {
+		fieldStart, fieldLength := findSQLLogField(line, searchFrom)
+		if fieldStart < 0 {
+			break
+		}
+		valueStart := fieldStart + fieldLength
+		if valueStart >= len(line) {
+			break
+		}
+		valueEnd := valueStart
+		var value string
+		if line[valueStart] == '"' {
+			valueEnd++
+			escaped := false
+			for valueEnd < len(line) {
+				if escaped {
+					escaped = false
+					valueEnd++
+					continue
+				}
+				if line[valueEnd] == '\\' {
+					escaped = true
+					valueEnd++
+					continue
+				}
+				if line[valueEnd] == '"' {
+					valueEnd++
+					break
+				}
+				valueEnd++
+			}
+			if valueEnd > len(line) || valueEnd <= valueStart+1 {
+				break
+			}
+			decoded, err := strconv.Unquote(line[valueStart:valueEnd])
+			if err != nil {
+				break
+			}
+			value = strconv.Quote(sqlaudit.RedactSQL(decoded))
+		} else {
+			valueEnd = len(line)
+			value = sqlaudit.RedactSQL(line[valueStart:valueEnd])
+		}
+		line = line[:valueStart] + value + line[valueEnd:]
+		searchFrom = valueStart + len(value)
+	}
+	return sqlaudit.RedactError(line)
+}
+
+func findSQLLogField(line string, start int) (int, int) {
+	lower := strings.ToLower(line)
+	bestIndex := -1
+	bestLength := 0
+	for _, marker := range []string{"sql片段=", "sqltext=", "sql="} {
+		if index := strings.Index(lower[start:], marker); index >= 0 {
+			index += start
+			if bestIndex < 0 || index < bestIndex {
+				bestIndex = index
+				bestLength = len(marker)
+			}
+		}
+	}
+	return bestIndex, bestLength
+}
+
 func readAppLogTailWindow(filePath string, maxBytes int64) ([]byte, bool, error) {
 	f, err := os.Open(filePath)
 	if err != nil {
@@ -1421,7 +1488,7 @@ func readAppLogTailByPathWithText(filePath string, lineLimit int, keyword string
 		if line == "" {
 			continue
 		}
-		lines = append(lines, line)
+		lines = append(lines, redactAppLogSQLFields(line))
 	}
 
 	filteredLines := make([]string, 0, len(lines))
