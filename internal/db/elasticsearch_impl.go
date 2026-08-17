@@ -940,7 +940,7 @@ func (e *ElasticsearchDB) resolveWriteIndex(indexOrAlias string) (string, error)
 
 	res, err := e.client.Indices.GetAlias(
 		e.client.Indices.GetAlias.WithContext(ctx),
-		e.client.Indices.GetAlias.WithIndex(indexOrAlias),
+		e.client.Indices.GetAlias.WithName(indexOrAlias),
 	)
 	if err != nil {
 		return "", fmt.Errorf("读取别名 metadata 失败：%w", err)
@@ -949,7 +949,7 @@ func (e *ElasticsearchDB) resolveWriteIndex(indexOrAlias string) (string, error)
 
 	if res.IsError() {
 		if res.StatusCode == http.StatusNotFound {
-			// 404 表示不是别名，按直接索引名处理。
+			// Alias API 的 404 表示该名称不是别名，按直接索引名处理。
 			_, _ = io.Copy(io.Discard, res.Body)
 			return indexOrAlias, nil
 		}

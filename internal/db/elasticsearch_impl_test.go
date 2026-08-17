@@ -85,12 +85,17 @@ func TestBuildESClientConfigSeparatesConnectionAndRequestTimeout(t *testing.T) {
 func TestElasticsearchApplyChangesResolvesWriteAliasMetadata(t *testing.T) {
 	testCases := []struct {
 		name          string
+		target        string
+		aliasPath     string
+		aliasStatus   int
 		aliasResponse map[string]interface{}
 		wantIndex     string
 		wantErr       string
 	}{
 		{
-			name: "unique write index",
+			name:      "unique write index",
+			target:    "events",
+			aliasPath: "/_alias/events",
 			aliasResponse: map[string]interface{}{
 				"events-000001": map[string]interface{}{"aliases": map[string]interface{}{
 					"events": map[string]interface{}{"is_write_index": false},
@@ -102,7 +107,9 @@ func TestElasticsearchApplyChangesResolvesWriteAliasMetadata(t *testing.T) {
 			wantIndex: "events-000002",
 		},
 		{
-			name: "missing write index",
+			name:      "missing write index",
+			target:    "events",
+			aliasPath: "/_alias/events",
 			aliasResponse: map[string]interface{}{
 				"events-000001": map[string]interface{}{"aliases": map[string]interface{}{
 					"events": map[string]interface{}{},
@@ -114,7 +121,9 @@ func TestElasticsearchApplyChangesResolvesWriteAliasMetadata(t *testing.T) {
 			wantErr: "is_write_index=true",
 		},
 		{
-			name: "conflicting write indexes",
+			name:      "conflicting write indexes",
+			target:    "events",
+			aliasPath: "/_alias/events",
 			aliasResponse: map[string]interface{}{
 				"events-000001": map[string]interface{}{"aliases": map[string]interface{}{
 					"events": map[string]interface{}{"is_write_index": true},
@@ -125,6 +134,13 @@ func TestElasticsearchApplyChangesResolvesWriteAliasMetadata(t *testing.T) {
 			},
 			wantErr: "is_write_index=true",
 		},
+		{
+			name:        "direct index",
+			target:      "events-000002",
+			aliasPath:   "/_alias/events-000002",
+			aliasStatus: http.StatusNotFound,
+			wantIndex:   "events-000002",
+		},
 	}
 
 	for _, tc := range testCases {
@@ -133,7 +149,16 @@ func TestElasticsearchApplyChangesResolvesWriteAliasMetadata(t *testing.T) {
 			var bulkIndex string
 			server := newMockESServer(t, func(w http.ResponseWriter, r *http.Request) {
 				switch {
-				case r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/_alias"):
+				case r.Method == http.MethodGet:
+					if r.URL.Path != tc.aliasPath {
+						t.Errorf("unexpected alias metadata path: got %q want %q", r.URL.Path, tc.aliasPath)
+						w.WriteHeader(http.StatusInternalServerError)
+						return
+					}
+					if tc.aliasStatus != 0 {
+						w.WriteHeader(tc.aliasStatus)
+						return
+					}
 					writeJSON(w, tc.aliasResponse)
 				case r.Method == http.MethodPost && r.URL.Path == "/_bulk":
 					bulkCalls.Add(1)
@@ -156,8 +181,8 @@ func TestElasticsearchApplyChangesResolvesWriteAliasMetadata(t *testing.T) {
 				}
 			})
 
-			db := newTestESDB(t, server.URL, "events")
-			err := db.ApplyChanges("events", connection.ChangeSet{
+			db := newTestESDB(t, server.URL, tc.target)
+			err := db.ApplyChanges(tc.target, connection.ChangeSet{
 				Inserts: []map[string]interface{}{{"message": "hello"}},
 			})
 			if tc.wantErr != "" {
