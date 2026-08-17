@@ -348,7 +348,7 @@ func TestListInstancesV1CatalogKeepsDisabledInstancesAcrossClustersAndPages(t *t
 	}
 }
 
-func TestListInstancesV1CatalogReturnsEmptyForServiceWithoutClusters(t *testing.T) {
+func TestListInstancesV1CatalogQueriesUnscopedWhenServiceDoesNotDeclareClusters(t *testing.T) {
 	catalogRequests := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
@@ -368,7 +368,19 @@ func TestListInstancesV1CatalogReturnsEmptyForServiceWithoutClusters(t *testing.
 			})
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/v1/ns/catalog/instances"):
 			catalogRequests++
-			http.Error(w, "cluster should not be queried", http.StatusInternalServerError)
+			if cluster := r.URL.Query().Get("clusterName"); cluster != "" {
+				t.Errorf("catalog clusterName = %q, want empty", cluster)
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"count": 1,
+				"list": []map[string]any{{
+					"ip":          "10.0.0.1",
+					"port":        8080,
+					"healthy":     true,
+					"enabled":     false,
+					"clusterName": "DEFAULT",
+				}},
+			})
 		default:
 			http.NotFound(w, r)
 		}
@@ -385,11 +397,28 @@ func TestListInstancesV1CatalogReturnsEmptyForServiceWithoutClusters(t *testing.
 	if err != nil {
 		t.Fatalf("ListInstances: %v", err)
 	}
-	if len(instances.Hosts) != 0 {
-		t.Fatalf("hosts = %#v, want empty", instances.Hosts)
+	if len(instances.Hosts) != 1 || instances.Hosts[0].Enabled {
+		t.Fatalf("hosts = %#v, want one disabled instance", instances.Hosts)
 	}
-	if catalogRequests != 0 {
-		t.Fatalf("catalog requests = %d, want 0", catalogRequests)
+	if catalogRequests != 1 {
+		t.Fatalf("catalog requests = %d, want 1", catalogRequests)
+	}
+}
+
+func TestParseNacosCatalogInstancesKeepsDisabledInstancesAcrossSupportedPageShapes(t *testing.T) {
+	for _, raw := range []string{
+		`{"count":1,"instances":[{"ip":"10.0.0.1","port":8080,"enabled":false}]}`,
+		`{"count":1,"list":[{"ip":"10.0.0.1","port":8080,"enabled":false}]}`,
+		`{"count":1,"pageItems":[{"ip":"10.0.0.1","port":8080,"enabled":false}]}`,
+	} {
+		page, err := parseNacosCatalogInstances([]byte(raw))
+		if err != nil {
+			t.Fatalf("parseNacosCatalogInstances(%s): %v", raw, err)
+		}
+		instances := normalizeNacosInstances(page.items(), "MKEFU_SERVICE@@orders")
+		if len(instances) != 1 || instances[0].Enabled {
+			t.Fatalf("instances = %#v, want one disabled instance", instances)
+		}
 	}
 }
 
