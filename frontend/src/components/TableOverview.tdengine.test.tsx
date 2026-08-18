@@ -504,6 +504,13 @@ describe('TableOverview metadata compatibility', () => {
       success: true,
       data: [
         {
+          table_name: 'reporting.reporting_summary',
+          table_comment: 'Reporting summary',
+          table_rows: 8,
+          data_length: 2048,
+          index_length: 512,
+        },
+        {
           table_name: 'reporting.orders',
           table_comment: 'Orders',
           table_rows: 12,
@@ -536,6 +543,19 @@ describe('TableOverview metadata compatibility', () => {
       expect(renderedText).not.toContain('reporting.orders');
     };
 
+    assertBareTableName();
+    await act(async () => {
+      renderer!.root.findByType('input').props.onChange({ target: { value: 'reporting' } });
+      await Promise.resolve();
+    });
+    const filteredText = collectText(renderer!.toJSON());
+    expect(filteredText).toContain('reporting_summary');
+    expect(filteredText).not.toContain('orders');
+
+    await act(async () => {
+      renderer!.root.findByType('input').props.onChange({ target: { value: '' } });
+      await Promise.resolve();
+    });
     assertBareTableName();
     await act(async () => {
       renderer!.root.findByProps({ 'data-table-overview-view-mode': 'list' }).props.onClick();

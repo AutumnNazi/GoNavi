@@ -396,7 +396,10 @@ const TableOverview: React.FC<TableOverviewProps> = ({ tab }) => {
         void loadData();
     }, [autoFetchVisible, loadData]);
 
-    const tableSearchIndex = useMemo(() => buildTableOverviewSearchIndex(tables), [tables]);
+    const tableSearchIndex = useMemo(
+        () => buildTableOverviewSearchIndex(tables, (table) => getTableOverviewDisplayName(metadataDialect, table.name)),
+        [metadataDialect, tables],
+    );
 
     const sortedFiltered = useMemo(() => (
         filterAndSortTableOverviewRows(tableSearchIndex, deferredSearchText, sortField, sortOrder)
