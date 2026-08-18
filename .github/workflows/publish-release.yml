@@ -15,6 +15,11 @@ on:
         required: false
         default: false
         type: boolean
+      tooling_ref:
+        description: Optional ref containing current release tooling for mirror-only re-syncs
+        required: false
+        default: ''
+        type: string
 
 permissions:
   actions: read
@@ -269,9 +274,10 @@ jobs:
       - name: Checkout release tooling
         uses: actions/checkout@v5
         with:
-          # Publish the mirror payload from the exact immutable tag whose assets
-          # were validated above, never from the dispatch branch.
-          ref: ${{ steps.validate.outputs.tag }}
+          # Normal releases use the exact immutable tag whose assets were
+          # validated above. A mirror-only re-sync may opt into a newer tooling
+          # ref so an older release can receive newly added edge destinations.
+          ref: ${{ inputs.tooling_ref || steps.validate.outputs.tag }}
 
       - name: Validate stable npm CLI package version
         env:
