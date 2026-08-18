@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Publish one prepared generation to the DMIT static edge, then commit its
-# routing control to Cloudflare KV.
+# Publish one prepared generation to the DMIT static edge and netcup origin,
+# then commit their routing control to Cloudflare KV.
 # Secrets are consumed only from the environment and are never printed.
 
 require_value() {
@@ -24,6 +24,12 @@ PUB_THROUGHPUT_WARN_MBPS="${PUB_THROUGHPUT_WARN_MBPS:-20}"
 [[ "${PUB_THROUGHPUT_WARN_MBPS}" =~ ^[0-9]+([.][0-9]+)?$ ]] || { echo "Invalid throughput warning threshold" >&2; exit 1; }
 EDGE_DMIT_MAX_BYTES="${EDGE_DMIT_MAX_BYTES:-9000000000}"
 EDGE_DMIT_RESERVE_FREE_BYTES="${EDGE_DMIT_RESERVE_FREE_BYTES:-2000000000}"
+EDGE_NETCUP_MAX_BYTES="${EDGE_NETCUP_MAX_BYTES:-9000000000}"
+EDGE_NETCUP_RESERVE_FREE_BYTES="${EDGE_NETCUP_RESERVE_FREE_BYTES:-2000000000}"
+[[ "${EDGE_NETCUP_HOST:-}" == "152.53.66.99" ]] || {
+  echo "Netcup origin SSH host must be 152.53.66.99" >&2
+  exit 1
+}
 PUB_TIMEOUT_KILL_AFTER_SECONDS="${PUB_TIMEOUT_KILL_AFTER_SECONDS:-15}"
 PUB_PREPARE_COMMAND_TIMEOUT_SECONDS="${PUB_PREPARE_COMMAND_TIMEOUT_SECONDS:-600}"
 PUB_SSH_CONNECT_TIMEOUT_SECONDS="${PUB_SSH_CONNECT_TIMEOUT_SECONDS:-15}"
@@ -105,7 +111,11 @@ payload_bytes="$(jq -r '.payloadBytes' "${stage_dir}/deployment.json")"
 node_value() {
   local node="$1" suffix="$2" variable=""
   variable="EDGE_${node^^}_${suffix}"
-  printf '%s' "${!variable:-}"
+  local value="${!variable:-}"
+  if [[ "${suffix}" == BASE_URL ]]; then
+    value="${value%/}"
+  fi
+  printf '%s' "${value}"
 }
 
 stage_node() (
@@ -125,7 +135,20 @@ stage_node() (
   done
   [[ "${port}" =~ ^[0-9]+$ ]] || { echo "${node} has an invalid SSH port" >&2; exit 1; }
   [[ "${max_bytes}" =~ ^[0-9]+$ && "${reserve_free_bytes}" =~ ^[0-9]+$ ]] || { echo "${node} has an invalid disk budget" >&2; exit 1; }
-  [[ "${root}" == /srv/* && "${base_url}" == https://* ]] || { echo "${node} root or HTTPS URL is invalid" >&2; exit 1; }
+  [[ "${root}" == /srv/* && "${base_url}" =~ ^https://[A-Za-z0-9.-]+/?$ ]] || { echo "${node} root or HTTPS URL is invalid" >&2; exit 1; }
+  if [[ "${node}" == netcup && "${host}" != "152.53.66.99" ]]; then
+    echo "netcup origin SSH host must be 152.53.66.99" >&2
+    exit 1
+  fi
+  if [[ "${node}" == netcup ]]; then
+    base_url_without_slash="${base_url%/}"
+    case "${base_url_without_slash}" in
+      https://download.syngnat.top|https://152.53.66.99|https://179.253.224.58|https://157.254.234.28)
+        echo "netcup base URL must be a separate Cloudflare-proxied hostname" >&2
+        exit 1
+        ;;
+    esac
+  fi
 
   ssh_dir="${credential_root}/${node}"
   mkdir -p "${ssh_dir}"
@@ -258,12 +281,14 @@ PY
   printf 'immutable\n' > "${status_root}/${node}.status"
 )
 
-echo "[dmit] staging generation ${PUB_GENERATION}"
-stage_node dmit
-[[ "$(cat "${status_root}/dmit.status" 2>/dev/null || true)" == immutable ]] || {
-  echo "DMIT did not pass immutable verification" >&2
-  exit 1
-}
+for node in dmit netcup; do
+  echo "[${node}] staging generation ${PUB_GENERATION}"
+  stage_node "${node}"
+  [[ "$(cat "${status_root}/${node}.status" 2>/dev/null || true)" == immutable ]] || {
+    echo "${node} did not pass immutable verification" >&2
+    exit 1
+  }
+done
 
 probe_path="/$(jq -r '.probePath' "${stage_dir}/deployment.json")"
 probe_size="$(jq -r '.probeSize' "${stage_dir}/deployment.json")"
@@ -331,12 +356,14 @@ activate_node() (
   printf 'ready\n' > "${status_root}/${node}.status"
 )
 
-echo "[dmit] activating generation ${PUB_GENERATION}"
-activate_node dmit
-[[ "$(cat "${status_root}/dmit.status" 2>/dev/null || true)" == ready ]] || {
-  echo "DMIT did not pass mutable activation" >&2
-  exit 1
-}
+for node in dmit netcup; do
+  echo "[${node}] activating generation ${PUB_GENERATION}"
+  activate_node "${node}"
+  [[ "$(cat "${status_root}/${node}.status" 2>/dev/null || true)" == ready ]] || {
+    echo "${node} did not pass mutable activation" >&2
+    exit 1
+  }
+done
 
 control_file="${stage_dir}/control-${PUB_CHANNEL}.json"
 verified_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -346,7 +373,8 @@ jq -n \
   --arg verifiedAt "${verified_at}" \
   --arg probePath "${probe_path}" --argjson probeSize "${probe_size}" --arg probeSha256 "${probe_sha}" \
   --arg dmitBase "$(node_value dmit BASE_URL)" \
-  '{schemaVersion:1,channel:$channel,generation:$generation,appTag:$appTag,driverTag:$driverTag,verifiedAt:$verifiedAt,probePath:$probePath,probeSize:$probeSize,probeSha256:$probeSha256,nodes:{dmit:{baseUrl:$dmitBase,enabled:true}}}' \
+  --arg netcupBase "$(node_value netcup BASE_URL)" \
+  '{schemaVersion:1,channel:$channel,generation:$generation,appTag:$appTag,driverTag:$driverTag,verifiedAt:$verifiedAt,probePath:$probePath,probeSize:$probeSize,probeSha256:$probeSha256,nodes:{dmit:{baseUrl:$dmitBase,enabled:true},netcup:{baseUrl:$netcupBase,enabled:true}}}' \
   > "${control_file}"
 
 put_kv_control() {
@@ -376,4 +404,4 @@ put_kv_control() {
 put_kv_control "control:history:${PUB_CHANNEL}:${PUB_GENERATION}" "${control_file}"
 put_kv_control "control:${PUB_CHANNEL}" "${control_file}"
 
-echo "Published generation ${PUB_GENERATION}: dmit=true"
+echo "Published generation ${PUB_GENERATION}: dmit=true netcup=true"

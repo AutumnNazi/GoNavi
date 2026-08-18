@@ -1,4 +1,5 @@
-const NODE_IDS = ["dmit"] as const;
+const NODE_IDS = ["dmit", "netcup"] as const;
+const LEGACY_DISABLED_NETCUP_BASE_URL = "https://netcup-disabled.invalid";
 const CHANNELS = ["stable", "dev"] as const;
 const SUCCESS_THRESHOLD = 2;
 const FAILURE_THRESHOLD = 3;
@@ -106,6 +107,21 @@ function normalizeHttpsBaseUrl(value: unknown): string | null {
   }
 }
 
+function isNetcupProxyBaseUrl(value: string): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    return false;
+  }
+  if (parsed.pathname !== "/" && parsed.pathname !== "") return false;
+  const hostname = parsed.hostname.toLowerCase();
+  return !/^(?:\d{1,3}\.){3}\d{1,3}$/.test(hostname)
+    && !hostname.includes(":")
+    && hostname !== "download.syngnat.top"
+    && hostname !== "157.254.234.28";
+}
+
 function parseStrictUTCTimestamp(value: string): number | null {
   if (!UTC_TIMESTAMP_PATTERN.test(value)) return null;
   const milliseconds = Date.parse(value);
@@ -137,12 +153,21 @@ function validateControl(value: unknown, expectedChannel: Channel): PublicationC
   const nodes = {} as Record<NodeId, EdgeConfig>;
   for (const nodeId of NODE_IDS) {
     const rawNode = value.nodes[nodeId];
+    // A control written before netcup was introduced remains readable, but its
+    // missing fallback is explicitly disabled until the next publication.
+    if (rawNode === undefined && nodeId === "netcup") {
+      nodes[nodeId] = { baseUrl: LEGACY_DISABLED_NETCUP_BASE_URL, enabled: false };
+      continue;
+    }
     if (!isRecord(rawNode) || typeof rawNode.enabled !== "boolean") {
       throw new Error(`invalid edge config for ${nodeId}`);
     }
     const baseUrl = normalizeHttpsBaseUrl(rawNode.baseUrl);
     if (!baseUrl) {
       throw new Error(`invalid HTTPS base URL for ${nodeId}`);
+    }
+    if (nodeId === "netcup" && !isNetcupProxyBaseUrl(baseUrl)) {
+      throw new Error("netcup base URL must be a separate HTTPS hostname");
     }
     nodes[nodeId] = { baseUrl, enabled: rawNode.enabled };
   }
@@ -359,6 +384,17 @@ async function readRoutingState(env: Env, channel: Channel): Promise<RoutingStat
     const nodes = {} as Record<NodeId, NodeHealth>;
     for (const nodeId of NODE_IDS) {
       const raw = value.nodes[nodeId];
+      if (raw === undefined && nodeId === "netcup") {
+        nodes[nodeId] = {
+          generation: control.generation,
+          healthy: false,
+          consecutiveFailures: 0,
+          consecutiveSuccesses: 0,
+          checkedAt: "",
+          detail: "disabled by legacy publication control",
+        };
+        continue;
+      }
       if (
         !isRecord(raw)
         || typeof raw.generation !== "string"
@@ -454,7 +490,7 @@ export async function refreshChannel(
 }
 
 export function orderedNodeIds(): NodeId[] {
-  return ["dmit"];
+  return ["dmit", "netcup"];
 }
 
 export function isRoutingStateFresh(checkedAt: string, now: number = Date.now()): boolean {
@@ -478,6 +514,7 @@ function joinBaseAndPath(baseUrl: string, relativePath: string): string {
 
 export function selectLegacyRedirectCandidate<T extends { source: string }>(candidates: T[]): T {
   return candidates.find((candidate) => candidate.source === "dmit")
+    ?? candidates.find((candidate) => candidate.source === "netcup")
     ?? candidates[0];
 }
 

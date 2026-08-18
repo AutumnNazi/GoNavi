@@ -1,5 +1,5 @@
-name: Publish verified download mirror
-description: Publish immutable assets to the DMIT static edge before mutable pointers and KV control
+name: Publish verified download edges
+description: Publish immutable assets to the DMIT edge and netcup origin before mutable pointers and KV control
 
 inputs:
   channel: { required: true, description: stable or dev }
@@ -16,12 +16,20 @@ inputs:
   dmit-ssh-user: { required: true, description: Restricted gonavi-cdn user }
   dmit-ssh-private-key: { required: true, description: DMIT deployment key }
   dmit-ssh-known-hosts: { required: true, description: Pinned DMIT host key }
+  netcup-ssh-host: { required: true, description: Netcup origin SSH host; must be 152.53.66.99 }
+  netcup-ssh-port: { required: true, description: Netcup origin SSH port }
+  netcup-ssh-user: { required: true, description: Restricted gonavi-cdn user }
+  netcup-ssh-private-key: { required: true, description: Netcup origin deployment key }
+  netcup-ssh-known-hosts: { required: true, description: Pinned netcup origin host key }
+  netcup-base-url: { required: true, description: HTTPS Cloudflare-proxied netcup origin base URL }
   cloudflare-account-id: { required: true, description: Cloudflare account ID }
   cloudflare-api-token: { required: true, description: Token restricted to Workers KV Storage Write }
   routing-state-kv-id: { required: true, description: Download dispatcher routing KV namespace ID }
   throughput-warning-mbps: { required: false, default: '20', description: Observability-only public eight-Range warning threshold }
   dmit-max-bytes: { required: false, default: '9000000000', description: Maximum DMIT mirror bytes }
   dmit-reserve-free-bytes: { required: false, default: '2000000000', description: Minimum free bytes preserved on DMIT }
+  netcup-max-bytes: { required: false, default: '9000000000', description: Maximum netcup origin bytes }
+  netcup-reserve-free-bytes: { required: false, default: '2000000000', description: Minimum free bytes preserved on netcup }
 
 runs:
   using: composite
@@ -75,4 +83,13 @@ runs:
         EDGE_DMIT_BASE_URL: https://download.syngnat.top
         EDGE_DMIT_MAX_BYTES: ${{ inputs.dmit-max-bytes }}
         EDGE_DMIT_RESERVE_FREE_BYTES: ${{ inputs.dmit-reserve-free-bytes }}
+        EDGE_NETCUP_HOST: ${{ inputs.netcup-ssh-host }}
+        EDGE_NETCUP_PORT: ${{ inputs.netcup-ssh-port }}
+        EDGE_NETCUP_USER: ${{ inputs.netcup-ssh-user }}
+        EDGE_NETCUP_PRIVATE_KEY: ${{ inputs.netcup-ssh-private-key }}
+        EDGE_NETCUP_KNOWN_HOSTS: ${{ inputs.netcup-ssh-known-hosts }}
+        EDGE_NETCUP_ROOT: /srv/gonavi-downloads
+        EDGE_NETCUP_BASE_URL: ${{ inputs.netcup-base-url }}
+        EDGE_NETCUP_MAX_BYTES: ${{ inputs.netcup-max-bytes }}
+        EDGE_NETCUP_RESERVE_FREE_BYTES: ${{ inputs.netcup-reserve-free-bytes }}
       run: bash "${GITHUB_WORKSPACE}/tools/publish-edge-release.sh"

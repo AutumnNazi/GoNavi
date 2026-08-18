@@ -21,17 +21,19 @@ describe("download dispatcher", () => {
     ]);
   });
 
-  it("uses DMIT as the only static edge in every region", () => {
-    expect(orderedNodeIds()).toEqual(["dmit"]);
+  it("keeps DMIT first and netcup second in every region", () => {
+    expect(orderedNodeIds()).toEqual(["dmit", "netcup"]);
   });
 
-  it("keeps legacy 302 downloads on healthy DMIT before GitHub", () => {
+  it("keeps legacy 302 downloads on healthy DMIT before netcup and GitHub", () => {
     const candidates = [
       { source: "dmit", url: "https://download.syngnat.top/asset" },
+      { source: "netcup", url: "https://origin.example/asset" },
       { source: "github", url: "https://github.com/example/asset" },
     ];
     expect(selectLegacyRedirectCandidate(candidates).source).toBe("dmit");
-    expect(selectLegacyRedirectCandidate(candidates.filter((candidate) => candidate.source !== "dmit")).source).toBe("github");
+    expect(selectLegacyRedirectCandidate(candidates.filter((candidate) => candidate.source !== "dmit")).source).toBe("netcup");
+    expect(selectLegacyRedirectCandidate(candidates.filter((candidate) => candidate.source === "github")).source).toBe("github");
   });
 
   it("opens after two successes and closes after three failures", () => {
@@ -196,6 +198,137 @@ describe("download dispatcher", () => {
     } finally {
       await env.ROUTING_STATE.delete("routing:stable");
     }
+  });
+
+  it("routes healthy DMIT, then netcup, then GitHub", async () => {
+    const generation = "stable-dual-edge";
+    const control = {
+      schemaVersion: 1,
+      channel: "stable" as const,
+      generation,
+      appTag: "v1.2.3",
+      driverTag: null,
+      probePath: "/gonavi/releases/download/v1.2.3/GoNavi.zip",
+      probeSize: 1024,
+      probeSha256: "a".repeat(64),
+      nodes: {
+        dmit: { baseUrl: "https://download.syngnat.top", enabled: true },
+        netcup: { baseUrl: "https://origin.example", enabled: true },
+      },
+    };
+    await env.ROUTING_STATE.put("control:stable", JSON.stringify(control));
+    await env.ROUTING_STATE.put("routing:stable", JSON.stringify({
+      schemaVersion: 1,
+      channel: "stable",
+      generation,
+      control,
+      nodes: {
+        dmit: {
+          generation,
+          healthy: true,
+          consecutiveFailures: 0,
+          consecutiveSuccesses: 2,
+          checkedAt: new Date().toISOString(),
+          detail: "ok",
+        },
+        netcup: {
+          generation,
+          healthy: true,
+          consecutiveFailures: 0,
+          consecutiveSuccesses: 2,
+          checkedAt: new Date().toISOString(),
+          detail: "ok",
+        },
+      },
+      checkedAt: new Date().toISOString(),
+    }));
+
+    const response = await SELF.fetch(
+      "https://download-dispatch.syngnat.top/v1/resolve?format=json&path=/gonavi/releases/download/v1.2.3/GoNavi.zip",
+    );
+    const body = await response.json<{ candidates: Array<{ source: string; url: string }> }>();
+    expect(body.candidates).toEqual([
+      { source: "dmit", url: "https://download.syngnat.top/gonavi/releases/download/v1.2.3/GoNavi.zip" },
+      { source: "netcup", url: "https://origin.example/gonavi/releases/download/v1.2.3/GoNavi.zip" },
+      { source: "github", url: "https://github.com/Syngnat/GoNavi/releases/download/v1.2.3/GoNavi.zip" },
+    ]);
+  });
+
+  it("falls back to healthy netcup when DMIT is unhealthy", async () => {
+    const generation = "stable-netcup-fallback";
+    const control = {
+      schemaVersion: 1,
+      channel: "stable" as const,
+      generation,
+      appTag: "v1.2.3",
+      driverTag: null,
+      probePath: "/gonavi/releases/download/v1.2.3/GoNavi.zip",
+      probeSize: 1024,
+      probeSha256: "a".repeat(64),
+      nodes: {
+        dmit: { baseUrl: "https://download.syngnat.top", enabled: true },
+        netcup: { baseUrl: "https://origin.example", enabled: true },
+      },
+    };
+    await env.ROUTING_STATE.put("control:stable", JSON.stringify(control));
+    await env.ROUTING_STATE.put("routing:stable", JSON.stringify({
+      schemaVersion: 1,
+      channel: "stable",
+      generation,
+      control,
+      nodes: {
+        dmit: {
+          generation,
+          healthy: false,
+          consecutiveFailures: 3,
+          consecutiveSuccesses: 0,
+          checkedAt: new Date().toISOString(),
+          detail: "timeout",
+        },
+        netcup: {
+          generation,
+          healthy: true,
+          consecutiveFailures: 0,
+          consecutiveSuccesses: 2,
+          checkedAt: new Date().toISOString(),
+          detail: "ok",
+        },
+      },
+      checkedAt: new Date().toISOString(),
+    }));
+
+    const response = await SELF.fetch(
+      "https://download-dispatch.syngnat.top/v1/resolve?path=/gonavi/releases/download/v1.2.3/GoNavi.zip",
+      { redirect: "manual" },
+    );
+    expect(response.status).toBe(302);
+    expect(response.headers.get("X-GoNavi-Download-Source")).toBe("netcup");
+    expect(response.headers.get("Location")).toBe(
+      "https://origin.example/gonavi/releases/download/v1.2.3/GoNavi.zip",
+    );
+  });
+
+  it("does not accept a netcup origin IP as a public fallback URL", async () => {
+    await env.ROUTING_STATE.put("control:stable", JSON.stringify({
+      schemaVersion: 1,
+      channel: "stable",
+      generation: "stable-invalid-netcup-url",
+      appTag: "v1.2.3",
+      driverTag: null,
+      probePath: "/gonavi/releases/download/v1.2.3/GoNavi.zip",
+      probeSize: 1024,
+      probeSha256: "a".repeat(64),
+      nodes: {
+        dmit: { baseUrl: "https://download.syngnat.top", enabled: true },
+        netcup: { baseUrl: "https://152.53.66.99", enabled: true },
+      },
+    }));
+
+    const response = await SELF.fetch(
+      "https://download-dispatch.syngnat.top/v1/resolve?format=json&path=/gonavi/releases/download/v1.2.3/GoNavi.zip",
+    );
+    const body = await response.json<{ candidates: Array<{ source: string }> }>();
+    expect(body.candidates.map((candidate) => candidate.source)).toEqual(["github"]);
   });
 
   it("routes immutable assets to DMIT only when their app or driver tag matches the active control", async () => {

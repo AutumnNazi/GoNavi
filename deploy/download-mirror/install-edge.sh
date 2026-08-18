@@ -22,10 +22,14 @@ retention_source="${script_dir}/../../tools/edge-release-retention.py"
 transaction_target="/usr/local/libexec/gonavi-edge-transaction"
 retention_target="/usr/local/libexec/gonavi-edge-retention"
 
-[[ "${node_id}" == dmit ]] || { echo "only the DMIT edge is supported" >&2; exit 2; }
 [[ "${public_root}" == /srv/* && -f "${server_source}" ]] || { echo "invalid root or server config" >&2; exit 2; }
 [[ -f "${transaction_source}" && -f "${retention_source}" ]] || { echo "run installer from a complete GoNavi checkout" >&2; exit 2; }
-[[ "${server_kind}" == caddy ]] || { echo "DMIT must retain its existing Caddy listener" >&2; exit 2; }
+case "${node_id}:${server_kind}" in
+  dmit:caddy|netcup:nginx) ;;
+  dmit:*) echo "DMIT must retain its existing Caddy listener" >&2; exit 2 ;;
+  netcup:*) echo "netcup must use the Nginx static-site configuration" >&2; exit 2 ;;
+  *) echo "unsupported edge node: ${node_id}" >&2; exit 2 ;;
+esac
 getent group "${server_group}" >/dev/null || { echo "server group does not exist" >&2; exit 2; }
 
 if ! id "${deploy_user}" >/dev/null 2>&1; then
@@ -74,38 +78,69 @@ visudo -cf "${sudoers_tmp}"
 install -m 0440 -o root -g root "${sudoers_tmp}" /etc/sudoers.d/gonavi-cdn-edge
 rm -f -- "${sudoers_tmp}"
 
-# The installer never installs another listener or rewrites Caddy's existing
-# hosts. DMIT must explicitly import the managed snippet from its Caddyfile.
-command -v caddy >/dev/null || { echo "caddy is not installed" >&2; exit 2; }
-caddyfile="/etc/caddy/Caddyfile"
-site_dir="/etc/caddy/conf.d"
-site_path="${site_dir}/gonavi-download.caddy"
-[[ -f "${caddyfile}" ]] || { echo "missing ${caddyfile}" >&2; exit 2; }
-caddy validate --config "${server_source}" --adapter caddyfile
-install -d -m 0755 "${site_dir}"
-backup_path="$(mktemp)"
-had_site=false
-if [[ -f "${site_path}" ]]; then
-  cp -- "${site_path}" "${backup_path}"
-  had_site=true
-fi
-install -m 0644 "${server_source}" "${site_path}"
-if ! grep -Eq '^[[:space:]]*import[[:space:]]+/etc/caddy/conf\.d/(\*|\*\.caddy)[[:space:]]*$' "${caddyfile}"; then
-  rm -f -- "${backup_path}"
-  echo "Caddy snippet staged at ${site_path}; add import /etc/caddy/conf.d/*.caddy while replacing only the existing download.syngnat.top block, then validate and reload Caddy"
-  exit 3
-fi
-if ! caddy validate --config "${caddyfile}" --adapter caddyfile; then
-  if [[ "${had_site}" == true ]]; then
-    install -m 0644 "${backup_path}" "${site_path}"
-  else
-    rm -f -- "${site_path}"
+# The installer never installs another listener or rewrites unrelated hosts.
+if [[ "${server_kind}" == caddy ]]; then
+  # DMIT retains its existing Caddy listener and must explicitly import the
+  # managed snippet from its Caddyfile.
+  command -v caddy >/dev/null || { echo "caddy is not installed" >&2; exit 2; }
+  caddyfile="/etc/caddy/Caddyfile"
+  site_dir="/etc/caddy/conf.d"
+  site_path="${site_dir}/gonavi-download.caddy"
+  [[ -f "${caddyfile}" ]] || { echo "missing ${caddyfile}" >&2; exit 2; }
+  caddy validate --config "${server_source}" --adapter caddyfile
+  install -d -m 0755 "${site_dir}"
+  backup_path="$(mktemp)"
+  had_site=false
+  if [[ -f "${site_path}" ]]; then
+    cp -- "${site_path}" "${backup_path}"
+    had_site=true
+  fi
+  install -m 0644 "${server_source}" "${site_path}"
+  if ! grep -Eq '^[[:space:]]*import[[:space:]]+/etc/caddy/conf\.d/(\*|\*\.caddy)[[:space:]]*$' "${caddyfile}"; then
+    rm -f -- "${backup_path}"
+    echo "Caddy snippet staged at ${site_path}; add import /etc/caddy/conf.d/*.caddy while replacing only the existing download.syngnat.top block, then validate and reload Caddy"
+    exit 3
+  fi
+  if ! caddy validate --config "${caddyfile}" --adapter caddyfile; then
+    if [[ "${had_site}" == true ]]; then
+      install -m 0644 "${backup_path}" "${site_path}"
+    else
+      rm -f -- "${site_path}"
+    fi
+    rm -f -- "${backup_path}"
+    echo "Caddy validation failed; managed snippet was rolled back" >&2
+    exit 1
   fi
   rm -f -- "${backup_path}"
-  echo "Caddy validation failed; managed snippet was rolled back" >&2
-  exit 1
+  systemctl reload caddy
+else
+  # netcup already uses Nginx. The caller supplies a complete server snippet
+  # whose server_name is the Cloudflare-proxied hostname, never the origin IP.
+  command -v nginx >/dev/null || { echo "nginx is not installed" >&2; exit 2; }
+  grep -Eq '^[[:space:]]*server_name[[:space:]]+' "${server_source}" || { echo "netcup Nginx config must declare server_name" >&2; exit 2; }
+  grep -Fq "root ${public_root}" "${server_source}" || { echo "netcup Nginx config must serve the mirror root" >&2; exit 2; }
+  site_dir="/etc/nginx/conf.d"
+  site_path="${site_dir}/gonavi-download.conf"
+  install -d -m 0755 "${site_dir}"
+  backup_path="$(mktemp)"
+  had_site=false
+  if [[ -f "${site_path}" ]]; then
+    cp -- "${site_path}" "${backup_path}"
+    had_site=true
+  fi
+  install -m 0644 "${server_source}" "${site_path}"
+  if ! nginx -t; then
+    if [[ "${had_site}" == true ]]; then
+      install -m 0644 "${backup_path}" "${site_path}"
+    else
+      rm -f -- "${site_path}"
+    fi
+    rm -f -- "${backup_path}"
+    echo "Nginx validation failed; managed snippet was rolled back" >&2
+    exit 1
+  fi
+  rm -f -- "${backup_path}"
+  systemctl reload nginx
 fi
-rm -f -- "${backup_path}"
-systemctl reload caddy
 
 echo "GoNavi static edge installed: node=${node_id} server=${server_kind} root=${public_root} user=${deploy_user}"
