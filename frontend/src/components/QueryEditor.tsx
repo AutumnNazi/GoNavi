@@ -15,7 +15,7 @@ import {
 } from '@ant-design/icons';
 import { format } from 'sql-formatter';
 import { v4 as uuidv4 } from 'uuid';
-import { TabData, ColumnDefinition, type SavedQuery, type SqlSnippet } from '../types';
+import { TabData, ColumnDefinition, type ConnectionConfig, type SavedQuery, type SqlSnippet } from '../types';
 import { type SqlLog, useStore } from '../store';
 import { DBQuery, DBQueryWithCancel, DBQueryMulti, DBQueryMultiInTransaction, DBQueryMultiTransactional, DBGetTables, DBTableExists, DBGetAllColumns, DBGetDatabases, DBGetColumns, DBGetTriggers, DBShowCreateTable, CancelQuery, GenerateQueryID, WriteSQLFile, ExportSQLFile, InspectElasticsearchConsole, ExecuteElasticsearchConsole } from '../../wailsjs/go/app/App';
 import { GONAVI_ROW_KEY } from './DataGrid';
@@ -7975,7 +7975,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       if (
           pendingTransaction
           && matchesCurrentExecutionContext
-          && canReusePendingSqlEditorTransactionForType(dbType, sourceStatements)
+          && canReusePendingSqlEditorTransactionForType(dbType, sourceStatements, config as ConnectionConfig)
       ) {
           return DBQueryMultiInTransaction(pendingTransaction.id, sql, queryId);
       }
@@ -8740,7 +8740,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
     }
     const connCaps = getDataSourceCapabilities(conn.config);
     if (!connCaps.supportsQueryEditor) {
-        message.error(translate('query_editor.message.unsupported_source'));
+        message.error(translate(connCaps.query.messageKey || 'query_editor.message.unsupported_source'));
         if (isCurrentRun()) setLoading(false);
         return;
     }
@@ -8974,13 +8974,13 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                 clearUnpinnedResultSets();
                 return;
             }
-            const useManagedTransaction = shouldUseSqlEditorManagedTransactionForType(normalizedDbType, sourceStatements);
+            const useManagedTransaction = shouldUseSqlEditorManagedTransactionForType(normalizedDbType, sourceStatements, config);
             if (useManagedTransaction && pendingSqlTransactionRef.current) {
                 message.warning(translate('query_editor.transaction.message.pending_managed_transaction'));
                 return;
             }
             const managedTransactionStatementCount = sourceStatements
-                .filter((statement) => shouldUseSqlEditorManagedTransactionForType(normalizedDbType, [statement]))
+                .filter((statement) => shouldUseSqlEditorManagedTransactionForType(normalizedDbType, [statement], config))
                 .length || sourceStatements.length;
 
             const forceReadOnlyResult = connCaps.forceReadOnlyQueryResult;

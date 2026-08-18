@@ -230,6 +230,10 @@ export function DataImportCapability(arg1) {
   return window['go']['app']['App']['DataImportCapability'](arg1);
 }
 
+export function DataSourceCapability(arg1) {
+  return window['go']['app']['App']['DataSourceCapability'](arg1);
+}
+
 export function DataSync(arg1) {
   return window['go']['app']['App']['DataSync'](arg1);
 }

@@ -123,6 +123,8 @@ export function DBTableExists(arg1:connection.ConnectionConfig,arg2:string,arg3:
 
 export function DataImportCapability(arg1:connection.ConnectionConfig):Promise<app.DataImportCapability>;
 
+export function DataSourceCapability(arg1:connection.ConnectionConfig):Promise<app.DataSourceCapability>;
+
 export function DataSync(arg1:sync.SyncConfig):Promise<sync.SyncResult>;
 
 export function DataSyncAnalyze(arg1:sync.SyncConfig):Promise<connection.QueryResult>;

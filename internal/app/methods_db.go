@@ -1239,6 +1239,9 @@ func (a *App) dbQueryWithCancel(
 		}()
 	}
 
+	if err := a.ensureDataSourceQueryCapability(config); err != nil {
+		return connection.QueryResult{Success: false, Message: err.Error(), QueryID: queryID}
+	}
 	if err := ensureConnectionAllowsQuery(config, query); err != nil {
 		return connection.QueryResult{Success: false, Message: err.Error(), QueryID: queryID}
 	}
@@ -1476,6 +1479,9 @@ func (a *App) dbQueryMulti(
 	}
 
 	query = sanitizeSQLForPgLike(resolveDDLDBType(config), query)
+	if err := a.ensureDataSourceQueryCapability(config); err != nil {
+		return connection.QueryResult{Success: false, Message: err.Error(), QueryID: queryID}
+	}
 	if err := ensureConnectionAllowsQuery(config, query); err != nil {
 		return connection.QueryResult{Success: false, Message: err.Error(), QueryID: queryID}
 	}
@@ -2189,6 +2195,9 @@ func (a *App) DBQueryIsolated(config connection.ConnectionConfig, dbName string,
 	runConfig := normalizeRunConfig(config, dbName)
 
 	query = sanitizeSQLForPgLike(resolveDDLDBType(config), query)
+	if err := a.ensureDataSourceQueryCapability(config); err != nil {
+		return connection.QueryResult{Success: false, Message: err.Error()}
+	}
 	if err := ensureConnectionAllowsQuery(config, query); err != nil {
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}

@@ -7,6 +7,7 @@ import {
   shouldUseSqlEditorManagedTransaction,
   shouldUseSqlEditorManagedTransactionForType,
 } from './sqlEditorTransaction';
+import { getDataSourceCapabilityContract } from './dataSourceCapabilities';
 import { findSqlStatementRanges } from './sqlStatementSelection';
 
 describe('sqlEditorTransaction', () => {
@@ -114,6 +115,7 @@ describe('sqlEditorTransaction', () => {
     ['clickhouse', 'INSERT INTO events FORMAT JSONEachRow {"id":1}'],
     ['iotdb', 'INSERT INTO root.ln.wf01.wt01(timestamp,status) VALUES(1,true)'],
   ])('keeps %s writes on the plain multi-statement execution path', (dbType, sql) => {
+    expect(getDataSourceCapabilityContract({ type: dbType }).transaction.supported).toBe(false);
     expect(shouldUseSqlEditorManagedTransactionForType(dbType, [sql])).toBe(false);
     expect(canReusePendingSqlEditorTransactionForType(dbType, [
       'SELECT * FROM users WHERE id = 1',
@@ -133,5 +135,15 @@ describe('sqlEditorTransaction', () => {
     expect(canReusePendingSqlEditorTransactionForType('mysql', [
       'COMMIT',
     ])).toBe(false);
+  });
+
+  it('reads the shared transaction capability while retaining runtime-probed custom drivers', () => {
+    const sql = 'UPDATE demo SET enabled = true';
+    expect(shouldUseSqlEditorManagedTransactionForType('future-driver', [sql])).toBe(false);
+    expect(shouldUseSqlEditorManagedTransactionForType(
+      'future-driver',
+      [sql],
+      { type: 'custom', driver: 'future-driver' },
+    )).toBe(true);
   });
 });

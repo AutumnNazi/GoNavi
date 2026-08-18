@@ -109,6 +109,9 @@ func (a *App) DBQueryMultiTransactional(config connection.ConnectionConfig, dbNa
 			Err:            sqlAuditErrorFromResult(result),
 		})
 	}()
+	if err := a.ensureDataSourceQueryCapability(config); err != nil {
+		return connection.QueryResult{Success: false, Message: err.Error(), QueryID: queryID}
+	}
 	if err := ensureConnectionAllowsQuery(config, query); err != nil {
 		return connection.QueryResult{Success: false, Message: err.Error(), QueryID: queryID}
 	}
@@ -656,12 +659,7 @@ func shouldUseManagedSQLTransaction(dbType string, query string) bool {
 }
 
 func isManagedSQLTransactionUnsupportedType(dbType string) bool {
-	switch strings.ToLower(strings.TrimSpace(dbType)) {
-	case "trino", "tdengine", "clickhouse", "iotdb", "rocketmq", "mqtt", "kafka", "rabbitmq":
-		return true
-	default:
-		return false
-	}
+	return !db.ResolveDataSourceCapability(dbType).Transaction.Supported
 }
 
 func sqlEditorImplicitTransactionSQL(dbType string) (commitSQL string, rollbackSQL string, ok bool) {
