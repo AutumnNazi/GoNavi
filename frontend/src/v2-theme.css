@@ -3200,6 +3200,18 @@ body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .ant-tree-node-content-wra
   background: var(--gn-bg-hover) !important;
 }
 
+body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .ant-tree-treenode.ant-tree-treenode-draggable {
+  cursor: pointer !important;
+}
+
+body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .ant-tree-treenode.ant-tree-treenode-draggable:hover {
+  background: var(--gn-bg-hover) !important;
+}
+
+body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .ant-tree-treenode.ant-tree-treenode-draggable.ant-tree-treenode-selected {
+  background: color-mix(in srgb, var(--gn-accent) 10%, var(--gn-bg-selected)) !important;
+}
+
 body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .ant-tree-node-content-wrapper.ant-tree-node-selected {
   background: color-mix(in srgb, var(--gn-accent) 10%, var(--gn-bg-selected)) !important;
   color: var(--gn-fg-1) !important;
