@@ -2394,6 +2394,8 @@
   "ai_settings.provider_preset.ollama.label": "Ollama",
   "ai_settings.provider_preset.openai.desc": "GPT-5.6 系列",
   "ai_settings.provider_preset.openai.label": "OpenAI",
+  "ai_settings.provider_preset.orcarouter.desc": "200+ モデルへのスマートルーティング / OpenAI 互換",
+  "ai_settings.provider_preset.orcarouter.label": "OrcaRouter",
   "ai_settings.provider_preset.qwen_bailian.desc": "Bailian の Anthropic互換端点 / リモートのモデル一覧",
   "ai_settings.provider_preset.qwen_bailian.label": "Qwen（Bailian 汎用）",
   "ai_settings.provider_preset.qwen_coding_plan.desc": "Claude Code CLI プロキシ経路 / 公式対応モデル一覧",

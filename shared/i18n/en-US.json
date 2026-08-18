@@ -2394,6 +2394,8 @@
   "ai_settings.provider_preset.ollama.label": "Ollama",
   "ai_settings.provider_preset.openai.desc": "GPT-5.6 series",
   "ai_settings.provider_preset.openai.label": "OpenAI",
+  "ai_settings.provider_preset.orcarouter.desc": "Smart routing to 200+ models / OpenAI-compatible",
+  "ai_settings.provider_preset.orcarouter.label": "OrcaRouter",
   "ai_settings.provider_preset.qwen_bailian.desc": "Bailian Anthropic-compatible endpoint / remote model list",
   "ai_settings.provider_preset.qwen_bailian.label": "Qwen (Bailian General)",
   "ai_settings.provider_preset.qwen_coding_plan.desc": "Claude Code CLI proxy chain / official supported model list",
