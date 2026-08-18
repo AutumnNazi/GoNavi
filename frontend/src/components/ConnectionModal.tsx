@@ -350,7 +350,8 @@ const ConnectionModal: React.FC<{
   initialValues?: SavedConnection | null;
   onOpenDriverManager?: () => void;
   onSaved?: (savedConnection: SavedConnection) => void | Promise<void>;
-}> = ({ open, onClose, initialValues, onOpenDriverManager, onSaved }) => {
+  onOpenConnectionHealth?: (savedConnection: SavedConnection) => void;
+}> = ({ open, onClose, initialValues, onOpenDriverManager, onSaved, onOpenConnectionHealth }) => {
   const [form] = Form.useForm();
   const [saving, setSaving] = useState(false);
   const [testingConnection, setTestingConnection] = useState(false);
@@ -3098,6 +3099,17 @@ const ConnectionModal: React.FC<{
           )}
         </div>
         <Space size={8} className="gn-conn-studio-foot-right">
+          {initialValues?.id && onOpenConnectionHealth && (
+            <Button
+              key="connection-health"
+              className="gn-conn-studio-button"
+              icon={<SafetyCertificateOutlined />}
+              disabled={saving || testingConnection}
+              onClick={() => onOpenConnectionHealth(initialValues)}
+            >
+              {t("connection_health.action.open")}
+            </Button>
+          )}
           <Button
             key="test"
             className="gn-conn-studio-button"

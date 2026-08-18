@@ -16,6 +16,7 @@ import FloatingAIChatWindow from './components/FloatingAIChatWindow';
 import FloatingQueryResultWindows from './components/FloatingQueryResultWindows';
 import NativeDetachedWindowController from './components/NativeDetachedWindowController';
 import ConnectionModal from './components/ConnectionModal';
+import ConnectionHealthModal from './components/ConnectionHealthModal';
 import SnippetSettingsModal from './components/SnippetSettingsModal';
 import ConnectionPackagePasswordModal from './components/ConnectionPackagePasswordModal';
 import UpdateReleaseNotesModal from './components/UpdateReleaseNotesModal';
@@ -753,6 +754,8 @@ function App() {
   const [isConnectionModalMounted, setIsConnectionModalMounted] = useState(false);
   const [isDriverModalOpen, setIsDriverModalOpen] = useState(false);
   const [editingConnection, setEditingConnection] = useState<SavedConnection | null>(null);
+  const [isConnectionHealthModalOpen, setIsConnectionHealthModalOpen] = useState(false);
+  const [connectionHealthTargetIds, setConnectionHealthTargetIds] = useState<string[]>([]);
   const pendingConnectionTagIdRef = useRef<string | null>(null);
   const connectionModalWarmupDoneRef = useRef(false);
   const windowState = useStore(state => state.windowState);
@@ -4361,6 +4364,10 @@ function App() {
           openSecurityUpdateSettings();
       }
   };
+  const handleOpenConnectionHealth = useCallback((connectionIds: string[] = []) => {
+      setConnectionHealthTargetIds(Array.from(new Set(connectionIds.filter((id) => String(id || '').trim() !== ''))));
+      setIsConnectionHealthModalOpen(true);
+  }, []);
 
   const handleOpenDriverManagerFromConnection = () => {
       pendingConnectionTagIdRef.current = null;
@@ -8356,8 +8363,17 @@ function App() {
             initialValues={editingConnection}
             onOpenDriverManager={handleOpenDriverManagerFromConnection}
             onSaved={handleConnectionSaved}
+            onOpenConnectionHealth={(connection) => {
+              handleCloseModal();
+              handleOpenConnectionHealth([connection.id]);
+            }}
           />
           )}
+          <ConnectionHealthModal
+            open={isConnectionHealthModalOpen}
+            targetConnectionIds={connectionHealthTargetIds}
+            onClose={() => setIsConnectionHealthModalOpen(false)}
+          />
           {isSettingsModalOpen && (() => {
             const toolCenterGroups: SettingsCenterNavigationGroup[] = [
               {
@@ -8382,6 +8398,16 @@ function App() {
                     description: t('app.tools.entry.export.description'),
                     onClick: () => {
                       void handleExportConnections('config');
+                    },
+                  },
+                  {
+                    key: 'connection-health',
+                    icon: <SafetyCertificateOutlined />,
+                    title: t('app.tools.entry.connection_health.title'),
+                    description: t('app.tools.entry.connection_health.description'),
+                    onClick: () => {
+                      handleCancelSettingsCenterPane();
+                      handleOpenConnectionHealth();
                     },
                   },
                   {

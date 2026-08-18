@@ -630,6 +630,14 @@ export function InspectElasticsearchConsole(arg1, arg2, arg3) {
   return window['go']['app']['App']['InspectElasticsearchConsole'](arg1, arg2, arg3);
 }
 
+export function InspectSavedConnectionHealth(arg1) {
+  return window['go']['app']['App']['InspectSavedConnectionHealth'](arg1);
+}
+
+export function InspectSavedConnectionsHealth(arg1) {
+  return window['go']['app']['App']['InspectSavedConnectionsHealth'](arg1);
+}
+
 export function InstallLocalDriverPackage(arg1, arg2, arg3, arg4) {
   return window['go']['app']['App']['InstallLocalDriverPackage'](arg1, arg2, arg3, arg4);
 }

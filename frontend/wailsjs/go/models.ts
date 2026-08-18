@@ -2183,6 +2183,66 @@ export namespace connection {
 		    return a;
 		}
 	}
+	export class ConnectionHealthCheck {
+	    key: string;
+	    status: string;
+	    durationMs?: number;
+	    detail?: string;
+	    recommendation?: string;
+
+	    static createFrom(source: any = {}) {
+	        return new ConnectionHealthCheck(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.key = source["key"];
+	        this.status = source["status"];
+	        this.durationMs = source["durationMs"];
+	        this.detail = source["detail"];
+	        this.recommendation = source["recommendation"];
+	    }
+	}
+	export class ConnectionHealthReport {
+	    connectionId: string;
+	    connectionName?: string;
+	    connectionType?: string;
+	    overallStatus: string;
+	    durationMs: number;
+	    checks: ConnectionHealthCheck[];
+
+	    static createFrom(source: any = {}) {
+	        return new ConnectionHealthReport(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.connectionId = source["connectionId"];
+	        this.connectionName = source["connectionName"];
+	        this.connectionType = source["connectionType"];
+	        this.overallStatus = source["overallStatus"];
+	        this.durationMs = source["durationMs"];
+	        this.checks = this.convertValues(source["checks"], ConnectionHealthCheck);
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 
 	export class GlobalProxyView {
 	    enabled: boolean;
