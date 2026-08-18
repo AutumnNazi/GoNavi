@@ -6,6 +6,7 @@ import {
   Drawer,
   Empty,
   Input,
+  Modal,
   Select,
   Space,
   Spin,
@@ -29,6 +30,7 @@ import {
 import {
   resolveRequestDiagnosticsBackend,
   unwrapRequestDiagnostics,
+  type DatabaseDiagnosticPreview,
   type RequestDiagnosticsBackend,
 } from './requestDiagnosticsRpc';
 import './RequestDiagnosticsWorkbench.css';
@@ -76,6 +78,16 @@ const cancellationLabel = (trace: RequestTraceRecord): string => {
   }
 };
 
+const databaseDiagnosticConnectionStateLabel = (state?: string): string => {
+  switch (state) {
+    case 'no_connection': return '无活动连接';
+    case 'connected': return '已连接';
+    case 'multiple_connections': return '多连接';
+    case 'multiple_drivers': return '多驱动';
+    default: return '未知';
+  }
+};
+
 export default function RequestDiagnosticsWorkbench({
   tab: _tab,
   backend: backendOverride,
@@ -88,6 +100,10 @@ export default function RequestDiagnosticsWorkbench({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [selected, setSelected] = useState<RequestTraceRecord | null>(null);
+  const [packagePreview, setPackagePreview] = useState<DatabaseDiagnosticPreview | null>(null);
+  const [packagePreviewOpen, setPackagePreviewOpen] = useState(false);
+  const [packagePreviewLoading, setPackagePreviewLoading] = useState(false);
+  const [packageExporting, setPackageExporting] = useState(false);
   const requestSequence = useRef(0);
 
   const load = useCallback(async () => {
@@ -218,12 +234,70 @@ export default function RequestDiagnosticsWorkbench({
     message.error('当前环境不支持导出请求追踪');
   };
 
+  const openDatabaseDiagnosticPackagePreview = async () => {
+    if (typeof backend.GetDatabaseDiagnosticPackagePreview !== 'function') {
+      message.error('数据库诊断包后端不可用');
+      return;
+    }
+    setPackagePreviewLoading(true);
+    try {
+      const result = await backend.GetDatabaseDiagnosticPackagePreview();
+      setPackagePreview(unwrapRequestDiagnostics(result));
+      setPackagePreviewOpen(true);
+    } catch (cause) {
+      const detail = cause instanceof Error ? cause.message : String(cause);
+      message.error('无法准备数据库诊断包：' + detail);
+    } finally {
+      setPackagePreviewLoading(false);
+    }
+  };
+
+  const exportDatabaseDiagnosticPackage = async () => {
+    if (!packagePreview) return;
+    setPackageExporting(true);
+    try {
+      const isWebRuntime = typeof window !== 'undefined'
+        && (window as any).__GONAVI_WEB_RUNTIME__?.buildType === 'web';
+      if (!isWebRuntime && typeof backend.ExportDatabaseDiagnosticPackage === 'function') {
+        const result = await backend.ExportDatabaseDiagnosticPackage();
+        const cancellationMessage = String(result?.message || '').trim().toLocaleLowerCase();
+        if (result?.success === false && (cancellationMessage === 'cancelled' || cancellationMessage === '已取消')) {
+          return;
+        }
+        const data = unwrapRequestDiagnostics(result) || {};
+        const path = String(data.path || data.filePath || '').trim();
+        message.success(path ? '诊断包已导出至 ' + path : '诊断包已导出');
+        setPackagePreviewOpen(false);
+        return;
+      }
+      if (typeof backend.BuildDatabaseDiagnosticPackage !== 'function') {
+        throw new Error('数据库诊断包导出后端不可用');
+      }
+      const data = unwrapRequestDiagnostics(await backend.BuildDatabaseDiagnosticPackage()) || {};
+      const content = String(data.content || '');
+      const fileName = String(data.fileName || 'gonavi-database-diagnostics.json');
+      const mimeType = String(data.mimeType || 'application/json;charset=utf-8');
+      if (!content || !downloadBrowserTextFile(content, fileName, mimeType)) {
+        throw new Error('当前环境不支持下载诊断包');
+      }
+      message.success('诊断包已下载');
+      setPackagePreviewOpen(false);
+    } catch (cause) {
+      const detail = cause instanceof Error ? cause.message : String(cause);
+      message.error('导出数据库诊断包失败：' + detail);
+    } finally {
+      setPackageExporting(false);
+    }
+  };
+
   return (
     <section className="gn-request-diagnostics-workbench" aria-label="请求诊断中心">
       <header className="gn-request-diagnostics-header">
         <div>
           <Title level={3}>请求诊断</Title>
           <Text type="secondary">当前运行进程内的请求摘要；不保存 SQL、结果行、连接地址或凭证。</Text>
+          <br />
+          <Text type="secondary">导出前会先展示采集范围和脱敏结果；生成过程不会连接数据库或执行 SQL。</Text>
         </div>
         <Space wrap>
           <Input
@@ -243,6 +317,14 @@ export default function RequestDiagnosticsWorkbench({
             style={{ minWidth: 132 }}
           />
           <Button icon={<ReloadOutlined />} onClick={() => void load()} loading={loading}>刷新</Button>
+          <Button
+            type="primary"
+            icon={<DownloadOutlined />}
+            onClick={() => void openDatabaseDiagnosticPackagePreview()}
+            loading={packagePreviewLoading}
+          >
+            生成诊断包
+          </Button>
         </Space>
       </header>
       {error ? <Alert type="warning" showIcon message="无法读取请求诊断" description={error} /> : null}
@@ -265,6 +347,51 @@ export default function RequestDiagnosticsWorkbench({
           />
         </Spin>
       </div>
+      <Modal
+        open={packagePreviewOpen}
+        title="生成只读数据库诊断包"
+        okText="生成并导出 JSON"
+        cancelText="取消"
+        confirmLoading={packageExporting}
+        okButtonProps={{ disabled: !packagePreview }}
+        onCancel={() => setPackagePreviewOpen(false)}
+        onOk={() => void exportDatabaseDiagnosticPackage()}
+        destroyOnHidden
+      >
+        <Alert
+          type="info"
+          showIcon
+          message="默认脱敏且只读"
+          description="该过程仅快照现有内存状态和已有慢查询摘要，不会打开连接、执行 SQL、创建历史文件或写入审计数据。"
+        />
+        <Descriptions size="small" bordered column={1} style={{ marginTop: 16 }}>
+          <Descriptions.Item label="包格式">{String(packagePreview?.format || 'json').toUpperCase()}</Descriptions.Item>
+          <Descriptions.Item label="连接摘要">{packagePreview?.connectionCount || 0}</Descriptions.Item>
+          <Descriptions.Item label="请求追踪">{packagePreview?.requestTraceCount || 0}</Descriptions.Item>
+          <Descriptions.Item label="运行中查询">{packagePreview?.runningQueryCount || 0}</Descriptions.Item>
+          <Descriptions.Item label="待完成事务">{packagePreview?.pendingTransactionCount || 0}</Descriptions.Item>
+          <Descriptions.Item label="慢查询汇总">{packagePreview?.slowQuerySummaryCount || 0}</Descriptions.Item>
+          <Descriptions.Item label="连接状态">{databaseDiagnosticConnectionStateLabel(packagePreview?.sources?.connectionState)}</Descriptions.Item>
+          <Descriptions.Item label="驱动类型">{packagePreview?.sources?.driverTypes?.join(' · ') || '-'}</Descriptions.Item>
+        </Descriptions>
+        <section style={{ marginTop: 16 }}>
+          <Text strong>会采集</Text>
+          <ul>
+            {(packagePreview?.scope?.included || []).map((item) => <li key={item}>{item}</li>)}
+          </ul>
+        </section>
+        <section>
+          <Text strong>不会采集</Text>
+          <ul>
+            {(packagePreview?.scope?.excluded || []).map((item) => <li key={item}>{item}</li>)}
+          </ul>
+        </section>
+        <Space wrap>
+          {Object.entries(packagePreview?.redaction || {}).map(([key, value]) => (
+            <Tag key={key} color={value === 'excluded' ? 'green' : 'default'}>{key}: {value}</Tag>
+          ))}
+        </Space>
+      </Modal>
       <Drawer
         open={Boolean(selected)}
         onClose={() => setSelected(null)}

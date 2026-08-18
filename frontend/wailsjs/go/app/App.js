@@ -22,6 +22,10 @@ export function AuthorizeMCPConnectionSQL(arg1, arg2) {
   return window['go']['app']['App']['AuthorizeMCPConnectionSQL'](arg1, arg2);
 }
 
+export function BuildDatabaseDiagnosticPackage() {
+  return window['go']['app']['App']['BuildDatabaseDiagnosticPackage']();
+}
+
 export function BuildSQLAuditExport(arg1, arg2) {
   return window['go']['app']['App']['BuildSQLAuditExport'](arg1, arg2);
 }
@@ -446,6 +450,10 @@ export function ExportDataWithOptions(arg1, arg2, arg3, arg4) {
   return window['go']['app']['App']['ExportDataWithOptions'](arg1, arg2, arg3, arg4);
 }
 
+export function ExportDatabaseDiagnosticPackage() {
+  return window['go']['app']['App']['ExportDatabaseDiagnosticPackage']();
+}
+
 export function ExportDatabaseSQL(arg1, arg2, arg3) {
   return window['go']['app']['App']['ExportDatabaseSQL'](arg1, arg2, arg3);
 }
@@ -520,6 +528,10 @@ export function GetAppInfo() {
 
 export function GetDataRootDirectoryInfo() {
   return window['go']['app']['App']['GetDataRootDirectoryInfo']();
+}
+
+export function GetDatabaseDiagnosticPackagePreview() {
+  return window['go']['app']['App']['GetDatabaseDiagnosticPackagePreview']();
 }
 
 export function GetDriverStatusList(arg1, arg2) {

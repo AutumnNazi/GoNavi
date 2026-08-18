@@ -19,6 +19,8 @@ export function ApplySavedQueryDirectory(arg1:string):Promise<connection.QueryRe
 
 export function AuthorizeMCPConnectionSQL(arg1:connection.ConnectionConfig,arg2:string):Promise<void>;
 
+export function BuildDatabaseDiagnosticPackage():Promise<connection.QueryResult>;
+
 export function BuildSQLAuditExport(arg1:sqlaudit.Filter,arg2:string):Promise<connection.QueryResult>;
 
 export function CancelApplicationQuit():Promise<connection.QueryResult>;
@@ -231,6 +233,8 @@ export function ExportData(arg1:Array<Record<string, any>>,arg2:Array<string>,ar
 
 export function ExportDataWithOptions(arg1:Array<Record<string, any>>,arg2:Array<string>,arg3:string,arg4:app.ExportFileOptions):Promise<connection.QueryResult>;
 
+export function ExportDatabaseDiagnosticPackage():Promise<connection.QueryResult>;
+
 export function ExportDatabaseSQL(arg1:connection.ConnectionConfig,arg2:string,arg3:boolean):Promise<connection.QueryResult>;
 
 export function ExportDatabaseSQLWithOptions(arg1:connection.ConnectionConfig,arg2:string,arg3:boolean,arg4:app.ExportFileOptions):Promise<connection.QueryResult>;
@@ -268,6 +272,8 @@ export function GenerateQueryID():Promise<string>;
 export function GetAppInfo():Promise<connection.QueryResult>;
 
 export function GetDataRootDirectoryInfo():Promise<connection.QueryResult>;
+
+export function GetDatabaseDiagnosticPackagePreview():Promise<connection.QueryResult>;
 
 export function GetDriverStatusList(arg1:string,arg2:string):Promise<connection.QueryResult>;
 
