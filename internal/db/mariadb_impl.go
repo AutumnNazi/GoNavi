@@ -94,7 +94,7 @@ func (m *MariaDB) QueryMulti(query string) ([]connection.ResultSetData, error) {
 	if m.conn == nil {
 		return nil, fmt.Errorf("连接未打开")
 	}
-	rows, err := m.conn.Query(query)
+	rows, err := m.conn.QueryContext(metadataContextFor(m), query)
 	if err != nil {
 		return nil, err
 	}
@@ -133,7 +133,7 @@ func (m *MariaDB) Query(query string) ([]map[string]interface{}, []string, error
 		return nil, nil, fmt.Errorf("连接未打开")
 	}
 
-	rows, err := m.conn.Query(query)
+	rows, err := m.conn.QueryContext(metadataContextFor(m), query)
 	if err != nil {
 		return nil, nil, err
 	}

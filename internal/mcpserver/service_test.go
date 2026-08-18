@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"GoNavi-Wails/internal/ai"
 	appcore "GoNavi-Wails/internal/app"
@@ -39,6 +41,52 @@ type fakeBackend struct {
 	events              []string
 }
 
+type cancellableTablesBackend struct {
+	*fakeBackend
+	started chan struct{}
+	calls   atomic.Int32
+}
+
+func (b *cancellableTablesBackend) DBGetTables(ctx context.Context, _ connection.ConnectionConfig, _ string) connection.QueryResult {
+	if b.calls.Add(1) > 1 {
+		return b.tablesResult
+	}
+	select {
+	case b.started <- struct{}{}:
+	default:
+	}
+	<-ctx.Done()
+	return connection.QueryResult{Success: false, Message: ctx.Err().Error()}
+}
+
+type cancellableViewsBackend struct {
+	*fakeBackend
+	started chan struct{}
+}
+
+type cancellableColumnsBackend struct {
+	*fakeBackend
+	started chan struct{}
+}
+
+func (b *cancellableViewsBackend) DBGetViews(ctx context.Context, _ connection.ConnectionConfig, _ string) connection.QueryResult {
+	select {
+	case b.started <- struct{}{}:
+	default:
+	}
+	<-ctx.Done()
+	return connection.QueryResult{Success: false, Message: ctx.Err().Error()}
+}
+
+func (b *cancellableColumnsBackend) DBGetColumns(ctx context.Context, _ connection.ConnectionConfig, _ string, _ string) connection.QueryResult {
+	select {
+	case b.started <- struct{}{}:
+	default:
+	}
+	<-ctx.Done()
+	return connection.QueryResult{Success: false, Message: ctx.Err().Error()}
+}
+
 func (f *fakeBackend) Close(context.Context) error {
 	return nil
 }
@@ -51,43 +99,43 @@ func (f *fakeBackend) GetEditableSavedConnection(id string) (connection.SavedCon
 	return f.editableConnection, f.editableErr
 }
 
-func (f *fakeBackend) DBGetDatabases(config connection.ConnectionConfig) connection.QueryResult {
+func (f *fakeBackend) DBGetDatabases(context.Context, connection.ConnectionConfig) connection.QueryResult {
 	return f.databasesResult
 }
 
-func (f *fakeBackend) DBGetTables(config connection.ConnectionConfig, dbName string) connection.QueryResult {
+func (f *fakeBackend) DBGetTables(context.Context, connection.ConnectionConfig, string) connection.QueryResult {
 	return f.tablesResult
 }
 
-func (f *fakeBackend) DBGetViews(config connection.ConnectionConfig, dbName string) connection.QueryResult {
+func (f *fakeBackend) DBGetViews(context.Context, connection.ConnectionConfig, string) connection.QueryResult {
 	return f.viewsResult
 }
 
-func (f *fakeBackend) DBGetObjects(config connection.ConnectionConfig, dbName string) connection.QueryResult {
+func (f *fakeBackend) DBGetObjects(context.Context, connection.ConnectionConfig, string) connection.QueryResult {
 	return f.objectsResult
 }
 
-func (f *fakeBackend) DBGetAllColumns(config connection.ConnectionConfig, dbName string) connection.QueryResult {
+func (f *fakeBackend) DBGetAllColumns(context.Context, connection.ConnectionConfig, string) connection.QueryResult {
 	return f.allColumnsResult
 }
 
-func (f *fakeBackend) DBGetColumns(config connection.ConnectionConfig, dbName string, tableName string) connection.QueryResult {
+func (f *fakeBackend) DBGetColumns(context.Context, connection.ConnectionConfig, string, string) connection.QueryResult {
 	return f.columnsResult
 }
 
-func (f *fakeBackend) DBGetIndexes(config connection.ConnectionConfig, dbName string, tableName string) connection.QueryResult {
+func (f *fakeBackend) DBGetIndexes(context.Context, connection.ConnectionConfig, string, string) connection.QueryResult {
 	return f.indexesResult
 }
 
-func (f *fakeBackend) DBGetForeignKeys(config connection.ConnectionConfig, dbName string, tableName string) connection.QueryResult {
+func (f *fakeBackend) DBGetForeignKeys(context.Context, connection.ConnectionConfig, string, string) connection.QueryResult {
 	return f.foreignKeysResult
 }
 
-func (f *fakeBackend) DBGetTriggers(config connection.ConnectionConfig, dbName string, tableName string) connection.QueryResult {
+func (f *fakeBackend) DBGetTriggers(context.Context, connection.ConnectionConfig, string, string) connection.QueryResult {
 	return f.triggersResult
 }
 
-func (f *fakeBackend) DBShowCreateTable(config connection.ConnectionConfig, dbName string, tableName string) connection.QueryResult {
+func (f *fakeBackend) DBShowCreateTable(context.Context, connection.ConnectionConfig, string, string) connection.QueryResult {
 	return f.ddlResult
 }
 
@@ -115,6 +163,160 @@ func (f *fakeBackend) AuthorizeSQLConnection(config connection.ConnectionConfig,
 	f.authorizedSQL = sql
 	f.events = append(f.events, "authorize")
 	return f.authorizeErr
+}
+
+func TestGetTablesForwardsCancellationWithoutAffectingConcurrentRequests(t *testing.T) {
+	backend := &cancellableTablesBackend{
+		fakeBackend: &fakeBackend{
+			editableConnection: connection.SavedConnectionView{
+				ID:     "mysql-main",
+				Config: connection.ConnectionConfig{Type: "mysql", Database: "app"},
+			},
+			tablesResult: connection.QueryResult{
+				Success: true,
+				Data:    []map[string]string{{"Table": "users"}},
+			},
+		},
+		started: make(chan struct{}, 1),
+	}
+	service := NewService(backend)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	type callResult struct {
+		result *mcp.CallToolResult
+		output getTablesResult
+		err    error
+	}
+	firstResult := make(chan callResult, 1)
+	go func() {
+		result, output, err := service.GetTables(ctx, nil, databaseArgs{ConnectionID: "mysql-main", DBName: "app"})
+		firstResult <- callResult{result: result, output: output, err: err}
+	}()
+
+	select {
+	case <-backend.started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("GetTables did not reach the cancellable backend")
+	}
+
+	secondResult, secondOutput, secondErr := service.GetTables(context.Background(), nil, databaseArgs{ConnectionID: "mysql-main", DBName: "app"})
+	if secondErr != nil || secondResult == nil || secondResult.IsError {
+		t.Fatalf("concurrent GetTables failed: result=%#v err=%v", secondResult, secondErr)
+	}
+	if len(secondOutput.Tables) != 1 || secondOutput.Tables[0] != "users" {
+		t.Fatalf("unexpected concurrent GetTables output: %#v", secondOutput)
+	}
+
+	cancel()
+	select {
+	case received := <-firstResult:
+		if received.err != nil {
+			t.Fatalf("cancelled GetTables returned transport error: %v", received.err)
+		}
+		if received.result == nil || !received.result.IsError {
+			t.Fatalf("cancelled GetTables should return a tool error, got %#v", received.result)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("cancelled GetTables did not return")
+	}
+}
+
+func TestGetTablesReturnsCancellationWhenViewLookupIsCancelled(t *testing.T) {
+	backend := &cancellableViewsBackend{
+		fakeBackend: &fakeBackend{
+			editableConnection: connection.SavedConnectionView{
+				ID:     "mysql-main",
+				Config: connection.ConnectionConfig{Type: "mysql", Database: "app"},
+			},
+			tablesResult: connection.QueryResult{
+				Success: true,
+				Data:    []map[string]string{{"Table": "users"}},
+			},
+		},
+		started: make(chan struct{}, 1),
+	}
+	service := NewService(backend)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	type callResult struct {
+		result *mcp.CallToolResult
+		output getTablesResult
+		err    error
+	}
+	results := make(chan callResult, 1)
+	go func() {
+		result, output, err := service.GetTables(ctx, nil, databaseArgs{ConnectionID: "mysql-main", DBName: "app"})
+		results <- callResult{result: result, output: output, err: err}
+	}()
+
+	select {
+	case <-backend.started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("GetTables did not reach the cancellable view lookup")
+	}
+	cancel()
+
+	select {
+	case received := <-results:
+		if received.err != nil {
+			t.Fatalf("cancelled GetTables returned transport error: %v", received.err)
+		}
+		if received.result == nil || !received.result.IsError {
+			t.Fatalf("cancelled view lookup should return a tool error, got %#v", received.result)
+		}
+		if len(received.output.Tables) != 0 || len(received.output.Views) != 0 {
+			t.Fatalf("cancelled view lookup returned partial metadata: %#v", received.output)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("cancelled view lookup did not return")
+	}
+}
+
+func TestGetColumnsForwardsCancellation(t *testing.T) {
+	backend := &cancellableColumnsBackend{
+		fakeBackend: &fakeBackend{
+			editableConnection: connection.SavedConnectionView{
+				ID:     "mysql-main",
+				Config: connection.ConnectionConfig{Type: "mysql", Database: "app"},
+			},
+		},
+		started: make(chan struct{}, 1),
+	}
+	service := NewService(backend)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	type callResult struct {
+		result *mcp.CallToolResult
+		output getColumnsResult
+		err    error
+	}
+	results := make(chan callResult, 1)
+	go func() {
+		result, output, err := service.GetColumns(ctx, nil, tableArgs{ConnectionID: "mysql-main", DBName: "app", TableName: "orders"})
+		results <- callResult{result: result, output: output, err: err}
+	}()
+
+	select {
+	case <-backend.started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("GetColumns 未到达可取消后端")
+	}
+	cancel()
+
+	select {
+	case received := <-results:
+		if received.err != nil {
+			t.Fatalf("取消的 GetColumns 返回传输错误：%v", received.err)
+		}
+		if received.result == nil || !received.result.IsError {
+			t.Fatalf("取消的 GetColumns 应返回工具错误，实际为 %#v", received.result)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("取消的 GetColumns 未返回")
+	}
 }
 
 func TestGetConnectionsReturnsSavedConnectionSummaries(t *testing.T) {

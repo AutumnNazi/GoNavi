@@ -222,7 +222,6 @@ func (s *Service) GetConnections(ctx context.Context, req *mcp.CallToolRequest, 
 }
 
 func (s *Service) GetDatabases(ctx context.Context, req *mcp.CallToolRequest, args connectionIDArgs) (*mcp.CallToolResult, getDatabasesResult, error) {
-	_ = ctx
 	_ = req
 
 	view, errResult := s.resolveConnection(args.ConnectionID)
@@ -230,7 +229,7 @@ func (s *Service) GetDatabases(ctx context.Context, req *mcp.CallToolRequest, ar
 		return errResult, getDatabasesResult{}, nil
 	}
 
-	queryResult := s.backend.DBGetDatabases(view.Config)
+	queryResult := s.backend.DBGetDatabases(ctx, view.Config)
 	if !queryResult.Success {
 		return toolError("获取数据库列表失败: %s", strings.TrimSpace(queryResult.Message)), getDatabasesResult{}, nil
 	}
@@ -247,7 +246,6 @@ func (s *Service) GetDatabases(ctx context.Context, req *mcp.CallToolRequest, ar
 }
 
 func (s *Service) GetTables(ctx context.Context, req *mcp.CallToolRequest, args databaseArgs) (*mcp.CallToolResult, getTablesResult, error) {
-	_ = ctx
 	_ = req
 
 	view, errResult := s.resolveConnection(args.ConnectionID)
@@ -256,7 +254,7 @@ func (s *Service) GetTables(ctx context.Context, req *mcp.CallToolRequest, args 
 	}
 
 	dbName := effectiveDBName(args.DBName, view.Config)
-	queryResult := s.backend.DBGetTables(view.Config, dbName)
+	queryResult := s.backend.DBGetTables(ctx, view.Config, dbName)
 	if !queryResult.Success {
 		return toolError("获取表列表失败: %s", strings.TrimSpace(queryResult.Message)), getTablesResult{}, nil
 	}
@@ -265,9 +263,15 @@ func (s *Service) GetTables(ctx context.Context, req *mcp.CallToolRequest, args 
 	if err != nil {
 		return toolError("解析表列表失败: %v", err), getTablesResult{}, nil
 	}
+	if err := ctx.Err(); err != nil {
+		return toolError("获取表列表失败: %s", err), getTablesResult{}, nil
+	}
 
 	views := []string{}
-	viewResult := s.backend.DBGetViews(view.Config, dbName)
+	viewResult := s.backend.DBGetViews(ctx, view.Config, dbName)
+	if err := ctx.Err(); err != nil {
+		return toolError("获取表列表失败: %s", err), getTablesResult{}, nil
+	}
 	if viewResult.Success {
 		if decodedViews, decodeErr := decodeNamedStringSlice(viewResult.Data, "View", "view", "name"); decodeErr == nil {
 			views = decodedViews
@@ -289,7 +293,6 @@ func (s *Service) GetTables(ctx context.Context, req *mcp.CallToolRequest, args 
 }
 
 func (s *Service) GetViews(ctx context.Context, req *mcp.CallToolRequest, args databaseArgs) (*mcp.CallToolResult, getViewsResult, error) {
-	_ = ctx
 	_ = req
 
 	view, errResult := s.resolveConnection(args.ConnectionID)
@@ -298,7 +301,7 @@ func (s *Service) GetViews(ctx context.Context, req *mcp.CallToolRequest, args d
 	}
 
 	dbName := effectiveDBName(args.DBName, view.Config)
-	queryResult := s.backend.DBGetViews(view.Config, dbName)
+	queryResult := s.backend.DBGetViews(ctx, view.Config, dbName)
 	if !queryResult.Success {
 		return toolError("获取视图列表失败: %s", strings.TrimSpace(queryResult.Message)), getViewsResult{}, nil
 	}
@@ -316,7 +319,6 @@ func (s *Service) GetViews(ctx context.Context, req *mcp.CallToolRequest, args d
 }
 
 func (s *Service) GetObjects(ctx context.Context, req *mcp.CallToolRequest, args objectsArgs) (*mcp.CallToolResult, getObjectsResult, error) {
-	_ = ctx
 	_ = req
 
 	view, errResult := s.resolveConnection(args.ConnectionID)
@@ -325,7 +327,7 @@ func (s *Service) GetObjects(ctx context.Context, req *mcp.CallToolRequest, args
 	}
 
 	dbName := effectiveDBName(args.DBName, view.Config)
-	queryResult := s.backend.DBGetObjects(view.Config, dbName)
+	queryResult := s.backend.DBGetObjects(ctx, view.Config, dbName)
 	if !queryResult.Success {
 		output := getObjectsResult{
 			ConnectionID:      view.ID,
@@ -379,7 +381,6 @@ func objectMetadataWarnings(result connection.QueryResult) []string {
 }
 
 func (s *Service) GetAllColumns(ctx context.Context, req *mcp.CallToolRequest, args databaseArgs) (*mcp.CallToolResult, getAllColumnsResult, error) {
-	_ = ctx
 	_ = req
 
 	view, errResult := s.resolveConnection(args.ConnectionID)
@@ -392,7 +393,7 @@ func (s *Service) GetAllColumns(ctx context.Context, req *mcp.CallToolRequest, a
 		return toolError("dbName 不能为空"), getAllColumnsResult{}, nil
 	}
 
-	queryResult := s.backend.DBGetAllColumns(view.Config, dbName)
+	queryResult := s.backend.DBGetAllColumns(ctx, view.Config, dbName)
 	if !queryResult.Success {
 		return toolError("获取全库字段摘要失败: %s", strings.TrimSpace(queryResult.Message)), getAllColumnsResult{}, nil
 	}
@@ -410,7 +411,6 @@ func (s *Service) GetAllColumns(ctx context.Context, req *mcp.CallToolRequest, a
 }
 
 func (s *Service) GetColumns(ctx context.Context, req *mcp.CallToolRequest, args tableArgs) (*mcp.CallToolResult, getColumnsResult, error) {
-	_ = ctx
 	_ = req
 
 	view, errResult := s.resolveConnection(args.ConnectionID)
@@ -424,7 +424,7 @@ func (s *Service) GetColumns(ctx context.Context, req *mcp.CallToolRequest, args
 	}
 
 	dbName := effectiveDBName(args.DBName, view.Config)
-	queryResult := s.backend.DBGetColumns(view.Config, dbName, tableName)
+	queryResult := s.backend.DBGetColumns(ctx, view.Config, dbName, tableName)
 	if !queryResult.Success {
 		return toolError("获取字段列表失败: %s", strings.TrimSpace(queryResult.Message)), getColumnsResult{}, nil
 	}
@@ -443,7 +443,6 @@ func (s *Service) GetColumns(ctx context.Context, req *mcp.CallToolRequest, args
 }
 
 func (s *Service) GetIndexes(ctx context.Context, req *mcp.CallToolRequest, args tableArgs) (*mcp.CallToolResult, getIndexesResult, error) {
-	_ = ctx
 	_ = req
 
 	view, errResult := s.resolveConnection(args.ConnectionID)
@@ -457,7 +456,7 @@ func (s *Service) GetIndexes(ctx context.Context, req *mcp.CallToolRequest, args
 	}
 
 	dbName := effectiveDBName(args.DBName, view.Config)
-	queryResult := s.backend.DBGetIndexes(view.Config, dbName, tableName)
+	queryResult := s.backend.DBGetIndexes(ctx, view.Config, dbName, tableName)
 	if !queryResult.Success {
 		return toolError("获取索引定义失败: %s", strings.TrimSpace(queryResult.Message)), getIndexesResult{}, nil
 	}
@@ -476,7 +475,6 @@ func (s *Service) GetIndexes(ctx context.Context, req *mcp.CallToolRequest, args
 }
 
 func (s *Service) GetForeignKeys(ctx context.Context, req *mcp.CallToolRequest, args tableArgs) (*mcp.CallToolResult, getForeignKeysResult, error) {
-	_ = ctx
 	_ = req
 
 	view, errResult := s.resolveConnection(args.ConnectionID)
@@ -490,7 +488,7 @@ func (s *Service) GetForeignKeys(ctx context.Context, req *mcp.CallToolRequest, 
 	}
 
 	dbName := effectiveDBName(args.DBName, view.Config)
-	queryResult := s.backend.DBGetForeignKeys(view.Config, dbName, tableName)
+	queryResult := s.backend.DBGetForeignKeys(ctx, view.Config, dbName, tableName)
 	if !queryResult.Success {
 		return toolError("获取外键关系失败: %s", strings.TrimSpace(queryResult.Message)), getForeignKeysResult{}, nil
 	}
@@ -509,7 +507,6 @@ func (s *Service) GetForeignKeys(ctx context.Context, req *mcp.CallToolRequest, 
 }
 
 func (s *Service) GetTriggers(ctx context.Context, req *mcp.CallToolRequest, args tableArgs) (*mcp.CallToolResult, getTriggersResult, error) {
-	_ = ctx
 	_ = req
 
 	view, errResult := s.resolveConnection(args.ConnectionID)
@@ -523,7 +520,7 @@ func (s *Service) GetTriggers(ctx context.Context, req *mcp.CallToolRequest, arg
 	}
 
 	dbName := effectiveDBName(args.DBName, view.Config)
-	queryResult := s.backend.DBGetTriggers(view.Config, dbName, tableName)
+	queryResult := s.backend.DBGetTriggers(ctx, view.Config, dbName, tableName)
 	if !queryResult.Success {
 		return toolError("获取触发器定义失败: %s", strings.TrimSpace(queryResult.Message)), getTriggersResult{}, nil
 	}
@@ -542,7 +539,6 @@ func (s *Service) GetTriggers(ctx context.Context, req *mcp.CallToolRequest, arg
 }
 
 func (s *Service) GetTableDDL(ctx context.Context, req *mcp.CallToolRequest, args tableArgs) (*mcp.CallToolResult, getTableDDLResult, error) {
-	_ = ctx
 	_ = req
 
 	view, errResult := s.resolveConnection(args.ConnectionID)
@@ -556,7 +552,7 @@ func (s *Service) GetTableDDL(ctx context.Context, req *mcp.CallToolRequest, arg
 	}
 
 	dbName := effectiveDBName(args.DBName, view.Config)
-	queryResult := s.backend.DBShowCreateTable(view.Config, dbName, tableName)
+	queryResult := s.backend.DBShowCreateTable(ctx, view.Config, dbName, tableName)
 	if !queryResult.Success {
 		return toolError("获取建表语句失败: %s", strings.TrimSpace(queryResult.Message)), getTableDDLResult{}, nil
 	}

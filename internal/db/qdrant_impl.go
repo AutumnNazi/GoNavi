@@ -221,7 +221,7 @@ func (q *QdrantDB) GetDatabases() ([]string, error) {
 }
 
 func (q *QdrantDB) GetTables(dbName string) ([]string, error) {
-	collections, err := q.listCollections(context.Background())
+	collections, err := q.listCollections(metadataContextFor(q))
 	if err != nil {
 		return nil, err
 	}
@@ -236,7 +236,7 @@ func (q *QdrantDB) GetTables(dbName string) ([]string, error) {
 }
 
 func (q *QdrantDB) GetCreateStatement(dbName, tableName string) (string, error) {
-	info, err := q.getCollectionInfo(context.Background(), tableNameOrDB(dbName, tableName))
+	info, err := q.getCollectionInfo(metadataContextFor(q), tableNameOrDB(dbName, tableName))
 	if err != nil {
 		return "", err
 	}
@@ -245,7 +245,7 @@ func (q *QdrantDB) GetCreateStatement(dbName, tableName string) (string, error) 
 }
 
 func (q *QdrantDB) GetColumns(dbName, tableName string) ([]connection.ColumnDefinition, error) {
-	info, err := q.getCollectionInfo(context.Background(), tableNameOrDB(dbName, tableName))
+	info, err := q.getCollectionInfo(metadataContextFor(q), tableNameOrDB(dbName, tableName))
 	if err != nil {
 		return nil, err
 	}
@@ -285,7 +285,7 @@ func (q *QdrantDB) GetIndexes(dbName, tableName string) ([]connection.IndexDefin
 	indexes := []connection.IndexDefinition{
 		{Name: "PRIMARY", ColumnName: "id", NonUnique: 0, SeqInIndex: 1, IndexType: "PRIMARY"},
 	}
-	info, err := q.getCollectionInfo(context.Background(), tableNameOrDB(dbName, tableName))
+	info, err := q.getCollectionInfo(metadataContextFor(q), tableNameOrDB(dbName, tableName))
 	if err == nil {
 		indexes = append(indexes, qdrantVectorIndexes(info)...)
 		indexes = append(indexes, qdrantPayloadIndexes(info)...)

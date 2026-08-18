@@ -958,18 +958,7 @@ func (c *ClickHouseDB) QueryContext(ctx context.Context, query string) ([]map[st
 }
 
 func (c *ClickHouseDB) Query(query string) ([]map[string]interface{}, []string, error) {
-	if c.legacyHTTP != nil {
-		return c.legacyHTTP.Query(context.Background(), query)
-	}
-	if c.conn == nil {
-		return nil, nil, fmt.Errorf("连接未打开")
-	}
-	rows, err := c.conn.Query(query)
-	if err != nil {
-		return nil, nil, err
-	}
-	defer rows.Close()
-	return scanRows(rows)
+	return c.QueryContext(metadataContextFor(c), query)
 }
 
 func (c *ClickHouseDB) StreamQueryContext(ctx context.Context, query string, consumer QueryStreamConsumer) error {

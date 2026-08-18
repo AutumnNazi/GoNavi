@@ -680,6 +680,10 @@ func importRedisTransferPayload(client redis.RedisClient, payload redisTransferF
 
 // getRedisClient gets or creates a Redis client from cache
 func (a *App) getRedisClient(config connection.ConnectionConfig) (redis.RedisClient, error) {
+	if a != nil && a.metadataSession != nil {
+		return a.metadataSession.openRedisClient(config)
+	}
+
 	resolvedConfig, err := a.resolveConnectionSecrets(config)
 	if err != nil {
 		wrapped := wrapConnectError(config, err)

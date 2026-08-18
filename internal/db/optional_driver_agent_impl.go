@@ -419,11 +419,18 @@ func optionalAgentContextError(driverType, method string, err error) error {
 }
 
 func (c *optionalDriverAgentClient) callWithTimeout(req optionalAgentRequest, out interface{}, fields *[]string, messages *[]string, rowsAffected *int64, timeout time.Duration) error {
+	return c.callWithContext(context.Background(), req, out, fields, messages, rowsAffected, timeout)
+}
+
+func (c *optionalDriverAgentClient) callWithContext(ctx context.Context, req optionalAgentRequest, out interface{}, fields *[]string, messages *[]string, rowsAffected *int64, timeout time.Duration) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	if timeout <= 0 {
-		return c.call(req, out, fields, messages, rowsAffected)
+		return c.callContext(ctx, req, out, fields, messages, rowsAffected)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	err := c.callContext(ctx, req, out, fields, messages, rowsAffected)
 	if errors.Is(err, context.DeadlineExceeded) && req.Method == optionalAgentMethodMetadata {
@@ -801,25 +808,12 @@ func (d *OptionalDriverAgentDB) QueryContextWithMessages(ctx context.Context, qu
 }
 
 func (d *OptionalDriverAgentDB) Query(query string) ([]map[string]interface{}, []string, error) {
-	data, fields, _, err := d.QueryWithMessages(query)
+	data, fields, _, err := d.QueryContextWithMessages(metadataContextFor(d), query)
 	return data, fields, err
 }
 
 func (d *OptionalDriverAgentDB) QueryWithMessages(query string) ([]map[string]interface{}, []string, []string, error) {
-	client, err := d.requireClient()
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	var data []map[string]interface{}
-	var fields []string
-	var messages []string
-	if err := client.call(optionalAgentRequest{
-		Method: optionalAgentMethodQuery,
-		Query:  query,
-	}, &data, &fields, &messages, nil); err != nil {
-		return nil, nil, nil, err
-	}
-	return data, fields, messages, nil
+	return d.QueryContextWithMessages(metadataContextFor(d), query)
 }
 
 func (d *OptionalDriverAgentDB) QueryMulti(query string) ([]connection.ResultSetData, error) {
@@ -1180,7 +1174,7 @@ func (d *OptionalDriverAgentDB) GetDatabases() ([]string, error) {
 		return nil, err
 	}
 	var dbs []string
-	if err := client.callWithTimeout(optionalAgentRequest{
+	if err := client.callWithContext(metadataContextFor(d), optionalAgentRequest{
 		Method: optionalAgentMethodGetDatabases,
 	}, &dbs, nil, nil, nil, optionalAgentControlCallTimeout); err != nil {
 		return nil, err
@@ -1194,7 +1188,7 @@ func (d *OptionalDriverAgentDB) GetTables(dbName string) ([]string, error) {
 		return nil, err
 	}
 	var tables []string
-	if err := client.callWithTimeout(optionalAgentRequest{
+	if err := client.callWithContext(metadataContextFor(d), optionalAgentRequest{
 		Method: optionalAgentMethodGetTables,
 		DBName: dbName,
 	}, &tables, nil, nil, nil, optionalAgentControlCallTimeout); err != nil {
@@ -1209,7 +1203,7 @@ func (d *OptionalDriverAgentDB) TableExists(dbName, tableName string) (bool, err
 		return false, err
 	}
 	var exists bool
-	err = client.callWithTimeout(optionalAgentRequest{
+	err = client.callWithContext(metadataContextFor(d), optionalAgentRequest{
 		Method:    optionalAgentMethodTableExists,
 		DBName:    dbName,
 		TableName: tableName,
@@ -1262,7 +1256,7 @@ func (d *OptionalDriverAgentDB) GetCreateStatement(dbName, tableName string) (st
 		return "", err
 	}
 	var sqlText string
-	if err := client.callWithTimeout(optionalAgentRequest{
+	if err := client.callWithContext(metadataContextFor(d), optionalAgentRequest{
 		Method:    optionalAgentMethodGetCreateStmt,
 		DBName:    dbName,
 		TableName: tableName,
@@ -1278,7 +1272,7 @@ func (d *OptionalDriverAgentDB) GetColumns(dbName, tableName string) ([]connecti
 		return nil, err
 	}
 	var columns []connection.ColumnDefinition
-	if err := client.callWithTimeout(optionalAgentRequest{
+	if err := client.callWithContext(metadataContextFor(d), optionalAgentRequest{
 		Method:    optionalAgentMethodGetColumns,
 		DBName:    dbName,
 		TableName: tableName,
@@ -1294,7 +1288,7 @@ func (d *OptionalDriverAgentDB) GetAllColumns(dbName string) ([]connection.Colum
 		return nil, err
 	}
 	var columns []connection.ColumnDefinitionWithTable
-	if err := client.callWithTimeout(optionalAgentRequest{
+	if err := client.callWithContext(metadataContextFor(d), optionalAgentRequest{
 		Method: optionalAgentMethodGetAllColumns,
 		DBName: dbName,
 	}, &columns, nil, nil, nil, optionalAgentControlCallTimeout); err != nil {
@@ -1309,7 +1303,7 @@ func (d *OptionalDriverAgentDB) GetIndexes(dbName, tableName string) ([]connecti
 		return nil, err
 	}
 	var indexes []connection.IndexDefinition
-	if err := client.callWithTimeout(optionalAgentRequest{
+	if err := client.callWithContext(metadataContextFor(d), optionalAgentRequest{
 		Method:    optionalAgentMethodGetIndexes,
 		DBName:    dbName,
 		TableName: tableName,
@@ -1325,7 +1319,7 @@ func (d *OptionalDriverAgentDB) GetForeignKeys(dbName, tableName string) ([]conn
 		return nil, err
 	}
 	var keys []connection.ForeignKeyDefinition
-	if err := client.callWithTimeout(optionalAgentRequest{
+	if err := client.callWithContext(metadataContextFor(d), optionalAgentRequest{
 		Method:    optionalAgentMethodGetForeignKeys,
 		DBName:    dbName,
 		TableName: tableName,
@@ -1341,7 +1335,7 @@ func (d *OptionalDriverAgentDB) GetTriggers(dbName, tableName string) ([]connect
 		return nil, err
 	}
 	var triggers []connection.TriggerDefinition
-	if err := client.callWithTimeout(optionalAgentRequest{
+	if err := client.callWithContext(metadataContextFor(d), optionalAgentRequest{
 		Method:    optionalAgentMethodGetTriggers,
 		DBName:    dbName,
 		TableName: tableName,

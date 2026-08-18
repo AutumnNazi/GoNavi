@@ -343,7 +343,7 @@ func (r *RocketMQDB) GetTables(dbName string) ([]string, error) {
 	if r.runtime == nil {
 		return nil, fmt.Errorf("连接未打开")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(metadataContextFor(r), 10*time.Second)
 	defer cancel()
 	topics, err := r.runtime.ListTopics(ctx, false)
 	if err != nil {
@@ -363,7 +363,7 @@ func (r *RocketMQDB) GetCreateStatement(dbName, tableName string) (string, error
 	if r.runtime == nil {
 		return "", fmt.Errorf("连接未打开")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(metadataContextFor(r), 10*time.Second)
 	defer cancel()
 	topic := rocketmqResolveTopic(tableName, r.defaultTopic)
 	if topic == "" {

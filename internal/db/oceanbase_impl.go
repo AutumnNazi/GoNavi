@@ -824,6 +824,14 @@ func (o *OceanBaseDB) activeDatabase() Database {
 	return &o.MySQLDB
 }
 
+func (o *OceanBaseDB) bindMetadataContext(ctx context.Context) {
+	BindMetadataContext(o.activeDatabase(), ctx)
+}
+
+func (o *OceanBaseDB) clearMetadataContext() {
+	ClearMetadataContext(o.activeDatabase())
+}
+
 func (o *OceanBaseDB) Close() error {
 	if o.oracle != nil {
 		err := o.oracle.Close()

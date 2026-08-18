@@ -318,7 +318,7 @@ func (r *RabbitMQDB) GetDatabases() ([]string, error) {
 	if r.client == nil {
 		return nil, fmt.Errorf("连接未打开")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(metadataContextFor(r), 10*time.Second)
 	defer cancel()
 
 	items, err := r.listVHosts(ctx, 0)
@@ -342,7 +342,7 @@ func (r *RabbitMQDB) GetTables(dbName string) ([]string, error) {
 	if r.client == nil {
 		return nil, fmt.Errorf("连接未打开")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(metadataContextFor(r), 10*time.Second)
 	defer cancel()
 
 	vhost := rabbitmqResolveVHost(dbName, r.defaultVHost)
@@ -369,7 +369,7 @@ func (r *RabbitMQDB) GetCreateStatement(dbName, tableName string) (string, error
 	if queue == "" {
 		return "", fmt.Errorf("RabbitMQ queue 不能为空")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(metadataContextFor(r), 10*time.Second)
 	defer cancel()
 
 	info, err := r.getQueueInfo(ctx, vhost, queue)

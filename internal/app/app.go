@@ -171,6 +171,7 @@ type App struct {
 	connectFailures               map[string]cachedConnectFailure
 	dbConnectGroup                singleflight.Group
 	dbConnectFlights              map[uint64]*databaseConnectFlight
+	metadataSession               *metadataSession
 	nextDBConnectFlightID         uint64
 	dbShuttingDown                bool
 	dbConnectBeforeForgetHook     func()       // Test seam for release/singleflight ordering.
@@ -1278,12 +1279,33 @@ func formatConnSummary(config connection.ConnectionConfig) string {
 }
 
 func (a *App) getDatabaseForcePing(config connection.ConnectionConfig) (db.Database, error) {
-	return a.getDatabaseWithPing(config, true)
+	if a != nil && a.metadataSession != nil {
+		instance, err := a.getDatabaseWithContext(a.metadataSession.ctx, config, true)
+		a.bindMetadataDatabase(instance)
+		return instance, err
+	}
+	instance, err := a.getDatabaseWithPing(config, true)
+	a.bindMetadataDatabase(instance)
+	return instance, err
 }
 
 // Helper: Get or create a database connection
 func (a *App) getDatabase(config connection.ConnectionConfig) (db.Database, error) {
-	return a.getDatabaseWithPing(config, false)
+	if a != nil && a.metadataSession != nil {
+		instance, err := a.getDatabaseWithContext(a.metadataSession.ctx, config, false)
+		a.bindMetadataDatabase(instance)
+		return instance, err
+	}
+	instance, err := a.getDatabaseWithPing(config, false)
+	a.bindMetadataDatabase(instance)
+	return instance, err
+}
+
+func (a *App) bindMetadataDatabase(instance db.Database) {
+	if a == nil || a.metadataSession == nil || instance == nil {
+		return
+	}
+	a.metadataSession.bindDatabase(instance)
 }
 
 type databaseWaitResult struct {

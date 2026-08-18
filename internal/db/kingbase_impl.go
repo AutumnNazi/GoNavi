@@ -232,7 +232,7 @@ func (k *KingbaseDB) getSearchPathStr() string {
 		  AND nspname NOT LIKE 'pg|_%' ESCAPE '|'
 		ORDER BY nspname`
 
-	rows, err := k.conn.Query(query)
+	rows, err := k.conn.QueryContext(metadataContextFor(k), query)
 	if err != nil {
 		logger.Warnf("人大金仓查询用户 schema 失败，跳过 search_path 设置：%v", err)
 		return ""
@@ -317,7 +317,7 @@ func (k *KingbaseDB) Query(query string) ([]map[string]interface{}, []string, er
 		return nil, nil, fmt.Errorf("连接未打开")
 	}
 
-	rows, err := k.conn.Query(query)
+	rows, err := k.conn.QueryContext(metadataContextFor(k), query)
 	if err != nil {
 		return nil, nil, err
 	}
