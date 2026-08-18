@@ -4244,6 +4244,7 @@
   "data_grid.message.column_quick_find_not_rendered": "Die Feldspalte \"{{column}}\" wird derzeit nicht gerendert und kann daher nicht gefunden werden.",
   "data_grid.message.column_visibility_reset": "Alle Spalten wiederhergestellt",
   "data_grid.message.commit_failed": "Übernahme fehlgeschlagen: {{detail}}",
+  "data_grid.message.transaction_outcome_unknown": "Das Ergebnis der Transaktion ist möglicherweise unbekannt",
   "data_grid.message.copied_columns": "Füllvorlage mit {{count}} Feldern erstellt. Zielzellen markieren oder Zielzeilen auswählen.",
   "data_grid.message.copied_rows": "{{count}} Zeilen kopiert. Du kannst sie als neue Zeilen einfügen.",
   "data_grid.message.copied_to_clipboard": "In die Zwischenablage kopiert",

@@ -2115,6 +2115,7 @@ export namespace connection {
 	    messages?: string[];
 	    partial?: boolean;
 	    warnings?: string[];
+	    outcomeUnknown?: boolean;
 	    failedObjectTypes?: string[];
 	    retryable?: boolean;
 	    truncated?: boolean;
@@ -2137,6 +2138,7 @@ export namespace connection {
 	        this.messages = source["messages"];
 	        this.partial = source["partial"];
 	        this.warnings = source["warnings"];
+	        this.outcomeUnknown = source["outcomeUnknown"];
 	        this.failedObjectTypes = source["failedObjectTypes"];
 	        this.retryable = source["retryable"];
 	        this.truncated = source["truncated"];

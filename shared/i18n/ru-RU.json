@@ -4244,6 +4244,7 @@
   "data_grid.message.column_quick_find_not_rendered": "Столбец поля \"{{column}}\" сейчас не отрисован, поэтому его нельзя найти.",
   "data_grid.message.column_visibility_reset": "Все столбцы восстановлены",
   "data_grid.message.commit_failed": "Не удалось зафиксировать изменения: {{detail}}",
+  "data_grid.message.transaction_outcome_unknown": "Результат транзакции может быть неизвестен",
   "data_grid.message.copied_columns": "Создан шаблон заполнения с {{count}} полями. Выделите целевые ячейки или отметьте целевые строки.",
   "data_grid.message.copied_rows": "Скопировано строк: {{count}}. Их можно вставить как новые строки.",
   "data_grid.message.copied_to_clipboard": "Скопировано в буфер обмена",

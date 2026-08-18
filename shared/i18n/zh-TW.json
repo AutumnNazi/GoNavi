@@ -4244,6 +4244,7 @@
   "data_grid.message.column_quick_find_not_rendered": "欄位列「{{column}}」目前尚未渲染，無法定位",
   "data_grid.message.column_visibility_reset": "已還原全部欄位",
   "data_grid.message.commit_failed": "提交失敗：{{detail}}",
+  "data_grid.message.transaction_outcome_unknown": "交易結果可能未知",
   "data_grid.message.copied_columns": "已建立包含 {{count}} 個欄位的填入範本，請框選目標儲存格或勾選目標列。",
   "data_grid.message.copied_rows": "已複製 {{count}} 列，可作為新列貼上。",
   "data_grid.message.copied_to_clipboard": "已複製到剪貼簿",

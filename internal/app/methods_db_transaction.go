@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -819,6 +820,9 @@ func (a *App) finishManagedSQLTransaction(transactionID string, commit bool, tri
 	}
 	closeErr := tx.execer.Close()
 	if execErr != nil {
+		if closeErr != nil {
+			execErr = errors.Join(execErr, closeErr)
+		}
 		a.recordSQLAuditTransactionEvent(sqlAuditTransactionEventInput{
 			Config:        tx.config,
 			Database:      tx.config.Database,
@@ -837,7 +841,11 @@ func (a *App) finishManagedSQLTransaction(transactionID string, commit bool, tri
 		if commit {
 			key = "db.backend.error.transaction_commit_failed"
 		}
-		return connection.QueryResult{Success: false, Message: a.appText(key, map[string]any{"detail": execErr.Error()})}
+		return connection.QueryResult{
+			Success:        false,
+			Message:        a.appText(key, map[string]any{"detail": execErr.Error()}),
+			OutcomeUnknown: true,
+		}
 	}
 	if closeErr != nil {
 		// Commit/Rollback has already succeeded at the database boundary. Record that

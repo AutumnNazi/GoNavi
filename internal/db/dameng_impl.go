@@ -242,11 +242,18 @@ func (d *DamengDB) OpenTransactionExecer(ctx context.Context) (TransactionExecer
 		return nil, err
 	}
 	// Do not bind the transaction to ctx: the editor finishes it in a later RPC.
-	tx, err := d.conn.Begin()
+	// Keep the pinned connection so failed finalization can evict it instead of
+	// returning an unresolved transaction to database/sql's idle pool.
+	conn, err := d.conn.Conn(context.Background())
 	if err != nil {
 		return nil, err
 	}
-	return NewSQLTxStatementExecer(tx), nil
+	tx, err := conn.BeginTx(context.Background(), nil)
+	if err != nil {
+		_ = conn.Close()
+		return nil, err
+	}
+	return NewSQLTxStatementExecerWithConn(tx, conn), nil
 }
 
 func (d *DamengDB) GetDatabases() ([]string, error) {

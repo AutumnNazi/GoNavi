@@ -530,13 +530,24 @@ func (e *sqlConnStatementExecer) Discard() error {
 }
 
 type sqlConnTransactionExecer struct {
-	mu          sync.Mutex
-	conn        *sql.Conn
-	done        bool
-	commitSQL   string
-	rollbackSQL string
-	scanDialect string
+	mu                sync.Mutex
+	conn              *sql.Conn
+	done              bool
+	state             sqlTransactionState
+	rollbackAttempted bool
+	commitSQL         string
+	rollbackSQL       string
+	scanDialect       string
 }
+
+type sqlTransactionState uint8
+
+const (
+	sqlTransactionStateOpen sqlTransactionState = iota
+	sqlTransactionStateFinishing
+	sqlTransactionStateFinished
+	sqlTransactionStateUnknown
+)
 
 func NewSQLConnTransactionExecer(conn *sql.Conn, commitSQL string, rollbackSQL string) TransactionExecer {
 	return NewSQLConnTransactionExecerWithDialect(conn, commitSQL, rollbackSQL, "")
@@ -560,7 +571,7 @@ func (e *sqlConnTransactionExecer) activeConn() (*sql.Conn, error) {
 	if e.conn == nil {
 		return nil, localizedDatabaseRuntimeError("db.backend.error.connection_not_open", nil)
 	}
-	if e.done {
+	if e.done || e.state != sqlTransactionStateOpen {
 		return nil, localizedDatabaseRuntimeError("db.backend.error.transaction_already_finished", nil)
 	}
 	return e.conn, nil
@@ -633,31 +644,54 @@ func (e *sqlConnTransactionExecer) QueryMulti(query string) ([]connection.Result
 	return e.QueryMultiContext(context.Background(), query)
 }
 
-func (e *sqlConnTransactionExecer) finish(sqlText string) error {
+func (e *sqlConnTransactionExecer) finish(sqlText string, commit bool) error {
 	if e == nil {
 		return nil
 	}
 	e.mu.Lock()
-	if e.conn == nil || e.done {
+	if e.conn == nil || e.done || e.state == sqlTransactionStateFinished || e.state == sqlTransactionStateFinishing {
+		e.mu.Unlock()
+		return nil
+	}
+	if e.state == sqlTransactionStateUnknown && (commit || e.rollbackAttempted) {
 		e.mu.Unlock()
 		return nil
 	}
 	conn := e.conn
-	e.done = true
+	e.state = sqlTransactionStateFinishing
+	if !commit {
+		e.rollbackAttempted = true
+	}
 	e.mu.Unlock()
 	if strings.TrimSpace(sqlText) == "" {
+		e.mu.Lock()
+		e.state = sqlTransactionStateFinished
+		e.done = true
+		e.mu.Unlock()
 		return nil
 	}
 	_, err := conn.ExecContext(context.Background(), sqlText)
+	e.mu.Lock()
+	if err == nil {
+		e.state = sqlTransactionStateFinished
+		e.done = true
+	} else {
+		e.state = sqlTransactionStateUnknown
+		e.done = false
+	}
+	e.mu.Unlock()
+	if err != nil {
+		return MarkWriteOutcomeUnknown(err)
+	}
 	return err
 }
 
 func (e *sqlConnTransactionExecer) Commit() error {
-	return e.finish(e.commitSQL)
+	return e.finish(e.commitSQL, true)
 }
 
 func (e *sqlConnTransactionExecer) Rollback() error {
-	return e.finish(e.rollbackSQL)
+	return e.finish(e.rollbackSQL, false)
 }
 
 func (e *sqlConnTransactionExecer) Close() error {
@@ -669,32 +703,69 @@ func (e *sqlConnTransactionExecer) Close() error {
 		e.mu.Unlock()
 		return nil
 	}
-	conn := e.conn
-	shouldRollback := !e.done && e.rollbackSQL != ""
-	rollbackSQL := e.rollbackSQL
-	e.conn = nil
-	e.done = true
+	shouldRollback := !e.done && strings.TrimSpace(e.rollbackSQL) != "" &&
+		(e.state == sqlTransactionStateOpen || (e.state == sqlTransactionStateUnknown && !e.rollbackAttempted))
+	shouldDiscard := !e.done && !shouldRollback
 	e.mu.Unlock()
 
-	var rollbackErr error
 	if shouldRollback {
-		_, rollbackErr = conn.ExecContext(context.Background(), rollbackSQL)
+		if err := e.Rollback(); err != nil {
+			if discardErr := e.Discard(); discardErr != nil {
+				return errors.Join(err, discardErr)
+			}
+			return err
+		}
 	}
-	closeErr := conn.Close()
-	if rollbackErr != nil {
-		return rollbackErr
+	if shouldDiscard {
+		return e.Discard()
 	}
-	return closeErr
+
+	e.mu.Lock()
+	if e.conn == nil {
+		e.mu.Unlock()
+		return nil
+	}
+	conn := e.conn
+	e.conn = nil
+	e.done = true
+	e.state = sqlTransactionStateFinished
+	e.mu.Unlock()
+
+	return conn.Close()
+}
+
+func (e *sqlConnTransactionExecer) Discard() error {
+	if e == nil {
+		return nil
+	}
+	e.mu.Lock()
+	conn := e.conn
+	e.conn = nil
+	e.done = true
+	e.state = sqlTransactionStateFinished
+	e.mu.Unlock()
+	return discardSQLConn(&conn)
 }
 
 type sqlTxStatementExecer struct {
-	mu   sync.Mutex
-	tx   *sql.Tx
-	done bool
+	mu                sync.Mutex
+	tx                *sql.Tx
+	conn              *sql.Conn
+	done              bool
+	state             sqlTransactionState
+	rollbackAttempted bool
+	lastFinishErr     error
 }
 
 func NewSQLTxStatementExecer(tx *sql.Tx) TransactionExecer {
 	return &sqlTxStatementExecer{tx: tx}
+}
+
+// NewSQLTxStatementExecerWithConn keeps the pinned *sql.Conn alongside a
+// database/sql transaction so a failed finalization can evict the physical
+// connection instead of returning an unresolved transaction to the pool.
+func NewSQLTxStatementExecerWithConn(tx *sql.Tx, conn *sql.Conn) TransactionExecer {
+	return &sqlTxStatementExecer{tx: tx, conn: conn}
 }
 
 func (e *sqlTxStatementExecer) activeTx() (*sql.Tx, error) {
@@ -703,7 +774,7 @@ func (e *sqlTxStatementExecer) activeTx() (*sql.Tx, error) {
 	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	if e.done {
+	if e.done || e.state != sqlTransactionStateOpen {
 		return nil, localizedDatabaseRuntimeError("db.backend.error.transaction_already_finished", nil)
 	}
 	return e.tx, nil
@@ -776,35 +847,96 @@ func (e *sqlTxStatementExecer) QueryMulti(query string) ([]connection.ResultSetD
 	return e.QueryMultiContext(context.Background(), query)
 }
 
-func (e *sqlTxStatementExecer) finish(action func(*sql.Tx) error) error {
+func (e *sqlTxStatementExecer) finish(action func(*sql.Tx) error, commit bool) error {
 	if e == nil || e.tx == nil {
 		return nil
 	}
 	e.mu.Lock()
-	if e.done {
+	if e.done || e.state == sqlTransactionStateFinished || e.state == sqlTransactionStateFinishing {
+		e.mu.Unlock()
+		return nil
+	}
+	if e.state == sqlTransactionStateUnknown && (commit || e.rollbackAttempted) {
 		e.mu.Unlock()
 		return nil
 	}
 	tx := e.tx
-	e.done = true
+	e.state = sqlTransactionStateFinishing
+	if !commit {
+		e.rollbackAttempted = true
+	}
 	e.mu.Unlock()
-	return action(tx)
+	err := action(tx)
+	e.mu.Lock()
+	if err == nil {
+		e.done = true
+		e.state = sqlTransactionStateFinished
+		e.lastFinishErr = nil
+	} else {
+		e.done = false
+		e.state = sqlTransactionStateUnknown
+		e.lastFinishErr = MarkWriteOutcomeUnknown(err)
+	}
+	e.mu.Unlock()
+	if err != nil {
+		return MarkWriteOutcomeUnknown(err)
+	}
+	return nil
 }
 
 func (e *sqlTxStatementExecer) Commit() error {
 	return e.finish(func(tx *sql.Tx) error {
 		return tx.Commit()
-	})
+	}, true)
 }
 
 func (e *sqlTxStatementExecer) Rollback() error {
 	return e.finish(func(tx *sql.Tx) error {
 		return tx.Rollback()
-	})
+	}, false)
 }
 
 func (e *sqlTxStatementExecer) Close() error {
-	return e.Rollback()
+	if e == nil || e.tx == nil {
+		return nil
+	}
+	e.mu.Lock()
+	if e.state == sqlTransactionStateUnknown && e.rollbackAttempted && e.lastFinishErr != nil {
+		err := e.lastFinishErr
+		e.mu.Unlock()
+		if discardErr := e.Discard(); discardErr != nil {
+			return errors.Join(err, discardErr)
+		}
+		return err
+	}
+	e.mu.Unlock()
+	if err := e.Rollback(); err != nil {
+		if discardErr := e.Discard(); discardErr != nil {
+			return errors.Join(err, discardErr)
+		}
+		return err
+	}
+	e.mu.Lock()
+	conn := e.conn
+	e.conn = nil
+	e.mu.Unlock()
+	if conn != nil {
+		return conn.Close()
+	}
+	return nil
+}
+
+func (e *sqlTxStatementExecer) Discard() error {
+	if e == nil {
+		return nil
+	}
+	e.mu.Lock()
+	conn := e.conn
+	e.conn = nil
+	e.done = true
+	e.state = sqlTransactionStateFinished
+	e.mu.Unlock()
+	return discardSQLConn(&conn)
 }
 
 // BatchApplier 定义了批量变更提交接口。

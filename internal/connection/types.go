@@ -202,6 +202,7 @@ type QueryResult struct {
 	Messages           []string    `json:"messages,omitempty"`
 	Partial            bool        `json:"partial,omitempty"`
 	Warnings           []string    `json:"warnings,omitempty"`
+	OutcomeUnknown     bool        `json:"outcomeUnknown,omitempty"`
 	FailedObjectTypes  []string    `json:"failedObjectTypes,omitempty"`
 	Retryable          bool        `json:"retryable,omitempty"`
 	Truncated          bool        `json:"truncated,omitempty"`

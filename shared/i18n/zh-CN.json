@@ -4244,6 +4244,7 @@
   "data_grid.message.column_quick_find_not_rendered": "字段列“{{column}}”当前未渲染，无法定位",
   "data_grid.message.column_visibility_reset": "已恢复全部列",
   "data_grid.message.commit_failed": "提交失败：{{detail}}",
+  "data_grid.message.transaction_outcome_unknown": "事务结果可能未知",
   "data_grid.message.copied_columns": "已创建包含 {{count}} 个字段的填充模板，请框选目标单元格或勾选目标行。",
   "data_grid.message.copied_rows": "已复制 {{count}} 行，可作为新行粘贴。",
   "data_grid.message.copied_to_clipboard": "已复制到剪贴板",

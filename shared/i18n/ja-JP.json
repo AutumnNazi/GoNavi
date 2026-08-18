@@ -4244,6 +4244,7 @@
   "data_grid.message.column_quick_find_not_rendered": "フィールド列「{{column}}」は現在レンダリングされていないため、特定できません",
   "data_grid.message.column_visibility_reset": "すべての列を表示しました",
   "data_grid.message.commit_failed": "コミットに失敗しました: {{detail}}",
+  "data_grid.message.transaction_outcome_unknown": "トランザクションの結果が不明な可能性があります",
   "data_grid.message.copied_columns": "{{count}} フィールドの入力テンプレートを作成しました。対象セルを範囲選択するか、対象行にチェックを入れてください。",
   "data_grid.message.copied_rows": "{{count}} 行をコピーしました。新しい行として貼り付けできます。",
   "data_grid.message.copied_to_clipboard": "クリップボードにコピーしました",
