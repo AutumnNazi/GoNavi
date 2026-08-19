@@ -47,10 +47,17 @@ func TestExecuteSQLFileStreamPreflightsStatementBeforeExec(t *testing.T) {
 	}
 }
 
-func TestSQLFileExecutionDialogFiltersIncludeGzipSQL(t *testing.T) {
-	filters := sqlFileExecutionDialogFilters(nil)
-	if len(filters) == 0 || filters[0].Pattern != "*.sql;*.sql.gz" {
-		t.Fatalf("filters = %#v, want SQL and gzip SQL pattern", filters)
+func TestSQLFileExecutionDialogFiltersAreSafeOnMacOS(t *testing.T) {
+	filters := sqlFileExecutionDialogFiltersForPlatform(nil, "darwin")
+	if len(filters) != 1 || filters[0].Pattern != "*.sql;*.gz" {
+		t.Fatalf("filters = %#v, want SQL and gzip extension patterns without an all-files wildcard", filters)
+	}
+}
+
+func TestSQLFileExecutionDialogFiltersIncludeGzipSQLOutsideMacOS(t *testing.T) {
+	filters := sqlFileExecutionDialogFiltersForPlatform(nil, "linux")
+	if len(filters) != 2 || filters[0].Pattern != "*.sql;*.sql.gz" || filters[1].Pattern != "*.*" {
+		t.Fatalf("filters = %#v, want SQL and gzip SQL pattern plus all-files fallback", filters)
 	}
 }
 

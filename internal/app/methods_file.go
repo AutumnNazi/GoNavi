@@ -17,6 +17,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
+	goRuntime "runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -970,16 +971,32 @@ func selectSQLFileForExecutionByPathWithText(filePath string, text fileBackendTe
 }
 
 func sqlFileExecutionDialogFilters(text fileBackendTextFunc) []runtime.FileFilter {
-	return []runtime.FileFilter{
+	return sqlFileExecutionDialogFiltersForPlatform(text, goRuntime.GOOS)
+}
+
+func sqlFileExecutionDialogFiltersForPlatform(text fileBackendTextFunc, platform string) []runtime.FileFilter {
+	pattern := "*.sql;*.sql.gz"
+	includeAllFiles := true
+	// Wails turns compound extensions into UTTypes on macOS. "sql.gz" is not
+	// recognized and makes the native dialog abort; "gz" keeps gzip SQL selectable.
+	if platform == "darwin" {
+		pattern = "*.sql;*.gz"
+		includeAllFiles = false
+	}
+
+	filters := []runtime.FileFilter{
 		{
 			DisplayName: fileBackendText(text, "file.backend.filter.sql_files", nil),
-			Pattern:     "*.sql;*.sql.gz",
-		},
-		{
-			DisplayName: fileBackendText(text, "file.backend.filter.all_files_pattern", nil),
-			Pattern:     "*.*",
+			Pattern:     pattern,
 		},
 	}
+	if includeAllFiles {
+		filters = append(filters, runtime.FileFilter{
+			DisplayName: fileBackendText(text, "file.backend.filter.all_files_pattern", nil),
+			Pattern:     "*.*",
+		})
+	}
+	return filters
 }
 
 func readSQLFileWithMetadataByPath(filePath string) connection.QueryResult {
