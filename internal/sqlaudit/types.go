@@ -43,6 +43,9 @@ type Event struct {
 	SQLFingerprint        string `json:"sqlFingerprint"`
 	StatementIndex        int    `json:"statementIndex"`
 	StatementCount        int    `json:"statementCount"`
+	ExecutedCount         int    `json:"executedCount,omitempty"`
+	FailedIndex           int    `json:"failedIndex,omitempty"`
+	OutcomeUnknown        bool   `json:"outcomeUnknown,omitempty"`
 	DurationMs            int64  `json:"durationMs"`
 	RowsAffected          int64  `json:"rowsAffected"`
 	RowsReturned          int64  `json:"rowsReturned"`

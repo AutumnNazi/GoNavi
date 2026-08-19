@@ -2,6 +2,7 @@ package sqlaudit
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"os"
@@ -121,6 +122,52 @@ func TestOpenConfiguresSQLiteAndDefaultSettings(t *testing.T) {
 		if got := fileInfo.Mode().Perm(); got != 0o600 {
 			t.Fatalf("audit database mode = %#o, want 0600", got)
 		}
+	}
+}
+
+func TestOpenMigratesV1EventsWithoutBreakingExistingHashChain(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "audit", "sql_audit.db")
+	store, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open v2 store: %v", err)
+	}
+	if err := store.Append(sampleEvent("v1-event", time.Now().UnixMilli())); err != nil {
+		t.Fatalf("append v1-compatible event: %v", err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatalf("close v2 store: %v", err)
+	}
+
+	legacyDB, err := sql.Open("sqlite", sqliteAuditDSN(path))
+	if err != nil {
+		t.Fatalf("open legacy database: %v", err)
+	}
+	for _, column := range []string{"executed_count", "failed_index", "outcome_unknown"} {
+		if _, err := legacyDB.Exec("ALTER TABLE sql_audit_events DROP COLUMN " + column); err != nil {
+			_ = legacyDB.Close()
+			t.Fatalf("drop v2 column %s: %v", column, err)
+		}
+	}
+	if _, err := legacyDB.Exec("PRAGMA user_version=1"); err != nil {
+		_ = legacyDB.Close()
+		t.Fatalf("set v1 schema version: %v", err)
+	}
+	if err := legacyDB.Close(); err != nil {
+		t.Fatalf("close legacy database: %v", err)
+	}
+
+	migrated, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open migrated v1 store: %v", err)
+	}
+	t.Cleanup(func() { _ = migrated.Close() })
+	report, err := migrated.VerifyIntegrity()
+	if err != nil || !report.Valid || report.CheckedRecords != 1 {
+		t.Fatalf("migrated v1 integrity report = %#v, err=%v", report, err)
+	}
+	page, err := migrated.Query(Filter{PageSize: 10})
+	if err != nil || len(page.Items) != 1 || page.Items[0].ExecutedCount != 0 || page.Items[0].FailedIndex != 0 || page.Items[0].OutcomeUnknown {
+		t.Fatalf("migrated v1 event = %#v, err=%v", page.Items, err)
 	}
 }
 
@@ -615,6 +662,29 @@ func TestAppendBatchLargerThanMaxRecordsFailsAtomically(t *testing.T) {
 	}
 	if report, err := store.VerifyIntegrity(); err != nil || !report.Valid || report.CheckedRecords != 1 {
 		t.Fatalf("large-batch chain invalid: report=%#v err=%v", report, err)
+	}
+}
+
+func TestStorePreservesMultiStatementExecutionSummary(t *testing.T) {
+	store := openTestStore(t)
+	event := sampleEvent("multi-summary", time.Now().UnixMilli())
+	event.StatementCount = 3
+	event.ExecutedCount = 1
+	event.FailedIndex = 2
+	event.OutcomeUnknown = true
+	if err := store.Append(event); err != nil {
+		t.Fatalf("Append returned error: %v", err)
+	}
+	page, err := store.Query(Filter{PageSize: 10})
+	if err != nil || len(page.Items) != 1 {
+		t.Fatalf("Query returned page=%#v err=%v", page, err)
+	}
+	got := page.Items[0]
+	if got.ExecutedCount != 1 || got.FailedIndex != 2 || !got.OutcomeUnknown {
+		t.Fatalf("execution summary = %#v", got)
+	}
+	if report, err := store.VerifyIntegrity(); err != nil || !report.Valid {
+		t.Fatalf("summary audit hash invalid: report=%#v err=%v", report, err)
 	}
 }
 

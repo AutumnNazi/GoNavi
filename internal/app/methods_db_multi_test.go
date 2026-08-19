@@ -40,7 +40,8 @@ type fakeBatchWriteDB struct {
 
 type fakeNativeMultiResultDB struct {
 	*fakeBatchWriteDB
-	multiCalls int
+	multiCalls       int
+	partialResultErr map[string]error
 }
 
 type fakeEmptyNativeMultiResultDB struct {
@@ -70,7 +71,7 @@ func (f *fakeNativeMultiResultDB) QueryMultiContextWithMessages(ctx context.Cont
 		return nil, nil, err
 	}
 	if multi := f.multiResult[query]; len(multi) > 0 {
-		return cloneResultSets(multi), append([]string(nil), f.messageMap[query]...), nil
+		return cloneResultSets(multi), append([]string(nil), f.messageMap[query]...), f.partialResultErr[query]
 	}
 	rows, columns, messages, err := f.QueryContextWithMessages(ctx, query)
 	if err != nil {

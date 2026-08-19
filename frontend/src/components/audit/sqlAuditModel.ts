@@ -20,6 +20,9 @@ export interface SQLAuditEvent {
   sqlFingerprint: string;
   statementIndex: number;
   statementCount: number;
+  executedCount: number;
+  failedIndex: number;
+  outcomeUnknown: boolean;
   durationMs: number;
   rowsAffected?: number;
   rowsReturned?: number;
@@ -188,6 +191,9 @@ export const normalizeSQLAuditEvent = (value: unknown, index = 0): SQLAuditEvent
     sqlFingerprint: toStringValue(raw.sqlFingerprint),
     statementIndex: Math.max(0, toFiniteNumber(raw.statementIndex)),
     statementCount: Math.max(0, toFiniteNumber(raw.statementCount)),
+    executedCount: Math.max(0, toFiniteNumber(raw.executedCount)),
+    failedIndex: Math.max(0, toFiniteNumber(raw.failedIndex)),
+    outcomeUnknown: raw.outcomeUnknown === true,
     durationMs: Math.max(0, toFiniteNumber(raw.durationMs)),
     rowsAffected: toOptionalFiniteNumber(raw.rowsAffected),
     rowsReturned: toOptionalFiniteNumber(raw.rowsReturned),

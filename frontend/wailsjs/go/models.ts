@@ -2284,6 +2284,10 @@ export namespace connection {
 	    fields?: string[];
 	    messages?: string[];
 	    partial?: boolean;
+	    executedCount?: number;
+	    failedIndex?: number;
+	    boundaryMode?: string;
+	    commitMode?: string;
 	    warnings?: string[];
 	    outcomeUnknown?: boolean;
 	    failedObjectTypes?: string[];
@@ -2307,6 +2311,10 @@ export namespace connection {
 	        this.fields = source["fields"];
 	        this.messages = source["messages"];
 	        this.partial = source["partial"];
+	        this.executedCount = source["executedCount"];
+	        this.failedIndex = source["failedIndex"];
+	        this.boundaryMode = source["boundaryMode"];
+	        this.commitMode = source["commitMode"];
 	        this.warnings = source["warnings"];
 	        this.outcomeUnknown = source["outcomeUnknown"];
 	        this.failedObjectTypes = source["failedObjectTypes"];
