@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Publish one prepared generation to the DMIT static edge and netcup origin,
+# Publish one prepared generation to the DMIT static edge and Bero origin,
 # then commit their routing control to Cloudflare KV.
 # Secrets are consumed only from the environment and are never printed.
 
@@ -24,10 +24,14 @@ PUB_THROUGHPUT_WARN_MBPS="${PUB_THROUGHPUT_WARN_MBPS:-20}"
 [[ "${PUB_THROUGHPUT_WARN_MBPS}" =~ ^[0-9]+([.][0-9]+)?$ ]] || { echo "Invalid throughput warning threshold" >&2; exit 1; }
 EDGE_DMIT_MAX_BYTES="${EDGE_DMIT_MAX_BYTES:-9000000000}"
 EDGE_DMIT_RESERVE_FREE_BYTES="${EDGE_DMIT_RESERVE_FREE_BYTES:-2000000000}"
-EDGE_NETCUP_MAX_BYTES="${EDGE_NETCUP_MAX_BYTES:-9000000000}"
-EDGE_NETCUP_RESERVE_FREE_BYTES="${EDGE_NETCUP_RESERVE_FREE_BYTES:-2000000000}"
-[[ "${EDGE_NETCUP_HOST:-}" == "152.53.66.99" ]] || {
-  echo "Netcup origin SSH host must be 152.53.66.99" >&2
+EDGE_BERO_MAX_BYTES="${EDGE_BERO_MAX_BYTES:-9000000000}"
+EDGE_BERO_RESERVE_FREE_BYTES="${EDGE_BERO_RESERVE_FREE_BYTES:-2000000000}"
+[[ "${EDGE_BERO_HOST:-}" == "94.103.173.47" ]] || {
+  echo "Bero origin SSH host must be 94.103.173.47" >&2
+  exit 1
+}
+[[ "${EDGE_BERO_PORT:-}" == "37167" ]] || {
+  echo "Bero origin SSH port must be 37167" >&2
   exit 1
 }
 PUB_TIMEOUT_KILL_AFTER_SECONDS="${PUB_TIMEOUT_KILL_AFTER_SECONDS:-15}"
@@ -135,19 +139,17 @@ stage_node() (
   done
   [[ "${port}" =~ ^[0-9]+$ ]] || { echo "${node} has an invalid SSH port" >&2; exit 1; }
   [[ "${max_bytes}" =~ ^[0-9]+$ && "${reserve_free_bytes}" =~ ^[0-9]+$ ]] || { echo "${node} has an invalid disk budget" >&2; exit 1; }
-  [[ "${root}" == /srv/* && "${base_url}" =~ ^https://[A-Za-z0-9.-]+/?$ ]] || { echo "${node} root or HTTPS URL is invalid" >&2; exit 1; }
-  if [[ "${node}" == netcup && "${host}" != "152.53.66.99" ]]; then
-    echo "netcup origin SSH host must be 152.53.66.99" >&2
+  [[ "${root}" == /srv/* && "${base_url}" =~ ^https://[A-Za-z0-9.-]+(:[0-9]{1,5})?/?$ ]] || { echo "${node} root or HTTPS URL is invalid" >&2; exit 1; }
+  if [[ "${node}" == bero && ( "${host}" != "94.103.173.47" || "${port}" != "37167" ) ]]; then
+    echo "bero origin SSH target must be 94.103.173.47:37167" >&2
     exit 1
   fi
-  if [[ "${node}" == netcup ]]; then
+  if [[ "${node}" == bero ]]; then
     base_url_without_slash="${base_url%/}"
-    case "${base_url_without_slash}" in
-      https://download.syngnat.top|https://152.53.66.99|https://179.253.224.58|https://157.254.234.28)
-        echo "netcup base URL must be a separate Cloudflare-proxied hostname" >&2
-        exit 1
-        ;;
-    esac
+    [[ "${base_url_without_slash}" == "https://origin-download.syngnat.top:8443" ]] || {
+      echo "bero base URL must be https://origin-download.syngnat.top:8443" >&2
+      exit 1
+    }
   fi
 
   ssh_dir="${credential_root}/${node}"
@@ -281,7 +283,7 @@ PY
   printf 'immutable\n' > "${status_root}/${node}.status"
 )
 
-for node in dmit netcup; do
+for node in dmit bero; do
   echo "[${node}] staging generation ${PUB_GENERATION}"
   stage_node "${node}"
   [[ "$(cat "${status_root}/${node}.status" 2>/dev/null || true)" == immutable ]] || {
@@ -356,7 +358,7 @@ activate_node() (
   printf 'ready\n' > "${status_root}/${node}.status"
 )
 
-for node in dmit netcup; do
+for node in dmit bero; do
   echo "[${node}] activating generation ${PUB_GENERATION}"
   activate_node "${node}"
   [[ "$(cat "${status_root}/${node}.status" 2>/dev/null || true)" == ready ]] || {
@@ -373,8 +375,8 @@ jq -n \
   --arg verifiedAt "${verified_at}" \
   --arg probePath "${probe_path}" --argjson probeSize "${probe_size}" --arg probeSha256 "${probe_sha}" \
   --arg dmitBase "$(node_value dmit BASE_URL)" \
-  --arg netcupBase "$(node_value netcup BASE_URL)" \
-  '{schemaVersion:1,channel:$channel,generation:$generation,appTag:$appTag,driverTag:$driverTag,verifiedAt:$verifiedAt,probePath:$probePath,probeSize:$probeSize,probeSha256:$probeSha256,nodes:{dmit:{baseUrl:$dmitBase,enabled:true},netcup:{baseUrl:$netcupBase,enabled:true}}}' \
+  --arg beroBase "$(node_value bero BASE_URL)" \
+  '{schemaVersion:1,channel:$channel,generation:$generation,appTag:$appTag,driverTag:$driverTag,verifiedAt:$verifiedAt,probePath:$probePath,probeSize:$probeSize,probeSha256:$probeSha256,nodes:{dmit:{baseUrl:$dmitBase,enabled:true},bero:{baseUrl:$beroBase,enabled:true}}}' \
   > "${control_file}"
 
 put_kv_control() {
@@ -404,4 +406,4 @@ put_kv_control() {
 put_kv_control "control:history:${PUB_CHANNEL}:${PUB_GENERATION}" "${control_file}"
 put_kv_control "control:${PUB_CHANNEL}" "${control_file}"
 
-echo "Published generation ${PUB_GENERATION}: dmit=true netcup=true"
+echo "Published generation ${PUB_GENERATION}: dmit=true bero=true"

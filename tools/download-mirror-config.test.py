@@ -22,16 +22,35 @@ class DownloadMirrorConfigTest(unittest.TestCase):
         self.assertNotIn("reverse_proxy", snippet)
         self.assertFalse((ROOT / "deploy/download-mirror/dmit-nginx.conf").exists())
         self.assertFalse((ROOT / "deploy/download-mirror/tencent-ip-nginx.conf").exists())
+        self.assertFalse((ROOT / "deploy/download-mirror/netcup-origin-download.conf").exists())
         self.assertIn("DMIT must retain its existing Caddy listener", installer)
-        self.assertIn("dmit:caddy|netcup:nginx", installer)
-        self.assertIn("netcup Nginx config must declare server_name", installer)
+        self.assertIn("dmit:caddy|bero:nginx", installer)
+        self.assertIn("Bero Nginx config must declare server_name", installer)
+        self.assertIn("Bero Nginx config must listen on 8443 with TLS", installer)
+        self.assertIn("Bero Nginx config must not claim ports 80, 443, or 2053", installer)
         self.assertIn("nginx -t", installer)
+        self.assertIn("systemctl is-active --quiet nginx", installer)
+        self.assertIn("systemctl enable --now nginx", installer)
+        self.assertLess(installer.index("nginx -t"), installer.index("systemctl enable --now nginx"))
         self.assertNotIn("tencent", installer.lower())
         self.assertIn("caddy validate", installer)
         self.assertIn("/usr/local/libexec/gonavi-edge-transaction", installer)
         self.assertIn("NOPASSWD: GONAVI_EDGE_CONTROL", installer)
 
-    def test_publication_uses_dmit_and_netcup_with_observability_only_throughput(self) -> None:
+    def test_bero_uses_public_tls_8443_without_claiming_sing_box_ports(self) -> None:
+        config = (ROOT / "deploy/download-mirror/bero-origin-download.conf").read_text(encoding="utf-8")
+
+        self.assertIn("server_name origin-download.syngnat.top", config)
+        self.assertIn("listen 8443 ssl;", config)
+        self.assertIn("listen [::]:8443 ssl;", config)
+        self.assertNotIn("listen 80", config)
+        self.assertNotIn("listen 443", config)
+        self.assertNotIn("listen 2053", config)
+        self.assertIn("ssl_certificate /etc/ssl/cloudflare/origin-download.syngnat.top.pem;", config)
+        self.assertIn("ssl_certificate_key /etc/ssl/cloudflare/origin-download.syngnat.top.key;", config)
+        self.assertIn("root /srv/gonavi-downloads", config)
+
+    def test_publication_uses_dmit_and_bero_with_observability_only_throughput(self) -> None:
         action = (ROOT / ".github/actions/publish-vps-mirror/action.yml").read_text(encoding="utf-8")
         publication = (ROOT / "tools/publish-edge-release.sh").read_text(encoding="utf-8")
         stable_workflow = (ROOT / ".github/workflows/publish-release.yml").read_text(encoding="utf-8")
@@ -39,22 +58,27 @@ class DownloadMirrorConfigTest(unittest.TestCase):
 
         self.assertIn("dmit-max-bytes", action)
         self.assertIn("default: '9000000000'", action)
-        self.assertIn("netcup-ssh-host", action)
-        self.assertIn("netcup-base-url", action)
-        self.assertIn("EDGE_NETCUP_HOST", action)
-        self.assertIn("CDN_NETCUP_SSH_HOST", stable_workflow)
-        self.assertIn("CDN_NETCUP_SSH_HOST", dev_workflow)
-        self.assertIn("CDN_NETCUP_BASE_URL", stable_workflow)
-        self.assertIn("CDN_NETCUP_BASE_URL", dev_workflow)
+        self.assertIn("bero-ssh-host", action)
+        self.assertIn("bero-base-url", action)
+        self.assertIn("EDGE_BERO_HOST", action)
+        self.assertIn("CDN_BERO_SSH_HOST", stable_workflow)
+        self.assertIn("CDN_BERO_SSH_HOST", dev_workflow)
+        self.assertIn("CDN_BERO_BASE_URL", stable_workflow)
+        self.assertIn("CDN_BERO_BASE_URL", dev_workflow)
+        self.assertNotIn("CDN_NETCUP_", stable_workflow)
+        self.assertNotIn("CDN_NETCUP_", dev_workflow)
         self.assertNotIn("tencent-ssh-", action)
         self.assertNotIn("tencent-max-bytes", action)
         self.assertNotIn("EDGE_TENCENT_", action)
         self.assertNotIn("CDN_TENCENT_", stable_workflow)
         self.assertNotIn("CDN_TENCENT_", dev_workflow)
         self.assertIn("stage_node \"${node}\"", publication)
-        self.assertIn("for node in dmit netcup", publication)
+        self.assertIn("for node in dmit bero", publication)
         self.assertIn("activate_node \"${node}\"", publication)
-        self.assertIn("netcup origin SSH host must be 152.53.66.99", publication)
+        self.assertIn("Bero origin SSH host must be 94.103.173.47", publication)
+        self.assertIn("Bero origin SSH port must be 37167", publication)
+        self.assertIn("https://origin-download.syngnat.top:8443", publication)
+        self.assertNotIn("netcup", publication.lower())
         self.assertNotIn("node_value tencent", publication)
         self.assertNotIn("tencent", publication.lower())
         self.assertIn("PUB_THROUGHPUT_WARN_MBPS", publication)
@@ -90,7 +114,7 @@ class DownloadMirrorConfigTest(unittest.TestCase):
         self.assertIn('echo "[${node}] uploading payload"', publication)
         self.assertIn('echo "[${node}] verifying immutable Range"', publication)
 
-    def test_publication_control_contains_dmit_and_netcup(self) -> None:
+    def test_publication_control_contains_dmit_and_bero(self) -> None:
         publication = (ROOT / "tools/publish-edge-release.sh").read_text(encoding="utf-8")
         filter_start = publication.index("'{schemaVersion:1") + 1
         filter_end = publication.index("}'", filter_start) + 1
@@ -127,8 +151,8 @@ class DownloadMirrorConfigTest(unittest.TestCase):
                 "dmitBase",
                 "https://download.syngnat.top",
                 "--arg",
-                "netcupBase",
-                "https://origin.example",
+                "beroBase",
+                "https://origin.example:8443",
                 jq_filter,
             ],
             check=True,
@@ -138,7 +162,7 @@ class DownloadMirrorConfigTest(unittest.TestCase):
         control = json.loads(result.stdout)
         self.assertEqual(control["nodes"], {
             "dmit": {"baseUrl": "https://download.syngnat.top", "enabled": True},
-            "netcup": {"baseUrl": "https://origin.example", "enabled": True},
+            "bero": {"baseUrl": "https://origin.example:8443", "enabled": True},
         })
         self.assertEqual(control["appTag"], "dev-abc123")
         self.assertEqual(control["driverTag"], "driver-abc123")

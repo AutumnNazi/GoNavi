@@ -21,18 +21,18 @@ describe("download dispatcher", () => {
     ]);
   });
 
-  it("keeps DMIT first and netcup second in every region", () => {
-    expect(orderedNodeIds()).toEqual(["dmit", "netcup"]);
+  it("keeps DMIT first and Bero second in every region", () => {
+    expect(orderedNodeIds()).toEqual(["dmit", "bero"]);
   });
 
-  it("keeps legacy 302 downloads on healthy DMIT before netcup and GitHub", () => {
+  it("keeps legacy 302 downloads on healthy DMIT before Bero and GitHub", () => {
     const candidates = [
       { source: "dmit", url: "https://download.syngnat.top/asset" },
-      { source: "netcup", url: "https://origin.example/asset" },
+      { source: "bero", url: "https://origin-download.syngnat.top:8443/asset" },
       { source: "github", url: "https://github.com/example/asset" },
     ];
     expect(selectLegacyRedirectCandidate(candidates).source).toBe("dmit");
-    expect(selectLegacyRedirectCandidate(candidates.filter((candidate) => candidate.source !== "dmit")).source).toBe("netcup");
+    expect(selectLegacyRedirectCandidate(candidates.filter((candidate) => candidate.source !== "dmit")).source).toBe("bero");
     expect(selectLegacyRedirectCandidate(candidates.filter((candidate) => candidate.source === "github")).source).toBe("github");
   });
 
@@ -200,9 +200,9 @@ describe("download dispatcher", () => {
     }
   });
 
-  it("routes healthy DMIT, then netcup, then GitHub", async () => {
-    const generation = "stable-dual-edge";
-    const control = {
+  it("does not reuse a legacy netcup fallback before Bero receives that generation", async () => {
+    const generation = "stable-legacy-netcup";
+    const legacyControl = {
       schemaVersion: 1,
       channel: "stable" as const,
       generation,
@@ -216,66 +216,12 @@ describe("download dispatcher", () => {
         netcup: { baseUrl: "https://origin.example", enabled: true },
       },
     };
-    await env.ROUTING_STATE.put("control:stable", JSON.stringify(control));
+    await env.ROUTING_STATE.put("control:stable", JSON.stringify(legacyControl));
     await env.ROUTING_STATE.put("routing:stable", JSON.stringify({
       schemaVersion: 1,
       channel: "stable",
       generation,
-      control,
-      nodes: {
-        dmit: {
-          generation,
-          healthy: true,
-          consecutiveFailures: 0,
-          consecutiveSuccesses: 2,
-          checkedAt: new Date().toISOString(),
-          detail: "ok",
-        },
-        netcup: {
-          generation,
-          healthy: true,
-          consecutiveFailures: 0,
-          consecutiveSuccesses: 2,
-          checkedAt: new Date().toISOString(),
-          detail: "ok",
-        },
-      },
-      checkedAt: new Date().toISOString(),
-    }));
-
-    const response = await SELF.fetch(
-      "https://download-dispatch.syngnat.top/v1/resolve?format=json&path=/gonavi/releases/download/v1.2.3/GoNavi.zip",
-    );
-    const body = await response.json<{ candidates: Array<{ source: string; url: string }> }>();
-    expect(body.candidates).toEqual([
-      { source: "dmit", url: "https://download.syngnat.top/gonavi/releases/download/v1.2.3/GoNavi.zip" },
-      { source: "netcup", url: "https://origin.example/gonavi/releases/download/v1.2.3/GoNavi.zip" },
-      { source: "github", url: "https://github.com/Syngnat/GoNavi/releases/download/v1.2.3/GoNavi.zip" },
-    ]);
-  });
-
-  it("falls back to healthy netcup when DMIT is unhealthy", async () => {
-    const generation = "stable-netcup-fallback";
-    const control = {
-      schemaVersion: 1,
-      channel: "stable" as const,
-      generation,
-      appTag: "v1.2.3",
-      driverTag: null,
-      probePath: "/gonavi/releases/download/v1.2.3/GoNavi.zip",
-      probeSize: 1024,
-      probeSha256: "a".repeat(64),
-      nodes: {
-        dmit: { baseUrl: "https://download.syngnat.top", enabled: true },
-        netcup: { baseUrl: "https://origin.example", enabled: true },
-      },
-    };
-    await env.ROUTING_STATE.put("control:stable", JSON.stringify(control));
-    await env.ROUTING_STATE.put("routing:stable", JSON.stringify({
-      schemaVersion: 1,
-      channel: "stable",
-      generation,
-      control,
+      control: legacyControl,
       nodes: {
         dmit: {
           generation,
@@ -298,21 +244,20 @@ describe("download dispatcher", () => {
     }));
 
     const response = await SELF.fetch(
-      "https://download-dispatch.syngnat.top/v1/resolve?path=/gonavi/releases/download/v1.2.3/GoNavi.zip",
-      { redirect: "manual" },
+      "https://download-dispatch.syngnat.top/v1/resolve?format=json&path=/gonavi/releases/download/v1.2.3/GoNavi.zip",
     );
-    expect(response.status).toBe(302);
-    expect(response.headers.get("X-GoNavi-Download-Source")).toBe("netcup");
-    expect(response.headers.get("Location")).toBe(
-      "https://origin.example/gonavi/releases/download/v1.2.3/GoNavi.zip",
-    );
+    const body = await response.json<{ candidates: Array<{ source: string; url: string }> }>();
+    expect(body.candidates).toEqual([
+      { source: "github", url: "https://github.com/Syngnat/GoNavi/releases/download/v1.2.3/GoNavi.zip" },
+    ]);
   });
 
-  it("does not accept a netcup origin IP as a public fallback URL", async () => {
-    await env.ROUTING_STATE.put("control:stable", JSON.stringify({
+  it("routes healthy DMIT, then Bero, then GitHub", async () => {
+    const generation = "stable-dual-edge";
+    const control = {
       schemaVersion: 1,
-      channel: "stable",
-      generation: "stable-invalid-netcup-url",
+      channel: "stable" as const,
+      generation,
       appTag: "v1.2.3",
       driverTag: null,
       probePath: "/gonavi/releases/download/v1.2.3/GoNavi.zip",
@@ -320,7 +265,114 @@ describe("download dispatcher", () => {
       probeSha256: "a".repeat(64),
       nodes: {
         dmit: { baseUrl: "https://download.syngnat.top", enabled: true },
-        netcup: { baseUrl: "https://152.53.66.99", enabled: true },
+        bero: { baseUrl: "https://origin-download.syngnat.top:8443", enabled: true },
+      },
+    };
+    await env.ROUTING_STATE.put("control:stable", JSON.stringify(control));
+    await env.ROUTING_STATE.put("routing:stable", JSON.stringify({
+      schemaVersion: 1,
+      channel: "stable",
+      generation,
+      control,
+      nodes: {
+        dmit: {
+          generation,
+          healthy: true,
+          consecutiveFailures: 0,
+          consecutiveSuccesses: 2,
+          checkedAt: new Date().toISOString(),
+          detail: "ok",
+        },
+        bero: {
+          generation,
+          healthy: true,
+          consecutiveFailures: 0,
+          consecutiveSuccesses: 2,
+          checkedAt: new Date().toISOString(),
+          detail: "ok",
+        },
+      },
+      checkedAt: new Date().toISOString(),
+    }));
+
+    const response = await SELF.fetch(
+      "https://download-dispatch.syngnat.top/v1/resolve?format=json&path=/gonavi/releases/download/v1.2.3/GoNavi.zip",
+    );
+    const body = await response.json<{ candidates: Array<{ source: string; url: string }> }>();
+    expect(body.candidates).toEqual([
+      { source: "dmit", url: "https://download.syngnat.top/gonavi/releases/download/v1.2.3/GoNavi.zip" },
+      { source: "bero", url: "https://origin-download.syngnat.top:8443/gonavi/releases/download/v1.2.3/GoNavi.zip" },
+      { source: "github", url: "https://github.com/Syngnat/GoNavi/releases/download/v1.2.3/GoNavi.zip" },
+    ]);
+  });
+
+  it("falls back to healthy Bero when DMIT is unhealthy", async () => {
+    const generation = "stable-bero-fallback";
+    const control = {
+      schemaVersion: 1,
+      channel: "stable" as const,
+      generation,
+      appTag: "v1.2.3",
+      driverTag: null,
+      probePath: "/gonavi/releases/download/v1.2.3/GoNavi.zip",
+      probeSize: 1024,
+      probeSha256: "a".repeat(64),
+      nodes: {
+        dmit: { baseUrl: "https://download.syngnat.top", enabled: true },
+        bero: { baseUrl: "https://origin-download.syngnat.top:8443", enabled: true },
+      },
+    };
+    await env.ROUTING_STATE.put("control:stable", JSON.stringify(control));
+    await env.ROUTING_STATE.put("routing:stable", JSON.stringify({
+      schemaVersion: 1,
+      channel: "stable",
+      generation,
+      control,
+      nodes: {
+        dmit: {
+          generation,
+          healthy: false,
+          consecutiveFailures: 3,
+          consecutiveSuccesses: 0,
+          checkedAt: new Date().toISOString(),
+          detail: "timeout",
+        },
+        bero: {
+          generation,
+          healthy: true,
+          consecutiveFailures: 0,
+          consecutiveSuccesses: 2,
+          checkedAt: new Date().toISOString(),
+          detail: "ok",
+        },
+      },
+      checkedAt: new Date().toISOString(),
+    }));
+
+    const response = await SELF.fetch(
+      "https://download-dispatch.syngnat.top/v1/resolve?path=/gonavi/releases/download/v1.2.3/GoNavi.zip",
+      { redirect: "manual" },
+    );
+    expect(response.status).toBe(302);
+    expect(response.headers.get("X-GoNavi-Download-Source")).toBe("bero");
+    expect(response.headers.get("Location")).toBe(
+      "https://origin-download.syngnat.top:8443/gonavi/releases/download/v1.2.3/GoNavi.zip",
+    );
+  });
+
+  it("does not accept a Bero origin IP as a public fallback URL", async () => {
+    await env.ROUTING_STATE.put("control:stable", JSON.stringify({
+      schemaVersion: 1,
+      channel: "stable",
+      generation: "stable-invalid-bero-url",
+      appTag: "v1.2.3",
+      driverTag: null,
+      probePath: "/gonavi/releases/download/v1.2.3/GoNavi.zip",
+      probeSize: 1024,
+      probeSha256: "a".repeat(64),
+      nodes: {
+        dmit: { baseUrl: "https://download.syngnat.top", enabled: true },
+        bero: { baseUrl: "https://94.103.173.47", enabled: true },
       },
     }));
 
