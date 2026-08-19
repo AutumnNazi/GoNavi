@@ -971,14 +971,7 @@ func (e *ElasticsearchDB) parseSearchResponse(res *esapi.Response) ([]map[string
 }
 
 func readElasticsearchQueryResponseBody(reader io.Reader) ([]byte, error) {
-	body, err := io.ReadAll(io.LimitReader(reader, maxElasticsearchConsoleResponseBytes+1))
-	if err != nil {
-		return nil, err
-	}
-	if len(body) > maxElasticsearchConsoleResponseBytes {
-		return nil, fmt.Errorf("Elasticsearch 响应超过 32 MiB 上限")
-	}
-	return body, nil
+	return readResponseBodyWithLimit(reader, maxRemoteJSONResponseBytes, "Elasticsearch 响应")
 }
 
 func truncateElasticsearchQueryErrorBody(body []byte) string {
@@ -1102,8 +1095,14 @@ func (e *ElasticsearchDB) esFetchIndexAliases(indexName string) []string {
 	}
 
 	// 响应格式：{ "index_name": { "aliases": { "alias_name": {} } } }
+	body, err := readLimitedJSONResponseBody(res.Body)
+	if err != nil {
+		logger.Warnf("Elasticsearch 读取索引别名响应失败：%v", err)
+		return nil
+	}
+
 	var aliasMap map[string]interface{}
-	if err := json.NewDecoder(res.Body).Decode(&aliasMap); err != nil {
+	if err := json.Unmarshal(body, &aliasMap); err != nil {
 		logger.Warnf("Elasticsearch 解析索引别名失败：%v", err)
 		return nil
 	}
@@ -1149,7 +1148,7 @@ func (e *ElasticsearchDB) esFetchIndexMapping(indexName string) (map[string]inte
 		return nil, fmt.Errorf("获取索引 mapping 失败：%s", res.Status())
 	}
 
-	body, err := io.ReadAll(res.Body)
+	body, err := readLimitedJSONResponseBody(res.Body)
 	if err != nil {
 		return nil, fmt.Errorf("读取 mapping 响应失败：%w", err)
 	}

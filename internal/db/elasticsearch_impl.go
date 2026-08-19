@@ -87,12 +87,9 @@ func (e *ElasticsearchDB) ExecuteElasticsearchConsoleRequest(ctx context.Context
 	}
 	defer httpResponse.Body.Close()
 
-	body, err := io.ReadAll(io.LimitReader(httpResponse.Body, maxElasticsearchConsoleResponseBytes+1))
+	body, err := readResponseBodyWithLimit(httpResponse.Body, maxElasticsearchConsoleResponseBytes, "Elasticsearch Console 响应")
 	if err != nil {
 		return ElasticsearchConsoleResponse{}, fmt.Errorf("读取 Elasticsearch Console 响应失败：%w", err)
-	}
-	if len(body) > maxElasticsearchConsoleResponseBytes {
-		return ElasticsearchConsoleResponse{}, fmt.Errorf("Elasticsearch Console 响应超过 32 MiB 上限")
 	}
 	return ElasticsearchConsoleResponse{
 		StatusCode:  httpResponse.StatusCode,
@@ -278,8 +275,11 @@ func (e *ElasticsearchDB) probeServerMajor(ctx context.Context) (int, error) {
 			Number string `json:"number"`
 		} `json:"version"`
 	}
-	decoder := json.NewDecoder(io.LimitReader(response.Body, 1<<20))
-	if err := decoder.Decode(&payload); err != nil {
+	body, err := readResponseBodyWithLimit(response.Body, 1<<20, "Elasticsearch 版本响应")
+	if err != nil {
+		return 0, fmt.Errorf("读取版本响应失败：%w", err)
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
 		return 0, fmt.Errorf("解析版本响应失败：%w", err)
 	}
 	majorText, _, _ := strings.Cut(strings.TrimSpace(payload.Version.Number), ".")
@@ -626,7 +626,11 @@ func (e *ElasticsearchDB) getDatabasesViaCatRequest(ctx context.Context, expandA
 	var rows []struct {
 		Index string `json:"index"`
 	}
-	if err := json.NewDecoder(res.Body).Decode(&rows); err != nil {
+	body, err := readLimitedJSONResponseBody(res.Body)
+	if err != nil {
+		return nil, fmt.Errorf("读取索引列表响应失败：%w", err)
+	}
+	if err := json.Unmarshal(body, &rows); err != nil {
 		return nil, fmt.Errorf("解析响应失败：%w", err)
 	}
 
@@ -656,7 +660,11 @@ func (e *ElasticsearchDB) getDatabasesViaAlias(ctx context.Context) ([]string, e
 	}
 
 	var indexMap map[string]interface{}
-	if err := json.NewDecoder(res.Body).Decode(&indexMap); err != nil {
+	body, err := readLimitedJSONResponseBody(res.Body)
+	if err != nil {
+		return nil, fmt.Errorf("读取别名响应失败：%w", err)
+	}
+	if err := json.Unmarshal(body, &indexMap); err != nil {
 		return nil, fmt.Errorf("解析响应失败：%w", err)
 	}
 
@@ -769,7 +777,7 @@ func (e *ElasticsearchDB) GetCreateStatement(dbName, tableName string) (string, 
 		return "", fmt.Errorf("获取索引定义失败：%s", res.Status())
 	}
 
-	body, err := io.ReadAll(res.Body)
+	body, err := readLimitedJSONResponseBody(res.Body)
 	if err != nil {
 		return "", fmt.Errorf("读取索引定义失败：%w", err)
 	}
@@ -859,7 +867,7 @@ func (e *ElasticsearchDB) GetIndexes(dbName, tableName string) ([]connection.Ind
 		return nil, fmt.Errorf("获取索引设置失败：%s", res.Status())
 	}
 
-	body, err := io.ReadAll(res.Body)
+	body, err := readLimitedJSONResponseBody(res.Body)
 	if err != nil {
 		return nil, fmt.Errorf("读取索引设置失败：%w", err)
 	}
@@ -953,11 +961,14 @@ func (e *ElasticsearchDB) resolveWriteIndex(indexOrAlias string) (string, error)
 			_, _ = io.Copy(io.Discard, res.Body)
 			return indexOrAlias, nil
 		}
-		body, _ := io.ReadAll(res.Body)
+		body, readErr := readLimitedJSONResponseBody(res.Body)
+		if readErr != nil {
+			return "", fmt.Errorf("读取别名 metadata 失败：%w", readErr)
+		}
 		return "", fmt.Errorf("读取别名 metadata 失败（HTTP %d）：%s", res.StatusCode, strings.TrimSpace(string(body)))
 	}
 
-	body, err := io.ReadAll(res.Body)
+	body, err := readLimitedJSONResponseBody(res.Body)
 	if err != nil {
 		return "", fmt.Errorf("读取别名 metadata 失败：%w", err)
 	}
@@ -1101,7 +1112,7 @@ func (e *ElasticsearchDB) ApplyChanges(tableName string, changes connection.Chan
 	}
 	defer res.Body.Close()
 
-	body, err := io.ReadAll(res.Body)
+	body, err := readLimitedJSONResponseBody(res.Body)
 	if err != nil {
 		return fmt.Errorf("读取 ES 批量操作响应失败：%w", err)
 	}

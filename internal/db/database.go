@@ -44,7 +44,10 @@ type Database interface {
 	GetTriggers(dbName, tableName string) ([]connection.TriggerDefinition, error)
 }
 
-const maxElasticsearchConsoleResponseBytes = 32 << 20
+const (
+	maxRemoteJSONResponseBytes           = 32 << 20
+	maxElasticsearchConsoleResponseBytes = maxRemoteJSONResponseBytes
+)
 
 // ElasticsearchConsoleBodyKind identifies how an Elasticsearch REST request
 // body must be encoded on the wire.

@@ -496,9 +496,9 @@ func (q *QdrantDB) doJSON(ctx context.Context, method, path string, body interfa
 		return err
 	}
 	defer res.Body.Close()
-	resBody, err := io.ReadAll(res.Body)
+	resBody, err := readLimitedJSONResponseBody(res.Body)
 	if err != nil {
-		return err
+		return fmt.Errorf("读取 Qdrant 响应失败：%w", err)
 	}
 	if res.StatusCode < 200 || res.StatusCode >= 300 {
 		message := strings.TrimSpace(string(resBody))

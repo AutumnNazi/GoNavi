@@ -643,9 +643,9 @@ func (r *RabbitMQDB) doJSON(ctx context.Context, method, path string, body inter
 	}
 	defer resp.Body.Close()
 
-	data, err := io.ReadAll(resp.Body)
+	data, err := readLimitedJSONResponseBody(resp.Body)
 	if err != nil {
-		return err
+		return fmt.Errorf("读取 RabbitMQ HTTP API 响应失败：%w", err)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		message := strings.TrimSpace(string(data))
