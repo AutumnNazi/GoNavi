@@ -33,6 +33,7 @@ import {
   type DatabaseDiagnosticPreview,
   type RequestDiagnosticsBackend,
 } from './requestDiagnosticsRpc';
+import ReproductionBundlePanel from './ReproductionBundlePanel';
 import './RequestDiagnosticsWorkbench.css';
 
 const { Text, Title } = Typography;
@@ -347,6 +348,7 @@ export default function RequestDiagnosticsWorkbench({
           />
         </Spin>
       </div>
+      <ReproductionBundlePanel backend={backend} isActive={isActive} />
       <Modal
         open={packagePreviewOpen}
         title="生成只读数据库诊断包"

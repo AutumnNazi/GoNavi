@@ -26,6 +26,10 @@ export function BuildDatabaseDiagnosticPackage() {
   return window['go']['app']['App']['BuildDatabaseDiagnosticPackage']();
 }
 
+export function BuildReproductionBundle(arg1, arg2) {
+  return window['go']['app']['App']['BuildReproductionBundle'](arg1, arg2);
+}
+
 export function BuildSQLAuditExport(arg1, arg2) {
   return window['go']['app']['App']['BuildSQLAuditExport'](arg1, arg2);
 }
@@ -478,6 +482,10 @@ export function ExportQueryWithOptions(arg1, arg2, arg3, arg4, arg5) {
   return window['go']['app']['App']['ExportQueryWithOptions'](arg1, arg2, arg3, arg4, arg5);
 }
 
+export function ExportReproductionBundle(arg1, arg2) {
+  return window['go']['app']['App']['ExportReproductionBundle'](arg1, arg2);
+}
+
 export function ExportSQLAuditFile(arg1, arg2) {
   return window['go']['app']['App']['ExportSQLAuditFile'](arg1, arg2);
 }
@@ -730,6 +738,10 @@ export function ListInstalledFontFamilies() {
   return window['go']['app']['App']['ListInstalledFontFamilies']();
 }
 
+export function ListReproductionBundleSources() {
+  return window['go']['app']['App']['ListReproductionBundleSources']();
+}
+
 export function ListSQLDirectory(arg1) {
   return window['go']['app']['App']['ListSQLDirectory'](arg1);
 }
@@ -938,6 +950,10 @@ export function PreviewImportFileWithOptions(arg1, arg2) {
   return window['go']['app']['App']['PreviewImportFileWithOptions'](arg1, arg2);
 }
 
+export function PreviewReproductionBundle(arg1) {
+  return window['go']['app']['App']['PreviewReproductionBundle'](arg1);
+}
+
 export function ReadAppLogTail(arg1, arg2) {
   return window['go']['app']['App']['ReadAppLogTail'](arg1, arg2);
 }
@@ -1100,6 +1116,10 @@ export function RenameTable(arg1, arg2, arg3, arg4) {
 
 export function RenameView(arg1, arg2, arg3, arg4) {
   return window['go']['app']['App']['RenameView'](arg1, arg2, arg3, arg4);
+}
+
+export function ReplayReproductionBundle(arg1) {
+  return window['go']['app']['App']['ReplayReproductionBundle'](arg1);
 }
 
 export function ResetWebViewZoom() {

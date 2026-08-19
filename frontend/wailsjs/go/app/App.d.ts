@@ -21,6 +21,8 @@ export function AuthorizeMCPConnectionSQL(arg1:connection.ConnectionConfig,arg2:
 
 export function BuildDatabaseDiagnosticPackage():Promise<connection.QueryResult>;
 
+export function BuildReproductionBundle(arg1:string,arg2:string):Promise<connection.QueryResult>;
+
 export function BuildSQLAuditExport(arg1:sqlaudit.Filter,arg2:string):Promise<connection.QueryResult>;
 
 export function CancelApplicationQuit():Promise<connection.QueryResult>;
@@ -247,6 +249,8 @@ export function ExportQuery(arg1:connection.ConnectionConfig,arg2:string,arg3:st
 
 export function ExportQueryWithOptions(arg1:connection.ConnectionConfig,arg2:string,arg3:string,arg4:string,arg5:app.ExportFileOptions):Promise<connection.QueryResult>;
 
+export function ExportReproductionBundle(arg1:string,arg2:string):Promise<connection.QueryResult>;
+
 export function ExportSQLAuditFile(arg1:sqlaudit.Filter,arg2:string):Promise<connection.QueryResult>;
 
 export function ExportSQLFile(arg1:string,arg2:string):Promise<connection.QueryResult>;
@@ -373,6 +377,8 @@ export function ListImportJobs():Promise<connection.QueryResult>;
 
 export function ListInstalledFontFamilies():Promise<connection.QueryResult>;
 
+export function ListReproductionBundleSources():Promise<connection.QueryResult>;
+
 export function ListSQLDirectory(arg1:string):Promise<connection.QueryResult>;
 
 export function LogWindowDiagnostic(arg1:string,arg2:string):Promise<void>;
@@ -477,6 +483,8 @@ export function PreviewImportFile(arg1:string):Promise<connection.QueryResult>;
 
 export function PreviewImportFileWithOptions(arg1:string,arg2:app.ImportFileOptions):Promise<connection.QueryResult>;
 
+export function PreviewReproductionBundle(arg1:string):Promise<connection.QueryResult>;
+
 export function ReadAppLogTail(arg1:number,arg2:string):Promise<connection.QueryResult>;
 
 export function ReadSQLFile(arg1:string):Promise<connection.QueryResult>;
@@ -558,6 +566,8 @@ export function RenameSchema(arg1:connection.ConnectionConfig,arg2:string,arg3:s
 export function RenameTable(arg1:connection.ConnectionConfig,arg2:string,arg3:string,arg4:string):Promise<connection.QueryResult>;
 
 export function RenameView(arg1:connection.ConnectionConfig,arg2:string,arg3:string,arg4:string):Promise<connection.QueryResult>;
+
+export function ReplayReproductionBundle(arg1:string):Promise<connection.QueryResult>;
 
 export function ResetWebViewZoom():Promise<connection.QueryResult>;
 

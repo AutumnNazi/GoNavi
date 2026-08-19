@@ -49,11 +49,60 @@ export interface DatabaseDiagnosticExportPayload {
   content?: string;
 }
 
+export type ReproductionBundleSourceKind = 'query' | 'sync' | 'import' | 'mcp';
+
+export interface ReproductionBundleSourceRef {
+  kind: ReproductionBundleSourceKind;
+  id: string;
+}
+
+export interface ReproductionBundleSourceSummary extends ReproductionBundleSourceRef {
+  label?: string;
+  status?: string;
+  errorKind?: string;
+  updatedAt?: number;
+}
+
+export interface ReproductionBundleSourcePage {
+  items?: ReproductionBundleSourceSummary[];
+  warnings?: string[];
+}
+
+export interface ReproductionBundleRedaction extends DatabaseDiagnosticRedaction {
+  rawErrorMessages?: string;
+}
+
+export interface ReproductionBundlePreview {
+  schemaVersion?: number;
+  format?: string;
+  appVersion?: string;
+  source?: ReproductionBundleSourceSummary;
+  capabilities?: Record<string, string>;
+  eventCount?: number;
+  fixtureEngine?: string;
+  offlineOnly?: boolean;
+  redaction?: ReproductionBundleRedaction;
+}
+
+export interface ReproductionBundleReplayResult {
+  reproduced?: boolean;
+  engine?: string;
+  sourceKind?: ReproductionBundleSourceKind;
+  status?: string;
+  errorKind?: string;
+  events?: Array<{ offsetMs?: number; name?: string; status?: string; stage?: string }>;
+}
+
 export interface RequestDiagnosticsBackend {
   GetRequestDiagnostics?: (filter: { requestId?: string; entry?: string; limit?: number }) => Promise<RequestDiagnosticsRpcResult<RequestTracePage>>;
   GetDatabaseDiagnosticPackagePreview?: () => Promise<RequestDiagnosticsRpcResult<DatabaseDiagnosticPreview>>;
   BuildDatabaseDiagnosticPackage?: () => Promise<RequestDiagnosticsRpcResult<DatabaseDiagnosticExportPayload>>;
   ExportDatabaseDiagnosticPackage?: () => Promise<RequestDiagnosticsRpcResult<Record<string, string>>>;
+  ListReproductionBundleSources?: () => Promise<RequestDiagnosticsRpcResult<ReproductionBundleSourcePage>>;
+  BuildReproductionBundle?: (kind: ReproductionBundleSourceKind, sourceId: string) => Promise<RequestDiagnosticsRpcResult<DatabaseDiagnosticExportPayload>>;
+  ExportReproductionBundle?: (kind: ReproductionBundleSourceKind, sourceId: string) => Promise<RequestDiagnosticsRpcResult<Record<string, string>>>;
+  PreviewReproductionBundle?: (content: string) => Promise<RequestDiagnosticsRpcResult<ReproductionBundlePreview>>;
+  ReplayReproductionBundle?: (content: string) => Promise<RequestDiagnosticsRpcResult<ReproductionBundleReplayResult>>;
 }
 
 export const resolveRequestDiagnosticsBackend = (): RequestDiagnosticsBackend => {
