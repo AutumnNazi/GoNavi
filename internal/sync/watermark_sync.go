@@ -75,6 +75,7 @@ type WatermarkSyncResult struct {
 	Success           bool             `json:"success"`
 	Message           string           `json:"message,omitempty"`
 	Cancelled         bool             `json:"cancelled,omitempty"`
+	OutcomeUnknown    bool             `json:"outcomeUnknown,omitempty"`
 	SourceRowsRead    int              `json:"sourceRowsRead"`
 	RowsInserted      int              `json:"rowsInserted"`
 	RowsUpdated       int              `json:"rowsUpdated"`
@@ -235,6 +236,7 @@ func (s *SyncEngine) RunWatermarkSync(ctx context.Context, request WatermarkSync
 		if batchInserted > 0 || batchUpdated > 0 {
 			if err := applySyncChangesContext(runCtx, applier, plan.applyTableName, changeSet); err != nil {
 				result.Cursor = cloneWatermarkCursor(durableCursor)
+				result.OutcomeUnknown = db.IsWriteOutcomeUnknown(err)
 				return failWatermarkSync(result, runCtx, fmt.Errorf("应用 watermark 目标批次失败: %w", err))
 			}
 			result.RowsInserted += batchInserted

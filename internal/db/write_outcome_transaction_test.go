@@ -32,6 +32,7 @@ type writeOutcomeTransactionState struct {
 	rollbackErr error
 	commits     int
 	rollbacks   int
+	closes      int
 }
 
 type writeOutcomeTransactionDriver struct{}
@@ -54,7 +55,12 @@ func (*writeOutcomeTransactionConn) Prepare(string) (driver.Stmt, error) {
 	return nil, driver.ErrSkip
 }
 
-func (*writeOutcomeTransactionConn) Close() error { return nil }
+func (conn *writeOutcomeTransactionConn) Close() error {
+	conn.state.mu.Lock()
+	defer conn.state.mu.Unlock()
+	conn.state.closes++
+	return nil
+}
 
 func (conn *writeOutcomeTransactionConn) Begin() (driver.Tx, error) {
 	return &writeOutcomeTransactionTx{state: conn.state}, nil
@@ -125,6 +131,32 @@ func TestPostgresApplyChangesMarksCommitFailureOutcomeUnknown(t *testing.T) {
 	})
 	if !IsWriteOutcomeUnknown(err) || !errors.Is(err, commitErr) {
 		t.Fatalf("commit error must preserve its cause and mark the outcome unknown, got %v", err)
+	}
+}
+
+func TestLegacyTransactionApplyChangesMarksCommitFailureOutcomeUnknown(t *testing.T) {
+	for name, apply := range map[string]func(*sql.DB) error{
+		"custom": func(database *sql.DB) error {
+			return (&CustomDB{conn: database, driver: "mysql"}).ApplyChanges("users", connection.ChangeSet{
+				Deletes: []map[string]interface{}{{"id": int64(1)}},
+			})
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			commitErr := errors.New("commit response lost")
+			state := &writeOutcomeTransactionState{commitErr: commitErr}
+			database := openWriteOutcomeTransactionDB(t, state)
+			err := apply(database)
+			if !IsWriteOutcomeUnknown(err) || !errors.Is(err, commitErr) {
+				t.Fatalf("commit error must be outcome unknown, got %v", err)
+			}
+			state.mu.Lock()
+			closes := state.closes
+			state.mu.Unlock()
+			if closes != 1 {
+				t.Fatalf("ambiguous commit must discard its physical connection, closes=%d", closes)
+			}
+		})
 	}
 }
 

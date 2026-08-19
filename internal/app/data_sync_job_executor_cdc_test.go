@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"GoNavi-Wails/internal/connection"
+	"GoNavi-Wails/internal/db"
 	syncbackend "GoNavi-Wails/internal/sync"
 	"GoNavi-Wails/internal/synccdc"
 	"GoNavi-Wails/internal/syncjob"
@@ -147,6 +148,56 @@ func TestExecuteCDCJobPersistsBootstrapAndTargetCommitBeforeAcknowledge(t *testi
 	}
 	if len(reporter.checkpoints) != 3 || reporter.checkpoints[0].BatchSequence != 0 || reporter.checkpoints[1].BatchSequence != 1 || reporter.checkpoints[2].BatchSequence != 2 {
 		t.Fatalf("checkpoints = %#v", reporter.checkpoints)
+	}
+}
+
+func TestExecuteCDCJobDoesNotCheckpointOrAcknowledgeUnknownWrite(t *testing.T) {
+	steps := make([]string, 0, 10)
+	position0 := synccdc.Position{Adapter: "executor-test-cdc", Opaque: json.RawMessage(`{"offset":0}`)}
+	position1 := synccdc.Position{Adapter: "executor-test-cdc", Opaque: json.RawMessage(`{"offset":1}`)}
+	stream := &executorTestCDCStream{steps: &steps, transactions: []synccdc.Transaction{{
+		Events: []synccdc.Event{{
+			Object: synccdc.ObjectRef{Database: "source", Name: "events"}, Operation: "insert",
+			Key: map[string]interface{}{"id": int64(1)}, After: map[string]interface{}{"id": int64(1)}, CommitTime: time.Now(),
+		}},
+		Position: position1,
+	}}}
+	adapter := &executorTestCDCAdapter{position: position0, stream: stream, steps: &steps}
+	registry := synccdc.NewRegistry()
+	if err := registry.Register(adapter); err != nil {
+		t.Fatalf("register adapter: %v", err)
+	}
+	application := NewApp()
+	application.dataSyncCDCRegistry = registry
+	application.dataSyncChangeEventRunner = func(context.Context, syncbackend.ChangeEventRequest) syncbackend.ChangeEventResult {
+		steps = append(steps, "apply")
+		return syncbackend.ChangeEventResult{Success: false, OutcomeUnknown: true, Message: "write response lost"}
+	}
+	executor := appDataSyncJobExecutor{app: application}
+	source := resolvedDataSyncJobEndpoint{Config: connection.ConnectionConfig{Type: "executor-test-source"}, Database: "source"}
+	target := resolvedDataSyncJobEndpoint{Config: connection.ConnectionConfig{Type: "mysql"}, Database: "target"}
+	definition := syncjob.JobDefinition{
+		ID: "job-unknown", Revision: 1, Kind: syncjob.JobKindReconcile, IncrementalMode: syncjob.IncrementalCDC,
+		CDC:     &syncjob.CDCSpec{Adapter: adapter.Name(), StartPosition: "latest"},
+		Options: syncjob.ExecutionOptions{BatchSize: 100, SyncMode: "insert_update", TargetTableStrategy: "existing_only", ErrorPolicy: syncjob.ErrorPolicyStop},
+		Mappings: []syncjob.TableMapping{{
+			SourceTable: "events", TargetTable: "events", KeyColumns: []string{"id"}, Enabled: true,
+			Columns: []syncjob.ColumnMapping{{Source: "id", Target: "id"}},
+		}},
+	}
+	reporter := &executorTestReporter{steps: &steps}
+	outcome, err := executor.executeCDCJob(context.Background(), syncjob.ExecutionRequest{Run: syncjob.RunRecord{ID: "run-unknown"}, Definition: definition}, definition, definition.Mappings, source, target, reporter)
+	if !db.IsWriteOutcomeUnknown(err) {
+		t.Fatalf("executeCDCJob error = %v, want unknown write outcome", err)
+	}
+	if outcome.Resumable {
+		t.Fatalf("outcome = %#v, unknown write must not be resumable", outcome)
+	}
+	if len(reporter.checkpoints) != 1 || reporter.checkpoints[0].Phase != "stream_initialized" {
+		t.Fatalf("checkpoints = %#v, want only bootstrap checkpoint", reporter.checkpoints)
+	}
+	if got := strings.Join(steps, ","); got != "barrier,save:stream_initialized,open,next,apply,close" {
+		t.Fatalf("execution order = %s, want no transaction checkpoint or acknowledge", got)
 	}
 }
 

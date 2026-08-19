@@ -87,6 +87,12 @@ func (s *SyncEngine) applySnapshotChangesOneByOne(config SyncConfig, res *SyncRe
 			return err
 		}
 		if err := applySyncChangesContext(s.context(), applier, targetTable, change); err != nil {
+			if db.IsWriteOutcomeUnknown(err) {
+				if res != nil {
+					res.OutcomeUnknown = true
+				}
+				return err
+			}
 			if s.contextError() != nil {
 				return s.contextError()
 			}

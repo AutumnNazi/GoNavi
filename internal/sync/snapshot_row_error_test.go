@@ -71,6 +71,46 @@ func TestRunSyncSkipRowAppliesSnapshotRowsIndividuallyFromStart(t *testing.T) {
 	}
 }
 
+func TestRunSyncSkipRowStopsOnUnknownWriteOutcome(t *testing.T) {
+	columns := []connection.ColumnDefinition{{Name: "id", Type: "bigint", Nullable: "NO", Key: "PRI"}}
+	source := &fakeMigrationDB{
+		columns: map[string][]connection.ColumnDefinition{"src.events": columns},
+		queryData: map[string][]map[string]interface{}{
+			"SELECT `id` FROM `src`.`events` ORDER BY `id` ASC LIMIT 2 OFFSET 0": {{"id": int64(1)}, {"id": int64(2)}},
+		},
+	}
+	target := &watermarkTestDatabase{fakeMigrationDB: fakeMigrationDB{columns: map[string][]connection.ColumnDefinition{"dst.events": columns}}}
+	applyCalls := 0
+	target.applyFunc = func(string, connection.ChangeSet) error {
+		applyCalls++
+		return db.MarkWriteOutcomeUnknown(errors.New("write response lost"))
+	}
+	useSyncDatabaseFactorySequence(t,
+		syncDatabaseFactoryStep{db: source},
+		syncDatabaseFactoryStep{db: target},
+	)
+	callbackCalls := 0
+	result := NewSyncEngine(Reporter{}).RunSyncContext(context.Background(), SyncConfig{
+		SourceConfig:   connection.ConnectionConfig{Type: "mysql", Database: "src"},
+		TargetConfig:   connection.ConnectionConfig{Type: "mysql", Database: "dst"},
+		Tables:         []string{"events"},
+		Content:        "data",
+		Mode:           "insert_only",
+		BatchSize:      2,
+		RowErrorPolicy: RowErrorPolicySkipRow,
+		OnRowError: func(context.Context, ChangeEventRowError) error {
+			callbackCalls++
+			return nil
+		},
+	})
+	if result.Success || !result.OutcomeUnknown || result.RowsSkipped != 0 {
+		t.Fatalf("RunSyncContext() = %+v, want unknown terminal failure", result)
+	}
+	if applyCalls != 1 || callbackCalls != 0 {
+		t.Fatalf("unknown write was replayed or skipped: applyCalls=%d callbackCalls=%d", applyCalls, callbackCalls)
+	}
+}
+
 func TestRunSyncSkipRowContinuesAfterSourceQueryProjectionError(t *testing.T) {
 	const sourceSQL = "SELECT external_id, raw_name FROM active_accounts"
 	source := &fakeMigrationDB{queryData: map[string][]map[string]interface{}{

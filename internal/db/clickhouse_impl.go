@@ -1429,10 +1429,14 @@ func (c *ClickHouseDB) ApplyChanges(tableName string, changes connection.ChangeS
 		}
 		query := fmt.Sprintf("ALTER TABLE %s DELETE WHERE %s", qualifiedTable, whereExpr)
 		if _, err := c.Exec(query); err != nil {
-			return localizedDatabaseRuntimeError("db.backend.error.clickhouse_delete_failed_with_sql", map[string]any{
+			resultErr := localizedDatabaseRuntimeError("db.backend.error.clickhouse_delete_failed_with_sql", map[string]any{
 				"detail": err.Error(),
 				"sql":    query,
 			})
+			if IsAmbiguousWriteResponse(err) {
+				return MarkWriteOutcomeUnknown(resultErr)
+			}
+			return resultErr
 		}
 	}
 
@@ -1444,10 +1448,14 @@ func (c *ClickHouseDB) ApplyChanges(tableName string, changes connection.ChangeS
 		}
 		query := fmt.Sprintf("ALTER TABLE %s UPDATE %s WHERE %s", qualifiedTable, setExpr, whereExpr)
 		if _, err := c.Exec(query); err != nil {
-			return localizedDatabaseRuntimeError("db.backend.error.clickhouse_update_failed_with_sql", map[string]any{
+			resultErr := localizedDatabaseRuntimeError("db.backend.error.clickhouse_update_failed_with_sql", map[string]any{
 				"detail": err.Error(),
 				"sql":    query,
 			})
+			if IsAmbiguousWriteResponse(err) {
+				return MarkWriteOutcomeUnknown(resultErr)
+			}
+			return resultErr
 		}
 	}
 
