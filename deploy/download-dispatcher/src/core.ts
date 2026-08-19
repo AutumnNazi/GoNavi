@@ -578,19 +578,9 @@ async function resolveDownload(request: Request, env: Env): Promise<Response> {
       }
     }
   }
-  if (requiresCurrentDevApp && candidates.length === 0) {
-    return Response.json(
-      {
-        error: "current dev app asset is temporarily unavailable",
-        code: "current_asset_unavailable",
-        currentTag: control?.appTag ?? "",
-      },
-      { status: 503, headers: { "Cache-Control": "no-store" } },
-    );
-  }
-  if (!requiresCurrentDevApp) {
-    candidates.push({ source: "github", url: coordinates.githubUrl });
-  }
+  // A gated request has already proven that its immutable dev tag is current.
+  // Keep its edge preference, but retain GitHub as the final availability fallback.
+  candidates.push({ source: "github", url: coordinates.githubUrl });
 
   const wantsJSON = url.searchParams.get("format") === "json";
   const selected = wantsJSON ? candidates[0] : selectLegacyRedirectCandidate(candidates);

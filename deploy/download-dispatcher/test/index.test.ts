@@ -586,7 +586,7 @@ describe("download dispatcher", () => {
     expect(response.headers.get("X-GoNavi-Download-Source")).toBe("dmit");
   });
 
-  it("returns only DMIT in gated current dev app JSON candidates", async () => {
+  it("returns DMIT, Bero, then GitHub for a gated current dev app", async () => {
     const generation = "dev-gate-json";
     const control = {
       schemaVersion: 1,
@@ -599,6 +599,7 @@ describe("download dispatcher", () => {
       probeSha256: "a".repeat(64),
       nodes: {
         dmit: { baseUrl: "https://download.syngnat.top", enabled: true },
+        bero: { baseUrl: "https://origin-download.syngnat.top:8443", enabled: true },
       },
     };
     await env.ROUTING_STATE.put("control:dev", JSON.stringify(control));
@@ -616,6 +617,14 @@ describe("download dispatcher", () => {
           checkedAt: new Date().toISOString(),
           detail: "ok",
         },
+        bero: {
+          generation,
+          healthy: true,
+          consecutiveFailures: 0,
+          consecutiveSuccesses: 2,
+          checkedAt: new Date().toISOString(),
+          detail: "ok",
+        },
       },
       checkedAt: new Date().toISOString(),
     }));
@@ -625,13 +634,23 @@ describe("download dispatcher", () => {
     );
     expect(response.status).toBe(200);
     const body = await response.json<{ candidates: Array<{ source: string; url: string }> }>();
-    expect(body.candidates).toEqual([{
-      source: "dmit",
-      url: "https://download.syngnat.top/gonavi/dev/releases/download/dev-current/GoNavi.zip",
-    }]);
+    expect(body.candidates).toEqual([
+      {
+        source: "dmit",
+        url: "https://download.syngnat.top/gonavi/dev/releases/download/dev-current/GoNavi.zip",
+      },
+      {
+        source: "bero",
+        url: "https://origin-download.syngnat.top:8443/gonavi/dev/releases/download/dev-current/GoNavi.zip",
+      },
+      {
+        source: "github",
+        url: "https://github.com/Syngnat/GoNavi/releases/download/dev-latest/GoNavi.zip",
+      },
+    ]);
   });
 
-  it("does not fall back to mutable GitHub when a gated current dev app tag has no healthy DMIT", async () => {
+  it("falls back to GitHub when a gated current dev app tag has no healthy edge", async () => {
     const generation = "dev-gate-unhealthy";
     const control = {
       schemaVersion: 1,
@@ -644,6 +663,7 @@ describe("download dispatcher", () => {
       probeSha256: "a".repeat(64),
       nodes: {
         dmit: { baseUrl: "https://download.syngnat.top", enabled: true },
+        bero: { baseUrl: "https://origin-download.syngnat.top:8443", enabled: true },
       },
     };
     await env.ROUTING_STATE.put("control:dev", JSON.stringify(control));
@@ -661,6 +681,14 @@ describe("download dispatcher", () => {
           checkedAt: new Date().toISOString(),
           detail: "timeout",
         },
+        bero: {
+          generation,
+          healthy: false,
+          consecutiveFailures: 3,
+          consecutiveSuccesses: 0,
+          checkedAt: new Date().toISOString(),
+          detail: "timeout",
+        },
       },
       checkedAt: new Date().toISOString(),
     }));
@@ -669,15 +697,12 @@ describe("download dispatcher", () => {
       "https://download-dispatch.syngnat.top/v1/resolve?require-current=1&path=/gonavi/dev/releases/download/dev-current/GoNavi.zip",
       { redirect: "manual" },
     );
-    const body = await response.json<{ error: string; code: string; currentTag: string }>();
-    expect(response.status).toBe(503);
-    expect(response.headers.get("Location")).toBeNull();
+    expect(response.status).toBe(302);
+    expect(response.headers.get("Location")).toBe(
+      "https://github.com/Syngnat/GoNavi/releases/download/dev-latest/GoNavi.zip",
+    );
+    expect(response.headers.get("X-GoNavi-Download-Source")).toBe("github");
     expect(response.headers.get("Cache-Control")).toBe("no-store");
-    expect(body).toEqual({
-      error: "current dev app asset is temporarily unavailable",
-      code: "current_asset_unavailable",
-      currentTag: "dev-current",
-    });
   });
 
   it("routes a freshly CI-verified current generation through DMIT before cron has state", async () => {
