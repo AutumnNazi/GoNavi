@@ -7,8 +7,9 @@ usage() {
 Usage:
   ./tools/verify-driver-revision-contract.sh --contracts-dir <directory>
 
-Requires the GUI and standalone CLI builds for every release platform to have
-used an identical generated driver-agent revision map.
+Requires the GUI and standalone CLI builds for every release target, including
+the Linux WebKit41 GUI variant, to have used an identical generated
+driver-agent revision map.
 EOF
 }
 
@@ -54,24 +55,27 @@ read_contract_hash() {
   printf '%s\n' "$value"
 }
 
-platforms=(
-  darwin-amd64
-  darwin-arm64
-  linux-amd64
-  linux-arm64
-  windows-amd64
-  windows-arm64
+contract_pairs=(
+  "darwin-amd64:darwin-amd64"
+  "darwin-arm64:darwin-arm64"
+  "linux-amd64:linux-amd64"
+  "linux-amd64-webkit41:linux-amd64"
+  "linux-arm64:linux-arm64"
+  "windows-amd64:windows-amd64"
+  "windows-arm64:windows-arm64"
 )
 
-for platform in "${platforms[@]}"; do
-  cli_contract="$contracts_dir/cli-${platform}.sha256"
-  gui_contract="$contracts_dir/gui-${platform}.sha256"
+for pair in "${contract_pairs[@]}"; do
+  gui_platform="${pair%%:*}"
+  cli_platform="${pair##*:}"
+  cli_contract="$contracts_dir/cli-${cli_platform}.sha256"
+  gui_contract="$contracts_dir/gui-${gui_platform}.sha256"
   cli_hash="$(read_contract_hash "$cli_contract")"
   gui_hash="$(read_contract_hash "$gui_contract")"
 
   if [[ "$cli_hash" != "$gui_hash" ]]; then
-    echo "driver revision contract mismatch for ${platform}: gui=${gui_hash} cli=${cli_hash}" >&2
+    echo "driver revision contract mismatch for ${gui_platform}: gui=${gui_hash} cli=${cli_hash}" >&2
     exit 1
   fi
-  echo "driver revision contract verified: ${platform} ${cli_hash}"
+  echo "driver revision contract verified: ${gui_platform} against cli-${cli_platform} ${cli_hash}"
 done

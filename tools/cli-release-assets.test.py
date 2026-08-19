@@ -171,7 +171,8 @@ class CLIReleaseAssetsTest(unittest.TestCase):
             self.assertIn("tools/write-driver-revision-contract.sh --role cli", cli_script)
             self.assertIn('--platform "GITHUB_EXPRESSION/GITHUB_EXPRESSION"', cli_script)
             self.assertIn("--output-dir driver-revision-contract", cli_script)
-            self.assertIn("tools/write-driver-revision-contract.sh --role gui", gui_script)
+            self.assertIn("tools/write-driver-revision-contract.sh", gui_script)
+            self.assertIn("--role gui", gui_script)
             self.assertIn('--platform "GITHUB_EXPRESSION"', gui_script)
             self.assertIn("--output-dir driver-revision-contract", gui_script)
             self.assertIn(
@@ -183,7 +184,10 @@ class CLIReleaseAssetsTest(unittest.TestCase):
             self.assertIn('--platform "${{ matrix.goos }}/${{ matrix.goarch }}"', source)
             self.assertIn('--platform "${{ matrix.platform }}"', source)
             self.assertIn("path: driver-revision-contract", source)
-            self.assertIn("if: ${{ matrix.wails_tags == '' }}", source)
+            self.assertIn('driver_revision_variant: "webkit41"', source)
+            self.assertIn('revision_contract_args+=(--variant "${{ matrix.driver_revision_variant }}")', source)
+            self.assertIn("name: " + gui_pattern[:-1] + "${{ matrix.build_name }}", source)
+            self.assertNotIn("if: ${{ matrix.wails_tags == '' }}", source)
             self.assertLess(
                 source.index("Verify GUI and CLI driver revision contracts"),
                 source.index(staging_step),

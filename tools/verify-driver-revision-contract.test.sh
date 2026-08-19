@@ -36,6 +36,13 @@ for platform in "${platforms[@]}"; do
     --revision-file "$revision_file"
 done
 
+bash ./tools/write-driver-revision-contract.sh \
+  --role gui \
+  --platform linux/amd64 \
+  --variant webkit41 \
+  --output-dir "$tmpdir/contracts" \
+  --revision-file "$revision_file"
+
 bash ./tools/verify-driver-revision-contract.sh --contracts-dir "$tmpdir/contracts" >/dev/null
 
 printf '%s\n' '// changed GUI revision fixture' > "$revision_file"
@@ -57,6 +64,27 @@ bash ./tools/write-driver-revision-contract.sh \
   --output-dir "$tmpdir/contracts" \
   --revision-file "$revision_file"
 
+printf '%s\n' '// changed WebKit41 GUI revision fixture' > "$revision_file"
+bash ./tools/write-driver-revision-contract.sh \
+  --role gui \
+  --platform linux/amd64 \
+  --variant webkit41 \
+  --output-dir "$tmpdir/contracts" \
+  --revision-file "$revision_file"
+if bash ./tools/verify-driver-revision-contract.sh --contracts-dir "$tmpdir/contracts" >"$tmpdir/variant-mismatch.stdout" 2>"$tmpdir/variant-mismatch.stderr"; then
+  echo "expected a mismatched WebKit41 GUI/CLI contract to fail" >&2
+  exit 1
+fi
+grep -Fq 'driver revision contract mismatch for linux-amd64-webkit41' "$tmpdir/variant-mismatch.stderr"
+
+printf '%s\n' '// generated revision fixture' > "$revision_file"
+bash ./tools/write-driver-revision-contract.sh \
+  --role gui \
+  --platform linux/amd64 \
+  --variant webkit41 \
+  --output-dir "$tmpdir/contracts" \
+  --revision-file "$revision_file"
+
 rm -f "$tmpdir/contracts/cli-linux-arm64.sha256"
 if bash ./tools/verify-driver-revision-contract.sh --contracts-dir "$tmpdir/contracts" >"$tmpdir/missing.stdout" 2>"$tmpdir/missing.stderr"; then
   echo "expected a missing GUI/CLI contract to fail" >&2
@@ -66,8 +94,19 @@ grep -Fq 'missing driver revision contract' "$tmpdir/missing.stderr"
 
 for workflow in .github/workflows/release.yml .github/workflows/dev-build.yml; do
   grep -Fq 'tools/write-driver-revision-contract.sh --role cli' "$workflow"
-  grep -Fq 'tools/write-driver-revision-contract.sh --role gui' "$workflow"
+  grep -Fq 'revision_contract_args=(' "$workflow"
+  grep -Fq -- '--role gui' "$workflow"
+  grep -Fq 'revision_contract_args+=(--variant "${{ matrix.driver_revision_variant }}")' "$workflow"
+  grep -Fq './tools/write-driver-revision-contract.sh "${revision_contract_args[@]}"' "$workflow"
+  grep -Fq 'driver_revision_variant: "webkit41"' "$workflow"
   grep -Fq 'tools/verify-driver-revision-contract.sh --contracts-dir driver-revision-contract' "$workflow"
+  if grep -Fq "if: \${{ matrix.wails_tags == '' }}" "$workflow"; then
+    echo "WebKit41 GUI revision contract must not be excluded: $workflow" >&2
+    exit 1
+  fi
 done
+
+grep -Fq 'name: gui-driver-revision-contract-${{ matrix.build_name }}' .github/workflows/release.yml
+grep -Fq 'name: dev-gui-driver-revision-contract-${{ matrix.build_name }}' .github/workflows/dev-build.yml
 
 echo "driver revision contract test passed"

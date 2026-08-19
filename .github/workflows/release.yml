@@ -408,6 +408,7 @@ jobs:
             build_name: gonavi-build-darwin-amd64
             wails_tags: ""
             artifact_suffix: ""
+            driver_revision_variant: ""
             build_optional_agents: true
             linux_webkit: ""
           - os: macos-latest
@@ -417,6 +418,7 @@ jobs:
             build_name: gonavi-build-darwin-arm64
             wails_tags: ""
             artifact_suffix: ""
+            driver_revision_variant: ""
             build_optional_agents: true
             linux_webkit: ""
           - os: windows-2025-vs2026
@@ -426,6 +428,7 @@ jobs:
             build_name: gonavi-build-windows-amd64
             wails_tags: ""
             artifact_suffix: ""
+            driver_revision_variant: ""
             build_optional_agents: true
             linux_webkit: ""
           - os: windows-2025-vs2026
@@ -435,6 +438,7 @@ jobs:
             build_name: gonavi-build-windows-arm64
             wails_tags: ""
             artifact_suffix: ""
+            driver_revision_variant: ""
             build_optional_agents: true
             linux_webkit: ""
           - os: ubuntu-22.04
@@ -444,6 +448,7 @@ jobs:
             build_name: gonavi-build-linux-amd64
             wails_tags: ""
             artifact_suffix: ""
+            driver_revision_variant: ""
             build_optional_agents: true
             linux_webkit: "4.0"
           - os: ubuntu-22.04-arm
@@ -453,6 +458,7 @@ jobs:
             build_name: gonavi-build-linux-arm64
             wails_tags: ""
             artifact_suffix: ""
+            driver_revision_variant: ""
             build_optional_agents: true
             linux_webkit: "4.0"
           # Debian 13 (trixie) 默认仓库已切到 WebKitGTK 4.1：单独提供 4.1 变体产物
@@ -463,6 +469,7 @@ jobs:
             build_name: gonavi-build-linux-amd64-webkit41
             wails_tags: "webkit2_41"
             artifact_suffix: "-WebKit41"
+            driver_revision_variant: "webkit41"
             build_optional_agents: false
             linux_webkit: "4.1"
 
@@ -665,9 +672,15 @@ jobs:
           set -euo pipefail
           echo "🧭 为 ${{ matrix.platform }} 全量生成 driver-agent revision 指纹，避免跨平台沿用旧 revision"
           ./tools/generate-driver-agent-revisions.sh --platform "${{ matrix.platform }}"
-          ./tools/write-driver-revision-contract.sh --role gui \
-            --platform "${{ matrix.platform }}" \
+          revision_contract_args=(
+            --role gui
+            --platform "${{ matrix.platform }}"
             --output-dir driver-revision-contract
+          )
+          if [[ -n "${{ matrix.driver_revision_variant }}" ]]; then
+            revision_contract_args+=(--variant "${{ matrix.driver_revision_variant }}")
+          fi
+          ./tools/write-driver-revision-contract.sh "${revision_contract_args[@]}"
           REVISION_HASH="$(python3 - <<'PY'
           import hashlib
           from pathlib import Path
@@ -1338,10 +1351,9 @@ jobs:
           retention-days: 1
 
       - name: Upload GUI driver revision contract
-        if: ${{ matrix.wails_tags == '' }}
         uses: actions/upload-artifact@v6
         with:
-          name: gui-driver-revision-contract-${{ matrix.os_name }}-${{ matrix.arch_name }}
+          name: gui-driver-revision-contract-${{ matrix.build_name }}
           path: driver-revision-contract/*.sha256
           if-no-files-found: error
           retention-days: 1
