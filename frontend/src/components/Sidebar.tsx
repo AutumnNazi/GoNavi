@@ -148,6 +148,10 @@ import FindInDatabaseModal from './FindInDatabaseModal';
 import { buildRpcConnectionConfig } from '../utils/connectionRpcConfig';
 import { buildSqlAnalysisWorkbenchTab } from '../utils/sqlAnalysisTab';
 import { buildSqlAuditWorkbenchTab } from '../utils/sqlAuditTab';
+import {
+    normalizeSidebarDatabaseRefreshRequest,
+    SIDEBAR_DATABASE_REFRESH_EVENT,
+} from '../utils/sidebarDatabaseRefresh';
 import { getDataSourceCapabilities, resolveDataSourceType } from '../utils/dataSourceCapabilities';
 import { isConnectionStructureEditRestricted } from '../utils/connectionReadOnly';
 import { noAutoCapInputProps } from '../utils/inputAutoCap';
@@ -1803,6 +1807,24 @@ const Sidebar: React.FC<{
       window.addEventListener('gonavi:sidebar-table-created', handleSidebarTableCreated as EventListener);
       return () => {
           window.removeEventListener('gonavi:sidebar-table-created', handleSidebarTableCreated as EventListener);
+      };
+  }, []);
+
+  useEffect(() => {
+      const handleSidebarDatabaseRefresh = (event: Event) => {
+          const request = normalizeSidebarDatabaseRefreshRequest((event as CustomEvent).detail);
+          if (!request) return;
+          const dbNode = findTreeNodeByKeyRef.current(
+              treeDataRef.current,
+              `${request.connectionId}-${request.dbName}`,
+          );
+          if (dbNode) {
+              void loadTables(dbNode, { ensureFresh: true });
+          }
+      };
+      window.addEventListener(SIDEBAR_DATABASE_REFRESH_EVENT, handleSidebarDatabaseRefresh as EventListener);
+      return () => {
+          window.removeEventListener(SIDEBAR_DATABASE_REFRESH_EVENT, handleSidebarDatabaseRefresh as EventListener);
       };
   }, []);
 

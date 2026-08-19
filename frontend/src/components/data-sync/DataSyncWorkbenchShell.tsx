@@ -38,6 +38,10 @@ import {
   createDataSyncWorkbenchTranslate,
   type DataSyncWorkbenchLocale,
 } from './text';
+import {
+  dispatchSidebarDatabaseRefresh,
+  type SidebarDatabaseRefreshRequest,
+} from '../../utils/sidebarDatabaseRefresh';
 import './DataSyncWorkbench.css';
 
 type WorkbenchView = 'tasks' | 'runs' | 'schedules' | 'cdc';
@@ -51,12 +55,57 @@ const EMPTY_CAPABILITY: DataSyncRouteCapability = {
 };
 
 const viewKeys: WorkbenchView[] = ['tasks', 'runs', 'schedules', 'cdc'];
+const SIDEBAR_REFRESH_RUN_STATUSES = new Set<DataSyncRunRecord['status']>([
+  'succeeded',
+  'partial',
+  'failed',
+  'paused',
+  'canceled',
+  'cancelled',
+  'interrupted',
+]);
 
 let localTaskSequence = 0;
 
 const nextLocalTaskId = (): string => {
   localTaskSequence += 1;
   return `data-sync-local-${Date.now()}-${localTaskSequence}`;
+};
+
+export const resolveDataSyncSidebarRefreshes = ({
+  previousStatuses,
+  runs,
+  tasks,
+}: {
+  previousStatuses: ReadonlyMap<string, DataSyncRunRecord['status']>;
+  runs: DataSyncRunRecord[];
+  tasks: DataSyncTaskDefinition[];
+}): Array<{ runId: string; request: SidebarDatabaseRefreshRequest }> => {
+  const tasksById = new Map(tasks.map((task) => [task.id, task]));
+  return runs.flatMap((run) => {
+    const previousStatus = previousStatuses.get(run.id);
+    if (
+      previousStatus === undefined
+      || SIDEBAR_REFRESH_RUN_STATUSES.has(previousStatus)
+      || !SIDEBAR_REFRESH_RUN_STATUSES.has(run.status)
+      || !(Number(run.rowsWritten) > 0)
+    ) {
+      return [];
+    }
+    const target = tasksById.get(run.taskId)?.target;
+    const connectionId = String(target?.connectionId || '').trim();
+    const dbName = String(target?.database || '').trim();
+    if (!connectionId || !dbName) return [];
+    return [{
+      runId: run.id,
+      request: {
+        connectionId,
+        dbName,
+        schemaName: String(target?.schema || '').trim() || undefined,
+        reason: 'data-sync',
+      },
+    }];
+  });
 };
 
 export type DataSyncWorkbenchShellProps = {
@@ -134,6 +183,7 @@ export const DataSyncWorkbenchShell: React.FC<DataSyncWorkbenchShellProps> = ({
   const [selectedRunId, setSelectedRunId] = useState('');
   const [errorRows, setErrorRows] = useState<DataSyncErrorRow[]>([]);
   const [checkpoint, setCheckpoint] = useState<DataSyncCheckpointSummary | null>(null);
+  const runStatusesRef = useRef<Map<string, DataSyncRunRecord['status']>>(new Map());
 
   const selectedTask = tasks.find((task) => task.id === selectedTaskId) || null;
   const checkpointTask = checkpoint
@@ -237,6 +287,19 @@ export const DataSyncWorkbenchShell: React.FC<DataSyncWorkbenchShellProps> = ({
     }, 3_000);
     return () => globalThis.clearInterval(timer);
   }, [activeView, runs]);
+
+  useEffect(() => {
+    const previousStatuses = runStatusesRef.current;
+    const refreshes = resolveDataSyncSidebarRefreshes({
+      previousStatuses,
+      runs,
+      tasks,
+    });
+    refreshes.forEach(({ request }) => {
+      dispatchSidebarDatabaseRefresh(request);
+    });
+    runStatusesRef.current = new Map(runs.map((run) => [run.id, run.status]));
+  }, [runs, tasks]);
 
   const patchSelectedTask = (
     patch: Partial<

@@ -358,6 +358,78 @@ describe('useSidebarTreeLoaders PostgreSQL partitions', () => {
     expect(executedSql).not.toMatch(/COUNT\s*\(/i);
   });
 
+  it('does not expose an estimated zero row count for MySQL InnoDB tables', async () => {
+    const connection = {
+      id: 'conn-mysql',
+      name: 'MySQL',
+      dbName: 'sales',
+      config: {
+        type: 'mysql',
+        host: '127.0.0.1',
+        port: 3306,
+        user: 'root',
+      },
+    } as SavedConnection & { dbName: string };
+    mocks.storeState.connections = [connection];
+    mocks.dbGetTables.mockResolvedValue({
+      success: true,
+      data: [{ Table: 'orders', Rows: '0' }],
+    });
+    mocks.dbQuery.mockImplementation(async (_config, _dbName, sql: string) => {
+      if (sql.includes('information_schema.tables')) {
+        return {
+          success: true,
+          data: [{
+            table_name: 'orders',
+            table_rows: 0,
+            table_engine: 'InnoDB',
+          }],
+        };
+      }
+      return { success: true, data: [] };
+    });
+
+    let loaders: ReturnType<typeof useSidebarTreeLoaders> | undefined;
+    const Harness = () => {
+      loaders = useSidebarTreeLoaders({
+        savedQueries: [],
+        tableSortPreference: {},
+        tableAccessCount: {},
+        pinnedSidebarTables: [],
+        pinnedSidebarDatabases: [],
+        isV2Ui: true,
+        loadingNodesRef: { current: new Set<string>() },
+        setConnectionStates: vi.fn(),
+        setLoadedKeys: vi.fn(),
+        replaceTreeNodeChildren: mocks.replaceTreeNodeChildren,
+        buildRuntimeConfig: (conn) => conn.config,
+        buildJVMRuntimeConfig: (conn) => conn.config,
+        buildJVMDiagnosticTreeNodes: () => [],
+        resolveSavedQueryDisplayName: (name) => String(name || ''),
+      });
+      return null;
+    };
+
+    act(() => {
+      renderer = create(<Harness />);
+    });
+    await act(async () => {
+      await loaders?.loadTables({
+        key: 'conn-mysql-sales',
+        dataRef: connection,
+      });
+    });
+
+    const [, databaseChildren] = mocks.replaceTreeNodeChildren.mock.calls[0];
+    const tablesGroup = databaseChildren.find(
+      (node: any) => node.dataRef?.groupKey === 'tables',
+    );
+    const ordersNode = tablesGroup.children.find(
+      (node: any) => node.dataRef?.tableName === 'orders',
+    );
+    expect(ordersNode.dataRef).not.toHaveProperty('rowCount');
+  });
+
   it('waits for an in-flight table load before running an ensureFresh load', async () => {
     const staleResponse = deferred<any>();
     const freshResponse = deferred<any>();

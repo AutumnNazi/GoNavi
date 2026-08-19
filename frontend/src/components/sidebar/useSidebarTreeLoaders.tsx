@@ -47,6 +47,7 @@ import {
   loadStarRocksMaterializedViews,
   loadViews,
   parseMetadataRowCount,
+  parseSidebarTableRowCount,
   shouldHideSchemaPrefix,
   splitQualifiedName,
   supportsDatabaseEvents,
@@ -964,7 +965,7 @@ export const useSidebarTreeLoaders = ({
                 };
                 tableRows.forEach((row: Record<string, any>) => {
                     const tableName = getSidebarTableName(row);
-                    const rowCount = parseMetadataRowCount(row);
+                    const rowCount = parseSidebarTableRowCount(row, conn as SavedConnection);
                     const tableSize = readNumericMetadataValue(row, [
                         'Data_length',
                         'data_length',
@@ -999,7 +1000,7 @@ export const useSidebarTreeLoaders = ({
                             'COMMENTS',
                             'MS_Description',
                         ]) || '').trim();
-                        const rowCount = parseMetadataRowCount(row);
+                        const rowCount = parseSidebarTableRowCount(row, conn as SavedConnection);
                         const tableSize = readNumericMetadataValue(row, [
                             'table_size',
                             'TABLE_SIZE',
@@ -1060,7 +1061,7 @@ export const useSidebarTreeLoaders = ({
 	                    tableName,
 	                    schemaName: String(mappedSchemaName || '').trim(),
 	                    displayName: getSidebarTableDisplayName(conn, tableName),
-                        rowCount: parseMetadataRowCount(row) ?? resolvedMetadata?.rowCount,
+                        rowCount: parseSidebarTableRowCount(row, conn as SavedConnection) ?? resolvedMetadata?.rowCount,
                         tableSize: resolvedMetadata?.tableSize,
                         createdAt: resolvedMetadata?.createdAt,
                         updatedAt: resolvedMetadata?.updatedAt,
