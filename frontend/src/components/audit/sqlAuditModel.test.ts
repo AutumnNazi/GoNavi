@@ -25,6 +25,9 @@ describe('sqlAuditModel', () => {
       sqlText: 'UPDATE users SET token = ?',
       sqlRedacted: true,
       rowsAffected: '2',
+      executedCount: '1',
+      failedIndex: '2',
+      outcomeUnknown: true,
       error: 'permission denied',
     });
 
@@ -37,6 +40,9 @@ describe('sqlAuditModel', () => {
       sqlText: 'UPDATE users SET token = ?',
       sqlRedacted: true,
       rowsAffected: 2,
+      executedCount: 1,
+      failedIndex: 2,
+      outcomeUnknown: true,
       error: 'permission denied',
     });
   });

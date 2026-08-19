@@ -190,6 +190,9 @@ export default function SqlAuditDetailDrawer({
             <Descriptions.Item label={t('sql_audit.detail.statement_position')}>
               {event.statementCount > 0 ? `${event.statementIndex || 1} / ${event.statementCount}` : '-'}
             </Descriptions.Item>
+            <Descriptions.Item label={t('sql_audit.detail.executed_count')}>{event.executedCount > 0 ? event.executedCount.toLocaleString(language) : '-'}</Descriptions.Item>
+            <Descriptions.Item label={t('sql_audit.detail.failed_index')}>{event.failedIndex > 0 ? event.failedIndex.toLocaleString(language) : '-'}</Descriptions.Item>
+            <Descriptions.Item label={t('sql_audit.detail.outcome_unknown')}>{event.outcomeUnknown ? t('sql_audit.detail.outcome_unknown_value') : '-'}</Descriptions.Item>
             <Descriptions.Item label={t('sql_audit.detail.rows_affected')}>{event.rowsAffected?.toLocaleString(language) ?? '-'}</Descriptions.Item>
             <Descriptions.Item label={t('sql_audit.detail.rows_returned')}>{event.rowsReturned?.toLocaleString(language) ?? '-'}</Descriptions.Item>
           </Descriptions>

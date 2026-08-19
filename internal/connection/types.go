@@ -201,6 +201,10 @@ type QueryResult struct {
 	Fields             []string    `json:"fields,omitempty"`
 	Messages           []string    `json:"messages,omitempty"`
 	Partial            bool        `json:"partial,omitempty"`
+	ExecutedCount      int         `json:"executedCount,omitempty"`
+	FailedIndex        int         `json:"failedIndex,omitempty"`
+	BoundaryMode       string      `json:"boundaryMode,omitempty"`
+	CommitMode         string      `json:"commitMode,omitempty"`
 	Warnings           []string    `json:"warnings,omitempty"`
 	OutcomeUnknown     bool        `json:"outcomeUnknown,omitempty"`
 	FailedObjectTypes  []string    `json:"failedObjectTypes,omitempty"`

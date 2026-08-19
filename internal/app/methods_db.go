@@ -1160,6 +1160,73 @@ func buildWriteExecutionFailure(ctx context.Context, err error, queryID string) 
 	return result
 }
 
+func summarizeMultiStatementResult(result connection.QueryResult, executedCount, failedIndex int, boundaryMode string, outcomeUnknown bool) connection.QueryResult {
+	return summarizeMultiStatementResultWithCommitMode(result, executedCount, failedIndex, boundaryMode, sqlaudit.CommitModeAuto, outcomeUnknown)
+}
+
+func summarizeMultiStatementResultWithCommitMode(result connection.QueryResult, executedCount, failedIndex int, boundaryMode string, commitMode string, outcomeUnknown bool) connection.QueryResult {
+	result.ExecutedCount = executedCount
+	result.FailedIndex = failedIndex
+	result.BoundaryMode = boundaryMode
+	result.CommitMode = commitMode
+	result.OutcomeUnknown = result.OutcomeUnknown || outcomeUnknown
+	result.Partial = result.Partial || executedCount > 0 && failedIndex > 0
+	return result
+}
+
+func sqlAuditTextTransactionMetadata(statement string, transactionOpen bool) (boundaryMode string, commitMode string) {
+	if !isSQLTransactionControlStatement(statement) {
+		if transactionOpen {
+			return sqlaudit.BoundaryModeTextSQL, sqlaudit.CommitModePending
+		}
+		return sqlaudit.BoundaryModeImplicit, sqlaudit.CommitModeAuto
+	}
+
+	keyword, keywordEnd := nextSQLKeyword(statement, 0)
+	switch keyword {
+	case "begin":
+		if isBeginTransactionControlStatement(statement, keywordEnd) {
+			return sqlaudit.BoundaryModeTextSQL, sqlaudit.CommitModePending
+		}
+	case "start", "savepoint", "release":
+		return sqlaudit.BoundaryModeTextSQL, sqlaudit.CommitModePending
+	case "commit", "rollback":
+		return sqlaudit.BoundaryModeTextSQL, sqlaudit.CommitModeManual
+	}
+	return sqlaudit.BoundaryModeTextSQL, sqlaudit.CommitModePending
+}
+
+func advancesSQLAuditTextTransaction(statement string, transactionOpen bool) bool {
+	keyword, keywordEnd := nextSQLKeyword(statement, 0)
+	switch keyword {
+	case "begin":
+		return transactionOpen || isBeginTransactionControlStatement(statement, keywordEnd)
+	case "start":
+		return transactionOpen || strings.Contains(strings.ToLower(statement), "transaction")
+	case "commit":
+		return false
+	case "rollback":
+		// ROLLBACK TO SAVEPOINT preserves the surrounding transaction.
+		return strings.Contains(strings.ToLower(statement), " to ")
+	default:
+		return transactionOpen
+	}
+}
+
+func executedStatementCount(err error) int {
+	if err == nil {
+		return 1
+	}
+	return 0
+}
+
+func failedStatementIndex(index int, err error) int {
+	if err != nil {
+		return index
+	}
+	return 0
+}
+
 func (a *App) DBQuery(config connection.ConnectionConfig, dbName string, query string) connection.QueryResult {
 	return a.dbQueryWithCancel(config, dbName, query, "", dbQueryAuditOptions{
 		auditAll:    a.webRuntime,
@@ -1432,7 +1499,7 @@ func (a *App) dbQueryMulti(
 				QueryID:    queryID,
 				SQL:        query,
 				Source:     auditSource,
-				CommitMode: "auto",
+				CommitMode: result.CommitMode,
 				Duration:   time.Since(auditStartedAt),
 				Result:     result,
 			})
@@ -1528,6 +1595,8 @@ func (a *App) dbQueryMulti(
 		startedAt time.Time,
 		rowsAffected int64,
 		rowsReturned int64,
+		boundaryMode string,
+		commitMode string,
 		statementErr error,
 	) {
 		if !auditSequentialStatements {
@@ -1542,11 +1611,14 @@ func (a *App) dbQueryMulti(
 			EventType:      "query_statement",
 			Status:         sqlAuditStatusFromError(statementErr),
 			Source:         auditSource,
-			CommitMode:     "auto",
-			BoundaryMode:   "unknown",
+			CommitMode:     commitMode,
+			BoundaryMode:   boundaryMode,
 			SQL:            statement,
 			StatementIndex: statementIndex,
 			StatementCount: statementCount,
+			ExecutedCount:  executedStatementCount(statementErr),
+			FailedIndex:    failedStatementIndex(statementIndex, statementErr),
+			OutcomeUnknown: writeExecutionOutcomeUnknown(ctx, statementErr),
 			Duration:       completedAt.Sub(startedAt),
 			RowsAffected:   rowsAffected,
 			RowsReturned:   rowsReturned,
@@ -1611,7 +1683,11 @@ func (a *App) dbQueryMulti(
 			Data: results, Messages: resultMessages, QueryID: queryID,
 		}, err)
 	}
-	if err != nil && shouldRefreshCachedConnection(err) {
+	// A native multi-result call may have already returned one or more result
+	// sets before the driver reports an error. Retrying that batch could replay
+	// query-first writes, so only refresh a cached connection before any result
+	// has been observed.
+	if err != nil && allReadOnly && len(results) == 0 && shouldRefreshCachedConnection(err) {
 		if a.invalidateCachedDatabase(runConfig, err) {
 			requestTrace.MarkRetry("cached connection refresh")
 			setRunningQueryCancellable(true)
@@ -1631,7 +1707,41 @@ func (a *App) dbQueryMulti(
 	}
 	if err != nil {
 		logger.Error(err, "DBQueryMulti 执行失败：%s SQL片段=%q", formatConnSummary(runConfig), sqlSnippet(query))
-		return buildQueryExecutionFailure(ctx, err, err.Error(), queryID)
+		normalizeNativeResultStatementIndexes(runConfig.Type, statements, results)
+		executedCount, exactPrefix := nativeResultExecutedStatementCount(statements, results)
+		// A query-first write can have reached the server even when a native
+		// result-stream error leaves no result set for the failing statement.
+		outcomeUnknown := containsSQLAuditWrite(resolvedDBType, query)
+		if exactPrefix {
+			for index := 1; index <= executedCount; index++ {
+				var rowsAffected, rowsReturned int64
+				for _, resultSet := range results {
+					if resultSet.StatementIndex != index {
+						continue
+					}
+					affected, returned := summarizeManagedSQLResultSet(resultSet)
+					rowsAffected += affected
+					rowsReturned += returned
+				}
+				appendStatementAudit(statements[index-1], index, auditStartedAt, rowsAffected, rowsReturned, sqlaudit.BoundaryModeDriverAPI, sqlaudit.CommitModeAuto, nil)
+			}
+		}
+		failedIndex := 0
+		if exactPrefix && executedCount < statementCount {
+			failedIndex = executedCount + 1
+			appendStatementAudit(statements[failedIndex-1], failedIndex, auditStartedAt, 0, 0, sqlaudit.BoundaryModeDriverAPI, sqlaudit.CommitModeAuto, err)
+			if outcomeUnknown && len(statementAuditEvents) > 0 {
+				statementAuditEvents[len(statementAuditEvents)-1].OutcomeUnknown = true
+			}
+		}
+		failure := buildQueryExecutionFailure(ctx, err, err.Error(), queryID)
+		failure.Data = results
+		failure.Messages = resultMessages
+		failure.Partial = len(results) > 0
+		// For query-first writes, a scanner/transport error after native results
+		// cannot prove the outcome of the failing statement. Preserve the known
+		// prefix and surface the remaining uncertainty to callers and the audit.
+		return summarizeMultiStatementResult(failure, executedCount, failedIndex, sqlaudit.BoundaryModeDriverAPI, outcomeUnknown)
 	}
 
 	// 某些 optional driver-agent 的原生多结果集路径会异常返回“成功但无可展示列/行”。
@@ -1646,7 +1756,12 @@ func (a *App) dbQueryMulti(
 
 	// 驱动支持多结果集，直接返回
 	if results != nil {
-		return connection.QueryResult{Success: true, Data: results, Messages: resultMessages, QueryID: queryID}
+		for index, statement := range statements {
+			if strings.TrimSpace(statement) != "" {
+				appendStatementAudit(statement, index+1, auditStartedAt, 0, 0, sqlaudit.BoundaryModeDriverAPI, sqlaudit.CommitModeAuto, nil)
+			}
+		}
+		return summarizeMultiStatementResult(connection.QueryResult{Success: true, Data: results, Messages: resultMessages, QueryID: queryID}, statementCount, 0, sqlaudit.BoundaryModeDriverAPI, false)
 	}
 
 	// 驱动不支持多结果集，回退到逐条执行
@@ -1740,28 +1855,35 @@ func (a *App) dbQueryMulti(
 					}
 					batchErr = classifyDispatchedWriteError(batchErr)
 					logger.Error(batchErr, "DBQueryMulti 批量写执行失败：%s SQL片段=%q", formatConnSummary(runConfig), sqlSnippet(query))
-					return buildWriteExecutionFailure(ctx, batchErr, queryID)
+					return summarizeMultiStatementResult(buildWriteExecutionFailure(ctx, batchErr, queryID), 0, 1, sqlaudit.BoundaryModeImplicit, writeExecutionOutcomeUnknown(ctx, batchErr))
 				}
 				logger.Infof("DBQueryMulti 批量写执行成功：%s 语句数=%d affectedRows=%d", formatConnSummary(runConfig), len(statements), affected)
-				return connection.QueryResult{
+				return summarizeMultiStatementResult(connection.QueryResult{
 					Success: true,
 					Data: []connection.ResultSetData{{
 						Rows:    []map[string]interface{}{{"affectedRows": affected}},
 						Columns: []string{"affectedRows"},
 					}},
 					QueryID: queryID,
-				}
+				}, 1, 0, sqlaudit.BoundaryModeImplicit, false)
 			}
 		}
 	}
 
 	var resultSets []connection.ResultSetData
+	executedCount := 0
+	textTransactionOpen := false
+	summaryBoundaryMode := sqlaudit.BoundaryModeImplicit
+	summaryCommitMode := sqlaudit.CommitModeAuto
 	for idx, stmt := range statements {
 		stmt = strings.TrimSpace(stmt)
 		if stmt == "" {
 			continue
 		}
 		statementStartedAt := time.Now()
+		statementBoundaryMode, statementCommitMode := sqlAuditTextTransactionMetadata(stmt, textTransactionOpen)
+		summaryBoundaryMode = statementBoundaryMode
+		summaryCommitMode = statementCommitMode
 
 		isReadStmt := isReadOnlySQLQuery(runConfig.Type, stmt)
 		tryQueryStmtFirst := shouldTryQueryResultFirst(runConfig.Type, stmt)
@@ -1900,7 +2022,9 @@ func (a *App) dbQueryMulti(
 						rowsReturned += returned
 						resultSets = append(resultSets, statementResult)
 					}
-					appendStatementAudit(stmt, idx+1, statementStartedAt, rowsAffected, rowsReturned, nil)
+					appendStatementAudit(stmt, idx+1, statementStartedAt, rowsAffected, rowsReturned, statementBoundaryMode, statementCommitMode, nil)
+					executedCount++
+					textTransactionOpen = advancesSQLAuditTextTransaction(stmt, textTransactionOpen)
 					continue
 				}
 				if data == nil {
@@ -1915,14 +2039,16 @@ func (a *App) dbQueryMulti(
 					Messages:       messages,
 					StatementIndex: idx + 1,
 				})
-				appendStatementAudit(stmt, idx+1, statementStartedAt, 0, int64(len(data)), nil)
+				appendStatementAudit(stmt, idx+1, statementStartedAt, 0, int64(len(data)), statementBoundaryMode, statementCommitMode, nil)
+				executedCount++
+				textTransactionOpen = advancesSQLAuditTextTransaction(stmt, textTransactionOpen)
 				continue
 			}
 			if isReadStmt {
 				logger.Error(err, "DBQueryMulti 逐条查询失败（第 %d/%d 条）：%s SQL片段=%q", idx+1, len(statements), formatConnSummary(runConfig), sqlSnippet(stmt))
 				errMsg := buildStatementExecutionFailedMessage(idx+1, err, len(resultSets))
-				appendStatementAudit(stmt, idx+1, statementStartedAt, 0, 0, err)
-				return buildQueryExecutionFailure(ctx, err, errMsg, queryID)
+				appendStatementAudit(stmt, idx+1, statementStartedAt, 0, 0, statementBoundaryMode, statementCommitMode, err)
+				return summarizeMultiStatementResultWithCommitMode(buildQueryExecutionFailure(ctx, err, errMsg, queryID), executedCount, idx+1, statementBoundaryMode, statementCommitMode, false)
 			}
 			if shouldRefreshCachedConnection(err) {
 				a.invalidateCachedDatabase(runConfig, err)
@@ -1930,10 +2056,10 @@ func (a *App) dbQueryMulti(
 			err = classifyDispatchedWriteError(err)
 			logger.Error(err, "DBQueryMulti 写入查询失败（第 %d/%d 条）：%s SQL片段=%q", idx+1, len(statements), formatConnSummary(runConfig), sqlSnippet(stmt))
 			errMsg := buildStatementExecutionFailedMessage(idx+1, err, len(resultSets))
-			appendStatementAudit(stmt, idx+1, statementStartedAt, 0, 0, err)
+			appendStatementAudit(stmt, idx+1, statementStartedAt, 0, 0, statementBoundaryMode, statementCommitMode, err)
 			failure := buildWriteExecutionFailure(ctx, err, queryID)
 			failure.Message = errMsg
-			return failure
+			return summarizeMultiStatementResultWithCommitMode(failure, executedCount, idx+1, statementBoundaryMode, statementCommitMode, writeExecutionOutcomeUnknown(ctx, err))
 		}
 
 		var affected int64
@@ -1977,18 +2103,20 @@ func (a *App) dbQueryMulti(
 			err = classifyDispatchedWriteError(err)
 			logger.Error(err, "DBQueryMulti 逐条执行失败（第 %d/%d 条）：%s SQL片段=%q", idx+1, len(statements), formatConnSummary(runConfig), sqlSnippet(stmt))
 			errMsg := buildStatementExecutionFailedMessage(idx+1, err, len(resultSets))
-			appendStatementAudit(stmt, idx+1, statementStartedAt, 0, 0, err)
+			appendStatementAudit(stmt, idx+1, statementStartedAt, 0, 0, statementBoundaryMode, statementCommitMode, err)
 			if writeExecutionOutcomeUnknown(ctx, err) {
-				return connection.QueryResult{Success: false, Message: errMsg, Data: map[string]any{"outcomeUnknown": true}, QueryID: queryID}
+				return summarizeMultiStatementResultWithCommitMode(connection.QueryResult{Success: false, Message: errMsg, Data: map[string]any{"outcomeUnknown": true}, QueryID: queryID}, executedCount, idx+1, statementBoundaryMode, statementCommitMode, true)
 			}
-			return connection.QueryResult{Success: false, Message: errMsg, QueryID: queryID}
+			return summarizeMultiStatementResultWithCommitMode(connection.QueryResult{Success: false, Message: errMsg, QueryID: queryID}, executedCount, idx+1, statementBoundaryMode, statementCommitMode, false)
 		}
 		resultSets = append(resultSets, connection.ResultSetData{
 			Rows:           []map[string]interface{}{{"affectedRows": affected}},
 			Columns:        []string{"affectedRows"},
 			StatementIndex: idx + 1,
 		})
-		appendStatementAudit(stmt, idx+1, statementStartedAt, affected, 0, nil)
+		appendStatementAudit(stmt, idx+1, statementStartedAt, affected, 0, statementBoundaryMode, statementCommitMode, nil)
+		executedCount++
+		textTransactionOpen = advancesSQLAuditTextTransaction(stmt, textTransactionOpen)
 	}
 
 	if resultSets == nil {
@@ -1999,7 +2127,7 @@ func (a *App) dbQueryMulti(
 	if len(statements) > 1 {
 		fallbackMsg = buildSequentialFallbackMessage(len(statements))
 	}
-	return connection.QueryResult{Success: true, Data: resultSets, QueryID: queryID, Message: fallbackMsg}
+	return summarizeMultiStatementResultWithCommitMode(connection.QueryResult{Success: true, Data: resultSets, QueryID: queryID, Message: fallbackMsg}, executedCount, 0, summaryBoundaryMode, summaryCommitMode, false)
 }
 
 func normalizeNativeResultStatementIndexes(dbType string, statements []string, results []connection.ResultSetData) {
@@ -2042,6 +2170,34 @@ func normalizeNativeResultStatementIndexes(dbType string, statements []string, r
 			results[resultIdx+1].StatementIndex = statementIdx + 1
 		}
 	}
+}
+
+// nativeResultExecutedStatementCount reports a completed leading statement
+// prefix only when result-set indexes prove that mapping. A stored procedure
+// can emit multiple result sets, so result-set count alone is not evidence of
+// how many statements completed.
+func nativeResultExecutedStatementCount(statements []string, results []connection.ResultSetData) (int, bool) {
+	if len(results) == 0 {
+		return 0, true
+	}
+	completed := make(map[int]struct{}, len(results))
+	for _, result := range results {
+		if result.StatementIndex < 1 || result.StatementIndex > len(statements) {
+			return 0, false
+		}
+		completed[result.StatementIndex] = struct{}{}
+	}
+	for index := 1; index <= len(statements); index++ {
+		if _, ok := completed[index]; !ok {
+			for later := index + 1; later <= len(statements); later++ {
+				if _, found := completed[later]; found {
+					return 0, false
+				}
+			}
+			return index - 1, true
+		}
+	}
+	return len(statements), true
 }
 
 func nativeReadOnlyResultsMissingTabularPayload(allReadOnly bool, results []connection.ResultSetData) bool {

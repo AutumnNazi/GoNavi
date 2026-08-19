@@ -83,6 +83,9 @@ type sqlAuditTransactionEventInput struct {
 	SQL            string
 	StatementIndex int
 	StatementCount int
+	ExecutedCount  int
+	FailedIndex    int
+	OutcomeUnknown bool
 	Duration       time.Duration
 	RowsAffected   int64
 	RowsReturned   int64
@@ -373,8 +376,12 @@ func (a *App) recordSQLAuditQuery(input sqlAuditQueryInput) {
 		QueryID:               strings.TrimSpace(input.QueryID),
 		Source:                normalizeSQLAuditSource(input.Source),
 		CommitMode:            normalizeSQLAuditCommitMode(input.CommitMode),
+		BoundaryMode:          normalizeSQLAuditBoundaryMode(input.Result.BoundaryMode),
 		SQLText:               input.SQL,
 		StatementCount:        statementCount,
+		ExecutedCount:         input.Result.ExecutedCount,
+		FailedIndex:           input.Result.FailedIndex,
+		OutcomeUnknown:        input.Result.OutcomeUnknown,
 		DurationMs:            durationMilliseconds(input.Duration),
 		RowsAffected:          sqlAuditRowsAffected(input.Result),
 		RowsReturned:          queryResultRowsReturned(input.Result),
@@ -443,6 +450,9 @@ func buildSQLAuditTransactionEvent(input sqlAuditTransactionEventInput) sqlaudit
 		SQLText:               input.SQL,
 		StatementIndex:        input.StatementIndex,
 		StatementCount:        input.StatementCount,
+		ExecutedCount:         input.ExecutedCount,
+		FailedIndex:           input.FailedIndex,
+		OutcomeUnknown:        input.OutcomeUnknown,
 		DurationMs:            durationMilliseconds(input.Duration),
 		RowsAffected:          input.RowsAffected,
 		RowsReturned:          input.RowsReturned,
