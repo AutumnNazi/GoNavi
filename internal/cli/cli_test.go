@@ -22,10 +22,12 @@ type fakeBackend struct {
 	saveCalls    int
 	resolveCalls int
 
-	connections []connection.SavedConnectionView
-	resolveErr  error
-	queryResult connection.QueryResult
-	batchResult connection.QueryResult
+	connections       []connection.SavedConnectionView
+	resolveErr        error
+	queryResult       connection.QueryResult
+	batchResult       connection.QueryResult
+	diagnosticResult  connection.QueryResult
+	diagnosticQueryID string
 
 	queryConfig           connection.ConnectionConfig
 	querySQL              string
@@ -97,6 +99,11 @@ func (backend *fakeBackend) ExportSQLAuditToPath(filter sqlaudit.Filter, format 
 	backend.auditPath = path
 	backend.auditOverwrite = overwrite
 	return connection.QueryResult{Success: true}
+}
+
+func (backend *fakeBackend) GetRequestDiagnostic(requestID string) connection.QueryResult {
+	backend.diagnosticQueryID = requestID
+	return backend.diagnosticResult
 }
 
 func runWithBackend(t *testing.T, fake *fakeBackend, args ...string) (int, string, string) {
@@ -251,6 +258,32 @@ func TestRunQueryDefaultsToJSONLResultSetsRowsAndSummary(t *testing.T) {
 	}
 	if !strings.Contains(lines[4], `"queryId":"query-1"`) || !strings.Contains(lines[4], `"resultSets":2`) || !strings.Contains(lines[4], `"rows":2`) {
 		t.Fatalf("summary is incomplete: %s", lines[4])
+	}
+}
+
+func TestRunQueryWritesRedactedRequestTraceToStderrWhenRequested(t *testing.T) {
+	fake := &fakeBackend{
+		connections: []connection.SavedConnectionView{{ID: "conn-1", Name: "production", Config: connection.ConnectionConfig{ID: "conn-1", Type: "mysql"}}},
+		queryResult: connection.QueryResult{
+			Success: true,
+			QueryID: "request-1",
+			Data:    []connection.ResultSetData{},
+		},
+		diagnosticResult: connection.QueryResult{
+			Success: true,
+			Data: map[string]any{
+				"requestId": "request-1",
+				"entry":     "cli",
+				"status":    "success",
+			},
+		},
+	}
+	code, _, stderr := runWithBackend(t, fake, "query", "--request-trace", "--conn", "production", "SELECT 1")
+	if code != ExitSuccess {
+		t.Fatalf("query exit = %d, stderr=%s", code, stderr)
+	}
+	if fake.diagnosticQueryID != "request-1" || !strings.Contains(stderr, `"type":"request_trace"`) || !strings.Contains(stderr, `"requestId":"request-1"`) {
+		t.Fatalf("request trace was not emitted: queryID=%q stderr=%s", fake.diagnosticQueryID, stderr)
 	}
 }
 

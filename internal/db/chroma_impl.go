@@ -143,6 +143,9 @@ func (c *ChromaDB) QueryContext(ctx context.Context, query string) ([]map[string
 	}
 
 	if parsed, ok := parseChromaSQL(text); ok {
+		if parsed.WhereError != nil {
+			return nil, nil, fmt.Errorf("Chroma WHERE 解析失败：%w", parsed.WhereError)
+		}
 		if parsed.Count {
 			total, err := c.countCollection(ctx, parsed.Collection, parsed.Where)
 			if err != nil {
@@ -252,32 +255,18 @@ func (c *ChromaDB) GetCreateStatement(dbName, tableName string) (string, error) 
 }
 
 func (c *ChromaDB) GetColumns(dbName, tableName string) ([]connection.ColumnDefinition, error) {
-	rows, _, err := c.getCollectionRows(context.Background(), tableNameOrDB(dbName, tableName), 20, 0, nil, []string{"documents", "metadatas", "embeddings"})
-	if err != nil {
+	// Chroma does not expose a collection-level schema for arbitrary metadata keys.
+	// Keep metadata inspection side-effect free: sampling documents would implicitly
+	// expose user data and embeddings while opening the fields node.
+	if _, err := c.resolveCollection(context.Background(), dbName, tableName); err != nil {
 		return nil, err
 	}
-	cols := []connection.ColumnDefinition{
+	return []connection.ColumnDefinition{
 		{Name: "id", Type: "string", Nullable: "NO", Key: "PRI", Comment: "Chroma document id"},
 		{Name: "document", Type: "text", Nullable: "YES", Comment: "Document text"},
 		{Name: "metadata", Type: "json", Nullable: "YES", Comment: "Full metadata object"},
 		{Name: "embedding", Type: "vector<float>", Nullable: "YES", Comment: "Embedding vector"},
-	}
-	seen := map[string]struct{}{"id": {}, "document": {}, "metadata": {}, "embedding": {}}
-	for _, row := range rows {
-		for key, value := range row {
-			if _, exists := seen[key]; exists || !strings.HasPrefix(key, "metadata.") {
-				continue
-			}
-			seen[key] = struct{}{}
-			cols = append(cols, connection.ColumnDefinition{
-				Name:     key,
-				Type:     inferChromaValueType(value),
-				Nullable: "YES",
-				Comment:  "Metadata field",
-			})
-		}
-	}
-	return cols, nil
+	}, nil
 }
 
 func (c *ChromaDB) GetAllColumns(dbName string) ([]connection.ColumnDefinitionWithTable, error) {
@@ -538,9 +527,9 @@ func (c *ChromaDB) doJSON(ctx context.Context, method, path string, body interfa
 		return err
 	}
 	defer res.Body.Close()
-	resBody, err := io.ReadAll(res.Body)
+	resBody, err := readLimitedJSONResponseBody(res.Body)
 	if err != nil {
-		return err
+		return fmt.Errorf("读取 Chroma 响应失败：%w", err)
 	}
 	if res.StatusCode < 200 || res.StatusCode >= 300 {
 		message := strings.TrimSpace(string(resBody))
@@ -852,6 +841,7 @@ type chromaParsedSQL struct {
 	Where             interface{}
 	Count             bool
 	IncludeEmbeddings bool
+	WhereError        error
 }
 
 var chromaSQLFromRE = regexp.MustCompile(`(?i)\bFROM\s+(?:"([^"]+)"|` + "`" + `([^` + "`" + `]+)` + "`" + `|([a-zA-Z0-9_.\-]+))`)
@@ -875,6 +865,11 @@ func parseChromaSQL(sqlText string) (chromaParsedSQL, bool) {
 	lower := strings.ToLower(text)
 	parsed.Count = strings.Contains(lower, "count(")
 	parsed.IncludeEmbeddings = strings.Contains(lower, "embedding")
+	whereExpr, _, whereErr := parseVectorSQLWhere(text)
+	parsed.WhereError = whereErr
+	if whereErr == nil && whereExpr != nil {
+		parsed.Where = chromaWhereFromExpr(whereExpr)
+	}
 	if m := chromaSQLLimitRE.FindStringSubmatch(text); len(m) > 1 {
 		parsed.Limit, _ = strconv.Atoi(m[1])
 	}

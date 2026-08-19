@@ -315,6 +315,39 @@ func TestGetTablesIncludesViewsInDedicatedField(t *testing.T) {
 	}
 }
 
+func TestGetTablesPreservesPartialMetadataWarnings(t *testing.T) {
+	backend := &fakeBackend{
+		editableConnection: connection.SavedConnectionView{
+			ID:     "redis-main",
+			Config: connection.ConnectionConfig{Type: "redis", Database: "0"},
+		},
+		tablesResult: connection.QueryResult{
+			Success:      true,
+			Message:      "Redis key scan truncated after 2 keys: cursor loop detected",
+			Partial:      true,
+			Truncated:    true,
+			Retryable:    true,
+			ScannedCount: 2,
+			Warnings:     []string{"Redis key scan truncated after 2 keys: cursor loop detected"},
+			Data:         []map[string]string{{"Table": "orders"}, {"Table": "users"}},
+		},
+	}
+
+	result, out, err := NewService(backend).GetTables(context.Background(), nil, databaseArgs{
+		ConnectionID: "redis-main",
+		DBName:       "0",
+	})
+	if err != nil || result == nil || result.IsError {
+		t.Fatalf("expected partial table metadata success, result=%#v err=%v", result, err)
+	}
+	if !out.Partial || !out.Truncated || !out.Retryable || out.ScannedCount != 2 || len(out.Warnings) != 1 {
+		t.Fatalf("partial table metadata details were lost: %#v", out)
+	}
+	if out.Message != backend.tablesResult.Message || out.Warnings[0] != backend.tablesResult.Warnings[0] {
+		t.Fatalf("expected table metadata message and warnings to propagate, got %#v", out)
+	}
+}
+
 func TestGetObjectsReturnsDatabaseObjectsAndFiltersByType(t *testing.T) {
 	backend := &fakeBackend{
 		editableConnection: connection.SavedConnectionView{
@@ -355,6 +388,58 @@ func TestGetObjectsReturnsDatabaseObjectsAndFiltersByType(t *testing.T) {
 	}
 	if out.Objects[1].Name != "orders.events" {
 		t.Fatalf("queue names must preserve dots, got %#v", out.Objects[1])
+	}
+}
+
+func TestGetObjectsPreservesPartialMetadataWarnings(t *testing.T) {
+	backend := &fakeBackend{
+		editableConnection: connection.SavedConnectionView{
+			ID:     "mysql-main",
+			Config: connection.ConnectionConfig{Type: "mysql", Database: "app"},
+		},
+		objectsResult: connection.QueryResult{
+			Success:           true,
+			Partial:           true,
+			Retryable:         true,
+			Truncated:         true,
+			ScannedCount:      1,
+			Warnings:          []string{"读取 view 对象元数据失败: permission denied"},
+			FailedObjectTypes: []string{"view"},
+			Data:              []connection.DatabaseObject{{Database: "app", Name: "users", Type: "table"}},
+		},
+	}
+
+	result, out, err := NewService(backend).GetObjects(context.Background(), nil, objectsArgs{ConnectionID: "mysql-main", DBName: "app"})
+	if err != nil || result == nil || result.IsError {
+		t.Fatalf("expected partial metadata success, result=%#v err=%v", result, err)
+	}
+	if !out.Partial || !out.Retryable || !out.Truncated || out.ScannedCount != 1 || len(out.Warnings) != 1 || len(out.FailedObjectTypes) != 1 || out.FailedObjectTypes[0] != "view" {
+		t.Fatalf("partial metadata details were lost: %#v", out)
+	}
+}
+
+func TestGetObjectsMarksBaseMetadataFailureRetryable(t *testing.T) {
+	backend := &fakeBackend{
+		editableConnection: connection.SavedConnectionView{ID: "mysql-main", Config: connection.ConnectionConfig{Type: "mysql", Database: "app"}},
+		objectsResult: connection.QueryResult{
+			Success:           false,
+			Partial:           true,
+			Retryable:         true,
+			Message:           "读取 table 对象元数据失败: permission denied",
+			FailedObjectTypes: []string{"table"},
+		},
+	}
+
+	result, out, err := NewService(backend).GetObjects(context.Background(), nil, objectsArgs{ConnectionID: "mysql-main", DBName: "app"})
+	if err != nil || result == nil || !result.IsError {
+		t.Fatalf("expected retryable tool error, result=%#v err=%v", result, err)
+	}
+	text := firstTextContent(result)
+	if !strings.Contains(text, "table") || !strings.Contains(text, "可重试") {
+		t.Fatalf("expected failure category and retry guidance, got %q", text)
+	}
+	if !out.Partial || !out.Retryable || len(out.Warnings) != 1 || len(out.FailedObjectTypes) != 1 || out.FailedObjectTypes[0] != "table" {
+		t.Fatalf("expected structured retry metadata, got %#v", out)
 	}
 }
 
@@ -833,6 +918,48 @@ func TestExecuteSQLForwardsRequestContextToBackend(t *testing.T) {
 	}
 	if backend.queryContext == nil || backend.queryContext.Err() != context.Canceled {
 		t.Fatalf("backend request context = %v, want cancelled request context", backend.queryContext)
+	}
+}
+
+func TestExecuteSQLExposesUnsupportedCancellationState(t *testing.T) {
+	backend := &fakeBackend{
+		editableConnection: connection.SavedConnectionView{
+			ID: "legacy-main",
+			Config: connection.ConnectionConfig{
+				Type:     "custom",
+				Database: "app",
+			},
+		},
+		inspection: appcore.SQLInspection{
+			StatementCount: 1,
+			ReadOnly:       true,
+			Statements: []appcore.SQLStatementInspection{
+				{Index: 1, Keyword: "select", ReadOnly: true},
+			},
+		},
+		queryResult: connection.QueryResult{
+			Success:           true,
+			Message:           "driver cannot stop the underlying SQL",
+			CancellationState: connection.QueryCancellationStateUnsupported,
+			Data:              []connection.ResultSetData{},
+		},
+	}
+
+	result, out, err := NewService(backend).ExecuteSQL(context.Background(), nil, executeSQLArgs{
+		ConnectionID: "legacy-main",
+		SQL:          "SELECT 1",
+	})
+	if err != nil {
+		t.Fatalf("ExecuteSQL returned error: %v", err)
+	}
+	if result == nil || result.IsError {
+		t.Fatalf("expected the completed SQL result with explicit cancellation state, got %#v", result)
+	}
+	if out.CancellationState != connection.QueryCancellationStateUnsupported {
+		t.Fatalf("unsupported cancellation state was lost from structured MCP output: %#v", out)
+	}
+	if text := firstTextContent(result); !strings.Contains(text, "取消状态：unsupported") {
+		t.Fatalf("unsupported cancellation state was lost at the MCP boundary: %q", text)
 	}
 }
 

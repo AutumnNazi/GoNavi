@@ -820,6 +820,116 @@ export namespace app {
 		}
 	}
 
+	export class DataSourceUICapabilities {
+	    explainDiagnosis: boolean;
+	    sqlQueryExport: boolean;
+	    copyInsert: boolean;
+	    copyTable: boolean;
+	    createDatabase: boolean;
+	    createDatabaseCharset: boolean;
+	    renameDatabase: boolean;
+	    dropDatabase: boolean;
+	    messagePublish: boolean;
+	    forceReadOnlyQueryResult: boolean;
+	    forceReadOnlyStructureDesigner: boolean;
+	    preferManualTotalCount: boolean;
+	    supportsApproximateTableCount: boolean;
+	    supportsApproximateTotalPages: boolean;
+
+	    static createFrom(source: any = {}) {
+	        return new DataSourceUICapabilities(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.explainDiagnosis = source["explainDiagnosis"];
+	        this.sqlQueryExport = source["sqlQueryExport"];
+	        this.copyInsert = source["copyInsert"];
+	        this.copyTable = source["copyTable"];
+	        this.createDatabase = source["createDatabase"];
+	        this.createDatabaseCharset = source["createDatabaseCharset"];
+	        this.renameDatabase = source["renameDatabase"];
+	        this.dropDatabase = source["dropDatabase"];
+	        this.messagePublish = source["messagePublish"];
+	        this.forceReadOnlyQueryResult = source["forceReadOnlyQueryResult"];
+	        this.forceReadOnlyStructureDesigner = source["forceReadOnlyStructureDesigner"];
+	        this.preferManualTotalCount = source["preferManualTotalCount"];
+	        this.supportsApproximateTableCount = source["supportsApproximateTableCount"];
+	        this.supportsApproximateTotalPages = source["supportsApproximateTotalPages"];
+	    }
+	}
+	export class DataSourceOperationCapability {
+	    supported: boolean;
+	    runtimeProbe?: boolean;
+	    reason?: string;
+	    alternative?: string;
+	    messageKey?: string;
+
+	    static createFrom(source: any = {}) {
+	        return new DataSourceOperationCapability(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.supported = source["supported"];
+	        this.runtimeProbe = source["runtimeProbe"];
+	        this.reason = source["reason"];
+	        this.alternative = source["alternative"];
+	        this.messageKey = source["messageKey"];
+	    }
+	}
+	export class DataSourceCapability {
+	    databaseType: string;
+	    query: DataSourceOperationCapability;
+	    metadata: DataSourceOperationCapability;
+	    transaction: DataSourceOperationCapability;
+	    pagination: DataSourceOperationCapability;
+	    cancel: DataSourceOperationCapability;
+	    schema: DataSourceOperationCapability;
+	    sampling: DataSourceOperationCapability;
+	    streaming: DataSourceOperationCapability;
+	    dangerousOperations: DataSourceOperationCapability;
+	    ui: DataSourceUICapabilities;
+
+	    static createFrom(source: any = {}) {
+	        return new DataSourceCapability(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.databaseType = source["databaseType"];
+	        this.query = this.convertValues(source["query"], DataSourceOperationCapability);
+	        this.metadata = this.convertValues(source["metadata"], DataSourceOperationCapability);
+	        this.transaction = this.convertValues(source["transaction"], DataSourceOperationCapability);
+	        this.pagination = this.convertValues(source["pagination"], DataSourceOperationCapability);
+	        this.cancel = this.convertValues(source["cancel"], DataSourceOperationCapability);
+	        this.schema = this.convertValues(source["schema"], DataSourceOperationCapability);
+	        this.sampling = this.convertValues(source["sampling"], DataSourceOperationCapability);
+	        this.streaming = this.convertValues(source["streaming"], DataSourceOperationCapability);
+	        this.dangerousOperations = this.convertValues(source["dangerousOperations"], DataSourceOperationCapability);
+	        this.ui = this.convertValues(source["ui"], DataSourceUICapabilities);
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+
+
 	export class ElasticsearchConsoleRequestResult {
 	    index: number;
 	    method: string;
@@ -1913,6 +2023,8 @@ export namespace connection {
 	    user: string;
 	    password: string;
 	    keyPath: string;
+	    knownHostsPath?: string;
+	    hostKeyFingerprint?: string;
 
 	    static createFrom(source: any = {}) {
 	        return new SSHConfig(source);
@@ -1925,6 +2037,8 @@ export namespace connection {
 	        this.user = source["user"];
 	        this.password = source["password"];
 	        this.keyPath = source["keyPath"];
+	        this.knownHostsPath = source["knownHostsPath"];
+	        this.hostKeyFingerprint = source["hostKeyFingerprint"];
 	    }
 	}
 	export class ConnectionProtectionConfig {
@@ -2069,6 +2183,66 @@ export namespace connection {
 		    return a;
 		}
 	}
+	export class ConnectionHealthCheck {
+	    key: string;
+	    status: string;
+	    durationMs?: number;
+	    detail?: string;
+	    recommendation?: string;
+
+	    static createFrom(source: any = {}) {
+	        return new ConnectionHealthCheck(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.key = source["key"];
+	        this.status = source["status"];
+	        this.durationMs = source["durationMs"];
+	        this.detail = source["detail"];
+	        this.recommendation = source["recommendation"];
+	    }
+	}
+	export class ConnectionHealthReport {
+	    connectionId: string;
+	    connectionName?: string;
+	    connectionType?: string;
+	    overallStatus: string;
+	    durationMs: number;
+	    checks: ConnectionHealthCheck[];
+
+	    static createFrom(source: any = {}) {
+	        return new ConnectionHealthReport(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.connectionId = source["connectionId"];
+	        this.connectionName = source["connectionName"];
+	        this.connectionType = source["connectionType"];
+	        this.overallStatus = source["overallStatus"];
+	        this.durationMs = source["durationMs"];
+	        this.checks = this.convertValues(source["checks"], ConnectionHealthCheck);
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 
 	export class GlobalProxyView {
 	    enabled: boolean;
@@ -2109,7 +2283,15 @@ export namespace connection {
 	    data: any;
 	    fields?: string[];
 	    messages?: string[];
+	    partial?: boolean;
+	    warnings?: string[];
+	    outcomeUnknown?: boolean;
+	    failedObjectTypes?: string[];
+	    retryable?: boolean;
+	    truncated?: boolean;
+	    scannedCount?: number;
 	    queryId?: string;
+	    cancellationState?: string;
 	    transactionId?: string;
 	    transactionPending?: boolean;
 
@@ -2124,7 +2306,15 @@ export namespace connection {
 	        this.data = source["data"];
 	        this.fields = source["fields"];
 	        this.messages = source["messages"];
+	        this.partial = source["partial"];
+	        this.warnings = source["warnings"];
+	        this.outcomeUnknown = source["outcomeUnknown"];
+	        this.failedObjectTypes = source["failedObjectTypes"];
+	        this.retryable = source["retryable"];
+	        this.truncated = source["truncated"];
+	        this.scannedCount = source["scannedCount"];
 	        this.queryId = source["queryId"];
+	        this.cancellationState = source["cancellationState"];
 	        this.transactionId = source["transactionId"];
 	        this.transactionPending = source["transactionPending"];
 	    }

@@ -4,6 +4,8 @@ export interface SSHConfig {
   user: string;
   password?: string;
   keyPath?: string;
+  knownHostsPath?: string;
+  hostKeyFingerprint?: string;
 }
 
 export interface ProxyConfig {
@@ -483,6 +485,7 @@ export interface TabData {
     | "sql-file-execution"
     | "sql-analysis"
     | "sql-audit"
+    | "request-diagnostics"
     | "redis-keys"
     | "redis-command"
     | "redis-monitor"

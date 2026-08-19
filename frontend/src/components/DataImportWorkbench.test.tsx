@@ -342,15 +342,12 @@ describe('DataImportWorkbench', () => {
     }).props.importOptions.conflictKeyColumns).toEqual(['id', 'x'.repeat(255)]);
   });
 
-  it('renders import job history without exposing a resume action', async () => {
+  it('renders the import job history panel', async () => {
     const renderer = await renderWorkbench();
 
     expect(renderer.root.findByProps({
       'data-import-job-history-mock': 'true',
     })).toBeDefined();
-    expect(renderer.root.findAllByProps({
-      'data-import-history-resume-action': true,
-    })).toHaveLength(0);
   });
 
   it('refreshes durable history when an import starts and when it finishes', async () => {

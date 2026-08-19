@@ -158,14 +158,17 @@ func (q *QdrantDB) QueryContext(ctx context.Context, query string) ([]map[string
 	}
 
 	if parsed, ok := parseQdrantSQL(text); ok {
+		if parsed.WhereError != nil {
+			return nil, nil, fmt.Errorf("Qdrant WHERE 解析失败：%w", parsed.WhereError)
+		}
 		if parsed.Count {
-			total, err := q.countPoints(ctx, parsed.Collection, nil)
+			total, err := q.countPoints(ctx, parsed.Collection, parsed.Filter)
 			if err != nil {
 				return nil, nil, err
 			}
 			return []map[string]interface{}{{"total": total}}, []string{"total"}, nil
 		}
-		return q.scrollPoints(ctx, parsed.Collection, parsed.Limit, parsed.Offset, nil, true, parsed.IncludeVector)
+		return q.scrollPoints(ctx, parsed.Collection, parsed.Limit, parsed.Offset, parsed.Filter, true, parsed.IncludeVector)
 	}
 
 	return nil, nil, fmt.Errorf("Qdrant 查询仅支持 JSON 命令或简单 SELECT 预览")
@@ -242,7 +245,7 @@ func (q *QdrantDB) GetCreateStatement(dbName, tableName string) (string, error) 
 }
 
 func (q *QdrantDB) GetColumns(dbName, tableName string) ([]connection.ColumnDefinition, error) {
-	rows, _, err := q.scrollPoints(context.Background(), tableNameOrDB(dbName, tableName), 20, nil, nil, true, true)
+	info, err := q.getCollectionInfo(context.Background(), tableNameOrDB(dbName, tableName))
 	if err != nil {
 		return nil, err
 	}
@@ -251,21 +254,7 @@ func (q *QdrantDB) GetColumns(dbName, tableName string) ([]connection.ColumnDefi
 		{Name: "vector", Type: "vector<float>", Nullable: "YES", Comment: "Vector or named vectors"},
 		{Name: "payload", Type: "json", Nullable: "YES", Comment: "Full payload object"},
 	}
-	seen := map[string]struct{}{"id": {}, "vector": {}, "payload": {}}
-	for _, row := range rows {
-		for key, value := range row {
-			if _, exists := seen[key]; exists || !strings.HasPrefix(key, "payload.") {
-				continue
-			}
-			seen[key] = struct{}{}
-			cols = append(cols, connection.ColumnDefinition{
-				Name:     key,
-				Type:     inferChromaValueType(value),
-				Nullable: "YES",
-				Comment:  "Payload field",
-			})
-		}
-	}
+	cols = append(cols, qdrantPayloadSchemaColumns(info)...)
 	return cols, nil
 }
 
@@ -507,9 +496,9 @@ func (q *QdrantDB) doJSON(ctx context.Context, method, path string, body interfa
 		return err
 	}
 	defer res.Body.Close()
-	resBody, err := io.ReadAll(res.Body)
+	resBody, err := readLimitedJSONResponseBody(res.Body)
 	if err != nil {
-		return err
+		return fmt.Errorf("读取 Qdrant 响应失败：%w", err)
 	}
 	if res.StatusCode < 200 || res.StatusCode >= 300 {
 		message := strings.TrimSpace(string(resBody))
@@ -818,6 +807,8 @@ type qdrantParsedSQL struct {
 	Offset        interface{}
 	Count         bool
 	IncludeVector bool
+	Filter        interface{}
+	WhereError    error
 }
 
 var qdrantSQLFromRE = regexp.MustCompile(`(?i)\bFROM\s+(?:"([^"]+)"|` + "`" + `([^` + "`" + `]+)` + "`" + `|([a-zA-Z0-9_.\-]+))`)
@@ -841,6 +832,14 @@ func parseQdrantSQL(sqlText string) (qdrantParsedSQL, bool) {
 	lower := strings.ToLower(text)
 	parsed.Count = strings.Contains(lower, "count(")
 	parsed.IncludeVector = strings.Contains(lower, "vector")
+	whereExpr, _, whereErr := parseVectorSQLWhere(text)
+	if whereErr == nil {
+		whereErr = validateQdrantWhereExpr(whereExpr)
+	}
+	parsed.WhereError = whereErr
+	if whereErr == nil && whereExpr != nil {
+		parsed.Filter = qdrantFilterFromExpr(whereExpr)
+	}
 	if m := qdrantSQLLimitRE.FindStringSubmatch(text); len(m) > 1 {
 		parsed.Limit, _ = strconv.Atoi(m[1])
 	}
@@ -1036,6 +1035,39 @@ func qdrantPayloadIndexes(info map[string]interface{}) []connection.IndexDefinit
 		})
 	}
 	return indexes
+}
+
+func qdrantPayloadSchemaColumns(info map[string]interface{}) []connection.ColumnDefinition {
+	schema := nestedMapValue(info, "payload_schema")
+	if len(schema) == 0 {
+		schema = nestedMapValue(info, "payload_schema", "schema")
+	}
+	if len(schema) == 0 {
+		return nil
+	}
+	names := make([]string, 0, len(schema))
+	for name := range schema {
+		if strings.TrimSpace(name) != "" {
+			names = append(names, name)
+		}
+	}
+	sort.Strings(names)
+	columns := make([]connection.ColumnDefinition, 0, len(names))
+	for _, name := range names {
+		fieldType := "json"
+		if definition, ok := schema[name].(map[string]interface{}); ok {
+			if dataType := strings.TrimSpace(mapString(definition, "data_type")); dataType != "" {
+				fieldType = dataType
+			}
+		}
+		columns = append(columns, connection.ColumnDefinition{
+			Name:     "payload." + name,
+			Type:     fieldType,
+			Nullable: "YES",
+			Comment:  "Payload schema field",
+		})
+	}
+	return columns
 }
 
 func nestedMapValue(value interface{}, path ...string) map[string]interface{} {

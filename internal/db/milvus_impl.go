@@ -563,9 +563,9 @@ func (m *MilvusDB) doJSON(ctx context.Context, method, path string, body interfa
 		return err
 	}
 	defer response.Body.Close()
-	responseBody, err := io.ReadAll(response.Body)
+	responseBody, err := readLimitedJSONResponseBody(response.Body)
 	if err != nil {
-		return err
+		return fmt.Errorf("read Milvus response: %w", err)
 	}
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
 		message := strings.TrimSpace(string(responseBody))

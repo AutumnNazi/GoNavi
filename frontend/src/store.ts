@@ -775,6 +775,8 @@ const sanitizeConnectionConfig = (value: unknown): ConnectionConfig => {
     user: toTrimmedString(sshRaw.user),
     password: toTrimmedString(sshRaw.password),
     keyPath: toTrimmedString(sshRaw.keyPath),
+    knownHostsPath: toTrimmedString(sshRaw.knownHostsPath),
+    hostKeyFingerprint: toTrimmedString(sshRaw.hostKeyFingerprint),
   };
   const proxyRaw =
     raw.proxy && typeof raw.proxy === "object"

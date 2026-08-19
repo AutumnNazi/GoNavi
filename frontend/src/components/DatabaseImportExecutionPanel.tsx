@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Button, Progress, Radio, Typography } from 'antd';
+import { Alert, Button, Progress, Typography } from 'antd';
 import {
   PlayCircleOutlined,
   ReloadOutlined,
@@ -18,6 +18,10 @@ import { confirmProductionRisk } from '../utils/productionRiskConfirm';
 import { formatImportBytes, formatImportDuration } from './importProgressMetrics';
 import Modal from './common/ResizableDraggableModal';
 import {
+  requestMySQLGTIDImportMode,
+  type MySQLGTIDImportMode,
+} from './MySQLGTIDImportModePrompt';
+import {
   useSQLFileExecutionRunner,
   type SQLFileExecutionRunnerStatus,
 } from './useSQLFileExecutionRunner';
@@ -34,61 +38,6 @@ type DatabaseImportExecutionPanelProps = {
   continueOnError: boolean;
   onRunningChange?: (running: boolean) => void;
 };
-
-type MySQLGTIDImportMode = 'reject' | 'skip' | 'reset';
-
-const requestMySQLGTIDImportMode = (
-  translate: typeof defaultTranslate,
-): Promise<Exclude<MySQLGTIDImportMode, 'reject'> | null> => new Promise((resolve) => {
-  let selectedMode: Exclude<MySQLGTIDImportMode, 'reject'> = 'skip';
-  let settled = false;
-  const settle = (value: Exclude<MySQLGTIDImportMode, 'reject'> | null) => {
-    if (settled) return;
-    settled = true;
-    resolve(value);
-  };
-
-  Modal.confirm({
-    title: translate('data_import.workbench.gtid.title'),
-    width: 560,
-    content: (
-      <div style={{ display: 'grid', gap: 14 }}>
-        <Paragraph style={{ margin: 0 }}>
-          {translate('data_import.workbench.gtid.description')}
-        </Paragraph>
-        <Radio.Group
-          data-mysql-gtid-mode-selector="true"
-          defaultValue="skip"
-          onChange={(event) => {
-            selectedMode = event.target.value === 'reset' ? 'reset' : 'skip';
-          }}
-          style={{ display: 'grid', gap: 12 }}
-        >
-          <div>
-            <Radio value="skip">
-              <Text strong>{translate('data_import.workbench.gtid.option.skip')}</Text>
-            </Radio>
-            <Text type="secondary" style={{ display: 'block', margin: '4px 0 0 24px' }}>
-              {translate('data_import.workbench.gtid.option.skip_description')}
-            </Text>
-          </div>
-          <div>
-            <Radio value="reset">
-              <Text strong>{translate('data_import.workbench.gtid.option.reset')}</Text>
-            </Radio>
-            <Text type="danger" style={{ display: 'block', margin: '4px 0 0 24px' }}>
-              {translate('data_import.workbench.gtid.option.reset_description')}
-            </Text>
-          </div>
-        </Radio.Group>
-      </div>
-    ),
-    okText: translate('data_import.workbench.gtid.action.continue'),
-    cancelText: translate('common.cancel'),
-    onOk: () => settle(selectedMode),
-    onCancel: () => settle(null),
-  });
-});
 
 const getFileName = (filePath: string): string => {
   const parts = String(filePath || '').split(/[\\/]/);

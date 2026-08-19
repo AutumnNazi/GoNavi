@@ -61,6 +61,13 @@ type backend interface {
 	ExportSQLAuditToPath(sqlaudit.Filter, string, string, bool) connection.QueryResult
 }
 
+// requestDiagnosticBackend is deliberately optional so the CLI's narrow
+// command backend remains compatible with integrations that do not retain
+// local request traces.
+type requestDiagnosticBackend interface {
+	GetRequestDiagnostic(string) connection.QueryResult
+}
+
 var newBackend = func(ctx context.Context, options appcore.HeadlessRuntimeOptions) (backend, error) {
 	return appcore.NewHeadlessRuntime(ctx, options)
 }
@@ -476,6 +483,7 @@ func runQuery(ctx context.Context, args []string, runtime backend, stdout io.Wri
 	fs.BoolVar(&allowWrite, "allow-write", false, "allow non-read-only SQL")
 	fs.BoolVar(&allowWrite, "allow-mutating", false, "deprecated alias for --allow-write")
 	queryTimeout := fs.Int("query-timeout", 0, "query timeout in seconds")
+	requestTrace := fs.Bool("request-trace", false, "write the redacted request trace to stderr")
 	help := fs.Bool("help", false, "show help")
 	if err := fs.Parse(args); err != nil {
 		return fail(stderr, ExitUsage, "usage", err)
@@ -503,6 +511,9 @@ func runQuery(ctx context.Context, args []string, runtime backend, stdout io.Wri
 		config.QueryTimeout = *queryTimeout
 	}
 	result := runtime.Query(ctx, config, *database, sql, appcore.HeadlessQueryOptions{AllowMutating: allowWrite})
+	if *requestTrace {
+		emitRequestTrace(stderr, runtime, result)
+	}
 	if !result.Success {
 		return failResult(ctx, stderr, result)
 	}
@@ -522,6 +533,7 @@ func runExport(ctx context.Context, args []string, runtime backend, stdout io.Wr
 	xlsxRows := fs.Int("xlsx-max-rows-per-sheet", 0, "maximum XLSX data rows per worksheet")
 	force := fs.Bool("force", false, "replace an existing output file")
 	queryTimeout := fs.Int("query-timeout", 0, "query timeout in seconds")
+	requestTrace := fs.Bool("request-trace", false, "write the redacted request trace to stderr")
 	help := fs.Bool("help", false, "show help")
 	if err := fs.Parse(args); err != nil {
 		return fail(stderr, ExitUsage, "usage", err)
@@ -559,6 +571,9 @@ func runExport(ctx context.Context, args []string, runtime backend, stdout io.Wr
 		Columns:             splitCSVList(*columns),
 		XLSXMaxRowsPerSheet: *xlsxRows,
 	}, *force)
+	if *requestTrace {
+		emitRequestTrace(stderr, runtime, result)
+	}
 	if !result.Success {
 		return failResult(ctx, stderr, result)
 	}
@@ -580,6 +595,7 @@ func runBatch(ctx context.Context, args []string, runtime backend, stdout io.Wri
 	stopOnError := fs.Bool("stop-on-error", false, "stop after the first statement error (default)")
 	jobID := fs.String("job-id", "", "durable job ID")
 	maxStatementBytes := fs.Int64("max-statement-bytes", 0, "maximum decoded bytes in one statement")
+	requestTrace := fs.Bool("request-trace", false, "write the redacted request trace to stderr")
 	help := fs.Bool("help", false, "show help")
 	if err := fs.Parse(args); err != nil {
 		return fail(stderr, ExitUsage, "usage", err)
@@ -630,6 +646,9 @@ func runBatch(ctx context.Context, args []string, runtime backend, stdout io.Wri
 		JobID:            strings.TrimSpace(*jobID),
 		MaxStatementSize: *maxStatementBytes,
 	})
+	if *requestTrace {
+		emitRequestTrace(stderr, runtime, result)
+	}
 	if !result.Success {
 		return failResult(ctx, stderr, result)
 	}
@@ -1000,6 +1019,26 @@ func queryResultSets(result connection.QueryResult) ([]connection.ResultSetData,
 	return nil, fmt.Errorf("query result is not tabular")
 }
 
+func emitRequestTrace(stderr io.Writer, runtime backend, result connection.QueryResult) {
+	if stderr == nil || runtime == nil || strings.TrimSpace(result.QueryID) == "" {
+		return
+	}
+	reader, ok := runtime.(requestDiagnosticBackend)
+	if !ok {
+		return
+	}
+	diagnostic := reader.GetRequestDiagnostic(result.QueryID)
+	if !diagnostic.Success || diagnostic.Data == nil {
+		return
+	}
+	// Diagnostic capture is observability only: a local stderr write must not
+	// change the outcome of the database command that just completed.
+	_ = encode(stderr, map[string]any{
+		"type":  "request_trace",
+		"trace": diagnostic.Data,
+	})
+}
+
 func sanitizeQueryResult(result connection.QueryResult) connection.QueryResult {
 	result.Message = sqlaudit.RedactError(result.Message)
 	if len(result.Messages) > 0 {
@@ -1234,15 +1273,15 @@ func writeConnectionImportUsage(writer io.Writer) {
 }
 
 func writeQueryUsage(writer io.Writer) {
-	_, _ = io.WriteString(writer, "Usage: gonavi query (--conn ID_OR_NAME|--connection-file FILE) [--database DB] [--allow-write] [--format jsonl|json|csv|md] (--sql SQL|--sql-file FILE|SQL)\n")
+	_, _ = io.WriteString(writer, "Usage: gonavi query (--conn ID_OR_NAME|--connection-file FILE) [--database DB] [--allow-write] [--request-trace] [--format jsonl|json|csv|md] (--sql SQL|--sql-file FILE|SQL)\n")
 }
 
 func writeExportUsage(writer io.Writer) {
-	_, _ = io.WriteString(writer, "Usage: gonavi export (--conn ID_OR_NAME|--connection-file FILE) --output FILE [--format csv|json|md|html|xlsx] (--sql SQL|--sql-file FILE|SQL)\n")
+	_, _ = io.WriteString(writer, "Usage: gonavi export (--conn ID_OR_NAME|--connection-file FILE) --output FILE [--request-trace] [--format csv|json|md|html|xlsx] (--sql SQL|--sql-file FILE|SQL)\n")
 }
 
 func writeBatchUsage(writer io.Writer) {
-	_, _ = io.WriteString(writer, "Usage: gonavi batch (--conn ID_OR_NAME|--connection-file FILE) --file FILE --allow-write [--transaction single|off] [--stop-on-error|--continue-on-error]\n")
+	_, _ = io.WriteString(writer, "Usage: gonavi batch (--conn ID_OR_NAME|--connection-file FILE) --file FILE --allow-write [--request-trace] [--transaction single|off] [--stop-on-error|--continue-on-error]\n")
 }
 
 func writeAuditUsage(writer io.Writer) {

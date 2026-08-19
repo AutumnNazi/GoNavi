@@ -11,6 +11,7 @@ import (
 	"GoNavi-Wails/internal/appdata"
 	"GoNavi-Wails/internal/connection"
 	"GoNavi-Wails/internal/logger"
+	"GoNavi-Wails/internal/requesttrace"
 )
 
 // Backend 抽象 GoNavi 后端能力，便于复用真实 App 和单元测试替身。
@@ -64,6 +65,13 @@ func (b *AppBackend) Close(ctx context.Context) error {
 	}
 	b.app.Shutdown()
 	return nil
+}
+
+func (b *AppBackend) RequestTraceStore() *requesttrace.Store {
+	if b == nil || b.app == nil {
+		return nil
+	}
+	return appcore.RequestTraceStoreForEntryPoint(b.app)
 }
 
 func (b *AppBackend) GetSavedConnections() ([]connection.SavedConnectionView, error) {

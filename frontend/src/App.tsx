@@ -16,6 +16,7 @@ import FloatingAIChatWindow from './components/FloatingAIChatWindow';
 import FloatingQueryResultWindows from './components/FloatingQueryResultWindows';
 import NativeDetachedWindowController from './components/NativeDetachedWindowController';
 import ConnectionModal from './components/ConnectionModal';
+import ConnectionHealthModal from './components/ConnectionHealthModal';
 import SnippetSettingsModal from './components/SnippetSettingsModal';
 import ConnectionPackagePasswordModal from './components/ConnectionPackagePasswordModal';
 import UpdateReleaseNotesModal from './components/UpdateReleaseNotesModal';
@@ -102,7 +103,8 @@ import {
 import { downloadBrowserTextFile } from './utils/browserFileTransfer';
 import { buildDataSyncWorkbenchTab } from './utils/dataSyncTab';
 import { buildSqlAuditWorkbenchTab } from './utils/sqlAuditTab';
-import { resolveDataSourceType } from './utils/dataSourceCapabilities';
+import { buildRequestDiagnosticsWorkbenchTab } from './utils/requestDiagnosticsTab';
+import { getDataSourceCapabilities, resolveDataSourceType } from './utils/dataSourceCapabilities';
 import { buildContextualNewQueryTemplate } from './utils/objectQueryTemplates';
 import {
   extractCustomThemeAntTokens,
@@ -752,6 +754,8 @@ function App() {
   const [isConnectionModalMounted, setIsConnectionModalMounted] = useState(false);
   const [isDriverModalOpen, setIsDriverModalOpen] = useState(false);
   const [editingConnection, setEditingConnection] = useState<SavedConnection | null>(null);
+  const [isConnectionHealthModalOpen, setIsConnectionHealthModalOpen] = useState(false);
+  const [connectionHealthTargetIds, setConnectionHealthTargetIds] = useState<string[]>([]);
   const pendingConnectionTagIdRef = useRef<string | null>(null);
   const connectionModalWarmupDoneRef = useRef(false);
   const windowState = useStore(state => state.windowState);
@@ -2749,10 +2753,17 @@ function App() {
 
   const handleNewQuery = useCallback(() => {
       const currentTab = activeTabId ? tabs.find(tab => tab.id === activeTabId) : undefined;
+      // 只继承支持查询编辑器的活动连接；Nacos/JVM 等工作台活动时不预选连接，
+      // 避免新建查询落入必然失败的 SQL 工作流。
+      const validConnectionIds = new Set(
+          connections
+              .filter(connection => getDataSourceCapabilities(connection.config).supportsQueryEditor)
+              .map(connection => connection.id),
+      );
       const targetContext = resolveNewQueryContext({
           sidebarContext: activeContext,
           activeTab: currentTab,
-          validConnectionIds: new Set(connections.map(connection => connection.id)),
+          validConnectionIds,
       });
       const connection = connections.find(c => c.id === targetContext.connectionId);
       const inheritsTableContext = canInheritNewQueryTableContext({
@@ -4353,6 +4364,10 @@ function App() {
           openSecurityUpdateSettings();
       }
   };
+  const handleOpenConnectionHealth = useCallback((connectionIds: string[] = []) => {
+      setConnectionHealthTargetIds(Array.from(new Set(connectionIds.filter((id) => String(id || '').trim() !== ''))));
+      setIsConnectionHealthModalOpen(true);
+  }, []);
 
   const handleOpenDriverManagerFromConnection = () => {
       pendingConnectionTagIdRef.current = null;
@@ -8348,8 +8363,17 @@ function App() {
             initialValues={editingConnection}
             onOpenDriverManager={handleOpenDriverManagerFromConnection}
             onSaved={handleConnectionSaved}
+            onOpenConnectionHealth={(connection) => {
+              handleCloseModal();
+              handleOpenConnectionHealth([connection.id]);
+            }}
           />
           )}
+          <ConnectionHealthModal
+            open={isConnectionHealthModalOpen}
+            targetConnectionIds={connectionHealthTargetIds}
+            onClose={() => setIsConnectionHealthModalOpen(false)}
+          />
           {isSettingsModalOpen && (() => {
             const toolCenterGroups: SettingsCenterNavigationGroup[] = [
               {
@@ -8374,6 +8398,16 @@ function App() {
                     description: t('app.tools.entry.export.description'),
                     onClick: () => {
                       void handleExportConnections('config');
+                    },
+                  },
+                  {
+                    key: 'connection-health',
+                    icon: <SafetyCertificateOutlined />,
+                    title: t('app.tools.entry.connection_health.title'),
+                    description: t('app.tools.entry.connection_health.description'),
+                    onClick: () => {
+                      handleCancelSettingsCenterPane();
+                      handleOpenConnectionHealth();
                     },
                   },
                   {
@@ -8474,6 +8508,16 @@ function App() {
                     onClick: () => {
                       handleCancelSettingsCenterPane();
                       addTab(buildSqlAuditWorkbenchTab());
+                    },
+                  },
+                  {
+                    key: 'request-diagnostics',
+                    icon: <BugOutlined />,
+                    title: '请求诊断',
+                    description: '按请求 ID 查看默认脱敏、可复制导出的调用追踪。',
+                    onClick: () => {
+                      handleCancelSettingsCenterPane();
+                      addTab(buildRequestDiagnosticsWorkbenchTab());
                     },
                   },
                 ],

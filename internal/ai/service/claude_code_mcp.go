@@ -1,6 +1,7 @@
 package aiservice
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -8,8 +9,10 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strconv"
 	"strings"
+	"time"
 
 	"GoNavi-Wails/internal/ai"
 )
@@ -52,6 +55,9 @@ var codexConfigPathFunc = func() (string, error) {
 
 var localMCPExecutablePathFunc = os.Executable
 var localCLICommandPathFunc = exec.LookPath
+var localCLICommandShellCandidatesFunc = localCLICommandShellCandidates
+var localCLICommandShellOutputFunc = runLocalCLICommandShell
+var localCLICommandShellLookupTimeout = 2 * time.Second
 
 type claudeCodeMCPServerConfig struct {
 	Type    string            `json:"type"`
@@ -73,6 +79,10 @@ func (s *Service) AIGetMCPClientInstallStatuses() []ai.MCPClientInstallStatus {
 		inspectClaudeCodeMCPInstallStatus(command, args, resolveErr, s.serviceText),
 		inspectCodexMCPInstallStatus(command, args, resolveErr, s.serviceText),
 		inspectOpenCodeMCPInstallStatus(command, args, resolveErr, s.serviceText),
+		inspectExternalJSONMCPClientInstallStatus(zCodeMCPClientSpec, command, args, resolveErr, s.serviceText),
+		inspectDeepSeekHarnessMCPInstallStatus(command, args, resolveErr, s.serviceText),
+		inspectExternalJSONMCPClientInstallStatus(kimiCodeMCPClientSpec, command, args, resolveErr, s.serviceText),
+		inspectGrokBuildMCPInstallStatus(command, args, resolveErr, s.serviceText),
 		buildRemoteMCPClientInstallStatus("openclaw", "OpenClaw", s.serviceText),
 		buildRemoteMCPClientInstallStatus("hermans", "Hermans", s.serviceText),
 	}
@@ -83,6 +93,9 @@ func (s *Service) AIInstallClaudeCodeMCP() (ai.MCPClientInstallResult, error) {
 	configPath, err := claudeCodeConfigPathFunc()
 	if err != nil {
 		return ai.MCPClientInstallResult{}, fmt.Errorf("%s", s.serviceText("ai.service.mcp_client.claude_code.config_path_failed", map[string]any{"detail": localizeMCPClientPathDetail(s.serviceText, err)}))
+	}
+	if err := requireLocalMCPClientCommand(claudeCodeClientCommandName, "Claude Code", s.serviceText); err != nil {
+		return ai.MCPClientInstallResult{}, err
 	}
 
 	executablePath, err := localMCPExecutablePathFunc()
@@ -120,6 +133,9 @@ func (s *Service) AIInstallCodexMCP() (ai.MCPClientInstallResult, error) {
 	configPath, err := codexConfigPathFunc()
 	if err != nil {
 		return ai.MCPClientInstallResult{}, fmt.Errorf("%s", s.serviceText("ai.service.mcp_client.codex.config_path_failed", map[string]any{"detail": localizeMCPClientPathDetail(s.serviceText, err)}))
+	}
+	if err := requireLocalMCPClientCommand(codexClientCommandName, "Codex", s.serviceText); err != nil {
+		return ai.MCPClientInstallResult{}, err
 	}
 
 	executablePath, err := localMCPExecutablePathFunc()
@@ -177,10 +193,25 @@ func (s *Service) repairInstalledLocalMCPClientConfigs() error {
 	if err := repairOpenCodeMCPClientConfig(command, args, s.serviceText); err != nil {
 		repairErrors = append(repairErrors, fmt.Errorf("OpenCode: %w", err))
 	}
+	if err := repairExternalJSONMCPClientConfig(zCodeMCPClientSpec, command, args, s.serviceText); err != nil {
+		repairErrors = append(repairErrors, fmt.Errorf("ZCode: %w", err))
+	}
+	if err := repairDeepSeekHarnessMCPClientConfig(command, args, s.serviceText); err != nil {
+		repairErrors = append(repairErrors, fmt.Errorf("DeepSeek Harness: %w", err))
+	}
+	if err := repairExternalJSONMCPClientConfig(kimiCodeMCPClientSpec, command, args, s.serviceText); err != nil {
+		repairErrors = append(repairErrors, fmt.Errorf("Kimi Code: %w", err))
+	}
+	if err := repairGrokBuildMCPClientConfig(command, args, s.serviceText); err != nil {
+		repairErrors = append(repairErrors, fmt.Errorf("Grok Build: %w", err))
+	}
 	return errors.Join(repairErrors...)
 }
 
 func repairClaudeCodeMCPClientConfig(expectedCommand string, expectedArgs []string, text mcpClientInstallTextFunc) error {
+	if !isLocalMCPClientCommandDetected(claudeCodeClientCommandName) {
+		return nil
+	}
 	configPath, err := claudeCodeConfigPathFunc()
 	if err != nil {
 		return err
@@ -202,6 +233,9 @@ func repairClaudeCodeMCPClientConfig(expectedCommand string, expectedArgs []stri
 }
 
 func repairCodexMCPClientConfig(expectedCommand string, expectedArgs []string, text mcpClientInstallTextFunc) error {
+	if !isLocalMCPClientCommandDetected(codexClientCommandName) {
+		return nil
+	}
 	configPath, err := codexConfigPathFunc()
 	if err != nil {
 		return err
@@ -315,14 +349,123 @@ func detectLocalCLICommand(commandName string) (bool, string) {
 		return false, ""
 	}
 	resolvedPath, err := localCLICommandPathFunc(commandName)
-	if err != nil {
+	if err == nil && strings.TrimSpace(resolvedPath) != "" {
+		return true, filepath.Clean(strings.TrimSpace(resolvedPath))
+	}
+
+	// GUI launches on Unix commonly omit the user's login-shell PATH. Keep the
+	// normal LookPath result authoritative, then ask a bounded login shell for
+	// an absolute command path before reporting the client as unavailable.
+	if runtime.GOOS == "windows" {
 		return false, ""
 	}
-	resolvedPath = strings.TrimSpace(resolvedPath)
-	if resolvedPath == "" {
+	return detectLocalCLICommandFromLoginShell(commandName)
+}
+
+func detectLocalCLICommandFromLoginShell(commandName string) (bool, string) {
+	if !isSafeLocalCLICommandName(commandName) {
 		return false, ""
 	}
-	return true, filepath.Clean(resolvedPath)
+	lookupCommand := "command -v -- " + shellQuoteLocalCLICommand(commandName)
+	ctx, cancel := context.WithTimeout(context.Background(), localCLICommandShellLookupTimeout)
+	defer cancel()
+	for _, shell := range localCLICommandShellCandidatesFunc() {
+		shell = strings.TrimSpace(shell)
+		if shell == "" {
+			continue
+		}
+		if ctx.Err() != nil {
+			break
+		}
+		output, err := localCLICommandShellOutputFunc(ctx, shell, lookupCommand)
+		ctxErr := ctx.Err()
+		if err != nil || ctxErr != nil {
+			continue
+		}
+		for _, line := range strings.Split(string(output), "\n") {
+			candidate := strings.TrimSpace(strings.TrimSuffix(line, "\r"))
+			if !isLocalCLICommandPathCandidate(candidate, commandName) {
+				continue
+			}
+			resolvedPath, err := localCLICommandPathFunc(candidate)
+			resolvedPath = strings.TrimSpace(resolvedPath)
+			if err != nil || !isLocalCLICommandPathCandidate(resolvedPath, commandName) {
+				continue
+			}
+			return true, filepath.Clean(resolvedPath)
+		}
+	}
+	return false, ""
+}
+
+func isLocalCLICommandPathCandidate(candidate string, commandName string) bool {
+	candidate = strings.TrimSpace(candidate)
+	commandName = strings.TrimSpace(commandName)
+	if candidate == "" || commandName == "" || !filepath.IsAbs(candidate) {
+		return false
+	}
+	return portablePathBase(candidate) == commandName
+}
+
+func runLocalCLICommandShell(ctx context.Context, shell string, lookupCommand string) ([]byte, error) {
+	return exec.CommandContext(ctx, shell, "-ilc", lookupCommand).Output()
+}
+
+func localCLICommandShellCandidates() []string {
+	seen := make(map[string]struct{}, 4)
+	result := make([]string, 0, 4)
+	appendShell := func(value string) {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			return
+		}
+		if _, ok := seen[value]; ok {
+			return
+		}
+		seen[value] = struct{}{}
+		result = append(result, value)
+	}
+	appendShell(os.Getenv("SHELL"))
+	appendShell("/bin/zsh")
+	appendShell("/bin/bash")
+	appendShell("/bin/sh")
+	return result
+}
+
+func isSafeLocalCLICommandName(commandName string) bool {
+	if commandName == "" {
+		return false
+	}
+	for _, char := range commandName {
+		if (char >= 'a' && char <= 'z') ||
+			(char >= 'A' && char <= 'Z') ||
+			(char >= '0' && char <= '9') ||
+			char == '.' || char == '_' || char == '-' {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+func shellQuoteLocalCLICommand(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'"
+}
+
+func isLocalMCPClientCommandDetected(commandName string) bool {
+	detected, _ := detectLocalCLICommand(commandName)
+	return detected
+}
+
+func requireLocalMCPClientCommand(commandName string, displayName string, textFuncs ...mcpClientInstallTextFunc) error {
+	if isLocalMCPClientCommandDetected(commandName) {
+		return nil
+	}
+	text := firstMCPClientInstallText(textFuncs)
+	return fmt.Errorf("%s", mcpClientInstallText(text, "ai.service.mcp_client.local_client_not_detected", map[string]any{
+		"label":   strings.TrimSpace(displayName),
+		"command": strings.TrimSpace(commandName),
+	}))
 }
 
 func mcpClientInstallText(text mcpClientInstallTextFunc, key string, params map[string]any) string {
@@ -386,6 +529,13 @@ func inspectClaudeCodeMCPInstallStatus(expectedCommand string, expectedArgs []st
 	status.Installed = true
 	status.Command = strings.TrimSpace(serverConfig.Command)
 	status.Args = append([]string(nil), serverConfig.Args...)
+	if !status.ClientDetected {
+		status.Message = mcpClientInstallText(text, "ai.service.mcp_client.local_client_not_detected", map[string]any{
+			"label":   status.DisplayName,
+			"command": status.ClientCommand,
+		})
+		return status
+	}
 	if expectedErr != nil {
 		status.Message = mcpClientInstallText(text, "ai.service.mcp_client.claude_code.status.path_check_failed", map[string]any{"detail": expectedErr.Error()})
 		return status
@@ -438,6 +588,13 @@ func inspectCodexMCPInstallStatus(expectedCommand string, expectedArgs []string,
 	status.Installed = true
 	status.Command = strings.TrimSpace(serverConfig.Command)
 	status.Args = append([]string(nil), serverConfig.Args...)
+	if !status.ClientDetected {
+		status.Message = mcpClientInstallText(text, "ai.service.mcp_client.local_client_not_detected", map[string]any{
+			"label":   status.DisplayName,
+			"command": status.ClientCommand,
+		})
+		return status
+	}
 	if expectedErr != nil {
 		status.Message = mcpClientInstallText(text, "ai.service.mcp_client.codex.status.path_check_failed", map[string]any{"detail": expectedErr.Error()})
 		return status
@@ -601,7 +758,7 @@ func upsertCodexMCPServerConfig(configPath string, serverID string, serverConfig
 		return fmt.Errorf("%s", mcpClientInstallText(text, "ai.service.mcp_client.codex.config_read_failed", map[string]any{"detail": err.Error()}))
 	}
 
-	updated := replaceOrAppendCodexMCPServerBlock(string(data), strings.TrimSpace(serverID), renderCodexMCPServerBlock(serverID, serverConfig))
+	updated := replaceOrAppendTOMLMCPServerBlock(string(data), strings.TrimSpace(serverID), renderCodexMCPServerBlock(serverID, serverConfig))
 	if err := os.WriteFile(configPath, []byte(updated), 0o644); err != nil {
 		return fmt.Errorf("%s", mcpClientInstallText(text, "ai.service.mcp_client.codex.config_write_failed", map[string]any{"detail": err.Error()}))
 	}
@@ -678,7 +835,7 @@ func parseCodexMCPServerConfig(content string, serverID string, textFuncs ...mcp
 	return result, found, nil
 }
 
-func replaceOrAppendCodexMCPServerBlock(content string, serverID string, block string) string {
+func replaceOrAppendTOMLMCPServerBlock(content string, serverID string, block string) string {
 	lines := strings.Split(strings.ReplaceAll(content, "\r\n", "\n"), "\n")
 	mainHeader := fmt.Sprintf("[mcp_servers.%s]", serverID)
 	nestedPrefix := fmt.Sprintf("[mcp_servers.%s.", serverID)
@@ -722,6 +879,12 @@ func replaceOrAppendCodexMCPServerBlock(content string, serverID string, block s
 	default:
 		return before + "\n\n" + rendered + "\n\n" + after
 	}
+}
+
+// replaceOrAppendCodexMCPServerBlock preserves the existing helper name for
+// callers and tests that were added before other TOML MCP clients existed.
+func replaceOrAppendCodexMCPServerBlock(content string, serverID string, block string) string {
+	return replaceOrAppendTOMLMCPServerBlock(content, serverID, block)
 }
 
 func renderTomlStringArray(values []string) []string {

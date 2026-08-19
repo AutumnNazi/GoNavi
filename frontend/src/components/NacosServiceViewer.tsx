@@ -186,6 +186,9 @@ const NacosServiceViewer: React.FC<NacosServiceViewerProps> = ({
   const [selectedServiceRaw, setSelectedServiceRaw] = useState<string | null>(null);
   const [selectedServiceDetail, setSelectedServiceDetail] = useState<NacosServiceDetail | null>(null);
   const [instances, setInstances] = useState<NacosInstance[]>([]);
+  const [updatingInstanceKeys, setUpdatingInstanceKeys] = useState<Set<string>>(
+    () => new Set(),
+  );
   const [expandedInstanceKeys, setExpandedInstanceKeys] = useState<Set<string>>(
     () => new Set(),
   );
@@ -206,6 +209,7 @@ const NacosServiceViewer: React.FC<NacosServiceViewerProps> = ({
   const serviceModalGenerationRef = useRef(0);
   const serviceSavingRef = useRef(false);
   const instanceSavingRef = useRef(false);
+  const updatingInstanceTokensRef = useRef<Map<string, symbol>>(new Map());
   const instanceModalGenerationRef = useRef(0);
   const instanceModalTargetServiceRawRef = useRef<string | null>(null);
   const activeContextRef = useRef<NacosContextToken | null>(null);
@@ -224,6 +228,8 @@ const NacosServiceViewer: React.FC<NacosServiceViewerProps> = ({
 
   useEffect(() => {
     setExpandedInstanceKeys(new Set());
+    updatingInstanceTokensRef.current.clear();
+    setUpdatingInstanceKeys(new Set());
   }, [connectionId, namespaceId, selectedServiceRaw]);
 
   const toggleInstanceDetails = useCallback((instanceKey: string) => {
@@ -677,6 +683,67 @@ const NacosServiceViewer: React.FC<NacosServiceViewerProps> = ({
     }
   };
 
+  const handleToggleEnabled = async (inst: NacosInstance, enabled: boolean) => {
+    const targetServiceRaw = selectedServiceRawRef.current;
+    if (!rpcConfig || dataEditRestricted || !targetServiceRaw) return;
+    const contextToken = { connectionId, namespaceId, rpcConfig };
+    const targetService = parseNacosServiceName(targetServiceRaw);
+    const instanceKey = `${formatNacosInstanceEndpoint(inst.ip, inst.port)}:${inst.clusterName || ''}`;
+    if (updatingInstanceTokensRef.current.has(instanceKey)) return;
+    const mutationToken = Symbol(instanceKey);
+    updatingInstanceTokensRef.current.set(instanceKey, mutationToken);
+    setUpdatingInstanceKeys(new Set(updatingInstanceTokensRef.current.keys()));
+    try {
+      if (!await confirmProductionMutation(
+        connection,
+        tr('connection.production_risk.action.modify_service'),
+        [namespaceId, targetService.serviceName, targetService.groupName, inst.ip, inst.port].filter(Boolean).join(' / '),
+        tr,
+      )) return;
+      if (
+        !isActiveContext(contextToken)
+        || selectedServiceRawRef.current !== targetServiceRaw
+        || updatingInstanceTokensRef.current.get(instanceKey) !== mutationToken
+      ) return;
+      const res = await (window as any).go.app.App.NacosUpdateInstance(rpcConfig, {
+        namespaceId: namespaceId || '',
+        serviceName: targetService.serviceName,
+        groupName: targetService.groupName,
+        ip: inst.ip,
+        port: inst.port,
+        weight: inst.weight ?? 1,
+        clusterName: inst.clusterName || 'DEFAULT',
+        enabled,
+        healthy: inst.healthy,
+        ephemeral: inst.ephemeral,
+        metadata: inst.metadata,
+      });
+      if (!res?.success) {
+        message.error(res?.message || 'update instance failed');
+        return;
+      }
+      if (
+        isActiveContext(contextToken)
+        && selectedServiceRawRef.current === targetServiceRaw
+        && updatingInstanceTokensRef.current.get(instanceKey) === mutationToken
+      ) {
+        setInstances((current) => current.map((item) => {
+          const currentKey = `${formatNacosInstanceEndpoint(item.ip, item.port)}:${item.clusterName || ''}`;
+          return currentKey === instanceKey ? { ...item, enabled } : item;
+        }));
+        await loadInstances(targetServiceRaw);
+      }
+      message.success(tr('nacos_service.message.instance_update_success'));
+    } catch (error: any) {
+      message.error(error?.message || String(error));
+    } finally {
+      if (updatingInstanceTokensRef.current.get(instanceKey) === mutationToken) {
+        updatingInstanceTokensRef.current.delete(instanceKey);
+        setUpdatingInstanceKeys(new Set(updatingInstanceTokensRef.current.keys()));
+      }
+    }
+  };
+
   const handleDeregister = async (inst: NacosInstance) => {
     const targetServiceRaw = selectedServiceRawRef.current;
     if (!rpcConfig || dataEditRestricted || !targetServiceRaw) return;
@@ -1125,9 +1192,28 @@ const NacosServiceViewer: React.FC<NacosServiceViewerProps> = ({
                           <strong className="gn-nacos-instance-row__endpoint">
                             {endpoint}
                           </strong>
-                          <Tag color={instance.enabled ? 'green' : undefined}>
-                            {tr('nacos_service.field.enabled')} · {instance.enabled ? 'on' : 'off'}
-                          </Tag>
+                          <div className="gn-nacos-instance-row__enabled-control">
+                            <span>
+                              {tr(
+                                instance.enabled
+                                  ? 'nacos_service.status.online'
+                                  : 'nacos_service.status.offline',
+                              )}
+                            </span>
+                            <Switch
+                              size="small"
+                              checked={!!instance.enabled}
+                              loading={updatingInstanceKeys.has(instanceKey)}
+                              disabled={dataEditRestricted || updatingInstanceKeys.has(instanceKey)}
+                              data-instance-action="toggle-enabled"
+                              aria-label={`${tr(
+                                instance.enabled
+                                  ? 'nacos_service.action.take_offline'
+                                  : 'nacos_service.action.bring_online',
+                              )} ${endpoint}`}
+                              onChange={(checked) => void handleToggleEnabled(instance, checked)}
+                            />
+                          </div>
                         </div>
                         <div className="gn-nacos-instance-row__health-control">
                           <span>{tr('nacos_service.field.healthy')}</span>

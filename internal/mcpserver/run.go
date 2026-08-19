@@ -24,11 +24,12 @@ const (
 
 // HTTPServerOptions 描述远程 Streamable HTTP MCP 入口。
 type HTTPServerOptions struct {
-	Addr         string
-	Path         string
-	Token        string
-	JSONResponse bool
-	SchemaOnly   bool
+	Addr             string
+	Path             string
+	Token            string
+	JSONResponse     bool
+	SchemaOnly       bool
+	AllowNonLoopback bool
 }
 
 // StreamableHTTPServerHandle 表示一个已启动的 Streamable HTTP MCP server。
@@ -246,11 +247,12 @@ func ParseHTTPServerOptions(args []string) (HTTPServerOptions, error) {
 	}
 
 	options := HTTPServerOptions{
-		Addr:         defaultAddr,
-		Path:         defaultPath,
-		Token:        strings.TrimSpace(os.Getenv("GONAVI_MCP_HTTP_TOKEN")),
-		JSONResponse: true,
-		SchemaOnly:   parseBoolEnvDefault("GONAVI_MCP_SCHEMA_ONLY", false),
+		Addr:             defaultAddr,
+		Path:             defaultPath,
+		Token:            strings.TrimSpace(os.Getenv("GONAVI_MCP_HTTP_TOKEN")),
+		JSONResponse:     true,
+		SchemaOnly:       parseBoolEnvDefault("GONAVI_MCP_SCHEMA_ONLY", false),
+		AllowNonLoopback: parseBoolEnvDefault("GONAVI_MCP_HTTP_ALLOW_NON_LOOPBACK", false),
 	}
 	fs := flag.NewFlagSet("gonavi-mcp-server http", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
@@ -259,6 +261,7 @@ func ParseHTTPServerOptions(args []string) (HTTPServerOptions, error) {
 	fs.StringVar(&options.Token, "token", options.Token, "bearer token required by remote MCP clients")
 	fs.BoolVar(&options.JSONResponse, "json-response", options.JSONResponse, "return application/json streamable responses when possible")
 	fs.BoolVar(&options.SchemaOnly, "schema-only", options.SchemaOnly, "only expose schema inspection tools and omit execute_sql")
+	fs.BoolVar(&options.AllowNonLoopback, "allow-non-loopback", options.AllowNonLoopback, "allow binding HTTP outside loopback for explicit container deployments")
 	if err := fs.Parse(args); err != nil {
 		return HTTPServerOptions{}, err
 	}
@@ -284,7 +287,7 @@ func normalizeHTTPServerOptions(options HTTPServerOptions) (HTTPServerOptions, e
 	if options.Addr == "" {
 		options.Addr = defaultStreamableHTTPAddr
 	}
-	if err := validateLoopbackHTTPAddr(options.Addr); err != nil {
+	if err := validateHTTPServerAddr(options.Addr, options.AllowNonLoopback); err != nil {
 		return HTTPServerOptions{}, err
 	}
 	options.Path = strings.TrimSpace(options.Path)
@@ -301,10 +304,13 @@ func normalizeHTTPServerOptions(options HTTPServerOptions) (HTTPServerOptions, e
 	return options, nil
 }
 
-func validateLoopbackHTTPAddr(addr string) error {
+func validateHTTPServerAddr(addr string, allowNonLoopback bool) error {
 	host, _, err := net.SplitHostPort(addr)
 	if err != nil {
 		return fmt.Errorf("MCP HTTP address must include a loopback host and port: %w", err)
+	}
+	if allowNonLoopback {
+		return nil
 	}
 	host = strings.Trim(host, "[]")
 	if strings.EqualFold(host, "localhost") {

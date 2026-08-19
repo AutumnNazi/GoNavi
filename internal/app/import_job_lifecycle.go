@@ -15,6 +15,7 @@ const importJobProgressPersistInterval = 500 * time.Millisecond
 type managedImportJobStart struct {
 	ID                  string
 	Kind                importjob.Kind
+	Stage               string
 	SourcePath          string
 	SourceIdentityToken string
 	SourceContentSHA256 string
@@ -25,6 +26,15 @@ type managedImportJobStart struct {
 	DatabaseName        string
 	TableName           string
 	OptionsHash         string
+	TableImportOptions  *importjob.TableImportOptions
+	ParentJobID         string
+	RecoveryAction      string
+	Current             int64
+	Succeeded           int64
+	Skipped             int64
+	Failed              int64
+	BytesRead           int64
+	Checkpoint          importjob.Checkpoint
 }
 
 type managedImportJobProgress struct {
@@ -76,7 +86,7 @@ func (a *App) beginManagedImportJob(start managedImportJobStart) (*managedImport
 		ID:                  strings.TrimSpace(start.ID),
 		Kind:                start.Kind,
 		Status:              importjob.StatusPreparing,
-		Stage:               "preparing",
+		Stage:               firstNonEmptyString(strings.TrimSpace(start.Stage), "preparing"),
 		SourcePath:          strings.TrimSpace(start.SourcePath),
 		SourceIdentityToken: strings.TrimSpace(start.SourceIdentityToken),
 		SourceContentSHA256: strings.TrimSpace(start.SourceContentSHA256),
@@ -87,7 +97,15 @@ func (a *App) beginManagedImportJob(start managedImportJobStart) (*managedImport
 		DatabaseName:        strings.TrimSpace(start.DatabaseName),
 		TableName:           strings.TrimSpace(start.TableName),
 		OptionsHash:         strings.TrimSpace(start.OptionsHash),
-		Checkpoint:          importjob.Checkpoint{},
+		TableImportOptions:  cloneImportJobTableOptions(start.TableImportOptions),
+		ParentJobID:         strings.TrimSpace(start.ParentJobID),
+		RecoveryAction:      strings.TrimSpace(start.RecoveryAction),
+		Current:             max(0, start.Current),
+		Succeeded:           max(0, start.Succeeded),
+		Skipped:             max(0, start.Skipped),
+		Failed:              max(0, start.Failed),
+		BytesRead:           max(0, start.BytesRead),
+		Checkpoint:          start.Checkpoint,
 	}
 	created, err := store.Put(job)
 	if err != nil {

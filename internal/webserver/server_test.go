@@ -32,6 +32,10 @@ func (webserverTestReceiver) OpenSQLFile() string {
 	return "desktop-method-reached"
 }
 
+func (webserverTestReceiver) RevealSavedConnectionPrimaryPassword(id string) (string, error) {
+	return "secret-for-" + id, nil
+}
+
 func TestInjectRuntimeBridgeAddsScriptOnce(t *testing.T) {
 	indexHTML := "<html><head><title>GoNavi</title></head><body></body></html>"
 
@@ -109,7 +113,7 @@ func TestMethodInvokerRejectsDesktopOnlyAppMethodsBeforeReflection(t *testing.T)
 		"ExportDatabaseSQLWithOptions", "ExportSchemaSQLWithOptions",
 		"ApplyDataRootDirectory", "OpenDataRootDirectory", "SelectLogDirectory", "ApplyLogDirectory", "OpenLogDirectory",
 		"SelectSavedQueryDirectory", "ApplySavedQueryDirectory", "OpenSavedQueryDirectory", "RevealSavedQueryInFolder", "SetApplicationBrandIcon",
-		"RefreshWebViewBounds",
+		"RefreshWebViewBounds", "RevealSavedConnectionPrimaryPassword",
 	} {
 		_, err := invoker.Invoke(invokeRequest{Namespace: "app", Receiver: "app", Method: method})
 		if err == nil || !strings.Contains(err.Error(), "unavailable in web runtime") {
@@ -131,6 +135,28 @@ func TestSharedMethodInvokerAllowsDesktopMethods(t *testing.T) {
 	}
 	if result != "desktop-method-reached" {
 		t.Fatalf("unexpected shared desktop result: %#v", result)
+	}
+}
+
+func TestSharedMethodInvokerAllowsSavedPasswordReveal(t *testing.T) {
+	invoker := &methodInvoker{
+		targets: map[string]reflect.Value{
+			"app.app": reflect.ValueOf(webserverTestReceiver{}),
+		},
+		allowDesktopMethods: true,
+	}
+	rawID, _ := json.Marshal("conn-1")
+	result, err := invoker.Invoke(invokeRequest{
+		Namespace: "app",
+		Receiver:  "app",
+		Method:    "RevealSavedConnectionPrimaryPassword",
+		Args:      []json.RawMessage{rawID},
+	})
+	if err != nil {
+		t.Fatalf("shared desktop password reveal was rejected: %v", err)
+	}
+	if result != "secret-for-conn-1" {
+		t.Fatalf("unexpected revealed password: %#v", result)
 	}
 }
 

@@ -729,6 +729,37 @@ describe('store appearance persistence', () => {
     expect(config?.oceanBaseProtocol).toBe('mysql');
   });
 
+  it('preserves SSH host key verification metadata when replacing saved connections', async () => {
+    const { useStore } = await importStore();
+
+    useStore.getState().replaceConnections([
+      {
+        id: 'ssh-host-key-1',
+        name: 'SSH host key',
+        config: {
+          id: 'ssh-host-key-1',
+          type: 'mysql',
+          host: 'db.local',
+          port: 3306,
+          user: 'root',
+          useSSH: true,
+          ssh: {
+            host: 'jump.local',
+            port: 2222,
+            user: 'ops',
+            knownHostsPath: ' /home/user/.ssh/known_hosts ',
+            hostKeyFingerprint: ' SHA256:pinned-host-key ',
+          },
+        },
+      },
+    ]);
+
+    expect(useStore.getState().connections[0]?.config.ssh).toMatchObject({
+      knownHostsPath: '/home/user/.ssh/known_hosts',
+      hostKeyFingerprint: 'SHA256:pinned-host-key',
+    });
+  });
+
   it('preserves JVM Arthas diagnostic config when replacing saved connections', async () => {
     const { useStore } = await importStore();
 

@@ -18,6 +18,7 @@ import {
   formatSidebarTableTimestamp,
   resolveV2ObjectGroupTitle,
 } from './sidebarHelpers';
+import { normalizeOracleObjectCompileStatus } from './oracleObjectCompilation';
 
 type SidebarV2TreeTitleOptions = {
   node: any;
@@ -145,6 +146,21 @@ export const renderSidebarV2TreeTitle = ({
     }
     return rawTitle;
   })();
+  const objectCompileStatus = (node.type === 'routine' || node.type === 'db-trigger')
+    ? normalizeOracleObjectCompileStatus(node?.dataRef?.objectStatus)
+    : '';
+  const objectCompileStatusLabel = objectCompileStatus
+    ? t(`sidebar.object_status.${objectCompileStatus.toLowerCase()}`)
+    : '';
+  const objectCompileStatusBadge = objectCompileStatus ? (
+    <span
+      className={`gn-v2-tree-object-status is-${objectCompileStatus.toLowerCase()}`}
+      data-sidebar-object-status={objectCompileStatus}
+      title={t('sidebar.object_status.tooltip', { status: objectCompileStatusLabel })}
+    >
+      {objectCompileStatusLabel}
+    </span>
+  ) : null;
   const tableMetadata = node.type === 'table'
     ? buildSidebarTableMetadataSnapshot(node?.dataRef)
     : null;
@@ -260,6 +276,7 @@ export const renderSidebarV2TreeTitle = ({
       {tableMetadataItems.map((item) => (
         <span key={item.key} className={item.className}>{item.text}</span>
       ))}
+      {objectCompileStatusBadge}
       {metaText && <span className="gn-v2-tree-count">{metaText}</span>}
     </span>
   );

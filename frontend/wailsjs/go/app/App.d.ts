@@ -19,6 +19,10 @@ export function ApplySavedQueryDirectory(arg1:string):Promise<connection.QueryRe
 
 export function AuthorizeMCPConnectionSQL(arg1:connection.ConnectionConfig,arg2:string):Promise<void>;
 
+export function BuildDatabaseDiagnosticPackage():Promise<connection.QueryResult>;
+
+export function BuildReproductionBundle(arg1:string,arg2:string):Promise<connection.QueryResult>;
+
 export function BuildSQLAuditExport(arg1:sqlaudit.Filter,arg2:string):Promise<connection.QueryResult>;
 
 export function CancelApplicationQuit():Promise<connection.QueryResult>;
@@ -109,6 +113,8 @@ export function DBQueryMultiTransactional(arg1:connection.ConnectionConfig,arg2:
 
 export function DBQueryWithCancel(arg1:connection.ConnectionConfig,arg2:string,arg3:string,arg4:string):Promise<connection.QueryResult>;
 
+export function DBRefreshTableStats(arg1:connection.ConnectionConfig,arg2:string,arg3:Array<string>):Promise<connection.QueryResult>;
+
 export function DBReleaseConnection(arg1:connection.ConnectionConfig):Promise<connection.QueryResult>;
 
 export function DBRollbackTransaction(arg1:string):Promise<connection.QueryResult>;
@@ -120,6 +126,8 @@ export function DBShowCreateTable(arg1:connection.ConnectionConfig,arg2:string,a
 export function DBTableExists(arg1:connection.ConnectionConfig,arg2:string,arg3:string):Promise<connection.QueryResult>;
 
 export function DataImportCapability(arg1:connection.ConnectionConfig):Promise<app.DataImportCapability>;
+
+export function DataSourceCapability(arg1:connection.ConnectionConfig):Promise<app.DataSourceCapability>;
 
 export function DataSync(arg1:sync.SyncConfig):Promise<sync.SyncResult>;
 
@@ -227,6 +235,8 @@ export function ExportData(arg1:Array<Record<string, any>>,arg2:Array<string>,ar
 
 export function ExportDataWithOptions(arg1:Array<Record<string, any>>,arg2:Array<string>,arg3:string,arg4:app.ExportFileOptions):Promise<connection.QueryResult>;
 
+export function ExportDatabaseDiagnosticPackage():Promise<connection.QueryResult>;
+
 export function ExportDatabaseSQL(arg1:connection.ConnectionConfig,arg2:string,arg3:boolean):Promise<connection.QueryResult>;
 
 export function ExportDatabaseSQLWithOptions(arg1:connection.ConnectionConfig,arg2:string,arg3:boolean,arg4:app.ExportFileOptions):Promise<connection.QueryResult>;
@@ -238,6 +248,8 @@ export function ExportImportErrorRows(arg1:string):Promise<connection.QueryResul
 export function ExportQuery(arg1:connection.ConnectionConfig,arg2:string,arg3:string,arg4:string,arg5:string):Promise<connection.QueryResult>;
 
 export function ExportQueryWithOptions(arg1:connection.ConnectionConfig,arg2:string,arg3:string,arg4:string,arg5:app.ExportFileOptions):Promise<connection.QueryResult>;
+
+export function ExportReproductionBundle(arg1:string,arg2:string):Promise<connection.QueryResult>;
 
 export function ExportSQLAuditFile(arg1:sqlaudit.Filter,arg2:string):Promise<connection.QueryResult>;
 
@@ -264,6 +276,8 @@ export function GenerateQueryID():Promise<string>;
 export function GetAppInfo():Promise<connection.QueryResult>;
 
 export function GetDataRootDirectoryInfo():Promise<connection.QueryResult>;
+
+export function GetDatabaseDiagnosticPackagePreview():Promise<connection.QueryResult>;
 
 export function GetDriverStatusList(arg1:string,arg2:string):Promise<connection.QueryResult>;
 
@@ -319,6 +333,10 @@ export function ImportSavedQueries(arg1:connection.SavedQueryImportPayload):Prom
 
 export function InspectElasticsearchConsole(arg1:connection.ConnectionConfig,arg2:string,arg3:string):Promise<app.ElasticsearchConsoleInspection>;
 
+export function InspectSavedConnectionHealth(arg1:string):Promise<connection.ConnectionHealthReport>;
+
+export function InspectSavedConnectionsHealth(arg1:Array<string>):Promise<Array<connection.ConnectionHealthReport>>;
+
 export function InstallLocalDriverPackage(arg1:string,arg2:string,arg3:string,arg4:string):Promise<connection.QueryResult>;
 
 export function InstallUpdateAndRestart(arg1:boolean):Promise<connection.QueryResult>;
@@ -358,6 +376,8 @@ export function ListDatabaseCollations(arg1:connection.ConnectionConfig):Promise
 export function ListImportJobs():Promise<connection.QueryResult>;
 
 export function ListInstalledFontFamilies():Promise<connection.QueryResult>;
+
+export function ListReproductionBundleSources():Promise<connection.QueryResult>;
 
 export function ListSQLDirectory(arg1:string):Promise<connection.QueryResult>;
 
@@ -463,6 +483,8 @@ export function PreviewImportFile(arg1:string):Promise<connection.QueryResult>;
 
 export function PreviewImportFileWithOptions(arg1:string,arg2:app.ImportFileOptions):Promise<connection.QueryResult>;
 
+export function PreviewReproductionBundle(arg1:string):Promise<connection.QueryResult>;
+
 export function ReadAppLogTail(arg1:number,arg2:string):Promise<connection.QueryResult>;
 
 export function ReadSQLFile(arg1:string):Promise<connection.QueryResult>;
@@ -545,6 +567,8 @@ export function RenameTable(arg1:connection.ConnectionConfig,arg2:string,arg3:st
 
 export function RenameView(arg1:connection.ConnectionConfig,arg2:string,arg3:string,arg4:string):Promise<connection.QueryResult>;
 
+export function ReplayReproductionBundle(arg1:string):Promise<connection.QueryResult>;
+
 export function ResetWebViewZoom():Promise<connection.QueryResult>;
 
 export function ResolveDriverDownloadDirectory(arg1:string):Promise<connection.QueryResult>;
@@ -564,6 +588,10 @@ export function ResultDiffPage(arg1:resultdiff.PageRequest):Promise<connection.Q
 export function ResultDiffStart(arg1:app.ResultDiffStartRequest):Promise<connection.QueryResult>;
 
 export function ResultDiffUploadChunk(arg1:resultdiff.UploadChunkRequest):Promise<connection.QueryResult>;
+
+export function ResumeImportJob(arg1:string):Promise<connection.QueryResult>;
+
+export function RetryImportJobFailedRows(arg1:string):Promise<connection.QueryResult>;
 
 export function RetrySecurityUpdateCurrentRound(arg1:app.RetrySecurityUpdateRequest):Promise<app.SecurityUpdateStatus>;
 

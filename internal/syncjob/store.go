@@ -681,6 +681,15 @@ type contextExecer interface {
 	ExecContext(context.Context, string, ...any) (sql.Result, error)
 }
 
+type contextQueryRower interface {
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}
+
+type contextExecerQueryRower interface {
+	contextExecer
+	contextQueryRower
+}
+
 func insertRun(ctx context.Context, executor contextExecer, run RunRecord, forbidPending bool) error {
 	insertPrefix := `INSERT INTO data_sync_runs(
 		id, job_id, owner_token, job_revision, trigger_kind, status, parent_run_id, attempt, queued_at, started_at, finished_at, heartbeat_at,
@@ -932,18 +941,10 @@ func (s *Store) CompleteRun(ctx context.Context, id string, status RunStatus, ou
 	if err := s.ensureOpen(); err != nil {
 		return RunRecord{}, err
 	}
-	switch status {
-	case RunStatusSucceeded, RunStatusPartial, RunStatusFailed, RunStatusCanceled, RunStatusInterrupted:
-	default:
-		return RunRecord{}, fmt.Errorf("unsupported terminal data sync run status %q", status)
+	message, nowMillis, resumable, err := normalizeTerminalRunCompletion(status, outcome, message, nowMillis)
+	if err != nil {
+		return RunRecord{}, err
 	}
-	if nowMillis <= 0 {
-		nowMillis = time.Now().UnixMilli()
-	}
-	if message == "" {
-		message = outcome.Message
-	}
-	resumable := outcome.Resumable || status == RunStatusInterrupted
 	result, err := s.db.ExecContext(ctx, `UPDATE data_sync_runs SET status = ?, finished_at = ?, heartbeat_at = ?, owner_token = '',
 		rows_inserted = ?, rows_updated = ?, rows_deleted = ?, rows_failed = ?, message = ?, resumable = ?, updated_at = ?
 		WHERE id = ? AND owner_token = '' AND status IN (?, ?)`, status, nowMillis, nowMillis, outcome.RowsInserted, outcome.RowsUpdated,
@@ -965,19 +966,50 @@ func (s *Store) CompleteRunOwned(ctx context.Context, id, ownerToken string, sta
 	if strings.TrimSpace(ownerToken) == "" {
 		return RunRecord{}, ErrRunOwnershipLost
 	}
-	switch status {
-	case RunStatusSucceeded, RunStatusPartial, RunStatusFailed, RunStatusCanceled, RunStatusInterrupted:
-	default:
-		return RunRecord{}, fmt.Errorf("unsupported terminal data sync run status %q", status)
+	message, nowMillis, resumable, err := normalizeTerminalRunCompletion(status, outcome, message, nowMillis)
+	if err != nil {
+		return RunRecord{}, err
 	}
-	if nowMillis <= 0 {
-		nowMillis = time.Now().UnixMilli()
+	return completeRunOwned(ctx, s.db, id, ownerToken, status, outcome, message, nowMillis, resumable)
+}
+
+func (s *Store) CompleteRunOwnedWithTerminalEvent(ctx context.Context, id, ownerToken string, status RunStatus, outcome ExecutionOutcome, message string, nowMillis int64) (RunRecord, RunEvent, error) {
+	if err := s.ensureOpen(); err != nil {
+		return RunRecord{}, RunEvent{}, err
 	}
-	if message == "" {
-		message = outcome.Message
+	if strings.TrimSpace(ownerToken) == "" {
+		return RunRecord{}, RunEvent{}, ErrRunOwnershipLost
 	}
-	resumable := outcome.Resumable || status == RunStatusInterrupted
-	result, err := s.db.ExecContext(ctx, `UPDATE data_sync_runs SET status = ?, finished_at = ?, heartbeat_at = ?, owner_token = '',
+	message, nowMillis, resumable, err := normalizeTerminalRunCompletion(status, outcome, message, nowMillis)
+	if err != nil {
+		return RunRecord{}, RunEvent{}, err
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return RunRecord{}, RunEvent{}, fmt.Errorf("begin atomic data sync run completion: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	completed, err := completeRunOwned(ctx, tx, id, ownerToken, status, outcome, message, nowMillis, resumable)
+	if err != nil {
+		return RunRecord{}, RunEvent{}, err
+	}
+	event, err := appendRunEvent(ctx, tx, RunEvent{
+		RunID: completed.ID, JobID: completed.JobID, Type: terminalEventTypeForStatus(status), Status: completed.Status,
+		Current: completed.Current, Total: completed.Total, Table: completed.Table, Stage: completed.Stage,
+		Message: completed.Message, CreatedAt: nowMillis,
+	})
+	if err != nil {
+		return RunRecord{}, RunEvent{}, fmt.Errorf("append terminal data sync run event: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return RunRecord{}, RunEvent{}, fmt.Errorf("commit atomic data sync run completion: %w", err)
+	}
+	return completed, event, nil
+}
+
+func completeRunOwned(ctx context.Context, executor contextExecerQueryRower, id, ownerToken string, status RunStatus, outcome ExecutionOutcome, message string, nowMillis int64, resumable bool) (RunRecord, error) {
+	result, err := executor.ExecContext(ctx, `UPDATE data_sync_runs SET status = ?, finished_at = ?, heartbeat_at = ?, owner_token = '',
 		rows_inserted = ?, rows_updated = ?, rows_deleted = ?, rows_failed = ?, message = ?, resumable = ?, updated_at = ?
 		WHERE id = ? AND owner_token = ? AND status IN (?, ?)`, status, nowMillis, nowMillis, outcome.RowsInserted, outcome.RowsUpdated,
 		outcome.RowsDeleted, outcome.RowsFailed, message, boolInt(resumable), nowMillis, strings.TrimSpace(id), ownerToken,
@@ -988,7 +1020,37 @@ func (s *Store) CompleteRunOwned(ctx context.Context, id, ownerToken string, sta
 	if err := requireOwnedAffected(result); err != nil {
 		return RunRecord{}, err
 	}
-	return s.GetRun(ctx, id)
+	return scanRun(executor.QueryRowContext(ctx, runSelect+` WHERE id = ?`, strings.TrimSpace(id)))
+}
+
+func normalizeTerminalRunCompletion(status RunStatus, outcome ExecutionOutcome, message string, nowMillis int64) (string, int64, bool, error) {
+	switch status {
+	case RunStatusSucceeded, RunStatusPartial, RunStatusFailed, RunStatusCanceled, RunStatusInterrupted:
+	default:
+		return "", 0, false, fmt.Errorf("unsupported terminal data sync run status %q", status)
+	}
+	if nowMillis <= 0 {
+		nowMillis = time.Now().UnixMilli()
+	}
+	if message == "" {
+		message = outcome.Message
+	}
+	return message, nowMillis, outcome.Resumable || status == RunStatusInterrupted, nil
+}
+
+func terminalEventTypeForStatus(status RunStatus) RunEventType {
+	switch status {
+	case RunStatusSucceeded:
+		return RunEventSucceeded
+	case RunStatusPartial:
+		return RunEventPartial
+	case RunStatusCanceled:
+		return RunEventCanceled
+	case RunStatusInterrupted:
+		return RunEventInterrupted
+	default:
+		return RunEventFailed
+	}
 }
 
 func (s *Store) RequestCancelRun(ctx context.Context, id string, nowMillis int64) (RunRecord, error) {
@@ -1627,6 +1689,10 @@ func (s *Store) AppendRunEvent(ctx context.Context, event RunEvent) (RunEvent, e
 	if err := s.ensureOpen(); err != nil {
 		return RunEvent{}, err
 	}
+	return appendRunEvent(ctx, s.db, event)
+}
+
+func appendRunEvent(ctx context.Context, queryer contextQueryRower, event RunEvent) (RunEvent, error) {
 	event.RunID = strings.TrimSpace(event.RunID)
 	if event.RunID == "" || event.Type == "" {
 		return RunEvent{}, errors.New("data sync run event requires runId and type")
@@ -1645,7 +1711,7 @@ func (s *Store) AppendRunEvent(ctx context.Context, event RunEvent) (RunEvent, e
 	FROM data_sync_runs AS run WHERE run.id = ?
 	RETURNING sequence, job_id`
 	for attempt := 0; attempt < 8; attempt++ {
-		err := s.db.QueryRowContext(ctx, insert, event.Type, event.Status, event.Current, event.Total,
+		err := queryer.QueryRowContext(ctx, insert, event.Type, event.Status, event.Current, event.Total,
 			strings.TrimSpace(event.Table), strings.TrimSpace(event.Stage), event.Message, nullableBytes(event.Payload),
 			event.CreatedAt, event.RunID).Scan(&event.Sequence, &event.JobID)
 		switch {

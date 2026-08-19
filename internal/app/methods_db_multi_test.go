@@ -555,6 +555,40 @@ END;`
 	}
 }
 
+func TestDBQueryMultiExecutesOracleCompileStatementWithoutTrailingDelimiter(t *testing.T) {
+	originalNewDatabaseFunc := newDatabaseFunc
+	t.Cleanup(func() {
+		newDatabaseFunc = originalNewDatabaseFunc
+	})
+
+	fakeDB := &fakeBatchWriteDB{}
+	newDatabaseFunc = func(dbType string) (db.Database, error) {
+		return fakeDB, nil
+	}
+
+	app := NewAppWithSecretStore(secretstore.NewUnavailableStore("test"))
+	config := connection.ConnectionConfig{
+		Type: "oracle",
+		Host: "127.0.0.1",
+		Port: 1521,
+		User: "app",
+	}
+
+	result := app.DBQueryMulti(config, "ORCLPDB1", `ALTER PROCEDURE "APP"."P_REBUILD" COMPILE;`, "oracle-compile-test")
+	if !result.Success {
+		t.Fatalf("expected Oracle compile statement success, got failure: %s", result.Message)
+	}
+	if fakeDB.batchCalls != 0 {
+		t.Fatalf("expected Oracle DDL to use the direct execution path, got batchCalls=%d", fakeDB.batchCalls)
+	}
+	if fakeDB.execCalls != 1 || len(fakeDB.execQueries) != 1 {
+		t.Fatalf("expected one Oracle compile exec call, got execCalls=%d queries=%#v", fakeDB.execCalls, fakeDB.execQueries)
+	}
+	if got, want := fakeDB.execQueries[0], `ALTER PROCEDURE "APP"."P_REBUILD" COMPILE`; got != want {
+		t.Fatalf("expected trailing delimiter to be removed before Oracle compile execution, got %q", got)
+	}
+}
+
 func TestDBQueryMultiKeepsOracleCreateProcedureAsSingleStatement(t *testing.T) {
 	originalNewDatabaseFunc := newDatabaseFunc
 	t.Cleanup(func() {

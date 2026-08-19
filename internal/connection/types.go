@@ -2,11 +2,13 @@ package connection
 
 // SSHConfig 存储 SSH 隧道连接配置。
 type SSHConfig struct {
-	Host     string `json:"host"`
-	Port     int    `json:"port"`
-	User     string `json:"user"`
-	Password string `json:"password"`
-	KeyPath  string `json:"keyPath"`
+	Host               string `json:"host"`
+	Port               int    `json:"port"`
+	User               string `json:"user"`
+	Password           string `json:"password"`
+	KeyPath            string `json:"keyPath"`
+	KnownHostsPath     string `json:"knownHostsPath,omitempty"`
+	HostKeyFingerprint string `json:"hostKeyFingerprint,omitempty"`
 }
 
 // ProxyConfig 存储代理连接配置。
@@ -189,6 +191,8 @@ type ResultSetData struct {
 	StatementIndex int                      `json:"statementIndex,omitempty"`
 }
 
+const QueryCancellationStateUnsupported = "unsupported"
+
 // QueryResult 是 Wails 绑定方法的统一响应格式，前端通过此结构体接收后端结果。
 type QueryResult struct {
 	Success            bool        `json:"success"`
@@ -196,20 +200,29 @@ type QueryResult struct {
 	Data               interface{} `json:"data"`
 	Fields             []string    `json:"fields,omitempty"`
 	Messages           []string    `json:"messages,omitempty"`
+	Partial            bool        `json:"partial,omitempty"`
+	Warnings           []string    `json:"warnings,omitempty"`
+	OutcomeUnknown     bool        `json:"outcomeUnknown,omitempty"`
+	FailedObjectTypes  []string    `json:"failedObjectTypes,omitempty"`
+	Retryable          bool        `json:"retryable,omitempty"`
+	Truncated          bool        `json:"truncated,omitempty"`
+	ScannedCount       int         `json:"scannedCount,omitempty"`
 	QueryID            string      `json:"queryId,omitempty"` // Unique ID for query cancellation
+	CancellationState  string      `json:"cancellationState,omitempty"`
 	TransactionID      string      `json:"transactionId,omitempty"`
 	TransactionPending bool        `json:"transactionPending,omitempty"`
 }
 
 // DatabaseObject 描述数据库或类数据库数据源中的可浏览对象。
 type DatabaseObject struct {
-	Name     string `json:"name"`
-	Type     string `json:"type"`
-	Schema   string `json:"schema,omitempty"`
-	Database string `json:"database,omitempty"`
-	Parent   string `json:"parent,omitempty"`
-	RawType  string `json:"rawType,omitempty"`
-	Comment  string `json:"comment,omitempty"`
+	Name         string `json:"name"`
+	Type         string `json:"type"`
+	Schema       string `json:"schema,omitempty"`
+	Database     string `json:"database,omitempty"`
+	Parent       string `json:"parent,omitempty"`
+	RawType      string `json:"rawType,omitempty"`
+	ObjectStatus string `json:"objectStatus,omitempty"`
+	Comment      string `json:"comment,omitempty"`
 }
 
 // DatabaseCharset 描述 MySQL 系数据源可用的字符集（SHOW CHARACTER SET）。

@@ -90,6 +90,12 @@ type getTablesResult struct {
 	DBName       string   `json:"dbName,omitempty"`
 	Tables       []string `json:"tables"`
 	Views        []string `json:"views"`
+	Message      string   `json:"message,omitempty"`
+	Partial      bool     `json:"partial,omitempty"`
+	Warnings     []string `json:"warnings,omitempty"`
+	Retryable    bool     `json:"retryable,omitempty"`
+	Truncated    bool     `json:"truncated,omitempty"`
+	ScannedCount int      `json:"scannedCount,omitempty"`
 }
 
 type getViewsResult struct {
@@ -99,9 +105,16 @@ type getViewsResult struct {
 }
 
 type getObjectsResult struct {
-	ConnectionID string                      `json:"connectionId"`
-	DBName       string                      `json:"dbName,omitempty"`
-	Objects      []connection.DatabaseObject `json:"objects"`
+	ConnectionID      string                      `json:"connectionId"`
+	DBName            string                      `json:"dbName,omitempty"`
+	Objects           []connection.DatabaseObject `json:"objects"`
+	Message           string                      `json:"message,omitempty"`
+	Partial           bool                        `json:"partial,omitempty"`
+	Warnings          []string                    `json:"warnings,omitempty"`
+	FailedObjectTypes []string                    `json:"failedObjectTypes,omitempty"`
+	Retryable         bool                        `json:"retryable,omitempty"`
+	Truncated         bool                        `json:"truncated,omitempty"`
+	ScannedCount      int                         `json:"scannedCount,omitempty"`
 }
 
 type getAllColumnsResult struct {
@@ -161,15 +174,17 @@ type sqlResultSet struct {
 }
 
 type executeSQLResult struct {
-	ConnectionID   string                `json:"connectionId"`
-	DBName         string                `json:"dbName,omitempty"`
-	StatementCount int                   `json:"statementCount"`
-	ReadOnly       bool                  `json:"readOnly"`
-	QueryID        string                `json:"queryId,omitempty"`
-	Message        string                `json:"message,omitempty"`
-	Truncated      bool                  `json:"truncated,omitempty"`
-	Statements     []sqlStatementSummary `json:"statements"`
-	Results        []sqlResultSet        `json:"results"`
+	RequestID         string                `json:"requestId,omitempty"`
+	ConnectionID      string                `json:"connectionId"`
+	DBName            string                `json:"dbName,omitempty"`
+	StatementCount    int                   `json:"statementCount"`
+	ReadOnly          bool                  `json:"readOnly"`
+	QueryID           string                `json:"queryId,omitempty"`
+	CancellationState string                `json:"cancellationState,omitempty"`
+	Message           string                `json:"message,omitempty"`
+	Truncated         bool                  `json:"truncated,omitempty"`
+	Statements        []sqlStatementSummary `json:"statements"`
+	Results           []sqlResultSet        `json:"results"`
 }
 
 func (s *Service) GetConnections(ctx context.Context, req *mcp.CallToolRequest, args emptyArgs) (*mcp.CallToolResult, getConnectionsResult, error) {
@@ -264,6 +279,12 @@ func (s *Service) GetTables(ctx context.Context, req *mcp.CallToolRequest, args 
 		DBName:       dbName,
 		Tables:       ensureNonNilStrings(tables),
 		Views:        ensureNonNilStrings(views),
+		Message:      strings.TrimSpace(queryResult.Message),
+		Partial:      queryResult.Partial,
+		Warnings:     objectMetadataWarnings(queryResult),
+		Retryable:    queryResult.Retryable,
+		Truncated:    queryResult.Truncated,
+		ScannedCount: queryResult.ScannedCount,
 	}, nil
 }
 
@@ -306,7 +327,26 @@ func (s *Service) GetObjects(ctx context.Context, req *mcp.CallToolRequest, args
 	dbName := effectiveDBName(args.DBName, view.Config)
 	queryResult := s.backend.DBGetObjects(view.Config, dbName)
 	if !queryResult.Success {
-		return toolError("获取数据库对象列表失败: %s", strings.TrimSpace(queryResult.Message)), getObjectsResult{}, nil
+		output := getObjectsResult{
+			ConnectionID:      view.ID,
+			DBName:            dbName,
+			Objects:           []connection.DatabaseObject{},
+			Message:           strings.TrimSpace(queryResult.Message),
+			Partial:           queryResult.Partial,
+			Warnings:          objectMetadataWarnings(queryResult),
+			FailedObjectTypes: queryResult.FailedObjectTypes,
+			Retryable:         queryResult.Retryable,
+			Truncated:         queryResult.Truncated,
+			ScannedCount:      queryResult.ScannedCount,
+		}
+		if queryResult.Retryable {
+			failedTypes := strings.Join(queryResult.FailedObjectTypes, ", ")
+			if failedTypes != "" {
+				return toolError("获取数据库对象列表失败（失败类别: %s，可重试）: %s", failedTypes, strings.TrimSpace(queryResult.Message)), output, nil
+			}
+			return toolError("获取数据库对象列表失败（可重试）: %s", strings.TrimSpace(queryResult.Message)), output, nil
+		}
+		return toolError("获取数据库对象列表失败: %s", strings.TrimSpace(queryResult.Message)), output, nil
 	}
 
 	objects, err := decodeDatabaseObjects(queryResult.Data)
@@ -315,10 +355,27 @@ func (s *Service) GetObjects(ctx context.Context, req *mcp.CallToolRequest, args
 	}
 
 	return successResult(), getObjectsResult{
-		ConnectionID: view.ID,
-		DBName:       dbName,
-		Objects:      filterDatabaseObjects(objects, args.ObjectTypes),
+		ConnectionID:      view.ID,
+		DBName:            dbName,
+		Objects:           filterDatabaseObjects(objects, args.ObjectTypes),
+		Message:           strings.TrimSpace(queryResult.Message),
+		Partial:           queryResult.Partial,
+		Warnings:          objectMetadataWarnings(queryResult),
+		FailedObjectTypes: queryResult.FailedObjectTypes,
+		Retryable:         queryResult.Retryable,
+		Truncated:         queryResult.Truncated,
+		ScannedCount:      queryResult.ScannedCount,
 	}, nil
+}
+
+func objectMetadataWarnings(result connection.QueryResult) []string {
+	if len(result.Warnings) > 0 {
+		return result.Warnings
+	}
+	if message := strings.TrimSpace(result.Message); message != "" {
+		return []string{message}
+	}
+	return nil
 }
 
 func (s *Service) GetAllColumns(ctx context.Context, req *mcp.CallToolRequest, args databaseArgs) (*mcp.CallToolResult, getAllColumnsResult, error) {
@@ -553,6 +610,9 @@ func (s *Service) ExecuteSQL(ctx context.Context, req *mcp.CallToolRequest, args
 	dbName := effectiveDBName(args.DBName, view.Config)
 	queryResult := s.executeAuthorizedSQL(ctx, view, dbName, sqlText, args.AllowMutating)
 	if !queryResult.Success {
+		if queryResult.CancellationState != "" {
+			return toolError("SQL 执行失败（cancellationState=%s）: %s", queryResult.CancellationState, strings.TrimSpace(queryResult.Message)), executeSQLResult{}, nil
+		}
 		return toolError("SQL 执行失败: %s", strings.TrimSpace(queryResult.Message)), executeSQLResult{}, nil
 	}
 
@@ -563,15 +623,17 @@ func (s *Service) ExecuteSQL(ctx context.Context, req *mcp.CallToolRequest, args
 
 	normalizedResults, truncated := normalizeResultSets(resultSets, normalizeMaxRowsPerResult(args.MaxRowsPerResult))
 	output := executeSQLResult{
-		ConnectionID:   view.ID,
-		DBName:         dbName,
-		StatementCount: inspection.StatementCount,
-		ReadOnly:       inspection.ReadOnly,
-		QueryID:        strings.TrimSpace(queryResult.QueryID),
-		Message:        strings.TrimSpace(queryResult.Message),
-		Truncated:      truncated,
-		Statements:     toStatementSummaries(inspection.Statements),
-		Results:        normalizedResults,
+		RequestID:         mcpRequestID(ctx),
+		ConnectionID:      view.ID,
+		DBName:            dbName,
+		StatementCount:    inspection.StatementCount,
+		ReadOnly:          inspection.ReadOnly,
+		QueryID:           strings.TrimSpace(queryResult.QueryID),
+		CancellationState: strings.TrimSpace(queryResult.CancellationState),
+		Message:           strings.TrimSpace(queryResult.Message),
+		Truncated:         truncated,
+		Statements:        toStatementSummaries(inspection.Statements),
+		Results:           normalizedResults,
 	}
 	return textResult(formatExecuteSQLResultContent(output)), output, nil
 }
@@ -956,6 +1018,10 @@ func formatExecuteSQLResultContent(result executeSQLResult) string {
 	builder.WriteString(fmt.Sprintf("语句数：%d，结果集：%d", result.StatementCount, len(result.Results)))
 	if result.Truncated {
 		builder.WriteString("，结果已截断")
+	}
+	if result.CancellationState != "" {
+		builder.WriteString("\n取消状态：")
+		builder.WriteString(result.CancellationState)
 	}
 	if result.Message != "" {
 		builder.WriteString("\n消息：")

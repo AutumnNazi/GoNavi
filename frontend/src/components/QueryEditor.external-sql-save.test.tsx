@@ -3774,7 +3774,7 @@ describe('QueryEditor external SQL save', () => {
     });
   });
 
-  it('matches table names from the beginning in FROM completion', async () => {
+  it('matches table names by prefix and substring in FROM completion', async () => {
     let renderer!: ReactTestRenderer;
     autoFetchState.visible = true;
     storeState.connections[0].config.database = '';
@@ -3787,6 +3787,7 @@ describe('QueryEditor external SQL save', () => {
         { Tables_in_main: 'hrmresource' },
         { Tables_in_main: 'hrm_resource_export_template' },
         { Tables_in_main: 'archive_hrmresource' },
+        { Tables_in_main: 'table_new_1' },
       ],
     });
     backendApp.DBGetAllColumns.mockResolvedValueOnce({
@@ -3795,6 +3796,7 @@ describe('QueryEditor external SQL save', () => {
         { tableName: 'hrmresource', name: 'hrmresult', type: 'varchar(32)' },
         { tableName: 'users', name: 'hrmresult_from_users', type: 'varchar(32)' },
         { tableName: 'users', name: 'SHORT_TITLE', type: 'varchar(255)' },
+        { tableName: 'users', name: 'emp_code', type: 'varchar(32)' },
       ],
     });
 
@@ -3816,8 +3818,10 @@ describe('QueryEditor external SQL save', () => {
     const labels = result.suggestions.map((item: any) => item.label);
 
     expect(labels).toContain('hrmresource');
+    // 子串匹配（#822/#939）：包含 hrmres 的表名候选保留，且排在精确/前缀命中之后
+    expect(labels).toContain('archive_hrmresource');
+    expect(labels.indexOf('archive_hrmresource')).toBeGreaterThan(labels.indexOf('hrmresource'));
     expect(labels).not.toContain('hrm_resource_export_template');
-    expect(labels).not.toContain('archive_hrmresource');
     expect(labels).not.toContain('hrmresult');
 
     editorState.value = 'SELECT * FROM users u, hrmres';
@@ -3828,8 +3832,19 @@ describe('QueryEditor external SQL save', () => {
     );
     const commaLabels = commaResult.suggestions.map((item: any) => item.label);
     expect(commaLabels).toContain('hrmresource');
-    expect(commaLabels).not.toContain('archive_hrmresource');
+    expect(commaLabels).toContain('archive_hrmresource');
+    expect(commaLabels.indexOf('archive_hrmresource')).toBeGreaterThan(commaLabels.indexOf('hrmresource'));
     expect(commaLabels).not.toContain('hrmresult_from_users');
+
+    // #939：输入表名中段片段（new）也能提示 table_new_1
+    editorState.value = 'SELECT * FROM new';
+    editorState.latestOnChange?.(editorState.value);
+    const substringResult = await sqlProvider.provideCompletionItems(
+      editorState.editor.getModel(),
+      { lineNumber: 1, column: editorState.value.length + 1 },
+    );
+    const substringLabels = substringResult.suggestions.map((item: any) => item.label);
+    expect(substringLabels).toContain('table_new_1');
     expect(backendApp.DBGetColumns.mock.calls.map((call: any[]) => call[2])).not.toContain('hrmres');
 
     editorState.value = 'SELECT * FROM A_C';
@@ -3849,6 +3864,16 @@ describe('QueryEditor external SQL save', () => {
     );
     const lowercaseColumn = lowercaseColumnResult.suggestions.find((item: any) => item.label === 'SHORT_TITLE');
     expect(lowercaseColumn?.insertText).toBe('short_title');
+
+    // #939：字段中段片段提示（输入 code 应提示 emp_code）
+    editorState.value = 'SELECT * FROM users WHERE code';
+    editorState.latestOnChange?.(editorState.value);
+    const columnSubstringResult = await sqlProvider.provideCompletionItems(
+      editorState.editor.getModel(),
+      { lineNumber: 1, column: editorState.value.length + 1 },
+    );
+    const columnSubstringLabels = columnSubstringResult.suggestions.map((item: any) => item.label);
+    expect(columnSubstringLabels).toContain('emp_code');
 
     await act(async () => {
       renderer.unmount();

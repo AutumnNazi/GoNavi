@@ -49,9 +49,12 @@ func TestStoreRecoverInterruptedSkipsCorruptMetadataAndRecoversValidJobs(t *test
 		ID:                  "import-running-valid",
 		Kind:                KindTable,
 		Status:              StatusRunning,
+		SourcePath:          "D:/imports/users.csv",
+		ConnectionID:        "connection-v1",
 		SourceIdentityToken: "source-v1",
 		TargetFingerprint:   "target-v1",
 		OptionsHash:         "options-v1",
+		TableImportOptions:  &TableImportOptions{},
 		Checkpoint:          Checkpoint{Safe: true, SourceRow: 1000},
 	})
 	if err != nil {
@@ -88,9 +91,12 @@ func TestStoreRecoversInterruptedJobOnlyFromSafeCheckpoint(t *testing.T) {
 		ID:                  "import-job-safe",
 		Kind:                KindTable,
 		Status:              StatusRunning,
+		SourcePath:          "D:/imports/users.csv",
+		ConnectionID:        "connection-v1",
 		SourceIdentityToken: "source-v1",
 		TargetFingerprint:   "target-v1",
 		OptionsHash:         "options-v1",
+		TableImportOptions:  &TableImportOptions{},
 		Checkpoint: Checkpoint{
 			Safe:       true,
 			SourceRow:  2000,
@@ -147,6 +153,50 @@ func TestValidateResumeRejectsChangedInputsAndUnknownOutcome(t *testing.T) {
 				t.Fatalf("error = %v, want ErrResumeUnsafe", err)
 			}
 		})
+	}
+}
+
+func TestStoreClaimResumeConsumesCheckpointAtomically(t *testing.T) {
+	store, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	job, err := store.Put(Job{
+		ID:                  "import-resumable",
+		Kind:                KindTable,
+		Status:              StatusInterrupted,
+		SourcePath:          "D:/imports/users.csv",
+		ConnectionID:        "connection-v1",
+		SourceIdentityToken: "source-v1",
+		TargetFingerprint:   "target-v1",
+		OptionsHash:         "options-v1",
+		TableImportOptions:  &TableImportOptions{},
+		Checkpoint:          Checkpoint{Safe: true, SourceRow: 10},
+		Resumable:           true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	claimed, err := store.ClaimResume(job.ID, "source-v1", "target-v1", "options-v1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if claimed.Resumable {
+		t.Fatalf("claimed job stayed resumable: %#v", claimed)
+	}
+	if _, err := store.ClaimResume(job.ID, "source-v1", "target-v1", "options-v1"); !errors.Is(err, ErrRecoveryUnavailable) {
+		t.Fatalf("second claim error = %v, want ErrRecoveryUnavailable", err)
+	}
+	if err := store.ReleaseResumeClaim(job.ID); err != nil {
+		t.Fatal(err)
+	}
+	restored, err := store.Get(job.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !restored.Resumable {
+		t.Fatalf("released job did not restore its safe checkpoint action: %#v", restored)
 	}
 }
 

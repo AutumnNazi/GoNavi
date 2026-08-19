@@ -308,6 +308,8 @@ describe('buildRpcConnectionConfig', () => {
       user: '',
       password: '',
       keyPath: '',
+      knownHostsPath: '',
+      hostKeyFingerprint: '',
     });
     expect(result.httpTunnel).toEqual({
       host: '',
@@ -353,6 +355,8 @@ describe('buildRpcConnectionConfig', () => {
         host: 'jump.local',
         port: '2222' as unknown as number,
         user: 'ops',
+        knownHostsPath: '/tmp/known_hosts',
+        hostKeyFingerprint: 'SHA256:pin',
       },
       useProxy: true,
       proxy: {
@@ -369,6 +373,8 @@ describe('buildRpcConnectionConfig', () => {
 
     expect(result).toBeInstanceOf(connection.ConnectionConfig);
     expect(result.ssh).toBeInstanceOf(connection.SSHConfig);
+    expect(result.ssh?.knownHostsPath).toBe('/tmp/known_hosts');
+    expect(result.ssh?.hostKeyFingerprint).toBe('SHA256:pin');
     expect(result.proxy).toBeInstanceOf(connection.ProxyConfig);
     expect(result.httpTunnel).toBeInstanceOf(connection.HTTPTunnelConfig);
     expect(typeof (result as any).convertValues).toBe('function');

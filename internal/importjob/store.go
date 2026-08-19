@@ -16,10 +16,11 @@ import (
 )
 
 var (
-	ErrNotFound         = errors.New("import job not found")
-	ErrRevisionConflict = errors.New("import job revision conflict")
-	errCorruptMetadata  = errors.New("import job metadata is corrupt")
-	validJobIDPattern   = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$`)
+	ErrNotFound            = errors.New("import job not found")
+	ErrRevisionConflict    = errors.New("import job revision conflict")
+	ErrRecoveryUnavailable = errors.New("import job recovery is unavailable")
+	errCorruptMetadata     = errors.New("import job metadata is corrupt")
+	validJobIDPattern      = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$`)
 )
 
 // CorruptJobFilesWarning reports that list/recovery skipped unreadable job
@@ -177,8 +178,7 @@ func (s *Store) RecoverInterrupted() ([]Job, error) {
 			continue
 		}
 		job.Status = StatusInterrupted
-		job.Resumable = job.Checkpoint.Safe && !job.OutcomeUnknown &&
-			job.SourceIdentityToken != "" && job.TargetFingerprint != "" && job.OptionsHash != ""
+		job.Resumable = canResume(job)
 		updated, err := s.putLocked(job)
 		if err != nil {
 			return nil, err
@@ -186,6 +186,72 @@ func (s *Store) RecoverInterrupted() ([]Job, error) {
 		recovered = append(recovered, updated)
 	}
 	return recovered, listErr
+}
+
+// ClaimResume atomically validates and consumes an interrupted task's resume
+// checkpoint. A second click cannot start another replay from the same
+// checkpoint while the first recovery is being initialized.
+func (s *Store) ClaimResume(id, sourceIdentityToken, targetFingerprint, optionsHash string) (Job, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	job, err := s.getLocked(id)
+	if err != nil {
+		return Job{}, err
+	}
+	if !canResume(job) || ValidateResume(job, sourceIdentityToken, targetFingerprint, optionsHash) != nil {
+		return Job{}, ErrRecoveryUnavailable
+	}
+	job.Resumable = false
+	updated, err := s.putLocked(job)
+	if err != nil {
+		return Job{}, err
+	}
+	return updated, nil
+}
+
+// ReleaseResumeClaim restores an interrupted task's action when recovery
+// setup failed before a replacement task was persisted.
+func (s *Store) ReleaseResumeClaim(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	job, err := s.getLocked(id)
+	if err != nil {
+		return err
+	}
+	if job.Status != StatusInterrupted || job.Resumable {
+		return nil
+	}
+	if !canResume(job) {
+		return ErrRecoveryUnavailable
+	}
+	job.Resumable = true
+	_, err = s.putLocked(job)
+	return err
+}
+
+func (s *Store) getLocked(id string) (Job, error) {
+	id = strings.TrimSpace(id)
+	if !validJobIDPattern.MatchString(id) {
+		return Job{}, ErrNotFound
+	}
+	job, err := readJob(s.jobPath(id))
+	if errors.Is(err, os.ErrNotExist) {
+		return Job{}, ErrNotFound
+	}
+	return job, err
+}
+
+func canResume(job Job) bool {
+	return job.Kind == KindTable && job.TableImportOptions != nil &&
+		job.RecoveryAction != "retry_failed_rows" &&
+		job.Checkpoint.Safe && !job.OutcomeUnknown &&
+		strings.TrimSpace(job.SourcePath) != "" &&
+		strings.TrimSpace(job.ConnectionID) != "" &&
+		strings.TrimSpace(job.SourceIdentityToken) != "" &&
+		strings.TrimSpace(job.TargetFingerprint) != "" &&
+		strings.TrimSpace(job.OptionsHash) != ""
 }
 
 func (s *Store) jobPath(id string) string {

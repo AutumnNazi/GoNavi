@@ -50,6 +50,7 @@ const backendApp = {
   SaveConnection: vi.fn(),
   TestConnection: vi.fn(),
   RedisConnect: vi.fn(),
+  RevealSavedConnectionPrimaryPassword: vi.fn(),
   SelectDatabaseFile: vi.fn(),
   SelectCertificateFile: vi.fn(),
   SelectSSHKeyFile: vi.fn(),
@@ -248,9 +249,38 @@ vi.mock("antd", () => {
       {children}
     </input>
   );
-  Input.Password = ({ value, onChange, placeholder, ...rest }: any) => (
-    <input value={value} onChange={onChange} placeholder={placeholder} {...rest} />
-  );
+  Input.Password = ({ value, onChange, placeholder, visibilityToggle, ...rest }: any) => {
+    const visibilityControlled =
+      typeof visibilityToggle === "object" && visibilityToggle.visible !== undefined;
+    const [visible, setVisible] = React.useState(
+      visibilityControlled ? visibilityToggle.visible : false,
+    );
+    React.useEffect(() => {
+      if (visibilityControlled) {
+        setVisible(visibilityToggle.visible);
+      }
+    }, [visibilityControlled, visibilityToggle]);
+    const simulatedVisibilityToggle =
+      typeof visibilityToggle === "object"
+        ? {
+            ...visibilityToggle,
+            onVisibleChange: async (nextVisible: boolean) => {
+              setVisible(nextVisible);
+              return visibilityToggle.onVisibleChange?.(nextVisible);
+            },
+          }
+        : visibilityToggle;
+    return (
+      <input
+        type={visible ? "text" : "password"}
+        value={value}
+        onChange={onChange}
+        placeholder={placeholder}
+        visibilityToggle={simulatedVisibilityToggle}
+        {...rest}
+      />
+    );
+  };
   Input.TextArea = ({ value, onChange, placeholder, ...rest }: any) => (
     <textarea value={value} onChange={onChange} placeholder={placeholder} {...rest} />
   );
@@ -437,6 +467,8 @@ describe("ConnectionModal i18n", () => {
     backendApp.DBGetDatabases.mockResolvedValue({ success: true, data: [] });
     backendApp.MongoDiscoverMembers.mockResolvedValue({ success: true, data: { members: [] } });
     backendApp.RedisConnect.mockResolvedValue({ success: true, message: "ok" });
+    backendApp.RevealSavedConnectionPrimaryPassword.mockReset();
+    backendApp.RevealSavedConnectionPrimaryPassword.mockResolvedValue("stored-secret");
     backendApp.TestJVMConnection.mockResolvedValue({ success: true, message: "ok" });
     backendApp.SelectDatabaseFile.mockReset();
     backendApp.SelectCertificateFile.mockReset();
@@ -504,6 +536,348 @@ describe("ConnectionModal i18n", () => {
     );
     expect(onClose).toHaveBeenCalledTimes(1);
   }, 15000);
+
+  it("reveals a saved primary password when the password visibility button is opened", async () => {
+    Object.assign(window, {
+      go: { app: { App: backendApp } },
+    });
+    const { default: ConnectionModal } = await import("./ConnectionModal");
+    const connection = {
+      ...initialConnection("mysql"),
+      hasPrimaryPassword: true,
+    };
+
+    let renderer: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(
+        <ConnectionModal open onClose={vi.fn()} initialValues={connection} />,
+      );
+      await flushConnectionTestTick();
+    });
+
+    const passwordInput = findInputByPlaceholder(
+      renderer!,
+      "••••••（留空表示继续沿用已保存密码）",
+    );
+    await act(async () => {
+      await passwordInput.props.visibilityToggle.onVisibleChange(true);
+      await flushConnectionTestTick();
+    });
+
+    expect(backendApp.RevealSavedConnectionPrimaryPassword).toHaveBeenCalledWith(
+      "mysql-conn",
+    );
+    expect(mockFormValues.password).toBe("stored-secret");
+    expect(
+      findInputByPlaceholder(
+        renderer!,
+        "••••••（留空表示继续沿用已保存密码）",
+      ).props.visibilityToggle.visible,
+    ).toBe(true);
+    expect(textContent(renderer!.toJSON())).not.toContain(
+      "已输入新值，保存时会替换当前已保存内容。",
+    );
+  });
+
+  it("returns the password input to hidden mode when revealing fails", async () => {
+    backendApp.RevealSavedConnectionPrimaryPassword.mockRejectedValue(
+      new Error("secret store unavailable"),
+    );
+    Object.assign(window, {
+      go: { app: { App: backendApp } },
+    });
+    const { default: ConnectionModal } = await import("./ConnectionModal");
+    const connection = {
+      ...initialConnection("mysql"),
+      hasPrimaryPassword: true,
+    };
+
+    let renderer: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(
+        <ConnectionModal open onClose={vi.fn()} initialValues={connection} />,
+      );
+      await flushConnectionTestTick();
+    });
+
+    const placeholder = "••••••（留空表示继续沿用已保存密码）";
+    await act(async () => {
+      await findInputByPlaceholder(
+        renderer!,
+        placeholder,
+      ).props.visibilityToggle.onVisibleChange(true);
+      await flushConnectionTestTick();
+    });
+
+    expect(findInputByPlaceholder(renderer!, placeholder).props.type).toBe(
+      "password",
+    );
+    expect(antdMessage.error).toHaveBeenCalledWith(
+      expect.stringContaining("系统密文存储当前不可用"),
+    );
+  });
+
+  it("does not let a delayed password reveal overwrite a user replacement", async () => {
+    let resolveReveal: ((value: string) => void) | undefined;
+    backendApp.RevealSavedConnectionPrimaryPassword.mockImplementation(
+      () =>
+        new Promise<string>((resolve) => {
+          resolveReveal = resolve;
+        }),
+    );
+    Object.assign(window, {
+      go: { app: { App: backendApp } },
+    });
+    const { default: ConnectionModal } = await import("./ConnectionModal");
+    const connection = {
+      ...initialConnection("mysql"),
+      hasPrimaryPassword: true,
+    };
+
+    let renderer: ReactTestRenderer;
+    let revealRequest: Promise<void>;
+    await act(async () => {
+      renderer = create(
+        <ConnectionModal open onClose={vi.fn()} initialValues={connection} />,
+      );
+      await flushConnectionTestTick();
+      revealRequest = findInputByPlaceholder(
+        renderer,
+        "••••••（留空表示继续沿用已保存密码）",
+      ).props.visibilityToggle.onVisibleChange(true);
+      await Promise.resolve();
+    });
+
+    expect(
+      findInputByPlaceholder(
+        renderer!,
+        "••••••（留空表示继续沿用已保存密码）",
+      ).props.type,
+    ).toBe("password");
+    mockFormValues = { ...mockFormValues, password: "user-replacement" };
+    await act(async () => {
+      resolveReveal?.("stored-secret");
+      await revealRequest!;
+      await flushConnectionTestTick();
+    });
+
+    expect(mockFormValues.password).toBe("user-replacement");
+  });
+
+  it("does not let a delayed password reveal undo an explicit clear", async () => {
+    let resolveReveal: ((value: string) => void) | undefined;
+    backendApp.RevealSavedConnectionPrimaryPassword.mockImplementation(
+      () =>
+        new Promise<string>((resolve) => {
+          resolveReveal = resolve;
+        }),
+    );
+    Object.assign(window, {
+      go: { app: { App: backendApp } },
+    });
+    const { default: ConnectionModal } = await import("./ConnectionModal");
+    const connection = {
+      ...initialConnection("mysql"),
+      hasPrimaryPassword: true,
+    };
+
+    let renderer: ReactTestRenderer;
+    let revealRequest: Promise<void>;
+    await act(async () => {
+      renderer = create(
+        <ConnectionModal open onClose={vi.fn()} initialValues={connection} />,
+      );
+      await flushConnectionTestTick();
+      revealRequest = findInputByPlaceholder(
+        renderer,
+        "••••••（留空表示继续沿用已保存密码）",
+      ).props.visibilityToggle.onVisibleChange(true);
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      renderer!.root.findAll(
+        (node) =>
+          textContent(node).includes("清除已保存密码") &&
+          typeof node.props.onChange === "function",
+      )[0].props.onChange({ target: { checked: true } });
+    });
+    await act(async () => {
+      resolveReveal?.("stored-secret");
+      await revealRequest!;
+      await flushConnectionTestTick();
+    });
+
+    expect(String(mockFormValues.password ?? "")).toBe("");
+    await act(async () => {
+      findButton(renderer!, "保存").props.onClick();
+      await flushConnectionTestTick();
+    });
+    expect(backendApp.SaveConnection).toHaveBeenCalledWith(
+      expect.objectContaining({ clearPrimaryPassword: true }),
+    );
+  });
+
+  it("clears revealed password state when the modal closes or switches connections", async () => {
+    let resolveReveal: ((value: string) => void) | undefined;
+    backendApp.RevealSavedConnectionPrimaryPassword.mockImplementation(
+      () =>
+        new Promise<string>((resolve) => {
+          resolveReveal = resolve;
+        }),
+    );
+    Object.assign(window, {
+      go: { app: { App: backendApp } },
+    });
+    const { default: ConnectionModal } = await import("./ConnectionModal");
+    const firstConnection = {
+      ...initialConnection("mysql"),
+      hasPrimaryPassword: true,
+    };
+    const secondConnection = {
+      ...initialConnection("postgres"),
+      hasPrimaryPassword: true,
+    };
+
+    let renderer: ReactTestRenderer;
+    let revealRequest: Promise<void>;
+    await act(async () => {
+      renderer = create(
+        <ConnectionModal open onClose={vi.fn()} initialValues={firstConnection} />,
+      );
+      await flushConnectionTestTick();
+      revealRequest = findInputByPlaceholder(
+        renderer,
+        "••••••（留空表示继续沿用已保存密码）",
+      ).props.visibilityToggle.onVisibleChange(true);
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      renderer!.update(
+        <ConnectionModal
+          open={false}
+          onClose={vi.fn()}
+          initialValues={firstConnection}
+        />,
+      );
+    });
+    expect(String(mockFormValues.password ?? "")).toBe("");
+
+    await act(async () => {
+      renderer!.update(
+        <ConnectionModal open onClose={vi.fn()} initialValues={secondConnection} />,
+      );
+      await flushConnectionTestTick();
+    });
+    expect(
+      findInputByPlaceholder(
+        renderer!,
+        "••••••（留空表示继续沿用已保存密码）",
+      ).props.visibilityToggle.visible,
+    ).toBe(false);
+
+    await act(async () => {
+      resolveReveal?.("first-connection-secret");
+      await revealRequest!;
+      await flushConnectionTestTick();
+    });
+    expect(String(mockFormValues.password ?? "")).toBe("");
+  });
+
+  it("removes an already revealed password as soon as the modal closes", async () => {
+    Object.assign(window, {
+      go: { app: { App: backendApp } },
+    });
+    const { default: ConnectionModal } = await import("./ConnectionModal");
+    const connection = {
+      ...initialConnection("mysql"),
+      hasPrimaryPassword: true,
+    };
+    const onClose = vi.fn();
+
+    let renderer: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(
+        <ConnectionModal open onClose={onClose} initialValues={connection} />,
+      );
+      await flushConnectionTestTick();
+      await findInputByPlaceholder(
+        renderer,
+        "••••••（留空表示继续沿用已保存密码）",
+      ).props.visibilityToggle.onVisibleChange(true);
+      await flushConnectionTestTick();
+    });
+    expect(mockFormValues.password).toBe("stored-secret");
+
+    await act(async () => {
+      findButton(renderer!, "取消").props.onClick();
+    });
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(String(mockFormValues.password ?? "")).toBe("");
+  });
+
+  it("preserves a revealed password unless the user actually replaces it", async () => {
+    Object.assign(window, {
+      go: { app: { App: backendApp } },
+    });
+    const { default: ConnectionModal } = await import("./ConnectionModal");
+    const connection = {
+      ...initialConnection("mysql"),
+      hasPrimaryPassword: true,
+    };
+
+    let renderer: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(
+        <ConnectionModal open onClose={vi.fn()} initialValues={connection} />,
+      );
+      await flushConnectionTestTick();
+      await findInputByPlaceholder(
+        renderer,
+        "••••••（留空表示继续沿用已保存密码）",
+      ).props.visibilityToggle.onVisibleChange(true);
+      await flushConnectionTestTick();
+    });
+    await act(async () => {
+      findButton(renderer!, "保存").props.onClick();
+      await flushConnectionTestTick();
+    });
+    expect(backendApp.SaveConnection).toHaveBeenCalledWith(
+      expect.objectContaining({
+        clearPrimaryPassword: false,
+        config: expect.objectContaining({ password: "" }),
+      }),
+    );
+
+    await act(async () => {
+      renderer!.unmount();
+    });
+    backendApp.SaveConnection.mockClear();
+    let replacementRenderer: ReactTestRenderer;
+    await act(async () => {
+      replacementRenderer = create(
+        <ConnectionModal open onClose={vi.fn()} initialValues={connection} />,
+      );
+      await flushConnectionTestTick();
+      await findInputByPlaceholder(
+        replacementRenderer,
+        "••••••（留空表示继续沿用已保存密码）",
+      ).props.visibilityToggle.onVisibleChange(true);
+      await flushConnectionTestTick();
+    });
+    mockFormValues = { ...mockFormValues, password: "user-replacement" };
+    await act(async () => {
+      findButton(replacementRenderer!, "保存").props.onClick();
+      await flushConnectionTestTick();
+    });
+    expect(backendApp.SaveConnection).toHaveBeenCalledWith(
+      expect.objectContaining({
+        clearPrimaryPassword: false,
+        config: expect.objectContaining({ password: "user-replacement" }),
+      }),
+    );
+  });
 
   it("updates visible copy when languagePreference changes while the modal stays open", async () => {
     const { default: ConnectionModal } = await import("./ConnectionModal");

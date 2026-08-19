@@ -734,7 +734,7 @@ func (m *Manager) dispatchQueued() {
 			continue
 		}
 		if !m.launch(run) {
-			_, _ = m.store.CompleteRunOwned(context.Background(), run.ID, run.OwnerToken, RunStatusInterrupted, ExecutionOutcome{Resumable: true}, "manager stopped before execution", m.nowMillis())
+			m.finish(run, RunStatusInterrupted, ExecutionOutcome{Resumable: true}, "manager stopped before execution")
 			return
 		}
 	}
@@ -898,11 +898,11 @@ func (m *Manager) callExecutor(ctx context.Context, request ExecutionRequest, re
 }
 
 func (m *Manager) finish(run RunRecord, status RunStatus, outcome ExecutionOutcome, message string) bool {
-	completed, err := m.store.CompleteRunOwned(context.Background(), run.ID, run.OwnerToken, status, outcome, message, m.nowMillis())
+	_, event, err := m.store.CompleteRunOwnedWithTerminalEvent(context.Background(), run.ID, run.OwnerToken, status, outcome, message, m.nowMillis())
 	if err != nil {
 		return false
 	}
-	_, _ = m.appendEvent(context.Background(), completed, eventTypeForStatus(status), message, nil)
+	m.notifyRunEvent(event)
 	return true
 }
 
@@ -1056,21 +1056,6 @@ func decodeRunDefinition(run RunRecord) (JobDefinition, error) {
 		return JobDefinition{}, fmt.Errorf("data sync job run snapshot endpoint fingerprints do not match run %s", run.ID)
 	}
 	return definition, nil
-}
-
-func eventTypeForStatus(status RunStatus) RunEventType {
-	switch status {
-	case RunStatusSucceeded:
-		return RunEventSucceeded
-	case RunStatusPartial:
-		return RunEventPartial
-	case RunStatusCanceled:
-		return RunEventCanceled
-	case RunStatusInterrupted:
-		return RunEventInterrupted
-	default:
-		return RunEventFailed
-	}
 }
 
 type managerReporter struct {

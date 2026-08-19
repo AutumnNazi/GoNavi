@@ -48,6 +48,7 @@ func TestDownloadUpdateAssetWithFallbackRetriesChecksumMismatch(t *testing.T) {
 		[]string{primary.URL, fallback.URL},
 		assetPath,
 		expectedHash,
+		int64(len(goodPayload)),
 		nil,
 	)
 	if err != nil {
@@ -67,7 +68,7 @@ func TestDownloadUpdateAssetWithFallbackRetriesChecksumMismatch(t *testing.T) {
 
 func TestDownloadFileWithHashUsesEightParallelRanges(t *testing.T) {
 	configureUpdateManifestHTTPTest(t)
-	payload := make([]byte, 100_003)
+	payload := make([]byte, parallelDownloadMinimumSize+3)
 	for index := range payload {
 		payload[index] = byte(index % 251)
 	}
@@ -75,7 +76,7 @@ func TestDownloadFileWithHashUsesEightParallelRanges(t *testing.T) {
 
 	var probeHits atomic.Int32
 	var rangeHits atomic.Int32
-	started := make(chan struct{}, updateDownloadParallelism)
+	started := make(chan struct{}, parallelDownloadWorkers)
 	release := make(chan struct{})
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		rawRange := req.Header.Get("Range")
@@ -87,9 +88,9 @@ func TestDownloadFileWithHashUsesEightParallelRanges(t *testing.T) {
 		w.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", start, end, len(payload)))
 		w.Header().Set("Content-Length", fmt.Sprintf("%d", end-start+1))
 		w.WriteHeader(http.StatusPartialContent)
-		if rawRange == "bytes=0-0" {
+		if rawRange == fmt.Sprintf("bytes=0-%d", downloadCandidateProbeBytes-1) {
 			probeHits.Add(1)
-			_, _ = w.Write(payload[:1])
+			_, _ = w.Write(payload[:downloadCandidateProbeBytes])
 			return
 		}
 
@@ -120,7 +121,7 @@ func TestDownloadFileWithHashUsesEightParallelRanges(t *testing.T) {
 		done <- downloadOutcome{hash: hash, err: err}
 	}()
 
-	for index := 0; index < updateDownloadParallelism; index++ {
+	for index := 0; index < parallelDownloadWorkers; index++ {
 		select {
 		case <-started:
 		case <-time.After(2 * time.Second):
@@ -136,7 +137,7 @@ func TestDownloadFileWithHashUsesEightParallelRanges(t *testing.T) {
 	if outcome.hash != expectedHash {
 		t.Fatalf("hash = %q, want %q", outcome.hash, expectedHash)
 	}
-	if probeHits.Load() != 1 || rangeHits.Load() != updateDownloadParallelism {
+	if probeHits.Load() != 1 || rangeHits.Load() != parallelDownloadWorkers {
 		t.Fatalf("request counts: probe=%d ranges=%d", probeHits.Load(), rangeHits.Load())
 	}
 	if downloaded.Load() != int64(len(payload)) || total.Load() != int64(len(payload)) {
@@ -175,8 +176,8 @@ func TestDownloadFileWithHashFallsBackWhenRangeIsUnsupported(t *testing.T) {
 	if actualHash != expectedHash {
 		t.Fatalf("hash = %q, want %q", actualHash, expectedHash)
 	}
-	if hits.Load() != 1 || rangeHits.Load() != 1 {
-		t.Fatalf("request counts: total=%d range=%d, want 1/1", hits.Load(), rangeHits.Load())
+	if hits.Load() != 2 || rangeHits.Load() != 1 {
+		t.Fatalf("request counts: total=%d range=%d, want 2/1", hits.Load(), rangeHits.Load())
 	}
 	actual, err := os.ReadFile(assetPath)
 	if err != nil {
@@ -217,7 +218,7 @@ func TestReleaseFromUpdateManifestMapsAssets(t *testing.T) {
 	}
 }
 
-func TestUpdateManifestRemoteURLsPreferMirrorThenGitHub(t *testing.T) {
+func TestUpdateManifestRemoteURLsPreferDispatcherThenGitHub(t *testing.T) {
 	tests := []struct {
 		channel updateChannel
 		want    []string
@@ -238,7 +239,7 @@ func TestUpdateManifestRemoteURLsPreferMirrorThenGitHub(t *testing.T) {
 	}
 }
 
-func TestFetchStaticUpdateManifestFromURLsStopsAfterMirrorSuccess(t *testing.T) {
+func TestFetchStaticUpdateManifestFromURLsStopsAfterDispatcherSuccess(t *testing.T) {
 	configureUpdateManifestHTTPTest(t)
 
 	const version = "9.9.9"
@@ -290,7 +291,7 @@ func TestFetchStaticUpdateManifestFromURLsStopsAfterMirrorSuccess(t *testing.T) 
 	}
 }
 
-func TestFetchStaticUpdateManifestFromURLsFallsBackFromInvalidMirrorManifests(t *testing.T) {
+func TestFetchStaticUpdateManifestFromURLsFallsBackFromInvalidDispatcherManifests(t *testing.T) {
 	for _, name := range []string{
 		"HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY",
 		"http_proxy", "https_proxy", "all_proxy",

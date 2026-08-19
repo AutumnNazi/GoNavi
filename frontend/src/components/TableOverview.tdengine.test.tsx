@@ -46,6 +46,7 @@ const storeState = vi.hoisted(() => ({
 
 const backendApp = vi.hoisted(() => ({
   DBGetTables: vi.fn(),
+  DBRefreshTableStats: vi.fn(),
   DBQuery: vi.fn(),
   DBShowCreateTable: vi.fn(),
   ExportTable: vi.fn(),
@@ -215,6 +216,7 @@ describe('TableOverview metadata compatibility', () => {
         { Table: 'meters' },
       ],
     });
+    backendApp.DBRefreshTableStats.mockResolvedValue({ success: false });
     backendApp.DBQuery.mockResolvedValue({
       success: false,
       message: '[0x2600] syntax error near',
@@ -377,6 +379,7 @@ describe('TableOverview metadata compatibility', () => {
     await flushPromises();
 
     expect(backendApp.DBGetTables).toHaveBeenCalledWith(expect.any(Object), 'main');
+    expect(backendApp.DBRefreshTableStats).toHaveBeenCalledWith(expect.any(Object), 'main', ['users', 'orders']);
     expect(backendApp.DBQuery).not.toHaveBeenCalled();
     expect(messageApi.error).not.toHaveBeenCalled();
     const renderedText = collectText(renderer!.toJSON());
@@ -389,6 +392,51 @@ describe('TableOverview metadata compatibility', () => {
     expect(renderedText).toContain('2.0 KB');
     expect(renderedText).toContain('0 B');
     expect(renderedText).toContain('100%');
+  });
+
+  it('shows cached sqlite rows before an asynchronous stats refresh completes', async () => {
+    storeState.connections = [
+      {
+        id: 'conn-1',
+        config: {
+          type: 'sqlite',
+          host: '',
+          port: 0,
+          user: '',
+          password: '',
+          database: 'E:\\data\\app.db',
+          useSSH: false,
+          ssh: { host: '', port: 22, user: '', password: '', keyPath: '' },
+        },
+      },
+    ];
+    const refresh = createDeferred<{ success: boolean; data: Array<Record<string, string>> }>();
+    backendApp.DBGetTables.mockResolvedValue({
+      success: true,
+      data: [{ Table: 'users', Rows: '12' }],
+    });
+    backendApp.DBRefreshTableStats.mockReturnValue(refresh.promise);
+
+    let renderer: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<TableOverview tab={{
+        id: 'tab-1',
+        title: '表概览 - main',
+        type: 'table-overview',
+        connectionId: 'conn-1',
+        dbName: 'main',
+      } as any} />);
+    });
+    await flushPromises();
+
+    expect(collectText(renderer!.toJSON())).toContain('12');
+
+    refresh.resolve({ success: true, data: [{ Table: 'users', Rows: '25' }] });
+    await flushPromises();
+
+    const refreshedText = collectText(renderer!.toJSON());
+    expect(refreshedText).toContain('25');
+    expect(refreshedText).not.toContain('12');
   });
 
   it('loads milvus collections through DBGetTables instead of information_schema SQL', async () => {
@@ -456,6 +504,13 @@ describe('TableOverview metadata compatibility', () => {
       success: true,
       data: [
         {
+          table_name: 'reporting.reporting_summary',
+          table_comment: 'Reporting summary',
+          table_rows: 8,
+          data_length: 2048,
+          index_length: 512,
+        },
+        {
           table_name: 'reporting.orders',
           table_comment: 'Orders',
           table_rows: 12,
@@ -488,6 +543,19 @@ describe('TableOverview metadata compatibility', () => {
       expect(renderedText).not.toContain('reporting.orders');
     };
 
+    assertBareTableName();
+    await act(async () => {
+      renderer!.root.findByType('input').props.onChange({ target: { value: 'reporting' } });
+      await Promise.resolve();
+    });
+    const filteredText = collectText(renderer!.toJSON());
+    expect(filteredText).toContain('reporting_summary');
+    expect(filteredText).not.toContain('orders');
+
+    await act(async () => {
+      renderer!.root.findByType('input').props.onChange({ target: { value: '' } });
+      await Promise.resolve();
+    });
     assertBareTableName();
     await act(async () => {
       renderer!.root.findByProps({ 'data-table-overview-view-mode': 'list' }).props.onClick();

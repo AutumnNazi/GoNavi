@@ -113,7 +113,7 @@ Each image is a **full GoNavi application window**, scaled proportionally for RE
 - OpenAI · Gemini · Claude · custom OpenAI-compatible APIs  
 - Attach live table schemas as context  
 - Slash commands: generate SQL, explain, optimize, review  
-- **MCP**: install into Claude Code / Codex, or Streamable HTTP for remote agents  
+- **MCP**: after detecting a locally installed CLI, one-click connect Claude Code / Codex / OpenCode / ZCode / DeepSeek Harness / Kimi Code / Grok Build, or use Streamable HTTP for remote agents
 - Secrets stay on the GoNavi host — agents get tools, not raw passwords  
 
 </td>
@@ -263,11 +263,10 @@ Grab the latest build from **[Releases](https://github.com/Syngnat/GoNavi/releas
 
 ### Standalone CLI
 
-The standalone CLI release track is being introduced. Dev builds already carry
-headless `gonavi` archives, and the first stable CLI release will publish the
-same assets under the `gonavi-cli_${VERSION}_${GOOS}_${GOARCH}` namespace with a
-matching `gonavi-cli_${VERSION}_checksums.txt` file. Until that stable release
-exists, use the dev archives for testing only. Extract an archive and run:
+Stable and dev builds carry headless `gonavi` archives under the
+`gonavi-cli_${VERSION}_${GOOS}_${GOARCH}` namespace with a matching
+`gonavi-cli_${VERSION}_checksums.txt` file. Download the matching archive from
+the GitHub Release, verify its checksum, extract it, then run:
 
 ```bash
 gonavi list-connections
@@ -276,14 +275,8 @@ gonavi export --conn CONNECTION_ID --output orders.csv --sql 'SELECT * FROM orde
 gonavi batch --conn CONNECTION_ID --file migration.sql --allow-write
 ```
 
-After the first stable CLI release, the verified npm wrapper will be published
-and will select the matching CLI archive and checksum file for the host
-platform. Until the package appears in the npm registry, install from a release
-archive instead. Once it is published, install with:
-
-```bash
-npm install -g @syngnat/gonavi-cli
-```
+The project does not currently publish the CLI to npm. Install it directly from
+the verified release archive instead.
 
 The stable workflow also generates and retains a checksum-driven WinGet
 manifest artifact for `Syngnat.GoNavi.CLI`; it must be accepted by the WinGet

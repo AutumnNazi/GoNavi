@@ -1,18 +1,14 @@
 # @syngnat/gonavi-cli
 
-This package is published with the first stable GoNavi CLI release. It installs
-the standalone `gonavi` executable for the current platform. The npm lifecycle
-downloads the matching GoNavi Release archive and the independent
-`gonavi-cli_${VERSION}_checksums.txt` file, verifies SHA256, checks the fixed
-archive entries, and only then installs the executable.
+The npm wrapper is not currently published. Install the standalone `gonavi`
+executable directly from a GoNavi GitHub Release instead: download the matching
+platform archive and its independent `gonavi-cli_${VERSION}_checksums.txt`
+file, verify SHA256, extract the archive, then run `gonavi list-connections`.
 
-```bash
-npm install -g @syngnat/gonavi-cli
-gonavi list-connections
-```
-
-Before the first stable CLI release is published, install the CLI directly
-from a release archive instead of the npm registry.
+This package source remains in the repository for a future opt-in npm
+distribution. If that distribution is enabled, its lifecycle will download the
+matching release archive, verify SHA256, check the fixed archive entries, and
+only then install the executable.
 
 The package does not store credentials or configure a separate data directory;
 the executable keeps the normal `GONAVI_DATA_ROOT` and `~/.gonavi` resolution.

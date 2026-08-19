@@ -124,6 +124,7 @@ type importProgressState struct {
 	BytesRead      int64  `json:"bytesRead,omitempty"`
 	TotalBytes     int64  `json:"totalBytes,omitempty"`
 	Stage          string `json:"stage,omitempty"`
+	CheckpointSafe bool   `json:"checkpointSafe,omitempty"`
 }
 
 type importExecutionResult struct {
@@ -614,6 +615,21 @@ func (c *importBatchConsumer) SetContext(ctx context.Context) {
 	c.ctx = ctx
 }
 
+// SetInitialProgress continues a source stream after a durably committed
+// source-row checkpoint. The parser still reads the skipped prefix to retain
+// format validation and source-identity guarantees, while progress remains in
+// the original source-row coordinate system.
+func (c *importBatchConsumer) SetInitialProgress(current, succeeded, skipped, failed int) {
+	if c == nil {
+		return
+	}
+	c.currentRow = max(0, current)
+	c.successCount = max(0, succeeded)
+	c.skippedCount = max(0, skipped)
+	c.failedCount = max(0, failed)
+	c.lastProgressRow = c.currentRow
+}
+
 func (c *importBatchConsumer) contextError() error {
 	if c == nil || c.ctx == nil {
 		return nil
@@ -809,6 +825,11 @@ func (c *importBatchConsumer) emitProgress(current int, force ...bool) {
 	}
 	c.lastProgressRow = current
 	c.lastProgressAt = time.Now()
+	// A bulk writer has an uncommitted parser buffer until Flush succeeds. Its
+	// checkpoint is therefore safe only at an explicit flush boundary. The
+	// per-row path has no pending database write after ApplyOne returns, so it
+	// can safely advance the durable cursor after every accepted row.
+	checkpointSafe := !c.outcomeUnknown && (c.writer == nil || !c.writer.BatchEnabled() || c.continueOnError || forced)
 	c.report(importProgressState{
 		JobID:          c.jobID,
 		Current:        current,
@@ -820,6 +841,7 @@ func (c *importBatchConsumer) emitProgress(current int, force ...bool) {
 		BytesRead:      c.bytesRead,
 		TotalBytes:     c.totalBytes,
 		Stage:          "write",
+		CheckpointSafe: checkpointSafe,
 	})
 }
 

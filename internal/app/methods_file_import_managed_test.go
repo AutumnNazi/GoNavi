@@ -108,6 +108,9 @@ func TestImportDataWithProgressOptionsPersistsCompletedManagedJob(t *testing.T) 
 	if job.SourceIdentityToken == "" || job.TargetFingerprint == "" || job.OptionsHash == "" {
 		t.Fatalf("managed job identity is incomplete: %#v", job)
 	}
+	if job.TableImportOptions == nil || job.TableImportOptions.ContinueOnError == nil || *job.TableImportOptions.ContinueOnError {
+		t.Fatalf("managed job replay recipe is incomplete: %#v", job.TableImportOptions)
+	}
 }
 
 func TestImportDataWithProgressOptionsPublishesRejectedRowsAndPartialJob(t *testing.T) {

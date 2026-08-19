@@ -24,6 +24,7 @@ import (
 	nacosbackend "GoNavi-Wails/internal/nacos"
 	proxytunnel "GoNavi-Wails/internal/proxy"
 	redisbackend "GoNavi-Wails/internal/redis"
+	"GoNavi-Wails/internal/requesttrace"
 	"GoNavi-Wails/internal/resultdiff"
 	"GoNavi-Wails/internal/secretstore"
 	"GoNavi-Wails/internal/sqlaudit"
@@ -138,10 +139,11 @@ type databaseConnectResult struct {
 }
 
 type queryContext struct {
-	cancel          context.CancelFunc
-	started         time.Time
-	retainUntilDone bool
-	registrationID  uint64
+	cancel                  context.CancelFunc
+	started                 time.Time
+	retainUntilDone         bool
+	cancellationUnsupported bool
+	registrationID          uint64
 }
 
 type managedSQLTransaction struct {
@@ -192,6 +194,7 @@ type App struct {
 	importTasksClosing            bool
 	dataRootApplyMu               sync.Mutex
 	configDir                     string
+	sqliteTableStatsMu            sync.Mutex
 	secretStore                   secretstore.SecretStore
 	runningQueries                map[string]queryContext // queryID -> cancelFunc and start time
 	sqlTransactionMu              sync.Mutex
@@ -202,6 +205,8 @@ type App struct {
 	sqlAuditRuntimeActive         bool
 	sqlAuditSuspended             bool
 	sqlAuditAppendMu              sync.Mutex
+	requestTraceMu                sync.Mutex
+	requestTraceStore             *requesttrace.Store
 	sqlAuditHealthMu              sync.RWMutex
 	sqlAuditHealth                sqlAuditHealthState
 	sqlAuditHealthPath            string
@@ -282,6 +287,7 @@ func NewAppWithSecretStore(store secretstore.SecretStore) *App {
 		runningQueries:                make(map[string]queryContext),
 		importTasks:                   make(map[string]importTaskRegistration),
 		sqlTransactions:               make(map[string]*managedSQLTransaction),
+		requestTraceStore:             requesttrace.NewStore(requesttrace.DefaultCapacity),
 		configDir:                     resolveAppConfigDir(),
 		secretStore:                   store,
 		localizer:                     newAppLocalizer(),
@@ -1887,6 +1893,11 @@ func generateQueryID() string {
 }
 
 func (a *App) registerRunningQuery(queryID string, cancel context.CancelFunc, retainUntilDone bool) func() {
+	cleanup, _ := a.registerRunningQueryWithCancellationCapability(queryID, cancel, retainUntilDone)
+	return cleanup
+}
+
+func (a *App) registerRunningQueryWithCancellationCapability(queryID string, cancel context.CancelFunc, retainUntilDone bool) (func(), func(bool)) {
 	a.queryMu.Lock()
 	if a.runningQueries == nil {
 		a.runningQueries = make(map[string]queryContext)
@@ -1904,13 +1915,22 @@ func (a *App) registerRunningQuery(queryID string, cancel context.CancelFunc, re
 	}
 	a.queryMu.Unlock()
 
-	return func() {
+	cleanup := func() {
 		a.queryMu.Lock()
 		if current, exists := a.runningQueries[queryID]; exists && current.registrationID == registrationID {
 			delete(a.runningQueries, queryID)
 		}
 		a.queryMu.Unlock()
 	}
+	setCancellable := func(cancellable bool) {
+		a.queryMu.Lock()
+		if current, exists := a.runningQueries[queryID]; exists && current.registrationID == registrationID {
+			current.cancellationUnsupported = !cancellable
+			a.runningQueries[queryID] = current
+		}
+		a.queryMu.Unlock()
+	}
+	return cleanup, setCancellable
 }
 
 // registerExclusiveRunningQuery registers a long-running task only when the
@@ -1954,13 +1974,23 @@ func (a *App) CancelQuery(queryID string) connection.QueryResult {
 	defer a.queryMu.Unlock()
 
 	if ctx, exists := a.runningQueries[queryID]; exists {
+		if ctx.cancellationUnsupported {
+			logger.Warnf("取消查询失败：queryID=%s 的底层驱动不支持取消", queryID)
+			return connection.QueryResult{
+				Success:           false,
+				Message:           a.appText("query_editor.message.cancel_unsupported", nil),
+				CancellationState: connection.QueryCancellationStateUnsupported,
+			}
+		}
 		ctx.cancel()
+		a.requestDiagnostics().MarkCancellation(queryID, true)
 		if !ctx.retainUntilDone {
 			delete(a.runningQueries, queryID)
 		}
 		logger.Infof("查询已取消：queryID=%s", queryID)
 		return connection.QueryResult{Success: true, Message: a.appText("query_editor.message.cancel_success", nil)}
 	}
+	a.requestDiagnostics().MarkCancellation(queryID, false)
 	logger.Warnf("取消查询失败：queryID=%s 不存在或已完成", queryID)
 	return connection.QueryResult{Success: false, Message: a.appText("query_editor.message.cancel_no_running", nil)}
 }

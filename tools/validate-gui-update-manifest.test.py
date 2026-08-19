@@ -9,6 +9,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from urllib.parse import urlencode
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -36,6 +37,7 @@ class ValidateGUIUpdateManifestTest(unittest.TestCase):
         app_tag: str,
         asset_name: str,
         asset_bytes: bytes,
+        dispatcher: bool = False,
     ) -> tuple[Path, Path]:
         app_dir = root / "app-assets"
         app_dir.mkdir()
@@ -50,6 +52,13 @@ class ValidateGUIUpdateManifestTest(unittest.TestCase):
             tag_name = "dev-latest"
             version = app_tag
 
+        asset_url = f"{MIRROR_BASES[channel]}/{app_tag}/{asset_name}"
+        if dispatcher:
+            prefix = "/gonavi/releases/download" if channel == "stable" else "/gonavi/dev/releases/download"
+            asset_url = (
+                "https://download-dispatch.syngnat.top/v1/resolve?"
+                + urlencode({"path": f"{prefix}/{app_tag}/{asset_name}"})
+            )
         manifest = {
             "schemaVersion": 1,
             "component": "gui",
@@ -60,7 +69,7 @@ class ValidateGUIUpdateManifestTest(unittest.TestCase):
             "assets": [
                 {
                     "name": asset_name,
-                    "url": f"{MIRROR_BASES[channel]}/{app_tag}/{asset_name}",
+                    "url": asset_url,
                     "apiUrl": f"{GITHUB_BASE}/{tag_name}/{asset_name}",
                     "size": len(asset_bytes),
                     "sha256": sha256(asset_bytes),
@@ -78,9 +87,9 @@ class ValidateGUIUpdateManifestTest(unittest.TestCase):
         app_tag: str,
         app_dir: Path,
         manifest_path: Path,
+        dispatcher: bool = False,
     ) -> subprocess.CompletedProcess[str]:
-        return subprocess.run(
-            [
+        command = [
                 sys.executable,
                 str(SCRIPT),
                 "--channel",
@@ -93,7 +102,19 @@ class ValidateGUIUpdateManifestTest(unittest.TestCase):
                 str(manifest_path),
                 "--github-repository",
                 "Syngnat/GoNavi",
-            ],
+            ]
+        if dispatcher:
+            prefix = "/gonavi/releases/download" if channel == "stable" else "/gonavi/dev/releases/download"
+            command.extend(
+                [
+                    "--download-dispatcher-url",
+                    "https://download-dispatch.syngnat.top/v1/resolve",
+                    "--download-path-prefix",
+                    prefix,
+                ]
+            )
+        return subprocess.run(
+            command,
             cwd=str(ROOT),
             check=False,
             capture_output=True,
@@ -116,6 +137,28 @@ class ValidateGUIUpdateManifestTest(unittest.TestCase):
                 app_tag="v1.2.3",
                 app_dir=app_dir,
                 manifest_path=manifest_path,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_accepts_stable_gui_manifest_with_dispatcher(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            app_dir, manifest_path = self.write_manifest(
+                root,
+                channel="stable",
+                app_tag="v1.2.3",
+                asset_name="GoNavi-1.2.3-Windows-Amd64-Portable.exe",
+                asset_bytes=b"signed-portable",
+                dispatcher=True,
+            )
+
+            result = self.run_validator(
+                channel="stable",
+                app_tag="v1.2.3",
+                app_dir=app_dir,
+                manifest_path=manifest_path,
+                dispatcher=True,
             )
 
             self.assertEqual(result.returncode, 0, result.stderr)
@@ -219,7 +262,10 @@ class ValidateGUIUpdateManifestTest(unittest.TestCase):
         self.assertIn("tools/validate-gui-update-manifest.py", dev)
         self.assertIn("--channel dev", dev)
         self.assertIn("tools/validate-gui-update-manifest.py", mirror)
-        self.assertIn('--channel "${MIRROR_CHANNEL}"', mirror)
+        self.assertIn('--channel "${PUB_CHANNEL}"', mirror)
+        self.assertIn("--download-dispatcher-url", publish)
+        self.assertIn("--download-dispatcher-url", dev)
+        self.assertIn("--download-dispatcher-url", mirror)
 
 
 if __name__ == "__main__":

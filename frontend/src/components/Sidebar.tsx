@@ -152,7 +152,7 @@ import {
     normalizeSidebarDatabaseRefreshRequest,
     SIDEBAR_DATABASE_REFRESH_EVENT,
 } from '../utils/sidebarDatabaseRefresh';
-import { resolveDataSourceType } from '../utils/dataSourceCapabilities';
+import { getDataSourceCapabilities, resolveDataSourceType } from '../utils/dataSourceCapabilities';
 import { isConnectionStructureEditRestricted } from '../utils/connectionReadOnly';
 import { noAutoCapInputProps } from '../utils/inputAutoCap';
 import {
@@ -872,6 +872,14 @@ const Sidebar: React.FC<{
   const connectionReloadSignaturesRef = useRef<Record<string, string>>({});
   expandedKeysRef.current = expandedKeys;
   const connectionIds = useMemo(() => connections.map((conn) => conn.id), [connections]);
+  const queryCapableConnectionIds = useMemo(
+      () => new Set(
+          connections
+              .filter((conn) => getDataSourceCapabilities(conn.config).supportsQueryEditor)
+              .map((conn) => conn.id),
+      ),
+      [connections],
+  );
   const connectionIdSet = useMemo(() => new Set(connectionIds), [connectionIds]);
   const unmatchedSavedQueries = useMemo(
       () => savedQueries.filter((query) => isSavedQueryUnmatchedForConnectionIds(query, connectionIdSet)),
@@ -2802,6 +2810,7 @@ const Sidebar: React.FC<{
       openEditRoutine,
       openCreateRoutine,
       handleDropRoutine,
+      handleCompileOracleObject,
       resolveMessagePublishTarget,
       openMessagePublishModal,
       handleMessagePublishSuccess,
@@ -3103,6 +3112,7 @@ const Sidebar: React.FC<{
       closeV2CommandSearch,
       commandSearchFlatItems,
       connectionIds,
+      queryCapableConnectionIds,
       findTreeNodeByKeyRef,
       locateObjectInSidebar,
       loadDatabases,
@@ -3217,6 +3227,7 @@ const Sidebar: React.FC<{
     openRoutineDefinition,
     openEditRoutine,
     handleDropRoutine,
+    handleCompileOracleObject,
     openEventDefinition,
     openEditEvent,
     openSequenceDefinition,

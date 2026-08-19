@@ -10,6 +10,16 @@ on:
         description: Release tag to publish (for example, v0.8.7)
         required: true
         type: string
+      publish_npm:
+        description: Publish the optional npm CLI wrapper after the GitHub Release is public
+        required: false
+        default: false
+        type: boolean
+      tooling_ref:
+        description: Optional ref containing current release tooling for mirror-only re-syncs
+        required: false
+        default: ''
+        type: string
 
 permissions:
   actions: read
@@ -17,15 +27,19 @@ permissions:
 
 concurrency:
   # Stable and dev publications share the same mirror targets.
-  group: gonavi-release-publication
+  group: gonavi-download-publication
   cancel-in-progress: false
 
 jobs:
   publish:
     name: Validate, mirror, and publish release
     runs-on: ubuntu-latest
+    timeout-minutes: 120
     env:
       RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+      # npm distribution is opt-in. Stable GitHub/edge publication must not depend
+      # on an npm organization, token, or registry availability.
+      PUBLISH_NPM: ${{ inputs.publish_npm && 'true' || 'false' }}
     steps:
       - name: Validate release
         id: validate
@@ -58,6 +72,18 @@ jobs:
               commitSha = annotatedTag.data.object.sha;
             }
 
+            const releaseListForValidation = await github.rest.repos.listReleases({
+              owner,
+              repo,
+              per_page: 100,
+            });
+            const releaseForValidation = releaseListForValidation.data
+              .find((item) => item.tag_name === tag);
+            if (!releaseForValidation) {
+              core.setFailed('Release not found for ' + tag);
+              return;
+            }
+
             const workflowRuns = await github.rest.actions.listWorkflowRuns({
               owner,
               repo,
@@ -67,14 +93,66 @@ jobs:
               per_page: 100,
             });
             const runs = workflowRuns.data.workflow_runs;
-            const successfulRun = runs.find((run) => (
+            let successfulRun = runs.find((run) => (
               run.head_sha === commitSha
               && run.status === 'completed'
               && run.conclusion === 'success'
             ));
             if (!successfulRun) {
-              core.setFailed(`No successful Release workflow found for ${tag} at ${commitSha}`);
-              return;
+              const provenanceMatch = String(releaseForValidation.body || '').match(
+                /<!--\s*gonavi-release-provenance\s+(\{[\s\S]*?\})\s*-->/
+              );
+              if (!provenanceMatch) {
+                core.setFailed(
+                  'No successful tag-push Release workflow found for ' + tag
+                  + ' at ' + commitSha
+                  + ', and the draft release has no manual-release provenance'
+                );
+                return;
+              }
+              let provenance;
+              try {
+                provenance = JSON.parse(provenanceMatch[1]);
+              } catch (error) {
+                core.setFailed('Release provenance is not valid JSON: ' + error.message);
+                return;
+              }
+              const provenanceRunId = Number(provenance?.runId);
+              if (
+                !provenance
+                || provenance.schema !== 1
+                || provenance.tag !== tag
+                || String(provenance.commit || '').toLowerCase() !== commitSha.toLowerCase()
+                || !Number.isSafeInteger(provenanceRunId)
+                || provenanceRunId <= 0
+              ) {
+                core.setFailed('Release provenance does not bind this draft to its immutable tag');
+                return;
+              }
+              const repository = await github.rest.repos.get({ owner, repo });
+              const dispatchedWorkflowRuns = await github.rest.actions.listWorkflowRuns({
+                owner,
+                repo,
+                workflow_id: 'release.yml',
+                event: 'workflow_dispatch',
+                branch: repository.data.default_branch,
+                per_page: 100,
+              });
+              successfulRun = dispatchedWorkflowRuns.data.workflow_runs.find((run) => (
+                Number(run.id) === provenanceRunId
+                && run.status === 'completed'
+                && run.conclusion === 'success'
+              ));
+              if (!successfulRun) {
+                core.setFailed(
+                  'No successful manual Release workflow matches provenance run ' + provenanceRunId
+                );
+                return;
+              }
+              core.notice(
+                'Validated manual Release workflow ' + provenanceRunId
+                + ' for immutable tag ' + tag
+              );
             }
 
             const releaseList = await github.rest.repos.listReleases({
@@ -196,9 +274,10 @@ jobs:
       - name: Checkout release tooling
         uses: actions/checkout@v5
         with:
-          # Publish the package and mirror payload from the exact immutable tag
-          # whose assets were validated above, never from the dispatch branch.
-          ref: ${{ steps.validate.outputs.tag }}
+          # Normal releases use the exact immutable tag whose assets were
+          # validated above. A mirror-only re-sync may opt into a newer tooling
+          # ref so an older release can receive newly added edge destinations.
+          ref: ${{ inputs.tooling_ref || steps.validate.outputs.tag }}
 
       - name: Validate stable npm CLI package version
         env:
@@ -300,7 +379,9 @@ jobs:
             --app-tag "${RELEASE_TAG}" \
             --app-dir "${app_dir}" \
             --manifest "${app_dir}/latest.json" \
-            --github-repository "${GITHUB_REPOSITORY}"
+            --github-repository "${GITHUB_REPOSITORY}" \
+            --download-dispatcher-url "https://download-dispatch.syngnat.top/v1/resolve" \
+            --download-path-prefix "/gonavi/releases/download"
           if [[ "${has_driver_release}" == true ]]; then
             jq -e '.assets | type == "object" and length > 0' \
               "${driver_dir}/GoNavi-DriverAgents-Index.json" >/dev/null
@@ -309,10 +390,24 @@ jobs:
               exit 1
             }
             (cd "${driver_dir}" && sha256sum --check SHA256SUMS)
+            driver_version_index="${RUNNER_TEMP}/driver-version-index.json"
+            driver_hashes="${RUNNER_TEMP}/driver-asset-sha256.json"
             jq --arg tag "${RELEASE_TAG}" \
-              '.tagName = $tag' \
+              '.tagName = $tag | del(.mirrorTagName) | del(.assets["GoNavi-DriverAgents.zip"]) | del(.assetSha256)' \
               "${driver_dir}/GoNavi-DriverAgents-Index.json" \
-              > "${RUNNER_TEMP}/driver-latest-index.json"
+              > "${RUNNER_TEMP}/driver-version-index-base.json"
+            while IFS= read -r name; do
+              [[ "${name}" == "$(basename "${name}")" && -f "${driver_dir}/${name}" ]] || {
+                echo "Invalid or missing driver asset: ${name}" >&2
+                exit 1
+              }
+              printf '%s\t%s\n' "${name}" "$(sha256sum "${driver_dir}/${name}" | awk '{print $1}')"
+            done < <(jq -r '.assets | keys[]' "${RUNNER_TEMP}/driver-version-index-base.json") \
+              | jq -Rn '[inputs | split("\t") | {(.[0]): .[1]}] | add // {}' > "${driver_hashes}"
+            jq --slurpfile hashes "${driver_hashes}" \
+              '.assetSha256 = $hashes[0]' \
+              "${RUNNER_TEMP}/driver-version-index-base.json" > "${driver_version_index}"
+            cp "${driver_version_index}" "${RUNNER_TEMP}/driver-latest-index.json"
           fi
 
           while IFS=$'\t' read -r name expected_size expected_sha; do
@@ -405,6 +500,7 @@ jobs:
             core.notice(`Verified GitHub latest release ${tag}`);
 
       - name: Validate npm publication credentials
+        if: ${{ env.PUBLISH_NPM == 'true' }}
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
         shell: bash
@@ -415,6 +511,7 @@ jobs:
       # npm postinstall downloads the exact CLI archive from GitHub.  The
       # release must therefore be public and verified before npm publish.
       - name: Verify public CLI release assets for npm postinstall
+        if: ${{ env.PUBLISH_NPM == 'true' }}
         env:
           RELEASE_TAG: ${{ steps.validate.outputs.tag }}
         shell: bash
@@ -436,12 +533,14 @@ jobs:
           done
 
       - name: Setup Node for npm CLI publication
+        if: ${{ env.PUBLISH_NPM == 'true' }}
         uses: actions/setup-node@v5
         with:
           node-version: '20'
           registry-url: https://registry.npmjs.org
 
       - name: Publish npm CLI package
+        if: ${{ env.PUBLISH_NPM == 'true' }}
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
@@ -466,6 +565,7 @@ jobs:
           fi
 
       - name: Verify npm CLI package metadata
+        if: ${{ env.PUBLISH_NPM == 'true' }}
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
@@ -503,6 +603,10 @@ jobs:
           console.log(`verified npm metadata for ${metadata.name}@${metadata.version}`);
           NODE
 
+      - name: Skip npm CLI publication
+        if: ${{ env.PUBLISH_NPM != 'true' }}
+        run: echo "npm CLI publication is disabled for this release; GitHub and edge downloads remain enabled."
+
       - name: Generate and retain WinGet CLI manifest
         env:
           RELEASE_TAG: ${{ steps.validate.outputs.tag }}
@@ -530,7 +634,7 @@ jobs:
           if-no-files-found: error
           retention-days: 90
 
-      - name: Mirror stable release to Gatewaysentry
+      - name: Publish stable release to verified static edge
         uses: ./.github/actions/publish-vps-mirror
         with:
           channel: stable
@@ -540,10 +644,19 @@ jobs:
           driver-enabled: ${{ steps.mirror_payload.outputs.has_driver_release }}
           driver-tag: ${{ steps.validate.outputs.tag }}
           driver-dir: ${{ runner.temp }}/driver-release
-          driver-version-index: ${{ runner.temp }}/driver-release/GoNavi-DriverAgents-Index.json
+          driver-version-index: ${{ runner.temp }}/driver-version-index.json
           driver-latest-index: ${{ runner.temp }}/driver-latest-index.json
-          ssh-host: ${{ secrets.MIRROR_SSH_HOST }}
-          ssh-port: ${{ secrets.MIRROR_SSH_PORT }}
-          ssh-user: ${{ secrets.MIRROR_SSH_USER }}
-          ssh-private-key: ${{ secrets.MIRROR_SSH_PRIVATE_KEY }}
-          ssh-known-hosts: ${{ secrets.MIRROR_SSH_KNOWN_HOSTS }}
+          dmit-ssh-host: ${{ secrets.CDN_DMIT_SSH_HOST }}
+          dmit-ssh-port: ${{ secrets.CDN_DMIT_SSH_PORT }}
+          dmit-ssh-user: ${{ secrets.CDN_DMIT_SSH_USER }}
+          dmit-ssh-private-key: ${{ secrets.CDN_DMIT_SSH_PRIVATE_KEY }}
+          dmit-ssh-known-hosts: ${{ secrets.CDN_DMIT_SSH_KNOWN_HOSTS }}
+          netcup-ssh-host: ${{ secrets.CDN_NETCUP_SSH_HOST }}
+          netcup-ssh-port: ${{ secrets.CDN_NETCUP_SSH_PORT }}
+          netcup-ssh-user: ${{ secrets.CDN_NETCUP_SSH_USER }}
+          netcup-ssh-private-key: ${{ secrets.CDN_NETCUP_SSH_PRIVATE_KEY }}
+          netcup-ssh-known-hosts: ${{ secrets.CDN_NETCUP_SSH_KNOWN_HOSTS }}
+          netcup-base-url: ${{ vars.CDN_NETCUP_BASE_URL }}
+          cloudflare-account-id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          cloudflare-api-token: ${{ secrets.CLOUDFLARE_KV_API_TOKEN }}
+          routing-state-kv-id: ${{ vars.ROUTING_STATE_KV_ID }}

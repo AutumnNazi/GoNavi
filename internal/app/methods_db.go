@@ -1100,6 +1100,16 @@ func buildQueryExecutionFailure(ctx context.Context, err error, message string, 
 	return result
 }
 
+func (a *App) buildCancellationUnsupportedExecutionResult(result connection.QueryResult, err error) connection.QueryResult {
+	result.Success = err == nil
+	result.CancellationState = connection.QueryCancellationStateUnsupported
+	result.Message = a.appText("query_editor.message.cancel_unsupported", nil)
+	if err != nil {
+		result.Message += ": " + err.Error()
+	}
+	return result
+}
+
 func containsSQLAuditWrite(dbType string, query string) bool {
 	statements := splitSQLStatementsForDialect(dbType, query)
 	if len(statements) == 0 {
@@ -1179,13 +1189,29 @@ func (a *App) dbQueryWithCancel(
 	queryID string,
 	auditOptions dbQueryAuditOptions,
 ) (result connection.QueryResult) {
-	trackQueryHistory := auditOptions.trackHistory
-	auditStartedAt := time.Now()
-	var queryExecutionDuration time.Duration
 	runConfig := normalizeRunConfig(config, dbName)
+	if queryID == "" {
+		queryID = requestTraceIDFromContext(auditOptions.executionContext)
+	}
 	if queryID == "" {
 		queryID = generateQueryID()
 	}
+	traceContext, requestTrace, ownsRequestTrace := a.beginQueryRequestTrace(
+		auditOptions.executionContext,
+		runConfig,
+		queryID,
+		auditOptions.source,
+		"database.query",
+	)
+	auditOptions.executionContext = traceContext
+	defer func() {
+		a.recordQueryRequestTraceOutcome(requestTrace, result, ownsRequestTrace)
+	}()
+	requestTrace.AddEvent("query.accepted", nil)
+
+	trackQueryHistory := auditOptions.trackHistory
+	auditStartedAt := time.Now()
+	var queryExecutionDuration time.Duration
 	query = sanitizeSQLForPgLike(resolveDDLDBType(config), query)
 	trackSQLAudit := auditOptions.auditAll || (auditOptions.auditWrites && containsSQLAuditWrite(resolveDDLDBType(runConfig), query))
 	if trackSQLAudit {
@@ -1213,12 +1239,19 @@ func (a *App) dbQueryWithCancel(
 		}()
 	}
 
+	if err := a.ensureDataSourceQueryCapability(config); err != nil {
+		return connection.QueryResult{Success: false, Message: err.Error(), QueryID: queryID}
+	}
 	if err := ensureConnectionAllowsQuery(config, query); err != nil {
 		return connection.QueryResult{Success: false, Message: err.Error(), QueryID: queryID}
 	}
 
 	ctx, cancel := newQueryExecutionContextWithParent(auditOptions.executionContext, runConfig)
-	cleanupRunningQuery := a.registerRunningQuery(queryID, cancel, true)
+	if deadline, ok := ctx.Deadline(); ok {
+		requestTrace.SetRequestMetadata("", "", deadline)
+	}
+	requestTrace.AddEvent("driver.dispatched", nil)
+	cleanupRunningQuery, setRunningQueryCancellable := a.registerRunningQueryWithCancellationCapability(queryID, cancel, true)
 	defer func() {
 		cancel()
 		cleanupRunningQuery()
@@ -1232,20 +1265,31 @@ func (a *App) dbQueryWithCancel(
 
 	isReadQuery := isReadOnlySQLQuery(runConfig.Type, query)
 	tryQueryFirst := shouldTryQueryResultFirst(runConfig.Type, query)
+	legacyCancellationUnsupported := false
 
 	runReadQuery := func(inst db.Database) ([]map[string]interface{}, []string, error) {
 		startedAt := time.Now()
 		defer func() { queryExecutionDuration += time.Since(startedAt) }()
-		if q, ok := inst.(interface {
-			QueryContext(context.Context, string) ([]map[string]interface{}, []string, error)
-		}); ok {
+		if q, ok := inst.(db.QueryContexter); ok {
+			setRunningQueryCancellable(true)
 			return q.QueryContext(ctx, query)
 		}
-		return inst.Query(query)
+		if err := ctx.Err(); err != nil {
+			return nil, nil, err
+		}
+		setRunningQueryCancellable(false)
+		if err := ctx.Err(); err != nil {
+			setRunningQueryCancellable(true)
+			return nil, nil, err
+		}
+		data, columns, err := inst.Query(query)
+		legacyCancellationUnsupported = ctx.Err() != nil
+		return data, columns, err
 	}
 
 	runReadQueryWithMessages := func(inst db.Database) ([]map[string]interface{}, []string, []string, error) {
 		if q, ok := inst.(db.QueryMessageExecer); ok {
+			setRunningQueryCancellable(true)
 			startedAt := time.Now()
 			data, columns, messages, err := q.QueryContextWithMessages(ctx, query)
 			queryExecutionDuration += time.Since(startedAt)
@@ -1258,24 +1302,45 @@ func (a *App) dbQueryWithCancel(
 	runExecQuery := func(inst db.Database) (int64, error) {
 		startedAt := time.Now()
 		defer func() { queryExecutionDuration += time.Since(startedAt) }()
-		if e, ok := inst.(interface {
-			ExecContext(context.Context, string) (int64, error)
-		}); ok {
+		if e, ok := inst.(db.ExecContexter); ok {
+			setRunningQueryCancellable(true)
 			return e.ExecContext(ctx, query)
 		}
-		return inst.Exec(query)
+		if err := ctx.Err(); err != nil {
+			return 0, err
+		}
+		setRunningQueryCancellable(false)
+		if err := ctx.Err(); err != nil {
+			setRunningQueryCancellable(true)
+			return 0, err
+		}
+		affected, err := inst.Exec(query)
+		legacyCancellationUnsupported = ctx.Err() != nil
+		return affected, err
 	}
 
 	if isReadQuery || tryQueryFirst {
 		data, columns, messages, err := runReadQueryWithMessages(dbInst)
+		if legacyCancellationUnsupported {
+			return a.buildCancellationUnsupportedExecutionResult(connection.QueryResult{
+				Data: data, Fields: columns, Messages: messages, QueryID: queryID,
+			}, err)
+		}
 		if err != nil && isReadQuery && shouldRefreshCachedConnection(err) {
 			if a.invalidateCachedDatabase(runConfig, err) {
+				requestTrace.MarkRetry("cached connection refresh")
+				setRunningQueryCancellable(true)
 				retryInst, retryErr := a.getDatabaseWithContext(ctx, runConfig, true)
 				if retryErr != nil {
 					logger.Error(retryErr, "DBQuery 重建连接失败：%s SQL片段=%q", formatConnSummary(runConfig), sqlSnippet(query))
 					return buildQueryConnectionFailure(retryErr, queryID, auditOptions.classifyConnectionErrors)
 				}
 				data, columns, messages, err = runReadQueryWithMessages(retryInst)
+				if legacyCancellationUnsupported {
+					return a.buildCancellationUnsupportedExecutionResult(connection.QueryResult{
+						Data: data, Fields: columns, Messages: messages, QueryID: queryID,
+					}, err)
+				}
 			}
 		}
 		if err == nil {
@@ -1294,6 +1359,11 @@ func (a *App) dbQueryWithCancel(
 	}
 
 	affected, err := runExecQuery(dbInst)
+	if legacyCancellationUnsupported {
+		return a.buildCancellationUnsupportedExecutionResult(connection.QueryResult{
+			Data: map[string]int64{"affectedRows": affected}, QueryID: queryID,
+		}, err)
+	}
 	if err != nil {
 		if shouldRefreshCachedConnection(err) {
 			a.invalidateCachedDatabase(runConfig, err)
@@ -1329,6 +1399,25 @@ func (a *App) dbQueryMulti(
 	auditOptions dbQueryMultiAuditOptions,
 ) (result connection.QueryResult) {
 	runConfig := normalizeRunConfig(config, dbName)
+	if queryID == "" {
+		queryID = requestTraceIDFromContext(auditOptions.executionContext)
+	}
+	if queryID == "" {
+		queryID = generateQueryID()
+	}
+	traceContext, requestTrace, ownsRequestTrace := a.beginQueryRequestTrace(
+		auditOptions.executionContext,
+		runConfig,
+		queryID,
+		auditOptions.source,
+		"database.query_multi",
+	)
+	auditOptions.executionContext = traceContext
+	defer func() {
+		a.recordQueryRequestTraceOutcome(requestTrace, result, ownsRequestTrace)
+	}()
+	requestTrace.AddEvent("query.accepted", nil)
+
 	resolvedDBType := resolveDDLDBType(runConfig)
 	trackSQLAudit := auditOptions.auditAll || (auditOptions.auditWrites && containsSQLAuditWrite(resolvedDBType, query))
 	auditSource := normalizeSQLAuditSource(auditOptions.source)
@@ -1389,17 +1478,20 @@ func (a *App) dbQueryMulti(
 		})
 	}
 
-	if queryID == "" {
-		queryID = generateQueryID()
-	}
-
 	query = sanitizeSQLForPgLike(resolveDDLDBType(config), query)
+	if err := a.ensureDataSourceQueryCapability(config); err != nil {
+		return connection.QueryResult{Success: false, Message: err.Error(), QueryID: queryID}
+	}
 	if err := ensureConnectionAllowsQuery(config, query); err != nil {
 		return connection.QueryResult{Success: false, Message: err.Error(), QueryID: queryID}
 	}
 
 	ctx, cancel := newQueryExecutionContextWithParent(auditOptions.executionContext, runConfig)
-	cleanupRunningQuery := a.registerRunningQuery(queryID, cancel, true)
+	if deadline, ok := ctx.Deadline(); ok {
+		requestTrace.SetRequestMetadata("", "", deadline)
+	}
+	requestTrace.AddEvent("driver.dispatched", nil)
+	cleanupRunningQuery, setRunningQueryCancellable := a.registerRunningQueryWithCancellationCapability(queryID, cancel, true)
 	defer func() {
 		cancel()
 		cleanupRunningQuery()
@@ -1416,6 +1508,7 @@ func (a *App) dbQueryMulti(
 			a.markCachedDatabaseHealthy(dbInst, time.Now())
 		}
 	}()
+	legacyCancellationUnsupported := false
 
 	// 尝试使用驱动原生多结果集支持。
 	// 注意：原生 conn.Query() 执行写操作（UPDATE/INSERT/DELETE）时，
@@ -1481,29 +1574,47 @@ func (a *App) dbQueryMulti(
 			err      error
 		)
 		if q, ok := inst.(db.MultiResultQueryMessageExecer); ok {
+			setRunningQueryCancellable(true)
 			measureQueryExecution(func() {
 				results, messages, err = q.QueryMultiContextWithMessages(ctx, query)
 			})
 			return results, messages, err
 		}
 		if q, ok := inst.(db.MultiResultQuerierContext); ok {
+			setRunningQueryCancellable(true)
 			measureQueryExecution(func() {
 				results, err = q.QueryMultiContext(ctx, query)
 			})
 			return results, nil, err
 		}
 		if q, ok := inst.(db.MultiResultQuerier); ok {
+			if err := ctx.Err(); err != nil {
+				return nil, nil, err
+			}
+			setRunningQueryCancellable(false)
+			if err := ctx.Err(); err != nil {
+				setRunningQueryCancellable(true)
+				return nil, nil, err
+			}
 			measureQueryExecution(func() {
 				results, err = q.QueryMulti(query)
 			})
+			legacyCancellationUnsupported = ctx.Err() != nil
 			return results, nil, err
 		}
 		return nil, nil, nil // 返回 nil 表示不支持
 	}
 
 	results, resultMessages, err := runMultiQuery(dbInst)
+	if legacyCancellationUnsupported {
+		return a.buildCancellationUnsupportedExecutionResult(connection.QueryResult{
+			Data: results, Messages: resultMessages, QueryID: queryID,
+		}, err)
+	}
 	if err != nil && shouldRefreshCachedConnection(err) {
 		if a.invalidateCachedDatabase(runConfig, err) {
+			requestTrace.MarkRetry("cached connection refresh")
+			setRunningQueryCancellable(true)
 			retryInst, retryErr := a.getDatabaseWithContext(ctx, runConfig, true)
 			if retryErr != nil {
 				logger.Error(retryErr, "DBQueryMulti 重建连接失败：%s SQL片段=%q", formatConnSummary(runConfig), sqlSnippet(query))
@@ -1511,6 +1622,11 @@ func (a *App) dbQueryMulti(
 			}
 			dbInst = retryInst
 			results, resultMessages, err = runMultiQuery(retryInst)
+			if legacyCancellationUnsupported {
+				return a.buildCancellationUnsupportedExecutionResult(connection.QueryResult{
+					Data: results, Messages: resultMessages, QueryID: queryID,
+				}, err)
+			}
 		}
 	}
 	if err != nil {
@@ -1550,6 +1666,7 @@ func (a *App) dbQueryMulti(
 	var sessionBatchTarget db.BatchWriteExecer
 	closeExecTarget := func() {}
 	if provider, ok := dbInst.(db.SessionExecerProvider); ok {
+		setRunningQueryCancellable(true)
 		sessionExecer, sessionErr := provider.OpenSessionExecer(ctx)
 		if sessionErr != nil {
 			logger.Warnf("DBQueryMulti 打开会话级执行器失败，将回退共享连接：%s SQL片段=%q err=%v", formatConnSummary(runConfig), sqlSnippet(query), sessionErr)
@@ -1614,6 +1731,7 @@ func (a *App) dbQueryMulti(
 					batchErr error
 				)
 				measureQueryExecution(func() {
+					setRunningQueryCancellable(true)
 					affected, batchErr = batcher.ExecBatchContext(ctx, query)
 				})
 				if batchErr != nil {
@@ -1659,17 +1777,30 @@ func (a *App) dbQueryMulti(
 			runStatementQuery := func() error {
 				measureQueryExecution(func() {
 					if sessionQueryMessageTarget != nil {
+						setRunningQueryCancellable(true)
 						data, columns, messages, err = sessionQueryMessageTarget.QueryContextWithMessages(ctx, stmt)
 					} else if sessionQueryTarget != nil {
+						setRunningQueryCancellable(true)
 						data, columns, err = sessionQueryTarget.QueryContext(ctx, stmt)
 					} else if q, ok := dbInst.(db.QueryMessageExecer); ok {
+						setRunningQueryCancellable(true)
 						data, columns, messages, err = q.QueryContextWithMessages(ctx, stmt)
-					} else if q, ok := dbInst.(interface {
-						QueryContext(context.Context, string) ([]map[string]interface{}, []string, error)
-					}); ok {
+					} else if q, ok := dbInst.(db.QueryContexter); ok {
+						setRunningQueryCancellable(true)
 						data, columns, err = q.QueryContext(ctx, stmt)
 					} else {
+						if ctxErr := ctx.Err(); ctxErr != nil {
+							err = ctxErr
+							return
+						}
+						setRunningQueryCancellable(false)
+						if ctxErr := ctx.Err(); ctxErr != nil {
+							setRunningQueryCancellable(true)
+							err = ctxErr
+							return
+						}
 						data, columns, err = dbInst.Query(stmt)
+						legacyCancellationUnsupported = ctx.Err() != nil
 					}
 				})
 				return err
@@ -1677,32 +1808,65 @@ func (a *App) dbQueryMulti(
 			if preferPlainReadQuery {
 				err = runStatementQuery()
 			} else if sessionMultiQueryMessageTarget != nil {
+				setRunningQueryCancellable(true)
 				measureQueryExecution(func() {
 					statementResults, messages, err = sessionMultiQueryMessageTarget.QueryMultiContextWithMessages(ctx, stmt)
 				})
 				usedMultiResult = true
 			} else if sessionMultiQueryTarget != nil {
+				setRunningQueryCancellable(true)
 				measureQueryExecution(func() {
 					statementResults, err = sessionMultiQueryTarget.QueryMultiContext(ctx, stmt)
 				})
 				usedMultiResult = true
 			} else if q, ok := dbInst.(db.MultiResultQueryMessageExecer); ok {
+				setRunningQueryCancellable(true)
 				measureQueryExecution(func() {
 					statementResults, messages, err = q.QueryMultiContextWithMessages(ctx, stmt)
 				})
 				usedMultiResult = true
 			} else if q, ok := dbInst.(db.MultiResultQuerierContext); ok {
+				setRunningQueryCancellable(true)
 				measureQueryExecution(func() {
 					statementResults, err = q.QueryMultiContext(ctx, stmt)
 				})
 				usedMultiResult = true
 			} else if q, ok := dbInst.(db.MultiResultQuerier); ok {
-				measureQueryExecution(func() {
-					statementResults, err = q.QueryMulti(stmt)
-				})
+				if ctxErr := ctx.Err(); ctxErr != nil {
+					err = ctxErr
+				} else {
+					setRunningQueryCancellable(false)
+					if ctxErr := ctx.Err(); ctxErr != nil {
+						setRunningQueryCancellable(true)
+						err = ctxErr
+					} else {
+						measureQueryExecution(func() {
+							statementResults, err = q.QueryMulti(stmt)
+						})
+						legacyCancellationUnsupported = ctx.Err() != nil
+					}
+				}
 				usedMultiResult = true
 			} else {
 				err = runStatementQuery()
+			}
+			if legacyCancellationUnsupported {
+				cancellationResults := append([]connection.ResultSetData(nil), resultSets...)
+				if err == nil {
+					if usedMultiResult {
+						for resultIndex := range statementResults {
+							statementResults[resultIndex].StatementIndex = idx + 1
+						}
+						cancellationResults = append(cancellationResults, statementResults...)
+					} else {
+						cancellationResults = append(cancellationResults, connection.ResultSetData{
+							Rows: data, Columns: columns, Messages: messages, StatementIndex: idx + 1,
+						})
+					}
+				}
+				return a.buildCancellationUnsupportedExecutionResult(connection.QueryResult{
+					Data: cancellationResults, QueryID: queryID,
+				}, err)
 			}
 			if err == nil && usedMultiResult && shouldFallbackToPlainQueryAfterMultiResult(isReadStmt, statementResults, messages) {
 				logger.Warnf("DBQueryMulti 逐条多结果集返回空结果，将回退普通查询（第 %d/%d 条）：%s SQL片段=%q", idx+1, len(statements), formatConnSummary(runConfig), sqlSnippet(stmt))
@@ -1775,15 +1939,37 @@ func (a *App) dbQueryMulti(
 		var affected int64
 		measureQueryExecution(func() {
 			if sessionExecTarget != nil {
+				setRunningQueryCancellable(true)
 				affected, err = sessionExecTarget.ExecContext(ctx, stmt)
-			} else if e, ok := dbInst.(interface {
-				ExecContext(context.Context, string) (int64, error)
-			}); ok {
+			} else if e, ok := dbInst.(db.ExecContexter); ok {
+				setRunningQueryCancellable(true)
 				affected, err = e.ExecContext(ctx, stmt)
 			} else {
+				if ctxErr := ctx.Err(); ctxErr != nil {
+					err = ctxErr
+					return
+				}
+				setRunningQueryCancellable(false)
+				if ctxErr := ctx.Err(); ctxErr != nil {
+					setRunningQueryCancellable(true)
+					err = ctxErr
+					return
+				}
 				affected, err = dbInst.Exec(stmt)
+				legacyCancellationUnsupported = ctx.Err() != nil
 			}
 		})
+		if legacyCancellationUnsupported {
+			cancellationResults := append([]connection.ResultSetData(nil), resultSets...)
+			if err == nil {
+				cancellationResults = append(cancellationResults, connection.ResultSetData{
+					Rows: []map[string]interface{}{{"affectedRows": affected}}, Columns: []string{"affectedRows"}, StatementIndex: idx + 1,
+				})
+			}
+			return a.buildCancellationUnsupportedExecutionResult(connection.QueryResult{
+				Data: cancellationResults, QueryID: queryID,
+			}, err)
+		}
 		if err != nil {
 			if shouldRefreshCachedConnection(err) {
 				a.invalidateCachedDatabase(runConfig, err)
@@ -2009,6 +2195,9 @@ func (a *App) DBQueryIsolated(config connection.ConnectionConfig, dbName string,
 	runConfig := normalizeRunConfig(config, dbName)
 
 	query = sanitizeSQLForPgLike(resolveDDLDBType(config), query)
+	if err := a.ensureDataSourceQueryCapability(config); err != nil {
+		return connection.QueryResult{Success: false, Message: err.Error()}
+	}
 	if err := ensureConnectionAllowsQuery(config, query); err != nil {
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
@@ -2074,12 +2263,12 @@ func (a *App) DBQueryIsolated(config connection.ConnectionConfig, dbName string,
 }
 
 func sqlSnippet(query string) string {
-	q := strings.TrimSpace(query)
+	q := strings.TrimSpace(sqlaudit.RedactSQL(query))
 	const max = 200
-	if len(q) <= max {
+	if len([]rune(q)) <= max {
 		return q
 	}
-	return q[:max] + "..."
+	return string([]rune(q)[:max]) + "..."
 }
 
 func ensureNonNilSlice[T any](items []T) []T {
@@ -2182,6 +2371,7 @@ func (a *App) DBGetTables(config connection.ConnectionConfig, dbName string) con
 		cursor := uint64(0)
 		tables := make([]string, 0, 128)
 		seen := make(map[string]struct{}, 128)
+		seenCursors := map[uint64]struct{}{cursor: {}}
 		for {
 			result, err := client.ScanKeys("*", cursor, 1000)
 			if err != nil {
@@ -2199,20 +2389,25 @@ func (a *App) DBGetTables(config connection.ConnectionConfig, dbName string) con
 				seen[key] = struct{}{}
 				tables = append(tables, key)
 			}
-			if strings.TrimSpace(result.Cursor) == "" || strings.TrimSpace(result.Cursor) == "0" {
+			rawCursor := strings.TrimSpace(result.Cursor)
+			if rawCursor == "0" {
 				break
 			}
-			next, err := strconv.ParseUint(strings.TrimSpace(result.Cursor), 10, 64)
-			if err != nil || next == cursor {
-				break
+			next, err := strconv.ParseUint(rawCursor, 10, 64)
+			if err != nil {
+				return buildRedisTablesPartialResult(tables, fmt.Sprintf("invalid cursor %q: %v", rawCursor, err))
 			}
+			if _, exists := seenCursors[next]; exists {
+				return buildRedisTablesPartialResult(tables, fmt.Sprintf("cursor loop detected (cursor=%d next=%d)", cursor, next))
+			}
+			seenCursors[next] = struct{}{}
 			cursor = next
 		}
 		resData := make([]map[string]string, 0, len(tables))
 		for _, name := range tables {
 			resData = append(resData, map[string]string{"Table": name})
 		}
-		return connection.QueryResult{Success: true, Data: resData}
+		return connection.QueryResult{Success: true, Data: resData, ScannedCount: len(tables)}
 	}
 
 	dbInst, err := a.getDatabase(runConfig)
@@ -2236,6 +2431,23 @@ func (a *App) DBGetTables(config connection.ConnectionConfig, dbName string) con
 	if err != nil {
 		logger.Error(err, "DBGetTables 获取表列表失败：%s", formatConnSummary(runConfig))
 		return connection.QueryResult{Success: false, Message: err.Error()}
+	}
+
+	if isSQLiteConnection(runConfig) {
+		cachedStats, cacheErr := a.readSQLiteTableStats(runConfig, dbName)
+		if cacheErr != nil {
+			logger.Warnf("DBGetTables 读取 SQLite 表统计缓存失败（保留表列表）：%s err=%v", formatConnSummary(runConfig), cacheErr)
+			cachedStats = map[string]sqliteCachedTableStat{}
+		}
+		resData := make([]map[string]string, 0, len(tables))
+		for _, name := range tables {
+			item := map[string]string{"Table": name}
+			if stat, ok := cachedStats[name]; ok {
+				applySQLiteTableStats(item, stat)
+			}
+			resData = append(resData, item)
+		}
+		return connection.QueryResult{Success: true, Data: resData}
 	}
 
 	tableRowCounts := map[string]int64{}
@@ -2268,6 +2480,94 @@ func (a *App) DBGetTables(config connection.ConnectionConfig, dbName string) con
 		resData = append(resData, item)
 	}
 
+	return connection.QueryResult{Success: true, Data: resData}
+}
+
+func buildRedisTablesPartialResult(tables []string, reason string) connection.QueryResult {
+	warning := fmt.Sprintf("Redis key scan truncated after %d keys: %s", len(tables), strings.TrimSpace(reason))
+	resData := make([]map[string]string, 0, len(tables))
+	for _, name := range tables {
+		resData = append(resData, map[string]string{"Table": name})
+	}
+	return connection.QueryResult{
+		Success:           true,
+		Data:              resData,
+		Message:           warning,
+		Partial:           true,
+		Warnings:          []string{warning},
+		Retryable:         true,
+		Truncated:         true,
+		ScannedCount:      len(tables),
+		FailedObjectTypes: []string{"key"},
+	}
+}
+
+func (a *App) DBRefreshTableStats(config connection.ConnectionConfig, dbName string, rawTables []string) connection.QueryResult {
+	runConfig := normalizeMetadataRunConfig(config, dbName)
+	if !isSQLiteConnection(runConfig) {
+		return connection.QueryResult{Success: false, Message: "table statistics refresh is only supported for SQLite connections"}
+	}
+
+	tables := make([]string, 0, len(rawTables))
+	seen := make(map[string]struct{}, len(rawTables))
+	for _, rawTable := range rawTables {
+		tableName := strings.TrimSpace(rawTable)
+		if tableName == "" {
+			continue
+		}
+		if _, ok := seen[tableName]; ok {
+			continue
+		}
+		seen[tableName] = struct{}{}
+		tables = append(tables, tableName)
+	}
+
+	dbInst, err := a.getDatabase(runConfig)
+	if err != nil {
+		logger.Error(err, "DBRefreshTableStats 获取连接失败：%s", formatConnSummary(runConfig))
+		return connection.QueryResult{Success: false, Message: err.Error()}
+	}
+
+	tableRowCounts := map[string]int64{}
+	if rowCounter, ok := dbInst.(db.TableRowCounter); ok {
+		tableRowCounts, err = rowCounter.GetTableRowCounts(dbName, tables)
+		if err != nil {
+			logger.Warnf("DBRefreshTableStats 获取 SQLite 表行数失败（保留旧缓存）：%s err=%v", formatConnSummary(runConfig), err)
+			return connection.QueryResult{Success: false, Message: err.Error()}
+		}
+	}
+
+	tableStorageStats := map[string]db.TableStorageStats{}
+	if storageProvider, ok := dbInst.(db.TableStorageStatsProvider); ok {
+		tableStorageStats, err = storageProvider.GetTableStorageStats(dbName, tables)
+		if err != nil {
+			logger.Warnf("DBRefreshTableStats 获取 SQLite 表存储大小失败（保留旧缓存大小）：%s err=%v", formatConnSummary(runConfig), err)
+			tableStorageStats = map[string]db.TableStorageStats{}
+		}
+	}
+
+	if err := a.mergeSQLiteTableStats(runConfig, dbName, tables, tableRowCounts, tableStorageStats); err != nil {
+		logger.Warnf("DBRefreshTableStats 写入 SQLite 表统计缓存失败（仍返回实时结果）：%s err=%v", formatConnSummary(runConfig), err)
+	}
+	cachedStats, cacheErr := a.readSQLiteTableStats(runConfig, dbName)
+	if cacheErr != nil {
+		cachedStats = map[string]sqliteCachedTableStat{}
+	}
+	resData := make([]map[string]string, 0, len(tables))
+	for _, name := range tables {
+		item := map[string]string{"Table": name}
+		if stat, ok := cachedStats[name]; ok {
+			applySQLiteTableStats(item, stat)
+		}
+		if rowCount, ok := tableRowCounts[name]; ok {
+			item["Rows"] = strconv.FormatInt(rowCount, 10)
+		}
+		if storage, ok := tableStorageStats[name]; ok {
+			item["Data_length"] = strconv.FormatInt(storage.DataLength, 10)
+			item["Index_length"] = strconv.FormatInt(storage.IndexLength, 10)
+		}
+		resData = append(resData, item)
+	}
 	return connection.QueryResult{Success: true, Data: resData}
 }
 
@@ -3206,7 +3506,7 @@ func (a *App) DBGetForeignKeys(config connection.ConnectionConfig, dbName string
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
 
-	schemaName, pureTableName := normalizeSchemaAndTable(config, dbName, tableName)
+	schemaName, pureTableName := normalizeMetadataSchemaAndTable(config, dbName, tableName)
 	fks, err := dbInst.GetForeignKeys(schemaName, pureTableName)
 	if err != nil {
 		return connection.QueryResult{Success: false, Message: err.Error()}
@@ -3246,7 +3546,7 @@ func (a *App) DBGetTriggers(config connection.ConnectionConfig, dbName string, t
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
 
-	schemaName, pureTableName := normalizeSchemaAndTable(config, dbName, tableName)
+	schemaName, pureTableName := normalizeMetadataSchemaAndTable(config, dbName, tableName)
 	triggers, err := dbInst.GetTriggers(schemaName, pureTableName)
 	if err != nil {
 		return connection.QueryResult{Success: false, Message: err.Error()}

@@ -22,6 +22,14 @@ export function AuthorizeMCPConnectionSQL(arg1, arg2) {
   return window['go']['app']['App']['AuthorizeMCPConnectionSQL'](arg1, arg2);
 }
 
+export function BuildDatabaseDiagnosticPackage() {
+  return window['go']['app']['App']['BuildDatabaseDiagnosticPackage']();
+}
+
+export function BuildReproductionBundle(arg1, arg2) {
+  return window['go']['app']['App']['BuildReproductionBundle'](arg1, arg2);
+}
+
 export function BuildSQLAuditExport(arg1, arg2) {
   return window['go']['app']['App']['BuildSQLAuditExport'](arg1, arg2);
 }
@@ -202,6 +210,10 @@ export function DBQueryWithCancel(arg1, arg2, arg3, arg4) {
   return window['go']['app']['App']['DBQueryWithCancel'](arg1, arg2, arg3, arg4);
 }
 
+export function DBRefreshTableStats(arg1, arg2, arg3) {
+  return window['go']['app']['App']['DBRefreshTableStats'](arg1, arg2, arg3);
+}
+
 export function DBReleaseConnection(arg1) {
   return window['go']['app']['App']['DBReleaseConnection'](arg1);
 }
@@ -224,6 +236,10 @@ export function DBTableExists(arg1, arg2, arg3) {
 
 export function DataImportCapability(arg1) {
   return window['go']['app']['App']['DataImportCapability'](arg1);
+}
+
+export function DataSourceCapability(arg1) {
+  return window['go']['app']['App']['DataSourceCapability'](arg1);
 }
 
 export function DataSync(arg1) {
@@ -438,6 +454,10 @@ export function ExportDataWithOptions(arg1, arg2, arg3, arg4) {
   return window['go']['app']['App']['ExportDataWithOptions'](arg1, arg2, arg3, arg4);
 }
 
+export function ExportDatabaseDiagnosticPackage() {
+  return window['go']['app']['App']['ExportDatabaseDiagnosticPackage']();
+}
+
 export function ExportDatabaseSQL(arg1, arg2, arg3) {
   return window['go']['app']['App']['ExportDatabaseSQL'](arg1, arg2, arg3);
 }
@@ -460,6 +480,10 @@ export function ExportQuery(arg1, arg2, arg3, arg4, arg5) {
 
 export function ExportQueryWithOptions(arg1, arg2, arg3, arg4, arg5) {
   return window['go']['app']['App']['ExportQueryWithOptions'](arg1, arg2, arg3, arg4, arg5);
+}
+
+export function ExportReproductionBundle(arg1, arg2) {
+  return window['go']['app']['App']['ExportReproductionBundle'](arg1, arg2);
 }
 
 export function ExportSQLAuditFile(arg1, arg2) {
@@ -512,6 +536,10 @@ export function GetAppInfo() {
 
 export function GetDataRootDirectoryInfo() {
   return window['go']['app']['App']['GetDataRootDirectoryInfo']();
+}
+
+export function GetDatabaseDiagnosticPackagePreview() {
+  return window['go']['app']['App']['GetDatabaseDiagnosticPackagePreview']();
 }
 
 export function GetDriverStatusList(arg1, arg2) {
@@ -622,6 +650,14 @@ export function InspectElasticsearchConsole(arg1, arg2, arg3) {
   return window['go']['app']['App']['InspectElasticsearchConsole'](arg1, arg2, arg3);
 }
 
+export function InspectSavedConnectionHealth(arg1) {
+  return window['go']['app']['App']['InspectSavedConnectionHealth'](arg1);
+}
+
+export function InspectSavedConnectionsHealth(arg1) {
+  return window['go']['app']['App']['InspectSavedConnectionsHealth'](arg1);
+}
+
 export function InstallLocalDriverPackage(arg1, arg2, arg3, arg4) {
   return window['go']['app']['App']['InstallLocalDriverPackage'](arg1, arg2, arg3, arg4);
 }
@@ -700,6 +736,10 @@ export function ListImportJobs() {
 
 export function ListInstalledFontFamilies() {
   return window['go']['app']['App']['ListInstalledFontFamilies']();
+}
+
+export function ListReproductionBundleSources() {
+  return window['go']['app']['App']['ListReproductionBundleSources']();
 }
 
 export function ListSQLDirectory(arg1) {
@@ -910,6 +950,10 @@ export function PreviewImportFileWithOptions(arg1, arg2) {
   return window['go']['app']['App']['PreviewImportFileWithOptions'](arg1, arg2);
 }
 
+export function PreviewReproductionBundle(arg1) {
+  return window['go']['app']['App']['PreviewReproductionBundle'](arg1);
+}
+
 export function ReadAppLogTail(arg1, arg2) {
   return window['go']['app']['App']['ReadAppLogTail'](arg1, arg2);
 }
@@ -1074,6 +1118,10 @@ export function RenameView(arg1, arg2, arg3, arg4) {
   return window['go']['app']['App']['RenameView'](arg1, arg2, arg3, arg4);
 }
 
+export function ReplayReproductionBundle(arg1) {
+  return window['go']['app']['App']['ReplayReproductionBundle'](arg1);
+}
+
 export function ResetWebViewZoom() {
   return window['go']['app']['App']['ResetWebViewZoom']();
 }
@@ -1112,6 +1160,14 @@ export function ResultDiffStart(arg1) {
 
 export function ResultDiffUploadChunk(arg1) {
   return window['go']['app']['App']['ResultDiffUploadChunk'](arg1);
+}
+
+export function ResumeImportJob(arg1) {
+  return window['go']['app']['App']['ResumeImportJob'](arg1);
+}
+
+export function RetryImportJobFailedRows(arg1) {
+  return window['go']['app']['App']['RetryImportJobFailedRows'](arg1);
 }
 
 export function RetrySecurityUpdateCurrentRound(arg1) {

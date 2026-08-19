@@ -2,9 +2,20 @@ import Modal from './common/ResizableDraggableModal';
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import Editor, { type BeforeMount, type OnMount } from './MonacoEditor';
 import { message, Input, Form, MenuProps, Button, Segmented, type InputRef } from 'antd';
+import {
+    CodeOutlined,
+    EditOutlined,
+    ExportOutlined,
+    FileTextOutlined,
+    HistoryOutlined,
+    KeyOutlined,
+    SaveOutlined,
+    SearchOutlined,
+    UndoOutlined,
+} from '@ant-design/icons';
 import { format } from 'sql-formatter';
 import { v4 as uuidv4 } from 'uuid';
-import { TabData, ColumnDefinition, type SavedQuery, type SqlSnippet } from '../types';
+import { TabData, ColumnDefinition, type ConnectionConfig, type SavedQuery, type SqlSnippet } from '../types';
 import { type SqlLog, useStore } from '../store';
 import { DBQuery, DBQueryWithCancel, DBQueryMulti, DBQueryMultiInTransaction, DBQueryMultiTransactional, DBGetTables, DBTableExists, DBGetAllColumns, DBGetDatabases, DBGetColumns, DBGetTriggers, DBShowCreateTable, CancelQuery, GenerateQueryID, WriteSQLFile, ExportSQLFile, InspectElasticsearchConsole, ExecuteElasticsearchConsole } from '../../wailsjs/go/app/App';
 import { GONAVI_ROW_KEY } from './DataGrid';
@@ -134,6 +145,7 @@ import {
     extractQueryEditorCurrentSchema,
     QUERY_EDITOR_CURRENT_SCHEMA_SQL,
     resolveLoadedQueryEditorSchema,
+    shouldIncludeQueryEditorSchemaObject,
     supportsQueryEditorSchemaSelection,
 } from './queryEditor/queryEditorSchemaContext';
 import { useSqlEditorTransactionController } from './useSqlEditorTransactionController';
@@ -1003,7 +1015,7 @@ const resolveQueryEditorAiConnectionHost = (connection: any): string => {
 
 // HMR 重载时释放旧注册避免补全和 hover 内容重复
 const _g = globalThis as any;
-const SQL_COMPLETION_PROVIDER_VERSION = '20260803-prefix-retrigger-v2';
+const SQL_COMPLETION_PROVIDER_VERSION = '20260817-schema-context-v3';
 const QUERY_EDITOR_MONACO_LANGUAGE_IDS = ['sql', 'mysql'] as const;
 if (!_g.__gonaviSqlCompletionState) {
     _g.__gonaviSqlCompletionState = { registered: false, version: '', disposables: [] as any[] };
@@ -1018,6 +1030,7 @@ let sqlCompletionDisposables = _g.__gonaviSqlCompletionState.disposables;
 // 每个 QueryEditor 实例在成为活跃 Tab 时更新这些变量，确保 provider 始终使用正确的上下文。
 let sharedCurrentDb = '';
 let sharedCurrentConnectionId = '';
+let sharedCurrentSchema = '';
 let sharedConnections: any[] = [];
 let sharedTablesData: CompletionTableMeta[] = [];
 let sharedAllColumnsData: CompletionColumnMeta[] = [];
@@ -1309,6 +1322,7 @@ const resetSharedQueryEditorMetadata = () => {
     sharedQueryEditorMetadataContextKey = '';
     sharedQueryEditorMetadataConnectionConfig = null;
     sharedCurrentDb = '';
+    sharedCurrentSchema = '';
     sharedTablesData = [];
     sharedAllColumnsData = [];
     sharedVisibleDbs = [];
@@ -2316,6 +2330,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           sharedQueryEditorMetadataConnectionConfig = targetConnectionConfig;
           sharedCurrentDb = normalizedDbName;
           sharedCurrentConnectionId = normalizedConnectionId;
+          sharedCurrentSchema = '';
           sharedConnections = connections;
           sharedVisibleDbs = visibleDbsRef.current;
           sharedActiveEditorModelUri = String(editorRef.current?.getModel?.()?.uri?.toString?.() || '');
@@ -2856,6 +2871,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       }
       sharedCurrentDb = currentDb;
       sharedCurrentConnectionId = currentConnectionId;
+      sharedCurrentSchema = currentSchema;
       sharedConnections = connections;
       sharedTablesData = tablesRef.current;
       sharedAllColumnsData = allColumnsRef.current;
@@ -2869,7 +2885,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       sharedPackagesData = packagesRef.current;
       sharedColumnsCacheData = columnsCacheRef.current;
       sharedActiveEditorModelUri = String(editorRef.current?.getModel?.()?.uri?.toString?.() || '');
-  }, [isActive, currentDb, currentConnectionId, connections, tab.id]);
+  }, [isActive, currentDb, currentConnectionId, currentSchema, connections, tab.id]);
 
   useEffect(() => {
       connectionsRef.current = connections;
@@ -4796,23 +4812,10 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
 
       if (isV2Ui && typeof editor.onContextMenu === 'function') {
           editor.onContextMenu(() => {
-              const decorateContextMenu = () => {
-                  const connectionName = connectionsRef.current.find(
-                      (connection) => connection.id === currentConnectionIdRef.current,
-                  )?.name;
-                  const contextMeta = [connectionName, currentDbRef.current]
-                      .filter(Boolean)
-                      .join(' · ');
-                  decorateV2MonacoContextMenu(
-                      translate('tab_manager.kind_badge.query'),
-                      contextMeta || translate('query_editor.placeholder.database'),
-                  );
-              };
-              // Monaco appends the menu asynchronously after dispatching onContextMenu.
-              // Retry across the next paint window so the first open is decorated too.
-              window.setTimeout(decorateContextMenu, 0);
-              window.setTimeout(decorateContextMenu, 48);
-              window.setTimeout(decorateContextMenu, 120);
+              decorateV2MonacoContextMenu();
+              window.setTimeout(decorateV2MonacoContextMenu, 0);
+              window.setTimeout(decorateV2MonacoContextMenu, 48);
+              window.setTimeout(decorateV2MonacoContextMenu, 120);
           });
       }
 
@@ -6288,6 +6291,11 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                       : applyQueryEditorCompletionFragmentCase(ident, fragment)
               );
               const getActiveCompletionDbName = () => String(sharedCurrentDb || currentDbRef.current || currentDb || tab.dbName || '').trim();
+              const getActiveCompletionSchemaName = () => (
+                  isPostgresSchemaDialect(activeDialect)
+                      ? String(sharedCurrentSchema || '').trim()
+                      : ''
+              );
               const dialectKeywords = resolveSqlKeywords(activeDialect);
               const dialectFunctions = resolveSqlFunctions(activeDialect);
 
@@ -6703,7 +6711,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                           getMatchRank: (table, normalizedPrefix) => {
                               if (String(table.dbName || '').toLowerCase() !== qualifierLower) return null;
                               const meta = buildDbQualifiedTableSuggestionMeta(table.dbName || qualifier, table.tableName || '');
-                              return rankQueryEditorCompletionCandidate(normalizedPrefix, [meta.displayName, table.tableName], false);
+                              return rankQueryEditorCompletionCandidate(normalizedPrefix, [meta.displayName, table.tableName]);
                           },
                           getSelectionKey: (table, _prefix, matchRank) => {
                               const meta = buildDbQualifiedTableSuggestionMeta(table.dbName || qualifier, table.tableName || '');
@@ -6764,7 +6772,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                           prefix,
                           getMatchRank: (synonym, normalizedPrefix) => (
                               String(synonym.ownerName || '').trim().toLowerCase() === qualifierLower
-                                  ? rankQueryEditorCompletionCandidate(normalizedPrefix, [synonym.synonymName], false)
+                                  ? rankQueryEditorCompletionCandidate(normalizedPrefix, [synonym.synonymName])
                                   : null
                           ),
                           getSelectionKey: (synonym) => '06' + synonym.synonymName,
@@ -6779,7 +6787,6 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                               return rankQueryEditorCompletionCandidate(
                                   normalizedPrefix,
                                   [meta.displayName, meta.objectName, routine.routineName],
-                                  false,
                               );
                           },
                           getSelectionKey: (routine) => '1' + buildRoutineSuggestionMeta(routine).displayName,
@@ -6818,7 +6825,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                           if (parsed.schema.toLowerCase() !== qualifierLower) return null;
                           hasKnownSchemaQualifier = true;
                           if (!parsed.table) return null;
-                          return rankQueryEditorCompletionCandidate(normalizedPrefix, [parsed.table], false);
+                          return rankQueryEditorCompletionCandidate(normalizedPrefix, [parsed.table]);
                       },
                       getSelectionKey: (table, _prefix, matchRank) => `0${matchRank}${splitSchemaAndTable(table.tableName || '', table.dbName).table}`,
                       buildSuggestion: (table) => {
@@ -6849,7 +6856,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                               if (meta.schemaName.toLowerCase() !== qualifierLower) return null;
                               hasKnownSchemaQualifier = true;
                               if (!meta.objectName) return null;
-                              return rankQueryEditorCompletionCandidate(normalizedPrefix, [meta.objectName], false);
+                              return rankQueryEditorCompletionCandidate(normalizedPrefix, [meta.objectName]);
                           },
                           getSelectionKey: (view, _prefix, matchRank) => `05${matchRank}${buildViewSuggestionMeta(view).objectName}`,
                           buildSuggestion: (view) => {
@@ -6875,7 +6882,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                       getMatchRank: (synonym, normalizedPrefix) => {
                           if (String(synonym.ownerName || '').trim().toLowerCase() !== qualifierLower) return null;
                           hasKnownSchemaQualifier = true;
-                          return rankQueryEditorCompletionCandidate(normalizedPrefix, [synonym.synonymName], false);
+                          return rankQueryEditorCompletionCandidate(normalizedPrefix, [synonym.synonymName]);
                       },
                       getSelectionKey: (synonym) => '06' + synonym.synonymName,
                       buildSuggestion: (synonym) => buildSynonymSuggestion(synonym, '06' + synonym.synonymName),
@@ -6887,7 +6894,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                           const meta = buildRoutineSuggestionMeta(routine);
                           if (meta.schemaName.toLowerCase() !== qualifierLower) return null;
                           hasKnownSchemaQualifier = true;
-                          return rankQueryEditorCompletionCandidate(normalizedPrefix, [meta.objectName], false);
+                          return rankQueryEditorCompletionCandidate(normalizedPrefix, [meta.objectName]);
                       },
                       getSelectionKey: (routine) => '1' + buildRoutineSuggestionMeta(routine).objectName,
                       buildSuggestion: (routine) => {
@@ -7026,6 +7033,13 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
               if (expectsTableName && currentDatabase) {
                   completionTables = findCompletionTablesByDatabase(completionTables, currentDatabase);
               }
+              const currentCompletionSchema = getActiveCompletionSchemaName();
+              if (expectsTableName && currentCompletionSchema) {
+                  completionTables = completionTables.filter((table) => {
+                      const parsed = splitSchemaAndTable(table.tableName || '', table.dbName);
+                      return shouldIncludeQueryEditorSchemaObject(currentCompletionSchema, parsed.schema);
+                  });
+              }
 
               const referencedColumns: CompletionColumnMeta[] = [];
               if (!expectsTableName) {
@@ -7113,10 +7127,9 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                           return rankQueryEditorCompletionCandidate(
                               normalizedPrefix,
                               [meta.dbQualifiedLabel, table.tableName, pureTable],
-                              !expectsTableName,
                           );
                       }
-                      return rankQueryEditorCompletionCandidate(normalizedPrefix, [table.tableName, pureTable], !expectsTableName);
+                      return rankQueryEditorCompletionCandidate(normalizedPrefix, [table.tableName, pureTable]);
                   },
                   getSelectionKey: (table, _prefix, matchRank) => {
                       const isCurrentDb = isCurrentCompletionDatabase(table.dbName || '');
@@ -7186,7 +7199,6 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                           return rankQueryEditorCompletionCandidate(
                               normalizedPrefix,
                               [meta.dbQualifiedLabel, meta.displayName, meta.objectName, view.viewName],
-                              !expectsTableName,
                           );
                       },
                       getSelectionKey: (view, _prefix, matchRank) => {
@@ -7225,7 +7237,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                   candidates: selectUnqualifiedCompletionSynonyms(sharedSynonymsData, oracleLoginOwner),
                   prefix: wordPrefix,
                   getMatchRank: (synonym, normalizedPrefix) => (
-                      rankQueryEditorCompletionCandidate(normalizedPrefix, [synonym.synonymName], !expectsTableName)
+                      rankQueryEditorCompletionCandidate(normalizedPrefix, [synonym.synonymName])
                   ),
                   getSelectionKey: (synonym) => (
                       sortGroups.tableCurrent + '05' + getPrefixMatchRank(synonym.synonymName || '') + synonym.synonymName
@@ -7245,7 +7257,6 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                       return rankQueryEditorCompletionCandidate(
                           normalizedPrefix,
                           [meta.dbQualifiedLabel, meta.displayName, meta.objectName, routine.routineName],
-                          !expectsTableName && !expectsRoutineName,
                       );
                   },
                   getSelectionKey: (routine) => {
@@ -7661,18 +7672,19 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
               {
                   key: 'upper',
                   label: translate('query_editor.format.keyword_upper'),
-                  icon: sqlFormatOptions.keywordCase === 'upper' ? '✓' : undefined,
+                  icon: <span aria-hidden="true" className="gn-query-format-case-icon gn-query-format-case-icon-upper">AA</span>,
                   onClick: () => setSqlFormatOptions({ keywordCase: 'upper' }),
               },
               {
                   key: 'lower',
                   label: translate('query_editor.format.keyword_lower'),
-                  icon: sqlFormatOptions.keywordCase === 'lower' ? '✓' : undefined,
+                  icon: <span aria-hidden="true" className="gn-query-format-case-icon gn-query-format-case-icon-lower">aa</span>,
                   onClick: () => setSqlFormatOptions({ keywordCase: 'lower' }),
               },
               {
                   key: 'restore-last-format',
                   label: translate('query_editor.format.restore_last_format'),
+                  icon: <UndoOutlined />,
                   disabled: !tab.formatRestoreSnapshot?.query,
                   onClick: handleRestoreLastFormat,
               },
@@ -7686,11 +7698,13 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
               {
                   key: 'snippet-settings',
                   label: translate('query_editor.format.snippet_settings'),
+                  icon: <CodeOutlined />,
                   onClick: () => window.dispatchEvent(new CustomEvent('gonavi:open-snippet-settings')),
               },
               {
                   key: 'shortcut-settings',
                   label: translate('query_editor.format.shortcut_settings'),
+                  icon: <KeyOutlined />,
                   onClick: () => window.dispatchEvent(new CustomEvent('gonavi:open-shortcut-settings')),
               },
           ],
@@ -7961,7 +7975,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       if (
           pendingTransaction
           && matchesCurrentExecutionContext
-          && canReusePendingSqlEditorTransactionForType(dbType, sourceStatements)
+          && canReusePendingSqlEditorTransactionForType(dbType, sourceStatements, config as ConnectionConfig)
       ) {
           return DBQueryMultiInTransaction(pendingTransaction.id, sql, queryId);
       }
@@ -8726,7 +8740,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
     }
     const connCaps = getDataSourceCapabilities(conn.config);
     if (!connCaps.supportsQueryEditor) {
-        message.error(translate('query_editor.message.unsupported_source'));
+        message.error(translate(connCaps.query.messageKey || 'query_editor.message.unsupported_source'));
         if (isCurrentRun()) setLoading(false);
         return;
     }
@@ -8960,13 +8974,13 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                 clearUnpinnedResultSets();
                 return;
             }
-            const useManagedTransaction = shouldUseSqlEditorManagedTransactionForType(normalizedDbType, sourceStatements);
+            const useManagedTransaction = shouldUseSqlEditorManagedTransactionForType(normalizedDbType, sourceStatements, config);
             if (useManagedTransaction && pendingSqlTransactionRef.current) {
                 message.warning(translate('query_editor.transaction.message.pending_managed_transaction'));
                 return;
             }
             const managedTransactionStatementCount = sourceStatements
-                .filter((statement) => shouldUseSqlEditorManagedTransactionForType(normalizedDbType, [statement]))
+                .filter((statement) => shouldUseSqlEditorManagedTransactionForType(normalizedDbType, [statement], config))
                 .length || sourceStatements.length;
 
             const forceReadOnlyResult = connCaps.forceReadOnlyQueryResult;
@@ -10441,6 +10455,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           majorVersion: elasticsearchServerMajor || 8,
       }).map((template) => ({
           key: template.id,
+          icon: <FileTextOutlined />,
           danger: template.dangerous,
           label: template.dangerous
               ? `${translate('query_editor.elasticsearch.danger_badge')} · ${translate(template.labelKey)}`
@@ -10457,6 +10472,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           children: [
               ...(currentSavedQuery && !tab.filePath ? [{
                   key: 'save-query-as',
+                  icon: <SaveOutlined />,
                   label: (
                       <span className="gn-v2-context-menu-item-title">
                           {translate('query_editor.action.save_as')}
@@ -10472,12 +10488,14 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
               {
                   key: 'rename-query',
                   label: translate('query_editor.action.rename_query'),
+                  icon: <EditOutlined />,
                   disabled: !!tab.filePath,
                   onClick: handleRenameQuery,
               },
               {
                   key: 'export-sql-file',
                   label: translate('query_editor.action.export_sql_file'),
+                  icon: <ExportOutlined />,
                   onClick: () => void handleExportSQLFile(),
               },
           ],
@@ -10489,6 +10507,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           children: [
               {
                   key: 'diagnose-query',
+                  icon: <SearchOutlined />,
                   label: (
                       <span className="gn-v2-context-menu-item-title">
                           {translate('app.shortcuts.action.diagnoseQuery.label' as any)}
@@ -10504,6 +10523,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
               },
               {
                   key: 'show-slow-queries',
+                  icon: <HistoryOutlined />,
                   label: (
                       <span className="gn-v2-context-menu-item-title">
                           {translate('app.shortcuts.action.showSlowQueries.label' as any)}
@@ -11200,6 +11220,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
         runDisabled={canSelectQuerySchema && schemaLoading}
         saveMoreMenuItems={saveMoreMenuItems}
         formatSettingsMenu={formatSettingsMenu}
+        formatSettingsSelectedKeys={[sqlFormatOptions.keywordCase]}
         templateMenuItems={elasticsearchTemplateMenuItems}
         onConnectionChange={(val) => {
             void switchQueryContext(val, '');

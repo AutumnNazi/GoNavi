@@ -340,6 +340,7 @@ export const buildSidebarLegacyNodeMenuItems = (
     openRoutineDefinition,
     openEditRoutine,
     handleDropRoutine,
+    handleCompileOracleObject,
     openEventDefinition,
     openEditEvent,
     openSequenceDefinition,
@@ -791,27 +792,29 @@ export const buildSidebarLegacyNodeMenuItems = (
                 }
             },
             { type: 'divider' },
-             {
-               key: 'new-query',
-               label: t('sidebar.menu.new_query'),
-               icon: <ConsoleSqlOutlined />,
-               onClick: () => {
-                   addTab({
-                       id: `query-${Date.now()}`,
-                       title: buildConnectionRootQueryTabTitle(),
-                       type: 'query',
-                       connectionId: node.key,
-                       dbName: undefined,
-                       query: ''
-                   });
-               }
-             },
-             {
-                 key: 'open-sql-file',
-                 label: t('sidebar.sql_file_exec.title'),
-                 icon: <FileAddOutlined />,
-                 onClick: () => handleRunSQLFile(node)
-             },
+             ...(connectionCapabilities.supportsQueryEditor ? [
+                 {
+                   key: 'new-query',
+                   label: t('sidebar.menu.new_query'),
+                   icon: <ConsoleSqlOutlined />,
+                   onClick: () => {
+                       addTab({
+                           id: `query-${Date.now()}`,
+                           title: buildConnectionRootQueryTabTitle(),
+                           type: 'query',
+                           connectionId: node.key,
+                           dbName: undefined,
+                           query: ''
+                       });
+                   }
+                 },
+                 {
+                     key: 'open-sql-file',
+                     label: t('sidebar.sql_file_exec.title'),
+                     icon: <FileAddOutlined />,
+                     onClick: () => handleRunSQLFile(node)
+                 },
+             ] : []),
              { type: 'divider' },
              {
                  key: 'edit',
@@ -1355,6 +1358,7 @@ export const buildSidebarLegacyNodeMenuItems = (
     } else if (node.type === 'routine') {
         const routineType = node.dataRef?.routineType || 'FUNCTION';
         const typeLabel = t(routineType === 'PROCEDURE' ? 'sidebar.object.procedure' : 'sidebar.object.function');
+        const supportsOracleCompilation = getMetadataDialect(node.dataRef as SavedConnection) === 'oracle';
         return [
             {
                 key: 'view-routine-def',
@@ -1368,6 +1372,12 @@ export const buildSidebarLegacyNodeMenuItems = (
                 icon: <EditOutlined />,
                 onClick: () => openEditRoutine(node)
             },
+            ...(supportsOracleCompilation && typeof handleCompileOracleObject === 'function' ? [{
+                key: 'compile-oracle-object',
+                label: t('sidebar.menu.compile'),
+                icon: <ThunderboltOutlined />,
+                onClick: () => void handleCompileOracleObject(node),
+            }] : []),
             { type: 'divider' },
             {
                 key: 'danger-zone',
@@ -1383,6 +1393,22 @@ export const buildSidebarLegacyNodeMenuItems = (
                     }
                 ]
             },
+        ];
+    } else if (node.type === 'db-trigger') {
+        const supportsOracleCompilation = getMetadataDialect(node.dataRef as SavedConnection) === 'oracle';
+        return [
+            {
+                key: 'view-trigger-definition',
+                label: t('sidebar.menu.view_object_definition'),
+                icon: <CodeOutlined />,
+                onClick: () => onDoubleClick(null, node),
+            },
+            ...(supportsOracleCompilation && typeof handleCompileOracleObject === 'function' ? [{
+                key: 'compile-oracle-object',
+                label: t('sidebar.menu.compile'),
+                icon: <ThunderboltOutlined />,
+                onClick: () => void handleCompileOracleObject(node),
+            }] : []),
         ];
     } else if (node.type === 'sequence') {
         return [

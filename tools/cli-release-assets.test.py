@@ -104,6 +104,8 @@ class CLIReleaseAssetsTest(unittest.TestCase):
                 "Generate SHA256SUMS",
                 "Verify CLI release assets",
                 "Generate static update manifest (latest.json)",
+                "Annotate macOS signing status",
+                "Record release provenance",
             ),
             "dev-build.yml": (
                 "Build and package dev CLI",
@@ -139,6 +141,17 @@ class CLIReleaseAssetsTest(unittest.TestCase):
                     f"invalid bash in {workflow_name} step {step_name!r}:\n{result.stderr}",
                 )
 
+    def test_stable_release_title_matches_immutable_tag(self) -> None:
+        source = (ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
+        self.assertIn(
+            "name: ${{ needs.validate_release_tag.outputs.tag }}",
+            source,
+        )
+        self.assertNotIn(
+            "name: GoNavi ${{ needs.validate_release_tag.outputs.tag }}",
+            source,
+        )
+
     def test_gui_manifest_input_never_contains_cli_assets(self) -> None:
         workflow_steps = {
             "release.yml": (
@@ -166,7 +179,7 @@ class CLIReleaseAssetsTest(unittest.TestCase):
                 "release.yml",
                 "Generate CLI checksums",
                 "1.2.3",
-                {"GITHUB_REF_NAME": "v1.2.3"},
+                {"RELEASE_TAG": "v1.2.3"},
             ),
             (
                 "dev-build.yml",
@@ -302,11 +315,29 @@ class CLIReleaseAssetsTest(unittest.TestCase):
         self.assertIn("GoNavi-${version}-Linux-Amd64-WebKit41.AppImage", source)
         self.assertIn("const allowedAssetNames = new Set([...requiredAssets, ...optionalAssets])", source)
         self.assertNotIn("release.assets.length !== expectedAssets.length", source)
-        self.assertIn("ref: ${{ steps.validate.outputs.tag }}", source)
+        self.assertIn("ref: ${{ inputs.tooling_ref || steps.validate.outputs.tag }}", source)
+        self.assertIn("tooling_ref:", source)
+        self.assertIn("publish_npm:", source)
+        self.assertIn("PUBLISH_NPM: ${{ inputs.publish_npm && 'true' || 'false' }}", source)
         self.assertIn("NPM_TOKEN secret is required", source)
         self.assertIn("Validate npm publication credentials", source)
         self.assertIn("npm publish npm/gonavi-cli --access public --ignore-scripts", source)
         self.assertIn('npm view "@syngnat/gonavi-cli@${version}" --json', source)
+        for step_name in (
+            "Validate npm publication credentials",
+            "Verify public CLI release assets for npm postinstall",
+            "Setup Node for npm CLI publication",
+            "Publish npm CLI package",
+            "Verify npm CLI package metadata",
+        ):
+            self.assertIn(
+                f"- name: {step_name}\n        if: ${{{{ env.PUBLISH_NPM == 'true' }}}}",
+                source,
+            )
+        self.assertIn(
+            "- name: Skip npm CLI publication\n        if: ${{ env.PUBLISH_NPM != 'true' }}",
+            source,
+        )
         self.assertIn("Upload WinGet CLI manifest artifact", source)
         self.assertIn("actions/upload-artifact@v6", source)
         self.assertIn("winget-cli-manifest-${{ steps.validate.outputs.tag }}", source)
@@ -316,15 +347,13 @@ class CLIReleaseAssetsTest(unittest.TestCase):
         )
         self.assertLess(
             source.index("Verify npm CLI package metadata"),
-            source.index("Mirror stable release to Gatewaysentry"),
+            source.index("Publish stable release to verified static edge"),
         )
 
-    def test_stable_release_validates_npm_cli_version_before_build(self) -> None:
+    def test_stable_release_does_not_require_npm_wrapper_publication(self) -> None:
         source = (ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
-        self.assertIn(
-            'python3 tools/validate-npm-cli-package-version.py --tag "$GITHUB_REF_NAME"',
-            source,
-        )
+        self.assertNotIn("Validate stable npm CLI package version", source)
+        self.assertNotIn("validate-npm-cli-package-version.py --tag", source)
 
     def test_cli_container_uses_data_volume_and_help_entrypoint(self) -> None:
         dockerfile = (ROOT / "Dockerfile.cli").read_text(encoding="utf-8")

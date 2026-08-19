@@ -136,6 +136,16 @@ func (runtime *HeadlessRuntime) GetSavedConnections() ([]connection.SavedConnect
 	return runtime.app.GetSavedConnections()
 }
 
+// GetRequestDiagnostic returns the process-local, redacted trace for a CLI
+// request. It intentionally shares the desktop retention boundary and never
+// writes diagnostic data to the connection store.
+func (runtime *HeadlessRuntime) GetRequestDiagnostic(requestID string) connection.QueryResult {
+	if runtime == nil || runtime.app == nil {
+		return connection.QueryResult{Success: false, Message: "headless runtime is unavailable"}
+	}
+	return runtime.app.GetRequestDiagnostic(requestID)
+}
+
 func (runtime *HeadlessRuntime) SaveConnection(input connection.SavedConnectionInput) (connection.SavedConnectionView, error) {
 	if runtime == nil || runtime.app == nil {
 		return connection.SavedConnectionView{}, errors.New("headless runtime is unavailable")
@@ -193,7 +203,7 @@ func (runtime *HeadlessRuntime) InspectSQL(config connection.ConnectionConfig, s
 	return InspectSQL(resolveDDLDBType(config), sql)
 }
 
-func (runtime *HeadlessRuntime) Query(ctx context.Context, config connection.ConnectionConfig, dbName string, sql string, options HeadlessQueryOptions) connection.QueryResult {
+func (runtime *HeadlessRuntime) Query(ctx context.Context, config connection.ConnectionConfig, dbName string, sql string, options HeadlessQueryOptions) (result connection.QueryResult) {
 	if runtime == nil || runtime.app == nil || runtime.executor == nil {
 		return connection.QueryResult{Success: false, Message: "headless runtime is unavailable"}
 	}
@@ -201,6 +211,23 @@ func (runtime *HeadlessRuntime) Query(ctx context.Context, config connection.Con
 	if sql == "" {
 		return connection.QueryResult{Success: false, Message: "SQL is required"}
 	}
+	queryID := runtime.app.GenerateQueryID()
+	traceCtx, requestTrace, ownsRequestTrace := runtime.app.beginQueryRequestTrace(
+		ctx,
+		config,
+		queryID,
+		"cli",
+		"cli.query",
+	)
+	if ownsRequestTrace {
+		defer func() {
+			if result.QueryID == "" {
+				result.QueryID = queryID
+			}
+			runtime.app.completeQueryRequestTrace(requestTrace, result)
+		}()
+	}
+	requestTrace.AddEvent("cli.command.accepted", nil)
 	var err error
 	config, err = runtime.app.resolveConnectionSecrets(config)
 	if err != nil {
@@ -209,8 +236,7 @@ func (runtime *HeadlessRuntime) Query(ctx context.Context, config connection.Con
 	if err := runtime.authorizeHeadlessSQL(config, sql, options.AllowMutating, false); err != nil {
 		return headlessPolicyFailure(err)
 	}
-	queryID := runtime.app.GenerateQueryID()
-	return runtime.executor.DBQueryMulti(ctx, config, dbName, sql, queryID)
+	return runtime.executor.DBQueryMulti(traceCtx, config, dbName, sql, queryID)
 }
 
 // ExportQueryToPath performs a SELECT/WITH export without any desktop dialog.
@@ -223,6 +249,24 @@ func (runtime *HeadlessRuntime) ExportQueryToPath(ctx context.Context, config co
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	queryID := runtime.app.GenerateQueryID()
+	traceCtx, requestTrace, ownsRequestTrace := runtime.app.beginQueryRequestTrace(
+		ctx,
+		config,
+		queryID,
+		"cli",
+		"cli.export",
+	)
+	ctx = traceCtx
+	if ownsRequestTrace {
+		defer func() {
+			if result.QueryID == "" {
+				result.QueryID = queryID
+			}
+			runtime.app.completeQueryRequestTrace(requestTrace, result)
+		}()
+	}
+	requestTrace.AddEvent("export.accepted", nil)
 	sql = strings.TrimSpace(sql)
 	options = normalizeExportFileOptions("", options)
 	if sql == "" {
@@ -255,7 +299,6 @@ func (runtime *HeadlessRuntime) ExportQueryToPath(ctx context.Context, config co
 		return buildQueryExecutionFailure(ctx, err, err.Error(), "")
 	}
 
-	queryID := runtime.app.GenerateQueryID()
 	runConfig := normalizeRunConfig(config, dbName)
 	startedAt := time.Now()
 	defer func() {
@@ -273,6 +316,7 @@ func (runtime *HeadlessRuntime) ExportQueryToPath(ctx context.Context, config co
 		})
 	}()
 
+	requestTrace.AddEvent("driver.dispatched", nil)
 	dbInst, err := runtime.app.getDatabaseWithContext(ctx, runConfig, false)
 	if err != nil {
 		return headlessConnectionFailure(err)
@@ -326,10 +370,28 @@ func (runtime *HeadlessRuntime) ExportQueryToPath(ctx context.Context, config co
 	}
 }
 
-func (runtime *HeadlessRuntime) ExecuteSQLFile(ctx context.Context, config connection.ConnectionConfig, dbName string, filePath string, options HeadlessSQLFileOptions) connection.QueryResult {
+func (runtime *HeadlessRuntime) ExecuteSQLFile(ctx context.Context, config connection.ConnectionConfig, dbName string, filePath string, options HeadlessSQLFileOptions) (result connection.QueryResult) {
 	if runtime == nil || runtime.app == nil {
 		return connection.QueryResult{Success: false, Message: "headless runtime is unavailable"}
 	}
+	queryID := runtime.app.GenerateQueryID()
+	traceCtx, requestTrace, ownsRequestTrace := runtime.app.beginQueryRequestTrace(
+		ctx,
+		config,
+		queryID,
+		"cli",
+		"cli.batch",
+	)
+	ctx = traceCtx
+	if ownsRequestTrace {
+		defer func() {
+			if result.QueryID == "" {
+				result.QueryID = queryID
+			}
+			runtime.app.completeQueryRequestTrace(requestTrace, result)
+		}()
+	}
+	requestTrace.AddEvent("batch.accepted", nil)
 	transactionMode, err := normalizeHeadlessSQLTransactionMode(options.TransactionMode)
 	if err != nil {
 		return connection.QueryResult{Success: false, Message: err.Error()}
@@ -372,6 +434,7 @@ func (runtime *HeadlessRuntime) ExecuteSQLFile(ctx context.Context, config conne
 		}
 		return nil
 	}
+	requestTrace.AddEvent("driver.dispatched", nil)
 	return runtime.app.executeSQLFileWithStatementLimitPolicyContextWithPolicy(
 		ctx,
 		config,

@@ -6,7 +6,7 @@ import { Input, Spin, Empty, Dropdown, message, Tooltip, Button } from 'antd';
 import type { MenuProps } from 'antd';
 import { TableOutlined, SearchOutlined, ReloadOutlined, SortAscendingOutlined, DatabaseOutlined, ConsoleSqlOutlined, EditOutlined, CopyOutlined, SaveOutlined, DeleteOutlined, ExportOutlined, AppstoreOutlined, UnorderedListOutlined, WarningOutlined, CaretUpFilled, CaretDownFilled } from '@ant-design/icons';
 import { buildSidebarTablePinKey, useStore, type TableOverviewViewMode } from '../store';
-import { DBGetTables, DBQuery, DBShowCreateTable, DropTable, RenameTable } from '../../wailsjs/go/app/App';
+import { DBGetTables, DBQuery, DBRefreshTableStats, DBShowCreateTable, DropTable, RenameTable } from '../../wailsjs/go/app/App';
 import type { TabData } from '../types';
 import { useAutoFetchVisibility } from '../utils/autoFetchVisibility';
 import { buildRpcConnectionConfig } from '../utils/connectionRpcConfig';
@@ -345,6 +345,21 @@ const TableOverview: React.FC<TableOverviewProps> = ({ tab }) => {
                 if (!isLatestRequest()) return;
                 if (res.success && Array.isArray(res.data)) {
                     setTables(parseTableStats(metadataDialect, res.data));
+                    if (metadataDialect === 'sqlite' || metadataDialect === 'sqlite3') {
+                        setLoading(false);
+                        const tableNames = res.data
+                            .map((row: Record<string, any>) => extractTableNameFromMetadataRow(row))
+                            .filter((tableName: string) => tableName !== '');
+                        const refreshed = await DBRefreshTableStats(
+                            buildRpcConnectionConfig(config) as any,
+                            tab.dbName || '',
+                            tableNames,
+                        ).catch(() => null);
+                        if (!isLatestRequest()) return;
+                        if (refreshed?.success && Array.isArray(refreshed.data)) {
+                            setTables(parseTableStats(metadataDialect, refreshed.data));
+                        }
+                    }
                 } else {
                     message.error(t('table_overview.message.load_tables_failed', {
                         detail: res.message || t('table_overview.message.unknown_error'),
@@ -381,7 +396,10 @@ const TableOverview: React.FC<TableOverviewProps> = ({ tab }) => {
         void loadData();
     }, [autoFetchVisible, loadData]);
 
-    const tableSearchIndex = useMemo(() => buildTableOverviewSearchIndex(tables), [tables]);
+    const tableSearchIndex = useMemo(
+        () => buildTableOverviewSearchIndex(tables, (table) => getTableOverviewDisplayName(metadataDialect, table.name)),
+        [metadataDialect, tables],
+    );
 
     const sortedFiltered = useMemo(() => (
         filterAndSortTableOverviewRows(tableSearchIndex, deferredSearchText, sortField, sortOrder)

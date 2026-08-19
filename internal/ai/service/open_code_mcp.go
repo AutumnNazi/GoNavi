@@ -29,6 +29,9 @@ func (s *Service) AIInstallOpenCodeMCP() (ai.MCPClientInstallResult, error) {
 	if err != nil {
 		return ai.MCPClientInstallResult{}, fmt.Errorf("%s", s.serviceText("ai.service.mcp_client.opencode.config_path_failed", map[string]any{"detail": localizeMCPClientPathDetail(s.serviceText, err)}))
 	}
+	if err := requireLocalMCPClientCommand(openCodeClientCommandName, "OpenCode", s.serviceText); err != nil {
+		return ai.MCPClientInstallResult{}, err
+	}
 
 	executablePath, err := localMCPExecutablePathFunc()
 	if err != nil {
@@ -130,6 +133,13 @@ func inspectOpenCodeMCPInstallStatus(expectedCommand string, expectedArgs []stri
 		status.Command = strings.TrimSpace(serverConfig.Command[0])
 		status.Args = append([]string(nil), serverConfig.Command[1:]...)
 	}
+	if !status.ClientDetected {
+		status.Message = mcpClientInstallText(text, "ai.service.mcp_client.local_client_not_detected", map[string]any{
+			"label":   status.DisplayName,
+			"command": status.ClientCommand,
+		})
+		return status
+	}
 	if expectedErr != nil {
 		status.Message = mcpClientInstallText(text, "ai.service.mcp_client.opencode.status.path_check_failed", map[string]any{"detail": expectedErr.Error()})
 		return status
@@ -147,6 +157,9 @@ func inspectOpenCodeMCPInstallStatus(expectedCommand string, expectedArgs []stri
 }
 
 func repairOpenCodeMCPClientConfig(expectedCommand string, expectedArgs []string, text mcpClientInstallTextFunc) error {
+	if !isLocalMCPClientCommandDetected(openCodeClientCommandName) {
+		return nil
+	}
 	configPath, err := openCodeConfigPathFunc()
 	if err != nil {
 		return err

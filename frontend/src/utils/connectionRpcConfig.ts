@@ -53,6 +53,8 @@ const normalizeSSHConfig = (value: unknown): connection.SSHConfig => {
     user: toStringValue(raw.user),
     password: toStringValue(raw.password),
     keyPath: toStringValue(raw.keyPath),
+    knownHostsPath: toStringValue(raw.knownHostsPath),
+    hostKeyFingerprint: toStringValue(raw.hostKeyFingerprint),
   });
 };
 

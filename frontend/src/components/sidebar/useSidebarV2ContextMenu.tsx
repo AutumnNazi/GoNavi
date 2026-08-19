@@ -463,6 +463,7 @@ export const useSidebarV2ContextMenu = ({
               driverLabel={resolveConnectionIconType(conn)}
               isRedis={conn?.config?.type === 'redis'}
               supportsCreateDatabase={capabilities.supportsCreateDatabase}
+              supportsQueryEditor={capabilities.supportsQueryEditor}
               tags={connectionTags.map((tag) => ({
                   id: tag.id,
                   name: tag.name,
