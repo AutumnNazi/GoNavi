@@ -99,6 +99,7 @@ class CLIReleaseAssetsTest(unittest.TestCase):
             "release.yml": (
                 "Build and package CLI",
                 "Package macOS DMG",
+                "Verify GUI and CLI driver revision contracts",
                 "Validate CLI artifact staging",
                 "Generate CLI checksums",
                 "Generate SHA256SUMS",
@@ -110,6 +111,7 @@ class CLIReleaseAssetsTest(unittest.TestCase):
             "dev-build.yml": (
                 "Build and package dev CLI",
                 "Package macOS DMG",
+                "Verify GUI and CLI driver revision contracts",
                 "Validate dev CLI artifact staging",
                 "Generate dev CLI checksums",
                 "Generate SHA256SUMS",
@@ -140,6 +142,56 @@ class CLIReleaseAssetsTest(unittest.TestCase):
                     0,
                     f"invalid bash in {workflow_name} step {step_name!r}:\n{result.stderr}",
                 )
+
+    def test_gui_and_cli_driver_revisions_are_compared_before_release_staging(self) -> None:
+        cases = (
+            (
+                "release.yml",
+                "Build and package CLI",
+                "Validate CLI artifact staging",
+                "cli-driver-revision-contract-*",
+                "gui-driver-revision-contract-*",
+            ),
+            (
+                "dev-build.yml",
+                "Build and package dev CLI",
+                "Validate dev CLI artifact staging",
+                "dev-cli-driver-revision-contract-*",
+                "dev-gui-driver-revision-contract-*",
+            ),
+        )
+        for workflow_name, cli_step, staging_step, cli_pattern, gui_pattern in cases:
+            source = (ROOT / ".github" / "workflows" / workflow_name).read_text(encoding="utf-8")
+            cli_script = extract_workflow_run_script(source, cli_step)
+            gui_script = extract_workflow_run_script(source, "Build")
+            verification_script = extract_workflow_run_script(
+                source, "Verify GUI and CLI driver revision contracts"
+            )
+
+            self.assertIn("tools/write-driver-revision-contract.sh --role cli", cli_script)
+            self.assertIn('--platform "GITHUB_EXPRESSION/GITHUB_EXPRESSION"', cli_script)
+            self.assertIn("--output-dir driver-revision-contract", cli_script)
+            self.assertIn("tools/write-driver-revision-contract.sh --role gui", gui_script)
+            self.assertIn('--platform "GITHUB_EXPRESSION"', gui_script)
+            self.assertIn("--output-dir driver-revision-contract", gui_script)
+            self.assertIn(
+                "tools/verify-driver-revision-contract.sh --contracts-dir driver-revision-contract",
+                verification_script,
+            )
+            self.assertIn(cli_pattern, source)
+            self.assertIn(gui_pattern, source)
+            self.assertIn('--platform "${{ matrix.goos }}/${{ matrix.goarch }}"', source)
+            self.assertIn('--platform "${{ matrix.platform }}"', source)
+            self.assertIn("path: driver-revision-contract", source)
+            self.assertIn("if: ${{ matrix.wails_tags == '' }}", source)
+            self.assertLess(
+                source.index("Verify GUI and CLI driver revision contracts"),
+                source.index(staging_step),
+            )
+
+        for workflow_name in ("release.yml", "dev-build.yml"):
+            source = (ROOT / ".github" / "workflows" / workflow_name).read_text(encoding="utf-8")
+            self.assertIn("bash tools/verify-driver-revision-contract.test.sh", source)
 
     def test_stable_release_title_matches_immutable_tag(self) -> None:
         source = (ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")

@@ -20,10 +20,11 @@ tmpdir_failure="$(mktemp -d "${TMPDIR:-/tmp}/gonavi-generate-driver-revisions-fa
 tmpdir_platform="$(mktemp -d "${TMPDIR:-/tmp}/gonavi-generate-driver-revisions-platform.XXXXXX")"
 tmpdir_connection="$(mktemp -d "${TMPDIR:-/tmp}/gonavi-generate-driver-revisions-connection.XXXXXX")"
 tmpdir_scope="$(mktemp -d "${TMPDIR:-/tmp}/gonavi-generate-driver-revisions-scope.XXXXXX")"
+tmpdir_runner="$(mktemp -d "${TMPDIR:-/tmp}/gonavi-generate-driver-revisions-runner.XXXXXX")"
 darwin_file="$(mktemp "${TMPDIR:-/tmp}/gonavi-darwin-revisions.XXXXXX")"
 windows_file="$(mktemp "${TMPDIR:-/tmp}/gonavi-windows-revisions.XXXXXX")"
 cleanup() {
-  rm -rf "$tmpdir_failure" "$tmpdir_platform" "$tmpdir_connection" "$tmpdir_scope"
+  rm -rf "$tmpdir_failure" "$tmpdir_platform" "$tmpdir_connection" "$tmpdir_scope" "$tmpdir_runner"
   rm -f "$darwin_file" "$windows_file"
 }
 trap cleanup EXIT
@@ -84,6 +85,62 @@ if [[ "$darwin_duckdb" == "$windows_duckdb" ]]; then
   echo "expected duckdb revision to differ between darwin/arm64 and windows/amd64, got identical value: $darwin_duckdb" >&2
   exit 1
 fi
+
+copy_repo_to_tmp "$tmpdir_runner"
+
+(
+  cd "$tmpdir_runner"
+  runner_source="$tmpdir_runner/runner-only.go"
+  before_file="$(mktemp "${TMPDIR:-/tmp}/gonavi-runner-revision-before.XXXXXX")"
+  after_file="$(mktemp "${TMPDIR:-/tmp}/gonavi-runner-revision-after.XXXXXX")"
+  cleanup_runner_revision_files() {
+    rm -f "$before_file" "$after_file"
+  }
+  trap cleanup_runner_revision_files EXIT
+
+  printf '%s\n' 'package runneronly' 'const Revision = "first"' > "$runner_source"
+  mkdir -p fake-bin
+  cat >fake-bin/go <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ "${1:-}" == "list" ]]; then
+  for arg in "$@"; do
+    if [[ "$arg" == "./cmd/optional-driver-agent" ]]; then
+      printf '%s\n' "$PWD/cmd/optional-driver-agent/main.go"
+      printf '%s\n' "$PWD/internal/db/sqlite_impl.go"
+      printf '%s\n' "${RUNNER_SOURCE:?}"
+      exit 0
+    fi
+  done
+fi
+
+exec "${REAL_GO:?}" "$@"
+EOF
+  chmod +x fake-bin/go
+
+  export REAL_GO="$(command -v go)"
+  export RUNNER_SOURCE="$runner_source"
+  export PATH="$PWD/fake-bin:$PATH"
+  export GONAVI_DRIVER_REVISION_JOBS=1
+
+  bash ./tools/generate-driver-agent-revisions.sh --platform darwin/arm64 --drivers sqlite >/dev/null
+  cp internal/db/driver_agent_revisions_gen.go "$before_file"
+  printf '%s\n' 'package runneronly' 'const Revision = "second"' > "$runner_source"
+  bash ./tools/generate-driver-agent-revisions.sh --platform darwin/arm64 --drivers sqlite >/dev/null
+  cp internal/db/driver_agent_revisions_gen.go "$after_file"
+
+  before_sqlite="$(extract_revision "$before_file" sqlite)"
+  after_sqlite="$(extract_revision "$after_file" sqlite)"
+  if [[ -z "$before_sqlite" || -z "$after_sqlite" ]]; then
+    echo "expected sqlite revision to be generated for runner-isolation check" >&2
+    exit 1
+  fi
+  if [[ "$before_sqlite" != "$after_sqlite" ]]; then
+    echo "expected runner-only dependency change to keep sqlite revision stable, before=$before_sqlite after=$after_sqlite" >&2
+    exit 1
+  fi
+)
 
 copy_repo_to_tmp "$tmpdir_connection"
 

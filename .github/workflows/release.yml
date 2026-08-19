@@ -79,6 +79,7 @@ jobs:
             .github/workflows/publish-release.yml
           bash tools/detect-changed-driver-agents.test.sh
           bash tools/generate-driver-agent-revisions.test.sh
+          bash tools/verify-driver-revision-contract.test.sh
           python3 tools/generate-driver-release-manifest.test.py
           python3 tools/generate-update-latest-manifest.test.py
           python3 tools/validate-gui-update-manifest.test.py
@@ -344,6 +345,9 @@ jobs:
           stage="${RUNNER_TEMP}/gonavi-cli-${{ matrix.goos }}-${{ matrix.goarch }}"
           mkdir -p "$stage"
           ./tools/generate-driver-agent-revisions.sh --platform "${{ matrix.goos }}/${{ matrix.goarch }}"
+          ./tools/write-driver-revision-contract.sh --role cli \
+            --platform "${{ matrix.goos }}/${{ matrix.goarch }}" \
+            --output-dir driver-revision-contract
           CGO_ENABLED=0 GOOS="${{ matrix.goos }}" GOARCH="${{ matrix.goarch }}" \
             go build -trimpath -ldflags="-s -w -X GoNavi-Wails/internal/cli.Version=${version}" \
             -o "$stage/${{ matrix.binary }}" ./cmd/gonavi
@@ -371,6 +375,14 @@ jobs:
         with:
           name: cli-artifact-${{ matrix.goos }}-${{ matrix.goarch }}
           path: gonavi-cli_*
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Upload CLI driver revision contract
+        uses: actions/upload-artifact@v6
+        with:
+          name: cli-driver-revision-contract-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: driver-revision-contract/*.sha256
           if-no-files-found: error
           retention-days: 1
 
@@ -653,6 +665,9 @@ jobs:
           set -euo pipefail
           echo "🧭 为 ${{ matrix.platform }} 全量生成 driver-agent revision 指纹，避免跨平台沿用旧 revision"
           ./tools/generate-driver-agent-revisions.sh --platform "${{ matrix.platform }}"
+          ./tools/write-driver-revision-contract.sh --role gui \
+            --platform "${{ matrix.platform }}" \
+            --output-dir driver-revision-contract
           REVISION_HASH="$(python3 - <<'PY'
           import hashlib
           from pathlib import Path
@@ -1322,6 +1337,15 @@ jobs:
             driver-provenance/**
           retention-days: 1
 
+      - name: Upload GUI driver revision contract
+        if: ${{ matrix.wails_tags == '' }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: gui-driver-revision-contract-${{ matrix.os_name }}-${{ matrix.arch_name }}
+          path: driver-revision-contract/*.sha256
+          if-no-files-found: error
+          retention-days: 1
+
   # Phase 2: Collect all artifacts and Publish Release (Single Job)
   release:
     name: Publish Release
@@ -1358,6 +1382,26 @@ jobs:
           path: cli-assets
           pattern: cli-artifact-*
           merge-multiple: true
+
+      - name: Download GUI driver revision contracts
+        uses: actions/download-artifact@v7
+        with:
+          path: driver-revision-contract
+          pattern: gui-driver-revision-contract-*
+          merge-multiple: true
+
+      - name: Download CLI driver revision contracts
+        uses: actions/download-artifact@v7
+        with:
+          path: driver-revision-contract
+          pattern: cli-driver-revision-contract-*
+          merge-multiple: true
+
+      - name: Verify GUI and CLI driver revision contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./tools/verify-driver-revision-contract.sh --contracts-dir driver-revision-contract
 
       - name: Validate CLI artifact staging
         shell: bash
