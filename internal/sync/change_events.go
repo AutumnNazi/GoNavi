@@ -59,6 +59,7 @@ type ChangeEventRequest struct {
 type ChangeEventResult struct {
 	Success        bool                  `json:"success"`
 	Cancelled      bool                  `json:"cancelled,omitempty"`
+	OutcomeUnknown bool                  `json:"outcomeUnknown,omitempty"`
 	Message        string                `json:"message,omitempty"`
 	EventsReceived int                   `json:"eventsReceived"`
 	EventsApplied  int                   `json:"eventsApplied"`
@@ -339,6 +340,10 @@ func applyChangeEventBatchWithPolicy(ctx context.Context, targetDB db.Database, 
 			result.BatchesApplied++
 		}
 		return nil
+	}
+	if db.IsWriteOutcomeUnknown(err) {
+		result.OutcomeUnknown = true
+		return err
 	}
 	if ctx.Err() != nil {
 		return ctx.Err()

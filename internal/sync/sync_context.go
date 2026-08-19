@@ -4,6 +4,7 @@ import (
 	"GoNavi-Wails/internal/connection"
 	"GoNavi-Wails/internal/db"
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 )
@@ -106,9 +107,17 @@ func applySyncChangesContext(ctx context.Context, applier db.BatchApplier, table
 		}
 	}
 	if err := applier.ApplyChanges(tableName, changes); err != nil {
+		if contextErr := ctx.Err(); contextErr != nil {
+			return db.MarkWriteOutcomeUnknown(errors.Join(err, contextErr))
+		}
 		return err
 	}
-	return ctx.Err()
+	if err := ctx.Err(); err != nil {
+		// A legacy applier cannot observe cancellation while the call is in
+		// flight. Its write may already have reached the target.
+		return db.MarkWriteOutcomeUnknown(err)
+	}
+	return nil
 }
 
 func executeSyncSQLStatementsContext(ctx context.Context, database db.Database, statements []string) error {

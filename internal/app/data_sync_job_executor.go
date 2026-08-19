@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"GoNavi-Wails/internal/db"
 	syncbackend "GoNavi-Wails/internal/sync"
 	"GoNavi-Wails/internal/syncjob"
 )
@@ -288,6 +289,9 @@ func (executor appDataSyncJobExecutor) executeWatermarkMappingWithRetry(
 			return outcome, nil
 		}
 		runErr := errors.New(result.Message)
+		if result.OutcomeUnknown {
+			return syncjob.ExecutionOutcome{Resumable: false}, db.MarkWriteOutcomeUnknown(runErr)
+		}
 		if result.Cancelled || ctx.Err() != nil || attempt == maxAttempts {
 			if ctx.Err() != nil {
 				return outcome, ctx.Err()
@@ -485,9 +489,12 @@ func (executor appDataSyncJobExecutor) executeOneMapping(ctx context.Context, ru
 		RowsDeleted:  int64(result.RowsDeleted),
 		RowsFailed:   int64(result.RowsSkipped),
 		Message:      result.Message,
-		Resumable:    !result.Success && !strings.EqualFold(strings.TrimSpace(config.Mode), "insert_only"),
+		Resumable:    !result.Success && !result.OutcomeUnknown && !strings.EqualFold(strings.TrimSpace(config.Mode), "insert_only"),
 	}
 	if !result.Success {
+		if result.OutcomeUnknown {
+			return outcome, db.MarkWriteOutcomeUnknown(errors.New(result.Message))
+		}
 		if result.Cancelled && ctx.Err() != nil {
 			return outcome, ctx.Err()
 		}

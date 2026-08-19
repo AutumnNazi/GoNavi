@@ -432,10 +432,15 @@ func (d *DuckDB) ApplyChanges(tableName string, changes connection.ChangeSet) er
 		return duckDBConnectionNotOpenError()
 	}
 
-	tx, err := d.conn.Begin()
+	conn, tx, err := beginPinnedWriteTransaction(d.conn)
 	if err != nil {
 		return err
 	}
+	defer func() {
+		if conn != nil {
+			_ = conn.Close()
+		}
+	}()
 	defer tx.Rollback()
 
 	quoteIdent := func(name string) string {
@@ -520,5 +525,5 @@ func (d *DuckDB) ApplyChanges(tableName string, changes connection.ChangeSet) er
 		return err
 	}
 
-	return tx.Commit()
+	return commitPinnedWriteTransaction(&conn, tx)
 }

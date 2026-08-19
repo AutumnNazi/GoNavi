@@ -22,7 +22,7 @@ func TestDuckDBConnectConfiguresBoundedPool(t *testing.T) {
 	if got := client.conn.Stats().MaxOpenConnections; got != duckDBSQLMaxOpenConns {
 		t.Fatalf("expected max open connections %d, got %d", duckDBSQLMaxOpenConns, got)
 	}
-	if _, err := client.Query("SELECT 1"); err != nil {
+	if _, _, err := client.Query("SELECT 1"); err != nil {
 		t.Fatalf("query failed: %v", err)
 	}
 	stats := client.conn.Stats()

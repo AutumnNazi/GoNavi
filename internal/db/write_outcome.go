@@ -101,3 +101,29 @@ func commitWriteTransaction(tx *sql.Tx) error {
 	}
 	return nil
 }
+
+// beginPinnedWriteTransaction keeps the physical connection available until a
+// commit outcome is known, so an ambiguous commit can evict that connection.
+func beginPinnedWriteTransaction(database *sql.DB) (*sql.Conn, *sql.Tx, error) {
+	conn, err := database.Conn(context.Background())
+	if err != nil {
+		return nil, nil, err
+	}
+	tx, err := conn.BeginTx(context.Background(), nil)
+	if err != nil {
+		_ = conn.Close()
+		return nil, nil, err
+	}
+	return conn, tx, nil
+}
+
+func commitPinnedWriteTransaction(connRef **sql.Conn, tx *sql.Tx) error {
+	err := commitWriteTransaction(tx)
+	if !IsWriteOutcomeUnknown(err) {
+		return err
+	}
+	if discardErr := discardSQLConn(connRef); discardErr != nil {
+		return errors.Join(err, fmt.Errorf("事务连接丢弃失败：%w", discardErr))
+	}
+	return err
+}

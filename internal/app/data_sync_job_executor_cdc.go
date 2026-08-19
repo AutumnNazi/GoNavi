@@ -10,6 +10,7 @@ import (
 	"io"
 	"strings"
 
+	"GoNavi-Wails/internal/db"
 	syncbackend "GoNavi-Wails/internal/sync"
 	"GoNavi-Wails/internal/synccdc"
 	"GoNavi-Wails/internal/syncjob"
@@ -134,6 +135,10 @@ func (executor appDataSyncJobExecutor) executeCDCJob(
 			outcome.RowsDeleted += int64(result.RowsDeleted)
 			outcome.RowsFailed += int64(result.EventsSkipped)
 			if !result.Success {
+				if result.OutcomeUnknown {
+					outcome.Resumable = false
+					return outcome, db.MarkWriteOutcomeUnknown(errors.New(result.Message))
+				}
 				if result.Cancelled && ctx.Err() != nil {
 					return outcome, ctx.Err()
 				}

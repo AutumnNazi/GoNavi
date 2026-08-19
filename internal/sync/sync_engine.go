@@ -58,15 +58,16 @@ type SyncConfig struct {
 
 // SyncResult holds the result of the sync operation
 type SyncResult struct {
-	Success      bool     `json:"success"`
-	Message      string   `json:"message"`
-	Logs         []string `json:"logs"`
-	TablesSynced int      `json:"tablesSynced"`
-	RowsInserted int      `json:"rowsInserted"`
-	RowsUpdated  int      `json:"rowsUpdated"`
-	RowsDeleted  int      `json:"rowsDeleted"`
-	RowsSkipped  int      `json:"rowsSkipped,omitempty"`
-	Cancelled    bool     `json:"cancelled,omitempty"`
+	Success        bool     `json:"success"`
+	Message        string   `json:"message"`
+	Logs           []string `json:"logs"`
+	TablesSynced   int      `json:"tablesSynced"`
+	RowsInserted   int      `json:"rowsInserted"`
+	RowsUpdated    int      `json:"rowsUpdated"`
+	RowsDeleted    int      `json:"rowsDeleted"`
+	RowsSkipped    int      `json:"rowsSkipped,omitempty"`
+	Cancelled      bool     `json:"cancelled,omitempty"`
+	OutcomeUnknown bool     `json:"outcomeUnknown,omitempty"`
 }
 
 type SyncEngine struct {
@@ -783,6 +784,9 @@ func (s *SyncEngine) applyChangesInBatches(jobID string, res *SyncResult, tableN
 				idx+1, len(batches), len(batch.Inserts), len(batch.Updates), len(batch.Deletes)))
 		}
 		if err := applySyncChangesContext(s.context(), applier, tableName, batch); err != nil {
+			if db.IsWriteOutcomeUnknown(err) {
+				res.OutcomeUnknown = true
+			}
 			if len(batches) > 1 {
 				if applied.total() > 0 {
 					return applied, fmt.Errorf(

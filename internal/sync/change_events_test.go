@@ -4,6 +4,7 @@ import (
 	"GoNavi-Wails/internal/connection"
 	"GoNavi-Wails/internal/db"
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -119,6 +120,40 @@ func TestRunChangeEventsContextSkipsBadRowByAtomicBatchIsolation(t *testing.T) {
 	}
 	if strings.Contains(result.Message, "customer-password-raw") || strings.Contains(fmt.Sprint(result.RowErrors), "customer-password-raw") {
 		t.Fatalf("sensitive payload leaked in result: %+v", result)
+	}
+}
+
+func TestRunChangeEventsContextDoesNotReplayUnknownWriteWithSkipRow(t *testing.T) {
+	columns := []connection.ColumnDefinition{{Name: "id", Type: "bigint", Nullable: "NO", Key: "PRI"}}
+	target := &watermarkTestDatabase{fakeMigrationDB: fakeMigrationDB{columns: map[string][]connection.ColumnDefinition{"dst.events": columns}}}
+	target.queryFunc = func(string) ([]map[string]interface{}, []string, error) { return nil, nil, nil }
+	applyCalls := 0
+	target.applyFunc = func(string, connection.ChangeSet) error {
+		applyCalls++
+		return db.MarkWriteOutcomeUnknown(errors.New("write response lost"))
+	}
+	useSyncDatabaseFactorySequence(t, syncDatabaseFactoryStep{db: target})
+	request := changeEventBaseRequest(
+		DataChangeEvent{ID: "first", Object: SyncObjectRef{Name: "events"}, Operation: ChangeEventOperationInsert, Key: map[string]interface{}{"id": int64(10)}, After: map[string]interface{}{"id": int64(10)}},
+		DataChangeEvent{ID: "second", Object: SyncObjectRef{Name: "events"}, Operation: ChangeEventOperationInsert, Key: map[string]interface{}{"id": int64(50)}, After: map[string]interface{}{"id": int64(50)}},
+	)
+	request.Sync.BatchSize = 2
+	request.RowErrorPolicy = RowErrorPolicySkipRow
+	callbackCalls := 0
+	request.OnRowError = func(context.Context, ChangeEventRowError) error {
+		callbackCalls++
+		return nil
+	}
+
+	result := NewSyncEngine(Reporter{}).RunChangeEventsContext(context.Background(), request)
+	if result.Success || !result.OutcomeUnknown || result.EventsApplied != 0 || result.EventsSkipped != 0 {
+		t.Fatalf("RunChangeEventsContext() = %+v, want unknown terminal failure", result)
+	}
+	if applyCalls != 1 {
+		t.Fatalf("apply calls = %d, want one unknown batch without split/replay", applyCalls)
+	}
+	if callbackCalls != 0 || len(result.RowErrors) != 0 {
+		t.Fatalf("row-error handling ran after unknown write: callbacks=%d errors=%#v", callbackCalls, result.RowErrors)
 	}
 }
 
