@@ -1,5 +1,6 @@
-const NODE_IDS = ["dmit", "netcup"] as const;
-const LEGACY_DISABLED_NETCUP_BASE_URL = "https://netcup-disabled.invalid";
+const NODE_IDS = ["dmit", "bero"] as const;
+const LEGACY_DISABLED_BERO_BASE_URL = "https://bero-disabled.invalid";
+const BERO_PROXY_BASE_URL = "https://origin-download.syngnat.top:8443";
 const CHANNELS = ["stable", "dev"] as const;
 const SUCCESS_THRESHOLD = 2;
 const FAILURE_THRESHOLD = 3;
@@ -107,19 +108,8 @@ function normalizeHttpsBaseUrl(value: unknown): string | null {
   }
 }
 
-function isNetcupProxyBaseUrl(value: string): boolean {
-  let parsed: URL;
-  try {
-    parsed = new URL(value);
-  } catch {
-    return false;
-  }
-  if (parsed.pathname !== "/" && parsed.pathname !== "") return false;
-  const hostname = parsed.hostname.toLowerCase();
-  return !/^(?:\d{1,3}\.){3}\d{1,3}$/.test(hostname)
-    && !hostname.includes(":")
-    && hostname !== "download.syngnat.top"
-    && hostname !== "157.254.234.28";
+function isBeroProxyBaseUrl(value: string): boolean {
+  return value === BERO_PROXY_BASE_URL;
 }
 
 function parseStrictUTCTimestamp(value: string): number | null {
@@ -153,10 +143,11 @@ function validateControl(value: unknown, expectedChannel: Channel): PublicationC
   const nodes = {} as Record<NodeId, EdgeConfig>;
   for (const nodeId of NODE_IDS) {
     const rawNode = value.nodes[nodeId];
-    // A control written before netcup was introduced remains readable, but its
-    // missing fallback is explicitly disabled until the next publication.
-    if (rawNode === undefined && nodeId === "netcup") {
-      nodes[nodeId] = { baseUrl: LEGACY_DISABLED_NETCUP_BASE_URL, enabled: false };
+    // A control written before the Bero fallback remains readable, but its old
+    // netcup node is intentionally not reused: that generation is not verified
+    // on Bero yet and must fall back to GitHub until the next publication.
+    if (rawNode === undefined && nodeId === "bero") {
+      nodes[nodeId] = { baseUrl: LEGACY_DISABLED_BERO_BASE_URL, enabled: false };
       continue;
     }
     if (!isRecord(rawNode) || typeof rawNode.enabled !== "boolean") {
@@ -166,8 +157,8 @@ function validateControl(value: unknown, expectedChannel: Channel): PublicationC
     if (!baseUrl) {
       throw new Error(`invalid HTTPS base URL for ${nodeId}`);
     }
-    if (nodeId === "netcup" && !isNetcupProxyBaseUrl(baseUrl)) {
-      throw new Error("netcup base URL must be a separate HTTPS hostname");
+    if (nodeId === "bero" && !isBeroProxyBaseUrl(baseUrl)) {
+      throw new Error("bero base URL must be a separate HTTPS hostname");
     }
     nodes[nodeId] = { baseUrl, enabled: rawNode.enabled };
   }
@@ -384,7 +375,7 @@ async function readRoutingState(env: Env, channel: Channel): Promise<RoutingStat
     const nodes = {} as Record<NodeId, NodeHealth>;
     for (const nodeId of NODE_IDS) {
       const raw = value.nodes[nodeId];
-      if (raw === undefined && nodeId === "netcup") {
+      if (raw === undefined && nodeId === "bero") {
         nodes[nodeId] = {
           generation: control.generation,
           healthy: false,
@@ -490,7 +481,7 @@ export async function refreshChannel(
 }
 
 export function orderedNodeIds(): NodeId[] {
-  return ["dmit", "netcup"];
+  return ["dmit", "bero"];
 }
 
 export function isRoutingStateFresh(checkedAt: string, now: number = Date.now()): boolean {
@@ -514,7 +505,7 @@ function joinBaseAndPath(baseUrl: string, relativePath: string): string {
 
 export function selectLegacyRedirectCandidate<T extends { source: string }>(candidates: T[]): T {
   return candidates.find((candidate) => candidate.source === "dmit")
-    ?? candidates.find((candidate) => candidate.source === "netcup")
+    ?? candidates.find((candidate) => candidate.source === "bero")
     ?? candidates[0];
 }
 

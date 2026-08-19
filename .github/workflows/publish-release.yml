@@ -651,12 +651,12 @@ jobs:
           dmit-ssh-user: ${{ secrets.CDN_DMIT_SSH_USER }}
           dmit-ssh-private-key: ${{ secrets.CDN_DMIT_SSH_PRIVATE_KEY }}
           dmit-ssh-known-hosts: ${{ secrets.CDN_DMIT_SSH_KNOWN_HOSTS }}
-          netcup-ssh-host: ${{ secrets.CDN_NETCUP_SSH_HOST }}
-          netcup-ssh-port: ${{ secrets.CDN_NETCUP_SSH_PORT }}
-          netcup-ssh-user: ${{ secrets.CDN_NETCUP_SSH_USER }}
-          netcup-ssh-private-key: ${{ secrets.CDN_NETCUP_SSH_PRIVATE_KEY }}
-          netcup-ssh-known-hosts: ${{ secrets.CDN_NETCUP_SSH_KNOWN_HOSTS }}
-          netcup-base-url: ${{ vars.CDN_NETCUP_BASE_URL }}
+          bero-ssh-host: ${{ secrets.CDN_BERO_SSH_HOST }}
+          bero-ssh-port: ${{ secrets.CDN_BERO_SSH_PORT }}
+          bero-ssh-user: ${{ secrets.CDN_BERO_SSH_USER }}
+          bero-ssh-private-key: ${{ secrets.CDN_BERO_SSH_PRIVATE_KEY }}
+          bero-ssh-known-hosts: ${{ secrets.CDN_BERO_SSH_KNOWN_HOSTS }}
+          bero-base-url: ${{ vars.CDN_BERO_BASE_URL }}
           cloudflare-account-id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           cloudflare-api-token: ${{ secrets.CLOUDFLARE_KV_API_TOKEN }}
           routing-state-kv-id: ${{ vars.ROUTING_STATE_KV_ID }}

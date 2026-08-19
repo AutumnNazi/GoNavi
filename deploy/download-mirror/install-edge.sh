@@ -25,9 +25,9 @@ retention_target="/usr/local/libexec/gonavi-edge-retention"
 [[ "${public_root}" == /srv/* && -f "${server_source}" ]] || { echo "invalid root or server config" >&2; exit 2; }
 [[ -f "${transaction_source}" && -f "${retention_source}" ]] || { echo "run installer from a complete GoNavi checkout" >&2; exit 2; }
 case "${node_id}:${server_kind}" in
-  dmit:caddy|netcup:nginx) ;;
+  dmit:caddy|bero:nginx) ;;
   dmit:*) echo "DMIT must retain its existing Caddy listener" >&2; exit 2 ;;
-  netcup:*) echo "netcup must use the Nginx static-site configuration" >&2; exit 2 ;;
+  bero:*) echo "Bero must use the Nginx static-site configuration" >&2; exit 2 ;;
   *) echo "unsupported edge node: ${node_id}" >&2; exit 2 ;;
 esac
 getent group "${server_group}" >/dev/null || { echo "server group does not exist" >&2; exit 2; }
@@ -114,11 +114,19 @@ if [[ "${server_kind}" == caddy ]]; then
   rm -f -- "${backup_path}"
   systemctl reload caddy
 else
-  # netcup already uses Nginx. The caller supplies a complete server snippet
-  # whose server_name is the Cloudflare-proxied hostname, never the origin IP.
+  # Bero serves the dedicated Cloudflare hostname on :8443 because sing-box
+  # owns :443. The caller supplies a complete static-site server snippet.
   command -v nginx >/dev/null || { echo "nginx is not installed" >&2; exit 2; }
-  grep -Eq '^[[:space:]]*server_name[[:space:]]+' "${server_source}" || { echo "netcup Nginx config must declare server_name" >&2; exit 2; }
-  grep -Fq "root ${public_root}" "${server_source}" || { echo "netcup Nginx config must serve the mirror root" >&2; exit 2; }
+  grep -Eq '^[[:space:]]*server_name[[:space:]]+' "${server_source}" || { echo "Bero Nginx config must declare server_name" >&2; exit 2; }
+  grep -Fq "root ${public_root}" "${server_source}" || { echo "Bero Nginx config must serve the mirror root" >&2; exit 2; }
+  grep -Eq '^[[:space:]]*listen[[:space:]]+8443[[:space:]]+ssl;' "${server_source}" || {
+    echo "Bero Nginx config must listen on 8443 with TLS" >&2
+    exit 2
+  }
+  if grep -Eq '^[[:space:]]*listen[[:space:]]+(\[::\]:)?(80|443|2053)[[:space:];]' "${server_source}"; then
+    echo "Bero Nginx config must not claim ports 80, 443, or 2053" >&2
+    exit 2
+  fi
   site_dir="/etc/nginx/conf.d"
   site_path="${site_dir}/gonavi-download.conf"
   install -d -m 0755 "${site_dir}"
@@ -140,7 +148,11 @@ else
     exit 1
   fi
   rm -f -- "${backup_path}"
-  systemctl reload nginx
+  if systemctl is-active --quiet nginx; then
+    systemctl reload nginx
+  else
+    systemctl enable --now nginx
+  fi
 fi
 
 echo "GoNavi static edge installed: node=${node_id} server=${server_kind} root=${public_root} user=${deploy_user}"
