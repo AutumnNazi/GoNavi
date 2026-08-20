@@ -68,9 +68,26 @@ func mockLocalMCPClientCommandsDetected(t *testing.T) {
 	t.Cleanup(func() { localCLICommandPathFunc = originalCLIPathFunc })
 }
 
+// isolateDeepSeekHarnessClientFallbacks disables the DeepSeek Harness detection
+// fallbacks (DSH home directory and npx cache), so tests exercise the plain
+// PATH-based detection without depending on the developer machine's ~/.dsh or
+// ~/.npm layout.
+func isolateDeepSeekHarnessClientFallbacks(t *testing.T) {
+	t.Helper()
+	originalHomeDirFunc := deepSeekHarnessHomeDirFunc
+	originalNpxPackageDirFunc := deepSeekHarnessNpxPackageDirFunc
+	deepSeekHarnessHomeDirFunc = func() string { return filepath.Join(t.TempDir(), "no-dsh-home") }
+	deepSeekHarnessNpxPackageDirFunc = func() string { return "" }
+	t.Cleanup(func() {
+		deepSeekHarnessHomeDirFunc = originalHomeDirFunc
+		deepSeekHarnessNpxPackageDirFunc = originalNpxPackageDirFunc
+	})
+}
+
 func TestLocalMCPClientInstallersRejectUndetectedClientsWithoutWritingConfig(t *testing.T) {
 	disableLocalCLICommandShellFallback(t)
 	additionalPaths := isolateAdditionalMCPClientConfigs(t)
+	isolateDeepSeekHarnessClientFallbacks(t)
 	openCodePath := isolateOpenCodeMCPConfig(t)
 	originalClaudeConfigPathFunc := claudeCodeConfigPathFunc
 	originalCodexConfigPathFunc := codexConfigPathFunc
@@ -122,6 +139,7 @@ func TestLocalMCPClientInstallersRejectUndetectedClientsWithoutWritingConfig(t *
 func TestDeepSeekHarnessStatusDoesNotReportConnectedWhenClientCommandIsMissing(t *testing.T) {
 	disableLocalCLICommandShellFallback(t)
 	paths := isolateAdditionalMCPClientConfigs(t)
+	isolateDeepSeekHarnessClientFallbacks(t)
 	executablePath := isolateAdditionalMCPClientExecutable(t)
 	originalCLIPathFunc := localCLICommandPathFunc
 	localCLICommandPathFunc = func(string) (string, error) { return "", errors.New("not found") }
@@ -366,5 +384,166 @@ func TestResolveKimiCodeConfigPathHonorsKimiCodeHome(t *testing.T) {
 	}
 	if want := filepath.Join(root, "mcp.json"); path != want {
 		t.Fatalf("Kimi config path = %q, want %q", path, want)
+	}
+}
+
+func TestDeepSeekHarnessClientDetectedViaHomeDir(t *testing.T) {
+	disableLocalCLICommandShellFallback(t)
+	originalCLIPathFunc := localCLICommandPathFunc
+	localCLICommandPathFunc = func(string) (string, error) { return "", errors.New("not found") }
+	t.Cleanup(func() { localCLICommandPathFunc = originalCLIPathFunc })
+
+	home := filepath.Join(t.TempDir(), "dsh-home")
+	if err := os.MkdirAll(filepath.Join(home, "profiles"), 0o755); err != nil {
+		t.Fatalf("MkdirAll DSH home profiles returned error: %v", err)
+	}
+	originalHomeDirFunc := deepSeekHarnessHomeDirFunc
+	deepSeekHarnessHomeDirFunc = func() string { return home }
+	t.Cleanup(func() { deepSeekHarnessHomeDirFunc = originalHomeDirFunc })
+
+	detected, path := detectDeepSeekHarnessClient()
+	if !detected {
+		t.Fatal("expected the DeepSeek Harness client to be detected via its home directory")
+	}
+	if path != home {
+		t.Fatalf("detected client path = %q, want %q", path, home)
+	}
+}
+
+func TestDeepSeekHarnessClientNotDetectedViaEmptyHomeDir(t *testing.T) {
+	disableLocalCLICommandShellFallback(t)
+	originalCLIPathFunc := localCLICommandPathFunc
+	localCLICommandPathFunc = func(string) (string, error) { return "", errors.New("not found") }
+	t.Cleanup(func() { localCLICommandPathFunc = originalCLIPathFunc })
+
+	home := filepath.Join(t.TempDir(), "empty-home")
+	if err := os.MkdirAll(home, 0o755); err != nil {
+		t.Fatalf("MkdirAll empty home returned error: %v", err)
+	}
+	originalHomeDirFunc := deepSeekHarnessHomeDirFunc
+	deepSeekHarnessHomeDirFunc = func() string { return home }
+	t.Cleanup(func() { deepSeekHarnessHomeDirFunc = originalHomeDirFunc })
+	originalNpxPackageDirFunc := deepSeekHarnessNpxPackageDirFunc
+	deepSeekHarnessNpxPackageDirFunc = func() string { return "" }
+	t.Cleanup(func() { deepSeekHarnessNpxPackageDirFunc = originalNpxPackageDirFunc })
+
+	if detected, _ := detectDeepSeekHarnessClient(); detected {
+		t.Fatal("an unrelated empty directory must not count as a DeepSeek Harness installation")
+	}
+}
+
+func TestDeepSeekHarnessClientDetectedViaNpxCache(t *testing.T) {
+	disableLocalCLICommandShellFallback(t)
+	originalCLIPathFunc := localCLICommandPathFunc
+	localCLICommandPathFunc = func(string) (string, error) { return "", errors.New("not found") }
+	t.Cleanup(func() { localCLICommandPathFunc = originalCLIPathFunc })
+
+	packageDir := filepath.Join(t.TempDir(), "npx", "hash", "node_modules", "@deepseek-ai", "dsh")
+	if err := os.MkdirAll(packageDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll npx package dir returned error: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(packageDir, "package.json"), []byte(`{"name":"@deepseek-ai/dsh"}`), 0o644); err != nil {
+		t.Fatalf("WriteFile package.json returned error: %v", err)
+	}
+	originalNpxPackageDirFunc := deepSeekHarnessNpxPackageDirFunc
+	deepSeekHarnessNpxPackageDirFunc = func() string { return packageDir }
+	t.Cleanup(func() { deepSeekHarnessNpxPackageDirFunc = originalNpxPackageDirFunc })
+	originalHomeDirFunc := deepSeekHarnessHomeDirFunc
+	deepSeekHarnessHomeDirFunc = func() string { return filepath.Join(t.TempDir(), "no-dsh-home") }
+	t.Cleanup(func() { deepSeekHarnessHomeDirFunc = originalHomeDirFunc })
+
+	detected, path := detectDeepSeekHarnessClient()
+	if !detected {
+		t.Fatal("expected the DeepSeek Harness client to be detected via the npx cache package")
+	}
+	if path != packageDir {
+		t.Fatalf("detected client path = %q, want %q", path, packageDir)
+	}
+}
+
+func TestDeepSeekHarnessInstallSucceedsWhenDetectedViaHomeDir(t *testing.T) {
+	disableLocalCLICommandShellFallback(t)
+	paths := isolateAdditionalMCPClientConfigs(t)
+	executablePath := isolateAdditionalMCPClientExecutable(t)
+	originalCLIPathFunc := localCLICommandPathFunc
+	localCLICommandPathFunc = func(string) (string, error) { return "", errors.New("not found") }
+	t.Cleanup(func() { localCLICommandPathFunc = originalCLIPathFunc })
+
+	home := filepath.Join(t.TempDir(), "dsh-home")
+	if err := os.MkdirAll(filepath.Join(home, "profiles"), 0o755); err != nil {
+		t.Fatalf("MkdirAll DSH home profiles returned error: %v", err)
+	}
+	originalHomeDirFunc := deepSeekHarnessHomeDirFunc
+	deepSeekHarnessHomeDirFunc = func() string { return home }
+	t.Cleanup(func() { deepSeekHarnessHomeDirFunc = originalHomeDirFunc })
+
+	service := NewService()
+	service.AISetLanguage(string(i18n.LanguageEnUS))
+	if _, err := service.AIInstallDeepSeekHarnessMCP(); err != nil {
+		t.Fatalf("AIInstallDeepSeekHarnessMCP should succeed when DSH is detected via its home directory, got error: %v", err)
+	}
+	if _, err := os.Stat(paths.DeepSeekHarness); err != nil {
+		t.Fatalf("DeepSeek Harness config was not written: %v", err)
+	}
+	config, found, err := readDeepSeekHarnessMCPServerConfig(paths.DeepSeekHarness, service.serviceText)
+	if err != nil || !found {
+		t.Fatalf("read DeepSeek Harness GoNavi MCP config = (%#v, %t, %v)", config, found, err)
+	}
+	if config.Command != executablePath || !reflect.DeepEqual(config.Args, []string{"mcp-server"}) {
+		t.Fatalf("unexpected DeepSeek Harness config: %#v", config)
+	}
+}
+
+func TestDeepSeekHarnessStatusConnectedWhenHomeDetectedAndConfigMatches(t *testing.T) {
+	disableLocalCLICommandShellFallback(t)
+	paths := isolateAdditionalMCPClientConfigs(t)
+	executablePath := isolateAdditionalMCPClientExecutable(t)
+	originalCLIPathFunc := localCLICommandPathFunc
+	localCLICommandPathFunc = func(string) (string, error) { return "", errors.New("not found") }
+	t.Cleanup(func() { localCLICommandPathFunc = originalCLIPathFunc })
+
+	home := filepath.Join(t.TempDir(), "dsh-home")
+	if err := os.MkdirAll(filepath.Join(home, "profiles"), 0o755); err != nil {
+		t.Fatalf("MkdirAll DSH home profiles returned error: %v", err)
+	}
+	originalHomeDirFunc := deepSeekHarnessHomeDirFunc
+	deepSeekHarnessHomeDirFunc = func() string { return home }
+	t.Cleanup(func() { deepSeekHarnessHomeDirFunc = originalHomeDirFunc })
+
+	service := NewService()
+	service.AISetLanguage(string(i18n.LanguageEnUS))
+	if err := upsertDeepSeekHarnessMCPServerConfig(paths.DeepSeekHarness, executablePath, []string{"mcp-server"}, service.serviceText); err != nil {
+		t.Fatalf("upsertDeepSeekHarnessMCPServerConfig returned error: %v", err)
+	}
+
+	status := inspectDeepSeekHarnessMCPInstallStatus(executablePath, []string{"mcp-server"}, nil, service.serviceText)
+	if !status.ClientDetected {
+		t.Fatalf("expected the DeepSeek Harness client to be detected via its home directory, got %#v", status)
+	}
+	if !status.Installed || !status.MatchesCurrent {
+		t.Fatalf("expected the DeepSeek Harness config to be reported as connected, got %#v", status)
+	}
+}
+
+func TestResolveDeepSeekHarnessNpxPackageDirScansNpmCache(t *testing.T) {
+	cacheRoot := filepath.Join(t.TempDir(), "npm-cache")
+	t.Setenv("npm_config_cache", cacheRoot)
+	packageDir := filepath.Join(cacheRoot, "_npx", "abc123", "node_modules", "@deepseek-ai", "dsh")
+	if err := os.MkdirAll(packageDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll npx package dir returned error: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(packageDir, "package.json"), []byte(`{}`), 0o644); err != nil {
+		t.Fatalf("WriteFile package.json returned error: %v", err)
+	}
+	if got := resolveDeepSeekHarnessNpxPackageDir(); got != packageDir {
+		t.Fatalf("resolveDeepSeekHarnessNpxPackageDir = %q, want %q", got, packageDir)
+	}
+}
+
+func TestResolveDeepSeekHarnessNpxPackageDirEmptyWithoutCache(t *testing.T) {
+	cacheRoot := filepath.Join(t.TempDir(), "empty-cache")
+	t.Setenv("npm_config_cache", cacheRoot)
+	if got := resolveDeepSeekHarnessNpxPackageDir(); got != "" {
+		t.Fatalf("resolveDeepSeekHarnessNpxPackageDir = %q, want empty", got)
 	}
 }

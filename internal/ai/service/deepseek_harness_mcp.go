@@ -18,6 +18,8 @@ const (
 )
 
 var deepSeekHarnessConfigPathFunc = resolveDeepSeekHarnessConfigPath
+var deepSeekHarnessHomeDirFunc = resolveDeepSeekHarnessHomeDir
+var deepSeekHarnessNpxPackageDirFunc = resolveDeepSeekHarnessNpxPackageDir
 
 type deepSeekHarnessMCPServerConfig struct {
 	Command string
@@ -36,7 +38,7 @@ func (s *Service) AIInstallDeepSeekHarnessMCP() (ai.MCPClientInstallResult, erro
 			map[string]any{"detail": localizeMCPClientPathDetail(s.serviceText, err)},
 		)
 	}
-	if err := requireLocalMCPClientCommand(deepSeekHarnessClientCommandName, "DeepSeek Harness", s.serviceText); err != nil {
+	if err := requireDeepSeekHarnessClient(s.serviceText); err != nil {
 		return ai.MCPClientInstallResult{}, err
 	}
 	executablePath, err := localMCPExecutablePathFunc()
@@ -68,10 +70,92 @@ func resolveDeepSeekHarnessConfigPath() (string, error) {
 	return filepath.Join(configRoot, "cordis.patch.yml"), nil
 }
 
+func resolveDeepSeekHarnessHomeDir() string {
+	configRoot, err := resolveMCPClientConfigRoot("DSH_HOME", ".dsh")
+	if err != nil {
+		return ""
+	}
+	return configRoot
+}
+
+// resolveDeepSeekHarnessNpxPackageDir locates the @deepseek-ai/dsh package in the
+// npm npx cache. The official quick start (`npx @deepseek-ai/dsh web`) installs
+// the harness into the transient npx cache instead of a PATH directory, so the
+// presence of that package is a reliable "DeepSeek Harness is installed" signal
+// for users who follow the documented setup.
+func resolveDeepSeekHarnessNpxPackageDir() string {
+	cacheRoot := strings.TrimSpace(os.Getenv("npm_config_cache"))
+	if cacheRoot == "" {
+		homeDir, err := resolveMCPClientUserHomeDir()
+		if err != nil {
+			return ""
+		}
+		cacheRoot = filepath.Join(homeDir, ".npm")
+	}
+	npxRoot := filepath.Join(cacheRoot, "_npx")
+	entries, err := os.ReadDir(npxRoot)
+	if err != nil {
+		return ""
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		candidate := filepath.Join(npxRoot, entry.Name(), "node_modules", "@deepseek-ai", "dsh")
+		if info, err := os.Stat(candidate); err == nil && info.IsDir() {
+			return candidate
+		}
+	}
+	return ""
+}
+
+// detectDeepSeekHarnessClient reports whether a DeepSeek Harness installation is
+// present and returns the path to surface in the status UI. PATH detection alone
+// misses the officially documented npx quick start (which never puts `dsh` on
+// PATH), so the DSH home directory and the npx package cache are checked as
+// fallbacks before the client is reported as missing.
+func detectDeepSeekHarnessClient() (bool, string) {
+	if detected, path := detectLocalCLICommand(deepSeekHarnessClientCommandName); detected {
+		return true, path
+	}
+	if home := deepSeekHarnessHomeDirFunc(); home != "" && deepSeekHarnessHomeMarkersPresent(home) {
+		return true, home
+	}
+	if packageDir := deepSeekHarnessNpxPackageDirFunc(); packageDir != "" {
+		if info, err := os.Stat(filepath.Join(packageDir, "package.json")); err == nil && !info.IsDir() {
+			return true, packageDir
+		}
+	}
+	return false, ""
+}
+
+// deepSeekHarnessHomeMarkersPresent reports whether the DSH home directory was
+// created by DeepSeek Harness itself (settings.yaml and/or profiles are written
+// on first boot) rather than by an unrelated process.
+func deepSeekHarnessHomeMarkersPresent(home string) bool {
+	for _, marker := range []string{"settings.yaml", "profiles"} {
+		if _, err := os.Stat(filepath.Join(home, marker)); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
+func requireDeepSeekHarnessClient(textFuncs ...mcpClientInstallTextFunc) error {
+	if detected, _ := detectDeepSeekHarnessClient(); detected {
+		return nil
+	}
+	text := firstMCPClientInstallText(textFuncs)
+	return fmt.Errorf("%s", mcpClientInstallText(text, "ai.service.mcp_client.local_client_not_detected", map[string]any{
+		"label":   "DeepSeek Harness",
+		"command": deepSeekHarnessClientCommandName,
+	}))
+}
+
 func inspectDeepSeekHarnessMCPInstallStatus(expectedCommand string, expectedArgs []string, expectedErr error, textFuncs ...mcpClientInstallTextFunc) ai.MCPClientInstallStatus {
 	text := firstMCPClientInstallText(textFuncs)
 	configPath, pathErr := deepSeekHarnessConfigPathFunc()
-	clientDetected, clientPath := detectLocalCLICommand(deepSeekHarnessClientCommandName)
+	clientDetected, clientPath := detectDeepSeekHarnessClient()
 	status := ai.MCPClientInstallStatus{
 		Client:         "deepseek-harness",
 		DisplayName:    "DeepSeek Harness",
@@ -124,7 +208,7 @@ func inspectDeepSeekHarnessMCPInstallStatus(expectedCommand string, expectedArgs
 }
 
 func repairDeepSeekHarnessMCPClientConfig(expectedCommand string, expectedArgs []string, text mcpClientInstallTextFunc) error {
-	if !isLocalMCPClientCommandDetected(deepSeekHarnessClientCommandName) {
+	if detected, _ := detectDeepSeekHarnessClient(); !detected {
 		return nil
 	}
 	configPath, err := deepSeekHarnessConfigPathFunc()
