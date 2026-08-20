@@ -14,6 +14,8 @@ import (
 	"sync"
 	"time"
 
+	httpserverlimits "GoNavi-Wails/internal/httpserver"
+
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -174,17 +176,13 @@ func StartStreamableHTTPServer(ctx context.Context, backend Backend, options HTT
 		SessionTimeout: 30 * time.Minute,
 	})
 
-	mux := http.NewServeMux()
-	mux.Handle(normalized.Path, bearerTokenAuthHandler(normalized.Token, streamableHandler))
-	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-		_, _ = io.WriteString(w, "ok")
-	})
-
 	httpServer := &http.Server{
 		Addr:              normalized.Addr,
-		Handler:           mux,
-		ReadHeaderTimeout: 10 * time.Second,
+		Handler:           streamableHTTPRoutes(normalized, streamableHandler),
+		ReadHeaderTimeout: httpserverlimits.ReadHeaderTimeout,
+		ReadTimeout:       httpserverlimits.ReadTimeout,
+		WriteTimeout:      httpserverlimits.WriteTimeout,
+		IdleTimeout:       httpserverlimits.IdleTimeout,
 	}
 
 	listener, err := net.Listen("tcp", normalized.Addr)
@@ -233,6 +231,22 @@ func StartStreamableHTTPServer(ctx context.Context, backend Backend, options HTT
 	}()
 
 	return handle, nil
+}
+
+func streamableHTTPRoutes(options HTTPServerOptions, streamableHandler http.Handler) http.Handler {
+	streamableHandler = httpserverlimits.StreamingWriteTimeoutWhen(streamableHandler, func(r *http.Request) bool {
+		// GET is always the standalone SSE stream. Unless JSONResponse was
+		// explicitly requested, POST call responses are SSE streams as well.
+		return r.Method == http.MethodGet || !options.JSONResponse
+	})
+
+	mux := http.NewServeMux()
+	mux.Handle(options.Path, bearerTokenAuthHandler(options.Token, httpserverlimits.LimitRequestBody(streamableHandler)))
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		_, _ = io.WriteString(w, "ok")
+	})
+	return mux
 }
 
 // ParseHTTPServerOptions 解析 http 模式参数，并支持环境变量兜底。
