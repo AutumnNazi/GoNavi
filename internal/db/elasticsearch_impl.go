@@ -717,7 +717,7 @@ func (e *ElasticsearchDB) TableExists(dbName, tableName string) (bool, error) {
 		return false, fmt.Errorf("未指定索引名")
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), defaultEsPingTimeout)
+	ctx, cancel := context.WithTimeout(metadataContextFor(e), defaultEsPingTimeout)
 	defer cancel()
 	res, err := e.client.Indices.Exists(
 		[]string{indexName},

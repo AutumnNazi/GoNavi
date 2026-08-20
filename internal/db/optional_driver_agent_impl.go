@@ -649,6 +649,20 @@ type optionalDriverAgentTransactionalDB struct {
 	*OptionalDriverAgentDB
 }
 
+func (d *optionalDriverAgentTransactionalDB) bindMetadataContext(ctx context.Context) {
+	if d == nil || d.OptionalDriverAgentDB == nil {
+		return
+	}
+	BindMetadataContext(d.OptionalDriverAgentDB, ctx)
+}
+
+func (d *optionalDriverAgentTransactionalDB) clearMetadataContext() {
+	if d == nil || d.OptionalDriverAgentDB == nil {
+		return
+	}
+	ClearMetadataContext(d.OptionalDriverAgentDB)
+}
+
 type optionalDriverAgentSession struct {
 	client    *optionalDriverAgentClient
 	driver    string

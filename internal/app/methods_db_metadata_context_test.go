@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -18,10 +19,14 @@ type contextAwareMetadataDB struct {
 	release   chan struct{}
 	closeDone chan struct{}
 
-	doneOnce   sync.Once
-	closeOnce  sync.Once
-	closeCalls atomic.Int32
+	doneOnce       sync.Once
+	closeOnce      sync.Once
+	closeCalls     atomic.Int32
+	skipTableQuery bool
+	createErr      error
 }
+
+type metadataRequestContextKey struct{}
 
 func newContextAwareMetadataDB() *contextAwareMetadataDB {
 	return &contextAwareMetadataDB{
@@ -45,8 +50,16 @@ func (f *contextAwareMetadataDB) Close() error {
 }
 func (f *contextAwareMetadataDB) Ping() error { return nil }
 func (f *contextAwareMetadataDB) Query(string) ([]map[string]interface{}, []string, error) {
-	ctx := db.MetadataContext(f)
-	f.started <- ctx
+	return f.queryWithContext(db.MetadataContext(f))
+}
+func (f *contextAwareMetadataDB) QueryContext(ctx context.Context, _ string) ([]map[string]interface{}, []string, error) {
+	return f.queryWithContext(ctx)
+}
+func (f *contextAwareMetadataDB) queryWithContext(ctx context.Context) ([]map[string]interface{}, []string, error) {
+	select {
+	case f.started <- ctx:
+	default:
+	}
 	select {
 	case <-ctx.Done():
 		f.doneOnce.Do(func() { close(f.done) })
@@ -59,13 +72,18 @@ func (f *contextAwareMetadataDB) Query(string) ([]map[string]interface{}, []stri
 func (f *contextAwareMetadataDB) Exec(string) (int64, error)      { return 0, nil }
 func (f *contextAwareMetadataDB) GetDatabases() ([]string, error) { return nil, nil }
 func (f *contextAwareMetadataDB) GetTables(string) ([]string, error) {
+	if f.skipTableQuery {
+		return []string{"orders"}, nil
+	}
 	_, _, err := f.Query("metadata tables")
 	if err != nil {
 		return nil, err
 	}
 	return []string{"orders"}, nil
 }
-func (f *contextAwareMetadataDB) GetCreateStatement(string, string) (string, error) { return "", nil }
+func (f *contextAwareMetadataDB) GetCreateStatement(string, string) (string, error) {
+	return "", f.createErr
+}
 func (f *contextAwareMetadataDB) GetColumns(string, string) ([]connection.ColumnDefinition, error) {
 	_, _, err := f.Query("metadata columns")
 	if err != nil {
@@ -268,6 +286,12 @@ func TestMetadataContextCancellationReachesQuery(t *testing.T) {
 				return application.DBGetColumnsContext(ctx, config, "app", "orders")
 			},
 		},
+		{
+			name: "views",
+			call: func(application *App, ctx context.Context, config connection.ConnectionConfig) connection.QueryResult {
+				return application.DBGetViewsContext(ctx, config, "app")
+			},
+		},
 	}
 
 	for _, testCase := range tests {
@@ -277,13 +301,13 @@ func TestMetadataContextCancellationReachesQuery(t *testing.T) {
 			newDatabaseFunc = func(string) (db.Database, error) { return instance, nil }
 			application := newDatabaseCacheConcurrencyTestApp()
 			config := connection.ConnectionConfig{Type: "postgres", Host: "127.0.0.1", Port: 5432, Database: "app"}
-			ctx, cancel := context.WithCancel(context.Background())
+			ctx, cancel := context.WithCancel(context.WithValue(context.Background(), metadataRequestContextKey{}, "metadata-request"))
 			defer cancel()
 
 			resultCh := make(chan connection.QueryResult, 1)
 			go func() { resultCh <- testCase.call(application, ctx, config) }()
-			if got := waitForContext(t, instance.started, "元数据查询未启动"); got != ctx {
-				t.Fatalf("查询上下文 = %v，期望请求上下文", got)
+			if got := waitForContext(t, instance.started, "元数据查询未启动"); got.Value(metadataRequestContextKey{}) != "metadata-request" {
+				t.Fatalf("查询上下文未继承请求上下文值：%v", got)
 			}
 			cancel()
 
@@ -302,6 +326,64 @@ func TestMetadataContextCancellationReachesQuery(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestMetadataObjectsFallbackCancellationReachesQuery(t *testing.T) {
+	installMetadataSessionTestHooks(t)
+	instance := newContextAwareMetadataDB()
+	instance.skipTableQuery = true
+	newDatabaseFunc = func(string) (db.Database, error) { return instance, nil }
+	application := newDatabaseCacheConcurrencyTestApp()
+	config := connection.ConnectionConfig{Type: "postgres", Host: "127.0.0.1", Port: 5432, Database: "app"}
+	ctx, cancel := context.WithCancel(context.WithValue(context.Background(), metadataRequestContextKey{}, "metadata-request"))
+	defer cancel()
+
+	resultCh := make(chan connection.QueryResult, 1)
+	go func() { resultCh <- application.DBGetObjectsContext(ctx, config, "app") }()
+	if got := waitForContext(t, instance.started, "对象后备元数据查询未启动"); got.Value(metadataRequestContextKey{}) != "metadata-request" {
+		t.Fatalf("对象后备查询未继承请求上下文值：%v", got)
+	}
+	cancel()
+
+	select {
+	case result := <-resultCh:
+		if result.Success {
+			t.Fatalf("取消的对象元数据请求意外成功：%#v", result)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("取消的对象元数据请求未及时返回")
+	}
+	waitForMetadataSignal(t, instance.done, "对象后备查询未因上下文取消而退出")
+	waitForMetadataSignal(t, instance.closeDone, "对象后备查询退出后未关闭隔离数据库")
+}
+
+func TestMetadataDDLViewFallbackCancellationReachesQuery(t *testing.T) {
+	installMetadataSessionTestHooks(t)
+	instance := newContextAwareMetadataDB()
+	instance.createErr = errors.New("create statement unavailable")
+	newDatabaseFunc = func(string) (db.Database, error) { return instance, nil }
+	application := newDatabaseCacheConcurrencyTestApp()
+	config := connection.ConnectionConfig{Type: "postgres", Host: "127.0.0.1", Port: 5432, Database: "app"}
+	ctx, cancel := context.WithCancel(context.WithValue(context.Background(), metadataRequestContextKey{}, "metadata-request"))
+	defer cancel()
+
+	resultCh := make(chan connection.QueryResult, 1)
+	go func() { resultCh <- application.DBShowCreateTableContext(ctx, config, "app", "orders") }()
+	if got := waitForContext(t, instance.started, "DDL 视图回退查询未启动"); got.Value(metadataRequestContextKey{}) != "metadata-request" {
+		t.Fatalf("DDL 视图回退查询未继承请求上下文值：%v", got)
+	}
+	cancel()
+
+	select {
+	case result := <-resultCh:
+		if result.Success {
+			t.Fatalf("取消的 DDL 元数据请求意外成功：%#v", result)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("取消的 DDL 元数据请求未及时返回")
+	}
+	waitForMetadataSignal(t, instance.done, "DDL 视图回退查询未因上下文取消而退出")
+	waitForMetadataSignal(t, instance.closeDone, "DDL 视图回退查询退出后未关闭隔离数据库")
 }
 
 func TestCancelledMetadataRequestClosesLateDatabaseConnection(t *testing.T) {

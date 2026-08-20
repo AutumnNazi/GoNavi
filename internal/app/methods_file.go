@@ -7124,7 +7124,7 @@ func (a *App) ExportQueryWithOptions(config connection.ConnectionConfig, dbName 
 }
 
 func queryDataForExport(dbInst db.Database, config connection.ConnectionConfig, query string) ([]map[string]interface{}, []string, error) {
-	return queryDataForExportWithContext(context.Background(), dbInst, config, query)
+	return queryDataForExportWithContext(db.MetadataContext(dbInst), dbInst, config, query)
 }
 
 // queryDataForExportWithContext is the buffered export fallback. It retains
@@ -7921,7 +7921,7 @@ func newExportFileWriter(f *os.File, options ExportFileOptions) (exportFileWrite
 }
 
 func streamQueryDataForExport(dbInst db.Database, config connection.ConnectionConfig, query string, consumer db.QueryStreamConsumer) error {
-	return streamQueryDataForExportWithContext(context.Background(), dbInst, config, query, consumer)
+	return streamQueryDataForExportWithContext(db.MetadataContext(dbInst), dbInst, config, query, consumer)
 }
 
 // streamQueryDataForExportWithContext preserves the existing streaming and

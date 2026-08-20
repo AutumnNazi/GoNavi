@@ -32,14 +32,17 @@ type fakeExportQueryDB struct {
 	queries            []string
 	lastContextTimeout time.Duration
 	hasContextDeadline bool
+	lastQueryContext   context.Context
 }
 
 type fakeStreamExportDB struct {
 	fakeExportQueryDB
-	streamData []map[string]interface{}
-	streamCols []string
-	streamHits int
-	queryHits  int
+	streamData    []map[string]interface{}
+	streamCols    []string
+	streamHits    int
+	queryHits     int
+	streamStarted chan context.Context
+	streamBlock   bool
 }
 
 type fakeValueStreamExportDB struct {
@@ -57,6 +60,11 @@ type fakeGeneratedValueStreamExportDB struct {
 	streamHits int
 	valueHits  int
 }
+
+type exportContextTestConsumer struct{}
+
+func (exportContextTestConsumer) SetColumns([]string) error               { return nil }
+func (exportContextTestConsumer) ConsumeRow(map[string]interface{}) error { return nil }
 
 type fakeSQLDumpExportDB struct {
 	fakeExportQueryDB
@@ -90,6 +98,7 @@ func (f *fakeExportQueryDB) Query(query string) ([]map[string]interface{}, []str
 func (f *fakeExportQueryDB) QueryContext(ctx context.Context, query string) ([]map[string]interface{}, []string, error) {
 	f.lastQuery = query
 	f.queries = append(f.queries, query)
+	f.lastQueryContext = ctx
 	if deadline, ok := ctx.Deadline(); ok {
 		f.hasContextDeadline = true
 		f.lastContextTimeout = time.Until(deadline)
@@ -142,9 +151,20 @@ func (f *fakeStreamExportDB) StreamQuery(query string, consumer db.QueryStreamCo
 	return f.StreamQueryContext(context.Background(), query, consumer)
 }
 
-func (f *fakeStreamExportDB) StreamQueryContext(_ context.Context, query string, consumer db.QueryStreamConsumer) error {
+func (f *fakeStreamExportDB) StreamQueryContext(ctx context.Context, query string, consumer db.QueryStreamConsumer) error {
 	f.streamHits++
 	f.lastQuery = query
+	f.lastQueryContext = ctx
+	if f.streamStarted != nil {
+		select {
+		case f.streamStarted <- ctx:
+		default:
+		}
+	}
+	if f.streamBlock {
+		<-ctx.Done()
+		return ctx.Err()
+	}
 	if err := consumer.SetColumns(f.streamCols); err != nil {
 		return err
 	}
@@ -619,6 +639,78 @@ func TestQueryDataForExport_UsesMinimumTimeout(t *testing.T) {
 	upperBound := minExportQueryTimeout + 5*time.Second
 	if fake.lastContextTimeout < lowerBound || fake.lastContextTimeout > upperBound {
 		t.Fatalf("导出最小超时异常，want≈%s got=%s", minExportQueryTimeout, fake.lastContextTimeout)
+	}
+}
+
+type exportMetadataContextKey struct{}
+
+func TestQueryDataForExportUsesBoundMetadataContext(t *testing.T) {
+	fake := &fakeExportQueryDB{
+		data: []map[string]interface{}{{"v": 1}},
+		cols: []string{"v"},
+	}
+	parent := context.WithValue(context.Background(), exportMetadataContextKey{}, "metadata-request")
+	db.BindMetadataContext(fake, parent)
+	defer db.ClearMetadataContext(fake)
+
+	if _, _, err := queryDataForExport(fake, connection.ConnectionConfig{Timeout: 10}, "SELECT 1"); err != nil {
+		t.Fatalf("queryDataForExport 返回错误: %v", err)
+	}
+	if got := fake.lastQueryContext.Value(exportMetadataContextKey{}); got != "metadata-request" {
+		t.Fatalf("导出查询未继承元数据请求上下文值，got=%v", got)
+	}
+}
+
+func TestStreamQueryDataForExportUsesBoundMetadataContext(t *testing.T) {
+	fake := &fakeStreamExportDB{
+		fakeExportQueryDB: fakeExportQueryDB{data: []map[string]interface{}{{"v": 1}}, cols: []string{"v"}},
+		streamCols:        []string{"v"},
+		streamData:        []map[string]interface{}{{"v": 1}},
+	}
+	parent := context.WithValue(context.Background(), exportMetadataContextKey{}, "metadata-request")
+	db.BindMetadataContext(fake, parent)
+	defer db.ClearMetadataContext(fake)
+
+	if err := streamQueryDataForExport(fake, connection.ConnectionConfig{Timeout: 10}, "SELECT 1", exportContextTestConsumer{}); err != nil {
+		t.Fatalf("streamQueryDataForExport 返回错误: %v", err)
+	}
+	if got := fake.lastQueryContext.Value(exportMetadataContextKey{}); got != "metadata-request" {
+		t.Fatalf("流式导出查询未继承元数据请求上下文值，got=%v", got)
+	}
+}
+
+func TestStreamQueryDataForExportCancellationUsesBoundMetadataContext(t *testing.T) {
+	fake := &fakeStreamExportDB{
+		fakeExportQueryDB: fakeExportQueryDB{data: []map[string]interface{}{{"v": 1}}, cols: []string{"v"}},
+		streamStarted:     make(chan context.Context, 1),
+		streamBlock:       true,
+	}
+	parent, cancel := context.WithCancel(context.WithValue(context.Background(), exportMetadataContextKey{}, "metadata-request"))
+	defer cancel()
+	db.BindMetadataContext(fake, parent)
+	defer db.ClearMetadataContext(fake)
+
+	resultCh := make(chan error, 1)
+	go func() {
+		resultCh <- streamQueryDataForExport(fake, connection.ConnectionConfig{Timeout: 10}, "SELECT 1", exportContextTestConsumer{})
+	}()
+	select {
+	case queryCtx := <-fake.streamStarted:
+		if queryCtx.Value(exportMetadataContextKey{}) != "metadata-request" {
+			t.Fatalf("流式导出查询未继承元数据请求上下文值，got=%v", queryCtx.Value(exportMetadataContextKey{}))
+		}
+	case <-time.After(time.Second):
+		t.Fatal("流式导出查询未启动")
+	}
+	cancel()
+
+	select {
+	case err := <-resultCh:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("取消后的流式导出错误 = %v，期望 context.Canceled", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("流式导出查询未因取消而退出")
 	}
 }
 

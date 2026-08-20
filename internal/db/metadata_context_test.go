@@ -154,3 +154,19 @@ func TestMySQLMetadataColumnsQueryUsesRequestContext(t *testing.T) {
 		t.Fatal("MySQL 列元数据查询未因取消而退出")
 	}
 }
+
+func TestDamengTransactionalMetadataContextBindsInnerDriver(t *testing.T) {
+	inner := &OptionalDriverAgentDB{driverType: "dameng"}
+	database := &optionalDriverAgentTransactionalDB{OptionalDriverAgentDB: inner}
+	ctx := context.WithValue(context.Background(), struct{}{}, "dameng-metadata")
+
+	BindMetadataContext(database, ctx)
+	if got := MetadataContext(inner); got != ctx {
+		t.Fatalf("Dameng 事务代理内层上下文 = %v，期望请求上下文", got)
+	}
+
+	ClearMetadataContext(database)
+	if got := MetadataContext(inner); got.Value(struct{}{}) != nil {
+		t.Fatalf("Dameng 事务代理清理后内层仍保留元数据上下文：%v", got)
+	}
+}
