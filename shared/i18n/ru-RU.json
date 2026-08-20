@@ -5958,6 +5958,7 @@
   "import_preview.error.stop_failed": "Не удалось остановить импорт",
   "import_preview.error.stop_failed_detail": "Не удалось остановить импорт: {{detail}}",
   "import_preview.mapping.validation.required": "Сопоставьте хотя бы один столбец файла",
+  "import_preview.mapping.validation.required_database_columns": "Сопоставьте обязательные столбцы базы данных: {{columns}}",
   "import_preview.preview.description": "Ниже показаны первые 5 строк. Начните импорт после проверки данных.",
   "import_preview.preview.field_list": "Список полей:",
   "import_preview.preview.summary": "{{rows}} строк и {{columns}} полей",

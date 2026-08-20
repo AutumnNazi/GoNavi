@@ -5958,6 +5958,7 @@
   "import_preview.error.stop_failed": "インポートを停止できませんでした",
   "import_preview.error.stop_failed_detail": "インポートを停止できませんでした: {{detail}}",
   "import_preview.mapping.validation.required": "ファイル列を 1 つ以上マッピングしてください",
+  "import_preview.mapping.validation.required_database_columns": "必須データベース列をマッピングしてください: {{columns}}",
   "import_preview.preview.description": "最初の 5 行を表示しています。内容を確認してからインポートを開始してください。",
   "import_preview.preview.field_list": "フィールド一覧:",
   "import_preview.preview.summary": "{{rows}} 行、{{columns}} フィールド",

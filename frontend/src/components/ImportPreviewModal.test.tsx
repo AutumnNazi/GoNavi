@@ -384,6 +384,32 @@ describe("ImportPreviewModal i18n", () => {
     );
   });
 
+  it("requires only non-null database fields while allowing nullable fields to be omitted", async () => {
+    mocks.previewImportFile.mockResolvedValue({
+      success: true,
+      data: {
+        columns: ["note"],
+        totalRows: 1,
+        previewRows: [{ note: "optional" }],
+      },
+    });
+    mocks.dbGetColumns.mockResolvedValue({
+      success: true,
+      data: [
+        { name: "id", type: "bigint", nullable: "NO" },
+        { name: "note", type: "varchar", nullable: "YES" },
+      ],
+    });
+
+    const renderer = await renderImportPreview();
+    const button = renderer.root.findAllByType("button")
+      .find((node) => textContent(node.props.children) === "Start import");
+    expect(button?.props.disabled).toBe(true);
+    expect(textContent(renderer.toJSON())).toContain(
+      "Map the required database columns: id",
+    );
+  });
+
   it("uses the same parser options for preview and import", async () => {
     const importOptions: DataImportPreferences = {
       continueOnError: true,

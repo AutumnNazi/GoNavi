@@ -404,6 +404,38 @@ func TestImportColumnMappingConsumerStreamsMappedColumnsAndRows(t *testing.T) {
 	}
 }
 
+func TestImportColumnMappingConsumerAllowsOmittedNullableTarget(t *testing.T) {
+	collector := newImportPreviewCollector(5)
+	consumer, err := newImportColumnMappingConsumer(collector, map[string]string{
+		"id": "id",
+	}, []connection.ColumnDefinition{
+		{Name: "id", Nullable: "NO"},
+		{Name: "note", Nullable: "YES"},
+	})
+	if err != nil {
+		t.Fatalf("newImportColumnMappingConsumer returned error: %v", err)
+	}
+	if err := consumer.SetColumns([]string{"id"}); err != nil {
+		t.Fatalf("nullable target should be omittable: %v", err)
+	}
+}
+
+func TestImportColumnMappingConsumerRejectsOmittedRequiredTarget(t *testing.T) {
+	collector := newImportPreviewCollector(5)
+	consumer, err := newImportColumnMappingConsumer(collector, map[string]string{
+		"id": "id",
+	}, []connection.ColumnDefinition{
+		{Name: "id", Nullable: "NO"},
+		{Name: "name", Nullable: "NO"},
+	})
+	if err != nil {
+		t.Fatalf("newImportColumnMappingConsumer returned error: %v", err)
+	}
+	if err := consumer.SetColumns([]string{"id"}); err == nil || !strings.Contains(err.Error(), "name") {
+		t.Fatalf("expected omitted required target error, got %v", err)
+	}
+}
+
 func TestImportColumnMappingConsumerNilMappingsPreserveLegacyHeaders(t *testing.T) {
 	collector := newImportPreviewCollector(5)
 	consumer, err := newImportColumnMappingConsumer(collector, nil, nil)

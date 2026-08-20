@@ -5958,6 +5958,7 @@
   "import_preview.error.stop_failed": "停止匯入失敗",
   "import_preview.error.stop_failed_detail": "停止匯入失敗: {{detail}}",
   "import_preview.mapping.validation.required": "請至少映射一個檔案欄位",
+  "import_preview.mapping.validation.required_database_columns": "請映射資料庫非空欄位：{{columns}}",
   "import_preview.preview.description": "以下顯示前 5 列預覽資料，確認無誤後開始匯入。",
   "import_preview.preview.field_list": "欄位清單：",
   "import_preview.preview.summary": "共 {{rows}} 列資料，{{columns}} 個欄位",

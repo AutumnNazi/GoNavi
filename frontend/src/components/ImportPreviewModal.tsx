@@ -13,7 +13,12 @@ import { useStore } from "../store";
 import { t as defaultTranslate } from "../i18n";
 import { useOptionalI18n } from "../i18n/provider";
 import { buildRpcConnectionConfig } from "../utils/connectionRpcConfig";
-import { getColumnDefinitionName } from "../utils/columnDefinition";
+import {
+  getColumnDefinitionExtra,
+  getColumnDefinitionName,
+  getColumnDefinitionNullable,
+  hasColumnDefinitionDefault,
+} from "../utils/columnDefinition";
 import { confirmProductionRisk } from "../utils/productionRiskConfirm";
 import { calculateImportTransferMetrics, formatImportBytes, formatImportDuration } from "./importProgressMetrics";
 import {
@@ -136,6 +141,7 @@ const ImportPreviewModal: React.FC<ImportPreviewModalProps> = ({
   const [loading, setLoading] = useState(true);
   const [previewData, setPreviewData] = useState<PreviewData | null>(null);
   const [targetColumns, setTargetColumns] = useState<string[]>([]);
+  const [targetColumnDefinitions, setTargetColumnDefinitions] = useState<unknown[]>([]);
   const [columnMappings, setColumnMappings] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
@@ -250,6 +256,7 @@ const ImportPreviewModal: React.FC<ImportPreviewModalProps> = ({
     setError(null);
     setPreviewData(null);
     setTargetColumns([]);
+    setTargetColumnDefinitions([]);
     setColumnMappings({});
     setImportResult(null);
     setProgress(null);
@@ -327,6 +334,7 @@ const ImportPreviewModal: React.FC<ImportPreviewModalProps> = ({
         previewRows: previewRes.data.previewRows || [],
       });
       setTargetColumns(nextTargetColumns);
+      setTargetColumnDefinitions(columnsRes.data);
       setColumnMappings(nextMappings);
     } catch (e: any) {
       if (previewRequestRef.current !== requestId) return;
@@ -350,6 +358,22 @@ const ImportPreviewModal: React.FC<ImportPreviewModalProps> = ({
   const normalizedMappedTargetColumns = new Set(
     mappedTargetColumns.map((column) => column.trim().toLowerCase()),
   );
+  const requiredTargetColumns = targetColumnDefinitions
+    .filter((column) => {
+      const nullable = getColumnDefinitionNullable(column).toUpperCase();
+      const extra = getColumnDefinitionExtra(column).toLowerCase();
+      return nullable === "NO"
+        && !hasColumnDefinitionDefault(column)
+        && !(column && typeof column === "object" && "default" in column && (column as { default?: unknown }).default != null)
+        && !extra.includes("auto_increment")
+        && !extra.includes("identity")
+        && !extra.includes("generated");
+    })
+    .map(getColumnDefinitionName)
+    .filter(Boolean);
+  const unmappedRequiredColumns = requiredTargetColumns.filter(
+    (column) => !normalizedMappedTargetColumns.has(column.toLowerCase()),
+  );
   const unmappedConflictKeys = parserOptions.conflictPolicy === "upsert"
     ? parserOptions.conflictKeyColumns.filter((column) => (
         !normalizedMappedTargetColumns.has(column.trim().toLowerCase())
@@ -362,6 +386,10 @@ const ImportPreviewModal: React.FC<ImportPreviewModalProps> = ({
       ? t("data_import.workbench.advanced.conflict_keys_not_mapped", {
           columns: unmappedConflictKeys.join(", "),
         })
+      : unmappedRequiredColumns.length > 0
+        ? t("import_preview.mapping.validation.required_database_columns", {
+            columns: unmappedRequiredColumns.join(", "),
+          })
       : null;
   const mappingValidationError = importOptionsValidationError || (hasDuplicateSourceColumns
     ? t("import_preview.mapping.validation.duplicate_source")

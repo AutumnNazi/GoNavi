@@ -5958,6 +5958,7 @@
   "import_preview.error.stop_failed": "Could not stop the import",
   "import_preview.error.stop_failed_detail": "Could not stop the import: {{detail}}",
   "import_preview.mapping.validation.required": "Map at least one file column",
+  "import_preview.mapping.validation.required_database_columns": "Map the required database columns: {{columns}}",
   "import_preview.preview.description": "The first 5 rows are shown below. Start the import after confirming the data.",
   "import_preview.preview.field_list": "Field list:",
   "import_preview.preview.summary": "{{rows}} rows and {{columns}} fields",

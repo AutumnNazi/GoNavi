@@ -5958,6 +5958,7 @@
   "import_preview.error.stop_failed": "Import konnte nicht gestoppt werden",
   "import_preview.error.stop_failed_detail": "Import konnte nicht gestoppt werden: {{detail}}",
   "import_preview.mapping.validation.required": "Ordnen Sie mindestens eine Dateispalte zu",
+  "import_preview.mapping.validation.required_database_columns": "Ordnen Sie die erforderlichen Datenbankspalten zu: {{columns}}",
   "import_preview.preview.description": "Die ersten 5 Zeilen werden unten angezeigt. Starten Sie den Import nach der Prüfung der Daten.",
   "import_preview.preview.field_list": "Feldliste:",
   "import_preview.preview.summary": "{{rows}} Zeilen und {{columns}} Felder",

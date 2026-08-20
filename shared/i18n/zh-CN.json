@@ -5958,6 +5958,7 @@
   "import_preview.error.stop_failed": "停止导入失败",
   "import_preview.error.stop_failed_detail": "停止导入失败: {{detail}}",
   "import_preview.mapping.validation.required": "请至少映射一个文件列",
+  "import_preview.mapping.validation.required_database_columns": "请映射数据库非空字段：{{columns}}",
   "import_preview.preview.description": "以下是前 5 行预览数据，确认无误后点击“开始导入”",
   "import_preview.preview.field_list": "字段列表：",
   "import_preview.preview.summary": "共 {{rows}} 行数据，{{columns}} 个字段",
