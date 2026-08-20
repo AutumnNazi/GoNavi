@@ -137,6 +137,29 @@ WHERE t.event_object_table = '%s'
 ORDER BY t.trigger_name, t.event_manipulation`, escapePGLikeMetadataLiteral(tableName), buildPGLikeVisibleRelationPredicate("c", schemaName))
 }
 
+func buildPGLikeTableCommentMetadataQuery(schemaName, tableName string) string {
+	return fmt.Sprintf(`
+SELECT pg_catalog.obj_description(c.oid, 'pg_class') AS table_comment
+FROM pg_catalog.pg_class AS c
+JOIN pg_catalog.pg_namespace AS n ON n.oid = c.relnamespace
+WHERE c.relkind IN ('r', 'p')
+  AND %s
+  AND c.relname = '%s'
+LIMIT 1`, buildPGLikeVisibleRelationPredicate("c", schemaName), escapePGLikeMetadataLiteral(tableName))
+}
+
+func parsePGLikeTableComment(data []map[string]interface{}) string {
+	for _, row := range data {
+		for key, value := range row {
+			if !strings.EqualFold(key, "table_comment") || value == nil {
+				continue
+			}
+			return fmt.Sprintf("%v", value)
+		}
+	}
+	return ""
+}
+
 func buildPGLikeColumnDefinitions(data []map[string]interface{}) []connection.ColumnDefinition {
 	columns := make([]connection.ColumnDefinition, 0, len(data))
 	for _, row := range data {

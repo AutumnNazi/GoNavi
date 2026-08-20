@@ -2871,6 +2871,7 @@ func resolveCreateStatementWithFallbackWithText(dbInst db.Database, config conne
 			if columns, err := loadCreateStatementCommentColumns(dbInst, dbType, metadataSchemaName, metadataTableName); err == nil {
 				sqlStr = appendCreateStatementColumnComments(dbType, ddlSchemaName, ddlTableName, sqlStr, columns)
 			}
+			sqlStr = appendCreateStatementTableComment(dbInst, dbType, metadataSchemaName, metadataTableName, ddlSchemaName, ddlTableName, sqlStr)
 			return sqlStr, nil
 		}
 		if isOceanBaseOracleProtocol(config) {
@@ -2920,6 +2921,7 @@ func resolveCreateStatementWithFallbackWithText(dbInst db.Database, config conne
 		}
 		return "", buildErr
 	}
+	fallbackDDL = appendCreateStatementTableComment(dbInst, dbType, metadataSchemaName, metadataTableName, ddlSchemaName, ddlTableName, fallbackDDL)
 	return fallbackDDL, nil
 }
 
@@ -3064,6 +3066,46 @@ func appendCreateStatementColumnComments(dbType string, schemaName string, table
 		trimmedDDL += ";"
 	}
 	return trimmedDDL + "\n" + strings.Join(commentStatements, "\n")
+}
+
+func appendCreateStatementTableComment(
+	dbInst db.Database,
+	dbType string,
+	metadataSchemaName string,
+	metadataTableName string,
+	ddlSchemaName string,
+	ddlTableName string,
+	ddl string,
+) string {
+	if dbType != "postgres" || strings.TrimSpace(ddl) == "" {
+		return ddl
+	}
+	provider, ok := dbInst.(db.TableCommentProvider)
+	if !ok {
+		return ddl
+	}
+
+	comment, err := provider.GetTableComment(metadataSchemaName, metadataTableName)
+	if err != nil || comment == "" {
+		return ddl
+	}
+
+	tableRef := quoteTableIdentByType(dbType, ddlSchemaName, ddlTableName)
+	marker := "COMMENT ON TABLE " + strings.ToUpper(tableRef)
+	if strings.Contains(strings.ToUpper(ddl), marker) {
+		return ddl
+	}
+
+	trimmedDDL := strings.TrimRight(ddl, " \t\r\n")
+	if !strings.HasSuffix(trimmedDDL, ";") {
+		trimmedDDL += ";"
+	}
+	return fmt.Sprintf(
+		"%s\nCOMMENT ON TABLE %s IS '%s';",
+		trimmedDDL,
+		tableRef,
+		escapeSQLStringLiteralBody(dbType, comment),
+	)
 }
 
 func buildFallbackCreateStatementWithText(dbType string, schemaName string, tableName string, columns []connection.ColumnDefinition, indexes []connection.IndexDefinition, text func(string, map[string]any) string) (string, error) {

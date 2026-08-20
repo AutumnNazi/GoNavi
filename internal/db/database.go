@@ -174,6 +174,12 @@ type DatabaseForeignKeyProvider interface {
 	GetDatabaseForeignKeys(dbName string) (map[string][]connection.ForeignKeyDefinition, error)
 }
 
+// TableCommentProvider is an optional metadata interface for drivers that can
+// load a table-level comment for schema/backup DDL generation.
+type TableCommentProvider interface {
+	GetTableComment(dbName, tableName string) (string, error)
+}
+
 // TableExistsChecker is an optional point lookup for a table's canonical
 // metadata identity. Callers must pass the exact name returned by driver
 // metadata; this interface does not parse arbitrary SQL identifiers.
