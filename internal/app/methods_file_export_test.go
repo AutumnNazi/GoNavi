@@ -73,6 +73,15 @@ type fakeSQLDumpExportDB struct {
 	createErr error
 }
 
+type fakePostgresCommentExportDB struct {
+	fakeSQLDumpExportDB
+	tableComment      string
+	tableCommentErr   error
+	commentSchema     string
+	commentTable      string
+	tableCommentCalls int
+}
+
 type captureExportProgressEmitter struct {
 	events []exportProgressPayload
 }
@@ -135,6 +144,13 @@ func (f *fakeSQLDumpExportDB) GetTables(dbName string) ([]string, error) {
 
 func (f *fakeSQLDumpExportDB) GetCreateStatement(dbName, tableName string) (string, error) {
 	return f.createSQL, f.createErr
+}
+
+func (f *fakePostgresCommentExportDB) GetTableComment(dbName, tableName string) (string, error) {
+	f.tableCommentCalls++
+	f.commentSchema = dbName
+	f.commentTable = tableName
+	return f.tableComment, f.tableCommentErr
 }
 
 func (f *fakeStreamExportDB) Query(query string) ([]map[string]interface{}, []string, error) {
@@ -1736,6 +1752,86 @@ func TestDumpTableSQL_PostgresBooleanBackupUsesBooleanLiterals(t *testing.T) {
 	}
 	if strings.Contains(content, "VALUES (1, 0)") {
 		t.Fatalf("PostgreSQL bool 备份不应输出数字布尔值，content=%s", content)
+	}
+}
+
+func TestDumpTableSQL_PostgresBackupExportIncludesEscapedTableComment(t *testing.T) {
+	fake := &fakePostgresCommentExportDB{
+		fakeSQLDumpExportDB: fakeSQLDumpExportDB{
+			fakeExportQueryDB: fakeExportQueryDB{
+				defs: []connection.ColumnDefinition{{Name: "ID", Type: "bigint", Nullable: "NO"}},
+			},
+			createSQL: "-- SHOW CREATE TABLE not fully supported for PostgreSQL in this MVP.",
+		},
+		tableComment: "Owner's archive\\path\n第二行",
+	}
+	var buf bytes.Buffer
+	writer := bufio.NewWriter(&buf)
+
+	err := dumpTableSQL(
+		writer,
+		fake,
+		connection.ConnectionConfig{Type: "postgres"},
+		"app",
+		`"Sales.Schema"."Order.Items"`,
+		true,
+		true,
+		map[string]string{},
+	)
+	if err != nil {
+		t.Fatalf("dumpTableSQL returned error: %v", err)
+	}
+	if err := writer.Flush(); err != nil {
+		t.Fatalf("flush exported SQL: %v", err)
+	}
+
+	content := buf.String()
+	for _, want := range []string{
+		`CREATE TABLE "Sales.Schema"."Order.Items"`,
+		"COMMENT ON TABLE \"Sales.Schema\".\"Order.Items\" IS 'Owner''s archive\\path\n第二行';",
+	} {
+		if !strings.Contains(content, want) {
+			t.Fatalf("expected PostgreSQL backup export to contain %q, got %s", want, content)
+		}
+	}
+	if fake.tableCommentCalls != 1 || fake.commentSchema != "Sales.Schema" || fake.commentTable != "Order.Items" {
+		t.Fatalf("unexpected table-comment metadata target: calls=%d target=%q.%q", fake.tableCommentCalls, fake.commentSchema, fake.commentTable)
+	}
+}
+
+func TestDumpTableSQL_PostgresSchemaExportOmitsEmptyTableComment(t *testing.T) {
+	fake := &fakePostgresCommentExportDB{
+		fakeSQLDumpExportDB: fakeSQLDumpExportDB{
+			fakeExportQueryDB: fakeExportQueryDB{
+				defs: []connection.ColumnDefinition{{Name: "id", Type: "bigint", Nullable: "NO"}},
+			},
+			createSQL: "-- SHOW CREATE TABLE not fully supported for PostgreSQL in this MVP.",
+		},
+	}
+	var buf bytes.Buffer
+	writer := bufio.NewWriter(&buf)
+
+	if err := dumpTableSQL(
+		writer,
+		fake,
+		connection.ConnectionConfig{Type: "postgres"},
+		"app",
+		"public.orders",
+		true,
+		false,
+		map[string]string{},
+	); err != nil {
+		t.Fatalf("dumpTableSQL returned error: %v", err)
+	}
+	if err := writer.Flush(); err != nil {
+		t.Fatalf("flush exported SQL: %v", err)
+	}
+
+	if content := buf.String(); strings.Contains(content, "COMMENT ON TABLE") {
+		t.Fatalf("empty PostgreSQL table comment should not emit DDL, got %s", content)
+	}
+	if fake.tableCommentCalls != 1 {
+		t.Fatalf("expected one table-comment metadata lookup, got %d", fake.tableCommentCalls)
 	}
 }
 

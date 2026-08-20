@@ -72,6 +72,46 @@ func TestBuildPGLikeMetadataQueriesKeepExplicitSchema(t *testing.T) {
 	}
 }
 
+func TestBuildPGLikeTableCommentMetadataQueryEscapesNames(t *testing.T) {
+	t.Parallel()
+
+	query := buildPGLikeTableCommentMetadataQuery("audit'schema", "order'items")
+	for _, want := range []string{
+		"pg_catalog.obj_description(c.oid, 'pg_class') AS table_comment",
+		"n.nspname = 'audit''schema'",
+		"c.relname = 'order''items'",
+	} {
+		if !strings.Contains(query, want) {
+			t.Fatalf("expected table-comment metadata query to contain %q, got %s", want, query)
+		}
+	}
+	if strings.Contains(query, "pg_catalog.pg_table_is_visible") {
+		t.Fatalf("explicit schema table-comment metadata should not use visibility predicate, got %s", query)
+	}
+}
+
+func TestBuildPGLikeTableCommentMetadataQueryUsesVisibleRelationWithoutSchema(t *testing.T) {
+	t.Parallel()
+
+	query := buildPGLikeTableCommentMetadataQuery("", "orders")
+	if !strings.Contains(query, "pg_catalog.pg_table_is_visible(c.oid)") {
+		t.Fatalf("expected visible relation predicate for table-comment metadata, got %s", query)
+	}
+}
+
+func TestParsePGLikeTableCommentHandlesMissingAndSpecialValues(t *testing.T) {
+	t.Parallel()
+
+	if got := parsePGLikeTableComment(nil); got != "" {
+		t.Fatalf("missing table comment = %q, want empty", got)
+	}
+	want := "  Owner's archive\\path\n第二行  "
+	got := parsePGLikeTableComment([]map[string]interface{}{{"TABLE_COMMENT": want}})
+	if got != want {
+		t.Fatalf("special table comment = %q, want %q", got, want)
+	}
+}
+
 func TestBuildPGLikeColumnDefinitionsMarksPrimaryKey(t *testing.T) {
 	t.Parallel()
 
