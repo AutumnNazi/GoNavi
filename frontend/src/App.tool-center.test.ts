@@ -70,4 +70,25 @@ describe('settings center tool entries', () => {
       /@media \(prefers-reduced-motion: reduce\) \{[\s\S]*?\.gonavi-settings-center-modal \.ant-btn-loading-icon \.anticon-spin \{[^}]*animation-duration: 1s !important;[^}]*animation-iteration-count: infinite !important;[^}]*\}/,
     );
   });
+
+  it('waits for the unsaved SQL confirmation before continuing an update install request', () => {
+    const quitHandlerStart = appSource.indexOf('const handleApplicationQuitRequest = useCallback(async (');
+    const quitHandlerEnd = appSource.indexOf('const handleInstallUpdateRequest = useCallback', quitHandlerStart);
+    const quitHandlerSource = appSource.slice(quitHandlerStart, quitHandlerEnd);
+
+    expect(quitHandlerStart).toBeGreaterThanOrEqual(0);
+    expect(quitHandlerEnd).toBeGreaterThan(quitHandlerStart);
+    expect(quitHandlerSource).toContain('await new Promise<void>((resolve) => {');
+    expect(quitHandlerSource).toContain('const finish = () => {');
+    expect(quitHandlerSource).toContain('await runConfirmedActionAndFinish();');
+    expect(quitHandlerSource).toContain('centered: true,');
+
+    const installRequestSource = appSource.slice(quitHandlerEnd);
+    const closeInstancesModalStart = installRequestSource.indexOf("title: t('app.about.update_install_confirm.close_instances_title'");
+    const closeInstancesModalSource = installRequestSource.slice(closeInstancesModalStart);
+    expect(closeInstancesModalStart).toBeGreaterThanOrEqual(0);
+    expect(closeInstancesModalSource).toContain('centered: true,');
+    expect(closeInstancesModalSource).toContain('await handleInstallFromProgress(true);');
+    expect(closeInstancesModalSource).not.toContain('await handleApplicationQuitRequest(');
+  });
 });

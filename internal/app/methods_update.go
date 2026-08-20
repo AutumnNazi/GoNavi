@@ -54,7 +54,6 @@ var (
 	updateLaunchInstallScript          = launchUpdateScript
 	updateFindOtherWindowsInstances    = findOtherWindowsUpdateInstances
 	updateCloseWindowsInstances        = closeWindowsUpdateInstances
-	updateConfirmCloseWindowsInstances = showWindowsUpdateCloseConfirmation
 	updateAcquireWindowsMaintenance    = acquireWindowsUpdateMaintenance
 	updateQuitSleep                    = time.Sleep
 	updateExitProcess                  = os.Exit
@@ -479,30 +478,14 @@ func (a *App) InstallUpdateAndRestart(closeAllWindowsInstancesConfirmed bool) co
 			}
 		}
 		if windowsUpdateCloseConfirmationRequired(stdRuntime.GOOS, closeAllWindowsInstancesConfirmed, len(runningInstances)) {
-			confirmationParams := map[string]any{"count": len(runningInstances)}
-			confirmed, confirmErr := updateConfirmCloseWindowsInstances(
-				a.ctx,
-				a.appText("app.about.update_install_confirm.close_instances_title", confirmationParams),
-				a.appText("app.about.update_install_confirm.close_instances_content", confirmationParams),
-			)
-			if confirmErr != nil {
-				return connection.QueryResult{
-					Success: false,
-					Message: a.appText("app.update.backend.message.install_launch_failed", map[string]any{
-						"detail": confirmErr.Error(),
-					}),
-				}
+			return connection.QueryResult{
+				Success: false,
+				Data: map[string]any{
+					"requiresCloseConfirmation": true,
+					"instanceCount":             len(runningInstances),
+					"runningPids":               otherWindowsUpdateProcessIDs(runningInstances),
+				},
 			}
-			if !confirmed {
-				return connection.QueryResult{
-					Success: false,
-					Data: map[string]any{
-						"cancelled":   true,
-						"runningPids": otherWindowsUpdateProcessIDs(runningInstances),
-					},
-				}
-			}
-			closeAllWindowsInstancesConfirmed = true
 		}
 
 		if staged.InstallMode == updateInstallModePortable {
