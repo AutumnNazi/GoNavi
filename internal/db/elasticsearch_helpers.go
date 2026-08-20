@@ -1076,7 +1076,7 @@ func parseSearchResponseJSON(body []byte) ([]map[string]interface{}, []string, e
 
 // esFetchIndexAliases 获取指定索引关联的所有别名。
 func (e *ElasticsearchDB) esFetchIndexAliases(indexName string) []string {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(metadataContextFor(e), 10*time.Second)
 	defer cancel()
 
 	res, err := e.client.Indices.GetAlias(
@@ -1132,7 +1132,7 @@ func (e *ElasticsearchDB) esFetchIndexMapping(indexName string) (map[string]inte
 		return nil, fmt.Errorf("连接未打开")
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(metadataContextFor(e), 10*time.Second)
 	defer cancel()
 
 	res, err := e.client.Indices.GetMapping(

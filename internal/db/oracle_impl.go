@@ -280,7 +280,7 @@ func (o *OracleDB) Query(query string) ([]map[string]interface{}, []string, erro
 		return nil, nil, fmt.Errorf("连接未打开")
 	}
 
-	rows, err := o.conn.Query(query)
+	rows, err := o.conn.QueryContext(metadataContextFor(o), query)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -293,7 +293,7 @@ func (o *OracleDB) queryUnbounded(query string) ([]map[string]interface{}, []str
 		return nil, nil, fmt.Errorf("连接未打开")
 	}
 
-	rows, err := o.conn.Query(query)
+	rows, err := o.conn.QueryContext(metadataContextFor(o), query)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -484,7 +484,7 @@ func (o *OracleDB) inferOracleColumnsFromSelect(dbName string, tableName string)
 	var firstErr error
 	for _, candidate := range oracleMetadataNamePairs(dbName, tableName) {
 		query := "SELECT * FROM " + quoteOracleTableRef(candidate.schema, candidate.table) + " WHERE 1 = 0"
-		rows, err := o.conn.Query(query)
+		rows, err := o.conn.QueryContext(metadataContextFor(o), query)
 		if err != nil {
 			if firstErr == nil {
 				firstErr = err

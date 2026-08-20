@@ -188,7 +188,7 @@ func (i *IoTDBDB) Ping() error {
 }
 
 func (i *IoTDBDB) Query(query string) ([]map[string]interface{}, []string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), defaultIoTDBQueryTimeout)
+	ctx, cancel := context.WithTimeout(metadataContextFor(i), defaultIoTDBQueryTimeout)
 	defer cancel()
 	return i.QueryContext(ctx, query)
 }

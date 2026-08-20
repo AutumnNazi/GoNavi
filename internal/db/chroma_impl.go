@@ -114,7 +114,7 @@ func (c *ChromaDB) Ping() error {
 	if c.client == nil {
 		return fmt.Errorf("连接未打开")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(metadataContextFor(c), 10*time.Second)
 	defer cancel()
 
 	if err := c.detectVersion(ctx); err != nil {
@@ -124,7 +124,7 @@ func (c *ChromaDB) Ping() error {
 }
 
 func (c *ChromaDB) Query(query string) ([]map[string]interface{}, []string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), defaultChromaQueryTimeout)
+	ctx, cancel := context.WithTimeout(metadataContextFor(c), defaultChromaQueryTimeout)
 	defer cancel()
 	return c.QueryContext(ctx, query)
 }
@@ -203,7 +203,7 @@ func (c *ChromaDB) GetDatabases() ([]string, error) {
 	if c.client == nil {
 		return nil, fmt.Errorf("连接未打开")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(metadataContextFor(c), 10*time.Second)
 	defer cancel()
 	if err := c.ensureVersion(ctx); err != nil {
 		return nil, err
@@ -231,7 +231,7 @@ func (c *ChromaDB) GetDatabases() ([]string, error) {
 }
 
 func (c *ChromaDB) GetTables(dbName string) ([]string, error) {
-	collections, err := c.listCollections(context.Background(), dbName)
+	collections, err := c.listCollections(metadataContextFor(c), dbName)
 	if err != nil {
 		return nil, err
 	}
@@ -246,7 +246,7 @@ func (c *ChromaDB) GetTables(dbName string) ([]string, error) {
 }
 
 func (c *ChromaDB) GetCreateStatement(dbName, tableName string) (string, error) {
-	coll, err := c.resolveCollection(context.Background(), dbName, tableName)
+	coll, err := c.resolveCollection(metadataContextFor(c), dbName, tableName)
 	if err != nil {
 		return "", err
 	}
@@ -258,7 +258,7 @@ func (c *ChromaDB) GetColumns(dbName, tableName string) ([]connection.ColumnDefi
 	// Chroma does not expose a collection-level schema for arbitrary metadata keys.
 	// Keep metadata inspection side-effect free: sampling documents would implicitly
 	// expose user data and embeddings while opening the fields node.
-	if _, err := c.resolveCollection(context.Background(), dbName, tableName); err != nil {
+	if _, err := c.resolveCollection(metadataContextFor(c), dbName, tableName); err != nil {
 		return nil, err
 	}
 	return []connection.ColumnDefinition{

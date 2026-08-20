@@ -297,7 +297,7 @@ func (s *SqlServerDB) Query(query string) ([]map[string]interface{}, []string, e
 }
 
 func (s *SqlServerDB) QueryWithMessages(query string) ([]map[string]interface{}, []string, []string, error) {
-	return s.QueryContextWithMessages(context.Background(), query)
+	return s.QueryContextWithMessages(metadataContextFor(s), query)
 }
 
 func (s *SqlServerDB) ExecContext(ctx context.Context, query string) (int64, error) {

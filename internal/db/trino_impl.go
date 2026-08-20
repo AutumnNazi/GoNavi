@@ -417,7 +417,7 @@ func (t *TrinoDB) QueryContext(ctx context.Context, query string) ([]map[string]
 }
 
 func (t *TrinoDB) Query(query string) ([]map[string]interface{}, []string, error) {
-	return t.QueryContext(context.Background(), query)
+	return t.QueryContext(metadataContextFor(t), query)
 }
 
 func (t *TrinoDB) StreamQueryContext(ctx context.Context, query string, consumer QueryStreamConsumer) error {

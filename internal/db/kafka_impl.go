@@ -178,13 +178,13 @@ func (k *KafkaDB) Ping() error {
 	if k.runtime == nil {
 		return fmt.Errorf("连接未打开")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(metadataContextFor(k), 10*time.Second)
 	defer cancel()
 	return k.runtime.Ping(ctx)
 }
 
 func (k *KafkaDB) Query(query string) ([]map[string]interface{}, []string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), defaultKafkaQueryTimeout)
+	ctx, cancel := context.WithTimeout(metadataContextFor(k), defaultKafkaQueryTimeout)
 	defer cancel()
 	return k.QueryContext(ctx, query)
 }
@@ -297,7 +297,7 @@ func (k *KafkaDB) GetTables(dbName string) ([]string, error) {
 	if k.runtime == nil {
 		return nil, fmt.Errorf("连接未打开")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(metadataContextFor(k), 10*time.Second)
 	defer cancel()
 	topics, err := k.runtime.ListTopics(ctx, false)
 	if err != nil {
@@ -317,7 +317,7 @@ func (k *KafkaDB) GetCreateStatement(dbName, tableName string) (string, error) {
 	if k.runtime == nil {
 		return "", fmt.Errorf("连接未打开")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(metadataContextFor(k), 10*time.Second)
 	defer cancel()
 	description, err := k.runtime.DescribeTopic(ctx, kafkaResolveTopic(tableName, k.defaultTopic))
 	if err != nil {
@@ -377,7 +377,7 @@ func (k *KafkaDB) GetIndexes(dbName, tableName string) ([]connection.IndexDefini
 	if k.runtime == nil {
 		return nil, fmt.Errorf("连接未打开")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(metadataContextFor(k), 10*time.Second)
 	defer cancel()
 	description, err := k.runtime.DescribeTopic(ctx, kafkaResolveTopic(tableName, k.defaultTopic))
 	if err != nil {

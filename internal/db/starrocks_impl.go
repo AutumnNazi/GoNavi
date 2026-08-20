@@ -3,6 +3,7 @@
 package db
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"strings"
@@ -22,6 +23,14 @@ const (
 // StarRocksDB 使用独立 driver 名称接入，底层协议兼容 MySQL。
 type StarRocksDB struct {
 	MySQLDB
+}
+
+func (s *StarRocksDB) bindMetadataContext(ctx context.Context) {
+	BindMetadataContext(&s.MySQLDB, ctx)
+}
+
+func (s *StarRocksDB) clearMetadataContext() {
+	ClearMetadataContext(&s.MySQLDB)
 }
 
 func init() {

@@ -19,16 +19,16 @@ type Backend interface {
 	Close(context.Context) error
 	GetSavedConnections() ([]connection.SavedConnectionView, error)
 	GetEditableSavedConnection(id string) (connection.SavedConnectionView, error)
-	DBGetDatabases(config connection.ConnectionConfig) connection.QueryResult
-	DBGetTables(config connection.ConnectionConfig, dbName string) connection.QueryResult
-	DBGetViews(config connection.ConnectionConfig, dbName string) connection.QueryResult
-	DBGetObjects(config connection.ConnectionConfig, dbName string) connection.QueryResult
-	DBGetAllColumns(config connection.ConnectionConfig, dbName string) connection.QueryResult
-	DBGetColumns(config connection.ConnectionConfig, dbName string, tableName string) connection.QueryResult
-	DBGetIndexes(config connection.ConnectionConfig, dbName string, tableName string) connection.QueryResult
-	DBGetForeignKeys(config connection.ConnectionConfig, dbName string, tableName string) connection.QueryResult
-	DBGetTriggers(config connection.ConnectionConfig, dbName string, tableName string) connection.QueryResult
-	DBShowCreateTable(config connection.ConnectionConfig, dbName string, tableName string) connection.QueryResult
+	DBGetDatabases(context.Context, connection.ConnectionConfig) connection.QueryResult
+	DBGetTables(context.Context, connection.ConnectionConfig, string) connection.QueryResult
+	DBGetViews(context.Context, connection.ConnectionConfig, string) connection.QueryResult
+	DBGetObjects(context.Context, connection.ConnectionConfig, string) connection.QueryResult
+	DBGetAllColumns(context.Context, connection.ConnectionConfig, string) connection.QueryResult
+	DBGetColumns(context.Context, connection.ConnectionConfig, string, string) connection.QueryResult
+	DBGetIndexes(context.Context, connection.ConnectionConfig, string, string) connection.QueryResult
+	DBGetForeignKeys(context.Context, connection.ConnectionConfig, string, string) connection.QueryResult
+	DBGetTriggers(context.Context, connection.ConnectionConfig, string, string) connection.QueryResult
+	DBShowCreateTable(context.Context, connection.ConnectionConfig, string, string) connection.QueryResult
 	ExecuteSQLFromMCP(context.Context, connection.ConnectionConfig, string, string) connection.QueryResult
 	InspectSQL(dbType string, sql string) appcore.SQLInspection
 	GetSQLSafetyLevel() ai.SQLPermissionLevel
@@ -82,44 +82,44 @@ func (b *AppBackend) GetEditableSavedConnection(id string) (connection.SavedConn
 	return b.app.GetEditableSavedConnection(id)
 }
 
-func (b *AppBackend) DBGetDatabases(config connection.ConnectionConfig) connection.QueryResult {
-	return b.app.DBGetDatabases(config)
+func (b *AppBackend) DBGetDatabases(ctx context.Context, config connection.ConnectionConfig) connection.QueryResult {
+	return b.app.DBGetDatabasesContext(ctx, config)
 }
 
-func (b *AppBackend) DBGetTables(config connection.ConnectionConfig, dbName string) connection.QueryResult {
-	return b.app.DBGetTables(config, dbName)
+func (b *AppBackend) DBGetTables(ctx context.Context, config connection.ConnectionConfig, dbName string) connection.QueryResult {
+	return b.app.DBGetTablesContext(ctx, config, dbName)
 }
 
-func (b *AppBackend) DBGetViews(config connection.ConnectionConfig, dbName string) connection.QueryResult {
-	return b.app.DBGetViews(config, dbName)
+func (b *AppBackend) DBGetViews(ctx context.Context, config connection.ConnectionConfig, dbName string) connection.QueryResult {
+	return b.app.DBGetViewsContext(ctx, config, dbName)
 }
 
-func (b *AppBackend) DBGetObjects(config connection.ConnectionConfig, dbName string) connection.QueryResult {
-	return b.app.DBGetObjects(config, dbName)
+func (b *AppBackend) DBGetObjects(ctx context.Context, config connection.ConnectionConfig, dbName string) connection.QueryResult {
+	return b.app.DBGetObjectsContext(ctx, config, dbName)
 }
 
-func (b *AppBackend) DBGetAllColumns(config connection.ConnectionConfig, dbName string) connection.QueryResult {
-	return b.app.DBGetAllColumns(config, dbName)
+func (b *AppBackend) DBGetAllColumns(ctx context.Context, config connection.ConnectionConfig, dbName string) connection.QueryResult {
+	return b.app.DBGetAllColumnsContext(ctx, config, dbName)
 }
 
-func (b *AppBackend) DBGetColumns(config connection.ConnectionConfig, dbName string, tableName string) connection.QueryResult {
-	return b.app.DBGetColumns(config, dbName, tableName)
+func (b *AppBackend) DBGetColumns(ctx context.Context, config connection.ConnectionConfig, dbName string, tableName string) connection.QueryResult {
+	return b.app.DBGetColumnsContext(ctx, config, dbName, tableName)
 }
 
-func (b *AppBackend) DBGetIndexes(config connection.ConnectionConfig, dbName string, tableName string) connection.QueryResult {
-	return b.app.DBGetIndexes(config, dbName, tableName)
+func (b *AppBackend) DBGetIndexes(ctx context.Context, config connection.ConnectionConfig, dbName string, tableName string) connection.QueryResult {
+	return b.app.DBGetIndexesContext(ctx, config, dbName, tableName)
 }
 
-func (b *AppBackend) DBGetForeignKeys(config connection.ConnectionConfig, dbName string, tableName string) connection.QueryResult {
-	return b.app.DBGetForeignKeys(config, dbName, tableName)
+func (b *AppBackend) DBGetForeignKeys(ctx context.Context, config connection.ConnectionConfig, dbName string, tableName string) connection.QueryResult {
+	return b.app.DBGetForeignKeysContext(ctx, config, dbName, tableName)
 }
 
-func (b *AppBackend) DBGetTriggers(config connection.ConnectionConfig, dbName string, tableName string) connection.QueryResult {
-	return b.app.DBGetTriggers(config, dbName, tableName)
+func (b *AppBackend) DBGetTriggers(ctx context.Context, config connection.ConnectionConfig, dbName string, tableName string) connection.QueryResult {
+	return b.app.DBGetTriggersContext(ctx, config, dbName, tableName)
 }
 
-func (b *AppBackend) DBShowCreateTable(config connection.ConnectionConfig, dbName string, tableName string) connection.QueryResult {
-	return b.app.DBShowCreateTable(config, dbName, tableName)
+func (b *AppBackend) DBShowCreateTable(ctx context.Context, config connection.ConnectionConfig, dbName string, tableName string) connection.QueryResult {
+	return b.app.DBShowCreateTableContext(ctx, config, dbName, tableName)
 }
 
 // ExecuteAuthorizedSQLFromMCP resolves the saved connection and checks its

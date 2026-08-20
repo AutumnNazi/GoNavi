@@ -344,7 +344,7 @@ func (e *ElasticsearchDB) Ping() error {
 
 // Query 执行 Elasticsearch 查询，支持 JSON DSL 和 query_string 两种模式。
 func (e *ElasticsearchDB) Query(query string) ([]map[string]interface{}, []string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), defaultEsQueryTimeout)
+	ctx, cancel := context.WithTimeout(metadataContextFor(e), defaultEsQueryTimeout)
 	defer cancel()
 	return e.queryWithContext(ctx, query)
 }
@@ -562,7 +562,7 @@ func (e *ElasticsearchDB) GetDatabases() ([]string, error) {
 		catTimeout = totalTimeout
 	}
 
-	catCtx, cancelCat := context.WithTimeout(context.Background(), catTimeout)
+	catCtx, cancelCat := context.WithTimeout(metadataContextFor(e), catTimeout)
 	indices, catErr := e.getDatabasesViaCat(catCtx)
 	cancelCat()
 	if catErr == nil {
@@ -575,7 +575,7 @@ func (e *ElasticsearchDB) GetDatabases() ([]string, error) {
 		return nil, fmt.Errorf("获取索引列表失败：CAT Indices API: %v；Alias API: 总超时 %s 已耗尽", catErr, totalTimeout)
 	}
 
-	aliasCtx, cancelAlias := context.WithTimeout(context.Background(), remaining)
+	aliasCtx, cancelAlias := context.WithTimeout(metadataContextFor(e), remaining)
 	indices, aliasErr := e.getDatabasesViaAlias(aliasCtx)
 	cancelAlias()
 	if aliasErr == nil {
@@ -725,7 +725,7 @@ func (e *ElasticsearchDB) TableExists(dbName, tableName string) (bool, error) {
 		return false, fmt.Errorf("未指定索引名")
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), defaultEsPingTimeout)
+	ctx, cancel := context.WithTimeout(metadataContextFor(e), defaultEsPingTimeout)
 	defer cancel()
 	res, err := e.client.Indices.Exists(
 		[]string{indexName},
@@ -761,7 +761,7 @@ func (e *ElasticsearchDB) GetCreateStatement(dbName, tableName string) (string, 
 		return "", fmt.Errorf("未指定索引名")
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(metadataContextFor(e), 10*time.Second)
 	defer cancel()
 
 	res, err := e.client.Indices.Get(
@@ -851,7 +851,7 @@ func (e *ElasticsearchDB) GetIndexes(dbName, tableName string) ([]connection.Ind
 		return nil, fmt.Errorf("未指定索引名")
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(metadataContextFor(e), 10*time.Second)
 	defer cancel()
 
 	res, err := e.client.Indices.GetSettings(

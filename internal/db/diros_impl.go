@@ -3,6 +3,7 @@
 package db
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"strings"
@@ -22,6 +23,14 @@ const (
 // DirosDB 使用独立 driver 名称（diros）接入，底层协议兼容 MySQL（对外显示为 Doris）。
 type DirosDB struct {
 	MySQLDB
+}
+
+func (d *DirosDB) bindMetadataContext(ctx context.Context) {
+	BindMetadataContext(&d.MySQLDB, ctx)
+}
+
+func (d *DirosDB) clearMetadataContext() {
+	ClearMetadataContext(&d.MySQLDB)
 }
 
 func init() {

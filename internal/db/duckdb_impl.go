@@ -116,7 +116,7 @@ func (d *DuckDB) Query(query string) ([]map[string]interface{}, []string, error)
 	if d.conn == nil {
 		return nil, nil, duckDBConnectionNotOpenError()
 	}
-	rows, err := d.conn.Query(query)
+	rows, err := d.conn.QueryContext(metadataContextFor(d), query)
 	if err != nil {
 		return nil, nil, err
 	}

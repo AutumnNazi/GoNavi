@@ -187,7 +187,7 @@ func (h *HighGoDB) Query(query string) ([]map[string]interface{}, []string, erro
 		return nil, nil, fmt.Errorf("连接未打开")
 	}
 
-	rows, err := h.conn.Query(query)
+	rows, err := h.conn.QueryContext(metadataContextFor(h), query)
 	if err != nil {
 		return nil, nil, err
 	}

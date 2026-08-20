@@ -1158,7 +1158,7 @@ func (m *MongoDB) GetDatabases() ([]string, error) {
 		return nil, fmt.Errorf("连接未打开")
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(metadataContextFor(m), 10*time.Second)
 	defer cancel()
 
 	dbs, err := m.client.ListDatabaseNames(ctx, bson.M{})
@@ -1178,7 +1178,7 @@ func (m *MongoDB) GetTables(dbName string) ([]string, error) {
 		targetDB = m.database
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(metadataContextFor(m), 10*time.Second)
 	defer cancel()
 
 	collections, err := m.client.Database(targetDB).ListCollectionNames(ctx, bson.M{})
@@ -1214,7 +1214,7 @@ func (m *MongoDB) GetIndexes(dbName, tableName string) ([]connection.IndexDefini
 		targetDB = m.database
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(metadataContextFor(m), 10*time.Second)
 	defer cancel()
 
 	collection := m.client.Database(targetDB).Collection(tableName)

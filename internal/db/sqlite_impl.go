@@ -217,7 +217,7 @@ func (s *SQLiteDB) Query(query string) ([]map[string]interface{}, []string, erro
 		return nil, nil, fmt.Errorf("连接未打开")
 	}
 
-	rows, err := s.conn.Query(query)
+	rows, err := s.conn.QueryContext(metadataContextFor(s), query)
 	if err != nil {
 		return nil, nil, err
 	}

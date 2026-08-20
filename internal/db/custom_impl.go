@@ -110,7 +110,7 @@ func (c *CustomDB) Query(query string) ([]map[string]interface{}, []string, erro
 		return nil, nil, localizedDatabaseRuntimeError("db.backend.error.connection_not_open", nil)
 	}
 
-	rows, err := c.conn.Query(query)
+	rows, err := c.conn.QueryContext(metadataContextFor(c), query)
 	if err != nil {
 		return nil, nil, err
 	}

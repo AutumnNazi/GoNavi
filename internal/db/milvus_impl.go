@@ -107,7 +107,7 @@ func (m *MilvusDB) Ping() error {
 	if m.client == nil {
 		return fmt.Errorf("connection is not open")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(metadataContextFor(m), 10*time.Second)
 	defer cancel()
 	_, err := m.listCollections(ctx, m.database)
 	return err
@@ -196,7 +196,7 @@ func (m *MilvusDB) GetDatabases() ([]string, error) {
 	if m.client == nil {
 		return nil, fmt.Errorf("connection is not open")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(metadataContextFor(m), 10*time.Second)
 	defer cancel()
 
 	var raw interface{}
@@ -215,11 +215,11 @@ func (m *MilvusDB) GetDatabases() ([]string, error) {
 }
 
 func (m *MilvusDB) GetTables(dbName string) ([]string, error) {
-	return m.listCollections(context.Background(), m.databaseName(dbName))
+	return m.listCollections(metadataContextFor(m), m.databaseName(dbName))
 }
 
 func (m *MilvusDB) GetCreateStatement(dbName, tableName string) (string, error) {
-	info, err := m.getCollectionInfo(context.Background(), m.databaseName(dbName), tableNameOrDB(dbName, tableName))
+	info, err := m.getCollectionInfo(metadataContextFor(m), m.databaseName(dbName), tableNameOrDB(dbName, tableName))
 	if err != nil {
 		return "", err
 	}
@@ -228,7 +228,7 @@ func (m *MilvusDB) GetCreateStatement(dbName, tableName string) (string, error) 
 }
 
 func (m *MilvusDB) GetColumns(dbName, tableName string) ([]connection.ColumnDefinition, error) {
-	info, err := m.getCollectionInfo(context.Background(), m.databaseName(dbName), tableNameOrDB(dbName, tableName))
+	info, err := m.getCollectionInfo(metadataContextFor(m), m.databaseName(dbName), tableNameOrDB(dbName, tableName))
 	if err != nil {
 		return nil, err
 	}
@@ -287,7 +287,7 @@ func (m *MilvusDB) GetAllColumns(dbName string) ([]connection.ColumnDefinitionWi
 }
 
 func (m *MilvusDB) GetIndexes(dbName, tableName string) ([]connection.IndexDefinition, error) {
-	info, err := m.getCollectionInfo(context.Background(), m.databaseName(dbName), tableNameOrDB(dbName, tableName))
+	info, err := m.getCollectionInfo(metadataContextFor(m), m.databaseName(dbName), tableNameOrDB(dbName, tableName))
 	if err != nil {
 		return nil, err
 	}

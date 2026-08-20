@@ -164,7 +164,7 @@ func (v *VastbaseDB) Query(query string) ([]map[string]interface{}, []string, er
 		return nil, nil, fmt.Errorf("连接未打开")
 	}
 
-	rows, err := v.conn.Query(query)
+	rows, err := v.conn.QueryContext(metadataContextFor(v), query)
 	if err != nil {
 		return nil, nil, err
 	}

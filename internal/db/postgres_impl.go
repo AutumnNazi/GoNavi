@@ -246,7 +246,7 @@ func (p *PostgresDB) Query(query string) ([]map[string]interface{}, []string, er
 		return nil, nil, fmt.Errorf("连接未打开")
 	}
 
-	rows, err := p.conn.Query(query)
+	rows, err := p.conn.QueryContext(metadataContextFor(p), query)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -255,7 +255,7 @@ func (p *PostgresDB) Query(query string) ([]map[string]interface{}, []string, er
 }
 
 func (p *PostgresDB) QueryWithMessages(query string) ([]map[string]interface{}, []string, []string, error) {
-	return p.QueryContextWithMessages(context.Background(), query)
+	return p.QueryContextWithMessages(metadataContextFor(p), query)
 }
 
 func (p *PostgresDB) ExecBatchContext(ctx context.Context, query string) (int64, error) {
@@ -621,7 +621,7 @@ func (p *PostgresDB) queryUserSchemas() []string {
 		  AND nspname NOT LIKE 'pg|_%' ESCAPE '|'
 		ORDER BY nspname`
 
-	rows, err := p.conn.Query(query)
+	rows, err := p.conn.QueryContext(metadataContextFor(p), query)
 	if err != nil {
 		logger.Warnf("PostgreSQL 查询用户 schema 失败：%v", err)
 		return nil

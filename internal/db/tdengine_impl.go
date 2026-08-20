@@ -169,7 +169,7 @@ func (t *TDengineDB) Query(query string) ([]map[string]interface{}, []string, er
 		return nil, nil, fmt.Errorf("连接未打开")
 	}
 
-	rows, err := t.conn.Query(query)
+	rows, err := t.conn.QueryContext(metadataContextFor(t), query)
 	if err != nil {
 		return nil, nil, err
 	}
