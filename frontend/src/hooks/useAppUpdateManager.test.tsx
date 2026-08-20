@@ -701,6 +701,44 @@ describe('useAppUpdateManager', () => {
     expect(messageApi.error).not.toHaveBeenCalled();
   });
 
+  it('returns the Windows instance confirmation request to the GoNavi modal layer', async () => {
+    backendApp.CheckForUpdates.mockResolvedValue({
+      success: true,
+      data: {
+        hasUpdate: true,
+        currentVersion: '0.8.1',
+        latestVersion: '0.8.2',
+        downloaded: true,
+        assetSize: 2048,
+        installMode: 'portable',
+        packageType: 'portable',
+      },
+    });
+    backendApp.InstallUpdateAndRestart.mockResolvedValue({
+      success: false,
+      data: { requiresCloseConfirmation: true, instanceCount: 3 },
+    });
+
+    renderHook();
+    await act(async () => {
+      await hook?.checkForUpdates(false);
+    });
+
+    let requestedInstanceCount: number | null = null;
+    let accepted = true;
+    await act(async () => {
+      accepted = await hook!.handleInstallFromProgress(false, (instanceCount) => {
+        requestedInstanceCount = instanceCount;
+      });
+    });
+
+    expect(accepted).toBe(false);
+    expect(requestedInstanceCount).toBe(3);
+    expect(hook?.updateDownloadProgress.status).toBe('done');
+    expect(hook?.updateDownloadProgress.open).toBe(false);
+    expect(messageApi.error).not.toHaveBeenCalled();
+  });
+
   it('returns false without calling the backend when no update is ready', async () => {
     renderHook();
 

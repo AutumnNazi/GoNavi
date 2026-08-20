@@ -396,7 +396,10 @@ export const useAppUpdateManager = ({
   const canShowProgressEntry = (isLatestUpdateDownloaded || isBackgroundProgressForLatestUpdate)
     && updateInstallTriggeredVersionRef.current !== (lastUpdateKey || null);
 
-  const handleInstallFromProgress = useCallback(async (closeAllWindowsInstancesConfirmed = false): Promise<boolean> => {
+  const handleInstallFromProgress = useCallback(async (
+    closeAllWindowsInstancesConfirmed = false,
+    onCloseInstancesConfirmationRequired?: (instanceCount: number) => void,
+  ): Promise<boolean> => {
     const canInstall = updateDownloadProgress.status === 'done'
       || (Boolean(lastUpdateInfo?.hasUpdate) && (Boolean(lastUpdateInfo?.downloaded) || updateDownloadedVersionRef.current === lastUpdateKey));
     if (!canInstall) {
@@ -421,6 +424,21 @@ export const useAppUpdateManager = ({
       res = { success: false, message: error?.message || t('common.unknown') };
     }
     if (!res?.success) {
+      if (res?.data?.requiresCloseConfirmation === true) {
+        const parsedInstanceCount = Number(res?.data?.instanceCount);
+        const instanceCount = Number.isFinite(parsedInstanceCount) && parsedInstanceCount > 0
+          ? Math.floor(parsedInstanceCount)
+          : 1;
+        setUpdateDownloadProgress((prev) => ({
+          ...prev,
+          open: false,
+          status: 'done',
+          percent: 100,
+          message: '',
+        }));
+        onCloseInstancesConfirmationRequired?.(instanceCount);
+        return false;
+      }
       if (res?.data?.cancelled === true) {
         setUpdateDownloadProgress((prev) => ({
           ...prev,
