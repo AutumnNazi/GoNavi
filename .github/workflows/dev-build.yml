@@ -288,8 +288,58 @@ jobs:
           fi
           echo "release_source=dev-latest" >> "$GITHUB_OUTPUT"
 
+  driver_revision_maps:
+    name: Generate canonical driver revision map ${{ matrix.goos }}/${{ matrix.goarch }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: darwin
+            goarch: amd64
+            artifact_key: darwin-amd64
+          - goos: darwin
+            goarch: arm64
+            artifact_key: darwin-arm64
+          - goos: linux
+            goarch: amd64
+            artifact_key: linux-amd64
+          - goos: linux
+            goarch: arm64
+            artifact_key: linux-arm64
+          - goos: windows
+            goarch: amd64
+            artifact_key: windows-amd64
+          - goos: windows
+            goarch: arm64
+            artifact_key: windows-arm64
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: 'go.mod'
+
+      - name: Generate canonical driver revision map
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./tools/generate-driver-agent-revisions.sh --platform "${{ matrix.goos }}/${{ matrix.goarch }}"
+          test -s internal/db/driver_agent_revisions_gen.go
+
+      - name: Upload canonical driver revision map
+        uses: actions/upload-artifact@v6
+        with:
+          name: dev-canonical-driver-revision-map-${{ matrix.artifact_key }}
+          path: internal/db/driver_agent_revisions_gen.go
+          if-no-files-found: error
+          retention-days: 1
+
   cli:
     name: Build dev CLI ${{ matrix.goos }}/${{ matrix.goarch }}
+    needs: driver_revision_maps
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -328,6 +378,19 @@ jobs:
         with:
           go-version-file: 'go.mod'
 
+      - name: Download canonical driver revision map
+        uses: actions/download-artifact@v7
+        with:
+          name: dev-canonical-driver-revision-map-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: canonical-driver-revision-map
+
+      - name: Install canonical driver revision map
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s canonical-driver-revision-map/driver_agent_revisions_gen.go
+          install -m 0644 canonical-driver-revision-map/driver_agent_revisions_gen.go internal/db/driver_agent_revisions_gen.go
+
       - name: Build and package dev CLI
         shell: bash
         run: |
@@ -336,7 +399,6 @@ jobs:
           asset="gonavi-cli_${version}_${{ matrix.goos }}_${{ matrix.goarch }}.${{ matrix.extension }}"
           stage="${RUNNER_TEMP}/gonavi-cli-${{ matrix.goos }}-${{ matrix.goarch }}"
           mkdir -p "$stage"
-          ./tools/generate-driver-agent-revisions.sh --platform "${{ matrix.goos }}/${{ matrix.goarch }}"
           ./tools/write-driver-revision-contract.sh --role cli \
             --platform "${{ matrix.goos }}/${{ matrix.goarch }}" \
             --output-dir driver-revision-contract
@@ -383,6 +445,7 @@ jobs:
     needs:
       - frontend
       - driver_agents
+      - driver_revision_maps
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -393,6 +456,7 @@ jobs:
             os_name: MacOS
             arch_name: Amd64
             build_name: gonavi-build-darwin-amd64
+            canonical_revision_map: darwin-amd64
             wails_tags: ""
             artifact_suffix: ""
             driver_revision_variant: ""
@@ -403,6 +467,7 @@ jobs:
             os_name: MacOS
             arch_name: Arm64
             build_name: gonavi-build-darwin-arm64
+            canonical_revision_map: darwin-arm64
             wails_tags: ""
             artifact_suffix: ""
             driver_revision_variant: ""
@@ -413,6 +478,7 @@ jobs:
             os_name: Windows
             arch_name: Amd64
             build_name: gonavi-build-windows-amd64
+            canonical_revision_map: windows-amd64
             wails_tags: ""
             artifact_suffix: ""
             driver_revision_variant: ""
@@ -423,6 +489,7 @@ jobs:
             os_name: Windows
             arch_name: Arm64
             build_name: gonavi-build-windows-arm64
+            canonical_revision_map: windows-arm64
             wails_tags: ""
             artifact_suffix: ""
             driver_revision_variant: ""
@@ -433,6 +500,7 @@ jobs:
             os_name: Linux
             arch_name: Amd64
             build_name: gonavi-build-linux-amd64
+            canonical_revision_map: linux-amd64
             wails_tags: ""
             artifact_suffix: ""
             driver_revision_variant: ""
@@ -443,6 +511,7 @@ jobs:
             os_name: Linux
             arch_name: Arm64
             build_name: gonavi-build-linux-arm64
+            canonical_revision_map: linux-arm64
             wails_tags: ""
             artifact_suffix: ""
             driver_revision_variant: ""
@@ -453,6 +522,7 @@ jobs:
             os_name: Linux
             arch_name: Amd64
             build_name: gonavi-build-linux-amd64-webkit41
+            canonical_revision_map: linux-amd64
             wails_tags: "webkit2_41"
             artifact_suffix: "-WebKit41"
             driver_revision_variant: "webkit41"
@@ -467,6 +537,19 @@ jobs:
         uses: actions/setup-go@v6
         with:
           go-version-file: 'go.mod'
+
+      - name: Download canonical driver revision map
+        uses: actions/download-artifact@v7
+        with:
+          name: dev-canonical-driver-revision-map-${{ matrix.canonical_revision_map }}
+          path: canonical-driver-revision-map
+
+      - name: Install canonical driver revision map
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s canonical-driver-revision-map/driver_agent_revisions_gen.go
+          install -m 0644 canonical-driver-revision-map/driver_agent_revisions_gen.go internal/db/driver_agent_revisions_gen.go
 
       - name: Download frontend dist
         id: download_frontend_dist
@@ -660,8 +743,6 @@ jobs:
         run: |
           set -euo pipefail
           DEV_VERSION="${{ steps.version.outputs.version }}"
-          echo "🧭 为 ${{ matrix.platform }} 全量生成 driver-agent revision 指纹，避免跨平台沿用旧 revision"
-          ./tools/generate-driver-agent-revisions.sh --platform "${{ matrix.platform }}"
           revision_contract_args=(
             --role gui
             --platform "${{ matrix.platform }}"

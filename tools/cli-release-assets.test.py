@@ -77,10 +77,9 @@ class CLIReleaseAssetsTest(unittest.TestCase):
             self.assertIn('gonavi-cli_${version}_checksums.txt', source)
             self.assertIn('(cd cli-assets && sha256sum "${expected[@]}"', source)
             self.assertIn('sha256sum --check "$cli_checksum_name"', source)
-            self.assertIn(
-                './tools/generate-driver-agent-revisions.sh --platform "${{ matrix.goos }}/${{ matrix.goarch }}"',
-                source,
-            )
+            self.assertIn("Download canonical driver revision map", source)
+            self.assertIn("Install canonical driver revision map", source)
+            self.assertIn("canonical-driver-revision-map/driver_agent_revisions_gen.go", source)
             self.assertIn("--component gui", source)
             self.assertIn("--assets-dir release-assets", source)
             self.assertIn("release-assets/*", source)
@@ -179,6 +178,11 @@ class CLIReleaseAssetsTest(unittest.TestCase):
                 "tools/verify-driver-revision-contract.sh --contracts-dir driver-revision-contract",
                 verification_script,
             )
+            self.assertIn("driver_revision_maps", source)
+            self.assertIn("Download canonical driver revision map", source)
+            self.assertIn("Install canonical driver revision map", source)
+            self.assertNotIn("generate-driver-agent-revisions.sh --platform", cli_script)
+            self.assertNotIn("generate-driver-agent-revisions.sh --platform", gui_script)
             self.assertIn(cli_pattern, source)
             self.assertIn(gui_pattern, source)
             self.assertIn('--platform "${{ matrix.goos }}/${{ matrix.goarch }}"', source)
@@ -192,6 +196,23 @@ class CLIReleaseAssetsTest(unittest.TestCase):
                 source.index("Verify GUI and CLI driver revision contracts"),
                 source.index(staging_step),
             )
+
+            cli_job_marker = "name: Build CLI" if workflow_name == "release.yml" else "name: Build dev CLI"
+            cli_needs_index = source.index(cli_job_marker)
+            self.assertIn("driver_revision_maps", source[cli_needs_index : source.index("    steps:", cli_needs_index)])
+            build_index = source.index("name: Build ${{ matrix.platform }}")
+            build_header = source[build_index : source.index("    steps:", build_index)]
+            self.assertIn("driver_revision_maps", build_header)
+            for artifact_key in (
+                "darwin-amd64",
+                "darwin-arm64",
+                "linux-amd64",
+                "linux-arm64",
+                "windows-amd64",
+                "windows-arm64",
+            ):
+                self.assertIn(f"canonical_revision_map: {artifact_key}", source)
+            self.assertIn("canonical_revision_map: linux-amd64\n            wails_tags: \"webkit2_41\"", source)
 
         for workflow_name in ("release.yml", "dev-build.yml"):
             source = (ROOT / ".github" / "workflows" / workflow_name).read_text(encoding="utf-8")
