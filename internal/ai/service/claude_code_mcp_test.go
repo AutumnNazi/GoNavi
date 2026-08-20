@@ -146,7 +146,10 @@ func TestDetectLocalCLICommandUsesRealLoginShellForDesktopPath(t *testing.T) {
 	localCLICommandPathFunc = exec.LookPath
 	localCLICommandShellCandidatesFunc = localCLICommandShellCandidates
 	localCLICommandShellOutputFunc = runLocalCLICommandShell
-	localCLICommandShellLookupTimeout = time.Second
+	// This test starts a real shell subprocess. Leave production's two-second
+	// lookup budget unchanged, but allow the fixture enough scheduling time
+	// when go test runs packages in parallel.
+	localCLICommandShellLookupTimeout = 5 * time.Second
 
 	detected, resolvedPath := detectLocalCLICommand(command)
 	if !detected {
