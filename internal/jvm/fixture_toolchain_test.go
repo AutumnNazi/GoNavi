@@ -163,16 +163,29 @@ func readJVMFixtureToolVersion(parent context.Context, binary string) (string, i
 	ctx, cancel := context.WithTimeout(parent, 5*time.Second)
 	defer cancel()
 
-	output, err := exec.CommandContext(ctx, binary, "-version").CombinedOutput()
-	text := strings.TrimSpace(string(output))
-	if err != nil {
-		return text, 0, fmt.Errorf("%w; output: %s", err, nonEmptyJVMFixtureText(text, "<empty>"))
+	var lastText string
+	var lastErr error
+	for _, argument := range []string{"--version", "-version"} {
+		output, runErr := exec.CommandContext(ctx, binary, argument).CombinedOutput()
+		text := strings.TrimSpace(string(output))
+		lastText = text
+		lastErr = runErr
+
+		major, parseErr := parseJVMFixtureMajorVersion(text)
+		if parseErr == nil {
+			// Some Windows Java launchers return exit status 1 while still
+			// emitting a valid version string. The fixture only needs a
+			// consistent toolchain, so the parsed version is authoritative.
+			return text, major, nil
+		}
+		if runErr == nil {
+			return text, 0, parseErr
+		}
 	}
-	major, err := parseJVMFixtureMajorVersion(text)
-	if err != nil {
-		return text, 0, err
+	if lastErr != nil {
+		return lastText, 0, fmt.Errorf("%w; output: %s", lastErr, nonEmptyJVMFixtureText(lastText, "<empty>"))
 	}
-	return text, major, nil
+	return lastText, 0, fmt.Errorf("unrecognized Java version output: %q", compactJVMFixtureVersion(lastText))
 }
 
 func parseJVMFixtureMajorVersion(output string) (int, error) {
