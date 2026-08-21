@@ -1,6 +1,7 @@
 package app
 
 import (
+	"strings"
 	"testing"
 
 	"GoNavi-Wails/internal/connection"
@@ -136,6 +137,36 @@ func TestBuildChangePreviewQuotesQualifiedOracleTargetBySegment(t *testing.T) {
 	want := `UPDATE "APP"."USERS" SET "STATUS" = '0' WHERE "ID" = 7;`
 	if len(preview.Updates) != 1 || preview.Updates[0] != want {
 		t.Fatalf("qualified Oracle preview = %#v, want %q", preview.Updates, want)
+	}
+}
+
+func TestBuildChangePreviewUsesDialectStringLiteralRules(t *testing.T) {
+	tests := []struct {
+		name      string
+		dbType    string
+		wantValue string
+	}{
+		{name: "mysql", dbType: "mysql", wantValue: `'O''Reilly \\docs'`},
+		{name: "postgres", dbType: "postgres", wantValue: `'O''Reilly \docs'`},
+		{name: "oracle", dbType: "oracle", wantValue: `'O''Reilly \docs'`},
+		{name: "sqlserver", dbType: "sqlserver", wantValue: `'O''Reilly \docs'`},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			preview := buildChangePreview(
+				&fakeBatchWriteDB{},
+				connection.ConnectionConfig{Type: test.dbType},
+				"users",
+				connection.ChangeSet{Updates: []connection.UpdateRow{{
+					Keys:   map[string]interface{}{"id": int64(1)},
+					Values: map[string]interface{}{"name": "O'Reilly \\docs"},
+				}}},
+			)
+			if len(preview.Updates) != 1 || !strings.Contains(preview.Updates[0], test.wantValue) {
+				t.Fatalf("dialect preview = %#v, want value literal %q", preview.Updates, test.wantValue)
+			}
+		})
 	}
 }
 

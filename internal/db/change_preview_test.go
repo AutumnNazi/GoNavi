@@ -3,6 +3,7 @@ package db
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"GoNavi-Wails/internal/connection"
 )
@@ -107,6 +108,49 @@ func TestFormatLiteral(t *testing.T) {
 		if got != c.expected {
 			t.Errorf("formatLiteral(%v): got %s, want %s", c.val, got, c.expected)
 		}
+	}
+}
+
+func TestGenerateChangePreviewWithDialectEscapesStringLiterals(t *testing.T) {
+	changes := connection.ChangeSet{
+		Updates: []connection.UpdateRow{{
+			Keys: map[string]interface{}{"id": int64(1)},
+			Values: map[string]interface{}{
+				"text": "O'Reilly \\docs",
+				"when": time.Date(2026, 8, 21, 13, 14, 15, 0, time.UTC),
+			},
+		}},
+	}
+
+	tests := []struct {
+		name   string
+		dbType string
+		want   string
+	}{
+		{name: "mysql", dbType: "mysql", want: "UPDATE `users` SET `text` = 'O''Reilly \\\\docs', `when` = '2026-08-21 13:14:15' WHERE `id` = 1;"},
+		{name: "postgres", dbType: "postgres", want: `UPDATE "users" SET "text" = 'O''Reilly \docs', "when" = TIMESTAMP '2026-08-21 13:14:15' WHERE "id" = 1;`},
+		{name: "oracle", dbType: "oracle", want: `UPDATE "users" SET "text" = 'O''Reilly \docs', "when" = TO_TIMESTAMP('2026-08-21 13:14:15', 'YYYY-MM-DD HH24:MI:SS') WHERE "id" = 1;`},
+		{name: "sqlserver", dbType: "sqlserver", want: "UPDATE [users] SET [text] = 'O''Reilly \\docs', [when] = CONVERT(datetime2, '2026-08-21T13:14:15', 126) WHERE [id] = 1;"},
+		{name: "sphinx", dbType: "sphinx", want: "UPDATE `users` SET `text` = 'O''Reilly \\\\docs', `when` = '2026-08-21 13:14:15' WHERE `id` = 1;"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			quote := func(s string) string {
+				switch test.dbType {
+				case "mysql", "sphinx":
+					return "`" + s + "`"
+				case "sqlserver":
+					return "[" + s + "]"
+				default:
+					return `"` + s + `"`
+				}
+			}
+			_, updates, _ := GenerateChangePreviewWithDialect("users", changes, test.dbType, quote, quote)
+			if len(updates) != 1 || updates[0] != test.want {
+				t.Fatalf("preview = %#v, want %q", updates, test.want)
+			}
+		})
 	}
 }
 

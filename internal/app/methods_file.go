@@ -4888,7 +4888,7 @@ func buildChangePreview(dbInst db.Database, config connection.ConnectionConfig, 
 	dbType := resolveDDLDBType(config)
 	quoter := func(s string) string { return quoteIdentByType(dbType, s) }
 	tableQuoter := func(s string) string { return quoteQualifiedIdentByType(dbType, s) }
-	deletes, updates, inserts := db.GenerateChangePreviewWithTableQuoter(tableName, changes, quoter, tableQuoter)
+	deletes, updates, inserts := db.GenerateChangePreviewWithDialect(tableName, changes, dbType, quoter, tableQuoter)
 	return ChangePreview{Deletes: deletes, Updates: updates, Inserts: inserts}
 }
 

@@ -23,6 +23,29 @@ func GenerateChangePreviewWithTableQuoter(
 	quoteIdent func(string) string,
 	quoteTable func(string) string,
 ) (deletes, updates, inserts []string) {
+	return generateChangePreview(tableName, changes, quoteIdent, quoteTable, formatLiteral)
+}
+
+// GenerateChangePreviewWithDialect 按目标方言格式化值字面量，同时保留现有标识符引用钩子。
+func GenerateChangePreviewWithDialect(
+	tableName string,
+	changes connection.ChangeSet,
+	dbType string,
+	quoteIdent func(string) string,
+	quoteTable func(string) string,
+) (deletes, updates, inserts []string) {
+	return generateChangePreview(tableName, changes, quoteIdent, quoteTable, func(v interface{}) string {
+		return formatLiteralForDialect(dbType, v)
+	})
+}
+
+func generateChangePreview(
+	tableName string,
+	changes connection.ChangeSet,
+	quoteIdent func(string) string,
+	quoteTable func(string) string,
+	format func(interface{}) string,
+) (deletes, updates, inserts []string) {
 	if quoteTable == nil {
 		quoteTable = quoteIdent
 	}
@@ -32,7 +55,7 @@ func GenerateChangePreviewWithTableQuoter(
 		var conds []string
 		for _, k := range sortedKeys(pk) {
 			v := pk[k]
-			conds = append(conds, fmt.Sprintf("%s = %s", quoteIdent(k), formatLiteral(v)))
+			conds = append(conds, fmt.Sprintf("%s = %s", quoteIdent(k), format(v)))
 		}
 		if len(conds) > 0 {
 			deletes = append(deletes, fmt.Sprintf("DELETE FROM %s WHERE %s;", quoteTable(tableName), strings.Join(conds, " AND ")))
@@ -44,7 +67,7 @@ func GenerateChangePreviewWithTableQuoter(
 		var sets []string
 		for _, k := range sortedKeys(row.Values) {
 			v := row.Values[k]
-			sets = append(sets, fmt.Sprintf("%s = %s", quoteIdent(k), formatLiteral(v)))
+			sets = append(sets, fmt.Sprintf("%s = %s", quoteIdent(k), format(v)))
 		}
 		if len(sets) == 0 {
 			continue
@@ -52,7 +75,7 @@ func GenerateChangePreviewWithTableQuoter(
 		var conds []string
 		for _, k := range sortedKeys(row.Keys) {
 			v := row.Keys[k]
-			conds = append(conds, fmt.Sprintf("%s = %s", quoteIdent(k), formatLiteral(v)))
+			conds = append(conds, fmt.Sprintf("%s = %s", quoteIdent(k), format(v)))
 		}
 		if len(conds) == 0 {
 			continue
@@ -70,7 +93,7 @@ func GenerateChangePreviewWithTableQuoter(
 				continue
 			}
 			cols = append(cols, quoteIdent(k))
-			vals = append(vals, formatLiteral(v))
+			vals = append(vals, format(v))
 		}
 		if len(cols) == 0 {
 			continue
@@ -93,14 +116,58 @@ func sortedKeys(m map[string]interface{}) []string {
 
 // formatLiteral 将 Go 值转为 SQL 字面量字符串。
 func formatLiteral(v interface{}) string {
+	return formatLiteralWithEscaper(v, func(value string) string {
+		escaped := strings.ReplaceAll(value, "\\", "\\\\")
+		return strings.ReplaceAll(escaped, "'", "\\'")
+	}, func(value string) string {
+		return strings.ReplaceAll(value, "'", "\\'")
+	})
+}
+
+func formatLiteralForDialect(dbType string, v interface{}) string {
+	normalizedType := strings.ToLower(strings.TrimSpace(dbType))
+	switch normalizedType {
+	case "postgresql":
+		normalizedType = "postgres"
+	case "mssql", "sql_server", "sql-server":
+		normalizedType = "sqlserver"
+	}
+	if temporal, ok := v.(time.Time); ok {
+		return formatPreviewTemporalLiteral(normalizedType, temporal)
+	}
+	return formatLiteralWithEscaper(v, func(value string) string {
+		if dialectEscapesBackslashInPreviewLiteral(normalizedType) {
+			value = strings.ReplaceAll(value, "\\", "\\\\")
+		}
+		return strings.ReplaceAll(value, "'", "''")
+	}, func(value string) string {
+		if dialectEscapesBackslashInPreviewLiteral(normalizedType) {
+			value = strings.ReplaceAll(value, "\\", "\\\\")
+		}
+		return strings.ReplaceAll(value, "'", "''")
+	})
+}
+
+func formatPreviewTemporalLiteral(dbType string, value time.Time) string {
+	switch dbType {
+	case "postgres":
+		return fmt.Sprintf("TIMESTAMP '%s'", value.Format("2006-01-02 15:04:05"))
+	case "oracle":
+		return fmt.Sprintf("TO_TIMESTAMP('%s', 'YYYY-MM-DD HH24:MI:SS')", value.Format("2006-01-02 15:04:05"))
+	case "sqlserver":
+		return fmt.Sprintf("CONVERT(datetime2, '%s', 126)", value.Format("2006-01-02T15:04:05"))
+	default:
+		return fmt.Sprintf("'%s'", value.Format("2006-01-02 15:04:05"))
+	}
+}
+
+func formatLiteralWithEscaper(v interface{}, escapeString func(string) string, escapeDefault func(string) string) string {
 	if v == nil {
 		return "NULL"
 	}
 	switch t := v.(type) {
 	case string:
-		escaped := strings.ReplaceAll(t, "\\", "\\\\")
-		escaped = strings.ReplaceAll(escaped, "'", "\\'")
-		return fmt.Sprintf("'%s'", escaped)
+		return fmt.Sprintf("'%s'", escapeString(t))
 	case float64:
 		return formatNumber(t)
 	case float32:
@@ -133,10 +200,20 @@ func formatLiteral(v interface{}) string {
 		}
 		return "FALSE"
 	case []byte:
-		return formatLiteral(string(t))
+		return fmt.Sprintf("'%s'", escapeString(string(t)))
 	default:
-		escaped := strings.ReplaceAll(fmt.Sprintf("%v", t), "'", "\\'")
-		return fmt.Sprintf("'%s'", escaped)
+		return fmt.Sprintf("'%s'", escapeDefault(fmt.Sprintf("%v", t)))
+	}
+}
+
+// dialectEscapesBackslashInPreviewLiteral reports dialects whose default string
+// literal parser treats backslash as an escape character.
+func dialectEscapesBackslashInPreviewLiteral(dbType string) bool {
+	switch dbType {
+	case "mysql", "mariadb", "tidb", "oceanbase", "diros", "doris", "starrocks", "sphinx", "clickhouse", "tdengine", "taos":
+		return true
+	default:
+		return false
 	}
 }
 
