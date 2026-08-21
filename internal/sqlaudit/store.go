@@ -704,8 +704,15 @@ func normalizeFilter(filter Filter) Filter {
 }
 
 func buildFilterWhere(filter Filter) (string, []any) {
-	conditions := make([]string, 0, 10)
+	conditions := make([]string, 0, 11)
 	args := make([]any, 0, 12)
+	if filter.ExecutionHistory {
+		conditions = append(conditions, `(source = 'query_editor' AND (
+			event_type = 'query'
+			OR event_type = 'transaction_statement'
+			OR (event_type = 'transaction_begin' AND status <> 'success')
+		))`)
+	}
 	if filter.Search != "" {
 		pattern := "%" + escapeLike(filter.Search) + "%"
 		conditions = append(conditions, `(sql_text LIKE ? ESCAPE '\' OR error_text LIKE ? ESCAPE '\'
