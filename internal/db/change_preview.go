@@ -151,14 +151,41 @@ func formatLiteralForDialect(dbType string, v interface{}) string {
 func formatPreviewTemporalLiteral(dbType string, value time.Time) string {
 	switch dbType {
 	case "postgres":
-		return fmt.Sprintf("TIMESTAMP '%s'", value.Format("2006-01-02 15:04:05"))
+		return fmt.Sprintf("TIMESTAMP '%s'", formatPreviewTimestamp(value, 6))
 	case "oracle":
-		return fmt.Sprintf("TO_TIMESTAMP('%s', 'YYYY-MM-DD HH24:MI:SS')", value.Format("2006-01-02 15:04:05"))
+		text, precision := formatPreviewTimestampWithPrecision(value, 9)
+		if precision == 0 {
+			return fmt.Sprintf("TO_TIMESTAMP('%s', 'YYYY-MM-DD HH24:MI:SS')", text)
+		}
+		return fmt.Sprintf("TO_TIMESTAMP('%s', 'YYYY-MM-DD HH24:MI:SS.FF%d')", text, precision)
 	case "sqlserver":
-		return fmt.Sprintf("CONVERT(datetime2, '%s', 126)", value.Format("2006-01-02T15:04:05"))
+		return fmt.Sprintf("CONVERT(datetime2(7), '%s', 126)", strings.Replace(formatPreviewTimestamp(value, 7), " ", "T", 1))
 	default:
-		return fmt.Sprintf("'%s'", value.Format("2006-01-02 15:04:05"))
+		return fmt.Sprintf("'%s'", formatPreviewTimestamp(value, 6))
 	}
+}
+
+// formatPreviewTimestamp 将小数秒限制在目标方言可表达的精度内，并保留原始本地时间值。
+func formatPreviewTimestamp(value time.Time, maxPrecision int) string {
+	text, _ := formatPreviewTimestampWithPrecision(value, maxPrecision)
+	return text
+}
+
+func formatPreviewTimestampWithPrecision(value time.Time, maxPrecision int) (string, int) {
+	text := value.Format("2006-01-02 15:04:05")
+	if value.Nanosecond() == 0 || maxPrecision <= 0 {
+		return text, 0
+	}
+
+	fraction := strings.TrimRight(fmt.Sprintf("%09d", value.Nanosecond()), "0")
+	if len(fraction) > maxPrecision {
+		fraction = fraction[:maxPrecision]
+	}
+	fraction = strings.TrimRight(fraction, "0")
+	if fraction == "" {
+		return text, 0
+	}
+	return text + "." + fraction, len(fraction)
 }
 
 func formatLiteralWithEscaper(v interface{}, escapeString func(string) string, escapeDefault func(string) string) string {

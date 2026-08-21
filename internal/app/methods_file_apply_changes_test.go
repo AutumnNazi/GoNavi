@@ -3,6 +3,7 @@ package app
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"GoNavi-Wails/internal/connection"
 	"GoNavi-Wails/internal/db"
@@ -145,11 +146,12 @@ func TestBuildChangePreviewUsesDialectStringLiteralRules(t *testing.T) {
 		name      string
 		dbType    string
 		wantValue string
+		wantTime  string
 	}{
-		{name: "mysql", dbType: "mysql", wantValue: `'O''Reilly \\docs'`},
-		{name: "postgres", dbType: "postgres", wantValue: `'O''Reilly \docs'`},
-		{name: "oracle", dbType: "oracle", wantValue: `'O''Reilly \docs'`},
-		{name: "sqlserver", dbType: "sqlserver", wantValue: `'O''Reilly \docs'`},
+		{name: "mysql", dbType: "mysql", wantValue: `'O''Reilly \\docs'`, wantTime: `'2026-08-21 13:14:15.123456'`},
+		{name: "postgres", dbType: "postgres", wantValue: `'O''Reilly \docs'`, wantTime: `TIMESTAMP '2026-08-21 13:14:15.123456'`},
+		{name: "oracle", dbType: "oracle", wantValue: `'O''Reilly \docs'`, wantTime: `TO_TIMESTAMP('2026-08-21 13:14:15.123456', 'YYYY-MM-DD HH24:MI:SS.FF6')`},
+		{name: "sqlserver", dbType: "sqlserver", wantValue: `'O''Reilly \docs'`, wantTime: `CONVERT(datetime2(7), '2026-08-21T13:14:15.123456', 126)`},
 	}
 
 	for _, test := range tests {
@@ -159,12 +161,15 @@ func TestBuildChangePreviewUsesDialectStringLiteralRules(t *testing.T) {
 				connection.ConnectionConfig{Type: test.dbType},
 				"users",
 				connection.ChangeSet{Updates: []connection.UpdateRow{{
-					Keys:   map[string]interface{}{"id": int64(1)},
-					Values: map[string]interface{}{"name": "O'Reilly \\docs"},
+					Keys: map[string]interface{}{"id": int64(1)},
+					Values: map[string]interface{}{
+						"name": "O'Reilly \\docs",
+						"when": time.Date(2026, 8, 21, 13, 14, 15, 123456000, time.UTC),
+					},
 				}}},
 			)
-			if len(preview.Updates) != 1 || !strings.Contains(preview.Updates[0], test.wantValue) {
-				t.Fatalf("dialect preview = %#v, want value literal %q", preview.Updates, test.wantValue)
+			if len(preview.Updates) != 1 || !strings.Contains(preview.Updates[0], test.wantValue) || !strings.Contains(preview.Updates[0], test.wantTime) {
+				t.Fatalf("dialect preview = %#v, want value literal %q and time literal %q", preview.Updates, test.wantValue, test.wantTime)
 			}
 		})
 	}

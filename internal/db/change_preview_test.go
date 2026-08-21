@@ -117,7 +117,7 @@ func TestGenerateChangePreviewWithDialectEscapesStringLiterals(t *testing.T) {
 			Keys: map[string]interface{}{"id": int64(1)},
 			Values: map[string]interface{}{
 				"text": "O'Reilly \\docs",
-				"when": time.Date(2026, 8, 21, 13, 14, 15, 0, time.UTC),
+				"when": time.Date(2026, 8, 21, 13, 14, 15, 123456000, time.UTC),
 			},
 		}},
 	}
@@ -127,11 +127,11 @@ func TestGenerateChangePreviewWithDialectEscapesStringLiterals(t *testing.T) {
 		dbType string
 		want   string
 	}{
-		{name: "mysql", dbType: "mysql", want: "UPDATE `users` SET `text` = 'O''Reilly \\\\docs', `when` = '2026-08-21 13:14:15' WHERE `id` = 1;"},
-		{name: "postgres", dbType: "postgres", want: `UPDATE "users" SET "text" = 'O''Reilly \docs', "when" = TIMESTAMP '2026-08-21 13:14:15' WHERE "id" = 1;`},
-		{name: "oracle", dbType: "oracle", want: `UPDATE "users" SET "text" = 'O''Reilly \docs', "when" = TO_TIMESTAMP('2026-08-21 13:14:15', 'YYYY-MM-DD HH24:MI:SS') WHERE "id" = 1;`},
-		{name: "sqlserver", dbType: "sqlserver", want: "UPDATE [users] SET [text] = 'O''Reilly \\docs', [when] = CONVERT(datetime2, '2026-08-21T13:14:15', 126) WHERE [id] = 1;"},
-		{name: "sphinx", dbType: "sphinx", want: "UPDATE `users` SET `text` = 'O''Reilly \\\\docs', `when` = '2026-08-21 13:14:15' WHERE `id` = 1;"},
+		{name: "mysql", dbType: "mysql", want: "UPDATE `users` SET `text` = 'O''Reilly \\\\docs', `when` = '2026-08-21 13:14:15.123456' WHERE `id` = 1;"},
+		{name: "postgres", dbType: "postgres", want: `UPDATE "users" SET "text" = 'O''Reilly \docs', "when" = TIMESTAMP '2026-08-21 13:14:15.123456' WHERE "id" = 1;`},
+		{name: "oracle", dbType: "oracle", want: `UPDATE "users" SET "text" = 'O''Reilly \docs', "when" = TO_TIMESTAMP('2026-08-21 13:14:15.123456', 'YYYY-MM-DD HH24:MI:SS.FF6') WHERE "id" = 1;`},
+		{name: "sqlserver", dbType: "sqlserver", want: "UPDATE [users] SET [text] = 'O''Reilly \\docs', [when] = CONVERT(datetime2(7), '2026-08-21T13:14:15.123456', 126) WHERE [id] = 1;"},
+		{name: "sphinx", dbType: "sphinx", want: "UPDATE `users` SET `text` = 'O''Reilly \\\\docs', `when` = '2026-08-21 13:14:15.123456' WHERE `id` = 1;"},
 	}
 
 	for _, test := range tests {
@@ -149,6 +149,27 @@ func TestGenerateChangePreviewWithDialectEscapesStringLiterals(t *testing.T) {
 			_, updates, _ := GenerateChangePreviewWithDialect("users", changes, test.dbType, quote, quote)
 			if len(updates) != 1 || updates[0] != test.want {
 				t.Fatalf("preview = %#v, want %q", updates, test.want)
+			}
+		})
+	}
+}
+
+func TestFormatPreviewTemporalLiteralRetainsDialectPrecision(t *testing.T) {
+	value := time.Date(2026, 8, 21, 13, 14, 15, 123456789, time.UTC)
+	tests := []struct {
+		dbType string
+		want   string
+	}{
+		{dbType: "mysql", want: `'2026-08-21 13:14:15.123456'`},
+		{dbType: "postgres", want: `TIMESTAMP '2026-08-21 13:14:15.123456'`},
+		{dbType: "oracle", want: `TO_TIMESTAMP('2026-08-21 13:14:15.123456789', 'YYYY-MM-DD HH24:MI:SS.FF9')`},
+		{dbType: "sqlserver", want: `CONVERT(datetime2(7), '2026-08-21T13:14:15.1234567', 126)`},
+	}
+
+	for _, test := range tests {
+		t.Run(test.dbType, func(t *testing.T) {
+			if got := formatPreviewTemporalLiteral(test.dbType, value); got != test.want {
+				t.Fatalf("formatPreviewTemporalLiteral(%q) = %q, want %q", test.dbType, got, test.want)
 			}
 		})
 	}
