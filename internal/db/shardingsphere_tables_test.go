@@ -115,6 +115,24 @@ func TestParsePostgresTableNamesUsesCaseInsensitiveColumns(t *testing.T) {
 	}
 }
 
+func TestParsePostgresTableNamesPreservesCaseSensitiveQualifiedIdentifiers(t *testing.T) {
+	t.Parallel()
+
+	got := parsePostgresTableNames([]map[string]interface{}{
+		{"schemaname": "ldf_server", "tablename": "ldf_application_type"},
+		{"schemaname": "ldf_server", "tablename": "ldf_application_type"},
+		{"schemaname": "LDF_SERVER", "tablename": "LDF_APPLICATION_TYPE"},
+	})
+	want := []string{
+		"ldf_server.ldf_application_type",
+		"LDF_SERVER.LDF_APPLICATION_TYPE",
+	}
+
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("parsed tables = %v, want %v", got, want)
+	}
+}
+
 func TestParsePostgresTableNamesPreservesDotsInsideTableIdentifiers(t *testing.T) {
 	t.Parallel()
 

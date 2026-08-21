@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -222,6 +223,46 @@ func TestDBGetTablesReusesOceanBaseOracleBaseConnectionForSelectedSchema(t *test
 	fixture.requireBaseConnectionReused(t, "selected schema table metadata")
 	if dbInst.tableCalls != 1 || dbInst.tableSchema != "CRH_AC" {
 		t.Fatalf("expected table metadata for CRH_AC once, calls=%d schema=%q", dbInst.tableCalls, dbInst.tableSchema)
+	}
+}
+
+func TestDBGetObjectsDeduplicatesExactTableMetadataNames(t *testing.T) {
+	dbInst := &fakeMetadataRetryDB{tables: []string{
+		" ldf_server.ldf_application_type ",
+		"ldf_server.ldf_application_type",
+		"archive.ldf_application_type",
+		"LDF_SERVER.LDF_APPLICATION_TYPE",
+	}}
+	fixture := newOceanBaseOracleMetadataFixture(t, dbInst)
+
+	result := fixture.app.DBGetObjects(fixture.config, "CRH_AC")
+	if !result.Success {
+		t.Fatalf("expected DBGetObjects success, got failure: %s", result.Message)
+	}
+	objects, ok := result.Data.([]connection.DatabaseObject)
+	if !ok {
+		t.Fatalf("DBGetObjects data type = %T, want []connection.DatabaseObject", result.Data)
+	}
+	tableNames := make([]string, 0, len(objects))
+	for _, object := range objects {
+		if object.Type == "table" {
+			tableNames = append(tableNames, object.Schema+"."+object.Name)
+		}
+	}
+	if len(tableNames) != 3 {
+		t.Fatalf("DBGetObjects table count = %d, want 3: %v", len(tableNames), tableNames)
+	}
+	want := map[string]struct{}{
+		"ldf_server.ldf_application_type": {},
+		"archive.ldf_application_type":    {},
+		"LDF_SERVER.LDF_APPLICATION_TYPE": {},
+	}
+	got := make(map[string]struct{}, len(tableNames))
+	for _, tableName := range tableNames {
+		got[tableName] = struct{}{}
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("DBGetObjects table names = %v, want %v", got, want)
 	}
 }
 

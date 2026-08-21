@@ -76,6 +76,137 @@ export interface SidebarTreeNode {
   type?: SidebarTreeNodeType;
 }
 
+/**
+ * Keep the tree safe for rc-tree/virtual-list consumers when a metadata
+ * endpoint returns the same node more than once.  Keys are expected to be
+ * globally unique; a duplicate key otherwise makes the virtual list reuse a
+ * row and can render one item over and over while filtering. The first node
+ * keeps its position and metadata, while children discovered on later copies
+ * are merged into it so a late-loaded subtree is not lost.
+ */
+export const dedupeSidebarTreeNodesByKey = (
+  nodes: SidebarTreeNode[],
+): SidebarTreeNode[] => {
+  type SidebarNodeRecord = {
+    source: SidebarTreeNode;
+    children: SidebarNodeRecord[];
+  };
+
+  // Treat the incoming tree as a graph. Metadata refreshes can create both
+  // repeated object references and distinct objects with the same key; an
+  // iterative collection pass avoids recursion limits while retaining every
+  // descendant discovered on a duplicate node.
+  const recordsByObject = new Map<SidebarTreeNode, SidebarNodeRecord>();
+  const recordsByKey = new Map<string, SidebarNodeRecord>();
+  const visitedObjects = new Set<SidebarTreeNode>();
+
+  const getNodeKey = (node: SidebarTreeNode): string => (
+    node.key == null ? '' : String(node.key).trim()
+  );
+
+  const getRecord = (node: SidebarTreeNode): SidebarNodeRecord => {
+    const objectRecord = recordsByObject.get(node);
+    if (objectRecord) return objectRecord;
+
+    const key = getNodeKey(node);
+    const record = (key && recordsByKey.get(key)) || {
+      source: node,
+      children: [],
+    };
+    recordsByObject.set(node, record);
+    if (key && !recordsByKey.has(key)) recordsByKey.set(key, record);
+    return record;
+  };
+
+  type CollectFrame = {
+    node: SidebarTreeNode;
+    parent?: SidebarNodeRecord;
+  };
+  const pending: CollectFrame[] = [];
+  const rootNodes = (Array.isArray(nodes) ? nodes : [])
+    .filter((node): node is SidebarTreeNode => !!node && typeof node === 'object');
+
+  // Use an explicit DFS stack so merged children retain the same preorder as
+  // the original recursive implementation without risking call-stack growth.
+  for (let index = rootNodes.length - 1; index >= 0; index -= 1) {
+    const node = rootNodes[index];
+    if (node && typeof node === 'object') pending.push({ node });
+  }
+  while (pending.length > 0) {
+    const frame = pending.pop();
+    const node = frame?.node;
+    if (!node || visitedObjects.has(node)) continue;
+    visitedObjects.add(node);
+
+    const record = getRecord(node);
+    if (frame?.parent) frame.parent.children.push(record);
+    const children = Array.isArray(node.children) ? node.children : [];
+    for (let childIndex = children.length - 1; childIndex >= 0; childIndex -= 1) {
+      const child = children[childIndex];
+      if (child && typeof child === 'object' && !visitedObjects.has(child)) {
+        pending.push({ node: child, parent: record });
+      }
+    }
+  }
+
+  // Resolve root records after collection so a descendant encountered before
+  // a later root with the same key remains the canonical (first) node.
+  const roots = rootNodes.map((node) => getRecord(node));
+
+  const emitted = new Set<SidebarNodeRecord>();
+  type BuildFrame = {
+    records: SidebarNodeRecord[];
+    index: number;
+    output: SidebarTreeNode[];
+    owner?: SidebarTreeNode;
+    childOutput?: SidebarTreeNode[];
+  };
+  const result: SidebarTreeNode[] = [];
+  const stack: BuildFrame[] = [{ records: roots, index: 0, output: result }];
+
+  // Emit each keyed record once. A global emitted set is intentional: rc-tree
+  // requires globally unique keys, so a duplicate appearing under another
+  // parent must not produce a second rendered row.
+  while (stack.length > 0) {
+    const frame = stack[stack.length - 1];
+    if (frame.index >= frame.records.length) {
+      stack.pop();
+      if (frame.owner && frame.childOutput) {
+        if (frame.childOutput.length === 0) {
+          delete frame.owner.children;
+        } else {
+          // A later duplicate can turn a placeholder leaf into a branch.
+          frame.owner.isLeaf = false;
+        }
+      }
+      continue;
+    }
+
+    const record = frame.records[frame.index];
+    frame.index += 1;
+    if (!record || emitted.has(record)) continue;
+    emitted.add(record);
+
+    const { children: _sourceChildren, ...sourceWithoutChildren } = record.source;
+    const normalizedNode: SidebarTreeNode = { ...sourceWithoutChildren };
+    frame.output.push(normalizedNode);
+
+    if (record.children.length > 0) {
+      const childOutput: SidebarTreeNode[] = [];
+      normalizedNode.children = childOutput;
+      stack.push({
+        records: record.children,
+        index: 0,
+        output: childOutput,
+        owner: normalizedNode,
+        childOutput,
+      });
+    }
+  }
+
+  return result;
+};
+
 // Keep these values aligned with the V2 explorer tree layout in v2-theme.css.
 const V2_TREE_HORIZONTAL_SCROLL_RESERVE_PX = 32;
 const V2_TREE_CONTENT_TOP_PADDING_PX = 4;
@@ -922,10 +1053,17 @@ export const V2_COMMAND_SEARCH_MAX_TREE_RESULTS = 120;
 export const buildV2CommandSearchTreeIndex = (
   items: V2CommandSearchItem[],
 ): V2CommandSearchTreeIndexEntry[] => {
+  const seenKeys = new Set<string>();
   return items.flatMap((item) => {
     if (item.kind !== 'node') {
       return [];
     }
+    const nodeKey = item.node?.key == null ? '' : String(item.node.key).trim();
+    const dedupeKey = nodeKey || item.key;
+    if (seenKeys.has(dedupeKey)) {
+      return [];
+    }
+    seenKeys.add(dedupeKey);
     const dataRef = item.node.dataRef || {};
     const normalizedTitle = String(item.title || '').toLowerCase();
     const normalizedPrimaryObjectText = String(

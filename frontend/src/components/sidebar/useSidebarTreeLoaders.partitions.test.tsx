@@ -153,6 +153,65 @@ describe('useSidebarTreeLoaders PostgreSQL partitions', () => {
     expect(databaseNodes[3].dataRef.pinnedSidebarDatabase).toBeUndefined();
   });
 
+  it('trims and deduplicates database metadata while preserving response order', async () => {
+    const connection = {
+      id: 'conn-database-dedupe',
+      name: 'MySQL',
+      config: {
+        type: 'mysql',
+        host: '127.0.0.1',
+        port: 3306,
+        user: 'root',
+      },
+    } as SavedConnection;
+    mocks.storeState.connections = [connection];
+    mocks.dbGetDatabases.mockResolvedValue({
+      success: true,
+      data: [
+        { Database: '  analytics  ' },
+        { database: 'analytics' },
+        { Database: '   ' },
+        { Database: 'archive' },
+        { Database: ' archive ' },
+      ],
+    });
+
+    let loaders: ReturnType<typeof useSidebarTreeLoaders> | undefined;
+    const Harness = () => {
+      loaders = useSidebarTreeLoaders({
+        savedQueries: [],
+        tableSortPreference: {},
+        tableAccessCount: {},
+        pinnedSidebarTables: [],
+        pinnedSidebarDatabases: [],
+        isV2Ui: false,
+        loadingNodesRef: { current: new Set<string>() },
+        setConnectionStates: vi.fn(),
+        setLoadedKeys: vi.fn(),
+        replaceTreeNodeChildren: mocks.replaceTreeNodeChildren,
+        buildRuntimeConfig: (conn) => conn.config,
+        buildJVMRuntimeConfig: (conn) => conn.config,
+        buildJVMDiagnosticTreeNodes: () => [],
+        resolveSavedQueryDisplayName: (name) => String(name || ''),
+      });
+      return null;
+    };
+
+    act(() => {
+      renderer = create(<Harness />);
+    });
+    await act(async () => {
+      await loaders?.loadDatabases({ key: connection.id, dataRef: connection });
+    });
+
+    const [, databaseNodes] = mocks.replaceTreeNodeChildren.mock.calls[0];
+    expect(databaseNodes.map((node: any) => node.title)).toEqual([
+      'analytics',
+      'archive',
+    ]);
+    expect(new Set(databaseNodes.map((node: any) => node.key)).size).toBe(2);
+  });
+
   it('discards an older database response and keeps the latest visibility rules', async () => {
     const staleResponse = deferred<any>();
     const currentResponse = deferred<any>();
@@ -356,6 +415,302 @@ describe('useSidebarTreeLoaders PostgreSQL partitions', () => {
 
     const executedSql = mocks.dbQuery.mock.calls.map((call) => String(call[2] || '')).join('\n');
     expect(executedSql).not.toMatch(/COUNT\s*\(/i);
+  });
+
+  it('matches PostgreSQL status metadata when the table list omits its schema', async () => {
+    const connection = {
+      id: 'conn-pg-unqualified-metadata',
+      name: 'PostgreSQL',
+      dbName: 'analytics',
+      config: {
+        type: 'postgres',
+        host: '127.0.0.1',
+        port: 5432,
+        user: 'postgres',
+        database: 'analytics',
+      },
+    } as SavedConnection & { dbName: string };
+    mocks.storeState.connections = [connection];
+    mocks.dbGetTables.mockResolvedValue({
+      success: true,
+      data: [{ Table: 'orders' }],
+    });
+    mocks.dbQuery.mockImplementation(async (_config, _dbName, sql: string) => {
+      if (sql.includes('partition_parent_table')) {
+        return {
+          success: true,
+          data: [{
+            table_name: 'public.orders',
+            table_rows: 42,
+            table_comment: 'orders metadata',
+          }],
+        };
+      }
+      return { success: true, data: [] };
+    });
+
+    let loaders: ReturnType<typeof useSidebarTreeLoaders> | undefined;
+    const Harness = () => {
+      loaders = useSidebarTreeLoaders({
+        savedQueries: [],
+        tableSortPreference: {},
+        tableAccessCount: {},
+        pinnedSidebarTables: [],
+        pinnedSidebarDatabases: [],
+        isV2Ui: true,
+        loadingNodesRef: { current: new Set<string>() },
+        setConnectionStates: vi.fn(),
+        setLoadedKeys: vi.fn(),
+        replaceTreeNodeChildren: mocks.replaceTreeNodeChildren,
+        buildRuntimeConfig: (conn) => conn.config,
+        buildJVMRuntimeConfig: (conn) => conn.config,
+        buildJVMDiagnosticTreeNodes: () => [],
+        resolveSavedQueryDisplayName: (name) => String(name || ''),
+      });
+      return null;
+    };
+
+    act(() => {
+      renderer = create(<Harness />);
+    });
+    await act(async () => {
+      await loaders?.loadTables({
+        key: 'conn-pg-unqualified-metadata-analytics',
+        dataRef: connection,
+      });
+    });
+
+    const [, databaseChildren] = mocks.replaceTreeNodeChildren.mock.calls[0];
+    const findTableNode = (nodes: any[]): any => {
+      for (const node of nodes || []) {
+        if (node.type === 'table' && node.dataRef?.tableName === 'orders') return node;
+        const nested = findTableNode(node.children || []);
+        if (nested) return nested;
+      }
+      return undefined;
+    };
+    const ordersNode = findTableNode(databaseChildren);
+    expect(ordersNode?.dataRef).toMatchObject({
+      rowCount: 42,
+      tableComment: 'orders metadata',
+    });
+  });
+
+  it('renders a repeated Kingbase table once while preserving the same table in another schema', async () => {
+    const connection = {
+      id: 'conn-kingbase',
+      name: 'Kingbase',
+      dbName: 'ldf_server_dbs_dev',
+      config: {
+        type: 'kingbase',
+        host: '127.0.0.1',
+        port: 54321,
+        user: 'system',
+        database: 'ldf_server_dbs_dev',
+      },
+    } as SavedConnection & { dbName: string };
+    mocks.storeState.connections = [connection];
+    mocks.dbGetTables.mockResolvedValue({
+      success: true,
+      data: [
+        { Table: 'ldf_server.ldf_application_type' },
+        { Table: 'ldf_server.ldf_application_type' },
+        { Table: 'LDF_SERVER.LDF_APPLICATION_TYPE' },
+        { Table: 'archive.ldf_application_type' },
+      ],
+    });
+    mocks.dbQuery.mockResolvedValue({ success: true, data: [] });
+
+    let loaders: ReturnType<typeof useSidebarTreeLoaders> | undefined;
+    const Harness = () => {
+      loaders = useSidebarTreeLoaders({
+        savedQueries: [],
+        tableSortPreference: {},
+        tableAccessCount: {},
+        pinnedSidebarTables: [],
+        pinnedSidebarDatabases: [],
+        isV2Ui: true,
+        loadingNodesRef: { current: new Set<string>() },
+        setConnectionStates: vi.fn(),
+        setLoadedKeys: vi.fn(),
+        replaceTreeNodeChildren: mocks.replaceTreeNodeChildren,
+        buildRuntimeConfig: (conn) => conn.config,
+        buildJVMRuntimeConfig: (conn) => conn.config,
+        buildJVMDiagnosticTreeNodes: () => [],
+        resolveSavedQueryDisplayName: (name) => String(name || ''),
+      });
+      return null;
+    };
+
+    act(() => {
+      renderer = create(<Harness />);
+    });
+    await act(async () => {
+      await loaders?.loadTables({
+        key: 'conn-kingbase-ldf_server_dbs_dev',
+        dataRef: connection,
+      });
+    });
+
+    const [, databaseChildren] = mocks.replaceTreeNodeChildren.mock.calls[0];
+    const findSchemaTables = (schemaName: string) => {
+      const schemaNode = databaseChildren.find(
+        (node: any) => node.dataRef?.groupKey === 'schema' && node.dataRef?.schemaName === schemaName,
+      );
+      return schemaNode.children.find((node: any) => node.dataRef?.groupKey === 'tables');
+    };
+    const ldfTables = findSchemaTables('ldf_server');
+    const upperLdfTables = findSchemaTables('LDF_SERVER');
+    const archiveTables = findSchemaTables('archive');
+    const ldfNodes = ldfTables.children.filter((node: any) => node.type === 'table');
+    const upperLdfNodes = upperLdfTables.children.filter((node: any) => node.type === 'table');
+    const archiveNodes = archiveTables.children.filter((node: any) => node.type === 'table');
+
+    expect(ldfNodes).toHaveLength(1);
+    expect(ldfNodes[0].dataRef.tableName).toBe('ldf_server.ldf_application_type');
+    expect(upperLdfNodes).toHaveLength(1);
+    expect(upperLdfNodes[0].dataRef.tableName).toBe('LDF_SERVER.LDF_APPLICATION_TYPE');
+    expect(archiveNodes).toHaveLength(1);
+    expect(archiveNodes[0].dataRef.tableName).toBe('archive.ldf_application_type');
+    expect(ldfNodes[0].key).not.toBe(archiveNodes[0].key);
+    expect(ldfNodes[0].key).not.toBe(upperLdfNodes[0].key);
+  });
+
+  it('keeps an empty schema bucket distinct from a schema literally named default', async () => {
+    const connection = {
+      id: 'conn-pg-default-schema',
+      name: 'PostgreSQL',
+      dbName: 'analytics',
+      config: {
+        type: 'postgres',
+        host: '127.0.0.1',
+        port: 5432,
+        user: 'postgres',
+        database: 'analytics',
+      },
+    } as SavedConnection & { dbName: string };
+    mocks.storeState.connections = [connection];
+    mocks.dbGetTables.mockResolvedValue({
+      success: true,
+      data: [
+        { Table: 'unscoped_orders' },
+        { Table: 'default.orders' },
+      ],
+    });
+    mocks.dbQuery.mockResolvedValue({ success: true, data: [] });
+
+    let loaders: ReturnType<typeof useSidebarTreeLoaders> | undefined;
+    const Harness = () => {
+      loaders = useSidebarTreeLoaders({
+        savedQueries: [],
+        tableSortPreference: {},
+        tableAccessCount: {},
+        pinnedSidebarTables: [],
+        pinnedSidebarDatabases: [],
+        isV2Ui: true,
+        loadingNodesRef: { current: new Set<string>() },
+        setConnectionStates: vi.fn(),
+        setLoadedKeys: vi.fn(),
+        replaceTreeNodeChildren: mocks.replaceTreeNodeChildren,
+        buildRuntimeConfig: (conn) => conn.config,
+        buildJVMRuntimeConfig: (conn) => conn.config,
+        buildJVMDiagnosticTreeNodes: () => [],
+        resolveSavedQueryDisplayName: (name) => String(name || ''),
+      });
+      return null;
+    };
+
+    act(() => {
+      renderer = create(<Harness />);
+    });
+    await act(async () => {
+      await loaders?.loadTables({
+        key: 'conn-pg-default-schema-analytics',
+        dataRef: connection,
+      });
+    });
+
+    const [, databaseChildren] = mocks.replaceTreeNodeChildren.mock.calls[0];
+    const schemaNodes = databaseChildren.filter((node: any) => node.dataRef?.groupKey === 'schema');
+    const emptySchema = schemaNodes.find((node: any) => node.dataRef?.schemaName === '');
+    const defaultSchema = schemaNodes.find((node: any) => node.dataRef?.schemaName === 'default');
+    const getTableNames = (schemaNode: any) => schemaNode.children
+      .find((node: any) => node.dataRef?.groupKey === 'tables').children
+      .filter((node: any) => node.type === 'table')
+      .map((node: any) => node.dataRef.tableName);
+
+    expect(emptySchema).toBeDefined();
+    expect(defaultSchema).toBeDefined();
+    expect(emptySchema.key).not.toBe(defaultSchema.key);
+    expect(new Set(schemaNodes.map((node: any) => node.key)).size).toBe(schemaNodes.length);
+    expect(getTableNames(emptySchema)).toEqual(['unscoped_orders']);
+    expect(getTableNames(defaultSchema)).toEqual(['default.orders']);
+  });
+
+  it('uses distinct keys for case-sensitive schemas even when the database name matches one schema', async () => {
+    const connection = {
+      id: 'conn-case-sensitive-kingbase',
+      name: 'Kingbase case-sensitive',
+      dbName: 'LDF_SERVER',
+      config: {
+        type: 'kingbase',
+        host: '127.0.0.1',
+        port: 54321,
+        user: 'system',
+        database: 'LDF_SERVER',
+      },
+    } as SavedConnection & { dbName: string };
+    mocks.storeState.connections = [connection];
+    mocks.dbGetTables.mockResolvedValue({
+      success: true,
+      data: [
+        { Table: 'LDF_SERVER.orders' },
+        { Table: 'ldf_server.orders' },
+      ],
+    });
+    mocks.dbQuery.mockResolvedValue({ success: true, data: [] });
+
+    let loaders: ReturnType<typeof useSidebarTreeLoaders> | undefined;
+    const Harness = () => {
+      loaders = useSidebarTreeLoaders({
+        savedQueries: [],
+        tableSortPreference: {},
+        tableAccessCount: {},
+        pinnedSidebarTables: [],
+        pinnedSidebarDatabases: [],
+        isV2Ui: false,
+        loadingNodesRef: { current: new Set<string>() },
+        setConnectionStates: vi.fn(),
+        setLoadedKeys: vi.fn(),
+        replaceTreeNodeChildren: mocks.replaceTreeNodeChildren,
+        buildRuntimeConfig: (conn) => conn.config,
+        buildJVMRuntimeConfig: (conn) => conn.config,
+        buildJVMDiagnosticTreeNodes: () => [],
+        resolveSavedQueryDisplayName: (name) => String(name || ''),
+      });
+      return null;
+    };
+
+    act(() => {
+      renderer = create(<Harness />);
+    });
+    await act(async () => {
+      await loaders?.loadTables({
+        key: 'conn-case-sensitive-kingbase-LDF_SERVER',
+        dataRef: connection,
+      });
+    });
+
+    const [, databaseChildren] = mocks.replaceTreeNodeChildren.mock.calls[0];
+    const tableNodes = databaseChildren
+      .flatMap((node: any) => node.children || [])
+      .flatMap((node: any) => node.children || [])
+      .filter((node: any) => node.type === 'table');
+    expect(tableNodes.map((node: any) => node.dataRef.tableName)).toEqual([
+      'LDF_SERVER.orders',
+      'ldf_server.orders',
+    ]);
+    expect(tableNodes[0].key).not.toBe(tableNodes[1].key);
   });
 
   it('does not expose an estimated zero row count for MySQL InnoDB tables', async () => {

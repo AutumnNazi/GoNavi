@@ -2,7 +2,10 @@ import { DBQuery } from "../../../wailsjs/go/app/App";
 import type { SavedConnection } from "../../types";
 import { buildRpcConnectionConfig } from "../../utils/connectionRpcConfig";
 import { normalizeOceanBaseProtocol } from "../../utils/oceanBaseProtocol";
-import { splitQualifiedNameLast } from "../../utils/qualifiedName";
+import {
+  splitQualifiedNameLast,
+  splitQualifiedNameSegmentsDetailed,
+} from "../../utils/qualifiedName";
 import {
   buildMySQLCompatibleViewMetadataSqls,
   isSidebarViewTableType,
@@ -386,7 +389,7 @@ const buildQualifiedName = (schemaName: string, objectName: string): string => {
   const name = String(objectName || "").trim();
   if (!name) return "";
   if (!schema) return name;
-  if (name.includes(".")) return name;
+  if (splitQualifiedNameSegmentsDetailed(name).length > 1) return name;
   return `${schema}.${name}`;
 };
 
@@ -397,7 +400,7 @@ const buildSidebarObjectKeyName = (
 ): string => {
   const schema = String(schemaName || "").trim();
   const name = String(objectName || "").trim();
-  if (!schema || !name || name.includes(".")) return name;
+  if (!schema || !name || splitQualifiedNameSegmentsDetailed(name).length > 1) return name;
   if (
     schema.toLowerCase() ===
     String(dbName || "")

@@ -8,8 +8,10 @@ import { DBQuery } from "../../../wailsjs/go/app/App";
 import {
   buildFunctionsMetadataQuerySpecs,
   buildPackagesMetadataQuerySpecs,
+  buildQualifiedName,
   buildSchemasMetadataQuerySpecs,
   buildSequencesMetadataQuerySpecs,
+  buildSidebarObjectKeyName,
   buildSidebarTableStatusSQL,
   buildTriggersMetadataQuerySpecs,
   buildViewsMetadataQuerySpecs,
@@ -71,6 +73,24 @@ describe("sidebar table metadata", () => {
 
     expect(sql).toContain("ENGINE AS table_engine");
     expect(sql).not.toMatch(/COUNT\s*\(/i);
+  });
+});
+
+describe("sidebar object identities", () => {
+  it("keeps quoted-dot object names scoped to their schema", () => {
+    expect(buildQualifiedName("sales", '"daily.report"')).toBe(
+      'sales."daily.report"',
+    );
+    expect(buildQualifiedName("sales", 'sales."daily.report"')).toBe(
+      'sales."daily.report"',
+    );
+
+    expect(
+      buildSidebarObjectKeyName("app", "sales", '"daily.report"'),
+    ).toBe('sales."daily.report"');
+    expect(
+      buildSidebarObjectKeyName("app", "archive", '"daily.report"'),
+    ).toBe('archive."daily.report"');
   });
 });
 

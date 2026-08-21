@@ -468,7 +468,7 @@ func getKingbaseNameFromRow(row map[string]interface{}, keys ...string) string {
 func (k *KingbaseDB) GetTables(dbName string) ([]string, error) {
 	// Kingbase: tables are scoped by the current DB connection; include schema to avoid search_path issues.
 	query := `
-		SELECT table_schema AS schemaname, table_name AS tablename
+		SELECT DISTINCT table_schema AS schemaname, table_name AS tablename
 		FROM information_schema.tables
 		WHERE table_type = 'BASE TABLE'
 		  AND table_schema NOT IN ('pg_catalog', 'information_schema')
@@ -480,19 +480,7 @@ func (k *KingbaseDB) GetTables(dbName string) ([]string, error) {
 		return nil, err
 	}
 
-	var tables []string
-	for _, row := range data {
-		schema, okSchema := row["schemaname"]
-		name, okName := row["tablename"]
-		if okSchema && okName {
-			tables = append(tables, fmt.Sprintf("%v.%v", schema, name))
-			continue
-		}
-		if val, ok := row["table_name"]; ok {
-			tables = append(tables, fmt.Sprintf("%v", val))
-		}
-	}
-	return tables, nil
+	return parsePostgresTableNames(data), nil
 }
 
 func (k *KingbaseDB) GetCreateStatement(dbName, tableName string) (string, error) {

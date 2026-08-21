@@ -63,11 +63,15 @@ import {
   type SidebarTreeNode as TreeNode,
 } from '../sidebarV2Utils';
 import {
+  dedupeSidebarTableEntries,
+  getSidebarTableEntryIdentity,
   groupSidebarPartitionTableEntries,
 } from './sidebarPartitions';
 import { DBGetDatabases, DBGetTables, DBQuery, DBRefreshTableStats, GetDriverStatusList, JVMProbeCapabilities } from '../../../wailsjs/go/app/App';
 import type { SidebarTableMetadataSnapshot } from '../../utils/sidebarTableMetadata';
 import { collectNacosServiceGroupsByPage } from '../nacosServiceName';
+import { isPostgresSchemaDialect } from '../sidebarCoreUtils';
+import { splitQualifiedNameSegmentsDetailed } from '../../utils/qualifiedName';
 
 type DriverStatusSnapshot = {
   type: string;
@@ -265,6 +269,18 @@ type UseSidebarTreeLoadersOptions = {
   buildJVMDiagnosticTreeNodes: (conn: SavedConnection) => TreeNode[];
   resolveSavedQueryDisplayName: (name: string | null | undefined) => string;
   onDatabaseTreeLoaded?: (databaseKey: string) => void;
+};
+
+const dedupeTrimmedDatabaseNames = (databaseNames: readonly string[]): string[] => {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  databaseNames.forEach((databaseName) => {
+    const normalizedName = String(databaseName || '').trim();
+    if (!normalizedName || seen.has(normalizedName)) return;
+    seen.add(normalizedName);
+    result.push(normalizedName);
+  });
+  return result;
 };
 
 export const useSidebarTreeLoaders = ({
@@ -702,12 +718,14 @@ export const useSidebarTreeLoaders = ({
               }
 	          if (res.success) {
                 const dbRows: any[] = Array.isArray(res.data) ? res.data : [];
-                const databaseNames = filterVisibleDatabaseNames(
+                const visibleDatabaseNames = filterVisibleDatabaseNames(
                     currentConnection,
                     dbRows
                         .map((row: any) => row.Database || row.database)
                         .filter((name: unknown): name is string => typeof name === 'string' && name.length > 0),
                 );
+
+                const databaseNames = dedupeTrimmedDatabaseNames(visibleDatabaseNames);
 	            let dbs: TreeNode[] = databaseNames.map((databaseName) => ({
 	              title: databaseName,
               key: `${currentConnection.id}-${databaseName}`,
@@ -921,9 +939,31 @@ export const useSidebarTreeLoaders = ({
                     ? await DBQuery(buildRpcConnectionConfig(config) as any, conn.dbName, tableStatusSql).catch(() => ({ success: false, data: [] as any[] }))
                     : { success: false, data: [] as any[] };
                 const tableMetadataMap = new Map<string, SidebarLoadedTableMetadata>();
+                const metadataObjectKeyIdentities = new Map<string, Set<string>>();
+                const ambiguousMetadataObjectKeys = new Set<string>();
+                const metadataDialect = getMetadataDialect(conn as SavedConnection);
                 const buildTableMetadataKeys = (rawTableName: string, rawSchemaName = ''): string[] => {
                     const tableName = String(rawTableName || '').trim();
                     if (!tableName) return [];
+                    if (isPostgresSchemaDialect(metadataDialect)) {
+                        const identity = getSidebarTableEntryIdentity({
+                            tableName,
+                            schemaName: String(rawSchemaName || '').trim(),
+                        });
+                        const segments = splitQualifiedNameSegmentsDetailed(tableName);
+                        const objectName = String(
+                            segments[segments.length - 1]?.raw || tableName,
+                        ).trim();
+                        const keys = new Set<string>();
+                        if (identity) keys.add(`pg-exact:${identity}`);
+                        // Catalog/status queries can disagree on whether the schema is
+                        // included in table_name. Keep an object-only fallback, while
+                        // preferring the schema-qualified identity above whenever both
+                        // forms are present. An ambiguous object name is discarded below
+                        // instead of being applied across schemas.
+                        if (objectName) keys.add(`pg-object:${objectName}`);
+                        return Array.from(keys);
+                    }
                     const parsed = splitQualifiedName(tableName);
                     const schemaName = String(rawSchemaName || parsed.schemaName || '').trim();
                     const objectName = String(parsed.objectName || tableName).trim();
@@ -949,7 +989,20 @@ export const useSidebarTreeLoaders = ({
                     patch: SidebarLoadedTableMetadata,
                     rawSchemaName = '',
                 ) => {
-                    buildTableMetadataKeys(rawTableName, rawSchemaName).forEach((metadataKey) => {
+                    const metadataKeys = buildTableMetadataKeys(rawTableName, rawSchemaName);
+                    const exactIdentity = metadataKeys.find((metadataKey) => metadataKey.startsWith('pg-exact:')) || '';
+                    metadataKeys.forEach((metadataKey) => {
+                        if (isPostgresSchemaDialect(metadataDialect) && metadataKey.startsWith('pg-object:')) {
+                            if (ambiguousMetadataObjectKeys.has(metadataKey)) return;
+                            const identities = metadataObjectKeyIdentities.get(metadataKey) || new Set<string>();
+                            identities.add(exactIdentity || metadataKey);
+                            metadataObjectKeyIdentities.set(metadataKey, identities);
+                            if (identities.size > 1) {
+                                ambiguousMetadataObjectKeys.add(metadataKey);
+                                tableMetadataMap.delete(metadataKey);
+                                return;
+                            }
+                        }
                         const current = tableMetadataMap.get(metadataKey) || {};
                         tableMetadataMap.set(metadataKey, {
                             ...current,
@@ -965,6 +1018,7 @@ export const useSidebarTreeLoaders = ({
                 };
                 tableRows.forEach((row: Record<string, any>) => {
                     const tableName = getSidebarTableName(row);
+                    const rawSchemaName = getCaseInsensitiveValue(row, ['schema_name', 'SCHEMA_NAME', 'owner', 'OWNER']);
                     const rowCount = parseSidebarTableRowCount(row, conn as SavedConnection);
                     const tableSize = readNumericMetadataValue(row, [
                         'Data_length',
@@ -975,7 +1029,7 @@ export const useSidebarTreeLoaders = ({
                         mergeTableMetadata(tableName, {
                             ...(rowCount !== undefined ? { rowCount } : {}),
                             ...(tableSize !== undefined ? { tableSize } : {}),
-                        });
+                        }, rawSchemaName ? String(rawSchemaName).trim() : '');
                     }
                 });
                 if (tableStatsResult?.success && Array.isArray(tableStatsResult.data)) {
@@ -1038,14 +1092,17 @@ export const useSidebarTreeLoaders = ({
                         }, rawSchemaName);
                     });
                 }
-	            const tableEntries = tableRows.map((row: any) => {
-	                const tableName = getSidebarTableName(row as Record<string, any>);
-	                const parsed = splitQualifiedName(tableName);
-                    const metadataKeys = buildTableMetadataKeys(tableName);
+                const tableEntries = tableRows.map((row: any) => {
+                    const tableName = getSidebarTableName(row as Record<string, any>);
+                    const parsed = splitQualifiedName(tableName);
+                    const rowSchemaName = getCaseInsensitiveValue(row, ['schema_name', 'SCHEMA_NAME', 'owner', 'OWNER']);
+                    const metadataKeys = buildTableMetadataKeys(
+                        tableName,
+                        rowSchemaName ? String(rowSchemaName).trim() : '',
+                    );
                     const resolvedMetadata = metadataKeys
                         .map((metadataKey) => tableMetadataMap.get(metadataKey))
                         .find((value): value is SidebarLoadedTableMetadata => !!value);
-                    const rowSchemaName = getCaseInsensitiveValue(row, ['schema_name', 'SCHEMA_NAME', 'owner', 'OWNER']);
                     const mappedSchemaName = rowSchemaName
                         || resolvedMetadata?.schemaName
                         || parsed.schemaName;
@@ -1057,10 +1114,10 @@ export const useSidebarTreeLoaders = ({
                         'comments',
                         'COMMENTS',
                     ]);
-	                return {
-	                    tableName,
-	                    schemaName: String(mappedSchemaName || '').trim(),
-	                    displayName: getSidebarTableDisplayName(conn, tableName),
+                    return {
+                        tableName,
+                        schemaName: String(mappedSchemaName || '').trim(),
+                        displayName: getSidebarTableDisplayName(conn, tableName),
                         rowCount: parseSidebarTableRowCount(row, conn as SavedConnection) ?? resolvedMetadata?.rowCount,
                         tableSize: resolvedMetadata?.tableSize,
                         createdAt: resolvedMetadata?.createdAt,
@@ -1068,9 +1125,9 @@ export const useSidebarTreeLoaders = ({
                         tableComment: rowComment
                             || resolvedMetadata?.tableComment
                             || '',
-	                    partitionParentTableName: resolvedMetadata?.partitionParentTableName,
-	                };
-	            }) as SidebarLoadedTableEntry[];
+                        partitionParentTableName: resolvedMetadata?.partitionParentTableName,
+                    };
+                }) as SidebarLoadedTableEntry[];
 
 	            const [schemasResult, viewsResult, materializedViewsResult, triggersResult, routinesResult, sequencesResult, packagesResult, eventsResult] = await Promise.all([
 	                loadSchemas(conn, conn.dbName),
@@ -1093,7 +1150,7 @@ export const useSidebarTreeLoaders = ({
             const normalizedSchemaRows = schemaRows
                 .map((schemaName) => String(schemaName || '').trim())
                 .filter((schemaName) => schemaName !== '');
-            const normalizedTableEntries = tableEntries.map((entry) => {
+            const normalizedTableEntries = dedupeSidebarTableEntries(tableEntries.map((entry) => {
                 if (entry.schemaName || normalizedSchemaRows.length !== 1) {
                     return entry;
                 }
@@ -1101,7 +1158,7 @@ export const useSidebarTreeLoaders = ({
                     ...entry,
                     schemaName: normalizedSchemaRows[0],
                 };
-            });
+            }));
 
             const viewEntries = viewRows.map((entry: SidebarViewMetadataEntry) => {
                 const parsed = splitQualifiedName(entry.viewName);
@@ -1306,7 +1363,8 @@ export const useSidebarTreeLoaders = ({
 	                    entry.tableName,
 	                    entry.schemaName,
 	                );
-	                const nodeKey = `${conn.id}-${conn.dbName}-${entry.tableName}`;
+	                const keyName = encodeURIComponent(getSidebarTableEntryIdentity(entry));
+	                const nodeKey = `${conn.id}-${conn.dbName}-table-${keyName}`;
 	                const tableDataRef = {
 	                    ...conn,
 	                    tableName: entry.tableName,
@@ -1451,7 +1509,7 @@ export const useSidebarTreeLoaders = ({
 	                };
 	            };
 
-	            const buildEventNode = (entry: { eventName: string; schemaName: string; displayName: string; eventType?: string; status?: string }): TreeNode => ({
+            const buildEventNode = (entry: { eventName: string; schemaName: string; displayName: string; eventType?: string; status?: string }): TreeNode => ({
 	                title: entry.displayName,
 	                key: `${conn.id}-${conn.dbName}-event-${entry.schemaName}-${entry.eventName}`,
 	                icon: <ClockCircleOutlined />,
@@ -1500,7 +1558,10 @@ export const useSidebarTreeLoaders = ({
 	                const schemaMap = new Map<string, SchemaBucket>();
 	                const getSchemaBucket = (rawSchemaName: string): SchemaBucket => {
 	                    const schemaName = String(rawSchemaName || '').trim();
-	                    const schemaKey = schemaName || '__default__';
+	                    // Use a length-prefixed identity rather than a sentinel. A
+	                    // real schema can be named "default" (or "__default__"),
+	                    // and it must remain distinct from rows with no schema.
+	                    const schemaKey = `${schemaName.length}:${schemaName}`;
 	                    let bucket = schemaMap.get(schemaKey);
 	                    if (!bucket) {
 	                        bucket = {
@@ -1546,7 +1607,8 @@ export const useSidebarTreeLoaders = ({
 	                        return a.schemaName.toLowerCase().localeCompare(b.schemaName.toLowerCase());
 	                    })
 	                    .map((bucket) => {
-	                    const schemaNodeKey = `${key}-schema-${bucket.schemaName || 'default'}`;
+	                    const schemaIdentity = `${bucket.schemaName.length}:${bucket.schemaName}`;
+	                    const schemaNodeKey = `${key}-schema-${encodeURIComponent(schemaIdentity)}`;
 	                    const schemaTitle = bucket.schemaName || t('sidebar.tree.default_schema');
 	                        const groupedNodes: TreeNode[] = [
 	                            buildObjectGroup(schemaNodeKey, 'tables', t('sidebar.object_group.tables'), <TableOutlined />, bucket.tables, { schemaName: bucket.schemaName }),

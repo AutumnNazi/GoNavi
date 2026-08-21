@@ -66,15 +66,36 @@ describe('sidebarLocate', () => {
 
     expect(resolveSidebarLocateTarget(request!, { groupBySchema: true })).toMatchObject({
       targetKey: 'conn-1-main-view-public.orders_view',
-      schemaKey: 'conn-1-main-schema-public',
-      objectGroupKey: 'conn-1-main-schema-public-views',
+      schemaKey: 'conn-1-main-schema-6%3Apublic',
+      objectGroupKey: 'conn-1-main-schema-6%3Apublic-views',
       expectedAncestorKeys: [
         'conn-1',
         'conn-1-main',
-        'conn-1-main-schema-public',
-        'conn-1-main-schema-public-views',
+        'conn-1-main-schema-6%3Apublic',
+        'conn-1-main-schema-6%3Apublic-views',
       ],
     });
+  });
+
+  it('keeps an empty schema key distinct from a schema literally named default', () => {
+    const emptySchemaTarget = resolveSidebarLocateTarget({
+      connectionId: 'conn-1',
+      dbName: 'main',
+      tableName: 'orders',
+      schemaName: '',
+      objectGroup: 'tables',
+    }, { groupBySchema: true });
+    const namedDefaultSchemaTarget = resolveSidebarLocateTarget({
+      connectionId: 'conn-1',
+      dbName: 'main',
+      tableName: 'default.orders',
+      schemaName: 'default',
+      objectGroup: 'tables',
+    }, { groupBySchema: true });
+
+    expect(emptySchemaTarget.schemaKey).toBe('conn-1-main-schema-0%3A');
+    expect(namedDefaultSchemaTarget.schemaKey).toBe('conn-1-main-schema-7%3Adefault');
+    expect(emptySchemaTarget.schemaKey).not.toBe(namedDefaultSchemaTarget.schemaKey);
   });
 
   it('builds a locate request from the active table tab', () => {
@@ -197,7 +218,7 @@ describe('sidebarLocate', () => {
 
     expect(resolveSidebarLocateTarget(request!, { groupBySchema: true })).toMatchObject({
       targetKey: 'view-def-conn-1-main-sales.mv_daily',
-      objectGroupKey: 'conn-1-main-schema-sales-materializedViews',
+      objectGroupKey: 'conn-1-main-schema-5%3Asales-materializedViews',
     });
   });
 
@@ -764,6 +785,50 @@ describe('sidebarLocate', () => {
       'conn-1-SYSDBA',
       'conn-1-SYSDBA-tables',
       'conn-1-SYSDBA-table-V_ACCOUNT',
+    ]);
+  });
+
+  it('decodes schema-aware table keys during visual locate fallback', () => {
+    const schemaAwareIdentity = `reporting${String.fromCharCode(0)}orders`;
+    const nodeKey = `conn-1-main-table-${encodeURIComponent(schemaAwareIdentity)}`;
+    const target = resolveSidebarLocateTarget({
+      tabId: 'stale-table-tab-id',
+      connectionId: 'conn-1',
+      dbName: 'main',
+      tableName: 'reporting.orders',
+      schemaName: 'reporting',
+      objectGroup: 'tables',
+    }, { groupBySchema: false });
+
+    const tree = [
+      {
+        key: 'conn-1',
+        children: [
+          {
+            key: 'conn-1-main',
+            dataRef: { id: 'conn-1', dbName: 'main' },
+            children: [
+              {
+                key: 'conn-1-main-tables',
+                children: [
+                  {
+                    key: nodeKey,
+                    type: 'table',
+                    dataRef: {},
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    ];
+
+    expect(findSidebarNodePathForLocate(tree, target)).toEqual([
+      'conn-1',
+      'conn-1-main',
+      'conn-1-main-tables',
+      nodeKey,
     ]);
   });
 

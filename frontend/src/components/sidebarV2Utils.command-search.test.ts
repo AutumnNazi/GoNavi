@@ -5,10 +5,12 @@ import {
   V2_COMMAND_SEARCH_MAX_TREE_RESULTS,
   buildV2CommandSearchTreeIndex,
   collectSidebarSubtreeKeys,
+  dedupeSidebarTreeNodesByKey,
   filterV2CommandSearchTreeItems,
   parseV2CommandSearchQuery,
   resolveSidebarDatabaseTreePruneKeys,
   shouldClearSidebarNodeChildrenOnCollapse,
+  type SidebarTreeNode,
   type V2CommandSearchItem,
 } from './sidebarV2Utils';
 
@@ -37,6 +39,107 @@ const buildNodeItems = (count: number): V2CommandSearchItem[] => {
 };
 
 describe('sidebarV2 command search performance helpers', () => {
+  it('drops duplicate tree keys while preserving children from later copies', () => {
+    const deduped = dedupeSidebarTreeNodesByKey([
+      {
+        key: 'conn-1',
+        title: '开发库',
+        type: 'connection',
+        isLeaf: true,
+        children: [{ key: 'db-1', title: '业务库', type: 'database' }],
+      },
+      {
+        key: 'conn-1',
+        title: '开发库（重复响应）',
+        type: 'connection',
+        children: [{ key: 'db-2', title: '报表库', type: 'database' }],
+      },
+    ]);
+
+    expect(deduped).toHaveLength(1);
+    expect(deduped[0]?.title).toBe('开发库');
+    expect(deduped[0]?.children?.map((node) => node.key)).toEqual(['db-1', 'db-2']);
+    expect(deduped[0]?.isLeaf).toBe(false);
+  });
+
+  it('indexes each command-search node key only once', () => {
+    const items = buildNodeItems(2);
+    const duplicate = { ...items[0], key: 'different-wrapper-key', title: 'same key duplicate' };
+
+    expect(buildV2CommandSearchTreeIndex([items[0], duplicate, items[1]])).toHaveLength(2);
+  });
+
+  it('handles numeric keys and cyclic tree references without repeating rows', () => {
+    const cyclicNode: SidebarTreeNode = { key: 'cyclic-node', title: '循环节点', type: 'database' };
+    cyclicNode.children = [cyclicNode];
+    const zeroKeyNode = {
+      key: 0 as unknown as string,
+      title: '零键节点',
+      type: 'database' as const,
+    };
+
+    const deduped = dedupeSidebarTreeNodesByKey([zeroKeyNode, { ...zeroKeyNode }, cyclicNode]);
+
+    expect(deduped).toHaveLength(2);
+    expect(deduped[0]?.key).toBe(0);
+    expect(deduped[1]?.children).toBeUndefined();
+  });
+
+  it('handles deep duplicate-key chains without recursive stack growth', () => {
+    const root: SidebarTreeNode = { key: 'deep-duplicate', title: '根节点', type: 'database' };
+    let current = root;
+    for (let index = 0; index < 12000; index += 1) {
+      const child: SidebarTreeNode = {
+        key: 'deep-duplicate',
+        title: `重复节点 ${index}`,
+        type: 'database',
+      };
+      current.children = [child];
+      current = child;
+    }
+
+    const deduped = dedupeSidebarTreeNodesByKey([root]);
+
+    expect(deduped).toHaveLength(1);
+    expect(deduped[0]?.key).toBe('deep-duplicate');
+    expect(deduped[0]?.children).toBeUndefined();
+  });
+
+  it('merges descendants from distinct duplicate-key objects while breaking key cycles', () => {
+    const first: SidebarTreeNode = { key: 'same-key', title: '首个节点', type: 'database' };
+    const duplicate: SidebarTreeNode = { key: 'same-key', title: '重复节点', type: 'database' };
+    const descendant: SidebarTreeNode = { key: 'descendant', title: '保留子节点', type: 'table' };
+    first.children = [duplicate];
+    duplicate.children = [descendant];
+    descendant.children = [{ key: 'same-key', title: '回到重复键', type: 'database' }];
+
+    const deduped = dedupeSidebarTreeNodesByKey([first]);
+
+    expect(deduped).toHaveLength(1);
+    expect(deduped[0]?.children?.map((node) => node.key)).toEqual(['descendant']);
+    expect(deduped[0]?.children?.[0]?.children).toBeUndefined();
+  });
+
+  it('keeps the first depth-first node as canonical when a later root reuses its key', () => {
+    const nested: SidebarTreeNode = { key: 'shared-key', title: '先遇到的节点', type: 'table' };
+    const root: SidebarTreeNode = {
+      key: 'root-node',
+      title: '根节点',
+      type: 'connection',
+      children: [nested],
+    };
+    const laterRoot: SidebarTreeNode = {
+      key: 'shared-key',
+      title: '后遇到的节点',
+      type: 'table',
+    };
+
+    const deduped = dedupeSidebarTreeNodesByKey([root, laterRoot]);
+
+    expect(deduped).toHaveLength(1);
+    expect(deduped[0]?.children?.[0]?.title).toBe('先遇到的节点');
+  });
+
   it('keeps the initial tree result limit when the query is empty', () => {
     const items = buildNodeItems(V2_COMMAND_SEARCH_INITIAL_TREE_LIMIT + 80);
 

@@ -385,7 +385,7 @@ func parsePostgresTableNames(data []map[string]interface{}) []string {
 		if schema != "" {
 			table = fmt.Sprintf("%s.%s", encodePGLikeQualifiedNamePart(schema), table)
 		}
-		key := strings.ToLower(table)
+		key := table
 		if _, exists := seen[key]; exists {
 			continue
 		}

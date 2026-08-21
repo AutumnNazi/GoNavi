@@ -50,6 +50,7 @@ import {
   RevealSavedQueryInFolder,
 } from '../../../wailsjs/go/app/App';
 import { resolveSidebarNodeConnectionId, type SidebarTreeNode as TreeNode } from '../sidebarV2Utils';
+import { buildSidebarSchemaNodeKey } from '../../utils/sidebarLocate';
 
 export type SidebarMessagePublishTarget = {
   connection: SavedConnection;
@@ -154,6 +155,26 @@ const ensureSidebarObjectEditSqlTerminator = (sql: string): string => {
   const normalized = String(sql || '').trim();
   if (!normalized) return '';
   return /;\s*$/.test(normalized) ? normalized : `${normalized};`;
+};
+
+const getSidebarSchemaTreeKeyPrefixes = (
+  connectionId: unknown,
+  dbName: unknown,
+  schemaName: unknown,
+): string[] => {
+  const databaseKey = `${String(connectionId || '').trim()}-${String(dbName || '').trim()}`;
+  const schema = String(schemaName || '').trim();
+  return Array.from(new Set([
+    buildSidebarSchemaNodeKey(databaseKey, schema),
+    // Keep cleanup compatible with trees created before schema identities were
+    // encoded; those keys can remain in expanded/loaded state during refresh.
+    `${databaseKey}-schema-${schema || 'default'}`,
+  ]));
+};
+
+const isSidebarSchemaTreeKey = (key: unknown, prefixes: readonly string[]): boolean => {
+  const value = String(key || '');
+  return prefixes.some((prefix) => value === prefix || value.startsWith(`${prefix}-`));
 };
 
 const extractMySqlEventCreateSql = (rows: any[]): string => {
@@ -594,9 +615,9 @@ export const useSidebarObjectActions = ({
         newSchemaName,
       );
       if (res.success) {
-        const schemaKeyPrefix = `${conn.id}-${dbName}-schema-${oldSchemaName || 'default'}`;
-        setExpandedKeys(prev => prev.filter(k => !k.toString().startsWith(schemaKeyPrefix)));
-        setLoadedKeys(prev => prev.filter(k => !k.toString().startsWith(schemaKeyPrefix)));
+        const schemaKeyPrefixes = getSidebarSchemaTreeKeyPrefixes(conn.id, dbName, oldSchemaName);
+        setExpandedKeys(prev => prev.filter(k => !isSidebarSchemaTreeKey(k, schemaKeyPrefixes)));
+        setLoadedKeys(prev => prev.filter(k => !isSidebarSchemaTreeKey(k, schemaKeyPrefixes)));
         await loadTables(getDatabaseNodeRef(conn, dbName), { ensureFresh: true });
         setIsRenameSchemaModalOpen(false);
         setRenameSchemaTarget(null);
@@ -630,9 +651,9 @@ export const useSidebarObjectActions = ({
           schemaName,
         );
         if (res.success) {
-          const schemaKeyPrefix = `${conn.id}-${dbName}-schema-${schemaName || 'default'}`;
-          setExpandedKeys(prev => prev.filter(k => !k.toString().startsWith(schemaKeyPrefix)));
-          setLoadedKeys(prev => prev.filter(k => !k.toString().startsWith(schemaKeyPrefix)));
+          const schemaKeyPrefixes = getSidebarSchemaTreeKeyPrefixes(conn.id, dbName, schemaName);
+          setExpandedKeys(prev => prev.filter(k => !isSidebarSchemaTreeKey(k, schemaKeyPrefixes)));
+          setLoadedKeys(prev => prev.filter(k => !isSidebarSchemaTreeKey(k, schemaKeyPrefixes)));
           await loadTables(getDatabaseNodeRef(conn, dbName), { ensureFresh: true });
           message.success(t('sidebar.message.schema_deleted'));
         } else {

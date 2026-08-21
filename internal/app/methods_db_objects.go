@@ -55,6 +55,7 @@ func (a *App) DBGetObjects(config connection.ConnectionConfig, dbName string) co
 		logger.Warnf("DBGetObjects 获取基础对象失败：%s err=%v", formatConnSummary(runConfig), tableErr)
 		return failedObjectMetadataResult(tableType, tableErr)
 	}
+	tables = dedupeMetadataTableNames(tables)
 	objects = append(objects, buildNamedObjects(dbName, tableType, tables)...)
 
 	warnings := make([]string, 0)
@@ -93,7 +94,7 @@ func (a *App) DBGetObjects(config connection.ConnectionConfig, dbName string) co
 	partial := len(failedObjectTypes) > 0
 	result := connection.QueryResult{
 		Success:           true,
-		Data:              dedupeSortDatabaseObjects(objects),
+		Data:              dedupeSortDatabaseObjects(objects, databaseObjectIdentifiersAreCaseSensitive(dbType)),
 		Partial:           partial,
 		Warnings:          warnings,
 		FailedObjectTypes: failedObjectTypes,
@@ -306,7 +307,16 @@ func splitObjectSchemaName(raw string) (string, string) {
 	return "", text
 }
 
-func dedupeSortDatabaseObjects(objects []connection.DatabaseObject) []connection.DatabaseObject {
+func databaseObjectIdentifiersAreCaseSensitive(dbType string) bool {
+	switch resolveDDLDBType(connection.ConnectionConfig{Type: dbType}) {
+	case "postgres", "kingbase", "highgo", "vastbase", "opengauss", "gaussdb", "oracle", "dameng":
+		return true
+	default:
+		return false
+	}
+}
+
+func dedupeSortDatabaseObjects(objects []connection.DatabaseObject, preserveCase bool) []connection.DatabaseObject {
 	seen := make(map[string]struct{}, len(objects))
 	result := make([]connection.DatabaseObject, 0, len(objects))
 	for _, object := range objects {
@@ -317,7 +327,13 @@ func dedupeSortDatabaseObjects(objects []connection.DatabaseObject) []connection
 		if object.Name == "" || object.Type == "" {
 			continue
 		}
-		key := strings.ToLower(strings.Join([]string{object.Database, object.Type, object.Schema, object.Name, object.Parent}, "\x00"))
+		keyParts := []string{object.Database, object.Type, object.Schema, object.Name, object.Parent}
+		if !preserveCase {
+			for index := range keyParts {
+				keyParts[index] = strings.ToLower(keyParts[index])
+			}
+		}
+		key := strings.Join(keyParts, "\x00")
 		if _, ok := seen[key]; ok {
 			continue
 		}

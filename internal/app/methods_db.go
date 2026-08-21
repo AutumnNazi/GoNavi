@@ -2507,6 +2507,7 @@ func (a *App) DBGetDatabases(config connection.ConnectionConfig) connection.Quer
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
 
+	dbs = dedupeMetadataDatabaseNames(dbs)
 	resData := make([]map[string]string, 0, len(dbs))
 	for _, name := range dbs {
 		resData = append(resData, map[string]string{"Database": name})
@@ -2588,6 +2589,7 @@ func (a *App) DBGetTables(config connection.ConnectionConfig, dbName string) con
 		logger.Error(err, "DBGetTables 获取表列表失败：%s", formatConnSummary(runConfig))
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
+	tables = dedupeMetadataTableNames(tables)
 
 	if isSQLiteConnection(runConfig) {
 		cachedStats, cacheErr := a.readSQLiteTableStats(runConfig, dbName)
@@ -2637,6 +2639,49 @@ func (a *App) DBGetTables(config connection.ConnectionConfig, dbName string) con
 	}
 
 	return connection.QueryResult{Success: true, Data: resData}
+}
+
+// Metadata may come from a driver agent or catalog query with duplicate rows.
+// Preserve exact identifiers and order while removing only identical nonblank entries.
+func dedupeMetadataDatabaseNames(databases []string) []string {
+	if len(databases) == 0 {
+		return databases
+	}
+	seen := make(map[string]struct{}, len(databases))
+	result := make([]string, 0, len(databases))
+	for _, database := range databases {
+		if strings.TrimSpace(database) == "" {
+			continue
+		}
+		if _, exists := seen[database]; exists {
+			continue
+		}
+		seen[database] = struct{}{}
+		result = append(result, database)
+	}
+	return result
+}
+
+// Metadata may come from an optional driver agent or a catalog view with
+// duplicate rows. Preserve exact identifiers and order while removing only
+// identical nonblank entries so schema-qualified names remain distinct.
+func dedupeMetadataTableNames(tables []string) []string {
+	if len(tables) == 0 {
+		return tables
+	}
+	seen := make(map[string]struct{}, len(tables))
+	result := make([]string, 0, len(tables))
+	for _, table := range tables {
+		if strings.TrimSpace(table) == "" {
+			continue
+		}
+		if _, exists := seen[table]; exists {
+			continue
+		}
+		seen[table] = struct{}{}
+		result = append(result, table)
+	}
+	return result
 }
 
 func buildRedisTablesPartialResult(tables []string, reason string) connection.QueryResult {

@@ -33,6 +33,7 @@ import {
 import type { SearchScope } from '../sidebarCoreUtils';
 import {
   buildV2CommandSearchTreeIndex,
+  dedupeSidebarTreeNodesByKey,
   estimateV2TreeHorizontalScrollWidth,
   filterV2CommandSearchTreeItems,
   filterV2ExplorerTreeByKind,
@@ -327,6 +328,14 @@ export const useSidebarSearchModel = ({
     return false;
   };
 
+  // Metadata refreshes can briefly expose the same keyed node more than once.
+  // Normalize before filtering so rc-tree's virtual list never receives
+  // duplicate keys (which otherwise appear as an endlessly repeated row).
+  const normalizedTreeData = useMemo(
+    () => dedupeSidebarTreeNodesByKey(treeData),
+    [treeData],
+  );
+
   const loop = (data: TreeNode[], keyword: string): TreeNode[] => {
     const isSmartMode = searchScopes.includes('smart');
     const result: TreeNode[] = [];
@@ -366,9 +375,9 @@ export const useSidebarSearchModel = ({
 
   const displayTreeData = useMemo(() => {
     const keyword = deferredSearchValue.trim().toLowerCase();
-    if (!keyword) return treeData;
-    return loop(treeData, keyword);
-  }, [deferredSearchValue, searchScopes, treeData]);
+    if (!keyword) return normalizedTreeData;
+    return loop(normalizedTreeData, keyword);
+  }, [deferredSearchValue, normalizedTreeData, searchScopes]);
 
   const commandSearchTreeItems = useMemo(() => {
     if (!isV2CommandSearchOpen) {
@@ -428,9 +437,9 @@ export const useSidebarSearchModel = ({
       });
     };
 
-    visit(treeData);
+    visit(normalizedTreeData);
     return result;
-  }, [connectionById, extractObjectName, isV2CommandSearchOpen, treeData]);
+  }, [connectionById, extractObjectName, isV2CommandSearchOpen, normalizedTreeData]);
   const commandSearchTreeIndex = useMemo(
     () => buildV2CommandSearchTreeIndex(commandSearchTreeItems),
     [commandSearchTreeItems],
@@ -587,10 +596,10 @@ export const useSidebarSearchModel = ({
     if (!activeConnection) return displayTreeData;
     const activeConnectionNode = displayTreeData.find((node) => node.type === 'connection' && node.key === activeConnection.id);
     if (activeConnectionNode) {
-      return [
+      return dedupeSidebarTreeNodesByKey([
         ...(activeConnectionNode.children && activeConnectionNode.children.length > 0 ? activeConnectionNode.children : []),
         ...externalSQLNodes,
-      ];
+      ]);
     }
     const filterTree = (nodes: TreeNode[]): TreeNode[] => nodes.flatMap((node) => {
       if (node.type === 'tag') {
@@ -604,7 +613,7 @@ export const useSidebarSearchModel = ({
     });
 
     const filtered = filterTree(displayTreeData);
-    return [...filtered, ...externalSQLNodes];
+    return dedupeSidebarTreeNodesByKey([...filtered, ...externalSQLNodes]);
   }, [activeConnection, displayTreeData]);
   const v2VisibleTreeData = useMemo(() => {
     if (v2ExplorerFilter === 'all') {

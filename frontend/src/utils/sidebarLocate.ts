@@ -75,6 +75,25 @@ export interface SidebarLocateTabLike {
 const toTrimmedString = (value: unknown): string => String(value ?? '').trim();
 const normalizeLocateName = (value: string): string => toTrimmedString(value).toLowerCase();
 
+// Schema groups use an encoded, length-prefixed identity so an unqualified
+// object (empty schema) cannot collide with a schema literally named
+// "default" or another sentinel value. Keep this helper shared with locate
+// and object-refresh paths that derive the same tree keys.
+export const encodeSidebarSchemaIdentity = (schemaName: unknown): string => {
+  const schema = toTrimmedString(schemaName);
+  return encodeURIComponent(`${schema.length}:${schema}`);
+};
+
+export const buildSidebarSchemaNodeKey = (
+  databaseKey: string,
+  schemaName: unknown,
+): string => `${toTrimmedString(databaseKey)}-schema-${encodeSidebarSchemaIdentity(schemaName)}`;
+
+const buildLegacySidebarSchemaNodeKey = (
+  databaseKey: string,
+  schemaName: unknown,
+): string => `${toTrimmedString(databaseKey)}-schema-${toTrimmedString(schemaName) || 'default'}`;
+
 const normalizeExternalSQLLocatePath = (value: unknown): string => toTrimmedString(value).replace(/\\/g, '/');
 
 export const normalizeSidebarLocateConnectionRequest = (detail: unknown): SidebarLocateConnectionRequest | null => {
@@ -256,8 +275,9 @@ export const resolveSidebarLocateTarget = (
           ? `${databaseKey}-routine-${request.tableName}`
           : `${databaseKey}-${request.tableName}`;
   const targetKey = request.tabId || fallbackTargetKey;
-  const schemaSegment = request.schemaName || 'default';
-  const schemaKey = options.groupBySchema ? `${databaseKey}-schema-${schemaSegment}` : undefined;
+  const schemaKey = options.groupBySchema
+    ? buildSidebarSchemaNodeKey(databaseKey, request.schemaName)
+    : undefined;
   const objectGroupKey = options.groupBySchema
     ? `${schemaKey}-${request.objectGroup}`
     : `${databaseKey}-${request.objectGroup}`;
@@ -451,7 +471,27 @@ const getVisualNodeObjectName = (
           : [`${target.databaseKey}-table-`, `${target.databaseKey}-`];
 
   const matchedPrefix = keyPrefixes.find((prefix) => nodeKey.startsWith(prefix));
-  return matchedPrefix ? nodeKey.slice(matchedPrefix.length) : '';
+  if (!matchedPrefix) return '';
+
+  const keyName = nodeKey.slice(matchedPrefix.length);
+  if (target.objectGroup !== 'tables') return keyName;
+
+  // Table nodes use an encoded schema\u0000object identity so names that only
+  // differ by schema never share an rc-tree key. Recover a qualified name for
+  // the metadata-free locate fallback, while accepting historical raw keys.
+  try {
+    const decodedKeyName = decodeURIComponent(keyName);
+    const separatorIndex = decodedKeyName.indexOf('\u0000');
+    if (separatorIndex < 0) return decodedKeyName;
+
+    const schemaName = decodedKeyName.slice(0, separatorIndex).trim();
+    const objectName = decodedKeyName.slice(separatorIndex + 1).trim();
+    if (!schemaName) return objectName;
+    if (!objectName) return schemaName;
+    return `${schemaName}.${objectName}`;
+  } catch {
+    return keyName;
+  }
 };
 
 const getLocateObjectGroupPathSuffix = (objectGroup: SidebarLocateObjectGroup): string => {
@@ -534,12 +574,23 @@ const selectPreferredSidebarLocatePath = (
     targetParsed.schemaName,
     target.dbName,
   ].filter(Boolean);
-  const normalizedSchemas = Array.from(new Set(schemaCandidates.map(normalizeLocateName)));
+  const seenSchemaNames = new Set<string>();
 
-  for (const normalizedSchema of normalizedSchemas) {
-    const preferredSchemaKey = `${normalizeLocateName(target.databaseKey)}-schema-${normalizedSchema}`;
+  for (const schemaCandidate of schemaCandidates) {
+    const normalizedSchema = normalizeLocateName(schemaCandidate);
+    if (seenSchemaNames.has(normalizedSchema)) continue;
+    seenSchemaNames.add(normalizedSchema);
+    const preferredSchemaKeys = [
+      buildSidebarSchemaNodeKey(target.databaseKey, schemaCandidate),
+      buildSidebarSchemaNodeKey(target.databaseKey, normalizedSchema),
+      // Existing expanded trees can still contain pre-schema-identity keys.
+      // Prefer the current encoding, but accept the legacy form while the tree
+      // is being refreshed after an upgrade.
+      buildLegacySidebarSchemaNodeKey(target.databaseKey, schemaCandidate),
+      buildLegacySidebarSchemaNodeKey(target.databaseKey, normalizedSchema),
+    ].map(normalizeLocateName);
     const bySchemaGroup = paths.filter((path) =>
-      path.some((key) => normalizeLocateName(key) === preferredSchemaKey),
+      path.some((key) => preferredSchemaKeys.includes(normalizeLocateName(key))),
     );
     if (bySchemaGroup.length === 1) return bySchemaGroup[0];
 
