@@ -288,6 +288,10 @@ func (c *optionalDriverAgentClient) callLocked(req optionalAgentRequest, out int
 		return err
 	}
 	payload = append(payload, '\n')
+	if len(payload) > OptionalDriverAgentMaxJSONLineBytes {
+		_ = c.forceTerminate(ErrOptionalDriverAgentJSONLineTooLarge)
+		return markOptionalAgentApplyChangesTransportUnknown(req, fmt.Errorf("发送 %s 驱动代理请求失败：%w", driverDisplayName(c.driver), ErrOptionalDriverAgentJSONLineTooLarge))
+	}
 	if _, err := c.stdin.Write(payload); err != nil {
 		stderrText := c.stderrText()
 		if stderrText == "" {
@@ -296,8 +300,11 @@ func (c *optionalDriverAgentClient) callLocked(req optionalAgentRequest, out int
 		return markOptionalAgentApplyChangesTransportUnknown(req, fmt.Errorf("调用 %s 驱动代理失败：%w（stderr: %s）", driverDisplayName(c.driver), err, stderrText))
 	}
 
-	line, err := c.reader.ReadBytes('\n')
+	line, err := ReadOptionalDriverAgentJSONLine(c.reader)
 	if err != nil {
+		if errors.Is(err, ErrOptionalDriverAgentJSONLineTooLarge) {
+			_ = c.forceTerminate(err)
+		}
 		stderrText := c.stderrText()
 		if stderrText == "" {
 			return markOptionalAgentApplyChangesTransportUnknown(req, fmt.Errorf("读取 %s 驱动代理响应失败：%w", driverDisplayName(c.driver), err))
@@ -313,6 +320,10 @@ func (c *optionalDriverAgentClient) callLocked(req optionalAgentRequest, out int
 		errText := strings.TrimSpace(resp.Error)
 		if errText == "" {
 			errText = fmt.Sprintf("%s 驱动代理返回失败", driverDisplayName(c.driver))
+		}
+		if errText == ErrOptionalDriverAgentJSONLineTooLarge.Error() {
+			_ = c.forceTerminate(ErrOptionalDriverAgentJSONLineTooLarge)
+			return markOptionalAgentApplyChangesTransportUnknown(req, ErrOptionalDriverAgentJSONLineTooLarge)
 		}
 		return errors.New(errText)
 	}
@@ -462,6 +473,10 @@ func (c *optionalDriverAgentClient) callStreamQueryLocked(req optionalAgentReque
 		return err
 	}
 	payload = append(payload, '\n')
+	if len(payload) > OptionalDriverAgentMaxJSONLineBytes {
+		_ = c.forceTerminate(ErrOptionalDriverAgentJSONLineTooLarge)
+		return fmt.Errorf("发送 %s 驱动代理请求失败：%w", driverDisplayName(c.driver), ErrOptionalDriverAgentJSONLineTooLarge)
+	}
 	if _, err := c.stdin.Write(payload); err != nil {
 		stderrText := c.stderrText()
 		if stderrText == "" {
@@ -480,8 +495,11 @@ func (c *optionalDriverAgentClient) callStreamQueryLocked(req optionalAgentReque
 	var processedRows int64
 
 	for {
-		line, err := c.reader.ReadBytes('\n')
+		line, err := ReadOptionalDriverAgentJSONLine(c.reader)
 		if err != nil {
+			if errors.Is(err, ErrOptionalDriverAgentJSONLineTooLarge) {
+				_ = c.forceTerminate(err)
+			}
 			stderrText := c.stderrText()
 			if stderrText == "" {
 				return fmt.Errorf("读取 %s 驱动代理响应失败：%w", driverDisplayName(c.driver), err)
@@ -497,6 +515,10 @@ func (c *optionalDriverAgentClient) callStreamQueryLocked(req optionalAgentReque
 			errText := strings.TrimSpace(resp.Error)
 			if errText == "" {
 				errText = fmt.Sprintf("%s 驱动代理返回失败", driverDisplayName(c.driver))
+			}
+			if errText == ErrOptionalDriverAgentJSONLineTooLarge.Error() {
+				_ = c.forceTerminate(ErrOptionalDriverAgentJSONLineTooLarge)
+				return ErrOptionalDriverAgentJSONLineTooLarge
 			}
 			return errors.New(errText)
 		}
