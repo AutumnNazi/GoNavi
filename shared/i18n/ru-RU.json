@@ -5929,6 +5929,7 @@
   "find_in_database.match.contains": "Содержит",
   "find_in_database.match.exact": "Точное совпадение",
   "find_in_database.message.connection_config_not_found": "Конфигурация подключения не найдена",
+  "find_in_database.message.get_all_columns_failed": "Не удалось получить сводку столбцов: {{detail}}",
   "find_in_database.message.get_tables_failed": "Не удалось получить список таблиц: {{detail}}",
   "find_in_database.message.keyword_required": "Введите ключевое слово для поиска",
   "find_in_database.message.no_matches": "Совпадающие данные не найдены",

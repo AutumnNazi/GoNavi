@@ -5929,6 +5929,7 @@
   "find_in_database.match.contains": "包含",
   "find_in_database.match.exact": "完全符合",
   "find_in_database.message.connection_config_not_found": "找不到連線設定",
+  "find_in_database.message.get_all_columns_failed": "取得欄位摘要失敗: {{detail}}",
   "find_in_database.message.get_tables_failed": "取得資料表清單失敗: {{detail}}",
   "find_in_database.message.keyword_required": "請輸入搜尋關鍵字",
   "find_in_database.message.no_matches": "找不到符合的資料",

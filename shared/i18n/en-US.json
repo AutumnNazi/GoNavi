@@ -5929,6 +5929,7 @@
   "find_in_database.match.contains": "Contains",
   "find_in_database.match.exact": "Exact match",
   "find_in_database.message.connection_config_not_found": "Connection configuration not found",
+  "find_in_database.message.get_all_columns_failed": "Failed to get column summary: {{detail}}",
   "find_in_database.message.get_tables_failed": "Failed to get table list: {{detail}}",
   "find_in_database.message.keyword_required": "Enter a search keyword",
   "find_in_database.message.no_matches": "No matching data found",

@@ -5929,6 +5929,7 @@
   "find_in_database.match.contains": "含む",
   "find_in_database.match.exact": "完全一致",
   "find_in_database.message.connection_config_not_found": "接続設定が見つかりません",
+  "find_in_database.message.get_all_columns_failed": "カラムサマリーの取得に失敗しました: {{detail}}",
   "find_in_database.message.get_tables_failed": "テーブル一覧の取得に失敗しました: {{detail}}",
   "find_in_database.message.keyword_required": "検索キーワードを入力してください",
   "find_in_database.message.no_matches": "一致するデータが見つかりません",

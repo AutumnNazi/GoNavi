@@ -5929,6 +5929,7 @@
   "find_in_database.match.contains": "Enthält",
   "find_in_database.match.exact": "Exakte Übereinstimmung",
   "find_in_database.message.connection_config_not_found": "Verbindungskonfiguration nicht gefunden",
+  "find_in_database.message.get_all_columns_failed": "Spaltenübersicht konnte nicht abgerufen werden: {{detail}}",
   "find_in_database.message.get_tables_failed": "Tabellenliste konnte nicht abgerufen werden: {{detail}}",
   "find_in_database.message.keyword_required": "Suchbegriff eingeben",
   "find_in_database.message.no_matches": "Keine passenden Daten gefunden",

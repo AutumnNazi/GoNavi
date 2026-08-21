@@ -5929,6 +5929,7 @@
   "find_in_database.match.contains": "包含",
   "find_in_database.match.exact": "精确匹配",
   "find_in_database.message.connection_config_not_found": "未找到连接配置",
+  "find_in_database.message.get_all_columns_failed": "获取字段摘要失败: {{detail}}",
   "find_in_database.message.get_tables_failed": "获取表列表失败: {{detail}}",
   "find_in_database.message.keyword_required": "请输入搜索关键字",
   "find_in_database.message.no_matches": "未找到匹配的数据",

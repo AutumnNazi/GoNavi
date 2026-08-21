@@ -1043,6 +1043,14 @@ let sharedQueryEditorMetadataConnectionConfig: unknown = null;
 
 const QUERY_EDITOR_TABLE_SUGGESTION_ROW_HEIGHT = 36;
 
+export const shouldRefreshQueryEditorCompletionColumns = (
+    intent: string,
+    hasColumnsForDatabase: boolean,
+    hasIncompleteColumnMetadata: boolean,
+): boolean => (
+    intent === 'column_name' && (hasIncompleteColumnMetadata || !hasColumnsForDatabase)
+);
+
 const normalizeQueryEditorTableSuggestionText = (value: unknown): string => (
     String(value ?? '').replace(/\r\n|\r|\n/g, '').trim()
 );
@@ -1615,6 +1623,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
   const acceptSqlAiCompletionBindingRef = useRef<{ combo: string; enabled: boolean }>({ combo: '', enabled: false });
   const queryEditorActiveRef = useRef(false);
   const aiContextMetadataWarmupRef = useRef<Record<string, Promise<boolean> | undefined>>({});
+  const incompleteColumnMetadataDbsRef = useRef<Set<string>>(new Set());
   const aiContextCacheRef = useRef<{ deps: unknown[]; value: QueryEditorAiContext } | null>(null);
   const triggerSqlAiCompletionAltPressedRef = useRef(false);
   const triggerSqlAiCompletionAltGestureAtRef = useRef(0);
@@ -2251,6 +2260,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       metadataFetchKeyRef.current = '';
       aiContextMetadataWarmupRef.current = {};
       aiContextCacheRef.current = null;
+      incompleteColumnMetadataDbsRef.current.clear();
       missingTableMetadataKeysRef.current.clear();
       tablesRef.current = [];
       allColumnsRef.current = [];
@@ -2708,8 +2718,14 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       const normalizedDbName = dbName.toLowerCase();
       const needsTables = intent.intent === 'table_name'
           || !tablesRef.current.some((table) => String(table.dbName || '').trim().toLowerCase() === normalizedDbName);
-      const needsColumns = intent.intent === 'column_name'
-          && !allColumnsRef.current.some((column) => String(column.dbName || '').trim().toLowerCase() === normalizedDbName);
+      const hasColumnsForDatabase = allColumnsRef.current.some(
+          (column) => String(column.dbName || '').trim().toLowerCase() === normalizedDbName,
+      );
+      const needsColumns = shouldRefreshQueryEditorCompletionColumns(
+          intent.intent,
+          hasColumnsForDatabase,
+          incompleteColumnMetadataDbsRef.current.has(normalizedDbName),
+      );
       if (!needsTables && !needsColumns) {
           return;
       }
@@ -2803,8 +2819,13 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                       warmupSucceeded = false;
                   }
                   if (resCols?.success && Array.isArray(resCols.data)) {
-                      if (isTableMetadataIncomplete(resCols)) {
+                      const incomplete = isTableMetadataIncomplete(resCols);
+                      if (incomplete) {
                           message.warning(getTableMetadataIssueDetail(resCols));
+                          incompleteColumnMetadataDbsRef.current.add(normalizedDbName);
+                          warmupSucceeded = false;
+                      } else {
+                          incompleteColumnMetadataDbsRef.current.delete(normalizedDbName);
                       }
                       const fetchedColumns = resCols.data.map((col: any) => ({
                           dbName,
@@ -4079,8 +4100,12 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
               const resCols = await DBGetAllColumns(buildRpcConnectionConfig(config) as any, dbName);
               if (cancelled) return;
               if (resCols.success && Array.isArray(resCols.data)) {
+                  const normalizedMetadataDbName = String(dbName || '').trim().toLowerCase();
                   if (isTableMetadataIncomplete(resCols)) {
                       message.warning(getTableMetadataIssueDetail(resCols));
+                      incompleteColumnMetadataDbsRef.current.add(normalizedMetadataDbName);
+                  } else {
+                      incompleteColumnMetadataDbsRef.current.delete(normalizedMetadataDbName);
                   }
                   resCols.data.forEach((col: any) => {
                       allColumns.push({

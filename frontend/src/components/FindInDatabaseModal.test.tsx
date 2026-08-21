@@ -242,4 +242,26 @@ describe("FindInDatabaseModal i18n", () => {
     expect(mocks.message.warning).toHaveBeenCalledWith("Column summary is incomplete");
     expect(mocks.dbQuery).toHaveBeenCalledTimes(1);
   });
+
+  it("reports a failed column summary instead of presenting no matches", async () => {
+    mocks.dbGetTables.mockResolvedValue({ success: true, data: [{ Table: "healthy" }] });
+    mocks.dbGetAllColumns.mockResolvedValue({ success: false, message: "metadata permission denied" });
+    const renderer = renderFindModal();
+
+    const input = renderer.root.findByType("input");
+    await act(async () => {
+      input.props.onChange({ target: { value: "alice" } });
+    });
+    const searchButton = renderer.root.findAllByType("button").find((button) => textContent(button).includes("Search"));
+
+    await act(async () => {
+      searchButton?.props.onClick();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(mocks.message.error).toHaveBeenCalledWith("Failed to get column summary: metadata permission denied");
+    expect(mocks.message.info).not.toHaveBeenCalledWith("No matching data found");
+    expect(mocks.dbQuery).not.toHaveBeenCalled();
+  });
 });
