@@ -10,15 +10,26 @@ import (
 	"reflect"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"testing/fstest"
 	"time"
 
 	aiservice "GoNavi-Wails/internal/ai/service"
 	appcore "GoNavi-Wails/internal/app"
+	httpserverlimits "GoNavi-Wails/internal/httpserver"
 )
 
 type webserverTestReceiver struct{}
+
+type countingWebserverTestReceiver struct {
+	calls atomic.Int32
+}
+
+func (r *countingWebserverTestReceiver) Echo(value string) string {
+	r.calls.Add(1)
+	return value
+}
 
 func (webserverTestReceiver) Echo(value string) (map[string]any, error) {
 	return map[string]any{"value": value}, nil
@@ -96,6 +107,54 @@ func TestMethodInvokerInvokeSupportsStructuredReturnValues(t *testing.T) {
 	}
 	if payload["value"] != "hello" {
 		t.Fatalf("expected echoed value hello, got %#v", payload["value"])
+	}
+}
+
+func TestWebInvokeBodyLimitRejectsBeforeBusinessInvocation(t *testing.T) {
+	receiver := &countingWebserverTestReceiver{}
+	server := &Server{invoker: &methodInvoker{targets: map[string]reflect.Value{
+		"test.receiver": reflect.ValueOf(receiver),
+	}}}
+	handler := httpserverlimits.LimitRequestBody(http.HandlerFunc(server.handleInvoke))
+	validPayload := `{"namespace":"test","receiver":"receiver","method":"Echo","args":["ok"]}`
+
+	t.Run("oversize", func(t *testing.T) {
+		paddingSize := int(httpserverlimits.MaxRequestBodyBytes) - len(validPayload) + 1
+		request := httptest.NewRequest(http.MethodPost, internalRoutePrefix+"/api/invoke", strings.NewReader(validPayload+strings.Repeat(" ", paddingSize)))
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, request)
+
+		if recorder.Code != http.StatusRequestEntityTooLarge {
+			t.Fatalf("status = %d, want %d; body=%q", recorder.Code, http.StatusRequestEntityTooLarge, recorder.Body.String())
+		}
+		if receiver.calls.Load() != 0 {
+			t.Fatal("Web invoke business method was called for an oversized body")
+		}
+	})
+
+	t.Run("normal", func(t *testing.T) {
+		request := httptest.NewRequest(http.MethodPost, internalRoutePrefix+"/api/invoke", strings.NewReader(validPayload))
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, request)
+
+		if recorder.Code != http.StatusOK {
+			t.Fatalf("status = %d, want %d; body=%q", recorder.Code, http.StatusOK, recorder.Body.String())
+		}
+		if receiver.calls.Load() != 1 {
+			t.Fatalf("Web invoke calls = %d, want 1", receiver.calls.Load())
+		}
+	})
+}
+
+func TestParseOptionsPreservesDockerPublicListenAddress(t *testing.T) {
+	t.Setenv("GONAVI_WEB_ADDR", "0.0.0.0:34116")
+
+	options, err := ParseOptions(nil)
+	if err != nil {
+		t.Fatalf("ParseOptions returned error: %v", err)
+	}
+	if options.Addr != "0.0.0.0:34116" {
+		t.Fatalf("Addr = %q, want Docker public listen address", options.Addr)
 	}
 }
 
