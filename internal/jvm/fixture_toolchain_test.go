@@ -21,6 +21,11 @@ import (
 
 var errJVMFixtureToolchainUnavailable = errors.New("JDK toolchain unavailable")
 
+// The full backend suite can leave the Linux runner CPU-constrained while
+// starting a JVM. Keep a finite deadline, but do not mistake a slow JVM
+// startup for an unusable JDK after the previous five-second deadline.
+const jvmFixtureToolVersionTimeout = 30 * time.Second
+
 var jvmFixtureVersionPattern = regexp.MustCompile(`(?i)(?:java|openjdk|javac)(?:\s+version)?\s+"?([0-9]+)(?:\.([0-9]+))?`)
 
 type jvmFixtureToolchain struct {
@@ -160,7 +165,7 @@ func jvmFixtureBinaryName(name string) string {
 }
 
 func readJVMFixtureToolVersion(parent context.Context, binary string) (string, int, error) {
-	ctx, cancel := context.WithTimeout(parent, 5*time.Second)
+	ctx, cancel := context.WithTimeout(parent, jvmFixtureToolVersionTimeout)
 	defer cancel()
 
 	output, err := exec.CommandContext(ctx, binary, "-version").CombinedOutput()
