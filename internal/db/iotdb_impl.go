@@ -391,9 +391,11 @@ func (i *IoTDBDB) GetAllColumns(dbName string) ([]connection.ColumnDefinitionWit
 		return nil, err
 	}
 	var result []connection.ColumnDefinitionWithTable
+	var failures []MetadataObjectFailure
 	for _, table := range tables {
 		cols, err := i.GetColumns(dbName, table)
 		if err != nil {
+			failures = append(failures, MetadataObjectFailure{ObjectName: table, Err: err})
 			continue
 		}
 		for _, col := range cols {
@@ -405,7 +407,7 @@ func (i *IoTDBDB) GetAllColumns(dbName string) ([]connection.ColumnDefinitionWit
 			})
 		}
 	}
-	return result, nil
+	return result, NewPartialMetadataError(failures)
 }
 
 func (i *IoTDBDB) GetIndexes(dbName, tableName string) ([]connection.IndexDefinition, error) {

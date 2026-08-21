@@ -441,6 +441,42 @@ func TestGetAllColumnsReturnsCrossTableColumnSummaries(t *testing.T) {
 	}
 }
 
+func TestGetAllColumnsPreservesPartialMetadataWarnings(t *testing.T) {
+	backend := &fakeBackend{
+		editableConnection: connection.SavedConnectionView{
+			ID:     "mysql-main",
+			Config: connection.ConnectionConfig{Type: "mysql", Database: "app"},
+		},
+		allColumnsResult: connection.QueryResult{
+			Success:  true,
+			Partial:  true,
+			Message:  "Column summary is incomplete",
+			Warnings: []string{"Failed to read column metadata for restricted: permission denied"},
+			Data: []connection.ColumnDefinitionWithTable{
+				{TableName: "healthy", Name: "id", Type: "bigint"},
+			},
+		},
+	}
+
+	service := NewService(backend)
+	result, out, err := service.GetAllColumns(context.Background(), nil, databaseArgs{
+		ConnectionID: "mysql-main",
+		DBName:       "app",
+	})
+	if err != nil {
+		t.Fatalf("GetAllColumns returned error: %v", err)
+	}
+	if result == nil || result.IsError || !out.Partial {
+		t.Fatalf("expected partial success result, got %#v / %#v", result, out)
+	}
+	if len(out.Columns) != 1 || out.Columns[0].TableName != "healthy" {
+		t.Fatalf("expected successful columns, got %#v", out.Columns)
+	}
+	if out.Message != "Column summary is incomplete" || len(out.Warnings) != 1 || !strings.Contains(out.Warnings[0], "restricted") {
+		t.Fatalf("expected partial metadata details, got %#v", out)
+	}
+}
+
 func TestGetViewsReturnsViewNames(t *testing.T) {
 	backend := &fakeBackend{
 		editableConnection: connection.SavedConnectionView{

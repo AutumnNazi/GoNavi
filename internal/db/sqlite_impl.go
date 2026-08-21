@@ -726,6 +726,7 @@ func (s *SQLiteDB) GetAllColumns(dbName string) ([]connection.ColumnDefinitionWi
 	}
 
 	var cols []connection.ColumnDefinitionWithTable
+	var failures []MetadataObjectFailure
 	for _, table := range tables {
 		// Skip internal tables
 		if strings.HasPrefix(strings.ToLower(table), "sqlite_") {
@@ -733,6 +734,7 @@ func (s *SQLiteDB) GetAllColumns(dbName string) ([]connection.ColumnDefinitionWi
 		}
 		columns, err := s.GetColumns("", table)
 		if err != nil {
+			failures = append(failures, MetadataObjectFailure{ObjectName: table, Err: err})
 			continue
 		}
 		for _, col := range columns {
@@ -744,5 +746,5 @@ func (s *SQLiteDB) GetAllColumns(dbName string) ([]connection.ColumnDefinitionWi
 			})
 		}
 	}
-	return cols, nil
+	return cols, NewPartialMetadataError(failures)
 }

@@ -214,4 +214,32 @@ describe("FindInDatabaseModal i18n", () => {
     expect(mocks.dbGetAllColumns).not.toHaveBeenCalled();
     expect(mocks.dbQuery).not.toHaveBeenCalled();
   });
+
+  it("warns about an incomplete column summary but searches available columns", async () => {
+    mocks.dbGetTables.mockResolvedValue({ success: true, data: [{ Table: "healthy" }, { Table: "restricted" }] });
+    mocks.dbGetAllColumns.mockResolvedValue({
+      success: true,
+      partial: true,
+      message: "Column summary is incomplete",
+      warnings: ["Failed to read column metadata for restricted: permission denied"],
+      data: [{ tableName: "healthy", name: "email", type: "varchar(255)" }],
+    });
+    mocks.dbQuery.mockResolvedValue({ success: true, data: [] });
+    const renderer = renderFindModal();
+
+    const input = renderer.root.findByType("input");
+    await act(async () => {
+      input.props.onChange({ target: { value: "alice" } });
+    });
+    const searchButton = renderer.root.findAllByType("button").find((button) => textContent(button).includes("Search"));
+
+    await act(async () => {
+      searchButton?.props.onClick();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(mocks.message.warning).toHaveBeenCalledWith("Column summary is incomplete");
+    expect(mocks.dbQuery).toHaveBeenCalledTimes(1);
+  });
 });

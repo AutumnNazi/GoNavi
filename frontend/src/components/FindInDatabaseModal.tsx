@@ -133,6 +133,9 @@ const FindInDatabaseModal: React.FC<FindInDatabaseModalProps> = ({ open, onClose
 
             const allColsRes = await DBGetAllColumns(buildRpcConnectionConfig(config) as any, dbName);
             const allColumns: any[] = (allColsRes?.success && Array.isArray(allColsRes.data)) ? allColsRes.data : [];
+            if (allColsRes?.success && isTableMetadataIncomplete(allColsRes)) {
+                message.warning(getTableMetadataIssueDetail(allColsRes));
+            }
 
             const columnsByTable: Record<string, Array<{ name: string; type: string }>> = {};
             allColumns.forEach((col: any) => {

@@ -359,9 +359,11 @@ func (m *MQTTDB) GetAllColumns(dbName string) ([]connection.ColumnDefinitionWith
 		return nil, err
 	}
 	var result []connection.ColumnDefinitionWithTable
+	var failures []MetadataObjectFailure
 	for _, table := range tables {
 		cols, err := m.GetColumns(dbName, table)
 		if err != nil {
+			failures = append(failures, MetadataObjectFailure{ObjectName: table, Err: err})
 			continue
 		}
 		for _, col := range cols {
@@ -373,7 +375,7 @@ func (m *MQTTDB) GetAllColumns(dbName string) ([]connection.ColumnDefinitionWith
 			})
 		}
 	}
-	return result, nil
+	return result, NewPartialMetadataError(failures)
 }
 
 func (m *MQTTDB) GetIndexes(dbName, tableName string) ([]connection.IndexDefinition, error) {

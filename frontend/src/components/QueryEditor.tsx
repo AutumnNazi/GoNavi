@@ -55,6 +55,7 @@ import {
 import { extractQueryResultTableRef, type QueryResultTableRef } from '../utils/queryResultTable';
 import { quoteIdentPart, quoteQualifiedIdent } from '../utils/sql';
 import { extractTableNameFromMetadataRow } from '../utils/tableMetadataRows';
+import { getTableMetadataIssueDetail, isTableMetadataIncomplete } from '../utils/tableMetadataResult';
 import { formatSqlExecutionError, hasLocalizedSqlTimeoutKeyword } from '../utils/sqlErrorSemantics';
 import { canReusePendingSqlEditorTransactionForType, shouldUseSqlEditorManagedTransactionForType } from '../utils/sqlEditorTransaction';
 import { findSqlStatementRanges, resolveCurrentSqlStatementRange, resolveExecutableSql } from '../utils/sqlStatementSelection';
@@ -2802,6 +2803,9 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                       warmupSucceeded = false;
                   }
                   if (resCols?.success && Array.isArray(resCols.data)) {
+                      if (isTableMetadataIncomplete(resCols)) {
+                          message.warning(getTableMetadataIssueDetail(resCols));
+                      }
                       const fetchedColumns = resCols.data.map((col: any) => ({
                           dbName,
                           tableName: col.tableName,
@@ -4075,6 +4079,9 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
               const resCols = await DBGetAllColumns(buildRpcConnectionConfig(config) as any, dbName);
               if (cancelled) return;
               if (resCols.success && Array.isArray(resCols.data)) {
+                  if (isTableMetadataIncomplete(resCols)) {
+                      message.warning(getTableMetadataIssueDetail(resCols));
+                  }
                   resCols.data.forEach((col: any) => {
                       allColumns.push({
                           dbName,

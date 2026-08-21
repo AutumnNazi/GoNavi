@@ -121,6 +121,9 @@ type getAllColumnsResult struct {
 	ConnectionID string                                 `json:"connectionId"`
 	DBName       string                                 `json:"dbName,omitempty"`
 	Columns      []connection.ColumnDefinitionWithTable `json:"columns"`
+	Message      string                                 `json:"message,omitempty"`
+	Partial      bool                                   `json:"partial,omitempty"`
+	Warnings     []string                               `json:"warnings,omitempty"`
 }
 
 type getColumnsResult struct {
@@ -407,6 +410,9 @@ func (s *Service) GetAllColumns(ctx context.Context, req *mcp.CallToolRequest, a
 		ConnectionID: view.ID,
 		DBName:       dbName,
 		Columns:      ensureNonNilColumnsWithTable(columns),
+		Message:      strings.TrimSpace(queryResult.Message),
+		Partial:      queryResult.Partial,
+		Warnings:     objectMetadataWarnings(queryResult),
 	}, nil
 }
 
