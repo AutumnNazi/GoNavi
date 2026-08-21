@@ -131,6 +131,7 @@ export const WorkbenchTabContent: React.FC<WorkbenchTabContentProps> = React.mem
         namespaceId={tab.nacosNamespaceId ?? ''}
         namespaceName={tab.nacosNamespaceName}
         initialGroup={tab.nacosGroup}
+        isActive={isActive}
       />
     );
   } else if (tab.type === 'trigger') {

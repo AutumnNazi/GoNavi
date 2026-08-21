@@ -77,6 +77,7 @@ type NacosServiceViewerProps = {
   namespaceId: string;
   namespaceName?: string;
   initialGroup?: string;
+  isActive?: boolean;
 };
 
 type NacosServiceRow = {
@@ -98,6 +99,19 @@ type ServiceViewContext = {
   group: string;
 };
 
+type NacosLoadOptions = {
+  silent?: boolean;
+};
+
+type LoadServices = (
+  page?: number,
+  requestedGroup?: string,
+  requestedPageSize?: number,
+  options?: NacosLoadOptions,
+) => Promise<void>;
+
+type LoadInstances = (rawServiceName: string, options?: NacosLoadOptions) => Promise<void>;
+
 const formatNacosInstanceEndpoint = (ip: string, port: number): string => {
   const host = String(ip || '').trim();
   const displayHost = host.includes(':') && !(host.startsWith('[') && host.endsWith(']'))
@@ -114,12 +128,14 @@ const getNacosInstanceMetadataEntries = (
   .sort(([leftKey], [rightKey]) => leftKey.localeCompare(rightKey));
 
 const NACOS_SERVICES_CHANGED_EVENT = 'gonavi:nacos-services-changed';
+export const NACOS_AUTO_REFRESH_INTERVAL_MS = 5_000;
 
 const NacosServiceViewer: React.FC<NacosServiceViewerProps> = ({
   connectionId,
   namespaceId,
   namespaceName,
   initialGroup,
+  isActive = true,
 }) => {
   const connections = useStore((state) => state.connections);
   const appTheme = useStore((state) => state.theme);
@@ -213,6 +229,10 @@ const NacosServiceViewer: React.FC<NacosServiceViewerProps> = ({
   const instanceModalGenerationRef = useRef(0);
   const instanceModalTargetServiceRawRef = useRef<string | null>(null);
   const activeContextRef = useRef<NacosContextToken | null>(null);
+  const autoRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const autoRefreshGenerationRef = useRef(0);
+  const loadServicesRef = useRef<LoadServices>(async () => undefined);
+  const loadInstancesRef = useRef<LoadInstances>(async () => undefined);
   const serviceViewRef = useRef<ServiceViewContext>({
     requestId: 0,
     page: 1,
@@ -288,6 +308,7 @@ const NacosServiceViewer: React.FC<NacosServiceViewerProps> = ({
       page = 1,
       requestedGroup = groupFilter.trim(),
       requestedPageSize = pageSize,
+      options?: NacosLoadOptions,
     ) => {
       if (!rpcConfig) return;
       const requestId = ++serviceRequestIdRef.current;
@@ -307,7 +328,7 @@ const NacosServiceViewer: React.FC<NacosServiceViewerProps> = ({
         });
         if (requestId !== serviceRequestIdRef.current) return;
         if (!res?.success) {
-          message.error(res?.message || 'list services failed');
+          if (!options?.silent) message.error(res?.message || 'list services failed');
           return;
         }
         const pageData = (res.data || {}) as ServicePage;
@@ -315,7 +336,7 @@ const NacosServiceViewer: React.FC<NacosServiceViewerProps> = ({
         const total = Number(pageData.count) || names.length;
         const lastPage = Math.max(1, Math.ceil(total / requestedPageSize));
         if (names.length === 0 && page > lastPage) {
-          await loadServices(lastPage, requestedGroup, requestedPageSize);
+          await loadServices(lastPage, requestedGroup, requestedPageSize, options);
           return;
         }
         setServiceNames(names);
@@ -334,7 +355,7 @@ const NacosServiceViewer: React.FC<NacosServiceViewerProps> = ({
         }
       } catch (error: any) {
         if (requestId !== serviceRequestIdRef.current) return;
-        message.error(error?.message || String(error));
+        if (!options?.silent) message.error(error?.message || String(error));
       } finally {
         if (requestId === serviceRequestIdRef.current) {
           setLoadingServices(false);
@@ -345,7 +366,7 @@ const NacosServiceViewer: React.FC<NacosServiceViewerProps> = ({
   );
 
   const loadInstances = useCallback(
-    async (rawServiceName: string) => {
+    async (rawServiceName: string, options?: NacosLoadOptions) => {
       if (!rpcConfig || selectedServiceRawRef.current !== rawServiceName) return;
       const parsed = parseNacosServiceName(rawServiceName);
       const requestId = ++instanceRequestIdRef.current;
@@ -374,7 +395,7 @@ const NacosServiceViewer: React.FC<NacosServiceViewerProps> = ({
           || selectedServiceRawRef.current !== rawServiceName
         ) return;
         if (!res?.success) {
-          message.error(res?.message || 'list instances failed');
+          if (!options?.silent) message.error(res?.message || 'list instances failed');
           return;
         }
         const list = (res.data || {}) as InstanceList;
@@ -385,7 +406,7 @@ const NacosServiceViewer: React.FC<NacosServiceViewerProps> = ({
           requestId !== instanceRequestIdRef.current
           || selectedServiceRawRef.current !== rawServiceName
         ) return;
-        message.error(error?.message || String(error));
+        if (!options?.silent) message.error(error?.message || String(error));
         return;
       } finally {
         if (
@@ -409,11 +430,13 @@ const NacosServiceViewer: React.FC<NacosServiceViewerProps> = ({
             ? { ephemeral: !!hosts[0].ephemeral, clusters: [] }
             : null,
         );
-        message.error(detailRes?.message || 'load service detail failed');
+        if (!options?.silent) message.error(detailRes?.message || 'load service detail failed');
       }
     },
     [rpcConfig, namespaceId],
   );
+  loadServicesRef.current = loadServices;
+  loadInstancesRef.current = loadInstances;
 
   useEffect(() => {
     const contextToken = { connectionId, namespaceId, rpcConfig };
@@ -447,6 +470,53 @@ const NacosServiceViewer: React.FC<NacosServiceViewerProps> = ({
       instanceRequestIdRef.current += 1;
     };
   }, [connectionId, namespaceId, rpcConfig, initialGroup]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (autoRefreshTimerRef.current !== null) {
+      clearTimeout(autoRefreshTimerRef.current);
+      autoRefreshTimerRef.current = null;
+    }
+    const generation = ++autoRefreshGenerationRef.current;
+    if (!isActive || !rpcConfig) {
+      return () => {
+        if (autoRefreshGenerationRef.current === generation) {
+          autoRefreshGenerationRef.current += 1;
+        }
+      };
+    }
+
+    let cancelled = false;
+    const scheduleNextRefresh = () => {
+      if (cancelled || autoRefreshGenerationRef.current !== generation) return;
+      autoRefreshTimerRef.current = setTimeout(() => {
+        autoRefreshTimerRef.current = null;
+        void refresh();
+      }, NACOS_AUTO_REFRESH_INTERVAL_MS);
+    };
+    const refresh = async () => {
+      if (cancelled || autoRefreshGenerationRef.current !== generation) return;
+      const view = serviceViewRef.current;
+      await loadServicesRef.current(view.page, view.group, view.pageSize, { silent: true });
+      if (cancelled || autoRefreshGenerationRef.current !== generation) return;
+      const selected = selectedServiceRawRef.current;
+      if (selected) {
+        await loadInstancesRef.current(selected, { silent: true });
+      }
+      scheduleNextRefresh();
+    };
+    scheduleNextRefresh();
+
+    return () => {
+      cancelled = true;
+      if (autoRefreshGenerationRef.current === generation) {
+        autoRefreshGenerationRef.current += 1;
+      }
+      if (autoRefreshTimerRef.current !== null) {
+        clearTimeout(autoRefreshTimerRef.current);
+        autoRefreshTimerRef.current = null;
+      }
+    };
+  }, [isActive, rpcConfig]);
 
   const handleCreateService = async () => {
     if (!rpcConfig || structureRestricted || serviceSavingRef.current) return;
