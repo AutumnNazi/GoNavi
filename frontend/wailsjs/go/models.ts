@@ -2964,6 +2964,7 @@ export namespace sqlaudit {
 	    source: string;
 	    fromTimestamp: number;
 	    toTimestamp: number;
+	    executionHistory: boolean;
 	    page: number;
 	    pageSize: number;
 
@@ -2983,6 +2984,7 @@ export namespace sqlaudit {
 	        this.source = source["source"];
 	        this.fromTimestamp = source["fromTimestamp"];
 	        this.toTimestamp = source["toTimestamp"];
+	        this.executionHistory = source["executionHistory"];
 	        this.page = source["page"];
 	        this.pageSize = source["pageSize"];
 	    }

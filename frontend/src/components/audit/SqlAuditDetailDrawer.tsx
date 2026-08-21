@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Button, Descriptions, Drawer, Empty, Pagination, Space, Spin, Tag, Typography, message, theme } from 'antd';
-import { CopyOutlined } from '@ant-design/icons';
+import { CopyOutlined, ImportOutlined } from '@ant-design/icons';
 import { useI18n } from '../../i18n/provider';
 import {
   buildSQLAuditFilterPayload,
   DEFAULT_SQL_AUDIT_FILTER,
   getSQLAuditEnumLabelKey,
+  getSQLAuditRecoveryState,
+  isSQLAuditEventRestorable,
   normalizeSQLAuditPage,
   sortSQLAuditTimeline,
   type SQLAuditEvent,
@@ -26,6 +28,7 @@ interface SqlAuditDetailDrawerProps {
   onClose: () => void;
   backend?: SQLAuditBackend;
   connectionName?: string;
+  onRestore?: (event: SQLAuditEvent) => void;
 }
 
 const resolveStatusColor = (status: string): string => {
@@ -41,6 +44,7 @@ export default function SqlAuditDetailDrawer({
   onClose,
   backend: backendOverride,
   connectionName,
+  onRestore,
 }: SqlAuditDetailDrawerProps) {
   const { t, language } = useI18n();
   const { token } = theme.useToken();
@@ -139,6 +143,8 @@ export default function SqlAuditDetailDrawer({
   const sourceLabel = labelEnum('source', event.source);
   const eventTypeLabel = labelEnum('event_type', event.eventType);
   const boundaryModeLabel = t(`sql_audit.boundary_mode.${event.boundaryMode || 'unknown'}`);
+  const recoveryState = getSQLAuditRecoveryState(event);
+  const restorable = isSQLAuditEventRestorable(event);
 
   return (
     <Drawer
@@ -160,13 +166,28 @@ export default function SqlAuditDetailDrawer({
         } as React.CSSProperties,
       }}
       extra={(
-        <Button
-          size="small"
-          icon={<CopyOutlined aria-hidden="true" />}
-          onClick={() => void copyText(JSON.stringify(event, null, 2), 'sql_audit.message.json_copied')}
-        >
-          {t('sql_audit.action.copy_json')}
-        </Button>
+        <Space size={6} wrap>
+          <Button
+            size="small"
+            icon={<ImportOutlined aria-hidden="true" />}
+            disabled={!restorable}
+            title={restorable
+              ? t('query_history.restore.action')
+              : t(recoveryState === 'metadata'
+                ? 'query_history.restore.metadata_unavailable'
+                : 'query_history.restore.event_unavailable')}
+            onClick={() => onRestore?.(event)}
+          >
+            {t('query_history.restore.action')}
+          </Button>
+          <Button
+            size="small"
+            icon={<CopyOutlined aria-hidden="true" />}
+            onClick={() => void copyText(JSON.stringify(event, null, 2), 'sql_audit.message.json_copied')}
+          >
+            {t('sql_audit.action.copy_json')}
+          </Button>
+        </Space>
       )}
     >
       <div className="gn-sql-audit-detail">
@@ -213,6 +234,11 @@ export default function SqlAuditDetailDrawer({
             </Button>
           </div>
           {event.sqlText ? <pre className="gn-sql-audit-detail-sql">{event.sqlText}</pre> : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('sql_audit.detail.no_sql')} />}
+          {recoveryState === 'metadata' ? (
+            <Alert type="warning" showIcon message={t('query_history.recovery.metadata')} description={t('query_history.restore.metadata_unavailable')} />
+          ) : recoveryState === 'redacted' ? (
+            <Alert type="info" showIcon message={t('query_history.recovery.redacted')} description={t('query_history.restore.redacted_warning')} />
+          ) : null}
           {event.error ? <Alert type="error" showIcon message={t('sql_audit.detail.error')} description={event.error} /> : null}
         </section>
 

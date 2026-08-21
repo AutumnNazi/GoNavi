@@ -291,6 +291,51 @@ func TestQuerySupportsContractFiltersAndEscapesSearchWildcards(t *testing.T) {
 	}
 }
 
+func TestQueryExecutionHistoryIncludesEditorRunsWithoutTransactionLifecycleNoise(t *testing.T) {
+	store := openTestStore(t)
+	now := time.Now().UnixMilli()
+	events := []Event{
+		{ID: "editor-query", EventType: "query", Status: "success", Source: "query_editor", SQLText: "SELECT 1", Timestamp: now},
+		{ID: "editor-query-statement", EventType: "query_statement", Status: "success", Source: "query_editor", SQLText: "SELECT 1", Timestamp: now + 1},
+		{ID: "editor-transaction-statement", EventType: "transaction_statement", Status: "error", Source: "query_editor", SQLText: "UPDATE users SET active = 1", Timestamp: now + 2},
+		{ID: "editor-transaction-open-failed", EventType: "transaction_begin", Status: "error", Source: "query_editor", SQLText: "UPDATE users SET active = 1", Timestamp: now + 3},
+		{ID: "editor-transaction-opened", EventType: "transaction_begin", Status: "success", Source: "query_editor", SQLText: "UPDATE users SET active = 1", Timestamp: now + 4},
+		{ID: "editor-transaction-commit", EventType: "transaction_commit", Status: "success", Source: "query_editor", Timestamp: now + 5},
+		{ID: "application-query", EventType: "query", Status: "success", Source: "application_api", SQLText: "SELECT 2", Timestamp: now + 6},
+	}
+	for _, event := range events {
+		event.ConnectionID = "conn-main"
+		event.ConnectionFingerprint = strings.Repeat("a", 64)
+		event.DBType = "postgres"
+		event.Database = "analytics"
+		if err := store.Append(event); err != nil {
+			t.Fatalf("Append %s returned error: %v", event.ID, err)
+		}
+	}
+
+	page, err := store.Query(Filter{ExecutionHistory: true, PageSize: 10})
+	if err != nil {
+		t.Fatalf("Query execution history returned error: %v", err)
+	}
+	if page.Total != 3 || len(page.Items) != 3 {
+		t.Fatalf("execution history page = %#v, want three editor executions", page)
+	}
+	ids := map[string]bool{}
+	for _, event := range page.Items {
+		ids[event.ID] = true
+	}
+	for _, id := range []string{"editor-query", "editor-transaction-statement", "editor-transaction-open-failed"} {
+		if !ids[id] {
+			t.Fatalf("execution history omitted %s: %#v", id, page.Items)
+		}
+	}
+	for _, id := range []string{"editor-query-statement", "editor-transaction-opened", "editor-transaction-commit", "application-query"} {
+		if ids[id] {
+			t.Fatalf("execution history included non-execution event %s: %#v", id, page.Items)
+		}
+	}
+}
+
 func TestMetadataAndDisabledCaptureModes(t *testing.T) {
 	store := openTestStore(t)
 	settings := DefaultSettings()

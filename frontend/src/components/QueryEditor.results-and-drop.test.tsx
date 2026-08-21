@@ -438,6 +438,7 @@ vi.mock('@ant-design/icons', () => {
     BulbOutlined: Icon,
     CheckOutlined: Icon,
     ClearOutlined: Icon,
+    ClockCircleOutlined: Icon,
     CodeOutlined: Icon,
     CopyOutlined: Icon,
     DiffOutlined: Icon,

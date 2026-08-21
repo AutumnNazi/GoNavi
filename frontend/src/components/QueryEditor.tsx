@@ -4,6 +4,7 @@ import Editor, { type BeforeMount, type OnMount } from './MonacoEditor';
 import { message, Input, Form, MenuProps, Button, Segmented, type InputRef } from 'antd';
 import {
     CodeOutlined,
+    ClockCircleOutlined,
     EditOutlined,
     ExportOutlined,
     FileTextOutlined,
@@ -74,6 +75,7 @@ import {
 import { resolveUniqueKeyGroupsFromIndexes } from './dataGridCopyInsert';
 import { t as translate } from '../i18n';
 import { buildSqlAnalysisWorkbenchTab } from '../utils/sqlAnalysisTab';
+import { buildQueryHistoryWorkbenchTab, shouldKeepRestoredQueryUnbound } from '../utils/sqlAuditTab';
 import { isLocalizedUntitledQueryTitle, QUERY_TAB_RENAME_REQUEST_EVENT } from '../utils/queryTabTitle';
 import { buildSqlServerObjectDefinitionQueries } from '../utils/sqlServerObjectDefinition';
 import { formatDdlForDisplay } from '../utils/ddlFormat';
@@ -1919,6 +1921,13 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       [addTab, currentConnectionCapabilities.supportsExplainDiagnosis, currentConnectionId, currentDb, tab.dbName],
   );
 
+  const openQueryHistoryWorkbench = useCallback(() => {
+      addTab(buildQueryHistoryWorkbenchTab({
+          connectionId: String(currentConnectionId || '').trim(),
+          dbName: String(currentDb || tab.dbName || '').trim(),
+      }));
+  }, [addTab, currentConnectionId, currentDb, tab.dbName]);
+
   const handleCloseSqlSnippetPicker = useCallback(() => {
       setIsSqlSnippetPickerOpen(false);
       setSqlSnippetPickerKeyword('');
@@ -2498,13 +2507,16 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
   }, [currentConnectionId]);
 
   useEffect(() => {
+      if (shouldKeepRestoredQueryUnbound(tab, currentConnectionId)) {
+          return;
+      }
       if (!queryCapableConnections.some(c => c.id === currentConnectionId)) {
           const fallback = queryCapableConnections[0]?.id || '';
           if (fallback && fallback !== currentConnectionId) {
               void switchQueryContext(fallback, '', { silentPending: true });
           }
       }
-  }, [currentConnectionId, pendingSqlTransaction?.id, queryCapableConnections, queryContextLockRunSeq, switchQueryContext]);
+  }, [currentConnectionId, pendingSqlTransaction?.id, queryCapableConnections, queryContextLockRunSeq, switchQueryContext, tab.preserveUnboundConnection]);
 
   useEffect(() => {
       currentDbRef.current = currentDb;
@@ -10505,6 +10517,12 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           key: 'analysis-actions',
           label: translate('tab_manager.kind_badge.sql_analysis'),
           children: [
+              {
+                  key: 'show-query-history',
+                  icon: <ClockCircleOutlined />,
+                  label: translate('query_history.action.open'),
+                  onClick: openQueryHistoryWorkbench,
+              },
               {
                   key: 'diagnose-query',
                   icon: <SearchOutlined />,

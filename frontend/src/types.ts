@@ -556,8 +556,10 @@ export interface TabData {
   sqlFileExecutionFileSizeMB?: string;
   sqlAnalysisView?: "diagnose" | "slow-query";
   sqlAnalysisRequestKey?: string;
+  sqlAuditView?: "audit" | "query-history";
   sqlAuditTransactionId?: string;
   sqlAuditRequestKey?: string;
+  preserveUnboundConnection?: boolean;
   formatRestoreSnapshot?: {
     query: string;
     createdAt: number;

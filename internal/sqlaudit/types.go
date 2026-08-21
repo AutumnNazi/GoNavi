@@ -65,8 +65,12 @@ type Filter struct {
 	Source        string `json:"source"`
 	FromTimestamp int64  `json:"fromTimestamp"`
 	ToTimestamp   int64  `json:"toTimestamp"`
-	Page          int    `json:"page"`
-	PageSize      int    `json:"pageSize"`
+	// ExecutionHistory limits results to user-triggered SQL editor executions.
+	// It deliberately excludes transaction lifecycle/control events while still
+	// including per-statement managed-transaction executions and failed opens.
+	ExecutionHistory bool `json:"executionHistory"`
+	Page             int  `json:"page"`
+	PageSize         int  `json:"pageSize"`
 }
 
 type Summary struct {
