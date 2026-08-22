@@ -19,6 +19,7 @@ import (
 )
 
 func TestAllSSHClientEntrypointsRequireHostKeyVerification(t *testing.T) {
+	useEmptySSHHome(t)
 	config := connection.SSHConfig{Host: "127.0.0.1", Port: 1, User: "tester"}
 	cases := []struct {
 		name string
@@ -74,6 +75,7 @@ func TestAllSSHClientEntrypointsRequireHostKeyVerification(t *testing.T) {
 }
 
 func TestConnectSSHRequiresHostKeyVerification(t *testing.T) {
+	useEmptySSHHome(t)
 	server := startTestSSHServer(t, newTestHostSigner(t))
 
 	client, err := connectSSH(server.config())
@@ -101,6 +103,7 @@ func TestConnectSSHRejectsInvalidPinnedHostKeyFingerprint(t *testing.T) {
 }
 
 func TestRegisterSSHNetworkRequiresHostKeyVerification(t *testing.T) {
+	useEmptySSHHome(t)
 	_, err := RegisterSSHNetwork(connection.SSHConfig{
 		Host: "127.0.0.1",
 		Port: 1,
@@ -112,6 +115,16 @@ func TestRegisterSSHNetworkRequiresHostKeyVerification(t *testing.T) {
 	if !strings.Contains(err.Error(), "host key verification") {
 		t.Fatalf("expected host key verification error, got %q", err)
 	}
+}
+
+func useEmptySSHHome(t *testing.T) {
+	t.Helper()
+	emptyHome := t.TempDir()
+	t.Setenv("HOME", emptyHome)
+	t.Setenv("USERPROFILE", emptyHome)
+	// Some SSH entry points initialise the process-wide logger. Keep its open
+	// file outside t.TempDir so Windows can remove the temporary home reliably.
+	t.Setenv("GONAVI_LOG_DIR", filepath.Join(os.TempDir(), "gonavi-ssh-hostkey-test-logs"))
 }
 
 func TestConnectSSHAcceptsPinnedHostKeyFingerprint(t *testing.T) {

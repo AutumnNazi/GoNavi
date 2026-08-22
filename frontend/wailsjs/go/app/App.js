@@ -1238,6 +1238,10 @@ export function SelectSSHKeyFile(arg1) {
   return window['go']['app']['App']['SelectSSHKeyFile'](arg1);
 }
 
+export function SelectSSHKnownHostsFile(arg1) {
+  return window['go']['app']['App']['SelectSSHKnownHostsFile'](arg1);
+}
+
 export function SelectSavedQueryDirectory(arg1) {
   return window['go']['app']['App']['SelectSavedQueryDirectory'](arg1);
 }
@@ -1272,6 +1276,10 @@ export function StartSecurityUpdate(arg1) {
 
 export function TestConnection(arg1) {
   return window['go']['app']['App']['TestConnection'](arg1);
+}
+
+export function TestConnectionWithProgress(arg1, arg2) {
+  return window['go']['app']['App']['TestConnectionWithProgress'](arg1, arg2);
 }
 
 export function TestGlobalProxyConnection(arg1) {

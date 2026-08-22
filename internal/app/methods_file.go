@@ -3858,6 +3858,39 @@ func (a *App) SelectSSHKeyFile(currentPath string) connection.QueryResult {
 	return connection.QueryResult{Success: true, Data: map[string]interface{}{"path": selection}}
 }
 
+// SelectSSHKnownHostsFile opens a local file dialog for a known_hosts file.
+// It deliberately only selects an existing user-managed file: SSH host keys
+// are never fetched, accepted, or written automatically by this application.
+func (a *App) SelectSSHKnownHostsFile(currentPath string) connection.QueryResult {
+	fallbackDir := ""
+	if home, err := os.UserHomeDir(); err == nil {
+		fallbackDir = filepath.Join(home, ".ssh")
+	}
+	defaultDir := resolveFileOpenDialogDirectory(currentPath, fallbackDir)
+
+	selection, err := runtime.OpenFileDialog(a.ctx, runtime.OpenDialogOptions{
+		Title:            a.appText("file.backend.dialog.select_ssh_known_hosts_file", nil),
+		DefaultDirectory: defaultDir,
+		ShowHiddenFiles:  true,
+		Filters: []runtime.FileFilter{
+			{
+				DisplayName: a.appText("file.backend.filter.all_files", nil),
+				Pattern:     "*.*",
+			},
+		},
+	})
+	if err != nil {
+		return connection.QueryResult{Success: false, Message: err.Error()}
+	}
+	if strings.TrimSpace(selection) == "" {
+		return connection.QueryResult{Success: false, Message: "已取消"}
+	}
+	if abs, err := filepath.Abs(selection); err == nil {
+		selection = abs
+	}
+	return connection.QueryResult{Success: true, Data: map[string]interface{}{"path": selection}}
+}
+
 func (a *App) SelectCertificateFile(currentPath string, certKind string) connection.QueryResult {
 	fallbackDir := ""
 	if home, err := os.UserHomeDir(); err == nil {

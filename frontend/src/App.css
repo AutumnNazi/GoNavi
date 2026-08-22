@@ -2205,6 +2205,189 @@ body[data-ui-version="v2"] .gn-conn-check-line .ant-form-item {
     margin-top: 4px;
 }
 
+/* SSH 测试过程：用连接链路而不是无限 spinner 告诉用户卡在何处。 */
+.gn-ssh-progress {
+    padding: 24px;
+    color: var(--gn-fg-1, rgba(0, 0, 0, 0.88));
+}
+
+.gn-ssh-progress-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 22px;
+}
+
+.gn-ssh-progress-eyebrow {
+    color: var(--gn-primary, #1677ff);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.gn-ssh-progress h2 {
+    margin: 3px 0 2px;
+    font-size: 20px;
+    line-height: 1.3;
+}
+
+.gn-ssh-progress-head p {
+    margin: 0;
+    color: var(--gn-fg-4, rgba(0, 0, 0, 0.45));
+    font-family: var(--gn-font-mono, ui-monospace, monospace);
+    font-size: 12px;
+}
+
+.gn-ssh-progress-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex: 0 0 auto;
+}
+
+.gn-ssh-progress-steps {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 6px;
+    list-style: none;
+    margin: 0 0 14px;
+    padding: 0;
+}
+
+.gn-ssh-progress-steps li {
+    position: relative;
+    display: grid;
+    gap: 4px;
+    min-width: 0;
+    color: var(--gn-fg-5, rgba(0, 0, 0, 0.4));
+    font-size: 12px;
+}
+
+.gn-ssh-progress-steps li:not(:last-child)::after {
+    position: absolute;
+    top: 6px;
+    left: calc(50% + 10px);
+    width: calc(100% - 16px);
+    height: 2px;
+    background: var(--gn-border, rgba(5, 5, 5, 0.12));
+    content: "";
+}
+
+.gn-ssh-progress-dot,
+.gn-ssh-progress-log-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 999px;
+    background: var(--gn-border, rgba(5, 5, 5, 0.18));
+}
+
+.gn-ssh-progress-steps li[data-status="running"] {
+    color: var(--gn-primary, #1677ff);
+}
+
+.gn-ssh-progress-steps li[data-status="running"] .gn-ssh-progress-dot {
+    background: var(--gn-primary, #1677ff);
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--gn-primary, #1677ff) 16%, transparent);
+}
+
+.gn-ssh-progress-steps li[data-status="success"] {
+    color: var(--gn-fg-2, rgba(0, 0, 0, 0.72));
+}
+
+.gn-ssh-progress-steps li[data-status="success"] .gn-ssh-progress-dot,
+.gn-ssh-progress-steps li[data-status="success"]::after {
+    background: var(--gn-success, #10b981);
+}
+
+.gn-ssh-progress-steps li[data-status="error"] {
+    color: var(--gn-error, #d4380d);
+}
+
+.gn-ssh-progress-steps li[data-status="error"] .gn-ssh-progress-dot {
+    background: var(--gn-error, #d4380d);
+}
+
+.gn-ssh-progress-steps small {
+    overflow: hidden;
+    color: inherit;
+    font-size: 10px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.gn-ssh-progress-summary {
+    margin: 0 0 12px;
+    color: var(--gn-fg-3, rgba(0, 0, 0, 0.55));
+    font-size: 13px;
+}
+
+.gn-ssh-progress-summary[data-status="success"] {
+    color: var(--gn-success, #10b981);
+}
+
+.gn-ssh-progress-summary[data-status="error"] {
+    color: var(--gn-error, #d4380d);
+}
+
+.gn-ssh-progress-log {
+    display: grid;
+    gap: 7px;
+    max-height: 260px;
+    overflow: auto;
+    padding: 14px 16px;
+    border: 1px solid var(--gn-border, rgba(5, 5, 5, 0.12));
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--gn-primary, #1677ff) 3%, transparent);
+    color: var(--gn-fg-2, rgba(0, 0, 0, 0.72));
+    font-family: var(--gn-font-mono, ui-monospace, monospace);
+    font-size: 12px;
+    line-height: 1.45;
+}
+
+.gn-ssh-progress-log > div {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.gn-ssh-progress-log > div[data-status="running"] .gn-ssh-progress-log-dot {
+    background: var(--gn-primary, #1677ff);
+}
+
+.gn-ssh-progress-log > div[data-status="success"] .gn-ssh-progress-log-dot {
+    background: var(--gn-success, #10b981);
+}
+
+.gn-ssh-progress-log > div[data-status="error"] .gn-ssh-progress-log-dot {
+    background: var(--gn-error, #d4380d);
+}
+
+@media (max-width: 680px) {
+    .gn-ssh-progress {
+        padding: 18px;
+    }
+
+    .gn-ssh-progress-head {
+        display: grid;
+    }
+
+    .gn-ssh-progress-steps {
+        grid-template-columns: 1fr;
+        gap: 9px;
+    }
+
+    .gn-ssh-progress-steps li {
+        grid-template-columns: 12px minmax(0, 1fr) auto;
+        align-items: center;
+    }
+
+    .gn-ssh-progress-steps li:not(:last-child)::after {
+        display: none;
+    }
+}
+
 /* Custom Title Bar Close Button Hover */
 .gonavi-titlebar-leading {
     display: flex;

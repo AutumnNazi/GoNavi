@@ -128,6 +128,7 @@ const ConnectionModalStep2: React.FC<ConnectionModalStep2Props> = (props) => {
     handleSelectCertificateFile,
     handleSelectDatabaseFile,
     handleSelectSSHKeyFile,
+    handleSelectSSHKnownHostsFile,
     initialValues,
     isCustom,
     isFileDb,
@@ -174,6 +175,7 @@ const ConnectionModalStep2: React.FC<ConnectionModalStep2Props> = (props) => {
     selectingCertificateField,
     selectingDbFile,
     selectingSSHKey,
+    selectingSSHKnownHosts,
     setActiveConfigSection,
     setActiveNetworkConfig,
     setChoiceFieldValue,
@@ -2700,6 +2702,7 @@ const ConnectionModalStep2: React.FC<ConnectionModalStep2Props> = (props) => {
       getConnectionOptionCardStyle={getConnectionOptionCardStyle}
       handleSelectCertificateFile={handleSelectCertificateFile}
       handleSelectSSHKeyFile={handleSelectSSHKeyFile}
+      handleSelectSSHKnownHostsFile={handleSelectSSHKnownHostsFile}
       initialValues={initialValues}
       isFileDb={isFileDb}
       isJVM={isJVM}
@@ -2711,6 +2714,7 @@ const ConnectionModalStep2: React.FC<ConnectionModalStep2Props> = (props) => {
       proxyType={proxyType}
       selectingCertificateField={selectingCertificateField}
       selectingSSHKey={selectingSSHKey}
+      selectingSSHKnownHosts={selectingSSHKnownHosts}
       setActiveNetworkConfig={setActiveNetworkConfig}
       sslHintText={sslHintText}
       sslMode={sslMode}

@@ -49,11 +49,13 @@ const backendApp = {
   MongoDiscoverMembers: vi.fn(),
   SaveConnection: vi.fn(),
   TestConnection: vi.fn(),
+  TestConnectionWithProgress: vi.fn(),
   RedisConnect: vi.fn(),
   RevealSavedConnectionPrimaryPassword: vi.fn(),
   SelectDatabaseFile: vi.fn(),
   SelectCertificateFile: vi.fn(),
   SelectSSHKeyFile: vi.fn(),
+  SelectSSHKnownHostsFile: vi.fn(),
   TestJVMConnection: vi.fn(),
 };
 
@@ -464,6 +466,8 @@ describe("ConnectionModal i18n", () => {
       config: { ...input.config, password: "" },
     }));
     backendApp.TestConnection.mockResolvedValue({ success: false, message: "saved connection not found: conn-1" });
+    backendApp.TestConnectionWithProgress.mockReset();
+    backendApp.TestConnectionWithProgress.mockResolvedValue({ success: true, message: "ok" });
     backendApp.DBGetDatabases.mockResolvedValue({ success: true, data: [] });
     backendApp.MongoDiscoverMembers.mockResolvedValue({ success: true, data: { members: [] } });
     backendApp.RedisConnect.mockResolvedValue({ success: true, message: "ok" });
@@ -473,6 +477,7 @@ describe("ConnectionModal i18n", () => {
     backendApp.SelectDatabaseFile.mockReset();
     backendApp.SelectCertificateFile.mockReset();
     backendApp.SelectSSHKeyFile.mockReset();
+    backendApp.SelectSSHKnownHostsFile.mockReset();
     antdMessage.error.mockReset();
     antdMessage.warning.mockReset();
     antdMessage.success.mockReset();
@@ -536,6 +541,39 @@ describe("ConnectionModal i18n", () => {
     );
     expect(onClose).toHaveBeenCalledTimes(1);
   }, 15000);
+
+  it("shows a staged SSH tunnel result instead of only a generic connection spinner", async () => {
+    const { default: ConnectionModal } = await import("./ConnectionModal");
+    const connection = initialConnection("mysql", {
+      useSSH: true,
+      ssh: {
+        host: "bastion.example.com",
+        port: 22,
+        user: "ops",
+        password: "secret",
+      },
+    });
+
+    let renderer: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(
+        <ConnectionModal open onClose={vi.fn()} initialValues={connection} />,
+      );
+      await flushConnectionTestTick();
+    });
+    await act(async () => {
+      findButton(renderer!, "测试连接").props.onClick();
+      await flushConnectionTestTick();
+    });
+
+    expect(backendApp.TestConnectionWithProgress).toHaveBeenCalledWith(
+      expect.objectContaining({ useSSH: true }),
+      expect.stringMatching(/^ssh-test-/),
+    );
+    expect(textContent(renderer!.toJSON())).toContain("正在验证 SSH 隧道");
+    expect(textContent(renderer!.toJSON())).toContain("网络连接");
+    expect(textContent(renderer!.toJSON())).toContain("数据库验证");
+  });
 
   it("reveals a saved primary password when the password visibility button is opened", async () => {
     Object.assign(window, {
@@ -1550,7 +1588,7 @@ describe("ConnectionModal i18n", () => {
       'name: "Custom (自定义)"',
     ].forEach((snippet) => {
     });
-    expect(combinedConnectionModalSource.match(/isBackendCancelledResult\(res\)/g) ?? []).toHaveLength(3);
+    expect(combinedConnectionModalSource.match(/isBackendCancelledResult\(res\)/g) ?? []).toHaveLength(4);
   });
 
   it("renders English URI feedback and file picker error shell while preserving raw detail", async () => {

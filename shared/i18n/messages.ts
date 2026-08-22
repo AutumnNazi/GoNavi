@@ -182,6 +182,8 @@ export const messages: Record<SupportedLanguage, Record<MessageKey, string>> = {
     "connection.modal.connectionParams.help":
       "按当前数据源驱动支持的 URI/DSN query 格式填写；认证密码请使用上方密码字段。",
     "connection.modal.filePicker.sshKeyFailure": "选择私钥文件失败: {detail}",
+    "connection.modal.filePicker.sshKnownHostsFailure":
+      "选择 known_hosts 文件失败: {detail}",
     "connection.modal.filePicker.certificateFailure":
       "选择证书文件失败: {detail}",
     "connection.modal.filePicker.databaseFailure":
@@ -1081,6 +1083,8 @@ export const messages: Record<SupportedLanguage, Record<MessageKey, string>> = {
       "Use the URI/DSN query format supported by the current data source driver. Put authentication passwords in the password field above.",
     "connection.modal.filePicker.sshKeyFailure":
       "Failed to select private key file: {detail}",
+    "connection.modal.filePicker.sshKnownHostsFailure":
+      "Failed to select known_hosts file: {detail}",
     "connection.modal.filePicker.certificateFailure":
       "Failed to select certificate file: {detail}",
     "connection.modal.filePicker.databaseFailure":

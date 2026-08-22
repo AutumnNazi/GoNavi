@@ -31,6 +31,7 @@ const ConnectionModalNetworkSecuritySection: React.FC<ConnectionModalNetworkSecu
     form,
     handleSelectCertificateFile,
     handleSelectSSHKeyFile,
+    handleSelectSSHKnownHostsFile,
     initialValues,
     isFileDb,
     isJVM,
@@ -39,6 +40,7 @@ const ConnectionModalNetworkSecuritySection: React.FC<ConnectionModalNetworkSecu
     proxyType,
     selectingCertificateField,
     selectingSSHKey,
+    selectingSSHKnownHosts,
     setActiveNetworkConfig,
     sslHintText,
     sslMode,
@@ -364,23 +366,21 @@ const ConnectionModalNetworkSecuritySection: React.FC<ConnectionModalNetworkSecu
       </div>
       <div className="gn-conn-f-row">
         {denseLabel(
-          t("connection.modal.dense.path"),
+          t("connection.modal.network.ssh.knownHostsFile"),
           t("connection.modal.network.ssh.knownHostsPath"),
         )}
         <div className="gn-conn-f-ctrl">
-          <Form.Item name="sshKnownHostsPath" style={{ marginBottom: 0 }}>
-            <Input
-              {...noAutoCapInputProps}
-              placeholder={t(
-                "connection.modal.network.ssh.knownHostsPathPlaceholder",
-              )}
-            />
-          </Form.Item>
+          {renderPathPick(
+            "sshKnownHostsPath",
+            t("connection.modal.network.ssh.knownHostsPathPlaceholder"),
+            handleSelectSSHKnownHostsFile,
+            selectingSSHKnownHosts,
+          )}
         </div>
       </div>
       <div className="gn-conn-f-row">
         {denseLabel(
-          t("connection.modal.dense.fingerprint"),
+          t("connection.modal.network.ssh.hostKeyFingerprintShort"),
           t("connection.modal.network.ssh.hostKeyFingerprint"),
         )}
         <div className="gn-conn-f-ctrl">

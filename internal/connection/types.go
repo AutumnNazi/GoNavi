@@ -1,5 +1,22 @@
 package connection
 
+// SSHProgressEvent describes a non-sensitive phase in establishing an SSH
+// connection. It intentionally contains no host, credential, or error text:
+// callers already know the target and failures continue through the normal
+// connection-result path where redaction rules apply.
+type SSHProgressEvent struct {
+	Stage  string `json:"stage"`
+	Status string `json:"status"`
+}
+
+// SSHProgressReporter receives best-effort SSH connection phase updates. It is
+// runtime-only and is never serialized with a saved connection.
+type SSHProgressReporter func(SSHProgressEvent)
+
+type sshRuntime struct {
+	report SSHProgressReporter
+}
+
 // SSHConfig 存储 SSH 隧道连接配置。
 type SSHConfig struct {
 	Host               string `json:"host"`
@@ -9,6 +26,28 @@ type SSHConfig struct {
 	KeyPath            string `json:"keyPath"`
 	KnownHostsPath     string `json:"knownHostsPath,omitempty"`
 	HostKeyFingerprint string `json:"hostKeyFingerprint,omitempty"`
+	runtime            *sshRuntime
+}
+
+// WithProgressReporter attaches a transient observer to this config. Keeping
+// it behind an unexported pointer preserves the public JSON contract and
+// keeps SSHConfig comparable for existing cache keys.
+func (c SSHConfig) WithProgressReporter(reporter SSHProgressReporter) SSHConfig {
+	if reporter == nil {
+		c.runtime = nil
+		return c
+	}
+	c.runtime = &sshRuntime{report: reporter}
+	return c
+}
+
+// ReportProgress publishes a best-effort SSH phase update when this config is
+// being used by an interactive connection test.
+func (c SSHConfig) ReportProgress(stage string, status string) {
+	if c.runtime == nil || c.runtime.report == nil {
+		return
+	}
+	c.runtime.report(SSHProgressEvent{Stage: stage, Status: status})
 }
 
 // ProxyConfig 存储代理连接配置。

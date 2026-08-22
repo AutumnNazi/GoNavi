@@ -73,6 +73,7 @@ var desktopOnlyAppMethods = map[string]struct{}{
 	"ImportConfigFile":              {},
 	"ExportConnectionsPackage":      {},
 	"SelectSSHKeyFile":              {},
+	"SelectSSHKnownHostsFile":       {},
 	"SelectCertificateFile":         {},
 	"SelectDatabaseFile":            {},
 	"ImportData":                    {},

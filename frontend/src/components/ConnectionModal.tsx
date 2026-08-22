@@ -152,15 +152,25 @@ import {
   GetDriverStatusList,
   MongoDiscoverMembers,
   TestConnection,
+  TestConnectionWithProgress,
   RedisConnect,
   RedisGetDatabases,
   NacosConnect,
   SelectDatabaseFile,
   SelectCertificateFile,
   SelectSSHKeyFile,
+  SelectSSHKnownHostsFile,
   TestJVMConnection,
 } from "../../wailsjs/go/app/App";
+import { EventsOn } from "../../wailsjs/runtime";
 import { ConnectionConfig, MongoMemberInfo, SavedConnection } from "../types";
+import SSHConnectionProgressPanel from "./connectionModal/SSHConnectionProgressPanel";
+import {
+  applySSHConnectionProgressEvent,
+  createSSHConnectionProgress,
+  finishSSHConnectionProgress,
+  type SSHConnectionProgress,
+} from "./connectionModal/sshConnectionProgress";
 
 const { Text } = Typography;
 type EditableJVMMode = (typeof JVM_EDITABLE_MODES)[number];
@@ -377,6 +387,9 @@ const ConnectionModal: React.FC<{
   >("ssl");
   const [testResult, setTestResult] = useState<TestResultState | null>(null);
   const [testErrorLogOpen, setTestErrorLogOpen] = useState(false);
+  const [sshConnectionProgress, setSSHConnectionProgress] =
+    useState<SSHConnectionProgress | null>(null);
+  const [sshProgressPanelOpen, setSSHProgressPanelOpen] = useState(false);
   const [dbList, setDbList] = useState<string[]>([]);
   const [redisDbList, setRedisDbList] = useState<number[]>([]);
   const [mongoMembers, setMongoMembers] = useState<MongoMemberInfo[]>([]);
@@ -392,6 +405,7 @@ const ConnectionModal: React.FC<{
   const [driverStatusLoaded, setDriverStatusLoaded] = useState(false);
   const [selectingDbFile, setSelectingDbFile] = useState(false);
   const [selectingSSHKey, setSelectingSSHKey] = useState(false);
+  const [selectingSSHKnownHosts, setSelectingSSHKnownHosts] = useState(false);
   const [selectingCertificateField, setSelectingCertificateField] = useState<
     "sslCAPath" | "sslCertPath" | "sslKeyPath" | null
   >(null);
@@ -898,7 +912,24 @@ const ConnectionModal: React.FC<{
       setTestResult(null);
       setTestErrorLogOpen(false);
     }
+    setSSHConnectionProgress(null);
+    setSSHProgressPanelOpen(false);
   };
+
+  useEffect(() => {
+    let unsubscribe: (() => void) | undefined;
+    try {
+      unsubscribe = EventsOn("connection:test-progress", (event: any) => {
+        setSSHConnectionProgress((current) =>
+          current ? applySSHConnectionProgressEvent(current, event) : current,
+        );
+      });
+    } catch {
+      // The browser/web-server client has no Wails event bridge. It still
+      // receives the final test result and the progress panel resolves then.
+    }
+    return () => unsubscribe?.();
+  }, []);
 
   const setChoiceFieldValue = (fieldName: string, value: string | boolean) => {
     clearConnectionTestResultForChoice();
@@ -1367,6 +1398,39 @@ const ConnectionModal: React.FC<{
     }
   };
 
+  const handleSelectSSHKnownHostsFile = async () => {
+    if (selectingSSHKnownHosts) {
+      return;
+    }
+    try {
+      setSelectingSSHKnownHosts(true);
+      const currentPath = String(form.getFieldValue("sshKnownHostsPath") || "").trim();
+      const res = await SelectSSHKnownHostsFile(currentPath);
+      if (res?.success) {
+        const data = res.data || {};
+        const selectedPath =
+          typeof data === "string" ? data : String(data.path || "").trim();
+        if (selectedPath) {
+          form.setFieldValue("sshKnownHostsPath", selectedPath);
+        }
+      } else if (!isBackendCancelledResult(res)) {
+        message.error(
+          t("connection.modal.filePicker.sshKnownHostsFailure", {
+            detail: res?.message || t("connection.modal.error.unknown"),
+          }),
+        );
+      }
+    } catch (e: any) {
+      message.error(
+        t("connection.modal.filePicker.sshKnownHostsFailure", {
+          detail: e?.message || String(e),
+        }),
+      );
+    } finally {
+      setSelectingSSHKnownHosts(false);
+    }
+  };
+
   const handleSelectCertificateFile = async (
     fieldName: "sslCAPath" | "sslCertPath" | "sslKeyPath",
     certKind: "ca" | "client-cert" | "client-key",
@@ -1514,6 +1578,8 @@ const ConnectionModal: React.FC<{
       }
       setTestResult(null); // Reset test result
       setTestErrorLogOpen(false);
+      setSSHConnectionProgress(null);
+      setSSHProgressPanelOpen(false);
       setDbList([]);
       setRedisDbList([]);
       setMongoMembers([]);
@@ -2048,6 +2114,7 @@ const ConnectionModal: React.FC<{
     testInFlightRef.current = true;
     const testRunId = ++testRunIdRef.current;
     const isCurrentTestRun = () => testRunIdRef.current === testRunId;
+    let sshProgressRunId = "";
     try {
       await form.validateFields();
       if (!isCurrentTestRun()) return;
@@ -2113,14 +2180,33 @@ const ConnectionModal: React.FC<{
         !isRedisType && !isJVMType && !isNacosType
           ? buildRpcConnectionConfig(config as any)
           : config;
+      const shouldReportSSHProgress =
+        Boolean((config as any).useSSH) &&
+        !isRedisType &&
+        !isJVMType &&
+        !isNacosType;
+      if (shouldReportSSHProgress) {
+        const sshConfig = (dbTestConfig as any)?.ssh || (config as any)?.ssh || {};
+        sshProgressRunId = `ssh-test-${testRunId}-${Date.now()}`;
+        setSSHConnectionProgress(
+          createSSHConnectionProgress({
+            runId: sshProgressRunId,
+            host: String(sshConfig.host || ""),
+            port: Number(sshConfig.port) || 22,
+          }),
+        );
+        setSSHProgressPanelOpen(true);
+      }
       const res = await withClientTimeout(
         isJVMType
           ? TestJVMConnection(config as any)
           : isRedisType
             ? RedisConnect(config as any)
             : isNacosType
-              ? NacosConnect(config as any)
-              : TestConnection(dbTestConfig as any),
+            ? NacosConnect(config as any)
+              : shouldReportSSHProgress
+                ? TestConnectionWithProgress(dbTestConfig as any, sshProgressRunId)
+                : TestConnection(dbTestConfig as any),
         rpcTimeoutMs,
         t("connection.modal.test.timeout", { seconds: timeoutSeconds }),
       );
@@ -2128,6 +2214,13 @@ const ConnectionModal: React.FC<{
       if (!isCurrentTestRun()) return;
 
       if (res.success) {
+        if (sshProgressRunId) {
+          setSSHConnectionProgress((current) =>
+            current?.runId === sshProgressRunId
+              ? finishSSHConnectionProgress(current, { success: true })
+              : current,
+          );
+        }
         void message.destroy("connection-test-failure");
         setTestResult({ type: "success", message: res.message });
         void (async () => {
@@ -2220,6 +2313,16 @@ const ConnectionModal: React.FC<{
           }
         })();
       } else {
+        if (sshProgressRunId) {
+          setSSHConnectionProgress((current) =>
+            current?.runId === sshProgressRunId
+              ? finishSSHConnectionProgress(current, {
+                  success: false,
+                  reason: res?.message,
+                })
+              : current,
+          );
+        }
         applyTestFailureFeedback({
           kind: "runtime",
           reason: res?.message,
@@ -2241,6 +2344,13 @@ const ConnectionModal: React.FC<{
           : typeof e === "string"
             ? e
             : t("connection.modal.test.fallback.unknownException");
+      if (sshProgressRunId) {
+        setSSHConnectionProgress((current) =>
+          current?.runId === sshProgressRunId
+            ? finishSSHConnectionProgress(current, { success: false, reason })
+            : current,
+        );
+      }
       applyTestFailureFeedback({
         kind: "runtime",
         reason,
@@ -2953,6 +3063,7 @@ const ConnectionModal: React.FC<{
         handleSelectCertificateFile,
         handleSelectDatabaseFile,
         handleSelectSSHKeyFile,
+        handleSelectSSHKnownHostsFile,
         initialValues,
         isCustom,
         isFileDb,
@@ -2999,6 +3110,7 @@ const ConnectionModal: React.FC<{
         selectingCertificateField,
         selectingDbFile,
         selectingSSHKey,
+        selectingSSHKnownHosts,
         setActiveConfigSection,
         setActiveNetworkConfig,
         setChoiceFieldValue,
@@ -3250,6 +3362,27 @@ const ConnectionModal: React.FC<{
         }}
       >
         {step === 1 ? renderStep1() : renderStep2()}
+      </Modal>
+      <Modal
+        open={sshProgressPanelOpen && !!sshConnectionProgress}
+        onCancel={() => setSSHProgressPanelOpen(false)}
+        centered
+        width={720}
+        footer={null}
+        zIndex={APP_NESTED_MODAL_Z_INDEX}
+        destroyOnHidden
+        styles={{
+          content: modalShellStyle,
+          header: { display: "none" },
+          body: { padding: 0 },
+        }}
+      >
+        {sshConnectionProgress ? (
+          <SSHConnectionProgressPanel
+            progress={sshConnectionProgress}
+            onClose={() => setSSHProgressPanelOpen(false)}
+          />
+        ) : null}
       </Modal>
       <Modal
         title={renderConnectionModalTitle(

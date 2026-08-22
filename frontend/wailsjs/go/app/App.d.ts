@@ -627,6 +627,8 @@ export function SelectSQLFileForExecution():Promise<connection.QueryResult>;
 
 export function SelectSSHKeyFile(arg1:string):Promise<connection.QueryResult>;
 
+export function SelectSSHKnownHostsFile(arg1:string):Promise<connection.QueryResult>;
+
 export function SelectSavedQueryDirectory(arg1:string):Promise<connection.QueryResult>;
 
 export function SetApplicationBrandIcon(arg1:string):Promise<connection.QueryResult>;
@@ -644,6 +646,8 @@ export function Shutdown():Promise<void>;
 export function StartSecurityUpdate(arg1:app.StartSecurityUpdateRequest):Promise<app.SecurityUpdateStatus>;
 
 export function TestConnection(arg1:connection.ConnectionConfig):Promise<connection.QueryResult>;
+
+export function TestConnectionWithProgress(arg1:connection.ConnectionConfig,arg2:string):Promise<connection.QueryResult>;
 
 export function TestGlobalProxyConnection(arg1:connection.TestGlobalProxyInput):Promise<connection.QueryResult>;
 

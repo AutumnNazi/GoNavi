@@ -14,10 +14,21 @@ import (
 	"GoNavi-Wails/internal/db"
 	"GoNavi-Wails/internal/logger"
 	"GoNavi-Wails/internal/sqlaudit"
+	"GoNavi-Wails/internal/uievents"
 	"GoNavi-Wails/shared/i18n"
 )
 
 const testConnectionTimeoutUpperBoundSeconds = 12
+
+const connectionTestProgressEventName = "connection:test-progress"
+
+type connectionTestProgressEvent struct {
+	RunID  string `json:"runId"`
+	Stage  string `json:"stage"`
+	Status string `json:"status"`
+}
+
+type connectionTestProgressReporter func(stage string, status string)
 
 func normalizeTestConnectionConfig(config connection.ConnectionConfig) connection.ConnectionConfig {
 	normalized := config
@@ -115,10 +126,41 @@ func (a *App) DBReleaseConnection(config connection.ConnectionConfig) connection
 }
 
 func (a *App) TestConnection(config connection.ConnectionConfig) connection.QueryResult {
+	return a.testConnection(config, nil)
+}
+
+// TestConnectionWithProgress emits non-sensitive SSH connection stages for one
+// interactive test run. The ordinary TestConnection API remains available to
+// headless and older clients without an event listener.
+func (a *App) TestConnectionWithProgress(config connection.ConnectionConfig, runID string) connection.QueryResult {
+	runID = strings.TrimSpace(runID)
+	if runID == "" || !config.UseSSH {
+		return a.testConnection(config, nil)
+	}
+	report := func(stage string, status string) {
+		uievents.Emit(a.ctx, connectionTestProgressEventName, connectionTestProgressEvent{
+			RunID:  runID,
+			Stage:  stage,
+			Status: status,
+		})
+	}
+	return a.testConnection(config, report)
+}
+
+func (a *App) testConnection(config connection.ConnectionConfig, report connectionTestProgressReporter) connection.QueryResult {
 	testConfig := normalizeTestConnectionConfig(config)
 	started := time.Now()
+	if report != nil {
+		report("preparing", "running")
+		testConfig.SSH = testConfig.SSH.WithProgressReporter(func(event connection.SSHProgressEvent) {
+			report(event.Stage, event.Status)
+		})
+	}
 	logger.Infof("TestConnection 开始：%s", formatConnSummary(testConfig))
 	if err := validateTestConnectionInputWithText(testConfig, a.appText); err != nil {
+		if report != nil {
+			report("failed", "error")
+		}
 		logger.Warnf("TestConnection 参数校验失败：耗时=%s %s 原因=%s", time.Since(started).Round(time.Millisecond), formatConnSummary(testConfig), err.Error())
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
@@ -127,16 +169,25 @@ func (a *App) TestConnection(config connection.ConnectionConfig) connection.Quer
 		dbInst, err = a.retryIsolatedTestConnectionAfterMySQLMaxUserConnections(testConfig, err)
 	}
 	if err != nil {
+		if report != nil {
+			report("failed", "error")
+		}
 		logger.Error(err, "TestConnection 连接测试失败：耗时=%s %s", time.Since(started).Round(time.Millisecond), formatConnSummary(testConfig))
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
 	if dbInst != nil {
 		if closeErr := dbInst.Close(); closeErr != nil {
+			if report != nil {
+				report("failed", "error")
+			}
 			logger.Error(closeErr, "TestConnection 释放临时连接失败：耗时=%s %s", time.Since(started).Round(time.Millisecond), formatConnSummary(testConfig))
 			return connection.QueryResult{Success: false, Message: a.appText("db.backend.error.test_connection_close_failed", map[string]any{"detail": closeErr.Error()})}
 		}
 	}
 
+	if report != nil {
+		report("database_connected", "success")
+	}
 	logger.Infof("TestConnection 连接测试成功：耗时=%s %s", time.Since(started).Round(time.Millisecond), formatConnSummary(testConfig))
 	return connection.QueryResult{Success: true, Message: a.appText("db.backend.message.connect_success", nil)}
 }
