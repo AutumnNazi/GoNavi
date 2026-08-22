@@ -356,9 +356,11 @@ func (k *KafkaDB) GetAllColumns(dbName string) ([]connection.ColumnDefinitionWit
 		return nil, err
 	}
 	var result []connection.ColumnDefinitionWithTable
+	var failures []MetadataObjectFailure
 	for _, table := range tables {
 		cols, err := k.GetColumns(dbName, table)
 		if err != nil {
+			failures = append(failures, MetadataObjectFailure{ObjectName: table, Err: err})
 			continue
 		}
 		for _, col := range cols {
@@ -370,7 +372,7 @@ func (k *KafkaDB) GetAllColumns(dbName string) ([]connection.ColumnDefinitionWit
 			})
 		}
 	}
-	return result, nil
+	return result, NewPartialMetadataError(failures)
 }
 
 func (k *KafkaDB) GetIndexes(dbName, tableName string) ([]connection.IndexDefinition, error) {

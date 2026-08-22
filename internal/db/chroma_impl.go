@@ -275,9 +275,11 @@ func (c *ChromaDB) GetAllColumns(dbName string) ([]connection.ColumnDefinitionWi
 		return nil, err
 	}
 	var result []connection.ColumnDefinitionWithTable
+	var failures []MetadataObjectFailure
 	for _, table := range tables {
 		cols, err := c.GetColumns(dbName, table)
 		if err != nil {
+			failures = append(failures, MetadataObjectFailure{ObjectName: table, Err: err})
 			continue
 		}
 		for _, col := range cols {
@@ -289,7 +291,7 @@ func (c *ChromaDB) GetAllColumns(dbName string) ([]connection.ColumnDefinitionWi
 			})
 		}
 	}
-	return result, nil
+	return result, NewPartialMetadataError(failures)
 }
 
 func (c *ChromaDB) GetIndexes(dbName, tableName string) ([]connection.IndexDefinition, error) {

@@ -29,6 +29,7 @@ type fakeMetadataRetryDB struct {
 	tables           []string
 	columns          []connection.ColumnDefinition
 	allColumns       []connection.ColumnDefinitionWithTable
+	allColumnsErr    error
 	indexes          []connection.IndexDefinition
 	createStatement  string
 	tablesErr        error
@@ -127,7 +128,7 @@ func (f *fakeMetadataRetryDB) GetColumns(dbName, tableName string) ([]connection
 func (f *fakeMetadataRetryDB) GetAllColumns(dbName string) ([]connection.ColumnDefinitionWithTable, error) {
 	f.allColumnCalls++
 	f.allColumnSchema = dbName
-	return f.allColumns, nil
+	return f.allColumns, f.allColumnsErr
 }
 func (f *fakeMetadataRetryDB) GetIndexes(dbName, tableName string) ([]connection.IndexDefinition, error) {
 	f.indexCalls++
@@ -297,6 +298,42 @@ func TestDBGetAllColumnsReusesOceanBaseOracleBaseConnectionForSelectedSchema(t *
 	fixture.requireBaseConnectionReused(t, "selected schema all-column metadata")
 	if dbInst.allColumnCalls != 1 || dbInst.allColumnSchema != "CRH_AC" {
 		t.Fatalf("expected all-column metadata for CRH_AC once, calls=%d schema=%q", dbInst.allColumnCalls, dbInst.allColumnSchema)
+	}
+}
+
+func TestDBGetAllColumnsPreservesPartialMetadataResult(t *testing.T) {
+	dbInst := &fakeMetadataRetryDB{
+		allColumns: []connection.ColumnDefinitionWithTable{{TableName: "healthy", Name: "id", Type: "integer"}},
+		allColumnsErr: db.NewPartialMetadataError([]db.MetadataObjectFailure{{
+			ObjectName: "restricted",
+			Err:        errors.New("metadata permission denied password=secret-token"),
+		}}),
+	}
+	fixture := newOceanBaseOracleMetadataFixture(t, dbInst)
+
+	result := fixture.app.DBGetAllColumns(fixture.config, "CRH_AC")
+	if !result.Success || !result.Partial {
+		t.Fatalf("expected partial DBGetAllColumns success, got %#v", result)
+	}
+	columns, ok := result.Data.([]connection.ColumnDefinitionWithTable)
+	if !ok || len(columns) != 1 || columns[0].TableName != "healthy" {
+		t.Fatalf("expected successful columns to be preserved, got %#v", result.Data)
+	}
+	if len(result.Warnings) != 1 || !strings.Contains(result.Warnings[0], "restricted") {
+		t.Fatalf("expected warning for restricted object, got %#v", result.Warnings)
+	}
+	if strings.Contains(result.Warnings[0], "secret-token") {
+		t.Fatalf("partial result leaked sensitive detail: %#v", result.Warnings)
+	}
+}
+
+func TestDBGetAllColumnsFailsWhenBaseMetadataReadFails(t *testing.T) {
+	dbInst := &fakeMetadataRetryDB{allColumnsErr: errors.New("base metadata permission denied")}
+	fixture := newOceanBaseOracleMetadataFixture(t, dbInst)
+
+	result := fixture.app.DBGetAllColumns(fixture.config, "CRH_AC")
+	if result.Success || result.Partial || result.Message != "base metadata permission denied" {
+		t.Fatalf("expected ordinary metadata failure, got %#v", result)
 	}
 }
 

@@ -3902,6 +3902,16 @@ func (a *App) DBGetAllColumns(config connection.ConnectionConfig, dbName string)
 
 	cols, err := dbInst.GetAllColumns(dbName)
 	if err != nil {
+		var partialErr *db.PartialMetadataError
+		if errors.As(err, &partialErr) {
+			return connection.QueryResult{
+				Success:  true,
+				Message:  partialErr.Error(),
+				Data:     ensureNonNilSlice(cols),
+				Partial:  true,
+				Warnings: partialErr.Warnings(),
+			}
+		}
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
 

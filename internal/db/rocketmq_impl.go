@@ -415,9 +415,11 @@ func (r *RocketMQDB) GetAllColumns(dbName string) ([]connection.ColumnDefinition
 		return nil, err
 	}
 	var result []connection.ColumnDefinitionWithTable
+	var failures []MetadataObjectFailure
 	for _, table := range tables {
 		cols, err := r.GetColumns(dbName, table)
 		if err != nil {
+			failures = append(failures, MetadataObjectFailure{ObjectName: table, Err: err})
 			continue
 		}
 		for _, col := range cols {
@@ -429,7 +431,7 @@ func (r *RocketMQDB) GetAllColumns(dbName string) ([]connection.ColumnDefinition
 			})
 		}
 	}
-	return result, nil
+	return result, NewPartialMetadataError(failures)
 }
 
 func (r *RocketMQDB) GetIndexes(dbName, tableName string) ([]connection.IndexDefinition, error) {
