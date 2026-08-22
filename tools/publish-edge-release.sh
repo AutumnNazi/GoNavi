@@ -39,6 +39,7 @@ PUB_PREPARE_COMMAND_TIMEOUT_SECONDS="${PUB_PREPARE_COMMAND_TIMEOUT_SECONDS:-600}
 PUB_SSH_CONNECT_TIMEOUT_SECONDS="${PUB_SSH_CONNECT_TIMEOUT_SECONDS:-15}"
 PUB_SSH_SERVER_ALIVE_INTERVAL_SECONDS="${PUB_SSH_SERVER_ALIVE_INTERVAL_SECONDS:-15}"
 PUB_SSH_SERVER_ALIVE_COUNT_MAX="${PUB_SSH_SERVER_ALIVE_COUNT_MAX:-4}"
+PUB_SSH_CONTROL_PERSIST_SECONDS="${PUB_SSH_CONTROL_PERSIST_SECONDS:-300}"
 PUB_SSH_QUICK_COMMAND_TIMEOUT_SECONDS="${PUB_SSH_QUICK_COMMAND_TIMEOUT_SECONDS:-60}"
 PUB_SSH_TRANSACTION_COMMAND_TIMEOUT_SECONDS="${PUB_SSH_TRANSACTION_COMMAND_TIMEOUT_SECONDS:-300}"
 PUB_SSH_RETENTION_COMMAND_TIMEOUT_SECONDS="${PUB_SSH_RETENTION_COMMAND_TIMEOUT_SECONDS:-120}"
@@ -51,7 +52,8 @@ PUB_KV_REQUEST_TIMEOUT_SECONDS="${PUB_KV_REQUEST_TIMEOUT_SECONDS:-30}"
 for name in \
   PUB_TIMEOUT_KILL_AFTER_SECONDS PUB_PREPARE_COMMAND_TIMEOUT_SECONDS \
   PUB_SSH_CONNECT_TIMEOUT_SECONDS PUB_SSH_SERVER_ALIVE_INTERVAL_SECONDS \
-  PUB_SSH_SERVER_ALIVE_COUNT_MAX PUB_SSH_QUICK_COMMAND_TIMEOUT_SECONDS \
+  PUB_SSH_SERVER_ALIVE_COUNT_MAX PUB_SSH_CONTROL_PERSIST_SECONDS \
+  PUB_SSH_QUICK_COMMAND_TIMEOUT_SECONDS \
   PUB_SSH_TRANSACTION_COMMAND_TIMEOUT_SECONDS PUB_SSH_RETENTION_COMMAND_TIMEOUT_SECONDS \
   PUB_RSYNC_IO_TIMEOUT_SECONDS PUB_RSYNC_COMMAND_TIMEOUT_SECONDS \
   PUB_HTTP_CONNECT_TIMEOUT_SECONDS PUB_HTTP_REQUEST_TIMEOUT_SECONDS \
@@ -59,6 +61,7 @@ for name in \
   [[ "${!name}" =~ ^[1-9][0-9]*$ ]] || { echo "Invalid positive timeout: ${name}" >&2; exit 1; }
 done
 command -v timeout >/dev/null || { echo "GNU timeout is required for edge publication" >&2; exit 1; }
+command -v sha256sum >/dev/null || { echo "sha256sum is required for edge publication" >&2; exit 1; }
 
 run_timed() {
   local limit_seconds="$1"
@@ -69,16 +72,36 @@ run_timed() {
 stage_dir="${RUNNER_TEMP}/gonavi-edge-${PUB_GENERATION}"
 credential_root="${RUNNER_TEMP}/gonavi-edge-ssh-${PUB_GENERATION}"
 status_root="${RUNNER_TEMP}/gonavi-edge-status-${PUB_GENERATION}"
+control_fingerprint="$(printf '%s' "${PUB_GENERATION}" | sha256sum | cut -c1-16)"
+control_root="${RUNNER_TEMP%/}/gonavi-edge-control-${control_fingerprint}"
+
+ssh_control_path() {
+  local node="$1"
+  printf '%s/%s.sock' "${control_root}" "${node}"
+}
+
+stop_ssh_control_master() {
+  local node="$1" host port user control_path
+  control_path="$(ssh_control_path "${node}")"
+  [[ -S "${control_path}" ]] || return 0
+  host="$(node_value "${node}" HOST)"
+  port="$(node_value "${node}" PORT)"
+  user="$(node_value "${node}" USER)"
+  [[ -n "${host}" && -n "${port}" && -n "${user}" ]] || return 0
+  ssh -o BatchMode=yes -S "${control_path}" -O exit -p "${port}" "${user}@${host}" >/dev/null 2>&1 || true
+}
 
 cleanup() {
   local exit_code=$?
   trap - EXIT
-  rm -rf -- "${stage_dir}" "${credential_root}" "${status_root}"
+  stop_ssh_control_master dmit
+  stop_ssh_control_master bero
+  rm -rf -- "${stage_dir}" "${credential_root}" "${status_root}" "${control_root}"
   exit "${exit_code}"
 }
 trap cleanup EXIT
-mkdir -p "${credential_root}" "${status_root}"
-chmod 0700 "${credential_root}"
+mkdir -p "${credential_root}" "${status_root}" "${control_root}"
+chmod 0700 "${credential_root}" "${control_root}"
 
 prepare_args=(
   --channel "${PUB_CHANNEL}"
@@ -124,7 +147,7 @@ node_value() {
 
 stage_node() (
   set -euo pipefail
-  local node="$1" host port user private_key known_hosts root base_url max_bytes reserve_free_bytes ssh_dir remote remote_stage
+  local node="$1" host port user private_key known_hosts root base_url max_bytes reserve_free_bytes ssh_dir remote remote_stage control_path
   host="$(node_value "${node}" HOST)"
   port="$(node_value "${node}" PORT)"
   user="$(node_value "${node}" USER)"
@@ -159,12 +182,18 @@ stage_node() (
   printf '%s\n' "${known_hosts}" > "${ssh_dir}/known_hosts"
   chmod 0600 "${ssh_dir}/id_ed25519" "${ssh_dir}/known_hosts"
   ssh-keygen -y -f "${ssh_dir}/id_ed25519" >/dev/null
+  control_path="$(ssh_control_path "${node}")"
+  # The Bero SSH endpoint applies a connection-rate guard. Reusing one
+  # authenticated transport keeps a multi-step publication below that guard
+  # without weakening the deployment key or host-key checks.
   ssh_options=(
     -i "${ssh_dir}/id_ed25519" -p "${port}" -o BatchMode=yes -o IdentitiesOnly=yes
     -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=${ssh_dir}/known_hosts"
     -o "ConnectTimeout=${PUB_SSH_CONNECT_TIMEOUT_SECONDS}"
     -o "ServerAliveInterval=${PUB_SSH_SERVER_ALIVE_INTERVAL_SECONDS}"
     -o "ServerAliveCountMax=${PUB_SSH_SERVER_ALIVE_COUNT_MAX}"
+    -o ControlMaster=auto -o "ControlPersist=${PUB_SSH_CONTROL_PERSIST_SECONDS}"
+    -o "ControlPath=${control_path}"
   )
   remote="${user}@${host}"
   remote_stage="${root}/.incoming/${PUB_GENERATION}"
@@ -202,7 +231,7 @@ stage_node() (
   echo "[${node}] uploading payload"
   run_timed "${PUB_RSYNC_COMMAND_TIMEOUT_SECONDS}" \
     rsync -rlt --delete --partial --timeout="${PUB_RSYNC_IO_TIMEOUT_SECONDS}" --chmod=Du=rwx,Dgo=rx,Fu=rw,Fgo=r \
-    -e "ssh -i ${ssh_dir}/id_ed25519 -p ${port} -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=${ssh_dir}/known_hosts -o ConnectTimeout=${PUB_SSH_CONNECT_TIMEOUT_SECONDS} -o ServerAliveInterval=${PUB_SSH_SERVER_ALIVE_INTERVAL_SECONDS} -o ServerAliveCountMax=${PUB_SSH_SERVER_ALIVE_COUNT_MAX}" \
+    -e "ssh -i ${ssh_dir}/id_ed25519 -p ${port} -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=${ssh_dir}/known_hosts -o ConnectTimeout=${PUB_SSH_CONNECT_TIMEOUT_SECONDS} -o ServerAliveInterval=${PUB_SSH_SERVER_ALIVE_INTERVAL_SECONDS} -o ServerAliveCountMax=${PUB_SSH_SERVER_ALIVE_COUNT_MAX} -o ControlMaster=auto -o ControlPersist=${PUB_SSH_CONTROL_PERSIST_SECONDS} -o ControlPath=${control_path}" \
     "${stage_dir}/" "${remote}:${remote_stage}/"
   for command in verify promote-immutable; do
     echo "[${node}] ${command}"
@@ -298,7 +327,7 @@ probe_sha="$(jq -r '.probeSha256' "${stage_dir}/deployment.json")"
 
 activate_node() (
   set -euo pipefail
-  local node="$1" host port user private_key known_hosts root base_url max_bytes reserve_free_bytes ssh_dir remote remote_stage
+  local node="$1" host port user private_key known_hosts root base_url max_bytes reserve_free_bytes ssh_dir remote remote_stage control_path
   host="$(node_value "${node}" HOST)"
   port="$(node_value "${node}" PORT)"
   user="$(node_value "${node}" USER)"
@@ -309,12 +338,15 @@ activate_node() (
   max_bytes="$(node_value "${node}" MAX_BYTES)"
   reserve_free_bytes="$(node_value "${node}" RESERVE_FREE_BYTES)"
   ssh_dir="${credential_root}/${node}"
+  control_path="$(ssh_control_path "${node}")"
   ssh_options=(
     -i "${ssh_dir}/id_ed25519" -p "${port}" -o BatchMode=yes -o IdentitiesOnly=yes
     -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=${ssh_dir}/known_hosts"
     -o "ConnectTimeout=${PUB_SSH_CONNECT_TIMEOUT_SECONDS}"
     -o "ServerAliveInterval=${PUB_SSH_SERVER_ALIVE_INTERVAL_SECONDS}"
     -o "ServerAliveCountMax=${PUB_SSH_SERVER_ALIVE_COUNT_MAX}"
+    -o ControlMaster=auto -o "ControlPersist=${PUB_SSH_CONTROL_PERSIST_SECONDS}"
+    -o "ControlPath=${control_path}"
   )
   remote="${user}@${host}"
   remote_stage="${root}/.incoming/${PUB_GENERATION}"
