@@ -1382,7 +1382,7 @@ func (a *App) resolveEffectiveConnectionConfig(config connection.ConnectionConfi
 	if err != nil {
 		return config, wrapConnectError(resolvedConfig, err)
 	}
-	return runtimeConfig, nil
+	return a.withManagedSSHHostKeyTrustStore(runtimeConfig), nil
 }
 
 func (a *App) getDatabaseWithPing(config connection.ConnectionConfig, forcePing bool) (db.Database, error) {

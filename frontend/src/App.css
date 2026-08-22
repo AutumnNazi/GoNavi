@@ -2205,6 +2205,46 @@ body[data-ui-version="v2"] .gn-conn-check-line .ant-form-item {
     margin-top: 4px;
 }
 
+/* SSH 主机身份不再是一个需要用户填写的路径/指纹字段。
+   提示占据完整可用宽度，避免长说明落入 52px 的密排标签列而被截断。 */
+.gn-ssh-host-key-automatic-hint {
+    margin: 2px 0 4px;
+    max-width: 100%;
+    line-height: 1.55;
+}
+
+.gn-ssh-host-key-trust-dialog {
+    display: grid;
+    gap: 14px;
+}
+
+.gn-ssh-host-key-trust-facts {
+    display: grid;
+    grid-template-columns: minmax(88px, auto) minmax(0, 1fr);
+    gap: 8px 14px;
+    margin: 0;
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+.gn-ssh-host-key-trust-facts dt {
+    color: var(--gn-fg-4, rgba(0, 0, 0, 0.45));
+}
+
+.gn-ssh-host-key-trust-facts dd {
+    min-width: 0;
+    margin: 0;
+    color: var(--gn-fg-1, rgba(0, 0, 0, 0.88));
+    font-family: var(--gn-font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
+    overflow-wrap: anywhere;
+}
+
+.gn-ssh-host-key-trust-explanation {
+    color: var(--gn-fg-4, rgba(0, 0, 0, 0.45));
+    font-size: 12px;
+    line-height: 1.55;
+}
+
 /* SSH 测试过程：用连接链路而不是无限 spinner 告诉用户卡在何处。 */
 .gn-ssh-progress {
     padding: 24px;
@@ -2259,17 +2299,21 @@ body[data-ui-version="v2"] .gn-conn-check-line .ant-form-item {
 .gn-ssh-progress-steps li {
     position: relative;
     display: grid;
+    justify-items: center;
     gap: 4px;
     min-width: 0;
     color: var(--gn-fg-5, rgba(0, 0, 0, 0.4));
     font-size: 12px;
+    text-align: center;
 }
 
 .gn-ssh-progress-steps li:not(:last-child)::after {
     position: absolute;
-    top: 6px;
-    left: calc(50% + 10px);
-    width: calc(100% - 16px);
+    /* Start and end at adjacent dot centres. The dot is layered above it,
+       making the connector visually touch the dot without cutting through it. */
+    top: 4px;
+    left: 50%;
+    width: calc(100% + 6px);
     height: 2px;
     background: var(--gn-border, rgba(5, 5, 5, 0.12));
     content: "";
@@ -2277,6 +2321,8 @@ body[data-ui-version="v2"] .gn-conn-check-line .ant-form-item {
 
 .gn-ssh-progress-dot,
 .gn-ssh-progress-log-dot {
+    position: relative;
+    z-index: 1;
     width: 10px;
     height: 10px;
     border-radius: 999px;
@@ -2381,6 +2427,12 @@ body[data-ui-version="v2"] .gn-conn-check-line .ant-form-item {
     .gn-ssh-progress-steps li {
         grid-template-columns: 12px minmax(0, 1fr) auto;
         align-items: center;
+        justify-items: stretch;
+        text-align: left;
+    }
+
+    .gn-ssh-progress-steps li .gn-ssh-progress-dot {
+        justify-self: start;
     }
 
     .gn-ssh-progress-steps li:not(:last-child)::after {

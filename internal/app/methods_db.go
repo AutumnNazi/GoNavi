@@ -172,6 +172,10 @@ func (a *App) testConnection(config connection.ConnectionConfig, report connecti
 		if report != nil {
 			report("failed", "error")
 		}
+		if trustResult, ok := a.sshHostKeyTrustRequiredResult(err); ok {
+			logger.Warnf("TestConnection 需要确认 SSH 服务端身份：耗时=%s %s", time.Since(started).Round(time.Millisecond), formatConnSummary(testConfig))
+			return trustResult
+		}
 		logger.Error(err, "TestConnection 连接测试失败：耗时=%s %s", time.Since(started).Round(time.Millisecond), formatConnSummary(testConfig))
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}

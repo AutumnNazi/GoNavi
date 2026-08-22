@@ -292,10 +292,11 @@ func (a *App) getNacosClientWithContext(ctx context.Context, config connection.C
 		return nil, wrapped
 	}
 
-	connectConfig, proxyErr := resolveDialConfigWithProxyFunc(resolvedConfig)
+	effectiveConfig := a.withManagedSSHHostKeyTrustStore(resolvedConfig)
+	connectConfig, proxyErr := resolveDialConfigWithProxyFunc(effectiveConfig)
 	if proxyErr != nil {
-		wrapped := wrapConnectError(resolvedConfig, proxyErr)
-		logger.Error(wrapped, "Nacos 代理准备失败：%s", formatNacosConnSummary(resolvedConfig))
+		wrapped := wrapConnectError(effectiveConfig, proxyErr)
+		logger.Error(wrapped, "Nacos 代理准备失败：%s", formatNacosConnSummary(effectiveConfig))
 		return nil, wrapped
 	}
 	connectConfig.Type = "nacos"
@@ -303,7 +304,7 @@ func (a *App) getNacosClientWithContext(ctx context.Context, config connection.C
 		return nil, err
 	}
 
-	cacheIdentityConfig := resolvedConfig
+	cacheIdentityConfig := effectiveConfig
 	cacheIdentityConfig.Type = "nacos"
 	key := getNacosClientCacheKey(cacheIdentityConfig)
 
@@ -404,10 +405,11 @@ func (a *App) openNacosClientIsolated(config connection.ConnectionConfig) (nacos
 		logger.Error(wrapped, "Nacos 密文解析失败：%s", formatNacosConnSummary(config))
 		return nil, wrapped
 	}
-	connectConfig, proxyErr := resolveDialConfigWithProxyFunc(resolvedConfig)
+	effectiveConfig := a.withManagedSSHHostKeyTrustStore(resolvedConfig)
+	connectConfig, proxyErr := resolveDialConfigWithProxyFunc(effectiveConfig)
 	if proxyErr != nil {
-		wrapped := wrapConnectError(resolvedConfig, proxyErr)
-		logger.Error(wrapped, "Nacos 代理准备失败：%s", formatNacosConnSummary(resolvedConfig))
+		wrapped := wrapConnectError(effectiveConfig, proxyErr)
+		logger.Error(wrapped, "Nacos 代理准备失败：%s", formatNacosConnSummary(effectiveConfig))
 		return nil, wrapped
 	}
 	connectConfig.Type = "nacos"
@@ -442,6 +444,10 @@ func (a *App) NacosConnect(config connection.ConnectionConfig) connection.QueryR
 	defer cancel()
 	_, err := a.getNacosClientWithContext(ctx, config)
 	if err != nil {
+		if trustResult, ok := a.sshHostKeyTrustRequiredResult(err); ok {
+			logger.Warnf("NacosConnect 需要确认 SSH 服务端身份：%s", formatNacosConnSummary(config))
+			return trustResult
+		}
 		logger.Error(err, "NacosConnect 连接失败：%s", formatNacosConnSummary(config))
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
@@ -454,6 +460,10 @@ func (a *App) NacosTestConnection(config connection.ConnectionConfig) connection
 	config.Type = "nacos"
 	client, err := a.openNacosClientIsolated(config)
 	if err != nil {
+		if trustResult, ok := a.sshHostKeyTrustRequiredResult(err); ok {
+			logger.Warnf("NacosTestConnection 需要确认 SSH 服务端身份：%s", formatNacosConnSummary(config))
+			return trustResult
+		}
 		logger.Error(err, "NacosTestConnection 连接失败：%s", formatNacosConnSummary(config))
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}

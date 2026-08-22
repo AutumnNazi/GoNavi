@@ -57,6 +57,7 @@ const backendApp = {
   SelectSSHKeyFile: vi.fn(),
   SelectSSHKnownHostsFile: vi.fn(),
   TestJVMConnection: vi.fn(),
+  TrustSSHHostKeyForConnection: vi.fn(),
 };
 
 const textContent = (node: any): string => {
@@ -478,6 +479,8 @@ describe("ConnectionModal i18n", () => {
     backendApp.SelectCertificateFile.mockReset();
     backendApp.SelectSSHKeyFile.mockReset();
     backendApp.SelectSSHKnownHostsFile.mockReset();
+    backendApp.TrustSSHHostKeyForConnection.mockReset();
+    backendApp.TrustSSHHostKeyForConnection.mockResolvedValue({ success: true, message: "saved" });
     antdMessage.error.mockReset();
     antdMessage.warning.mockReset();
     antdMessage.success.mockReset();
@@ -573,6 +576,141 @@ describe("ConnectionModal i18n", () => {
     expect(textContent(renderer!.toJSON())).toContain("正在验证 SSH 隧道");
     expect(textContent(renderer!.toJSON())).toContain("网络连接");
     expect(textContent(renderer!.toJSON())).toContain("数据库验证");
+  });
+
+  it("guides an unknown SSH host through automatic confirmation without a manual field", async () => {
+    const fingerprint = "SHA256:QWERTYuiopASDFghjklZXCVbnm1234567890abcd";
+    backendApp.TestConnectionWithProgress.mockReset();
+    backendApp.TestConnectionWithProgress
+      .mockResolvedValueOnce({
+        success: false,
+        message: "confirmation required",
+        data: {
+          sshHostKeyTrust: {
+            state: "unknown",
+            source: "discovered",
+            host: "bastion.example.com",
+            port: 2222,
+            address: "bastion.example.com:2222",
+            keyType: "ssh-ed25519",
+            fingerprint,
+          },
+        },
+      })
+      .mockResolvedValueOnce({ success: true, message: "ok" });
+    const { default: ConnectionModal } = await import("./ConnectionModal");
+    const connection = initialConnection("mysql", {
+      useSSH: true,
+      ssh: {
+        host: "bastion.example.com",
+        port: 2222,
+        user: "ops",
+      },
+    });
+
+    let renderer: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(
+        <ConnectionModal open onClose={vi.fn()} initialValues={connection} />,
+      );
+      await flushConnectionTestTick();
+    });
+    await act(async () => {
+      findButton(renderer!, "测试连接").props.onClick();
+      await flushConnectionTestTick();
+    });
+
+    const pageText = textContent(renderer!.toJSON());
+    expect(pageText).toContain("确认 SSH 服务器身份");
+    expect(pageText).toContain("bastion.example.com:2222");
+    expect(pageText).toContain(fingerprint);
+    expect(findButton(renderer!, "仅本次继续")).toBeDefined();
+    expect(findButton(renderer!, "信任并保存")).toBeDefined();
+
+    await act(async () => {
+      findButton(renderer!, "仅本次继续").props.onClick();
+      await flushConnectionTestTick();
+    });
+    expect(backendApp.TestConnectionWithProgress).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        useSSH: true,
+        ssh: expect.objectContaining({ hostKeyFingerprint: fingerprint }),
+      }),
+      expect.stringMatching(/^ssh-test-/),
+    );
+    expect(backendApp.TrustSSHHostKeyForConnection).not.toHaveBeenCalled();
+  });
+
+  it("saves an explicitly approved SSH host key before retrying", async () => {
+    const fingerprint = "SHA256:ZXCVbnm1234567890abcdQWERTYuiopASDFghjkl";
+    backendApp.TestConnectionWithProgress.mockReset();
+    backendApp.TestConnectionWithProgress
+      .mockResolvedValueOnce({
+        success: false,
+        message: "confirmation required",
+        data: {
+          sshHostKeyTrust: {
+            state: "changed",
+            source: "gonavi",
+            host: "bastion.example.com",
+            port: 22,
+            address: "bastion.example.com:22",
+            keyType: "ssh-ed25519",
+            fingerprint,
+            previousFingerprint: "SHA256:previous",
+          },
+        },
+      })
+      .mockResolvedValueOnce({ success: true, message: "ok" });
+    const { default: ConnectionModal } = await import("./ConnectionModal");
+
+    let renderer: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(
+        <ConnectionModal
+          open
+          onClose={vi.fn()}
+          initialValues={initialConnection("mysql", {
+            useSSH: true,
+            ssh: {
+              host: "bastion.example.com",
+              port: 22,
+              user: "ops",
+              hostKeyFingerprint: "SHA256:legacy",
+            },
+          })}
+        />,
+      );
+      await flushConnectionTestTick();
+    });
+    await act(async () => {
+      findButton(renderer!, "测试连接").props.onClick();
+      await flushConnectionTestTick();
+    });
+
+    expect(textContent(renderer!.toJSON())).toContain("SSH 服务器密钥已变化");
+    expect(textContent(renderer!.toJSON())).toContain("SHA256:previous");
+    await act(async () => {
+      findButton(renderer!, "替换并信任").props.onClick();
+      await flushConnectionTestTick();
+    });
+
+    expect(backendApp.TrustSSHHostKeyForConnection).toHaveBeenCalledWith(
+      expect.objectContaining({
+        useSSH: true,
+        ssh: expect.objectContaining({
+          host: "bastion.example.com",
+          port: 22,
+        }),
+      }),
+      fingerprint,
+    );
+    expect(backendApp.TestConnectionWithProgress).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        ssh: expect.objectContaining({ hostKeyFingerprint: "" }),
+      }),
+      expect.stringMatching(/^ssh-test-/),
+    );
   });
 
   it("reveals a saved primary password when the password visibility button is opened", async () => {
@@ -1588,7 +1726,8 @@ describe("ConnectionModal i18n", () => {
       'name: "Custom (自定义)"',
     ].forEach((snippet) => {
     });
-    expect(combinedConnectionModalSource.match(/isBackendCancelledResult\(res\)/g) ?? []).toHaveLength(4);
+    expect(combinedConnectionModalSource.match(/isBackendCancelledResult\(res\)/g) ?? []).toHaveLength(3);
+    expect(combinedConnectionModalSource).not.toContain("SelectSSHKnownHostsFile");
   });
 
   it("renders English URI feedback and file picker error shell while preserving raw detail", async () => {

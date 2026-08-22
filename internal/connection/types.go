@@ -1,5 +1,7 @@
 package connection
 
+import "strings"
+
 // SSHProgressEvent describes a non-sensitive phase in establishing an SSH
 // connection. It intentionally contains no host, credential, or error text:
 // callers already know the target and failures continue through the normal
@@ -14,7 +16,17 @@ type SSHProgressEvent struct {
 type SSHProgressReporter func(SSHProgressEvent)
 
 type sshRuntime struct {
-	report SSHProgressReporter
+	report                       SSHProgressReporter
+	managedHostKeyTrustStorePath string
+	hostKeyIdentityHost          string
+	hostKeyIdentityPort          int
+}
+
+func (r sshRuntime) hasState() bool {
+	return r.report != nil ||
+		r.managedHostKeyTrustStorePath != "" ||
+		r.hostKeyIdentityHost != "" ||
+		r.hostKeyIdentityPort != 0
 }
 
 // SSHConfig 存储 SSH 隧道连接配置。
@@ -33,12 +45,75 @@ type SSHConfig struct {
 // it behind an unexported pointer preserves the public JSON contract and
 // keeps SSHConfig comparable for existing cache keys.
 func (c SSHConfig) WithProgressReporter(reporter SSHProgressReporter) SSHConfig {
-	if reporter == nil {
+	runtime := sshRuntime{}
+	if c.runtime != nil {
+		runtime = *c.runtime
+	}
+	runtime.report = reporter
+	if !runtime.hasState() {
 		c.runtime = nil
 		return c
 	}
-	c.runtime = &sshRuntime{report: reporter}
+	c.runtime = &runtime
 	return c
+}
+
+// WithManagedHostKeyTrustStore attaches GoNavi's private host-key trust
+// store for this runtime connection. The path is deliberately transient: it
+// is never sent to the frontend or persisted with a saved data source.
+func (c SSHConfig) WithManagedHostKeyTrustStore(path string) SSHConfig {
+	runtime := sshRuntime{}
+	if c.runtime != nil {
+		runtime = *c.runtime
+	}
+	runtime.managedHostKeyTrustStorePath = strings.TrimSpace(path)
+	if !runtime.hasState() {
+		c.runtime = nil
+		return c
+	}
+	c.runtime = &runtime
+	return c
+}
+
+// ManagedHostKeyTrustStorePath returns the private GoNavi trust-store path
+// attached to this runtime connection, if any.
+func (c SSHConfig) ManagedHostKeyTrustStorePath() string {
+	if c.runtime == nil {
+		return ""
+	}
+	return c.runtime.managedHostKeyTrustStorePath
+}
+
+// WithHostKeyIdentity preserves the logical SSH server identity while a
+// proxy rewrites Host/Port to a local forwarding endpoint. The identity is
+// runtime-only so trusted-host records never depend on an ephemeral localhost
+// port and are not serialized into saved connection settings.
+func (c SSHConfig) WithHostKeyIdentity(host string, port int) SSHConfig {
+	host = strings.TrimSpace(host)
+	if host == "" {
+		return c
+	}
+	if port <= 0 {
+		port = 22
+	}
+	runtime := sshRuntime{}
+	if c.runtime != nil {
+		runtime = *c.runtime
+	}
+	runtime.hostKeyIdentityHost = host
+	runtime.hostKeyIdentityPort = port
+	c.runtime = &runtime
+	return c
+}
+
+// HostKeyIdentity returns the logical server address used for host-key
+// verification. Without a proxy rewrite it is simply the configured SSH
+// host and port.
+func (c SSHConfig) HostKeyIdentity() (string, int) {
+	if c.runtime != nil && c.runtime.hostKeyIdentityHost != "" {
+		return c.runtime.hostKeyIdentityHost, c.runtime.hostKeyIdentityPort
+	}
+	return c.Host, c.Port
 }
 
 // ReportProgress publishes a best-effort SSH phase update when this config is

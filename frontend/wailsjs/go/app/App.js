@@ -1294,6 +1294,14 @@ export function TruncateTables(arg1, arg2, arg3) {
   return window['go']['app']['App']['TruncateTables'](arg1, arg2, arg3);
 }
 
+export function TrustSSHHostKey(arg1, arg2, arg3) {
+  return window['go']['app']['App']['TrustSSHHostKey'](arg1, arg2, arg3);
+}
+
+export function TrustSSHHostKeyForConnection(arg1, arg2) {
+  return window['go']['app']['App']['TrustSSHHostKeyForConnection'](arg1, arg2);
+}
+
 export function UpdateSQLAuditSettings(arg1) {
   return window['go']['app']['App']['UpdateSQLAuditSettings'](arg1);
 }

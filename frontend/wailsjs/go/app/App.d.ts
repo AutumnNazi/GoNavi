@@ -655,6 +655,10 @@ export function TestJVMConnection(arg1:connection.ConnectionConfig):Promise<conn
 
 export function TruncateTables(arg1:connection.ConnectionConfig,arg2:string,arg3:Array<string>):Promise<connection.QueryResult>;
 
+export function TrustSSHHostKey(arg1:string,arg2:number,arg3:string):Promise<connection.QueryResult>;
+
+export function TrustSSHHostKeyForConnection(arg1:connection.ConnectionConfig,arg2:string):Promise<connection.QueryResult>;
+
 export function UpdateSQLAuditSettings(arg1:sqlaudit.Settings):Promise<connection.QueryResult>;
 
 export function VerifySQLAuditIntegrity():Promise<connection.QueryResult>;

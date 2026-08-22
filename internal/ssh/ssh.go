@@ -103,7 +103,11 @@ func connectSSH(config connection.SSHConfig) (*ssh.Client, error) {
 		Timeout:         5 * time.Second,
 	}
 
-	addr := fmt.Sprintf("%s:%d", config.Host, config.Port)
+	addr, _, err := sshDialAddress(config)
+	if err != nil {
+		config.ReportProgress("tcp_connecting", "error")
+		return nil, err
+	}
 	config.ReportProgress("tcp_connecting", "running")
 	tcpConn, err := net.DialTimeout("tcp", addr, sshConfig.Timeout)
 	if err != nil {
@@ -112,6 +116,14 @@ func connectSSH(config connection.SSHConfig) (*ssh.Client, error) {
 		return nil, err
 	}
 	config.ReportProgress("tcp_connected", "success")
+	// net.DialTimeout only bounds the TCP connection. Keep the same deadline on
+	// the socket while SSH exchanges its banner and host key so a peer that
+	// accepts TCP but never completes SSH cannot leave the UI waiting forever.
+	if err := tcpConn.SetDeadline(time.Now().Add(sshConfig.Timeout)); err != nil {
+		_ = tcpConn.Close()
+		config.ReportProgress("failed", "error")
+		return nil, fmt.Errorf("set SSH handshake deadline: %w", err)
+	}
 	clientConn, channels, requests, err := ssh.NewClientConn(tcpConn, addr, sshConfig)
 	if err != nil {
 		_ = tcpConn.Close()
@@ -119,6 +131,7 @@ func connectSSH(config connection.SSHConfig) (*ssh.Client, error) {
 		logger.Error(err, "SSH 连接建立失败：地址=%s 用户=%s", addr, config.User)
 		return nil, err
 	}
+	_ = tcpConn.SetDeadline(time.Time{})
 	client := ssh.NewClient(clientConn, channels, requests)
 	config.ReportProgress("authenticated", "success")
 	logger.Infof("SSH 连接建立成功：地址=%s 用户=%s", addr, config.User)
@@ -126,6 +139,13 @@ func connectSSH(config connection.SSHConfig) (*ssh.Client, error) {
 }
 
 func newHostKeyCallback(config connection.SSHConfig) (ssh.HostKeyCallback, error) {
+	// An explicit known_hosts path is a user-selected verification policy. It
+	// must take precedence over a legacy fingerprint that may coexist in an old
+	// saved connection; otherwise a managed migration could silently bypass a
+	// revoked or changed record in that file.
+	if strings.TrimSpace(config.KnownHostsPath) != "" {
+		return newKnownHostsOrManagedHostKeyCallback(config)
+	}
 	fingerprint := strings.TrimSpace(config.HostKeyFingerprint)
 	if fingerprint != "" {
 		const prefix = "SHA256:"
@@ -145,7 +165,19 @@ func newHostKeyCallback(config connection.SSHConfig) (ssh.HostKeyCallback, error
 			actual := ssh.FingerprintSHA256(key)
 			if actual != fingerprint {
 				config.ReportProgress("host_key_verifying", "error")
-				return fmt.Errorf("SSH host key fingerprint mismatch for %s: expected %s, got %s", hostname, fingerprint, actual)
+				if strings.TrimSpace(config.ManagedHostKeyTrustStorePath()) != "" {
+					// Existing connections can carry a legacy manual pin even though
+					// the simplified UI no longer exposes that field. Surface a
+					// structured change request so the user can explicitly replace
+					// it with a GoNavi-managed record instead of being stranded by a
+					// generic mismatch error.
+					return newHostKeyTrustRequiredError(config, key, "changed", "legacy", fingerprint)
+				}
+				identity := hostname
+				if address, _, err := sshHostKeyAddress(config); err == nil {
+					identity = address
+				}
+				return fmt.Errorf("SSH host key fingerprint mismatch for %s: expected %s, got %s", identity, fingerprint, actual)
 			}
 			config.ReportProgress("host_key_verified", "success")
 			config.ReportProgress("authenticating", "running")
@@ -153,26 +185,98 @@ func newHostKeyCallback(config connection.SSHConfig) (ssh.HostKeyCallback, error
 		}, nil
 	}
 
+	return newKnownHostsOrManagedHostKeyCallback(config)
+}
+
+func newKnownHostsOrManagedHostKeyCallback(config connection.SSHConfig) (ssh.HostKeyCallback, error) {
 	knownHostsPath, usingDefaultKnownHosts := resolveKnownHostsPath(config.KnownHostsPath)
-	if knownHostsPath == "" {
+	managedTrustStorePath := config.ManagedHostKeyTrustStorePath()
+	var knownHostsCallback ssh.HostKeyCallback
+	if knownHostsPath != "" {
+		callback, err := knownhosts.New(knownHostsPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load SSH known_hosts file %s: %w", knownHostsPath, err)
+		}
+		knownHostsCallback = callback
+	}
+	if knownHostsCallback == nil && strings.TrimSpace(managedTrustStorePath) == "" {
 		return nil, fmt.Errorf("SSH host key verification is required: configure hostKeyFingerprint or knownHostsPath")
 	}
-	callback, err := knownhosts.New(knownHostsPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load SSH known_hosts file %s: %w", knownHostsPath, err)
-	}
+
 	return func(hostname string, remote net.Addr, key ssh.PublicKey) error {
+		identity, _, identityErr := sshHostKeyAddress(config)
+		if identityErr != nil {
+			config.ReportProgress("host_key_verifying", "error")
+			return identityErr
+		}
 		if usingDefaultKnownHosts {
 			config.ReportProgress("known_hosts_default", "running")
 		}
 		config.ReportProgress("host_key_verifying", "running")
-		if err := callback(hostname, remote, key); err != nil {
+		if knownHostsCallback != nil && !usingDefaultKnownHosts {
+			// A path carried by an existing connection is an explicit user policy.
+			// Do not let GoNavi's convenience store bypass a mismatch or revocation
+			// in that file; only the auto-discovered default file may fall back to
+			// the managed confirmation flow below.
+			if err := knownHostsCallback(identity, remote, key); err != nil {
+				config.ReportProgress("host_key_verifying", "error")
+				return err
+			}
+			config.ReportProgress("host_key_verified", "success")
+			config.ReportProgress("authenticating", "running")
+			return nil
+		}
+		if knownHostsCallback != nil && usingDefaultKnownHosts {
+			// A managed record is a convenience trust decision, never an override
+			// for a security validation failure from OpenSSH. The only error that
+			// may continue to GoNavi's managed confirmation flow is KeyError,
+			// which represents an ordinary unknown or changed key. Certificate,
+			// revocation, CA, principal, and validity errors must fail closed.
+			if err := knownHostsCallback(identity, remote, key); err != nil {
+				var keyErr *knownhosts.KeyError
+				if !errors.As(err, &keyErr) {
+					config.ReportProgress("host_key_verifying", "error")
+					return err
+				}
+			}
+		}
+
+		if matched, trustRequired, err := managedHostKeyMatches(config, key); err != nil {
 			config.ReportProgress("host_key_verifying", "error")
 			return err
+		} else if trustRequired != nil {
+			config.ReportProgress("host_key_verifying", "error")
+			return trustRequired
+		} else if matched {
+			config.ReportProgress("host_key_verified", "success")
+			config.ReportProgress("authenticating", "running")
+			return nil
 		}
-		config.ReportProgress("host_key_verified", "success")
-		config.ReportProgress("authenticating", "running")
-		return nil
+
+		if knownHostsCallback != nil {
+			if err := knownHostsCallback(identity, remote, key); err == nil {
+				config.ReportProgress("host_key_verified", "success")
+				config.ReportProgress("authenticating", "running")
+				return nil
+			} else {
+				var keyErr *knownhosts.KeyError
+				if strings.TrimSpace(managedTrustStorePath) == "" || !errors.As(err, &keyErr) {
+					config.ReportProgress("host_key_verifying", "error")
+					return err
+				}
+				state := "unknown"
+				previousFingerprint := ""
+				if len(keyErr.Want) > 0 {
+					state = "changed"
+					previousFingerprint = ssh.FingerprintSHA256(keyErr.Want[0].Key)
+				}
+				config.ReportProgress("host_key_verifying", "error")
+				return newHostKeyTrustRequiredError(config, key, state, "system", previousFingerprint)
+			}
+		}
+
+		config.ReportProgress("host_key_verifying", "error")
+		return newHostKeyTrustRequiredError(config, key, "unknown", "discovered", "")
 	}, nil
 }
 
@@ -286,6 +390,25 @@ func sshAuthFingerprint(config connection.SSHConfig) string {
 	_, _ = hasher.Write([]byte(knownHostsPath))
 	_, _ = hasher.Write([]byte{0})
 	_, _ = hasher.Write([]byte(strings.TrimSpace(config.HostKeyFingerprint)))
+	_, _ = hasher.Write([]byte{0})
+	if identity, _, err := sshHostKeyAddress(config); err == nil {
+		// The physical dial endpoint may be a short-lived localhost proxy. The
+		// cache must nevertheless remain scoped to the real server identity that
+		// supplied the host key.
+		_, _ = hasher.Write([]byte(identity))
+	}
+	_, _ = hasher.Write([]byte{0})
+	managedTrustStorePath := strings.TrimSpace(config.ManagedHostKeyTrustStorePath())
+	_, _ = hasher.Write([]byte(managedTrustStorePath))
+	if managedTrustStorePath != "" {
+		_, _ = hasher.Write([]byte{0})
+		if contents, err := os.ReadFile(managedTrustStorePath); err == nil {
+			contentsDigest := sha256.Sum256(contents)
+			_, _ = hasher.Write(contentsDigest[:])
+		} else {
+			_, _ = hasher.Write([]byte("managed_store_read_error"))
+		}
+	}
 	if config.KeyPath != "" {
 		if st, err := os.Stat(config.KeyPath); err == nil {
 			_, _ = hasher.Write([]byte{0})

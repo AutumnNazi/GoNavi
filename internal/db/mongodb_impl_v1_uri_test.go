@@ -10,9 +10,11 @@ import (
 	"testing"
 
 	"GoNavi-Wails/internal/connection"
+	"GoNavi-Wails/internal/ssh"
 
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
+	cryptossh "golang.org/x/crypto/ssh"
 )
 
 func TestMongoSSHDialerV1RoutesAllMembersThroughSSH(t *testing.T) {
@@ -65,6 +67,51 @@ func TestMongoSSHDialerV1RoutesAllMembersThroughSSH(t *testing.T) {
 				t.Fatalf("unexpected SSH targets: %v", addresses)
 			}
 		})
+	}
+}
+
+func TestMongoConnectV1PreservesSSHHostKeyTrustErrorBeforeDriverDial(t *testing.T) {
+	originalGetOrCreate := mongoGetOrCreateSSHClient
+	t.Cleanup(func() { mongoGetOrCreateSSHClient = originalGetOrCreate })
+
+	want := &ssh.HostKeyTrustRequiredError{Status: ssh.HostKeyTrustStatus{
+		State:       "unknown",
+		Host:        "bastion.example.test",
+		Port:        22,
+		Address:     "bastion.example.test:22",
+		KeyType:     "ssh-ed25519",
+		Fingerprint: "SHA256:untrusted-key",
+	}}
+	var preflightConfig connection.SSHConfig
+	mongoGetOrCreateSSHClient = func(config connection.SSHConfig) (*cryptossh.Client, error) {
+		preflightConfig = config
+		return nil, want
+	}
+
+	err := (&MongoDBV1{}).Connect(connection.ConnectionConfig{
+		Type:   "mongodb",
+		Host:   "mongo.internal.example",
+		Port:   defaultMongoPort,
+		UseSSH: true,
+		SSH: connection.SSHConfig{
+			Host: "bastion.example.test",
+			Port: 22,
+			User: "operator",
+		},
+	})
+	if err == nil {
+		t.Fatal("expected SSH host-key trust error")
+	}
+	if preflightConfig.Host != "bastion.example.test" || preflightConfig.Port != 22 {
+		t.Fatalf("unexpected SSH preflight config: %+v", preflightConfig)
+	}
+
+	var got *ssh.HostKeyTrustRequiredError
+	if !errors.As(err, &got) {
+		t.Fatalf("expected HostKeyTrustRequiredError to remain unwrapable, got %T: %v", err, err)
+	}
+	if got != want {
+		t.Fatalf("unexpected SSH host-key trust error: got %#v, want %#v", got, want)
 	}
 }
 

@@ -21,9 +21,10 @@ import (
 )
 
 type MySQLDB struct {
-	conn               *sql.DB
-	pingTimeout        time.Duration
-	batchWritesEnabled bool
+	conn                *sql.DB
+	pingTimeout         time.Duration
+	batchWritesEnabled  bool
+	sshNetworkRegistrar func(connection.SSHConfig) (string, error)
 }
 
 var _ BatchApplierContext = (*MySQLDB)(nil)
@@ -781,7 +782,7 @@ func (m *MySQLDB) resolveProtocolAndAddress(config connection.ConnectionConfig) 
 	address := normalizeMySQLAddress(config.Host, config.Port)
 
 	if config.UseSSH {
-		netName, err := ssh.RegisterSSHNetwork(config.SSH)
+		netName, err := m.registerSSHNetwork(config.SSH)
 		if err != nil {
 			return "", "", fmt.Errorf("创建 SSH 隧道失败：%w", err)
 		}
@@ -789,6 +790,13 @@ func (m *MySQLDB) resolveProtocolAndAddress(config connection.ConnectionConfig) 
 	}
 
 	return protocol, address, nil
+}
+
+func (m *MySQLDB) registerSSHNetwork(config connection.SSHConfig) (string, error) {
+	if m != nil && m.sshNetworkRegistrar != nil {
+		return m.sshNetworkRegistrar(config)
+	}
+	return ssh.RegisterSSHNetwork(config)
 }
 
 func (m *MySQLDB) getDSN(config connection.ConnectionConfig) (string, error) {
@@ -838,6 +846,9 @@ func (m *MySQLDB) Connect(config connection.ConnectionConfig) error {
 
 		protocol, address, err := m.resolveProtocolAndAddress(candidateConfig)
 		if err != nil {
+			if _, requiresTrust := ssh.HostKeyTrustStatusFromError(err); requiresTrust {
+				return fmt.Errorf("MySQL %s 创建 SSH 隧道失败: %w", address, err)
+			}
 			errorDetails = append(errorDetails, fmt.Sprintf("%s 生成连接串失败: %v", address, err))
 			continue
 		}

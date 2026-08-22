@@ -31,7 +31,6 @@ const ConnectionModalNetworkSecuritySection: React.FC<ConnectionModalNetworkSecu
     form,
     handleSelectCertificateFile,
     handleSelectSSHKeyFile,
-    handleSelectSSHKnownHostsFile,
     initialValues,
     isFileDb,
     isJVM,
@@ -40,7 +39,6 @@ const ConnectionModalNetworkSecuritySection: React.FC<ConnectionModalNetworkSecu
     proxyType,
     selectingCertificateField,
     selectingSSHKey,
-    selectingSSHKnownHosts,
     setActiveNetworkConfig,
     sslHintText,
     sslMode,
@@ -364,38 +362,8 @@ const ConnectionModalNetworkSecuritySection: React.FC<ConnectionModalNetworkSecu
           )}
         </div>
       </div>
-      <div className="gn-conn-f-row">
-        {denseLabel(
-          t("connection.modal.network.ssh.knownHostsFile"),
-          t("connection.modal.network.ssh.knownHostsPath"),
-        )}
-        <div className="gn-conn-f-ctrl">
-          {renderPathPick(
-            "sshKnownHostsPath",
-            t("connection.modal.network.ssh.knownHostsPathPlaceholder"),
-            handleSelectSSHKnownHostsFile,
-            selectingSSHKnownHosts,
-          )}
-        </div>
-      </div>
-      <div className="gn-conn-f-row">
-        {denseLabel(
-          t("connection.modal.network.ssh.hostKeyFingerprintShort"),
-          t("connection.modal.network.ssh.hostKeyFingerprint"),
-        )}
-        <div className="gn-conn-f-ctrl">
-          <Form.Item name="sshHostKeyFingerprint" style={{ marginBottom: 0 }}>
-            <Input
-              {...noAutoCapInputProps}
-              placeholder={t(
-                "connection.modal.network.ssh.hostKeyFingerprintPlaceholder",
-              )}
-            />
-          </Form.Item>
-        </div>
-      </div>
-      <div className="gn-conn-field-hint">
-        {t("connection.modal.network.ssh.hostKeyVerificationHint")}
+      <div className="gn-conn-field-hint gn-ssh-host-key-automatic-hint">
+        {t("connection.modal.network.ssh.hostKeyAutomaticHint")}
       </div>
       {renderStoredSecretControls({
         fieldName: "sshPassword",

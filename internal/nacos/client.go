@@ -146,9 +146,9 @@ func (c *ClientImpl) Connect(config connection.ConnectionConfig) error {
 		}
 		forwarder, err = acquire(normalized.SSH, normalized.Host, normalized.Port)
 		if err != nil {
-			return localizedNacosBackendError("nacos.backend.error.ssh_tunnel_create_failed", map[string]any{
+			return localizedNacosBackendErrorWithCause("nacos.backend.error.ssh_tunnel_create_failed", map[string]any{
 				"detail": err.Error(),
-			})
+			}, err)
 		}
 		if forwarder == nil {
 			return localizedNacosBackendError("nacos.backend.error.ssh_tunnel_create_failed", map[string]any{

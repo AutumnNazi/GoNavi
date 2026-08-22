@@ -27,6 +27,15 @@ const (
 var (
 	rocketMQTunnelNow             = time.Now
 	rocketMQDialContextThroughSSH = ssh.DialContextThroughSSH
+	// Preparing a RocketMQ tunnel only starts local listeners. Establish the SSH
+	// session before those listeners are returned so host-key confirmation errors
+	// reach the caller synchronously instead of being logged by a later
+	// forwarder goroutine. GetOrCreateSSHClient caches the verified client, so
+	// the dialer below reuses it for NameServer and Broker traffic.
+	rocketMQEnsureSSHClient = func(config connection.SSHConfig) error {
+		_, err := ssh.GetOrCreateSSHClient(config)
+		return err
+	}
 )
 
 type rocketmqDialContextFunc func(ctx context.Context, network, address string) (net.Conn, error)
@@ -72,6 +81,9 @@ func prepareRocketMQTunnel(config connection.ConnectionConfig) (connection.Conne
 	var dialContext rocketmqDialContextFunc
 	switch {
 	case runConfig.UseSSH:
+		if err := rocketMQEnsureSSHClient(runConfig.SSH); err != nil {
+			return connection.ConnectionConfig{}, nil, fmt.Errorf("建立 RocketMQ SSH 隧道失败：%w", err)
+		}
 		sshConfig := runConfig.SSH
 		dialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
 			return rocketMQDialContextThroughSSH(ctx, sshConfig, network, address)

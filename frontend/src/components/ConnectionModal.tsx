@@ -159,8 +159,8 @@ import {
   SelectDatabaseFile,
   SelectCertificateFile,
   SelectSSHKeyFile,
-  SelectSSHKnownHostsFile,
   TestJVMConnection,
+  TrustSSHHostKeyForConnection,
 } from "../../wailsjs/go/app/App";
 import { EventsOn } from "../../wailsjs/runtime";
 import { ConnectionConfig, MongoMemberInfo, SavedConnection } from "../types";
@@ -171,6 +171,10 @@ import {
   finishSSHConnectionProgress,
   type SSHConnectionProgress,
 } from "./connectionModal/sshConnectionProgress";
+import {
+  readSSHHostKeyTrustDetails,
+  type SSHHostKeyTrustDetails,
+} from "./connectionModal/sshHostKeyTrust";
 
 const { Text } = Typography;
 type EditableJVMMode = (typeof JVM_EDITABLE_MODES)[number];
@@ -390,6 +394,9 @@ const ConnectionModal: React.FC<{
   const [sshConnectionProgress, setSSHConnectionProgress] =
     useState<SSHConnectionProgress | null>(null);
   const [sshProgressPanelOpen, setSSHProgressPanelOpen] = useState(false);
+  const [sshHostKeyTrust, setSSHHostKeyTrust] =
+    useState<SSHHostKeyTrustDetails | null>(null);
+  const [trustingSSHHostKey, setTrustingSSHHostKey] = useState(false);
   const [dbList, setDbList] = useState<string[]>([]);
   const [redisDbList, setRedisDbList] = useState<number[]>([]);
   const [mongoMembers, setMongoMembers] = useState<MongoMemberInfo[]>([]);
@@ -405,7 +412,6 @@ const ConnectionModal: React.FC<{
   const [driverStatusLoaded, setDriverStatusLoaded] = useState(false);
   const [selectingDbFile, setSelectingDbFile] = useState(false);
   const [selectingSSHKey, setSelectingSSHKey] = useState(false);
-  const [selectingSSHKnownHosts, setSelectingSSHKnownHosts] = useState(false);
   const [selectingCertificateField, setSelectingCertificateField] = useState<
     "sslCAPath" | "sslCertPath" | "sslKeyPath" | null
   >(null);
@@ -609,6 +615,8 @@ const ConnectionModal: React.FC<{
 
   const handleModalClose = () => {
     resetPrimaryPasswordRevealState();
+    setSSHHostKeyTrust(null);
+    setTrustingSSHHostKey(false);
     onClose();
   };
 
@@ -914,6 +922,7 @@ const ConnectionModal: React.FC<{
     }
     setSSHConnectionProgress(null);
     setSSHProgressPanelOpen(false);
+    setSSHHostKeyTrust(null);
   };
 
   useEffect(() => {
@@ -1398,39 +1407,6 @@ const ConnectionModal: React.FC<{
     }
   };
 
-  const handleSelectSSHKnownHostsFile = async () => {
-    if (selectingSSHKnownHosts) {
-      return;
-    }
-    try {
-      setSelectingSSHKnownHosts(true);
-      const currentPath = String(form.getFieldValue("sshKnownHostsPath") || "").trim();
-      const res = await SelectSSHKnownHostsFile(currentPath);
-      if (res?.success) {
-        const data = res.data || {};
-        const selectedPath =
-          typeof data === "string" ? data : String(data.path || "").trim();
-        if (selectedPath) {
-          form.setFieldValue("sshKnownHostsPath", selectedPath);
-        }
-      } else if (!isBackendCancelledResult(res)) {
-        message.error(
-          t("connection.modal.filePicker.sshKnownHostsFailure", {
-            detail: res?.message || t("connection.modal.error.unknown"),
-          }),
-        );
-      }
-    } catch (e: any) {
-      message.error(
-        t("connection.modal.filePicker.sshKnownHostsFailure", {
-          detail: e?.message || String(e),
-        }),
-      );
-    } finally {
-      setSelectingSSHKnownHosts(false);
-    }
-  };
-
   const handleSelectCertificateFile = async (
     fieldName: "sslCAPath" | "sslCertPath" | "sslKeyPath",
     certKind: "ca" | "client-cert" | "client-key",
@@ -1580,6 +1556,8 @@ const ConnectionModal: React.FC<{
       setTestErrorLogOpen(false);
       setSSHConnectionProgress(null);
       setSSHProgressPanelOpen(false);
+      setSSHHostKeyTrust(null);
+      setTrustingSSHHostKey(false);
       setDbList([]);
       setRedisDbList([]);
       setMongoMembers([]);
@@ -2109,7 +2087,7 @@ const ConnectionModal: React.FC<{
     });
   };
 
-  const handleTest = async () => {
+  const handleTest = async (hostKeyFingerprintOverride = "") => {
     if (testInFlightRef.current) return;
     testInFlightRef.current = true;
     const testRunId = ++testRunIdRef.current;
@@ -2162,6 +2140,12 @@ const ConnectionModal: React.FC<{
         translate: t,
       });
       if (!isCurrentTestRun()) return;
+      if (hostKeyFingerprintOverride && (config as any).ssh) {
+        (config as any).ssh = {
+          ...(config as any).ssh,
+          hostKeyFingerprint: hostKeyFingerprintOverride,
+        };
+      }
       if (initialValues?.id) {
         config.id = initialValues.id;
       }
@@ -2212,6 +2196,26 @@ const ConnectionModal: React.FC<{
       );
 
       if (!isCurrentTestRun()) return;
+
+      const hostKeyTrust = Boolean((config as any).useSSH)
+        ? readSSHHostKeyTrustDetails(res?.data)
+        : null;
+      if (hostKeyTrust) {
+        if (sshProgressRunId) {
+          setSSHConnectionProgress((current) =>
+            current?.runId === sshProgressRunId
+              ? finishSSHConnectionProgress(current, {
+                  success: false,
+                  reason: res?.message,
+                })
+              : current,
+          );
+          setSSHProgressPanelOpen(false);
+        }
+        setSSHHostKeyTrust(hostKeyTrust);
+        setTestResult(null);
+        return;
+      }
 
       if (res.success) {
         if (sshProgressRunId) {
@@ -2361,6 +2365,62 @@ const ConnectionModal: React.FC<{
         testInFlightRef.current = false;
         setTestingConnection(false);
       }
+    }
+  };
+
+  const handleContinueSSHHostKeyOnce = () => {
+    const trust = sshHostKeyTrust;
+    if (!trust || trustingSSHHostKey) return;
+    setSSHHostKeyTrust(null);
+    void handleTest(trust.fingerprint);
+  };
+
+  const handleTrustAndSaveSSHHostKey = async () => {
+    const trust = sshHostKeyTrust;
+    if (!trust || trustingSSHHostKey) return;
+    setTrustingSSHHostKey(true);
+    try {
+      const values = { ...form.getFieldsValue(true), type: dbType };
+      const config = await buildConnectionConfig({
+        values,
+        forPersist: false,
+        initialValues,
+        nacosNamespaceIdTouched:
+          form.isFieldTouched?.("nacosNamespaceId") === true,
+        oracleModeTouched: oracleModeTouchedRef.current,
+        translate: t,
+      });
+      if (initialValues?.id) {
+        config.id = initialValues.id;
+      }
+      const result = await TrustSSHHostKeyForConnection(
+        buildRpcConnectionConfig(config as any),
+        trust.fingerprint,
+      );
+      if (!result?.success) {
+        throw new Error(
+          result?.message ||
+            t("connection.modal.network.ssh.hostKeyDialog.saveFailure", {
+              detail: t("connection.modal.error.unknown"),
+            }),
+        );
+      }
+      // Migrate an old manual pin only after its replacement was safely saved
+      // in GoNavi's managed trust store. The transient \"continue once\" path
+      // deliberately leaves the saved connection unchanged.
+      form.setFieldValue("sshHostKeyFingerprint", "");
+      setSSHHostKeyTrust(null);
+      void handleTest();
+    } catch (error: unknown) {
+      const detail = normalizeConnectionSecretErrorMessage(
+        error instanceof Error ? error.message : String(error),
+        t("connection.modal.error.unknown"),
+      );
+      message.error(
+        t("connection.modal.network.ssh.hostKeyDialog.saveFailure", { detail }),
+      );
+    } finally {
+      setTrustingSSHHostKey(false);
     }
   };
 
@@ -3063,7 +3123,6 @@ const ConnectionModal: React.FC<{
         handleSelectCertificateFile,
         handleSelectDatabaseFile,
         handleSelectSSHKeyFile,
-        handleSelectSSHKnownHostsFile,
         initialValues,
         isCustom,
         isFileDb,
@@ -3110,7 +3169,6 @@ const ConnectionModal: React.FC<{
         selectingCertificateField,
         selectingDbFile,
         selectingSSHKey,
-        selectingSSHKnownHosts,
         setActiveConfigSection,
         setActiveNetworkConfig,
         setChoiceFieldValue,
@@ -3362,6 +3420,114 @@ const ConnectionModal: React.FC<{
         }}
       >
         {step === 1 ? renderStep1() : renderStep2()}
+      </Modal>
+      <Modal
+        title={
+          sshHostKeyTrust
+            ? renderConnectionModalTitle(
+                <SafetyCertificateOutlined />,
+                t(
+                  sshHostKeyTrust.state === "changed"
+                    ? "connection.modal.network.ssh.hostKeyDialog.changedTitle"
+                    : "connection.modal.network.ssh.hostKeyDialog.unknownTitle",
+                ),
+                t(
+                  sshHostKeyTrust.state === "changed"
+                    ? "connection.modal.network.ssh.hostKeyDialog.changedMessage"
+                    : "connection.modal.network.ssh.hostKeyDialog.unknownMessage",
+                ),
+              )
+            : null
+        }
+        open={!!sshHostKeyTrust}
+        onCancel={() => {
+          if (!trustingSSHHostKey) setSSHHostKeyTrust(null);
+        }}
+        centered
+        width={620}
+        zIndex={APP_NESTED_MODAL_Z_INDEX + 1}
+        destroyOnHidden
+        maskClosable={!trustingSSHHostKey}
+        styles={{
+          content: modalShellStyle,
+          header: {
+            background: "transparent",
+            borderBottom: "none",
+            paddingBottom: 8,
+          },
+          body: { paddingTop: 8 },
+          footer: {
+            background: "transparent",
+            borderTop: "none",
+            paddingTop: 10,
+          },
+        }}
+        footer={[
+          <Button
+            key="cancel"
+            disabled={trustingSSHHostKey}
+            onClick={() => setSSHHostKeyTrust(null)}
+          >
+            {t("common.action.cancel")}
+          </Button>,
+          <Button
+            key="once"
+            disabled={trustingSSHHostKey}
+            onClick={handleContinueSSHHostKeyOnce}
+          >
+            {t("connection.modal.network.ssh.hostKeyDialog.continueOnce")}
+          </Button>,
+          <Button
+            key="trust"
+            type="primary"
+            danger={sshHostKeyTrust?.state === "changed"}
+            loading={trustingSSHHostKey}
+            onClick={handleTrustAndSaveSSHHostKey}
+          >
+            {t(
+              sshHostKeyTrust?.state === "changed"
+                ? "connection.modal.network.ssh.hostKeyDialog.replaceAndTrust"
+                : "connection.modal.network.ssh.hostKeyDialog.trustAndSave",
+            )}
+          </Button>,
+        ]}
+      >
+        {sshHostKeyTrust ? (
+          <div className="gn-ssh-host-key-trust-dialog">
+            <Alert
+              type={sshHostKeyTrust.state === "changed" ? "warning" : "info"}
+              showIcon
+              message={t(
+                sshHostKeyTrust.state === "changed"
+                  ? "connection.modal.network.ssh.hostKeyDialog.changedMessage"
+                  : "connection.modal.network.ssh.hostKeyDialog.unknownMessage",
+              )}
+            />
+            <dl className="gn-ssh-host-key-trust-facts">
+              <dt>{t("connection.modal.network.ssh.hostKeyDialog.host")}</dt>
+              <dd>{sshHostKeyTrust.address}</dd>
+              <dt>{t("connection.modal.network.ssh.hostKeyDialog.keyType")}</dt>
+              <dd>{sshHostKeyTrust.keyType}</dd>
+              <dt>
+                {t("connection.modal.network.ssh.hostKeyDialog.fingerprint")}
+              </dt>
+              <dd>{sshHostKeyTrust.fingerprint}</dd>
+              {sshHostKeyTrust.previousFingerprint ? (
+                <>
+                  <dt>
+                    {t(
+                      "connection.modal.network.ssh.hostKeyDialog.previousFingerprint",
+                    )}
+                  </dt>
+                  <dd>{sshHostKeyTrust.previousFingerprint}</dd>
+                </>
+              ) : null}
+            </dl>
+            <div className="gn-ssh-host-key-trust-explanation">
+              {t("connection.modal.network.ssh.hostKeyDialog.saveExplanation")}
+            </div>
+          </div>
+        ) : null}
       </Modal>
       <Modal
         open={sshProgressPanelOpen && !!sshConnectionProgress}

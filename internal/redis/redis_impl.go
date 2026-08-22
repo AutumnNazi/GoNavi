@@ -455,9 +455,9 @@ func (r *RedisClientImpl) Connect(config connection.ConnectionConfig) (err error
 	if config.UseSSH {
 		forwarder, err := ssh.AcquireLocalForwarder(config.SSH, config.Host, config.Port)
 		if err != nil {
-			return localizedRedisBackendError("redis.backend.error.ssh_tunnel_create_failed", map[string]any{
+			return localizedRedisBackendErrorWithCause("redis.backend.error.ssh_tunnel_create_failed", map[string]any{
 				"detail": err.Error(),
-			})
+			}, err)
 		}
 		r.forwarder = forwarder
 		addr = forwarder.LocalAddr

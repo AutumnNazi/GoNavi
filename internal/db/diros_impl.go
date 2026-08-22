@@ -141,7 +141,7 @@ func (d *DirosDB) getDSN(config connection.ConnectionConfig) (string, error) {
 	address := normalizeMySQLAddress(config.Host, config.Port)
 
 	if config.UseSSH {
-		netName, err := ssh.RegisterSSHNetwork(config.SSH)
+		netName, err := d.registerSSHNetwork(config.SSH)
 		if err != nil {
 			return "", fmt.Errorf("创建 SSH 隧道失败：%w", err)
 		}
@@ -188,6 +188,9 @@ func (d *DirosDB) Connect(config connection.ConnectionConfig) error {
 
 		dsn, err := d.getDSN(candidateConfig)
 		if err != nil {
+			if _, requiresTrust := ssh.HostKeyTrustStatusFromError(err); requiresTrust {
+				return fmt.Errorf("Doris %s 创建 SSH 隧道失败: %w", address, err)
+			}
 			errorDetails = append(errorDetails, fmt.Sprintf("%s 生成连接串失败: %v", address, err))
 			continue
 		}

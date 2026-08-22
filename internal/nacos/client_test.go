@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"GoNavi-Wails/internal/connection"
+	"GoNavi-Wails/internal/ssh"
 )
 
 type closeIdleTrackingTransport struct {
@@ -449,6 +450,42 @@ func TestClientSSHForwarderRejectsNilLease(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("expected nil SSH forwarder lease to be rejected")
+	}
+}
+
+func TestClientSSHForwarderFailurePreservesHostKeyTrustCause(t *testing.T) {
+	required := &ssh.HostKeyTrustRequiredError{Status: ssh.HostKeyTrustStatus{
+		State:       "unknown",
+		Host:        "bastion.internal.test",
+		Port:        22,
+		Address:     "bastion.internal.test:22",
+		Fingerprint: "SHA256:example",
+	}}
+	client := &ClientImpl{
+		acquireSSHForwarder: func(
+			connection.SSHConfig,
+			string,
+			int,
+		) (nacosForwarderLease, error) {
+			return nil, required
+		},
+	}
+	err := client.Connect(connection.ConnectionConfig{
+		Type:             "nacos",
+		Host:             "nacos.internal.test",
+		Port:             8848,
+		UseSSH:           true,
+		ConnectionParams: "contextPath=/",
+	})
+	if err == nil {
+		t.Fatal("expected SSH forwarder acquisition to fail")
+	}
+	var actual *ssh.HostKeyTrustRequiredError
+	if !errors.As(err, &actual) {
+		t.Fatalf("errors.As(%T) did not retain HostKeyTrustRequiredError: %v", err, err)
+	}
+	if actual != required {
+		t.Fatalf("retained cause = %p, want %p", actual, required)
 	}
 }
 

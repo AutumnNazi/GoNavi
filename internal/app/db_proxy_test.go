@@ -187,6 +187,26 @@ func TestResolveDialConfigWithProxy_NacosProxyWithSSHForwardsGatewayOnly(t *test
 	}
 }
 
+func TestResolveDialConfigWithProxyRejectsEmptySSHGatewayBeforeForwarding(t *testing.T) {
+	_, err := resolveDialConfigWithProxy(connection.ConnectionConfig{
+		Type:     "mysql",
+		UseProxy: true,
+		Proxy: connection.ProxyConfig{
+			Type: "socks5",
+			Host: "127.0.0.1",
+			Port: 1080,
+		},
+		UseSSH: true,
+		SSH: connection.SSHConfig{
+			Host: "   ",
+			Port: 22,
+		},
+	})
+	if err == nil {
+		t.Fatal("expected empty SSH gateway to be rejected before a proxy forwarder is created")
+	}
+}
+
 func TestResolveDialConfigWithProxy_RocketMQKeepsDynamicTargets(t *testing.T) {
 	tests := []struct {
 		name string

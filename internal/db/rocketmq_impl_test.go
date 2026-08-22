@@ -145,12 +145,24 @@ func TestRocketMQConnectSupportsNetworkTunnels(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			var runtimeConfig connection.ConnectionConfig
 			originalFactory := newRocketMQRuntime
+			originalEnsure := rocketMQEnsureSSHClient
+			ensureCalls := 0
+			if testCase.config.UseSSH {
+				rocketMQEnsureSSHClient = func(config connection.SSHConfig) error {
+					ensureCalls++
+					if config.Host != testCase.config.SSH.Host || config.Port != testCase.config.SSH.Port {
+						t.Fatalf("prepared SSH config = %#v, want %#v", config, testCase.config.SSH)
+					}
+					return nil
+				}
+			}
 			newRocketMQRuntime = func(config connection.ConnectionConfig) (rocketmqRuntime, error) {
 				runtimeConfig = config
 				return &fakeRocketMQRuntime{}, nil
 			}
 			defer func() {
 				newRocketMQRuntime = originalFactory
+				rocketMQEnsureSSHClient = originalEnsure
 			}()
 
 			client := &RocketMQDB{}
@@ -163,6 +175,9 @@ func TestRocketMQConnectSupportsNetworkTunnels(t *testing.T) {
 			}
 			if runtimeConfig.Host != "127.0.0.1" || runtimeConfig.Port <= 0 {
 				t.Fatalf("runtime NameServer = %s:%d, want local forwarded address", runtimeConfig.Host, runtimeConfig.Port)
+			}
+			if testCase.config.UseSSH && ensureCalls != 1 {
+				t.Fatalf("SSH client preparation calls = %d, want 1", ensureCalls)
 			}
 			localAddress := rocketmqFormatHostPort(runtimeConfig.Host, runtimeConfig.Port)
 			if err := client.Close(); err != nil {

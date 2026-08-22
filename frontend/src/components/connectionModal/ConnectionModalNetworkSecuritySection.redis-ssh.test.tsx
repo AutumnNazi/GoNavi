@@ -167,7 +167,7 @@ describe('ConnectionModalNetworkSecuritySection redis SSH topology gating', () =
     expect(text).toContain(t('connection.modal.network.ssh.disabledHint'));
   });
 
-  it('makes the known_hosts field explicit and lets users browse for it', async () => {
+  it('keeps server identity verification automatic instead of exposing known_hosts or fingerprint inputs', async () => {
     const selectKnownHosts = vi.fn();
     const renderer = await renderSection(
       { useSSH: true },
@@ -179,16 +179,14 @@ describe('ConnectionModalNetworkSecuritySection redis SSH topology gating', () =
     );
 
     const text = findAllText(renderer);
-    expect(text).toContain(t('connection.modal.network.ssh.knownHostsFile'));
-    expect(text).toContain(t('connection.modal.network.ssh.hostKeyVerificationHint'));
+    expect(text).not.toContain(t('connection.modal.network.ssh.knownHostsFile'));
+    expect(text).not.toContain(t('connection.modal.network.ssh.hostKeyFingerprintShort'));
+    expect(text).toContain(t('connection.modal.network.ssh.hostKeyAutomaticHint'));
 
     const browseButtons = renderer.root.findAllByType('button').filter(
       (node) => collectTextLeaves(node.children, []).join('') === t('connection.modal.action.browse'),
     );
-    expect(browseButtons).toHaveLength(2);
-    await act(async () => {
-      browseButtons[1].props.onClick();
-    });
-    expect(selectKnownHosts).toHaveBeenCalledTimes(1);
+    expect(browseButtons).toHaveLength(1);
+    expect(selectKnownHosts).not.toHaveBeenCalled();
   });
 });

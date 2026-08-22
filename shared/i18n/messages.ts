@@ -624,6 +624,29 @@ export const messages: Record<SupportedLanguage, Record<MessageKey, string>> = {
     "connection.modal.network.ssh.hostKeyFingerprintPlaceholder": "SHA256:<base64>",
     "connection.modal.network.ssh.hostKeyVerificationHint":
       "必须配置 known_hosts 路径或 SHA256 指纹；未知或变更的服务端密钥会被拒绝，应用不会自动写入或覆盖密钥。",
+    "connection.modal.network.ssh.hostKeyAutomaticHint":
+      "GoNavi 会自动识别并验证服务器身份。首次连接时，请通过可信渠道核对指纹后确认；已信任的服务器会自动通过，密钥变化将被阻止。",
+    "connection.modal.network.ssh.hostKeyConfirmationRequired":
+      "需要确认 SSH 服务器身份后才能继续。",
+    "connection.modal.network.ssh.hostKeyTrustSaved":
+      "已信任并保存 SSH 服务器身份。",
+    "connection.modal.network.ssh.hostKeyDialog.unknownTitle": "确认 SSH 服务器身份",
+    "connection.modal.network.ssh.hostKeyDialog.changedTitle": "SSH 服务器密钥已变化",
+    "connection.modal.network.ssh.hostKeyDialog.unknownMessage":
+      "GoNavi 已在 SSH 握手中识别到服务器公钥。请通过可信渠道核对指纹后再继续。",
+    "connection.modal.network.ssh.hostKeyDialog.changedMessage":
+      "服务器返回的密钥与已信任记录不同。为防止中间人攻击，连接已被阻止。",
+    "connection.modal.network.ssh.hostKeyDialog.host": "服务器",
+    "connection.modal.network.ssh.hostKeyDialog.keyType": "密钥算法",
+    "connection.modal.network.ssh.hostKeyDialog.fingerprint": "SHA256 指纹",
+    "connection.modal.network.ssh.hostKeyDialog.previousFingerprint": "此前指纹",
+    "connection.modal.network.ssh.hostKeyDialog.continueOnce": "仅本次继续",
+    "connection.modal.network.ssh.hostKeyDialog.trustAndSave": "信任并保存",
+    "connection.modal.network.ssh.hostKeyDialog.replaceAndTrust": "替换并信任",
+    "connection.modal.network.ssh.hostKeyDialog.saveExplanation":
+      "仅会保存到 GoNavi 的可信主机库，不会修改 ~/.ssh/known_hosts。",
+    "connection.modal.network.ssh.hostKeyDialog.saveFailure":
+      "保存服务器身份失败：{detail}",
     "connection.modal.network.ssh.retained": "已保存 SSH 密码",
     "connection.modal.network.ssh.clearPassword": "清除已保存 SSH 密码",
     "connection.modal.network.ssh.savedDescription":
@@ -1553,6 +1576,29 @@ export const messages: Record<SupportedLanguage, Record<MessageKey, string>> = {
     "connection.modal.network.ssh.hostKeyFingerprintPlaceholder": "SHA256:<base64>",
     "connection.modal.network.ssh.hostKeyVerificationHint":
       "Configure a known_hosts path or SHA256 fingerprint. Unknown or changed server keys are rejected; keys are never written or overwritten automatically.",
+    "connection.modal.network.ssh.hostKeyAutomaticHint":
+      "GoNavi automatically identifies and verifies the server's identity. On first connection, verify the fingerprint through a trusted channel and confirm it; trusted servers pass automatically, while changed keys are blocked.",
+    "connection.modal.network.ssh.hostKeyConfirmationRequired":
+      "Confirm the SSH server identity before continuing.",
+    "connection.modal.network.ssh.hostKeyTrustSaved":
+      "The SSH server identity has been trusted and saved.",
+    "connection.modal.network.ssh.hostKeyDialog.unknownTitle": "Confirm SSH server identity",
+    "connection.modal.network.ssh.hostKeyDialog.changedTitle": "SSH server key changed",
+    "connection.modal.network.ssh.hostKeyDialog.unknownMessage":
+      "GoNavi identified the server public key during the SSH handshake. Verify this fingerprint through a trusted channel before continuing.",
+    "connection.modal.network.ssh.hostKeyDialog.changedMessage":
+      "The server presented a key that differs from the trusted record. The connection was blocked to protect against man-in-the-middle attacks.",
+    "connection.modal.network.ssh.hostKeyDialog.host": "Server",
+    "connection.modal.network.ssh.hostKeyDialog.keyType": "Key type",
+    "connection.modal.network.ssh.hostKeyDialog.fingerprint": "SHA256 fingerprint",
+    "connection.modal.network.ssh.hostKeyDialog.previousFingerprint": "Previous fingerprint",
+    "connection.modal.network.ssh.hostKeyDialog.continueOnce": "Continue once",
+    "connection.modal.network.ssh.hostKeyDialog.trustAndSave": "Trust and save",
+    "connection.modal.network.ssh.hostKeyDialog.replaceAndTrust": "Replace and trust",
+    "connection.modal.network.ssh.hostKeyDialog.saveExplanation":
+      "This saves the key only in GoNavi's trusted-host store; ~/.ssh/known_hosts is not changed.",
+    "connection.modal.network.ssh.hostKeyDialog.saveFailure":
+      "Could not save the server identity: {detail}",
     "connection.modal.network.ssh.retained": "saved SSH password",
     "connection.modal.network.ssh.clearPassword": "Clear saved SSH password",
     "connection.modal.network.ssh.savedDescription":
