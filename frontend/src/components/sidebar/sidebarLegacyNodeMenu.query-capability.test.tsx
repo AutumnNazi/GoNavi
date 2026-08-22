@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { buildSidebarLegacyNodeMenuItems } from './sidebarLegacyNodeMenu';
 
-const buildConnectionRootItems = (connection: any) =>
+const buildConnectionRootItems = (connection: any, connectionTags: any[] = []) =>
   buildSidebarLegacyNodeMenuItems({
     key: connection.id,
     type: 'connection',
@@ -12,7 +12,7 @@ const buildConnectionRootItems = (connection: any) =>
     loadDatabases: vi.fn(),
     handleRunSQLFile: vi.fn(),
     buildConnectionRootQueryTabTitle: vi.fn(() => 'query'),
-    connectionTags: [],
+    connectionTags,
   }) as any[];
 
 const itemKeys = (items: any[]) => items.map((item) => item?.key);
@@ -54,5 +54,34 @@ describe('connection root menu query entry gating', () => {
       expect(itemKeys(items), JSON.stringify(config)).toContain('new-query');
       expect(itemKeys(items), JSON.stringify(config)).toContain('open-sql-file');
     });
+  });
+
+  it('only offers moving out of a group when the connection belongs to one', () => {
+    const ungroupedItems = buildConnectionRootItems({
+      id: 'mysql-ungrouped',
+      name: 'MySQL ungrouped',
+      config: { type: 'mysql', host: '127.0.0.1', port: 3306 },
+    }, [{
+      id: 'team',
+      name: '团队环境',
+      connectionIds: ['mysql-grouped'],
+    }]);
+    const ungroupedTagMenu = ungroupedItems.find((item) => item?.key === 'move-to-tag');
+
+    expect(itemKeys(ungroupedTagMenu.children)).toContain('move-to-tag-team');
+    expect(itemKeys(ungroupedTagMenu.children)).not.toContain('move-to-ungrouped');
+
+    const groupedItems = buildConnectionRootItems({
+      id: 'mysql-grouped',
+      name: 'MySQL grouped',
+      config: { type: 'mysql', host: '127.0.0.1', port: 3306 },
+    }, [{
+      id: 'team',
+      name: '团队环境',
+      connectionIds: ['mysql-grouped'],
+    }]);
+    const groupedTagMenu = groupedItems.find((item) => item?.key === 'move-to-tag');
+
+    expect(itemKeys(groupedTagMenu.children)).toContain('move-to-ungrouped');
   });
 });

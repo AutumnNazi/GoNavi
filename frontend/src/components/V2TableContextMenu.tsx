@@ -652,13 +652,11 @@ export const V2ConnectionContextMenuView: React.FC<{
                 kbd: tag.selected ? t('connection.sidebar.menu.current') : undefined,
                 selected: tag.selected,
               })),
-              {
+              ...(hasSelectedTag ? [{
                 action: 'move-to-ungrouped',
-                icon: hasSelectedTag ? <FolderOpenOutlined /> : <CheckSquareOutlined />,
+                icon: <FolderOpenOutlined />,
                 title: t('connection.sidebar.menu.moveToUngrouped'),
-                kbd: hasSelectedTag ? undefined : t('connection.sidebar.menu.current'),
-                selected: !hasSelectedTag,
-              },
+              }] : []),
             ])}
           </>
         )}
