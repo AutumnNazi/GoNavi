@@ -578,6 +578,52 @@ describe("ConnectionModal i18n", () => {
     expect(textContent(renderer!.toJSON())).toContain("数据库验证");
   });
 
+  it("shows a driver preflight failure in the SSH log without blaming the network", async () => {
+    const revisionMismatch =
+      "clickhouse 驱动代理 revision 不匹配（已安装：src-old，当前需要：src-new）";
+    backendApp.TestConnectionWithProgress.mockResolvedValue({
+      success: false,
+      message: revisionMismatch,
+    });
+    const { default: ConnectionModal } = await import("./ConnectionModal");
+    const connection = initialConnection("clickhouse", {
+      useSSH: true,
+      ssh: {
+        host: "bastion.example.com",
+        port: 22,
+        user: "ops",
+        password: "secret",
+      },
+    });
+
+    let renderer: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(
+        <ConnectionModal open onClose={vi.fn()} initialValues={connection} />,
+      );
+      await flushConnectionTestTick();
+    });
+    await act(async () => {
+      findButton(renderer!, "测试连接").props.onClick();
+      await flushConnectionTestTick();
+    });
+
+    expect(textContent(renderer!.toJSON())).toContain("连接测试失败");
+    const progressLog = renderer!.root.findAll(
+      (node) => node.props?.role === "log",
+    )[0];
+    expect(textContent(progressLog)).toContain(revisionMismatch);
+    const networkStep = renderer!.root.findAll(
+      (node) => node.type === "li" && textContent(node).includes("网络连接"),
+    )[0];
+    expect(networkStep.props["data-status"]).toBe("pending");
+    expect(
+      renderer!.root.findAll(
+        (node) => node.type === "li" && node.props?.["data-status"] === "error",
+      ),
+    ).toHaveLength(0);
+  });
+
   it("guides an unknown SSH host through automatic confirmation without a manual field", async () => {
     const fingerprint = "SHA256:QWERTYuiopASDFghjklZXCVbnm1234567890abcd";
     backendApp.TestConnectionWithProgress.mockReset();

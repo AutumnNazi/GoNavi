@@ -84,7 +84,12 @@ const SSHConnectionProgressPanel: React.FC<{
           {progress.logs.map((entry, index) => (
             <div key={`${entry.stage}-${entry.status}-${index}`} data-status={entry.status}>
               <span className="gn-ssh-progress-log-dot" aria-hidden="true" />
-              {resolveLogText(entry.stage)}
+              <span className="gn-ssh-progress-log-message">
+                {resolveLogText(entry.stage)}
+                {entry.detail ? (
+                  <small className="gn-ssh-progress-log-detail">{entry.detail}</small>
+                ) : null}
+              </span>
             </div>
           ))}
         </div>

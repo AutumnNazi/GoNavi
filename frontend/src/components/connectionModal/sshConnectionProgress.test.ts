@@ -58,9 +58,32 @@ describe("SSH connection progress", () => {
     expect(ignored).toBe(initial);
     expect(failed.status).toBe("error");
     expect(failed.steps.find((step) => step.id === "host-key")?.status).toBe("error");
-    expect(failed.steps.find((step) => step.id === "transport")?.status).toBe("running");
+    expect(failed.steps.find((step) => step.id === "transport")?.status).toBe("pending");
     expect(failed.logs[failed.logs.length - 1]).toEqual(
       expect.objectContaining({ stage: "failed", status: "error" }),
+    );
+  });
+
+  it("keeps SSH stages pending and records the reason when driver preflight fails", () => {
+    const initial = createSSHConnectionProgress({
+      runId: "ssh-run-1",
+      host: "bastion.example.com",
+      port: 22,
+    });
+    const reason = "clickhouse 驱动代理 revision 不匹配（已安装：src-old，当前需要：src-new）";
+    const failed = finishSSHConnectionProgress(initial, {
+      success: false,
+      reason,
+    });
+    const afterDelayedFailureEvent = applySSHConnectionProgressEvent(failed, {
+      runId: "ssh-run-1",
+      stage: "failed",
+      status: "error",
+    });
+
+    expect(afterDelayedFailureEvent.steps.every((step) => step.status === "pending")).toBe(true);
+    expect(afterDelayedFailureEvent.logs[afterDelayedFailureEvent.logs.length - 1]).toEqual(
+      expect.objectContaining({ stage: "failed", status: "error", detail: reason }),
     );
   });
 });

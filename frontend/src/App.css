@@ -2394,8 +2394,24 @@ body[data-ui-version="v2"] .gn-conn-check-line .ant-form-item {
 
 .gn-ssh-progress-log > div {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     gap: 8px;
+}
+
+.gn-ssh-progress-log-message {
+    min-width: 0;
+}
+
+.gn-ssh-progress-log-detail {
+    display: block;
+    margin-top: 2px;
+    overflow-wrap: anywhere;
+    color: var(--gn-fg-3, rgba(0, 0, 0, 0.55));
+    font-size: 11px;
+}
+
+.gn-ssh-progress-log > div[data-status="error"] .gn-ssh-progress-log-detail {
+    color: var(--gn-error, #d4380d);
 }
 
 .gn-ssh-progress-log > div[data-status="running"] .gn-ssh-progress-log-dot {

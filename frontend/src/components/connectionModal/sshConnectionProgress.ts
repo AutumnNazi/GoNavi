@@ -25,6 +25,7 @@ export type SSHConnectionProgressEvent = {
 export type SSHConnectionProgressLog = {
   stage: string;
   status: SSHConnectionProgressStatus;
+  detail?: string;
 };
 
 export type SSHConnectionProgress = {
@@ -45,7 +46,6 @@ const STEP_IDS: SSHConnectionProgressStepID[] = [
 ];
 
 const STAGE_TO_STEP: Record<string, SSHConnectionProgressStepID | undefined> = {
-  preparing: "transport",
   tcp_connecting: "transport",
   tcp_connected: "transport",
   known_hosts_default: "host-key",
@@ -79,7 +79,11 @@ const appendLog = (
 ): SSHConnectionProgressLog[] => {
   const previous = logs[logs.length - 1];
   if (previous?.stage === entry.stage && previous.status === entry.status) {
-    return logs;
+    const detail = entry.detail || previous.detail;
+    if (previous.detail === detail) {
+      return logs;
+    }
+    return [...logs.slice(0, -1), { ...entry, ...(detail ? { detail } : {}) }];
   }
   return [...logs, entry].slice(-64);
 };
@@ -110,7 +114,7 @@ const markPriorStepsSuccessful = (
 const inferFailureStep = (
   progress: SSHConnectionProgress,
   reason: unknown,
-): SSHConnectionProgressStepID => {
+): SSHConnectionProgressStepID | undefined => {
   const message = String(reason || "").toLowerCase();
   if (
     message.includes("host key") ||
@@ -131,7 +135,7 @@ const inferFailureStep = (
   if (message.includes("tunnel") || message.includes("forwarder")) {
     return "tunnel";
   }
-  return progress.steps.find((step) => step.status === "running")?.id || "database";
+  return progress.steps.find((step) => step.status === "running")?.id;
 };
 
 export const createSSHConnectionProgress = ({
@@ -147,9 +151,9 @@ export const createSSHConnectionProgress = ({
   host: String(host || "").trim(),
   port: Number(port) || 22,
   status: "running",
-  steps: STEP_IDS.map((id, index) => ({
+  steps: STEP_IDS.map((id) => ({
     id,
-    status: index === 0 ? "running" : "pending",
+    status: "pending",
   })),
   logs: [{ stage: "preparing", status: "running" }],
 });
@@ -202,11 +206,18 @@ export const finishSSHConnectionProgress = (
   // A final RPC error can arrive before any live desktop event (for example
   // while a private key is read). Do not paint earlier stages green unless
   // they actually reported success.
-  const steps = setStepStatus(progress.steps, target, "error");
+  const detail = String(result.reason || "").trim();
+  const steps = target
+    ? setStepStatus(progress.steps, target, "error")
+    : progress.steps;
   return {
     ...progress,
     status: "error",
     steps,
-    logs: appendLog(progress.logs, { stage: "failed", status: "error" }),
+    logs: appendLog(progress.logs, {
+      stage: "failed",
+      status: "error",
+      ...(detail ? { detail } : {}),
+    }),
   };
 };

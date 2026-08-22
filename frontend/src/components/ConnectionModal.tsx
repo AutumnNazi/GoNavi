@@ -2206,7 +2206,10 @@ const ConnectionModal: React.FC<{
             current?.runId === sshProgressRunId
               ? finishSSHConnectionProgress(current, {
                   success: false,
-                  reason: res?.message,
+                  reason: normalizeConnectionSecretErrorMessage(
+                    res?.message,
+                    t("connection.modal.error.unknown"),
+                  ),
                 })
               : current,
           );
@@ -2322,7 +2325,10 @@ const ConnectionModal: React.FC<{
             current?.runId === sshProgressRunId
               ? finishSSHConnectionProgress(current, {
                   success: false,
-                  reason: res?.message,
+                  reason: normalizeConnectionSecretErrorMessage(
+                    res?.message,
+                    t("connection.modal.error.unknown"),
+                  ),
                 })
               : current,
           );
@@ -2351,7 +2357,13 @@ const ConnectionModal: React.FC<{
       if (sshProgressRunId) {
         setSSHConnectionProgress((current) =>
           current?.runId === sshProgressRunId
-            ? finishSSHConnectionProgress(current, { success: false, reason })
+            ? finishSSHConnectionProgress(current, {
+                success: false,
+                reason: normalizeConnectionSecretErrorMessage(
+                  reason,
+                  t("connection.modal.error.unknown"),
+                ),
+              })
             : current,
         );
       }
