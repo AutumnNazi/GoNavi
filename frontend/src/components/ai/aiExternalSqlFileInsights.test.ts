@@ -110,4 +110,35 @@ describe('aiExternalSqlFileInsights', () => {
     });
     expect(snapshot.directory).not.toHaveProperty('bindingSource');
   });
+
+  it('does not fill an explicitly unbound file from its directory default database', () => {
+    const snapshot = buildExternalSQLFileSnapshot({
+      filePath: 'D:/sql/reports/create-database.sql',
+      readResult: {
+        content: 'CREATE DATABASE reporting;',
+        filePath: 'D:/sql/reports/create-database.sql',
+        name: 'create-database.sql',
+      },
+      externalSQLDirectories: [{
+        id: 'dir-1',
+        name: '报表脚本',
+        path: 'D:/sql/reports',
+        connectionId: 'conn-1',
+        dbName: 'crm',
+        fileBindings: [{
+          filePath: 'D:/sql/reports/create-database.sql',
+          connectionId: 'conn-1',
+          dbName: '',
+        }],
+        createdAt: 1,
+      }],
+      connections,
+    });
+
+    expect(snapshot.directory).toMatchObject({
+      connectionId: 'conn-1',
+      dbName: '',
+      bindingSource: 'file',
+    });
+  });
 });

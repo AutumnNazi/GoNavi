@@ -226,6 +226,65 @@ describe('externalSqlTree helpers', () => {
     expect(node.children?.[0]?.children?.[1]?.dataRef).not.toHaveProperty('hasExplicitBinding');
   });
 
+  it('keeps an explicit no-database file binding separate from clearing the override', () => {
+    const directory: ExternalSQLDirectory = {
+      id: 'dir-bound',
+      name: 'bound scripts',
+      path: 'D:/sql/bound',
+      connectionId: 'connection-1',
+      dbName: 'orders',
+      createdAt: 1,
+    };
+
+    const withoutDatabase = setExternalSQLFileBinding(directory, 'D:/sql/bound/bootstrap.sql', {
+      connectionId: 'connection-1',
+      dbName: '',
+    });
+
+    expect(withoutDatabase.fileBindings).toEqual([{
+      filePath: 'D:/sql/bound/bootstrap.sql',
+      connectionId: 'connection-1',
+      dbName: '',
+    }]);
+    expect(resolveExternalSQLFileBinding(
+      [withoutDatabase],
+      'D:/sql/bound/bootstrap.sql',
+    )).toEqual({
+      connectionId: 'connection-1',
+      dbName: '',
+      hasExplicitBinding: true,
+    });
+
+    const treeWithNoDatabase = buildExternalSQLRootNode({
+      directories: [withoutDatabase],
+      directoryTrees: {
+        'dir-bound': [{ name: 'bootstrap.sql', path: 'D:/sql/bound/bootstrap.sql', isDir: false }],
+      },
+    });
+    expect(treeWithNoDatabase.children?.[0]?.children?.[0]?.dataRef).toMatchObject({
+      connectionId: 'connection-1',
+      dbName: '',
+      hasExplicitBinding: true,
+    });
+
+    const cleared = setExternalSQLFileBinding(
+      withoutDatabase,
+      'D:/sql/bound/bootstrap.sql',
+      null,
+    );
+    const treeAfterClearing = buildExternalSQLRootNode({
+      directories: [cleared],
+      directoryTrees: {
+        'dir-bound': [{ name: 'bootstrap.sql', path: 'D:/sql/bound/bootstrap.sql', isDir: false }],
+      },
+    });
+    expect(treeAfterClearing.children?.[0]?.children?.[0]?.dataRef).toMatchObject({
+      connectionId: 'connection-1',
+      dbName: 'orders',
+    });
+    expect(treeAfterClearing.children?.[0]?.children?.[0]?.dataRef).not.toHaveProperty('hasExplicitBinding');
+  });
+
   it('keeps same-path directories separate when they target different databases', () => {
     const node = buildExternalSQLRootNode({
       directories: [

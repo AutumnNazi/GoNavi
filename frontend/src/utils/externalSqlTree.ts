@@ -123,7 +123,10 @@ export const setExternalSQLFileBinding = (
   );
   const connectionId = String(target?.connectionId || '').trim();
   const dbName = String(target?.dbName || '').trim();
-  const fileBindings = connectionId && dbName
+  // A file may deliberately use a connection without selecting a default
+  // database (for example CREATE DATABASE scripts). Keep that explicit empty
+  // value so it does not fall back to the directory's default database.
+  const fileBindings = connectionId
     ? [...remainingBindings, { filePath: normalizedFilePath, connectionId, dbName }]
     : remainingBindings;
   const nextDirectory = { ...directory };
@@ -275,8 +278,12 @@ const mapExternalSQLTreeEntries = (
   }
 
   const fileBinding = findExternalSQLFileBinding(context.fileBindings, entry.path);
-  const connectionId = String(fileBinding?.connectionId || '').trim() || context.connectionId;
-  const dbName = String(fileBinding?.dbName || '').trim() || context.dbName;
+  const connectionId = fileBinding
+    ? String(fileBinding.connectionId || '').trim()
+    : context.connectionId;
+  const dbName = fileBinding
+    ? String(fileBinding.dbName || '').trim()
+    : context.dbName;
 
   return [{
     title: entry.name,

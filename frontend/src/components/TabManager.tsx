@@ -1530,8 +1530,12 @@ const TabManager: React.FC<TabManagerProps> = React.memo<TabManagerProps>(({ onF
       connectionId: file.connectionId,
       dbName: file.dbName,
     });
-    const connectionId = String(fileBinding?.connectionId || file.connectionId || '').trim();
-    const dbName = String(fileBinding?.dbName || file.dbName || '').trim();
+    const connectionId = String(
+      fileBinding ? fileBinding.connectionId : file.connectionId || '',
+    ).trim();
+    const dbName = String(
+      fileBinding ? fileBinding.dbName : file.dbName || '',
+    ).trim();
     if (!connectionId || !connectionById.has(connectionId)) {
       message.error(t('sidebar.message.connection_config_not_found'));
       return;
