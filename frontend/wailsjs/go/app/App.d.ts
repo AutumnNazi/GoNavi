@@ -27,6 +27,8 @@ export function BuildSQLAuditExport(arg1:sqlaudit.Filter,arg2:string):Promise<co
 
 export function CancelApplicationQuit():Promise<connection.QueryResult>;
 
+export function CancelConnectionTest(arg1:string):Promise<connection.QueryResult>;
+
 export function CancelImportJob(arg1:string):Promise<connection.QueryResult>;
 
 export function CancelQuery(arg1:string):Promise<connection.QueryResult>;
@@ -456,6 +458,8 @@ export function NacosStopBetaConfig(arg1:connection.ConnectionConfig,arg2:string
 export function NacosStopConfigListen(arg1:string):Promise<connection.QueryResult>;
 
 export function NacosTestConnection(arg1:connection.ConnectionConfig):Promise<connection.QueryResult>;
+
+export function NacosTestConnectionWithProgress(arg1:connection.ConnectionConfig,arg2:string):Promise<connection.QueryResult>;
 
 export function NacosUpdateConfigListenMD5(arg1:string,arg2:string):Promise<connection.QueryResult>;
 

@@ -17,6 +17,7 @@ import (
 	"GoNavi-Wails/internal/connection"
 	"GoNavi-Wails/internal/logger"
 	"GoNavi-Wails/internal/nacos"
+	"GoNavi-Wails/internal/uievents"
 	"golang.org/x/sync/singleflight"
 )
 
@@ -35,6 +36,12 @@ var errNacosCacheInvalidated = errors.New("Nacos 连接缓存已关闭")
 const defaultNacosOperationTimeoutSeconds = 30
 
 const nacosNamespaceListForbiddenErrorCode = "nacos_namespace_list_forbidden"
+
+const connectionTestQueryPrefix = "connection-test:"
+
+type nacosContextConnector interface {
+	ConnectContext(context.Context, connection.ConnectionConfig) error
+}
 
 func init() {
 	nacosCacheGenerationCtx, nacosCacheGenerationCancel = context.WithCancel(context.Background())
@@ -399,11 +406,24 @@ func (a *App) getNacosClientWithContext(ctx context.Context, config connection.C
 }
 
 func (a *App) openNacosClientIsolated(config connection.ConnectionConfig) (nacos.Client, error) {
+	return a.openNacosClientIsolatedWithContext(context.Background(), config)
+}
+
+func (a *App) openNacosClientIsolatedWithContext(ctx context.Context, config connection.ConnectionConfig) (nacos.Client, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	resolvedConfig, err := a.resolveConnectionSecrets(config)
 	if err != nil {
 		wrapped := wrapConnectError(config, err)
 		logger.Error(wrapped, "Nacos 密文解析失败：%s", formatNacosConnSummary(config))
 		return nil, wrapped
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
 	effectiveConfig := a.withManagedSSHHostKeyTrustStore(resolvedConfig)
 	connectConfig, proxyErr := resolveDialConfigWithProxyFunc(effectiveConfig)
@@ -414,13 +434,37 @@ func (a *App) openNacosClientIsolated(config connection.ConnectionConfig) (nacos
 	}
 	connectConfig.Type = "nacos"
 	client := newNacosClientFunc()
-	if err := client.Connect(connectConfig); err != nil {
+	if err := connectNacosClientWithContext(ctx, client, connectConfig); err != nil {
 		_ = client.Close()
 		wrapped := wrapConnectError(connectConfig, err)
-		logger.Error(wrapped, "Nacos 临时连接失败：%s", formatNacosConnSummary(connectConfig))
+		if !errors.Is(ctx.Err(), context.Canceled) {
+			logger.Error(wrapped, "Nacos 临时连接失败：%s", formatNacosConnSummary(connectConfig))
+		}
 		return nil, wrapped
 	}
 	return client, nil
+}
+
+func connectNacosClientWithContext(ctx context.Context, client nacos.Client, config connection.ConnectionConfig) error {
+	if connector, ok := client.(nacosContextConnector); ok {
+		return connector.ConnectContext(ctx, config)
+	}
+
+	resultCh := make(chan error, 1)
+	go func() {
+		resultCh <- client.Connect(config)
+	}()
+	select {
+	case err := <-resultCh:
+		return err
+	case <-ctx.Done():
+		_ = client.Close()
+		go func() {
+			<-resultCh
+			_ = client.Close()
+		}()
+		return ctx.Err()
+	}
 }
 
 func (a *App) nacosOperationContext(config connection.ConnectionConfig) (context.Context, context.CancelFunc) {
@@ -457,9 +501,88 @@ func (a *App) NacosConnect(config connection.ConnectionConfig) connection.QueryR
 
 // NacosTestConnection tests connectivity without reusing long-lived cache.
 func (a *App) NacosTestConnection(config connection.ConnectionConfig) connection.QueryResult {
+	ctx, cancel := a.nacosOperationContext(config)
+	defer cancel()
+	return a.nacosTestConnection(ctx, config, nil)
+}
+
+// NacosTestConnectionWithProgress tests a Nacos connection through SSH while
+// emitting the same non-sensitive connection stages as database test runs.
+// It deliberately uses an isolated Nacos client so every interactive test
+// establishes and verifies its own SSH tunnel instead of reusing a cached one.
+func (a *App) NacosTestConnectionWithProgress(config connection.ConnectionConfig, runID string) connection.QueryResult {
+	runID = strings.TrimSpace(runID)
+	if runID == "" {
+		return a.NacosTestConnection(config)
+	}
+	ctx, cancel := a.nacosOperationContext(config)
+	queryID := connectionTestQueryPrefix + runID
+	cleanup, registered := a.registerExclusiveRunningQuery(queryID, cancel, true)
+	if !registered {
+		cancel()
+		return connection.QueryResult{Success: false, Message: "connection test is already running"}
+	}
+	defer func() {
+		cancel()
+		cleanup()
+	}()
+
+	var report connectionTestProgressReporter
+	if config.UseSSH {
+		report = func(stage string, status string) {
+			uievents.Emit(a.ctx, connectionTestProgressEventName, connectionTestProgressEvent{
+				RunID:  runID,
+				Stage:  stage,
+				Status: status,
+			})
+		}
+	}
+	return a.nacosTestConnection(ctx, config, report)
+}
+
+// CancelConnectionTest cancels one active connection test without touching
+// shared database connections or SSH forwarders owned by other connections.
+func (a *App) CancelConnectionTest(runID string) connection.QueryResult {
+	runID = strings.TrimSpace(runID)
+	if runID == "" {
+		return connection.QueryResult{Success: false}
+	}
+
+	a.queryMu.RLock()
+	query, exists := a.runningQueries[connectionTestQueryPrefix+runID]
+	a.queryMu.RUnlock()
+	if !exists {
+		return connection.QueryResult{Success: false}
+	}
+	query.cancel()
+	return connection.QueryResult{
+		Success: true,
+		Data:    map[string]any{"cancelled": true},
+	}
+}
+
+func (a *App) nacosTestConnection(ctx context.Context, config connection.ConnectionConfig, report connectionTestProgressReporter) connection.QueryResult {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	config.Type = "nacos"
-	client, err := a.openNacosClientIsolated(config)
+	if report != nil {
+		report("preparing", "running")
+		config.SSH = config.SSH.WithProgressReporter(func(event connection.SSHProgressEvent) {
+			report(event.Stage, event.Status)
+		})
+	}
+	client, err := a.openNacosClientIsolatedWithContext(ctx, config)
 	if err != nil {
+		if report != nil {
+			report("failed", "error")
+		}
+		if errors.Is(ctx.Err(), context.Canceled) {
+			return connection.QueryResult{
+				Success: false,
+				Data:    map[string]any{"cancelled": true},
+			}
+		}
 		if trustResult, ok := a.sshHostKeyTrustRequiredResult(err); ok {
 			logger.Warnf("NacosTestConnection 需要确认 SSH 服务端身份：%s", formatNacosConnSummary(config))
 			return trustResult
@@ -469,12 +592,18 @@ func (a *App) NacosTestConnection(config connection.ConnectionConfig) connection
 	}
 	if client != nil {
 		if closeErr := client.Close(); closeErr != nil {
+			if report != nil {
+				report("failed", "error")
+			}
 			logger.Error(closeErr, "NacosTestConnection 释放临时连接失败：%s", formatNacosConnSummary(config))
 			return connection.QueryResult{
 				Success: false,
 				Message: a.appText("nacos.backend.error.test_connection_close_failed", map[string]any{"detail": closeErr.Error()}),
 			}
 		}
+	}
+	if report != nil {
+		report("database_connected", "success")
 	}
 	logger.Infof("NacosTestConnection 连接成功：%s", formatNacosConnSummary(config))
 	return connection.QueryResult{Success: true, Message: a.appText("nacos.backend.message.connect_success", nil)}

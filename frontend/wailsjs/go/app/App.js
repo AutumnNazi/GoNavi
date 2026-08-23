@@ -38,6 +38,10 @@ export function CancelApplicationQuit() {
   return window['go']['app']['App']['CancelApplicationQuit']();
 }
 
+export function CancelConnectionTest(arg1) {
+  return window['go']['app']['App']['CancelConnectionTest'](arg1);
+}
+
 export function CancelImportJob(arg1) {
   return window['go']['app']['App']['CancelImportJob'](arg1);
 }
@@ -896,6 +900,10 @@ export function NacosStopConfigListen(arg1) {
 
 export function NacosTestConnection(arg1) {
   return window['go']['app']['App']['NacosTestConnection'](arg1);
+}
+
+export function NacosTestConnectionWithProgress(arg1, arg2) {
+  return window['go']['app']['App']['NacosTestConnectionWithProgress'](arg1, arg2);
 }
 
 export function NacosUpdateConfigListenMD5(arg1, arg2) {

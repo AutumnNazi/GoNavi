@@ -28,8 +28,9 @@ type closeIdleTrackingTransport struct {
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
 type fakeNacosForwarderLease struct {
-	address  string
-	releases atomic.Int32
+	address       string
+	releases      atomic.Int32
+	releaseSignal chan struct{}
 }
 
 func (f *fakeNacosForwarderLease) LocalAddress() string {
@@ -38,6 +39,13 @@ func (f *fakeNacosForwarderLease) LocalAddress() string {
 
 func (f *fakeNacosForwarderLease) Release() error {
 	f.releases.Add(1)
+	if f.releaseSignal != nil {
+		select {
+		case <-f.releaseSignal:
+		default:
+			close(f.releaseSignal)
+		}
+	}
 	return nil
 }
 
@@ -529,6 +537,106 @@ func TestNacosHTTPClientReliesOnRequestContextDeadline(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), context.DeadlineExceeded.Error()) {
 		t.Fatalf("request error = %q, want context deadline exceeded", err)
+	}
+}
+
+func TestClientConnectContextCancelsSlowReadinessProbe(t *testing.T) {
+	requestStarted := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, request *http.Request) {
+		close(requestStarted)
+		<-request.Context().Done()
+	}))
+	defer server.Close()
+
+	parsed, err := url.Parse(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	port, err := strconv.Atoi(parsed.Port())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	client := &ClientImpl{}
+	resultCh := make(chan error, 1)
+	go func() {
+		resultCh <- client.ConnectContext(ctx, connection.ConnectionConfig{
+			Type:             "nacos",
+			Host:             parsed.Hostname(),
+			Port:             port,
+			ConnectionParams: "contextPath=/",
+		})
+	}()
+
+	select {
+	case <-requestStarted:
+	case <-time.After(time.Second):
+		t.Fatal("ConnectContext did not start the readiness request")
+	}
+	cancel()
+
+	select {
+	case err := <-resultCh:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("ConnectContext error = %v, want context cancellation", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("ConnectContext did not return after cancellation")
+	}
+}
+
+func TestClientConnectContextReleasesForwarderThatArrivesAfterCancellation(t *testing.T) {
+	acquireStarted := make(chan struct{})
+	allowAcquireReturn := make(chan struct{})
+	lease := &fakeNacosForwarderLease{releaseSignal: make(chan struct{})}
+	client := &ClientImpl{
+		acquireSSHForwarder: func(
+			connection.SSHConfig,
+			string,
+			int,
+		) (nacosForwarderLease, error) {
+			close(acquireStarted)
+			<-allowAcquireReturn
+			return lease, nil
+		},
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	resultCh := make(chan error, 1)
+	go func() {
+		resultCh <- client.ConnectContext(ctx, connection.ConnectionConfig{
+			Type:   "nacos",
+			Host:   "nacos.internal.test",
+			Port:   8848,
+			UseSSH: true,
+		})
+	}()
+
+	select {
+	case <-acquireStarted:
+	case <-time.After(time.Second):
+		t.Fatal("ConnectContext did not start SSH forwarder acquisition")
+	}
+	cancel()
+
+	select {
+	case err := <-resultCh:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("ConnectContext error = %v, want context cancellation", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("ConnectContext did not return while SSH acquisition was pending")
+	}
+
+	close(allowAcquireReturn)
+	select {
+	case <-lease.releaseSignal:
+	case <-time.After(time.Second):
+		t.Fatal("late SSH forwarder lease was not released")
+	}
+	if got := lease.releases.Load(); got != 1 {
+		t.Fatalf("late SSH forwarder Release calls = %d, want 1", got)
 	}
 }
 
