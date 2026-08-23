@@ -33,11 +33,7 @@ func (s *Service) AIInstallOpenCodeMCP() (ai.MCPClientInstallResult, error) {
 		return ai.MCPClientInstallResult{}, err
 	}
 
-	executablePath, err := localMCPExecutablePathFunc()
-	if err != nil {
-		return ai.MCPClientInstallResult{}, fmt.Errorf("%s", s.serviceText("ai.service.mcp_client.executable_path_failed", map[string]any{"detail": err.Error()}))
-	}
-	command, args, err := resolveLocalMCPCommand(executablePath, s.serviceText)
+	command, args, err := resolveCurrentLocalMCPCommand(s.serviceText)
 	if err != nil {
 		return ai.MCPClientInstallResult{}, err
 	}
@@ -171,7 +167,7 @@ func repairOpenCodeMCPClientConfig(expectedCommand string, expectedArgs []string
 	command, args := serverConfig.Command[0], serverConfig.Command[1:]
 	if sameMCPCommand(command, args, expectedCommand, expectedArgs) ||
 		!strings.EqualFold(strings.TrimSpace(serverConfig.Type), "local") ||
-		!shouldRepairInstalledLocalMCPCommand(command, args, expectedCommand) {
+		!shouldRepairInstalledLocalMCPCommand(command, args, expectedCommand, expectedArgs) {
 		return nil
 	}
 	serverConfig.Command = append([]string{expectedCommand}, expectedArgs...)

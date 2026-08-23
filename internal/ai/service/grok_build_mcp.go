@@ -37,11 +37,7 @@ func (s *Service) AIInstallGrokBuildMCP() (ai.MCPClientInstallResult, error) {
 	if err := requireLocalMCPClientCommand(grokBuildClientCommandName, "Grok Build", s.serviceText); err != nil {
 		return ai.MCPClientInstallResult{}, err
 	}
-	executablePath, err := localMCPExecutablePathFunc()
-	if err != nil {
-		return ai.MCPClientInstallResult{}, fmt.Errorf("%s", s.serviceText("ai.service.mcp_client.executable_path_failed", map[string]any{"detail": err.Error()}))
-	}
-	command, args, err := resolveLocalMCPCommand(executablePath, s.serviceText)
+	command, args, err := resolveCurrentLocalMCPCommand(s.serviceText)
 	if err != nil {
 		return ai.MCPClientInstallResult{}, err
 	}
@@ -139,7 +135,7 @@ func repairGrokBuildMCPClientConfig(expectedCommand string, expectedArgs []strin
 	if err != nil || !found || sameMCPCommand(serverConfig.Command, serverConfig.Args, expectedCommand, expectedArgs) {
 		return err
 	}
-	if !shouldRepairInstalledLocalMCPCommand(serverConfig.Command, serverConfig.Args, expectedCommand) {
+	if !shouldRepairInstalledLocalMCPCommand(serverConfig.Command, serverConfig.Args, expectedCommand, expectedArgs) {
 		return nil
 	}
 	return upsertGrokBuildMCPServerConfig(configPath, gonaviMCPServerID, grokBuildMCPServerConfig{

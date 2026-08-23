@@ -41,11 +41,7 @@ func (s *Service) AIInstallDeepSeekHarnessMCP() (ai.MCPClientInstallResult, erro
 	if err := requireDeepSeekHarnessClient(s.serviceText); err != nil {
 		return ai.MCPClientInstallResult{}, err
 	}
-	executablePath, err := localMCPExecutablePathFunc()
-	if err != nil {
-		return ai.MCPClientInstallResult{}, fmt.Errorf("%s", s.serviceText("ai.service.mcp_client.executable_path_failed", map[string]any{"detail": err.Error()}))
-	}
-	command, args, err := resolveLocalMCPCommand(executablePath, s.serviceText)
+	command, args, err := resolveCurrentLocalMCPCommand(s.serviceText)
 	if err != nil {
 		return ai.MCPClientInstallResult{}, err
 	}
@@ -219,7 +215,7 @@ func repairDeepSeekHarnessMCPClientConfig(expectedCommand string, expectedArgs [
 	if err != nil || !found || sameMCPCommand(serverConfig.Command, serverConfig.Args, expectedCommand, expectedArgs) {
 		return err
 	}
-	if !shouldRepairInstalledLocalMCPCommand(serverConfig.Command, serverConfig.Args, expectedCommand) {
+	if !shouldRepairInstalledLocalMCPCommand(serverConfig.Command, serverConfig.Args, expectedCommand, expectedArgs) {
 		return nil
 	}
 	return upsertDeepSeekHarnessMCPServerConfig(configPath, expectedCommand, expectedArgs, text)
