@@ -3364,6 +3364,7 @@
   "connection_modal.action.reset_default": "重設為預設值",
   "connection_modal.action.save": "儲存",
   "connection_modal.action.test": "測試連線",
+  "connection_modal.action.cancel_test": "取消測試連線",
   "connection_modal.action.view_reason": "查看原因",
   "connection_modal.appearance.color": "顏色",
   "connection_modal.appearance.current_icon": "目前圖示：{{icon}}",

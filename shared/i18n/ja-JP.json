@@ -3364,6 +3364,7 @@
   "connection_modal.action.reset_default": "既定値に戻す",
   "connection_modal.action.save": "保存",
   "connection_modal.action.test": "接続をテスト",
+  "connection_modal.action.cancel_test": "接続テストを中止",
   "connection_modal.action.view_reason": "ビュー理由",
   "connection_modal.appearance.color": "色",
   "connection_modal.appearance.current_icon": "現在のアイコン: {{icon}}",

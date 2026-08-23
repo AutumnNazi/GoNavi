@@ -3364,6 +3364,7 @@
   "connection_modal.action.reset_default": "Сбросить по умолчанию",
   "connection_modal.action.save": "Сохранить",
   "connection_modal.action.test": "Проверить подключение",
+  "connection_modal.action.cancel_test": "Отменить проверку подключения",
   "connection_modal.action.view_reason": "Показать причину",
   "connection_modal.appearance.color": "Цвет",
   "connection_modal.appearance.current_icon": "Текущий значок: {{icon}}",

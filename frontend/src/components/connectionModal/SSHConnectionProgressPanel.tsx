@@ -32,7 +32,8 @@ const resolveLogText = (stage: string): string => {
 const SSHConnectionProgressPanel: React.FC<{
   progress: SSHConnectionProgress;
   onClose: () => void;
-}> = ({ progress, onClose }) => {
+  onCancelTest: () => void;
+}> = ({ progress, onClose, onCancelTest }) => {
   const [logsExpanded, setLogsExpanded] = useState(true);
   const isRunning = progress.status === "running";
 
@@ -59,9 +60,13 @@ const SSHConnectionProgressPanel: React.FC<{
               ? t("connection.modal.sshProgress.hideLogs")
               : t("connection.modal.sshProgress.showLogs")}
           </Button>
-          {!isRunning ? (
+          {isRunning ? (
+            <Button danger onClick={onCancelTest}>
+              {t("connection.modal.action.cancel_test")}
+            </Button>
+          ) : (
             <Button onClick={onClose}>{t("common.action.close")}</Button>
-          ) : null}
+          )}
         </div>
       </header>
 

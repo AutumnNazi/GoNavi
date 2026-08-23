@@ -3364,6 +3364,7 @@
   "connection_modal.action.reset_default": "恢复默认",
   "connection_modal.action.save": "保存",
   "connection_modal.action.test": "测试连接",
+  "connection_modal.action.cancel_test": "取消测试连接",
   "connection_modal.action.view_reason": "查看原因",
   "connection_modal.appearance.color": "颜色",
   "connection_modal.appearance.current_icon": "当前图标：{{icon}}",

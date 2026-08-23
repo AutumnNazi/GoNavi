@@ -3364,6 +3364,7 @@
   "connection_modal.action.reset_default": "Reset default",
   "connection_modal.action.save": "Save",
   "connection_modal.action.test": "Test connection",
+  "connection_modal.action.cancel_test": "Cancel test",
   "connection_modal.action.view_reason": "View reason",
   "connection_modal.appearance.color": "Color",
   "connection_modal.appearance.current_icon": "Current icon: {{icon}}",

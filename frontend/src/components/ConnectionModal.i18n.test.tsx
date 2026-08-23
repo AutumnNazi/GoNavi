@@ -51,6 +51,9 @@ const backendApp = {
   TestConnection: vi.fn(),
   TestConnectionWithProgress: vi.fn(),
   RedisConnect: vi.fn(),
+  NacosTestConnection: vi.fn(),
+  NacosTestConnectionWithProgress: vi.fn(),
+  CancelConnectionTest: vi.fn(),
   RevealSavedConnectionPrimaryPassword: vi.fn(),
   SelectDatabaseFile: vi.fn(),
   SelectCertificateFile: vi.fn(),
@@ -469,6 +472,12 @@ describe("ConnectionModal i18n", () => {
     backendApp.TestConnection.mockResolvedValue({ success: false, message: "saved connection not found: conn-1" });
     backendApp.TestConnectionWithProgress.mockReset();
     backendApp.TestConnectionWithProgress.mockResolvedValue({ success: true, message: "ok" });
+    backendApp.NacosTestConnection.mockReset();
+    backendApp.NacosTestConnection.mockResolvedValue({ success: true, message: "ok" });
+    backendApp.NacosTestConnectionWithProgress.mockReset();
+    backendApp.NacosTestConnectionWithProgress.mockResolvedValue({ success: true, message: "ok" });
+    backendApp.CancelConnectionTest.mockReset();
+    backendApp.CancelConnectionTest.mockResolvedValue({ success: true, data: { cancelled: true } });
     backendApp.DBGetDatabases.mockResolvedValue({ success: true, data: [] });
     backendApp.MongoDiscoverMembers.mockResolvedValue({ success: true, data: { members: [] } });
     backendApp.RedisConnect.mockResolvedValue({ success: true, message: "ok" });
@@ -576,6 +585,41 @@ describe("ConnectionModal i18n", () => {
     expect(textContent(renderer!.toJSON())).toContain("正在验证 SSH 隧道");
     expect(textContent(renderer!.toJSON())).toContain("网络连接");
     expect(textContent(renderer!.toJSON())).toContain("数据库验证");
+  });
+
+  it("shows staged SSH progress and logs when testing a Nacos connection", async () => {
+    const { default: ConnectionModal } = await import("./ConnectionModal");
+    const connection = initialConnection("nacos", {
+      useSSH: true,
+      ssh: {
+        host: "bastion.example.com",
+        port: 22,
+        user: "ops",
+        password: "secret",
+      },
+    });
+
+    let renderer: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(
+        <ConnectionModal open onClose={vi.fn()} initialValues={connection} />,
+      );
+      await flushConnectionTestTick();
+    });
+    await act(async () => {
+      findButton(renderer!, "测试连接").props.onClick();
+      await flushConnectionTestTick();
+    });
+
+    expect(backendApp.NacosTestConnectionWithProgress).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "nacos", useSSH: true }),
+      expect.stringMatching(/^ssh-test-/),
+    );
+    expect(backendApp.NacosTestConnection).not.toHaveBeenCalled();
+    expect(textContent(renderer!.toJSON())).toContain("正在验证 SSH 隧道");
+    expect(textContent(renderer!.toJSON())).toContain("网络连接");
+    expect(textContent(renderer!.toJSON())).toContain("数据库验证");
+    expect(textContent(renderer!.toJSON())).toContain("准备连接检查");
   });
 
   it("shows a driver preflight failure in the SSH log without blaming the network", async () => {
@@ -2047,6 +2091,55 @@ describe("ConnectionModal i18n", () => {
     expect(textContent(renderer!.toJSON())).not.toContain("stale connection failure");
     expect(findButton(renderer!, "测试连接").props.disabled).toBe(false);
     expect(findButton(renderer!, "保存").props.disabled).toBe(false);
+  });
+
+  it("cancels an in-flight Nacos test and ignores its late result", async () => {
+    storeState.appearance.uiVersion = "legacy";
+    setCurrentLanguage("zh-CN");
+    let resolveConnection: ((value: unknown) => void) | undefined;
+    backendApp.NacosTestConnectionWithProgress.mockReset();
+    backendApp.NacosTestConnectionWithProgress.mockReturnValue(
+      new Promise((resolve) => {
+        resolveConnection = resolve;
+      }),
+    );
+    const { default: ConnectionModal } = await import("./ConnectionModal");
+    const connection = initialConnection("nacos", { port: 8848 });
+
+    let renderer: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(
+        <ConnectionModal open onClose={vi.fn()} initialValues={connection} />,
+      );
+    });
+    await act(async () => {
+      findButton(renderer!, "测试连接").props.onClick();
+      await flushConnectionTestTick();
+    });
+
+    expect(backendApp.NacosTestConnectionWithProgress).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "nacos", useSSH: false }),
+      expect.stringMatching(/^nacos-test-/),
+    );
+    const runID = backendApp.NacosTestConnectionWithProgress.mock.calls[0][1];
+    expect(findButton(renderer!, "取消测试连接")).toBeDefined();
+
+    await act(async () => {
+      findButton(renderer!, "取消测试连接").props.onClick();
+      await flushConnectionTestTick();
+    });
+
+    expect(backendApp.CancelConnectionTest).toHaveBeenCalledWith(runID);
+    expect(findButton(renderer!, "测试连接").props.disabled).toBe(false);
+    expect(findButton(renderer!, "保存").props.disabled).toBe(false);
+
+    await act(async () => {
+      resolveConnection?.({ success: false, message: "late Nacos failure" });
+      await flushConnectionTestTick();
+    });
+
+    expect(textContent(renderer!.toJSON())).not.toContain("late Nacos failure");
+    expect(findButton(renderer!, "测试连接").props.disabled).toBe(false);
   });
 
   it("renders English data source groups and hints for the remaining step one copy", async () => {

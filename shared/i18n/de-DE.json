@@ -3364,6 +3364,7 @@
   "connection_modal.action.reset_default": "Auf Standard zurücksetzen",
   "connection_modal.action.save": "Speichern",
   "connection_modal.action.test": "Verbindung testen",
+  "connection_modal.action.cancel_test": "Verbindungstest abbrechen",
   "connection_modal.action.view_reason": "Grund anzeigen",
   "connection_modal.appearance.color": "Farbe",
   "connection_modal.appearance.current_icon": "Aktuelles Symbol: {{icon}}",

@@ -4,6 +4,7 @@ import React, {
   useLayoutEffect,
   useRef,
   useMemo,
+  useCallback,
 } from "react";
 import Modal from './common/ResizableDraggableModal';
 import {
@@ -155,7 +156,8 @@ import {
   TestConnectionWithProgress,
   RedisConnect,
   RedisGetDatabases,
-  NacosConnect,
+  NacosTestConnectionWithProgress,
+  CancelConnectionTest,
   SelectDatabaseFile,
   SelectCertificateFile,
   SelectSSHKeyFile,
@@ -423,6 +425,8 @@ const ConnectionModal: React.FC<{
   const testInFlightRef = useRef(false);
   const testTimerRef = useRef<number | null>(null);
   const testRunIdRef = useRef(0);
+  const activeTestCancellationRef = useRef<(() => void) | null>(null);
+  const activeNacosTestRunIdRef = useRef("");
   const primaryPasswordRevealRequestRef = useRef(0);
   const revealedPrimaryPasswordRef = useRef("");
   const clearSecretsRef = useRef(clearSecrets);
@@ -613,7 +617,35 @@ const ConnectionModal: React.FC<{
     setPrimaryPasswordVisible(false);
   };
 
+  const cancelActiveConnectionTest = useCallback(() => {
+    const nacosTestRunId = activeNacosTestRunIdRef.current;
+    activeNacosTestRunIdRef.current = "";
+
+    // Invalidate the current run before rejecting its local wait. This keeps a
+    // late Wails response from writing stale success/failure feedback back into
+    // a newer editing session.
+    testRunIdRef.current += 1;
+    const cancelLocalWait = activeTestCancellationRef.current;
+    activeTestCancellationRef.current = null;
+    if (testTimerRef.current !== null) {
+      window.clearTimeout(testTimerRef.current);
+      testTimerRef.current = null;
+    }
+    testInFlightRef.current = false;
+    setTestingConnection(false);
+    setTestResult(null);
+    setSSHConnectionProgress(null);
+    setSSHProgressPanelOpen(false);
+    setSSHHostKeyTrust(null);
+    cancelLocalWait?.();
+
+    if (nacosTestRunId) {
+      void CancelConnectionTest(nacosTestRunId).catch(() => undefined);
+    }
+  }, []);
+
   const handleModalClose = () => {
+    cancelActiveConnectionTest();
     resetPrimaryPasswordRevealState();
     setSSHHostKeyTrust(null);
     setTrustingSSHHostKey(false);
@@ -1542,6 +1574,7 @@ const ConnectionModal: React.FC<{
   };
 
   useEffect(() => {
+    cancelActiveConnectionTest();
     testRunIdRef.current += 1;
     if (open) {
       oracleModeTouchedRef.current = false;
@@ -1931,10 +1964,11 @@ const ConnectionModal: React.FC<{
         setPrimaryPasswordVisible(false);
       }
     }
-  }, [open, initialValues]);
+  }, [open, initialValues, cancelActiveConnectionTest]);
 
   useEffect(() => {
     return () => {
+      cancelActiveConnectionTest();
       testRunIdRef.current += 1;
       primaryPasswordRevealRequestRef.current += 1;
       revealedPrimaryPasswordRef.current = "";
@@ -1943,7 +1977,7 @@ const ConnectionModal: React.FC<{
         testTimerRef.current = null;
       }
     };
-  }, []);
+  }, [cancelActiveConnectionTest]);
 
   const handleOk = async () => {
     try {
@@ -2069,6 +2103,21 @@ const ConnectionModal: React.FC<{
     }
   };
 
+  const makeCancellableConnectionTestRequest = <T,>(promise: Promise<T>) => {
+    let rejectCancellation: ((reason?: unknown) => void) | null = null;
+    const cancellation = new Promise<never>((_, reject) => {
+      rejectCancellation = reject;
+    });
+    const cancel = () => {
+      rejectCancellation?.(new Error("connection test cancelled"));
+    };
+    activeTestCancellationRef.current = cancel;
+    return {
+      promise: Promise.race([promise, cancellation]),
+      cancel,
+    };
+  };
+
   const applyTestFailureFeedback = ({
     kind,
     reason,
@@ -2093,6 +2142,11 @@ const ConnectionModal: React.FC<{
     const testRunId = ++testRunIdRef.current;
     const isCurrentTestRun = () => testRunIdRef.current === testRunId;
     let sshProgressRunId = "";
+    let nacosTestRunId = "";
+    let cancellableRequest: {
+      promise: Promise<any>;
+      cancel: () => void;
+    } | null = null;
     try {
       await form.validateFields();
       if (!isCurrentTestRun()) return;
@@ -2167,8 +2221,7 @@ const ConnectionModal: React.FC<{
       const shouldReportSSHProgress =
         Boolean((config as any).useSSH) &&
         !isRedisType &&
-        !isJVMType &&
-        !isNacosType;
+        !isJVMType;
       if (shouldReportSSHProgress) {
         const sshConfig = (dbTestConfig as any)?.ssh || (config as any)?.ssh || {};
         sshProgressRunId = `ssh-test-${testRunId}-${Date.now()}`;
@@ -2181,16 +2234,23 @@ const ConnectionModal: React.FC<{
         );
         setSSHProgressPanelOpen(true);
       }
+      if (isNacosType) {
+        nacosTestRunId =
+          sshProgressRunId || `nacos-test-${testRunId}-${Date.now()}`;
+        activeNacosTestRunIdRef.current = nacosTestRunId;
+      }
+      const rpcPromise = isJVMType
+        ? TestJVMConnection(config as any)
+        : isRedisType
+          ? RedisConnect(config as any)
+          : isNacosType
+            ? NacosTestConnectionWithProgress(config as any, nacosTestRunId)
+            : shouldReportSSHProgress
+              ? TestConnectionWithProgress(dbTestConfig as any, sshProgressRunId)
+              : TestConnection(dbTestConfig as any);
+      cancellableRequest = makeCancellableConnectionTestRequest(rpcPromise);
       const res = await withClientTimeout(
-        isJVMType
-          ? TestJVMConnection(config as any)
-          : isRedisType
-            ? RedisConnect(config as any)
-            : isNacosType
-            ? NacosConnect(config as any)
-              : shouldReportSSHProgress
-                ? TestConnectionWithProgress(dbTestConfig as any, sshProgressRunId)
-                : TestConnection(dbTestConfig as any),
+        cancellableRequest.promise,
         rpcTimeoutMs,
         t("connection.modal.test.timeout", { seconds: timeoutSeconds }),
       );
@@ -2373,6 +2433,18 @@ const ConnectionModal: React.FC<{
         fallbackKey: "connection.modal.test.fallback.unknownException",
       });
     } finally {
+      if (
+        cancellableRequest &&
+        activeTestCancellationRef.current === cancellableRequest.cancel
+      ) {
+        activeTestCancellationRef.current = null;
+      }
+      if (
+        nacosTestRunId &&
+        activeNacosTestRunIdRef.current === nacosTestRunId
+      ) {
+        activeNacosTestRunIdRef.current = "";
+      }
       if (isCurrentTestRun()) {
         testInFlightRef.current = false;
         setTestingConnection(false);
@@ -3301,6 +3373,16 @@ const ConnectionModal: React.FC<{
           >
             {t("connection.action.test")}
           </Button>
+          {testingConnection ? (
+            <Button
+              key="cancel-test"
+              danger
+              className="gn-conn-studio-button"
+              onClick={cancelActiveConnectionTest}
+            >
+              {t("connection.modal.action.cancel_test")}
+            </Button>
+          ) : null}
           <Button
             key="cancel"
             className="gn-conn-studio-button"
@@ -3543,7 +3625,11 @@ const ConnectionModal: React.FC<{
       </Modal>
       <Modal
         open={sshProgressPanelOpen && !!sshConnectionProgress}
-        onCancel={() => setSSHProgressPanelOpen(false)}
+        onCancel={
+          sshConnectionProgress?.status === "running"
+            ? cancelActiveConnectionTest
+            : () => setSSHProgressPanelOpen(false)
+        }
         centered
         width={720}
         footer={null}
@@ -3559,6 +3645,7 @@ const ConnectionModal: React.FC<{
           <SSHConnectionProgressPanel
             progress={sshConnectionProgress}
             onClose={() => setSSHProgressPanelOpen(false)}
+            onCancelTest={cancelActiveConnectionTest}
           />
         ) : null}
       </Modal>
