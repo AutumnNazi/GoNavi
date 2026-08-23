@@ -48,6 +48,21 @@ describe('settings center tool entries', () => {
     expect(flushOnQuit).toBeGreaterThan(captureOnQuit);
   });
 
+  it('refreshes the Windows WebView surface after restoring normal startup bounds', () => {
+    const restoreNormalStart = appSource.indexOf('const restoreNormalWindowBounds = async');
+    const restoreNormalEnd = appSource.indexOf('const restoreWindowState = async', restoreNormalStart);
+    const restoreNormalSource = appSource.slice(restoreNormalStart, restoreNormalEnd);
+    const applyBounds = restoreNormalSource.indexOf('applyRestoredWindowBounds(bounds);');
+    const waitForBounds = restoreNormalSource.indexOf('await waitForNativeWindowBounds(appliedBounds);');
+    const refreshSurface = restoreNormalSource.indexOf('await tryRefreshStartupWebViewBounds();');
+
+    expect(restoreNormalStart).toBeGreaterThanOrEqual(0);
+    expect(restoreNormalEnd).toBeGreaterThan(restoreNormalStart);
+    expect(applyBounds).toBeGreaterThanOrEqual(0);
+    expect(waitForBounds).toBeGreaterThan(applyBounds);
+    expect(refreshSurface).toBeGreaterThan(waitForBounds);
+  });
+
   it('keeps the resize minimise probe independent from DPR debounce and clears it on unmount', () => {
     const scaleEffectStart = appSource.indexOf('let minimisedCheckTimer: number | null = null;');
     const dprScheduleStart = appSource.indexOf('const scheduleDevicePixelRatioCheck = (trigger: WindowsScaleCheckTrigger) => {', scaleEffectStart);

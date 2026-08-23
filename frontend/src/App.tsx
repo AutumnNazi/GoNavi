@@ -1440,6 +1440,28 @@ function App() {
           return false;
       };
 
+      const waitForNativeWindowBounds = (bounds: {
+          width: number;
+          height: number;
+          x: number;
+          y: number;
+      }): Promise<boolean> => waitForWindowCondition({
+          read: async () => {
+              const [size, position] = await Promise.all([
+                  WindowGetSize(),
+                  WindowGetPosition(),
+              ]);
+              return Math.abs(Math.trunc(Number(size?.w)) - bounds.width) <= 2
+                  && Math.abs(Math.trunc(Number(size?.h)) - bounds.height) <= 2
+                  && Math.abs(Math.trunc(Number(position?.x)) - bounds.x) <= 2
+                  && Math.abs(Math.trunc(Number(position?.y)) - bounds.y) <= 2;
+          },
+          wait,
+          isCancelled: () => cancelled,
+          maxChecks: 16,
+          intervalMs: 40,
+      });
+
       const waitForStartupPreferenceApplied = (): Promise<boolean> => waitForWindowCondition({
           read: checkStartupPreferenceApplied,
           wait,
@@ -1491,22 +1513,7 @@ function App() {
               });
               WindowSetPosition(setPosition.x, setPosition.y);
               WindowSetSize(nextBounds.width, nextBounds.height);
-              const boundsApplied = await waitForWindowCondition({
-                  read: async () => {
-                      const [size, position] = await Promise.all([
-                          WindowGetSize(),
-                          WindowGetPosition(),
-                      ]);
-                      return Math.abs(Math.trunc(Number(size?.w)) - nextBounds.width) <= 2
-                          && Math.abs(Math.trunc(Number(size?.h)) - nextBounds.height) <= 2
-                          && Math.abs(Math.trunc(Number(position?.x)) - nextBounds.x) <= 2
-                          && Math.abs(Math.trunc(Number(position?.y)) - nextBounds.y) <= 2;
-                  },
-                  wait,
-                  isCancelled: () => cancelled,
-                  maxChecks: 16,
-                  intervalMs: 40,
-              });
+              const boundsApplied = await waitForNativeWindowBounds(nextBounds);
               if (!boundsApplied) {
                   return false;
               }
@@ -1616,6 +1623,7 @@ function App() {
           });
           WindowSetPosition(setPosition.x, setPosition.y);
           state.setWindowBounds(nextBounds);
+          return nextBounds;
       };
 
       const restoreNormalWindowBounds = async (bounds: {
@@ -1636,7 +1644,15 @@ function App() {
           } catch (e) {
               console.warn('Failed to restore normal window chrome', e);
           }
-          applyRestoredWindowBounds(bounds);
+          const appliedBounds = applyRestoredWindowBounds(bounds);
+          // Wails can finish the native normal-window transition before the
+          // WebView2 controller receives its first size update. Wait for the
+          // native rect, then explicitly resize the controller just as the
+          // maximised startup path does.
+          if (isWindowsPlatform()) {
+              await waitForNativeWindowBounds(appliedBounds);
+              await tryRefreshStartupWebViewBounds();
+          }
           useStore.getState().setWindowState('normal');
       };
 
