@@ -734,6 +734,10 @@ export function ListImportJobs() {
   return window['go']['app']['App']['ListImportJobs']();
 }
 
+export function ListDriverDownloadTasks() {
+  return window['go']['app']['App']['ListDriverDownloadTasks']();
+}
+
 export function ListInstalledFontFamilies() {
   return window['go']['app']['App']['ListInstalledFontFamilies']();
 }
@@ -1272,6 +1276,10 @@ export function Shutdown() {
 
 export function StartSecurityUpdate(arg1) {
   return window['go']['app']['App']['StartSecurityUpdate'](arg1);
+}
+
+export function StartDriverPackageDownload(arg1, arg2, arg3, arg4) {
+  return window['go']['app']['App']['StartDriverPackageDownload'](arg1, arg2, arg3, arg4);
 }
 
 export function TestConnection(arg1) {

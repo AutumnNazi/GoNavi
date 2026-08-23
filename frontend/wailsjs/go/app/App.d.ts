@@ -375,6 +375,8 @@ export function ListDatabaseCollations(arg1:connection.ConnectionConfig):Promise
 
 export function ListImportJobs():Promise<connection.QueryResult>;
 
+export function ListDriverDownloadTasks():Promise<connection.QueryResult>;
+
 export function ListInstalledFontFamilies():Promise<connection.QueryResult>;
 
 export function ListReproductionBundleSources():Promise<connection.QueryResult>;
@@ -644,6 +646,8 @@ export function SetWindowTranslucency(arg1:number,arg2:number):Promise<void>;
 export function Shutdown():Promise<void>;
 
 export function StartSecurityUpdate(arg1:app.StartSecurityUpdateRequest):Promise<app.SecurityUpdateStatus>;
+
+export function StartDriverPackageDownload(arg1:string,arg2:string,arg3:string,arg4:string):Promise<connection.QueryResult>;
 
 export function TestConnection(arg1:connection.ConnectionConfig):Promise<connection.QueryResult>;
 

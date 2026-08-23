@@ -193,6 +193,10 @@ type App struct {
 	importTasks                   map[string]importTaskRegistration
 	importTasksWG                 sync.WaitGroup
 	importTasksClosing            bool
+	driverDownloadTaskMu          sync.RWMutex
+	driverDownloadTasks           map[string]DriverDownloadTaskStatus
+	driverDownloadActiveTaskID    string
+	driverDownloadTaskRunner      func(string, string, string, string) connection.QueryResult
 	dataRootApplyMu               sync.Mutex
 	configDir                     string
 	sqliteTableStatsMu            sync.Mutex
@@ -287,6 +291,7 @@ func NewAppWithSecretStore(store secretstore.SecretStore) *App {
 		dbConnectFlights:              make(map[uint64]*databaseConnectFlight),
 		runningQueries:                make(map[string]queryContext),
 		importTasks:                   make(map[string]importTaskRegistration),
+		driverDownloadTasks:           make(map[string]DriverDownloadTaskStatus),
 		sqlTransactions:               make(map[string]*managedSQLTransaction),
 		requestTraceStore:             requesttrace.NewStore(requesttrace.DefaultCapacity),
 		configDir:                     resolveAppConfigDir(),
