@@ -311,6 +311,8 @@ export function GetUnboundSavedQueries():Promise<Array<connection.SavedQuery>>;
 
 export function GetUpdateChannel():Promise<connection.QueryResult>;
 
+export function GetUpdateDownloadTask():Promise<connection.QueryResult>;
+
 export function ImportConfigFile():Promise<connection.QueryResult>;
 
 export function ImportConnectionsPayload(arg1:string,arg2:string):Promise<app.ConnectionPackageImportResult>;
@@ -648,6 +650,8 @@ export function Shutdown():Promise<void>;
 export function StartSecurityUpdate(arg1:app.StartSecurityUpdateRequest):Promise<app.SecurityUpdateStatus>;
 
 export function StartDriverPackageDownload(arg1:string,arg2:string,arg3:string,arg4:string):Promise<connection.QueryResult>;
+
+export function StartUpdateDownload():Promise<connection.QueryResult>;
 
 export function TestConnection(arg1:connection.ConnectionConfig):Promise<connection.QueryResult>;
 

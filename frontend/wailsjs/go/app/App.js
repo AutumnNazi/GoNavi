@@ -606,6 +606,10 @@ export function GetUpdateChannel() {
   return window['go']['app']['App']['GetUpdateChannel']();
 }
 
+export function GetUpdateDownloadTask() {
+  return window['go']['app']['App']['GetUpdateDownloadTask']();
+}
+
 export function ImportConfigFile() {
   return window['go']['app']['App']['ImportConfigFile']();
 }
@@ -1280,6 +1284,10 @@ export function StartSecurityUpdate(arg1) {
 
 export function StartDriverPackageDownload(arg1, arg2, arg3, arg4) {
   return window['go']['app']['App']['StartDriverPackageDownload'](arg1, arg2, arg3, arg4);
+}
+
+export function StartUpdateDownload() {
+  return window['go']['app']['App']['StartUpdateDownload']();
 }
 
 export function TestConnection(arg1) {

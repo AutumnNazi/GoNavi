@@ -1492,6 +1492,130 @@ func TestDownloadUpdateKeepsSingleLeaseWhileRefreshingAndDownloadingDevAsset(t *
 	}
 }
 
+func TestStartUpdateDownloadKeepsTaskQueryableAfterStarterReturns(t *testing.T) {
+	app, installMode := newDevUpdateDownloadTestApp(t)
+
+	payload := []byte(strings.Repeat("x", 100))
+	assetName, err := expectedAssetNameForInstallMode(stdRuntime.GOOS, stdRuntime.GOARCH, "dev-background", installMode)
+	if err != nil {
+		t.Fatalf("expectedAssetNameForInstallMode: %v", err)
+	}
+	assetURL := devUpdateDispatcherAssetURL("dev-background", assetName)
+	hash := fmt.Sprintf("%x", sha256.Sum256(payload))
+	downloadReached := make(chan struct{}, 1)
+	downloadURLMismatch := make(chan error, 1)
+	releaseDownload := make(chan struct{})
+	stubDevUpdateDownloadFile(t, func(rawURL string, assetPath string, onProgress func(downloaded, total int64), expectedSize int64) (string, error) {
+		if rawURL != downloadDispatcherURLRequiringCurrentDevAsset(assetURL) {
+			err := fmt.Errorf("background download URL = %q, want gated Dispatcher URL", rawURL)
+			select {
+			case downloadURLMismatch <- err:
+			default:
+			}
+			return "", err
+		}
+		if onProgress != nil {
+			onProgress(45, expectedSize)
+		}
+		select {
+		case downloadReached <- struct{}{}:
+		default:
+		}
+		<-releaseDownload
+		if err := os.WriteFile(assetPath, payload, 0o644); err != nil {
+			return "", err
+		}
+		if onProgress != nil {
+			onProgress(int64(len(payload)), expectedSize)
+		}
+		return hash, nil
+	})
+	app.updateState.lastCheck = updateInfoFromReleaseForTest(
+		t,
+		devUpdateReleaseForTest(t, "dev-background", assetURL, payload, installMode),
+		installMode,
+	)
+
+	start := app.StartUpdateDownload()
+	if !start.Success {
+		t.Fatalf("StartUpdateDownload returned failure: %#v", start)
+	}
+	startedTask := updateDownloadTaskFromResult(t, start)
+	if startedTask.TaskID == "" || !startedTask.Running || startedTask.Status != "start" {
+		t.Fatalf("unexpected initial background task: %#v", startedTask)
+	}
+
+	select {
+	case <-downloadReached:
+	case err := <-downloadURLMismatch:
+		t.Fatal(err)
+	case <-time.After(2 * time.Second):
+		close(releaseDownload)
+		t.Fatal("background update did not reach the download seam")
+	}
+
+	query := app.GetUpdateDownloadTask()
+	if !query.Success {
+		close(releaseDownload)
+		t.Fatalf("GetUpdateDownloadTask returned failure: %#v", query)
+	}
+	inFlightTask := updateDownloadTaskFromResult(t, query)
+	if inFlightTask.TaskID != startedTask.TaskID || !inFlightTask.Running || inFlightTask.Status != "downloading" || inFlightTask.Percent != 45 || inFlightTask.Downloaded != 45 || inFlightTask.Total != int64(len(payload)) {
+		close(releaseDownload)
+		t.Fatalf("query did not restore the in-flight task: %#v", inFlightTask)
+	}
+
+	reused := app.StartUpdateDownload()
+	if !reused.Success {
+		close(releaseDownload)
+		t.Fatalf("second StartUpdateDownload returned failure: %#v", reused)
+	}
+	if reusedData, ok := reused.Data.(map[string]interface{}); !ok || reusedData["alreadyRunning"] != true {
+		close(releaseDownload)
+		t.Fatalf("second StartUpdateDownload did not reuse the active task: %#v", reused)
+	}
+	if reusedTask := updateDownloadTaskFromResult(t, reused); reusedTask.TaskID != startedTask.TaskID {
+		close(releaseDownload)
+		t.Fatalf("reused task ID = %q, want %q", reusedTask.TaskID, startedTask.TaskID)
+	}
+
+	close(releaseDownload)
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		finished := updateDownloadTaskFromResult(t, app.GetUpdateDownloadTask())
+		if !finished.Running {
+			if finished.TaskID != startedTask.TaskID || finished.Status != "done" || finished.Percent != 100 || finished.Result == nil || !finished.Result.Info.Downloaded {
+				t.Fatalf("unexpected completed background task: %#v", finished)
+			}
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("background task did not finish: %#v", finished)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+func updateDownloadTaskFromResult(t *testing.T, result connection.QueryResult) UpdateDownloadTaskStatus {
+	t.Helper()
+	data, ok := result.Data.(map[string]interface{})
+	if !ok {
+		t.Fatalf("update task result data type = %T, want map", result.Data)
+	}
+	switch task := data["task"].(type) {
+	case *UpdateDownloadTaskStatus:
+		if task == nil {
+			t.Fatal("update task is nil")
+		}
+		return *snapshotUpdateDownloadTask(task)
+	case UpdateDownloadTaskStatus:
+		return task
+	default:
+		t.Fatalf("update task type = %T, want UpdateDownloadTaskStatus", data["task"])
+		return UpdateDownloadTaskStatus{}
+	}
+}
+
 func newDevUpdateDownloadTestApp(t *testing.T) (*App, updateInstallMode) {
 	t.Helper()
 	configureUpdateManifestHTTPTest(t)
