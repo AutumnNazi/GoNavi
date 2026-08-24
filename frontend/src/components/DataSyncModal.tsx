@@ -759,9 +759,11 @@ const DataSyncModal: React.FC<{
     }
     if (workflowType === "migration") {
       const supportsAutoCreate = migrationCapability?.supportsAutoCreate === true;
-      if (syncMode === "insert_update") {
-        setSyncMode("insert_only");
-      }
+      // 迁移保持默认 insert_update：目标表已存在且补列时，必须走按主键差异
+      // 更新才能把新增字段的值回填到已有数据行；强制 insert_only 会让这些
+      // 行永远留 NULL（issue #1014）。全新建表场景下目标为空表，
+      // insert_update 的差异比对等价于全量插入，无额外开销。
+      // 无主键的已存在表会由引擎明确报错提示，而不是静默漏数据。
       if (syncContent === "schema") {
         setSyncContent("both");
       }
@@ -1347,6 +1349,10 @@ const DataSyncModal: React.FC<{
     };
     return buildSqlPreview(previewData, previewTable, targetType, ops);
   }, [previewData, previewTable, targetConnId, connections, tableOptions]);
+  // Old Redis/Mongo preview payloads did not set RowSelectionSupported, but
+  // still include a usable pkColumn. Preserve their existing row-selection UI.
+  const previewRowSelectionSupported =
+    previewData?.rowSelectionSupported !== false || Boolean(previewData?.pkColumn);
   const previewHasSchemaStatements = useMemo(
     () =>
       Array.isArray(previewData?.schemaStatements) &&
@@ -2937,34 +2943,44 @@ const DataSyncModal: React.FC<{
                         }),
                         children: (
                           <div>
-                            <Text type="secondary">
-                              {isCompareEntry
-                                ? tr(
-                                    "data_sync.compare_entry.preview.selection_hint",
-                                  )
-                                : tr("data_sync.preview.selection_hint.insert")}
-                            </Text>
+                            {previewRowSelectionSupported && (
+                              <Text type="secondary">
+                                {isCompareEntry
+                                  ? tr(
+                                      "data_sync.compare_entry.preview.selection_hint",
+                                    )
+                                  : tr("data_sync.preview.selection_hint.insert")}
+                              </Text>
+                            )}
                             <Table
                               size="small"
                               style={{ marginTop: 8 }}
-                              rowKey={(r: any) => r.pk}
+                              rowKey={(r: any, index?: number) =>
+                                r.pk || `preview-insert-${index ?? 0}`}
                               dataSource={(previewData.inserts || []).map(
-                                (r: any) => ({ ...r, key: r.pk }),
+                                (r: any, index: number) => ({
+                                  ...r,
+                                  key: r.pk || `preview-insert-${index}`,
+                                }),
                               )}
                               pagination={false}
-                              rowSelection={{
-                                selectedRowKeys: (tableOptions[previewTable]
-                                  ?.selectedInsertPks || []) as any,
-                                onChange: (keys) =>
-                                  updateTableOption(
-                                    previewTable,
-                                    "selectedInsertPks",
-                                    keys as string[],
-                                  ),
-                                getCheckboxProps: () => ({
-                                  disabled: !tableOptions[previewTable]?.insert,
-                                }),
-                              }}
+                              rowSelection={
+                                previewRowSelectionSupported
+                                  ? {
+                                      selectedRowKeys: (tableOptions[previewTable]
+                                        ?.selectedInsertPks || []) as any,
+                                      onChange: (keys) =>
+                                        updateTableOption(
+                                          previewTable,
+                                          "selectedInsertPks",
+                                          keys as string[],
+                                        ),
+                                      getCheckboxProps: () => ({
+                                        disabled: !tableOptions[previewTable]?.insert,
+                                      }),
+                                    }
+                                  : undefined
+                              }
                               columns={[
                                 {
                                   title:
@@ -3003,13 +3019,15 @@ const DataSyncModal: React.FC<{
                         }),
                         children: (
                           <div>
-                            <Text type="secondary">
-                              {isCompareEntry
-                                ? tr(
-                                    "data_sync.compare_entry.preview.selection_hint",
-                                  )
-                                : tr("data_sync.preview.selection_hint.update")}
-                            </Text>
+                            {previewRowSelectionSupported && (
+                              <Text type="secondary">
+                                {isCompareEntry
+                                  ? tr(
+                                      "data_sync.compare_entry.preview.selection_hint",
+                                    )
+                                  : tr("data_sync.preview.selection_hint.update")}
+                              </Text>
+                            )}
                             <Table
                               size="small"
                               style={{ marginTop: 8 }}
@@ -3018,19 +3036,23 @@ const DataSyncModal: React.FC<{
                                 (r: any) => ({ ...r, key: r.pk }),
                               )}
                               pagination={false}
-                              rowSelection={{
-                                selectedRowKeys: (tableOptions[previewTable]
-                                  ?.selectedUpdatePks || []) as any,
-                                onChange: (keys) =>
-                                  updateTableOption(
-                                    previewTable,
-                                    "selectedUpdatePks",
-                                    keys as string[],
-                                  ),
-                                getCheckboxProps: () => ({
-                                  disabled: !tableOptions[previewTable]?.update,
-                                }),
-                              }}
+                              rowSelection={
+                                previewRowSelectionSupported
+                                  ? {
+                                      selectedRowKeys: (tableOptions[previewTable]
+                                        ?.selectedUpdatePks || []) as any,
+                                      onChange: (keys) =>
+                                        updateTableOption(
+                                          previewTable,
+                                          "selectedUpdatePks",
+                                          keys as string[],
+                                        ),
+                                      getCheckboxProps: () => ({
+                                        disabled: !tableOptions[previewTable]?.update,
+                                      }),
+                                    }
+                                  : undefined
+                              }
                               columns={[
                                 {
                                   title:
@@ -3139,13 +3161,15 @@ const DataSyncModal: React.FC<{
                               showIcon
                               message={tr("data_sync.preview.delete_warning")}
                             />
-                            <Text type="secondary">
-                              {isCompareEntry
-                                ? tr(
-                                    "data_sync.compare_entry.preview.selection_hint",
-                                  )
-                                : tr("data_sync.preview.selection_hint.delete")}
-                            </Text>
+                            {previewRowSelectionSupported && (
+                              <Text type="secondary">
+                                {isCompareEntry
+                                  ? tr(
+                                      "data_sync.compare_entry.preview.selection_hint",
+                                    )
+                                  : tr("data_sync.preview.selection_hint.delete")}
+                              </Text>
+                            )}
                             <Table
                               size="small"
                               style={{ marginTop: 8 }}
@@ -3154,19 +3178,23 @@ const DataSyncModal: React.FC<{
                                 (r: any) => ({ ...r, key: r.pk }),
                               )}
                               pagination={false}
-                              rowSelection={{
-                                selectedRowKeys: (tableOptions[previewTable]
-                                  ?.selectedDeletePks || []) as any,
-                                onChange: (keys) =>
-                                  updateTableOption(
-                                    previewTable,
-                                    "selectedDeletePks",
-                                    keys as string[],
-                                  ),
-                                getCheckboxProps: () => ({
-                                  disabled: !tableOptions[previewTable]?.delete,
-                                }),
-                              }}
+                              rowSelection={
+                                previewRowSelectionSupported
+                                  ? {
+                                      selectedRowKeys: (tableOptions[previewTable]
+                                        ?.selectedDeletePks || []) as any,
+                                      onChange: (keys) =>
+                                        updateTableOption(
+                                          previewTable,
+                                          "selectedDeletePks",
+                                          keys as string[],
+                                        ),
+                                      getCheckboxProps: () => ({
+                                        disabled: !tableOptions[previewTable]?.delete,
+                                      }),
+                                    }
+                                  : undefined
+                              }
                               columns={[
                                 {
                                   title:

@@ -2856,6 +2856,20 @@ func lookupExactTableExists(database tableNameMetadataProvider, dbName, tableNam
 	return containsExactTableName(tables, tableName), nil
 }
 
+func normalizeTableExistsLookup(config connection.ConnectionConfig, dbName, tableName string) (string, string) {
+	// MySQL-family drivers enumerate TABLE_NAME without the database prefix,
+	// while callers may pass a qualified object (database.table) from a data
+	// sync mapping. Keep the database in the GetTables argument and compare the
+	// bare table name, matching the contract used by GetColumns and DDL paths.
+	switch resolveDDLDBType(config) {
+	case "mysql", "mariadb":
+		if schema, table := normalizeMetadataSchemaAndTable(config, dbName, tableName); strings.TrimSpace(table) != "" {
+			return schema, table
+		}
+	}
+	return dbName, tableName
+}
+
 // DBTableExists checks one table against the driver's table-name metadata without
 // loading row counts, storage statistics, or sampled message fields.
 func (a *App) DBTableExists(config connection.ConnectionConfig, dbName string, tableName string) connection.QueryResult {
@@ -2864,7 +2878,8 @@ func (a *App) DBTableExists(config connection.ConnectionConfig, dbName string, t
 		return connection.QueryResult{Success: true, Data: map[string]bool{"exists": false}}
 	}
 
-	runConfig := normalizeMetadataRunConfig(config, dbName)
+	lookupDBName, lookupTableName := normalizeTableExistsLookup(config, dbName, targetTableName)
+	runConfig := normalizeMetadataRunConfig(config, lookupDBName)
 	if strings.EqualFold(strings.TrimSpace(runConfig.Type), "redis") {
 		runConfig.Type = "redis"
 		client, err := a.getRedisClient(runConfig)
@@ -2886,7 +2901,7 @@ func (a *App) DBTableExists(config connection.ConnectionConfig, dbName string, t
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
 
-	exists, err := lookupExactTableExists(dbInst, dbName, targetTableName)
+	exists, err := lookupExactTableExists(dbInst, lookupDBName, lookupTableName)
 	if err != nil && shouldRefreshCachedConnection(err) {
 		if a.invalidateCachedDatabase(runConfig, err) {
 			retryInst, retryErr := a.getDatabaseForcePing(runConfig)
@@ -2894,7 +2909,7 @@ func (a *App) DBTableExists(config connection.ConnectionConfig, dbName string, t
 				logger.Error(retryErr, "DBTableExists 重建连接失败：%s 表=%s.%s", formatConnSummary(runConfig), dbName, targetTableName)
 				return connection.QueryResult{Success: false, Message: retryErr.Error()}
 			}
-			exists, err = lookupExactTableExists(retryInst, dbName, targetTableName)
+			exists, err = lookupExactTableExists(retryInst, lookupDBName, lookupTableName)
 		}
 	}
 	if err != nil {

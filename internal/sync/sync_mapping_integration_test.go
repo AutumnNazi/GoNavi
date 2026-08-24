@@ -154,11 +154,74 @@ func TestRunSyncExplicitMappingUsesConfiguredKeyWithoutPhysicalPK(t *testing.T) 
 			},
 		}},
 	})
-	if !result.Success || result.RowsUpdated != 1 || result.RowsInserted != 0 {
-		t.Fatalf("RunSync() = %+v, want explicit-key update without physical PK", result)
+	if !result.Success || result.TablesSynced != 1 || result.RowsUpdated != 1 {
+		t.Fatalf("RunSync() = %+v, want configured-key update", result)
 	}
-	if len(target.applied.Updates) != 1 || !reflect.DeepEqual(target.applied.Updates[0].Keys, map[string]interface{}{"user_id": int64(7)}) {
-		t.Fatalf("explicit-key update = %#v", target.applied.Updates)
+	if len(target.applied.Updates) != 1 || len(target.applied.Inserts) != 0 || len(target.applied.Deletes) != 0 {
+		t.Fatalf("configured key must drive the update diff: %#v", target.applied)
+	}
+	if got := target.applied.Updates[0].Keys; !reflect.DeepEqual(got, map[string]interface{}{"user_id": int64(7)}) {
+		t.Fatalf("update keys = %#v, want mapped configured key", got)
+	}
+}
+
+func TestRunSyncExplicitMappingUsesConfiguredKeyOverPhysicalPrimaryKey(t *testing.T) {
+	source := &mappingSyncDatabase{
+		columnsByTable: map[string][]connection.ColumnDefinition{
+			"APP.users": {
+				{Name: "id", Type: "NUMBER", Key: "PK"},
+				{Name: "email", Type: "VARCHAR2(100)"},
+				{Name: "name", Type: "VARCHAR2(100)"},
+			},
+		},
+		queryRows: []map[string]interface{}{{"id": int64(8), "email": "old@example.com", "name": "new"}},
+	}
+	target := &mappingSyncDatabase{
+		columnsByTable: map[string][]connection.ColumnDefinition{
+			"dbo.people": {
+				{Name: "user_id", Type: "BIGINT", Key: "PK"},
+				{Name: "email", Type: "NVARCHAR(100)"},
+				{Name: "display_name", Type: "NVARCHAR(100)"},
+			},
+		},
+		queryRows: []map[string]interface{}{{"user_id": int64(7), "email": "old@example.com", "display_name": "old"}},
+	}
+	useSyncDatabaseFactorySequence(t,
+		syncDatabaseFactoryStep{db: source},
+		syncDatabaseFactoryStep{db: target},
+	)
+
+	result := NewSyncEngine(Reporter{}).RunSync(SyncConfig{
+		SourceConfig:   connection.ConnectionConfig{Type: "oracle"},
+		TargetConfig:   connection.ConnectionConfig{Type: "sqlserver"},
+		SourceDatabase: "APP",
+		TargetDatabase: "warehouse",
+		Tables:         []string{"users"},
+		Content:        "data",
+		Mode:           "insert_update",
+		TableOptions: map[string]TableOptions{
+			"users": {Update: true},
+		},
+		Mappings: []SyncObjectMapping{{
+			ID:         "users-to-people",
+			Source:     SyncObjectRef{Schema: "APP", Name: "users"},
+			Target:     SyncObjectRef{Schema: "dbo", Name: "people"},
+			KeyColumns: []string{"email"},
+			Columns: []SyncColumnMapping{
+				{Source: "id", Target: "user_id"},
+				{Source: "email", Target: "email"},
+				{Source: "name", Target: "display_name"},
+			},
+		}},
+	})
+	if !result.Success || result.RowsUpdated != 1 || result.RowsInserted != 0 || result.RowsDeleted != 0 {
+		t.Fatalf("RunSync() = %+v, want one configured-key update", result)
+	}
+	if len(target.applied.Updates) != 1 || len(target.applied.Inserts) != 0 || len(target.applied.Deletes) != 0 {
+		t.Fatalf("configured key must control diffing: %#v", target.applied)
+	}
+	if got := target.applied.Updates[0].Keys; !reflect.DeepEqual(got, map[string]interface{}{"email": "old@example.com"}) {
+		t.Fatalf("update keys = %#v, want mapped configured key", got)
 	}
 }
 

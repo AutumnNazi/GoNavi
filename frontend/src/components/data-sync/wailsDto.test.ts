@@ -11,6 +11,8 @@ import {
   decodeObjectMetadata,
   decodeDataSyncPreflightQuery,
   decodeRouteCapability,
+  decodeRunEvent,
+  decodeRunRecord,
   encodeDataSyncJobDefinition,
   requireWailsQueryData,
 } from './wailsDto';
@@ -221,6 +223,106 @@ describe('data sync Wails DTO boundary', () => {
     });
   });
 
+  it('defaults omitted CDC fields for legacy or un-preflighted draft jobs', () => {
+    const cdc = reviseDataSyncTask(configuredTask('cdc'), {
+      incremental: {
+        mode: 'cdc',
+        initialSnapshot: false,
+        startPosition: 'latest',
+        adapter: 'mongodb-change-stream',
+        slotName: '',
+        publicationName: '',
+      },
+      trigger: { mode: 'continuous' },
+    });
+    const legacyWire = JSON.parse(JSON.stringify(encodeDataSyncJobDefinition(cdc))) as {
+      cdc: Record<string, unknown>;
+    };
+    delete legacyWire.cdc.initialSnapshot;
+    delete legacyWire.cdc.adapter;
+
+    expect(decodeDataSyncJobDefinition(legacyWire)).toMatchObject({
+      incremental: {
+        mode: 'cdc',
+        initialSnapshot: false,
+        adapter: '',
+      },
+    });
+  });
+
+  it('round-trips schema-only migration content and column repair settings', () => {
+    const base = createDataSyncTaskDraft({
+      id: 'schema-migration',
+      kind: 'migration',
+      content: 'schema',
+    });
+    const task = reviseDataSyncTask(base, {
+      name: 'Schema migration',
+      source: {
+        ...base.source,
+        connectionId: 'source-id',
+        type: 'mysql',
+        database: 'source',
+        schema: 'source_schema',
+      },
+      target: {
+        ...base.target,
+        connectionId: 'target-id',
+        type: 'postgresql',
+        database: 'target',
+        schema: 'target_schema',
+      },
+      mappings: [
+        createDataSyncTableMapping('schema-map', 'orders', 'orders'),
+      ],
+    });
+
+    const wire = encodeDataSyncJobDefinition(task);
+    expect(wire).toMatchObject({
+      kind: 'migration',
+      options: {
+        content: 'schema',
+        autoAddColumns: true,
+      },
+      mappings: [
+        {
+          sourceSchema: 'source_schema',
+          sourceTable: 'orders',
+          targetSchema: 'target_schema',
+          targetTable: 'orders',
+        },
+      ],
+    });
+    expect(decodeDataSyncJobDefinition(wire)).toMatchObject({
+      kind: 'migration',
+      content: 'schema',
+      delivery: { autoAddColumns: true },
+    });
+  });
+
+  it('preserves data-only defaults for legacy migrations without options', () => {
+    const task = configuredTask('migration');
+    const legacyWire = JSON.parse(JSON.stringify(encodeDataSyncJobDefinition(task))) as {
+      options: Record<string, unknown>;
+    };
+    delete legacyWire.options.content;
+    delete legacyWire.options.autoAddColumns;
+
+    const decoded = decodeDataSyncJobDefinition(legacyWire);
+    expect(decoded).toMatchObject({
+      kind: 'migration',
+      content: 'data',
+      delivery: { autoAddColumns: false },
+    });
+    expect(encodeDataSyncJobDefinition(decoded)).toMatchObject({
+      kind: 'migration',
+      options: {
+        content: 'data',
+        autoAddColumns: false,
+      },
+    });
+  });
+
   it('fails closed for malformed QueryResult and unsafe policies', () => {
     expect(() => requireWailsQueryData({ success: true }, 'Example')).toThrow(
       DataSyncGatewayProtocolError,
@@ -253,6 +355,19 @@ describe('data sync Wails DTO boundary', () => {
         }),
       ),
     ).toThrow('requires retryLimit 0');
+  });
+
+  it('requires a sequence for run events because pagination uses it as a cursor', () => {
+    expect(() =>
+      decodeRunEvent(
+        {
+          runId: 'run-1',
+          type: 'log',
+          createdAt: Date.parse('2026-08-08T00:00:00.000Z'),
+        },
+        'event',
+      ),
+    ).toThrow('event.sequence');
   });
 
   it('encodes safe snapshot row isolation and preserves per-mapping watermarks', () => {
@@ -395,5 +510,59 @@ describe('data sync Wails DTO boundary', () => {
         task,
       ),
     ).toThrow(DataSyncGatewayProtocolError);
+  });
+
+  it('decodes compareMode from a run definition snapshot', () => {
+    const baseRun = {
+      id: 'run-1',
+      jobId: 'job-1',
+      status: 'succeeded',
+      trigger: 'manual',
+      attempt: 1,
+      resumable: false,
+      queuedAt: 0,
+      rowsInserted: 0,
+      rowsUpdated: 0,
+      rowsDeleted: 0,
+      rowsFailed: 0,
+    };
+    const schemaRun = decodeRunRecord(
+      {
+        ...baseRun,
+        definitionSnapshot: {
+          kind: 'compare',
+          options: { content: 'schema' },
+        },
+      },
+      new Map(),
+    );
+    expect(schemaRun.compareMode).toBe('schema');
+
+    const dataRun = decodeRunRecord(
+      {
+        ...baseRun,
+        definitionSnapshot: {
+          kind: 'compare',
+          options: { content: 'data' },
+        },
+      },
+      new Map(),
+    );
+    expect(dataRun.compareMode).toBe('data');
+
+    const migrationRun = decodeRunRecord(
+      {
+        ...baseRun,
+        definitionSnapshot: {
+          kind: 'migration',
+          options: { content: 'both' },
+        },
+      },
+      new Map(),
+    );
+    expect(migrationRun.compareMode).toBeUndefined();
+
+    const noSnapshotRun = decodeRunRecord(baseRun, new Map());
+    expect(noSnapshotRun.compareMode).toBeUndefined();
   });
 });

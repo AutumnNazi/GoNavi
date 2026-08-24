@@ -511,6 +511,7 @@ func buildDataSyncJobEngineConfig(definition syncjob.JobDefinition, runID string
 	if mapping.SourceSchema != "" {
 		sourceTable = strings.TrimSpace(mapping.SourceSchema) + "." + sourceTable
 	}
+	effectiveSyncMode := dataSyncJobEffectiveSyncMode(definition)
 	config := syncbackend.SyncConfig{
 		SourceConfig:        source.Config,
 		TargetConfig:        target.Config,
@@ -519,17 +520,17 @@ func buildDataSyncJobEngineConfig(definition syncjob.JobDefinition, runID string
 		TargetSchema:        firstNonEmptySyncJob(mapping.TargetSchema, target.Schema),
 		Tables:              []string{sourceTable},
 		Content:             definition.Options.Content,
-		Mode:                definition.Options.SyncMode,
+		Mode:                effectiveSyncMode,
 		JobID:               runID,
 		BatchSize:           definition.Options.BatchSize,
 		RowErrorPolicy:      string(definition.Options.ErrorPolicy),
-		AutoAddColumns:      definition.Options.AutoAddColumns,
+		AutoAddColumns:      definition.AutoAddColumnsEnabled(),
 		TargetTableStrategy: firstNonEmptySyncJob(mapping.TargetTableStrategy, definition.Options.TargetTableStrategy),
 		CreateIndexes:       definition.Options.CreateIndexes,
 		TableOptions: map[string]syncbackend.TableOptions{
 			sourceTable: {
 				Insert: true,
-				Update: definition.Options.SyncMode == "insert_update",
+				Update: effectiveSyncMode == "insert_update",
 				Delete: definition.Options.PropagateDeletes,
 			},
 		},
@@ -550,13 +551,13 @@ func buildDataSyncJobEngineConfig(definition syncjob.JobDefinition, runID string
 		config.TableOptions = map[string]syncbackend.TableOptions{
 			"__query_result__": {
 				Insert: true,
-				Update: definition.Options.SyncMode == "insert_update",
+				Update: effectiveSyncMode == "insert_update",
 				Delete: false,
 			},
 		}
 		return config, nil
 	}
-	if dataSyncJobMappingNeedsExplicitProjection(mapping) {
+	if dataSyncJobMappingNeedsExplicitProjection(definition, mapping) {
 		engineMapping, err := buildEngineObjectMapping(mapping)
 		if err != nil {
 			return syncbackend.SyncConfig{}, err
@@ -569,11 +570,52 @@ func buildDataSyncJobEngineConfig(definition syncjob.JobDefinition, runID string
 	return config, nil
 }
 
-func dataSyncJobMappingNeedsExplicitProjection(mapping syncjob.TableMapping) bool {
-	return len(mapping.Columns) > 0 ||
-		len(mapping.KeyColumns) > 0 ||
-		!strings.EqualFold(strings.TrimSpace(mapping.SourceTable), strings.TrimSpace(mapping.TargetTable)) ||
-		(strings.TrimSpace(mapping.TargetSchema) != "" && !strings.EqualFold(strings.TrimSpace(mapping.SourceSchema), strings.TrimSpace(mapping.TargetSchema)))
+func dataSyncJobEffectiveSyncMode(definition syncjob.JobDefinition) string {
+	switch strings.ToLower(strings.TrimSpace(definition.Options.SyncMode)) {
+	case "insert_only":
+		return "insert_only"
+	case "full_overwrite":
+		return "full_overwrite"
+	default:
+		return "insert_update"
+	}
+}
+
+func dataSyncJobMappingNeedsExplicitProjection(definition syncjob.JobDefinition, mapping syncjob.TableMapping) bool {
+	// 结构型迁移任务（同名表 + schema/both 内容）允许走隐式路径：
+	// 运行时引擎会按物理主键做行匹配与差异回填，UI 自动填充的识别列
+	// 恰好就是源表主键元数据，二者等价；若因 KeyColumns 降级为显式投影，
+	// 引擎会强制关闭 AutoAddColumns，导致目标缺列永远不被补齐（issue #1014）。
+	structureMigration := definition.Kind == syncjob.JobKindMigration &&
+		dataSyncJobMigrationAllowsSchemaChanges(definition) &&
+		strings.EqualFold(strings.TrimSpace(mapping.SourceTable), strings.TrimSpace(mapping.TargetTable))
+	if len(mapping.Columns) > 0 ||
+		(len(mapping.KeyColumns) > 0 && !structureMigration) ||
+		!strings.EqualFold(strings.TrimSpace(mapping.SourceTable), strings.TrimSpace(mapping.TargetTable)) {
+		return true
+	}
+
+	if strings.TrimSpace(mapping.TargetSchema) == "" || strings.EqualFold(
+		strings.TrimSpace(mapping.SourceSchema),
+		strings.TrimSpace(mapping.TargetSchema),
+	) {
+		return false
+	}
+
+	// The legacy migration planner must see the source and target schemas so it
+	// can inspect the target table and emit ALTER TABLE statements. Explicit
+	// mappings are intentionally rejected by the sync engine for schema/both
+	// content, so only structure-capable migration tasks may omit the mapping.
+	return !(definition.Kind == syncjob.JobKindMigration && dataSyncJobMigrationAllowsSchemaChanges(definition))
+}
+
+func dataSyncJobMigrationAllowsSchemaChanges(definition syncjob.JobDefinition) bool {
+	switch strings.ToLower(strings.TrimSpace(definition.Options.Content)) {
+	case "schema", "both":
+		return true
+	default:
+		return false
+	}
 }
 
 func buildEngineObjectMapping(mapping syncjob.TableMapping) (syncbackend.SyncObjectMapping, error) {

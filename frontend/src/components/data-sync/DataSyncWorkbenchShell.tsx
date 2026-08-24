@@ -29,6 +29,11 @@ import {
   type DataSyncPreflightSnapshot,
   type DataSyncRouteCapability,
   type DataSyncRunRecord,
+  type DataSyncRunCursor,
+  type DataSyncRunPage,
+  type DataSyncRunPageSize,
+  type DataSyncRunEvent,
+  type DataSyncCompareResult,
   type DataSyncScheduleSummary,
   type DataSyncTaskDefinition,
   type DataSyncTaskKind,
@@ -38,13 +43,45 @@ import {
   createDataSyncWorkbenchTranslate,
   type DataSyncWorkbenchLocale,
 } from './text';
+import { decodeCompareResult } from './wailsDto';
 import {
   dispatchSidebarDatabaseRefresh,
   type SidebarDatabaseRefreshRequest,
 } from '../../utils/sidebarDatabaseRefresh';
+import Modal from '../common/ResizableDraggableModal';
 import './DataSyncWorkbench.css';
 
 type WorkbenchView = 'tasks' | 'runs' | 'schedules' | 'cdc';
+
+type DataSyncConfirmation =
+  | {
+      kind: 'delete-task';
+      task: DataSyncTaskDefinition;
+      title: string;
+      description: string;
+      confirmText: string;
+    }
+  | {
+      kind: 'delete-run';
+      runId: string;
+      title: string;
+      description: string;
+      confirmText: string;
+    }
+  | {
+      kind: 'clear-terminal-runs';
+      title: string;
+      description: string;
+      confirmText: string;
+    }
+  | {
+      kind: 'reset-checkpoint';
+      taskId: string;
+      revision: number;
+      title: string;
+      description: string;
+      confirmText: string;
+    };
 
 const EMPTY_CAPABILITY: DataSyncRouteCapability = {
   level: 'unknown',
@@ -64,6 +101,40 @@ const SIDEBAR_REFRESH_RUN_STATUSES = new Set<DataSyncRunRecord['status']>([
   'cancelled',
   'interrupted',
 ]);
+
+/**
+ * The compare executor emits one Analyze payload per table mapping, each a
+ * SyncAnalyzeResult JSON (`{success,message,tables:[...]}`) carrying a single
+ * table — executeOneMapping runs once per mapping. Merge every payload in
+ * chronological order so a multi-mapping compare lists all of its tables
+ * instead of only the last one, keeping the newest entry per table when a run
+ * was resumed and a mapping re-analyzed.
+ */
+const extractCompareResult = (
+  events: DataSyncRunEvent[],
+): DataSyncCompareResult | null => {
+  const byTable = new Map<string, DataSyncCompareResult['tables'][number]>();
+  let latest: DataSyncCompareResult | null = null;
+  for (const event of events) {
+    const payload = event.payload;
+    if (
+      !payload ||
+      typeof payload !== 'object' ||
+      !Array.isArray((payload as { tables?: unknown }).tables)
+    ) {
+      continue;
+    }
+    try {
+      const decoded = decodeCompareResult(payload, 'compareResult');
+      latest = decoded;
+      decoded.tables.forEach((table) => byTable.set(table.table, table));
+    } catch {
+      // Ignore malformed payloads and keep scanning the remaining events.
+    }
+  }
+  if (!latest) return null;
+  return { ...latest, tables: Array.from(byTable.values()) };
+};
 
 let localTaskSequence = 0;
 
@@ -115,6 +186,23 @@ export type DataSyncWorkbenchShellProps = {
   onClose?: () => void;
 };
 
+/**
+ * Keep tasks supplied by an entry point until persistence has a matching copy.
+ * A persisted task wins for the same id so a stale in-memory draft cannot
+ * overwrite the saved definition.
+ */
+export const mergeDataSyncInitialTasks = (
+  initialTasks: DataSyncTaskDefinition[],
+  loadedTasks: DataSyncTaskDefinition[],
+  deletedTaskIds: ReadonlySet<string> = new Set(),
+): DataSyncTaskDefinition[] => {
+  const loadedIds = new Set(loadedTasks.map((task) => task.id));
+  const missingInitialTasks = initialTasks.filter(
+    (task) => !loadedIds.has(task.id) && !deletedTaskIds.has(task.id),
+  );
+  return [...missingInitialTasks, ...loadedTasks];
+};
+
 export const DataSyncWorkbenchShell: React.FC<DataSyncWorkbenchShellProps> = ({
   initialTasks = [],
   gateway,
@@ -158,6 +246,13 @@ export const DataSyncWorkbenchShell: React.FC<DataSyncWorkbenchShellProps> = ({
           .map((task) => task.id),
       ),
   );
+  const dirtyTaskIdsRef = useRef(dirtyTaskIds);
+  const deletedTaskIdsRef = useRef(new Set<string>());
+  const markTaskDirty = (taskId: string) => {
+    const next = new Set(dirtyTaskIdsRef.current).add(taskId);
+    dirtyTaskIdsRef.current = next;
+    setDirtyTaskIds(next);
+  };
   const [saving, setSaving] = useState(false);
   const [preflighting, setPreflighting] = useState(false);
   const [preflights, setPreflights] = useState<
@@ -172,20 +267,80 @@ export const DataSyncWorkbenchShell: React.FC<DataSyncWorkbenchShellProps> = ({
   const [beginningApproval, setBeginningApproval] = useState(false);
   const [approving, setApproving] = useState(false);
   const [approvalError, setApprovalError] = useState('');
+  const [pendingPublicationTaskId, setPendingPublicationTaskId] = useState('');
   const [operationError, setOperationError] = useState('');
   const [operationBusy, setOperationBusy] = useState('');
   const [capability, setCapability] = useState<DataSyncRouteCapability>(
     EMPTY_CAPABILITY,
   );
   const [runs, setRuns] = useState<DataSyncRunRecord[]>([]);
+  const [runPageIndex, setRunPageIndex] = useState(0);
+  const [runPageSize, setRunPageSize] = useState<DataSyncRunPageSize>(10);
+  const [runPageCursors, setRunPageCursors] = useState<
+    Array<DataSyncRunCursor | null>
+  >([null]);
+  const [nextRunCursor, setNextRunCursor] = useState<DataSyncRunCursor | null>(null);
+  const [runTotal, setRunTotal] = useState(0);
+  const runPageRequestEpochRef = useRef(0);
+  const selectedRunRequestEpochRef = useRef(0);
   const [schedules, setSchedules] = useState<DataSyncScheduleSummary[]>([]);
   const [cdcSources, setCdcSources] = useState<DataSyncCdcSourceStatus[]>([]);
   const [selectedRunId, setSelectedRunId] = useState('');
   const [errorRows, setErrorRows] = useState<DataSyncErrorRow[]>([]);
   const [checkpoint, setCheckpoint] = useState<DataSyncCheckpointSummary | null>(null);
+  const [compareResult, setCompareResult] = useState<DataSyncCompareResult | null>(
+    null,
+  );
   const runStatusesRef = useRef<Map<string, DataSyncRunRecord['status']>>(new Map());
 
+  const applyRunPage = (
+    page: DataSyncRunPage,
+    pageIndex: number,
+    cursors: Array<DataSyncRunCursor | null>,
+  ) => {
+    const selectedRunStillVisible = Boolean(
+      selectedRunId && page.runs.some((run) => run.id === selectedRunId),
+    );
+    if (!selectedRunStillVisible) {
+      // A page change that removes the selected run invalidates any detail
+      // request for the old page. A refresh that keeps it visible must leave
+      // its already-loaded error rows/checkpoint/compare result untouched.
+      selectedRunRequestEpochRef.current += 1;
+      setErrorRows([]);
+      setCheckpoint(null);
+      setCompareResult(null);
+    }
+    setRuns(page.runs);
+    setRunPageIndex(pageIndex);
+    setRunPageCursors(cursors);
+    setNextRunCursor(page.nextCursor);
+    setRunTotal(page.total);
+    setSelectedRunId((current) =>
+      page.runs.some((run) => run.id === current) ? current : '',
+    );
+  };
+
+  const requestRunPage = async (
+    cursor: DataSyncRunCursor | null,
+    pageSize: DataSyncRunPageSize,
+  ): Promise<DataSyncRunPage | null> => {
+    const requestEpoch = ++runPageRequestEpochRef.current;
+    const page = await gatewayRef.current!.listRunsPage(cursor, pageSize);
+    return requestEpoch === runPageRequestEpochRef.current ? page : null;
+  };
+
+  const reloadFirstRunPage = async () => {
+    const page = await requestRunPage(null, runPageSize);
+    if (page) applyRunPage(page, 0, [null]);
+  };
+
   const selectedTask = tasks.find((task) => task.id === selectedTaskId) || null;
+  const selectedRun = runs.find((run) => run.id === selectedRunId) || null;
+  const selectedRunTask = selectedRun
+    ? tasks.find((task) => task.id === selectedRun.taskId) || null
+    : null;
+  const selectedRunCompareMode =
+    selectedRun?.compareMode ?? selectedRunTask?.compareMode;
   const checkpointTask = checkpoint
     ? tasks.find((task) => task.id === checkpoint.taskId) || null
     : null;
@@ -216,27 +371,54 @@ export const DataSyncWorkbenchShell: React.FC<DataSyncWorkbenchShellProps> = ({
     let active = true;
     void gatewayRef.current!
       .listTasks()
-      .then(async (loadedTasks) => {
-        const [loadedRuns, loadedSchedules, loadedSources] = await Promise.all([
-          gatewayRef.current!.listRuns(),
-          gatewayRef.current!.listSchedules(),
-          gatewayRef.current!.listCdcSources(),
-        ]);
-        return [loadedTasks, loadedRuns, loadedSchedules, loadedSources] as const;
-      })
-      .then(([loadedTasks, loadedRuns, loadedSchedules, loadedSources]) => {
+      .then((loadedTasks) => {
         if (!active) return;
         if (loadedTasks.length > 0) {
-          setTasks(loadedTasks);
+          const mergedTasks = mergeDataSyncInitialTasks(
+            initialTasksRef.current!,
+            loadedTasks,
+            deletedTaskIdsRef.current,
+          );
+          setTasks((current) => {
+            const currentById = new Map(current.map((task) => [task.id, task]));
+            return mergedTasks.map((task) =>
+              dirtyTaskIdsRef.current.has(task.id)
+                ? currentById.get(task.id) || task
+                : task,
+            );
+          });
           setSelectedTaskId((current) =>
-            loadedTasks.some((task) => task.id === current)
+            mergedTasks.some((task) => task.id === current)
               ? current
-              : loadedTasks[0].id,
+              : mergedTasks[0].id,
           );
         }
-        setRuns(loadedRuns);
-        setSchedules(loadedSchedules);
-        setCdcSources(loadedSources);
+        return Promise.allSettled([
+          requestRunPage(null, 10),
+          gatewayRef.current!.listSchedules(),
+          gatewayRef.current!.listCdcSources(),
+        ] as const);
+      })
+      .then((results) => {
+        if (!active || !results) return;
+        const [runPage, schedules, sources] = results;
+        if (runPage.status === 'fulfilled' && runPage.value) {
+          applyRunPage(runPage.value, 0, [null]);
+        }
+        if (schedules.status === 'fulfilled') {
+          setSchedules(schedules.value);
+        }
+        if (sources.status === 'fulfilled') {
+          setCdcSources(sources.value);
+        }
+        const rejected = results.find(
+          (result): result is PromiseRejectedResult => result.status === 'rejected',
+        );
+        if (rejected) {
+          setOperationError(
+            rejected.reason instanceof Error ? rejected.reason.message : String(rejected.reason),
+          );
+        }
       })
       .catch((error) => {
         if (active) {
@@ -268,7 +450,13 @@ export const DataSyncWorkbenchShell: React.FC<DataSyncWorkbenchShellProps> = ({
     return () => {
       active = false;
     };
-  }, [selectedTask?.id, selectedTask?.source, selectedTask?.target]);
+  }, [
+    selectedTask?.id,
+    selectedTask?.kind,
+    selectedTask?.source,
+    selectedTask?.target,
+    selectedTask?.incremental,
+  ]);
 
   useEffect(() => {
     if (activeView !== 'runs') return undefined;
@@ -278,15 +466,16 @@ export const DataSyncWorkbenchShell: React.FC<DataSyncWorkbenchShellProps> = ({
     );
     if (!hasActiveRun) return undefined;
     const timer = globalThis.setInterval(() => {
-      void gatewayRef.current!
-        .listRuns()
-        .then(setRuns)
+      void requestRunPage(runPageCursors[runPageIndex], runPageSize)
+        .then((page) => {
+          if (page) applyRunPage(page, runPageIndex, runPageCursors);
+        })
         .catch((error) =>
           setOperationError(error instanceof Error ? error.message : String(error)),
         );
     }, 3_000);
     return () => globalThis.clearInterval(timer);
-  }, [activeView, runs]);
+  }, [activeView, runPageCursors, runPageIndex, runPageSize, runs, selectedRunId]);
 
   useEffect(() => {
     const previousStatuses = runStatusesRef.current;
@@ -305,7 +494,7 @@ export const DataSyncWorkbenchShell: React.FC<DataSyncWorkbenchShellProps> = ({
     patch: Partial<
       Omit<
         DataSyncTaskDefinition,
-        'id' | 'schemaVersion' | 'revision' | 'createdAt'
+        'id' | 'schemaVersion' | 'revision' | 'editEpoch' | 'createdAt'
       >
     >,
   ) => {
@@ -316,7 +505,7 @@ export const DataSyncWorkbenchShell: React.FC<DataSyncWorkbenchShellProps> = ({
         task.id === taskId ? reviseDataSyncTask(task, patch) : task,
       ),
     );
-    setDirtyTaskIds((current) => new Set(current).add(taskId));
+    markTaskDirty(taskId);
     setApprovalError('');
     setApprovalChallenges((current) => {
       if (!current[taskId]) return current;
@@ -332,21 +521,35 @@ export const DataSyncWorkbenchShell: React.FC<DataSyncWorkbenchShellProps> = ({
       kind,
       name: t(`task_kind.${kind}`),
     });
+    deletedTaskIdsRef.current.delete(task.id);
     setTasks((current) => [...current, task]);
     setSelectedTaskId(task.id);
-    setDirtyTaskIds((current) => new Set(current).add(task.id));
+    markTaskDirty(task.id);
     setActiveStage('endpoints');
     setShowKindSelector(false);
     setActiveView('tasks');
   };
 
-  const saveTask = async () => {
-    if (!selectedTask || saving) return;
-    const submittedTaskId = selectedTask.id;
+  const saveTask = async (taskToSave = selectedTask) => {
+    if (!taskToSave || saving) return null;
+    const submittedTaskId = taskToSave.id;
     setSaving(true);
     setOperationError('');
     try {
-      const saved = await gatewayRef.current!.saveTask(selectedTask);
+      const saved = await gatewayRef.current!.saveTask(taskToSave);
+      let refreshedPreflight: DataSyncPreflightSnapshot | null = null;
+      let refreshError: unknown = null;
+      if (saved.lifecycle === 'ready' || saved.lifecycle === 'enabled') {
+        try {
+          // PutJob advances the persisted revision. Revalidate that exact
+          // revision before exposing the run action; the old snapshot is no
+          // longer sufficient evidence, even when the visible fields did not
+          // change.
+          refreshedPreflight = await gatewayRef.current!.preflightTask(saved);
+        } catch (error) {
+          refreshError = error;
+        }
+      }
       setTasks((current) => {
         const next = current.flatMap((task) => {
           if (task.id === submittedTaskId) return [saved];
@@ -355,32 +558,39 @@ export const DataSyncWorkbenchShell: React.FC<DataSyncWorkbenchShellProps> = ({
         });
         return next.some((task) => task.id === saved.id) ? next : [...next, saved];
       });
+      setPreflights((current) => {
+        const next = { ...current };
+        delete next[submittedTaskId];
+        delete next[saved.id];
+        if (refreshedPreflight) {
+          next[saved.id] = refreshedPreflight;
+        } else if (saved.id !== submittedTaskId) {
+          const previous = current[submittedTaskId];
+          if (previous) {
+            next[saved.id] = {
+              ...previous,
+              taskId: saved.id,
+              // A server-assigned identity can change the authoritative
+              // definition hash. Keep the evidence visible, but stale.
+              taskRevision:
+                previous.taskRevision === saved.revision
+                  ? previous.taskRevision - 1
+                  : previous.taskRevision,
+            };
+          }
+        }
+        return next;
+      });
       if (saved.id !== submittedTaskId) {
         setSelectedTaskId((current) =>
           current === submittedTaskId ? saved.id : current,
         );
-        setPreflights((current) => {
-          const previous = current[submittedTaskId];
-          if (!previous) return current;
-          const next = { ...current };
-          delete next[submittedTaskId];
-          next[saved.id] = {
-            ...previous,
-            taskId: saved.id,
-            // A server-assigned identity can change the authoritative definition hash.
-            // Keep the keyed evidence for display, but force a fresh preflight.
-            taskRevision:
-              previous.taskRevision === saved.revision
-                ? previous.taskRevision - 1
-                : previous.taskRevision,
-          };
-          return next;
-        });
       }
       setDirtyTaskIds((current) => {
         const next = new Set(current);
         next.delete(submittedTaskId);
         next.delete(saved.id);
+        dirtyTaskIdsRef.current = next;
         return next;
       });
       setApprovals((current) => {
@@ -395,8 +605,17 @@ export const DataSyncWorkbenchShell: React.FC<DataSyncWorkbenchShellProps> = ({
         delete next[saved.id];
         return next;
       });
+      if (refreshError) {
+        setOperationError(
+          `任务已保存，但保存后的预检失败：${
+            refreshError instanceof Error ? refreshError.message : String(refreshError)
+          }`,
+        );
+      }
+      return saved;
     } catch (error) {
       setOperationError(error instanceof Error ? error.message : String(error));
+      return null;
     } finally {
       setSaving(false);
     }
@@ -433,6 +652,51 @@ export const DataSyncWorkbenchShell: React.FC<DataSyncWorkbenchShellProps> = ({
     }
   };
 
+  const deleteTask = async (task: DataSyncTaskDefinition) => {
+    if (operationBusy === 'delete') return;
+    setOperationBusy('delete');
+    setOperationError('');
+    try {
+      await gatewayRef.current!.deleteTask(task.id);
+      deletedTaskIdsRef.current.add(task.id);
+      setTasks((current) => current.filter((item) => item.id !== task.id));
+      setDirtyTaskIds((current) => {
+        if (!current.has(task.id)) return current;
+        const next = new Set(current);
+        next.delete(task.id);
+        dirtyTaskIdsRef.current = next;
+        return next;
+      });
+      setPreflights((current) => {
+        if (!current[task.id]) return current;
+        const next = { ...current };
+        delete next[task.id];
+        return next;
+      });
+      setApprovals((current) => {
+        if (!current[task.id]) return current;
+        const next = { ...current };
+        delete next[task.id];
+        return next;
+      });
+      setApprovalChallenges((current) => {
+        if (!current[task.id]) return current;
+        const next = { ...current };
+        delete next[task.id];
+        return next;
+      });
+      setSelectedTaskId((current) => {
+        if (current !== task.id) return current;
+        const remaining = tasks.filter((item) => item.id !== task.id);
+        return remaining[0]?.id || '';
+      });
+    } catch (error) {
+      setOperationError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setOperationBusy('');
+    }
+  };
+
   const startTask = async () => {
     if (
       !selectedTask ||
@@ -446,11 +710,55 @@ export const DataSyncWorkbenchShell: React.FC<DataSyncWorkbenchShellProps> = ({
     setOperationBusy('start');
     setOperationError('');
     try {
-      const run = await gatewayRef.current!.startTask(
+      await gatewayRef.current!.startTask(
         selectedTask,
         selectedPreflight,
       );
-      setRuns((current) => [run, ...current.filter((item) => item.id !== run.id)]);
+      // The backend may consume a production approval and persist a new job
+      // revision before creating the run. Invalidate the one-shot evidence
+      // immediately, then refresh the authoritative task before the run page
+      // so a history-load failure cannot leave the editor on the old revision.
+      setPreflights((current) => {
+        const next = { ...current };
+        delete next[selectedTask.id];
+        return next;
+      });
+      setApprovals((current) => {
+        const next = { ...current };
+        delete next[selectedTask.id];
+        return next;
+      });
+      setApprovalChallenges((current) => {
+        const next = { ...current };
+        delete next[selectedTask.id];
+        return next;
+      });
+      const refreshedTask = (await gatewayRef.current!.listTasks()).find(
+        (task) => task.id === selectedTask.id,
+      );
+      if (refreshedTask) {
+        setTasks((current) =>
+          current.map((task) =>
+            task.id === refreshedTask.id ? refreshedTask : task,
+          ),
+        );
+        setPreflights((current) => {
+          const next = { ...current };
+          delete next[refreshedTask.id];
+          return next;
+        });
+        setApprovals((current) => {
+          const next = { ...current };
+          delete next[refreshedTask.id];
+          return next;
+        });
+        setApprovalChallenges((current) => {
+          const next = { ...current };
+          delete next[refreshedTask.id];
+          return next;
+        });
+      }
+      await reloadFirstRunPage();
       setActiveView('runs');
     } catch (error) {
       setOperationError(error instanceof Error ? error.message : String(error));
@@ -465,19 +773,28 @@ export const DataSyncWorkbenchShell: React.FC<DataSyncWorkbenchShellProps> = ({
   };
 
   const selectRun = async (runId: string) => {
+    const requestEpoch = ++selectedRunRequestEpochRef.current;
     setSelectedRunId(runId);
+    setErrorRows([]);
+    setCheckpoint(null);
+    setCompareResult(null);
     const run = runs.find((item) => item.id === runId);
     setOperationError('');
     try {
-      const [rows, loadedCheckpoint] = await Promise.all([
+      const [rows, loadedCheckpoint, events] = await Promise.all([
         gatewayRef.current!.listErrorRows(runId),
         run ? gatewayRef.current!.getCheckpoint(run.taskId) : Promise.resolve(null),
+        gatewayRef.current!.listRunEvents(runId),
       ]);
+      if (requestEpoch !== selectedRunRequestEpochRef.current) return;
       setErrorRows(rows);
       setCheckpoint(loadedCheckpoint);
+      setCompareResult(extractCompareResult(events));
     } catch (error) {
+      if (requestEpoch !== selectedRunRequestEpochRef.current) return;
       setErrorRows([]);
       setCheckpoint(null);
+      setCompareResult(null);
       setOperationError(error instanceof Error ? error.message : String(error));
     }
   };
@@ -504,6 +821,7 @@ export const DataSyncWorkbenchShell: React.FC<DataSyncWorkbenchShellProps> = ({
 
   const approveTask = async () => {
     if (!selectedTask || !selectedPreflight || approving) return;
+    const publicationPending = pendingPublicationTaskId === selectedTask.id;
     setApproving(true);
     setApprovalError('');
     try {
@@ -512,6 +830,23 @@ export const DataSyncWorkbenchShell: React.FC<DataSyncWorkbenchShellProps> = ({
         selectedPreflight,
       );
       setApprovals((current) => ({ ...current, [selectedTask.id]: grant }));
+      if (publicationPending) {
+        const saved = await saveTask(selectedTask);
+        if (!saved) {
+          // A one-time approval token may have been consumed by an uncertain
+          // save attempt. Return to draft so a retry must preflight and approve
+          // the exact definition again instead of reusing stale authority.
+          setTasks((current) =>
+            current.map((task) =>
+              task.id === selectedTask.id
+                ? reviseDataSyncTask(task, { lifecycle: 'draft' })
+                : task,
+            ),
+          );
+          markTaskDirty(selectedTask.id);
+        }
+        setPendingPublicationTaskId('');
+      }
     } catch (error) {
       setApprovalError(error instanceof Error ? error.message : String(error));
     } finally {
@@ -528,8 +863,11 @@ export const DataSyncWorkbenchShell: React.FC<DataSyncWorkbenchShellProps> = ({
     setOperationBusy('refresh-runs');
     setOperationError('');
     try {
-      setRuns(await gatewayRef.current!.listRuns());
-      if (selectedRunId) await selectRun(selectedRunId);
+      const page = await requestRunPage(
+        runPageCursors[runPageIndex],
+        runPageSize,
+      );
+      if (page) applyRunPage(page, runPageIndex, runPageCursors);
     } catch (error) {
       setOperationError(error instanceof Error ? error.message : String(error));
     } finally {
@@ -552,11 +890,12 @@ export const DataSyncWorkbenchShell: React.FC<DataSyncWorkbenchShellProps> = ({
           ),
         );
       } else {
-        const run =
-          action === 'resume'
-            ? await gatewayRef.current!.resumeRun(runId)
-            : await gatewayRef.current!.retryRun(runId);
-        setRuns((current) => [run, ...current.filter((item) => item.id !== run.id)]);
+        if (action === 'resume') {
+          await gatewayRef.current!.resumeRun(runId);
+        } else {
+          await gatewayRef.current!.retryRun(runId);
+        }
+        await reloadFirstRunPage();
       }
     } catch (error) {
       setOperationError(error instanceof Error ? error.message : String(error));
@@ -608,17 +947,14 @@ export const DataSyncWorkbenchShell: React.FC<DataSyncWorkbenchShellProps> = ({
     }
   };
 
-  const resetCheckpoint = async () => {
-    if (!checkpoint || !checkpointTask || checkpointTask.lifecycle !== 'paused') {
-      return;
-    }
-    if (!globalThis.confirm(t('checkpoint.reset_warning'))) return;
+  const resetCheckpointForTask = async (taskId: string, revision: number) => {
+    if (operationBusy === 'reset-checkpoint') return;
     setOperationBusy('reset-checkpoint');
     setOperationError('');
     try {
       const saved = await gatewayRef.current!.resetCheckpoint(
-        checkpoint.taskId,
-        checkpointTask.revision,
+        taskId,
+        revision,
       );
       setTasks((current) =>
         current.map((task) => (task.id === saved.id ? saved : task)),
@@ -685,6 +1021,218 @@ export const DataSyncWorkbenchShell: React.FC<DataSyncWorkbenchShellProps> = ({
     setActiveStage('preflight');
   };
 
+  const publishTask = async () => {
+    if (!selectedTask || saving || preflighting) return;
+    const candidate = reviseDataSyncTask(selectedTask, { lifecycle: 'ready' });
+    setPreflighting(true);
+    setOperationError('');
+    setApprovalError('');
+    try {
+      const snapshot = await gatewayRef.current!.preflightTask(candidate);
+      setActiveStage('preflight');
+      if (snapshot.status === 'blocked') {
+        // Keep the editor on the persisted draft. A blocked publication must
+        // never leave an unsaved ready state that the user cannot recover from.
+        setPreflights((current) => ({
+          ...current,
+          [selectedTask.id]: {
+            ...snapshot,
+            taskRevision: selectedTask.revision,
+            taskEditEpoch: selectedTask.editEpoch,
+          },
+        }));
+        return;
+      }
+      if (snapshot.approvalRequired) {
+        // The approval token is tied to this exact candidate definition. Keep
+        // it selected until approval completes, then save it atomically.
+        setTasks((current) =>
+          current.map((task) => (task.id === candidate.id ? candidate : task)),
+        );
+        markTaskDirty(candidate.id);
+        setPreflights((current) => ({ ...current, [candidate.id]: snapshot }));
+        setApprovals((current) => {
+          const next = { ...current };
+          delete next[candidate.id];
+          return next;
+        });
+        setApprovalChallenges((current) => {
+          const next = { ...current };
+          delete next[candidate.id];
+          return next;
+        });
+        setPendingPublicationTaskId(candidate.id);
+        return;
+      }
+      await saveTask(candidate);
+    } catch (error) {
+      setOperationError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setPreflighting(false);
+    }
+  };
+
+  const changeRunPage = async (direction: 'previous' | 'next') => {
+    if (direction === 'previous' && runPageIndex === 0) return;
+    if (direction === 'next' && !nextRunCursor) return;
+    const cursor =
+      direction === 'previous'
+        ? runPageCursors[runPageIndex - 1]
+        : nextRunCursor;
+    const nextIndex = direction === 'previous' ? runPageIndex - 1 : runPageIndex + 1;
+    const cursors =
+      direction === 'previous'
+        ? runPageCursors.slice(0, nextIndex + 1)
+        : [...runPageCursors.slice(0, runPageIndex + 1), cursor];
+    setOperationBusy('page-runs');
+    setOperationError('');
+    try {
+      const page = await requestRunPage(cursor, runPageSize);
+      if (page) applyRunPage(page, nextIndex, cursors);
+    } catch (error) {
+      setOperationError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setOperationBusy('');
+    }
+  };
+
+  const changeRunPageSize = async (pageSize: DataSyncRunPageSize) => {
+    if (pageSize === runPageSize) return;
+    setOperationBusy('page-runs');
+    setOperationError('');
+    setRunPageSize(pageSize);
+    try {
+      const page = await requestRunPage(null, pageSize);
+      if (page) applyRunPage(page, 0, [null]);
+    } catch (error) {
+      setOperationError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setOperationBusy('');
+    }
+  };
+
+  const deleteRunHistory = async (runId: string) => {
+    if (operationBusy === `delete-run:${runId}`) return;
+    setOperationBusy(`delete-run:${runId}`);
+    setOperationError('');
+    try {
+      await gatewayRef.current!.deleteRun(runId);
+      let page = await requestRunPage(
+        runPageCursors[runPageIndex],
+        runPageSize,
+      );
+      if (!page) return;
+      let pageIndex = runPageIndex;
+      let cursors = runPageCursors;
+      if (page.runs.length === 0 && pageIndex > 0) {
+        pageIndex -= 1;
+        cursors = runPageCursors.slice(0, pageIndex + 1);
+        page = await requestRunPage(cursors[pageIndex], runPageSize);
+        if (!page) return;
+      }
+      applyRunPage(page, pageIndex, cursors);
+    } catch (error) {
+      setOperationError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setOperationBusy('');
+    }
+  };
+
+  const clearTerminalRunHistory = async () => {
+    if (operationBusy === 'clear-runs') return;
+    setOperationBusy('clear-runs');
+    setOperationError('');
+    try {
+      await gatewayRef.current!.clearTerminalRuns();
+      const page = await requestRunPage(null, runPageSize);
+      if (page) applyRunPage(page, 0, [null]);
+    } catch (error) {
+      setOperationError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setOperationBusy('');
+    }
+  };
+
+  const executeConfirmation = async (confirmation: DataSyncConfirmation) => {
+    switch (confirmation.kind) {
+      case 'delete-task':
+        await deleteTask(confirmation.task);
+        break;
+      case 'delete-run':
+        await deleteRunHistory(confirmation.runId);
+        break;
+      case 'clear-terminal-runs':
+        await clearTerminalRunHistory();
+        break;
+      case 'reset-checkpoint':
+        await resetCheckpointForTask(
+          confirmation.taskId,
+          confirmation.revision,
+        );
+        break;
+    }
+  };
+
+  const openConfirmation = (confirmation: DataSyncConfirmation) => {
+    Modal.confirm({
+      title: confirmation.title,
+      content: confirmation.description,
+      okText: confirmation.confirmText,
+      cancelText: t('common.cancel'),
+      centered: true,
+      closable: true,
+      maskClosable: true,
+      okButtonProps: { danger: true, type: 'primary' },
+      onOk: () => executeConfirmation(confirmation),
+    });
+  };
+
+  const requestDeleteSelectedTask = () => {
+    if (!selectedTask || operationBusy === 'delete') return;
+    openConfirmation({
+      kind: 'delete-task',
+      task: selectedTask,
+      title: t('workbench.delete_confirm_title'),
+      description: t('workbench.delete_confirm'),
+      confirmText: t('workbench.delete'),
+    });
+  };
+
+  const requestDeleteRunHistory = (runId: string) => {
+    if (operationBusy === `delete-run:${runId}`) return;
+    openConfirmation({
+      kind: 'delete-run',
+      runId,
+      title: t('runs.delete_confirm_title'),
+      description: t('runs.delete_confirm'),
+      confirmText: t('runs.delete'),
+    });
+  };
+
+  const requestClearTerminalRunHistory = () => {
+    if (operationBusy === 'clear-runs') return;
+    openConfirmation({
+      kind: 'clear-terminal-runs',
+      title: t('runs.clear_terminal_confirm_title'),
+      description: t('runs.clear_terminal_confirm'),
+      confirmText: t('runs.clear_terminal'),
+    });
+  };
+
+  const requestResetCheckpoint = () => {
+    if (!checkpoint || !checkpointTask || checkpointTask.lifecycle !== 'paused') {
+      return;
+    }
+    openConfirmation({
+      kind: 'reset-checkpoint',
+      taskId: checkpoint.taskId,
+      revision: checkpointTask.revision,
+      title: t('checkpoint.reset_confirm_title'),
+      description: t('checkpoint.reset_warning'),
+      confirmText: t('checkpoint.reset'),
+    });
+  };
+
   const actionEnabled = Boolean(
     selectedTask &&
       selectedPreflight &&
@@ -692,6 +1240,42 @@ export const DataSyncWorkbenchShell: React.FC<DataSyncWorkbenchShellProps> = ({
       !dirtyTaskIds.has(selectedTask.id) &&
       canStartDataSyncTask(selectedTask, selectedPreflight, selectedApproval),
   );
+  const selectedApprovalCurrent = Boolean(
+    selectedPreflight &&
+      selectedApproval &&
+      selectedApproval.definitionHash === selectedPreflight.definitionHash &&
+      Date.parse(selectedApproval.expiresAt) > Date.now(),
+  );
+  const currentPreflightRequiresApproval = Boolean(
+    selectedPreflight &&
+      !preflightStale &&
+      selectedPreflight.approvalRequired !== false &&
+      !selectedPreflight.approvalSatisfied &&
+      !selectedApprovalCurrent,
+  );
+  const runActionTitle = actionEnabled
+    ? t('workbench.start')
+    : !selectedTask
+      ? t('workbench.preflight_before_run')
+      : selectedTask.lifecycle !== 'ready' && selectedTask.lifecycle !== 'enabled'
+        ? t('workbench.lifecycle_before_run')
+        : dirtyTaskIds.has(selectedTask.id)
+          ? !selectedPreflight || preflightStale
+            ? t('workbench.preflight_then_save_before_run')
+            : selectedPreflight.status === 'blocked'
+              ? t('workbench.blocked_action')
+              : currentPreflightRequiresApproval
+              ? t('workbench.approval_before_run')
+              : t('workbench.save_before_run')
+          : !selectedPreflight || preflightStale
+            ? t('workbench.preflight_before_run')
+            : selectedPreflight.status === 'blocked'
+              ? t('workbench.blocked_action')
+              : !capability.canExecute
+                ? t('workbench.capability_before_run')
+                : currentPreflightRequiresApproval
+                  ? t('workbench.approval_before_run')
+                  : t('workbench.preflight_before_run');
   const saveApprovalReady = Boolean(
     selectedTask &&
       (selectedTask.lifecycle === 'draft' ||
@@ -819,7 +1403,8 @@ export const DataSyncWorkbenchShell: React.FC<DataSyncWorkbenchShellProps> = ({
                     <button
                       type="button"
                       className="gn-data-sync-button"
-                      onClick={() => transitionLifecycle('ready')}
+                      disabled={saving || preflighting}
+                      onClick={() => void publishTask()}
                     >
                       {t('lifecycle.publish_ready')}
                     </button>
@@ -852,13 +1437,33 @@ export const DataSyncWorkbenchShell: React.FC<DataSyncWorkbenchShellProps> = ({
                       {t('lifecycle.resume_schedule')}
                     </button>
                   ) : null}
-                  {selectedTask.lifecycle !== 'archived' ? (
+                  {selectedTask.lifecycle === 'archived' ? (
+                    <button
+                      type="button"
+                      className="gn-data-sync-button"
+                      onClick={() => transitionLifecycle('draft')}
+                    >
+                      {t('lifecycle.restore')}
+                    </button>
+                  ) : (
                     <button
                       type="button"
                       className="gn-data-sync-link-button gn-data-sync-link-button--danger"
                       onClick={() => transitionLifecycle('archived')}
                     >
                       {t('lifecycle.archive')}
+                    </button>
+                  )}
+                  {selectedTask.lifecycle !== 'archived' ? (
+                    <button
+                      type="button"
+                      className="gn-data-sync-link-button gn-data-sync-link-button--danger"
+                      disabled={operationBusy === 'delete'}
+                      onClick={requestDeleteSelectedTask}
+                    >
+                      {operationBusy === 'delete'
+                        ? t('workbench.deleting')
+                        : t('workbench.delete')}
                     </button>
                   ) : null}
                   <button
@@ -887,7 +1492,7 @@ export const DataSyncWorkbenchShell: React.FC<DataSyncWorkbenchShellProps> = ({
                     type="button"
                     className="gn-data-sync-button gn-data-sync-button--primary"
                     disabled={!actionEnabled || operationBusy === 'start'}
-                    title={actionEnabled ? t('workbench.start') : t('workbench.blocked_action')}
+                    title={runActionTitle}
                     onClick={() => void startTask()}
                   >
                     {t('workbench.start')}
@@ -921,13 +1526,30 @@ export const DataSyncWorkbenchShell: React.FC<DataSyncWorkbenchShellProps> = ({
       {activeView === 'runs' ? (
         <DataSyncRunHistory
           runs={runs}
+          runPage={runPageIndex + 1}
+          runPageSize={runPageSize}
+          runTotal={runTotal}
+          hasPreviousRunPage={runPageIndex > 0}
+          hasNextRunPage={nextRunCursor !== null}
           selectedRunId={selectedRunId}
+          selectedRunMessage={runs.find(
+            (run) =>
+              run.id === selectedRunId &&
+              ['failed', 'partial', 'interrupted'].includes(run.status),
+          )?.message}
           errorRows={errorRows}
+          compareResult={compareResult}
+          compareMode={selectedRunCompareMode}
           t={t}
           onSelectRun={(runId) => void selectRun(runId)}
           checkpoint={checkpoint}
           busyAction={operationBusy}
           onRefresh={() => void refreshRuns()}
+          onPreviousRunPage={() => void changeRunPage('previous')}
+          onNextRunPage={() => void changeRunPage('next')}
+          onRunPageSizeChange={(pageSize) => void changeRunPageSize(pageSize)}
+          onDeleteRun={requestDeleteRunHistory}
+          onClearTerminalRuns={requestClearTerminalRunHistory}
           onCancel={(runId) => void updateRun('cancel', runId)}
           onResume={(runId) => void updateRun('resume', runId)}
           onRetry={(runId) => void updateRun('retry', runId)}
@@ -935,7 +1557,7 @@ export const DataSyncWorkbenchShell: React.FC<DataSyncWorkbenchShellProps> = ({
           errorRowRetryAvailable={gatewayRef.current!.capabilities.errorRowRetry}
           onRetryErrorRow={(errorRowId) => void retryErrorRow(errorRowId)}
           checkpointResetEnabled={checkpointTask?.lifecycle === 'paused'}
-          onResetCheckpoint={() => void resetCheckpoint()}
+          onResetCheckpoint={requestResetCheckpoint}
         />
       ) : null}
       {activeView === 'schedules' ? (

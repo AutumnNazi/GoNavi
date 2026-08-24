@@ -319,13 +319,20 @@ func syncKeyColumnsForTable(config SyncConfig, tableName string, sourceColumns [
 	} else if explicit {
 		return keys, nil
 	}
+	return physicalPrimaryKeyColumns(sourceColumns), nil
+}
+
+// physicalPrimaryKeyColumns returns only database-declared primary-key columns.
+// Explicit mapping keys are resolved by syncKeyColumnsForTable before this
+// legacy-table fallback is used.
+func physicalPrimaryKeyColumns(sourceColumns []connection.ColumnDefinition) []string {
 	keys := make([]string, 0, 2)
 	for _, column := range sourceColumns {
 		if strings.EqualFold(strings.TrimSpace(column.Key), "PRI") || strings.EqualFold(strings.TrimSpace(column.Key), "PK") {
 			keys = append(keys, strings.TrimSpace(column.Name))
 		}
 	}
-	return keys, nil
+	return keys
 }
 
 func buildMappedExistingTargetPlan(config SyncConfig, tableName string, sourceDB db.Database, targetDB db.Database) (SchemaMigrationPlan, []connection.ColumnDefinition, []connection.ColumnDefinition, error) {
