@@ -222,9 +222,13 @@ func (e *ElasticsearchDB) Connect(config connection.ConnectionConfig) (err error
 
 		e.client = client
 		e.consoleClient = consoleClient
+		verificationStartedAt := time.Now()
 		if err := e.Ping(); err != nil {
 			e.client = nil
 			e.consoleClient = nil
+			if e.forwarder != nil {
+				err = wrapDatabaseConnectionVerifyErrorWithForwarder(err, e.forwarder, verificationStartedAt)
+			}
 			logger.Warnf("Elasticsearch 连接验证失败：%d/%d 模式=%s 错误=%v", idx+1, len(attempts), sslLabel, err)
 			lastErr = err
 			continue

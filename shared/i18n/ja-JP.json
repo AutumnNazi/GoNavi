@@ -5259,6 +5259,8 @@
   "db.backend.error.connection_not_open": "接続が開かれていません",
   "db.backend.error.connection_open_failed_prefix": "データベース接続を開けませんでした: ",
   "db.backend.error.connection_verify_failed_prefix": "接続確立後の検証に失敗しました: ",
+  "db.backend.error.ssh_tunnel_remote_target_verify_failed": "SSH トンネルを確立しました（ローカル {{localAddr}} -> リモート {{remoteAddr}}）が、データベース検証に失敗しました。ローカル接続エラー: ",
+  "db.backend.error.ssh_tunnel_remote_dial_failed": "SSH トンネルを確立しました（ローカル {{localAddr}} -> リモート {{remoteAddr}}）が、踏み台ホストからリモートエンドポイントに接続できませんでした: {{remoteError}}。ローカル接続の検証エラー: ",
   "db.backend.error.create_table_statement_not_found": "CREATE TABLE 文が見つかりませんでした",
   "db.backend.error.sqlserver_create_statement_unsupported": "現在のバックエンドでは SQL Server テーブル DDL の表示はサポートされていません",
   "db.backend.error.custom_clickhouse_dsn_invalid": "ClickHouse カスタム接続の DSN が無効です。clickhouse://、http(s)://、jdbc:clickhouse://、または jdbc:ch:// 形式の単一ノードアドレスを使用してください",

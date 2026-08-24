@@ -5259,6 +5259,8 @@
   "db.backend.error.connection_not_open": "Verbindung ist nicht geöffnet",
   "db.backend.error.connection_open_failed_prefix": "Datenbankverbindung konnte nicht geöffnet werden: ",
   "db.backend.error.connection_verify_failed_prefix": "Verbindung konnte nach dem Aufbau nicht verifiziert werden: ",
+  "db.backend.error.ssh_tunnel_remote_target_verify_failed": "SSH-Tunnel hergestellt (lokal {{localAddr}} -> entfernt {{remoteAddr}}), aber die Datenbankverbindung konnte nicht verifiziert werden; lokaler Verbindungsfehler: ",
+  "db.backend.error.ssh_tunnel_remote_dial_failed": "SSH-Tunnel hergestellt (lokal {{localAddr}} -> entfernt {{remoteAddr}}), aber der Sprunghost konnte den entfernten Endpunkt nicht erreichen: {{remoteError}}; lokaler Verbindungsprüfungsfehler: ",
   "db.backend.error.create_table_statement_not_found": "Die CREATE TABLE-Anweisung wurde nicht gefunden",
   "db.backend.error.sqlserver_create_statement_unsupported": "Das Anzeigen der SQL Server-Tabellen-DDL wird vom aktuellen Backend nicht unterstützt",
   "db.backend.error.custom_clickhouse_dsn_invalid": "Die DSN der benutzerdefinierten ClickHouse-Verbindung ist ungültig. Verwenden Sie eine Einzelknoten-Adresse im Format clickhouse://, http(s)://, jdbc:clickhouse:// oder jdbc:ch://",

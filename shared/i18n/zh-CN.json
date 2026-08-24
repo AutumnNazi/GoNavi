@@ -5259,6 +5259,8 @@
   "db.backend.error.connection_not_open": "连接未打开",
   "db.backend.error.connection_open_failed_prefix": "打开数据库连接失败：",
   "db.backend.error.connection_verify_failed_prefix": "连接建立后验证失败：",
+  "db.backend.error.ssh_tunnel_remote_target_verify_failed": "SSH 隧道已建立（本地 {{localAddr}} -> 远程 {{remoteAddr}}），数据库验证失败；本地连接错误：",
+  "db.backend.error.ssh_tunnel_remote_dial_failed": "SSH 隧道已建立（本地 {{localAddr}} -> 远程 {{remoteAddr}}），但跳板机无法连接远端：{{remoteError}}；本地连接验证错误：",
   "db.backend.error.create_table_statement_not_found": "未找到 CREATE TABLE 语句",
   "db.backend.error.sqlserver_create_statement_unsupported": "当前后端暂不支持查看 SQL Server 表 DDL",
   "db.backend.error.custom_clickhouse_dsn_invalid": "ClickHouse 自定义连接 DSN 无效；请使用 clickhouse://、http(s)://、jdbc:clickhouse:// 或 jdbc:ch:// 格式的单节点地址",

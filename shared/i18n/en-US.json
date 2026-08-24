@@ -5259,6 +5259,8 @@
   "db.backend.error.connection_not_open": "Connection is not open",
   "db.backend.error.connection_open_failed_prefix": "Failed to open database connection: ",
   "db.backend.error.connection_verify_failed_prefix": "Failed to verify the established connection: ",
+  "db.backend.error.ssh_tunnel_remote_target_verify_failed": "SSH tunnel established (local {{localAddr}} -> remote {{remoteAddr}}), but database verification failed; local connection error: ",
+  "db.backend.error.ssh_tunnel_remote_dial_failed": "SSH tunnel established (local {{localAddr}} -> remote {{remoteAddr}}), but the jump host could not reach the remote endpoint: {{remoteError}}; local connection verification error: ",
   "db.backend.error.create_table_statement_not_found": "The CREATE TABLE statement was not found",
   "db.backend.error.sqlserver_create_statement_unsupported": "Viewing SQL Server table DDL is not supported by the current backend",
   "db.backend.error.custom_clickhouse_dsn_invalid": "The ClickHouse custom connection DSN is invalid. Use a single-node clickhouse://, http(s)://, jdbc:clickhouse://, or jdbc:ch:// address",
