@@ -4,6 +4,7 @@ import React, {
   useLayoutEffect,
   useRef,
   useMemo,
+  useCallback,
 } from "react";
 import Modal from './common/ResizableDraggableModal';
 import {
@@ -152,15 +153,30 @@ import {
   GetDriverStatusList,
   MongoDiscoverMembers,
   TestConnection,
+  TestConnectionWithProgress,
   RedisConnect,
   RedisGetDatabases,
-  NacosConnect,
+  NacosTestConnectionWithProgress,
+  CancelConnectionTest,
   SelectDatabaseFile,
   SelectCertificateFile,
   SelectSSHKeyFile,
   TestJVMConnection,
+  TrustSSHHostKeyForConnection,
 } from "../../wailsjs/go/app/App";
+import { EventsOn } from "../../wailsjs/runtime";
 import { ConnectionConfig, MongoMemberInfo, SavedConnection } from "../types";
+import SSHConnectionProgressPanel from "./connectionModal/SSHConnectionProgressPanel";
+import {
+  applySSHConnectionProgressEvent,
+  createSSHConnectionProgress,
+  finishSSHConnectionProgress,
+  type SSHConnectionProgress,
+} from "./connectionModal/sshConnectionProgress";
+import {
+  readSSHHostKeyTrustDetails,
+  type SSHHostKeyTrustDetails,
+} from "./connectionModal/sshHostKeyTrust";
 
 const { Text } = Typography;
 type EditableJVMMode = (typeof JVM_EDITABLE_MODES)[number];
@@ -377,6 +393,12 @@ const ConnectionModal: React.FC<{
   >("ssl");
   const [testResult, setTestResult] = useState<TestResultState | null>(null);
   const [testErrorLogOpen, setTestErrorLogOpen] = useState(false);
+  const [sshConnectionProgress, setSSHConnectionProgress] =
+    useState<SSHConnectionProgress | null>(null);
+  const [sshProgressPanelOpen, setSSHProgressPanelOpen] = useState(false);
+  const [sshHostKeyTrust, setSSHHostKeyTrust] =
+    useState<SSHHostKeyTrustDetails | null>(null);
+  const [trustingSSHHostKey, setTrustingSSHHostKey] = useState(false);
   const [dbList, setDbList] = useState<string[]>([]);
   const [redisDbList, setRedisDbList] = useState<number[]>([]);
   const [mongoMembers, setMongoMembers] = useState<MongoMemberInfo[]>([]);
@@ -403,6 +425,8 @@ const ConnectionModal: React.FC<{
   const testInFlightRef = useRef(false);
   const testTimerRef = useRef<number | null>(null);
   const testRunIdRef = useRef(0);
+  const activeTestCancellationRef = useRef<(() => void) | null>(null);
+  const activeNacosTestRunIdRef = useRef("");
   const primaryPasswordRevealRequestRef = useRef(0);
   const revealedPrimaryPasswordRef = useRef("");
   const clearSecretsRef = useRef(clearSecrets);
@@ -593,8 +617,38 @@ const ConnectionModal: React.FC<{
     setPrimaryPasswordVisible(false);
   };
 
+  const cancelActiveConnectionTest = useCallback(() => {
+    const nacosTestRunId = activeNacosTestRunIdRef.current;
+    activeNacosTestRunIdRef.current = "";
+
+    // Invalidate the current run before rejecting its local wait. This keeps a
+    // late Wails response from writing stale success/failure feedback back into
+    // a newer editing session.
+    testRunIdRef.current += 1;
+    const cancelLocalWait = activeTestCancellationRef.current;
+    activeTestCancellationRef.current = null;
+    if (testTimerRef.current !== null) {
+      window.clearTimeout(testTimerRef.current);
+      testTimerRef.current = null;
+    }
+    testInFlightRef.current = false;
+    setTestingConnection(false);
+    setTestResult(null);
+    setSSHConnectionProgress(null);
+    setSSHProgressPanelOpen(false);
+    setSSHHostKeyTrust(null);
+    cancelLocalWait?.();
+
+    if (nacosTestRunId) {
+      void CancelConnectionTest(nacosTestRunId).catch(() => undefined);
+    }
+  }, []);
+
   const handleModalClose = () => {
+    cancelActiveConnectionTest();
     resetPrimaryPasswordRevealState();
+    setSSHHostKeyTrust(null);
+    setTrustingSSHHostKey(false);
     onClose();
   };
 
@@ -898,7 +952,25 @@ const ConnectionModal: React.FC<{
       setTestResult(null);
       setTestErrorLogOpen(false);
     }
+    setSSHConnectionProgress(null);
+    setSSHProgressPanelOpen(false);
+    setSSHHostKeyTrust(null);
   };
+
+  useEffect(() => {
+    let unsubscribe: (() => void) | undefined;
+    try {
+      unsubscribe = EventsOn("connection:test-progress", (event: any) => {
+        setSSHConnectionProgress((current) =>
+          current ? applySSHConnectionProgressEvent(current, event) : current,
+        );
+      });
+    } catch {
+      // The browser/web-server client has no Wails event bridge. It still
+      // receives the final test result and the progress panel resolves then.
+    }
+    return () => unsubscribe?.();
+  }, []);
 
   const setChoiceFieldValue = (fieldName: string, value: string | boolean) => {
     clearConnectionTestResultForChoice();
@@ -1502,6 +1574,7 @@ const ConnectionModal: React.FC<{
   };
 
   useEffect(() => {
+    cancelActiveConnectionTest();
     testRunIdRef.current += 1;
     if (open) {
       oracleModeTouchedRef.current = false;
@@ -1514,6 +1587,10 @@ const ConnectionModal: React.FC<{
       }
       setTestResult(null); // Reset test result
       setTestErrorLogOpen(false);
+      setSSHConnectionProgress(null);
+      setSSHProgressPanelOpen(false);
+      setSSHHostKeyTrust(null);
+      setTrustingSSHHostKey(false);
       setDbList([]);
       setRedisDbList([]);
       setMongoMembers([]);
@@ -1887,10 +1964,11 @@ const ConnectionModal: React.FC<{
         setPrimaryPasswordVisible(false);
       }
     }
-  }, [open, initialValues]);
+  }, [open, initialValues, cancelActiveConnectionTest]);
 
   useEffect(() => {
     return () => {
+      cancelActiveConnectionTest();
       testRunIdRef.current += 1;
       primaryPasswordRevealRequestRef.current += 1;
       revealedPrimaryPasswordRef.current = "";
@@ -1899,7 +1977,7 @@ const ConnectionModal: React.FC<{
         testTimerRef.current = null;
       }
     };
-  }, []);
+  }, [cancelActiveConnectionTest]);
 
   const handleOk = async () => {
     try {
@@ -2025,6 +2103,21 @@ const ConnectionModal: React.FC<{
     }
   };
 
+  const makeCancellableConnectionTestRequest = <T,>(promise: Promise<T>) => {
+    let rejectCancellation: ((reason?: unknown) => void) | null = null;
+    const cancellation = new Promise<never>((_, reject) => {
+      rejectCancellation = reject;
+    });
+    const cancel = () => {
+      rejectCancellation?.(new Error("connection test cancelled"));
+    };
+    activeTestCancellationRef.current = cancel;
+    return {
+      promise: Promise.race([promise, cancellation]),
+      cancel,
+    };
+  };
+
   const applyTestFailureFeedback = ({
     kind,
     reason,
@@ -2043,11 +2136,17 @@ const ConnectionModal: React.FC<{
     });
   };
 
-  const handleTest = async () => {
+  const handleTest = async (hostKeyFingerprintOverride = "") => {
     if (testInFlightRef.current) return;
     testInFlightRef.current = true;
     const testRunId = ++testRunIdRef.current;
     const isCurrentTestRun = () => testRunIdRef.current === testRunId;
+    let sshProgressRunId = "";
+    let nacosTestRunId = "";
+    let cancellableRequest: {
+      promise: Promise<any>;
+      cancel: () => void;
+    } | null = null;
     try {
       await form.validateFields();
       if (!isCurrentTestRun()) return;
@@ -2095,6 +2194,12 @@ const ConnectionModal: React.FC<{
         translate: t,
       });
       if (!isCurrentTestRun()) return;
+      if (hostKeyFingerprintOverride && (config as any).ssh) {
+        (config as any).ssh = {
+          ...(config as any).ssh,
+          hostKeyFingerprint: hostKeyFingerprintOverride,
+        };
+      }
       if (initialValues?.id) {
         config.id = initialValues.id;
       }
@@ -2113,21 +2218,76 @@ const ConnectionModal: React.FC<{
         !isRedisType && !isJVMType && !isNacosType
           ? buildRpcConnectionConfig(config as any)
           : config;
+      const shouldReportSSHProgress =
+        Boolean((config as any).useSSH) &&
+        !isRedisType &&
+        !isJVMType;
+      if (shouldReportSSHProgress) {
+        const sshConfig = (dbTestConfig as any)?.ssh || (config as any)?.ssh || {};
+        sshProgressRunId = `ssh-test-${testRunId}-${Date.now()}`;
+        setSSHConnectionProgress(
+          createSSHConnectionProgress({
+            runId: sshProgressRunId,
+            host: String(sshConfig.host || ""),
+            port: Number(sshConfig.port) || 22,
+          }),
+        );
+        setSSHProgressPanelOpen(true);
+      }
+      if (isNacosType) {
+        nacosTestRunId =
+          sshProgressRunId || `nacos-test-${testRunId}-${Date.now()}`;
+        activeNacosTestRunIdRef.current = nacosTestRunId;
+      }
+      const rpcPromise = isJVMType
+        ? TestJVMConnection(config as any)
+        : isRedisType
+          ? RedisConnect(config as any)
+          : isNacosType
+            ? NacosTestConnectionWithProgress(config as any, nacosTestRunId)
+            : shouldReportSSHProgress
+              ? TestConnectionWithProgress(dbTestConfig as any, sshProgressRunId)
+              : TestConnection(dbTestConfig as any);
+      cancellableRequest = makeCancellableConnectionTestRequest(rpcPromise);
       const res = await withClientTimeout(
-        isJVMType
-          ? TestJVMConnection(config as any)
-          : isRedisType
-            ? RedisConnect(config as any)
-            : isNacosType
-              ? NacosConnect(config as any)
-              : TestConnection(dbTestConfig as any),
+        cancellableRequest.promise,
         rpcTimeoutMs,
         t("connection.modal.test.timeout", { seconds: timeoutSeconds }),
       );
 
       if (!isCurrentTestRun()) return;
 
+      const hostKeyTrust = Boolean((config as any).useSSH)
+        ? readSSHHostKeyTrustDetails(res?.data)
+        : null;
+      if (hostKeyTrust) {
+        if (sshProgressRunId) {
+          setSSHConnectionProgress((current) =>
+            current?.runId === sshProgressRunId
+              ? finishSSHConnectionProgress(current, {
+                  success: false,
+                  reason: normalizeConnectionSecretErrorMessage(
+                    res?.message,
+                    t("connection.modal.error.unknown"),
+                  ),
+                })
+              : current,
+          );
+          setSSHProgressPanelOpen(false);
+        }
+        setSSHHostKeyTrust(hostKeyTrust);
+        setTestResult(null);
+        return;
+      }
+
       if (res.success) {
+        if (sshProgressRunId) {
+          setSSHConnectionProgress((current) =>
+            current?.runId === sshProgressRunId
+              ? finishSSHConnectionProgress(current, { success: true })
+              : current,
+          );
+        }
         void message.destroy("connection-test-failure");
         setTestResult({ type: "success", message: res.message });
         void (async () => {
@@ -2220,6 +2380,19 @@ const ConnectionModal: React.FC<{
           }
         })();
       } else {
+        if (sshProgressRunId) {
+          setSSHConnectionProgress((current) =>
+            current?.runId === sshProgressRunId
+              ? finishSSHConnectionProgress(current, {
+                  success: false,
+                  reason: normalizeConnectionSecretErrorMessage(
+                    res?.message,
+                    t("connection.modal.error.unknown"),
+                  ),
+                })
+              : current,
+          );
+        }
         applyTestFailureFeedback({
           kind: "runtime",
           reason: res?.message,
@@ -2241,16 +2414,97 @@ const ConnectionModal: React.FC<{
           : typeof e === "string"
             ? e
             : t("connection.modal.test.fallback.unknownException");
+      if (sshProgressRunId) {
+        setSSHConnectionProgress((current) =>
+          current?.runId === sshProgressRunId
+            ? finishSSHConnectionProgress(current, {
+                success: false,
+                reason: normalizeConnectionSecretErrorMessage(
+                  reason,
+                  t("connection.modal.error.unknown"),
+                ),
+              })
+            : current,
+        );
+      }
       applyTestFailureFeedback({
         kind: "runtime",
         reason,
         fallbackKey: "connection.modal.test.fallback.unknownException",
       });
     } finally {
+      if (
+        cancellableRequest &&
+        activeTestCancellationRef.current === cancellableRequest.cancel
+      ) {
+        activeTestCancellationRef.current = null;
+      }
+      if (
+        nacosTestRunId &&
+        activeNacosTestRunIdRef.current === nacosTestRunId
+      ) {
+        activeNacosTestRunIdRef.current = "";
+      }
       if (isCurrentTestRun()) {
         testInFlightRef.current = false;
         setTestingConnection(false);
       }
+    }
+  };
+
+  const handleContinueSSHHostKeyOnce = () => {
+    const trust = sshHostKeyTrust;
+    if (!trust || trustingSSHHostKey) return;
+    setSSHHostKeyTrust(null);
+    void handleTest(trust.fingerprint);
+  };
+
+  const handleTrustAndSaveSSHHostKey = async () => {
+    const trust = sshHostKeyTrust;
+    if (!trust || trustingSSHHostKey) return;
+    setTrustingSSHHostKey(true);
+    try {
+      const values = { ...form.getFieldsValue(true), type: dbType };
+      const config = await buildConnectionConfig({
+        values,
+        forPersist: false,
+        initialValues,
+        nacosNamespaceIdTouched:
+          form.isFieldTouched?.("nacosNamespaceId") === true,
+        oracleModeTouched: oracleModeTouchedRef.current,
+        translate: t,
+      });
+      if (initialValues?.id) {
+        config.id = initialValues.id;
+      }
+      const result = await TrustSSHHostKeyForConnection(
+        buildRpcConnectionConfig(config as any),
+        trust.fingerprint,
+      );
+      if (!result?.success) {
+        throw new Error(
+          result?.message ||
+            t("connection.modal.network.ssh.hostKeyDialog.saveFailure", {
+              detail: t("connection.modal.error.unknown"),
+            }),
+        );
+      }
+      // Migrate an old manual pin only after its replacement was safely saved
+      // in GoNavi's managed trust store. The transient \"continue once\" path
+      // deliberately leaves the saved connection unchanged.
+      form.setFieldValue("sshHostKeyFingerprint", "");
+      setSSHHostKeyTrust(null);
+      void handleTest();
+    } catch (error: unknown) {
+      const detail = normalizeConnectionSecretErrorMessage(
+        error instanceof Error ? error.message : String(error),
+        t("connection.modal.error.unknown"),
+      );
+      message.error(
+        t("connection.modal.network.ssh.hostKeyDialog.saveFailure", { detail }),
+      );
+    } finally {
+      setTrustingSSHHostKey(false);
     }
   };
 
@@ -3119,6 +3373,16 @@ const ConnectionModal: React.FC<{
           >
             {t("connection.action.test")}
           </Button>
+          {testingConnection ? (
+            <Button
+              key="cancel-test"
+              danger
+              className="gn-conn-studio-button"
+              onClick={cancelActiveConnectionTest}
+            >
+              {t("connection.modal.action.cancel_test")}
+            </Button>
+          ) : null}
           <Button
             key="cancel"
             className="gn-conn-studio-button"
@@ -3250,6 +3514,140 @@ const ConnectionModal: React.FC<{
         }}
       >
         {step === 1 ? renderStep1() : renderStep2()}
+      </Modal>
+      <Modal
+        title={
+          sshHostKeyTrust
+            ? renderConnectionModalTitle(
+                <SafetyCertificateOutlined />,
+                t(
+                  sshHostKeyTrust.state === "changed"
+                    ? "connection.modal.network.ssh.hostKeyDialog.changedTitle"
+                    : "connection.modal.network.ssh.hostKeyDialog.unknownTitle",
+                ),
+                t(
+                  sshHostKeyTrust.state === "changed"
+                    ? "connection.modal.network.ssh.hostKeyDialog.changedMessage"
+                    : "connection.modal.network.ssh.hostKeyDialog.unknownMessage",
+                ),
+              )
+            : null
+        }
+        open={!!sshHostKeyTrust}
+        onCancel={() => {
+          if (!trustingSSHHostKey) setSSHHostKeyTrust(null);
+        }}
+        centered
+        width={620}
+        zIndex={APP_NESTED_MODAL_Z_INDEX + 1}
+        destroyOnHidden
+        maskClosable={!trustingSSHHostKey}
+        styles={{
+          content: modalShellStyle,
+          header: {
+            background: "transparent",
+            borderBottom: "none",
+            paddingBottom: 8,
+          },
+          body: { paddingTop: 8 },
+          footer: {
+            background: "transparent",
+            borderTop: "none",
+            paddingTop: 10,
+          },
+        }}
+        footer={[
+          <Button
+            key="cancel"
+            disabled={trustingSSHHostKey}
+            onClick={() => setSSHHostKeyTrust(null)}
+          >
+            {t("common.action.cancel")}
+          </Button>,
+          <Button
+            key="once"
+            disabled={trustingSSHHostKey}
+            onClick={handleContinueSSHHostKeyOnce}
+          >
+            {t("connection.modal.network.ssh.hostKeyDialog.continueOnce")}
+          </Button>,
+          <Button
+            key="trust"
+            type="primary"
+            danger={sshHostKeyTrust?.state === "changed"}
+            loading={trustingSSHHostKey}
+            onClick={handleTrustAndSaveSSHHostKey}
+          >
+            {t(
+              sshHostKeyTrust?.state === "changed"
+                ? "connection.modal.network.ssh.hostKeyDialog.replaceAndTrust"
+                : "connection.modal.network.ssh.hostKeyDialog.trustAndSave",
+            )}
+          </Button>,
+        ]}
+      >
+        {sshHostKeyTrust ? (
+          <div className="gn-ssh-host-key-trust-dialog">
+            <Alert
+              type={sshHostKeyTrust.state === "changed" ? "warning" : "info"}
+              showIcon
+              message={t(
+                sshHostKeyTrust.state === "changed"
+                  ? "connection.modal.network.ssh.hostKeyDialog.changedMessage"
+                  : "connection.modal.network.ssh.hostKeyDialog.unknownMessage",
+              )}
+            />
+            <dl className="gn-ssh-host-key-trust-facts">
+              <dt>{t("connection.modal.network.ssh.hostKeyDialog.host")}</dt>
+              <dd>{sshHostKeyTrust.address}</dd>
+              <dt>{t("connection.modal.network.ssh.hostKeyDialog.keyType")}</dt>
+              <dd>{sshHostKeyTrust.keyType}</dd>
+              <dt>
+                {t("connection.modal.network.ssh.hostKeyDialog.fingerprint")}
+              </dt>
+              <dd>{sshHostKeyTrust.fingerprint}</dd>
+              {sshHostKeyTrust.previousFingerprint ? (
+                <>
+                  <dt>
+                    {t(
+                      "connection.modal.network.ssh.hostKeyDialog.previousFingerprint",
+                    )}
+                  </dt>
+                  <dd>{sshHostKeyTrust.previousFingerprint}</dd>
+                </>
+              ) : null}
+            </dl>
+            <div className="gn-ssh-host-key-trust-explanation">
+              {t("connection.modal.network.ssh.hostKeyDialog.saveExplanation")}
+            </div>
+          </div>
+        ) : null}
+      </Modal>
+      <Modal
+        open={sshProgressPanelOpen && !!sshConnectionProgress}
+        onCancel={
+          sshConnectionProgress?.status === "running"
+            ? cancelActiveConnectionTest
+            : () => setSSHProgressPanelOpen(false)
+        }
+        centered
+        width={720}
+        footer={null}
+        zIndex={APP_NESTED_MODAL_Z_INDEX}
+        destroyOnHidden
+        styles={{
+          content: modalShellStyle,
+          header: { display: "none" },
+          body: { padding: 0 },
+        }}
+      >
+        {sshConnectionProgress ? (
+          <SSHConnectionProgressPanel
+            progress={sshConnectionProgress}
+            onClose={() => setSSHProgressPanelOpen(false)}
+            onCancelTest={cancelActiveConnectionTest}
+          />
+        ) : null}
       </Modal>
       <Modal
         title={renderConnectionModalTitle(

@@ -27,6 +27,8 @@ export function BuildSQLAuditExport(arg1:sqlaudit.Filter,arg2:string):Promise<co
 
 export function CancelApplicationQuit():Promise<connection.QueryResult>;
 
+export function CancelConnectionTest(arg1:string):Promise<connection.QueryResult>;
+
 export function CancelImportJob(arg1:string):Promise<connection.QueryResult>;
 
 export function CancelQuery(arg1:string):Promise<connection.QueryResult>;
@@ -311,6 +313,8 @@ export function GetUnboundSavedQueries():Promise<Array<connection.SavedQuery>>;
 
 export function GetUpdateChannel():Promise<connection.QueryResult>;
 
+export function GetUpdateDownloadTask():Promise<connection.QueryResult>;
+
 export function ImportConfigFile():Promise<connection.QueryResult>;
 
 export function ImportConnectionsPayload(arg1:string,arg2:string):Promise<app.ConnectionPackageImportResult>;
@@ -374,6 +378,8 @@ export function ListDatabaseCharsets(arg1:connection.ConnectionConfig):Promise<c
 export function ListDatabaseCollations(arg1:connection.ConnectionConfig):Promise<connection.QueryResult>;
 
 export function ListImportJobs():Promise<connection.QueryResult>;
+
+export function ListDriverDownloadTasks():Promise<connection.QueryResult>;
 
 export function ListInstalledFontFamilies():Promise<connection.QueryResult>;
 
@@ -452,6 +458,8 @@ export function NacosStopBetaConfig(arg1:connection.ConnectionConfig,arg2:string
 export function NacosStopConfigListen(arg1:string):Promise<connection.QueryResult>;
 
 export function NacosTestConnection(arg1:connection.ConnectionConfig):Promise<connection.QueryResult>;
+
+export function NacosTestConnectionWithProgress(arg1:connection.ConnectionConfig,arg2:string):Promise<connection.QueryResult>;
 
 export function NacosUpdateConfigListenMD5(arg1:string,arg2:string):Promise<connection.QueryResult>;
 
@@ -627,6 +635,8 @@ export function SelectSQLFileForExecution():Promise<connection.QueryResult>;
 
 export function SelectSSHKeyFile(arg1:string):Promise<connection.QueryResult>;
 
+export function SelectSSHKnownHostsFile(arg1:string):Promise<connection.QueryResult>;
+
 export function SelectSavedQueryDirectory(arg1:string):Promise<connection.QueryResult>;
 
 export function SetApplicationBrandIcon(arg1:string):Promise<connection.QueryResult>;
@@ -643,13 +653,23 @@ export function Shutdown():Promise<void>;
 
 export function StartSecurityUpdate(arg1:app.StartSecurityUpdateRequest):Promise<app.SecurityUpdateStatus>;
 
+export function StartDriverPackageDownload(arg1:string,arg2:string,arg3:string,arg4:string):Promise<connection.QueryResult>;
+
+export function StartUpdateDownload():Promise<connection.QueryResult>;
+
 export function TestConnection(arg1:connection.ConnectionConfig):Promise<connection.QueryResult>;
+
+export function TestConnectionWithProgress(arg1:connection.ConnectionConfig,arg2:string):Promise<connection.QueryResult>;
 
 export function TestGlobalProxyConnection(arg1:connection.TestGlobalProxyInput):Promise<connection.QueryResult>;
 
 export function TestJVMConnection(arg1:connection.ConnectionConfig):Promise<connection.QueryResult>;
 
 export function TruncateTables(arg1:connection.ConnectionConfig,arg2:string,arg3:Array<string>):Promise<connection.QueryResult>;
+
+export function TrustSSHHostKey(arg1:string,arg2:number,arg3:string):Promise<connection.QueryResult>;
+
+export function TrustSSHHostKeyForConnection(arg1:connection.ConnectionConfig,arg2:string):Promise<connection.QueryResult>;
 
 export function UpdateSQLAuditSettings(arg1:sqlaudit.Settings):Promise<connection.QueryResult>;
 

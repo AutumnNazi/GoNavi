@@ -4,6 +4,7 @@ import Editor, { type BeforeMount, type OnMount } from './MonacoEditor';
 import { message, Input, Form, MenuProps, Button, Segmented, type InputRef } from 'antd';
 import {
     CodeOutlined,
+    ClockCircleOutlined,
     EditOutlined,
     ExportOutlined,
     FileTextOutlined,
@@ -54,6 +55,7 @@ import {
 import { extractQueryResultTableRef, type QueryResultTableRef } from '../utils/queryResultTable';
 import { quoteIdentPart, quoteQualifiedIdent } from '../utils/sql';
 import { extractTableNameFromMetadataRow } from '../utils/tableMetadataRows';
+import { getTableMetadataIssueDetail, isTableMetadataIncomplete } from '../utils/tableMetadataResult';
 import { formatSqlExecutionError, hasLocalizedSqlTimeoutKeyword } from '../utils/sqlErrorSemantics';
 import { canReusePendingSqlEditorTransactionForType, shouldUseSqlEditorManagedTransactionForType } from '../utils/sqlEditorTransaction';
 import { findSqlStatementRanges, resolveCurrentSqlStatementRange, resolveExecutableSql } from '../utils/sqlStatementSelection';
@@ -74,6 +76,7 @@ import {
 import { resolveUniqueKeyGroupsFromIndexes } from './dataGridCopyInsert';
 import { t as translate } from '../i18n';
 import { buildSqlAnalysisWorkbenchTab } from '../utils/sqlAnalysisTab';
+import { buildQueryHistoryWorkbenchTab, shouldKeepRestoredQueryUnbound } from '../utils/sqlAuditTab';
 import { isLocalizedUntitledQueryTitle, QUERY_TAB_RENAME_REQUEST_EVENT } from '../utils/queryTabTitle';
 import { buildSqlServerObjectDefinitionQueries } from '../utils/sqlServerObjectDefinition';
 import { formatDdlForDisplay } from '../utils/ddlFormat';
@@ -1040,6 +1043,14 @@ let sharedQueryEditorMetadataConnectionConfig: unknown = null;
 
 const QUERY_EDITOR_TABLE_SUGGESTION_ROW_HEIGHT = 36;
 
+export const shouldRefreshQueryEditorCompletionColumns = (
+    intent: string,
+    hasColumnsForDatabase: boolean,
+    hasIncompleteColumnMetadata: boolean,
+): boolean => (
+    intent === 'column_name' && (hasIncompleteColumnMetadata || !hasColumnsForDatabase)
+);
+
 const normalizeQueryEditorTableSuggestionText = (value: unknown): string => (
     String(value ?? '').replace(/\r\n|\r|\n/g, '').trim()
 );
@@ -1612,6 +1623,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
   const acceptSqlAiCompletionBindingRef = useRef<{ combo: string; enabled: boolean }>({ combo: '', enabled: false });
   const queryEditorActiveRef = useRef(false);
   const aiContextMetadataWarmupRef = useRef<Record<string, Promise<boolean> | undefined>>({});
+  const incompleteColumnMetadataDbsRef = useRef<Set<string>>(new Set());
   const aiContextCacheRef = useRef<{ deps: unknown[]; value: QueryEditorAiContext } | null>(null);
   const triggerSqlAiCompletionAltPressedRef = useRef(false);
   const triggerSqlAiCompletionAltGestureAtRef = useRef(0);
@@ -1918,6 +1930,13 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       },
       [addTab, currentConnectionCapabilities.supportsExplainDiagnosis, currentConnectionId, currentDb, tab.dbName],
   );
+
+  const openQueryHistoryWorkbench = useCallback(() => {
+      addTab(buildQueryHistoryWorkbenchTab({
+          connectionId: String(currentConnectionId || '').trim(),
+          dbName: String(currentDb || tab.dbName || '').trim(),
+      }));
+  }, [addTab, currentConnectionId, currentDb, tab.dbName]);
 
   const handleCloseSqlSnippetPicker = useCallback(() => {
       setIsSqlSnippetPickerOpen(false);
@@ -2241,6 +2260,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       metadataFetchKeyRef.current = '';
       aiContextMetadataWarmupRef.current = {};
       aiContextCacheRef.current = null;
+      incompleteColumnMetadataDbsRef.current.clear();
       missingTableMetadataKeysRef.current.clear();
       tablesRef.current = [];
       allColumnsRef.current = [];
@@ -2498,13 +2518,16 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
   }, [currentConnectionId]);
 
   useEffect(() => {
+      if (shouldKeepRestoredQueryUnbound(tab, currentConnectionId)) {
+          return;
+      }
       if (!queryCapableConnections.some(c => c.id === currentConnectionId)) {
           const fallback = queryCapableConnections[0]?.id || '';
           if (fallback && fallback !== currentConnectionId) {
               void switchQueryContext(fallback, '', { silentPending: true });
           }
       }
-  }, [currentConnectionId, pendingSqlTransaction?.id, queryCapableConnections, queryContextLockRunSeq, switchQueryContext]);
+  }, [currentConnectionId, pendingSqlTransaction?.id, queryCapableConnections, queryContextLockRunSeq, switchQueryContext, tab.preserveUnboundConnection]);
 
   useEffect(() => {
       currentDbRef.current = currentDb;
@@ -2695,8 +2718,14 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       const normalizedDbName = dbName.toLowerCase();
       const needsTables = intent.intent === 'table_name'
           || !tablesRef.current.some((table) => String(table.dbName || '').trim().toLowerCase() === normalizedDbName);
-      const needsColumns = intent.intent === 'column_name'
-          && !allColumnsRef.current.some((column) => String(column.dbName || '').trim().toLowerCase() === normalizedDbName);
+      const hasColumnsForDatabase = allColumnsRef.current.some(
+          (column) => String(column.dbName || '').trim().toLowerCase() === normalizedDbName,
+      );
+      const needsColumns = shouldRefreshQueryEditorCompletionColumns(
+          intent.intent,
+          hasColumnsForDatabase,
+          incompleteColumnMetadataDbsRef.current.has(normalizedDbName),
+      );
       if (!needsTables && !needsColumns) {
           return;
       }
@@ -2790,6 +2819,14 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                       warmupSucceeded = false;
                   }
                   if (resCols?.success && Array.isArray(resCols.data)) {
+                      const incomplete = isTableMetadataIncomplete(resCols);
+                      if (incomplete) {
+                          message.warning(getTableMetadataIssueDetail(resCols));
+                          incompleteColumnMetadataDbsRef.current.add(normalizedDbName);
+                          warmupSucceeded = false;
+                      } else {
+                          incompleteColumnMetadataDbsRef.current.delete(normalizedDbName);
+                      }
                       const fetchedColumns = resCols.data.map((col: any) => ({
                           dbName,
                           tableName: col.tableName,
@@ -4063,6 +4100,13 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
               const resCols = await DBGetAllColumns(buildRpcConnectionConfig(config) as any, dbName);
               if (cancelled) return;
               if (resCols.success && Array.isArray(resCols.data)) {
+                  const normalizedMetadataDbName = String(dbName || '').trim().toLowerCase();
+                  if (isTableMetadataIncomplete(resCols)) {
+                      message.warning(getTableMetadataIssueDetail(resCols));
+                      incompleteColumnMetadataDbsRef.current.add(normalizedMetadataDbName);
+                  } else {
+                      incompleteColumnMetadataDbsRef.current.delete(normalizedMetadataDbName);
+                  }
                   resCols.data.forEach((col: any) => {
                       allColumns.push({
                           dbName,
@@ -10505,6 +10549,12 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           key: 'analysis-actions',
           label: translate('tab_manager.kind_badge.sql_analysis'),
           children: [
+              {
+                  key: 'show-query-history',
+                  icon: <ClockCircleOutlined />,
+                  label: translate('query_history.action.open'),
+                  onClick: openQueryHistoryWorkbench,
+              },
               {
                   key: 'diagnose-query',
                   icon: <SearchOutlined />,

@@ -2190,7 +2190,9 @@ const sanitizeExternalSQLFileBindings = (
     const filePath = normalizeExternalSQLPath(toTrimmedString(raw.filePath));
     const connectionId = toTrimmedString(raw.connectionId);
     const dbName = toTrimmedString(raw.dbName);
-    if (!filePath || !connectionId || !dbName) return;
+    // dbName intentionally stays optional for a file binding: an empty value
+    // means "connect to this host without selecting a default database".
+    if (!filePath || !connectionId) return;
     bindings.set(filePath, { filePath, connectionId, dbName });
   });
   return [...bindings.values()];

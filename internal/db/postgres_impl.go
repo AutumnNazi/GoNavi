@@ -406,6 +406,19 @@ func (p *PostgresDB) GetCreateStatement(dbName, tableName string) (string, error
 	return fmt.Sprintf("-- SHOW CREATE TABLE not fully supported for PostgreSQL in this MVP.\n-- Table: %s", tableName), nil
 }
 
+func (p *PostgresDB) GetTableComment(dbName, tableName string) (string, error) {
+	schema, table := normalizePGLikeMetadataTable(dbName, tableName)
+	if table == "" {
+		return "", localizedDatabaseRuntimeError("db.backend.error.table_name_required", nil)
+	}
+
+	data, _, err := p.Query(buildPGLikeTableCommentMetadataQuery(schema, table))
+	if err != nil {
+		return "", err
+	}
+	return parsePGLikeTableComment(data), nil
+}
+
 func (p *PostgresDB) GetColumns(dbName, tableName string) ([]connection.ColumnDefinition, error) {
 	schema, table := normalizePGLikeMetadataTable(dbName, tableName)
 	if table == "" {

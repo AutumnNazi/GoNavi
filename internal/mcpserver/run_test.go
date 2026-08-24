@@ -1,12 +1,32 @@
 package mcpserver
 
 import (
+	"bytes"
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
+
+	httpserverlimits "GoNavi-Wails/internal/httpserver"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
+
+type bearerTokenRoundTripper struct {
+	token string
+	base  http.RoundTripper
+}
+
+func (t bearerTokenRoundTripper) RoundTrip(request *http.Request) (*http.Response, error) {
+	request = request.Clone(request.Context())
+	request.Header = request.Header.Clone()
+	request.Header.Set("Authorization", "Bearer "+t.token)
+	return t.base.RoundTrip(request)
+}
 
 func TestStartStreamableHTTPServerStopsWhenContextIsCanceled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
@@ -28,6 +48,90 @@ func TestStartStreamableHTTPServerStopsWhenContextIsCanceled(t *testing.T) {
 
 	if err := handle.Wait(); err != nil {
 		t.Fatalf("HTTP server returned error after context cancellation: %v", err)
+	}
+}
+
+func TestStreamableHTTPRoutesRejectOversizeBeforeSDKHandler(t *testing.T) {
+	var called atomic.Bool
+	handler := streamableHTTPRoutes(HTTPServerOptions{Path: "/mcp", Token: "test-token"}, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		called.Store(true)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	request := httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewReader(bytes.Repeat([]byte("x"), int(httpserverlimits.MaxRequestBodyBytes+1))))
+	request.Header.Set("Authorization", "Bearer test-token")
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("status = %d, want %d; body=%q", recorder.Code, http.StatusRequestEntityTooLarge, recorder.Body.String())
+	}
+	if called.Load() {
+		t.Fatal("MCP SDK handler was called for an oversized body")
+	}
+}
+
+func TestStreamableHTTPRoutesPassNormalBody(t *testing.T) {
+	var body string
+	handler := streamableHTTPRoutes(HTTPServerOptions{Path: "/mcp", Token: "test-token", JSONResponse: true}, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		payload, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Errorf("read body in SDK handler: %v", err)
+		}
+		body = string(payload)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	request := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0"}`))
+	request.Header.Set("Authorization", "Bearer test-token")
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusNoContent)
+	}
+	if body != `{"jsonrpc":"2.0"}` {
+		t.Fatalf("SDK handler body = %q", body)
+	}
+}
+
+func TestStartStreamableHTTPServerSupportsNormalSessionAndSSE(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	handle, err := StartStreamableHTTPServer(ctx, &fakeBackend{}, HTTPServerOptions{
+		Addr:  "127.0.0.1:0",
+		Path:  "/mcp",
+		Token: "test-token",
+	})
+	if err != nil {
+		t.Fatalf("StartStreamableHTTPServer returned error: %v", err)
+	}
+	t.Cleanup(func() {
+		stopCtx, stopCancel := context.WithTimeout(context.Background(), time.Second)
+		defer stopCancel()
+		if err := handle.Stop(stopCtx); err != nil {
+			t.Errorf("stop Streamable HTTP server: %v", err)
+		}
+	})
+
+	httpClient := &http.Client{Transport: bearerTokenRoundTripper{token: "test-token", base: http.DefaultTransport}}
+	client := mcp.NewClient(&mcp.Implementation{Name: "run-test-client", Version: "v0.0.1"}, nil)
+	session, err := client.Connect(ctx, &mcp.StreamableClientTransport{
+		Endpoint:   "http://" + handle.Addr + handle.Path,
+		HTTPClient: httpClient,
+	}, nil)
+	if err != nil {
+		t.Fatalf("connect Streamable HTTP client: %v", err)
+	}
+	defer session.Close()
+
+	result, err := session.ListTools(ctx, nil)
+	if err != nil {
+		t.Fatalf("list tools over normal MCP session: %v", err)
+	}
+	if len(result.Tools) == 0 {
+		t.Fatal("normal MCP session returned no tools")
 	}
 }
 

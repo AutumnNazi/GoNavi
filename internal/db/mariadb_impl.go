@@ -269,12 +269,7 @@ func (m *MariaDB) GetColumns(dbName, tableName string) ([]connection.ColumnDefin
 }
 
 func (m *MariaDB) GetIndexes(dbName, tableName string) ([]connection.IndexDefinition, error) {
-	query := fmt.Sprintf("SHOW INDEX FROM `%s`.`%s`", dbName, tableName)
-	if dbName == "" {
-		query = fmt.Sprintf("SHOW INDEX FROM `%s`", tableName)
-	}
-
-	data, _, err := m.Query(query)
+	data, _, err := m.Query(buildMySQLShowIndexQuery(dbName, tableName))
 	if err != nil {
 		return nil, err
 	}
@@ -322,11 +317,8 @@ func (m *MariaDB) GetIndexes(dbName, tableName string) ([]connection.IndexDefini
 }
 
 func (m *MariaDB) GetForeignKeys(dbName, tableName string) ([]connection.ForeignKeyDefinition, error) {
-	query := fmt.Sprintf(`SELECT CONSTRAINT_NAME, COLUMN_NAME, REFERENCED_TABLE_NAME, REFERENCED_COLUMN_NAME
-              FROM information_schema.KEY_COLUMN_USAGE
-              WHERE TABLE_SCHEMA = '%s' AND TABLE_NAME = '%s' AND REFERENCED_TABLE_NAME IS NOT NULL`, dbName, tableName)
-
-	data, _, err := m.Query(query)
+	schema, table := mysqlMetadataTableParts(dbName, tableName)
+	data, _, err := queryMetadataRowsWithArgs(m.conn, metadataContextFor(m), "mariadb", buildMySQLForeignKeysQuery(), schema, table)
 	if err != nil {
 		return nil, err
 	}
@@ -346,8 +338,8 @@ func (m *MariaDB) GetForeignKeys(dbName, tableName string) ([]connection.Foreign
 }
 
 func (m *MariaDB) GetTriggers(dbName, tableName string) ([]connection.TriggerDefinition, error) {
-	query := fmt.Sprintf("SHOW TRIGGERS FROM `%s` WHERE `Table` = '%s'", dbName, tableName)
-	data, _, err := m.Query(query)
+	schema, table := mysqlMetadataTableParts(dbName, tableName)
+	data, _, err := queryMetadataRowsWithArgs(m.conn, metadataContextFor(m), "mariadb", buildMySQLShowTriggersQuery(schema), table)
 	if err != nil {
 		return nil, err
 	}

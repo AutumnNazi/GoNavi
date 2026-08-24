@@ -81,7 +81,9 @@ export const buildExternalSQLFileSnapshot = (params: {
       ? { connectionId: matchedDirectory.connectionId, dbName: matchedDirectory.dbName }
       : undefined,
   );
-  const effectiveConnectionId = fileBinding?.connectionId || matchedDirectory?.connectionId || '';
+  const effectiveConnectionId = fileBinding
+    ? fileBinding.connectionId
+    : matchedDirectory?.connectionId || '';
   const matchedConnection = connections.find((item) => item.id === effectiveConnectionId);
   const matchingTabs = tabs.filter(
     (tab) => normalizeExternalSQLPath(tab.filePath || '').toLowerCase() === resolvedFilePath.toLowerCase(),
@@ -103,7 +105,7 @@ export const buildExternalSQLFileSnapshot = (params: {
       connectionId: effectiveConnectionId,
       connectionName: matchedConnection?.name || '',
       connectionType: matchedConnection?.config?.type || '',
-      dbName: fileBinding?.dbName || matchedDirectory.dbName || '',
+      dbName: fileBinding ? fileBinding.dbName : matchedDirectory.dbName || '',
       ...(fileBinding ? { bindingSource: 'file' } : {}),
     } : null,
     hasOpenTab: matchingTabs.length > 0,

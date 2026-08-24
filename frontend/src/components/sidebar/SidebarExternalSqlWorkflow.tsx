@@ -367,10 +367,10 @@ export const ExternalSQLBindingModal: React.FC<ExternalSQLBindingModalProps> = (
         <Form.Item
           name="dbName"
           label={t('data_export.label.database')}
-          rules={[{ required: true, message: t('sidebar.message.select_connection_or_database_first') }]}
           extra={databaseLoadError || undefined}
         >
           <Select
+            allowClear
             showSearch
             optionFilterProp="label"
             loading={loadingDatabases}
@@ -573,8 +573,12 @@ export const useSidebarExternalSqlWorkflow = ({
           dbName: String(ctx?.dbName || '').trim(),
         },
       );
-      const connectionId = fileBinding?.connectionId || ctx.connectionId;
-      const dbName = fileBinding?.dbName || String(ctx.dbName || '').trim();
+      const connectionId = fileBinding
+        ? fileBinding.connectionId
+        : ctx.connectionId;
+      const dbName = fileBinding
+        ? fileBinding.dbName
+        : String(ctx.dbName || '').trim();
       openSQLFileExecutionWorkbench({
         connectionId,
         dbName,
@@ -727,13 +731,18 @@ export const useSidebarExternalSqlWorkflow = ({
   };
 
   const openExternalSQLFile = async (fileNode: any) => {
+    const hasExplicitBinding = fileNode?.dataRef?.hasExplicitBinding === true;
     const fileContext = {
       connectionId: String(fileNode?.dataRef?.connectionId || '').trim(),
       dbName: String(fileNode?.dataRef?.dbName || '').trim(),
     };
     const fallbackContext = resolveExternalSQLExecutionContext();
-    const connectionId = fileContext.connectionId || fallbackContext.connectionId;
-    const dbName = fileContext.dbName || fallbackContext.dbName;
+    const connectionId = hasExplicitBinding
+      ? fileContext.connectionId
+      : fileContext.connectionId || fallbackContext.connectionId;
+    const dbName = hasExplicitBinding
+      ? fileContext.dbName
+      : fileContext.dbName || fallbackContext.dbName;
     const filePath = String(fileNode?.dataRef?.path || '').trim();
     const fileName = String(fileNode?.dataRef?.name || fileNode?.title || t('sidebar.sql_file.default_name')).trim() || t('sidebar.sql_file.default_name');
     if (!filePath) {

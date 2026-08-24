@@ -79,6 +79,16 @@ func (s *xlsxSharedStringStore) Add(value string) error {
 	if s == nil || s.file == nil || s.writer == nil {
 		return fmt.Errorf("shared string store unavailable")
 	}
+	// Get seeks the shared-string file to read an earlier value. Flush the
+	// buffered writer and restore its append position before adding another
+	// value; otherwise a lazy, out-of-order lookup can overwrite earlier data
+	// and make subsequent Excel reads fail with EOF.
+	if err := s.flush(); err != nil {
+		return err
+	}
+	if _, err := s.file.Seek(0, io.SeekEnd); err != nil {
+		return err
+	}
 	if len(s.offsets) >= s.maxCount {
 		return fmt.Errorf("shared string count exceeds %d limit", s.maxCount)
 	}

@@ -476,6 +476,8 @@ if (
             App: {
                 CheckUpdate: async () => ({ success: false }),
                 DownloadUpdate: async () => ({ success: false }),
+                StartUpdateDownload: async () => ({ success: false, message: 'Browser mock does not provide an update package' }),
+                GetUpdateDownloadTask: async () => ({ success: true, data: { task: null } }),
                 SetLanguage: async () => null,
                 GetSavedConnections: async () => cloneBrowserMockValue(mockConnections),
                 GetEditableSavedConnection: async (id: string) => {

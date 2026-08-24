@@ -68,6 +68,52 @@ func TestSQLiteConnectConfiguresBoundedPoolAndSerializesWrites(t *testing.T) {
 	}
 }
 
+func TestSQLiteMetadataSupportsApostropheObjectNames(t *testing.T) {
+	client := &SQLiteDB{}
+	if err := client.Connect(connection.ConnectionConfig{Type: "sqlite", Host: ":memory:"}); err != nil {
+		t.Fatalf("连接 SQLite 失败: %v", err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+
+	const parentTable = "parent'items"
+	const table = "order'items"
+	const index = "idx'order_parent"
+	const trigger = "trg'order_insert"
+
+	if _, err := client.conn.Exec(`CREATE TABLE "parent'items" (id INTEGER PRIMARY KEY)`); err != nil {
+		t.Fatalf("创建父表失败: %v", err)
+	}
+	if _, err := client.conn.Exec(`CREATE TABLE "order'items" (id INTEGER PRIMARY KEY, parent_id INTEGER, FOREIGN KEY (parent_id) REFERENCES "parent'items" (id))`); err != nil {
+		t.Fatalf("创建测试表失败: %v", err)
+	}
+	if _, err := client.conn.Exec(`CREATE INDEX "idx'order_parent" ON "order'items" (parent_id)`); err != nil {
+		t.Fatalf("创建索引失败: %v", err)
+	}
+	if _, err := client.conn.Exec(`CREATE TRIGGER "trg'order_insert" AFTER INSERT ON "order'items" BEGIN SELECT 1; END`); err != nil {
+		t.Fatalf("创建触发器失败: %v", err)
+	}
+
+	ddl, err := client.GetCreateStatement("main", table)
+	if err != nil || !strings.Contains(ddl, table) {
+		t.Fatalf("GetCreateStatement = %q, %v", ddl, err)
+	}
+
+	indexes, err := client.GetIndexes("main", table)
+	if err != nil || len(indexes) != 1 || indexes[0].Name != index || indexes[0].ColumnName != "parent_id" {
+		t.Fatalf("GetIndexes = %#v, %v", indexes, err)
+	}
+
+	foreignKeys, err := client.GetForeignKeys("main", table)
+	if err != nil || len(foreignKeys) != 1 || foreignKeys[0].RefTableName != parentTable || foreignKeys[0].ColumnName != "parent_id" {
+		t.Fatalf("GetForeignKeys = %#v, %v", foreignKeys, err)
+	}
+
+	triggers, err := client.GetTriggers("main", table)
+	if err != nil || len(triggers) != 1 || triggers[0].Name != trigger || triggers[0].Timing != "AFTER" || triggers[0].Event != "INSERT" {
+		t.Fatalf("GetTriggers = %#v, %v", triggers, err)
+	}
+}
+
 func TestResolveSQLiteDSNRejectsHostPort(t *testing.T) {
 	_, err := resolveSQLiteDSN(connection.ConnectionConfig{Type: "sqlite", Host: "localhost:3306"})
 	if err == nil {

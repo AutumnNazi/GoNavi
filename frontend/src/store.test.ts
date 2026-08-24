@@ -2061,6 +2061,39 @@ describe('store appearance persistence', () => {
     ]);
   });
 
+  it('persists an external SQL file binding with an explicitly empty database', async () => {
+    const { useStore } = await importStore();
+
+    useStore.getState().saveExternalSQLDirectory({
+      id: 'ext-no-db',
+      name: 'bootstrap scripts',
+      path: 'D:/sql/bootstrap',
+      connectionId: 'conn-1',
+      dbName: 'orders',
+      fileBindings: [{
+        filePath: 'D:/sql/bootstrap/create-database.sql',
+        connectionId: 'conn-1',
+        dbName: '',
+      }],
+      createdAt: 1,
+    });
+
+    const persisted = JSON.parse(storage.getItem('lite-db-storage') || '{}');
+    expect(persisted.state.externalSQLDirectories[0].fileBindings).toEqual([{
+      filePath: 'D:/sql/bootstrap/create-database.sql',
+      connectionId: 'conn-1',
+      dbName: '',
+    }]);
+
+    vi.resetModules();
+    const reloaded = await importStore();
+    expect(reloaded.useStore.getState().externalSQLDirectories[0].fileBindings).toEqual([{
+      filePath: 'D:/sql/bootstrap/create-database.sql',
+      connectionId: 'conn-1',
+      dbName: '',
+    }]);
+  });
+
   it('records recent workbench targets and SQL files with their database binding', async () => {
     const { useStore } = await importStore();
 

@@ -1440,6 +1440,28 @@ function App() {
           return false;
       };
 
+      const waitForNativeWindowBounds = (bounds: {
+          width: number;
+          height: number;
+          x: number;
+          y: number;
+      }): Promise<boolean> => waitForWindowCondition({
+          read: async () => {
+              const [size, position] = await Promise.all([
+                  WindowGetSize(),
+                  WindowGetPosition(),
+              ]);
+              return Math.abs(Math.trunc(Number(size?.w)) - bounds.width) <= 2
+                  && Math.abs(Math.trunc(Number(size?.h)) - bounds.height) <= 2
+                  && Math.abs(Math.trunc(Number(position?.x)) - bounds.x) <= 2
+                  && Math.abs(Math.trunc(Number(position?.y)) - bounds.y) <= 2;
+          },
+          wait,
+          isCancelled: () => cancelled,
+          maxChecks: 16,
+          intervalMs: 40,
+      });
+
       const waitForStartupPreferenceApplied = (): Promise<boolean> => waitForWindowCondition({
           read: checkStartupPreferenceApplied,
           wait,
@@ -1491,22 +1513,7 @@ function App() {
               });
               WindowSetPosition(setPosition.x, setPosition.y);
               WindowSetSize(nextBounds.width, nextBounds.height);
-              const boundsApplied = await waitForWindowCondition({
-                  read: async () => {
-                      const [size, position] = await Promise.all([
-                          WindowGetSize(),
-                          WindowGetPosition(),
-                      ]);
-                      return Math.abs(Math.trunc(Number(size?.w)) - nextBounds.width) <= 2
-                          && Math.abs(Math.trunc(Number(size?.h)) - nextBounds.height) <= 2
-                          && Math.abs(Math.trunc(Number(position?.x)) - nextBounds.x) <= 2
-                          && Math.abs(Math.trunc(Number(position?.y)) - nextBounds.y) <= 2;
-                  },
-                  wait,
-                  isCancelled: () => cancelled,
-                  maxChecks: 16,
-                  intervalMs: 40,
-              });
+              const boundsApplied = await waitForNativeWindowBounds(nextBounds);
               if (!boundsApplied) {
                   return false;
               }
@@ -1616,6 +1623,7 @@ function App() {
           });
           WindowSetPosition(setPosition.x, setPosition.y);
           state.setWindowBounds(nextBounds);
+          return nextBounds;
       };
 
       const restoreNormalWindowBounds = async (bounds: {
@@ -1636,7 +1644,15 @@ function App() {
           } catch (e) {
               console.warn('Failed to restore normal window chrome', e);
           }
-          applyRestoredWindowBounds(bounds);
+          const appliedBounds = applyRestoredWindowBounds(bounds);
+          // Wails can finish the native normal-window transition before the
+          // WebView2 controller receives its first size update. Wait for the
+          // native rect, then explicitly resize the controller just as the
+          // maximised startup path does.
+          if (isWindowsPlatform()) {
+              await waitForNativeWindowBounds(appliedBounds);
+              await tryRefreshStartupWebViewBounds();
+          }
           useStore.getState().setWindowState('normal');
       };
 
@@ -2873,73 +2889,119 @@ function App() {
       }
 
       const label = buildApplicationQuitUnsavedSQLLabel(targets);
-      let destroyConfirm: (() => void) | null = null;
-      const confirmRef = Modal.confirm({
-          title: t('app.quit.unsaved_sql.title'),
-          content: t(targets.length === 1
-              ? 'app.quit.unsaved_sql.content_single'
-              : 'app.quit.unsaved_sql.content_multiple', { label }),
-          okText: t('app.quit.unsaved_sql.save_exit'),
-          cancelText: t('app.quit.unsaved_sql.cancel'),
+      await new Promise<void>((resolve) => {
+          let finished = false;
+          const finish = () => {
+              if (finished) return;
+              finished = true;
+              resolve();
+          };
+          const runConfirmedActionAndFinish = async () => {
+              try {
+                  await runConfirmedAction();
+              } finally {
+                  finish();
+              }
+          };
+
+          let destroyConfirm: (() => void) | null = null;
+          const confirmRef = Modal.confirm({
+              title: t('app.quit.unsaved_sql.title'),
+              content: t(targets.length === 1
+                  ? 'app.quit.unsaved_sql.content_single'
+                  : 'app.quit.unsaved_sql.content_multiple', { label }),
+              okText: t('app.quit.unsaved_sql.save_exit'),
+              cancelText: t('app.quit.unsaved_sql.cancel'),
+              centered: true,
+              closable: true,
+              maskClosable: false,
+              zIndex: applicationQuitModalZIndex,
+              okButtonProps: { danger: true, type: 'primary' },
+              footer: (_, { OkBtn, CancelBtn }) => (
+                  <>
+                      <Button
+                        onClick={() => {
+                            destroyConfirm?.();
+                            applicationQuitConfirmRef.current = null;
+                            void runConfirmedActionAndFinish();
+                        }}
+                      >
+                          {t('app.quit.unsaved_sql.confirm_exit')}
+                      </Button>
+                      <CancelBtn />
+                      <OkBtn />
+                  </>
+              ),
+              onCancel: () => {
+                  cancelRequest();
+                  finish();
+              },
+              onOk: async () => {
+                  try {
+                      await saveLatestApplicationQuitUnsavedSQLState({
+                          getState: () => {
+                              const latestState = useStore.getState();
+                              return {
+                                  tabs: latestState.tabs,
+                                  savedQueries: latestState.savedQueries,
+                              };
+                          },
+                          updateTabs: (update) => {
+                              useStore.setState((state) => ({ tabs: update(state.tabs) }));
+                          },
+                          saveQuery,
+                      });
+                      message.success(t('app.quit.unsaved_sql.saved'));
+                  } catch (error) {
+                      cancelRequest();
+                      finish();
+                      message.error(t('app.quit.unsaved_sql.save_failed_cancel_exit', {
+                          detail: error instanceof Error ? error.message : String(error),
+                      }));
+                      throw error;
+                  }
+                  await runConfirmedActionAndFinish();
+              },
+          });
+          destroyConfirm = confirmRef.destroy;
+          applicationQuitConfirmRef.current = confirmRef;
+      });
+  }, [applicationQuitModalZIndex, ensureSavedQueriesLoaded, forceQuitApplication, resetApplicationQuitRequest, saveQuery, t]);
+
+  const handleInstallUpdateRequest = useCallback(async () => {
+      let pendingCloseInstanceCount: number | null = null;
+      hideUpdateDownloadProgress();
+      await handleApplicationQuitRequest(
+          () => handleInstallFromProgress(false, (instanceCount) => {
+              pendingCloseInstanceCount = instanceCount;
+          }),
+          () => {
+              if (pendingCloseInstanceCount === null) {
+                  showUpdateDownloadProgress();
+              }
+          },
+      );
+      if (pendingCloseInstanceCount === null) {
+          return;
+      }
+      Modal.confirm({
+          title: t('app.about.update_install_confirm.close_instances_title', { count: pendingCloseInstanceCount }),
+          content: t('app.about.update_install_confirm.close_instances_content'),
+          okText: t('app.about.update_install_confirm.close_instances_ok'),
+          cancelText: t('common.cancel'),
+          centered: true,
           closable: true,
           maskClosable: false,
           zIndex: applicationQuitModalZIndex,
           okButtonProps: { danger: true, type: 'primary' },
-          footer: (_, { OkBtn, CancelBtn }) => (
-              <>
-                  <Button
-                    onClick={() => {
-                        destroyConfirm?.();
-                        applicationQuitConfirmRef.current = null;
-                        void runConfirmedAction();
-                    }}
-                  >
-                      {t('app.quit.unsaved_sql.confirm_exit')}
-                  </Button>
-                  <CancelBtn />
-                  <OkBtn />
-              </>
-          ),
           onCancel: () => {
-              cancelRequest();
+              showUpdateDownloadProgress();
           },
           onOk: async () => {
-              try {
-                  await saveLatestApplicationQuitUnsavedSQLState({
-                      getState: () => {
-                          const latestState = useStore.getState();
-                          return {
-                              tabs: latestState.tabs,
-                              savedQueries: latestState.savedQueries,
-                          };
-                      },
-                      updateTabs: (update) => {
-                          useStore.setState((state) => ({ tabs: update(state.tabs) }));
-                      },
-                      saveQuery,
-                  });
-                  message.success(t('app.quit.unsaved_sql.saved'));
-              } catch (error) {
-                  cancelRequest();
-                  message.error(t('app.quit.unsaved_sql.save_failed_cancel_exit', {
-                      detail: error instanceof Error ? error.message : String(error),
-                  }));
-                  throw error;
-              }
-              await runConfirmedAction();
+              await handleInstallFromProgress(true);
           },
       });
-      destroyConfirm = confirmRef.destroy;
-      applicationQuitConfirmRef.current = confirmRef;
-  }, [applicationQuitModalZIndex, ensureSavedQueriesLoaded, forceQuitApplication, resetApplicationQuitRequest, saveQuery, t]);
-
-  const handleInstallUpdateRequest = useCallback(async () => {
-      hideUpdateDownloadProgress();
-      await handleApplicationQuitRequest(
-          () => handleInstallFromProgress(false),
-          showUpdateDownloadProgress,
-      );
-  }, [handleApplicationQuitRequest, handleInstallFromProgress, hideUpdateDownloadProgress, showUpdateDownloadProgress]);
+  }, [applicationQuitModalZIndex, handleApplicationQuitRequest, handleInstallFromProgress, hideUpdateDownloadProgress, showUpdateDownloadProgress, t]);
 
   useEffect(() => {
       const offBeforeClose = EventsOn('app:before-close-request', () => {

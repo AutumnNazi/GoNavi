@@ -27,10 +27,12 @@ const backendApp = {
   GetDriverVersionPackageSize: vi.fn(),
   GetDriverStatusList: vi.fn(),
   InstallLocalDriverPackage: vi.fn(),
+  ListDriverDownloadTasks: vi.fn(),
   OpenDriverDownloadDirectory: vi.fn(),
   RemoveDriverPackage: vi.fn(),
   SelectDriverPackageDirectory: vi.fn(),
   SelectDriverPackageFile: vi.fn(),
+  StartDriverPackageDownload: vi.fn(),
 };
 
 const textContent = (node: any): string => {
@@ -253,10 +255,12 @@ describe('DriverManagerModal i18n', () => {
     backendApp.GetDriverVersionPackageSize.mockResolvedValue({ success: true, data: { packageSizeText: '12 MB' } });
     backendApp.DownloadDriverPackage.mockResolvedValue({ success: true });
     backendApp.InstallLocalDriverPackage.mockResolvedValue({ success: true });
+    backendApp.ListDriverDownloadTasks.mockResolvedValue({ success: true, data: [] });
     backendApp.OpenDriverDownloadDirectory.mockResolvedValue({ success: true });
     backendApp.RemoveDriverPackage.mockResolvedValue({ success: true });
     backendApp.SelectDriverPackageDirectory.mockResolvedValue({ success: false, message: '已取消' });
     backendApp.SelectDriverPackageFile.mockResolvedValue({ success: false, message: '已取消' });
+    backendApp.StartDriverPackageDownload.mockResolvedValue({ success: true, data: { task: null } });
   });
 
   it('updates visible copy when languagePreference changes while the modal stays open', async () => {

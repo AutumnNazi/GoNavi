@@ -362,40 +362,8 @@ const ConnectionModalNetworkSecuritySection: React.FC<ConnectionModalNetworkSecu
           )}
         </div>
       </div>
-      <div className="gn-conn-f-row">
-        {denseLabel(
-          t("connection.modal.dense.path"),
-          t("connection.modal.network.ssh.knownHostsPath"),
-        )}
-        <div className="gn-conn-f-ctrl">
-          <Form.Item name="sshKnownHostsPath" style={{ marginBottom: 0 }}>
-            <Input
-              {...noAutoCapInputProps}
-              placeholder={t(
-                "connection.modal.network.ssh.knownHostsPathPlaceholder",
-              )}
-            />
-          </Form.Item>
-        </div>
-      </div>
-      <div className="gn-conn-f-row">
-        {denseLabel(
-          t("connection.modal.dense.fingerprint"),
-          t("connection.modal.network.ssh.hostKeyFingerprint"),
-        )}
-        <div className="gn-conn-f-ctrl">
-          <Form.Item name="sshHostKeyFingerprint" style={{ marginBottom: 0 }}>
-            <Input
-              {...noAutoCapInputProps}
-              placeholder={t(
-                "connection.modal.network.ssh.hostKeyFingerprintPlaceholder",
-              )}
-            />
-          </Form.Item>
-        </div>
-      </div>
-      <div className="gn-conn-field-hint">
-        {t("connection.modal.network.ssh.hostKeyVerificationHint")}
+      <div className="gn-conn-field-hint gn-ssh-host-key-automatic-hint">
+        {t("connection.modal.network.ssh.hostKeyAutomaticHint")}
       </div>
       {renderStoredSecretControls({
         fieldName: "sshPassword",

@@ -202,6 +202,7 @@ type importColumnMappingConsumer struct {
 	targetBySource   map[string]string
 	selectedSources  []string
 	resolvedMappings []importResolvedColumnMapping
+	requiredTargets  map[string]string
 }
 
 func newImportColumnMappingConsumer(
@@ -237,6 +238,16 @@ func newImportColumnMappingConsumer(
 	targetBySource := make(map[string]string, len(columnMappings))
 	selectedSources := make([]string, 0, len(columnMappings))
 	usedTargets := make(map[string]string, len(columnMappings))
+	requiredTargets := make(map[string]string)
+	for _, column := range targetColumns {
+		if strings.EqualFold(strings.TrimSpace(column.Nullable), "NO") &&
+			!column.HasDefault && column.Default == nil &&
+			!strings.Contains(strings.ToLower(column.Extra), "auto_increment") &&
+			!strings.Contains(strings.ToLower(column.Extra), "identity") &&
+			!strings.Contains(strings.ToLower(column.Extra), "generated") {
+			requiredTargets[normalizeColumnName(column.Name)] = column.Name
+		}
+	}
 	for _, source := range sources {
 		if strings.TrimSpace(source) == "" {
 			return nil, fmt.Errorf("导入字段映射源字段不能为空")
@@ -273,6 +284,7 @@ func newImportColumnMappingConsumer(
 		downstream:      downstream,
 		targetBySource:  targetBySource,
 		selectedSources: selectedSources,
+		requiredTargets: requiredTargets,
 	}, nil
 }
 
@@ -300,6 +312,20 @@ func (c *importColumnMappingConsumer) SetColumns(columns []string) error {
 		if _, ok := foundSources[source]; !ok {
 			return fmt.Errorf("导入字段映射源字段 %q 不存在", source)
 		}
+	}
+	selectedTargets := make(map[string]struct{}, len(targets))
+	for _, target := range targets {
+		selectedTargets[normalizeColumnName(target)] = struct{}{}
+	}
+	missingRequired := make([]string, 0)
+	for normalized, target := range c.requiredTargets {
+		if _, ok := selectedTargets[normalized]; !ok {
+			missingRequired = append(missingRequired, target)
+		}
+	}
+	if len(missingRequired) > 0 {
+		sort.Strings(missingRequired)
+		return fmt.Errorf("导入字段映射缺少非空字段: %s", strings.Join(missingRequired, ", "))
 	}
 
 	c.resolvedMappings = resolved

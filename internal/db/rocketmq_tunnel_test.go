@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"GoNavi-Wails/internal/connection"
+	sshbridge "GoNavi-Wails/internal/ssh"
 )
 
 func TestRewriteRocketMQRouteFrameMapsBrokerAddresses(t *testing.T) {
@@ -89,6 +90,62 @@ func TestNormalizeRocketMQTunnelConfigDefaultsSSHPort(t *testing.T) {
 	}
 	if config.SSH.Port != 22 {
 		t.Fatalf("SSH port = %d, want 22", config.SSH.Port)
+	}
+}
+
+func TestPrepareRocketMQTunnelReturnsHostKeyTrustRequirementSynchronously(t *testing.T) {
+	originalEnsure := rocketMQEnsureSSHClient
+	originalDial := rocketMQDialContextThroughSSH
+	required := &sshbridge.HostKeyTrustRequiredError{
+		Status: sshbridge.HostKeyTrustStatus{
+			State:       "unknown",
+			Host:        "ssh.internal.test",
+			Port:        22,
+			Fingerprint: "SHA256:test-host-key",
+		},
+	}
+	ensureCalls := 0
+	rocketMQEnsureSSHClient = func(config connection.SSHConfig) error {
+		ensureCalls++
+		if config.Host != "ssh.internal.test" || config.Port != 22 {
+			t.Fatalf("SSH config = %#v, want normalized SSH endpoint", config)
+		}
+		return required
+	}
+	rocketMQDialContextThroughSSH = func(context.Context, connection.SSHConfig, string, string) (net.Conn, error) {
+		t.Fatal("SSH dial must not start when host-key confirmation is required")
+		return nil, nil
+	}
+	t.Cleanup(func() {
+		rocketMQEnsureSSHClient = originalEnsure
+		rocketMQDialContextThroughSSH = originalDial
+	})
+
+	_, tunnels, err := prepareRocketMQTunnel(connection.ConnectionConfig{
+		Type:   "rocketmq",
+		Host:   "nameserver.internal.test",
+		Port:   9876,
+		UseSSH: true,
+		SSH: connection.SSHConfig{
+			Host: "ssh.internal.test",
+			User: "ssh-user",
+		},
+	})
+	if err == nil {
+		t.Fatal("prepareRocketMQTunnel succeeded, want host-key trust requirement")
+	}
+	if tunnels != nil {
+		t.Fatalf("tunnels = %#v, want nil when SSH verification fails", tunnels)
+	}
+	if ensureCalls != 1 {
+		t.Fatalf("SSH client preparation calls = %d, want 1", ensureCalls)
+	}
+	var got *sshbridge.HostKeyTrustRequiredError
+	if !errors.As(err, &got) {
+		t.Fatalf("prepareRocketMQTunnel error = %T %v, want wrapped HostKeyTrustRequiredError", err, err)
+	}
+	if got != required {
+		t.Fatalf("unwrapped host-key error = %#v, want %#v", got, required)
 	}
 }
 
@@ -212,9 +269,18 @@ func TestRocketMQSSHTunnelForwardsNameServerAndBroker(t *testing.T) {
 	broker := startRocketMQEchoServer(t, "broker-ping", "broker-pong")
 	nameserver := startRocketMQNameServerStub(t, broker.Addr().String())
 	originalDial := rocketMQDialContextThroughSSH
+	originalEnsure := rocketMQEnsureSSHClient
 	var mu sync.Mutex
 	var targets []string
 	var sshConfigs []connection.SSHConfig
+	ensureCalls := 0
+	rocketMQEnsureSSHClient = func(config connection.SSHConfig) error {
+		ensureCalls++
+		if config.Host != "ssh.internal.test" || config.Port != 22 {
+			t.Fatalf("prepared SSH config = %#v, want normalized SSH endpoint", config)
+		}
+		return nil
+	}
 	rocketMQDialContextThroughSSH = func(ctx context.Context, config connection.SSHConfig, network, address string) (net.Conn, error) {
 		mu.Lock()
 		targets = append(targets, address)
@@ -222,7 +288,10 @@ func TestRocketMQSSHTunnelForwardsNameServerAndBroker(t *testing.T) {
 		mu.Unlock()
 		return (&net.Dialer{}).DialContext(ctx, network, address)
 	}
-	t.Cleanup(func() { rocketMQDialContextThroughSSH = originalDial })
+	t.Cleanup(func() {
+		rocketMQEnsureSSHClient = originalEnsure
+		rocketMQDialContextThroughSSH = originalDial
+	})
 
 	nameserverHost, nameserverPort := rocketmqTestHostPort(t, nameserver.Addr().String())
 	config, tunnels, err := prepareRocketMQTunnel(connection.ConnectionConfig{
@@ -245,6 +314,9 @@ func TestRocketMQSSHTunnelForwardsNameServerAndBroker(t *testing.T) {
 	defer mu.Unlock()
 	if !containsString(targets, nameserver.Addr().String()) || !containsString(targets, broker.Addr().String()) {
 		t.Fatalf("SSH targets = %v, want NameServer and Broker", targets)
+	}
+	if ensureCalls != 1 {
+		t.Fatalf("SSH client preparation calls = %d, want 1", ensureCalls)
 	}
 	for _, sshConfig := range sshConfigs {
 		if sshConfig.Port != 22 {

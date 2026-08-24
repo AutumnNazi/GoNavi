@@ -57,6 +57,12 @@ func mongoConnectionDialer(config connection.ConnectionConfig) options.ContextDi
 	return nil
 }
 
+// mongoGetOrCreateSSHClient is kept as a narrow seam for testing the
+// synchronous SSH preflight. MongoDB invokes its dialer asynchronously while
+// selecting servers, which would otherwise flatten a host-key trust error into
+// the driver's aggregated string error before it reaches the application.
+var mongoGetOrCreateSSHClient = ssh.GetOrCreateSSHClient
+
 const defaultMongoPort = 27017
 const mongoObjectIDLocatorColumn = "__gonavi_mongodb_id_locator__"
 
@@ -356,6 +362,13 @@ func (m *MongoDB) Connect(config connection.ConnectionConfig) (err error) {
 	if runConfig.UseSSH {
 		sshRouteHint = fmt.Sprintf("SSH隧道 %s:%d", runConfig.SSH.Host, runConfig.SSH.Port)
 		logger.Infof("MongoDB 使用 SSH 隧道连接：跳板=%s:%d", runConfig.SSH.Host, runConfig.SSH.Port)
+		// MongoDB creates connections through its driver dialer asynchronously and
+		// later combines failures into a plain string. Establish the cached SSH
+		// client before constructing the driver dialer so a structured host-key
+		// trust error remains unwrapable by the application layer.
+		if _, sshErr := mongoGetOrCreateSSHClient(runConfig.SSH); sshErr != nil {
+			return fmt.Errorf("创建 MongoDB SSH 隧道失败：%w", sshErr)
+		}
 	}
 
 	m.pingTimeout = getConnectTimeout(connectConfig)

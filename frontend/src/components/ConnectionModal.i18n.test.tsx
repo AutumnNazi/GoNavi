@@ -49,12 +49,18 @@ const backendApp = {
   MongoDiscoverMembers: vi.fn(),
   SaveConnection: vi.fn(),
   TestConnection: vi.fn(),
+  TestConnectionWithProgress: vi.fn(),
   RedisConnect: vi.fn(),
+  NacosTestConnection: vi.fn(),
+  NacosTestConnectionWithProgress: vi.fn(),
+  CancelConnectionTest: vi.fn(),
   RevealSavedConnectionPrimaryPassword: vi.fn(),
   SelectDatabaseFile: vi.fn(),
   SelectCertificateFile: vi.fn(),
   SelectSSHKeyFile: vi.fn(),
+  SelectSSHKnownHostsFile: vi.fn(),
   TestJVMConnection: vi.fn(),
+  TrustSSHHostKeyForConnection: vi.fn(),
 };
 
 const textContent = (node: any): string => {
@@ -464,6 +470,14 @@ describe("ConnectionModal i18n", () => {
       config: { ...input.config, password: "" },
     }));
     backendApp.TestConnection.mockResolvedValue({ success: false, message: "saved connection not found: conn-1" });
+    backendApp.TestConnectionWithProgress.mockReset();
+    backendApp.TestConnectionWithProgress.mockResolvedValue({ success: true, message: "ok" });
+    backendApp.NacosTestConnection.mockReset();
+    backendApp.NacosTestConnection.mockResolvedValue({ success: true, message: "ok" });
+    backendApp.NacosTestConnectionWithProgress.mockReset();
+    backendApp.NacosTestConnectionWithProgress.mockResolvedValue({ success: true, message: "ok" });
+    backendApp.CancelConnectionTest.mockReset();
+    backendApp.CancelConnectionTest.mockResolvedValue({ success: true, data: { cancelled: true } });
     backendApp.DBGetDatabases.mockResolvedValue({ success: true, data: [] });
     backendApp.MongoDiscoverMembers.mockResolvedValue({ success: true, data: { members: [] } });
     backendApp.RedisConnect.mockResolvedValue({ success: true, message: "ok" });
@@ -473,6 +487,9 @@ describe("ConnectionModal i18n", () => {
     backendApp.SelectDatabaseFile.mockReset();
     backendApp.SelectCertificateFile.mockReset();
     backendApp.SelectSSHKeyFile.mockReset();
+    backendApp.SelectSSHKnownHostsFile.mockReset();
+    backendApp.TrustSSHHostKeyForConnection.mockReset();
+    backendApp.TrustSSHHostKeyForConnection.mockResolvedValue({ success: true, message: "saved" });
     antdMessage.error.mockReset();
     antdMessage.warning.mockReset();
     antdMessage.success.mockReset();
@@ -536,6 +553,255 @@ describe("ConnectionModal i18n", () => {
     );
     expect(onClose).toHaveBeenCalledTimes(1);
   }, 15000);
+
+  it("shows a staged SSH tunnel result instead of only a generic connection spinner", async () => {
+    const { default: ConnectionModal } = await import("./ConnectionModal");
+    const connection = initialConnection("mysql", {
+      useSSH: true,
+      ssh: {
+        host: "bastion.example.com",
+        port: 22,
+        user: "ops",
+        password: "secret",
+      },
+    });
+
+    let renderer: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(
+        <ConnectionModal open onClose={vi.fn()} initialValues={connection} />,
+      );
+      await flushConnectionTestTick();
+    });
+    await act(async () => {
+      findButton(renderer!, "测试连接").props.onClick();
+      await flushConnectionTestTick();
+    });
+
+    expect(backendApp.TestConnectionWithProgress).toHaveBeenCalledWith(
+      expect.objectContaining({ useSSH: true }),
+      expect.stringMatching(/^ssh-test-/),
+    );
+    expect(textContent(renderer!.toJSON())).toContain("正在验证 SSH 隧道");
+    expect(textContent(renderer!.toJSON())).toContain("网络连接");
+    expect(textContent(renderer!.toJSON())).toContain("数据库验证");
+  });
+
+  it("shows staged SSH progress and logs when testing a Nacos connection", async () => {
+    const { default: ConnectionModal } = await import("./ConnectionModal");
+    const connection = initialConnection("nacos", {
+      useSSH: true,
+      ssh: {
+        host: "bastion.example.com",
+        port: 22,
+        user: "ops",
+        password: "secret",
+      },
+    });
+
+    let renderer: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(
+        <ConnectionModal open onClose={vi.fn()} initialValues={connection} />,
+      );
+      await flushConnectionTestTick();
+    });
+    await act(async () => {
+      findButton(renderer!, "测试连接").props.onClick();
+      await flushConnectionTestTick();
+    });
+
+    expect(backendApp.NacosTestConnectionWithProgress).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "nacos", useSSH: true }),
+      expect.stringMatching(/^ssh-test-/),
+    );
+    expect(backendApp.NacosTestConnection).not.toHaveBeenCalled();
+    expect(textContent(renderer!.toJSON())).toContain("正在验证 SSH 隧道");
+    expect(textContent(renderer!.toJSON())).toContain("网络连接");
+    expect(textContent(renderer!.toJSON())).toContain("数据库验证");
+    expect(textContent(renderer!.toJSON())).toContain("准备连接检查");
+  });
+
+  it("shows a driver preflight failure in the SSH log without blaming the network", async () => {
+    const revisionMismatch =
+      "clickhouse 驱动代理 revision 不匹配（已安装：src-old，当前需要：src-new）";
+    backendApp.TestConnectionWithProgress.mockResolvedValue({
+      success: false,
+      message: revisionMismatch,
+    });
+    const { default: ConnectionModal } = await import("./ConnectionModal");
+    const connection = initialConnection("clickhouse", {
+      useSSH: true,
+      ssh: {
+        host: "bastion.example.com",
+        port: 22,
+        user: "ops",
+        password: "secret",
+      },
+    });
+
+    let renderer: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(
+        <ConnectionModal open onClose={vi.fn()} initialValues={connection} />,
+      );
+      await flushConnectionTestTick();
+    });
+    await act(async () => {
+      findButton(renderer!, "测试连接").props.onClick();
+      await flushConnectionTestTick();
+    });
+
+    expect(textContent(renderer!.toJSON())).toContain("连接测试失败");
+    const progressLog = renderer!.root.findAll(
+      (node) => node.props?.role === "log",
+    )[0];
+    expect(textContent(progressLog)).toContain(revisionMismatch);
+    const networkStep = renderer!.root.findAll(
+      (node) => node.type === "li" && textContent(node).includes("网络连接"),
+    )[0];
+    expect(networkStep.props["data-status"]).toBe("pending");
+    expect(
+      renderer!.root.findAll(
+        (node) => node.type === "li" && node.props?.["data-status"] === "error",
+      ),
+    ).toHaveLength(0);
+  });
+
+  it("guides an unknown SSH host through automatic confirmation without a manual field", async () => {
+    const fingerprint = "SHA256:QWERTYuiopASDFghjklZXCVbnm1234567890abcd";
+    backendApp.TestConnectionWithProgress.mockReset();
+    backendApp.TestConnectionWithProgress
+      .mockResolvedValueOnce({
+        success: false,
+        message: "confirmation required",
+        data: {
+          sshHostKeyTrust: {
+            state: "unknown",
+            source: "discovered",
+            host: "bastion.example.com",
+            port: 2222,
+            address: "bastion.example.com:2222",
+            keyType: "ssh-ed25519",
+            fingerprint,
+          },
+        },
+      })
+      .mockResolvedValueOnce({ success: true, message: "ok" });
+    const { default: ConnectionModal } = await import("./ConnectionModal");
+    const connection = initialConnection("mysql", {
+      useSSH: true,
+      ssh: {
+        host: "bastion.example.com",
+        port: 2222,
+        user: "ops",
+      },
+    });
+
+    let renderer: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(
+        <ConnectionModal open onClose={vi.fn()} initialValues={connection} />,
+      );
+      await flushConnectionTestTick();
+    });
+    await act(async () => {
+      findButton(renderer!, "测试连接").props.onClick();
+      await flushConnectionTestTick();
+    });
+
+    const pageText = textContent(renderer!.toJSON());
+    expect(pageText).toContain("确认 SSH 服务器身份");
+    expect(pageText).toContain("bastion.example.com:2222");
+    expect(pageText).toContain(fingerprint);
+    expect(findButton(renderer!, "仅本次继续")).toBeDefined();
+    expect(findButton(renderer!, "信任并保存")).toBeDefined();
+
+    await act(async () => {
+      findButton(renderer!, "仅本次继续").props.onClick();
+      await flushConnectionTestTick();
+    });
+    expect(backendApp.TestConnectionWithProgress).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        useSSH: true,
+        ssh: expect.objectContaining({ hostKeyFingerprint: fingerprint }),
+      }),
+      expect.stringMatching(/^ssh-test-/),
+    );
+    expect(backendApp.TrustSSHHostKeyForConnection).not.toHaveBeenCalled();
+  });
+
+  it("saves an explicitly approved SSH host key before retrying", async () => {
+    const fingerprint = "SHA256:ZXCVbnm1234567890abcdQWERTYuiopASDFghjkl";
+    backendApp.TestConnectionWithProgress.mockReset();
+    backendApp.TestConnectionWithProgress
+      .mockResolvedValueOnce({
+        success: false,
+        message: "confirmation required",
+        data: {
+          sshHostKeyTrust: {
+            state: "changed",
+            source: "gonavi",
+            host: "bastion.example.com",
+            port: 22,
+            address: "bastion.example.com:22",
+            keyType: "ssh-ed25519",
+            fingerprint,
+            previousFingerprint: "SHA256:previous",
+          },
+        },
+      })
+      .mockResolvedValueOnce({ success: true, message: "ok" });
+    const { default: ConnectionModal } = await import("./ConnectionModal");
+
+    let renderer: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(
+        <ConnectionModal
+          open
+          onClose={vi.fn()}
+          initialValues={initialConnection("mysql", {
+            useSSH: true,
+            ssh: {
+              host: "bastion.example.com",
+              port: 22,
+              user: "ops",
+              hostKeyFingerprint: "SHA256:legacy",
+            },
+          })}
+        />,
+      );
+      await flushConnectionTestTick();
+    });
+    await act(async () => {
+      findButton(renderer!, "测试连接").props.onClick();
+      await flushConnectionTestTick();
+    });
+
+    expect(textContent(renderer!.toJSON())).toContain("SSH 服务器密钥已变化");
+    expect(textContent(renderer!.toJSON())).toContain("SHA256:previous");
+    await act(async () => {
+      findButton(renderer!, "替换并信任").props.onClick();
+      await flushConnectionTestTick();
+    });
+
+    expect(backendApp.TrustSSHHostKeyForConnection).toHaveBeenCalledWith(
+      expect.objectContaining({
+        useSSH: true,
+        ssh: expect.objectContaining({
+          host: "bastion.example.com",
+          port: 22,
+        }),
+      }),
+      fingerprint,
+    );
+    expect(backendApp.TestConnectionWithProgress).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        ssh: expect.objectContaining({ hostKeyFingerprint: "" }),
+      }),
+      expect.stringMatching(/^ssh-test-/),
+    );
+  });
 
   it("reveals a saved primary password when the password visibility button is opened", async () => {
     Object.assign(window, {
@@ -1551,6 +1817,7 @@ describe("ConnectionModal i18n", () => {
     ].forEach((snippet) => {
     });
     expect(combinedConnectionModalSource.match(/isBackendCancelledResult\(res\)/g) ?? []).toHaveLength(3);
+    expect(combinedConnectionModalSource).not.toContain("SelectSSHKnownHostsFile");
   });
 
   it("renders English URI feedback and file picker error shell while preserving raw detail", async () => {
@@ -1824,6 +2091,55 @@ describe("ConnectionModal i18n", () => {
     expect(textContent(renderer!.toJSON())).not.toContain("stale connection failure");
     expect(findButton(renderer!, "测试连接").props.disabled).toBe(false);
     expect(findButton(renderer!, "保存").props.disabled).toBe(false);
+  });
+
+  it("cancels an in-flight Nacos test and ignores its late result", async () => {
+    storeState.appearance.uiVersion = "legacy";
+    setCurrentLanguage("zh-CN");
+    let resolveConnection: ((value: unknown) => void) | undefined;
+    backendApp.NacosTestConnectionWithProgress.mockReset();
+    backendApp.NacosTestConnectionWithProgress.mockReturnValue(
+      new Promise((resolve) => {
+        resolveConnection = resolve;
+      }),
+    );
+    const { default: ConnectionModal } = await import("./ConnectionModal");
+    const connection = initialConnection("nacos", { port: 8848 });
+
+    let renderer: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(
+        <ConnectionModal open onClose={vi.fn()} initialValues={connection} />,
+      );
+    });
+    await act(async () => {
+      findButton(renderer!, "测试连接").props.onClick();
+      await flushConnectionTestTick();
+    });
+
+    expect(backendApp.NacosTestConnectionWithProgress).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "nacos", useSSH: false }),
+      expect.stringMatching(/^nacos-test-/),
+    );
+    const runID = backendApp.NacosTestConnectionWithProgress.mock.calls[0][1];
+    expect(findButton(renderer!, "取消测试连接")).toBeDefined();
+
+    await act(async () => {
+      findButton(renderer!, "取消测试连接").props.onClick();
+      await flushConnectionTestTick();
+    });
+
+    expect(backendApp.CancelConnectionTest).toHaveBeenCalledWith(runID);
+    expect(findButton(renderer!, "测试连接").props.disabled).toBe(false);
+    expect(findButton(renderer!, "保存").props.disabled).toBe(false);
+
+    await act(async () => {
+      resolveConnection?.({ success: false, message: "late Nacos failure" });
+      await flushConnectionTestTick();
+    });
+
+    expect(textContent(renderer!.toJSON())).not.toContain("late Nacos failure");
+    expect(findButton(renderer!, "测试连接").props.disabled).toBe(false);
   });
 
   it("renders English data source groups and hints for the remaining step one copy", async () => {

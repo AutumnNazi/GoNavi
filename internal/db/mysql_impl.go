@@ -21,9 +21,10 @@ import (
 )
 
 type MySQLDB struct {
-	conn               *sql.DB
-	pingTimeout        time.Duration
-	batchWritesEnabled bool
+	conn                *sql.DB
+	pingTimeout         time.Duration
+	batchWritesEnabled  bool
+	sshNetworkRegistrar func(connection.SSHConfig) (string, error)
 }
 
 var _ BatchApplierContext = (*MySQLDB)(nil)
@@ -781,7 +782,7 @@ func (m *MySQLDB) resolveProtocolAndAddress(config connection.ConnectionConfig) 
 	address := normalizeMySQLAddress(config.Host, config.Port)
 
 	if config.UseSSH {
-		netName, err := ssh.RegisterSSHNetwork(config.SSH)
+		netName, err := m.registerSSHNetwork(config.SSH)
 		if err != nil {
 			return "", "", fmt.Errorf("创建 SSH 隧道失败：%w", err)
 		}
@@ -789,6 +790,13 @@ func (m *MySQLDB) resolveProtocolAndAddress(config connection.ConnectionConfig) 
 	}
 
 	return protocol, address, nil
+}
+
+func (m *MySQLDB) registerSSHNetwork(config connection.SSHConfig) (string, error) {
+	if m != nil && m.sshNetworkRegistrar != nil {
+		return m.sshNetworkRegistrar(config)
+	}
+	return ssh.RegisterSSHNetwork(config)
 }
 
 func (m *MySQLDB) getDSN(config connection.ConnectionConfig) (string, error) {
@@ -838,6 +846,9 @@ func (m *MySQLDB) Connect(config connection.ConnectionConfig) error {
 
 		protocol, address, err := m.resolveProtocolAndAddress(candidateConfig)
 		if err != nil {
+			if _, requiresTrust := ssh.HostKeyTrustStatusFromError(err); requiresTrust {
+				return fmt.Errorf("MySQL %s 创建 SSH 隧道失败: %w", address, err)
+			}
 			errorDetails = append(errorDetails, fmt.Sprintf("%s 生成连接串失败: %v", address, err))
 			continue
 		}
@@ -1085,7 +1096,7 @@ func quoteMySQLIdentifier(ident string) string {
 	return "`" + strings.ReplaceAll(normalizeMySQLIdentifierPart(ident), "`", "``") + "`"
 }
 
-func mysqlQualifiedTableIdentifier(dbName, tableName string) string {
+func mysqlMetadataTableParts(dbName, tableName string) (string, string) {
 	schema := normalizeMySQLIdentifierPart(dbName)
 	table := strings.TrimSpace(tableName)
 	if parsedSchema, parsedTable := SplitSQLQualifiedName(table); parsedTable != "" {
@@ -1096,7 +1107,11 @@ func mysqlQualifiedTableIdentifier(dbName, tableName string) string {
 	} else {
 		table = normalizeMySQLIdentifierPart(table)
 	}
+	return schema, table
+}
 
+func mysqlQualifiedTableIdentifier(dbName, tableName string) string {
+	schema, table := mysqlMetadataTableParts(dbName, tableName)
 	if schema != "" {
 		return quoteMySQLIdentifier(schema) + "." + quoteMySQLIdentifier(table)
 	}
@@ -1109,6 +1124,37 @@ func buildMySQLShowCreateTableQuery(dbName, tableName string) string {
 
 func buildMySQLShowFullColumnsQuery(dbName, tableName string) string {
 	return "SHOW FULL COLUMNS FROM " + mysqlQualifiedTableIdentifier(dbName, tableName)
+}
+
+func buildMySQLShowIndexQuery(dbName, tableName string) string {
+	return "SHOW INDEX FROM " + mysqlQualifiedTableIdentifier(dbName, tableName)
+}
+
+func buildMySQLForeignKeysQuery() string {
+	return `SELECT CONSTRAINT_NAME, COLUMN_NAME, REFERENCED_TABLE_NAME, REFERENCED_COLUMN_NAME
+              FROM information_schema.KEY_COLUMN_USAGE
+              WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND REFERENCED_TABLE_NAME IS NOT NULL`
+}
+
+func buildMySQLShowTriggersQuery(dbName string) string {
+	schema := normalizeMySQLIdentifierPart(dbName)
+	query := "SHOW TRIGGERS"
+	if schema != "" {
+		query += " FROM " + quoteMySQLIdentifier(schema)
+	}
+	return query + " WHERE `Table` = ?"
+}
+
+func queryMetadataRowsWithArgs(conn *sql.DB, ctx context.Context, dialect, query string, args ...interface{}) ([]map[string]interface{}, []string, error) {
+	if conn == nil {
+		return nil, nil, fmt.Errorf("连接未打开")
+	}
+	rows, err := conn.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer rows.Close()
+	return scanRowsForDialect(rows, dialect)
 }
 
 func (m *MySQLDB) GetCreateStatement(dbName, tableName string) (string, error) {
@@ -1164,12 +1210,7 @@ func (m *MySQLDB) GetColumns(dbName, tableName string) ([]connection.ColumnDefin
 }
 
 func (m *MySQLDB) GetIndexes(dbName, tableName string) ([]connection.IndexDefinition, error) {
-	query := fmt.Sprintf("SHOW INDEX FROM `%s`.`%s`", dbName, tableName)
-	if dbName == "" {
-		query = fmt.Sprintf("SHOW INDEX FROM `%s`", tableName)
-	}
-
-	data, _, err := m.Query(query)
+	data, _, err := m.Query(buildMySQLShowIndexQuery(dbName, tableName))
 	if err != nil {
 		return nil, err
 	}
@@ -1217,11 +1258,8 @@ func (m *MySQLDB) GetIndexes(dbName, tableName string) ([]connection.IndexDefini
 }
 
 func (m *MySQLDB) GetForeignKeys(dbName, tableName string) ([]connection.ForeignKeyDefinition, error) {
-	query := fmt.Sprintf(`SELECT CONSTRAINT_NAME, COLUMN_NAME, REFERENCED_TABLE_NAME, REFERENCED_COLUMN_NAME 
-              FROM information_schema.KEY_COLUMN_USAGE 
-              WHERE TABLE_SCHEMA = '%s' AND TABLE_NAME = '%s' AND REFERENCED_TABLE_NAME IS NOT NULL`, dbName, tableName)
-
-	data, _, err := m.Query(query)
+	schema, table := mysqlMetadataTableParts(dbName, tableName)
+	data, _, err := queryMetadataRowsWithArgs(m.conn, metadataContextFor(m), "mysql", buildMySQLForeignKeysQuery(), schema, table)
 	if err != nil {
 		return nil, err
 	}
@@ -1241,8 +1279,8 @@ func (m *MySQLDB) GetForeignKeys(dbName, tableName string) ([]connection.Foreign
 }
 
 func (m *MySQLDB) GetTriggers(dbName, tableName string) ([]connection.TriggerDefinition, error) {
-	query := fmt.Sprintf("SHOW TRIGGERS FROM `%s` WHERE `Table` = '%s'", dbName, tableName)
-	data, _, err := m.Query(query)
+	schema, table := mysqlMetadataTableParts(dbName, tableName)
+	data, _, err := queryMetadataRowsWithArgs(m.conn, metadataContextFor(m), "mysql", buildMySQLShowTriggersQuery(schema), table)
 	if err != nil {
 		return nil, err
 	}

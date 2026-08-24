@@ -399,9 +399,11 @@ func (t *TDengineDB) GetAllColumns(dbName string) ([]connection.ColumnDefinition
 	}
 
 	cols := make([]connection.ColumnDefinitionWithTable, 0)
+	var failures []MetadataObjectFailure
 	for _, table := range tables {
 		tableCols, err := t.GetColumns(dbName, table)
 		if err != nil {
+			failures = append(failures, MetadataObjectFailure{ObjectName: table, Err: err})
 			continue
 		}
 		for _, col := range tableCols {
@@ -414,7 +416,7 @@ func (t *TDengineDB) GetAllColumns(dbName string) ([]connection.ColumnDefinition
 		}
 	}
 
-	return cols, nil
+	return cols, NewPartialMetadataError(failures)
 }
 
 func (t *TDengineDB) GetIndexes(dbName, tableName string) ([]connection.IndexDefinition, error) {

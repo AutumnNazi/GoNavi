@@ -170,7 +170,7 @@ func (o *OceanBaseDB) getDSN(config connection.ConnectionConfig) (string, error)
 	address := normalizeMySQLAddress(config.Host, config.Port)
 
 	if config.UseSSH {
-		netName, err := ssh.RegisterSSHNetwork(config.SSH)
+		netName, err := oceanBaseRegisterSSHNetwork(config.SSH)
 		if err != nil {
 			return "", fmt.Errorf("创建 SSH 隧道失败：%w", err)
 		}
@@ -457,7 +457,11 @@ type oceanBaseMySQLWireProbeResult struct {
 	err            error
 }
 
-var oceanBaseProbeDialContext = defaultOceanBaseProbeDialContext
+var (
+	oceanBaseProbeDialContext      = defaultOceanBaseProbeDialContext
+	oceanBaseAcquireLocalForwarder = ssh.AcquireLocalForwarder
+	oceanBaseRegisterSSHNetwork    = ssh.RegisterSSHNetwork
+)
 
 func defaultOceanBaseProbeDialContext(ctx context.Context, config connection.ConnectionConfig, address string) (net.Conn, error) {
 	if config.UseSSH {
@@ -605,8 +609,11 @@ func (o *OceanBaseDB) connectOracleViaOBClient(config connection.ConnectionConfi
 
 		if candidateConfig.UseSSH {
 			var err error
-			forwarder, err = ssh.AcquireLocalForwarder(candidateConfig.SSH, host, port)
+			forwarder, err = oceanBaseAcquireLocalForwarder(candidateConfig.SSH, host, port)
 			if err != nil {
+				if _, requiresTrust := ssh.HostKeyTrustStatusFromError(err); requiresTrust {
+					return fmt.Errorf("OceanBase Oracle (OBClient 路径) %s 创建 SSH 本地转发失败：%w", address, err)
+				}
 				errorDetails = append(errorDetails, fmt.Sprintf("%s 创建 SSH 本地转发失败：%v", address, err))
 				continue
 			}
@@ -768,6 +775,9 @@ func (o *OceanBaseDB) Connect(config connection.ConnectionConfig) (err error) {
 
 		dsn, err := o.getDSN(candidateConfig)
 		if err != nil {
+			if _, requiresTrust := ssh.HostKeyTrustStatusFromError(err); requiresTrust {
+				return fmt.Errorf("OceanBase %s 创建 SSH 隧道失败：%w", address, err)
+			}
 			errorDetails = append(errorDetails, fmt.Sprintf("%s 生成连接串失败：%v", address, err))
 			continue
 		}
@@ -805,6 +815,9 @@ func (o *OceanBaseDB) connectOracleViaOBClientThenTNS(config connection.Connecti
 	obclientErr := o.connectOracleViaOBClient(config)
 	if obclientErr == nil {
 		return nil
+	}
+	if _, requiresTrust := ssh.HostKeyTrustStatusFromError(obclientErr); requiresTrust {
+		return obclientErr
 	}
 	if strings.TrimSpace(config.Database) == "" {
 		return fmt.Errorf("OceanBase Oracle OBClient/MySQL-wire 路径连接失败：%v；当前未填写 Service Name，已跳过 TNS 路径。若连接的是 OBClient/OBServer MySQL-wire 入口，Service Name 可继续留空，请检查主机、端口、用户名、密码和 driver-agent 是否为当前版本；Service Name 只用于 OBProxy Oracle listener/TNS 入口", obclientErr)

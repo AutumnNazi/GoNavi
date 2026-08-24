@@ -48,6 +48,21 @@ describe('settings center tool entries', () => {
     expect(flushOnQuit).toBeGreaterThan(captureOnQuit);
   });
 
+  it('refreshes the Windows WebView surface after restoring normal startup bounds', () => {
+    const restoreNormalStart = appSource.indexOf('const restoreNormalWindowBounds = async');
+    const restoreNormalEnd = appSource.indexOf('const restoreWindowState = async', restoreNormalStart);
+    const restoreNormalSource = appSource.slice(restoreNormalStart, restoreNormalEnd);
+    const applyBounds = restoreNormalSource.indexOf('applyRestoredWindowBounds(bounds);');
+    const waitForBounds = restoreNormalSource.indexOf('await waitForNativeWindowBounds(appliedBounds);');
+    const refreshSurface = restoreNormalSource.indexOf('await tryRefreshStartupWebViewBounds();');
+
+    expect(restoreNormalStart).toBeGreaterThanOrEqual(0);
+    expect(restoreNormalEnd).toBeGreaterThan(restoreNormalStart);
+    expect(applyBounds).toBeGreaterThanOrEqual(0);
+    expect(waitForBounds).toBeGreaterThan(applyBounds);
+    expect(refreshSurface).toBeGreaterThan(waitForBounds);
+  });
+
   it('keeps the resize minimise probe independent from DPR debounce and clears it on unmount', () => {
     const scaleEffectStart = appSource.indexOf('let minimisedCheckTimer: number | null = null;');
     const dprScheduleStart = appSource.indexOf('const scheduleDevicePixelRatioCheck = (trigger: WindowsScaleCheckTrigger) => {', scaleEffectStart);
@@ -69,5 +84,26 @@ describe('settings center tool entries', () => {
     expect(appCss).toMatch(
       /@media \(prefers-reduced-motion: reduce\) \{[\s\S]*?\.gonavi-settings-center-modal \.ant-btn-loading-icon \.anticon-spin \{[^}]*animation-duration: 1s !important;[^}]*animation-iteration-count: infinite !important;[^}]*\}/,
     );
+  });
+
+  it('waits for the unsaved SQL confirmation before continuing an update install request', () => {
+    const quitHandlerStart = appSource.indexOf('const handleApplicationQuitRequest = useCallback(async (');
+    const quitHandlerEnd = appSource.indexOf('const handleInstallUpdateRequest = useCallback', quitHandlerStart);
+    const quitHandlerSource = appSource.slice(quitHandlerStart, quitHandlerEnd);
+
+    expect(quitHandlerStart).toBeGreaterThanOrEqual(0);
+    expect(quitHandlerEnd).toBeGreaterThan(quitHandlerStart);
+    expect(quitHandlerSource).toContain('await new Promise<void>((resolve) => {');
+    expect(quitHandlerSource).toContain('const finish = () => {');
+    expect(quitHandlerSource).toContain('await runConfirmedActionAndFinish();');
+    expect(quitHandlerSource).toContain('centered: true,');
+
+    const installRequestSource = appSource.slice(quitHandlerEnd);
+    const closeInstancesModalStart = installRequestSource.indexOf("title: t('app.about.update_install_confirm.close_instances_title'");
+    const closeInstancesModalSource = installRequestSource.slice(closeInstancesModalStart);
+    expect(closeInstancesModalStart).toBeGreaterThanOrEqual(0);
+    expect(closeInstancesModalSource).toContain('centered: true,');
+    expect(closeInstancesModalSource).toContain('await handleInstallFromProgress(true);');
+    expect(closeInstancesModalSource).not.toContain('await handleApplicationQuitRequest(');
   });
 });

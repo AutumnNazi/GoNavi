@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"GoNavi-Wails/internal/connection"
+	"GoNavi-Wails/internal/ssh"
 	"GoNavi-Wails/shared/i18n"
 
 	mysqlDriver "github.com/go-sql-driver/mysql"
@@ -542,6 +543,99 @@ func TestOceanBaseOracleConnectProbeDialFailureMentionsSSHWhenEnabled(t *testing
 	}
 	if strings.Contains(got, "VPN/内网路由") {
 		t.Fatalf("expected SSH diagnosis not direct-client VPN hint, got %q", got)
+	}
+}
+
+func TestOceanBaseOBClientPreservesSSHHostKeyTrustError(t *testing.T) {
+	originalAcquireLocalForwarder := oceanBaseAcquireLocalForwarder
+	t.Cleanup(func() { oceanBaseAcquireLocalForwarder = originalAcquireLocalForwarder })
+
+	want := &ssh.HostKeyTrustRequiredError{Status: ssh.HostKeyTrustStatus{
+		State:       "unknown",
+		Host:        testSSHJumpHost,
+		Port:        22,
+		Address:     testSSHJumpHost + ":22",
+		KeyType:     "ssh-ed25519",
+		Fingerprint: "SHA256:untrusted-key",
+	}}
+	oceanBaseAcquireLocalForwarder = func(connection.SSHConfig, string, int) (*ssh.LocalForwarder, error) {
+		return nil, want
+	}
+
+	config := connection.ConnectionConfig{
+		Type:   "oceanbase",
+		Host:   testOceanBaseOracleHost,
+		Port:   testOceanBaseOraclePort,
+		UseSSH: true,
+		SSH: connection.SSHConfig{
+			Host: testSSHJumpHost,
+			Port: 22,
+			User: testSSHJumpUser,
+		},
+	}
+	for _, connect := range []struct {
+		name string
+		fn   func(connection.ConnectionConfig) error
+	}{
+		{name: "OBClient path", fn: (&OceanBaseDB{}).connectOracleViaOBClient},
+		{name: "OBClient to TNS fallback", fn: (&OceanBaseDB{}).connectOracleViaOBClientThenTNS},
+	} {
+		connect := connect
+		t.Run(connect.name, func(t *testing.T) {
+			err := connect.fn(config)
+			if err == nil {
+				t.Fatal("expected SSH host-key trust error")
+			}
+
+			var got *ssh.HostKeyTrustRequiredError
+			if !errors.As(err, &got) {
+				t.Fatalf("expected HostKeyTrustRequiredError to remain unwrapable, got %T: %v", err, err)
+			}
+			if got != want {
+				t.Fatalf("unexpected SSH host-key trust error: got %#v, want %#v", got, want)
+			}
+		})
+	}
+}
+
+func TestOceanBaseMySQLPathPreservesSSHHostKeyTrustError(t *testing.T) {
+	originalRegisterSSHNetwork := oceanBaseRegisterSSHNetwork
+	t.Cleanup(func() { oceanBaseRegisterSSHNetwork = originalRegisterSSHNetwork })
+
+	want := &ssh.HostKeyTrustRequiredError{Status: ssh.HostKeyTrustStatus{
+		State:       "unknown",
+		Host:        testSSHJumpHost,
+		Port:        22,
+		Address:     testSSHJumpHost + ":22",
+		KeyType:     "ssh-ed25519",
+		Fingerprint: "SHA256:untrusted-key",
+	}}
+	oceanBaseRegisterSSHNetwork = func(connection.SSHConfig) (string, error) {
+		return "", want
+	}
+
+	err := (&OceanBaseDB{}).Connect(connection.ConnectionConfig{
+		Type:     "oceanbase",
+		Host:     testOceanBaseOracleHost,
+		Port:     testOceanBaseOraclePort,
+		User:     testOceanBaseOracleUser,
+		Password: testOceanBaseOraclePassword,
+		UseSSH:   true,
+		SSH: connection.SSHConfig{
+			Host: testSSHJumpHost,
+			Port: 22,
+			User: testSSHJumpUser,
+		},
+	})
+	if err == nil {
+		t.Fatal("expected SSH host-key trust error")
+	}
+	var got *ssh.HostKeyTrustRequiredError
+	if !errors.As(err, &got) {
+		t.Fatalf("expected HostKeyTrustRequiredError to remain unwrapable, got %T: %v", err, err)
+	}
+	if got != want {
+		t.Fatalf("unexpected SSH host-key trust error: got %#v, want %#v", got, want)
 	}
 }
 

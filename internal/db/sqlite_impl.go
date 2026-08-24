@@ -25,6 +25,10 @@ type SQLiteDB struct {
 
 var _ BatchApplierContext = (*SQLiteDB)(nil)
 
+func escapeSQLiteStringLiteral(value string) string {
+	return strings.ReplaceAll(value, "'", "''")
+}
+
 func (s *SQLiteDB) Connect(config connection.ConnectionConfig) error {
 	dsn, err := resolveSQLiteDSN(config)
 	if err != nil {
@@ -294,7 +298,7 @@ func (s *SQLiteDB) GetTableRowCounts(_ string, tables []string) (map[string]int6
 }
 
 func (s *SQLiteDB) GetCreateStatement(dbName, tableName string) (string, error) {
-	query := fmt.Sprintf("SELECT sql FROM sqlite_master WHERE type='table' AND name='%s'", tableName)
+	query := fmt.Sprintf("SELECT sql FROM sqlite_master WHERE type='table' AND name='%s'", escapeSQLiteStringLiteral(tableName))
 	data, _, err := s.Query(query)
 	if err != nil {
 		return "", err
@@ -313,10 +317,8 @@ func (s *SQLiteDB) GetColumns(dbName, tableName string) ([]connection.ColumnDefi
 		return nil, localizedDatabaseRuntimeError("db.backend.error.table_name_required", nil)
 	}
 
-	esc := func(v string) string { return strings.ReplaceAll(v, "'", "''") }
-
 	// cid, name, type, notnull, dflt_value, pk
-	data, _, err := s.Query(fmt.Sprintf("PRAGMA table_info('%s')", esc(table)))
+	data, _, err := s.Query(fmt.Sprintf("PRAGMA table_info('%s')", escapeSQLiteStringLiteral(table)))
 	if err != nil {
 		return nil, err
 	}
@@ -404,7 +406,6 @@ func (s *SQLiteDB) GetIndexes(dbName, tableName string) ([]connection.IndexDefin
 		return nil, localizedDatabaseRuntimeError("db.backend.error.table_name_required", nil)
 	}
 
-	esc := func(v string) string { return strings.ReplaceAll(v, "'", "''") }
 	parseInt := func(v interface{}) int {
 		switch val := v.(type) {
 		case int:
@@ -424,7 +425,7 @@ func (s *SQLiteDB) GetIndexes(dbName, tableName string) ([]connection.IndexDefin
 		}
 	}
 
-	data, _, err := s.Query(fmt.Sprintf("PRAGMA index_list('%s')", esc(table)))
+	data, _, err := s.Query(fmt.Sprintf("PRAGMA index_list('%s')", escapeSQLiteStringLiteral(table)))
 	if err != nil {
 		return nil, err
 	}
@@ -452,7 +453,7 @@ func (s *SQLiteDB) GetIndexes(dbName, tableName string) ([]connection.IndexDefin
 			nonUnique = 0
 		}
 
-		cols, _, err := s.Query(fmt.Sprintf("PRAGMA index_info('%s')", esc(indexName)))
+		cols, _, err := s.Query(fmt.Sprintf("PRAGMA index_info('%s')", escapeSQLiteStringLiteral(indexName)))
 		if err != nil {
 			// skip broken index
 			continue
@@ -495,9 +496,7 @@ func (s *SQLiteDB) GetForeignKeys(dbName, tableName string) ([]connection.Foreig
 		return nil, localizedDatabaseRuntimeError("db.backend.error.table_name_required", nil)
 	}
 
-	esc := func(v string) string { return strings.ReplaceAll(v, "'", "''") }
-
-	data, _, err := s.Query(fmt.Sprintf("PRAGMA foreign_key_list('%s')", esc(table)))
+	data, _, err := s.Query(fmt.Sprintf("PRAGMA foreign_key_list('%s')", escapeSQLiteStringLiteral(table)))
 	if err != nil {
 		return nil, err
 	}
@@ -569,9 +568,7 @@ func (s *SQLiteDB) GetTriggers(dbName, tableName string) ([]connection.TriggerDe
 		return nil, localizedDatabaseRuntimeError("db.backend.error.table_name_required", nil)
 	}
 
-	esc := func(v string) string { return strings.ReplaceAll(v, "'", "''") }
-
-	data, _, err := s.Query(fmt.Sprintf("SELECT name AS trigger_name, sql AS statement FROM sqlite_master WHERE type='trigger' AND tbl_name='%s' ORDER BY name", esc(table)))
+	data, _, err := s.Query(fmt.Sprintf("SELECT name AS trigger_name, sql AS statement FROM sqlite_master WHERE type='trigger' AND tbl_name='%s' ORDER BY name", escapeSQLiteStringLiteral(table)))
 	if err != nil {
 		return nil, err
 	}
@@ -729,6 +726,7 @@ func (s *SQLiteDB) GetAllColumns(dbName string) ([]connection.ColumnDefinitionWi
 	}
 
 	var cols []connection.ColumnDefinitionWithTable
+	var failures []MetadataObjectFailure
 	for _, table := range tables {
 		// Skip internal tables
 		if strings.HasPrefix(strings.ToLower(table), "sqlite_") {
@@ -736,6 +734,7 @@ func (s *SQLiteDB) GetAllColumns(dbName string) ([]connection.ColumnDefinitionWi
 		}
 		columns, err := s.GetColumns("", table)
 		if err != nil {
+			failures = append(failures, MetadataObjectFailure{ObjectName: table, Err: err})
 			continue
 		}
 		for _, col := range columns {
@@ -747,5 +746,5 @@ func (s *SQLiteDB) GetAllColumns(dbName string) ([]connection.ColumnDefinitionWi
 			})
 		}
 	}
-	return cols, nil
+	return cols, NewPartialMetadataError(failures)
 }

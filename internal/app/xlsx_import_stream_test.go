@@ -281,6 +281,30 @@ func TestXLSXImportUsesConfiguredHeaderRow(t *testing.T) {
 	}
 }
 
+func TestXLSXImportSharedStringLookupAfterOutOfOrderAccess(t *testing.T) {
+	sharedStrings := `<sst>` +
+		`<si><t>row-one</t></si>` +
+		`<si><t>row-two</t></si>` +
+		`<si><t>name</t></si>` +
+		`<si><t>row-three</t></si>` +
+		`</sst>`
+	sheet := `<worksheet><sheetData>` +
+		`<row r="1"><c r="A1" t="s"><v>2</v></c></row>` +
+		`<row r="2"><c r="A2" t="s"><v>0</v></c></row>` +
+		`<row r="3"><c r="A3" t="s"><v>3</v></c></row>` +
+		`</sheetData></worksheet>`
+	path := writeXLSXTestArchive(t, minimalXLSXTestEntries(sharedStrings, sheet))
+
+	consumer := &importCollectConsumer{}
+	if err := streamImportFile(path, consumer); err != nil {
+		t.Fatalf("stream XLSX with out-of-order shared strings: %v", err)
+	}
+	want := []map[string]interface{}{{"name": "row-one"}, {"name": "row-three"}}
+	if !reflect.DeepEqual(consumer.rows, want) {
+		t.Fatalf("rows = %#v, want %#v", consumer.rows, want)
+	}
+}
+
 func TestXLSXImportRejectsDataRowWiderThanHeader(t *testing.T) {
 	entries := minimalXLSXTestEntries(
 		`<sst></sst>`,

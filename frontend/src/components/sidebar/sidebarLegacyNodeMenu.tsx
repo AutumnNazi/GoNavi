@@ -762,14 +762,25 @@ export const buildSidebarLegacyNodeMenuItems = (
             icon: <FolderOutlined />,
             onClick: () => moveConnectionToTag(node.key, tag.id)
         }));
-        if (connectionTags.length > 0) {
-            tagSubMenuItems.push({ type: 'divider' });
+        const currentTagId = connectionTags.find(
+            (tag: any) => tag.connectionIds.includes(String(node.key)),
+        )?.id;
+        if (currentTagId) {
+            if (connectionTags.length > 0) {
+                tagSubMenuItems.push({ type: 'divider' });
+            }
+            tagSubMenuItems.push({
+                key: 'move-to-ungrouped',
+                label: t('connection.sidebar.menu.moveOutTag'),
+                onClick: () => moveConnectionToTag(node.key, null)
+            });
         }
-        tagSubMenuItems.push({
-            key: 'move-to-ungrouped',
-            label: t('connection.sidebar.menu.moveOutTag'),
-            onClick: () => moveConnectionToTag(node.key, null)
-        });
+        const tagMenuItem = tagSubMenuItems.length > 0 ? {
+            key: 'move-to-tag',
+            label: t('connection.sidebar.menu.moveToTag'),
+            icon: <FolderOpenOutlined />,
+            children: tagSubMenuItems
+        } : null;
 
         // Regular database connection menu
         const connectionCapabilities = getDataSourceCapabilities((node.dataRef as SavedConnection)?.config);
@@ -830,12 +841,7 @@ export const buildSidebarLegacyNodeMenuItems = (
                  icon: <CopyOutlined />,
                  onClick: () => handleDuplicateConnection(node.dataRef as SavedConnection)
              },
-             {
-                 key: 'move-to-tag',
-                 label: t('connection.sidebar.menu.moveToTag'),
-                 icon: <FolderOpenOutlined />,
-                 children: tagSubMenuItems
-             },
+             ...(tagMenuItem ? [tagMenuItem] : []),
              {
                  key: 'disconnect',
                  label: t('connection.sidebar.menu.disconnect'),

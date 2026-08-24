@@ -227,6 +227,7 @@ type driverStatusItem struct {
 const driverDownloadProgressEvent = "driver:download-progress"
 
 type driverDownloadProgressPayload struct {
+	TaskID     string  `json:"taskId,omitempty"`
 	DriverType string  `json:"driverType"`
 	Status     string  `json:"status"`
 	Percent    float64 `json:"percent"`
@@ -1630,10 +1631,9 @@ func (a *App) RemoveDriverPackage(driverType string, downloadDir string) connect
 }
 
 func (a *App) emitDriverDownloadProgress(driverType string, status string, downloaded, total int64, message string) {
-	if a.ctx == nil {
-		return
-	}
+	taskID := a.updateDriverDownloadTaskProgress(driverType, status, 0, message)
 	payload := driverDownloadProgressPayload{
+		TaskID:     taskID,
 		DriverType: normalizeDriverType(driverType),
 		Status:     strings.TrimSpace(status),
 		Percent:    0,
@@ -1659,7 +1659,26 @@ func (a *App) emitDriverDownloadProgress(driverType string, status string, downl
 	if payload.Status == "done" && payload.Percent < 100 {
 		payload.Percent = 100
 	}
+	if taskID != "" {
+		_ = a.updateDriverDownloadTaskProgress(driverType, payload.Status, payload.Percent, payload.Message)
+	}
+	if a.ctx == nil {
+		return
+	}
 	uievents.Emit(a.ctx, driverDownloadProgressEvent, payload)
+}
+
+func (a *App) emitDriverDownloadTaskSnapshot(task DriverDownloadTaskStatus) {
+	if a == nil || a.ctx == nil {
+		return
+	}
+	uievents.Emit(a.ctx, driverDownloadProgressEvent, driverDownloadProgressPayload{
+		TaskID:     task.TaskID,
+		DriverType: task.DriverType,
+		Status:     task.Status,
+		Percent:    task.Percent,
+		Message:    task.Message,
+	})
 }
 
 func probeDriverNetworkEndpoint(client *http.Client, item driverNetworkProbeItem) driverNetworkProbeItem {

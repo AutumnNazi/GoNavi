@@ -269,9 +269,11 @@ func (m *MilvusDB) GetAllColumns(dbName string) ([]connection.ColumnDefinitionWi
 		return nil, err
 	}
 	result := make([]connection.ColumnDefinitionWithTable, 0)
+	var failures []MetadataObjectFailure
 	for _, table := range tables {
 		columns, columnErr := m.GetColumns(dbName, table)
 		if columnErr != nil {
+			failures = append(failures, MetadataObjectFailure{ObjectName: table, Err: columnErr})
 			continue
 		}
 		for _, column := range columns {
@@ -283,7 +285,7 @@ func (m *MilvusDB) GetAllColumns(dbName string) ([]connection.ColumnDefinitionWi
 			})
 		}
 	}
-	return result, nil
+	return result, NewPartialMetadataError(failures)
 }
 
 func (m *MilvusDB) GetIndexes(dbName, tableName string) ([]connection.IndexDefinition, error) {

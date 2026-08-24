@@ -45,7 +45,9 @@ vi.mock('antd', () => {
       {children}
     </button>
   );
-  const Input = (props: any) => <input {...props} />;
+  const Input: any = (props: any) => <input {...props} />;
+  Input.Password = Input;
+  Input.TextArea = Input;
   const InputNumber = (props: any) => <input type="number" {...props} />;
   const Select = ({ children }: any) => <select>{children}</select>;
   Select.Option = ({ children }: any) => <option>{children}</option>;
@@ -54,12 +56,13 @@ vi.mock('antd', () => {
 
 const renderSection = async (
   formValues: Record<string, unknown>,
+  overrides: Record<string, unknown> = {},
 ): Promise<ReactTestRenderer> => {
   state.mockFormValues = { ...formValues };
   let renderer: ReactTestRenderer | undefined;
   const Harness = () => (
     <ConnectionModalNetworkSecuritySection
-      dbType="redis"
+      dbType={String(overrides.dbType ?? "redis")}
       form={(globalThis as any).__gonaviNetworkSectionTestFormApi}
       activeNetworkConfig="ssh"
       setActiveNetworkConfig={() => undefined}
@@ -69,17 +72,22 @@ const renderSection = async (
       initialValues={{}}
       handleSelectCertificateFile={() => undefined}
       handleSelectSSHKeyFile={() => undefined}
+      handleSelectSSHKnownHostsFile={
+        (overrides.handleSelectSSHKnownHostsFile as (() => void) | undefined) ??
+        (() => undefined)
+      }
       renderStoredSecretControls={() => null}
       proxyType="socks5"
       selectingCertificateField={null}
       selectingSSHKey={null}
+      selectingSSHKnownHosts={false}
       sslHintText=""
       sslMode=""
       supportsSSLCAPath={false}
       supportsSSLClientCertificate={false}
       useHttpTunnel={false}
       useProxy={false}
-      useSSH={false}
+      useSSH={overrides.useSSH === true}
       useSSL={false}
     />
   );
@@ -157,5 +165,28 @@ describe('ConnectionModalNetworkSecuritySection redis SSH topology gating', () =
     const text = findAllText(renderer);
     expect(text).not.toContain(UNSUPPORTED_HINT);
     expect(text).toContain(t('connection.modal.network.ssh.disabledHint'));
+  });
+
+  it('keeps server identity verification automatic instead of exposing known_hosts or fingerprint inputs', async () => {
+    const selectKnownHosts = vi.fn();
+    const renderer = await renderSection(
+      { useSSH: true },
+      {
+        dbType: 'mysql',
+        useSSH: true,
+        handleSelectSSHKnownHostsFile: selectKnownHosts,
+      },
+    );
+
+    const text = findAllText(renderer);
+    expect(text).not.toContain(t('connection.modal.network.ssh.knownHostsFile'));
+    expect(text).not.toContain(t('connection.modal.network.ssh.hostKeyFingerprintShort'));
+    expect(text).toContain(t('connection.modal.network.ssh.hostKeyAutomaticHint'));
+
+    const browseButtons = renderer.root.findAllByType('button').filter(
+      (node) => collectTextLeaves(node.children, []).join('') === t('connection.modal.action.browse'),
+    );
+    expect(browseButtons).toHaveLength(1);
+    expect(selectKnownHosts).not.toHaveBeenCalled();
   });
 });

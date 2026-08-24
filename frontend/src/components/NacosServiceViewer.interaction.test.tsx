@@ -2,7 +2,7 @@ import React from 'react';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import NacosServiceViewer from './NacosServiceViewer';
+import NacosServiceViewer, { NACOS_AUTO_REFRESH_INTERVAL_MS } from './NacosServiceViewer';
 
 const storeState = vi.hoisted(() => ({
   connections: [{
@@ -224,6 +224,7 @@ describe('NacosServiceViewer interactions', () => {
   afterEach(() => {
     renderer?.unmount();
     renderer = null;
+    vi.useRealTimers();
     vi.unstubAllGlobals();
   });
 
@@ -385,6 +386,122 @@ describe('NacosServiceViewer interactions', () => {
     });
     expect(emptyState.props.role).toBe('status');
     expect(emptyState.children).toEqual(['Current result set has no data']);
+  });
+
+  it('automatically refreshes service and selected instance data after an external online-state change', async () => {
+    vi.useFakeTimers();
+    let enabled = true;
+    let externallyChanged = false;
+    nacosBackend.NacosListServices.mockImplementation(async () => ({
+      success: true,
+      data: {
+        count: externallyChanged ? 2 : 1,
+        pageNo: 1,
+        pageSize: 50,
+        serviceNames: externallyChanged
+          ? ['GROUP_A@@alpha', 'GROUP_A@@new-service']
+          : ['GROUP_A@@alpha'],
+      },
+    }));
+    nacosBackend.NacosListInstances.mockImplementation(async () => ({
+      success: true,
+      data: {
+        hosts: [{
+          ip: '10.0.0.1',
+          port: 8080,
+          healthy: true,
+          enabled,
+          ephemeral: false,
+          clusterName: 'DEFAULT',
+        }],
+      },
+    }));
+
+    await act(async () => {
+      renderer = create(
+        <NacosServiceViewer connectionId="nacos-1" namespaceId="dev" namespaceName="dev" />,
+      );
+    });
+    await flushEffects();
+
+    const serviceTable = latestServiceTableProps();
+    await act(async () => {
+      serviceTable.onRow(serviceTable.dataSource[0]).onClick();
+    });
+    await flushEffects();
+    expect(instanceEnabledSwitch(renderer!, '10.0.0.1:8080')?.props.checked).toBe(true);
+
+    enabled = false;
+    externallyChanged = true;
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(NACOS_AUTO_REFRESH_INTERVAL_MS);
+    });
+
+    expect(nacosBackend.NacosListServices).toHaveBeenCalledTimes(2);
+    expect(nacosBackend.NacosListInstances).toHaveBeenCalledTimes(2);
+    expect(latestServiceTableProps().dataSource).toEqual([
+      expect.objectContaining({ rawName: 'GROUP_A@@alpha' }),
+      expect.objectContaining({ rawName: 'GROUP_A@@new-service' }),
+    ]);
+    expect(instanceEnabledSwitch(renderer!, '10.0.0.1:8080')?.props.checked).toBe(false);
+  });
+
+  it('does not poll inactive service pages and retries automatic refreshes silently', async () => {
+    vi.useFakeTimers();
+    nacosBackend.NacosListServices
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          count: 1,
+          pageNo: 1,
+          pageSize: 50,
+          serviceNames: ['GROUP_A@@alpha'],
+        },
+      })
+      .mockResolvedValueOnce({ success: false, message: 'temporary refresh failure' })
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          count: 1,
+          pageNo: 1,
+          pageSize: 50,
+          serviceNames: ['GROUP_A@@recovered'],
+        },
+      });
+
+    await act(async () => {
+      renderer = create(
+        <NacosServiceViewer
+          connectionId="nacos-1"
+          namespaceId="dev"
+          namespaceName="dev"
+          isActive={false}
+        />,
+      );
+    });
+    await flushEffects();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(NACOS_AUTO_REFRESH_INTERVAL_MS * 2);
+    });
+    expect(nacosBackend.NacosListServices).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      renderer!.update(
+        <NacosServiceViewer connectionId="nacos-1" namespaceId="dev" namespaceName="dev" />,
+      );
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(NACOS_AUTO_REFRESH_INTERVAL_MS);
+    });
+    expect(nacosBackend.NacosListServices).toHaveBeenCalledTimes(2);
+    expect(antdState.message.error).not.toHaveBeenCalledWith('temporary refresh failure');
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(NACOS_AUTO_REFRESH_INTERVAL_MS);
+    });
+    expect(latestServiceTableProps().dataSource).toEqual([
+      expect.objectContaining({ rawName: 'GROUP_A@@recovered' }),
+    ]);
   });
 
   it('keeps the newest service page when an older request resolves later', async () => {

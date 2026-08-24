@@ -19,6 +19,7 @@ import QueryEditor, {
   filterQueryEditorResultSetsForBulkClose,
   resolveQueryEditorNavigationDecorations,
   resolveQueryEditorNavigationTarget,
+  shouldRefreshQueryEditorCompletionColumns,
 } from './QueryEditor';
 import QueryEditorResultsPanel, {
   QUERY_EDITOR_SQL_LOG_TAB_KEY,
@@ -38,6 +39,14 @@ const create = (...args: Parameters<typeof createRenderer>): ReactTestRenderer =
   };
   return renderer;
 };
+
+describe('query editor incomplete column metadata', () => {
+  it('retries column metadata when the cached fields came from a partial summary', () => {
+    expect(shouldRefreshQueryEditorCompletionColumns('column_name', true, true)).toBe(true);
+    expect(shouldRefreshQueryEditorCompletionColumns('column_name', true, false)).toBe(false);
+    expect(shouldRefreshQueryEditorCompletionColumns('table_name', false, true)).toBe(false);
+  });
+});
 
 const storeState = vi.hoisted(() => ({
   connections: [
@@ -438,6 +447,7 @@ vi.mock('@ant-design/icons', () => {
     BulbOutlined: Icon,
     CheckOutlined: Icon,
     ClearOutlined: Icon,
+    ClockCircleOutlined: Icon,
     CodeOutlined: Icon,
     CopyOutlined: Icon,
     DiffOutlined: Icon,

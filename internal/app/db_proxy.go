@@ -64,11 +64,18 @@ func resolveDialConfigWithProxy(raw connection.ConnectionConfig) (connection.Con
 	config.HTTPTunnel = connection.HTTPTunnelConfig{}
 
 	if config.UseSSH {
+		sshHost := strings.TrimSpace(config.SSH.Host)
+		if sshHost == "" {
+			return connection.ConnectionConfig{}, fmt.Errorf("%s", defaultAppText("connection_modal.validation.ssh_host_required", nil))
+		}
 		sshPort := config.SSH.Port
 		if sshPort <= 0 {
 			sshPort = 22
 		}
-		forwardedSSH, err := buildProxyForwardAddress(normalizedProxy, strings.TrimSpace(config.SSH.Host), sshPort)
+		// The proxy needs a local, ephemeral dial endpoint, but host-key trust
+		// must remain bound to the real bastion address the user configured.
+		config.SSH = config.SSH.WithHostKeyIdentity(sshHost, sshPort)
+		forwardedSSH, err := buildProxyForwardAddress(normalizedProxy, sshHost, sshPort)
 		if err != nil {
 			return connection.ConnectionConfig{}, fmt.Errorf("%s", defaultAppText("db.backend.error.proxy_ssh_gateway_connect_failed", map[string]any{
 				"detail": err.Error(),

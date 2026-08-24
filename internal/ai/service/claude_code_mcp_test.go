@@ -60,6 +60,97 @@ func TestResolveLocalMCPCommandKeepsDedicatedServerBinary(t *testing.T) {
 	}
 }
 
+func TestResolveLocalMCPCommandUsesDedicatedServerForWailsDevelopmentBuild(t *testing.T) {
+	repoRoot := t.TempDir()
+	developmentExecutable := filepath.Join(repoRoot, "build", "bin", "GoNavi-dev.exe")
+	if err := os.MkdirAll(filepath.Dir(developmentExecutable), 0o755); err != nil {
+		t.Fatalf("MkdirAll development output directory returned error: %v", err)
+	}
+	if err := os.WriteFile(developmentExecutable, []byte("development executable"), 0o755); err != nil {
+		t.Fatalf("WriteFile development executable returned error: %v", err)
+	}
+	developmentServer := filepath.Join(repoRoot, "build", "bin", "gonavi-mcp-server-dev.exe")
+	if err := os.WriteFile(developmentServer, []byte("development MCP server"), 0o755); err != nil {
+		t.Fatalf("WriteFile development MCP server returned error: %v", err)
+	}
+
+	command, args, err := resolveLocalMCPCommand(developmentExecutable)
+	if err != nil {
+		t.Fatalf("resolveLocalMCPCommand returned error: %v", err)
+	}
+	if want := developmentServer; command != want {
+		t.Fatalf("command = %q, want %q", command, want)
+	}
+	if len(args) != 0 {
+		t.Fatalf("args = %#v, want no arguments", args)
+	}
+}
+
+func TestResolveLocalMCPCommandBuildsMissingDedicatedServerForWailsDevelopmentBuild(t *testing.T) {
+	repoRoot := t.TempDir()
+	developmentExecutable := filepath.Join(repoRoot, "build", "bin", "GoNavi-dev.exe")
+	if err := os.MkdirAll(filepath.Dir(developmentExecutable), 0o755); err != nil {
+		t.Fatalf("MkdirAll development output directory returned error: %v", err)
+	}
+	if err := os.WriteFile(developmentExecutable, []byte("development executable"), 0o755); err != nil {
+		t.Fatalf("WriteFile development executable returned error: %v", err)
+	}
+	developmentServer := filepath.Join(repoRoot, "build", "bin", "gonavi-mcp-server-dev.exe")
+
+	originalBuilder := buildWailsDevelopmentMCPServerFunc
+	buildCalls := 0
+	buildWailsDevelopmentMCPServerFunc = func(gotRepoRoot string, gotServerPath string) error {
+		buildCalls++
+		if gotRepoRoot != repoRoot {
+			t.Fatalf("repo root = %q, want %q", gotRepoRoot, repoRoot)
+		}
+		if gotServerPath != developmentServer {
+			t.Fatalf("server path = %q, want %q", gotServerPath, developmentServer)
+		}
+		return os.WriteFile(gotServerPath, []byte("built development MCP server"), 0o755)
+	}
+	t.Cleanup(func() {
+		buildWailsDevelopmentMCPServerFunc = originalBuilder
+	})
+
+	command, args, err := resolveLocalMCPCommand(developmentExecutable)
+	if err != nil {
+		t.Fatalf("resolveLocalMCPCommand returned error: %v", err)
+	}
+	if buildCalls != 1 {
+		t.Fatalf("build calls = %d, want 1", buildCalls)
+	}
+	if command != developmentServer {
+		t.Fatalf("command = %q, want %q", command, developmentServer)
+	}
+	if len(args) != 0 {
+		t.Fatalf("args = %#v, want no arguments", args)
+	}
+}
+
+func TestShouldRepairInstalledLocalMCPCommandMigratesExistingWailsDevelopmentBuild(t *testing.T) {
+	repoRoot := t.TempDir()
+	developmentExecutable := filepath.Join(repoRoot, "build", "bin", "GoNavi-dev.exe")
+	if err := os.MkdirAll(filepath.Dir(developmentExecutable), 0o755); err != nil {
+		t.Fatalf("MkdirAll development output directory returned error: %v", err)
+	}
+	if err := os.WriteFile(developmentExecutable, []byte("currently running MCP host"), 0o755); err != nil {
+		t.Fatalf("WriteFile development executable returned error: %v", err)
+	}
+
+	developmentServer := filepath.Join(repoRoot, "build", "bin", "gonavi-mcp-server-dev.exe")
+	if !shouldRepairInstalledLocalMCPCommand(developmentExecutable, []string{"mcp-server"}, developmentServer, nil) {
+		t.Fatal("expected a Wails development executable to be migrated even while it exists")
+	}
+	legacyGoRunArgs := []string{"-C", repoRoot, "run", "./cmd/gonavi-mcp-server"}
+	if !shouldRepairInstalledLocalMCPCommand(filepath.Join(repoRoot, "go.exe"), legacyGoRunArgs, developmentServer, nil) {
+		t.Fatal("expected the legacy development go-run configuration to be migrated")
+	}
+	if shouldRepairInstalledLocalMCPCommand(developmentExecutable, []string{"mcp-server"}, filepath.Join(repoRoot, "GoNavi.exe"), []string{"mcp-server"}) {
+		t.Fatal("expected a production launch to preserve a development MCP configuration")
+	}
+}
+
 func TestDetectLocalCLICommandFallsBackToLoginShellPath(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("login-shell PATH fallback is Unix-only")
@@ -146,7 +237,10 @@ func TestDetectLocalCLICommandUsesRealLoginShellForDesktopPath(t *testing.T) {
 	localCLICommandPathFunc = exec.LookPath
 	localCLICommandShellCandidatesFunc = localCLICommandShellCandidates
 	localCLICommandShellOutputFunc = runLocalCLICommandShell
-	localCLICommandShellLookupTimeout = time.Second
+	// This test starts a real shell subprocess. Leave production's two-second
+	// lookup budget unchanged, but allow the fixture enough scheduling time
+	// when go test runs packages in parallel.
+	localCLICommandShellLookupTimeout = 5 * time.Second
 
 	detected, resolvedPath := detectLocalCLICommand(command)
 	if !detected {

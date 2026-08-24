@@ -38,6 +38,10 @@ export function CancelApplicationQuit() {
   return window['go']['app']['App']['CancelApplicationQuit']();
 }
 
+export function CancelConnectionTest(arg1) {
+  return window['go']['app']['App']['CancelConnectionTest'](arg1);
+}
+
 export function CancelImportJob(arg1) {
   return window['go']['app']['App']['CancelImportJob'](arg1);
 }
@@ -606,6 +610,10 @@ export function GetUpdateChannel() {
   return window['go']['app']['App']['GetUpdateChannel']();
 }
 
+export function GetUpdateDownloadTask() {
+  return window['go']['app']['App']['GetUpdateDownloadTask']();
+}
+
 export function ImportConfigFile() {
   return window['go']['app']['App']['ImportConfigFile']();
 }
@@ -732,6 +740,10 @@ export function ListDatabaseCollations(arg1) {
 
 export function ListImportJobs() {
   return window['go']['app']['App']['ListImportJobs']();
+}
+
+export function ListDriverDownloadTasks() {
+  return window['go']['app']['App']['ListDriverDownloadTasks']();
 }
 
 export function ListInstalledFontFamilies() {
@@ -888,6 +900,10 @@ export function NacosStopConfigListen(arg1) {
 
 export function NacosTestConnection(arg1) {
   return window['go']['app']['App']['NacosTestConnection'](arg1);
+}
+
+export function NacosTestConnectionWithProgress(arg1, arg2) {
+  return window['go']['app']['App']['NacosTestConnectionWithProgress'](arg1, arg2);
 }
 
 export function NacosUpdateConfigListenMD5(arg1, arg2) {
@@ -1238,6 +1254,10 @@ export function SelectSSHKeyFile(arg1) {
   return window['go']['app']['App']['SelectSSHKeyFile'](arg1);
 }
 
+export function SelectSSHKnownHostsFile(arg1) {
+  return window['go']['app']['App']['SelectSSHKnownHostsFile'](arg1);
+}
+
 export function SelectSavedQueryDirectory(arg1) {
   return window['go']['app']['App']['SelectSavedQueryDirectory'](arg1);
 }
@@ -1270,8 +1290,20 @@ export function StartSecurityUpdate(arg1) {
   return window['go']['app']['App']['StartSecurityUpdate'](arg1);
 }
 
+export function StartDriverPackageDownload(arg1, arg2, arg3, arg4) {
+  return window['go']['app']['App']['StartDriverPackageDownload'](arg1, arg2, arg3, arg4);
+}
+
+export function StartUpdateDownload() {
+  return window['go']['app']['App']['StartUpdateDownload']();
+}
+
 export function TestConnection(arg1) {
   return window['go']['app']['App']['TestConnection'](arg1);
+}
+
+export function TestConnectionWithProgress(arg1, arg2) {
+  return window['go']['app']['App']['TestConnectionWithProgress'](arg1, arg2);
 }
 
 export function TestGlobalProxyConnection(arg1) {
@@ -1284,6 +1316,14 @@ export function TestJVMConnection(arg1) {
 
 export function TruncateTables(arg1, arg2, arg3) {
   return window['go']['app']['App']['TruncateTables'](arg1, arg2, arg3);
+}
+
+export function TrustSSHHostKey(arg1, arg2, arg3) {
+  return window['go']['app']['App']['TrustSSHHostKey'](arg1, arg2, arg3);
+}
+
+export function TrustSSHHostKeyForConnection(arg1, arg2) {
+  return window['go']['app']['App']['TrustSSHHostKeyForConnection'](arg1, arg2);
 }
 
 export function UpdateSQLAuditSettings(arg1) {
