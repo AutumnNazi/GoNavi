@@ -3824,6 +3824,13 @@ func normalizeConnectionPackageExportFilename(filename string) string {
 	return trimmed + connectionPackageExtension
 }
 
+// sshKeyFileDialogFilters intentionally returns nil. The macOS Wails adapter
+// treats filters as filename extensions, which excludes extensionless OpenSSH
+// keys such as ~/.ssh/id_ed25519. A nil filter list means all files.
+func sshKeyFileDialogFilters() []runtime.FileFilter {
+	return nil
+}
+
 func (a *App) SelectSSHKeyFile(currentPath string) connection.QueryResult {
 	fallbackDir := ""
 	if home, err := os.UserHomeDir(); err == nil {
@@ -3832,19 +3839,14 @@ func (a *App) SelectSSHKeyFile(currentPath string) connection.QueryResult {
 	defaultDir := resolveFileOpenDialogDirectory(currentPath, fallbackDir)
 
 	// OpenSSH private keys are commonly extensionless (id_ed25519, id_ecdsa,
-	// custom names). Wails/macOS treats dialog filters as file extensions only,
-	// so filename globs never match real key basenames and hide them.
-	// Allow all files and show hidden items so ~/.ssh keys remain selectable.
+	// custom names). Wails/macOS interprets filters as filename extensions, so
+	// even an "all files" glob can hide extensionless keys. Omitting filters
+	// lets the native dialog accept every file while still showing ~/.ssh items.
 	selection, err := runtime.OpenFileDialog(a.ctx, runtime.OpenDialogOptions{
 		Title:            a.appText("file.backend.dialog.select_ssh_key_file", nil),
 		DefaultDirectory: defaultDir,
 		ShowHiddenFiles:  true,
-		Filters: []runtime.FileFilter{
-			{
-				DisplayName: a.appText("file.backend.filter.all_files", nil),
-				Pattern:     "*.*",
-			},
-		},
+		Filters:          sshKeyFileDialogFilters(),
 	})
 	if err != nil {
 		return connection.QueryResult{Success: false, Message: err.Error()}
@@ -3901,9 +3903,10 @@ func (a *App) SelectCertificateFile(currentPath string, certKind string) connect
 	kind := strings.ToLower(strings.TrimSpace(certKind))
 	titleKey := "file.backend.dialog.select_tls_certificate_file"
 	displayNameKey := "file.backend.filter.certificate_files"
-	// Certificate material usually has extensions; still include all-files so
-	// extensionless keys remain selectable (same macOS filter limitation).
+	// Certificate material usually has extensions. Client private keys are often
+	// extensionless, so that dialog intentionally omits filters below.
 	filterPattern := "*.pem;*.crt;*.cer;*.cert;*.key"
+	var filters []runtime.FileFilter
 	switch kind {
 	case "ca":
 		titleKey = "file.backend.dialog.select_ca_server_certificate_file"
@@ -3912,15 +3915,9 @@ func (a *App) SelectCertificateFile(currentPath string, certKind string) connect
 	case "client-key":
 		titleKey = "file.backend.dialog.select_client_private_key_file"
 		displayNameKey = "file.backend.filter.private_key_files"
-		// Prefer all-files for private keys: extensionless PEM keys are common.
-		filterPattern = "*.*"
 	}
-
-	selection, err := runtime.OpenFileDialog(a.ctx, runtime.OpenDialogOptions{
-		Title:            a.appText(titleKey, nil),
-		DefaultDirectory: defaultDir,
-		ShowHiddenFiles:  kind == "client-key",
-		Filters: []runtime.FileFilter{
+	if kind != "client-key" {
+		filters = []runtime.FileFilter{
 			{
 				DisplayName: a.appText(displayNameKey, nil),
 				Pattern:     filterPattern,
@@ -3929,7 +3926,14 @@ func (a *App) SelectCertificateFile(currentPath string, certKind string) connect
 				DisplayName: a.appText("file.backend.filter.all_files", nil),
 				Pattern:     "*.*",
 			},
-		},
+		}
+	}
+
+	selection, err := runtime.OpenFileDialog(a.ctx, runtime.OpenDialogOptions{
+		Title:            a.appText(titleKey, nil),
+		DefaultDirectory: defaultDir,
+		ShowHiddenFiles:  kind == "client-key",
+		Filters:          filters,
 	})
 	if err != nil {
 		return connection.QueryResult{Success: false, Message: err.Error()}
