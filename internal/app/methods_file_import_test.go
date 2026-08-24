@@ -204,6 +204,89 @@ func TestBuildImportPreviewXLSXStreamSupportsInlineStrings(t *testing.T) {
 	}
 }
 
+type issue1025CapturingImportDB struct {
+	fakeMetadataRetryDB
+	batchChanges []connection.ChangeSet
+}
+
+func (database *issue1025CapturingImportDB) ApplyChanges(_ string, changes connection.ChangeSet) error {
+	database.batchChanges = append(database.batchChanges, changes)
+	return nil
+}
+
+func (database *issue1025CapturingImportDB) ApplyChangesContext(ctx context.Context, tableName string, changes connection.ChangeSet) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return database.ApplyChanges(tableName, changes)
+}
+
+func TestIssue1025BlankNullableXLSXCellsBecomeSQLNull(t *testing.T) {
+	database := &issue1025CapturingImportDB{fakeMetadataRetryDB: fakeMetadataRetryDB{
+		columns: []connection.ColumnDefinition{
+			{Name: "id", Type: "bigint", Nullable: "NO"},
+			{Name: "payload", Type: "json", Nullable: "YES"},
+			{Name: "count", Type: "int", Nullable: "YES"},
+			{Name: "required_count", Type: "int", Nullable: "NO"},
+		},
+	}}
+	installImportTestDatabase(t, database)
+
+	path := filepath.Join(t.TempDir(), "users.xlsx")
+	file, err := os.Create(path)
+	if err != nil {
+		t.Fatalf("create xlsx: %v", err)
+	}
+	writer, err := newXLSXExportFileWriter(file, 0)
+	if err != nil {
+		_ = file.Close()
+		t.Fatalf("create xlsx writer: %v", err)
+	}
+	if err := writer.SetColumns([]string{"id", "payload", "count", "required_count"}); err != nil {
+		_ = file.Close()
+		t.Fatalf("set xlsx columns: %v", err)
+	}
+	if err := writer.ConsumeRowValues([]interface{}{"1", "", "", ""}); err != nil {
+		_ = file.Close()
+		t.Fatalf("write xlsx row: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		_ = file.Close()
+		t.Fatalf("close xlsx writer: %v", err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatalf("close xlsx: %v", err)
+	}
+
+	app := newManagedImportTestApp(t)
+	continueOnError := false
+	result := app.ImportDataWithProgressOptions(
+		connection.ConnectionConfig{Type: "mysql", Host: "127.0.0.1", Port: 3306, Database: "app"},
+		"app",
+		"users",
+		path,
+		ImportFileOptions{
+			ContinueOnError: &continueOnError,
+		},
+	)
+	if !result.Success {
+		t.Fatalf("blank nullable XLSX cells should import successfully: %#v", result)
+	}
+	if len(database.batchChanges) != 1 || len(database.batchChanges[0].Inserts) != 1 {
+		t.Fatalf("batch changes = %#v, want one inserted row", database.batchChanges)
+	}
+	row := database.batchChanges[0].Inserts[0]
+	if row["id"] != "1" {
+		t.Fatalf("id = %#v, want string 1", row["id"])
+	}
+	if row["payload"] != nil || row["count"] != nil {
+		t.Fatalf("nullable blank cells = %#v, want NULL values", row)
+	}
+	if row["required_count"] != "" {
+		t.Fatalf("required blank cell = %#v, want empty string for database validation", row["required_count"])
+	}
+}
+
 func TestBuildImportPreviewXLSXStreamSupportsSharedStrings(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "shared.xlsx")
 	workbook := excelize.NewFile()
@@ -474,6 +557,48 @@ func TestImportColumnTypeLookupKeepsCaseDistinctTypes(t *testing.T) {
 	}
 	if !strings.Contains(query, `("Foo", "foo") VALUES ('false', false)`) {
 		t.Fatalf("case-distinct target types produced wrong SQL: %s", query)
+	}
+}
+
+func TestImportColumnTypeLookupResolvesNullableMetadata(t *testing.T) {
+	lookup := newImportColumnTypeLookup([]connection.ColumnDefinition{
+		{Name: "optional_json", Type: "json", Nullable: "YES"},
+		{Name: "required_count", Type: "int", Nullable: "NO"},
+		{Name: "unknown", Type: "text"},
+	})
+
+	if nullable, known := lookup.IsNullable("OPTIONAL_JSON"); !known || !nullable {
+		t.Fatalf("optional column metadata = (%t, %t), want (true, true)", nullable, known)
+	}
+	if nullable, known := lookup.IsNullable("required_count"); !known || nullable {
+		t.Fatalf("required column metadata = (%t, %t), want (false, true)", nullable, known)
+	}
+	if _, known := lookup.IsNullable("unknown"); known {
+		t.Fatal("missing nullable metadata should remain unknown")
+	}
+}
+
+func TestBuildImportInsertQueryConvertsEmptyNullableValuesToSQLNull(t *testing.T) {
+	query, err := buildImportInsertQuery(
+		"mysql",
+		"users",
+		[]string{"optional_json", "optional_count", "required_count"},
+		map[string]interface{}{
+			"optional_json":  "",
+			"optional_count": "",
+			"required_count": "",
+		},
+		newImportColumnTypeLookup([]connection.ColumnDefinition{
+			{Name: "optional_json", Type: "json", Nullable: "YES"},
+			{Name: "optional_count", Type: "int", Nullable: "YES"},
+			{Name: "required_count", Type: "int", Nullable: "NO"},
+		}),
+	)
+	if err != nil {
+		t.Fatalf("buildImportInsertQuery returned error: %v", err)
+	}
+	if !strings.Contains(query, "VALUES (NULL, NULL, '')") {
+		t.Fatalf("nullable empty values produced wrong SQL: %s", query)
 	}
 }
 

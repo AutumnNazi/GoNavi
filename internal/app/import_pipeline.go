@@ -368,14 +368,18 @@ type importRowColumnValidator interface {
 }
 
 type importColumnTypeLookup struct {
-	byExactName  map[string]string
-	byFoldedName map[string][]string
+	byExactName          map[string]string
+	byFoldedName         map[string][]string
+	nullableByExactName  map[string]string
+	nullableByFoldedName map[string][]string
 }
 
 func newImportColumnTypeLookup(columns []connection.ColumnDefinition) importColumnTypeLookup {
 	lookup := importColumnTypeLookup{
-		byExactName:  make(map[string]string, len(columns)),
-		byFoldedName: make(map[string][]string, len(columns)),
+		byExactName:          make(map[string]string, len(columns)),
+		byFoldedName:         make(map[string][]string, len(columns)),
+		nullableByExactName:  make(map[string]string, len(columns)),
+		nullableByFoldedName: make(map[string][]string, len(columns)),
 	}
 	for _, column := range columns {
 		name := column.Name
@@ -385,8 +389,13 @@ func newImportColumnTypeLookup(columns []connection.ColumnDefinition) importColu
 		if _, exists := lookup.byExactName[name]; !exists {
 			foldedName := normalizeColumnName(name)
 			lookup.byFoldedName[foldedName] = append(lookup.byFoldedName[foldedName], name)
+			lookup.nullableByFoldedName[foldedName] = append(
+				lookup.nullableByFoldedName[foldedName],
+				strings.TrimSpace(column.Nullable),
+			)
 		}
 		lookup.byExactName[name] = strings.TrimSpace(column.Type)
+		lookup.nullableByExactName[name] = strings.TrimSpace(column.Nullable)
 	}
 	return lookup
 }
@@ -400,6 +409,59 @@ func (l importColumnTypeLookup) Resolve(columnName string) string {
 		return ""
 	}
 	return l.byExactName[foldedMatches[0]]
+}
+
+func normalizeImportNullable(raw string) (bool, bool) {
+	switch strings.ToUpper(strings.TrimSpace(raw)) {
+	case "YES", "Y", "TRUE", "1", "NULLABLE":
+		return true, true
+	case "NO", "N", "FALSE", "0", "NOT NULL", "NOT_NULL", "NOTNULL", "REQUIRED":
+		return false, true
+	default:
+		return false, false
+	}
+}
+
+func (l importColumnTypeLookup) IsNullable(columnName string) (bool, bool) {
+	raw, ok := l.nullableByExactName[columnName]
+	if !ok {
+		foldedMatches := l.nullableByFoldedName[normalizeColumnName(columnName)]
+		if len(foldedMatches) != 1 {
+			return false, false
+		}
+		raw = foldedMatches[0]
+	}
+	return normalizeImportNullable(raw)
+}
+
+func normalizeImportValueForColumn(value interface{}, nullable bool) interface{} {
+	if nullable {
+		if text, ok := value.(string); ok && text == "" {
+			return nil
+		}
+	}
+	return value
+}
+
+func normalizeImportRowForTargetColumns(row map[string]interface{}, columnTypes importColumnTypeLookup) map[string]interface{} {
+	normalized := cloneImportRow(row)
+	for column, value := range normalized {
+		if nullable, known := columnTypes.IsNullable(column); known {
+			normalized[column] = normalizeImportValueForColumn(value, nullable)
+		}
+	}
+	return normalized
+}
+
+func normalizeImportRowsForTargetColumns(rows []map[string]interface{}, columnTypes importColumnTypeLookup) []map[string]interface{} {
+	if len(rows) == 0 {
+		return nil
+	}
+	normalized := make([]map[string]interface{}, 0, len(rows))
+	for _, row := range rows {
+		normalized = append(normalized, normalizeImportRowForTargetColumns(row, columnTypes))
+	}
+	return normalized
 }
 
 type importDatabaseRowWriter struct {
@@ -454,7 +516,7 @@ func (w *importDatabaseRowWriter) ApplyBatchContext(ctx context.Context, rows []
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	changes := connection.ChangeSet{Inserts: cloneImportRows(rows)}
+	changes := connection.ChangeSet{Inserts: normalizeImportRowsForTargetColumns(rows, w.columnTypes)}
 	if contextApplier, ok := w.applier.(db.BatchApplierContext); ok {
 		return contextApplier.ApplyChangesContext(ctx, w.tableName, changes)
 	}
@@ -483,7 +545,7 @@ func (w *importDatabaseRowWriter) ApplyOneWithOutcomeContext(ctx context.Context
 		return importRowApplySucceeded, err
 	}
 	if w.applier != nil && w.conflictPolicy == importConflictPolicyStop {
-		changes := connection.ChangeSet{Inserts: []map[string]interface{}{cloneImportRow(row)}}
+		changes := connection.ChangeSet{Inserts: []map[string]interface{}{normalizeImportRowForTargetColumns(row, w.columnTypes)}}
 		var err error
 		if contextApplier, ok := w.applier.(db.BatchApplierContext); ok {
 			err = contextApplier.ApplyChangesContext(ctx, w.tableName, changes)
@@ -1359,6 +1421,7 @@ func buildImportInsertQueryWithConflict(
 	quotedCols := make([]string, 0, len(columns))
 	values := make([]string, 0, len(columns))
 	usableColumns := make([]string, 0, len(columns))
+	normalizedRow := normalizeImportRowForTargetColumns(row, columnTypes)
 	for _, column := range columns {
 		if strings.TrimSpace(column) == "" {
 			continue
@@ -1366,7 +1429,8 @@ func buildImportInsertQueryWithConflict(
 		usableColumns = append(usableColumns, column)
 		quotedCols = append(quotedCols, quoteIdentByType(dbType, column))
 		colType := columnTypes.Resolve(column)
-		values = append(values, formatImportSQLValue(dbType, colType, row[column]))
+		value := normalizedRow[column]
+		values = append(values, formatImportSQLValue(dbType, colType, value))
 	}
 	if len(quotedCols) == 0 {
 		return "", fmt.Errorf("导入文件缺少有效列头")
