@@ -485,7 +485,11 @@ export const decodeDataSyncJobDefinition = (
     ERROR_POLICIES,
     'job.options.errorPolicy',
   );
-  const content = optionalString(options.content, 'job.options.content') || 'data';
+  const content = enumValue(
+    optionalString(options.content, 'job.options.content') || 'data',
+    ['schema', 'data', 'both'] as const,
+    'job.options.content',
+  );
   const uiKind = incrementalMode === 'cdc' ? 'cdc' : kind === 'query_sink' ? 'querySink' : kind;
   let incremental: DataSyncTaskDefinition['incremental'];
   if (incrementalMode === 'watermark') {
@@ -526,8 +530,9 @@ export const decodeDataSyncJobDefinition = (
     lifecycle,
     compareMode:
       kind === 'compare'
-        ? enumValue(content, ['schema', 'data', 'both'] as const, 'job.options.content')
+        ? content
         : undefined,
+    content,
     sourceMode: kind === 'query_sink' ? 'query' : 'tables',
     sourceQuery: optionalString(job.sourceQuery, 'job.sourceQuery'),
     source,
@@ -771,7 +776,13 @@ export const encodeDataSyncJobDefinition = (
       tableMappingToWire(task, mapping, index),
     ),
     options: {
-      content: task.kind === 'compare' ? task.compareMode || 'data' : task.kind === 'migration' ? 'both' : 'data',
+      content:
+        task.content ||
+        (task.kind === 'compare'
+          ? task.compareMode || 'data'
+          : task.kind === 'migration'
+            ? 'both'
+            : 'data'),
       syncMode,
       targetTableStrategy,
       autoAddColumns: task.delivery.autoAddColumns,

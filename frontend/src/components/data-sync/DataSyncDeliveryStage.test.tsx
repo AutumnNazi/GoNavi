@@ -223,6 +223,39 @@ describe('DataSyncTaskEditor delivery stage', () => {
     });
   });
 
+  it('keeps schema-only migration writable and exposes automatic missing-column DDL', async () => {
+    const base = createDataSyncTaskDraft({
+      id: 'schema-sync',
+      kind: 'migration',
+      content: 'schema',
+    });
+    const task = reviseDataSyncTask(base, {
+      source: endpoint('source'),
+      target: endpoint('target'),
+      mappings: [
+        createDataSyncTableMapping('schema-sync:mapping:1', 'orders', 'orders'),
+      ],
+      delivery: {
+        ...base.delivery,
+        autoAddColumns: true,
+      },
+    });
+    const { renderer } = await renderDelivery(task);
+    const rendered = JSON.stringify(renderer.toJSON());
+
+    expect(rendered).toContain('此任务仅执行结构变更');
+    expect(
+      renderer.root.findAllByProps({
+        'data-structure-option': 'auto-add-columns',
+      }),
+    ).toHaveLength(1);
+    expect(
+      renderer.root
+        .findAllByType('select')
+        .some((select) => select.props.value === 'schema'),
+    ).toBe(true);
+  });
+
   it('explains compare tasks without exposing irrelevant write controls', async () => {
     const task = createDataSyncTaskDraft({ id: 'compare', kind: 'compare' });
     const { renderer } = await renderDelivery(task);

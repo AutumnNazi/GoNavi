@@ -72,6 +72,50 @@ const nextLocalTaskId = (): string => {
   return `data-sync-local-${Date.now()}-${localTaskSequence}`;
 };
 
+/**
+ * Turn a schema comparison into an explicit, writable schema-only task.
+ * Comparison jobs remain read-only; this copy is the opt-in mutation path.
+ */
+export const createSchemaSyncTaskFromCompare = ({
+  compareTask,
+  id,
+  name,
+  now = new Date().toISOString(),
+}: {
+  compareTask: DataSyncTaskDefinition;
+  id: string;
+  name: string;
+  now?: string;
+}): DataSyncTaskDefinition | null => {
+  if (compareTask.kind !== 'compare' || compareTask.compareMode !== 'schema') {
+    return null;
+  }
+  const draft = createDataSyncTaskDraft({
+    id,
+    kind: 'migration',
+    name,
+    now,
+    content: 'schema',
+    sourceConnectionId: compareTask.source.connectionId,
+  });
+  return reviseDataSyncTask(draft, {
+    source: compareTask.source,
+    target: compareTask.target,
+    mappings: compareTask.mappings.map((mapping) => ({
+      ...mapping,
+      // Schema migration uses source metadata to generate ADD COLUMN DDL;
+      // row keys and field transforms are deliberately not carried over.
+      targetMode: 'existing_only',
+      keyColumns: [],
+      fields: [],
+    })),
+    delivery: {
+      ...draft.delivery,
+      autoAddColumns: true,
+    },
+  });
+};
+
 export const resolveDataSyncSidebarRefreshes = ({
   previousStatuses,
   runs,
@@ -336,6 +380,25 @@ export const DataSyncWorkbenchShell: React.FC<DataSyncWorkbenchShellProps> = ({
     setSelectedTaskId(task.id);
     setDirtyTaskIds((current) => new Set(current).add(task.id));
     setActiveStage('endpoints');
+    setShowKindSelector(false);
+    setActiveView('tasks');
+  };
+
+  const createSchemaSyncTask = () => {
+    if (!selectedTask || selectedTask.kind !== 'compare' || selectedTask.compareMode !== 'schema') {
+      return;
+    }
+    const schemaSyncName = `${selectedTask.name || t('task_kind.schema_sync')} · ${t('task_kind.schema_sync')}`;
+    const task = createSchemaSyncTaskFromCompare({
+      compareTask: selectedTask,
+      id: nextLocalTaskId(),
+      name: schemaSyncName,
+    });
+    if (!task) return;
+    setTasks((current) => [...current, task]);
+    setSelectedTaskId(task.id);
+    setDirtyTaskIds((current) => new Set(current).add(task.id));
+    setActiveStage('delivery');
     setShowKindSelector(false);
     setActiveView('tasks');
   };
@@ -859,6 +922,16 @@ export const DataSyncWorkbenchShell: React.FC<DataSyncWorkbenchShellProps> = ({
                       onClick={() => transitionLifecycle('archived')}
                     >
                       {t('lifecycle.archive')}
+                    </button>
+                  ) : null}
+                  {selectedTask.kind === 'compare' && selectedTask.compareMode === 'schema' ? (
+                    <button
+                      type="button"
+                      className="gn-data-sync-button"
+                      data-data-sync-action="create-schema-sync"
+                      onClick={createSchemaSyncTask}
+                    >
+                      {t('workbench.create_schema_sync')}
                     </button>
                   ) : null}
                   <button

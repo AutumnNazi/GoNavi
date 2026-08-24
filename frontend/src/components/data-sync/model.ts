@@ -23,6 +23,9 @@ export type DataSyncTaskStage =
 
 export type DataSyncCompareMode = 'schema' | 'data' | 'both';
 
+/** Content executed by a writable data-sync task. */
+export type DataSyncTaskContent = 'schema' | 'data' | 'both';
+
 export type DataSyncEndpointRef = {
   connectionId: string;
   connectionName: string;
@@ -138,6 +141,8 @@ export type DataSyncTaskDefinition = {
   kind: DataSyncTaskKind;
   lifecycle: DataSyncTaskLifecycle;
   compareMode?: DataSyncCompareMode;
+  /** Persisted jobs created before content became explicit may omit this field. */
+  content?: DataSyncTaskContent;
   sourceMode: 'tables' | 'query';
   sourceQuery: string;
   source: DataSyncEndpointRef;
@@ -383,6 +388,7 @@ type CreateDataSyncTaskInput = {
   name?: string;
   now?: string;
   compareMode?: DataSyncCompareMode;
+  content?: DataSyncTaskContent;
   sourceConnectionId?: string;
 };
 
@@ -564,52 +570,64 @@ export const createDataSyncTaskDraft = ({
   name = '',
   now = new Date().toISOString(),
   compareMode,
+  content,
   sourceConnectionId = '',
-}: CreateDataSyncTaskInput): DataSyncTaskDefinition => ({
-  schemaVersion: DATA_SYNC_TASK_SCHEMA_VERSION,
-  id,
-  revision: 1,
-  name,
-  kind,
-  lifecycle: 'draft',
-  compareMode: kind === 'compare' ? compareMode || 'data' : undefined,
-  sourceMode: kind === 'querySink' ? 'query' : 'tables',
-  sourceQuery: '',
-  source: emptyEndpoint(sourceConnectionId),
-  target: emptyEndpoint(),
-  mappings:
-    kind === 'querySink'
-      ? [createDataSyncTableMapping(`${id}:mapping:1`)]
-      : [],
-  delivery: {
-    writeMode: defaultWriteMode(kind),
-    errorPolicy: 'stop',
-    batchSize: 1_000,
-    commitEvery: 1_000,
-    retryLimit: kind === 'querySink' ? 0 : 3,
-    retryBackoffMs: 500,
-    propagateDeletes: false,
-    autoAddColumns: false,
-    createIndexes: false,
-    captureErrorPayload: false,
-  },
-  trigger: kind === 'cdc' ? { mode: 'continuous' } : { mode: 'manual' },
-  incremental:
-    kind === 'cdc'
-      ? {
-          mode: 'cdc',
-          initialSnapshot: false,
-          startPosition: 'latest',
-          adapter: '',
-          slotName: '',
-          publicationName: '',
-        }
-      : { mode: 'snapshot' },
-  concurrencyPolicy: 'forbid',
-  resumePolicy: 'manual',
-  createdAt: now,
-  updatedAt: now,
-});
+}: CreateDataSyncTaskInput): DataSyncTaskDefinition => {
+  const resolvedCompareMode = kind === 'compare' ? compareMode || 'data' : undefined;
+  const resolvedContent =
+    content ||
+    (kind === 'compare'
+      ? resolvedCompareMode || 'data'
+      : kind === 'migration'
+        ? 'both'
+        : 'data');
+  return {
+    schemaVersion: DATA_SYNC_TASK_SCHEMA_VERSION,
+    id,
+    revision: 1,
+    name,
+    kind,
+    lifecycle: 'draft',
+    compareMode: resolvedCompareMode,
+    content: resolvedContent,
+    sourceMode: kind === 'querySink' ? 'query' : 'tables',
+    sourceQuery: '',
+    source: emptyEndpoint(sourceConnectionId),
+    target: emptyEndpoint(),
+    mappings:
+      kind === 'querySink'
+        ? [createDataSyncTableMapping(`${id}:mapping:1`)]
+        : [],
+    delivery: {
+      writeMode: defaultWriteMode(kind),
+      errorPolicy: 'stop',
+      batchSize: 1_000,
+      commitEvery: 1_000,
+      retryLimit: kind === 'querySink' ? 0 : 3,
+      retryBackoffMs: 500,
+      propagateDeletes: false,
+      autoAddColumns: false,
+      createIndexes: false,
+      captureErrorPayload: false,
+    },
+    trigger: kind === 'cdc' ? { mode: 'continuous' } : { mode: 'manual' },
+    incremental:
+      kind === 'cdc'
+        ? {
+            mode: 'cdc',
+            initialSnapshot: false,
+            startPosition: 'latest',
+            adapter: '',
+            slotName: '',
+            publicationName: '',
+          }
+        : { mode: 'snapshot' },
+    concurrencyPolicy: 'forbid',
+    resumePolicy: 'manual',
+    createdAt: now,
+    updatedAt: now,
+  };
+};
 
 export const reviseDataSyncTask = (
   task: DataSyncTaskDefinition,

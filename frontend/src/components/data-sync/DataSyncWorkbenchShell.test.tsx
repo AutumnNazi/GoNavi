@@ -12,6 +12,7 @@ import {
   type DataSyncRunRecord,
 } from './model';
 import {
+  createSchemaSyncTaskFromCompare,
   DataSyncWorkbenchShell,
   resolveDataSyncSidebarRefreshes,
 } from './DataSyncWorkbenchShell';
@@ -113,6 +114,107 @@ describe('DataSyncWorkbenchShell', () => {
     expect((markup.match(/gn-data-sync-stage-nav/g) || []).length).toBeGreaterThan(0);
     expect(markup).not.toContain('ant-card');
     expect(markup).not.toContain('linear-gradient');
+  });
+
+  it('converts a schema compare into an explicit schema-only task from the UI', async () => {
+    const compareBase = createDataSyncTaskDraft({
+      id: 'schema-compare-task',
+      kind: 'compare',
+      compareMode: 'schema',
+      name: '线上表结构比对',
+    });
+    const compareTask = reviseDataSyncTask(compareBase, {
+      source: {
+        connectionId: 'mysql-local',
+        connectionName: '本地 MySQL',
+        type: 'mysql',
+        database: 'local_db',
+        schema: '',
+      },
+      target: {
+        connectionId: 'mysql-online',
+        connectionName: '线上 MySQL',
+        type: 'mysql',
+        database: 'online_db',
+        schema: '',
+      },
+      mappings: [
+        {
+          ...createDataSyncTableMapping('schema-map', 'orders', 'orders'),
+          keyColumns: ['id'],
+          fields: [
+            {
+              id: 'field-1',
+              sourceField: 'name',
+              targetField: 'name',
+              sourceType: 'varchar(64)',
+              targetType: 'varchar(64)',
+              transform: '',
+              nullable: true,
+            },
+          ],
+        },
+      ],
+    });
+
+    const converted = createSchemaSyncTaskFromCompare({
+      compareTask,
+      id: 'schema-sync-task',
+      name: '线上表结构比对 · 结构同步',
+      now: '2026-08-08T02:00:00.000Z',
+    });
+    expect(converted).toMatchObject({
+      kind: 'migration',
+      content: 'schema',
+      source: compareTask.source,
+      target: compareTask.target,
+      delivery: { autoAddColumns: true },
+      mappings: [
+        {
+          sourceObject: 'orders',
+          targetObject: 'orders',
+          targetMode: 'existing_only',
+          keyColumns: [],
+          fields: [],
+        },
+      ],
+    });
+
+    const gateway = createStaticDataSyncWorkbenchGateway({
+      tasks: [compareTask],
+      capabilities: {
+        [compareTask.id]: {
+          level: 'full',
+          canExecute: true,
+          supportsAutoCreate: true,
+          supportsAutoAddColumns: true,
+          requiresExistingTarget: false,
+          supportsMutations: true,
+          supportsCdc: false,
+        },
+      },
+    });
+    const renderer = TestRenderer.create(
+      <DataSyncWorkbenchShell
+        initialTasks={[compareTask]}
+        gateway={gateway}
+        locale="zh-CN"
+      />,
+    );
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    act(() => {
+      renderer.root
+        .findByProps({ 'data-data-sync-action': 'create-schema-sync' })
+        .props.onClick();
+    });
+
+    expect(renderer.root.findByProps({ 'data-schema-only-task': 'true' })).toBeTruthy();
+    expect(renderer.root.findAllByProps({ 'data-data-sync-action': 'create-schema-sync' })).toHaveLength(0);
+    expect(renderer.root.findByProps({ 'data-dirty': 'true' })).toBeTruthy();
   });
 
   it('edits mappings and marks the task revision as dirty', async () => {

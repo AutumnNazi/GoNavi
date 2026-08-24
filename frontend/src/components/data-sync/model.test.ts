@@ -50,6 +50,26 @@ describe('data sync task model', () => {
     });
   });
 
+  it('keeps writable task content explicit so schema-only sync cannot copy rows', () => {
+    const schemaSync = createDataSyncTaskDraft({
+      id: 'schema-sync-1',
+      kind: 'migration',
+      content: 'schema',
+      now: '2026-08-08T00:00:00.000Z',
+    });
+    const migration = createDataSyncTaskDraft({
+      id: 'migration-1',
+      kind: 'migration',
+      now: '2026-08-08T00:00:00.000Z',
+    });
+
+    expect(schemaSync).toMatchObject({
+      content: 'schema',
+      delivery: { writeMode: 'upsert', autoAddColumns: false },
+    });
+    expect(migration.content).toBe('both');
+  });
+
   it('increments revisions and makes an older preflight stale', () => {
     const task = createDataSyncTaskDraft({
       id: 'task-1',

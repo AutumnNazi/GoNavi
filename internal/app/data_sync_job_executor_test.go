@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"GoNavi-Wails/internal/connection"
 	syncbackend "GoNavi-Wails/internal/sync"
 	"GoNavi-Wails/internal/syncjob"
 )
@@ -81,6 +82,43 @@ func TestBuildDataSyncJobEngineConfigPropagatesDeletePolicy(t *testing.T) {
 	}
 	if config.BatchSize != 321 {
 		t.Fatalf("engine batch size = %d, want 321", config.BatchSize)
+	}
+}
+
+func TestBuildDataSyncJobEngineConfigKeepsSchemaOnlyAutoAddForExplicitMapping(t *testing.T) {
+	config, err := buildDataSyncJobEngineConfig(
+		syncjob.JobDefinition{
+			Options: syncjob.ExecutionOptions{
+				Content:             "schema",
+				AutoAddColumns:      true,
+				TargetTableStrategy: "existing_only",
+				SyncMode:            "insert_update",
+			},
+		},
+		"run-1",
+		resolvedDataSyncJobEndpoint{
+			Config:   connection.ConnectionConfig{Type: "mysql"},
+			Database: "local",
+		},
+		resolvedDataSyncJobEndpoint{
+			Config:   connection.ConnectionConfig{Type: "mysql"},
+			Database: "online",
+		},
+		syncjob.TableMapping{
+			SourceSchema: "local",
+			SourceTable:  "orders",
+			TargetSchema: "online",
+			TargetTable:  "orders_archive",
+		},
+	)
+	if err != nil {
+		t.Fatalf("buildDataSyncJobEngineConfig returned error: %v", err)
+	}
+	if !config.AutoAddColumns {
+		t.Fatal("schema-only explicit mapping lost autoAddColumns")
+	}
+	if len(config.Mappings) != 1 || config.TargetTableStrategy != "existing_only" {
+		t.Fatalf("unexpected explicit schema mapping config: %+v", config)
 	}
 }
 
