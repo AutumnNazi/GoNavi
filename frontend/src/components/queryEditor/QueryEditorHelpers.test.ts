@@ -9,6 +9,7 @@ import {
     createBoundedQueryEditorCompletionCandidateBatch,
     findCompletionTablesByDatabase,
     getCompletionTableSchemaCounts,
+    isSystemMetadataQueryResult,
     isOracleBaseTableReference,
     isQueryEditorTableSourceCompletionContext,
     materializeBoundedQueryEditorCompletionBatches,
@@ -64,6 +65,26 @@ describe('QueryEditor result merge identity', () => {
         expect(first).not.toBe(second);
         expect(first).toContain('::0::0');
         expect(second).toContain('::1::0');
+    });
+});
+
+describe('QueryEditor system metadata guard', () => {
+    it('keeps SQL Server system schemas read-only when metadata uses the current database', () => {
+        expect(isSystemMetadataQueryResult({
+            tableName: 'sys.objects',
+            metadataDbName: 'appdb',
+            metadataTableName: 'sys.objects',
+        }, 'sqlserver')).toBe(true);
+        expect(isSystemMetadataQueryResult({
+            tableName: 'INFORMATION_SCHEMA.TABLES',
+            metadataDbName: 'appdb',
+            metadataTableName: '[INFORMATION_SCHEMA].[TABLES]',
+        }, 'mssql')).toBe(true);
+        expect(isSystemMetadataQueryResult({
+            tableName: 'dbo.orders',
+            metadataDbName: 'appdb',
+            metadataTableName: 'dbo.orders',
+        }, 'sqlserver')).toBe(false);
     });
 });
 
