@@ -104,6 +104,7 @@ import {
     takeQueryEditorResultSession,
 } from '../utils/queryEditorResultSessionCache';
 import { buildEditableTriggerSql } from '../utils/triggerEditSql';
+import { dispatchSidebarDatabaseListRefresh } from '../utils/sidebarDatabaseRefresh';
 import { findTriggerDefinitionStatement } from '../utils/triggerDefinition';
 import { openNativeQueryResultWindow } from '../utils/nativeDetachedWindowHost';
 import {
@@ -8801,6 +8802,40 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
               return;
           }
           void message.success(translate('query_editor.elasticsearch.execution_success'));
+          if (inspection.containsWrite) {
+              dispatchSidebarDatabaseListRefresh({
+                  connectionId: conn.id,
+                  reason: 'elasticsearch-write',
+              });
+              void DBGetDatabases(config)
+                  .then((databaseResult: any) => {
+                      if (
+                          String(currentConnectionIdRef.current || '').trim() !== conn.id
+                          || !databaseResult?.success
+                          || !Array.isArray(databaseResult.data)
+                      ) {
+                          return;
+                      }
+                      const returnedDatabaseNames = databaseResult.data
+                          .map((row: any) => row.Database || row.database)
+                          .filter((name: unknown): name is string => (
+                              typeof name === 'string' && name.length > 0
+                          ));
+                      const databaseNames = filterVisibleDatabaseNames(conn, returnedDatabaseNames);
+                      visibleDbsRef.current = databaseNames;
+                      if (isActive) {
+                          sharedVisibleDbs = databaseNames;
+                      }
+                      setDbList(databaseNames);
+                      const selectedIndex = String(currentDbRef.current || '').trim();
+                      if (selectedIndex && !returnedDatabaseNames.includes(selectedIndex)) {
+                          handleDatabaseChange('');
+                      }
+                  })
+                  .catch(() => {
+                      // The write already succeeded; the next sidebar/editor refresh can retry metadata.
+                  });
+          }
       } catch (error: any) {
           if (!isElasticsearchConsoleRunCurrent(runSeqRef.current, runSeq)) return;
           setExecutionError(`${translate('query_editor.elasticsearch.execute_failed')}: ${error?.message || String(error || '')}`);

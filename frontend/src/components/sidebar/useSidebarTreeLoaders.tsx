@@ -22,6 +22,7 @@ import type { SavedConnection, SavedQuery, JVMCapability, JVMResourceSummary } f
 import { useStore } from '../../store';
 import { t } from '../../i18n';
 import { buildRpcConnectionConfig } from '../../utils/connectionRpcConfig';
+import { resolveDataSourceType } from '../../utils/dataSourceCapabilities';
 import { filterVisibleDatabaseNames } from '../../utils/databaseVisibility';
 import { buildRedisDbNodeLabel, getRedisDbAlias } from '../../utils/redisDbAlias';
 import { buildJVMMonitoringActionDescriptors } from '../../utils/jvmSidebarActions';
@@ -718,11 +719,12 @@ export const useSidebarTreeLoaders = ({
               }
 	          if (res.success) {
                 const dbRows: any[] = Array.isArray(res.data) ? res.data : [];
+                const returnedDatabaseNames = dbRows
+                    .map((row: any) => row.Database || row.database)
+                    .filter((name: unknown): name is string => typeof name === 'string' && name.length > 0);
                 const visibleDatabaseNames = filterVisibleDatabaseNames(
                     currentConnection,
-                    dbRows
-                        .map((row: any) => row.Database || row.database)
-                        .filter((name: unknown): name is string => typeof name === 'string' && name.length > 0),
+                    returnedDatabaseNames,
                 );
 
                 const databaseNames = dedupeTrimmedDatabaseNames(visibleDatabaseNames);
@@ -752,7 +754,23 @@ export const useSidebarTreeLoaders = ({
             } else {
                 // 空列表：清理 loadedKeys 以允许重新加载，不设置 children = []
                 setLoadedKeys(prev => prev.filter(k => k !== node.key));
-                message.warning({ content: t('sidebar.message.no_visible_databases'), key: `conn-${currentConnection.id}-dbs` });
+                const isEmptyElasticsearchCluster =
+                    resolveDataSourceType(currentConnection.config) === 'elasticsearch'
+                    && returnedDatabaseNames.length === 0;
+                if (isEmptyElasticsearchCluster) {
+                    // Clear stale index nodes after the last index is deleted while
+                    // keeping children undefined so the connection remains reloadable.
+                    replaceTreeNodeChildren(node.key, undefined, currentConnection);
+                    message.info({
+                        content: t('sidebar.message.elasticsearch_no_indices'),
+                        key: `conn-${currentConnection.id}-dbs`,
+                    });
+                } else {
+                    message.warning({
+                        content: t('sidebar.message.no_visible_databases'),
+                        key: `conn-${currentConnection.id}-dbs`,
+                    });
+                }
             }
             shouldMarkConnectionSuccess = true;
 	          } else {

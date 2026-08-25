@@ -462,6 +462,10 @@ export const useSidebarV2ContextMenu = ({
               hostSummary={resolveConnectionHostSummary(conn?.config)}
               driverLabel={resolveConnectionIconType(conn)}
               isRedis={conn?.config?.type === 'redis'}
+              supportsCreateIndex={capabilities.supportsCreateIndex}
+              createIndexLabel={capabilities.supportsCreateIndex
+                  ? t('query_editor.elasticsearch.templates.create_index')
+                  : undefined}
               supportsCreateDatabase={capabilities.supportsCreateDatabase}
               supportsQueryEditor={capabilities.supportsQueryEditor}
               tags={connectionTags.map((tag) => ({

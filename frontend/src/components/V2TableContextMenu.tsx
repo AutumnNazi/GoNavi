@@ -586,6 +586,8 @@ export const V2ConnectionContextMenuView: React.FC<{
   hostSummary?: string;
   driverLabel?: string;
   isRedis?: boolean;
+  supportsCreateIndex?: boolean;
+  createIndexLabel?: string;
   supportsCreateDatabase?: boolean;
   supportsQueryEditor?: boolean;
   tags?: V2ConnectionContextMenuTagItem[];
@@ -596,6 +598,8 @@ export const V2ConnectionContextMenuView: React.FC<{
   hostSummary,
   driverLabel,
   isRedis = false,
+  supportsCreateIndex = false,
+  createIndexLabel,
   supportsCreateDatabase = true,
   supportsQueryEditor = true,
   tags = [],
@@ -626,7 +630,9 @@ export const V2ConnectionContextMenuView: React.FC<{
           { action: 'new-command', icon: <ConsoleSqlOutlined />, title: t('sidebar.menu.new_command_window'), featured: true },
           { action: 'open-monitor', icon: <DashboardOutlined />, title: t('redis_monitor.title.instance') },
         ]) : renderItems([
-          ...(supportsCreateDatabase ? [{ action: 'new-db' as const, icon: <DatabaseOutlined />, title: t('connection.sidebar.menu.createDatabase'), kbd: primaryShortcut('N', shortcutPlatform), featured: true }] : []),
+          ...(supportsCreateIndex ? [{ action: 'new-db' as const, icon: <DatabaseOutlined />, title: createIndexLabel || t('query_editor.elasticsearch.templates.create_index'), kbd: primaryShortcut('N', shortcutPlatform), featured: true }]
+            : supportsCreateDatabase ? [{ action: 'new-db' as const, icon: <DatabaseOutlined />, title: t('connection.sidebar.menu.createDatabase'), kbd: primaryShortcut('N', shortcutPlatform), featured: true }]
+              : []),
           { action: 'refresh', icon: <ReloadOutlined />, title: t('connection.sidebar.menu.refresh'), kbd: primaryShortcut('R', shortcutPlatform) },
           ...(supportsQueryEditor ? [
             { action: 'new-query' as const, icon: <ConsoleSqlOutlined />, title: t('sidebar.menu.new_query') },

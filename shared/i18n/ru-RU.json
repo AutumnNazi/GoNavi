@@ -7808,6 +7808,7 @@
   "sidebar.message.message_publish_target_fallback": "цель",
   "sidebar.message.message_publish_unsupported": "Текущий объект не поддерживает тестовую отправку сообщений",
   "sidebar.message.no_visible_databases": "Видимые базы данных или схемы не возвращены. Проверьте права учетной записи или обновите через контекстное меню.",
+  "sidebar.message.elasticsearch_no_indices": "В этом кластере Elasticsearch пока нет индексов. Щелкните соединение правой кнопкой мыши, чтобы создать индекс.",
   "sidebar.message.operation_create_failed": "Не удалось создать: {{error}}",
   "sidebar.message.operation_drop_failed": "Не удалось удалить: {{error}}",
   "sidebar.message.operation_rename_failed": "Не удалось переименовать: {{error}}",

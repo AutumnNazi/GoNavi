@@ -205,12 +205,13 @@ describe('dataSourceCapabilities', () => {
     });
   });
 
-  it('treats Elasticsearch as a queryable read-only datasource', () => {
+  it('gives Elasticsearch a dedicated index-create shortcut without changing MongoDB', () => {
     expect(getDataSourceCapabilities({ type: 'elasticsearch' })).toMatchObject({
       type: 'elasticsearch',
       supportsQueryEditor: true,
       supportsSqlQueryExport: false,
       supportsCopyInsert: false,
+      supportsCreateIndex: true,
       supportsCreateDatabase: false,
       supportsRenameDatabase: false,
       supportsDropDatabase: false,
@@ -219,7 +220,31 @@ describe('dataSourceCapabilities', () => {
     expect(getDataSourceCapabilities({ type: 'custom', driver: 'elastic' })).toMatchObject({
       type: 'elasticsearch',
       supportsQueryEditor: true,
+      supportsCreateIndex: true,
+      supportsCreateDatabase: false,
       forceReadOnlyQueryResult: false,
+    });
+    expect(getDataSourceCapabilities({ type: 'mongodb' })).toMatchObject({
+      type: 'mongodb',
+      supportsCreateIndex: false,
+      supportsCreateDatabase: false,
+    });
+  });
+
+  it('does not expose Elasticsearch index creation for protected connections', () => {
+    expect(getDataSourceCapabilities({
+      type: 'elasticsearch',
+      readOnly: true,
+    })).toMatchObject({
+      supportsCreateIndex: false,
+      supportsCreateDatabase: false,
+    });
+    expect(getDataSourceCapabilities({
+      type: 'elasticsearch',
+      protection: { restrictStructureEdit: true },
+    })).toMatchObject({
+      supportsCreateIndex: false,
+      supportsCreateDatabase: false,
     });
   });
 

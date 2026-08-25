@@ -232,6 +232,7 @@ export type DataSourceCapabilities = {
   supportsSqlQueryExport: boolean;
   supportsCopyInsert: boolean;
   supportsCopyTable: boolean;
+  supportsCreateIndex: boolean;
   supportsCreateDatabase: boolean;
   supportsCreateDatabaseCharset: boolean;
   supportsRenameDatabase: boolean;
@@ -272,6 +273,7 @@ export const getDataSourceCapabilities = (config: ConnectionLike): DataSourceCap
       && !dataImportRestricted
       && !structureEditRestricted
       && ui.copyTable === true,
+    supportsCreateIndex: contract.type === 'elasticsearch' && !structureEditRestricted,
     supportsCreateDatabase: !structureEditRestricted && ui.createDatabase === true,
     supportsCreateDatabaseCharset:
       !structureEditRestricted && ui.createDatabaseCharset === true,

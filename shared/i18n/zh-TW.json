@@ -7808,6 +7808,7 @@
   "sidebar.message.message_publish_target_fallback": "目標",
   "sidebar.message.message_publish_unsupported": "目前物件不支援測試傳送訊息",
   "sidebar.message.no_visible_databases": "未傳回可見資料庫或結構。請檢查帳號權限，或從右鍵選單重新整理。",
+  "sidebar.message.elasticsearch_no_indices": "目前 Elasticsearch 叢集尚無索引；可在連線上按右鍵建立索引。",
   "sidebar.message.operation_create_failed": "建立失敗：{{error}}",
   "sidebar.message.operation_drop_failed": "刪除失敗：{{error}}",
   "sidebar.message.operation_rename_failed": "重新命名失敗：{{error}}",

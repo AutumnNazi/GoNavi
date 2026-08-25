@@ -33,6 +33,7 @@ import { t } from '../../i18n';
 import { useStore } from '../../store';
 import type { SavedConnection, SavedQuery, SavedQueryGroup } from '../../types';
 import { getDataSourceCapabilities } from '../../utils/dataSourceCapabilities';
+import { buildElasticsearchConsoleTemplates } from '../../utils/elasticsearchConsole';
 import { resolveTableSelectQuery } from '../../utils/objectQueryTemplates';
 import {
   buildSavedQueryGroupPath,
@@ -784,12 +785,28 @@ export const buildSidebarLegacyNodeMenuItems = (
 
         // Regular database connection menu
         const connectionCapabilities = getDataSourceCapabilities((node.dataRef as SavedConnection)?.config);
+        const isElasticsearch = connectionCapabilities.type === 'elasticsearch';
         return [
-            ...(connectionCapabilities.supportsCreateDatabase ? [{
+            ...((connectionCapabilities.supportsCreateDatabase || connectionCapabilities.supportsCreateIndex) ? [{
                 key: 'new-db',
-                label: t('connection.sidebar.menu.createDatabase'),
+                label: t(connectionCapabilities.supportsCreateIndex
+                    ? 'query_editor.elasticsearch.templates.create_index'
+                    : 'connection.sidebar.menu.createDatabase'),
                 icon: <DatabaseOutlined />,
                 onClick: () => {
+                    if (isElasticsearch && connectionCapabilities.supportsCreateIndex) {
+                        const query = buildElasticsearchConsoleTemplates('')
+                            .find((template) => template.id === 'create_index')?.source || '';
+                        addTab({
+                            id: `query-${Date.now()}`,
+                            title: buildConnectionRootQueryTabTitle(),
+                            type: 'query',
+                            connectionId: node.key,
+                            dbName: undefined,
+                            query,
+                        });
+                        return;
+                    }
                     setTargetConnection(node);
                     setIsCreateDbModalOpen(true);
                 }

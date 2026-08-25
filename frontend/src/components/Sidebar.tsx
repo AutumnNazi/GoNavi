@@ -149,7 +149,9 @@ import { buildRpcConnectionConfig } from '../utils/connectionRpcConfig';
 import { buildSqlAnalysisWorkbenchTab } from '../utils/sqlAnalysisTab';
 import { buildSqlAuditWorkbenchTab } from '../utils/sqlAuditTab';
 import {
+    normalizeSidebarDatabaseListRefreshRequest,
     normalizeSidebarDatabaseRefreshRequest,
+    SIDEBAR_DATABASE_LIST_REFRESH_EVENT,
     SIDEBAR_DATABASE_REFRESH_EVENT,
 } from '../utils/sidebarDatabaseRefresh';
 import { getDataSourceCapabilities, resolveDataSourceType } from '../utils/dataSourceCapabilities';
@@ -2567,6 +2569,30 @@ const Sidebar: React.FC<{
           return Array.from(new Set(next));
       });
   };
+
+  useEffect(() => {
+      const handleSidebarDatabaseListRefresh = (event: Event) => {
+          const request = normalizeSidebarDatabaseListRefreshRequest((event as CustomEvent).detail);
+          if (!request) return;
+          const connectionNode = findTreeNodeByKeyRef.current(
+              treeDataRef.current,
+              request.connectionId,
+          );
+          if (connectionNode) {
+              void refreshConnectionResources(connectionNode);
+          }
+      };
+      window.addEventListener(
+          SIDEBAR_DATABASE_LIST_REFRESH_EVENT,
+          handleSidebarDatabaseListRefresh as EventListener,
+      );
+      return () => {
+          window.removeEventListener(
+              SIDEBAR_DATABASE_LIST_REFRESH_EVENT,
+              handleSidebarDatabaseListRefresh as EventListener,
+          );
+      };
+  }, [refreshConnectionResources]);
 
   useEffect(() => {
       const handleNacosServicesChanged = (event: Event) => {

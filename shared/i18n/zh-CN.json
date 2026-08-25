@@ -7808,6 +7808,7 @@
   "sidebar.message.message_publish_target_fallback": "目标",
   "sidebar.message.message_publish_unsupported": "当前对象不支持测试发送消息",
   "sidebar.message.no_visible_databases": "未返回可见数据库或结构。请检查账号权限，或从右键菜单刷新。",
+  "sidebar.message.elasticsearch_no_indices": "当前 Elasticsearch 集群暂无索引；可右键连接创建索引。",
   "sidebar.message.operation_create_failed": "创建失败：{{error}}",
   "sidebar.message.operation_drop_failed": "删除失败：{{error}}",
   "sidebar.message.operation_rename_failed": "重命名失败：{{error}}",

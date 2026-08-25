@@ -7808,6 +7808,7 @@
   "sidebar.message.message_publish_target_fallback": "target",
   "sidebar.message.message_publish_unsupported": "The current object does not support test message sending",
   "sidebar.message.no_visible_databases": "No visible databases or schemas were returned. Check account permissions or refresh from the context menu.",
+  "sidebar.message.elasticsearch_no_indices": "This Elasticsearch cluster has no indices. Right-click the connection to create one.",
   "sidebar.message.operation_create_failed": "Create failed: {{error}}",
   "sidebar.message.operation_drop_failed": "Drop failed: {{error}}",
   "sidebar.message.operation_rename_failed": "Rename failed: {{error}}",

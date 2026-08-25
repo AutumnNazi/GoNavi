@@ -7808,6 +7808,7 @@
   "sidebar.message.message_publish_target_fallback": "対象",
   "sidebar.message.message_publish_unsupported": "現在のオブジェクトはメッセージ送信テストに対応していません",
   "sidebar.message.no_visible_databases": "表示可能なデータベースまたはスキーマが返されませんでした。権限を確認するか、右クリックメニューから更新してください。",
+  "sidebar.message.elasticsearch_no_indices": "この Elasticsearch クラスターにはまだインデックスがありません。接続を右クリックして作成できます。",
   "sidebar.message.operation_create_failed": "作成に失敗しました: {{error}}",
   "sidebar.message.operation_drop_failed": "削除に失敗しました: {{error}}",
   "sidebar.message.operation_rename_failed": "名前の変更に失敗しました: {{error}}",

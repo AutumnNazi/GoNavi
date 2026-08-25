@@ -7808,6 +7808,7 @@
   "sidebar.message.message_publish_target_fallback": "Ziel",
   "sidebar.message.message_publish_unsupported": "Das aktuelle Objekt unterstützt kein testweises Senden von Nachrichten",
   "sidebar.message.no_visible_databases": "Es wurden keine sichtbaren Datenbanken oder Schemas zurückgegeben. Prüfen Sie die Berechtigungen oder aktualisieren Sie über das Kontextmenü.",
+  "sidebar.message.elasticsearch_no_indices": "Dieser Elasticsearch-Cluster enthält noch keine Indizes. Klicken Sie mit der rechten Maustaste auf die Verbindung, um einen Index zu erstellen.",
   "sidebar.message.operation_create_failed": "Erstellen fehlgeschlagen: {{error}}",
   "sidebar.message.operation_drop_failed": "Löschen fehlgeschlagen: {{error}}",
   "sidebar.message.operation_rename_failed": "Umbenennen fehlgeschlagen: {{error}}",

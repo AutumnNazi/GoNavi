@@ -5,6 +5,7 @@ import { message } from 'antd';
 
 import type { SavedConnection } from '../../types';
 import { buildSidebarDatabasePinKey } from '../../store';
+import { t } from '../../i18n';
 import { useSidebarTreeLoaders } from './useSidebarTreeLoaders';
 
 const mocks = vi.hoisted(() => ({
@@ -210,6 +211,59 @@ describe('useSidebarTreeLoaders PostgreSQL partitions', () => {
       'archive',
     ]);
     expect(new Set(databaseNodes.map((node: any) => node.key)).size).toBe(2);
+  });
+
+  it('reports a successful empty Elasticsearch cluster as no indices instead of a permission problem', async () => {
+    const connection = {
+      id: 'conn-elasticsearch-empty',
+      name: 'Elasticsearch',
+      config: {
+        type: 'elasticsearch',
+        host: '127.0.0.1',
+        port: 9200,
+      },
+    } as SavedConnection;
+    mocks.storeState.connections = [connection];
+    mocks.dbGetDatabases.mockResolvedValue({ success: true, data: [] });
+
+    let loaders: ReturnType<typeof useSidebarTreeLoaders> | undefined;
+    const Harness = () => {
+      loaders = useSidebarTreeLoaders({
+        savedQueries: [],
+        tableSortPreference: {},
+        tableAccessCount: {},
+        pinnedSidebarTables: [],
+        pinnedSidebarDatabases: [],
+        isV2Ui: false,
+        loadingNodesRef: { current: new Set<string>() },
+        setConnectionStates: vi.fn(),
+        setLoadedKeys: vi.fn(),
+        replaceTreeNodeChildren: mocks.replaceTreeNodeChildren,
+        buildRuntimeConfig: (conn) => conn.config,
+        buildJVMRuntimeConfig: (conn) => conn.config,
+        buildJVMDiagnosticTreeNodes: () => [],
+        resolveSavedQueryDisplayName: (name) => String(name || ''),
+      });
+      return null;
+    };
+
+    act(() => {
+      renderer = create(<Harness />);
+    });
+    await act(async () => {
+      await loaders?.loadDatabases({ key: connection.id, dataRef: connection });
+    });
+
+    expect(message.info).toHaveBeenCalledWith({
+      content: t('sidebar.message.elasticsearch_no_indices'),
+      key: `conn-${connection.id}-dbs`,
+    });
+    expect(message.warning).not.toHaveBeenCalled();
+    expect(mocks.replaceTreeNodeChildren).toHaveBeenCalledWith(
+      connection.id,
+      undefined,
+      connection,
+    );
   });
 
   it('discards an older database response and keeps the latest visibility rules', async () => {

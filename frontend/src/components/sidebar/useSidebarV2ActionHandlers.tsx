@@ -7,6 +7,8 @@ import { t } from '../../i18n';
 import type { ConnectionTag, SavedConnection } from '../../types';
 import { buildRpcConnectionConfig } from '../../utils/connectionRpcConfig';
 import { resolveConnectionAccentColor, resolveConnectionIconType } from '../../utils/connectionVisual';
+import { getDataSourceCapabilities } from '../../utils/dataSourceCapabilities';
+import { buildElasticsearchConsoleTemplates } from '../../utils/elasticsearchConsole';
 import {
   buildTableSelectQuery,
   isElasticsearchDbType,
@@ -535,10 +537,26 @@ export const useSidebarV2ActionHandlers = ({
     const connId = String(node?.key || node?.dataRef?.id || '');
     if (!connId) return;
     switch (action) {
-      case 'new-db':
+      case 'new-db': {
+        const capabilities = getDataSourceCapabilities(node?.dataRef?.config);
+        if (capabilities.type === 'elasticsearch') {
+          if (!capabilities.supportsCreateIndex) return;
+          const query = buildElasticsearchConsoleTemplates('')
+            .find((template) => template.id === 'create_index')?.source || '';
+          addTab({
+            id: `query-${Date.now()}`,
+            title: buildConnectionRootQueryTabTitle(),
+            type: 'query',
+            connectionId: connId,
+            dbName: undefined,
+            query,
+          });
+          return;
+        }
         setTargetConnection(node);
         setIsCreateDbModalOpen(true);
         return;
+      }
       case 'refresh':
         void refreshConnectionResources(node);
         return;

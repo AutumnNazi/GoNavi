@@ -173,6 +173,8 @@ const backendApp = vi.hoisted(() => ({
   GenerateQueryID: vi.fn(),
   WriteSQLFile: vi.fn(),
   ExportSQLFile: vi.fn(),
+  InspectElasticsearchConsole: vi.fn(),
+  ExecuteElasticsearchConsole: vi.fn(),
 }));
 
 const messageApi = vi.hoisted(() => ({
@@ -984,6 +986,14 @@ describe('QueryEditor external SQL save', () => {
     backendApp.DBTableExists.mockResolvedValue({ success: true, data: { exists: true } });
     backendApp.DBShowCreateTable.mockResolvedValue({ success: false, data: '' });
     backendApp.GenerateQueryID.mockResolvedValue('query-1');
+    backendApp.InspectElasticsearchConsole.mockResolvedValue({
+      success: true,
+      requests: [],
+      containsWrite: false,
+      requiresConfirmation: false,
+      fingerprint: 'inspection-default',
+    });
+    backendApp.ExecuteElasticsearchConsole.mockResolvedValue({ success: true, results: [] });
     storeState.connections = createDefaultConnections();
     storeState.sqlLogs = [];
     storeState.addSqlLog.mockReset();
@@ -1133,6 +1143,77 @@ describe('QueryEditor external SQL save', () => {
     await act(async () => {
       renderer.unmount();
     });
+  });
+
+  it('refreshes Elasticsearch index choices and the sidebar after a successful index write', async () => {
+    storeState.connections[0].config.type = 'elasticsearch';
+    storeState.connections[0].config.port = 9200;
+    backendApp.InspectElasticsearchConsole.mockImplementation(
+      (_config: unknown, _defaultIndex: string, source: string) => Promise.resolve(
+        source === 'GET /'
+          ? {
+              success: true,
+              requests: [{ method: 'GET', path: '/', route: '/', risk: 'read' }],
+              containsWrite: false,
+              requiresConfirmation: false,
+              fingerprint: 'inspect-root',
+              serverMajor: 8,
+            }
+          : {
+              success: true,
+              requests: [{ method: 'PUT', path: '/events-2026', route: '/{target}', target: 'events-2026', risk: 'dangerous' }],
+              containsWrite: true,
+              requiresConfirmation: false,
+              fingerprint: 'create-events-2026',
+              serverMajor: 8,
+            },
+      ),
+    );
+    backendApp.ExecuteElasticsearchConsole.mockResolvedValue({
+      success: true,
+      results: [{
+        index: 0,
+        method: 'PUT',
+        path: '/events-2026',
+        requestLabel: 'PUT /events-2026',
+        httpStatus: 200,
+        rawResponse: '{"acknowledged":true}',
+        outcome: 'success',
+        readOnly: false,
+      }],
+    });
+    backendApp.DBGetDatabases.mockResolvedValue({
+      success: true,
+      data: [{ Database: 'events-2026' }],
+    });
+
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<QueryEditor tab={createTab({
+        dbName: '',
+        query: 'PUT /events-2026\n{}',
+      })} />);
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      await findButton(renderer, '运行当前请求').props.onClick();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(backendApp.DBGetDatabases).toHaveBeenCalledTimes(1);
+    expect(antdSelectState.props.some((props) => (
+      Array.isArray(props.options)
+      && props.options.some((option: any) => option?.value === 'events-2026')
+    ))).toBe(true);
+    expect(window.dispatchEvent).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'gonavi:sidebar-database-list-refresh',
+      detail: expect.objectContaining({
+        connectionId: 'conn-1',
+        reason: 'elasticsearch-write',
+      }),
+    }));
   });
 
   it('loads PostgreSQL schemas and executes SQL with the selected search_path', async () => {
