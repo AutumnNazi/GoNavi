@@ -1029,25 +1029,13 @@ func (e *ElasticsearchDB) ApplyChanges(tableName string, changes connection.Chan
 		return fmt.Errorf("解析写入索引失败：%w", err)
 	}
 
-	// resolveWriteIndex 确定写操作的目标索引。
-	// 如果文档数据中包含 _index（来自查询结果），使用实际索引名而非别名。
-	resolveWriteIndex := func(vals map[string]interface{}) string {
-		if idx, ok := vals["_index"]; ok {
-			if idxStr := strings.TrimSpace(fmt.Sprintf("%v", idx)); idxStr != "" {
-				return idxStr
-			}
-		}
-		return writeIndexName
-	}
-
 	// 删除操作
 	for _, pk := range changes.Deletes {
 		idVal, ok := pk["_id"]
 		if !ok {
 			return fmt.Errorf("删除操作缺少 _id")
 		}
-		writeIdx := resolveWriteIndex(pk)
-		actionJSON, _ := json.Marshal(e.esBulkActionMeta("delete", writeIdx, fmt.Sprintf("%v", idVal)))
+		actionJSON, _ := json.Marshal(e.esBulkActionMeta("delete", writeIndexName, fmt.Sprintf("%v", idVal)))
 		bulkBody.Write(actionJSON)
 		bulkBody.WriteByte('\n')
 	}
@@ -1058,8 +1046,7 @@ func (e *ElasticsearchDB) ApplyChanges(tableName string, changes connection.Chan
 		if !ok {
 			return fmt.Errorf("更新操作缺少 _id")
 		}
-		writeIdx := resolveWriteIndex(update.Values)
-		actionJSON, _ := json.Marshal(e.esBulkActionMeta("update", writeIdx, fmt.Sprintf("%v", idVal)))
+		actionJSON, _ := json.Marshal(e.esBulkActionMeta("update", writeIndexName, fmt.Sprintf("%v", idVal)))
 		bulkBody.Write(actionJSON)
 		bulkBody.WriteByte('\n')
 
@@ -1091,8 +1078,7 @@ func (e *ElasticsearchDB) ApplyChanges(tableName string, changes connection.Chan
 			}
 		}
 
-		writeIdx := resolveWriteIndex(insert)
-		actionJSON, _ := json.Marshal(e.esBulkActionMeta("index", writeIdx, docID))
+		actionJSON, _ := json.Marshal(e.esBulkActionMeta("index", writeIndexName, docID))
 		bulkBody.Write(actionJSON)
 		bulkBody.WriteByte('\n')
 		docJSON, _ := json.Marshal(doc)
