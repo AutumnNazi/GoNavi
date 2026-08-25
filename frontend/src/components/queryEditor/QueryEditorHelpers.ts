@@ -526,8 +526,13 @@ export const isSystemMetadataQueryResult = (tableRef: QueryResultTableRef, dbTyp
     if (normalizedDbType === 'sqlite' || normalizedDbType === 'duckdb') {
         return SQLITE_SYSTEM_METADATA_TABLES.has(metadataTableName) || metadataDbName === 'information_schema';
     }
-    if (normalizedDbType === 'sqlserver') {
-        return metadataDbName === 'information_schema' || metadataDbName === 'sys';
+    if (['sqlserver', 'mssql', 'sql_server', 'sql-server'].includes(normalizedDbType)) {
+        // SQL Server keeps the database in metadataDbName and the schema in
+        // metadataTableName (for example, appdb + sys.objects). Checking the
+        // database here would let system schemas bypass the read-only guard.
+        const parts = splitQualifiedNameSegments(tableRef.metadataTableName);
+        const schema = String(parts.length >= 2 ? parts[0] : '').toLowerCase();
+        return schema === 'information_schema' || schema === 'sys';
     }
     if (normalizedDbType === 'clickhouse') {
         return metadataDbName === 'system' || metadataDbName === 'information_schema';
