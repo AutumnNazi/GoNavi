@@ -330,8 +330,12 @@ const DeliveryStage: React.FC<{
         task.incremental.mode === 'cdc' &&
         allEnabledMappingsHaveKeys));
   const implicitSameNameMappings = hasImplicitSameNameMappings(task);
+  const schemaOnlyMigration =
+    task.kind === 'migration' && task.content === 'schema';
   const canConfigureMigrationStructure =
-    task.kind === 'migration' && capability.canExecute && implicitSameNameMappings;
+    task.kind === 'migration' &&
+    capability.canExecute &&
+    (implicitSameNameMappings || schemaOnlyMigration);
   const canAutoAddColumns =
     canConfigureMigrationStructure && capability.supportsAutoAddColumns === true;
   const canCreateIndexes =
@@ -479,6 +483,30 @@ const DeliveryStage: React.FC<{
         </div>
       </header>
       <div className="gn-data-sync-delivery-main">
+        {task.kind === 'migration' ? (
+          <Field label={t('delivery.content_mode')}>
+            <select
+              className="gn-data-sync-control"
+              value={task.content || 'both'}
+              onChange={(event) =>
+                onPatch({
+                  content: event.target.value as NonNullable<
+                    DataSyncTaskDefinition['content']
+                  >,
+                })
+              }
+            >
+              <option value="schema">{t('delivery.content.schema')}</option>
+              <option value="data">{t('delivery.content.data')}</option>
+              <option value="both">{t('delivery.content.both')}</option>
+            </select>
+          </Field>
+        ) : null}
+        {schemaOnlyMigration ? (
+          <p className="gn-data-sync-inline-note" role="note" data-schema-only-task="true">
+            {t('delivery.schema_only_note')}
+          </p>
+        ) : null}
         {appendOnlyTarget ? (
           <p className="gn-data-sync-inline-note" role="note" data-append-only-target="true">
             {t('delivery.append_only_target_note')}

@@ -504,7 +504,11 @@ export const decodeDataSyncJobDefinition = (
     ERROR_POLICIES,
     'job.options.errorPolicy',
   );
-  const content = optionalString(options.content, 'job.options.content') || 'data';
+  const content = enumValue(
+    optionalString(options.content, 'job.options.content') || 'data',
+    ['schema', 'data', 'both'] as const,
+    'job.options.content',
+  );
   const uiKind = incrementalMode === 'cdc' ? 'cdc' : kind === 'query_sink' ? 'querySink' : kind;
   let incremental: DataSyncTaskDefinition['incremental'];
   if (incrementalMode === 'watermark') {
@@ -556,7 +560,7 @@ export const decodeDataSyncJobDefinition = (
         : undefined,
     compareMode:
       kind === 'compare'
-        ? enumValue(content, ['schema', 'data', 'both'] as const, 'job.options.content')
+        ? content
         : undefined,
     sourceMode: kind === 'query_sink' ? 'query' : 'tables',
     sourceQuery: optionalString(job.sourceQuery, 'job.sourceQuery'),

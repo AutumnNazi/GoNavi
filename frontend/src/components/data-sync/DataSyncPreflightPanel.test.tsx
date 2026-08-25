@@ -10,11 +10,9 @@ vi.mock('../../../wailsjs/runtime/runtime', () => runtimeApi);
 
 import { DataSyncPreflightPanel } from './DataSyncPreflightPanel';
 
-Object.assign(globalThis, {
-  navigator: {
-    clipboard: {
-      writeText: vi.fn(() => Promise.resolve()),
-    },
+vi.stubGlobal('navigator', {
+  clipboard: {
+    writeText: vi.fn(() => Promise.resolve()),
   },
 });
 import {

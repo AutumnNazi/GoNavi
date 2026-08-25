@@ -235,12 +235,44 @@ describe('DataSyncTaskEditor delivery stage', () => {
     });
 
     const { renderer } = await renderDelivery(task);
-
     expect(
       renderer.root.findAllByProps({
         'data-structure-option': 'auto-add-columns',
       }),
     ).toHaveLength(1);
+  });
+
+  it('keeps schema-only migration writable and exposes automatic missing-column DDL', async () => {
+    const base = createDataSyncTaskDraft({
+      id: 'schema-sync',
+      kind: 'migration',
+      content: 'schema',
+    });
+    const task = reviseDataSyncTask(base, {
+      source: endpoint('source'),
+      target: endpoint('target'),
+      mappings: [
+        createDataSyncTableMapping('schema-sync:mapping:1', 'orders', 'orders'),
+      ],
+      delivery: {
+        ...base.delivery,
+        autoAddColumns: true,
+      },
+    });
+    const { renderer } = await renderDelivery(task);
+    const rendered = JSON.stringify(renderer.toJSON());
+
+    expect(rendered).toContain('此任务仅执行结构变更');
+    expect(
+      renderer.root.findAllByProps({
+        'data-structure-option': 'auto-add-columns',
+      }),
+    ).toHaveLength(1);
+    expect(
+      renderer.root
+        .findAllByType('select')
+        .some((select) => select.props.value === 'schema'),
+    ).toBe(true);
   });
 
   it('keeps schema-only migration defaults before table mappings are selected', async () => {

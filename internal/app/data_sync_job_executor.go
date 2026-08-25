@@ -566,6 +566,12 @@ func buildDataSyncJobEngineConfig(definition syncjob.JobDefinition, runID string
 		config.AutoAddColumns = false
 		config.CreateIndexes = false
 		config.TargetTableStrategy = "existing_only"
+		// Schema-only mapped tasks still need the migration planner to see
+		// missing source columns. Data mappings keep the historical fail-closed
+		// behavior for explicit projections.
+		if strings.EqualFold(strings.TrimSpace(definition.Options.Content), "schema") {
+			config.AutoAddColumns = definition.AutoAddColumnsEnabled()
+		}
 	}
 	return config, nil
 }

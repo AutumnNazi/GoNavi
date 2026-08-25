@@ -190,6 +190,14 @@ describe('data sync Wails DTO boundary', () => {
       sourceQuery: 'SELECT id FROM orders',
     });
     const compare = configuredTask('compare');
+    const schemaMigrationBase = configuredTask('migration');
+    const schemaMigration = reviseDataSyncTask(schemaMigrationBase, {
+      content: 'schema',
+      delivery: {
+        ...schemaMigrationBase.delivery,
+        autoAddColumns: true,
+      },
+    });
     const cdcBase = configuredTask('cdc');
     const cdc = reviseDataSyncTask(cdcBase, {
       incremental: {
@@ -211,6 +219,16 @@ describe('data sync Wails DTO boundary', () => {
     expect(encodeDataSyncJobDefinition(compare)).toMatchObject({
       kind: 'compare',
       options: { content: 'data' },
+    });
+    const schemaMigrationWire = encodeDataSyncJobDefinition(schemaMigration);
+    expect(schemaMigrationWire).toMatchObject({
+      kind: 'migration',
+      options: { content: 'schema', autoAddColumns: true },
+    });
+    expect(decodeDataSyncJobDefinition(schemaMigrationWire)).toMatchObject({
+      kind: 'migration',
+      content: 'schema',
+      delivery: { autoAddColumns: true },
     });
     expect(encodeDataSyncJobDefinition(cdc)).toMatchObject({
       kind: 'reconcile',
