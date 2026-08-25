@@ -26,6 +26,7 @@ vi.mock('./data-sync', () => ({
       data-data-sync-shell="true"
       data-kind={String(initialTasks[0]?.kind || '')}
       data-compare-mode={String(initialTasks[0]?.compareMode || '')}
+      data-content={String(initialTasks[0]?.content || '')}
       data-task-id={String(initialTasks[0]?.id || '')}
       data-locale={locale}
       onClick={onClose}
@@ -42,7 +43,7 @@ const tab: TabData = {
 };
 
 describe('DataSyncWorkbench', () => {
-  it('maps the selected workflow into a full-page task shell and closes its tab', () => {
+  it('maps schema compare mode without setting migration content and closes its tab', () => {
     closeTab.mockReset();
 
     const markup = renderToStaticMarkup(<DataSyncWorkbench tab={tab} />);
@@ -50,6 +51,7 @@ describe('DataSyncWorkbench', () => {
     expect(markup).toContain('data-data-sync-shell="true"');
     expect(markup).toContain('data-kind="compare"');
     expect(markup).toContain('data-compare-mode="schema"');
+    expect(markup).toContain('data-content=""');
     expect(markup).toContain(
       'data-task-id="data-sync-local-data-sync-workbench-schema-compare"',
     );
@@ -60,5 +62,20 @@ describe('DataSyncWorkbench', () => {
     });
 
     expect(closeTab).toHaveBeenCalledWith(tab.id);
+  });
+
+  it('maps data compare mode without setting migration content', () => {
+    const dataCompareTab: TabData = {
+      ...tab,
+      id: 'data-sync-workbench-data-compare',
+      title: '数据比对',
+      dataSyncEntryMode: 'dataCompare',
+    };
+
+    const markup = renderToStaticMarkup(<DataSyncWorkbench tab={dataCompareTab} />);
+
+    expect(markup).toContain('data-kind="compare"');
+    expect(markup).toContain('data-compare-mode="data"');
+    expect(markup).toContain('data-content=""');
   });
 });

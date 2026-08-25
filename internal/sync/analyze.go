@@ -7,28 +7,36 @@ import (
 )
 
 type TableDiffSummary struct {
-	Table              string            `json:"table"`
-	PKColumn           string            `json:"pkColumn,omitempty"`
-	CanSync            bool              `json:"canSync"`
-	Inserts            int               `json:"inserts"`
-	Updates            int               `json:"updates"`
-	Deletes            int               `json:"deletes"`
-	Same               int               `json:"same"`
-	SchemaDiffCount    int               `json:"schemaDiffCount,omitempty"`
-	Message            string            `json:"message,omitempty"`
-	HasSchema          bool              `json:"hasSchema,omitempty"`
-	TargetTableExists  bool              `json:"targetTableExists,omitempty"`
-	PlannedAction      string            `json:"plannedAction,omitempty"`
-	Warnings           []string          `json:"warnings,omitempty"`
-	UnsupportedObjects []string          `json:"unsupportedObjects,omitempty"`
-	UnmigratedIndexes  []UnmigratedIndex `json:"unmigratedIndexes,omitempty"`
-	IndexesToCreate    int               `json:"indexesToCreate,omitempty"`
-	IndexesSkipped     int               `json:"indexesSkipped,omitempty"`
+	Table           string   `json:"table"`
+	SourceObject    string   `json:"sourceObject,omitempty"`
+	TargetObject    string   `json:"targetObject,omitempty"`
+	PKColumn        string   `json:"pkColumn,omitempty"`
+	CanSync         bool     `json:"canSync"`
+	Inserts         int      `json:"inserts"`
+	Updates         int      `json:"updates"`
+	Deletes         int      `json:"deletes"`
+	Same            int      `json:"same"`
+	SchemaDiffCount int      `json:"schemaDiffCount,omitempty"`
+	MissingColumns  []string `json:"missingColumns,omitempty"`
+	// ColumnDiffs carries every column-level structural difference, in both
+	// directions and including type/nullability drift. MissingColumns stays for
+	// backward compatibility but only covers source columns absent downstream.
+	ColumnDiffs        []ColumnStructureDiff `json:"columnDiffs,omitempty"`
+	Message            string                `json:"message,omitempty"`
+	HasSchema          bool                  `json:"hasSchema,omitempty"`
+	TargetTableExists  bool                  `json:"targetTableExists,omitempty"`
+	PlannedAction      string                `json:"plannedAction,omitempty"`
+	Warnings           []string              `json:"warnings,omitempty"`
+	UnsupportedObjects []string              `json:"unsupportedObjects,omitempty"`
+	UnmigratedIndexes  []UnmigratedIndex     `json:"unmigratedIndexes,omitempty"`
+	IndexesToCreate    int                   `json:"indexesToCreate,omitempty"`
+	IndexesSkipped     int                   `json:"indexesSkipped,omitempty"`
 }
 
 type SyncAnalyzeResult struct {
 	Success bool               `json:"success"`
 	Message string             `json:"message"`
+	Content string             `json:"content,omitempty"`
 	Tables  []TableDiffSummary `json:"tables"`
 }
 
@@ -59,19 +67,26 @@ func (s *SyncEngine) Analyze(config SyncConfig) SyncAnalyzeResult {
 	contentRaw := strings.ToLower(strings.TrimSpace(config.Content))
 	syncSchema := false
 	syncData := true
+	// Content echoes the mode actually applied, not the raw request: the empty
+	// and unknown cases both degrade to data-only, and reporting the original
+	// string would leave the UI with a mode matching neither data nor schema.
+	normalizedContent := "data"
 	switch contentRaw {
 	case "", "data":
 		syncData = true
 	case "schema":
 		syncSchema = true
 		syncData = false
+		normalizedContent = "schema"
 	case "both":
 		syncSchema = true
 		syncData = true
+		normalizedContent = "both"
 	default:
 		s.appendLog(config.JobID, nil, "warn", fmt.Sprintf("未知同步内容 %q，已自动使用仅同步数据", config.Content))
 		syncData = true
 	}
+	result.Content = normalizedContent
 
 	analysisStartedStage := localizedSyncBackendText("data_sync.progress.stage.analysis_started", nil)
 	analysisCompletedStage := localizedSyncBackendText("data_sync.progress.stage.analysis_completed", nil)
@@ -133,26 +148,57 @@ func (s *SyncEngine) Analyze(config SyncConfig) SyncAnalyzeResult {
 			}
 			summary.TargetTableExists = plan.TargetTableExists
 			summary.PlannedAction = plan.PlannedAction
+			summary.SourceObject = plan.SourceQueryTable
+			summary.TargetObject = plan.TargetQueryTable
 			summary.Warnings = append(summary.Warnings, plan.Warnings...)
 			summary.UnsupportedObjects = append(summary.UnsupportedObjects, plan.UnsupportedObjects...)
 			summary.UnmigratedIndexes = append(summary.UnmigratedIndexes, plan.UnmigratedIndexes...)
 			summary.IndexesToCreate = plan.IndexesToCreate
 			summary.IndexesSkipped = plan.IndexesSkipped
 			summary.SchemaDiffCount = len(plan.PreDataSQL) + len(plan.PostDataSQL)
+			if plan.TargetTableExists {
+				summary.MissingColumns = diffMissingColumnNames(cols, targetCols)
+				summary.ColumnDiffs = diffColumnStructures(
+					cols,
+					targetCols,
+					resolveMigrationDBType(config.SourceConfig),
+					resolveMigrationDBType(config.TargetConfig),
+				)
+				// Report the full structural picture, not just the ALTER
+				// statements the planner happened to generate: a compare task
+				// generates none, so this used to stay 0 and render "identical".
+				if len(summary.ColumnDiffs) > summary.SchemaDiffCount {
+					summary.SchemaDiffCount = len(summary.ColumnDiffs)
+				}
+			}
 
 			if !plan.TargetTableExists && !plan.AutoCreate {
 				summary.Message = firstNonEmpty(plan.PlannedAction, localizedSyncBackendText("data_sync.plan.target_missing_cannot_sync", nil))
 				result.Tables = append(result.Tables, summary)
 				return
 			}
+			if plan.TargetTableExists && syncContentAllowsSchemaChanges(config.Content) {
+				unsupportedDiffs := unsupportedExistingTargetSchemaDiffs(summary.ColumnDiffs)
+				if len(unsupportedDiffs) > 0 {
+					summary.Message = "存在当前不支持自动修复的结构差异（" + summarizeColumnStructureDiffs(unsupportedDiffs) + "）；当前仅支持补齐目标缺失字段"
+					result.Tables = append(result.Tables, summary)
+					return
+				}
+			}
 
 			if !syncData {
 				summary.CanSync = true
-				if summary.SchemaDiffCount > 0 {
+				switch {
+				case len(summary.ColumnDiffs) > 0:
+					// Do not fall back to plan.PlannedAction here: the planner
+					// sets it to "表结构已一致" whenever it has no ALTER to run,
+					// which is true for type/nullability drift and would mask it.
+					summary.Message = summarizeColumnStructureDiffs(summary.ColumnDiffs)
+				case summary.SchemaDiffCount > 0:
 					summary.Message = firstNonEmpty(plan.PlannedAction, localizedSyncBackendText("data_sync.plan.schema_changes_detected", map[string]any{
 						"count": summary.SchemaDiffCount,
 					}))
-				} else {
+				default:
 					summary.Message = firstNonEmpty(plan.PlannedAction, localizedSyncBackendText("data_sync.plan.schema_only_no_data_diff", nil))
 				}
 				result.Tables = append(result.Tables, summary)
@@ -165,6 +211,16 @@ func (s *SyncEngine) Analyze(config SyncConfig) SyncAnalyzeResult {
 				summary.Message = err.Error()
 				result.Tables = append(result.Tables, summary)
 				return
+			}
+			if tableMode == "insert_update" && plan.TargetTableExists {
+				// A newly created target only receives inserts, so it does not need
+				// a comparison key. Existing targets do: an explicit mapping key is
+				// valid when configured; legacy table sync falls back to its PK.
+				if len(pkCols) == 0 {
+					summary.Message = localizedSyncBackendText("data_sync.backend.error.diff_pk_required", nil)
+					result.Tables = append(result.Tables, summary)
+					return
+				}
 			}
 
 			sourceType := resolveMigrationDBType(config.SourceConfig)
@@ -201,11 +257,6 @@ func (s *SyncEngine) Analyze(config SyncConfig) SyncAnalyzeResult {
 				return
 			}
 
-			if len(pkCols) == 0 {
-				summary.Message = localizedSyncBackendText("data_sync.backend.error.diff_pk_required", nil)
-				result.Tables = append(result.Tables, summary)
-				return
-			}
 			sourcePKCol := pkCols[0]
 			comparisonPKCols := append([]string(nil), pkCols...)
 			if hasExplicitSyncMappings(config) {
@@ -239,6 +290,16 @@ func (s *SyncEngine) Analyze(config SyncConfig) SyncAnalyzeResult {
 				summary.Updates = counts.Updates
 				summary.Deletes = counts.Deletes
 				summary.Same = counts.Same
+				// Columns absent on either side are excluded from the row
+				// comparison, so these counts describe only the shared columns.
+				// The structure section reports the column gap itself.
+				if len(summary.MissingColumns) > 0 {
+					summary.Warnings = append(summary.Warnings, fmt.Sprintf(
+						"目标表缺失 %d 个字段：%s；数据对比仅比较两端共有字段，同步执行前需先补齐目标表结构",
+						len(summary.MissingColumns),
+						strings.Join(summary.MissingColumns, ", "),
+					))
+				}
 				if strings.TrimSpace(summary.Message) == "" {
 					summary.Message = firstNonEmpty(plan.PlannedAction, localizedSyncBackendText("data_sync.backend.summary.diff_completed", nil))
 				}
@@ -292,4 +353,30 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+// summarizeColumnStructureDiffs renders a per-kind tally so the compare row
+// states what actually diverged instead of only counting missing columns.
+func summarizeColumnStructureDiffs(diffs []ColumnStructureDiff) string {
+	counts := make(map[string]int, 4)
+	for _, diff := range diffs {
+		counts[diff.Kind]++
+	}
+	parts := make([]string, 0, 4)
+	if n := counts["missing_in_target"]; n > 0 {
+		parts = append(parts, fmt.Sprintf("目标缺失 %d 个字段", n))
+	}
+	if n := counts["extra_in_target"]; n > 0 {
+		parts = append(parts, fmt.Sprintf("目标多出 %d 个字段", n))
+	}
+	if n := counts["type"]; n > 0 {
+		parts = append(parts, fmt.Sprintf("%d 个字段类型不同", n))
+	}
+	if n := counts["nullable"]; n > 0 {
+		parts = append(parts, fmt.Sprintf("%d 个字段可空性不同", n))
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return "表结构存在差异：" + strings.Join(parts, "，")
 }

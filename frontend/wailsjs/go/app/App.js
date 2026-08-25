@@ -342,6 +342,14 @@ export function DataSyncRunCancel(arg1) {
   return window['go']['app']['App']['DataSyncRunCancel'](arg1);
 }
 
+export function DataSyncRunClearTerminal(arg1) {
+  return window['go']['app']['App']['DataSyncRunClearTerminal'](arg1);
+}
+
+export function DataSyncRunDelete(arg1) {
+  return window['go']['app']['App']['DataSyncRunDelete'](arg1);
+}
+
 export function DataSyncRunEventList(arg1, arg2, arg3) {
   return window['go']['app']['App']['DataSyncRunEventList'](arg1, arg2, arg3);
 }
@@ -352,6 +360,10 @@ export function DataSyncRunGet(arg1) {
 
 export function DataSyncRunList(arg1, arg2) {
   return window['go']['app']['App']['DataSyncRunList'](arg1, arg2);
+}
+
+export function DataSyncRunPage(arg1, arg2, arg3, arg4) {
+  return window['go']['app']['App']['DataSyncRunPage'](arg1, arg2, arg3, arg4);
 }
 
 export function DataSyncRunResume(arg1) {
