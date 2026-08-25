@@ -402,6 +402,26 @@ export interface ConnectionTag {
   childOrder?: string[];
 }
 
+export interface ConnectionSidebarLayoutInput {
+  connectionTags: ConnectionTag[];
+  sidebarRootOrder: string[];
+}
+
+export interface ConnectionSidebarLayout extends ConnectionSidebarLayoutInput {
+  initialized: boolean;
+  revision: number;
+}
+
+export interface SaveConnectionSidebarLayoutInput {
+  expectedRevision: number;
+  layout: ConnectionSidebarLayoutInput;
+}
+
+export interface SaveConnectionSidebarLayoutResult {
+  conflict: boolean;
+  layout: ConnectionSidebarLayout;
+}
+
 export interface ColumnDefinition {
   name: string;
   type: string;

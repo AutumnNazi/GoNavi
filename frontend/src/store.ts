@@ -10,6 +10,7 @@ import {
   SavedQuery,
   SavedQueryGroup,
   ConnectionTag,
+  ConnectionSidebarLayoutInput,
   AIChatMessage,
   AIContextItem,
   GlobalProxyConfig,
@@ -1875,6 +1876,9 @@ interface AppState {
   updateConnection: (conn: SavedConnection) => void;
   removeConnection: (id: string) => void;
   replaceConnections: (connections: SavedConnection[]) => void;
+  replaceConnectionSidebarLayout: (
+    layout: ConnectionSidebarLayoutInput,
+  ) => void;
 
   addConnectionTag: (tag: ConnectionTag) => void;
   updateConnectionTag: (tag: ConnectionTag) => void;
@@ -3834,6 +3838,14 @@ export const useStore = create<AppState>()(
               readPersistedShortcutOptions() ?? state.shortcutOptions,
           };
         }),
+      replaceConnectionSidebarLayout: (layout) =>
+        set((state) =>
+          normalizeConnectionTagTreeState(
+            sanitizeConnectionTags(layout?.connectionTags),
+            sanitizeSidebarRootOrder(layout?.sidebarRootOrder),
+            state.connections,
+          ),
+        ),
 
       addConnectionTag: (tag) =>
         set((state) => {

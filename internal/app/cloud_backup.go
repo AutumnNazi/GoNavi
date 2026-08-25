@@ -88,10 +88,11 @@ type cloudBackupFile struct {
 }
 
 type cloudBackupPayload struct {
-	SchemaVersion int                      `json:"schemaVersion"`
-	CreatedAt     string                   `json:"createdAt"`
-	Connections   connectionPackagePayload `json:"connections"`
-	Files         []cloudBackupFile        `json:"files,omitempty"`
+	SchemaVersion           int                                 `json:"schemaVersion"`
+	CreatedAt               string                              `json:"createdAt"`
+	Connections             connectionPackagePayload            `json:"connections"`
+	ConnectionSidebarLayout *connection.ConnectionSidebarLayout `json:"connectionSidebarLayout,omitempty"`
+	Files                   []cloudBackupFile                   `json:"files,omitempty"`
 }
 
 type cloudBackupRestoreTarget struct {
@@ -108,10 +109,11 @@ type cloudBackupFileSnapshot struct {
 }
 
 type cloudBackupConnectionFilesSnapshot struct {
-	connectionsData    []byte
-	connectionsExists  bool
-	dailySecretsData   []byte
-	dailySecretsExists bool
+	connectionsData         []byte
+	connectionsExists       bool
+	dailySecretsData        []byte
+	dailySecretsExists      bool
+	connectionSidebarLayout connectionSidebarLayoutSnapshot
 }
 
 type cloudBackupRestoreConfirmationToken struct {
@@ -586,6 +588,7 @@ func (a *App) buildCloudBackupPayload(config CloudBackupConfig) ([]byte, error) 
 		return nil, errors.New("select at least one cloud backup category")
 	}
 	var connections connectionPackagePayload
+	var connectionSidebarLayout *connection.ConnectionSidebarLayout
 	var files []cloudBackupFile
 	buildSnapshot := func(repo *savedConnectionRepository) error {
 		if _, ok := selected[CloudBackupCategoryConnections]; ok {
@@ -593,6 +596,13 @@ func (a *App) buildCloudBackupPayload(config CloudBackupConfig) ([]byte, error) 
 			connections, err = a.buildConnectionPackagePayloadUnlocked(repo, nil, nil)
 			if err != nil {
 				return err
+			}
+			layout, err := a.connectionSidebarLayoutRepository().loadUnlocked()
+			if err != nil {
+				return err
+			}
+			if layout.Initialized {
+				connectionSidebarLayout = &layout
 			}
 		}
 		var err error
@@ -612,7 +622,13 @@ func (a *App) buildCloudBackupPayload(config CloudBackupConfig) ([]byte, error) 
 	if err != nil {
 		return nil, err
 	}
-	payload := cloudBackupPayload{SchemaVersion: cloudBackupPayloadSchemaVersion, CreatedAt: time.Now().UTC().Format(time.RFC3339), Connections: connections, Files: files}
+	payload := cloudBackupPayload{
+		SchemaVersion:           cloudBackupPayloadSchemaVersion,
+		CreatedAt:               time.Now().UTC().Format(time.RFC3339),
+		Connections:             connections,
+		ConnectionSidebarLayout: connectionSidebarLayout,
+		Files:                   files,
+	}
 	return json.Marshal(payload)
 }
 
@@ -962,6 +978,7 @@ func (a *App) CloudBackupRestore(request CloudBackupRestoreRequest) (CloudBackup
 	}
 
 	repo := a.savedConnectionRepository()
+	layoutRepo := a.connectionSidebarLayoutRepository()
 	restoreMutations := func() error {
 		filesToRestore := append([]cloudBackupFile(nil), settingsFiles...)
 		var connectionSnapshot cloudBackupConnectionFilesSnapshot
@@ -999,6 +1016,18 @@ func (a *App) CloudBackupRestore(request CloudBackupRestoreRequest) (CloudBackup
 					return fmt.Errorf("restore connections failed: %w (rollback failed: %v)", importErr, rollbackErr)
 				}
 				return importErr
+			}
+			if payload.ConnectionSidebarLayout != nil {
+				_, replaceErr := layoutRepo.replaceUnlocked(connection.ConnectionSidebarLayoutInput{
+					ConnectionTags:   payload.ConnectionSidebarLayout.ConnectionTags,
+					SidebarRootOrder: payload.ConnectionSidebarLayout.SidebarRootOrder,
+				})
+				if replaceErr != nil {
+					if rollbackErr := rollbackMutations(); rollbackErr != nil {
+						return fmt.Errorf("restore connection sidebar layout failed: %w (rollback failed: %v)", replaceErr, rollbackErr)
+					}
+					return fmt.Errorf("restore connection sidebar layout: %w", replaceErr)
+				}
 			}
 		}
 		if len(savedQueryFiles) > 0 {
@@ -1052,7 +1081,7 @@ func buildCloudBackupRestorePreview(payload cloudBackupPayload, selectedCategori
 		category := CloudBackupCategory{ID: categoryID}
 		if categoryID == CloudBackupCategoryConnections {
 			category.ItemCount = len(payload.Connections.Connections)
-			if category.ItemCount == 0 {
+			if category.ItemCount == 0 && payload.ConnectionSidebarLayout == nil {
 				continue
 			}
 			preview.ConnectionCount = category.ItemCount
@@ -1223,6 +1252,12 @@ func captureCloudBackupConnectionFilesSnapshotUnlocked(repo *savedConnectionRepo
 	if err != nil {
 		return cloudBackupConnectionFilesSnapshot{}, err
 	}
+	snapshot.connectionSidebarLayout, err = captureConnectionSidebarLayoutSnapshotUnlocked(
+		newConnectionSidebarLayoutRepository(repo.configDir),
+	)
+	if err != nil {
+		return cloudBackupConnectionFilesSnapshot{}, err
+	}
 	return snapshot, nil
 }
 
@@ -1237,6 +1272,7 @@ func (snapshot cloudBackupConnectionFilesSnapshot) restoreUnlocked(repo *savedCo
 	return errors.Join(
 		restoreCloudBackupOptionalFile(repo.connectionsPath(), snapshot.connectionsExists, snapshot.connectionsData, 0o644),
 		restoreCloudBackupOptionalFile(repo.dailySecrets().Path(), snapshot.dailySecretsExists, snapshot.dailySecretsData, 0o600),
+		snapshot.connectionSidebarLayout.restoreUnlocked(newConnectionSidebarLayoutRepository(repo.configDir)),
 	)
 }
 

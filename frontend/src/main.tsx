@@ -47,6 +47,12 @@ if (
     };
 
     const mockConnections: any[] = [];
+    let mockConnectionSidebarLayout: any = {
+        initialized: false,
+        revision: 0,
+        connectionTags: [],
+        sidebarRootOrder: [],
+    };
     const mockSavedQueries: any[] = [];
     const mockSavedQueryGroups: any[] = [];
     const mockQueryTables = [
@@ -480,6 +486,40 @@ if (
                 GetUpdateDownloadTask: async () => ({ success: true, data: { task: null } }),
                 SetLanguage: async () => null,
                 GetSavedConnections: async () => cloneBrowserMockValue(mockConnections),
+                BootstrapConnectionSidebarLayout: async (input: any) => {
+                    if (
+                        !mockConnectionSidebarLayout.initialized
+                        && Array.isArray(input?.connectionTags)
+                        && input.connectionTags.length > 0
+                    ) {
+                        mockConnectionSidebarLayout = {
+                            initialized: true,
+                            revision: 1,
+                            connectionTags: cloneBrowserMockValue(input.connectionTags),
+                            sidebarRootOrder: cloneBrowserMockValue(input.sidebarRootOrder || []),
+                        };
+                    }
+                    return cloneBrowserMockValue(mockConnectionSidebarLayout);
+                },
+                SaveConnectionSidebarLayout: async (input: any) => {
+                    if (Number(input?.expectedRevision) !== Number(mockConnectionSidebarLayout.revision)) {
+                        return {
+                            conflict: true,
+                            layout: cloneBrowserMockValue(mockConnectionSidebarLayout),
+                        };
+                    }
+                    const layout = input?.layout || {};
+                    mockConnectionSidebarLayout = {
+                        initialized: true,
+                        revision: Number(mockConnectionSidebarLayout.revision) + 1,
+                        connectionTags: cloneBrowserMockValue(layout.connectionTags || []),
+                        sidebarRootOrder: cloneBrowserMockValue(layout.sidebarRootOrder || []),
+                    };
+                    return {
+                        conflict: false,
+                        layout: cloneBrowserMockValue(mockConnectionSidebarLayout),
+                    };
+                },
                 GetEditableSavedConnection: async (id: string) => {
                     const existing = mockConnections.find((item) => item.id === id);
                     if (!existing) {

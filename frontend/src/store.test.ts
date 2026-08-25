@@ -1480,6 +1480,47 @@ describe('store appearance persistence', () => {
     ]);
   });
 
+  it('atomically replaces the connection sidebar layout loaded from the backend', async () => {
+    const { useStore } = await importStore();
+    useStore.getState().replaceConnections([
+      {
+        id: 'conn-a',
+        name: 'A',
+        config: { id: 'conn-a', type: 'mysql', host: 'a.local', port: 3306, user: 'root' },
+      },
+      {
+        id: 'conn-b',
+        name: 'B',
+        config: { id: 'conn-b', type: 'redis', host: 'b.local', port: 6379, user: 'default' },
+      },
+    ]);
+
+    useStore.getState().replaceConnectionSidebarLayout({
+      connectionTags: [
+        {
+          id: 'tag-remote',
+          name: '远端分组',
+          connectionIds: ['conn-b'],
+          childOrder: ['connection:conn-b'],
+        },
+      ],
+      sidebarRootOrder: ['connection:conn-a', 'tag:tag-remote'],
+    });
+
+    expect(useStore.getState().connectionTags).toEqual([
+      expect.objectContaining({
+        id: 'tag-remote',
+        name: '远端分组',
+        connectionIds: ['conn-b'],
+        childOrder: ['connection:conn-b'],
+      }),
+    ]);
+    expect(useStore.getState().sidebarRootOrder).toEqual([
+      'connection:conn-a',
+      'tag:tag-remote',
+    ]);
+  });
+
   it('persists the table designer schema per connection and clears it with the connection', async () => {
     const { useStore } = await importStore();
     useStore.getState().replaceConnections([{
