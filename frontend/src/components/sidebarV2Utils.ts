@@ -741,6 +741,26 @@ export const buildSidebarConnectionTagTree = (
   return rootItems;
 };
 
+export const flattenSidebarConnectionTagTree = (
+  connections: SavedConnection[],
+  connectionTags: ConnectionTag[],
+  sidebarRootOrder: string[] = [],
+): SavedConnection[] => {
+  const ordered: SavedConnection[] = [];
+  const append = (items: SidebarConnectionTagTreeItem[]) => {
+    items.forEach((item) => {
+      if (item.kind === 'connection') {
+        ordered.push(item.connection);
+        return;
+      }
+      append(item.children);
+    });
+  };
+
+  append(buildSidebarConnectionTagTree(connections, connectionTags, sidebarRootOrder));
+  return ordered;
+};
+
 export const buildV2RailConnectionGroups = (
   connections: SavedConnection[],
   connectionTags: ConnectionTag[],

@@ -22,7 +22,8 @@ import {
 
 import { t as defaultTranslate } from '../i18n';
 import { useOptionalI18n } from '../i18n/provider';
-import type { SavedConnection } from "../types";
+import type { ConnectionTag, SavedConnection } from "../types";
+import { flattenSidebarConnectionTagTree } from './sidebarV2Utils';
 import {
   getShortcutDisplayLabel,
   type ShortcutPlatform,
@@ -49,6 +50,8 @@ export type QueryEditorToolbarProps = {
   currentConnectionId: string;
   currentDb: string;
   queryCapableConnections: SavedConnection[];
+  connectionTags?: ConnectionTag[];
+  sidebarRootOrder?: string[];
   dbList: string[];
   schemaSelect?: QueryEditorSchemaSelectProps;
   maxRows: number;
@@ -225,6 +228,8 @@ const QueryEditorToolbar: React.FC<QueryEditorToolbarProps> = ({
   currentConnectionId,
   currentDb,
   queryCapableConnections,
+  connectionTags = [],
+  sidebarRootOrder = [],
   dbList,
   schemaSelect,
   maxRows,
@@ -273,8 +278,16 @@ const QueryEditorToolbar: React.FC<QueryEditorToolbarProps> = ({
     setOpenToolbarMenu((current) => open ? key : current === key ? null : current);
   };
   const baseMoreMenuItems = saveMoreMenuItems ?? [];
+  const orderedQueryCapableConnections = React.useMemo(
+    () => flattenSidebarConnectionTagTree(
+      queryCapableConnections,
+      connectionTags,
+      sidebarRootOrder,
+    ),
+    [connectionTags, queryCapableConnections, sidebarRootOrder],
+  );
   const connectionSelectOptions: FullNameSelectOption[] =
-    queryCapableConnections.map((connection) => ({
+    orderedQueryCapableConnections.map((connection) => ({
       label: connection.name,
       value: connection.id,
       title: "",
