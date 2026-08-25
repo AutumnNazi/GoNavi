@@ -427,6 +427,51 @@ func TestDBGetSchemaMetadataReusesOceanBaseOracleBaseConnectionForSelectedSchema
 	}
 }
 
+func TestDBGetViewsFailsWhenAllViewMetadataQueriesFail(t *testing.T) {
+	dbInst := &fakeMetadataRetryDB{
+		queryErr: errors.New("view metadata permission denied"),
+	}
+	fixture := newOceanBaseOracleMetadataFixture(t, dbInst)
+
+	result := fixture.app.DBGetViews(fixture.config, "CRH_AC")
+	if result.Success || !result.Retryable {
+		t.Fatalf("expected retryable view metadata failure, got %#v", result)
+	}
+	if !strings.Contains(result.Message, "view metadata permission denied") {
+		t.Fatalf("expected view metadata error to propagate, got %q", result.Message)
+	}
+	views, ok := result.Data.([]map[string]string)
+	if !ok || len(views) != 0 {
+		t.Fatalf("expected no view data on failure, got %#v", result.Data)
+	}
+}
+
+func TestDBGetViewsSucceedsWhenViewFallbackQuerySucceeds(t *testing.T) {
+	dbInst := &fakeMetadataRetryDB{
+		queryResults: []fakeMetadataQueryResult{
+			{match: "information_schema.tables", err: errors.New("catalog query denied")},
+			{match: "SHOW FULL TABLES", rows: []map[string]interface{}{{
+				"table_name": "active_users",
+				"table_type": "VIEW",
+			}}},
+		},
+	}
+	fixture := newOceanBaseOracleMetadataFixture(t, dbInst)
+	config := fixture.config
+	config.Type = "mysql"
+	config.OceanBaseProtocol = ""
+	config.Database = "app"
+
+	result := fixture.app.DBGetViews(config, "app")
+	if !result.Success || result.Retryable {
+		t.Fatalf("expected successful fallback view metadata result, got %#v", result)
+	}
+	views, ok := result.Data.([]map[string]string)
+	if !ok || len(views) != 1 || views[0]["View"] != "active_users" {
+		t.Fatalf("expected fallback view metadata, got %#v", result.Data)
+	}
+}
+
 func TestDBGetObjectsMarksExtensionMetadataFailuresPartial(t *testing.T) {
 	dbInst := &fakeMetadataRetryDB{
 		tables:   []string{"CRH_AC.ORDERS"},

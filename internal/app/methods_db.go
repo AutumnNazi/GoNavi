@@ -2935,7 +2935,18 @@ func (a *App) DBGetViews(config connection.ConnectionConfig, dbName string) conn
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
 
-	views := mapValuesSorted(listViewNameLookup(dbInst, runConfig, dbName))
+	viewLookup, err := listViewNameLookupWithStatus(dbInst, runConfig, dbName)
+	if err != nil {
+		logger.Warnf("DBGetViews 获取视图元数据失败：%s err=%v", formatConnSummary(runConfig), err)
+		return connection.QueryResult{
+			Success:   false,
+			Message:   err.Error(),
+			Data:      []map[string]string{},
+			Retryable: true,
+		}
+	}
+
+	views := mapValuesSorted(viewLookup)
 	resData := make([]map[string]string, 0, len(views))
 	for _, name := range views {
 		resData = append(resData, map[string]string{"View": name})
