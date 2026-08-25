@@ -568,7 +568,7 @@ func TestGetTablesMarksViewReadFailurePartial(t *testing.T) {
 		},
 		viewsResult: connection.QueryResult{
 			Success:   false,
-			Message:   "authentication failed for user",
+			Message:   "authentication failed password=secret-token",
 			Retryable: true,
 		},
 	}
@@ -585,6 +585,9 @@ func TestGetTablesMarksViewReadFailurePartial(t *testing.T) {
 	}
 	if out.Warnings[0] != "获取视图元数据失败，返回的对象集合不完整" {
 		t.Fatalf("expected safe view metadata warning, got %#v", out.Warnings)
+	}
+	if strings.Contains(out.Message, "secret-token") || strings.Contains(out.Warnings[0], "secret-token") {
+		t.Fatalf("view metadata failure leaked sensitive detail: %#v", out)
 	}
 }
 
