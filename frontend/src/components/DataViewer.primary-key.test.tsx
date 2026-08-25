@@ -388,6 +388,35 @@ describe('DataViewer safe editing locator', () => {
     renderer.unmount();
   });
 
+  it('opens an Elasticsearch index without implicitly sorting on _id', async () => {
+    storeState.connections[0].config.type = 'elasticsearch';
+    storeState.connections[0].config.database = 'my-index';
+    storeState.connections[0].config.port = 9200;
+    backendApp.DBGetColumns.mockResolvedValue({
+      success: true,
+      data: [{ name: '_id', key: 'PRI', type: 'keyword' }],
+    });
+    backendApp.DBGetIndexes.mockResolvedValue({
+      success: true,
+      data: [{ name: 'PRIMARY', columnName: '_id', nonUnique: 0, seqInIndex: 1, indexType: 'PRIMARY' }],
+    });
+
+    const renderer = await renderAndReload(createTab({
+      id: 'tab-elasticsearch-index',
+      dbName: 'my-index',
+      tableName: 'my-index',
+      title: 'my-index',
+    }));
+
+    const indexQueries = backendApp.DBQuery.mock.calls
+      .map((call: any[]) => String(call[2] || ''))
+      .filter((sql: string) => /FROM\s+"my-index"/i.test(sql));
+    expect(indexQueries.length).toBeGreaterThan(0);
+    expect(indexQueries.every((sql: string) => !/ORDER\s+BY\s+"?_id"?/i.test(sql))).toBe(true);
+    expect(indexQueries[indexQueries.length - 1]).toContain('LIMIT 101 OFFSET 0');
+    renderer.unmount();
+  });
+
   it('keeps MongoDB results read-only when _id is missing', async () => {
     storeState.languagePreference = 'en-US';
     storeState.connections[0].config.type = 'mongodb';
