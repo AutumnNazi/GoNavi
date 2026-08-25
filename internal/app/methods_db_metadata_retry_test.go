@@ -930,6 +930,42 @@ func TestDBGetColumnsKeepsDatabaseForMySQLMetadata(t *testing.T) {
 	}
 }
 
+func TestDBTableExistsNormalizesQualifiedMySQLTableMetadata(t *testing.T) {
+	originalNewDatabaseFunc := newDatabaseFunc
+	originalResolveDialConfigWithProxyFunc := resolveDialConfigWithProxyFunc
+	t.Cleanup(func() {
+		newDatabaseFunc = originalNewDatabaseFunc
+		resolveDialConfigWithProxyFunc = originalResolveDialConfigWithProxyFunc
+	})
+
+	dbInst := &fakeMetadataRetryDB{tables: []string{"users"}}
+	newDatabaseFunc = func(dbType string) (db.Database, error) {
+		return dbInst, nil
+	}
+	resolveDialConfigWithProxyFunc = func(raw connection.ConnectionConfig) (connection.ConnectionConfig, error) {
+		return raw, nil
+	}
+
+	app := NewAppWithSecretStore(secretstore.NewUnavailableStore("test"))
+	result := app.DBTableExists(connection.ConnectionConfig{
+		Type: "mysql",
+		Host: "127.0.0.1",
+		Port: 3306,
+		User: "root",
+	}, "demo_db", "demo_db.users")
+
+	if !result.Success {
+		t.Fatalf("expected DBTableExists success, got failure: %s", result.Message)
+	}
+	exists, ok := result.Data.(map[string]bool)
+	if !ok || !exists["exists"] {
+		t.Fatalf("expected qualified MySQL table to exist, got %#v", result.Data)
+	}
+	if dbInst.tableSchema != "demo_db" {
+		t.Fatalf("expected MySQL table lookup database demo_db, got %q", dbInst.tableSchema)
+	}
+}
+
 func TestDBGetColumnsInfersOceanBaseOracleFieldsWhenAgentMetadataIsEmpty(t *testing.T) {
 	installFakeOptionalDriverRuntime(t)
 	originalNewDatabaseFunc := newDatabaseFunc

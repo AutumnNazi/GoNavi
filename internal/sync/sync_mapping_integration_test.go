@@ -17,6 +17,7 @@ type mappingSyncDatabase struct {
 	columnsByTable map[string][]connection.ColumnDefinition
 	queryRows      []map[string]interface{}
 	queries        []string
+	execs          []string
 	appliedTable   string
 	applied        connection.ChangeSet
 	appliedBatches []connection.ChangeSet
@@ -32,7 +33,10 @@ func (d *mappingSyncDatabase) Query(query string) ([]map[string]interface{}, []s
 	}
 	return rows, nil, nil
 }
-func (d *mappingSyncDatabase) Exec(string) (int64, error) { return 0, nil }
+func (d *mappingSyncDatabase) Exec(query string) (int64, error) {
+	d.execs = append(d.execs, query)
+	return 0, nil
+}
 func (d *mappingSyncDatabase) GetColumns(schema, table string) ([]connection.ColumnDefinition, error) {
 	return append([]connection.ColumnDefinition(nil), d.columnsByTable[schema+"."+table]...), nil
 }
@@ -111,6 +115,61 @@ func TestRunSyncExplicitMappingUsesMappedTargetAndProjectedRows(t *testing.T) {
 	}
 }
 
+func TestRunSyncSchemaOnlyExplicitMappingAddsMissingColumnsWithoutRows(t *testing.T) {
+	source := &mappingSyncDatabase{
+		columnsByTable: map[string][]connection.ColumnDefinition{
+			"local.orders": {
+				{Name: "id", Type: "bigint", Key: "PRI"},
+				{Name: "name", Type: "varchar(64)"},
+				{Name: "status", Type: "varchar(16)"},
+			},
+		},
+		queryRows: []map[string]interface{}{{"id": int64(1), "name": "alice", "status": "active"}},
+	}
+	target := &mappingSyncDatabase{
+		columnsByTable: map[string][]connection.ColumnDefinition{
+			"online.orders_archive": {
+				{Name: "id", Type: "bigint", Key: "PRI"},
+				{Name: "name", Type: "varchar(64)"},
+			},
+		},
+	}
+	useSyncDatabaseFactorySequence(t,
+		syncDatabaseFactoryStep{db: source},
+		syncDatabaseFactoryStep{db: target},
+	)
+
+	result := NewSyncEngine(Reporter{}).RunSync(SyncConfig{
+		SourceConfig:        connection.ConnectionConfig{Type: "mysql"},
+		TargetConfig:        connection.ConnectionConfig{Type: "mysql"},
+		SourceDatabase:      "local",
+		TargetDatabase:      "online",
+		TargetTableStrategy: "existing_only",
+		Tables:              []string{"orders"},
+		Content:             "schema",
+		Mode:                "insert_update",
+		AutoAddColumns:      true,
+		Mappings: []SyncObjectMapping{{
+			ID:     "orders-to-archive",
+			Source: SyncObjectRef{Schema: "local", Name: "orders"},
+			Target: SyncObjectRef{Schema: "online", Name: "orders_archive"},
+		}},
+	})
+
+	if !result.Success || result.TablesSynced != 1 {
+		t.Fatalf("RunSync() = %+v, want one schema-synced table", result)
+	}
+	if len(target.execs) != 1 || !strings.Contains(target.execs[0], "ADD COLUMN `status` varchar(16) NULL") {
+		t.Fatalf("target schema execs = %#v, want one status ADD COLUMN", target.execs)
+	}
+	if len(source.queries) != 0 || len(target.queries) != 0 {
+		t.Fatalf("schema-only sync queried rows: source=%#v target=%#v", source.queries, target.queries)
+	}
+	if len(target.appliedBatches) != 0 {
+		t.Fatalf("schema-only sync applied row changes: %#v", target.appliedBatches)
+	}
+}
+
 func TestRunSyncExplicitMappingUsesConfiguredKeyWithoutPhysicalPK(t *testing.T) {
 	source := &mappingSyncDatabase{
 		columnsByTable: map[string][]connection.ColumnDefinition{
@@ -154,11 +213,74 @@ func TestRunSyncExplicitMappingUsesConfiguredKeyWithoutPhysicalPK(t *testing.T) 
 			},
 		}},
 	})
-	if !result.Success || result.RowsUpdated != 1 || result.RowsInserted != 0 {
-		t.Fatalf("RunSync() = %+v, want explicit-key update without physical PK", result)
+	if !result.Success || result.TablesSynced != 1 || result.RowsUpdated != 1 {
+		t.Fatalf("RunSync() = %+v, want configured-key update", result)
 	}
-	if len(target.applied.Updates) != 1 || !reflect.DeepEqual(target.applied.Updates[0].Keys, map[string]interface{}{"user_id": int64(7)}) {
-		t.Fatalf("explicit-key update = %#v", target.applied.Updates)
+	if len(target.applied.Updates) != 1 || len(target.applied.Inserts) != 0 || len(target.applied.Deletes) != 0 {
+		t.Fatalf("configured key must drive the update diff: %#v", target.applied)
+	}
+	if got := target.applied.Updates[0].Keys; !reflect.DeepEqual(got, map[string]interface{}{"user_id": int64(7)}) {
+		t.Fatalf("update keys = %#v, want mapped configured key", got)
+	}
+}
+
+func TestRunSyncExplicitMappingUsesConfiguredKeyOverPhysicalPrimaryKey(t *testing.T) {
+	source := &mappingSyncDatabase{
+		columnsByTable: map[string][]connection.ColumnDefinition{
+			"APP.users": {
+				{Name: "id", Type: "NUMBER", Key: "PK"},
+				{Name: "email", Type: "VARCHAR2(100)"},
+				{Name: "name", Type: "VARCHAR2(100)"},
+			},
+		},
+		queryRows: []map[string]interface{}{{"id": int64(8), "email": "old@example.com", "name": "new"}},
+	}
+	target := &mappingSyncDatabase{
+		columnsByTable: map[string][]connection.ColumnDefinition{
+			"dbo.people": {
+				{Name: "user_id", Type: "BIGINT", Key: "PK"},
+				{Name: "email", Type: "NVARCHAR(100)"},
+				{Name: "display_name", Type: "NVARCHAR(100)"},
+			},
+		},
+		queryRows: []map[string]interface{}{{"user_id": int64(7), "email": "old@example.com", "display_name": "old"}},
+	}
+	useSyncDatabaseFactorySequence(t,
+		syncDatabaseFactoryStep{db: source},
+		syncDatabaseFactoryStep{db: target},
+	)
+
+	result := NewSyncEngine(Reporter{}).RunSync(SyncConfig{
+		SourceConfig:   connection.ConnectionConfig{Type: "oracle"},
+		TargetConfig:   connection.ConnectionConfig{Type: "sqlserver"},
+		SourceDatabase: "APP",
+		TargetDatabase: "warehouse",
+		Tables:         []string{"users"},
+		Content:        "data",
+		Mode:           "insert_update",
+		TableOptions: map[string]TableOptions{
+			"users": {Update: true},
+		},
+		Mappings: []SyncObjectMapping{{
+			ID:         "users-to-people",
+			Source:     SyncObjectRef{Schema: "APP", Name: "users"},
+			Target:     SyncObjectRef{Schema: "dbo", Name: "people"},
+			KeyColumns: []string{"email"},
+			Columns: []SyncColumnMapping{
+				{Source: "id", Target: "user_id"},
+				{Source: "email", Target: "email"},
+				{Source: "name", Target: "display_name"},
+			},
+		}},
+	})
+	if !result.Success || result.RowsUpdated != 1 || result.RowsInserted != 0 || result.RowsDeleted != 0 {
+		t.Fatalf("RunSync() = %+v, want one configured-key update", result)
+	}
+	if len(target.applied.Updates) != 1 || len(target.applied.Inserts) != 0 || len(target.applied.Deletes) != 0 {
+		t.Fatalf("configured key must control diffing: %#v", target.applied)
+	}
+	if got := target.applied.Updates[0].Keys; !reflect.DeepEqual(got, map[string]interface{}{"email": "old@example.com"}) {
+		t.Fatalf("update keys = %#v, want mapped configured key", got)
 	}
 }
 

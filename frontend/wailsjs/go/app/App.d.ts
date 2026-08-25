@@ -179,11 +179,17 @@ export function DataSyncPreview(arg1:sync.SyncConfig,arg2:string,arg3:number):Pr
 
 export function DataSyncRunCancel(arg1:string):Promise<connection.QueryResult>;
 
+export function DataSyncRunClearTerminal(arg1:string):Promise<connection.QueryResult>;
+
+export function DataSyncRunDelete(arg1:string):Promise<connection.QueryResult>;
+
 export function DataSyncRunEventList(arg1:string,arg2:number,arg3:number):Promise<connection.QueryResult>;
 
 export function DataSyncRunGet(arg1:string):Promise<connection.QueryResult>;
 
 export function DataSyncRunList(arg1:string,arg2:number):Promise<connection.QueryResult>;
+
+export function DataSyncRunPage(arg1:string,arg2:number,arg3:string,arg4:number):Promise<connection.QueryResult>;
 
 export function DataSyncRunResume(arg1:string):Promise<connection.QueryResult>;
 

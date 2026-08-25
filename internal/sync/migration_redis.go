@@ -409,7 +409,11 @@ func (s *SyncEngine) runRedisToMongoSync(config SyncConfig, result SyncResult) S
 }
 
 func (s *SyncEngine) analyzeRedisToMongo(config SyncConfig) SyncAnalyzeResult {
-	result := SyncAnalyzeResult{Success: true, Tables: []TableDiffSummary{}}
+	// Keyspace migration compares documents, never table structure. Pin the
+	// echoed content to "data" so the UI renders the row counts below instead of
+	// falling back to the task's compareMode and hiding them under a schema-only
+	// view that this analyzer never populates.
+	result := SyncAnalyzeResult{Success: true, Content: "data", Tables: []TableDiffSummary{}}
 	sourceClient := newRedisSourceClient()
 	sourceConfig := withResolvedRedisDB(config.SourceConfig)
 	if err := sourceClient.Connect(sourceConfig); err != nil {
@@ -1194,7 +1198,9 @@ func (s *SyncEngine) runMongoToRedisSync(config SyncConfig, result SyncResult) S
 }
 
 func (s *SyncEngine) analyzeMongoToRedis(config SyncConfig) SyncAnalyzeResult {
-	result := SyncAnalyzeResult{Success: true, Tables: []TableDiffSummary{}}
+	// See analyzeRedisToMongo: keyspace migration is data-only, so pin the
+	// echoed content rather than letting the UI fall back to compareMode.
+	result := SyncAnalyzeResult{Success: true, Content: "data", Tables: []TableDiffSummary{}}
 	sourceDB, err := newSyncDatabase(config.SourceConfig.Type)
 	if err != nil {
 		return SyncAnalyzeResult{Success: false, Message: "初始化源数据库驱动失败: " + err.Error()}

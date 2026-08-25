@@ -12,6 +12,10 @@ import {
   type DataSyncPreflightSnapshot,
   type DataSyncRouteCapability,
   type DataSyncRunRecord,
+  type DataSyncRunCursor,
+  type DataSyncRunPage,
+  type DataSyncRunPageSize,
+  type DataSyncRunEvent,
   type DataSyncSavedConnectionView,
   type DataSyncScheduleSummary,
   type DataSyncTaskDefinition,
@@ -34,6 +38,8 @@ export interface DataSyncWorkbenchGateway {
   ): Promise<DataSyncFieldMetadata[]>;
   listTasks(): Promise<DataSyncTaskDefinition[]>;
   saveTask(task: DataSyncTaskDefinition): Promise<DataSyncTaskDefinition>;
+  /** Permanently deletes a persisted inactive task; local-only drafts resolve immediately. */
+  deleteTask(taskId: string): Promise<void>;
   resolveCapability(task: DataSyncTaskDefinition): Promise<DataSyncRouteCapability>;
   preflightTask(task: DataSyncTaskDefinition): Promise<DataSyncPreflightSnapshot>;
   beginApproval(
@@ -49,6 +55,11 @@ export interface DataSyncWorkbenchGateway {
     preflight: DataSyncPreflightSnapshot,
   ): Promise<DataSyncRunRecord>;
   listRuns(taskId?: string): Promise<DataSyncRunRecord[]>;
+  listRunsPage(
+    cursor?: DataSyncRunCursor | null,
+    pageSize?: DataSyncRunPageSize,
+  ): Promise<DataSyncRunPage>;
+  listRunEvents(runId: string): Promise<DataSyncRunEvent[]>;
   listErrorRows(runId: string): Promise<DataSyncErrorRow[]>;
   listSchedules(): Promise<DataSyncScheduleSummary[]>;
   listCdcAdapters(): Promise<string[]>;
@@ -61,6 +72,8 @@ export interface DataSyncWorkbenchGateway {
   cancelRun(runId: string): Promise<void>;
   resumeRun(runId: string): Promise<DataSyncRunRecord>;
   retryRun(runId: string): Promise<DataSyncRunRecord>;
+  deleteRun(runId: string): Promise<void>;
+  clearTerminalRuns(): Promise<number>;
   discardErrorRow(errorRowId: string): Promise<void>;
   retryErrorRow(errorRowId: string): Promise<DataSyncErrorRow>;
 }
@@ -73,6 +86,7 @@ export type StaticDataSyncGatewayFixtures = {
   tasks?: DataSyncTaskDefinition[];
   capabilities?: Record<string, DataSyncRouteCapability>;
   runs?: DataSyncRunRecord[];
+  runEventsByRun?: Record<string, DataSyncRunEvent[]>;
   errorRowsByRun?: Record<string, DataSyncErrorRow[]>;
   schedules?: DataSyncScheduleSummary[];
   cdcSources?: DataSyncCdcSourceStatus[];
@@ -182,6 +196,11 @@ const unresolvedCapability: DataSyncRouteCapability = {
   supportsCdc: false,
 };
 
+const isTerminalRun = (status: DataSyncRunRecord['status']): boolean =>
+  ['succeeded', 'partial', 'failed', 'canceled', 'cancelled', 'interrupted'].includes(
+    status,
+  );
+
 /**
  * Static adapter used until persisted task/run APIs are available.
  * It deliberately does not call Wails and stores only non-secret task references.
@@ -193,6 +212,7 @@ export const createStaticDataSyncWorkbenchGateway = (
     (fixtures.tasks || []).map((task) => [task.id, copy(task)] as const),
   );
   const runs = copy(fixtures.runs || []);
+  const runEvents = copy(fixtures.runEventsByRun || {});
   const errors = copy(fixtures.errorRowsByRun || {});
   const schedules = copy(fixtures.schedules || []);
   const cdcSources = copy(fixtures.cdcSources || []);
@@ -238,6 +258,9 @@ export const createStaticDataSyncWorkbenchGateway = (
       taskMap.set(saved.id, saved);
       return copy(saved);
     },
+    async deleteTask(taskId) {
+      taskMap.delete(taskId);
+    },
     async resolveCapability(task) {
       const capability = fixtures.capabilities?.[task.id];
       return copy(capability || unresolvedCapability);
@@ -259,6 +282,7 @@ export const createStaticDataSyncWorkbenchGateway = (
       return {
         taskId: task.id,
         taskRevision: task.revision,
+        taskEditEpoch: task.editEpoch,
         status: resolveDataSyncPreflightStatus(issues),
         issues: copy(issues),
         definitionHash:
@@ -281,11 +305,27 @@ export const createStaticDataSyncWorkbenchGateway = (
         .filter((run) => !taskId || run.taskId === taskId)
         .map(copy);
     },
+    async listRunsPage(cursor, pageSize = 10) {
+      const start = cursor
+        ? Math.max(0, runs.findIndex((run) => run.id === cursor.id) + 1)
+        : 0;
+      const pageRuns = runs.slice(start, start + pageSize).map(copy);
+      const last = pageRuns[pageRuns.length - 1];
+      return {
+        runs: pageRuns,
+        nextCursor:
+          last && start + pageRuns.length < runs.length
+            ? { createdAt: 0, id: last.id }
+            : null,
+        total: runs.length,
+      };
+    },
     async startTask(task, preflight) {
       if (
         (task.lifecycle !== 'ready' && task.lifecycle !== 'enabled') ||
         preflight.taskId !== task.id ||
         preflight.taskRevision !== task.revision ||
+        preflight.taskEditEpoch !== task.editEpoch ||
         preflight.status === 'blocked' ||
         preflight.approvalRequired !== false
       ) {
@@ -296,6 +336,7 @@ export const createStaticDataSyncWorkbenchGateway = (
         id: `${task.id}:run:${startedAt}`,
         taskId: task.id,
         taskName: task.name,
+        compareMode: task.kind === 'compare' ? task.compareMode : undefined,
         status: task.kind === 'cdc' ? 'streaming' : 'queued',
         trigger:
           task.trigger.mode === 'manual'
@@ -319,6 +360,9 @@ export const createStaticDataSyncWorkbenchGateway = (
     },
     async listErrorRows(runId) {
       return (errors[runId] || []).map(copy);
+    },
+    async listRunEvents(runId) {
+      return (runEvents[runId] || []).map(copy);
     },
     async listSchedules() {
       return schedules.map(copy);
@@ -384,6 +428,27 @@ export const createStaticDataSyncWorkbenchGateway = (
       };
       runs.unshift(retried);
       return copy(retried);
+    },
+    async deleteRun(runId) {
+      const index = runs.findIndex((run) => run.id === runId);
+      if (index < 0) throw new Error('data sync run not found');
+      if (!isTerminalRun(runs[index].status)) {
+        throw new Error('data sync run is not terminal');
+      }
+      runs.splice(index, 1);
+      delete runEvents[runId];
+      delete errors[runId];
+    },
+    async clearTerminalRuns() {
+      let deleted = 0;
+      for (let index = runs.length - 1; index >= 0; index -= 1) {
+        if (!isTerminalRun(runs[index].status)) continue;
+        const [run] = runs.splice(index, 1);
+        delete runEvents[run.id];
+        delete errors[run.id];
+        deleted += 1;
+      }
+      return deleted;
     },
     async discardErrorRow(errorRowId) {
       for (const rows of Object.values(errors)) {

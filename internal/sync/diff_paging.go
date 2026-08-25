@@ -92,6 +92,13 @@ func (s *SyncEngine) tryApplyDiffInPages(config SyncConfig, res *SyncResult, tab
 	return handled, applied, nil
 }
 
+// scanTableDiffInPages compares a table page by page.
+//
+// Both the source and the target SELECT are restricted to columns that exist on
+// both sides. A column present on only one side is a *structural* difference and
+// is reported as such (see diffColumnStructures); counting the rows that carry
+// it as data updates would report the same single problem once per row and
+// duplicate what the structure section already states.
 func scanTableDiffInPages(sourceDB db.Database, targetDB db.Database, sourceType, targetType string, plan SchemaMigrationPlan, sourceCols, targetCols []connection.ColumnDefinition, pkCol string, targetColSet map[string]struct{}, includeDeletes bool, consume func(page pagedDiffPage) error) (bool, pagedDiffCounts, error) {
 	return scanTableDiffInPagesContext(context.Background(), sourceDB, targetDB, sourceType, targetType, plan, sourceCols, targetCols, pkCol, targetColSet, includeDeletes, consume)
 }

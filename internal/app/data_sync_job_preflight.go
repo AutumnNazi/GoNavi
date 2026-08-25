@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -43,6 +44,14 @@ func (a *App) preflightDataSyncJob(input syncjob.JobDefinition, now time.Time) D
 	definition.Target.ConnectionName = target.View.Name
 	definition.Target.ConnectionType = target.Config.Type
 	definition.Target.Fingerprint = target.Fingerprint
+	if definition.IncrementalMode == syncjob.IncrementalCDC && definition.CDC != nil {
+		adapter, adapterErr := a.resolveDataSyncCDCAdapter(source.Config)
+		if adapterErr != nil {
+			result.Issues = append(result.Issues, preflightIssue("cdc_adapter_unavailable", DataSyncJobPreflightBlocker, "trigger", adapterErr.Error(), ""))
+		} else {
+			definition.CDC.Adapter = adapter.Name()
+		}
+	}
 	result.Definition = definition
 	result.SourceFingerprint = source.Fingerprint
 	result.TargetFingerprint = target.Fingerprint
@@ -167,17 +176,19 @@ func (a *App) preflightDataSyncJob(input syncjob.JobDefinition, now time.Time) D
 		))
 	}
 	if definition.IncrementalMode == syncjob.IncrementalCDC {
-		cdcCapability, probeErr := a.probeDataSyncCDC(normalizeMetadataRunConfig(source.Config, source.Database), definition.CDC.Adapter)
-		if probeErr != nil {
-			result.Issues = append(result.Issues, preflightIssue("cdc_probe_failed", DataSyncJobPreflightBlocker, "trigger", probeErr.Error(), ""))
-		} else {
-			result.CDCCapability = &cdcCapability
-			if !cdcCapability.Supported || !cdcCapability.Ready {
-				message := strings.TrimSpace(cdcCapability.Reason)
-				if message == "" {
-					message = "the selected CDC adapter is not ready for this source"
+		if definition.CDC != nil && strings.TrimSpace(definition.CDC.Adapter) != "" {
+			cdcCapability, probeErr := a.probeDataSyncCDC(dataSyncCDCProbeConfig(source), "")
+			if probeErr != nil {
+				result.Issues = append(result.Issues, preflightIssue("cdc_probe_failed", DataSyncJobPreflightBlocker, "trigger", probeErr.Error(), ""))
+			} else {
+				result.CDCCapability = &cdcCapability
+				if !cdcCapability.Supported || !cdcCapability.Ready {
+					message := strings.TrimSpace(cdcCapability.Reason)
+					if message == "" {
+						message = "the automatically selected CDC adapter is not ready for this source"
+					}
+					result.Issues = append(result.Issues, preflightIssue("cdc_adapter_not_ready", DataSyncJobPreflightBlocker, "trigger", message, ""))
 				}
-				result.Issues = append(result.Issues, preflightIssue("cdc_adapter_not_ready", DataSyncJobPreflightBlocker, "trigger", message, ""))
 			}
 		}
 		if definition.Options.TargetTableStrategy != "existing_only" {
@@ -260,10 +271,20 @@ func (a *App) preflightDataSyncMappings(definition syncjob.JobDefinition, source
 		}
 		mappingID := dataSyncJobMappingLabel(mapping)
 		if definition.Kind == syncjob.JobKindQuerySink {
-			if !isReadOnlySQLQuery(source.Config.Type, definition.SourceQuery) {
+			readOnly := isReadOnlySQLQuery(source.Config.Type, definition.SourceQuery)
+			if !readOnly {
 				issues = append(issues, preflightIssue("source_query_not_read_only", DataSyncJobPreflightBlocker, "mappings", "sourceQuery must be a single read-only query", mappingID))
 			}
-			issues = append(issues, a.preflightDataSyncQueryTarget(definition, mapping, target)...)
+			targetIssues := a.preflightDataSyncQueryTarget(definition, mapping, target)
+			issues = append(issues, targetIssues...)
+			if readOnly && !hasPreflightBlocker(targetIssues) {
+				queryColumns, queryErr := a.preflightDataSyncQueryColumns(source, definition.SourceQuery)
+				if queryErr != nil {
+					issues = append(issues, preflightIssue("query_schema_probe_failed", DataSyncJobPreflightBlocker, "mappings", queryErr.Error(), mappingID))
+				} else {
+					issues = append(issues, preflightQuerySourceColumnIssues(mapping, queryColumns, mappingID)...)
+				}
+			}
 			continue
 		}
 		sourceTable := qualifyDataSyncJobObject(mapping.SourceSchema, mapping.SourceTable)
@@ -296,7 +317,7 @@ func (a *App) preflightDataSyncMappings(definition syncjob.JobDefinition, source
 		}
 		if !targetExists {
 			targetStrategy := firstNonEmptySyncJob(mapping.TargetTableStrategy, definition.Options.TargetTableStrategy)
-			if dataSyncJobMappingNeedsExplicitProjection(mapping) || targetStrategy == "existing_only" || !resultSupportsAutoCreate(sync.ResolveMigrationCapability(source.Config, target.Config)) {
+			if dataSyncJobMappingNeedsExplicitProjection(definition, mapping) || targetStrategy == "existing_only" || !resultSupportsAutoCreate(sync.ResolveMigrationCapability(source.Config, target.Config)) {
 				issues = append(issues, preflightIssue("target_table_missing", DataSyncJobPreflightBlocker, "mappings", "target table does not exist and this mapping cannot auto-create it", mappingID))
 			} else {
 				issues = append(issues, preflightIssue("target_table_will_be_created", DataSyncJobPreflightInfo, "mappings", "target table will be created by the migration planner", mappingID))
@@ -310,6 +331,24 @@ func (a *App) preflightDataSyncMappings(definition syncjob.JobDefinition, source
 			continue
 		}
 		targetColumns, _ := targetResult.Data.([]connection.ColumnDefinition)
+		issues = append(issues, preflightSourceComparisonKeyIssues(definition, mapping, sourceColumns, targetColumns, targetExists, mappingID)...)
+		issues = append(issues, preflightUnsupportedTargetSchemaIssues(
+			definition,
+			mapping,
+			sourceColumns,
+			targetColumns,
+			source.Config.Type,
+			target.Config.Type,
+			mappingID,
+		)...)
+		issues = append(issues, preflightImplicitTargetColumnIssues(
+			definition,
+			mapping,
+			sourceColumns,
+			targetColumns,
+			sync.ResolveMigrationCapability(source.Config, target.Config),
+			mappingID,
+		)...)
 		targetColumnSet := dataSyncJobColumnSet(targetColumns)
 		for _, column := range mapping.Columns {
 			if column.Source != "" {
@@ -399,34 +438,110 @@ func (a *App) preflightDataSyncQueryTarget(definition syncjob.JobDefinition, map
 			issues = append(issues, preflightIssue("target_column_missing", DataSyncJobPreflightBlocker, "mappings", fmt.Sprintf("target column %s does not exist", column.Target), mappingID))
 		}
 	}
-	if strings.EqualFold(definition.Options.SyncMode, "insert_update") {
-		if len(mapping.KeyColumns) != 1 {
-			issues = append(issues, preflightIssue("query_key_required", DataSyncJobPreflightBlocker, "mappings", "query sink insert_update requires exactly one stable key column", mappingID))
-		} else {
-			engineMapping, err := buildEngineObjectMapping(mapping)
-			if err != nil {
-				issues = append(issues, preflightIssue("mapping_compile_failed", DataSyncJobPreflightBlocker, "mappings", err.Error(), mappingID))
-			} else {
-				projection, err := sync.CompileProjection(engineMapping)
-				if err != nil {
-					issues = append(issues, preflightIssue("mapping_compile_failed", DataSyncJobPreflightBlocker, "mappings", err.Error(), mappingID))
-				} else {
-					mappedKey, ok := projection.TargetColumn(mapping.KeyColumns[0])
-					primaryKeys := make([]string, 0, 2)
-					for _, column := range targetColumns {
-						if strings.EqualFold(column.Key, "PRI") || strings.EqualFold(column.Key, "PK") {
-							primaryKeys = append(primaryKeys, column.Name)
-						}
-					}
-					if !ok || len(primaryKeys) != 1 || !strings.EqualFold(strings.TrimSpace(mappedKey), strings.TrimSpace(primaryKeys[0])) {
-						issues = append(issues, preflightIssue("query_target_pk_mismatch", DataSyncJobPreflightBlocker, "mappings", "query sink stable key must map to the target table's single primary key", mappingID))
-					}
-				}
-			}
+	if dataSyncJobUsesInsertUpdate(definition) {
+		indexResult := a.DBGetIndexes(target.Config, target.Database, targetTable)
+		if !indexResult.Success {
+			return append(issues, preflightIssue("target_indexes_failed", DataSyncJobPreflightBlocker, "mappings", indexResult.Message, mappingID))
+		}
+		targetIndexes, _ := indexResult.Data.([]connection.IndexDefinition)
+		issues = append(issues, preflightQueryComparisonKeyIssuesWithIndexes(mapping, targetColumns, targetIndexes, mappingID)...)
+	}
+	return issues
+}
+
+// preflightDataSyncQueryColumns asks the source for result metadata without
+// fetching any data. Running the same query only after a task starts turned a
+// simple column alias typo into a failed write run.
+func (a *App) preflightDataSyncQueryColumns(source resolvedDataSyncJobEndpoint, sourceQuery string) ([]string, error) {
+	result := a.DBQueryIsolated(source.Config, source.Database, dataSyncJobQueryMetadataProbeSQL(source.Config, sourceQuery))
+	if !result.Success {
+		return nil, fmt.Errorf("read query result metadata: %s", strings.TrimSpace(result.Message))
+	}
+	if len(result.Fields) == 0 {
+		return nil, fmt.Errorf("read query result metadata did not return any fields")
+	}
+	return result.Fields, nil
+}
+
+// dataSyncJobQueryMetadataProbeSQL preserves the source query as a derived
+// table and makes the outer query empty. The database still resolves aliases
+// and types, but no source result rows are fetched during preflight.
+func dataSyncJobQueryMetadataProbeSQL(config connection.ConnectionConfig, sourceQuery string) string {
+	query := strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(sourceQuery), ";"))
+	switch resolveDDLDBType(config) {
+	case "sqlserver":
+		return "SELECT TOP 0 * FROM (" + stripTopLevelSQLOrderBy(query) + ") AS __gonavi_preflight"
+	case "oracle", "dameng":
+		return "SELECT * FROM (" + query + ") __gonavi_preflight WHERE 1 = 0"
+	default:
+		return "SELECT * FROM (" + query + ") AS __gonavi_preflight WHERE 1 = 0"
+	}
+}
+
+func preflightQuerySourceColumnIssues(mapping syncjob.TableMapping, queryColumns []string, mappingID string) []DataSyncJobPreflightIssue {
+	queryColumnSet := make(map[string]struct{}, len(queryColumns))
+	for _, column := range queryColumns {
+		if normalized := strings.ToLower(strings.TrimSpace(column)); normalized != "" {
+			queryColumnSet[normalized] = struct{}{}
 		}
 	}
-	issues = append(issues, preflightIssue("query_schema_runtime_validation", DataSyncJobPreflightWarning, "mappings", "query result field names are validated against the mapping when the read-only query executes", mappingID))
+	issues := make([]DataSyncJobPreflightIssue, 0)
+	for _, mappingColumn := range mapping.Columns {
+		sourceColumn := strings.TrimSpace(mappingColumn.Source)
+		if sourceColumn == "" || len(mappingColumn.DefaultValue) > 0 {
+			continue
+		}
+		if _, exists := queryColumnSet[strings.ToLower(sourceColumn)]; !exists {
+			issues = append(issues, preflightIssue(
+				"query_source_column_missing",
+				DataSyncJobPreflightBlocker,
+				"mappings",
+				fmt.Sprintf("query result column %s does not exist", sourceColumn),
+				mappingID,
+			))
+		}
+	}
 	return issues
+}
+
+func preflightImplicitTargetColumnIssues(definition syncjob.JobDefinition, mapping syncjob.TableMapping, sourceColumns, targetColumns []connection.ColumnDefinition, capability sync.MigrationCapability, mappingID string) []DataSyncJobPreflightIssue {
+	if definition.Kind == syncjob.JobKindCompare || strings.EqualFold(strings.TrimSpace(definition.Options.Content), "schema") {
+		return nil
+	}
+	if dataSyncJobMappingNeedsExplicitProjection(definition, mapping) {
+		return nil
+	}
+	targetColumnSet := dataSyncJobColumnSet(targetColumns)
+	missing := make([]string, 0)
+	for _, sourceColumn := range sourceColumns {
+		name := strings.TrimSpace(sourceColumn.Name)
+		if name == "" {
+			continue
+		}
+		if _, exists := targetColumnSet[strings.ToLower(name)]; !exists {
+			missing = append(missing, name)
+		}
+	}
+	if len(missing) == 0 {
+		return nil
+	}
+	message := fmt.Sprintf("target is missing source columns required for sync: %s", strings.Join(missing, ", "))
+	if definition.AutoAddColumnsEnabled() && capability.SupportsAutoAddColumns {
+		return []DataSyncJobPreflightIssue{preflightIssue(
+			"target_columns_will_be_added",
+			DataSyncJobPreflightInfo,
+			"mappings",
+			message,
+			mappingID,
+		)}
+	}
+	return []DataSyncJobPreflightIssue{preflightIssue(
+		"target_columns_missing_for_sync",
+		DataSyncJobPreflightBlocker,
+		"mappings",
+		message,
+		mappingID,
+	)}
 }
 
 func finishDataSyncJobPreflight(result DataSyncJobPreflightResult) DataSyncJobPreflightResult {
@@ -490,6 +605,317 @@ func dataSyncJobColumnSet(columns []connection.ColumnDefinition) map[string]stru
 		}
 	}
 	return result
+}
+
+// preflightSourceComparisonKeyIssues verifies the physical primary key required
+// to compare against an existing target. An explicit mapping key replaces the
+// engine's default physical key, so a user-supplied business key cannot turn an
+// update into an apparently safe upsert. New targets have no prior rows to
+// match, so an initial auto-create import may proceed without a key.
+func preflightSourceComparisonKeyIssues(definition syncjob.JobDefinition, mapping syncjob.TableMapping, sourceColumns, targetColumns []connection.ColumnDefinition, targetExists bool, mappingID string) []DataSyncJobPreflightIssue {
+	content := strings.ToLower(strings.TrimSpace(definition.Options.Content))
+	if !targetExists ||
+		!dataSyncJobUsesInsertUpdate(definition) ||
+		content == "schema" ||
+		(definition.Kind != syncjob.JobKindMigration && definition.Kind != syncjob.JobKindReconcile) {
+		return nil
+	}
+
+	physicalKeys := dataSyncJobPhysicalPrimaryKeyColumns(sourceColumns)
+	if len(physicalKeys) == 0 {
+		return []DataSyncJobPreflightIssue{preflightIssue(
+			"source_primary_key_required",
+			DataSyncJobPreflightBlocker,
+			"mappings",
+			"insert_update on an existing target requires a source physical primary key",
+			mappingID,
+		)}
+	}
+	if dataSyncJobHasExplicitKeyColumns(mapping) && !dataSyncJobSameColumnSet(mapping.KeyColumns, physicalKeys) {
+		if !dataSyncJobMappingNeedsExplicitProjection(definition, mapping) {
+			return []DataSyncJobPreflightIssue{preflightIssue(
+				"structure_migration_primary_key_required",
+				DataSyncJobPreflightBlocker,
+				"mappings",
+				"schema migration with an existing target uses source physical primary keys; mapped stable keys are unavailable on this route",
+				mappingID,
+			)}
+		}
+		return []DataSyncJobPreflightIssue{preflightIssue(
+			"source_primary_key_must_be_used",
+			DataSyncJobPreflightBlocker,
+			"mappings",
+			"insert_update on an existing target must use the complete source physical primary key instead of a business key",
+			mappingID,
+		)}
+	}
+	if !dataSyncJobMappingNeedsExplicitProjection(definition, mapping) {
+		return nil
+	}
+
+	keyColumns := append([]string(nil), mapping.KeyColumns...)
+	if len(keyColumns) == 0 {
+		keyColumns = physicalKeys
+	}
+	engineMapping, err := buildEngineObjectMapping(mapping)
+	if err != nil {
+		return []DataSyncJobPreflightIssue{preflightIssue("mapping_compile_failed", DataSyncJobPreflightBlocker, "mappings", err.Error(), mappingID)}
+	}
+	projection, err := sync.CompileProjection(engineMapping)
+	if err != nil {
+		return []DataSyncJobPreflightIssue{preflightIssue("mapping_compile_failed", DataSyncJobPreflightBlocker, "mappings", err.Error(), mappingID)}
+	}
+
+	sourceColumnSet := make(map[string]string, len(sourceColumns))
+	for _, column := range sourceColumns {
+		name := strings.TrimSpace(column.Name)
+		if name != "" {
+			sourceColumnSet[strings.ToLower(name)] = name
+		}
+	}
+	targetColumnSet := dataSyncJobColumnSet(targetColumns)
+	issues := make([]DataSyncJobPreflightIssue, 0)
+	for _, configuredKey := range keyColumns {
+		configuredKey = strings.TrimSpace(configuredKey)
+		canonicalKey, exists := sourceColumnSet[strings.ToLower(configuredKey)]
+		if !exists {
+			// The generic source-key validation above owns this diagnostic.
+			continue
+		}
+		targetKey, mapped := projection.TargetColumn(canonicalKey)
+		if !mapped || strings.TrimSpace(targetKey) == "" {
+			issues = append(issues, preflightIssue("mapping_key_unmapped", DataSyncJobPreflightBlocker, "mappings", fmt.Sprintf("stable key %s is not mapped to a target column", canonicalKey), mappingID))
+			continue
+		}
+		if _, exists := targetColumnSet[strings.ToLower(strings.TrimSpace(targetKey))]; !exists {
+			issues = append(issues, preflightIssue("mapping_key_target_missing", DataSyncJobPreflightBlocker, "mappings", fmt.Sprintf("stable key %s maps to missing target column %s", canonicalKey, targetKey), mappingID))
+		}
+	}
+	return issues
+}
+
+func dataSyncJobUsesInsertUpdate(definition syncjob.JobDefinition) bool {
+	mode := strings.ToLower(strings.TrimSpace(definition.Options.SyncMode))
+	return mode == "" || mode == "insert_update"
+}
+
+func dataSyncJobHasExplicitKeyColumns(mapping syncjob.TableMapping) bool {
+	for _, column := range mapping.KeyColumns {
+		if strings.TrimSpace(column) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+func preflightQueryComparisonKeyIssues(mapping syncjob.TableMapping, targetColumns []connection.ColumnDefinition, mappingID string) []DataSyncJobPreflightIssue {
+	return preflightQueryComparisonKeyIssuesWithIndexes(mapping, targetColumns, nil, mappingID)
+}
+
+func preflightQueryComparisonKeyIssuesWithIndexes(mapping syncjob.TableMapping, targetColumns []connection.ColumnDefinition, targetIndexes []connection.IndexDefinition, mappingID string) []DataSyncJobPreflightIssue {
+	if !dataSyncJobHasExplicitKeyColumns(mapping) {
+		return []DataSyncJobPreflightIssue{preflightIssue("query_key_required", DataSyncJobPreflightBlocker, "mappings", "query sink insert_update requires at least one mapped stable key column", mappingID)}
+	}
+
+	engineMapping, err := buildEngineObjectMapping(mapping)
+	if err != nil {
+		return []DataSyncJobPreflightIssue{preflightIssue("mapping_compile_failed", DataSyncJobPreflightBlocker, "mappings", err.Error(), mappingID)}
+	}
+	projection, err := sync.CompileProjection(engineMapping)
+	if err != nil {
+		return []DataSyncJobPreflightIssue{preflightIssue("mapping_compile_failed", DataSyncJobPreflightBlocker, "mappings", err.Error(), mappingID)}
+	}
+
+	targetColumnSet := dataSyncJobColumnSet(targetColumns)
+	issues := make([]DataSyncJobPreflightIssue, 0)
+	targetKeys := make([]string, 0, len(mapping.KeyColumns))
+	for _, sourceKey := range mapping.KeyColumns {
+		sourceKey = strings.TrimSpace(sourceKey)
+		if sourceKey == "" {
+			issues = append(issues, preflightIssue("query_key_unmapped", DataSyncJobPreflightBlocker, "mappings", "query sink stable key cannot be empty", mappingID))
+			continue
+		}
+		targetKey, ok := projection.TargetColumn(sourceKey)
+		if !ok || strings.TrimSpace(targetKey) == "" {
+			issues = append(issues, preflightIssue("query_key_unmapped", DataSyncJobPreflightBlocker, "mappings", fmt.Sprintf("query sink stable key %s is not mapped to a target column", sourceKey), mappingID))
+			continue
+		}
+		if _, exists := targetColumnSet[strings.ToLower(strings.TrimSpace(targetKey))]; !exists {
+			issues = append(issues, preflightIssue("query_key_target_missing", DataSyncJobPreflightBlocker, "mappings", fmt.Sprintf("query sink stable key %s maps to missing target column %s", sourceKey, targetKey), mappingID))
+			continue
+		}
+		targetKeys = append(targetKeys, targetKey)
+	}
+	// A nil slice means the caller did not provide index metadata (the legacy
+	// helper is also used by mapping-only tests). An explicitly empty slice is
+	// different: DBGetIndexes normalizes successful empty results to a non-nil
+	// slice, so that case must still reject an unindexed comparison key.
+	if len(issues) == 0 && targetIndexes != nil && !dataSyncJobHasUniqueIndexForColumns(targetIndexes, targetKeys) {
+		issues = append(issues, preflightIssue(
+			"query_key_target_non_unique",
+			DataSyncJobPreflightBlocker,
+			"mappings",
+			fmt.Sprintf("query sink stable key must map to a primary or unique target index: %s", strings.Join(targetKeys, ", ")),
+			mappingID,
+		))
+	}
+	return issues
+}
+
+func dataSyncJobHasUniqueIndexForColumns(indexes []connection.IndexDefinition, columns []string) bool {
+	if len(columns) == 0 {
+		return false
+	}
+	groups := make(map[string][]connection.IndexDefinition)
+	for _, index := range indexes {
+		if index.NonUnique != 0 || strings.TrimSpace(index.Name) == "" || strings.TrimSpace(index.ColumnName) == "" {
+			continue
+		}
+		groups[strings.ToLower(strings.TrimSpace(index.Name))] = append(groups[strings.ToLower(strings.TrimSpace(index.Name))], index)
+	}
+	for _, group := range groups {
+		sort.Slice(group, func(left, right int) bool { return group[left].SeqInIndex < group[right].SeqInIndex })
+		indexColumns := make([]string, 0, len(group))
+		for _, index := range group {
+			indexColumns = append(indexColumns, index.ColumnName)
+		}
+		if dataSyncJobSameColumnSet(indexColumns, columns) {
+			return true
+		}
+	}
+	return false
+}
+
+func preflightUnsupportedTargetSchemaIssues(definition syncjob.JobDefinition, mapping syncjob.TableMapping, sourceColumns, targetColumns []connection.ColumnDefinition, sourceType, targetType, mappingID string) []DataSyncJobPreflightIssue {
+	if definition.Kind != syncjob.JobKindMigration || !dataSyncJobMigrationAllowsSchemaChanges(definition) {
+		return nil
+	}
+	unsupported := sync.UnsupportedExistingTargetSchemaDiffs(sourceColumns, targetColumns, sourceType, targetType)
+	if len(unsupported) == 0 {
+		return nil
+	}
+	return []DataSyncJobPreflightIssue{preflightIssue(
+		"schema_unsupported_difference",
+		DataSyncJobPreflightBlocker,
+		"mappings",
+		fmt.Sprintf("target table has schema differences that cannot be repaired automatically (%s); only missing target columns can be added", sync.DescribeColumnStructureDiffs(unsupported)),
+		mappingID,
+	)}
+}
+
+func stripTopLevelSQLOrderBy(query string) string {
+	depth := 0
+	for index := 0; index < len(query); {
+		switch query[index] {
+		case '\'', '"', '`':
+			index = skipSQLQuotedLiteral(query, index, query[index])
+			continue
+		case '[':
+			index = skipSQLBracketIdentifier(query, index)
+			continue
+		case '-', '/':
+			if next := skipSQLWhitespaceAndComments(query, index); next != index {
+				index = next
+				continue
+			}
+		case '(':
+			depth++
+		case ')':
+			if depth > 0 {
+				depth--
+			}
+		}
+		if depth == 0 && isSQLIdentifierStart(query[index]) {
+			start := index
+			for index < len(query) && isSQLIdentifierPart(query[index]) {
+				index++
+			}
+			if strings.EqualFold(query[start:index], "order") {
+				next := skipSQLWhitespaceAndComments(query, index)
+				byStart := next
+				for next < len(query) && isSQLIdentifierPart(query[next]) {
+					next++
+				}
+				if strings.EqualFold(query[byStart:next], "by") {
+					if hasTopLevelSQLKeyword(query, next, "offset") {
+						return strings.TrimSpace(query)
+					}
+					return strings.TrimSpace(query[:start])
+				}
+			}
+			continue
+		}
+		index++
+	}
+	return strings.TrimSpace(query)
+}
+
+func hasTopLevelSQLKeyword(query string, start int, wanted string) bool {
+	depth := 0
+	for index := start; index < len(query); {
+		switch query[index] {
+		case '\'', '"', '`':
+			index = skipSQLQuotedLiteral(query, index, query[index])
+			continue
+		case '[':
+			index = skipSQLBracketIdentifier(query, index)
+			continue
+		case '(':
+			depth++
+		case ')':
+			if depth > 0 {
+				depth--
+			}
+		}
+		if depth == 0 && isSQLIdentifierStart(query[index]) {
+			wordStart := index
+			for index < len(query) && isSQLIdentifierPart(query[index]) {
+				index++
+			}
+			if strings.EqualFold(query[wordStart:index], wanted) {
+				return true
+			}
+			continue
+		}
+		index++
+	}
+	return false
+}
+
+func dataSyncJobPhysicalPrimaryKeyColumns(columns []connection.ColumnDefinition) []string {
+	keys := make([]string, 0, 2)
+	for _, column := range columns {
+		key := strings.TrimSpace(column.Key)
+		if strings.EqualFold(key, "PRI") || strings.EqualFold(key, "PK") {
+			keys = append(keys, strings.TrimSpace(column.Name))
+		}
+	}
+	return keys
+}
+
+func dataSyncJobSameColumnSet(left, right []string) bool {
+	if len(left) == 0 || len(left) != len(right) {
+		return false
+	}
+	seen := make(map[string]struct{}, len(left))
+	for _, name := range left {
+		key := strings.ToLower(strings.TrimSpace(name))
+		if key == "" {
+			return false
+		}
+		if _, exists := seen[key]; exists {
+			return false
+		}
+		seen[key] = struct{}{}
+	}
+	for _, name := range right {
+		key := strings.ToLower(strings.TrimSpace(name))
+		if _, exists := seen[key]; !exists {
+			return false
+		}
+		delete(seen, key)
+	}
+	return len(seen) == 0
 }
 
 func resultSupportsAutoCreate(capability sync.MigrationCapability) bool {
