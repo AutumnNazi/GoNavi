@@ -36,6 +36,8 @@ var _ QueryMessageExecer = (*KingbaseDB)(nil)
 var _ StatementQueryMessageExecer = (*kingbaseSessionExecer)(nil)
 var _ DatabaseForeignKeyProvider = (*KingbaseDB)(nil)
 
+var openKingbaseDB = sql.Open
+
 // resolveKingbaseConnectDatabases returns databases that can be used to establish
 // a connection. Kingbase follows PostgreSQL's default of using the login user as
 // the database when no database is supplied, which is surprising for the UI's
@@ -77,6 +79,13 @@ func firstConnectionParamValue(params url.Values, keys ...string) string {
 		}
 	}
 	return ""
+}
+
+func kingbaseConfigHasExplicitSearchPath(config connection.ConnectionConfig) bool {
+	params := url.Values{}
+	mergeConnectionParamValuesWithAllowlist(params, connectionParamsFromURI(config.URI, "kingbase", "postgres", "postgresql"), kingbaseConnectionParamNames)
+	mergeConnectionParamValuesWithAllowlist(params, connectionParamsFromText(config.ConnectionParams), kingbaseConnectionParamNames)
+	return strings.TrimSpace(params.Get("search_path")) != ""
 }
 
 func quoteConnValue(v string) string {
@@ -221,7 +230,7 @@ func (k *KingbaseDB) Connect(config connection.ConnectionConfig) (err error) {
 			attempt := sslConfig
 			attempt.Database = dbName
 			dsn := k.getDSN(attempt)
-			db, err := sql.Open("kingbase", dsn)
+			db, err := openKingbaseDB("kingbase", dsn)
 			if err != nil {
 				failures = append(failures, fmt.Sprintf("%s 数据库=%s 打开连接失败: %v", sslLabel, dbName, err))
 				continue
@@ -242,47 +251,51 @@ func (k *KingbaseDB) Connect(config connection.ConnectionConfig) (err error) {
 				logger.Infof("人大金仓自动选择连接数据库：%s", dbName)
 			}
 
-			// 获取 schema 列表以重构带有 search_path 的连接池
-			searchPathStr := k.getSearchPathStr()
-			if searchPathStr != "" {
-				// 将 search_path 参数拼入 DSN
-				finalDSN := dsn + " search_path=" + quoteConnValue(searchPathStr)
-				if finalDB, err := sql.Open("kingbase", finalDSN); err == nil {
-					configureSQLConnectionPool(finalDB, "kingbase")
-					finalDB.SetConnMaxLifetime(5 * time.Minute)
-					k.pingTimeout = getConnectTimeout(attempt)
-
-					// 临时将 k.conn 指向 finalDB 来做 ping 测试
-					oldConn := k.conn
-					k.conn = finalDB
-					if err := k.Ping(); err == nil {
-						// 成功使用带 search_path 的连接池
-						_ = oldConn.Close()
-						logger.Infof("人大金仓已配置连接级 search_path：%s", searchPathStr)
-					} else {
-						_ = finalDB.Close()
-						k.conn = oldConn
-					}
+			if err := k.ensureSearchPath(dsn, kingbaseConfigHasExplicitSearchPath(attempt)); err != nil {
+				failures = append(failures, fmt.Sprintf("%s 数据库=%s 配置 search_path 失败: %v", sslLabel, dbName, err))
+				if k.conn != nil {
+					_ = k.conn.Close()
+					k.conn = nil
 				}
-			}
-			if searchPathStr != "" {
-				timeout := k.pingTimeout
-				if timeout <= 0 {
-					timeout = 5 * time.Second
-				}
-				ctx, cancel := utils.ContextWithTimeout(timeout)
-				defer cancel()
-				if _, err := k.conn.ExecContext(ctx, fmt.Sprintf("SET search_path TO %s", searchPathStr)); err != nil {
-					logger.Warnf("人大金仓显式设置 search_path 失败：%v", err)
-				} else {
-					logger.Infof("人大金仓已设置默认 search_path：%s", searchPathStr)
-				}
+				continue
 			}
 
 			return nil
 		}
 	}
 	return fmt.Errorf("连接建立后验证失败：%s", strings.Join(failures, "；"))
+}
+
+func (k *KingbaseDB) ensureSearchPath(baseDSN string, hasExplicitSearchPath bool) error {
+	if k.conn == nil {
+		return fmt.Errorf("连接未打开")
+	}
+	if hasExplicitSearchPath {
+		return nil
+	}
+
+	searchPath := k.getSearchPathStr()
+	if strings.TrimSpace(searchPath) == "" {
+		return nil
+	}
+
+	newDB, err := openKingbaseDB("kingbase", baseDSN+" search_path="+quoteConnValue(searchPath))
+	if err != nil {
+		return fmt.Errorf("打开带 search_path 的连接失败: %w", err)
+	}
+	configureSQLConnectionPool(newDB, "kingbase")
+	newDB.SetConnMaxLifetime(5 * time.Minute)
+	oldConn := k.conn
+	k.conn = newDB
+	if err := k.Ping(); err != nil {
+		_ = newDB.Close()
+		k.conn = oldConn
+		return fmt.Errorf("验证带 search_path 的连接失败: %w", err)
+	}
+
+	_ = oldConn.Close()
+	logger.Infof("人大金仓已配置连接级 search_path：%s", searchPath)
+	return nil
 }
 
 // getSearchPathStr 查询当前数据库中所有用户 schema，配置 DSN 的 search_path。
