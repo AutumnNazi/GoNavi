@@ -199,6 +199,7 @@ import {
     getCompletionTableSchemaCounts,
     getFirstRowValue,
     getNormalizedPositionAtOffset,
+    getQueryEditorModelValueLength,
     hasQueryEditorCtrlMetaModifier,
     getInitialEditorQuery,
     getMySQLShowTablesName,
@@ -1667,6 +1668,9 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
   const [sqlReferencedMetadataKey, setSqlReferencedMetadataKey] = useState('');
   const sqlReferencedMetadataTimerRef = useRef<number | null>(null);
   const lastSqlReferencedMetadataKeyRef = useRef('');
+  const objectDecorationIdleCallbackRef = useRef<number | null>(null);
+  const objectDecorationFallbackTimerRef = useRef<number | null>(null);
+  const objectDecorationRefreshSeqRef = useRef(0);
 
   const connections = useStore(state => state.connections);
   const currentConnection = connections.find(
@@ -3008,6 +3012,84 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
 
       objectDecorationIdsRef.current = editor.deltaDecorations(objectDecorationIdsRef.current, decorations);
   }, [isObjectEditQueryTab]);
+
+  const cancelPendingObjectDecorationRefresh = useCallback(() => {
+      objectDecorationRefreshSeqRef.current += 1;
+      if (typeof window === 'undefined') {
+          objectDecorationIdleCallbackRef.current = null;
+          objectDecorationFallbackTimerRef.current = null;
+          return;
+      }
+      if (objectDecorationIdleCallbackRef.current !== null) {
+          window.cancelIdleCallback?.(objectDecorationIdleCallbackRef.current);
+          objectDecorationIdleCallbackRef.current = null;
+      }
+      if (objectDecorationFallbackTimerRef.current !== null) {
+          window.clearTimeout(objectDecorationFallbackTimerRef.current);
+          objectDecorationFallbackTimerRef.current = null;
+      }
+  }, []);
+
+  const cancelPendingSqlReferencedMetadataRefresh = useCallback(() => {
+      if (sqlReferencedMetadataTimerRef.current === null || typeof window === 'undefined') {
+          return;
+      }
+      window.clearTimeout(sqlReferencedMetadataTimerRef.current);
+      sqlReferencedMetadataTimerRef.current = null;
+  }, []);
+
+  const scheduleObjectDecorationRefresh = useCallback((editor: any) => {
+      cancelPendingObjectDecorationRefresh();
+      if (isObjectEditQueryTab || typeof window === 'undefined') {
+          return;
+      }
+      const scheduledModel = editor?.getModel?.();
+      if (!scheduledModel) {
+          return;
+      }
+      const refreshSeq = objectDecorationRefreshSeqRef.current;
+      const runRefresh = () => {
+          objectDecorationIdleCallbackRef.current = null;
+          objectDecorationFallbackTimerRef.current = null;
+          if (
+              refreshSeq !== objectDecorationRefreshSeqRef.current
+              || !queryEditorMountedRef.current
+              || !queryEditorActiveRef.current
+              || editorRef.current !== editor
+              || editor.getModel?.() !== scheduledModel
+          ) {
+              return;
+          }
+          const modelLength = getQueryEditorModelValueLength(scheduledModel)
+              ?? lastLocalQueryRef.current.length;
+          if (modelLength > QUERY_EDITOR_LIVE_DECORATION_MAX_TEXT_LENGTH) {
+              if (objectDecorationIdsRef.current.length > 0) {
+                  clearQueryEditorObjectDecorations(editor, objectDecorationIdsRef);
+              }
+              return;
+          }
+          refreshObjectDecorations(QUERY_EDITOR_LIVE_DECORATION_MAX_TEXT_LENGTH);
+      };
+
+      if (typeof window.requestIdleCallback === 'function') {
+          objectDecorationIdleCallbackRef.current = window.requestIdleCallback(runRefresh, { timeout: 1_200 });
+          return;
+      }
+      objectDecorationFallbackTimerRef.current = window.setTimeout(runRefresh, 0);
+  }, [cancelPendingObjectDecorationRefresh, isObjectEditQueryTab, refreshObjectDecorations]);
+
+  useEffect(() => {
+      if (isActive) {
+          return;
+      }
+      cancelPendingSqlReferencedMetadataRefresh();
+      cancelPendingObjectDecorationRefresh();
+  }, [cancelPendingObjectDecorationRefresh, cancelPendingSqlReferencedMetadataRefresh, isActive]);
+
+  useEffect(() => () => {
+      cancelPendingSqlReferencedMetadataRefresh();
+      cancelPendingObjectDecorationRefresh();
+  }, [cancelPendingObjectDecorationRefresh, cancelPendingSqlReferencedMetadataRefresh]);
 
   const validateTableNavigationTarget = useCallback(async (
       connectionId: string,
@@ -5767,6 +5849,8 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       };
 
       editor.onDidChangeModelContent?.((event: any) => {
+          cancelPendingObjectDecorationRefresh();
+          cancelPendingSqlReferencedMetadataRefresh();
           if (recoverTriggerSqlAiCompletionFallback(event)) {
               return;
           }
@@ -5780,9 +5864,6 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
               refreshObjectDecorations(QUERY_EDITOR_LIVE_DECORATION_MAX_TEXT_LENGTH);
           }
           // SQL 文本变更后，按引用库集合防抖触发跨库元数据拉取（db.table / schema.table / db.schema.table）
-          if (sqlReferencedMetadataTimerRef.current !== null) {
-              window.clearTimeout(sqlReferencedMetadataTimerRef.current);
-          }
           sqlReferencedMetadataTimerRef.current = window.setTimeout(() => {
               sqlReferencedMetadataTimerRef.current = null;
               if (editorRef.current !== editor) {
@@ -5799,6 +5880,9 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                   ...referencedDbs.map((dbName) => String(dbName || '').toLowerCase()).sort(),
               ].join('\u0000');
               if (nextKey === lastSqlReferencedMetadataKeyRef.current) {
+                  if (!hasSlashCommandMarker) {
+                      scheduleObjectDecorationRefresh(editor);
+                  }
                   return;
               }
               lastSqlReferencedMetadataKeyRef.current = nextKey;
@@ -6033,6 +6117,8 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       });
 
       editor.onDidDispose?.(() => {
+          cancelPendingSqlReferencedMetadataRefresh();
+          cancelPendingObjectDecorationRefresh();
           clearQueryEditorLinkDecorations(editor, linkDecorationIdsRef);
           clearQueryEditorObjectDecorations(editor, objectDecorationIdsRef);
           clearSqlFieldDropPreview(editor);

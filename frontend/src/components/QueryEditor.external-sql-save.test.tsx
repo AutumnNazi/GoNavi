@@ -9708,32 +9708,220 @@ END;`;
     expect(editorState.editor.getModel().getValue).not.toHaveBeenCalled();
   });
 
-  it('does not rescan object decorations after repeated edits in the same database context', async () => {
+  it('debounces object decoration rescans and colors newly typed tables in the same database context', async () => {
     vi.useFakeTimers();
+    Object.assign(window, {
+      setTimeout: globalThis.setTimeout.bind(globalThis),
+      clearTimeout: globalThis.clearTimeout.bind(globalThis),
+    });
     try {
+      editorState.value = 'select * from users;';
+      autoFetchState.visible = true;
+      backendApp.DBGetDatabases.mockResolvedValueOnce({ success: true, data: [{ Database: 'main' }] });
+      backendApp.DBGetTables.mockResolvedValueOnce({
+        success: true,
+        data: [{ Tables_in_main: 'users' }, { Tables_in_main: 'orders' }],
+      });
+      backendApp.DBGetAllColumns.mockResolvedValueOnce({ success: true, data: [] });
+
       await act(async () => {
-        create(<QueryEditor tab={createTab({ query: 'select 1;' })} />);
+        create(<QueryEditor tab={createTab({ query: editorState.value, dbName: 'main' })} />);
+      });
+      await act(async () => {
+        for (let i = 0; i < 10; i += 1) {
+          await Promise.resolve();
+        }
       });
 
-      const emitChange = async (value: string) => {
+      const readObjectTokenTexts = () => editorState.editor.deltaDecorations.mock.calls
+        .flatMap((call: any[]) => call[1] || [])
+        .filter((item: any) => item?.options?.inlineClassName === 'gonavi-query-editor-object-token')
+        .map((item: any) => editorState.editor.getModel().getValueInRange(item.range));
+
+      expect(readObjectTokenTexts()).toContain('users');
+
+      editorState.editor.deltaDecorations.mockClear();
+      const emitChange = (value: string, insertedText: string) => {
         editorState.value = value;
         editorState.latestOnChange?.(value);
         editorState.modelContentListeners.forEach((listener) => listener({
-          changes: [{ text: value }],
+          changes: [{ text: insertedText }],
         }));
-        await act(async () => {
-          vi.advanceTimersByTime(450);
-          await Promise.resolve();
-        });
       };
 
-      await emitChange('select users.id from users;');
-      editorState.editor.deltaDecorations.mockClear();
-      await emitChange('select users.id, users.name from users;');
+      await act(async () => {
+        emitChange('select * from users;\nselect * from orde', '\nselect * from orde');
+        vi.advanceTimersByTime(225);
+        await Promise.resolve();
+      });
+      await act(async () => {
+        emitChange('select * from users;\nselect * from orders;', 'rs;');
+      });
 
+      await act(async () => {
+        vi.advanceTimersByTime(449);
+        await Promise.resolve();
+      });
+      expect(readObjectTokenTexts()).not.toContain('orders');
+
+      await act(async () => {
+        vi.advanceTimersByTime(1);
+        vi.runOnlyPendingTimers();
+        await Promise.resolve();
+      });
+
+      expect(readObjectTokenTexts()).toContain('orders');
+      expect(editorState.editor.deltaDecorations.mock.calls.filter(
+        (call: any[]) => (call[1] || []).some(
+          (item: any) => item?.options?.inlineClassName === 'gonavi-query-editor-object-token',
+        ),
+      )).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+      Object.assign(window, {
+        setTimeout: globalThis.setTimeout.bind(globalThis),
+        clearTimeout: globalThis.clearTimeout.bind(globalThis),
+      });
+    }
+  });
+
+  it('cancels a pending idle object decoration refresh when the editor becomes inactive', async () => {
+    vi.useFakeTimers();
+    Object.assign(window, {
+      setTimeout: globalThis.setTimeout.bind(globalThis),
+      clearTimeout: globalThis.clearTimeout.bind(globalThis),
+    });
+    let objectDecorationIdleCallback: IdleRequestCallback | undefined;
+    const cancelIdleCallback = vi.fn();
+    const requestIdleCallback = vi.fn((
+      callback: IdleRequestCallback,
+      options?: IdleRequestOptions,
+    ) => {
+      if (options?.timeout === 1_200) {
+        objectDecorationIdleCallback = callback;
+        return 41;
+      }
+      return 42;
+    });
+    Object.assign(window, { requestIdleCallback, cancelIdleCallback });
+
+    try {
+      editorState.value = 'select * from users;';
+      autoFetchState.visible = true;
+      backendApp.DBGetDatabases.mockResolvedValueOnce({ success: true, data: [{ Database: 'main' }] });
+      backendApp.DBGetTables.mockResolvedValueOnce({
+        success: true,
+        data: [{ Tables_in_main: 'users' }, { Tables_in_main: 'orders' }],
+      });
+      backendApp.DBGetAllColumns.mockResolvedValueOnce({ success: true, data: [] });
+
+      const tab = createTab({ query: editorState.value, dbName: 'main' });
+      let renderer!: ReactTestRenderer;
+      await act(async () => {
+        renderer = create(<QueryEditor tab={tab} />);
+      });
+      await act(async () => {
+        for (let i = 0; i < 10; i += 1) {
+          await Promise.resolve();
+        }
+      });
+
+      const initialObjectTokenTexts = editorState.editor.deltaDecorations.mock.calls
+        .flatMap((call: any[]) => call[1] || [])
+        .filter((item: any) => item?.options?.inlineClassName === 'gonavi-query-editor-object-token')
+        .map((item: any) => editorState.editor.getModel().getValueInRange(item.range));
+      expect(initialObjectTokenTexts).toContain('users');
+      requestIdleCallback.mockClear();
+      cancelIdleCallback.mockClear();
+      objectDecorationIdleCallback = undefined;
+
+      await act(async () => {
+        editorState.value = 'select * from users;\nselect * from orders;';
+        editorState.modelContentListeners.forEach((listener) => listener({
+          changes: [{ text: '\nselect * from orders;' }],
+        }));
+        vi.advanceTimersByTime(450);
+        await Promise.resolve();
+      });
+
+      expect(requestIdleCallback.mock.calls.filter(([, options]) => options?.timeout === 1_200)).toHaveLength(1);
+      expect(objectDecorationIdleCallback).toBeTypeOf('function');
+
+      await act(async () => {
+        renderer.update(<QueryEditor tab={tab} isActive={false} />);
+      });
+      expect(cancelIdleCallback).toHaveBeenCalledWith(41);
+
+      const model = editorState.editor.getModel();
+      model.getValue.mockClear();
+      model.getValueLength.mockClear();
+      editorState.editor.getModel.mockClear();
+      editorState.editor.deltaDecorations.mockClear();
+
+      await act(async () => {
+        objectDecorationIdleCallback?.({ didTimeout: false, timeRemaining: () => 50 });
+      });
+
+      expect(editorState.editor.getModel).not.toHaveBeenCalled();
+      expect(model.getValue).not.toHaveBeenCalled();
+      expect(model.getValueLength).not.toHaveBeenCalled();
       expect(editorState.editor.deltaDecorations).not.toHaveBeenCalled();
     } finally {
       vi.useRealTimers();
+      Object.assign(window, {
+        setTimeout: globalThis.setTimeout.bind(globalThis),
+        clearTimeout: globalThis.clearTimeout.bind(globalThis),
+      });
+    }
+  });
+
+  it('cancels the debounced object decoration refresh when the editor unmounts', async () => {
+    vi.useFakeTimers();
+    Object.assign(window, {
+      setTimeout: globalThis.setTimeout.bind(globalThis),
+      clearTimeout: globalThis.clearTimeout.bind(globalThis),
+    });
+
+    try {
+      let renderer!: ReactTestRenderer;
+      await act(async () => {
+        renderer = create(<QueryEditor tab={createTab({ query: 'select 1;' })} />);
+      });
+      vi.clearAllTimers();
+
+      await act(async () => {
+        editorState.value = 'select * from orders;';
+        editorState.modelContentListeners.forEach((listener) => listener({
+          changes: [{ text: 'select * from orders;' }],
+        }));
+      });
+      expect(vi.getTimerCount()).toBeGreaterThan(0);
+
+      await act(async () => {
+        renderer.unmount();
+      });
+
+      const model = editorState.editor.getModel();
+      model.getValue.mockClear();
+      model.getValueLength.mockClear();
+      editorState.editor.getModel.mockClear();
+      editorState.editor.deltaDecorations.mockClear();
+
+      await act(async () => {
+        vi.runOnlyPendingTimers();
+        await Promise.resolve();
+      });
+
+      expect(editorState.editor.getModel).not.toHaveBeenCalled();
+      expect(model.getValue).not.toHaveBeenCalled();
+      expect(model.getValueLength).not.toHaveBeenCalled();
+      expect(editorState.editor.deltaDecorations).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+      Object.assign(window, {
+        setTimeout: globalThis.setTimeout.bind(globalThis),
+        clearTimeout: globalThis.clearTimeout.bind(globalThis),
+      });
     }
   });
 
