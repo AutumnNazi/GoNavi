@@ -46,6 +46,23 @@ export type DataSyncSavedConnectionView = {
   writable: boolean;
 };
 
+/**
+ * Credential-free projection of the sidebar host tree. Connection details are
+ * resolved from DataSyncSavedConnectionView so no saved config reaches the
+ * workbench through this layout metadata.
+ */
+export type DataSyncConnectionTreeItem =
+  | {
+      kind: 'group';
+      id: string;
+      name: string;
+      children: DataSyncConnectionTreeItem[];
+    }
+  | {
+      kind: 'connection';
+      connectionId: string;
+    };
+
 export type DataSyncDatabaseMetadata = {
   name: string;
 };

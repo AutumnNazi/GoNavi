@@ -23,6 +23,7 @@ import {
   reviseDataSyncTask,
   type DataSyncCdcSourceStatus,
   type DataSyncCheckpointSummary,
+  type DataSyncConnectionTreeItem,
   type DataSyncApprovalChallenge,
   type DataSyncApprovalGrant,
   type DataSyncErrorRow,
@@ -226,6 +227,7 @@ export const resolveDataSyncSidebarRefreshes = ({
 export type DataSyncWorkbenchShellProps = {
   initialTasks?: DataSyncTaskDefinition[];
   gateway?: DataSyncWorkbenchGateway;
+  connectionTree?: DataSyncConnectionTreeItem[];
   locale?: DataSyncWorkbenchLocale | string;
   onClose?: () => void;
 };
@@ -250,6 +252,7 @@ export const mergeDataSyncInitialTasks = (
 export const DataSyncWorkbenchShell: React.FC<DataSyncWorkbenchShellProps> = ({
   initialTasks = [],
   gateway,
+  connectionTree = [],
   locale,
   onClose,
 }) => {
@@ -1445,6 +1448,7 @@ export const DataSyncWorkbenchShell: React.FC<DataSyncWorkbenchShellProps> = ({
                 <DataSyncTaskEditor
                   task={selectedTask}
                   gateway={gatewayRef.current!}
+                  connectionTree={connectionTree}
                   capability={capability}
                   activeStage={activeStage}
                   preflight={selectedPreflight}

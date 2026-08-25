@@ -7,8 +7,13 @@ import {
   createDataSyncTaskDraft,
   createWailsDataSyncWorkbenchGateway,
   DataSyncWorkbenchShell,
+  type DataSyncConnectionTreeItem,
 } from './data-sync';
 import type { DataSyncEntryMode } from './dataSyncEntryMode';
+import {
+  buildSidebarConnectionTagTree,
+  type SidebarConnectionTagTreeItem,
+} from './sidebarV2Utils';
 
 const resolveEntryMode = (tab: TabData): DataSyncEntryMode => {
   if (tab.dataSyncEntryMode === 'schemaCompare' || tab.dataSyncEntryMode === 'dataCompare') {
@@ -19,6 +24,9 @@ const resolveEntryMode = (tab: TabData): DataSyncEntryMode => {
 
 const DataSyncWorkbench: React.FC<{ tab: TabData }> = ({ tab }) => {
   const closeTab = useStore((state) => state.closeTab);
+  const connections = useStore((state) => state.connections);
+  const connectionTags = useStore((state) => state.connectionTags);
+  const sidebarRootOrder = useStore((state) => state.sidebarRootOrder);
   const i18n = useOptionalI18n();
   const entryMode = resolveEntryMode(tab);
   const handleClose = useCallback(() => {
@@ -41,6 +49,25 @@ const DataSyncWorkbench: React.FC<{ tab: TabData }> = ({ tab }) => {
     [entryMode, tab.connectionId, tab.id, tab.title],
   );
   const gateway = useMemo(() => createWailsDataSyncWorkbenchGateway(), []);
+  const connectionTree = useMemo<DataSyncConnectionTreeItem[]>(() => {
+    const projectItem = (
+      item: SidebarConnectionTagTreeItem,
+    ): DataSyncConnectionTreeItem =>
+      item.kind === 'connection'
+        ? { kind: 'connection', connectionId: item.id }
+        : {
+            kind: 'group',
+            id: item.id,
+            name: item.tag.name,
+            children: item.children.map(projectItem),
+          };
+
+    return buildSidebarConnectionTagTree(
+      connections,
+      connectionTags,
+      sidebarRootOrder,
+    ).map(projectItem);
+  }, [connections, connectionTags, sidebarRootOrder]);
 
   return (
     <div
@@ -50,6 +77,7 @@ const DataSyncWorkbench: React.FC<{ tab: TabData }> = ({ tab }) => {
       <DataSyncWorkbenchShell
         initialTasks={[initialTask]}
         gateway={gateway}
+        connectionTree={connectionTree}
         locale={i18n?.language}
         onClose={handleClose}
       />

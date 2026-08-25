@@ -64,18 +64,16 @@ describe('data sync metadata selectors', () => {
     const database = sourceEndpoint.findByProps({
       'data-endpoint-control': 'database',
     });
-    const connectionPrompt = connection
-      .findAllByType('option')
-      .find((option) => option.props.value === '')!;
     const databasePrompt = database
       .findAllByType('option')
       .find((option) => option.props.value === '')!;
 
-    expect(connection.props.value).toBe('');
+    expect(connection.props.value).toBeUndefined();
+    expect(connection.props.placeholder).toBe('选择连接');
+    expect(connection.props.treeData.map((node: { value: string }) => node.value)).toEqual([
+      'connection:source',
+    ]);
     expect(database.props.value).toBe('');
-    expect(connectionPrompt.props).toEqual(
-      expect.objectContaining({ disabled: true, hidden: true }),
-    );
     expect(databasePrompt.props).toEqual(
       expect.objectContaining({ disabled: true, hidden: true }),
     );
@@ -123,14 +121,14 @@ describe('data sync metadata selectors', () => {
     });
     const connectionValues = sourceEndpoint
       .findByProps({ 'data-endpoint-control': 'connection' })
-      .findAllByType('option')
-      .map((option) => option.props.value);
+      .props.treeData.map((node: { value: string }) => node.value);
     const databaseValues = sourceEndpoint
       .findByProps({ 'data-endpoint-control': 'database' })
       .findAllByType('option')
       .map((option) => option.props.value);
 
     expect(connectionValues).not.toContain('');
+    expect(connectionValues).toContain('connection:source');
     expect(databaseValues).not.toContain('');
   });
 
@@ -201,7 +199,7 @@ describe('data sync metadata selectors', () => {
       'data-endpoint-control': 'connection',
     });
     act(() => {
-      connectionSelect.props.onChange({ target: { value: 'source-b' } });
+      connectionSelect.props.onChange('connection:source-b');
     });
     await flush();
 

@@ -10,6 +10,7 @@ import {
   createDataSyncTableMapping,
   canUseDataSyncRowErrorIsolation,
   validateDataSyncTask,
+  type DataSyncConnectionTreeItem,
   type DataSyncDeliveryPolicy,
   type DataSyncFieldMetadata,
   type DataSyncIncrementalPolicy,
@@ -129,9 +130,10 @@ const clearEndpointMappings = (
 const EndpointStage: React.FC<{
   task: DataSyncTaskDefinition;
   gateway: DataSyncWorkbenchGateway;
+  connectionTree: DataSyncConnectionTreeItem[];
   t: DataSyncWorkbenchTranslate;
   onPatch: (patch: TaskPatch) => void;
-}> = ({ task, gateway, t, onPatch }) => {
+}> = ({ task, gateway, connectionTree, t, onPatch }) => {
   const connections = useDataSyncSavedConnections(gateway);
   const sourceDatabases = useDataSyncDatabases(gateway, task.source.connectionId);
   const targetDatabases = useDataSyncDatabases(gateway, task.target.connectionId);
@@ -199,6 +201,7 @@ const EndpointStage: React.FC<{
         title={t('editor.source_endpoint')}
         endpoint={task.source}
         connections={connections}
+        connectionTree={connectionTree}
         databases={sourceDatabases}
         t={t}
         onConnectionChange={(connection) => selectConnection('source', connection)}
@@ -210,6 +213,7 @@ const EndpointStage: React.FC<{
         title={t('editor.target_endpoint')}
         endpoint={task.target}
         connections={connections}
+        connectionTree={connectionTree}
         databases={targetDatabases}
         t={t}
         onConnectionChange={(connection) => selectConnection('target', connection)}
@@ -1194,6 +1198,7 @@ const PreflightStage: React.FC<{
 export const DataSyncTaskEditor: React.FC<{
   task: DataSyncTaskDefinition;
   gateway: DataSyncWorkbenchGateway;
+  connectionTree?: DataSyncConnectionTreeItem[];
   capability: DataSyncRouteCapability;
   activeStage: DataSyncTaskStage;
   preflight: DataSyncPreflightSnapshot | null;
@@ -1204,6 +1209,7 @@ export const DataSyncTaskEditor: React.FC<{
 }> = ({
   task,
   gateway,
+  connectionTree = [],
   capability,
   activeStage,
   preflight,
@@ -1394,7 +1400,13 @@ export const DataSyncTaskEditor: React.FC<{
     </nav>
     <div className="gn-data-sync-task-editor__body">
       {activeStage === 'endpoints' ? (
-        <EndpointStage task={task} gateway={gateway} t={t} onPatch={onPatch} />
+        <EndpointStage
+          task={task}
+          gateway={gateway}
+          connectionTree={connectionTree}
+          t={t}
+          onPatch={onPatch}
+        />
       ) : null}
       {activeStage === 'mappings' ? (
         <>

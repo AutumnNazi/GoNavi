@@ -1,6 +1,8 @@
 import React from 'react';
 
+import { DataSyncConnectionTreeSelect } from './DataSyncConnectionTreeSelect';
 import type {
+  DataSyncConnectionTreeItem,
   DataSyncDatabaseMetadata,
   DataSyncEndpointRef,
   DataSyncSavedConnectionView,
@@ -44,6 +46,7 @@ export const DataSyncEndpointSelector: React.FC<{
   title: string;
   endpoint: DataSyncEndpointRef;
   connections: DataSyncMetadataResult<DataSyncSavedConnectionView>;
+  connectionTree: DataSyncConnectionTreeItem[];
   databases: DataSyncMetadataResult<DataSyncDatabaseMetadata>;
   t: DataSyncWorkbenchTranslate;
   onConnectionChange: (connection: DataSyncSavedConnectionView | null) => void;
@@ -54,6 +57,7 @@ export const DataSyncEndpointSelector: React.FC<{
   title,
   endpoint,
   connections,
+  connectionTree,
   databases,
   t,
   onConnectionChange,
@@ -62,12 +66,6 @@ export const DataSyncEndpointSelector: React.FC<{
 }) => {
   const selectableConnections = connections.items.filter((connection) =>
     role === 'source' ? connection.readable : connection.writable,
-  );
-  const currentConnection = connections.items.find(
-    (connection) => connection.id === endpoint.connectionId,
-  );
-  const currentConnectionSelectable = selectableConnections.some(
-    (connection) => connection.id === endpoint.connectionId,
   );
   const currentDatabaseKnown = databases.items.some(
     (database) => database.name === endpoint.database,
@@ -82,34 +80,16 @@ export const DataSyncEndpointSelector: React.FC<{
       <div className="gn-data-sync-field-grid">
         <label className="gn-data-sync-field" data-wide="true">
           <span>{t('editor.connection')}</span>
-          <select
-            className="gn-data-sync-control"
-            data-endpoint-control="connection"
-            value={endpoint.connectionId}
-            disabled={connections.status === 'loading'}
-            onChange={(event) => {
-              const selected = connections.items.find(
-                (connection) => connection.id === event.target.value,
-              );
-              onConnectionChange(selected || null);
-            }}
-          >
-            {!endpoint.connectionId ? (
-              <option value="" disabled hidden>
-                {t('metadata.select_connection')}
-              </option>
-            ) : null}
-            {endpoint.connectionId && !currentConnectionSelectable ? (
-              <option value={endpoint.connectionId}>
-                {currentConnection?.name || endpoint.connectionName || endpoint.connectionId}
-              </option>
-            ) : null}
-            {selectableConnections.map((connection) => (
-              <option key={connection.id} value={connection.id}>
-                {connection.name} · {connection.type}
-              </option>
-            ))}
-          </select>
+          <DataSyncConnectionTreeSelect
+            role={role}
+            endpoint={endpoint}
+            connections={connections.items}
+            connectionTree={connectionTree}
+            loading={connections.status === 'loading'}
+            placeholder={t('metadata.select_connection')}
+            emptyText={t('metadata.no_eligible_connections')}
+            onChange={onConnectionChange}
+          />
         </label>
         <label className="gn-data-sync-field">
           <span>{t('editor.database_type')}</span>
