@@ -175,6 +175,20 @@ class DownloadMirrorConfigTest(unittest.TestCase):
         self.assertEqual(control["driverTag"], "driver-abc123")
         self.assertEqual(control["verifiedAt"], "2026-08-13T06:00:00Z")
 
+    def test_app_only_publication_uses_the_activated_driver_tag_in_control(self) -> None:
+        publication = (ROOT / "tools/publish-edge-release.sh").read_text(encoding="utf-8")
+
+        self.assertIn('health_file="${status_root}/${node}.health.json"', publication)
+        self.assertIn('driver_tag_file="${status_root}/${node}.driver-tag"', publication)
+        self.assertIn('dmit_driver_tag="$(cat "${status_root}/dmit.driver-tag")"', publication)
+        self.assertIn('bero_driver_tag="$(cat "${status_root}/bero.driver-tag")"', publication)
+        self.assertIn("Activated edge driver tags disagree", publication)
+        self.assertIn('effective_driver_tag="${dmit_driver_tag}"', publication)
+        self.assertLess(
+            publication.index('effective_driver_tag="${dmit_driver_tag}"'),
+            publication.index('control_file="${stage_dir}/control-${PUB_CHANNEL}.json"'),
+        )
+
     def test_publication_commits_control_to_kv_without_object_storage(self) -> None:
         action = (ROOT / ".github/actions/publish-vps-mirror/action.yml").read_text(encoding="utf-8")
         publication = (ROOT / "tools/publish-edge-release.sh").read_text(encoding="utf-8")

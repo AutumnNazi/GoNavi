@@ -327,7 +327,7 @@ probe_sha="$(jq -r '.probeSha256' "${stage_dir}/deployment.json")"
 
 activate_node() (
   set -euo pipefail
-  local node="$1" host port user private_key known_hosts root base_url max_bytes reserve_free_bytes ssh_dir remote remote_stage control_path
+  local node="$1" host port user private_key known_hosts root base_url max_bytes reserve_free_bytes ssh_dir remote remote_stage control_path health_file driver_tag_file
   host="$(node_value "${node}" HOST)"
   port="$(node_value "${node}" PORT)"
   user="$(node_value "${node}" USER)"
@@ -378,11 +378,18 @@ activate_node() (
     return 1
   fi
   echo "[${node}] verifying mutable health"
+  health_file="${status_root}/${node}.health.json"
+  driver_tag_file="${status_root}/${node}.driver-tag"
   curl --fail --silent --show-error --proto '=https' --tlsv1.2 \
     --connect-timeout "${PUB_HTTP_CONNECT_TIMEOUT_SECONDS}" --max-time "${PUB_HTTP_REQUEST_TIMEOUT_SECONDS}" \
-    "${base_url}/healthz?generation=${PUB_GENERATION}" \
-    | jq -e --arg channel "${PUB_CHANNEL}" --arg generation "${PUB_GENERATION}" \
-      '.status == "ok" and .ready == true and .channels[$channel].generation == $generation' >/dev/null
+    --output "${health_file}" \
+    "${base_url}/healthz?generation=${PUB_GENERATION}"
+  jq -e --arg channel "${PUB_CHANNEL}" --arg generation "${PUB_GENERATION}" \
+    '.status == "ok" and .ready == true and .channels[$channel].generation == $generation
+      and ((.channels[$channel].driverTag // "") | type == "string")' \
+    "${health_file}" >/dev/null
+  jq -r --arg channel "${PUB_CHANNEL}" '.channels[$channel].driverTag // ""' \
+    "${health_file}" > "${driver_tag_file}"
   printf -v retention_command 'sudo -- %q --root %q --min-age-seconds 0 --max-bytes %q --min-free-bytes %q' \
     "/usr/local/libexec/gonavi-edge-retention" "${root}" "${max_bytes}" "${reserve_free_bytes}"
   echo "[${node}] applying retention"
@@ -398,6 +405,18 @@ for node in dmit bero; do
     exit 1
   }
 done
+
+dmit_driver_tag="$(cat "${status_root}/dmit.driver-tag")"
+bero_driver_tag="$(cat "${status_root}/bero.driver-tag")"
+if [[ "${dmit_driver_tag}" != "${bero_driver_tag}" ]]; then
+  echo "Activated edge driver tags disagree: dmit=${dmit_driver_tag} bero=${bero_driver_tag}" >&2
+  exit 1
+fi
+if [[ "${PUB_DRIVER_ENABLED}" == true && "${dmit_driver_tag}" != "${PUB_DRIVER_TAG}" ]]; then
+  echo "Activated edge driver tag does not match the published driver tag" >&2
+  exit 1
+fi
+effective_driver_tag="${dmit_driver_tag}"
 
 control_file="${stage_dir}/control-${PUB_CHANNEL}.json"
 verified_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
