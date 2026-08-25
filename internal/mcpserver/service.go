@@ -271,14 +271,26 @@ func (s *Service) GetTables(ctx context.Context, req *mcp.CallToolRequest, args 
 	}
 
 	views := []string{}
+	partial := queryResult.Partial
+	warnings := objectMetadataWarnings(queryResult)
+	retryable := queryResult.Retryable
 	viewResult := s.backend.DBGetViews(ctx, view.Config, dbName)
 	if err := ctx.Err(); err != nil {
 		return toolError("获取表列表失败: %s", err), getTablesResult{}, nil
 	}
-	if viewResult.Success {
-		if decodedViews, decodeErr := decodeNamedStringSlice(viewResult.Data, "View", "view", "name"); decodeErr == nil {
+	viewMetadataFailed := !viewResult.Success
+	if !viewMetadataFailed {
+		decodedViews, decodeErr := decodeNamedStringSlice(viewResult.Data, "View", "view", "name")
+		if decodeErr != nil {
+			viewMetadataFailed = true
+		} else {
 			views = decodedViews
 		}
+	}
+	if viewMetadataFailed {
+		partial = true
+		retryable = retryable || viewResult.Retryable
+		warnings = append(warnings, "获取视图元数据失败，返回的对象集合不完整")
 	}
 
 	return successResult(), getTablesResult{
@@ -287,9 +299,9 @@ func (s *Service) GetTables(ctx context.Context, req *mcp.CallToolRequest, args 
 		Tables:       ensureNonNilStrings(tables),
 		Views:        ensureNonNilStrings(views),
 		Message:      strings.TrimSpace(queryResult.Message),
-		Partial:      queryResult.Partial,
-		Warnings:     objectMetadataWarnings(queryResult),
-		Retryable:    queryResult.Retryable,
+		Partial:      partial,
+		Warnings:     warnings,
+		Retryable:    retryable,
 		Truncated:    queryResult.Truncated,
 		ScannedCount: queryResult.ScannedCount,
 	}, nil
