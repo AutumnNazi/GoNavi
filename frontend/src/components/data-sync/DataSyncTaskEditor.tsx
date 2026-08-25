@@ -40,7 +40,10 @@ const STAGES: DataSyncTaskStage[] = [
 ];
 
 type TaskPatch = Partial<
-  Omit<DataSyncTaskDefinition, 'id' | 'schemaVersion' | 'revision' | 'createdAt'>
+  Omit<
+    DataSyncTaskDefinition,
+    'id' | 'schemaVersion' | 'revision' | 'editEpoch' | 'createdAt'
+  >
 >;
 
 const Field: React.FC<{
@@ -258,13 +261,17 @@ const resolveDataSyncObjectIdentity = (
 };
 
 const hasImplicitSameNameMappings = (task: DataSyncTaskDefinition): boolean => {
+  const structureMigration =
+    task.kind === 'migration' &&
+    (task.content === 'schema' || task.content === 'both');
   const mappings = task.mappings;
   return (
     mappings.some((mapping) => mapping.enabled) &&
     mappings.every((mapping) => {
       if (
         mapping.fields.length > 0 ||
-        mapping.keyColumns.some((column) => column.trim().length > 0)
+        (!structureMigration &&
+          mapping.keyColumns.some((column) => column.trim().length > 0))
       ) {
         return false;
       }
@@ -278,8 +285,7 @@ const hasImplicitSameNameMappings = (task: DataSyncTaskDefinition): boolean => {
       );
       return (
         Boolean(source.name) &&
-        source.name === target.name &&
-        source.schema === target.schema
+        source.name === target.name
       );
     })
   );
@@ -303,6 +309,11 @@ const DeliveryStage: React.FC<{
   const appendOnlyTarget =
     capability.level !== 'unknown' && capability.supportsMutations === false;
   const enabledMappings = task.mappings.filter((mapping) => mapping.enabled);
+  const hasConfiguredMappings = enabledMappings.some(
+    (mapping) =>
+      mapping.sourceObject.trim().length > 0 &&
+      mapping.targetObject.trim().length > 0,
+  );
   const allEnabledMappingsHaveKeys =
     enabledMappings.length > 0 &&
     enabledMappings.every((mapping) =>
@@ -319,8 +330,12 @@ const DeliveryStage: React.FC<{
         task.incremental.mode === 'cdc' &&
         allEnabledMappingsHaveKeys));
   const implicitSameNameMappings = hasImplicitSameNameMappings(task);
+  const schemaOnlyMigration =
+    task.kind === 'migration' && task.content === 'schema';
   const canConfigureMigrationStructure =
-    task.kind === 'migration' && capability.canExecute && implicitSameNameMappings;
+    task.kind === 'migration' &&
+    capability.canExecute &&
+    (implicitSameNameMappings || schemaOnlyMigration);
   const canAutoAddColumns =
     canConfigureMigrationStructure && capability.supportsAutoAddColumns === true;
   const canCreateIndexes =
@@ -378,6 +393,7 @@ const DeliveryStage: React.FC<{
       patch.retryLimit = 0;
     }
     if (
+      hasConfiguredMappings &&
       structureCapabilityResolved &&
       !canAutoAddColumns &&
       task.delivery.autoAddColumns
@@ -385,6 +401,7 @@ const DeliveryStage: React.FC<{
       patch.autoAddColumns = false;
     }
     if (
+      hasConfiguredMappings &&
       structureCapabilityResolved &&
       !canCreateIndexes &&
       task.delivery.createIndexes
@@ -394,11 +411,15 @@ const DeliveryStage: React.FC<{
     if (Object.keys(patch).length > 0) {
       onPatch({ delivery: { ...task.delivery, ...patch } });
     }
+    if (task.delivery.writeMode === 'append' && task.resumePolicy !== 'never') {
+      onPatch({ resumePolicy: 'never' });
+    }
   }, [
     canAutoAddColumns,
     canCreateIndexes,
     canPropagateDeletes,
     appendOnlyTarget,
+    hasConfiguredMappings,
     onPatch,
     readOnly,
     rowIsolationAvailable,
@@ -409,6 +430,7 @@ const DeliveryStage: React.FC<{
     task.delivery.errorPolicy,
     task.delivery.propagateDeletes,
     task.delivery.writeMode,
+    task.resumePolicy,
   ]);
 
   if (readOnly) {
@@ -420,6 +442,30 @@ const DeliveryStage: React.FC<{
             <p>{t('delivery.help')}</p>
           </div>
         </header>
+        <div
+          className="gn-data-sync-delivery-main"
+          data-data-sync-compare-mode="true"
+        >
+          <Field label={t('compare.mode.title')}>
+            <select
+              className="gn-data-sync-control"
+              value={task.compareMode || 'data'}
+              onChange={(event) =>
+                onPatch({
+                  compareMode: event.target
+                    .value as DataSyncTaskDefinition['compareMode'],
+                })
+              }
+            >
+              <option value="data">{t('compare.mode.data')}</option>
+              <option value="schema">{t('compare.mode.schema')}</option>
+              <option value="both">{t('compare.mode.both')}</option>
+            </select>
+          </Field>
+          <p className="gn-data-sync-inline-note" role="note">
+            {t('compare.mode.help')}
+          </p>
+        </div>
         <div className="gn-data-sync-readonly-note" role="note">
           <strong>{t('delivery.read_only_title')}</strong>
           <span>{t('delivery.read_only_note')}</span>
@@ -437,6 +483,30 @@ const DeliveryStage: React.FC<{
         </div>
       </header>
       <div className="gn-data-sync-delivery-main">
+        {task.kind === 'migration' ? (
+          <Field label={t('delivery.content_mode')}>
+            <select
+              className="gn-data-sync-control"
+              value={task.content || 'both'}
+              onChange={(event) =>
+                onPatch({
+                  content: event.target.value as NonNullable<
+                    DataSyncTaskDefinition['content']
+                  >,
+                })
+              }
+            >
+              <option value="schema">{t('delivery.content.schema')}</option>
+              <option value="data">{t('delivery.content.data')}</option>
+              <option value="both">{t('delivery.content.both')}</option>
+            </select>
+          </Field>
+        ) : null}
+        {schemaOnlyMigration ? (
+          <p className="gn-data-sync-inline-note" role="note" data-schema-only-task="true">
+            {t('delivery.schema_only_note')}
+          </p>
+        ) : null}
         {appendOnlyTarget ? (
           <p className="gn-data-sync-inline-note" role="note" data-append-only-target="true">
             {t('delivery.append_only_target_note')}
@@ -457,6 +527,9 @@ const DeliveryStage: React.FC<{
                   : {}),
                 ...(writeMode !== 'upsert' ? { propagateDeletes: false } : {}),
               });
+              if (writeMode === 'append' && task.resumePolicy !== 'never') {
+                onPatch({ resumePolicy: 'never' });
+              }
             }}
           >
             <option
@@ -612,6 +685,28 @@ const DeliveryStage: React.FC<{
                   {t('delivery.append_retry_note')}
                 </p>
               ) : null}
+              <Field label={t('delivery.recovery_policy')}>
+                <select
+                  className="gn-data-sync-control"
+                  value={task.delivery.writeMode === 'append' ? 'never' : task.resumePolicy}
+                  disabled={task.delivery.writeMode === 'append'}
+                  data-delivery-recovery={task.delivery.writeMode}
+                  onChange={(event) =>
+                    onPatch({
+                      resumePolicy: event.target.value as DataSyncTaskDefinition['resumePolicy'],
+                    })
+                  }
+                >
+                  <option value="never">{t('delivery.recovery.never')}</option>
+                  <option value="manual">{t('delivery.recovery.manual')}</option>
+                  <option value="auto">{t('delivery.recovery.auto')}</option>
+                </select>
+                {task.delivery.writeMode === 'append' ? (
+                  <small className="gn-data-sync-mode-help">
+                    {t('delivery.append_recovery_note')}
+                  </small>
+                ) : null}
+              </Field>
               <Field label={t('delivery.retry_backoff')}>
                 <input
                   type="number"
@@ -700,9 +795,10 @@ const DeliveryStage: React.FC<{
 const TriggerStage: React.FC<{
   task: DataSyncTaskDefinition;
   gateway: DataSyncWorkbenchGateway;
+  capability: DataSyncRouteCapability;
   t: DataSyncWorkbenchTranslate;
   onPatch: (patch: TaskPatch) => void;
-}> = ({ task, gateway, t, onPatch }) => {
+}> = ({ task, gateway, capability, t, onPatch }) => {
   const trigger = task.trigger;
   const incremental = task.incremental;
   const hasMixedWatermarks =
@@ -715,7 +811,7 @@ const TriggerStage: React.FC<{
             `${mapping.watermark!.column}\u0000${mapping.watermark!.tieBreaker}`,
         ),
     ).size > 1;
-  const [cdcAdapters, setCdcAdapters] = useState<string[]>([]);
+  const [cdcAdapterName, setCdcAdapterName] = useState('');
   const [cdcMetadataState, setCdcMetadataState] = useState<
     'idle' | 'loading' | 'ready' | 'error'
   >('idle');
@@ -724,32 +820,37 @@ const TriggerStage: React.FC<{
   useEffect(() => {
     if (incremental.mode !== 'cdc') {
       setCdcMetadataState('idle');
-      setCdcAdapters([]);
+      setCdcAdapterName('');
       setCheckpointAvailable(false);
       return undefined;
     }
     let active = true;
     setCdcMetadataState('loading');
     void Promise.all([
-      gateway.listCdcAdapters(),
       gateway.getCheckpoint(task.id),
     ])
-      .then(([adapters, checkpoint]) => {
+      .then(([checkpoint]) => {
         if (!active) return;
-        setCdcAdapters(adapters);
+        setCdcAdapterName(incremental.adapter || capability.cdcAdapter || '');
         setCheckpointAvailable(Boolean(checkpoint));
         setCdcMetadataState('ready');
       })
       .catch(() => {
         if (!active) return;
-        setCdcAdapters([]);
+        setCdcAdapterName('');
         setCheckpointAvailable(false);
         setCdcMetadataState('error');
       });
     return () => {
       active = false;
     };
-  }, [gateway, incremental.mode, task.id]);
+  }, [
+    capability.cdcAdapter,
+    gateway,
+    incremental.mode === 'cdc' ? incremental.adapter : '',
+    incremental.mode,
+    task.id,
+  ]);
   return (
   <section className="gn-data-sync-section" data-data-sync-trigger="true">
     <header className="gn-data-sync-section__header">
@@ -967,26 +1068,31 @@ const TriggerStage: React.FC<{
       {incremental.mode === 'cdc' ? (
         <>
           <Field label={t('incremental.cdc_adapter')}>
-            <select
-              className="gn-data-sync-control"
-              value={incremental.adapter}
-              disabled={cdcMetadataState === 'loading'}
-              onChange={(event) =>
-                onPatch({
-                  incremental: { ...incremental, adapter: event.target.value },
-                })
-              }
-            >
-              <option value="">
-                {cdcMetadataState === 'loading'
-                  ? t('metadata.loading_cdc_adapters')
-                  : t('incremental.select_cdc_adapter')}
-              </option>
-              {cdcAdapters.map((adapter) => (
-                <option key={adapter} value={adapter}>{adapter}</option>
-              ))}
-            </select>
+            <output className="gn-data-sync-control gn-data-sync-control--read-only gn-data-sync-mono">
+              {cdcMetadataState === 'loading'
+                ? t('metadata.loading_cdc_adapters')
+                : cdcAdapterName || t('incremental.select_cdc_adapter')}
+            </output>
           </Field>
+          {capability.cdcAdapter && capability.cdcProbeReady === true ? (
+            <p
+              className="gn-data-sync-inline-note"
+              role="status"
+              data-cdc-probe-status="ready"
+            >
+              {t('incremental.cdc_probe_ready')}
+            </p>
+          ) : null}
+          {capability.cdcAdapter && capability.cdcProbeReady === false ? (
+            <div
+              className="gn-data-sync-safety-note"
+              role="alert"
+              data-cdc-probe-status="blocked"
+            >
+              <strong>{t('incremental.cdc_probe_unready')}</strong>
+              {capability.cdcProbeReason ? <p>{capability.cdcProbeReason}</p> : null}
+            </div>
+          ) : null}
           <Field label={t('incremental.start_position')}>
             <select
               className="gn-data-sync-control"
@@ -1032,13 +1138,20 @@ const PreflightStage: React.FC<{
   t: DataSyncWorkbenchTranslate;
   onLocate: (stage: DataSyncTaskStage) => void;
 }> = ({ task, snapshot, stale, t, onLocate }) => {
-  const issues = !stale && snapshot ? snapshot.issues : validateDataSyncTask(task);
+  const hasCurrentSnapshot = Boolean(snapshot && !stale);
+  const issues = hasCurrentSnapshot ? snapshot!.issues : validateDataSyncTask(task);
   return (
     <section className="gn-data-sync-section" data-data-sync-preflight-stage="true">
       <header className="gn-data-sync-section__header">
         <div>
           <h2>{t('preflight.title')}</h2>
-          <p>{stale ? t('preflight.stale') : t('preflight.empty')}</p>
+          <p>
+            {stale
+              ? t('preflight.stale')
+              : hasCurrentSnapshot
+                ? t('preflight.empty')
+                : t('preflight.not_run')}
+          </p>
         </div>
       </header>
       {!stale && snapshot && snapshot.approvalRequired !== false ? (
@@ -1053,7 +1166,9 @@ const PreflightStage: React.FC<{
       ) : null}
       <ol className="gn-data-sync-preflight-checklist">
         {issues.length === 0 ? (
-          <li data-severity="info">{t('preflight.passed')}</li>
+          <li data-severity="info">
+            {hasCurrentSnapshot ? t('preflight.passed') : t('preflight.not_run')}
+          </li>
         ) : (
           issues.map((item) => (
             <li key={item.id} data-severity={item.severity}>
@@ -1294,7 +1409,7 @@ export const DataSyncTaskEditor: React.FC<{
                 mappings: [
                   ...task.mappings,
                   createDataSyncTableMapping(
-                    `${task.id}:mapping:${task.mappings.length + 1}:${task.revision + 1}`,
+                    `${task.id}:mapping:${task.mappings.length + 1}:${task.editEpoch + 1}`,
                   ),
                 ],
               })
@@ -1330,7 +1445,13 @@ export const DataSyncTaskEditor: React.FC<{
         />
       ) : null}
       {activeStage === 'trigger' ? (
-        <TriggerStage task={task} gateway={gateway} t={t} onPatch={onPatch} />
+        <TriggerStage
+          task={task}
+          gateway={gateway}
+          capability={capability}
+          t={t}
+          onPatch={onPatch}
+        />
       ) : null}
       {activeStage === 'preflight' ? (
         <PreflightStage
