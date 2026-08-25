@@ -561,6 +561,7 @@ func TestResolveDeepSeekHarnessNpxPackageDirEmptyWithoutCache(t *testing.T) {
 
 func TestDetectZCodeClientFallsBackToMacOSAppBundle(t *testing.T) {
 	disableLocalCLICommandShellFallback(t)
+	withTestAIGOOS(t, "darwin")
 	originalCLIPathFunc := localCLICommandPathFunc
 	localCLICommandPathFunc = func(string) (string, error) { return "", errors.New("not found") }
 	t.Cleanup(func() { localCLICommandPathFunc = originalCLIPathFunc })
