@@ -84,21 +84,21 @@ func isolateDeepSeekHarnessClientFallbacks(t *testing.T) {
 	})
 }
 
-// isolateZCodeMacOSAppFallback disables the ZCode macOS .app bundle fallback so
-// tests exercise the plain PATH-based detection without depending on whether
-// the developer machine happens to have /Applications/ZCode.app installed.
-func isolateZCodeMacOSAppFallback(t *testing.T) {
+// isolateZCodeHomeFallback disables the ZCode ~/.zcode home-directory fallback so
+// tests exercise the plain PATH-based detection without depending on whether the
+// developer machine happens to have ~/.zcode installed.
+func isolateZCodeHomeFallback(t *testing.T) {
 	t.Helper()
-	originalAppExecutableFunc := zCodeMacOSAppExecutableFunc
-	zCodeMacOSAppExecutableFunc = func() string { return "" }
-	t.Cleanup(func() { zCodeMacOSAppExecutableFunc = originalAppExecutableFunc })
+	originalHomeDirFunc := zCodeHomeDirFunc
+	zCodeHomeDirFunc = func() string { return "" }
+	t.Cleanup(func() { zCodeHomeDirFunc = originalHomeDirFunc })
 }
 
 func TestLocalMCPClientInstallersRejectUndetectedClientsWithoutWritingConfig(t *testing.T) {
 	disableLocalCLICommandShellFallback(t)
 	additionalPaths := isolateAdditionalMCPClientConfigs(t)
 	isolateDeepSeekHarnessClientFallbacks(t)
-	isolateZCodeMacOSAppFallback(t)
+	isolateZCodeHomeFallback(t)
 	openCodePath := isolateOpenCodeMCPConfig(t)
 	originalClaudeConfigPathFunc := claudeCodeConfigPathFunc
 	originalCodexConfigPathFunc := codexConfigPathFunc
@@ -559,72 +559,54 @@ func TestResolveDeepSeekHarnessNpxPackageDirEmptyWithoutCache(t *testing.T) {
 	}
 }
 
-func TestDetectZCodeClientFallsBackToMacOSAppBundle(t *testing.T) {
+func TestDetectZCodeClientFallsBackToUserHomeDir(t *testing.T) {
 	disableLocalCLICommandShellFallback(t)
-	withTestAIGOOS(t, "darwin")
 	originalCLIPathFunc := localCLICommandPathFunc
 	localCLICommandPathFunc = func(string) (string, error) { return "", errors.New("not found") }
 	t.Cleanup(func() { localCLICommandPathFunc = originalCLIPathFunc })
 
-	appRoot := filepath.Join(t.TempDir(), "Applications", "ZCode.app", "Contents", "MacOS")
-	if err := os.MkdirAll(appRoot, 0o755); err != nil {
-		t.Fatalf("MkdirAll app bundle returned error: %v", err)
-	}
-	appExecutable := filepath.Join(appRoot, "ZCode")
-	if err := os.WriteFile(appExecutable, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
-		t.Fatalf("WriteFile app executable returned error: %v", err)
-	}
-
-	originalSearchPathsFunc := zCodeMacOSAppSearchPathsFunc
-	zCodeMacOSAppSearchPathsFunc = func() []string { return []string{appExecutable} }
-	t.Cleanup(func() { zCodeMacOSAppSearchPathsFunc = originalSearchPathsFunc })
+	homeDir := t.TempDir()
+	originalHomeDirFunc := zCodeHomeDirFunc
+	zCodeHomeDirFunc = func() string { return homeDir }
+	t.Cleanup(func() { zCodeHomeDirFunc = originalHomeDirFunc })
 
 	detected, path := detectZCodeClient()
 	if !detected {
-		t.Fatal("expected ZCode client to be detected via its macOS app bundle")
+		t.Fatal("expected ZCode client to be detected via its user home directory")
 	}
-	if path != appExecutable {
-		t.Fatalf("detected client path = %q, want %q", path, appExecutable)
+	if path != homeDir {
+		t.Fatalf("detected client path = %q, want %q", path, homeDir)
 	}
 }
 
-func TestDetectZCodeClientSkipsAppBundleOutsideDarwin(t *testing.T) {
+func TestDetectZCodeClientSkipsHomeDirWhenMissing(t *testing.T) {
 	disableLocalCLICommandShellFallback(t)
-	withTestAIGOOS(t, "windows")
 	originalCLIPathFunc := localCLICommandPathFunc
 	localCLICommandPathFunc = func(string) (string, error) { return "", errors.New("not found") }
 	t.Cleanup(func() { localCLICommandPathFunc = originalCLIPathFunc })
 
-	originalSearchPathsFunc := zCodeMacOSAppSearchPathsFunc
-	zCodeMacOSAppSearchPathsFunc = func() []string { return []string{filepath.Join(t.TempDir(), "ZCode")} }
-	t.Cleanup(func() { zCodeMacOSAppSearchPathsFunc = originalSearchPathsFunc })
+	originalHomeDirFunc := zCodeHomeDirFunc
+	zCodeHomeDirFunc = func() string { return "" }
+	t.Cleanup(func() { zCodeHomeDirFunc = originalHomeDirFunc })
 
 	if detected, path := detectZCodeClient(); detected || path != "" {
-		t.Fatalf("app bundle fallback must be skipped outside darwin, got (%t, %q)", detected, path)
+		t.Fatalf("home-directory fallback must not fire when missing, got (%t, %q)", detected, path)
 	}
 }
 
-func TestZCodeStatusConnectedWhenOnlyAppBundleDetected(t *testing.T) {
+func TestZCodeStatusConnectedWhenOnlyHomeDirDetected(t *testing.T) {
 	disableLocalCLICommandShellFallback(t)
-	withTestAIGOOS(t, "darwin")
 	paths := isolateAdditionalMCPClientConfigs(t)
 	executablePath := isolateAdditionalMCPClientExecutable(t)
 
-	appRoot := filepath.Join(t.TempDir(), "ZCode.app", "Contents", "MacOS")
-	if err := os.MkdirAll(appRoot, 0o755); err != nil {
-		t.Fatalf("MkdirAll app bundle returned error: %v", err)
-	}
-	appExecutable := filepath.Join(appRoot, "ZCode")
-	if err := os.WriteFile(appExecutable, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
-		t.Fatalf("WriteFile app executable returned error: %v", err)
-	}
+	homeDir := t.TempDir()
+	originalHomeDirFunc := zCodeHomeDirFunc
+	zCodeHomeDirFunc = func() string { return homeDir }
+	t.Cleanup(func() { zCodeHomeDirFunc = originalHomeDirFunc })
 
 	originalCLIPathFunc := localCLICommandPathFunc
 	localCLICommandPathFunc = func(string) (string, error) { return "", errors.New("not found") }
 	t.Cleanup(func() { localCLICommandPathFunc = originalCLIPathFunc })
-	originalSearchPathsFunc := zCodeMacOSAppSearchPathsFunc
-	zCodeMacOSAppSearchPathsFunc = func() []string { return []string{appExecutable} }
-	t.Cleanup(func() { zCodeMacOSAppSearchPathsFunc = originalSearchPathsFunc })
 
 	service := NewService()
 	service.AISetLanguage(string(i18n.LanguageEnUS))
@@ -633,8 +615,8 @@ func TestZCodeStatusConnectedWhenOnlyAppBundleDetected(t *testing.T) {
 	}
 
 	status := inspectExternalJSONMCPClientInstallStatus(zCodeMCPClientSpec, executablePath, []string{"mcp-server"}, nil, service.serviceText)
-	if !status.ClientDetected || status.ClientPath != appExecutable {
-		t.Fatalf("expected ZCode detected via app bundle, got %#v", status)
+	if !status.ClientDetected || status.ClientPath != homeDir {
+		t.Fatalf("expected ZCode detected via home directory, got %#v", status)
 	}
 	if !status.Installed || !status.MatchesCurrent {
 		t.Fatalf("expected ZCode config to be reported as connected, got %#v", status)

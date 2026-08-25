@@ -18,8 +18,7 @@ const (
 var zCodeConfigPathFunc = resolveZCodeConfigPath
 var kimiCodeConfigPathFunc = resolveKimiCodeConfigPath
 var zCodeClientDetectFunc = detectZCodeClient
-var zCodeMacOSAppExecutableFunc = resolveZCodeMacOSAppExecutable
-var zCodeMacOSAppSearchPathsFunc = zCodeMacOSAppSearchPaths
+var zCodeHomeDirFunc = resolveZCodeHomeDir
 
 type externalJSONMCPClientSpec struct {
 	Client         string
@@ -89,48 +88,35 @@ func resolveKimiCodeConfigPath() (string, error) {
 }
 
 // detectZCodeClient reports whether a ZCode installation is present and returns
-// the path surfaced in the status UI. On macOS ZCode ships as an Electron .app
-// bundle whose executable lives at Contents/MacOS/ZCode without being placed on
-// PATH, so a PATH-only lookup would report a false negative even though the app
-// (and its ~/.zcode/cli config) are installed.
+// the path surfaced in the status UI. ZCode installs a CLI (zcode) and a
+// per-user data directory (~/.zcode) on every platform, but its installer does
+// not reliably put the zcode command on PATH, so a PATH-only lookup would
+// report a false negative even though ZCode is installed. The user-level
+// ~/.zcode directory is a fixed, cross-platform installation marker, so it is
+// used as the fallback.
 func detectZCodeClient() (bool, string) {
 	if detected, path := detectLocalCLICommand(zCodeClientCommandName); detected {
 		return true, path
 	}
-	if appExecutable := zCodeMacOSAppExecutableFunc(); appExecutable != "" {
-		return true, appExecutable
+	if homeDir := zCodeHomeDirFunc(); homeDir != "" {
+		return true, homeDir
 	}
 	return false, ""
 }
 
-func resolveZCodeMacOSAppExecutable() string {
-	if aiRuntimeGOOS() != "darwin" {
+func resolveZCodeHomeDir() string {
+	configPath, err := resolveZCodeConfigPath()
+	if err != nil {
 		return ""
 	}
-	for _, candidate := range zCodeMacOSAppSearchPathsFunc() {
-		candidate = strings.TrimSpace(candidate)
-		if candidate == "" {
-			continue
-		}
-		if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
-			return filepath.Clean(candidate)
-		}
+	// The MCP config lives at ~/.zcode/cli/config.json; the installation marker
+	// is the directory two levels up (~/.zcode).
+	homeDir := filepath.Dir(filepath.Dir(configPath))
+	info, err := os.Stat(homeDir)
+	if err != nil || !info.IsDir() {
+		return ""
 	}
-	return ""
-}
-
-func zCodeMacOSAppSearchPaths() []string {
-	homeDir, err := resolveMCPClientUserHomeDir()
-	if err != nil {
-		homeDir = ""
-	}
-	candidates := []string{
-		filepath.Join("/Applications", "ZCode.app", "Contents", "MacOS", "ZCode"),
-	}
-	if homeDir != "" {
-		candidates = append(candidates, filepath.Join(homeDir, "Applications", "ZCode.app", "Contents", "MacOS", "ZCode"))
-	}
-	return candidates
+	return filepath.Clean(homeDir)
 }
 
 func detectExternalJSONMCPClientCommand(spec externalJSONMCPClientSpec) (bool, string) {
