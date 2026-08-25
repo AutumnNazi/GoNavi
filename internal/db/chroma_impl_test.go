@@ -208,6 +208,69 @@ func TestChromaSelectPassesWhereToGetAndCount(t *testing.T) {
 	}
 }
 
+func TestChromaCountWithWherePaginatesBeyondOneMillion(t *testing.T) {
+	const matchingDocuments = 1_000_001
+	var offsets []int
+	server := newMockChromaServer(t, func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/api/v2/heartbeat":
+			writeChromaJSON(w, map[string]interface{}{"ok": true})
+		case strings.HasSuffix(r.URL.Path, "/collections"):
+			writeChromaJSON(w, []chromaCollection{{ID: "col-products", Name: "products"}})
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/collections/col-products/get"):
+			var body map[string]interface{}
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatalf("decode count request: %v", err)
+			}
+			if body["where"] == nil {
+				t.Fatal("count request must keep WHERE filter")
+			}
+			if include, ok := body["include"].([]interface{}); !ok || len(include) != 0 {
+				t.Fatalf("count request must not fetch documents, include = %#v", body["include"])
+			}
+			offset := intFromAny(body["offset"], -1)
+			limit := intFromAny(body["limit"], 0)
+			if offset < 0 || limit != chromaFilteredCountPageSize {
+				t.Fatalf("count request offset=%d limit=%d", offset, limit)
+			}
+			offsets = append(offsets, offset)
+			remaining := matchingDocuments - offset
+			if remaining < 0 {
+				remaining = 0
+			}
+			count := min(limit, remaining)
+			ids := make([]string, count)
+			for i := range ids {
+				ids[i] = fmt.Sprintf("doc-%d", offset+i)
+			}
+			writeChromaJSON(w, chromaGetResponse{IDs: ids})
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+
+	db := newTestChromaDB(t, server.URL)
+	rows, columns, err := db.Query("SELECT count(*) FROM products WHERE active = true")
+	if err != nil {
+		t.Fatalf("Query failed: %v", err)
+	}
+	if len(rows) != 1 || len(columns) != 1 || columns[0] != "total" {
+		t.Fatalf("count result = %#v, columns = %v", rows, columns)
+	}
+	if total, ok := rows[0]["total"].(int64); !ok || total != matchingDocuments {
+		t.Fatalf("count total = %#v, want %d", rows[0]["total"], matchingDocuments)
+	}
+	wantPages := (matchingDocuments + chromaFilteredCountPageSize - 1) / chromaFilteredCountPageSize
+	if len(offsets) != wantPages {
+		t.Fatalf("count pages = %d, want %d", len(offsets), wantPages)
+	}
+	for page, offset := range offsets {
+		if want := page * chromaFilteredCountPageSize; offset != want {
+			t.Fatalf("page %d offset = %d, want %d", page, offset, want)
+		}
+	}
+}
+
 func TestChromaSelectRejectsUnsupportedWhereWithoutDataRequest(t *testing.T) {
 	db := &ChromaDB{client: &http.Client{Transport: vectorWhereRoundTripFunc(func(*http.Request) (*http.Response, error) {
 		t.Fatal("unsupported WHERE must not make an HTTP request")

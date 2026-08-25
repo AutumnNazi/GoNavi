@@ -23,10 +23,11 @@ import (
 )
 
 const (
-	defaultChromaPort         = 8000
-	defaultChromaTenant       = "default_tenant"
-	defaultChromaDatabase     = "default_database"
-	defaultChromaQueryTimeout = 30 * time.Second
+	defaultChromaPort           = 8000
+	defaultChromaTenant         = "default_tenant"
+	defaultChromaDatabase       = "default_database"
+	defaultChromaQueryTimeout   = 30 * time.Second
+	chromaFilteredCountPageSize = 10_000
 )
 
 type ChromaDB struct {
@@ -641,22 +642,57 @@ func (c *ChromaDB) getCollectionRows(ctx context.Context, collection string, lim
 	return rows, columns, nil
 }
 
-func (c *ChromaDB) countCollection(ctx context.Context, collection string, where interface{}) (int64, error) {
-	path, err := c.collectionActionPath(ctx, collection, "count")
-	if err != nil {
+func (c *ChromaDB) getCollectionIDCount(ctx context.Context, path string, offset int, where interface{}) (int, error) {
+	body := map[string]interface{}{
+		"limit":   chromaFilteredCountPageSize,
+		"offset":  offset,
+		"include": []string{},
+	}
+	if where != nil {
+		body["where"] = where
+	}
+	var resp chromaGetResponse
+	if err := c.doJSON(ctx, http.MethodPost, path, body, &resp); err != nil {
 		return 0, err
 	}
+	return len(resp.IDs), nil
+}
+
+func (c *ChromaDB) countCollection(ctx context.Context, collection string, where interface{}) (int64, error) {
 	if where == nil {
+		path, err := c.collectionActionPath(ctx, collection, "count")
+		if err != nil {
+			return 0, err
+		}
 		var raw interface{}
 		if err := c.doJSON(ctx, http.MethodGet, path, nil, &raw); err == nil {
 			return chromaCountValue(raw), nil
 		}
 	}
-	rows, _, err := c.getCollectionRows(ctx, collection, 1_000_000, 0, where, []string{"documents"})
+	path, err := c.collectionActionPath(ctx, collection, "get")
 	if err != nil {
 		return 0, err
 	}
-	return int64(len(rows)), nil
+
+	countCtx := ctx
+	var cancel context.CancelFunc = func() {}
+	if _, hasDeadline := ctx.Deadline(); !hasDeadline {
+		countCtx, cancel = context.WithTimeout(ctx, defaultChromaQueryTimeout)
+	}
+	defer cancel()
+
+	var total int64
+	for offset := 0; ; {
+		pageCount, err := c.getCollectionIDCount(countCtx, path, offset, where)
+		if err != nil {
+			return 0, err
+		}
+		total += int64(pageCount)
+		if pageCount < chromaFilteredCountPageSize {
+			return total, nil
+		}
+		offset += pageCount
+	}
 }
 
 func (c *ChromaDB) queryJSON(ctx context.Context, text string) ([]map[string]interface{}, []string, error) {
