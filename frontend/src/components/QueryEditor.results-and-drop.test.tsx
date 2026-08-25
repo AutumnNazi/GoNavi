@@ -323,7 +323,8 @@ const editorState = vi.hoisted(() => {
   return state;
 });
 
-vi.mock('../store', () => {
+vi.mock('../store', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../store')>();
   const useStore = Object.assign(
     (selector: (state: typeof storeState) => any) => React.useSyncExternalStore(
       (subscriber) => {
@@ -337,7 +338,7 @@ vi.mock('../store', () => {
     ),
     { getState: () => storeState },
   );
-  return { useStore };
+  return { ...actual, useStore };
 });
 
 vi.mock('../../wailsjs/go/app/App', () => backendApp);
