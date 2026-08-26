@@ -36,6 +36,8 @@ type QdrantDB struct {
 	forwarder   *ssh.LocalForwarder
 }
 
+var _ BatchApplierContext = (*QdrantDB)(nil)
+
 type qdrantCollectionInfo struct {
 	Name string `json:"name"`
 }
@@ -307,7 +309,11 @@ func (q *QdrantDB) GetTriggers(dbName, tableName string) ([]connection.TriggerDe
 }
 
 func (q *QdrantDB) ApplyChanges(tableName string, changes connection.ChangeSet) error {
-	ctx, cancel := context.WithTimeout(context.Background(), defaultQdrantQueryTimeout)
+	return q.ApplyChangesContext(context.Background(), tableName, changes)
+}
+
+func (q *QdrantDB) ApplyChangesContext(ctx context.Context, tableName string, changes connection.ChangeSet) error {
+	ctx, cancel := context.WithTimeout(ctx, defaultQdrantQueryTimeout)
 	defer cancel()
 	writeApplied := false
 	writeError := func(err error) error {

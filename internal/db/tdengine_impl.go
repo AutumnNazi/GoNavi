@@ -57,6 +57,8 @@ type TDengineDB struct {
 	probeWebSocketEndpoint tdengineWebSocketEndpointProbeFunc
 }
 
+var _ BatchApplierContext = (*TDengineDB)(nil)
+
 func (t *TDengineDB) getDSN(config connection.ConnectionConfig) string {
 	params := url.Values{}
 	mergeConnectionParamsFromConfigWithAllowlist(params, config, tdengineConnectionParamNames, "taos", "taosws", "tdengine")
@@ -661,6 +663,10 @@ func (t *TDengineDB) GetTriggers(dbName, tableName string) ([]connection.Trigger
 }
 
 func (t *TDengineDB) ApplyChanges(tableName string, changes connection.ChangeSet) error {
+	return t.ApplyChangesContext(context.Background(), tableName, changes)
+}
+
+func (t *TDengineDB) ApplyChangesContext(ctx context.Context, tableName string, changes connection.ChangeSet) error {
 	if t.conn == nil {
 		return localizedDatabaseRuntimeError("db.backend.error.connection_not_open", nil)
 	}
@@ -672,14 +678,18 @@ func (t *TDengineDB) ApplyChanges(tableName string, changes connection.ChangeSet
 	}
 
 	qualifiedTable := quoteTDengineTable("", tableName)
-	return execTDengineInsertBatches(t.conn, qualifiedTable, changes.Inserts)
+	return execTDengineInsertBatchesContext(ctx, t.conn, qualifiedTable, changes.Inserts)
 }
 
 func execTDengineInsertBatches(conn *sql.DB, qualifiedTable string, rows []map[string]interface{}) error {
+	return execTDengineInsertBatchesContext(context.Background(), conn, qualifiedTable, rows)
+}
+
+func execTDengineInsertBatchesContext(ctx context.Context, conn *sql.DB, qualifiedTable string, rows []map[string]interface{}) error {
 	if conn == nil {
 		return fmt.Errorf("连接未打开")
 	}
-	return execLiteralInsertBatches(literalInsertConfig{
+	err := execLiteralInsertBatches(literalInsertConfig{
 		Table: qualifiedTable,
 		Rows:  rows,
 		QuoteColumn: func(column string) string {
@@ -687,9 +697,16 @@ func execTDengineInsertBatches(conn *sql.DB, qualifiedTable string, rows []map[s
 		},
 		Literal: tdengineLiteral,
 		Exec: func(query string) (sql.Result, error) {
-			return conn.Exec(query)
+			return conn.ExecContext(ctx, query)
 		},
 	})
+	if err != nil && ctx.Err() != nil {
+		if IsWriteOutcomeUnknown(err) {
+			return MarkWriteOutcomeUnknown(ctx.Err())
+		}
+		return ctx.Err()
+	}
+	return err
 }
 
 func buildTDengineInsertSQL(qualifiedTable string, row map[string]interface{}) (string, error) {
