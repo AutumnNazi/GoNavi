@@ -313,6 +313,13 @@ func (c *ChromaDB) GetTriggers(dbName, tableName string) ([]connection.TriggerDe
 func (c *ChromaDB) ApplyChanges(tableName string, changes connection.ChangeSet) error {
 	ctx, cancel := context.WithTimeout(context.Background(), defaultChromaQueryTimeout)
 	defer cancel()
+	writeApplied := false
+	writeError := func(err error) error {
+		if writeApplied {
+			return MarkWriteOutcomeUnknown(err)
+		}
+		return err
+	}
 
 	if len(changes.Deletes) > 0 {
 		ids := make([]string, 0, len(changes.Deletes))
@@ -330,8 +337,9 @@ func (c *ChromaDB) ApplyChanges(tableName string, changes connection.ChangeSet) 
 		}
 		if len(ids) > 0 {
 			if _, err := c.deleteCommand(ctx, tableName, map[string]interface{}{"ids": ids}); err != nil {
-				return err
+				return writeError(err)
 			}
+			writeApplied = true
 		}
 	}
 
@@ -348,12 +356,13 @@ func (c *ChromaDB) ApplyChanges(tableName string, changes connection.ChangeSet) 
 			rows = append(rows, row)
 		}
 		if err := c.upsertRows(ctx, tableName, rows); err != nil {
-			return err
+			return writeError(err)
 		}
+		writeApplied = true
 	}
 	if len(changes.Inserts) > 0 {
 		if err := c.upsertRows(ctx, tableName, changes.Inserts); err != nil {
-			return err
+			return writeError(err)
 		}
 	}
 	return nil
