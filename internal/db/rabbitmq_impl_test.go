@@ -204,7 +204,11 @@ func TestRabbitMQQueryExecAndColumns(t *testing.T) {
 					},
 				},
 			})
-		case req.Method == http.MethodPut && escapedPath == "/api/exchanges/%2F/events.topic/publish":
+		case escapedPath == "/api/exchanges/%2F/events.topic/publish":
+			if req.Method != http.MethodPost {
+				http.Error(w, "RabbitMQ publish endpoint requires POST", http.StatusMethodNotAllowed)
+				return
+			}
 			if err := json.NewDecoder(req.Body).Decode(&lastPublishBody); err != nil {
 				t.Fatalf("decode publish body failed: %v", err)
 			}
@@ -299,6 +303,14 @@ func TestRabbitMQQueryExecAndColumns(t *testing.T) {
 	}
 	if lastPublishBody["payload_encoding"] != "string" || !strings.Contains(lastPublishBody["payload"].(string), `"id":1`) {
 		t.Fatalf("unexpected publish payload: %#v", lastPublishBody)
+	}
+
+	affected, err = client.Exec(`{"publish":"","exchange":"events.topic","routing_key":"","payload":{"fanout":true}}`)
+	if err != nil {
+		t.Fatalf("rabbitmq direct exchange publish failed: %v", err)
+	}
+	if affected != 1 || lastPublishBody["routing_key"] != "" {
+		t.Fatalf("unexpected direct exchange publish body: %#v", lastPublishBody)
 	}
 
 	getRequestCount = 0

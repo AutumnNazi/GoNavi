@@ -70,10 +70,29 @@ func (a *App) DBGetObjects(config connection.ConnectionConfig, dbName string) co
 		warnings = append(warnings, warning)
 		failedObjectTypes = append(failedObjectTypes, objectType)
 	}
+	buildResult := func() connection.QueryResult {
+		partial := len(failedObjectTypes) > 0
+		result := connection.QueryResult{
+			Success:           true,
+			Data:              dedupeSortDatabaseObjects(objects, databaseObjectIdentifiersAreCaseSensitive(dbType)),
+			Partial:           partial,
+			Warnings:          warnings,
+			FailedObjectTypes: failedObjectTypes,
+			Retryable:         partial,
+		}
+		if partial {
+			result.Message = "对象元数据不完整，可重试"
+		}
+		return result
+	}
 
 	if dbType == "rabbitmq" {
 		metadataObjects, metadataErr := listObjectsByQueries(dbInst, runConfig, dbName, "exchange", buildMessageExchangeMetadataQueries(dbType))
 		appendMetadataObjects("exchange", metadataObjects, metadataErr)
+	}
+	switch dbType {
+	case "mqtt", "kafka", "rocketmq", "rabbitmq":
+		return buildResult()
 	}
 
 	viewLookup, viewErr := listViewNameLookupWithStatus(dbInst, runConfig, dbName)
@@ -91,19 +110,7 @@ func (a *App) DBGetObjects(config connection.ConnectionConfig, dbName string) co
 	metadataObjects, metadataErr = listObjectsByQueries(dbInst, runConfig, dbName, "event", buildObjectEventMetadataQueries(dbType, dbName))
 	appendMetadataObjects("event", metadataObjects, metadataErr)
 
-	partial := len(failedObjectTypes) > 0
-	result := connection.QueryResult{
-		Success:           true,
-		Data:              dedupeSortDatabaseObjects(objects, databaseObjectIdentifiersAreCaseSensitive(dbType)),
-		Partial:           partial,
-		Warnings:          warnings,
-		FailedObjectTypes: failedObjectTypes,
-		Retryable:         partial,
-	}
-	if partial {
-		result.Message = "对象元数据不完整，可重试"
-	}
-	return result
+	return buildResult()
 }
 
 func objectMetadataWarning(objectType string, err error) string {
@@ -309,7 +316,8 @@ func splitObjectSchemaName(raw string) (string, string) {
 
 func databaseObjectIdentifiersAreCaseSensitive(dbType string) bool {
 	switch resolveDDLDBType(connection.ConnectionConfig{Type: dbType}) {
-	case "postgres", "kingbase", "highgo", "vastbase", "opengauss", "gaussdb", "oracle", "dameng":
+	case "postgres", "kingbase", "highgo", "vastbase", "opengauss", "gaussdb", "oracle", "dameng",
+		"mqtt", "kafka", "rocketmq", "rabbitmq":
 		return true
 	default:
 		return false

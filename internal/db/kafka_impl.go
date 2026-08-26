@@ -1064,7 +1064,7 @@ func parseKafkaSQL(sqlText string, defaultLatest bool) (kafkaParsedSQL, bool) {
 			GroupID: firstNonEmpty(matches[1], matches[2], matches[3]),
 			Topic:   firstNonEmpty(matches[4], matches[5], matches[6]),
 			Limit:   defaultKafkaPreviewLimit,
-			Latest:  true,
+			Latest:  defaultLatest,
 		}
 		if limitMatch := kafkaSQLLimitRE.FindStringSubmatch(text); len(limitMatch) > 1 {
 			parsed.Limit, _ = strconv.Atoi(limitMatch[1])

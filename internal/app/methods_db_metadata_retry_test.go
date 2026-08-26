@@ -267,6 +267,121 @@ func TestDBGetObjectsDeduplicatesExactTableMetadataNames(t *testing.T) {
 	}
 }
 
+func TestDBGetObjectsStopsAfterMessageBrokerObjects(t *testing.T) {
+	tests := []struct {
+		name         string
+		dbType       string
+		dbName       string
+		tables       []string
+		queryResults []fakeMetadataQueryResult
+		wantObjects  []string
+		wantQueries  []string
+	}{
+		{
+			name:        "mqtt topics preserve case",
+			dbType:      "mqtt",
+			dbName:      "topics",
+			tables:      []string{"Orders", "orders"},
+			wantObjects: []string{"topic:Orders", "topic:orders"},
+		},
+		{
+			name:        "kafka topics preserve case",
+			dbType:      "kafka",
+			dbName:      "topics",
+			tables:      []string{"Orders", "orders"},
+			wantObjects: []string{"topic:Orders", "topic:orders"},
+		},
+		{
+			name:        "rocketmq topics preserve case",
+			dbType:      "rocketmq",
+			dbName:      "topics",
+			tables:      []string{"Orders", "orders"},
+			wantObjects: []string{"topic:Orders", "topic:orders"},
+		},
+		{
+			name:   "rabbitmq queues and exchanges preserve case",
+			dbType: "rabbitmq",
+			dbName: "/",
+			tables: []string{"Orders", "orders"},
+			queryResults: []fakeMetadataQueryResult{
+				{
+					match: "SHOW EXCHANGES",
+					rows: []map[string]interface{}{
+						{"exchange": "Orders", "type": "topic"},
+						{"exchange": "orders", "type": "topic"},
+					},
+					fields: []string{"exchange", "type"},
+				},
+			},
+			wantObjects: []string{
+				"exchange:Orders",
+				"exchange:orders",
+				"queue:Orders",
+				"queue:orders",
+			},
+			wantQueries: []string{"SHOW EXCHANGES"},
+		},
+	}
+
+	for index, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			installFakeOptionalDriverRuntime(t)
+			originalNewDatabaseFunc := newDatabaseFunc
+			originalResolveDialConfigWithProxyFunc := resolveDialConfigWithProxyFunc
+			t.Cleanup(func() {
+				newDatabaseFunc = originalNewDatabaseFunc
+				resolveDialConfigWithProxyFunc = originalResolveDialConfigWithProxyFunc
+			})
+
+			database := &fakeMetadataRetryDB{
+				tables:       test.tables,
+				queryResults: test.queryResults,
+				queryErr:     errors.New("unexpected relational metadata query"),
+			}
+			newDatabaseFunc = func(dbType string) (db.Database, error) {
+				if dbType != test.dbType {
+					t.Fatalf("newDatabaseFunc type = %q, want %q", dbType, test.dbType)
+				}
+				return database, nil
+			}
+			resolveDialConfigWithProxyFunc = func(raw connection.ConnectionConfig) (connection.ConnectionConfig, error) {
+				return raw, nil
+			}
+
+			application := NewAppWithSecretStore(secretstore.NewUnavailableStore("test"))
+			config := connection.ConnectionConfig{
+				Type: test.dbType,
+				Host: "message-broker.test",
+				Port: 19000 + index,
+			}
+			result := application.DBGetObjects(config, test.dbName)
+			if !result.Success || result.Partial || result.Retryable {
+				t.Fatalf("DBGetObjects(%s) = %#v, want complete success", test.dbType, result)
+			}
+			objects, ok := result.Data.([]connection.DatabaseObject)
+			if !ok {
+				t.Fatalf("DBGetObjects(%s) data type = %T, want []connection.DatabaseObject", test.dbType, result.Data)
+			}
+			gotObjects := make([]string, 0, len(objects))
+			for _, object := range objects {
+				gotObjects = append(gotObjects, object.Type+":"+object.Name)
+			}
+			if !reflect.DeepEqual(gotObjects, test.wantObjects) {
+				t.Fatalf("DBGetObjects(%s) objects = %v, want %v", test.dbType, gotObjects, test.wantObjects)
+			}
+			if !reflect.DeepEqual(database.queries, test.wantQueries) {
+				t.Fatalf("DBGetObjects(%s) queries = %v, want %v", test.dbType, database.queries, test.wantQueries)
+			}
+			for _, query := range database.queries {
+				lowerQuery := strings.ToLower(query)
+				if strings.Contains(lowerQuery, "information_schema") || strings.Contains(lowerQuery, "pg_catalog") || strings.Contains(lowerQuery, "sqlite_") {
+					t.Fatalf("DBGetObjects(%s) executed relational metadata query %q", test.dbType, query)
+				}
+			}
+		})
+	}
+}
+
 func TestDBGetColumnsReusesOceanBaseOracleBaseConnectionForSelectedSchema(t *testing.T) {
 	dbInst := &fakeMetadataRetryDB{
 		columns: []connection.ColumnDefinition{{Name: "ID", Key: "PRI"}},

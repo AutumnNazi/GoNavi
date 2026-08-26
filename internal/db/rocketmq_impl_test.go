@@ -14,14 +14,14 @@ import (
 )
 
 type fakeRocketMQRuntime struct {
-	listTopicsResult   []rocketmqTopicInfo
-	describeResult     rocketmqTopicDescription
-	fetchResult        []rocketmqMessageRecord
-	publishAffected    int64
-	lastDescribe       rocketmqDescribeRequest
-	lastFetch          rocketmqFetchRequest
-	lastPublish        rocketmqPublishCommand
-	fetchCount         int
+	listTopicsResult []rocketmqTopicInfo
+	describeResult   rocketmqTopicDescription
+	fetchResult      []rocketmqMessageRecord
+	publishAffected  int64
+	lastDescribe     rocketmqDescribeRequest
+	lastFetch        rocketmqFetchRequest
+	lastPublish      rocketmqPublishCommand
+	fetchCount       int
 }
 
 func (f *fakeRocketMQRuntime) Close() error { return nil }
@@ -369,6 +369,26 @@ func TestRocketMQQueryExecAndColumns(t *testing.T) {
 	}
 	if !reflect.DeepEqual(tables, []string{"orders.events"}) {
 		t.Fatalf("unexpected rocketmq topic list: %#v", tables)
+	}
+}
+
+func TestParseRocketMQConsumeUsesConfiguredStartOffset(t *testing.T) {
+	for _, testCase := range []struct {
+		name          string
+		defaultLatest bool
+	}{
+		{name: "earliest", defaultLatest: false},
+		{name: "latest", defaultLatest: true},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			parsed, ok := parseRocketMQSQL(`CONSUME FROM "orders.events" LIMIT 10`, testCase.defaultLatest)
+			if !ok {
+				t.Fatal("CONSUME should parse")
+			}
+			if parsed.Latest != testCase.defaultLatest {
+				t.Fatalf("Latest = %v, want configured value %v", parsed.Latest, testCase.defaultLatest)
+			}
+		})
 	}
 }
 

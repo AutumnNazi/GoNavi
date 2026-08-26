@@ -228,8 +228,28 @@ func TestKafkaQuerySelectAndConsumeKeepTopicNameIntact(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CONSUME failed: %v", err)
 	}
-	if runtime.lastFetchRequest.Topic != "logs.app-1" || runtime.lastFetchRequest.GroupID != "gonavi" || !runtime.lastFetchRequest.Latest {
+	if runtime.lastFetchRequest.Topic != "logs.app-1" || runtime.lastFetchRequest.GroupID != "gonavi" || runtime.lastFetchRequest.Latest {
 		t.Fatalf("unexpected consume request: %#v", runtime.lastFetchRequest)
+	}
+}
+
+func TestParseKafkaConsumeUsesConfiguredStartOffset(t *testing.T) {
+	for _, testCase := range []struct {
+		name          string
+		defaultLatest bool
+	}{
+		{name: "earliest", defaultLatest: false},
+		{name: "latest", defaultLatest: true},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			parsed, ok := parseKafkaSQL(`CONSUME FROM "orders.events" LIMIT 10`, testCase.defaultLatest)
+			if !ok {
+				t.Fatal("CONSUME should parse")
+			}
+			if parsed.Latest != testCase.defaultLatest {
+				t.Fatalf("Latest = %v, want configured value %v", parsed.Latest, testCase.defaultLatest)
+			}
+		})
 	}
 }
 

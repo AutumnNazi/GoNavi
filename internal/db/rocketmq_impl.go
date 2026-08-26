@@ -55,13 +55,13 @@ type rocketmqTopicInfo struct {
 }
 
 type rocketmqTopicDescription struct {
-	Name                 string
-	Namespace            string
-	ConsumerGroup        string
-	TagExpression        string
-	QueueCount           int
+	Name                  string
+	Namespace             string
+	ConsumerGroup         string
+	TagExpression         string
+	QueueCount            int
 	TotalApproximateCount int64
-	Queues               []rocketmqTopicQueueInfo
+	Queues                []rocketmqTopicQueueInfo
 }
 
 type rocketmqTopicQueueInfo struct {
@@ -1285,7 +1285,7 @@ func parseRocketMQSQL(sqlText string, defaultLatest bool) (rocketmqParsedSQL, bo
 			Action: "consume",
 			Topic:  firstNonEmpty(matches[1], matches[2], matches[3]),
 			Limit:  defaultRocketMQPreviewLimit,
-			Latest: true,
+			Latest: defaultLatest,
 		}
 		if limitMatch := rocketmqSQLLimitRE.FindStringSubmatch(text); len(limitMatch) > 1 {
 			parsed.Limit, _ = strconv.Atoi(limitMatch[1])
@@ -1352,17 +1352,17 @@ func rocketmqDescribeRows(description rocketmqTopicDescription) []map[string]int
 	rows := make([]map[string]interface{}, 0, len(description.Queues))
 	for _, queue := range description.Queues {
 		rows = append(rows, map[string]interface{}{
-			"topic":                    description.Name,
-			"namespace":                description.Namespace,
-			"consumer_group":           description.ConsumerGroup,
-			"tag_expression":           description.TagExpression,
-			"queue_count":              description.QueueCount,
-			"topic_approximate_count":  description.TotalApproximateCount,
-			"broker_name":              queue.BrokerName,
-			"queue_id":                 queue.QueueID,
-			"min_offset":               queue.MinOffset,
-			"max_offset":               queue.MaxOffset,
-			"approximate_count":        queue.ApproximateCount,
+			"topic":                   description.Name,
+			"namespace":               description.Namespace,
+			"consumer_group":          description.ConsumerGroup,
+			"tag_expression":          description.TagExpression,
+			"queue_count":             description.QueueCount,
+			"topic_approximate_count": description.TotalApproximateCount,
+			"broker_name":             queue.BrokerName,
+			"queue_id":                queue.QueueID,
+			"min_offset":              queue.MinOffset,
+			"max_offset":              queue.MaxOffset,
+			"approximate_count":       queue.ApproximateCount,
 		})
 	}
 	if len(rows) == 0 {
