@@ -67,6 +67,23 @@ func TestTrinoCloseCleansStateWhenDatabaseCloseFails(t *testing.T) {
 	}
 }
 
+func TestOpenTrinoSQLConnectionConfiguresPool(t *testing.T) {
+	const driverName = "gonavi_trino_close_test"
+	trinoCloseTestDriverOnce.Do(func() {
+		sql.Register(driverName, trinoCloseTestDriver{})
+	})
+
+	conn, err := openTrinoSQLConnection(driverName, "")
+	if err != nil {
+		t.Fatalf("open test database: %v", err)
+	}
+	t.Cleanup(func() { _ = conn.Close() })
+
+	if got := conn.Stats().MaxOpenConnections; got != defaultSQLMaxOpenConns {
+		t.Fatalf("max open connections = %d, want %d", got, defaultSQLMaxOpenConns)
+	}
+}
+
 func TestBuildTrinoDSNDoesNotDeriveQueryTimeoutFromConnectionTimeout(t *testing.T) {
 	dsn, err := buildTrinoDSN(connection.ConnectionConfig{
 		Type:     "trino",
