@@ -207,7 +207,9 @@ func TestStartStreamableHTTPServerSupportsNormalSessionAndSSE(t *testing.T) {
 		}
 	})
 
-	httpClient := &http.Client{Transport: bearerTokenRoundTripper{token: "test-token", base: http.DefaultTransport}}
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	t.Cleanup(transport.CloseIdleConnections)
+	httpClient := &http.Client{Transport: bearerTokenRoundTripper{token: "test-token", base: transport}}
 	client := mcp.NewClient(&mcp.Implementation{Name: "run-test-client", Version: "v0.0.1"}, nil)
 	session, err := client.Connect(ctx, &mcp.StreamableClientTransport{
 		Endpoint:   "http://" + handle.Addr + handle.Path,
