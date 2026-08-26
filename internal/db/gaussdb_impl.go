@@ -228,7 +228,10 @@ func (g *GaussDB) ensureSearchPath(baseDSN string) error {
 		return nil
 	}
 
-	rawSchemas := g.queryUserSchemas()
+	rawSchemas, err := g.queryUserSchemas()
+	if err != nil {
+		return fmt.Errorf("查询用户 schema 失败：%w", err)
+	}
 	if len(rawSchemas) == 0 {
 		return nil
 	}

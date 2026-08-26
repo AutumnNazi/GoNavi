@@ -587,7 +587,10 @@ func (p *PostgresDB) ensureSearchPath(baseDSN string) error {
 		return nil
 	}
 
-	rawSchemas := p.queryUserSchemas()
+	rawSchemas, err := p.queryUserSchemas()
+	if err != nil {
+		return fmt.Errorf("查询用户 schema 失败：%w", err)
+	}
 	if len(rawSchemas) == 0 {
 		return nil
 	}
@@ -622,9 +625,9 @@ func (p *PostgresDB) ensureSearchPath(baseDSN string) error {
 }
 
 // queryUserSchemas 查询当前数据库中所有用户 schema。
-func (p *PostgresDB) queryUserSchemas() []string {
+func (p *PostgresDB) queryUserSchemas() ([]string, error) {
 	if p.conn == nil {
-		return nil
+		return nil, nil
 	}
 
 	query := `SELECT nspname FROM pg_namespace
@@ -634,8 +637,7 @@ func (p *PostgresDB) queryUserSchemas() []string {
 
 	rows, err := p.conn.QueryContext(metadataContextFor(p), query)
 	if err != nil {
-		logger.Warnf("PostgreSQL 查询用户 schema 失败：%v", err)
-		return nil
+		return nil, fmt.Errorf("查询用户 schema：%w", err)
 	}
 	defer rows.Close()
 
@@ -643,14 +645,17 @@ func (p *PostgresDB) queryUserSchemas() []string {
 	for rows.Next() {
 		var name string
 		if err := rows.Scan(&name); err != nil {
-			continue
+			return nil, fmt.Errorf("扫描用户 schema：%w", err)
 		}
 		name = strings.TrimSpace(name)
 		if name != "" {
 			schemas = append(schemas, name)
 		}
 	}
-	return schemas
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("遍历用户 schema：%w", err)
+	}
+	return schemas, nil
 }
 
 func (p *PostgresDB) ApplyChanges(tableName string, changes connection.ChangeSet) error {
