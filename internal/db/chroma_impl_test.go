@@ -415,6 +415,7 @@ func TestChromaApplyChangesRejectsDeletesWithoutID(t *testing.T) {
 	}{
 		{name: "empty id", deletes: []map[string]interface{}{{"id": ""}}},
 		{name: "nil id", deletes: []map[string]interface{}{{"id": nil}}},
+		{name: "typed nil id", deletes: []map[string]interface{}{{"id": (*string)(nil)}}},
 		{name: "missing id", deletes: []map[string]interface{}{{}}},
 		{name: "mixed ids", deletes: []map[string]interface{}{{"id": "old"}, {"id": ""}}},
 	} {

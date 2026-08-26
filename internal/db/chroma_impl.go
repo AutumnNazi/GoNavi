@@ -330,11 +330,7 @@ func (c *ChromaDB) ApplyChangesContext(ctx context.Context, tableName string, ch
 	if len(changes.Deletes) > 0 {
 		ids := make([]string, 0, len(changes.Deletes))
 		for _, row := range changes.Deletes {
-			rawID := firstExisting(row, "id", "_id")
-			if rawID == nil {
-				continue
-			}
-			if id := strings.TrimSpace(fmt.Sprintf("%v", rawID)); id != "" {
+			if id := chromaRowID(row); id != "" {
 				ids = append(ids, id)
 			}
 		}
@@ -1056,7 +1052,15 @@ func chromaCountValue(raw interface{}) int64 {
 }
 
 func chromaRowID(row map[string]interface{}) string {
-	return strings.TrimSpace(fmt.Sprintf("%v", firstExisting(row, "id", "_id")))
+	raw := firstExisting(row, "id", "_id")
+	if raw == nil {
+		return ""
+	}
+	text := strings.TrimSpace(fmt.Sprintf("%v", raw))
+	if text == "" || text == "<nil>" {
+		return ""
+	}
+	return text
 }
 
 func isChromaReservedRowField(key string) bool {
