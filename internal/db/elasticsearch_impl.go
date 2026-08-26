@@ -43,6 +43,8 @@ type ElasticsearchDB struct {
 	forwarder        *ssh.LocalForwarder
 }
 
+var _ BatchApplierContext = (*ElasticsearchDB)(nil)
+
 func (e *ElasticsearchDB) ElasticsearchConsoleTransportUsable() bool {
 	return e.consoleClient != nil
 }
@@ -943,11 +945,15 @@ func (e *ElasticsearchDB) esBulkActionMeta(action, indexName string, docID strin
 // resolveWriteIndex 解析别名 metadata 中唯一标记为 is_write_index 的索引。
 // 直接索引名通过 GetAlias 的 404 判定；别名缺失或冲突时拒绝写入。
 func (e *ElasticsearchDB) resolveWriteIndex(indexOrAlias string) (string, error) {
+	return e.resolveWriteIndexContext(context.Background(), indexOrAlias)
+}
+
+func (e *ElasticsearchDB) resolveWriteIndexContext(ctx context.Context, indexOrAlias string) (string, error) {
 	indexOrAlias = strings.TrimSpace(indexOrAlias)
 	if indexOrAlias == "" {
 		return "", fmt.Errorf("未指定索引或别名")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
 	res, err := e.client.Indices.GetAlias(
@@ -1012,6 +1018,10 @@ func isESMetaField(name string) bool {
 
 // ApplyChanges 实现 BatchApplier 接口，通过 ES _bulk API 批量提交增删改。
 func (e *ElasticsearchDB) ApplyChanges(tableName string, changes connection.ChangeSet) error {
+	return e.ApplyChangesContext(context.Background(), tableName, changes)
+}
+
+func (e *ElasticsearchDB) ApplyChangesContext(ctx context.Context, tableName string, changes connection.ChangeSet) error {
 	if e.client == nil {
 		return localizedDatabaseRuntimeError("db.backend.error.connection_not_open", nil)
 	}
@@ -1024,7 +1034,7 @@ func (e *ElasticsearchDB) ApplyChanges(tableName string, changes connection.Chan
 	var bulkBody bytes.Buffer
 
 	// 如果目标是别名（非直接索引），解析出实际的可写索引名。
-	writeIndexName, err := e.resolveWriteIndex(indexName)
+	writeIndexName, err := e.resolveWriteIndexContext(ctx, indexName)
 	if err != nil {
 		return fmt.Errorf("解析写入索引失败：%w", err)
 	}
@@ -1090,7 +1100,7 @@ func (e *ElasticsearchDB) ApplyChanges(tableName string, changes connection.Chan
 		return nil
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
 	res, err := e.client.Bulk(

@@ -50,6 +50,8 @@ type MilvusDB struct {
 	forwarder   *ssh.LocalForwarder
 }
 
+var _ BatchApplierContext = (*MilvusDB)(nil)
+
 func (m *MilvusDB) Connect(config connection.ConnectionConfig) (err error) {
 	_ = m.Close()
 	defer func() {
@@ -348,7 +350,11 @@ func (m *MilvusDB) GetTriggers(dbName, tableName string) ([]connection.TriggerDe
 }
 
 func (m *MilvusDB) ApplyChanges(tableName string, changes connection.ChangeSet) error {
-	ctx, cancel := context.WithTimeout(context.Background(), defaultMilvusQueryTimeout)
+	return m.ApplyChangesContext(context.Background(), tableName, changes)
+}
+
+func (m *MilvusDB) ApplyChangesContext(ctx context.Context, tableName string, changes connection.ChangeSet) error {
+	ctx, cancel := context.WithTimeout(ctx, defaultMilvusQueryTimeout)
 	defer cancel()
 	collection := strings.TrimSpace(tableName)
 	if collection == "" {

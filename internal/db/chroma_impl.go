@@ -40,6 +40,8 @@ type ChromaDB struct {
 	forwarder   *ssh.LocalForwarder
 }
 
+var _ BatchApplierContext = (*ChromaDB)(nil)
+
 type chromaCollection struct {
 	ID        string                 `json:"id"`
 	Name      string                 `json:"name"`
@@ -311,7 +313,11 @@ func (c *ChromaDB) GetTriggers(dbName, tableName string) ([]connection.TriggerDe
 }
 
 func (c *ChromaDB) ApplyChanges(tableName string, changes connection.ChangeSet) error {
-	ctx, cancel := context.WithTimeout(context.Background(), defaultChromaQueryTimeout)
+	return c.ApplyChangesContext(context.Background(), tableName, changes)
+}
+
+func (c *ChromaDB) ApplyChangesContext(ctx context.Context, tableName string, changes connection.ChangeSet) error {
+	ctx, cancel := context.WithTimeout(ctx, defaultChromaQueryTimeout)
 	defer cancel()
 
 	if len(changes.Deletes) > 0 {
