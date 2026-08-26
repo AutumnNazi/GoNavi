@@ -867,6 +867,11 @@ body[data-ui-version="v2"] .gn-v2-redis-empty-value {
   -webkit-backdrop-filter: none !important;
 }
 
+body[data-ui-version="v2"] .gn-v2-redis-header,
+body[data-ui-version="v2"] .gn-v2-redis-tree-card {
+  min-width: 0;
+}
+
 body[data-ui-version="v2"] .gn-v2-redis-header {
   grid-row: 1;
   padding: 14px !important;
@@ -936,6 +941,31 @@ body[data-ui-version="v2"] .gn-v2-redis-tree-shell {
   box-shadow: none !important;
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
+}
+
+/* Redis highlights the complete Tree row, including its checkbox. Keep the
+   nested Ant Tree content wrapper transparent so hover/selection does not
+   render a second, inset highlight behind the Key label. */
+body[data-ui-version="v2"] .gn-v2-redis-workbench .ant-tree .ant-tree-treenode:hover {
+  background: var(--gn-bg-hover) !important;
+}
+
+body[data-ui-version="v2"] .gn-v2-redis-workbench .ant-tree .ant-tree-treenode.ant-tree-treenode-selected,
+body[data-ui-version="v2"] .gn-v2-redis-workbench .ant-tree .ant-tree-treenode.ant-tree-treenode-selected:hover {
+  background: var(--gn-bg-selected) !important;
+  border: none !important;
+}
+
+body[data-ui-version="v2"] .gn-v2-redis-workbench .ant-tree .ant-tree-node-content-wrapper:hover,
+body[data-ui-version="v2"] .gn-v2-redis-workbench .ant-tree .ant-tree-node-content-wrapper:active,
+body[data-ui-version="v2"] .gn-v2-redis-workbench .ant-tree .ant-tree-node-content-wrapper:focus,
+body[data-ui-version="v2"] .gn-v2-redis-workbench .ant-tree .ant-tree-node-content-wrapper:focus-visible,
+body[data-ui-version="v2"] .gn-v2-redis-workbench .ant-tree .ant-tree-node-content-wrapper.ant-tree-node-selected,
+body[data-ui-version="v2"] .gn-v2-redis-workbench .ant-tree .ant-tree-node-content-wrapper.ant-tree-node-selected:hover {
+  background: transparent !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+  outline: none !important;
 }
 
 body[data-ui-version="v2"] .gn-v2-redis-workbench .ant-tree-checkbox {

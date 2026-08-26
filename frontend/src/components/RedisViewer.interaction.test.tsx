@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import RedisViewer from './RedisViewer';
 
 const appCss = readFileSync(new URL('../App.css', import.meta.url), 'utf8');
+const v2WorkbenchCss = readFileSync(new URL('../styles/v2-theme-workbench.css', import.meta.url), 'utf8');
 
 const storeState = vi.hoisted(() => ({
   connections: [
@@ -1822,6 +1823,24 @@ describe('RedisViewer tree interactions', () => {
   it('only shows the Redis value table scrollbar when its rows overflow', () => {
     expect(appCss).toMatch(
       /\.redis-value-table-shell \.ant-table-body\s*\{[^}]*overflow-y:\s*auto\s*!important;/s,
+    );
+  });
+
+  it('keeps the V2 Redis Key hover highlight on a single row surface', () => {
+    expect(v2WorkbenchCss).toMatch(
+      /body\[data-ui-version="v2"\] \.gn-v2-redis-workbench \.ant-tree \.ant-tree-treenode:hover\s*\{[^}]*background:\s*var\(--gn-bg-hover\)\s*!important;/s,
+    );
+    expect(v2WorkbenchCss).toMatch(
+      /\.ant-tree-treenode\.ant-tree-treenode-selected:hover\s*\{[^}]*background:\s*var\(--gn-bg-selected\)\s*!important;[^}]*border:\s*none\s*!important;/s,
+    );
+    expect(v2WorkbenchCss).toMatch(
+      /body\[data-ui-version="v2"\] \.gn-v2-redis-workbench \.ant-tree \.ant-tree-node-content-wrapper:hover,[^{]*\{[^}]*background:\s*transparent\s*!important;/s,
+    );
+  });
+
+  it('allows the V2 Redis header and Key card to shrink inside the sidebar grid column', () => {
+    expect(v2WorkbenchCss).toMatch(
+      /body\[data-ui-version="v2"\] \.gn-v2-redis-header,\s*body\[data-ui-version="v2"\] \.gn-v2-redis-tree-card\s*\{[^}]*min-width:\s*0\s*;/s,
     );
   });
 
