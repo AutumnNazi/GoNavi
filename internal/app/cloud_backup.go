@@ -1558,6 +1558,7 @@ func writeCloudBackupFile(target string, data []byte, mode os.FileMode) error {
 }
 
 func (a *App) initializeCloudBackup(ctx context.Context) {
+	a.initializeCloudBackupLifecycle(ctx)
 	if _, err := a.CloudBackupGetConfig(); err != nil {
 		logger.Warnf("加载云端备份配置失败：%v", err)
 	}
@@ -1577,11 +1578,11 @@ func (a *App) restartCloudBackupScheduler() {
 		return
 	}
 	a.cloudBackupSchedulerMu.Lock()
+	defer a.cloudBackupSchedulerMu.Unlock()
 	if a.cloudBackupSchedulerCancel != nil {
 		a.cloudBackupSchedulerCancel()
 	}
 	a.cloudBackupSchedulerCancel = nil
-	a.cloudBackupSchedulerMu.Unlock()
 	config, err := a.loadCloudBackupConfig()
 	if err != nil || !config.Enabled {
 		return
@@ -1590,11 +1591,18 @@ func (a *App) restartCloudBackupScheduler() {
 	if interval <= 0 {
 		return
 	}
-	ctx, cancel := context.WithCancel(context.Background())
-	a.cloudBackupSchedulerMu.Lock()
+	a.cloudBackupLifecycleMu.Lock()
+	parent := a.cloudBackupLifecycleContextLocked(context.Background())
+	if a.cloudBackupShuttingDown || parent.Err() != nil {
+		a.cloudBackupLifecycleMu.Unlock()
+		return
+	}
+	ctx, cancel := context.WithCancel(parent)
 	a.cloudBackupSchedulerCancel = cancel
-	a.cloudBackupSchedulerMu.Unlock()
+	a.cloudBackupBackgroundWG.Add(1)
+	a.cloudBackupLifecycleMu.Unlock()
 	go func() {
+		defer a.cloudBackupBackgroundWG.Done()
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 		for {
@@ -1638,11 +1646,73 @@ func (a *App) markCloudBackupDirty() {
 	if config.Schedule != CloudBackupScheduleImmediate {
 		return
 	}
-	go func() {
-		if _, err := a.cloudBackupSync(context.Background()); err != nil {
-			logger.Warnf("修改后同步云端备份失败：%v", err)
+	a.queueImmediateCloudBackup()
+}
+
+func (a *App) initializeCloudBackupLifecycle(parent context.Context) {
+	a.cloudBackupLifecycleMu.Lock()
+	defer a.cloudBackupLifecycleMu.Unlock()
+	if a.cloudBackupShuttingDown {
+		return
+	}
+	a.cloudBackupLifecycleContextLocked(parent)
+}
+
+func (a *App) cloudBackupLifecycleContextLocked(parent context.Context) context.Context {
+	if a.cloudBackupLifecycleCtx != nil {
+		return a.cloudBackupLifecycleCtx
+	}
+	if parent == nil {
+		parent = context.Background()
+	}
+	a.cloudBackupLifecycleCtx, a.cloudBackupLifecycleCancel = context.WithCancel(parent)
+	a.cloudBackupImmediateSignal = make(chan struct{}, 1)
+	return a.cloudBackupLifecycleCtx
+}
+
+func (a *App) queueImmediateCloudBackup() {
+	a.cloudBackupLifecycleMu.Lock()
+	if a.cloudBackupShuttingDown {
+		a.cloudBackupLifecycleMu.Unlock()
+		return
+	}
+	ctx := a.cloudBackupLifecycleContextLocked(context.Background())
+	if ctx.Err() != nil {
+		a.cloudBackupLifecycleMu.Unlock()
+		return
+	}
+	if !a.cloudBackupImmediateStarted {
+		a.cloudBackupImmediateStarted = true
+		a.cloudBackupBackgroundWG.Add(1)
+		go a.runImmediateCloudBackup(ctx, a.cloudBackupImmediateSignal)
+	}
+	select {
+	case a.cloudBackupImmediateSignal <- struct{}{}:
+	default:
+	}
+	a.cloudBackupLifecycleMu.Unlock()
+}
+
+func (a *App) runImmediateCloudBackup(ctx context.Context, signal <-chan struct{}) {
+	defer a.cloudBackupBackgroundWG.Done()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		default:
 		}
-	}()
+		select {
+		case <-ctx.Done():
+			return
+		case <-signal:
+			if ctx.Err() != nil {
+				return
+			}
+			if _, err := a.cloudBackupSync(ctx); err != nil && ctx.Err() == nil {
+				logger.Warnf("修改后同步云端备份失败：%v", err)
+			}
+		}
+	}
 }
 
 func (a *App) cloudBackupDirtyState() (bool, uint64) {
@@ -1669,6 +1739,13 @@ func (a *App) shutdownCloudBackup() {
 		a.cloudBackupSchedulerCancel = nil
 	}
 	a.cloudBackupSchedulerMu.Unlock()
+	a.cloudBackupLifecycleMu.Lock()
+	a.cloudBackupShuttingDown = true
+	if a.cloudBackupLifecycleCancel != nil {
+		a.cloudBackupLifecycleCancel()
+	}
+	a.cloudBackupLifecycleMu.Unlock()
+	a.cloudBackupBackgroundWG.Wait()
 	config, err := a.loadCloudBackupConfig()
 	if err != nil || !config.Enabled || config.Schedule != CloudBackupScheduleOnExit {
 		return

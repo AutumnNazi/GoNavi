@@ -233,6 +233,13 @@ type App struct {
 	cloudBackupSyncMu             sync.Mutex
 	cloudBackupStateMu            sync.Mutex
 	cloudBackupSecretMu           sync.Mutex
+	cloudBackupLifecycleMu        sync.Mutex
+	cloudBackupLifecycleCtx       context.Context
+	cloudBackupLifecycleCancel    context.CancelFunc
+	cloudBackupBackgroundWG       sync.WaitGroup
+	cloudBackupShuttingDown       bool
+	cloudBackupImmediateSignal    chan struct{}
+	cloudBackupImmediateStarted   bool
 	cloudBackupSchedulerMu        sync.Mutex
 	cloudBackupSchedulerCancel    context.CancelFunc
 	cloudBackupDirtyMu            sync.Mutex
