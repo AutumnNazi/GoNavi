@@ -444,9 +444,13 @@ func (t *TrinoDB) ExecContext(ctx context.Context, query string) (int64, error) 
 	if err != nil {
 		return 0, err
 	}
+	return trinoRowsAffected(res)
+}
+
+func trinoRowsAffected(res sql.Result) (int64, error) {
 	affected, err := res.RowsAffected()
 	if err != nil {
-		return 0, nil
+		return 0, MarkWriteOutcomeUnknown(err)
 	}
 	return affected, nil
 }
