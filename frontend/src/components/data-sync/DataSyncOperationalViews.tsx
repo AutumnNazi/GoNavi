@@ -7,6 +7,7 @@ import type {
   DataSyncCompareMode,
   DataSyncCompareResult,
   DataSyncErrorRow,
+  DataSyncRunEvent,
   DataSyncRunRecord,
   DataSyncRunPageSize,
   DataSyncScheduleSummary,
@@ -58,6 +59,7 @@ export const DataSyncRunHistory: React.FC<{
   hasNextRunPage: boolean;
   selectedRunId: string;
   selectedRunMessage?: string;
+  runEvents: DataSyncRunEvent[];
   errorRows: DataSyncErrorRow[];
   compareResult: DataSyncCompareResult | null;
   compareMode?: DataSyncCompareMode;
@@ -88,6 +90,7 @@ export const DataSyncRunHistory: React.FC<{
   hasNextRunPage,
   selectedRunId,
   selectedRunMessage,
+  runEvents,
   errorRows,
   compareResult,
   compareMode,
@@ -266,6 +269,36 @@ export const DataSyncRunHistory: React.FC<{
       </nav>
       </>
     )}
+
+    <section className="gn-data-sync-run-events" data-data-sync-run-events="true">
+      <h2>{t('events.title')}</h2>
+      {!selectedRunId ? (
+        <p>{t('events.select_run')}</p>
+      ) : runEvents.length === 0 ? (
+        <p>{t('events.empty')}</p>
+      ) : (
+        <ol className="gn-data-sync-run-events__timeline">
+          {runEvents.map((event) => {
+            const scope = [event.stage, event.table].filter(Boolean).join(' · ');
+            return (
+              <li key={event.sequence} data-event-sequence={event.sequence}>
+                <div className="gn-data-sync-run-events__marker" aria-hidden="true" />
+                <div className="gn-data-sync-run-events__content">
+                  <header>
+                    <strong>{event.type}</strong>
+                    <time>{formatDataSyncTime(event.createdAt)}</time>
+                  </header>
+                  {scope ? (
+                    <p className="gn-data-sync-run-events__meta">{scope}</p>
+                  ) : null}
+                  {event.message ? <p>{event.message}</p> : null}
+                </div>
+              </li>
+            );
+          })}
+        </ol>
+      )}
+    </section>
 
     <section className="gn-data-sync-error-rows" data-data-sync-error-rows="true">
       <h2>{t('errors.title')}</h2>
