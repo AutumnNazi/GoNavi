@@ -77,6 +77,7 @@ type UseSidebarV2ActionHandlersArgs = {
   openDesign: (node: any, initialTab: string, readOnly?: boolean) => void;
   openNewTableDesign: (node: any) => void;
   onDoubleClick: (event: any, node: any) => void;
+  openMessageQueueWorkbench: (node: any, action?: 'open' | 'consume' | 'publish') => void;
   openMessagePublishModal: (node: any) => void;
   openTableDdlInDesigner: (node: any) => void;
   openTableInERView: (node: any) => void;
@@ -149,6 +150,7 @@ export const useSidebarV2ActionHandlers = ({
   openDesign,
   openNewTableDesign,
   onDoubleClick,
+  openMessageQueueWorkbench,
   openMessagePublishModal,
   openTableDdlInDesigner,
   openTableInERView,
@@ -574,6 +576,15 @@ export const useSidebarV2ActionHandlers = ({
           dbName: undefined,
           query: '',
         });
+        return;
+      case 'open-message-workbench':
+        openMessageQueueWorkbench(node, 'open');
+        return;
+      case 'consume-messages':
+        openMessageQueueWorkbench(node, 'consume');
+        return;
+      case 'publish-message':
+        openMessagePublishModal(node);
         return;
       case 'open-sql-file':
         handleRunSQLFile(node);

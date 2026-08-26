@@ -19,9 +19,11 @@ import {
   FolderAddOutlined,
   FolderOpenOutlined,
   FolderOutlined,
+  InboxOutlined,
   KeyOutlined,
   LinkOutlined,
   PlusOutlined,
+  PlayCircleOutlined,
   ReloadOutlined,
   SaveOutlined,
   SendOutlined,
@@ -348,6 +350,7 @@ export const buildSidebarLegacyNodeMenuItems = (
     openSequenceDefinition,
     openPackageDefinition,
     resolveMessagePublishTarget,
+    openMessageQueueWorkbench,
     openMessagePublishModal,
     openDesign,
     openCreateStarRocksRollup,
@@ -793,6 +796,8 @@ export const buildSidebarLegacyNodeMenuItems = (
         // Regular database connection menu
         const connectionCapabilities = getDataSourceCapabilities((node.dataRef as SavedConnection)?.config);
         const isElasticsearch = connectionCapabilities.type === 'elasticsearch';
+        const isMessageQueue = ['mqtt', 'kafka', 'rocketmq', 'rabbitmq'].includes(connectionCapabilities.type);
+        const messagePublishTarget = isMessageQueue ? resolveMessagePublishTarget(node) : null;
         return [
             ...((connectionCapabilities.supportsCreateDatabase || connectionCapabilities.supportsCreateIndex) ? [{
                 key: 'new-db',
@@ -828,6 +833,26 @@ export const buildSidebarLegacyNodeMenuItems = (
             },
             { type: 'divider' },
              ...(connectionCapabilities.supportsQueryEditor ? [
+                 ...(isMessageQueue ? [
+                     {
+                       key: 'open-message-workbench',
+                       label: t('message_queue_workbench.tab_kind'),
+                       icon: <InboxOutlined />,
+                       onClick: () => openMessageQueueWorkbench(node, 'open'),
+                     },
+                     {
+                       key: 'consume-messages',
+                       label: t('message_consume.action.subscribe'),
+                       icon: <PlayCircleOutlined />,
+                       onClick: () => openMessageQueueWorkbench(node, 'consume'),
+                     },
+                     ...(messagePublishTarget ? [{
+                       key: 'publish-message',
+                       label: t('message_queue_workbench.action.publish'),
+                       icon: <SendOutlined />,
+                       onClick: () => openMessagePublishModal(node),
+                     }] : []),
+                 ] : [
                  {
                    key: 'new-query',
                    label: t('sidebar.menu.new_query'),
@@ -849,6 +874,7 @@ export const buildSidebarLegacyNodeMenuItems = (
                      icon: <FileAddOutlined />,
                      onClick: () => handleRunSQLFile(node)
                  },
+                 ]),
              ] : []),
              { type: 'divider' },
              ...(supportsConnectionVisibility(node.dataRef as SavedConnection) ? [{
@@ -1488,6 +1514,74 @@ export const buildSidebarLegacyNodeMenuItems = (
                 label: t('sidebar.menu.edit_definition'),
                 icon: <EditOutlined />,
                 onClick: () => void openEditEvent(node)
+            },
+        ];
+    } else if (node.type === 'message-namespace' || node.type === 'message-object-group') {
+        const messagePublishTarget = resolveMessagePublishTarget(node);
+        return [
+            ...(node.type === 'message-namespace' ? [{
+                key: 'open-message-workbench',
+                label: t('message_queue_workbench.tab_kind'),
+                icon: <InboxOutlined />,
+                onClick: () => openMessageQueueWorkbench(node, 'open'),
+            }, {
+                key: 'consume-messages',
+                label: t('message_consume.action.subscribe'),
+                icon: <PlayCircleOutlined />,
+                onClick: () => openMessageQueueWorkbench(node, 'consume'),
+            }, ...(messagePublishTarget ? [{
+                key: 'publish-message',
+                label: t('message_queue_workbench.action.publish'),
+                icon: <SendOutlined />,
+                onClick: () => openMessagePublishModal(node),
+            }] : [])] : []),
+            {
+                key: 'refresh-message-objects',
+                label: t('sidebar.menu.refresh_message_objects'),
+                icon: <ReloadOutlined />,
+                onClick: () => void loadTables(
+                    getDatabaseNodeRef(node.dataRef, String(node.dataRef?.dbName || '')),
+                    { ensureFresh: true },
+                ),
+            },
+        ];
+    } else if (node.type === 'message-object') {
+        const objectKind = String(node.dataRef?.messageObjectKind || '').trim().toLowerCase();
+        const messagePublishTarget = resolveMessagePublishTarget(node);
+        return [
+            ...(objectKind === 'exchange' ? [] : [{
+                key: 'browse-messages',
+                label: t('sidebar.menu.browse_messages'),
+                icon: <EyeOutlined />,
+                onClick: () => openMessageQueueWorkbench(node, 'consume'),
+            }]),
+            {
+                key: 'open-message-workbench',
+                label: t('message_queue_workbench.tab_kind'),
+                icon: <InboxOutlined />,
+                onClick: () => openMessageQueueWorkbench(node, 'open'),
+            },
+            ...(messagePublishTarget ? [{
+                key: 'publish-message',
+                label: t('message_publish_modal.title'),
+                icon: <SendOutlined />,
+                onClick: () => openMessagePublishModal(node),
+            }] : []),
+            { type: 'divider' as const },
+            {
+                key: 'copy-message-object-name',
+                label: t('sidebar.menu.copy_object_name'),
+                icon: <CopyOutlined />,
+                onClick: () => handleCopyTableName(node),
+            },
+            {
+                key: 'refresh-message-objects',
+                label: t('sidebar.menu.refresh_message_objects'),
+                icon: <ReloadOutlined />,
+                onClick: () => void loadTables(
+                    getDatabaseNodeRef(node.dataRef, String(node.dataRef?.dbName || '')),
+                    { ensureFresh: true },
+                ),
             },
         ];
     } else if (node.type === 'table') {

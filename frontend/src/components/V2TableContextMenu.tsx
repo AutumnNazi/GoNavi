@@ -28,8 +28,10 @@ import {
   FileTextOutlined,
   FolderAddOutlined,
   HddOutlined,
+  InboxOutlined,
   PushpinOutlined,
   PlusOutlined,
+  PlayCircleOutlined,
   UndoOutlined,
   SortAscendingOutlined,
   SortDescendingOutlined,
@@ -521,6 +523,9 @@ export type V2ConnectionContextMenuActionKey =
   | 'visibility'
   | 'refresh'
   | 'new-query'
+  | 'open-message-workbench'
+  | 'consume-messages'
+  | 'publish-message'
   | 'open-sql-file'
   | 'new-command'
   | 'open-monitor'
@@ -592,6 +597,8 @@ export const V2ConnectionContextMenuView: React.FC<{
   supportsCreateDatabase?: boolean;
   supportsVisibility?: boolean;
   supportsQueryEditor?: boolean;
+  isMessageQueue?: boolean;
+  supportsMessagePublish?: boolean;
   tags?: V2ConnectionContextMenuTagItem[];
   onAction?: (action: V2ConnectionContextMenuActionKey) => void;
 }> = ({
@@ -605,6 +612,8 @@ export const V2ConnectionContextMenuView: React.FC<{
   supportsCreateDatabase = true,
   supportsVisibility = false,
   supportsQueryEditor = true,
+  isMessageQueue = false,
+  supportsMessagePublish = false,
   tags = [],
   onAction,
 }) => {
@@ -632,6 +641,11 @@ export const V2ConnectionContextMenuView: React.FC<{
           { action: 'refresh', icon: <ReloadOutlined />, title: t('connection.sidebar.menu.refresh'), kbd: primaryShortcut('R', shortcutPlatform), featured: true },
           { action: 'new-command', icon: <ConsoleSqlOutlined />, title: t('sidebar.menu.new_command_window'), featured: true },
           { action: 'open-monitor', icon: <DashboardOutlined />, title: t('redis_monitor.title.instance') },
+        ]) : isMessageQueue ? renderItems([
+          { action: 'open-message-workbench', icon: <InboxOutlined />, title: t('message_queue_workbench.tab_kind'), featured: true },
+          { action: 'consume-messages', icon: <PlayCircleOutlined />, title: t('message_consume.action.subscribe'), featured: true },
+          ...(supportsMessagePublish ? [{ action: 'publish-message' as const, icon: <SendOutlined />, title: t('message_queue_workbench.action.publish') }] : []),
+          { action: 'refresh', icon: <ReloadOutlined />, title: t('connection.sidebar.menu.refresh'), kbd: primaryShortcut('R', shortcutPlatform) },
         ]) : renderItems([
           ...(supportsCreateIndex ? [{ action: 'new-db' as const, icon: <DatabaseOutlined />, title: createIndexLabel || t('query_editor.elasticsearch.templates.create_index'), kbd: primaryShortcut('N', shortcutPlatform), featured: true }]
             : supportsCreateDatabase ? [{ action: 'new-db' as const, icon: <DatabaseOutlined />, title: t('connection.sidebar.menu.createDatabase'), kbd: primaryShortcut('N', shortcutPlatform), featured: true }]

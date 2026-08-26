@@ -313,7 +313,7 @@ export const resolveSidebarSwitcherLoadKey = (node: SidebarTreeSwitcherNodeLike 
     return connectionId ? `dbs-${connectionId}` : null;
   }
 
-  if (treeNode.type === 'database') {
+  if (treeNode.type === 'database' || treeNode.type === 'message-namespace') {
     const connectionId = String(dataRef?.id || '').trim();
     const dbName = String(dataRef?.dbName || '').trim();
     return connectionId && dbName ? `tables-${connectionId}-${dbName}` : null;
@@ -1207,7 +1207,7 @@ const Sidebar: React.FC<{
 
       expandedKeys.forEach(key => {
           const node = findTreeNodeByKey(treeData, key);
-          if (node && node.type === 'database') {
+          if (node && (node.type === 'database' || node.type === 'message-namespace')) {
               loadTables(node, { ensureFresh: true });
           }
       });
@@ -1613,7 +1613,7 @@ const Sidebar: React.FC<{
 
   const getNodeDatabaseContext = (node: any): { connectionId: string; dbName: string; dbNodeKey: string } | null => {
     if (!node) return null;
-    if (node.type === 'database') {
+    if (node.type === 'database' || node.type === 'message-namespace') {
       return {
         connectionId: String(node?.dataRef?.id || '').trim(),
         dbName: String(node?.dataRef?.dbName || '').trim(),
@@ -1839,7 +1839,7 @@ const Sidebar: React.FC<{
         await loadDatabases({ key, dataRef });
     } else if (type === 'jvm-mode' || type === 'jvm-resource') {
         await loadJVMResources({ key, dataRef });
-    } else if (type === 'database') {
+    } else if (type === 'database' || type === 'message-namespace') {
         await loadTables({ key, dataRef });
     } else if (type === 'nacos-config-entry') {
         await loadNacosConfigGroups({ key, dataRef });
@@ -1998,6 +1998,12 @@ const Sidebar: React.FC<{
       return false;
   };
 
+  const openMessageObjectNode = (node: any): boolean => {
+      if (node?.type !== 'message-object') return false;
+      openMessageQueueWorkbench(node, 'open');
+      return true;
+  };
+
   const onSelect = (keys: React.Key[], info: any) => {
       if (isV2Ui && (info?.node?.type === 'v2-table-section' || info?.node?.type === 'v2-database-section')) {
           return;
@@ -2025,9 +2031,9 @@ const Sidebar: React.FC<{
       // Update active context
       if (type === 'connection') {
           setActiveContext({ connectionId: key, dbName: '' });
-      } else if (type === 'database') {
+      } else if (type === 'database' || type === 'message-namespace') {
           setActiveContext({ connectionId: nodeConnectionId || dataRef.id, dbName: dataRef.dbName });
-      } else if (type === 'table') {
+      } else if (type === 'table' || type === 'message-object') {
           setActiveContext({ connectionId: nodeConnectionId || dataRef.id, dbName: dataRef.dbName });
       } else if (type === 'jvm-mode' || type === 'jvm-resource' || type === 'jvm-diagnostic' || type === 'jvm-monitoring') {
           setActiveContext({ connectionId: nodeConnectionId || dataRef.id, dbName: '' });
@@ -2123,13 +2129,13 @@ const Sidebar: React.FC<{
           setSelectedKeys([nodeKey]);
           selectedNodesRef.current = [node];
           setActiveContext({ connectionId: nodeKey, dbName: '' });
-      } else if (type === 'database') {
+      } else if (type === 'database' || type === 'message-namespace') {
           setSelectedKeys([nodeKey]);
           selectedNodesRef.current = [node];
           setActiveContext({ connectionId: nodeConnectionId || dataRef.id, dbName: dataRef.dbName });
       } else if (type === 'jvm-mode' || type === 'jvm-resource' || type === 'jvm-diagnostic' || type === 'jvm-monitoring') {
           setActiveContext({ connectionId: nodeConnectionId || dataRef.id, dbName: '' });
-      } else if (type === 'table' || type === 'view' || type === 'materialized-view' || type === 'sequence' || type === 'package' || type === 'db-trigger' || type === 'db-event' || type === 'routine') {
+      } else if (type === 'table' || type === 'message-object' || type === 'view' || type === 'materialized-view' || type === 'sequence' || type === 'package' || type === 'db-trigger' || type === 'db-event' || type === 'routine') {
           setActiveContext({ connectionId: nodeConnectionId || dataRef.id, dbName: dataRef.dbName });
       } else if (type === 'saved-query') setActiveContext({ connectionId: dataRef.connectionId, dbName: dataRef.dbName });
       else if (type === 'redis-db') setActiveContext({ connectionId: dataRef.id, dbName: `db${dataRef.redisDB}` });
@@ -2146,7 +2152,17 @@ const Sidebar: React.FC<{
           });
       }
 
-      if (node.type === 'table') {
+      const isMessageQueueConnection = node.type === 'connection'
+          && ['mqtt', 'kafka', 'rocketmq', 'rabbitmq'].includes(
+              resolveDataSourceType(node.dataRef?.config),
+          );
+      if (isMessageQueueConnection || node.type === 'message-namespace') {
+          openMessageQueueWorkbench(node, 'open');
+          return;
+      }
+      if (openMessageObjectNode(node)) {
+          return;
+      } else if (node.type === 'table') {
           const { tableName, dbName, id } = node.dataRef;
           // 记录表访问
           recordTableAccess(id, dbName, tableName);
@@ -2908,6 +2924,7 @@ const Sidebar: React.FC<{
       handleDropRoutine,
       handleCompileOracleObject,
       resolveMessagePublishTarget,
+      openMessageQueueWorkbench,
       openMessagePublishModal,
       handleMessagePublishSuccess,
   } = useSidebarObjectActions({
@@ -3033,6 +3050,7 @@ const Sidebar: React.FC<{
       openDesign,
       openNewTableDesign,
       onDoubleClick,
+      openMessageQueueWorkbench,
       openMessagePublishModal,
       openTableDdlInDesigner,
       openTableInERView,
@@ -3116,6 +3134,12 @@ const Sidebar: React.FC<{
       setAIPanelVisible,
       extractObjectName,
   });
+  const activeConnectionIsMessageQueue = [
+      'mqtt',
+      'kafka',
+      'rocketmq',
+      'rabbitmq',
+  ].includes(resolveDataSourceType(activeConnection?.config));
   const legacyToolbarButtonColor = darkMode ? 'rgba(255,255,255,0.65)' : 'rgba(0,0,0,0.65)';
   const legacyToolbarStyle: React.CSSProperties = {
       padding: '6px 16px',
@@ -3337,6 +3361,7 @@ const Sidebar: React.FC<{
     openSequenceDefinition,
     openPackageDefinition,
     resolveMessagePublishTarget,
+    openMessageQueueWorkbench,
     openMessagePublishModal,
     openDesign,
     openCreateStarRocksRollup,
@@ -3765,6 +3790,9 @@ const Sidebar: React.FC<{
   );
   const v2CommandSearchLabel = t('sidebar.command_search.label');
   const v2CommandSearchPlaceholder = t('sidebar.command_search.placeholder');
+  const v2ExplorerSearchPlaceholder = activeConnectionIsMessageQueue
+      ? t('sidebar.message_queue.search_placeholder')
+      : v2CommandSearchPlaceholder;
 
   const handleOpenDataImportWorkbench = useCallback(() => {
     const node = selectedNodesRef.current[0];
@@ -4225,7 +4253,7 @@ const Sidebar: React.FC<{
                         aria-label={v2CommandSearchLabel}
                     >
                         <SearchOutlined />
-                        <span>{v2PersistedSidebarFilter || v2CommandSearchPlaceholder}</span>
+                        <span>{v2PersistedSidebarFilter || v2ExplorerSearchPlaceholder}</span>
                         {focusSidebarSearchShortcutTokens.length > 0 ? (
                             <span className="gn-v2-search-shortcut" aria-hidden="true">
                                 {focusSidebarSearchShortcutTokens.map((token, index) => (
@@ -4338,7 +4366,7 @@ const Sidebar: React.FC<{
             )}
         </div>
 
-        {isV2Ui && (
+        {isV2Ui && !activeConnectionIsMessageQueue && (
             <div className="gn-v2-explorer-filter-tabs" aria-label={t('sidebar.command_search.object_kind.filter_aria')}>
                 {V2_EXPLORER_FILTER_OPTIONS.map((item) => (
                     <button
@@ -4695,6 +4723,7 @@ const Sidebar: React.FC<{
             connection={messagePublishTarget?.connection || null}
             executionDbName={messagePublishTarget?.executionDbName || ''}
             defaultDestination={messagePublishTarget?.destination || ''}
+            defaultExchange={messagePublishTarget?.exchange || ''}
             onCancel={() => setMessagePublishTarget(null)}
             onSuccess={handleMessagePublishSuccess}
         />

@@ -309,7 +309,11 @@ export const useSidebarSearchModel = ({
 
   const matchByScopes = (node: TreeNode, keyword: string, scopes: SearchScope[]): boolean => {
     const title = String(node.title || '').toLowerCase();
-    if (scopes.includes('database') && node.type === 'database' && title.includes(keyword)) {
+    if (
+      scopes.includes('database')
+      && (node.type === 'database' || node.type === 'message-namespace')
+      && title.includes(keyword)
+    ) {
       return true;
     }
     if (scopes.includes('tag') && node.type === 'tag' && title.includes(keyword)) {
@@ -318,7 +322,11 @@ export const useSidebarSearchModel = ({
     if (scopes.includes('host') && node.type === 'connection' && getConnectionHostSearchText(node).includes(keyword)) {
       return true;
     }
-    if (scopes.includes('object') && (isV2SidebarObjectNode(node) || node.type === 'object-group') && title.includes(keyword)) {
+    if (
+      scopes.includes('object')
+      && (isV2SidebarObjectNode(node) || node.type === 'object-group' || node.type === 'message-object-group')
+      && title.includes(keyword)
+    ) {
       return true;
     }
     if (node.type === 'external-sql-root' || node.type === 'external-sql-directory' || node.type === 'external-sql-folder' || node.type === 'external-sql-file') {
@@ -352,6 +360,7 @@ export const useSidebarSearchModel = ({
         const shouldKeepFullSubtree = isSmartMode
           || item.type === 'connection'
           || item.type === 'database'
+          || item.type === 'message-namespace'
           || item.type === 'tag'
           || item.type === 'external-sql-root'
           || item.type === 'external-sql-directory'
@@ -397,7 +406,7 @@ export const useSidebarSearchModel = ({
             icon: getDbIcon(resolveConnectionIconType(conn), resolveConnectionAccentColor(conn), 16),
             node,
           });
-        } else if (node.type === 'database') {
+        } else if (node.type === 'database' || node.type === 'message-namespace') {
           const conn = connectionById.get(String(dataRef.id || ''));
           result.push({
             key: `node-${node.key}`,
@@ -407,18 +416,23 @@ export const useSidebarSearchModel = ({
             icon: <DatabaseOutlined />,
             node,
           });
-        } else if (
-          node.type === 'table'
-          || node.type === 'view'
-          || node.type === 'materialized-view'
-          || node.type === 'sequence'
-          || node.type === 'db-trigger'
-          || node.type === 'db-event'
-          || node.type === 'routine'
-          || node.type === 'package'
-        ) {
+        } else if (isV2SidebarObjectNode(node)) {
           const conn = connectionById.get(String(dataRef.id || ''));
-          const objectName = String(dataRef.tableName || dataRef.viewName || dataRef.sequenceName || dataRef.triggerName || dataRef.eventName || dataRef.routineName || dataRef.packageName || node.title || '').trim();
+          const objectName = String(
+            dataRef.messageObjectName
+            || dataRef.topicName
+            || dataRef.queueName
+            || dataRef.exchangeName
+            || dataRef.tableName
+            || dataRef.viewName
+            || dataRef.sequenceName
+            || dataRef.triggerName
+            || dataRef.eventName
+            || dataRef.routineName
+            || dataRef.packageName
+            || node.title
+            || '',
+          ).trim();
           const displayName = String(node.title || extractObjectName(objectName) || objectName).trim();
           result.push({
             key: `node-${node.key}`,
@@ -654,7 +668,9 @@ export const useSidebarSearchModel = ({
           return total;
         }, 0);
         databaseTableCounts.set(node.key, tableCount);
-      } else if (node.type === 'object-group') {
+      } else if (node.type === 'message-namespace') {
+        databaseTableCounts.set(node.key, childCount);
+      } else if (node.type === 'object-group' || node.type === 'message-object-group') {
         objectGroupCounts.set(node.key, childCount);
       }
       return totalCount;

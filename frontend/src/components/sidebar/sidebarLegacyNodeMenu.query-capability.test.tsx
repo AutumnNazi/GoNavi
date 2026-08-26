@@ -18,6 +18,7 @@ const buildConnectionRootItems = (
     loadDatabases: vi.fn(),
     handleRunSQLFile: vi.fn(),
     buildConnectionRootQueryTabTitle: vi.fn(() => 'query'),
+    resolveMessagePublishTarget: vi.fn(() => null),
     connectionTags,
     ...overrides,
   }) as any[];
@@ -45,10 +46,25 @@ describe('connection root menu query entry gating', () => {
     expect(itemKeys(items)).toContain('open-sql-file');
   });
 
-  it('keeps new query for currently queryable messaging and vector connections', () => {
+  it('routes messaging connections to the message workbench instead of generic queries', () => {
     [
       { type: 'mqtt', host: '127.0.0.1', port: 1883 },
       { type: 'rocketmq', host: '127.0.0.1', port: 9876 },
+    ].forEach((config, index) => {
+      const items = buildConnectionRootItems({
+        id: `message-queue-${index}`,
+        name: `message queue ${index}`,
+        config,
+      });
+      expect(itemKeys(items), JSON.stringify(config)).toContain('open-message-workbench');
+      expect(itemKeys(items), JSON.stringify(config)).toContain('consume-messages');
+      expect(itemKeys(items), JSON.stringify(config)).not.toContain('new-query');
+      expect(itemKeys(items), JSON.stringify(config)).not.toContain('open-sql-file');
+    });
+  });
+
+  it('keeps new query for currently queryable vector and document connections', () => {
+    [
       { type: 'chroma', host: '127.0.0.1', port: 8000 },
       { type: 'elasticsearch', host: '127.0.0.1', port: 9200 },
       { type: 'mongodb', host: '127.0.0.1', port: 27017 },

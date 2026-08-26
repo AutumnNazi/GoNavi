@@ -366,6 +366,13 @@ describe('Sidebar locate toolbar', () => {
       title: 'users',
       dataRef: {},
     })).toBe('users');
+    expect(resolveSidebarTableNameForCopy({
+      title: 'display topic',
+      dataRef: {
+        messageObjectName: 'devices/+/telemetry',
+        tableName: 'legacy-topic-name',
+      },
+    })).toBe('devices/+/telemetry');
   });
 
   it('treats empty lazy children as unloaded for sidebar expansion', () => {
@@ -374,6 +381,7 @@ describe('Sidebar locate toolbar', () => {
     expect(hasSidebarLazyChildren([{ key: 'child', title: 'child' }])).toBe(true);
     expect(shouldLoadSidebarNodeOnExpand({ type: 'database', children: [] })).toBe(true);
     expect(shouldLoadSidebarNodeOnExpand({ type: 'database', children: [{ key: 'tables', title: '表' }] })).toBe(false);
+    expect(shouldLoadSidebarNodeOnExpand({ type: 'message-namespace', children: [] })).toBe(true);
     expect(shouldLoadSidebarNodeOnExpand({ type: 'object-group', children: [] })).toBe(false);
   });
 
@@ -398,9 +406,20 @@ describe('Sidebar locate toolbar', () => {
       },
       expanded: true,
     };
+    const messageNamespaceNode = {
+      key: 'conn-1-topics',
+      data: {
+        key: 'conn-1-topics',
+        title: 'Topics',
+        type: 'message-namespace' as const,
+        dataRef: { id: 'conn-1', dbName: 'topics' },
+      },
+      expanded: true,
+    };
 
     expect(resolveSidebarSwitcherLoadKey(connectionNode)).toBe('dbs-conn-1');
     expect(resolveSidebarSwitcherLoadKey(databaseNode)).toBe('tables-conn-1-main');
+    expect(resolveSidebarSwitcherLoadKey(messageNamespaceNode)).toBe('tables-conn-1-topics');
     expect(shouldKeepSidebarSwitcherCollapsedWhileLoading(connectionNode, new Set(['dbs-conn-1']))).toBe(true);
     expect(shouldKeepSidebarSwitcherCollapsedWhileLoading(databaseNode, new Set(['tables-conn-1-main']))).toBe(true);
     expect(shouldKeepSidebarSwitcherCollapsedWhileLoading({
@@ -929,6 +948,31 @@ describe('Sidebar locate toolbar', () => {
       source.indexOf('const openV2ConnectionContextMenu = ('),
       source.indexOf('const getV2TreeMetaText = (node: any): string => {'),
     );
+  });
+
+  it('replaces relational explorer controls in an active message queue context', () => {
+    mocks.state.connections = [{
+      id: 'mqtt-1',
+      name: 'MQTT',
+      config: { type: 'mqtt', host: 'localhost', port: 1883 },
+    }];
+    mocks.state.activeContext = { connectionId: 'mqtt-1', dbName: 'topics' };
+    mocks.state.activeTabId = 'message-queue-mqtt-1-topics';
+    mocks.state.tabs = [{
+      id: 'message-queue-mqtt-1-topics',
+      title: 'MQTT · 消息',
+      type: 'message-queue',
+      connectionId: 'mqtt-1',
+      dbName: 'topics',
+    }];
+
+    const markup = renderSidebarMarkup({ uiVersion: 'v2' });
+
+    expect(markup).toContain(t('sidebar.message_queue.search_placeholder'));
+    expect(markup).not.toContain('gn-v2-explorer-filter-tabs');
+    expect(markup).not.toContain(`>${t('sidebar.command_search.object_kind.tables')}<`);
+    expect(markup).not.toContain(`>${t('sidebar.command_search.object_kind.views')}<`);
+    expect(markup).not.toContain(`>${t('sidebar.command_search.object_kind.routines')}<`);
   });
 
   it('can render the v2 sidebar with legacy persistent filter input', () => {

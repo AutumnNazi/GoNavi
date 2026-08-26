@@ -51,11 +51,13 @@ import {
 } from '../../../wailsjs/go/app/App';
 import { resolveSidebarNodeConnectionId, type SidebarTreeNode as TreeNode } from '../sidebarV2Utils';
 import { buildSidebarSchemaNodeKey } from '../../utils/sidebarLocate';
+import { resolveSidebarMessageActionTarget } from './sidebarMessageActions';
 
 export type SidebarMessagePublishTarget = {
   connection: SavedConnection;
   executionDbName: string;
   destination: string;
+  exchange?: string;
 };
 
 type RunExportWithProgress = <T extends ExportRunResult>(
@@ -1588,12 +1590,44 @@ export const useSidebarObjectActions = ({
     if (!sourceConnection?.config) return null;
     const capabilities = getDataSourceCapabilities(sourceConnection.config);
     if (!capabilities.supportsMessagePublish) return null;
+    const actionTarget = resolveSidebarMessageActionTarget(node);
 
     return {
       connection: sourceConnection,
-      executionDbName: String(node?.dataRef?.dbName || ''),
-      destination: String(node?.dataRef?.tableName || node?.title || '').trim(),
+      executionDbName: actionTarget?.executionDbName || String(node?.dataRef?.dbName || ''),
+      destination: actionTarget?.publish.destination || '',
+      ...(actionTarget?.publish.exchange ? { exchange: actionTarget.publish.exchange } : {}),
     };
+  };
+
+  const openMessageQueueWorkbench = (
+    node: any,
+    action: 'open' | 'consume' | 'publish' = 'open',
+  ) => {
+    const connectionId = String(node?.dataRef?.id || node?.key || '').trim();
+    const liveConnection = connections.find((item) => item.id === connectionId);
+    const sourceConnection = (liveConnection || node?.dataRef) as SavedConnection | undefined;
+    const actionTarget = resolveSidebarMessageActionTarget(node);
+    if (!sourceConnection?.config || !actionTarget) {
+      message.warning(t('sidebar.message.message_queue_workbench_unsupported'));
+      return;
+    }
+    const dbName = actionTarget.executionDbName
+      || String(node?.dataRef?.dbName || sourceConnection.config.database || '').trim();
+    const target = action === 'publish'
+      ? actionTarget.publish.destination
+      : actionTarget.consume.destination;
+    addTab({
+      id: `message-queue-${sourceConnection.id}-${encodeURIComponent(dbName || 'default')}`,
+      title: `${sourceConnection.name} · ${t('message_queue_workbench.tab_kind')}`,
+      type: 'message-queue',
+      connectionId: sourceConnection.id,
+      dbName,
+      messageQueueTarget: target,
+      messageQueueObjectKind: actionTarget.objectKind || undefined,
+      messageQueueAction: action,
+      messageQueueRequestKey: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    });
   };
 
   const openMessagePublishModal = (node: any) => {
@@ -1663,6 +1697,7 @@ export const useSidebarObjectActions = ({
     handleDropRoutine,
     handleCompileOracleObject,
     resolveMessagePublishTarget,
+    openMessageQueueWorkbench,
     openMessagePublishModal,
     handleMessagePublishSuccess,
   };

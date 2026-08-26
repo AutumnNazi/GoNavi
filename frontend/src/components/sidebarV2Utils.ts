@@ -28,6 +28,9 @@ export type SidebarConnectionState = 'loading' | 'success' | 'error';
 export type SidebarTreeNodeType =
   | 'connection'
   | 'database'
+  | 'message-namespace'
+  | 'message-object'
+  | 'message-object-group'
   | 'table'
   | 'view'
   | 'materialized-view'
@@ -237,6 +240,7 @@ export const shouldLoadSidebarNodeOnExpand = (
   if (!node || node.isLeaf === true || hasSidebarLazyChildren(node.children)) return false;
   return node.type === 'connection'
     || node.type === 'database'
+    || node.type === 'message-namespace'
     || node.type === 'external-sql-root'
     || node.type === 'table'
     || node.type === 'jvm-mode'
@@ -318,7 +322,19 @@ export const resolveNacosServicesDoubleClickAction = (
 export const resolveSidebarTableNameForCopy = (
   node: Pick<SidebarTreeNode, 'title' | 'dataRef'> | null | undefined,
 ): string => {
-  return String(node?.dataRef?.tableName || node?.dataRef?.viewName || node?.dataRef?.sequenceName || node?.dataRef?.packageName || node?.dataRef?.eventName || node?.title || '').trim();
+  return String(
+    node?.dataRef?.messageObjectName
+    || node?.dataRef?.topicName
+    || node?.dataRef?.queueName
+    || node?.dataRef?.exchangeName
+    || node?.dataRef?.tableName
+    || node?.dataRef?.viewName
+    || node?.dataRef?.sequenceName
+    || node?.dataRef?.packageName
+    || node?.dataRef?.eventName
+    || node?.title
+    || '',
+  ).trim();
 };
 
 type SidebarTableSortPreference = 'name' | 'frequency';
@@ -952,6 +968,12 @@ export const filterV2ExplorerTreeByKind = (
     if (node.type === 'external-sql-root') {
       return null;
     }
+    // Relational filters have no semantic equivalent for a broker. Keep the
+    // complete MQ namespace visible instead of making the explorer look empty
+    // when the user switches from a database connection with a filter active.
+    if (node.type === 'message-namespace') {
+      return node;
+    }
     const groupKey = String(node?.dataRef?.groupKey || '');
     if (node.type === 'object-group') {
       if (allowedGroupKeys.has(groupKey)) {
@@ -1064,7 +1086,8 @@ const isV2CommandSearchObjectNode = (node: SidebarTreeNode): boolean => {
     || node.type === 'view'
     || node.type === 'materialized-view'
     || node.type === 'sequence'
-    || node.type === 'package';
+    || node.type === 'package'
+    || node.type === 'message-object';
 };
 
 export const V2_COMMAND_SEARCH_INITIAL_TREE_LIMIT = 24;
@@ -1087,7 +1110,16 @@ export const buildV2CommandSearchTreeIndex = (
     const dataRef = item.node.dataRef || {};
     const normalizedTitle = String(item.title || '').toLowerCase();
     const normalizedPrimaryObjectText = String(
-      dataRef.tableName || dataRef.viewName || dataRef.sequenceName || dataRef.packageName || item.title || '',
+      dataRef.messageObjectName
+      || dataRef.topicName
+      || dataRef.queueName
+      || dataRef.exchangeName
+      || dataRef.tableName
+      || dataRef.viewName
+      || dataRef.sequenceName
+      || dataRef.packageName
+      || item.title
+      || '',
     ).toLowerCase();
 
     return [{
@@ -1095,6 +1127,10 @@ export const buildV2CommandSearchTreeIndex = (
       normalizedSearchText: [
         item.title,
         item.meta,
+        dataRef.messageObjectName,
+        dataRef.topicName,
+        dataRef.queueName,
+        dataRef.exchangeName,
         dataRef.tableName,
         dataRef.viewName,
         dataRef.sequenceName,
@@ -1596,7 +1632,7 @@ export const resolveSidebarSingleDatabaseExpandedKeys = ({
       if (
         nodeKey
         && connectionId
-        && (node.type === 'database' || node.type === 'redis-db')
+        && (node.type === 'database' || node.type === 'message-namespace' || node.type === 'redis-db')
       ) {
         databaseNodesByKey.set(nodeKey, {
           key: nodeKey,
@@ -1717,7 +1753,11 @@ export const resolveSidebarDatabaseTreePruneKeys = ({
   const loadedDatabaseKeys: string[] = [];
   const visit = (nodes: SidebarTreeNode[]) => {
     nodes.forEach((node) => {
-      if (node.type === 'database' && Array.isArray(node.children) && node.children.length > 0) {
+      if (
+        (node.type === 'database' || node.type === 'message-namespace')
+        && Array.isArray(node.children)
+        && node.children.length > 0
+      ) {
         loadedDatabaseKeys.push(String(node.key || '').trim());
         return;
       }

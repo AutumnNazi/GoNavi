@@ -243,7 +243,8 @@ export const getV2RailConnectionGroupBadgeText = (
 export const isV2SidebarObjectNode = (
   node: { type?: string } | null | undefined,
 ): boolean => {
-  return node?.type === 'table'
+  return node?.type === 'message-object'
+      || node?.type === 'table'
       || node?.type === 'view'
       || node?.type === 'materialized-view'
       || node?.type === 'sequence'
@@ -295,7 +296,19 @@ export const resolveV2ObjectGroupTitle = (
 export const resolveSidebarTableNameForCopy = (
   node: Pick<SidebarNodeLike, 'title' | 'dataRef'> | null | undefined,
 ): string => {
-  return String(node?.dataRef?.tableName || node?.dataRef?.viewName || node?.dataRef?.sequenceName || node?.dataRef?.packageName || node?.dataRef?.eventName || node?.title || '').trim();
+  return String(
+    node?.dataRef?.messageObjectName
+    || node?.dataRef?.topicName
+    || node?.dataRef?.queueName
+    || node?.dataRef?.exchangeName
+    || node?.dataRef?.tableName
+    || node?.dataRef?.viewName
+    || node?.dataRef?.sequenceName
+    || node?.dataRef?.packageName
+    || node?.dataRef?.eventName
+    || node?.title
+    || '',
+  ).trim();
 };
 
 /** resolveSidebarDatabaseNameForCopy extracts the exact database identifier shown by the node. */
@@ -369,6 +382,7 @@ export const shouldLoadSidebarNodeOnExpand = (
   if (!node || node.isLeaf === true || hasSidebarLazyChildren(node.children)) return false;
   return node.type === 'connection'
       || node.type === 'database'
+      || node.type === 'message-namespace'
       || node.type === 'external-sql-root'
       || node.type === 'table'
       || node.type === 'jvm-mode'

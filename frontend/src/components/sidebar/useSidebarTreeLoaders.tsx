@@ -71,7 +71,7 @@ import {
   getSidebarTableEntryIdentity,
   groupSidebarPartitionTableEntries,
 } from './sidebarPartitions';
-import { DBGetDatabases, DBGetTables, DBQuery, DBRefreshTableStats, GetDriverStatusList, JVMProbeCapabilities } from '../../../wailsjs/go/app/App';
+import { DBGetDatabases, DBGetObjects, DBGetTables, DBQuery, DBRefreshTableStats, GetDriverStatusList, JVMProbeCapabilities } from '../../../wailsjs/go/app/App';
 import type { SidebarTableMetadataSnapshot } from '../../utils/sidebarTableMetadata';
 import { collectNacosServiceGroupsByPage } from '../nacosServiceName';
 import { isPostgresSchemaDialect } from '../sidebarCoreUtils';
@@ -254,6 +254,153 @@ const resolveSavedConnectionDriverType = (conn: SavedConnection | undefined): st
     return type;
   }
   return normalizeDriverType(conn?.config?.driver || '');
+};
+
+type SidebarMessageQueueType = 'mqtt' | 'kafka' | 'rocketmq' | 'rabbitmq';
+type SidebarMessageObjectKind = 'topic-filter' | 'topic' | 'queue' | 'exchange';
+type SidebarMessageNamespaceKind = 'topic-filter' | 'topic' | 'vhost';
+
+type SidebarMessageObjectGroupProfile = {
+  kind: SidebarMessageObjectKind;
+  groupKey: 'queues' | 'exchanges';
+  titleKey: string;
+};
+
+type SidebarMessageQueueProfile = {
+  type: SidebarMessageQueueType;
+  namespaceKind: SidebarMessageNamespaceKind;
+  namespaceTitle: (databaseName: string) => string;
+  resolveObjectKind: (rawType: string) => SidebarMessageObjectKind | null;
+  groups?: SidebarMessageObjectGroupProfile[];
+};
+
+const normalizeSidebarMessageObjectType = (value: unknown): string => (
+  String(value || '').trim().toLowerCase().replace(/[\s-]+/g, '_')
+);
+
+const SIDEBAR_MESSAGE_QUEUE_PROFILES: Record<SidebarMessageQueueType, SidebarMessageQueueProfile> = {
+  mqtt: {
+    type: 'mqtt',
+    namespaceKind: 'topic-filter',
+    namespaceTitle: () => t('sidebar.message_queue.namespace.topic_filters'),
+    resolveObjectKind: (rawType) => normalizeSidebarMessageObjectType(rawType) === 'topic'
+      ? 'topic-filter'
+      : null,
+  },
+  kafka: {
+    type: 'kafka',
+    namespaceKind: 'topic',
+    namespaceTitle: () => t('sidebar.message_queue.namespace.topics'),
+    resolveObjectKind: (rawType) => normalizeSidebarMessageObjectType(rawType) === 'topic'
+      ? 'topic'
+      : null,
+  },
+  rocketmq: {
+    type: 'rocketmq',
+    namespaceKind: 'topic',
+    namespaceTitle: () => t('sidebar.message_queue.namespace.topics'),
+    resolveObjectKind: (rawType) => normalizeSidebarMessageObjectType(rawType) === 'topic'
+      ? 'topic'
+      : null,
+  },
+  rabbitmq: {
+    type: 'rabbitmq',
+    namespaceKind: 'vhost',
+    namespaceTitle: (databaseName) => databaseName,
+    resolveObjectKind: (rawType) => {
+      const normalizedType = normalizeSidebarMessageObjectType(rawType);
+      return normalizedType === 'queue' || normalizedType === 'exchange'
+        ? normalizedType
+        : null;
+    },
+    groups: [
+      {
+        kind: 'queue',
+        groupKey: 'queues',
+        titleKey: 'sidebar.message_queue.group.queues',
+      },
+      {
+        kind: 'exchange',
+        groupKey: 'exchanges',
+        titleKey: 'sidebar.message_queue.group.exchanges',
+      },
+    ],
+  },
+};
+
+const resolveSidebarMessageQueueProfile = (
+  config: SavedConnection['config'] | undefined,
+): SidebarMessageQueueProfile | null => {
+  const type = resolveDataSourceType(config) as SidebarMessageQueueType;
+  return SIDEBAR_MESSAGE_QUEUE_PROFILES[type] || null;
+};
+
+const sidebarMessageObjectIcon = (kind: SidebarMessageObjectKind): React.ReactNode => (
+  kind === 'exchange' ? <LinkOutlined /> : <UnorderedListOutlined />
+);
+
+const buildSidebarMessageObjectNodes = (
+  profile: SidebarMessageQueueProfile,
+  conn: SavedConnection & { dbName?: string },
+  parentKey: string,
+  rows: Record<string, any>[],
+): TreeNode[] => {
+  const seenIdentities = new Set<string>();
+  const nodes = rows.flatMap((row): TreeNode[] => {
+    const name = String(row.name ?? row.Name ?? row.objectName ?? row.ObjectName ?? '').trim();
+    const rawType = String(row.type ?? row.Type ?? row.objectType ?? row.ObjectType ?? '').trim();
+    const kind = profile.resolveObjectKind(rawType);
+    if (!name || !kind) return [];
+    const identity = JSON.stringify([kind, name]);
+    if (seenIdentities.has(identity)) return [];
+    seenIdentities.add(identity);
+    return [{
+      title: name,
+      key: `${parentKey}-message-${kind}-${encodeURIComponent(name)}`,
+      icon: sidebarMessageObjectIcon(kind),
+      type: 'message-object',
+      dataRef: {
+        ...conn,
+        dbName: conn.dbName,
+        messageQueue: true,
+        messageQueueType: profile.type,
+        messageObjectName: name,
+        messageObjectKind: kind,
+        messageObjectType: rawType,
+        // Existing preview/publish actions already understand tableName. Keep
+        // that compatibility field while the node itself uses message semantics.
+        tableName: name,
+      },
+      isLeaf: true,
+    }];
+  }).sort((left, right) => String(left.title).localeCompare(
+    String(right.title),
+    undefined,
+    { numeric: true, sensitivity: 'base' },
+  ));
+
+  if (!profile.groups) return nodes;
+  return profile.groups.map((group) => {
+    const children = nodes.filter(
+      (candidate) => candidate.dataRef?.messageObjectKind === group.kind,
+    );
+    return {
+      title: t(group.titleKey),
+      key: `${parentKey}-message-group-${group.groupKey}`,
+      icon: <FolderOpenOutlined />,
+      type: 'message-object-group',
+      dataRef: {
+        ...conn,
+        dbName: conn.dbName,
+        messageQueue: true,
+        messageQueueType: profile.type,
+        messageObjectKind: group.kind,
+        groupKey: group.groupKey,
+      },
+      isLeaf: children.length === 0,
+      ...(children.length > 0 ? { children } : {}),
+    } as TreeNode;
+  });
 };
 
 
@@ -755,14 +902,36 @@ export const useSidebarTreeLoaders = ({
                 );
 
                 const databaseNames = dedupeTrimmedDatabaseNames(visibleDatabaseNames);
-	            let dbs: TreeNode[] = databaseNames.map((databaseName) => ({
-	              title: databaseName,
-              key: `${currentConnection.id}-${databaseName}`,
-              icon: <DatabaseOutlined />,
-              type: 'database' as const,
-              dataRef: { ...currentConnection, dbName: databaseName },
-              isLeaf: false,
-            }));
+                const messageQueueProfile = resolveSidebarMessageQueueProfile(
+                    currentConnection.config,
+                );
+	            let dbs: TreeNode[] = databaseNames.map((databaseName) => (
+                  messageQueueProfile
+                    ? {
+                        title: messageQueueProfile.namespaceTitle(databaseName),
+                        key: `${currentConnection.id}-${databaseName}`,
+                        icon: messageQueueProfile.namespaceKind === 'vhost'
+                          ? <DatabaseOutlined />
+                          : <UnorderedListOutlined />,
+                        type: 'message-namespace' as const,
+                        dataRef: {
+                          ...currentConnection,
+                          dbName: databaseName,
+                          messageQueue: true,
+                          messageQueueType: messageQueueProfile.type,
+                          messageNamespaceKind: messageQueueProfile.namespaceKind,
+                        },
+                        isLeaf: false,
+                      }
+                    : {
+	                    title: databaseName,
+                        key: `${currentConnection.id}-${databaseName}`,
+                        icon: <DatabaseOutlined />,
+                        type: 'database' as const,
+                        dataRef: { ...currentConnection, dbName: databaseName },
+                        isLeaf: false,
+                      }
+                ));
 
             if (isV2Ui) {
                 const currentPinnedSidebarDatabases =
@@ -928,6 +1097,7 @@ export const useSidebarTreeLoaders = ({
       };
       
       const dbQueries = savedQueries.filter(q => q.connectionId === conn.id && q.dbName === dbName);
+      const messageQueueProfile = resolveSidebarMessageQueueProfile(conn.config);
       const queriesNode: TreeNode = {
           title: t('sidebar.tree.saved_queries'),
           key: `${key}-queries`,
@@ -953,6 +1123,56 @@ export const useSidebarTreeLoaders = ({
 	          ssh: conn.config.ssh || { host: "", port: 22, user: "", password: "", keyPath: "" }
 	      };
 	      try {
+	          if (messageQueueProfile) {
+	              const objectsResult = await DBGetObjects(
+	                  buildRpcConnectionConfig(config) as any,
+	                  conn.dbName,
+	              );
+	              if (!objectsResult.success) {
+	                  showTableLoadFailure(objectsResult.message);
+	                  return;
+	              }
+
+	              const objectRows: Record<string, any>[] = Array.isArray(objectsResult.data)
+	                  ? objectsResult.data as Record<string, any>[]
+	                  : [];
+	              const latestConnection = useStore.getState().connections.find(
+	                  (candidate) => candidate.id === conn.id,
+	              ) || conn;
+	              const latestDatabaseConnection = { ...latestConnection, dbName };
+	              const objectNodes = buildSidebarMessageObjectNodes(
+	                  messageQueueProfile,
+	                  latestDatabaseConnection,
+	                  String(key),
+	                  objectRows,
+	              );
+	              replaceTreeNodeChildren(
+	                  key,
+	                  objectNodes,
+	                  latestDatabaseConnection,
+	              );
+	              onDatabaseTreeLoaded?.(String(key));
+	              shouldMarkDatabaseSuccess = true;
+
+	              if (objectsResult.partial || objectsResult.truncated) {
+	                  const warningDetail = String(
+	                      objectsResult.message
+	                      || (Array.isArray(objectsResult.warnings)
+	                          ? objectsResult.warnings.join('; ')
+	                          : '')
+	                      || t('sidebar.message.load_table_list_failed', {
+	                          error: 'message object metadata was incomplete',
+	                      }),
+	                  );
+	                  message.warning({
+	                      key: `db-${key}-message-objects-partial`,
+	                      duration: 10,
+	                      content: warningDetail,
+	                  });
+	              }
+	              return;
+	          }
+
 	          const res = await DBGetTables(buildRpcConnectionConfig(config) as any, conn.dbName);
 	          if (res.success) {
                 const tableRows: any[] = Array.isArray(res.data) ? res.data : [];
