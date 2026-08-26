@@ -321,6 +321,15 @@ func (t *TrinoDB) Close() error {
 	return firstErr
 }
 
+func openTrinoSQLConnection(driverName, dsn string) (*sql.DB, error) {
+	conn, err := sql.Open(driverName, dsn)
+	if err != nil {
+		return nil, err
+	}
+	configureSQLConnectionPool(conn, "trino")
+	return conn, nil
+}
+
 func (t *TrinoDB) Connect(config connection.ConnectionConfig) error {
 	_ = t.Close()
 
@@ -362,7 +371,7 @@ func (t *TrinoDB) Connect(config connection.ConnectionConfig) error {
 		_ = t.Close()
 		return err
 	}
-	conn, err := sql.Open("trino", dsn)
+	conn, err := openTrinoSQLConnection("trino", dsn)
 	if err != nil {
 		_ = t.Close()
 		return err
