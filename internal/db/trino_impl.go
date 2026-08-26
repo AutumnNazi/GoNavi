@@ -481,12 +481,15 @@ func (t *TrinoDB) GetDatabases() ([]string, error) {
 
 	namespaces := make([]string, 0, len(catalogs)*2)
 	seen := make(map[string]struct{}, len(catalogs)*4)
-	var lastErr error
+	failedCatalogs := make([]MetadataObjectFailure, 0)
 	for _, catalog := range catalogs {
 		query := fmt.Sprintf("SHOW SCHEMAS FROM %s", quoteTrinoIdentifier(catalog))
 		schemas, schemaErr := t.queryTrinoSingleColumnStrings(query)
 		if schemaErr != nil {
-			lastErr = schemaErr
+			failedCatalogs = append(failedCatalogs, MetadataObjectFailure{
+				ObjectName: catalog,
+				Err:        schemaErr,
+			})
 			continue
 		}
 		for _, schema := range schemas {
@@ -503,15 +506,13 @@ func (t *TrinoDB) GetDatabases() ([]string, error) {
 		}
 	}
 
-	if len(namespaces) == 0 {
-		if strings.TrimSpace(t.namespace) != "" {
-			return []string{t.namespace}, nil
-		}
-		if lastErr != nil {
-			return nil, lastErr
-		}
+	if len(namespaces) == 0 && strings.TrimSpace(t.namespace) != "" {
+		namespaces = append(namespaces, t.namespace)
 	}
 	sort.Strings(namespaces)
+	if partialErr := NewPartialMetadataError(failedCatalogs); partialErr != nil {
+		return namespaces, partialErr
+	}
 	return namespaces, nil
 }
 
