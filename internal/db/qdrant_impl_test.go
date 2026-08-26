@@ -321,6 +321,35 @@ func TestQdrantApplyChangesUpsertPayloadAndDelete(t *testing.T) {
 	}
 }
 
+func TestQdrantApplyChangesRejectsDeleteWithMissingID(t *testing.T) {
+	deleteRequests := 0
+	server := newMockQdrantServer(t, func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/collections":
+			writeQdrantJSON(w, map[string]interface{}{"result": map[string]interface{}{"collections": []interface{}{}}})
+		case r.Method == http.MethodPost && r.URL.Path == "/collections/products/points/delete":
+			deleteRequests++
+			writeQdrantJSON(w, map[string]interface{}{"result": map[string]interface{}{"operation_id": 1}})
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+
+	db := newTestQdrantDB(t, server.URL)
+	err := db.ApplyChanges("products", connection.ChangeSet{
+		Deletes: []map[string]interface{}{{"id": 9}, {"payload.category": "missing id"}},
+	})
+	if err == nil {
+		t.Fatal("ApplyChanges succeeded, want missing id failure")
+	}
+	if IsWriteOutcomeUnknown(err) {
+		t.Fatalf("ApplyChanges reported unknown outcome before issuing a delete: %v", err)
+	}
+	if deleteRequests != 0 {
+		t.Fatalf("delete requests = %d, want 0", deleteRequests)
+	}
+}
+
 func TestQdrantLiveSmoke(t *testing.T) {
 	serverURL := strings.TrimSpace(os.Getenv("GONAVI_QDRANT_TEST_URL"))
 	if serverURL == "" {

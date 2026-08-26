@@ -317,6 +317,9 @@ func (q *QdrantDB) ApplyChanges(tableName string, changes connection.ChangeSet) 
 				ids = append(ids, id)
 			}
 		}
+		if len(ids) != len(changes.Deletes) {
+			return fmt.Errorf("Qdrant delete has %d row(s) without a valid id", len(changes.Deletes)-len(ids))
+		}
 		if len(ids) > 0 {
 			if _, err := q.deleteCommand(ctx, tableName, map[string]interface{}{"points": ids}); err != nil {
 				return err

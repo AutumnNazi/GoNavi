@@ -387,6 +387,40 @@ func TestMilvusApplyChangesDeletesMergesUpdatesAndInserts(t *testing.T) {
 	}
 }
 
+func TestMilvusApplyChangesRejectsDeleteWithMissingPrimaryKey(t *testing.T) {
+	description := map[string]interface{}{
+		"fields": []map[string]interface{}{{"name": "id", "type": "Int64", "primaryKey": true}},
+	}
+	deleteRequests := 0
+	server := newMockMilvusServer(t, func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case isMilvusCollectionListRequest(r):
+			writeMilvusJSON(w, []string{})
+		case r.Method == http.MethodPost && r.URL.Path == milvusCollectionsDescribePath:
+			writeMilvusJSON(w, description)
+		case r.Method == http.MethodPost && r.URL.Path == milvusEntitiesDeletePath:
+			deleteRequests++
+			writeMilvusJSON(w, map[string]interface{}{})
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+
+	db := newTestMilvusDB(t, server.URL)
+	err := db.ApplyChanges("products", connection.ChangeSet{
+		Deletes: []map[string]interface{}{{"id": 1}, {"category": "missing id"}},
+	})
+	if err == nil {
+		t.Fatal("ApplyChanges succeeded, want missing primary key failure")
+	}
+	if IsWriteOutcomeUnknown(err) {
+		t.Fatalf("ApplyChanges reported unknown outcome before issuing a delete: %v", err)
+	}
+	if deleteRequests != 0 {
+		t.Fatalf("delete requests = %d, want 0", deleteRequests)
+	}
+}
+
 func TestMilvusResponseCodeFailureIsReturned(t *testing.T) {
 	server := newMockMilvusServer(t, func(w http.ResponseWriter, r *http.Request) {
 		if isMilvusCollectionListRequest(r) {

@@ -321,6 +321,9 @@ func (c *ChromaDB) ApplyChanges(tableName string, changes connection.ChangeSet) 
 				ids = append(ids, id)
 			}
 		}
+		if len(ids) != len(changes.Deletes) {
+			return fmt.Errorf("Chroma delete has %d row(s) without a valid id", len(changes.Deletes)-len(ids))
+		}
 		if len(ids) > 0 {
 			if _, err := c.deleteCommand(ctx, tableName, map[string]interface{}{"ids": ids}); err != nil {
 				return err
@@ -1034,7 +1037,15 @@ func chromaCountValue(raw interface{}) int64 {
 }
 
 func chromaRowID(row map[string]interface{}) string {
-	return strings.TrimSpace(fmt.Sprintf("%v", firstExisting(row, "id", "_id")))
+	raw := firstExisting(row, "id", "_id")
+	if raw == nil {
+		return ""
+	}
+	text := strings.TrimSpace(fmt.Sprintf("%v", raw))
+	if text == "" || text == "<nil>" {
+		return ""
+	}
+	return text
 }
 
 func isChromaReservedRowField(key string) bool {
