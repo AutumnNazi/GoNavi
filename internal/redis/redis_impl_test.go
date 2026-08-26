@@ -166,6 +166,12 @@ func TestScanKeysKeepsEntireRedisScanBatch(t *testing.T) {
 	}
 }
 
+func TestRedisKeyScanStepCountUsesOneHundred(t *testing.T) {
+	if got := normalizeRedisScanStepCount(100); got != 100 {
+		t.Fatalf("expected Redis key SCAN COUNT 100, got %d", got)
+	}
+}
+
 // 回归保护：HGETALL 在 RESP3 下返回 map[interface{}]interface{}（go-redis v9 默认 RESP3），
 // 这种类型 encoding/json 无法序列化，原值穿透到 Wails RPC 会让 Windows 进程退出（用户感知闪退）。
 // formatCommandResult 必须把 map 平展成交错 [k1, v1, k2, v2, ...] array，前端按 array 渲染。
@@ -1568,8 +1574,8 @@ func TestReadRedisHashEntriesWithFallbackUsesHScanWhenHGetAllForbidden(t *testin
 			if cursor != 0 {
 				t.Fatalf("expected first scan cursor to be 0, got %d", cursor)
 			}
-			if count <= 0 {
-				t.Fatalf("expected positive scan count, got %d", count)
+			if count != 200 {
+				t.Fatalf("expected HSCAN fallback count 200, got %d", count)
 			}
 			return []string{"field-a", "value-a", "field-b", "value-b"}, 0, nil
 		},

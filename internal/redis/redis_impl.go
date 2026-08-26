@@ -45,8 +45,9 @@ const (
 	redisClusterLogicalDBCount        = 16
 	redisScanDefaultTargetCount int64 = 2000
 	redisScanMaxTargetCount     int64 = 10000
-	redisScanMinStepCount       int64 = 200
+	redisKeyScanMinStepCount    int64 = 100
 	redisScanMaxStepCount       int64 = 2000
+	redisHashScanStepCount      int64 = 200
 	redisScanMaxRounds                = 64
 	redisScanMaxDuration              = 12 * time.Second
 	redisSearchMaxTargetCount   int64 = 1000
@@ -766,8 +767,8 @@ func normalizeRedisScanTargetCount(count int64) int64 {
 }
 
 func normalizeRedisScanStepCount(targetCount int64) int64 {
-	if targetCount < redisScanMinStepCount {
-		return redisScanMinStepCount
+	if targetCount < redisKeyScanMinStepCount {
+		return redisKeyScanMinStepCount
 	}
 	if targetCount > redisScanMaxStepCount {
 		return redisScanMaxStepCount
@@ -1159,7 +1160,7 @@ func readRedisHashEntriesWithFallback(
 	entries := make(map[string]string)
 	var cursor uint64
 	for round := 0; round < redisScanMaxRounds; round++ {
-		pairs, nextCursor, scanErr := scan(cursor, redisScanMinStepCount)
+		pairs, nextCursor, scanErr := scan(cursor, redisHashScanStepCount)
 		if scanErr != nil {
 			return nil, 0, scanErr
 		}

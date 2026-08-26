@@ -45,10 +45,12 @@ const REDIS_TREE_KEY_TYPE_WIDTH = 92;
 const REDIS_TREE_KEY_TYPE_WIDTH_NARROW = 84;
 const REDIS_TREE_KEY_TTL_WIDTH = 92;
 const REDIS_TREE_HIDE_TTL_THRESHOLD = 460;
-const REDIS_KEY_INITIAL_LOAD_COUNT = 2000;
-const REDIS_KEY_LOAD_MORE_COUNT = 2000;
-const REDIS_KEY_SEARCH_INITIAL_LOAD_COUNT = 600;
-const REDIS_KEY_SEARCH_LOAD_MORE_COUNT = 1000;
+const REDIS_KEY_INITIAL_LOAD_COUNT = 100;
+const REDIS_KEY_LOAD_MORE_COUNT = 100;
+const REDIS_CLUSTER_KEY_INITIAL_LOAD_COUNT = 2000;
+const REDIS_CLUSTER_KEY_LOAD_MORE_COUNT = 2000;
+const REDIS_KEY_SEARCH_INITIAL_LOAD_COUNT = 100;
+const REDIS_KEY_SEARCH_LOAD_MORE_COUNT = 100;
 const REDIS_KEY_SEARCH_MAX_RESULT_COUNT = 10000;
 const REDIS_LARGE_KEYSPACE_THRESHOLD = 10000;
 const REDIS_LARGE_KEYSPACE_MAX_EXPANDED_GROUPS = 200;
@@ -60,6 +62,7 @@ const REDIS_VALUE_TABLE_MIN_SCROLL_HEIGHT = 96;
 type RedisValueTableProps = Omit<TableProps<any>, 'pagination' | 'scroll' | 'size'> & {
     totalCount: number;
     totalLabel: string;
+    paginationResetKey?: string;
 };
 
 const getElementOuterHeight = (element: HTMLElement | null): number => {
@@ -70,9 +73,17 @@ const getElementOuterHeight = (element: HTMLElement | null): number => {
     return element.getBoundingClientRect().height + marginTop + marginBottom;
 };
 
-const RedisValueTable: React.FC<RedisValueTableProps> = ({ totalCount, totalLabel, dataSource, ...tableProps }) => {
+const RedisValueTable: React.FC<RedisValueTableProps> = ({ totalCount, totalLabel, paginationResetKey, dataSource, ...tableProps }) => {
     const shellRef = useRef<HTMLDivElement>(null);
     const [scrollHeight, setScrollHeight] = useState(REDIS_VALUE_TABLE_DEFAULT_SCROLL_HEIGHT);
+    const [currentPage, setCurrentPage] = useState(1);
+    const maxPage = Math.max(1, Math.ceil(totalCount / REDIS_VALUE_TABLE_PAGE_SIZE));
+
+    useEffect(() => {
+        if (paginationResetKey !== undefined) {
+            setCurrentPage(1);
+        }
+    }, [paginationResetKey]);
 
     useEffect(() => {
         const shell = shellRef.current;
@@ -124,6 +135,12 @@ const RedisValueTable: React.FC<RedisValueTableProps> = ({ totalCount, totalLabe
                     pageSize: REDIS_VALUE_TABLE_PAGE_SIZE,
                     showSizeChanger: false,
                     showTotal: () => totalLabel,
+                    ...(paginationResetKey !== undefined
+                        ? {
+                            current: Math.min(currentPage, maxPage),
+                            onChange: setCurrentPage,
+                        }
+                        : {}),
                 }}
                 scroll={{ y: scrollHeight }}
             />
@@ -150,9 +167,12 @@ type RedisImportPreview = {
     keys: RedisKeyInfo[];
 };
 
-const getRedisScanLoadCount = (pattern: string, append: boolean): number => {
+const getRedisScanLoadCount = (pattern: string, append: boolean, isCluster: boolean): number => {
     const normalizedPattern = pattern.trim() || '*';
     if (normalizedPattern === '*') {
+        if (isCluster) {
+            return append ? REDIS_CLUSTER_KEY_LOAD_MORE_COUNT : REDIS_CLUSTER_KEY_INITIAL_LOAD_COUNT;
+        }
         return append ? REDIS_KEY_LOAD_MORE_COUNT : REDIS_KEY_INITIAL_LOAD_COUNT;
     }
     return append ? REDIS_KEY_SEARCH_LOAD_MORE_COUNT : REDIS_KEY_SEARCH_INITIAL_LOAD_COUNT;
@@ -268,6 +288,8 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
     const [selectedKey, setSelectedKey] = useState<string | null>(null);
     const [keyValue, setKeyValue] = useState<RedisValue | null>(null);
     const [listSortOrder, setListSortOrder] = useState<RedisListSortOrder>(null);
+    const [hashFieldFilter, setHashFieldFilter] = useState('');
+    const [hashValueFilter, setHashValueFilter] = useState('');
     const [valueLoading, setValueLoading] = useState(false);
     const [editModalOpen, setEditModalOpen] = useState(false);
     const [newKeyModalOpen, setNewKeyModalOpen] = useState(false);
@@ -308,6 +330,11 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
     const [showTreeKeyTTL, setShowTreeKeyTTL] = useState(true);
     const [treeHeight, setTreeHeight] = useState(500);
     const [expandedGroupKeys, setExpandedGroupKeys] = useState<string[]>([]);
+
+    useEffect(() => {
+        setHashFieldFilter('');
+        setHashValueFilter('');
+    }, [connectionId, redisDB, selectedKey]);
 
     const workbenchCardStyle = useMemo(() => ({
         background: workbenchTheme.panelBg,
@@ -441,7 +468,7 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
         if (!config) return;
 
         const normalizedPattern = pattern.trim() || '*';
-        const effectiveTargetCount = targetCount ?? getRedisScanLoadCount(normalizedPattern, append);
+        const effectiveTargetCount = targetCount ?? getRedisScanLoadCount(normalizedPattern, append, redisTopology === 'cluster');
         const requestId = latestLoadRequestIdRef.current + 1;
         latestLoadRequestIdRef.current = requestId;
 
@@ -505,14 +532,14 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
                 setLoading(false);
             }
         }
-    }, [getConfig, scanRedisKeysPage, tr]);
+    }, [getConfig, redisTopology, scanRedisKeysPage, tr]);
 
     useEffect(() => {
         loadKeys(
             searchPattern,
             '0',
             false,
-            getRedisScanLoadCount(searchPattern, false),
+            getRedisScanLoadCount(searchPattern, false, redisTopology === 'cluster'),
             searchMode !== 'exact' && searchPattern !== '*'
         );
     }, [loadKeys, redisDB]);
@@ -526,10 +553,10 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
             normalized.pattern,
             '0',
             false,
-            getRedisScanLoadCount(normalized.pattern, false),
+            getRedisScanLoadCount(normalized.pattern, false, redisTopology === 'cluster'),
             mode !== 'exact' && normalized.keyword !== ''
         );
-    }, [loadKeys, searchMode]);
+    }, [loadKeys, redisTopology, searchMode]);
 
     const handleSearch = (value: string) => {
         executeSearch(value);
@@ -547,7 +574,7 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
             normalized.pattern,
             '0',
             false,
-            getRedisScanLoadCount(normalized.pattern, false),
+            getRedisScanLoadCount(normalized.pattern, false, redisTopology === 'cluster'),
             searchMode !== 'exact' && normalized.keyword !== ''
         );
     };
@@ -562,7 +589,7 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
         if (!hasMore || loading) {
             return;
         }
-        loadKeys(searchPattern, cursor, true, getRedisScanLoadCount(searchPattern, true));
+        loadKeys(searchPattern, cursor, true, getRedisScanLoadCount(searchPattern, true, redisTopology === 'cluster'));
     };
 
     const handleLoadAllKeys = useCallback(async () => {
@@ -572,7 +599,7 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
         }
 
         const normalizedPattern = searchPattern.trim() || '*';
-        const batchSize = getRedisScanLoadCount(normalizedPattern, true);
+        const batchSize = getRedisScanLoadCount(normalizedPattern, true, redisTopology === 'cluster');
         const requestId = latestLoadRequestIdRef.current + 1;
         latestLoadRequestIdRef.current = requestId;
 
@@ -619,7 +646,7 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
                 setLoadingAllKeys(false);
             }
         }
-    }, [getConfig, hasMore, loading, scanRedisKeysPage, searchPattern, tr]);
+    }, [getConfig, hasMore, loading, redisTopology, scanRedisKeysPage, searchPattern, tr]);
 
     const handleRefresh = () => {
         setCursor('0');
@@ -627,7 +654,7 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
             searchPattern,
             '0',
             false,
-            getRedisScanLoadCount(searchPattern, false),
+            getRedisScanLoadCount(searchPattern, false, redisTopology === 'cluster'),
             searchMode !== 'exact' && searchPattern !== '*'
         );
     };
@@ -766,7 +793,7 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
                     searchPattern,
                     '0',
                     false,
-                    getRedisScanLoadCount(searchPattern, false),
+                    getRedisScanLoadCount(searchPattern, false, redisTopology === 'cluster'),
                     searchMode !== 'exact' && searchPattern !== '*'
                 );
                 message.success(tr('redis_viewer.message.import_summary', {
@@ -784,7 +811,7 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
         } finally {
             setImportingKeys(false);
         }
-    }, [confirmRedisMutation, getConfig, importConflictMode, importPreview, importSelectedKeys, loadKeys, redisDB, resetImportModalState, searchMode, searchPattern, tr]);
+    }, [confirmRedisMutation, getConfig, importConflictMode, importPreview, importSelectedKeys, loadKeys, redisDB, redisTopology, resetImportModalState, searchMode, searchPattern, tr]);
 
     const importSelectedKeySet = useMemo(() => new Set(importSelectedKeys), [importSelectedKeys]);
     const handleToggleImportPreviewKey = useCallback((key: string, checked: boolean) => {
@@ -1505,7 +1532,17 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
         };
 
         const renderHashValue = () => {
-            const data = Object.entries(keyValue.value as Record<string, string>).map(([field, value]) => {
+            const fieldQuery = hashFieldFilter.trim().toLowerCase();
+            const valueQuery = hashValueFilter.trim().toLowerCase();
+            const hasFilter = fieldQuery !== '' || valueQuery !== '';
+            const allEntries = Object.entries(keyValue.value as Record<string, string>);
+            const filteredEntries = hasFilter
+                ? allEntries.filter(([field, value]) => (
+                    (fieldQuery === '' || field.toLowerCase().includes(fieldQuery))
+                    && (valueQuery === '' || value.toLowerCase().includes(valueQuery))
+                ))
+                : allEntries;
+            const data = filteredEntries.map(([field, value]) => {
                 const { displayValue, isBinary, isJson, encoding } = processValueForCurrentView(value);
                 return { field, value, displayValue, isBinary, isJson, encoding };
             });
@@ -1546,7 +1583,7 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
 
             return (
                 <div className={isV2Ui ? 'gn-v2-redis-data-section' : undefined} style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-                    <div className={isV2Ui ? 'gn-v2-redis-value-actionbar' : undefined} style={{ marginBottom: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div className={isV2Ui ? 'gn-v2-redis-value-actionbar' : undefined} style={{ marginBottom: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                         <Button size="small" style={actionButtonStyle} icon={<PlusOutlined />} onClick={() => {
                             Modal.confirm({
                                 title: tr('redis_viewer.modal.add_field'),
@@ -1569,10 +1606,39 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
                                 }
                             });
                         }}>{tr('redis_viewer.action.add_field')}</Button>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8, flex: '1 1 420px', minWidth: 0, flexWrap: 'wrap' }}>
+                            <Input
+                                {...noAutoCapInputProps}
+                                data-redis-hash-field-filter="true"
+                                size="small"
+                                allowClear
+                                prefix={<SearchOutlined />}
+                                value={hashFieldFilter}
+                                aria-label={tr('redis_viewer.placeholder.filter_field')}
+                                placeholder={tr('redis_viewer.placeholder.filter_field')}
+                                onChange={(event) => setHashFieldFilter(event.target.value)}
+                                style={{ flex: '1 1 180px', maxWidth: 260 }}
+                            />
+                            <Input
+                                {...noAutoCapInputProps}
+                                data-redis-hash-value-filter="true"
+                                size="small"
+                                allowClear
+                                prefix={<SearchOutlined />}
+                                value={hashValueFilter}
+                                aria-label={tr('redis_viewer.placeholder.filter_value')}
+                                placeholder={tr('redis_viewer.placeholder.filter_value')}
+                                onChange={(event) => setHashValueFilter(event.target.value)}
+                                style={{ flex: '1 1 180px', maxWidth: 320 }}
+                            />
+                        </div>
                     </div>
                     <RedisValueTable
-                        totalCount={keyValue.length}
-                        totalLabel={tr('redis_viewer.pagination.total', { count: keyValue.length })}
+                        totalCount={data.length}
+                        totalLabel={hasFilter
+                            ? tr('redis_viewer.pagination.filtered_total', { matched: data.length, total: allEntries.length })
+                            : tr('redis_viewer.pagination.total', { count: allEntries.length })}
+                        paginationResetKey={`${selectedKey}\u0000${hashFieldFilter}\u0000${hashValueFilter}`}
                         dataSource={data}
                         columns={[
                             { title: tr('redis_viewer.table.field'), dataIndex: 'field', key: 'field', width: 200, ellipsis: true },
