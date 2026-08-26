@@ -361,6 +361,9 @@ func (m *MilvusDB) ApplyChanges(tableName string, changes connection.ChangeSet) 
 
 	if len(changes.Deletes) > 0 {
 		ids := milvusRowIDs(changes.Deletes, primaryField)
+		if len(ids) != len(changes.Deletes) {
+			return fmt.Errorf("Milvus delete is missing primary key field %q", primaryField)
+		}
 		if len(ids) > 0 {
 			if err := m.deleteEntities(ctx, collection, milvusIDFilter(primaryField, ids)); err != nil {
 				return err

@@ -317,9 +317,16 @@ func (c *ChromaDB) ApplyChanges(tableName string, changes connection.ChangeSet) 
 	if len(changes.Deletes) > 0 {
 		ids := make([]string, 0, len(changes.Deletes))
 		for _, row := range changes.Deletes {
-			if id := chromaRowID(row); id != "" {
+			rawID := firstExisting(row, "id", "_id")
+			if rawID == nil {
+				continue
+			}
+			if id := strings.TrimSpace(fmt.Sprintf("%v", rawID)); id != "" {
 				ids = append(ids, id)
 			}
+		}
+		if len(ids) != len(changes.Deletes) {
+			return fmt.Errorf("Chroma 删除行缺少 id")
 		}
 		if len(ids) > 0 {
 			if _, err := c.deleteCommand(ctx, tableName, map[string]interface{}{"ids": ids}); err != nil {

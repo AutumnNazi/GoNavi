@@ -388,6 +388,59 @@ func TestChromaApplyChangesUpsertAndDelete(t *testing.T) {
 	}
 }
 
+func TestChromaApplyChangesRejectsDeletesWithoutID(t *testing.T) {
+	deleteRequests := 0
+	upsertRequests := 0
+	server := newMockChromaServer(t, func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/api/v2/heartbeat":
+			writeChromaJSON(w, map[string]interface{}{"ok": true})
+		case r.URL.Path == "/api/v2/tenants/default_tenant/databases/default_database/collections":
+			writeChromaJSON(w, []chromaCollection{{ID: "col-products", Name: "products", Database: "default_database"}})
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/collections/col-products/upsert"):
+			upsertRequests++
+			writeChromaJSON(w, map[string]interface{}{"ok": true})
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/collections/col-products/delete"):
+			deleteRequests++
+			writeChromaJSON(w, map[string]interface{}{"ok": true})
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+
+	db := newTestChromaDB(t, server.URL)
+	for _, test := range []struct {
+		name    string
+		deletes []map[string]interface{}
+	}{
+		{name: "empty id", deletes: []map[string]interface{}{{"id": ""}}},
+		{name: "nil id", deletes: []map[string]interface{}{{"id": nil}}},
+		{name: "missing id", deletes: []map[string]interface{}{{}}},
+		{name: "mixed ids", deletes: []map[string]interface{}{{"id": "old"}, {"id": ""}}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			deleteRequests = 0
+			upsertRequests = 0
+			err := db.ApplyChanges("products", connection.ChangeSet{
+				Deletes: test.deletes,
+				Inserts: []map[string]interface{}{{"id": "new", "document": "should not be written"}},
+			})
+			if err == nil {
+				t.Fatal("ApplyChanges unexpectedly succeeded")
+			}
+			if err.Error() != "Chroma 删除行缺少 id" {
+				t.Fatalf("ApplyChanges error = %q", err)
+			}
+			if deleteRequests != 0 {
+				t.Fatalf("delete requests = %d, want 0", deleteRequests)
+			}
+			if upsertRequests != 0 {
+				t.Fatalf("upsert requests = %d, want 0", upsertRequests)
+			}
+		})
+	}
+}
+
 func TestChromaLiveSmoke(t *testing.T) {
 	serverURL := strings.TrimSpace(os.Getenv("GONAVI_CHROMA_TEST_URL"))
 	if serverURL == "" {
