@@ -506,6 +506,7 @@ export interface TabData {
     | "sql-analysis"
     | "sql-audit"
     | "request-diagnostics"
+    | "message-queue"
     | "redis-keys"
     | "redis-command"
     | "redis-monitor"
@@ -580,6 +581,12 @@ export interface TabData {
   sqlAuditTransactionId?: string;
   sqlAuditRequestKey?: string;
   preserveUnboundConnection?: boolean;
+  /** Message queue workbench target requested by the sidebar. */
+  messageQueueTarget?: string;
+  messageQueueObjectKind?: "topic-filter" | "topic" | "queue" | "exchange";
+  messageQueueAction?: "open" | "consume" | "publish";
+  /** Changes whenever an existing workbench should react to a new sidebar request. */
+  messageQueueRequestKey?: string;
   formatRestoreSnapshot?: {
     query: string;
     createdAt: number;

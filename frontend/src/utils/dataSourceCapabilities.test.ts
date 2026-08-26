@@ -5,10 +5,24 @@ import {
   getDataSourceCapabilities,
   getDataSourceCapabilityContract,
   getDataSourceOperationCapability,
+  isMessageQueueDataSource,
+  resolveMessageQueueExecutionDbName,
   shouldShowOceanBaseRowNumberColumn,
 } from './dataSourceCapabilities';
 
 describe('dataSourceCapabilities', () => {
+  it('keeps topic defaults out of non-RabbitMQ workbench identities', () => {
+    expect(resolveMessageQueueExecutionDbName({ type: 'mqtt', database: 'devices/#' })).toBe('topics');
+    expect(resolveMessageQueueExecutionDbName({ type: 'kafka', database: 'orders.events' }, 'legacy-topic')).toBe('topics');
+    expect(resolveMessageQueueExecutionDbName({ type: 'rocketmq' }, '')).toBe('topics');
+  });
+
+  it('uses the selected or configured RabbitMQ vhost as the workbench boundary', () => {
+    expect(resolveMessageQueueExecutionDbName({ type: 'rabbitmq', database: '/orders' })).toBe('/orders');
+    expect(resolveMessageQueueExecutionDbName({ type: 'rabbitmq', database: '/orders' }, '/billing')).toBe('/billing');
+    expect(resolveMessageQueueExecutionDbName({ type: 'rabbitmq' })).toBe('/');
+  });
+
   it('treats Oracle table preview totals as manual exact count plus approximate metadata count', () => {
     expect(getDataSourceCapabilities({ type: 'oracle' })).toMatchObject({
       type: 'oracle',
@@ -477,6 +491,19 @@ describe('dataSourceCapabilities', () => {
     ].forEach((config) => {
       expect(getDataSourceCapabilities(config).supportsQueryEditor, JSON.stringify(config)).toBe(true);
     });
+  });
+
+  it('separates message-oriented primary workbenches from relational query editors', () => {
+    [
+      { type: 'mqtts' },
+      { type: 'apache-kafka' },
+      { type: 'custom', driver: 'rocket-mq' },
+      { type: 'rabbit_mq' },
+    ].forEach((config) => {
+      expect(isMessageQueueDataSource(config), JSON.stringify(config)).toBe(true);
+    });
+    expect(isMessageQueueDataSource({ type: 'postgres' })).toBe(false);
+    expect(isMessageQueueDataSource({ type: 'redis' })).toBe(false);
   });
 
   it('treats RabbitMQ as a queryable messaging datasource with publish support', () => {

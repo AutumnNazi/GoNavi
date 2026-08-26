@@ -108,7 +108,12 @@ import { downloadBrowserTextFile } from './utils/browserFileTransfer';
 import { buildDataSyncWorkbenchTab } from './utils/dataSyncTab';
 import { buildSqlAuditWorkbenchTab } from './utils/sqlAuditTab';
 import { buildRequestDiagnosticsWorkbenchTab } from './utils/requestDiagnosticsTab';
-import { getDataSourceCapabilities, resolveDataSourceType } from './utils/dataSourceCapabilities';
+import {
+  getDataSourceCapabilities,
+  isMessageQueueDataSource,
+  resolveMessageQueueExecutionDbName,
+  resolveDataSourceType,
+} from './utils/dataSourceCapabilities';
 import { buildContextualNewQueryTemplate } from './utils/objectQueryTemplates';
 import {
   extractCustomThemeAntTokens,
@@ -2317,6 +2322,14 @@ function App() {
   const setActiveTab = useStore(state => state.setActiveTab);
   const savedQueries = useStore(state => state.savedQueries);
   const saveQuery = useStore(state => state.saveQuery);
+  const currentPrimaryActionConnection = useMemo(() => {
+      const activeTab = activeTabId ? tabs.find(tab => tab.id === activeTabId) : undefined;
+      const connectionId = String(activeContext?.connectionId || activeTab?.connectionId || '').trim();
+      return connections.find(connection => connection.id === connectionId) || null;
+  }, [activeContext?.connectionId, activeTabId, connections, tabs]);
+  const primaryActionIsMessageQueue = isMessageQueueDataSource(
+      currentPrimaryActionConnection?.config,
+  );
   const applicationQuitConfirmRef = useRef<{ destroy: () => void } | null>(null);
   const applicationQuitHandlingRef = useRef(false);
   const openSecurityUpdateSettings = useCallback((focusTarget?: SecurityUpdateSettingsFocusTarget | null) => {
@@ -2848,6 +2861,22 @@ function App() {
           validConnectionIds,
       });
       const connection = connections.find(c => c.id === targetContext.connectionId);
+      if (connection && isMessageQueueDataSource(connection.config)) {
+          const dbName = resolveMessageQueueExecutionDbName(
+              connection.config,
+              targetContext.dbName,
+          );
+          addTab({
+              id: `message-queue-${connection.id}-${encodeURIComponent(dbName || 'default')}`,
+              title: `${connection.name} · ${t('message_queue_workbench.tab_kind')}`,
+              type: 'message-queue',
+              connectionId: connection.id,
+              dbName,
+              messageQueueAction: 'open',
+              messageQueueRequestKey: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          });
+          return;
+      }
       const inheritsTableContext = canInheritNewQueryTableContext({
           activeTab: currentTab,
           targetContext,
@@ -8064,7 +8093,10 @@ function App() {
                       )}
                   </div>
                   <TitleBarPrimaryActions
-                    newQueryLabel={t('query.new')}
+                    newQueryLabel={t(primaryActionIsMessageQueue
+                      ? 'message_queue_workbench.action.open'
+                      : 'query.new')}
+                    newQueryIcon={primaryActionIsMessageQueue ? <MessageOutlined /> : undefined}
                     newConnectionLabel={t('connection.new')}
                     newQueryShortcut={titleBarNewQueryShortcut}
                     newConnectionShortcut={titleBarNewConnectionShortcut}

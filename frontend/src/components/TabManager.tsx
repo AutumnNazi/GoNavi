@@ -70,6 +70,7 @@ const getTabKindLabel = (tab: TabData): string => {
   if (tab.type === 'sql-file-execution') return t('sidebar.sql_file_exec.title');
   if (tab.type === 'sql-analysis') return t('tab_manager.kind_badge.sql_analysis');
   if (tab.type === 'sql-audit') return t('tab_manager.kind_badge.sql_audit');
+  if (tab.type === 'message-queue') return t('message_queue_workbench.tab_kind');
   if (tab.type.startsWith('redis')) return t('tab_manager.kind_badge.redis');
   if (tab.type.startsWith('jvm')) return t('tab_manager.kind_badge.jvm');
   if (tab.type === 'trigger') return t('tab_manager.kind_badge.trigger');
@@ -300,6 +301,7 @@ const getTabKindTooltipLabel = (tab: TabData): string => {
   if (tab.type === 'sql-file-execution') return t('sidebar.sql_file_exec.title');
   if (tab.type === 'sql-analysis') return t('tab_manager.hover.kind.sql_analysis');
   if (tab.type === 'sql-audit') return t('tab_manager.hover.kind.sql_audit');
+  if (tab.type === 'message-queue') return t('message_queue_workbench.tab_kind');
   if (tab.type === 'redis-keys') return t('tab_manager.hover.kind.redis_keys');
   if (tab.type === 'redis-command') return t('tab_manager.hover.kind.redis_command');
   if (tab.type === 'redis-monitor') return t('tab_manager.hover.kind.redis_monitor');
@@ -334,6 +336,7 @@ const getTabObjectLabel = (tab: TabData): string => {
   if (tab.resourcePath) return tab.resourcePath;
   if (tab.filePath) return tab.filePath;
   if (tab.type === 'sql-analysis' || tab.type === 'sql-audit') return tab.title;
+  if (tab.type === 'message-queue') return tab.messageQueueTarget || tab.dbName || '';
   if (tab.type.startsWith('redis')) return `db${tab.redisDB ?? 0}`;
   return '';
 };

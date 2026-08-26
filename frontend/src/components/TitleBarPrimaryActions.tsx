@@ -22,6 +22,7 @@ export const resolveTitleBarPrimaryActionShortcut = (
 
 interface TitleBarPrimaryActionsProps {
   newQueryLabel: string;
+  newQueryIcon?: React.ReactNode;
   newConnectionLabel: string;
   newQueryShortcut?: string;
   newConnectionShortcut?: string;
@@ -35,6 +36,7 @@ const getActionTitle = (label: string, shortcut?: string): string => (
 
 const TitleBarPrimaryActions: React.FC<TitleBarPrimaryActionsProps> = ({
   newQueryLabel,
+  newQueryIcon,
   newConnectionLabel,
   newQueryShortcut,
   newConnectionShortcut,
@@ -55,7 +57,7 @@ const TitleBarPrimaryActions: React.FC<TitleBarPrimaryActionsProps> = ({
       data-gonavi-new-query-action="true"
       onClick={onNewQuery}
     >
-      <ConsoleSqlOutlined />
+      {newQueryIcon || <ConsoleSqlOutlined />}
       {newQueryLabel}
     </button>
     <button

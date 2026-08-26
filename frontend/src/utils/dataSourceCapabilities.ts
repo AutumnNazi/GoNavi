@@ -9,7 +9,7 @@ import { normalizeOceanBaseProtocol } from './oceanBaseProtocol';
 
 type ConnectionLike = Pick<
   ConnectionConfig,
-  'type' | 'driver' | 'oceanBaseProtocol' | 'readOnly' | 'protection'
+  'type' | 'driver' | 'oceanBaseProtocol' | 'readOnly' | 'protection' | 'database'
 > | null | undefined;
 
 const normalizeDataSourceToken = (raw: string): string => {
@@ -108,6 +108,39 @@ export const resolveDataSourceType = (config: ConnectionLike): string => {
     return 'oracle';
   }
   return type;
+};
+
+const MESSAGE_QUEUE_DATA_SOURCE_TYPES = new Set([
+  'mqtt',
+  'kafka',
+  'rocketmq',
+  'rabbitmq',
+]);
+
+/**
+ * Message queues still expose a query command grammar for advanced users, but
+ * their primary workbench is message-oriented rather than a SQL editor.
+ */
+export const isMessageQueueDataSource = (config: ConnectionLike): boolean => (
+  MESSAGE_QUEUE_DATA_SOURCE_TYPES.has(resolveDataSourceType(config))
+);
+
+/**
+ * Resolve the synthetic namespace used to identify and execute an MQ
+ * workbench. Topic defaults belong to the consume/publish forms, not to the
+ * workbench identity. RabbitMQ is the exception because its vhost is a real
+ * execution boundary.
+ */
+export const resolveMessageQueueExecutionDbName = (
+  config: ConnectionLike,
+  explicitDbName?: unknown,
+): string => {
+  const type = resolveDataSourceType(config);
+  const explicit = String(explicitDbName || '').trim();
+  const configured = String(config?.database || '').trim();
+  if (type === 'rabbitmq') return explicit || configured || '/';
+  if (MESSAGE_QUEUE_DATA_SOURCE_TYPES.has(type)) return 'topics';
+  return explicit || configured;
 };
 
 export const shouldShowOceanBaseRowNumberColumn = (config: ConnectionLike): boolean => {

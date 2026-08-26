@@ -99,6 +99,22 @@ describe('TitleBarPrimaryActions', () => {
     ]);
   });
 
+  it('accepts a message-oriented icon for the context-aware primary action', () => {
+    const renderer = create(
+      <TitleBarPrimaryActions
+        newQueryLabel="消息工作台"
+        newQueryIcon={<span data-icon="message-workbench" />}
+        newConnectionLabel="新建连接"
+        onNewQuery={vi.fn()}
+        onNewConnection={vi.fn()}
+      />,
+    );
+
+    const primaryButton = renderer.root.findAllByType('button')[0];
+    expect(primaryButton.findByProps({ 'data-icon': 'message-workbench' })).toBeTruthy();
+    expect(primaryButton.props['aria-label']).toBe('消息工作台');
+  });
+
   it('uses current platform custom bindings and hides disabled shortcuts', () => {
     const shortcutOptions = cloneShortcutOptions(DEFAULT_SHORTCUT_OPTIONS);
     shortcutOptions.newQueryTab.mac = { combo: 'Meta+Alt+Q', enabled: true };
