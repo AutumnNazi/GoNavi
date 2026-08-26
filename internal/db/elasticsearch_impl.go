@@ -1123,28 +1123,29 @@ func (e *ElasticsearchDB) ApplyChangesContext(ctx context.Context, tableName str
 
 	// 检查是否有单条操作失败
 	var result map[string]interface{}
-	if err := json.Unmarshal(body, &result); err == nil {
-		if hasErrors, ok := result["errors"].(bool); ok && hasErrors {
-			if items, ok := result["items"].([]interface{}); ok {
-				for _, item := range items {
-					itemMap, ok := item.(map[string]interface{})
+	if err := json.Unmarshal(body, &result); err != nil {
+		return MarkWriteOutcomeUnknown(fmt.Errorf("解析 ES 批量操作响应失败，写入状态未知：%w", err))
+	}
+	if hasErrors, ok := result["errors"].(bool); ok && hasErrors {
+		if items, ok := result["items"].([]interface{}); ok {
+			for _, item := range items {
+				itemMap, ok := item.(map[string]interface{})
+				if !ok {
+					continue
+				}
+				for _, op := range itemMap {
+					opMap, ok := op.(map[string]interface{})
 					if !ok {
 						continue
 					}
-					for _, op := range itemMap {
-						opMap, ok := op.(map[string]interface{})
-						if !ok {
-							continue
-						}
-						if errMap, ok := opMap["error"].(map[string]interface{}); ok {
-							reason, _ := errMap["reason"].(string)
-							return fmt.Errorf("ES 批量操作部分失败：%s", reason)
-						}
+					if errMap, ok := opMap["error"].(map[string]interface{}); ok {
+						reason, _ := errMap["reason"].(string)
+						return fmt.Errorf("ES 批量操作部分失败：%s", reason)
 					}
 				}
 			}
-			return fmt.Errorf("ES 批量操作部分失败")
 		}
+		return fmt.Errorf("ES 批量操作部分失败")
 	}
 
 	logger.Infof("ES 批量操作完成：索引=%s 删除=%d 更新=%d 新增=%d",
