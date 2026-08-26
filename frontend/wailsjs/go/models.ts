@@ -820,6 +820,24 @@ export namespace app {
 		}
 	}
 
+	export class DataSourceNavigationCapabilities {
+	    primaryVisibilitySupported: boolean;
+	    primaryKind: string;
+	    secondarySchemaVisibilitySupported: boolean;
+	    schemaIdentifierCaseSensitive: boolean;
+
+	    static createFrom(source: any = {}) {
+	        return new DataSourceNavigationCapabilities(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.primaryVisibilitySupported = source["primaryVisibilitySupported"];
+	        this.primaryKind = source["primaryKind"];
+	        this.secondarySchemaVisibilitySupported = source["secondarySchemaVisibilitySupported"];
+	        this.schemaIdentifierCaseSensitive = source["schemaIdentifierCaseSensitive"];
+	    }
+	}
 	export class DataSourceUICapabilities {
 	    explainDiagnosis: boolean;
 	    sqlQueryExport: boolean;
@@ -890,6 +908,7 @@ export namespace app {
 	    streaming: DataSourceOperationCapability;
 	    dangerousOperations: DataSourceOperationCapability;
 	    ui: DataSourceUICapabilities;
+	    navigation: DataSourceNavigationCapabilities;
 
 	    static createFrom(source: any = {}) {
 	        return new DataSourceCapability(source);
@@ -908,6 +927,7 @@ export namespace app {
 	        this.streaming = this.convertValues(source["streaming"], DataSourceOperationCapability);
 	        this.dangerousOperations = this.convertValues(source["dangerousOperations"], DataSourceOperationCapability);
 	        this.ui = this.convertValues(source["ui"], DataSourceUICapabilities);
+	        this.navigation = this.convertValues(source["navigation"], DataSourceNavigationCapabilities);
 	    }
 
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -928,6 +948,7 @@ export namespace app {
 		    return a;
 		}
 	}
+
 
 
 	export class ElasticsearchConsoleRequestResult {
@@ -2244,6 +2265,60 @@ export namespace connection {
 		}
 	}
 
+	export class SchemaVisibilityRule {
+	    mode: string;
+	    schemas?: string[];
+
+	    static createFrom(source: any = {}) {
+	        return new SchemaVisibilityRule(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.mode = source["mode"];
+	        this.schemas = source["schemas"];
+	    }
+	}
+	export class ConnectionVisibilityInput {
+	    id: string;
+	    includeDatabases?: string[];
+	    includeDatabasePatterns?: string[];
+	    excludeDatabasePatterns?: string[];
+	    includeRedisDatabases?: number[];
+	    schemaVisibilityByDatabase?: Record<string, SchemaVisibilityRule>;
+
+	    static createFrom(source: any = {}) {
+	        return new ConnectionVisibilityInput(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.includeDatabases = source["includeDatabases"];
+	        this.includeDatabasePatterns = source["includeDatabasePatterns"];
+	        this.excludeDatabasePatterns = source["excludeDatabasePatterns"];
+	        this.includeRedisDatabases = source["includeRedisDatabases"];
+	        this.schemaVisibilityByDatabase = this.convertValues(source["schemaVisibilityByDatabase"], SchemaVisibilityRule, true);
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	export class GlobalProxyView {
 	    enabled: boolean;
 	    type: string;
@@ -2350,20 +2425,6 @@ export namespace connection {
 	        this.user = source["user"];
 	        this.password = source["password"];
 	        this.clearPassword = source["clearPassword"];
-	    }
-	}
-	export class SchemaVisibilityRule {
-	    mode: string;
-	    schemas?: string[];
-
-	    static createFrom(source: any = {}) {
-	        return new SchemaVisibilityRule(source);
-	    }
-
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.mode = source["mode"];
-	        this.schemas = source["schemas"];
 	    }
 	}
 	export class SavedConnectionInput {
@@ -2870,6 +2931,27 @@ export namespace redis {
 
 }
 
+export namespace requesttrace {
+
+	export class Filter {
+	    requestId?: string;
+	    entry?: string;
+	    limit?: number;
+
+	    static createFrom(source: any = {}) {
+	        return new Filter(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.requestId = source["requestId"];
+	        this.entry = source["entry"];
+	        this.limit = source["limit"];
+	    }
+	}
+
+}
+
 export namespace resultdiff {
 
 	export class CompareOptions {
@@ -3269,6 +3351,7 @@ export namespace sync {
 	    rowsDeleted: number;
 	    rowsSkipped?: number;
 	    cancelled?: boolean;
+	    outcomeUnknown?: boolean;
 
 	    static createFrom(source: any = {}) {
 	        return new SyncResult(source);
@@ -3285,6 +3368,7 @@ export namespace sync {
 	        this.rowsDeleted = source["rowsDeleted"];
 	        this.rowsSkipped = source["rowsSkipped"];
 	        this.cancelled = source["cancelled"];
+	        this.outcomeUnknown = source["outcomeUnknown"];
 	    }
 	}
 

@@ -24,6 +24,7 @@ describe('dataSourceCapabilities', () => {
       preferManualTotalCount: true,
       supportsApproximateTableCount: true,
       supportsApproximateTotalPages: true,
+      schemaIdentifierCaseSensitive: false,
     });
   });
 
@@ -555,8 +556,14 @@ describe('dataSourceCapabilities', () => {
 
   it('exposes complete, guided capability contracts to every frontend entry point', () => {
     const redis = getDataSourceCapabilityContract({ type: 'redis' });
-    expect(Object.keys(redis).filter((key) => key !== 'type' && key !== 'ui').sort())
+    expect(Object.keys(redis).filter((key) => key !== 'type' && key !== 'ui' && key !== 'navigation').sort())
       .toEqual([...DATA_SOURCE_CAPABILITY_OPERATIONS].sort());
+    expect(Object.keys(redis.navigation).sort()).toEqual([
+      'primaryKind',
+      'primaryVisibilitySupported',
+      'schemaIdentifierCaseSensitive',
+      'secondarySchemaVisibilitySupported',
+    ]);
     expect(redis.query).toMatchObject({
       supported: false,
       reason: 'dedicated_workbench',

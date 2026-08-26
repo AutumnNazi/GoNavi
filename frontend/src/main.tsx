@@ -267,6 +267,7 @@ if (
         const hasIncludeDatabases = Object.prototype.hasOwnProperty.call(input || {}, 'includeDatabases');
         const hasIncludeDatabasePatterns = Object.prototype.hasOwnProperty.call(input || {}, 'includeDatabasePatterns');
         const hasExcludeDatabasePatterns = Object.prototype.hasOwnProperty.call(input || {}, 'excludeDatabasePatterns');
+        const hasIncludeRedisDatabases = Object.prototype.hasOwnProperty.call(input || {}, 'includeRedisDatabases');
         const hasSchemaVisibilityByDatabase = Object.prototype.hasOwnProperty.call(input || {}, 'schemaVisibilityByDatabase');
         const existingSecrets = existing ? (mockConnectionSecrets.get(existing.id) || {}) : {};
         const config = (input?.config && typeof input.config === 'object') ? input.config : {};
@@ -330,7 +331,9 @@ if (
             excludeDatabasePatterns: hasExcludeDatabasePatterns
                 ? (Array.isArray(input?.excludeDatabasePatterns) ? [...input.excludeDatabasePatterns] : undefined)
                 : existing?.excludeDatabasePatterns,
-            includeRedisDatabases: Array.isArray(input?.includeRedisDatabases) ? [...input.includeRedisDatabases] : existing?.includeRedisDatabases,
+            includeRedisDatabases: hasIncludeRedisDatabases
+                ? (Array.isArray(input?.includeRedisDatabases) ? [...input.includeRedisDatabases] : undefined)
+                : existing?.includeRedisDatabases,
             schemaVisibilityByDatabase: hasSchemaVisibilityByDatabase
                 ? (input?.schemaVisibilityByDatabase && typeof input.schemaVisibilityByDatabase === 'object'
                     ? cloneBrowserMockValue(input.schemaVisibilityByDatabase)
@@ -350,6 +353,25 @@ if (
         };
         upsertMockConnection(view);
         return cloneBrowserMockValue(view);
+    };
+
+    const updateMockConnectionVisibility = (input: any) => {
+        const existing = mockConnections.find((item) => item.id === input?.id);
+        if (!existing) {
+            throw new Error(`saved connection not found: ${String(input?.id || '')}`);
+        }
+        const updated = {
+            ...existing,
+            includeDatabases: Array.isArray(input?.includeDatabases) ? [...input.includeDatabases] : undefined,
+            includeDatabasePatterns: Array.isArray(input?.includeDatabasePatterns) ? [...input.includeDatabasePatterns] : undefined,
+            excludeDatabasePatterns: Array.isArray(input?.excludeDatabasePatterns) ? [...input.excludeDatabasePatterns] : undefined,
+            includeRedisDatabases: Array.isArray(input?.includeRedisDatabases) ? [...input.includeRedisDatabases] : undefined,
+            schemaVisibilityByDatabase: input?.schemaVisibilityByDatabase && typeof input.schemaVisibilityByDatabase === 'object'
+                ? cloneBrowserMockValue(input.schemaVisibilityByDatabase)
+                : undefined,
+        };
+        upsertMockConnection(updated);
+        return cloneBrowserMockValue(updated);
     };
 
     const saveMockQuery = (input: any) => {
@@ -540,6 +562,7 @@ if (
                 },
                 ListInstalledFontFamilies: async () => ({ success: true, data: [] }),
                 SaveConnection: async (input: any) => saveMockConnection(input),
+                UpdateConnectionVisibility: async (input: any) => updateMockConnectionVisibility(input),
                 DeleteConnection: async (id: string) => {
                     const index = mockConnections.findIndex((item) => item.id === id);
                     if (index >= 0) {

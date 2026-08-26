@@ -3,8 +3,10 @@
 import {connection} from '../models';
 import {sqlaudit} from '../models';
 import {app} from '../models';
+import {context} from '../models';
 import {sync} from '../models';
 import {syncjob} from '../models';
+import {requesttrace} from '../models';
 import {jvm} from '../models';
 import {redis} from '../models';
 import {resultdiff} from '../models';
@@ -81,23 +83,41 @@ export function DBConnect(arg1:connection.ConnectionConfig):Promise<connection.Q
 
 export function DBGetAllColumns(arg1:connection.ConnectionConfig,arg2:string):Promise<connection.QueryResult>;
 
+export function DBGetAllColumnsContext(arg1:context.Context,arg2:connection.ConnectionConfig,arg3:string):Promise<connection.QueryResult>;
+
 export function DBGetColumns(arg1:connection.ConnectionConfig,arg2:string,arg3:string):Promise<connection.QueryResult>;
+
+export function DBGetColumnsContext(arg1:context.Context,arg2:connection.ConnectionConfig,arg3:string,arg4:string):Promise<connection.QueryResult>;
 
 export function DBGetDatabaseForeignKeys(arg1:connection.ConnectionConfig,arg2:string):Promise<connection.QueryResult>;
 
 export function DBGetDatabases(arg1:connection.ConnectionConfig):Promise<connection.QueryResult>;
 
+export function DBGetDatabasesContext(arg1:context.Context,arg2:connection.ConnectionConfig):Promise<connection.QueryResult>;
+
 export function DBGetForeignKeys(arg1:connection.ConnectionConfig,arg2:string,arg3:string):Promise<connection.QueryResult>;
+
+export function DBGetForeignKeysContext(arg1:context.Context,arg2:connection.ConnectionConfig,arg3:string,arg4:string):Promise<connection.QueryResult>;
 
 export function DBGetIndexes(arg1:connection.ConnectionConfig,arg2:string,arg3:string):Promise<connection.QueryResult>;
 
+export function DBGetIndexesContext(arg1:context.Context,arg2:connection.ConnectionConfig,arg3:string,arg4:string):Promise<connection.QueryResult>;
+
 export function DBGetObjects(arg1:connection.ConnectionConfig,arg2:string):Promise<connection.QueryResult>;
+
+export function DBGetObjectsContext(arg1:context.Context,arg2:connection.ConnectionConfig,arg3:string):Promise<connection.QueryResult>;
 
 export function DBGetTables(arg1:connection.ConnectionConfig,arg2:string):Promise<connection.QueryResult>;
 
+export function DBGetTablesContext(arg1:context.Context,arg2:connection.ConnectionConfig,arg3:string):Promise<connection.QueryResult>;
+
 export function DBGetTriggers(arg1:connection.ConnectionConfig,arg2:string,arg3:string):Promise<connection.QueryResult>;
 
+export function DBGetTriggersContext(arg1:context.Context,arg2:connection.ConnectionConfig,arg3:string,arg4:string):Promise<connection.QueryResult>;
+
 export function DBGetViews(arg1:connection.ConnectionConfig,arg2:string):Promise<connection.QueryResult>;
+
+export function DBGetViewsContext(arg1:context.Context,arg2:connection.ConnectionConfig,arg3:string):Promise<connection.QueryResult>;
 
 export function DBQuery(arg1:connection.ConnectionConfig,arg2:string,arg3:string):Promise<connection.QueryResult>;
 
@@ -124,6 +144,8 @@ export function DBRollbackTransaction(arg1:string):Promise<connection.QueryResul
 export function DBRollbackTransactionWithTrigger(arg1:string,arg2:string):Promise<connection.QueryResult>;
 
 export function DBShowCreateTable(arg1:connection.ConnectionConfig,arg2:string,arg3:string):Promise<connection.QueryResult>;
+
+export function DBShowCreateTableContext(arg1:context.Context,arg2:connection.ConnectionConfig,arg3:string,arg4:string):Promise<connection.QueryResult>;
 
 export function DBTableExists(arg1:connection.ConnectionConfig,arg2:string,arg3:string):Promise<connection.QueryResult>;
 
@@ -299,6 +321,10 @@ export function GetGlobalProxyConfig():Promise<connection.QueryResult>;
 
 export function GetImportJob(arg1:string):Promise<connection.QueryResult>;
 
+export function GetRequestDiagnostic(arg1:string):Promise<connection.QueryResult>;
+
+export function GetRequestDiagnostics(arg1:requesttrace.Filter):Promise<connection.QueryResult>;
+
 export function GetSQLAuditEvents(arg1:sqlaudit.Filter):Promise<connection.QueryResult>;
 
 export function GetSQLAuditHealth():Promise<connection.QueryResult>;
@@ -383,9 +409,9 @@ export function ListDatabaseCharsets(arg1:connection.ConnectionConfig):Promise<c
 
 export function ListDatabaseCollations(arg1:connection.ConnectionConfig):Promise<connection.QueryResult>;
 
-export function ListImportJobs():Promise<connection.QueryResult>;
-
 export function ListDriverDownloadTasks():Promise<connection.QueryResult>;
+
+export function ListImportJobs():Promise<connection.QueryResult>;
 
 export function ListInstalledFontFamilies():Promise<connection.QueryResult>;
 
@@ -609,6 +635,8 @@ export function RetryImportJobFailedRows(arg1:string):Promise<connection.QueryRe
 
 export function RetrySecurityUpdateCurrentRound(arg1:app.RetrySecurityUpdateRequest):Promise<app.SecurityUpdateStatus>;
 
+export function RevealSavedConnectionPrimaryPassword(arg1:string):Promise<string>;
+
 export function RevealSavedQueryInFolder(arg1:string):Promise<connection.QueryResult>;
 
 export function SaveCloudBackupConfig(arg1:app.CloudBackupConfigInput):Promise<app.CloudBackupConfig>;
@@ -657,9 +685,9 @@ export function SetWindowTranslucency(arg1:number,arg2:number):Promise<void>;
 
 export function Shutdown():Promise<void>;
 
-export function StartSecurityUpdate(arg1:app.StartSecurityUpdateRequest):Promise<app.SecurityUpdateStatus>;
-
 export function StartDriverPackageDownload(arg1:string,arg2:string,arg3:string,arg4:string):Promise<connection.QueryResult>;
+
+export function StartSecurityUpdate(arg1:app.StartSecurityUpdateRequest):Promise<app.SecurityUpdateStatus>;
 
 export function StartUpdateDownload():Promise<connection.QueryResult>;
 
@@ -676,6 +704,8 @@ export function TruncateTables(arg1:connection.ConnectionConfig,arg2:string,arg3
 export function TrustSSHHostKey(arg1:string,arg2:number,arg3:string):Promise<connection.QueryResult>;
 
 export function TrustSSHHostKeyForConnection(arg1:connection.ConnectionConfig,arg2:string):Promise<connection.QueryResult>;
+
+export function UpdateConnectionVisibility(arg1:connection.ConnectionVisibilityInput):Promise<connection.SavedConnectionView>;
 
 export function UpdateSQLAuditSettings(arg1:sqlaudit.Settings):Promise<connection.QueryResult>;
 

@@ -29,14 +29,17 @@ import (
 var savedConnectionsMu sync.Mutex
 
 const (
-	savedConnectionsFileName      = "connections.json"
-	savedConnectionSecretKind     = "connection"
-	defaultConnectionEnvironment  = "local"
-	maxSchemaVisibilityDatabases  = 128
-	maxSchemaVisibilitySchemas    = 256
-	maxSchemaVisibilityNameBytes  = 256
-	maxDatabaseFilterPatterns     = 256
-	maxDatabaseFilterPatternBytes = 256
+	savedConnectionsFileName            = "connections.json"
+	savedConnectionSecretKind           = "connection"
+	defaultConnectionEnvironment        = "local"
+	maxIncludedDatabases                = 256
+	maxIncludedDatabaseNameBytes        = 256
+	maxSchemaVisibilityDatabases        = 128
+	maxSchemaVisibilitySchemas          = 256
+	maxSchemaVisibilityNameBytes        = 256
+	maxDatabaseFilterPatterns           = 256
+	maxDatabaseFilterPatternBytes       = 256
+	maxRedisDatabaseIndex         int64 = 1<<53 - 1
 )
 
 func normalizeConnectionEnvironmentType(value string) string {
@@ -212,6 +215,33 @@ func cloneStringSlice(input []string) []string {
 	return cloned
 }
 
+func sanitizeIncludedDatabases(input []string) []string {
+	if len(input) == 0 {
+		return nil
+	}
+
+	result := make([]string, 0, min(len(input), maxIncludedDatabases))
+	seen := make(map[string]struct{}, cap(result))
+	for _, database := range input {
+		if len(result) >= maxIncludedDatabases {
+			break
+		}
+		database = strings.TrimSpace(database)
+		if database == "" || len(database) > maxIncludedDatabaseNameBytes {
+			continue
+		}
+		if _, exists := seen[database]; exists {
+			continue
+		}
+		seen[database] = struct{}{}
+		result = append(result, database)
+	}
+	if len(result) == 0 {
+		return nil
+	}
+	return result
+}
+
 func sanitizeDatabasePatterns(input []string) []string {
 	if len(input) == 0 {
 		return nil
@@ -262,6 +292,29 @@ func cloneIntSlice(input []int) []int {
 	return cloned
 }
 
+func sanitizeIncludedRedisDatabases(input []int) []int {
+	if len(input) == 0 {
+		return nil
+	}
+
+	result := make([]int, 0, len(input))
+	seen := make(map[int]struct{}, len(input))
+	for _, database := range input {
+		if database < 0 || int64(database) > maxRedisDatabaseIndex {
+			continue
+		}
+		if _, exists := seen[database]; exists {
+			continue
+		}
+		seen[database] = struct{}{}
+		result = append(result, database)
+	}
+	if len(result) == 0 {
+		return nil
+	}
+	return result
+}
+
 func cloneSchemaVisibilityByDatabase(input map[string]connection.SchemaVisibilityRule) map[string]connection.SchemaVisibilityRule {
 	if len(input) == 0 {
 		return nil
@@ -276,7 +329,23 @@ func cloneSchemaVisibilityByDatabase(input map[string]connection.SchemaVisibilit
 	return cloned
 }
 
-func sanitizeSchemaVisibilityByDatabase(input map[string]connection.SchemaVisibilityRule) map[string]connection.SchemaVisibilityRule {
+func schemaVisibilityIdentifiersCaseSensitive(config connection.ConnectionConfig) bool {
+	driverType := strings.ToLower(strings.TrimSpace(config.Type))
+	if driverType == "custom" {
+		driverType = strings.ToLower(strings.TrimSpace(config.Driver))
+	}
+	switch driverType {
+	case "postgres", "postgresql", "kingbase", "highgo", "vastbase", "opengauss", "open_gauss", "open-gauss", "gaussdb":
+		return true
+	default:
+		return false
+	}
+}
+
+func sanitizeSchemaVisibilityByDatabase(
+	input map[string]connection.SchemaVisibilityRule,
+	caseSensitive bool,
+) map[string]connection.SchemaVisibilityRule {
 	if len(input) == 0 {
 		return nil
 	}
@@ -291,7 +360,10 @@ func sanitizeSchemaVisibilityByDatabase(input map[string]connection.SchemaVisibi
 		if database == "" || len(database) > maxSchemaVisibilityNameBytes {
 			continue
 		}
-		databaseKey := strings.ToLower(database)
+		databaseKey := database
+		if !caseSensitive {
+			databaseKey = strings.ToLower(database)
+		}
 		if _, exists := seenDatabases[databaseKey]; exists {
 			continue
 		}
@@ -310,7 +382,10 @@ func sanitizeSchemaVisibilityByDatabase(input map[string]connection.SchemaVisibi
 			if schema == "" || len(schema) > maxSchemaVisibilityNameBytes {
 				continue
 			}
-			schemaKey := strings.ToLower(schema)
+			schemaKey := schema
+			if !caseSensitive {
+				schemaKey = strings.ToLower(schema)
+			}
 			if _, exists := seenSchemas[schemaKey]; exists {
 				continue
 			}
@@ -354,31 +429,34 @@ func splitConnectionSecrets(input connection.SavedConnectionInput) (connection.S
 	meta = stripConnectionSecretFields(meta)
 
 	view := connection.SavedConnectionView{
-		ID:                         id,
-		Name:                       strings.TrimSpace(input.Name),
-		EnvironmentType:            normalizeConnectionEnvironmentType(input.EnvironmentType),
-		Config:                     meta,
-		IncludeDatabases:           cloneStringSlice(input.IncludeDatabases),
-		IncludeDatabasePatterns:    sanitizeDatabasePatterns(input.IncludeDatabasePatterns),
-		ExcludeDatabasePatterns:    sanitizeDatabasePatterns(input.ExcludeDatabasePatterns),
-		IncludeRedisDatabases:      cloneIntSlice(input.IncludeRedisDatabases),
-		SchemaVisibilityByDatabase: sanitizeSchemaVisibilityByDatabase(input.SchemaVisibilityByDatabase),
-		IconType:                   strings.TrimSpace(input.IconType),
-		IconColor:                  strings.TrimSpace(input.IconColor),
-		HasPrimaryPassword:         strings.TrimSpace(bundle.Password) != "",
-		HasSSHPassword:             strings.TrimSpace(bundle.SSHPassword) != "",
-		HasProxyPassword:           strings.TrimSpace(bundle.ProxyPassword) != "",
-		HasHTTPTunnelPassword:      strings.TrimSpace(bundle.HTTPTunnelPassword) != "",
-		HasMySQLReplicaPassword:    strings.TrimSpace(bundle.MySQLReplicaPassword) != "",
-		HasMongoReplicaPassword:    strings.TrimSpace(bundle.MongoReplicaPassword) != "",
-		HasRedisSentinelPassword:   strings.TrimSpace(bundle.RedisSentinelPassword) != "",
-		HasOpaqueURI:               strings.TrimSpace(bundle.OpaqueURI) != "",
-		HasOpaqueDSN:               strings.TrimSpace(bundle.OpaqueDSN) != "",
-		HasJVMJMXPassword:          strings.TrimSpace(bundle.JVMJMXPassword) != "",
-		HasJVMEndpointAPIKey:       strings.TrimSpace(bundle.JVMEndpointAPIKey) != "",
-		HasJVMAgentAPIKey:          strings.TrimSpace(bundle.JVMAgentAPIKey) != "",
-		HasJVMDiagnosticAPIKey:     strings.TrimSpace(bundle.JVMDiagnosticAPIKey) != "",
-		HasSensitiveParams:         strings.TrimSpace(bundle.SensitiveParams) != "",
+		ID:                      id,
+		Name:                    strings.TrimSpace(input.Name),
+		EnvironmentType:         normalizeConnectionEnvironmentType(input.EnvironmentType),
+		Config:                  meta,
+		IncludeDatabases:        cloneStringSlice(input.IncludeDatabases),
+		IncludeDatabasePatterns: sanitizeDatabasePatterns(input.IncludeDatabasePatterns),
+		ExcludeDatabasePatterns: sanitizeDatabasePatterns(input.ExcludeDatabasePatterns),
+		IncludeRedisDatabases:   cloneIntSlice(input.IncludeRedisDatabases),
+		SchemaVisibilityByDatabase: sanitizeSchemaVisibilityByDatabase(
+			input.SchemaVisibilityByDatabase,
+			schemaVisibilityIdentifiersCaseSensitive(input.Config),
+		),
+		IconType:                 strings.TrimSpace(input.IconType),
+		IconColor:                strings.TrimSpace(input.IconColor),
+		HasPrimaryPassword:       strings.TrimSpace(bundle.Password) != "",
+		HasSSHPassword:           strings.TrimSpace(bundle.SSHPassword) != "",
+		HasProxyPassword:         strings.TrimSpace(bundle.ProxyPassword) != "",
+		HasHTTPTunnelPassword:    strings.TrimSpace(bundle.HTTPTunnelPassword) != "",
+		HasMySQLReplicaPassword:  strings.TrimSpace(bundle.MySQLReplicaPassword) != "",
+		HasMongoReplicaPassword:  strings.TrimSpace(bundle.MongoReplicaPassword) != "",
+		HasRedisSentinelPassword: strings.TrimSpace(bundle.RedisSentinelPassword) != "",
+		HasOpaqueURI:             strings.TrimSpace(bundle.OpaqueURI) != "",
+		HasOpaqueDSN:             strings.TrimSpace(bundle.OpaqueDSN) != "",
+		HasJVMJMXPassword:        strings.TrimSpace(bundle.JVMJMXPassword) != "",
+		HasJVMEndpointAPIKey:     strings.TrimSpace(bundle.JVMEndpointAPIKey) != "",
+		HasJVMAgentAPIKey:        strings.TrimSpace(bundle.JVMAgentAPIKey) != "",
+		HasJVMDiagnosticAPIKey:   strings.TrimSpace(bundle.JVMDiagnosticAPIKey) != "",
+		HasSensitiveParams:       strings.TrimSpace(bundle.SensitiveParams) != "",
 	}
 	return view, bundle
 }
@@ -656,6 +734,60 @@ func (r *savedConnectionRepository) Save(input connection.SavedConnectionInput) 
 		return connection.SavedConnectionView{}, err
 	}
 	return saved, nil
+}
+
+func prepareConnectionVisibilityInput(input connection.ConnectionVisibilityInput) (connection.ConnectionVisibilityInput, error) {
+	if err := validateDatabasePatterns("include", input.IncludeDatabasePatterns); err != nil {
+		return connection.ConnectionVisibilityInput{}, err
+	}
+	if err := validateDatabasePatterns("exclude", input.ExcludeDatabasePatterns); err != nil {
+		return connection.ConnectionVisibilityInput{}, err
+	}
+
+	input.ID = strings.TrimSpace(input.ID)
+	input.IncludeDatabases = sanitizeIncludedDatabases(input.IncludeDatabases)
+	input.IncludeDatabasePatterns = sanitizeDatabasePatterns(input.IncludeDatabasePatterns)
+	input.ExcludeDatabasePatterns = sanitizeDatabasePatterns(input.ExcludeDatabasePatterns)
+	input.IncludeRedisDatabases = sanitizeIncludedRedisDatabases(input.IncludeRedisDatabases)
+	return input, nil
+}
+
+func (r *savedConnectionRepository) UpdateVisibility(input connection.ConnectionVisibilityInput) (connection.SavedConnectionView, error) {
+	prepared, err := prepareConnectionVisibilityInput(input)
+	if err != nil {
+		return connection.SavedConnectionView{}, err
+	}
+
+	var updated connection.SavedConnectionView
+	err = r.withWriteLock(func() error {
+		connections, loadErr := r.load()
+		if loadErr != nil {
+			return loadErr
+		}
+		for index := range connections {
+			if connections[index].ID != prepared.ID {
+				continue
+			}
+			connections[index].IncludeDatabases = prepared.IncludeDatabases
+			connections[index].IncludeDatabasePatterns = prepared.IncludeDatabasePatterns
+			connections[index].ExcludeDatabasePatterns = prepared.ExcludeDatabasePatterns
+			connections[index].IncludeRedisDatabases = prepared.IncludeRedisDatabases
+			connections[index].SchemaVisibilityByDatabase = sanitizeSchemaVisibilityByDatabase(
+				prepared.SchemaVisibilityByDatabase,
+				schemaVisibilityIdentifiersCaseSensitive(connections[index].Config),
+			)
+			if saveErr := r.saveAll(connections); saveErr != nil {
+				return saveErr
+			}
+			updated = connections[index]
+			return nil
+		}
+		return fmt.Errorf("saved connection not found: %s", prepared.ID)
+	})
+	if err != nil {
+		return connection.SavedConnectionView{}, err
+	}
+	return updated, nil
 }
 
 func (r *savedConnectionRepository) Find(id string) (connection.SavedConnectionView, error) {

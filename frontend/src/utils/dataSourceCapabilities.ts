@@ -139,6 +139,24 @@ export type DataSourceOperationCapability = {
   messageKey?: string;
 };
 
+export type DataSourceNavigationPrimaryKind =
+  | 'none'
+  | 'database'
+  | 'catalog'
+  | 'owner'
+  | 'namespace'
+  | 'index'
+  | 'vhost'
+  | 'catalog_schema'
+  | 'redis_db';
+
+export type DataSourceNavigationCapabilities = {
+  primaryVisibilitySupported: boolean;
+  primaryKind: DataSourceNavigationPrimaryKind;
+  secondarySchemaVisibilitySupported: boolean;
+  schemaIdentifierCaseSensitive: boolean;
+};
+
 export type DataSourceUICapabilityFlags = {
   explainDiagnosis?: boolean;
   sqlQueryExport?: boolean;
@@ -168,6 +186,7 @@ export type DataSourceCapabilityContract = {
   streaming: DataSourceOperationCapability;
   dangerousOperations: DataSourceOperationCapability;
   ui: DataSourceUICapabilityFlags;
+  navigation: DataSourceNavigationCapabilities;
 };
 
 type DataSourceCapabilityProfile = Omit<DataSourceCapabilityContract, 'type'>;
@@ -198,6 +217,7 @@ const cloneCapabilityProfile = (
   streaming: cloneOperationCapability(profile.streaming),
   dangerousOperations: cloneOperationCapability(profile.dangerousOperations),
   ui: { ...profile.ui },
+  navigation: { ...profile.navigation },
 });
 
 export const getDataSourceCapabilityContract = (config: ConnectionLike): DataSourceCapabilityContract => {
@@ -227,6 +247,10 @@ export type DataSourceCapabilities = {
   sampling: DataSourceOperationCapability;
   streaming: DataSourceOperationCapability;
   dangerousOperations: DataSourceOperationCapability;
+  navigation: DataSourceNavigationCapabilities;
+  supportsPrimaryVisibility: boolean;
+  supportsSecondarySchemaVisibility: boolean;
+  schemaIdentifierCaseSensitive: boolean;
   supportsQueryEditor: boolean;
   supportsExplainDiagnosis: boolean;
   supportsSqlQueryExport: boolean;
@@ -264,6 +288,10 @@ export const getDataSourceCapabilities = (config: ConnectionLike): DataSourceCap
     sampling: contract.sampling,
     streaming: contract.streaming,
     dangerousOperations: contract.dangerousOperations,
+    navigation: contract.navigation,
+    supportsPrimaryVisibility: contract.navigation.primaryVisibilitySupported,
+    supportsSecondarySchemaVisibility: contract.navigation.secondarySchemaVisibilitySupported,
+    schemaIdentifierCaseSensitive: contract.navigation.schemaIdentifierCaseSensitive,
     supportsQueryEditor: contract.query.supported,
     supportsExplainDiagnosis: ui.explainDiagnosis === true,
     supportsSqlQueryExport: ui.sqlQueryExport === true,

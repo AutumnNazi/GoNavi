@@ -22,7 +22,10 @@ import type { SavedConnection, SavedQuery, JVMCapability, JVMResourceSummary } f
 import { useStore } from '../../store';
 import { t } from '../../i18n';
 import { buildRpcConnectionConfig } from '../../utils/connectionRpcConfig';
-import { resolveDataSourceType } from '../../utils/dataSourceCapabilities';
+import {
+  getDataSourceCapabilities,
+  resolveDataSourceType,
+} from '../../utils/dataSourceCapabilities';
 import { filterVisibleDatabaseNames } from '../../utils/databaseVisibility';
 import { buildRedisDbNodeLabel, getRedisDbAlias } from '../../utils/redisDbAlias';
 import { buildJVMMonitoringActionDescriptors } from '../../utils/jvmSidebarActions';
@@ -485,47 +488,71 @@ export const useSidebarTreeLoaders = ({
 
           // Handle Redis connections differently
           if (conn.config.type === 'redis') {
+              const redisRequestId = (databaseRequestIdsRef.current[conn.id] || 0) + 1;
+              databaseRequestIdsRef.current[conn.id] = redisRequestId;
+              const redisRequestSignature = buildConnectionReloadSignature(conn);
+              const resolveCurrentRedisRequestConnection = (): SavedConnection | null => {
+                  if (databaseRequestIdsRef.current[conn.id] !== redisRequestId) return null;
+                  const currentConnection = useStore.getState().connections.find(
+                      (candidate) => candidate.id === conn.id,
+                  );
+                  if (
+                      !currentConnection
+                      || buildConnectionReloadSignature(currentConnection) !== redisRequestSignature
+                  ) {
+                      return null;
+                  }
+                  return currentConnection;
+              };
               try {
                   const res = await (window as any).go.app.App.RedisGetDatabases(buildRpcConnectionConfig(config));
+                  const currentConnection = resolveCurrentRedisRequestConnection();
+                  if (!currentConnection) return;
                   if (res.success) {
                       const redisRows: any[] = Array.isArray(res.data) ? res.data : [];
                       const redisDbAliases = useStore.getState().appearance.redisDbAliases;
                       let dbs = redisRows.map((db: any) => {
                           const keyCount = Number(db.keys) > 0 ? Number(db.keys) : 0;
-                          const alias = getRedisDbAlias(redisDbAliases, conn.id, db.index);
+                          const alias = getRedisDbAlias(redisDbAliases, currentConnection.id, db.index);
                           return {
-                              title: buildRedisDbNodeLabel(
-                                  db.index,
-                                  alias,
-                              ),
-                              key: `${conn.id}-db${db.index}`,
+                              title: buildRedisDbNodeLabel(db.index, alias),
+                              key: `${currentConnection.id}-db${db.index}`,
                               icon: <DatabaseOutlined style={{ color: '#DC382D' }} />,
                               type: 'redis-db' as const,
-                              dataRef: { ...conn, redisDB: db.index, redisKeyCount: keyCount, redisDbAlias: alias },
+                              dataRef: {
+                                  ...currentConnection,
+                                  redisDB: db.index,
+                                  redisKeyCount: keyCount,
+                                  redisDbAlias: alias,
+                              },
                               isLeaf: true,
                               dbIndex: db.index,
                           };
                       });
-                      // Filter Redis databases if configured
-                      if (conn.includeRedisDatabases && conn.includeRedisDatabases.length > 0) {
-                          dbs = dbs.filter(db => conn.includeRedisDatabases!.includes(db.dbIndex));
+                      if (currentConnection.includeRedisDatabases?.length) {
+                          dbs = dbs.filter((db) => currentConnection.includeRedisDatabases!.includes(db.dbIndex));
                       }
-                      replaceTreeNodeChildren(node.key, dbs, conn);
+                      replaceTreeNodeChildren(node.key, dbs, currentConnection);
                       shouldMarkConnectionSuccess = true;
                   } else {
-                      setConnectionStates(prev => ({ ...prev, [conn.id]: 'error' }));
-                      message.error({ content: res.message, key: `conn-${conn.id}-dbs` });
+                      setConnectionStates(prev => ({ ...prev, [currentConnection.id]: 'error' }));
+                      message.error({ content: res.message, key: `conn-${currentConnection.id}-dbs` });
                   }
               } catch (e: any) {
-                  setConnectionStates(prev => ({ ...prev, [conn.id]: 'error' }));
+                  const currentConnection = resolveCurrentRedisRequestConnection();
+                  if (!currentConnection) return;
+                  setConnectionStates(prev => ({ ...prev, [currentConnection.id]: 'error' }));
                   message.error({
                       content: t('sidebar.message.connection_failed', { error: e?.message || String(e) }),
-                      key: `conn-${conn.id}-dbs`,
+                      key: `conn-${currentConnection.id}-dbs`,
                   });
               } finally {
-                  loadingNodesRef.current.delete(loadKey);
-                  if (shouldMarkConnectionSuccess) {
-                      setConnectionStates(prev => ({ ...prev, [conn.id]: 'success' }));
+                  if (databaseRequestIdsRef.current[conn.id] === redisRequestId) {
+                      loadingNodesRef.current.delete(loadKey);
+                      const currentConnection = resolveCurrentRedisRequestConnection();
+                      if (shouldMarkConnectionSuccess && currentConnection) {
+                          setConnectionStates(prev => ({ ...prev, [currentConnection.id]: 'success' }));
+                      }
                   }
               }
               return;
@@ -1337,9 +1364,17 @@ export const useSidebarTreeLoaders = ({
 	            const latestConnection = useStore.getState().connections.find(
 	                (candidate) => candidate.id === conn.id,
 	            ) || conn;
-	            const latestDatabaseConnection = { ...latestConnection, dbName };
-	            const shouldGroupBySchema = shouldHideSchemaPrefix(latestDatabaseConnection as SavedConnection);
-	            const schemaVisibilityRule = getSchemaVisibilityRule(latestDatabaseConnection, dbName);
+		            const latestDatabaseConnection = { ...latestConnection, dbName };
+		            const shouldGroupBySchema = shouldHideSchemaPrefix(latestDatabaseConnection as SavedConnection);
+		            const schemaIdentifierOptions = {
+		                caseSensitive: getDataSourceCapabilities(latestDatabaseConnection.config)
+		                    .schemaIdentifierCaseSensitive,
+		            };
+		            const schemaVisibilityRule = getSchemaVisibilityRule(
+		                latestDatabaseConnection,
+		                dbName,
+		                schemaIdentifierOptions,
+		            );
 
 	            // 获取当前数据库的排序偏好
 	            const sortPreferenceKey = `${conn.id}-${conn.dbName}`;
@@ -1352,8 +1387,8 @@ export const useSidebarTreeLoaders = ({
 	                tableAccessCount: currentTableAccessCount,
 	                pinnedSidebarTables: isV2Ui ? currentPinnedSidebarTables : [],
 	            }), {
-	                isEntryVisible: (entry) => !shouldGroupBySchema
-	                    || isSchemaVisible(schemaVisibilityRule, entry.schemaName),
+		                isEntryVisible: (entry) => !shouldGroupBySchema
+		                    || isSchemaVisible(schemaVisibilityRule, entry.schemaName, schemaIdentifierOptions),
 	            }) as SidebarLoadedTableEntry[];
 
 	            // Sort views by name (case-insensitive)
@@ -1615,9 +1650,13 @@ export const useSidebarTreeLoaders = ({
 	                const includeSequences = supportsDatabaseSequences(conn as SavedConnection);
 	                const includeEvents = supportsDatabaseEvents(conn as SavedConnection);
 
-	                const schemaNodes: TreeNode[] = Array.from(schemaMap.values())
-	                    .filter((bucket) => !(isOracleLike && !bucket.schemaName))
-	                    .filter((bucket) => isSchemaVisible(schemaVisibilityRule, bucket.schemaName))
+		                const schemaNodes: TreeNode[] = Array.from(schemaMap.values())
+		                    .filter((bucket) => !(isOracleLike && !bucket.schemaName))
+		                    .filter((bucket) => isSchemaVisible(
+		                        schemaVisibilityRule,
+		                        bucket.schemaName,
+		                        schemaIdentifierOptions,
+		                    ))
 	                    .sort((a, b) => {
 	                        if (!a.schemaName && !b.schemaName) return 0;
 	                        if (!a.schemaName) return -1;

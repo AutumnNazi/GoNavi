@@ -17,7 +17,7 @@ import {
 import type { SavedConnection } from '../../types';
 import { t } from '../../i18n';
 import { DBQuery } from '../../../wailsjs/go/app/App';
-import { getCaseInsensitiveRawValue, getCaseInsensitiveValue, getMetadataDialect, splitQualifiedName, escapeSQLLiteral, parseSidebarTableRowCount, shouldHideSchemaPrefix } from './sidebarMetadataLoaders';
+import { getCaseInsensitiveRawValue, getCaseInsensitiveValue, getMetadataDialect, splitQualifiedName, escapeSQLLiteral, parseSidebarTableRowCount } from './sidebarMetadataLoaders';
 import { getDataSourceCapabilities } from '../../utils/dataSourceCapabilities';
 import { resolveConnectionHostSummary } from '../../utils/tabDisplay';
 import { resolveConnectionIconType } from '../../utils/connectionVisual';
@@ -76,6 +76,7 @@ type SidebarV2ContextMenuOptions = {
   handleDeleteSchema: (node: any) => void;
   openRenameSchemaModal: (node: any) => void;
   openSchemaVisibilitySettings: (node: any) => void;
+  supportsConnectionVisibility: (connection: SavedConnection) => boolean;
   resolveMessagePublishTarget: (node: any) => unknown;
   addSqlLog: (log: any) => void;
   handleV2TableContextMenuAction: (node: any, action: V2TableContextMenuActionKey) => void;
@@ -224,6 +225,7 @@ export const useSidebarV2ContextMenu = ({
   handleDeleteSchema,
   openRenameSchemaModal,
   openSchemaVisibilitySettings,
+  supportsConnectionVisibility,
   resolveMessagePublishTarget,
   addSqlLog,
   handleV2TableContextMenuAction,
@@ -396,7 +398,7 @@ export const useSidebarV2ContextMenu = ({
               shortcutPlatform={activeShortcutPlatform}
               dialect={dialect}
               supportsSchemaActions={isPostgresSchemaDialect(dialect)}
-              supportsSchemaVisibility={shouldHideSchemaPrefix(node.dataRef as SavedConnection)}
+              supportsSchemaVisibility={capabilities.supportsSecondarySchemaVisibility}
               supportsStarRocksActions={dialect === 'starrocks'}
               supportsRenameDatabase={capabilities.supportsRenameDatabase}
               supportsDropDatabase={capabilities.supportsDropDatabase}
@@ -467,6 +469,7 @@ export const useSidebarV2ContextMenu = ({
                   ? t('query_editor.elasticsearch.templates.create_index')
                   : undefined}
               supportsCreateDatabase={capabilities.supportsCreateDatabase}
+              supportsVisibility={supportsConnectionVisibility(conn)}
               supportsQueryEditor={capabilities.supportsQueryEditor}
               tags={connectionTags.map((tag) => ({
                   id: tag.id,

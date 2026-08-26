@@ -36,6 +36,17 @@ type SavedConnectionInput struct {
 	ClearSensitiveParams       bool                            `json:"clearSensitiveConnectionParams,omitempty"`
 }
 
+// ConnectionVisibilityInput updates only the database and schema visibility
+// metadata of an existing saved connection.
+type ConnectionVisibilityInput struct {
+	ID                         string                          `json:"id"`
+	IncludeDatabases           []string                        `json:"includeDatabases,omitempty"`
+	IncludeDatabasePatterns    []string                        `json:"includeDatabasePatterns,omitempty"`
+	ExcludeDatabasePatterns    []string                        `json:"excludeDatabasePatterns,omitempty"`
+	IncludeRedisDatabases      []int                           `json:"includeRedisDatabases,omitempty"`
+	SchemaVisibilityByDatabase map[string]SchemaVisibilityRule `json:"schemaVisibilityByDatabase,omitempty"`
+}
+
 type SavedConnectionView struct {
 	ID                         string                          `json:"id"`
 	Name                       string                          `json:"name"`

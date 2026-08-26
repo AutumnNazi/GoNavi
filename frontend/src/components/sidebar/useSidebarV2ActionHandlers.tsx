@@ -101,6 +101,7 @@ type UseSidebarV2ActionHandlersArgs = {
   handleDeleteDatabase: (node: any) => void;
   onCreateConnectionInGroup?: (targetTagId: string) => void;
   onEditConnection?: (conn: SavedConnection) => void;
+  openConnectionVisibilitySettings: (conn: SavedConnection) => void;
   handleDuplicateConnection: (conn: SavedConnection) => Promise<void>;
   buildConnectionRootQueryTabTitle: () => string;
   buildConnectionRootRedisCommandTabTitle: (redisDbLabel?: string) => string;
@@ -172,6 +173,7 @@ export const useSidebarV2ActionHandlers = ({
   handleDeleteDatabase,
   onCreateConnectionInGroup,
   onEditConnection,
+  openConnectionVisibilitySettings,
   handleDuplicateConnection,
   buildConnectionRootQueryTabTitle,
   buildConnectionRootRedisCommandTabTitle,
@@ -559,6 +561,9 @@ export const useSidebarV2ActionHandlers = ({
       }
       case 'refresh':
         void refreshConnectionResources(node);
+        return;
+      case 'visibility':
+        openConnectionVisibilitySettings(node.dataRef as SavedConnection);
         return;
       case 'new-query':
         addTab({

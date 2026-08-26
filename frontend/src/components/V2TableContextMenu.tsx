@@ -518,6 +518,7 @@ const primaryShortcut = (
 
 export type V2ConnectionContextMenuActionKey =
   | 'new-db'
+  | 'visibility'
   | 'refresh'
   | 'new-query'
   | 'open-sql-file'
@@ -589,6 +590,7 @@ export const V2ConnectionContextMenuView: React.FC<{
   supportsCreateIndex?: boolean;
   createIndexLabel?: string;
   supportsCreateDatabase?: boolean;
+  supportsVisibility?: boolean;
   supportsQueryEditor?: boolean;
   tags?: V2ConnectionContextMenuTagItem[];
   onAction?: (action: V2ConnectionContextMenuActionKey) => void;
@@ -601,6 +603,7 @@ export const V2ConnectionContextMenuView: React.FC<{
   supportsCreateIndex = false,
   createIndexLabel,
   supportsCreateDatabase = true,
+  supportsVisibility = false,
   supportsQueryEditor = true,
   tags = [],
   onAction,
@@ -642,6 +645,7 @@ export const V2ConnectionContextMenuView: React.FC<{
 
         <div className="gn-v2-context-menu-section-title">{t('connection.sidebar.menu.section')}</div>
         {renderItems([
+          ...(supportsVisibility ? [{ action: 'visibility' as const, icon: <EyeInvisibleOutlined />, title: t('sidebar.database_schema_visibility.menu.manage') }] : []),
           { action: 'edit', icon: <EditOutlined />, title: t('sidebar.menu.edit_connection'), kbd: 'F2' },
           { action: 'copy-connection', icon: <CopyOutlined />, title: t('connection.sidebar.menu.copy') },
           { action: 'disconnect', icon: <DisconnectOutlined />, title: t('connection.sidebar.menu.disconnect') },

@@ -49,6 +49,15 @@ func (a *App) SaveConnection(input connection.SavedConnectionInput) (connection.
 	return sanitizeSavedConnectionView(view), nil
 }
 
+func (a *App) UpdateConnectionVisibility(input connection.ConnectionVisibilityInput) (connection.SavedConnectionView, error) {
+	view, err := a.savedConnectionRepository().UpdateVisibility(input)
+	if err != nil {
+		return connection.SavedConnectionView{}, err
+	}
+	a.markCloudBackupDirty()
+	return sanitizeSavedConnectionView(view), nil
+}
+
 func (a *App) DeleteConnection(id string) error {
 	err := a.savedConnectionRepository().Delete(id)
 	if err == nil {

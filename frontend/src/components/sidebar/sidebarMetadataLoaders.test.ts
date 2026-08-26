@@ -23,6 +23,7 @@ import {
   loadSequences,
   loadViews,
   parseSidebarTableRowCount,
+  shouldHideSchemaPrefix,
   supportsDatabaseSequences,
 } from "./sidebarMetadataLoaders";
 
@@ -74,6 +75,10 @@ describe("sidebar table metadata", () => {
     expect(sql).toContain("ENGINE AS table_engine");
     expect(sql).not.toMatch(/COUNT\s*\(/i);
   });
+
+  it("groups DuckDB objects under schemas", () => {
+    expect(shouldHideSchemaPrefix({ config: { type: "duckdb" } } as any)).toBe(true);
+  });
 });
 
 describe("sidebar object identities", () => {
@@ -114,7 +119,11 @@ describe("buildSchemasMetadataQuerySpecs", () => {
     expect(buildSchemasMetadataQuerySpecs("mysql", "app")).toEqual([]);
   });
 
-  it("keeps case-distinct PostgreSQL schemas selectable", async () => {
+  it.each([
+    ["postgres", undefined],
+    ["kingbase", undefined],
+    ["custom", "pgx"],
+  ])("keeps case-distinct schemas selectable for %s", async (type, driver) => {
     mockedDBQuery.mockResolvedValue({
       success: true,
       message: "",
@@ -125,9 +134,26 @@ describe("buildSchemasMetadataQuerySpecs", () => {
       ],
     });
 
-    await expect(loadSchemas({ config: { type: "postgres" } }, "analytics")).resolves.toEqual({
+    await expect(loadSchemas({ config: { type, ...(driver ? { driver } : {}) } }, "analytics")).resolves.toEqual({
       supported: true,
       schemas: ["foo", "Foo"],
+    });
+  });
+
+  it("deduplicates DuckDB schemas case-insensitively", async () => {
+    mockedDBQuery.mockResolvedValue({
+      success: true,
+      message: "",
+      data: [
+        { schema_name: "foo" },
+        { schema_name: "Foo" },
+        { schema_name: "foo" },
+      ],
+    });
+
+    await expect(loadSchemas({ config: { type: "duckdb" } }, "analytics")).resolves.toEqual({
+      supported: true,
+      schemas: ["foo"],
     });
   });
 

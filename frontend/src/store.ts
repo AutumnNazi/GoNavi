@@ -75,6 +75,7 @@ import {
   type DetachedWindowBounds,
 } from "./utils/detachedWindow";
 import { clearQueryEditorResultSession } from "./utils/queryEditorResultSessionCache";
+import { getDataSourceCapabilities } from "./utils/dataSourceCapabilities";
 import { normalizeConnectionEnvironmentType } from "./utils/connectionEnvironment";
 import {
   DEFAULT_LANGUAGE,
@@ -480,6 +481,7 @@ const sanitizeDatabasePatternArray = (value: unknown): string[] => {
 
 const sanitizeSchemaVisibilityByDatabase = (
   value: unknown,
+  caseSensitive: boolean,
 ): Record<string, SchemaVisibilityRule> | undefined => {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return undefined;
@@ -490,7 +492,7 @@ const sanitizeSchemaVisibilityByDatabase = (
   Object.entries(value as Record<string, unknown>).some(([rawDatabase, rawRule]) => {
     if (Object.keys(result).length >= 128) return true;
     const database = toTrimmedString(rawDatabase);
-    const databaseKey = database.toLocaleLowerCase();
+    const databaseKey = caseSensitive ? database : database.toLocaleLowerCase();
     if (!database || database.length > 256 || seenDatabases.has(databaseKey)) {
       return false;
     }
@@ -506,7 +508,7 @@ const sanitizeSchemaVisibilityByDatabase = (
     const seenSchemas = new Set<string>();
     const schemas = sanitizeStringArray(rule.schemas, 256)
       .filter((schema) => {
-        const schemaKey = schema.toLocaleLowerCase();
+        const schemaKey = caseSensitive ? schema : schema.toLocaleLowerCase();
         if (seenSchemas.has(schemaKey)) return false;
         seenSchemas.add(schemaKey);
         return true;
@@ -986,6 +988,7 @@ const sanitizeSavedConnection = (
   );
   const schemaVisibilityByDatabase = sanitizeSchemaVisibilityByDatabase(
     raw.schemaVisibilityByDatabase,
+    getDataSourceCapabilities(config).schemaIdentifierCaseSensitive,
   );
 
   return {

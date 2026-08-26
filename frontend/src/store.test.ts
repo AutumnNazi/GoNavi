@@ -959,6 +959,62 @@ describe('store appearance persistence', () => {
     expect(saved?.excludeDatabasePatterns).toEqual(['archive_%']);
   });
 
+  it('preserves case-distinct schema visibility entries according to datasource capability', async () => {
+    const { useStore } = await importStore();
+
+    useStore.getState().replaceConnections([
+      {
+        id: 'postgres-schemas',
+        name: 'Postgres schemas',
+        schemaVisibilityByDatabase: {
+          analytics: { mode: 'include', schemas: ['foo', 'Foo', 'foo'] },
+          Analytics: { mode: 'exclude', schemas: ['temp'] },
+        },
+        config: {
+          id: 'postgres-schemas',
+          type: 'postgres',
+          host: 'db.local',
+          port: 5432,
+          user: 'postgres',
+        },
+      },
+      {
+        id: 'duckdb-schemas',
+        name: 'DuckDB schemas',
+        schemaVisibilityByDatabase: {
+          analytics: { mode: 'include', schemas: ['foo', 'Foo', 'foo'] },
+        },
+        config: {
+          id: 'duckdb-schemas',
+          type: 'duckdb',
+          host: 'D:/db/analytics.duckdb',
+          port: 0,
+          user: '',
+        },
+      },
+      {
+        id: 'sqlserver-schemas',
+        name: 'SQL Server schemas',
+        schemaVisibilityByDatabase: {
+          analytics: { mode: 'include', schemas: ['foo', 'Foo', 'foo'] },
+        },
+        config: {
+          id: 'sqlserver-schemas',
+          type: 'sqlserver',
+          host: 'db.local',
+          port: 1433,
+          user: 'sa',
+        },
+      },
+    ]);
+
+    const [postgres, duckdb, sqlserver] = useStore.getState().connections;
+    expect(postgres?.schemaVisibilityByDatabase?.analytics.schemas).toEqual(['foo', 'Foo']);
+    expect(postgres?.schemaVisibilityByDatabase?.Analytics.schemas).toEqual(['temp']);
+    expect(duckdb?.schemaVisibilityByDatabase?.analytics.schemas).toEqual(['foo']);
+    expect(sqlserver?.schemaVisibilityByDatabase?.analytics.schemas).toEqual(['foo']);
+  });
+
   it('keeps InterSystems IRIS saved connections as independent datasource type', async () => {
     const { useStore } = await importStore();
 

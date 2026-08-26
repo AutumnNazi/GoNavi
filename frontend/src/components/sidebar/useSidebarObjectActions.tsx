@@ -123,11 +123,31 @@ type UseSidebarObjectActionsArgs = {
   runExportWithProgress: RunExportWithProgress;
   setAIPanelVisible: (visible: boolean) => void;
   addAIContext: (connectionId: string, context: { dbName: string; tableName: string; ddl: string }) => void;
-  migrateSchemaVisibilityForRenamedDatabase: (
+  migrateVisibilityForRenamedDatabase: (
     connection: SavedConnection,
     oldDbName: string,
     newDbName: string,
   ) => Promise<SavedConnection>;
+  removeVisibilityForDeletedDatabase: (
+    connection: SavedConnection,
+    dbName: string,
+  ) => Promise<SavedConnection>;
+  migrateVisibilityForRenamedSchema: (
+    connection: SavedConnection,
+    dbName: string,
+    oldSchemaName: string,
+    newSchemaName: string,
+  ) => Promise<SavedConnection>;
+  removeVisibilityForDeletedSchema: (
+    connection: SavedConnection,
+    dbName: string,
+    schemaName: string,
+  ) => Promise<SavedConnection>;
+  migratePinnedDatabaseKey: (
+    connectionId: string,
+    oldDbName: string,
+    newDbName?: string,
+  ) => void;
 };
 
 const resolveCopyObjectNameLabel = (node: any): string => {
@@ -252,7 +272,11 @@ export const useSidebarObjectActions = ({
   runExportWithProgress,
   setAIPanelVisible,
   addAIContext,
-  migrateSchemaVisibilityForRenamedDatabase,
+  migrateVisibilityForRenamedDatabase,
+  removeVisibilityForDeletedDatabase,
+  migrateVisibilityForRenamedSchema,
+  removeVisibilityForDeletedSchema,
+  migratePinnedDatabaseKey,
 }: UseSidebarObjectActionsArgs) => {
   const resolveActionConnection = (connRef: any): SavedConnection | null => {
     const connectionId = String(connRef?.id || connRef?.connectionId || '').trim();
@@ -615,6 +639,12 @@ export const useSidebarObjectActions = ({
         newSchemaName,
       );
       if (res.success) {
+        await migrateVisibilityForRenamedSchema(
+          conn as SavedConnection,
+          dbName,
+          oldSchemaName,
+          newSchemaName,
+        );
         const schemaKeyPrefixes = getSidebarSchemaTreeKeyPrefixes(conn.id, dbName, oldSchemaName);
         setExpandedKeys(prev => prev.filter(k => !isSidebarSchemaTreeKey(k, schemaKeyPrefixes)));
         setLoadedKeys(prev => prev.filter(k => !isSidebarSchemaTreeKey(k, schemaKeyPrefixes)));
@@ -651,6 +681,7 @@ export const useSidebarObjectActions = ({
           schemaName,
         );
         if (res.success) {
+          await removeVisibilityForDeletedSchema(conn as SavedConnection, dbName, schemaName);
           const schemaKeyPrefixes = getSidebarSchemaTreeKeyPrefixes(conn.id, dbName, schemaName);
           setExpandedKeys(prev => prev.filter(k => !isSidebarSchemaTreeKey(k, schemaKeyPrefixes)));
           setLoadedKeys(prev => prev.filter(k => !isSidebarSchemaTreeKey(k, schemaKeyPrefixes)));
@@ -683,11 +714,12 @@ export const useSidebarObjectActions = ({
       const config = buildRuntimeConfig(conn, conn.dbName);
       const res = await RenameDatabase(buildRpcConnectionConfig(config) as any, oldDbName, newDbName);
       if (res.success) {
-        const migratedConnection = await migrateSchemaVisibilityForRenamedDatabase(
+        const migratedConnection = await migrateVisibilityForRenamedDatabase(
           conn as SavedConnection,
           oldDbName,
           newDbName,
         );
+        migratePinnedDatabaseKey(String(conn.id || ''), oldDbName, newDbName);
         setExpandedKeys(prev => prev.filter(k => !k.toString().startsWith(`${conn.id}-${oldDbName}`)));
         setLoadedKeys(prev => prev.filter(k => !k.toString().startsWith(`${conn.id}-${oldDbName}`)));
         await loadDatabases(
@@ -718,10 +750,15 @@ export const useSidebarObjectActions = ({
         const config = buildRuntimeConfig(conn, conn.dbName);
         const res = await DropDatabase(buildRpcConnectionConfig(config) as any, dbName);
         if (res.success) {
+          const cleanedConnection = await removeVisibilityForDeletedDatabase(
+            conn as SavedConnection,
+            dbName,
+          );
+          migratePinnedDatabaseKey(String(conn.id || ''), dbName);
           closeTabsByDatabase(conn.id, dbName);
           setExpandedKeys(prev => prev.filter(k => !k.toString().startsWith(`${conn.id}-${dbName}`)));
           setLoadedKeys(prev => prev.filter(k => !k.toString().startsWith(`${conn.id}-${dbName}`)));
-          await loadDatabases(getConnectionNodeRef(conn), { ensureFresh: true });
+          await loadDatabases(getConnectionNodeRef(cleanedConnection), { ensureFresh: true });
           message.success(t('sidebar.message.database_deleted'));
         } else {
           message.error(t('sidebar.message.operation_drop_failed', { error: res.message }));

@@ -16,6 +16,7 @@ import {
 } from "../../utils/sidebarMetadata";
 import { isPostgresSchemaDialect } from "../sidebarCoreUtils";
 import { extractTableNameFromMetadataRow } from "../../utils/tableMetadataRows";
+import { getDataSourceCapabilities } from "../../utils/dataSourceCapabilities";
 import { normalizeOracleObjectCompileStatus } from './oracleObjectCompilation';
 
 export const buildSidebarRuntimeConfig = (
@@ -48,6 +49,7 @@ const SIDEBAR_SCHEMA_DB_TYPES = new Set([
   "iris",
   "oracle",
   "dameng",
+  "duckdb",
 ]);
 
 const SIDEBAR_SCHEMA_CUSTOM_DRIVERS = new Set([
@@ -63,6 +65,7 @@ const SIDEBAR_SCHEMA_CUSTOM_DRIVERS = new Set([
   "iris",
   "oracle",
   "dm",
+  "duckdb",
 ]);
 
 const shouldHideSchemaPrefix = (conn: SavedConnection | undefined): boolean => {
@@ -1345,8 +1348,11 @@ const loadSchemas = async (
   conn: any,
   dbName: string,
 ): Promise<{ schemas: string[] } & MetadataLoadState> => {
-  const dialect = getMetadataDialect(conn as SavedConnection);
+  const savedConnection = conn as SavedConnection;
+  const dialect = getMetadataDialect(savedConnection);
   const querySpecs = buildSchemasMetadataQuerySpecs(dialect, dbName);
+  const caseSensitive = getDataSourceCapabilities(savedConnection.config)
+    .schemaIdentifierCaseSensitive;
   const { results, hasSuccessfulQuery, failureMessage } = await queryMetadataRowsBySpecs(
     conn,
     dbName,
@@ -1365,9 +1371,7 @@ const loadSchemas = async (
         ]) || getFirstRowValue(row);
       if (!schemaName) return;
       if (dialect === "iris" && isIRISSystemSchemaName(schemaName)) return;
-      // PostgreSQL quoted identifiers are case-sensitive, so `foo` and `Foo`
-      // can be distinct schemas and must both remain selectable.
-      const key = dialect === "postgres" ? schemaName : schemaName.toLowerCase();
+      const key = caseSensitive ? schemaName : schemaName.toLocaleLowerCase();
       if (seen.has(key)) return;
       seen.add(key);
       schemas.push(schemaName);

@@ -293,8 +293,9 @@ export const buildSidebarLegacyNodeMenuItems = (
   const {
     addTab,
     getMetadataDialect,
-    shouldHideSchemaPrefix,
     openSchemaVisibilitySettings,
+    openConnectionVisibilitySettings = () => undefined,
+    supportsConnectionVisibility = () => false,
     handleV2DatabaseContextMenuAction,
     isPostgresSchemaDialect,
     handleExportSchemaSQL,
@@ -654,6 +655,12 @@ export const buildSidebarLegacyNodeMenuItems = (
                     }
                 },
                 { type: 'divider' },
+                ...(supportsConnectionVisibility(node.dataRef as SavedConnection) ? [{
+                    key: 'visibility',
+                    label: t('sidebar.database_schema_visibility.menu.manage'),
+                    icon: <EyeOutlined />,
+                    onClick: () => openConnectionVisibilitySettings(node.dataRef as SavedConnection),
+                }] : []),
                 {
                     key: 'edit',
                     label: t('sidebar.menu.edit_connection'),
@@ -844,6 +851,12 @@ export const buildSidebarLegacyNodeMenuItems = (
                  },
              ] : []),
              { type: 'divider' },
+             ...(supportsConnectionVisibility(node.dataRef as SavedConnection) ? [{
+                 key: 'visibility',
+                 label: t('sidebar.database_schema_visibility.menu.manage'),
+                 icon: <EyeOutlined />,
+                 onClick: () => openConnectionVisibilitySettings(node.dataRef as SavedConnection),
+             }] : []),
              {
                  key: 'edit',
                  label: t('sidebar.menu.edit_connection'),
@@ -1146,8 +1159,7 @@ export const buildSidebarLegacyNodeMenuItems = (
        const capabilities = getDataSourceCapabilities(databaseConn?.config);
        const isStarRocks = dialect === 'starrocks';
        const supportsSchemaActions = isPostgresSchemaDialect(dialect);
-       const supportsSchemaVisibility = typeof shouldHideSchemaPrefix === 'function'
-           && shouldHideSchemaPrefix(databaseConn);
+       const supportsSchemaVisibility = capabilities.supportsSecondarySchemaVisibility;
        const canCreateTable = !isStructureOnlyDbType(String(databaseConn?.id || ''));
        return [
             {
