@@ -109,7 +109,7 @@ func NewManager(ctx context.Context, store *Store, executor Executor, options Ma
 		return nil, errors.New("data sync job executor is required")
 	}
 	options = normalizeManagerOptions(options)
-	managerCtx, cancel := context.WithCancelCause(context.Background())
+	managerCtx, cancel := context.WithCancelCause(ctx)
 	manager := &Manager{
 		store:    store,
 		executor: executor,
