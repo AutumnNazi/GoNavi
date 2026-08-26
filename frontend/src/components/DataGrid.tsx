@@ -2016,28 +2016,6 @@ const DataGrid: React.FC<DataGridProps> = ({
     resetCellSelection();
   }, [resetCellSelection]);
 
-  const selectEditableColumnCells = useCallback((columnName: string) => {
-    if (
-      !cellEditModeRef.current
-      || !canModifyData
-      || !isWritableResultColumn(columnName, effectiveEditLocator)
-    ) {
-      return;
-    }
-
-    resetCellSelection(false);
-    const nextSelection = new Set<string>();
-    displayDataRef.current.forEach((row) => {
-      const rowKey = row?.[GONAVI_ROW_KEY];
-      if (rowKey === undefined || rowKey === null) return;
-      nextSelection.add(makeCellKey(rowKeyStr(rowKey), columnName));
-    });
-    currentSelectionRef.current = nextSelection;
-    setSelectedCells(nextSelection);
-    markCellSelectionDeleteEligible(true);
-    updateCellSelection(nextSelection);
-  }, [canModifyData, effectiveEditLocator, makeCellKey, markCellSelectionDeleteEligible, resetCellSelection, rowKeyStr, updateCellSelection]);
-
   const previousSelectionSourceDataRef = useRef(data);
   useEffect(() => {
     if (previousSelectionSourceDataRef.current === data) return;
@@ -2060,6 +2038,7 @@ const DataGrid: React.FC<DataGridProps> = ({
     handleCopySelectedColumnsFromRow,
     handlePasteCopiedColumnsToSelectedRows,
     handleBatchFillToSelected,
+    selectEditableColumnCells,
   } = useDataGridBatchActions({
     CELL_SELECTION_DRAG_THRESHOLD_PX,
     GONAVI_ROW_KEY,

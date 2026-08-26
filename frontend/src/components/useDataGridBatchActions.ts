@@ -51,7 +51,7 @@ type DataGridBatchActionsContext = Record<string, any> & {
   setSelectedCells: React.Dispatch<React.SetStateAction<Set<string>>>;
   markCellSelectionDeleteEligible: (eligible: boolean) => void;
   rowKeyStr: (key: React.Key) => string;
-  resetCellSelection: () => void;
+  resetCellSelection: (clearState?: boolean) => void;
   makeCellKey: (rowKey: string, colName: string) => string;
   splitCellKey: (cellKey: string) => { rowKey: string; colName: string } | null;
   updateCellSelection: (cells: Set<string>) => void;
@@ -880,6 +880,42 @@ const handleBatchFillCells = useCallback(() => {
     setCellContextMenu((prev: any) => ({ ...prev, visible: false }));
   }, [copiedCellPatch, addedRows, modifiedRows, rowKeyStr, selectedCells, canUseCellSelectionAsFillTemplateTargets, effectiveEditLocator, translateDataGrid]);
 
+  const selectEditableColumnCells = useCallback((columnName: string) => {
+    if (
+      !cellEditModeRef.current
+      || !canModifyData
+      || !isWritableResultColumn(columnName, effectiveEditLocator)
+    ) {
+      return;
+    }
+
+    resetCellSelection(false);
+    const currentRows = displayDataRef.current;
+    const colIndex = columnIndexMap.get(columnName) ?? -1;
+    const nextSelection = new Set<string>();
+    let anchorRowIndex = -1;
+    for (let rowIndex = 0; rowIndex < currentRows.length; rowIndex += 1) {
+      const rowKey = currentRows[rowIndex]?.[GONAVI_ROW_KEY];
+      if (rowKey === undefined || rowKey === null) continue;
+      if (anchorRowIndex === -1) anchorRowIndex = rowIndex;
+      nextSelection.add(makeCellKey(rowKeyStr(rowKey), columnName));
+    }
+    if (anchorRowIndex === -1) return;
+
+    const anchorRowKey = currentRows[anchorRowIndex]?.[GONAVI_ROW_KEY];
+    if (anchorRowKey === undefined || anchorRowKey === null) return;
+    selectionStartRef.current = {
+      rowKey: rowKeyStr(anchorRowKey),
+      colName: columnName,
+      rowIndex: anchorRowIndex,
+      colIndex,
+    };
+    currentSelectionRef.current = nextSelection;
+    setSelectedCells(nextSelection);
+    markCellSelectionDeleteEligible(true);
+    updateCellSelection(nextSelection);
+  }, [canModifyData, effectiveEditLocator, columnIndexMap, makeCellKey, markCellSelectionDeleteEligible, resetCellSelection, rowKeyStr, updateCellSelection]);
+
   // 批量填充到选中行
   const handleBatchFillToSelected = useCallback((sourceRecord: Item, dataIndex: string) => {
     if (!isWritableResultColumn(dataIndex, effectiveEditLocator)) {
@@ -947,5 +983,6 @@ const handleBatchFillCells = useCallback(() => {
     handleCopySelectedColumnsFromRow,
     handlePasteCopiedColumnsToSelectedRows,
     handleBatchFillToSelected,
+    selectEditableColumnCells,
   };
 };
