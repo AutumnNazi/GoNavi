@@ -15,6 +15,7 @@ import {
   createDataSyncTaskDraft,
   reviseDataSyncTask,
   type DataSyncErrorRow,
+  type DataSyncRunEvent,
   type DataSyncRunRecord,
 } from './model';
 import {
@@ -65,6 +66,7 @@ const latestConfirmation = (): {
 describe('DataSyncWorkbenchShell', () => {
   afterEach(() => {
     modalConfirm.mockReset();
+    vi.useRealTimers();
     vi.unstubAllGlobals();
   });
 
@@ -431,6 +433,87 @@ describe('DataSyncWorkbenchShell', () => {
       content: 'Clear all completed run records and their error rows and event details? Checkpoints are retained.',
       okText: 'Clear completed records',
     });
+  });
+
+  it('renders and refreshes the selected run event timeline', async () => {
+    const task = buildTask();
+    const run: DataSyncRunRecord = {
+      id: 'active-run-events',
+      taskId: task.id,
+      taskName: task.name,
+      status: 'running',
+      trigger: 'manual',
+      attempt: 1,
+      resumable: false,
+      message: '',
+      startedAt: '2026-08-08T01:00:00.000Z',
+      finishedAt: '',
+      rowsRead: 10,
+      rowsWritten: 8,
+      rowsFailed: 0,
+      throughput: 8,
+      checkpoint: 'orders:8',
+    };
+    const firstEvent: DataSyncRunEvent = {
+      runId: run.id,
+      sequence: 1,
+      type: 'started',
+      message: 'run started',
+      stage: 'snapshot',
+      createdAt: '2026-08-08T01:00:01.000Z',
+    };
+    const secondEvent: DataSyncRunEvent = {
+      ...firstEvent,
+      sequence: 2,
+      type: 'progress',
+      message: 'copied 8 rows',
+      table: 'orders',
+      createdAt: '2026-08-08T01:00:02.000Z',
+    };
+    let events = [firstEvent];
+    const baseGateway = createStaticDataSyncWorkbenchGateway({
+      tasks: [task],
+      runs: [run],
+    });
+    const gateway = {
+      ...baseGateway,
+      listRunEvents: vi.fn(async () => events.map((event) => ({ ...event }))),
+    };
+    vi.useFakeTimers();
+    const renderer = TestRenderer.create(
+      <DataSyncWorkbenchShell initialTasks={[task]} gateway={gateway} locale="en-US" />,
+    );
+
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    act(() => {
+      renderer.root
+        .findAllByType('button')
+        .find((button) => button.children.includes('Runs'))!
+        .props.onClick();
+    });
+    await act(async () => {
+      renderer.root
+        .findAllByType('button')
+        .find((button) => button.children.includes('View run details'))!
+        .props.onClick();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(renderer.root.findByProps({ 'data-data-sync-run-events': 'true' })).toBeTruthy();
+    expect(renderer.root.findAllByProps({ children: firstEvent.message })).toHaveLength(1);
+
+    events = [firstEvent, secondEvent];
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3_000);
+    });
+
+    expect(renderer.root.findAllByProps({ children: secondEvent.message })).toHaveLength(1);
+    expect(gateway.listRunEvents).toHaveBeenCalledTimes(2);
+    act(() => renderer.unmount());
   });
 
   it('rekeys a local draft and its preflight when persistence assigns an ID', async () => {

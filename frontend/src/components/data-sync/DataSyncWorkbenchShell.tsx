@@ -93,6 +93,16 @@ const EMPTY_CAPABILITY: DataSyncRouteCapability = {
 };
 
 const viewKeys: WorkbenchView[] = ['tasks', 'runs', 'schedules', 'cdc'];
+const RUN_POLL_INTERVAL_MS = 3_000;
+const ACTIVE_RUN_STATUSES = new Set<DataSyncRunRecord['status']>([
+  'queued',
+  'running',
+  'cancelling',
+  'preflighting',
+  'snapshotting',
+  'catching_up',
+  'streaming',
+]);
 const SIDEBAR_REFRESH_RUN_STATUSES = new Set<DataSyncRunRecord['status']>([
   'succeeded',
   'partial',
@@ -330,9 +340,11 @@ export const DataSyncWorkbenchShell: React.FC<DataSyncWorkbenchShellProps> = ({
   const [runTotal, setRunTotal] = useState(0);
   const runPageRequestEpochRef = useRef(0);
   const selectedRunRequestEpochRef = useRef(0);
+  const runEventsRequestEpochRef = useRef(0);
   const [schedules, setSchedules] = useState<DataSyncScheduleSummary[]>([]);
   const [cdcSources, setCdcSources] = useState<DataSyncCdcSourceStatus[]>([]);
   const [selectedRunId, setSelectedRunId] = useState('');
+  const [runEvents, setRunEvents] = useState<DataSyncRunEvent[]>([]);
   const [errorRows, setErrorRows] = useState<DataSyncErrorRow[]>([]);
   const [checkpoint, setCheckpoint] = useState<DataSyncCheckpointSummary | null>(null);
   const [compareResult, setCompareResult] = useState<DataSyncCompareResult | null>(
@@ -351,8 +363,11 @@ export const DataSyncWorkbenchShell: React.FC<DataSyncWorkbenchShellProps> = ({
     if (!selectedRunStillVisible) {
       // A page change that removes the selected run invalidates any detail
       // request for the old page. A refresh that keeps it visible must leave
-      // its already-loaded error rows/checkpoint/compare result untouched.
+      // its already-loaded event timeline/error rows/checkpoint/compare result
+      // untouched.
       selectedRunRequestEpochRef.current += 1;
+      runEventsRequestEpochRef.current += 1;
+      setRunEvents([]);
       setErrorRows([]);
       setCheckpoint(null);
       setCompareResult(null);
@@ -383,6 +398,9 @@ export const DataSyncWorkbenchShell: React.FC<DataSyncWorkbenchShellProps> = ({
 
   const selectedTask = tasks.find((task) => task.id === selectedTaskId) || null;
   const selectedRun = runs.find((run) => run.id === selectedRunId) || null;
+  const selectedRunActive = Boolean(
+    selectedRun && ACTIVE_RUN_STATUSES.has(selectedRun.status),
+  );
   const selectedRunTask = selectedRun
     ? tasks.find((task) => task.id === selectedRun.taskId) || null
     : null;
@@ -507,10 +525,7 @@ export const DataSyncWorkbenchShell: React.FC<DataSyncWorkbenchShellProps> = ({
 
   useEffect(() => {
     if (activeView !== 'runs') return undefined;
-    const hasActiveRun = runs.some((run) =>
-      ['queued', 'running', 'cancelling', 'preflighting', 'snapshotting', 'catching_up', 'streaming']
-        .includes(run.status),
-    );
+    const hasActiveRun = runs.some((run) => ACTIVE_RUN_STATUSES.has(run.status));
     if (!hasActiveRun) return undefined;
     const timer = globalThis.setInterval(() => {
       void requestRunPage(runPageCursors[runPageIndex], runPageSize)
@@ -520,9 +535,40 @@ export const DataSyncWorkbenchShell: React.FC<DataSyncWorkbenchShellProps> = ({
         .catch((error) =>
           setOperationError(error instanceof Error ? error.message : String(error)),
         );
-    }, 3_000);
+    }, RUN_POLL_INTERVAL_MS);
     return () => globalThis.clearInterval(timer);
   }, [activeView, runPageCursors, runPageIndex, runPageSize, runs, selectedRunId]);
+
+  useEffect(() => {
+    if (activeView !== 'runs' || !selectedRunId || !selectedRunActive) {
+      return undefined;
+    }
+    let active = true;
+    let timer: ReturnType<typeof globalThis.setTimeout> | undefined;
+    const poll = async () => {
+      const requestEpoch = ++runEventsRequestEpochRef.current;
+      try {
+        const loadedEvents = await gatewayRef.current!.listRunEvents(selectedRunId);
+        if (!active || requestEpoch !== runEventsRequestEpochRef.current) return;
+        setRunEvents(loadedEvents);
+        setCompareResult(extractCompareResult(loadedEvents));
+      } catch (error) {
+        if (active && requestEpoch === runEventsRequestEpochRef.current) {
+          setOperationError(error instanceof Error ? error.message : String(error));
+        }
+      } finally {
+        if (active) {
+          timer = globalThis.setTimeout(poll, RUN_POLL_INTERVAL_MS);
+        }
+      }
+    };
+    timer = globalThis.setTimeout(poll, RUN_POLL_INTERVAL_MS);
+    return () => {
+      active = false;
+      runEventsRequestEpochRef.current += 1;
+      if (timer !== undefined) globalThis.clearTimeout(timer);
+    };
+  }, [activeView, selectedRunId, selectedRunActive]);
 
   useEffect(() => {
     const previousStatuses = runStatusesRef.current;
@@ -841,7 +887,9 @@ export const DataSyncWorkbenchShell: React.FC<DataSyncWorkbenchShellProps> = ({
 
   const selectRun = async (runId: string) => {
     const requestEpoch = ++selectedRunRequestEpochRef.current;
+    const eventRequestEpoch = ++runEventsRequestEpochRef.current;
     setSelectedRunId(runId);
+    setRunEvents([]);
     setErrorRows([]);
     setCheckpoint(null);
     setCompareResult(null);
@@ -854,11 +902,17 @@ export const DataSyncWorkbenchShell: React.FC<DataSyncWorkbenchShellProps> = ({
         gatewayRef.current!.listRunEvents(runId),
       ]);
       if (requestEpoch !== selectedRunRequestEpochRef.current) return;
+      if (eventRequestEpoch === runEventsRequestEpochRef.current) {
+        setRunEvents(events);
+      }
       setErrorRows(rows);
       setCheckpoint(loadedCheckpoint);
       setCompareResult(extractCompareResult(events));
     } catch (error) {
       if (requestEpoch !== selectedRunRequestEpochRef.current) return;
+      if (eventRequestEpoch === runEventsRequestEpochRef.current) {
+        setRunEvents([]);
+      }
       setErrorRows([]);
       setCheckpoint(null);
       setCompareResult(null);
@@ -1615,6 +1669,7 @@ export const DataSyncWorkbenchShell: React.FC<DataSyncWorkbenchShellProps> = ({
               run.id === selectedRunId &&
               ['failed', 'partial', 'interrupted'].includes(run.status),
           )?.message}
+          runEvents={runEvents}
           errorRows={errorRows}
           compareResult={compareResult}
           compareMode={selectedRunCompareMode}
