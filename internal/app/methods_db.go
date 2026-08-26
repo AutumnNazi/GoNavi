@@ -2333,6 +2333,12 @@ func shouldTryQueryResultFirst(dbType string, query string) bool {
 		return true
 	}
 	keyword := leadingSQLKeyword(query)
+	if normalizeSQLClassifierDBType(dbType) == "mqtt" && keyword == "unsubscribe" {
+		// MQTT models UNSUBSCRIBE as a query command because it returns the
+		// released topic filter. Route it through QueryContext instead of the
+		// JSON-only publish Exec path.
+		return true
+	}
 	switch keyword {
 	case "explain", "pragma":
 		return true
