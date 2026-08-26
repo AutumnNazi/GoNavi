@@ -82,6 +82,9 @@ vi.mock('@ant-design/icons', async () => {
     CopyOutlined: Icon,
     FolderOpenOutlined: Icon,
     KeyOutlined: Icon,
+    PartitionOutlined: Icon,
+    UnorderedListOutlined: Icon,
+    TagsOutlined: Icon,
     RightOutlined: Icon,
     DownOutlined: Icon,
   };
@@ -332,6 +335,181 @@ describe('RedisViewer tree interactions', () => {
     expect(redisBackend.RedisScanKeys.mock.calls[1]?.slice(1)).toEqual(['*', '27', 100]);
     expect(countLeafNodes(antdState.treeProps.treeData)).toBe(2);
 
+    renderer!.unmount();
+  });
+
+  it('uses native scrolling for a small Key page and virtualizes larger loaded sets', async () => {
+    redisBackend.RedisScanKeys.mockResolvedValue({
+      success: true,
+      data: {
+        cursor: '0',
+        keys: createRedisKeyBatch(0, 101),
+      },
+    });
+
+    let renderer: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<RedisViewer connectionId="redis-1" redisDB={0} />);
+    });
+    await flushEffects();
+
+    expect(antdState.treeProps.virtual).toBe(false);
+    renderer!.unmount();
+
+    redisBackend.RedisScanKeys.mockResolvedValue({
+      success: true,
+      data: {
+        cursor: '0',
+        keys: createRedisKeyBatch(0, 500),
+      },
+    });
+
+    await act(async () => {
+      renderer = create(<RedisViewer connectionId="redis-1" redisDB={0} />);
+    });
+    await flushEffects();
+
+    expect(antdState.treeProps.virtual).toBe(false);
+    renderer!.unmount();
+
+    redisBackend.RedisScanKeys.mockResolvedValue({
+      success: true,
+      data: {
+        cursor: '0',
+        keys: createRedisKeyBatch(0, 501),
+      },
+    });
+
+    await act(async () => {
+      renderer = create(<RedisViewer connectionId="redis-1" redisDB={0} />);
+    });
+    await flushEffects();
+
+    expect(antdState.treeProps.virtual).toBe(true);
+    const largeSetScanCount = redisBackend.RedisScanKeys.mock.calls.length;
+    for (const mode of ['list', 'type'] as const) {
+      await act(async () => {
+        renderer!.root.findByProps({ 'data-redis-key-view-mode': mode }).props.onClick?.();
+      });
+      await flushEffects();
+      expect(antdState.treeProps.virtual).toBe(true);
+      expect(redisBackend.RedisScanKeys).toHaveBeenCalledTimes(largeSetScanCount);
+    }
+    renderer!.unmount();
+  });
+
+  it('switches between tree, list, and type Key views without rescanning', async () => {
+    redisBackend.RedisScanKeys.mockResolvedValue({
+      success: true,
+      data: {
+        cursor: '0',
+        keys: [
+          { key: 'app:user:1', type: 'string', ttl: -1 },
+          { key: 'app:user:2', type: 'string', ttl: 120 },
+          { key: 'app:order:1', type: 'hash', ttl: -1 },
+          { key: 'misc', type: 'set', ttl: -1 },
+        ],
+      },
+    });
+
+    let renderer: ReactTestRenderer;
+    let typeGroupTitleRenderer: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<RedisViewer connectionId="redis-1" redisDB={0} />);
+    });
+    await flushEffects();
+
+    const initialScanCount = redisBackend.RedisScanKeys.mock.calls.length;
+    const treeButton = renderer!.root.findByProps({ 'data-redis-key-view-mode': 'tree' });
+    const listButton = renderer!.root.findByProps({ 'data-redis-key-view-mode': 'list' });
+    const typeButton = renderer!.root.findByProps({ 'data-redis-key-view-mode': 'type' });
+    expect(treeButton.props['aria-pressed']).toBe(true);
+    expect(treeButton.props['aria-label']).toBe('Tree view');
+    expect(listButton.props['aria-label']).toBe('List view');
+    expect(typeButton.props['aria-label']).toBe('Group by type');
+    expect(antdState.treeProps.virtual).toBe(false);
+
+    const appGroup = antdState.treeProps.treeData.find((node: any) => node.key === 'group:app');
+    const appGroupTitle = antdState.treeProps.titleRender(appGroup);
+    await act(async () => {
+      appGroupTitle.props.onClick({ preventDefault: vi.fn(), stopPropagation: vi.fn() });
+    });
+    expect(antdState.treeProps.expandedKeys).toContain('group:app');
+
+    const selectedLeaf = findLeafNodeByRawKey(antdState.treeProps.treeData, 'app:user:1');
+    const checkedLeaf = findLeafNodeByRawKey(antdState.treeProps.treeData, 'app:order:1');
+    await act(async () => {
+      antdState.treeProps.onSelect?.([selectedLeaf.key]);
+      antdState.treeProps.onCheck?.(
+        { checked: [checkedLeaf.key], halfChecked: [] },
+        { checked: true, node: checkedLeaf },
+      );
+    });
+    await flushEffects();
+
+    await act(async () => {
+      listButton.props.onClick?.();
+    });
+    await flushEffects();
+
+    expect(redisBackend.RedisScanKeys).toHaveBeenCalledTimes(initialScanCount);
+    expect(antdState.treeProps.virtual).toBe(false);
+    expect(antdState.treeProps.treeData.every((node: any) => node.nodeType === 'leaf')).toBe(true);
+    expect(antdState.treeProps.treeData.map((node: any) => node.leafLabel)).toEqual([
+      'app:order:1',
+      'app:user:1',
+      'app:user:2',
+      'misc',
+    ]);
+    expect(antdState.treeProps.selectedKeys).toEqual(['key:app:user:1']);
+    expect(antdState.treeProps.checkedKeys.checked).toContain('key:app:order:1');
+    expect(renderer!.root.findByProps({ 'data-redis-key-view-mode': 'list' }).props['aria-pressed']).toBe(true);
+
+    await act(async () => {
+      typeButton.props.onClick?.();
+    });
+    await flushEffects();
+
+    expect(redisBackend.RedisScanKeys).toHaveBeenCalledTimes(initialScanCount);
+    expect(antdState.treeProps.virtual).toBe(false);
+    expect(antdState.treeProps.treeData.map((node: any) => node.key)).toEqual([
+      'type-group:string',
+      'type-group:hash',
+      'type-group:set',
+    ]);
+    expect(antdState.treeProps.treeData.map((node: any) => node.groupLeafCount)).toEqual([2, 1, 1]);
+    expect(antdState.treeProps.selectedKeys).toEqual(['key:app:user:1']);
+    expect(antdState.treeProps.checkedKeys.checked).toEqual(expect.arrayContaining([
+      'key:app:order:1',
+      'type-group:hash',
+    ]));
+
+    const stringTypeGroup = antdState.treeProps.treeData[0];
+    await act(async () => {
+      typeGroupTitleRenderer = create(antdState.treeProps.titleRender(stringTypeGroup));
+    });
+    expect(typeGroupTitleRenderer!.root.findAllByProps({ 'aria-label': 'Filter by namespace' })).toHaveLength(0);
+    const typeGroupEvent = { preventDefault: vi.fn(), stopPropagation: vi.fn() };
+    await act(async () => {
+      typeGroupTitleRenderer!.root.findByProps({ role: 'button' }).props.onClick(typeGroupEvent);
+    });
+    expect(antdState.treeProps.expandedKeys).toContain('type-group:string');
+
+    await act(async () => {
+      renderer!.root.findByProps({ 'data-redis-key-view-mode': 'tree' }).props.onClick?.();
+    });
+    await flushEffects();
+    expect(antdState.treeProps.expandedKeys).toContain('group:app');
+    expect(antdState.treeProps.virtual).toBe(false);
+
+    await act(async () => {
+      renderer!.root.findByProps({ 'data-redis-key-view-mode': 'type' }).props.onClick?.();
+    });
+    await flushEffects();
+    expect(antdState.treeProps.expandedKeys).toContain('type-group:string');
+    expect(antdState.treeProps.virtual).toBe(false);
+
+    typeGroupTitleRenderer!.unmount();
     renderer!.unmount();
   });
 

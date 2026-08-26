@@ -3,7 +3,7 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { createPortal } from 'react-dom';
 import { Table, Input, Button, Space, Tag, Tree, Spin, message, Form, InputNumber, Popconfirm, Tooltip, Radio } from 'antd';
 import type { RadioChangeEvent, TableProps } from 'antd';
-import { ReloadOutlined, DeleteOutlined, PlusOutlined, EditOutlined, EyeOutlined, SearchOutlined, ClockCircleOutlined, CopyOutlined, FolderOpenOutlined, KeyOutlined, RightOutlined, DownOutlined } from '@ant-design/icons';
+import { ReloadOutlined, DeleteOutlined, PlusOutlined, EditOutlined, EyeOutlined, SearchOutlined, ClockCircleOutlined, CopyOutlined, FolderOpenOutlined, KeyOutlined, PartitionOutlined, UnorderedListOutlined, TagsOutlined, RightOutlined, DownOutlined } from '@ant-design/icons';
 import { useStore } from '../store';
 import { RedisKeyInfo, RedisValue, StreamEntry } from '../types';
 import Editor from './MonacoEditor';
@@ -22,7 +22,9 @@ import {
     applyTreeNodeCheck,
     buildLeafNodeKey,
     buildCheckedTreeNodeState,
+    buildRedisKeyListView,
     buildRedisKeyTree,
+    buildRedisKeyTypeView,
     isGroupFullyChecked,
     parseRawKeyFromNodeKey,
     type RedisTreeDataNode,
@@ -52,6 +54,7 @@ const REDIS_CLUSTER_KEY_LOAD_MORE_COUNT = 2000;
 const REDIS_KEY_SEARCH_INITIAL_LOAD_COUNT = 100;
 const REDIS_KEY_SEARCH_LOAD_MORE_COUNT = 100;
 const REDIS_KEY_SEARCH_MAX_RESULT_COUNT = 10000;
+const REDIS_KEY_VIRTUAL_SCROLL_THRESHOLD = 500;
 const REDIS_LARGE_KEYSPACE_THRESHOLD = 10000;
 const REDIS_LARGE_KEYSPACE_MAX_EXPANDED_GROUPS = 200;
 const REDIS_KEY_GONE_MESSAGE = 'Redis Key 不存在或已过期'; // i18n-scan: allow-raw backend sentinel
@@ -156,6 +159,7 @@ interface RedisViewerProps {
 type RedisExportScope = 'all' | 'selected';
 type RedisImportConflictMode = 'overwrite' | 'skip';
 type RedisListSortOrder = 'ascend' | 'descend' | null;
+type RedisKeyViewMode = 'tree' | 'list' | 'type';
 type RedisImportPreview = {
     file: string;
     exportedAt?: string;
@@ -307,6 +311,7 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
     const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
     const [editValue, setEditValue] = useState('');
     const [treeContextMenu, setTreeContextMenu] = useState<{ x: number; y: number; rawKey: string } | null>(null);
+    const [keyViewMode, setKeyViewMode] = useState<RedisKeyViewMode>('tree');
 
     // View mode shared by every Redis value type.
     const [viewMode, setViewMode] = useState<'auto' | 'text' | 'utf8' | 'hex'>('auto');
@@ -329,7 +334,8 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
     const treeContainerRef = useRef<HTMLDivElement>(null);
     const [showTreeKeyTTL, setShowTreeKeyTTL] = useState(true);
     const [treeHeight, setTreeHeight] = useState(500);
-    const [expandedGroupKeys, setExpandedGroupKeys] = useState<string[]>([]);
+    const [expandedTreeGroupKeys, setExpandedTreeGroupKeys] = useState<string[]>([]);
+    const [expandedTypeGroupKeys, setExpandedTypeGroupKeys] = useState<string[]>([]);
 
     useEffect(() => {
         setHashFieldFilter('');
@@ -1104,12 +1110,34 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
     }, []);
 
     const isLargeKeyspace = keys.length >= REDIS_LARGE_KEYSPACE_THRESHOLD;
+    const shouldVirtualizeKeyTree = keys.length > REDIS_KEY_VIRTUAL_SCROLL_THRESHOLD;
 
     const keyTree = useMemo(() => {
+        if (keyViewMode === 'list') {
+            return buildRedisKeyListView(keys, !isLargeKeyspace);
+        }
+        if (keyViewMode === 'type') {
+            return buildRedisKeyTypeView(keys, !isLargeKeyspace);
+        }
         return buildRedisKeyTree(keys, !isLargeKeyspace);
-    }, [isLargeKeyspace, keys]);
+    }, [isLargeKeyspace, keyViewMode, keys]);
 
     const groupKeySet = useMemo(() => new Set(keyTree.groupKeys), [keyTree.groupKeys]);
+    const expandedGroupKeys = keyViewMode === 'tree'
+        ? expandedTreeGroupKeys
+        : keyViewMode === 'type'
+            ? expandedTypeGroupKeys
+            : [];
+
+    const updateExpandedGroupKeys = useCallback((updater: (previousKeys: string[]) => string[]) => {
+        if (keyViewMode === 'tree') {
+            setExpandedTreeGroupKeys(updater);
+            return;
+        }
+        if (keyViewMode === 'type') {
+            setExpandedTypeGroupKeys(updater);
+        }
+    }, [keyViewMode]);
 
     const selectedTreeNodeKeys = useMemo(() => {
         if (!selectedKey) {
@@ -1128,14 +1156,17 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
     }, [keys]);
 
     useEffect(() => {
-        setExpandedGroupKeys((prev) => {
+        if (keyViewMode === 'list') {
+            return;
+        }
+        updateExpandedGroupKeys((prev) => {
             const validKeys = prev.filter(nodeKey => groupKeySet.has(nodeKey));
             if (!isLargeKeyspace) {
                 return validKeys;
             }
             return validKeys.slice(0, REDIS_LARGE_KEYSPACE_MAX_EXPANDED_GROUPS);
         });
-    }, [groupKeySet, isLargeKeyspace]);
+    }, [groupKeySet, isLargeKeyspace, keyViewMode, updateExpandedGroupKeys]);
 
     useEffect(() => {
         if (!treeContextMenu) {
@@ -1192,7 +1223,7 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
     }, []);
 
     const handleToggleGroupExpand = useCallback((groupNodeKey: string) => {
-        setExpandedGroupKeys((prev) => {
+        updateExpandedGroupKeys((prev) => {
             const exists = prev.includes(groupNodeKey);
             const nextKeys = exists
                 ? prev.filter((nodeKey) => nodeKey !== groupNodeKey)
@@ -1204,7 +1235,12 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
 
             return nextKeys;
         });
-    }, [isLargeKeyspace]);
+    }, [isLargeKeyspace, updateExpandedGroupKeys]);
+
+    const handleKeyViewModeChange = useCallback((nextMode: RedisKeyViewMode) => {
+        setTreeContextMenu(null);
+        setKeyViewMode(nextMode);
+    }, []);
 
     const handleFilterByGroup = useCallback((treeNode: RedisTreeDataNode) => {
         const groupPath = treeNode.groupPath?.trim();
@@ -1228,6 +1264,7 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
             const groupFullyChecked = isGroupFullyChecked(treeNode, selectedKeys);
             const groupNodeKey = String(treeNode.key ?? '');
             const isExpanded = expandedGroupKeys.includes(groupNodeKey);
+            const isTypeGroup = treeNode.groupKind === 'type';
             return (
                 <div
                     role="button"
@@ -1282,36 +1319,50 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
                         >
                             {isExpanded ? <DownOutlined style={{ fontSize: 11 }} /> : <RightOutlined style={{ fontSize: 11 }} />}
                         </button>
-                        <FolderOpenOutlined style={{ color: workbenchTheme.textMuted }} />
-                        <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {treeNode.groupName}
-                        </span>
+                        {isTypeGroup ? (
+                            <Tag
+                                color={getTypeColor(treeNode.groupName ?? 'unknown')}
+                                style={{ marginInlineEnd: 0, borderRadius: 999, fontWeight: 600, flexShrink: 0 }}
+                            >
+                                <TagsOutlined style={{ marginRight: 4 }} />
+                                {treeNode.groupName}
+                            </Tag>
+                        ) : (
+                            <>
+                                <FolderOpenOutlined style={{ color: workbenchTheme.textMuted }} />
+                                <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                    {treeNode.groupName}
+                                </span>
+                            </>
+                        )}
                         <span style={{ fontSize: 12, color: workbenchTheme.textMuted, flexShrink: 0 }}>({treeNode.groupLeafCount ?? 0})</span>
                     </Space>
                     <Space size={6} style={{ flexShrink: 0 }}>
-                        <Tooltip title={tr('redis_viewer.action.filter_group')}>
-                            <Button
-                                size="small"
-                                className="redis-tree-group-filter-button"
-                                aria-label={tr('redis_viewer.action.filter_group')}
-                                icon={<SearchOutlined />}
-                                style={{
-                                    width: 26,
-                                    height: 26,
-                                    padding: 0,
-                                    borderRadius: 999,
-                                    borderColor: workbenchTheme.actionSecondaryBorder,
-                                    background: workbenchTheme.actionSecondaryBg,
-                                    color: workbenchTheme.accent,
-                                    boxShadow: 'none',
-                                }}
-                                onMouseDown={stopTreeTitleEvent}
-                                onClick={(event) => {
-                                    stopTreeTitleEvent(event);
-                                    handleFilterByGroup(treeNode);
-                                }}
-                            />
-                        </Tooltip>
+                        {treeNode.groupKind === 'namespace' && (
+                            <Tooltip title={tr('redis_viewer.action.filter_group')}>
+                                <Button
+                                    size="small"
+                                    className="redis-tree-group-filter-button"
+                                    aria-label={tr('redis_viewer.action.filter_group')}
+                                    icon={<SearchOutlined />}
+                                    style={{
+                                        width: 26,
+                                        height: 26,
+                                        padding: 0,
+                                        borderRadius: 999,
+                                        borderColor: workbenchTheme.actionSecondaryBorder,
+                                        background: workbenchTheme.actionSecondaryBg,
+                                        color: workbenchTheme.accent,
+                                        boxShadow: 'none',
+                                    }}
+                                    onMouseDown={stopTreeTitleEvent}
+                                    onClick={(event) => {
+                                        stopTreeTitleEvent(event);
+                                        handleFilterByGroup(treeNode);
+                                    }}
+                                />
+                            </Tooltip>
+                        )}
                         <Button
                             size="small"
                             style={{
@@ -1346,7 +1397,9 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
             return (
                 <div style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: workbenchTheme.textPrimary }}>
                     <span>{leafLabel}</span>
-                    <span style={{ marginLeft: 8, color: workbenchTheme.textMuted, fontSize: 12 }}>[{keyType}]</span>
+                    {keyViewMode !== 'type' && (
+                        <span style={{ marginLeft: 8, color: workbenchTheme.textMuted, fontSize: 12 }}>[{keyType}]</span>
+                    )}
                     {showTreeKeyTTL && (
                         <span style={{ marginLeft: 8, color: workbenchTheme.textMuted, fontSize: 12 }}>{formatTTL(ttl)}</span>
                     )}
@@ -1390,19 +1443,21 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
                         </span>
                     </Tooltip>
                 </div>
-                <Tag
-                    color={getTypeColor(keyType)}
-                    style={{
-                        marginInlineEnd: 0,
-                        width: showTreeKeyTTL ? REDIS_TREE_KEY_TYPE_WIDTH : REDIS_TREE_KEY_TYPE_WIDTH_NARROW,
-                        textAlign: 'center',
-                        flexShrink: 0,
-                        borderRadius: 999,
-                        fontWeight: 600,
-                    }}
-                >
-                    {keyType}
-                </Tag>
+                {keyViewMode !== 'type' && (
+                    <Tag
+                        color={getTypeColor(keyType)}
+                        style={{
+                            marginInlineEnd: 0,
+                            width: showTreeKeyTTL ? REDIS_TREE_KEY_TYPE_WIDTH : REDIS_TREE_KEY_TYPE_WIDTH_NARROW,
+                            textAlign: 'center',
+                            flexShrink: 0,
+                            borderRadius: 999,
+                            fontWeight: 600,
+                        }}
+                    >
+                        {keyType}
+                    </Tag>
+                )}
                 {showTreeKeyTTL && (
                     <span
                         style={{
@@ -1421,17 +1476,17 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
                 )}
             </div>
         );
-    }, [expandedGroupKeys, formatTTL, getTypeColor, handleSelectGroupDescendants, handleToggleGroupExpand, isLargeKeyspace, keyAccentColor, selectedKeys, showTreeKeyTTL, tr, workbenchTheme]);
+    }, [expandedGroupKeys, formatTTL, getTypeColor, handleFilterByGroup, handleSelectGroupDescendants, handleToggleGroupExpand, isLargeKeyspace, keyAccentColor, keyViewMode, selectedKeys, showTreeKeyTTL, tr, workbenchTheme]);
 
     const handleTreeExpand = (nextExpandedKeys: React.Key[]) => {
         const validGroupKeys = nextExpandedKeys
             .map(key => String(key))
             .filter(nodeKey => groupKeySet.has(nodeKey));
         if (isLargeKeyspace) {
-            setExpandedGroupKeys(validGroupKeys.slice(0, REDIS_LARGE_KEYSPACE_MAX_EXPANDED_GROUPS));
+            updateExpandedGroupKeys(() => validGroupKeys.slice(0, REDIS_LARGE_KEYSPACE_MAX_EXPANDED_GROUPS));
             return;
         }
-        setExpandedGroupKeys(validGroupKeys);
+        updateExpandedGroupKeys(() => validGroupKeys);
     };
 
     const renderValueEditor = () => {
@@ -2425,6 +2480,20 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
         return <div style={{ padding: 20 }}>{tr('redis_viewer.state.connection_not_found')}</div>;
     }
 
+    const keyViewOptions: Array<{ mode: RedisKeyViewMode; label: string; icon: React.ReactNode }> = [
+        { mode: 'tree', label: tr('redis_viewer.key_view.tree'), icon: <PartitionOutlined /> },
+        { mode: 'list', label: tr('redis_viewer.key_view.list'), icon: <UnorderedListOutlined /> },
+        { mode: 'type', label: tr('redis_viewer.key_view.type'), icon: <TagsOutlined /> },
+    ];
+    const keyColumnTitle = keyViewMode === 'tree'
+        ? tr('redis_viewer.title.namespace_key')
+        : keyViewMode === 'type'
+            ? tr('redis_viewer.title.type_key')
+            : tr('redis_viewer.field.key');
+    const keyMetaColumnTitle = keyViewMode === 'type'
+        ? (showTreeKeyTTL ? tr('redis_viewer.title.ttl') : '')
+        : (showTreeKeyTTL ? tr('redis_viewer.title.type_ttl') : tr('redis_viewer.title.type'));
+
     return (
         <div
             className={`redis-viewer-workbench${isV2Ui ? ' gn-v2-redis-workbench' : ''}`}
@@ -2530,14 +2599,69 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
                     </div>
                 </div>
                 <div className={isV2Ui ? 'gn-v2-redis-tree-card' : undefined} style={{ ...workbenchCardStyle, flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', padding: 10 }}>
-                    {isLargeKeyspace && (
+                    <div
+                        style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            gap: 10,
+                            padding: '0 4px 8px',
+                        }}
+                    >
+                        <span style={{ color: workbenchTheme.textMuted, fontSize: 12, fontWeight: 600 }}>
+                            {tr('redis_viewer.key_view.title')}
+                        </span>
+                        <div
+                            role="group"
+                            aria-label={tr('redis_viewer.key_view.title')}
+                            className="gn-v2-redis-key-view-switch"
+                            style={isV2Ui ? undefined : {
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 2,
+                                padding: 2,
+                                borderRadius: 8,
+                                border: workbenchTheme.panelBorder,
+                                background: workbenchTheme.panelBgSubtle,
+                            }}
+                        >
+                            {keyViewOptions.map(({ mode, label, icon }) => (
+                                <Tooltip title={label} key={mode}>
+                                    <button
+                                        type="button"
+                                        className={`gn-v2-redis-key-view-switch-btn${keyViewMode === mode ? ' is-active' : ''}`}
+                                        data-redis-key-view-mode={mode}
+                                        aria-label={label}
+                                        aria-pressed={keyViewMode === mode}
+                                        onClick={() => handleKeyViewModeChange(mode)}
+                                        style={isV2Ui ? undefined : {
+                                            width: 28,
+                                            height: 26,
+                                            padding: 0,
+                                            borderRadius: 6,
+                                            border: 'none',
+                                            display: 'inline-flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            cursor: 'pointer',
+                                            color: keyViewMode === mode ? workbenchTheme.accent : workbenchTheme.textMuted,
+                                            background: keyViewMode === mode ? workbenchTheme.accentSoft : 'transparent',
+                                        }}
+                                    >
+                                        {icon}
+                                    </button>
+                                </Tooltip>
+                            ))}
+                        </div>
+                    </div>
+                    {isLargeKeyspace && keyViewMode !== 'list' && (
                         <div style={{ padding: '8px 10px', fontSize: 12, color: workbenchTheme.textMuted, marginBottom: 8, borderRadius: 12, background: workbenchTheme.panelBgSubtle, border: workbenchTheme.panelBorder }}>
                             {tr('redis_viewer.notice.large_keyspace_mode', { count: REDIS_LARGE_KEYSPACE_MAX_EXPANDED_GROUPS })}
                         </div>
                     )}
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 8px 10px 8px', color: workbenchTheme.textMuted, fontSize: 12, textTransform: 'uppercase', letterSpacing: '.06em' }}>
-                        <span>{tr('redis_viewer.title.namespace_key')}</span>
-                        <span>{tr('redis_viewer.title.type_ttl')}</span>
+                        <span>{keyColumnTitle}</span>
+                        <span>{keyMetaColumnTitle}</span>
                     </div>
                     <div ref={treeContainerRef} className={isV2Ui ? 'gn-v2-redis-tree-shell' : undefined} style={{ ...workbenchSubCardStyle, flex: 1, minHeight: 0, overflow: 'hidden', padding: 6 }}>
                         <Spin spinning={loading} size="small" style={{ width: '100%' }}>
@@ -2548,7 +2672,7 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
                                 checkable
                                 checkStrictly
                                 selectable
-                                virtual
+                                virtual={shouldVirtualizeKeyTree}
                                 height={Math.max(treeHeight - 8, 220)}
                                 treeData={keyTree.treeData}
                                 titleRender={renderTreeNodeTitle}
