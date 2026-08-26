@@ -2564,6 +2564,24 @@ func (a *App) DBGetDatabases(config connection.ConnectionConfig) connection.Quer
 		}
 	}
 	if err != nil {
+		var partialErr *db.PartialMetadataError
+		if errors.As(err, &partialErr) {
+			warning := partialErr.Error()
+			logger.Warnf("DBGetDatabases 获取到部分数据库列表：%s err=%s", formatConnSummary(runConfig), warning)
+			resData := make([]map[string]string, 0, len(dbs))
+			for _, name := range dbs {
+				resData = append(resData, map[string]string{"Database": name})
+			}
+			return connection.QueryResult{
+				Success:           len(resData) > 0,
+				Data:              resData,
+				Message:           warning,
+				Partial:           true,
+				Warnings:          partialErr.Warnings(),
+				FailedObjectTypes: []string{"database"},
+				Retryable:         true,
+			}
+		}
 		logger.Error(err, "DBGetDatabases 获取数据库列表失败：%s", formatConnSummary(runConfig))
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
