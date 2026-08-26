@@ -274,7 +274,10 @@ func (k *KingbaseDB) ensureSearchPath(baseDSN string, hasExplicitSearchPath bool
 		return nil
 	}
 
-	searchPath := k.getSearchPathStr()
+	searchPath, err := k.getSearchPathStr()
+	if err != nil {
+		return err
+	}
 	if strings.TrimSpace(searchPath) == "" {
 		return nil
 	}
@@ -300,9 +303,9 @@ func (k *KingbaseDB) ensureSearchPath(baseDSN string, hasExplicitSearchPath bool
 
 // getSearchPathStr 查询当前数据库中所有用户 schema，配置 DSN 的 search_path。
 // KingBase 默认 search_path 为 "$user", public，对于自定义 schema 下的表不可见。
-func (k *KingbaseDB) getSearchPathStr() string {
+func (k *KingbaseDB) getSearchPathStr() (string, error) {
 	if k.conn == nil {
-		return ""
+		return "", nil
 	}
 
 	query := `SELECT nspname FROM pg_namespace
@@ -312,8 +315,7 @@ func (k *KingbaseDB) getSearchPathStr() string {
 
 	rows, err := k.conn.QueryContext(metadataContextFor(k), query)
 	if err != nil {
-		logger.Warnf("人大金仓查询用户 schema 失败，跳过 search_path 设置：%v", err)
-		return ""
+		return "", fmt.Errorf("查询用户 schema：%w", err)
 	}
 	defer rows.Close()
 
@@ -321,16 +323,19 @@ func (k *KingbaseDB) getSearchPathStr() string {
 	for rows.Next() {
 		var name string
 		if err := rows.Scan(&name); err != nil {
-			continue
+			return "", fmt.Errorf("扫描用户 schema：%w", err)
 		}
 		name = strings.TrimSpace(name)
 		if name != "" {
 			rawSchemas = append(rawSchemas, name)
 		}
 	}
+	if err := rows.Err(); err != nil {
+		return "", fmt.Errorf("遍历用户 schema：%w", err)
+	}
 
 	searchPath, _ := buildKingbaseSearchPathCommon(rawSchemas)
-	return searchPath
+	return searchPath, nil
 }
 
 func (k *KingbaseDB) Close() error {
