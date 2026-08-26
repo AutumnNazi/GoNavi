@@ -4,10 +4,13 @@ package db
 
 import (
 	"context"
+	"crypto/tls"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
+	"net/http"
 	"net/url"
 	"sort"
 	"strconv"
@@ -19,18 +22,62 @@ import (
 	"GoNavi-Wails/internal/ssh"
 	"GoNavi-Wails/internal/utils"
 
+	"github.com/gorilla/websocket"
+	_ "github.com/taosdata/driver-go/v3/taosRestful"
 	_ "github.com/taosdata/driver-go/v3/taosWS"
 )
 
+const (
+	tdengineWebSocketDriver = "taosWS"
+	tdengineRestfulDriver   = "taosRestful"
+	tdengineVersionProbeSQL = "SELECT SERVER_VERSION()"
+)
+
+var tdengineRESTConnectionParamNames = newConnectionParamNameMap(
+	"interpolateParams",
+	"token",
+	"disableCompression",
+	"readBufferSize",
+	"timezone",
+	"bearerToken",
+)
+
+type tdengineConnectAttemptFunc func(config connection.ConnectionConfig, driverName, dsn string) (*sql.DB, error)
+
+type tdengineWebSocketEndpointProbeFunc func(ctx context.Context, config connection.ConnectionConfig) (int, error)
+
 // TDengineDB implements Database interface for TDengine.
-// Uses taosWS driver via WebSocket (通常通过 taosAdapter 提供服务)。
+// WebSocket is preferred; RESTful is used only for explicit server/protocol incompatibility.
 type TDengineDB struct {
-	conn        *sql.DB
-	pingTimeout time.Duration
-	forwarder   *ssh.LocalForwarder
+	conn                   *sql.DB
+	driverName             string
+	pingTimeout            time.Duration
+	forwarder              *ssh.LocalForwarder
+	connectAttempt         tdengineConnectAttemptFunc
+	probeWebSocketEndpoint tdengineWebSocketEndpointProbeFunc
 }
 
 func (t *TDengineDB) getDSN(config connection.ConnectionConfig) string {
+	params := url.Values{}
+	mergeConnectionParamsFromConfigWithAllowlist(params, config, tdengineConnectionParamNames, "taos", "taosws", "tdengine")
+	return buildTDengineDSN(config, resolveTDengineNet(config), params)
+}
+
+func (t *TDengineDB) getRestDSN(config connection.ConnectionConfig) string {
+	params := url.Values{}
+	mergeConnectionParamsFromConfigWithAllowlist(params, config, tdengineRESTConnectionParamNames, "taos", "taosrestful", "tdengine", "http", "https")
+	if normalizedSSLMode(config) == sslModeSkipVerify {
+		params.Set("skipVerify", "true")
+	}
+
+	netType := "http"
+	if normalizedSSLMode(config) != sslModeDisable {
+		netType = "https"
+	}
+	return buildTDengineDSN(config, netType, params)
+}
+
+func buildTDengineDSN(config connection.ConnectionConfig, netType string, params url.Values) string {
 	user := strings.TrimSpace(config.User)
 	if user == "" {
 		user = "root"
@@ -45,9 +92,6 @@ func (t *TDengineDB) getDSN(config connection.ConnectionConfig) string {
 
 	escapedUser := url.QueryEscape(user)
 	escapedPass := url.QueryEscape(pass)
-	netType := resolveTDengineNet(config)
-	params := url.Values{}
-	mergeConnectionParamsFromConfigWithAllowlist(params, config, tdengineConnectionParamNames, "taos", "taosws", "tdengine")
 	query := params.Encode()
 	dsn := fmt.Sprintf("%s:%s@%s(%s)%s", escapedUser, escapedPass, netType, net.JoinHostPort(config.Host, strconv.Itoa(config.Port)), path)
 	if query == "" {
@@ -98,29 +142,211 @@ func (t *TDengineDB) Connect(config connection.ConnectionConfig) (err error) {
 	}
 
 	var failures []string
-	for idx, attempt := range attempts {
-		dsn := t.getDSN(attempt)
-		db, err := sql.Open("taosWS", dsn)
-		if err != nil {
-			failures = append(failures, fmt.Sprintf("第%d次连接打开失败: %v", idx+1, err))
-			continue
+	for idx, attemptConfig := range attempts {
+		db, wsErr := t.runConnectAttempt(attemptConfig, tdengineWebSocketDriver, t.getDSN(attemptConfig))
+		if wsErr == nil {
+			t.acceptConnection(db, tdengineWebSocketDriver, attemptConfig)
+			t.logTDengineSSLFallback(idx)
+			return nil
 		}
-		configureSQLConnectionPool(db, "tdengine")
-		t.conn = db
-		t.pingTimeout = getConnectTimeout(attempt)
-
-		if err := t.Ping(); err != nil {
+		if db != nil {
 			_ = db.Close()
-			t.conn = nil
-			failures = append(failures, fmt.Sprintf("第%d次连接验证失败: %v", idx+1, err))
+		}
+		failures = append(failures, fmt.Sprintf("第%d次 WebSocket 连接验证失败: %s", idx+1, safeTDengineErrorText(wsErr, attemptConfig)))
+
+		if !t.shouldFallbackToREST(attemptConfig, wsErr) {
 			continue
 		}
-		if idx > 0 {
-			logger.Warnf("TDengine SSL 优先连接失败，已回退至明文连接")
+
+		logger.Warnf("TDengine WebSocket 与服务端版本或协议不兼容，尝试 RESTful 协议")
+		restDB, restErr := t.runConnectAttempt(attemptConfig, tdengineRestfulDriver, t.getRestDSN(attemptConfig))
+		if restErr == nil {
+			t.acceptConnection(restDB, tdengineRestfulDriver, attemptConfig)
+			t.logTDengineSSLFallback(idx)
+			logger.Warnf("TDengine 已回退至 RESTful 协议")
+			return nil
 		}
-		return nil
+		if restDB != nil {
+			_ = restDB.Close()
+		}
+		failures = append(failures, fmt.Sprintf("第%d次 RESTful 连接验证失败: %s", idx+1, safeTDengineErrorText(restErr, attemptConfig)))
 	}
 	return fmt.Errorf("连接建立后验证失败：%s", strings.Join(failures, "；"))
+}
+
+func (t *TDengineDB) runConnectAttempt(config connection.ConnectionConfig, driverName, dsn string) (*sql.DB, error) {
+	if t.connectAttempt != nil {
+		return t.connectAttempt(config, driverName, dsn)
+	}
+	return openAndValidateTDengineConnection(config, driverName, dsn)
+}
+
+func openAndValidateTDengineConnection(config connection.ConnectionConfig, driverName, dsn string) (*sql.DB, error) {
+	db, err := sql.Open(driverName, dsn)
+	if err != nil {
+		return nil, err
+	}
+	configureSQLConnectionPool(db, "tdengine")
+
+	ctx, cancel := utils.ContextWithTimeout(getConnectTimeout(config))
+	defer cancel()
+	if err := validateTDengineConnection(ctx, db, driverName); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+	return db, nil
+}
+
+func validateTDengineConnection(ctx context.Context, db *sql.DB, driverName string) error {
+	if driverName != tdengineRestfulDriver {
+		return db.PingContext(ctx)
+	}
+
+	var version interface{}
+	if err := db.QueryRowContext(ctx, tdengineVersionProbeSQL).Scan(&version); err != nil {
+		return fmt.Errorf("RESTful 只读版本探针失败: %w", err)
+	}
+	if version == nil || strings.TrimSpace(fmt.Sprint(version)) == "" {
+		return fmt.Errorf("RESTful 只读版本探针返回空版本")
+	}
+	return nil
+}
+
+func (t *TDengineDB) acceptConnection(db *sql.DB, driverName string, config connection.ConnectionConfig) {
+	t.conn = db
+	t.driverName = driverName
+	t.pingTimeout = getConnectTimeout(config)
+}
+
+func (t *TDengineDB) logTDengineSSLFallback(attemptIndex int) {
+	if attemptIndex > 0 {
+		logger.Warnf("TDengine SSL 优先连接失败，已回退至明文连接")
+	}
+}
+
+func (t *TDengineDB) shouldFallbackToREST(config connection.ConnectionConfig, wsErr error) bool {
+	if isTDengineWebSocketCompatibilityError(wsErr) {
+		return true
+	}
+	if !isTDengineBadWebSocketHandshake(wsErr) {
+		return false
+	}
+
+	probe := t.probeWebSocketEndpoint
+	if probe == nil {
+		probe = probeTDengineWebSocketEndpoint
+	}
+	ctx, cancel := utils.ContextWithTimeout(getConnectTimeout(config))
+	defer cancel()
+	statusCode, _ := probe(ctx, config)
+	return isTDengineUnsupportedWebSocketStatus(statusCode)
+}
+
+func isTDengineWebSocketCompatibilityError(err error) bool {
+	if err == nil {
+		return false
+	}
+	text := strings.ToLower(err.Error())
+	if strings.Contains(text, "version mismatch.") && strings.Contains(text, "minimum required tdengine version") {
+		return true
+	}
+	if strings.Contains(text, "unknown tdengine version:") {
+		return true
+	}
+	if strings.Contains(text, "get version:") {
+		return true
+	}
+	if strings.Contains(text, "websocket endpoint") && (strings.Contains(text, "not found") || strings.Contains(text, "not support") || strings.Contains(text, "unsupported")) {
+		return true
+	}
+	if strings.Contains(text, "websocket protocol") && (strings.Contains(text, "not support") || strings.Contains(text, "unsupported")) {
+		return true
+	}
+	return strings.Contains(text, "unexpected action") ||
+		strings.Contains(text, "unknown action") ||
+		strings.Contains(text, "unsupported action") ||
+		strings.Contains(text, "action not support") ||
+		strings.Contains(text, "action not implemented")
+}
+
+func isTDengineBadWebSocketHandshake(err error) bool {
+	return err != nil && strings.Contains(strings.ToLower(err.Error()), "websocket: bad handshake")
+}
+
+func isTDengineUnsupportedWebSocketStatus(statusCode int) bool {
+	switch statusCode {
+	case http.StatusNotFound,
+		http.StatusMethodNotAllowed,
+		http.StatusGone,
+		http.StatusUpgradeRequired,
+		http.StatusNotImplemented:
+		return true
+	default:
+		return false
+	}
+}
+
+func probeTDengineWebSocketEndpoint(ctx context.Context, config connection.ConnectionConfig) (int, error) {
+	endpoint := url.URL{
+		Scheme: resolveTDengineNet(config),
+		Host:   net.JoinHostPort(config.Host, strconv.Itoa(config.Port)),
+		Path:   "/ws",
+	}
+	params := url.Values{}
+	mergeConnectionParamsFromConfigWithAllowlist(params, config, tdengineConnectionParamNames, "taos", "taosws", "tdengine")
+	if token := params.Get("token"); token != "" {
+		endpoint.RawQuery = url.Values{"token": []string{token}}.Encode()
+	}
+
+	dialer := websocket.Dialer{
+		Proxy:            http.ProxyFromEnvironment,
+		HandshakeTimeout: getConnectTimeout(config),
+	}
+	if normalizedSSLMode(config) == sslModeSkipVerify {
+		// The caller explicitly selected skip-verify for this connection.
+		dialer.TLSClientConfig = &tls.Config{InsecureSkipVerify: true} // #nosec G402
+	}
+
+	ws, response, err := dialer.DialContext(ctx, endpoint.String(), nil)
+	if ws != nil {
+		_ = ws.Close()
+	}
+	statusCode := 0
+	if response != nil {
+		statusCode = response.StatusCode
+		if response.Body != nil {
+			_ = response.Body.Close()
+		}
+	}
+	return statusCode, err
+}
+
+func safeTDengineErrorText(err error, config connection.ConnectionConfig) string {
+	if err == nil {
+		return ""
+	}
+	text := err.Error()
+	secrets := []string{config.Password}
+	params := url.Values{}
+	mergeConnectionParamsFromConfigWithAllowlist(params, config, tdengineConnectionParamNames, "taos", "taosws", "taosrestful", "tdengine", "http", "https")
+	for _, name := range []string{"token", "bearerToken", "totpCode"} {
+		secrets = append(secrets, params.Get(name))
+	}
+	for _, secret := range secrets {
+		if secret == "" {
+			continue
+		}
+		variants := []string{secret, url.QueryEscape(secret)}
+		if encoded, marshalErr := json.Marshal(secret); marshalErr == nil && len(encoded) >= 2 {
+			variants = append(variants, string(encoded[1:len(encoded)-1]))
+		}
+		for _, variant := range variants {
+			if variant != "" {
+				text = strings.ReplaceAll(text, variant, "[REDACTED]")
+			}
+		}
+	}
+	return text
 }
 
 func (t *TDengineDB) Close() error {
@@ -132,7 +358,10 @@ func (t *TDengineDB) Close() error {
 	}
 
 	if t.conn != nil {
-		return t.conn.Close()
+		db := t.conn
+		t.conn = nil
+		t.driverName = ""
+		return db.Close()
 	}
 	return nil
 }
@@ -147,7 +376,7 @@ func (t *TDengineDB) Ping() error {
 	}
 	ctx, cancel := utils.ContextWithTimeout(timeout)
 	defer cancel()
-	return t.conn.PingContext(ctx)
+	return validateTDengineConnection(ctx, t.conn, t.driverName)
 }
 
 func (t *TDengineDB) QueryContext(ctx context.Context, query string) ([]map[string]interface{}, []string, error) {

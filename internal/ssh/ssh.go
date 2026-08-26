@@ -600,11 +600,18 @@ func (f *LocalForwarder) handleConnection(localConn net.Conn) {
 	// Bidirectional copy with error channel
 	errc := make(chan error, 2)
 
+	// Half-close each destination after its source reaches EOF. This propagates
+	// EOF promptly without truncating data that is still flowing in reverse.
 	// Copy from local to remote
 	go func() {
 		_, err := io.Copy(remoteConn, localConn)
 		if err != nil {
 			logger.Warnf("本地->远程数据复制错误：%v", err)
+		}
+		if closeWriter, ok := remoteConn.(interface{ CloseWrite() error }); ok {
+			if closeErr := closeWriter.CloseWrite(); closeErr != nil {
+				logger.Warnf("关闭远程连接写入方向失败：%v", closeErr)
+			}
 		}
 		errc <- err
 	}()
@@ -614,6 +621,11 @@ func (f *LocalForwarder) handleConnection(localConn net.Conn) {
 		_, err := io.Copy(localConn, remoteConn)
 		if err != nil {
 			logger.Warnf("远程->本地数据复制错误：%v", err)
+		}
+		if closeWriter, ok := localConn.(interface{ CloseWrite() error }); ok {
+			if closeErr := closeWriter.CloseWrite(); closeErr != nil {
+				logger.Warnf("关闭本地连接写入方向失败：%v", closeErr)
+			}
 		}
 		errc <- err
 	}()
