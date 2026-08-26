@@ -13,6 +13,7 @@ import (
 	"runtime"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -1284,6 +1285,116 @@ func TestCloudBackupImmediateScheduleSaveDoesNotWaitForRemote(t *testing.T) {
 	close(releaseRequest)
 	application.cloudBackupSyncMu.Lock()
 	application.cloudBackupSyncMu.Unlock()
+}
+
+func TestCloudBackupImmediateScheduleCoalescesDirtySignals(t *testing.T) {
+	requests := make(chan int32, 128)
+	releaseFirst := make(chan struct{})
+	var requestCount atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPut {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		current := requestCount.Add(1)
+		requests <- current
+		if current == 1 {
+			<-releaseFirst
+		}
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer server.Close()
+
+	application := NewAppWithSecretStore(newFakeAppSecretStore())
+	application.configDir = t.TempDir()
+	if _, err := application.SaveCloudBackupConfig(CloudBackupConfigInput{
+		Enabled: true, Provider: CloudBackupProviderWebDAV, WebDAVEndpoint: server.URL,
+		WebDAVFilePath: "backup.gonavi", Schedule: CloudBackupScheduleImmediate,
+		WebDAVUsername: "user", WebDAVPassword: "pass", EncryptionPassword: "backup-pass",
+	}); err != nil {
+		close(releaseFirst)
+		t.Fatalf("SaveCloudBackupConfig returned error: %v", err)
+	}
+
+	select {
+	case <-requests:
+	case <-time.After(3 * time.Second):
+		close(releaseFirst)
+		t.Fatal("initial immediate cloud backup did not start")
+	}
+	for range 100 {
+		application.markCloudBackupDirty()
+	}
+	close(releaseFirst)
+
+	select {
+	case request := <-requests:
+		if request != 2 {
+			t.Fatalf("coalesced cloud backup request = %d, want 2", request)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("coalesced dirty cloud backup did not run")
+	}
+	select {
+	case request := <-requests:
+		t.Fatalf("dirty signals queued an extra cloud backup request %d", request)
+	case <-time.After(300 * time.Millisecond):
+	}
+	application.shutdownCloudBackup()
+}
+
+func TestCloudBackupShutdownCancelsImmediateSyncAndDropsPendingDirty(t *testing.T) {
+	requests := make(chan struct{}, 128)
+	releaseServer := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPut {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		requests <- struct{}{}
+		select {
+		case <-r.Context().Done():
+		case <-releaseServer:
+		}
+	}))
+	defer server.Close()
+	defer close(releaseServer)
+
+	application := NewAppWithSecretStore(newFakeAppSecretStore())
+	application.configDir = t.TempDir()
+	if _, err := application.SaveCloudBackupConfig(CloudBackupConfigInput{
+		Enabled: true, Provider: CloudBackupProviderWebDAV, WebDAVEndpoint: server.URL,
+		WebDAVFilePath: "backup.gonavi", Schedule: CloudBackupScheduleImmediate,
+		WebDAVUsername: "user", WebDAVPassword: "pass", EncryptionPassword: "backup-pass",
+	}); err != nil {
+		t.Fatalf("SaveCloudBackupConfig returned error: %v", err)
+	}
+	select {
+	case <-requests:
+	case <-time.After(3 * time.Second):
+		t.Fatal("initial immediate cloud backup did not start")
+	}
+	for range 100 {
+		application.markCloudBackupDirty()
+	}
+
+	shutdownDone := make(chan struct{})
+	go func() {
+		application.shutdownCloudBackup()
+		close(shutdownDone)
+	}()
+	select {
+	case <-shutdownDone:
+	case <-time.After(3 * time.Second):
+		t.Fatal("cloud backup shutdown did not wait for cancellation")
+	}
+
+	application.markCloudBackupDirty()
+	select {
+	case <-requests:
+		t.Fatal("cloud backup wrote to the remote after shutdown")
+	case <-time.After(300 * time.Millisecond):
+	}
 }
 
 func TestCloudBackupSyncCompletionPreservesConcurrentProviderConfig(t *testing.T) {
