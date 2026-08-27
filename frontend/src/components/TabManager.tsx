@@ -7,7 +7,12 @@ import { DndContext, PointerSensor, closestCenter, useSensor, useSensors } from 
 import type { DragEndEvent, DragMoveEvent, DragStartEvent } from '@dnd-kit/core';
 import { SortableContext, useSortable, horizontalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { useStore, type RecentConnectionTarget, type RecentSQLFile } from '../store';
+import {
+  sanitizeTabEnvironmentAccentThickness,
+  useStore,
+  type RecentConnectionTarget,
+  type RecentSQLFile,
+} from '../store';
 import type { ExternalSQLDirectory, SavedConnection, SavedQuery, TabData } from '../types';
 import { t } from '../i18n';
 import {
@@ -116,6 +121,16 @@ export const isRunningDataImportWorkbenchTab = (
 ): boolean => tab.type === 'data-import' && tab.dataImportRunning === true;
 
 export const TAB_WORKBENCH_CLASS_NAME = 'tab-workbench';
+export const TAB_ENVIRONMENT_ACCENT_CSS_HEIGHT = 'var(--gn-tab-environment-accent-thickness, 2px)';
+
+export const buildTabWorkbenchStyle = (
+  isV2Ui: boolean,
+  v2TabWidth: number,
+  tabEnvironmentAccentThickness: unknown,
+): React.CSSProperties => ({
+  ...(isV2Ui ? { '--gn-v2-tab-width': `${v2TabWidth}px` } : {}),
+  '--gn-tab-environment-accent-thickness': `${sanitizeTabEnvironmentAccentThickness(tabEnvironmentAccentThickness)}px`,
+} as React.CSSProperties);
 
 export const V2_WORKBENCH_TAB_MIN_WIDTH = 112;
 export const V2_WORKBENCH_TAB_MAX_WIDTH = 260;
@@ -915,9 +930,11 @@ const TabManager: React.FC<TabManagerProps> = React.memo<TabManagerProps>(({ onF
     };
   }, [dockedTabs.length, isV2Ui]);
 
-  const tabWorkbenchStyle = isV2Ui
-    ? ({ '--gn-v2-tab-width': `${v2TabWidth}px` } as React.CSSProperties)
-    : undefined;
+  const tabWorkbenchStyle = buildTabWorkbenchStyle(
+    isV2Ui,
+    v2TabWidth,
+    appearance.tabEnvironmentAccentThickness,
+  );
   const detachTabToWindow = useCallback((tabId: string, preferred?: { x?: number; y?: number; width?: number; height?: number }) => {
     const tab = tabs.find((item) => item.id === tabId);
     if (tab && isBackgroundTaskWorkbenchTab(tab)) {
@@ -1999,7 +2016,7 @@ const TabManager: React.FC<TabManagerProps> = React.memo<TabManagerProps>(({ onF
               right: 8px;
               bottom: 0;
               left: 8px;
-              height: 4px;
+              height: ${TAB_ENVIRONMENT_ACCENT_CSS_HEIGHT};
               box-sizing: border-box;
               border-radius: 4px 4px 0 0;
               background: var(--gn-tab-environment-color);

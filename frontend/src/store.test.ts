@@ -82,6 +82,8 @@ describe('store appearance persistence', () => {
     expect(appearance.v2CommandSearchPersistentFilterEnabled).toBe(false);
     expect(appearance.v2SidebarPersistedFilter).toBe('');
     expect(appearance.v2SidebarRailScale).toBe(1);
+    expect(appearance.tabEnvironmentAccentThickness).toBe(2);
+    expect(appearance.toolbarButtonColorOverrides).toEqual({});
     expect(appearance.sidebarSingleDatabaseExpansion).toBe(false);
     expect(appearance.sidebarHiddenObjectGroups).toEqual([]);
     expect(appearance.showDataTableVerticalBorders).toBe(false);
@@ -222,6 +224,7 @@ describe('store appearance persistence', () => {
       dataTableDensity: 'compact',
       tableDoubleClickAction: 'open-design',
       v2SidebarRailScale: 1.55,
+      tabEnvironmentAccentThickness: 5,
       sidebarSingleDatabaseExpansion: true,
     });
 
@@ -231,6 +234,7 @@ describe('store appearance persistence', () => {
     expect(persisted.state.appearance.dataTableDensity).toBe('compact');
     expect(persisted.state.appearance.tableDoubleClickAction).toBe('open-design');
     expect(persisted.state.appearance.v2SidebarRailScale).toBe(1.55);
+    expect(persisted.state.appearance.tabEnvironmentAccentThickness).toBe(5);
     expect(persisted.state.appearance.sidebarSingleDatabaseExpansion).toBe(true);
 
     vi.resetModules();
@@ -242,7 +246,131 @@ describe('store appearance persistence', () => {
     expect(appearance.dataTableDensity).toBe('compact');
     expect(appearance.tableDoubleClickAction).toBe('open-design');
     expect(appearance.v2SidebarRailScale).toBe(1.55);
+    expect(appearance.tabEnvironmentAccentThickness).toBe(5);
     expect(appearance.sidebarSingleDatabaseExpansion).toBe(true);
+  });
+
+  it('sanitizes invalid tab environment accent thickness values', async () => {
+    const { useStore } = await importStore();
+
+    useStore.getState().setAppearance({ tabEnvironmentAccentThickness: 6 });
+    expect(useStore.getState().appearance.tabEnvironmentAccentThickness).toBe(6);
+
+    useStore.getState().setAppearance({ tabEnvironmentAccentThickness: 7 });
+    expect(useStore.getState().appearance.tabEnvironmentAccentThickness).toBe(2);
+
+    useStore.getState().setAppearance({ tabEnvironmentAccentThickness: Number.NaN });
+    expect(useStore.getState().appearance.tabEnvironmentAccentThickness).toBe(2);
+    expect(JSON.parse(storage.getItem('lite-db-storage') || '{}').state.appearance.tabEnvironmentAccentThickness).toBe(2);
+  });
+
+  it('persists and sanitizes scoped toolbar button color overrides', async () => {
+    const { useStore } = await importStore();
+
+    useStore.getState().setAppearance({
+      toolbarButtonColorOverrides: {
+        query: {
+          'button-fg': '#ABCDEF',
+          'button-hover-bg': 'rgba(12, 34, 56, 0.4)',
+          'button-disabled-border': '#778899',
+        },
+        result: {
+          'primary-active-border': '#1234',
+          'primary-disabled-fg': 'rgba(90, 80, 70, 0.6)',
+          'button-bg': 'url(https://example.com/invalid)',
+        },
+      },
+    });
+
+    expect(useStore.getState().appearance.toolbarButtonColorOverrides).toEqual({
+      query: {
+        'button-fg': '#abcdef',
+        'button-hover-bg': 'rgba(12, 34, 56, 0.4)',
+        'button-disabled-border': '#778899',
+      },
+      result: {
+        'primary-active-border': '#1234',
+        'primary-disabled-fg': 'rgba(90, 80, 70, 0.6)',
+      },
+    });
+    expect(
+      JSON.parse(storage.getItem('lite-db-storage') || '{}').state.appearance
+        .toolbarButtonColorOverrides,
+    ).toEqual({
+      query: {
+        'button-fg': '#abcdef',
+        'button-hover-bg': 'rgba(12, 34, 56, 0.4)',
+        'button-disabled-border': '#778899',
+      },
+      result: {
+        'primary-active-border': '#1234',
+        'primary-disabled-fg': 'rgba(90, 80, 70, 0.6)',
+      },
+    });
+
+    vi.resetModules();
+    const reloaded = await importStore();
+    expect(reloaded.useStore.getState().appearance.toolbarButtonColorOverrides).toEqual({
+      query: {
+        'button-fg': '#abcdef',
+        'button-hover-bg': 'rgba(12, 34, 56, 0.4)',
+        'button-disabled-border': '#778899',
+      },
+      result: {
+        'primary-active-border': '#1234',
+        'primary-disabled-fg': 'rgba(90, 80, 70, 0.6)',
+      },
+    });
+  });
+
+  it('drops malformed toolbar overrides restored from an older snapshot', async () => {
+    storage.setItem('lite-db-storage', JSON.stringify({
+      state: {
+        appearance: {
+          toolbarButtonColorOverrides: {
+            query: {
+              'button-fg': 'var(--gn-accent)',
+              'button-bg': '#112233',
+              unknown: '#ffffff',
+            },
+            result: 'invalid',
+            other: { 'button-fg': '#000000' },
+          },
+        },
+      },
+      version: 20,
+    }));
+
+    const { useStore } = await importStore();
+    expect(useStore.getState().appearance.toolbarButtonColorOverrides).toEqual({
+      query: { 'button-bg': '#112233' },
+    });
+  });
+
+  it('migrates and sanitizes toolbar overrides from a version 19 snapshot', async () => {
+    storage.setItem('lite-db-storage', JSON.stringify({
+      state: {
+        appearance: {
+          toolbarButtonColorOverrides: {
+            query: {
+              'button-fg': '#ABCDEF',
+              'button-bg': 'var(--gn-accent)',
+            },
+            result: {
+              'primary-hover-border': 'rgba(12, 34, 56, 0.5)',
+              unknown: '#ffffff',
+            },
+          },
+        },
+      },
+      version: 19,
+    }));
+
+    const { useStore } = await importStore();
+    expect(useStore.getState().appearance.toolbarButtonColorOverrides).toEqual({
+      query: { 'button-fg': '#abcdef' },
+      result: { 'primary-hover-border': 'rgba(12, 34, 56, 0.5)' },
+    });
   });
 
   it('persists and sanitizes hidden sidebar object groups', async () => {

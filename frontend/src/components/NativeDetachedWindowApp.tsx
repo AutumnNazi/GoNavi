@@ -55,6 +55,7 @@ import { subscribeQueryTabDraftChanges } from '../utils/sqlFileTabDrafts';
 import CustomThemeStyleHost, {
   type CustomThemeAntTokenSnapshot,
 } from './theme/CustomThemeStyleHost';
+import ToolbarAppearanceStyleHost from './theme/ToolbarAppearanceStyleHost';
 import {
   getShortcutPlatform,
   installGlobalImeCompositionTracking,
@@ -1345,6 +1346,7 @@ const NativeDetachedWindowApp: React.FC<NativeDetachedWindowAppProps> = ({
         onAntTokensChange={setComputedCustomThemeAntTokens}
         themeOverride={customThemeOverride}
       />
+      <ToolbarAppearanceStyleHost />
       <ConfigProvider
         locale={getAntdLocale(i18n?.language ?? 'en-US')}
         componentSize={componentSize}

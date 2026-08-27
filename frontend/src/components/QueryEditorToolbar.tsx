@@ -711,7 +711,7 @@ const QueryEditorToolbar: React.FC<QueryEditorToolbarProps> = ({
                 <Button
                   className={isV2Ui ? "gn-v2-query-toolbar-icon-action gn-v2-query-toolbar-ai-action" : undefined}
                   icon={<RobotOutlined />}
-                  style={{ color: "#818cf8" }}
+                  style={isV2Ui ? undefined : { color: "#818cf8" }}
                   aria-label={aiMoreTitle}
                   aria-haspopup="menu"
                   aria-expanded={isV2Ui ? openToolbarMenu === "ai" : undefined}
@@ -730,7 +730,7 @@ const QueryEditorToolbar: React.FC<QueryEditorToolbarProps> = ({
                   aria-label={triggerSqlAiCompletionLabel}
                   className={isV2Ui ? "gn-v2-query-toolbar-icon-action gn-v2-query-toolbar-ai-action" : undefined}
                   icon={<RobotOutlined />}
-                  style={{ color: "#818cf8" }}
+                  style={isV2Ui ? undefined : { color: "#818cf8" }}
                   onMouseDown={onCaptureEditorCursorPosition}
                   onClick={onTriggerSqlAiCompletion}
                 >

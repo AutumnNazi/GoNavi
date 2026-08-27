@@ -149,6 +149,11 @@ import {
   removeConnectionTableAccessCounts,
   sanitizeTableAccessCount,
 } from "./utils/tableAccessCount";
+import {
+  DEFAULT_TOOLBAR_BUTTON_COLOR_OVERRIDES,
+  sanitizeToolbarButtonColorOverrides,
+  type ToolbarButtonColorOverrides,
+} from "./utils/toolbarAppearance";
 
 export type TableDoubleClickAction = "open-data" | "open-design";
 export type ThemeMode = "light" | "dark";
@@ -167,6 +172,8 @@ export interface AppearanceSettings
   v2CommandSearchPersistentFilterEnabled: boolean;
   v2SidebarPersistedFilter: string;
   v2SidebarRailScale: number;
+  tabEnvironmentAccentThickness: number;
+  toolbarButtonColorOverrides: ToolbarButtonColorOverrides;
   sidebarSingleDatabaseExpansion: boolean;
   sidebarHiddenObjectGroups: SidebarObjectGroupKey[];
   customUIFontFamily: string | null;
@@ -179,6 +186,9 @@ export interface AppearanceSettings
 export const DEFAULT_V2_SIDEBAR_RAIL_SCALE = 1.0;
 export const MIN_V2_SIDEBAR_RAIL_SCALE = 1.0;
 export const MAX_V2_SIDEBAR_RAIL_SCALE = 1.8;
+export const DEFAULT_TAB_ENVIRONMENT_ACCENT_THICKNESS = 2;
+export const MIN_TAB_ENVIRONMENT_ACCENT_THICKNESS = 1;
+export const MAX_TAB_ENVIRONMENT_ACCENT_THICKNESS = 6;
 
 export const DEFAULT_APPEARANCE: AppearanceSettings = {
   uiVersion: "v2",
@@ -190,6 +200,8 @@ export const DEFAULT_APPEARANCE: AppearanceSettings = {
   v2CommandSearchPersistentFilterEnabled: false,
   v2SidebarPersistedFilter: "",
   v2SidebarRailScale: DEFAULT_V2_SIDEBAR_RAIL_SCALE,
+  tabEnvironmentAccentThickness: DEFAULT_TAB_ENVIRONMENT_ACCENT_THICKNESS,
+  toolbarButtonColorOverrides: { ...DEFAULT_TOOLBAR_BUTTON_COLOR_OVERRIDES },
   sidebarSingleDatabaseExpansion: false,
   sidebarHiddenObjectGroups: [],
   customUIFontFamily: null,
@@ -259,6 +271,15 @@ export const sanitizeV2SidebarRailScale = (value: unknown): number => {
     DEFAULT_V2_SIDEBAR_RAIL_SCALE,
     MIN_V2_SIDEBAR_RAIL_SCALE,
     MAX_V2_SIDEBAR_RAIL_SCALE,
+  );
+};
+
+export const sanitizeTabEnvironmentAccentThickness = (value: unknown): number => {
+  return normalizeIntegerInRange(
+    value,
+    DEFAULT_TAB_ENVIRONMENT_ACCENT_THICKNESS,
+    MIN_TAB_ENVIRONMENT_ACCENT_THICKNESS,
+    MAX_TAB_ENVIRONMENT_ACCENT_THICKNESS,
   );
 };
 
@@ -3092,6 +3113,12 @@ const sanitizeAppearance = (
     ),
     v2SidebarRailScale: sanitizeV2SidebarRailScale(
       appearance.v2SidebarRailScale,
+    ),
+    tabEnvironmentAccentThickness: sanitizeTabEnvironmentAccentThickness(
+      appearance.tabEnvironmentAccentThickness,
+    ),
+    toolbarButtonColorOverrides: sanitizeToolbarButtonColorOverrides(
+      appearance.toolbarButtonColorOverrides,
     ),
     sidebarSingleDatabaseExpansion:
       appearance.sidebarSingleDatabaseExpansion === true,

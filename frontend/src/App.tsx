@@ -50,14 +50,19 @@ import {
 } from './brand/brandIcons';
 import { composeMacOSDockIconBase64, shouldSyncMacOSDockIcon } from './brand/macDockIcon';
 import CustomThemeManager from './components/settings/CustomThemeManager';
+import ToolbarButtonAppearanceSettings from './components/settings/ToolbarButtonAppearanceSettings';
 import CustomThemeStyleHost, {
   type CustomThemeAntTokenSnapshot,
 } from './components/theme/CustomThemeStyleHost';
+import ToolbarAppearanceStyleHost from './components/theme/ToolbarAppearanceStyleHost';
 import {
   AUTO_CHECK_FOR_UPDATES_INTERVAL_OPTIONS,
   DEFAULT_APPEARANCE,
+  MAX_TAB_ENVIRONMENT_ACCENT_THICKNESS,
   MAX_V2_SIDEBAR_RAIL_SCALE,
+  MIN_TAB_ENVIRONMENT_ACCENT_THICKNESS,
   MIN_V2_SIDEBAR_RAIL_SCALE,
+  sanitizeTabEnvironmentAccentThickness,
   sanitizeV2SidebarRailScale,
   type ThemePreference,
   flushAppStatePersistence,
@@ -311,6 +316,12 @@ const SIDEBAR_RAIL_SCALE_SLIDER_MARKS: Record<number, string> = {
   1.25: '125%',
   1.5: '150%',
   1.8: '180%',
+};
+const TAB_ENVIRONMENT_ACCENT_THICKNESS_SLIDER_MARKS: Record<number, string> = {
+  1: '1',
+  2: '2',
+  4: '4',
+  6: '6',
 };
 const OPACITY_SLIDER_MARKS: Record<number, string> = {
   0.1: '10%',
@@ -850,6 +861,9 @@ function App() {
       ? effectiveFontSize
       : (sanitizeSidebarTreeFontSize(appearance.sidebarTreeFontSize) ?? effectiveFontSize);
   const effectiveSidebarRailScale = sanitizeV2SidebarRailScale(appearance.v2SidebarRailScale);
+  const effectiveTabEnvironmentAccentThickness = sanitizeTabEnvironmentAccentThickness(
+      appearance.tabEnvironmentAccentThickness,
+  );
   const tableDoubleClickAction = appearance.tableDoubleClickAction === 'open-design' ? 'open-design' : 'open-data';
   const newQuerySqlTemplate = appearance.newQuerySqlTemplate ?? DEFAULT_QUERY_TEMPLATE;
   const sidebarTableMetadataFieldOrder = useMemo(
@@ -6279,6 +6293,11 @@ function App() {
                                   <CustomThemeManager />,
                               )}
                               {renderThemeSettingsSection(
+                                  t('app.theme.toolbar_buttons.title'),
+                                  <ToolbarButtonAppearanceSettings />,
+                                  t('app.theme.toolbar_buttons.description'),
+                              )}
+                              {renderThemeSettingsSection(
                                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                                       <span>{t('app.theme.ui_version.title')}</span>
                                       <span style={{
@@ -6626,6 +6645,24 @@ function App() {
                                               ]}
                                               value={tabDisplaySettings.layout}
                                               onChange={(value) => setTabDisplayLayout(value as TabDisplayLayout)}
+                                          />
+                                      ),
+                                  })}
+                                  {renderThemeSettingsRow({
+                                      label: t('app.theme.tab_display.environment_accent_thickness'),
+                                      hint: t('app.theme.tab_display.environment_accent_thickness_hint'),
+                                      stacked: true,
+                                      control: (
+                                          <ThemeSettingsSlider
+                                              min={MIN_TAB_ENVIRONMENT_ACCENT_THICKNESS}
+                                              max={MAX_TAB_ENVIRONMENT_ACCENT_THICKNESS}
+                                              step={1}
+                                              marks={TAB_ENVIRONMENT_ACCENT_THICKNESS_SLIDER_MARKS}
+                                              value={effectiveTabEnvironmentAccentThickness}
+                                              unit="px"
+                                              onChange={(value) => setAppearance({
+                                                  tabEnvironmentAccentThickness: sanitizeTabEnvironmentAccentThickness(value),
+                                              })}
                                           />
                                       ),
                                   })}
@@ -7187,6 +7224,28 @@ function App() {
                                   <div style={{ marginBottom: 8, fontWeight: 600 }}>{t('app.theme.custom.title')}</div>
                                   <CustomThemeManager legacyMode />
                               </div>
+                              <div style={utilityPanelStyle}>
+                                  <div style={{ marginBottom: 8, fontWeight: 600 }}>
+                                      {t('app.theme.toolbar_buttons.title')}
+                                  </div>
+                                  <div style={{ ...utilityMutedTextStyle, marginBottom: 10 }}>
+                                      {t('app.theme.toolbar_buttons.description')}
+                                  </div>
+                                  <div
+                                    role="note"
+                                    style={{
+                                        ...utilityMutedTextStyle,
+                                        marginBottom: 12,
+                                        padding: '8px 10px',
+                                        border: `1px solid ${darkMode ? 'rgba(56,189,248,0.24)' : 'rgba(2,132,199,0.18)'}`,
+                                        borderRadius: 8,
+                                        background: darkMode ? 'rgba(56,189,248,0.08)' : 'rgba(2,132,199,0.06)',
+                                    }}
+                                  >
+                                      {t('app.theme.toolbar_buttons.legacy_hint')}
+                                  </div>
+                                  <ToolbarButtonAppearanceSettings />
+                              </div>
                           </div>
                       ) : (
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -7387,6 +7446,27 @@ function App() {
                                           value={tabDisplaySettings.layout}
                                           onChange={(value) => setTabDisplayLayout(value as TabDisplayLayout)}
                                       />
+                                  </div>
+                                  <div style={{ marginBottom: 12 }}>
+                                      <div style={{ marginBottom: 4, fontWeight: 500 }}>
+                                          {t('app.theme.tab_display.environment_accent_thickness')}
+                                      </div>
+                                      <div style={{ ...utilityMutedTextStyle, marginBottom: 8 }}>
+                                          {t('app.theme.tab_display.environment_accent_thickness_hint')}
+                                      </div>
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                                          <Slider
+                                              min={MIN_TAB_ENVIRONMENT_ACCENT_THICKNESS}
+                                              max={MAX_TAB_ENVIRONMENT_ACCENT_THICKNESS}
+                                              step={1}
+                                              value={effectiveTabEnvironmentAccentThickness}
+                                              onChange={(value) => setAppearance({
+                                                  tabEnvironmentAccentThickness: sanitizeTabEnvironmentAccentThickness(value),
+                                              })}
+                                              style={{ flex: 1 }}
+                                          />
+                                          <span style={{ width: 56 }}>{effectiveTabEnvironmentAccentThickness}px</span>
+                                      </div>
                                   </div>
                                   <div style={{ display: 'grid', gap: 8 }}>
                                       {tabDisplayElementOrder.map((key) => {
@@ -8042,6 +8122,7 @@ function App() {
             contextKey={customThemeStyleContextKey}
             onAntTokensChange={setComputedCustomThemeAntTokens}
         />
+        <ToolbarAppearanceStyleHost />
         <Layout data-gonavi-close-shortcut-scope="workspace" style={{
             height: '100vh',
             overflow: 'hidden',

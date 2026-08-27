@@ -13,6 +13,22 @@ const appCss = readFileSync(
 
 describe('settings center tool entries', () => {
 
+  it('exposes toolbar button overrides from both V2 and legacy theme settings', () => {
+    expect(appSource.match(/<ToolbarButtonAppearanceSettings \/>/g)).toHaveLength(2);
+
+    const legacySettingsStart = appSource.indexOf('const renderThemeSettingsContentLegacy = () =>');
+    const legacySettingsEnd = appSource.indexOf(
+      'const renderThemeSettingsContent = () =>',
+      legacySettingsStart,
+    );
+    const legacySettingsSource = appSource.slice(legacySettingsStart, legacySettingsEnd);
+
+    expect(legacySettingsStart).toBeGreaterThanOrEqual(0);
+    expect(legacySettingsEnd).toBeGreaterThan(legacySettingsStart);
+    expect(legacySettingsSource).toContain("t('app.theme.toolbar_buttons.legacy_hint')");
+    expect(legacySettingsSource).toContain('<ToolbarButtonAppearanceSettings />');
+  });
+
   it('captures native window bounds before maximising and before the final quit flush', () => {
     const startupRestoreStart = appSource.indexOf('const restoreWindowState = async');
     const startupRestoreEnd = appSource.indexOf('if (useStore.persist.hasHydrated())', startupRestoreStart);

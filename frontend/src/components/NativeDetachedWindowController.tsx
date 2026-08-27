@@ -14,6 +14,7 @@ import {
   recordNativeDetachedVisibilityRevision,
   shouldApplyNativeDetachedHideRevision,
   syncNativeAIChatHostState,
+  syncNativeDetachedAppearance,
   syncNativeDetachedShortcutOptions,
   syncNativeDetachedThemeContext,
   getActiveNativeDetachedThemeContext,
@@ -614,9 +615,33 @@ const NativeDetachedWindowController = ({
     let previousIds = currentNativeWindowIds();
     let previousAIVisible = useStore.getState().aiPanelVisible;
     let previousAIHostStateRefs = readAIHostStateRefs();
+    let previousAppearance = useStore.getState().appearance;
     let previousShortcutOptions = useStore.getState().shortcutOptions;
     let previousCustomTheme = getActiveNativeDetachedThemeContext();
+    let appearanceSyncTimer: ReturnType<typeof setTimeout> | null = null;
+    let pendingAppearanceSyncTargets = new Set<string>();
+    let pendingAppearance = previousAppearance;
     let aiHostSyncTimer: ReturnType<typeof setTimeout> | null = null;
+    const scheduleAppearanceSync = (
+      targetWindowIds: Iterable<string>,
+      appearance: typeof previousAppearance,
+    ) => {
+      if (currentWindowId) return;
+      for (const id of targetWindowIds) pendingAppearanceSyncTargets.add(id);
+      if (pendingAppearanceSyncTargets.size === 0) return;
+      pendingAppearance = appearance;
+      if (appearanceSyncTimer !== null) clearTimeout(appearanceSyncTimer);
+      appearanceSyncTimer = setTimeout(() => {
+        appearanceSyncTimer = null;
+        const currentIds = currentNativeWindowIds();
+        const targetIds = Array.from(pendingAppearanceSyncTargets).filter((id) => currentIds.has(id));
+        pendingAppearanceSyncTargets = new Set<string>();
+        if (targetIds.length === 0) return;
+        void syncNativeDetachedAppearance(targetIds, pendingAppearance).catch((error) => {
+          console.warn('[Native Detached Window] Failed to sync appearance settings', error);
+        });
+      }, 40);
+    };
     const scheduleAIHostStateSync = (delay = 100) => {
       if (currentWindowId || !useStore.getState().detachedAIChatWindow) return;
       if (aiHostSyncTimer !== null) clearTimeout(aiHostSyncTimer);
@@ -637,6 +662,7 @@ const NativeDetachedWindowController = ({
       const nextState = useStore.getState();
       const nextIds = currentNativeWindowIds();
       const nextShortcutOptions = nextState.shortcutOptions;
+      const nextAppearance = nextState.appearance;
       const newlyOpenedIds = new Set<string>();
       const aiWindowJustOpened = !previousIds.has('ai-chat') && nextIds.has('ai-chat');
       for (const id of nextIds) {
@@ -667,6 +693,12 @@ const NativeDetachedWindowController = ({
         void hideNativeDetachedWindowById('ai-chat').catch(() => undefined);
       }
       previousAIVisible = nextState.aiPanelVisible;
+      const appearanceChanged = nextAppearance !== previousAppearance;
+      if (appearanceChanged) {
+        previousAppearance = nextAppearance;
+      }
+      const appearanceSyncTargets = appearanceChanged ? nextIds : newlyOpenedIds;
+      scheduleAppearanceSync(appearanceSyncTargets, nextAppearance);
       const shortcutOptionsChanged = nextShortcutOptions !== previousShortcutOptions;
       if (shortcutOptionsChanged) {
         previousShortcutOptions = nextShortcutOptions;
@@ -786,6 +818,7 @@ const NativeDetachedWindowController = ({
       unsubscribeQueryDrafts();
       removeWindowEventListeners.forEach((remove) => remove());
       pendingLocalDispatchTimers.forEach((timer) => clearTimeout(timer));
+      if (appearanceSyncTimer !== null) clearTimeout(appearanceSyncTimer);
       if (aiHostSyncTimer !== null) clearTimeout(aiHostSyncTimer);
       workbenchStateSources.clear();
     };

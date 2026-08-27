@@ -134,6 +134,34 @@ body[data-ui-version="v2"] {
   --gn-v2-menu-item-radius: 5px;
   --gn-v2-menu-surface-radius: 10px;
   --gn-v2-menu-surface-padding: 4px;
+
+  /* Query/DataGrid 工具栏按钮的公开主题契约。
+     自定义主题可覆盖这组通用变量，也可用 --gn-query-toolbar-* /
+     --gn-result-toolbar-* 变量只调整其中一组。 */
+  --gn-toolbar-button-fg: var(--gn-fg-2);
+  --gn-toolbar-button-bg: var(--gn-bg-panel);
+  --gn-toolbar-button-border: var(--gn-br-2);
+  --gn-toolbar-button-hover-fg: var(--gn-fg-1);
+  --gn-toolbar-button-hover-bg: var(--gn-bg-hover);
+  --gn-toolbar-button-hover-border: var(--gn-br-3);
+  --gn-toolbar-button-active-fg: var(--gn-fg-1);
+  --gn-toolbar-button-active-bg: var(--gn-bg-active);
+  --gn-toolbar-button-active-border: var(--gn-br-3);
+  --gn-toolbar-button-disabled-fg: var(--gn-fg-5);
+  --gn-toolbar-button-disabled-bg: var(--gn-bg-active);
+  --gn-toolbar-button-disabled-border: var(--gn-br-2);
+  --gn-toolbar-primary-fg: var(--gn-ant-on-primary, var(--gn-on-accent, #fff));
+  --gn-toolbar-primary-bg: var(--gn-accent-strong, var(--gn-accent));
+  --gn-toolbar-primary-border: var(--gn-accent-strong, var(--gn-accent-2));
+  --gn-toolbar-primary-hover-fg: var(--gn-ant-on-primary, var(--gn-on-accent, #fff));
+  --gn-toolbar-primary-hover-bg: var(--gn-accent-strong-hover, var(--gn-accent-2));
+  --gn-toolbar-primary-hover-border: var(--gn-accent-strong-hover, var(--gn-accent-2));
+  --gn-toolbar-primary-active-fg: var(--gn-ant-on-primary, var(--gn-on-accent, #fff));
+  --gn-toolbar-primary-active-bg: var(--gn-accent-strong-active, var(--gn-accent-2));
+  --gn-toolbar-primary-active-border: var(--gn-accent-strong-active, var(--gn-accent-2));
+  --gn-toolbar-primary-disabled-fg: var(--gn-fg-5);
+  --gn-toolbar-primary-disabled-bg: var(--gn-bg-active);
+  --gn-toolbar-primary-disabled-border: var(--gn-br-2);
   font-family: var(--gn-font-sans) !important;
   font-size: var(--gn-font-size, var(--gonavi-font-size, 14px));
   -webkit-font-smoothing: antialiased;
@@ -4547,6 +4575,30 @@ body[data-ui-version="v2"] .gn-v2-data-grid-toolbar-frame {
 }
 
 body[data-ui-version="v2"] .gn-v2-data-grid .data-grid-toolbar-scroll {
+  --gn-toolbar-action-fg: var(--gn-client-result-toolbar-button-fg, var(--gn-result-toolbar-button-fg, var(--gn-toolbar-button-fg)));
+  --gn-toolbar-action-bg: var(--gn-client-result-toolbar-button-bg, var(--gn-result-toolbar-button-bg, var(--gn-toolbar-button-bg)));
+  --gn-toolbar-action-border: var(--gn-client-result-toolbar-button-border, var(--gn-result-toolbar-button-border, var(--gn-toolbar-button-border)));
+  --gn-toolbar-action-hover-fg: var(--gn-client-result-toolbar-button-hover-fg, var(--gn-result-toolbar-button-hover-fg, var(--gn-toolbar-button-hover-fg)));
+  --gn-toolbar-action-hover-bg: var(--gn-client-result-toolbar-button-hover-bg, var(--gn-result-toolbar-button-hover-bg, var(--gn-toolbar-button-hover-bg)));
+  --gn-toolbar-action-hover-border: var(--gn-client-result-toolbar-button-hover-border, var(--gn-result-toolbar-button-hover-border, var(--gn-toolbar-button-hover-border)));
+  --gn-toolbar-action-active-fg: var(--gn-client-result-toolbar-button-active-fg, var(--gn-result-toolbar-button-active-fg, var(--gn-toolbar-button-active-fg)));
+  --gn-toolbar-action-active-bg: var(--gn-client-result-toolbar-button-active-bg, var(--gn-result-toolbar-button-active-bg, var(--gn-toolbar-button-active-bg)));
+  --gn-toolbar-action-active-border: var(--gn-client-result-toolbar-button-active-border, var(--gn-result-toolbar-button-active-border, var(--gn-toolbar-button-active-border)));
+  --gn-toolbar-action-disabled-fg: var(--gn-client-result-toolbar-button-disabled-fg, var(--gn-result-toolbar-button-disabled-fg, var(--gn-toolbar-button-disabled-fg)));
+  --gn-toolbar-action-disabled-bg: var(--gn-client-result-toolbar-button-disabled-bg, var(--gn-result-toolbar-button-disabled-bg, var(--gn-toolbar-button-disabled-bg)));
+  --gn-toolbar-action-disabled-border: var(--gn-client-result-toolbar-button-disabled-border, var(--gn-result-toolbar-button-disabled-border, var(--gn-toolbar-button-disabled-border)));
+  --gn-toolbar-action-primary-fg: var(--gn-client-result-toolbar-primary-fg, var(--gn-result-toolbar-primary-fg, var(--gn-toolbar-primary-fg)));
+  --gn-toolbar-action-primary-bg: var(--gn-client-result-toolbar-primary-bg, var(--gn-result-toolbar-primary-bg, var(--gn-toolbar-primary-bg)));
+  --gn-toolbar-action-primary-border: var(--gn-client-result-toolbar-primary-border, var(--gn-result-toolbar-primary-border, var(--gn-toolbar-primary-border)));
+  --gn-toolbar-action-primary-hover-fg: var(--gn-client-result-toolbar-primary-hover-fg, var(--gn-result-toolbar-primary-hover-fg, var(--gn-toolbar-primary-hover-fg)));
+  --gn-toolbar-action-primary-hover-bg: var(--gn-client-result-toolbar-primary-hover-bg, var(--gn-result-toolbar-primary-hover-bg, var(--gn-toolbar-primary-hover-bg)));
+  --gn-toolbar-action-primary-hover-border: var(--gn-client-result-toolbar-primary-hover-border, var(--gn-result-toolbar-primary-hover-border, var(--gn-toolbar-primary-hover-border)));
+  --gn-toolbar-action-primary-active-fg: var(--gn-client-result-toolbar-primary-active-fg, var(--gn-result-toolbar-primary-active-fg, var(--gn-toolbar-primary-active-fg)));
+  --gn-toolbar-action-primary-active-bg: var(--gn-client-result-toolbar-primary-active-bg, var(--gn-result-toolbar-primary-active-bg, var(--gn-toolbar-primary-active-bg)));
+  --gn-toolbar-action-primary-active-border: var(--gn-client-result-toolbar-primary-active-border, var(--gn-result-toolbar-primary-active-border, var(--gn-toolbar-primary-active-border)));
+  --gn-toolbar-action-primary-disabled-fg: var(--gn-client-result-toolbar-primary-disabled-fg, var(--gn-result-toolbar-primary-disabled-fg, var(--gn-toolbar-primary-disabled-fg)));
+  --gn-toolbar-action-primary-disabled-bg: var(--gn-client-result-toolbar-primary-disabled-bg, var(--gn-result-toolbar-primary-disabled-bg, var(--gn-toolbar-primary-disabled-bg)));
+  --gn-toolbar-action-primary-disabled-border: var(--gn-client-result-toolbar-primary-disabled-border, var(--gn-result-toolbar-primary-disabled-border, var(--gn-toolbar-primary-disabled-border)));
   min-height: 44px;
   padding: 7px 12px !important;
   gap: 4px !important;
@@ -4556,6 +4608,78 @@ body[data-ui-version="v2"] .gn-v2-data-grid .data-grid-toolbar-scroll {
 body[data-ui-version="v2"] .gn-v2-data-grid .data-grid-toolbar-scroll .ant-btn {
   height: 28px !important;
   border-radius: 7px !important;
+}
+
+body[data-ui-version="v2"] .gn-v2-data-grid .data-grid-toolbar-scroll .ant-btn-default:not(.gn-v2-ai-insight-button):not(:disabled):not(.ant-btn-disabled) {
+  color: var(--gn-toolbar-action-fg) !important;
+  background: var(--gn-toolbar-action-bg) !important;
+  border-color: var(--gn-toolbar-action-border) !important;
+}
+
+body[data-ui-version="v2"] .gn-v2-data-grid .data-grid-toolbar-scroll .ant-btn-default:not(.gn-v2-ai-insight-button):not(:disabled):not(.ant-btn-disabled):hover,
+body[data-ui-version="v2"] .gn-v2-data-grid .data-grid-toolbar-scroll .ant-btn-default:not(.gn-v2-ai-insight-button):not(:disabled):not(.ant-btn-disabled):focus-visible {
+  color: var(--gn-toolbar-action-hover-fg) !important;
+  background: var(--gn-toolbar-action-hover-bg) !important;
+  border-color: var(--gn-toolbar-action-hover-border) !important;
+}
+
+body[data-ui-version="v2"] .gn-v2-data-grid .data-grid-toolbar-scroll .ant-btn-default:not(.gn-v2-ai-insight-button):not(:disabled):not(.ant-btn-disabled):active,
+body[data-ui-version="v2"] .gn-v2-data-grid .data-grid-toolbar-scroll .ant-btn-default:not(.gn-v2-ai-insight-button):not(:disabled):not(.ant-btn-disabled)[aria-expanded="true"] {
+  color: var(--gn-toolbar-action-active-fg) !important;
+  background: var(--gn-toolbar-action-active-bg) !important;
+  border-color: var(--gn-toolbar-action-active-border) !important;
+}
+
+body[data-ui-version="v2"] .gn-v2-data-grid .data-grid-toolbar-scroll .ant-btn-default:disabled,
+body[data-ui-version="v2"] .gn-v2-data-grid .data-grid-toolbar-scroll .ant-btn-default.ant-btn-disabled {
+  color: var(--gn-toolbar-action-disabled-fg) !important;
+  background: var(--gn-toolbar-action-disabled-bg) !important;
+  border-color: var(--gn-toolbar-action-disabled-border) !important;
+}
+
+body[data-ui-version="v2"] .gn-v2-data-grid .data-grid-toolbar-scroll .ant-btn-default.ant-btn-dangerous:not(:disabled):not(.ant-btn-disabled) {
+  color: var(--gn-client-result-toolbar-button-fg, var(--gn-result-toolbar-button-fg, var(--gn-danger))) !important;
+  background: var(--gn-client-result-toolbar-button-bg, var(--gn-result-toolbar-button-bg, var(--gn-toolbar-action-bg))) !important;
+  border-color: var(--gn-client-result-toolbar-button-border, var(--gn-result-toolbar-button-border, var(--gn-toolbar-action-border))) !important;
+}
+
+body[data-ui-version="v2"] .gn-v2-data-grid .data-grid-toolbar-scroll .ant-btn-default.ant-btn-dangerous:not(:disabled):not(.ant-btn-disabled):hover,
+body[data-ui-version="v2"] .gn-v2-data-grid .data-grid-toolbar-scroll .ant-btn-default.ant-btn-dangerous:not(:disabled):not(.ant-btn-disabled):focus-visible {
+  color: var(--gn-client-result-toolbar-button-hover-fg, var(--gn-result-toolbar-button-hover-fg, var(--gn-danger))) !important;
+  background: var(--gn-client-result-toolbar-button-hover-bg, var(--gn-result-toolbar-button-hover-bg, var(--gn-toolbar-action-hover-bg))) !important;
+  border-color: var(--gn-client-result-toolbar-button-hover-border, var(--gn-result-toolbar-button-hover-border, var(--gn-toolbar-action-hover-border))) !important;
+}
+
+body[data-ui-version="v2"] .gn-v2-data-grid .data-grid-toolbar-scroll .ant-btn-default.ant-btn-dangerous:not(:disabled):not(.ant-btn-disabled):active {
+  color: var(--gn-client-result-toolbar-button-active-fg, var(--gn-result-toolbar-button-active-fg, var(--gn-danger))) !important;
+  background: var(--gn-client-result-toolbar-button-active-bg, var(--gn-result-toolbar-button-active-bg, var(--gn-toolbar-action-active-bg))) !important;
+  border-color: var(--gn-client-result-toolbar-button-active-border, var(--gn-result-toolbar-button-active-border, var(--gn-toolbar-action-active-border))) !important;
+}
+
+body[data-ui-version="v2"] .gn-v2-data-grid .data-grid-toolbar-scroll .ant-btn-primary:not(.ant-btn-dangerous):not(.gn-v2-commit-button):not(:disabled):not(.ant-btn-disabled) {
+  color: var(--gn-toolbar-action-primary-fg) !important;
+  background: var(--gn-toolbar-action-primary-bg) !important;
+  border-color: var(--gn-toolbar-action-primary-border) !important;
+}
+
+body[data-ui-version="v2"] .gn-v2-data-grid .data-grid-toolbar-scroll .ant-btn-primary:not(.ant-btn-dangerous):not(.gn-v2-commit-button):not(:disabled):not(.ant-btn-disabled):hover,
+body[data-ui-version="v2"] .gn-v2-data-grid .data-grid-toolbar-scroll .ant-btn-primary:not(.ant-btn-dangerous):not(.gn-v2-commit-button):not(:disabled):not(.ant-btn-disabled):focus-visible {
+  color: var(--gn-toolbar-action-primary-hover-fg) !important;
+  background: var(--gn-toolbar-action-primary-hover-bg) !important;
+  border-color: var(--gn-toolbar-action-primary-hover-border) !important;
+}
+
+body[data-ui-version="v2"] .gn-v2-data-grid .data-grid-toolbar-scroll .ant-btn-primary:not(.ant-btn-dangerous):not(.gn-v2-commit-button):not(:disabled):not(.ant-btn-disabled):active {
+  color: var(--gn-toolbar-action-primary-active-fg) !important;
+  background: var(--gn-toolbar-action-primary-active-bg) !important;
+  border-color: var(--gn-toolbar-action-primary-active-border) !important;
+}
+
+body[data-ui-version="v2"] .gn-v2-data-grid .data-grid-toolbar-scroll .ant-btn-primary:not(.gn-v2-commit-button):disabled,
+body[data-ui-version="v2"] .gn-v2-data-grid .data-grid-toolbar-scroll .ant-btn-primary:not(.gn-v2-commit-button).ant-btn-disabled {
+  color: var(--gn-toolbar-action-primary-disabled-fg) !important;
+  background: var(--gn-toolbar-action-primary-disabled-bg) !important;
+  border-color: var(--gn-toolbar-action-primary-disabled-border) !important;
 }
 
 body[data-ui-version="v2"] .gn-v2-data-grid .gn-v2-data-grid-toolbar-action {
@@ -4641,9 +4765,9 @@ body[data-ui-version="v2"] .gn-v2-toolbar-kbd {
 }
 
 body[data-ui-version="v2"] .gn-v2-data-grid .gn-v2-commit-button {
-  border-color: var(--gn-accent-2) !important;
-  background: var(--gn-accent) !important;
-  color: var(--gn-on-accent, #fff) !important;
+  border-color: var(--gn-client-result-toolbar-primary-border, var(--gn-result-toolbar-primary-border, var(--gn-accent-2))) !important;
+  background: var(--gn-client-result-toolbar-primary-bg, var(--gn-result-toolbar-primary-bg, var(--gn-accent))) !important;
+  color: var(--gn-client-result-toolbar-primary-fg, var(--gn-result-toolbar-primary-fg, var(--gn-on-accent, #fff))) !important;
   font-weight: 750 !important;
 }
 
@@ -4656,24 +4780,25 @@ body[data-ui-version="v2"] .gn-v2-data-grid .gn-v2-commit-button {
 body[data-ui-version="v2"] .gn-v2-data-grid .gn-v2-commit-button:hover,
 body[data-ui-version="v2"] .gn-v2-data-grid .gn-v2-commit-button:focus,
 body[data-ui-version="v2"] .gn-v2-data-grid .gn-v2-commit-button:focus-visible {
-  border-color: var(--gn-accent-hover, var(--gn-accent-2)) !important;
-  background: var(--gn-accent-hover, var(--gn-accent-2)) !important;
-  color: var(--gn-on-accent, #fff) !important;
+  border-color: var(--gn-client-result-toolbar-primary-hover-border, var(--gn-result-toolbar-primary-hover-border, var(--gn-accent-hover, var(--gn-accent-2)))) !important;
+  background: var(--gn-client-result-toolbar-primary-hover-bg, var(--gn-result-toolbar-primary-hover-bg, var(--gn-accent-hover, var(--gn-accent-2)))) !important;
+  color: var(--gn-client-result-toolbar-primary-hover-fg, var(--gn-result-toolbar-primary-hover-fg, var(--gn-on-accent, #fff))) !important;
   box-shadow: var(--gn-shadow-sm), inset 0 0.5px 0 rgba(255, 255, 255, 0.15) !important;
 }
 
 body[data-ui-version="v2"] .gn-v2-data-grid .gn-v2-commit-button:active {
-  border-color: var(--gn-accent-active, var(--gn-accent-2)) !important;
-  background: var(--gn-accent-active, var(--gn-accent-2)) !important;
-  color: var(--gn-on-accent, #fff) !important;
+  border-color: var(--gn-client-result-toolbar-primary-active-border, var(--gn-result-toolbar-primary-active-border, var(--gn-accent-active, var(--gn-accent-2)))) !important;
+  background: var(--gn-client-result-toolbar-primary-active-bg, var(--gn-result-toolbar-primary-active-bg, var(--gn-accent-active, var(--gn-accent-2)))) !important;
+  color: var(--gn-client-result-toolbar-primary-active-fg, var(--gn-result-toolbar-primary-active-fg, var(--gn-on-accent, #fff))) !important;
   box-shadow: none !important;
 }
 
-body[data-ui-version="v2"] .gn-v2-data-grid .gn-v2-commit-button:disabled {
+body[data-ui-version="v2"] .gn-v2-data-grid .gn-v2-commit-button:disabled,
+body[data-ui-version="v2"] .gn-v2-data-grid .gn-v2-commit-button.ant-btn-disabled {
   opacity: 1;
-  border-color: var(--gn-br-2) !important;
-  background: var(--gn-bg-active) !important;
-  color: var(--gn-fg-5) !important;
+  border-color: var(--gn-client-result-toolbar-primary-disabled-border, var(--gn-result-toolbar-primary-disabled-border, var(--gn-br-2))) !important;
+  background: var(--gn-client-result-toolbar-primary-disabled-bg, var(--gn-result-toolbar-primary-disabled-bg, var(--gn-bg-active))) !important;
+  color: var(--gn-client-result-toolbar-primary-disabled-fg, var(--gn-result-toolbar-primary-disabled-fg, var(--gn-fg-5))) !important;
   box-shadow: none !important;
 }
 
@@ -4695,14 +4820,23 @@ body[data-ui-version="v2"] .gn-v2-data-grid .gn-v2-commit-button:active .gn-v2-t
 }
 
 body[data-ui-version="v2"] .gn-v2-data-grid .gn-v2-ai-insight-button {
-  border-color: transparent !important;
-  background: var(--gn-info-soft) !important;
-  color: var(--gn-info) !important;
+  border-color: var(--gn-client-result-toolbar-button-border, var(--gn-result-toolbar-button-border, transparent)) !important;
+  background: var(--gn-client-result-toolbar-button-bg, var(--gn-result-toolbar-button-bg, var(--gn-info-soft))) !important;
+  color: var(--gn-client-result-toolbar-button-fg, var(--gn-result-toolbar-button-fg, var(--gn-info))) !important;
   font-weight: 750 !important;
 }
 
-body[data-ui-version="v2"] .gn-v2-data-grid .gn-v2-ai-insight-button:hover {
-  filter: brightness(0.96);
+body[data-ui-version="v2"] .gn-v2-data-grid .gn-v2-ai-insight-button:hover,
+body[data-ui-version="v2"] .gn-v2-data-grid .gn-v2-ai-insight-button:focus-visible {
+  border-color: var(--gn-client-result-toolbar-button-hover-border, var(--gn-result-toolbar-button-hover-border, transparent)) !important;
+  background: var(--gn-client-result-toolbar-button-hover-bg, var(--gn-result-toolbar-button-hover-bg, color-mix(in srgb, var(--gn-info-soft) 96%, var(--gn-info) 4%))) !important;
+  color: var(--gn-client-result-toolbar-button-hover-fg, var(--gn-result-toolbar-button-hover-fg, var(--gn-info))) !important;
+}
+
+body[data-ui-version="v2"] .gn-v2-data-grid .gn-v2-ai-insight-button:active {
+  border-color: var(--gn-client-result-toolbar-button-active-border, var(--gn-result-toolbar-button-active-border, transparent)) !important;
+  background: var(--gn-client-result-toolbar-button-active-bg, var(--gn-result-toolbar-button-active-bg, color-mix(in srgb, var(--gn-info-soft) 90%, var(--gn-info) 10%))) !important;
+  color: var(--gn-client-result-toolbar-button-active-fg, var(--gn-result-toolbar-button-active-fg, var(--gn-info))) !important;
 }
 
 body[data-ui-version="v2"] .gn-v2-data-grid .gn-v2-ai-insight-button .gn-v2-toolbar-kbd {
@@ -4712,15 +4846,23 @@ body[data-ui-version="v2"] .gn-v2-data-grid .gn-v2-ai-insight-button .gn-v2-tool
 }
 
 body[data-ui-version="v2"] .gn-v2-data-grid .gn-v2-query-result-toolbar-hide {
-  border-color: var(--gn-br-1) !important;
-  background: var(--gn-bg-panel) !important;
-  color: var(--gn-fg-2) !important;
+  border-color: var(--gn-toolbar-action-border) !important;
+  background: var(--gn-toolbar-action-bg) !important;
+  color: var(--gn-toolbar-action-fg) !important;
   font-weight: 650 !important;
 }
 
-body[data-ui-version="v2"] .gn-v2-data-grid .gn-v2-query-result-toolbar-hide:hover {
-  background: var(--gn-bg-hover) !important;
-  color: var(--gn-fg-1) !important;
+body[data-ui-version="v2"] .gn-v2-data-grid .gn-v2-query-result-toolbar-hide:hover,
+body[data-ui-version="v2"] .gn-v2-data-grid .gn-v2-query-result-toolbar-hide:focus-visible {
+  border-color: var(--gn-toolbar-action-hover-border) !important;
+  background: var(--gn-toolbar-action-hover-bg) !important;
+  color: var(--gn-toolbar-action-hover-fg) !important;
+}
+
+body[data-ui-version="v2"] .gn-v2-data-grid .gn-v2-query-result-toolbar-hide:active {
+  border-color: var(--gn-toolbar-action-active-border) !important;
+  background: var(--gn-toolbar-action-active-bg) !important;
+  color: var(--gn-toolbar-action-active-fg) !important;
 }
 
 body[data-ui-version="v2"] .gn-v2-smart-filter-panel {
