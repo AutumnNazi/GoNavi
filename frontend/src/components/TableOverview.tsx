@@ -71,6 +71,7 @@ type OverviewTableSection = {
 const OVERVIEW_CONTEXT_MENU_SAFE_GAP = 8;
 const OVERVIEW_CONTEXT_MENU_WIDTH = 264;
 const OVERVIEW_CONTEXT_MENU_FALLBACK_HEIGHT = 420;
+const TABLE_OVERVIEW_CARD_HEIGHT = 180;
 
 const resolveOverviewContextMenuPosition = (
     x: number,
@@ -1146,35 +1147,50 @@ const TableOverview: React.FC<TableOverviewProps> = ({ tab }) => {
         return formatSidebarTableTimestamp(value) || value;
     }, []);
 
-    const renderTableOverviewMetaBadges = useCallback((table: TableStatRow, compact = false) => {
-        const items = [
-            ...(table.updateTime ? [{
+    const renderTableOverviewMetaBadges = useCallback((
+        table: TableStatRow,
+        compact = false,
+        reserveMissing = false,
+    ) => {
+        const metadataItems = [
+            {
                 key: 'updated',
                 label: t('table_overview.metric.updated_at'),
                 raw: table.updateTime,
-                value: formatOverviewTimestamp(table.updateTime),
-            }] : []),
-            ...(table.createTime ? [{
+                value: table.updateTime ? formatOverviewTimestamp(table.updateTime) : '—',
+            },
+            {
                 key: 'created',
                 label: t('table_overview.metric.created_at'),
                 raw: table.createTime,
-                value: formatOverviewTimestamp(table.createTime),
-            }] : []),
+                value: table.createTime ? formatOverviewTimestamp(table.createTime) : '—',
+            },
         ];
+        const items = reserveMissing ? metadataItems : metadataItems.filter((item) => item.raw);
         if (items.length === 0) return null;
         return (
             <div
+                className={reserveMissing && isV2Ui ? 'gn-v2-table-card-timestamps' : undefined}
                 style={{
                     display: 'flex',
-                    flexWrap: 'wrap',
-                    gap: 8,
+                    flexDirection: reserveMissing ? 'column' : 'row',
+                    flexWrap: reserveMissing ? 'nowrap' : 'wrap',
+                    alignItems: reserveMissing ? 'flex-start' : undefined,
+                    gap: reserveMissing ? 4 : 8,
+                    minHeight: reserveMissing ? 48 : undefined,
+                    flexShrink: reserveMissing ? 0 : undefined,
                     marginTop: compact ? 8 : 0,
                     marginBottom: compact ? 0 : 10,
                 }}
             >
                 {items.map((item) => (
-                    <Tooltip key={item.key} title={`${item.label}: ${item.raw}`} mouseEnterDelay={0.4}>
+                    <Tooltip
+                        key={item.key}
+                        title={item.raw ? `${item.label}: ${item.raw}` : undefined}
+                        mouseEnterDelay={0.4}
+                    >
                         <span
+                            data-table-overview-card-field={item.key}
                             style={{
                                 display: 'inline-flex',
                                 alignItems: 'center',
@@ -1205,6 +1221,7 @@ const TableOverview: React.FC<TableOverviewProps> = ({ tab }) => {
     const renderCardTableContent = (table: TableStatRow) => (
         <div
             className={isV2Ui ? 'gn-v2-table-card' : undefined}
+            data-table-overview-card={isV2Ui ? table.name : undefined}
             onDoubleClick={() => openTableByDefaultAction(table.name)}
             onContextMenu={isV2Ui ? (event) => openV2OverviewContextMenu(event, table) : undefined}
             style={{
@@ -1214,6 +1231,13 @@ const TableOverview: React.FC<TableOverviewProps> = ({ tab }) => {
                 }),
                 borderRadius: 10,
                 padding: '14px 16px',
+                height: isV2Ui ? '100%' : undefined,
+                minHeight: isV2Ui ? 0 : undefined,
+                maxHeight: isV2Ui ? '100%' : undefined,
+                boxSizing: isV2Ui ? 'border-box' : undefined,
+                overflow: isV2Ui ? 'hidden' : undefined,
+                display: isV2Ui ? 'flex' : undefined,
+                flexDirection: isV2Ui ? 'column' : undefined,
                 cursor: 'pointer',
                 transition: isV2Ui ? undefined : 'all 0.15s ease',
                 userSelect: 'none',
@@ -1221,7 +1245,7 @@ const TableOverview: React.FC<TableOverviewProps> = ({ tab }) => {
             onMouseEnter={isV2Ui ? undefined : e => { (e.currentTarget as HTMLDivElement).style.background = cardHoverBg; (e.currentTarget as HTMLDivElement).style.borderColor = accentColor; }}
             onMouseLeave={isV2Ui ? undefined : e => { (e.currentTarget as HTMLDivElement).style.background = cardBg || ''; (e.currentTarget as HTMLDivElement).style.borderColor = cardBorder || ''; }}
         >
-            <div className={isV2Ui ? 'gn-v2-table-card-name' : undefined} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+            <div className={isV2Ui ? 'gn-v2-table-card-name' : undefined} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, flexShrink: 0 }}>
                 <TableOutlined style={{ fontSize: 14, color: accentColor }} />
                 <Tooltip title={getTableOverviewDisplayName(metadataDialect, table.name)} mouseEnterDelay={0.4}>
                     <span style={{ fontSize: 13, fontWeight: 600, color: textPrimary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, display: 'block' }}>
@@ -1229,18 +1253,46 @@ const TableOverview: React.FC<TableOverviewProps> = ({ tab }) => {
                     </span>
                 </Tooltip>
             </div>
-            {table.comment && (
-                <Tooltip title={table.comment} mouseEnterDelay={0.4}>
-                    <div style={{ fontSize: 12, color: textSecondary, marginBottom: 10, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {table.comment}
+            {(isV2Ui || table.comment) && (
+                <Tooltip title={table.comment || undefined} mouseEnterDelay={0.4}>
+                    <div
+                        className={isV2Ui ? 'gn-v2-table-card-comment' : undefined}
+                        data-table-overview-card-field={isV2Ui ? 'comment' : undefined}
+                        style={{
+                            minHeight: isV2Ui ? 19 : undefined,
+                            flexShrink: isV2Ui ? 0 : undefined,
+                            fontSize: 12,
+                            color: textSecondary,
+                            marginBottom: 10,
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                        }}
+                    >
+                        {table.comment || '—'}
                     </div>
                 </Tooltip>
             )}
-            {renderTableOverviewMetaBadges(table)}
-            <div className={isV2Ui ? 'gn-v2-table-card-meta' : undefined} style={{ display: 'flex', gap: 16, fontSize: 12, color: textMuted }}>
-                <span title={t('table_overview.sort.rows')} style={{ minWidth: 52 }}>📊 {formatRows(table.rows)}</span>
-                <span title={t('table_overview.metric.data_size')} style={{ minWidth: 72 }}>💾 {formatSize(table.dataSize)}</span>
-                {table.engine && <span title={t('table_overview.metric.engine')} style={{ marginLeft: 'auto', opacity: 0.7 }}>{table.engine}</span>}
+            {renderTableOverviewMetaBadges(table, false, isV2Ui)}
+            <div className={isV2Ui ? 'gn-v2-table-card-meta' : undefined} style={{ display: 'flex', alignItems: 'center', minWidth: 0, gap: 16, marginTop: isV2Ui ? 'auto' : undefined, flexShrink: isV2Ui ? 0 : undefined, fontSize: 12, color: textMuted }}>
+                <span title={t('table_overview.sort.rows')} style={{ minWidth: 52, flexShrink: 0, whiteSpace: 'nowrap' }}>📊 {formatRows(table.rows)}</span>
+                <span title={t('table_overview.metric.data_size')} style={{ minWidth: 72, flexShrink: 0, whiteSpace: 'nowrap' }}>💾 {formatSize(table.dataSize)}</span>
+                {(isV2Ui || table.engine) && (
+                    <span
+                        data-table-overview-card-field={isV2Ui ? 'engine' : undefined}
+                        title={`${t('table_overview.metric.engine')}: ${table.engine || '—'}`}
+                        style={{
+                            marginLeft: 'auto',
+                            minWidth: 0,
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                            opacity: 0.7,
+                        }}
+                    >
+                        {table.engine || '—'}
+                    </span>
+                )}
             </div>
             {isV2Ui && (
                 <div className="gn-v2-table-size-bar">
@@ -1714,6 +1766,7 @@ const TableOverview: React.FC<TableOverviewProps> = ({ tab }) => {
                                     <div className={isV2Ui ? 'gn-v2-table-card-grid' : undefined} style={{
                                         display: 'grid',
                                         gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))',
+                                        gridAutoRows: isV2Ui ? TABLE_OVERVIEW_CARD_HEIGHT : undefined,
                                         gap: 12,
                                     }}>
                                         {section.rows.map(renderCardTable)}
