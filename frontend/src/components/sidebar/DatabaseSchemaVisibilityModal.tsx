@@ -247,7 +247,20 @@ export const DatabaseSchemaVisibilityModal: React.FC<DatabaseSchemaVisibilityMod
     if (checked && supportsSchemas) void loadDatabaseSchemas(database);
   }, [candidates, loadDatabaseSchemas, supportsSchemas]);
 
-  const toggleSchema = useCallback((database: string, schema: string, checked: boolean) => {
+  const toggleSchema = useCallback((
+    database: string,
+    schema: string,
+    checked: boolean,
+    databaseSelected: boolean,
+  ) => {
+    if (checked && !databaseSelected) {
+      setExactSelectionChanged(true);
+      setSelectedDatabases((previous) => {
+        const next = new Set(previous);
+        next.add(database);
+        return candidates.map((candidate) => candidate.name).filter((name) => next.has(name));
+      });
+    }
     setSchemaSnapshots((previous) => {
       const rule = findSchemaVisibilityRuleEntry(
         source.schemaVisibilityByDatabase || undefined,
@@ -256,7 +269,7 @@ export const DatabaseSchemaVisibilityModal: React.FC<DatabaseSchemaVisibilityMod
       )?.[1];
       const current = previous[database] || resolveSchemaSelection(rule, [schema], schemaCaseSensitive);
       const targetIdentity = schemaIdentity(schema, schemaCaseSensitive);
-      const nextSchemas = current.selectedSchemas.filter(
+      const nextSchemas = (databaseSelected ? current.selectedSchemas : []).filter(
         (item) => schemaIdentity(item, schemaCaseSensitive) !== targetIdentity,
       );
       if (checked) nextSchemas.push(schema);
@@ -265,7 +278,12 @@ export const DatabaseSchemaVisibilityModal: React.FC<DatabaseSchemaVisibilityMod
         [database]: { ...current, selectedSchemas: nextSchemas },
       };
     });
-  }, [databaseCaseSensitive, schemaCaseSensitive, source.schemaVisibilityByDatabase]);
+  }, [
+    candidates,
+    databaseCaseSensitive,
+    schemaCaseSensitive,
+    source.schemaVisibilityByDatabase,
+  ]);
 
   const filteredCandidates = useMemo(() => {
     const query = search.trim().toLocaleLowerCase();
@@ -303,12 +321,16 @@ export const DatabaseSchemaVisibilityModal: React.FC<DatabaseSchemaVisibilityMod
             isLeaf: true,
             title: (
               <Checkbox
-                checked={snapshot.selectedSchemas.some(
+                checked={selected && snapshot.selectedSchemas.some(
                   (item) => schemaIdentity(item, schemaCaseSensitive) === schemaIdentity(schema, schemaCaseSensitive),
                 )}
-                disabled={!selected}
                 onClick={(event) => event.stopPropagation()}
-                onChange={(event) => toggleSchema(database, schema, event.target.checked)}
+                onChange={(event) => toggleSchema(
+                  database,
+                  schema,
+                  event.target.checked,
+                  selected,
+                )}
               >
                 {schema}
               </Checkbox>
