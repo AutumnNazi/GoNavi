@@ -1777,7 +1777,11 @@ func resolveDriverProbeDialAddress(rawURL string) (string, error) {
 		}
 	}
 
-	if proxyURL := resolveDriverProbeProxyURL(parsed); proxyURL != nil {
+	proxyURL, proxyErr := resolveDriverProbeProxyURL(parsed)
+	if proxyErr != nil {
+		return "", proxyErr
+	}
+	if proxyURL != nil {
 		proxyHost := strings.TrimSpace(proxyURL.Hostname())
 		if proxyHost == "" {
 			return net.JoinHostPort(targetHost, targetPort), nil
@@ -1792,25 +1796,21 @@ func resolveDriverProbeDialAddress(rawURL string) (string, error) {
 	return net.JoinHostPort(targetHost, targetPort), nil
 }
 
-func resolveDriverProbeProxyURL(target *url.URL) *url.URL {
+func resolveDriverProbeProxyURL(target *url.URL) (*url.URL, error) {
 	if target == nil {
-		return nil
+		return nil, nil
 	}
 
 	snapshot := currentGlobalProxyConfig()
 	if snapshot.Enabled {
 		proxyURL, err := buildProxyURLFromConfig(snapshot.Proxy)
 		if err == nil {
-			return proxyURL
+			return proxyURL, nil
 		}
 	}
 
 	req := &http.Request{URL: target}
-	proxyURL, err := http.ProxyFromEnvironment(req)
-	if err != nil {
-		return nil
-	}
-	return proxyURL
+	return defaultHTTPProxyFunc()(req)
 }
 
 func defaultPortForScheme(scheme string) string {
