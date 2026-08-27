@@ -9,6 +9,7 @@ export interface ConnectionSidebarLayoutBackend {
   BootstrapConnectionSidebarLayout?: (
     input: ConnectionSidebarLayoutInput,
   ) => Promise<ConnectionSidebarLayout>;
+  LoadConnectionSidebarLayout?: () => Promise<ConnectionSidebarLayout>;
   SaveConnectionSidebarLayout?: (
     input: SaveConnectionSidebarLayoutInput,
   ) => Promise<SaveConnectionSidebarLayoutResult>;
@@ -28,6 +29,7 @@ export interface ConnectionSidebarLayoutBootstrapResult {
 
 export interface ConnectionSidebarLayoutCoordinator {
   bootstrap: () => Promise<ConnectionSidebarLayoutBootstrapResult>;
+  refresh: () => Promise<void>;
   flush: () => Promise<void>;
   dispose: () => void;
 }
@@ -36,6 +38,7 @@ interface CreateConnectionSidebarLayoutCoordinatorArgs {
   backend?: ConnectionSidebarLayoutBackend;
   store: ConnectionSidebarLayoutStore;
   debounceMs?: number;
+  refreshIntervalMs?: number;
   onError?: (error: unknown) => void;
 }
 
@@ -58,19 +61,59 @@ export const createConnectionSidebarLayoutCoordinator = (
 ): ConnectionSidebarLayoutCoordinator => {
   let disposed = false;
   let bootstrapPromise: Promise<ConnectionSidebarLayoutBootstrapResult> | null = null;
+  let bootstrapSettled = false;
+  let bootstrapSucceeded = false;
   let revision = 0;
   let unsubscribe: (() => void) | null = null;
   let pendingLayout: ConnectionSidebarLayoutInput | null = null;
   let pendingTimer: ReturnType<typeof setTimeout> | null = null;
   let inFlightSave: Promise<void> | null = null;
+  let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+  let refreshInFlight: Promise<void> | null = null;
   let lastObservedFingerprint = '';
   let applyingRemoteLayout = false;
   const debounceMs = args.debounceMs ?? 160;
+  const refreshIntervalMs = Math.max(0, args.refreshIntervalMs ?? 0);
 
   const clearPendingTimer = () => {
     if (pendingTimer !== null) {
       clearTimeout(pendingTimer);
       pendingTimer = null;
+    }
+  };
+
+  const clearRefreshTimer = () => {
+    if (refreshTimer !== null) {
+      clearTimeout(refreshTimer);
+      refreshTimer = null;
+    }
+  };
+
+  const applyRemoteLayout = (
+    layout: ConnectionSidebarLayout,
+    options: { allowBusy?: boolean } = {},
+  ): void => {
+    if (
+      disposed
+      || !layout.initialized
+      || (!options.allowBusy && (pendingLayout || inFlightSave))
+      || layout.revision < revision
+    ) {
+      return;
+    }
+    const authoritativeLayout = cloneLayout(layout);
+    const authoritativeFingerprint = layoutFingerprint(authoritativeLayout);
+    const currentFingerprint = layoutFingerprint(args.store.getLayout());
+    revision = layout.revision;
+    lastObservedFingerprint = authoritativeFingerprint;
+    if (authoritativeFingerprint === currentFingerprint) {
+      return;
+    }
+    applyingRemoteLayout = true;
+    try {
+      args.store.replaceLayout(authoritativeLayout);
+    } finally {
+      applyingRemoteLayout = false;
     }
   };
 
@@ -98,16 +141,9 @@ export const createConnectionSidebarLayoutCoordinator = (
         });
         revision = result.layout.revision;
         if (result.conflict && !disposed) {
-          const authoritativeLayout = cloneLayout(result.layout);
           pendingLayout = null;
           clearPendingTimer();
-          lastObservedFingerprint = layoutFingerprint(authoritativeLayout);
-          applyingRemoteLayout = true;
-          try {
-            args.store.replaceLayout(authoritativeLayout);
-          } finally {
-            applyingRemoteLayout = false;
-          }
+          applyRemoteLayout(result.layout, { allowBusy: true });
         }
       } catch (error) {
         saveFailed = true;
@@ -155,42 +191,111 @@ export const createConnectionSidebarLayoutCoordinator = (
     });
   };
 
+  const refresh = (): Promise<void> => {
+    if (!bootstrapSettled) {
+      if (!bootstrapPromise) return Promise.resolve();
+      return bootstrapPromise.then(() => refresh());
+    }
+    if (refreshInFlight) return refreshInFlight;
+    const loadLayout = args.backend?.LoadConnectionSidebarLayout;
+    const bootstrapLayout = args.backend?.BootstrapConnectionSidebarLayout;
+    if (
+      disposed
+      || (typeof loadLayout !== 'function' && typeof bootstrapLayout !== 'function')
+    ) {
+      return Promise.resolve();
+    }
+    refreshInFlight = (async () => {
+      try {
+        let layout: ConnectionSidebarLayout;
+        if (!bootstrapSucceeded && typeof bootstrapLayout === 'function') {
+          layout = await bootstrapLayout(cloneLayout(args.store.getLayout()));
+          bootstrapSucceeded = true;
+        } else if (typeof loadLayout === 'function') {
+          layout = await loadLayout();
+        } else {
+          layout = await bootstrapLayout!({
+            connectionTags: [],
+            sidebarRootOrder: [],
+          });
+        }
+        if (disposed) return;
+        applyRemoteLayout(layout);
+        startSubscription();
+      } catch (error) {
+        args.onError?.(error);
+        throw error;
+      }
+    })().finally(() => {
+      refreshInFlight = null;
+    });
+    return refreshInFlight;
+  };
+
+  const scheduleRefresh = () => {
+    if (
+      disposed
+      || refreshIntervalMs <= 0
+      || refreshTimer !== null
+      || (
+        typeof args.backend?.LoadConnectionSidebarLayout !== 'function'
+        && typeof args.backend?.BootstrapConnectionSidebarLayout !== 'function'
+      )
+    ) {
+      return;
+    }
+    refreshTimer = setTimeout(() => {
+      refreshTimer = null;
+      void refresh()
+        .catch(() => undefined)
+        .finally(scheduleRefresh);
+    }, refreshIntervalMs);
+  };
+
   const bootstrap = (): Promise<ConnectionSidebarLayoutBootstrapResult> => {
     if (bootstrapPromise) return bootstrapPromise;
     bootstrapPromise = (async () => {
       const bootstrapLayout = args.backend?.BootstrapConnectionSidebarLayout;
       if (typeof bootstrapLayout !== 'function') {
+        scheduleRefresh();
         return { available: false, initialized: false, revision: 0 };
       }
       let layout: ConnectionSidebarLayout;
       try {
         layout = await bootstrapLayout(cloneLayout(args.store.getLayout()));
+        bootstrapSucceeded = true;
       } catch (error) {
         args.onError?.(error);
+        scheduleRefresh();
         return { available: false, initialized: false, revision: 0 };
       }
       if (!disposed && layout.initialized) {
-        args.store.replaceLayout(cloneLayout(layout));
+        applyRemoteLayout(layout);
       }
       revision = layout.revision;
       if (!disposed) {
         startSubscription();
+        scheduleRefresh();
       }
       return {
         available: true,
         initialized: layout.initialized,
         revision: layout.revision,
       };
-    })();
+    })().finally(() => {
+      bootstrapSettled = true;
+    });
     return bootstrapPromise;
   };
 
   return {
     bootstrap,
+    refresh,
     flush,
     dispose: () => {
       disposed = true;
       clearPendingTimer();
+      clearRefreshTimer();
       unsubscribe?.();
       unsubscribe = null;
     },

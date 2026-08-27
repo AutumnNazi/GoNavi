@@ -2265,6 +2265,95 @@ export namespace connection {
 		}
 	}
 
+	export class ConnectionTag {
+	    id: string;
+	    name: string;
+	    parentTagId?: string;
+	    connectionIds: string[];
+	    childOrder?: string[];
+
+	    static createFrom(source: any = {}) {
+	        return new ConnectionTag(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.name = source["name"];
+	        this.parentTagId = source["parentTagId"];
+	        this.connectionIds = source["connectionIds"];
+	        this.childOrder = source["childOrder"];
+	    }
+	}
+	export class ConnectionSidebarLayout {
+	    initialized: boolean;
+	    revision: number;
+	    connectionTags: ConnectionTag[];
+	    sidebarRootOrder: string[];
+
+	    static createFrom(source: any = {}) {
+	        return new ConnectionSidebarLayout(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.initialized = source["initialized"];
+	        this.revision = source["revision"];
+	        this.connectionTags = this.convertValues(source["connectionTags"], ConnectionTag);
+	        this.sidebarRootOrder = source["sidebarRootOrder"];
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class ConnectionSidebarLayoutInput {
+	    connectionTags: ConnectionTag[];
+	    sidebarRootOrder: string[];
+
+	    static createFrom(source: any = {}) {
+	        return new ConnectionSidebarLayoutInput(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.connectionTags = this.convertValues(source["connectionTags"], ConnectionTag);
+	        this.sidebarRootOrder = source["sidebarRootOrder"];
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+
 	export class SchemaVisibilityRule {
 	    mode: string;
 	    schemas?: string[];
@@ -2403,6 +2492,70 @@ export namespace connection {
 	    }
 	}
 
+	export class SaveConnectionSidebarLayoutInput {
+	    expectedRevision: number;
+	    layout: ConnectionSidebarLayoutInput;
+
+	    static createFrom(source: any = {}) {
+	        return new SaveConnectionSidebarLayoutInput(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.expectedRevision = source["expectedRevision"];
+	        this.layout = this.convertValues(source["layout"], ConnectionSidebarLayoutInput);
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class SaveConnectionSidebarLayoutResult {
+	    conflict: boolean;
+	    layout: ConnectionSidebarLayout;
+
+	    static createFrom(source: any = {}) {
+	        return new SaveConnectionSidebarLayoutResult(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.conflict = source["conflict"];
+	        this.layout = this.convertValues(source["layout"], ConnectionSidebarLayout);
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	export class SaveGlobalProxyInput {
 	    enabled: boolean;
 	    type: string;

@@ -23,6 +23,13 @@ func (a *App) BootstrapConnectionSidebarLayout(
 	return result, nil
 }
 
+// LoadConnectionSidebarLayout returns the latest shared layout without using
+// a migration candidate or mutating the authoritative file. It is intended for
+// refreshing clients that already completed BootstrapConnectionSidebarLayout.
+func (a *App) LoadConnectionSidebarLayout() (connection.ConnectionSidebarLayout, error) {
+	return a.connectionSidebarLayoutRepository().Load()
+}
+
 // SaveConnectionSidebarLayout replaces the complete shared layout using an
 // optimistic revision check. A conflict is returned as data together with the
 // current authoritative layout so the caller can recover without parsing an

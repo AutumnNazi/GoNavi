@@ -22,6 +22,10 @@ export function AuthorizeMCPConnectionSQL(arg1, arg2) {
   return window['go']['app']['App']['AuthorizeMCPConnectionSQL'](arg1, arg2);
 }
 
+export function BootstrapConnectionSidebarLayout(arg1) {
+  return window['go']['app']['App']['BootstrapConnectionSidebarLayout'](arg1);
+}
+
 export function BuildDatabaseDiagnosticPackage() {
   return window['go']['app']['App']['BuildDatabaseDiagnosticPackage']();
 }
@@ -818,6 +822,10 @@ export function ListSQLDirectory(arg1) {
   return window['go']['app']['App']['ListSQLDirectory'](arg1);
 }
 
+export function LoadConnectionSidebarLayout() {
+  return window['go']['app']['App']['LoadConnectionSidebarLayout']();
+}
+
 export function LogWindowDiagnostic(arg1, arg2) {
   return window['go']['app']['App']['LogWindowDiagnostic'](arg1, arg2);
 }
@@ -1264,6 +1272,10 @@ export function SaveCloudBackupConfig(arg1) {
 
 export function SaveConnection(arg1) {
   return window['go']['app']['App']['SaveConnection'](arg1);
+}
+
+export function SaveConnectionSidebarLayout(arg1) {
+  return window['go']['app']['App']['SaveConnectionSidebarLayout'](arg1);
 }
 
 export function SaveGlobalProxy(arg1) {

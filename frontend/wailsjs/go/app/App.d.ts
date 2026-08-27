@@ -21,6 +21,8 @@ export function ApplySavedQueryDirectory(arg1:string):Promise<connection.QueryRe
 
 export function AuthorizeMCPConnectionSQL(arg1:connection.ConnectionConfig,arg2:string):Promise<void>;
 
+export function BootstrapConnectionSidebarLayout(arg1:connection.ConnectionSidebarLayoutInput):Promise<connection.ConnectionSidebarLayout>;
+
 export function BuildDatabaseDiagnosticPackage():Promise<connection.QueryResult>;
 
 export function BuildReproductionBundle(arg1:string,arg2:string):Promise<connection.QueryResult>;
@@ -419,6 +421,8 @@ export function ListReproductionBundleSources():Promise<connection.QueryResult>;
 
 export function ListSQLDirectory(arg1:string):Promise<connection.QueryResult>;
 
+export function LoadConnectionSidebarLayout():Promise<connection.ConnectionSidebarLayout>;
+
 export function LogWindowDiagnostic(arg1:string,arg2:string):Promise<void>;
 
 export function MongoDiscoverMembers(arg1:connection.ConnectionConfig):Promise<connection.QueryResult>;
@@ -642,6 +646,8 @@ export function RevealSavedQueryInFolder(arg1:string):Promise<connection.QueryRe
 export function SaveCloudBackupConfig(arg1:app.CloudBackupConfigInput):Promise<app.CloudBackupConfig>;
 
 export function SaveConnection(arg1:connection.SavedConnectionInput):Promise<connection.SavedConnectionView>;
+
+export function SaveConnectionSidebarLayout(arg1:connection.SaveConnectionSidebarLayoutInput):Promise<connection.SaveConnectionSidebarLayoutResult>;
 
 export function SaveGlobalProxy(arg1:connection.SaveGlobalProxyInput):Promise<connection.GlobalProxyView>;
 

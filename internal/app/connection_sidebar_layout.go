@@ -603,6 +603,36 @@ func (r *connectionSidebarLayoutRepository) Bootstrap(
 	return result, mutated, err
 }
 
+// Load returns the latest authoritative layout for an already-running client.
+// Normalization is applied only to the returned view: keeping the persisted
+// revision and bytes unchanged lets a later Save use the same revision CAS and
+// makes this operation safe for polling.
+func (r *connectionSidebarLayoutRepository) Load() (connection.ConnectionSidebarLayout, error) {
+	result := emptyConnectionSidebarLayout()
+	err := r.withLock(func() error {
+		current, err := r.loadUnlocked()
+		if err != nil {
+			return err
+		}
+		if !current.Initialized {
+			result = current
+			return nil
+		}
+		normalized, err := r.normalizeUnlocked(connection.ConnectionSidebarLayoutInput{
+			ConnectionTags:   current.ConnectionTags,
+			SidebarRootOrder: current.SidebarRootOrder,
+		})
+		if err != nil {
+			return err
+		}
+		current.ConnectionTags = normalized.ConnectionTags
+		current.SidebarRootOrder = normalized.SidebarRootOrder
+		result = current
+		return nil
+	})
+	return result, err
+}
+
 func (r *connectionSidebarLayoutRepository) Save(
 	input connection.SaveConnectionSidebarLayoutInput,
 ) (connection.SaveConnectionSidebarLayoutResult, error) {

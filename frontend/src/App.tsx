@@ -1411,6 +1411,7 @@ function App() {
           onError: (error) => {
               console.warn('Failed to synchronize shared connection sidebar layout', error);
           },
+          refreshIntervalMs: 2_000,
       });
       connectionSidebarLayoutCoordinatorRef.current = coordinator;
       const flushConnectionSidebarLayout = () => {
@@ -1418,8 +1419,18 @@ function App() {
               console.warn('Failed to flush shared connection sidebar layout', error);
           });
       };
+      const refreshConnectionSidebarLayout = () => {
+          void coordinator.refresh().catch(() => undefined);
+      };
+      const refreshVisibleConnectionSidebarLayout = () => {
+          if (document.visibilityState === 'visible') {
+              refreshConnectionSidebarLayout();
+          }
+      };
       window.addEventListener('pagehide', flushConnectionSidebarLayout, true);
       window.addEventListener('beforeunload', flushConnectionSidebarLayout, true);
+      window.addEventListener('focus', refreshConnectionSidebarLayout);
+      document.addEventListener('visibilitychange', refreshVisibleConnectionSidebarLayout);
       void coordinator.bootstrap().finally(() => {
           if (!cancelled) {
               setHasLoadedConnectionSidebarLayout(true);
@@ -1430,6 +1441,8 @@ function App() {
           cancelled = true;
           window.removeEventListener('pagehide', flushConnectionSidebarLayout, true);
           window.removeEventListener('beforeunload', flushConnectionSidebarLayout, true);
+          window.removeEventListener('focus', refreshConnectionSidebarLayout);
+          document.removeEventListener('visibilitychange', refreshVisibleConnectionSidebarLayout);
           coordinator.dispose();
           if (connectionSidebarLayoutCoordinatorRef.current === coordinator) {
               connectionSidebarLayoutCoordinatorRef.current = null;
