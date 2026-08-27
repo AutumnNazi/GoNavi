@@ -5210,6 +5210,8 @@
   "data_viewer.message.mongo_filter_invalid_detail": "Недопустимое условие фильтра MongoDB: {{detail}}",
   "data_viewer.message.mongo_filter_parse_failed": "Не удалось разобрать",
   "data_viewer.message.query_failed": "Ошибка запроса",
+  "data_viewer.message.rabbitmq_preview_title": "Предпросмотр RabbitMQ может повторно поставить сообщения в очередь",
+  "data_viewer.message.rabbitmq_preview_warning": "Предпросмотр очереди RabbitMQ {{queue}} использует ack_requeue_true. Сообщения извлекаются и возвращаются в очередь, из-за чего могут быть помечены как redelivered и может измениться порядок сообщений. Активные потребители также могут быть затронуты. Продолжить предпросмотр?",
   "data_viewer.message.query_timeout": "Запрос превысил тайм-аут подключения и был прерван. Увеличьте тайм-аут подключения или сократите область запроса и повторите попытку.",
   "data_viewer.message.result_not_ready": "Текущий набор результатов еще не готов. Сначала загрузите данные один раз.",
   "data_viewer.message.sort_buffer_retry_succeeded": "Буфер сортировки был автоматически увеличен, повторный запрос выполнен успешно.",

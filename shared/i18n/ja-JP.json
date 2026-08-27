@@ -5210,6 +5210,8 @@
   "data_viewer.message.mongo_filter_invalid_detail": "MongoDB のフィルター条件が無効です: {{detail}}",
   "data_viewer.message.mongo_filter_parse_failed": "解析に失敗しました",
   "data_viewer.message.query_failed": "クエリに失敗しました",
+  "data_viewer.message.rabbitmq_preview_title": "RabbitMQ のプレビューではメッセージが再キューされる可能性があります",
+  "data_viewer.message.rabbitmq_preview_warning": "RabbitMQ のキュー {{queue}} のプレビューでは ack_requeue_true を使用します。メッセージは取得後に再キューされるため、redelivered としてマークされたり、キューの順序に影響したりする可能性があります。実行中のコンシューマーも影響を受ける場合があります。プレビューを続行しますか？",
   "data_viewer.message.query_timeout": "クエリが接続タイムアウトを超えたため中断されました。接続タイムアウトを延長するか、クエリ範囲を絞って再試行してください。",
   "data_viewer.message.result_not_ready": "現在の結果セットはまだ準備できていません。先に一度データを読み込んでください。",
   "data_viewer.message.sort_buffer_retry_succeeded": "ソートバッファを自動的に増やして再試行し、クエリに成功しました。",

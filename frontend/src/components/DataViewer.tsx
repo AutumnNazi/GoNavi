@@ -31,6 +31,7 @@ import {
 } from '../utils/columnDefinition';
 import { splitQualifiedNameLast, splitQualifiedNameSegments } from '../utils/qualifiedName';
 import { requestTableMetadata } from '../utils/tableMetadataRequestCache';
+import { confirmRabbitMQPreview } from '../utils/rabbitmqPreview';
 
 type ViewerPaginationState = {
   current: number;
@@ -409,6 +410,8 @@ const DataViewer: React.FC<{ tab: TabData; isActive?: boolean }> = React.memo(({
   const initialLoadRef = useRef(false);
   const skipNextAutoFetchRef = useRef(false);
   const deferredInitialFetchRef = useRef(shouldDeferInitialDataViewerFetch(tab.initialViewMode));
+  const rabbitMQPreviewConfirmedRef = useRef(false);
+  const rabbitMQPreviewConfirmationRef = useRef<Promise<boolean> | null>(null);
 
   const [pagination, setPagination] = useState<ViewerPaginationState>({
       current: initialViewerSnapshot.currentPage,
@@ -497,6 +500,8 @@ const DataViewer: React.FC<{ tab: TabData; isActive?: boolean }> = React.memo(({
     latestCountKeyRef.current = '';
     scrollSnapshotRef.current = { top: snapshot.scrollTop, left: snapshot.scrollLeft };
     initialLoadRef.current = false;
+    rabbitMQPreviewConfirmedRef.current = false;
+    rabbitMQPreviewConfirmationRef.current = null;
     deferredInitialFetchRef.current = shouldDeferInitialDataViewerFetch(tab.initialViewMode);
     skipNextAutoFetchRef.current = true;
     setPagination(prev => ({
@@ -600,6 +605,22 @@ const DataViewer: React.FC<{ tab: TabData; isActive?: boolean }> = React.memo(({
     setPagination(prev => ({ ...prev, totalCountLoading: false, totalCountCancelled: true }));
   }, []);
 
+  const ensureRabbitMQPreviewConfirmed = useCallback(async (queue: string): Promise<boolean> => {
+    if (rabbitMQPreviewConfirmedRef.current) return true;
+
+    const pendingConfirmation = rabbitMQPreviewConfirmationRef.current || (() => {
+      const nextConfirmation = confirmRabbitMQPreview({ queue, translate: tr });
+      rabbitMQPreviewConfirmationRef.current = nextConfirmation;
+      return nextConfirmation;
+    })();
+    const approved = await pendingConfirmation;
+    if (rabbitMQPreviewConfirmationRef.current === pendingConfirmation) {
+      rabbitMQPreviewConfirmationRef.current = null;
+    }
+    if (approved) rabbitMQPreviewConfirmedRef.current = true;
+    return approved;
+  }, [tr]);
+
   const fetchData = useCallback(async (page = pagination.current, size = pagination.pageSize, options?: DataViewerFetchOptions) => {
     const navigateToLastPage = options?.navigateToLastPage === true;
     const refreshTotal = options?.refreshTotal === true || navigateToLastPage;
@@ -636,6 +657,13 @@ const DataViewer: React.FC<{ tab: TabData; isActive?: boolean }> = React.memo(({
 
     const dbName = tab.dbName || '';
     const tableName = tab.tableName || '';
+    if (dbTypeLower === 'rabbitmq' && tableName && !rabbitMQPreviewConfirmedRef.current) {
+        const approved = await ensureRabbitMQPreviewConfirmed(tableName);
+        if (!approved || fetchSeqRef.current !== seq) {
+            if (fetchSeqRef.current === seq) setLoading(false);
+            return;
+        }
+    }
     const isMongoDB = dbTypeLower === 'mongodb';
     let mongoFilter: Record<string, unknown> | undefined;
     if (isMongoDB) {
@@ -1249,7 +1277,7 @@ const DataViewer: React.FC<{ tab: TabData; isActive?: boolean }> = React.memo(({
         });
     }
     if (fetchSeqRef.current === seq) setLoading(false);
-  }, [connections, tab, sortInfo, filterConditions, quickWhereCondition, pkColumns, editLocator, forceReadOnly, pagination.total, pagination.totalKnown, pagination.totalApprox, pagination.approximateTotal, preferManualTotalCount, supportsApproximateTableCount, supportsApproximateTotalPages, tr]);
+  }, [connections, ensureRabbitMQPreviewConfirmed, tab, sortInfo, filterConditions, quickWhereCondition, pkColumns, editLocator, forceReadOnly, pagination.total, pagination.totalKnown, pagination.totalApprox, pagination.approximateTotal, preferManualTotalCount, supportsApproximateTableCount, supportsApproximateTotalPages, tr]);
   // 依赖定位列：在无手动排序时可回退到安全定位列稳定排序。
   // 定位信息只会在表上下文变化后重新加载，避免循环查询。
 
