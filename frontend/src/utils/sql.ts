@@ -61,11 +61,18 @@ export const quoteIdentPart = (dbType: string, ident: string) => {
 export const quoteQualifiedIdent = (dbType: string, ident: string) => {
   const raw = (ident || '').trim();
   if (!raw) return raw;
-  if (['rocketmq', 'mqtt', 'kafka', 'rabbitmq'].includes((dbType || '').trim().toLowerCase())) {
+  const normalizedType = (dbType || '').trim().toLowerCase();
+  if (['rocketmq', 'mqtt', 'kafka', 'rabbitmq'].includes(normalizedType)) {
     return quoteIdentPart(dbType, raw);
   }
   const parts = splitQualifiedNameSegments(raw).filter(Boolean);
   if (parts.length === 0) return quoteIdentPart(dbType, raw);
+  // IoTDB Tree SQL reserves the root node as a path keyword. Quoting it makes
+  // an otherwise valid device query fail during parsing, while child nodes can
+  // still be quoted to preserve special characters and reserved words.
+  if (normalizedType === 'iotdb' && normalizeIdentPart(parts[0]).toLowerCase() === 'root') {
+    return ['root', ...parts.slice(1).map((part) => quoteIdentPart(dbType, part))].join('.');
+  }
   if (parts.length === 1 && parts[0] === normalizeIdentPart(raw)) return quoteIdentPart(dbType, raw);
   return parts.map((part) => quoteIdentPart(dbType, part)).join('.');
 };

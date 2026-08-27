@@ -303,6 +303,55 @@ describe('DataViewer safe editing locator', () => {
     renderer!.unmount();
   });
 
+  it('keeps the IoTDB root node bare in the initial device preview query', async () => {
+    storeState.connections = [{
+      id: 'conn-iotdb',
+      name: 'iotdb',
+      config: {
+        type: 'iotdb',
+        host: '127.0.0.1',
+        port: 6667,
+        user: 'root',
+        password: '',
+        database: 'root.gonavi_iotdb',
+      },
+    }];
+    backendApp.DBQuery.mockImplementation(async (_config: any, _dbName: string, sql: string) => {
+      const normalizedSql = String(sql || '');
+      if (/count\s*\(/i.test(normalizedSql)) {
+        return { success: true, fields: ['total'], data: [{ total: 200 }] };
+      }
+      const limit = Number(normalizedSql.match(/\bLIMIT\s+(\d+)/i)?.[1] || 101);
+      return { success: true, fields: ['Time', 'temperature'], data: createRows(limit) };
+    });
+
+    let renderer: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<DataViewer tab={createTab({
+        id: 'tab-iotdb-preview',
+        connectionId: 'conn-iotdb',
+        dbName: 'root.gonavi_iotdb',
+        tableName: 'root.gonavi_iotdb.smoke',
+        title: 'root.gonavi_iotdb.smoke',
+      })} />);
+    });
+    await flushPromises();
+
+    const executedSql = backendApp.DBQuery.mock.calls.map((call: any[]) => String(call[2] || ''));
+    expect(executedSql).toContain('SELECT * FROM root.`gonavi_iotdb`.`smoke` LIMIT 101 OFFSET 0');
+    expect(executedSql.some((sql) => sql.includes('FROM `root`'))).toBe(false);
+
+    await act(async () => {
+      await dataGridState.latestProps.onPageChange(2, 10);
+    });
+    await flushPromises();
+
+    const pagedSql = backendApp.DBQuery.mock.calls.map((call: any[]) => String(call[2] || ''));
+    expect(pagedSql).toContain('SELECT * FROM root.`gonavi_iotdb`.`smoke` LIMIT 11 OFFSET 10');
+    expect(pagedSql.some((sql) => sql.includes('FROM `root`'))).toBe(false);
+    renderer!.unmount();
+  });
+
   it('does not block the initial Kingbase table query on edit-locator metadata', async () => {
     storeState.connections[0].config.type = 'kingbase';
     storeState.connections[0].config.database = 'ldf_server_dbs_dev';

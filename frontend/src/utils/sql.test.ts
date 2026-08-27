@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildOrderBySQL, buildPaginatedSelectSQL, buildWhereSQL, quoteQualifiedIdent, reverseOrderBySQL } from './sql';
+import { buildOrderBySQL, buildPaginatedSelectSQL, buildWhereSQL, quoteIdentPart, quoteQualifiedIdent, reverseOrderBySQL } from './sql';
 
 describe('buildOrderBySQL', () => {
   it('does not sort Elasticsearch table previews by the _id fallback column', () => {
@@ -87,9 +87,14 @@ describe('reverseOrderBySQL', () => {
 });
 
 describe('quoteQualifiedIdent', () => {
-  it('quotes Apache IoTDB device paths with backticks per path segment', () => {
+  it('keeps the Apache IoTDB root node bare while quoting child path segments', () => {
     expect(quoteQualifiedIdent('iotdb', 'root.sg.d1'))
-      .toBe('`root`.`sg`.`d1`');
+      .toBe('root.`sg`.`d1`');
+  });
+
+  it('keeps Apache IoTDB measurement identifiers quoted', () => {
+    expect(quoteIdentPart('iotdb', 'temperature'))
+      .toBe('`temperature`');
   });
 
   it('keeps RocketMQ topic names as one quoted identifier', () => {
