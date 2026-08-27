@@ -3337,7 +3337,7 @@ body[data-ui-version='v2'] .ant-layout-sider[data-sidebar-collapsed='false'] [da
   transition: none;
 }
 
-body[data-ui-version='v2'] .ant-layout-sider[data-sidebar-collapsed='false'] .gn-v2-rail-sidebar-toggle-slot {
+body[data-ui-version='v2'] .ant-layout-sider[data-sidebar-collapsed='false'] .gn-v2-connection-rail {
   display: none;
 }
 

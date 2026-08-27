@@ -883,6 +883,65 @@ describe('Sidebar locate toolbar', () => {
     expect(markup).toContain('data-sidebar-legacy-toolbar-item="true"');
   });
 
+  it('renders exactly six expanded v2 titlebar actions in task order', () => {
+    const markup = renderSidebarMarkup({
+      uiVersion: 'v2',
+      onCollapseSidebar: mocks.noop,
+      collapseSidebarLabel: t('app.sidebar.collapse'),
+      onToggleAI: mocks.noop,
+      onOpenSettings: mocks.noop,
+    });
+    const actionsStart = markup.indexOf('<div class="gn-v2-active-connection-actions"');
+    const actionsEnd = markup.indexOf('<div class="gn-v2-explorer-search"', actionsStart);
+
+    expect(actionsStart).toBeGreaterThanOrEqual(0);
+    expect(actionsEnd).toBeGreaterThan(actionsStart);
+
+    const actionMarkup = markup.slice(actionsStart, actionsEnd);
+    const actionLabels = Array.from(
+      actionMarkup.matchAll(/<button\b[^>]*\baria-label="([^"]+)"/g),
+      (match) => match[1],
+    );
+
+    expect(actionLabels).toEqual([
+      t('sidebar.action.locate_current_table'),
+      t('sidebar.action.scroll_to_top'),
+      t('sidebar.active_connection.actions'),
+      t('app.sidebar.ai_assistant'),
+      t('app.sidebar.settings'),
+      t('app.sidebar.collapse'),
+    ]);
+  });
+
+  it('keeps expanded v2 actions out of the collapsed-only connection rail', () => {
+    const source = readSourceFile('./Sidebar.tsx');
+    const propsStart = source.indexOf('const v2ConnectionRailProps = {');
+    const propsEnd = source.indexOf('\n  return (', propsStart);
+
+    expect(propsStart).toBeGreaterThanOrEqual(0);
+    expect(propsEnd).toBeGreaterThan(propsStart);
+    expect(source.slice(propsStart, propsEnd)).toContain('showLocateAction: false');
+  });
+
+  it('hides only the expanded v2 rail and wraps a narrow titlebar into two rows', () => {
+    const source = readSourceFile('./Sidebar.tsx');
+    const appCss = readSourceFile('../App.css');
+    const css = readV2ThemeCss();
+    const narrowLayoutStart = css.indexOf('@container gn-v2-object-explorer (max-width:');
+    const narrowLayoutEnd = css.indexOf('body[data-ui-version="v2"] .gn-v2-explorer-search', narrowLayoutStart);
+
+    expect(source).toContain('{isV2Ui && <SidebarConnectionRail {...v2ConnectionRailProps} />}');
+    expect(appCss).toMatch(/body\[data-ui-version=(["'])v2\1\]\s+\.ant-layout-sider\[data-sidebar-collapsed=(["'])false\2\]\s+\.gn-v2-connection-rail\s*\{[^}]*display:\s*none;/s);
+    expect(appCss).not.toMatch(/body\[data-ui-version=(["'])v2\1\]\s+\.ant-layout-sider\[data-sidebar-collapsed=(["'])true\2\]\s+\.gn-v2-connection-rail\s*\{[^}]*display:\s*none;/s);
+    expect(narrowLayoutStart).toBeGreaterThanOrEqual(0);
+    expect(narrowLayoutEnd).toBeGreaterThan(narrowLayoutStart);
+
+    const narrowLayoutCss = css.slice(narrowLayoutStart, narrowLayoutEnd);
+    expect(narrowLayoutCss).toMatch(/\.gn-v2-active-connection-header\s*\{[^}]*flex-wrap:\s*wrap;/s);
+    expect(narrowLayoutCss).toMatch(/\.gn-v2-active-connection-trigger\s*\{[^}]*(?:flex-basis:\s*100%|flex:\s*[^;]*100%);/s);
+    expect(narrowLayoutCss).toMatch(/\.gn-v2-active-connection-actions\s*\{[^}]*(?:width|flex-basis):\s*100%;/s);
+  });
+
   it('renders the fixed v2 rail, titlebar quick actions, explorer filters and workbench actions', () => {
     const markup = renderSidebarMarkup({ uiVersion: 'v2', onCreateConnection: mocks.noop });
     const source = readSidebarSource();
