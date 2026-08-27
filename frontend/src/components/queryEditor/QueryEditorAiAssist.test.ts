@@ -648,13 +648,13 @@ describe('QueryEditorAiAssist', () => {
                 columns: [{ dbName: 'shop', tableName: 'users', name: 'id', type: 'bigint' }],
             },
             editorSnapshot: {
-                prefix: 'select * from users ',
+                prefix: 'select * from users where id ',
                 suffix: '',
-                currentLineBeforeCursor: 'select * from users ',
+                currentLineBeforeCursor: 'select * from users where id ',
                 currentLineAfterCursor: '',
             },
         });
-        expect(insertText).toBe('where id > 1;');
+        expect(insertText).toBe('> 1;');
         expect(service.AIChatSend).toHaveBeenCalledTimes(1);
 
         const missingProvider = await resolveQueryEditorAiRuntimeReadiness({
@@ -682,9 +682,9 @@ describe('QueryEditorAiAssist', () => {
                 columns: [],
             },
             editorSnapshot: {
-                prefix: 'select * from users ',
+                prefix: 'select * from users where id ',
                 suffix: '',
-                currentLineBeforeCursor: 'select * from users ',
+                currentLineBeforeCursor: 'select * from users where id ',
                 currentLineAfterCursor: '',
             },
         };
@@ -720,6 +720,45 @@ describe('QueryEditorAiAssist', () => {
         });
 
         expect(insertText).toBe('eos');
+        expect(service.AIChatSend).not.toHaveBeenCalled();
+        expect(service.AIGetProviders).not.toHaveBeenCalled();
+        expect(service.AIGetActiveProvider).not.toHaveBeenCalled();
+    });
+
+    it('suggests an alias after a manually completed table source and skips AI', async () => {
+        const service = readyService('SELECT * FROM system_user su;');
+        const request = {
+            service,
+            aiContext: {
+                connectionName: 'Local MySQL',
+                sourceType: 'mysql',
+                currentDb: 'shop',
+                tables: [
+                    { dbName: 'shop', tableName: 'system_user' },
+                    { dbName: 'shop', tableName: 'service_user' },
+                ],
+                columns: [],
+            },
+        };
+
+        await expect(requestQueryEditorInlineCompletion({
+            ...request,
+            editorSnapshot: {
+                prefix: 'SELECT * FROM system_user ',
+                suffix: '',
+                currentLineBeforeCursor: 'SELECT * FROM system_user ',
+                currentLineAfterCursor: '',
+            },
+        })).resolves.toBe('su');
+        await expect(requestQueryEditorInlineCompletion({
+            ...request,
+            editorSnapshot: {
+                prefix: 'SELECT * FROM system_user su JOIN service_user ',
+                suffix: '',
+                currentLineBeforeCursor: 'SELECT * FROM system_user su JOIN service_user ',
+                currentLineAfterCursor: '',
+            },
+        })).resolves.toBe('su2');
         expect(service.AIChatSend).not.toHaveBeenCalled();
         expect(service.AIGetProviders).not.toHaveBeenCalled();
         expect(service.AIGetActiveProvider).not.toHaveBeenCalled();
@@ -990,15 +1029,15 @@ describe('QueryEditorAiAssist', () => {
                 columns: [{ dbName: 'shop', tableName: 'users', name: 'id', type: 'bigint' }],
             },
             editorSnapshot: {
-                prefix: 'select * from users ',
+                prefix: 'select * from users where id ',
                 suffix: '',
-                currentLineBeforeCursor: 'select * from users ',
+                currentLineBeforeCursor: 'select * from users where id ',
                 currentLineAfterCursor: '',
             },
         });
 
         expect(resolveQueryEditorInlineCompletionModel((await service.AIGetProviders())[0])).toBe('gpt-5-mini');
-        expect(insertText).toBe('where id = 1;');
+        expect(insertText).toBe('= 1;');
         expect(service.AIChatSend).not.toHaveBeenCalled();
         expect(service.AIChatSendWithOptions).toHaveBeenCalledWith(expect.any(Array), [], {
             model: 'gpt-5-mini',
@@ -1023,9 +1062,9 @@ describe('QueryEditorAiAssist', () => {
                 columns: [{ dbName: 'shop', tableName: 'users', name: 'id', type: 'bigint' }],
             },
             editorSnapshot: {
-                prefix: 'select * from users ',
+                prefix: 'select * from users where id ',
                 suffix: '',
-                currentLineBeforeCursor: 'select * from users ',
+                currentLineBeforeCursor: 'select * from users where id ',
                 currentLineAfterCursor: '',
             },
         });
@@ -1055,14 +1094,14 @@ describe('QueryEditorAiAssist', () => {
                 columns: [{ dbName: 'shop', tableName: 'videos', name: 'code', type: 'varchar' }],
             },
             editorSnapshot: {
-                prefix: 'select * from videos ',
+                prefix: 'select * from videos where code ',
                 suffix: '',
-                currentLineBeforeCursor: 'select * from videos ',
+                currentLineBeforeCursor: 'select * from videos where code ',
                 currentLineAfterCursor: '',
             },
         });
 
-        expect(insertText).toBe('WHERE code IS NOT NULL;');
+        expect(insertText).toBe('IS NOT NULL;');
     });
 
     it('drops inline completions that introduce tables outside the selected database context', async () => {
@@ -1081,9 +1120,9 @@ describe('QueryEditorAiAssist', () => {
                 columns: [{ dbName: 'shop', tableName: 'videos', name: 'code', type: 'varchar' }],
             },
             editorSnapshot: {
-                prefix: 'select * from videos ',
+                prefix: 'select * from videos where code ',
                 suffix: '',
-                currentLineBeforeCursor: 'select * from videos ',
+                currentLineBeforeCursor: 'select * from videos where code ',
                 currentLineAfterCursor: '',
             },
         });

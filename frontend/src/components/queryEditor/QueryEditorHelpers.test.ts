@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
     buildBoundedQueryEditorCompletionSuggestions,
     buildQueryEditorAliasMap,
+    buildQueryEditorTableSourceAlias,
     buildQueryEditorResultSetMergeKey,
     collectQueryEditorReferencedDatabaseNames,
     collectQueryEditorTableReferences,
@@ -11,6 +12,7 @@ import {
     getCompletionTableSchemaCounts,
     isSystemMetadataQueryResult,
     isOracleBaseTableReference,
+    isQueryEditorTableAliasCompletionContext,
     isQueryEditorTableSourceCompletionContext,
     materializeBoundedQueryEditorCompletionBatches,
     rankQueryEditorCompletionCandidate,
@@ -345,6 +347,18 @@ describe('QueryEditorHelpers Oracle-like execution schema', () => {
 });
 
 describe('QueryEditorHelpers qualified navigation (MySQL db.table + PG schema.table)', () => {
+    it('generates table source aliases from name initials and resolves collisions', () => {
+        expect(buildQueryEditorTableSourceAlias('system_user', '')).toBe('su');
+        expect(buildQueryEditorTableSourceAlias('code_query_record_zykj', '')).toBe('cqrz');
+        expect(buildQueryEditorTableSourceAlias('public.system_user', 'SELECT * FROM system_user su')).toBe('su2');
+        expect(buildQueryEditorTableSourceAlias('system_user', 'SELECT * FROM system_user su JOIN service_user su2')).toBe('su3');
+    });
+
+    it('only permits table aliases for non-insert table sources', () => {
+        expect(isQueryEditorTableAliasCompletionContext('SELECT * FROM system_user ')).toBe(true);
+        expect(isQueryEditorTableAliasCompletionContext('INSERT INTO system_user ')).toBe(false);
+    });
+
     it('keeps a dotted Dameng owner intact when metadata already identifies it', () => {
         expect(splitCompletionSchemaAndTable(
             'PEM2.4_V1_1.COM_APPROVE_INFO',

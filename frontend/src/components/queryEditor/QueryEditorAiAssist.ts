@@ -8,6 +8,9 @@ import type {
 } from './QueryEditorHelpers';
 import {
     buildQueryEditorAliasMap,
+    buildQueryEditorTableSourceAlias,
+    collectQueryEditorTableReferences,
+    isQueryEditorTableAliasCompletionContext,
 } from './QueryEditorHelpers';
 import { isPostgresSchemaDialect } from '../../utils/connectionDriverType';
 
@@ -366,6 +369,14 @@ export const resolveQueryEditorInlineLocalCompletion = ({
         return {
             handled: true,
             insertText: '',
+        };
+    }
+
+    const tableAliasInsertText = resolveDeterministicInlineTableAliasInsertText(editorSnapshot);
+    if (tableAliasInsertText) {
+        return {
+            handled: true,
+            insertText: tableAliasInsertText,
         };
     }
 
@@ -1468,6 +1479,21 @@ const resolveDeterministicInlineTableInsertText = (
         normalizeInlineIdentifierPath(fragment),
         isPostgresSchemaDialect(context.sourceType || ''),
     );
+};
+
+const resolveDeterministicInlineTableAliasInsertText = (
+    editorSnapshot: QueryEditorAiEditorSnapshot,
+): string => {
+    const statementPrefix = getCurrentStatementPrefix(editorSnapshot.prefix);
+    if (!/\s$/.test(statementPrefix) || !isQueryEditorTableAliasCompletionContext(statementPrefix)) {
+        return '';
+    }
+    const references = collectQueryEditorTableReferences(statementPrefix);
+    const currentReference = references[references.length - 1];
+    if (!currentReference || currentReference.alias) {
+        return '';
+    }
+    return buildQueryEditorTableSourceAlias(currentReference.tableIdent, statementPrefix);
 };
 
 const resolveDeterministicInlineColumnInsertText = (
