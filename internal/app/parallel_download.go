@@ -32,9 +32,13 @@ const (
 	downloadCandidateProbeTimeout = 15 * time.Second
 	downloadCandidateCacheTTL     = 6 * time.Hour
 	downloadRegionalBiasRatio     = 1.20
+	downloadDMITBaseURL           = "https://download.syngnat.top"
+	downloadBeroBaseURL           = "https://origin-download.syngnat.top:8443"
 )
 
 var errParallelRangeUnsupported = errors.New("download source does not support validated byte ranges")
+var errNotImmutableDriverDispatcherAsset = errors.New("not an immutable driver dispatcher asset")
+var errInvalidDownloadDispatcherURL = errors.New("invalid download dispatcher URL")
 
 type downloadCurrentAssetMismatchError struct{}
 
@@ -61,14 +65,99 @@ func downloadDispatcherURLForPath(assetPath string) string {
 	return "https://" + downloadDispatcherHostname + downloadDispatcherPath + "?" + query.Encode()
 }
 
-func downloadDispatcherAssetPath(rawURL string) (string, bool) {
+func parseDownloadDispatcherAssetPath(rawURL string) (string, bool, error) {
 	parsed, err := url.Parse(strings.TrimSpace(rawURL))
-	if err != nil || !strings.EqualFold(parsed.Scheme, "https") || parsed.User != nil ||
-		!strings.EqualFold(parsed.Hostname(), downloadDispatcherHostname) || parsed.EscapedPath() != downloadDispatcherPath {
-		return "", false
+	if err != nil || parsed == nil || !strings.EqualFold(parsed.Hostname(), downloadDispatcherHostname) {
+		return "", false, nil
 	}
-	assetPath := strings.TrimSpace(parsed.Query().Get("path"))
-	return assetPath, strings.HasPrefix(assetPath, "/")
+	if !strings.EqualFold(parsed.Scheme, "https") || parsed.User != nil || parsed.Port() != "" ||
+		parsed.EscapedPath() != downloadDispatcherPath || parsed.Fragment != "" {
+		return "", true, fmt.Errorf("%w: invalid endpoint", errInvalidDownloadDispatcherURL)
+	}
+	query, err := url.ParseQuery(parsed.RawQuery)
+	if err != nil {
+		return "", true, fmt.Errorf("%w: invalid query", errInvalidDownloadDispatcherURL)
+	}
+	pathValues := query["path"]
+	if len(pathValues) != 1 {
+		return "", true, fmt.Errorf("%w: exactly one path parameter is required", errInvalidDownloadDispatcherURL)
+	}
+	assetPath := strings.TrimSpace(pathValues[0])
+	if err := validateDownloadDispatcherAssetPath(assetPath); err != nil {
+		return "", true, err
+	}
+	return assetPath, true, nil
+}
+
+func validateDownloadDispatcherAssetPath(assetPath string) error {
+	if !strings.HasPrefix(assetPath, "/") || strings.HasPrefix(assetPath, "//") || strings.HasSuffix(assetPath, "/") ||
+		strings.Contains(assetPath, "%") || strings.Contains(assetPath, "\\") || strings.ContainsRune(assetPath, '\x00') {
+		return fmt.Errorf("%w: invalid asset path", errInvalidDownloadDispatcherURL)
+	}
+	parts := strings.Split(strings.TrimPrefix(assetPath, "/"), "/")
+	for _, part := range parts {
+		if part == "" || part == "." || part == ".." {
+			return fmt.Errorf("%w: invalid asset path segment", errInvalidDownloadDispatcherURL)
+		}
+	}
+	isMutable := assetPath == "/gonavi/releases/latest/latest.json" ||
+		assetPath == "/gonavi/dev/releases/latest/latest-dev.json" ||
+		assetPath == "/drivers/releases/latest/GoNavi-DriverAgents-Index.json" ||
+		assetPath == "/drivers/dev/releases/latest/GoNavi-DriverAgents-Index.json"
+	isStableImmutable := len(parts) == 5 && (parts[0] == "gonavi" || parts[0] == "drivers") &&
+		parts[1] == "releases" && parts[2] == "download"
+	isDevImmutable := len(parts) == 6 && (parts[0] == "gonavi" || parts[0] == "drivers") &&
+		parts[1] == "dev" && parts[2] == "releases" && parts[3] == "download"
+	if !isMutable && !isStableImmutable && !isDevImmutable {
+		return fmt.Errorf("%w: unsupported asset path", errInvalidDownloadDispatcherURL)
+	}
+	return nil
+}
+
+func downloadDispatcherAssetPath(rawURL string) (string, bool) {
+	assetPath, recognized, err := parseDownloadDispatcherAssetPath(rawURL)
+	return assetPath, recognized && err == nil
+}
+
+// staticDriverDispatcherDownloadCandidates derives the immutable driver data
+// plane locally. Driver release URLs already contain the exact tag and asset,
+// so stale Dispatcher health/KV state must not collapse the fallback chain to
+// GitHub only.
+func staticDriverDispatcherDownloadCandidates(rawURL string) ([]string, error) {
+	assetPath, recognized, err := parseDownloadDispatcherAssetPath(rawURL)
+	if !recognized {
+		return nil, errNotImmutableDriverDispatcherAsset
+	}
+	if err != nil {
+		return nil, err
+	}
+	parts := strings.Split(strings.TrimPrefix(assetPath, "/"), "/")
+	isDev := len(parts) == 6 && parts[0] == "drivers" && parts[1] == "dev" && parts[2] == "releases" && parts[3] == "download"
+	isStable := len(parts) == 5 && parts[0] == "drivers" && parts[1] == "releases" && parts[2] == "download"
+	if !isDev && !isStable {
+		return nil, errNotImmutableDriverDispatcherAsset
+	}
+	tagIndex := 3
+	if isDev {
+		tagIndex = 4
+	}
+	tag := parts[tagIndex]
+	assetName := parts[len(parts)-1]
+	githubTag := tag
+	if isDev {
+		githubTag = "dev-latest"
+	}
+	encodedParts := make([]string, 0, len(parts))
+	for _, part := range parts {
+		encodedParts = append(encodedParts, url.PathEscape(part))
+	}
+	relativePath := "/" + strings.Join(encodedParts, "/")
+	githubURL := "https://github.com/Syngnat/GoNavi-DriverAgents/releases/download/" + url.PathEscape(githubTag) + "/" + url.PathEscape(assetName)
+	return []string{
+		downloadDMITBaseURL + relativePath,
+		downloadBeroBaseURL + relativePath,
+		githubURL,
+	}, nil
 }
 
 func downloadDispatcherURLRequiringCurrentDevAsset(rawURL string) string {
@@ -129,8 +218,17 @@ func validatedHTTPSDownloadCandidates(value dispatcherDownloadResponse) []string
 }
 
 func resolveDispatcherDownloadCandidates(client *http.Client, rawURL string) ([]string, error) {
-	if _, ok := downloadDispatcherAssetPath(rawURL); !ok {
+	_, recognized, parseErr := parseDownloadDispatcherAssetPath(rawURL)
+	if !recognized {
 		return []string{strings.TrimSpace(rawURL)}, nil
+	}
+	if parseErr != nil {
+		return nil, parseErr
+	}
+	if candidates, err := staticDriverDispatcherDownloadCandidates(rawURL); err == nil {
+		return candidates, nil
+	} else if !errors.Is(err, errNotImmutableDriverDispatcherAsset) {
+		return nil, err
 	}
 	parsed, err := url.Parse(rawURL)
 	if err != nil {
@@ -827,6 +925,9 @@ func downloadFileWithHashParallelAwareAndExpectedSize(
 	} else {
 		candidates, dispatcherErr = resolveDispatcherDownloadCandidates(client, rawURL)
 		if dispatcherErr != nil {
+			if errors.Is(dispatcherErr, errInvalidDownloadDispatcherURL) {
+				return "", dispatcherErr
+			}
 			// The 302 endpoint remains a compatibility fallback when JSON resolution
 			// is temporarily unavailable. It still uses normal TLS.
 			candidates = []string{strings.TrimSpace(rawURL)}

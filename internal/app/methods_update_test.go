@@ -1312,6 +1312,37 @@ func TestPrepareUpdateDownloadCandidateRecognizesAlreadyGatedDevAsset(t *testing
 	}
 }
 
+func TestDownloadUpdateAssetWithFallbackRejectsMalformedDispatcherWithoutUsingNextURL(t *testing.T) {
+	original := updateDownloadFileWithExpectedSize
+	t.Cleanup(func() {
+		updateDownloadFileWithExpectedSize = original
+	})
+	var attempts []string
+	updateDownloadFileWithExpectedSize = func(rawURL string, _ string, _ func(downloaded, total int64), _ int64) (string, error) {
+		attempts = append(attempts, rawURL)
+		if len(attempts) == 1 {
+			return "", errInvalidDownloadDispatcherURL
+		}
+		return strings.Repeat("a", 64), nil
+	}
+
+	validPath := "%2Fgonavi%2Fdev%2Freleases%2Fdownload%2Fdev-current%2FGoNavi.zip"
+	malformedURL := "https://download-dispatch.syngnat.top/v1/resolve?path=" + validPath + "&path=" + validPath
+	_, err := downloadUpdateAssetWithFallback(
+		[]string{malformedURL, "https://github.com/Syngnat/GoNavi/releases/download/dev-latest/GoNavi.zip"},
+		filepath.Join(t.TempDir(), "GoNavi.zip"),
+		"",
+		0,
+		nil,
+	)
+	if !errors.Is(err, errInvalidDownloadDispatcherURL) {
+		t.Fatalf("malformed Dispatcher update error = %v, want typed invalid URL", err)
+	}
+	if len(attempts) != 1 || attempts[0] != malformedURL {
+		t.Fatalf("malformed Dispatcher update attempts = %#v, want only the invalid primary URL", attempts)
+	}
+}
+
 func TestDownloadUpdateRefreshesDevReleaseOnceAfterExpiredAsset(t *testing.T) {
 	app, installMode := newDevUpdateDownloadTestApp(t)
 

@@ -987,7 +987,7 @@ func downloadUpdateAssetWithFallback(
 			return actualHash, nil
 		}
 		var currentAssetMismatch downloadCurrentAssetMismatchError
-		if requiresCurrentDevAsset || errors.As(err, &currentAssetMismatch) {
+		if requiresCurrentDevAsset || errors.As(err, &currentAssetMismatch) || errors.Is(err, errInvalidDownloadDispatcherURL) {
 			_ = os.Remove(assetPath)
 			return "", err
 		}

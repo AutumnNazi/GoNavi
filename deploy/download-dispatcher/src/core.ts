@@ -1,5 +1,6 @@
 const NODE_IDS = ["dmit", "bero"] as const;
 const LEGACY_DISABLED_BERO_BASE_URL = "https://bero-disabled.invalid";
+const DMIT_DOWNLOAD_BASE_URL = "https://download.syngnat.top";
 const BERO_PROXY_BASE_URL = "https://origin-download.syngnat.top:8443";
 const CHANNELS = ["stable", "dev"] as const;
 const SUCCESS_THRESHOLD = 2;
@@ -217,8 +218,16 @@ function controlsShareRoutingIdentity(left: PublicationControl, right: Publicati
 }
 
 function isAllowedAssetPath(value: string): boolean {
-  if (!value.startsWith("/") || value.includes("\\") || value.includes("..")) return false;
-  const parts = value.split("/").filter(Boolean);
+  if (
+    !value.startsWith("/")
+    || value.startsWith("//")
+    || value.endsWith("/")
+    || value.includes("%")
+    || value.includes("\\")
+    || value.includes("\0")
+  ) return false;
+  const parts = value.slice(1).split("/");
+  if (parts.some((part) => part === "" || part === "." || part === "..")) return false;
   if (parts.length !== 5 && parts.length !== 6) return false;
   if (parts[0] === "gonavi") {
     if (parts[1] === "releases") {
@@ -503,6 +512,14 @@ function joinBaseAndPath(baseUrl: string, relativePath: string): string {
   return baseUrl.replace(/\/+$/, "") + relativePath;
 }
 
+function fixedDriverDownloadCandidates(coordinates: AssetCoordinates): Array<{ source: string; url: string }> {
+  return [
+    { source: "dmit", url: joinBaseAndPath(DMIT_DOWNLOAD_BASE_URL, coordinates.relativePath) },
+    { source: "bero", url: joinBaseAndPath(BERO_PROXY_BASE_URL, coordinates.relativePath) },
+    { source: "github", url: coordinates.githubUrl },
+  ];
+}
+
 export function selectLegacyRedirectCandidate<T extends { source: string }>(candidates: T[]): T {
   return candidates.find((candidate) => candidate.source === "dmit")
     ?? candidates.find((candidate) => candidate.source === "bero")
@@ -511,7 +528,8 @@ export function selectLegacyRedirectCandidate<T extends { source: string }>(cand
 
 async function resolveDownload(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
-  const coordinates = parseAssetCoordinates(url.searchParams.get("path") ?? "");
+  const pathValues = url.searchParams.getAll("path");
+  const coordinates = pathValues.length === 1 ? parseAssetCoordinates(pathValues[0]) : null;
   if (!coordinates) {
     return Response.json({ error: "invalid asset path" }, { status: 400, headers: { "Cache-Control": "no-store" } });
   }
@@ -523,6 +541,35 @@ async function resolveDownload(request: Request, env: Env): Promise<Response> {
         code: "invalid_current_asset_request",
       },
       { status: 400, headers: { "Cache-Control": "no-store" } },
+    );
+  }
+  const wantsJSON = url.searchParams.get("format") === "json";
+  if (wantsJSON && coordinates.immutable?.kind === "driver") {
+    // Immutable driver URLs already carry their exact release tag and asset
+    // name. Return the complete fixed data-plane chain without consulting KV:
+    // a stale or app-only publication state must not collapse fallback to a
+    // single GitHub request.
+    const candidates = fixedDriverDownloadCandidates(coordinates);
+    const selected = candidates[0];
+    console.log(JSON.stringify({
+      message: "download source selected",
+      channel: coordinates.channel,
+      generation: "",
+      source: selected.source,
+    }));
+    const headers = new Headers({
+      "Cache-Control": "no-store",
+      Location: selected.url,
+      "X-GoNavi-Download-Source": selected.source,
+    });
+    return Response.json(
+      {
+        url: selected.url,
+        source: selected.source,
+        generation: "",
+        candidates,
+      },
+      { headers },
     );
   }
   const [control, state] = await Promise.all([
@@ -582,7 +629,6 @@ async function resolveDownload(request: Request, env: Env): Promise<Response> {
   // Keep its edge preference, but retain GitHub as the final availability fallback.
   candidates.push({ source: "github", url: coordinates.githubUrl });
 
-  const wantsJSON = url.searchParams.get("format") === "json";
   const selected = wantsJSON ? candidates[0] : selectLegacyRedirectCandidate(candidates);
   console.log(JSON.stringify({
     message: "download source selected",

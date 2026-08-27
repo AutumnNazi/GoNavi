@@ -383,7 +383,7 @@ describe("download dispatcher", () => {
     expect(body.candidates.map((candidate) => candidate.source)).toEqual(["github"]);
   });
 
-  it("routes immutable assets to DMIT only when their app or driver tag matches the active control", async () => {
+  it("keeps app assets current-gated while driver assets retain the fixed fallback chain", async () => {
     const generation = "stable-run-1";
     const control = {
       schemaVersion: 1,
@@ -428,13 +428,63 @@ describe("download dispatcher", () => {
 
       await expect(resolveSources("/gonavi/releases/download/v1.2.3/GoNavi.zip")).resolves.toEqual(["dmit", "github"]);
       await expect(resolveSources("/gonavi/releases/download/v1.2.4/GoNavi.zip")).resolves.toEqual(["github"]);
-      await expect(resolveSources("/drivers/releases/download/driver-v1/mysql.zip")).resolves.toEqual(["dmit", "github"]);
-      await expect(resolveSources("/drivers/releases/download/driver-v2/mysql.zip")).resolves.toEqual(["github"]);
+      await expect(resolveSources("/drivers/releases/download/driver-v1/mysql.zip")).resolves.toEqual(["dmit", "bero", "github"]);
+      await expect(resolveSources("/drivers/releases/download/driver-v2/mysql.zip")).resolves.toEqual(["dmit", "bero", "github"]);
       await expect(resolveSources("/gonavi/releases/latest/latest.json")).resolves.toEqual(["dmit", "github"]);
       await expect(resolveSources("/drivers/releases/latest/GoNavi-DriverAgents-Index.json")).resolves.toEqual(["dmit", "github"]);
     } finally {
       await env.ROUTING_STATE.delete("routing:stable");
     }
+  });
+
+  it("returns the exact fixed driver fallback chain without publication state", async () => {
+    await env.ROUTING_STATE.delete("control:dev");
+    await env.ROUTING_STATE.delete("routing:dev");
+
+    const response = await SELF.fetch(
+      "https://download-dispatch.syngnat.top/v1/resolve?format=json&path=/drivers/dev/releases/download/dev-5b7ef3c/sqlserver-driver-agent-darwin-arm64.zip",
+    );
+    const body = await response.json<{ candidates: Array<{ source: string; url: string }> }>();
+
+    expect(body.candidates).toEqual([
+      {
+        source: "dmit",
+        url: "https://download.syngnat.top/drivers/dev/releases/download/dev-5b7ef3c/sqlserver-driver-agent-darwin-arm64.zip",
+      },
+      {
+        source: "bero",
+        url: "https://origin-download.syngnat.top:8443/drivers/dev/releases/download/dev-5b7ef3c/sqlserver-driver-agent-darwin-arm64.zip",
+      },
+      {
+        source: "github",
+        url: "https://github.com/Syngnat/GoNavi-DriverAgents/releases/download/dev-latest/sqlserver-driver-agent-darwin-arm64.zip",
+      },
+    ]);
+  });
+
+  it("rejects ambiguous driver paths before returning fixed mirror candidates", async () => {
+    const invalidPaths = [
+      "/drivers/releases/download/%2e%2e/asset.zip",
+      "/drivers/releases/download/v1.9.6%2Fother/asset.zip",
+      "/drivers/releases/download/v1.9.6/asset\0.zip",
+      "/drivers/releases/download/./asset.zip",
+      "/drivers/releases/download//asset.zip",
+    ];
+    for (const assetPath of invalidPaths) {
+      const response = await SELF.fetch(
+        `https://download-dispatch.syngnat.top/v1/resolve?format=json&path=${encodeURIComponent(assetPath)}`,
+      );
+      expect(response.status, assetPath).toBe(400);
+      await expect(response.json()).resolves.toEqual({ error: "invalid asset path" });
+    }
+
+    const first = encodeURIComponent("/drivers/releases/download/v1.9.6/asset.zip");
+    const second = encodeURIComponent("/drivers/releases/download/v1.9.7/asset.zip");
+    const duplicateResponse = await SELF.fetch(
+      `https://download-dispatch.syngnat.top/v1/resolve?format=json&path=${first}&path=${second}`,
+    );
+    expect(duplicateResponse.status).toBe(400);
+    await expect(duplicateResponse.json()).resolves.toEqual({ error: "invalid asset path" });
   });
 
   it("keeps a newly published dev tag on GitHub until the matching DMIT generation is active", async () => {
@@ -482,8 +532,8 @@ describe("download dispatcher", () => {
 
       await expect(resolveSources("/gonavi/dev/releases/download/dev-current/GoNavi.zip")).resolves.toEqual(["dmit", "github"]);
       await expect(resolveSources("/gonavi/dev/releases/download/dev-next/GoNavi.zip")).resolves.toEqual(["github"]);
-      await expect(resolveSources("/drivers/dev/releases/download/driver-current/mysql.zip")).resolves.toEqual(["dmit", "github"]);
-      await expect(resolveSources("/drivers/dev/releases/download/driver-next/mysql.zip")).resolves.toEqual(["github"]);
+      await expect(resolveSources("/drivers/dev/releases/download/driver-current/mysql.zip")).resolves.toEqual(["dmit", "bero", "github"]);
+      await expect(resolveSources("/drivers/dev/releases/download/driver-next/mysql.zip")).resolves.toEqual(["dmit", "bero", "github"]);
       await expect(resolveSources("/gonavi/dev/releases/latest/latest-dev.json")).resolves.toEqual(["dmit", "github"]);
       await expect(resolveSources("/drivers/dev/releases/latest/GoNavi-DriverAgents-Index.json")).resolves.toEqual(["dmit", "github"]);
     } finally {
@@ -731,10 +781,10 @@ describe("download dispatcher", () => {
     };
 
     await expect(resolveSources("/gonavi/dev/releases/download/dev-current/GoNavi.zip")).resolves.toEqual(["dmit", "github"]);
-    await expect(resolveSources("/drivers/dev/releases/download/driver-current/mysql.zip")).resolves.toEqual(["dmit", "github"]);
+    await expect(resolveSources("/drivers/dev/releases/download/driver-current/mysql.zip")).resolves.toEqual(["dmit", "bero", "github"]);
     await expect(resolveSources("/gonavi/dev/releases/latest/latest-dev.json")).resolves.toEqual(["dmit", "github"]);
     await expect(resolveSources("/gonavi/dev/releases/download/dev-next/GoNavi.zip")).resolves.toEqual(["github"]);
-    await expect(resolveSources("/drivers/dev/releases/download/driver-next/mysql.zip")).resolves.toEqual(["github"]);
+    await expect(resolveSources("/drivers/dev/releases/download/driver-next/mysql.zip")).resolves.toEqual(["dmit", "bero", "github"]);
   });
 
   it("does not reuse an old healthy routing state after control advances", async () => {
