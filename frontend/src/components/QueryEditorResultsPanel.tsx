@@ -81,6 +81,7 @@ export const resolveEffectiveActiveResultKey = (
 };
 
 interface QueryEditorResultsPanelProps {
+    workbenchTabId?: string;
     resultSets: QueryEditorResultSet[];
     activeResultKey: string;
     isActive: boolean;
@@ -144,6 +145,7 @@ export const shouldActivateResultTabDetachPointer = (event: {
 };
 
 const QueryEditorResultsPanel: React.FC<QueryEditorResultsPanelProps> = ({
+    workbenchTabId,
     resultSets,
     activeResultKey,
     isActive,
@@ -659,6 +661,7 @@ const QueryEditorResultsPanel: React.FC<QueryEditorResultsPanelProps> = ({
                             </div>
                         ) : (
                             <DataGrid
+                                workbenchTabId={workbenchTabId}
                                 data={rs.rows}
                                 columnNames={resolveVisibleQueryResultColumns(rs.columns, globalHiddenColumns)}
                                 isActive={isActive && resolvedActiveResultKey === rs.key}
@@ -707,6 +710,7 @@ const QueryEditorResultsPanel: React.FC<QueryEditorResultsPanelProps> = ({
                         </div>
                     ) : null}
                     <DataGrid
+                        workbenchTabId={workbenchTabId}
                         data={rs.rows}
                         columnNames={visibleColumns}
                         isActive={isActive && resolvedActiveResultKey === rs.key}

@@ -11507,6 +11507,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
 
       {isResultPanelVisible && (
         <QueryEditorResultsPanel
+          workbenchTabId={tab.id}
           resultSets={resultSets}
           activeResultKey={activeResultKey}
           isActive={isActive}
