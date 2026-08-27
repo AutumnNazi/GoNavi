@@ -16,6 +16,7 @@ import {
   formatSidebarRowCount,
   formatSidebarTableSize,
   formatSidebarTableTimestamp,
+  resolveSidebarQueriesFolderTitle,
   resolveV2ObjectGroupTitle,
 } from './sidebarHelpers';
 import { normalizeOracleObjectCompileStatus } from './oracleObjectCompilation';
@@ -138,7 +139,8 @@ export const renderSidebarV2TreeTitle = ({
     );
   }
   const displayTitle = (() => {
-    if (node.type === 'queries-folder') return t('sidebar.tree.saved_queries');
+    const queriesFolderTitle = resolveSidebarQueriesFolderTitle(node);
+    if (queriesFolderTitle) return queriesFolderTitle;
     if (node.type === 'external-sql-root') return t('sidebar.external_sql.root');
     if (node.type === 'object-group') {
       const objectGroupTitle = resolveV2ObjectGroupTitle(node);

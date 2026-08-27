@@ -14,7 +14,10 @@ import {
   shouldHideSchemaPrefix,
   splitQualifiedName,
 } from './sidebarMetadataLoaders';
-import { resolveV2ObjectGroupTitle } from './sidebarHelpers';
+import {
+  resolveSidebarQueriesFolderTitle,
+  resolveV2ObjectGroupTitle,
+} from './sidebarHelpers';
 import { normalizeOracleObjectCompileStatus } from './oracleObjectCompilation';
 
 type UseSidebarTitleRenderArgs = {
@@ -56,7 +59,7 @@ export const useSidebarTitleRender = ({
       : <Badge status={legacyBadgeStatus} style={{ marginLeft: 4, marginRight: 8 }} />
   ) : null;
 
-  const displayTitle = String(node.title ?? '');
+  const displayTitle = resolveSidebarQueriesFolderTitle(node) ?? String(node.title ?? '');
   const dragText = resolveSidebarObjectDragText(node);
   let hoverTitle = displayTitle;
   if (node.type === 'message-object' || node.type === 'table' || node.type === 'view' || node.type === 'materialized-view' || node.type === 'sequence' || node.type === 'package' || node.type === 'db-event') {

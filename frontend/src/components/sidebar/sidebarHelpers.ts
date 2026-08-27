@@ -311,6 +311,13 @@ export const resolveSidebarTableNameForCopy = (
   ).trim();
 };
 
+export const resolveSidebarQueriesFolderTitle = (
+  node: Pick<SidebarNodeLike, 'type'> | null | undefined,
+): string | null => {
+  if (node?.type !== 'queries-folder') return null;
+  return t('sidebar.tree.saved_queries');
+};
+
 /** resolveSidebarDatabaseNameForCopy extracts the exact database identifier shown by the node. */
 export const resolveSidebarDatabaseNameForCopy = (
   node: Pick<SidebarNodeLike, 'title' | 'dataRef'> | null | undefined,
