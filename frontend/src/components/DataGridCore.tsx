@@ -1436,6 +1436,8 @@ interface DataGridProps {
     initialViewModeScope?: 'shared' | 'local';
     onDataViewActivate?: () => void;
     onDataChange?: (rows: any[]) => void;
+    /** Workbench tab that owns editable changes in this grid. */
+    workbenchTabId?: string;
 }
 
 type GridFilterCondition = FilterCondition & {

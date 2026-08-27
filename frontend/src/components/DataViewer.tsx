@@ -1435,6 +1435,7 @@ const DataViewer: React.FC<{ tab: TabData; isActive?: boolean }> = React.memo(({
           initialViewMode={tab.initialViewMode}
           initialViewModeRequestId={tab.initialViewModeRequestId}
           onDataViewActivate={handleDataViewActivate}
+          workbenchTabId={tab.id}
       />
     </div>
   );

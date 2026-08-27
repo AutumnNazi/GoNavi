@@ -49,6 +49,7 @@ import {
   dispatchSidebarDatabaseRefresh,
   type SidebarDatabaseRefreshRequest,
 } from '../../utils/sidebarDatabaseRefresh';
+import { registerWorkbenchTabCloseGuard } from '../../utils/workbenchTabCloseProtection';
 import Modal from '../common/ResizableDraggableModal';
 import './DataSyncWorkbench.css';
 
@@ -240,6 +241,7 @@ export type DataSyncWorkbenchShellProps = {
   connectionTree?: DataSyncConnectionTreeItem[];
   locale?: DataSyncWorkbenchLocale | string;
   onClose?: () => void;
+  workbenchTabId?: string;
 };
 
 /**
@@ -265,6 +267,7 @@ export const DataSyncWorkbenchShell: React.FC<DataSyncWorkbenchShellProps> = ({
   connectionTree = [],
   locale,
   onClose,
+  workbenchTabId,
 }) => {
   const t = useMemo(() => createDataSyncWorkbenchTranslate(locale), [locale]);
   const initialTasksRef = useRef<DataSyncTaskDefinition[]>();
@@ -733,6 +736,24 @@ export const DataSyncWorkbenchShell: React.FC<DataSyncWorkbenchShellProps> = ({
       setSaving(false);
     }
   };
+
+  useEffect(() => {
+    if (!workbenchTabId) return undefined;
+    return registerWorkbenchTabCloseGuard(workbenchTabId, {
+      isDirty: () => dirtyTaskIdsRef.current.size > 0,
+      save: async () => {
+        const dirtyTaskIds = Array.from(dirtyTaskIdsRef.current);
+        for (const taskId of dirtyTaskIds) {
+          const task = tasks.find((item) => item.id === taskId);
+          if (!task || !(await saveTask(task))) return false;
+        }
+        return dirtyTaskIdsRef.current.size === 0;
+      },
+      // Closing unmounts this workbench. The pending in-memory definitions
+      // are intentionally discarded only after the user chose that action.
+      discard: () => undefined,
+    });
+  }, [saveTask, tasks, workbenchTabId]);
 
   const runPreflight = async () => {
     if (!selectedTask || preflighting) return;

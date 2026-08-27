@@ -1,7 +1,8 @@
 import Modal from './common/ResizableDraggableModal';
+import { registerWorkbenchTabCloseGuard } from '../utils/workbenchTabCloseProtection';
 // cspell:ignore anticon sqls uuidv uuidv4 hscroll
 import React, { useState, useEffect, useRef, useContext, useMemo, useCallback, useDeferredValue } from 'react';
-import { createPortal } from 'react-dom';
+import { createPortal, flushSync } from 'react-dom';
 import { Table, message, Input, Button, Dropdown, MenuProps, Form, Pagination, Select, Checkbox, Segmented, Tooltip, Popover, DatePicker, TimePicker } from 'antd';
 import type { InputRef } from 'antd';
 import dayjs from 'dayjs';
@@ -337,6 +338,7 @@ const DataGrid: React.FC<DataGridProps> = ({
     initialViewModeScope,
     onDataViewActivate,
     onDataChange,
+    workbenchTabId,
 }) => {
   const storedConnections = useStore(state => state.connections);
   const connections = useMemo(() => {
@@ -2480,23 +2482,24 @@ const DataGrid: React.FC<DataGridProps> = ({
       !!focusedCellInfo &&
       isWritableResultColumn(focusedCellInfo.dataIndex, effectiveEditLocator)
   ), [canModifyData, focusedCellInfo, effectiveEditLocator]);
-  const handleDataPanelSave = useCallback(() => {
-      if (!focusedCellInfo) return;
+  const handleDataPanelSave = useCallback((): boolean => {
+      if (!focusedCellInfo) return false;
       if (!focusedCellWritable) {
           void message.info(translateDataGrid('data_grid.message.current_field_not_editable'));
-          return;
+          return false;
       }
       // 与 updateFocusedCell 设置的原始值比较，避免幽灵变更
       if (dataPanelValue === dataPanelOriginalRef.current) {
           dataPanelDirtyRef.current = false;
           void message.info(translateDataGrid('data_grid.message.no_data_changes'));
-          return;
+          return true;
       }
       const nextRow: any = { ...focusedCellInfo.record, [focusedCellInfo.dataIndex]: dataPanelValue };
       handleCellSave(nextRow);
       dataPanelOriginalRef.current = dataPanelValue;
       dataPanelDirtyRef.current = false;
       void message.success(translateDataGrid('data_grid.message.saved'));
+      return true;
   }, [focusedCellInfo, focusedCellWritable, dataPanelValue, handleCellSave, translateDataGrid]);
   const lastReportedDataFingerprintRef = useRef('');
   useEffect(() => {
@@ -3644,11 +3647,11 @@ const DataGrid: React.FC<DataGridProps> = ({
       visibleColumnNames, rowKeyStr, normalizeCommitCellValue, shouldCommitColumn,
       connectionId, tableName, connections, rowLocatorMessages, translateDataGrid]);
 
-  const handleCommit = useCallback(async (source: 'manual' | 'auto' = 'manual') => {
+  const handleCommit = useCallback(async (source: 'manual' | 'auto' = 'manual'): Promise<boolean> => {
       clearAutoCommitTimer();
-      if (!connectionId || !tableName) return;
+      if (!connectionId || !tableName) return false;
       const conn = connections.find(c => c.id === connectionId);
-      if (!conn) return;
+      if (!conn) return false;
       const changeSetResult = buildDataGridCommitChangeSet({
           addedRows,
           modifiedRows,
@@ -3665,13 +3668,13 @@ const DataGrid: React.FC<DataGridProps> = ({
           void message.error(changeSetResult.error
               ? translateDataGrid('data_grid.message.change_set_build_failed_detail', { detail: changeSetResult.error })
               : translateDataGrid('data_grid.message.change_set_build_failed'));
-          return;
+          return false;
       }
 
       const { inserts, updates, deletes } = changeSetResult.changes;
       if (inserts.length === 0 && updates.length === 0 && deletes.length === 0) {
           void message.info(translateDataGrid('data_grid.message.no_changes_to_commit'));
-          return;
+          return true;
       }
 
       const config = { 
@@ -3689,7 +3692,7 @@ const DataGrid: React.FC<DataGridProps> = ({
           target: [dbName, tableName].filter(Boolean).join(' / '),
           translate: translateDataGrid,
       });
-      if (!approved) return;
+      if (!approved) return false;
       
       const startTime = Date.now();
       const res = await ApplyChanges(buildRpcConnectionConfig(config) as any, dbName || '', tableName, { inserts, updates, deletes, locatorStrategy: effectiveEditLocator?.strategy } as any);
@@ -3721,6 +3724,7 @@ const DataGrid: React.FC<DataGridProps> = ({
           void message.success(source === 'auto'
               ? translateDataGrid('data_grid.message.auto_commit_success')
               : translateDataGrid('data_grid.message.transaction_committed'));
+          return true;
       } else {
           addSqlLog({
               id: Date.now().toString(),
@@ -3737,6 +3741,7 @@ const DataGrid: React.FC<DataGridProps> = ({
           void message.error(source === 'auto'
               ? translateDataGrid('data_grid.message.auto_commit_failed', { detail: res.message })
               : translateDataGrid('data_grid.message.commit_failed', { detail: res.message }));
+          return false;
       }
   }, [
       clearAutoCommitTimer,
@@ -3758,6 +3763,31 @@ const DataGrid: React.FC<DataGridProps> = ({
       onReload,
       translateDataGrid,
   ]);
+  const handleCommitRef = useRef(handleCommit);
+  handleCommitRef.current = handleCommit;
+
+  useEffect(() => {
+      if (!workbenchTabId) return undefined;
+      return registerWorkbenchTabCloseGuard(workbenchTabId, {
+          isDirty: () => hasChanges || dataPanelDirtyRef.current,
+          save: async () => {
+              if (dataPanelDirtyRef.current) {
+                  const applied = flushSync(() => handleDataPanelSave());
+                  if (!applied || dataPanelDirtyRef.current) return false;
+              }
+              return handleCommitRef.current('manual');
+          },
+          discard: () => {
+              clearAutoCommitTimer();
+              setAddedRows([]);
+              setModifiedRows({});
+              setDeletedRowKeys(new Set());
+              setModifiedColumns({});
+              setDataPanelValue(dataPanelOriginalRef.current);
+              dataPanelDirtyRef.current = false;
+          },
+      });
+  }, [clearAutoCommitTimer, handleDataPanelSave, hasChanges, setDataPanelValue, workbenchTabId]);
 
   useEffect(() => {
       if (!canModifyData || dataEditCommitMode !== 'auto' || !hasChanges) {
