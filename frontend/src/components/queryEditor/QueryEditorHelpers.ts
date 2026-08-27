@@ -2235,6 +2235,14 @@ export const isQueryEditorTableSourceCompletionContext = (source: string): boole
     analyzeQueryEditorTableReferences(source).expectsTableSource
 );
 
+export const isQueryEditorTableAliasCompletionContext = (source: string): boolean => {
+    if (!isQueryEditorTableSourceCompletionContext(source)) {
+        return false;
+    }
+    return !/\b(?:INSERT|REPLACE)\s+INTO\s+(?:[`"\[]?[A-Za-z_][\w$]*[`"\]]?\s*\.\s*){0,2}[`"\[]?[A-Za-z_][\w$]*[`"\]]?\s*$/i
+        .test(source);
+};
+
 export const buildQueryEditorAliasMap = (
     fullText: string,
     currentDb: string,
@@ -2266,6 +2274,34 @@ export const buildQueryEditorAliasMap = (
         aliasMap[alias.toLowerCase()] = aliasTarget;
     }
     return aliasMap;
+};
+
+/**
+ * 为 SQL 表源生成简短别名。仅使用表名本身的单词首字母，避免将数据库或 schema
+ * 混入别名；同一语句中已使用的别名会依次追加数字。
+ */
+export const buildQueryEditorTableSourceAlias = (tableName: string, statementText: string): string => {
+    const table = getCompletionQualifiedNameLastPart(tableName);
+    const baseAlias = table
+        .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+        .split(/[^A-Za-z0-9$]+/)
+        .filter((word) => /^[A-Za-z]/.test(word))
+        .map((word) => word[0].toLowerCase())
+        .join('');
+    if (!baseAlias) return '';
+
+    const usedAliases = new Set(
+        collectQueryEditorTableReferences(statementText)
+            .map((reference) => String(reference.alias || '').trim().toLowerCase())
+            .filter(Boolean),
+    );
+    if (!usedAliases.has(baseAlias)) return baseAlias;
+
+    let suffix = 2;
+    while (usedAliases.has(`${baseAlias}${suffix}`)) {
+        suffix += 1;
+    }
+    return `${baseAlias}${suffix}`;
 };
 
 /**

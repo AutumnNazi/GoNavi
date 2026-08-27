@@ -187,6 +187,7 @@ import {
     buildCompletionTriggersMetadataQuerySpecs,
     buildCompletionViewsMetadataQuerySpecs,
     buildQueryEditorAliasMap,
+    buildQueryEditorTableSourceAlias,
     buildQueryEditorHoverMarkdown,
     buildQueryEditorResultSetMergeKey,
     buildQualifiedCompletionName,
@@ -209,6 +210,7 @@ import {
     getQueryEditorObjectResolveText,
     getTabQueryValue,
     isOracleBaseTableReference,
+    isQueryEditorTableAliasCompletionContext,
     isQueryEditorTableSourceCompletionContext,
     isDocumentLevelShortcutTarget,
     isQueryEditorPrimaryMouseButton,
@@ -6786,6 +6788,13 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
               const completionScopeText = currentStatementPrefix || linePrefix;
               const currentStatementText = currentStatementRange?.text || '';
               const completionReferenceText = currentStatementText || completionScopeText;
+              const isTableSourceCompletion = isQueryEditorTableSourceCompletionContext(completionScopeText);
+              const isTableAliasCompletion = isQueryEditorTableAliasCompletionContext(completionScopeText);
+              const appendTableSourceAlias = (insertText: string, tableName: string) => {
+                  if (!isTableAliasCompletion) return insertText;
+                  const alias = buildQueryEditorTableSourceAlias(tableName, completionReferenceText);
+                  return alias ? `${insertText} ${alias}` : insertText;
+              };
 
               // 0) 三段式 db.table.column 格式：当输入 db.table. 时提示列
               const threePartMatch = linePrefix.match(QUERY_EDITOR_SQL_THREE_PART_COMPLETION_REGEX);
@@ -6861,7 +6870,10 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                                       [meta.displayName, table.tableName],
                                   ),
                                   kind: monaco.languages.CompletionItemKind.Class,
-                                  insertText: quoteCompletionPath(applyCompletionFragmentCase(meta.insertName, rawPrefix)),
+                                  insertText: appendTableSourceAlias(
+                                      quoteCompletionPath(applyCompletionFragmentCase(meta.insertName, rawPrefix)),
+                                      meta.insertName,
+                                  ),
                                   detail: appendCommentToDetail(`${translate('query_editor.object_info.table')} (${table.dbName})`, table.comment),
                                   documentation: buildCompletionDocumentation(table.comment),
                                   range,
@@ -6972,7 +6984,10 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                                   [parsed.table, table.tableName],
                               ),
                               kind: monaco.languages.CompletionItemKind.Class,
-                              insertText: quoteCompletionPart(applyCompletionFragmentCase(parsed.table, rawPrefix)),
+                              insertText: appendTableSourceAlias(
+                                  quoteCompletionPart(applyCompletionFragmentCase(parsed.table, rawPrefix)),
+                                  parsed.table,
+                              ),
                               detail: appendCommentToDetail(`${translate('query_editor.object_info.table')} (${table.dbName}${parsed.schema ? '.' + parsed.schema : ''})`, table.comment),
                               documentation: buildCompletionDocumentation(table.comment),
                               range,
@@ -7107,7 +7122,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                   const matchRank = rankQueryEditorCompletionCandidate(wordPrefix, candidates);
                   return matchRank === null ? '9' : String(matchRank);
               };
-              const expectsTableName = isQueryEditorTableSourceCompletionContext(completionScopeText)
+              const expectsTableName = isTableSourceCompletion
                   || /\b(?:TABLE|DESCRIBE|DESC|EXPLAIN)\s+[`"]?[\w.]*$/i.test(linePrefix);
               const expectsRoutineName = /\bCALL\s+[`"]?[\w.]*$/i.test(linePrefix);
               const matchesKeywordPrefix = wordPrefix.length > 0
@@ -7291,7 +7306,10 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                                   [label, table.tableName || '', pureTable],
                               ),
                               kind: monaco.languages.CompletionItemKind.Class,
-                              insertText: quoteCompletionPath(applyCompletionFragmentCase(label, rawWordPrefix)),
+                              insertText: appendTableSourceAlias(
+                                  quoteCompletionPath(applyCompletionFragmentCase(label, rawWordPrefix)),
+                                  table.tableName || label,
+                              ),
                               detail: appendCommentToDetail(`${translate('query_editor.object_info.table')} (${table.dbName})`, table.comment),
                               documentation: buildCompletionDocumentation(table.comment),
                               range,
@@ -7310,10 +7328,13 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                               [label, table.tableName || '', pureTable],
                           ),
                           kind: monaco.languages.CompletionItemKind.Class,
-                          insertText: quoteCompletionPath(applyCompletionFragmentCase(
-                              hasDuplicate ? table.tableName : pureTable,
-                              rawWordPrefix,
-                          )),
+                          insertText: appendTableSourceAlias(
+                              quoteCompletionPath(applyCompletionFragmentCase(
+                                  hasDuplicate ? table.tableName : pureTable,
+                                  rawWordPrefix,
+                              )),
+                              pureTable,
+                          ),
                           detail: appendCommentToDetail(`${translate('query_editor.object_info.table')}${schemaInfo}`, table.comment),
                           documentation: buildCompletionDocumentation(table.comment),
                           range,
