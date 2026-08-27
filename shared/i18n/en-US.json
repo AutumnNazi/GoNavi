@@ -5210,6 +5210,8 @@
   "data_viewer.message.mongo_filter_invalid_detail": "MongoDB filter condition is invalid: {{detail}}",
   "data_viewer.message.mongo_filter_parse_failed": "Failed to parse",
   "data_viewer.message.query_failed": "Query failed",
+  "data_viewer.message.rabbitmq_preview_title": "RabbitMQ preview may requeue messages",
+  "data_viewer.message.rabbitmq_preview_warning": "RabbitMQ preview uses ack_requeue_true for queue {{queue}}. Messages are fetched and requeued, which may mark them as redelivered and affect queue order. Active consumers may also be affected. Continue?",
   "data_viewer.message.query_timeout": "Query exceeded the connection timeout and was interrupted. Increase the connection timeout, or reduce the query scope and retry.",
   "data_viewer.message.result_not_ready": "Current result set is not ready. Load data once first.",
   "data_viewer.message.sort_buffer_retry_succeeded": "Increased the sort buffer automatically, and the query succeeded.",

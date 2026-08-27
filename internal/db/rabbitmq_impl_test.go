@@ -173,6 +173,9 @@ func TestRabbitMQQueryExecAndColumns(t *testing.T) {
 				t.Fatalf("decode get body failed: %v", err)
 			}
 			lastGetCount = intFromAny(body["count"], 0)
+			if body["ackmode"] != "ack_requeue_true" {
+				t.Fatalf("expected RabbitMQ preview to use ack_requeue_true, got %#v", body["ackmode"])
+			}
 			_ = json.NewEncoder(w).Encode([]map[string]interface{}{
 				{
 					"exchange":         "events.topic",

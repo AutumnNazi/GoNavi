@@ -5210,6 +5210,8 @@
   "data_viewer.message.mongo_filter_invalid_detail": "MongoDB-Filterbedingung ist ungültig: {{detail}}",
   "data_viewer.message.mongo_filter_parse_failed": "Analyse fehlgeschlagen",
   "data_viewer.message.query_failed": "Abfrage fehlgeschlagen",
+  "data_viewer.message.rabbitmq_preview_title": "Die RabbitMQ-Vorschau kann Nachrichten erneut in die Warteschlange stellen",
+  "data_viewer.message.rabbitmq_preview_warning": "Die RabbitMQ-Vorschau verwendet ack_requeue_true für die Warteschlange {{queue}}. Nachrichten werden abgerufen und erneut eingereiht, wodurch sie als redelivered markiert werden und sich die Reihenfolge der Warteschlange ändern kann. Auch aktive Verbraucher können betroffen sein. Vorschau fortsetzen?",
   "data_viewer.message.query_timeout": "Die Abfrage hat das Verbindungstimeout überschritten und wurde unterbrochen. Erhöhen Sie das Verbindungstimeout oder verkleinern Sie den Abfragebereich und versuchen Sie es erneut.",
   "data_viewer.message.result_not_ready": "Die aktuelle Ergebnismenge ist noch nicht bereit. Laden Sie zuerst einmal Daten.",
   "data_viewer.message.sort_buffer_retry_succeeded": "Der Sortierpuffer wurde automatisch erhöht und die Abfrage erfolgreich erneut ausgeführt.",

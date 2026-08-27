@@ -5210,6 +5210,8 @@
   "data_viewer.message.mongo_filter_invalid_detail": "Mongo 篩選條件無效：{{detail}}",
   "data_viewer.message.mongo_filter_parse_failed": "解析失敗",
   "data_viewer.message.query_failed": "查詢失敗",
+  "data_viewer.message.rabbitmq_preview_title": "RabbitMQ 預覽可能會重新排入訊息",
+  "data_viewer.message.rabbitmq_preview_warning": "RabbitMQ 預覽佇列 {{queue}} 使用 ack_requeue_true。訊息會被取出後重新排入，可能被標記為 redelivered 並影響佇列順序；正在執行的消費者也可能受到影響。確定要繼續預覽嗎？",
   "data_viewer.message.query_timeout": "查詢超過連線逾時時間，已中斷。請調高連線逾時時間，或縮小查詢範圍後再試。",
   "data_viewer.message.result_not_ready": "目前結果集尚未就緒，請先執行一次載入",
   "data_viewer.message.sort_buffer_retry_succeeded": "已自動提升排序緩衝並重試成功。",

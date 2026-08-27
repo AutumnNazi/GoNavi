@@ -38,6 +38,10 @@ const messageApi = vi.hoisted(() => ({
   info: vi.fn(),
 }));
 
+const modalApi = vi.hoisted(() => ({
+  confirm: vi.fn(),
+}));
+
 const dataGridState = vi.hoisted(() => ({
   latestProps: null as any,
   renderedProps: [] as any[],
@@ -55,6 +59,12 @@ vi.mock('../../wailsjs/go/app/App', () => backendApp);
 
 vi.mock('antd', () => ({
   message: messageApi,
+}));
+
+vi.mock('./common/ResizableDraggableModal', () => ({
+  default: {
+    confirm: modalApi.confirm,
+  },
 }));
 
 vi.mock('./DataGrid', () => ({
@@ -144,6 +154,129 @@ describe('DataViewer safe editing locator', () => {
     await flushPromises();
 
     expect(messageApi.error).toHaveBeenCalledWith('未找到连接');
+    renderer!.unmount();
+  });
+
+  it('asks before reading RabbitMQ queue messages and allows cancelling the preview', async () => {
+    storeState.connections = [{
+      id: 'conn-rabbitmq',
+      name: 'rabbitmq',
+      config: {
+        type: 'rabbitmq',
+        host: '127.0.0.1',
+        port: 15672,
+        user: 'guest',
+        password: '',
+        database: '/',
+      },
+    }];
+
+    let modalOptions: any;
+    modalApi.confirm.mockImplementation((options: any) => {
+      modalOptions = options;
+      return { destroy: vi.fn() };
+    });
+
+    let renderer: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<DataViewer tab={createTab({
+        id: 'tab-rabbitmq-cancel',
+        connectionId: 'conn-rabbitmq',
+        dbName: '/',
+        tableName: 'orders.events',
+        title: 'orders.events',
+      })} />);
+      await Promise.resolve();
+    });
+    await flushPromises();
+
+    let reloadPromise!: Promise<unknown>;
+    await act(async () => {
+      reloadPromise = dataGridState.latestProps.onReload();
+      await Promise.resolve();
+    });
+    await flushPromises();
+
+    expect(modalApi.confirm).toHaveBeenCalledTimes(1);
+    expect(modalOptions.title).toBe('RabbitMQ 预览可能重新入队消息');
+    expect(modalOptions.content).toContain('ack_requeue_true');
+    expect(modalOptions.content).toContain('orders.events');
+    expect(modalOptions.okText).toBe('继续');
+    expect(modalOptions.cancelText).toBe('取消');
+    expect(backendApp.DBQuery).not.toHaveBeenCalled();
+
+    await act(async () => {
+      modalOptions.onCancel();
+      await reloadPromise;
+    });
+
+    expect(backendApp.DBQuery).not.toHaveBeenCalled();
+    renderer!.unmount();
+  });
+
+  it('continues RabbitMQ preview after confirmation without prompting on reload', async () => {
+    storeState.connections = [{
+      id: 'conn-rabbitmq',
+      name: 'rabbitmq',
+      config: {
+        type: 'rabbitmq',
+        host: '127.0.0.1',
+        port: 15672,
+        user: 'guest',
+        password: '',
+        database: '/',
+      },
+    }];
+    backendApp.DBQuery.mockResolvedValue({
+      success: true,
+      fields: ['payload'],
+      data: [{ payload: 'hello' }],
+    });
+
+    let modalOptions: any;
+    modalApi.confirm.mockImplementation((options: any) => {
+      modalOptions = options;
+      return { destroy: vi.fn() };
+    });
+
+    let renderer: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<DataViewer tab={createTab({
+        id: 'tab-rabbitmq-confirm',
+        connectionId: 'conn-rabbitmq',
+        dbName: '/',
+        tableName: 'orders.events',
+        title: 'orders.events',
+      })} />);
+      await Promise.resolve();
+    });
+    await flushPromises();
+
+    let reloadPromise!: Promise<unknown>;
+    await act(async () => {
+      reloadPromise = dataGridState.latestProps.onReload();
+      await Promise.resolve();
+    });
+    await flushPromises();
+
+    expect(modalApi.confirm).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      modalOptions.onOk();
+      await reloadPromise;
+    });
+    await flushPromises();
+
+    expect(backendApp.DBQuery).toHaveBeenCalled();
+    expect(backendApp.DBQuery.mock.calls.some((call: any[]) => (
+      /select\s+\*\s+from\s+"orders\.events"/i.test(String(call[2] || ''))
+    ))).toBe(true);
+
+    const queryCountAfterConfirmation = backendApp.DBQuery.mock.calls.length;
+    await act(async () => {
+      await dataGridState.latestProps.onReload();
+    });
+    expect(backendApp.DBQuery.mock.calls.length).toBeGreaterThan(queryCountAfterConfirmation);
+    expect(modalApi.confirm).toHaveBeenCalledTimes(1);
     renderer!.unmount();
   });
 
