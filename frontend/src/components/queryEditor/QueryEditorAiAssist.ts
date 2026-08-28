@@ -1511,7 +1511,7 @@ const resolveDeterministicInlineTableAliasInsertText = (
         return '';
     }
     const alias = buildQueryEditorTableSourceAlias(currentReference.tableIdent, statementPrefix);
-    return alias ? `AS ${alias}` : '';
+    return alias;
 };
 
 export const isQueryEditorInlineTableAliasPending = (

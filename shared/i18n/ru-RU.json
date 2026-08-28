@@ -3072,7 +3072,7 @@
   "app.theme.query_template.hint": "Очистите текст, чтобы новые вкладки запроса открывались пустыми. Кнопка восстановления вернет SELECT * FROM .",
   "app.theme.query_template.reset_default": "Восстановить по умолчанию",
   "app.theme.query_template.title": "SQL по умолчанию для нового запроса",
-  "app.theme.table_alias.description": "Автоматически добавляет AS с псевдонимом таблицы при выборе таблицы в источнике запроса или после ввода имени таблицы и пробела.",
+  "app.theme.table_alias.description": "Автоматически добавляет псевдонимы таблиц при выборе таблицы в источнике запроса или после ввода имени таблицы и пробела.",
   "app.theme.table_alias.title": "Автоматически добавлять псевдонимы таблиц",
   "app.theme.startup_window.hint": "* Вступает в силу при следующем запуске",
   "app.theme.startup_window.maximised": "Разворачивать окно при запуске",

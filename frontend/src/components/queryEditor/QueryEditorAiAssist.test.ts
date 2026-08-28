@@ -749,7 +749,7 @@ describe('QueryEditorAiAssist', () => {
                 currentLineBeforeCursor: 'SELECT * FROM system_user ',
                 currentLineAfterCursor: '',
             },
-        })).resolves.toBe('AS su');
+        })).resolves.toBe('su');
         await expect(requestQueryEditorInlineCompletion({
             ...request,
             editorSnapshot: {
@@ -758,10 +758,31 @@ describe('QueryEditorAiAssist', () => {
                 currentLineBeforeCursor: 'SELECT * FROM system_user su JOIN service_user ',
                 currentLineAfterCursor: '',
             },
-        })).resolves.toBe('AS su2');
+        })).resolves.toBe('su2');
         expect(service.AIChatSend).not.toHaveBeenCalled();
         expect(service.AIGetProviders).not.toHaveBeenCalled();
         expect(service.AIGetActiveProvider).not.toHaveBeenCalled();
+    });
+
+    it('uses an alias without AS after a manually entered Oracle table name', async () => {
+        const service = readyService('SELECT * FROM system_user su;');
+        await expect(requestQueryEditorInlineCompletion({
+            service,
+            aiContext: {
+                connectionName: 'Local Oracle',
+                sourceType: 'oracle',
+                currentDb: 'ORCL',
+                tables: [{ dbName: 'ORCL', tableName: 'system_user' }],
+                columns: [],
+            },
+            editorSnapshot: {
+                prefix: 'SELECT * FROM system_user ',
+                suffix: '',
+                currentLineBeforeCursor: 'SELECT * FROM system_user ',
+                currentLineAfterCursor: '',
+            },
+        })).resolves.toBe('su');
+        expect(service.AIChatSend).not.toHaveBeenCalled();
     });
 
     it('does not suggest an alias after a manually completed table source when disabled', async () => {

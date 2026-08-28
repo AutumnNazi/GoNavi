@@ -3072,7 +3072,7 @@
   "app.theme.query_template.hint": "空にすると新しいクエリタブは空白のまま開きます。既定に戻すと SELECT * FROM に戻ります。",
   "app.theme.query_template.reset_default": "既定に戻す",
   "app.theme.query_template.title": "新規クエリの既定 SQL",
-  "app.theme.table_alias.description": "クエリの表ソースで表名を選択したとき、または表名を入力してスペースを入力したときに、AS 表別名を自動で追加します。",
+  "app.theme.table_alias.description": "クエリの表ソースで表名を選択したとき、または表名を入力してスペースを入力したときに、表別名を自動で追加します。",
   "app.theme.table_alias.title": "表別名を自動追加",
   "app.theme.startup_window.hint": "* 変更は次回起動時に有効になります",
   "app.theme.startup_window.maximised": "起動時に最大化",

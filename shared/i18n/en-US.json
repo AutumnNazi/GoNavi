@@ -3072,7 +3072,7 @@
   "app.theme.query_template.hint": "Clear the text to keep new query tabs blank. Use Restore default to go back to SELECT * FROM .",
   "app.theme.query_template.reset_default": "Restore default",
   "app.theme.query_template.title": "New Query Default SQL",
-  "app.theme.table_alias.description": "Automatically add AS table aliases when selecting a table in a query source or typing a table name followed by a space.",
+  "app.theme.table_alias.description": "Automatically add table aliases when selecting a table in a query source or typing a table name followed by a space.",
   "app.theme.table_alias.title": "Auto-add Table Aliases",
   "app.theme.startup_window.hint": "* Takes effect on next startup",
   "app.theme.startup_window.maximised": "Maximize on startup",
