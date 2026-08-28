@@ -4059,7 +4059,6 @@ const Sidebar: React.FC<{
       key: 'settings-workspace',
       label: t('app.tools.group.workspace.title'),
       icon: <CodeOutlined aria-hidden="true" />,
-      priority: 'secondary',
       menu: [
         {
           key: 'drivers',

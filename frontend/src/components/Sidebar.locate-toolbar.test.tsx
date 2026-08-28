@@ -942,6 +942,31 @@ describe('Sidebar locate toolbar', () => {
     expect(narrowLayoutCss).toMatch(/\.gn-v2-active-connection-actions\s*\{[^}]*(?:width|flex-basis):\s*100%;/s);
   });
 
+  it('places editor and driver tools after connection configuration instead of inside More', () => {
+    const source = readSourceFile('./Sidebar.tsx');
+    const actionsStart = source.indexOf('const v2TitlebarQuickActions: TitleBarQuickAction[] = [');
+    const actionsEnd = source.indexOf('\n  ];', actionsStart);
+
+    expect(actionsStart).toBeGreaterThanOrEqual(0);
+    expect(actionsEnd).toBeGreaterThan(actionsStart);
+
+    const actionsSource = source.slice(actionsStart, actionsEnd);
+    const connectionPackageIndex = actionsSource.indexOf("key: 'connection-package'");
+    const workspaceIndex = actionsSource.indexOf("key: 'settings-workspace'");
+    const aboutIndex = actionsSource.indexOf("key: 'settings-about'", workspaceIndex);
+
+    expect(connectionPackageIndex).toBeGreaterThanOrEqual(0);
+    expect(workspaceIndex).toBeGreaterThan(connectionPackageIndex);
+    expect(aboutIndex).toBeGreaterThan(workspaceIndex);
+
+    const workspaceSource = actionsSource.slice(workspaceIndex, aboutIndex);
+    expect(workspaceSource).not.toContain("priority: 'secondary'");
+    expect(workspaceSource).toContain("key: 'drivers'");
+    expect(workspaceSource).toContain("key: 'snippet-settings'");
+    expect(workspaceSource).toContain("key: 'shortcut-settings'");
+    expect(workspaceSource).toContain("key: 'sql-audit'");
+  });
+
   it('renders the fixed v2 rail, titlebar quick actions, explorer filters and workbench actions', () => {
     const markup = renderSidebarMarkup({ uiVersion: 'v2', onCreateConnection: mocks.noop });
     const source = readSidebarSource();
