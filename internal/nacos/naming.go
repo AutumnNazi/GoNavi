@@ -46,8 +46,9 @@ func (c *ClientImpl) ListServices(ctx context.Context, query ServiceQuery) (*Ser
 	}
 
 	groupName := strings.TrimSpace(query.GroupName)
+	serviceName := strings.TrimSpace(query.ServiceName)
 	if family == nacosAPIV3 && groupName != "" {
-		return c.listV3ServicesByExactGroup(ctx, query.NamespaceID, groupName, pageNo, pageSize)
+		return c.listV3ServicesByExactGroup(ctx, query.NamespaceID, groupName, serviceName, pageNo, pageSize)
 	}
 
 	params := url.Values{}
@@ -59,13 +60,14 @@ func (c *ClientImpl) ListServices(ctx context.Context, query ServiceQuery) (*Ser
 	if (family == nacosAPIV1 || family == nacosAPIV2) && groupName == "" {
 		// Nacos 2.x has no cross-group v2 service list, but retains v1 Catalog.
 		apiPath = routesForNacosAPI(nacosAPIV1).serviceList
-		params.Set("serviceNameParam", "")
+		params.Set("serviceNameParam", serviceName)
 		params.Set("groupNameParam", "")
 	} else if family == nacosAPIV1 || family == nacosAPIV2 {
 		apiPath = routes.serviceListByGroup
 		params.Set("groupName", normalizeServiceGroup(groupName))
+		params.Set("serviceNameParam", serviceName)
 	} else {
-		params.Set("serviceNameParam", "")
+		params.Set("serviceNameParam", serviceName)
 		params.Set("groupNameParam", groupName)
 	}
 
@@ -158,6 +160,7 @@ func (c *ClientImpl) listV3ServicesByExactGroup(
 	ctx context.Context,
 	namespaceID string,
 	groupName string,
+	serviceName string,
 	pageNo int,
 	pageSize int,
 ) (*ServicePage, error) {
@@ -168,7 +171,7 @@ func (c *ClientImpl) listV3ServicesByExactGroup(
 		params.Set("pageNo", strconv.Itoa(remotePageNo))
 		params.Set("pageSize", strconv.Itoa(maxServicePageSize))
 		params.Set("namespaceId", normalizeNamespaceID(namespaceID))
-		params.Set("serviceNameParam", "")
+		params.Set("serviceNameParam", serviceName)
 		params.Set("groupNameParam", regexp.QuoteMeta(groupName))
 
 		body, status, err := c.doRequest(ctx, http.MethodGet, c.currentAPIRoutes().serviceListByGroup, params, nil)

@@ -1455,6 +1455,7 @@ export namespace app {
 	}
 	export class NacosServiceQuery {
 	    namespaceId: string;
+	    serviceName?: string;
 	    groupName?: string;
 	    pageNo?: number;
 	    pageSize?: number;
@@ -1466,6 +1467,7 @@ export namespace app {
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.namespaceId = source["namespaceId"];
+	        this.serviceName = source["serviceName"];
 	        this.groupName = source["groupName"];
 	        this.pageNo = source["pageNo"];
 	        this.pageSize = source["pageSize"];

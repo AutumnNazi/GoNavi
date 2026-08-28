@@ -227,6 +227,7 @@ func TestListServicesUsesCatalogAcrossGroups(t *testing.T) {
 
 	page, err := client.ListServices(context.Background(), ServiceQuery{
 		NamespaceID: "mkefu-dev",
+		ServiceName: "order",
 		PageNo:      1,
 		PageSize:    50,
 	})
@@ -236,6 +237,9 @@ func TestListServicesUsesCatalogAcrossGroups(t *testing.T) {
 	groupValues, hasGroupParam := catalogQuery["groupNameParam"]
 	if catalogQuery.Get("namespaceId") != "mkefu-dev" || !hasGroupParam || len(groupValues) != 1 || groupValues[0] != "" {
 		t.Fatalf("catalog query = %#v", catalogQuery)
+	}
+	if catalogQuery.Get("serviceNameParam") != "order" {
+		t.Fatalf("catalog serviceNameParam = %q, want order", catalogQuery.Get("serviceNameParam"))
 	}
 	want := []string{"MKEFU_SERVICE@@orders", "DEFAULT_GROUP@@payments"}
 	if page.Count != 2 || len(page.ServiceNames) != len(want) {
@@ -249,6 +253,7 @@ func TestListServicesUsesCatalogAcrossGroups(t *testing.T) {
 
 	groupPage, err := client.ListServices(context.Background(), ServiceQuery{
 		NamespaceID: "mkefu-dev",
+		ServiceName: "order",
 		GroupName:   "MKEFU_SERVICE",
 		PageNo:      1,
 		PageSize:    50,
@@ -258,6 +263,9 @@ func TestListServicesUsesCatalogAcrossGroups(t *testing.T) {
 	}
 	if groupQuery.Get("groupName") != "MKEFU_SERVICE" || groupQuery.Get("namespaceId") != "mkefu-dev" {
 		t.Fatalf("exact group query = %#v", groupQuery)
+	}
+	if groupQuery.Get("serviceNameParam") != "order" {
+		t.Fatalf("exact group serviceNameParam = %q, want order", groupQuery.Get("serviceNameParam"))
 	}
 	if groupPage.Count != 1 || len(groupPage.ServiceNames) != 1 || groupPage.ServiceNames[0] != "MKEFU_SERVICE@@orders" {
 		t.Fatalf("exact group page = %#v", groupPage)
