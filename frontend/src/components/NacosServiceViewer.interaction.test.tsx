@@ -273,11 +273,16 @@ describe('NacosServiceViewer interactions', () => {
     await flushEffects();
 
     const serviceInput = renderer!.root.findAllByType('input')
-      .find((input) => input.props.placeholder === 'nacos_service.field.service');
+      .find((input) => input.props.style?.width === 180);
     expect(serviceInput).toBeDefined();
     await act(async () => {
       serviceInput!.props.onChange({ target: { value: 'order' } });
-      serviceInput!.props.onPressEnter();
+    });
+    await flushEffects();
+    const updatedServiceInput = renderer!.root.findAllByType('input')
+      .find((input) => input.props.style?.width === 180);
+    await act(async () => {
+      updatedServiceInput!.props.onPressEnter();
     });
     await flushEffects();
 
