@@ -4366,12 +4366,12 @@ body .gonavi-about-update-channel .ant-segmented-item {
 }
 
 body .gonavi-about-update-channel .ant-segmented-item-label {
-  min-height: calc(var(--gn-control-height, 32px) - 4px) !important;
+  min-height: calc(var(--gn-control-height, 32px) - 6px) !important;
   padding: 0 8px !important;
   color: rgba(15, 23, 42, 0.62) !important;
   font-size: var(--gn-font-size-sm, 12px) !important;
   font-weight: 600 !important;
-  line-height: calc(var(--gn-control-height, 32px) - 4px) !important;
+  line-height: calc(var(--gn-control-height, 32px) - 6px) !important;
 }
 
 body .gonavi-about-update-channel .ant-segmented-item-selected,
