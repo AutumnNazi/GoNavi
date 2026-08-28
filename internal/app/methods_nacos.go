@@ -459,10 +459,10 @@ func connectNacosClientWithContext(ctx context.Context, client nacos.Client, con
 		return err
 	case <-ctx.Done():
 		_ = client.Close()
-		go func() {
+		trackConnectionHealthCleanup(ctx, func() {
 			<-resultCh
 			_ = client.Close()
-		}()
+		})
 		return ctx.Err()
 	}
 }
