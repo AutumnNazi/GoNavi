@@ -883,7 +883,7 @@ describe('Sidebar locate toolbar', () => {
     expect(markup).toContain('data-sidebar-legacy-toolbar-item="true"');
   });
 
-  it('renders exactly six expanded v2 titlebar actions in task order', () => {
+  it('renders exactly six expanded v2 explorer actions in task order', () => {
     const markup = renderSidebarMarkup({
       uiVersion: 'v2',
       onCollapseSidebar: mocks.noop,
@@ -891,8 +891,8 @@ describe('Sidebar locate toolbar', () => {
       onToggleAI: mocks.noop,
       onOpenSettings: mocks.noop,
     });
-    const actionsStart = markup.indexOf('<div class="gn-v2-active-connection-actions"');
-    const actionsEnd = markup.indexOf('<div class="gn-v2-explorer-search"', actionsStart);
+    const actionsStart = markup.indexOf('<div class="gn-v2-explorer-actions"');
+    const actionsEnd = markup.indexOf('<div class="gn-v2-explorer-filter-tabs"', actionsStart);
 
     expect(actionsStart).toBeGreaterThanOrEqual(0);
     expect(actionsEnd).toBeGreaterThan(actionsStart);
@@ -923,26 +923,19 @@ describe('Sidebar locate toolbar', () => {
     expect(source.slice(propsStart, propsEnd)).toContain('showLocateAction: false');
   });
 
-  it('hides only the expanded v2 rail and wraps a narrow titlebar into two rows', () => {
+  it('keeps the expanded v2 explorer actions usable in narrow containers', () => {
     const source = readSourceFile('./Sidebar.tsx');
     const appCss = readSourceFile('../App.css');
     const css = readV2ThemeCss();
-    const narrowLayoutStart = css.indexOf('@container gn-v2-object-explorer (max-width:');
-    const narrowLayoutEnd = css.indexOf('body[data-ui-version="v2"] .gn-v2-explorer-search', narrowLayoutStart);
-
     expect(source).toContain('{isV2Ui && <SidebarConnectionRail {...v2ConnectionRailProps} />}');
     expect(appCss).toMatch(/body\[data-ui-version=(["'])v2\1\]\s+\.ant-layout-sider\[data-sidebar-collapsed=(["'])false\2\]\s+\.gn-v2-connection-rail\s*\{[^}]*display:\s*none;/s);
     expect(appCss).not.toMatch(/body\[data-ui-version=(["'])v2\1\]\s+\.ant-layout-sider\[data-sidebar-collapsed=(["'])true\2\]\s+\.gn-v2-connection-rail\s*\{[^}]*display:\s*none;/s);
-    expect(narrowLayoutStart).toBeGreaterThanOrEqual(0);
-    expect(narrowLayoutEnd).toBeGreaterThan(narrowLayoutStart);
-
-    const narrowLayoutCss = css.slice(narrowLayoutStart, narrowLayoutEnd);
-    expect(narrowLayoutCss).toMatch(/\.gn-v2-active-connection-header\s*\{[^}]*flex-wrap:\s*wrap;/s);
-    expect(narrowLayoutCss).toMatch(/\.gn-v2-active-connection-trigger\s*\{[^}]*(?:flex-basis:\s*100%|flex:\s*[^;]*100%);/s);
-    expect(narrowLayoutCss).toMatch(/\.gn-v2-active-connection-actions\s*\{[^}]*(?:width|flex-basis):\s*100%;/s);
+    expect(css).toMatch(/\.gn-v2-explorer-actions\s*\{[^}]*min-width:\s*0;[^}]*overflow-x:\s*auto;[^}]*overflow-y:\s*hidden;/s);
+    expect(css).toMatch(/@container gn-v2-object-explorer \(max-width:\s*300px\)\s*\{[^}]*\.gn-v2-explorer-actions\s*\{[^}]*justify-content:\s*flex-start;/s);
+    expect(css).not.toContain('.gn-v2-active-connection-header');
   });
 
-  it('places editor and driver tools after connection configuration instead of inside More', () => {
+  it('places driver management in the titlebar and editor tools inside More', () => {
     const source = readSourceFile('./Sidebar.tsx');
     const actionsStart = source.indexOf('const v2TitlebarQuickActions: TitleBarQuickAction[] = [');
     const actionsEnd = source.indexOf('\n  ];', actionsStart);
@@ -952,16 +945,23 @@ describe('Sidebar locate toolbar', () => {
 
     const actionsSource = source.slice(actionsStart, actionsEnd);
     const connectionPackageIndex = actionsSource.indexOf("key: 'connection-package'");
+    const driverIndex = actionsSource.indexOf("key: 'drivers'");
     const workspaceIndex = actionsSource.indexOf("key: 'settings-workspace'");
     const aboutIndex = actionsSource.indexOf("key: 'settings-about'", workspaceIndex);
 
     expect(connectionPackageIndex).toBeGreaterThanOrEqual(0);
+    expect(driverIndex).toBeGreaterThan(connectionPackageIndex);
     expect(workspaceIndex).toBeGreaterThan(connectionPackageIndex);
     expect(aboutIndex).toBeGreaterThan(workspaceIndex);
 
+    const driverSource = actionsSource.slice(driverIndex, actionsSource.indexOf("key: 'open-external-sql-file'", driverIndex));
+    expect(driverSource).not.toContain("priority: 'secondary'");
+    expect(driverSource).toContain("label: t('app.tools.entry.drivers.title')");
+    expect(driverSource).toContain("pane: 'drivers'");
+
     const workspaceSource = actionsSource.slice(workspaceIndex, aboutIndex);
-    expect(workspaceSource).not.toContain("priority: 'secondary'");
-    expect(workspaceSource).toContain("key: 'drivers'");
+    expect(workspaceSource).toContain("priority: 'secondary'");
+    expect(workspaceSource).not.toContain("key: 'drivers'");
     expect(workspaceSource).toContain("key: 'snippet-settings'");
     expect(workspaceSource).toContain("key: 'shortcut-settings'");
     expect(workspaceSource).toContain("key: 'sql-audit'");
@@ -979,7 +979,9 @@ describe('Sidebar locate toolbar', () => {
     expect(markup.indexOf('data-sidebar-fixed-rail="true"')).toBeLessThan(markup.indexOf('data-sidebar-tree-panel="true"'));
     expect(markup).toContain('data-sidebar-tree-panel="true" style="display:flex');
     expect(markup).not.toContain('data-sidebar-tree-panel="true" aria-hidden="true" style="display:none');
-    expect(markup).toContain('gn-v2-active-connection-header');
+    expect(markup).toContain('gn-v2-explorer-actions');
+    expect(markup).not.toContain('gn-v2-active-connection-header');
+    expect(markup).not.toContain('gn-v2-active-connection-copy');
     expect(markup).toContain('gn-v2-explorer-search');
     expect(markup).toContain('data-v2-sidebar-search-mode="command"');
     expect(markup).toContain('gn-v2-explorer-command-trigger');
@@ -1208,10 +1210,10 @@ describe('Sidebar locate toolbar', () => {
     expect(css).toMatch(/body\[data-ui-version="v2"\] \.gn-v2-rail-item,\s*body\[data-ui-version="v2"\] \.gn-v2-rail-tool \{[^}]*width: calc\(36px \* var\(--gn-v2-rail-scale\)\);[^}]*height: calc\(38px \* var\(--gn-v2-rail-scale\)\);[^}]*font-size: calc\(var\(--gn-font-size-sm, 12px\) \* var\(--gn-sidebar-rail-scale, 1\)\);/s);
     expect(css).toMatch(/\.gn-v2-rail-tool \{[^}]*height: calc\(28px \* var\(--gn-v2-rail-scale\)\);/s);
     expect(css).toMatch(/\.gn-v2-rail-tool \{[^}]*width: calc\(28px \* var\(--gn-v2-rail-scale\)\);/s);
-    expect(css).toMatch(/\.gn-v2-active-connection-trigger \{[^}]*height: 34px;[^}]*border: 0;[^}]*background: transparent;/s);
-    expect(css).toMatch(/\.gn-v2-active-connection-tooltip \{[^}]*display: flex;[^}]*flex-direction: column;[^}]*gap: 2px;[^}]*max-width: min\(320px, calc\(100vw - 24px\)\);[^}]*overflow-wrap: anywhere;/s);
+    expect(css).toMatch(/\.gn-v2-explorer-tool\.ant-btn \{[^}]*width: 26px;[^}]*min-width: 26px;[^}]*height: 26px !important;/s);
+    expect(css).toMatch(/\.gn-v2-explorer-action-wrap:focus-visible \{[^}]*outline: 2px solid var\(--gn-accent\);/s);
     expect(css).toMatch(/\.gn-v2-object-explorer \{[^}]*container-type: inline-size;[^}]*container-name: gn-v2-object-explorer;/s);
-    expect(css).not.toContain('.gn-v2-active-connection-trigger:hover');
+    expect(css).not.toContain('.gn-v2-active-connection-trigger');
   });
 
   it('keeps query and connection creation actions out of the v2 explorer header', () => {
@@ -1234,7 +1236,7 @@ describe('Sidebar locate toolbar', () => {
     };
 
     const markup = renderSidebarMarkup({ uiVersion: 'v2', onCreateConnection: mocks.noop });
-    expect(markup).toContain('gn-v2-active-connection-actions');
+    expect(markup).toContain('gn-v2-explorer-actions');
     expect(markup).not.toContain('data-gonavi-new-query-action="true"');
     expect(markup).not.toContain('data-gonavi-create-connection-action="true"');
   });
@@ -1423,17 +1425,15 @@ describe('Sidebar locate toolbar', () => {
     const markup = renderSidebarMarkup({ uiVersion: 'v2' });
 
     expect(markup).toContain('gn-v2-connection-rail');
-    expect(markup).toContain('gn-v2-active-connection-copy');
-    expect(markup).toMatch(/<strong aria-describedby="[^"]+">本地<\/strong>/);
-    expect(markup).toMatch(/<span aria-describedby="[^"]+">app_db<\/span>/);
-    expect(markup).not.toContain('title="本地"');
-    expect(markup).not.toContain('title="app_db"');
+    expect(markup).toContain('gn-v2-explorer-actions');
+    expect(markup).not.toContain('gn-v2-active-connection-header');
+    expect(markup).not.toContain('gn-v2-active-connection-copy');
     expect(markup).not.toContain('gn-v2-live-dot');
     expect(markup).not.toContain('<span>localhost</span>');
     expect(markup).not.toContain('gn-v2-db-icon-label');
   });
 
-  it('shows an empty v2 active host header when no host is selected', () => {
+  it('keeps the v2 explorer actions available when no host is selected', () => {
     setCurrentLanguage('en-US');
 
     mocks.state.connections = [{
@@ -1458,11 +1458,9 @@ describe('Sidebar locate toolbar', () => {
 
     const markup = renderSidebarMarkup({ uiVersion: 'v2' });
 
-    expect(markup).toMatch(new RegExp(`<strong aria-describedby="[^"]+">${t('sidebar.active_connection.no_host_selected')}</strong>`));
-    expect(markup).toMatch(new RegExp(`<span class="is-placeholder" aria-describedby="[^"]+">${t('sidebar.active_connection.no_database_selected')}</span>`));
-    expect(markup).not.toContain(`title="${t('sidebar.active_connection.no_host_selected')}"`);
-    expect(markup).not.toContain(`title="${t('sidebar.active_connection.no_database_selected')}"`);
-    expect(markup).not.toContain('<strong>本地</strong>');
+    expect(markup).toContain('gn-v2-explorer-actions');
+    expect(markup).not.toContain('gn-v2-active-connection-header');
+    expect(markup).not.toContain('gn-v2-active-connection-copy');
   });
 
   it('normalizes rc-tree absolute drop positions back to relative positions', () => {
