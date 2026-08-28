@@ -4446,6 +4446,23 @@ body[data-ui-version='v2'] .gonavi-about-update-channel.ant-segmented .ant-segme
   border-radius: 4px;
 }
 
+/* 数据库显示范围弹窗：搜索框与刷新按钮并排、等高 */
+.gn-schema-visibility-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.gn-schema-visibility-search .ant-input-affix-wrapper {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+body[data-ui-version='v2'] .gn-schema-visibility-search .ant-btn {
+  height: var(--gn-control-height, 32px) !important;
+}
+
 /* ── Theme settings (v2 only): clean desktop settings ─── */
 body .gonavi-theme-settings {
   --gn-settings-fg: #0f172a;
