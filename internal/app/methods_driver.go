@@ -4102,6 +4102,8 @@ func buildOptionalDriverFallbackProgressMessage(text func(string, map[string]any
 
 var downloadOptionalDriverAgentBinaryForInstall = downloadOptionalDriverAgentBinaryWithMetadata
 
+var fetchMirrorDriverReleaseByTagForDriverDownload = fetchMirrorDriverReleaseByTag
+
 func ensureOptionalDriverAgentBinary(a *App, definition driverDefinition, executablePath string, downloadURL string, selectedVersion string) (string, string, error) {
 	driverType := normalizeDriverType(definition.Type)
 	displayName := resolveDriverDisplayName(definition)

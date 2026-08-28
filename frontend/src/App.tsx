@@ -1,6 +1,6 @@
 ﻿import Modal from './components/common/ResizableDraggableModal';
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { Layout, Button, ConfigProvider, theme, message, Spin, Slider, Switch, Input, InputNumber, Select, Segmented, Tooltip, Alert } from 'antd';
+import { Layout, Button, ConfigProvider, theme, message, notification, Spin, Slider, Switch, Input, InputNumber, Select, Segmented, Tooltip, Alert } from 'antd';
 import { UploadOutlined, DownloadOutlined, CloudDownloadOutlined, BugOutlined, GlobalOutlined, InfoCircleOutlined, GithubOutlined, SkinOutlined, CheckOutlined, MinusOutlined, BorderOutlined, CloseOutlined, SettingOutlined, LinkOutlined, BgColorsOutlined, AppstoreOutlined, RobotOutlined, FolderOpenOutlined, HddOutlined, SafetyCertificateOutlined, SwitcherOutlined, CodeOutlined, RightOutlined, TableOutlined, MenuOutlined, MenuFoldOutlined, MenuUnfoldOutlined, PoweroffOutlined, TagOutlined, UserOutlined, UpCircleOutlined, MessageOutlined, FileTextOutlined, SyncOutlined, SendOutlined, AuditOutlined } from '@ant-design/icons';
 import { DndContext, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
 import { arrayMove, SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
@@ -770,6 +770,7 @@ const SidebarMetadataSortableRow: React.FC<SidebarMetadataSortableRowProps> = ({
 
 function App() {
   const { language, t } = useI18n();
+  const [notificationApi, notificationContextHolder] = notification.useNotification();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isConnectionModalMounted, setIsConnectionModalMounted] = useState(false);
   const [isDriverModalOpen, setIsDriverModalOpen] = useState(false);
@@ -1402,7 +1403,9 @@ function App() {
       }
 
       let cancelled = false;
-      const coordinator = createConnectionSidebarLayoutCoordinator({
+      const notificationKey = 'connection-sidebar-layout-save-state';
+      let coordinator: ConnectionSidebarLayoutCoordinator;
+      coordinator = createConnectionSidebarLayoutCoordinator({
           backend: (window as any).go?.app?.App,
           store: {
               getLayout: () => {
@@ -1424,6 +1427,85 @@ function App() {
           },
           onError: (error) => {
               console.warn('Failed to synchronize shared connection sidebar layout', error);
+          },
+          onSaveStateChange: (state) => {
+              if (cancelled) return;
+              if (state.status === 'saving') {
+                  notificationApi.open({
+                      key: notificationKey,
+                      message: t('app.connection_sidebar_layout.saving'),
+                      description: t('app.connection_sidebar_layout.saving_description'),
+                      icon: <SyncOutlined spin />,
+                      duration: 0,
+                      placement: 'bottomRight',
+                  });
+                  return;
+              }
+              if (state.status === 'saved') {
+                  notificationApi.success({
+                      key: notificationKey,
+                      message: t('app.connection_sidebar_layout.saved'),
+                      description: t('app.connection_sidebar_layout.saved_description'),
+                      duration: 2,
+                      placement: 'bottomRight',
+                  });
+                  return;
+              }
+              if (state.status === 'error') {
+                  const detail = state.error instanceof Error
+                      ? state.error.message
+                      : String(state.error);
+                  notificationApi.error({
+                      key: notificationKey,
+                      message: t('app.connection_sidebar_layout.save_failed'),
+                      description: t('app.connection_sidebar_layout.save_failed_description', { detail }),
+                      btn: (
+                          <Button
+                            size="small"
+                            type="primary"
+                            onClick={() => void coordinator.retryPendingSave().catch(() => undefined)}
+                          >
+                            {t('app.connection_sidebar_layout.retry_save')}
+                          </Button>
+                      ),
+                      duration: 0,
+                      placement: 'bottomRight',
+                  });
+                  return;
+              }
+              notificationApi.warning({
+                  key: notificationKey,
+                  message: t('app.connection_sidebar_layout.conflict'),
+                  description: t('app.connection_sidebar_layout.conflict_description'),
+                  btn: (
+                      <div style={{ display: 'flex', gap: 8 }}>
+                          <Button
+                            size="small"
+                            onClick={() => {
+                                coordinator.acceptRemoteLayout();
+                                notificationApi.info({
+                                    key: notificationKey,
+                                    message: t('app.connection_sidebar_layout.remote_applied'),
+                                    description: t('app.connection_sidebar_layout.remote_applied_description'),
+                                    duration: 2,
+                                    placement: 'bottomRight',
+                                });
+                            }}
+                          >
+                            {t('app.connection_sidebar_layout.refresh_remote')}
+                          </Button>
+                          <Button
+                            size="small"
+                            type="primary"
+                            onClick={() => void coordinator.retryPendingSave().catch(() => undefined)}
+                          >
+                            {t('app.connection_sidebar_layout.retry_save')}
+                          </Button>
+                      </div>
+                  ),
+                  duration: 0,
+                  placement: 'bottomRight',
+              });
           },
           refreshIntervalMs: 2_000,
       });
@@ -1457,12 +1539,13 @@ function App() {
           window.removeEventListener('beforeunload', flushConnectionSidebarLayout, true);
           window.removeEventListener('focus', refreshConnectionSidebarLayout);
           document.removeEventListener('visibilitychange', refreshVisibleConnectionSidebarLayout);
+          notificationApi.destroy(notificationKey);
           coordinator.dispose();
           if (connectionSidebarLayoutCoordinatorRef.current === coordinator) {
               connectionSidebarLayoutCoordinatorRef.current = null;
           }
       };
-  }, [hasLoadedSecureConfig, isStoreHydrated, replaceConnectionSidebarLayout]);
+  }, [hasLoadedSecureConfig, isStoreHydrated, notificationApi, replaceConnectionSidebarLayout, t]);
 
   useEffect(() => {
       let cancelled = false;
@@ -8142,6 +8225,7 @@ function App() {
         componentSize={appComponentSize}
         theme={antdTheme}
     >
+        {notificationContextHolder}
         <CustomThemeStyleHost
             contextKey={customThemeStyleContextKey}
             onAntTokensChange={setComputedCustomThemeAntTokens}

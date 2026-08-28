@@ -3098,13 +3098,10 @@ const Sidebar: React.FC<{
       commandSearchFlatItems,
       flattenConnectionNodes,
       activeConnection,
-      activeConnectionDisplayName,
-      activeDatabaseDisplayName,
       v2VisibleTreeData,
       v2TreeHorizontalScrollWidth,
       effectiveTreeHeight,
       v2TreeMetrics,
-      activeConnectionObjectCount,
   } = useSidebarSearchModel({
       searchScopes,
       setSearchScopes,
@@ -3781,16 +3778,8 @@ const Sidebar: React.FC<{
   const v2LocateCurrentTableUnavailableLabel = t('sidebar.message.locate_current_table_unavailable');
   const v2AiAssistantLabel = t('app.sidebar.ai_assistant');
   const v2SettingsLabel = t('app.sidebar.settings');
-  const v2ActiveConnectionHeaderLabel = t('sidebar.active_connection.current_host_database');
-  const v2NoDatabaseSelectedLabel = t('sidebar.active_connection.no_database_selected');
   const v2ConnectionActionsLabel = t('sidebar.active_connection.actions');
   const v2ScrollToTopLabel = t('sidebar.action.scroll_to_top');
-  const v2ActiveConnectionTooltipContent = (
-    <div className="gn-v2-active-connection-tooltip">
-      <strong>{activeConnectionDisplayName}</strong>
-      <span>{activeDatabaseDisplayName || v2NoDatabaseSelectedLabel}</span>
-    </div>
-  );
   const v2CommandSearchLabel = t('sidebar.command_search.label');
   const v2CommandSearchPlaceholder = t('sidebar.command_search.placeholder');
   const v2ExplorerSearchPlaceholder = activeConnectionIsMessageQueue
@@ -3891,6 +3880,7 @@ const Sidebar: React.FC<{
       key: 'data-workflow',
       label: v2DataWorkflowLabel,
       icon: <SwitcherOutlined aria-hidden="true" />,
+      priority: 'secondary',
       menu: [
         {
           key: 'schema-compare',
@@ -3916,6 +3906,7 @@ const Sidebar: React.FC<{
       key: 'connection-package',
       label: t('app.tools.group.config.title'),
       icon: <HddOutlined aria-hidden="true" />,
+      priority: 'secondary',
       menu: [
         {
           key: 'import-connections',
@@ -3930,6 +3921,12 @@ const Sidebar: React.FC<{
           onClick: () => onOpenSettingsNavigation?.({ group: 'config', action: 'export-connections' }),
         },
       ],
+    },
+    {
+      key: 'drivers',
+      label: t('app.tools.entry.drivers.title'),
+      icon: <SettingOutlined aria-hidden="true" />,
+      onClick: () => onOpenSettingsNavigation?.({ group: 'workspace', pane: 'drivers' }),
     },
     {
       key: 'open-external-sql-file',
@@ -4062,12 +4059,6 @@ const Sidebar: React.FC<{
       priority: 'secondary',
       menu: [
         {
-          key: 'drivers',
-          label: t('app.tools.entry.drivers.title'),
-          icon: <SettingOutlined aria-hidden="true" />,
-          onClick: () => onOpenSettingsNavigation?.({ group: 'workspace', pane: 'drivers' }),
-        },
-        {
           key: 'snippet-settings',
           label: t('app.tools.entry.snippets.title'),
           icon: <CodeOutlined aria-hidden="true" />,
@@ -4185,133 +4176,6 @@ const Sidebar: React.FC<{
             data-sidebar-tree-panel={isV2Ui ? 'true' : undefined}
             style={{ display: 'flex', flexDirection: 'column', height: '100%', minWidth: 0, flex: 1 }}
         >
-        {isV2Ui && (
-            <div className="gn-v2-active-connection-header" data-object-count={activeConnectionObjectCount}>
-                <div className="gn-v2-active-connection-trigger" aria-label={v2ActiveConnectionHeaderLabel}>
-                    <div className="gn-v2-active-connection-copy">
-                        <Tooltip title={v2ActiveConnectionTooltipContent} placement="bottomLeft" mouseEnterDelay={0.35}>
-                            <strong>{activeConnectionDisplayName}</strong>
-                        </Tooltip>
-                        <Tooltip title={v2ActiveConnectionTooltipContent} placement="bottomLeft" mouseEnterDelay={0.35}>
-                            <span className={activeDatabaseDisplayName ? undefined : 'is-placeholder'}>
-                                {activeDatabaseDisplayName || v2NoDatabaseSelectedLabel}
-                            </span>
-                        </Tooltip>
-                    </div>
-                </div>
-                <div
-                    className="gn-v2-active-connection-actions"
-                    role="group"
-                    aria-label={v2RailSystemActionsLabel}
-                    data-sidebar-header-actions="true"
-                >
-                    <div className="gn-v2-header-action-group is-navigation" role="group" aria-label={v2RailObjectActionsLabel}>
-                        <Tooltip
-                            title={canLocateActiveTab ? v2LocateCurrentTableLabel : v2LocateCurrentTableUnavailableLabel}
-                            placement="bottom"
-                            mouseEnterDelay={0.35}
-                        >
-                            <span
-                                className="gn-v2-header-action-wrap"
-                                tabIndex={canLocateActiveTab ? undefined : 0}
-                                aria-label={canLocateActiveTab ? undefined : v2LocateCurrentTableUnavailableLabel}
-                            >
-                                <Button
-                                    size="small"
-                                    type="text"
-                                    className="gn-v2-header-tool"
-                                    icon={<AimOutlined />}
-                                    aria-label={v2LocateCurrentTableLabel}
-                                    data-sidebar-locate-current-tab-action="true"
-                                    disabled={!canLocateActiveTab}
-                                    onClick={handleLocateActiveTabInSidebar}
-                                />
-                            </span>
-                        </Tooltip>
-                        <Tooltip title={v2ScrollToTopLabel} placement="bottom" mouseEnterDelay={0.35}>
-                            <Button
-                                size="small"
-                                type="text"
-                                className="gn-v2-header-tool"
-                                icon={<VerticalAlignTopOutlined />}
-                                aria-label={v2ScrollToTopLabel}
-                                data-sidebar-scroll-to-top-action="true"
-                                onClick={() => {
-                                    treeRef.current?.scrollTo?.({ index: 0, align: 'top' });
-                                }}
-                            />
-                        </Tooltip>
-                    </div>
-                    <div className="gn-v2-header-action-group is-connection" role="group" aria-label={v2ConnectionActionsLabel}>
-                        <Tooltip title={v2ConnectionActionsLabel} placement="bottom" mouseEnterDelay={0.35}>
-                            <span
-                                className="gn-v2-header-action-wrap"
-                                tabIndex={activeConnection ? undefined : 0}
-                                aria-label={activeConnection ? undefined : v2ConnectionActionsLabel}
-                            >
-                                <Button
-                                    size="small"
-                                    type="text"
-                                    className="gn-v2-header-tool"
-                                    icon={<MoreOutlined />}
-                                    aria-label={v2ConnectionActionsLabel}
-                                    aria-haspopup="menu"
-                                    data-sidebar-active-connection-actions="true"
-                                    disabled={!activeConnection}
-                                    onClick={(event) => {
-                                        if (activeConnection) {
-                                            openV2ConnectionContextMenu(event, activeConnection);
-                                        }
-                                    }}
-                                />
-                            </span>
-                        </Tooltip>
-                    </div>
-                    <div className="gn-v2-header-action-group is-system" role="group" aria-label={v2RailSystemActionsLabel}>
-                        <Tooltip title={v2AiAssistantLabel} placement="bottom" mouseEnterDelay={0.35}>
-                            <Button
-                                size="small"
-                                type="text"
-                                className={`gn-v2-header-tool${aiPanelVisible ? ' is-active' : ''}`}
-                                icon={<RobotOutlined />}
-                                aria-label={v2AiAssistantLabel}
-                                aria-pressed={aiPanelVisible}
-                                data-gonavi-ai-entry-action="true"
-                                onClick={onToggleAI}
-                            />
-                        </Tooltip>
-                        <Tooltip title={v2SettingsLabel} placement="bottom" mouseEnterDelay={0.35}>
-                            <Button
-                                size="small"
-                                type="text"
-                                className="gn-v2-header-tool"
-                                icon={<SettingOutlined />}
-                                aria-label={v2SettingsLabel}
-                                data-sidebar-settings-action="true"
-                                onClick={onOpenSettings}
-                            />
-                        </Tooltip>
-                    </div>
-                    {onCollapseSidebar && collapseSidebarLabel && (
-                        <Tooltip title={collapseSidebarLabel} placement="bottom" mouseEnterDelay={0.35}>
-                            <Button
-                                ref={collapseSidebarButtonRef}
-                                size="small"
-                                type="text"
-                                className="gonavi-sidebar-collapse-trigger gn-v2-header-tool"
-                                data-sidebar-collapse-trigger="true"
-                                data-sidebar-toggle-placement="explorer-header"
-                                aria-label={collapseSidebarLabel}
-                                aria-controls="gonavi-sidebar-tree-panel"
-                                aria-expanded={true}
-                                icon={<MenuFoldOutlined />}
-                                onClick={onCollapseSidebar}
-                            />
-                        </Tooltip>
-                    )}
-                </div>
-            </div>
-        )}
         <div className={isV2Ui ? 'gn-v2-explorer-search' : undefined} style={{ padding: '8px 14px', borderBottom: `1px solid ${darkMode ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)'}` }}>
             {isV2Ui && !v2UseLegacySidebarFilter ? (
                 <div className="gn-v2-explorer-command-row" data-v2-sidebar-search-mode="command">
@@ -4437,6 +4301,120 @@ const Sidebar: React.FC<{
                 />
             )}
         </div>
+
+        {isV2Ui && (
+            <div
+                className="gn-v2-explorer-actions"
+                role="toolbar"
+                aria-label={v2RailSystemActionsLabel}
+                data-sidebar-explorer-actions="true"
+            >
+                <div className="gn-v2-explorer-action-group is-navigation" role="group" aria-label={v2RailObjectActionsLabel}>
+                    <Tooltip
+                        title={canLocateActiveTab ? v2LocateCurrentTableLabel : v2LocateCurrentTableUnavailableLabel}
+                        placement="bottom"
+                        mouseEnterDelay={0.35}
+                    >
+                        <span
+                            className="gn-v2-explorer-action-wrap"
+                            tabIndex={canLocateActiveTab ? undefined : 0}
+                            aria-label={canLocateActiveTab ? undefined : v2LocateCurrentTableUnavailableLabel}
+                        >
+                            <Button
+                                size="small"
+                                type="text"
+                                className="gn-v2-explorer-tool"
+                                icon={<AimOutlined />}
+                                aria-label={v2LocateCurrentTableLabel}
+                                data-sidebar-locate-current-tab-action="true"
+                                disabled={!canLocateActiveTab}
+                                onClick={handleLocateActiveTabInSidebar}
+                            />
+                        </span>
+                    </Tooltip>
+                    <Tooltip title={v2ScrollToTopLabel} placement="bottom" mouseEnterDelay={0.35}>
+                        <Button
+                            size="small"
+                            type="text"
+                            className="gn-v2-explorer-tool"
+                            icon={<VerticalAlignTopOutlined />}
+                            aria-label={v2ScrollToTopLabel}
+                            data-sidebar-scroll-to-top-action="true"
+                            onClick={() => {
+                                treeRef.current?.scrollTo?.({ index: 0, align: 'top' });
+                            }}
+                        />
+                    </Tooltip>
+                </div>
+                <div className="gn-v2-explorer-action-group is-connection" role="group" aria-label={v2ConnectionActionsLabel}>
+                    <Tooltip title={v2ConnectionActionsLabel} placement="bottom" mouseEnterDelay={0.35}>
+                        <span
+                            className="gn-v2-explorer-action-wrap"
+                            tabIndex={activeConnection ? undefined : 0}
+                            aria-label={activeConnection ? undefined : v2ConnectionActionsLabel}
+                        >
+                            <Button
+                                size="small"
+                                type="text"
+                                className="gn-v2-explorer-tool"
+                                icon={<MoreOutlined />}
+                                aria-label={v2ConnectionActionsLabel}
+                                aria-haspopup="menu"
+                                data-sidebar-active-connection-actions="true"
+                                disabled={!activeConnection}
+                                onClick={(event) => {
+                                    if (activeConnection) {
+                                        openV2ConnectionContextMenu(event, activeConnection);
+                                    }
+                                }}
+                            />
+                        </span>
+                    </Tooltip>
+                </div>
+                <div className="gn-v2-explorer-action-group is-system" role="group" aria-label={v2RailSystemActionsLabel}>
+                    <Tooltip title={v2AiAssistantLabel} placement="bottom" mouseEnterDelay={0.35}>
+                        <Button
+                            size="small"
+                            type="text"
+                            className={`gn-v2-explorer-tool${aiPanelVisible ? ' is-active' : ''}`}
+                            icon={<RobotOutlined />}
+                            aria-label={v2AiAssistantLabel}
+                            aria-pressed={aiPanelVisible}
+                            data-gonavi-ai-entry-action="true"
+                            onClick={onToggleAI}
+                        />
+                    </Tooltip>
+                    <Tooltip title={v2SettingsLabel} placement="bottom" mouseEnterDelay={0.35}>
+                        <Button
+                            size="small"
+                            type="text"
+                            className="gn-v2-explorer-tool"
+                            icon={<SettingOutlined />}
+                            aria-label={v2SettingsLabel}
+                            data-sidebar-settings-action="true"
+                            onClick={onOpenSettings}
+                        />
+                    </Tooltip>
+                </div>
+                {onCollapseSidebar && collapseSidebarLabel && (
+                    <Tooltip title={collapseSidebarLabel} placement="bottom" mouseEnterDelay={0.35}>
+                        <Button
+                            ref={collapseSidebarButtonRef}
+                            size="small"
+                            type="text"
+                            className="gonavi-sidebar-collapse-trigger gn-v2-explorer-tool"
+                            data-sidebar-collapse-trigger="true"
+                            data-sidebar-toggle-placement="explorer-toolbar"
+                            aria-label={collapseSidebarLabel}
+                            aria-controls="gonavi-sidebar-tree-panel"
+                            aria-expanded={true}
+                            icon={<MenuFoldOutlined />}
+                            onClick={onCollapseSidebar}
+                        />
+                    </Tooltip>
+                )}
+            </div>
+        )}
 
         {isV2Ui && !activeConnectionIsMessageQueue && (
             <div className="gn-v2-explorer-filter-tabs" aria-label={t('sidebar.command_search.object_kind.filter_aria')}>

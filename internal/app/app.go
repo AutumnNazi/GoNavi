@@ -202,6 +202,10 @@ type App struct {
 	sqliteTableStatsMu            sync.Mutex
 	secretStore                   secretstore.SecretStore
 	runningQueries                map[string]queryContext // queryID -> cancelFunc and start time
+	connectionHealthRunsMu        sync.Mutex
+	connectionHealthRuns          map[string]*connectionHealthRun
+	connectionHealthRunsClosing   bool
+	connectionHealthRunInspect    func(context.Context, string) connection.ConnectionHealthReport // 测试钩子：用于确定性控制批量任务执行时序。
 	sqlTransactionMu              sync.Mutex
 	sqlTransactions               map[string]*managedSQLTransaction
 	sqlAuditMu                    sync.RWMutex
@@ -297,6 +301,7 @@ func NewAppWithSecretStore(store secretstore.SecretStore) *App {
 		connectFailures:               make(map[string]cachedConnectFailure),
 		dbConnectFlights:              make(map[uint64]*databaseConnectFlight),
 		runningQueries:                make(map[string]queryContext),
+		connectionHealthRuns:          make(map[string]*connectionHealthRun),
 		importTasks:                   make(map[string]importTaskRegistration),
 		driverDownloadTasks:           make(map[string]DriverDownloadTaskStatus),
 		sqlTransactions:               make(map[string]*managedSQLTransaction),
@@ -574,6 +579,9 @@ func (a *App) LogWindowDiagnostic(stage string, payload string) {
 // Shutdown is called when the app terminates.
 func (a *App) Shutdown() {
 	logger.Infof("应用开始关闭，准备释放资源")
+	if !a.cancelAndWaitConnectionHealthRuns(5 * time.Second) {
+		logger.Warnf("连接健康检查任务未能在关闭超时内全部退出；将继续释放数据库资源")
+	}
 	a.shutdownCloudBackup()
 	a.shutdownDataSyncJobs()
 	if !a.cancelAndWaitImportTasks(5 * time.Second) {
@@ -1354,6 +1362,12 @@ func (a *App) getDatabaseWithContext(ctx context.Context, config connection.Conn
 }
 
 func (a *App) openDatabaseIsolated(config connection.ConnectionConfig) (db.Database, error) {
+	a.mu.RLock()
+	shuttingDown := a.dbShuttingDown
+	a.mu.RUnlock()
+	if shuttingDown {
+		return nil, errDatabaseConnectionShutdown
+	}
 	effectiveConfig, err := a.resolveEffectiveConnectionConfig(config)
 	if err != nil {
 		return nil, err

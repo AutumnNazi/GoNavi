@@ -49,13 +49,26 @@ func TestWindowsSystemProxyUsesBypassAndSOCKSFallback(t *testing.T) {
 	}
 }
 
-func TestWindowsSystemProxyRejectsUnsupportedAutomaticOnlyPolicy(t *testing.T) {
+func TestWindowsSystemProxyFallsBackToDirectForAutomaticOnlyPolicy(t *testing.T) {
 	got, err := resolveWindowsSystemProxySettings(
 		mustSystemProxyURL(t, "https://github.com/repo"),
 		windowsSystemProxySettings{AutoDetect: true},
 	)
 	if got != nil {
 		t.Fatalf("expected no proxy URL, got %v", got)
+	}
+	if err != nil {
+		t.Fatalf("automatic-only Windows settings should allow direct access, got %v", err)
+	}
+}
+
+func TestWindowsSystemProxyRejectsExplicitPACWithoutManualProxy(t *testing.T) {
+	got, err := resolveWindowsSystemProxySettings(
+		mustSystemProxyURL(t, "https://github.com/repo"),
+		windowsSystemProxySettings{AutoConfigURL: "https://proxy.example/config.pac"},
+	)
+	if got != nil {
+		t.Fatalf("expected no proxy URL for unsupported PAC, got %v", got)
 	}
 	if err == nil || !strings.Contains(err.Error(), "PAC/WPAD") {
 		t.Fatalf("expected explicit PAC/WPAD error, got %v", err)

@@ -942,6 +942,140 @@ func TestResolveOptionalDriverAgentDownloadURLsUsesMongoV1AssetForCompatibleDefa
 	t.Fatalf("expected MongoDB v1 release asset %q in candidates, got %v", want, urls)
 }
 
+func TestResolveOptionalDriverAgentDownloadURLsAddsDevMirrorCandidatesWhenGitHubURLProvided(t *testing.T) {
+	originalFetch := fetchMirrorDriverReleaseByTagForDriverDownload
+	originalCache := cloneReleaseAssetSizeCache(driverReleaseSizeMap)
+	t.Cleanup(func() {
+		fetchMirrorDriverReleaseByTagForDriverDownload = originalFetch
+		driverReleaseSizeMu.Lock()
+		driverReleaseSizeMap = originalCache
+		driverReleaseSizeMu.Unlock()
+	})
+
+	driverReleaseSizeMu.Lock()
+	driverReleaseSizeMap = map[string]driverReleaseAssetSizeCacheEntry{}
+	driverReleaseSizeMu.Unlock()
+
+	const selectedVersion = "1.9.6"
+	assetName := optionalDriverReleaseZipAssetNameForVersion("sqlserver", selectedVersion)
+	githubURL := driverReleaseDownloadURL(driverReleaseDevTag, assetName)
+	physicalTag := "dev-33153267878-1"
+	mirrorURL := driverMirrorDevReleaseDownloadURL(physicalTag, assetName)
+	fetchMirrorDriverReleaseByTagForDriverDownload = func(tag string) (*githubRelease, error) {
+		if tag != driverReleaseDevTag {
+			t.Fatalf("unexpected mirror release tag %q", tag)
+		}
+		return &githubRelease{TagName: driverReleaseDevTag, Assets: []githubAsset{{
+			Name:               assetName,
+			BrowserDownloadURL: mirrorURL,
+			URL:                githubURL,
+		}}}, nil
+	}
+
+	definition, ok := resolveDriverDefinition("sqlserver")
+	if !ok {
+		t.Fatal("expected SQL Server driver definition")
+	}
+	got := resolveOptionalDriverAgentDownloadURLs(definition, githubURL, selectedVersion)
+	if len(got) < 2 {
+		t.Fatalf("expected mirror and GitHub candidates, got %v", got)
+	}
+	if got[0] != mirrorURL {
+		t.Fatalf("expected dev mirror candidate first, got %q", got[0])
+	}
+	if got[1] != githubURL {
+		t.Fatalf("expected original GitHub candidate second, got %q", got[1])
+	}
+
+	expanded, err := expandOptionalDriverDownloadCandidates(got[:2])
+	if err != nil {
+		t.Fatalf("expand mirror candidates: %v", err)
+	}
+	expectedExpanded, err := staticDriverDispatcherDownloadCandidates(mirrorURL)
+	if err != nil {
+		t.Fatalf("expand expected mirror candidates: %v", err)
+	}
+	if len(expanded) != len(expectedExpanded) {
+		t.Fatalf("expected DMIT/Bero/GitHub candidates with duplicate GitHub removed, got %#v", expanded)
+	}
+	for index, expected := range expectedExpanded {
+		if expanded[index].URL != expected {
+			t.Fatalf("expanded candidate %d = %q, want %q", index, expanded[index].URL, expected)
+		}
+	}
+}
+
+func TestResolveOptionalDriverAgentDownloadURLsAddsDevMirrorCandidatesForBuiltinURL(t *testing.T) {
+	originalVersion := AppVersion
+	originalFetch := fetchMirrorDriverReleaseByTagForDriverDownload
+	driverReleaseSizeMu.Lock()
+	originalCache := cloneReleaseAssetSizeCache(driverReleaseSizeMap)
+	driverReleaseSizeMu.Unlock()
+	t.Cleanup(func() {
+		AppVersion = originalVersion
+		fetchMirrorDriverReleaseByTagForDriverDownload = originalFetch
+		driverReleaseSizeMu.Lock()
+		driverReleaseSizeMap = originalCache
+		driverReleaseSizeMu.Unlock()
+	})
+
+	AppVersion = "dev-test123"
+	const selectedVersion = "1.9.6"
+	assetName := optionalDriverReleaseZipAssetNameForVersion("sqlserver", selectedVersion)
+	githubURL := driverReleaseDownloadURL(driverReleaseDevTag, assetName)
+	physicalTag := "dev-test123"
+	mirrorURL := driverMirrorDevReleaseDownloadURL(physicalTag, assetName)
+	now := time.Now()
+	driverReleaseSizeMu.Lock()
+	driverReleaseSizeMap = map[string]driverReleaseAssetSizeCacheEntry{
+		"tag:" + driverReleaseDevTag: {LoadedAt: now, Err: "mirror index unavailable"},
+		"latest":                     {LoadedAt: now, Err: "mirror index unavailable"},
+	}
+	driverReleaseSizeMu.Unlock()
+
+	var fetches int
+	fetchMirrorDriverReleaseByTagForDriverDownload = func(tag string) (*githubRelease, error) {
+		fetches++
+		if tag != driverReleaseDevTag {
+			t.Fatalf("unexpected mirror release tag %q", tag)
+		}
+		return &githubRelease{TagName: driverReleaseDevTag, Assets: []githubAsset{{
+			Name:               assetName,
+			BrowserDownloadURL: mirrorURL,
+			URL:                githubURL,
+		}}}, nil
+	}
+
+	definition := driverDefinition{Type: "sqlserver", PinnedVersion: selectedVersion}
+	got := resolveOptionalDriverAgentDownloadURLs(definition, "builtin://activate/sqlserver", selectedVersion)
+	want := []string{mirrorURL, githubURL}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("expected dev mirror then GitHub for builtin URL, got %v, want %v", got, want)
+	}
+	if fetches == 0 {
+		t.Fatal("expected cold dev mirror metadata to be resolved from the mirror index")
+	}
+}
+
+func TestResolveOptionalDriverAgentDownloadURLsKeepsGitHubWhenDevMirrorLookupFails(t *testing.T) {
+	originalFetch := fetchMirrorDriverReleaseByTagForDriverDownload
+	t.Cleanup(func() {
+		fetchMirrorDriverReleaseByTagForDriverDownload = originalFetch
+	})
+
+	fetchMirrorDriverReleaseByTagForDriverDownload = func(string) (*githubRelease, error) {
+		return nil, errors.New("mirror index unavailable")
+	}
+	const selectedVersion = "1.9.7"
+	assetName := optionalDriverReleaseZipAssetNameForVersion("sqlserver", selectedVersion)
+	githubURL := driverReleaseDownloadURL(driverReleaseDevTag, assetName)
+	definition := driverDefinition{Type: "sqlserver", PinnedVersion: "1.9.6"}
+	got := resolveOptionalDriverAgentDownloadURLs(definition, githubURL, selectedVersion)
+	if !reflect.DeepEqual(got, []string{githubURL}) {
+		t.Fatalf("expected original GitHub URL to remain as final fallback, got %v", got)
+	}
+}
+
 func TestResolveOptionalDriverAgentDownloadURLsDoesNotUseMongoV2BaseForCompatibleDefault(t *testing.T) {
 	definition, ok := resolveDriverDefinition("mongodb")
 	if !ok {

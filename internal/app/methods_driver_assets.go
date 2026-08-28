@@ -756,6 +756,42 @@ func isDriverMirrorDownloadURL(rawURL string) bool {
 	return err == nil && strings.EqualFold(parsed.Hostname(), "download.syngnat.top")
 }
 
+func resolveMirrorDriverDownloadURLForTagAsset(tag string, assetName string) string {
+	tag = strings.TrimSpace(tag)
+	assetName = strings.TrimSpace(assetName)
+	if tag == "" || assetName == "" {
+		return ""
+	}
+	if !strings.EqualFold(tag, driverReleaseDevTag) {
+		return driverMirrorReleaseDownloadURL(tag, assetName)
+	}
+	if mirrorURL := readReleaseMirrorDownloadURLFromCache("tag:"+tag, assetName); mirrorURL != "" {
+		return mirrorURL
+	}
+
+	// dev-latest is a mutable GitHub alias while the mirror stores each
+	// publication under an immutable physical tag. Resolve that tag from the
+	// mirror index when the release metadata cache is cold; a failure here must
+	// leave the original GitHub URL usable as the final fallback.
+	release, err := fetchMirrorDriverReleaseByTagForDriverDownload(tag)
+	if err != nil {
+		return ""
+	}
+	asset, found := findReleaseAssetByName(release, []string{assetName})
+	if !found || !isDriverMirrorDownloadURL(asset.BrowserDownloadURL) {
+		return ""
+	}
+	return strings.TrimSpace(asset.BrowserDownloadURL)
+}
+
+func resolveMirrorDriverDownloadURLForGitHubURL(rawURL string) string {
+	tag, assetName, ok := driverReleaseDownloadCoordinates(rawURL)
+	if !ok {
+		return ""
+	}
+	return resolveMirrorDriverDownloadURLForTagAsset(tag, assetName)
+}
+
 func resolveOptionalDriverAgentDownloadURLs(definition driverDefinition, rawURL string, selectedVersion string) []string {
 	candidates := make([]string, 0, 6)
 	seen := make(map[string]struct{}, 6)
@@ -788,7 +824,7 @@ func resolveOptionalDriverAgentDownloadURLs(definition driverDefinition, rawURL 
 		}
 		if mirrorTag != "" && assetName != "" {
 			if strings.EqualFold(releaseTag, driverReleaseDevTag) {
-				appendURL(readReleaseMirrorDownloadURLFromCache("tag:"+releaseTag, assetName))
+				appendURL(resolveMirrorDriverDownloadURLForTagAsset(releaseTag, assetName))
 			} else {
 				appendURL(driverMirrorReleaseDownloadURL(mirrorTag, assetName))
 			}
@@ -813,13 +849,9 @@ func resolveOptionalDriverAgentDownloadURLs(definition driverDefinition, rawURL 
 	if parsed, err := url.Parse(strings.TrimSpace(rawURL)); err == nil && isOptionalDriverDownloadZipURL(parsed.String()) {
 		switch strings.ToLower(strings.TrimSpace(parsed.Scheme)) {
 		case "http", "https":
-			if tag, assetName, ok := driverReleaseDownloadCoordinates(parsed.String()); ok &&
+			if _, _, ok := driverReleaseDownloadCoordinates(parsed.String()); ok &&
 				!isDriverMirrorDownloadURL(parsed.String()) {
-				if strings.EqualFold(tag, driverReleaseDevTag) {
-					appendURL(readReleaseMirrorDownloadURLFromCache("tag:"+tag, assetName))
-				} else {
-					appendURL(driverMirrorReleaseDownloadURL(tag, assetName))
-				}
+				appendURL(resolveMirrorDriverDownloadURLForGitHubURL(parsed.String()))
 			}
 			appendURL(parsed.String())
 		}

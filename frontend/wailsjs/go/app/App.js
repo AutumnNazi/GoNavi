@@ -58,6 +58,10 @@ export function CancelSQLFileExecution(arg1) {
   return window['go']['app']['App']['CancelSQLFileExecution'](arg1);
 }
 
+export function CancelSavedConnectionsHealthRun(arg1) {
+  return window['go']['app']['App']['CancelSavedConnectionsHealthRun'](arg1);
+}
+
 export function CheckDriverNetworkStatus() {
   return window['go']['app']['App']['CheckDriverNetworkStatus']();
 }
@@ -648,6 +652,10 @@ export function GetSQLAuditSettings() {
 
 export function GetSavedConnections() {
   return window['go']['app']['App']['GetSavedConnections']();
+}
+
+export function GetSavedConnectionsHealthRun(arg1) {
+  return window['go']['app']['App']['GetSavedConnectionsHealthRun'](arg1);
 }
 
 export function GetSavedQueries() {
@@ -1364,6 +1372,10 @@ export function Shutdown() {
 
 export function StartDriverPackageDownload(arg1, arg2, arg3, arg4) {
   return window['go']['app']['App']['StartDriverPackageDownload'](arg1, arg2, arg3, arg4);
+}
+
+export function StartSavedConnectionsHealthRun(arg1) {
+  return window['go']['app']['App']['StartSavedConnectionsHealthRun'](arg1);
 }
 
 export function StartSecurityUpdate(arg1) {

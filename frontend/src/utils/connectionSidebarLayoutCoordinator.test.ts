@@ -186,9 +186,10 @@ describe('connection sidebar layout coordinator', () => {
     coordinator.dispose();
   });
 
-  it('does not overwrite a pending local edit before revision CAS resolves the conflict', async () => {
+  it('keeps a pending local edit recoverable until the user accepts the remote layout', async () => {
     vi.useFakeTimers();
     const store = createLayoutStore(emptyLayout);
+    const onSaveStateChange = vi.fn();
     const concurrentRemoteLayout: ConnectionSidebarLayout = {
       ...remoteLayout,
       revision: 8,
@@ -206,6 +207,7 @@ describe('connection sidebar layout coordinator', () => {
       backend,
       store: store.adapter,
       debounceMs: 160,
+      onSaveStateChange,
     });
     await coordinator.bootstrap();
 
@@ -223,6 +225,16 @@ describe('connection sidebar layout coordinator', () => {
       expectedRevision: 7,
       layout: localEdit,
     });
+    expect(store.read()).toEqual(localEdit);
+    expect(onSaveStateChange).toHaveBeenLastCalledWith({
+      status: 'conflict',
+      localLayout: localEdit,
+      remoteLayout: concurrentRemoteLayout,
+    });
+    await expect(coordinator.flush()).rejects.toThrow('unresolved revision conflict');
+    expect(store.read()).toEqual(localEdit);
+
+    coordinator.acceptRemoteLayout();
     expect(store.read()).toEqual({
       connectionTags: concurrentRemoteLayout.connectionTags,
       sidebarRootOrder: concurrentRemoteLayout.sidebarRootOrder,
@@ -380,6 +392,7 @@ describe('connection sidebar layout coordinator', () => {
 
   it('coalesces changes made during an in-flight save and reuses the returned revision', async () => {
     vi.useFakeTimers();
+    const onSaveStateChange = vi.fn();
     const store = createLayoutStore({
       connectionTags: remoteLayout.connectionTags,
       sidebarRootOrder: remoteLayout.sidebarRootOrder,
@@ -413,6 +426,7 @@ describe('connection sidebar layout coordinator', () => {
       backend,
       store: store.adapter,
       debounceMs: 160,
+      onSaveStateChange,
     });
     await coordinator.bootstrap();
 
@@ -447,15 +461,21 @@ describe('connection sidebar layout coordinator', () => {
       expectedRevision: 8,
       layout: latestChange,
     });
+    expect(
+      onSaveStateChange.mock.calls
+        .map(([state]) => state)
+        .filter((state) => state.status === 'saved'),
+    ).toEqual([{ status: 'saved', revision: 9 }]);
     coordinator.dispose();
   });
 
-  it('applies the authoritative backend layout on conflict without echo-saving it', async () => {
+  it('retries the current local layout against the latest revision after a conflict', async () => {
     vi.useFakeTimers();
     const store = createLayoutStore({
       connectionTags: remoteLayout.connectionTags,
       sidebarRootOrder: remoteLayout.sidebarRootOrder,
     });
+    const onSaveStateChange = vi.fn();
     const concurrentLayout: ConnectionSidebarLayout = {
       initialized: true,
       revision: 8,
@@ -464,30 +484,65 @@ describe('connection sidebar layout coordinator', () => {
     };
     const backend = {
       BootstrapConnectionSidebarLayout: vi.fn(async () => cloneLayout(remoteLayout)),
-      SaveConnectionSidebarLayout: vi.fn(async () => ({
-        conflict: true,
-        layout: cloneLayout(concurrentLayout),
-      })),
+      SaveConnectionSidebarLayout: vi
+        .fn()
+        .mockResolvedValueOnce({
+          conflict: true,
+          layout: cloneLayout(concurrentLayout),
+        })
+        .mockImplementationOnce(async (input) => ({
+          conflict: false,
+          layout: {
+            initialized: true,
+            revision: 9,
+            ...cloneLayout(input.layout),
+          },
+        })),
     };
     const coordinator = createConnectionSidebarLayoutCoordinator({
       backend,
       store: store.adapter,
       debounceMs: 160,
+      onSaveStateChange,
     });
     await coordinator.bootstrap();
 
-    store.update({
+    const localLayout: ConnectionSidebarLayoutInput = {
       connectionTags: [{ ...remoteLayout.connectionTags[0], name: '本实例' }],
       sidebarRootOrder: remoteLayout.sidebarRootOrder,
-    });
+    };
+    store.update(localLayout);
     await vi.advanceTimersByTimeAsync(160);
     await vi.advanceTimersByTimeAsync(500);
 
-    expect(store.read()).toEqual({
-      connectionTags: concurrentLayout.connectionTags,
-      sidebarRootOrder: concurrentLayout.sidebarRootOrder,
-    });
+    expect(store.read()).toEqual(localLayout);
     expect(backend.SaveConnectionSidebarLayout).toHaveBeenCalledTimes(1);
+    expect(onSaveStateChange).toHaveBeenLastCalledWith({
+      status: 'conflict',
+      localLayout,
+      remoteLayout: concurrentLayout,
+    });
+
+    const latestLocalLayout: ConnectionSidebarLayoutInput = {
+      connectionTags: [{ ...remoteLayout.connectionTags[0], name: '本实例继续修改' }],
+      sidebarRootOrder: remoteLayout.sidebarRootOrder,
+    };
+    store.update(latestLocalLayout);
+    await vi.advanceTimersByTimeAsync(160);
+    expect(backend.SaveConnectionSidebarLayout).toHaveBeenCalledTimes(1);
+
+    await coordinator.retryPendingSave();
+
+    expect(backend.SaveConnectionSidebarLayout).toHaveBeenCalledTimes(2);
+    expect(backend.SaveConnectionSidebarLayout).toHaveBeenLastCalledWith({
+      expectedRevision: 8,
+      layout: latestLocalLayout,
+    });
+    expect(onSaveStateChange).toHaveBeenLastCalledWith({
+      status: 'saved',
+      revision: 9,
+    });
+    expect(store.read()).toEqual(latestLocalLayout);
     coordinator.dispose();
   });
 
@@ -558,6 +613,7 @@ describe('connection sidebar layout coordinator', () => {
       rejectFirstSave = reject;
     });
     const onError = vi.fn();
+    const onSaveStateChange = vi.fn();
     const backend = {
       BootstrapConnectionSidebarLayout: vi.fn(async () => cloneLayout(remoteLayout)),
       SaveConnectionSidebarLayout: vi
@@ -577,6 +633,7 @@ describe('connection sidebar layout coordinator', () => {
       store: store.adapter,
       debounceMs: 160,
       onError,
+      onSaveStateChange,
     });
     await coordinator.bootstrap();
 
@@ -597,13 +654,21 @@ describe('connection sidebar layout coordinator', () => {
     rejectFirstSave(new Error('disk temporarily busy'));
     await vi.runAllTimersAsync();
     expect(onError).toHaveBeenCalledTimes(1);
+    expect(onSaveStateChange).toHaveBeenLastCalledWith({
+      status: 'error',
+      error: expect.objectContaining({ message: 'disk temporarily busy' }),
+    });
     expect(backend.SaveConnectionSidebarLayout).toHaveBeenCalledTimes(1);
 
-    await coordinator.flush();
+    await coordinator.retryPendingSave();
     expect(backend.SaveConnectionSidebarLayout).toHaveBeenCalledTimes(2);
     expect(backend.SaveConnectionSidebarLayout).toHaveBeenLastCalledWith({
       expectedRevision: 7,
       layout: latestChange,
+    });
+    expect(onSaveStateChange).toHaveBeenLastCalledWith({
+      status: 'saved',
+      revision: 8,
     });
     coordinator.dispose();
   });
