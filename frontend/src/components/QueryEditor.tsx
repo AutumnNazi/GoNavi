@@ -261,6 +261,7 @@ import {
     resolveQueryEditorInlineCompletionEdit,
     resolveQueryEditorInlineLocalCompletion,
     resolveQueryEditorInlineRuntimeReadiness,
+    isQueryEditorInlineTableAliasPending,
     shouldTriggerQueryEditorInlineObjectSuggestFallback,
     shouldRequestQueryEditorInlineCompletion,
     type QueryEditorAiApplyMode,
@@ -5267,6 +5268,10 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
               position = normalizedState.position;
               editorSnapshot = normalizedState.snapshot;
           }
+          const autoAddTableAlias = useStore.getState().appearance.autoAddTableAlias !== false;
+          if (!autoAddTableAlias && isQueryEditorInlineTableAliasPending(editorSnapshot)) {
+              return;
+          }
           const intent = resolveQueryEditorInlineCompletionIntentDetails(editorSnapshot);
           const shouldUseInlineMemory = manualTrigger || intent.intent !== 'general_sql';
           let memoryInsertText = '';
@@ -5342,6 +5347,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                           aiContext,
                           editorSnapshot,
                           deferEmptySchemaCompletion: true,
+                          autoAddTableAlias,
                       });
                       if (localCompletion.handled) {
                           if (localCompletion.insertText.trim()) {
@@ -5374,6 +5380,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                           service: aiService,
                           aiContext: buildQueryEditorAiContext(),
                           editorSnapshot,
+                          autoAddTableAlias,
                       });
                       const currentPosition = normalizeEditorPosition(editor.getPosition?.());
                       if (
@@ -6800,9 +6807,9 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
               const isTableSourceCompletion = isQueryEditorTableSourceCompletionContext(completionScopeText);
               const isTableAliasCompletion = isQueryEditorTableAliasCompletionContext(completionScopeText);
               const appendTableSourceAlias = (insertText: string, tableName: string) => {
-                  if (!isTableAliasCompletion) return insertText;
+                  if (!isTableAliasCompletion || useStore.getState().appearance.autoAddTableAlias === false) return insertText;
                   const alias = buildQueryEditorTableSourceAlias(tableName, completionReferenceText);
-                  return alias ? `${insertText} ${alias}` : insertText;
+                  return alias ? `${insertText} AS ${alias}` : insertText;
               };
 
               // 0) 三段式 db.table.column 格式：当输入 db.table. 时提示列

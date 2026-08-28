@@ -3072,6 +3072,8 @@
   "app.theme.query_template.hint": "清空後新建查詢會保持空白；點擊「恢復預設」可回到 SELECT * FROM 。",
   "app.theme.query_template.reset_default": "恢復預設",
   "app.theme.query_template.title": "新建查詢預設 SQL",
+  "app.theme.table_alias.description": "在查詢表來源位置選擇表名，或手動輸入表名後輸入空格時，自動補充 AS 表別名。",
+  "app.theme.table_alias.title": "自動新增表別名",
   "app.theme.startup_window.hint": "* 修改后下次启动生效",
   "app.theme.startup_window.maximised": "啟動時最大化",
   "app.theme.startup_window.title": "启动視窗",

@@ -749,7 +749,7 @@ describe('QueryEditorAiAssist', () => {
                 currentLineBeforeCursor: 'SELECT * FROM system_user ',
                 currentLineAfterCursor: '',
             },
-        })).resolves.toBe('su');
+        })).resolves.toBe('AS su');
         await expect(requestQueryEditorInlineCompletion({
             ...request,
             editorSnapshot: {
@@ -758,7 +758,31 @@ describe('QueryEditorAiAssist', () => {
                 currentLineBeforeCursor: 'SELECT * FROM system_user su JOIN service_user ',
                 currentLineAfterCursor: '',
             },
-        })).resolves.toBe('su2');
+        })).resolves.toBe('AS su2');
+        expect(service.AIChatSend).not.toHaveBeenCalled();
+        expect(service.AIGetProviders).not.toHaveBeenCalled();
+        expect(service.AIGetActiveProvider).not.toHaveBeenCalled();
+    });
+
+    it('does not suggest an alias after a manually completed table source when disabled', async () => {
+        const service = readyService('SELECT * FROM system_user su;');
+        await expect(requestQueryEditorInlineCompletion({
+            service,
+            autoAddTableAlias: false,
+            aiContext: {
+                connectionName: 'Local MySQL',
+                sourceType: 'mysql',
+                currentDb: 'shop',
+                tables: [{ dbName: 'shop', tableName: 'system_user' }],
+                columns: [],
+            },
+            editorSnapshot: {
+                prefix: 'SELECT * FROM system_user ',
+                suffix: '',
+                currentLineBeforeCursor: 'SELECT * FROM system_user ',
+                currentLineAfterCursor: '',
+            },
+        })).resolves.toBe('');
         expect(service.AIChatSend).not.toHaveBeenCalled();
         expect(service.AIGetProviders).not.toHaveBeenCalled();
         expect(service.AIGetActiveProvider).not.toHaveBeenCalled();

@@ -67,6 +67,7 @@ const storeState = vi.hoisted(() => ({
   appearance: {
     uiVersion: 'legacy' as 'legacy' | 'v2',
     newQuerySqlTemplate: null as string | null,
+    autoAddTableAlias: true,
   },
   sqlFormatOptions: { keywordCase: 'upper' as const },
   setSqlFormatOptions: vi.fn(),
@@ -902,6 +903,7 @@ describe('QueryEditor external SQL save', () => {
     storeState.setAIPanelVisible.mockReset();
     storeState.appearance.uiVersion = 'legacy';
     storeState.appearance.newQuerySqlTemplate = null;
+    storeState.appearance.autoAddTableAlias = true;
     storeState.queryOptions = {
       maxRows: 5000,
       wordWrap: false,
@@ -2268,6 +2270,46 @@ describe('QueryEditor external SQL save', () => {
       ]?.[0];
       expect(ghostOverlay?.className).toBe('gonavi-query-editor-ai-inline-ghost-overlay');
       expect(ghostOverlay?.textContent).toBe(' videos SET status = 1 WHERE id = ?;');
+      expect(editorState.editor.trigger).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not restore a table alias from SQL memory when automatic table aliases are disabled', async () => {
+    vi.useFakeTimers();
+    try {
+      storeState.appearance.autoAddTableAlias = false;
+      storeState.sqlLogs = [{
+        id: 'sql-log-table-alias-memory',
+        timestamp: Date.now(),
+        sql: 'SELECT * FROM system_user AS su WHERE su.id = ?;',
+        status: 'success',
+        duration: 9,
+        dbName: 'main',
+      } as any];
+
+      await act(async () => {
+        create(<QueryEditor tab={createTab({ query: '', dbName: 'main' })} />);
+      });
+
+      editorState.value = 'SELECT * FROM system_user ';
+      editorState.position = { lineNumber: 1, column: editorState.value.length + 1 };
+      editorState.editor.trigger.mockClear();
+      editorState.domNode.appendChild.mockClear();
+
+      await act(async () => {
+        editorState.latestOnChange?.(editorState.value);
+        editorState.modelContentListeners.forEach((listener) => listener({
+          changes: [{ text: ' ' }],
+        }));
+        vi.advanceTimersByTime(120);
+        for (let i = 0; i < 8; i += 1) {
+          await Promise.resolve();
+        }
+      });
+
+      expect(editorState.domNode.appendChild).not.toHaveBeenCalled();
       expect(editorState.editor.trigger).not.toHaveBeenCalled();
     } finally {
       vi.useRealTimers();
@@ -3948,7 +3990,7 @@ describe('QueryEditor external SQL save', () => {
       { lineNumber: 1, column: editorState.value.length + 1 },
     );
     const uppercaseTable = uppercaseTableResult.suggestions.find((item: any) => item.label === 'a_cninfo_announcement');
-    expect(uppercaseTable?.insertText).toBe('a_cninfo_announcement aca');
+    expect(uppercaseTable?.insertText).toBe('a_cninfo_announcement AS aca');
 
     editorState.value = 'SELECT * FROM users WHERE sh';
     editorState.latestOnChange?.(editorState.value);
@@ -4007,7 +4049,7 @@ describe('QueryEditor external SQL save', () => {
       { lineNumber: 1, column: editorState.value.length + 1 },
     );
     expect(conflictResult.suggestions.find((item: any) => item.label === 'system_user')?.insertText)
-      .toBe('system_user su2');
+      .toBe('system_user AS su2');
 
     editorState.value = 'SELECT * FROM code';
     editorState.latestOnChange?.(editorState.value);
@@ -4016,7 +4058,7 @@ describe('QueryEditor external SQL save', () => {
       { lineNumber: 1, column: editorState.value.length + 1 },
     );
     expect(initialsResult.suggestions.find((item: any) => item.label === 'code_query_record_zykj')?.insertText)
-      .toBe('code_query_record_zykj cqrz');
+      .toBe('code_query_record_zykj AS cqrz');
 
     editorState.value = 'INSERT INTO system';
     editorState.latestOnChange?.(editorState.value);
@@ -4025,6 +4067,41 @@ describe('QueryEditor external SQL save', () => {
       { lineNumber: 1, column: editorState.value.length + 1 },
     );
     expect(insertResult.suggestions.find((item: any) => item.label === 'system_user')?.insertText)
+      .toBe('system_user');
+
+    await act(async () => {
+      renderer.unmount();
+    });
+  });
+
+  it('does not add table aliases to table source completions when disabled', async () => {
+    let renderer!: ReactTestRenderer;
+    autoFetchState.visible = true;
+    storeState.appearance.autoAddTableAlias = false;
+    storeState.connections[0].config.database = 'main';
+    backendApp.DBGetDatabases.mockResolvedValueOnce({ success: true, data: [{ Database: 'main' }] });
+    backendApp.DBGetTables.mockResolvedValueOnce({
+      success: true,
+      data: [{ Tables_in_main: 'system_user' }],
+    });
+    backendApp.DBGetAllColumns.mockResolvedValueOnce({ success: true, data: [] });
+
+    await act(async () => {
+      renderer = create(<QueryEditor tab={createTab({ query: '', dbName: 'main' })} />);
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    editorState.value = 'SELECT * FROM system';
+    editorState.latestOnChange?.(editorState.value);
+    const result = await findSqlCompletionProvider().provideCompletionItems(
+      editorState.editor.getModel(),
+      { lineNumber: 1, column: editorState.value.length + 1 },
+    );
+    expect(result.suggestions.find((item: any) => item.label === 'system_user')?.insertText)
       .toBe('system_user');
 
     await act(async () => {
@@ -4383,7 +4460,7 @@ describe('QueryEditor external SQL save', () => {
     const result = await sqlProvider.provideCompletionItems(editorState.editor.getModel(), { lineNumber: 1, column: editorState.value.length + 1 });
     const match = result.suggestions.find((item: any) => item.label === 'MyTable');
 
-    expect(match?.insertText).toBe('"MyTable" mt');
+    expect(match?.insertText).toBe('"MyTable" AS mt');
 
     await act(async () => {
       renderer.unmount();
@@ -4416,7 +4493,7 @@ describe('QueryEditor external SQL save', () => {
     const result = await sqlProvider.provideCompletionItems(editorState.editor.getModel(), { lineNumber: 1, column: editorState.value.length + 1 });
     const match = result.suggestions.find((item: any) => item.label === 'MyTable');
 
-    expect(match?.insertText).toBe('"MyTable" mt');
+    expect(match?.insertText).toBe('"MyTable" AS mt');
 
     await act(async () => {
       renderer.unmount();
@@ -8597,7 +8674,7 @@ describe('QueryEditor external SQL save', () => {
       const tableSuggestion = completionItems?.suggestions?.find((item: any) => item?.label === 'AAA3_NJ');
 
       expect(tableSuggestion).toBeTruthy();
-      expect(tableSuggestion.insertText).toBe('AAA3_NJ an');
+      expect(tableSuggestion.insertText).toBe('AAA3_NJ AS an');
       expect(tableSuggestion.detail).toContain('表 (sbdev)');
       expect(completionItems?.suggestions?.some((item: any) => item?.label === 'sbdev.SBDEV.AAA3_NJ')).toBe(false);
     });
