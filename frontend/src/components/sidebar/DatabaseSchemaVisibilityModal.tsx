@@ -454,7 +454,7 @@ export const DatabaseSchemaVisibilityModal: React.FC<DatabaseSchemaVisibilityMod
             )}
           />
         )}
-        <Space.Compact style={{ width: '100%' }}>
+        <div className="gn-schema-visibility-search">
           <Input
             allowClear
             prefix={<SearchOutlined />}
@@ -465,7 +465,7 @@ export const DatabaseSchemaVisibilityModal: React.FC<DatabaseSchemaVisibilityMod
           <Button icon={<ReloadOutlined />} loading={loading} onClick={() => void refreshDatabases(true)}>
             {t('common.refresh')}
           </Button>
-        </Space.Compact>
+        </div>
         <Space wrap>
           <Button size="small" onClick={selectAll}>
             {t('sidebar.database_schema_visibility.action.select_all')}
