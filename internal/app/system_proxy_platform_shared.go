@@ -22,12 +22,17 @@ func resolveWindowsSystemProxySettings(target *url.URL, settings windowsSystemPr
 	if target == nil || !isSystemProxyTargetScheme(target.Scheme) {
 		return nil, nil
 	}
-	// Windows commonly leaves AutoDetect enabled while a proxy client also
-	// installs an explicit ProxyServer value. The explicit endpoint is usable
-	// without evaluating PAC/WPAD, so prefer it and only fail closed when the
-	// automatic policy is the sole configured source.
-	if strings.TrimSpace(settings.Proxy) == "" && (settings.AutoDetect || strings.TrimSpace(settings.AutoConfigURL) != "") {
-		return nil, errors.New("Windows automatic proxy configuration (PAC/WPAD) is not supported; configure an explicit proxy in GoNavi")
+	// Windows commonly leaves AutoDetect enabled even when no proxy is actually
+	// configured. PAC/WPAD evaluation is outside the HTTP transport's scope. A
+	// bare AutoDetect flag therefore means direct access, while an explicit PAC
+	// URL remains an actionable unsupported configuration.
+	if strings.TrimSpace(settings.Proxy) == "" {
+		if strings.TrimSpace(settings.AutoConfigURL) != "" {
+			return nil, errors.New("Windows automatic proxy configuration (PAC/WPAD) is not supported; configure an explicit proxy in GoNavi")
+		}
+		if settings.AutoDetect {
+			return nil, nil
+		}
 	}
 	if systemProxyPatternsMatch(target, splitSystemProxyPatterns(settings.ProxyBypass)) {
 		return nil, nil
