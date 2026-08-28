@@ -31,8 +31,20 @@ export interface ConnectionSidebarLayoutCoordinator {
   bootstrap: () => Promise<ConnectionSidebarLayoutBootstrapResult>;
   refresh: () => Promise<void>;
   flush: () => Promise<void>;
+  acceptRemoteLayout: () => void;
+  retryPendingSave: () => Promise<void>;
   dispose: () => void;
 }
+
+export type ConnectionSidebarLayoutSaveState =
+  | { status: 'saving' }
+  | { status: 'saved'; revision: number }
+  | { status: 'error'; error: unknown }
+  | {
+    status: 'conflict';
+    localLayout: ConnectionSidebarLayoutInput;
+    remoteLayout: ConnectionSidebarLayout;
+  };
 
 interface CreateConnectionSidebarLayoutCoordinatorArgs {
   backend?: ConnectionSidebarLayoutBackend;
@@ -40,6 +52,7 @@ interface CreateConnectionSidebarLayoutCoordinatorArgs {
   debounceMs?: number;
   refreshIntervalMs?: number;
   onError?: (error: unknown) => void;
+  onSaveStateChange?: (state: ConnectionSidebarLayoutSaveState) => void;
 }
 
 const cloneLayout = (
@@ -70,6 +83,10 @@ export const createConnectionSidebarLayoutCoordinator = (
   let inFlightSave: Promise<void> | null = null;
   let refreshTimer: ReturnType<typeof setTimeout> | null = null;
   let refreshInFlight: Promise<void> | null = null;
+  let unresolvedConflict: {
+    localLayout: ConnectionSidebarLayoutInput;
+    remoteLayout: ConnectionSidebarLayout;
+  } | null = null;
   let lastObservedFingerprint = '';
   let applyingRemoteLayout = false;
   const debounceMs = args.debounceMs ?? 160;
@@ -122,6 +139,9 @@ export const createConnectionSidebarLayoutCoordinator = (
     if (inFlightSave) {
       return inFlightSave;
     }
+    if (unresolvedConflict) {
+      return;
+    }
     const saveLayout = args.backend?.SaveConnectionSidebarLayout;
     const layout = pendingLayout;
     pendingLayout = null;
@@ -133,27 +153,59 @@ export const createConnectionSidebarLayoutCoordinator = (
       return;
     }
     let saveFailed = false;
+    let saveConflicted = false;
     inFlightSave = (async () => {
       try {
+        args.onSaveStateChange?.({ status: 'saving' });
         const result = await saveLayout({
           expectedRevision: revision,
           layout: cloneLayout(layout),
         });
         revision = result.layout.revision;
         if (result.conflict && !disposed) {
-          pendingLayout = null;
+          saveConflicted = true;
+          const localLayout = cloneLayout(args.store.getLayout());
+          pendingLayout = localLayout;
           clearPendingTimer();
-          applyRemoteLayout(result.layout, { allowBusy: true });
+          unresolvedConflict = {
+            localLayout,
+            remoteLayout: result.layout,
+          };
+          args.onSaveStateChange?.({
+            status: 'conflict',
+            localLayout: cloneLayout(localLayout),
+            remoteLayout: {
+              ...cloneLayout(result.layout),
+              initialized: result.layout.initialized,
+              revision: result.layout.revision,
+            },
+          });
+          return;
+        }
+        if (!disposed && !pendingLayout) {
+          args.onSaveStateChange?.({
+            status: 'saved',
+            revision: result.layout.revision,
+          });
         }
       } catch (error) {
         saveFailed = true;
-        pendingLayout ??= cloneLayout(layout);
+        pendingLayout = cloneLayout(args.store.getLayout());
+        if (!disposed) {
+          args.onSaveStateChange?.({ status: 'error', error });
+        }
         args.onError?.(error);
         throw error;
       }
     })().finally(() => {
       inFlightSave = null;
-      if (!disposed && !saveFailed && pendingLayout) {
+      if (
+        !disposed
+        && !saveFailed
+        && !saveConflicted
+        && !unresolvedConflict
+        && pendingLayout
+      ) {
         void savePendingLayout().catch(() => undefined);
       }
     });
@@ -165,10 +217,30 @@ export const createConnectionSidebarLayoutCoordinator = (
     while (inFlightSave || pendingLayout) {
       if (inFlightSave) {
         await inFlightSave;
+      } else if (unresolvedConflict) {
+        throw new Error('Connection sidebar layout has an unresolved revision conflict');
       } else {
         await savePendingLayout();
       }
     }
+  };
+
+  const acceptRemoteLayout = (): void => {
+    if (disposed || !unresolvedConflict) return;
+    const { remoteLayout } = unresolvedConflict;
+    unresolvedConflict = null;
+    pendingLayout = null;
+    clearPendingTimer();
+    applyRemoteLayout(remoteLayout, { allowBusy: true });
+  };
+
+  const retryPendingSave = async (): Promise<void> => {
+    if (disposed) return;
+    if (unresolvedConflict) {
+      pendingLayout = cloneLayout(args.store.getLayout());
+      unresolvedConflict = null;
+    }
+    await flush();
   };
 
   const startSubscription = () => {
@@ -292,6 +364,8 @@ export const createConnectionSidebarLayoutCoordinator = (
     bootstrap,
     refresh,
     flush,
+    acceptRemoteLayout,
+    retryPendingSave,
     dispose: () => {
       disposed = true;
       clearPendingTimer();
