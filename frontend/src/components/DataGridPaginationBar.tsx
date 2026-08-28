@@ -19,6 +19,8 @@ interface DataGridPaginationState {
   approximateTotal?: number;
   totalCountLoading?: boolean;
   totalCountCancelled?: boolean;
+  totalCountUnavailableLabel?: string;
+  totalCountUnavailableReason?: string;
 }
 
 export type DataGridPaginationTranslate = (key: string, params?: I18nParams) => string;
@@ -129,20 +131,35 @@ const DataGridPaginationBar: React.FC<DataGridPaginationBarProps> = ({
   const countTotalLabel = translate('data_grid.toolbar.count_total');
   const cancelCountLabel = translate('data_grid.toolbar.cancel_count');
   const effectiveTotalCountLoading = totalCountLoading || Boolean(pagination.totalCountLoading);
+  const totalCountUnavailable = Boolean(pagination.totalCountUnavailableReason) && !effectiveTotalCountLoading;
   const shouldShowTotalCountButton = Boolean(onToggleTotalCount && (
     manualTotalCountAvailable
     || pagination.totalCountLoading
     || pagination.totalKnown === false
   ));
+  const totalCountButtonLabel = totalCountUnavailable
+    ? (pagination.totalCountUnavailableLabel || countTotalLabel)
+    : (effectiveTotalCountLoading ? cancelCountLabel : countTotalLabel);
+  const totalCountButtonTooltip = totalCountUnavailable
+    ? pagination.totalCountUnavailableReason
+    : (effectiveTotalCountLoading
+      ? translate('data_grid.toolbar.cancel_count_tooltip')
+      : translate('data_grid.toolbar.count_total_tooltip'));
   const totalCountButton = shouldShowTotalCountButton ? (
-    <Button
-      data-grid-pagination-total-count="true"
-      size="small"
-      icon={effectiveTotalCountLoading ? <CloseOutlined /> : <VerticalAlignBottomOutlined />}
-      onClick={onToggleTotalCount}
-    >
-      {effectiveTotalCountLoading ? cancelCountLabel : countTotalLabel}
-    </Button>
+    <Tooltip title={totalCountButtonTooltip}>
+      <span style={{ display: 'inline-flex' }}>
+        <Button
+          data-grid-pagination-total-count="true"
+          size="small"
+          aria-label={totalCountButtonLabel}
+          disabled={totalCountUnavailable}
+          icon={effectiveTotalCountLoading ? <CloseOutlined /> : <VerticalAlignBottomOutlined />}
+          onClick={onToggleTotalCount}
+        >
+          {totalCountButtonLabel}
+        </Button>
+      </span>
+    </Tooltip>
   ) : null;
 
   const maxJumpPage = showKnownPageCount ? Math.max(1, paginationTotalPages) : null;
@@ -185,6 +202,7 @@ const DataGridPaginationBar: React.FC<DataGridPaginationBarProps> = ({
   );
   const firstPageLabel = translate('data_grid.pagination.first_page');
   const lastPageLabel = translate('data_grid.pagination.last_page');
+  const lastPageUnavailable = Boolean(pagination.totalCountUnavailableReason);
   const firstPageTarget = resolveDataGridPaginationBoundaryTarget({
     boundary: 'first',
     current: pagination.current,
@@ -222,7 +240,7 @@ const DataGridPaginationBar: React.FC<DataGridPaginationBarProps> = ({
     </Tooltip>
   );
   const lastPageButton = (
-    <Tooltip title={lastPageLabel}>
+    <Tooltip title={lastPageUnavailable ? pagination.totalCountUnavailableReason : lastPageLabel}>
       <span style={{ display: 'inline-flex' }}>
         <Button
           data-grid-pagination-last="true"
@@ -231,7 +249,7 @@ const DataGridPaginationBar: React.FC<DataGridPaginationBarProps> = ({
           icon={<VerticalLeftOutlined />}
           iconPosition="end"
           aria-label={lastPageLabel}
-          disabled={lastPageAction === null}
+          disabled={lastPageUnavailable || lastPageAction === null}
           onClick={() => lastPageAction?.()}
         >
           {lastPageLabel}
