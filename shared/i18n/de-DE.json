@@ -3084,6 +3084,8 @@
   "app.theme.query_template.hint": "Leeren Sie den Text, damit neue Abfrage-Tabs leer starten. Mit Standard wiederherstellen kehren Sie zu SELECT * FROM zurück.",
   "app.theme.query_template.reset_default": "Standard wiederherstellen",
   "app.theme.query_template.title": "Standard-SQL für neue Abfragen",
+  "app.theme.table_alias.description": "Fügt beim Auswählen einer Tabelle in einer Abfragequelle oder nach der Eingabe eines Tabellennamens mit Leerzeichen automatisch Tabellenaliase hinzu.",
+  "app.theme.table_alias.title": "Tabellenaliase automatisch hinzufügen",
   "app.theme.startup_window.hint": "* Wird beim nächsten Start wirksam",
   "app.theme.startup_window.maximised": "Beim Start maximieren",
   "app.theme.startup_window.title": "Startfenster",

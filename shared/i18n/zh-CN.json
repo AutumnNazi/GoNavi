@@ -3084,6 +3084,8 @@
   "app.theme.query_template.hint": "清空后新建查询将保持空白；点击“恢复默认”可回到 SELECT * FROM 。",
   "app.theme.query_template.reset_default": "恢复默认",
   "app.theme.query_template.title": "新建查询默认 SQL",
+  "app.theme.table_alias.description": "在查询表源位置选择表名，或手动输入表名后输入空格时，自动补充表别名。",
+  "app.theme.table_alias.title": "自动添加表别名",
   "app.theme.startup_window.hint": "* 修改后下次启动生效",
   "app.theme.startup_window.maximised": "启动时最大化",
   "app.theme.startup_window.title": "启动窗口",

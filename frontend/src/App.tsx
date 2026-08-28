@@ -6712,6 +6712,18 @@ function App() {
                                       </div>
                                   </>,
                               )}
+                              {renderThemeSettingsSection(
+                                  t('app.theme.table_alias.title'),
+                                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                                      <div className="gonavi-settings-section-hint" style={{ marginTop: 0 }}>
+                                          {t('app.theme.table_alias.description')}
+                                      </div>
+                                      <Switch
+                                          checked={appearance.autoAddTableAlias !== false}
+                                          onChange={(checked) => setAppearance({ autoAddTableAlias: checked })}
+                                      />
+                                  </div>,
+                              )}
                               <section className="gonavi-settings-section" ref={tabDisplaySettingsPanelRef}>
                                   <div className="gonavi-settings-section-title">{t('app.theme.tab_display.title')}</div>
                                   <div className="gonavi-settings-section-hint">{t('app.theme.tab_display.description')}</div>
@@ -7510,6 +7522,18 @@ function App() {
                                               {t('app.theme.query_template.reset_default')}
                                           </Button>
                                       </div>
+                                  </div>
+                              </div>
+                              <div style={utilityPanelStyle}>
+                                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                                      <div>
+                                          <div style={{ fontWeight: 500 }}>{t('app.theme.table_alias.title')}</div>
+                                          <div style={{ ...utilityMutedTextStyle, marginTop: 4 }}>{t('app.theme.table_alias.description')}</div>
+                                      </div>
+                                      <Switch
+                                          checked={appearance.autoAddTableAlias !== false}
+                                          onChange={(checked) => setAppearance({ autoAddTableAlias: checked })}
+                                      />
                                   </div>
                               </div>
                               <div ref={tabDisplaySettingsPanelRef} style={utilityPanelStyle}>

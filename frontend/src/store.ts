@@ -179,6 +179,7 @@ export interface AppearanceSettings
   customUIFontFamily: string | null;
   customMonoFontFamily: string | null;
   newQuerySqlTemplate: string | null;
+  autoAddTableAlias: boolean;
   tabDisplay: TabDisplaySettings;
   redisDbAliases: RedisDbAliasMap;
 }
@@ -207,6 +208,7 @@ export const DEFAULT_APPEARANCE: AppearanceSettings = {
   customUIFontFamily: null,
   customMonoFontFamily: null,
   newQuerySqlTemplate: null,
+  autoAddTableAlias: true,
   tabDisplay: DEFAULT_TAB_DISPLAY_SETTINGS,
   redisDbAliases: DEFAULT_REDIS_DB_ALIASES,
   ...DEFAULT_DATA_GRID_DISPLAY_SETTINGS,
@@ -3128,6 +3130,10 @@ const sanitizeAppearance = (
     customUIFontFamily: sanitizeFontFamilyInput(appearance.customUIFontFamily),
     customMonoFontFamily: sanitizeFontFamilyInput(appearance.customMonoFontFamily),
     newQuerySqlTemplate: sanitizeNewQuerySqlTemplate(appearance.newQuerySqlTemplate),
+    autoAddTableAlias:
+      typeof appearance.autoAddTableAlias === "boolean"
+        ? appearance.autoAddTableAlias
+        : DEFAULT_APPEARANCE.autoAddTableAlias,
     tabDisplay: version < TAB_DISPLAY_DEFAULT_MIGRATION_VERSION
       && isLegacyDefaultTabDisplaySettings(appearance.tabDisplay)
       ? sanitizeTabDisplaySettings(DEFAULT_TAB_DISPLAY_SETTINGS)

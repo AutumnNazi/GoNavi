@@ -98,6 +98,7 @@ describe('store appearance persistence', () => {
     expect(appearance.customUIFontFamily).toBeNull();
     expect(appearance.customMonoFontFamily).toBeNull();
     expect(appearance.newQuerySqlTemplate).toBeNull();
+    expect(appearance.autoAddTableAlias).toBe(true);
     expect(appearance.tabDisplay).toEqual({
       layout: 'double',
       primaryElements: ['object'],
@@ -673,6 +674,25 @@ describe('store appearance persistence', () => {
     vi.resetModules();
     reloaded = await importStore();
     expect(reloaded.useStore.getState().appearance.newQuerySqlTemplate).toBeNull();
+  });
+
+  it('persists the table alias preference and defaults invalid values to enabled', async () => {
+    const { useStore } = await importStore();
+
+    useStore.getState().setAppearance({ autoAddTableAlias: false });
+    expect(JSON.parse(storage.getItem('lite-db-storage') || '{}').state.appearance.autoAddTableAlias).toBe(false);
+
+    vi.resetModules();
+    let reloaded = await importStore();
+    expect(reloaded.useStore.getState().appearance.autoAddTableAlias).toBe(false);
+
+    storage.setItem('lite-db-storage', JSON.stringify({
+      state: { appearance: { autoAddTableAlias: 'disabled' } },
+      version: 20,
+    }));
+    vi.resetModules();
+    reloaded = await importStore();
+    expect(reloaded.useStore.getState().appearance.autoAddTableAlias).toBe(true);
   });
 
   it('persists v2 sidebar search preferences and sanitizes filter text', async () => {

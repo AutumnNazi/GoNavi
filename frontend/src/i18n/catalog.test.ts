@@ -50,6 +50,9 @@ const readDataGridV2DdlWorkspaceSource = (): string =>
 const readQueryEditorSource = (): string =>
   readFileSync(new URL("../components/QueryEditor.tsx", import.meta.url), "utf8");
 
+const readAppSource = (): string =>
+  readFileSync(new URL("../App.tsx", import.meta.url), "utf8");
+
 const readQueryEditorHelpersSource = (): string =>
   readFileSync(new URL("../components/queryEditor/QueryEditorHelpers.ts", import.meta.url), "utf8");
 
@@ -345,6 +348,8 @@ describe("i18n catalog", () => {
       "app.theme.query_template.hint",
       "app.theme.query_template.reset_default",
       "app.theme.query_template.title",
+      "app.theme.table_alias.description",
+      "app.theme.table_alias.title",
       "app.theme.theme_settings_description",
       "app.theme.theme_settings_title",
       "app.theme.ui_version.beta_warning",
@@ -363,6 +368,26 @@ describe("i18n catalog", () => {
         expect(catalogs[language]).toHaveProperty(key);
         expect(catalogs[language][key]).toBeTruthy();
       }
+    }
+  });
+
+  it("renders the table alias setting in both theme setting variants", () => {
+    const source = readAppSource();
+    const v2Source = sliceBetween(
+      source,
+      "const renderThemeSettingsContentV2 = () =>",
+      "const renderThemeSettingsContentLegacy = () =>",
+    );
+    const legacySource = sliceBetween(
+      source,
+      "const renderThemeSettingsContentLegacy = () =>",
+      "const renderThemeSettingsContent = () =>",
+    );
+
+    for (const settingsSource of [v2Source, legacySource]) {
+      expect(settingsSource).toContain("app.theme.table_alias.title");
+      expect(settingsSource).toContain("app.theme.table_alias.description");
+      expect(settingsSource).toContain("setAppearance({ autoAddTableAlias: checked })");
     }
   });
 
