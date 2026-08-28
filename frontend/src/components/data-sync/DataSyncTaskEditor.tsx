@@ -3,12 +3,14 @@ import React, { useEffect, useRef, useState } from 'react';
 import { DataSyncEndpointSelector } from './DataSyncEndpointSelector';
 import { DataSyncFieldMappingEditor } from './DataSyncFieldMappingEditor';
 import { DataSyncMappingTable } from './DataSyncMappingTable';
+import { DataSyncRouteBar } from './DataSyncRouteBar';
 import type { DataSyncWorkbenchGateway } from './gateway';
 import {
   autoMatchDataSyncFields,
   buildDataSyncMappingsFromSelection,
   createDataSyncTableMapping,
   canUseDataSyncRowErrorIsolation,
+  DATA_SYNC_TASK_STAGES,
   validateDataSyncTask,
   type DataSyncConnectionTreeItem,
   type DataSyncDeliveryPolicy,
@@ -32,20 +34,15 @@ import {
   useDataSyncSavedConnections,
 } from './useDataSyncMetadata';
 
-const STAGES: DataSyncTaskStage[] = [
-  'endpoints',
-  'mappings',
-  'delivery',
-  'trigger',
-  'preflight',
-];
-
 type TaskPatch = Partial<
   Omit<
     DataSyncTaskDefinition,
     'id' | 'schemaVersion' | 'revision' | 'editEpoch' | 'createdAt'
   >
 >;
+type TaskPatchUpdater =
+  | TaskPatch
+  | ((currentTask: DataSyncTaskDefinition) => TaskPatch);
 
 const Field: React.FC<{
   label: string;
@@ -1203,9 +1200,10 @@ export const DataSyncTaskEditor: React.FC<{
   activeStage: DataSyncTaskStage;
   preflight: DataSyncPreflightSnapshot | null;
   preflightStale: boolean;
+  preflightContent?: React.ReactNode;
   t: DataSyncWorkbenchTranslate;
   onStageChange: (stage: DataSyncTaskStage) => void;
-  onPatch: (patch: TaskPatch) => void;
+  onPatch: (patch: TaskPatchUpdater) => void;
 }> = ({
   task,
   gateway,
@@ -1214,30 +1212,98 @@ export const DataSyncTaskEditor: React.FC<{
   activeStage,
   preflight,
   preflightStale,
+  preflightContent,
   t,
   onStageChange,
   onPatch,
 }) => {
   const sourceObjects = useDataSyncObjects(gateway, task.source);
   const targetObjects = useDataSyncObjects(gateway, task.target);
+  const navigationIssues =
+    preflight && !preflightStale ? preflight.issues : validateDataSyncTask(task);
   const currentTaskRef = useRef(task);
+  const stageNavRef = useRef<HTMLElement | null>(null);
   currentTaskRef.current = task;
   const [inspectedMappingId, setInspectedMappingId] = useState('');
+  const mappingProbeEpochRef = useRef(0);
+  const [mappingProbe, setMappingProbe] = useState<{
+    taskId: string;
+    epoch: number;
+    completed: number;
+    total: number;
+  } | null>(null);
   const inspectedMapping =
     task.mappings.find((mapping) => mapping.id === inspectedMappingId) || null;
 
   useEffect(() => {
     setInspectedMappingId('');
-  }, [task.id]);
+    mappingProbeEpochRef.current += 1;
+    setMappingProbe(null);
+    return () => {
+      mappingProbeEpochRef.current += 1;
+    };
+  }, [
+    task.id,
+    task.source.connectionId,
+    task.source.type,
+    task.source.database,
+    task.source.schema,
+    task.target.connectionId,
+    task.target.type,
+    task.target.database,
+    task.target.schema,
+  ]);
 
   useEffect(() => {
     if (inspectedMappingId && !inspectedMapping) setInspectedMappingId('');
   }, [inspectedMapping, inspectedMappingId]);
 
+  useEffect(() => {
+    const navigation = stageNavRef.current;
+    if (!navigation) return undefined;
+    const activeButton = navigation.querySelector<HTMLElement>(
+      `button[data-stage="${activeStage}"]`,
+    );
+    if (!activeButton) return undefined;
+
+    const keepActiveStageVisible = () => {
+      const navigationBounds = navigation.getBoundingClientRect();
+      const buttonBounds = activeButton.getBoundingClientRect();
+      const hidden =
+        buttonBounds.left < navigationBounds.left + 6 ||
+        buttonBounds.right > navigationBounds.right - 6;
+      if (!hidden) return;
+      const buttonLeftInsideNavigation =
+        navigation.scrollLeft + buttonBounds.left - navigationBounds.left;
+      const left = Math.min(
+        Math.max(0, navigation.scrollWidth - navigation.clientWidth),
+        Math.max(
+          0,
+          buttonLeftInsideNavigation -
+            (navigation.clientWidth - buttonBounds.width) / 2,
+        ),
+      );
+      const reduceMotion =
+        typeof globalThis.matchMedia === 'function' &&
+        globalThis.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      if (typeof navigation.scrollTo === 'function') {
+        navigation.scrollTo({ left, behavior: reduceMotion ? 'auto' : 'smooth' });
+      } else {
+        navigation.scrollLeft = left;
+      }
+    };
+
+    keepActiveStageVisible();
+    if (typeof globalThis.ResizeObserver !== 'function') return undefined;
+    const observer = new globalThis.ResizeObserver(keepActiveStageVisible);
+    observer.observe(navigation);
+    return () => observer.disconnect();
+  }, [activeStage]);
+
   const changeMapping = (mapping: DataSyncTableMapping) =>
     onPatch({ mappings: updateMapping(task, mapping) });
 
-  const addSelectedObjects = async (sourceNames: string[]) => {
+  const addSelectedObjects = (sourceNames: string[]) => {
     const requestTask = task;
     const requestSourceScope = JSON.stringify([
       requestTask.source.connectionId,
@@ -1264,9 +1330,10 @@ export const DataSyncTaskEditor: React.FC<{
           capability.supportsAutoCreate &&
           capability.requiresExistingTarget !== true,
       });
-    let mappings = buildMappings(requestTask.mappings);
+    const mappings = buildMappings(requestTask.mappings);
+    onPatch({ mappings });
     if (requestTask.kind !== 'reconcile' && requestTask.kind !== 'cdc') {
-      onPatch({ mappings });
+      setMappingProbe(null);
       return;
     }
 
@@ -1276,129 +1343,266 @@ export const DataSyncTaskEditor: React.FC<{
     const addedMappings = mappings.filter((mapping) =>
       selectedSources.has(mapping.sourceObject.trim().toLowerCase()),
     );
+    if (addedMappings.length === 0) return;
+    const probeEpoch = ++mappingProbeEpochRef.current;
+    setMappingProbe({
+      taskId: requestTask.id,
+      epoch: probeEpoch,
+      completed: 0,
+      total: addedMappings.length,
+    });
     type DetectedMappingMetadata = {
       keyColumns: string[];
       sourceFields: DataSyncFieldMetadata[];
       targetFields: DataSyncFieldMetadata[];
       targetObject: string;
     };
-    const metadataBySource = new Map<string, DetectedMappingMetadata>();
-    let cursor = 0;
-    const workers = Array.from(
-      { length: Math.min(4, addedMappings.length) },
-      async () => {
-        while (cursor < addedMappings.length) {
-          const index = cursor;
-          cursor += 1;
-          const mapping = addedMappings[index];
-          try {
-            const sourceFields = await gateway.listFields(
-              requestTask.source,
-              mapping.sourceObject,
-            );
-            let targetFields: DataSyncFieldMetadata[] = [];
-            if (requestTask.kind === 'cdc' && mapping.targetObject.trim()) {
-              try {
-                targetFields = await gateway.listFields(
-                  requestTask.target,
-                  mapping.targetObject,
+    const detectInBackground = async () => {
+      const metadataByMappingId = new Map<string, DetectedMappingMetadata>();
+      const progressStride = Math.max(1, Math.ceil(addedMappings.length / 40));
+      let completedCount = 0;
+      let publishedCount = 0;
+      let cursor = 0;
+      const workers = Array.from(
+        { length: Math.min(4, addedMappings.length) },
+        async () => {
+          while (
+            cursor < addedMappings.length &&
+            mappingProbeEpochRef.current === probeEpoch
+          ) {
+            const index = cursor;
+            cursor += 1;
+            const mapping = addedMappings[index];
+            try {
+              const sourceFields = await gateway.listFields(
+                requestTask.source,
+                mapping.sourceObject,
+              );
+              let targetFields: DataSyncFieldMetadata[] = [];
+              if (requestTask.kind === 'cdc' && mapping.targetObject.trim()) {
+                try {
+                  targetFields = await gateway.listFields(
+                    requestTask.target,
+                    mapping.targetObject,
+                  );
+                } catch {
+                  targetFields = [];
+                }
+              }
+              metadataByMappingId.set(mapping.id, {
+                keyColumns: sourceFields
+                  .filter((field) => field.key)
+                  .sort((left, right) => left.ordinal - right.ordinal)
+                  .map((field) => field.name),
+                sourceFields,
+                targetFields,
+                targetObject: mapping.targetObject,
+              });
+            } catch {
+              metadataByMappingId.set(mapping.id, {
+                keyColumns: [],
+                sourceFields: [],
+                targetFields: [],
+                targetObject: mapping.targetObject,
+              });
+            } finally {
+              completedCount += 1;
+              if (
+                completedCount === addedMappings.length ||
+                completedCount - publishedCount >= progressStride
+              ) {
+                publishedCount = completedCount;
+                setMappingProbe((current) =>
+                  current?.epoch === probeEpoch
+                    ? {
+                        ...current,
+                        completed: Math.min(current.total, completedCount),
+                      }
+                    : current,
                 );
-              } catch {
-                targetFields = [];
               }
             }
-            metadataBySource.set(mapping.sourceObject.trim().toLowerCase(), {
-              keyColumns: sourceFields
-                .filter((field) => field.key)
-                .sort((left, right) => left.ordinal - right.ordinal)
-                .map((field) => field.name),
-              sourceFields,
-              targetFields,
-              targetObject: mapping.targetObject,
-            });
-          } catch {
-            metadataBySource.set(mapping.sourceObject.trim().toLowerCase(), {
-              keyColumns: [],
-              sourceFields: [],
-              targetFields: [],
-              targetObject: mapping.targetObject,
-            });
           }
-        }
-      },
-    );
-    await Promise.all(workers);
-
-    const currentTask = currentTaskRef.current;
-    const currentSourceScope = JSON.stringify([
-      currentTask.source.connectionId,
-      currentTask.source.type,
-      currentTask.source.database,
-      currentTask.source.schema,
-    ]);
-    const currentTargetScope = JSON.stringify([
-      currentTask.target.connectionId,
-      currentTask.target.type,
-      currentTask.target.database,
-      currentTask.target.schema,
-    ]);
-    if (
-      currentTask.id !== requestTask.id ||
-      currentTask.kind !== requestTask.kind ||
-      currentSourceScope !== requestSourceScope ||
-      currentTargetScope !== requestTargetScope
-    ) {
-      return;
-    }
-
-    mappings = buildMappings(currentTask.mappings).map((mapping) => {
-      const detected = metadataBySource.get(
-        mapping.sourceObject.trim().toLowerCase(),
+        },
       );
-      if (!detected) return mapping;
-      const sameTarget =
-        detected.targetObject.trim().toLowerCase() ===
-        mapping.targetObject.trim().toLowerCase();
-      return {
-        ...mapping,
-        keyColumns:
-          mapping.keyColumns.length > 0
-            ? mapping.keyColumns
-            : detected.keyColumns,
-        fields:
-          requestTask.kind === 'cdc' &&
-          sameTarget &&
-          mapping.fields.length === 0 &&
-          detected.sourceFields.length > 0 &&
-          detected.targetFields.length > 0
-            ? autoMatchDataSyncFields(
-                mapping.id,
-                detected.sourceFields,
-                detected.targetFields,
-                mapping.fields,
-              )
-            : mapping.fields,
-      };
-    });
-    onPatch({ mappings });
+      await Promise.all(workers);
+
+      const currentTask = currentTaskRef.current;
+      const currentSourceScope = JSON.stringify([
+        currentTask.source.connectionId,
+        currentTask.source.type,
+        currentTask.source.database,
+        currentTask.source.schema,
+      ]);
+      const currentTargetScope = JSON.stringify([
+        currentTask.target.connectionId,
+        currentTask.target.type,
+        currentTask.target.database,
+        currentTask.target.schema,
+      ]);
+      if (
+        currentTask.id !== requestTask.id ||
+        currentTask.kind !== requestTask.kind ||
+        currentSourceScope !== requestSourceScope ||
+        currentTargetScope !== requestTargetScope
+      ) {
+        setMappingProbe((current) =>
+          current?.epoch === probeEpoch ? null : current,
+        );
+        return;
+      }
+
+      onPatch((latestTask) => ({
+        mappings: latestTask.mappings.map((mapping) => {
+          const detected = metadataByMappingId.get(mapping.id);
+          if (!detected) return mapping;
+          const sameTarget =
+            detected.targetObject.trim().toLowerCase() ===
+            mapping.targetObject.trim().toLowerCase();
+          return {
+            ...mapping,
+            keyColumns:
+              mapping.keyColumns.length > 0
+                ? mapping.keyColumns
+                : detected.keyColumns,
+            fields:
+              requestTask.kind === 'cdc' &&
+              sameTarget &&
+              mapping.fields.length === 0 &&
+              detected.sourceFields.length > 0 &&
+              detected.targetFields.length > 0
+                ? autoMatchDataSyncFields(
+                    mapping.id,
+                    detected.sourceFields,
+                    detected.targetFields,
+                    mapping.fields,
+                  )
+                : mapping.fields,
+          };
+        }),
+      }));
+    };
+    void detectInBackground();
+  };
+
+  const mappingProbeRunning = Boolean(
+    mappingProbe?.taskId === task.id && mappingProbe.completed < mappingProbe.total,
+  );
+  const editEndpoints = () => {
+    const endpointStageButton = stageNavRef.current?.querySelector<HTMLButtonElement>(
+      'button[data-stage="endpoints"]',
+    );
+    onStageChange('endpoints');
+    endpointStageButton?.focus();
+  };
+
+  const moveStageFromKeyboard = (
+    event: React.KeyboardEvent<HTMLButtonElement>,
+    currentIndex: number,
+  ) => {
+    const targetIndex =
+      event.key === 'ArrowRight'
+        ? Math.min(DATA_SYNC_TASK_STAGES.length - 1, currentIndex + 1)
+        : event.key === 'ArrowLeft'
+          ? Math.max(0, currentIndex - 1)
+          : event.key === 'Home'
+            ? 0
+            : event.key === 'End'
+              ? DATA_SYNC_TASK_STAGES.length - 1
+              : -1;
+    if (targetIndex < 0) return;
+
+    event.preventDefault();
+    const targetStage = DATA_SYNC_TASK_STAGES[targetIndex];
+    onStageChange(targetStage);
+    stageNavRef.current
+      ?.querySelector<HTMLButtonElement>(`button[data-stage="${targetStage}"]`)
+      ?.focus();
   };
 
   return (
   <div className="gn-data-sync-task-editor" data-data-sync-task-editor="true">
-    <nav className="gn-data-sync-stage-nav" aria-label={t('preflight.title')}>
-      {STAGES.map((stage, index) => (
-        <button
-          key={stage}
-          type="button"
-          data-active={stage === activeStage ? 'true' : 'false'}
-          onClick={() => onStageChange(stage)}
-        >
-          <span>{index + 1}</span>
-          {t(`stage.${stage}`)}
-        </button>
-      ))}
+    <nav
+      ref={stageNavRef}
+      className="gn-data-sync-stage-nav"
+      aria-label={t('workbench.task_steps')}
+    >
+      {DATA_SYNC_TASK_STAGES.map((stage, index) => {
+        const issues = navigationIssues.filter((issue) => issue.stage === stage);
+        const blockers = issues.filter((issue) => issue.severity === 'blocker').length;
+        const warnings = issues.filter((issue) => issue.severity === 'warning').length;
+        const isFutureStage = index > DATA_SYNC_TASK_STAGES.indexOf(activeStage);
+        const status =
+          stage === 'preflight'
+            ? preflightStale
+              ? 'warning'
+              : !preflight
+                ? 'pending'
+                : preflight.status === 'passed'
+                  ? 'ready'
+                  : preflight.status
+            : blockers > 0
+              ? 'blocked'
+              : warnings > 0
+                ? 'warning'
+                : isFutureStage
+                  ? 'pending'
+                  : 'ready';
+        const statusLabel =
+          stage === 'preflight' && preflightStale
+            ? t('preflight.stale')
+            : status === 'ready'
+              ? stage === 'preflight'
+                ? t('preflight.passed')
+                : t('workbench.stage_ready')
+              : status === 'blocked'
+                ? t('preflight.blocked', { count: blockers || 1 })
+                : status === 'warning'
+                  ? t('preflight.warning', { count: warnings || 1 })
+                  : stage === 'preflight'
+                    ? t('preflight.not_run')
+                    : t('workbench.stage_pending');
+        return (
+          <button
+            key={stage}
+            type="button"
+            data-stage={stage}
+            data-active={stage === activeStage ? 'true' : 'false'}
+            data-status={status}
+            aria-current={stage === activeStage ? 'step' : undefined}
+            aria-label={`${t(`stage.${stage}`)} · ${statusLabel}`}
+            title={statusLabel}
+            onClick={() => onStageChange(stage)}
+            onKeyDown={(event) => moveStageFromKeyboard(event, index)}
+          >
+            <span className="gn-data-sync-stage-nav__node" aria-hidden="true">
+              {status === 'ready' ? '✓' : index + 1}
+            </span>
+            <span className="gn-data-sync-stage-nav__label">
+              <span className="gn-data-sync-stage-nav__label-full">
+                {t(`stage.${stage}`)}
+              </span>
+              <span className="gn-data-sync-stage-nav__label-short" aria-hidden="true">
+                {t(`stage_short.${stage}`)}
+              </span>
+            </span>
+          </button>
+        );
+      })}
     </nav>
-    <div className="gn-data-sync-task-editor__body">
+    <div
+      className="gn-data-sync-task-editor__body"
+      data-data-sync-stage-content="true"
+    >
+      {activeStage !== 'endpoints' ? (
+        <DataSyncRouteBar
+          source={task.source}
+          target={task.target}
+          capability={capability}
+          t={t}
+          onEditEndpoints={editEndpoints}
+        />
+      ) : null}
       {activeStage === 'endpoints' ? (
         <EndpointStage
           task={task}
@@ -1410,11 +1614,40 @@ export const DataSyncTaskEditor: React.FC<{
       ) : null}
       {activeStage === 'mappings' ? (
         <>
+          {mappingProbe?.taskId === task.id ? (
+            <div
+              className="gn-data-sync-mapping-probe"
+              data-mapping-probe={
+                mappingProbe.completed >= mappingProbe.total ? 'complete' : 'running'
+              }
+              role="status"
+              aria-live="polite"
+            >
+              <span>
+                {t(
+                  mappingProbe.completed >= mappingProbe.total
+                    ? 'mapping.probe_complete'
+                    : 'mapping.probe_running',
+                )}
+              </span>
+              <strong>
+                {t('mapping.probe_progress', {
+                  completed: mappingProbe.completed,
+                  total: mappingProbe.total,
+                })}
+              </strong>
+            </div>
+          ) : null}
           <DataSyncMappingTable
+            key={task.id}
             mappings={task.mappings}
             taskKind={task.kind}
             sourceObjects={sourceObjects}
             targetObjects={targetObjects}
+            endpointsReady={Boolean(
+              task.source.connectionId.trim() && task.target.connectionId.trim(),
+            )}
+            selectionBusy={mappingProbeRunning}
             t={t}
             onAdd={() =>
               onPatch({
@@ -1466,13 +1699,15 @@ export const DataSyncTaskEditor: React.FC<{
         />
       ) : null}
       {activeStage === 'preflight' ? (
-        <PreflightStage
-          task={task}
-          snapshot={preflight}
-          stale={preflightStale}
-          t={t}
-          onLocate={onStageChange}
-        />
+        preflightContent || (
+          <PreflightStage
+            task={task}
+            snapshot={preflight}
+            stale={preflightStale}
+            t={t}
+            onLocate={onStageChange}
+          />
+        )
       ) : null}
     </div>
   </div>

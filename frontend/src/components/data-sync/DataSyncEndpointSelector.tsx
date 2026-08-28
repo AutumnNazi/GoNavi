@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 
 import { DataSyncConnectionTreeSelect } from './DataSyncConnectionTreeSelect';
 import type {
@@ -70,13 +70,33 @@ export const DataSyncEndpointSelector: React.FC<{
   const currentDatabaseKnown = databases.items.some(
     (database) => database.name === endpoint.database,
   );
+  const [schemaDraft, setSchemaDraft] = useState(endpoint.schema);
+
+  useEffect(() => {
+    setSchemaDraft(endpoint.schema);
+  }, [endpoint.connectionId, endpoint.database, endpoint.schema]);
+
+  const commitSchema = () => {
+    if (schemaDraft !== endpoint.schema) onSchemaChange(schemaDraft);
+  };
 
   return (
     <fieldset
       className="gn-data-sync-endpoint-fields"
       data-endpoint-role={role}
+      data-expanded={endpoint.connectionId ? 'true' : 'false'}
     >
-      <legend>{title}</legend>
+      <legend>
+        <span>{title}</span>
+        {endpoint.connectionId && endpoint.type ? (
+          <span
+            className="gn-data-sync-endpoint-type"
+            data-endpoint-control="type"
+          >
+            {endpoint.type}
+          </span>
+        ) : null}
+      </legend>
       <div className="gn-data-sync-field-grid">
         <label className="gn-data-sync-field" data-wide="true">
           <span>{t('editor.connection')}</span>
@@ -91,50 +111,48 @@ export const DataSyncEndpointSelector: React.FC<{
             onChange={onConnectionChange}
           />
         </label>
-        <label className="gn-data-sync-field">
-          <span>{t('editor.database_type')}</span>
-          <output
-            className="gn-data-sync-control gn-data-sync-control--read-only gn-data-sync-mono"
-            data-endpoint-control="type"
-          >
-            {endpoint.type || t('metadata.not_selected')}
-          </output>
-        </label>
-        <label className="gn-data-sync-field">
-          <span>{t('editor.database')}</span>
-          <select
-            className="gn-data-sync-control gn-data-sync-mono"
-            data-endpoint-control="database"
-            value={endpoint.database}
-            disabled={!endpoint.connectionId || databases.status === 'loading'}
-            onChange={(event) => onDatabaseChange(event.target.value)}
-          >
-            {!endpoint.database ? (
-              <option value="" disabled hidden>
-                {t('metadata.select_database')}
-              </option>
-            ) : null}
-            {endpoint.database && !currentDatabaseKnown ? (
-              <option value={endpoint.database}>{endpoint.database}</option>
-            ) : null}
-            {databases.items.map((database) => (
-              <option key={database.name} value={database.name}>
-                {database.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="gn-data-sync-field">
-          <span>{t('editor.schema')}</span>
-          <input
-            className="gn-data-sync-control gn-data-sync-mono"
-            data-endpoint-control="schema"
-            value={endpoint.schema}
-            placeholder={t('metadata.schema_optional')}
-            disabled={!endpoint.connectionId}
-            onChange={(event) => onSchemaChange(event.target.value)}
-          />
-        </label>
+        {endpoint.connectionId ? (
+          <>
+            <label className="gn-data-sync-field">
+              <span>{t('editor.database')}</span>
+              <select
+                className="gn-data-sync-control gn-data-sync-mono"
+                data-endpoint-control="database"
+                value={endpoint.database}
+                disabled={databases.status === 'loading'}
+                onChange={(event) => onDatabaseChange(event.target.value)}
+              >
+                {!endpoint.database ? (
+                  <option value="" disabled hidden>
+                    {t('metadata.select_database')}
+                  </option>
+                ) : null}
+                {endpoint.database && !currentDatabaseKnown ? (
+                  <option value={endpoint.database}>{endpoint.database}</option>
+                ) : null}
+                {databases.items.map((database) => (
+                  <option key={database.name} value={database.name}>
+                    {database.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="gn-data-sync-field">
+              <span>{t('editor.schema')}</span>
+              <input
+                className="gn-data-sync-control gn-data-sync-mono"
+                data-endpoint-control="schema"
+                value={schemaDraft}
+                placeholder={t('metadata.schema_optional')}
+                onChange={(event) => setSchemaDraft(event.target.value)}
+                onBlur={commitSchema}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') event.currentTarget.blur();
+                }}
+              />
+            </label>
+          </>
+        ) : null}
       </div>
       <MetadataStatus
         scope={`${role}-connections`}

@@ -21,6 +21,14 @@ export type DataSyncTaskStage =
   | 'trigger'
   | 'preflight';
 
+export const DATA_SYNC_TASK_STAGES: readonly DataSyncTaskStage[] = [
+  'endpoints',
+  'mappings',
+  'delivery',
+  'trigger',
+  'preflight',
+];
+
 export type DataSyncCompareMode = 'schema' | 'data' | 'both';
 
 /** Content selected by a writable migration task. */

@@ -7,6 +7,7 @@ import type { TabData } from '../types';
 import DataSyncWorkbench from './DataSyncWorkbench';
 
 const closeTab = vi.fn();
+const requestCloseWorkbenchTabs = vi.hoisted(() => vi.fn());
 const storeState = {
   closeTab,
   connections: [] as Array<Record<string, unknown>>,
@@ -22,6 +23,10 @@ vi.mock('../store', async (importOriginal) => {
       selector(storeState),
   };
 });
+
+vi.mock('../utils/workbenchTabCloseProtection', () => ({
+  requestCloseWorkbenchTabs,
+}));
 
 vi.mock('./data-sync', () => ({
   createDataSyncTaskDraft: (input: Record<string, unknown>) => input,
@@ -57,6 +62,7 @@ const tab: TabData = {
 describe('DataSyncWorkbench', () => {
   beforeEach(() => {
     closeTab.mockReset();
+    requestCloseWorkbenchTabs.mockReset();
     storeState.connections = [];
     storeState.connectionTags = [];
     storeState.sidebarRootOrder = [];
@@ -78,7 +84,7 @@ describe('DataSyncWorkbench', () => {
       renderer.root.findByProps({ 'data-data-sync-shell': 'true' }).props.onClick();
     });
 
-    expect(closeTab).toHaveBeenCalledWith(tab.id);
+    expect(requestCloseWorkbenchTabs).toHaveBeenCalledWith([tab.id]);
   });
 
   it('maps data compare mode without setting migration content', () => {

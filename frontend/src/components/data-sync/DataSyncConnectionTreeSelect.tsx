@@ -180,7 +180,7 @@ export const DataSyncConnectionTreeSelect: React.FC<{
   loading: boolean;
   placeholder: string;
   emptyText: string;
-  onChange: (connection: DataSyncSavedConnectionView) => void;
+  onChange: (connection: DataSyncSavedConnectionView | null) => void;
 }> = ({
   role,
   endpoint,
@@ -253,6 +253,7 @@ export const DataSyncConnectionTreeSelect: React.FC<{
       value={selectedValue}
       placeholder={placeholder}
       disabled={loading}
+      allowClear={Boolean(endpoint.connectionId)}
       treeData={treeData}
       treeExpandedKeys={searchValue ? undefined : expandedGroupValues}
       onTreeExpand={(expandedKeys) => {
@@ -288,6 +289,11 @@ export const DataSyncConnectionTreeSelect: React.FC<{
         onChange(selected);
       }}
       onChange={(value) => {
+        if (!value) {
+          setSearchValue('');
+          onChange(null);
+          return;
+        }
         if (!value.startsWith(CONNECTION_VALUE_PREFIX)) return;
         const connectionId = value.slice(CONNECTION_VALUE_PREFIX.length);
         const selected = connections.find(
