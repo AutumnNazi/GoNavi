@@ -57,11 +57,16 @@ func (c *ClientImpl) ListServices(ctx context.Context, query ServiceQuery) (*Ser
 	params.Set("namespaceId", normalizeNamespaceID(query.NamespaceID))
 	routes := c.currentAPIRoutes()
 	apiPath := routes.serviceList
-	if (family == nacosAPIV1 || family == nacosAPIV2) && groupName == "" {
+	useCatalog := (family == nacosAPIV1 || family == nacosAPIV2) && (groupName == "" || serviceName != "")
+	if useCatalog {
 		// Nacos 2.x has no cross-group v2 service list, but retains v1 Catalog.
 		apiPath = routesForNacosAPI(nacosAPIV1).serviceList
 		params.Set("serviceNameParam", serviceName)
-		params.Set("groupNameParam", "")
+		if groupName == "" {
+			params.Set("groupNameParam", "")
+		} else {
+			params.Set("groupNameParam", regexp.QuoteMeta(groupName))
+		}
 	} else if family == nacosAPIV1 || family == nacosAPIV2 {
 		apiPath = routes.serviceListByGroup
 		params.Set("groupName", normalizeServiceGroup(groupName))
@@ -97,6 +102,18 @@ func (c *ClientImpl) ListServices(ctx context.Context, query ServiceQuery) (*Ser
 		}
 		count = payload.TotalCount
 		services = payload.PageItems
+	} else if useCatalog {
+		var payload struct {
+			Count       int64              `json:"count"`
+			ServiceList []nacosServiceItem `json:"serviceList"`
+		}
+		if err := json.Unmarshal(data, &payload); err != nil {
+			return nil, localizedNacosBackendError("nacos.backend.error.parse_services", map[string]any{
+				"detail": err.Error(),
+			})
+		}
+		count = payload.Count
+		services = payload.ServiceList
 	} else if family == nacosAPIV1 && groupName != "" {
 		var payload struct {
 			Count int64    `json:"count"`
