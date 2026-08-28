@@ -32,6 +32,7 @@ import {
 import { splitQualifiedNameLast, splitQualifiedNameSegments } from '../utils/qualifiedName';
 import { requestTableMetadata } from '../utils/tableMetadataRequestCache';
 import { confirmRabbitMQPreview } from '../utils/rabbitmqPreview';
+import { isRocketMQTagFilteredConnection } from '../utils/rocketmqTagFilter';
 
 type ViewerPaginationState = {
   current: number;
@@ -437,6 +438,13 @@ const DataViewer: React.FC<{ tab: TabData; isActive?: boolean }> = React.memo(({
   const preferManualTotalCount = currentConnCaps.preferManualTotalCount;
   const supportsApproximateTableCount = currentConnCaps.supportsApproximateTableCount;
   const supportsApproximateTotalPages = currentConnCaps.supportsApproximateTotalPages;
+  const rocketMQTagTotalCountUnavailable = isRocketMQTagFilteredConnection(currentConnConfig);
+  const totalCountUnavailableLabel = rocketMQTagTotalCountUnavailable
+    ? tr('data_grid.toolbar.tag_total_unavailable')
+    : undefined;
+  const totalCountUnavailableReason = rocketMQTagTotalCountUnavailable
+    ? tr('data_grid.toolbar.tag_total_unavailable_tooltip')
+    : undefined;
   const persistViewerSnapshot = useCallback((tabId: string, overrides?: Partial<ViewerFilterSnapshot>) => {
     const normalizedTabId = String(tabId || '').trim();
     if (!normalizedTabId) return;
@@ -534,6 +542,11 @@ const DataViewer: React.FC<{ tab: TabData; isActive?: boolean }> = React.memo(({
   }, [tab.id, persistViewerSnapshot]);
 
   const handleManualTotalCount = useCallback(async () => {
+    if (rocketMQTagTotalCountUnavailable) {
+      message.warning(tr('data_grid.toolbar.tag_total_unavailable_tooltip'));
+      return;
+    }
+
     const config = latestConfigRef.current;
     const dbName = latestDbNameRef.current;
     const countSql = latestCountSqlRef.current;
@@ -598,7 +611,7 @@ const DataViewer: React.FC<{ tab: TabData; isActive?: boolean }> = React.memo(({
       setPagination(prev => ({ ...prev, totalCountLoading: false }));
       message.error(tr('data_viewer.message.total_count_failed_detail', { detail: String(e?.message || e) }));
     }
-  }, [addSqlLog, tr]);
+  }, [addSqlLog, rocketMQTagTotalCountUnavailable, tr]);
 
   const handleCancelManualTotalCount = useCallback(() => {
     manualCountSeqRef.current++;
@@ -1326,9 +1339,13 @@ const DataViewer: React.FC<{ tab: TabData; isActive?: boolean }> = React.memo(({
     setSortInfo([{ columnKey: normalizedField, order: normalizedOrder, enabled: true }]);
   }, []);
   const handlePageChange = useCallback((page: number, size: number) => fetchData(page, size), [fetchData]);
-  const handleLastPage = useCallback((pageSize: number) => (
-    fetchData(1, pageSize, { navigateToLastPage: true })
-  ), [fetchData]);
+  const handleLastPage = useCallback((pageSize: number) => {
+    if (rocketMQTagTotalCountUnavailable) {
+      message.warning(tr('data_grid.toolbar.tag_total_unavailable_tooltip'));
+      return;
+    }
+    fetchData(1, pageSize, { navigateToLastPage: true });
+  }, [fetchData, rocketMQTagTotalCountUnavailable, tr]);
   const handleToggleFilter = useCallback(() => setShowFilter(prev => !prev), []);
   const handleApplyFilter = useCallback((conditions: FilterCondition[]) => {
     skipNextAutoFetchRef.current = false;
@@ -1416,7 +1433,14 @@ const DataViewer: React.FC<{ tab: TabData; isActive?: boolean }> = React.memo(({
           onSort={handleSort}
           onPageChange={handlePageChange}
           onLastPage={handleLastPage}
-          pagination={pagination}
+          pagination={{
+            ...pagination,
+            totalKnown: rocketMQTagTotalCountUnavailable ? false : pagination.totalKnown,
+            totalApprox: rocketMQTagTotalCountUnavailable ? false : pagination.totalApprox,
+            approximateTotal: rocketMQTagTotalCountUnavailable ? undefined : pagination.approximateTotal,
+            totalCountUnavailableLabel,
+            totalCountUnavailableReason,
+          }}
           onRequestTotalCount={preferManualTotalCount ? handleManualTotalCount : undefined}
           onCancelTotalCount={preferManualTotalCount ? handleCancelManualTotalCount : undefined}
           showFilter={showFilter}

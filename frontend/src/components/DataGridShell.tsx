@@ -478,8 +478,9 @@ const renderDataTableView = () => (
           onCancelTotalCount?.();
           return;
       }
+      if (pagination?.totalCountUnavailableReason) return;
       onRequestTotalCount();
-  }, [onCancelTotalCount, onRequestTotalCount, pagination?.totalCountLoading]);
+  }, [onCancelTotalCount, onRequestTotalCount, pagination?.totalCountLoading, pagination?.totalCountUnavailableReason]);
   const paginationContent = (
       <DataGridPaginationBar
           isV2Ui={isV2Ui}
@@ -633,6 +634,8 @@ const renderDataTableView = () => (
             aiShortcutLabel={aiShortcutLabel}
             legacyAiButtonStyle={legacyAiButtonStyle}
             paginationTotalCountLoading={pagination?.totalCountLoading}
+            totalCountUnavailableLabel={pagination?.totalCountUnavailableLabel}
+            totalCountUnavailableReason={pagination?.totalCountUnavailableReason}
             toolbarExtraActions={toolbarExtraActions}
             filterConditions={filterConditions}
             sortInfo={sortInfo}

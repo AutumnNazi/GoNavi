@@ -1414,6 +1414,8 @@ interface DataGridProps {
         approximateTotal?: number,
         totalCountLoading?: boolean,
         totalCountCancelled?: boolean,
+        totalCountUnavailableLabel?: string,
+        totalCountUnavailableReason?: string,
     };
     onRequestTotalCount?: () => void;
     onCancelTotalCount?: () => void;

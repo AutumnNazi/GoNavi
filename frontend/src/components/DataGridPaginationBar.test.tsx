@@ -105,6 +105,42 @@ describe('DataGridPaginationBar boundary navigation', () => {
     expect(markup).not.toContain('data-grid-pagination-total-count="true"');
   });
 
+  it('shows the TAG limitation before execution and disables total-count boundary actions', () => {
+    const unavailableReason = 'Broker offsets cannot provide an exact TAG total.';
+    const markup = renderToStaticMarkup(
+      <DataGridPaginationBar
+        isV2Ui
+        pagination={{
+          current: 1,
+          pageSize: 100,
+          total: 100,
+          totalKnown: false,
+          totalCountUnavailableLabel: 'TAG total unavailable',
+          totalCountUnavailableReason: unavailableReason,
+        }}
+        paginationV2SummaryText="Current page loaded 100 rows"
+        paginationSummaryText="Current page loaded 100 rows"
+        paginationControlTotal={100}
+        paginationTotalPages={1}
+        paginationPageText="Page 1"
+        paginationPageSizeOptions={['100']}
+        showKnownPageCount={false}
+        manualTotalCountAvailable
+        onPageChange={vi.fn()}
+        onLastPage={vi.fn()}
+        onPageSizeChange={vi.fn()}
+        onV2PageStep={vi.fn()}
+        onToggleTotalCount={vi.fn()}
+      />,
+    );
+    const totalCountButton = markup.match(/<button[^>]*data-grid-pagination-total-count="true"[^>]*>/)?.[0];
+    const lastPageButton = markup.match(/<button[^>]*data-grid-pagination-last="true"[^>]*>/)?.[0];
+
+    expect(totalCountButton).toContain('disabled');
+    expect(markup).toContain('TAG total unavailable');
+    expect(lastPageButton).toContain('disabled');
+  });
+
   it('keeps the last-page action available for a fresh tail lookup at the cached boundary', () => {
     const onPageChange = vi.fn();
     const onLastPage = vi.fn();

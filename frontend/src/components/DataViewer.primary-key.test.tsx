@@ -280,6 +280,52 @@ describe('DataViewer safe editing locator', () => {
     renderer!.unmount();
   });
 
+  it('prevents RocketMQ TAG total-count and last-page requests before COUNT execution', async () => {
+    storeState.connections = [{
+      id: 'conn-rocketmq',
+      name: 'rocketmq',
+      config: {
+        type: 'rocketmq',
+        host: '127.0.0.1',
+        port: 9876,
+        user: '',
+        password: '',
+        database: 'orders.events',
+        connectionParams: 'tag=paid',
+      } as any,
+    }];
+    backendApp.DBQuery.mockResolvedValue({
+      success: true,
+      fields: ['tags', 'body'],
+      data: [{ tags: 'paid', body: 'hello' }],
+    });
+
+    const renderer = await renderAndReload(createTab({
+      id: 'tab-rocketmq-tag',
+      connectionId: 'conn-rocketmq',
+      dbName: 'topics',
+      tableName: 'orders.events',
+      title: 'orders.events',
+    }));
+    const props = dataGridState.latestProps;
+
+    expect(props.pagination).toMatchObject({
+      totalKnown: false,
+      totalCountUnavailableLabel: 'TAG 总量不可用',
+    });
+    expect(props.pagination.totalCountUnavailableReason).toContain('DESCRIBE TOPIC');
+
+    backendApp.DBQuery.mockClear();
+    await act(async () => {
+      await props.onRequestTotalCount();
+      await props.onLastPage(100);
+    });
+
+    expect(backendApp.DBQuery).not.toHaveBeenCalled();
+    expect(messageApi.warning).toHaveBeenCalledTimes(2);
+    renderer.unmount();
+  });
+
   it('defers the initial table query when the table opens in embedded object design', async () => {
     backendApp.DBGetColumns.mockResolvedValue({
       success: true,
