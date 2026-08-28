@@ -3948,7 +3948,7 @@ describe('QueryEditor external SQL save', () => {
       { lineNumber: 1, column: editorState.value.length + 1 },
     );
     const uppercaseTable = uppercaseTableResult.suggestions.find((item: any) => item.label === 'a_cninfo_announcement');
-    expect(uppercaseTable?.insertText).toBe('a_cninfo_announcement aca');
+    expect(uppercaseTable?.insertText).toBe('a_cninfo_announcement AS aca');
 
     editorState.value = 'SELECT * FROM users WHERE sh';
     editorState.latestOnChange?.(editorState.value);
@@ -4007,7 +4007,7 @@ describe('QueryEditor external SQL save', () => {
       { lineNumber: 1, column: editorState.value.length + 1 },
     );
     expect(conflictResult.suggestions.find((item: any) => item.label === 'system_user')?.insertText)
-      .toBe('system_user su2');
+      .toBe('system_user AS su2');
 
     editorState.value = 'SELECT * FROM code';
     editorState.latestOnChange?.(editorState.value);
@@ -4016,7 +4016,7 @@ describe('QueryEditor external SQL save', () => {
       { lineNumber: 1, column: editorState.value.length + 1 },
     );
     expect(initialsResult.suggestions.find((item: any) => item.label === 'code_query_record_zykj')?.insertText)
-      .toBe('code_query_record_zykj cqrz');
+      .toBe('code_query_record_zykj AS cqrz');
 
     editorState.value = 'INSERT INTO system';
     editorState.latestOnChange?.(editorState.value);
@@ -4383,7 +4383,7 @@ describe('QueryEditor external SQL save', () => {
     const result = await sqlProvider.provideCompletionItems(editorState.editor.getModel(), { lineNumber: 1, column: editorState.value.length + 1 });
     const match = result.suggestions.find((item: any) => item.label === 'MyTable');
 
-    expect(match?.insertText).toBe('"MyTable" mt');
+    expect(match?.insertText).toBe('"MyTable" AS mt');
 
     await act(async () => {
       renderer.unmount();
@@ -4416,7 +4416,7 @@ describe('QueryEditor external SQL save', () => {
     const result = await sqlProvider.provideCompletionItems(editorState.editor.getModel(), { lineNumber: 1, column: editorState.value.length + 1 });
     const match = result.suggestions.find((item: any) => item.label === 'MyTable');
 
-    expect(match?.insertText).toBe('"MyTable" mt');
+    expect(match?.insertText).toBe('"MyTable" AS mt');
 
     await act(async () => {
       renderer.unmount();
@@ -8597,7 +8597,7 @@ describe('QueryEditor external SQL save', () => {
       const tableSuggestion = completionItems?.suggestions?.find((item: any) => item?.label === 'AAA3_NJ');
 
       expect(tableSuggestion).toBeTruthy();
-      expect(tableSuggestion.insertText).toBe('AAA3_NJ an');
+      expect(tableSuggestion.insertText).toBe('AAA3_NJ AS an');
       expect(tableSuggestion.detail).toContain('表 (sbdev)');
       expect(completionItems?.suggestions?.some((item: any) => item?.label === 'sbdev.SBDEV.AAA3_NJ')).toBe(false);
     });

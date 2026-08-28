@@ -749,7 +749,7 @@ describe('QueryEditorAiAssist', () => {
                 currentLineBeforeCursor: 'SELECT * FROM system_user ',
                 currentLineAfterCursor: '',
             },
-        })).resolves.toBe('su');
+        })).resolves.toBe('AS su');
         await expect(requestQueryEditorInlineCompletion({
             ...request,
             editorSnapshot: {
@@ -758,7 +758,7 @@ describe('QueryEditorAiAssist', () => {
                 currentLineBeforeCursor: 'SELECT * FROM system_user su JOIN service_user ',
                 currentLineAfterCursor: '',
             },
-        })).resolves.toBe('su2');
+        })).resolves.toBe('AS su2');
         expect(service.AIChatSend).not.toHaveBeenCalled();
         expect(service.AIGetProviders).not.toHaveBeenCalled();
         expect(service.AIGetActiveProvider).not.toHaveBeenCalled();

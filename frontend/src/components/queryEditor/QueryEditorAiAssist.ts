@@ -1493,7 +1493,8 @@ const resolveDeterministicInlineTableAliasInsertText = (
     if (!currentReference || currentReference.alias) {
         return '';
     }
-    return buildQueryEditorTableSourceAlias(currentReference.tableIdent, statementPrefix);
+    const alias = buildQueryEditorTableSourceAlias(currentReference.tableIdent, statementPrefix);
+    return alias ? `AS ${alias}` : '';
 };
 
 const resolveDeterministicInlineColumnInsertText = (
