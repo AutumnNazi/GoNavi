@@ -202,10 +202,13 @@ func TestListServicesUsesCatalogAcrossGroups(t *testing.T) {
 			_ = json.NewEncoder(w).Encode(map[string]any{"code": 200, "data": []any{}})
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/v1/ns/catalog/services"):
 			catalogQuery = r.URL.Query()
-			if catalogQuery.Get("groupNameParam") == "MKEFU_SERVICE" {
+			if catalogQuery.Get("groupNameParam") == "^MKEFU_SERVICE$" {
 				_ = json.NewEncoder(w).Encode(map[string]any{
-					"count":       1,
-					"serviceList": []map[string]any{{"name": "orders", "groupName": "MKEFU_SERVICE"}},
+					"count": 2,
+					"serviceList": []map[string]any{
+						{"name": "orders", "groupName": "MKEFU_SERVICE"},
+						{"name": "other", "groupName": "MKEFU_SERVICE_ARCHIVE"},
+					},
 				})
 				return
 			}
@@ -261,7 +264,7 @@ func TestListServicesUsesCatalogAcrossGroups(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListServices with group: %v", err)
 	}
-	if catalogQuery.Get("groupNameParam") != "MKEFU_SERVICE" || catalogQuery.Get("namespaceId") != "mkefu-dev" {
+	if catalogQuery.Get("groupNameParam") != "^MKEFU_SERVICE$" || catalogQuery.Get("namespaceId") != "mkefu-dev" {
 		t.Fatalf("exact group query = %#v", catalogQuery)
 	}
 	if catalogQuery.Get("serviceNameParam") != "order" {

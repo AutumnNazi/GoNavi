@@ -65,7 +65,7 @@ func (c *ClientImpl) ListServices(ctx context.Context, query ServiceQuery) (*Ser
 		if groupName == "" {
 			params.Set("groupNameParam", "")
 		} else {
-			params.Set("groupNameParam", regexp.QuoteMeta(groupName))
+			params.Set("groupNameParam", "^"+regexp.QuoteMeta(groupName)+"$")
 		}
 	} else if family == nacosAPIV1 || family == nacosAPIV2 {
 		apiPath = routes.serviceListByGroup
@@ -156,6 +156,16 @@ func (c *ClientImpl) ListServices(ctx context.Context, query ServiceQuery) (*Ser
 		}
 		count = payload.Count
 		services = payload.ServiceList
+	}
+	if useCatalog && groupName != "" {
+		filtered := make([]nacosServiceItem, 0, len(services))
+		for _, service := range services {
+			if strings.TrimSpace(service.GroupName) == groupName {
+				filtered = append(filtered, service)
+			}
+		}
+		services = filtered
+		count = int64(len(services))
 	}
 
 	names := make([]string, 0, len(services))
