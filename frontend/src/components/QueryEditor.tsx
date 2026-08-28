@@ -6802,7 +6802,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
               const appendTableSourceAlias = (insertText: string, tableName: string) => {
                   if (!isTableAliasCompletion) return insertText;
                   const alias = buildQueryEditorTableSourceAlias(tableName, completionReferenceText);
-                  return alias ? `${insertText} ${alias}` : insertText;
+                  return alias ? `${insertText} AS ${alias}` : insertText;
               };
 
               // 0) 三段式 db.table.column 格式：当输入 db.table. 时提示列
