@@ -218,7 +218,7 @@ func (c *ChromaDB) GetDatabases() ([]string, error) {
 	var raw []map[string]interface{}
 	err := c.doJSON(ctx, http.MethodGet, fmt.Sprintf("/api/v2/tenants/%s/databases", url.PathEscape(c.tenant)), nil, &raw)
 	if err != nil {
-		return []string{c.database}, nil
+		return nil, err
 	}
 	names := make([]string, 0, len(raw))
 	for _, item := range raw {

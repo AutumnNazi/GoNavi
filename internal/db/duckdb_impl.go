@@ -171,7 +171,7 @@ func (d *DuckDB) Exec(query string) (int64, error) {
 func (d *DuckDB) GetDatabases() ([]string, error) {
 	data, _, err := d.Query("PRAGMA database_list")
 	if err != nil {
-		return []string{"main"}, nil
+		return nil, err
 	}
 
 	seen := map[string]struct{}{}
