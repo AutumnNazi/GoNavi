@@ -21,6 +21,7 @@ import {
 } from '../../wailsjs/go/app/App';
 import { t as defaultTranslate } from '../i18n';
 import { useOptionalI18n } from '../i18n/provider';
+import { downloadBrowserFileFromResult } from '../utils/browserFileTransfer';
 import Modal from './common/ResizableDraggableModal';
 
 const { Text } = Typography;
@@ -212,6 +213,10 @@ const ImportJobHistoryPanel: React.FC<ImportJobHistoryPanelProps> = ({ refreshTo
       const result = await ExportImportErrorRows(artifactID);
       if (!result?.success) {
         void message.error(result?.message || t('data_import.history.error.export_failed'));
+        return;
+      }
+      if (!downloadBrowserFileFromResult(result)) {
+        void message.error(t('data_import.history.error.export_failed'));
         return;
       }
       void message.success(t('data_import.history.message.exported'));

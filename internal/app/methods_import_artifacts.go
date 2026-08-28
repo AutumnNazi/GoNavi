@@ -31,7 +31,7 @@ func (a *App) ensureImportErrorArtifactStore() (*importErrorArtifactStore, error
 // ExportImportErrorRows copies a managed rejected-row artifact to a path the
 // desktop user explicitly selected. The opaque ID prevents arbitrary local
 // files from being read through the RPC boundary.
-func (a *App) ExportImportErrorRows(artifactID string) connection.QueryResult {
+func (a *App) ExportImportErrorRows(artifactID string) (result connection.QueryResult) {
 	store, err := a.ensureImportErrorArtifactStore()
 	if err != nil {
 		return connection.QueryResult{Success: false, Message: err.Error()}
@@ -42,21 +42,32 @@ func (a *App) ExportImportErrorRows(artifactID string) connection.QueryResult {
 	}
 	defer source.Close()
 
-	targetPath, err := a.showSaveFileDialog(runtime.SaveDialogOptions{
-		Title:           a.appText("file.backend.dialog.export_import_errors", nil),
-		DefaultFilename: "gonavi-import-errors.jsonl",
-		Filters: []runtime.FileFilter{{
-			DisplayName: "JSON Lines (*.jsonl)",
-			Pattern:     "*.jsonl",
-		}},
-	})
-	if err != nil {
-		return connection.QueryResult{Success: false, Message: err.Error()}
+	targetPath := ""
+	var webTarget *webDownloadTarget
+	if a.webRuntime {
+		webTarget, err = a.newWebDownloadTarget("gonavi-import-errors.jsonl", webDownloadMIMEForFormat("jsonl"))
+		if err != nil {
+			return connection.QueryResult{Success: false, Message: err.Error()}
+		}
+		targetPath = webTarget.path
+		defer func() { result = webTarget.finish(result) }()
+	} else {
+		targetPath, err = a.showSaveFileDialog(runtime.SaveDialogOptions{
+			Title:           a.appText("file.backend.dialog.export_import_errors", nil),
+			DefaultFilename: "gonavi-import-errors.jsonl",
+			Filters: []runtime.FileFilter{{
+				DisplayName: "JSON Lines (*.jsonl)",
+				Pattern:     "*.jsonl",
+			}},
+		})
+		if err != nil {
+			return connection.QueryResult{Success: false, Message: err.Error()}
+		}
+		if strings.TrimSpace(targetPath) == "" {
+			return connection.QueryResult{Success: false, Message: a.appText("file.backend.message.user_cancelled", nil)}
+		}
 	}
-	if strings.TrimSpace(targetPath) == "" {
-		return connection.QueryResult{Success: false, Message: a.appText("file.backend.message.user_cancelled", nil)}
-	}
-	target, err := createAtomicExportTarget(targetPath)
+	target, err := createAtomicExportTarget(targetPath, webDownloadBudgetForTarget(webTarget))
 	if err != nil {
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}

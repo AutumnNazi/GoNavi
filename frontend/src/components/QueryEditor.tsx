@@ -40,6 +40,7 @@ import { applyMongoQueryAutoLimit, convertMongoShellToJsonCommand } from "../uti
 import { getShortcutDisplayLabel, getShortcutPlatform, getShortcutPrimaryModifierDisplayLabel, isEditableElement, isImeComposingKeyEvent, isShortcutMatch, comboToMonacoKeyBinding, normalizeShortcutCombo, resolveShortcutBinding } from "../utils/shortcuts";
 import { useAutoFetchVisibility } from '../utils/autoFetchVisibility';
 import { buildRpcConnectionConfig } from '../utils/connectionRpcConfig';
+import { downloadBrowserTextFile, isWebRuntime } from '../utils/browserFileTransfer';
 import { filterVisibleDatabaseNames } from '../utils/databaseVisibility';
 import { isPostgresSchemaDialect } from '../utils/connectionDriverType';
 import { resolveOceanBaseProtocolFromConfig } from '../utils/oceanBaseProtocol';
@@ -290,6 +291,14 @@ const QUERY_EDITOR_FORMAT_PARAM_TYPES = {
 };
 const QUERY_EDITOR_FORMAT_ERROR_LOG_MAX_LENGTH = 500;
 const EMPTY_QUERY_EDITOR_SQL_LOGS: SqlLog[] = [];
+
+const normalizeBrowserSQLExportFileName = (rawName: string): string => {
+    const pathParts = String(rawName || '').trim().split(/[\\/]/);
+    let name = String(pathParts[pathParts.length - 1] || '').trim();
+    if (!name || name === '.') name = 'query';
+    name = name.replace(/[\\/:*?"<>|]/g, '_') || 'query';
+    return name.toLowerCase().endsWith('.sql') ? name : `${name}.sql`;
+};
 
 const hasElasticsearchUncertainOutcome = (response: any): boolean => (
     response?.outcomeUnknown === true
@@ -10580,7 +10589,20 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
 
   const handleExportSQLFile = async () => {
       try {
-          const res = await ExportSQLFile(currentSavedQuery?.name || resolveDefaultQueryName(), getCurrentQuery());
+          const defaultName = currentSavedQuery?.name || resolveDefaultQueryName();
+          const content = getCurrentQuery();
+          if (isWebRuntime()) {
+              if (!downloadBrowserTextFile(
+                  content,
+                  normalizeBrowserSQLExportFileName(defaultName),
+                  'text/sql;charset=utf-8',
+              )) {
+                  throw new Error('Browser download is unavailable');
+              }
+              message.success(translate('query_editor.message.export_sql_file_success'));
+              return;
+          }
+          const res = await ExportSQLFile(defaultName, content);
           if (!res.success) {
               if ((res.message || '') !== '已取消') {
                   message.error(translate('query_editor.message.export_sql_file_failed', {

@@ -33,6 +33,7 @@ type DatabaseImportExecutionPanelProps = {
   connectionConfig: Record<string, unknown> | null;
   dbName?: string;
   filePath: string;
+  fileName?: string;
   fileSizeMB?: string;
   darkMode: boolean;
   continueOnError: boolean;
@@ -58,6 +59,7 @@ const DatabaseImportExecutionPanel: React.FC<DatabaseImportExecutionPanelProps> 
   connectionConfig,
   dbName = '',
   filePath,
+  fileName = '',
   fileSizeMB,
   darkMode,
   continueOnError,
@@ -122,7 +124,7 @@ const DatabaseImportExecutionPanel: React.FC<DatabaseImportExecutionPanelProps> 
     const approved = await confirmProductionRisk({
       connection,
       action: t('connection.production_risk.action.execute_sql'),
-      target: [dbName, getFileName(filePath)].filter(Boolean).join(' / '),
+      target: [dbName, fileName || getFileName(filePath)].filter(Boolean).join(' / '),
       translate: t,
     });
     if (!approved) return;
@@ -153,7 +155,7 @@ const DatabaseImportExecutionPanel: React.FC<DatabaseImportExecutionPanelProps> 
 
       setExecutionStarted(true);
       await runSQLFileExecutionWithProgress({
-        title: getFileName(filePath),
+        title: fileName || getFileName(filePath),
         filePath,
         fileSizeMB,
         run: async (jobId) => {
@@ -191,6 +193,7 @@ const DatabaseImportExecutionPanel: React.FC<DatabaseImportExecutionPanelProps> 
     connection,
     continueOnError,
     dbName,
+    fileName,
     filePath,
     fileSizeMB,
     runSQLFileExecutionWithProgress,
@@ -317,12 +320,12 @@ const DatabaseImportExecutionPanel: React.FC<DatabaseImportExecutionPanelProps> 
             </Title>
             <Paragraph
               type="secondary"
-              title={filePath}
+              title={fileName || filePath}
               style={{ margin: '6px 0 0', wordBreak: 'break-all' }}
             >
               {state.status === 'idle'
                 ? t('data_import.workbench.state.ready_sql_description')
-                : state.filePath || filePath}
+                : fileName || state.filePath || filePath}
             </Paragraph>
           </div>
           {fileSizeMB ? <Text type="secondary">{fileSizeMB} MB</Text> : null}

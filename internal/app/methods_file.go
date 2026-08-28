@@ -310,12 +310,16 @@ func newExportProgressReporter(a *App, options ExportFileOptions, targetName str
 	if a == nil || a.ctx == nil || jobID == "" {
 		return nil
 	}
+	filePath = strings.TrimSpace(filePath)
+	if a.webRuntime && filePath != "" {
+		filePath = filepath.Base(filePath)
+	}
 	return &exportProgressReporter{
 		app:            a,
 		jobID:          jobID,
 		format:         strings.ToLower(strings.TrimSpace(options.Format)),
 		targetName:     strings.TrimSpace(targetName),
-		filePath:       strings.TrimSpace(filePath),
+		filePath:       filePath,
 		totalRows:      normalizeExportTotalRowsHint(options.TotalRowsHint, options.TotalRowsKnown),
 		totalRowsKnown: options.TotalRowsKnown,
 	}
@@ -3136,9 +3140,17 @@ func (a *App) ImportDatabaseSQLWithOptions(config connection.ConnectionConfig, d
 	return a.importDatabaseSQLWithGTIDMode(config, dbName, filePath, jobID, continueOnError, mode)
 }
 
-func (a *App) importDatabaseSQLWithGTIDMode(config connection.ConnectionConfig, dbName string, filePath string, jobID string, continueOnError bool, mode mysqlGTIDImportMode) connection.QueryResult {
+func (a *App) importDatabaseSQLWithGTIDMode(config connection.ConnectionConfig, dbName string, filePath string, jobID string, continueOnError bool, mode mysqlGTIDImportMode) (result connection.QueryResult) {
 	if err := a.validateDatabaseSQLImportAccess(config); err != nil {
 		return connection.QueryResult{Success: false, Message: err.Error()}
+	}
+	resolvedPath, err := a.resolveWebUploadReference(filePath, webUploadPurposeSQLExecution)
+	if err != nil {
+		return connection.QueryResult{Success: false, Message: err.Error()}
+	}
+	filePath = resolvedPath
+	if a.webRuntime {
+		defer func() { result = sanitizeWebManagedResult(result, filePath) }()
 	}
 	if !isMySQLGTIDImportConfig(config) {
 		mode = ""
@@ -4026,9 +4038,18 @@ func (a *App) PreviewImportFile(filePath string) connection.QueryResult {
 
 // PreviewImportFileWithOptions previews a file with the same parser settings
 // that will be used by ImportDataWithProgressOptions.
-func (a *App) PreviewImportFileWithOptions(filePath string, options ImportFileOptions) connection.QueryResult {
+func (a *App) PreviewImportFileWithOptions(filePath string, options ImportFileOptions) (queryResult connection.QueryResult) {
 	if strings.TrimSpace(filePath) == "" {
 		return connection.QueryResult{Success: false, Message: a.appText("file.backend.error.import_file_empty", nil)}
+	}
+	fileReference := filePath
+	resolvedPath, err := a.resolveWebUploadReference(filePath, webUploadPurposeDataImport)
+	if err != nil {
+		return connection.QueryResult{Success: false, Message: err.Error()}
+	}
+	filePath = resolvedPath
+	if a.webRuntime {
+		defer func() { queryResult = sanitizeWebManagedResult(queryResult, filePath) }()
 	}
 	if err := validateImportFileOptions(options); err != nil {
 		return connection.QueryResult{Success: false, Message: err.Error()}
@@ -4051,6 +4072,9 @@ func (a *App) PreviewImportFileWithOptions(filePath string, options ImportFileOp
 		"filePath":       filePath,
 		"fileSize":       sourceIdentity.Size,
 		"sourceIdentity": sourceIdentity,
+	}
+	if a.webRuntime {
+		result["filePath"] = fileReference
 	}
 
 	return connection.QueryResult{Success: true, Data: result}
@@ -4511,6 +4535,14 @@ func (a *App) stoppedImportResult(resultData importExecutionResult, detail strin
 // ImportDataWithProgressOptions executes a streamed import with optional source-header
 // to database-column mappings. ImportDataWithProgress remains the compatibility entrypoint.
 func (a *App) ImportDataWithProgressOptions(config connection.ConnectionConfig, dbName, tableName, filePath string, options ImportFileOptions) (result connection.QueryResult) {
+	resolvedPath, err := a.resolveWebUploadReference(filePath, webUploadPurposeDataImport)
+	if err != nil {
+		return connection.QueryResult{Success: false, Message: err.Error()}
+	}
+	filePath = resolvedPath
+	if a.webRuntime {
+		defer func() { result = sanitizeWebManagedResult(result, filePath) }()
+	}
 	return a.importDataWithProgressOptions(config, dbName, tableName, filePath, options, nil)
 }
 
@@ -4964,11 +4996,11 @@ func buildExportTableSelectQuery(dbType string, tableName string, columns []stri
 // 写路径上 Close 的错误意味着数据未真正落盘：网络盘回写缓存与磁盘配额耗尽常常直到 close(2)
 // 才报 ENOSPC/EIO，此时 Write 已经返回成功。若像读路径那样用 defer 丢弃，用户会拿到被截断的
 // 文件却收到“导出成功”，等于静默数据丢失。调用方仍应保留 defer 兜底关闭以覆盖错误路径。
-func closeExportFile(f *os.File) error {
+func closeExportFile(f io.Closer) error {
 	return f.Close()
 }
 
-func (a *App) ExportTableWithOptions(config connection.ConnectionConfig, dbName string, tableName string, options ExportFileOptions) connection.QueryResult {
+func (a *App) ExportTableWithOptions(config connection.ConnectionConfig, dbName string, tableName string, options ExportFileOptions) (result connection.QueryResult) {
 	options = normalizeExportFileOptions("", options)
 	if err := validateExportColumnsSelection(options); err != nil {
 		return connection.QueryResult{Success: false, Message: err.Error()}
@@ -4979,21 +5011,37 @@ func (a *App) ExportTableWithOptions(config connection.ConnectionConfig, dbName 
 			return connection.QueryResult{Success: false, Message: err.Error()}
 		}
 	}
-	filename, err := a.showSaveFileDialog(runtime.SaveDialogOptions{
-		Title:           a.appText("file.backend.dialog.export_table", map[string]any{"table": tableName}),
-		DefaultFilename: fmt.Sprintf("%s.%s", tableName, format),
-		Filters:         exportFileDialogFilters(format),
-	})
-
-	if err != nil || strings.TrimSpace(filename) == "" {
-		return connection.QueryResult{Success: false, Message: "已取消"}
+	defaultFilename := fmt.Sprintf("%s.%s", tableName, format)
+	filename := ""
+	var err error
+	var webTarget *webDownloadTarget
+	if a.webRuntime {
+		webTarget, err = a.newWebDownloadTarget(fmt.Sprintf("%s.%s", sanitizeExportFileStem(tableName), format), webDownloadMIMEForFormat(format))
+		if err != nil {
+			return connection.QueryResult{Success: false, Message: err.Error()}
+		}
+		filename = webTarget.path
+		defer func() { result = webTarget.finish(result) }()
+	} else {
+		filename, err = a.showSaveFileDialog(runtime.SaveDialogOptions{
+			Title:           a.appText("file.backend.dialog.export_table", map[string]any{"table": tableName}),
+			DefaultFilename: defaultFilename,
+			Filters:         exportFileDialogFilters(format),
+		})
+		if err != nil || strings.TrimSpace(filename) == "" {
+			return connection.QueryResult{Success: false, Message: "已取消"}
+		}
+		filename, err = a.resolveExportDialogTargetPath(filename, format)
+		if err != nil {
+			return connection.QueryResult{Success: false, Message: err.Error()}
+		}
 	}
-	filename, err = a.resolveExportDialogTargetPath(filename, format)
-	if err != nil {
-		return connection.QueryResult{Success: false, Message: err.Error()}
-	}
 
-	reporter := newExportProgressReporter(a, options, tableName, filename)
+	reporterPath := filename
+	if webTarget != nil {
+		reporterPath = webTarget.metadata.FileName
+	}
+	reporter := newExportProgressReporter(a, options, tableName, reporterPath)
 	reporter.Start(a.appText("data_export.progress.stage.preparing_export", nil))
 	runConfig := normalizeRunConfig(config, dbName)
 
@@ -5017,7 +5065,7 @@ func (a *App) ExportTableWithOptions(config connection.ConnectionConfig, dbName 
 
 	if format == "sql" {
 		reporter.Start(a.appText("data_export.progress.stage.exporting_sql_file", nil))
-		target, err := createAtomicExportTarget(filename)
+		target, err := createAtomicExportTarget(filename, webDownloadBudgetForTarget(webTarget))
 		if err != nil {
 			reporter.Error(0, err.Error())
 			return connection.QueryResult{Success: false, Message: err.Error()}
@@ -5069,7 +5117,7 @@ func (a *App) ExportTableWithOptions(config connection.ConnectionConfig, dbName 
 	dbType := resolveDDLDBType(config)
 	query := buildExportTableSelectQuery(dbType, tableName, options.Columns)
 
-	f, err := os.Create(filename)
+	f, err := openExportFileForTarget(webTarget, filename)
 	if err != nil {
 		reporter.Error(0, err.Error())
 		return connection.QueryResult{Success: false, Message: err.Error()}
@@ -5095,11 +5143,11 @@ func (a *App) ExportTableWithOptions(config connection.ConnectionConfig, dbName 
 }
 
 func (a *App) ExportTablesSQL(config connection.ConnectionConfig, dbName string, tableNames []string, includeData bool) connection.QueryResult {
-	return a.exportTablesSQL(config, dbName, tableNames, true, includeData)
+	return a.ExportTablesSQLWithOptions(config, dbName, tableNames, true, includeData, ExportFileOptions{Format: "sql"})
 }
 
 func (a *App) ExportTablesDataSQL(config connection.ConnectionConfig, dbName string, tableNames []string) connection.QueryResult {
-	return a.exportTablesSQL(config, dbName, tableNames, false, true)
+	return a.ExportTablesSQLWithOptions(config, dbName, tableNames, false, true, ExportFileOptions{Format: "sql"})
 }
 
 func (a *App) ExportTablesSQLWithOptions(
@@ -5109,7 +5157,7 @@ func (a *App) ExportTablesSQLWithOptions(
 	includeSchema bool,
 	includeData bool,
 	options ExportFileOptions,
-) connection.QueryResult {
+) (result connection.QueryResult) {
 	if !includeSchema && !includeData {
 		return connection.QueryResult{Success: false, Message: a.appText("file.backend.error.invalid_export_mode", nil)}
 	}
@@ -5119,24 +5167,41 @@ func (a *App) ExportTablesSQLWithOptions(
 	options.TotalRowsHint = int64(len(objects))
 	options.TotalRowsKnown = true
 
-	filename, err := a.showSaveFileDialog(runtime.SaveDialogOptions{
-		Title:           a.appText("file.backend.dialog.export_tables_sql", nil),
-		DefaultFilename: buildTablesExportDefaultFilename(dbName, objects, includeSchema, includeData),
-		Filters:         exportFileDialogFilters("sql"),
-	})
-	if err != nil || strings.TrimSpace(filename) == "" {
-		return connection.QueryResult{Success: false, Message: "已取消"}
-	}
-	filename, err = a.resolveExportDialogTargetPath(filename, "sql")
-	if err != nil {
-		return connection.QueryResult{Success: false, Message: err.Error()}
+	defaultFilename := buildTablesExportDefaultFilename(dbName, objects, includeSchema, includeData)
+	filename := ""
+	var err error
+	var webTarget *webDownloadTarget
+	if a.webRuntime {
+		webTarget, err = a.newWebDownloadTarget(defaultFilename, webDownloadMIMEForFormat("sql"))
+		if err != nil {
+			return connection.QueryResult{Success: false, Message: err.Error()}
+		}
+		filename = webTarget.path
+		defer func() { result = webTarget.finish(result) }()
+	} else {
+		filename, err = a.showSaveFileDialog(runtime.SaveDialogOptions{
+			Title:           a.appText("file.backend.dialog.export_tables_sql", nil),
+			DefaultFilename: defaultFilename,
+			Filters:         exportFileDialogFilters("sql"),
+		})
+		if err != nil || strings.TrimSpace(filename) == "" {
+			return connection.QueryResult{Success: false, Message: "已取消"}
+		}
+		filename, err = a.resolveExportDialogTargetPath(filename, "sql")
+		if err != nil {
+			return connection.QueryResult{Success: false, Message: err.Error()}
+		}
 	}
 
-	reporter := newExportProgressReporter(a, options, resolveBatchObjectsTargetNameWithText(dbName, objects, a.appText), filename)
+	reporterPath := filename
+	if webTarget != nil {
+		reporterPath = webTarget.metadata.FileName
+	}
+	reporter := newExportProgressReporter(a, options, resolveBatchObjectsTargetNameWithText(dbName, objects, a.appText), reporterPath)
 	if reporter != nil {
 		reporter.Start(a.appText("data_export.progress.stage.preparing_batch_tables_export", nil))
 	}
-	return a.exportTablesSQLToFile(config, dbName, objects, includeSchema, includeData, filename, reporter, options)
+	return a.exportTablesSQLToFile(config, dbName, objects, includeSchema, includeData, filename, reporter, options, webDownloadBudgetForTarget(webTarget))
 }
 
 func (a *App) exportTablesSQL(config connection.ConnectionConfig, dbName string, tableNames []string, includeSchema bool, includeData bool) connection.QueryResult {
@@ -5167,24 +5232,40 @@ func (a *App) exportTablesSQL(config connection.ConnectionConfig, dbName string,
 		filename,
 		nil,
 		ExportFileOptions{Format: "sql"},
+		nil,
 	)
 }
 
+type atomicExportFile interface {
+	io.Writer
+	io.Closer
+	Sync() error
+}
+
 type atomicExportTarget struct {
-	file       *os.File
+	file       atomicExportFile
 	tempPath   string
 	targetPath string
 	closed     bool
 	committed  bool
 }
 
-func createAtomicExportTarget(targetPath string) (*atomicExportTarget, error) {
+func createAtomicExportTarget(targetPath string, budgets ...*webTransferBudget) (*atomicExportTarget, error) {
 	temporary, err := os.CreateTemp(filepath.Dir(targetPath), ".gonavi-export-*.part")
 	if err != nil {
 		return nil, err
 	}
+	var file atomicExportFile = temporary
+	if len(budgets) > 0 && budgets[0] != nil {
+		file, err = newWebTransferFile(temporary, budgets[0])
+		if err != nil {
+			_ = temporary.Close()
+			_ = os.Remove(temporary.Name())
+			return nil, err
+		}
+	}
 	return &atomicExportTarget{
-		file:       temporary,
+		file:       file,
 		tempPath:   temporary.Name(),
 		targetPath: targetPath,
 	}, nil
@@ -5231,6 +5312,7 @@ func (a *App) exportTablesSQLToFile(
 	filename string,
 	reporter *exportProgressReporter,
 	options ExportFileOptions,
+	budget *webTransferBudget,
 ) connection.QueryResult {
 	if !includeSchema && !includeData {
 		return connection.QueryResult{Success: false, Message: a.appText("file.backend.error.invalid_export_mode", nil)}
@@ -5248,7 +5330,7 @@ func (a *App) exportTablesSQLToFile(
 	viewLookup := listViewNameLookup(dbInst, runConfig, dbName)
 	objects := buildExportObjectOrder(runConfig, dbName, normalizeExportNameList(tableNames), viewLookup, false)
 
-	target, err := createAtomicExportTarget(filename)
+	target, err := createAtomicExportTarget(filename, budget)
 	if err != nil {
 		if reporter != nil {
 			reporter.Error(0, err.Error())
@@ -5341,27 +5423,40 @@ func (a *App) ExportDatabaseSQLWithOptions(
 	dbName string,
 	includeData bool,
 	options ExportFileOptions,
-) connection.QueryResult {
+) (result connection.QueryResult) {
 	safeDbName := strings.TrimSpace(dbName)
 	if safeDbName == "" {
 		return connection.QueryResult{Success: false, Message: a.appText("file.backend.error.database_name_required", nil)}
 	}
 	options = normalizeExportFileOptions("sql", options)
 
-	filename, err := a.showSaveFileDialog(runtime.SaveDialogOptions{
-		Title:           a.appText("file.backend.dialog.export_database_sql", map[string]any{"database": safeDbName}),
-		DefaultFilename: buildDatabaseExportDefaultFilename(safeDbName, includeData),
-		Filters:         exportFileDialogFilters("sql"),
-	})
-	if err != nil || strings.TrimSpace(filename) == "" {
-		return connection.QueryResult{Success: false, Message: "已取消"}
-	}
-	filename, err = a.resolveExportDialogTargetPath(filename, "sql")
-	if err != nil {
-		return connection.QueryResult{Success: false, Message: err.Error()}
+	defaultFilename := buildDatabaseExportDefaultFilename(safeDbName, includeData)
+	filename := ""
+	var err error
+	var webTarget *webDownloadTarget
+	if a.webRuntime {
+		webTarget, err = a.newWebDownloadTarget(defaultFilename, webDownloadMIMEForFormat("sql"))
+		if err != nil {
+			return connection.QueryResult{Success: false, Message: err.Error()}
+		}
+		filename = webTarget.path
+		defer func() { result = webTarget.finish(result) }()
+	} else {
+		filename, err = a.showSaveFileDialog(runtime.SaveDialogOptions{
+			Title:           a.appText("file.backend.dialog.export_database_sql", map[string]any{"database": safeDbName}),
+			DefaultFilename: defaultFilename,
+			Filters:         exportFileDialogFilters("sql"),
+		})
+		if err != nil || strings.TrimSpace(filename) == "" {
+			return connection.QueryResult{Success: false, Message: "已取消"}
+		}
+		filename, err = a.resolveExportDialogTargetPath(filename, "sql")
+		if err != nil {
+			return connection.QueryResult{Success: false, Message: err.Error()}
+		}
 	}
 
-	return a.exportDatabaseSQLToFile(config, safeDbName, includeData, filename, options)
+	return a.exportDatabaseSQLToFile(config, safeDbName, includeData, filename, options, webDownloadBudgetForTarget(webTarget))
 }
 
 func (a *App) ExportDatabasesSQLWithOptions(
@@ -5369,28 +5464,59 @@ func (a *App) ExportDatabasesSQLWithOptions(
 	dbNames []string,
 	includeData bool,
 	options ExportFileOptions,
-) connection.QueryResult {
+) (result connection.QueryResult) {
 	normalizedDbNames := normalizeExportNameList(dbNames)
 	if len(normalizedDbNames) == 0 {
 		return connection.QueryResult{Success: false, Message: a.appText("sidebar.message.select_database_required", nil)}
 	}
 
-	directory, err := runtime.OpenDirectoryDialog(a.ctx, runtime.OpenDialogOptions{
-		Title:            a.appText("file.backend.dialog.select_batch_export_directory", nil),
-		DefaultDirectory: normalizeDirectoryDialogPath(""),
-	})
-	if err != nil || strings.TrimSpace(directory) == "" {
-		return connection.QueryResult{Success: false, Message: "已取消"}
+	directory := ""
+	var err error
+	var webTarget *webDownloadTarget
+	if a.webRuntime {
+		archiveMode := "schema"
+		if includeData {
+			archiveMode = "backup"
+		}
+		archiveName := fmt.Sprintf("gonavi_%s_%d-databases.zip", archiveMode, len(normalizedDbNames))
+		webTarget, err = a.newWebDownloadTarget(archiveName, webDownloadMIMEForFormat("zip"))
+		if err != nil {
+			return connection.QueryResult{Success: false, Message: err.Error()}
+		}
+		directory = filepath.Join(webTarget.dir, "batch")
+		if err := os.MkdirAll(directory, 0o700); err != nil {
+			webTarget.abort()
+			return connection.QueryResult{Success: false, Message: err.Error()}
+		}
+		defer func() { result = webTarget.finish(result) }()
+		defer func() {
+			if cleanupErr := os.RemoveAll(directory); cleanupErr != nil && result.Success {
+				result = connection.QueryResult{Success: false, Message: cleanupErr.Error()}
+			}
+		}()
+	} else {
+		directory, err = runtime.OpenDirectoryDialog(a.ctx, runtime.OpenDialogOptions{
+			Title:            a.appText("file.backend.dialog.select_batch_export_directory", nil),
+			DefaultDirectory: normalizeDirectoryDialogPath(""),
+		})
+		if err != nil || strings.TrimSpace(directory) == "" {
+			return connection.QueryResult{Success: false, Message: "已取消"}
+		}
 	}
 
 	options = normalizeExportFileOptions("sql", options)
 	options.TotalRowsHint = int64(len(normalizedDbNames))
 	options.TotalRowsKnown = true
-	reporter := newExportProgressReporter(a, options, a.appText("data_export.workbench.target.batch_databases", map[string]any{"count": len(normalizedDbNames)}), directory)
+	reporterPath := directory
+	if webTarget != nil {
+		reporterPath = webTarget.metadata.FileName
+	}
+	reporter := newExportProgressReporter(a, options, a.appText("data_export.workbench.target.batch_databases", map[string]any{"count": len(normalizedDbNames)}), reporterPath)
 	if reporter != nil {
 		reporter.Start(a.appText("data_export.progress.stage.preparing_batch_databases_export", nil))
 	}
 
+	entries := make([]webDownloadZipEntry, 0, len(normalizedDbNames))
 	for index, name := range normalizedDbNames {
 		if reporter != nil {
 			reporter.ForceRunning(int64(index), a.appText("data_export.progress.stage.exporting_item_with_progress", map[string]any{
@@ -5399,16 +5525,35 @@ func (a *App) ExportDatabasesSQLWithOptions(
 				"total":   len(normalizedDbNames),
 			}))
 		}
-		targetFile := filepath.Join(directory, buildDatabaseExportDefaultFilename(name, includeData))
+		entryName := buildDatabaseExportDefaultFilename(name, includeData)
+		if webTarget != nil {
+			entryName = fmt.Sprintf("%03d-%s", index+1, entryName)
+		}
+		targetFile := filepath.Join(directory, entryName)
 		innerOptions := options
 		innerOptions.JobID = ""
-		result := a.exportDatabaseSQLToFile(config, name, includeData, targetFile, innerOptions)
+		result := a.exportDatabaseSQLToFile(config, name, includeData, targetFile, innerOptions, webDownloadBudgetForTarget(webTarget))
 		if !result.Success {
-			result.Message = fmt.Sprintf("%s: %s", targetFile, result.Message)
+			displayTarget := targetFile
+			if webTarget != nil {
+				displayTarget = entryName
+			}
+			result.Message = fmt.Sprintf("%s: %s", displayTarget, result.Message)
 			if reporter != nil {
 				reporter.Error(int64(index), result.Message)
 			}
 			return result
+		}
+		if webTarget != nil {
+			entries = append(entries, webDownloadZipEntry{Name: filepath.Base(targetFile), Path: targetFile})
+		}
+	}
+	if webTarget != nil {
+		if err := writeWebDownloadZip(webTarget.path, entries, webTarget.budget); err != nil {
+			if reporter != nil {
+				reporter.Error(int64(len(normalizedDbNames)), err.Error())
+			}
+			return connection.QueryResult{Success: false, Message: err.Error()}
 		}
 	}
 
@@ -5432,7 +5577,12 @@ func (a *App) exportDatabaseSQLToFile(
 	includeData bool,
 	filename string,
 	options ExportFileOptions,
+	budgets ...*webTransferBudget,
 ) connection.QueryResult {
+	var budget *webTransferBudget
+	if len(budgets) > 0 {
+		budget = budgets[0]
+	}
 	safeDbName := strings.TrimSpace(dbName)
 	if safeDbName == "" {
 		return connection.QueryResult{Success: false, Message: a.appText("file.backend.error.database_name_required", nil)}
@@ -5466,7 +5616,7 @@ func (a *App) exportDatabaseSQLToFile(
 		reporter.ForceRunning(0, a.appText("data_export.progress.stage.exporting_sql_file", nil))
 	}
 
-	target, err := createAtomicExportTarget(filename)
+	target, err := createAtomicExportTarget(filename, budget)
 	if err != nil {
 		if reporter != nil {
 			reporter.Error(0, err.Error())
@@ -5567,7 +5717,7 @@ func (a *App) ExportSchemaSQLWithOptions(
 	schemaName string,
 	includeData bool,
 	options ExportFileOptions,
-) connection.QueryResult {
+) (result connection.QueryResult) {
 	safeDbName := strings.TrimSpace(dbName)
 	safeSchemaName := strings.TrimSpace(schemaName)
 	if safeDbName == "" {
@@ -5583,19 +5733,39 @@ func (a *App) ExportSchemaSQLWithOptions(
 		suffix = "backup"
 	}
 
-	filename, err := a.showSaveFileDialog(runtime.SaveDialogOptions{
-		Title:           a.appText("file.backend.dialog.export_database_sql", map[string]any{"database": safeDbName + "." + safeSchemaName}),
-		DefaultFilename: fmt.Sprintf("%s_%s_%s.sql", safeDbName, safeSchemaName, suffix),
-		Filters:         exportFileDialogFilters("sql"),
-	})
-	if err != nil || strings.TrimSpace(filename) == "" {
-		return connection.QueryResult{Success: false, Message: "已取消"}
+	defaultFilename := fmt.Sprintf("%s_%s_%s.sql", safeDbName, safeSchemaName, suffix)
+	filename := ""
+	var err error
+	var webTarget *webDownloadTarget
+	if a.webRuntime {
+		webTarget, err = a.newWebDownloadTarget(
+			fmt.Sprintf("%s_%s_%s.sql", sanitizeExportFileStem(safeDbName), sanitizeExportFileStem(safeSchemaName), suffix),
+			webDownloadMIMEForFormat("sql"),
+		)
+		if err != nil {
+			return connection.QueryResult{Success: false, Message: err.Error()}
+		}
+		filename = webTarget.path
+		defer func() { result = webTarget.finish(result) }()
+	} else {
+		filename, err = a.showSaveFileDialog(runtime.SaveDialogOptions{
+			Title:           a.appText("file.backend.dialog.export_database_sql", map[string]any{"database": safeDbName + "." + safeSchemaName}),
+			DefaultFilename: defaultFilename,
+			Filters:         exportFileDialogFilters("sql"),
+		})
+		if err != nil || strings.TrimSpace(filename) == "" {
+			return connection.QueryResult{Success: false, Message: "已取消"}
+		}
+		filename, err = a.resolveExportDialogTargetPath(filename, "sql")
+		if err != nil {
+			return connection.QueryResult{Success: false, Message: err.Error()}
+		}
 	}
-	filename, err = a.resolveExportDialogTargetPath(filename, "sql")
-	if err != nil {
-		return connection.QueryResult{Success: false, Message: err.Error()}
+	reporterPath := filename
+	if webTarget != nil {
+		reporterPath = webTarget.metadata.FileName
 	}
-	reporter := newExportProgressReporter(a, options, safeDbName+"."+safeSchemaName, filename)
+	reporter := newExportProgressReporter(a, options, safeDbName+"."+safeSchemaName, reporterPath)
 	if reporter != nil {
 		reporter.Start(a.appText("data_export.progress.stage.preparing_export", nil))
 	}
@@ -5633,7 +5803,7 @@ func (a *App) ExportSchemaSQLWithOptions(
 		reporter.ForceRunning(0, a.appText("data_export.progress.stage.exporting_sql_file", nil))
 	}
 
-	target, err := createAtomicExportTarget(filename)
+	target, err := createAtomicExportTarget(filename, webDownloadBudgetForTarget(webTarget))
 	if err != nil {
 		if reporter != nil {
 			reporter.Error(0, err.Error())
@@ -7013,7 +7183,7 @@ func (a *App) ExportData(data []map[string]interface{}, columns []string, defaul
 	return a.ExportDataWithOptions(data, columns, defaultName, ExportFileOptions{Format: format})
 }
 
-func (a *App) ExportDataWithOptions(data []map[string]interface{}, columns []string, defaultName string, options ExportFileOptions) connection.QueryResult {
+func (a *App) ExportDataWithOptions(data []map[string]interface{}, columns []string, defaultName string, options ExportFileOptions) (result connection.QueryResult) {
 	if defaultName == "" {
 		defaultName = "export"
 	}
@@ -7027,26 +7197,45 @@ func (a *App) ExportDataWithOptions(data []map[string]interface{}, columns []str
 	}
 	format := options.Format
 	logger.Infof("ExportData 开始：rows=%d cols=%d format=%s defaultName=%s", len(data), len(columns), strings.ToLower(strings.TrimSpace(format)), strings.TrimSpace(defaultName))
-	filename, err := a.showSaveFileDialog(runtime.SaveDialogOptions{
-		Title:           a.appText("file.backend.dialog.export_data", nil),
-		DefaultFilename: fmt.Sprintf("%s.%s", defaultName, strings.ToLower(format)),
-		Filters:         exportFileDialogFilters(format),
-	})
-
-	if err != nil || strings.TrimSpace(filename) == "" {
-		logger.Infof("ExportData 已取消或未选择文件：err=%v", err)
-		return connection.QueryResult{Success: false, Message: "已取消"}
-	}
-	filename, err = a.resolveExportDialogTargetPath(filename, format)
-	if err != nil {
-		logger.Warnf("ExportData 目标文件无效：file=%s err=%v", filename, err)
-		return connection.QueryResult{Success: false, Message: err.Error()}
+	defaultFilename := fmt.Sprintf("%s.%s", defaultName, strings.ToLower(format))
+	filename := ""
+	var err error
+	var webTarget *webDownloadTarget
+	if a.webRuntime {
+		webTarget, err = a.newWebDownloadTarget(
+			fmt.Sprintf("%s.%s", sanitizeExportFileStem(defaultName), strings.ToLower(format)),
+			webDownloadMIMEForFormat(format),
+		)
+		if err != nil {
+			return connection.QueryResult{Success: false, Message: err.Error()}
+		}
+		filename = webTarget.path
+		defer func() { result = webTarget.finish(result) }()
+	} else {
+		filename, err = a.showSaveFileDialog(runtime.SaveDialogOptions{
+			Title:           a.appText("file.backend.dialog.export_data", nil),
+			DefaultFilename: defaultFilename,
+			Filters:         exportFileDialogFilters(format),
+		})
+		if err != nil || strings.TrimSpace(filename) == "" {
+			logger.Infof("ExportData 已取消或未选择文件：err=%v", err)
+			return connection.QueryResult{Success: false, Message: "已取消"}
+		}
+		filename, err = a.resolveExportDialogTargetPath(filename, format)
+		if err != nil {
+			logger.Warnf("ExportData 目标文件无效：file=%s err=%v", filename, err)
+			return connection.QueryResult{Success: false, Message: err.Error()}
+		}
 	}
 	logger.Infof("ExportData 选定文件：%s", filename)
-	reporter := newExportProgressReporter(a, options, defaultName, filename)
+	reporterPath := filename
+	if webTarget != nil {
+		reporterPath = webTarget.metadata.FileName
+	}
+	reporter := newExportProgressReporter(a, options, defaultName, reporterPath)
 	reporter.Start(a.appText("data_export.progress.stage.preparing_export", nil))
 
-	f, err := os.Create(filename)
+	f, err := openExportFileForTarget(webTarget, filename)
 	if err != nil {
 		reporter.Error(0, err.Error())
 		return connection.QueryResult{Success: false, Message: err.Error()}
@@ -7080,7 +7269,7 @@ func (a *App) ExportQuery(config connection.ConnectionConfig, dbName string, que
 	return a.ExportQueryWithOptions(config, dbName, query, defaultName, ExportFileOptions{Format: format})
 }
 
-func (a *App) ExportQueryWithOptions(config connection.ConnectionConfig, dbName string, query string, defaultName string, options ExportFileOptions) connection.QueryResult {
+func (a *App) ExportQueryWithOptions(config connection.ConnectionConfig, dbName string, query string, defaultName string, options ExportFileOptions) (result connection.QueryResult) {
 	query = strings.TrimSpace(query)
 	if query == "" {
 		return connection.QueryResult{Success: false, Message: a.appText("file.backend.error.query_required", nil)}
@@ -7100,22 +7289,42 @@ func (a *App) ExportQueryWithOptions(config connection.ConnectionConfig, dbName 
 		}
 	}
 
-	filename, err := a.showSaveFileDialog(runtime.SaveDialogOptions{
-		Title:           a.appText("file.backend.dialog.export_query_result", nil),
-		DefaultFilename: fmt.Sprintf("%s.%s", defaultName, strings.ToLower(format)),
-		Filters:         exportFileDialogFilters(format),
-	})
-	if err != nil || strings.TrimSpace(filename) == "" {
-		logger.Infof("ExportQuery 已取消或未选择文件：err=%v", err)
-		return connection.QueryResult{Success: false, Message: "已取消"}
-	}
-	filename, err = a.resolveExportDialogTargetPath(filename, format)
-	if err != nil {
-		logger.Warnf("ExportQuery 目标文件无效：file=%s err=%v", filename, err)
-		return connection.QueryResult{Success: false, Message: err.Error()}
+	defaultFilename := fmt.Sprintf("%s.%s", defaultName, strings.ToLower(format))
+	filename := ""
+	var err error
+	var webTarget *webDownloadTarget
+	if a.webRuntime {
+		webTarget, err = a.newWebDownloadTarget(
+			fmt.Sprintf("%s.%s", sanitizeExportFileStem(defaultName), strings.ToLower(format)),
+			webDownloadMIMEForFormat(format),
+		)
+		if err != nil {
+			return connection.QueryResult{Success: false, Message: err.Error()}
+		}
+		filename = webTarget.path
+		defer func() { result = webTarget.finish(result) }()
+	} else {
+		filename, err = a.showSaveFileDialog(runtime.SaveDialogOptions{
+			Title:           a.appText("file.backend.dialog.export_query_result", nil),
+			DefaultFilename: defaultFilename,
+			Filters:         exportFileDialogFilters(format),
+		})
+		if err != nil || strings.TrimSpace(filename) == "" {
+			logger.Infof("ExportQuery 已取消或未选择文件：err=%v", err)
+			return connection.QueryResult{Success: false, Message: "已取消"}
+		}
+		filename, err = a.resolveExportDialogTargetPath(filename, format)
+		if err != nil {
+			logger.Warnf("ExportQuery 目标文件无效：file=%s err=%v", filename, err)
+			return connection.QueryResult{Success: false, Message: err.Error()}
+		}
 	}
 	logger.Infof("ExportQuery 开始：type=%s db=%s format=%s file=%s sql=%q", strings.TrimSpace(config.Type), strings.TrimSpace(dbName), strings.ToLower(strings.TrimSpace(format)), filename, sqlSnippet(query))
-	reporter := newExportProgressReporter(a, options, defaultName, filename)
+	reporterPath := filename
+	if webTarget != nil {
+		reporterPath = webTarget.metadata.FileName
+	}
+	reporter := newExportProgressReporter(a, options, defaultName, reporterPath)
 	reporter.Start(a.appText("data_export.progress.stage.preparing_export", nil))
 
 	runConfig := normalizeRunConfig(config, dbName)
@@ -7149,7 +7358,7 @@ func (a *App) ExportQueryWithOptions(config connection.ConnectionConfig, dbName 
 		return connection.QueryResult{Success: false, Message: a.appText("file.backend.error.select_with_query_required", nil)}
 	}
 
-	f, err := os.Create(filename)
+	f, err := openExportFileForTarget(webTarget, filename)
 	if err != nil {
 		reporter.Error(0, err.Error())
 		return connection.QueryResult{Success: false, Message: err.Error()}
@@ -7375,7 +7584,7 @@ type csvExportFileWriter struct {
 	record  []string
 }
 
-func newCSVExportFileWriter(f *os.File) (*csvExportFileWriter, error) {
+func newCSVExportFileWriter(f io.Writer) (*csvExportFileWriter, error) {
 	if _, err := f.Write([]byte{0xEF, 0xBB, 0xBF}); err != nil {
 		return nil, err
 	}
@@ -7402,15 +7611,15 @@ func (w *csvExportFileWriter) Close() error {
 }
 
 type jsonExportFileWriter struct {
-	file    *os.File
+	file    io.Writer
 	encoder *json.Encoder
 	columns []string
 	rowBuf  map[string]interface{}
 	first   bool
 }
 
-func newJSONExportFileWriter(f *os.File) (*jsonExportFileWriter, error) {
-	if _, err := f.WriteString("[\n"); err != nil {
+func newJSONExportFileWriter(f io.Writer) (*jsonExportFileWriter, error) {
+	if _, err := io.WriteString(f, "[\n"); err != nil {
 		return nil, err
 	}
 	encoder := json.NewEncoder(f)
@@ -7444,7 +7653,7 @@ func (w *jsonExportFileWriter) ConsumeRowValues(values []interface{}) error {
 
 func (w *jsonExportFileWriter) writeCurrentRow() error {
 	if !w.first {
-		if _, err := w.file.WriteString(",\n"); err != nil {
+		if _, err := io.WriteString(w.file, ",\n"); err != nil {
 			return err
 		}
 	}
@@ -7456,12 +7665,12 @@ func (w *jsonExportFileWriter) writeCurrentRow() error {
 }
 
 func (w *jsonExportFileWriter) Close() error {
-	_, err := w.file.WriteString("\n]")
+	_, err := io.WriteString(w.file, "\n]")
 	return err
 }
 
 type markdownExportFileWriter struct {
-	file    *os.File
+	file    io.Writer
 	columns []string
 	record  []string
 }
@@ -7500,7 +7709,7 @@ type htmlExportFileWriter struct {
 	rowCount int64
 }
 
-func newHTMLExportFileWriter(f *os.File) *htmlExportFileWriter {
+func newHTMLExportFileWriter(f io.Writer) *htmlExportFileWriter {
 	return &htmlExportFileWriter{writer: bufio.NewWriterSize(f, 1024*256)}
 }
 
@@ -7868,7 +8077,7 @@ type sqlInsertExportFileWriter struct {
 	closed   bool
 }
 
-func newSQLInsertExportFileWriter(f *os.File, options ExportFileOptions) (*sqlInsertExportFileWriter, error) {
+func newSQLInsertExportFileWriter(f io.Writer, options ExportFileOptions) (*sqlInsertExportFileWriter, error) {
 	dialect := strings.TrimSpace(options.InsertSQLDialect)
 	targetTable := strings.TrimSpace(options.InsertSQLTargetTable)
 	if dialect == "" {
@@ -7954,7 +8163,7 @@ func resolveRequestedExportColumns(columns []string, requested []string) ([]stri
 	return selected, nil
 }
 
-func newExportFileWriter(f *os.File, options ExportFileOptions) (exportFileWriter, error) {
+func newExportFileWriter(f io.Writer, options ExportFileOptions) (exportFileWriter, error) {
 	options = normalizeExportFileOptions("", options)
 	switch options.Format {
 	case "csv":
@@ -7966,7 +8175,16 @@ func newExportFileWriter(f *os.File, options ExportFileOptions) (exportFileWrite
 	case "html":
 		return newHTMLExportFileWriter(f), nil
 	case "xlsx":
-		return newXLSXExportFileWriter(f, options.XLSXMaxRowsPerSheet)
+		file, ok := f.(xlsxExportOutputFile)
+		if !ok {
+			return nil, fmt.Errorf("xlsx export requires a seekable file")
+		}
+		writeOptions := xlsxExportWriteOptions{}
+		if managed, ok := f.(*webTransferFile); ok {
+			writeOptions.tempDir = filepath.Dir(managed.file.Name())
+			writeOptions.budget = managed.budget
+		}
+		return newXLSXExportFileWriter(file, options.XLSXMaxRowsPerSheet, writeOptions)
 	case "sql":
 		return newSQLInsertExportFileWriter(f, options)
 	default:
@@ -8031,11 +8249,11 @@ func streamQueryDataForExportWithContext(ctx context.Context, dbInst db.Database
 	return nil
 }
 
-func exportQueryResultToFile(f *os.File, dbInst db.Database, config connection.ConnectionConfig, query string, options ExportFileOptions, reporter *exportProgressReporter) (int64, []string, error) {
+func exportQueryResultToFile(f io.Writer, dbInst db.Database, config connection.ConnectionConfig, query string, options ExportFileOptions, reporter *exportProgressReporter) (int64, []string, error) {
 	return exportQueryResultToFileWithContext(context.Background(), f, dbInst, config, query, options, reporter)
 }
 
-func exportQueryResultToFileWithContext(ctx context.Context, f *os.File, dbInst db.Database, config connection.ConnectionConfig, query string, options ExportFileOptions, reporter *exportProgressReporter) (int64, []string, error) {
+func exportQueryResultToFileWithContext(ctx context.Context, f io.Writer, dbInst db.Database, config connection.ConnectionConfig, query string, options ExportFileOptions, reporter *exportProgressReporter) (int64, []string, error) {
 	options = normalizeExportFileOptions("", options)
 	if err := validateExportColumnsSelection(options); err != nil {
 		return 0, nil, err
@@ -8108,12 +8326,12 @@ func formatExportRecordValue(val interface{}, markdown bool) string {
 	return text
 }
 
-func writeRowsToFile(f *os.File, data []map[string]interface{}, columns []string, options ExportFileOptions) error {
+func writeRowsToFile(f io.Writer, data []map[string]interface{}, columns []string, options ExportFileOptions) error {
 	_, err := writeRowsToFileWithReporter(f, data, columns, options, nil)
 	return err
 }
 
-func writeRowsToFileWithReporter(f *os.File, data []map[string]interface{}, columns []string, options ExportFileOptions, reporter *exportProgressReporter) (int64, error) {
+func writeRowsToFileWithReporter(f io.Writer, data []map[string]interface{}, columns []string, options ExportFileOptions, reporter *exportProgressReporter) (int64, error) {
 	if f == nil {
 		return 0, fmt.Errorf("file required")
 	}

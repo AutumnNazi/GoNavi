@@ -17,6 +17,7 @@ import {
     resolveTextInputSafeBackdropFilter,
 } from '../utils/appearance';
 import { buildRpcConnectionConfig } from '../utils/connectionRpcConfig';
+import { downloadBrowserFileFromResult } from '../utils/browserFileTransfer';
 import {
     applyRenamedRedisKeyState,
     applyTreeNodeCheck,
@@ -693,6 +694,10 @@ const RedisViewer: React.FC<RedisViewerProps> = ({ connectionId, redisDB }) => {
                 },
             );
             if (res?.success) {
+                if (!downloadBrowserFileFromResult(res)) {
+                    message.error(tr('redis_viewer.message.export_failed', { detail: 'Browser download is unavailable' }));
+                    return;
+                }
                 const exportedCount = Number(res?.data?.exported ?? (scope === 'selected' ? selectedKeys.length : 0));
                 message.success(tr('redis_viewer.message.export_success', { count: exportedCount }));
                 return;

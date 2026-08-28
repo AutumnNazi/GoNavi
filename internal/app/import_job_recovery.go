@@ -45,6 +45,9 @@ func (a *App) ResumeImportJob(jobID string) connection.QueryResult {
 	if job.Kind != importjob.KindTable || job.TableImportOptions == nil {
 		return connection.QueryResult{Success: false, Message: importJobRecoveryErrorMessage(a, errImportJobRecoveryUnavailable)}
 	}
+	if err := a.validateWebManagedUploadPath(job.SourcePath, webUploadPurposeDataImport); err != nil {
+		return connection.QueryResult{Success: false, Message: importJobRecoveryErrorMessage(a, errImportJobRecoveryUnavailable)}
+	}
 	config, err := a.resolveImportJobSavedConnection(job)
 	if err != nil {
 		return connection.QueryResult{Success: false, Message: importJobRecoveryErrorMessage(a, err)}

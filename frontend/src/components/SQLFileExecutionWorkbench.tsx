@@ -223,9 +223,15 @@ const SQLFileExecutionWorkbench: React.FC<{ tab: TabData }> = ({ tab }) => {
     () => resolveConnectionHostSummary(connection?.config),
     [connection?.config],
   );
+  const displayFileName = String(tab.sqlFileExecutionFileName || '').trim()
+    || getFileName(String(tab.filePath || '').trim());
   const { state, reset, cancelExecution, runSQLFileExecutionWithProgress, isRunning } = useSQLFileExecutionRunner({
     showToast: true,
   });
+  const displayFileReference = String(tab.sqlFileExecutionFileName || '').trim()
+    || state.filePath
+    || tab.filePath
+    || '-';
   const terminal = state.status === 'done'
     || state.status === 'cancelled'
     || state.status === 'error';
@@ -338,7 +344,7 @@ const SQLFileExecutionWorkbench: React.FC<{ tab: TabData }> = ({ tab }) => {
       const approved = await confirmProductionRisk({
         connection,
         action: t('connection.production_risk.action.execute_sql'),
-        target: [tab.dbName, getFileName(filePath)].filter(Boolean).join(' / '),
+        target: [tab.dbName, displayFileName].filter(Boolean).join(' / '),
         translate: t,
       });
       if (!approved) return;
@@ -397,6 +403,7 @@ const SQLFileExecutionWorkbench: React.FC<{ tab: TabData }> = ({ tab }) => {
     connection,
     connectionConfig,
     continueOnError,
+    displayFileName,
     executionPending,
     isRunning,
     runSQLFileExecutionWithProgress,
@@ -501,7 +508,7 @@ const SQLFileExecutionWorkbench: React.FC<{ tab: TabData }> = ({ tab }) => {
 
               <Text type="secondary">{t('sidebar.sql_file_exec.workbench.label.file_path')}</Text>
               <Paragraph style={{ marginBottom: 0, wordBreak: 'break-all' }}>
-                {tab.filePath || '-'}
+                {tab.sqlFileExecutionFileName || tab.filePath || '-'}
               </Paragraph>
 
               <Text type="secondary">{t('sidebar.sql_file_exec.file_size').replace(/[:：]\s*$/, '')}</Text>
@@ -649,7 +656,7 @@ const SQLFileExecutionWorkbench: React.FC<{ tab: TabData }> = ({ tab }) => {
                   {state.title || tab.title || t('sidebar.sql_file_exec.title')}
                 </Title>
                 <div style={{ marginTop: 6, color: secondaryTextColor, fontSize: 13 }}>
-                  {state.jobId ? `${state.filePath || tab.filePath || '-'} · ${currentSummary}` : t('sidebar.sql_file_exec.workbench.description.current_task_empty')}
+                  {state.jobId ? `${displayFileReference} · ${currentSummary}` : t('sidebar.sql_file_exec.workbench.description.current_task_empty')}
                 </div>
               </div>
 
@@ -681,7 +688,7 @@ const SQLFileExecutionWorkbench: React.FC<{ tab: TabData }> = ({ tab }) => {
                     {t('sidebar.sql_file_exec.workbench.label.file_path')}
                   </div>
                   <div style={{ color: headingColor, fontWeight: 600, maxWidth: 360, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {state.filePath || tab.filePath || '-'}
+                    {displayFileReference}
                   </div>
                 </div>
                 <div>
@@ -720,7 +727,7 @@ const SQLFileExecutionWorkbench: React.FC<{ tab: TabData }> = ({ tab }) => {
                       {t('sidebar.sql_file_exec.workbench.label.file_path')}
                     </div>
                     <Paragraph style={{ marginBottom: 0, wordBreak: 'break-all' }}>
-                      {state.filePath || '-'}
+                      {displayFileReference}
                     </Paragraph>
                   </div>
                 </div>
@@ -855,7 +862,7 @@ const SQLFileExecutionWorkbench: React.FC<{ tab: TabData }> = ({ tab }) => {
 
                           <Text type="secondary">{t('sidebar.sql_file_exec.workbench.label.file_path')}</Text>
                           <Paragraph style={{ marginBottom: 0, wordBreak: 'break-all' }}>
-                            {entry.filePath || '-'}
+                            {tab.sqlFileExecutionFileName || entry.filePath || '-'}
                           </Paragraph>
                         </div>
                       </div>

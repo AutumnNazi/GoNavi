@@ -574,6 +574,7 @@ export interface TabData {
   dataImportLaunchKey?: string;
   dataImportRunning?: boolean;
   sqlFileExecutionRequestKey?: string;
+  sqlFileExecutionFileName?: string;
   sqlFileExecutionFileSizeMB?: string;
   sqlAnalysisView?: "diagnose" | "slow-query";
   sqlAnalysisRequestKey?: string;

@@ -77,31 +77,6 @@ var desktopOnlyAppMethods = map[string]struct{}{
 	"SelectCertificateFile":         {},
 	"SelectDatabaseFile":            {},
 	"ImportData":                    {},
-	"ImportDatabaseSQL":             {},
-	"PreviewImportFile":             {},
-	"PreviewImportFileWithOptions":  {},
-	"ImportDataWithProgress":        {},
-	"ImportDataWithProgressOptions": {},
-	"ListImportJobs":                {},
-	"GetImportJob":                  {},
-	"CancelImportJob":               {},
-	"DeleteImportJob":               {},
-	"ExportImportErrorRows":         {},
-	"ExportTable":                   {},
-	"ExportTableWithOptions":        {},
-	"ExportTablesSQL":               {},
-	"ExportTablesDataSQL":           {},
-	"ExportTablesSQLWithOptions":    {},
-	"ExportDatabaseSQL":             {},
-	"ExportDatabaseSQLWithOptions":  {},
-	"ExportDatabasesSQLWithOptions": {},
-	"ExportSchemaSQL":               {},
-	"ExportSchemaSQLWithOptions":    {},
-	"ExportData":                    {},
-	"ExportDataWithOptions":         {},
-	"ExportQuery":                   {},
-	"ExportQueryWithOptions":        {},
-	"RedisExportKeys":               {},
 	"ExportSQLAuditFile":            {},
 }
 
@@ -769,6 +744,8 @@ func (s *Server) routes() http.Handler {
 	mux.Handle(internalRoutePrefix+"/auth/settings", s.requireWebAuth(http.HandlerFunc(s.handleAuthSettings)))
 	mux.Handle(internalRoutePrefix+"/auth/settings/password", s.requireWebAuth(httpserverlimits.LimitRequestBody(http.HandlerFunc(s.handleAuthPasswordChange))))
 	mux.Handle(internalRoutePrefix+"/api/invoke", s.requireWebAuth(httpserverlimits.LimitRequestBody(http.HandlerFunc(s.handleInvoke))))
+	mux.Handle(internalRoutePrefix+"/api/upload", s.requireWebAuth(http.HandlerFunc(s.handleWebUpload)))
+	mux.Handle(internalRoutePrefix+"/api/download/", s.requireWebAuth(httpserverlimits.StreamingWriteTimeout(http.HandlerFunc(s.handleWebDownload))))
 	mux.Handle(internalRoutePrefix+"/events", s.requireWebAuth(httpserverlimits.StreamingWriteTimeout(http.HandlerFunc(s.handleEvents))))
 	mux.Handle(internalRoutePrefix+"/web-runtime.js", s.requireWebAuth(http.HandlerFunc(s.handleRuntimeBridge)))
 	mux.HandleFunc(internalRoutePrefix+"/healthz", func(w http.ResponseWriter, _ *http.Request) {

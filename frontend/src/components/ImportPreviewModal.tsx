@@ -13,6 +13,7 @@ import { useStore } from "../store";
 import { t as defaultTranslate } from "../i18n";
 import { useOptionalI18n } from "../i18n/provider";
 import { buildRpcConnectionConfig } from "../utils/connectionRpcConfig";
+import { downloadBrowserFileFromResult } from "../utils/browserFileTransfer";
 import {
   getColumnDefinitionExtra,
   getColumnDefinitionName,
@@ -610,6 +611,8 @@ const ImportPreviewModal: React.FC<ImportPreviewModalProps> = ({
       const result = await ExportImportErrorRows(artifactID);
       if (!result.success) {
         setError(result.message || t("import_preview.error.export_rejected_rows_failed"));
+      } else if (!downloadBrowserFileFromResult(result)) {
+        setError(t("import_preview.error.export_rejected_rows_failed"));
       }
     } catch (exportError: any) {
       setError(t("import_preview.error.export_rejected_rows_failed_detail", {

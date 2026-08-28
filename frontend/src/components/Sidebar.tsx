@@ -1580,6 +1580,7 @@ const Sidebar: React.FC<{
       handleAddExternalSQLDirectory,
       handleRemoveExternalSQLDirectory,
       handleRefreshExternalSQLDirectory,
+      browserSQLFileInputProps,
       externalSQLFileModalProps,
       externalSQLBindingModalProps,
   } = useSidebarExternalSqlWorkflow({
@@ -1600,6 +1601,7 @@ const Sidebar: React.FC<{
       setExpandedKeys,
       setAutoExpandParent,
       getActiveContext: () => useStore.getState().activeContext,
+      isWebRuntime,
   });
 
   useEffect(() => {
@@ -4779,6 +4781,12 @@ const Sidebar: React.FC<{
             );
         })()}
 
+        {isWebRuntime ? (
+          <input
+            {...browserSQLFileInputProps}
+            data-sidebar-browser-sql-file-input="true"
+          />
+        ) : null}
         <ExternalSQLFileModal {...externalSQLFileModalProps} />
         <ExternalSQLBindingModal {...externalSQLBindingModalProps} />
 

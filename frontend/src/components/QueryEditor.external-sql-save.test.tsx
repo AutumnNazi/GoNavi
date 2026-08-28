@@ -11199,6 +11199,45 @@ END;`;
     expect(messageApi.success).toHaveBeenCalledWith('SQL 文件已导出。');
   });
 
+  it('downloads SQL directly in the web runtime without invoking the desktop export dialog', async () => {
+    storeState.savedQueries = [{
+      id: 'saved-1',
+      name: '常用查询',
+      sql: 'select 1;',
+      connectionId: 'conn-1',
+      dbName: 'main',
+      createdAt: 100,
+    }];
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<QueryEditor tab={createTab({ savedQueryId: 'saved-1' })} />);
+    });
+
+    (window as any).__GONAVI_WEB_RUNTIME__ = { buildType: 'web' };
+    const anchor = {
+      href: '',
+      download: '',
+      click: vi.fn(),
+    };
+    (document.createElement as any).mockReturnValueOnce(anchor);
+    (document.body as any).removeChild = vi.fn();
+    const createObjectURL = vi.fn(() => 'blob:web-sql');
+    const revokeObjectURL = vi.fn();
+    vi.stubGlobal('URL', { createObjectURL, revokeObjectURL });
+    editorState.value = 'select 10;';
+
+    await act(async () => {
+      await findButton(renderer, '导出 SQL 文件').props.onClick();
+    });
+
+    expect(backendApp.ExportSQLFile).not.toHaveBeenCalled();
+    expect(anchor).toMatchObject({ href: 'blob:web-sql', download: '常用查询.sql' });
+    expect(anchor.click).toHaveBeenCalledOnce();
+    expect(createObjectURL).toHaveBeenCalledOnce();
+    expect(revokeObjectURL).toHaveBeenCalledWith('blob:web-sql');
+    expect(messageApi.success).toHaveBeenCalledWith('SQL 文件已导出。');
+  });
+
   describe('export sql file toast localization', () => {
     const prepareSavedQueryExport = async () => {
       storeState.savedQueries = [
