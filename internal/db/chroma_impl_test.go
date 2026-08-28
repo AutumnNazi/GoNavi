@@ -126,6 +126,31 @@ func TestChromaGetDatabasesAndTablesV2(t *testing.T) {
 	}
 }
 
+func TestChromaGetDatabasesV2PropagatesHTTPFailure(t *testing.T) {
+	server := newMockChromaServer(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v2/heartbeat":
+			writeChromaJSON(w, map[string]interface{}{"ok": true})
+		case "/api/v2/tenants/default_tenant/databases":
+			http.Error(w, "database service unavailable", http.StatusServiceUnavailable)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+
+	db := newTestChromaDB(t, server.URL)
+	dbs, err := db.GetDatabases()
+	if err == nil {
+		t.Fatalf("GetDatabases unexpectedly succeeded with databases %v", dbs)
+	}
+	if dbs != nil {
+		t.Fatalf("databases = %v, want nil on HTTP failure", dbs)
+	}
+	if !strings.Contains(err.Error(), "database service unavailable") {
+		t.Fatalf("GetDatabases error = %q, want server error context", err)
+	}
+}
+
 func TestChromaSelectConvertsToGetRows(t *testing.T) {
 	var capturedPath string
 	var capturedBody map[string]interface{}
