@@ -264,7 +264,7 @@ func TestListServicesUsesCatalogAcrossGroups(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListServices with group: %v", err)
 	}
-	if catalogQuery.Get("groupNameParam") != "^MKEFU_SERVICE$" || catalogQuery.Get("namespaceId") != "mkefu-dev" {
+	if catalogQuery.Get("groupNameParam") != "MKEFU_SERVICE" || catalogQuery.Get("namespaceId") != "mkefu-dev" {
 		t.Fatalf("exact group query = %#v", catalogQuery)
 	}
 	if catalogQuery.Get("serviceNameParam") != "order" {
