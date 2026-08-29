@@ -62,6 +62,23 @@ const padSidebarTimestampPart = (value: number): string => String(value).padStar
  * 若无法被 Date 可靠解析，则尽量保留原始文本的可读部分。
  */
 export const formatSidebarTableTimestamp = (value: unknown): string => {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '';
+    return [
+      date.getFullYear(),
+      '-',
+      padSidebarTimestampPart(date.getMonth() + 1),
+      '-',
+      padSidebarTimestampPart(date.getDate()),
+      ' ',
+      padSidebarTimestampPart(date.getHours()),
+      ':',
+      padSidebarTimestampPart(date.getMinutes()),
+      ':',
+      padSidebarTimestampPart(date.getSeconds()),
+    ].join('');
+  }
   const text = String(value ?? '').trim();
   if (!text) return '';
 

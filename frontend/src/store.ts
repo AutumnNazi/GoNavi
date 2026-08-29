@@ -4263,6 +4263,16 @@ export const useStore = create<AppState>()(
         insertBefore = false,
       ) =>
         set((state) => {
+          const sortMode = targetTagId
+            ? state.connectionTags.find((tag) => tag.id === targetTagId)?.sortMode || 'manual'
+            : state.rootSortMode;
+          if (sortMode !== 'manual') {
+            return {
+              connections: state.connections,
+              connectionTags: state.connectionTags,
+              sidebarRootOrder: state.sidebarRootOrder,
+            };
+          }
           if (
             !connectionId ||
             !targetConnectionId ||

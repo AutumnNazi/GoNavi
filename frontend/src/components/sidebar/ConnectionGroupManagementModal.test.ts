@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { orderConnectionGroupIds } from './ConnectionGroupManagementModal';
+import {
+  canReorderConnections,
+  hasConnectionDragPayload,
+  orderConnectionGroupIds,
+} from './ConnectionGroupManagementModal';
 
 describe('orderConnectionGroupIds', () => {
   const tags = [
@@ -14,5 +18,16 @@ describe('orderConnectionGroupIds', () => {
     expect(orderConnectionGroupIds(persistedOrder, tags, 'manual')).toEqual(persistedOrder);
     expect(orderConnectionGroupIds(persistedOrder, tags, 'name')).toEqual(['alpha', 'newest', 'zebra']);
     expect(orderConnectionGroupIds(persistedOrder, tags, 'createdAt')).toEqual(['newest', 'zebra', 'alpha']);
+  });
+
+  it('allows connection reordering only in custom mode', () => {
+    expect(canReorderConnections('manual')).toBe(true);
+    expect(canReorderConnections('name')).toBe(false);
+    expect(canReorderConnections('createdAt')).toBe(false);
+  });
+
+  it('recognizes only connection drags, keeping group tree drops isolated', () => {
+    expect(hasConnectionDragPayload({ dataTransfer: { types: ['application/x-gonavi-connection-ids'] } } as any)).toBe(true);
+    expect(hasConnectionDragPayload({ dataTransfer: { types: ['text/plain'] } } as any)).toBe(false);
   });
 });

@@ -3098,6 +3098,17 @@ const Sidebar: React.FC<{
       buildConnectionRootRedisCommandTabTitle,
       buildConnectionRootRedisMonitorTabTitle,
   });
+  useEffect(() => {
+      const handleDeleteConnection = (event: Event) => {
+          const connectionId = String(
+              (event as CustomEvent<{ connectionId?: string }>).detail?.connectionId || '',
+          ).trim();
+          const connection = connections.find((item) => item.id === connectionId);
+          if (connection) deleteConnectionNode(getConnectionNodeForAction(connection));
+      };
+      window.addEventListener('gonavi:delete-connection', handleDeleteConnection);
+      return () => window.removeEventListener('gonavi:delete-connection', handleDeleteConnection);
+  }, [connections, deleteConnectionNode, getConnectionNodeForAction]);
   const {
       onSearch,
       searchScopeSummary,

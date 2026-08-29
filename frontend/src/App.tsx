@@ -9848,6 +9848,7 @@ function App() {
             open={isConnectionGroupManagementOpen}
             onClose={() => setIsConnectionGroupManagementOpen(false)}
             onOpenTagForm={(parentTagId) => window.dispatchEvent(new CustomEvent('gonavi:open-connection-tag-form', { detail: { parentTagId } }))}
+            onEditConnection={handleEditConnection}
           />
 
           {/* Ghost Resize Line for Log Panel */}

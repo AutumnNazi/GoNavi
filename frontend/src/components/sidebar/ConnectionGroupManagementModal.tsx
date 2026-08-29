@@ -1,14 +1,37 @@
 import React, { useMemo, useState } from 'react';
-import { Button, Checkbox, Empty, Form, Input, List, Modal, Select, Space, Tooltip, Tree, Typography } from 'antd';
+import { Button, Empty, Form, Input, List, Modal, Select, Space, Table, Tooltip, Tree, Typography } from 'antd';
 import { DeleteOutlined, EditOutlined, FolderAddOutlined, HolderOutlined, InboxOutlined, SettingOutlined } from '@ant-design/icons';
 import type { DataNode } from 'antd/es/tree';
+import type { ColumnsType } from 'antd/es/table';
 import { useStore } from '../../store';
-import type { ConnectionSortMode, ConnectionTag } from '../../types';
+import type { ConnectionSortMode, ConnectionTag, SavedConnection } from '../../types';
 import { t } from '../../i18n';
 import { buildSidebarRootTagToken, resolveConnectionTagChildOrder, resolveSidebarRootOrderTokens } from '../../store';
+import { formatSidebarTableTimestamp } from './sidebarHelpers';
 
-type Props = { open: boolean; onClose: () => void; onOpenTagForm: (parentTagId?: string) => void };
+type Props = {
+  open: boolean;
+  onClose: () => void;
+  onOpenTagForm: (parentTagId?: string) => void;
+  onEditConnection: (connection: SavedConnection) => void;
+};
 const UNGROUPED = '__ungrouped__';
+const CONNECTION_DRAG_TYPE = 'application/x-gonavi-connection-ids';
+
+export const hasConnectionDragPayload = (event: Pick<React.DragEvent<HTMLElement>, 'dataTransfer'>): boolean =>
+  Array.from(event.dataTransfer.types).includes(CONNECTION_DRAG_TYPE);
+
+const getConnectionIdsFromDragEvent = (event: React.DragEvent<HTMLElement>): string[] => {
+  if (!hasConnectionDragPayload(event)) return [];
+  try {
+    const ids = JSON.parse(event.dataTransfer.getData(CONNECTION_DRAG_TYPE));
+    return Array.isArray(ids) ? ids.filter((id): id is string => typeof id === 'string' && id.length > 0) : [];
+  } catch {
+    return [];
+  }
+};
+
+export const canReorderConnections = (mode: ConnectionSortMode): boolean => mode === 'manual';
 
 export const orderConnectionGroupIds = (
   ids: string[],
@@ -44,7 +67,7 @@ const collectTagTree = (rootId: string, tags: ConnectionTag[]) => {
   return tags.filter((tag) => ids.has(tag.id));
 };
 
-const ConnectionGroupManagementModal: React.FC<Props> = ({ open, onClose, onOpenTagForm }) => {
+const ConnectionGroupManagementModal: React.FC<Props> = ({ open, onClose, onOpenTagForm, onEditConnection }) => {
   const connections = useStore((state) => state.connections);
   const tags = useStore((state) => state.connectionTags);
   const rootOrder = useStore((state) => state.sidebarRootOrder);
@@ -55,9 +78,11 @@ const ConnectionGroupManagementModal: React.FC<Props> = ({ open, onClose, onOpen
   const removeConnection = useStore((state) => state.removeConnection);
   const moveConnections = useStore((state) => state.moveConnectionsToTag);
   const moveTag = useStore((state) => state.moveConnectionTag);
+  const reorderConnections = useStore((state) => state.reorderConnections);
   const [selectedContainer, setSelectedContainer] = useState<string>(UNGROUPED);
   const [selectedConnections, setSelectedConnections] = useState<string[]>([]);
-  const [draggedConnections, setDraggedConnections] = useState<string[]>([]);
+  const [, setDraggedConnections] = useState<string[]>([]);
+  const [draggedConnectionId, setDraggedConnectionId] = useState<string | null>(null);
   const [renameTag, setRenameTag] = useState<ConnectionTag | null>(null);
   const [nameForm] = Form.useForm<{ name: string }>();
 
@@ -73,8 +98,10 @@ const ConnectionGroupManagementModal: React.FC<Props> = ({ open, onClose, onOpen
       return a.name.localeCompare(b.name, undefined, { sensitivity: 'base', numeric: true }) || (manualIndex.get(left) || 0) - (manualIndex.get(right) || 0) || left.localeCompare(right);
     });
   };
-  const moveDraggedConnections = (targetTagId: string | null) => {
-    if (!draggedConnections.length) return;
+  const moveDraggedConnections = (connectionIds: string[], targetTagId: string | null) => {
+    if (!connectionIds.length) return;
+    setDraggedConnections([]);
+    setDraggedConnectionId(null);
     const owners = new Map<string, ConnectionTag>();
     tags.forEach((tag) => tag.connectionIds.forEach((connectionId) => {
       if (!owners.has(connectionId)) owners.set(connectionId, tag);
@@ -82,12 +109,12 @@ const ConnectionGroupManagementModal: React.FC<Props> = ({ open, onClose, onOpen
     const targetName = targetTagId
       ? tagById.get(targetTagId)?.name || t('connection.sidebar.management.ungrouped')
       : t('connection.sidebar.management.ungrouped');
-    const preview = draggedConnections.slice(0, 8);
+    const preview = connectionIds.slice(0, 8);
     Modal.confirm({
       title: t('connection.sidebar.management.moveTitle'),
       content: <div>
         <Typography.Paragraph style={{ marginBottom: 8 }}>
-          {t('connection.sidebar.management.movePreviewTarget', { count: draggedConnections.length, name: targetName })}
+          {t('connection.sidebar.management.movePreviewTarget', { count: connectionIds.length, name: targetName })}
         </Typography.Paragraph>
         <List
           size="small"
@@ -98,13 +125,27 @@ const ConnectionGroupManagementModal: React.FC<Props> = ({ open, onClose, onOpen
             return <List.Item>{t('connection.sidebar.management.movePreviewItem', { name: connection?.name || connectionId, source })}</List.Item>;
           }}
         />
-        {draggedConnections.length > preview.length && <Typography.Text type="secondary">
-          {t('connection.sidebar.management.movePreviewRemaining', { count: draggedConnections.length - preview.length })}
+        {connectionIds.length > preview.length && <Typography.Text type="secondary">
+          {t('connection.sidebar.management.movePreviewRemaining', { count: connectionIds.length - preview.length })}
         </Typography.Text>}
       </div>,
-      onOk: () => moveConnections(draggedConnections, targetTagId),
+      onOk: () => moveConnections(connectionIds, targetTagId),
     });
   };
+  const getConnectionDropHandlers = (targetTagId: string | null) => ({
+    onDragOver: (event: React.DragEvent<HTMLElement>) => {
+      if (!hasConnectionDragPayload(event)) return;
+      event.preventDefault();
+      event.dataTransfer.dropEffect = 'move';
+    },
+    onDrop: (event: React.DragEvent<HTMLElement>) => {
+      const ids = getConnectionIdsFromDragEvent(event);
+      if (!ids.length) return;
+      event.preventDefault();
+      event.stopPropagation();
+      moveDraggedConnections(ids, targetTagId);
+    },
+  });
   const isTagDraggable = (tag: ConnectionTag | undefined) => {
     if (!tag) return false;
     const parentMode = tag.parentTagId ? tagById.get(tag.parentTagId)?.sortMode : rootSortMode;
@@ -120,7 +161,7 @@ const ConnectionGroupManagementModal: React.FC<Props> = ({ open, onClose, onOpen
         if (!tag || (tag.parentTagId || undefined) !== parentId) return nodes;
         nodes.push({
           key: tag.id,
-          title: <div className="connection-group-tree-title" onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); moveDraggedConnections(tag.id); }}><span className="connection-group-tree-name" title={tag.name}>{tag.name}</span><Typography.Text type="secondary">({tag.connectionIds.length})</Typography.Text></div>,
+          title: <div className="connection-group-tree-title" {...getConnectionDropHandlers(tag.id)}><span className="connection-group-tree-name" title={tag.name}>{tag.name}</span><Typography.Text type="secondary">({tag.connectionIds.length})</Typography.Text></div>,
           children: buildTree(tag.id),
         });
         return nodes;
@@ -131,8 +172,7 @@ const ConnectionGroupManagementModal: React.FC<Props> = ({ open, onClose, onOpen
   const currentIds = currentTag ? currentTag.connectionIds : ungrouped.map((connection) => connection.id);
   const currentMode = currentTag?.sortMode || rootSortMode;
   const visibleConnections = sortConnections(currentIds, currentMode);
-  const allVisibleSelected = visibleConnections.length > 0 && visibleConnections.every((id) => selectedConnections.includes(id));
-  const treeData: DataNode[] = [{ key: UNGROUPED, title: <div className="connection-group-tree-title" onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); moveDraggedConnections(null); }}><span className="connection-group-tree-name"><InboxOutlined /> {t('connection.sidebar.management.ungrouped')}</span><Typography.Text type="secondary">({ungrouped.length})</Typography.Text></div> }, ...buildTree()];
+  const treeData: DataNode[] = [{ key: UNGROUPED, title: <div className="connection-group-tree-title" {...getConnectionDropHandlers(null)}><span className="connection-group-tree-name"><InboxOutlined /> {t('connection.sidebar.management.ungrouped')}</span><Typography.Text type="secondary">({ungrouped.length})</Typography.Text></div> }, ...buildTree()];
   const submitRename = async () => {
     const { name: rawName } = await nameForm.validateFields();
     const name = rawName.trim();
@@ -156,18 +196,58 @@ const ConnectionGroupManagementModal: React.FC<Props> = ({ open, onClose, onOpen
     } });
   };
   const handleTreeDrop = (info: any) => {
-    if (!info.dropToGap) return;
+    if (!info.dropToGap || !info.dragNode || !info.node) return;
     const sourceId = String(info.dragNode.key); const targetId = String(info.node.key);
     const source = tagById.get(sourceId); const target = tagById.get(targetId);
     if (!source || !target || source.parentTagId !== target.parentTagId || !isTagDraggable(source)) return;
     moveTag(sourceId, source.parentTagId || null, buildSidebarRootTagToken(targetId), info.dropPosition < 0);
   };
+  const isConnectionDraggable = canReorderConnections(currentMode);
+  const visibleConnectionSet = new Set(visibleConnections);
+  const connectionColumns: ColumnsType<SavedConnection> = [
+    {
+      title: t('connection.sidebar.management.connectionName'),
+      dataIndex: 'name',
+      key: 'name',
+      ellipsis: true,
+      render: (name: string) => <Space size={6} style={{ minWidth: 0 }}><HolderOutlined style={{ color: '#999' }} /><Typography.Text ellipsis={{ tooltip: name }} style={{ minWidth: 0 }}>{name}</Typography.Text></Space>,
+    },
+    {
+      title: t('connection.sidebar.management.address'),
+      key: 'address',
+      width: 180,
+      ellipsis: true,
+      render: (_, connection) => {
+        const host = String(connection.config.host || '');
+        const port = Number(connection.config.port);
+        const address = host && Number.isFinite(port) && port > 0 ? `${host}:${port}` : host;
+        return <Typography.Text ellipsis={{ tooltip: address }}>{address || '-'}</Typography.Text>;
+      },
+    },
+    {
+      title: t('connection.sidebar.management.createdAt'),
+      dataIndex: 'createdAt',
+      key: 'createdAt',
+      width: 160,
+      render: (createdAt: number | undefined) => createdAt ? formatSidebarTableTimestamp(createdAt) : '-',
+    },
+    {
+      title: t('connection.sidebar.management.actions'),
+      key: 'actions',
+      width: 80,
+      align: 'center',
+      render: (_, connection) => <Space size={2}>
+        <Tooltip title={t('sidebar.menu.edit_connection')}><Button type="text" size="small" icon={<EditOutlined />} aria-label={t('sidebar.menu.edit_connection')} onClick={() => onEditConnection(connection)} /></Tooltip>
+        <Tooltip title={t('connection.sidebar.menu.delete')}><Button type="text" size="small" danger icon={<DeleteOutlined />} aria-label={t('connection.sidebar.menu.delete')} onClick={() => window.dispatchEvent(new CustomEvent('gonavi:delete-connection', { detail: { connectionId: connection.id } }))} /></Tooltip>
+      </Space>,
+    },
+  ];
 
   return <>
     <Modal open={open} onCancel={onClose} footer={null} width={960} title={<Space><SettingOutlined />{t('connection.sidebar.management.title')}</Space>} destroyOnClose>
       <div style={{ display: 'grid', gridTemplateColumns: '280px minmax(0, 1fr)', gap: 20, minHeight: 520 }}>
         <div style={{ borderRight: '1px solid var(--gn-border, #eee)', paddingRight: 16, minWidth: 0 }}>
-          <Button type="primary" block icon={<FolderAddOutlined />} onClick={() => { onClose(); onOpenTagForm(selectedContainer === UNGROUPED ? undefined : selectedContainer); }}>{t('connection.sidebar.management.new')}</Button>
+          <Button type="primary" block icon={<FolderAddOutlined />} onClick={() => onOpenTagForm(selectedContainer === UNGROUPED ? undefined : selectedContainer)}>{t('connection.sidebar.management.new')}</Button>
           <Tree className="connection-group-management-tree" treeData={treeData} selectedKeys={[selectedContainer]} defaultExpandAll draggable={{ nodeDraggable: (node) => isTagDraggable(tagById.get(String(node.key))) }} onDrop={handleTreeDrop} onSelect={(keys) => { if (keys[0]) setSelectedContainer(String(keys[0])); }} style={{ marginTop: 12 }} />
         </div>
         <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column' }}>
@@ -175,8 +255,48 @@ const ConnectionGroupManagementModal: React.FC<Props> = ({ open, onClose, onOpen
             <Typography.Title level={5} ellipsis={{ tooltip: currentTag?.name || t('connection.sidebar.management.ungrouped') }} style={{ margin: 0 }}>{currentTag?.name || t('connection.sidebar.management.ungrouped')}</Typography.Title>
             <Space size={4}>{currentTag && <><Tooltip title={t('connection.sidebar.management.rename')}><Button type="text" icon={<EditOutlined />} aria-label={t('connection.sidebar.management.rename')} onClick={() => { setRenameTag(currentTag); nameForm.setFieldsValue({ name: currentTag.name }); }} /></Tooltip><Tooltip title={t('connection.sidebar.management.delete')}><Button type="text" danger icon={<DeleteOutlined />} aria-label={t('connection.sidebar.management.delete')} onClick={deleteGroup} /></Tooltip></>}<Select size="small" value={currentMode} style={{ width: 130 }} options={[{ label: t('connection.sidebar.management.manual'), value: 'manual' }, { label: t('connection.sidebar.management.name'), value: 'name' }, { label: t('connection.sidebar.management.createdAt'), value: 'createdAt' }]} onChange={(value) => setSortMode(currentTag?.id || null, value as ConnectionSortMode)} /></Space>
           </div>
-          <Space style={{ marginBottom: 10 }}><Button size="small" onClick={() => setSelectedConnections((current) => allVisibleSelected ? current.filter((id) => !visibleConnections.includes(id)) : Array.from(new Set([...current, ...visibleConnections])))}>{allVisibleSelected ? t('connection.sidebar.management.clear') : t('connection.sidebar.management.selectAll')}</Button><Typography.Text type="secondary">{t('connection.sidebar.management.selected', { count: selectedConnections.length })}</Typography.Text></Space>
-          {visibleConnections.length ? <List bordered size="small" dataSource={visibleConnections} renderItem={(id) => { const connection = connectionById.get(id)!; return <List.Item draggable onDragStart={() => setDraggedConnections(selectedConnections.includes(id) ? selectedConnections : [id])} style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(120px, 36%)', gap: 12 }}><Checkbox checked={selectedConnections.includes(id)} onChange={(event) => setSelectedConnections((current) => event.target.checked ? [...current, id] : current.filter((item) => item !== id))}><HolderOutlined style={{ color: '#999', marginRight: 6 }} />{connection.name}</Checkbox><Typography.Text ellipsis type="secondary">{connection.config.host || ''}</Typography.Text></List.Item>; }} /> : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('connection.sidebar.management.empty')} />}
+          <Typography.Text type="secondary" style={{ marginBottom: 10 }}>{t('connection.sidebar.management.selected', { count: selectedConnections.length })}</Typography.Text>
+          {visibleConnections.length ? <Table<SavedConnection>
+            bordered
+            size="small"
+            pagination={false}
+            rowKey="id"
+            dataSource={visibleConnections.map((id) => connectionById.get(id)).filter((connection): connection is SavedConnection => Boolean(connection))}
+            columns={connectionColumns}
+            rowSelection={{
+              selectedRowKeys: selectedConnections,
+              preserveSelectedRowKeys: true,
+              columnWidth: 42,
+              onChange: (keys) => setSelectedConnections((current) => Array.from(new Set([
+                ...current.filter((id) => !visibleConnectionSet.has(id)),
+                ...keys.map(String),
+              ]))),
+            }}
+            onRow={(connection) => ({
+              draggable: true,
+              onDragStart: (event) => {
+                const ids = selectedConnections.includes(connection.id) ? selectedConnections : [connection.id];
+                event.dataTransfer.effectAllowed = 'move';
+                event.dataTransfer.setData(CONNECTION_DRAG_TYPE, JSON.stringify(ids));
+                setDraggedConnections(ids);
+                setDraggedConnectionId(connection.id);
+              },
+              onDragEnd: () => { setDraggedConnections([]); setDraggedConnectionId(null); },
+              onDragOver: (event) => {
+                if (!isConnectionDraggable || !draggedConnectionId || !visibleConnectionSet.has(draggedConnectionId) || !hasConnectionDragPayload(event)) return;
+                event.preventDefault();
+                event.dataTransfer.dropEffect = 'move';
+              },
+              onDrop: (event) => {
+                if (!isConnectionDraggable || !draggedConnectionId || draggedConnectionId === connection.id || !visibleConnectionSet.has(draggedConnectionId) || !getConnectionIdsFromDragEvent(event).length) return;
+                event.preventDefault();
+                const bounds = event.currentTarget.getBoundingClientRect();
+                reorderConnections(draggedConnectionId, connection.id, currentTag?.id || null, event.clientY < bounds.top + bounds.height / 2);
+                setDraggedConnections([]);
+                setDraggedConnectionId(null);
+              },
+            })}
+          /> : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('connection.sidebar.management.empty')} />}
         </div>
       </div>
     </Modal>

@@ -1523,6 +1523,19 @@ describe('store appearance persistence', () => {
       'conn-b',
       'conn-d',
     ]);
+
+    useStore.getState().setConnectionSortMode('tag-dev', 'name');
+    useStore.getState().reorderConnections('conn-b', 'conn-d', 'tag-dev', true);
+    expect(useStore.getState().connectionTags[0]?.connectionIds).toEqual(['conn-d', 'conn-b']);
+
+    useStore.getState().setConnectionSortMode(null, 'createdAt');
+    useStore.getState().reorderConnections('conn-a', 'conn-c', null, true);
+    expect(useStore.getState().connections.map((conn) => conn.id)).toEqual([
+      'conn-c',
+      'conn-a',
+      'conn-b',
+      'conn-d',
+    ]);
   });
 
   it('reorders sidebar root items across tags and ungrouped hosts', async () => {
