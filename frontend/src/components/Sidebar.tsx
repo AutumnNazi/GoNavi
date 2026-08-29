@@ -656,7 +656,6 @@ const Sidebar: React.FC<{
   /** Whether web-only settings entries (e.g. browser auth) should appear. */
   isWebRuntime?: boolean;
   onOpenDataSyncWorkbench?: (entryMode: DataSyncEntryMode) => void;
-  onOpenConnectionGroupManagement?: () => void;
   onToggleAI?: () => void;
   onToggleLogPanel?: () => void;
   uiVersion?: 'legacy' | 'v2';
@@ -675,7 +674,6 @@ const Sidebar: React.FC<{
   onOpenSettingsNavigation,
   isWebRuntime = false,
   onOpenDataSyncWorkbench,
-  onOpenConnectionGroupManagement,
   onToggleAI,
   onToggleLogPanel,
   uiVersion,
@@ -3778,7 +3776,6 @@ const Sidebar: React.FC<{
   const v2RailObjectActionsLabel = t('sidebar.rail.object_actions');
   const v2RailSystemActionsLabel = t('sidebar.rail.system_actions');
   const v2NewGroupLabel = t('sidebar.action.new_group');
-  const v2ManageGroupsLabel = t('connection.sidebar.management.title');
   const v2BatchActionsLabel = t('sidebar.action.batch_operations');
   const v2BatchTablesLabel = t('sidebar.action.batch_tables');
   const v2BatchDatabasesLabel = t('sidebar.action.batch_databases');
@@ -3841,13 +3838,6 @@ const Sidebar: React.FC<{
   }, [addTab]);
 
   const v2TitlebarQuickActions: TitleBarQuickAction[] = [
-    {
-      key: 'manage-groups',
-      label: v2ManageGroupsLabel,
-      icon: <FolderOpenOutlined aria-hidden="true" />,
-      onClick: onOpenConnectionGroupManagement,
-      priority: 'primary',
-    },
     {
       key: 'new-group',
       label: v2NewGroupLabel,
@@ -4459,8 +4449,6 @@ const Sidebar: React.FC<{
         {/* Toolbar */}
         {!isV2Ui && (
         <div data-sidebar-legacy-toolbar="true" style={legacyToolbarStyle}>
-                <div data-sidebar-legacy-toolbar-item="true" style={legacyToolbarItemStyle}>
-            </div>
             <div data-sidebar-legacy-toolbar-item="true" style={legacyToolbarItemStyle}>
                 <Tooltip title={t('sidebar.action.new_group')}>
                     <Button

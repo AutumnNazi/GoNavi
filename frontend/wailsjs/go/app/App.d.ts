@@ -227,6 +227,8 @@ export function DataSyncSchedulePreview(arg1:syncjob.JobDefinition,arg2:number):
 
 export function DeleteConnection(arg1:string):Promise<void>;
 
+export function DeleteConnections(arg1:Array<string>):Promise<void>;
+
 export function DeleteImportJob(arg1:string):Promise<connection.QueryResult>;
 
 export function DeleteQuery(arg1:string):Promise<void>;

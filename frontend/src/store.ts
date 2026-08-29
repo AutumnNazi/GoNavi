@@ -1136,9 +1136,11 @@ const normalizeConnectionTagTree = (
     );
     const name = toTrimmedString(entry.name, fallbackName) || fallbackName;
     const parentTagId = toTrimmedString(entry.parentTagId) || undefined;
+    const createdAt = Number(entry.createdAt);
     tags.push({
       id,
       name,
+      createdAt: Number.isFinite(createdAt) && createdAt > 0 ? createdAt : undefined,
       parentTagId,
       connectionIds: sanitizeStringArray(entry.connectionIds, 256),
       childOrder: sanitizeSidebarItemOrder(entry.childOrder),
@@ -1223,9 +1225,11 @@ const sanitizeConnectionTags = (value: unknown): ConnectionTag[] => {
     );
     const name = toTrimmedString(raw.name, fallbackName) || fallbackName;
     const sortMode = toTrimmedString(raw.sortMode) as ConnectionSortMode;
+    const createdAt = Number(raw.createdAt);
     result.push({
       id,
       name,
+      createdAt: Number.isFinite(createdAt) && createdAt > 0 ? createdAt : undefined,
       parentTagId: toTrimmedString(raw.parentTagId) || undefined,
       connectionIds: sanitizeStringArray(raw.connectionIds, 256),
       childOrder: sanitizeSidebarItemOrder(raw.childOrder),
@@ -3931,6 +3935,7 @@ export const useStore = create<AppState>()(
             childOrder: tag.childOrder?.map((token) => token.startsWith('tag:')
               ? `tag:${idMap.get(token.slice(4)) || token.slice(4)}` : token),
             sortMode: tag.sortMode || 'manual',
+            createdAt: Date.now(),
           }));
           const sourceParent = source.parentTagId;
           const sourceToken = buildSidebarRootTagToken(id);
@@ -4021,6 +4026,9 @@ export const useStore = create<AppState>()(
             {
               id: tagId,
               name,
+              createdAt: Number.isFinite(Number(tag.createdAt)) && Number(tag.createdAt) > 0
+                ? Number(tag.createdAt)
+                : Date.now(),
               parentTagId,
               connectionIds: directConnectionIds,
               childOrder: sanitizeSidebarItemOrder(tag.childOrder),

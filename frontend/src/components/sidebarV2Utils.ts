@@ -675,12 +675,38 @@ export const buildSidebarConnectionTagTree = (
     });
   };
 
+  const sortTagIds = (ids: string[], mode: ConnectionTag['sortMode']): string[] => {
+    if (mode !== 'name' && mode !== 'createdAt') return ids;
+    const manualIndex = new Map(ids.map((id, index) => [id, index]));
+    return [...ids].sort((left, right) => {
+      const a = tagById.get(left);
+      const b = tagById.get(right);
+      if (!a || !b) return (manualIndex.get(left) || 0) - (manualIndex.get(right) || 0);
+      if (mode === 'createdAt') {
+        return (b.createdAt || 0) - (a.createdAt || 0)
+          || (manualIndex.get(left) || 0) - (manualIndex.get(right) || 0)
+          || left.localeCompare(right);
+      }
+      return a.name.localeCompare(b.name, undefined, { sensitivity: 'base', numeric: true })
+        || (manualIndex.get(left) || 0) - (manualIndex.get(right) || 0)
+        || left.localeCompare(right);
+    });
+  };
+
   const applyConnectionSort = (tokens: string[], ids: string[], mode: ConnectionTag['sortMode']): string[] => {
     const sorted = sortConnectionIds(ids, mode);
     if (sorted === ids || mode === 'manual') return tokens;
     const sortedTokens = sorted.map(buildSidebarRootConnectionToken);
     let index = 0;
     return tokens.map((token) => token.startsWith('connection:') ? sortedTokens[index++] || token : token);
+  };
+
+  const applyTagSort = (tokens: string[], ids: string[], mode: ConnectionTag['sortMode']): string[] => {
+    const sorted = sortTagIds(ids, mode);
+    if (sorted === ids || mode === 'manual') return tokens;
+    const sortedTokens = sorted.map(buildSidebarRootTagToken);
+    let index = 0;
+    return tokens.map((token) => token.startsWith('tag:') ? sortedTokens[index++] || token : token);
   };
 
   const resolveOrderedChildTokens = (tagId: string): string[] => {
@@ -697,7 +723,12 @@ export const buildSidebarConnectionTagTree = (
     };
 
     const orderedTokens = resolveConnectionTagChildOrder(tagId, connectionTags);
-    applyConnectionSort(orderedTokens, directConnectionIds, tagById.get(tagId)?.sortMode).forEach(append);
+    const sortMode = tagById.get(tagId)?.sortMode;
+    applyTagSort(
+      applyConnectionSort(orderedTokens, directConnectionIds, sortMode),
+      directTagIds,
+      sortMode,
+    ).forEach(append);
     // Legacy groups have no childOrder; keep their old host-first layout and
     // append any new subgroup records in their persisted creation order.
     directConnectionIds.forEach((id) => append(buildSidebarRootConnectionToken(id)));
@@ -718,7 +749,11 @@ export const buildSidebarConnectionTagTree = (
     orderedRootTokens.push(token);
   };
   const rawRootTokens = resolveSidebarRootOrderTokens(sidebarRootOrder, connectionTags, connections);
-  applyConnectionSort(rawRootTokens, rootConnectionIds, rootSortMode).forEach(appendRoot);
+  applyTagSort(
+    applyConnectionSort(rawRootTokens, rootConnectionIds, rootSortMode),
+    rootTagIds,
+    rootSortMode,
+  ).forEach(appendRoot);
   rootTagIds.forEach((id) => appendRoot(buildSidebarRootTagToken(id)));
   rootConnectionIds.forEach((id) => appendRoot(buildSidebarRootConnectionToken(id)));
 

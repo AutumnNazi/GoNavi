@@ -721,6 +721,35 @@ describe('Sidebar locate toolbar', () => {
     expect(isConnectionTagDescendant('group-1-1', 'group-1', tags)).toBe(false);
   });
 
+  it('sorts sibling groups by their parent container mode without changing manual order', () => {
+    const tags = [
+      { id: 'parent', name: 'Parent', sortMode: 'name', connectionIds: [], childOrder: ['tag:child-z', 'tag:child-a'] },
+      { id: 'child-z', name: 'Zebra child', createdAt: 2, parentTagId: 'parent', connectionIds: [] },
+      { id: 'child-a', name: 'Alpha child', createdAt: 1, parentTagId: 'parent', connectionIds: [] },
+      { id: 'root-z', name: 'Zebra root', createdAt: 2, connectionIds: [] },
+      { id: 'root-a', name: 'Alpha root', createdAt: 1, connectionIds: [] },
+    ] as any[];
+    const outline = (items: ReturnType<typeof buildSidebarConnectionTagTree>): unknown[] => items.map((item) => (
+      item.kind === 'connection' ? item.id : { id: item.id, children: outline(item.children) }
+    ));
+
+    expect(outline(buildSidebarConnectionTagTree([], tags, ['tag:root-z', 'tag:parent', 'tag:root-a'], 'manual'))).toEqual([
+      { id: 'root-z', children: [] },
+      { id: 'parent', children: [{ id: 'child-a', children: [] }, { id: 'child-z', children: [] }] },
+      { id: 'root-a', children: [] },
+    ]);
+    expect(outline(buildSidebarConnectionTagTree([], tags, ['tag:root-z', 'tag:parent', 'tag:root-a'], 'name'))).toEqual([
+      { id: 'root-a', children: [] },
+      { id: 'parent', children: [{ id: 'child-a', children: [] }, { id: 'child-z', children: [] }] },
+      { id: 'root-z', children: [] },
+    ]);
+    expect(outline(buildSidebarConnectionTagTree([], tags, ['tag:root-a', 'tag:parent', 'tag:root-z'], 'createdAt'))).toEqual([
+      { id: 'root-z', children: [] },
+      { id: 'root-a', children: [] },
+      { id: 'parent', children: [{ id: 'child-a', children: [] }, { id: 'child-z', children: [] }] },
+    ]);
+  });
+
   it('keeps malformed group parents and parent cycles visible at the root', () => {
     const tags = [
       { id: 'a', name: 'A', parentTagId: 'b', connectionIds: [] },

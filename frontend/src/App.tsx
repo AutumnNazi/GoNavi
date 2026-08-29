@@ -8425,7 +8425,6 @@ function App() {
                             onOpenSettingsNavigation={handleTitleBarSettingsNavigation}
                             isWebRuntime={isWebRuntime}
                             onOpenDataSyncWorkbench={handleOpenDataSyncWorkbench}
-                            onOpenConnectionGroupManagement={() => setIsConnectionGroupManagementOpen(true)}
                             onToggleAI={toggleAIPanel}
                             onToggleLogPanel={handleToggleLogPanel}
                             uiVersion={appearance.uiVersion}
