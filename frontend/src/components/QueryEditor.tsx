@@ -44,7 +44,7 @@ import { downloadBrowserTextFile, isWebRuntime } from '../utils/browserFileTrans
 import { filterVisibleDatabaseNames } from '../utils/databaseVisibility';
 import { isPostgresSchemaDialect } from '../utils/connectionDriverType';
 import { resolveOceanBaseProtocolFromConfig } from '../utils/oceanBaseProtocol';
-import { isOracleLikeDialect, resolveSqlDialect, resolveSqlFunctions, resolveSqlKeywords } from '../utils/sqlDialect';
+import { appendTableAlias, isOracleLikeDialect, resolveSqlDialect, resolveSqlFunctions, resolveSqlKeywords } from '../utils/sqlDialect';
 import { applyQueryAutoLimit } from '../utils/queryAutoLimit';
 import {
     buildQueryResultCountSql,
@@ -376,6 +376,12 @@ const normalizeQueryEditorInlineMemorySqlKey = (sql: string): string => (
         .trim()
         .toLowerCase()
 );
+
+const normalizeQueryEditorCompletionAnalysisText = (sql: string): string => {
+    const normalized = String(sql || '').replace(/\r\n?/g, '\n');
+    // Preserve offsets while preventing a UTF-8 BOM from becoming part of SQL syntax analysis.
+    return normalized.startsWith('\uFEFF') ? ` ${normalized.slice(1)}` : normalized;
+};
 
 const matchesQueryEditorInlineMemoryDb = (currentDb: string, candidateDb?: string): boolean => {
     const normalizedCurrentDb = String(currentDb || '').trim().toLowerCase();
@@ -2705,6 +2711,11 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           host: resolveQueryEditorAiConnectionHost(conn),
           port: conn?.config?.port,
           sourceType: conn?.config?.type,
+          sqlDialect: resolveSqlDialect(
+              String(conn?.config?.type || ''),
+              String(conn?.config?.driver || ''),
+              { oceanBaseProtocol: conn?.config?.oceanBaseProtocol },
+          ),
           currentDb: currentDbName,
           visibleDbs: visibleDbsRef.current,
           tables: [...mergedTablesByKey.values()],
@@ -6789,15 +6800,15 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                   return [] as CompletionColumnMeta[];
               };
 
-              const fullText = model.getValue();
+              const fullText = normalizeQueryEditorCompletionAnalysisText(model.getValue());
               const cursorOffset = getNormalizedOffsetAtPosition(fullText, {
                   lineNumber: Number(position?.lineNumber || 1),
                   column: Number(position?.column || 1),
               });
               const currentStatementRange = resolveCurrentSqlStatementRange(fullText, cursorOffset, activeDialect);
 
-              // 获取当前行光标前的内容
-              const linePrefix = model.getLineContent(position.lineNumber).slice(0, position.column - 1);
+              const lineStartOffset = fullText.lastIndexOf('\n', Math.max(0, cursorOffset - 1)) + 1;
+              const linePrefix = fullText.slice(lineStartOffset, cursorOffset);
               const currentStatementPrefix = currentStatementRange
                   ? fullText.slice(currentStatementRange.start, cursorOffset)
                   : fullText.slice(0, cursorOffset);
@@ -6809,7 +6820,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
               const appendTableSourceAlias = (insertText: string, tableName: string) => {
                   if (!isTableAliasCompletion || useStore.getState().appearance.autoAddTableAlias === false) return insertText;
                   const alias = buildQueryEditorTableSourceAlias(tableName, completionReferenceText);
-                  return alias ? `${insertText} AS ${alias}` : insertText;
+                  return appendTableAlias(insertText, alias, activeDialect);
               };
 
               // 0) 三段式 db.table.column 格式：当输入 db.table. 时提示列
