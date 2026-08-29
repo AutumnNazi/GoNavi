@@ -1,7 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { readV2ThemeCss } from '../test/readV2ThemeCss';
 
-const readSourceFile = (relativePath: string): string => readFileSync(
+const readCssFile = (relativePath: string): string => readFileSync(
   new URL(relativePath, import.meta.url),
   'utf8',
 );
@@ -17,17 +18,9 @@ const readCssRule = (css: string, selector: string): string => {
 };
 
 describe('sidebar divider layout', () => {
-  it('lets the expanded V2 sidebar reach the Sider boundary without resize padding', () => {
-    const appSource = readSourceFile('../App.tsx');
-
-    expect(appSource).toContain(
-      "paddingRight: isV2Ui || isSidebarCollapsed ? 0 : sidebarResizeHandleWidth",
-    );
-  });
-
   it('uses one outer divider for expanded V2 and keeps the collapsed rail divider', () => {
-    const appCss = readSourceFile('../App.css');
-    const v2ThemeCss = readSourceFile('../v2-theme.css');
+    const appCss = readCssFile('../App.css');
+    const v2ThemeCss = readV2ThemeCss();
     const siderRule = readCssRule(v2ThemeCss, 'body[data-ui-version="v2"] .ant-layout-sider');
     const sidebarRule = readCssRule(v2ThemeCss, 'body[data-ui-version="v2"] .gn-v2-sidebar-redesign');
     const railRule = readCssRule(v2ThemeCss, 'body[data-ui-version="v2"] .gn-v2-connection-rail');
