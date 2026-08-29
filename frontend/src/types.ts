@@ -351,6 +351,7 @@ export interface MongoMemberInfo {
 export interface SavedConnection {
   id: string;
   name: string;
+  createdAt?: number;
   environmentType?: ConnectionEnvironmentType;
   config: ConnectionConfig;
   secretRef?: string;
@@ -400,11 +401,15 @@ export interface ConnectionTag {
    * `connection:<id>` tokens as the sidebar root order.
    */
   childOrder?: string[];
+  sortMode?: ConnectionSortMode;
 }
+
+export type ConnectionSortMode = 'manual' | 'name' | 'createdAt';
 
 export interface ConnectionSidebarLayoutInput {
   connectionTags: ConnectionTag[];
   sidebarRootOrder: string[];
+  rootSortMode?: ConnectionSortMode;
 }
 
 export interface ConnectionSidebarLayout extends ConnectionSidebarLayoutInput {

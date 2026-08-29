@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"GoNavi-Wails/internal/appdata"
 	"GoNavi-Wails/internal/connection"
@@ -431,6 +432,7 @@ func splitConnectionSecrets(input connection.SavedConnectionInput) (connection.S
 	view := connection.SavedConnectionView{
 		ID:                      id,
 		Name:                    strings.TrimSpace(input.Name),
+		CreatedAt:               input.CreatedAt,
 		EnvironmentType:         normalizeConnectionEnvironmentType(input.EnvironmentType),
 		Config:                  meta,
 		IncludeDatabases:        cloneStringSlice(input.IncludeDatabases),
@@ -572,7 +574,16 @@ func (r *savedConnectionRepository) load() ([]connection.SavedConnectionView, er
 	if file.Connections == nil {
 		return []connection.SavedConnectionView{}, nil
 	}
+	// Legacy files predate CreatedAt. Derive a stable monotonic order from the
+	// file timestamp so repeated restarts do not reshuffle old connections.
+	legacyCreatedAt := int64(0)
+	if info, statErr := os.Stat(r.connectionsPath()); statErr == nil {
+		legacyCreatedAt = info.ModTime().UnixMilli()
+	}
 	for index := range file.Connections {
+		if file.Connections[index].CreatedAt <= 0 && legacyCreatedAt > 0 {
+			file.Connections[index].CreatedAt = legacyCreatedAt - int64(index)
+		}
 		file.Connections[index].EnvironmentType = normalizeConnectionEnvironmentType(
 			file.Connections[index].EnvironmentType,
 		)
@@ -662,6 +673,9 @@ func prepareSavedConnectionInput(input connection.SavedConnectionInput) (connect
 		input.ID = strings.TrimSpace(input.Config.ID)
 	}
 	input.Config.ID = input.ID
+	if input.CreatedAt <= 0 {
+		input.CreatedAt = time.Now().UnixMilli()
+	}
 	return input, nil
 }
 
@@ -957,6 +971,34 @@ func buildDuplicateConnectionName(baseName string, existing []connection.SavedCo
 }
 
 func (r *savedConnectionRepository) List() ([]connection.SavedConnectionView, error) {
+	legacyMetadata := false
+	if payload, readErr := os.ReadFile(r.connectionsPath()); readErr == nil {
+		var raw savedConnectionsFile
+		if json.Unmarshal(payload, &raw) == nil {
+			for _, item := range raw.Connections {
+				if item.CreatedAt <= 0 {
+					legacyMetadata = true
+					break
+				}
+			}
+		}
+	}
+	connections, err := r.load()
+	if err != nil {
+		return nil, err
+	}
+	if !legacyMetadata {
+		return connections, nil
+	}
+	if err := r.withWriteLock(func() error {
+		latest, loadErr := r.load()
+		if loadErr != nil {
+			return loadErr
+		}
+		return r.saveAll(latest)
+	}); err != nil {
+		return nil, err
+	}
 	return r.load()
 }
 
@@ -1002,6 +1044,7 @@ func (r *savedConnectionRepository) Duplicate(id string, unnamedName string, cop
 		original := connections[index]
 		duplicate := original
 		duplicate.ID = "conn-" + uuid.New().String()[:8]
+		duplicate.CreatedAt = time.Now().UnixMilli()
 		duplicate.Config.ID = duplicate.ID
 		duplicate.Name = buildDuplicateConnectionName(original.Name, connections, unnamedName, copySuffix)
 		duplicate.IncludeDatabasePatterns = cloneStringSlice(original.IncludeDatabasePatterns)

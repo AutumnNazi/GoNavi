@@ -16,7 +16,7 @@ import (
 
 const (
 	connectionSidebarLayoutFileName       = "connection_sidebar_layout.json"
-	connectionSidebarLayoutFormatVersion  = 1
+	connectionSidebarLayoutFormatVersion  = 2
 	connectionSidebarLayoutMaxFileBytes   = 4 * 1024 * 1024
 	connectionSidebarLayoutMaxTags        = 1024
 	connectionSidebarLayoutMaxReferences  = 65536
@@ -33,6 +33,7 @@ type connectionSidebarLayoutDiskFile struct {
 	Revision         uint64                     `json:"revision"`
 	ConnectionTags   []connection.ConnectionTag `json:"connectionTags"`
 	SidebarRootOrder []string                   `json:"sidebarRootOrder"`
+	RootSortMode     string                     `json:"rootSortMode,omitempty"`
 }
 
 type connectionSidebarLayoutRepository struct {
@@ -139,7 +140,7 @@ func (r *connectionSidebarLayoutRepository) loadUnlocked() (connection.Connectio
 	if err := json.Unmarshal(payload, &diskFile); err != nil {
 		return connection.ConnectionSidebarLayout{}, err
 	}
-	if diskFile.Version != connectionSidebarLayoutFormatVersion {
+	if diskFile.Version != 1 && diskFile.Version != connectionSidebarLayoutFormatVersion {
 		return connection.ConnectionSidebarLayout{}, fmt.Errorf(
 			"unsupported connection sidebar layout version: %d",
 			diskFile.Version,
@@ -158,6 +159,9 @@ func (r *connectionSidebarLayoutRepository) loadUnlocked() (connection.Connectio
 		if diskFile.ConnectionTags[index].ChildOrder == nil {
 			diskFile.ConnectionTags[index].ChildOrder = []string{}
 		}
+		if diskFile.ConnectionTags[index].SortMode != "name" && diskFile.ConnectionTags[index].SortMode != "createdAt" {
+			diskFile.ConnectionTags[index].SortMode = "manual"
+		}
 	}
 	if diskFile.SidebarRootOrder == nil {
 		diskFile.SidebarRootOrder = []string{}
@@ -167,7 +171,15 @@ func (r *connectionSidebarLayoutRepository) loadUnlocked() (connection.Connectio
 		Revision:         diskFile.Revision,
 		ConnectionTags:   diskFile.ConnectionTags,
 		SidebarRootOrder: diskFile.SidebarRootOrder,
+		RootSortMode:     normalizeConnectionSidebarSortMode(diskFile.RootSortMode),
 	}, nil
+}
+
+func normalizeConnectionSidebarSortMode(value string) string {
+	if value == "name" || value == "createdAt" {
+		return value
+	}
+	return "manual"
 }
 
 func (r *connectionSidebarLayoutRepository) saveUnlocked(layout connection.ConnectionSidebarLayout) error {
@@ -176,6 +188,7 @@ func (r *connectionSidebarLayoutRepository) saveUnlocked(layout connection.Conne
 		Revision:         layout.Revision,
 		ConnectionTags:   layout.ConnectionTags,
 		SidebarRootOrder: layout.SidebarRootOrder,
+		RootSortMode:     normalizeConnectionSidebarSortMode(layout.RootSortMode),
 	}
 	payload, err := json.MarshalIndent(diskFile, "", "  ")
 	if err != nil {
@@ -413,6 +426,7 @@ func (r *connectionSidebarLayoutRepository) normalizeUnlocked(
 			ParentTagID:   strings.TrimSpace(raw.ParentTagID),
 			ConnectionIDs: connectionIDs,
 			ChildOrder:    sanitizeConnectionSidebarOrderTokens(raw.ChildOrder),
+			SortMode:      normalizeConnectionSidebarSortMode(raw.SortMode),
 		})
 	}
 
@@ -503,6 +517,7 @@ func (r *connectionSidebarLayoutRepository) normalizeUnlocked(
 	return connection.ConnectionSidebarLayoutInput{
 		ConnectionTags:   tags,
 		SidebarRootOrder: appendMissingConnectionSidebarTokens(input.SidebarRootOrder, rootDefaults),
+		RootSortMode:     normalizeConnectionSidebarSortMode(input.RootSortMode),
 	}, nil
 }
 

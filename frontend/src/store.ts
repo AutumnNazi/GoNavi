@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import { v4 as uuidv4 } from "uuid";
 import { isNativeDetachedWindowRoute } from "./utils/nativeDetachedWindowRoute";
 import {
   ConnectionConfig,
@@ -11,6 +12,7 @@ import {
   SavedQueryGroup,
   ConnectionTag,
   ConnectionSidebarLayoutInput,
+  ConnectionSortMode,
   AIChatMessage,
   AIContextItem,
   GlobalProxyConfig,
@@ -295,7 +297,7 @@ const MIN_KEEPALIVE_INTERVAL_MINUTES = 1;
 const MAX_KEEPALIVE_INTERVAL_MINUTES = 1440;
 const DEFAULT_DIAGNOSTIC_TIMEOUT_SECONDS = 15;
 const MAX_DIAGNOSTIC_TIMEOUT_SECONDS = 300;
-const PERSIST_VERSION = 20;
+const PERSIST_VERSION = 21;
 const SQL_EDITOR_FONT_SIZE_SPLIT_VERSION = 19;
 const TAB_DISPLAY_DEFAULT_MIGRATION_VERSION = 20;
 const UI_VERSION_V2_MIGRATION_VERSION = 14;
@@ -997,6 +999,7 @@ const sanitizeSavedConnection = (
     ? `${displayType}-${config.host}`
     : indexedStoreFallback("store.fallback.connection_name", index);
   const name = toTrimmedString(raw.name, fallbackName) || fallbackName;
+  const createdAtValue = Number(raw.createdAt);
   const includeDatabases = sanitizeStringArray(raw.includeDatabases, 256);
   const includeDatabasePatterns = sanitizeDatabasePatternArray(
     raw.includeDatabasePatterns,
@@ -1017,6 +1020,7 @@ const sanitizeSavedConnection = (
   return {
     id,
     name,
+    createdAt: Number.isFinite(createdAtValue) && createdAtValue > 0 ? createdAtValue : undefined,
     environmentType: normalizeConnectionEnvironmentType(raw.environmentType),
     config: { ...config, id: config.id || id },
     secretRef: toTrimmedString(raw.secretRef) || undefined,
@@ -1138,6 +1142,7 @@ const normalizeConnectionTagTree = (
       parentTagId,
       connectionIds: sanitizeStringArray(entry.connectionIds, 256),
       childOrder: sanitizeSidebarItemOrder(entry.childOrder),
+      sortMode: entry.sortMode === 'name' || entry.sortMode === 'createdAt' ? entry.sortMode : 'manual',
     });
   });
 
@@ -1217,12 +1222,14 @@ const sanitizeConnectionTags = (value: unknown): ConnectionTag[] => {
       index,
     );
     const name = toTrimmedString(raw.name, fallbackName) || fallbackName;
+    const sortMode = toTrimmedString(raw.sortMode) as ConnectionSortMode;
     result.push({
       id,
       name,
       parentTagId: toTrimmedString(raw.parentTagId) || undefined,
       connectionIds: sanitizeStringArray(raw.connectionIds, 256),
       childOrder: sanitizeSidebarItemOrder(raw.childOrder),
+      sortMode: sortMode === 'name' || sortMode === 'createdAt' ? sortMode : 'manual',
     });
   });
 
@@ -1811,6 +1818,7 @@ interface AppState {
   connections: SavedConnection[];
   connectionTags: ConnectionTag[];
   sidebarRootOrder: string[];
+  rootSortMode: ConnectionSortMode;
   tabs: TabData[];
   /** 主工作区已拆出的浮动窗口（会话态，不持久化） */
   detachedWorkbenchWindows: DetachedWorkbenchWindow[];
@@ -1933,6 +1941,9 @@ interface AppState {
     targetToken: string,
     insertBefore: boolean,
   ) => void;
+  setConnectionSortMode: (tagId: string | null, mode: ConnectionSortMode) => void;
+  duplicateConnectionTag: (id: string) => string | null;
+  moveConnectionsToTag: (ids: string[], targetTagId: string | null) => void;
 
   addTab: (tab: TabData) => void;
   updateQueryTabDraft: (
@@ -3543,6 +3554,7 @@ const PERSISTED_STATE_DEPENDENCY_KEYS = [
   "activeTabId",
   "connectionTags",
   "sidebarRootOrder",
+  "rootSortMode",
   "externalSQLDirectories",
   "recentConnectionTargets",
   "recentSQLFiles",
@@ -3598,6 +3610,7 @@ const buildPersistedStateProjection = (
     activeTabId: sanitizeActiveTabId(state.activeTabId, tabs),
     connectionTags: state.connectionTags,
     sidebarRootOrder: state.sidebarRootOrder,
+    rootSortMode: state.rootSortMode,
     externalSQLDirectories: state.externalSQLDirectories,
     recentConnectionTargets: sanitizeRecentConnectionTargets(
       state.recentConnectionTargets,
@@ -3714,6 +3727,7 @@ export const useStore = create<AppState>()(
       connections: [],
       connectionTags: [],
       sidebarRootOrder: [],
+      rootSortMode: 'manual',
       tabs: [],
       detachedWorkbenchWindows: [],
       detachedQueryResultWindows: [],
@@ -3876,12 +3890,85 @@ export const useStore = create<AppState>()(
         }),
       replaceConnectionSidebarLayout: (layout) =>
         set((state) =>
-          normalizeConnectionTagTreeState(
+          ({ ...normalizeConnectionTagTreeState(
             sanitizeConnectionTags(layout?.connectionTags),
             sanitizeSidebarRootOrder(layout?.sidebarRootOrder),
             state.connections,
-          ),
+          ), rootSortMode: layout?.rootSortMode === 'name' || layout?.rootSortMode === 'createdAt' ? layout.rootSortMode : 'manual' }),
         ),
+
+      setConnectionSortMode: (tagId, mode) =>
+        set((state) => {
+          const safeMode: ConnectionSortMode = mode === 'name' || mode === 'createdAt' ? mode : 'manual';
+          if (!tagId) return { rootSortMode: safeMode };
+          return {
+            connectionTags: state.connectionTags.map((tag) =>
+              tag.id === tagId ? { ...tag, sortMode: safeMode } : tag,
+            ),
+          };
+        }),
+      duplicateConnectionTag: (id) => {
+        let duplicatedId: string | null = null;
+        set((state) => {
+          const source = state.connectionTags.find((tag) => tag.id === id);
+          if (!source) return state;
+          const descendants = new Set<string>();
+          const collect = (parent: string) => state.connectionTags.forEach((tag) => {
+            if (tag.parentTagId === parent && !descendants.has(tag.id)) {
+              descendants.add(tag.id); collect(tag.id);
+            }
+          });
+          collect(id);
+          const oldIds = [id, ...descendants];
+          const idMap = new Map(oldIds.map((oldId) => [oldId, `tag-${uuidv4()}`]));
+          duplicatedId = idMap.get(id) || null;
+          const copies = state.connectionTags.filter((tag) => oldIds.includes(tag.id)).map((tag) => ({
+            ...tag,
+            id: idMap.get(tag.id)!,
+            name: `${tag.name} - Copy`,
+            parentTagId: tag.parentTagId ? idMap.get(tag.parentTagId) : undefined,
+            childOrder: tag.childOrder?.map((token) => token.startsWith('tag:')
+              ? `tag:${idMap.get(token.slice(4)) || token.slice(4)}` : token),
+            sortMode: tag.sortMode || 'manual',
+          }));
+          const sourceParent = source.parentTagId;
+          const sourceToken = buildSidebarRootTagToken(id);
+          const newToken = buildSidebarRootTagToken(duplicatedId!);
+          const nextTags = [...state.connectionTags, ...copies];
+          if (!sourceParent) {
+            const order = [...state.sidebarRootOrder];
+            const index = order.indexOf(sourceToken);
+            order.splice(index < 0 ? order.length : index + 1, 0, newToken);
+            return { connectionTags: nextTags, sidebarRootOrder: order };
+          }
+          const parent = nextTags.find((tag) => tag.id === sourceParent);
+          if (!parent) return { connectionTags: nextTags };
+          const order = resolveConnectionTagChildOrder(sourceParent, nextTags);
+          const index = order.indexOf(sourceToken);
+          return { connectionTags: nextTags.map((tag) => tag.id === sourceParent
+            ? { ...tag, childOrder: (() => { const next = [...order]; next.splice(index < 0 ? next.length : index + 1, 0, newToken); return next; })() }
+            : tag) };
+        });
+        return duplicatedId;
+      },
+      moveConnectionsToTag: (ids, targetTagId) =>
+        set((state) => {
+          const selected = new Set(ids.filter((id) => state.connections.some((connection) => connection.id === id)));
+          if (!selected.size || (targetTagId && !state.connectionTags.some((tag) => tag.id === targetTagId))) return state;
+          const nextTags = state.connectionTags.map((tag) => ({
+            ...tag,
+            connectionIds: tag.connectionIds.filter((id) => !selected.has(id)),
+            childOrder: tag.childOrder?.filter((token) => !(token.startsWith('connection:') && selected.has(token.slice(11)))),
+          }));
+          if (targetTagId) {
+            const target = nextTags.find((tag) => tag.id === targetTagId)!;
+            const additions = [...selected].filter((id) => !target.connectionIds.includes(id));
+            return { connectionTags: nextTags.map((tag) => tag.id === targetTagId
+              ? { ...tag, connectionIds: [...tag.connectionIds, ...additions], childOrder: [...(tag.childOrder || []), ...additions.map(buildSidebarRootConnectionToken)] }
+              : tag) };
+          }
+          return { connectionTags: nextTags };
+        }),
 
       addConnectionTag: (tag) =>
         set((state) => {
@@ -6021,6 +6108,9 @@ export const useStore = create<AppState>()(
           state.connectionTags === undefined ? undefined : nextState.connectionTags,
           state.connections === undefined ? undefined : nextState.connections,
         );
+        nextState.rootSortMode = state.rootSortMode === 'name' || state.rootSortMode === 'createdAt'
+          ? state.rootSortMode
+          : 'manual';
         delete nextState.savedQueries;
         delete nextState.savedQueryGroups;
         nextState.externalSQLDirectories = sanitizeExternalSQLDirectories(
@@ -6162,6 +6252,9 @@ export const useStore = create<AppState>()(
           connections: persistedConnections,
           connectionTags: persistedConnectionTags,
           sidebarRootOrder: persistedSidebarRootOrder,
+          rootSortMode: state.rootSortMode === 'name' || state.rootSortMode === 'createdAt'
+            ? state.rootSortMode
+            : currentState.rootSortMode,
           tabs: safeTabs,
           // Floating windows are session-only and must not be restored from disk.
           detachedWorkbenchWindows: [],

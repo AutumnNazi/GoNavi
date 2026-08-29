@@ -126,7 +126,7 @@ describe('store appearance persistence', () => {
       primaryElements: ['object'],
       secondaryElements: ['kind', 'connection', 'database'],
     });
-    expect(JSON.parse(storage.getItem('lite-db-storage') || '{}').version).toBe(20);
+    expect(JSON.parse(storage.getItem('lite-db-storage') || '{}').version).toBe(21);
 
     storage.setItem('lite-db-storage', JSON.stringify({
       state: {
@@ -179,7 +179,7 @@ describe('store appearance persistence', () => {
     expect(appearance.sqlEditorFontSizeFollowGlobal).toBe(false);
 
     const persisted = JSON.parse(storage.getItem('lite-db-storage') || '{}');
-    expect(persisted.version).toBe(20);
+    expect(persisted.version).toBe(21);
     expect(persisted.state.appearance.sqlEditorFontSize).toBe(17);
     expect(persisted.state.appearance.sqlEditorFontSizeFollowGlobal).toBe(false);
   });
@@ -198,7 +198,7 @@ describe('store appearance persistence', () => {
     expect(useStore.getState().appearance.uiVersion).toBe('v2');
 
     const persisted = JSON.parse(storage.getItem('lite-db-storage') || '{}');
-    expect(persisted.version).toBe(20);
+    expect(persisted.version).toBe(21);
     expect(persisted.state.appearance.uiVersion).toBe('v2');
   });
 
@@ -1797,7 +1797,7 @@ describe('store appearance persistence', () => {
     )).toEqual(legacyTag?.childOrder);
 
     const persisted = JSON.parse(storage.getItem('lite-db-storage') || '{}');
-    expect(persisted.version).toBe(20);
+    expect(persisted.version).toBe(21);
     expect(persisted.state.connectionTags[0].childOrder).toEqual([
       'connection:conn-a',
       'connection:conn-b',
@@ -3791,7 +3791,7 @@ describe('store appearance persistence', () => {
       mac: { combo: 'Meta+K', enabled: false },
       windows: { combo: 'Ctrl+K', enabled: true },
     });
-    expect(JSON.parse(storage.getItem('lite-db-storage') || '{}').version).toBe(20);
+    expect(JSON.parse(storage.getItem('lite-db-storage') || '{}').version).toBe(21);
 
     storage.setItem('lite-db-storage', JSON.stringify({
       state: {

@@ -9,6 +9,7 @@ type ConnectionTag struct {
 	ParentTagID   string   `json:"parentTagId,omitempty"`
 	ConnectionIDs []string `json:"connectionIds"`
 	ChildOrder    []string `json:"childOrder,omitempty"`
+	SortMode      string   `json:"sortMode,omitempty"`
 }
 
 // ConnectionSidebarLayoutInput is the client-owned layout snapshot used for
@@ -16,6 +17,7 @@ type ConnectionTag struct {
 type ConnectionSidebarLayoutInput struct {
 	ConnectionTags   []ConnectionTag `json:"connectionTags"`
 	SidebarRootOrder []string        `json:"sidebarRootOrder"`
+	RootSortMode     string          `json:"rootSortMode,omitempty"`
 }
 
 // ConnectionSidebarLayout is the authoritative shared layout returned to a
@@ -26,6 +28,7 @@ type ConnectionSidebarLayout struct {
 	Revision         uint64          `json:"revision"`
 	ConnectionTags   []ConnectionTag `json:"connectionTags"`
 	SidebarRootOrder []string        `json:"sidebarRootOrder"`
+	RootSortMode     string          `json:"rootSortMode,omitempty"`
 }
 
 // SaveConnectionSidebarLayoutInput replaces the complete shared layout when

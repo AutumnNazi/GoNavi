@@ -10,6 +10,7 @@ import Sidebar from './components/Sidebar';
 import TitleBarPrimaryActions, {
   resolveTitleBarPrimaryActionShortcut,
 } from './components/TitleBarPrimaryActions';
+import ConnectionGroupManagementModal from './components/sidebar/ConnectionGroupManagementModal';
 import TabManager from './components/TabManager';
 import FloatingWorkbenchWindows from './components/FloatingWorkbenchWindows';
 import FloatingAIChatWindow from './components/FloatingAIChatWindow';
@@ -1111,6 +1112,7 @@ function App() {
   const [securityUpdateProgressStage, setSecurityUpdateProgressStage] = useState(() => t('app.security_update.stage.checking_saved_config'));
   const [securityUpdateRepairSource, setSecurityUpdateRepairSource] = useState<SecurityUpdateRepairSource | null>(null);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
+  const [isConnectionGroupManagementOpen, setIsConnectionGroupManagementOpen] = useState(false);
   const [activeSettingsCenterGroupKey, setActiveSettingsCenterGroupKey] = useState<SettingsCenterGroupKey>('preferences');
   const [activeSettingsCenterPane, setActiveSettingsCenterPane] = useState<SettingsCenterPaneState | null>(null);
   const activeSettingsCenterPaneRef = useRef<SettingsCenterPaneState | null>(null);
@@ -1413,6 +1415,7 @@ function App() {
                   return {
                       connectionTags: state.connectionTags,
                       sidebarRootOrder: state.sidebarRootOrder,
+                      rootSortMode: state.rootSortMode,
                   };
               },
               replaceLayout: replaceConnectionSidebarLayout,
@@ -8304,6 +8307,8 @@ function App() {
                     newConnectionShortcut={titleBarNewConnectionShortcut}
                     onNewQuery={handleNewQuery}
                     onNewConnection={handleCreateConnection}
+                    connectionGroupLabel={t('connection.sidebar.management.title')}
+                    onConnectionGroupManagement={() => setIsConnectionGroupManagementOpen(true)}
                   />
                   {isV2Ui && <div id="gonavi-titlebar-quick-actions" className="gonavi-titlebar-quick-actions-slot" />}
               </div>
@@ -8419,6 +8424,7 @@ function App() {
                             onOpenSettingsNavigation={handleTitleBarSettingsNavigation}
                             isWebRuntime={isWebRuntime}
                             onOpenDataSyncWorkbench={handleOpenDataSyncWorkbench}
+                            onOpenConnectionGroupManagement={() => setIsConnectionGroupManagementOpen(true)}
                             onToggleAI={toggleAIPanel}
                             onToggleLogPanel={handleToggleLogPanel}
                             uiVersion={appearance.uiVersion}
@@ -9837,6 +9843,11 @@ function App() {
                   <div style={{ ...linuxResizeHandleStyleBase, bottom: 0, right: 0, width: 14, height: 14, cursor: 'nwse-resize' }} />
               </>
           )}
+
+          <ConnectionGroupManagementModal
+            open={isConnectionGroupManagementOpen}
+            onClose={() => setIsConnectionGroupManagementOpen(false)}
+          />
 
           {/* Ghost Resize Line for Log Panel */}
           <div
