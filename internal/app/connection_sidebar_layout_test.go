@@ -3,6 +3,7 @@ package app
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -679,7 +680,7 @@ func TestConnectionSidebarLayoutFutureVersionReturnsErrorWithoutOverwrite(t *tes
 		t.Run(operation.name, func(t *testing.T) {
 			application := newConnectionSidebarLayoutTestApp(t)
 			layoutPath := filepath.Join(application.configDir, connectionSidebarLayoutFileName)
-			future := []byte(`{"version":2,"revision":1,"connectionTags":[],"sidebarRootOrder":[]}`)
+			future := []byte(fmt.Sprintf(`{"version":%d,"revision":1,"connectionTags":[],"sidebarRootOrder":[]}`, connectionSidebarLayoutFormatVersion+1))
 			if err := os.WriteFile(layoutPath, future, 0o644); err != nil {
 				t.Fatalf("write future layout: %v", err)
 			}
