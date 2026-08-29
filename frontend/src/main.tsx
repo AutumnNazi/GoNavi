@@ -548,6 +548,7 @@ if (
                         layout: cloneBrowserMockValue(mockConnectionSidebarLayout),
                     };
                 },
+                LoadConnectionSidebarLayout: async () => cloneBrowserMockValue(mockConnectionSidebarLayout),
                 GetEditableSavedConnection: async (id: string) => {
                     const existing = mockConnections.find((item) => item.id === id);
                     if (!existing) {
@@ -575,6 +576,17 @@ if (
                         mockConnections.splice(index, 1);
                     }
                     mockConnectionSecrets.delete(id);
+                    return null;
+                },
+                DeleteConnections: async (ids: string[]) => {
+                    const requested = new Set((Array.isArray(ids) ? ids : []).map((id) => String(id).trim()).filter(Boolean));
+                    for (let index = mockConnections.length - 1; index >= 0; index -= 1) {
+                        if (requested.has(String(mockConnections[index]?.id || ''))) {
+                            mockConnectionSecrets.delete(mockConnections[index].id);
+                            mockConnections.splice(index, 1);
+                        }
+                    }
+                    requested.forEach((id) => mockConnectionSecrets.delete(id));
                     return null;
                 },
                 DuplicateConnection: async (id: string) => {

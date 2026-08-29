@@ -50,8 +50,18 @@ func assertConnectionSidebarTagsWithCreatedAt(
 		}
 		comparable[index].CreatedAt = 0
 	}
-	if !reflect.DeepEqual(comparable, want) {
-		t.Fatalf("connection tags = %#v, want %#v", comparable, want)
+	expected := append([]connection.ConnectionTag(nil), want...)
+	for index := range expected {
+		// Legacy layout candidates are normalized to explicit sort modes on read.
+		if expected[index].SortMode == "" {
+			expected[index].SortMode = "manual"
+		}
+		if expected[index].ConnectionSortMode == "" {
+			expected[index].ConnectionSortMode = "createdAt"
+		}
+	}
+	if !reflect.DeepEqual(comparable, expected) {
+		t.Fatalf("connection tags = %#v, want %#v", comparable, expected)
 	}
 }
 

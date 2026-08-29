@@ -1688,6 +1688,8 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
   const connections = useStore(state => state.connections);
   const connectionTags = useStore(state => state.connectionTags);
   const sidebarRootOrder = useStore(state => state.sidebarRootOrder);
+  const rootSortMode = useStore(state => state.rootSortMode);
+  const rootConnectionSortMode = useStore(state => state.rootConnectionSortMode);
   const currentConnection = connections.find(
       (connection) => connection.id === currentConnectionId,
   );
@@ -11406,6 +11408,8 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
         queryCapableConnections={queryCapableConnections}
         connectionTags={connectionTags}
         sidebarRootOrder={sidebarRootOrder}
+        rootSortMode={rootSortMode}
+        rootConnectionSortMode={rootConnectionSortMode}
         dbList={dbList}
         contextSelectionDisabled={queryContextLockRunSeq !== 0 || Boolean(pendingSqlTransaction)}
         schemaSelect={canSelectQuerySchema ? {

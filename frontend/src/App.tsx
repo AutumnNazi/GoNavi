@@ -1095,6 +1095,7 @@ function App() {
   );
   const linuxCJKFontInstallHint = getLinuxCJKFontInstallHint(runtimePlatform, installedFontFamilies);
   const [isStoreHydrated, setIsStoreHydrated] = useState(() => useStore.persist.hasHydrated());
+  const closeTabsByConnection = useStore(state => state.closeTabsByConnection);
   const savedQueriesBootstrapPromiseRef = useRef<Promise<void> | null>(null);
   const savedQueriesLoadedRef = useRef(false);
   const [hasLoadedSecureConfig, setHasLoadedSecureConfig] = useState(false);
@@ -8734,6 +8735,7 @@ function App() {
             open={isModalOpen}
             onClose={handleCloseModal}
             initialValues={editingConnection}
+            modalZIndex={isConnectionGroupManagementOpen ? APP_NESTED_MODAL_Z_INDEX : undefined}
             onOpenDriverManager={handleOpenDriverManagerFromConnection}
             onSaved={handleConnectionSaved}
             onOpenConnectionHealth={(connection) => {
@@ -9852,6 +9854,7 @@ function App() {
             onOpenTagForm={(parentTagId) => window.dispatchEvent(new CustomEvent('gonavi:open-connection-tag-form', { detail: { parentTagId } }))}
             onCreateConnectionInGroup={handleCreateConnectionInGroup}
             onEditConnection={handleEditConnection}
+            onCloseTabsByConnection={closeTabsByConnection}
           />
 
           {/* Ghost Resize Line for Log Panel */}

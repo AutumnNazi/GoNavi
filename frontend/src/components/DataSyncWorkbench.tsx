@@ -27,6 +27,8 @@ const DataSyncWorkbench: React.FC<{ tab: TabData }> = ({ tab }) => {
   const connections = useStore((state) => state.connections);
   const connectionTags = useStore((state) => state.connectionTags);
   const sidebarRootOrder = useStore((state) => state.sidebarRootOrder);
+  const rootSortMode = useStore((state) => state.rootSortMode);
+  const rootConnectionSortMode = useStore((state) => state.rootConnectionSortMode);
   const i18n = useOptionalI18n();
   const entryMode = resolveEntryMode(tab);
   const handleClose = useCallback(() => {
@@ -66,8 +68,10 @@ const DataSyncWorkbench: React.FC<{ tab: TabData }> = ({ tab }) => {
       connections,
       connectionTags,
       sidebarRootOrder,
+      rootSortMode,
+      rootConnectionSortMode,
     ).map(projectItem);
-  }, [connections, connectionTags, sidebarRootOrder]);
+  }, [connections, connectionTags, rootConnectionSortMode, rootSortMode, sidebarRootOrder]);
 
   return (
     <div

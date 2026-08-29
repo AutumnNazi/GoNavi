@@ -1,13 +1,15 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Button, Empty, Form, Input, List, Modal, Select, Space, Table, Tooltip, Tree, Typography } from 'antd';
-import { DeleteOutlined, EditOutlined, FolderAddOutlined, HolderOutlined, InboxOutlined, PlusOutlined, SettingOutlined } from '@ant-design/icons';
+import { Button, Empty, Form, Input, List, message, Modal, Select, Space, Table, Tag, Tooltip, Tree, Typography } from 'antd';
+import { CloseOutlined, DeleteOutlined, EditOutlined, FolderAddOutlined, InboxOutlined, PlusOutlined, SettingOutlined, SortAscendingOutlined } from '@ant-design/icons';
 import type { DataNode } from 'antd/es/tree';
 import type { ColumnsType } from 'antd/es/table';
 import { useStore } from '../../store';
 import type { ConnectionDisplaySortMode, ConnectionTag, SavedConnection } from '../../types';
 import { t } from '../../i18n';
 import { buildSidebarRootTagToken, resolveConnectionTagChildOrder, resolveSidebarRootOrderTokens } from '../../store';
+import { APP_FOREGROUND_MODAL_Z_INDEX, APP_NESTED_MODAL_Z_INDEX } from '../../utils/overlayZIndex';
 import { formatSidebarTableTimestamp } from './sidebarHelpers';
+import './ConnectionGroupManagementModal.css';
 
 type Props = {
   open: boolean;
@@ -15,9 +17,14 @@ type Props = {
   onOpenTagForm: (parentTagId?: string) => void;
   onCreateConnectionInGroup: (tagId: string) => void;
   onEditConnection: (connection: SavedConnection) => void;
+  onCloseTabsByConnection?: (connectionId: string) => void;
 };
 const UNGROUPED = '__ungrouped__';
 const CONNECTION_DRAG_TYPE = 'application/x-gonavi-connection-ids';
+
+const isInteractiveDragTarget = (target: EventTarget | null): boolean => (
+  Boolean((target as Element | null)?.closest?.('button, input, a, .ant-checkbox-wrapper, .ant-select, [role="button"]'))
+);
 
 export const hasConnectionDragPayload = (event: Pick<React.DragEvent<HTMLElement>, 'dataTransfer'>): boolean =>
   Array.from(event.dataTransfer.types).includes(CONNECTION_DRAG_TYPE);
@@ -55,7 +62,7 @@ const collectTagTree = (rootId: string, tags: ConnectionTag[]) => {
   return tags.filter((tag) => ids.has(tag.id));
 };
 
-const ConnectionGroupManagementModal: React.FC<Props> = ({ open, onClose, onOpenTagForm, onCreateConnectionInGroup, onEditConnection }) => {
+const ConnectionGroupManagementModal: React.FC<Props> = ({ open, onClose, onOpenTagForm, onCreateConnectionInGroup, onEditConnection, onCloseTabsByConnection }) => {
   const connections = useStore((state) => state.connections);
   const tags = useStore((state) => state.connectionTags);
   const rootOrder = useStore((state) => state.sidebarRootOrder);
@@ -145,7 +152,7 @@ const ConnectionGroupManagementModal: React.FC<Props> = ({ open, onClose, onOpen
         if (!tag || (tag.parentTagId || undefined) !== parentId) return nodes;
         nodes.push({
           key: tag.id,
-          title: <div className="connection-group-tree-title" {...getConnectionDropHandlers(tag.id)}><span className="connection-group-tree-name" title={tag.name}>{tag.name}</span><Typography.Text type="secondary">({tag.connectionIds.length})</Typography.Text></div>,
+          title: <div className="connection-group-tree-title" {...getConnectionDropHandlers(tag.id)}><span className="connection-group-tree-name" title={tag.name}>{tag.name}</span><Typography.Text className="connection-group-tree-count" type="secondary">{tag.connectionIds.length}</Typography.Text></div>,
           children: buildTree(tag.id),
         });
         return nodes;
@@ -156,7 +163,7 @@ const ConnectionGroupManagementModal: React.FC<Props> = ({ open, onClose, onOpen
   const currentIds = currentTag ? currentTag.connectionIds : ungrouped.map((connection) => connection.id);
   const currentMode = currentTag?.connectionSortMode || rootConnectionSortMode;
   const visibleConnections = sortConnections(currentIds, currentMode);
-  const treeData: DataNode[] = [{ key: UNGROUPED, title: <div className="connection-group-tree-title" {...getConnectionDropHandlers(null)}><span className="connection-group-tree-name"><InboxOutlined /> {t('connection.sidebar.management.ungrouped')}</span><Typography.Text type="secondary">({ungrouped.length})</Typography.Text></div> }, ...buildTree()];
+  const treeData: DataNode[] = [{ key: UNGROUPED, title: <div className="connection-group-tree-title" {...getConnectionDropHandlers(null)}><span className="connection-group-tree-name"><InboxOutlined /> {t('connection.sidebar.management.ungrouped')}</span><Typography.Text className="connection-group-tree-count" type="secondary">{ungrouped.length}</Typography.Text></div> }, ...buildTree()];
   const submitRename = async () => {
     const { name: rawName } = await nameForm.validateFields();
     const name = rawName.trim();
@@ -169,15 +176,55 @@ const ConnectionGroupManagementModal: React.FC<Props> = ({ open, onClose, onOpen
     if (!currentTag) return;
     const subtree = collectTagTree(currentTag.id, tags);
     const connectionIds = Array.from(new Set(subtree.flatMap((tag) => tag.connectionIds)));
-    Modal.confirm({ title: t('connection.sidebar.management.delete'), content: t('connection.sidebar.management.deleteContent', { name: currentTag.name, groupCount: subtree.length, connectionCount: connectionIds.length }), okButtonProps: { danger: true }, onOk: async () => {
-      const backendApp = (window as any).go?.app?.App;
-      if (connectionIds.length > 0 && typeof backendApp?.DeleteConnections !== 'function') throw new Error('DeleteConnections unavailable');
-      if (connectionIds.length > 0) await backendApp.DeleteConnections(connectionIds);
-      connectionIds.forEach(removeConnection);
-      removeTagTree(currentTag.id);
-      setSelectedConnections((current) => current.filter((id) => !connectionIds.includes(id)));
-      setSelectedContainer(UNGROUPED);
-    } });
+    const deleteContentKey = connectionIds.length > 0
+      ? 'connection.sidebar.management.deleteContent'
+      : 'connection.sidebar.management.deleteEmptyContent';
+    Modal.confirm({
+      title: t('connection.sidebar.management.deleteGroup'),
+      content: t(deleteContentKey, { name: currentTag.name, connectionCount: connectionIds.length }),
+      okButtonProps: { danger: true },
+      onOk: async () => {
+        try {
+          const backendApp = (window as any).go?.app?.App;
+          let idsToDelete = connectionIds;
+          // If the backend can provide the authoritative layout, refuse to use
+          // a stale window's subtree. This avoids deleting a connection that
+          // another window moved out of the group after this modal rendered.
+          if (typeof backendApp?.LoadConnectionSidebarLayout === 'function') {
+            const authoritative = await backendApp.LoadConnectionSidebarLayout();
+            if (authoritative?.initialized && Array.isArray(authoritative.connectionTags)) {
+              const authoritativeTag = authoritative.connectionTags.find((tag: ConnectionTag) => tag.id === currentTag.id);
+              if (!authoritativeTag) throw new Error(t('connection.sidebar.management.deleteStale'));
+              const authoritativeSubtree = collectTagTree(currentTag.id, authoritative.connectionTags as ConnectionTag[]);
+              const authoritativeIds = Array.from(new Set(authoritativeSubtree.flatMap((tag) => tag.connectionIds)));
+              const localSet = new Set(connectionIds);
+              const remoteSet = new Set(authoritativeIds);
+              const sameIds = localSet.size === remoteSet.size && Array.from(localSet).every((id) => remoteSet.has(id));
+              if (!sameIds) throw new Error(t('connection.sidebar.management.deleteStale'));
+              idsToDelete = authoritativeIds;
+            }
+          }
+          if (idsToDelete.length > 0 && typeof backendApp?.DeleteConnections !== 'function') {
+            throw new Error(t('connection.sidebar.management.deleteFailure'));
+          }
+          if (idsToDelete.length > 0) await backendApp.DeleteConnections(idsToDelete);
+          idsToDelete.forEach((connectionId) => {
+            onCloseTabsByConnection?.(connectionId);
+            removeConnection(connectionId);
+          });
+          removeTagTree(currentTag.id);
+          setSelectedConnections((current) => current.filter((id) => !idsToDelete.includes(id)));
+          setSelectedContainer(UNGROUPED);
+        } catch (error: any) {
+          const staleMessage = t('connection.sidebar.management.deleteStale');
+          const errorMessage = error?.message === staleMessage
+            ? staleMessage
+            : t('connection.sidebar.management.deleteFailure');
+          message.error(errorMessage);
+          throw error;
+        }
+      },
+    });
   };
   const handleTreeDrop = (info: any) => {
     if (!info.dropToGap || !info.dragNode || !info.node) return;
@@ -204,7 +251,7 @@ const ConnectionGroupManagementModal: React.FC<Props> = ({ open, onClose, onOpen
       dataIndex: 'name',
       key: 'name',
       ellipsis: true,
-      render: (name: string) => <Space size={6} style={{ minWidth: 0 }}><HolderOutlined style={{ color: '#999' }} /><Typography.Text ellipsis={{ tooltip: name }} style={{ minWidth: 0 }}>{name}</Typography.Text></Space>,
+      render: (name: string) => <Typography.Text ellipsis={{ tooltip: name }} className="connection-group-management-cell-text">{name}</Typography.Text>,
     },
     {
       title: t('connection.sidebar.management.address'),
@@ -230,28 +277,57 @@ const ConnectionGroupManagementModal: React.FC<Props> = ({ open, onClose, onOpen
       key: 'actions',
       width: 80,
       align: 'center',
-      render: (_, connection) => <Space size={2}>
-        <Tooltip title={t('sidebar.menu.edit_connection')}><Button type="text" size="small" icon={<EditOutlined />} aria-label={t('sidebar.menu.edit_connection')} onClick={() => onEditConnection(connection)} /></Tooltip>
-        <Tooltip title={t('connection.sidebar.menu.delete')}><Button type="text" size="small" danger icon={<DeleteOutlined />} aria-label={t('connection.sidebar.menu.delete')} onClick={() => window.dispatchEvent(new CustomEvent('gonavi:delete-connection', { detail: { connectionId: connection.id } }))} /></Tooltip>
+      render: (_, connection) => <Space size={4} className="connection-group-management-row-actions">
+        <Tooltip title={t('connection.sidebar.management.editConnection')} placement="bottom" mouseEnterDelay={0.35}><Button type="text" size="small" icon={<EditOutlined />} aria-label={t('connection.sidebar.management.editConnection')} onClick={() => onEditConnection(connection)} /></Tooltip>
+        <Tooltip title={t('connection.sidebar.management.deleteConnection')} placement="bottom" mouseEnterDelay={0.35}><Button className="connection-group-management-row-delete" type="default" size="small" danger icon={<DeleteOutlined />} aria-label={t('connection.sidebar.management.deleteConnection')} onClick={() => window.dispatchEvent(new CustomEvent('gonavi:delete-connection', { detail: { connectionId: connection.id } }))} /></Tooltip>
       </Space>,
     },
   ];
 
   return <>
-    <Modal open={open} onCancel={onClose} footer={null} width={960} title={<Space><SettingOutlined />{t('connection.sidebar.management.title')}</Space>} destroyOnClose>
-      <div style={{ display: 'grid', gridTemplateColumns: '280px minmax(0, 1fr)', gap: 20, minHeight: 520 }}>
-        <div style={{ borderRight: '1px solid var(--gn-border, #eee)', paddingRight: 16, minWidth: 0 }}>
-          <Button type="primary" block icon={<FolderAddOutlined />} onClick={() => onOpenTagForm(selectedContainer === UNGROUPED ? undefined : selectedContainer)}>{t('connection.sidebar.management.new')}</Button>
-          <Tree className="connection-group-management-tree" treeData={treeData} selectedKeys={[selectedContainer]} defaultExpandAll draggable={{ nodeDraggable: (node) => isTagDraggable(tagById.get(String(node.key))) }} onDrop={handleTreeDrop} onSelect={(keys) => { if (keys[0]) setSelectedContainer(String(keys[0])); }} style={{ marginTop: 12 }} />
-        </div>
-        <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', gap: 12, alignItems: 'center', marginBottom: 12 }}>
-            <Typography.Title level={5} ellipsis={{ tooltip: currentTag?.name || t('connection.sidebar.management.ungrouped') }} style={{ margin: 0 }}>{currentTag?.name || t('connection.sidebar.management.ungrouped')}</Typography.Title>
-            <Space size={4}>{currentTag && <><Tooltip title={t('sidebar.menu.new_connection')}><Button type="text" icon={<PlusOutlined />} aria-label={t('sidebar.menu.new_connection')} onClick={() => onCreateConnectionInGroup(currentTag.id)} /></Tooltip><Tooltip title={t('connection.sidebar.management.rename')}><Button type="text" icon={<EditOutlined />} aria-label={t('connection.sidebar.management.rename')} onClick={() => { setRenameTag(currentTag); nameForm.setFieldsValue({ name: currentTag.name }); }} /></Tooltip><Tooltip title={t('connection.sidebar.management.delete')}><Button type="text" danger icon={<DeleteOutlined />} aria-label={t('connection.sidebar.management.delete')} onClick={deleteGroup} /></Tooltip></>}<Select size="small" value={currentMode} style={{ width: 130 }} options={[{ label: t('connection.sidebar.management.name'), value: 'name' }, { label: t('connection.sidebar.management.createdAt'), value: 'createdAt' }]} onChange={(value) => setConnectionSortMode(currentTag?.id || null, value as ConnectionDisplaySortMode)} /></Space>
+    <Modal
+      open={open}
+      onCancel={onClose}
+      footer={null}
+      width={980}
+      rootClassName="connection-group-management-modal"
+      zIndex={APP_FOREGROUND_MODAL_Z_INDEX}
+      title={<Space><SettingOutlined />{t('connection.sidebar.management.title')}</Space>}
+      closeIcon={<Tooltip title={t('connection.sidebar.management.close')} placement="bottom" mouseEnterDelay={0.35}><CloseOutlined aria-label={t('connection.sidebar.management.close')} /></Tooltip>}
+      destroyOnClose
+    >
+      <div className="connection-group-management-layout">
+        <aside className="connection-group-management-sidebar">
+          <Tooltip title={t('connection.sidebar.management.new')} placement="bottom" mouseEnterDelay={0.35}>
+            <Button className="connection-group-management-new-group" type="primary" block icon={<FolderAddOutlined />} onClick={() => onOpenTagForm(selectedContainer === UNGROUPED ? undefined : selectedContainer)}>{t('connection.sidebar.management.new')}</Button>
+          </Tooltip>
+          <Tree className="connection-group-management-tree" treeData={treeData} selectedKeys={[selectedContainer]} defaultExpandAll blockNode draggable={{ nodeDraggable: (node) => isTagDraggable(tagById.get(String(node.key))) }} onDrop={handleTreeDrop} onSelect={(keys) => { if (keys[0]) setSelectedContainer(String(keys[0])); }} />
+        </aside>
+        <section className="connection-group-management-content">
+          <div className="connection-group-management-toolbar">
+            <div className="connection-group-management-heading">
+              <Typography.Title level={5} ellipsis={{ tooltip: currentTag?.name || t('connection.sidebar.management.ungrouped') }} className="connection-group-management-title">{currentTag?.name || t('connection.sidebar.management.ungrouped')}</Typography.Title>
+              {selectedExistingConnectionIds.length > 0 && <Tag className="connection-group-management-selected-tag" color="success">{t('connection.sidebar.management.selected', { count: selectedExistingConnectionIds.length })}</Tag>}
+            </div>
+            <Space size={6} className="connection-group-management-toolbar-actions">
+              {currentTag && <>
+                <Tooltip title={t('connection.sidebar.management.addConnection')} placement="bottom" mouseEnterDelay={0.35}><Button className="connection-group-management-toolbar-button is-primary" type="primary" icon={<PlusOutlined />} aria-label={t('connection.sidebar.management.addConnection')} onClick={() => onCreateConnectionInGroup(currentTag.id)} /></Tooltip>
+                <Tooltip title={t('connection.sidebar.management.rename')} placement="bottom" mouseEnterDelay={0.35}><Button className="connection-group-management-toolbar-button" icon={<EditOutlined />} aria-label={t('connection.sidebar.management.rename')} onClick={() => { setRenameTag(currentTag); nameForm.setFieldsValue({ name: currentTag.name }); }} /></Tooltip>
+                <Tooltip title={t('connection.sidebar.management.delete')} placement="bottom" mouseEnterDelay={0.35}><Button className="connection-group-management-toolbar-button" danger icon={<DeleteOutlined />} aria-label={t('connection.sidebar.management.delete')} onClick={deleteGroup} /></Tooltip>
+              </>}
+              <div className="connection-group-management-sort-control" role="group" aria-label={t('connection.sidebar.management.sort')}>
+                <Tooltip title={t('connection.sidebar.management.sort')} placement="bottom" mouseEnterDelay={0.35}>
+                  <span className="connection-group-management-sort-label" tabIndex={0}>
+                    <SortAscendingOutlined aria-hidden="true" />
+                    <span>{t('connection.sidebar.management.sortLabel')}</span>
+                  </span>
+                </Tooltip>
+                <Select aria-label={t('connection.sidebar.management.sort')} size="small" value={currentMode} className="connection-group-management-sort" options={[{ label: t('connection.sidebar.management.name'), value: 'name' }, { label: t('connection.sidebar.management.createdAt'), value: 'createdAt' }]} onChange={(value) => setConnectionSortMode(currentTag?.id || null, value as ConnectionDisplaySortMode)} />
+              </div>
+            </Space>
           </div>
-          <Typography.Text type="secondary" style={{ marginBottom: 10 }}>{t('connection.sidebar.management.selected', { count: selectedExistingConnectionIds.length })}</Typography.Text>
           {visibleConnections.length ? <Table<SavedConnection>
-            bordered
+            className="connection-group-management-table"
             size="small"
             pagination={false}
             rowKey="id"
@@ -269,16 +345,20 @@ const ConnectionGroupManagementModal: React.FC<Props> = ({ open, onClose, onOpen
             onRow={(connection) => ({
               draggable: true,
               onDragStart: (event) => {
+                if (isInteractiveDragTarget(event.target)) {
+                  event.preventDefault();
+                  return;
+                }
                 const ids = selectedExistingConnectionIds.includes(connection.id) ? selectedExistingConnectionIds : [connection.id];
                 event.dataTransfer.effectAllowed = 'move';
                 event.dataTransfer.setData(CONNECTION_DRAG_TYPE, JSON.stringify(ids));
               },
             })}
           /> : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('connection.sidebar.management.empty')} />}
-        </div>
+        </section>
       </div>
     </Modal>
-    <Modal open={Boolean(renameTag)} title={t('connection.sidebar.management.rename')} onCancel={() => setRenameTag(null)} onOk={() => { void submitRename(); }} destroyOnClose><Form form={nameForm} layout="vertical"><Form.Item name="name" label={t('connection.sidebar.management.nameLabel')} rules={[{ required: true, whitespace: true, message: t('connection.sidebar.management.nameRequired') }]}><Input autoFocus /></Form.Item></Form></Modal>
+    <Modal zIndex={APP_NESTED_MODAL_Z_INDEX} open={Boolean(renameTag)} title={t('connection.sidebar.management.rename')} onCancel={() => setRenameTag(null)} onOk={() => { void submitRename(); }} destroyOnClose><Form form={nameForm} layout="vertical"><Form.Item name="name" label={t('connection.sidebar.management.nameLabel')} rules={[{ required: true, whitespace: true, message: t('connection.sidebar.management.nameRequired') }]}><Input autoFocus /></Form.Item></Form></Modal>
   </>;
 };
 
