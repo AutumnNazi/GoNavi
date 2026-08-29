@@ -22,7 +22,7 @@ func init() {
 		"mongodb":       "src-ebf664aa1ae713eb",
 		"tdengine":      "src-d31c6a45a99a1e0e",
 		"iotdb":         "src-0cdf32eb1c4d9965",
-		"clickhouse":    "src-e78f984ffc735117",
+		"clickhouse":    "src-5e7fd89b6f3d82e9",
 		"elasticsearch": "src-ba63c309637a5cc8",
 		"trino":         "src-f38f259400f25695",
 	}
