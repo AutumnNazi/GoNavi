@@ -1977,6 +1977,28 @@ describe('store appearance persistence', () => {
     )?.connectionIds).toEqual(['host-1', 'host-3', 'host-4', 'host-2']);
   });
 
+  it('rejects duplicate group names under the same parent but permits them elsewhere', async () => {
+    const { useStore } = await importStore();
+    useStore.getState().addConnectionTag({ id: 'root-a', name: 'Shared', connectionIds: [] });
+    useStore.getState().addConnectionTag({ id: 'root-b', name: ' shared ', connectionIds: [] });
+    useStore.getState().addConnectionTag({ id: 'parent', name: 'Parent', connectionIds: [] });
+    useStore.getState().addConnectionTag({ id: 'child', name: 'shared', parentTagId: 'parent', connectionIds: [] });
+
+    expect(useStore.getState().connectionTags.map((tag) => tag.id)).toEqual(['root-a', 'parent', 'child']);
+  });
+
+  it('removes a group subtree without promoting its descendants', async () => {
+    const { useStore } = await importStore();
+    useStore.getState().addConnectionTag({ id: 'root', name: 'Root', connectionIds: [] });
+    useStore.getState().addConnectionTag({ id: 'child', name: 'Child', parentTagId: 'root', connectionIds: [] });
+    useStore.getState().addConnectionTag({ id: 'grandchild', name: 'Grandchild', parentTagId: 'child', connectionIds: [] });
+    useStore.getState().addConnectionTag({ id: 'other', name: 'Other', connectionIds: [] });
+
+    useStore.getState().removeConnectionTagTree('root');
+
+    expect(useStore.getState().connectionTags.map((tag) => tag.id)).toEqual(['other']);
+  });
+
   it('rejects moving a group into itself or a descendant', async () => {
     const { useStore } = await importStore();
     useStore.getState().addConnectionTag({

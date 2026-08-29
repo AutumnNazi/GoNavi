@@ -9848,6 +9848,7 @@ function App() {
           <ConnectionGroupManagementModal
             open={isConnectionGroupManagementOpen}
             onClose={() => setIsConnectionGroupManagementOpen(false)}
+            onOpenTagForm={(parentTagId) => window.dispatchEvent(new CustomEvent('gonavi:open-connection-tag-form', { detail: { parentTagId } }))}
           />
 
           {/* Ghost Resize Line for Log Panel */}

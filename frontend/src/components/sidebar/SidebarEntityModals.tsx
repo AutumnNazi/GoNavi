@@ -246,6 +246,16 @@ export const SidebarEntityModals: React.FC<SidebarEntityModalsProps> = ({
             connectionTags,
             editingTagId,
           );
+          const requestedName = String(values.name || '').trim();
+          const duplicate = connectionTags.some((tag) => (
+            tag.id !== editingTagId
+            && tag.parentTagId === parentTagId
+            && tag.name.trim().localeCompare(requestedName, undefined, { sensitivity: 'accent' }) === 0
+          ));
+          if (duplicate) {
+            createTagForm.setFields([{ name: 'name', errors: [t('connection.sidebar.management.nameDuplicate')] }]);
+            return;
+          }
           if (renameViewTarget?.type === 'tag') {
             updateConnectionTag({
               ...renameViewTarget.dataRef,

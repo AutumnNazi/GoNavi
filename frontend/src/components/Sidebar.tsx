@@ -1191,6 +1191,18 @@ const Sidebar: React.FC<{
   const [isCreateTagModalOpen, setIsCreateTagModalOpen] = useState(false);
   const [createTagForm] = Form.useForm();
 
+  useEffect(() => {
+    const openTagForm = (event: Event) => {
+      const parentTagId = String((event as CustomEvent<{ parentTagId?: string }>).detail?.parentTagId || '').trim();
+      setRenameViewTarget(null);
+      createTagForm.resetFields();
+      if (parentTagId) createTagForm.setFieldsValue({ parentTagId });
+      setIsCreateTagModalOpen(true);
+    };
+    window.addEventListener('gonavi:open-connection-tag-form', openTagForm);
+    return () => window.removeEventListener('gonavi:open-connection-tag-form', openTagForm);
+  }, [createTagForm]);
+
   const {
       handleExportDatabaseSQL,
       handleExportSchemaSQL,
@@ -4448,9 +4460,6 @@ const Sidebar: React.FC<{
         {!isV2Ui && (
         <div data-sidebar-legacy-toolbar="true" style={legacyToolbarStyle}>
                 <div data-sidebar-legacy-toolbar-item="true" style={legacyToolbarItemStyle}>
-                <Tooltip title={v2ManageGroupsLabel}>
-                    <Button size="small" type="text" icon={<SettingOutlined />} aria-label={v2ManageGroupsLabel} data-sidebar-manage-groups-action="true" onClick={onOpenConnectionGroupManagement} style={{ color: legacyToolbarButtonColor }} />
-                </Tooltip>
             </div>
             <div data-sidebar-legacy-toolbar-item="true" style={legacyToolbarItemStyle}>
                 <Tooltip title={t('sidebar.action.new_group')}>

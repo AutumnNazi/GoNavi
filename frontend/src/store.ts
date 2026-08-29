@@ -1917,6 +1917,7 @@ interface AppState {
   addConnectionTag: (tag: ConnectionTag) => void;
   updateConnectionTag: (tag: ConnectionTag) => void;
   removeConnectionTag: (id: string) => void;
+  removeConnectionTagTree: (id: string) => void;
   moveConnectionToTag: (
     connectionId: string,
     targetTagId: string | null,
@@ -3985,6 +3986,24 @@ export const useStore = create<AppState>()(
             return normalized;
           }
 
+          const parentTagId = toTrimmedString(tag.parentTagId) || undefined;
+          const name = toTrimmedString(
+            tag.name,
+            indexedStoreFallback(
+              "store.fallback.connection_tag_name",
+              normalized.connectionTags.length,
+            ),
+          ) || indexedStoreFallback(
+            "store.fallback.connection_tag_name",
+            normalized.connectionTags.length,
+          );
+          if (normalized.connectionTags.some((candidate) =>
+            candidate.parentTagId === parentTagId
+            && candidate.name.trim().localeCompare(name.trim(), undefined, { sensitivity: "accent" }) === 0,
+          )) {
+            return normalized;
+          }
+
           const directConnectionIds = sanitizeStringArray(tag.connectionIds, 256);
           const directConnectionTokens = new Set(
             directConnectionIds.map(buildSidebarRootConnectionToken),
@@ -4001,19 +4020,8 @@ export const useStore = create<AppState>()(
             })),
             {
               id: tagId,
-              name:
-                toTrimmedString(
-                  tag.name,
-                  indexedStoreFallback(
-                    "store.fallback.connection_tag_name",
-                    normalized.connectionTags.length,
-                  ),
-                ) ||
-                indexedStoreFallback(
-                  "store.fallback.connection_tag_name",
-                  normalized.connectionTags.length,
-                ),
-              parentTagId: toTrimmedString(tag.parentTagId) || undefined,
+              name,
+              parentTagId,
               connectionIds: directConnectionIds,
               childOrder: sanitizeSidebarItemOrder(tag.childOrder),
             },
@@ -4063,6 +4071,12 @@ export const useStore = create<AppState>()(
           const requestedParentTagId = hasRequestedParent
             ? toTrimmedString(tag.parentTagId) || undefined
             : existing.parentTagId;
+          const requestedName = toTrimmedString(tag.name, existing.name) || existing.name;
+          if (normalized.connectionTags.some((candidate) =>
+            candidate.id !== tag.id
+            && candidate.parentTagId === requestedParentTagId
+            && candidate.name.trim().localeCompare(requestedName.trim(), undefined, { sensitivity: "accent" }) === 0,
+          )) return normalized;
           const hasRequestedChildOrder = Object.prototype.hasOwnProperty.call(
             tag,
             "childOrder",
@@ -4071,7 +4085,7 @@ export const useStore = create<AppState>()(
             if (candidate.id === tag.id) {
               return {
                 ...candidate,
-                name: toTrimmedString(tag.name, candidate.name) || candidate.name,
+                name: requestedName,
                 connectionIds: requestedConnectionIds,
                 childOrder: hasRequestedChildOrder
                   ? sanitizeSidebarItemOrder(tag.childOrder)
@@ -4164,6 +4178,31 @@ export const useStore = create<AppState>()(
           return normalizeConnectionTagTreeState(
             nextTags,
             nextRootOrder,
+            state.connections,
+          );
+        }),
+      removeConnectionTagTree: (id) =>
+        set((state) => {
+          const normalized = normalizeConnectionTagTreeState(
+            state.connectionTags,
+            state.sidebarRootOrder,
+            state.connections,
+          );
+          const removedIds = new Set<string>();
+          const pending = [id];
+          while (pending.length) {
+            const current = pending.pop();
+            if (!current || removedIds.has(current)) continue;
+            removedIds.add(current);
+            normalized.connectionTags.forEach((tag) => {
+              if (tag.parentTagId === current) pending.push(tag.id);
+            });
+          }
+          if (!removedIds.size || !removedIds.has(id)) return normalized;
+          const removedTokens = new Set([...removedIds].map(buildSidebarRootTagToken));
+          return normalizeConnectionTagTreeState(
+            normalized.connectionTags.filter((tag) => !removedIds.has(tag.id)),
+            normalized.sidebarRootOrder.filter((token) => !removedTokens.has(token)),
             state.connections,
           );
         }),
