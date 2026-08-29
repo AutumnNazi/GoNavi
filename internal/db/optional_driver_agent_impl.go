@@ -99,6 +99,7 @@ type optionalAgentResponse struct {
 	ID              int64                         `json:"id"`
 	Success         bool                          `json:"success"`
 	Error           string                        `json:"error,omitempty"`
+	OutcomeUnknown  bool                          `json:"outcomeUnknown,omitempty"`
 	SSHHostKeyTrust *sshbridge.HostKeyTrustStatus `json:"sshHostKeyTrust,omitempty"`
 	SSHProgress     *connection.SSHProgressEvent  `json:"sshProgress,omitempty"`
 	Data            json.RawMessage               `json:"data,omitempty"`
@@ -331,6 +332,9 @@ func (c *optionalDriverAgentClient) callLocked(req optionalAgentRequest, out int
 		if resp.ID != req.ID {
 			return c.rejectProtocolViolation(req, "响应 ID 不匹配：收到 %d，期望 %d", resp.ID, req.ID)
 		}
+		if resp.OutcomeUnknown && (resp.Success || req.Method != optionalAgentMethodApplyChanges) {
+			return c.rejectProtocolViolation(req, "outcomeUnknown 仅允许用于失败的 applyChanges 响应")
+		}
 		if resp.SSHProgress != nil {
 			if !resp.Success || req.Method != optionalAgentMethodConnect || !req.StreamSSHProgress || req.sshProgressReporter == nil {
 				return c.rejectProtocolViolation(req, "收到了未订阅或无效的 SSH 进度帧")
@@ -350,7 +354,11 @@ func (c *optionalDriverAgentClient) callLocked(req optionalAgentRequest, out int
 			if resp.SSHHostKeyTrust != nil {
 				return fmt.Errorf("%s: %w", errText, &sshbridge.HostKeyTrustRequiredError{Status: *resp.SSHHostKeyTrust})
 			}
-			return errors.New(errText)
+			err := errors.New(errText)
+			if resp.OutcomeUnknown {
+				return MarkWriteOutcomeUnknown(err)
+			}
+			return err
 		}
 
 		if fields != nil {

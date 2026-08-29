@@ -106,7 +106,7 @@ func (executor appDataSyncJobExecutor) Execute(ctx context.Context, request sync
 		outcome.RowsDeleted += mappingOutcome.RowsDeleted
 		outcome.RowsFailed += mappingOutcome.RowsFailed
 		if runErr != nil {
-			outcome.Resumable = dataSyncJobMappingRetrySafe(definition)
+			outcome.Resumable = dataSyncJobMappingRetrySafe(definition) && !db.IsWriteOutcomeUnknown(runErr)
 			return outcome, runErr
 		}
 
@@ -194,6 +194,9 @@ func (executor appDataSyncJobExecutor) executeWatermarkJob(
 		outcome.RowsUpdated += mappingOutcome.RowsUpdated
 		outcome.RowsFailed += mappingOutcome.RowsFailed
 		if runErr != nil {
+			if db.IsWriteOutcomeUnknown(runErr) {
+				outcome.Resumable = false
+			}
 			return outcome, runErr
 		}
 		if err := reporter.ReportProgress(syncjob.RunProgress{
@@ -406,6 +409,12 @@ func dataSyncJobResumeIndex(request syncjob.ExecutionRequest, mappings []syncjob
 }
 
 func (executor appDataSyncJobExecutor) executeMappingWithRetry(ctx context.Context, runID string, definition syncjob.JobDefinition, config syncbackend.SyncConfig, reporter syncjob.RunReporter) (syncjob.ExecutionOutcome, error) {
+	return executeDataSyncMappingWithRetry(ctx, definition, reporter, func() (syncjob.ExecutionOutcome, error) {
+		return executor.executeOneMapping(ctx, runID, definition.Kind, config, reporter)
+	})
+}
+
+func executeDataSyncMappingWithRetry(ctx context.Context, definition syncjob.JobDefinition, reporter syncjob.RunReporter, operation func() (syncjob.ExecutionOutcome, error)) (syncjob.ExecutionOutcome, error) {
 	maxAttempts := definition.Options.MaxRetries + 1
 	if maxAttempts < 1 {
 		maxAttempts = 1
@@ -420,9 +429,13 @@ func (executor appDataSyncJobExecutor) executeMappingWithRetry(ctx context.Conte
 		if err := ctx.Err(); err != nil {
 			return syncjob.ExecutionOutcome{Resumable: true}, err
 		}
-		result, err := executor.executeOneMapping(ctx, runID, definition.Kind, config, reporter)
+		result, err := operation()
 		if err == nil {
 			return result, nil
+		}
+		if db.IsWriteOutcomeUnknown(err) {
+			result.Resumable = false
+			return result, err
 		}
 		if attempt == maxAttempts || ctx.Err() != nil {
 			return result, err
