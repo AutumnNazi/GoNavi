@@ -971,34 +971,10 @@ func buildDuplicateConnectionName(baseName string, existing []connection.SavedCo
 }
 
 func (r *savedConnectionRepository) List() ([]connection.SavedConnectionView, error) {
-	legacyMetadata := false
-	if payload, readErr := os.ReadFile(r.connectionsPath()); readErr == nil {
-		var raw savedConnectionsFile
-		if json.Unmarshal(payload, &raw) == nil {
-			for _, item := range raw.Connections {
-				if item.CreatedAt <= 0 {
-					legacyMetadata = true
-					break
-				}
-			}
-		}
-	}
-	connections, err := r.load()
-	if err != nil {
-		return nil, err
-	}
-	if !legacyMetadata {
-		return connections, nil
-	}
-	if err := r.withWriteLock(func() error {
-		latest, loadErr := r.load()
-		if loadErr != nil {
-			return loadErr
-		}
-		return r.saveAll(latest)
-	}); err != nil {
-		return nil, err
-	}
+	// load derives stable timestamps for legacy records in memory. Do not try
+	// to persist that normalization here: List is also called while callers
+	// hold the repository write lock (for example during cloud restore), and
+	// the lock is deliberately non-reentrant.
 	return r.load()
 }
 

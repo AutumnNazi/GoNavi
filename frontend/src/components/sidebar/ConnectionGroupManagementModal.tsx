@@ -64,7 +64,7 @@ const ConnectionGroupManagementModal: React.FC<Props> = ({ open, onClose }) => {
     <div style={{ display: 'grid', gridTemplateColumns: '280px minmax(0, 1fr)', gap: 16, minHeight: 520 }}>
       <div style={{ borderRight: '1px solid #eee', paddingRight: 12 }}>
         <Space style={{ marginBottom: 10 }}><Button size="small" icon={<FolderAddOutlined />} onClick={() => openNameModal('create')}>{t('connection.sidebar.management.new')}</Button></Space>
-        <Tree treeData={treeData} selectedKeys={[selectedContainer]} defaultExpandAll onSelect={(keys) => { if (keys[0]) { setSelectedContainer(String(keys[0])); setSelectedConnections([]); } }} />
+          <Tree treeData={treeData} selectedKeys={[selectedContainer]} defaultExpandAll onSelect={(keys) => { if (keys[0]) setSelectedContainer(String(keys[0])); }} />
       </div>
       <div>
         <Space wrap style={{ marginBottom: 12 }}>
@@ -72,7 +72,7 @@ const ConnectionGroupManagementModal: React.FC<Props> = ({ open, onClose }) => {
           {currentTag && <><Button size="small" onClick={() => openNameModal('rename', currentTag)}>{t('connection.sidebar.management.rename')}</Button><Button size="small" icon={<CopyOutlined />} onClick={() => { const id = duplicateTag(currentTag.id); if (id) setSelectedContainer(id); }}>{t('connection.sidebar.management.copy')}</Button><Button size="small" danger icon={<DeleteOutlined />} onClick={deleteGroup}>{t('connection.sidebar.management.delete')}</Button></>}
           <Segmented size="small" value={currentMode} options={[{ label: t('connection.sidebar.management.manual'), value: 'manual' }, { label: t('connection.sidebar.management.name'), value: 'name' }, { label: t('connection.sidebar.management.createdAt'), value: 'createdAt' }]} onChange={(value) => setSortMode(currentTag?.id || null, value as ConnectionSortMode)} />
         </Space>
-        <Space style={{ marginBottom: 10 }}><Button size="small" onClick={() => setSelectedConnections(visibleConnections)}>{t('connection.sidebar.management.selectAll')}</Button><Button size="small" onClick={() => setSelectedConnections([])}>{t('connection.sidebar.management.clear')}</Button><Typography.Text type="secondary">{t('connection.sidebar.management.selected', { count: selectedConnections.length })}</Typography.Text></Space>
+        <Space style={{ marginBottom: 10 }}><Button size="small" onClick={() => setSelectedConnections((current) => Array.from(new Set([...current, ...visibleConnections])))}>{t('connection.sidebar.management.selectAll')}</Button><Button size="small" onClick={() => setSelectedConnections([])}>{t('connection.sidebar.management.clear')}</Button><Typography.Text type="secondary">{t('connection.sidebar.management.selected', { count: selectedConnections.length })}</Typography.Text></Space>
         {visibleConnections.length ? <List bordered size="small" dataSource={visibleConnections} renderItem={(id) => { const connection = connectionById.get(id)!; return <List.Item draggable onDragStart={() => setDraggedConnections(selectedConnections.includes(id) ? selectedConnections : [id])}><Checkbox checked={selectedConnections.includes(id)} onChange={(event) => setSelectedConnections((current) => event.target.checked ? [...current, id] : current.filter((item) => item !== id))}>{connection.name}</Checkbox><Typography.Text type="secondary">{connection.config.host || ''}</Typography.Text></List.Item>; }} /> : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('connection.sidebar.management.empty')} />}
       </div>
     </div>

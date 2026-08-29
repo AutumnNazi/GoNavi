@@ -1420,10 +1420,11 @@ function App() {
               },
               replaceLayout: replaceConnectionSidebarLayout,
               subscribe: (listener) => useStore.subscribe((state, previousState) => {
-                  if (
-                      state.connectionTags !== previousState.connectionTags
-                      || state.sidebarRootOrder !== previousState.sidebarRootOrder
-                  ) {
+                    if (
+                        state.connectionTags !== previousState.connectionTags
+                        || state.sidebarRootOrder !== previousState.sidebarRootOrder
+                        || state.rootSortMode !== previousState.rootSortMode
+                    ) {
                       listener();
                   }
               }),

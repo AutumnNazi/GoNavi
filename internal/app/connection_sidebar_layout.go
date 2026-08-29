@@ -159,9 +159,7 @@ func (r *connectionSidebarLayoutRepository) loadUnlocked() (connection.Connectio
 		if diskFile.ConnectionTags[index].ChildOrder == nil {
 			diskFile.ConnectionTags[index].ChildOrder = []string{}
 		}
-		if diskFile.ConnectionTags[index].SortMode != "name" && diskFile.ConnectionTags[index].SortMode != "createdAt" {
-			diskFile.ConnectionTags[index].SortMode = "manual"
-		}
+		diskFile.ConnectionTags[index].SortMode = normalizeConnectionSidebarSortMode(diskFile.ConnectionTags[index].SortMode)
 	}
 	if diskFile.SidebarRootOrder == nil {
 		diskFile.SidebarRootOrder = []string{}
@@ -179,7 +177,9 @@ func normalizeConnectionSidebarSortMode(value string) string {
 	if value == "name" || value == "createdAt" {
 		return value
 	}
-	return "manual"
+	// Manual ordering is the zero value. Keep it omitted on disk and in API
+	// snapshots for compatibility with v1 layouts and existing callers.
+	return ""
 }
 
 func (r *connectionSidebarLayoutRepository) saveUnlocked(layout connection.ConnectionSidebarLayout) error {
@@ -230,6 +230,7 @@ func (r *connectionSidebarLayoutRepository) replaceUnlocked(
 		Revision:         nextRevision,
 		ConnectionTags:   normalized.ConnectionTags,
 		SidebarRootOrder: normalized.SidebarRootOrder,
+		RootSortMode:     normalized.RootSortMode,
 	}
 	if err := r.saveUnlocked(replacement); err != nil {
 		return connection.ConnectionSidebarLayout{}, err

@@ -1021,6 +1021,7 @@ func (a *App) CloudBackupRestore(request CloudBackupRestoreRequest) (CloudBackup
 				_, replaceErr := layoutRepo.replaceUnlocked(connection.ConnectionSidebarLayoutInput{
 					ConnectionTags:   payload.ConnectionSidebarLayout.ConnectionTags,
 					SidebarRootOrder: payload.ConnectionSidebarLayout.SidebarRootOrder,
+					RootSortMode:     payload.ConnectionSidebarLayout.RootSortMode,
 				})
 				if replaceErr != nil {
 					if rollbackErr := rollbackMutations(); rollbackErr != nil {
