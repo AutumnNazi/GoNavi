@@ -1482,7 +1482,7 @@ describe('store appearance persistence', () => {
     expect(useStore.getState().connectionTags.every((item) => !('environmentType' in item))).toBe(true);
   }, 30_000);
 
-  it('reorders connections inside tags and ungrouped roots independently', async () => {
+  it('keeps group order custom while storing independent connection display sorting', async () => {
     const { useStore } = await importStore();
 
     useStore.getState().replaceConnections([
@@ -1513,29 +1513,15 @@ describe('store appearance persistence', () => {
       connectionIds: ['conn-b', 'conn-d'],
     });
 
-    useStore.getState().reorderConnections('conn-d', 'conn-b', 'tag-dev', true);
-    expect(useStore.getState().connectionTags[0]?.connectionIds).toEqual(['conn-d', 'conn-b']);
+    useStore.getState().setConnectionDisplaySortMode('tag-dev', 'name');
+    useStore.getState().setConnectionDisplaySortMode(null, 'createdAt');
 
-    useStore.getState().reorderConnections('conn-c', 'conn-a', null, true);
-    expect(useStore.getState().connections.map((conn) => conn.id)).toEqual([
-      'conn-c',
-      'conn-a',
-      'conn-b',
-      'conn-d',
-    ]);
-
-    useStore.getState().setConnectionSortMode('tag-dev', 'name');
-    useStore.getState().reorderConnections('conn-b', 'conn-d', 'tag-dev', true);
-    expect(useStore.getState().connectionTags[0]?.connectionIds).toEqual(['conn-d', 'conn-b']);
-
-    useStore.getState().setConnectionSortMode(null, 'createdAt');
-    useStore.getState().reorderConnections('conn-a', 'conn-c', null, true);
-    expect(useStore.getState().connections.map((conn) => conn.id)).toEqual([
-      'conn-c',
-      'conn-a',
-      'conn-b',
-      'conn-d',
-    ]);
+    expect(useStore.getState().connectionTags[0]).toEqual(expect.objectContaining({
+      sortMode: 'manual',
+      connectionSortMode: 'name',
+    }));
+    expect(useStore.getState().rootSortMode).toBe('manual');
+    expect(useStore.getState().rootConnectionSortMode).toBe('createdAt');
   });
 
   it('reorders sidebar root items across tags and ungrouped hosts', async () => {

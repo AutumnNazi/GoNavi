@@ -52,6 +52,8 @@ if (
         revision: 0,
         connectionTags: [],
         sidebarRootOrder: [],
+        rootSortMode: 'manual',
+        rootConnectionSortMode: 'createdAt',
     };
     const mockSavedQueries: any[] = [];
     const mockSavedQueryGroups: any[] = [];
@@ -519,6 +521,8 @@ if (
                             revision: 1,
                             connectionTags: cloneBrowserMockValue(input.connectionTags),
                             sidebarRootOrder: cloneBrowserMockValue(input.sidebarRootOrder || []),
+                            rootSortMode: 'manual',
+                            rootConnectionSortMode: input?.rootConnectionSortMode === 'name' ? 'name' : 'createdAt',
                         };
                     }
                     return cloneBrowserMockValue(mockConnectionSidebarLayout);
@@ -536,6 +540,8 @@ if (
                         revision: Number(mockConnectionSidebarLayout.revision) + 1,
                         connectionTags: cloneBrowserMockValue(layout.connectionTags || []),
                         sidebarRootOrder: cloneBrowserMockValue(layout.sidebarRootOrder || []),
+                        rootSortMode: 'manual',
+                        rootConnectionSortMode: layout.rootConnectionSortMode === 'name' ? 'name' : 'createdAt',
                     };
                     return {
                         conflict: false,

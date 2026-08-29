@@ -1,30 +1,19 @@
 import { describe, expect, it } from 'vitest';
 import {
-  canReorderConnections,
+  findFirstRootTagToken,
   filterExistingConnectionIds,
   hasConnectionDragPayload,
-  orderConnectionGroupIds,
 } from './ConnectionGroupManagementModal';
 
-describe('orderConnectionGroupIds', () => {
-  const tags = [
-    { id: 'zebra', name: 'Zebra', createdAt: 20, connectionIds: [] },
-    { id: 'alpha', name: 'Alpha', createdAt: 10, connectionIds: [] },
-    { id: 'newest', name: 'Newest', createdAt: 30, connectionIds: [] },
-  ];
-
-  it('uses the persisted token order for manual mode and sorts automatically otherwise', () => {
-    const persistedOrder = ['zebra', 'newest', 'alpha'];
-
-    expect(orderConnectionGroupIds(persistedOrder, tags, 'manual')).toEqual(persistedOrder);
-    expect(orderConnectionGroupIds(persistedOrder, tags, 'name')).toEqual(['alpha', 'newest', 'zebra']);
-    expect(orderConnectionGroupIds(persistedOrder, tags, 'createdAt')).toEqual(['newest', 'zebra', 'alpha']);
-  });
-
-  it('allows connection reordering only in custom mode', () => {
-    expect(canReorderConnections('manual')).toBe(true);
-    expect(canReorderConnections('name')).toBe(false);
-    expect(canReorderConnections('createdAt')).toBe(false);
+describe('ConnectionGroupManagementModal helpers', () => {
+  it('finds the first real root group after synthetic ungrouped content', () => {
+    expect(findFirstRootTagToken([
+      'connection:ungrouped-a',
+      'tag:root-first',
+      'connection:ungrouped-b',
+      'tag:root-second',
+    ])).toBe('tag:root-first');
+    expect(findFirstRootTagToken(['connection:ungrouped-a'])).toBeNull();
   });
 
   it('recognizes only connection drags, keeping group tree drops isolated', () => {

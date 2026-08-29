@@ -4,32 +4,35 @@ package connection
 // sidebar. ConnectionIDs contains direct hosts only; ChildOrder may mix
 // connection:<id> and tag:<id> tokens for direct children.
 type ConnectionTag struct {
-	ID            string   `json:"id"`
-	Name          string   `json:"name"`
-	CreatedAt     int64    `json:"createdAt,omitempty"`
-	ParentTagID   string   `json:"parentTagId,omitempty"`
-	ConnectionIDs []string `json:"connectionIds"`
-	ChildOrder    []string `json:"childOrder,omitempty"`
-	SortMode      string   `json:"sortMode,omitempty"`
+	ID                 string   `json:"id"`
+	Name               string   `json:"name"`
+	CreatedAt          int64    `json:"createdAt,omitempty"`
+	ParentTagID        string   `json:"parentTagId,omitempty"`
+	ConnectionIDs      []string `json:"connectionIds"`
+	ChildOrder         []string `json:"childOrder,omitempty"`
+	SortMode           string   `json:"sortMode,omitempty"`
+	ConnectionSortMode string   `json:"connectionSortMode,omitempty"`
 }
 
 // ConnectionSidebarLayoutInput is the client-owned layout snapshot used for
 // first-run bootstrap candidates and complete authoritative replacements.
 type ConnectionSidebarLayoutInput struct {
-	ConnectionTags   []ConnectionTag `json:"connectionTags"`
-	SidebarRootOrder []string        `json:"sidebarRootOrder"`
-	RootSortMode     string          `json:"rootSortMode,omitempty"`
+	ConnectionTags         []ConnectionTag `json:"connectionTags"`
+	SidebarRootOrder       []string        `json:"sidebarRootOrder"`
+	RootSortMode           string          `json:"rootSortMode,omitempty"`
+	RootConnectionSortMode string          `json:"rootConnectionSortMode,omitempty"`
 }
 
 // ConnectionSidebarLayout is the authoritative shared layout returned to a
 // client. Initialized distinguishes a missing file from an intentionally saved
 // empty layout.
 type ConnectionSidebarLayout struct {
-	Initialized      bool            `json:"initialized"`
-	Revision         uint64          `json:"revision"`
-	ConnectionTags   []ConnectionTag `json:"connectionTags"`
-	SidebarRootOrder []string        `json:"sidebarRootOrder"`
-	RootSortMode     string          `json:"rootSortMode,omitempty"`
+	Initialized            bool            `json:"initialized"`
+	Revision               uint64          `json:"revision"`
+	ConnectionTags         []ConnectionTag `json:"connectionTags"`
+	SidebarRootOrder       []string        `json:"sidebarRootOrder"`
+	RootSortMode           string          `json:"rootSortMode,omitempty"`
+	RootConnectionSortMode string          `json:"rootConnectionSortMode,omitempty"`
 }
 
 // SaveConnectionSidebarLayoutInput replaces the complete shared layout when

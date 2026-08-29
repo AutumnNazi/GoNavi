@@ -2319,6 +2319,7 @@ export namespace connection {
 	    connectionIds: string[];
 	    childOrder?: string[];
 	    sortMode?: string;
+	    connectionSortMode?: string;
 
 	    static createFrom(source: any = {}) {
 	        return new ConnectionTag(source);
@@ -2333,6 +2334,7 @@ export namespace connection {
 	        this.connectionIds = source["connectionIds"];
 	        this.childOrder = source["childOrder"];
 	        this.sortMode = source["sortMode"];
+	        this.connectionSortMode = source["connectionSortMode"];
 	    }
 	}
 	export class ConnectionSidebarLayout {
@@ -2341,6 +2343,7 @@ export namespace connection {
 	    connectionTags: ConnectionTag[];
 	    sidebarRootOrder: string[];
 	    rootSortMode?: string;
+	    rootConnectionSortMode?: string;
 
 	    static createFrom(source: any = {}) {
 	        return new ConnectionSidebarLayout(source);
@@ -2353,6 +2356,7 @@ export namespace connection {
 	        this.connectionTags = this.convertValues(source["connectionTags"], ConnectionTag);
 	        this.sidebarRootOrder = source["sidebarRootOrder"];
 	        this.rootSortMode = source["rootSortMode"];
+	        this.rootConnectionSortMode = source["rootConnectionSortMode"];
 	    }
 
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -2377,6 +2381,7 @@ export namespace connection {
 	    connectionTags: ConnectionTag[];
 	    sidebarRootOrder: string[];
 	    rootSortMode?: string;
+	    rootConnectionSortMode?: string;
 
 	    static createFrom(source: any = {}) {
 	        return new ConnectionSidebarLayoutInput(source);
@@ -2387,6 +2392,7 @@ export namespace connection {
 	        this.connectionTags = this.convertValues(source["connectionTags"], ConnectionTag);
 	        this.sidebarRootOrder = source["sidebarRootOrder"];
 	        this.rootSortMode = source["rootSortMode"];
+	        this.rootConnectionSortMode = source["rootConnectionSortMode"];
 	    }
 
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

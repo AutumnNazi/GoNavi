@@ -712,6 +712,7 @@ const Sidebar: React.FC<{
   const connectionTags = useStore(state => state.connectionTags);
   const sidebarRootOrder = useStore(state => state.sidebarRootOrder);
   const rootSortMode = useStore(state => state.rootSortMode);
+  const rootConnectionSortMode = useStore(state => state.rootConnectionSortMode);
   const addConnectionTag = useStore(state => state.addConnectionTag);
   const updateConnectionTag = useStore(state => state.updateConnectionTag);
   const removeConnectionTag = useStore(state => state.removeConnectionTag);
@@ -1338,6 +1339,7 @@ const Sidebar: React.FC<{
         connectionTags,
         sidebarRootOrder,
         rootSortMode,
+        rootConnectionSortMode,
       ).map(buildTreeNode);
       if (allSavedQueriesNode) {
         orderedNodes.push(allSavedQueriesNode);
@@ -1345,7 +1347,7 @@ const Sidebar: React.FC<{
       const externalSQLRootNode = prev.find((node) => node.type === 'external-sql-root');
       return externalSQLRootNode ? [...orderedNodes, externalSQLRootNode] : orderedNodes;
     });
-  }, [connections, connectionTags, sidebarRootOrder, rootSortMode, allSavedQueriesNode]);
+  }, [connections, connectionTags, sidebarRootOrder, rootSortMode, rootConnectionSortMode, allSavedQueriesNode]);
 
   const handleDuplicateConnection = async (conn: SavedConnection) => {
     if (!conn?.id) return;
@@ -3444,8 +3446,8 @@ const Sidebar: React.FC<{
       setIsTreeDragging,
   });
   const v2RailConnectionGroups = useMemo(
-      () => buildV2RailConnectionGroups(connections, connectionTags, sidebarRootOrder, rootSortMode),
-      [connections, connectionTags, sidebarRootOrder, rootSortMode],
+      () => buildV2RailConnectionGroups(connections, connectionTags, sidebarRootOrder, rootSortMode, rootConnectionSortMode),
+      [connections, connectionTags, sidebarRootOrder, rootSortMode, rootConnectionSortMode],
   );
   const getTagParentId = (tagId: unknown): string | null => {
       const tag = connectionTags.find((candidate) => candidate.id === String(tagId || '').trim());

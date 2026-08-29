@@ -1416,6 +1416,7 @@ function App() {
                       connectionTags: state.connectionTags,
                       sidebarRootOrder: state.sidebarRootOrder,
                       rootSortMode: state.rootSortMode,
+                      rootConnectionSortMode: state.rootConnectionSortMode,
                   };
               },
               replaceLayout: replaceConnectionSidebarLayout,
@@ -1424,6 +1425,7 @@ function App() {
                         state.connectionTags !== previousState.connectionTags
                         || state.sidebarRootOrder !== previousState.sidebarRootOrder
                         || state.rootSortMode !== previousState.rootSortMode
+                        || state.rootConnectionSortMode !== previousState.rootConnectionSortMode
                     ) {
                       listener();
                   }
@@ -9848,6 +9850,7 @@ function App() {
             open={isConnectionGroupManagementOpen}
             onClose={() => setIsConnectionGroupManagementOpen(false)}
             onOpenTagForm={(parentTagId) => window.dispatchEvent(new CustomEvent('gonavi:open-connection-tag-form', { detail: { parentTagId } }))}
+            onCreateConnectionInGroup={handleCreateConnectionInGroup}
             onEditConnection={handleEditConnection}
           />
 

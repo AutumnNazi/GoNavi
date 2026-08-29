@@ -30,11 +30,12 @@ const (
 var connectionSidebarLayoutMu sync.Mutex
 
 type connectionSidebarLayoutDiskFile struct {
-	Version          int                        `json:"version"`
-	Revision         uint64                     `json:"revision"`
-	ConnectionTags   []connection.ConnectionTag `json:"connectionTags"`
-	SidebarRootOrder []string                   `json:"sidebarRootOrder"`
-	RootSortMode     string                     `json:"rootSortMode,omitempty"`
+	Version                int                        `json:"version"`
+	Revision               uint64                     `json:"revision"`
+	ConnectionTags         []connection.ConnectionTag `json:"connectionTags"`
+	SidebarRootOrder       []string                   `json:"sidebarRootOrder"`
+	RootSortMode           string                     `json:"rootSortMode,omitempty"`
+	RootConnectionSortMode string                     `json:"rootConnectionSortMode,omitempty"`
 }
 
 type connectionSidebarLayoutRepository struct {
@@ -85,8 +86,10 @@ func (snapshot connectionSidebarLayoutSnapshot) restoreUnlocked(
 
 func emptyConnectionSidebarLayout() connection.ConnectionSidebarLayout {
 	return connection.ConnectionSidebarLayout{
-		ConnectionTags:   []connection.ConnectionTag{},
-		SidebarRootOrder: []string{},
+		ConnectionTags:         []connection.ConnectionTag{},
+		SidebarRootOrder:       []string{},
+		RootSortMode:           "manual",
+		RootConnectionSortMode: "createdAt",
 	}
 }
 
@@ -169,7 +172,11 @@ func (r *connectionSidebarLayoutRepository) loadUnlocked() (connection.Connectio
 		if diskFile.ConnectionTags[index].ChildOrder == nil {
 			diskFile.ConnectionTags[index].ChildOrder = []string{}
 		}
-		diskFile.ConnectionTags[index].SortMode = normalizeConnectionSidebarSortMode(diskFile.ConnectionTags[index].SortMode)
+		diskFile.ConnectionTags[index].ConnectionSortMode = normalizeConnectionSidebarConnectionSortMode(
+			diskFile.ConnectionTags[index].ConnectionSortMode,
+			diskFile.ConnectionTags[index].SortMode,
+		)
+		diskFile.ConnectionTags[index].SortMode = "manual"
 	}
 	if diskFile.SidebarRootOrder == nil {
 		diskFile.SidebarRootOrder = []string{}
@@ -179,7 +186,11 @@ func (r *connectionSidebarLayoutRepository) loadUnlocked() (connection.Connectio
 		Revision:         diskFile.Revision,
 		ConnectionTags:   diskFile.ConnectionTags,
 		SidebarRootOrder: diskFile.SidebarRootOrder,
-		RootSortMode:     normalizeConnectionSidebarSortMode(diskFile.RootSortMode),
+		RootSortMode:     "manual",
+		RootConnectionSortMode: normalizeConnectionSidebarConnectionSortMode(
+			diskFile.RootConnectionSortMode,
+			diskFile.RootSortMode,
+		),
 	}
 	// A layout at the maximum revision cannot participate in a safe write CAS.
 	// Keep the migrated timestamps in the returned snapshot, but do not rewrite
@@ -192,13 +203,14 @@ func (r *connectionSidebarLayoutRepository) loadUnlocked() (connection.Connectio
 	return layout, nil
 }
 
-func normalizeConnectionSidebarSortMode(value string) string {
+func normalizeConnectionSidebarConnectionSortMode(value string, legacyValue string) string {
 	if value == "name" || value == "createdAt" {
 		return value
 	}
-	// Manual ordering is the zero value. Keep it omitted on disk and in API
-	// snapshots for compatibility with v1 layouts and existing callers.
-	return ""
+	if legacyValue == "name" || legacyValue == "createdAt" {
+		return legacyValue
+	}
+	return "createdAt"
 }
 
 func (r *connectionSidebarLayoutRepository) saveUnlocked(layout connection.ConnectionSidebarLayout) error {
@@ -207,7 +219,11 @@ func (r *connectionSidebarLayoutRepository) saveUnlocked(layout connection.Conne
 		Revision:         layout.Revision,
 		ConnectionTags:   layout.ConnectionTags,
 		SidebarRootOrder: layout.SidebarRootOrder,
-		RootSortMode:     normalizeConnectionSidebarSortMode(layout.RootSortMode),
+		RootSortMode:     "manual",
+		RootConnectionSortMode: normalizeConnectionSidebarConnectionSortMode(
+			layout.RootConnectionSortMode,
+			layout.RootSortMode,
+		),
 	}
 	payload, err := json.MarshalIndent(diskFile, "", "  ")
 	if err != nil {
@@ -245,11 +261,12 @@ func (r *connectionSidebarLayoutRepository) replaceUnlocked(
 		nextRevision = current.Revision + 1
 	}
 	replacement := connection.ConnectionSidebarLayout{
-		Initialized:      true,
-		Revision:         nextRevision,
-		ConnectionTags:   normalized.ConnectionTags,
-		SidebarRootOrder: normalized.SidebarRootOrder,
-		RootSortMode:     normalized.RootSortMode,
+		Initialized:            true,
+		Revision:               nextRevision,
+		ConnectionTags:         normalized.ConnectionTags,
+		SidebarRootOrder:       normalized.SidebarRootOrder,
+		RootSortMode:           normalized.RootSortMode,
+		RootConnectionSortMode: normalized.RootConnectionSortMode,
 	}
 	if err := r.saveUnlocked(replacement); err != nil {
 		return connection.ConnectionSidebarLayout{}, err
@@ -445,13 +462,14 @@ func (r *connectionSidebarLayoutRepository) normalizeUnlocked(
 			createdAt = time.Now().UnixMilli() - int64(len(input.ConnectionTags)-rawIndex)
 		}
 		tags = append(tags, connection.ConnectionTag{
-			ID:            id,
-			Name:          name,
-			CreatedAt:     createdAt,
-			ParentTagID:   strings.TrimSpace(raw.ParentTagID),
-			ConnectionIDs: connectionIDs,
-			ChildOrder:    sanitizeConnectionSidebarOrderTokens(raw.ChildOrder),
-			SortMode:      normalizeConnectionSidebarSortMode(raw.SortMode),
+			ID:                 id,
+			Name:               name,
+			CreatedAt:          createdAt,
+			ParentTagID:        strings.TrimSpace(raw.ParentTagID),
+			ConnectionIDs:      connectionIDs,
+			ChildOrder:         sanitizeConnectionSidebarOrderTokens(raw.ChildOrder),
+			SortMode:           "manual",
+			ConnectionSortMode: normalizeConnectionSidebarConnectionSortMode(raw.ConnectionSortMode, raw.SortMode),
 		})
 	}
 
@@ -540,9 +558,10 @@ func (r *connectionSidebarLayoutRepository) normalizeUnlocked(
 		rootDefaults = append(rootDefaults, buildConnectionSidebarHostToken(connectionID))
 	}
 	return connection.ConnectionSidebarLayoutInput{
-		ConnectionTags:   tags,
-		SidebarRootOrder: appendMissingConnectionSidebarTokens(input.SidebarRootOrder, rootDefaults),
-		RootSortMode:     normalizeConnectionSidebarSortMode(input.RootSortMode),
+		ConnectionTags:         tags,
+		SidebarRootOrder:       appendMissingConnectionSidebarTokens(input.SidebarRootOrder, rootDefaults),
+		RootSortMode:           "manual",
+		RootConnectionSortMode: normalizeConnectionSidebarConnectionSortMode(input.RootConnectionSortMode, input.RootSortMode),
 	}, nil
 }
 
@@ -596,16 +615,18 @@ func (r *connectionSidebarLayoutRepository) Bootstrap(
 		}
 		if current.Initialized {
 			normalized, err := r.normalizeUnlocked(connection.ConnectionSidebarLayoutInput{
-				ConnectionTags:   current.ConnectionTags,
-				SidebarRootOrder: current.SidebarRootOrder,
-				RootSortMode:     current.RootSortMode,
+				ConnectionTags:         current.ConnectionTags,
+				SidebarRootOrder:       current.SidebarRootOrder,
+				RootSortMode:           current.RootSortMode,
+				RootConnectionSortMode: current.RootConnectionSortMode,
 			})
 			if err != nil {
 				return err
 			}
 			if !reflect.DeepEqual(current.ConnectionTags, normalized.ConnectionTags) ||
 				!reflect.DeepEqual(current.SidebarRootOrder, normalized.SidebarRootOrder) ||
-				current.RootSortMode != normalized.RootSortMode {
+				current.RootSortMode != normalized.RootSortMode ||
+				current.RootConnectionSortMode != normalized.RootConnectionSortMode {
 				if current.Revision == ^uint64(0) {
 					return errors.New("connection sidebar layout revision overflow")
 				}
@@ -613,6 +634,7 @@ func (r *connectionSidebarLayoutRepository) Bootstrap(
 				current.ConnectionTags = normalized.ConnectionTags
 				current.SidebarRootOrder = normalized.SidebarRootOrder
 				current.RootSortMode = normalized.RootSortMode
+				current.RootConnectionSortMode = normalized.RootConnectionSortMode
 				if err := r.saveUnlocked(current); err != nil {
 					return err
 				}
@@ -632,11 +654,12 @@ func (r *connectionSidebarLayoutRepository) Bootstrap(
 			return nil
 		}
 		result = connection.ConnectionSidebarLayout{
-			Initialized:      true,
-			Revision:         1,
-			ConnectionTags:   normalized.ConnectionTags,
-			SidebarRootOrder: normalized.SidebarRootOrder,
-			RootSortMode:     normalized.RootSortMode,
+			Initialized:            true,
+			Revision:               1,
+			ConnectionTags:         normalized.ConnectionTags,
+			SidebarRootOrder:       normalized.SidebarRootOrder,
+			RootSortMode:           normalized.RootSortMode,
+			RootConnectionSortMode: normalized.RootConnectionSortMode,
 		}
 		if err := r.saveUnlocked(result); err != nil {
 			return err
@@ -663,15 +686,18 @@ func (r *connectionSidebarLayoutRepository) Load() (connection.ConnectionSidebar
 			return nil
 		}
 		normalized, err := r.normalizeUnlocked(connection.ConnectionSidebarLayoutInput{
-			ConnectionTags:   current.ConnectionTags,
-			SidebarRootOrder: current.SidebarRootOrder,
-			RootSortMode:     current.RootSortMode,
+			ConnectionTags:         current.ConnectionTags,
+			SidebarRootOrder:       current.SidebarRootOrder,
+			RootSortMode:           current.RootSortMode,
+			RootConnectionSortMode: current.RootConnectionSortMode,
 		})
 		if err != nil {
 			return err
 		}
 		current.ConnectionTags = normalized.ConnectionTags
 		current.SidebarRootOrder = normalized.SidebarRootOrder
+		current.RootSortMode = normalized.RootSortMode
+		current.RootConnectionSortMode = normalized.RootConnectionSortMode
 		result = current
 		return nil
 	})
@@ -691,15 +717,18 @@ func (r *connectionSidebarLayoutRepository) Save(
 			(current.Initialized && input.ExpectedRevision != current.Revision) {
 			if current.Initialized {
 				normalized, normalizeErr := r.normalizeUnlocked(connection.ConnectionSidebarLayoutInput{
-					ConnectionTags:   current.ConnectionTags,
-					SidebarRootOrder: current.SidebarRootOrder,
-					RootSortMode:     current.RootSortMode,
+					ConnectionTags:         current.ConnectionTags,
+					SidebarRootOrder:       current.SidebarRootOrder,
+					RootSortMode:           current.RootSortMode,
+					RootConnectionSortMode: current.RootConnectionSortMode,
 				})
 				if normalizeErr != nil {
 					return normalizeErr
 				}
 				current.ConnectionTags = normalized.ConnectionTags
 				current.SidebarRootOrder = normalized.SidebarRootOrder
+				current.RootSortMode = normalized.RootSortMode
+				current.RootConnectionSortMode = normalized.RootConnectionSortMode
 			}
 			result.Conflict = true
 			result.Layout = current
@@ -717,11 +746,12 @@ func (r *connectionSidebarLayoutRepository) Save(
 			nextRevision = current.Revision + 1
 		}
 		result.Layout = connection.ConnectionSidebarLayout{
-			Initialized:      true,
-			Revision:         nextRevision,
-			ConnectionTags:   normalized.ConnectionTags,
-			SidebarRootOrder: normalized.SidebarRootOrder,
-			RootSortMode:     normalized.RootSortMode,
+			Initialized:            true,
+			Revision:               nextRevision,
+			ConnectionTags:         normalized.ConnectionTags,
+			SidebarRootOrder:       normalized.SidebarRootOrder,
+			RootSortMode:           normalized.RootSortMode,
+			RootConnectionSortMode: normalized.RootConnectionSortMode,
 		}
 		return r.saveUnlocked(result.Layout)
 	})

@@ -238,6 +238,7 @@ export const SidebarEntityModals: React.FC<SidebarEntityModalsProps> = ({
       )}
       open={isCreateTagModalOpen}
       centered
+      zIndex={1200}
       styles={{ content: modalPanelStyle, header: { background: 'transparent', borderBottom: 'none', paddingBottom: 10 }, body: { paddingTop: 8 }, footer: { background: 'transparent', borderTop: 'none', paddingTop: 12 } }}
       onOk={() => {
         createTagForm.validateFields().then(values => {

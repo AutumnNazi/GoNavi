@@ -12,6 +12,7 @@ import {
   SavedQueryGroup,
   ConnectionTag,
   ConnectionSidebarLayoutInput,
+  ConnectionDisplaySortMode,
   ConnectionSortMode,
   AIChatMessage,
   AIContextItem,
@@ -1144,7 +1145,14 @@ const normalizeConnectionTagTree = (
       parentTagId,
       connectionIds: sanitizeStringArray(entry.connectionIds, 256),
       childOrder: sanitizeSidebarItemOrder(entry.childOrder),
-      sortMode: entry.sortMode === 'name' || entry.sortMode === 'createdAt' ? entry.sortMode : 'manual',
+      // Group order is always user-defined. Preserve a legacy automatic mode
+      // only as the initial direct-connection display preference.
+      sortMode: 'manual',
+      connectionSortMode: entry.connectionSortMode === 'name' || entry.connectionSortMode === 'createdAt'
+        ? entry.connectionSortMode
+        : entry.sortMode === 'name' || entry.sortMode === 'createdAt'
+          ? entry.sortMode
+          : 'createdAt',
     });
   });
 
@@ -1225,6 +1233,7 @@ const sanitizeConnectionTags = (value: unknown): ConnectionTag[] => {
     );
     const name = toTrimmedString(raw.name, fallbackName) || fallbackName;
     const sortMode = toTrimmedString(raw.sortMode) as ConnectionSortMode;
+    const connectionSortMode = toTrimmedString(raw.connectionSortMode) as ConnectionDisplaySortMode;
     const createdAt = Number(raw.createdAt);
     result.push({
       id,
@@ -1233,7 +1242,12 @@ const sanitizeConnectionTags = (value: unknown): ConnectionTag[] => {
       parentTagId: toTrimmedString(raw.parentTagId) || undefined,
       connectionIds: sanitizeStringArray(raw.connectionIds, 256),
       childOrder: sanitizeSidebarItemOrder(raw.childOrder),
-      sortMode: sortMode === 'name' || sortMode === 'createdAt' ? sortMode : 'manual',
+      sortMode: 'manual',
+      connectionSortMode: connectionSortMode === 'name' || connectionSortMode === 'createdAt'
+        ? connectionSortMode
+        : sortMode === 'name' || sortMode === 'createdAt'
+          ? sortMode
+          : 'createdAt',
     });
   });
 
@@ -1823,6 +1837,7 @@ interface AppState {
   connectionTags: ConnectionTag[];
   sidebarRootOrder: string[];
   rootSortMode: ConnectionSortMode;
+  rootConnectionSortMode: ConnectionDisplaySortMode;
   tabs: TabData[];
   /** 主工作区已拆出的浮动窗口（会话态，不持久化） */
   detachedWorkbenchWindows: DetachedWorkbenchWindow[];
@@ -1946,7 +1961,7 @@ interface AppState {
     targetToken: string,
     insertBefore: boolean,
   ) => void;
-  setConnectionSortMode: (tagId: string | null, mode: ConnectionSortMode) => void;
+  setConnectionDisplaySortMode: (tagId: string | null, mode: ConnectionDisplaySortMode) => void;
   duplicateConnectionTag: (id: string) => string | null;
   moveConnectionsToTag: (ids: string[], targetTagId: string | null) => void;
 
@@ -3560,6 +3575,7 @@ const PERSISTED_STATE_DEPENDENCY_KEYS = [
   "connectionTags",
   "sidebarRootOrder",
   "rootSortMode",
+  "rootConnectionSortMode",
   "externalSQLDirectories",
   "recentConnectionTargets",
   "recentSQLFiles",
@@ -3616,6 +3632,7 @@ const buildPersistedStateProjection = (
     connectionTags: state.connectionTags,
     sidebarRootOrder: state.sidebarRootOrder,
     rootSortMode: state.rootSortMode,
+    rootConnectionSortMode: state.rootConnectionSortMode,
     externalSQLDirectories: state.externalSQLDirectories,
     recentConnectionTargets: sanitizeRecentConnectionTargets(
       state.recentConnectionTargets,
@@ -3733,6 +3750,7 @@ export const useStore = create<AppState>()(
       connectionTags: [],
       sidebarRootOrder: [],
       rootSortMode: 'manual',
+      rootConnectionSortMode: 'createdAt',
       tabs: [],
       detachedWorkbenchWindows: [],
       detachedQueryResultWindows: [],
@@ -3899,16 +3917,23 @@ export const useStore = create<AppState>()(
             sanitizeConnectionTags(layout?.connectionTags),
             sanitizeSidebarRootOrder(layout?.sidebarRootOrder),
             state.connections,
-          ), rootSortMode: layout?.rootSortMode === 'name' || layout?.rootSortMode === 'createdAt' ? layout.rootSortMode : 'manual' }),
+          ),
+          rootSortMode: 'manual',
+          rootConnectionSortMode: layout?.rootConnectionSortMode === 'name' || layout?.rootConnectionSortMode === 'createdAt'
+            ? layout.rootConnectionSortMode
+            : layout?.rootSortMode === 'name' || layout?.rootSortMode === 'createdAt'
+              ? layout.rootSortMode
+              : 'createdAt',
+          }),
         ),
 
-      setConnectionSortMode: (tagId, mode) =>
+      setConnectionDisplaySortMode: (tagId, mode) =>
         set((state) => {
-          const safeMode: ConnectionSortMode = mode === 'name' || mode === 'createdAt' ? mode : 'manual';
-          if (!tagId) return { rootSortMode: safeMode };
+          const safeMode: ConnectionDisplaySortMode = mode === 'name' ? 'name' : 'createdAt';
+          if (!tagId) return { rootConnectionSortMode: safeMode };
           return {
             connectionTags: state.connectionTags.map((tag) =>
-              tag.id === tagId ? { ...tag, sortMode: safeMode } : tag,
+              tag.id === tagId ? { ...tag, connectionSortMode: safeMode } : tag,
             ),
           };
         }),
@@ -6165,9 +6190,12 @@ export const useStore = create<AppState>()(
           state.connectionTags === undefined ? undefined : nextState.connectionTags,
           state.connections === undefined ? undefined : nextState.connections,
         );
-        nextState.rootSortMode = state.rootSortMode === 'name' || state.rootSortMode === 'createdAt'
-          ? state.rootSortMode
-          : 'manual';
+        nextState.rootSortMode = 'manual';
+        nextState.rootConnectionSortMode = state.rootConnectionSortMode === 'name' || state.rootConnectionSortMode === 'createdAt'
+          ? state.rootConnectionSortMode
+          : state.rootSortMode === 'name' || state.rootSortMode === 'createdAt'
+            ? state.rootSortMode
+            : 'createdAt';
         delete nextState.savedQueries;
         delete nextState.savedQueryGroups;
         nextState.externalSQLDirectories = sanitizeExternalSQLDirectories(
@@ -6309,9 +6337,12 @@ export const useStore = create<AppState>()(
           connections: persistedConnections,
           connectionTags: persistedConnectionTags,
           sidebarRootOrder: persistedSidebarRootOrder,
-          rootSortMode: state.rootSortMode === 'name' || state.rootSortMode === 'createdAt'
-            ? state.rootSortMode
-            : currentState.rootSortMode,
+          rootSortMode: 'manual',
+          rootConnectionSortMode: state.rootConnectionSortMode === 'name' || state.rootConnectionSortMode === 'createdAt'
+            ? state.rootConnectionSortMode
+            : state.rootSortMode === 'name' || state.rootSortMode === 'createdAt'
+              ? state.rootSortMode
+              : currentState.rootConnectionSortMode,
           tabs: safeTabs,
           // Floating windows are session-only and must not be restored from disk.
           detachedWorkbenchWindows: [],

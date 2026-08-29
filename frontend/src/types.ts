@@ -402,15 +402,19 @@ export interface ConnectionTag {
    * `connection:<id>` tokens as the sidebar root order.
    */
   childOrder?: string[];
+  /** Direct connection display order within this group. */
+  connectionSortMode?: ConnectionDisplaySortMode;
   sortMode?: ConnectionSortMode;
 }
 
 export type ConnectionSortMode = 'manual' | 'name' | 'createdAt';
+export type ConnectionDisplaySortMode = 'name' | 'createdAt';
 
 export interface ConnectionSidebarLayoutInput {
   connectionTags: ConnectionTag[];
   sidebarRootOrder: string[];
   rootSortMode?: ConnectionSortMode;
+  rootConnectionSortMode?: ConnectionDisplaySortMode;
 }
 
 export interface ConnectionSidebarLayout extends ConnectionSidebarLayoutInput {

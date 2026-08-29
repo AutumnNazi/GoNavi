@@ -113,7 +113,7 @@ func TestBootstrapConnectionSidebarLayoutDoesNotPersistEmptyGroups(t *testing.T)
 	}
 }
 
-func TestConnectionSidebarLayoutPersistsLegacyTagCreatedAtAndRootSortMode(t *testing.T) {
+func TestConnectionSidebarLayoutPersistsLegacyTagCreatedAtAndRootConnectionSortMode(t *testing.T) {
 	application := newConnectionSidebarLayoutTestApp(t)
 	layoutPath := filepath.Join(application.configDir, connectionSidebarLayoutFileName)
 	legacy := []byte(`{"version":1,"revision":3,"connectionTags":[{"id":"legacy-tag","name":"Legacy","connectionIds":[]}],"sidebarRootOrder":["tag:legacy-tag"],"rootSortMode":"name"}`)
@@ -125,8 +125,8 @@ func TestConnectionSidebarLayoutPersistsLegacyTagCreatedAtAndRootSortMode(t *tes
 	if err != nil {
 		t.Fatalf("LoadConnectionSidebarLayout: %v", err)
 	}
-	if loaded.RootSortMode != "name" || len(loaded.ConnectionTags) != 1 || loaded.ConnectionTags[0].CreatedAt <= 0 {
-		t.Fatalf("loaded legacy layout = %+v, want root name sort and migrated timestamp", loaded)
+	if loaded.RootSortMode != "manual" || loaded.RootConnectionSortMode != "name" || len(loaded.ConnectionTags) != 1 || loaded.ConnectionTags[0].CreatedAt <= 0 {
+		t.Fatalf("loaded legacy layout = %+v, want manual root sort, name connection sort and migrated timestamp", loaded)
 	}
 
 	persistedBytes, err := os.ReadFile(layoutPath)
@@ -137,16 +137,16 @@ func TestConnectionSidebarLayoutPersistsLegacyTagCreatedAtAndRootSortMode(t *tes
 	if err := json.Unmarshal(persistedBytes, &persisted); err != nil {
 		t.Fatalf("decode migrated layout: %v", err)
 	}
-	if persisted.RootSortMode != "name" || len(persisted.ConnectionTags) != 1 || persisted.ConnectionTags[0].CreatedAt != loaded.ConnectionTags[0].CreatedAt {
-		t.Fatalf("persisted migrated layout = %+v, want loaded root sort and timestamp", persisted)
+	if persisted.RootSortMode != "manual" || persisted.RootConnectionSortMode != "name" || len(persisted.ConnectionTags) != 1 || persisted.ConnectionTags[0].CreatedAt != loaded.ConnectionTags[0].CreatedAt {
+		t.Fatalf("persisted migrated layout = %+v, want manual root sort, connection sort and timestamp", persisted)
 	}
 
 	bootstrapped, err := application.BootstrapConnectionSidebarLayout(connection.ConnectionSidebarLayoutInput{})
 	if err != nil {
 		t.Fatalf("BootstrapConnectionSidebarLayout: %v", err)
 	}
-	if bootstrapped.RootSortMode != "name" {
-		t.Fatalf("bootstrap root sort mode = %q, want name", bootstrapped.RootSortMode)
+	if bootstrapped.RootSortMode != "manual" || bootstrapped.RootConnectionSortMode != "name" {
+		t.Fatalf("bootstrap sort modes = root %q, connections %q; want manual/name", bootstrapped.RootSortMode, bootstrapped.RootConnectionSortMode)
 	}
 }
 
