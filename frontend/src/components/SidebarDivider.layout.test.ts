@@ -31,6 +31,10 @@ describe('sidebar divider layout', () => {
     const siderRule = readCssRule(v2ThemeCss, 'body[data-ui-version="v2"] .ant-layout-sider');
     const sidebarRule = readCssRule(v2ThemeCss, 'body[data-ui-version="v2"] .gn-v2-sidebar-redesign');
     const railRule = readCssRule(v2ThemeCss, 'body[data-ui-version="v2"] .gn-v2-connection-rail');
+    const expandedRailRule = readCssRule(
+      appCss,
+      "body[data-ui-version='v2'] .ant-layout-sider[data-sidebar-collapsed='false'] .gn-v2-connection-rail",
+    );
     const collapsedSiderRule = readCssRule(
       appCss,
       "body[data-ui-version] .ant-layout-sider[data-sidebar-collapsed='true']",
@@ -39,6 +43,8 @@ describe('sidebar divider layout', () => {
     expect(siderRule).toContain('border-right: 0.5px solid var(--gn-br-1) !important;');
     expect(sidebarRule).not.toContain('border-right:');
     expect(railRule).toContain('border-right: 0.5px solid var(--gn-br-1);');
+    expect(railRule).toContain('display: flex;');
+    expect(expandedRailRule).toContain('display: none;');
     expect(collapsedSiderRule).toContain('border-right: 0 !important;');
   });
 });
