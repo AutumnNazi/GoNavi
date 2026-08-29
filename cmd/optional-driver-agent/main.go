@@ -43,6 +43,7 @@ type agentResponse struct {
 	ID              int64                         `json:"id"`
 	Success         bool                          `json:"success"`
 	Error           string                        `json:"error,omitempty"`
+	OutcomeUnknown  bool                          `json:"outcomeUnknown,omitempty"`
 	SSHHostKeyTrust *sshbridge.HostKeyTrustStatus `json:"sshHostKeyTrust,omitempty"`
 	SSHProgress     *connection.SSHProgressEvent  `json:"sshProgress,omitempty"`
 	Data            interface{}                   `json:"data,omitempty"`
@@ -524,7 +525,9 @@ func handleRequestWithSSHProgressReporter(runtimeState *agentRuntime, req agentR
 			return fail(resp, "当前驱动不支持 ApplyChanges")
 		}
 		if err := applier.ApplyChanges(req.TableName, *req.Changes); err != nil {
-			return fail(resp, err.Error())
+			resp = fail(resp, err.Error())
+			resp.OutcomeUnknown = db.IsWriteOutcomeUnknown(err)
+			return resp
 		}
 	default:
 		return fail(resp, "不支持的方法")
