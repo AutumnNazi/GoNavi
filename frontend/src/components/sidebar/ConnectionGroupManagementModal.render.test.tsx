@@ -80,6 +80,10 @@ vi.mock('antd', async () => {
       'data-select-visible': true,
       onClick: () => rowSelection?.onChange(dataSource.map((row: any) => row.id)),
     }),
+    ReactModule.createElement('button', {
+      'data-clear-visible': true,
+      onClick: () => rowSelection?.onChange([]),
+    }),
     dataSource.map((row: any, rowIndex: number) => ReactModule.createElement(
       'div',
       { key: row.id, 'data-connection-row': row.id, ...(onRow?.(row) || {}) },
@@ -207,6 +211,9 @@ describe('ConnectionGroupManagementModal rendering', () => {
     const heading = root.findByProps({ className: 'connection-group-management-heading' });
     const selectedTag = heading.findByProps({ className: 'connection-group-management-selected-tag' });
     expect(selectedTag.findByType('span').children.join('')).toBe('已选 1');
+
+    act(() => findByData(root, 'clear-visible').props.onClick());
+    expect(root.findAllByProps({ className: 'connection-group-management-selected-tag' })).toHaveLength(0);
   });
 
   it('keeps cross-group dragging but blocks drags started from controls', () => {
