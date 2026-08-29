@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   canReorderConnections,
+  filterExistingConnectionIds,
   hasConnectionDragPayload,
   orderConnectionGroupIds,
 } from './ConnectionGroupManagementModal';
@@ -29,5 +30,12 @@ describe('orderConnectionGroupIds', () => {
   it('recognizes only connection drags, keeping group tree drops isolated', () => {
     expect(hasConnectionDragPayload({ dataTransfer: { types: ['application/x-gonavi-connection-ids'] } } as any)).toBe(true);
     expect(hasConnectionDragPayload({ dataTransfer: { types: ['text/plain'] } } as any)).toBe(false);
+  });
+
+  it('removes deleted connections from a persisted cross-container selection', () => {
+    expect(filterExistingConnectionIds(['conn-a', 'removed', 'conn-b'], [
+      { id: 'conn-a' },
+      { id: 'conn-b' },
+    ])).toEqual(['conn-a', 'conn-b']);
   });
 });

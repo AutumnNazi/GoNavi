@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Button, Empty, Form, Input, List, Modal, Select, Space, Table, Tooltip, Tree, Typography } from 'antd';
 import { DeleteOutlined, EditOutlined, FolderAddOutlined, HolderOutlined, InboxOutlined, SettingOutlined } from '@ant-design/icons';
 import type { DataNode } from 'antd/es/tree';
@@ -32,6 +32,14 @@ const getConnectionIdsFromDragEvent = (event: React.DragEvent<HTMLElement>): str
 };
 
 export const canReorderConnections = (mode: ConnectionSortMode): boolean => mode === 'manual';
+
+export const filterExistingConnectionIds = (
+  ids: string[],
+  connections: Array<Pick<SavedConnection, 'id'>>,
+): string[] => {
+  const existingIds = new Set(connections.map((connection) => connection.id));
+  return ids.filter((id) => existingIds.has(id));
+};
 
 export const orderConnectionGroupIds = (
   ids: string[],
@@ -87,6 +95,13 @@ const ConnectionGroupManagementModal: React.FC<Props> = ({ open, onClose, onOpen
   const [nameForm] = Form.useForm<{ name: string }>();
 
   const connectionById = useMemo(() => new Map(connections.map((connection) => [connection.id, connection])), [connections]);
+  const selectedExistingConnectionIds = filterExistingConnectionIds(selectedConnections, connections);
+  useEffect(() => {
+    setSelectedConnections((current) => {
+      const next = filterExistingConnectionIds(current, connections);
+      return next.length === current.length ? current : next;
+    });
+  }, [connections]);
   const ownerIds = useMemo(() => new Set(tags.flatMap((tag) => tag.connectionIds)), [tags]);
   const tagById = useMemo(() => new Map(tags.map((tag) => [tag.id, tag])), [tags]);
   const sortConnections = (ids: string[], mode: ConnectionSortMode) => {
@@ -255,7 +270,7 @@ const ConnectionGroupManagementModal: React.FC<Props> = ({ open, onClose, onOpen
             <Typography.Title level={5} ellipsis={{ tooltip: currentTag?.name || t('connection.sidebar.management.ungrouped') }} style={{ margin: 0 }}>{currentTag?.name || t('connection.sidebar.management.ungrouped')}</Typography.Title>
             <Space size={4}>{currentTag && <><Tooltip title={t('connection.sidebar.management.rename')}><Button type="text" icon={<EditOutlined />} aria-label={t('connection.sidebar.management.rename')} onClick={() => { setRenameTag(currentTag); nameForm.setFieldsValue({ name: currentTag.name }); }} /></Tooltip><Tooltip title={t('connection.sidebar.management.delete')}><Button type="text" danger icon={<DeleteOutlined />} aria-label={t('connection.sidebar.management.delete')} onClick={deleteGroup} /></Tooltip></>}<Select size="small" value={currentMode} style={{ width: 130 }} options={[{ label: t('connection.sidebar.management.manual'), value: 'manual' }, { label: t('connection.sidebar.management.name'), value: 'name' }, { label: t('connection.sidebar.management.createdAt'), value: 'createdAt' }]} onChange={(value) => setSortMode(currentTag?.id || null, value as ConnectionSortMode)} /></Space>
           </div>
-          <Typography.Text type="secondary" style={{ marginBottom: 10 }}>{t('connection.sidebar.management.selected', { count: selectedConnections.length })}</Typography.Text>
+          <Typography.Text type="secondary" style={{ marginBottom: 10 }}>{t('connection.sidebar.management.selected', { count: selectedExistingConnectionIds.length })}</Typography.Text>
           {visibleConnections.length ? <Table<SavedConnection>
             bordered
             size="small"
@@ -264,7 +279,7 @@ const ConnectionGroupManagementModal: React.FC<Props> = ({ open, onClose, onOpen
             dataSource={visibleConnections.map((id) => connectionById.get(id)).filter((connection): connection is SavedConnection => Boolean(connection))}
             columns={connectionColumns}
             rowSelection={{
-              selectedRowKeys: selectedConnections,
+              selectedRowKeys: selectedExistingConnectionIds,
               preserveSelectedRowKeys: true,
               columnWidth: 42,
               onChange: (keys) => setSelectedConnections((current) => Array.from(new Set([
@@ -275,7 +290,7 @@ const ConnectionGroupManagementModal: React.FC<Props> = ({ open, onClose, onOpen
             onRow={(connection) => ({
               draggable: true,
               onDragStart: (event) => {
-                const ids = selectedConnections.includes(connection.id) ? selectedConnections : [connection.id];
+                const ids = selectedExistingConnectionIds.includes(connection.id) ? selectedExistingConnectionIds : [connection.id];
                 event.dataTransfer.effectAllowed = 'move';
                 event.dataTransfer.setData(CONNECTION_DRAG_TYPE, JSON.stringify(ids));
                 setDraggedConnections(ids);
