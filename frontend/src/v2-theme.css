@@ -2159,7 +2159,6 @@ body[data-ui-version="v2"] .gn-v2-sidebar-redesign {
   --gn-v2-rail-scale: calc(var(--gn-ui-scale, 1) * var(--gn-sidebar-rail-scale, 1));
   width: 100%;
   background: var(--gn-bg-panel-2);
-  border-right: 0.5px solid var(--gn-br-1);
   overflow: hidden;
 }
 
