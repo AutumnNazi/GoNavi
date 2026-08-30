@@ -22,7 +22,7 @@ import {
 
 import { t as defaultTranslate } from '../i18n';
 import { useOptionalI18n } from '../i18n/provider';
-import type { ConnectionTag, SavedConnection } from "../types";
+import type { ConnectionDisplaySortMode, ConnectionTag, SavedConnection } from "../types";
 import { flattenSidebarConnectionTagTree } from './sidebarV2Utils';
 import {
   getShortcutDisplayLabel,
@@ -52,6 +52,8 @@ export type QueryEditorToolbarProps = {
   queryCapableConnections: SavedConnection[];
   connectionTags?: ConnectionTag[];
   sidebarRootOrder?: string[];
+  rootSortMode?: ConnectionTag['sortMode'];
+  rootConnectionSortMode?: ConnectionDisplaySortMode;
   dbList: string[];
   schemaSelect?: QueryEditorSchemaSelectProps;
   maxRows: number;
@@ -230,6 +232,8 @@ const QueryEditorToolbar: React.FC<QueryEditorToolbarProps> = ({
   queryCapableConnections,
   connectionTags = [],
   sidebarRootOrder = [],
+  rootSortMode = 'manual',
+  rootConnectionSortMode = 'createdAt',
   dbList,
   schemaSelect,
   maxRows,
@@ -283,8 +287,10 @@ const QueryEditorToolbar: React.FC<QueryEditorToolbarProps> = ({
       queryCapableConnections,
       connectionTags,
       sidebarRootOrder,
+      rootSortMode,
+      rootConnectionSortMode,
     ),
-    [connectionTags, queryCapableConnections, sidebarRootOrder],
+    [connectionTags, queryCapableConnections, rootConnectionSortMode, rootSortMode, sidebarRootOrder],
   );
   const connectionSelectOptions: FullNameSelectOption[] =
     orderedQueryCapableConnections.map((connection) => ({

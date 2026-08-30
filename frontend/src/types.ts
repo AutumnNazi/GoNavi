@@ -351,6 +351,7 @@ export interface MongoMemberInfo {
 export interface SavedConnection {
   id: string;
   name: string;
+  createdAt?: number;
   environmentType?: ConnectionEnvironmentType;
   config: ConnectionConfig;
   secretRef?: string;
@@ -389,6 +390,7 @@ export interface GlobalProxyConfig extends ProxyConfig {
 export interface ConnectionTag {
   id: string;
   name: string;
+  createdAt?: number;
   /**
    * Parent group id. An omitted value keeps the group at the sidebar root.
    * Hosts are always owned by exactly one direct group, while groups can nest.
@@ -400,11 +402,19 @@ export interface ConnectionTag {
    * `connection:<id>` tokens as the sidebar root order.
    */
   childOrder?: string[];
+  /** Direct connection display order within this group. */
+  connectionSortMode?: ConnectionDisplaySortMode;
+  sortMode?: ConnectionSortMode;
 }
+
+export type ConnectionSortMode = 'manual' | 'name' | 'createdAt';
+export type ConnectionDisplaySortMode = 'name' | 'createdAt';
 
 export interface ConnectionSidebarLayoutInput {
   connectionTags: ConnectionTag[];
   sidebarRootOrder: string[];
+  rootSortMode?: ConnectionSortMode;
+  rootConnectionSortMode?: ConnectionDisplaySortMode;
 }
 
 export interface ConnectionSidebarLayout extends ConnectionSidebarLayoutInput {

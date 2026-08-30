@@ -1019,8 +1019,10 @@ func (a *App) CloudBackupRestore(request CloudBackupRestoreRequest) (CloudBackup
 			}
 			if payload.ConnectionSidebarLayout != nil {
 				_, replaceErr := layoutRepo.replaceUnlocked(connection.ConnectionSidebarLayoutInput{
-					ConnectionTags:   payload.ConnectionSidebarLayout.ConnectionTags,
-					SidebarRootOrder: payload.ConnectionSidebarLayout.SidebarRootOrder,
+					ConnectionTags:         payload.ConnectionSidebarLayout.ConnectionTags,
+					SidebarRootOrder:       payload.ConnectionSidebarLayout.SidebarRootOrder,
+					RootSortMode:           payload.ConnectionSidebarLayout.RootSortMode,
+					RootConnectionSortMode: payload.ConnectionSidebarLayout.RootConnectionSortMode,
 				})
 				if replaceErr != nil {
 					if rollbackErr := rollbackMutations(); rollbackErr != nil {

@@ -727,6 +727,8 @@ const Sidebar: React.FC<{
   const removeConnection = useStore(state => state.removeConnection);
   const connectionTags = useStore(state => state.connectionTags);
   const sidebarRootOrder = useStore(state => state.sidebarRootOrder);
+  const rootSortMode = useStore(state => state.rootSortMode);
+  const rootConnectionSortMode = useStore(state => state.rootConnectionSortMode);
   const addConnectionTag = useStore(state => state.addConnectionTag);
   const updateConnectionTag = useStore(state => state.updateConnectionTag);
   const removeConnectionTag = useStore(state => state.removeConnectionTag);
@@ -1221,6 +1223,18 @@ const Sidebar: React.FC<{
   const [isCreateTagModalOpen, setIsCreateTagModalOpen] = useState(false);
   const [createTagForm] = Form.useForm();
 
+  useEffect(() => {
+    const openTagForm = (event: Event) => {
+      const parentTagId = String((event as CustomEvent<{ parentTagId?: string }>).detail?.parentTagId || '').trim();
+      setRenameViewTarget(null);
+      createTagForm.resetFields();
+      if (parentTagId) createTagForm.setFieldsValue({ parentTagId });
+      setIsCreateTagModalOpen(true);
+    };
+    window.addEventListener('gonavi:open-connection-tag-form', openTagForm);
+    return () => window.removeEventListener('gonavi:open-connection-tag-form', openTagForm);
+  }, [createTagForm]);
+
   const {
       handleExportDatabaseSQL,
       handleExportSchemaSQL,
@@ -1358,6 +1372,8 @@ const Sidebar: React.FC<{
         connections,
         connectionTags,
         sidebarRootOrder,
+        rootSortMode,
+        rootConnectionSortMode,
       ).map(buildTreeNode);
       if (allSavedQueriesNode) {
         orderedNodes.push(allSavedQueriesNode);
@@ -1365,7 +1381,7 @@ const Sidebar: React.FC<{
       const externalSQLRootNode = prev.find((node) => node.type === 'external-sql-root');
       return externalSQLRootNode ? [...orderedNodes, externalSQLRootNode] : orderedNodes;
     });
-  }, [allSavedQueriesNode, connectionTags, connections, sidebarRootOrder]);
+  }, [connections, connectionTags, sidebarRootOrder, rootSortMode, rootConnectionSortMode, allSavedQueriesNode]);
 
   const handleDuplicateConnection = async (conn: SavedConnection) => {
     if (!conn?.id) return;
@@ -3363,6 +3379,17 @@ const Sidebar: React.FC<{
       buildConnectionRootRedisCommandTabTitle,
       buildConnectionRootRedisMonitorTabTitle,
   });
+  useEffect(() => {
+      const handleDeleteConnection = (event: Event) => {
+          const connectionId = String(
+              (event as CustomEvent<{ connectionId?: string }>).detail?.connectionId || '',
+          ).trim();
+          const connection = connections.find((item) => item.id === connectionId);
+          if (connection) deleteConnectionNode(getConnectionNodeForAction(connection));
+      };
+      window.addEventListener('gonavi:delete-connection', handleDeleteConnection);
+      return () => window.removeEventListener('gonavi:delete-connection', handleDeleteConnection);
+  }, [connections, deleteConnectionNode, getConnectionNodeForAction]);
   const {
       onSearch,
       searchScopeSummary,
@@ -3701,8 +3728,8 @@ const Sidebar: React.FC<{
       setIsTreeDragging,
   });
   const v2RailConnectionGroups = useMemo(
-      () => buildV2RailConnectionGroups(connections, connectionTags, sidebarRootOrder),
-      [connections, connectionTags, sidebarRootOrder],
+      () => buildV2RailConnectionGroups(connections, connectionTags, sidebarRootOrder, rootSortMode, rootConnectionSortMode),
+      [connections, connectionTags, sidebarRootOrder, rootSortMode, rootConnectionSortMode],
   );
   const getTagParentId = (tagId: unknown): string | null => {
       const tag = connectionTags.find((candidate) => candidate.id === String(tagId || '').trim());

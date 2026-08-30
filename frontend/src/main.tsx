@@ -52,6 +52,8 @@ if (
         revision: 0,
         connectionTags: [],
         sidebarRootOrder: [],
+        rootSortMode: 'manual',
+        rootConnectionSortMode: 'createdAt',
     };
     const mockSavedQueries: any[] = [];
     const mockSavedQueryGroups: any[] = [];
@@ -519,6 +521,8 @@ if (
                             revision: 1,
                             connectionTags: cloneBrowserMockValue(input.connectionTags),
                             sidebarRootOrder: cloneBrowserMockValue(input.sidebarRootOrder || []),
+                            rootSortMode: 'manual',
+                            rootConnectionSortMode: input?.rootConnectionSortMode === 'name' ? 'name' : 'createdAt',
                         };
                     }
                     return cloneBrowserMockValue(mockConnectionSidebarLayout);
@@ -536,12 +540,15 @@ if (
                         revision: Number(mockConnectionSidebarLayout.revision) + 1,
                         connectionTags: cloneBrowserMockValue(layout.connectionTags || []),
                         sidebarRootOrder: cloneBrowserMockValue(layout.sidebarRootOrder || []),
+                        rootSortMode: 'manual',
+                        rootConnectionSortMode: layout.rootConnectionSortMode === 'name' ? 'name' : 'createdAt',
                     };
                     return {
                         conflict: false,
                         layout: cloneBrowserMockValue(mockConnectionSidebarLayout),
                     };
                 },
+                LoadConnectionSidebarLayout: async () => cloneBrowserMockValue(mockConnectionSidebarLayout),
                 GetEditableSavedConnection: async (id: string) => {
                     const existing = mockConnections.find((item) => item.id === id);
                     if (!existing) {
@@ -569,6 +576,17 @@ if (
                         mockConnections.splice(index, 1);
                     }
                     mockConnectionSecrets.delete(id);
+                    return null;
+                },
+                DeleteConnections: async (ids: string[]) => {
+                    const requested = new Set((Array.isArray(ids) ? ids : []).map((id) => String(id).trim()).filter(Boolean));
+                    for (let index = mockConnections.length - 1; index >= 0; index -= 1) {
+                        if (requested.has(String(mockConnections[index]?.id || ''))) {
+                            mockConnectionSecrets.delete(mockConnections[index].id);
+                            mockConnections.splice(index, 1);
+                        }
+                    }
+                    requested.forEach((id) => mockConnectionSecrets.delete(id));
                     return null;
                 },
                 DuplicateConnection: async (id: string) => {

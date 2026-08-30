@@ -10,6 +10,7 @@ import Sidebar from './components/Sidebar';
 import TitleBarPrimaryActions, {
   resolveTitleBarPrimaryActionShortcut,
 } from './components/TitleBarPrimaryActions';
+import ConnectionGroupManagementModal from './components/sidebar/ConnectionGroupManagementModal';
 import TabManager from './components/TabManager';
 import FloatingWorkbenchWindows from './components/FloatingWorkbenchWindows';
 import FloatingAIChatWindow from './components/FloatingAIChatWindow';
@@ -1099,6 +1100,7 @@ function App() {
   );
   const linuxCJKFontInstallHint = getLinuxCJKFontInstallHint(runtimePlatform, installedFontFamilies);
   const [isStoreHydrated, setIsStoreHydrated] = useState(() => useStore.persist.hasHydrated());
+  const closeTabsByConnection = useStore(state => state.closeTabsByConnection);
   const savedQueriesBootstrapPromiseRef = useRef<Promise<void> | null>(null);
   const savedQueriesLoadedRef = useRef(false);
   const [hasLoadedSecureConfig, setHasLoadedSecureConfig] = useState(false);
@@ -1116,6 +1118,7 @@ function App() {
   const [securityUpdateProgressStage, setSecurityUpdateProgressStage] = useState(() => t('app.security_update.stage.checking_saved_config'));
   const [securityUpdateRepairSource, setSecurityUpdateRepairSource] = useState<SecurityUpdateRepairSource | null>(null);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
+  const [isConnectionGroupManagementOpen, setIsConnectionGroupManagementOpen] = useState(false);
   const [activeSettingsCenterGroupKey, setActiveSettingsCenterGroupKey] = useState<SettingsCenterGroupKey>('preferences');
   const [activeSettingsCenterPane, setActiveSettingsCenterPane] = useState<SettingsCenterPaneState | null>(null);
   const activeSettingsCenterPaneRef = useRef<SettingsCenterPaneState | null>(null);
@@ -1418,14 +1421,18 @@ function App() {
                   return {
                       connectionTags: state.connectionTags,
                       sidebarRootOrder: state.sidebarRootOrder,
+                      rootSortMode: state.rootSortMode,
+                      rootConnectionSortMode: state.rootConnectionSortMode,
                   };
               },
               replaceLayout: replaceConnectionSidebarLayout,
               subscribe: (listener) => useStore.subscribe((state, previousState) => {
-                  if (
-                      state.connectionTags !== previousState.connectionTags
-                      || state.sidebarRootOrder !== previousState.sidebarRootOrder
-                  ) {
+                    if (
+                        state.connectionTags !== previousState.connectionTags
+                        || state.sidebarRootOrder !== previousState.sidebarRootOrder
+                        || state.rootSortMode !== previousState.rootSortMode
+                        || state.rootConnectionSortMode !== previousState.rootConnectionSortMode
+                    ) {
                       listener();
                   }
               }),
@@ -8362,6 +8369,8 @@ function App() {
                     newConnectionShortcut={titleBarNewConnectionShortcut}
                     onNewQuery={handleNewQuery}
                     onNewConnection={handleCreateConnection}
+                    connectionGroupLabel={t('connection.sidebar.management.title')}
+                    onConnectionGroupManagement={() => setIsConnectionGroupManagementOpen(true)}
                   />
                   {isV2Ui && <div id="gonavi-titlebar-quick-actions" className="gonavi-titlebar-quick-actions-slot" />}
               </div>
@@ -8809,6 +8818,7 @@ function App() {
             open={isModalOpen}
             onClose={handleCloseModal}
             initialValues={editingConnection}
+            modalZIndex={isConnectionGroupManagementOpen ? APP_NESTED_MODAL_Z_INDEX : undefined}
             onOpenDriverManager={handleOpenDriverManagerFromConnection}
             onSaved={handleConnectionSaved}
             onOpenConnectionHealth={(connection) => {
@@ -9920,6 +9930,18 @@ function App() {
                   <div style={{ ...linuxResizeHandleStyleBase, bottom: 0, right: 0, width: 14, height: 14, cursor: 'nwse-resize' }} />
               </>
           )}
+
+          <ConnectionGroupManagementModal
+            open={isConnectionGroupManagementOpen}
+            onClose={() => setIsConnectionGroupManagementOpen(false)}
+            onOpenTagForm={(parentTagId) => window.dispatchEvent(new CustomEvent('gonavi:open-connection-tag-form', { detail: { parentTagId } }))}
+            onCreateConnectionInGroup={handleCreateConnectionInGroup}
+            onEditConnection={handleEditConnection}
+            onCloseTabsByConnection={closeTabsByConnection}
+            onConnectionGroupDeleted={async () => {
+              await connectionSidebarLayoutCoordinatorRef.current?.refresh().catch(() => undefined);
+            }}
+          />
 
           {/* Ghost Resize Line for Log Panel */}
           <div

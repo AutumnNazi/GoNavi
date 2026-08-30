@@ -126,7 +126,7 @@ describe('store appearance persistence', () => {
       primaryElements: ['object'],
       secondaryElements: ['kind', 'connection', 'database'],
     });
-    expect(JSON.parse(storage.getItem('lite-db-storage') || '{}').version).toBe(20);
+    expect(JSON.parse(storage.getItem('lite-db-storage') || '{}').version).toBe(21);
 
     storage.setItem('lite-db-storage', JSON.stringify({
       state: {
@@ -179,7 +179,7 @@ describe('store appearance persistence', () => {
     expect(appearance.sqlEditorFontSizeFollowGlobal).toBe(false);
 
     const persisted = JSON.parse(storage.getItem('lite-db-storage') || '{}');
-    expect(persisted.version).toBe(20);
+    expect(persisted.version).toBe(21);
     expect(persisted.state.appearance.sqlEditorFontSize).toBe(17);
     expect(persisted.state.appearance.sqlEditorFontSizeFollowGlobal).toBe(false);
   });
@@ -198,7 +198,7 @@ describe('store appearance persistence', () => {
     expect(useStore.getState().appearance.uiVersion).toBe('v2');
 
     const persisted = JSON.parse(storage.getItem('lite-db-storage') || '{}');
-    expect(persisted.version).toBe(20);
+    expect(persisted.version).toBe(21);
     expect(persisted.state.appearance.uiVersion).toBe('v2');
   });
 
@@ -1482,7 +1482,7 @@ describe('store appearance persistence', () => {
     expect(useStore.getState().connectionTags.every((item) => !('environmentType' in item))).toBe(true);
   }, 30_000);
 
-  it('reorders connections inside tags and ungrouped roots independently', async () => {
+  it('keeps group order custom while storing independent connection display sorting', async () => {
     const { useStore } = await importStore();
 
     useStore.getState().replaceConnections([
@@ -1513,16 +1513,15 @@ describe('store appearance persistence', () => {
       connectionIds: ['conn-b', 'conn-d'],
     });
 
-    useStore.getState().reorderConnections('conn-d', 'conn-b', 'tag-dev', true);
-    expect(useStore.getState().connectionTags[0]?.connectionIds).toEqual(['conn-d', 'conn-b']);
+    useStore.getState().setConnectionDisplaySortMode('tag-dev', 'name');
+    useStore.getState().setConnectionDisplaySortMode(null, 'createdAt');
 
-    useStore.getState().reorderConnections('conn-c', 'conn-a', null, true);
-    expect(useStore.getState().connections.map((conn) => conn.id)).toEqual([
-      'conn-c',
-      'conn-a',
-      'conn-b',
-      'conn-d',
-    ]);
+    expect(useStore.getState().connectionTags[0]).toEqual(expect.objectContaining({
+      sortMode: 'manual',
+      connectionSortMode: 'name',
+    }));
+    expect(useStore.getState().rootSortMode).toBe('manual');
+    expect(useStore.getState().rootConnectionSortMode).toBe('createdAt');
   });
 
   it('reorders sidebar root items across tags and ungrouped hosts', async () => {
@@ -1797,7 +1796,7 @@ describe('store appearance persistence', () => {
     )).toEqual(legacyTag?.childOrder);
 
     const persisted = JSON.parse(storage.getItem('lite-db-storage') || '{}');
-    expect(persisted.version).toBe(20);
+    expect(persisted.version).toBe(21);
     expect(persisted.state.connectionTags[0].childOrder).toEqual([
       'connection:conn-a',
       'connection:conn-b',
@@ -1975,6 +1974,28 @@ describe('store appearance persistence', () => {
     expect(useStore.getState().connectionTags.find(
       (tag) => tag.id === 'group-1',
     )?.connectionIds).toEqual(['host-1', 'host-3', 'host-4', 'host-2']);
+  });
+
+  it('rejects duplicate group names under the same parent but permits them elsewhere', async () => {
+    const { useStore } = await importStore();
+    useStore.getState().addConnectionTag({ id: 'root-a', name: 'Shared', connectionIds: [] });
+    useStore.getState().addConnectionTag({ id: 'root-b', name: ' shared ', connectionIds: [] });
+    useStore.getState().addConnectionTag({ id: 'parent', name: 'Parent', connectionIds: [] });
+    useStore.getState().addConnectionTag({ id: 'child', name: 'shared', parentTagId: 'parent', connectionIds: [] });
+
+    expect(useStore.getState().connectionTags.map((tag) => tag.id)).toEqual(['root-a', 'parent', 'child']);
+  });
+
+  it('removes a group subtree without promoting its descendants', async () => {
+    const { useStore } = await importStore();
+    useStore.getState().addConnectionTag({ id: 'root', name: 'Root', connectionIds: [] });
+    useStore.getState().addConnectionTag({ id: 'child', name: 'Child', parentTagId: 'root', connectionIds: [] });
+    useStore.getState().addConnectionTag({ id: 'grandchild', name: 'Grandchild', parentTagId: 'child', connectionIds: [] });
+    useStore.getState().addConnectionTag({ id: 'other', name: 'Other', connectionIds: [] });
+
+    useStore.getState().removeConnectionTagTree('root');
+
+    expect(useStore.getState().connectionTags.map((tag) => tag.id)).toEqual(['other']);
   });
 
   it('rejects moving a group into itself or a descendant', async () => {
@@ -3797,7 +3818,7 @@ describe('store appearance persistence', () => {
       mac: { combo: 'Meta+K', enabled: false },
       windows: { combo: 'Ctrl+K', enabled: true },
     });
-    expect(JSON.parse(storage.getItem('lite-db-storage') || '{}').version).toBe(20);
+    expect(JSON.parse(storage.getItem('lite-db-storage') || '{}').version).toBe(21);
 
     storage.setItem('lite-db-storage', JSON.stringify({
       state: {

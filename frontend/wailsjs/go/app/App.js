@@ -434,6 +434,14 @@ export function DeleteConnection(arg1) {
   return window['go']['app']['App']['DeleteConnection'](arg1);
 }
 
+export function DeleteConnectionGroup(arg1) {
+  return window['go']['app']['App']['DeleteConnectionGroup'](arg1);
+}
+
+export function DeleteConnections(arg1) {
+  return window['go']['app']['App']['DeleteConnections'](arg1);
+}
+
 export function DeleteImportJob(arg1) {
   return window['go']['app']['App']['DeleteImportJob'](arg1);
 }
