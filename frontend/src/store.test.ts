@@ -2791,7 +2791,7 @@ describe('store appearance persistence', () => {
     expect(reloaded.useStore.getState().tabs[0].formatRestoreSnapshot).toBeUndefined();
   });
 
-  it('updates activeContext when switching between tabs with different host or database', async () => {
+  it('updates activeContext, including the selected table, when switching between tabs', async () => {
     const { useStore } = await importStore();
 
     useStore.getState().addTab({
@@ -2805,6 +2805,7 @@ describe('store appearance persistence', () => {
     expect(useStore.getState().activeContext).toEqual({
       connectionId: 'conn-1',
       dbName: 'sys',
+      tableName: 'users',
     });
 
     useStore.getState().addTab({
@@ -2825,6 +2826,7 @@ describe('store appearance persistence', () => {
     expect(useStore.getState().activeContext).toEqual({
       connectionId: 'conn-1',
       dbName: 'sys',
+      tableName: 'users',
     });
   });
 
@@ -3290,7 +3292,11 @@ describe('store appearance persistence', () => {
 
     useStore.getState().closeAllTabs();
     expect(useStore.getState().tabs.map((tab) => tab.id)).toEqual(['data-import-workbench']);
-    expect(useStore.getState().activeContext).toEqual({ connectionId: 'conn-1', dbName: 'main' });
+    expect(useStore.getState().activeContext).toEqual({
+      connectionId: 'conn-1',
+      dbName: 'main',
+      tableName: 'users',
+    });
 
     useStore.getState().addTab({
       ...useStore.getState().tabs[0],

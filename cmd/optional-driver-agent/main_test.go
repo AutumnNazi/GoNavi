@@ -134,6 +134,27 @@ type fakeAgentSSHRuntimeDB struct {
 	connectProgress []connection.SSHProgressEvent
 }
 
+type fakeAgentApplyChangesDB struct {
+	fakeAgentTimeoutDB
+	applyErr error
+}
+
+func (f *fakeAgentApplyChangesDB) ApplyChanges(string, connection.ChangeSet) error {
+	return f.applyErr
+}
+
+func TestHandleRequestApplyChangesEncodesUnknownWriteOutcome(t *testing.T) {
+	runtimeState := &agentRuntime{
+		inst:     &fakeAgentApplyChangesDB{applyErr: db.MarkWriteOutcomeUnknown(errors.New("response lost"))},
+		sessions: make(map[string]db.StatementExecer),
+	}
+	changes := connection.ChangeSet{Inserts: []map[string]interface{}{{"id": 1}}}
+	resp := handleRequest(runtimeState, agentRequest{ID: 11, Method: agentMethodApplyChanges, TableName: "items", Changes: &changes})
+	if resp.Success || !resp.OutcomeUnknown || resp.Error != "response lost" {
+		t.Fatalf("applyChanges response = %#v", resp)
+	}
+}
+
 func (f *fakeAgentSSHRuntimeDB) Connect(config connection.ConnectionConfig) error {
 	f.connectConfig = config
 	for _, event := range f.connectProgress {

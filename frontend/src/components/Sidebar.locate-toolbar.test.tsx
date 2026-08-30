@@ -1282,7 +1282,8 @@ describe('Sidebar locate toolbar', () => {
     const source = readSidebarSource();
     const treeLoaderSource = readSourceFile('./sidebar/useSidebarTreeLoaders.tsx');
     const titleRenderSource = readSourceFile('./sidebar/useSidebarTitleRender.tsx');
-    expect(css).toMatch(/\.gn-v2-tree-status\.is-loading::before \{[^}]*border: 2px solid rgba\(37, 99, 235, 0\.24\);[^}]*animation: gn-v2-tree-status-spin 0\.8s linear infinite;/s);
+    expect(css).toMatch(/\.gn-v2-tree-status\.is-loading::before \{[^}]*border: 2px solid rgba\(37, 99, 235, 0\.58\);[^}]*animation: gn-v2-tree-status-spin 0\.8s linear infinite;/s);
+    expect(css).toMatch(/\.gn-v2-tree-status\.is-loading::before \{[^}]*border-top-color: #2563eb;/s);
     expect(css).toMatch(/@keyframes gn-v2-tree-status-spin \{[^}]*to \{ transform: rotate\(360deg\); \}/s);
   });
 

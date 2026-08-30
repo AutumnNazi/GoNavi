@@ -56,6 +56,9 @@ import {
   shouldClearSidebarActiveContextOnEmptySelect,
   shouldLoadSidebarNodeOnExpand,
   getV2RailConnectionGroupBadgeText,
+  resolveSidebarTitlebarObjectName,
+  clearSidebarHostConnectionState,
+  shouldDeferSidebarTitlebarSelection,
   type V2ExplorerFilter,
 } from './sidebar/sidebarHelpers';
 // 重新导出，保持外部测试文件的 `from './Sidebar'` 兼容
@@ -68,11 +71,13 @@ export {
   getV2RailConnectionGroupBadgeText,
   isV2SidebarObjectNode,
   resolveV2ObjectGroupTitle,
+  clearSidebarHostConnectionState,
+  shouldDeferSidebarTitlebarSelection,
   resolveSidebarTableNameForCopy,
   resolveSidebarDatabaseNameForCopy,
   parseV2CommandSearchQuery,
 } from './sidebar/sidebarHelpers';
-import React, { useEffect, useState, useMemo, useRef, useCallback, useDeferredValue } from 'react';
+import React, { useEffect, useLayoutEffect, useState, useMemo, useRef, useCallback, useDeferredValue } from 'react';
 import { createPortal } from 'react-dom';
 import { Tree, message, Dropdown, MenuProps, Input, Button, Form, Popover, Radio, Select, Tooltip } from 'antd';
 import { APP_POPUP_Z_INDEX } from '../utils/overlayZIndex';
@@ -204,6 +209,11 @@ import { getShortcutPlatform, resolveShortcutDisplay } from '../utils/shortcuts'
 import { buildExternalSQLRootNode, type ExternalSQLTreeNode } from '../utils/externalSqlTree';
 import { resolveSidebarTableMetadataFields } from '../utils/sidebarTableMetadata';
 import { filterSidebarTreeByHiddenObjectGroups } from '../utils/sidebarObjectVisibility';
+import {
+  mergeTitlebarSidebarSnapshot,
+  type TitlebarSelectionContext,
+  type TitlebarSidebarSnapshot,
+} from '../utils/titlebarContext';
 import { t } from '../i18n';
 import MessagePublishModal from './MessagePublishModal';
 import {
@@ -214,6 +224,10 @@ import {
 } from './sidebarCoreUtils';
 export { resolveSidebarContextMenuPosition } from './sidebarCoreUtils';
 export type { ExternalSQLFileModalMode, SearchScope } from './sidebarCoreUtils';
+
+// Keep the titlebar snapshot synchronous in the browser without emitting an
+// SSR warning when the Sidebar is rendered to HTML in tests or web tooling.
+const useSidebarLayoutEffect = typeof window === 'undefined' ? useEffect : useLayoutEffect;
 import {
   applySidebarDatabasePinning,
   buildSidebarTableChildrenForUi,
@@ -659,6 +673,7 @@ const Sidebar: React.FC<{
   onToggleAI?: () => void;
   onToggleLogPanel?: () => void;
   uiVersion?: 'legacy' | 'v2';
+  onTitlebarSnapshotChange?: (snapshot: React.SetStateAction<TitlebarSidebarSnapshot>) => void;
   onFocusCommandSearch?: () => void;
   onCollapseSidebar?: () => void;
   onExpandSidebar?: () => void;
@@ -677,6 +692,7 @@ const Sidebar: React.FC<{
   onToggleAI,
   onToggleLogPanel,
   uiVersion,
+  onTitlebarSnapshotChange,
   onFocusCommandSearch,
   onCollapseSidebar,
   onExpandSidebar,
@@ -857,6 +873,21 @@ const Sidebar: React.FC<{
   const [autoExpandParent, setAutoExpandParent] = useState(true);
   const [loadedKeys, setLoadedKeys] = useState<React.Key[]>([]);
   const [selectedKeys, setSelectedKeys] = useState<React.Key[]>([]);
+  const selectedSidebarKeyRef = useRef('');
+  const setSidebarSelectedKeys = useCallback((
+      action: React.SetStateAction<React.Key[]>,
+  ) => {
+      if (typeof action === 'function') {
+          setSelectedKeys((previous) => {
+              const next = action(previous);
+              selectedSidebarKeyRef.current = String(next[0] ?? '').trim();
+              return next;
+          });
+          return;
+      }
+      selectedSidebarKeyRef.current = String(action[0] ?? '').trim();
+      setSelectedKeys(action);
+  }, []);
   const selectedNodesRef = useRef<any[]>([]);
   const loadingNodesRef = useRef<Set<string>>(new Set());
   const databaseTreeTouchedAtRef = useRef<Record<string, number>>({});
@@ -875,13 +906,14 @@ const Sidebar: React.FC<{
   const treeDragSelectionSnapshotRef = useRef<{
       selectedKeys: React.Key[];
       selectedNodes: any[];
-      activeContext: { connectionId: string; dbName: string } | null;
+      activeContext: { connectionId: string; dbName: string; tableName?: string } | null;
   }>({
       selectedKeys: [],
       selectedNodes: [],
       activeContext: null,
   });
   const connectionReloadSignaturesRef = useRef<Record<string, string>>({});
+  const invalidateConnectionLoadsRef = useRef<(connectionId: string) => void>(() => {});
   expandedKeysRef.current = expandedKeys;
   const connectionIds = useMemo(() => connections.map((conn) => conn.id), [connections]);
   const queryCapableConnectionIds = useMemo(
@@ -917,10 +949,10 @@ const Sidebar: React.FC<{
   const restoreTreeSelectionAfterDrag = useCallback(() => {
       const snapshot = treeDragSelectionSnapshotRef.current;
       treeDragSelectSuppressUntilRef.current = Date.now() + 1000;
-      setSelectedKeys(snapshot.selectedKeys);
+      setSidebarSelectedKeys(snapshot.selectedKeys);
       selectedNodesRef.current = snapshot.selectedNodes;
       setActiveContext(snapshot.activeContext);
-  }, [setActiveContext]);
+  }, [setActiveContext, setSidebarSelectedKeys]);
 
   const openV2CommandSearch = useCallback(() => {
       pruneLoadedDatabaseTreesRef.current();
@@ -1134,6 +1166,7 @@ const Sidebar: React.FC<{
   
   // Connection Status State: key -> 'loading' | 'success' | 'error'
   const [connectionStates, setConnectionStates] = useState<Record<string, SidebarConnectionState>>({});
+
   const [isTreeDragging, setIsTreeDragging] = useState(false);
   const [sidebarTreeDragNodeType, setSidebarTreeDragNodeType] = useState<string | null>(null);
   const [sidebarTreeDropPreview, setSidebarTreeDropPreview] = useState<{
@@ -1262,6 +1295,7 @@ const Sidebar: React.FC<{
         return next;
       });
       staleIds.forEach((id) => {
+        invalidateConnectionLoadsRef.current(id);
         Array.from(loadingNodesRef.current).forEach((key) => {
           if (key === `dbs-${id}` || key.startsWith(`tables-${id}-`)) {
             loadingNodesRef.current.delete(key);
@@ -1412,6 +1446,147 @@ const Sidebar: React.FC<{
 
   findTreeNodeByKeyRef.current = findTreeNodeByKey;
 
+  const resolveSidebarSelectionContext = useCallback((node: any): TitlebarSelectionContext | null => {
+      if (!node) return null;
+      const type = String(node.type || '');
+      const dataRef = node.dataRef || {};
+      const connectionId = type === 'connection'
+          ? String(node.key || dataRef.id || '').trim()
+          : String(
+              resolveSidebarNodeConnectionId(node, connectionIds)
+              || dataRef.id
+              || dataRef.connectionId
+              || '',
+          ).trim();
+      if (!connectionId) return null;
+
+      // The state map is keyed by the Host connection id. Keep this key
+      // stable when a database/table row is selected so the title bar follows
+      // the same Host marker as the tree instead of a child-row spinner.
+      const sidebarStateKey = connectionId;
+
+      if (type === 'connection') {
+          return { connectionId, dbName: '', sidebarStateKey };
+      }
+
+      let dbName = String(dataRef.dbName || '').trim();
+      if (type === 'redis-db') {
+          dbName = `db${dataRef.redisDB}`;
+      } else if (
+          type === 'nacos-namespace'
+          || type === 'nacos-config-entry'
+          || type === 'nacos-config-group'
+          || type === 'nacos-services-entry'
+          || type === 'nacos-service-group'
+      ) {
+          dbName = String(
+              dataRef.nacosNamespaceName
+              || dataRef.nacosNamespaceId
+              || 'public',
+          ).trim();
+      }
+
+      const tableName = resolveSidebarTitlebarObjectName(node);
+      return tableName
+          ? { connectionId, dbName, tableName, sidebarStateKey }
+          : { connectionId, dbName, sidebarStateKey };
+  }, [connectionIds]);
+
+  const titlebarSnapshotRevisionRef = useRef(0);
+  const publishTitlebarSnapshotUpdate = useCallback((
+      update: (snapshot: TitlebarSidebarSnapshot) => TitlebarSidebarSnapshot,
+      expectedSelectedKey?: unknown,
+  ) => {
+      const revision = ++titlebarSnapshotRevisionRef.current;
+      const expectedKey = expectedSelectedKey === undefined
+          ? undefined
+          : String(expectedSelectedKey ?? '').trim();
+      onTitlebarSnapshotChange?.((current) => {
+          // A queued effect can outlive the selection that produced it. Do
+          // not let that older tree key repaint the title bar after the user
+          // has already selected another row.
+          if (
+              expectedKey !== undefined
+              && selectedSidebarKeyRef.current !== expectedKey
+          ) {
+              return current;
+          }
+          const next = update(current);
+          return mergeTitlebarSidebarSnapshot(current, {
+              ...next,
+              revision,
+          });
+      });
+  }, [onTitlebarSnapshotChange]);
+
+  const publishTitlebarSelection = useCallback((
+      selection: TitlebarSelectionContext | null,
+      expectedSelectedKey?: unknown,
+  ) => {
+      // `sidebarStateKey` identifies the Host marker; the stale-update guard
+      // must use the actual rc-tree row key (which may be a database/table).
+      const expectedKey = expectedSelectedKey === undefined
+          ? selectedSidebarKeyRef.current
+          : expectedSelectedKey;
+      publishTitlebarSnapshotUpdate((snapshot) => ({
+          ...snapshot,
+          selection,
+      }), expectedKey);
+  }, [publishTitlebarSnapshotUpdate]);
+
+  const publishTitlebarSelectionForNode = useCallback((node: any) => {
+      const selection = resolveSidebarSelectionContext(node);
+      const selectedKey = String(node?.key ?? '').trim();
+      if (selectedKey) {
+          selectedSidebarKeyRef.current = selectedKey;
+      }
+      publishTitlebarSnapshotUpdate((snapshot) => ({
+          ...snapshot,
+          selection,
+      }), selectedKey || selection?.sidebarStateKey || '');
+  }, [publishTitlebarSnapshotUpdate, resolveSidebarSelectionContext]);
+
+  // Keep the title bar tied to the row selected in this tree, even when a
+  // different workbench tab is active.
+  const lastPublishedSidebarSnapshotRef = useRef<{
+      selectionSignature: string;
+      connectionStates: Record<string, SidebarConnectionState>;
+  } | null>(null);
+  useSidebarLayoutEffect(() => {
+      const selectedKey = selectedKeys[0];
+      const selectedNode = selectedKey == null
+          ? null
+          : findTreeNodeByKey(treeData, selectedKey)
+              || selectedNodesRef.current.find((node) => String(node?.key) === String(selectedKey));
+      if (shouldDeferSidebarTitlebarSelection({
+          selectedKey,
+          selectedNode,
+          connectionIds,
+      })) {
+          return;
+      }
+      const context = resolveSidebarSelectionContext(selectedNode);
+      const selectionSignature = context
+          ? [context.connectionId, context.dbName, context.tableName || '', context.sidebarStateKey || ''].join('\u0000')
+          : '';
+      const previous = lastPublishedSidebarSnapshotRef.current;
+      if (
+          previous
+          && previous.selectionSignature === selectionSignature
+          && previous.connectionStates === connectionStates
+      ) {
+          return;
+      }
+      lastPublishedSidebarSnapshotRef.current = {
+          selectionSignature,
+          connectionStates,
+      };
+      publishTitlebarSnapshotUpdate(() => ({
+          selection: context,
+          connectionStates,
+      }), selectedKey == null ? '' : selectedKey);
+  }, [connectionIds, connectionStates, publishTitlebarSnapshotUpdate, resolveSidebarSelectionContext, selectedKeys, treeData]);
+
   const replaceTreeNodeChildren = (
     key: React.Key,
     children: TreeNode[] | undefined,
@@ -1448,10 +1623,25 @@ const Sidebar: React.FC<{
           return nextTreeData;
       });
       setLoadedKeys((prev) => prev.filter((key) => !keysToClearSet.has(String(key))));
+      // Clearing a Host subtree also invalidates its transient load result;
+      // otherwise a late metadata response can repaint the unloaded row green.
+      const clearedConnectionIds = connectionIds.filter((connectionId) => keysToClearSet.has(connectionId));
+      clearedConnectionIds.forEach((connectionId) => invalidateConnectionLoadsRef.current(connectionId));
+      setConnectionStates((previous) => {
+          let changed = false;
+          const next = { ...previous };
+          keysToClearSet.forEach((key) => {
+              if (Object.prototype.hasOwnProperty.call(next, key)) {
+                  delete next[key];
+                  changed = true;
+              }
+          });
+          return changed ? next : previous;
+      });
       keysToClearSet.forEach((key) => {
           delete databaseTreeTouchedAtRef.current[key];
       });
-  }, []);
+  }, [connectionIds]);
 
   const pruneLoadedDatabaseTrees = useCallback(() => {
       const activeDatabaseKey = activeContext?.connectionId && activeContext?.dbName
@@ -1684,12 +1874,21 @@ const Sidebar: React.FC<{
           const targetNode = findTreeNodeByKey(treeDataRef.current, targetKey);
           setSearchValue('');
           mergeExpandedTreeKeys(path.slice(0, -1));
-          setSelectedKeys([targetKey]);
+          setSidebarSelectedKeys([targetKey]);
           selectedNodesRef.current = targetNode ? [targetNode] : [];
           const connectionId = String(request.connectionId || activeContext?.connectionId || activeTab?.connectionId || '').trim();
           const dbName = String(request.dbName || activeContext?.dbName || activeTab?.dbName || '').trim();
           if (connectionId) {
               setActiveContext({ connectionId, dbName });
+              publishTitlebarSelection(
+                  resolveSidebarSelectionContext(targetNode)
+                  || {
+                      connectionId,
+                      dbName,
+                      sidebarStateKey: connectionId,
+                  },
+                  targetKey,
+              );
           }
           scrollSidebarTreeToKey(targetKey);
           return;
@@ -1770,9 +1969,23 @@ const Sidebar: React.FC<{
       const targetNode = findTreeNodeByKey(treeDataRef.current, targetKey);
       setSearchValue('');
       mergeExpandedTreeKeys(path.slice(0, -1));
-      setSelectedKeys([targetKey]);
+      setSidebarSelectedKeys([targetKey]);
       selectedNodesRef.current = targetNode ? [targetNode] : [];
-      setActiveContext({ connectionId: request.connectionId, dbName: request.dbName });
+      setActiveContext({
+          connectionId: request.connectionId,
+          dbName: request.dbName,
+          tableName: resolveSidebarTitlebarObjectName(targetNode) || request.tableName,
+      });
+      publishTitlebarSelection(
+          resolveSidebarSelectionContext(targetNode)
+          || {
+              connectionId: request.connectionId,
+              dbName: request.dbName,
+              tableName: request.tableName,
+              sidebarStateKey: request.connectionId,
+          },
+          targetKey,
+      );
       scrollSidebarTreeToKey(targetKey);
   };
 
@@ -2023,6 +2236,33 @@ const Sidebar: React.FC<{
       return true;
   };
 
+  const clearStaleHostStateOnSelection = (node: any): void => {
+      if (node?.type !== 'connection') return;
+      const connectionId = String(node.key || node.dataRef?.id || '').trim();
+      if (!connectionId) return;
+
+      // The rail and command-search paths call this before writing the tree
+      // selection. Register the row first so a queued update from the prior
+      // Host cannot repaint the title bar after this selection.
+      selectedSidebarKeyRef.current = String(node.key || connectionId).trim();
+
+      // Selecting a Host is a navigation action, not a connection-health
+      // assertion. Clear only a previous success/error result. If an
+      // explicit expansion/reconnect is already loading, keep that request
+      // and its loading state so the title bar stays in lockstep with the
+      // Host row instead of cancelling the in-flight probe.
+      setConnectionStates((previous) => clearSidebarHostConnectionState(previous, connectionId));
+      const selection = resolveSidebarSelectionContext(node);
+      publishTitlebarSnapshotUpdate((snapshot) => ({
+          ...snapshot,
+          selection,
+          connectionStates: clearSidebarHostConnectionState(
+              snapshot.connectionStates,
+              connectionId,
+          ),
+      }), selectedSidebarKeyRef.current);
+  };
+
   const onSelect = (keys: React.Key[], info: any) => {
       if (isV2Ui && (info?.node?.type === 'v2-table-section' || info?.node?.type === 'v2-database-section')) {
           return;
@@ -2033,10 +2273,11 @@ const Sidebar: React.FC<{
       if (isTreeDragging) {
           return;
       }
-      setSelectedKeys(keys);
+      setSidebarSelectedKeys(keys);
       selectedNodesRef.current = info.selectedNodes || [];
 
       if (keys.length === 0) {
+          publishTitlebarSelection(null);
           if (shouldClearSidebarActiveContextOnEmptySelect(isV2Ui)) {
               setActiveContext(null);
           }
@@ -2046,18 +2287,35 @@ const Sidebar: React.FC<{
 
       const { type, dataRef, key, title } = info.node;
       const nodeConnectionId = resolveSidebarNodeConnectionId(info.node, connectionIds);
+      if (type === 'connection') {
+          clearStaleHostStateOnSelection(info.node);
+      } else {
+          publishTitlebarSelectionForNode(info.node);
+      }
 
       // Update active context
       if (type === 'connection') {
           setActiveContext({ connectionId: key, dbName: '' });
       } else if (type === 'database' || type === 'message-namespace') {
           setActiveContext({ connectionId: nodeConnectionId || dataRef.id, dbName: dataRef.dbName });
-      } else if (type === 'table' || type === 'message-object') {
-          setActiveContext({ connectionId: nodeConnectionId || dataRef.id, dbName: dataRef.dbName });
+      } else if (
+          type === 'table'
+          || type === 'message-object'
+          || type === 'view'
+          || type === 'materialized-view'
+          || type === 'sequence'
+          || type === 'package'
+          || type === 'db-trigger'
+          || type === 'db-event'
+          || type === 'routine'
+      ) {
+          setActiveContext({
+              connectionId: nodeConnectionId || dataRef.id,
+              dbName: dataRef.dbName,
+              tableName: resolveSidebarTitlebarObjectName(info.node),
+          });
       } else if (type === 'jvm-mode' || type === 'jvm-resource' || type === 'jvm-diagnostic' || type === 'jvm-monitoring') {
           setActiveContext({ connectionId: nodeConnectionId || dataRef.id, dbName: '' });
-      } else if (type === 'view' || type === 'materialized-view' || type === 'sequence' || type === 'package' || type === 'db-trigger' || type === 'db-event' || type === 'routine') {
-          setActiveContext({ connectionId: nodeConnectionId || dataRef.id, dbName: dataRef.dbName });
       } else if (type === 'saved-query') {
           setActiveContext({ connectionId: dataRef.connectionId, dbName: dataRef.dbName });
       } else if (type === 'redis-db') {
@@ -2144,20 +2402,37 @@ const Sidebar: React.FC<{
           return;
       }
       const nodeConnectionId = resolveSidebarNodeConnectionId(node, connectionIds);
-      if (type === 'connection') {
-          setSelectedKeys([nodeKey]);
+      // Context-menu actions call this handler directly, without rc-tree's
+      // preceding select event. Keep the tree selection in sync so the
+      // titlebar layout effect cannot restore the previously selected row
+      // after opening the requested object.
+      if (nodeKey !== undefined && nodeKey !== null && String(nodeKey).trim() !== '') {
+          setSidebarSelectedKeys([nodeKey]);
           selectedNodesRef.current = [node];
+      }
+      if (type === 'connection') {
+          clearStaleHostStateOnSelection(node);
+      } else {
+          publishTitlebarSelectionForNode(node);
+      }
+      if (type === 'connection') {
           setActiveContext({ connectionId: nodeKey, dbName: '' });
       } else if (type === 'database' || type === 'message-namespace') {
-          setSelectedKeys([nodeKey]);
-          selectedNodesRef.current = [node];
           setActiveContext({ connectionId: nodeConnectionId || dataRef.id, dbName: dataRef.dbName });
       } else if (type === 'jvm-mode' || type === 'jvm-resource' || type === 'jvm-diagnostic' || type === 'jvm-monitoring') {
           setActiveContext({ connectionId: nodeConnectionId || dataRef.id, dbName: '' });
       } else if (type === 'table' || type === 'message-object' || type === 'view' || type === 'materialized-view' || type === 'sequence' || type === 'package' || type === 'db-trigger' || type === 'db-event' || type === 'routine') {
-          setActiveContext({ connectionId: nodeConnectionId || dataRef.id, dbName: dataRef.dbName });
-      } else if (type === 'saved-query') setActiveContext({ connectionId: dataRef.connectionId, dbName: dataRef.dbName });
-      else if (type === 'redis-db') setActiveContext({ connectionId: dataRef.id, dbName: `db${dataRef.redisDB}` });
+          setActiveContext({
+              connectionId: nodeConnectionId || dataRef.id,
+              dbName: dataRef.dbName,
+              tableName: resolveSidebarTitlebarObjectName(node),
+          });
+      } else if (type === 'saved-query') {
+          setActiveContext({ connectionId: dataRef.connectionId, dbName: dataRef.dbName });
+      }
+      else if (type === 'redis-db') {
+          setActiveContext({ connectionId: dataRef.id, dbName: `db${dataRef.redisDB}` });
+      }
       else if (
           type === 'nacos-namespace'
           || type === 'nacos-config-entry'
@@ -2513,6 +2788,7 @@ const Sidebar: React.FC<{
       loadTables,
       loadNacosConfigGroups,
       loadNacosServiceGroups,
+      invalidateConnectionLoads,
   } = useSidebarTreeLoaders({
       savedQueries,
       tableSortPreference,
@@ -2533,6 +2809,7 @@ const Sidebar: React.FC<{
           pruneLoadedDatabaseTrees();
       },
   });
+  invalidateConnectionLoadsRef.current = invalidateConnectionLoads;
   loadNacosServiceGroupsRef.current = loadNacosServiceGroups;
   replaceTreeNodeChildrenRef.current = replaceTreeNodeChildren;
 
@@ -2547,6 +2824,7 @@ const Sidebar: React.FC<{
           connectionId,
       });
 
+      invalidateConnectionLoads(connectionId);
       setLoadedKeys((previous) => previous.filter((key) => !isConnectionTreeKey(key, connectionId)));
       Array.from(loadingNodesRef.current).forEach((loadingKey) => {
           if (loadingKey === `dbs-${connectionId}` || loadingKey.startsWith(`tables-${connectionId}-`)) {
@@ -3036,6 +3314,7 @@ const Sidebar: React.FC<{
       loadingNodesRef,
       treeDataRef,
       refreshConnectionResources,
+      invalidateConnectionLoads,
       findTreeNodeByKeyRef,
       refreshV2TableContextMenuStatsRef,
       setConnectionStates,
@@ -3262,6 +3541,7 @@ const Sidebar: React.FC<{
       activeContext,
       activeTab,
       addTab,
+      clearStaleHostStateOnSelection,
       closeV2CommandSearch,
       commandSearchFlatItems,
       connectionIds,
@@ -3271,10 +3551,11 @@ const Sidebar: React.FC<{
       loadDatabases,
       mergeExpandedTreeKeys,
       onDoubleClick,
+      publishTitlebarSelectionForNode,
       scrollSidebarTreeToKey,
       selectedNodesRef,
       setActiveContext,
-      setSelectedKeys,
+      setSelectedKeys: setSidebarSelectedKeys,
       setV2CommandActiveIndex,
       treeDataRef,
       v2CommandActiveIndex,
@@ -3313,11 +3594,12 @@ const Sidebar: React.FC<{
       }
 
       const dbName = String(databaseNode.dataRef?.dbName || request.dbName).trim();
-      setSelectedKeys([databaseNode.key]);
+      setSidebarSelectedKeys([databaseNode.key]);
       selectedNodesRef.current = [databaseNode];
       setActiveContext({ connectionId: connection.id, dbName });
+      publishTitlebarSelectionForNode(databaseNode);
       scrollSidebarTreeToKey(databaseNode.key);
-  }, [connections, findTreeNodeByKeyRef, onExpandSidebar, scrollSidebarTreeToKey, selectConnectionFromRail, selectedNodesRef, setActiveContext, setSearchValue, setSelectedKeys, treeDataRef]);
+  }, [connections, findTreeNodeByKeyRef, onExpandSidebar, publishTitlebarSelectionForNode, scrollSidebarTreeToKey, selectConnectionFromRail, selectedNodesRef, setActiveContext, setSearchValue, setSidebarSelectedKeys, treeDataRef]);
 
   useEffect(() => {
       const handleLocateSidebarConnection = (event: Event) => {

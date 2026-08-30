@@ -1848,7 +1848,7 @@ interface AppState {
   /** AI 独立窗上次尺寸/位置（持久化，再次打开时复用） */
   aiChatDetachedBoundsMemory: AIChatDetachedBoundsMemory | null;
   activeTabId: string | null;
-  activeContext: { connectionId: string; dbName: string } | null;
+  activeContext: { connectionId: string; dbName: string; tableName?: string } | null;
   savedQueries: SavedQuery[];
   savedQueryGroups: SavedQueryGroup[];
   externalSQLDirectories: ExternalSQLDirectory[];
@@ -1991,7 +1991,7 @@ interface AppState {
   closeAllTabs: () => void;
   setActiveTab: (id: string) => void;
   setActiveContext: (
-    context: { connectionId: string; dbName: string } | null,
+    context: { connectionId: string; dbName: string; tableName?: string } | null,
   ) => void;
   detachWorkbenchTab: (
     tabId: string,
@@ -2678,21 +2678,31 @@ const resolveCloseTabActiveTabId = (
 
 const resolveActiveContextFromTab = (
   tab: TabData | null | undefined,
-): { connectionId: string; dbName: string } | null => {
+): { connectionId: string; dbName: string; tableName?: string } | null => {
   if (!tab) return null;
   const connectionId = toTrimmedString(tab.connectionId);
   if (!connectionId) return null;
+  const tableName = toTrimmedString(
+    tab.tableName
+    || tab.viewName
+    || tab.triggerName
+    || tab.eventName
+    || tab.routineName
+    || tab.sequenceName
+    || tab.packageName,
+  );
   return {
     connectionId,
     dbName: toTrimmedString(tab.dbName),
+    ...(tableName ? { tableName } : {}),
   };
 };
 
 const resolveActiveContextForTabId = (
   tabs: TabData[],
   activeTabId: string | null | undefined,
-  fallbackContext: { connectionId: string; dbName: string } | null,
-): { connectionId: string; dbName: string } | null => {
+  fallbackContext: { connectionId: string; dbName: string; tableName?: string } | null,
+): { connectionId: string; dbName: string; tableName?: string } | null => {
   const normalizedActiveTabId = toTrimmedString(activeTabId);
   if (normalizedActiveTabId) {
     const activeTab = tabs.find((tab) => tab.id === normalizedActiveTabId);

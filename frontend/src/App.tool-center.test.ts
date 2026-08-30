@@ -13,6 +13,26 @@ const appCss = readFileSync(
 
 describe('settings center tool entries', () => {
 
+  it('keeps the V2 titlebar context summary mounted beside the primary actions', () => {
+    expect(appSource).toContain('className="gn-v2-titlebar-center"');
+    expect(appSource).toContain('data-titlebar-active-context={titlebarContext.connection ? \'true\' : \'false\'}');
+    expect(appSource).toContain('<strong>{titleBarConnectionName}</strong>');
+    expect(appSource).toContain('<small>{titleBarContextDetailText}</small>');
+    expect(appSource).toContain('onTitlebarSnapshotChange={setSidebarTitlebarSnapshot}');
+  });
+
+  it('applies the V2 document scope before the first titlebar paint', () => {
+    const appearanceEffectStart = appSource.indexOf('// Apply the document theme before the first paint.');
+    const appearanceEffectEnd = appSource.indexOf('  }, [', appearanceEffectStart);
+
+    expect(appearanceEffectStart).toBeGreaterThanOrEqual(0);
+    expect(appearanceEffectEnd).toBeGreaterThan(appearanceEffectStart);
+
+    const appearanceEffectSource = appSource.slice(appearanceEffectStart, appearanceEffectEnd);
+    expect(appearanceEffectSource).toContain('useLayoutEffect(() => {');
+    expect(appearanceEffectSource).toContain("document.body.setAttribute('data-ui-version', appearance.uiVersion);");
+  });
+
   it('exposes toolbar button overrides from both V2 and legacy theme settings', () => {
     expect(appSource.match(/<ToolbarButtonAppearanceSettings \/>/g)).toHaveLength(2);
 

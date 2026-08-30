@@ -471,8 +471,7 @@ body[data-custom-theme][data-ui-version="v2"] .gn-v2-tree-status.is-success::bef
 
 body[data-custom-theme][data-ui-version="v2"] .gn-v2-live-dot.is-loading,
 body[data-custom-theme][data-ui-version="v2"] .gn-v2-tree-status.is-loading::before {
-  border-color: var(--gn-info-soft) !important;
-  border-top-color: var(--gn-info) !important;
+  border-color: var(--gn-info) !important;
 }
 
 body[data-custom-theme][data-ui-version="v2"] .gn-v2-tab-label-part-host {

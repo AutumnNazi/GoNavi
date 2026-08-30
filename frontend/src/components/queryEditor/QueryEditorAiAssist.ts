@@ -13,6 +13,7 @@ import {
     isQueryEditorTableAliasCompletionContext,
 } from './QueryEditorHelpers';
 import { isPostgresSchemaDialect } from '../../utils/connectionDriverType';
+import { appendTableAlias, resolveTableAliasSyntax } from '../../utils/sqlDialect';
 
 export type QueryEditorAiApplyMode = 'insert' | 'replaceSelection' | 'replaceAll';
 
@@ -44,6 +45,7 @@ export interface QueryEditorAiContext {
     host?: string;
     port?: string | number;
     sourceType?: string;
+    sqlDialect?: string;
     currentDb?: string;
     visibleDbs?: string[];
     tables?: CompletionTableMeta[];
@@ -376,7 +378,7 @@ export const resolveQueryEditorInlineLocalCompletion = ({
 
     const isTableAliasContext = isQueryEditorInlineTableAliasPending(editorSnapshot);
     const tableAliasInsertText = autoAddTableAlias
-        ? resolveDeterministicInlineTableAliasInsertText(editorSnapshot)
+        ? resolveDeterministicInlineTableAliasInsertText(editorSnapshot, aiContext.sqlDialect || aiContext.sourceType)
         : '';
     if (tableAliasInsertText) {
         return {
@@ -384,7 +386,10 @@ export const resolveQueryEditorInlineLocalCompletion = ({
             insertText: tableAliasInsertText,
         };
     }
-    if (!autoAddTableAlias && isTableAliasContext) {
+    if (isTableAliasContext && (
+        !autoAddTableAlias
+        || resolveTableAliasSyntax(aiContext.sqlDialect || aiContext.sourceType || '') === 'none'
+    )) {
         return {
             handled: true,
             insertText: '',
@@ -1500,6 +1505,7 @@ const resolveDeterministicInlineTableInsertText = (
 
 const resolveDeterministicInlineTableAliasInsertText = (
     editorSnapshot: QueryEditorAiEditorSnapshot,
+    dialect?: string,
 ): string => {
     const statementPrefix = getCurrentStatementPrefix(editorSnapshot.prefix);
     if (!/\s$/.test(statementPrefix) || !isQueryEditorTableAliasCompletionContext(statementPrefix)) {
@@ -1511,7 +1517,7 @@ const resolveDeterministicInlineTableAliasInsertText = (
         return '';
     }
     const alias = buildQueryEditorTableSourceAlias(currentReference.tableIdent, statementPrefix);
-    return alias;
+    return appendTableAlias('', alias, dialect || '');
 };
 
 export const isQueryEditorInlineTableAliasPending = (

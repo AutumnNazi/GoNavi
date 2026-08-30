@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import React, { useCallback, useRef } from 'react';
 import { Button, message } from 'antd';
 import {
   AppstoreOutlined,
@@ -459,11 +459,87 @@ export const useSidebarTreeLoaders = ({
   const databaseRequestIdsRef = useRef<Record<string, number>>({});
   const nacosServiceGroupRequestIdsRef = useRef<Record<string, number>>({});
   const nacosNamespaceRequestIdsRef = useRef<Record<string, number>>({});
+  // A connection can be disconnected or refreshed while a metadata request
+  // is still in flight. Keep a generation per resource load so a late
+  // response cannot resurrect the old Host success state.
+  const loadGenerationsRef = useRef<Record<string, number>>({});
+  // Unlike a per-resource generation, this epoch also invalidates loads that
+  // are queued behind an in-flight request in scheduleSidebarLoad.
+  const connectionLoadEpochsRef = useRef<Record<string, number>>({});
   const nacosNamespaceActiveRequestsRef = useRef<
       Record<string, { requestId: number; signature: string }>
   >({});
   const databaseLoadsRef = useRef<Map<string, TrackedSidebarLoad>>(new Map());
   const tableLoadsRef = useRef<Map<string, TrackedSidebarLoad>>(new Map());
+
+  const beginLoadGeneration = (loadKey: string): number => {
+      const nextGeneration = (loadGenerationsRef.current[loadKey] || 0) + 1;
+      loadGenerationsRef.current[loadKey] = nextGeneration;
+      return nextGeneration;
+  };
+
+  const isCurrentLoadGeneration = (loadKey: string, generation: number): boolean => (
+      loadGenerationsRef.current[loadKey] === generation
+  );
+
+  const getConnectionLoadEpoch = (connectionId: string): number => {
+      const normalizedConnectionId = String(connectionId || '').trim();
+      return connectionLoadEpochsRef.current[normalizedConnectionId] || 0;
+  };
+
+  const isCurrentConnectionLoadEpoch = (
+      connectionId: string,
+      epoch: number,
+  ): boolean => getConnectionLoadEpoch(connectionId) === epoch;
+
+  const invalidateConnectionLoads = useCallback((connectionId: string): void => {
+      const normalizedConnectionId = String(connectionId || '').trim();
+      if (!normalizedConnectionId) return;
+
+      connectionLoadEpochsRef.current[normalizedConnectionId] =
+          (connectionLoadEpochsRef.current[normalizedConnectionId] || 0) + 1;
+
+      const isConnectionLoadKey = (loadKey: string): boolean => (
+          loadKey === `dbs-${normalizedConnectionId}`
+          || loadKey.startsWith(`tables-${normalizedConnectionId}-`)
+          || loadKey.startsWith(`nacos-groups-${normalizedConnectionId}-`)
+          || loadKey.startsWith(`nacos-service-groups-${normalizedConnectionId}-`)
+          || loadKey.startsWith(`jvm-resources-${normalizedConnectionId}-`)
+      );
+
+      Object.keys(loadGenerationsRef.current).forEach((loadKey) => {
+          if (isConnectionLoadKey(loadKey)) {
+              loadGenerationsRef.current[loadKey] += 1;
+          }
+      });
+      // These request counters are used by the existing loaders to reject
+      // stale payloads before they touch the tree.
+      databaseRequestIdsRef.current[normalizedConnectionId] =
+          (databaseRequestIdsRef.current[normalizedConnectionId] || 0) + 1;
+      nacosNamespaceRequestIdsRef.current[normalizedConnectionId] =
+          (nacosNamespaceRequestIdsRef.current[normalizedConnectionId] || 0) + 1;
+      Object.keys(nacosServiceGroupRequestIdsRef.current).forEach((loadKey) => {
+          if (isConnectionLoadKey(loadKey)) {
+              nacosServiceGroupRequestIdsRef.current[loadKey] += 1;
+          }
+      });
+
+      Array.from(loadingNodesRef.current).forEach((loadKey) => {
+          if (isConnectionLoadKey(loadKey)) {
+              loadingNodesRef.current.delete(loadKey);
+          }
+      });
+
+      // Prevent a queued ensureFresh load from blocking a subsequent explicit
+      // reconnect. Its eventual callback is rejected by the connection epoch.
+      databaseLoadsRef.current.delete(`dbs-${normalizedConnectionId}`);
+      Array.from(tableLoadsRef.current.keys()).forEach((loadKey) => {
+          if (isConnectionLoadKey(loadKey)) {
+              tableLoadsRef.current.delete(loadKey);
+          }
+      });
+      delete nacosNamespaceActiveRequestsRef.current[normalizedConnectionId];
+  }, [loadingNodesRef]);
 
 	  const fetchDriverStatusMap = async (): Promise<Record<string, DriverStatusSnapshot>> => {
 	      const cached = driverStatusCacheRef.current;
@@ -521,9 +597,14 @@ export const useSidebarTreeLoaders = ({
 	          console.warn('检查驱动代理更新状态失败', error);
 	      }
 	  };
-	  const runLoadDatabases = async (node: any) => {
+	  const runLoadDatabases = async (
+      node: any,
+      expectedConnectionEpoch = getConnectionLoadEpoch(String(node?.dataRef?.id || '')),
+  ) => {
 		      const conn = node.dataRef as SavedConnection;
+	      if (!isCurrentConnectionLoadEpoch(conn.id, expectedConnectionEpoch)) return;
 		      const loadKey = `dbs-${conn.id}`;
+          let loadGeneration = 0;
           let nacosNamespaceRequest:
               | { requestId: number; signature: string }
               | undefined;
@@ -534,6 +615,7 @@ export const useSidebarTreeLoaders = ({
               if (activeRequest?.signature === signature) {
                   return;
               }
+              loadGeneration = beginLoadGeneration(loadKey);
               const requestId =
                   (nacosNamespaceRequestIdsRef.current[conn.id] || 0) + 1;
               nacosNamespaceRequestIdsRef.current[conn.id] = requestId;
@@ -543,8 +625,14 @@ export const useSidebarTreeLoaders = ({
               loadingNodesRef.current.add(loadKey);
           } else {
               if (loadingNodesRef.current.has(loadKey)) return;
+              loadGeneration = beginLoadGeneration(loadKey);
               loadingNodesRef.current.add(loadKey);
           }
+          const isCurrentLoad = () => (
+              isCurrentConnectionLoadEpoch(conn.id, expectedConnectionEpoch)
+              && isCurrentLoadGeneration(loadKey, loadGeneration)
+          );
+          if (!isCurrentLoad()) return;
           setConnectionStates(prev => ({ ...prev, [conn.id]: 'loading' }));
           let shouldMarkConnectionSuccess = false;
 	      const config = {
@@ -559,6 +647,7 @@ export const useSidebarTreeLoaders = ({
           if (conn.config.type === 'jvm') {
               try {
                   const res = await JVMProbeCapabilities(buildRuntimeConfig(conn) as any);
+                  if (!isCurrentLoad()) return;
                   if (res.success) {
                       const capabilities: JVMCapability[] = Array.isArray(res.data) ? res.data as JVMCapability[] : [];
                       const modeNodes: TreeNode[] = capabilities.map((capability) => ({
@@ -607,6 +696,7 @@ export const useSidebarTreeLoaders = ({
                       }
                   }
               } catch (e: any) {
+                  if (!isCurrentLoad()) return;
                   const diagnosticNode = buildJVMDiagnosticTreeNodes(conn);
                   setConnectionStates(prev => ({ ...prev, [conn.id]: 'error' }));
                   if (diagnosticNode.length > 0) {
@@ -625,9 +715,11 @@ export const useSidebarTreeLoaders = ({
                       });
                   }
               } finally {
-                  loadingNodesRef.current.delete(loadKey);
-                  if (shouldMarkConnectionSuccess) {
-                      setConnectionStates(prev => ({ ...prev, [conn.id]: 'success' }));
+                  if (isCurrentLoad()) {
+                      loadingNodesRef.current.delete(loadKey);
+                      if (shouldMarkConnectionSuccess) {
+                          setConnectionStates(prev => ({ ...prev, [conn.id]: 'success' }));
+                      }
                   }
               }
               return;
@@ -639,6 +731,7 @@ export const useSidebarTreeLoaders = ({
               databaseRequestIdsRef.current[conn.id] = redisRequestId;
               const redisRequestSignature = buildConnectionReloadSignature(conn);
               const resolveCurrentRedisRequestConnection = (): SavedConnection | null => {
+                  if (!isCurrentLoad()) return null;
                   if (databaseRequestIdsRef.current[conn.id] !== redisRequestId) return null;
                   const currentConnection = useStore.getState().connections.find(
                       (candidate) => candidate.id === conn.id,
@@ -694,7 +787,10 @@ export const useSidebarTreeLoaders = ({
                       key: `conn-${currentConnection.id}-dbs`,
                   });
               } finally {
-                  if (databaseRequestIdsRef.current[conn.id] === redisRequestId) {
+                  if (
+                      isCurrentLoad()
+                      && databaseRequestIdsRef.current[conn.id] === redisRequestId
+                  ) {
                       loadingNodesRef.current.delete(loadKey);
                       const currentConnection = resolveCurrentRedisRequestConnection();
                       if (shouldMarkConnectionSuccess && currentConnection) {
@@ -712,6 +808,9 @@ export const useSidebarTreeLoaders = ({
               const isLatestNamespaceRequest = () =>
                   nacosNamespaceRequestIdsRef.current[conn.id] === requestId;
               const resolveCurrentRequestConnection = (): SavedConnection | null => {
+                  if (!isCurrentLoad()) {
+                      return null;
+                  }
                   if (!isLatestNamespaceRequest()) {
                       return null;
                   }
@@ -848,7 +947,7 @@ export const useSidebarTreeLoaders = ({
               } finally {
                   const activeRequest =
                       nacosNamespaceActiveRequestsRef.current[conn.id];
-                  if (activeRequest?.requestId === requestId) {
+                  if (activeRequest?.requestId === requestId && isCurrentLoad()) {
                       delete nacosNamespaceActiveRequestsRef.current[conn.id];
                       loadingNodesRef.current.delete(loadKey);
                       const currentConnection = resolveCurrentRequestConnection();
@@ -870,6 +969,9 @@ export const useSidebarTreeLoaders = ({
           databaseRequestIdsRef.current[conn.id] = databaseRequestId;
           const databaseRequestSignature = buildConnectionReloadSignature(conn);
           const resolveCurrentDatabaseRequestConnection = (): SavedConnection | null => {
+              if (!isCurrentLoad()) {
+                  return null;
+              }
               if (databaseRequestIdsRef.current[conn.id] !== databaseRequestId) {
                   return null;
               }
@@ -986,7 +1088,10 @@ export const useSidebarTreeLoaders = ({
                 key: `conn-${currentConnection.id}-dbs`,
             });
 	      } finally {
-              if (databaseRequestIdsRef.current[conn.id] === databaseRequestId) {
+              if (
+                  isCurrentLoad()
+                  && databaseRequestIdsRef.current[conn.id] === databaseRequestId
+              ) {
 	              loadingNodesRef.current.delete(loadKey);
                   const currentConnection = resolveCurrentDatabaseRequestConnection();
                   if (shouldMarkConnectionSuccess && currentConnection) {
@@ -1006,10 +1111,11 @@ export const useSidebarTreeLoaders = ({
       const conn = node.dataRef as SavedConnection;
       const loadKey = `dbs-${conn.id}`;
       const signature = buildConnectionReloadSignature(conn);
+      const connectionEpoch = getConnectionLoadEpoch(conn.id);
       return scheduleSidebarLoad(
           databaseLoadsRef.current,
           loadKey,
-          () => runLoadDatabases(node),
+          () => runLoadDatabases(node, connectionEpoch),
           options,
           signature,
       );
@@ -1020,7 +1126,13 @@ export const useSidebarTreeLoaders = ({
       const providerMode = String(conn.providerMode || '').trim().toLowerCase();
       const parentPath = String(conn.resourcePath || '').trim();
       const loadKey = `jvm-resources-${conn.id}-${providerMode}-${parentPath}`;
+      const connectionEpoch = getConnectionLoadEpoch(conn.id);
       if (loadingNodesRef.current.has(loadKey)) return;
+      const loadGeneration = beginLoadGeneration(loadKey);
+      const isCurrentLoad = () => (
+          isCurrentConnectionLoadEpoch(conn.id, connectionEpoch)
+          && isCurrentLoadGeneration(loadKey, loadGeneration)
+      );
       loadingNodesRef.current.add(loadKey);
 
       try {
@@ -1030,6 +1142,7 @@ export const useSidebarTreeLoaders = ({
           }
 
           const res = await backendApp.JVMListResources(buildJVMRuntimeConfig(conn, providerMode), parentPath);
+          if (!isCurrentLoad()) return;
           if (res.success) {
               const resourceRows: JVMResourceSummary[] = Array.isArray(res.data) ? res.data as JVMResourceSummary[] : [];
               const resourceNodes: TreeNode[] = resourceRows.map((item) => ({
@@ -1055,26 +1168,40 @@ export const useSidebarTreeLoaders = ({
               message.error({ content: res.message, key: `jvm-resource-${node.key}` });
           }
       } catch (e: any) {
+          if (!isCurrentLoad()) return;
           setLoadedKeys(prev => prev.filter(k => k !== node.key));
           message.error({
               content: t('sidebar.message.load_jvm_resources_failed', { error: e?.message || String(e) }),
               key: `jvm-resource-${node.key}`,
           });
       } finally {
-          loadingNodesRef.current.delete(loadKey);
+          if (isCurrentLoad()) {
+              loadingNodesRef.current.delete(loadKey);
+          }
       }
   };
 
-	  const runLoadTables = async (node: any) => {
-	      const conn = node.dataRef; // has dbName
-	      const dbName = conn.dbName;
+	  const runLoadTables = async (
+      node: any,
+      expectedConnectionEpoch = getConnectionLoadEpoch(String(node?.dataRef?.id || '')),
+  ) => {
+		      const conn = node.dataRef; // has dbName
+		      const dbName = conn.dbName;
       const key = node.key;
       const loadKey = `tables-${conn.id}-${dbName}`;
+      if (!isCurrentConnectionLoadEpoch(conn.id, expectedConnectionEpoch)) return;
       if (loadingNodesRef.current.has(loadKey)) return;
+      const loadGeneration = beginLoadGeneration(loadKey);
+      const isCurrentLoad = () => (
+          isCurrentConnectionLoadEpoch(conn.id, expectedConnectionEpoch)
+          && isCurrentLoadGeneration(loadKey, loadGeneration)
+      );
       loadingNodesRef.current.add(loadKey);
+      if (!isCurrentLoad()) return;
       setConnectionStates(prev => ({ ...prev, [key as string]: 'loading' }));
       let shouldMarkDatabaseSuccess = false;
       const showTableLoadFailure = (error: unknown) => {
+          if (!isCurrentLoad()) return;
           const errorMessage = String(error || t('sidebar.message.load_table_list_failed', { error: 'unknown error' }));
           setConnectionStates(prev => ({ ...prev, [key as string]: 'error' }));
           setLoadedKeys(prev => prev.filter(loadedKey => loadedKey !== node.key));
@@ -1124,11 +1251,12 @@ export const useSidebarTreeLoaders = ({
 	      };
 	      try {
 	          if (messageQueueProfile) {
-	              const objectsResult = await DBGetObjects(
-	                  buildRpcConnectionConfig(config) as any,
-	                  conn.dbName,
-	              );
-	              if (!objectsResult.success) {
+              const objectsResult = await DBGetObjects(
+                  buildRpcConnectionConfig(config) as any,
+                  conn.dbName,
+              );
+              if (!isCurrentLoad()) return;
+              if (!objectsResult.success) {
 	                  showTableLoadFailure(objectsResult.message);
 	                  return;
 	              }
@@ -1174,6 +1302,7 @@ export const useSidebarTreeLoaders = ({
 	          }
 
 	          const res = await DBGetTables(buildRpcConnectionConfig(config) as any, conn.dbName);
+          if (!isCurrentLoad()) return;
 	          if (res.success) {
                 const tableRows: any[] = Array.isArray(res.data) ? res.data : [];
                 if (res.partial || res.truncated) {
@@ -1203,6 +1332,7 @@ export const useSidebarTreeLoaders = ({
                 const tableStatsResult = tableStatusSql
                     ? await DBQuery(buildRpcConnectionConfig(config) as any, conn.dbName, tableStatusSql).catch(() => ({ success: false, data: [] as any[] }))
                     : { success: false, data: [] as any[] };
+                if (!isCurrentLoad()) return;
                 const tableMetadataMap = new Map<string, SidebarLoadedTableMetadata>();
                 const metadataObjectKeyIdentities = new Map<string, Set<string>>();
                 const ambiguousMetadataObjectKeys = new Set<string>();
@@ -1404,6 +1534,7 @@ export const useSidebarTreeLoaders = ({
 	                loadPackages(conn, conn.dbName),
 	                loadDatabaseEvents(conn, conn.dbName),
 	            ]);
+            if (!isCurrentLoad()) return;
             const viewRows: SidebarViewMetadataEntry[] = Array.isArray(viewsResult.views) ? viewsResult.views : [];
             const materializedViewRows: SidebarViewMetadataEntry[] = Array.isArray(materializedViewsResult.views) ? materializedViewsResult.views : [];
             const triggerRows: any[] = Array.isArray(triggersResult.triggers) ? triggersResult.triggers : [];
@@ -1929,7 +2060,8 @@ export const useSidebarTreeLoaders = ({
 
 	                renderedDatabaseChildren = [queriesNode, ...groupedNodes];
 	            }
-	            replaceTreeNodeChildren(key, renderedDatabaseChildren, latestDatabaseConnection);
+            if (!isCurrentLoad()) return;
+            replaceTreeNodeChildren(key, renderedDatabaseChildren, latestDatabaseConnection);
                 onDatabaseTreeLoaded?.(String(key));
                 shouldMarkDatabaseSuccess = true;
 
@@ -1937,12 +2069,13 @@ export const useSidebarTreeLoaders = ({
 	                const tableNames = tableRows
 	                    .map((row) => getSidebarTableName(row as Record<string, any>))
 	                    .filter((tableName) => String(tableName || '').trim() !== '');
-	                const refreshed = await DBRefreshTableStats(
-	                    buildRpcConnectionConfig(config) as any,
-	                    conn.dbName,
-	                    tableNames,
-	                ).catch(() => null);
-	                if (refreshed?.success && Array.isArray(refreshed.data)) {
+                const refreshed = await DBRefreshTableStats(
+                    buildRpcConnectionConfig(config) as any,
+                    conn.dbName,
+                    tableNames,
+                ).catch(() => null);
+                if (!isCurrentLoad()) return;
+                if (refreshed?.success && Array.isArray(refreshed.data)) {
 	                    renderedDatabaseChildren = applyRefreshedSQLiteStatsToTree(
 	                        renderedDatabaseChildren,
 	                        refreshed.data as Record<string, any>[],
@@ -1954,12 +2087,16 @@ export const useSidebarTreeLoaders = ({
 	            showTableLoadFailure(res.message);
           }
 	      } catch (e: any) {
-	          showTableLoadFailure(t('sidebar.message.load_table_list_failed', { error: e?.message || String(e) }));
+              if (isCurrentLoad()) {
+                  showTableLoadFailure(t('sidebar.message.load_table_list_failed', { error: e?.message || String(e) }));
+              }
 	      } finally {
-	          loadingNodesRef.current.delete(loadKey);
+          if (isCurrentLoad()) {
+              loadingNodesRef.current.delete(loadKey);
               if (shouldMarkDatabaseSuccess) {
                   setConnectionStates(prev => ({ ...prev, [key as string]: 'success' }));
               }
+          }
 	      }
   };
 
@@ -1969,10 +2106,11 @@ export const useSidebarTreeLoaders = ({
   ): Promise<void> => {
       const conn = node.dataRef;
       const loadKey = `tables-${conn.id}-${conn.dbName}`;
+      const connectionEpoch = getConnectionLoadEpoch(conn.id);
       return scheduleSidebarLoad(
           tableLoadsRef.current,
           loadKey,
-          () => runLoadTables(node),
+          () => runLoadTables(node, connectionEpoch),
           options,
       );
   };
@@ -1987,12 +2125,19 @@ export const useSidebarTreeLoaders = ({
       const loadKey = `nacos-groups-${connectionId}-${nodeKeyId}`;
       if (!connectionId) return;
       if (loadingNodesRef.current.has(loadKey)) return;
+      const connectionEpoch = getConnectionLoadEpoch(connectionId);
+      const loadGeneration = beginLoadGeneration(loadKey);
+      const isCurrentLoad = () => (
+          isCurrentConnectionLoadEpoch(connectionId, connectionEpoch)
+          && isCurrentLoadGeneration(loadKey, loadGeneration)
+      );
       loadingNodesRef.current.add(loadKey);
       try {
           const res = await (window as any).go.app.App.NacosListConfigGroups(
               buildRpcConnectionConfig(dataRef.config || {}),
               namespaceId,
           );
+          if (!isCurrentLoad()) return;
           if (!res?.success) {
               message.error({
                   content: res?.message || t('sidebar.message.connection_failed', { error: 'list groups failed' }),
@@ -2039,13 +2184,16 @@ export const useSidebarTreeLoaders = ({
               });
           }
       } catch (error: any) {
+          if (!isCurrentLoad()) return;
           message.error({
               content: t('sidebar.message.connection_failed', { error: error?.message || String(error) }),
               key: loadKey,
           });
           setLoadedKeys((prev) => prev.filter((k) => k !== node.key));
       } finally {
-          loadingNodesRef.current.delete(loadKey);
+          if (isCurrentLoad()) {
+              loadingNodesRef.current.delete(loadKey);
+          }
       }
   };
 
@@ -2061,6 +2209,12 @@ export const useSidebarTreeLoaders = ({
       const loadKey = `nacos-service-groups-${connectionId}-${nodeKeyId}`;
       if (!connectionId) return false;
       if (loadingNodesRef.current.has(loadKey) && !options.force) return false;
+      const connectionEpoch = getConnectionLoadEpoch(connectionId);
+      const loadGeneration = beginLoadGeneration(loadKey);
+      const isCurrentLoad = () => (
+          isCurrentConnectionLoadEpoch(connectionId, connectionEpoch)
+          && isCurrentLoadGeneration(loadKey, loadGeneration)
+      );
       const requestId = (nacosServiceGroupRequestIdsRef.current[loadKey] || 0) + 1;
       nacosServiceGroupRequestIdsRef.current[loadKey] = requestId;
       loadingNodesRef.current.add(loadKey);
@@ -2078,7 +2232,10 @@ export const useSidebarTreeLoaders = ({
               }
               return res.data || {};
           });
-          if (nacosServiceGroupRequestIdsRef.current[loadKey] !== requestId) {
+          if (
+              !isCurrentLoad()
+              || nacosServiceGroupRequestIdsRef.current[loadKey] !== requestId
+          ) {
               return false;
           }
 
@@ -2111,7 +2268,10 @@ export const useSidebarTreeLoaders = ({
           replaceTreeNodeChildren(node.key, [allNode, ...groupNodes], dataRef);
           return true;
       } catch (error: any) {
-          if (nacosServiceGroupRequestIdsRef.current[loadKey] !== requestId) {
+          if (
+              !isCurrentLoad()
+              || nacosServiceGroupRequestIdsRef.current[loadKey] !== requestId
+          ) {
               return false;
           }
           message.error({
@@ -2121,7 +2281,10 @@ export const useSidebarTreeLoaders = ({
           setLoadedKeys((prev) => prev.filter((k) => k !== node.key));
           return false;
       } finally {
-          if (nacosServiceGroupRequestIdsRef.current[loadKey] === requestId) {
+          if (
+              isCurrentLoad()
+              && nacosServiceGroupRequestIdsRef.current[loadKey] === requestId
+          ) {
               loadingNodesRef.current.delete(loadKey);
           }
       }
@@ -2133,5 +2296,6 @@ export const useSidebarTreeLoaders = ({
       loadTables,
       loadNacosConfigGroups,
       loadNacosServiceGroups,
+      invalidateConnectionLoads,
   };
 };

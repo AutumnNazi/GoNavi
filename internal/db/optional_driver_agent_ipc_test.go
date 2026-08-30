@@ -68,6 +68,57 @@ func TestOptionalDriverAgentClientRejectsOversizedRequest(t *testing.T) {
 	}
 }
 
+func TestOptionalDriverAgentClientRehydratesUnknownApplyChangesOutcome(t *testing.T) {
+	response, err := json.Marshal(optionalAgentResponse{
+		ID:             1,
+		Success:        false,
+		Error:          "response lost",
+		OutcomeUnknown: true,
+	})
+	if err != nil {
+		t.Fatalf("marshal response: %v", err)
+	}
+	var stdin optionalAgentTestWriteCloser
+	client := &optionalDriverAgentClient{
+		stdin:  &stdin,
+		reader: bufio.NewReader(bytes.NewReader(append(response, '\n'))),
+		driver: "mongodb",
+	}
+	err = client.call(optionalAgentRequest{Method: optionalAgentMethodApplyChanges}, nil, nil, nil, nil)
+	if !IsWriteOutcomeUnknown(err) || err.Error() != "response lost" {
+		t.Fatalf("applyChanges error = %T %v, unknown=%t", err, err, IsWriteOutcomeUnknown(err))
+	}
+}
+
+func TestOptionalDriverAgentClientRejectsOutcomeUnknownOnInvalidResponse(t *testing.T) {
+	tests := []struct {
+		name    string
+		method  string
+		success bool
+	}{
+		{name: "successful applyChanges", method: optionalAgentMethodApplyChanges, success: true},
+		{name: "non-applyChanges failure", method: optionalAgentMethodQuery, success: false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			response, err := json.Marshal(optionalAgentResponse{ID: 1, Success: test.success, Error: "bad marker", OutcomeUnknown: true})
+			if err != nil {
+				t.Fatalf("marshal response: %v", err)
+			}
+			var stdin optionalAgentTestWriteCloser
+			client := &optionalDriverAgentClient{
+				stdin:  &stdin,
+				reader: bufio.NewReader(bytes.NewReader(append(response, '\n'))),
+				driver: "mongodb",
+			}
+			err = client.call(optionalAgentRequest{Method: test.method}, nil, nil, nil, nil)
+			if err == nil || !strings.Contains(err.Error(), "outcomeUnknown") {
+				t.Fatalf("protocol error = %v", err)
+			}
+		})
+	}
+}
+
 func TestOptionalDriverAgentClientRejectsOversizedStreamChunkAndDoesNotReuseTransport(t *testing.T) {
 	var stdin optionalAgentTestWriteCloser
 	oversized := append(bytes.Repeat([]byte{'x'}, OptionalDriverAgentMaxJSONLineBytes), '\n')

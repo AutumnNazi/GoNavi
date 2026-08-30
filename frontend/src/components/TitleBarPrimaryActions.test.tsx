@@ -12,6 +12,7 @@ import {
 } from '../utils/shortcuts';
 
 const appCss = readFileSync(new URL('../App.css', import.meta.url), 'utf8');
+const v2ThemeCss = readFileSync(new URL('../v2-theme.css', import.meta.url), 'utf8');
 
 vi.mock('@ant-design/icons', () => {
   const Icon = () => <span data-icon="true" />;
@@ -46,6 +47,73 @@ describe('TitleBarPrimaryActions', () => {
     expect(closeHoverMatch, 'Missing close-button hover override').not.toBeNull();
     expect(closeHoverMatch?.groups?.body).toContain('background-color: #ff4d4f !important;');
     expect(closeHoverMatch?.groups?.body).toContain('color: #fff !important;');
+  });
+
+  it('keeps the V2 titlebar context marker styles available', () => {
+    expect(v2ThemeCss).toContain('.gn-v2-titlebar-status.is-success .gn-v2-titlebar-status-dot');
+    expect(v2ThemeCss).toContain('max-width: min(520px, calc(100vw - 620px));');
+    expect(v2ThemeCss).toContain('calc(100vw - 620px)');
+    expect(v2ThemeCss).not.toContain('calc(100vw - 1120px)');
+    expect(v2ThemeCss).toContain('@media (min-width: 921px) and (max-width: 1230px)');
+    expect(v2ThemeCss).toContain('@media (max-width: 920px)');
+  });
+
+  it('keeps a selected-but-unconnected titlebar marker neutral', () => {
+    const statusRule = v2ThemeCss.match(
+      /body\[data-ui-version="v2"\] \.gn-v2-titlebar-status\s*\{(?<body>[^}]*)\}/s,
+    );
+    expect(statusRule, 'Missing titlebar marker base rule').not.toBeNull();
+    expect(statusRule?.groups?.body).toContain('width: 14px;');
+    expect(statusRule?.groups?.body).toContain('height: 14px;');
+    expect(statusRule?.groups?.body).toContain('flex: 0 0 14px;');
+    expect(statusRule?.groups?.body).toContain('overflow: visible;');
+    expect(statusRule?.groups?.body).toContain('color: var(--gn-fg-4);');
+
+    expect(v2ThemeCss).not.toContain('.gn-v2-titlebar-center[data-connection-status="selected"] .gn-v2-titlebar-status');
+    expect(v2ThemeCss).toContain('color: var(--gn-fg-4);');
+  });
+
+  it('keeps the V2 titlebar marker unclipped', () => {
+    const centerRule = v2ThemeCss.match(
+      /body\[data-ui-version="v2"\] \.gn-v2-titlebar-center\s*\{(?<body>[^}]*)\}/s,
+    );
+    expect(centerRule?.groups?.body).toContain('overflow: visible;');
+    expect(centerRule?.groups?.body).toContain('z-index: 1;');
+    const dotRule = v2ThemeCss.match(
+      /body\[data-ui-version="v2"\] \.gn-v2-titlebar-status-dot\s*\{(?<body>[^}]*)\}/s,
+    );
+    expect(dotRule, 'Missing titlebar dot geometry rule').not.toBeNull();
+    expect(dotRule?.groups?.body).toContain('width: 9px;');
+    expect(dotRule?.groups?.body).toContain('height: 9px;');
+    expect(dotRule?.groups?.body).toContain('flex: 0 0 9px;');
+    expect(dotRule?.groups?.body).toContain('box-sizing: border-box;');
+    expect(dotRule?.groups?.body).toContain('border-radius: 50%;');
+    const loadingDotRule = v2ThemeCss.match(
+      /body\[data-ui-version="v2"\] \.gn-v2-titlebar-status\.is-loading \.gn-v2-titlebar-status-dot\s*\{(?<body>[^}]*)\}/s,
+    );
+    expect(loadingDotRule, 'Missing titlebar loading dot rule').not.toBeNull();
+    expect(loadingDotRule?.groups?.body).toContain('width: 10px;');
+    expect(loadingDotRule?.groups?.body).toContain('height: 10px;');
+    expect(loadingDotRule?.groups?.body).toContain('flex-basis: 10px;');
+    expect(loadingDotRule?.groups?.body).toContain('border-top-color: #2563eb;');
+    const copyRule = v2ThemeCss.match(
+      /body\[data-ui-version="v2"\] \.gn-v2-titlebar-copy\s*\{(?<body>[^}]*)\}/s,
+    );
+    expect(copyRule?.groups?.body).toContain('overflow: hidden;');
+    expect(v2ThemeCss).not.toContain('.gn-v2-titlebar-center span:last-child');
+    expect(v2ThemeCss).toContain('.gn-v2-tree-status.is-loading::before');
+    expect(v2ThemeCss).toContain('.gn-v2-tree-status.is-success::before');
+    expect(v2ThemeCss).toContain('.gn-v2-tree-status.is-error::before');
+    expect(v2ThemeCss).toContain('.gn-v2-titlebar-status-dot');
+    expect(v2ThemeCss).toContain('.gn-v2-titlebar-status.is-loading .gn-v2-titlebar-status-dot');
+    expect(v2ThemeCss).toContain('.gn-v2-titlebar-status.is-success .gn-v2-titlebar-status-dot');
+    expect(v2ThemeCss).toContain('.gn-v2-titlebar-status.is-error .gn-v2-titlebar-status-dot');
+    expect(v2ThemeCss).toContain('@keyframes gn-v2-titlebar-status-spin');
+    expect(v2ThemeCss).not.toContain('.gn-v2-titlebar-live');
+    expect(v2ThemeCss).toContain('flex: 0 0 14px;');
+    expect(v2ThemeCss).toContain('box-sizing: border-box;');
+    expect(v2ThemeCss).toContain('animation: gn-v2-titlebar-status-spin 0.8s linear infinite;');
+    expect(v2ThemeCss).toContain('border-top-color: #2563eb;');
   });
 
   it('shows both labels in query-first order and invokes their actions', () => {
