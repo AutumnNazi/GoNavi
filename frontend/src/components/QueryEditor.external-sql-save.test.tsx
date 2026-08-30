@@ -4051,6 +4051,55 @@ describe('QueryEditor external SQL save', () => {
     expect(conflictResult.suggestions.find((item: any) => item.label === 'system_user')?.insertText)
       .toBe('system_user AS su2');
 
+    storeState.connections[0].config.type = 'tidb';
+    editorState.value = 'SELECT * FROM sys';
+    editorState.latestOnChange?.(editorState.value);
+    const tidbResult = await sqlProvider.provideCompletionItems(
+      editorState.editor.getModel(),
+      { lineNumber: 1, column: editorState.value.length + 1 },
+    );
+    expect(tidbResult.suggestions.find((item: any) => item.label === 'system_user')?.insertText)
+      .toBe('system_user AS su');
+
+    editorState.value = '\uFEFF-- legacy completion test\r\nSELECT *\r\nFROM sys';
+    editorState.latestOnChange?.(editorState.value);
+    const crlfResult = await sqlProvider.provideCompletionItems(
+      editorState.editor.getModel(),
+      { lineNumber: 3, column: 9 },
+    );
+    expect(crlfResult.suggestions.find((item: any) => item.label === 'system_user')?.insertText)
+      .toBe('system_user AS su');
+    expect(editorState.value).toBe('\uFEFF-- legacy completion test\r\nSELECT *\r\nFROM sys');
+
+    storeState.connections[0].config.type = 'oracle';
+    editorState.value = 'SELECT * FROM sys';
+    editorState.latestOnChange?.(editorState.value);
+    const oracleResult = await sqlProvider.provideCompletionItems(
+      editorState.editor.getModel(),
+      { lineNumber: 1, column: editorState.value.length + 1 },
+    );
+    expect(oracleResult.suggestions.find((item: any) => item.label === 'system_user')?.insertText)
+      .toBe('system_user su');
+
+    storeState.connections[0].config.type = 'oceanbase';
+    (storeState.connections[0].config as Record<string, unknown>).oceanBaseProtocol = 'oracle';
+    const oceanBaseOracleResult = await sqlProvider.provideCompletionItems(
+      editorState.editor.getModel(),
+      { lineNumber: 1, column: editorState.value.length + 1 },
+    );
+    expect(oceanBaseOracleResult.suggestions.find((item: any) => item.label === 'system_user')?.insertText)
+      .toBe('system_user su');
+
+    storeState.connections[0].config.type = 'iotdb';
+    const unsupportedDialectResult = await sqlProvider.provideCompletionItems(
+      editorState.editor.getModel(),
+      { lineNumber: 1, column: editorState.value.length + 1 },
+    );
+    expect(unsupportedDialectResult.suggestions.find((item: any) => item.label === 'system_user')?.insertText)
+      .toBe('system_user');
+
+    storeState.connections[0].config.type = 'mysql';
+    (storeState.connections[0].config as Record<string, unknown>).oceanBaseProtocol = undefined;
     editorState.value = 'SELECT * FROM code';
     editorState.latestOnChange?.(editorState.value);
     const initialsResult = await sqlProvider.provideCompletionItems(
@@ -8674,7 +8723,7 @@ describe('QueryEditor external SQL save', () => {
       const tableSuggestion = completionItems?.suggestions?.find((item: any) => item?.label === 'AAA3_NJ');
 
       expect(tableSuggestion).toBeTruthy();
-      expect(tableSuggestion.insertText).toBe('AAA3_NJ AS an');
+      expect(tableSuggestion.insertText).toBe('AAA3_NJ an');
       expect(tableSuggestion.detail).toContain('表 (sbdev)');
       expect(completionItems?.suggestions?.some((item: any) => item?.label === 'sbdev.SBDEV.AAA3_NJ')).toBe(false);
     });
