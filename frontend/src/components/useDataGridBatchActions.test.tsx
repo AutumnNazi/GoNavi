@@ -79,6 +79,7 @@ describe('useDataGridBatchActions clipboard paste', () => {
   const renderHook = ({
     canModifyData = true,
     addedRows = [] as any[],
+    deletedRowKeys = new Set<string>(),
     modifiedRows = {} as Record<string, any>,
     selectedCells = new Set<string>(),
     selectedRowKeys = [] as React.Key[],
@@ -126,7 +127,7 @@ describe('useDataGridBatchActions clipboard paste', () => {
       copiedCellPatch,
       canUseCellSelectionAsFillTemplateTargets,
       currentSelectionRef,
-      deletedRowKeys: new Set<string>(),
+      deletedRowKeys,
       displayColumnNames: ['id', 'generated', 'name'],
       displayDataRef: { current: rows },
       effectiveEditLocator: {},
@@ -137,6 +138,7 @@ describe('useDataGridBatchActions clipboard paste', () => {
       isWritableResultColumn: (columnName: string) => columnName !== 'generated',
       makeCellKey,
       markCellSelectionDeleteEligible: vi.fn(),
+      markCellSelectionUserSelection: vi.fn(),
       modifiedRows,
       pendingCellSelectionStartRef: { current: null },
       requestAnimationFrame: (callback: FrameRequestCallback) => { callback(0); return 1; },
@@ -269,6 +271,7 @@ describe('useDataGridBatchActions clipboard paste', () => {
       makeCellKey('row-3', 'name'),
     ]));
     expect(hook.ctx.markCellSelectionDeleteEligible).toHaveBeenCalledWith(true);
+    expect(hook.ctx.markCellSelectionUserSelection).toHaveBeenCalledWith(true);
 
     const preventDefault = vi.fn();
     act(() => {
@@ -311,6 +314,184 @@ describe('useDataGridBatchActions clipboard paste', () => {
       'row-2': { name: 'fixed' },
       'row-3': { name: 'fixed' },
     });
+  });
+
+  it('sets every selected cell to NULL from the context-menu action', () => {
+    const hook = renderHook({
+      selectedCells: new Set([
+        makeCellKey('row-1', 'name'),
+        makeCellKey('row-2', 'id'),
+        makeCellKey('row-2', 'name'),
+      ]),
+    });
+
+    act(() => {
+      hook.getActions().handleSetNullForSelectedCells({ rowKey: 'row-2', colName: 'name' });
+    });
+
+    const nextRows = hook.setModifiedRows.mock.calls[0][0]({});
+    expect(nextRows).toEqual({
+      'row-1': { name: null },
+      'row-2': { id: null, name: null },
+    });
+    const nextColumns = hook.setModifiedColumns.mock.calls[0][0]({});
+    expect(nextColumns['row-1']).toEqual(new Set(['name']));
+    expect(nextColumns['row-2']).toEqual(new Set(['id', 'name']));
+    expect(hook.ctx.setCellContextMenu).toHaveBeenCalledWith(expect.any(Function));
+  });
+
+  it('keeps the explicit selected-cell action scoped to the selection', () => {
+    const hook = renderHook({
+      selectedCells: new Set([
+        makeCellKey('row-1', 'name'),
+        makeCellKey('row-2', 'name'),
+      ]),
+    });
+
+    act(() => {
+      // The explicit menu action deliberately has no right-click fallback.
+      hook.getActions().handleSetNullForSelectedCells();
+    });
+
+    const nextRows = hook.setModifiedRows.mock.calls[0][0]({});
+    expect(nextRows).toEqual({
+      'row-1': { name: null },
+      'row-2': { name: null },
+    });
+  });
+
+  it('merges a concurrent field patch when the NULL updater runs', () => {
+    const hook = renderHook({
+      selectedCells: new Set([makeCellKey('row-1', 'name')]),
+    });
+
+    act(() => {
+      hook.getActions().handleSetNullForSelectedCells();
+    });
+
+    const nextRows = hook.setModifiedRows.mock.calls[0][0]({
+      'row-1': { id: 'concurrent-id' },
+    });
+    expect(nextRows).toEqual({
+      'row-1': { id: 'concurrent-id', name: null },
+    });
+
+    const nextColumns = hook.setModifiedColumns.mock.calls[0][0]({
+      'row-1': new Set(['id']),
+    });
+    expect(nextColumns['row-1']).toEqual(new Set(['id', 'name']));
+  });
+
+  it('ignores selected cells from rows hidden by the active client filter', () => {
+    const hook = renderHook({
+      selectedCells: new Set([
+        makeCellKey('row-1', 'name'),
+        makeCellKey('row-2', 'name'),
+      ]),
+    });
+    hook.ctx.displayDataRef.current = hook.ctx.displayDataRef.current.filter((row: any) => row.key !== 'row-2');
+
+    act(() => {
+      hook.getActions().handleSetNullForSelectedCells({ rowKey: 'row-1', colName: 'name' });
+    });
+
+    const nextRows = hook.setModifiedRows.mock.calls[0][0]({});
+    expect(nextRows).toEqual({ 'row-1': { name: null } });
+  });
+
+  it('falls back to the clicked cell when the context menu is outside the selection', () => {
+    const hook = renderHook({
+      selectedCells: new Set([makeCellKey('row-1', 'name')]),
+    });
+
+    act(() => {
+      hook.getActions().handleSetNullForSelectedCells({ rowKey: 'row-2', colName: 'name' });
+    });
+
+    const nextRows = hook.setModifiedRows.mock.calls[0][0]({});
+    expect(nextRows).toEqual({ 'row-2': { name: null } });
+  });
+
+  it('does not treat an ineligible focused-cell state as a batch selection', () => {
+    const hook = renderHook({
+      canUseCellSelectionAsFillTemplateTargets: false,
+      selectedCells: new Set([
+        makeCellKey('row-1', 'name'),
+        makeCellKey('row-2', 'name'),
+      ]),
+    });
+
+    act(() => {
+      hook.getActions().handleSetNullForSelectedCells({ rowKey: 'row-2', colName: 'name' });
+    });
+
+    const nextRows = hook.setModifiedRows.mock.calls[0][0]({});
+    expect(nextRows).toEqual({ 'row-2': { name: null } });
+  });
+
+  it('keeps the non-editable-field message for a single read-only fallback cell', () => {
+    const hook = renderHook({
+      canUseCellSelectionAsFillTemplateTargets: false,
+    });
+
+    act(() => {
+      hook.getActions().handleSetNullForSelectedCells({ rowKey: 'row-1', colName: 'generated' });
+    });
+
+    expect(messageApi.info).toHaveBeenCalledWith(expect.stringContaining('data_grid.message.current_field_not_editable'));
+    expect(hook.setModifiedRows).not.toHaveBeenCalled();
+  });
+
+  it('skips rows that are already marked for deletion', () => {
+    const hook = renderHook({
+      deletedRowKeys: new Set(['row-1']),
+      selectedCells: new Set([
+        makeCellKey('row-1', 'name'),
+        makeCellKey('row-2', 'name'),
+      ]),
+    });
+
+    act(() => {
+      hook.getActions().handleSetNullForSelectedCells({ rowKey: 'row-2', colName: 'name' });
+    });
+
+    const nextRows = hook.setModifiedRows.mock.calls[0][0]({});
+    expect(nextRows).toEqual({ 'row-2': { name: null } });
+  });
+
+  it('preserves an existing partial patch while setting another selected field to NULL', () => {
+    const hook = renderHook({
+      modifiedRows: { 'row-1': { id: 'draft-id' } },
+      selectedCells: new Set([
+        makeCellKey('row-1', 'name'),
+      ]),
+    });
+
+    act(() => {
+      hook.getActions().handleSetNullForSelectedCells({ rowKey: 'row-1', colName: 'name' });
+    });
+
+    const nextRows = hook.setModifiedRows.mock.calls[0][0]({ 'row-1': { id: 'draft-id' } });
+    expect(nextRows).toEqual({ 'row-1': { id: 'draft-id', name: null } });
+    const nextColumns = hook.setModifiedColumns.mock.calls[0][0]({ 'row-1': new Set(['id']) });
+    expect(nextColumns['row-1']).toEqual(new Set(['id', 'name']));
+  });
+
+  it('removes a row patch when NULL restores the original NULL value', () => {
+    const hook = renderHook({
+      modifiedRows: { 'row-1': { name: 'draft' } },
+      selectedCells: new Set([makeCellKey('row-1', 'name')]),
+    });
+    hook.ctx.displayDataRef.current[0].name = null;
+
+    act(() => {
+      hook.getActions().handleSetNullForSelectedCells({ rowKey: 'row-1', colName: 'name' });
+    });
+
+    const nextRows = hook.setModifiedRows.mock.calls[0][0]({ 'row-1': { name: 'draft' } });
+    expect(nextRows).toEqual({});
+    const nextColumns = hook.setModifiedColumns.mock.calls[0][0]({ 'row-1': new Set(['name']) });
+    expect(nextColumns).toEqual({});
   });
 
   it('ignores column header selection when the column is not writable', () => {
@@ -504,6 +685,7 @@ describe('useDataGridBatchActions clipboard paste', () => {
     expect(hook.selectionStartRef.current).toEqual({ rowKey: 'row-1', colName: 'id', rowIndex: 0, colIndex: 0 });
     expect(hook.setSelectedCells).toHaveBeenCalledWith(new Set([makeCellKey('row-1', 'id')]));
     expect(hook.ctx.markCellSelectionDeleteEligible).toHaveBeenCalledWith(false);
+    expect(hook.ctx.markCellSelectionUserSelection).toHaveBeenCalledWith(false);
     expect(hook.updateCellSelection).toHaveBeenCalledWith(new Set([makeCellKey('row-1', 'id')]));
   });
 

@@ -215,6 +215,8 @@ import {
     makeCellKey,
     splitCellKey,
     collectDataGridCellSelectionRowKeys,
+    filterDataGridCellSelectionToVisibleRows,
+    resolveDataGridCellSelectionAnchor,
     collectDataGridFillTemplateTargetRowKeys,
     resolveContextMenuFieldName,
     trimSimpleCache,
@@ -317,6 +319,8 @@ export {
     buildGridFieldSelectOptions,
     buildDataGridCommitChangeSet,
     collectDataGridCellSelectionRowKeys,
+    filterDataGridCellSelectionToVisibleRows,
+    resolveDataGridCellSelectionAnchor,
     collectDataGridFillTemplateTargetRowKeys,
     buildColumnMetaMap,
     shouldOmitBlankDataGridInsertValue,
@@ -1039,6 +1043,10 @@ const DataGrid: React.FC<DataGridProps> = ({
   const [selectedCells, setSelectedCells] = useState<Set<string>>(new Set());
   const [cellSelectionDeleteEligible, setCellSelectionDeleteEligible] = useState(false);
   const cellSelectionSourceDataRef = useRef<Item[] | null>(null);
+  // Keep the origin of an explicit user cell selection separate from the
+  // editable/delete eligibility guard. Read-only result grids still support
+  // selecting cells and should report that selection in the footer.
+  const cellSelectionUserSourceDataRef = useRef<Item[] | null>(null);
   const [copiedCellPatch, setCopiedCellPatch] = useState<{ sourceRowKey: string; values: Record<string, any> } | null>(null);
   const [copiedRowsForPaste, setCopiedRowsForPaste] = useState<Array<Record<string, any>>>([]);
 
@@ -1986,11 +1994,16 @@ const DataGrid: React.FC<DataGridProps> = ({
     setCellSelectionDeleteEligible(eligible);
   }, [data]);
 
+  const markCellSelectionUserSelection = useCallback((active: boolean) => {
+    cellSelectionUserSourceDataRef.current = active ? data : null;
+  }, [data]);
+
   const resetCellSelection = useCallback((clearState: boolean = true) => {
     if (clearState) {
       setSelectedCells(new Set());
     }
     markCellSelectionDeleteEligible(false);
+    markCellSelectionUserSelection(false);
     currentSelectionRef.current = new Set();
     selectionStartRef.current = null;
     pendingCellSelectionStartRef.current = null;
@@ -2009,7 +2022,7 @@ const DataGrid: React.FC<DataGridProps> = ({
       cellSelectionAutoScrollRafRef.current = null;
     }
     updateCellSelection(new Set());
-  }, [markCellSelectionDeleteEligible, updateCellSelection]);
+  }, [markCellSelectionDeleteEligible, markCellSelectionUserSelection, updateCellSelection]);
 
   const closeCellEditMode = useCallback(() => {
     setCellEditMode(false);
@@ -2019,9 +2032,14 @@ const DataGrid: React.FC<DataGridProps> = ({
   }, [resetCellSelection]);
 
   const previousSelectionSourceDataRef = useRef(data);
+  // Keep the data-refresh reset visible to the display-data effect. React may
+  // run both effects before the setSelectedCells reset is rendered, and the
+  // old selection must not be intersected with the new result set in between.
+  const selectionResetSourceDataRef = useRef<Item[] | null>(null);
   useEffect(() => {
     if (previousSelectionSourceDataRef.current === data) return;
     previousSelectionSourceDataRef.current = data;
+    selectionResetSourceDataRef.current = data;
     setSelectedRowKeys([]);
     resetCellSelection();
   }, [data, resetCellSelection]);
@@ -2037,6 +2055,7 @@ const DataGrid: React.FC<DataGridProps> = ({
   // 批量填充选中的单元格
     const {
     handleBatchFillCells,
+    handleSetNullForSelectedCells,
     handleCopySelectedColumnsFromRow,
     handlePasteCopiedColumnsToSelectedRows,
     handleBatchFillToSelected,
@@ -2087,6 +2106,7 @@ const DataGrid: React.FC<DataGridProps> = ({
     setModifiedRows,
     setSelectedCells,
     markCellSelectionDeleteEligible,
+    markCellSelectionUserSelection,
     splitCellKey,
     suppressCellSelectionClickRef,
     translateDataGrid,
@@ -2101,7 +2121,62 @@ const DataGrid: React.FC<DataGridProps> = ({
       return rowsBeforeClientFilter;
   }, [exportScope, filterConditions, rowsBeforeClientFilter]);
 
-  useEffect(() => { displayDataRef.current = displayData; }, [displayData]);
+  useEffect(() => {
+      displayDataRef.current = displayData;
+
+      if (selectionResetSourceDataRef.current === data) {
+          if (currentSelectionRef.current.size === 0 && selectedCells.size === 0) {
+              selectionResetSourceDataRef.current = null;
+          } else {
+              return;
+          }
+      }
+
+      const activeSelection = currentSelectionRef.current.size > 0
+          ? currentSelectionRef.current
+          : selectedCells;
+      if (activeSelection.size === 0) return;
+
+      const nextRowIndexMap = new Map<string, number>();
+      displayData.forEach((row, index) => {
+          const rowKey = row?.[GONAVI_ROW_KEY];
+          if (rowKey === undefined || rowKey === null) return;
+          nextRowIndexMap.set(String(rowKey), index);
+      });
+      rowIndexMapRef.current = nextRowIndexMap;
+
+      const visibleSelection = filterDataGridCellSelectionToVisibleRows({
+          cellKeys: activeSelection,
+          rows: displayData,
+      });
+
+      const previousAnchor = selectionStartRef.current;
+      const nextAnchor = resolveDataGridCellSelectionAnchor({
+          cellKeys: visibleSelection,
+          rows: displayData,
+          columnNames: displayColumnNames,
+          preferredAnchor: previousAnchor,
+      });
+      const anchorChanged = previousAnchor?.rowKey !== nextAnchor?.rowKey
+          || previousAnchor?.colName !== nextAnchor?.colName
+          || previousAnchor?.rowIndex !== nextAnchor?.rowIndex
+          || previousAnchor?.colIndex !== nextAnchor?.colIndex;
+      selectionStartRef.current = nextAnchor;
+
+      if (visibleSelection.size === 0) {
+          resetCellSelection();
+          return;
+      }
+
+      if (visibleSelection.size === activeSelection.size) {
+          if (anchorChanged) updateCellSelection(visibleSelection);
+          return;
+      }
+
+      currentSelectionRef.current = visibleSelection;
+      setSelectedCells(visibleSelection);
+      updateCellSelection(visibleSelection);
+  }, [GONAVI_ROW_KEY, currentSelectionRef, data, displayColumnNames, displayData, filterDataGridCellSelectionToVisibleRows, resetCellSelection, resolveDataGridCellSelectionAnchor, rowIndexMapRef, selectedCells, selectionStartRef, updateCellSelection]);
 
   const pendingChangeCount = addedRows.length + Object.keys(modifiedRows).length + deletedRowKeys.size;
   const hasChanges = pendingChangeCount > 0;
@@ -2126,10 +2201,27 @@ const DataGrid: React.FC<DataGridProps> = ({
       setAutoCommitRemainingSeconds(null);
   }, []);
 
-  const selectedCellRowCount = useMemo(
-      () => collectDataGridCellSelectionRowKeys(selectedCells).length,
-      [selectedCells],
+  const visibleSelectedCells = useMemo(
+      () => filterDataGridCellSelectionToVisibleRows({
+          cellKeys: selectedCells,
+          rows: displayData,
+      }),
+      [displayData, selectedCells],
   );
+  const selectedCellCount = canUseCellSelectionAsFillTemplateTargets
+      ? visibleSelectedCells.size
+      : 0;
+  const selectedCellRowCount = useMemo(
+      () => collectDataGridCellSelectionRowKeys(visibleSelectedCells).length,
+      [visibleSelectedCells],
+  );
+  // Cell selection represents rows independently from the table checkbox
+  // selection. Use the same eligibility/source guard as other edit actions so
+  // Page Find's focused cell does not appear as a data selection in the footer.
+  const hasUserCellSelection = cellSelectionUserSourceDataRef.current === data;
+  const selectedRowCount = hasUserCellSelection && visibleSelectedCells.size > 0
+      ? selectedCellRowCount
+      : selectedRowKeys.length;
   const fillTemplateTargetRowCount = useMemo(
       () => copiedCellPatch
           ? collectDataGridFillTemplateTargetRowKeys({
@@ -2288,15 +2380,16 @@ const DataGrid: React.FC<DataGridProps> = ({
   handleCellSaveRef.current = handleCellSave;
 
   const handleCellSetNull = useCallback(() => {
-    if (!cellContextMenu.record) return;
-    if (!isWritableResultColumn(cellContextMenu.dataIndex, effectiveEditLocator)) {
-      void message.info(translateDataGrid('data_grid.message.current_field_not_editable'));
-      setCellContextMenu(prev => ({ ...prev, visible: false }));
-      return;
-    }
-    handleCellSave({ ...cellContextMenu.record, [cellContextMenu.dataIndex]: null });
-    setCellContextMenu(prev => ({ ...prev, visible: false }));
-  }, [cellContextMenu, handleCellSave, effectiveEditLocator, translateDataGrid]);
+    const record = cellContextMenu.record;
+    const dataIndex = String(cellContextMenu.dataIndex || '').trim();
+    const rowKey = record?.[GONAVI_ROW_KEY];
+    if (!record || !dataIndex || rowKey === undefined || rowKey === null) return;
+
+    // The original contextual action batches when the clicked cell belongs to
+    // an active range, while retaining single-cell fallback outside that range.
+    // The separately labelled action always batches the current selection.
+    handleSetNullForSelectedCells({ rowKey, colName: dataIndex });
+  }, [GONAVI_ROW_KEY, cellContextMenu.dataIndex, cellContextMenu.record, handleSetNullForSelectedCells]);
 
   const canUndoContextMenuCellChange = useMemo(() => {
     const record = cellContextMenu.record;
@@ -2717,11 +2810,12 @@ const DataGrid: React.FC<DataGridProps> = ({
   useEffect(() => {
       if (normalizedPageFindText) return;
       const emptySelection = new Set<string>();
+      markCellSelectionUserSelection(false);
       setSelectedCells(emptySelection);
       currentSelectionRef.current = emptySelection;
       selectionStartRef.current = null;
       updateCellSelection(emptySelection);
-  }, [normalizedPageFindText, updateCellSelection]);
+  }, [markCellSelectionUserSelection, normalizedPageFindText, updateCellSelection]);
 
   const activePageFindPosition = activePageFindMatchIndex >= 0 && activePageFindMatchIndex < pageFindMatches.length
       ? activePageFindMatchIndex + 1
@@ -3931,6 +4025,7 @@ const DataGrid: React.FC<DataGridProps> = ({
     filterConditions,
     handleBatchFillToSelected,
     handleCellSetNull,
+    handleSetNullForSelectedCells,
     handleCopyColumnData,
     handleCopyContextMenuFieldName,
     handleOpenContextMenuRowEditor,
@@ -4462,6 +4557,7 @@ const DataGrid: React.FC<DataGridProps> = ({
   const focusPageFindMatch = useCallback((match: DataGridFindMatch) => {
       if (!match) return;
       const nextSelection = new Set([makeCellKey(match.rowKey, match.columnName)]);
+      markCellSelectionUserSelection(false);
       markCellSelectionDeleteEligible(false);
       setSelectedCells(nextSelection);
       currentSelectionRef.current = nextSelection;
@@ -4552,7 +4648,7 @@ const DataGrid: React.FC<DataGridProps> = ({
               applyVisibleFocus();
           });
       });
-  }, [applyVirtualHorizontalOffset, enableVirtual, markCellSelectionDeleteEligible, mergedDisplayData, pickVerticalScrollTarget, readVirtualHorizontalOffset, rowKeyStr, updateCellSelection, updateFocusedCell]);
+  }, [applyVirtualHorizontalOffset, enableVirtual, markCellSelectionDeleteEligible, markCellSelectionUserSelection, mergedDisplayData, pickVerticalScrollTarget, readVirtualHorizontalOffset, rowKeyStr, updateCellSelection, updateFocusedCell]);
 
   const handleNavigatePageFind = useCallback((direction: DataGridFindNavigationDirection) => {
       const nextIndex = resolveDataGridFindNavigationIndex(activePageFindMatchIndex, pageFindMatches.length, direction);
@@ -5551,6 +5647,7 @@ const DataGrid: React.FC<DataGridProps> = ({
         handleBatchFillToSelected,
         handleCellEditorSave,
         handleCellSetNull,
+        handleSetNullForSelectedCells,
         handleClosePageFind,
         handleCommit,
         handleCopyContextMenuFieldName,
@@ -5685,7 +5782,9 @@ const DataGrid: React.FC<DataGridProps> = ({
         rowEditorRowKey,
         rowSelectionConfig,
         selectedCells,
+        selectedCellCount,
         selectedCellRowCount,
+        selectedRowCount,
         fillTemplateTargetRowCount,
         selectedRowKeys,
         selectionAccentHex,

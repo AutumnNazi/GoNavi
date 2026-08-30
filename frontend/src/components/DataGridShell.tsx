@@ -156,6 +156,7 @@ const DataGridShell: React.FC<DataGridShellProps> = (props) => {
     handleBatchFillToSelected,
     handleCellEditorSave,
     handleCellSetNull,
+    handleSetNullForSelectedCells,
     handleClosePageFind,
     handleCommit,
     handleCopyContextMenuFieldName,
@@ -283,7 +284,9 @@ const DataGridShell: React.FC<DataGridShellProps> = (props) => {
     rowEditorRowKey,
     rowSelectionConfig,
     selectedCells,
+    selectedCellCount,
     selectedCellRowCount,
+    selectedRowCount,
     fillTemplateTargetRowCount,
     selectedRowKeys,
     selectionAccentHex,
@@ -485,6 +488,7 @@ const renderDataTableView = () => (
       <DataGridPaginationBar
           isV2Ui={isV2Ui}
           pagination={pagination}
+          selectedRowCount={selectedRowCount}
           paginationV2SummaryText={paginationV2SummaryText}
           paginationSummaryText={paginationSummaryText}
           paginationControlTotal={paginationControlTotal}
@@ -948,6 +952,7 @@ const renderDataTableView = () => (
                         tableName={tableName}
                         rowLabel={cellContextMenu.record?.[GONAVI_ROW_KEY] === undefined ? undefined : `row ${String(cellContextMenu.record?.[GONAVI_ROW_KEY])}`}
                         selectedRowCount={selectedRowKeys.length}
+                        selectedCellCount={selectedCellCount}
                         canModifyData={canModifyData}
                         canUndoCellChange={canUndoContextMenuCellChange}
                         copiedRowCount={copiedRowsForPaste.length}
@@ -989,6 +994,8 @@ const renderDataTableView = () => (
             onPasteCopiedRowsAsNew={handlePasteCopiedRowsAsNew}
             onUndoCellChange={handleUndoContextMenuCellChange}
             onSetNull={handleCellSetNull}
+            onSetNullForSelectedCells={handleSetNullForSelectedCells}
+            selectedCellCount={selectedCellCount}
             onEditRow={handleOpenContextMenuRowEditor}
             onFillToSelected={() => {
                 if (selectedRowKeys.length > 0 && cellContextMenu.record) {

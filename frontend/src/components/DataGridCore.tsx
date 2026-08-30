@@ -262,6 +262,88 @@ const collectDataGridCellSelectionRowKeys = (cellKeys: Iterable<string>): string
     }
     return Array.from(rowKeys);
 };
+const filterDataGridCellSelectionToVisibleRows = ({
+    cellKeys,
+    rows,
+    rowKeyField = GONAVI_ROW_KEY,
+}: {
+    cellKeys: Iterable<string>;
+    rows: Iterable<Record<string, any>>;
+    rowKeyField?: string;
+}): Set<string> => {
+    const visibleRowKeys = new Set<string>();
+    for (const row of rows) {
+        const rowKey = row?.[rowKeyField];
+        if (rowKey === undefined || rowKey === null) continue;
+        visibleRowKeys.add(String(rowKey));
+    }
+
+    const visibleCells = new Set<string>();
+    for (const cellKey of cellKeys) {
+        const parsed = splitCellKey(cellKey);
+        if (parsed && visibleRowKeys.has(parsed.rowKey)) {
+            visibleCells.add(cellKey);
+        }
+    }
+    return visibleCells;
+};
+type DataGridCellSelectionAnchor = {
+    rowKey: string;
+    colName: string;
+    rowIndex: number;
+    colIndex: number;
+};
+const resolveDataGridCellSelectionAnchor = ({
+    cellKeys,
+    rows,
+    columnNames,
+    preferredAnchor,
+}: {
+    cellKeys: Iterable<string>;
+    rows: Iterable<Record<string, any>>;
+    columnNames: Iterable<string>;
+    preferredAnchor?: { rowKey: string; colName: string } | null;
+}): DataGridCellSelectionAnchor | null => {
+    const selectedCells = new Set(cellKeys);
+    if (selectedCells.size === 0) return null;
+
+    const rowList = Array.from(rows);
+    const columns = Array.from(columnNames, (columnName) => String(columnName));
+    const columnIndexMap = new Map<string, number>();
+    columns.forEach((columnName, index) => columnIndexMap.set(columnName, index));
+
+    const rowIndexMap = new Map<string, number>();
+    rowList.forEach((row, index) => {
+        const rowKey = row?.[GONAVI_ROW_KEY];
+        if (rowKey === undefined || rowKey === null) return;
+        rowIndexMap.set(String(rowKey), index);
+    });
+
+    const resolveCandidate = (rowKey: string, colName: string): DataGridCellSelectionAnchor | null => {
+        const rowIndex = rowIndexMap.get(rowKey);
+        const colIndex = columnIndexMap.get(colName);
+        if (rowIndex === undefined || colIndex === undefined) return null;
+        if (!selectedCells.has(makeCellKey(rowKey, colName))) return null;
+        return { rowKey, colName, rowIndex, colIndex };
+    };
+
+    if (preferredAnchor) {
+        const preferred = resolveCandidate(String(preferredAnchor.rowKey), String(preferredAnchor.colName));
+        if (preferred) return preferred;
+    }
+
+    for (const [rowIndex, row] of rowList.entries()) {
+        const rowKey = row?.[GONAVI_ROW_KEY];
+        if (rowKey === undefined || rowKey === null) continue;
+        const rowKeyText = String(rowKey);
+        for (const [colIndex, colName] of columns.entries()) {
+            if (selectedCells.has(makeCellKey(rowKeyText, colName))) {
+                return { rowKey: rowKeyText, colName, rowIndex, colIndex };
+            }
+        }
+    }
+    return null;
+};
 const collectDataGridFillTemplateTargetRowKeys = ({
     selectedRowKeys,
     selectedCellKeys,
@@ -1762,6 +1844,8 @@ export {
     makeCellKey,
     splitCellKey,
     collectDataGridCellSelectionRowKeys,
+    filterDataGridCellSelectionToVisibleRows,
+    resolveDataGridCellSelectionAnchor,
     collectDataGridFillTemplateTargetRowKeys,
     trimSimpleCache,
     looksLikeDateTimeText,

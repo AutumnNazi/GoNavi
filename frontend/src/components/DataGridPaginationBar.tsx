@@ -28,6 +28,8 @@ export type DataGridPaginationTranslate = (key: string, params?: I18nParams) => 
 export interface DataGridPaginationBarProps {
   isV2Ui: boolean;
   pagination?: DataGridPaginationState;
+  /** Number of distinct rows selected by the grid (cell selection takes precedence). */
+  selectedRowCount?: number;
   paginationV2SummaryText: string;
   paginationSummaryText: string;
   paginationControlTotal: number;
@@ -101,6 +103,7 @@ export const createDataGridLastPageAction = ({
 const DataGridPaginationBar: React.FC<DataGridPaginationBarProps> = ({
   isV2Ui,
   pagination,
+  selectedRowCount = 0,
   paginationV2SummaryText,
   paginationSummaryText,
   paginationControlTotal,
@@ -119,13 +122,39 @@ const DataGridPaginationBar: React.FC<DataGridPaginationBarProps> = ({
 }) => {
   const [jumpPage, setJumpPage] = React.useState<number | null>(pagination?.current ?? null);
   const showSequentialPagination = !showKnownPageCount;
+  const normalizedSelectedRowCount = Number.isFinite(Number(selectedRowCount))
+    ? Math.max(0, Math.trunc(Number(selectedRowCount)))
+    : 0;
+
+  // Keep the selection count available for non-paginated result sets too.
+  // Those grids still render the shared statusbar, but intentionally omit
+  // page controls and therefore do not have a pagination state object.
+  const selectedRowCountSummary = normalizedSelectedRowCount > 0 ? (
+    <span
+      className="data-grid-pagination-summary-value data-grid-selection-summary"
+      data-grid-selected-count="true"
+      aria-live="polite"
+    >
+      {translate('data_grid.pagination.selected_count', { count: normalizedSelectedRowCount })}
+    </span>
+  ) : null;
 
   React.useEffect(() => {
     setJumpPage(pagination?.current ?? null);
   }, [pagination?.current]);
 
   if (!pagination) {
-    return null;
+    if (!selectedRowCountSummary) return null;
+    return (
+      <div
+        className={`${isV2Ui ? 'gn-v2-data-grid-pagination-wrap ' : ''}data-grid-pagination-wrap`}
+        style={isV2Ui ? undefined : { padding: 0, borderTop: 'none', display: 'flex', justifyContent: 'flex-start' }}
+      >
+        <div className="data-grid-pagination-shell">
+          {selectedRowCountSummary}
+        </div>
+      </div>
+    );
   }
 
   const countTotalLabel = translate('data_grid.toolbar.count_total');
@@ -295,6 +324,7 @@ const DataGridPaginationBar: React.FC<DataGridPaginationBarProps> = ({
           <div className="data-grid-pagination-summary" aria-live="polite">
             <span className="data-grid-pagination-summary-value">{paginationV2SummaryText}</span>
           </div>
+          {selectedRowCountSummary}
           {totalCountButton}
           {firstPageButton}
           <Button
@@ -340,6 +370,7 @@ const DataGridPaginationBar: React.FC<DataGridPaginationBarProps> = ({
             <span className="data-grid-pagination-kicker">{translate('data_grid.pagination.result_set')}</span>
             <span className="data-grid-pagination-summary-value">{paginationSummaryText}</span>
           </div>
+          {selectedRowCountSummary}
           {totalCountButton}
           {showSequentialPagination ? sequentialPaginationControl : (
             <>

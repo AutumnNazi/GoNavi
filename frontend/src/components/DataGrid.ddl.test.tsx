@@ -8,6 +8,8 @@ import DataGrid, {
   buildColumnMetaMap,
   buildDataGridCommitChangeSet,
   collectDataGridCellSelectionRowKeys,
+  filterDataGridCellSelectionToVisibleRows,
+  resolveDataGridCellSelectionAnchor,
   collectDataGridFillTemplateTargetRowKeys,
   formatCellDisplayText,
   GONAVI_ROW_KEY,
@@ -582,6 +584,42 @@ describe('DataGrid cell selection row keys', () => {
       sourceRowKey: 'row-1',
       rowKeyToString: String,
     })).toEqual(['row-2', 'row-3']);
+  });
+
+  it('keeps only cell selections belonging to currently visible rows', () => {
+    expect(filterDataGridCellSelectionToVisibleRows({
+      cellKeys: [
+        'row-1\u0001name',
+        'row-2\u0001name',
+        'row-3\u0001name',
+        'malformed-cell-key',
+      ],
+      rows: [
+        { __gonavi_row_key__: 'row-1' },
+        { __gonavi_row_key__: 'row-3' },
+      ],
+    })).toEqual(new Set(['row-1\u0001name', 'row-3\u0001name']));
+  });
+
+  it('moves a hidden selection anchor to the first visible selected cell', () => {
+    expect(resolveDataGridCellSelectionAnchor({
+      cellKeys: [
+        'row-2\u0001name',
+        'row-3\u0001id',
+        'row-3\u0001name',
+      ],
+      rows: [
+        { __gonavi_row_key__: 'row-3' },
+        { __gonavi_row_key__: 'row-2' },
+      ],
+      columnNames: ['id', 'name'],
+      preferredAnchor: { rowKey: 'row-1', colName: 'name' },
+    })).toEqual({
+      rowKey: 'row-3',
+      colName: 'id',
+      rowIndex: 0,
+      colIndex: 0,
+    });
   });
 });
 
@@ -2178,6 +2216,7 @@ describe('DataGrid DDL interactions', () => {
         tableName=""
         rowLabel=""
         selectedRowCount={3}
+        selectedCellCount={4}
         canModifyData
         copiedRowCount={2}
         canPasteCopiedColumns
@@ -2190,6 +2229,7 @@ describe('DataGrid DDL interactions', () => {
     expect(content).toContain(t('data_grid.context_menu.copy_field_name'));
     expect(content).toContain(t('data_grid.context_menu.edit_section'));
     expect(content).toContain(t('data_grid.batch_fill.set_null'));
+    expect(content).toContain(t('data_grid.batch_fill.set_null_selected'));
     expect(content).toContain(t('data_grid.context_menu.edit_row'));
     expect(content).toContain(t('data_grid.context_menu.copy_row_as_new'));
     expect(content).toContain(t('data_grid.context_menu.paste_row_as_new_count', { count: 2 }));
@@ -2199,6 +2239,39 @@ describe('DataGrid DDL interactions', () => {
       expect(content).not.toContain(rawSnippet);
     });
     renderer.unmount();
+  });
+
+  it('exposes a distinct action for setting the selected cells to NULL', () => {
+    const onAction = vi.fn();
+    const renderer = create(
+      <V2CellContextMenuView
+        fieldName="status"
+        selectedCellCount={2}
+        canModifyData
+        onAction={onAction}
+      />,
+    );
+
+    const label = t('data_grid.batch_fill.set_null_selected');
+    const button = findButton(renderer, label);
+    expect(button).toBeTruthy();
+    expect(button.props.disabled).toBe(false);
+
+    act(() => {
+      button.props.onClick({ preventDefault: vi.fn(), stopPropagation: vi.fn() });
+    });
+    expect(onAction).toHaveBeenCalledWith('set-null-selected');
+    renderer.unmount();
+
+    const emptyRenderer = create(
+      <V2CellContextMenuView
+        fieldName="status"
+        selectedCellCount={0}
+        canModifyData
+      />,
+    );
+    expect(findButton(emptyRenderer, label).props.disabled).toBe(true);
+    emptyRenderer.unmount();
   });
 
   it('opens the v2 cell context menu for table cells instead of the legacy inline menu', async () => {
