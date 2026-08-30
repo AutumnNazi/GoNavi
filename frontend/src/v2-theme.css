@@ -3520,7 +3520,7 @@ body[data-ui-version="v2"] .gn-v2-tree-status.is-loading::before {
   width: 10px;
   height: 10px;
   flex: 0 0 10px;
-  border: 2px solid rgba(37, 99, 235, 0.24);
+  border: 2px solid rgba(37, 99, 235, 0.58);
   border-top-color: #2563eb;
   background: transparent;
   box-shadow: none;
@@ -4095,6 +4095,7 @@ body[data-ui-version="v2"] .gn-v2-app-root {
 
 body[data-ui-version="v2"] .gn-v2-titlebar {
   position: relative;
+  overflow: visible;
   background: var(--gn-bg-panel-2) !important;
   border: 0 !important;
   box-shadow: none !important;
@@ -4117,15 +4118,22 @@ body[data-ui-version="v2"] .gn-v2-titlebar-brand {
 
 body[data-ui-version="v2"] .gn-v2-titlebar-copy {
   display: flex;
+  max-width: 100%;
   min-width: 0;
   flex-direction: column;
   line-height: 1.05;
+  overflow: hidden;
 }
 
 body[data-ui-version="v2"] .gn-v2-titlebar-copy strong {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
   color: var(--gn-fg-2);
   font-size: 12px;
   font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 body[data-ui-version="v2"] .gn-v2-titlebar-copy small {
@@ -4145,7 +4153,7 @@ body[data-ui-version="v2"] .gn-v2-titlebar-center {
   left: 50%;
   top: 50%;
   display: inline-flex;
-  max-width: 520px;
+  max-width: min(520px, calc(100vw - 620px));
   transform: translate(-50%, -50%);
   align-items: center;
   gap: 8px;
@@ -4153,22 +4161,98 @@ body[data-ui-version="v2"] .gn-v2-titlebar-center {
   font-family: var(--gn-font-mono);
   font-size: 12px;
   font-weight: 650;
-  overflow: hidden;
+  line-height: 1;
+  overflow: visible;
+  z-index: 1;
   white-space: nowrap;
 }
 
-body[data-ui-version="v2"] .gn-v2-titlebar-center span:last-child {
+body[data-ui-version="v2"] .gn-v2-titlebar-center > .gn-v2-titlebar-copy {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-body[data-ui-version="v2"] .gn-v2-titlebar-live {
-  width: 7px;
-  height: 7px;
-  flex: 0 0 7px;
+/* Title-bar marker is intentionally independent from the Sidebar tree status
+   renderer. Its fixed wrapper keeps the marker geometry stable in WebView2. */
+body[data-ui-version="v2"] .gn-v2-titlebar-status {
+  position: relative;
+  width: 14px;
+  min-width: 14px;
+  height: 14px;
+  flex: 0 0 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  overflow: visible;
+  margin: 0 2px 0 0;
+  color: var(--gn-fg-4);
+  background: transparent;
+  line-height: 0;
+}
+
+body[data-ui-version="v2"] .gn-v2-titlebar-status-dot {
+  display: block;
+  width: 9px;
+  height: 9px;
+  flex: 0 0 9px;
+  box-sizing: border-box;
+  border: 1.5px solid var(--gn-fg-4);
   border-radius: 50%;
-  box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 18%, transparent);
+  background: transparent;
+}
+
+body[data-ui-version="v2"] .gn-v2-titlebar-status.is-success .gn-v2-titlebar-status-dot {
+  border: 0;
+  background: var(--gn-status-connected);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--gn-status-connected) 22%, transparent);
+}
+
+body[data-ui-version="v2"] .gn-v2-titlebar-status.is-loading .gn-v2-titlebar-status-dot {
+  width: 10px;
+  height: 10px;
+  flex-basis: 10px;
+  border: 2px solid rgba(37, 99, 235, 0.58);
+  border-top-color: #2563eb;
+  background: transparent;
+  box-shadow: none;
+  animation: gn-v2-titlebar-status-spin 0.8s linear infinite;
+}
+
+body[data-ui-version="v2"] .gn-v2-titlebar-status.is-error .gn-v2-titlebar-status-dot {
+  border: 0;
+  background: var(--gn-danger);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--gn-danger) 20%, transparent);
+}
+
+@keyframes gn-v2-titlebar-status-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Keep the centered summary out of the narrow desktop gap where its
+   reserved width is too small for the status marker and context copy. */
+@media (min-width: 921px) and (max-width: 1230px) {
+  body[data-ui-version="v2"] .gn-v2-titlebar-center {
+    display: none;
+  }
+}
+
+@media (max-width: 920px) {
+  body[data-ui-version="v2"] .gn-v2-titlebar-center {
+    display: inline-flex;
+    max-width: min(260px, calc(100vw - 620px));
+  }
+
+  body[data-ui-version="v2"] .gn-v2-titlebar-copy small {
+    display: none;
+  }
+}
+
+@media (max-width: 720px) {
+  body[data-ui-version="v2"] .gn-v2-titlebar-center {
+    display: none;
+  }
 }
 
 body[data-ui-version="v2"] .gn-v2-app-shell {

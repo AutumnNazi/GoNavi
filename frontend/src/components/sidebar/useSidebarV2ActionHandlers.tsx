@@ -44,6 +44,7 @@ type UseSidebarV2ActionHandlersArgs = {
   loadingNodesRef: MutableRefObject<Set<string>>;
   treeDataRef: MutableRefObject<TreeNode[]>;
   refreshConnectionResources: (node: any) => Promise<void>;
+  invalidateConnectionLoads: (connectionId: string) => void;
   findTreeNodeByKeyRef: MutableRefObject<(nodes: TreeNode[], targetKey: React.Key) => TreeNode | null>;
   refreshV2TableContextMenuStatsRef: MutableRefObject<(node: any) => void>;
   setConnectionStates: Dispatch<SetStateAction<Record<string, SidebarConnectionState>>>;
@@ -117,6 +118,7 @@ export const useSidebarV2ActionHandlers = ({
   loadingNodesRef,
   treeDataRef,
   refreshConnectionResources,
+  invalidateConnectionLoads,
   findTreeNodeByKeyRef,
   refreshV2TableContextMenuStatsRef,
   setConnectionStates,
@@ -474,6 +476,7 @@ export const useSidebarV2ActionHandlers = ({
     const connKey = String(node?.key || node?.dataRef?.id || '');
     if (!connKey) return;
     const conn = (connections.find((item) => item.id === connKey) || node?.dataRef) as SavedConnection | undefined;
+    invalidateConnectionLoads(connKey);
     Array.from(loadingNodesRef.current).forEach((loadingKey) => {
       if (loadingKey === `dbs-${connKey}` || loadingKey.startsWith(`tables-${connKey}-`)) {
         loadingNodesRef.current.delete(loadingKey);
@@ -513,6 +516,7 @@ export const useSidebarV2ActionHandlers = ({
         }
         try {
           await backendApp.DeleteConnection(connId);
+          invalidateConnectionLoads(connId);
           closeTabsByConnection(connId);
           removeConnection(connId);
           message.success(t('connection.sidebar.delete.success'));

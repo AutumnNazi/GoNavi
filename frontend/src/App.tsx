@@ -1,5 +1,5 @@
 ﻿import Modal from './components/common/ResizableDraggableModal';
-import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useMemo, useCallback, useRef } from 'react';
 import { Layout, Button, ConfigProvider, theme, message, notification, Spin, Slider, Switch, Input, InputNumber, Select, Segmented, Tooltip, Alert } from 'antd';
 import { UploadOutlined, DownloadOutlined, CloudDownloadOutlined, BugOutlined, GlobalOutlined, InfoCircleOutlined, GithubOutlined, SkinOutlined, CheckOutlined, MinusOutlined, BorderOutlined, CloseOutlined, SettingOutlined, LinkOutlined, BgColorsOutlined, AppstoreOutlined, RobotOutlined, FolderOpenOutlined, HddOutlined, SafetyCertificateOutlined, SwitcherOutlined, CodeOutlined, RightOutlined, TableOutlined, MenuOutlined, MenuFoldOutlined, MenuUnfoldOutlined, PoweroffOutlined, TagOutlined, UserOutlined, UpCircleOutlined, MessageOutlined, FileTextOutlined, SyncOutlined, SendOutlined, AuditOutlined } from '@ant-design/icons';
 import { DndContext, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
@@ -95,6 +95,11 @@ import {
   type TabDisplayLayout,
   type TabDisplaySettings,
 } from './utils/tabDisplay';
+import {
+  resolveTitlebarConnectionStatus,
+  resolveTitlebarContext,
+  type TitlebarSidebarSnapshot,
+} from './utils/titlebarContext';
 import { getMacNativeTitlebarPaddingLeft, getMacNativeTitlebarPaddingRight, shouldHandleMacNativeFullscreenShortcut, shouldSuppressMacNativeEscapeExit } from './utils/macWindow';
 import { shouldEnableMacWindowDiagnostics } from './utils/macWindowDiagnostics';
 import { getConnectionWorkbenchState } from './utils/startupReadiness';
@@ -2426,17 +2431,65 @@ function App() {
   const addTab = useStore(state => state.addTab);
   const activeContext = useStore(state => state.activeContext);
   const connections = useStore(state => state.connections);
+  const [sidebarTitlebarSnapshot, setSidebarTitlebarSnapshot] = useState<TitlebarSidebarSnapshot>({
+      selection: null,
+      connectionStates: {},
+  });
   const moveConnectionToTag = useStore(state => state.moveConnectionToTag);
   const tabs = useWorkbenchTabs();
   const activeTabId = useStore(state => state.activeTabId);
   const setActiveTab = useStore(state => state.setActiveTab);
   const savedQueries = useStore(state => state.savedQueries);
   const saveQuery = useStore(state => state.saveQuery);
+  const activeWorkbenchTab = useMemo(
+      () => activeTabId ? tabs.find(tab => tab.id === activeTabId) : undefined,
+      [activeTabId, tabs],
+  );
+  const titlebarContext = useMemo(
+      () => resolveTitlebarContext({
+          activeContext,
+          sidebarContext: sidebarTitlebarSnapshot.selection,
+          activeTab: activeWorkbenchTab,
+          connections,
+      }),
+      [activeContext, activeWorkbenchTab, connections, sidebarTitlebarSnapshot.selection],
+  );
+  // Keep primary-action semantics anchored to the active workbench context.
+  // The title-bar summary may intentionally follow a separate Sidebar row.
   const currentPrimaryActionConnection = useMemo(() => {
-      const activeTab = activeTabId ? tabs.find(tab => tab.id === activeTabId) : undefined;
-      const connectionId = String(activeContext?.connectionId || activeTab?.connectionId || '').trim();
+      const connectionId = String(activeContext?.connectionId || activeWorkbenchTab?.connectionId || '').trim();
       return connections.find(connection => connection.id === connectionId) || null;
-  }, [activeContext?.connectionId, activeTabId, connections, tabs]);
+  }, [activeContext?.connectionId, activeWorkbenchTab?.connectionId, connections]);
+  const titlebarConnectionStatus = useMemo(
+      () => resolveTitlebarConnectionStatus({
+          connectionId: titlebarContext.connectionId,
+          sidebarStateKey: titlebarContext.sidebarStateKey,
+          hasConnection: Boolean(titlebarContext.connection),
+          connectionStates: sidebarTitlebarSnapshot.connectionStates,
+      }),
+      [sidebarTitlebarSnapshot.connectionStates, titlebarContext.connection, titlebarContext.connectionId, titlebarContext.sidebarStateKey],
+  );
+  const titlebarStatusClass = titlebarConnectionStatus === 'loading'
+      || titlebarConnectionStatus === 'success'
+      || titlebarConnectionStatus === 'error'
+      ? titlebarConnectionStatus
+      : 'default';
+  const titleBarConnectionName = titlebarContext.connectionName
+      || t('sidebar.active_connection.no_host_selected');
+  const titleBarContextDetails = [
+      titlebarContext.hostSummary,
+      titlebarContext.databaseName,
+      titlebarContext.tableName,
+  ].filter(Boolean);
+  const titleBarContextDetailText = titleBarContextDetails.join(' · ')
+      || t('sidebar.active_connection.no_database_selected');
+  const titleBarContextText = [
+      titlebarContext.connection ? titleBarConnectionName : '',
+      ...titleBarContextDetails,
+  ].filter(Boolean).join(' · ') || titleBarConnectionName;
+  const titleBarContextTooltip = titlebarContext.connection
+      ? titleBarContextText
+      : t('sidebar.active_connection.no_host_selected');
   const primaryActionIsMessageQueue = isMessageQueueDataSource(
       currentPrimaryActionConnection?.config,
   );
@@ -4833,7 +4886,11 @@ function App() {
       sidebarCollapsed: isSidebarCollapsed,
   });
 
-  useEffect(() => {
+  // Apply the document theme before the first paint. V2 structural styles are
+  // scoped by data-ui-version; a passive effect leaves one unstyled titlebar
+  // frame where the centered context and its marker collapse into the legacy
+  // flex layout.
+  useLayoutEffect(() => {
     document.body.style.backgroundColor = 'transparent';
     document.body.style.color = darkMode ? '#ffffff' : '#000000';
     document.documentElement.style.colorScheme = darkMode ? 'dark' : 'light';
@@ -8251,6 +8308,7 @@ function App() {
           />
           {/* Custom Title Bar */}
           <div
+            className={isV2Ui ? 'gn-v2-titlebar' : undefined}
             onDoubleClick={handleTitleBarDoubleClick}
             style={{
                 height: titleBarHeight,
@@ -8307,6 +8365,30 @@ function App() {
                   />
                   {isV2Ui && <div id="gonavi-titlebar-quick-actions" className="gonavi-titlebar-quick-actions-slot" />}
               </div>
+              {isV2Ui && (
+                  <div
+                    className="gn-v2-titlebar-center"
+                    data-titlebar-active-context={titlebarContext.connection ? 'true' : 'false'}
+                    data-connection-status={titlebarConnectionStatus}
+                    aria-label={titleBarContextTooltip}
+                    title={titleBarContextTooltip}
+                    style={{
+                        WebkitAppRegion: isWebRuntime ? 'no-drag' : 'drag',
+                        '--wails-draggable': isWebRuntime ? 'no-drag' : 'drag',
+                    } as any}
+                  >
+                      <span
+                        className={`gn-v2-titlebar-status is-${titlebarStatusClass}`}
+                        aria-hidden="true"
+                      >
+                          <span className="gn-v2-titlebar-status-dot" />
+                      </span>
+                      <span className="gn-v2-titlebar-copy">
+                          <strong>{titleBarConnectionName}</strong>
+                          <small>{titleBarContextDetailText}</small>
+                      </span>
+                  </div>
+              )}
               {isWebRuntime ? (
                   <div
                     onDoubleClick={(e) => e.stopPropagation()}
@@ -8424,8 +8506,9 @@ function App() {
                             uiVersion={appearance.uiVersion}
                             onFocusCommandSearch={handleFocusSidebarSearch}
                             onCollapseSidebar={isV2Ui ? handleCollapseSidebarPanel : undefined}
-                            onExpandSidebar={isV2Ui ? handleExpandSidebarPanel : undefined}
-                            collapseSidebarLabel={isV2Ui ? sidebarPanelCollapseLabel : undefined}
+                             onExpandSidebar={isV2Ui ? handleExpandSidebarPanel : undefined}
+                             onTitlebarSnapshotChange={setSidebarTitlebarSnapshot}
+                             collapseSidebarLabel={isV2Ui ? sidebarPanelCollapseLabel : undefined}
                             collapseSidebarButtonRef={sidebarExplorerToggleRef}
                             expandSidebarLabel={isV2Ui ? sidebarPanelExpandLabel : undefined}
                             expandSidebarButtonRef={sidebarCollapsedToggleRef}

@@ -3,11 +3,13 @@ import { useCallback, type MutableRefObject, type Dispatch, type SetStateAction 
 import { t } from '../../i18n';
 import type { SavedConnection } from '../../types';
 import { resolveSidebarNodeConnectionId, shouldRunV2CommandSearchEnter, type SidebarTreeNode as TreeNode, type V2CommandSearchItem } from '../sidebarV2Utils';
+import { resolveSidebarTitlebarObjectName } from './sidebarHelpers';
 
 type UseSidebarCommandSearchRunnerArgs = {
   activeContext: any;
   activeTab: any;
   addTab: (tab: any) => void;
+  clearStaleHostStateOnSelection: (node: any) => void;
   closeV2CommandSearch: () => void;
   commandSearchFlatItems: V2CommandSearchItem[];
   connectionIds: string[];
@@ -17,9 +19,10 @@ type UseSidebarCommandSearchRunnerArgs = {
   loadDatabases: (node: any) => Promise<void>;
   mergeExpandedTreeKeys: (requiredKeys: React.Key[]) => void;
   onDoubleClick: (event: any, node: any) => void;
+  publishTitlebarSelectionForNode?: (node: any) => void;
   scrollSidebarTreeToKey: (key: React.Key) => void;
   selectedNodesRef: MutableRefObject<any[]>;
-  setActiveContext: (context: { connectionId: string; dbName: string } | null) => void;
+  setActiveContext: (context: { connectionId: string; dbName: string; tableName?: string } | null) => void;
   setSelectedKeys: Dispatch<SetStateAction<React.Key[]>>;
   setV2CommandActiveIndex: Dispatch<SetStateAction<number>>;
   treeDataRef: MutableRefObject<TreeNode[]>;
@@ -51,6 +54,7 @@ export const useSidebarCommandSearchRunner = ({
   activeContext,
   activeTab,
   addTab,
+  clearStaleHostStateOnSelection,
   closeV2CommandSearch,
   commandSearchFlatItems,
   connectionIds,
@@ -60,6 +64,7 @@ export const useSidebarCommandSearchRunner = ({
   loadDatabases,
   mergeExpandedTreeKeys,
   onDoubleClick,
+  publishTitlebarSelectionForNode,
   scrollSidebarTreeToKey,
   selectedNodesRef,
   setActiveContext,
@@ -71,8 +76,12 @@ export const useSidebarCommandSearchRunner = ({
   const selectConnectionFromRail = useCallback((conn: SavedConnection): Promise<void> => {
     const key = conn.id;
     const connectionNode = findTreeNodeByKeyRef.current(treeDataRef.current, key);
+    clearStaleHostStateOnSelection(connectionNode || {
+      key,
+      dataRef: conn,
+      type: 'connection',
+    });
     setSelectedKeys([key]);
-    selectedNodesRef.current = connectionNode ? [connectionNode] : [];
     setActiveContext({ connectionId: key, dbName: '' });
     mergeExpandedTreeKeys([key]);
     const targetNode = connectionNode || {
@@ -80,8 +89,13 @@ export const useSidebarCommandSearchRunner = ({
       dataRef: conn,
       type: 'connection',
     };
+    // Keep a synthetic rail selection available until the Host row is loaded
+    // into treeData; otherwise the titlebar effect would briefly publish null
+    // and hide the newly selected Host.
+    selectedNodesRef.current = [targetNode];
+    publishTitlebarSelectionForNode?.(targetNode);
     return loadDatabases(targetNode);
-  }, [findTreeNodeByKeyRef, loadDatabases, mergeExpandedTreeKeys, selectedNodesRef, setActiveContext, setSelectedKeys, treeDataRef]);
+  }, [clearStaleHostStateOnSelection, findTreeNodeByKeyRef, loadDatabases, mergeExpandedTreeKeys, publishTitlebarSelectionForNode, selectedNodesRef, setActiveContext, setSelectedKeys, treeDataRef]);
 
   const runCommandSearchItem = useCallback((item?: V2CommandSearchItem) => {
     if (!item) return;
@@ -117,6 +131,7 @@ export const useSidebarCommandSearchRunner = ({
       return;
     }
     if (node.type === 'database') {
+      publishTitlebarSelectionForNode?.(node);
       setActiveContext({ connectionId: resolveSidebarNodeConnectionId(node, connectionIds) || dataRef.id, dbName: dataRef.dbName });
       mergeExpandedTreeKeys([dataRef.id, node.key]);
       setSelectedKeys([node.key]);
@@ -125,6 +140,7 @@ export const useSidebarCommandSearchRunner = ({
       return;
     }
     if (node.type === 'table' || node.type === 'view' || node.type === 'materialized-view') {
+      publishTitlebarSelectionForNode?.(node);
       void locateObjectInSidebar({
         tabId: String(node.key || ''),
         connectionId: dataRef.id,
@@ -137,7 +153,12 @@ export const useSidebarCommandSearchRunner = ({
       return;
     }
     if (node.type === 'db-trigger' || node.type === 'db-event' || node.type === 'routine' || node.type === 'sequence' || node.type === 'package') {
-      setActiveContext({ connectionId: dataRef.id, dbName: dataRef.dbName });
+      publishTitlebarSelectionForNode?.(node);
+      setActiveContext({
+        connectionId: resolveSidebarNodeConnectionId(node, connectionIds) || dataRef.id,
+        dbName: dataRef.dbName,
+        tableName: resolveSidebarTitlebarObjectName(node),
+      });
       setSelectedKeys([node.key]);
       selectedNodesRef.current = [node];
       scrollSidebarTreeToKey(node.key);
@@ -154,6 +175,7 @@ export const useSidebarCommandSearchRunner = ({
     locateObjectInSidebar,
     mergeExpandedTreeKeys,
     onDoubleClick,
+    publishTitlebarSelectionForNode,
     scrollSidebarTreeToKey,
     selectConnectionFromRail,
     selectedNodesRef,
