@@ -603,6 +603,19 @@ const ImportPreviewModal: React.FC<ImportPreviewModalProps> = ({
       ].filter(Boolean).join(" · ")
     : "";
 
+  const errorArtifactCount = Number(importResult?.errorArtifactCount) || 0;
+  const errorArtifactOmittedCount = Number(importResult?.errorArtifactOmittedCount) || 0;
+  const errorArtifactRetryableCount = Number(importResult?.errorArtifactRetryableCount) || 0;
+  const errorArtifactUnretryableCount = Number(importResult?.errorArtifactUnretryableCount) || 0;
+  const hasErrorArtifactMetadata = Boolean(importResult) && (
+    importResult?.errorArtifactScopeKnown === true
+    || errorArtifactCount > 0
+    || errorArtifactOmittedCount > 0
+    || errorArtifactRetryableCount > 0
+    || errorArtifactUnretryableCount > 0
+    || importResult?.errorArtifactTruncated === true
+  );
+
   const handleExportRejectedRows = async () => {
     const artifactID = String(importResult?.errorArtifactId || "").trim();
     if (!artifactID) return;
@@ -896,6 +909,30 @@ const ImportPreviewModal: React.FC<ImportPreviewModalProps> = ({
             showIcon
             style={{ marginBottom: 16 }}
           />
+          {hasErrorArtifactMetadata ? (
+            <div
+              data-import-preview-error-artifact="true"
+              style={{ display: "grid", gap: 2, marginBottom: 12 }}
+            >
+              <div data-import-preview-error-artifact-count="true">
+                {t("data_import.error_artifact.count", { count: errorArtifactCount })}
+              </div>
+              <div data-import-preview-error-artifact-omitted-count="true">
+                {t("data_import.error_artifact.omitted_count", { count: errorArtifactOmittedCount })}
+              </div>
+              <div data-import-preview-error-artifact-retryable-count="true">
+                {t("data_import.error_artifact.retryable_count", { count: errorArtifactRetryableCount })}
+              </div>
+              <div data-import-preview-error-artifact-unretryable-count="true">
+                {t("data_import.error_artifact.unretryable_count", { count: errorArtifactUnretryableCount })}
+              </div>
+              {importResult.errorArtifactTruncated ? (
+                <div data-import-preview-error-artifact-truncated="true">
+                  {t("data_import.error_artifact.truncated")}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
           {importResult.errorArtifactId ? (
             <Button onClick={() => void handleExportRejectedRows()}>
               {t("import_preview.action.export_rejected_rows")}

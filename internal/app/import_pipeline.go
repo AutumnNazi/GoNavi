@@ -128,15 +128,23 @@ type importProgressState struct {
 }
 
 type importExecutionResult struct {
-	Success            int
-	Skipped            int
-	Failed             int
-	Total              int
-	ErrorLogs          []string
-	ErrorArtifactID    string
-	ErrorArtifactCount int64
-	StoppedOnError     bool
-	OutcomeUnknown     bool
+	Success                       int
+	Skipped                       int
+	Failed                        int
+	Total                         int
+	ErrorLogs                     []string
+	ErrorArtifactID               string
+	ErrorArtifactCount            int64
+	ErrorArtifactBytes            int64
+	ErrorArtifactOmittedCount     int64
+	ErrorArtifactTruncated        bool
+	ErrorArtifactRetryableCount   int64
+	ErrorArtifactUnretryableCount int64
+	ErrorArtifactScopeKnown       bool
+	ErrorArtifactMaxRows          int64
+	ErrorArtifactMaxBytes         int64
+	StoppedOnError                bool
+	OutcomeUnknown                bool
 }
 
 type importPreviewCollector struct {
@@ -874,7 +882,8 @@ func (c *importBatchConsumer) flush() error {
 						SourceRow: int64(sourceRow),
 						Category:  "database",
 						Message:   sanitizedMessage,
-						Values:    cloneImportRow(row),
+						Retryable: true,
+						Values:    row,
 					}); persistErr != nil {
 						c.stoppedOnError = true
 						c.emitProgress(startRow+idx, true)
