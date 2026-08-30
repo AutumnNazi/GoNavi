@@ -168,6 +168,7 @@ describe('ConnectionGroupManagementModal rendering', () => {
         onCreateConnectionInGroup={vi.fn()}
         onEditConnection={vi.fn()}
         onCloseTabsByConnection={onCloseTabsByConnection}
+        onConnectionGroupDeleted={vi.fn().mockResolvedValue(undefined)}
       />);
     });
     return renderer!.root;
@@ -363,6 +364,72 @@ describe('ConnectionGroupManagementModal rendering', () => {
     await act(async () => { await confirmOptions.onOk(); });
     expect(deleteConnections).toHaveBeenCalledWith(['connection-1']);
     expect(closeTabsByConnection).toHaveBeenCalledWith('connection-1');
+    expect(storeState.removeConnection).toHaveBeenCalledWith('connection-1');
+    expect(storeState.removeConnectionTagTree).toHaveBeenCalledWith('group-1');
+  });
+
+  it('uses the atomic group deletion binding when available', async () => {
+    const deleteConnectionGroup = vi.fn().mockResolvedValue(undefined);
+    const deleteConnections = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal('window', {
+      go: {
+        app: {
+          App: {
+            LoadConnectionSidebarLayout: vi.fn().mockResolvedValue({
+              initialized: true,
+              revision: 9,
+              connectionTags: [{ id: 'group-1', name: 'Production', connectionIds: ['connection-1'] }],
+            }),
+            DeleteConnectionGroup: deleteConnectionGroup,
+            DeleteConnections: deleteConnections,
+          },
+        },
+      },
+    });
+    const root = renderModal();
+    selectGroup(root);
+    act(() => root.findByProps({ 'aria-label': '删除' }).props.onClick());
+    const confirmOptions = (Modal as any).confirm.mock.calls.at(-1)[0];
+
+    await act(async () => { await confirmOptions.onOk(); });
+    expect(deleteConnectionGroup).toHaveBeenCalledWith({ tagId: 'group-1', expectedRevision: 9 });
+    expect(deleteConnections).not.toHaveBeenCalled();
+    expect(storeState.removeConnectionTagTree).toHaveBeenCalledWith('group-1');
+  });
+
+  it('keeps local cleanup when the post-delete layout refresh fails', async () => {
+    const deleteConnectionGroup = vi.fn().mockResolvedValue(undefined);
+    const refreshFailure = new Error('refresh unavailable');
+    const onConnectionGroupDeleted = vi.fn().mockRejectedValue(refreshFailure);
+    vi.stubGlobal('window', {
+      go: { app: { App: {
+        LoadConnectionSidebarLayout: vi.fn().mockResolvedValue({
+          initialized: true,
+          revision: 9,
+          connectionTags: [{ id: 'group-1', name: 'Production', connectionIds: ['connection-1'] }],
+        }),
+        DeleteConnectionGroup: deleteConnectionGroup,
+      } } },
+    });
+    const root = renderModal();
+    // Replace the default callback with a failing one for this scenario.
+    act(() => renderer!.update(<ConnectionGroupManagementModal
+      open
+      onClose={vi.fn()}
+      onOpenTagForm={vi.fn()}
+      onCreateConnectionInGroup={vi.fn()}
+      onEditConnection={vi.fn()}
+      onCloseTabsByConnection={vi.fn()}
+      onConnectionGroupDeleted={onConnectionGroupDeleted}
+    />));
+    selectGroup(renderer!.root);
+    act(() => renderer!.root.findByProps({ 'aria-label': '删除' }).props.onClick());
+    const confirmOptions = (Modal as any).confirm.mock.calls.at(-1)[0];
+
+    await act(async () => { await confirmOptions.onOk(); });
+    await act(async () => { await Promise.resolve(); });
+    expect(deleteConnectionGroup).toHaveBeenCalledWith({ tagId: 'group-1', expectedRevision: 9 });
+    expect(onConnectionGroupDeleted).toHaveBeenCalled();
     expect(storeState.removeConnection).toHaveBeenCalledWith('connection-1');
     expect(storeState.removeConnectionTagTree).toHaveBeenCalledWith('group-1');
   });

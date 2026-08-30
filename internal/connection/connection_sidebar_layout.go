@@ -48,3 +48,11 @@ type SaveConnectionSidebarLayoutResult struct {
 	Conflict bool                    `json:"conflict"`
 	Layout   ConnectionSidebarLayout `json:"layout"`
 }
+
+// DeleteConnectionGroupInput requests an atomic recursive group deletion.
+// ExpectedRevision protects against deleting connections after another window
+// has changed the authoritative group layout.
+type DeleteConnectionGroupInput struct {
+	TagID            string `json:"tagId"`
+	ExpectedRevision uint64 `json:"expectedRevision"`
+}

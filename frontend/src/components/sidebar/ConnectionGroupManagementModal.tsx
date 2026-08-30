@@ -18,6 +18,7 @@ type Props = {
   onCreateConnectionInGroup: (tagId: string) => void;
   onEditConnection: (connection: SavedConnection) => void;
   onCloseTabsByConnection?: (connectionId: string) => void;
+  onConnectionGroupDeleted?: () => Promise<void>;
 };
 const UNGROUPED = '__ungrouped__';
 const CONNECTION_DRAG_TYPE = 'application/x-gonavi-connection-ids';
@@ -62,7 +63,7 @@ const collectTagTree = (rootId: string, tags: ConnectionTag[]) => {
   return tags.filter((tag) => ids.has(tag.id));
 };
 
-const ConnectionGroupManagementModal: React.FC<Props> = ({ open, onClose, onOpenTagForm, onCreateConnectionInGroup, onEditConnection, onCloseTabsByConnection }) => {
+const ConnectionGroupManagementModal: React.FC<Props> = ({ open, onClose, onOpenTagForm, onCreateConnectionInGroup, onEditConnection, onCloseTabsByConnection, onConnectionGroupDeleted }) => {
   const connections = useStore((state) => state.connections);
   const tags = useStore((state) => state.connectionTags);
   const rootOrder = useStore((state) => state.sidebarRootOrder);
@@ -187,6 +188,7 @@ const ConnectionGroupManagementModal: React.FC<Props> = ({ open, onClose, onOpen
         try {
           const backendApp = (window as any).go?.app?.App;
           let idsToDelete = connectionIds;
+          let usedAtomicGroupDelete = false;
           // If the backend can provide the authoritative layout, refuse to use
           // a stale window's subtree. This avoids deleting a connection that
           // another window moved out of the group after this modal rendered.
@@ -202,12 +204,37 @@ const ConnectionGroupManagementModal: React.FC<Props> = ({ open, onClose, onOpen
               const sameIds = localSet.size === remoteSet.size && Array.from(localSet).every((id) => remoteSet.has(id));
               if (!sameIds) throw new Error(t('connection.sidebar.management.deleteStale'));
               idsToDelete = authoritativeIds;
+
+              // New runtimes delete the complete subtree, credentials and
+              // layout in one recoverable backend transaction. Keep the
+              // legacy connection-only path for older already-installed
+              // runtimes that do not expose this binding yet.
+              if (typeof backendApp?.DeleteConnectionGroup === 'function') {
+                const revision = Number(authoritative.revision);
+                if (!Number.isSafeInteger(revision) || revision <= 0) {
+                  throw new Error(t('connection.sidebar.management.deleteFailure'));
+                }
+                await backendApp.DeleteConnectionGroup({
+                  tagId: currentTag.id,
+                  expectedRevision: revision,
+                });
+                usedAtomicGroupDelete = true;
+                // Advance the coordinator revision before local mutations so
+                // its debounced save cannot race the committed backend
+                // revision. Refresh failure is non-fatal: local cleanup below
+                // still reflects the successful backend deletion.
+                try {
+                  await onConnectionGroupDeleted?.();
+                } catch {
+                  // Keep the successful deletion result and clean up locally.
+                }
+              }
             }
           }
-          if (idsToDelete.length > 0 && typeof backendApp?.DeleteConnections !== 'function') {
+          if (!usedAtomicGroupDelete && idsToDelete.length > 0 && typeof backendApp?.DeleteConnections !== 'function') {
             throw new Error(t('connection.sidebar.management.deleteFailure'));
           }
-          if (idsToDelete.length > 0) await backendApp.DeleteConnections(idsToDelete);
+          if (!usedAtomicGroupDelete && idsToDelete.length > 0) await backendApp.DeleteConnections(idsToDelete);
           idsToDelete.forEach((connectionId) => {
             onCloseTabsByConnection?.(connectionId);
             removeConnection(connectionId);

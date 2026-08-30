@@ -9855,6 +9855,9 @@ function App() {
             onCreateConnectionInGroup={handleCreateConnectionInGroup}
             onEditConnection={handleEditConnection}
             onCloseTabsByConnection={closeTabsByConnection}
+            onConnectionGroupDeleted={async () => {
+              await connectionSidebarLayoutCoordinatorRef.current?.refresh().catch(() => undefined);
+            }}
           />
 
           {/* Ghost Resize Line for Log Panel */}

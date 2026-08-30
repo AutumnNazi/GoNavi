@@ -235,7 +235,7 @@ func (r *connectionSidebarLayoutRepository) saveUnlocked(layout connection.Conne
 			connectionSidebarLayoutMaxFileBytes,
 		)
 	}
-	return writeConnectionSidebarLayoutFileAtomic(r.layoutPath(), payload)
+	return writeConnectionSidebarLayoutFileAtomicFunc(r.layoutPath(), payload)
 }
 
 // replaceUnlocked replaces the authoritative layout while the caller already
@@ -564,6 +564,8 @@ func (r *connectionSidebarLayoutRepository) normalizeUnlocked(
 		RootConnectionSortMode: normalizeConnectionSidebarConnectionSortMode(input.RootConnectionSortMode, input.RootSortMode),
 	}, nil
 }
+
+var writeConnectionSidebarLayoutFileAtomicFunc = writeConnectionSidebarLayoutFileAtomic
 
 func writeConnectionSidebarLayoutFileAtomic(targetPath string, payload []byte) error {
 	directory := filepath.Dir(targetPath)
