@@ -520,6 +520,14 @@ textarea.gn-message-command-editor {
 .gn-message-consume-effective-title .ant-tag { margin: 0; font-size: 9px; }
 .gn-message-workbench-unavailable { display: grid; place-items: center; }
 
+.gn-consumer-groups-panel {
+  max-height: min(68vh, 680px);
+  overflow: auto;
+}
+.gn-consumer-groups-panel table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.gn-consumer-groups-panel th, .gn-consumer-groups-panel td { padding: 7px 9px; border-bottom: 1px solid var(--gn-br-1); text-align: left; white-space: nowrap; }
+.gn-consumer-groups-panel th { color: var(--gn-fg-3); font-weight: 600; }
+
 @media (max-width: 840px) {
   .gn-message-workbench-header { align-items: flex-start; flex-direction: column; }
   .gn-message-workbench-body { grid-template-columns: minmax(180px, 34vw) minmax(0, 1fr); }
@@ -531,4 +539,15 @@ textarea.gn-message-command-editor {
 @media (prefers-reduced-motion: reduce) {
   .gn-message-subscription-item,
   .gn-message-subscription-actions { transition: none; }
+}
+.gn-message-workbench-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
