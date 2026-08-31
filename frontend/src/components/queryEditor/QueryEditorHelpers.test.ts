@@ -647,6 +647,11 @@ SELECT * FROM analytics.public.events;
         });
     });
 
+    it('does not classify a table alias as a table source', () => {
+        const sql = 'SELECT * FROM users u';
+        expect(isQueryEditorTableSourceAtPosition(sql, 1, sql.length)).toBe(false);
+    });
+
     it('resolves PostgreSQL schema.table under the current database', () => {
         const tables = [
             { dbName: 'appdb', tableName: 'public.users' },
@@ -1058,6 +1063,67 @@ describe('QueryEditorHelpers cross-line qualified identifier resolution', () => 
             kind: 'table',
             dbName: 'main',
             tableName: 'test_users',
+        });
+    });
+
+    it('infers the second source in a comma-separated FROM list when metadata misses it', () => {
+        const sql = 'SELECT * FROM known_table, missing_table';
+        const target = resolveQueryEditorHoverTarget(
+            sql,
+            sql,
+            sql.length,
+            'main',
+            ['main'],
+            [],
+            [],
+            [],
+            [],
+            [],
+            [],
+            [],
+            [],
+            false,
+            { text: sql, offset: sql.length - 1 },
+            '',
+            undefined,
+            true,
+        );
+
+        expect(target).toMatchObject({
+            kind: 'table',
+            dbName: 'main',
+            tableName: 'missing_table',
+        });
+    });
+
+    it('infers an arbitrary schema-qualified table when metadata misses it', () => {
+        const sql = 'SELECT * FROM billing.orders';
+        const target = resolveQueryEditorHoverTarget(
+            sql,
+            sql,
+            sql.length,
+            'appdb',
+            ['appdb'],
+            [],
+            [],
+            [],
+            [],
+            [],
+            [],
+            [],
+            [],
+            false,
+            { text: sql, offset: sql.length - 1 },
+            '',
+            undefined,
+            true,
+        );
+
+        expect(target).toMatchObject({
+            kind: 'table',
+            dbName: 'appdb',
+            tableName: 'orders',
+            schemaName: 'billing',
         });
     });
 

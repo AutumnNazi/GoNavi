@@ -1,4 +1,5 @@
 import { resolveOceanBaseProtocolForDialect } from './oceanBaseProtocol';
+import { splitQualifiedNameSegments } from './qualifiedName';
 import { t as translate } from '../i18n';
 
 export type ColumnTypeOption = { value: string };
@@ -266,12 +267,7 @@ const needsPgLikeQuote = (ident: string): boolean => !/^[a-z_][a-z0-9_]*$/.test(
 export const unquoteSqlIdentifierPart = stripIdentifierQuotes;
 
 export const unquoteSqlIdentifierPath = (path: string): string => (
-  String(path || '')
-    .trim()
-    .split('.')
-    .map((part) => stripIdentifierQuotes(part))
-    .filter(Boolean)
-    .join('.')
+  splitQualifiedNameSegments(path).filter(Boolean).join('.')
 );
 
 export const quoteSqlIdentifierPart = (dbType: string, part: string): string => {
@@ -292,10 +288,7 @@ export const quoteSqlIdentifierPart = (dbType: string, part: string): string => 
 };
 
 export const quoteSqlIdentifierPath = (dbType: string, path: string): string => (
-  String(path || '')
-    .trim()
-    .split('.')
-    .map((part) => stripIdentifierQuotes(part))
+  splitQualifiedNameSegments(path)
     .filter(Boolean)
     .map((part) => quoteSqlIdentifierPart(dbType, part))
     .join('.')

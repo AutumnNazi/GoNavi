@@ -140,5 +140,6 @@ describe('tableDesignerIndexUtils', () => {
     expect(shouldRestoreOriginalIndex({ failedStatementIndex: 1 })).toBe(true);
     expect(shouldRestoreOriginalIndex({ failedStatementIndex: 0 })).toBe(false);
     expect(shouldRestoreOriginalIndex({})).toBe(false);
+    expect(shouldRestoreOriginalIndex({ failedStatementIndex: 1, outcomeUnknown: true })).toBe(false);
   });
 });

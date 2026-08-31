@@ -19,6 +19,10 @@ export type TableDesignerSchemaExecutionResult = {
   message?: string;
   failedStatementIndex?: number;
   schemaMayHaveChanged?: boolean;
+  // A transport/driver failure can happen after the server applied the DDL.
+  // Callers must refresh metadata but must not perform destructive compensation
+  // against an outcome that has not been confirmed.
+  outcomeUnknown?: boolean;
   statementCount: number;
 };
 
@@ -64,15 +68,15 @@ export const executeTableDesignerSchemaStatements = async ({
     try {
       const result = await execute(statement);
       if (!result?.success) {
-        const schemaMayHaveChanged = hasExecutedSchemaStatement
-          || !result
-          || isSchemaExecutionOutcomeUnknown(result);
+        const outcomeUnknown = !result || isSchemaExecutionOutcomeUnknown(result);
+        const schemaMayHaveChanged = hasExecutedSchemaStatement || outcomeUnknown;
         if (schemaMayHaveChanged) refreshSchemaConsumers();
         return {
           ok: false,
           message: String(result?.message || ''),
           failedStatementIndex: index,
           schemaMayHaveChanged,
+          ...(outcomeUnknown ? { outcomeUnknown: true } : {}),
           statementCount: statements.length,
         };
       }
@@ -85,6 +89,7 @@ export const executeTableDesignerSchemaStatements = async ({
         message: error?.message || String(error || ''),
         failedStatementIndex: index,
         schemaMayHaveChanged: true,
+        outcomeUnknown: true,
         statementCount: statements.length,
       };
     }

@@ -56,6 +56,18 @@ describe('tableDesignerTriggerSql', () => {
       .toBe('DROP TRIGGER IF EXISTS `users_bi`');
   });
 
+  it('keeps dots inside quoted owner and table identifiers', () => {
+    const qualifiedTable = '"PEM2.4_V1_1"."COM_APPROVE_INFO"';
+    expect(buildTableDesignerTriggerDropSql('TRG_APPROVE', qualifiedTable, 'postgres'))
+      .toBe('DROP TRIGGER IF EXISTS "TRG_APPROVE" ON "PEM2.4_V1_1"."COM_APPROVE_INFO"');
+    expect(buildTableDesignerTriggerRestoreSql({
+      name: 'TRG_APPROVE',
+      timing: 'BEFORE',
+      event: 'INSERT',
+      statement: 'BEGIN NULL; END;',
+    }, qualifiedTable, 'postgres')).toContain(`ON ${qualifiedTable}`);
+  });
+
   it('does not add DROP before Oracle and Dameng replaceable trigger definitions', () => {
     const replaceSql = 'CREATE OR REPLACE TRIGGER "AUDIT"."USERS_BI" BEFORE INSERT ON "AUDIT"."USERS" BEGIN NULL; END;';
     expect(shouldDropTableDesignerTriggerBeforeReplace(replaceSql, 'oracle')).toBe(false);

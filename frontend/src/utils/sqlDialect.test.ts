@@ -9,6 +9,8 @@ import {
   resolveSqlFunctions,
   resolveSqlKeywords,
   resolveTableAliasSyntax,
+  quoteSqlIdentifierPath,
+  unquoteSqlIdentifierPath,
 } from './sqlDialect';
 
 const values = (options: Array<{ value: string }>) => options.map((item) => item.value);
@@ -77,6 +79,12 @@ describe('sqlDialect', () => {
     expect(appendTableAlias('system_user', 'su', 'oracle')).toBe('system_user su');
     expect(appendTableAlias('system_user', 'su', 'unknown')).toBe('system_user');
     expect(appendTableAlias('', 'su', 'mysql')).toBe('AS su');
+  });
+
+  it('preserves dots inside quoted identifier path segments', () => {
+    const path = '"PEM2.4_V1_1"."COM_APPROVE_INFO"';
+    expect(unquoteSqlIdentifierPath(path)).toBe('PEM2.4_V1_1.COM_APPROVE_INFO');
+    expect(quoteSqlIdentifierPath('postgres', path)).toBe(path);
   });
 
   it('resolves field type options per datasource family', () => {

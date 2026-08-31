@@ -4431,6 +4431,79 @@ describe('QueryEditor external SQL save', () => {
     });
   });
 
+  it('drops stale in-flight lazy table metadata after a schema refresh event', async () => {
+    let renderer!: ReactTestRenderer;
+    autoFetchState.visible = false;
+    let resolveOldTables!: (value: any) => void;
+    const oldTables = new Promise((resolve) => {
+      resolveOldTables = resolve;
+    });
+    backendApp.DBGetTables
+      .mockImplementationOnce(() => oldTables)
+      .mockResolvedValueOnce({
+        success: true,
+        data: [{ Table: 'fresh_table' }],
+      });
+    backendApp.DBQuery.mockResolvedValue({ success: true, data: [] });
+
+    const baseWindow: any = window;
+    const refreshListeners: Array<(event: Event) => void> = [];
+    vi.stubGlobal('window', {
+      ...baseWindow,
+      addEventListener: vi.fn((type: string, listener: (event: Event) => void) => {
+        if (type === 'gonavi:sidebar-database-refresh') refreshListeners.push(listener);
+      }),
+      removeEventListener: vi.fn((type: string, listener: (event: Event) => void) => {
+        if (type !== 'gonavi:sidebar-database-refresh') return;
+        const index = refreshListeners.indexOf(listener);
+        if (index >= 0) refreshListeners.splice(index, 1);
+      }),
+      dispatchEvent: vi.fn(),
+    });
+
+    await act(async () => {
+      renderer = create(<QueryEditor tab={createTab({ query: '', dbName: 'main' })} isActive />);
+    });
+    const sqlProvider = editorState.providers.find((provider) => (
+      Array.isArray(provider.triggerCharacters) && provider.triggerCharacters.includes('.')
+    ));
+    expect(sqlProvider).toBeTruthy();
+
+    editorState.value = 'SELECT * FROM old_';
+    editorState.latestOnChange?.(editorState.value);
+    const pendingCompletion = sqlProvider.provideCompletionItems(
+      editorState.editor.getModel(),
+      { lineNumber: 1, column: editorState.value.length + 1 },
+    );
+    await Promise.resolve();
+    expect(backendApp.DBGetTables).toHaveBeenCalledTimes(1);
+
+    refreshListeners.forEach((listener) => listener({
+      type: 'gonavi:sidebar-database-refresh',
+      detail: { connectionId: 'conn-1', dbName: 'main' },
+    } as any));
+    resolveOldTables({
+      success: true,
+      data: [{ Table: 'stale_table' }],
+    });
+    await pendingCompletion;
+
+    editorState.value = 'SELECT * FROM fresh_';
+    editorState.latestOnChange?.(editorState.value);
+    const refreshedCompletion = await sqlProvider.provideCompletionItems(
+      editorState.editor.getModel(),
+      { lineNumber: 1, column: editorState.value.length + 1 },
+    );
+
+    expect(backendApp.DBGetTables).toHaveBeenCalledTimes(2);
+    expect(refreshedCompletion.suggestions.map((item: any) => item.label)).toContain('fresh_table');
+    expect(refreshedCompletion.suggestions.map((item: any) => item.label)).not.toContain('stale_table');
+
+    await act(async () => {
+      renderer.unmount();
+    });
+  });
+
   it('suggests MySQL CALL keyword and stored routine names in SQL completion', async () => {
     let renderer!: ReactTestRenderer;
     autoFetchState.visible = true;
@@ -6947,6 +7020,94 @@ describe('QueryEditor external SQL save', () => {
       ([event]: any[]) => event?.type === 'gonavi:sidebar-database-refresh',
     );
     expect(refreshEvents).toHaveLength(2);
+  });
+
+  it('does not restore an edited trigger when the replacement outcome is unknown', async () => {
+    const triggerRollbackSql = 'CREATE TRIGGER `users_bi` BEFORE INSERT ON `users` FOR EACH ROW SET NEW.updated_at = NOW();';
+    editorState.value = [
+      '-- trigger replacement',
+      'DROP TRIGGER IF EXISTS `users_bi`;',
+      'CREATE TRIGGER `users_bi` BEFORE INSERT ON `users` FOR EACH ROW SET NEW.updated_at = CURRENT_TIMESTAMP;',
+    ].join('\n');
+    editorState.selection = {
+      startLineNumber: 1,
+      startColumn: 1,
+      endLineNumber: 3,
+      endColumn: editorState.value.split('\n')[2]!.length + 1,
+    };
+    autoFetchState.visible = true;
+    backendApp.DBQueryMulti.mockResolvedValueOnce({
+      success: false,
+      message: 'connection lost after dispatch',
+      executedCount: 1,
+      failedIndex: 2,
+      outcomeUnknown: true,
+      data: [],
+    });
+
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<QueryEditor tab={createTab({
+        query: editorState.value,
+        queryMode: 'object-edit',
+        triggerRollbackSql,
+      })} isActive />);
+    });
+
+    await act(async () => {
+      await findButton(renderer, '运行').props.onClick();
+    });
+
+    expect(backendApp.DBQueryAudited).not.toHaveBeenCalledWith(
+      expect.anything(),
+      'main',
+      triggerRollbackSql,
+      'table_designer',
+    );
+  });
+
+  it('does not restore a trigger when a later statement fails after replacement', async () => {
+    const triggerRollbackSql = 'CREATE TRIGGER `users_bi` BEFORE INSERT ON `users` FOR EACH ROW SET NEW.updated_at = NOW();';
+    editorState.value = [
+      '-- trigger replacement',
+      'DROP TRIGGER IF EXISTS `users_bi`;',
+      'CREATE TRIGGER `users_bi` BEFORE INSERT ON `users` FOR EACH ROW SET NEW.updated_at = CURRENT_TIMESTAMP;',
+      'SELECT * FROM missing_table;',
+    ].join('\n');
+    editorState.selection = {
+      startLineNumber: 1,
+      startColumn: 1,
+      endLineNumber: 4,
+      endColumn: editorState.value.split('\n')[3]!.length + 1,
+    };
+    autoFetchState.visible = true;
+    backendApp.DBQueryMulti.mockResolvedValueOnce({
+      success: false,
+      message: 'table does not exist',
+      executedCount: 2,
+      failedIndex: 3,
+      data: [],
+    });
+
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<QueryEditor tab={createTab({
+        query: editorState.value,
+        queryMode: 'object-edit',
+        triggerRollbackSql,
+      })} isActive />);
+    });
+
+    await act(async () => {
+      await findButton(renderer, '运行').props.onClick();
+    });
+
+    expect(backendApp.DBQueryAudited).not.toHaveBeenCalledWith(
+      expect.anything(),
+      'main',
+      triggerRollbackSql,
+      'table_designer',
+    );
   });
 
   it('keeps multiline table-source resolution after the hover document limit', async () => {

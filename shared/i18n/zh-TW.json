@@ -8678,6 +8678,7 @@
   "table_designer.message.trigger_restored_after_failure": "{{detail}}；原觸發器已自動還原",
   "table_designer.message.trigger_restore_failed": "{{detail}}；原觸發器自動還原失敗：{{restoreDetail}}，請立即檢查",
   "table_designer.message.trigger_restore_unavailable": "{{detail}}；無法自動還原原觸發器定義，請立即檢查",
+  "table_designer.message.trigger_outcome_unknown": "{{detail}}；觸發器狀態無法確認，未自動還原，請立即檢查",
   "table_designer.message.no_copyable_columns": "未選取可複製欄位",
   "table_designer.message.no_index_changes": "未偵測到索引變更",
   "table_designer.message.only_normal_unique_index_supported": "目前資料庫僅支援一般索引與唯一索引維護",

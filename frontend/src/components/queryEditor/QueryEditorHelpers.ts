@@ -2010,10 +2010,22 @@ export const findQualifiedIdentifierWindowAtOffset = (
     return { start, end };
 };
 
-const isQueryEditorTableSourcePrefix = (prefix: string): boolean => (
-    /\b(?:from|join|update|into)\s+(?:(?:only|lateral)\s+)?$/i.test(prefix)
-    || /\bdelete\s+from\s+(?:(?:only|lateral)\s+)?$/i.test(prefix)
-);
+const isQueryEditorTableSourcePrefix = (prefix: string): boolean => {
+    if (
+        /\b(?:from|join|update|into)\s+(?:(?:only|lateral)\s+)?$/i.test(prefix)
+        || /\bdelete\s+from\s+(?:(?:only|lateral)\s+)?$/i.test(prefix)
+    ) {
+        return true;
+    }
+
+    // A comma starts another physical source in the same FROM list and a dot
+    // starts a qualified source segment. Restrict the analyzer fallback to
+    // those unfinished delimiters; otherwise `FROM users alias` would make
+    // the alias look like another table source.
+    const trimmedPrefix = String(prefix || '').replace(/\s+$/, '');
+    return /[,.]$/.test(trimmedPrefix)
+        && analyzeQueryEditorTableReferences(trimmedPrefix).expectsTableSource;
+};
 
 export const isQueryEditorTableSourceAtPosition = (
     fullText: string,
@@ -3034,12 +3046,20 @@ export const resolveQueryEditorHoverTarget = (
             if (QUERY_EDITOR_COMMON_SCHEMA_NAME_SET.has(firstKey)) {
                 return { kind: 'table', dbName: currentDb, tableName: secondPart, schemaName: firstPart, range };
             }
+            // Metadata can be incomplete while a user is working in a
+            // non-standard schema. Preserve the qualifier and still provide
+            // the selected database as the safe fallback context.
+            return { kind: 'table', dbName: currentDb, tableName: secondPart, schemaName: firstPart, range };
         }
         if (parts.length === 3) {
             const [dbName, schemaName, tableName] = parts;
             if (visibleDbs.some((knownDbName) => String(knownDbName || '').trim().toLowerCase() === dbName.toLowerCase())) {
                 return { kind: 'table', dbName, tableName, schemaName, range };
             }
+            // If the catalog/database prefix is not currently visible, do not
+            // drop the table hover altogether. Keep the remaining qualification
+            // in tableName so DDL lookup can use the exact reference later.
+            return { kind: 'table', dbName: currentDb, tableName: `${schemaName}.${tableName}`, range };
         }
     }
 

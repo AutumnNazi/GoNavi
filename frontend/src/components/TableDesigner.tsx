@@ -1539,7 +1539,12 @@ END;`;
         });
         if (!dropResult.ok) {
           const failureDetail = dropResult.rawMessage || dropResult.message;
-          if (dropResult.schemaMayHaveChanged && restoreSql) {
+          if (dropResult.outcomeUnknown) {
+            await fetchData();
+            message.error(t('table_designer.message.trigger_outcome_unknown', {
+              detail: failureDetail,
+            }, i18nLanguage));
+          } else if (dropResult.schemaMayHaveChanged && restoreSql) {
             const restoreResult = await executeSchemaStatements(restoreSql, {
               skipProductionRiskConfirm: true,
               splitStatements: false,
@@ -1579,7 +1584,11 @@ END;`;
       } else {
         if (triggerSchemaMayHaveChanged || result.schemaMayHaveChanged) await fetchData();
         const failureDetail = result.rawMessage || result.message;
-        if (triggerSchemaMayHaveChanged && restoreSql) {
+        if (result.outcomeUnknown) {
+          message.error(t('table_designer.message.trigger_outcome_unknown', {
+            detail: failureDetail,
+          }, i18nLanguage));
+        } else if (triggerSchemaMayHaveChanged && restoreSql) {
           const restoreResult = await executeSchemaStatements(restoreSql, {
             skipProductionRiskConfirm: true,
             splitStatements: false,

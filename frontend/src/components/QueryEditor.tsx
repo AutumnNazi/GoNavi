@@ -322,6 +322,20 @@ const hasElasticsearchUncertainOutcome = (response: any): boolean => (
     response?.outcomeUnknown === true
 );
 
+const hasSqlExecutionOutcomeUnknown = (response: any): boolean => (
+    response?.outcomeUnknown === true
+    || response?.data?.outcomeUnknown === true
+);
+
+const isQueryEditorTriggerDropStatement = (statement: string): boolean => (
+    /^\s*DROP\s+TRIGGER\b/i.test(maskQueryEditorSqlLiteralsAndComments(String(statement || '')))
+);
+
+const isQueryEditorTriggerCreateStatement = (statement: string): boolean => (
+    /^\s*CREATE\s+(?:(?:DEFINER\s*=\s*[^\s]+)\s+)?(?:OR\s+REPLACE\s+)?TRIGGER\b/i
+        .test(maskQueryEditorSqlLiteralsAndComments(String(statement || '')))
+);
+
 const buildElasticsearchOutcomeMetadata = (response: any): { outcomeUnknown: boolean } => ({
     outcomeUnknown: hasElasticsearchUncertainOutcome(response),
 });
@@ -1212,6 +1226,10 @@ let sharedColumnsCacheData: Record<string, any[]> = {};
 let sharedActiveEditorModelUri = '';
 const sharedLazyTablesCache: Record<string, CompletionTableMeta[] | undefined> = {};
 const sharedLazyTablesInFlight: Record<string, Promise<CompletionTableMeta[]> | undefined> = {};
+// Revisions prevent an already-running lazy metadata request from writing its
+// stale result back after a schema refresh. The global metadata generation is
+// scoped to the active editor, while this map is scoped to each cache entry.
+const sharedLazyTablesRevisionByKey: Record<string, number> = {};
 const createSqlCompletionResult = (suggestions: any[], retriggerOnContinue = false) => ({
     suggestions,
     // Monaco otherwise keeps filtering a cached list locally. Re-run strict
@@ -1226,6 +1244,66 @@ const isSqlCompletionRequestCancelled = (token?: { isCancellationRequested?: boo
 const clearRecord = (record: Record<string, unknown>) => {
     Object.keys(record).forEach((key) => {
         delete record[key];
+    });
+};
+
+const splitSharedLazyTablesCacheKey = (key: string): { connectionId: string; dbName: string } => {
+    const separator = String(key || '').indexOf('|');
+    if (separator < 0) {
+        return { connectionId: String(key || ''), dbName: '' };
+    }
+    const rest = String(key || '').slice(separator + 1);
+    return {
+        connectionId: String(key || '').slice(0, separator),
+        dbName: rest.split('|', 1)[0] || '',
+    };
+};
+
+const isSharedLazyTablesCacheKeyForRequest = (
+    key: string,
+    connectionId: string,
+    dbName?: string,
+): boolean => {
+    const parts = splitSharedLazyTablesCacheKey(key);
+    if (parts.connectionId !== connectionId) return false;
+    const normalizedDbName = String(dbName || '').trim().toLowerCase();
+    return !normalizedDbName || parts.dbName.trim().toLowerCase() === normalizedDbName;
+};
+
+const getSharedLazyTablesRevision = (cacheKey: string): number => (
+    sharedLazyTablesRevisionByKey[cacheKey] || 0
+);
+
+const invalidateSharedLazyTablesCacheKey = (cacheKey: string) => {
+    const normalizedCacheKey = String(cacheKey || '').trim();
+    if (!normalizedCacheKey) return;
+    delete sharedLazyTablesCache[normalizedCacheKey];
+    sharedLazyTablesRevisionByKey[normalizedCacheKey] = getSharedLazyTablesRevision(normalizedCacheKey) + 1;
+    Object.keys(sharedLazyTablesInFlight).forEach((inFlightKey) => {
+        const inFlightCacheKey = inFlightKey.replace(/\|\d+$/, '');
+        if (inFlightCacheKey === normalizedCacheKey) {
+            delete sharedLazyTablesInFlight[inFlightKey];
+        }
+    });
+};
+
+const invalidateSharedLazyTablesCache = (connectionId: string, dbName?: string) => {
+    const normalizedConnectionId = String(connectionId || '').trim();
+    if (!normalizedConnectionId) return;
+
+    const cacheKeys = new Set([
+        ...Object.keys(sharedLazyTablesCache),
+        ...Object.keys(sharedLazyTablesRevisionByKey),
+    ]);
+    Object.keys(sharedLazyTablesInFlight).forEach((inFlightKey) => {
+        // In-flight keys append the metadata generation to the cache key.
+        const cacheKey = inFlightKey.replace(/\|\d+$/, '');
+        if (!isSharedLazyTablesCacheKeyForRequest(cacheKey, normalizedConnectionId, dbName)) return;
+        cacheKeys.add(cacheKey);
+    });
+    cacheKeys.forEach((cacheKey) => {
+        if (!isSharedLazyTablesCacheKeyForRequest(cacheKey, normalizedConnectionId, dbName)) return;
+        invalidateSharedLazyTablesCacheKey(cacheKey);
     });
 };
 const QUERY_EDITOR_SQL_SNIPPET_SUGGEST_DETAIL_MIN_HEIGHT = 260;
@@ -1322,6 +1400,7 @@ const installQueryEditorHoverDdlCacheInvalidationListener = () => {
         const request = normalizeSidebarDatabaseRefreshRequest((event as CustomEvent).detail);
         if (!request) return;
         invalidateQueryEditorHoverDdlCacheForConnection(request.connectionId);
+        invalidateSharedLazyTablesCache(request.connectionId, request.dbName);
         // 每个编辑器实例按自己的连接上下文判断是否重载。不能依赖共享的「最后活跃」连接，
         // 否则连接 A 在后台发生结构变化、当前 Query Tab 是连接 B 时，A 切回后会永久复用旧 metadata。
         sharedQueryEditorMetadataReloadRequestListeners.forEach((listener) => listener(request));
@@ -1651,6 +1730,7 @@ const resetSharedQueryEditorMetadata = () => {
     sharedActiveEditorModelUri = '';
     clearRecord(sharedLazyTablesCache);
     clearRecord(sharedLazyTablesInFlight);
+    clearRecord(sharedLazyTablesRevisionByKey);
     sharedQueryEditorHoverDdlCache.clear();
     sharedQueryEditorHoverDdlRequests.clear();
     sharedQueryEditorHoverDdlRevisionByConnection.clear();
@@ -3052,6 +3132,8 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       }
 
       const metadataGeneration = metadataGenerationRef.current;
+      const lazyTablesCacheKey = `${connectionId}|${dbName}`;
+      const lazyTablesCacheRevision = getSharedLazyTablesRevision(lazyTablesCacheKey);
       const warmupKey = `${connectionId}\u0000${normalizedDbName}\u0000${needsTables ? 'tables' : ''}\u0000${needsColumns ? 'columns' : ''}\u0000${metadataGeneration}`;
       const existingWarmup = aiContextMetadataWarmupRef.current[warmupKey];
       if (existingWarmup) {
@@ -3118,7 +3200,9 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                           });
                           tablesRef.current = [...nextTableByKey.values()];
                           sharedTablesData = tablesRef.current;
-                          sharedLazyTablesCache[`${connectionId}|${dbName}`] = fetchedTables;
+                          if (getSharedLazyTablesRevision(lazyTablesCacheKey) === lazyTablesCacheRevision) {
+                              sharedLazyTablesCache[lazyTablesCacheKey] = fetchedTables;
+                          }
                       }
                   }
               } catch (error) {
@@ -3549,9 +3633,15 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           }
       });
       const sharedTablesCacheKey = `${connectionId}|${dbName}`;
-      sharedLazyTablesCache[sharedTablesCacheKey] = (sharedLazyTablesCache[sharedTablesCacheKey] || []).filter(
+      const remainingLazyTables = (sharedLazyTablesCache[sharedTablesCacheKey] || []).filter(
           (table) => !isTargetTableName(String(table.tableName || '')),
       );
+      // A validation result invalidates any in-flight response for the same
+      // database; otherwise that response can reinsert the missing table.
+      invalidateSharedLazyTablesCacheKey(sharedTablesCacheKey);
+      if (remainingLazyTables.length > 0) {
+          sharedLazyTablesCache[sharedTablesCacheKey] = remainingLazyTables;
+      }
       aiContextCacheRef.current = null;
       sharedTablesData = tablesRef.current;
       sharedAllColumnsData = allColumnsRef.current;
@@ -4418,6 +4508,10 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           sharedQueryEditorMetadataReloadRequestListeners.delete(reloadListener);
           if (sharedQueryEditorMetadataReloadRequestListeners.size === 0) {
               uninstallQueryEditorHoverDdlCacheInvalidationListener();
+              // No editor can receive refresh events while the set is empty.
+              // Drop shared metadata as well so a later mount cannot reuse a
+              // cache that may have changed while the listener was absent.
+              resetSharedQueryEditorMetadata();
           }
       };
   }, []);
@@ -7128,6 +7222,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                   if (sharedLazyTablesCache[cacheKey]) {
                       return sharedLazyTablesCache[cacheKey];
                   }
+                  const cacheRevision = getSharedLazyTablesRevision(cacheKey);
                   const conn = sharedConnections.find(c => c.id === connId);
                   if (!conn) return [] as CompletionTableMeta[];
                   const metadataSnapshot: QueryEditorMetadataRequestSnapshot = {
@@ -7149,7 +7244,10 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                       DBGetTables(buildRpcConnectionConfig(config) as any, dbName),
                   ])
                       .then(([tableComments, res]) => {
-                          if (!isSharedQueryEditorMetadataRequestCurrent(metadataSnapshot, metadataContextKey)) {
+                          if (
+                              !isSharedQueryEditorMetadataRequestCurrent(metadataSnapshot, metadataContextKey)
+                              || getSharedLazyTablesRevision(cacheKey) !== cacheRevision
+                          ) {
                               return [];
                           }
                           const tables = res?.success && Array.isArray(res.data)
@@ -9901,15 +9999,32 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                 const executionErrorText = formatSqlExecutionError(res.message, { translate });
                 let triggerRestoreMessage = '';
                 const triggerRollbackSql = String(tab.triggerRollbackSql || '').trim();
-                const triggerDropMayHaveChangedSchema = Number(res.executedCount) > 0
-                    || Number(res.failedIndex) > 1
-                    || res.outcomeUnknown === true
-                    || res.data?.outcomeUnknown === true;
-                const triggerDropWasDispatched = triggerDropMayHaveChangedSchema
+                const triggerExecutionOutcomeUnknown = hasSqlExecutionOutcomeUnknown(res);
+                const failedStatementIndex = Number(res.failedIndex) || 0;
+                const failedStatementZeroIndex = failedStatementIndex - 1;
+                const triggerDropStatementIndex = sourceStatements.findIndex(isQueryEditorTriggerDropStatement);
+                const triggerCreateStatementIndex = triggerDropStatementIndex >= 0
+                    ? sourceStatements.findIndex((statement, index) => (
+                        index > triggerDropStatementIndex && isQueryEditorTriggerCreateStatement(statement)
+                    ))
+                    : -1;
+                const confirmedStatementCountForCompensation = Number(res.executedCount) || 0;
+                // Compensation is safe only when the DROP is confirmed and the
+                // following CREATE is a confirmed failure. An unknown result
+                // may mean the new trigger already exists; recreating the old
+                // definition would silently overwrite it.
+                const triggerDropWasDispatched = !triggerExecutionOutcomeUnknown
+                    && failedStatementIndex > 1
+                    && triggerCreateStatementIndex === failedStatementZeroIndex
+                    && confirmedStatementCountForCompensation > triggerDropStatementIndex
+                    && confirmedStatementCountForCompensation <= failedStatementZeroIndex
                     && Boolean(triggerRollbackSql)
-                    && sourceStatements
-                        .slice(0, schemaInvalidationStatementCount)
-                        .some((statement) => /\bDROP\s+TRIGGER\b/i.test(statement));
+                    && triggerDropStatementIndex >= 0;
+                if (triggerExecutionOutcomeUnknown && triggerRollbackSql) {
+                    triggerRestoreMessage = translate('table_designer.message.trigger_outcome_unknown', {
+                        detail: executionErrorText,
+                    });
+                }
                 if (triggerDropWasDispatched) {
                     try {
                         const restoreResult = await DBQueryAudited(
@@ -9944,7 +10059,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                         dbName: currentDb,
                     });
                 }
-                const errorMsg = res.message.toLowerCase();
+                const errorMsg = String(res.message || '').toLowerCase();
                 const isCancelledError = errorMsg.includes('context canceled') ||
                                          errorMsg.includes('查询已取消') ||
                                          errorMsg.includes('canceled') ||

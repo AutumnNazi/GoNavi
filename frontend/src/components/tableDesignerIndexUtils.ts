@@ -17,6 +17,7 @@ export interface IndexFormSnapshot {
 
 export interface SchemaExecutionSnapshot {
   failedStatementIndex?: number;
+  outcomeUnknown?: boolean;
 }
 
 export interface IndexMetadataResponse {
@@ -101,5 +102,6 @@ export const toggleIndexSelection = (
 };
 
 export const shouldRestoreOriginalIndex = (result: SchemaExecutionSnapshot): boolean => (
-  (result.failedStatementIndex ?? -1) > 0
+  !result.outcomeUnknown
+  && (result.failedStatementIndex ?? -1) > 0
 );

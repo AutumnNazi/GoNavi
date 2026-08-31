@@ -164,6 +164,7 @@ COMMENT ON COLUMN "HR"."EMPLOYEES"."ID" IS '主键';`)).toBe("员工'表");
       ok: false,
       failedStatementIndex: 0,
       schemaMayHaveChanged: true,
+      outcomeUnknown: true,
     });
     expect(refreshSchemaConsumers).toHaveBeenCalledTimes(1);
   });
@@ -177,7 +178,7 @@ COMMENT ON COLUMN "HR"."EMPLOYEES"."ID" IS '主键';`)).toBe("员工'表");
       refreshSchemaConsumers,
     });
 
-    expect(result).toMatchObject({ ok: false, schemaMayHaveChanged: true });
+    expect(result).toMatchObject({ ok: false, schemaMayHaveChanged: true, outcomeUnknown: true });
     expect(refreshSchemaConsumers).toHaveBeenCalledTimes(1);
   });
 });
