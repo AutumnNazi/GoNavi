@@ -205,7 +205,13 @@ func normalizeToolCallHistoryWithOptions(messages []ai.Message, preserveStandalo
 
 		expected := make(map[string]struct{}, len(message.ToolCalls))
 		validIDs := true
-		for _, call := range message.ToolCalls {
+		normalizedToolCalls := append([]ai.ToolCall(nil), message.ToolCalls...)
+		for callIndex, call := range normalizedToolCalls {
+			normalizedArguments, validArguments := normalizeOpenAIToolCallArguments(call.Function.Arguments)
+			if !validArguments {
+				validIDs = false
+			}
+			normalizedToolCalls[callIndex].Function.Arguments = normalizedArguments
 			id := strings.TrimSpace(call.ID)
 			if id == "" {
 				validIDs = false
@@ -239,6 +245,7 @@ func normalizeToolCallHistoryWithOptions(messages []ai.Message, preserveStandalo
 		}
 
 		if validIDs {
+			message.ToolCalls = normalizedToolCalls
 			normalized = append(normalized, message)
 			normalized = append(normalized, results...)
 		}
@@ -247,6 +254,19 @@ func normalizeToolCallHistoryWithOptions(messages []ai.Message, preserveStandalo
 		index = cursor - 1
 	}
 	return normalized
+}
+
+func normalizeOpenAIToolCallArguments(arguments string) (string, bool) {
+	trimmed := strings.TrimSpace(arguments)
+	if trimmed == "" {
+		return `{}`, true
+	}
+
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(trimmed), &object); err != nil || object == nil {
+		return arguments, false
+	}
+	return arguments, true
 }
 
 func hasToolCallID(toolCallIDs map[string]struct{}, id string) bool {

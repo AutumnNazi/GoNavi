@@ -287,6 +287,111 @@ func TestOpenAIProviderChatMovesSystemMessagesToRequestPrefix(t *testing.T) {
 	}
 }
 
+func TestOpenAIProviderChatDropsCompleteToolCallTurnWithMalformedArguments(t *testing.T) {
+	var received openAIChatRequest
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer r.Body.Close()
+		if err := json.NewDecoder(r.Body).Decode(&received); err != nil {
+			t.Fatalf("decode request body failed: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"pong"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`))
+	}))
+	defer server.Close()
+
+	providerInstance, err := NewOpenAIProvider(ai.ProviderConfig{
+		Type:    "openai",
+		APIKey:  "sk-test",
+		BaseURL: server.URL,
+		Model:   "gpt-chat",
+	})
+	if err != nil {
+		t.Fatalf("create provider failed: %v", err)
+	}
+
+	_, err = providerInstance.Chat(context.Background(), ai.ChatRequest{
+		Messages: []ai.Message{
+			{Role: "user", Content: "Inspect the connection."},
+			{
+				Role: "assistant",
+				ToolCalls: []ai.ToolCall{{
+					ID:   "call_execute_sql",
+					Type: "function",
+					Function: ai.ToolCallFunction{
+						Name:      "execute_sql",
+						Arguments: `{"connectionId":"1787533241017"`,
+					},
+				}},
+			},
+			{Role: "tool", ToolCallID: "call_execute_sql", Content: `{"error":"arguments parse failed"}`},
+			{Role: "user", Content: "Continue."},
+		},
+	})
+	if err != nil {
+		t.Fatalf("chat failed: %v", err)
+	}
+
+	if len(received.Messages) != 2 {
+		t.Fatalf("expected malformed tool-call turn to be removed, got %#v", received.Messages)
+	}
+	if received.Messages[0].Role != "user" || received.Messages[0].Content != "Inspect the connection." ||
+		received.Messages[1].Role != "user" || received.Messages[1].Content != "Continue." {
+		t.Fatalf("expected surrounding user messages to remain, got %#v", received.Messages)
+	}
+}
+
+func TestOpenAIProviderChatNormalizesBlankToolArgumentsToEmptyObject(t *testing.T) {
+	var received openAIChatRequest
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer r.Body.Close()
+		if err := json.NewDecoder(r.Body).Decode(&received); err != nil {
+			t.Fatalf("decode request body failed: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"pong"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`))
+	}))
+	defer server.Close()
+
+	providerInstance, err := NewOpenAIProvider(ai.ProviderConfig{
+		Type:    "openai",
+		APIKey:  "sk-test",
+		BaseURL: server.URL,
+		Model:   "gpt-chat",
+	})
+	if err != nil {
+		t.Fatalf("create provider failed: %v", err)
+	}
+
+	messages := []ai.Message{
+		{
+			Role: "assistant",
+			ToolCalls: []ai.ToolCall{{
+				ID:   "call_no_args",
+				Type: "function",
+				Function: ai.ToolCallFunction{
+					Name:      "list_connections",
+					Arguments: " \t\n ",
+				},
+			}},
+		},
+		{Role: "tool", ToolCallID: "call_no_args", Content: `{"connections":[]}`},
+	}
+	_, err = providerInstance.Chat(context.Background(), ai.ChatRequest{Messages: messages})
+	if err != nil {
+		t.Fatalf("chat failed: %v", err)
+	}
+
+	if len(received.Messages) != 2 || len(received.Messages[0].ToolCalls) != 1 {
+		t.Fatalf("expected blank-argument tool-call turn to remain, got %#v", received.Messages)
+	}
+	if got := received.Messages[0].ToolCalls[0].Function.Arguments; got != `{}` {
+		t.Fatalf("expected blank tool arguments to be normalized to {}, got %q", got)
+	}
+	if got := messages[0].ToolCalls[0].Function.Arguments; got != " \t\n " {
+		t.Fatalf("expected request history to remain unmodified, got arguments %q", got)
+	}
+}
+
 func TestOpenAIProviderChatStreamMovesSystemMessagesToRequestPrefix(t *testing.T) {
 	var received openAIChatRequest
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -668,6 +773,31 @@ func TestBuildOpenAIMessagesDropsIncompleteToolCallHistory(t *testing.T) {
 	}
 	if got[0].Role != "user" || got[1].Role != "user" {
 		t.Fatalf("expected user messages to remain after removing incomplete turn, got %#v", got)
+	}
+}
+
+func TestBuildOpenAIMessagesDropsCompleteToolCallTurnWithNonObjectArguments(t *testing.T) {
+	for name, arguments := range map[string]string{
+		"array":   `[]`,
+		"boolean": `true`,
+		"null":    `null`,
+		"number":  `1`,
+		"string":  `"connection-1"`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			toolCall := testOpenAIToolCall()
+			toolCall.Function.Arguments = arguments
+			got := buildOpenAIMessages([]ai.Message{
+				{Role: "user", Content: "Inspect."},
+				{Role: "assistant", ToolCalls: []ai.ToolCall{toolCall}},
+				{Role: "tool", ToolCallID: toolCall.ID, Content: `{"ok":true}`},
+				{Role: "user", Content: "Continue."},
+			}, "gpt-4o", "https://api.openai.com/v1")
+
+			if len(got) != 2 || got[0].Role != "user" || got[1].Role != "user" {
+				t.Fatalf("expected non-object tool-call turn to be removed, got %#v", got)
+			}
+		})
 	}
 }
 
