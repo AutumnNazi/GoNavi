@@ -12,6 +12,7 @@ export const splitSchemaExecutionStatements = (sqlText: string): string[] => (
 export const isSchemaExecutionOutcomeUnknown = (result: any): boolean => (
   result?.outcomeUnknown === true
   || result?.data?.outcomeUnknown === true
+  || String(result?.cancellationState || '').trim().toLowerCase() === 'unsupported'
 );
 
 export type TableDesignerSchemaExecutionResult = {

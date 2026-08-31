@@ -51,6 +51,7 @@ COMMENT ON COLUMN "HR"."EMPLOYEES"."ID" IS '主键';`)).toBe("员工'表");
   it('recognizes ambiguous schema execution failures from both response shapes', () => {
     expect(isSchemaExecutionOutcomeUnknown({ outcomeUnknown: true })).toBe(true);
     expect(isSchemaExecutionOutcomeUnknown({ data: { outcomeUnknown: true } })).toBe(true);
+    expect(isSchemaExecutionOutcomeUnknown({ success: false, cancellationState: 'unsupported' })).toBe(true);
     expect(isSchemaExecutionOutcomeUnknown({ success: false, data: { outcomeUnknown: false } })).toBe(false);
   });
 

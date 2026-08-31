@@ -325,6 +325,7 @@ const hasElasticsearchUncertainOutcome = (response: any): boolean => (
 const hasSqlExecutionOutcomeUnknown = (response: any): boolean => (
     response?.outcomeUnknown === true
     || response?.data?.outcomeUnknown === true
+    || String(response?.cancellationState || '').trim().toLowerCase() === 'unsupported'
 );
 
 const isQueryEditorTriggerDropStatement = (statement: string): boolean => (

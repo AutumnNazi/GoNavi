@@ -18,6 +18,7 @@ export interface IndexFormSnapshot {
 export interface SchemaExecutionSnapshot {
   failedStatementIndex?: number;
   outcomeUnknown?: boolean;
+  cancellationState?: string;
 }
 
 export interface IndexMetadataResponse {
@@ -103,5 +104,6 @@ export const toggleIndexSelection = (
 
 export const shouldRestoreOriginalIndex = (result: SchemaExecutionSnapshot): boolean => (
   !result.outcomeUnknown
+  && String(result.cancellationState || '').trim().toLowerCase() !== 'unsupported'
   && (result.failedStatementIndex ?? -1) > 0
 );
