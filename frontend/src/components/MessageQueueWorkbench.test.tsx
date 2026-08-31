@@ -82,6 +82,9 @@ vi.mock('antd', async () => {
     ),
     Empty: passthrough('div'),
     Input,
+    Modal: ({ children, open, ...props }: any) => (
+      open ? ReactModule.createElement('div', { ...props, 'data-testid': 'modal' }, children) : null
+    ),
     Segmented: passthrough('div'),
     Space: passthrough('div'),
     Tag: passthrough('span'),
@@ -825,6 +828,93 @@ describe('MessageQueueWorkbench MQTT stream lifecycle', () => {
       defaultExchange: 'events.fanout',
       executionDbName: '/',
     });
+    act(() => { renderer.unmount(); });
+  });
+
+  it('shows Kafka consumer group details returned by the backend', async () => {
+    storeState.connections = [{
+      id: 'kafka-1',
+      name: 'Kafka test',
+      config: { type: 'kafka', host: '127.0.0.1', port: 9092 },
+    }];
+    backend.DBQuery.mockResolvedValueOnce({
+      success: true,
+      data: [{
+        group: 'orders', state: 'Stable', member: 'member-1', client_id: 'consumer-a',
+        topic: 'orders.events', partition: 2, current_offset: 11, log_end_offset: 14, lag: 3,
+      }],
+    });
+    const kafkaTab = { ...tab, id: 'message-queue-kafka-1-topics', connectionId: 'kafka-1', dbName: 'topics' } as any;
+    const renderer = renderWorkbench(kafkaTab);
+
+    clickButtonWithText(renderer, 'message_queue_workbench.consumer_groups.action.open');
+    await act(async () => { await Promise.resolve(); });
+
+    expect(backend.DBQuery).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'kafka' }),
+      'topics',
+      'SHOW CONSUMER GROUPS;',
+    );
+    expect(renderedText(renderer)).toContain('orders.events');
+    expect(renderedText(renderer)).toContain('member-1');
+    expect(renderedText(renderer)).toContain('3');
+    act(() => { renderer.unmount(); });
+  });
+
+  it('keeps the newest consumer group request when an earlier request resolves late', async () => {
+    storeState.connections = [{
+      id: 'kafka-1',
+      name: 'Kafka test',
+      config: { type: 'kafka', host: '127.0.0.1', port: 9092 },
+    }];
+    const first = deferred<any>();
+    const second = deferred<any>();
+    backend.DBQuery
+      .mockImplementationOnce(() => first.promise)
+      .mockImplementationOnce(() => second.promise);
+    const kafkaTab = { ...tab, id: 'message-queue-kafka-1-topics', connectionId: 'kafka-1', dbName: 'topics' } as any;
+    const renderer = renderWorkbench(kafkaTab);
+
+    clickButtonWithText(renderer, 'message_queue_workbench.consumer_groups.action.open');
+    act(() => { renderer.root.findByProps({ 'data-testid': 'modal' }).props.onCancel(); });
+    const consumerGroupsButton = renderer.root.findAllByType('button').find((candidate) => (
+      collectText(candidate.props.children).includes('message_queue_workbench.consumer_groups.action.open')
+    ));
+    expect(consumerGroupsButton?.props.loading).toBe(false);
+    clickButtonWithText(renderer, 'message_queue_workbench.consumer_groups.action.open');
+    await act(async () => {
+      second.resolve({ success: true, data: [{ group: 'new-group', state: 'Stable' }] });
+      await Promise.resolve();
+    });
+    await act(async () => {
+      first.resolve({ success: true, data: [{ group: 'old-group', state: 'Empty' }] });
+      await Promise.resolve();
+    });
+
+    expect(renderedText(renderer)).toContain('new-group');
+    expect(renderedText(renderer)).not.toContain('old-group');
+    act(() => { renderer.unmount(); });
+  });
+
+  it('explains that RocketMQ consumer group inspection is unavailable before sending a query', () => {
+    storeState.connections = [{
+      id: 'rocketmq-1',
+      name: 'RocketMQ test',
+      config: { type: 'rocketmq', host: '127.0.0.1', port: 9876 },
+    }];
+    const rocketMQTab = { ...tab, id: 'message-queue-rocketmq-1-topics', connectionId: 'rocketmq-1', dbName: 'topics' } as any;
+    const renderer = renderWorkbench(rocketMQTab);
+
+    const consumerGroupsButton = renderer.root.findAllByType('button').find((candidate) => (
+      collectText(candidate.props.children).includes('message_queue_workbench.consumer_groups.action.open')
+    ));
+    expect(consumerGroupsButton?.props.disabled).toBe(true);
+    const unavailableControl = renderer.root.findAllByType('span').find((candidate) => (
+      candidate.props['aria-describedby'] === 'rocketmq-consumer-groups-unavailable'
+    ));
+    expect(unavailableControl?.props.tabIndex).toBe(0);
+    expect(renderedText(renderer)).toContain('message_queue_workbench.consumer_groups.error.rocketmq_unsupported');
+    expect(backend.DBQuery).not.toHaveBeenCalled();
     act(() => { renderer.unmount(); });
   });
 });

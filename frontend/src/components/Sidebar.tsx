@@ -1106,6 +1106,7 @@ const Sidebar: React.FC<{
   const loadingNodesRef = useRef<Set<string>>(new Set());
   const databaseTreeTouchedAtRef = useRef<Record<string, number>>({});
   const pruneLoadedDatabaseTreesRef = useRef<() => void>(() => {});
+  const refreshConnectionResourcesRef = useRef<(node: any) => Promise<void>>(async () => {});
   const loadNacosServiceGroupsRef = useRef<(
       node: any,
       options?: { force?: boolean },
@@ -2217,6 +2218,16 @@ const Sidebar: React.FC<{
       const handleSidebarDatabaseRefresh = (event: Event) => {
           const request = normalizeSidebarDatabaseRefreshRequest((event as CustomEvent).detail);
           if (!request) return;
+          if (!request.dbName) {
+              const connectionNode = findTreeNodeByKeyRef.current(
+                  treeDataRef.current,
+                  request.connectionId,
+              );
+              if (connectionNode) {
+                  void refreshConnectionResourcesRef.current(connectionNode);
+              }
+              return;
+          }
           const dbNode = findTreeNodeByKeyRef.current(
               treeDataRef.current,
               `${request.connectionId}-${request.dbName}`,
@@ -3051,6 +3062,7 @@ const Sidebar: React.FC<{
           return Array.from(new Set(next));
       });
   };
+  refreshConnectionResourcesRef.current = refreshConnectionResources;
 
   useEffect(() => {
       const handleSidebarDatabaseListRefresh = (event: Event) => {

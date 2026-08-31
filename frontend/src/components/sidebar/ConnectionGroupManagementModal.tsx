@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Button, Empty, Form, Input, List, message, Modal, Select, Space, Table, Tag, Tooltip, Tree, Typography } from 'antd';
+import { Button, Empty, Form, Input, List, message, Select, Space, Table, Tag, Tooltip, Tree, Typography } from 'antd';
 import { CloseOutlined, DeleteOutlined, EditOutlined, FolderAddOutlined, InboxOutlined, PlusOutlined, SettingOutlined, SortAscendingOutlined } from '@ant-design/icons';
 import type { DataNode } from 'antd/es/tree';
 import type { ColumnsType } from 'antd/es/table';
+import Modal from '../common/ResizableDraggableModal';
 import { useStore } from '../../store';
 import type { ConnectionDisplaySortMode, ConnectionTag, SavedConnection } from '../../types';
 import { t } from '../../i18n';
@@ -317,6 +318,10 @@ const ConnectionGroupManagementModal: React.FC<Props> = ({ open, onClose, onOpen
       onCancel={onClose}
       footer={null}
       width={980}
+      centered
+      resizable
+      minResizableWidth={860}
+      minResizableHeight={520}
       rootClassName="connection-group-management-modal"
       zIndex={APP_FOREGROUND_MODAL_Z_INDEX}
       title={<Space><SettingOutlined />{t('connection.sidebar.management.title')}</Space>}
@@ -385,7 +390,7 @@ const ConnectionGroupManagementModal: React.FC<Props> = ({ open, onClose, onOpen
         </section>
       </div>
     </Modal>
-    <Modal zIndex={APP_NESTED_MODAL_Z_INDEX} open={Boolean(renameTag)} title={t('connection.sidebar.management.rename')} onCancel={() => setRenameTag(null)} onOk={() => { void submitRename(); }} destroyOnClose><Form form={nameForm} layout="vertical"><Form.Item name="name" label={t('connection.sidebar.management.nameLabel')} rules={[{ required: true, whitespace: true, message: t('connection.sidebar.management.nameRequired') }]}><Input autoFocus /></Form.Item></Form></Modal>
+    <Modal zIndex={APP_NESTED_MODAL_Z_INDEX} centered open={Boolean(renameTag)} title={t('connection.sidebar.management.rename')} onCancel={() => setRenameTag(null)} onOk={() => { void submitRename(); }} destroyOnClose><Form form={nameForm} layout="vertical"><Form.Item name="name" label={t('connection.sidebar.management.nameLabel')} rules={[{ required: true, whitespace: true, message: t('connection.sidebar.management.nameRequired') }]}><Input autoFocus /></Form.Item></Form></Modal>
   </>;
 };
 

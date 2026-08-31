@@ -8853,6 +8853,7 @@ function App() {
             open={isConnectionHealthModalOpen}
             targetConnectionIds={connectionHealthTargetIds}
             onClose={() => setIsConnectionHealthModalOpen(false)}
+            zIndex={isConnectionGroupManagementOpen ? APP_NESTED_MODAL_Z_INDEX : APP_FOREGROUND_MODAL_Z_INDEX}
           />
           {isSettingsModalOpen && (() => {
             const toolCenterGroups: SettingsCenterNavigationGroup[] = [

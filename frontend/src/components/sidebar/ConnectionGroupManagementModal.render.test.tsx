@@ -1,8 +1,8 @@
 import React from 'react';
 import { readFileSync } from 'node:fs';
-import { Modal } from 'antd';
 import { act, create, type ReactTestInstance, type ReactTestRenderer } from 'react-test-renderer';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import Modal from '../common/ResizableDraggableModal';
 
 const storeState = vi.hoisted(() => ({
   connections: [{
@@ -50,6 +50,15 @@ vi.mock('@ant-design/icons', async () => {
   };
 });
 
+vi.mock('../common/ResizableDraggableModal', async () => {
+  const ReactModule = await import('react');
+  const Modal = ({ open, children, title, zIndex, rootClassName, closeIcon }: any) => open
+    ? ReactModule.createElement('div', { 'data-modal': true, 'data-z-index': zIndex, className: rootClassName }, title, closeIcon, children)
+    : null;
+  Modal.confirm = vi.fn();
+  return { default: Modal };
+});
+
 vi.mock('antd', async () => {
   const ReactModule = await import('react');
   const passthrough = (tag: string) => ({ children, ...props }: any) => ReactModule.createElement(tag, props, children);
@@ -66,10 +75,6 @@ vi.mock('antd', async () => {
   const Input = passthrough('input');
   const List: any = ({ dataSource = [], renderItem }: any) => ReactModule.createElement('div', null, dataSource.map(renderItem));
   List.Item = passthrough('div');
-  const Modal: any = ({ open, children, title, zIndex, rootClassName, closeIcon }: any) => open
-    ? ReactModule.createElement('div', { 'data-modal': true, 'data-z-index': zIndex, className: rootClassName }, title, closeIcon, children)
-    : null;
-  Modal.confirm = vi.fn();
   const Select = (props: any) => ReactModule.createElement('select', props);
   const Space: any = passthrough('div');
   Space.Compact = passthrough('div');
@@ -112,7 +117,7 @@ vi.mock('antd', async () => {
     Text: passthrough('span'),
     Title: passthrough('h2'),
   };
-  return { Button, Empty, Form, Input, List, Modal, Select, Space, Table, Tag, Tooltip, Tree, Typography, message: messageMock };
+  return { Button, Empty, Form, Input, List, Select, Space, Table, Tag, Tooltip, Tree, Typography, message: messageMock };
 });
 
 import { setCurrentLanguage } from '../../i18n';

@@ -173,6 +173,7 @@ END;`;
     expect(query).toContain('FULL_TRIGGER_DDL_TAIL');
     expect(query).not.toContain('[CLOB preview:');
     expect(query).not.toContain('Only a trigger definition fragment was returned');
+    expect(query).not.toMatch(/\bDROP\s+TRIGGER\b/i);
   });
 
   it('resolves the table before loading Oracle metadata for a restored trigger tab', async () => {

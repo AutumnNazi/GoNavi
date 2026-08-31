@@ -242,7 +242,9 @@ export const useSidebarV2ContextMenu = ({
       const invalidateDatabaseStats = (event: Event) => {
           const request = normalizeSidebarDatabaseRefreshRequest((event as CustomEvent).detail);
           if (!request) return;
-          const keyPrefix = `${request.connectionId}::${request.dbName}::`;
+          const keyPrefix = request.dbName
+              ? `${request.connectionId}::${request.dbName}::`
+              : `${request.connectionId}::`;
           setV2TableContextMenuStats((current) => {
               const staleKeys = Object.keys(current).filter((key) => key.startsWith(keyPrefix));
               if (staleKeys.length === 0) return current;
