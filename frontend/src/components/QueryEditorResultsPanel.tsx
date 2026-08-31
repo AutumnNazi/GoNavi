@@ -856,7 +856,7 @@ const QueryEditorResultsPanel: React.FC<QueryEditorResultsPanelProps> = ({
               .query-result-panel-tab-actions { display: inline-flex; flex-direction: row; align-items: center; gap: 4px; }
               .query-result-tabs .ant-tabs-extra-content .query-result-panel-tab-action { width: 28px; min-width: 28px; height: 28px !important; min-height: 28px !important; padding: 0 !important; display: inline-flex; align-items: center; justify-content: center; }
             `}</style>
-            <div data-gonavi-close-shortcut-scope="result" className={isV2Ui ? 'gn-v2-query-results' : undefined} style={{ position: 'relative', flex: 1, minHeight: 0, overflow: 'hidden', padding: 0, display: 'flex', flexDirection: 'column' }}>
+            <div data-gonavi-close-shortcut-scope="result" className={isV2Ui ? 'gn-v2-query-results' : undefined} style={{ position: 'relative', flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
                 {tabItems.length > 0 ? (
                     <Tabs className="query-result-tabs" activeKey={resolvedActiveResultKey} onChange={onActiveResultKeyChange} animated={false} style={{ flex: 1, minHeight: 0 }} tabBarExtraContent={tabsExtraContent} items={tabItems} />
                 ) : executionError ? (

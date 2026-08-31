@@ -608,6 +608,9 @@ body[data-ui-version="v2"] .gn-v2-query-resizer:hover {
 }
 
 body[data-ui-version="v2"] .gn-v2-query-results {
+  box-sizing: border-box;
+  min-width: 0;
+  padding-inline: 8px;
   background: var(--gn-bg-app);
 }
 
