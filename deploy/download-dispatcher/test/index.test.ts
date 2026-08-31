@@ -437,6 +437,66 @@ describe("download dispatcher", () => {
     }
   });
 
+  it("pins mutable GoNavi manifests to the publication control app tag", async () => {
+    const cases = [
+      {
+        channel: "stable",
+        generation: "stable-manifest-current",
+        appTag: "v1.2.3",
+        probePath: "/gonavi/releases/download/v1.2.3/GoNavi.zip",
+        mutablePath: "/gonavi/releases/latest/latest.json",
+        immutablePath: "/gonavi/releases/download/v1.2.3/latest.json",
+        githubUrl: "https://github.com/Syngnat/GoNavi/releases/download/v1.2.3/latest.json",
+      },
+      {
+        channel: "dev",
+        generation: "dev-manifest-current",
+        appTag: "dev-current",
+        probePath: "/gonavi/dev/releases/download/dev-current/GoNavi.zip",
+        mutablePath: "/gonavi/dev/releases/latest/latest-dev.json",
+        immutablePath: "/gonavi/dev/releases/download/dev-current/latest-dev.json",
+        githubUrl: "https://github.com/Syngnat/GoNavi/releases/download/dev-latest/latest-dev.json",
+      },
+    ] as const;
+
+    for (const testCase of cases) {
+      const control = {
+        schemaVersion: 1,
+        channel: testCase.channel,
+        generation: testCase.generation,
+        appTag: testCase.appTag,
+        driverTag: null,
+        verifiedAt: new Date().toISOString(),
+        probePath: testCase.probePath,
+        probeSize: 1024,
+        probeSha256: "a".repeat(64),
+        nodes: {
+          dmit: { baseUrl: "https://download.syngnat.top", enabled: true },
+          bero: { baseUrl: "https://origin-download.syngnat.top:8443", enabled: true },
+        },
+      };
+      await env.ROUTING_STATE.put(`control:${testCase.channel}`, JSON.stringify(control));
+
+      const jsonResponse = await SELF.fetch(
+        `https://download-dispatch.syngnat.top/v1/resolve?format=json&path=${encodeURIComponent(testCase.mutablePath)}`,
+      );
+      const body = await jsonResponse.json<{ candidates: Array<{ source: string; url: string }> }>();
+      expect(jsonResponse.status).toBe(200);
+      expect(body.candidates).toEqual([
+        { source: "dmit", url: `https://download.syngnat.top${testCase.immutablePath}` },
+        { source: "bero", url: `https://origin-download.syngnat.top:8443${testCase.immutablePath}` },
+        { source: "github", url: testCase.githubUrl },
+      ]);
+
+      const redirectResponse = await SELF.fetch(
+        `https://download-dispatch.syngnat.top/v1/resolve?path=${encodeURIComponent(testCase.mutablePath)}`,
+        { redirect: "manual" },
+      );
+      expect(redirectResponse.status).toBe(302);
+      expect(redirectResponse.headers.get("Location")).toBe(`https://download.syngnat.top${testCase.immutablePath}`);
+    }
+  });
+
   it("returns the exact fixed driver fallback chain without publication state", async () => {
     await env.ROUTING_STATE.delete("control:dev");
     await env.ROUTING_STATE.delete("routing:dev");

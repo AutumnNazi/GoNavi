@@ -25,17 +25,20 @@ import (
 )
 
 const (
-	updateRepo                  = "Syngnat/GoNavi"
-	updateLatestAPIURL          = "https://api.github.com/repos/" + updateRepo + "/releases/latest"
-	updateDevAPIURL             = "https://api.github.com/repos/" + updateRepo + "/releases/tags/" + updateDevReleaseTag
-	updateChecksumAsset         = "SHA256SUMS"
-	updateDownloadProgressEvent = "update:download-progress"
-	updateNetworkRetryDelay     = 250 * time.Millisecond
-	updateQuitRequestDelay      = 300 * time.Millisecond
-	updateQuitForceExitDelay    = 35 * time.Second
-	updateReleaseCacheTTL       = 10 * time.Minute
-	updateGitHubAPIVersion      = "2022-11-28"
-	updateHTTPBodySnippetLimit  = 240
+	updateRepo                             = "Syngnat/GoNavi"
+	updateLatestAPIURL                     = "https://api.github.com/repos/" + updateRepo + "/releases/latest"
+	updateDevAPIURL                        = "https://api.github.com/repos/" + updateRepo + "/releases/tags/" + updateDevReleaseTag
+	updateChecksumAsset                    = "SHA256SUMS"
+	updateDownloadProgressEvent            = "update:download-progress"
+	updateNetworkRetryDelay                = 250 * time.Millisecond
+	updateCurrentDevAssetRetryLimit        = 8
+	updateCurrentDevAssetRetryInitialDelay = time.Second
+	updateCurrentDevAssetRetryMaxDelay     = time.Minute
+	updateQuitRequestDelay                 = 300 * time.Millisecond
+	updateQuitForceExitDelay               = 35 * time.Second
+	updateReleaseCacheTTL                  = 10 * time.Minute
+	updateGitHubAPIVersion                 = "2022-11-28"
+	updateHTTPBodySnippetLimit             = 240
 )
 
 type cachedGitHubRelease struct {
@@ -57,6 +60,7 @@ var (
 	updateCloseWindowsInstances        = closeWindowsUpdateInstances
 	updateAcquireWindowsMaintenance    = acquireWindowsUpdateMaintenance
 	updateQuitSleep                    = time.Sleep
+	updateCurrentDevAssetRetrySleep    = time.Sleep
 	updateExitProcess                  = os.Exit
 	updateDownloadFileWithExpectedSize = downloadFileWithHashWithExpectedSize
 )
@@ -466,23 +470,61 @@ func (a *App) runUpdateDownloadTask(work updateDownloadTaskWork) (result connect
 	downloadRevision := work.revision
 	a.emitUpdateDownloadProgress(info, "start", 0, info.AssetSize, "")
 	result, downloadErr := a.downloadAndStageUpdate(*info, downloadRevision)
-	if work.channel == updateChannelDev && isExpiredUpdateAssetError(downloadErr) {
-		refreshed, staged, revision, refreshErr := a.refreshDevUpdateInfoForDownload(downloadRevision)
+	mismatchRetries := 0
+	waitForCurrentAssetRetry := func() bool {
+		if mismatchRetries >= updateCurrentDevAssetRetryLimit {
+			return false
+		}
+		delay := currentDevAssetRetryDelay(mismatchRetries)
+		mismatchRetries++
+		logger.Warnf("dev 更新包尚未在 Dispatcher 激活，等待后重试：attempt=%d delay=%s", mismatchRetries, delay)
+		updateCurrentDevAssetRetrySleep(delay)
+		return true
+	}
+	for recoveryAttempts := 0; work.channel == updateChannelDev && isExpiredUpdateAssetError(downloadErr) && recoveryAttempts <= updateCurrentDevAssetRetryLimit; recoveryAttempts++ {
+		var pendingIfNoUpdate *UpdateInfo
+		if isCurrentDevAssetMismatchError(downloadErr) {
+			pendingIfNoUpdate = info
+		}
+		refreshed, staged, revision, refreshErr := a.refreshDevUpdateInfoForDownload(downloadRevision, pendingIfNoUpdate)
 		if refreshErr != nil {
 			logger.Warnf("dev 更新包失效后刷新清单失败：%v", refreshErr)
-		} else if updateAssetIdentityChanged(*info, *refreshed) {
-			info = refreshed
-			downloadRevision = revision
-			if invalid := a.validateUpdateInfoForDownload(info); invalid != nil {
-				result = *invalid
-				downloadErr = nil
-			} else if staged != nil {
-				result = connection.QueryResult{Success: true, Message: a.appText("app.update.backend.message.package_already_downloaded", nil), Data: buildUpdateDownloadResult(*info, staged)}
-			} else {
-				a.emitUpdateDownloadProgress(info, "start", 0, info.AssetSize, "")
-				result, downloadErr = a.downloadAndStageUpdate(*info, downloadRevision)
+			break
+		}
+
+		downloadRevision = revision
+		if !refreshed.HasUpdate && isCurrentDevAssetMismatchError(downloadErr) {
+			// A mutable dev-latest source can briefly expose the next build while
+			// Dispatcher control still points at the already-installed build. Keep
+			// retrying the gated future asset; the refreshed no-update snapshot only
+			// advances the state revision and must not discard that pending target.
+			if !waitForCurrentAssetRetry() {
+				break
+			}
+			result, downloadErr = a.downloadAndStageUpdate(*info, downloadRevision)
+			continue
+		}
+
+		identityChanged := updateAssetIdentityChanged(*info, *refreshed)
+		info = refreshed
+		if invalid := a.validateUpdateInfoForDownload(info); invalid != nil {
+			result = *invalid
+			downloadErr = nil
+			break
+		}
+		if staged != nil {
+			result = connection.QueryResult{Success: true, Message: a.appText("app.update.backend.message.package_already_downloaded", nil), Data: buildUpdateDownloadResult(*info, staged)}
+			downloadErr = nil
+			break
+		}
+		if identityChanged {
+			a.emitUpdateDownloadProgress(info, "start", 0, info.AssetSize, "")
+		} else {
+			if !isCurrentDevAssetMismatchError(downloadErr) || !waitForCurrentAssetRetry() {
+				break
 			}
 		}
+		result, downloadErr = a.downloadAndStageUpdate(*info, downloadRevision)
 	}
 	if !result.Success {
 		a.emitUpdateDownloadProgress(info, "error", 0, info.AssetSize, result.Message)
@@ -620,7 +662,7 @@ func (a *App) validateUpdateInfoForDownload(info *UpdateInfo) *connection.QueryR
 	return nil
 }
 
-func (a *App) refreshDevUpdateInfoForDownload(expectedRevision uint64) (*UpdateInfo, *stagedUpdate, uint64, error) {
+func (a *App) refreshDevUpdateInfoForDownload(expectedRevision uint64, pendingIfNoUpdate *UpdateInfo) (*UpdateInfo, *stagedUpdate, uint64, error) {
 	info, err := fetchLatestUpdateInfoWithOptions(updateChannelDev, true)
 	if err != nil {
 		return nil, nil, expectedRevision, err
@@ -632,15 +674,19 @@ func (a *App) refreshDevUpdateInfoForDownload(expectedRevision uint64) (*UpdateI
 		return nil, nil, expectedRevision, localizedUpdateError{key: "app.update.backend.message.check_stale"}
 	}
 
+	stateInfo := &info
+	if !info.HasUpdate && pendingIfNoUpdate != nil && pendingIfNoUpdate.HasUpdate {
+		stateInfo = snapshotUpdateInfo(pendingIfNoUpdate)
+	}
 	var staged *stagedUpdate
-	if info.HasUpdate {
-		staged = resolveReusableStagedUpdate(info, snapshotStagedUpdate(a.updateState.staged))
+	if stateInfo.HasUpdate {
+		staged = resolveReusableStagedUpdate(*stateInfo, snapshotStagedUpdate(a.updateState.staged))
 		if staged != nil {
-			info.Downloaded = true
-			info.DownloadPath = staged.FilePath
+			stateInfo.Downloaded = true
+			stateInfo.DownloadPath = staged.FilePath
 		}
 	}
-	a.updateState.lastCheck = snapshotUpdateInfo(&info)
+	a.updateState.lastCheck = snapshotUpdateInfo(stateInfo)
 	a.updateState.staged = snapshotStagedUpdate(staged)
 	a.updateState.revision++
 	return snapshotUpdateInfo(&info), snapshotStagedUpdate(staged), a.updateState.revision, nil
@@ -666,6 +712,22 @@ func isExpiredUpdateAssetError(err error) bool {
 	}
 	return localized.httpStatus == http.StatusNotFound ||
 		localized.httpStatus == http.StatusGone
+}
+
+func isCurrentDevAssetMismatchError(err error) bool {
+	var currentAssetMismatch downloadCurrentAssetMismatchError
+	return errors.As(err, &currentAssetMismatch)
+}
+
+func currentDevAssetRetryDelay(retry int) time.Duration {
+	delay := updateCurrentDevAssetRetryInitialDelay
+	for attempt := 0; attempt < retry && delay < updateCurrentDevAssetRetryMaxDelay; attempt++ {
+		delay *= 2
+	}
+	if delay > updateCurrentDevAssetRetryMaxDelay {
+		return updateCurrentDevAssetRetryMaxDelay
+	}
+	return delay
 }
 
 func (a *App) InstallUpdateAndRestart(closeAllWindowsInstancesConfirmed bool) connection.QueryResult {

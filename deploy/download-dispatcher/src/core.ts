@@ -266,6 +266,31 @@ function parseAssetCoordinates(rawPath: string): AssetCoordinates | null {
   };
 }
 
+function pinMutableAppManifestToControl(
+  coordinates: AssetCoordinates,
+  control: PublicationControl | null,
+): AssetCoordinates {
+  if (!control) return coordinates;
+
+  let pinnedPath: string;
+  switch (coordinates.relativePath) {
+    case "/gonavi/releases/latest/latest.json":
+      pinnedPath = `/gonavi/releases/download/${control.appTag}/latest.json`;
+      break;
+    case "/gonavi/dev/releases/latest/latest-dev.json":
+      pinnedPath = `/gonavi/dev/releases/download/${control.appTag}/latest-dev.json`;
+      break;
+    default:
+      return coordinates;
+  }
+
+  const pinned = parseAssetCoordinates(pinnedPath);
+  if (!pinned || pinned.channel !== control.channel || pinned.immutable?.kind !== "app") {
+    throw new Error("invalid publication control app manifest path");
+  }
+  return pinned;
+}
+
 function parseContentRange(value: string | null): { start: number; end: number; total: number } | null {
   const match = /^bytes (\d+)-(\d+)\/(\d+)$/.exec(value ?? "");
   if (!match) return null;
@@ -529,10 +554,11 @@ export function selectLegacyRedirectCandidate<T extends { source: string }>(cand
 async function resolveDownload(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
   const pathValues = url.searchParams.getAll("path");
-  const coordinates = pathValues.length === 1 ? parseAssetCoordinates(pathValues[0]) : null;
-  if (!coordinates) {
+  const requestedCoordinates = pathValues.length === 1 ? parseAssetCoordinates(pathValues[0]) : null;
+  if (!requestedCoordinates) {
     return Response.json({ error: "invalid asset path" }, { status: 400, headers: { "Cache-Control": "no-store" } });
   }
+  let coordinates = requestedCoordinates;
   const requiresCurrentDevApp = url.searchParams.get("require-current") === "1";
   if (requiresCurrentDevApp && (coordinates.channel !== "dev" || coordinates.immutable?.kind !== "app")) {
     return Response.json(
@@ -576,6 +602,7 @@ async function resolveDownload(request: Request, env: Env): Promise<Response> {
     readCurrentControl(env, coordinates.channel),
     readRoutingState(env, coordinates.channel),
   ]);
+  coordinates = pinMutableAppManifestToControl(coordinates, control);
   const requestedDevAppTag = requiresCurrentDevApp && coordinates.immutable?.kind === "app"
     ? coordinates.immutable.tag
     : null;

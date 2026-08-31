@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	stdRuntime "runtime"
 	"strings"
 	"sync"
@@ -1454,6 +1455,167 @@ func TestDownloadUpdateDoesNotRetryUnchangedExpiredDevAsset(t *testing.T) {
 	}
 	if result.Message != "" {
 		t.Fatalf("DownloadUpdate message = %q, want empty test-only stub message", result.Message)
+	}
+}
+
+func TestDownloadUpdateWaitsForFutureDevAssetControlToConverge(t *testing.T) {
+	app, installMode := newDevUpdateDownloadTestApp(t)
+
+	payload := []byte("activated dev update package")
+	assetName, err := expectedAssetNameForInstallMode(stdRuntime.GOOS, stdRuntime.GOARCH, "dev-activating", installMode)
+	if err != nil {
+		t.Fatalf("expectedAssetNameForInstallMode activating: %v", err)
+	}
+	assetURL := devUpdateDispatcherAssetURL("dev-activating", assetName)
+	expectedHash := fmt.Sprintf("%x", sha256.Sum256(payload))
+	assetHits := 0
+	stubDevUpdateDownloadFile(t, func(rawURL string, assetPath string, onProgress func(downloaded, total int64), expectedSize int64) (string, error) {
+		if rawURL != downloadDispatcherURLRequiringCurrentDevAsset(assetURL) {
+			t.Fatalf("activating dev asset URL = %q", rawURL)
+		}
+		assetHits++
+		if assetHits <= 2 {
+			return "", downloadCurrentAssetMismatchError{}
+		}
+		if err := os.WriteFile(assetPath, payload, 0o644); err != nil {
+			return "", err
+		}
+		if onProgress != nil {
+			onProgress(int64(len(payload)), expectedSize)
+		}
+		return expectedHash, nil
+	})
+
+	pendingRelease := devUpdateReleaseForTest(t, "dev-activating", assetURL, payload, installMode)
+	app.updateState.lastCheck = updateInfoFromReleaseForTest(t, pendingRelease, installMode)
+	currentAssetName, err := expectedAssetNameForInstallMode(stdRuntime.GOOS, stdRuntime.GOARCH, AppVersion, installMode)
+	if err != nil {
+		t.Fatalf("expectedAssetNameForInstallMode current: %v", err)
+	}
+	currentRelease := devUpdateReleaseForTest(
+		t,
+		AppVersion,
+		devUpdateDispatcherAssetURL(AppVersion, currentAssetName),
+		[]byte("already installed dev package"),
+		installMode,
+	)
+
+	staticCalls := 0
+	restoreStatic := swapUpdateFetchStaticManifest(func(channel updateChannel) (*githubRelease, error) {
+		staticCalls++
+		if channel != updateChannelDev {
+			t.Fatalf("update channel = %q, want dev", channel)
+		}
+		return currentRelease, nil
+	})
+	defer restoreStatic()
+
+	originalSleep := updateCurrentDevAssetRetrySleep
+	var retryDelays []time.Duration
+	updateCurrentDevAssetRetrySleep = func(delay time.Duration) {
+		retryDelays = append(retryDelays, delay)
+	}
+	t.Cleanup(func() {
+		updateCurrentDevAssetRetrySleep = originalSleep
+	})
+
+	result := app.DownloadUpdate()
+	if !result.Success {
+		t.Fatalf("DownloadUpdate returned failure: %#v", result)
+	}
+	if assetHits != 3 {
+		t.Fatalf("activating asset hits = %d, want 3", assetHits)
+	}
+	if staticCalls != 2 {
+		t.Fatalf("static manifest calls = %d, want 2", staticCalls)
+	}
+	if !reflect.DeepEqual(retryDelays, []time.Duration{time.Second, 2 * time.Second}) {
+		t.Fatalf("retry delays = %v, want [1s 2s]", retryDelays)
+	}
+	if app.updateState.staged == nil || app.updateState.staged.Version != "dev-activating" {
+		t.Fatalf("activated package was not staged: %#v", app.updateState.staged)
+	}
+}
+
+func TestDownloadUpdateStopsWaitingWhenDevAssetControlDoesNotConverge(t *testing.T) {
+	app, installMode := newDevUpdateDownloadTestApp(t)
+
+	payload := []byte("never activated dev update package")
+	assetName, err := expectedAssetNameForInstallMode(stdRuntime.GOOS, stdRuntime.GOARCH, "dev-not-activated", installMode)
+	if err != nil {
+		t.Fatalf("expectedAssetNameForInstallMode not activated: %v", err)
+	}
+	assetURL := devUpdateDispatcherAssetURL("dev-not-activated", assetName)
+	assetHits := 0
+	stubDevUpdateDownloadFile(t, func(rawURL string, _ string, _ func(downloaded, total int64), _ int64) (string, error) {
+		if rawURL != downloadDispatcherURLRequiringCurrentDevAsset(assetURL) {
+			t.Fatalf("not activated dev asset URL = %q", rawURL)
+		}
+		assetHits++
+		return "", downloadCurrentAssetMismatchError{}
+	})
+
+	pendingRelease := devUpdateReleaseForTest(t, "dev-not-activated", assetURL, payload, installMode)
+	app.updateState.lastCheck = updateInfoFromReleaseForTest(t, pendingRelease, installMode)
+	currentAssetName, err := expectedAssetNameForInstallMode(stdRuntime.GOOS, stdRuntime.GOARCH, AppVersion, installMode)
+	if err != nil {
+		t.Fatalf("expectedAssetNameForInstallMode current: %v", err)
+	}
+	currentRelease := devUpdateReleaseForTest(
+		t,
+		AppVersion,
+		devUpdateDispatcherAssetURL(AppVersion, currentAssetName),
+		[]byte("already installed dev package"),
+		installMode,
+	)
+
+	staticCalls := 0
+	restoreStatic := swapUpdateFetchStaticManifest(func(channel updateChannel) (*githubRelease, error) {
+		staticCalls++
+		if channel != updateChannelDev {
+			t.Fatalf("update channel = %q, want dev", channel)
+		}
+		return currentRelease, nil
+	})
+	defer restoreStatic()
+
+	originalSleep := updateCurrentDevAssetRetrySleep
+	var retryDelays []time.Duration
+	updateCurrentDevAssetRetrySleep = func(delay time.Duration) {
+		retryDelays = append(retryDelays, delay)
+	}
+	t.Cleanup(func() {
+		updateCurrentDevAssetRetrySleep = originalSleep
+	})
+
+	result := app.DownloadUpdate()
+	if result.Success {
+		t.Fatalf("DownloadUpdate unexpectedly succeeded: %#v", result)
+	}
+	if assetHits != 1+updateCurrentDevAssetRetryLimit {
+		t.Fatalf("not activated asset hits = %d, want %d", assetHits, 1+updateCurrentDevAssetRetryLimit)
+	}
+	if staticCalls != 1+updateCurrentDevAssetRetryLimit {
+		t.Fatalf("static manifest calls = %d, want %d", staticCalls, 1+updateCurrentDevAssetRetryLimit)
+	}
+	wantDelays := []time.Duration{
+		time.Second,
+		2 * time.Second,
+		4 * time.Second,
+		8 * time.Second,
+		16 * time.Second,
+		32 * time.Second,
+		time.Minute,
+		time.Minute,
+	}
+	if !reflect.DeepEqual(retryDelays, wantDelays) {
+		t.Fatalf("retry delays = %v, want %v", retryDelays, wantDelays)
+	}
+	if app.updateState.staged != nil {
+		t.Fatalf("not activated package was staged: %#v", app.updateState.staged)
+	}
+	if app.updateState.lastCheck == nil || !app.updateState.lastCheck.HasUpdate || app.updateState.lastCheck.LatestVersion != "dev-not-activated" {
+		t.Fatalf("pending update was discarded after retries: %#v", app.updateState.lastCheck)
 	}
 }
 
