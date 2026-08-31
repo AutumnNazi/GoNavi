@@ -310,6 +310,7 @@ const ConnectionHealthModal: React.FC<ConnectionHealthModalProps> = ({
       open={open}
       onCancel={handleClose}
       width={860}
+      centered
       zIndex={zIndex}
       destroyOnHidden
       footer={(
