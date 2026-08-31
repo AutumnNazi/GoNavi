@@ -1504,6 +1504,8 @@ export const QUERY_EDITOR_SQL_ALIAS_REFERENCE_REGEX = new RegExp(
     'gi',
 );
 export const QUERY_EDITOR_SQL_LEADING_IDENTIFIER_PATH_REGEX = new RegExp(`^(${QUERY_EDITOR_SQL_IDENTIFIER_PATH_PATTERN})([\\s\\S]*)$`);
+// Keep the original settle delay so moving across many identifiers does not
+// start a burst of remote metadata requests (notably over SSH).
 export const QUERY_EDITOR_HOVER_DELAY_MS = 1000;
 export const QUERY_EDITOR_OBJECT_DECORATION_MAX_TEXT_LENGTH = 200_000;
 export const QUERY_EDITOR_OBJECT_DECORATION_MAX_IDENTIFIERS = 200;
@@ -1920,6 +1922,7 @@ export const collectQueryEditorObjectDecorationCandidates = (
 export const findIdentifierWindowAtOffset = (
     lineContent: string,
     rawOffset: number,
+    preferRight = false,
 ): { start: number; end: number } | null => {
     const text = String(lineContent || '');
     if (!text) return null;
@@ -1929,10 +1932,14 @@ export const findIdentifierWindowAtOffset = (
     let offset = Math.max(0, Math.min(maxIndex, Number.isFinite(rawOffset) ? rawOffset : 0));
 
     if (!QUERY_EDITOR_IDENTIFIER_CHAR_REGEX.test(searchableText[offset] || '')) {
-        if (offset > 0 && QUERY_EDITOR_IDENTIFIER_CHAR_REGEX.test(searchableText[offset - 1] || '')) {
-            offset -= 1;
-        } else if (offset < maxIndex && QUERY_EDITOR_IDENTIFIER_CHAR_REGEX.test(searchableText[offset + 1] || '')) {
+        // At the separating space between a keyword and its operand, Monaco
+        // may report the first operand column. Context-sensitive callers can
+        // prefer the right token; normal identifier lookup keeps its legacy
+        // left-token behavior.
+        if (preferRight && offset < maxIndex && QUERY_EDITOR_IDENTIFIER_CHAR_REGEX.test(searchableText[offset + 1] || '')) {
             offset += 1;
+        } else if (offset > 0 && QUERY_EDITOR_IDENTIFIER_CHAR_REGEX.test(searchableText[offset - 1] || '')) {
+            offset -= 1;
         } else {
             return null;
         }
@@ -1951,9 +1958,120 @@ export const findIdentifierWindowAtOffset = (
     return start < end ? { start, end } : null;
 };
 
+export const getQueryEditorDocumentOffsetAtPosition = (
+    documentText: string,
+    lineNumber: number,
+    column: number,
+): number => {
+    const lines = String(documentText || '').split('\n');
+    const safeLineNumber = Math.max(1, Math.min(lines.length, Math.floor(Number(lineNumber) || 1)));
+    const lineStart = lines
+        .slice(0, safeLineNumber - 1)
+        .reduce((offset, line) => offset + line.length + 1, 0);
+    return lineStart + Math.max(0, Math.floor(Number(column) || 1) - 1);
+};
+
+// 限定名允许被格式化拆行（db\n.\ntable、`db`.\n`table`），在全文范围内吸收跨行的点号分段，
+// 避免悬停/导航把拆行后的限定名当成当前库同名对象（串库）
+export const findQualifiedIdentifierWindowAtOffset = (
+    text: string,
+    rawOffset: number,
+    preferRight = false,
+): { start: number; end: number } | null => {
+    const source = String(text || '');
+    if (!source) return null;
+    const base = findIdentifierWindowAtOffset(source, rawOffset, preferRight);
+    if (!base) return null;
+    let start = base.start;
+    let end = base.end;
+    for (;;) {
+        let cursor = start;
+        while (cursor > 0 && /\s/.test(source[cursor - 1])) cursor -= 1;
+        if (cursor <= 0 || source[cursor - 1] !== '.') break;
+        let segmentEnd = cursor - 1;
+        while (segmentEnd > 0 && /\s/.test(source[segmentEnd - 1])) segmentEnd -= 1;
+        if (segmentEnd <= 0) break;
+        const segmentWindow = findIdentifierWindowAtOffset(source, segmentEnd - 1, preferRight);
+        // 窗口只需覆盖段尾字符；点号本身属于标识符字符，窗口可能越过后继点号，不能要求精确对齐
+        if (!segmentWindow || segmentWindow.start > segmentEnd - 1 || segmentWindow.end <= segmentEnd - 1) break;
+        start = segmentWindow.start;
+    }
+    for (;;) {
+        let cursor = end;
+        while (cursor < source.length && /\s/.test(source[cursor])) cursor += 1;
+        if (cursor >= source.length || source[cursor] !== '.') break;
+        let segmentStart = cursor + 1;
+        while (segmentStart < source.length && /\s/.test(source[segmentStart])) segmentStart += 1;
+        if (segmentStart >= source.length) break;
+        const segmentWindow = findIdentifierWindowAtOffset(source, segmentStart, preferRight);
+        if (!segmentWindow || segmentWindow.start > segmentStart || segmentWindow.end <= segmentStart) break;
+        end = segmentWindow.end;
+    }
+    return { start, end };
+};
+
+const isQueryEditorTableSourcePrefix = (prefix: string): boolean => (
+    /\b(?:from|join|update|into)\s+(?:(?:only|lateral)\s+)?$/i.test(prefix)
+    || /\bdelete\s+from\s+(?:(?:only|lateral)\s+)?$/i.test(prefix)
+);
+
+export const isQueryEditorTableSourceAtPosition = (
+    fullText: string,
+    lineNumber: number,
+    column: number,
+): boolean => {
+    const text = String(fullText || '').replace(/\r\n?/g, '\n');
+    const lines = text.split('\n');
+    const safeLineNumber = Math.max(1, Math.min(lines.length, Math.floor(Number(lineNumber) || 1)));
+    const lineContent = lines[safeLineNumber - 1] || '';
+    const rawOffset = Math.max(0, Number(column || 1) - 2);
+    let identifierWindow = findIdentifierWindowAtOffset(lineContent, rawOffset, true);
+    // Monaco positions at the first character of a table name point one
+    // column after the separating space. When both neighbors are identifier
+    // characters (the `M` in FROM on the left and the table on the right),
+    // prefer the right-hand token so the source keyword does not win.
+    if (
+        rawOffset < lineContent.length
+        && /\s/.test(lineContent[rawOffset] || '')
+        && /[A-Za-z0-9_$`"\[\].]/.test(lineContent[rawOffset + 1] || '')
+    ) {
+        identifierWindow = findIdentifierWindowAtOffset(lineContent, rawOffset + 1, true);
+    }
+    if (!identifierWindow) return false;
+
+    const lineStart = lines
+        .slice(0, safeLineNumber - 1)
+        .reduce((offset, line) => offset + line.length + 1, 0);
+    return isQueryEditorTableSourcePrefix(
+        maskQueryEditorSqlLiteralsAndComments(text.slice(0, lineStart + identifierWindow.start)),
+    );
+};
+
 export const normalizeNavigationIdentifierParts = (text: string): string[] => (
     splitQualifiedNameSegments(text).map((part) => part.trim()).filter(Boolean)
 );
+
+const normalizeQueryEditorHoverIdentifier = (value: string): string => {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    // Whitespace inside quoted identifiers is legal and must be preserved.
+    if (/[`"\[]/.test(raw)) return raw;
+    const qualified = raw.replace(/\s*\.\s*/g, '.').trim();
+    if (qualified.includes(' ')) {
+        // A stale Monaco offset can leave the tail of FROM/JOIN in front of
+        // the actual operand (for example `OM test_users`). SQL identifiers
+        // cannot contain unquoted spaces, so keep the final token only.
+        return qualified.split(/\s+/).filter(Boolean).pop() || '';
+    }
+    return qualified;
+};
+
+const isQualifiedQueryEditorHoverIdentifier = (value: string): boolean => {
+    const compact = String(value || '').replace(/\s*\.\s*/g, '.').trim();
+    const parts = splitQualifiedNameSegments(compact);
+    if (parts.length < 2) return false;
+    return parts.every((part) => /[`"\[]/.test(part) || !/\s/.test(part));
+};
 
 export const buildQueryEditorHoverMarkdown = (target: QueryEditorHoverTarget): string => {
     const appendComment = (comment?: string): string => {
@@ -2243,11 +2361,16 @@ export const isQueryEditorTableAliasCompletionContext = (source: string): boolea
         .test(source);
 };
 
+export type QueryEditorAliasMap = Record<
+    string,
+    { dbName: string; tableName: string; explicitOwnerName?: string }
+>;
+
 export const buildQueryEditorAliasMap = (
     fullText: string,
     currentDb: string,
-): Record<string, { dbName: string; tableName: string; explicitOwnerName?: string }> => {
-    const aliasMap: Record<string, { dbName: string; tableName: string; explicitOwnerName?: string }> = {};
+): QueryEditorAliasMap => {
+    const aliasMap: QueryEditorAliasMap = {};
     for (const reference of collectQueryEditorTableReferences(fullText)) {
         const tableIdent = reference.tableIdent;
         if (!tableIdent) continue;
@@ -2396,21 +2519,32 @@ export const resolveQueryEditorNavigationTarget = (
     routines: CompletionRoutineMeta[] = [],
     sequences: CompletionSequenceMeta[] = [],
     packages: CompletionPackageMeta[] = [],
+    tableSourceContext = false,
+    documentContext?: { text: string; offset: number },
+    currentSchema = '',
 ): QueryEditorNavigationTarget | null => {
     const text = String(lineContent || '');
-    if (!text) return null;
-
     const offset = Math.max(0, Number(column || 1) - 2);
-    const windowRange = findIdentifierWindowAtOffset(text, offset);
-    if (!windowRange) return null;
+    const windowRange = findIdentifierWindowAtOffset(text, offset, true);
 
-    const rawIdentifier = text.slice(windowRange.start, windowRange.end).trim();
+    // 默认按单行解析；提供全文上下文时改用全文窗口，限定名拆行后仍能取到库名/Schema 前缀
+    const documentText = String(documentContext?.text || '');
+    const documentOffset = Number(documentContext?.offset);
+    const documentWindow = documentText && Number.isFinite(documentOffset)
+        ? findQualifiedIdentifierWindowAtOffset(documentText, documentOffset, true)
+        : null;
+    if (!windowRange && !documentWindow) return null;
+    const prefixSliceStart = documentWindow ? documentWindow.start : windowRange!.start;
+    const rawIdentifier = normalizeQueryEditorHoverIdentifier(documentWindow
+        ? documentText.slice(documentWindow.start, documentWindow.end).trim()
+        : text.slice(windowRange!.start, windowRange!.end).trim());
     if (!rawIdentifier) return null;
 
     const parts = normalizeNavigationIdentifierParts(rawIdentifier);
     if (parts.length === 0) return null;
 
     const currentDbName = String(currentDb || '').trim();
+    const currentSchemaName = String(currentSchema || '').trim();
     const visibleDbSet = new Set(visibleDbs.map((db) => String(db || '').trim().toLowerCase()).filter(Boolean));
     const tableMetas = tables.map((table) => {
         const dbName = String(table.dbName || '').trim();
@@ -2639,13 +2773,32 @@ export const resolveQueryEditorNavigationTarget = (
         || findPackage(candidateDbName, candidateObjectName, schemaName)
     );
 
+    const isTableSourceIdentifier = (identifierStart: number): boolean => {
+        const prefix = maskQueryEditorSqlLiteralsAndComments(
+            (documentWindow ? documentText : text).slice(0, Math.max(0, identifierStart)),
+        );
+        // A selected database gives an unqualified table reference its local
+        // meaning, even when another visible database has the same name.
+        return tableSourceContext || isQueryEditorTableSourcePrefix(prefix);
+    };
+
     if (parts.length === 1) {
         const [singlePart] = parts;
         const normalizedSingle = singlePart.toLowerCase();
+        // PostgreSQL 等支持 schema 的方言中，未限定对象与当前 search_path 同义。
+        // 有明确选择时先匹配该 schema，避免 metadata 返回顺序把 public.users 盖过 sales.users。
+        const currentDatabaseObject = (
+            currentSchemaName
+                ? findObjectInPriorityOrder(currentDbName, singlePart, currentSchemaName)
+                : null
+        ) || findObjectInPriorityOrder(currentDbName, singlePart);
+        if (isTableSourceIdentifier(prefixSliceStart)) {
+            return currentDatabaseObject;
+        }
         if (visibleDbSet.has(normalizedSingle)) {
             return { type: 'database', dbName: singlePart };
         }
-        return findObjectInPriorityOrder(currentDbName, singlePart);
+        return currentDatabaseObject;
     }
 
     if (parts.length === 2) {
@@ -2728,20 +2881,60 @@ export const resolveQueryEditorHoverTarget = (
     routines: CompletionRoutineMeta[] = [],
     sequences: CompletionSequenceMeta[] = [],
     packages: CompletionPackageMeta[] = [],
+    tableSourceContext = false,
+    documentContext?: { text: string; offset: number },
+    currentSchema = '',
+    aliasMap?: QueryEditorAliasMap,
+    allowTableSourceInference = false,
 ): QueryEditorHoverTarget | null => {
     const text = String(lineContent || '');
-    if (!text) return null;
-
     const offset = Math.max(0, Number(column || 1) - 2);
-    const windowRange = findIdentifierWindowAtOffset(text, offset);
-    if (!windowRange) return null;
+    const windowRange = findIdentifierWindowAtOffset(text, offset, true);
 
-    const rawIdentifier = text.slice(windowRange.start, windowRange.end).trim();
+    // 默认按单行解析；提供全文上下文时改用全文窗口，限定名拆行后仍能取到库名/Schema 前缀
+    const documentText = String(documentContext?.text || '');
+    const documentOffset = Number(documentContext?.offset);
+    const documentWindow = documentText && Number.isFinite(documentOffset)
+        ? findQualifiedIdentifierWindowAtOffset(documentText, documentOffset, true)
+        : null;
+    if (!windowRange && !documentWindow) return null;
+    const lineIdentifier = windowRange
+        ? normalizeQueryEditorHoverIdentifier(text.slice(windowRange.start, windowRange.end).trim())
+        : '';
+    const documentIdentifier = documentWindow
+        ? normalizeQueryEditorHoverIdentifier(documentText.slice(documentWindow.start, documentWindow.end).trim())
+        : '';
+    // A stale document offset can point at the tail of a nearby keyword while
+    // the current line still contains the exact operand under the cursor. Use
+    // the full-document window only when it contributes a real qualification
+    // (db/schema.table); otherwise the line token is the authoritative value.
+    const useDocumentIdentifier = Boolean(documentIdentifier)
+        && (!lineIdentifier || isQualifiedQueryEditorHoverIdentifier(documentIdentifier));
+    const resolutionText = useDocumentIdentifier ? documentText : text;
+    const rawIdentifier = useDocumentIdentifier ? documentIdentifier : lineIdentifier;
     if (!rawIdentifier) return null;
 
-    const range = { startColumn: windowRange.start + 1, endColumn: windowRange.end + 1 };
+    const range = windowRange
+        ? { startColumn: windowRange.start + 1, endColumn: windowRange.end + 1 }
+        : {
+            // Monaco can briefly report a stale/empty current line while the
+            // model has already supplied a valid document offset (notably when
+            // formatting moves a qualified name across lines). Keep the hover
+            // anchored to the current position instead of dropping the target.
+            startColumn: Math.max(1, Math.floor(Number(column) || 1)),
+            endColumn: Math.max(2, Math.floor(Number(column) || 1) + 1),
+        };
+    const sourceContextPosition = useDocumentIdentifier && documentWindow
+        ? getNormalizedPositionAtOffset(documentText, documentWindow.start)
+        : { lineNumber: 1, column };
+    const inferredTableSourceContext = isQueryEditorTableSourceAtPosition(
+        useDocumentIdentifier ? documentText : text,
+        sourceContextPosition.lineNumber,
+        sourceContextPosition.column,
+    );
     const parts = normalizeNavigationIdentifierParts(rawIdentifier);
     if (parts.length === 0 || parts.length > 3) return null;
+    const currentSchemaName = String(currentSchema || '').trim();
 
     const findMatchingTable = (dbName: string, rawTableName: string, schemaName = ''): CompletionTableMeta | null => {
         const normalizedDbName = String(dbName || '').trim().toLowerCase();
@@ -2767,8 +2960,8 @@ export const resolveQueryEditorHoverTarget = (
     };
 
     const navigationTarget = resolveQueryEditorNavigationTarget(
-        lineContent,
-        column,
+        resolutionText,
+        useDocumentIdentifier ? documentOffset + 1 : column,
         currentDb,
         visibleDbs,
         tables,
@@ -2778,6 +2971,9 @@ export const resolveQueryEditorHoverTarget = (
         routines,
         sequences,
         packages,
+        tableSourceContext,
+        useDocumentIdentifier ? { text: documentText, offset: documentOffset } : undefined,
+        currentSchema,
     );
     if (navigationTarget) {
         if (navigationTarget.type === 'database') {
@@ -2785,10 +2981,14 @@ export const resolveQueryEditorHoverTarget = (
         }
         if (navigationTarget.type === 'table') {
             const meta = findMatchingTable(navigationTarget.dbName, navigationTarget.tableName, navigationTarget.schemaName || '');
+            const sourceTableName = (inferredTableSourceContext || tableSourceContext)
+                && /\s/.test(String(navigationTarget.tableName || ''))
+                ? parts[parts.length - 1]
+                : '';
             return {
                 kind: 'table',
                 dbName: navigationTarget.dbName,
-                tableName: navigationTarget.tableName,
+                tableName: sourceTableName || navigationTarget.tableName,
                 schemaName: navigationTarget.schemaName,
                 comment: meta?.comment,
                 range,
@@ -2810,6 +3010,37 @@ export const resolveQueryEditorHoverTarget = (
             return { kind: 'sequence', dbName: navigationTarget.dbName, sequenceName: navigationTarget.sequenceName, schemaName: navigationTarget.schemaName, range };
         }
         return { kind: 'package', dbName: navigationTarget.dbName, packageName: navigationTarget.packageName, schemaName: navigationTarget.schemaName, range };
+    }
+
+    if (allowTableSourceInference && (tableSourceContext || inferredTableSourceContext) && currentDb) {
+        if (parts.length === 1) {
+            return {
+                kind: 'table',
+                dbName: currentDb,
+                tableName: parts[0],
+                schemaName: currentSchemaName || undefined,
+                range,
+            };
+        }
+        if (parts.length === 2) {
+            const [firstPart, secondPart] = parts;
+            const firstKey = firstPart.toLowerCase();
+            if (visibleDbs.some((dbName) => String(dbName || '').trim().toLowerCase() === firstKey)) {
+                return { kind: 'table', dbName: firstPart, tableName: secondPart, range };
+            }
+            if (currentSchemaName && firstKey === currentSchemaName.toLowerCase()) {
+                return { kind: 'table', dbName: currentDb, tableName: secondPart, schemaName: firstPart, range };
+            }
+            if (QUERY_EDITOR_COMMON_SCHEMA_NAME_SET.has(firstKey)) {
+                return { kind: 'table', dbName: currentDb, tableName: secondPart, schemaName: firstPart, range };
+            }
+        }
+        if (parts.length === 3) {
+            const [dbName, schemaName, tableName] = parts;
+            if (visibleDbs.some((knownDbName) => String(knownDbName || '').trim().toLowerCase() === dbName.toLowerCase())) {
+                return { kind: 'table', dbName, tableName, schemaName, range };
+            }
+        }
     }
 
     const findColumnTarget = (dbName: string, tableName: string, columnName: string): QueryEditorHoverTarget | null => {
@@ -2839,8 +3070,8 @@ export const resolveQueryEditorHoverTarget = (
 
     if (parts.length === 2) {
         const [firstPart, secondPart] = parts;
-        const aliasMap = buildQueryEditorAliasMap(fullText, currentDb);
-        const aliasInfo = aliasMap[firstPart.toLowerCase()];
+        const resolvedAliasMap = aliasMap || buildQueryEditorAliasMap(fullText, currentDb);
+        const aliasInfo = resolvedAliasMap[firstPart.toLowerCase()];
         if (aliasInfo) {
             const aliasedColumn = findColumnTarget(aliasInfo.dbName, aliasInfo.tableName, secondPart);
             if (aliasedColumn) return aliasedColumn;
@@ -2897,11 +3128,14 @@ export const resolveQueryEditorNavigationDecorations = (
     sequences: CompletionSequenceMeta[] = [],
     packages: CompletionPackageMeta[] = [],
     shortcutModifierLabel = 'Ctrl/Cmd',
+    tableSourceContext = false,
+    documentContext?: { text: string; offset: number },
+    currentSchema = '',
 ): Array<{ startColumn: number; endColumn: number; hoverMessage: string }> => {
     const text = String(lineContent || '');
     if (!text) return [];
     const offset = Math.max(0, Number(column || 1) - 2);
-    const windowRange = findIdentifierWindowAtOffset(text, offset);
+    const windowRange = findIdentifierWindowAtOffset(text, offset, true);
     if (!windowRange) return [];
 
     const navigationTarget = resolveQueryEditorNavigationTarget(
@@ -2916,6 +3150,9 @@ export const resolveQueryEditorNavigationDecorations = (
         routines,
         sequences,
         packages,
+        tableSourceContext,
+        documentContext,
+        currentSchema,
     );
     if (!navigationTarget) return [];
 

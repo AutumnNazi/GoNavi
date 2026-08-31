@@ -557,6 +557,7 @@ export interface TabData {
   nacosGroup?: string; // Nacos group filter for config or service workbenches
   triggerName?: string; // Trigger name for trigger tabs
   triggerTableName?: string; // Trigger target table for trigger tabs
+  triggerRollbackSql?: string; // Original trigger definition used after a failed replacement
   viewName?: string; // View name for view definition tabs
   viewKind?: "view" | "materialized";
   eventName?: string; // Event name for MySQL event definition tabs
