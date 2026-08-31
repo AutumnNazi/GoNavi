@@ -23,7 +23,7 @@ import { buildRpcConnectionConfig } from '../utils/connectionRpcConfig';
 import type { AIComposerNoticeDescriptor } from '../utils/aiComposerNotice';
 import { buildAIComposerNotice } from '../utils/aiComposerNotice';
 import { consumeAIChatSendShortcutOnKeyDown } from '../utils/aiChatSendShortcut';
-import { toAIRequestMessage } from '../utils/aiMessagePayload';
+import { toAIRequestMessage, toAIRequestMessages } from '../utils/aiMessagePayload';
 import { compressContextIfNeeded, getDynamicMaxContextChars } from '../utils/aiChatRuntime';
 import { getShortcutPlatform, resolveShortcutBinding } from '../utils/shortcuts';
 import { isMacLikePlatform } from '../utils/appearance';
@@ -36,7 +36,10 @@ import {
     inferAIChatConnectionContext,
     resolveAIChatPanelMode,
 } from './ai/aiChatPanelDerivedState';
-import { dispatchAIChatPayload } from './ai/aiChatPayloadDispatch';
+import {
+    dispatchAIChatPayload,
+    type AIChatSendRequestOptions,
+} from './ai/aiChatPayloadDispatch';
 import { buildAIChatReadinessSnapshot } from './ai/aiChatReadiness';
 import { buildAISystemContextMessages } from './ai/aiSystemContextMessages';
 import { useAIChatRuntimeResources } from './ai/useAIChatRuntimeResources';
@@ -46,6 +49,11 @@ import { useAIChatPlanContexts } from './ai/useAIChatPlanContexts';
 import { useAIChatSessionState } from './ai/useAIChatSessionState';
 import { useAIChatSessionTitleGenerator } from './ai/useAIChatSessionTitleGenerator';
 import { useAIChatLocalTools } from './ai/useAIChatLocalTools';
+import {
+    createAIChatSendAttemptCoordinator,
+    runAIChatSendAttemptStages,
+} from './ai/aiChatSendAttempt';
+import { resolveAIChatRetryPlan } from './ai/aiChatRetrySafety';
 import { useWorkbenchTabs } from '../hooks/useWorkbenchTabs';
 import { resolveLiveQueryTabs } from '../utils/liveQueryTabs';
 import { useI18n } from '../i18n/provider';
@@ -106,6 +114,13 @@ export const AIChatPanel: React.FC<AIChatPanelProps> = ({
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const nudgeCountRef = useRef(0);
+    const sendOptionsRef = useRef<AIChatSendRequestOptions>({});
+    const sendAttemptCoordinatorRef = useRef<ReturnType<typeof createAIChatSendAttemptCoordinator> | null>(null);
+    if (!sendAttemptCoordinatorRef.current) {
+        sendAttemptCoordinatorRef.current = createAIChatSendAttemptCoordinator();
+    }
+    const sendAttemptCoordinator = sendAttemptCoordinatorRef.current;
+    useEffect(() => () => sendAttemptCoordinator.invalidate(), [sendAttemptCoordinator]);
     const {
         getCurrentJVMPlanContext,
         getCurrentJVMDiagnosticPlanContext,
@@ -299,6 +314,7 @@ export const AIChatPanel: React.FC<AIChatPanelProps> = ({
         nextMessageId: genId,
         pendingJVMPlanContextRef,
         pendingJVMDiagnosticPlanContextRef,
+        sendOptionsRef,
         setSending,
         skills,
         translate: t,
@@ -307,58 +323,53 @@ export const AIChatPanel: React.FC<AIChatPanelProps> = ({
     });
 
     const handleRetryMessage = useCallback(async (msg: AIChatMessage) => {
-        if (sending || interactionDisabled) return;
+        if (sending || interactionDisabled || msg.excludeFromAIContext === true) return;
         const historyLocal = useStore.getState().aiChatHistory[sid] || [];
-        const aiIndex = historyLocal.findIndex(message => message.id === msg.id);
-        if (aiIndex <= 0) return;
-
-        let lastUserMsgIndex = -1;
-        for (let i = aiIndex - 1; i >= 0; i--) {
-            if (historyLocal[i].role === 'user') {
-                lastUserMsgIndex = i;
-                break;
-            }
-        }
-
-        if (lastUserMsgIndex >= 0) {
-            const userMsg = historyLocal[lastUserMsgIndex];
-            truncateAIChatMessages(sid, userMsg.id);
-
+        const retryPlan = resolveAIChatRetryPlan(historyLocal, msg.id);
+        if (retryPlan) {
+            const { userMessage: userMsg, requestHistory } = retryPlan;
             resetToolCallState();
+            const sendAttempt = sendAttemptCoordinator.begin(sid);
             nudgeCountRef.current = 0;
-            const retryJVMPlanContext = msg.jvmPlanContext || getCurrentJVMPlanContext();
-            const retryJVMDiagnosticPlanContext =
-                msg.jvmDiagnosticPlanContext || getCurrentJVMDiagnosticPlanContext();
-            pendingJVMPlanContextRef.current = retryJVMPlanContext;
-            pendingJVMDiagnosticPlanContextRef.current = retryJVMDiagnosticPlanContext;
-
-            setSending(true);
-
-            const connectingMsg: AIChatMessage = {
-                id: genId(),
-                role: 'assistant',
-                phase: 'connecting',
-                content: '',
-                timestamp: Date.now(),
-                loading: true,
-                jvmPlanContext: retryJVMPlanContext,
-                jvmDiagnosticPlanContext: retryJVMDiagnosticPlanContext,
-            };
-            addAIChatMessage(sid, connectingMsg);
-
-            const truncatedHistory = historyLocal.slice(0, lastUserMsgIndex + 1);
-            const messagesPayload = truncatedHistory.map((message) => toAIRequestMessage(message, t));
-
             try {
+                const retryJVMPlanContext = msg.jvmPlanContext || getCurrentJVMPlanContext();
+                const retryJVMDiagnosticPlanContext =
+                    msg.jvmDiagnosticPlanContext || getCurrentJVMDiagnosticPlanContext();
+                pendingJVMPlanContextRef.current = retryJVMPlanContext;
+                pendingJVMDiagnosticPlanContextRef.current = retryJVMDiagnosticPlanContext;
+                const retrySendOptions: AIChatSendRequestOptions = {
+                    model: String(activeProvider?.model || '').trim() || undefined,
+                    thinkingIntensity: String(thinkingIntensity || '').trim() || undefined,
+                };
+                sendOptionsRef.current = retrySendOptions;
+
+                setSending(true);
+                const messagesPayload = toAIRequestMessages(requestHistory, t);
                 const sysMessages = await buildSystemContextMessages(
                     retryJVMPlanContext,
                     retryJVMDiagnosticPlanContext,
                 );
+                if (await sendAttempt.shouldAbort()) return;
+
+                truncateAIChatMessages(sid, userMsg.id);
+                const connectingMsg: AIChatMessage = {
+                    id: genId(),
+                    role: 'assistant',
+                    phase: 'connecting',
+                    content: '',
+                    timestamp: Date.now(),
+                    loading: true,
+                    jvmPlanContext: retryJVMPlanContext,
+                    jvmDiagnosticPlanContext: retryJVMDiagnosticPlanContext,
+                };
+                addAIChatMessage(sid, connectingMsg);
+
                 const allMessages = [...sysMessages, ...messagesPayload];
                 await dispatchAIChatPayload({
                     sid,
                     messages: allMessages,
                     tools: availableTools,
+                    sendOptions: retrySendOptions,
                     addAIChatMessage,
                     updateAIChatMessage,
                     setSending,
@@ -368,8 +379,13 @@ export const AIChatPanel: React.FC<AIChatPanelProps> = ({
                     jvmDiagnosticPlanContext: retryJVMDiagnosticPlanContext,
                     translate: t,
                 });
-            } catch {
-                setSending(false);
+            } catch (error) {
+                if (!await sendAttempt.shouldAbort()) {
+                    console.error('Failed to retry AI message', error);
+                    setSending(false);
+                }
+            } finally {
+                sendAttempt.finish();
             }
         }
     }, [
@@ -377,13 +393,16 @@ export const AIChatPanel: React.FC<AIChatPanelProps> = ({
         sending,
         interactionDisabled,
         availableTools,
+        activeProvider,
         buildSystemContextMessages,
         truncateAIChatMessages,
         addAIChatMessage,
         getCurrentJVMPlanContext,
         getCurrentJVMDiagnosticPlanContext,
         resetToolCallState,
+        sendAttemptCoordinator,
         t,
+        thinkingIntensity,
         updateAIChatMessage,
     ]);
 
@@ -401,6 +420,7 @@ export const AIChatPanel: React.FC<AIChatPanelProps> = ({
         nudgeCountRef,
         pendingJVMPlanContextRef,
         pendingJVMDiagnosticPlanContextRef,
+        sendOptionsRef,
         translate: t,
     });
 
@@ -432,97 +452,123 @@ export const AIChatPanel: React.FC<AIChatPanelProps> = ({
         setComposerNoticeState(null);
 
         resetToolCallState();
+        const sendAttempt = sendAttemptCoordinator.begin(sid);
         nudgeCountRef.current = 0;
-        const currentJVMPlanContext = getCurrentJVMPlanContext();
-        const currentJVMDiagnosticPlanContext = getCurrentJVMDiagnosticPlanContext();
-        pendingJVMPlanContextRef.current = currentJVMPlanContext;
-        pendingJVMDiagnosticPlanContextRef.current = currentJVMDiagnosticPlanContext;
-
-        const currentAttachments = [...draftAttachments];
-        const currentImages = currentAttachments
-            .filter((attachment) => attachment.kind === 'image' && attachment.dataUrl)
-            .map((attachment) => attachment.dataUrl as string);
-        const currentFileAttachments = currentAttachments.filter((attachment) => attachment.kind !== 'image');
-        setInput('');
-        setDraftAttachments([]);
-        setSending(true);
-
-        textareaRef.current?.focus();
-
-        const userMsg: AIChatMessage = {
-            id: genId(),
-            role: 'user',
-            content: text,
-            timestamp: Date.now(),
-            images: currentImages.length > 0 ? currentImages : undefined,
-            attachments: currentFileAttachments.length > 0 ? currentFileAttachments : undefined,
-        };
-        addAIChatMessage(sid, userMsg);
-
-        const connectingMsg: AIChatMessage = {
-            id: genId(),
-            role: 'assistant',
-            phase: 'connecting',
-            content: '',
-            timestamp: Date.now(),
-            loading: true,
-            jvmPlanContext: currentJVMPlanContext,
-            jvmDiagnosticPlanContext: currentJVMDiagnosticPlanContext,
-        };
-        addAIChatMessage(sid, connectingMsg);
-
-        const systemMessages = await buildSystemContextMessages(
-            currentJVMPlanContext,
-            currentJVMDiagnosticPlanContext,
-        );
-
-        updateAIChatMessage(sid, connectingMsg.id, { content: t('ai_chat.panel.status.model_connecting') });
-
-        const chatMessages = [...messages, userMsg].map((message) => toAIRequestMessage(message, t));
-
-        let finalMessagesPayload = chatMessages;
-        const dynamicMaxLimit = getDynamicMaxContextChars(activeProvider?.model);
-        const summary = await compressContextIfNeeded(sid, chatMessages, dynamicMaxLimit, t);
-        if (summary) {
-            const compressedMsg: AIChatMessage = {
-                id: genId(),
-                role: 'assistant',
-                content: t('ai_chat.panel.status.memory_summary', { summary }),
-                timestamp: Date.now() - 1000,
-            };
-            useStore.getState().replaceAIChatHistory(sid, [compressedMsg, userMsg, connectingMsg]);
-            finalMessagesPayload = [
-                { role: 'assistant', content: compressedMsg.content },
-                toAIRequestMessage(userMsg, t),
-            ];
-        }
-
-        const allMessages = [...systemMessages, ...finalMessagesPayload];
-
-        updateAIChatMessage(sid, connectingMsg.id, { content: t('ai_chat.panel.status.waking_engine') });
-        updateAIChatMessage(sid, connectingMsg.id, { content: t('ai_chat.panel.status.waiting_response') });
-
-        await dispatchAIChatPayload({
-            sid,
-            messages: allMessages,
-            tools: availableTools,
-            sendOptions: {
+        let pendingAssistantMessageId = '';
+        try {
+            const currentJVMPlanContext = getCurrentJVMPlanContext();
+            const currentJVMDiagnosticPlanContext = getCurrentJVMDiagnosticPlanContext();
+            pendingJVMPlanContextRef.current = currentJVMPlanContext;
+            pendingJVMDiagnosticPlanContextRef.current = currentJVMDiagnosticPlanContext;
+            const requestSendOptions: AIChatSendRequestOptions = {
                 model: String(activeProvider?.model || '').trim() || undefined,
                 thinkingIntensity: String(thinkingIntensity || '').trim() || undefined,
-            },
-            addAIChatMessage,
-            updateAIChatMessage,
-            setSending,
-            nextMessageId: genId,
-            pendingAssistantMessageId: connectingMsg.id,
-            jvmPlanContext: currentJVMPlanContext,
-            jvmDiagnosticPlanContext: currentJVMDiagnosticPlanContext,
-            unavailableContent: t('ai_chat.panel.message.service_not_ready'),
-            translate: t,
-            onNonStreamSuccess: messages.length === 0
-                ? () => generateTitleForSession(sid)
-                : undefined,
-        });
+            };
+            sendOptionsRef.current = requestSendOptions;
+
+            const currentAttachments = [...draftAttachments];
+            const currentImages = currentAttachments
+                .filter((attachment) => attachment.kind === 'image' && attachment.dataUrl)
+                .map((attachment) => attachment.dataUrl as string);
+            const currentFileAttachments = currentAttachments.filter((attachment) => attachment.kind !== 'image');
+            setInput('');
+            setDraftAttachments([]);
+            setSending(true);
+
+            textareaRef.current?.focus();
+
+            const userMsg: AIChatMessage = {
+                id: genId(),
+                role: 'user',
+                content: text,
+                timestamp: Date.now(),
+                images: currentImages.length > 0 ? currentImages : undefined,
+                attachments: currentFileAttachments.length > 0 ? currentFileAttachments : undefined,
+            };
+            addAIChatMessage(sid, userMsg);
+
+            const connectingMsg: AIChatMessage = {
+                id: genId(),
+                role: 'assistant',
+                phase: 'connecting',
+                content: '',
+                timestamp: Date.now(),
+                loading: true,
+                jvmPlanContext: currentJVMPlanContext,
+                jvmDiagnosticPlanContext: currentJVMDiagnosticPlanContext,
+            };
+            pendingAssistantMessageId = connectingMsg.id;
+            addAIChatMessage(sid, connectingMsg);
+            updateAIChatMessage(sid, connectingMsg.id, { content: t('ai_chat.panel.status.model_connecting') });
+
+            const chatMessages = toAIRequestMessages([...messages, userMsg], t);
+            const dynamicMaxLimit = getDynamicMaxContextChars(activeProvider?.model);
+
+            await runAIChatSendAttemptStages({
+                attempt: sendAttempt,
+                buildSystemContext: () => buildSystemContextMessages(
+                    currentJVMPlanContext,
+                    currentJVMDiagnosticPlanContext,
+                ),
+                compressContext: () => compressContextIfNeeded(sid, chatMessages, dynamicMaxLimit, t),
+                dispatch: async ({ systemContext: systemMessages, compression: summary }) => {
+                    let finalMessagesPayload = chatMessages;
+                    if (summary) {
+                        const compressedMsg: AIChatMessage = {
+                            id: genId(),
+                            role: 'assistant',
+                            content: t('ai_chat.panel.status.memory_summary', { summary }),
+                            timestamp: Date.now() - 1000,
+                        };
+                        useStore.getState().replaceAIChatHistory(sid, [compressedMsg, userMsg, connectingMsg]);
+                        finalMessagesPayload = [
+                            { role: 'assistant', content: compressedMsg.content },
+                            toAIRequestMessage(userMsg, t),
+                        ];
+                    }
+
+                    const allMessages = [...systemMessages, ...finalMessagesPayload];
+                    updateAIChatMessage(sid, connectingMsg.id, { content: t('ai_chat.panel.status.waking_engine') });
+                    updateAIChatMessage(sid, connectingMsg.id, { content: t('ai_chat.panel.status.waiting_response') });
+
+                    return dispatchAIChatPayload({
+                        sid,
+                        messages: allMessages,
+                        tools: availableTools,
+                        sendOptions: requestSendOptions,
+                        addAIChatMessage,
+                        updateAIChatMessage,
+                        setSending,
+                        nextMessageId: genId,
+                        pendingAssistantMessageId: connectingMsg.id,
+                        jvmPlanContext: currentJVMPlanContext,
+                        jvmDiagnosticPlanContext: currentJVMDiagnosticPlanContext,
+                        unavailableContent: t('ai_chat.panel.message.service_not_ready'),
+                        translate: t,
+                        onNonStreamSuccess: messages.length === 0
+                            ? () => generateTitleForSession(sid)
+                            : undefined,
+                    });
+                },
+            });
+        } catch (error) {
+            if (!await sendAttempt.shouldAbort()) {
+                console.error('Failed to send AI message', error);
+                const detail = error instanceof Error ? error.message : String(error);
+                if (pendingAssistantMessageId) {
+                    updateAIChatMessage(sid, pendingAssistantMessageId, {
+                        content: t('ai_chat.panel.message.send_failed', { detail }),
+                        rawError: detail,
+                        excludeFromAIContext: true,
+                        loading: false,
+                        phase: 'idle',
+                    });
+                }
+                setSending(false);
+            }
+        } finally {
+            sendAttempt.finish();
+        }
     }, [
         input,
         draftAttachments,
@@ -542,6 +588,7 @@ export const AIChatPanel: React.FC<AIChatPanelProps> = ({
         getCurrentJVMDiagnosticPlanContext,
         loadingModels,
         resetToolCallState,
+        sendAttemptCoordinator,
         t,
         thinkingIntensity,
         updateAIChatMessage,

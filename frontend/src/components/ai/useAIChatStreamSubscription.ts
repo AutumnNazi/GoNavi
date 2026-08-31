@@ -10,9 +10,21 @@ import type {
   JVMDiagnosticPlanContext,
 } from '../../types';
 import { sanitizeErrorMsg } from '../../utils/aiChatRuntime';
-import { toAIRequestMessage } from '../../utils/aiMessagePayload';
+import {
+  stripLeakedToolCallMarkup,
+  toAIRequestMessages,
+} from '../../utils/aiMessagePayload';
 import type { AIChatToolDefinition } from '../../utils/aiToolRegistry';
 import type { AIChatAttachmentTranslator } from './aiChatAttachments';
+import {
+  dispatchAIChatPayload,
+  type AIChatSendRequestOptions,
+} from './aiChatPayloadDispatch';
+import {
+  beginAIChatLocalToolRun,
+  beginAIChatLocalToolTerminalStop,
+  shouldStopAIChatLocalToolRun,
+} from './aiChatLocalToolLifecycle';
 
 interface AIChatStreamChunk {
   content?: string;
@@ -44,6 +56,7 @@ interface UseAIChatStreamSubscriptionOptions {
   nudgeCountRef: MutableRefObject<number>;
   pendingJVMPlanContextRef: MutableRefObject<JVMAIPlanContext | undefined>;
   pendingJVMDiagnosticPlanContextRef: MutableRefObject<JVMDiagnosticPlanContext | undefined>;
+  sendOptionsRef: MutableRefObject<AIChatSendRequestOptions>;
   translate?: AIChatAttachmentTranslator;
 }
 
@@ -62,6 +75,7 @@ interface AIChatStreamState {
 
 const AI_CHAT_STREAM_FLUSH_INTERVAL_MS = 80;
 const activeAIChatStreamFlushers = new Map<string, () => void>();
+const activeAIChatStreamFinalizers = new Map<string, () => void>();
 
 type AIChatTerminalService = {
   AIChatCancelAllAndWait?: () => Promise<boolean>;
@@ -93,7 +107,24 @@ export const settleAIChatLoadingAssistantMessages = (sid: string): void => {
   const messages = state.aiChatHistory[sessionId] || [];
   for (const message of messages) {
     if (message.role === 'assistant' && message.loading) {
-      state.updateAIChatMessage(sessionId, message.id, { loading: false, phase: 'idle' });
+      const originalContent = message.content || '';
+      const repairedContent = stripLeakedToolCallMarkup(originalContent);
+      const hasPartialResponse = message.phase !== 'connecting' && Boolean(
+        repairedContent.trim()
+        || message.thinking?.trim()
+        || message.reasoning_content?.trim(),
+      );
+
+      if (hasPartialResponse) {
+        state.updateAIChatMessage(sessionId, message.id, {
+          ...(repairedContent !== originalContent ? { content: repairedContent } : {}),
+          loading: false,
+          phase: 'idle',
+          tool_calls: undefined,
+        });
+      } else {
+        state.deleteAIChatMessage(sessionId, message.id);
+      }
     }
   }
 };
@@ -105,6 +136,15 @@ export const settleAllAIChatLoadingAssistantMessages = (): void => {
   }
 };
 
+const finalizeAIChatStreamProgress = (sessionIds?: string[]): void => {
+  const targetIds = sessionIds
+    ? new Set(sessionIds.map((id) => String(id || '').trim()).filter(Boolean))
+    : null;
+  for (const [sessionId, finalize] of activeAIChatStreamFinalizers) {
+    if (!targetIds || targetIds.has(sessionId)) finalize();
+  }
+};
+
 export const prepareAIChatStreamForTerminalAction = async ({
   sid,
   service,
@@ -112,20 +152,39 @@ export const prepareAIChatStreamForTerminalAction = async ({
   settleDelayMs = 60,
   allSessions = false,
 }: PrepareAIChatStreamForTerminalActionOptions): Promise<boolean> => {
-  if (allSessions && typeof service?.AIChatCancelAllAndWait === 'function') {
-    const stopped = await service.AIChatCancelAllAndWait();
-    if (stopped === false) return false;
-  } else if (typeof service?.AIChatCancelAndWait === 'function') {
-    const stopped = await service.AIChatCancelAndWait(sid);
-    if (stopped === false) return false;
-  } else if (typeof service?.AIChatCancel === 'function') {
-    await service.AIChatCancel(sid);
+  const terminalSessionIds = allSessions
+    ? Object.keys(useStore.getState().aiChatHistory)
+    : [sid];
+  const localToolStop = beginAIChatLocalToolTerminalStop(terminalSessionIds);
+
+  try {
+    if (allSessions && typeof service?.AIChatCancelAllAndWait === 'function') {
+      const stopped = await service.AIChatCancelAllAndWait();
+      if (stopped === false) {
+        localToolStop.rollback();
+        return false;
+      }
+    } else if (typeof service?.AIChatCancelAndWait === 'function') {
+      const stopped = await service.AIChatCancelAndWait(sid);
+      if (stopped === false) {
+        localToolStop.rollback();
+        return false;
+      }
+    } else if (typeof service?.AIChatCancel === 'function') {
+      await service.AIChatCancel(sid);
+    }
+    localToolStop.commit();
+  } catch (error) {
+    localToolStop.rollback();
+    throw error;
   }
 
   if (settleDelayMs > 0) {
     await new Promise<void>((resolve) => setTimeout(resolve, settleDelayMs));
   }
   flushAIChatStreamBuffers(allSessions ? undefined : [sid]);
+  finalizeAIChatStreamProgress(allSessions ? undefined : [sid]);
+  await localToolStop.waitForIdle();
   if (allSessions) {
     settleAllAIChatLoadingAssistantMessages();
   } else {
@@ -191,6 +250,7 @@ export const useAIChatStreamSubscription = ({
   nudgeCountRef,
   pendingJVMPlanContextRef,
   pendingJVMDiagnosticPlanContextRef,
+  sendOptionsRef,
   translate,
 }: UseAIChatStreamSubscriptionOptions) => {
   const streamStateRef = useRef(createAIChatStreamState(sid));
@@ -208,6 +268,7 @@ export const useAIChatStreamSubscription = ({
     nudgeCountRef,
     pendingJVMPlanContextRef,
     pendingJVMDiagnosticPlanContextRef,
+    sendOptionsRef,
     translate,
   });
   optionsRef.current = {
@@ -224,6 +285,7 @@ export const useAIChatStreamSubscription = ({
     nudgeCountRef,
     pendingJVMPlanContextRef,
     pendingJVMDiagnosticPlanContextRef,
+    sendOptionsRef,
     translate,
   };
 
@@ -255,6 +317,9 @@ export const useAIChatStreamSubscription = ({
     // 缓冲高频 token，避免把流式吞吐直接转成同步重绘风暴
     const streamBuffer = streamState.streamBuffer;
     let flushTimerId: ReturnType<typeof setTimeout> | null = null;
+    let completionTimerId: ReturnType<typeof setTimeout> | null = null;
+    let pendingLocalToolTimerId: ReturnType<typeof setTimeout> | null = null;
+    let disposed = false;
 
     const cancelScheduledFlush = () => {
       if (flushTimerId !== null) {
@@ -294,6 +359,19 @@ export const useAIChatStreamSubscription = ({
       }
     };
     activeAIChatStreamFlushers.set(sid, flushStreamBuffer);
+    const finalizeStream = () => {
+      cancelScheduledFlush();
+      if (completionTimerId !== null) {
+        clearTimeout(completionTimerId);
+        completionTimerId = null;
+      }
+      if (pendingLocalToolTimerId !== null) {
+        clearTimeout(pendingLocalToolTimerId);
+        pendingLocalToolTimerId = null;
+      }
+      resetAIChatStreamProgress(streamState);
+    };
+    activeAIChatStreamFinalizers.set(sid, finalizeStream);
 
     const scheduleStreamFlush = () => {
       if (streamState.flushPending) return;
@@ -319,38 +397,52 @@ export const useAIChatStreamSubscription = ({
       }
 
       if (data.error) {
+        cancelScheduledFlush();
+        flushStreamBuffer();
+
         const cleanErr = sanitizeErrorMsg(data.error, translate);
         const rawErr = cleanErr !== data.error ? data.error : undefined;
         if (streamState.assistantMsgId) {
-          updateAIChatMessage(sid, streamState.assistantMsgId, {
-            content: translatePanelCopy(
-              translate,
-              'ai_chat.panel.message.error',
-              `❌ Error: ${cleanErr}`,
-              { detail: cleanErr },
-            ),
-            phase: 'idle',
-            loading: false,
-            rawError: rawErr,
-          });
-        } else {
-          addAIChatMessage(sid, {
-            id: nextMessageId(),
-            role: 'assistant',
-            phase: 'idle',
-            content: translatePanelCopy(
-              translate,
-              'ai_chat.panel.message.error',
-              `❌ Error: ${cleanErr}`,
-              { detail: cleanErr },
-            ),
-            rawError: rawErr,
-            timestamp: Date.now(),
-            jvmPlanContext: pendingJVMPlanContextRef.current,
-            jvmDiagnosticPlanContext: pendingJVMDiagnosticPlanContextRef.current,
-          });
+          const failedAssistantId = streamState.assistantMsgId;
+          const failedAssistant = (useStore.getState().aiChatHistory[sid] || [])
+            .find((message) => message.id === failedAssistantId);
+          const failedAssistantContent = failedAssistant?.content || '';
+          const repairedContent = stripLeakedToolCallMarkup(failedAssistantContent);
+          const hasPartialResponse = Boolean(
+            repairedContent.trim()
+            || failedAssistant?.thinking?.trim()
+            || failedAssistant?.reasoning_content?.trim(),
+          );
+
+          if (failedAssistant && hasPartialResponse) {
+            updateAIChatMessage(sid, failedAssistantId, {
+              ...(repairedContent !== failedAssistantContent ? { content: repairedContent } : {}),
+              phase: 'idle',
+              loading: false,
+              tool_calls: undefined,
+            });
+          } else if (failedAssistant) {
+            useStore.getState().deleteAIChatMessage(sid, failedAssistantId);
+          }
         }
-        cancelScheduledFlush();
+
+        addAIChatMessage(sid, {
+          id: nextMessageId(),
+          role: 'assistant',
+          phase: 'idle',
+          content: translatePanelCopy(
+            translate,
+            'ai_chat.panel.message.error',
+            `❌ Error: ${cleanErr}`,
+            { detail: cleanErr },
+          ),
+          rawError: rawErr,
+          excludeFromAIContext: true,
+          timestamp: Date.now(),
+          loading: false,
+          jvmPlanContext: pendingJVMPlanContextRef.current,
+          jvmDiagnosticPlanContext: pendingJVMDiagnosticPlanContextRef.current,
+        });
         resetAIChatStreamProgress(streamState);
         setSending(false);
         return;
@@ -431,7 +523,10 @@ export const useAIChatStreamSubscription = ({
         const doneAssistantId = streamState.assistantMsgId;
         const doneIsFirst = streamState.isFirstCompletion;
         resetAIChatStreamProgress(streamState);
-        setTimeout(() => {
+        if (completionTimerId !== null) clearTimeout(completionTimerId);
+        completionTimerId = setTimeout(() => {
+          completionTimerId = null;
+          if (disposed) return;
           const currentMsgs = useStore.getState().aiChatHistory[sid] || [];
           for (const msg of currentMsgs) {
             if (msg.id !== doneAssistantId && msg.loading && msg.phase === 'connecting') {
@@ -444,25 +539,42 @@ export const useAIChatStreamSubscription = ({
             const existing = current?.find((message) => message.id === doneAssistantId);
             if (existing && existing.tool_calls && existing.tool_calls.length > 0) {
               nudgeCountRef.current = 0;
-              setTimeout(() => executeLocalTools(existing.tool_calls!, doneAssistantId), 50);
+              pendingLocalToolTimerId = setTimeout(() => {
+                pendingLocalToolTimerId = null;
+                if (disposed) return;
+                void executeLocalTools(existing.tool_calls!, doneAssistantId);
+              }, 50);
               return;
             }
 
+            const existingContent = existing?.content || '';
+            const repairedContent = stripLeakedToolCallMarkup(existingContent);
+            const hasLeakedToolCallMarkup = repairedContent !== existingContent;
+            if (existing && hasLeakedToolCallMarkup) {
+              updateAIChatMessage(sid, doneAssistantId, { content: repairedContent });
+            }
             if (
               existing &&
               nudgeCountRef.current < 2 &&
-              shouldResendForceToolCallNudge(existing.content || '')
+              (hasLeakedToolCallMarkup || shouldResendForceToolCallNudge(existingContent))
             ) {
               nudgeCountRef.current += 1;
-              updateAIChatMessage(sid, doneAssistantId, { loading: false, phase: 'idle' });
+              updateAIChatMessage(sid, doneAssistantId, {
+                ...(hasLeakedToolCallMarkup ? { content: repairedContent } : {}),
+                loading: false,
+                phase: 'idle',
+              });
+              const finishNudgeRun = beginAIChatLocalToolRun(sid);
               (async () => {
                 try {
+                  if (disposed || await shouldStopAIChatLocalToolRun(sid)) return;
                   const currentHistory = useStore.getState().aiChatHistory[sid] || [];
-                  const messagesPayload = currentHistory.map((message) => toAIRequestMessage(message, translate));
+                  const messagesPayload = toAIRequestMessages(currentHistory, translate);
                   const sysMessages = await buildSystemContextMessages(
                     existing.jvmPlanContext,
                     existing.jvmDiagnosticPlanContext,
                   );
+                  if (disposed || await shouldStopAIChatLocalToolRun(sid)) return;
                   messagesPayload.push({
                     role: 'user',
                     content: translatePanelCopy(
@@ -472,13 +584,24 @@ export const useAIChatStreamSubscription = ({
                     ),
                   });
                   const allMsg = [...sysMessages, ...messagesPayload];
-                  const service = (window as any).go?.aiservice?.Service;
-                  if (service?.AIChatStream) {
-                    await service.AIChatStream(sid, allMsg, optionsRef.current.availableTools);
-                  }
+                  await dispatchAIChatPayload({
+                    sid,
+                    messages: allMsg,
+                    tools: optionsRef.current.availableTools,
+                    sendOptions: optionsRef.current.sendOptionsRef.current,
+                    addAIChatMessage,
+                    updateAIChatMessage,
+                    setSending,
+                    nextMessageId,
+                    jvmPlanContext: existing.jvmPlanContext,
+                    jvmDiagnosticPlanContext: existing.jvmDiagnosticPlanContext,
+                    translate,
+                  });
                 } catch (error) {
                   console.error('Nudge failed', error);
                   setSending(false);
+                } finally {
+                  finishNudgeRun();
                 }
               })();
               return;
@@ -486,7 +609,8 @@ export const useAIChatStreamSubscription = ({
 
             if (doneIsFirst) generateTitleForSession(sid);
 
-            const hasContent = !!existing?.content?.trim();
+            const visibleContent = hasLeakedToolCallMarkup ? repairedContent : existing?.content;
+            const hasContent = !!visibleContent?.trim();
             const hasThinking = !!existing?.thinking?.trim();
             const hasTools = !!existing?.tool_calls?.length;
 
@@ -499,6 +623,7 @@ export const useAIChatStreamSubscription = ({
                 ),
                 loading: false,
                 phase: 'idle',
+                excludeFromAIContext: true,
               });
             } else {
               updateAIChatMessage(sid, doneAssistantId, { loading: false, phase: 'idle' });
@@ -514,6 +639,7 @@ export const useAIChatStreamSubscription = ({
               ),
               timestamp: Date.now(),
               loading: false,
+              excludeFromAIContext: true,
             });
           }
           setSending(false);
@@ -523,10 +649,15 @@ export const useAIChatStreamSubscription = ({
 
     EventsOn(eventName, handler);
     return () => {
+      disposed = true;
       cancelScheduledFlush();
       flushStreamBuffer();
+      finalizeStream();
       if (activeAIChatStreamFlushers.get(sid) === flushStreamBuffer) {
         activeAIChatStreamFlushers.delete(sid);
+      }
+      if (activeAIChatStreamFinalizers.get(sid) === finalizeStream) {
+        activeAIChatStreamFinalizers.delete(sid);
       }
       EventsOff(eventName);
     };

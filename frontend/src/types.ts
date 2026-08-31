@@ -878,6 +878,7 @@ export interface AIChatMessage {
   tool_call_id?: string;
   tool_name?: string; // used for UI display
   rawError?: string; // 存储未清洗的原始错误信息，用于用户复制排查
+  excludeFromAIContext?: boolean; // 纯 UI 状态或错误消息，不回灌给模型
   success?: boolean; // 标记探针执行是否成功
   jvmPlanContext?: JVMAIPlanContext;
   jvmDiagnosticPlanContext?: JVMDiagnosticPlanContext;

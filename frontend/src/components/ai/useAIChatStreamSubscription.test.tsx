@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 
 import { useStore } from '../../store';
+import { resetAIChatLocalToolStop } from './aiChatLocalToolLifecycle';
 import {
   flushAIChatStreamBuffers,
   prepareAIChatStreamForTerminalAction,
@@ -11,6 +12,8 @@ import {
 
 const aiChatStreamMock = vi.hoisted(() => vi.fn(async (..._args: any[]) => undefined));
 const generateTitleForSessionMock = vi.hoisted(() => vi.fn(async () => undefined));
+const executeLocalToolsMock = vi.hoisted(() => vi.fn(async (..._args: any[]) => undefined));
+const buildSystemContextMessagesMock = vi.hoisted(() => vi.fn(async () => [] as any[]));
 const runtimeMock = vi.hoisted(() => {
   const handlers = new Map<string, (data: any) => void>();
   return {
@@ -90,11 +93,20 @@ const patchMessage = (
   });
 };
 
-const StreamHarness = () => {
+const createDeferred = <T,>() => {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((nextResolve) => {
+    resolve = nextResolve;
+  });
+  return { promise, resolve };
+};
+
+const StreamHarness = ({ initialNudgeCount = 0 }: { initialNudgeCount?: number }) => {
   const [sending, setSending] = useState(true);
-  const nudgeCountRef = useRef(0);
+  const nudgeCountRef = useRef(initialNudgeCount);
   const pendingJVMPlanContextRef = useRef<any>(undefined);
   const pendingJVMDiagnosticPlanContextRef = useRef<any>(undefined);
+  const sendOptionsRef = useRef({ model: 'glm-test', thinkingIntensity: 'high' });
 
   useAIChatStreamSubscription({
     sid: SESSION_ID,
@@ -103,13 +115,14 @@ const StreamHarness = () => {
     availableTools: [],
     addAIChatMessage: appendMessage,
     updateAIChatMessage: patchMessage,
-    buildSystemContextMessages: async () => [],
-    executeLocalTools: async () => {},
+    buildSystemContextMessages: buildSystemContextMessagesMock,
+    executeLocalTools: executeLocalToolsMock,
     generateTitleForSession: generateTitleForSessionMock,
     nextMessageId: () => `assistant-created-${++nextId}`,
     nudgeCountRef,
     pendingJVMPlanContextRef,
     pendingJVMDiagnosticPlanContextRef,
+    sendOptionsRef,
     translate,
   });
 
@@ -119,10 +132,14 @@ const StreamHarness = () => {
 describe('useAIChatStreamSubscription', () => {
 
   beforeEach(() => {
+    resetAIChatLocalToolStop(SESSION_ID);
     nextId = 0;
     patchMessageCalls = 0;
     aiChatStreamMock.mockClear();
     generateTitleForSessionMock.mockClear();
+    executeLocalToolsMock.mockClear();
+    buildSystemContextMessagesMock.mockReset();
+    buildSystemContextMessagesMock.mockResolvedValue([]);
     runtimeMock.handlers.clear();
     runtimeMock.EventsOn.mockClear();
     runtimeMock.EventsOff.mockClear();
@@ -164,6 +181,7 @@ describe('useAIChatStreamSubscription', () => {
   });
 
   afterEach(() => {
+    resetAIChatLocalToolStop(SESSION_ID);
     vi.useRealTimers();
     vi.unstubAllGlobals();
     useStore.setState({
@@ -223,6 +241,68 @@ describe('useAIChatStreamSubscription', () => {
     await act(async () => {
       renderer?.unmount();
     });
+  });
+
+  it('cancels the queued local-tool execution when terminal stop lands after stream completion', async () => {
+    vi.useFakeTimers();
+    const setSending = vi.fn();
+    let renderer: ReactTestRenderer | undefined;
+    await act(async () => {
+      renderer = create(<StreamHarness />);
+    });
+
+    await emitStreamChunk({
+      tool_calls: [{
+        id: 'call-queued',
+        type: 'function',
+        function: { name: 'execute_sql', arguments: '{"sql":"SELECT 1"}' },
+      }],
+    });
+    await emitStreamChunk({ done: true });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(50);
+    });
+    await expect(prepareAIChatStreamForTerminalAction({
+      sid: SESSION_ID,
+      service: { AIChatCancelAndWait: vi.fn(async () => true) },
+      setSending,
+      settleDelayMs: 0,
+    })).resolves.toBe(true);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(100);
+    });
+
+    expect(executeLocalToolsMock).not.toHaveBeenCalled();
+    expect(
+      (useStore.getState().aiChatHistory[SESSION_ID] || []).flatMap((message) => message.tool_calls || []),
+    ).toHaveLength(0);
+
+    await act(async () => renderer?.unmount());
+  });
+
+  it('does not execute a queued local tool after the stream subscription unmounts', async () => {
+    vi.useFakeTimers();
+    let renderer: ReactTestRenderer | undefined;
+    await act(async () => {
+      renderer = create(<StreamHarness />);
+    });
+
+    await emitStreamChunk({
+      tool_calls: [{
+        id: 'call-unmounted',
+        type: 'function',
+        function: { name: 'execute_sql', arguments: '{"sql":"SELECT 1"}' },
+      }],
+    });
+    await emitStreamChunk({ done: true });
+    await act(async () => {
+      renderer?.unmount();
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(150);
+    });
+
+    expect(executeLocalToolsMock).not.toHaveBeenCalled();
   });
 
   it('coalesces high-frequency thinking chunks before writing them to the store', async () => {
@@ -332,6 +412,53 @@ describe('useAIChatStreamSubscription', () => {
     });
   });
 
+  it('drops orphaned tool calls on cancellation and binds the next stream to its new placeholder', async () => {
+    vi.useFakeTimers();
+    const setSending = vi.fn();
+    let renderer: ReactTestRenderer | undefined;
+    await act(async () => {
+      renderer = create(<StreamHarness />);
+    });
+
+    await emitStreamChunk({
+      tool_calls: [{
+        id: 'call-partial',
+        type: 'function',
+        function: { name: 'execute_sql', arguments: '{"sql":"SELECT' },
+      }],
+    });
+    await expect(prepareAIChatStreamForTerminalAction({
+      sid: SESSION_ID,
+      service: { AIChatCancelAndWait: vi.fn(async () => true) },
+      setSending,
+      settleDelayMs: 0,
+    })).resolves.toBe(true);
+
+    expect(useStore.getState().aiChatHistory[SESSION_ID]).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'assistant-connecting' }),
+    ]));
+    expect(
+      (useStore.getState().aiChatHistory[SESSION_ID] || []).flatMap((message) => message.tool_calls || []),
+    ).toHaveLength(0);
+
+    appendMessage(SESSION_ID, {
+      id: 'assistant-next',
+      role: 'assistant',
+      phase: 'connecting',
+      content: 'waiting',
+      timestamp: 3,
+      loading: true,
+    });
+    await emitStreamChunk({ content: 'after cancel' });
+    flushAIChatStreamBuffers([SESSION_ID]);
+
+    expect(
+      (useStore.getState().aiChatHistory[SESSION_ID] || []).find((message) => message.id === 'assistant-next'),
+    ).toMatchObject({ content: 'after cancel', loading: true });
+
+    await act(async () => renderer?.unmount());
+  });
+
   it('cancels and settles every session before a native terminal handoff', async () => {
     const setSending = vi.fn();
     const cancelAllAndWait = vi.fn(async () => true);
@@ -371,7 +498,7 @@ describe('useAIChatStreamSubscription', () => {
       (useStore.getState().aiChatHistory[SESSION_ID] || []).find(
         (message) => message.id === 'assistant-connecting',
       ),
-    ).toMatchObject({ loading: false, phase: 'idle' });
+    ).toBeUndefined();
     expect(
       (useStore.getState().aiChatHistory['session-other'] || []).find(
         (message) => message.id === 'assistant-other',
@@ -402,6 +529,66 @@ describe('useAIChatStreamSubscription', () => {
     await act(async () => {
       renderer?.unmount();
     });
+  });
+
+  it('does not dispatch a force-tool nudge after terminal stop while context is still building', async () => {
+    vi.useFakeTimers();
+    const deferredContext = createDeferred<any[]>();
+    buildSystemContextMessagesMock.mockReturnValueOnce(deferredContext.promise);
+    const setSending = vi.fn();
+    let renderer: ReactTestRenderer | undefined;
+    await act(async () => {
+      renderer = create(<StreamHarness />);
+    });
+
+    await emitStreamChunk({ content: '我先查询一下相关信息' });
+    await emitStreamChunk({ done: true });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60);
+    });
+    expect(buildSystemContextMessagesMock).toHaveBeenCalledTimes(1);
+
+    let terminalStop!: Promise<boolean>;
+    await act(async () => {
+      terminalStop = prepareAIChatStreamForTerminalAction({
+        sid: SESSION_ID,
+        service: { AIChatCancelAndWait: vi.fn(async () => true) },
+        setSending,
+        settleDelayMs: 0,
+      });
+      await Promise.resolve();
+    });
+    deferredContext.resolve([]);
+    await expect(terminalStop).resolves.toBe(true);
+    await act(async () => {
+      await vi.runAllTimersAsync();
+    });
+
+    expect(aiChatStreamMock).not.toHaveBeenCalled();
+    await act(async () => renderer?.unmount());
+  });
+
+  it('still removes leaked tool-call markup after the force-nudge retry budget is exhausted', async () => {
+    vi.useFakeTimers();
+    let renderer: ReactTestRenderer | undefined;
+    await act(async () => {
+      renderer = create(<StreamHarness initialNudgeCount={2} />);
+    });
+
+    await emitStreamChunk({
+      content: '已完成。<tool_call>execute_sql<arg_key>sql</arg_key><arg_value>SELECT 1</arg_value>',
+    });
+    await emitStreamChunk({ done: true });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60);
+    });
+
+    expect(aiChatStreamMock).not.toHaveBeenCalled();
+    expect(
+      (useStore.getState().aiChatHistory[SESSION_ID] || [])
+        .find((message) => message.id === 'assistant-connecting')?.content,
+    ).toBe('已完成。');
+    await act(async () => renderer?.unmount());
   });
 
   it('resends a localized force-tool-call nudge when the model describes the next action in English', async () => {
@@ -452,6 +639,203 @@ describe('useAIChatStreamSubscription', () => {
     });
   });
 
+  it('repairs leaked textual tool-call markup after an interrupted tool chain', async () => {
+    vi.useFakeTimers();
+    const AIChatStreamWithOptions = vi.fn(async (..._args: any[]) => undefined);
+    vi.stubGlobal('window', {
+      go: {
+        aiservice: {
+          Service: {
+            AIChatStreamWithOptions,
+            AIChatStream: aiChatStreamMock,
+          },
+        },
+      },
+    });
+    useStore.setState({
+      aiChatHistory: {
+        [SESSION_ID]: [
+          {
+            id: 'assistant-tool',
+            role: 'assistant',
+            content: '插入订单明细',
+            tool_calls: [{
+              id: 'call-insert',
+              type: 'function',
+              function: { name: 'execute_sql', arguments: '{}' },
+            }],
+            timestamp: 1,
+          },
+          {
+            id: 'tool-result',
+            role: 'tool',
+            content: '{"affectedRows":90000}',
+            tool_call_id: 'call-insert',
+            timestamp: 2,
+          },
+          {
+            id: 'assistant-error',
+            role: 'assistant',
+            content: 'T:error context deadline exceeded',
+            timestamp: 3,
+          },
+          {
+            id: 'user-continue',
+            role: 'user',
+            content: '继续',
+            timestamp: 4,
+          },
+          {
+            id: 'assistant-connecting',
+            role: 'assistant',
+            phase: 'connecting',
+            content: '',
+            timestamp: 5,
+            loading: true,
+          },
+        ],
+      },
+    });
+    let renderer: ReactTestRenderer | undefined;
+
+    await act(async () => {
+      renderer = create(<StreamHarness />);
+    });
+
+    await emitStreamChunk({
+      content: '明细已插入 90,000 行。现在验证各表行数：<tool_call>execute_sql<arg_key>connectionId</arg_key><arg_value>1</arg_value>',
+    });
+    await emitStreamChunk({ done: true });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60);
+    });
+
+    expect(AIChatStreamWithOptions).toHaveBeenCalledTimes(1);
+    expect(aiChatStreamMock).not.toHaveBeenCalled();
+    const resentMessages = (AIChatStreamWithOptions.mock.calls[0]?.[1] ?? []) as Array<{ role: string; content: string }>;
+    expect(resentMessages[resentMessages.length - 1]).toEqual({ role: 'user', content: 'T:force-tool-call' });
+    expect(resentMessages.every((message) => !message.content.includes('<tool_call>'))).toBe(true);
+    expect(resentMessages.every((message) => !message.content.includes('context deadline exceeded'))).toBe(true);
+    expect(AIChatStreamWithOptions.mock.calls[0]?.[3]).toEqual({
+      model: 'glm-test',
+      thinkingIntensity: 'high',
+      temperature: undefined,
+      maxTokens: undefined,
+    });
+    const repaired = (useStore.getState().aiChatHistory[SESSION_ID] || [])
+      .find((message) => message.id === 'assistant-connecting');
+    expect(repaired?.content).toBe('明细已插入 90,000 行。现在验证各表行数：');
+
+    await act(async () => {
+      renderer?.unmount();
+    });
+  });
+
+  it('repairs leaked markup in partial text before separating stream errors from orphaned tool calls', async () => {
+    let renderer: ReactTestRenderer | undefined;
+
+    await act(async () => {
+      renderer = create(<StreamHarness />);
+    });
+
+    await emitStreamChunk({
+      content: '已完成前半段。<tool_call>execute_sql<arg_key>sql</arg_key><arg_value>SELECT 1</arg_value>',
+    });
+    await emitStreamChunk({
+      tool_calls: [{
+        id: 'call-partial',
+        type: 'function',
+        function: { name: 'execute_sql', arguments: '{"sql":"SELECT' },
+      }],
+    });
+    await emitStreamChunk({ error: 'context deadline exceeded' });
+
+    const messages = useStore.getState().aiChatHistory[SESSION_ID] || [];
+    const partial = messages.find((message) => message.id === 'assistant-connecting');
+    const errorMessage = messages.find((message) => message.id === 'assistant-created-1');
+
+    expect(partial).toMatchObject({
+      content: '已完成前半段。',
+      phase: 'idle',
+      loading: false,
+    });
+    expect(partial?.tool_calls).toBeUndefined();
+    expect(errorMessage).toMatchObject({
+      role: 'assistant',
+      content: 'T:error context deadline exceeded',
+      phase: 'idle',
+      loading: false,
+      excludeFromAIContext: true,
+    });
+    expect(errorMessage?.tool_calls).toBeUndefined();
+    expect(messages.flatMap((message) => message.tool_calls || [])).toHaveLength(0);
+
+    await act(async () => {
+      renderer?.unmount();
+    });
+  });
+
+  it('drops a partial response whose only content is leaked tool-call markup before appending the error', async () => {
+    let renderer: ReactTestRenderer | undefined;
+
+    await act(async () => {
+      renderer = create(<StreamHarness />);
+    });
+
+    await emitStreamChunk({
+      content: '&lt;tool_call&gt;execute_sql&lt;arg_key&gt;sql&lt;/arg_key&gt;',
+    });
+    await emitStreamChunk({ error: 'context deadline exceeded' });
+
+    const messages = useStore.getState().aiChatHistory[SESSION_ID] || [];
+    expect(messages.some((message) => message.id === 'assistant-connecting')).toBe(false);
+    expect(messages.filter((message) => message.role === 'assistant')).toEqual([
+      expect.objectContaining({
+        id: 'assistant-created-1',
+        content: 'T:error context deadline exceeded',
+        excludeFromAIContext: true,
+      }),
+    ]);
+
+    await act(async () => {
+      renderer?.unmount();
+    });
+  });
+
+  it('drops a tool-only streaming placeholder before appending the independent error', async () => {
+    let renderer: ReactTestRenderer | undefined;
+
+    await act(async () => {
+      renderer = create(<StreamHarness />);
+    });
+
+    await emitStreamChunk({
+      tool_calls: [{
+        id: 'call-orphaned',
+        type: 'function',
+        function: { name: 'execute_sql', arguments: '{}' },
+      }],
+    });
+    await emitStreamChunk({ error: 'stream disconnected' });
+
+    const messages = useStore.getState().aiChatHistory[SESSION_ID] || [];
+    expect(messages.some((message) => message.id === 'assistant-connecting')).toBe(false);
+    expect(messages.filter((message) => message.role === 'assistant')).toEqual([
+      expect.objectContaining({
+        id: 'assistant-created-1',
+        content: 'T:error stream disconnected',
+        phase: 'idle',
+        loading: false,
+        excludeFromAIContext: true,
+      }),
+    ]);
+    expect(messages.flatMap((message) => message.tool_calls || [])).toHaveLength(0);
+
+    await act(async () => {
+      renderer?.unmount();
+    });
+  });
+
   it('localizes stream error copy while preserving the sanitized raw detail', async () => {
     let renderer: ReactTestRenderer | undefined;
 
@@ -462,11 +846,13 @@ describe('useAIChatStreamSubscription', () => {
     await emitStreamChunk({ error: 'rpc failure' });
 
     const messages = useStore.getState().aiChatHistory[SESSION_ID] || [];
-    const assistant = messages.find((message) => message.id === 'assistant-connecting');
+    expect(messages.some((message) => message.id === 'assistant-connecting')).toBe(false);
+    const assistant = messages.find((message) => message.id === 'assistant-created-1');
     expect(assistant).toMatchObject({
       content: 'T:error rpc failure',
       phase: 'idle',
       loading: false,
+      excludeFromAIContext: true,
     });
 
     await act(async () => {
@@ -493,6 +879,7 @@ describe('useAIChatStreamSubscription', () => {
       content: 'T:empty-response',
       phase: 'idle',
       loading: false,
+      excludeFromAIContext: true,
     });
 
     await act(async () => {
@@ -533,6 +920,7 @@ describe('useAIChatStreamSubscription', () => {
         role: 'assistant',
         content: 'T:request-interrupted',
         loading: false,
+        excludeFromAIContext: true,
       }),
     ]));
 

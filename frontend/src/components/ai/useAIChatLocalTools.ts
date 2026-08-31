@@ -12,11 +12,22 @@ import type {
   JVMDiagnosticPlanContext,
 } from '../../types';
 import { compressContextIfNeeded, getDynamicMaxContextChars } from '../../utils/aiChatRuntime';
-import { toAIRequestMessage } from '../../utils/aiMessagePayload';
+import {
+  preflightAIToolCallArguments,
+  toAIRequestMessages,
+} from '../../utils/aiMessagePayload';
 import { resolveLiveQueryTabs } from '../../utils/liveQueryTabs';
 import type { AIChatToolDefinition } from '../../utils/aiToolRegistry';
-import { dispatchAIChatPayload } from './aiChatPayloadDispatch';
+import {
+  dispatchAIChatPayload,
+  type AIChatSendRequestOptions,
+} from './aiChatPayloadDispatch';
 import type { AIChatAttachmentTranslator } from './aiChatAttachments';
+import {
+  beginAIChatLocalToolRun,
+  resetAIChatLocalToolStop,
+  shouldStopAIChatLocalToolRun,
+} from './aiChatLocalToolLifecycle';
 import {
   buildToolResultMessage,
   executeLocalAIToolCall,
@@ -37,6 +48,7 @@ interface UseAIChatLocalToolsOptions {
   nextMessageId: () => string;
   pendingJVMPlanContextRef: MutableRefObject<JVMAIPlanContext | undefined>;
   pendingJVMDiagnosticPlanContextRef: MutableRefObject<JVMDiagnosticPlanContext | undefined>;
+  sendOptionsRef: MutableRefObject<AIChatSendRequestOptions>;
   setSending: (sending: boolean) => void;
   skills: AISkillConfig[];
   translate?: AIChatAttachmentTranslator;
@@ -50,6 +62,17 @@ interface UseAIChatLocalToolsOptions {
 
 const MAX_TOOL_CALL_ROUNDS = 15;
 const SOFT_LIMIT_ROUNDS = 10;
+
+const hasValidToolCallIds = (toolCalls: AIToolCall[]): boolean => {
+  const seen = new Set<string>();
+  return toolCalls.every((toolCall) => {
+    if (typeof toolCall.id !== 'string') return false;
+    const id = toolCall.id.trim();
+    if (!id || seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  });
+};
 
 const translatePanelCopy = (
   t: AIChatAttachmentTranslator | undefined,
@@ -72,6 +95,7 @@ export const useAIChatLocalTools = ({
   nextMessageId,
   pendingJVMPlanContextRef,
   pendingJVMDiagnosticPlanContextRef,
+  sendOptionsRef,
   setSending,
   skills,
   translate,
@@ -85,9 +109,10 @@ export const useAIChatLocalTools = ({
   const resetToolCallState = useCallback(() => {
     toolCallRoundRef.current = 0;
     totalToolRoundRef.current = 0;
-  }, []);
+    resetAIChatLocalToolStop(sid);
+  }, [sid]);
 
-  const executeLocalTools = useCallback(async (toolCalls: AIToolCall[], currentAsstMsgId: string) => {
+  const executeLocalToolsInternal = useCallback(async (toolCalls: AIToolCall[], currentAsstMsgId: string) => {
     const store = useStore.getState();
     const currentAsstMsg = (store.aiChatHistory[sid] || []).find((message) => message.id === currentAsstMsgId);
     const inheritedJVMPlanContext = currentAsstMsg?.jvmPlanContext || pendingJVMPlanContextRef.current;
@@ -95,6 +120,75 @@ export const useAIChatLocalTools = ({
       currentAsstMsg?.jvmDiagnosticPlanContext || pendingJVMDiagnosticPlanContextRef.current;
     pendingJVMPlanContextRef.current = inheritedJVMPlanContext;
     pendingJVMDiagnosticPlanContextRef.current = inheritedJVMDiagnosticPlanContext;
+
+    const settleStoppedToolRun = (completedToolCalls: AIToolCall[]) => {
+      const latest = (useStore.getState().aiChatHistory[sid] || [])
+        .find((message) => message.id === currentAsstMsgId);
+      if (latest) {
+        if (completedToolCalls.length > 0) {
+          updateAIChatMessage(sid, currentAsstMsgId, {
+            tool_calls: completedToolCalls,
+            loading: false,
+            phase: 'idle',
+          });
+        } else if (
+          latest.content.trim()
+          || latest.thinking?.trim()
+          || latest.reasoning_content?.trim()
+        ) {
+          updateAIChatMessage(sid, currentAsstMsgId, {
+            tool_calls: undefined,
+            loading: false,
+            phase: 'idle',
+          });
+        } else {
+          useStore.getState().deleteAIChatMessage(sid, currentAsstMsgId);
+        }
+      }
+    };
+
+    if (await shouldStopAIChatLocalToolRun(sid)) {
+      settleStoppedToolRun([]);
+      return;
+    }
+
+    const normalizedToolCalls = preflightAIToolCallArguments(toolCalls);
+    const invalidToolCallCopy = normalizedToolCalls === null
+      ? {
+        key: 'ai_chat.panel.tool_error.invalid_arguments',
+        fallback: '❌ Invalid tool-call response: tool arguments were incomplete or were not a JSON object. No tools were executed.',
+      }
+      : !hasValidToolCallIds(normalizedToolCalls)
+        ? {
+          key: 'ai_chat.panel.tool_error.invalid_call_ids',
+          fallback: '❌ Invalid tool-call response: every tool call must have a unique, non-empty ID. No tools were executed.',
+        }
+        : null;
+    if (invalidToolCallCopy) {
+      updateAIChatMessage(sid, currentAsstMsgId, {
+        loading: false,
+        phase: 'idle',
+        tool_calls: undefined,
+        excludeFromAIContext: true,
+      });
+      useStore.getState().addAIChatMessage(sid, {
+        id: nextMessageId(),
+        role: 'assistant',
+        content: translatePanelCopy(
+          translate,
+          invalidToolCallCopy.key,
+          invalidToolCallCopy.fallback,
+        ),
+        timestamp: Date.now(),
+        loading: false,
+        excludeFromAIContext: true,
+        jvmPlanContext: inheritedJVMPlanContext,
+        jvmDiagnosticPlanContext: inheritedJVMDiagnosticPlanContext,
+      });
+      setSending(false);
+      return;
+    }
+    if (normalizedToolCalls === null) return;
 
     totalToolRoundRef.current += 1;
     if (totalToolRoundRef.current > MAX_TOOL_CALL_ROUNDS) {
@@ -109,6 +203,7 @@ export const useAIChatLocalTools = ({
           { count: MAX_TOOL_CALL_ROUNDS },
         ),
         timestamp: Date.now(),
+        excludeFromAIContext: true,
         jvmPlanContext: inheritedJVMPlanContext,
         jvmDiagnosticPlanContext: inheritedJVMDiagnosticPlanContext,
       });
@@ -118,11 +213,17 @@ export const useAIChatLocalTools = ({
 
     const results: AIChatMessage[] = [];
     const executions: ExecuteLocalAIToolCallResult[] = [];
+    const completedToolCalls: AIToolCall[] = [];
     const currentConnections = useStore.getState().connections;
-    for (const toolCall of toolCalls) {
+    for (const toolCall of normalizedToolCalls) {
+      if (await shouldStopAIChatLocalToolRun(sid)) {
+        settleStoppedToolRun(completedToolCalls);
+        return;
+      }
       const currentState = useStore.getState();
       const execution = await executeLocalAIToolCall({
         toolCall,
+        availableTools,
         connections: currentConnections,
         activeContext: currentState.activeContext,
         aiContexts: currentState.aiContexts,
@@ -150,8 +251,17 @@ export const useAIChatLocalTools = ({
         execution,
       });
       results.push(toolResultMsg);
+      completedToolCalls.push(toolCall);
       useStore.getState().addAIChatMessage(sid, toolResultMsg);
+      if (await shouldStopAIChatLocalToolRun(sid)) {
+        settleStoppedToolRun(completedToolCalls);
+        return;
+      }
       await new Promise((resolve) => setTimeout(resolve, 150));
+      if (await shouldStopAIChatLocalToolRun(sid)) {
+        settleStoppedToolRun(completedToolCalls);
+        return;
+      }
     }
 
     const roundCountsAsFailure = executions.length > 0
@@ -171,6 +281,7 @@ export const useAIChatLocalTools = ({
             '⚠️ Probes failed for 3 consecutive rounds and were stopped. Check the connection status and retry.',
           ),
           timestamp: Date.now(),
+          excludeFromAIContext: true,
           jvmPlanContext: inheritedJVMPlanContext,
           jvmDiagnosticPlanContext: inheritedJVMDiagnosticPlanContext,
         });
@@ -180,6 +291,10 @@ export const useAIChatLocalTools = ({
     }
 
     try {
+      if (await shouldStopAIChatLocalToolRun(sid)) {
+        settleStoppedToolRun(completedToolCalls);
+        return;
+      }
       updateAIChatMessage(sid, currentAsstMsgId, { loading: false, phase: 'idle' });
 
       const chainConnectingMsg: AIChatMessage = {
@@ -228,17 +343,26 @@ export const useAIChatLocalTools = ({
 
       setSending(true);
       const currentHistory = useStore.getState().aiChatHistory[sid] || [];
-      const messagesPayload = currentHistory
-        .filter((message) => message.phase !== 'connecting')
-        .map((message) => toAIRequestMessage(message, translate));
+      const messagesPayload = toAIRequestMessages(
+        currentHistory.filter((message) => message.phase !== 'connecting'),
+        translate,
+      );
       const sysMessages = await buildSystemContextMessages(
         inheritedJVMPlanContext,
         inheritedJVMDiagnosticPlanContext,
       );
+      if (await shouldStopAIChatLocalToolRun(sid)) {
+        settleStoppedToolRun(completedToolCalls);
+        return;
+      }
 
       let finalMessagesPayload = messagesPayload;
       const dynamicMaxLimit = getDynamicMaxContextChars(activeProviderModel);
       const summary = await compressContextIfNeeded(sid, messagesPayload, dynamicMaxLimit, translate);
+      if (await shouldStopAIChatLocalToolRun(sid)) {
+        settleStoppedToolRun(completedToolCalls);
+        return;
+      }
       if (summary) {
         const compressedMsg: AIChatMessage = {
           id: nextMessageId(),
@@ -271,10 +395,15 @@ export const useAIChatLocalTools = ({
       const allMessages = [...sysMessages, ...finalMessagesPayload];
       const chainTools = totalToolRoundRef.current >= SOFT_LIMIT_ROUNDS ? [] : availableTools;
 
+      if (await shouldStopAIChatLocalToolRun(sid)) {
+        settleStoppedToolRun(completedToolCalls);
+        return;
+      }
       await dispatchAIChatPayload({
         sid,
         messages: allMessages,
         tools: chainTools,
+        sendOptions: sendOptionsRef.current,
         addAIChatMessage: (sessionId, message) => useStore.getState().addAIChatMessage(sessionId, message),
         updateAIChatMessage,
         setSending,
@@ -297,6 +426,7 @@ export const useAIChatLocalTools = ({
     nextMessageId,
     pendingJVMDiagnosticPlanContextRef,
     pendingJVMPlanContextRef,
+    sendOptionsRef,
     setSending,
     sid,
     skills,
@@ -304,6 +434,14 @@ export const useAIChatLocalTools = ({
     updateAIChatMessage,
     userPromptSettings,
   ]);
+
+  const executeLocalTools = useCallback((
+    toolCalls: AIToolCall[],
+    currentAsstMsgId: string,
+  ): Promise<void> => {
+    const finishRun = beginAIChatLocalToolRun(sid);
+    return executeLocalToolsInternal(toolCalls, currentAsstMsgId).finally(finishRun);
+  }, [executeLocalToolsInternal, sid]);
 
   return {
     executeLocalTools,

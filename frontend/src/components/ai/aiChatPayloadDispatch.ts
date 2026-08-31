@@ -142,6 +142,7 @@ export const dispatchAIChatPayload = async ({
           thinking: result?.success ? result.reasoning_content : undefined,
           reasoning_content: result?.success ? result.reasoning_content : undefined,
           rawError: !result?.success && cleanError !== rawError ? rawError : undefined,
+          excludeFromAIContext: result?.success ? undefined : true,
           jvmPlanContext,
           jvmDiagnosticPlanContext,
         },
@@ -171,6 +172,7 @@ export const dispatchAIChatPayload = async ({
           thinking: result?.success ? result.reasoning_content : undefined,
           reasoning_content: result?.success ? result.reasoning_content : undefined,
           rawError: !result?.success && cleanError !== rawError ? rawError : undefined,
+          excludeFromAIContext: result?.success ? undefined : true,
           jvmPlanContext,
           jvmDiagnosticPlanContext,
         },
@@ -192,6 +194,7 @@ export const dispatchAIChatPayload = async ({
         pendingAssistantMessageId,
         patch: {
           content: resolvedUnavailableContent,
+          excludeFromAIContext: true,
           jvmPlanContext,
           jvmDiagnosticPlanContext,
         },
@@ -211,6 +214,7 @@ export const dispatchAIChatPayload = async ({
       patch: {
         content: translate('ai_chat.panel.message.send_failed', { detail: cleanError }),
         rawError: cleanError !== rawError ? rawError : undefined,
+        excludeFromAIContext: true,
         jvmPlanContext,
         jvmDiagnosticPlanContext,
       },

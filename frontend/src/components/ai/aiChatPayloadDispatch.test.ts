@@ -39,6 +39,47 @@ describe('aiChatPayloadDispatch', () => {
     expect(setSending).not.toHaveBeenCalled();
   });
 
+  it('prefers streaming with options and forwards the normalized request overrides', async () => {
+    const AIChatStreamWithOptions = vi.fn().mockResolvedValue(undefined);
+    const AIChatStream = vi.fn().mockResolvedValue(undefined);
+
+    (globalThis as any).window = {
+      go: {
+        aiservice: {
+          Service: { AIChatStreamWithOptions, AIChatStream },
+        },
+      },
+    };
+
+    await dispatchAIChatPayload({
+      sid: 'session-options',
+      messages: [{ role: 'user', content: 'continue' }],
+      tools: [],
+      sendOptions: {
+        model: '  glm-test  ',
+        thinkingIntensity: ' high ',
+        temperature: 0,
+        maxTokens: 4096,
+      },
+      addAIChatMessage: vi.fn(),
+      setSending: vi.fn(),
+      nextMessageId: () => 'msg-options',
+    });
+
+    expect(AIChatStreamWithOptions).toHaveBeenCalledWith(
+      'session-options',
+      [{ role: 'user', content: 'continue' }],
+      [],
+      {
+        model: 'glm-test',
+        thinkingIntensity: 'high',
+        temperature: 0,
+        maxTokens: 4096,
+      },
+    );
+    expect(AIChatStream).not.toHaveBeenCalled();
+  });
+
   it('appends a non-stream assistant message when session-aware send is available', async () => {
     const AIChatSendInSession = vi.fn().mockResolvedValue({
       success: true,

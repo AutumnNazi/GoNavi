@@ -209,6 +209,7 @@ export const applyNativeDetachedWindowEvent = (
   currentWindowId?: string,
   callbacks: {
     onOpenAISettings?: () => void;
+    onToggleAI?: () => void;
     onHostEvent?: (event: NativeDetachedHostEvent) => void;
     aiContextSourceRef?: AIContextSourceRef;
     workbenchStateSources?: WorkbenchStateSources;
@@ -302,6 +303,10 @@ export const applyNativeDetachedWindowEvent = (
       && NATIVE_DETACHED_HOST_EVENT_NAMES.includes(hostEvent.name as NativeDetachedHostEventName)
     ) {
       if (hostEvent.name === 'gonavi:shortcut:toggle-ai-panel' && !localWindowId) {
+        if (callbacks.onToggleAI) {
+          callbacks.onToggleAI();
+          return;
+        }
         const wasVisible = useStore.getState().aiPanelVisible;
         useStore.getState().toggleAIPanel();
         const next = useStore.getState();
@@ -568,11 +573,13 @@ const areNativeDetachedThemeContextsEqual = (
 export interface NativeDetachedWindowControllerProps {
   currentWindowId?: string;
   onOpenAISettings?: () => void;
+  onToggleAI?: () => void;
 }
 
 const NativeDetachedWindowController = ({
   currentWindowId,
   onOpenAISettings,
+  onToggleAI,
 }: NativeDetachedWindowControllerProps = {}): null => {
   useEffect(() => {
     if (!hasNativeDetachedWindowManager()) return undefined;
@@ -607,6 +614,7 @@ const NativeDetachedWindowController = ({
     const off = EventsOn(NATIVE_DETACHED_WINDOW_EVENT, (payload: NativeDetachedWindowEvent) => {
       applyNativeDetachedWindowEvent(payload, currentWindowId, {
         onOpenAISettings,
+        onToggleAI,
         onHostEvent: dispatchHostEventLocally,
         aiContextSourceRef,
         workbenchStateSources,
@@ -822,7 +830,7 @@ const NativeDetachedWindowController = ({
       if (aiHostSyncTimer !== null) clearTimeout(aiHostSyncTimer);
       workbenchStateSources.clear();
     };
-  }, [currentWindowId, onOpenAISettings]);
+  }, [currentWindowId, onOpenAISettings, onToggleAI]);
 
   return null;
 };

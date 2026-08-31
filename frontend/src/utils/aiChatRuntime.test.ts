@@ -1,11 +1,14 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { compressContextIfNeeded, getDynamicMaxContextChars, sanitizeErrorMsg } from './aiChatRuntime';
 import { setCurrentLanguage } from '../i18n';
+import { useStore } from '../store';
 
 describe('aiChatRuntime', () => {
   afterEach(() => {
     setCurrentLanguage('zh-CN');
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 
   it('maps modern model families to practical context windows', () => {
@@ -42,5 +45,35 @@ describe('aiChatRuntime', () => {
     ], 1000);
 
     expect(result).toBeNull();
+  });
+
+  it('settles and excludes the compression placeholder when the compression request throws', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const sid = 'compression-error-session';
+    useStore.setState((state) => ({
+      aiChatHistory: { ...state.aiChatHistory, [sid]: [] },
+    }));
+    vi.stubGlobal('window', { go: {
+      aiservice: {
+        Service: {
+          AIChatSend: vi.fn().mockRejectedValue(new Error('upstream disconnected')),
+        },
+      },
+    } });
+
+    const result = await compressContextIfNeeded(sid, [
+      { role: 'user', content: 'x'.repeat(100) },
+    ], 1);
+
+    expect(result).toBeNull();
+    expect(consoleError).toHaveBeenCalledWith('Compression exception:', expect.any(Error));
+    expect(useStore.getState().aiChatHistory[sid]).toEqual([
+      expect.objectContaining({
+        role: 'assistant',
+        phase: 'idle',
+        loading: false,
+        excludeFromAIContext: true,
+      }),
+    ]);
   });
 });

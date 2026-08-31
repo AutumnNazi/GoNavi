@@ -30,6 +30,7 @@ import type { AIToolResultIndex } from './aiToolResultIndex';
 
 interface AIMessageBubbleProps {
   msg: AIChatMessage;
+  canRetry: boolean;
   darkMode: boolean;
   overlayTheme: OverlayWorkbenchTheme;
   textColor: string;
@@ -45,6 +46,7 @@ interface AIMessageBubbleProps {
 interface AIMessageActionBarProps {
   msg: AIChatMessage;
   isUser: boolean;
+  canRetry: boolean;
   isCopied: boolean;
   textColor: string;
   mutedText: string;
@@ -95,6 +97,7 @@ const AIMessageAttachmentSummary: React.FC<{
 const AIMessageActionBar: React.FC<AIMessageActionBarProps> = ({
   msg,
   isUser,
+  canRetry,
   isCopied,
   textColor,
   mutedText,
@@ -128,7 +131,7 @@ const AIMessageActionBar: React.FC<AIMessageActionBarProps> = ({
           onMouseLeave={(event) => { event.currentTarget.style.color = mutedText; }}
         />
       </Tooltip>
-    ) : (
+    ) : canRetry ? (
       <Tooltip title={copy('ai_chat.message.action.retry')}>
         <ReloadOutlined
           className="ai-action-icon"
@@ -138,7 +141,7 @@ const AIMessageActionBar: React.FC<AIMessageActionBarProps> = ({
           onMouseLeave={(event) => { event.currentTarget.style.color = mutedText; }}
         />
       </Tooltip>
-    )}
+    ) : null}
     <Tooltip title={copy('ai_chat.message.action.delete')}>
       <DeleteOutlined
         className="ai-action-icon"
@@ -189,6 +192,7 @@ const AIRawErrorButton: React.FC<{
 
 export const AIMessageBubble: React.FC<AIMessageBubbleProps> = React.memo(({
   msg,
+  canRetry,
   darkMode,
   overlayTheme,
   textColor,
@@ -314,6 +318,7 @@ export const AIMessageBubble: React.FC<AIMessageBubbleProps> = React.memo(({
           <AIMessageActionBar
             msg={msg}
             isUser={isUser}
+            canRetry={canRetry}
             isCopied={isCopied}
             textColor={textColor}
             mutedText={overlayTheme.mutedText}

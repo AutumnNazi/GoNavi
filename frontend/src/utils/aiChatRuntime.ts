@@ -45,6 +45,21 @@ export const compressContextIfNeeded = async (
   maxLimit: number,
   translate?: AIChatRuntimeTranslator,
 ) => {
+  let connectingMsgId: string | null = null;
+  const settleCompressionFailure = () => {
+    if (!connectingMsgId) return;
+    useStore.getState().updateAIChatMessage(sid, connectingMsgId, {
+      loading: false,
+      phase: 'idle',
+      content: translateRuntimeCopy(
+        translate,
+        'ai_chat.panel.status.memory_compress_failed',
+        '❌ Memory compression failed. Continuing with the original context...',
+      ),
+      excludeFromAIContext: true,
+    });
+  };
+
   try {
     const chars = messagesPayload.reduce((sum, message) =>
       sum + (message.content?.length || 0) + (message.reasoning_content?.length || 0) + JSON.stringify(message.tool_calls || []).length, 0);
@@ -53,7 +68,7 @@ export const compressContextIfNeeded = async (
     const Service = (window as any).go?.aiservice?.Service;
     if (!Service?.AIChatSend) return null;
 
-    const connectingMsgId = genCompressionMessageId();
+    connectingMsgId = genCompressionMessageId();
     useStore.getState().addAIChatMessage(sid, {
       id: connectingMsgId,
       role: 'assistant',
@@ -88,17 +103,10 @@ Notes:
       return result.content;
     }
 
-    useStore.getState().updateAIChatMessage(sid, connectingMsgId, {
-      loading: false,
-      phase: 'idle',
-      content: translateRuntimeCopy(
-        translate,
-        'ai_chat.panel.status.memory_compress_failed',
-        '❌ Memory compression failed. Continuing with the original context...',
-      ),
-    });
+    settleCompressionFailure();
   } catch (error) {
     console.error('Compression exception:', error);
+    settleCompressionFailure();
   }
   return null;
 };

@@ -17,6 +17,7 @@ import {
   haveSameRelevantToolResults,
   type AIToolResultIndex,
 } from './aiToolResultIndex';
+import { collectRetryableAIChatAssistantMessageIds } from './aiChatRetrySafety';
 
 interface AIChatPanelConversationViewProps {
   mode: AIChatPanelMode;
@@ -50,6 +51,7 @@ interface AIChatPanelConversationViewProps {
 
 interface AIChatMessageRowProps {
   message: AIChatMessage;
+  canRetry: boolean;
   toolResultsById: AIToolResultIndex;
   darkMode: boolean;
   overlayTheme: OverlayWorkbenchTheme;
@@ -68,6 +70,7 @@ const areAIChatMessageRowPropsEqual = (
   next: AIChatMessageRowProps,
 ): boolean => (
   previous.message === next.message
+  && previous.canRetry === next.canRetry
   && previous.darkMode === next.darkMode
   && previous.overlayTheme === next.overlayTheme
   && previous.textColor === next.textColor
@@ -87,6 +90,7 @@ const areAIChatMessageRowPropsEqual = (
 
 const AIChatMessageRow: React.FC<AIChatMessageRowProps> = React.memo(({
   message,
+  canRetry,
   toolResultsById,
   darkMode,
   overlayTheme,
@@ -108,6 +112,7 @@ const AIChatMessageRow: React.FC<AIChatMessageRowProps> = React.memo(({
   >
     <AIMessageBubble
       msg={message}
+      canRetry={canRetry}
       darkMode={darkMode}
       overlayTheme={overlayTheme}
       textColor={textColor}
@@ -124,7 +129,7 @@ const AIChatMessageRow: React.FC<AIChatMessageRowProps> = React.memo(({
 
 interface AIChatMessageListProps extends Omit<
   AIChatMessageRowProps,
-  'message' | 'toolResultsById'
+  'message' | 'canRetry' | 'toolResultsById'
 > {
   messages: AIChatMessage[];
 }
@@ -137,6 +142,10 @@ const AIChatMessageList: React.FC<AIChatMessageListProps> = ({
     () => buildAIToolResultIndex(messages),
     [messages],
   );
+  const retryableMessageIds = React.useMemo(
+    () => collectRetryableAIChatAssistantMessageIds(messages),
+    [messages],
+  );
 
   return (
     <>
@@ -145,6 +154,7 @@ const AIChatMessageList: React.FC<AIChatMessageListProps> = ({
           key={message.id}
           {...rowProps}
           message={message}
+          canRetry={retryableMessageIds.has(message.id)}
           toolResultsById={toolResultsById}
         />
       ))}

@@ -13,6 +13,7 @@ import type {
   ExternalSQLDirectory,
   TabData,
 } from '../../types';
+import type { AIChatToolDefinition } from '../../utils/aiToolRegistry';
 import { executeDatabaseToolCall } from './aiDatabaseToolExecutor';
 import {
   buildDefaultLocalToolRuntime,
@@ -25,6 +26,7 @@ export type { AILocalToolRuntime, AIToolContextEntry } from './aiLocalToolRuntim
 
 export interface ExecuteLocalAIToolCallOptions {
   toolCall: AIToolCall;
+  availableTools?: AIChatToolDefinition[];
   connections: SavedConnection[];
   activeContext?: { connectionId: string; dbName: string } | null;
   aiContexts?: Record<string, AIContextItem[]>;
@@ -63,8 +65,82 @@ const translateToolError = (
   params?: I18nParams,
 ) => translate?.(key, params) || fallback;
 
+const NON_EMPTY_REQUIRED_ARGUMENTS: Readonly<Record<string, readonly string[]>> = {
+  execute_sql: ['connectionId', 'dbName', 'sql'],
+};
+
+const schemaAllowsNull = (schema: unknown): boolean => {
+  if (schema === false) return false;
+  if (schema === true) return true;
+  if (!schema || typeof schema !== 'object' || Array.isArray(schema)) return true;
+  const schemaRecord = schema as Record<string, unknown>;
+
+  if (Object.prototype.hasOwnProperty.call(schemaRecord, 'const') && schemaRecord.const !== null) {
+    return false;
+  }
+  if (Array.isArray(schemaRecord.enum) && !schemaRecord.enum.includes(null)) return false;
+
+  const declaredType = schemaRecord.type;
+  if (schemaRecord.nullable !== true) {
+    if (Array.isArray(declaredType) && !declaredType.includes('null')) return false;
+    if (typeof declaredType === 'string' && declaredType !== 'null') return false;
+  }
+
+  const allOfBranches = schemaRecord.allOf;
+  if (Array.isArray(allOfBranches) && !allOfBranches.every(schemaAllowsNull)) return false;
+
+  for (const unionKey of ['anyOf', 'oneOf'] as const) {
+    const branches = schemaRecord[unionKey];
+    if (Array.isArray(branches) && !branches.some(schemaAllowsNull)) return false;
+  }
+
+  return true;
+};
+
+const findMissingRequiredArguments = (
+  toolCall: AIToolCall,
+  args: unknown,
+  availableTools: AIChatToolDefinition[],
+): string[] => {
+  const tool = availableTools.find((candidate) => candidate.function.name === toolCall.function.name);
+  const parameters = tool?.function.parameters;
+  const schemaRequired = Array.isArray(parameters?.required) ? parameters.required : [];
+  const nonEmptyRequired = NON_EMPTY_REQUIRED_ARGUMENTS[toolCall.function.name] || [];
+  const required = [...schemaRequired, ...nonEmptyRequired];
+  if (required.length === 0) return [];
+
+  const argsRecord = args && typeof args === 'object' && !Array.isArray(args)
+    ? args as Record<string, unknown>
+    : {};
+
+  const propertySchemas = parameters?.properties
+    && typeof parameters.properties === 'object'
+    && !Array.isArray(parameters.properties)
+    ? parameters.properties as Record<string, unknown>
+    : {};
+
+  return [...new Set(required)]
+    .filter((name): name is string => typeof name === 'string' && name.length > 0)
+    .filter((name) => {
+      if (!Object.prototype.hasOwnProperty.call(argsRecord, name)) return true;
+      const value = argsRecord[name];
+      if (nonEmptyRequired.includes(name)) {
+        return typeof value !== 'string' || value.trim().length === 0;
+      }
+      if (value === null) return !schemaAllowsNull(propertySchemas[name]);
+      if (typeof value !== 'string') return false;
+
+      const propertySchema = propertySchemas[name];
+      const minLength = propertySchema && typeof propertySchema === 'object' && !Array.isArray(propertySchema)
+        ? Number((propertySchema as Record<string, unknown>).minLength)
+        : 0;
+      return Number.isFinite(minLength) && minLength > 0 && value.length < minLength;
+    });
+};
+
 export async function executeLocalAIToolCall({
   toolCall,
+  availableTools = [],
   connections,
   activeContext = null,
   aiContexts = {},
@@ -90,6 +166,15 @@ export async function executeLocalAIToolCall({
 
   try {
     const args = JSON.parse(toolCall.function.arguments || '{}');
+    const missingRequiredArguments = findMissingRequiredArguments(toolCall, args, availableTools);
+    if (missingRequiredArguments.length > 0) {
+      return {
+        content: `Invalid tool arguments for ${toolCall.function.name}: missing or invalid required fields: ${missingRequiredArguments.join(', ')}`,
+        success: false,
+        toolName: buildToolName(toolCall, descriptor),
+        countsAsProbeFailure: false,
+      };
+    }
 
     const snapshotInspectionResult = await executeSnapshotInspectionToolCall({
       toolName: toolCall.function.name,

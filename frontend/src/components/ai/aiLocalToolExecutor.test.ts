@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { t as translateCatalog } from '../../i18n/catalog';
 import type { AIMCPToolDescriptor, AIToolCall, SavedConnection } from '../../types';
+import { BUILTIN_AI_TOOLS } from '../../utils/aiToolRegistry';
 import { buildToolResultMessage, executeLocalAIToolCall } from './aiLocalToolExecutor';
 
 const buildConnection = (): SavedConnection => ({
@@ -25,6 +26,292 @@ const buildToolCall = (name: string, args: Record<string, unknown>): AIToolCall 
 });
 
 describe('aiLocalToolExecutor', () => {
+  it('rejects execute_sql when required arguments are missing before invoking the database runtime', async () => {
+    const executeSQL = vi.fn().mockResolvedValue({ success: true, data: [] });
+    const checkSQL = vi.fn().mockResolvedValue({ allowed: true, operationType: 'query' });
+
+    const result = await executeLocalAIToolCall({
+      toolCall: buildToolCall('execute_sql', { connectionId: 'conn-1' }),
+      availableTools: BUILTIN_AI_TOOLS,
+      connections: [buildConnection()],
+      mcpTools: [],
+      toolContextMap: new Map(),
+      runtime: {
+        checkSQL,
+        query: executeSQL,
+      },
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.content).toContain('dbName');
+    expect(result.content).toContain('sql');
+    expect(result.countsAsProbeFailure).toBe(false);
+    expect(checkSQL).not.toHaveBeenCalled();
+    expect(executeSQL).not.toHaveBeenCalled();
+  });
+
+  it('parses tool arguments before required-field validation and runtime dispatch', async () => {
+    const executeSQL = vi.fn();
+    const checkSQL = vi.fn();
+    const malformedCall = buildToolCall('execute_sql', {});
+    malformedCall.function.arguments = '{"connectionId":"conn-1"';
+
+    const result = await executeLocalAIToolCall({
+      toolCall: malformedCall,
+      availableTools: BUILTIN_AI_TOOLS,
+      connections: [buildConnection()],
+      mcpTools: [],
+      toolContextMap: new Map(),
+      runtime: {
+        checkSQL,
+        query: executeSQL,
+      },
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.content).not.toContain('missing or empty required fields');
+    expect(checkSQL).not.toHaveBeenCalled();
+    expect(executeSQL).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['null', { connectionId: 'conn-1', dbName: null, sql: 'SELECT 1' }, 'dbName'],
+    ['blank string', { connectionId: 'conn-1', dbName: 'crm', sql: '   ' }, 'sql'],
+    ['array', { connectionId: 'conn-1', dbName: 'crm', sql: ['SELECT 1'] }, 'sql'],
+    ['object', { connectionId: 'conn-1', dbName: 'crm', sql: { statement: 'SELECT 1' } }, 'sql'],
+    ['boolean', { connectionId: 'conn-1', dbName: 'crm', sql: true }, 'sql'],
+  ])('rejects a %s required argument before invoking any SQL runtime', async (_label, args, missingName) => {
+    const executeSQL = vi.fn();
+    const checkSQL = vi.fn();
+
+    const result = await executeLocalAIToolCall({
+      toolCall: buildToolCall('execute_sql', args),
+      availableTools: BUILTIN_AI_TOOLS,
+      connections: [buildConnection()],
+      mcpTools: [],
+      toolContextMap: new Map(),
+      runtime: {
+        checkSQL,
+        query: executeSQL,
+      },
+    });
+
+    expect(result).toMatchObject({ success: false, countsAsProbeFailure: false });
+    expect(result.content).toContain(missingName);
+    expect(checkSQL).not.toHaveBeenCalled();
+    expect(executeSQL).not.toHaveBeenCalled();
+  });
+
+  it('rejects missing required MCP arguments before invoking the MCP runtime', async () => {
+    const callMCPTool = vi.fn();
+    const result = await executeLocalAIToolCall({
+      toolCall: buildToolCall('external_probe', { query: '' }),
+      availableTools: [{
+        type: 'function',
+        function: {
+          name: 'external_probe',
+          description: 'External probe',
+          parameters: {
+            type: 'object',
+            properties: { query: { type: 'string', minLength: 1 } },
+            required: ['query'],
+          },
+        },
+      }],
+      connections: [buildConnection()],
+      mcpTools: [{
+        alias: 'external_probe',
+        originalName: 'probe',
+        serverId: 'server-1',
+        serverName: 'Demo MCP',
+        title: 'External Probe',
+        description: '',
+      }],
+      toolContextMap: new Map(),
+      runtime: { callMCPTool },
+    });
+
+    expect(result).toMatchObject({
+      success: false,
+      toolName: 'External Probe',
+      countsAsProbeFailure: false,
+    });
+    expect(result.content).toContain('query');
+    expect(callMCPTool).not.toHaveBeenCalled();
+  });
+
+  it('allows an empty required MCP string when its schema has no minLength constraint', async () => {
+    const callMCPTool = vi.fn().mockResolvedValue({ content: 'ok', isError: false });
+    const result = await executeLocalAIToolCall({
+      toolCall: buildToolCall('external_probe', { query: '' }),
+      availableTools: [{
+        type: 'function',
+        function: {
+          name: 'external_probe',
+          description: 'External probe',
+          parameters: {
+            type: 'object',
+            properties: { query: { type: 'string' } },
+            required: ['query'],
+          },
+        },
+      }],
+      connections: [buildConnection()],
+      mcpTools: [{
+        alias: 'external_probe',
+        originalName: 'probe',
+        serverId: 'server-1',
+        serverName: 'Demo MCP',
+        title: 'External Probe',
+        description: '',
+      }],
+      toolContextMap: new Map(),
+      runtime: { callMCPTool },
+    });
+
+    expect(result.success).toBe(true);
+    expect(callMCPTool).toHaveBeenCalledWith('external_probe', '{"query":""}');
+  });
+
+  it('allows null for a required MCP property whose schema explicitly permits null', async () => {
+    const callMCPTool = vi.fn().mockResolvedValue({ content: 'ok', isError: false });
+    const result = await executeLocalAIToolCall({
+      toolCall: buildToolCall('external_probe', { query: null }),
+      availableTools: [{
+        type: 'function',
+        function: {
+          name: 'external_probe',
+          description: 'External probe',
+          parameters: {
+            type: 'object',
+            properties: { query: { type: ['string', 'null'] } },
+            required: ['query'],
+          },
+        },
+      }],
+      connections: [buildConnection()],
+      mcpTools: [{
+        alias: 'external_probe',
+        originalName: 'probe',
+        serverId: 'server-1',
+        serverName: 'Demo MCP',
+        title: 'External Probe',
+        description: '',
+      }],
+      toolContextMap: new Map(),
+      runtime: { callMCPTool },
+    });
+
+    expect(result.success).toBe(true);
+    expect(callMCPTool).toHaveBeenCalledWith('external_probe', '{"query":null}');
+  });
+
+  it.each([
+    ['an enum that excludes null', { enum: ['active', 'inactive'] }, false],
+    ['a non-null const', { const: 'active' }, false],
+    [
+      'an allOf schema with a branch that excludes null',
+      { allOf: [{ type: ['string', 'null'] }, { type: 'string' }] },
+      false,
+    ],
+    [
+      'an allOf schema whose branches all permit null',
+      { allOf: [{ type: ['string', 'null'] }, { enum: ['active', null] }] },
+      true,
+    ],
+    [
+      'an anyOf schema with a branch that permits null',
+      { anyOf: [{ type: 'string' }, { type: 'null' }] },
+      true,
+    ],
+    [
+      'a oneOf schema with a branch that permits null',
+      { oneOf: [{ type: 'string' }, { const: null }] },
+      true,
+    ],
+    ['a false boolean schema', false, false],
+    ['a true boolean schema', true, true],
+    ['an unconstrained schema', {}, true],
+  ])(
+    'validates null against %s',
+    async (_label, propertySchema, allowsNull) => {
+      const callMCPTool = vi.fn().mockResolvedValue({ content: 'ok', isError: false });
+      const result = await executeLocalAIToolCall({
+        toolCall: buildToolCall('external_probe', { query: null }),
+        availableTools: [{
+          type: 'function',
+          function: {
+            name: 'external_probe',
+            description: 'External probe',
+            parameters: {
+              type: 'object',
+              properties: { query: propertySchema },
+              required: ['query'],
+            },
+          },
+        }],
+        connections: [buildConnection()],
+        mcpTools: [{
+          alias: 'external_probe',
+          originalName: 'probe',
+          serverId: 'server-1',
+          serverName: 'Demo MCP',
+          title: 'External Probe',
+          description: '',
+        }],
+        toolContextMap: new Map(),
+        runtime: { callMCPTool },
+      });
+
+      expect(result.success).toBe(allowsNull);
+      if (allowsNull) {
+        expect(callMCPTool).toHaveBeenCalledWith('external_probe', '{"query":null}');
+      } else {
+        expect(result).toMatchObject({ countsAsProbeFailure: false });
+        expect(result.content).toContain('query');
+        expect(callMCPTool).not.toHaveBeenCalled();
+      }
+    },
+  );
+
+  it('preserves false, zero, and empty arrays as present top-level required arguments', async () => {
+    const callMCPTool = vi.fn().mockResolvedValue({ content: 'ok', isError: false });
+    const args = { enabled: false, limit: 0, items: [] };
+    const result = await executeLocalAIToolCall({
+      toolCall: buildToolCall('external_probe', args),
+      availableTools: [{
+        type: 'function',
+        function: {
+          name: 'external_probe',
+          description: 'External probe',
+          parameters: {
+            type: 'object',
+            properties: {
+              enabled: { type: 'boolean' },
+              limit: { type: 'number' },
+              items: { type: 'array' },
+            },
+            required: ['enabled', 'limit', 'items'],
+          },
+        },
+      }],
+      connections: [buildConnection()],
+      mcpTools: [{
+        alias: 'external_probe',
+        originalName: 'probe',
+        serverId: 'server-1',
+        serverName: 'Demo MCP',
+        title: 'External Probe',
+        description: '',
+      }],
+      toolContextMap: new Map(),
+      runtime: { callMCPTool },
+    });
+
+    expect(result.success).toBe(true);
+    expect(callMCPTool).toHaveBeenCalledWith('external_probe', JSON.stringify(args));
+  });
+
   it('caches validated table context after get_tables succeeds', async () => {
     const toolContextMap = new Map();
     const result = await executeLocalAIToolCall({
