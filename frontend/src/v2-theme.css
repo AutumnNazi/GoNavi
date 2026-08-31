@@ -2177,6 +2177,10 @@ body[data-ui-version="v2"] .gn-v2-connection-rail {
   background: transparent;
 }
 
+body[data-ui-version="v2"] .ant-layout-sider[data-sidebar-actions-placement='titlebar'] .gn-v2-connection-rail {
+  display: none;
+}
+
 body[data-ui-version="v2"] .gn-v2-rail-sidebar-toggle-slot {
   width: 100%;
   flex: 0 0 auto;
@@ -3817,6 +3821,7 @@ body[data-ui-version="v2"] .gn-v2-empty-hero {
 }
 
 body[data-ui-version="v2"] .gn-v2-empty-hero {
+  --gn-v2-empty-hero-padding-inline-start: 30px;
   flex: 0 0 auto;
   display: flex;
   flex-direction: column;
@@ -4074,6 +4079,7 @@ body[data-ui-version="v2"] .gn-v2-empty-resource-empty .ant-btn {
 
 @media (max-width: 1360px) {
   body[data-ui-version="v2"] .gn-v2-empty-hero {
+    --gn-v2-empty-hero-padding-inline-start: 24px;
     padding: 22px 22px 16px 24px;
   }
 
@@ -4106,6 +4112,10 @@ body[data-ui-version="v2"] .gn-v2-empty-resource-empty .ant-btn {
     padding-right: 16px;
   }
 
+  body[data-ui-version="v2"] .gn-v2-empty-hero {
+    --gn-v2-empty-hero-padding-inline-start: 16px;
+  }
+
   body[data-ui-version="v2"] .gn-v2-empty-resource-empty {
     grid-template-columns: 28px minmax(0, 1fr);
   }
@@ -4114,6 +4124,30 @@ body[data-ui-version="v2"] .gn-v2-empty-resource-empty .ant-btn {
     grid-column: 2;
     justify-self: start;
   }
+}
+
+/* The native macOS collapsed toolbar needs a second titlebar band. The empty
+   workbench already has clear space above its heading, so let that one screen
+   reclaim the band instead of shifting every landing-page element downward. */
+body[data-ui-version="v2"]
+  [data-gonavi-close-shortcut-scope="workspace"][data-empty-workbench='true'][data-collapsed-sidebar-actions-docked='true'][data-security-update-banner-visible='false']
+  > .ant-layout {
+  margin-top: calc(-1 * var(--gn-v2-empty-workbench-titlebar-overlap, 0px));
+}
+
+/* Only the eyebrow crosses the docked toolbar row. Keep the headline and all
+   following content on their normal left edge while moving this short label
+   just past the six scaled toolbar actions. */
+body[data-ui-version="v2"]
+  [data-gonavi-close-shortcut-scope="workspace"][data-empty-workbench='true'][data-collapsed-sidebar-actions-docked='true'][data-security-update-banner-visible='false']
+  .gn-v2-empty-eyebrow {
+  padding-left: max(
+    0px,
+    calc(
+      (182px * var(--gn-ui-scale, 1))
+      - var(--gn-v2-empty-hero-padding-inline-start, 30px)
+    )
+  );
 }
 
 /* ─── Full V2 workbench shell: app / topbar / workspace ─ */
@@ -4130,6 +4164,40 @@ body[data-ui-version="v2"] .gn-v2-titlebar {
   box-shadow: none !important;
 }
 
+/* Native macOS keeps its traffic lights in the upper titlebar band. When the
+   explorer is collapsed, reuse the otherwise empty lower-left band for the
+   same six theme-scaled actions shown by the expanded explorer toolbar. */
+body[data-ui-version="v2"] .gn-v2-titlebar-native-mac .gn-v2-collapsed-sidebar-actions {
+  --gn-v2-explorer-scale: var(--gn-ui-scale, 1);
+  position: absolute;
+  left: calc(6px * var(--gn-ui-scale, 1));
+  bottom: 1px;
+  z-index: 4;
+  display: flex;
+  min-width: 0;
+  max-width: calc(100% - 12px);
+  height: calc(26px * var(--gn-v2-explorer-scale));
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: calc(2px * var(--gn-ui-scale, 1));
+  padding: 0 calc(2px * var(--gn-ui-scale, 1));
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  -webkit-app-region: no-drag;
+  --wails-draggable: no-drag;
+}
+
+body[data-ui-version="v2"] .gn-v2-titlebar-native-mac .gn-v2-collapsed-sidebar-actions::-webkit-scrollbar {
+  display: none;
+}
+
+/* Keep the shared focus ring inside the scrolling titlebar host. */
+body[data-ui-version="v2"] .gn-v2-titlebar-native-mac .gn-v2-collapsed-sidebar-actions .gn-v2-explorer-tool.ant-btn:focus-visible,
+body[data-ui-version="v2"] .gn-v2-titlebar-native-mac .gn-v2-collapsed-sidebar-actions .gn-v2-explorer-action-wrap:focus-visible {
+  outline-offset: -3px;
+}
+
 body[data-ui-version="v2"] .gn-v2-titlebar-brand {
   width: 20px;
   height: 20px;
@@ -4143,145 +4211,6 @@ body[data-ui-version="v2"] .gn-v2-titlebar-brand {
   font-size: 10px;
   font-weight: 800;
   box-shadow: inset 0 0.5px 0 rgba(255,255,255,0.22), 0 1px 2px color-mix(in srgb, var(--gn-accent-strong, var(--gn-accent)) 24%, transparent);
-}
-
-body[data-ui-version="v2"] .gn-v2-titlebar-copy {
-  display: flex;
-  max-width: 100%;
-  min-width: 0;
-  flex-direction: column;
-  line-height: 1.05;
-  overflow: hidden;
-}
-
-body[data-ui-version="v2"] .gn-v2-titlebar-copy strong {
-  display: block;
-  min-width: 0;
-  overflow: hidden;
-  color: var(--gn-fg-2);
-  font-size: 12px;
-  font-weight: 800;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-body[data-ui-version="v2"] .gn-v2-titlebar-copy small {
-  max-width: 260px;
-  margin-top: 2px;
-  overflow: hidden;
-  color: var(--gn-fg-4);
-  font-family: var(--gn-font-mono);
-  font-size: 9.5px;
-  font-weight: 500;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-body[data-ui-version="v2"] .gn-v2-titlebar-center {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  display: inline-flex;
-  max-width: min(520px, calc(100vw - 620px));
-  transform: translate(-50%, -50%);
-  align-items: center;
-  gap: 8px;
-  color: var(--gn-fg-3);
-  font-family: var(--gn-font-mono);
-  font-size: 12px;
-  font-weight: 650;
-  line-height: 1;
-  overflow: visible;
-  z-index: 1;
-  white-space: nowrap;
-}
-
-body[data-ui-version="v2"] .gn-v2-titlebar-center > .gn-v2-titlebar-copy {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-/* Title-bar marker is intentionally independent from the Sidebar tree status
-   renderer. Its fixed wrapper keeps the marker geometry stable in WebView2. */
-body[data-ui-version="v2"] .gn-v2-titlebar-status {
-  position: relative;
-  width: 14px;
-  min-width: 14px;
-  height: 14px;
-  flex: 0 0 14px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  box-sizing: border-box;
-  overflow: visible;
-  margin: 0 2px 0 0;
-  color: var(--gn-fg-4);
-  background: transparent;
-  line-height: 0;
-}
-
-body[data-ui-version="v2"] .gn-v2-titlebar-status-dot {
-  display: block;
-  width: 9px;
-  height: 9px;
-  flex: 0 0 9px;
-  box-sizing: border-box;
-  border: 1.5px solid var(--gn-fg-4);
-  border-radius: 50%;
-  background: transparent;
-}
-
-body[data-ui-version="v2"] .gn-v2-titlebar-status.is-success .gn-v2-titlebar-status-dot {
-  border: 0;
-  background: var(--gn-status-connected);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--gn-status-connected) 22%, transparent);
-}
-
-body[data-ui-version="v2"] .gn-v2-titlebar-status.is-loading .gn-v2-titlebar-status-dot {
-  width: 10px;
-  height: 10px;
-  flex-basis: 10px;
-  border: 2px solid rgba(37, 99, 235, 0.58);
-  border-top-color: #2563eb;
-  background: transparent;
-  box-shadow: none;
-  animation: gn-v2-titlebar-status-spin 0.8s linear infinite;
-}
-
-body[data-ui-version="v2"] .gn-v2-titlebar-status.is-error .gn-v2-titlebar-status-dot {
-  border: 0;
-  background: var(--gn-danger);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--gn-danger) 20%, transparent);
-}
-
-@keyframes gn-v2-titlebar-status-spin {
-  to { transform: rotate(360deg); }
-}
-
-/* Keep the centered summary out of the narrow desktop gap where its
-   reserved width is too small for the status marker and context copy. */
-@media (min-width: 921px) and (max-width: 1230px) {
-  body[data-ui-version="v2"] .gn-v2-titlebar-center {
-    display: none;
-  }
-}
-
-@media (max-width: 920px) {
-  body[data-ui-version="v2"] .gn-v2-titlebar-center {
-    display: inline-flex;
-    max-width: min(260px, calc(100vw - 620px));
-  }
-
-  body[data-ui-version="v2"] .gn-v2-titlebar-copy small {
-    display: none;
-  }
-}
-
-@media (max-width: 720px) {
-  body[data-ui-version="v2"] .gn-v2-titlebar-center {
-    display: none;
-  }
 }
 
 body[data-ui-version="v2"] .gn-v2-app-shell {

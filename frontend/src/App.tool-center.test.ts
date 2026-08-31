@@ -10,15 +10,38 @@ const appCss = readFileSync(
   fileURLToPath(new globalThis.URL('./App.css', import.meta.url)),
   'utf8',
 );
+const sidebarSource = readFileSync(
+  fileURLToPath(new globalThis.URL('./components/Sidebar.tsx', import.meta.url)),
+  'utf8',
+);
 
 describe('settings center tool entries', () => {
 
-  it('keeps the V2 titlebar context summary mounted beside the primary actions', () => {
-    expect(appSource).toContain('className="gn-v2-titlebar-center"');
-    expect(appSource).toContain('data-titlebar-active-context={titlebarContext.connection ? \'true\' : \'false\'}');
-    expect(appSource).toContain('<strong>{titleBarConnectionName}</strong>');
-    expect(appSource).toContain('<small>{titleBarContextDetailText}</small>');
+  it('keeps the connection/database/object summary in the V2 explorer actions without the Host address', () => {
+    const titlebarStart = appSource.indexOf('{/* Custom Title Bar */}');
+    const titlebarEnd = appSource.indexOf('{showLinuxCJKFontBanner && (', titlebarStart);
+    const titlebarSource = appSource.slice(titlebarStart, titlebarEnd);
+
+    expect(titlebarStart).toBeGreaterThanOrEqual(0);
+    expect(titlebarEnd).toBeGreaterThan(titlebarStart);
+    expect(titlebarSource).not.toContain('className="gn-v2-titlebar-center"');
+    expect(titlebarSource).not.toContain('data-titlebar-active-context');
+    expect(appSource).toContain('const v2ExplorerContext = useMemo(() => ({');
+    expect(appSource).toContain('v2ExplorerContext={v2ExplorerContext}');
+    expect(sidebarSource).toContain('className="gn-v2-explorer-context"');
+    expect(sidebarSource).toContain('{context.databaseName}');
+    expect(sidebarSource).toContain('{context.objectName}');
     expect(appSource).toContain('onTitlebarSnapshotChange={setSidebarTitlebarSnapshot}');
+
+    const explorerContextStart = appSource.indexOf('const explorerContextConnectionName');
+    const explorerContextEnd = appSource.indexOf('const primaryActionIsMessageQueue', explorerContextStart);
+    const explorerContextSource = appSource.slice(explorerContextStart, explorerContextEnd);
+    expect(explorerContextStart).toBeGreaterThanOrEqual(0);
+    expect(explorerContextEnd).toBeGreaterThan(explorerContextStart);
+    expect(explorerContextSource).toContain('databaseName: titlebarContext.databaseName');
+    expect(explorerContextSource).toContain('objectName: titlebarContext.tableName');
+    expect(explorerContextSource).not.toContain('titlebarContext.hostSummary');
+    expect(explorerContextSource).not.toContain('detailText');
   });
 
   it('applies the V2 document scope before the first titlebar paint', () => {

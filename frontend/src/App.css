@@ -2460,6 +2460,7 @@ body[data-ui-version="v2"] .gn-conn-check-line .ant-form-item {
 .gonavi-titlebar-leading {
     display: flex;
     min-width: 0;
+    max-width: 100%;
     flex: 1 1 auto;
     align-items: center;
     gap: 8px;
@@ -2495,11 +2496,24 @@ body[data-ui-version="v2"] .gn-conn-check-line .ant-form-item {
 .gonavi-titlebar-quick-actions-slot {
     display: flex;
     min-width: 0;
-    flex: 1 1 auto;
+    flex: 0 1 auto;
+    max-width: min(560px, 44vw);
     align-items: center;
     margin-left: 0;
+    padding-left: 0;
+    border-left: 0;
     -webkit-app-region: drag;
     --wails-draggable: drag;
+}
+
+body[data-ui-version="v2"] .gn-v2-titlebar-right {
+    display: flex;
+    min-width: 0;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 6px;
+    height: 100%;
 }
 
 /* Primary: elevated capsule so "新建查询/连接" reads first */
@@ -2547,7 +2561,11 @@ body[data-ui-version="v2"] .gn-conn-check-line .ant-form-item {
     max-width: 100%;
     flex: 0 1 auto;
     align-items: center;
-    gap: 2px;
+    gap: 4px;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
     margin-left: 0;
     overflow: hidden;
     -webkit-app-region: drag;
@@ -2566,19 +2584,19 @@ body[data-ui-version="v2"] .gn-conn-check-line .ant-form-item {
 .gn-v2-titlebar-quick-action,
 .gn-v2-titlebar-quick-more {
     display: inline-flex;
-    height: 26px;
+    height: var(--gn-titlebar-action-height, 26px);
     flex: 0 0 auto;
     align-items: center;
-    gap: 5px;
+    gap: 6px;
     padding: 0 8px;
-    border: 0.5px solid transparent;
-    border-radius: 6px;
+    border: 0;
+    border-radius: 5px;
     background: transparent;
-    color: var(--gn-fg-4, var(--ant-color-text-tertiary));
+    color: var(--gn-fg-3, var(--ant-color-text-tertiary));
     cursor: pointer;
     font: inherit;
-    font-size: 11px;
-    font-weight: 500;
+    font-size: 12px;
+    font-weight: 550;
     line-height: 1;
     white-space: nowrap;
     -webkit-app-region: no-drag;
@@ -2590,9 +2608,9 @@ body[data-ui-version="v2"] .gn-conn-check-line .ant-form-item {
 .gn-v2-titlebar-quick-action:focus-visible,
 .gn-v2-titlebar-quick-more:hover,
 .gn-v2-titlebar-quick-more:focus-visible {
-    border-color: color-mix(in srgb, var(--gn-accent, var(--ant-color-primary)) 28%, transparent);
-    background: var(--gn-accent-soft, var(--ant-color-primary-bg));
-    color: var(--gn-accent, var(--ant-color-primary));
+    border-color: transparent;
+    background: var(--gn-bg-hover);
+    color: var(--gn-fg-1);
     outline: none;
 }
 
@@ -2602,6 +2620,18 @@ body[data-ui-version="v2"] .gn-conn-check-line .ant-form-item {
     font-size: 13px;
 }
 
+body[data-ui-version="v2"] .gn-v2-titlebar-quick-action,
+body[data-ui-version="v2"] .gn-v2-titlebar-quick-more {
+    gap: 6px;
+    font-size: 12px;
+}
+
+body[data-ui-version="v2"] .gn-v2-titlebar-quick-action .anticon,
+body[data-ui-version="v2"] .gn-v2-titlebar-quick-more .anticon {
+    font-size: 15px;
+    color: var(--gn-fg-4);
+}
+
 /* "更多" shows icon + label like other titlebar quick actions */
 .gn-v2-titlebar-quick-more {
     position: relative;
@@ -2609,6 +2639,20 @@ body[data-ui-version="v2"] .gn-conn-check-line .ant-form-item {
     padding: 0 8px;
     justify-content: center;
     gap: 5px;
+}
+
+body[data-ui-version="v2"] .gn-v2-titlebar-quick-more {
+    gap: 6px;
+    width: auto;
+    min-width: 0;
+    padding-inline: 8px;
+    border: 0;
+    border-radius: 5px;
+    margin-left: 0;
+}
+
+body[data-ui-version="v2"] .gn-v2-titlebar-quick-more .gn-v2-titlebar-quick-label {
+    display: inline;
 }
 
 @media (max-width: 1180px) {
@@ -2645,14 +2689,105 @@ body[data-ui-version="v2"] .gn-conn-check-line .ant-form-item {
     }
 }
 
+@media (max-width: 920px) {
+    body[data-ui-version="v2"] .gonavi-titlebar-primary-actions {
+        margin-right: 6px;
+    }
+
+}
+
+body[data-ui-version="v2"] .gn-v2-titlebar {
+    display: flex !important;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 0;
+}
+
+body[data-ui-version="v2"] .gonavi-titlebar-leading {
+    min-width: 0;
+    flex: 0 1 auto;
+    max-width: 100%;
+}
+
+body[data-ui-version="v2"] .gn-v2-titlebar-quick-actions-slot {
+    max-width: min(620px, 42vw);
+    flex: 0 1 auto;
+    margin-left: 10px;
+}
+
+body[data-ui-version="v2"] .gn-v2-titlebar-quick-actions {
+    max-width: 100%;
+}
+
+body[data-ui-version="v2"] .gn-v2-titlebar > .gn-v2-titlebar-right {
+    min-width: 0;
+    margin-left: auto;
+    align-self: stretch;
+}
+
+/* Native traffic lights keep a fixed vertical center while UI Scale changes the custom bar height. */
+body[data-ui-version="v2"] .gn-v2-titlebar-native-mac > .gonavi-titlebar-leading,
+body[data-ui-version="v2"] .gn-v2-titlebar-native-mac > .gn-v2-titlebar-right {
+    position: relative;
+    top: var(--gn-titlebar-native-content-offset, 0px);
+}
+
+body[data-ui-version="v2"] .gn-v2-titlebar-right .titlebar-window-controls {
+    min-width: max-content;
+}
+
+body[data-ui-version="v2"] .gn-v2-titlebar .titlebar-window-controls {
+    flex: 0 0 auto;
+}
+
+body[data-ui-version="v2"][data-platform='linux'] .gn-v2-titlebar > div:last-child {
+    min-width: max(96px, calc(var(--gn-titlebar-action-height, 34px) * 3));
+}
+
+@media (max-width: 720px) {
+    body[data-ui-version="v2"] .gn-v2-titlebar-quick-actions-slot {
+        max-width: 180px;
+    }
+}
+
+@media (max-width: 420px) {
+    /* Leave room for native window controls while keeping every command reachable. */
+    body[data-ui-version="v2"] .gonavi-titlebar-primary-action,
+    body[data-ui-version="v2"] .gn-v2-titlebar-quick-more {
+        width: 38px !important;
+        min-width: 38px !important;
+        padding-inline: 0 !important;
+        gap: 0 !important;
+        font-size: 0 !important;
+    }
+
+    body[data-ui-version="v2"] .gonavi-titlebar-primary-action .anticon,
+    body[data-ui-version="v2"] .gn-v2-titlebar-quick-more .anticon {
+        margin: 0;
+    }
+}
+
 body[data-platform='windows'] .titlebar-window-controls {
     gap: 8px;
+}
+
+body[data-ui-version="v2"][data-platform='windows'] .titlebar-window-controls {
+    gap: 0;
+    border-left: 0;
+    padding-left: 0;
+    margin-left: 0;
 }
 
 .titlebar-window-controls > .ant-btn.ant-btn-text {
     border: 0 !important;
     border-radius: 0 !important;
     box-shadow: none !important;
+}
+
+body[data-ui-version="v2"] .gn-v2-titlebar .titlebar-window-controls > .ant-btn.ant-btn-text,
+body[data-ui-version="v2"] .gn-v2-titlebar .titlebar-web-logout-btn {
+    height: 100% !important;
+    min-height: 100% !important;
 }
 
 .titlebar-window-controls > .titlebar-close-btn.ant-btn-text:hover {

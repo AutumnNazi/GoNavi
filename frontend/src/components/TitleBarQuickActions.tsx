@@ -51,7 +51,7 @@ const TitleBarQuickActions: React.FC<TitleBarQuickActionsProps> = ({ label, more
   };
 
   return (
-    <div className="gn-v2-titlebar-quick-actions" data-titlebar-quick-actions="true" role="group" aria-label={label}>
+    <div className="gn-v2-titlebar-quick-actions" data-titlebar-quick-actions="true" data-no-titlebar-toggle="true" role="group" aria-label={label}>
       <div className="gn-v2-titlebar-quick-primary">
         {primaryActions.map((action) => (
           action.menu && action.menu.length > 0 ? (
@@ -80,6 +80,7 @@ const TitleBarQuickActions: React.FC<TitleBarQuickActionsProps> = ({ label, more
                   type="button"
                   className="gn-v2-titlebar-quick-action gn-v2-titlebar-quick-menu"
                   data-titlebar-quick-menu={action.key}
+                  data-no-titlebar-toggle="true"
                   aria-label={action.label}
                 >
                   {action.icon}
@@ -93,6 +94,7 @@ const TitleBarQuickActions: React.FC<TitleBarQuickActionsProps> = ({ label, more
                 type="button"
                 className="gn-v2-titlebar-quick-action"
                 data-titlebar-quick-action={action.key}
+                data-no-titlebar-toggle="true"
                 aria-label={action.label}
                 disabled={action.disabled}
                 onClick={action.onClick}
@@ -128,11 +130,12 @@ const TitleBarQuickActions: React.FC<TitleBarQuickActionsProps> = ({ label, more
             <button
               type="button"
               className="gn-v2-titlebar-quick-more"
+              data-no-titlebar-toggle="true"
               aria-label={moreLabel}
               data-titlebar-quick-more="true"
             >
               <MoreOutlined aria-hidden="true" />
-              <span>{moreLabel}</span>
+              <span className="gn-v2-titlebar-quick-label">{moreLabel}</span>
             </button>
           </Dropdown>
         </Tooltip>

@@ -97,11 +97,10 @@ import {
   type TabDisplaySettings,
 } from './utils/tabDisplay';
 import {
-  resolveTitlebarConnectionStatus,
   resolveTitlebarContext,
   type TitlebarSidebarSnapshot,
 } from './utils/titlebarContext';
-import { getMacNativeTitlebarPaddingLeft, getMacNativeTitlebarPaddingRight, shouldHandleMacNativeFullscreenShortcut, shouldSuppressMacNativeEscapeExit } from './utils/macWindow';
+import { getMacNativeTitlebarContentOffset, getMacNativeTitlebarPaddingLeft, getMacNativeTitlebarPaddingRight, shouldHandleMacNativeFullscreenShortcut, shouldSuppressMacNativeEscapeExit } from './utils/macWindow';
 import { shouldEnableMacWindowDiagnostics } from './utils/macWindowDiagnostics';
 import { getConnectionWorkbenchState } from './utils/startupReadiness';
 import {
@@ -285,6 +284,7 @@ import {
 } from '../wailsjs/go/app/App';
 import { getAntdLocale } from './i18n/frameworkLocale';
 import { useI18n } from './i18n/provider';
+import { resolveTitleBarLayout } from './utils/titlebarLayout';
 import './App.css';
 import './v2-theme.css';
 import './styles/v2-theme-workbench.css';
@@ -1074,7 +1074,6 @@ function App() {
   const resolvedUiFontFamily = resolveUIFontFamily(appearance.customUIFontFamily);
   const resolvedMonoFontFamily = resolveMonoFontFamily(appearance.customMonoFontFamily);
   const appComponentSize: 'small' | 'middle' | 'large' = effectiveUiScale <= 0.92 ? 'small' : (effectiveUiScale >= 1.12 ? 'large' : 'middle');
-  const titleBarHeight = Math.max(28, Math.round(32 * effectiveUiScale));
   const titleBarButtonWidth = Math.max(40, Math.round(46 * effectiveUiScale));
   const floatingLogButtonHeight = Math.max(30, Math.round(34 * effectiveUiScale));
   const resolvedAppearance = resolveAppearanceValues(appearance);
@@ -1137,9 +1136,14 @@ function App() {
   const sidebarWidth = useStore(state => state.sidebarWidth);
   const setSidebarWidth = useStore(state => state.setSidebarWidth);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [collapsedSidebarActionsTarget, setCollapsedSidebarActionsTarget] = useState<HTMLDivElement | null>(null);
   const sidebarCollapsedToggleRef = useRef<HTMLButtonElement>(null);
   const sidebarExplorerToggleRef = useRef<HTMLButtonElement>(null);
   const pendingSidebarToggleFocusRef = useRef<'collapsed' | 'explorer' | null>(null);
+  const shouldDockCollapsedSidebarActionsInTitlebar = isV2Ui && (
+      runtimePlatform === 'darwin'
+      || (runtimePlatform === '' && /mac/i.test(detectNavigatorPlatform()))
+  );
   const handleCollapseSidebarPanel = useCallback(() => {
       pendingSidebarToggleFocusRef.current = 'collapsed';
       setIsSidebarCollapsed(true);
@@ -1154,10 +1158,24 @@ function App() {
   useEffect(() => {
       const target = pendingSidebarToggleFocusRef.current;
       if (!target) return;
+      if (
+          target === 'collapsed'
+          && isSidebarCollapsed
+          && shouldDockCollapsedSidebarActionsInTitlebar
+          && !collapsedSidebarActionsTarget
+      ) return;
       pendingSidebarToggleFocusRef.current = null;
       (target === 'collapsed' ? sidebarCollapsedToggleRef : sidebarExplorerToggleRef).current?.focus();
-  }, [isSidebarCollapsed]);
-  const sidebarCollapsedWidth = isV2Ui ? 38 * effectiveUiScale * effectiveSidebarRailScale : 0;
+  }, [collapsedSidebarActionsTarget, isSidebarCollapsed, shouldDockCollapsedSidebarActionsInTitlebar]);
+  const titleBarLayout = resolveTitleBarLayout(
+      effectiveUiScale,
+      isV2Ui,
+      isSidebarCollapsed && shouldDockCollapsedSidebarActionsInTitlebar,
+  );
+  const titleBarHeight = titleBarLayout.height;
+  const sidebarCollapsedWidth = isV2Ui && !shouldDockCollapsedSidebarActionsInTitlebar
+      ? 38 * effectiveUiScale * effectiveSidebarRailScale
+      : 0;
   const renderedSidebarWidth = isSidebarCollapsed ? sidebarCollapsedWidth : sidebarWidth;
   const aiPanelVisible = useStore(state => state.aiPanelVisible);
   const detachedAIChatWindow = useStore(state => state.detachedAIChatWindow);
@@ -1209,6 +1227,8 @@ function App() {
       () => resolveSecurityUpdateEntryVisibility(securityUpdateStatus),
       [securityUpdateStatus],
   );
+  const isSecurityUpdateBannerVisible = securityUpdateEntryVisibility.showBanner
+      && !isSecurityUpdateBannerDismissed;
 
   const windowCornerRadius = 14;
   useEffect(() => {
@@ -2467,36 +2487,29 @@ function App() {
       const connectionId = String(activeContext?.connectionId || activeWorkbenchTab?.connectionId || '').trim();
       return connections.find(connection => connection.id === connectionId) || null;
   }, [activeContext?.connectionId, activeWorkbenchTab?.connectionId, connections]);
-  const titlebarConnectionStatus = useMemo(
-      () => resolveTitlebarConnectionStatus({
-          connectionId: titlebarContext.connectionId,
-          sidebarStateKey: titlebarContext.sidebarStateKey,
-          hasConnection: Boolean(titlebarContext.connection),
-          connectionStates: sidebarTitlebarSnapshot.connectionStates,
-      }),
-      [sidebarTitlebarSnapshot.connectionStates, titlebarContext.connection, titlebarContext.connectionId, titlebarContext.sidebarStateKey],
-  );
-  const titlebarStatusClass = titlebarConnectionStatus === 'loading'
-      || titlebarConnectionStatus === 'success'
-      || titlebarConnectionStatus === 'error'
-      ? titlebarConnectionStatus
-      : 'default';
-  const titleBarConnectionName = titlebarContext.connectionName
+  const explorerContextConnectionName = titlebarContext.connectionName
       || t('sidebar.active_connection.no_host_selected');
-  const titleBarContextDetails = [
-      titlebarContext.hostSummary,
+  const explorerContextTooltipText = [
+      titlebarContext.connection ? explorerContextConnectionName : '',
       titlebarContext.databaseName,
       titlebarContext.tableName,
-  ].filter(Boolean);
-  const titleBarContextDetailText = titleBarContextDetails.join(' · ')
-      || t('sidebar.active_connection.no_database_selected');
-  const titleBarContextText = [
-      titlebarContext.connection ? titleBarConnectionName : '',
-      ...titleBarContextDetails,
-  ].filter(Boolean).join(' · ') || titleBarConnectionName;
-  const titleBarContextTooltip = titlebarContext.connection
-      ? titleBarContextText
+  ].filter(Boolean).join(' · ') || explorerContextConnectionName;
+  const explorerContextTooltip = titlebarContext.connection
+      ? explorerContextTooltipText
       : t('sidebar.active_connection.no_host_selected');
+  const v2ExplorerContext = useMemo(() => ({
+      active: Boolean(titlebarContext.connection),
+      connectionName: explorerContextConnectionName,
+      databaseName: titlebarContext.databaseName,
+      objectName: titlebarContext.tableName,
+      tooltip: explorerContextTooltip,
+  }), [
+      explorerContextConnectionName,
+      explorerContextTooltip,
+      titlebarContext.connection,
+      titlebarContext.databaseName,
+      titlebarContext.tableName,
+  ]);
   const primaryActionIsMessageQueue = isMessageQueueDataSource(
       currentPrimaryActionConnection?.config,
   );
@@ -8295,7 +8308,14 @@ function App() {
             onAntTokensChange={setComputedCustomThemeAntTokens}
         />
         <ToolbarAppearanceStyleHost />
-        <Layout data-gonavi-close-shortcut-scope="workspace" style={{
+        <Layout
+          data-gonavi-close-shortcut-scope="workspace"
+          data-empty-workbench={isV2Ui && tabs.length === 0 ? 'true' : 'false'}
+          data-collapsed-sidebar-actions-docked={
+              isSidebarCollapsed && shouldDockCollapsedSidebarActionsInTitlebar ? 'true' : 'false'
+          }
+          data-security-update-banner-visible={isSecurityUpdateBannerVisible ? 'true' : 'false'}
+          style={{
             height: '100vh',
             overflow: 'hidden',
             display: 'flex',
@@ -8305,7 +8325,9 @@ function App() {
             clipPath: showLinuxResizeHandles ? 'none' : 'inset(0 round var(--gonavi-border-radius))',
             backdropFilter: blurFilter,
             WebkitBackdropFilter: blurFilter,
-        }}>
+            ['--gn-v2-empty-workbench-titlebar-overlap' as any]: `${titleBarLayout.emptyWorkbenchTopOffset}px`,
+          }}
+        >
           <input
             ref={browserConnectionImportInputRef}
             type="file"
@@ -8315,19 +8337,27 @@ function App() {
           />
           {/* Custom Title Bar */}
           <div
-            className={isV2Ui ? 'gn-v2-titlebar' : undefined}
+            className={[
+              isV2Ui ? 'gn-v2-titlebar' : 'gonavi-titlebar',
+              isV2Ui && useNativeMacWindowControls ? 'gn-v2-titlebar-native-mac' : '',
+              isSidebarCollapsed && shouldDockCollapsedSidebarActionsInTitlebar ? 'gn-v2-titlebar-collapsed-docked' : '',
+            ].filter(Boolean).join(' ')}
             onDoubleClick={handleTitleBarDoubleClick}
             style={{
                 height: titleBarHeight,
                 flexShrink: 0,
                 display: 'flex',
                 alignItems: 'center',
-                justifyContent: 'space-between',
+                justifyContent: isV2Ui ? 'flex-start' : 'space-between',
+                // Keep the V2 titlebar on the same surface as the immediately adjacent workbench.
                 background: isV2Ui ? 'var(--gn-bg-panel-2)' : bgMain,
                 borderBottom: 'none',
                 userSelect: 'none',
                 WebkitAppRegion: isWebRuntime ? 'no-drag' : 'drag',
                 '--wails-draggable': isWebRuntime ? 'no-drag' : 'drag',
+                '--gn-titlebar-action-height': `${titleBarLayout.actionHeight}px`,
+                '--gn-titlebar-divider-height': `${titleBarLayout.dividerHeight}px`,
+                '--gn-titlebar-native-content-offset': `${getMacNativeTitlebarContentOffset(titleBarHeight, isV2Ui && useNativeMacWindowControls)}px`,
                 paddingLeft: getMacNativeTitlebarPaddingLeft(effectiveUiScale, useNativeMacWindowControls),
                 paddingRight: getMacNativeTitlebarPaddingRight(effectiveUiScale, useNativeMacWindowControls),
                 fontSize: tokenFontSize
@@ -8374,75 +8404,64 @@ function App() {
                   />
                   {isV2Ui && <div id="gonavi-titlebar-quick-actions" className="gonavi-titlebar-quick-actions-slot" />}
               </div>
-              {isV2Ui && (
+              {isSidebarCollapsed && shouldDockCollapsedSidebarActionsInTitlebar && (
                   <div
-                    className="gn-v2-titlebar-center"
-                    data-titlebar-active-context={titlebarContext.connection ? 'true' : 'false'}
-                    data-connection-status={titlebarConnectionStatus}
-                    aria-label={titleBarContextTooltip}
-                    title={titleBarContextTooltip}
-                    style={{
-                        WebkitAppRegion: isWebRuntime ? 'no-drag' : 'drag',
-                        '--wails-draggable': isWebRuntime ? 'no-drag' : 'drag',
-                    } as any}
-                  >
-                      <span
-                        className={`gn-v2-titlebar-status is-${titlebarStatusClass}`}
-                        aria-hidden="true"
-                      >
-                          <span className="gn-v2-titlebar-status-dot" />
-                      </span>
-                      <span className="gn-v2-titlebar-copy">
-                          <strong>{titleBarConnectionName}</strong>
-                          <small>{titleBarContextDetailText}</small>
-                      </span>
-                  </div>
+                    ref={setCollapsedSidebarActionsTarget}
+                    className="gn-v2-collapsed-sidebar-actions"
+                    data-collapsed-sidebar-actions="true"
+                    data-no-titlebar-toggle="true"
+                    role="toolbar"
+                    aria-label={t('sidebar.rail.system_actions')}
+                    onDoubleClick={(event) => event.stopPropagation()}
+                  />
               )}
-              {isWebRuntime ? (
-                  <div
-                    onDoubleClick={(e) => e.stopPropagation()}
-                    style={{ display: 'flex', alignItems: 'center', gap: 8, WebkitAppRegion: 'no-drag', '--wails-draggable': 'no-drag' } as any}
-                  >
-                      <Tooltip title="退出当前 Web 会话">
+              {/* Collapsed sidebar titlebar actions end */}
+              <div className={isV2Ui ? 'gn-v2-titlebar-right' : undefined}>
+                  {isWebRuntime ? (
+                      <div
+                        onDoubleClick={(e) => e.stopPropagation()}
+                        style={{ display: 'flex', alignItems: 'center', gap: 8, WebkitAppRegion: 'no-drag', '--wails-draggable': 'no-drag' } as any}
+                      >
+                          <Tooltip title="退出当前 Web 会话">
+                              <Button
+                                type="text"
+                                icon={<PoweroffOutlined />}
+                                className="titlebar-web-logout-btn"
+                                style={{ height: '100%', borderRadius: 8, width: titleBarButtonWidth }}
+                                onClick={() => { void handleWebLogout(); }}
+                              />
+                          </Tooltip>
+                      </div>
+                  ) : useNativeMacWindowControls ? null : (
+                      <div
+                        className="titlebar-window-controls"
+                        data-no-titlebar-toggle="true"
+                        onDoubleClick={(e) => e.stopPropagation()}
+                        style={{ display: 'flex', height: '100%', WebkitAppRegion: 'no-drag', '--wails-draggable': 'no-drag' } as any}
+                      >
                           <Button
                             type="text"
-                            icon={<PoweroffOutlined />}
-                            style={{ height: '100%', borderRadius: 8, width: titleBarButtonWidth }}
-                            onClick={() => { void handleWebLogout(); }}
+                            icon={<MinusOutlined />}
+                            style={{ height: '100%', borderRadius: 0, width: titleBarButtonWidth }}
+                            onClick={WindowMinimise}
                           />
-                      </Tooltip>
-                  </div>
-              ) : useNativeMacWindowControls ? (
-                  <div style={{ minWidth: Math.max(40, Math.round(48 * effectiveUiScale)) }} />
-              ) : (
-                  <div
-                    className="titlebar-window-controls"
-                    data-no-titlebar-toggle="true"
-                    onDoubleClick={(e) => e.stopPropagation()}
-                    style={{ display: 'flex', height: '100%', WebkitAppRegion: 'no-drag', '--wails-draggable': 'no-drag' } as any}
-                  >
-                      <Button
-                        type="text"
-                        icon={<MinusOutlined />}
-                        style={{ height: '100%', borderRadius: 0, width: titleBarButtonWidth }}
-                        onClick={WindowMinimise}
-                      />
-                      <Button
-                        type="text"
-                        icon={titleBarToggleIconKey === 'restore' ? <SwitcherOutlined /> : <BorderOutlined />}
-                        style={{ height: '100%', borderRadius: 0, width: titleBarButtonWidth }}
-                        onClick={() => { void handleTitleBarWindowToggle(); }}
-                      />
-                      <Button
-                        type="text"
-                        icon={<CloseOutlined />}
-                        danger
-                        className="titlebar-close-btn"
-                        style={{ height: '100%', borderRadius: 0, width: titleBarButtonWidth }}
-                        onClick={() => { void handleApplicationQuitRequest(); }}
-                      />
-                  </div>
-              )}
+                          <Button
+                            type="text"
+                            icon={titleBarToggleIconKey === 'restore' ? <SwitcherOutlined /> : <BorderOutlined />}
+                            style={{ height: '100%', borderRadius: 0, width: titleBarButtonWidth }}
+                            onClick={() => { void handleTitleBarWindowToggle(); }}
+                          />
+                          <Button
+                            type="text"
+                            icon={<CloseOutlined />}
+                            danger
+                            className="titlebar-close-btn"
+                            style={{ height: '100%', borderRadius: 0, width: titleBarButtonWidth }}
+                            onClick={() => { void handleApplicationQuitRequest(); }}
+                          />
+                      </div>
+                  )}
+              </div>
           </div>
 
           {showLinuxCJKFontBanner && (
@@ -8467,6 +8486,7 @@ function App() {
             trigger={null}
             data-sidebar-panel="true"
             data-sidebar-collapsed={isSidebarCollapsed}
+            data-sidebar-actions-placement={shouldDockCollapsedSidebarActionsInTitlebar ? 'titlebar' : 'fixed-rail'}
             className={isV2Ui ? 'gn-v2-app-sider' : undefined}
             style={{
                 borderRight: isV2Ui ? 'none' : '1px solid rgba(128,128,128,0.2)',
@@ -8513,11 +8533,13 @@ function App() {
                             onToggleAI={toggleAIPanel}
                             onToggleLogPanel={handleToggleLogPanel}
                             uiVersion={appearance.uiVersion}
+                            v2ExplorerContext={v2ExplorerContext}
+                            collapsedSidebarActionsTarget={collapsedSidebarActionsTarget}
                             onFocusCommandSearch={handleFocusSidebarSearch}
                             onCollapseSidebar={isV2Ui ? handleCollapseSidebarPanel : undefined}
-                             onExpandSidebar={isV2Ui ? handleExpandSidebarPanel : undefined}
-                             onTitlebarSnapshotChange={setSidebarTitlebarSnapshot}
-                             collapseSidebarLabel={isV2Ui ? sidebarPanelCollapseLabel : undefined}
+                            onExpandSidebar={isV2Ui ? handleExpandSidebarPanel : undefined}
+                            onTitlebarSnapshotChange={setSidebarTitlebarSnapshot}
+                            collapseSidebarLabel={isV2Ui ? sidebarPanelCollapseLabel : undefined}
                             collapseSidebarButtonRef={sidebarExplorerToggleRef}
                             expandSidebarLabel={isV2Ui ? sidebarPanelExpandLabel : undefined}
                             expandSidebarButtonRef={sidebarCollapsedToggleRef}
@@ -8625,7 +8647,7 @@ function App() {
            <Content
              style={{ background: isV2Ui ? 'var(--gn-bg-panel-2)' : bgContent, overflow: 'hidden', display: 'flex', flexDirection: 'column', minWidth: 0, flex: 1 }}
            >
-             {securityUpdateEntryVisibility.showBanner && !isSecurityUpdateBannerDismissed && (
+             {isSecurityUpdateBannerVisible && (
                 <SecurityUpdateBanner
                   status={securityUpdateStatus}
                   darkMode={darkMode}
