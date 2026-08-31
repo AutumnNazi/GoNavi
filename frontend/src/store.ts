@@ -172,7 +172,6 @@ export interface AppearanceSettings
   blur: number;
   tableDoubleClickAction: TableDoubleClickAction;
   v2SidebarSearchMode: "command" | "filter";
-  v2CommandSearchPersistentFilterEnabled: boolean;
   v2SidebarPersistedFilter: string;
   v2SidebarRailScale: number;
   tabEnvironmentAccentThickness: number;
@@ -201,7 +200,6 @@ export const DEFAULT_APPEARANCE: AppearanceSettings = {
   blur: 0,
   tableDoubleClickAction: "open-data",
   v2SidebarSearchMode: "command",
-  v2CommandSearchPersistentFilterEnabled: false,
   v2SidebarPersistedFilter: "",
   v2SidebarRailScale: DEFAULT_V2_SIDEBAR_RAIL_SCALE,
   tabEnvironmentAccentThickness: DEFAULT_TAB_ENVIRONMENT_ACCENT_THICKNESS,
@@ -3147,10 +3145,6 @@ const sanitizeAppearance = (
     v2SidebarSearchMode: sanitizeV2SidebarSearchMode(
       appearance.v2SidebarSearchMode,
     ),
-    v2CommandSearchPersistentFilterEnabled:
-      typeof appearance.v2CommandSearchPersistentFilterEnabled === "boolean"
-        ? appearance.v2CommandSearchPersistentFilterEnabled
-        : DEFAULT_APPEARANCE.v2CommandSearchPersistentFilterEnabled,
     v2SidebarPersistedFilter: sanitizeV2SidebarPersistedFilter(
       appearance.v2SidebarPersistedFilter,
     ),

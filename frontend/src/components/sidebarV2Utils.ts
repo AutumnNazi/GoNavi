@@ -1232,24 +1232,6 @@ export const shouldRunV2CommandSearchEnter = ({
   return activeItemCount > 0;
 };
 
-export interface V2CommandSearchPersistentFilterState {
-  commandSearchValue: string;
-  persistedFilter: string;
-  enabled: boolean;
-  isOpen: boolean;
-}
-
-export const resolveV2CommandSearchPersistentFilter = ({
-  commandSearchValue,
-  persistedFilter,
-  enabled,
-  isOpen,
-}: V2CommandSearchPersistentFilterState): string => {
-  if (!enabled) return '';
-  if (!isOpen) return String(persistedFilter ?? '').trim();
-  return String(commandSearchValue ?? '').trim();
-};
-
 export interface V2CommandSearchGlobalKeyState {
   key: string;
   isOpen: boolean;

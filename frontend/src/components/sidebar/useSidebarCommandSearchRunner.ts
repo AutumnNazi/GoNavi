@@ -20,7 +20,8 @@ type UseSidebarCommandSearchRunnerArgs = {
   mergeExpandedTreeKeys: (requiredKeys: React.Key[]) => void;
   onDoubleClick: (event: any, node: any) => void;
   publishTitlebarSelectionForNode?: (node: any) => void;
-  scrollSidebarTreeToKey: (key: React.Key) => void;
+  revealCommandSearchNode: (node: TreeNode) => void;
+  scrollSidebarTreeToKey: (key: React.Key, scrollBlock?: 'nearest' | 'center') => void;
   selectedNodesRef: MutableRefObject<any[]>;
   setActiveContext: (context: { connectionId: string; dbName: string; tableName?: string } | null) => void;
   setSelectedKeys: Dispatch<SetStateAction<React.Key[]>>;
@@ -65,6 +66,7 @@ export const useSidebarCommandSearchRunner = ({
   mergeExpandedTreeKeys,
   onDoubleClick,
   publishTitlebarSelectionForNode,
+  revealCommandSearchNode,
   scrollSidebarTreeToKey,
   selectedNodesRef,
   setActiveContext,
@@ -126,6 +128,7 @@ export const useSidebarCommandSearchRunner = ({
 
     const node = item.node;
     const dataRef = node.dataRef || {};
+    revealCommandSearchNode(node);
     if (node.type === 'connection') {
       void selectConnectionFromRail(dataRef as SavedConnection);
       return;
@@ -136,7 +139,7 @@ export const useSidebarCommandSearchRunner = ({
       mergeExpandedTreeKeys([dataRef.id, node.key]);
       setSelectedKeys([node.key]);
       selectedNodesRef.current = [node];
-      scrollSidebarTreeToKey(node.key);
+      scrollSidebarTreeToKey(node.key, 'center');
       return;
     }
     if (node.type === 'table' || node.type === 'view' || node.type === 'materialized-view') {
@@ -161,7 +164,7 @@ export const useSidebarCommandSearchRunner = ({
       });
       setSelectedKeys([node.key]);
       selectedNodesRef.current = [node];
-      scrollSidebarTreeToKey(node.key);
+      scrollSidebarTreeToKey(node.key, 'center');
       if (node.type !== 'sequence' && node.type !== 'package') {
         onDoubleClick(null, node);
       }
@@ -176,6 +179,7 @@ export const useSidebarCommandSearchRunner = ({
     mergeExpandedTreeKeys,
     onDoubleClick,
     publishTitlebarSelectionForNode,
+    revealCommandSearchNode,
     scrollSidebarTreeToKey,
     selectConnectionFromRail,
     selectedNodesRef,

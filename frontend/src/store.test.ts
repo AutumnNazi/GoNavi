@@ -79,7 +79,7 @@ describe('store appearance persistence', () => {
     expect(appearance).not.toHaveProperty('useNativeMacWindowControls');
     expect(appearance.tableDoubleClickAction).toBe('open-data');
     expect(appearance.v2SidebarSearchMode).toBe('command');
-    expect(appearance.v2CommandSearchPersistentFilterEnabled).toBe(false);
+    expect(appearance).not.toHaveProperty('v2CommandSearchPersistentFilterEnabled');
     expect(appearance.v2SidebarPersistedFilter).toBe('');
     expect(appearance.v2SidebarRailScale).toBe(1);
     expect(appearance.tabEnvironmentAccentThickness).toBe(2);
@@ -700,13 +700,12 @@ describe('store appearance persistence', () => {
 
     useStore.getState().setAppearance({
       v2SidebarSearchMode: 'filter',
-      v2CommandSearchPersistentFilterEnabled: true,
       v2SidebarPersistedFilter: `  ${'orders'.repeat(40)}  `,
     });
 
     const persisted = JSON.parse(storage.getItem('lite-db-storage') || '{}');
     expect(persisted.state.appearance.v2SidebarSearchMode).toBe('filter');
-    expect(persisted.state.appearance.v2CommandSearchPersistentFilterEnabled).toBe(true);
+    expect(persisted.state.appearance).not.toHaveProperty('v2CommandSearchPersistentFilterEnabled');
     expect(persisted.state.appearance.v2SidebarPersistedFilter).toHaveLength(120);
     expect(persisted.state.appearance.v2SidebarPersistedFilter.startsWith('orders')).toBe(true);
 
@@ -715,7 +714,7 @@ describe('store appearance persistence', () => {
     const appearance = reloaded.useStore.getState().appearance;
 
     expect(appearance.v2SidebarSearchMode).toBe('filter');
-    expect(appearance.v2CommandSearchPersistentFilterEnabled).toBe(true);
+    expect(appearance).not.toHaveProperty('v2CommandSearchPersistentFilterEnabled');
     expect(appearance.v2SidebarPersistedFilter).toHaveLength(120);
   });
 

@@ -50,6 +50,7 @@ describe('useSidebarCommandSearchRunner title bar context', () => {
         loadDatabases: vi.fn(),
         mergeExpandedTreeKeys: vi.fn(),
         onDoubleClick: vi.fn(),
+        revealCommandSearchNode: vi.fn(),
         scrollSidebarTreeToKey: vi.fn(),
         selectedNodesRef: { current: [] },
         setActiveContext,
@@ -114,6 +115,7 @@ describe('useSidebarCommandSearchRunner title bar context', () => {
         loadDatabases,
         mergeExpandedTreeKeys: vi.fn(),
         onDoubleClick: vi.fn(),
+        revealCommandSearchNode: vi.fn(),
         scrollSidebarTreeToKey: vi.fn(),
         selectedNodesRef: { current: [] },
         setActiveContext: vi.fn(),
@@ -137,5 +139,78 @@ describe('useSidebarCommandSearchRunner title bar context', () => {
     expect(loadDatabases).toHaveBeenCalledWith(connectionNode);
     expect(clearStaleHostStateOnSelection.mock.invocationCallOrder[0])
       .toBeLessThan(loadDatabases.mock.invocationCallOrder[0]);
+  });
+
+  it('reveals and locates a table in the sidebar before opening it', () => {
+    const revealCommandSearchNode = vi.fn();
+    const locateObjectInSidebar = vi.fn().mockResolvedValue(undefined);
+    const onDoubleClick = vi.fn();
+    let runCommandSearchItem: ReturnType<typeof useSidebarCommandSearchRunner>['runCommandSearchItem'] | undefined;
+    const tableNode = {
+      key: 'conn-1-main-schema-public-tables-orders',
+      title: 'orders',
+      type: 'table' as const,
+      dataRef: {
+        id: 'conn-1',
+        dbName: 'main',
+        schemaName: 'public',
+        tableName: 'orders',
+      },
+    };
+    const item: V2CommandSearchItem = {
+      key: `node-${tableNode.key}`,
+      kind: 'node',
+      title: tableNode.title,
+      meta: 'Local · main',
+      icon: null,
+      node: tableNode,
+    };
+
+    const Harness = () => {
+      ({ runCommandSearchItem } = useSidebarCommandSearchRunner({
+        activeContext: null,
+        activeTab: null,
+        addTab: vi.fn(),
+        clearStaleHostStateOnSelection: vi.fn(),
+        closeV2CommandSearch: vi.fn(),
+        commandSearchFlatItems: [],
+        connectionIds: ['conn-1'],
+        queryCapableConnectionIds: new Set(),
+        findTreeNodeByKeyRef: { current: () => tableNode },
+        locateObjectInSidebar,
+        loadDatabases: vi.fn(),
+        mergeExpandedTreeKeys: vi.fn(),
+        onDoubleClick,
+        revealCommandSearchNode,
+        scrollSidebarTreeToKey: vi.fn(),
+        selectedNodesRef: { current: [] },
+        setActiveContext: vi.fn(),
+        setSelectedKeys: vi.fn(),
+        setV2CommandActiveIndex: vi.fn(),
+        treeDataRef: { current: [tableNode] },
+        v2CommandActiveIndex: 0,
+      }));
+      return null;
+    };
+
+    act(() => {
+      renderer = create(<Harness />);
+    });
+    act(() => {
+      runCommandSearchItem?.(item);
+    });
+
+    expect(revealCommandSearchNode).toHaveBeenCalledWith(tableNode);
+    expect(locateObjectInSidebar).toHaveBeenCalledWith({
+      tabId: tableNode.key,
+      connectionId: 'conn-1',
+      dbName: 'main',
+      tableName: 'orders',
+      schemaName: 'public',
+      objectGroup: 'tables',
+    });
+    expect(onDoubleClick).toHaveBeenCalledWith(null, tableNode);
+    expect(revealCommandSearchNode.mock.invocationCallOrder[0])
+      .toBeLessThan(onDoubleClick.mock.invocationCallOrder[0]);
   });
 });
