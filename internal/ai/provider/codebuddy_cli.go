@@ -68,7 +68,7 @@ func (p *CodeBuddyCLIProvider) ChatWithState(ctx context.Context, state json.Raw
 		return nil, nil, err
 	}
 	prompt := buildPrompt(req.Messages)
-	args := []string{"-p", prompt, "--output-format", "json", "--enable-session-tracking"}
+	args := []string{"-p", prompt, "--output-format", "json"}
 	if strings.TrimSpace(p.config.Model) != "" {
 		args = append(args, "--model", strings.TrimSpace(p.config.Model))
 	}
@@ -167,7 +167,7 @@ func (p *CodeBuddyCLIProvider) chatStreamWithSession(ctx context.Context, resume
 	}
 
 	prompt := buildPrompt(req.Messages)
-	args := []string{"-p", prompt, "--output-format", "stream-json", "--verbose", "--include-partial-messages", "--enable-session-tracking"}
+	args := []string{"-p", prompt, "--output-format", "stream-json", "--verbose", "--include-partial-messages"}
 	if strings.TrimSpace(p.config.Model) != "" {
 		args = append(args, "--model", strings.TrimSpace(p.config.Model))
 	}
@@ -343,7 +343,7 @@ func resolveCodeBuddyCLICommand(lookPath func(string) (string, error)) (string, 
 			return command, nil
 		}
 	}
-	return "", fmt.Errorf("CodeBuddy CLI command not found. Install it first: npm install -g @tencent/codebuddy")
+	return "", fmt.Errorf("CodeBuddy CLI command not found. Install it first: npm install -g @tencent-ai/codebuddy-code")
 }
 
 func codebuddyCLIEndpointForLog(config ai.ProviderConfig) string {
