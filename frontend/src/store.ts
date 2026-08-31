@@ -3705,7 +3705,7 @@ const createMemoizedPersistedStateProjection = () => {
 
   return (state: AppState): AppState => {
     if (previousDependencies && previousProjection) {
-      let unchanged = true;
+      let changedDependencyIndex = -1;
       for (
         let index = 0;
         index < PERSISTED_STATE_DEPENDENCY_KEYS.length;
@@ -3713,11 +3713,29 @@ const createMemoizedPersistedStateProjection = () => {
       ) {
         const key = PERSISTED_STATE_DEPENDENCY_KEYS[index];
         if (!Object.is(previousDependencies[index], state[key])) {
-          unchanged = false;
-          break;
+          if (changedDependencyIndex !== -1) {
+            changedDependencyIndex = -2;
+            break;
+          }
+          changedDependencyIndex = index;
         }
       }
-      if (unchanged) {
+      if (changedDependencyIndex === -1) {
+        return previousProjection;
+      }
+      if (
+        changedDependencyIndex >= 0
+        && PERSISTED_STATE_DEPENDENCY_KEYS[changedDependencyIndex] === "activeTabId"
+      ) {
+        // Tab switches keep the query-tab payload unchanged; reuse its sanitized SQL snapshot.
+        previousDependencies[changedDependencyIndex] = state.activeTabId;
+        previousProjection = {
+          ...previousProjection,
+          activeTabId: sanitizeActiveTabId(
+            state.activeTabId,
+            previousProjection.tabs,
+          ),
+        };
         return previousProjection;
       }
     }

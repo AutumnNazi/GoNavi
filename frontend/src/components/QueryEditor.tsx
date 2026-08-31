@@ -1979,6 +1979,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
   const objectDecorationIdleCallbackRef = useRef<number | null>(null);
   const objectDecorationFallbackTimerRef = useRef<number | null>(null);
   const objectDecorationRefreshSeqRef = useRef(0);
+  const objectDecorationsDirtyRef = useRef(true);
 
   const connections = useStore(state => state.connections);
   const connectionTags = useStore(state => state.connectionTags);
@@ -2073,7 +2074,6 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
   const addTab = useStore(state => state.addTab);
   const setActiveContext = useStore(state => state.setActiveContext);
   const updateQueryTabDraft = useStore(state => state.updateQueryTabDraft);
-  const activeTabId = useStore(state => state.activeTabId);
   const savedQueries = useStore(state => state.savedQueries);
   const sqlSnippets = useStore(state => state.sqlSnippets);
   const currentConnectionIdRef = useRef(currentConnectionId);
@@ -3263,12 +3263,27 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
 
       if (isObjectEditQueryTab) {
           objectDecorationIdsRef.current = editor.deltaDecorations(objectDecorationIdsRef.current, []);
+          objectDecorationsDirtyRef.current = false;
+          return;
+      }
+
+      const objectMetadataCount = tablesRef.current.length
+          + viewsRef.current.length
+          + materializedViewsRef.current.length
+          + triggersRef.current.length
+          + routinesRef.current.length
+          + sequencesRef.current.length
+          + packagesRef.current.length;
+      if (objectMetadataCount > 5_000) {
+          objectDecorationIdsRef.current = editor.deltaDecorations(objectDecorationIdsRef.current, []);
+          objectDecorationsDirtyRef.current = false;
           return;
       }
 
       const text = getQueryEditorDecorationModelTextIfLightweight(model, maxTextLength);
       if (text === null) {
           objectDecorationIdsRef.current = editor.deltaDecorations(objectDecorationIdsRef.current, []);
+          objectDecorationsDirtyRef.current = false;
           return;
       }
 
@@ -3282,17 +3297,6 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           lineStartOffsets.push(lineStartOffset);
           lineStartOffset += line.length + 1;
       });
-      const objectMetadataCount = tablesRef.current.length
-          + viewsRef.current.length
-          + materializedViewsRef.current.length
-          + triggersRef.current.length
-          + routinesRef.current.length
-          + sequencesRef.current.length
-          + packagesRef.current.length;
-      if (objectMetadataCount > 5_000) {
-          objectDecorationIdsRef.current = editor.deltaDecorations(objectDecorationIdsRef.current, []);
-          return;
-      }
       const decorationColumns = allColumnsRef.current.length <= 2_000
           ? allColumnsRef.current
           : [];
@@ -3350,6 +3354,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       }
 
       objectDecorationIdsRef.current = editor.deltaDecorations(objectDecorationIdsRef.current, decorations);
+      objectDecorationsDirtyRef.current = false;
   }, [isObjectEditQueryTab]);
 
   const cancelPendingObjectDecorationRefresh = useCallback(() => {
@@ -3377,7 +3382,10 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       sqlReferencedMetadataTimerRef.current = null;
   }, []);
 
-  const scheduleObjectDecorationRefresh = useCallback((editor: any) => {
+  const scheduleObjectDecorationRefresh = useCallback((
+      editor: any,
+      maxTextLength = QUERY_EDITOR_LIVE_DECORATION_MAX_TEXT_LENGTH,
+  ) => {
       cancelPendingObjectDecorationRefresh();
       if (isObjectEditQueryTab || typeof window === 'undefined') {
           return;
@@ -3401,13 +3409,14 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           }
           const modelLength = getQueryEditorModelValueLength(scheduledModel)
               ?? lastLocalQueryRef.current.length;
-          if (modelLength > QUERY_EDITOR_LIVE_DECORATION_MAX_TEXT_LENGTH) {
+          if (modelLength > maxTextLength) {
               if (objectDecorationIdsRef.current.length > 0) {
                   clearQueryEditorObjectDecorations(editor, objectDecorationIdsRef);
               }
+              objectDecorationsDirtyRef.current = false;
               return;
           }
-          refreshObjectDecorations(QUERY_EDITOR_LIVE_DECORATION_MAX_TEXT_LENGTH);
+          refreshObjectDecorations(maxTextLength);
       };
 
       if (typeof window.requestIdleCallback === 'function') {
@@ -4475,8 +4484,12 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
               (table) => String(table.dbName || '').trim().toLowerCase() === metadataDbName.toLowerCase(),
           );
           if (!forceMetadataReload && metadataFetchKeyRef.current === metadataFetchKey && hasCurrentDbTables) {
-              // 已成功拉过同一批库且当前库表仍在：只刷新装饰（事件驱动的结构变更重载不受此去重限制）
-              refreshObjectDecorations();
+              if (objectDecorationsDirtyRef.current) {
+                  scheduleObjectDecorationRefresh(
+                      editorRef.current,
+                      QUERY_EDITOR_OBJECT_DECORATION_MAX_TEXT_LENGTH,
+                  );
+              }
               return;
           }
           // key 相同但表为空（中途 cancel / 异常）：允许重拉
@@ -4792,6 +4805,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       isObjectEditQueryTab,
       queryEditorMetadataReloadTick,
       refreshObjectDecorations,
+      scheduleObjectDecorationRefresh,
       sqlReferencedMetadataKey,
   ]);
 
@@ -5107,9 +5121,9 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           dbName: targetDbName,
           query: editSql,
           queryMode: 'object-edit',
-          returnToTabId: activeTabId || undefined,
+          returnToTabId: tab.id || undefined,
       });
-  }, [activeTabId, addTab]);
+  }, [addTab, tab.id]);
 
   const openDefinitionObjectEditTab = useCallback(async (
       navigationTarget: Extract<QueryEditorNavigationTarget, { type: 'view' | 'materialized-view' | 'sequence' | 'package' }>,
@@ -5206,9 +5220,9 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
               objectLabel,
           ),
           queryMode: 'object-edit',
-          returnToTabId: activeTabId || undefined,
+          returnToTabId: tab.id || undefined,
       });
-  }, [activeTabId, addTab]);
+  }, [addTab, tab.id]);
 
   const openTriggerObjectEditTab = useCallback(async (
       navigationTarget: Extract<QueryEditorNavigationTarget, { type: 'trigger' }>,
@@ -5273,9 +5287,9 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           triggerTableName: triggerTableName || undefined,
           triggerRollbackSql: triggerRollbackSql || undefined,
           queryMode: 'object-edit',
-          returnToTabId: activeTabId || undefined,
+          returnToTabId: tab.id || undefined,
       });
-  }, [activeTabId, addTab]);
+  }, [addTab, tab.id]);
 
   const handleEditorBeforeMount: BeforeMount = (monaco) => {
       const languageId = 'elasticsearch-console';
@@ -6274,6 +6288,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       };
 
       editor.onDidChangeModelContent?.((event: any) => {
+          objectDecorationsDirtyRef.current = true;
           cancelPendingObjectDecorationRefresh();
           cancelPendingSqlReferencedMetadataRefresh();
           if (recoverTriggerSqlAiCompletionFallback(event)) {
@@ -6454,7 +6469,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                       initialViewMode: 'fields',
                       initialViewModeRequestId: String(Date.now()),
                       objectType: 'table',
-                      returnToTabId: activeTabId || undefined,
+                      returnToTabId: tab.id || undefined,
                   });
               };
               const navigationContextVersion = tableNavigationContextRef.current.version;

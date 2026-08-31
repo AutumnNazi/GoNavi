@@ -4056,6 +4056,45 @@ describe('store persistence hot path', () => {
     expect(changedTheme.theme).not.toBe(initial.theme);
   });
 
+  it('reuses sanitized query tabs when only the active tab changes', async () => {
+    const { useStore } = await importStore();
+    const partialize = useStore.persist.getOptions().partialize;
+    if (!partialize) {
+      throw new Error('expected store partialize option');
+    }
+    let queryReads = 0;
+    const createQueryTab = (id: string) => new Proxy({
+      id,
+      title: id,
+      type: 'query' as const,
+      connectionId: 'kingbase-1',
+      dbName: 'appdb',
+      query: Array.from({ length: 120 }, (_, index) => `SELECT * FROM public.order_${index + 1};`).join('\n'),
+    }, {
+      get(target, property, receiver) {
+        if (property === 'query') queryReads += 1;
+        return Reflect.get(target, property, receiver);
+      },
+    });
+    const state = {
+      ...useStore.getState(),
+      tabs: [createQueryTab('query-1'), createQueryTab('query-2')],
+      activeTabId: 'query-1',
+    };
+
+    const initial = partialize(state) as Partial<typeof state>;
+    queryReads = 0;
+    const switched = partialize({
+      ...state,
+      activeTabId: 'query-2',
+    }) as Partial<typeof state>;
+
+    expect(switched).not.toBe(initial);
+    expect(switched.tabs).toBe(initial.tabs);
+    expect(switched.activeTabId).toBe('query-2');
+    expect(queryReads).toBe(0);
+  });
+
   it('invalidates connection projection when legacy secrets appear or disappear', async () => {
     const { useStore } = await importStore();
     const partialize = useStore.persist.getOptions().partialize;
