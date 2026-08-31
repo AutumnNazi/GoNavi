@@ -18,7 +18,7 @@ import { format } from 'sql-formatter';
 import { v4 as uuidv4 } from 'uuid';
 import { TabData, ColumnDefinition, type ConnectionConfig, type SavedQuery, type SqlSnippet } from '../types';
 import { type SqlLog, useStore } from '../store';
-import { DBQuery, DBQueryWithCancel, DBQueryMulti, DBQueryMultiInTransaction, DBQueryMultiTransactional, DBGetTables, DBTableExists, DBGetAllColumns, DBGetDatabases, DBGetColumns, DBGetTriggers, DBShowCreateTable, CancelQuery, GenerateQueryID, WriteSQLFile, ExportSQLFile, InspectElasticsearchConsole, ExecuteElasticsearchConsole } from '../../wailsjs/go/app/App';
+import { DBQuery, DBQueryWithCancel, DBQueryMulti, DBQueryMultiInTransaction, DBQueryMultiTransactional, DBQueryAudited, DBGetTables, DBTableExists, DBGetAllColumns, DBGetDatabases, DBGetColumns, DBGetTriggers, DBShowCreateTable, CancelQuery, GenerateQueryID, WriteSQLFile, ExportSQLFile, InspectElasticsearchConsole, ExecuteElasticsearchConsole } from '../../wailsjs/go/app/App';
 import { GONAVI_ROW_KEY } from './DataGrid';
 import { EventsOn, LogError, LogInfo } from '../../wailsjs/runtime';
 import {
@@ -58,7 +58,11 @@ import { quoteIdentPart, quoteQualifiedIdent } from '../utils/sql';
 import { extractTableNameFromMetadataRow } from '../utils/tableMetadataRows';
 import { getTableMetadataIssueDetail, isTableMetadataIncomplete } from '../utils/tableMetadataResult';
 import { formatSqlExecutionError, hasLocalizedSqlTimeoutKeyword } from '../utils/sqlErrorSemantics';
-import { canReusePendingSqlEditorTransactionForType, shouldUseSqlEditorManagedTransactionForType } from '../utils/sqlEditorTransaction';
+import {
+    canReusePendingSqlEditorTransactionForType,
+    isSqlEditorSchemaChangingStatement,
+    shouldUseSqlEditorManagedTransactionForType,
+} from '../utils/sqlEditorTransaction';
 import { findSqlStatementRanges, resolveCurrentSqlStatementRange, resolveExecutableSql } from '../utils/sqlStatementSelection';
 import { isMacLikePlatform } from '../utils/appearance';
 import { splitSidebarQualifiedName } from '../utils/sidebarLocate';
@@ -105,7 +109,18 @@ import {
     takeQueryEditorResultSession,
 } from '../utils/queryEditorResultSessionCache';
 import { buildEditableTriggerSql } from '../utils/triggerEditSql';
-import { dispatchSidebarDatabaseListRefresh } from '../utils/sidebarDatabaseRefresh';
+import {
+    buildTableDesignerTriggerDropSql,
+    buildTableDesignerTriggerRestoreSql,
+    shouldDropTableDesignerTriggerBeforeReplace,
+} from '../utils/tableDesignerTriggerSql';
+import {
+    dispatchSidebarDatabaseListRefresh,
+    dispatchSidebarDatabaseRefresh,
+    normalizeSidebarDatabaseRefreshRequest,
+    SIDEBAR_DATABASE_REFRESH_EVENT,
+    type SidebarDatabaseRefreshRequest,
+} from '../utils/sidebarDatabaseRefresh';
 import { findTriggerDefinitionStatement } from '../utils/triggerDefinition';
 import { openNativeQueryResultWindow } from '../utils/nativeDetachedWindowHost';
 import {
@@ -208,10 +223,12 @@ import {
     getMySQLShowTablesName,
     getNormalizedOffsetAtPosition,
     getQueryEditorDecorationModelTextIfLightweight,
+    getQueryEditorDocumentOffsetAtPosition,
     getQueryEditorObjectResolveText,
     getTabQueryValue,
     isOracleBaseTableReference,
     isQueryEditorTableAliasCompletionContext,
+    isQueryEditorTableSourceAtPosition,
     isQueryEditorTableSourceCompletionContext,
     isDocumentLevelShortcutTarget,
     isQueryEditorPrimaryMouseButton,
@@ -1038,10 +1055,11 @@ const resolveQueryEditorAiConnectionHost = (connection: any): string => {
 
 // HMR 重载时释放旧注册避免补全和 hover 内容重复
 const _g = globalThis as any;
-const SQL_COMPLETION_PROVIDER_VERSION = '20260817-schema-context-v3';
+const SQL_COMPLETION_PROVIDER_VERSION = '20260828-hover-ddl-v5';
+const SQL_COMPLETION_PROVIDER_MODULE_TOKEN = {};
 const QUERY_EDITOR_MONACO_LANGUAGE_IDS = ['sql', 'mysql'] as const;
 if (!_g.__gonaviSqlCompletionState) {
-    _g.__gonaviSqlCompletionState = { registered: false, version: '', disposables: [] as any[] };
+      _g.__gonaviSqlCompletionState = { registered: false, version: '', disposables: [] as any[] };
 }
 if (!Array.isArray(_g.__gonaviSqlCompletionState.disposables)) {
     _g.__gonaviSqlCompletionState.disposables = [];
@@ -1060,6 +1078,17 @@ let sharedAllColumnsData: CompletionColumnMeta[] = [];
 let sharedQueryEditorMetadataGeneration = 0;
 let sharedQueryEditorMetadataContextKey = '';
 let sharedQueryEditorMetadataConnectionConfig: unknown = null;
+const QUERY_EDITOR_HOVER_DDL_CACHE_LIMIT = 100;
+const sharedQueryEditorHoverDdlCache = new Map<string, string>();
+const sharedQueryEditorHoverDdlRequests = new Map<string, Promise<string>>();
+const sharedQueryEditorHoverDdlRevisionByConnection = new Map<string, number>();
+const sharedQueryEditorHoverDdlConfigRevisionByObject = new WeakMap<object, number>();
+let nextQueryEditorHoverDdlConfigRevision = 1;
+// 由活跃编辑器实例注册；收到侧栏结构刷新事件时触发编辑器自身元数据重载。
+// 用集合避免多编辑器实例（分屏/多标签）互相覆盖导致回调丢失
+const sharedQueryEditorMetadataReloadRequestListeners = new Set<
+    (request: SidebarDatabaseRefreshRequest) => void
+>();
 
 const QUERY_EDITOR_TABLE_SUGGESTION_ROW_HEIGHT = 36;
 
@@ -1230,6 +1259,260 @@ const isSharedQueryEditorMetadataRequestCurrent = (
     && sharedConnections.find((connection) => connection.id === snapshot.connectionId)?.config === snapshot.connectionConfig
 );
 
+const isSharedQueryEditorHoverDdlRequestCurrent = (
+    snapshot: QueryEditorMetadataRequestSnapshot,
+    contextKey: string,
+): boolean => (
+    snapshot.generation === sharedQueryEditorMetadataGeneration
+    && contextKey === sharedQueryEditorMetadataContextKey
+    && snapshot.connectionId === sharedCurrentConnectionId
+    && sharedConnections.find((connection) => connection.id === snapshot.connectionId)?.config === snapshot.connectionConfig
+);
+
+const buildQueryEditorHoverDdlCacheKey = (
+    snapshot: QueryEditorMetadataRequestSnapshot,
+    dbName: string,
+    tableName: string,
+    connectionRevision: number,
+    contextKey: string,
+): string => (
+    `${String(snapshot.connectionId || '').trim()}\u0000${connectionRevision}\u0000${getQueryEditorHoverDdlConfigRevision(snapshot.connectionConfig)}\u0000${String(contextKey || '')}\u0000${buildQueryEditorTableTargetKey(snapshot.connectionId, dbName, tableName)}`
+);
+
+const getQueryEditorHoverDdlConnectionRevision = (connectionId: string): number => (
+    sharedQueryEditorHoverDdlRevisionByConnection.get(String(connectionId || '').trim()) || 0
+);
+
+const getQueryEditorHoverDdlConfigRevision = (connectionConfig: unknown): number => {
+    if (!connectionConfig || typeof connectionConfig !== 'object') return 0;
+    const configObject = connectionConfig as object;
+    const existing = sharedQueryEditorHoverDdlConfigRevisionByObject.get(configObject);
+    if (existing !== undefined) return existing;
+    const revision = nextQueryEditorHoverDdlConfigRevision++;
+    sharedQueryEditorHoverDdlConfigRevisionByObject.set(configObject, revision);
+    return revision;
+};
+
+const invalidateQueryEditorHoverDdlCacheForConnection = (connectionId: string) => {
+    const normalizedConnectionId = String(connectionId || '').trim();
+    if (!normalizedConnectionId) return;
+
+    sharedQueryEditorHoverDdlRevisionByConnection.set(
+        normalizedConnectionId,
+        getQueryEditorHoverDdlConnectionRevision(normalizedConnectionId) + 1,
+    );
+    const cacheKeyPrefix = `${normalizedConnectionId}\u0000`;
+    for (const key of sharedQueryEditorHoverDdlCache.keys()) {
+        if (key.startsWith(cacheKeyPrefix)) {
+            sharedQueryEditorHoverDdlCache.delete(key);
+        }
+    }
+};
+
+const installQueryEditorHoverDdlCacheInvalidationListener = () => {
+    if (typeof window === 'undefined') return;
+
+    const listenerState = _g.__gonaviQueryEditorHoverDdlCacheInvalidationListener;
+    if (typeof listenerState?.listener === 'function') {
+        const target = listenerState.target || window;
+        target.removeEventListener?.(SIDEBAR_DATABASE_REFRESH_EVENT, listenerState.listener);
+    }
+
+    const listener = (event: Event) => {
+        const request = normalizeSidebarDatabaseRefreshRequest((event as CustomEvent).detail);
+        if (!request) return;
+        invalidateQueryEditorHoverDdlCacheForConnection(request.connectionId);
+        // 每个编辑器实例按自己的连接上下文判断是否重载。不能依赖共享的「最后活跃」连接，
+        // 否则连接 A 在后台发生结构变化、当前 Query Tab 是连接 B 时，A 切回后会永久复用旧 metadata。
+        sharedQueryEditorMetadataReloadRequestListeners.forEach((listener) => listener(request));
+    };
+    window.addEventListener(SIDEBAR_DATABASE_REFRESH_EVENT, listener);
+    _g.__gonaviQueryEditorHoverDdlCacheInvalidationListener = { listener, target: window };
+};
+
+const uninstallQueryEditorHoverDdlCacheInvalidationListener = () => {
+    const listenerState = _g.__gonaviQueryEditorHoverDdlCacheInvalidationListener;
+    if (typeof listenerState?.listener === 'function') {
+        const target = listenerState.target || (typeof window === 'undefined' ? null : window);
+        target?.removeEventListener?.(SIDEBAR_DATABASE_REFRESH_EVENT, listenerState.listener);
+    }
+    _g.__gonaviQueryEditorHoverDdlCacheInvalidationListener = undefined;
+};
+
+// Ctrl+点击/mousemove 热路径禁止整篇读取模型（大文档性能约束，见 external-sql-save 测试）：
+// 用光标上方有限行拼接探针文本，既支持表来源前缀与跨行限定名判断，又不触发 getValueLength/getValue
+const QUERY_EDITOR_TABLE_SOURCE_PROBE_LINE_WINDOW = 8;
+const buildQueryEditorTableSourceProbeContext = (
+    model: any,
+    position: { lineNumber: number; column: number },
+): { text: string; lineNumber: number; context: { text: string; offset: number } } => {
+    const safeLineNumber = Math.max(1, Math.floor(Number(position?.lineNumber) || 1));
+    const fromLine = Math.max(1, safeLineNumber - QUERY_EDITOR_TABLE_SOURCE_PROBE_LINE_WINDOW);
+    const lines: string[] = [];
+    for (let lineNumber = fromLine; lineNumber <= safeLineNumber; lineNumber += 1) {
+        lines.push(String(model?.getLineContent?.(lineNumber) || ''));
+    }
+    const text = lines.join('\n');
+    const offset = lines.slice(0, -1).reduce((acc, line) => acc + line.length + 1, 0)
+        + Math.max(0, Math.floor(Number(position?.column) || 1) - 1);
+    return {
+        text,
+        lineNumber: lines.length,
+        context: { text, offset },
+    };
+};
+
+const buildQueryEditorDecorationProbeContext = (
+    lines: string[],
+    lineStartOffsets: number[],
+    lineNumber: number,
+    column: number,
+): { text: string; lineNumber: number; context: { text: string; offset: number } } => {
+    const safeLineIndex = Math.max(0, Math.min(lines.length - 1, Math.floor(Number(lineNumber) || 1) - 1));
+    const fromLineIndex = Math.max(0, safeLineIndex - QUERY_EDITOR_TABLE_SOURCE_PROBE_LINE_WINDOW);
+    const toLineIndex = Math.min(lines.length - 1, safeLineIndex + QUERY_EDITOR_TABLE_SOURCE_PROBE_LINE_WINDOW);
+    const text = lines.slice(fromLineIndex, toLineIndex + 1).join('\n');
+    const offset = (lineStartOffsets[safeLineIndex] || 0)
+        - (lineStartOffsets[fromLineIndex] || 0)
+        + Math.max(0, Math.floor(Number(column) || 1) - 1);
+    return {
+        text,
+        lineNumber: safeLineIndex - fromLineIndex + 1,
+        context: { text, offset },
+    };
+};
+
+type QueryEditorObjectResolveContext = {
+    text: string;
+    lineNumber: number;
+    documentContext: { text: string; offset: number };
+};
+
+// Hover 可读取完整短文档；大文档则只取光标附近的小窗口，并把行号和 offset 换算到同一局部坐标系。
+// 不能把 Monaco 全文 offset 传给单行 fallback，否则限定名窗口会被夹到行尾。
+const buildQueryEditorObjectResolveContext = (
+    model: any,
+    position: { lineNumber: number; column: number },
+    lineContent: string,
+): QueryEditorObjectResolveContext => {
+    const resolvedText = getQueryEditorObjectResolveText(model, lineContent);
+    const modelLength = getQueryEditorModelValueLength(model);
+    const usesFullDocument = modelLength !== null
+        ? resolvedText.length === modelLength
+        : resolvedText !== lineContent || Number(model?.getLineCount?.() || 1) <= 1;
+    if (usesFullDocument) {
+        const offset = typeof model?.getOffsetAt === 'function'
+            ? model.getOffsetAt(position)
+            : getQueryEditorDocumentOffsetAtPosition(resolvedText, position.lineNumber, position.column);
+        return {
+            text: resolvedText,
+            lineNumber: position.lineNumber,
+            documentContext: { text: resolvedText, offset },
+        };
+    }
+
+    const safeLineNumber = Math.max(1, Math.floor(Number(position?.lineNumber) || 1));
+    const lineCount = Math.max(safeLineNumber, Math.floor(Number(model?.getLineCount?.()) || safeLineNumber));
+    const fromLine = Math.max(1, safeLineNumber - QUERY_EDITOR_TABLE_SOURCE_PROBE_LINE_WINDOW);
+    const toLine = Math.min(lineCount, safeLineNumber + QUERY_EDITOR_TABLE_SOURCE_PROBE_LINE_WINDOW);
+    const lines: string[] = [];
+    for (let lineNumber = fromLine; lineNumber <= toLine; lineNumber += 1) {
+        lines.push(String(model?.getLineContent?.(lineNumber) || ''));
+    }
+    const localLineNumber = safeLineNumber - fromLine + 1;
+    const offset = lines
+        .slice(0, localLineNumber - 1)
+        .reduce((acc, line) => acc + line.length + 1, 0)
+        + Math.max(0, Math.floor(Number(position?.column) || 1) - 1);
+    const text = lines.join('\n');
+    return {
+        text,
+        lineNumber: localLineNumber,
+        documentContext: { text, offset },
+    };
+};
+
+const readQueryEditorHoverDdlCache = (key: string): string | undefined => {
+    const cached = sharedQueryEditorHoverDdlCache.get(key);
+    if (cached === undefined) return undefined;
+
+    sharedQueryEditorHoverDdlCache.delete(key);
+    sharedQueryEditorHoverDdlCache.set(key, cached);
+    return cached;
+};
+
+const cacheQueryEditorHoverDdl = (key: string, ddl: string) => {
+    sharedQueryEditorHoverDdlCache.delete(key);
+    sharedQueryEditorHoverDdlCache.set(key, ddl);
+    if (sharedQueryEditorHoverDdlCache.size > QUERY_EDITOR_HOVER_DDL_CACHE_LIMIT) {
+        const oldestKey = sharedQueryEditorHoverDdlCache.keys().next().value;
+        if (oldestKey !== undefined) {
+            sharedQueryEditorHoverDdlCache.delete(oldestKey);
+        }
+    }
+};
+
+const loadQueryEditorHoverDdl = async (
+    snapshot: QueryEditorMetadataRequestSnapshot,
+    contextKey: string,
+    dbName: string,
+    tableName: string,
+): Promise<string> => {
+    const connectionRevision = getQueryEditorHoverDdlConnectionRevision(snapshot.connectionId);
+    const key = buildQueryEditorHoverDdlCacheKey(snapshot, dbName, tableName, connectionRevision, contextKey);
+    const cached = readQueryEditorHoverDdlCache(key);
+    if (cached !== undefined) return cached;
+
+    // Ordinary metadata reloads do not invalidate DDL. Keep one request per
+    // connection/config/schema revision/object so a slow SSH response is not
+    // discarded and fetched again on the next hover.
+    const requestKey = key;
+    const pending = sharedQueryEditorHoverDdlRequests.get(requestKey);
+    if (pending) return pending;
+
+    const request = (async () => {
+        try {
+            const result = await DBShowCreateTable(
+                buildRpcConnectionConfig(snapshot.connectionConfig as any) as any,
+                dbName,
+                tableName,
+            );
+            if (!result?.success) return '';
+
+            const ddl = formatDdlForDisplay(
+                result.data,
+                String((snapshot.connectionConfig as any)?.type || ''),
+            );
+            const isCurrentDdl = Boolean(ddl)
+                && connectionRevision === getQueryEditorHoverDdlConnectionRevision(snapshot.connectionId)
+                && isSharedQueryEditorHoverDdlRequestCurrent(snapshot, contextKey);
+            if (!isCurrentDdl) return '';
+
+            cacheQueryEditorHoverDdl(key, ddl);
+            return ddl;
+        } catch {
+            return '';
+        }
+    })();
+    sharedQueryEditorHoverDdlRequests.set(requestKey, request);
+    try {
+        return await request;
+    } finally {
+        if (sharedQueryEditorHoverDdlRequests.get(requestKey) === request) {
+            sharedQueryEditorHoverDdlRequests.delete(requestKey);
+        }
+    }
+};
+
+const buildQueryEditorHoverDdlMarkdown = (ddl: string): string => {
+    const fenceLength = Math.max(
+        3,
+        ...Array.from(String(ddl || '').matchAll(/`+/g), (match) => match[0].length + 1),
+    );
+    const fence = '`'.repeat(fenceLength);
+    return `${fence}sql\n${ddl}\n${fence}`;
+};
+
 const isExactQueryEditorTableName = (left: string, right: string): boolean => {
     const normalizedLeft = normalizeCompletionQualifiedName(left);
     const normalizedRight = normalizeCompletionQualifiedName(right);
@@ -1368,6 +1651,9 @@ const resetSharedQueryEditorMetadata = () => {
     sharedActiveEditorModelUri = '';
     clearRecord(sharedLazyTablesCache);
     clearRecord(sharedLazyTablesInFlight);
+    sharedQueryEditorHoverDdlCache.clear();
+    sharedQueryEditorHoverDdlRequests.clear();
+    sharedQueryEditorHoverDdlRevisionByConnection.clear();
 };
 
 const parseQueryResultSortInfo = (field: string, order: string): GridSortInfoItem[] => {
@@ -1529,6 +1815,9 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
   resultSetsRef.current = resultSets;
   activeResultKeyRef.current = activeResultKey;
   const [loading, setLoading] = useState(false);
+  const [queryEditorMetadataReloadTick, setQueryEditorMetadataReloadTick] = useState(0);
+  // 事件驱动的结构变更重载必须绕过 fetchKey 去重（服务端结构可能已变，前端无从感知）
+  const queryEditorMetadataForceReloadRef = useRef(false);
   const [queryContextLockRunSeq, setQueryContextLockRunSeq] = useState(0);
   const queryContextLockRunSeqRef = useRef(0);
   const lockQueryContextForRun = useCallback((runSeq: number) => {
@@ -1798,7 +2087,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       connectionConfig: null,
       version: 0,
   });
-  const tableNavigationContextKey = `${isActive ? 'active' : 'inactive'}\u0000${tab.id}\u0000${currentConnectionId}\u0000${currentDb}`;
+  const tableNavigationContextKey = `${isActive ? 'active' : 'inactive'}\u0000${tab.id}\u0000${currentConnectionId}\u0000${currentDb}\u0000${currentSchema}`;
   if (
       tableNavigationContextRef.current.key !== tableNavigationContextKey
       || tableNavigationContextRef.current.connectionConfig !== currentConnectionConfig
@@ -2363,7 +2652,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
               normalizedDbName,
               targetConnectionConfig,
           );
-          const nextSharedMetadataContextKey = `${tab.id}\u0000${normalizedConnectionId}\u0000${normalizedDbName}`;
+          const nextSharedMetadataContextKey = `${tab.id}\u0000${normalizedConnectionId}\u0000${normalizedDbName}\u0000`;
           if (
               !metadataContextChanged
               && (
@@ -2929,7 +3218,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       const activeConnectionConfig = connections.find(
           (connection) => connection.id === currentConnectionId,
       )?.config ?? null;
-      const nextSharedMetadataContextKey = `${tab.id}\u0000${currentConnectionId}\u0000${currentDb}`;
+      const nextSharedMetadataContextKey = `${tab.id}\u0000${currentConnectionId}\u0000${currentDb}\u0000${currentSchema}`;
       if (
           sharedQueryEditorMetadataContextKey !== nextSharedMetadataContextKey
           || sharedQueryEditorMetadataConnectionConfig !== activeConnectionConfig
@@ -2986,6 +3275,13 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       const decorations: any[] = [];
       const seen = new Set<string>();
       const candidates = collectQueryEditorObjectDecorationCandidates(text);
+      const lines = text.split('\n');
+      const lineStartOffsets: number[] = [];
+      let lineStartOffset = 0;
+      lines.forEach((line) => {
+          lineStartOffsets.push(lineStartOffset);
+          lineStartOffset += line.length + 1;
+      });
       const objectMetadataCount = tablesRef.current.length
           + viewsRef.current.length
           + materializedViewsRef.current.length
@@ -3000,10 +3296,17 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       const decorationColumns = allColumnsRef.current.length <= 2_000
           ? allColumnsRef.current
           : [];
+      const aliasMap = buildQueryEditorAliasMap(text, currentDbRef.current);
 
       for (const candidate of candidates) {
+          const probeContext = buildQueryEditorDecorationProbeContext(
+              lines,
+              lineStartOffsets,
+              candidate.lineNumber,
+              candidate.positionColumn,
+          );
           const hoverTarget = resolveQueryEditorHoverTarget(
-              text,
+              probeContext.text,
               candidate.lineContent,
               candidate.positionColumn,
               currentDbRef.current,
@@ -3016,6 +3319,14 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
               routinesRef.current,
               sequencesRef.current,
               packagesRef.current,
+              isQueryEditorTableSourceAtPosition(
+                  probeContext.text,
+                  probeContext.lineNumber,
+                  candidate.positionColumn,
+              ),
+              probeContext.context,
+              currentSchemaRef.current,
+              aliasMap,
           );
           if (!hoverTarget) continue;
 
@@ -3248,9 +3559,9 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           return false;
       }
       const lineContent = String(model.getLineContent?.(normalizedPosition.lineNumber) || '');
-      const resolveText = getQueryEditorObjectResolveText(model, lineContent);
+      const resolveContext = buildQueryEditorObjectResolveContext(model, normalizedPosition, lineContent);
       const hoverTarget = resolveQueryEditorHoverTarget(
-          resolveText,
+          resolveContext.text,
           lineContent,
           normalizedPosition.column,
           currentDbRef.current,
@@ -3263,6 +3574,9 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           routinesRef.current,
           sequencesRef.current,
           packagesRef.current,
+          isQueryEditorTableSourceAtPosition(resolveContext.text, resolveContext.lineNumber, normalizedPosition.column),
+          resolveContext.documentContext,
+          currentSchemaRef.current,
       );
       if (!hoverTarget) {
           return false;
@@ -4049,12 +4363,64 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
   ]);
 
   // Fetch Metadata for Autocomplete (Cross-database)
+  // 注册重载回调：结构变更（含表设计器等外部入口）触发刷新事件后，通过 tick 重跑本 effect 拉取最新元数据
+  useEffect(() => {
+      // 组件挂载时对当前 window 重新安装刷新监听（测试环境会替换 window 桩，模块级安装只覆盖首个 window）
+      installQueryEditorHoverDdlCacheInvalidationListener();
+      const reloadListener = (request: SidebarDatabaseRefreshRequest) => {
+          if (request.connectionId !== String(currentConnectionIdRef.current || '').trim()) {
+              return;
+          }
+          const updatesSharedActiveContext = queryEditorActiveRef.current
+              && !isObjectEditQueryTab
+              && String(sharedCurrentConnectionId || '').trim() === request.connectionId;
+          // 先失效再调度 effect：在 React 清理旧 effect 前返回的请求也不能把旧结构写回。
+          metadataGenerationRef.current += 1;
+          metadataFetchKeyRef.current = '';
+          tablesRef.current = [];
+          allColumnsRef.current = [];
+          viewsRef.current = [];
+          materializedViewsRef.current = [];
+          synonymsRef.current = [];
+          triggersRef.current = [];
+          routinesRef.current = [];
+          sequencesRef.current = [];
+          packagesRef.current = [];
+          columnsCacheRef.current = {};
+          incompleteColumnMetadataDbsRef.current.clear();
+          missingTableMetadataKeysRef.current.clear();
+          if (updatesSharedActiveContext) {
+              sharedQueryEditorMetadataGeneration += 1;
+              sharedTablesData = [];
+              sharedAllColumnsData = [];
+              sharedViewsData = [];
+              sharedMaterializedViewsData = [];
+              sharedSynonymsData = [];
+              sharedTriggersData = [];
+              sharedRoutinesData = [];
+              sharedSequencesData = [];
+              sharedPackagesData = [];
+          }
+          queryEditorMetadataForceReloadRef.current = true;
+          setQueryEditorMetadataReloadTick((tick) => tick + 1);
+      };
+      sharedQueryEditorMetadataReloadRequestListeners.add(reloadListener);
+      return () => {
+          sharedQueryEditorMetadataReloadRequestListeners.delete(reloadListener);
+          if (sharedQueryEditorMetadataReloadRequestListeners.size === 0) {
+              uninstallQueryEditorHoverDdlCacheInvalidationListener();
+          }
+      };
+  }, []);
   useEffect(() => {
       if (!isActive || !autoFetchVisible || isObjectEditQueryTab) {
           return;
       }
 
       let cancelled = false;
+      // 事件驱动的重载只生效一次；普通依赖变化不绕过去重
+      const forceMetadataReload = queryEditorMetadataForceReloadRef.current;
+      queryEditorMetadataForceReloadRef.current = false;
       const metadataGeneration = metadataGenerationRef.current;
       // 仅在本次 effect 成功完成后写入；中途 cancel 不得留下 key，否则同 key 永远不再拉取 → 超链接全灭
       let activeFetchKey = '';
@@ -4108,8 +4474,8 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           const hasCurrentDbTables = tablesRef.current.some(
               (table) => String(table.dbName || '').trim().toLowerCase() === metadataDbName.toLowerCase(),
           );
-          if (metadataFetchKeyRef.current === metadataFetchKey && hasCurrentDbTables) {
-              // 已成功拉过同一批库且当前库表仍在：只刷新装饰
+          if (!forceMetadataReload && metadataFetchKeyRef.current === metadataFetchKey && hasCurrentDbTables) {
+              // 已成功拉过同一批库且当前库表仍在：只刷新装饰（事件驱动的结构变更重载不受此去重限制）
               refreshObjectDecorations();
               return;
           }
@@ -4408,9 +4774,9 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
 
           if (!syncMetadataSnapshot()) return;
           // 成功完成后才固化 key，避免 cancel 后同 key 被误判为「已完成」
-          metadataFetchKeyRef.current = activeFetchKey;
-          lastSqlReferencedMetadataKeyRef.current = activeFetchKey;
-          refreshObjectDecorations();
+              metadataFetchKeyRef.current = activeFetchKey;
+              lastSqlReferencedMetadataKeyRef.current = activeFetchKey;
+              refreshObjectDecorations();
       };
       void fetchMetadata();
       return () => {
@@ -4424,6 +4790,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       isActive,
       isQueryEditorMetadataRequestCurrent,
       isObjectEditQueryTab,
+      queryEditorMetadataReloadTick,
       refreshObjectDecorations,
       sqlReferencedMetadataKey,
   ]);
@@ -4852,11 +5219,11 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       if (!targetTriggerName) return;
 
       const conn = connectionsRef.current.find((item) => item.id === connectionId);
+      const dialect = conn ? normalizeMetadataDialect(conn) : '';
+      const triggerTableName = String(navigationTarget.tableName || '').trim();
       let latestDefinition = '';
       if (conn) {
-          const dialect = normalizeMetadataDialect(conn);
           const connectionConfig = buildQueryEditorObjectDefinitionConnectionConfig(conn);
-          const triggerTableName = String(navigationTarget.tableName || '').trim();
           if (dialect === 'oracle') {
               if (triggerTableName) {
                   try {
@@ -4883,13 +5250,28 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           }
       }
 
+      const triggerRollbackSql = buildTableDesignerTriggerRestoreSql(
+          { name: targetTriggerName, statement: latestDefinition },
+          triggerTableName,
+          dialect,
+      );
+      const triggerDropSql = shouldDropTableDesignerTriggerBeforeReplace(triggerRollbackSql, dialect)
+          ? buildTableDesignerTriggerDropSql(targetTriggerName, triggerTableName, dialect)
+          : '';
+
       addTab({
           id: `query-edit-trigger-${connectionId}-${targetDbName}-${targetTriggerName}-${Date.now()}`,
           title: translate('trigger_viewer.tab.edit_trigger_title', { name: targetTriggerName }),
           type: 'query',
           connectionId,
           dbName: targetDbName,
-          query: buildEditableTriggerSql(targetTriggerName, latestDefinition, { translate }),
+          query: buildEditableTriggerSql(targetTriggerName, latestDefinition, {
+              dropSql: triggerDropSql,
+              translate,
+          }),
+          triggerName: targetTriggerName,
+          triggerTableName: triggerTableName || undefined,
+          triggerRollbackSql: triggerRollbackSql || undefined,
           queryMode: 'object-edit',
           returnToTabId: activeTabId || undefined,
       });
@@ -5513,6 +5895,8 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           }
           const model = editor.getModel?.();
           const lineContent = String(model?.getLineContent?.(targetPosition.lineNumber) || '');
+          // mousemove 热路径禁止整篇读取模型（大文档性能约束），用光标附近有限行做探针
+          const probeContext = buildQueryEditorTableSourceProbeContext(model, targetPosition);
           const decorations = resolveQueryEditorNavigationDecorations(
               lineContent,
               targetPosition.column,
@@ -5526,6 +5910,13 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
               sequencesRef.current,
               packagesRef.current,
               primaryShortcutModifierLabel,
+              isQueryEditorTableSourceAtPosition(
+                  probeContext.text,
+                  probeContext.lineNumber,
+                  targetPosition.column,
+              ),
+              probeContext.context,
+              currentSchemaRef.current,
           );
           if (decorations.length === 0) {
               clearQueryEditorLinkDecorations(editor, linkDecorationIdsRef);
@@ -5999,6 +6390,8 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
 
           const model = editor.getModel?.();
           const lineContent = String(model?.getLineContent?.(targetPosition.lineNumber) || '');
+          // Ctrl+点击热路径禁止整篇读取模型（大文档性能约束），用光标附近有限行做探针
+          const probeContext = buildQueryEditorTableSourceProbeContext(model, targetPosition);
           const navigationTarget = resolveQueryEditorNavigationTarget(
               lineContent,
               targetPosition.column,
@@ -6011,6 +6404,13 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
               routinesRef.current,
               sequencesRef.current,
               packagesRef.current,
+              isQueryEditorTableSourceAtPosition(
+                  probeContext.text,
+                  probeContext.lineNumber,
+                  targetPosition.column,
+              ),
+              probeContext.context,
+              currentSchemaRef.current,
           );
           if (!navigationTarget) {
               return;
@@ -6360,13 +6760,15 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       sqlCompletionRegistered = Boolean(_g.__gonaviSqlCompletionState.registered);
       sqlCompletionDisposables = _g.__gonaviSqlCompletionState.disposables;
       const shouldRegisterSqlCompletion = !sqlCompletionRegistered
-          || _g.__gonaviSqlCompletionState.version !== SQL_COMPLETION_PROVIDER_VERSION;
+          || _g.__gonaviSqlCompletionState.version !== SQL_COMPLETION_PROVIDER_VERSION
+          || _g.__gonaviSqlCompletionState.moduleToken !== SQL_COMPLETION_PROVIDER_MODULE_TOKEN;
 
       // HMR 重载时释放旧注册避免补全项重复
       if (shouldRegisterSqlCompletion) {
       sqlCompletionRegistered = true;
       _g.__gonaviSqlCompletionState.registered = true;
       _g.__gonaviSqlCompletionState.version = SQL_COMPLETION_PROVIDER_VERSION;
+      _g.__gonaviSqlCompletionState.moduleToken = SQL_COMPLETION_PROVIDER_MODULE_TOKEN;
       sqlCompletionDisposables.forEach((d: any) => d?.dispose?.());
       sqlCompletionDisposables.length = 0;
       const registerQueryEditorHoverProvider = (provider: any) => {
@@ -6379,16 +6781,16 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
               sqlCompletionDisposables.push(monaco.languages.registerCompletionItemProvider(languageId, provider));
           });
       };
-      registerQueryEditorHoverProvider({
+      const queryEditorMetadataHoverProvider = {
           provideHover: (model: any, position: any) => {
               const normalizedPosition = normalizeEditorPosition(position);
               if (!normalizedPosition) {
                   return null;
               }
               const lineContent = String(model?.getLineContent?.(normalizedPosition.lineNumber) || '');
-              const resolveText = getQueryEditorObjectResolveText(model, lineContent);
+              const resolveContext = buildQueryEditorObjectResolveContext(model, normalizedPosition, lineContent);
               const hoverTarget = resolveQueryEditorHoverTarget(
-                  resolveText,
+                  resolveContext.text,
                   lineContent,
                   normalizedPosition.column,
                   sharedCurrentDb,
@@ -6401,6 +6803,15 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                   sharedRoutinesData,
                   sharedSequencesData,
                   sharedPackagesData,
+                  isQueryEditorTableSourceAtPosition(
+                      resolveContext.text,
+                      resolveContext.lineNumber,
+                      normalizedPosition.column,
+                  ),
+                  resolveContext.documentContext,
+                  sharedCurrentSchema,
+                  undefined,
+                  true,
               );
               if (!hoverTarget) {
                   return null;
@@ -6415,7 +6826,87 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                   contents: [{ value: buildQueryEditorHoverMarkdown(hoverTarget) }],
               };
           },
-      });
+      };
+      const queryEditorDdlHoverProvider = {
+          provideHover: async (model: any, position: any, token?: { isCancellationRequested?: boolean }) => {
+              if (isSqlCompletionRequestCancelled(token)) {
+                  return null;
+              }
+              const normalizedPosition = normalizeEditorPosition(position);
+              if (!normalizedPosition) {
+                  return null;
+              }
+              const lineContent = String(model?.getLineContent?.(normalizedPosition.lineNumber) || '');
+              const resolveContext = buildQueryEditorObjectResolveContext(model, normalizedPosition, lineContent);
+              const hoverTarget = resolveQueryEditorHoverTarget(
+                  resolveContext.text,
+                  lineContent,
+                  normalizedPosition.column,
+                  sharedCurrentDb,
+                  sharedVisibleDbs,
+                  sharedTablesData,
+                  sharedAllColumnsData,
+                  sharedViewsData,
+                  sharedMaterializedViewsData,
+                  sharedTriggersData,
+                  sharedRoutinesData,
+                  sharedSequencesData,
+                  sharedPackagesData,
+                  isQueryEditorTableSourceAtPosition(
+                      resolveContext.text,
+                      resolveContext.lineNumber,
+                      normalizedPosition.column,
+                  ),
+                  resolveContext.documentContext,
+                  sharedCurrentSchema,
+                  undefined,
+                  true,
+              );
+              if (hoverTarget?.kind !== 'table') {
+                  return null;
+              }
+
+              const connectionId = String(sharedCurrentConnectionId || '').trim();
+              const dbName = String(hoverTarget.dbName || '').trim();
+              const tableName = buildQueryEditorQualifiedObjectName(
+                  String(hoverTarget.tableName || '').trim(),
+                  hoverTarget.schemaName,
+              );
+              const connection = sharedConnections.find((item) => item.id === connectionId);
+              if (!connectionId || !connection?.config || !dbName || !tableName) {
+                  return null;
+              }
+
+              const snapshot: QueryEditorMetadataRequestSnapshot = {
+                  generation: sharedQueryEditorMetadataGeneration,
+                  connectionId,
+                  connectionConfig: connection.config,
+              };
+              const contextKey = sharedQueryEditorMetadataContextKey;
+              const ddl = await loadQueryEditorHoverDdl(snapshot, contextKey, dbName, tableName);
+              if (
+                  isSqlCompletionRequestCancelled(token)
+                  || !ddl
+                  || !isSharedQueryEditorHoverDdlRequestCurrent(snapshot, contextKey)
+              ) {
+                  return null;
+              }
+
+              return {
+                  range: new monaco.Range(
+                      normalizedPosition.lineNumber,
+                      hoverTarget.range.startColumn,
+                      normalizedPosition.lineNumber,
+                      hoverTarget.range.endColumn,
+                  ),
+                  contents: [{ value: buildQueryEditorHoverDdlMarkdown(ddl) }],
+              };
+          },
+      };
+      // Monaco gives later same-language providers higher priority. Register the
+      // DDL provider first so the base table metadata remains above the DDL.
+      registerQueryEditorHoverProvider(queryEditorDdlHoverProvider);
+      registerQueryEditorHoverProvider(queryEditorMetadataHoverProvider);
       registerQueryEditorCompletionProvider({
           triggerCharacters: ['.'],
           provideCompletionItems: async (model: any, position: any, _context?: any, token?: { isCancellationRequested?: boolean }) => {
@@ -9377,7 +9868,67 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                 dbName: currentDb
             });
 
+            const confirmedStatementCount = res.success
+                ? sourceStatements.length
+                : Math.max(0, Math.min(sourceStatements.length, Number(res.executedCount) || 0));
+            const schemaInvalidationStatementCount = res.success
+                ? confirmedStatementCount
+                : Math.min(sourceStatements.length, confirmedStatementCount + 1);
+            if (sourceStatements.slice(0, schemaInvalidationStatementCount).some(isSqlEditorSchemaChangingStatement)) {
+                invalidateQueryEditorHoverDdlCacheForConnection(conn.id);
+                dispatchSidebarDatabaseRefresh({
+                    connectionId: conn.id,
+                    dbName: currentDb,
+                });
+            }
+
             if (!res.success) {
+                const executionErrorText = formatSqlExecutionError(res.message, { translate });
+                let triggerRestoreMessage = '';
+                const triggerRollbackSql = String(tab.triggerRollbackSql || '').trim();
+                const triggerDropMayHaveChangedSchema = Number(res.executedCount) > 0
+                    || Number(res.failedIndex) > 1
+                    || res.outcomeUnknown === true
+                    || res.data?.outcomeUnknown === true;
+                const triggerDropWasDispatched = triggerDropMayHaveChangedSchema
+                    && Boolean(triggerRollbackSql)
+                    && sourceStatements
+                        .slice(0, schemaInvalidationStatementCount)
+                        .some((statement) => /\bDROP\s+TRIGGER\b/i.test(statement));
+                if (triggerDropWasDispatched) {
+                    try {
+                        const restoreResult = await DBQueryAudited(
+                            buildRpcConnectionConfig(executionConfig) as any,
+                            currentDb,
+                            triggerRollbackSql,
+                            'table_designer',
+                        );
+                        if (!isCurrentRun()) return;
+                        triggerRestoreMessage = restoreResult?.success
+                            ? translate('table_designer.message.trigger_restored_after_failure', {
+                                detail: executionErrorText,
+                            })
+                            : translate('table_designer.message.trigger_restore_failed', {
+                                detail: executionErrorText,
+                                restoreDetail: restoreResult?.message || translate('common.unknown'),
+                            });
+                    } catch (restoreError: any) {
+                        if (!isCurrentRun()) return;
+                        triggerRestoreMessage = translate('table_designer.message.trigger_restore_failed', {
+                            detail: executionErrorText,
+                            restoreDetail: restoreError?.message || String(restoreError || translate('common.unknown')),
+                        });
+                    }
+                }
+                if (triggerDropWasDispatched && isCurrentRun()) {
+                    // The first refresh can race the compensating CREATE. Re-emit it
+                    // after restoration so consumers cannot cache the temporary gap.
+                    invalidateQueryEditorHoverDdlCacheForConnection(conn.id);
+                    dispatchSidebarDatabaseRefresh({
+                        connectionId: conn.id,
+                        dbName: currentDb,
+                    });
+                }
                 const errorMsg = res.message.toLowerCase();
                 const isCancelledError = errorMsg.includes('context canceled') ||
                                          errorMsg.includes('查询已取消') ||
@@ -9399,7 +9950,8 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                 }
 
                 updateResultPanelVisibility(true);
-                setExecutionError(formatSqlExecutionError(res.message, { translate }));
+                setExecutionError(triggerRestoreMessage
+                    || executionErrorText);
                 clearUnpinnedResultSets(QUERY_EDITOR_SQL_LOG_TAB_KEY);
                 return;
             }

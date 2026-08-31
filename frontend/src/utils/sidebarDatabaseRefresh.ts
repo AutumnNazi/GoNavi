@@ -3,7 +3,9 @@ export const SIDEBAR_DATABASE_LIST_REFRESH_EVENT = 'gonavi:sidebar-database-list
 
 export type SidebarDatabaseRefreshRequest = {
   connectionId: string;
-  dbName: string;
+  // Omitted for data sources whose schema is scoped directly to a connection
+  // (for example SQLite files). Consumers then refresh the whole connection.
+  dbName?: string;
   schemaName?: string;
   reason?: 'data-sync' | 'external';
 };
@@ -18,11 +20,11 @@ export const normalizeSidebarDatabaseRefreshRequest = (
 ): SidebarDatabaseRefreshRequest | null => {
   const connectionId = String(value?.connectionId || '').trim();
   const dbName = String(value?.dbName || '').trim();
-  if (!connectionId || !dbName) return null;
+  if (!connectionId) return null;
   const schemaName = String(value?.schemaName || '').trim();
   return {
     connectionId,
-    dbName,
+    ...(dbName ? { dbName } : {}),
     ...(schemaName ? { schemaName } : {}),
     ...(value?.reason ? { reason: value.reason } : {}),
   };

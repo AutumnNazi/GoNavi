@@ -9,6 +9,11 @@ import { buildRpcConnectionConfig } from '../utils/connectionRpcConfig';
 import { normalizeOceanBaseProtocol } from '../utils/oceanBaseProtocol';
 import { splitQualifiedNameLast } from '../utils/qualifiedName';
 import { buildEditableTriggerSql } from '../utils/triggerEditSql';
+import {
+    buildTableDesignerTriggerDropSql,
+    buildTableDesignerTriggerRestoreSql,
+    shouldDropTableDesignerTriggerBeforeReplace,
+} from '../utils/tableDesignerTriggerSql';
 import { findTriggerDefinitionStatement } from '../utils/triggerDefinition';
 import { buildSqlServerObjectDefinitionQueries } from '../utils/sqlServerObjectDefinition';
 import { useI18n } from '../i18n/provider';
@@ -630,6 +635,17 @@ LIMIT 1`];
                 return;
             }
             const latestDefinition = String(result.definition || '');
+            const conn = connections.find((item) => item.id === tab.connectionId);
+            const dialect = conn ? getMetadataDialect(conn) : '';
+            const triggerTableName = String(tab.triggerTableName || '').trim();
+            const triggerRollbackSql = buildTableDesignerTriggerRestoreSql(
+                { name: triggerName, statement: latestDefinition },
+                triggerTableName,
+                dialect,
+            );
+            const triggerDropSql = shouldDropTableDesignerTriggerBeforeReplace(triggerRollbackSql, dialect)
+                ? buildTableDesignerTriggerDropSql(triggerName, triggerTableName, dialect)
+                : '';
             loadedDefinitionKeyRef.current = objectIdentityKey;
             setTriggerDefinition(latestDefinition);
             setActiveContext({ connectionId: tab.connectionId, dbName });
@@ -639,7 +655,13 @@ LIMIT 1`];
                 type: 'query',
                 connectionId: tab.connectionId,
                 dbName,
-                query: buildEditableTriggerSql(triggerName, latestDefinition, { translate: t }),
+                query: buildEditableTriggerSql(triggerName, latestDefinition, {
+                    dropSql: triggerDropSql,
+                    translate: t,
+                }),
+                triggerName,
+                triggerTableName: triggerTableName || undefined,
+                triggerRollbackSql: triggerRollbackSql || undefined,
                 queryMode: 'object-edit',
             });
         } finally {
