@@ -968,9 +968,12 @@ if (
                 },
                 AIGetActiveProvider: async () => mockActiveProviderId,
                 AISetActiveProvider: async (id: string) => {
+                    if (!mockProviders.some((item) => item.id === id)) throw new Error(`provider not found: ${id}`);
                     mockActiveProviderId = id;
-                    return null;
                 },
+                AIGetCLICapabilities: async () => [],
+                AIGetCLIModelCatalog: async () => ({ models: [], source: 'none', stale: false }),
+                AIListCLIModels: async () => [],
                 AIGetSafetyLevel: async () => mockAISafetyLevel,
                 AIGetContextLevel: async () => mockAIContextLevel,
                 AIGetBuiltinPrompts: async () => ({}),
@@ -1152,11 +1155,11 @@ if (
                     mockSkills = mockSkills.filter((item) => item.id !== id);
                     return null;
                 },
-                AITestProvider: async (input: any) => ({
-                    success: String(input?.apiKey || '').trim() !== '',
-                    message: String(input?.apiKey || '').trim() !== ''
-                        ? t('app.browser_mock.provider.test_success')
-                        : t('app.browser_mock.provider.test_failed_detail', { detail: 'missing api key' }),
+                AITestProvider: async () => ({
+                    success: false,
+                    checkKind: 'none',
+                    modelVerified: false,
+                    message: t('ai_settings.message.preview_check_unavailable'),
                 }),
                 AISetSafetyLevel: async (level: string) => {
                     mockAISafetyLevel = String(level || 'readonly');

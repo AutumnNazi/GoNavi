@@ -114,13 +114,16 @@ var claudeCLIHealthCheckFunc = func(config ai.ProviderConfig) error {
 		return err
 	}
 
-	_, err = cliProvider.Chat(ctx, ai.ChatRequest{
+	response, err := cliProvider.Chat(ctx, ai.ChatRequest{
 		Messages: []ai.Message{
 			{Role: "user", Content: "ping"},
 		},
 		MaxTokens:   1,
 		Temperature: 0,
 	})
+	if err == nil && (response == nil || strings.TrimSpace(response.Content) == "") {
+		return fmt.Errorf("CLI returned no model response")
+	}
 	return err
 }
 
@@ -136,6 +139,14 @@ var codexCLIHealthCheckFunc = func(config ai.ProviderConfig) error {
 	return provider.CheckCodexCLIAuth(ctx)
 }
 
+var grokCLIHealthCheckFunc = func(_ ai.ProviderConfig) error {
+	return provider.CheckGrokCLIModels(context.Background())
+}
+
+var cursorCLIHealthCheckFunc = func(_ ai.ProviderConfig) error {
+	return provider.CheckCursorCLIAuth(context.Background())
+}
+
 var codebuddyCLIHealthCheckFunc = func(config ai.ProviderConfig) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -145,13 +156,16 @@ var codebuddyCLIHealthCheckFunc = func(config ai.ProviderConfig) error {
 		return err
 	}
 
-	_, err = cliProvider.Chat(ctx, ai.ChatRequest{
+	response, err := cliProvider.Chat(ctx, ai.ChatRequest{
 		Messages: []ai.Message{
 			{Role: "user", Content: "ping"},
 		},
 		MaxTokens:   1,
 		Temperature: 0,
 	})
+	if err == nil && (response == nil || strings.TrimSpace(response.Content) == "") {
+		return fmt.Errorf("CLI returned no model response")
+	}
 	return err
 }
 
@@ -172,6 +186,8 @@ func NewServiceWithSecretStore(store secretstore.SecretStore) *Service {
 	if store == nil {
 		store = secretstore.NewUnavailableStore("secret store unavailable")
 	}
+	// 外部客户端探测放在后台预热，避免这 1s 量级的代价落在设置页打开的同步路径上。
+	go prewarmLocalCLICommandCache()
 	return &Service{
 		providers:        make([]ai.ProviderConfig, 0),
 		safetyLevel:      ai.PermissionReadOnly,
@@ -442,7 +458,10 @@ func (s *Service) AISaveProvider(config ai.ProviderConfig) error {
 	defer s.mu.Unlock()
 
 	config = normalizeProviderConfig(config)
-	if err := validateCodexCLIProviderAuth(config); err != nil {
+	if err := s.validateProviderModelPreferencesLocked(config); err != nil {
+		return err
+	}
+	if err := validateSubscriptionCLIProviderAuth(config); err != nil {
 		return err
 	}
 	localCLIAuth := isLocalCLIAuthProvider(config)
@@ -460,6 +479,17 @@ func (s *Service) AISaveProvider(config ai.ProviderConfig) error {
 			existing = providerConfig
 			found = true
 			break
+		}
+	}
+
+	// Keep historical duplicates editable, but do not add another integration
+	// or convert an unrelated provider into a CLI already present on this host.
+	identity := singletonCLIProviderIdentity(config)
+	if identity != "" && (!found || singletonCLIProviderIdentity(existing) != identity) {
+		for _, providerConfig := range s.providers {
+			if providerConfig.ID != config.ID && singletonCLIProviderIdentity(providerConfig) == identity {
+				return s.serviceErrorLocked("ai_service.backend.error.provider_cli_already_configured", nil, errors.New("CLI integration already configured"))
+			}
 		}
 	}
 
@@ -507,6 +537,7 @@ func (s *Service) AISaveProvider(config ai.ProviderConfig) error {
 	}
 
 	runtimeConfig = normalizeProviderConfig(runtimeConfig)
+	previousProviders := append([]ai.ProviderConfig(nil), s.providers...)
 	if found {
 		for i := range s.providers {
 			if s.providers[i].ID == runtimeConfig.ID {
@@ -518,7 +549,11 @@ func (s *Service) AISaveProvider(config ai.ProviderConfig) error {
 		s.providers = append(s.providers, runtimeConfig)
 	}
 
-	return s.saveConfig()
+	if err := s.saveConfig(); err != nil {
+		s.providers = previousProviders
+		return err
+	}
+	return nil
 }
 
 // AIDeleteProvider 删除 Provider
@@ -554,7 +589,8 @@ func (s *Service) AIDeleteProvider(id string) error {
 	return s.saveConfig()
 }
 
-// AITestProvider 测试 Provider 配置是否可用，仅测试端点连通性与密钥，不实际调用对话
+// AITestProvider 返回实际执行的检查范围。订阅 CLI 不发送聊天消息；
+// 其他兼容路径可能发送最小探测请求，只有读到模型回复才标记 modelVerified。
 func (s *Service) AITestProvider(config ai.ProviderConfig) map[string]interface{} {
 	localCLIAuth := isLocalCLIAuthProvider(config)
 	if localCLIAuth {
@@ -589,34 +625,36 @@ func (s *Service) AITestProvider(config ai.ProviderConfig) map[string]interface{
 		s.mu.RUnlock()
 
 		if found {
-			config, existingBundle := applyExistingRuntimeProviderSecrets(config, existing)
+			var existingBundle providerSecretBundle
+			config, existingBundle = applyExistingRuntimeProviderSecrets(config, existing)
 			if existingBundle.hasAny() {
 				config = mergeProviderSecrets(config, existingBundle)
 			} else {
 				resolved, err := s.resolveProviderConfigSecrets(config)
 				if err != nil {
-					return map[string]interface{}{"success": false, "message": s.providerTestFailedMessage(err.Error())}
+					return s.providerTestResult("none", err)
 				}
 				config = resolved
 			}
 		} else {
 			resolved, err := s.resolveProviderConfigSecrets(config)
 			if err != nil {
-				return map[string]interface{}{"success": false, "message": s.providerTestFailedMessage(err.Error())}
+				return s.providerTestResult("none", err)
 			}
 			config = resolved
 		}
 	}
 
 	config = normalizeProviderConfig(config)
-	baseURL := strings.TrimRight(strings.TrimSpace(config.BaseURL), "/")
 	providerType := normalizedProviderType(config)
 
 	client := &http.Client{Timeout: 10 * time.Second}
 	var err error
+	checkKind := "none"
 
 	switch providerType {
 	case "openai", "anthropic", "gemini", "cursor-agent":
+		checkKind = "endpoint"
 		req, reqErr := newProviderHealthCheckRequest(config)
 		if reqErr != nil {
 			err = s.localizeProviderHealthCheckRequestError(reqErr)
@@ -654,8 +692,10 @@ func (s *Service) AITestProvider(config ai.ProviderConfig) map[string]interface{
 		}
 	case "claude-cli":
 		if isLocalCLIAuthProvider(config) {
+			checkKind = "local-auth"
 			err = claudeCLILocalAuthCheckFunc(config)
 		} else {
+			checkKind = "model-response"
 			testConfig := config
 			if strings.TrimSpace(testConfig.Model) == "" && isDashScopeCodingPlanProvider(testConfig) && len(dashScopeCodingPlanModels) > 0 {
 				testConfig.Model = dashScopeCodingPlanModels[0]
@@ -663,33 +703,60 @@ func (s *Service) AITestProvider(config ai.ProviderConfig) map[string]interface{
 			err = claudeCLIHealthCheckFunc(testConfig)
 		}
 	case "codex-cli":
-		if authErr := validateCodexCLIProviderAuth(config); authErr != nil {
+		checkKind = "local-auth"
+		if authErr := validateSubscriptionCLIProviderAuth(config); authErr != nil {
 			err = authErr
 		} else {
 			err = codexCLIHealthCheckFunc(config)
 		}
 	case "codebuddy-cli":
+		checkKind = "model-response"
 		err = codebuddyCLIHealthCheckFunc(config)
-	default:
-		if baseURL != "" {
-			req, _ := http.NewRequest("GET", baseURL, nil)
-			resp, reqErr := client.Do(req)
-			if reqErr != nil {
-				err = reqErr
-			} else {
-				resp.Body.Close()
-			}
+	case "grok-cli":
+		checkKind = "model-list"
+		if authErr := validateSubscriptionCLIProviderAuth(config); authErr != nil {
+			err = authErr
+		} else {
+			err = grokCLIHealthCheckFunc(config)
 		}
+	case "cursor-cli":
+		checkKind = "local-auth"
+		if authErr := validateSubscriptionCLIProviderAuth(config); authErr != nil {
+			err = authErr
+		} else {
+			err = cursorCLIHealthCheckFunc(config)
+		}
+	default:
+		err = s.serviceError("ai_service.backend.error.provider_test_unsupported", map[string]any{"protocol": providerType}, errors.New("unsupported protocol"))
 	}
 
+	return s.providerTestResult(checkKind, err)
+}
+
+func (s *Service) providerTestResult(checkKind string, err error) map[string]interface{} {
+	if checkKind == "none" && err == nil {
+		err = s.serviceError("ai_service.backend.error.provider_test_unsupported", map[string]any{"protocol": ""}, errors.New("no check executed"))
+	}
+	result := map[string]interface{}{
+		"success":       err == nil,
+		"checkKind":     checkKind,
+		"modelVerified": err == nil && checkKind == "model-response",
+	}
 	if err != nil {
-		return map[string]interface{}{"success": false, "message": s.providerTestFailedMessage(err.Error())}
+		result["message"] = s.providerTestFailedMessage(err.Error())
+		return result
 	}
-
-	return map[string]interface{}{
-		"success": true,
-		"message": s.serviceText("ai_service.backend.message.provider_test_success", nil),
+	messageKey := "ai_service.backend.message.provider_test_success"
+	switch checkKind {
+	case "local-auth":
+		messageKey = "ai_service.backend.message.provider_test_local_auth_success"
+	case "model-list":
+		messageKey = "ai_service.backend.message.provider_test_models_success"
+	case "model-response":
+		messageKey = "ai_service.backend.message.provider_test_response_success"
 	}
+	result["message"] = s.serviceText(messageKey, nil)
+	return result
 }
 
 func formatProviderHTTPBody(body []byte) string {
@@ -702,6 +769,12 @@ func formatProviderHTTPBody(body []byte) string {
 
 func normalizedProviderType(config ai.ProviderConfig) string {
 	providerType := strings.ToLower(strings.TrimSpace(config.Type))
+	// Older custom API configurations omit apiFormat. The request provider
+	// already treats that as OpenAI; checks and catalogs must use the same default.
+	// An explicit unknown protocol (or an incomplete CLI record) still fails closed.
+	if providerType == "custom" && strings.TrimSpace(config.APIFormat) == "" && !strings.EqualFold(strings.TrimSpace(config.AuthMode), "local-cli") {
+		return "openai"
+	}
 	if providerType == "custom" && strings.TrimSpace(config.APIFormat) != "" {
 		apiFormat := strings.ToLower(strings.TrimSpace(config.APIFormat))
 		if apiFormat == "openai-responses" {
@@ -720,19 +793,30 @@ func isLocalCLIAuthProvider(config ai.ProviderConfig) bool {
 		return false
 	}
 	switch strings.ToLower(strings.TrimSpace(config.APIFormat)) {
-	case "codex-cli", "claude-cli":
+	case "codex-cli", "claude-cli", "grok-cli", "cursor-cli":
 		return true
 	default:
 		return false
 	}
 }
 
-func validateCodexCLIProviderAuth(config ai.ProviderConfig) error {
-	if !strings.EqualFold(strings.TrimSpace(config.APIFormat), "codex-cli") {
+func singletonCLIProviderIdentity(config ai.ProviderConfig) string {
+	if normalizedProviderType(config) == "codebuddy-cli" {
+		return "codebuddy-cli"
+	}
+	if isLocalCLIAuthProvider(config) {
+		return strings.ToLower(strings.TrimSpace(config.APIFormat))
+	}
+	return ""
+}
+
+func validateSubscriptionCLIProviderAuth(config ai.ProviderConfig) error {
+	format := strings.ToLower(strings.TrimSpace(config.APIFormat))
+	if format != "codex-cli" && format != "grok-cli" && format != "cursor-cli" {
 		return nil
 	}
 	if !isLocalCLIAuthProvider(config) {
-		return fmt.Errorf("Codex CLI provider requires the Codex Subscription preset with local-cli authentication")
+		return fmt.Errorf("%s provider requires its Subscription preset with local-cli authentication", format)
 	}
 	return nil
 }
@@ -966,7 +1050,7 @@ func resolveModelsURL(config ai.ProviderConfig) string {
 		return baseURL + "/v1beta/models?key=" + config.APIKey
 	case "cursor-agent":
 		return provider.ResolveCursorAPIEndpoint(baseURL, "models")
-	case "codex-cli", "codebuddy-cli":
+	case "codex-cli", "codebuddy-cli", "cursor-cli":
 		return ""
 	case "openai":
 		if isDeepSeekResponsesProvider(config) {
@@ -1058,11 +1142,29 @@ func newAnthropicMessagesHealthCheckRequest(config ai.ProviderConfig) (*http.Req
 }
 
 // AISetActiveProvider 设置活动 Provider
-func (s *Service) AISetActiveProvider(id string) {
+func (s *Service) AISetActiveProvider(id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	found := false
+	for _, config := range s.providers {
+		if config.ID == id && id != "" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return s.serviceErrorLocked("ai_service.backend.error.active_provider_not_found", nil, errors.New("provider not found"))
+	}
+	if s.activeProvider == id {
+		return nil
+	}
+	previous := s.activeProvider
 	s.activeProvider = id
-	_ = s.saveConfig()
+	if err := s.saveConfig(); err != nil {
+		s.activeProvider = previous
+		return err
+	}
+	return nil
 }
 
 // AIGetActiveProvider 获取活动 Provider ID
@@ -1123,19 +1225,19 @@ func (s *Service) AIListModels() map[string]interface{} {
 	if isLocalCLIAuthProvider(config) || normalizedProviderType(config) == "codebuddy-cli" {
 		return map[string]interface{}{
 			"success": true,
-			"models":  append([]string(nil), config.Models...),
+			"models":  selectableProviderModels(config, config.Models),
 			"source":  "static",
 		}
 	}
 	if staticModels := defaultStaticModelsForProvider(config); len(staticModels) > 0 {
-		return map[string]interface{}{"success": true, "models": staticModels, "source": "static"}
+		return map[string]interface{}{"success": true, "models": selectableProviderModels(config, staticModels), "source": "static"}
 	}
 
 	models, err := fetchModelsFunc(config, localizer)
 	if err != nil {
 		// 回退到配置中的静态模型列表
-		if len(config.Models) > 0 {
-			return map[string]interface{}{"success": true, "models": config.Models, "source": "static"}
+		if len(config.Models) > 0 || len(config.CustomModels) > 0 {
+			return map[string]interface{}{"success": true, "models": selectableProviderModels(config, config.Models), "source": "static"}
 		}
 		return map[string]interface{}{"success": false, "models": []string{}, "error": err.Error()}
 	}
@@ -1145,7 +1247,7 @@ func (s *Service) AIListModels() map[string]interface{} {
 		return map[string]interface{}{"success": false, "models": []string{}, "error": err.Error()}
 	}
 
-	return map[string]interface{}{"success": true, "models": models, "source": "api"}
+	return map[string]interface{}{"success": true, "models": selectableProviderModels(config, models), "source": "api"}
 }
 
 // fetchModels 从供应商 API 获取可用模型列表
@@ -1166,7 +1268,7 @@ func fetchModels(config ai.ProviderConfig, localizer *i18n.Localizer) ([]string,
 		return fetchGeminiModels(config, localizer)
 	case "cursor-agent":
 		return fetchCursorModels(config, localizer)
-	case "codex-cli", "codebuddy-cli":
+	case "codex-cli", "codebuddy-cli", "cursor-cli":
 		return append([]string(nil), config.Models...), nil
 	default:
 		return fetchOpenAIModels(config, localizer)
@@ -1355,6 +1457,35 @@ func (s *Service) AIGetContextLevel() string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return string(s.contextLevel)
+}
+
+// AIGetCLICapabilities 返回各本机 CLI 的模型/档位能力与预填值，供设置界面渲染。
+// 前端据此决定是否显示档位控件、给哪些候选值，以及模型是手填还是可枚举；
+// 它不得自己维护一份值域副本——那会随上游 CLI 版本漂移而失真。
+func (s *Service) AIGetCLICapabilities() []ai.CLICapabilityView {
+	return provider.CLICapabilityViews()
+}
+
+// AIListCLIModels 保留列表接口；新设置页使用含来源的 AIGetCLIModelCatalog。
+func (s *Service) AIListCLIModels(apiFormat string) ([]string, error) {
+	capability, ok := provider.LookupCLICapability(apiFormat)
+	if !ok {
+		return nil, nil
+	}
+	catalog, err := capability.ModelCatalog(context.Background())
+	return catalog.Models, err
+}
+
+// AIGetCLIModelCatalog distinguishes documented aliases, local caches, and CLI enumeration.
+// Suggestions do not attest to login, entitlement, or a model response.
+func (s *Service) AIGetCLIModelCatalog(apiFormat string) (map[string]interface{}, error) {
+	catalog := provider.CLIModelCatalog{Models: []string{}, Source: "none"}
+	capability, ok := provider.LookupCLICapability(apiFormat)
+	var err error
+	if ok {
+		catalog, err = capability.ModelCatalog(context.Background())
+	}
+	return map[string]interface{}{"models": catalog.Models, "source": catalog.Source, "stale": catalog.Stale}, err
 }
 
 // AISetContextLevel 设置上下文传递级别
