@@ -173,9 +173,13 @@ async function readCurrentDevAppTag(fetchImpl: typeof fetch): Promise<string | n
     }
   }));
 
-  if (healthResults.some((health) => health === null)) return null;
-  const first = healthResults[0];
-  if (!first || healthResults.some((health) => health?.appTag !== first.appTag)) return null;
+  // One origin may be unavailable while the other still proves the current
+  // publication. Keep the current-asset gate useful for the fallback chain;
+  // only disagreeing successful observations are unsafe.
+  const available = healthResults.filter((health): health is CurrentDevAppHealth => health !== null);
+  if (available.length === 0) return null;
+  const first = available[0];
+  if (available.some((health) => health.appTag !== first.appTag)) return null;
   return first.appTag;
 }
 

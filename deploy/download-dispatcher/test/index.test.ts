@@ -139,7 +139,7 @@ describe("download dispatcher", () => {
     expect(body.candidates[1].url).toBe(`${BERO_BASE_URL}${path}`);
   });
 
-  it("requires both static origins to publish the same current dev app tag", async () => {
+  it("uses the shared current dev app tag when both origins are healthy", async () => {
     const path = "/gonavi/dev/releases/download/dev-current/GoNavi.zip";
     const { fetchImpl, calls } = createHealthFetch();
     const { response, body } = await readResolve(path, { requireCurrent: true, fetchImpl });
@@ -190,7 +190,26 @@ describe("download dispatcher", () => {
     expect(response.headers.get("Location")).toBeNull();
   });
 
-  it("fails closed when static origins disagree or are unavailable", async () => {
+  it("keeps the fallback chain available when one origin is unavailable", async () => {
+    const path = "/gonavi/dev/releases/download/dev-current/GoNavi.zip";
+    const { fetchImpl } = createHealthFetch({ throwFor: "cst" });
+    const response = await handleRequest(
+      resolveRequest(path, { requireCurrent: true, format: "json" }),
+      {} as Env,
+      fetchImpl,
+    );
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      source: "cst",
+      candidates: [
+        { source: "cst", url: `${CST_BASE_URL}${path}` },
+        { source: "bero", url: `${BERO_BASE_URL}${path}` },
+        { source: "github", url: "https://github.com/Syngnat/GoNavi/releases/download/dev-latest/GoNavi.zip" },
+      ],
+    });
+  });
+
+  it("fails closed when static origins disagree or both are unavailable", async () => {
     const path = "/gonavi/dev/releases/download/dev-current/GoNavi.zip";
     const mismatch = createHealthFetch({ cst: healthPayload("cst", "dev-new") });
     const mismatchResponse = await handleRequest(
@@ -204,7 +223,10 @@ describe("download dispatcher", () => {
       code: "current_asset_unavailable",
     });
 
-    const unavailable = createHealthFetch({ bero: new Response(null, { status: 503 }) });
+    const unavailable = createHealthFetch({
+      cst: new Response(null, { status: 503 }),
+      bero: new Response(null, { status: 503 }),
+    });
     const unavailableResponse = await handleRequest(
       resolveRequest(path, { requireCurrent: true }),
       {} as Env,
