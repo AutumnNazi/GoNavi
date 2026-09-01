@@ -106,12 +106,14 @@ import {
 } from '../utils/shortcuts';
 import {
     TEMPORAL_FORMATS,
-    formatFromDayjs,
     getTemporalPickerFormat,
     getTemporalPickerType,
     isTemporalColumnType,
     parseToDayjs,
     resolveTemporalEditorSaveValue,
+    isTemporalPickerPopupTarget,
+    isTemporalPickerPopupFocused,
+    TEMPORAL_PICKER_INTERACTION_DELAY_MS,
     type TemporalConnectionLike,
     type TemporalPickerType,
 } from './dataGridTemporal';
@@ -965,6 +967,11 @@ const DataGrid: React.FC<DataGridProps> = ({
   } | null>(null);
   const virtualInlineInputRef = useRef<any>(null);
   const virtualInlinePickerOpenRef = useRef(false);
+  const virtualInlinePickerInteractionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const virtualInlinePickerInteractionTokenRef = useRef(0);
+  const virtualInlinePickerPendingValueRef = useRef<dayjs.Dayjs | null | undefined>(undefined);
+  const virtualInlinePickerCommitSessionRef = useRef<number | null>(null);
+  const virtualInlinePickerSaveSessionRef = useRef<number | null>(null);
   const virtualInlineScrollLockRef = useRef<{ el: HTMLElement; handler: (e: WheelEvent) => void } | null>(null);
   // Cell Context Menu State
   const [cellContextMenu, setCellContextMenu] = useState<{
@@ -1118,6 +1125,11 @@ const DataGrid: React.FC<DataGridProps> = ({
       const target = e.target as HTMLElement;
       const tableContainer = containerRef.current;
       if (tableContainer && !tableContainer.contains(target)) {
+        // Ant Design renders the picker panel in a body portal. Its controls
+        // are outside the table DOM but still belong to the active editor.
+        if (isTemporalPickerPopupTarget(target)) {
+          return;
+        }
         // Remove focus from any input elements in the table
         const focusedElement = document.activeElement as HTMLElement;
         if (focusedElement && focusedElement.tagName === 'INPUT' && tableContainer.contains(focusedElement)) {
@@ -1385,6 +1397,14 @@ const DataGrid: React.FC<DataGridProps> = ({
       virtualInlineScrollLockRef.current = null;
   }, []);
 
+  const cancelVirtualInlinePickerInteraction = useCallback(() => {
+      if (virtualInlinePickerInteractionTimerRef.current !== null) {
+          clearTimeout(virtualInlinePickerInteractionTimerRef.current);
+          virtualInlinePickerInteractionTimerRef.current = null;
+      }
+      virtualInlinePickerInteractionTokenRef.current += 1;
+  }, []);
+
   const closeVirtualInlineEditor = useCallback((expectedSessionId?: number) => {
       if (
           expectedSessionId !== undefined
@@ -1392,15 +1412,31 @@ const DataGrid: React.FC<DataGridProps> = ({
       ) {
           return;
       }
+      cancelVirtualInlinePickerInteraction();
       virtualEditingSessionRef.current = null;
       lockVirtualInlineTableScroll(false);
       virtualInlinePickerOpenRef.current = false;
+      virtualInlinePickerPendingValueRef.current = undefined;
+      virtualInlinePickerCommitSessionRef.current = null;
+      virtualInlinePickerSaveSessionRef.current = null;
       setVirtualEditingCell((current) => (
           expectedSessionId === undefined || current?.sessionId === expectedSessionId
               ? null
               : current
       ));
-  }, [lockVirtualInlineTableScroll]);
+  }, [cancelVirtualInlinePickerInteraction, lockVirtualInlineTableScroll]);
+
+  useEffect(() => () => {
+      // Do not leave a portal interaction timer or capture-phase wheel listener
+      // behind when the table itself disappears.
+      cancelVirtualInlinePickerInteraction();
+      virtualEditingSessionRef.current = null;
+      virtualInlinePickerOpenRef.current = false;
+      virtualInlinePickerPendingValueRef.current = undefined;
+      virtualInlinePickerCommitSessionRef.current = null;
+      virtualInlinePickerSaveSessionRef.current = null;
+      lockVirtualInlineTableScroll(false);
+  }, [cancelVirtualInlinePickerInteraction, lockVirtualInlineTableScroll]);
 
   useEffect(() => {
       if (!virtualEditingCell) return;
@@ -2754,6 +2790,10 @@ const DataGrid: React.FC<DataGridProps> = ({
       pickerValue?: dayjs.Dayjs | null,
   ) => {
       if (!isVirtualEditingSessionCurrent(editingCell)) return;
+      if (virtualInlinePickerSaveSessionRef.current === editingCell.sessionId) return;
+      virtualInlinePickerSaveSessionRef.current = editingCell.sessionId;
+      cancelVirtualInlinePickerInteraction();
+      virtualInlinePickerPendingValueRef.current = undefined;
 
       const record = mergedDisplayDataByRowKeyRef.current.get(editingCell.rowKey);
       if (!record) {
@@ -2774,7 +2814,7 @@ const DataGrid: React.FC<DataGridProps> = ({
           }
           let nextValue = form.getFieldValue(fieldName);
           if (isDateTimeField) {
-              nextValue = resolveTemporalEditorSaveValue(nextValue, pickerValue, pickerType);
+              nextValue = resolveTemporalEditorSaveValue(nextValue, pickerValue, pickerType, currentRecord?.[editingCell.dataIndex]);
           }
           closeVirtualInlineEditor(editingCell.sessionId);
           if (!isCellValueEqualForDiff(currentRecord?.[editingCell.dataIndex], nextValue)) {
@@ -2786,8 +2826,63 @@ const DataGrid: React.FC<DataGridProps> = ({
           if (isDateTimeField) {
               closeVirtualInlineEditor(editingCell.sessionId);
           }
+      } finally {
+          if (virtualInlinePickerSaveSessionRef.current === editingCell.sessionId) {
+              virtualInlinePickerSaveSessionRef.current = null;
+          }
       }
-  }, [closeVirtualInlineEditor, currentConnConfig, dbType, form, isVirtualEditingSessionCurrent]);
+  }, [cancelVirtualInlinePickerInteraction, closeVirtualInlineEditor, currentConnConfig, dbType, form, isVirtualEditingSessionCurrent]);
+
+  const scheduleVirtualInlinePickerInteraction = useCallback((
+      editingCell: VirtualEditingCellState,
+      action: 'save' | 'close',
+      pickerValue?: dayjs.Dayjs | null,
+      relatedTarget?: EventTarget | null,
+  ) => {
+      if (!isVirtualEditingSessionCurrent(editingCell)) return;
+      if (virtualInlinePickerInteractionTimerRef.current !== null) {
+          clearTimeout(virtualInlinePickerInteractionTimerRef.current);
+      }
+      const token = ++virtualInlinePickerInteractionTokenRef.current;
+      const sessionId = editingCell.sessionId;
+      virtualInlinePickerInteractionTimerRef.current = setTimeout(() => {
+          virtualInlinePickerInteractionTimerRef.current = null;
+          if (
+              token !== virtualInlinePickerInteractionTokenRef.current
+              || !isVirtualEditingSessionCurrent(editingCell)
+              || virtualInlinePickerOpenRef.current
+              || virtualInlinePickerCommitSessionRef.current === sessionId
+              || isTemporalPickerPopupFocused(relatedTarget)
+          ) {
+              return;
+          }
+          if (action === 'save') {
+              const value = pickerValue !== undefined
+                  ? pickerValue
+                  : virtualInlinePickerPendingValueRef.current;
+              virtualInlinePickerPendingValueRef.current = undefined;
+              void saveVirtualInlineEditor(editingCell, value);
+              return;
+          }
+          closeVirtualInlineEditor(sessionId);
+      }, TEMPORAL_PICKER_INTERACTION_DELAY_MS);
+  }, [closeVirtualInlineEditor, isVirtualEditingSessionCurrent, saveVirtualInlineEditor]);
+
+  const commitVirtualInlinePickerValue = useCallback((
+      editingCell: VirtualEditingCellState,
+      pickerValue?: dayjs.Dayjs | null,
+  ) => {
+      if (!isVirtualEditingSessionCurrent(editingCell)) return;
+      const sessionId = editingCell.sessionId;
+      virtualInlinePickerCommitSessionRef.current = sessionId;
+      cancelVirtualInlinePickerInteraction();
+      virtualInlinePickerPendingValueRef.current = undefined;
+      void saveVirtualInlineEditor(editingCell, pickerValue).finally(() => {
+          if (virtualInlinePickerCommitSessionRef.current === sessionId) {
+              virtualInlinePickerCommitSessionRef.current = null;
+          }
+      });
+  }, [cancelVirtualInlinePickerInteraction, isVirtualEditingSessionCurrent, saveVirtualInlineEditor]);
 
   const pageFindResult = useMemo(() => collectDataGridFindResult(
       mergedDisplayData,
@@ -3096,7 +3191,12 @@ const DataGrid: React.FC<DataGridProps> = ({
               if (val && dayjs.isDayjs(val)) {
                   const colMeta = columnMetaMap[col] || columnMetaMapByLowerName[col.toLowerCase()];
                   const rowPickerType = getTemporalPickerType(colMeta?.type, dbType, currentConnConfig);
-                  convertedValues[col] = formatFromDayjs(val as dayjs.Dayjs, rowPickerType);
+                  convertedValues[col] = resolveTemporalEditorSaveValue(
+                      undefined,
+                      val as dayjs.Dayjs,
+                      rowPickerType,
+                      baseVal,
+                  );
               } else {
                   convertedValues[col] = normalizeMongoEditedCellValue(col, val, baseVal);
               }
@@ -3114,7 +3214,12 @@ const DataGrid: React.FC<DataGridProps> = ({
           if (nextVal && dayjs.isDayjs(nextVal)) {
               const colMeta = columnMetaMap[col] || columnMetaMapByLowerName[col.toLowerCase()];
               const rowPickerType = getTemporalPickerType(colMeta?.type, dbType, currentConnConfig);
-              nextVal = formatFromDayjs(nextVal as dayjs.Dayjs, rowPickerType);
+              nextVal = resolveTemporalEditorSaveValue(
+                  undefined,
+                  nextVal as dayjs.Dayjs,
+                  rowPickerType,
+                  baseRawMap[col],
+              );
           } else {
               nextVal = normalizeMongoEditedCellValue(col, nextVal, baseRawMap[col]);
           }
@@ -3336,12 +3441,26 @@ const DataGrid: React.FC<DataGridProps> = ({
                                               ref={virtualInlineInputRef}
                                               style={{ width: '100%' }}
                                               format={TEMPORAL_FORMATS[pickerType]}
-                                              onChange={(value) => setTimeout(() => { void saveVirtualInlineEditor(currentVirtualEditingCell, value); }, 0)}
+                                              onChange={(value) => {
+                                                  virtualInlinePickerPendingValueRef.current = value;
+                                                  scheduleVirtualInlinePickerInteraction(currentVirtualEditingCell, 'save', value);
+                                              }}
                                               onOpenChange={(open) => {
                                                   if (!isVirtualEditingSessionCurrent(currentVirtualEditingCell)) return;
+                                                  virtualInlinePickerOpenRef.current = open;
                                                   lockVirtualInlineTableScroll(open);
+                                                  if (open) {
+                                                      cancelVirtualInlinePickerInteraction();
+                                                  } else {
+                                                      scheduleVirtualInlinePickerInteraction(currentVirtualEditingCell, 'save');
+                                                  }
                                               }}
-                                              onBlur={() => setTimeout(() => { void saveVirtualInlineEditor(currentVirtualEditingCell); }, 0)}
+                                              onBlur={(event) => scheduleVirtualInlinePickerInteraction(
+                                                  currentVirtualEditingCell,
+                                                  'save',
+                                                  undefined,
+                                                  event?.relatedTarget,
+                                              )}
                                               needConfirm={false}
                                           />
                                       ) : pickerType === 'datetime' ? (
@@ -3354,32 +3473,36 @@ const DataGrid: React.FC<DataGridProps> = ({
                                               renderExtraFooter={() => (
                                                   <a
                                                       style={{ padding: '0 2px' }}
+                                                      onMouseDown={(event) => event.preventDefault()}
                                                       onClick={() => {
                                                           if (!isVirtualEditingSessionCurrent(currentVirtualEditingCell)) return;
                                                           setCellFieldValue(form, getCellFieldName(record, dataIndex), dayjs());
                                                       }}
                                                   >{translateDataGrid('data_grid.datetime_picker.now')}</a>
                                               )}
-                                              onOk={(value) => setTimeout(() => { void saveVirtualInlineEditor(currentVirtualEditingCell, (value as dayjs.Dayjs | null | undefined) ?? undefined); }, 0)}
+                                              onChange={(value) => {
+                                                  virtualInlinePickerPendingValueRef.current = value;
+                                              }}
+                                              onOk={(value) => commitVirtualInlinePickerValue(
+                                                  currentVirtualEditingCell,
+                                                  value as dayjs.Dayjs | null | undefined,
+                                              )}
                                               onOpenChange={(open) => {
                                                   if (!isVirtualEditingSessionCurrent(currentVirtualEditingCell)) return;
                                                   virtualInlinePickerOpenRef.current = open;
                                                   lockVirtualInlineTableScroll(open);
-                                                  if (!open) {
-                                                      setTimeout(() => {
-                                                          if (!virtualInlinePickerOpenRef.current) {
-                                                              closeVirtualInlineEditor(currentVirtualEditingCell.sessionId);
-                                                          }
-                                                      }, 0);
+                                                  if (open) {
+                                                      cancelVirtualInlinePickerInteraction();
+                                                  } else {
+                                                      scheduleVirtualInlinePickerInteraction(currentVirtualEditingCell, 'close');
                                                   }
                                               }}
-                                              onBlur={() => {
-                                                  setTimeout(() => {
-                                                      if (!virtualInlinePickerOpenRef.current) {
-                                                          closeVirtualInlineEditor(currentVirtualEditingCell.sessionId);
-                                                      }
-                                                  }, 150);
-                                              }}
+                                              onBlur={(event) => scheduleVirtualInlinePickerInteraction(
+                                                  currentVirtualEditingCell,
+                                                  'close',
+                                                  undefined,
+                                                  event?.relatedTarget,
+                                              )}
                                               needConfirm
                                           />
                                       ) : (
@@ -3388,12 +3511,26 @@ const DataGrid: React.FC<DataGridProps> = ({
                                               style={{ width: '100%' }}
                                               format={TEMPORAL_FORMATS[pickerType]}
                                               picker={pickerType as any}
-                                              onChange={(value) => setTimeout(() => { void saveVirtualInlineEditor(currentVirtualEditingCell, value); }, 0)}
+                                              onChange={(value) => {
+                                                  virtualInlinePickerPendingValueRef.current = value;
+                                                  scheduleVirtualInlinePickerInteraction(currentVirtualEditingCell, 'save', value);
+                                              }}
                                               onOpenChange={(open) => {
                                                   if (!isVirtualEditingSessionCurrent(currentVirtualEditingCell)) return;
+                                                  virtualInlinePickerOpenRef.current = open;
                                                   lockVirtualInlineTableScroll(open);
+                                                  if (open) {
+                                                      cancelVirtualInlinePickerInteraction();
+                                                  } else {
+                                                      scheduleVirtualInlinePickerInteraction(currentVirtualEditingCell, 'save');
+                                                  }
                                               }}
-                                              onBlur={() => setTimeout(() => { void saveVirtualInlineEditor(currentVirtualEditingCell); }, 0)}
+                                              onBlur={(event) => scheduleVirtualInlinePickerInteraction(
+                                                  currentVirtualEditingCell,
+                                                  'save',
+                                                  undefined,
+                                                  event?.relatedTarget,
+                                              )}
                                               needConfirm={false}
                                           />
                                       )
@@ -3440,7 +3577,7 @@ const DataGrid: React.FC<DataGridProps> = ({
               return originalRenderContent;
           }
       };
-  }), [closeVirtualInlineEditor, columns, currentConnConfig, dbType, deletedRowKeys, displayColumnTypeMap, enableInlineEditableCell, enableVirtual, form, handleCellSave, handleSharedCellContextMenu, handleSharedCellDoubleClick, handleVirtualCellActivate, inputCellPadding, isVirtualEditingSessionCurrent, lockVirtualInlineTableScroll, modifiedColumns, openCellEditor, rowKeyStr, saveVirtualInlineEditor, updateFocusedCell, useInlineEditableBodyCell, virtualCellWrapperStyle, virtualEditingCellForRender]);
+  }), [cancelVirtualInlinePickerInteraction, closeVirtualInlineEditor, columns, commitVirtualInlinePickerValue, currentConnConfig, dbType, deletedRowKeys, displayColumnTypeMap, enableInlineEditableCell, enableVirtual, form, handleCellSave, handleSharedCellContextMenu, handleSharedCellDoubleClick, handleVirtualCellActivate, inputCellPadding, isVirtualEditingSessionCurrent, lockVirtualInlineTableScroll, modifiedColumns, openCellEditor, rowKeyStr, saveVirtualInlineEditor, scheduleVirtualInlinePickerInteraction, updateFocusedCell, useInlineEditableBodyCell, virtualCellWrapperStyle, virtualEditingCellForRender]);
 
   const rowNumberColumnWidth = useMemo(() => {
       const manual = columnWidths[GONAVI_ROW_NUMBER_COLUMN_KEY];
