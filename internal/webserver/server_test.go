@@ -3,6 +3,7 @@ package webserver
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/fs"
 	"net/http"
@@ -24,6 +25,15 @@ type webserverTestReceiver struct{}
 
 type countingWebserverTestReceiver struct {
 	calls atomic.Int32
+}
+
+type contextWebserverTestReceiver struct {
+	publicCalls atomic.Int32
+}
+
+func (r *contextWebserverTestReceiver) Echo(value string) string {
+	r.publicCalls.Add(1)
+	return "public:" + value
 }
 
 func (r *countingWebserverTestReceiver) Echo(value string) string {
@@ -70,7 +80,7 @@ func TestMethodInvokerInvokeDecodesArgumentsAndReturnsResult(t *testing.T) {
 
 	rawLeft, _ := json.Marshal(2)
 	rawRight, _ := json.Marshal(5)
-	result, err := invoker.Invoke(invokeRequest{
+	result, err := invoker.Invoke(context.Background(), invokeRequest{
 		Namespace: "test",
 		Receiver:  "receiver",
 		Method:    "Sum",
@@ -92,7 +102,7 @@ func TestMethodInvokerInvokeSupportsStructuredReturnValues(t *testing.T) {
 	}
 
 	rawValue, _ := json.Marshal("hello")
-	result, err := invoker.Invoke(invokeRequest{
+	result, err := invoker.Invoke(context.Background(), invokeRequest{
 		Namespace: "test",
 		Receiver:  "receiver",
 		Method:    "Echo",
@@ -107,6 +117,183 @@ func TestMethodInvokerInvokeSupportsStructuredReturnValues(t *testing.T) {
 	}
 	if payload["value"] != "hello" {
 		t.Fatalf("expected echoed value hello, got %#v", payload["value"])
+	}
+}
+
+func TestMethodInvokerUsesContextHandlerForBothAppAliases(t *testing.T) {
+	receiver := &contextWebserverTestReceiver{}
+	handlerCalls := atomic.Int32{}
+	invoker := &methodInvoker{
+		targets: map[string]reflect.Value{
+			"app":     reflect.ValueOf(receiver),
+			"app.app": reflect.ValueOf(receiver),
+		},
+		contextHandlers: map[string]map[string]reflect.Value{
+			"app": {
+				"Echo": reflect.ValueOf(func(ctx context.Context, value string) string {
+					handlerCalls.Add(1)
+					if ctx.Value("request") != "1098" {
+						t.Fatalf("handler received the wrong request context")
+					}
+					return "context:" + value
+				}),
+			},
+		},
+	}
+	rawValue, _ := json.Marshal("hello")
+	ctx := context.WithValue(context.Background(), "request", "1098")
+
+	for _, request := range []invokeRequest{
+		{Namespace: "app", Method: "Echo", Args: []json.RawMessage{rawValue}},
+		{Namespace: "app", Receiver: "app", Method: "Echo", Args: []json.RawMessage{rawValue}},
+	} {
+		result, err := invoker.Invoke(ctx, request)
+		if err != nil {
+			t.Fatalf("Invoke(%s.%s) error = %v", request.Namespace, request.Receiver, err)
+		}
+		if result != "context:hello" {
+			t.Fatalf("Invoke(%s.%s) result = %#v", request.Namespace, request.Receiver, result)
+		}
+	}
+	if handlerCalls.Load() != 2 || receiver.publicCalls.Load() != 0 {
+		t.Fatalf("handler calls = %d, public calls = %d", handlerCalls.Load(), receiver.publicCalls.Load())
+	}
+}
+
+func TestMethodInvokerCancellationOnlyPrechecksRegisteredMethods(t *testing.T) {
+	receiver := &contextWebserverTestReceiver{}
+	handlerCalls := atomic.Int32{}
+	invoker := &methodInvoker{
+		targets: map[string]reflect.Value{"app": reflect.ValueOf(receiver)},
+		contextHandlers: map[string]map[string]reflect.Value{
+			"app": {
+				"Echo": reflect.ValueOf(func(context.Context, string) string {
+					handlerCalls.Add(1)
+					return "context"
+				}),
+			},
+		},
+	}
+	rawValue, _ := json.Marshal("hello")
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	if _, err := invoker.Invoke(cancelled, invokeRequest{
+		Namespace: "app", Method: "Echo", Args: []json.RawMessage{rawValue},
+	}); !errors.Is(err, context.Canceled) {
+		t.Fatalf("registered method error = %v, want context.Canceled", err)
+	}
+	if handlerCalls.Load() != 0 || receiver.publicCalls.Load() != 0 {
+		t.Fatalf("cancelled registered call reached business code")
+	}
+
+	invoker.contextHandlers = nil
+	result, err := invoker.Invoke(cancelled, invokeRequest{
+		Namespace: "app", Method: "Echo", Args: []json.RawMessage{rawValue},
+	})
+	if err != nil || result != "public:hello" || receiver.publicCalls.Load() != 1 {
+		t.Fatalf("unregistered cancelled call = (%#v, %v), public calls = %d", result, err, receiver.publicCalls.Load())
+	}
+}
+
+func TestValidateContextHandlersRejectsSignatureMismatch(t *testing.T) {
+	_, err := validateContextHandlers(
+		reflect.ValueOf(webserverTestReceiver{}),
+		[]string{"Sum"},
+		map[string]any{
+			"Sum": func(context.Context, int, string) int { return 0 },
+		},
+	)
+	if err == nil || !strings.Contains(err.Error(), "parameter 1 type mismatch") {
+		t.Fatalf("validateContextHandlers error = %v, want parameter mismatch", err)
+	}
+}
+
+func TestIssue1098RequiredContextHandlerSetIsExact(t *testing.T) {
+	application := appcore.NewWebApp()
+	invoker, err := newMethodInvoker(application, aiservice.NewService())
+	if err != nil {
+		t.Fatalf("newMethodInvoker returned error: %v", err)
+	}
+	handlers := invoker.contextHandlers["app"]
+	required := appcore.RequiredIssue1098WebRPCContextMethods()
+	if len(handlers) != len(required) {
+		t.Fatalf("handler count = %d, required count = %d", len(handlers), len(required))
+	}
+	for _, methodName := range required {
+		if !handlers[methodName].IsValid() {
+			t.Fatalf("required handler %s is missing", methodName)
+		}
+	}
+}
+
+func TestHTTPClientCancellationReachesContextHandler(t *testing.T) {
+	receiver := &contextWebserverTestReceiver{}
+	entered := make(chan struct{})
+	observed := make(chan struct{})
+	invoker := &methodInvoker{
+		targets: map[string]reflect.Value{"app": reflect.ValueOf(receiver)},
+		contextHandlers: map[string]map[string]reflect.Value{
+			"app": {
+				"Echo": reflect.ValueOf(func(ctx context.Context, value string) string {
+					close(entered)
+					<-ctx.Done()
+					close(observed)
+					return value
+				}),
+			},
+		},
+	}
+	server := httptest.NewServer(http.HandlerFunc((&Server{invoker: invoker}).handleInvoke))
+	defer server.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, server.URL, strings.NewReader(
+		`{"namespace":"app","method":"Echo","args":["hello"]}`,
+	))
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Content-Type", "application/json")
+	result := make(chan error, 1)
+	go func() {
+		response, requestErr := server.Client().Do(request)
+		if response != nil {
+			_ = response.Body.Close()
+		}
+		result <- requestErr
+	}()
+
+	select {
+	case <-entered:
+	case <-time.After(2 * time.Second):
+		t.Fatal("context handler was not entered")
+	}
+	cancel()
+	select {
+	case <-observed:
+	case <-time.After(2 * time.Second):
+		t.Fatal("HTTP cancellation did not reach the context handler")
+	}
+	select {
+	case requestErr := <-result:
+		if requestErr == nil {
+			t.Fatal("client request unexpectedly completed without cancellation")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("cancelled HTTP request did not return")
+	}
+}
+
+func TestRuntimeBridgeExposesStableAbortContract(t *testing.T) {
+	script := runtimeBridgeScript()
+	for _, expected := range []string{
+		"window.__GONAVI_WEB_RPC__", "invokeWithOptions", "WEB_RPC_ABORTED",
+		"not_started", "possibly_dispatched", "signal: signal",
+	} {
+		if !strings.Contains(script, expected) {
+			t.Fatalf("runtime bridge is missing %q", expected)
+		}
 	}
 }
 
@@ -172,7 +359,7 @@ func TestMethodInvokerRejectsDesktopOnlyAppMethodsBeforeReflection(t *testing.T)
 		"SelectSavedQueryDirectory", "ApplySavedQueryDirectory", "OpenSavedQueryDirectory", "RevealSavedQueryInFolder", "SetApplicationBrandIcon",
 		"RefreshWebViewBounds", "RevealSavedConnectionPrimaryPassword",
 	} {
-		_, err := invoker.Invoke(invokeRequest{Namespace: "app", Receiver: "app", Method: method})
+		_, err := invoker.Invoke(context.Background(), invokeRequest{Namespace: "app", Receiver: "app", Method: method})
 		if err == nil || !strings.Contains(err.Error(), "unavailable in web runtime") {
 			t.Fatalf("desktop-only method %s error = %v, want web runtime rejection", method, err)
 		}
@@ -186,7 +373,7 @@ func TestSharedMethodInvokerAllowsDesktopMethods(t *testing.T) {
 		},
 		allowDesktopMethods: true,
 	}
-	result, err := invoker.Invoke(invokeRequest{Namespace: "app", Receiver: "app", Method: "OpenSQLFile"})
+	result, err := invoker.Invoke(context.Background(), invokeRequest{Namespace: "app", Receiver: "app", Method: "OpenSQLFile"})
 	if err != nil {
 		t.Fatalf("shared desktop method was rejected: %v", err)
 	}
@@ -203,7 +390,7 @@ func TestSharedMethodInvokerAllowsSavedPasswordReveal(t *testing.T) {
 		allowDesktopMethods: true,
 	}
 	rawID, _ := json.Marshal("conn-1")
-	result, err := invoker.Invoke(invokeRequest{
+	result, err := invoker.Invoke(context.Background(), invokeRequest{
 		Namespace: "app",
 		Receiver:  "app",
 		Method:    "RevealSavedConnectionPrimaryPassword",

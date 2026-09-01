@@ -109,6 +109,12 @@ func loadSourceQuerySyncContext(config SyncConfig, sourceDB db.Database, targetD
 }
 
 func loadSourceQuerySyncContextWithContext(runCtx context.Context, config SyncConfig, sourceDB db.Database, targetDB db.Database, needSourceRows bool, needTargetRows bool, requirePK bool) (sourceQuerySyncContext, error) {
+	if runCtx == nil {
+		runCtx = context.Background()
+	}
+	if err := runCtx.Err(); err != nil {
+		return sourceQuerySyncContext{}, err
+	}
 	tableName, err := validateSourceQuerySyncConfig(config)
 	if err != nil {
 		return sourceQuerySyncContext{}, err
@@ -118,6 +124,9 @@ func loadSourceQuerySyncContextWithContext(runCtx context.Context, config SyncCo
 	targetCols, err := targetDB.GetColumns(targetSchema, targetTable)
 	if err != nil {
 		return sourceQuerySyncContext{}, syncWrapDetailError("data_sync.backend.error.load_target_columns_failed", err)
+	}
+	if err := runCtx.Err(); err != nil {
+		return sourceQuerySyncContext{}, err
 	}
 	if len(targetCols) == 0 {
 		return sourceQuerySyncContext{}, syncTextError("data_sync.backend.error.target_table_columns_missing", map[string]any{
@@ -302,6 +311,19 @@ func (s *SyncEngine) analyzeSourceQuery(config SyncConfig) SyncAnalyzeResult {
 	// echo it explicitly instead of leaving the field empty and letting the UI
 	// fall back to the task's compareMode.
 	result := SyncAnalyzeResult{Success: true, Content: "data", Tables: []TableDiffSummary{}}
+	cancelledResult := func(summary *TableDiffSummary) SyncAnalyzeResult {
+		err := s.contextError()
+		if err == nil {
+			return result
+		}
+		result.Success = false
+		result.Message = err.Error()
+		if summary != nil {
+			summary.Message = err.Error()
+			result.Tables = append(result.Tables, *summary)
+		}
+		return result
+	}
 	tableName, err := validateSourceQuerySyncConfig(config)
 	if err != nil {
 		return SyncAnalyzeResult{Success: false, Message: err.Error()}
@@ -326,14 +348,32 @@ func (s *SyncEngine) analyzeSourceQuery(config SyncConfig) SyncAnalyzeResult {
 	}
 
 	if err := sourceDB.Connect(config.SourceConfig); err != nil {
+		if s.contextError() != nil {
+			return cancelledResult(nil)
+		}
 		return SyncAnalyzeResult{Success: false, Message: localizedSyncBackendDetailText("data_sync.backend.error.connect_source_failed", err)}
 	}
+	if s.contextError() != nil {
+		_ = sourceDB.Close()
+		return cancelledResult(nil)
+	}
 	defer sourceDB.Close()
+	db.BindMetadataContext(sourceDB, s.context())
+	defer db.ClearMetadataContext(sourceDB)
 
 	if err := targetDB.Connect(config.TargetConfig); err != nil {
+		if s.contextError() != nil {
+			return cancelledResult(nil)
+		}
 		return SyncAnalyzeResult{Success: false, Message: localizedSyncBackendDetailText("data_sync.backend.error.connect_target_failed", err)}
 	}
+	if s.contextError() != nil {
+		_ = targetDB.Close()
+		return cancelledResult(nil)
+	}
 	defer targetDB.Close()
+	db.BindMetadataContext(targetDB, s.context())
+	defer db.ClearMetadataContext(targetDB)
 
 	summary := TableDiffSummary{
 		Table:   tableName,
@@ -341,8 +381,11 @@ func (s *SyncEngine) analyzeSourceQuery(config SyncConfig) SyncAnalyzeResult {
 	}
 	tableMode := normalizeSyncMode(config.Mode)
 	requiresComparisonKey := tableMode == "insert_update"
-	ctx, err := loadSourceQuerySyncContext(config, sourceDB, targetDB, false, false, requiresComparisonKey)
+	ctx, err := loadSourceQuerySyncContextWithContext(s.context(), config, sourceDB, targetDB, false, false, requiresComparisonKey)
 	if err != nil {
+		if s.contextError() != nil {
+			return cancelledResult(&summary)
+		}
 		summary.Message = err.Error()
 		result.Tables = append(result.Tables, summary)
 		result.Message = analyzedTargetTablesMessage
@@ -351,8 +394,11 @@ func (s *SyncEngine) analyzeSourceQuery(config SyncConfig) SyncAnalyzeResult {
 	}
 	if !requiresComparisonKey {
 		sourceType := resolveMigrationDBType(config.SourceConfig)
-		sourceCount, counted, err := countSourceQueryRowsForSync(sourceDB, sourceType, config.SourceQuery)
+		sourceCount, counted, err := countSourceQueryRowsForSyncContext(s.context(), sourceDB, sourceType, config.SourceQuery)
 		if err != nil {
+			if s.contextError() != nil {
+				return cancelledResult(&summary)
+			}
 			summary.Message = localizedSyncBackendDetailText("data_sync.backend.error.execute_source_query_failed", err)
 			result.Tables = append(result.Tables, summary)
 			result.Message = analyzedTargetTablesMessage
@@ -385,10 +431,13 @@ func (s *SyncEngine) analyzeSourceQuery(config SyncConfig) SyncAnalyzeResult {
 	counts := pagedDiffCounts{}
 	var scanErr error
 	if !hasExplicitSyncMappings(config) && len(ctx.PKColumns) == 1 {
-		handled, counts, scanErr = scanSourceQueryDiffInPages(sourceDB, targetDB, sourceType, ctx.TargetType, strings.TrimSpace(config.SourceQuery), ctx.TargetQueryTable, ctx.TargetCols, ctx.PKColumn, true, nil)
+		handled, counts, scanErr = scanSourceQueryDiffInPagesContext(s.context(), sourceDB, targetDB, sourceType, ctx.TargetType, strings.TrimSpace(config.SourceQuery), ctx.TargetQueryTable, ctx.TargetCols, ctx.PKColumn, true, nil)
 	}
 	if handled {
 		if scanErr != nil {
+			if s.contextError() != nil {
+				return cancelledResult(&summary)
+			}
 			summary.Message = scanErr.Error()
 			result.Tables = append(result.Tables, summary)
 			result.Message = analyzedTargetTablesMessage
@@ -409,8 +458,11 @@ func (s *SyncEngine) analyzeSourceQuery(config SyncConfig) SyncAnalyzeResult {
 		return result
 	}
 
-	ctx, err = loadSourceQuerySyncContext(config, sourceDB, targetDB, true, true, true)
+	ctx, err = loadSourceQuerySyncContextWithContext(s.context(), config, sourceDB, targetDB, true, true, true)
 	if err != nil {
+		if s.contextError() != nil {
+			return cancelledResult(&summary)
+		}
 		summary.Message = err.Error()
 		result.Tables = append(result.Tables, summary)
 		result.Message = analyzedTargetTablesMessage
@@ -419,6 +471,9 @@ func (s *SyncEngine) analyzeSourceQuery(config SyncConfig) SyncAnalyzeResult {
 	}
 
 	inserts, updates, deletes, same := diffRowsByKeyColumns(ctx.PKColumns, ctx.SourceRows, ctx.TargetRows)
+	if s.contextError() != nil {
+		return cancelledResult(&summary)
+	}
 	summary.CanSync = true
 	summary.PKColumn = ctx.PKColumn
 	summary.Inserts = len(inserts)
@@ -444,25 +499,43 @@ func (s *SyncEngine) previewSourceQuery(config SyncConfig, limit int) (TableDiff
 	}
 
 	if err := sourceDB.Connect(config.SourceConfig); err != nil {
+		if contextErr := s.contextError(); contextErr != nil {
+			return TableDiffPreview{}, contextErr
+		}
 		return TableDiffPreview{}, syncWrapDetailError("data_sync.backend.error.connect_source_failed", err)
 	}
+	if err := s.contextError(); err != nil {
+		_ = sourceDB.Close()
+		return TableDiffPreview{}, err
+	}
 	defer sourceDB.Close()
+	db.BindMetadataContext(sourceDB, s.context())
+	defer db.ClearMetadataContext(sourceDB)
 
 	if err := targetDB.Connect(config.TargetConfig); err != nil {
+		if contextErr := s.contextError(); contextErr != nil {
+			return TableDiffPreview{}, contextErr
+		}
 		return TableDiffPreview{}, syncWrapDetailError("data_sync.backend.error.connect_target_failed", err)
 	}
+	if err := s.contextError(); err != nil {
+		_ = targetDB.Close()
+		return TableDiffPreview{}, err
+	}
 	defer targetDB.Close()
+	db.BindMetadataContext(targetDB, s.context())
+	defer db.ClearMetadataContext(targetDB)
 
 	tableMode := normalizeSyncMode(config.Mode)
 	requiresComparisonKey := tableMode == "insert_update"
-	ctx, err := loadSourceQuerySyncContext(config, sourceDB, targetDB, false, false, requiresComparisonKey)
+	ctx, err := loadSourceQuerySyncContextWithContext(s.context(), config, sourceDB, targetDB, false, false, requiresComparisonKey)
 	if err != nil {
 		return TableDiffPreview{}, err
 	}
 
 	previewSummary := localizedSyncBackendText("data_sync.plan.source_query_preview", nil)
 	if !requiresComparisonKey {
-		ctx, err = loadSourceQuerySyncContext(config, sourceDB, targetDB, true, false, false)
+		ctx, err = loadSourceQuerySyncContextWithContext(s.context(), config, sourceDB, targetDB, true, false, false)
 		if err != nil {
 			return TableDiffPreview{}, err
 		}
@@ -493,6 +566,9 @@ func (s *SyncEngine) previewSourceQuery(config SyncConfig, limit int) (TableDiff
 			}
 		}
 		for _, row := range ctx.SourceRows {
+			if err := s.contextError(); err != nil {
+				return TableDiffPreview{}, err
+			}
 			if len(out.Inserts) >= limit {
 				break
 			}
@@ -529,7 +605,7 @@ func (s *SyncEngine) previewSourceQuery(config SyncConfig, limit int) (TableDiff
 	handled := false
 	var scanErr error
 	if !hasExplicitSyncMappings(config) && len(ctx.PKColumns) == 1 {
-		handled, _, scanErr = scanSourceQueryDiffInPages(sourceDB, targetDB, sourceType, ctx.TargetType, strings.TrimSpace(config.SourceQuery), ctx.TargetQueryTable, ctx.TargetCols, ctx.PKColumn, true, func(page pagedDiffPage) error {
+		handled, _, scanErr = scanSourceQueryDiffInPagesContext(s.context(), sourceDB, targetDB, sourceType, ctx.TargetType, strings.TrimSpace(config.SourceQuery), ctx.TargetQueryTable, ctx.TargetCols, ctx.PKColumn, true, func(page pagedDiffPage) error {
 			out.TotalInserts += len(page.Inserts)
 			out.TotalUpdates += len(page.Updates)
 			out.TotalDeletes += len(page.Deletes)
@@ -576,12 +652,15 @@ func (s *SyncEngine) previewSourceQuery(config SyncConfig, limit int) (TableDiff
 		return out, nil
 	}
 
-	ctx, err = loadSourceQuerySyncContext(config, sourceDB, targetDB, true, true, true)
+	ctx, err = loadSourceQuerySyncContextWithContext(s.context(), config, sourceDB, targetDB, true, true, true)
 	if err != nil {
 		return TableDiffPreview{}, err
 	}
 
 	inserts, updates, deletes, _ := diffRowsByKeyColumns(ctx.PKColumns, ctx.SourceRows, ctx.TargetRows)
+	if err := s.contextError(); err != nil {
+		return TableDiffPreview{}, err
+	}
 	out = TableDiffPreview{
 		Table:                 ctx.TableName,
 		PKColumn:              ctx.PKColumn,

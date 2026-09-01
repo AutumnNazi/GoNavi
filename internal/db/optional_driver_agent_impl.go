@@ -1358,12 +1358,19 @@ func (d *OptionalDriverAgentDB) GetCreateStatement(dbName, tableName string) (st
 }
 
 func (d *OptionalDriverAgentDB) GetColumns(dbName, tableName string) ([]connection.ColumnDefinition, error) {
+	return d.GetColumnsContext(metadataContextFor(d), dbName, tableName)
+}
+
+func (d *OptionalDriverAgentDB) GetColumnsContext(ctx context.Context, dbName, tableName string) ([]connection.ColumnDefinition, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	client, err := d.requireClient()
 	if err != nil {
 		return nil, err
 	}
 	var columns []connection.ColumnDefinition
-	if err := client.callWithContext(metadataContextFor(d), optionalAgentRequest{
+	if err := client.callWithContext(ctx, optionalAgentRequest{
 		Method:    optionalAgentMethodGetColumns,
 		DBName:    dbName,
 		TableName: tableName,

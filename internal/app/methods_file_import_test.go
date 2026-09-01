@@ -209,6 +209,20 @@ type issue1025CapturingImportDB struct {
 	batchChanges []connection.ChangeSet
 }
 
+type sameSessionImportMetadataDB struct {
+	issue1025CapturingImportDB
+	contextValue any
+	contextCalls int
+}
+
+func (database *sameSessionImportMetadataDB) GetColumnsContext(ctx context.Context, _, _ string) ([]connection.ColumnDefinition, error) {
+	database.contextCalls++
+	database.contextValue = ctx.Value(importMetadataContextKey{})
+	return append([]connection.ColumnDefinition(nil), database.columns...), ctx.Err()
+}
+
+type importMetadataContextKey struct{}
+
 func (database *issue1025CapturingImportDB) ApplyChanges(_ string, changes connection.ChangeSet) error {
 	database.batchChanges = append(database.batchChanges, changes)
 	return nil
@@ -284,6 +298,70 @@ func TestIssue1025BlankNullableXLSXCellsBecomeSQLNull(t *testing.T) {
 	}
 	if row["required_count"] != "" {
 		t.Fatalf("required blank cell = %#v, want empty string for database validation", row["required_count"])
+	}
+}
+
+func TestSQLiteMemoryImportReadsColumnsFromSameContextAwareInstance(t *testing.T) {
+	installFakeOptionalDriverRuntime(t)
+	database := &sameSessionImportMetadataDB{issue1025CapturingImportDB: issue1025CapturingImportDB{
+		fakeMetadataRetryDB: fakeMetadataRetryDB{
+			columns: []connection.ColumnDefinition{{Name: "id", Type: "integer", Nullable: "NO"}},
+		},
+	}}
+	installImportTestDatabase(t, database)
+	path := filepath.Join(t.TempDir(), "users.csv")
+	if err := os.WriteFile(path, []byte("id\n1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	application := newManagedImportTestApp(t)
+	ctx := context.WithValue(context.Background(), importMetadataContextKey{}, "request-1098")
+
+	result := application.importDataWithProgressContext(
+		ctx,
+		connection.ConnectionConfig{Type: "sqlite", Host: ":memory:"},
+		"",
+		"users",
+		path,
+		ImportFileOptions{ColumnMappings: map[string]string{"id": "id"}},
+	)
+	if !result.Success {
+		t.Fatalf("in-memory import failed: %#v", result)
+	}
+	if database.contextCalls != 1 || database.contextValue != "request-1098" {
+		t.Fatalf("same-session metadata context calls=%d value=%v", database.contextCalls, database.contextValue)
+	}
+	if database.connectCalls != 1 {
+		t.Fatalf("database connect calls = %d, want one shared in-memory instance", database.connectCalls)
+	}
+	if len(database.batchChanges) != 1 || len(database.batchChanges[0].Inserts) != 1 {
+		t.Fatalf("applied changes = %#v, want one row", database.batchChanges)
+	}
+}
+
+func TestDuckDBMemoryImportReadsColumnsFromSameContextAwareInstance(t *testing.T) {
+	database := &sameSessionImportMetadataDB{issue1025CapturingImportDB: issue1025CapturingImportDB{
+		fakeMetadataRetryDB: fakeMetadataRetryDB{
+			columns: []connection.ColumnDefinition{{Name: "id", Type: "integer", Nullable: "NO"}},
+		},
+	}}
+	application := NewAppWithSecretStore(newFakeAppSecretStore())
+	ctx := context.WithValue(context.Background(), importMetadataContextKey{}, "request-1098")
+
+	columns, err := application.importTargetColumnsContext(
+		ctx,
+		database,
+		connection.ConnectionConfig{Type: "duckdb", Host: ":memory:"},
+		"main",
+		"users",
+	)
+	if err != nil {
+		t.Fatalf("read in-memory DuckDB columns: %v", err)
+	}
+	if len(columns) != 1 || columns[0].Name != "id" {
+		t.Fatalf("columns = %#v, want id", columns)
+	}
+	if database.contextCalls != 1 || database.contextValue != "request-1098" {
+		t.Fatalf("same-session metadata context calls=%d value=%v", database.contextCalls, database.contextValue)
 	}
 }
 

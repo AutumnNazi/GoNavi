@@ -122,6 +122,22 @@ func redisBulkString(value string) string {
 	return fmt.Sprintf("$%d\r\n%s\r\n", len(value), value)
 }
 
+func TestGetValueObservesBoundMetadataContext(t *testing.T) {
+	rawClient := goredis.NewClient(&goredis.Options{Addr: "127.0.0.1:0", Protocol: 2})
+	client := &RedisClientImpl{client: rawClient, singleClient: rawClient}
+	t.Cleanup(func() { _ = client.Close() })
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	BindMetadataContext(client, ctx)
+	t.Cleanup(func() { ClearMetadataContext(client) })
+
+	_, err := client.GetValue("session:1")
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("GetValue() error = %v, want context.Canceled", err)
+	}
+}
+
 func TestScanKeysKeepsEntireRedisScanBatch(t *testing.T) {
 	addr := startRedisProtocolTestServer(t, func(args []string) string {
 		switch strings.ToUpper(strings.TrimSpace(args[0])) {
