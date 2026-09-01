@@ -2787,6 +2787,15 @@ body[data-ui-version="v2"] .gn-v2-titlebar > .gn-v2-titlebar-right {
     align-self: stretch;
 }
 
+/* Docked collapsed actions occupy a second row. Keep titlebar content and
+   custom Windows controls in the compact upper row so the rows never overlap. */
+body[data-ui-version="v2"] .gn-v2-titlebar-collapsed-docked:not(.gn-v2-titlebar-native-mac) > .gonavi-titlebar-leading,
+body[data-ui-version="v2"] .gn-v2-titlebar-collapsed-docked:not(.gn-v2-titlebar-native-mac) > .gn-v2-titlebar-right {
+    align-self: flex-start;
+    height: var(--gn-titlebar-collapsed-upper-height, 29px);
+    min-height: var(--gn-titlebar-collapsed-upper-height, 29px);
+}
+
 /* Native traffic lights keep a fixed vertical center while UI Scale changes the custom bar height. */
 body[data-ui-version="v2"] .gn-v2-titlebar-native-mac > .gonavi-titlebar-leading,
 body[data-ui-version="v2"] .gn-v2-titlebar-native-mac > .gn-v2-titlebar-right {

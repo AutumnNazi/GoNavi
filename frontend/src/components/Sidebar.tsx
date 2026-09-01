@@ -4755,7 +4755,7 @@ const Sidebar: React.FC<{
     showObjectActions: false,
     showLocateAction: false,
     aiActive: aiPanelVisible,
-    sidebarExpandAction: onExpandSidebar && expandSidebarLabel ? {
+    sidebarExpandAction: !collapsedSidebarActionsTarget && onExpandSidebar && expandSidebarLabel ? {
       label: expandSidebarLabel,
       onClick: onExpandSidebar,
       buttonRef: expandSidebarButtonRef,
