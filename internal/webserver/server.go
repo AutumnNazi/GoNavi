@@ -354,11 +354,12 @@ func (h *eventHub) unsubscribe(subscriber *eventSubscriber) {
 
 type methodInvoker struct {
 	targets             map[string]reflect.Value
+	contextHandlers     map[string]map[string]reflect.Value
 	allowDesktopMethods bool
 }
 
-func newMethodInvoker(app *appcore.App, ai *aiservice.Service) *methodInvoker {
-	return &methodInvoker{
+func newMethodInvoker(app *appcore.App, ai *aiservice.Service) (*methodInvoker, error) {
+	invoker := &methodInvoker{
 		targets: map[string]reflect.Value{
 			"app.app":           reflect.ValueOf(app),
 			"app":               reflect.ValueOf(app),
@@ -366,9 +367,98 @@ func newMethodInvoker(app *appcore.App, ai *aiservice.Service) *methodInvoker {
 			"aiservice":         reflect.ValueOf(ai),
 		},
 	}
+	appHandlers, err := validateContextHandlers(
+		reflect.ValueOf(app),
+		appcore.RequiredIssue1098WebRPCContextMethods(),
+		appcore.WebRPCContextHandlers(app),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("validate App Web RPC context handlers: %w", err)
+	}
+	invoker.contextHandlers = map[string]map[string]reflect.Value{"app": appHandlers}
+	return invoker, nil
 }
 
-func (i *methodInvoker) Invoke(req invokeRequest) (any, error) {
+func validateContextHandlers(target reflect.Value, required []string, handlers map[string]any) (map[string]reflect.Value, error) {
+	if !target.IsValid() || (target.Kind() == reflect.Pointer && target.IsNil()) {
+		return nil, fmt.Errorf("context handler target is unavailable")
+	}
+	requiredSet := make(map[string]struct{}, len(required))
+	for _, methodName := range required {
+		methodName = strings.TrimSpace(methodName)
+		if methodName == "" {
+			return nil, fmt.Errorf("required context method name is empty")
+		}
+		if _, exists := requiredSet[methodName]; exists {
+			return nil, fmt.Errorf("required context method %s is duplicated", methodName)
+		}
+		requiredSet[methodName] = struct{}{}
+	}
+	if len(handlers) != len(requiredSet) {
+		return nil, fmt.Errorf("context handler count mismatch: want %d got %d", len(requiredSet), len(handlers))
+	}
+
+	contextType := reflect.TypeOf((*context.Context)(nil)).Elem()
+	validated := make(map[string]reflect.Value, len(handlers))
+	for methodName, rawHandler := range handlers {
+		if _, required := requiredSet[methodName]; !required {
+			return nil, fmt.Errorf("context handler %s is not in the required method set", methodName)
+		}
+		publicMethod := target.MethodByName(methodName)
+		if !publicMethod.IsValid() {
+			return nil, fmt.Errorf("public method %s does not exist", methodName)
+		}
+		publicType := publicMethod.Type()
+		if publicType.IsVariadic() {
+			return nil, fmt.Errorf("public method %s must not be variadic", methodName)
+		}
+
+		handler := reflect.ValueOf(rawHandler)
+		if !handler.IsValid() || handler.Kind() != reflect.Func || handler.IsNil() {
+			return nil, fmt.Errorf("context handler %s must be a non-nil function", methodName)
+		}
+		handlerType := handler.Type()
+		if handlerType.IsVariadic() {
+			return nil, fmt.Errorf("context handler %s must not be variadic", methodName)
+		}
+		if handlerType.NumIn() != publicType.NumIn()+1 || handlerType.In(0) != contextType {
+			return nil, fmt.Errorf("context handler %s has an invalid parameter list", methodName)
+		}
+		for index := 0; index < publicType.NumIn(); index++ {
+			if handlerType.In(index+1) != publicType.In(index) {
+				return nil, fmt.Errorf("context handler %s parameter %d type mismatch", methodName, index)
+			}
+		}
+		if handlerType.NumOut() != publicType.NumOut() {
+			return nil, fmt.Errorf("context handler %s return count mismatch", methodName)
+		}
+		for index := 0; index < publicType.NumOut(); index++ {
+			if handlerType.Out(index) != publicType.Out(index) {
+				return nil, fmt.Errorf("context handler %s return %d type mismatch", methodName, index)
+			}
+		}
+		validated[methodName] = handler
+	}
+	for methodName := range requiredSet {
+		if _, exists := validated[methodName]; !exists {
+			return nil, fmt.Errorf("required context handler %s is missing", methodName)
+		}
+	}
+	return validated, nil
+}
+
+func canonicalInvokeTarget(key string) string {
+	switch key {
+	case "app", "app.app":
+		return "app"
+	case "aiservice", "aiservice.service":
+		return "aiservice"
+	default:
+		return key
+	}
+}
+
+func (i *methodInvoker) Invoke(ctx context.Context, req invokeRequest) (any, error) {
 	if i == nil {
 		return nil, fmt.Errorf("web invoker is not initialized")
 	}
@@ -411,6 +501,24 @@ func (i *methodInvoker) Invoke(req invokeRequest) (any, error) {
 			return nil, fmt.Errorf("decode argument %d for %s failed: %w", index, methodName, err)
 		}
 		callArgs = append(callArgs, argValue)
+	}
+
+	canonicalTarget := canonicalInvokeTarget(key)
+	handler := reflect.Value{}
+	if handlers := i.contextHandlers[canonicalTarget]; handlers != nil {
+		handler = handlers[methodName]
+	}
+	if handler.IsValid() {
+		if ctx == nil {
+			ctx = context.Background()
+		}
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		contextCallArgs := make([]reflect.Value, 0, len(callArgs)+1)
+		contextCallArgs = append(contextCallArgs, reflect.ValueOf(ctx))
+		contextCallArgs = append(contextCallArgs, callArgs...)
+		return unpackResults(handler.Call(contextCallArgs))
 	}
 
 	results := method.Call(callArgs)
@@ -515,17 +623,18 @@ func NewSharedRuntime(assetFS fs.FS, app *appcore.App, ai *aiservice.Service, op
 	}
 
 	events := newEventHub()
+	invoker, err := newMethodInvoker(app, ai)
+	if err != nil {
+		return nil, err
+	}
+	invoker.allowDesktopMethods = true
 	shared := &SharedRuntime{
 		server: &Server{
-			assets: frontendFS,
-			app:    app,
-			ai:     ai,
-			events: events,
-			invoker: func() *methodInvoker {
-				invoker := newMethodInvoker(app, ai)
-				invoker.allowDesktopMethods = true
-				return invoker
-			}(),
+			assets:        frontendFS,
+			app:           app,
+			ai:            ai,
+			events:        events,
+			invoker:       invoker,
 			auditHeavySem: make(chan struct{}, 1),
 		},
 		runtimeBridgePath:   bridgePath,
@@ -665,6 +774,10 @@ func New(ctx context.Context, assetFS fs.FS, options Options) (*Server, error) {
 	appcore.InitializeLifecycle(app, lifecycleCtx)
 	ai := aiservice.NewService()
 	aiservice.InitializeLifecycle(ai, lifecycleCtx)
+	invoker, err := newMethodInvoker(app, ai)
+	if err != nil {
+		return nil, err
+	}
 	auth, err := newWebAuthManagerFromEnvironment("")
 	if err != nil {
 		return nil, fmt.Errorf("initialize web auth failed: %w", err)
@@ -677,7 +790,7 @@ func New(ctx context.Context, assetFS fs.FS, options Options) (*Server, error) {
 		ai:            ai,
 		auth:          auth,
 		events:        events,
-		invoker:       newMethodInvoker(app, ai),
+		invoker:       invoker,
 		auditHeavySem: make(chan struct{}, 1),
 	}, nil
 }
@@ -865,6 +978,9 @@ func (s *Server) handleInvoke(w http.ResponseWriter, r *http.Request) {
 		if webTrace != nil {
 			completeWebInvokeTrace(webTrace, response)
 		}
+		if r.Context().Err() != nil {
+			return
+		}
 		if requestID != "" {
 			w.Header().Set("X-GoNavi-Request-ID", requestID)
 		}
@@ -879,7 +995,7 @@ func (s *Server) handleInvoke(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	result, err := s.invoker.Invoke(request)
+	result, err := s.invoker.Invoke(r.Context(), request)
 	if err != nil {
 		writeResponse(http.StatusBadRequest, invokeResponse{Error: err.Error()})
 		return

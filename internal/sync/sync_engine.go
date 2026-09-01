@@ -205,6 +205,8 @@ func (s *SyncEngine) runSync(config SyncConfig) SyncResult {
 	if err := s.contextError(); err != nil {
 		return s.fail(config.JobID, totalTables, result, err.Error())
 	}
+	db.BindMetadataContext(sourceDB, s.context())
+	defer db.ClearMetadataContext(sourceDB)
 
 	// Connect Target
 	s.appendLog(config.JobID, &result, "info", fmt.Sprintf("正在连接目标数据库: %s...", config.TargetConfig.Host))
@@ -217,6 +219,11 @@ func (s *SyncEngine) runSync(config SyncConfig) SyncResult {
 		return s.fail(config.JobID, totalTables, result, localizedSyncBackendDetailText("data_sync.backend.error.connect_target_failed", err))
 	}
 	defer targetDB.Close()
+	if err := s.contextError(); err != nil {
+		return s.fail(config.JobID, totalTables, result, err.Error())
+	}
+	db.BindMetadataContext(targetDB, s.context())
+	defer db.ClearMetadataContext(targetDB)
 
 	tableFailures := make([]string, 0)
 	for i, tableName := range config.Tables {

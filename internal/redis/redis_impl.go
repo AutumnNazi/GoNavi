@@ -895,7 +895,7 @@ func (r *RedisClientImpl) GetKeyType(key string) (string, error) {
 	if r.client == nil {
 		return "", fmt.Errorf("Redis 客户端未连接")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(metadataContextFor(r), 5*time.Second)
 	defer cancel()
 	return r.client.Type(ctx, r.toPhysicalKey(key)).Result()
 }
@@ -905,7 +905,7 @@ func (r *RedisClientImpl) GetTTL(key string) (int64, error) {
 	if r.client == nil {
 		return 0, fmt.Errorf("Redis 客户端未连接")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(metadataContextFor(r), 5*time.Second)
 	defer cancel()
 
 	ttl, err := r.client.TTL(ctx, r.toPhysicalKey(key)).Result()
@@ -993,7 +993,7 @@ func (r *RedisClientImpl) GetValue(key string) (*RedisValue, error) {
 		TTL:  ttl,
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(metadataContextFor(r), 30*time.Second)
 	defer cancel()
 
 	switch keyType {

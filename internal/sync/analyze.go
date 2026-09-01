@@ -1,7 +1,10 @@
 package sync
 
 import (
+	"GoNavi-Wails/internal/db"
 	"GoNavi-Wails/internal/logger"
+	"context"
+	"errors"
 	"fmt"
 	"strings"
 )
@@ -41,9 +44,25 @@ type SyncAnalyzeResult struct {
 }
 
 func (s *SyncEngine) Analyze(config SyncConfig) SyncAnalyzeResult {
+	runner := &SyncEngine{reporter: s.reporter, ctx: context.Background()}
+	return runner.analyze(config)
+}
+
+func (s *SyncEngine) AnalyzeContext(ctx context.Context, config SyncConfig) SyncAnalyzeResult {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	runner := &SyncEngine{reporter: s.reporter, ctx: markSyncDriverContext(ctx)}
+	return runner.analyze(config)
+}
+
+func (s *SyncEngine) analyze(config SyncConfig) SyncAnalyzeResult {
 	config = normalizeSyncConnectionDatabases(config)
 	config = normalizeMappedSyncTables(config)
 	result := SyncAnalyzeResult{Success: true, Tables: []TableDiffSummary{}}
+	if err := s.contextError(); err != nil {
+		return SyncAnalyzeResult{Success: false, Message: err.Error(), Tables: []TableDiffSummary{}}
+	}
 	if err := validateSyncMappings(config); err != nil {
 		result.Success = false
 		result.Message = err.Error()
@@ -105,18 +124,59 @@ func (s *SyncEngine) Analyze(config SyncConfig) SyncAnalyzeResult {
 	}
 
 	if err := sourceDB.Connect(config.SourceConfig); err != nil {
+		if contextErr := s.contextError(); contextErr != nil {
+			return SyncAnalyzeResult{Success: false, Message: contextErr.Error(), Tables: []TableDiffSummary{}}
+		}
 		logger.Error(err, "源数据库连接失败：%s", formatConnSummaryForSync(config.SourceConfig))
 		return SyncAnalyzeResult{Success: false, Message: localizedSyncBackendDetailText("data_sync.backend.error.connect_source_failed", err)}
 	}
+	if err := s.contextError(); err != nil {
+		_ = sourceDB.Close()
+		return SyncAnalyzeResult{Success: false, Message: err.Error(), Tables: []TableDiffSummary{}}
+	}
 	defer sourceDB.Close()
+	db.BindMetadataContext(sourceDB, s.context())
+	defer db.ClearMetadataContext(sourceDB)
 
 	if err := targetDB.Connect(config.TargetConfig); err != nil {
+		if contextErr := s.contextError(); contextErr != nil {
+			return SyncAnalyzeResult{Success: false, Message: contextErr.Error(), Tables: []TableDiffSummary{}}
+		}
 		logger.Error(err, "目标数据库连接失败：%s", formatConnSummaryForSync(config.TargetConfig))
 		return SyncAnalyzeResult{Success: false, Message: localizedSyncBackendDetailText("data_sync.backend.error.connect_target_failed", err)}
 	}
+	if err := s.contextError(); err != nil {
+		_ = targetDB.Close()
+		return SyncAnalyzeResult{Success: false, Message: err.Error(), Tables: []TableDiffSummary{}}
+	}
 	defer targetDB.Close()
+	db.BindMetadataContext(targetDB, s.context())
+	defer db.ClearMetadataContext(targetDB)
+
+	cancelled := false
+	recordCancellation := func(err error) bool {
+		contextErr := s.contextError()
+		if contextErr == nil {
+			switch {
+			case errors.Is(err, context.Canceled):
+				contextErr = context.Canceled
+			case errors.Is(err, context.DeadlineExceeded):
+				contextErr = context.DeadlineExceeded
+			default:
+				return false
+			}
+		}
+		cancelled = true
+		result.Success = false
+		result.Message = contextErr.Error()
+		return true
+	}
 
 	for i, tableName := range config.Tables {
+		if err := s.contextError(); err != nil {
+			recordCancellation(err)
+			break
+		}
 		func() {
 			s.progress(config.JobID, i, totalTables, tableName, localizedSyncBackendText("data_sync.progress.stage.analyzing_table", map[string]any{
 				"current": i + 1,
@@ -136,6 +196,7 @@ func (s *SyncEngine) Analyze(config SyncConfig) SyncAnalyzeResult {
 
 			plan, cols, targetCols, err := buildSchemaMigrationPlan(config, tableName, sourceDB, targetDB)
 			if err != nil {
+				recordCancellation(err)
 				summary.Message = err.Error()
 				result.Tables = append(result.Tables, summary)
 				return
@@ -225,15 +286,17 @@ func (s *SyncEngine) Analyze(config SyncConfig) SyncAnalyzeResult {
 
 			sourceType := resolveMigrationDBType(config.SourceConfig)
 			targetType := resolveMigrationDBType(config.TargetConfig)
-			sourceCount, counted, err := countTableRowsForSync(sourceDB, sourceType, plan.SourceQueryTable)
+			sourceCount, counted, err := countTableRowsForSyncContext(s.context(), sourceDB, sourceType, plan.SourceQueryTable)
 			if err != nil {
+				recordCancellation(err)
 				summary.Message = localizedSyncBackendDetailText("data_sync.backend.error.read_source_table_failed", err)
 				result.Tables = append(result.Tables, summary)
 				return
 			}
 			if !counted {
-				sourceRows, _, err := sourceDB.Query(fmt.Sprintf("SELECT * FROM %s", quoteQualifiedIdentByType(sourceType, plan.SourceQueryTable)))
+				sourceRows, _, err := querySyncDatabaseContext(s.context(), sourceDB, fmt.Sprintf("SELECT * FROM %s", quoteQualifiedIdentByType(sourceType, plan.SourceQueryTable)))
 				if err != nil {
+					recordCancellation(err)
 					summary.Message = localizedSyncBackendDetailText("data_sync.backend.error.read_source_table_failed", err)
 					result.Tables = append(result.Tables, summary)
 					return
@@ -277,10 +340,11 @@ func (s *SyncEngine) Analyze(config SyncConfig) SyncAnalyzeResult {
 			counts := pagedDiffCounts{}
 			var scanErr error
 			if !hasExplicitSyncMappings(config) && len(pkCols) == 1 {
-				handled, counts, scanErr = scanTableDiffInPages(sourceDB, targetDB, sourceType, targetType, plan, cols, targetCols, sourcePKCol, targetColSet, true, nil)
+				handled, counts, scanErr = scanTableDiffInPagesContext(s.context(), sourceDB, targetDB, sourceType, targetType, plan, cols, targetCols, sourcePKCol, targetColSet, true, nil)
 			}
 			if handled {
 				if scanErr != nil {
+					recordCancellation(scanErr)
 					summary.Message = scanErr.Error()
 					result.Tables = append(result.Tables, summary)
 					return
@@ -307,8 +371,9 @@ func (s *SyncEngine) Analyze(config SyncConfig) SyncAnalyzeResult {
 				return
 			}
 
-			sourceRows, _, err := sourceDB.Query(fmt.Sprintf("SELECT * FROM %s", quoteQualifiedIdentByType(sourceType, plan.SourceQueryTable)))
+			sourceRows, _, err := querySyncDatabaseContext(s.context(), sourceDB, fmt.Sprintf("SELECT * FROM %s", quoteQualifiedIdentByType(sourceType, plan.SourceQueryTable)))
 			if err != nil {
+				recordCancellation(err)
 				summary.Message = localizedSyncBackendDetailText("data_sync.backend.error.read_source_table_failed", err)
 				result.Tables = append(result.Tables, summary)
 				return
@@ -321,8 +386,9 @@ func (s *SyncEngine) Analyze(config SyncConfig) SyncAnalyzeResult {
 					return
 				}
 			}
-			targetRows, _, err := targetDB.Query(fmt.Sprintf("SELECT * FROM %s", quoteQualifiedIdentByType(targetType, plan.TargetQueryTable)))
+			targetRows, _, err := querySyncDatabaseContext(s.context(), targetDB, fmt.Sprintf("SELECT * FROM %s", quoteQualifiedIdentByType(targetType, plan.TargetQueryTable)))
 			if err != nil {
+				recordCancellation(err)
 				summary.Message = localizedSyncBackendDetailText("data_sync.backend.error.read_target_table_failed", err)
 				result.Tables = append(result.Tables, summary)
 				return
@@ -337,8 +403,14 @@ func (s *SyncEngine) Analyze(config SyncConfig) SyncAnalyzeResult {
 			}
 			result.Tables = append(result.Tables, summary)
 		}()
+		if cancelled {
+			break
+		}
 	}
 
+	if cancelled || recordCancellation(nil) {
+		return result
+	}
 	s.progress(config.JobID, totalTables, totalTables, "", analysisCompletedStage)
 	result.Message = localizedSyncBackendText("data_sync.backend.result.analyzed_tables", map[string]any{
 		"count": len(result.Tables),

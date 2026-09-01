@@ -15,6 +15,7 @@ import { t as defaultTranslate } from '../i18n';
 import { useOptionalI18n } from '../i18n/provider';
 import type { SavedConnection } from '../types';
 import { confirmProductionRisk } from '../utils/productionRiskConfirm';
+import { invokeAppWithSignal } from '../utils/webRpc';
 import { formatImportBytes, formatImportDuration } from './importProgressMetrics';
 import Modal from './common/ResizableDraggableModal';
 import {
@@ -72,6 +73,7 @@ const DatabaseImportExecutionPanel: React.FC<DatabaseImportExecutionPanelProps> 
   const [preflightError, setPreflightError] = useState('');
   const [cancelRequested, setCancelRequested] = useState(false);
   const lastReportedRunningRef = useRef<boolean | null>(null);
+  const executionRPCAbortRef = useRef<AbortController | null>(null);
   const {
     state,
     reset,
@@ -119,6 +121,11 @@ const DatabaseImportExecutionPanel: React.FC<DatabaseImportExecutionPanelProps> 
     onRunningChange?.(taskRunning);
   }, [onRunningChange, taskRunning]);
 
+  useEffect(() => () => {
+    executionRPCAbortRef.current?.abort();
+    executionRPCAbortRef.current = null;
+  }, []);
+
   const startImport = useCallback(async () => {
     if (!connectionConfig || !String(filePath || '').trim() || taskRunning) return;
     const approved = await confirmProductionRisk({
@@ -159,14 +166,34 @@ const DatabaseImportExecutionPanel: React.FC<DatabaseImportExecutionPanelProps> 
         filePath,
         fileSizeMB,
         run: async (jobId) => {
-          const result = await ImportDatabaseSQLWithOptions(
-            connectionConfig as any,
+          executionRPCAbortRef.current?.abort();
+          const controller = new AbortController();
+          executionRPCAbortRef.current = controller;
+          const args = [
+            connectionConfig,
             String(dbName || '').trim(),
             filePath,
             jobId,
             continueOnError,
             mysqlGTIDMode,
-          );
+          ];
+          const result = await invokeAppWithSignal(
+            'ImportDatabaseSQLWithOptions',
+            args,
+            controller.signal,
+            () => ImportDatabaseSQLWithOptions(
+              connectionConfig as any,
+              String(dbName || '').trim(),
+              filePath,
+              jobId,
+              continueOnError,
+              mysqlGTIDMode,
+            ),
+          ).finally(() => {
+            if (executionRPCAbortRef.current === controller) {
+              executionRPCAbortRef.current = null;
+            }
+          });
           // Reaching EOF with recorded statement errors is a completed import,
           // not a transport/fatal failure. Preserve the counters and render it
           // as a warning result instead of offering a misleading fatal retry.

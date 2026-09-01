@@ -1300,7 +1300,13 @@ func formatConnSummary(config connection.ConnectionConfig) string {
 
 func (a *App) getDatabaseForcePing(config connection.ConnectionConfig) (db.Database, error) {
 	if a != nil && a.metadataSession != nil {
-		instance, err := a.getDatabaseWithContext(a.metadataSession.ctx, config, true)
+		var instance db.Database
+		var err error
+		if a.metadataSession.synchronous {
+			instance, err = a.getDatabaseSynchronouslyWithContext(a.metadataSession.ctx, config, true)
+		} else {
+			instance, err = a.getDatabaseWithContext(a.metadataSession.ctx, config, true)
+		}
 		a.bindMetadataDatabase(instance)
 		return instance, err
 	}
@@ -1312,7 +1318,13 @@ func (a *App) getDatabaseForcePing(config connection.ConnectionConfig) (db.Datab
 // Helper: Get or create a database connection
 func (a *App) getDatabase(config connection.ConnectionConfig) (db.Database, error) {
 	if a != nil && a.metadataSession != nil {
-		instance, err := a.getDatabaseWithContext(a.metadataSession.ctx, config, false)
+		var instance db.Database
+		var err error
+		if a.metadataSession.synchronous {
+			instance, err = a.getDatabaseSynchronouslyWithContext(a.metadataSession.ctx, config, false)
+		} else {
+			instance, err = a.getDatabaseWithContext(a.metadataSession.ctx, config, false)
+		}
 		a.bindMetadataDatabase(instance)
 		return instance, err
 	}
@@ -1359,6 +1371,27 @@ func (a *App) getDatabaseWithContext(ctx context.Context, config connection.Conn
 		}
 		return result.instance, result.err
 	}
+}
+
+// getDatabaseSynchronouslyWithContext keeps non-context-aware Connect work in
+// the current request goroutine. It cannot interrupt Connect, but it guarantees
+// that a canceled Web RPC does not return while a detached connection worker is
+// still running. The context is checked again before any SQL is dispatched.
+func (a *App) getDatabaseSynchronouslyWithContext(ctx context.Context, config connection.ConnectionConfig, forcePing bool) (db.Database, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	instance, err := a.getDatabaseWithPing(config, forcePing)
+	if err != nil {
+		return nil, err
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return instance, nil
 }
 
 func (a *App) openDatabaseIsolated(config connection.ConnectionConfig) (db.Database, error) {

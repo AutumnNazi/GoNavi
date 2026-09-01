@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { isWebRPCAbortError } from '../../utils/webRpc';
 
 import {
   DataSyncCdcView,
@@ -334,6 +335,9 @@ export const DataSyncWorkbenchShell: React.FC<DataSyncWorkbenchShellProps> = ({
   const savingRef = useRef(false);
   const [preflighting, setPreflighting] = useState(false);
   const preflightingRef = useRef(false);
+  const preflightAbortRef = useRef<AbortController | null>(null);
+  const capabilityAbortRef = useRef<AbortController | null>(null);
+  const cdcAbortRef = useRef<AbortController | null>(null);
   const deletingTaskRef = useRef(false);
   const [preflights, setPreflights] = useState<
     Record<string, DataSyncPreflightSnapshot | undefined>
@@ -375,6 +379,12 @@ export const DataSyncWorkbenchShell: React.FC<DataSyncWorkbenchShellProps> = ({
     null,
   );
   const runStatusesRef = useRef<Map<string, DataSyncRunRecord['status']>>(new Map());
+
+  useEffect(() => () => {
+    preflightAbortRef.current?.abort();
+    capabilityAbortRef.current?.abort();
+    cdcAbortRef.current?.abort();
+  }, []);
 
   const applyRunPage = (
     page: DataSyncRunPage,
@@ -566,8 +576,12 @@ export const DataSyncWorkbenchShell: React.FC<DataSyncWorkbenchShellProps> = ({
 
   useEffect(() => {
     let active = true;
+    const taskController = new AbortController();
+    const cdcController = new AbortController();
+    cdcAbortRef.current?.abort();
+    cdcAbortRef.current = cdcController;
     void gatewayRef.current!
-      .listTasks()
+      .listTasks({ signal: taskController.signal })
       .then((loadedTasks) => {
         if (!active) return;
         if (loadedTasks.length > 0) {
@@ -593,7 +607,7 @@ export const DataSyncWorkbenchShell: React.FC<DataSyncWorkbenchShellProps> = ({
         return Promise.allSettled([
           requestRunPage(null, 10),
           gatewayRef.current!.listSchedules(),
-          gatewayRef.current!.listCdcSources(),
+          gatewayRef.current!.listCdcSources({ signal: cdcController.signal }),
         ] as const);
       })
       .then((results) => {
@@ -611,19 +625,22 @@ export const DataSyncWorkbenchShell: React.FC<DataSyncWorkbenchShellProps> = ({
         const rejected = results.find(
           (result): result is PromiseRejectedResult => result.status === 'rejected',
         );
-        if (rejected) {
+        if (rejected && !isWebRPCAbortError(rejected.reason)) {
           setOperationError(
             rejected.reason instanceof Error ? rejected.reason.message : String(rejected.reason),
           );
         }
       })
       .catch((error) => {
-        if (active) {
+        if (active && !isWebRPCAbortError(error)) {
           setOperationError(error instanceof Error ? error.message : String(error));
         }
       });
     return () => {
       active = false;
+      taskController.abort();
+      cdcController.abort();
+      if (cdcAbortRef.current === cdcController) cdcAbortRef.current = null;
     };
   }, [bootstrapRevision]);
 
@@ -633,19 +650,24 @@ export const DataSyncWorkbenchShell: React.FC<DataSyncWorkbenchShellProps> = ({
       return undefined;
     }
     let active = true;
+    const controller = new AbortController();
+    capabilityAbortRef.current?.abort();
+    capabilityAbortRef.current = controller;
     setCapability(EMPTY_CAPABILITY);
     void gatewayRef.current!
-      .resolveCapability(selectedTask)
+      .resolveCapability(selectedTask, { signal: controller.signal })
       .then((resolved) => {
         if (active) setCapability(resolved);
       })
       .catch((error) => {
-        if (!active) return;
+        if (!active || isWebRPCAbortError(error)) return;
         setCapability(EMPTY_CAPABILITY);
         setOperationError(error instanceof Error ? error.message : String(error));
       });
     return () => {
       active = false;
+      controller.abort();
+      if (capabilityAbortRef.current === controller) capabilityAbortRef.current = null;
     };
   }, [
     selectedTask?.id,
@@ -811,14 +833,23 @@ export const DataSyncWorkbenchShell: React.FC<DataSyncWorkbenchShellProps> = ({
       let refreshedPreflight: DataSyncPreflightSnapshot | null = null;
       let refreshError: unknown = null;
       if (saved.lifecycle === 'ready' || saved.lifecycle === 'enabled') {
+        preflightAbortRef.current?.abort();
+        const controller = new AbortController();
+        preflightAbortRef.current = controller;
         try {
           // PutJob advances the persisted revision. Revalidate that exact
           // revision before exposing the run action; the old snapshot is no
           // longer sufficient evidence, even when the visible fields did not
           // change.
-          refreshedPreflight = await gatewayRef.current!.preflightTask(saved);
+          refreshedPreflight = await gatewayRef.current!.preflightTask(saved, {
+            signal: controller.signal,
+          });
         } catch (error) {
-          refreshError = error;
+          if (!isWebRPCAbortError(error)) refreshError = error;
+        } finally {
+          if (preflightAbortRef.current === controller) {
+            preflightAbortRef.current = null;
+          }
         }
       }
       const tombstoned =
@@ -948,8 +979,13 @@ export const DataSyncWorkbenchShell: React.FC<DataSyncWorkbenchShellProps> = ({
     preflightingRef.current = true;
     setPreflighting(true);
     setOperationError('');
+    preflightAbortRef.current?.abort();
+    const controller = new AbortController();
+    preflightAbortRef.current = controller;
     try {
-      const snapshot = await gatewayRef.current!.preflightTask(selectedTask);
+      const snapshot = await gatewayRef.current!.preflightTask(selectedTask, {
+        signal: controller.signal,
+      });
       setPreflights((current) => ({ ...current, [selectedTask.id]: snapshot }));
       setApprovals((current) => {
         const approval = current[selectedTask.id];
@@ -971,8 +1007,10 @@ export const DataSyncWorkbenchShell: React.FC<DataSyncWorkbenchShellProps> = ({
         setActiveStage('preflight');
       }
     } catch (error) {
+      if (isWebRPCAbortError(error)) return;
       setOperationError(error instanceof Error ? error.message : String(error));
     } finally {
+      if (preflightAbortRef.current === controller) preflightAbortRef.current = null;
       preflightingRef.current = false;
       setPreflighting(false);
     }
@@ -1337,8 +1375,18 @@ export const DataSyncWorkbenchShell: React.FC<DataSyncWorkbenchShellProps> = ({
         return next;
       });
       setCheckpoint(null);
-      setCdcSources(await gatewayRef.current!.listCdcSources());
+      cdcAbortRef.current?.abort();
+      const controller = new AbortController();
+      cdcAbortRef.current = controller;
+      try {
+        setCdcSources(await gatewayRef.current!.listCdcSources({
+          signal: controller.signal,
+        }));
+      } finally {
+        if (cdcAbortRef.current === controller) cdcAbortRef.current = null;
+      }
     } catch (error) {
+      if (isWebRPCAbortError(error)) return;
       setOperationError(error instanceof Error ? error.message : String(error));
     } finally {
       setOperationBusy('');
@@ -1358,11 +1406,18 @@ export const DataSyncWorkbenchShell: React.FC<DataSyncWorkbenchShellProps> = ({
 
   const refreshCdc = async () => {
     setOperationBusy('refresh-cdc');
+    cdcAbortRef.current?.abort();
+    const controller = new AbortController();
+    cdcAbortRef.current = controller;
     try {
-      setCdcSources(await gatewayRef.current!.listCdcSources());
+      setCdcSources(await gatewayRef.current!.listCdcSources({
+        signal: controller.signal,
+      }));
     } catch (error) {
+      if (isWebRPCAbortError(error)) return;
       setOperationError(error instanceof Error ? error.message : String(error));
     } finally {
+      if (cdcAbortRef.current === controller) cdcAbortRef.current = null;
       setOperationBusy('');
     }
   };
@@ -1394,8 +1449,13 @@ export const DataSyncWorkbenchShell: React.FC<DataSyncWorkbenchShellProps> = ({
     setPreflighting(true);
     setOperationError('');
     setApprovalError('');
+    preflightAbortRef.current?.abort();
+    const controller = new AbortController();
+    preflightAbortRef.current = controller;
     try {
-      const snapshot = await gatewayRef.current!.preflightTask(candidate);
+      const snapshot = await gatewayRef.current!.preflightTask(candidate, {
+        signal: controller.signal,
+      });
       const latestTask = tasksRef.current.find((task) => task.id === selectedTask.id);
       if (!latestTask || latestTask.editEpoch !== selectedTask.editEpoch) {
         setOperationError(t('workbench.definition_changed_retry'));
@@ -1444,8 +1504,10 @@ export const DataSyncWorkbenchShell: React.FC<DataSyncWorkbenchShellProps> = ({
       }
       await saveTask(candidate, selectedTask.editEpoch, true);
     } catch (error) {
+      if (isWebRPCAbortError(error)) return;
       setOperationError(error instanceof Error ? error.message : String(error));
     } finally {
+      if (preflightAbortRef.current === controller) preflightAbortRef.current = null;
       preflightingRef.current = false;
       setPreflighting(false);
     }

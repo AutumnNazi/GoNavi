@@ -58,6 +58,31 @@ type importFileConsumer interface {
 	ConsumeRow(row map[string]interface{}) error
 }
 
+type contextImportFileConsumer struct {
+	ctx      context.Context
+	delegate importFileConsumer
+}
+
+func (c *contextImportFileConsumer) SetColumns(columns []string) error {
+	if err := c.ctx.Err(); err != nil {
+		return err
+	}
+	return c.delegate.SetColumns(columns)
+}
+
+func (c *contextImportFileConsumer) ConsumeRow(row map[string]interface{}) error {
+	if err := c.ctx.Err(); err != nil {
+		return err
+	}
+	return c.delegate.ConsumeRow(row)
+}
+
+func (c *contextImportFileConsumer) SetImportSourceProgress(bytesRead int64, totalBytes int64, stage string) {
+	if progress, ok := c.delegate.(importSourceProgressConsumer); ok {
+		progress.SetImportSourceProgress(bytesRead, totalBytes, stage)
+	}
+}
+
 type importSourceProgressConsumer interface {
 	SetImportSourceProgress(bytesRead int64, totalBytes int64, stage string)
 }
@@ -947,8 +972,12 @@ func buildImportPreview(filePath string, previewLimit int) (importPreviewData, e
 }
 
 func buildImportPreviewWithOptions(filePath string, previewLimit int, options ImportFileOptions) (importPreviewData, error) {
+	return buildImportPreviewWithOptionsContext(context.Background(), filePath, previewLimit, options)
+}
+
+func buildImportPreviewWithOptionsContext(ctx context.Context, filePath string, previewLimit int, options ImportFileOptions) (importPreviewData, error) {
 	collector := newImportPreviewCollector(previewLimit)
-	if err := streamImportFileWithOptions(filePath, collector, options); err != nil && !errors.Is(err, errImportPreviewLimitReached) {
+	if err := streamImportFileWithOptionsContext(ctx, filePath, collector, options); err != nil && !errors.Is(err, errImportPreviewLimitReached) {
 		return importPreviewData{}, err
 	} else if err == nil {
 		collectorResult := collector.Result()
@@ -971,12 +1000,23 @@ func streamImportFile(filePath string, consumer importFileConsumer) error {
 }
 
 func streamImportFileWithOptions(filePath string, consumer importFileConsumer, options ImportFileOptions) error {
+	return streamImportFileWithOptionsContext(context.Background(), filePath, consumer, options)
+}
+
+func streamImportFileWithOptionsContext(ctx context.Context, filePath string, consumer importFileConsumer, options ImportFileOptions) error {
 	if consumer == nil {
 		return fmt.Errorf("import file consumer is required")
 	}
 	if err := validateImportFileOptions(options); err != nil {
 		return err
 	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	consumer = &contextImportFileConsumer{ctx: ctx, delegate: consumer}
 	lower := strings.ToLower(filePath)
 	switch {
 	case strings.HasSuffix(lower, ".json"):

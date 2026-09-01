@@ -22,6 +22,7 @@ import {
   type DataSyncEndpointRef,
   type DataSyncValidationIssue,
 } from './model';
+import type { WebRPCRequestOptions } from '../../utils/webRpc';
 
 export interface DataSyncWorkbenchGateway {
   readonly capabilities: {
@@ -30,18 +31,31 @@ export interface DataSyncWorkbenchGateway {
   };
   /** Returns credential-free connection summaries only. */
   listSavedConnections(): Promise<DataSyncSavedConnectionView[]>;
-  listDatabases(connectionId: string): Promise<DataSyncDatabaseMetadata[]>;
-  listObjects(endpoint: DataSyncEndpointRef): Promise<DataSyncObjectMetadata[]>;
+  listDatabases(
+    connectionId: string,
+    options?: WebRPCRequestOptions,
+  ): Promise<DataSyncDatabaseMetadata[]>;
+  listObjects(
+    endpoint: DataSyncEndpointRef,
+    options?: WebRPCRequestOptions,
+  ): Promise<DataSyncObjectMetadata[]>;
   listFields(
     endpoint: DataSyncEndpointRef,
     objectName: string,
+    options?: WebRPCRequestOptions,
   ): Promise<DataSyncFieldMetadata[]>;
-  listTasks(): Promise<DataSyncTaskDefinition[]>;
+  listTasks(options?: WebRPCRequestOptions): Promise<DataSyncTaskDefinition[]>;
   saveTask(task: DataSyncTaskDefinition): Promise<DataSyncTaskDefinition>;
   /** Permanently deletes a persisted inactive task; local-only drafts resolve immediately. */
   deleteTask(taskId: string): Promise<void>;
-  resolveCapability(task: DataSyncTaskDefinition): Promise<DataSyncRouteCapability>;
-  preflightTask(task: DataSyncTaskDefinition): Promise<DataSyncPreflightSnapshot>;
+  resolveCapability(
+    task: DataSyncTaskDefinition,
+    options?: WebRPCRequestOptions,
+  ): Promise<DataSyncRouteCapability>;
+  preflightTask(
+    task: DataSyncTaskDefinition,
+    options?: WebRPCRequestOptions,
+  ): Promise<DataSyncPreflightSnapshot>;
   beginApproval(
     task: DataSyncTaskDefinition,
     preflight: DataSyncPreflightSnapshot,
@@ -63,8 +77,11 @@ export interface DataSyncWorkbenchGateway {
   listErrorRows(runId: string): Promise<DataSyncErrorRow[]>;
   listSchedules(): Promise<DataSyncScheduleSummary[]>;
   listCdcAdapters(): Promise<string[]>;
-  listCdcSources(): Promise<DataSyncCdcSourceStatus[]>;
-  getCheckpoint(taskId: string): Promise<DataSyncCheckpointSummary | null>;
+  listCdcSources(options?: WebRPCRequestOptions): Promise<DataSyncCdcSourceStatus[]>;
+  getCheckpoint(
+    taskId: string,
+    options?: WebRPCRequestOptions,
+  ): Promise<DataSyncCheckpointSummary | null>;
   resetCheckpoint(
     taskId: string,
     expectedJobRevision: number,

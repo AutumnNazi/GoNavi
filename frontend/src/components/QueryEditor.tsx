@@ -40,6 +40,7 @@ import { applyMongoQueryAutoLimit, convertMongoShellToJsonCommand } from "../uti
 import { getShortcutDisplayLabel, getShortcutPlatform, getShortcutPrimaryModifierDisplayLabel, isEditableElement, isImeComposingKeyEvent, isShortcutMatch, comboToMonacoKeyBinding, normalizeShortcutCombo, resolveShortcutBinding } from "../utils/shortcuts";
 import { useAutoFetchVisibility } from '../utils/autoFetchVisibility';
 import { buildRpcConnectionConfig } from '../utils/connectionRpcConfig';
+import { invokeAppWithSignal, isWebRPCAbortError } from '../utils/webRpc';
 import { downloadBrowserTextFile, isWebRuntime } from '../utils/browserFileTransfer';
 import { filterVisibleDatabaseNames } from '../utils/databaseVisibility';
 import { isPostgresSchemaDialect } from '../utils/connectionDriverType';
@@ -1842,6 +1843,21 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
   const [sqlSnippetPickerKeyword, setSqlSnippetPickerKeyword] = useState('');
   const runSeqRef = useRef(0);
   const currentQueryIdRef = useRef('');
+  const requestScopedRPCControllersRef = useRef(new Set<AbortController>());
+  const invokeRequestScopedApp = useCallback(<T,>(
+      method: string,
+      args: unknown[],
+      fallback: () => Promise<T>,
+  ): Promise<T> => {
+      const controller = new AbortController();
+      requestScopedRPCControllersRef.current.add(controller);
+      return invokeAppWithSignal(method, args, controller.signal, fallback)
+          .finally(() => requestScopedRPCControllersRef.current.delete(controller));
+  }, []);
+  useEffect(() => () => {
+      requestScopedRPCControllersRef.current.forEach((controller) => controller.abort());
+      requestScopedRPCControllersRef.current.clear();
+  }, []);
   const resultTotalCountSeqRef = useRef(0);
   const resultTotalCountRequestsRef = useRef<Record<string, { sequence: number; queryId: string }>>({});
   const [isSaveModalOpen, setIsSaveModalOpen] = useState(false);
@@ -8668,13 +8684,13 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       ) {
           return DBQueryMultiInTransaction(pendingTransaction.id, sql, queryId);
       }
-      return DBQueryMulti(
-          buildRpcConnectionConfig(executionConfig) as any,
-          dbName,
-          sql,
-          queryId,
+      const rpcConfig = buildRpcConnectionConfig(executionConfig) as any;
+      return invokeRequestScopedApp(
+          'DBQueryMulti',
+          [rpcConfig, dbName, sql, queryId],
+          () => DBQueryMulti(rpcConfig, dbName, sql, queryId),
       );
-  }, [buildSqlExecutionConnectionConfig]);
+  }, [buildSqlExecutionConnectionConfig, invokeRequestScopedApp]);
 
   // 精准重查询单个结果集（提交事务 / 刷新按钮使用），不会重跑整个编辑器 SQL
   const handleReloadResult = async (resultKey: string, sql: string) => {
@@ -8791,6 +8807,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           ));
       } catch (err: any) {
           if (!isCurrentRun()) return;
+          if (isWebRPCAbortError(err)) return;
           message.error(translate('query_editor.message.refresh_failed', {
               error: formatSqlExecutionError(err?.message || err || translate('common.unknown'), { translate }),
           }));
@@ -9111,6 +9128,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           }));
       } catch (err: any) {
           if (!isCurrentRun()) return;
+          if (isWebRPCAbortError(err)) return;
           message.error(translate('query_editor.message.page_query_failed', {
               error: formatSqlExecutionError(err?.message || err || translate('common.unknown'), { translate }),
           }));
@@ -9574,7 +9592,12 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                 runQueryId = queryId;
                 setQueryId(queryId);
 
-                const res = await DBQueryWithCancel(buildRpcConnectionConfig(config) as any, currentDb, executedSql, queryId);
+                const mongoRPCConfig = buildRpcConnectionConfig(config) as any;
+                const res = await invokeRequestScopedApp(
+                    'DBQueryWithCancel',
+                    [mongoRPCConfig, currentDb, executedSql, queryId],
+                    () => DBQueryWithCancel(mongoRPCConfig, currentDb, executedSql, queryId),
+                );
                 if (!isCurrentRun()) return;
                 if (currentQueryIdRef.current === queryId) {
                     clearQueryId();
@@ -10178,6 +10201,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
         }
     } catch (e: any) {
         if (!isCurrentRun()) return;
+        if (isWebRPCAbortError(e)) return;
         const formattedError = formatSqlExecutionError(e?.message || e, { translate });
         message.error(translate('query_editor.message.execution_failed_with_error', { error: formattedError }));
         addSqlLog({

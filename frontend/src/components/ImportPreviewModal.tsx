@@ -13,6 +13,7 @@ import { useStore } from "../store";
 import { t as defaultTranslate } from "../i18n";
 import { useOptionalI18n } from "../i18n/provider";
 import { buildRpcConnectionConfig } from "../utils/connectionRpcConfig";
+import { invokeAppWithSignal, isWebRPCAbortError } from "../utils/webRpc";
 import { downloadBrowserFileFromResult } from "../utils/browserFileTransfer";
 import {
   getColumnDefinitionExtra,
@@ -151,6 +152,7 @@ const ImportPreviewModal: React.FC<ImportPreviewModalProps> = ({
   const [importResult, setImportResult] = useState<any>(null);
   const previewRequestRef = useRef(0);
   const importRequestRef = useRef(0);
+  const importRPCAbortRef = useRef<AbortController | null>(null);
   const importingRef = useRef(false);
   const stoppingRef = useRef(false);
   const activeImportJobIdRef = useRef("");
@@ -179,15 +181,23 @@ const ImportPreviewModal: React.FC<ImportPreviewModalProps> = ({
     if (importingRef.current) return undefined;
     const requestId = previewRequestRef.current + 1;
     previewRequestRef.current = requestId;
+    const controller = new AbortController();
     if (visible && filePath) {
-      void loadPreview(requestId);
+      void loadPreview(requestId, controller.signal);
     }
     return () => {
+      controller.abort();
       if (previewRequestRef.current === requestId) {
         previewRequestRef.current += 1;
       }
     };
   }, [visible, filePath, connectionId, dbName, tableName, connection, parserOptionsKey]);
+
+  useEffect(() => () => {
+    importRequestRef.current += 1;
+    importRPCAbortRef.current?.abort();
+    importRPCAbortRef.current = null;
+  }, []);
 
   useEffect(() => {
     if (importing) {
@@ -245,7 +255,7 @@ const ImportPreviewModal: React.FC<ImportPreviewModalProps> = ({
     };
   }, [importing, onImportingChange]);
 
-  const loadPreview = async (requestId: number) => {
+  const loadPreview = async (requestId: number, signal: AbortSignal) => {
     importRequestRef.current += 1;
     importingRef.current = false;
     stoppingRef.current = false;
@@ -289,8 +299,18 @@ const ImportPreviewModal: React.FC<ImportPreviewModalProps> = ({
         return;
       }
       const [previewRes, columnsRes] = await Promise.all([
-        previewImportFileWithOptions(filePath, parserOptions),
-        DBGetColumns(rpcConfig, dbName, tableName),
+        invokeAppWithSignal(
+          "PreviewImportFileWithOptions",
+          [filePath, parserOptions],
+          signal,
+          () => previewImportFileWithOptions(filePath, parserOptions),
+        ),
+        invokeAppWithSignal(
+          "DBGetColumns",
+          [rpcConfig, dbName, tableName],
+          signal,
+          () => DBGetColumns(rpcConfig, dbName, tableName),
+        ),
       ]);
       if (previewRequestRef.current !== requestId) return;
       if (!previewRes.success || !previewRes.data) {
@@ -339,6 +359,7 @@ const ImportPreviewModal: React.FC<ImportPreviewModalProps> = ({
       setColumnMappings(nextMappings);
     } catch (e: any) {
       if (previewRequestRef.current !== requestId) return;
+      if (isWebRPCAbortError(e)) return;
       setError(
         t("import_preview.error.preview_failed_detail", {
           detail: String(e?.message || e),
@@ -437,6 +458,9 @@ const ImportPreviewModal: React.FC<ImportPreviewModalProps> = ({
     latestProgressRef.current = initialProgress;
     setProgress(initialProgress);
     setImportResult(null);
+    importRPCAbortRef.current?.abort();
+    const controller = new AbortController();
+    importRPCAbortRef.current = controller;
 
     try {
       const config = previewConnectionConfigRef.current;
@@ -448,19 +472,26 @@ const ImportPreviewModal: React.FC<ImportPreviewModalProps> = ({
       const selectedMappings = Object.fromEntries(
         Object.entries(columnMappings).filter(([, targetColumn]) => Boolean(targetColumn)),
       );
-      const res = await ImportDataWithProgressOptions(
-        buildRpcConnectionConfig(config) as any,
-        dbName,
-        tableName,
-        filePath,
-        {
+      const rpcConfig = buildRpcConnectionConfig(config) as any;
+      const options = {
           ...parserOptions,
           columnMappings: selectedMappings,
           jobId: importJobId,
           ...(previewData.sourceIdentityToken
             ? { sourceIdentityToken: previewData.sourceIdentityToken }
             : {}),
-        },
+      };
+      const res = await invokeAppWithSignal(
+        "ImportDataWithProgressOptions",
+        [rpcConfig, dbName, tableName, filePath, options],
+        controller.signal,
+        () => ImportDataWithProgressOptions(
+          rpcConfig,
+          dbName,
+          tableName,
+          filePath,
+          options,
+        ),
       );
       if (importRequestRef.current !== importRequestId) return;
 
@@ -498,6 +529,7 @@ const ImportPreviewModal: React.FC<ImportPreviewModalProps> = ({
       }
     } catch (e: any) {
       if (importRequestRef.current !== importRequestId) return;
+      if (isWebRPCAbortError(e)) return;
       const failureMessage = t("import_preview.error.import_failed_detail", {
         detail: String(e?.message || e),
       });
@@ -514,6 +546,7 @@ const ImportPreviewModal: React.FC<ImportPreviewModalProps> = ({
         outcomeUnknown: true,
       });
     } finally {
+      if (importRPCAbortRef.current === controller) importRPCAbortRef.current = null;
       if (importRequestRef.current === importRequestId) {
         importingRef.current = false;
         stoppingRef.current = false;
