@@ -66,6 +66,14 @@ export function AIGetBuiltinPrompts() {
   return window['go']['aiservice']['Service']['AIGetBuiltinPrompts']();
 }
 
+export function AIGetCLICapabilities() {
+  return window['go']['aiservice']['Service']['AIGetCLICapabilities']();
+}
+
+export function AIGetCLIModelCatalog(arg1) {
+  return window['go']['aiservice']['Service']['AIGetCLIModelCatalog'](arg1);
+}
+
 export function AIGetContextLevel() {
   return window['go']['aiservice']['Service']['AIGetContextLevel']();
 }
@@ -132,6 +140,10 @@ export function AIInstallOpenCodeMCP() {
 
 export function AIInstallZCodeMCP() {
   return window['go']['aiservice']['Service']['AIInstallZCodeMCP']();
+}
+
+export function AIListCLIModels(arg1) {
+  return window['go']['aiservice']['Service']['AIListCLIModels'](arg1);
 }
 
 export function AIListMCPTools() {

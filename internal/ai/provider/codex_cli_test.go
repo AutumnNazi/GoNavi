@@ -88,7 +88,7 @@ func TestBuildCodexCLIEnvRemovesAPIKeyOverrides(t *testing.T) {
 		"CODEX_API_KEY=codex-key",
 		"OPENAI_API_KEY=openai-key",
 		"OPENAI_BASE_URL=https://example.invalid",
-	})
+	}, "")
 
 	for _, key := range []string{"CODEX_API_KEY", "OPENAI_API_KEY", "OPENAI_BASE_URL"} {
 		if got := envValue(env, key); got != "" {

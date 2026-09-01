@@ -414,7 +414,7 @@ func overrideCodeBuddyCLIForTest(t *testing.T, fakeCodeBuddyPath string) func() 
 		return originalLookPath(name)
 	}
 	codebuddyCommandContext = func(ctx context.Context, name string, args ...string) *exec.Cmd {
-		if name == "codebuddy" || name == "cbc" {
+		if name == fakeCodeBuddyPath || name == "codebuddy" || name == "cbc" {
 			return exec.CommandContext(ctx, fakeCodeBuddyPath, args...)
 		}
 		return originalCommandContext(ctx, name, args...)
@@ -444,7 +444,7 @@ func overrideCodeBuddyCLIForTestWithCapture(t *testing.T, fakeCodeBuddyPath stri
 		return originalLookPath(name)
 	}
 	codebuddyCommandContext = func(ctx context.Context, name string, args ...string) *exec.Cmd {
-		if name == "codebuddy" || name == "cbc" {
+		if name == fakeCodeBuddyPath || name == "codebuddy" || name == "cbc" {
 			if capture != nil {
 				capture(args)
 			}
