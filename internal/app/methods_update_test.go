@@ -140,6 +140,13 @@ func TestFetchLatestUpdateInfoUsesAssetDigestWhenUpdateIsAvailable(t *testing.T)
 	if info.SHA256 != strings.ToLower(digest) || info.AssetName != assetName {
 		t.Fatalf("unexpected update info: %#v", info)
 	}
+	wantDispatcherURL := updateDispatcherAssetURL(updateChannelLatest, "v0.6.5", assetName)
+	if info.AssetURL != wantDispatcherURL {
+		t.Fatalf("stable asset URL = %q, want immutable dispatcher URL %q", info.AssetURL, wantDispatcherURL)
+	}
+	if strings.Contains(info.AssetURL, "github.com") {
+		t.Fatalf("stable asset URL must not bypass Dispatcher: %q", info.AssetURL)
+	}
 	if info.ReleasePublishedAt != "2026-07-08T11:15:00Z" {
 		t.Fatalf("expected release published time to be preserved, got %#v", info)
 	}
@@ -1135,7 +1142,9 @@ func TestDownloadUpdateRefreshesDevReleaseAfterCachedAssetExpires(t *testing.T) 
 		switch rawURL {
 		case downloadDispatcherURLRequiringCurrentDevAsset(staleURL):
 			staleHits++
-			return "", localizedUpdateError{httpStatus: http.StatusNotFound}
+			return "", downloadCurrentAssetTerminalError{
+				cause: localizedUpdateError{httpStatus: http.StatusNotFound},
+			}
 		case downloadDispatcherURLRequiringCurrentDevAsset(freshURL):
 			freshHits++
 			if err := os.WriteFile(assetPath, freshPayload, 0o644); err != nil {
@@ -1344,6 +1353,64 @@ func TestDownloadUpdateAssetWithFallbackRejectsMalformedDispatcherWithoutUsingNe
 	}
 }
 
+func TestDownloadUpdateAssetWithFallbackContinuesAfterGatedNetworkFailure(t *testing.T) {
+	payload := []byte("update package from GitHub")
+	expectedHash := fmt.Sprintf("%x", sha256.Sum256(payload))
+	assetPath := filepath.Join(t.TempDir(), "GoNavi.zip")
+	asset := "/gonavi/dev/releases/download/dev-current/GoNavi.zip"
+	gated := downloadDispatcherURLRequiringCurrentDevAsset(downloadDispatcherURLForPath(asset))
+	cst := "https://download.syngnat.top" + asset
+	bero := "https://origin-download.syngnat.top:8443" + asset
+	github := "https://github.com/Syngnat/GoNavi/releases/download/dev-latest/GoNavi.zip"
+
+	var attempts []string
+	stubDevUpdateDownloadFile(t, func(rawURL string, path string, onProgress func(downloaded, total int64), expectedSize int64) (string, error) {
+		attempts = append(attempts, rawURL)
+		switch rawURL {
+		case gated:
+			return "", errors.New("Cst Dispatcher connection refused")
+		case cst, bero:
+			return "", errors.New("mirror unavailable")
+		case github:
+			if err := os.WriteFile(path, payload, 0o644); err != nil {
+				return "", err
+			}
+			if onProgress != nil {
+				onProgress(int64(len(payload)), expectedSize)
+			}
+			return expectedHash, nil
+		default:
+			t.Fatalf("unexpected update candidate: %q", rawURL)
+			return "", nil
+		}
+	})
+
+	gotHash, err := downloadUpdateAssetWithFallback(
+		[]string{downloadDispatcherURLForPath(asset), cst, bero, github},
+		assetPath,
+		expectedHash,
+		int64(len(payload)),
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("gated network failure did not fall back: %v", err)
+	}
+	if gotHash != expectedHash {
+		t.Fatalf("actual hash = %q, want %q", gotHash, expectedHash)
+	}
+	wantAttempts := []string{gated, cst, bero, github}
+	if !reflect.DeepEqual(attempts, wantAttempts) {
+		t.Fatalf("update candidate order = %#v, want %#v", attempts, wantAttempts)
+	}
+	gotPayload, err := os.ReadFile(assetPath)
+	if err != nil {
+		t.Fatalf("read downloaded update: %v", err)
+	}
+	if string(gotPayload) != string(payload) {
+		t.Fatalf("downloaded payload = %q, want %q", gotPayload, payload)
+	}
+}
+
 func TestDownloadUpdateRefreshesDevReleaseOnceAfterExpiredAsset(t *testing.T) {
 	app, installMode := newDevUpdateDownloadTestApp(t)
 
@@ -1368,7 +1435,9 @@ func TestDownloadUpdateRefreshesDevReleaseOnceAfterExpiredAsset(t *testing.T) {
 		switch rawURL {
 		case downloadDispatcherURLRequiringCurrentDevAsset(expiredURL):
 			expiredHits++
-			return "", localizedUpdateError{httpStatus: http.StatusNotFound}
+			return "", downloadCurrentAssetTerminalError{
+				cause: localizedUpdateError{httpStatus: http.StatusNotFound},
+			}
 		case downloadDispatcherURLRequiringCurrentDevAsset(freshURL):
 			freshHits++
 			if err := os.WriteFile(assetPath, freshPayload, 0o644); err != nil {
@@ -1430,7 +1499,9 @@ func TestDownloadUpdateDoesNotRetryUnchangedExpiredDevAsset(t *testing.T) {
 			t.Fatalf("expired dev asset URL = %q", rawURL)
 		}
 		expiredHits++
-		return "", localizedUpdateError{httpStatus: http.StatusNotFound}
+		return "", downloadCurrentAssetTerminalError{
+			cause: localizedUpdateError{httpStatus: http.StatusNotFound},
+		}
 	})
 
 	expiredRelease := devUpdateReleaseForTest(t, "dev-expired", assetURL, []byte("expired payload"), installMode)

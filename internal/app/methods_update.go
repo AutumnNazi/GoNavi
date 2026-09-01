@@ -706,6 +706,14 @@ func isExpiredUpdateAssetError(err error) bool {
 	if errors.As(err, &currentAssetMismatch) {
 		return true
 	}
+	// Only statuses observed directly from the gated Dispatcher identify a
+	// stale dev asset. A 404/410 from Cst, Bero, GitHub, or a joined fallback
+	// error is an ordinary source failure and must not trigger a manifest
+	// refresh loop.
+	var terminal downloadCurrentAssetTerminalError
+	if !errors.As(err, &terminal) {
+		return false
+	}
 	var localized localizedUpdateError
 	if !errors.As(err, &localized) {
 		return false
@@ -1048,8 +1056,8 @@ func downloadUpdateAssetWithFallback(
 		if err == nil {
 			return actualHash, nil
 		}
-		var currentAssetMismatch downloadCurrentAssetMismatchError
-		if requiresCurrentDevAsset || errors.As(err, &currentAssetMismatch) || errors.Is(err, errInvalidDownloadDispatcherURL) {
+		if errors.Is(err, errInvalidDownloadDispatcherURL) ||
+			(requiresCurrentDevAsset && isCurrentDevAssetTerminalError(err)) {
 			_ = os.Remove(assetPath)
 			return "", err
 		}
@@ -1146,9 +1154,11 @@ func fetchLatestUpdateInfoWithOptions(channel updateChannel, forceNetwork bool) 
 	if sha256Value == "" {
 		return UpdateInfo{}, localizedUpdateError{key: "app.update.backend.error.sha256_missing_current_package"}
 	}
-	assetURL := firstNonEmptyString(asset.BrowserDownloadURL, asset.URL)
-	if channel == updateChannelDev {
-		assetURL = devUpdateDispatcherAssetURL(assetVersion, asset.Name)
+	assetURL := updateDispatcherAssetURL(channel, assetVersion, asset.Name)
+	if assetURL == "" {
+		// Keep legacy release metadata usable if an unexpected asset coordinate
+		// cannot be represented by the Dispatcher path validator.
+		assetURL = firstNonEmptyString(asset.BrowserDownloadURL, asset.URL)
 	}
 	return UpdateInfo{
 		HasUpdate:          hasUpdate,
@@ -1171,12 +1181,23 @@ func fetchLatestUpdateInfoWithOptions(channel updateChannel, forceNetwork bool) 
 }
 
 func devUpdateDispatcherAssetURL(version string, assetName string) string {
+	return updateDispatcherAssetURL(updateChannelDev, version, assetName)
+}
+
+func updateDispatcherAssetURL(channel updateChannel, version string, assetName string) string {
 	version = strings.TrimSpace(version)
 	assetName = strings.TrimSpace(assetName)
 	if version == "" || assetName == "" {
 		return ""
 	}
-	assetPath := "/gonavi/dev/releases/download/" + urlpkg.PathEscape(version) + "/" + urlpkg.PathEscape(assetName)
+	prefix := "/gonavi/releases/download/"
+	if channel == updateChannelDev {
+		prefix = "/gonavi/dev/releases/download/"
+	}
+	assetPath := prefix + urlpkg.PathEscape(version) + "/" + urlpkg.PathEscape(assetName)
+	if err := validateDownloadDispatcherAssetPath(assetPath); err != nil {
+		return ""
+	}
 	return downloadDispatcherURLForPath(assetPath)
 }
 
