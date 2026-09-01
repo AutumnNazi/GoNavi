@@ -51,7 +51,7 @@ Worker 对合法资产路径返回：
 2. `bero`：`https://origin-download.syngnat.top:8443/...`；
 3. `github`：对应 GitHub Releases URL。
 
-`require-current=1` 是旧客户端留下的兼容参数，现版本接受并忽略它；不会因为缺少旧状态而返回 `503` 或 `409`。路径仍经过严格 allowlist 校验，非法路径返回 `400`。
+`require-current=1` 是旧客户端留下的兼容参数。对 dev immutable 应用资产，Worker 会用两端 `/healthz` 的同一 `appTag` 和 `generation` 做当前资产校验；任一节点不可用时仍可由另一节点证明当前资产，两个健康节点的 generation 不一致则 fail-closed 返回 `503`。资产不匹配仍返回 `409`，路径仍经过严格 allowlist 校验，非法路径返回 `400`。
 
 客户端对每个候选执行状态码、Range、大小和校验检查；网络、DNS、TLS、超时或 5xx 失败会继续下一个候选。资产过期时客户端仍保留既有的 manifest 刷新语义，刷新后只重试一次。
 

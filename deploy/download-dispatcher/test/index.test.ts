@@ -236,6 +236,39 @@ describe("download dispatcher", () => {
     expect(unavailableResponse.headers.get("Location")).toBeNull();
   });
 
+  it("fails closed when origins share an app tag but publish different generations", async () => {
+    const path = "/gonavi/dev/releases/download/dev-current/GoNavi.zip";
+    const mismatchedGeneration = createHealthFetch({
+      cst: healthPayload("cst", "dev-current", "generation-cst"),
+      bero: healthPayload("bero", "dev-current", "generation-bero"),
+    });
+    const response = await handleRequest(
+      resolveRequest(path, { requireCurrent: true }),
+      {} as Env,
+      mismatchedGeneration.fetchImpl,
+    );
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toEqual({
+      error: "current dev app asset is temporarily unavailable",
+      code: "current_asset_unavailable",
+    });
+  });
+
+  it("rejects a health payload whose channel generation differs from its envelope", async () => {
+    const invalidCst = healthPayload("cst");
+    invalidCst.channels.dev.generation = "channel-only-generation";
+    const response = await handleRequest(
+      resolveRequest("/gonavi/dev/releases/download/dev-current/GoNavi.zip", { requireCurrent: true }),
+      {} as Env,
+      createHealthFetch({ cst: invalidCst, bero: new Response(null, { status: 503 }) }).fetchImpl,
+    );
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toEqual({
+      error: "current dev app asset is temporarily unavailable",
+      code: "current_asset_unavailable",
+    });
+  });
+
   it.each([
     ["stable app", "/gonavi/releases/download/v1.2.3/GoNavi.zip"],
     ["dev app manifest", "/gonavi/dev/releases/latest/latest-dev.json"],

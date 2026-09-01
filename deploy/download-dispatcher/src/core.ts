@@ -144,6 +144,7 @@ function parseCurrentDevAppHealth(value: unknown): CurrentDevAppHealth | null {
     || !DEV_APP_TAG_PATTERN.test(dev.appTag)
     || typeof dev.generation !== "string"
     || !ASSET_TAG_PATTERN.test(dev.generation)
+    || dev.generation !== value.generation
   ) {
     return null;
   }
@@ -179,7 +180,7 @@ async function readCurrentDevAppTag(fetchImpl: typeof fetch): Promise<string | n
   const available = healthResults.filter((health): health is CurrentDevAppHealth => health !== null);
   if (available.length === 0) return null;
   const first = available[0];
-  if (available.some((health) => health.appTag !== first.appTag)) return null;
+  if (available.some((health) => health.appTag !== first.appTag || health.generation !== first.generation)) return null;
   return first.appTag;
 }
 
