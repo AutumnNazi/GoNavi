@@ -3620,9 +3620,121 @@ body[data-theme='dark'] .gonavi-about-project-entry:hover:not(:disabled) {
 
 .gonavi-ai-settings-nav-item:focus-visible,
 .gonavi-ai-provider-select:focus-visible,
-.gonavi-ai-provider-add:focus-visible {
+.gonavi-ai-provider-add:focus-visible,
+.gonavi-ai-provider-support > summary:focus-visible,
+.gonavi-ai-provider-support-table:focus-visible,
+.gonavi-ai-cli-details > summary:focus-visible,
+.gonavi-ai-provider-more > summary:focus-visible {
   outline: 2px solid rgba(22, 163, 74, 0.55);
   outline-offset: -2px;
+}
+
+.gonavi-ai-cli-model-fields,
+.gonavi-ai-provider-field-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr));
+  gap: 0 12px;
+}
+
+.gonavi-ai-cli-model-fields > .ant-form-item,
+.gonavi-ai-provider-field-grid > .ant-form-item {
+  min-width: 0;
+}
+
+.gonavi-ai-provider-form > .gonavi-ai-provider-field-grid > .ant-form-item,
+.gonavi-ai-provider-more .gonavi-ai-provider-field-grid > .ant-form-item {
+  margin-bottom: 12px;
+}
+
+.gonavi-ai-provider-form[hidden] {
+  display: none;
+}
+
+.gonavi-ai-provider-guide {
+  margin: 14px 0 12px;
+}
+
+.gonavi-ai-provider-guide-label {
+  display: block;
+  font-size: var(--gn-font-size-sm, 12px);
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.gonavi-ai-provider-guide .gonavi-ai-provider-field-grid {
+  gap: 10px 12px;
+}
+
+.gonavi-ai-provider-guide .gonavi-ai-provider-field-grid > div {
+  min-width: 0;
+}
+
+.gonavi-ai-provider-guide-hint,
+.gonavi-ai-provider-guide-restore,
+.gonavi-ai-provider-support {
+  font-size: var(--gn-font-size-sm, 12px);
+  line-height: 1.6;
+}
+
+.gonavi-ai-provider-guide-hint {
+  margin: 8px 0 2px;
+}
+
+.gonavi-ai-provider-guide-restore {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.gonavi-ai-provider-support > summary {
+  cursor: pointer;
+  padding: 4px 0;
+}
+
+.gonavi-ai-provider-support p {
+  margin: 6px 0 8px;
+}
+
+.gonavi-ai-provider-support-table {
+  max-height: 280px;
+  overflow: auto;
+}
+
+.gonavi-ai-provider-support table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  text-align: left;
+}
+
+.gonavi-ai-provider-support th,
+.gonavi-ai-provider-support td {
+  padding: 6px 8px;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+  border-bottom: 1px solid currentColor;
+  border-bottom-color: color-mix(in srgb, currentColor 16%, transparent);
+}
+
+.gonavi-ai-provider-support th:first-child {
+  width: 35%;
+  font-weight: 500;
+}
+
+.gonavi-ai-provider-support caption {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
+.gonavi-ai-provider-support-configured {
+  display: inline-block;
+  margin-left: 6px;
+  font-size: 0.9em;
+  opacity: 0.7;
 }
 
 body[data-theme='dark'] .gonavi-ai-settings-nav-item:hover:not(.is-active),
@@ -3999,13 +4111,6 @@ body[data-theme='dark'] .gonavi-settings-center-entry:hover {
     gap: 12px !important;
   }
 
-  .gonavi-ai-settings-flat {
-    grid-template-columns: 148px minmax(0, 1fr) !important;
-  }
-
-  .gonavi-ai-settings-content {
-    padding-left: 16px !important;
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {

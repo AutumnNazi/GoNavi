@@ -743,12 +743,20 @@ export interface AIProviderConfig {
   model: string;
   inlineCompletionModel?: string;
   models?: string[];
+  /** Per-configuration suggestions only; absent fields preserve legacy behavior. */
+  disabledModels?: string[];
+  customModels?: string[];
   apiFormat?: string; // openai 可选 openai-responses；custom 支持 openai/anthropic/gemini/CLI 等格式
   headers?: Record<string, string>;
   maxTokens: number;
   temperature: number;
   /** 思考强度：off | low | medium | high；空表示供应商默认 */
   thinkingIntensity?: string;
+  /**
+   * 本机 CLI 供应商的推理档位。合法值域由目标 CLI 决定，三个 CLI 两两不同，
+   * 候选值来自后端 AIGetCLICapabilities，前端不维护副本。空表示沿用 CLI 默认。
+   */
+  effort?: string;
 }
 
 export interface AIUserPromptSettings {
