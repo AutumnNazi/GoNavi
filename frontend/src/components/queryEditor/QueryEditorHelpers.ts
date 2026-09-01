@@ -1473,6 +1473,8 @@ export type QueryEditorNavigationTarget =
     | { type: 'sequence'; dbName: string; sequenceName: string; schemaName?: string }
     | { type: 'package'; dbName: string; packageName: string; schemaName?: string };
 
+export type QueryEditorTableCtrlClickAction = 'open-design' | 'locate';
+
 export type QueryEditorHoverTarget =
     | { kind: 'database'; dbName: string; range: { startColumn: number; endColumn: number } }
     | { kind: 'table'; dbName: string; tableName: string; schemaName?: string; comment?: string; range: { startColumn: number; endColumn: number } }
@@ -3131,6 +3133,7 @@ export const resolveQueryEditorNavigationDecorations = (
     tableSourceContext = false,
     documentContext?: { text: string; offset: number },
     currentSchema = '',
+    tableCtrlClickAction: QueryEditorTableCtrlClickAction = 'open-design',
 ): Array<{ startColumn: number; endColumn: number; hoverMessage: string }> => {
     const text = String(lineContent || '');
     if (!text) return [];
@@ -3163,9 +3166,14 @@ export const resolveQueryEditorNavigationDecorations = (
             });
         }
         if (navigationTarget.type === 'table') {
-            return translate('query_editor.hover.open_table_with_shortcut', {
-                shortcut: shortcutModifierLabel,
-            });
+            return translate(
+                tableCtrlClickAction === 'locate'
+                    ? 'query_editor.hover.locate_table_with_shortcut'
+                    : 'query_editor.hover.open_table_with_shortcut',
+                {
+                    shortcut: shortcutModifierLabel,
+                },
+            );
         }
         if (navigationTarget.type === 'view') {
             return translate('query_editor.hover.open_view_with_shortcut', {

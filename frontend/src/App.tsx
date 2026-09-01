@@ -66,6 +66,7 @@ import {
   MIN_V2_SIDEBAR_RAIL_SCALE,
   sanitizeTabEnvironmentAccentThickness,
   sanitizeV2SidebarRailScale,
+  type QueryTableCtrlClickAction,
   type ThemePreference,
   flushAppStatePersistence,
   useStore,
@@ -873,6 +874,9 @@ function App() {
       appearance.tabEnvironmentAccentThickness,
   );
   const tableDoubleClickAction = appearance.tableDoubleClickAction === 'open-design' ? 'open-design' : 'open-data';
+  const queryTableCtrlClickAction: QueryTableCtrlClickAction = appearance.queryTableCtrlClickAction === 'locate'
+      ? 'locate'
+      : 'open-design';
   const newQuerySqlTemplate = appearance.newQuerySqlTemplate ?? DEFAULT_QUERY_TEMPLATE;
   const sidebarTableMetadataFieldOrder = useMemo(
       () => resolveSidebarTableMetadataFieldOrder(queryOptions?.sidebarTableMetadataFieldOrder),
@@ -7081,6 +7085,23 @@ function App() {
                                           ),
                                       })}
                                       {renderThemeSettingsRow({
+                                          label: t('app.theme.data_table.query_ctrl_click_action'),
+                                          hint: t('app.theme.data_table.query_ctrl_click_action_hint'),
+                                          stacked: true,
+                                          control: (
+                                              <Segmented
+                                                  className="gonavi-settings-segmented-choice"
+                                                  block
+                                                  options={[
+                                                      { label: t('app.theme.data_table.query_ctrl_click_action.open_design'), value: 'open-design' },
+                                                      { label: t('app.theme.data_table.query_ctrl_click_action.locate'), value: 'locate' },
+                                                  ]}
+                                                  value={queryTableCtrlClickAction}
+                                                  onChange={(value) => setAppearance({ queryTableCtrlClickAction: value as QueryTableCtrlClickAction })}
+                                              />
+                                          ),
+                                      })}
+                                      {renderThemeSettingsRow({
                                           label: t('app.theme.data_table.density'),
                                           hint: t('app.theme.data_table.density_hint'),
                                           stacked: true,
@@ -7945,6 +7966,21 @@ function App() {
                                           </div>
                                       </div>
                                       <div>
+                                          <div style={{ marginBottom: 8, fontWeight: 500 }}>{t('app.theme.data_table.query_ctrl_click_action')}</div>
+                                          <Segmented
+                                              block
+                                              options={[
+                                                  { label: t('app.theme.data_table.query_ctrl_click_action.open_design'), value: 'open-design' },
+                                                  { label: t('app.theme.data_table.query_ctrl_click_action.locate'), value: 'locate' },
+                                              ]}
+                                              value={queryTableCtrlClickAction}
+                                              onChange={(value) => setAppearance({ queryTableCtrlClickAction: value as QueryTableCtrlClickAction })}
+                                          />
+                                          <div style={{ ...utilityMutedTextStyle, marginTop: 8 }}>
+                                              {t('app.theme.data_table.query_ctrl_click_action_hint')}
+                                          </div>
+                                      </div>
+                                      <div>
                                           <div style={{ marginBottom: 8, fontWeight: 500 }}>{t('app.theme.data_table.density')}</div>
                                           <Segmented
                                               block
@@ -8581,6 +8617,7 @@ function App() {
                             onFocusCommandSearch={handleFocusSidebarSearch}
                             onCollapseSidebar={isV2Ui ? handleCollapseSidebarPanel : undefined}
                             onExpandSidebar={isV2Ui ? handleExpandSidebarPanel : undefined}
+                            onEnsureSidebarExpanded={isSidebarCollapsed ? handleExpandSidebarPanel : undefined}
                             onTitlebarSnapshotChange={setSidebarTitlebarSnapshot}
                             collapseSidebarLabel={isV2Ui ? sidebarPanelCollapseLabel : undefined}
                             collapseSidebarButtonRef={sidebarExplorerToggleRef}

@@ -68,6 +68,7 @@ const storeState = vi.hoisted(() => ({
     uiVersion: 'legacy' as 'legacy' | 'v2',
     newQuerySqlTemplate: null as string | null,
     autoAddTableAlias: true,
+    queryTableCtrlClickAction: 'open-design' as 'open-design' | 'locate',
   },
   sqlFormatOptions: { keywordCase: 'upper' as const },
   setSqlFormatOptions: vi.fn(),
@@ -905,6 +906,7 @@ describe('QueryEditor external SQL save', () => {
     storeState.appearance.uiVersion = 'legacy';
     storeState.appearance.newQuerySqlTemplate = null;
     storeState.appearance.autoAddTableAlias = true;
+    storeState.appearance.queryTableCtrlClickAction = 'open-design';
     storeState.queryOptions = {
       maxRows: 5000,
       wordWrap: false,
@@ -5356,6 +5358,60 @@ describe('QueryEditor external SQL save', () => {
     expect((window as any).dispatchEvent).not.toHaveBeenCalledWith(expect.objectContaining({
       type: 'gonavi:locate-sidebar-object',
     }));
+    expect(preventDefault).toHaveBeenCalled();
+    expect(stopPropagation).toHaveBeenCalled();
+  });
+
+  it('locates a table in the sidebar on ctrl/cmd click when configured', async () => {
+    storeState.appearance.queryTableCtrlClickAction = 'locate';
+    editorState.value = 'select * from analytics.events where id = 1';
+    autoFetchState.visible = true;
+    backendApp.DBGetDatabases.mockResolvedValueOnce({ success: true, data: [{ Database: 'main' }, { Database: 'analytics' }] });
+    backendApp.DBGetTables
+      .mockResolvedValueOnce({ success: true, data: [{ Tables_in_main: 'users' }] })
+      .mockResolvedValueOnce({ success: true, data: [{ Tables_in_analytics: 'events' }] });
+    backendApp.DBGetAllColumns
+      .mockResolvedValueOnce({ success: true, data: [] })
+      .mockResolvedValueOnce({ success: true, data: [] });
+
+    await act(async () => {
+      create(<QueryEditor tab={createTab({ query: editorState.value, dbName: 'main' })} />);
+    });
+    await act(async () => {
+      for (let i = 0; i < 4; i += 1) await Promise.resolve();
+    });
+
+    const preventDefault = vi.fn();
+    const stopPropagation = vi.fn();
+    await act(async () => {
+      editorState.mouseDownListeners[0]?.({
+        target: { position: { lineNumber: 1, column: 27 } },
+        event: {
+          leftButton: true,
+          ctrlKey: true,
+          metaKey: false,
+          preventDefault,
+          stopPropagation,
+        },
+      });
+      await Promise.resolve();
+    });
+
+    expect(storeState.addTab).not.toHaveBeenCalled();
+    expect(backendApp.DBTableExists).not.toHaveBeenCalled();
+    expect(window.dispatchEvent).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'gonavi:locate-sidebar-object',
+      detail: expect.objectContaining({
+        connectionId: 'conn-1',
+        dbName: 'analytics',
+        tableName: 'events',
+        objectGroup: 'tables',
+      }),
+    }));
+    const locateEvent = (window.dispatchEvent as any).mock.calls
+      .map(([event]: [CustomEvent]) => event)
+      .find((event: CustomEvent) => event?.type === 'gonavi:locate-sidebar-object');
+    expect(locateEvent?.detail).not.toHaveProperty('tabId');
     expect(preventDefault).toHaveBeenCalled();
     expect(stopPropagation).toHaveBeenCalled();
   });

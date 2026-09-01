@@ -5157,8 +5157,19 @@ body .gonavi-theme-settings .gonavi-settings-segmented-choice .ant-segmented-ite
   color: var(--gn-settings-muted) !important;
 }
 
-body .gonavi-theme-settings .gonavi-settings-segmented-choice .ant-segmented-thumb {
-  display: none !important;
+/*
+ * rc-segmented removes .ant-segmented-item-selected while its thumb moves.
+ * Do not hide that thumb: WebView2/WKWebView may not emit transitionend for
+ * a display:none node, leaving every item unstyled until the panel remounts.
+ * Keep the moving layer visually identical to the GoNavi selected state.
+ */
+body[data-ui-version='v2'] .gonavi-theme-settings .gonavi-settings-segmented-choice .ant-segmented-thumb {
+  display: block !important;
+  box-sizing: border-box !important;
+  border: 1px solid var(--gn-settings-accent) !important;
+  border-radius: 8px !important;
+  background: var(--gn-settings-accent-soft) !important;
+  box-shadow: none !important;
 }
 
 body .gonavi-theme-settings .gonavi-settings-segmented-choice .ant-segmented-item.ant-segmented-item-selected,
@@ -5174,6 +5185,19 @@ body .gonavi-theme-settings .gonavi-settings-segmented-choice .ant-segmented-ite
   font-weight: 700 !important;
 }
 
+/* The radio input updates before rc-segmented restores its selected class. */
+body[data-ui-version='v2'] .gonavi-theme-settings .gonavi-settings-segmented-choice .ant-segmented-item-input:checked + .ant-segmented-item-label {
+  color: var(--gn-settings-accent) !important;
+  font-weight: 700 !important;
+}
+
+/* Keep the parent pill selected while rc-segmented is moving its thumb. */
+body[data-ui-version='v2'] .gonavi-theme-settings .gonavi-settings-segmented-choice .ant-segmented-item:has(> .ant-segmented-item-input:checked) {
+  border-color: var(--gn-settings-accent) !important;
+  background: var(--gn-settings-accent-soft) !important;
+  box-shadow: none !important;
+}
+
 body[data-theme='dark'] .gonavi-theme-settings .gonavi-settings-segmented-choice .ant-segmented-item.ant-segmented-item-selected,
 body[data-theme='dark'] .gonavi-theme-settings .gonavi-settings-segmented-choice .ant-segmented-item[aria-selected='true'] {
   border-color: color-mix(in srgb, var(--gn-settings-accent) 70%, rgba(255, 255, 255, 0.2)) !important;
@@ -5183,6 +5207,15 @@ body[data-theme='dark'] .gonavi-theme-settings .gonavi-settings-segmented-choice
 body[data-theme='dark'] .gonavi-theme-settings .gonavi-settings-segmented-choice .ant-segmented-item.ant-segmented-item-selected .ant-segmented-item-label,
 body[data-theme='dark'] .gonavi-theme-settings .gonavi-settings-segmented-choice .ant-segmented-item[aria-selected='true'] .ant-segmented-item-label {
   color: #86efac !important;
+}
+
+body[data-ui-version='v2'][data-theme='dark'] .gonavi-theme-settings .gonavi-settings-segmented-choice .ant-segmented-item-input:checked + .ant-segmented-item-label {
+  color: #86efac !important;
+}
+
+body[data-ui-version='v2'][data-theme='dark'] .gonavi-theme-settings .gonavi-settings-segmented-choice .ant-segmented-item:has(> .ant-segmented-item-input:checked) {
+  border-color: color-mix(in srgb, var(--gn-settings-accent) 70%, rgba(255, 255, 255, 0.2)) !important;
+  background: color-mix(in srgb, var(--gn-settings-accent) 22%, transparent) !important;
 }
 
 /* 界面版本预览：预览画布保留边界，选择项本身保持平面。 */

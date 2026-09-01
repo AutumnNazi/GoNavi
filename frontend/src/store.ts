@@ -159,6 +159,8 @@ import {
 } from "./utils/toolbarAppearance";
 
 export type TableDoubleClickAction = "open-data" | "open-design";
+/** SQL 编辑器中按住 Ctrl/Cmd 点击表名时执行的动作。 */
+export type QueryTableCtrlClickAction = "open-design" | "locate";
 export type ThemeMode = "light" | "dark";
 export type ThemePreference = ThemeMode | "system";
 /** AI 聊天默认打开形态：侧栏 / 独立浮动窗 */
@@ -171,6 +173,7 @@ export interface AppearanceSettings
   opacity: number;
   blur: number;
   tableDoubleClickAction: TableDoubleClickAction;
+  queryTableCtrlClickAction: QueryTableCtrlClickAction;
   v2SidebarSearchMode: "command" | "filter";
   v2SidebarPersistedFilter: string;
   v2SidebarRailScale: number;
@@ -199,6 +202,7 @@ export const DEFAULT_APPEARANCE: AppearanceSettings = {
   opacity: 1.0,
   blur: 0,
   tableDoubleClickAction: "open-data",
+  queryTableCtrlClickAction: "open-design",
   v2SidebarSearchMode: "command",
   v2SidebarPersistedFilter: "",
   v2SidebarRailScale: DEFAULT_V2_SIDEBAR_RAIL_SCALE,
@@ -246,6 +250,12 @@ const sanitizeTableDoubleClickAction = (
   value: unknown,
 ): TableDoubleClickAction => {
   return value === "open-design" ? "open-design" : DEFAULT_APPEARANCE.tableDoubleClickAction;
+};
+
+const sanitizeQueryTableCtrlClickAction = (
+  value: unknown,
+): QueryTableCtrlClickAction => {
+  return value === "locate" ? "locate" : DEFAULT_APPEARANCE.queryTableCtrlClickAction;
 };
 
 const sanitizeV2SidebarPersistedFilter = (value: unknown): string => {
@@ -3141,6 +3151,9 @@ const sanitizeAppearance = (
         : DEFAULT_APPEARANCE.blur,
     tableDoubleClickAction: sanitizeTableDoubleClickAction(
       appearance.tableDoubleClickAction,
+    ),
+    queryTableCtrlClickAction: sanitizeQueryTableCtrlClickAction(
+      appearance.queryTableCtrlClickAction,
     ),
     v2SidebarSearchMode: sanitizeV2SidebarSearchMode(
       appearance.v2SidebarSearchMode,

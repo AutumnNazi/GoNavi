@@ -213,6 +213,7 @@ import {
     collectQueryEditorObjectDecorationCandidates,
     collectQueryEditorReferencedDatabaseNames,
     collectQueryEditorTableReferences,
+    dispatchQueryEditorSidebarLocate,
     findCompletionTablesByDatabase,
     getCaseInsensitiveValue,
     getCompletionTableSchemaCounts,
@@ -5947,6 +5948,9 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
               ),
               probeContext.context,
               currentSchemaRef.current,
+              useStore.getState().appearance.queryTableCtrlClickAction === 'locate'
+                  ? 'locate'
+                  : 'open-design',
           );
           if (decorations.length === 0) {
               clearQueryEditorLinkDecorations(editor, linkDecorationIdsRef);
@@ -6474,6 +6478,24 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           if (navigationTarget.type === 'table') {
               const targetTableName = String(navigationTarget.tableName || '').trim();
               if (!targetTableName) return;
+
+              // Keep the existing design-tab behavior as the default, but let
+              // the user opt into the faster sidebar locate flow. Read the
+              // store at click time because Monaco keeps this listener alive
+              // across appearance-setting changes and does not recreate it on
+              // every React render.
+              const queryTableCtrlClickAction = useStore.getState().appearance.queryTableCtrlClickAction;
+              if (queryTableCtrlClickAction === 'locate') {
+                  dispatchQueryEditorSidebarLocate({
+                      connectionId,
+                      dbName: targetDbName,
+                      tableName: targetTableName,
+                      schemaName: navigationTarget.schemaName,
+                      objectGroup: 'tables',
+                  });
+                  return;
+              }
+
               const openTableTab = () => {
                   addTab({
                       id: `${connectionId}-${targetDbName}-table-${targetTableName}`,

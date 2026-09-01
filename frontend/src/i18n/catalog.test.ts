@@ -334,6 +334,10 @@ describe("i18n catalog", () => {
       "app.theme.data_table.table_double_click_action.open_data",
       "app.theme.data_table.table_double_click_action.open_design",
       "app.theme.data_table.table_double_click_action_hint",
+      "app.theme.data_table.query_ctrl_click_action",
+      "app.theme.data_table.query_ctrl_click_action.open_design",
+      "app.theme.data_table.query_ctrl_click_action.locate",
+      "app.theme.data_table.query_ctrl_click_action_hint",
       "app.theme.instant_apply_hint",
       "app.theme.nav.appearance.description",
       "app.theme.nav.appearance.title",
@@ -1060,6 +1064,7 @@ describe("i18n catalog", () => {
     const hoverKeys = [
       "query_editor.hover.switch_database_with_shortcut",
       "query_editor.hover.open_table_with_shortcut",
+      "query_editor.hover.locate_table_with_shortcut",
       "query_editor.hover.open_view_with_shortcut",
       "query_editor.hover.open_materialized_view_with_shortcut",
       "query_editor.hover.open_trigger_with_shortcut",

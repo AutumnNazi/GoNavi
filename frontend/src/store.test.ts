@@ -78,6 +78,7 @@ describe('store appearance persistence', () => {
     expect(appearance.blur).toBe(6);
     expect(appearance).not.toHaveProperty('useNativeMacWindowControls');
     expect(appearance.tableDoubleClickAction).toBe('open-data');
+    expect(appearance.queryTableCtrlClickAction).toBe('open-design');
     expect(appearance.v2SidebarSearchMode).toBe('command');
     expect(appearance).not.toHaveProperty('v2CommandSearchPersistentFilterEnabled');
     expect(appearance.v2SidebarPersistedFilter).toBe('');
@@ -224,6 +225,7 @@ describe('store appearance persistence', () => {
       showDataTableRowNumber: false,
       dataTableDensity: 'compact',
       tableDoubleClickAction: 'open-design',
+      queryTableCtrlClickAction: 'locate',
       v2SidebarRailScale: 1.55,
       tabEnvironmentAccentThickness: 5,
       sidebarSingleDatabaseExpansion: true,
@@ -234,6 +236,7 @@ describe('store appearance persistence', () => {
     expect(persisted.state.appearance.showDataTableRowNumber).toBe(false);
     expect(persisted.state.appearance.dataTableDensity).toBe('compact');
     expect(persisted.state.appearance.tableDoubleClickAction).toBe('open-design');
+    expect(persisted.state.appearance.queryTableCtrlClickAction).toBe('locate');
     expect(persisted.state.appearance.v2SidebarRailScale).toBe(1.55);
     expect(persisted.state.appearance.tabEnvironmentAccentThickness).toBe(5);
     expect(persisted.state.appearance.sidebarSingleDatabaseExpansion).toBe(true);
@@ -246,6 +249,7 @@ describe('store appearance persistence', () => {
     expect(appearance.showDataTableRowNumber).toBe(false);
     expect(appearance.dataTableDensity).toBe('compact');
     expect(appearance.tableDoubleClickAction).toBe('open-design');
+    expect(appearance.queryTableCtrlClickAction).toBe('locate');
     expect(appearance.v2SidebarRailScale).toBe(1.55);
     expect(appearance.tabEnvironmentAccentThickness).toBe(5);
     expect(appearance.sidebarSingleDatabaseExpansion).toBe(true);
@@ -525,6 +529,7 @@ describe('store appearance persistence', () => {
       state: {
         appearance: {
           tableDoubleClickAction: 'open-random',
+          queryTableCtrlClickAction: 'open-random',
         },
       },
       version: 10,
@@ -532,6 +537,7 @@ describe('store appearance persistence', () => {
 
     const { useStore } = await importStore();
     expect(useStore.getState().appearance.tableDoubleClickAction).toBe('open-data');
+    expect(useStore.getState().appearance.queryTableCtrlClickAction).toBe('open-design');
   });
 
   it('sanitizes persisted v2 sidebar rail scale settings into the supported range', async () => {
