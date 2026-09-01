@@ -15,7 +15,7 @@ vi.mock('antd', () => ({
 import { Tooltip } from 'antd';
 import AIProviderModelSelect, { ModelManagementRow, MODEL_MANAGEMENT_BODY_HEIGHT, MODEL_MANAGEMENT_BODY_HEIGHT_VAR } from './AIProviderModelSelect';
 import { t } from '../../i18n/catalog';
-import { HINT_TOOLTIP_ENTER_DELAY, HINT_TOOLTIP_LEAVE_DELAY } from '../common/tooltipTiming';
+import { HINT_TOOLTIP_ENTER_DELAY } from '../common/tooltipTiming';
 
 describe('searchable model selection', () => {
   let renderer: ReactTestRenderer | undefined;
@@ -105,7 +105,8 @@ describe('searchable model selection', () => {
     expect(tooltips.length).toBeGreaterThan(0);
     tooltips.forEach((tooltip) => {
       expect(tooltip.props.mouseEnterDelay).toBe(HINT_TOOLTIP_ENTER_DELAY);
-      expect(tooltip.props.mouseLeaveDelay).toBe(HINT_TOOLTIP_LEAVE_DELAY);
+      expect(tooltip.props.mouseLeaveDelay).toBe(0);
+      expect(tooltip.props.overlayClassName).toBe('gonavi-ai-provider-hint-overlay');
     });
     expect(renderer!.root.findByProps({ role: 'switch', 'aria-label': 'Enable default' }).props.title).toBeUndefined();
   });

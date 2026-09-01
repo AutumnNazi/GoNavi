@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -12,11 +13,23 @@ import (
 	"time"
 
 	"GoNavi-Wails/internal/ai"
+	"GoNavi-Wails/internal/logger"
 )
 
 var grokLookPath = lookupLocalCLICommand
+var grokCommandContext = exec.CommandContext
 
-var grokCLIRequestTimeout = 120 * time.Second
+// cliStreamIdleTimeout is how long a streaming CLI may stay silent. Each
+// stdout line resets it, so thinking deltas keep a long turn alive.
+var cliStreamIdleTimeout = 3 * time.Minute
+
+// cliStreamMaxTimeout is the hard cap for one streaming CLI turn, even while
+// it is still emitting output.
+var cliStreamMaxTimeout = 15 * time.Minute
+
+// grokCLIRequestTimeout covers the buffered json Chat() path, which has no
+// incremental output to reset an idle timer.
+var grokCLIRequestTimeout = cliStreamMaxTimeout
 
 // grokCLIIsolationNote 说明本 provider 的隔离边界与 codex 不对等，务必不要按 codex 的假设使用。
 //
@@ -109,7 +122,7 @@ func (p *GrokCLIProvider) Chat(ctx context.Context, req ai.ChatRequest) (*ai.Cha
 }
 
 func (p *GrokCLIProvider) ChatStream(ctx context.Context, req ai.ChatRequest, callback func(ai.StreamChunk)) error {
-	result, err := p.run(ctx, req)
+	err := p.stream(ctx, req, callback)
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
 			return context.Canceled
@@ -117,14 +130,140 @@ func (p *GrokCLIProvider) ChatStream(ctx context.Context, req ai.ChatRequest, ca
 		callback(ai.StreamChunk{Error: err.Error(), Done: true})
 		return nil
 	}
-	if result.Thinking != "" {
-		callback(ai.StreamChunk{Thinking: result.Thinking})
+	return nil
+}
+
+func (p *GrokCLIProvider) stream(ctx context.Context, req ai.ChatRequest, callback func(ai.StreamChunk)) error {
+	ctx, watchdog := startCLIIdleWatchdog(ctx, cliStreamIdleTimeout, cliStreamMaxTimeout)
+	defer watchdog.Close()
+
+	command, err := resolveGrokCLICommand(runtime.GOOS, grokLookPath)
+	if err != nil {
+		return err
 	}
-	if result.Content != "" {
-		callback(ai.StreamChunk{Content: result.Content})
+	prompt := buildPrompt(req.Messages)
+	args, err := buildGrokCLIArgsWithStream(p.config, prompt, true)
+	if err != nil {
+		return err
+	}
+
+	cmd := grokCommandContext(ctx, command, args...)
+	cmd.Env = EnrichCLICommandPATH(cmd.Environ(), command)
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return fmt.Errorf("create Grok CLI stdout pipe failed: %w", err)
+	}
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+
+	requestLog := logAIUpstreamRequestStart(p.Name(), "CLI", "grok://cli", buildGrokCLIRequestLogBody(args, prompt, p.config, req))
+	var requestErr error
+	defer func() { logAIUpstreamRequestFinish(requestLog, 0, requestErr) }()
+
+	if err := cmd.Start(); err != nil {
+		requestErr = fmt.Errorf("start Grok CLI failed: %w", err)
+		return requestErr
+	}
+	if cmd.Process != nil {
+		logger.Infof("GrokCLI 请求进程已启动：requestId=%s pid=%d", requestLog.id, cmd.Process.Pid)
+	}
+
+	emitted := false
+	scanner := bufio.NewScanner(stdout)
+	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
+	var combined strings.Builder
+	for scanner.Scan() {
+		watchdog.Bump()
+		line := bytes.TrimSpace(scanner.Bytes())
+		if len(line) == 0 {
+			continue
+		}
+		combined.Write(line)
+		combined.WriteByte('\n')
+		thinking, content := grokStreamChunkFromLine(line)
+		if thinking != "" {
+			callback(ai.StreamChunk{Thinking: thinking})
+			emitted = true
+		}
+		if content != "" {
+			callback(ai.StreamChunk{Content: content})
+			emitted = true
+		}
+	}
+	scanErr := scanner.Err()
+	waitErr := cmd.Wait()
+	combined.WriteString(stderr.String())
+
+	if watchdog.TimedOut() || isClaudeCLITimeout(ctx, waitErr) {
+		requestErr = watchdog.TimeoutError("Grok CLI")
+		return requestErr
+	}
+	if errors.Is(ctx.Err(), context.Canceled) {
+		requestErr = context.Canceled
+		return requestErr
+	}
+	capability, _ := LookupCLICapability("grok-cli")
+	if rejection := capability.InspectRejection(combined.String()); rejection != nil {
+		requestErr = rejection
+		return requestErr
+	}
+	if scanErr != nil {
+		requestErr = fmt.Errorf("read Grok CLI stream failed: %w", scanErr)
+		return requestErr
+	}
+	if waitErr != nil && !emitted {
+		detail := strings.TrimSpace(firstLineFrom(strings.TrimSpace(stderr.String())))
+		if detail == "" {
+			detail = waitErr.Error()
+		}
+		requestErr = fmt.Errorf("Grok CLI execution failed: %s", detail)
+		return requestErr
+	}
+	if !emitted {
+		requestErr = fmt.Errorf("Grok CLI returned no streamed content")
+		return requestErr
 	}
 	callback(ai.StreamChunk{Done: true})
 	return nil
+}
+
+func grokStreamChunkFromLine(raw []byte) (thinking, content string) {
+	var payload any
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return "", ""
+	}
+	return grokStreamChunkFromValue(payload)
+}
+
+func grokStreamChunkFromValue(value any) (thinking, content string) {
+	object, ok := value.(map[string]any)
+	if !ok {
+		return "", ""
+	}
+	if event, ok := object["event"].(map[string]any); ok {
+		if nestedThinking, nestedContent := grokStreamChunkFromValue(event); nestedThinking != "" || nestedContent != "" {
+			return nestedThinking, nestedContent
+		}
+	}
+	if delta, ok := object["delta"].(map[string]any); ok {
+		thinking = stringFromJSON(delta["thinking"])
+		if thinking == "" {
+			thinking = stringFromJSON(delta["thought"])
+		}
+		return thinking, stringFromJSON(delta["text"])
+	}
+	switch strings.TrimSpace(stringFromJSON(object["type"])) {
+	case "content_block_delta", "text_delta", "thinking_delta", "stream_event":
+		return stringFromJSON(object["thinking"]), stringFromJSON(object["text"])
+	case "", "result":
+		return stringFromJSON(object["thought"]), stringFromJSON(object["text"])
+	}
+	return "", ""
+}
+
+func stringFromJSON(value any) string {
+	text, _ := value.(string)
+	return text
 }
 
 func (p *GrokCLIProvider) run(ctx context.Context, req ai.ChatRequest) (grokCLIResult, error) {
@@ -142,7 +281,7 @@ func (p *GrokCLIProvider) run(ctx context.Context, req ai.ChatRequest) (grokCLIR
 		return grokCLIResult{}, err
 	}
 
-	cmd := exec.CommandContext(ctx, command, args...)
+	cmd := grokCommandContext(ctx, command, args...)
 	cmd.Env = EnrichCLICommandPATH(cmd.Environ(), command)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -160,8 +299,12 @@ func (p *GrokCLIProvider) run(ctx context.Context, req ai.ChatRequest) (grokCLIR
 	}()
 
 	runErr := cmd.Run()
-	if ctx.Err() != nil {
-		requestErr = ctx.Err()
+	if errors.Is(ctx.Err(), context.Canceled) && !errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		requestErr = context.Canceled
+		return grokCLIResult{}, requestErr
+	}
+	if isClaudeCLITimeout(ctx, runErr) {
+		requestErr = fmt.Errorf("Grok CLI timed out after %s while waiting for the local grok process; the model may still be thinking", grokCLIRequestTimeout)
 		return grokCLIResult{}, requestErr
 	}
 
@@ -228,9 +371,18 @@ func parseGrokCLIResponse(raw []byte) (grokCLIParsed, error) {
 }
 
 func buildGrokCLIArgs(config ai.ProviderConfig, prompt string) ([]string, error) {
-	args := []string{
-		"-p", prompt,
-		"--output-format", "json",
+	return buildGrokCLIArgsWithStream(config, prompt, false)
+}
+
+func buildGrokCLIArgsWithStream(config ai.ProviderConfig, prompt string, stream bool) ([]string, error) {
+	format := "json"
+	args := []string{"-p", prompt, "--output-format", format}
+	if stream {
+		// NDJSON in the Anthropic Messages wire format, plus incremental
+		// text/thinking deltas. json mode waits for the whole reply.
+		args = []string{"-p", prompt, "--output-format", "streaming-messages-json", "--include-partial-messages"}
+	}
+	args = append(args,
 		// grok 没有 --ignore-user-config/--ignore-rules；覆盖系统提示是唯一能阻断
 		// 用户全局规则进入本次调用的手段。
 		"--system-prompt-override", grokCLISystemPrompt,
@@ -238,7 +390,7 @@ func buildGrokCLIArgs(config ai.ProviderConfig, prompt string) ([]string, error)
 		// 数据库访问由 GoNavi 自己的工具层负责，不经由 CLI 的文件/命令工具。
 		"--tools", "",
 		"--disable-web-search",
-	}
+	)
 
 	capability, ok := LookupCLICapability("grok-cli")
 	if !ok {

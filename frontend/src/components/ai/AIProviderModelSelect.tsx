@@ -1,6 +1,6 @@
 import React from 'react';
 import { Input, Select, Tooltip } from 'antd';
-import { hintTooltipTiming } from '../common/tooltipTiming';
+import { passThroughHintTooltip } from '../common/tooltipTiming';
 
 // The management popup reserves this much room for its switchable body from the
 // first open. Both tabs then render inside a box of the same height, so choosing a
@@ -35,13 +35,13 @@ export const ModelManagementRow = React.memo<ModelManagementRowProps>(({
   value, label, enabled, badge, reason, stateLabel, toggleLabel, setDefaultLabel, showSetDefault, onSetDefault, onToggle,
 }) => <div className={`gonavi-ai-model-management-row${enabled ? '' : ' is-disabled'}`}>
   <div className="gonavi-ai-model-management-name">
-    <Tooltip title={label} {...hintTooltipTiming}><span>{label}</span></Tooltip>
+    <Tooltip title={label} {...passThroughHintTooltip}><span>{label}</span></Tooltip>
     {badge && <small>{badge}</small>}
   </div>
   <div className="gonavi-ai-model-management-actions">
     {showSetDefault && <button type="button" aria-label={`${setDefaultLabel}: ${label}`}
       onClick={() => onSetDefault(value)}>{setDefaultLabel}</button>}
-    <Tooltip title={reason || undefined} {...hintTooltipTiming}>
+    <Tooltip title={reason || undefined} {...passThroughHintTooltip}>
       <button type="button" role="switch" aria-checked={enabled} aria-disabled={Boolean(reason)}
         aria-label={toggleLabel}
         onClick={() => onToggle(value, enabled, reason, label)}>

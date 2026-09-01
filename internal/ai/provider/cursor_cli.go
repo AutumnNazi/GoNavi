@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -167,10 +168,8 @@ func (p *CursorCLIProvider) Chat(ctx context.Context, req ai.ChatRequest) (respo
 	return &ai.ChatResponse{Content: content}, nil
 }
 
-// The CLI's terminal JSON is buffered. Do not synthesize token usage or claim
-// incremental model streaming before Cursor has completed successfully.
 func (p *CursorCLIProvider) ChatStream(ctx context.Context, req ai.ChatRequest, callback func(ai.StreamChunk)) error {
-	response, err := p.Chat(ctx, req)
+	err := p.stream(ctx, req, callback)
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
 			return context.Canceled
@@ -178,12 +177,42 @@ func (p *CursorCLIProvider) ChatStream(ctx context.Context, req ai.ChatRequest, 
 		callback(ai.StreamChunk{Error: err.Error(), Done: true})
 		return nil
 	}
-	callback(ai.StreamChunk{Content: response.Content})
-	callback(ai.StreamChunk{Done: true})
 	return nil
 }
 
+func (p *CursorCLIProvider) stream(ctx context.Context, req ai.ChatRequest, callback func(ai.StreamChunk)) error {
+	args, err := buildCursorCLIArgsWithStream(p.config, true)
+	if err != nil {
+		return err
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := cursorCLIAuthCheck(ctx); err != nil {
+		return err
+	}
+	ctx, watchdog := startCLIIdleWatchdog(ctx, cliStreamIdleTimeout, cliStreamMaxTimeout)
+	defer watchdog.Close()
+	prompt := buildPrompt(req.Messages)
+	requestLog := logAIUpstreamRequestStart(p.Name(), "CLI", "cursor://cli", map[string]any{
+		"model":        strings.TrimSpace(p.config.Model),
+		"messageCount": len(req.Messages),
+		"promptChars":  len(prompt),
+		"mode":         "ask",
+		"output":       "stream-json",
+		"nativeHooks":  "retained",
+	})
+	var requestErr error
+	defer func() { logAIUpstreamRequestFinish(requestLog, 0, requestErr) }()
+	requestErr = streamCursorCLICommand(ctx, watchdog, args, prompt, callback)
+	return requestErr
+}
+
 func buildCursorCLIArgs(config ai.ProviderConfig) ([]string, error) {
+	return buildCursorCLIArgsWithStream(config, false)
+}
+
+func buildCursorCLIArgsWithStream(config ai.ProviderConfig, stream bool) ([]string, error) {
 	capability, ok := LookupCLICapability("cursor-cli")
 	if !ok {
 		return nil, fmt.Errorf("Cursor CLI capability is not registered")
@@ -192,6 +221,9 @@ func buildCursorCLIArgs(config ai.ProviderConfig) ([]string, error) {
 		return nil, err
 	}
 	args := []string{"--print", "--output-format", "json", "--mode", "ask", "--sandbox", "enabled", "--trust"}
+	if stream {
+		args = []string{"--print", "--output-format", "stream-json", "--stream-partial-output", "--mode", "ask", "--sandbox", "enabled", "--trust"}
+	}
 	if model := strings.TrimSpace(config.Model); model != "" {
 		args = append(args, "--model", model)
 	}
@@ -228,42 +260,11 @@ func buildCursorCLIEnv(env []string, dataDir string) []string {
 func runCursorCLICommand(ctx context.Context, args []string, prompt string, timeout time.Duration, outputLimit int) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	command, err := resolveCursorCLICommand(runtime.GOOS, cursorLookPath)
+	cmd, cleanup, err := startCursorCLICommand(ctx, args, prompt)
 	if err != nil {
 		return nil, err
 	}
-	workspace, err := os.MkdirTemp("", "gonavi-cursor-")
-	if err != nil {
-		return nil, fmt.Errorf("create Cursor CLI temporary workspace: %w", err)
-	}
-	defer func() {
-		if err := os.RemoveAll(workspace); err != nil {
-			logger.Warnf("CursorCLI temporary workspace cleanup failed: %v", err)
-		}
-	}()
-	resolvedWorkspace, err := filepath.EvalSymlinks(workspace)
-	if err != nil {
-		return nil, fmt.Errorf("resolve Cursor CLI temporary workspace: %w", err)
-	}
-	workspace = resolvedWorkspace
-	if err := os.Mkdir(filepath.Join(workspace, ".cursor"), 0o700); err != nil {
-		return nil, fmt.Errorf("prepare Cursor CLI permissions: %w", err)
-	}
-	if err := os.WriteFile(filepath.Join(workspace, ".cursor", "cli.json"), []byte(cursorCLIProjectConfig), 0o600); err != nil {
-		return nil, fmt.Errorf("write Cursor CLI temporary permissions: %w", err)
-	}
-	// --trust refers exclusively to our newly-created workspace, never the
-	// user's project. No user CLI configuration or login file is rewritten.
-	commandArgs := append([]string{"--workspace", workspace}, args...)
-	cmd := cursorCommandContext(ctx, command, commandArgs...)
-	configureClaudeCLICommand(cmd) // Hide the console window on Windows.
-	cmd.Dir = workspace
-	cmd.Env = EnrichCLICommandPATH(buildCursorCLIEnv(cmd.Environ(), filepath.Join(workspace, "data")), command)
-	cmd.Stdin = strings.NewReader(prompt)
-	cmd.WaitDelay = time.Second
+	defer cleanup()
 	stdout := &cursorCLILimitedBuffer{limit: outputLimit, cancel: cancel}
 	stderr := &cursorCLILimitedBuffer{limit: 64 * 1024, cancel: cancel}
 	cmd.Stdout, cmd.Stderr = stdout, stderr
@@ -283,6 +284,171 @@ func runCursorCLICommand(ctx context.Context, args []string, prompt string, time
 		return nil, fmt.Errorf("Cursor CLI could not complete; check the local CLI installation")
 	}
 	return stdout.buffer.Bytes(), nil
+}
+
+func startCursorCLICommand(ctx context.Context, args []string, prompt string) (*exec.Cmd, func(), error) {
+	if err := ctx.Err(); err != nil {
+		return nil, nil, err
+	}
+	command, err := resolveCursorCLICommand(runtime.GOOS, cursorLookPath)
+	if err != nil {
+		return nil, nil, err
+	}
+	workspace, err := os.MkdirTemp("", "gonavi-cursor-")
+	if err != nil {
+		return nil, nil, fmt.Errorf("create Cursor CLI temporary workspace: %w", err)
+	}
+	cleanup := func() {
+		if err := os.RemoveAll(workspace); err != nil {
+			logger.Warnf("CursorCLI temporary workspace cleanup failed: %v", err)
+		}
+	}
+	resolvedWorkspace, err := filepath.EvalSymlinks(workspace)
+	if err != nil {
+		cleanup()
+		return nil, nil, fmt.Errorf("resolve Cursor CLI temporary workspace: %w", err)
+	}
+	workspace = resolvedWorkspace
+	if err := os.Mkdir(filepath.Join(workspace, ".cursor"), 0o700); err != nil {
+		cleanup()
+		return nil, nil, fmt.Errorf("prepare Cursor CLI permissions: %w", err)
+	}
+	if err := os.WriteFile(filepath.Join(workspace, ".cursor", "cli.json"), []byte(cursorCLIProjectConfig), 0o600); err != nil {
+		cleanup()
+		return nil, nil, fmt.Errorf("write Cursor CLI temporary permissions: %w", err)
+	}
+	// --trust refers exclusively to our newly-created workspace, never the
+	// user's project. No user CLI configuration or login file is rewritten.
+	commandArgs := append([]string{"--workspace", workspace}, args...)
+	cmd := cursorCommandContext(ctx, command, commandArgs...)
+	configureClaudeCLICommand(cmd) // Hide the console window on Windows.
+	cmd.Dir = workspace
+	cmd.Env = EnrichCLICommandPATH(buildCursorCLIEnv(cmd.Environ(), filepath.Join(workspace, "data")), command)
+	cmd.Stdin = strings.NewReader(prompt)
+	cmd.WaitDelay = time.Second
+	return cmd, cleanup, nil
+}
+
+func streamCursorCLICommand(ctx context.Context, watchdog *cliIdleWatchdog, args []string, prompt string, callback func(ai.StreamChunk)) error {
+	cmd, cleanup, err := startCursorCLICommand(ctx, args, prompt)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return fmt.Errorf("create Cursor CLI stdout pipe failed: %w", err)
+	}
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("start Cursor CLI failed: %w", err)
+	}
+	emitted := false
+	scanner := bufio.NewScanner(stdout)
+	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
+	for scanner.Scan() {
+		watchdog.Bump()
+		line := bytes.TrimSpace(scanner.Bytes())
+		if len(line) == 0 {
+			continue
+		}
+		thinking, content, done, failed := cursorCLIStreamChunkFromLine(line)
+		if failed != "" {
+			_ = cmd.Wait()
+			return fmt.Errorf("%s", failed)
+		}
+		if thinking != "" {
+			callback(ai.StreamChunk{Thinking: thinking})
+			emitted = true
+		}
+		if content != "" && !done {
+			callback(ai.StreamChunk{Content: content})
+			emitted = true
+		}
+		if done {
+			waitErr := cmd.Wait()
+			if waitErr != nil {
+				var exitErr *exec.ExitError
+				if errors.As(waitErr, &exitErr) {
+					return fmt.Errorf("Cursor CLI exited with code %d; check local sign-in, model and CLI version", exitErr.ExitCode())
+				}
+				return fmt.Errorf("Cursor CLI could not complete; check the local CLI installation")
+			}
+			if content != "" && !emitted {
+				callback(ai.StreamChunk{Content: content})
+				emitted = true
+			}
+			if !emitted {
+				return fmt.Errorf("Cursor CLI did not return a successful model response")
+			}
+			callback(ai.StreamChunk{Done: true})
+			return nil
+		}
+	}
+	waitErr := cmd.Wait()
+	if watchdog.TimedOut() || isClaudeCLITimeout(ctx, waitErr) {
+		return watchdog.TimeoutError("Cursor CLI")
+	}
+	if errors.Is(ctx.Err(), context.Canceled) {
+		return context.Canceled
+	}
+	if waitErr != nil {
+		var exitErr *exec.ExitError
+		if errors.As(waitErr, &exitErr) {
+			return fmt.Errorf("Cursor CLI exited with code %d; check local sign-in, model and CLI version", exitErr.ExitCode())
+		}
+		return fmt.Errorf("Cursor CLI could not complete; check the local CLI installation")
+	}
+	if !emitted {
+		return fmt.Errorf("Cursor CLI did not return a successful model response")
+	}
+	callback(ai.StreamChunk{Done: true})
+	return nil
+}
+
+func cursorCLIStreamChunkFromLine(raw []byte) (thinking, content string, done bool, failed string) {
+	var event struct {
+		Type    string `json:"type"`
+		Subtype string `json:"subtype"`
+		IsError *bool  `json:"is_error"`
+		Result  string `json:"result"`
+		Delta   struct {
+			Type     string `json:"type"`
+			Text     string `json:"text"`
+			Thinking string `json:"thinking"`
+		} `json:"delta"`
+		Message struct {
+			Content []struct {
+				Type     string `json:"type"`
+				Text     string `json:"text"`
+				Thinking string `json:"thinking"`
+			} `json:"content"`
+		} `json:"message"`
+	}
+	if err := json.Unmarshal(raw, &event); err != nil {
+		return "", "", false, "Cursor CLI returned invalid response JSON"
+	}
+	switch event.Type {
+	case "content_block_delta":
+		return event.Delta.Thinking, event.Delta.Text, false, ""
+	case "assistant":
+		for _, block := range event.Message.Content {
+			if block.Thinking != "" {
+				thinking += block.Thinking
+			}
+			if block.Text != "" {
+				content += block.Text
+			}
+		}
+		return thinking, content, false, ""
+	case "result":
+		if event.Subtype != "success" || event.IsError == nil || *event.IsError {
+			return "", "", false, "Cursor CLI did not return a successful model response"
+		}
+		return "", strings.TrimSpace(event.Result), true, ""
+	}
+	return "", "", false, ""
 }
 
 type cursorCLILimitedBuffer struct {

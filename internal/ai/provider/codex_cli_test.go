@@ -274,9 +274,13 @@ func TestCodexCLIProviderStopsRunningProcessWhenDeadlineExpires(t *testing.T) {
 	restore := overrideCodexCLIForTest(t, "sleep")
 	defer restore()
 
-	originalTimeout := codexCLIRequestTimeout
-	codexCLIRequestTimeout = 200 * time.Millisecond
-	defer func() { codexCLIRequestTimeout = originalTimeout }()
+	originalIdle, originalMax := cliStreamIdleTimeout, cliStreamMaxTimeout
+	cliStreamIdleTimeout = 200 * time.Millisecond
+	cliStreamMaxTimeout = time.Second
+	defer func() {
+		cliStreamIdleTimeout = originalIdle
+		cliStreamMaxTimeout = originalMax
+	}()
 
 	provider, _ := NewCodexCLIProvider(ai.ProviderConfig{AuthMode: "local-cli"})
 	started := time.Now()

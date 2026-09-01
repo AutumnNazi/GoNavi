@@ -197,6 +197,27 @@ func TestCursorCLIChatRejectsIncompleteErrorAndNonzeroResults(t *testing.T) {
 	}
 }
 
+func TestCursorCLIChatStreamEmitsPartialTextThenDone(t *testing.T) {
+	partial := strings.Join([]string{
+		`{"type":"assistant","message":{"content":[{"type":"text","text":"Hel"}]}}`,
+		`{"type":"content_block_delta","delta":{"text":"lo"}}`,
+		`{"type":"result","subtype":"success","is_error":false,"result":"Hello"}`,
+	}, "\n")
+	overrideCursorCLIProcess(t, "output", partial+"\n", 0)
+	provider, _ := NewCursorCLIProvider(ai.ProviderConfig{AuthMode: "local-cli"})
+	var chunks []ai.StreamChunk
+	if err := provider.ChatStream(context.Background(), ai.ChatRequest{
+		Messages: []ai.Message{{Role: "user", Content: "hi"}},
+	}, func(chunk ai.StreamChunk) {
+		chunks = append(chunks, chunk)
+	}); err != nil {
+		t.Fatalf("stream: %v", err)
+	}
+	if len(chunks) != 3 || chunks[0].Content != "Hel" || chunks[1].Content != "lo" || !chunks[2].Done || chunks[2].Content != "" {
+		t.Fatalf("result line must not duplicate streamed text: %#v", chunks)
+	}
+}
+
 func TestCursorCLIDeadlinesCancellationAndOutputBounds(t *testing.T) {
 	commands := overrideCursorCLIProcess(t, "wait", "", 0)
 	_, err := runCursorCLICommand(context.Background(), []string{"models"}, "", 100*time.Millisecond, 1024)
